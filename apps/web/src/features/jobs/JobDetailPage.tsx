@@ -158,7 +158,7 @@ function JobDocument({ job, editingField, busy, onEdit, onSave, onSaveFields }: 
         <div className="job-document-highlights" aria-label="岗位摘要">
           <Fact icon={<WalletCards size={17} />} label="薪资" emphasis>{editable("salary_text", "薪资", job.salary_text, undefined)}</Fact>
           <Fact icon={<MapPin size={17} />} label="工作地点">{editable("work_city", "工作地点", job.work_city)}</Fact>
-          <Fact icon={<BriefcaseBusiness size={17} />} label="用工类型">{editable("employment_type", "用工类型", job.employment_type, employmentOptions)}</Fact>
+          <Fact icon={<BriefcaseBusiness size={17} />} label="求职分类">{editable("employment_type", "求职分类", job.employment_type, employmentOptions)}</Fact>
         </div>
         <div className="job-document-intro">
           <section className="job-document-intro-section">
@@ -180,7 +180,7 @@ function JobDocument({ job, editingField, busy, onEdit, onSave, onSaveFields }: 
   );
 }
 
-const employmentOptions: Array<[string, string]> = [["full_time", "全职"], ["part_time", "兼职"], ["internship", "实习"], ["contract", "合同"], ["temporary", "临时"]];
+const employmentOptions: Array<[string, string]> = [["internship", "实习"], ["campus", "校招"], ["full_time", "正式"]];
 const workModeOptions: Array<[string, string]> = [["onsite", "现场"], ["hybrid", "混合"], ["remote", "远程"]];
 const salaryPeriodOptions: Array<[string, string]> = [["hour", "小时"], ["day", "天"], ["month", "月"], ["year", "年"]];
 const emptyInlineSelectValue = "__empty_inline_select__";

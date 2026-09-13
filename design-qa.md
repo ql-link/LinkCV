@@ -1,5 +1,63 @@
 # Design QA
 
+## 求职中心页头与排期控件 — 2026-09-06
+
+### Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-5787d624-cbcb-400c-9aa2-1c7d066cd99f.png`（`377 × 230` px，标出“议程”和“时间网格”入口；用户明确要求这两个视图的线条颜色与此前周视图一样减淡）。
+- Implementation route: `http://127.0.0.1:5173/career/applications` 与 `http://127.0.0.1:5173/career/schedule`，Chrome 已登录桌面状态。
+- Implementation screenshot: 当前任务中的 CUA 最终浏览器截图；该浏览器接口返回内联 PNG，没有提供可持久化文件路径。
+- Viewport: `1920 × 1022` CSS px，device density `1`。来源为局部裁切，因此使用完整实现截图确认页面结构，再分别聚焦二级导航与排期工具栏进行归一化比较。
+- State: “面试排期”选中，浅色主题，真实排期数据已加载；同时核对视图菜单关闭和展开状态。
+
+### Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：“今天”“周”、日期标题和二级导航使用项目系统字体及与来源一致的字重层级，菜单项目保持清晰的 15px 正文字号。
+- 间距与布局：二级导航文字底部与橙色弧线之间保留可辨识空隙；弧线改为以文字标签自身定位，浏览器实测“面试排期”文字与弧线中心均为 `368.171875px`，横向偏差 `0px`，左侧圆点不再参与弧线居中计算。排期工具栏按“今天、周、上一周期、下一周期、日期标题”顺序紧凑排列。
+- 色彩与 Token：选中项使用 `#f97316` 橙色圆点、文字和短弧形下划线；未选中项使用浅灰圆点和次级文字色，符合来源层级。
+- 视图分隔线：议程的根边框、日期分组线与记录分隔线统一使用 `--ec-grid-line-color`，与周视图的浅灰网格 Token 一致；不需要资源排期后，“时间网格”入口及其专属样式已移除。
+- 图片与图标：二级导航恢复项目原有 Lucide `ListChecks` 与 `CalendarDays` 图标，尺寸均为 15px；选中图标随文字变为橙色，未选中图标保持灰色。翻页与下拉箭头继续使用项目既有图标，没有增加截图中不存在的装饰资产。
+- 文案：导航已统一为“今天”“周”“选择视图”，菜单项统一为“月、周、日、5 天、议程”，日期标题采用中文年月日范围格式。
+- 控件外观：“今天”与前后翻页按钮均为透明背景、零边框、零阴影；“周”在菜单关闭且鼠标未悬停时同样为透明背景，仅在悬停或菜单展开时显示浅灰反馈；日历右侧“安排面试”按钮及其工具栏占位已完整移除。
+
+### Interaction Evidence
+
+- 在真实 `/career/schedule` 周视图同一空白坐标执行浏览器点击：单击后弹窗数 `0`、临时排期数 `0`；双击后出现“新建面试”弹窗及 `12:00–12:30` 临时排期。
+- 默认关闭态实测“周”为 `background: rgba(0, 0, 0, 0)`；点击后展开态为 `rgba(237, 241, 245, 1)`；选择“周”关闭菜单并移开鼠标后恢复为透明。
+- 已登录 Chrome 中重新加载 `/career/schedule`，可访问树与真实 DOM 中“安排面试”按钮数量均为 `0`，周排期网格数量为 `1`；完整页面截图确认右侧空间自然留白，没有残留按钮边框或空工具栏。
+- 中文化后在真实页面核对关闭态显示“今天 / 周 / 2026年8月31日 – 9月6日”；展开视图菜单后五个选项依次显示“月、周、日、5 天、议程”，无英文视图名称或资源排期入口残留。
+- 在真实“面试排期”和“求职记录”两个路由分别截图：二级导航文字左侧均显示语义图标；切换路由后当前项的图标、文字与弧形下划线同步变橙，另一项图标保持灰色，导航位置与间距未漂移。
+- 在真实页面切换“议程”并截图：议程日期分组线与记录分隔线均呈现与周视图一致的浅灰细线，内容与滚动区域未受影响。
+- 移除资源排期后重新加载排期页并展开菜单，真实 DOM 与截图中只剩“月、周、日、5 天、议程”五项，“时间网格”不存在，菜单高度自然收拢。
+- 拖动选择入口仍保留，单击规则调整没有移除按住空白区域拖动创建时间范围的能力。
+- 浏览器控制台 error：0。
+
+### Comparison History
+
+1. 首次实现完成结构上移，但沿用了偏棕的 warning 色，与来源亮橙选中态存在 P2 色差。
+2. 修复为页头局部 `#f97316`，同时让公文包边框、导航圆点、文字与下划线共享同一强调色。
+3. 修复后重新捕获完整求职记录页，并切换两个入口核对布局与状态；未发现剩余 P0/P1/P2。
+4. 用户进一步要求删除说明并居中标题；移除说明节点，为标题容器设置 38px 最小高度和垂直居中，再次捕获真实排期页。聚焦对照确认标题与图标中心线重合、导航结构未漂移，无新增 P0/P1/P2。
+5. 本轮首次捕获发现通用透明按钮样式仍给 Today 和 Week 回灌边框，并给前后翻页按钮回灌灰底，属于 P2 视觉偏差；同时二级导航下划线与文字过近。
+6. 将日历导航选择器改为精确匹配实际 `data-slot`，清除 Today 和翻页按钮的边框、背景与阴影，只保留 Week 的浅灰底；下移弧线后重新捕获关闭态和展开态，未发现剩余 P0/P1/P2。
+7. 用户指出弧线仍按“圆点＋文字”整体居中；将弧线伪元素从链接迁移到独立文字标签，并重新捕获排期页。浏览器测得文字与弧线中心差值 `0px`，问题已消除。
+8. 用户指出 Week 在未悬停时仍像被选中；移除关闭态常驻浅灰底，并避免菜单选择后返回焦点造成灰底残留。重新验证关闭、展开、再次关闭三个状态，背景依次为透明、浅灰、透明，无剩余 P0/P1/P2。
+9. 用户要求删除日历右侧“安排面试”按钮；移除按钮节点、空工具栏容器及专属样式，并把相关组件测试改为通过既有的空白时间双击入口打开新建弹窗。真实页面复核按钮数量为 `0`，日历数据与网格保持正常，无剩余 P0/P1/P2。
+10. 用户要求将排期左侧 Today、Week 等控件中文化；同步调整按钮、无障碍标签、完整视图菜单和各视图日期标题。真实页面分别捕获关闭态与菜单展开态，中文文案完整且布局未溢出，无剩余 P0/P1/P2。
+11. 用户要求把二级导航文字左侧圆点恢复为原有语义图标；用 `ListChecks` 和 `CalendarDays` 替换圆点，并恢复 15px 图标尺寸与选中态颜色继承。真实页面切换两个入口核对图标与激活状态，无剩余 P0/P1/P2。
+12. 用户指出“议程”和“时间网格”的线条颜色仍过重；为两个视图的结构边框统一应用周视图的 `--ec-grid-line-color`，并分别捕获真实视图核对。边框层级已统一，无剩余 P0/P1/P2。
+13. 用户确认不需要资源排期；从可用视图中移除 `resource`，同步删除资源视图的局部边框覆盖并更新菜单测试。真实页面展开菜单后确认只剩五个有效视图，无剩余 P0/P1/P2。
+
+### Follow-up Polish
+
+- P3：来源截图与当前开发数据的具体日期不同；这是数据状态差异，不属于控件样式偏差。
+
+final result: passed
+
+---
+
 ## Evidence
 
 - Source visual truth: 用户提供的 `LinkCV 2.zip` 中 `design_handoff_resume_editor/design_files/ui_kits/resume-workbench/Workbench.jsx`。
@@ -41,6 +99,105 @@
 - 浏览器自动化环境未注入真实本地图片文件；上传后的尺寸、替代文字、校验和错误态由组件实现与类型/单元测试覆盖，仍建议发布前用一张横图和一张竖图各做一次人工文件选择验收。
 
 final result: passed
+
+---
+
+# AI 助手名称前缀检索与内联文件引用 — 2026-09-03
+
+## Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-08784b34-174e-4d69-92ce-c3106fbc335c.png`、`/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-cd50507f-cb0e-4b3d-9ad4-f9bbb09343fe.png`、`/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-7701bfe9-9f1e-4a6a-a003-78ce2eb9d16e.png` 与 `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-82544ac8-2299-4835-b365-baa0e54aa995.png`。前三张分别规定内联原子引用与资料库图标，第四张规定搜索结果使用不可选择的分类标题。
+- Implementation route: `http://127.0.0.1:5173/assistant`，Chrome 已登录桌面状态。
+- Implementation screenshots: `/private/tmp/linkcv-assistant-inline-reference.png`、`/private/tmp/linkcv-assistant-dataset-icon.png` 与 `/private/tmp/linkcv-assistant-grouped-mentions.png`，均为 `1920 × 1887` px，桌面 CSS 视口与 device density 均为 `1`。
+- Combined comparison: `/private/tmp/linkcv-assistant-inline-comparison.png`，`1298 × 1068` px；上方保留两张原始参考，下方为实现截图的输入区等比聚焦裁切。
+- Source pixels: `1298 × 399` 与 `329 × 64`；参考是局部功能示意而非完整同视口页面，因此只比较编辑器内部结构、引用位置和视觉层级，不对页面留白做像素级判断。
+- State: 输入真实资料名前缀 `@mock-dev-20260823-a1-2`，Tab 选择首项，再分别在引用后输入“这是什么”、按 Home 在引用前输入“你好 ”。
+
+## Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 字体与排版：普通正文沿用助手输入区的文楷字体；文件单元使用现有无衬线 UI 字体与较小字号，和参考中正文、引用的层级差异一致。长名称使用单行截断，不撑破编辑器。
+- 间距与布局：文件引用已从编辑器上方移除，并与“你好”“这是什么”处在同一文本行。引用左右保留小间距，光标可停在单元前后，输入框高度、圆角、发送按钮和底部控制区保持原布局。
+- 色彩与 Token：引用采用浅灰蓝背景、细边框和蓝色文件图标，层级接近参考的轻量内联引用，不引入额外强调色或阴影。
+- 图片与图标：资料库结果与内联资料引用使用和工作区导航一致的 Lucide `Database` 圆柱图标，简历继续使用 `FileText`；移除操作仍使用项目现有图标，不使用字符、CSS 绘图或占位资源。
+- 文案与内容：搜索词解释为 `@` 后完整名称前缀；`@资料` 在真实账户中没有同名前缀文件时明确显示“没有匹配的文件”，不会再错误展示全部资料。
+- 分组层级：空搜索词下按“简历”在前、“资料”在后的顺序展示两个弱化标题，标题不可选；每组最多返回四项，使两个分类和资料首项在默认弹层高度内同时可见。
+
+## Interaction Evidence
+
+- `@资料` 返回空结果，证明“资料”不再被解释为分类指令。
+- `@mock-dev-20260823-a1-2` 只返回名称以该字符串开头的资料；Tab 选择可见首项。
+- 选中后引用作为不可编辑原子单元进入正文；实测可在其后输入“这是什么”，按 Home 后可在其前输入“你好 ”。
+- 发送后的用户消息继续按原位置显示同款内联文件单元，不再显示 `@文件名` 占位文本或在气泡下方重复追加文件标签；真实历史会话复核内联单元后直接衔接消息正文，控制台 error 为 0。
+- 成功完成发送后，下一轮输入框不再残留刚发送的文件单元；失败或停止仍保留草稿和引用供重试。
+- Markdown 一级至三级标题改为 28px、24px、21px 的语义标题层级，均大于 20px 正文；组件测试覆盖 `h2`、`h3`、`h4` 映射，避免标题再次退化为小号粗体。
+- Agent Markdown 组件测试覆盖水平分隔线、表格、有序列表、引用、链接、删除线、代码块与安全图片占位，并验证原始 HTML 不执行。
+- 真实历史会话复核得到 2 个语义表格、6 条水平分隔线、0 个残留 `---` 文本段落；输入框引用单元为 0，标题为 24px/21px、正文为 20px，控制台 error 为 0。
+- 独立助手表格正文使用 18px 字号和 9px × 11px 单元格留白，在保持与 20px 正文层级区分的同时提高长表可读性。
+- 删除按钮可移除引用；验收结束后已清空未发送草稿，没有写入对话或共享数据。
+- Chrome 控制台 error：0。
+
+## Automated Evidence
+
+- `npm run check:web`：61 个测试文件、560 个测试通过，设计规则、TypeScript 与生产构建通过。
+- Agent 后端定向测试：33 个通过，覆盖普通包含搜索与 `prefix=true` 前缀搜索的差异。
+
+## Comparison History
+
+1. 初始实现把 `@资料`、`@简历` 当作来源分类，并把已选文件显示在编辑器上方，与用户更正后的语义不一致。
+2. 修复后统一按 `@` 后名称前缀同时检索资料和简历；引用移入 contenteditable 正文并作为不可拆分单元渲染。
+3. 聚焦对照确认引用位置、图标、名称层级、前后文字和移除控件均符合两张参考图表达的目标，无需继续处理 P0/P1/P2。
+4. 用户补充资料库图标参考后，将 `dataset` 在 @ 结果、内联引用和资料选择器中的图标统一为导航栏同款 `Database`；浏览器复核弹层与选中态均生效。
+5. 用户补充分组参考后，新增“简历 / 资料”两个不可选择的分类标题，并把每组初始结果收敛为四项；相同桌面状态下复核两个标题及资料首项均无需滚动即可看到，方向键与 Tab 仍沿用连续结果顺序。
+
+## Follow-up Polish
+
+- P3：如果后续提供精确 Figma Token，可进一步微调引用单元的蓝灰色与圆角；当前实现已复用项目既有视觉语言，不影响验收。
+
+final result: passed
+
+---
+
+# 工作区导航顺序与 AI 羽毛图标 — 2026-09-03
+
+## Evidence
+
+- Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-998d0f84-cb0c-47e4-ad4c-a8f8447b8464.png` 提供对话页蓝色羽毛的轮廓参考；用户文字要求导航顺序改为“我的简历、简历模板、AI 助手、求职中心、资料库”，并要求重新生成黑白线性版本，不直接复用原图。
+- Generated asset: `apps/web/src/assets/assistant-feather-outline.png`，`128 × 128` RGBA 透明底；使用内置图片生成生成新线稿后，按实际 16px 导航槽位裁切缩放。
+- Implementation route: `http://127.0.0.1:5173/assistant`，Chrome 已登录桌面状态，AI 助手为激活项。
+- Implementation screenshots: `/private/tmp/linkcv-navigation-feather-active-full.png` 与聚焦导航区域 `/private/tmp/linkcv-navigation-feather-active.png`。
+- Combined comparison: `/private/tmp/linkcv-navigation-feather-comparison.png`，左侧是来源羽毛，右侧是实际导航激活态。
+
+## Findings
+
+没有剩余 P0/P1/P2 问题。
+
+- 顺序：五个一级导航按用户指定顺序排列，模板已移到 AI 助手之前；路由、预加载和当前页标记保持不变。
+- 激活色：AI 助手使用独立的亮青色 Token，和“我的简历”的蓝色、模板紫色、求职中心橙色、资料库绿色形成清晰区分。
+- 图标：AI 助手不再使用 `Sparkles`，改为新生成的透明底黑色羽毛线稿；保留来源羽毛的倾斜方向和细长轮廓，但没有复用蓝色像素或填充样式。
+- 尺寸与清晰度：资产按 16px 槽位重新裁切，羽毛主体接近占满高度，和相邻 Lucide 图标的视觉重量一致；深色模式通过反色保持可见。
+- 可访问性：图标保持装饰语义，链接仍以“AI 助手”作为可访问名称。
+
+## Interaction Evidence
+
+- 登录态浏览器中点击 AI 助手后进入 `/assistant`，该项正确获得当前页状态。
+- 浏览器结构确认五个链接的 DOM 顺序与指定顺序一致。
+- 组件测试覆盖导航 href 顺序以及 AI 助手使用新羽毛图片资产。
+
+## Comparison History
+
+1. 初次生成得到透明底黑色羽毛线稿；按 alpha 内容边界裁切并缩放到 `128 × 128` 项目资产。
+2. 首次导航截图显示羽毛主体留白略多；再次按真实 alpha 边界收紧，使 16px 下的主体高度从约 13px 提升到约 15px。
+3. 合并参考与最终实现复核后，方向、轮廓、黑白线性表达、导航顺序和相邻间距均符合目标。
+
+## Follow-up Polish
+
+- P3：位图在极高缩放倍率下不如 SVG 锐利，但当前 16px 产品尺寸清晰；本轮遵循用户“重新生成”要求保留生成资产，不另做手绘 SVG 替代。
+
+final result: passed
+
+---
 
 ## 求职详情记录卡片 — 2026-09-01
 
@@ -1009,5 +1166,56 @@ final result: passed
 
 - The local route loaded successfully in Chrome. Programmatic DOM measurement was unavailable because Chrome has `Allow JavaScript from Apple Events` disabled.
 - A full-screen capture was intentionally not taken because it could include unrelated windows or sensitive screen content. The card visual remains covered by the preceding reference/implementation comparison; this pass's new layout and interaction contracts are covered by source inspection, focused component tests, full Web regression, typecheck, and production build.
+
+final result: passed
+
+---
+
+# 日期时间选择器设计 QA
+
+- source visual truth path: `/Users/jixu/.codex/generated_images/01a074c0-01f0-7381-84af-765f32909409/exec-eb1a7719-8023-47ea-a65b-487424bfb8a3.png`
+- implementation screenshot path: `/Users/jixu/.codex/visualizations/2026/09/06/01a074c0-01f0-7381-84af-765f32909409/date-time-picker-implementation.jpg`
+- full-view comparison: `/Users/jixu/.codex/visualizations/2026/09/06/01a074c0-01f0-7381-84af-765f32909409/date-time-picker-comparison.jpg`
+- focused comparison: `/Users/jixu/.codex/visualizations/2026/09/06/01a074c0-01f0-7381-84af-765f32909409/date-time-picker-focused-comparison.jpg`
+- source pixels: `1586 x 992`
+- implementation pixels: `948 x 1018`
+- implementation CSS viewport: `948 x 1018`, `devicePixelRatio: 1`
+- final dialog size: `900 x 860` CSS px
+- final picker size: `548 x 304` CSS px
+- normalization: full view按各自完整画面等比缩放后并排；聚焦对照裁切同一日期时间选择器区域，再分别等比缩放到统一对照面板。来源图没有可恢复的 CSS viewport 或 devicePixelRatio，因此不做伪精确的像素级断言。
+- state: 求职阶段弹窗选择“笔试”，结束时间选择器展开，日期为 `2026-09-06`，时间为 `14:30`。
+
+## Findings
+
+- 当前没有可执行的 P0/P1/P2 差异。
+- 字体与排版：沿用 LinkCV 现有字体栈与字号 Token；标题、星期、日期、字段标签和结果摘要的层级与参考一致，没有截断或异常换行。
+- 间距与布局：实现采用左日历、右时间的双栏结构，底部次要操作与主操作分组；弹层不再与外层操作栏重叠。真实表单保留产品已有的“投递日期”字段，所以外层内容密度高于参考图，这是业务结构约束，不属于选择器漂移。
+- 颜色与 Token：边框、弱背景、蓝色选中态和黑色主按钮均复用项目 Token，视觉语义与参考一致。
+- 图片与资产：选择器没有图片资产；图标继续使用项目既有 `lucide-react` 图标，没有 CSS 图形或自制 SVG 替代。
+- 文案与内容：保留“时间 / 快捷选择 / 已选择 / 清除 / 今天 / 确定”。参考图在 `14:30` 结果下仍高亮 `14:00` 快捷项，状态彼此矛盾；实现只在时间精确匹配快捷值时高亮，避免误导。
+- 交互与可访问性：小时和分钟使用有标签的 combobox/listbox；快捷时间使用可感知选中状态；确认按钮在日期和时间完整前禁用；Escape 和外部 pointer down 可关闭弹层。
+
+## Comparison history
+
+1. 首次真实页面对照发现 P2：业务表单比参考多一行“投递日期”，弹层底部进入外层弹窗操作栏区域。修复为打开选择器时把内部可滚动面板调整到刚好容纳完整弹层。修复后证据：选择器底边 `861.6875`，外层操作栏顶边 `862`，无重叠。
+2. 第二次聚焦对照发现 P2：“确定”按钮被旧的 footer 通用选择器覆盖，显示为透明文字按钮。提高主按钮样式作用域并恢复 `120 x 40` 的深色主操作。最终聚焦对照显示按钮、双栏、摘要和 footer 与参考结构一致。
+
+## Open Questions
+
+- 无阻塞问题。来源图与浏览器窗口尺寸不同，因此最终判断基于同状态的完整画面和归一化聚焦区域，而不是未经证实的 1:1 像素匹配。
+
+## Implementation Checklist
+
+- [x] 双栏日期与时间布局
+- [x] 小时、分钟下拉选择
+- [x] `09:00 / 14:00 / 18:00` 快捷时间
+- [x] 已选结果摘要
+- [x] 清除、今天、确定操作
+- [x] 真实业务弹窗内无重叠
+- [x] 组件测试、类型检查和生产构建
+
+## Follow-up Polish
+
+- 移动端使用单列堆叠布局；本次来源只提供桌面视觉，未把移动端与未提供的移动稿做视觉像素对照。
 
 final result: passed

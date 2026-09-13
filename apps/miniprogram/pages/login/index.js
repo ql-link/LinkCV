@@ -39,6 +39,7 @@ Page({
   },
 
   onLoad(options) {
+    require('../../services/tabResources').prepare();
     const scene = decodeOption(options && options.scene);
     if (scene) {
       wx.reLaunch({ url: `/pages/confirm/index?scene=${encodeURIComponent(scene)}` });
@@ -47,6 +48,7 @@ Page({
 
     this.setData({ returnTo: resolveReturnTarget(options) });
     if (auth.hasSession()) {
+      require('../../services/tabPrefetch').schedule();
       wx.switchTab({
         url: RETURN_TARGETS.has(this.data.returnTo) ? this.data.returnTo : DEFAULT_RETURN_TARGET,
       });
@@ -116,8 +118,9 @@ Page({
   },
 
   async enterReturnTarget() {
+    require('../../services/tabPrefetch').schedule();
+    require('../../services/tabResources').prepare();
     this.setData({ submitting: false, message: "登录成功，正在进入…" });
-    await new Promise((resolve) => setTimeout(resolve, 120));
     wx.switchTab({ url: RETURN_TARGETS.has(this.data.returnTo) ? this.data.returnTo : DEFAULT_RETURN_TARGET });
   },
 

@@ -349,7 +349,6 @@ export function DatasetsPage() {
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [syncFailure, setSyncFailure] = useState<string | null>(null);
-  const [fading, setFading] = useState(false);
   const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
   const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<DatasetRecord | null>(null);
@@ -360,6 +359,7 @@ export function DatasetsPage() {
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<DatasetRecord[] | null>(null);
   const [busyAction, setBusyAction] = useState<DatasetAction>(null);
+  const [fading, setFading] = useState(false);
 
   const refreshDatasets = useCallback(async (options: { initial?: boolean; accepted?: boolean } = {}) => {
     const { initial = false, accepted = false } = options;
@@ -780,9 +780,10 @@ export function DatasetsPage() {
           )}
 
           {syncFailure && (
-            <div className="datasets-toast dataset-sync-toast">
-              <FeedbackNotice kind="error">
-                <span>{syncFailure}</span>
+            <FeedbackNotice
+              kind="error"
+              placement="floating"
+              action={(
                 <Button
                   variant="link"
                   size="sm"
@@ -790,8 +791,10 @@ export function DatasetsPage() {
                 >
                   重新刷新
                 </Button>
-              </FeedbackNotice>
-            </div>
+              )}
+            >
+              <span>{syncFailure}</span>
+            </FeedbackNotice>
           )}
 
           {!loadFailed && datasets.length === 0 && (
@@ -930,12 +933,10 @@ export function DatasetsPage() {
         />
       )}
 
-      {notice && (
-        <div className={`datasets-toast${fading ? " is-fading" : ""}`}>
-          <FeedbackNotice kind={notice.kind}>
-            <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
-          </FeedbackNotice>
-        </div>
+      {notice && !syncFailure && (
+        <FeedbackNotice className={fading ? "is-fading" : undefined} kind={notice.kind} placement="floating">
+          <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
+        </FeedbackNotice>
       )}
 
       {previewDataset && (

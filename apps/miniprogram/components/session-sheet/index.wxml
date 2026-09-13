@@ -1,0 +1,115 @@
+<view class="sheet-overlay" style="--brand-header-height:{{brandHeight}}px;top:{{brandHeight}}px;height:calc(100vh - {{brandHeight}}px)" wx:if="{{!editing}}" catchtouchmove="noop">
+  <view class="sheet-mask mask-enter" style="{{maskExitStyle}}" bindtap="close" />
+  <view
+    class="sheet sheet-enter" style="{{sheetExitStyle}}"
+    role="dialog"
+    aria-modal="true"
+    aria-label="面试详情"
+  >
+    <view class="sheet-header"
+      ><text class="sheet-title">{{recordEditing ? '填写面试记录' : '面试详情'}}</text
+      ><button
+        class="sheet-button close-button"
+        size="mini"
+        bindtap="close"
+        disabled="{{saving}}"
+        aria-label="关闭面试详情"
+      >
+        <image class="close-icon" src="/assets/career/detail-close.svg" />
+      </button></view
+    >
+    <scroll-view
+      class="sheet-content"
+      scroll-y
+      enhanced
+      show-scrollbar="{{false}}"
+    >
+      <view class="detail-stack">
+        <text class="sheet-hint" wx:if="{{loading && !session}}"
+          >正在加载面试详情…</text
+        >
+        <block wx:if="{{session}}">
+          <view class="identity">
+            <view class="identity-heading">
+              <text class="session-title">{{session.stage_label}}</text>
+              <view class="session-status tone-{{session.tone}}">
+                <career-icon name="{{session.icon}}" tone="{{session.tone}}" size="32" />
+                <text>{{session.statusLabel}}</text>
+              </view>
+            </view>
+            <text class="company-role">{{app.company_name_snapshot}} · {{app.job_title_snapshot}}</text>
+            <view class="time-row">
+              <image class="detail-icon" src="/assets/career/detail-calendar.svg" />
+              <text class="session-date">{{dateLabel}}</text>
+              <text class="session-time {{crossDay ? 'cross-day' : ''}}">{{timeLabel}}</text>
+            </view>
+            <view class="meeting-row">
+              <view class="meeting-mode">
+                <image class="detail-icon" src="/assets/career/detail-meeting.svg" />
+                <text>{{session.modeLabel}}</text>
+              </view>
+              <button wx:if="{{session.meeting_url}}" class="sheet-button copy-link" data-field="meeting_url" bindtap="copy">复制链接</button>
+              <button wx:elif="{{session.location}}" class="sheet-button copy-link" data-field="location" bindtap="copy">复制地址</button>
+            </view>
+            <text wx:if="{{session.meeting_url}}" class="muted meeting-address" user-select>{{session.meeting_url}}</text>
+            <view wx:if="{{session.location && session.meeting_url}}" class="meeting-row">
+              <text class="muted meeting-address location-text" user-select>{{session.location}}</text>
+              <button class="sheet-button copy-link" data-field="location" bindtap="copy">复制地址</button>
+            </view>
+            <text wx:elif="{{session.location}}" class="muted meeting-address" user-select>{{session.location}}</text>
+          </view>
+          <button wx:if="{{!recordEditing}}" class="sheet-button record-entry" data-mode="record" bindtap="openForm">
+            <text class="record-title">面试记录</text>
+            <text class="record-action">{{hasRecord ? '查看记录' : '填写记录'}}</text>
+          </button>
+          <view wx:if="{{recordEditing}}" class="record-form">
+            <view class="record-field"><text class="record-label">面试问题与回答</text><textarea class="record-input questions" value="{{recordForm.record}}" data-field="record" bindinput="inputRecord" disabled="{{saving}}" maxlength="500000" placeholder="记录面试中的问题和回答" cursor-spacing="100" /></view>
+            <view class="record-field"><text class="record-label">复盘总结（选填）</text><textarea class="record-input" value="{{recordForm.review}}" data-field="review" bindinput="inputRecord" disabled="{{saving}}" maxlength="500000" placeholder="记录本场表现与需要改进的地方" cursor-spacing="100" /></view>
+            <view class="record-field"><text class="record-label">改进计划（选填）</text><textarea class="record-input" value="{{recordForm.improvement}}" data-field="improvement" bindinput="inputRecord" disabled="{{saving}}" maxlength="500000" placeholder="下一次面试前准备什么？" cursor-spacing="100" /></view>
+            <text class="muted">保存仅更新记录，不会结束面试或推进流程。</text>
+          </view>
+          <view class="manage" wx:if="{{editable && !recordEditing}}"
+            ><button
+              class="sheet-button manage-button"
+              bindtap="edit"
+              disabled="{{saving}}"
+            >
+              修改安排</button
+            ><button
+              class="sheet-button manage-button danger"
+              bindtap="cancel"
+              disabled="{{saving}}"
+            >
+              取消安排
+            </button></view
+          >
+        </block>
+        <text class="feedback error" wx:if="{{error}}">{{error}}</text
+        ><button
+          wx:if="{{error && !recordEditing}}"
+          class="sheet-button manage-button"
+          bindtap="load"
+        >
+          重新加载
+        </button>
+      </view>
+    </scroll-view>
+    <view class="sheet-footer record-footer" wx:if="{{recordEditing}}"><button class="sheet-button cancel-record" bindtap="cancelRecord" disabled="{{saving}}">取消</button><button class="sheet-button save-button" bindtap="saveRecord" loading="{{saving}}" disabled="{{saving}}">保存记录</button></view>
+    <view class="sheet-footer" wx:elif="{{editable}}"
+      ><button
+        class="sheet-button save-button"
+        bindtap="complete"
+        disabled="{{saving || loading}}"
+      >
+        标记本场面试结束
+      </button></view
+    >
+  </view>
+</view>
+<schedule-sheet
+  wx:if="{{editing}}"
+  application-id="{{app.id}}"
+  session-id="{{sessionId}}"
+  bind:close="editClosed"
+  bind:saved="editClosed"
+/>

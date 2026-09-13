@@ -323,9 +323,6 @@
 .call-status.failed, .call-status.cancelled { background: rgba(255,241,237,.72); color: #a5423a; }
 .call-status.pending { background: color-mix(in srgb, var(--admin-warn) 12%, var(--surface-card)); color: var(--admin-warn); }
 .admin-secondary-button:disabled, .observability-filter-open:disabled { cursor: wait; opacity: .55; }
-.admin-toast { position: fixed; right: 1.4rem; bottom: 1.4rem; z-index: 90; display: flex; align-items: center; gap: .55rem; border: 1px solid var(--admin-line); border-radius: .7rem; background: var(--admin-ink); padding: .78rem 1rem; color: var(--admin-canvas); font-size: .72rem; box-shadow: var(--shadow-toast); }
-.admin-toast svg { color: #78d39b; }
-
 @media (max-width: 1040px) {
   .metrics-grid { grid-template-columns: repeat(2, 1fr); }
   .overview-grid { grid-template-columns: 1fr; }

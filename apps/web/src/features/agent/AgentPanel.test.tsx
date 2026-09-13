@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
-import { AgentPanel, AgentUserAvatar } from "./AgentPanel";
+import { AgentMarkdown, AgentPanel, AgentUserAvatar } from "./AgentPanel";
 
 const session: AgentSession = {
   id: "session-1",
@@ -38,6 +38,46 @@ afterEach(() => {
 });
 
 describe("AgentPanel", () => {
+  it("渲染常用 Markdown 块级与行内语法并阻止原始 HTML 执行", () => {
+    const { container } = render(<AgentMarkdown content={`# 一级标题
+
+---
+
+| 位置 | 建议 |
+| --- | --- |
+| 项目 | **补充量化结果** |
+
+1. 第一项
+2. 第二项
+
+> 引用说明
+
+[参考链接](https://example.com) 与 ~~删除内容~~、\`行内代码\`
+
+\`\`\`ts
+const value = 1;
+\`\`\`
+
+![远程图片](https://example.com/image.png)
+
+<script>alert("unsafe")</script>`} />);
+
+    expect(screen.getByRole("heading", { level: 2, name: "一级标题" })).toHaveClass("is-level-1");
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "位置" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "补充量化结果" })).toBeInTheDocument();
+    expect(screen.getByText("第一项")).toBeInTheDocument();
+    expect(screen.getByText("第二项")).toBeInTheDocument();
+    expect(container.querySelector("blockquote")).toHaveTextContent("引用说明");
+    expect(screen.getByRole("link", { name: "参考链接" })).toHaveAttribute("rel", "noopener noreferrer");
+    expect(container.querySelector("s")).toHaveTextContent("删除内容");
+    expect(container.querySelector("pre code")).toHaveTextContent("const value = 1;");
+    expect(screen.getByRole("img", { name: "远程图片" })).toHaveTextContent("[图片：远程图片]");
+    expect(container.querySelector("img")).not.toBeInTheDocument();
+    expect(container.querySelector("script")).not.toBeInTheDocument();
+    expect(container).toHaveTextContent('<script>alert("unsafe")</script>');
+  });
+
   it("用户消息头像使用当前用户图片，并在缺少图片时回退到昵称首字", async () => {
     class LoadedImage extends EventTarget {
       complete = true;

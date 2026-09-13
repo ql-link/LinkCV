@@ -546,6 +546,30 @@ describe("resume save serialization", () => {
     });
   });
 
+  it("保存并回填当前模板的文楷字体覆盖", async () => {
+    const wenkai = '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif';
+    const update = vi.spyOn(api, "updateResume").mockImplementation(async (_id, payload) => ({
+      resume: {
+        ...record(2, "# 第一次编辑"),
+        style: payload.style ?? defaultCanonicalPresentation,
+      },
+    }));
+
+    useResumeStore.getState().updateSettings({ fontFamily: wenkai });
+    await useResumeStore.getState().saveCurrentResume();
+
+    expect(update.mock.calls[0]?.[1].style).toMatchObject({
+      template_scoped: {
+        "classic-cn": { font_family: wenkai },
+      },
+    });
+    expect(useResumeStore.getState()).toMatchObject({
+      settings: { fontFamily: wenkai },
+      dirty: false,
+      saveStatus: "saved",
+    });
+  });
+
   it("恢复历史版本时不创建或保存新的版本", async () => {
     const calls: string[] = [];
     const update = vi.spyOn(api, "updateResume");

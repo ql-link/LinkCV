@@ -34,6 +34,10 @@ Page({
     this.loadPage();
   },
 
+  onReady() {
+    require('../../services/tabResources').prepare();
+  },
+
   onShow() {
     if (typeof this.getTabBar === "function" && this.getTabBar()) {
       this.getTabBar().setData({ selected: 0 });
@@ -112,6 +116,7 @@ Page({
   },
 
   async loadPage(options = {}) {
+    require('../../services/tabPrefetch').schedule();
     const isSilent = Boolean(options && options.silent);
     if (!isSilent) {
       this.setData({ loading: true, error: "", guest: false });

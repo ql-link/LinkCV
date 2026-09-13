@@ -43,7 +43,7 @@ function PdfGlyph({ className }: { className?: string }) {
 }
 
 /**
- * 散落工具 → LinkCV 连接图。
+ * 散落工具 → LinkResume 连接图。
  * 每个图标沿其与中心的连线方向做呼吸式漂移，连线虚线缓缓流动。
  */
 export function ConnectionMap() {
@@ -92,7 +92,7 @@ export function ConnectionMap() {
         })}
       </svg>
 
-      {/* 中心 LinkCV */}
+      {/* 中心 LinkResume */}
       <motion.div
         className="absolute z-10"
         style={{ left: `${(CX / W) * 100}%`, top: `${(CY / H) * 100}%`, x: '-50%', y: '-50%' }}
@@ -103,7 +103,7 @@ export function ConnectionMap() {
       >
         <div className="flex h-[88px] w-[88px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-zinc-900 shadow-2xl shadow-black/25 ring-4 ring-zinc-900/10 dark:bg-white dark:shadow-white/10 dark:ring-white/10">
           <img className="h-8 w-8 object-contain invert dark:invert-0" src={brandMark} alt="" aria-hidden="true" width="1080" height="1080" />
-          <span className="font-mono text-[9px] tracking-[0.18em] text-zinc-400 dark:text-zinc-600">LinkCV</span>
+          <span className="font-mono text-[9px] tracking-[0.18em] text-zinc-400 dark:text-zinc-600">LinkResume</span>
         </div>
       </motion.div>
 

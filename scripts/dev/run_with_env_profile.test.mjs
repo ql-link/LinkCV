@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   buildProfileEnvironment,
+  npmInvocation,
   resolveProfileFiles,
   serviceScriptForProfile,
   syncMiniprogramLocalConfig,
@@ -55,6 +56,54 @@ test("local profile can run from the main worktree secret file alone", () => {
   assert.equal(result.env.APP_ENV, "local");
 });
 
+test("local profile aligns a loopback RabbitMQ URL with the Compose host port", () => {
+  const paths = fixture();
+  writeFileSync(
+    join(paths.mainRoot, ".env"),
+    "RABBITMQ_PORT=5676\n",
+  );
+  writeFileSync(
+    join(paths.mainRoot, ".env.local"),
+    "RABBITMQ_URL=amqp://linkcv:secret@127.0.0.1:5672/\n",
+  );
+
+  const result = buildProfileEnvironment({
+    cwd: paths.mainRoot,
+    profile: ".env",
+    inheritedEnv: {},
+    gitCommonDir: join(paths.mainRoot, ".git"),
+  });
+
+  assert.equal(
+    result.env.RABBITMQ_URL,
+    "amqp://linkcv:secret@127.0.0.1:5676/",
+  );
+});
+
+test("local profile does not rewrite a remote RabbitMQ URL", () => {
+  const paths = fixture();
+  writeFileSync(
+    join(paths.mainRoot, ".env"),
+    "RABBITMQ_PORT=5676\n",
+  );
+  writeFileSync(
+    join(paths.mainRoot, ".env.local"),
+    "RABBITMQ_URL=amqp://linkcv:secret@rabbit.example.test:5672/\n",
+  );
+
+  const result = buildProfileEnvironment({
+    cwd: paths.mainRoot,
+    profile: ".env",
+    inheritedEnv: {},
+    gitCommonDir: join(paths.mainRoot, ".git"),
+  });
+
+  assert.equal(
+    result.env.RABBITMQ_URL,
+    "amqp://linkcv:secret@rabbit.example.test:5672/",
+  );
+});
+
 test("LINKCV_SECRET_ENV_FILE explicitly overrides the shared default", () => {
   const paths = fixture();
   writeFileSync(join(paths.worktree, ".env.development"), "APP_ENV=development\n");
@@ -78,6 +127,26 @@ test("Development profile keeps the Agent-aware four-service launcher", () => {
   assert.equal(serviceScriptForProfile(".env"), "dev:services");
 });
 
+test("the profile launcher reuses npm's JavaScript entrypoint", () => {
+  const invocation = npmInvocation(
+    { npm_execpath: "C:/npm/npm-cli.js" },
+    "win32",
+  );
+  assert.equal(invocation.command, process.execPath);
+  assert.deepEqual(invocation.prefixArgs, ["C:/npm/npm-cli.js"]);
+});
+
+test("the profile launcher has platform fallbacks outside npm scripts", () => {
+  assert.deepEqual(npmInvocation({ ComSpec: "cmd.exe" }, "win32"), {
+    command: "cmd.exe",
+    prefixArgs: ["/d", "/s", "/c", "npm"],
+  });
+  assert.deepEqual(npmInvocation({}, "linux"), {
+    command: "npm",
+    prefixArgs: [],
+  });
+});
+
 test("syncMiniprogramLocalConfig writes gitignored local.js with detected LAN IP", () => {
   const root = mkdtempSync(join(tmpdir(), "linkcv-miniprogram-"));
   const configDir = join(root, "apps/miniprogram/config");
@@ -87,4 +156,23 @@ test("syncMiniprogramLocalConfig writes gitignored local.js with detected LAN IP
   assert.ok(result);
   assert.equal(result.targetFile, join(configDir, "local.js"));
   assert.ok(result.lanIp);
+});
+
+test("generated simulator and phone addresses follow the selected launch profile and actual port", () => {
+  for (const [profile, env, port] of [
+    [".env", {}, 8000],
+    [".env", { BACKEND_PORT: "8123" }, 8123],
+    [".env.development", { BACKEND_PORT: "9999" }, 18000],
+    [".env.development", { LINKCV_LOCAL_BACKEND_PORT: "8000", BACKEND_PORT: "9999" }, 8000],
+    [".env.development", { LINKCV_LOCAL_BACKEND_PORT: "18123" }, 18123],
+  ]) {
+    const { worktree, mainRoot } = fixture();
+    mkdirSync(join(worktree, "apps/miniprogram/config"), { recursive: true });
+    const result = syncMiniprogramLocalConfig(worktree, undefined, { profile, env });
+    const config = JSON.parse(readFileSync(join(worktree, "apps/miniprogram/config/local.json"), "utf8"));
+    assert.equal(config.devtoolsApiBaseUrl, "http://127.0.0.1:" + port);
+    assert.equal(config.apiBaseUrl, "http://" + result.lanIp + ":" + port);
+    assert.ok(readFileSync(result.targetFile, "utf8").includes(config.devtoolsApiBaseUrl));
+    assert.equal(result.devtoolsApiBaseUrl, config.devtoolsApiBaseUrl);
+  }
 });

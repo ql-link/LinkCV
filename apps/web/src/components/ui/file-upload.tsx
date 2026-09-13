@@ -17,6 +17,7 @@ type FileUploadProps = {
   browseLabel?: string;
   className?: string;
   children?: ReactNode;
+  icon?: ReactNode;
   disabled?: boolean;
   file?: File | null;
   multiple?: boolean;
@@ -33,6 +34,7 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
   browseLabel = "浏览文件",
   className,
   children,
+  icon = <FileUp />,
   disabled = false,
   file = null,
   multiple = false,
@@ -97,7 +99,7 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
             if (!disabled) selectFiles(event.dataTransfer.files);
           }}
         >
-          <span className="file-upload-icon" aria-hidden="true"><FileUp /></span>
+          <span className="file-upload-icon" aria-hidden="true">{icon}</span>
           <span className="file-upload-copy">
             <strong>{file ? "点击重新选择或拖放文件替换" : multiple ? "点击上传或拖放多个文件" : "点击上传或拖放文件"}</strong>
             <small>{supportingText}</small>

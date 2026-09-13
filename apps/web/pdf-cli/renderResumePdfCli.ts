@@ -121,6 +121,15 @@ function chromiumExecutablePath() {
   }
   const candidates = [
     playwrightPath,
+    process.env.PROGRAMFILES
+      ? resolve(process.env.PROGRAMFILES, "Google/Chrome/Application/chrome.exe")
+      : "",
+    process.env["PROGRAMFILES(X86)"]
+      ? resolve(process.env["PROGRAMFILES(X86)"], "Microsoft/Edge/Application/msedge.exe")
+      : "",
+    process.env.LOCALAPPDATA
+      ? resolve(process.env.LOCALAPPDATA, "Google/Chrome/Application/chrome.exe")
+      : "",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
     "/usr/bin/chromium",

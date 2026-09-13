@@ -812,22 +812,28 @@ def test_overlong_resume_id_is_rejected_without_integer_conversion() -> None:
         assert response.json() == {"error": "RESUME_NOT_FOUND"}
 
 
-def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
+def test_presentation_settings_are_persisted_and_restored_with_versions() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client)
         resume = create_resume(client, app).json()["resume"]
         resume_id = resume["id"]
         style = resume["style"]
+        template_key = style["template_snapshot"]["template_key"]
         assert style["portable"]["smart_one_page"] is False
 
         style["portable"]["smart_one_page"] = True
+        style["template_scoped"][template_key]["font_family"] = "LXGW WenKai"
         updated = client.put(
             f"/api/resumes/{resume_id}",
             json={"style": style, "base_lock_version": 1},
         )
         assert updated.status_code == 200
         assert updated.json()["resume"]["style"]["portable"]["smart_one_page"] is True
+        assert (
+            updated.json()["resume"]["style"]["template_scoped"][template_key]["font_family"]
+            == "LXGW WenKai"
+        )
         version = client.post(f"/api/resumes/{resume_id}/versions")
         assert version.status_code == 201
         assert version.json()["version"]["version_no"] == 2
@@ -841,6 +847,10 @@ def test_smart_one_page_is_persisted_and_restored_with_versions() -> None:
 
         assert restored.status_code == 200
         assert restored.json()["resume"]["style"]["portable"]["smart_one_page"] is True
+        assert (
+            restored.json()["resume"]["style"]["template_scoped"][template_key]["font_family"]
+            == "LXGW WenKai"
+        )
 
 
 def test_update_uses_server_template_snapshot_and_retains_known_scoped_settings() -> None:

@@ -24,10 +24,18 @@ from linkcv.modules.agent.models import (
 )
 from linkcv.modules.agent.pi_client import stream_pi_run
 from linkcv.modules.agent.service import create_run
+from linkcv.modules.datasets.models import UserDataset
+from linkcv.modules.identity.models import User
 from linkcv.modules.job_descriptions.models import JobDescription
 from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
 from linkcv.modules.llm.service import LLMError
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkcv.modules.resumes.models import (
+    DATASET_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeTemplate,
+    ResumeVersion,
+)
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -36,8 +44,14 @@ INTERNAL_TOKEN = "internal-agent-token-for-tests-000000000001"
 
 
 class FakeStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
     def ensure_bucket(self) -> None:
         pass
+
+    def get(self, object_name: str) -> bytes:
+        return self.objects[object_name]
 
     def delete(self, object_name: str) -> None:
         pass
@@ -383,6 +397,11 @@ def test_context_search_is_applied_before_limit_for_resume_and_job() -> None:
         resumes = client.get("/api/agent/contexts?type=resume&q=目标&limit=1")
         assert resumes.status_code == 200
         assert [item["id"] for item in resumes.json()["contexts"]] == [old_resume["id"]]
+        prefix_resumes = client.get(
+            "/api/agent/contexts?type=resume&q=目标&prefix=true&limit=1"
+        )
+        assert prefix_resumes.status_code == 200
+        assert prefix_resumes.json()["contexts"] == []
 
         def create_job(title: str, company: str) -> dict:
             response = client.post(
@@ -415,6 +434,92 @@ def test_context_search_is_applied_before_limit_for_resume_and_job() -> None:
         jobs = client.get("/api/agent/contexts?type=job&q=目标&limit=1")
         assert jobs.status_code == 200
         assert [item["id"] for item in jobs.json()["contexts"]] == [old_job["id"]]
+
+
+def test_dataset_context_is_searchable_owner_scoped_and_resolved_for_message() -> None:
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-dataset-owner@example.test")
+        with app.state.session_factory() as db:
+            owner_user_id = db.scalar(
+                select(User.id).where(User.email == "agent-dataset-owner@example.test")
+            )
+            assert owner_user_id is not None
+            task = DocumentParseTask(
+                source_type=DATASET_SOURCE_TYPE,
+                user_id=owner_user_id,
+                file_name="资料1.md",
+                file_format="md",
+                object_name=f"users/{owner_user_id}/datasets/source/资料1.md",
+                converted_object_name=(
+                    f"users/{owner_user_id}/datasets/converted/资料1.md"
+                ),
+                upload_status="succeeded",
+                upload_duration_ms=1,
+                parse_status="succeeded",
+                parse_duration_ms=1,
+            )
+            db.add(task)
+            db.flush()
+            dataset = UserDataset(
+                user_id=owner_user_id,
+                idempotency_key="agent-dataset-context-001",
+                request_fingerprint="1" * 64,
+                parse_task_id=task.id,
+                file_name="资料1.md",
+                file_format="md",
+                content_type="text/markdown",
+                file_size=16,
+                object_name=task.object_name,
+                sha256="2" * 64,
+            )
+            db.add(dataset)
+            db.commit()
+            dataset_id = str(dataset.id)
+            dataset_version = dataset.sha256
+            assert task.converted_object_name is not None
+            app.state.storage.objects[task.converted_object_name] = b"# Fictional material"
+
+        found = owner.get(
+            "/api/agent/contexts?type=dataset&q=资料&prefix=true&limit=8"
+        )
+        assert found.status_code == 200
+        contexts = found.json()["contexts"]
+        assert len(contexts) == 1
+        assert contexts[0]["type"] == "dataset"
+        assert contexts[0]["id"] == dataset_id
+        assert contexts[0]["version"] == dataset_version
+        assert contexts[0]["label"] == "资料1.md"
+        assert contexts[0]["description"] == "资料库文件"
+        assert "content" not in contexts[0]
+
+        register(stranger, "agent-dataset-stranger@example.test")
+        hidden = stranger.get("/api/agent/contexts?type=dataset&q=资料&limit=8")
+        assert hidden.status_code == 200
+        assert hidden.json()["contexts"] == []
+
+        session = owner.post("/api/agent/sessions", json={}).json()["session"]
+        sent = owner.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "请参考 @资料1.md",
+                "idempotency_key": "dataset-context-message-001",
+                "contexts": [
+                    {
+                        "type": "dataset",
+                        "id": dataset_id,
+                        "version": dataset_version,
+                    }
+                ],
+            },
+        )
+        assert sent.status_code == 200
+        with app.state.session_factory() as db:
+            message = db.scalar(select(AgentMessage))
+            assert message is not None
+            assert message.metadata_json is not None
+            assert message.metadata_json["contexts"][0]["type"] == "dataset"
+            assert message.metadata_json["contexts"][0]["label"] == "资料1.md"
 
 
 def test_proposal_is_idempotent_and_confirmed_once() -> None:

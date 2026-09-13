@@ -23,6 +23,17 @@ from linkcv.workers.resume_import_worker import (
 logger = logging.getLogger(__name__)
 
 
+class InvalidDocumentParseMessage(ValueError):
+    """The broker payload does not satisfy the document-parse wire contract."""
+
+
+def _parse_message(body: bytes):
+    try:
+        return document_parse_task_message_adapter.validate_json(body)
+    except ValidationError as error:
+        raise InvalidDocumentParseMessage from error
+
+
 def _message_log_context(
     body: bytes,
     *,
@@ -72,7 +83,7 @@ async def _process_message(
     dataset_processor: DatasetParseProcessor,
     body: bytes,
 ) -> None:
-    message = document_parse_task_message_adapter.validate_json(body)
+    message = _parse_message(body)
     if isinstance(message, ResumeImportMessage):
         await resume_processor.process(
             import_id=int(message.payload.import_id),
@@ -242,7 +253,7 @@ async def _handle_rabbit_message(
     except WorkerDependencyUnavailable:
         await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
         await incoming.nack(requeue=True)
-    except ValidationError:
+    except InvalidDocumentParseMessage:
         logger.warning(
             "invalid document parse message sent to DLT",
             extra=_message_log_context(
@@ -435,7 +446,7 @@ async def _handle_kafka_message(
             await asyncio.sleep(settings.mq_consume_retry_backoff_seconds)
             consumer.resume(partition)
             continue
-        except ValidationError:
+        except InvalidDocumentParseMessage:
             logger.warning(
                 "invalid document parse Kafka message sent to DLT",
                 extra=_message_log_context(

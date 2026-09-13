@@ -22,6 +22,7 @@
   --ui-accent: #145ed6;
   --ui-accent-hover: #0f4eb4;
   --ui-accent-subtle: #e9f1fd;
+  --ui-assistant-accent: #0e7490;
   --ui-template-accent: #7c3aed;
   --ui-career-accent: #f97316;
   --ui-border: #dbe0e8;
@@ -180,6 +181,7 @@
     --ui-accent: #6ea1f0;
     --ui-accent-hover: #8ab4f4;
     --ui-accent-subtle: #1c3151;
+    --ui-assistant-accent: #67e8f9;
     --ui-template-accent: #a78bfa;
     --ui-career-accent: #fb923c;
     --ui-border: #353b43;

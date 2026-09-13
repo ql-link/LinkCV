@@ -1,0 +1,416 @@
+<brand-navigation title="{{navigationTitle}}" back managed-back disabled="{{saving}}" bind:back="cancelEdit" fallback="/pages/career/index" />
+<view
+  wx:if="{{mode === 'record' || mode === 'prepare'}}"
+  class="career-page record-editor"
+>
+  <view class="state hint" wx:if="{{loading}}">正在加载面试记录…</view
+  ><view wx:if="{{error}}" class="error"
+    >{{error}}<button
+      class="secondary"
+      wx:if="{{conflict}}"
+      bindtap="returnToDetail"
+    >
+      返回重新加载
+    </button></view
+  >
+  <block wx:if="{{session && !loading}}"
+    ><view class="editor-identity"
+      ><text class="heading">{{session.stage_label}}</text
+      ><text class="subtitle"
+        >{{app.company_name_snapshot}} · {{app.job_title_snapshot}}</text
+      ><text class="hint">{{sessionLabel}}</text></view
+    >
+    <view class="panel editor-fields"
+      ><block wx:if="{{mode === 'record'}}"
+        ><view class="editor-field"
+          ><text class="editor-label">面试问题与回答</text
+          ><textarea
+            class="record-input questions"
+            value="{{form.record}}"
+            data-field="record"
+            bindinput="input"
+            maxlength="500000"
+            disabled="{{saving}}"
+            placeholder="记录面试中的问题和回答"
+            cursor-spacing="120"
+          /></view
+        ><view class="editor-field"
+          ><text class="editor-label">复盘总结（选填）</text
+          ><textarea
+            class="record-input"
+            value="{{form.review}}"
+            data-field="review"
+            bindinput="input"
+            maxlength="500000"
+            disabled="{{saving}}"
+            placeholder="记录本场表现与需要改进的地方"
+            cursor-spacing="120"
+          /></view
+        ><view class="editor-field"
+          ><text class="editor-label">改进计划（选填）</text
+          ><textarea
+            class="record-input"
+            value="{{form.improvement}}"
+            data-field="improvement"
+            bindinput="input"
+            maxlength="500000"
+            disabled="{{saving}}"
+            placeholder="下一次面试前准备什么？"
+            cursor-spacing="120"
+          /></view
+      ></block>
+      <view wx:else class="editor-field"
+        ><text class="editor-label">面试准备</text
+        ><textarea
+          class="record-input preparation-input"
+          value="{{form.preparation}}"
+          data-field="preparation"
+          bindinput="input"
+          maxlength="100000"
+          disabled="{{saving}}"
+          placeholder="记录需要提前准备的内容"
+          cursor-spacing="120"
+        /></view
+    ></view>
+    <text class="hint">保存仅更新记录，不会结束面试或推进流程。</text
+    ><view class="dock"
+      ><button
+        class="primary"
+        bindtap="save"
+        loading="{{saving}}"
+        disabled="{{saving || conflict}}"
+      >
+        {{mode === 'prepare' ? '保存准备内容' : '保存记录'}}
+      </button></view
+    ></block
+  > </view
+><block wx:else
+  ><view
+    class="career-page form-page {{mode === 'record' || mode === 'prepare' ? 'editor-page' : 'with-dock'}}"
+  >
+    <view class="state hint" wx:if="{{loading}}">正在加载…</view>
+    <block wx:else>
+      <button class="secondary" wx:if="{{conflict}}" bindtap="returnToDetail">
+        返回详情重新加载
+      </button>
+      <view class="error" wx:if="{{error}}">{{error}}</view
+      ><view class="partial" wx:if="{{partial}}">{{partial}}</view>
+      <button class="secondary" wx:if="{{!app}}" bindtap="load">
+        重新加载
+      </button>
+      <view class="panel" wx:if="{{app}}">
+        <view class="section form-summary"
+          ><text class="heading"
+            >{{session && (mode === "record" || mode === "prepare") ? session.stage_label : app.company_name_snapshot + " · " + app.job_title_snapshot}}</text
+          ><text class="hint"
+            >{{session ? app.company_name_snapshot + ' · ' + sessionLabel : '当前：' + (app.current_stage ? app.current_stage.stage_label : '待投递')}}</text
+          ></view
+        >
+        <view class="stage-choice" wx:if="{{mode === 'stage'}}"
+          ><view class="stage-types"
+            ><button
+              wx:for="{{types}}"
+              wx:key="value"
+              class="stage-type {{form.stageType === item.value ? 'chosen' : ''}}"
+              disabled="{{saving || stageLocked}}"
+              data-type="{{item.value}}"
+              bindtap="selectType"
+            >
+              <career-icon name="{{item.value}}" design size="34" /><text
+                >{{item.label}}</text
+              >
+            </button></view
+          >
+          <text class="hint" wx:if="{{stageLocked && !partial}}"
+            >已提交阶段请求，重试会继续本次提交。</text
+          >
+        </view>
+        <view
+          class="section"
+          wx:if="{{mode === 'stage' && app.phase === 'pending'}}"
+          ><text class="heading">投递信息</text
+          ><text class="hint">这里只记录投递信息，不会向公司发送简历。</text
+          ><text class="label">实际投递日期（选填）</text
+          ><picker
+            mode="date"
+            value="{{form.appliedDate}}"
+            data-field="appliedDate"
+            bindchange="input"
+            disabled="{{saving || stageLocked}}"
+            ><view class="picker-value"
+              >{{form.appliedDate || '默认记录为今天'}} ›</view
+            ></picker
+          ><text class="label">投递简历（选填）</text
+          ><picker
+            range="{{resumes}}"
+            range-key="title"
+            value="{{form.resumeIndex}}"
+            data-field="resumeIndex"
+            bindchange="input"
+            disabled="{{saving || stageLocked}}"
+            ><view class="picker-value"
+              >{{resumes[form.resumeIndex].title}} ›</view
+            ></picker
+          ><button class="link" wx:if="{{resumeError}}" bindtap="retryResumes">
+            {{resumeError}}
+          </button></view
+        >
+        <view
+          class="section"
+          wx:if="{{mode === 'stage' && form.stageType === 'interview'}}"
+          ><text class="heading">面试阶段</text
+          ><text class="label">阶段名称 *</text
+          ><view class="native-field"
+            ><input
+              class="native-text-input"
+              value="{{form.stageLabel}}"
+              data-field="stageLabel"
+              bindinput="input"
+              placeholder="例如：技术二面、HR 面"
+              maxlength="100"
+              disabled="{{saving || stageLocked}}" /></view
+          ><text class="label">面试轮次（选填）</text
+          ><view class="native-field"
+            ><input
+              class="native-text-input"
+              value="{{form.round}}"
+              type="number"
+              data-field="round"
+              bindinput="input"
+              placeholder="按公司流程填写"
+              maxlength="5"
+              disabled="{{saving || stageLocked}}" /></view
+        ></view>
+        <view
+          class="section"
+          wx:if="{{mode === 'schedule' || (mode === 'stage' && form.stageType !== 'screening' && form.stageType !== 'offer')}}"
+          ><text class="heading"
+            >{{form.stageType === 'assessment' ? '测评安排' : '时间与地点'}}</text
+          ><text class="label"
+            >开始时间{{mode === 'schedule' || form.stageType === 'assessment' ? ' *' : '（选填）'}}</text
+          ><button
+            class="time-trigger"
+            data-target="start"
+            bindtap="chooseDateTime"
+            disabled="{{saving || stageLocked}}"
+          >
+            <text
+              >{{form.startTime ? form.startDate + ' ' + form.startTime : '选择日期和时间'}}</text
+            ><text class="time-action">选择时间</text>
+          </button>
+          <text class="label"
+            >{{form.stageType === 'assessment' ? '完成期限' : '结束时间'}}{{mode === 'schedule' ? ' *' : '（选填）'}}</text
+          ><button
+            class="time-trigger"
+            data-target="end"
+            bindtap="chooseDateTime"
+            disabled="{{saving || stageLocked}}"
+          >
+            <text
+              >{{form.endTime ? form.endDate + ' ' + form.endTime : '选择日期和时间'}}</text
+            ><text class="time-action">选择时间</text></button
+          ><text class="hint">所有时间均为北京时间。</text
+          ><block wx:if="{{mode === 'stage'}}"
+            ><text class="hint"
+              >{{form.stageType === 'assessment' ? '开始时间必填；完成期限未确定时，可先保存阶段。' : '开始和结束时间需一起填写；暂未确定时可先保存阶段。'}}填写完整时间后，链接与准备内容随安排保存。</text
+            ><button class="link" bindtap="clearTimes">
+              暂不添加安排
+            </button></block
+          >
+          <text class="label">方式</text
+          ><career-select
+            options="{{modes}}"
+            value="{{form.modeIndex}}"
+            data-field="modeIndex"
+            bind:change="input"
+            disabled="{{saving}}"
+          /><text class="label"
+            >{{form.stageType === 'assessment' ? '测评链接' : '会议 / 在线考试链接'}}（选填）</text
+          ><view class="native-field"
+            ><input
+              class="native-text-input"
+              value="{{form.meetingUrl}}"
+              data-field="meetingUrl"
+              bindinput="input"
+              placeholder="粘贴链接或会议号"
+              maxlength="2048"
+              disabled="{{saving}}" /></view
+          ><button class="link options-toggle" bindtap="toggleOptions">
+            {{optionsExpanded ? '收起选填信息' : '更多安排信息（选填）'}}
+            <text>›</text></button
+          ><view wx:if="{{optionsExpanded}}"
+            ><text class="label">地点 / 联系方式（选填）</text
+            ><view class="native-field"
+              ><input
+                class="native-text-input"
+                value="{{form.location}}"
+                data-field="location"
+                bindinput="input"
+                placeholder="现场地址或电话联系方式"
+                maxlength="500"
+                disabled="{{saving}}" /></view
+            ><text class="label">面试官（选填）</text
+            ><view class="native-field"
+              ><input
+                class="native-text-input"
+                value="{{form.interviewer}}"
+                data-field="interviewer"
+                bindinput="input"
+                maxlength="100"
+                disabled="{{saving}}" /></view
+            ><text class="label">准备内容（选填）</text
+            ><textarea
+              cursor-spacing="120"
+              value="{{form.preparation}}"
+              data-field="preparation"
+              bindinput="input"
+              maxlength="100000"
+              disabled="{{saving}}"
+              placeholder="记录本场需要提前准备的内容"
+            />
+          </view>
+        </view>
+        <view
+          class="section"
+          wx:if="{{mode === 'offer' || (mode === 'stage' && form.stageType === 'offer')}}"
+          ><text class="heading">Offer 信息</text
+          ><text class="hint">请在收到 Offer 后记录，以下待遇均可留空。</text
+          ><text class="label">工作地点（选填）</text
+          ><view class="native-field"
+            ><input
+              class="native-text-input"
+              value="{{form.baseLocation}}"
+              data-field="baseLocation"
+              bindinput="input"
+              maxlength="100"
+              disabled="{{saving}}" /></view
+          ><text class="label">薪资（选填）</text
+          ><view class="salary-row"
+            ><view class="native-field"
+              ><input
+                class="native-text-input"
+                value="{{form.salary}}"
+                data-field="salary"
+                bindinput="input"
+                type="digit"
+                maxlength="13"
+                disabled="{{saving}}"
+                placeholder="未填写" /></view
+            ><picker
+              range="{{currencies}}"
+              value="{{form.currencyIndex}}"
+              data-field="currencyIndex"
+              bindchange="input"
+              disabled="{{saving}}"
+              ><view class="picker-value"
+                >{{currencies[form.currencyIndex]}}</view
+              ></picker
+            ><text>/</text
+            ><picker
+              range="{{periods}}"
+              value="{{form.periodIndex}}"
+              data-field="periodIndex"
+              bindchange="input"
+              disabled="{{saving}}"
+              ><view class="picker-value"
+                >{{periods[form.periodIndex]}} ›</view
+              ></picker
+            ></view
+          ><text class="label">福利待遇（选填）</text
+          ><textarea
+            cursor-spacing="120"
+            class="benefits-editor"
+            auto-height
+            value="{{form.benefits}}"
+            data-field="benefits"
+            bindinput="input"
+            maxlength="500"
+            disabled="{{saving}}"
+          />
+        </view>
+        <view class="section" wx:if="{{mode === 'record'}}"
+          ><text class="heading">面试记录内容</text
+          ><textarea
+            cursor-spacing="120"
+            class="large-editor"
+            value="{{form.record}}"
+            data-field="record"
+            bindinput="input"
+            maxlength="500000"
+            disabled="{{saving}}"
+            placeholder="记录本场问题、回答和需要复盘的内容…"
+          />
+        </view>
+        <view class="section" wx:if="{{mode === 'prepare'}}"
+          ><text class="heading">面试准备</text
+          ><textarea
+            cursor-spacing="120"
+            class="large-editor"
+            value="{{form.preparation}}"
+            data-field="preparation"
+            bindinput="input"
+            maxlength="100000"
+            disabled="{{saving}}"
+            placeholder="记录本场需要提前准备的内容…"
+          />
+        </view>
+        <view class="section" wx:if="{{mode === 'terminate'}}"
+          ><text class="heading">确认终止这次求职？</text
+          ><text class="hint">终止后停止跟进，保留已有阶段和面试记录。</text
+          ><text class="label">终止原因</text
+          ><picker
+            range="{{reasons}}"
+            value="{{form.reasonIndex}}"
+            data-field="reasonIndex"
+            bindchange="input"
+            disabled="{{saving}}"
+            ><view class="picker-value"
+              >{{reasons[form.reasonIndex]}} ›</view
+            ></picker
+          ></view
+        >
+        <view
+          class="editor-actions"
+          wx:if="{{mode === 'record' || mode === 'prepare'}}"
+          ><button
+            class="primary"
+            loading="{{saving}}"
+            disabled="{{saving}}"
+            bindtap="save"
+          >
+            {{buttonLabel}}</button
+          ><button class="secondary" bindtap="cancelEdit" disabled="{{saving}}">
+            取消编辑
+          </button></view
+        >
+      </view>
+      <view
+        class="dock"
+        wx:if="{{app && mode !== 'record' && mode !== 'prepare'}}"
+        ><button
+          class="primary"
+          loading="{{saving}}"
+          disabled="{{saving}}"
+          bindtap="save"
+        >
+          {{buttonLabel}}
+        </button></view
+      >
+      <text
+        class="hint"
+        wx:if="{{app && mode === 'record'}}"
+        style="margin-top: 14px"
+        >保存记录后，本场面试状态和求职阶段保持不变。</text
+      >
+    </block>
+    <career-time-picker
+      wx:if="{{timeEditorOpen}}"
+      date="{{pickerDate}}"
+      time="{{pickerTime}}"
+      title="{{pickerTitle}}"
+      error="{{error}}"
+      bind:confirm="acceptDateTime"
+      bind:close="closeDateTime"
+    />
+  </view>
+</block>

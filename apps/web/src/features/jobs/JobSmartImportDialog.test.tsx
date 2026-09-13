@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError } from "../../api/client";
 import { JobSmartImportDialog } from "./JobSmartImportDialog";
@@ -6,6 +7,51 @@ import { JobSmartImportDialog } from "./JobSmartImportDialog";
 afterEach(() => vi.restoreAllMocks());
 
 describe("JobSmartImportDialog", () => {
+  it("创建岗位后直接打开后端返回的待投递记录", async () => {
+    window.history.replaceState(null, "", "/career/applications");
+    vi.spyOn(api, "createJobDescription").mockResolvedValue({
+      job_description: { id: "job-8" } as never,
+      application: {
+        id: "21",
+        phase: "pending",
+        lifecycle_status: "active",
+        current_stage_label: "待投递",
+      },
+    });
+    const onClose = vi.fn();
+    function ImportHarness() {
+      const [open, setOpen] = useState(true);
+      return open ? (
+        <JobSmartImportDialog
+          unified
+          onClose={() => {
+            onClose();
+            setOpen(false);
+          }}
+        />
+      ) : null;
+    }
+    render(<ImportHarness />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "手工填写" }));
+    fireEvent.change(screen.getByLabelText("职位名称"), {
+      target: { value: "后端开发工程师" },
+    });
+    fireEvent.change(screen.getByLabelText("公司名称"), {
+      target: { value: "示例科技" },
+    });
+    fireEvent.change(screen.getByLabelText("职位描述"), {
+      target: { value: "负责虚构业务平台开发" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建岗位" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/career/applications/21");
+    });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "导入岗位" })).not.toBeInTheDocument();
+  });
+
   it("默认打开岗位文字并提供可访问的三栏切换", () => {
     render(<JobSmartImportDialog unified onClose={vi.fn()} />);
 
@@ -30,12 +76,13 @@ describe("JobSmartImportDialog", () => {
     expect(screen.getByRole("tab", { name: "手工填写" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByLabelText("职位名称")).toBeInTheDocument();
     expect(screen.getByLabelText("公司名称")).toBeInTheDocument();
-    expect(screen.getByLabelText("职位描述")).toBeInTheDocument();
+    expect(screen.getByLabelText("职位描述")).not.toBeRequired();
+    expect(screen.queryByText("必填 2 项")).not.toBeInTheDocument();
     for (const heading of ["基本信息", "任职要求", "工作与薪酬", "公司与联系人", "来源与备注"]) {
       expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
     }
     for (const label of [
-      "技能", "用工类型", "学历要求", "经验要求", "工作城市", "详细地址", "工作方式",
+      "技能", "求职分类", "学历要求", "经验要求", "工作城市", "详细地址", "工作方式",
       "工作安排", "薪资范围", "行业", "公司规模", "融资阶段", "招聘者姓名", "招聘者职位",
       "来源链接（可选）", "个人备注",
     ]) {
@@ -51,6 +98,25 @@ describe("JobSmartImportDialog", () => {
     expect(screen.getByLabelText("工作城市").closest(".job-smart-manual-field")).toHaveClass("is-wide");
     expect(screen.queryByRole("heading", { name: "薪资明细" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建岗位" })).toBeInTheDocument();
+  });
+
+  it("职位描述留空时仍可创建岗位", async () => {
+    const create = vi.spyOn(api, "createJobDescription").mockResolvedValue({
+      job_description: { id: "42" } as never,
+      application: null,
+    });
+    render(<JobSmartImportDialog unified onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "手工填写" }));
+    fireEvent.change(screen.getByLabelText("职位名称"), { target: { value: "平台工程师" } });
+    fireEvent.change(screen.getByLabelText("公司名称"), { target: { value: "示例科技" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建岗位" }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      job_title: "平台工程师",
+      company_name: "示例科技",
+      description: "",
+    })));
   });
 
   it("识别完成后在同一弹窗切到手工页并回填草稿", async () => {
@@ -95,7 +161,7 @@ describe("JobSmartImportDialog", () => {
       .mockRejectedValueOnce(new ApiRequestError(504, "JD_IMPORT_PARSE_TIMEOUT"))
       .mockResolvedValueOnce({
         draft: { job_title: "后端工程师" },
-        warnings: ["未识别出公司名称、职位描述，请在创建前补充。"],
+        warnings: ["未识别出公司名称，请在创建前补充。"],
         inputType: "text",
         callId: "llmcall_retry",
       });
@@ -113,7 +179,7 @@ describe("JobSmartImportDialog", () => {
     await waitFor(() => expect(parse).toHaveBeenCalledTimes(2));
     expect(parsed).toHaveBeenCalledWith(
       { job_title: "后端工程师" },
-      ["未识别出公司名称、职位描述，请在创建前补充。"],
+      ["未识别出公司名称，请在创建前补充。"],
     );
   });
 

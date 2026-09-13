@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { api, type ResumeShareState } from "../../api/client";
 import { ConfirmDialog, PageLoading } from "@/components/ui";
 
@@ -113,7 +113,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
   }, [load]);
 
   // 链接加载或保存成功后，把暂存值同步为最新服务端状态
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!share) return;
     setDraftVisibility(share.share_visibility);
     setDraftExpiry(matchExpiry(share.share_expires_at));

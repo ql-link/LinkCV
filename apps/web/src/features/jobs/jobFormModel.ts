@@ -144,7 +144,6 @@ export function jobFormMissingFields(form: JobFormState): string[] {
   return [
     !form.job_title.trim() && "职位名称",
     !form.company_name.trim() && "公司名称",
-    !form.description.trim() && "职位描述",
   ].filter(Boolean) as string[];
 }
 

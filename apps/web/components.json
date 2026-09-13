@@ -18,5 +18,7 @@
     "utils": "@/lib/utils",
     "hooks": "@/hooks"
   },
-  "registries": {}
+  "registries": {
+    "@reui": "https://reui.io/r/{style}/{name}.json"
+  }
 }

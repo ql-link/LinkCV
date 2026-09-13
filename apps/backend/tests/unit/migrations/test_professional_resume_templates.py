@@ -14,7 +14,7 @@ TEMPLATE_KEYS = (
 
 
 def test_0026_seeds_four_guarded_fictional_templates() -> None:
-    up_sql = (SQL_DIR / "0026.up.sql").read_text()
+    up_sql = (SQL_DIR / "0026.up.sql").read_text(encoding="utf-8")
 
     for template_key in TEMPLATE_KEYS:
         assert up_sql.count(f"'{template_key}'") >= 2
@@ -46,7 +46,7 @@ def test_0026_seeds_four_guarded_fictional_templates() -> None:
 
 
 def test_0027_refreshes_only_guarded_professional_template_snapshots() -> None:
-    up_sql = (SQL_DIR / "0027.up.sql").read_text()
+    up_sql = (SQL_DIR / "0027.up.sql").read_text(encoding="utf-8")
 
     assert up_sql.count("UPDATE resume_templates") == 4
     assert up_sql.count("SHA2(JSON_UNQUOTE(JSON_EXTRACT") == 4

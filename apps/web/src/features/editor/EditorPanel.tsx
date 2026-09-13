@@ -1,7 +1,8 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { FeedbackNotice } from "@/components/ui";
 import { api } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { EditorCommand, EditorToolbar } from "./EditorToolbar";
@@ -30,6 +31,13 @@ export function EditorPanel() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingImageInsertRangeRef = useRef<EditorInsertRange | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!uploadError) return;
+    const timer = window.setTimeout(() => setUploadError(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [uploadError]);
 
   const handleCommand = (command: EditorCommand) => {
     if (!editorRef.current) return;
@@ -62,7 +70,7 @@ export function EditorPanel() {
         insertRange,
       );
     } catch (error) {
-      window.alert(`图片上传失败：${(error as Error).message}`);
+      setUploadError(`图片上传失败：${(error as Error).message}`);
     } finally {
       pendingImageInsertRangeRef.current = null;
       setIsUploadingImage(false);
@@ -75,6 +83,11 @@ export function EditorPanel() {
         onCommand={handleCommand}
         disabledCommands={isUploadingImage ? ["image"] : []}
       />
+      {uploadError && (
+        <FeedbackNotice kind="error" placement="floating">
+          {uploadError}
+        </FeedbackNotice>
+      )}
       <input
         ref={fileInputRef}
         className="visually-hidden"

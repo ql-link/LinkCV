@@ -69,3 +69,14 @@ def test_non_boss_or_incomplete_capture_is_rejected(
 
     with pytest.raises(InvalidJobImport):
         build_job_description_from_capture(payload)
+
+
+def test_employment_classification_prioritizes_internship_and_campus() -> None:
+    from linkcv.application.job_descriptions.import_service import _employment_type
+
+    for raw, expected in [
+        ("校招 全职", "campus"), ("校园招聘", "campus"), ("应届毕业生", "campus"),
+        ("校招实习", "internship"), ("社招", "full_time"), ("正式", "full_time"),
+        ("全职", "full_time"), ("兼职", None), ("合同", None), (None, None),
+    ]:
+        assert _employment_type(raw) == expected

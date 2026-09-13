@@ -659,6 +659,7 @@ class TemplateDefinition(ClosedModel):
 
 class PresentationSettings(ClosedModel):
     smart_one_page: bool = False
+    font_family: str | None = Field(default=None, min_length=1, max_length=100)
     font_scale: float | None = Field(default=None, ge=0.75, le=1.5)
     line_height: float | None = Field(default=None, ge=1, le=3)
     accent_color: Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")] | None = None

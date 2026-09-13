@@ -1,0 +1,200 @@
+<page-meta
+  page-style="overflow:hidden"
+/>
+<view class="career-home">
+  <brand-navigation />
+  <view class="home-header">
+    <view class="navigation">
+      <view
+        class="nav-item {{activeTab === 'schedule' ? 'active' : ''}}"
+        data-tab="schedule"
+        bindtap="switchTab"
+        role="button"
+        aria-label="面试安排"
+        ><career-icon
+          name="calendar"
+          tone="{{activeTab === 'schedule' ? 'accent' : 'muted'}}"
+          size="{{activeTab === 'schedule' ? 40 : 34}}" /><text>面试安排</text
+        ><view class="underline" wx:if="{{activeTab === 'schedule'}}"
+      /></view>
+      <view
+        class="nav-item {{activeTab === 'applications' ? 'active' : ''}}"
+        data-tab="applications"
+        bindtap="switchTab"
+        role="button"
+        aria-label="求职记录"
+        ><career-icon
+          name="briefcase"
+          tone="{{activeTab === 'applications' ? 'accent' : 'muted'}}"
+          size="{{activeTab === 'applications' ? 40 : 34}}" /><text
+          >求职记录</text
+        ><view class="underline" wx:if="{{activeTab === 'applications'}}"
+      /></view>
+    </view>
+  </view>
+  <scroll-view
+    class="career-scroll"
+    scroll-y="{{!scheduleSheetOpen && !sessionId}}"
+    enhanced
+    bounces="{{false}}"
+    show-scrollbar="{{false}}"
+    enable-back-to-top
+    refresher-enabled="{{!scheduleSheetOpen && !sessionId}}"
+    refresher-triggered="{{refresherTriggered}}"
+    bindrefresherrefresh="handleRefresherRefresh"
+  >
+  <view
+    class="career-page {{activeTab === 'schedule' ? 'schedule-body' : ''}}"
+    style="{{activeTab === 'schedule' ? 'min-height:calc(100vh - ' + statusBarHeight + 'px - 168px - env(safe-area-inset-bottom))' : ''}}"
+  >
+    <view wx:if="{{guest}}" class="panel state"
+      ><text class="title">登录后查看求职进展</text
+      ><text class="hint">在这里查看本账号的面试安排、求职记录与阶段历史。</text
+      ><button class="primary" bindtap="goLogin">登录账号</button></view
+    >
+    <view wx:elif="{{error}}" class="panel state"
+      ><text class="title">暂时无法加载</text><text class="hint">{{error}}</text
+      ><button class="primary" bindtap="retryLoad">重新加载</button></view
+    >
+    <view wx:elif="{{loading}}" class="state hint">正在加载…</view>
+    <block wx:elif="{{activeTab === 'schedule'}}">
+      <view class="panel schedule-panel">
+        <view class="schedule-toolbar row spread">
+          <picker
+            mode="date"
+            value="{{date}}"
+            bindchange="changeDate"
+            aria-label="选择日期"
+          >
+            <view
+              class="date-control"
+              hover-class="date-control-pressed"
+              hover-stay-time="120"
+              role="button"
+              ><career-icon name="calendar" size="28" /><text
+                >{{dateLabel}}</text
+              ></view
+            >
+          </picker>
+          <button
+            class="add-schedule"
+            size="mini"
+            hover-class="add-schedule-pressed"
+            bindtap="addSchedule"
+          >
+            添加安排
+          </button>
+        </view>
+        <view
+          class="time-grid"
+          style="min-height:{{timeline.minimumHeight}}rpx"
+        >
+          <view
+            class="hour"
+            wx:for="{{timeline.hours}}"
+            wx:key="*this"
+            style="top:{{index / (timeline.hours.length - 1) * 100}}%"
+          >
+            <text class="hour-label">{{item}}</text><view class="hour-line" />
+          </view>
+          <view class="events">
+            <view
+              wx:for="{{timeline.items}}"
+              wx:key="id"
+              class="event tone-{{item.tone}}"
+              style="{{item.fluidStyle}}"
+              data-id="{{item.id}}"
+              bindtap="openSession"
+              role="button"
+              aria-label="{{item.company_name}}，{{item.stage_label}}，{{item.compactTime}}，{{item.statusLabel}}"
+            >
+              <view class="event-title"
+                ><text class="event-company">{{item.company_name}}</text
+                ><text class="event-stage">{{item.stage_label}}</text></view
+              >
+              <text class="event-time">{{item.compactTime}}</text>
+            </view>
+          </view>
+          <text class="schedule-empty" wx:if="{{!timeline.items.length}}"
+            >当天暂无安排</text
+          >
+        </view>
+      </view>
+    </block>
+    <block wx:else>
+      <view class="search row"
+        ><career-icon name="search" tone="muted" size="32" /><input
+          placeholder="{{searchFocused ? '' : '搜索公司或岗位'}}"
+          aria-label="搜索公司或岗位"
+          value="{{keyword}}"
+          bindfocus="focusSearch"
+          bindblur="blurSearch"
+          bindinput="search"
+          maxlength="200"
+      /></view>
+      <view class="filters"
+        ><view
+          class="filter {{filter === item.value ? 'selected' : ''}}"
+          wx:for="{{filters}}"
+          wx:key="value"
+          data-value="{{item.value}}"
+          bindtap="filter"
+          ><text>{{item.label}}</text><view class="filter-line" /></view
+      ></view>
+      <view
+        class="panel application-card"
+        wx:for="{{visibleApplications}}"
+        wx:key="id"
+        data-id="{{item.id}}"
+        bindtap="openApplication"
+        role="button"
+      >
+        <view class="row spread card-title"
+          ><text class="card-identity"
+            ><text class="company-name">{{item.company_name_snapshot}}</text
+            ><text class="job-name"> · {{item.job_title_snapshot}}</text></text
+          ><text
+            class="employment employment-{{item.employmentLabel === '实习' ? 'internship' : item.employmentLabel === '校招' ? 'campus' : 'fulltime'}}"
+            >{{item.employmentLabel}}</text
+          ></view
+        >
+        <view class="card-info"
+          ><view class="row spread"
+            ><text class="stage-name grow">{{item.stageLabel}}</text
+            ><view class="status-badge tone-{{item.tone}}"
+              ><career-icon
+                name="{{item.icon}}"
+                tone="{{item.tone}}"
+                size="30"
+              /><text>{{item.statusLabel}}</text></view
+            ></view
+          ><text class="card-meta"
+            >{{item.nextLabel ? '下次安排 · ' + item.nextLabel : item.phase === 'pending' ? '尚未记录投递信息' : '投递日期 · ' + item.appliedLabel}}</text
+          ></view
+        >
+      </view>
+      <view class="panel state" wx:if="{{!visibleApplications.length}}"
+        ><text class="title"
+          >{{applications.length ? '没有匹配的求职记录' : '暂无求职记录'}}</text
+        ><text class="hint"
+          >{{applications.length ? '试试其他关键词或筛选条件。' : '在网页端添加岗位后，即可在这里记录投递信息和跟进面试。'}}</text
+        ></view
+      >
+    </block>
+  </view>
+  </scroll-view>
+</view>
+
+<schedule-sheet
+  wx:if="{{scheduleSheetOpen}}"
+  date="{{date}}"
+  bind:close="closeSchedule"
+  bind:saved="scheduleSaved"
+/>
+
+<session-sheet
+  wx:if="{{sessionId}}"
+  session-id="{{sessionId}}"
+  bind:close="closeSession"
+  bind:changed="loadPage"
+/>

@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "添加安排",
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index"
+  },
+  "navigationStyle": "custom"
+}

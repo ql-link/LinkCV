@@ -420,13 +420,17 @@ def test_presentation_keeps_template_scoped_settings_separate() -> None:
             "schema_version": "resume-presentation.v1",
             "portable": {"font_scale": 1},
             "template_scoped": {
-                "classic-cn": {"avatar_size_px": 96},
+                "classic-cn": {
+                    "avatar_size_px": 96,
+                    "font_family": "LXGW WenKai",
+                },
                 "modern-cn": {"avatar_size_px": 120},
             },
             "template_snapshot": template_payload(),
         }
     )
     assert presentation.template_scoped["classic-cn"].avatar_size_px == 96
+    assert presentation.template_scoped["classic-cn"].font_family == "LXGW WenKai"
     assert presentation.template_scoped["modern-cn"].avatar_size_px == 120
 
 

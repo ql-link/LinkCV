@@ -8,6 +8,7 @@ export type ApplicationProgressColumnKey =
   | "pending"
   | "screening"
   | "assessment"
+  | "written_test"
   | "interview"
   | "offer"
   | "ended";
@@ -21,6 +22,10 @@ export type ApplicationProgressSource = Pick<
   | "offer_status"
   | "archived_at"
   | "applied_at"
+  | "phase"
+  | "lifecycle_status"
+  | "termination_reason"
+  | "current_stage"
 >;
 
 /**
@@ -54,13 +59,16 @@ export type ApplicationProgressLabelOptions = {
 
 type ApplicationStageSource = Pick<
   JobApplicationRecord,
-  "current_stage_type" | "current_stage_label" | "current_round_no"
+  "current_stage_type" | "current_stage_label" | "current_round_no" | "current_stage"
 >;
 
 export function applicationStageMatchesSession(
   application: ApplicationStageSource,
-  session: Pick<InterviewSessionRecord, "stage_type" | "round_no" | "stage_label">,
+  session: Pick<InterviewSessionRecord, "application_stage_id" | "stage_type" | "round_no" | "stage_label">,
 ): boolean {
+  if (application.current_stage && session.application_stage_id) {
+    return application.current_stage.id === session.application_stage_id;
+  }
   if (application.current_stage_type === "screening" && session.stage_type === "other") {
     return application.current_stage_label.trim() === session.stage_label.trim();
   }
@@ -92,7 +100,8 @@ export const APPLICATION_PROGRESS_COLUMNS: Array<{
 }> = [
   { key: "pending", label: "待投递" },
   { key: "screening", label: "筛选中" },
-  { key: "assessment", label: "笔试 / 测评" },
+  { key: "assessment", label: "测评" },
+  { key: "written_test", label: "笔试" },
   { key: "interview", label: "面试中" },
   { key: "offer", label: "Offer" },
   { key: "ended", label: "已结束" },
@@ -105,11 +114,20 @@ const HOUR_IN_MILLISECONDS = 60 * 60 * 1000;
 const DAY_IN_MILLISECONDS = 24 * HOUR_IN_MILLISECONDS;
 
 function isActive(application: ApplicationProgressSource): boolean {
-  return application.status === "active" && application.archived_at === null;
+  return application.lifecycle_status !== "terminated"
+    && application.status === "active"
+    && application.archived_at === null;
 }
 
-function isAssessmentLabel(label: string): boolean {
-  return /笔试|测评|assessment/i.test(label);
+function legacyStableStageType(application: ApplicationProgressSource) {
+  if (application.current_stage_type === "hr") return "interview";
+  if (application.current_stage_type !== "screening") {
+    return application.current_stage_type;
+  }
+  const label = application.current_stage_label.trim().toLocaleLowerCase();
+  if (label.includes("笔试")) return "written_test";
+  if (label.includes("测评") || label.includes("assessment")) return "assessment";
+  return "screening";
 }
 
 /**
@@ -119,19 +137,27 @@ function isAssessmentLabel(label: string): boolean {
  * rounds—project to the single screening column.
  */
 export function normalizeApplicationStageLabel(
-  application: Pick<ApplicationProgressSource, "current_stage_type" | "current_stage_label">,
+  application: Pick<ApplicationProgressSource, "current_stage_type" | "current_stage_label" | "current_stage">,
 ): string {
+  if (application.current_stage) return application.current_stage.stage_label;
   const label = application.current_stage_label.trim();
   if (application.current_stage_type === "offer") return "Offer";
   if (application.current_stage_type !== "screening") return label || "当前阶段";
   if (label === "测评中") return "测评";
   if (label === "笔试中") return "笔试";
-  if (isAssessmentLabel(label)) return label || "当前阶段";
-  return DEFAULT_SCREENING_LABEL;
+  if (label.includes("笔试") || label.includes("测评") || /assessment/i.test(label)) {
+    return label || "当前阶段";
+  }
+  return label === PENDING_LABEL ? PENDING_LABEL : DEFAULT_SCREENING_LABEL;
 }
 
 function terminalStatusLabel(application: ApplicationProgressSource): string | null {
   if (application.archived_at) return "已归档";
+  if (application.lifecycle_status === "terminated") {
+    if (application.termination_reason === "company_rejected") return "未通过";
+    if (application.termination_reason === "user_withdrew" || application.termination_reason === "offer_declined") return "已主动结束";
+    return "已终止";
+  }
   if (application.status === "rejected") return "未通过";
   if (application.status === "withdrawn") return "已主动结束";
   if (application.status === "closed") {
@@ -145,15 +171,18 @@ export function projectApplicationProgress(
 ): ApplicationProgressProjection {
   const active = isActive(application);
   const normalizedStageLabel = normalizeApplicationStageLabel(application);
-  const isPending = active
-    && application.current_stage_type === "screening"
-    && application.applied_at === null;
+  const stableStageType = application.current_stage?.stage_type
+    ?? legacyStableStageType(application);
+  const phase = application.phase
+    ?? (application.applied_at || application.current_stage || application.current_stage_type !== "screening"
+      ? "applied"
+      : "pending");
+  const isPending = active && phase === "pending";
   const isWaiting = active
     && application.stage_state === "awaiting_result"
-    && (application.current_stage_type === "interview" || application.current_stage_type === "hr");
+    && (stableStageType === "interview" || stableStageType === "ai_interview");
   const isAssessment = active
-    && application.current_stage_type === "screening"
-    && isAssessmentLabel(application.current_stage_label.trim());
+    && (stableStageType === "assessment" || stableStageType === "written_test");
   const isAcceptedOffer = application.archived_at === null
     && application.status === "closed"
     && application.offer_status === "accepted";
@@ -198,7 +227,7 @@ export function projectApplicationProgress(
     };
   }
 
-  if (active && application.current_stage_type === "offer") {
+  if (active && stableStageType === "offer") {
     const statusLabel = offerStatusLabel(application.offer_status);
     return {
       columnKey: "offer",
@@ -212,9 +241,13 @@ export function projectApplicationProgress(
     };
   }
 
-  const columnKey: ApplicationProgressColumnKey = application.current_stage_type === "screening"
-    ? isAssessment ? "assessment" : "screening"
-    : "interview";
+  const columnKey: ApplicationProgressColumnKey = stableStageType === "screening"
+    ? "screening"
+    : stableStageType === "assessment"
+      ? "assessment"
+      : stableStageType === "written_test"
+        ? "written_test"
+        : "interview";
   const statusLabel = application.stage_state === "awaiting_schedule"
     ? "等待安排"
     : application.stage_state === "awaiting_result"
@@ -235,7 +268,9 @@ export function projectApplicationProgress(
 function scheduledProgressColumn(
   projection: ApplicationProgressProjection,
 ): boolean {
-  return projection.columnKey === "assessment" || projection.columnKey === "interview";
+  return projection.columnKey === "assessment"
+    || projection.columnKey === "written_test"
+    || projection.columnKey === "interview";
 }
 
 function validTimestamp(value: string | null | undefined): number | null {
@@ -262,7 +297,7 @@ export function applicationScheduleStatusLabel(
   const projection = projectApplicationProgress(application);
   if (!scheduledProgressColumn(projection)) return null;
 
-  if (currentStageCompleted) return "等待结果";
+  if (currentStageCompleted) return "已完成";
 
   const startAt = application.next_session_start_at;
   const start = validTimestamp(startAt);
@@ -328,8 +363,11 @@ export function applicationProgressToneClass(
 }
 
 /** The detail hero predates the board/list token name for the waiting tone. */
-export function applicationDetailStatusToneClass(application: ApplicationProgressSource): string {
-  const tone = applicationProgressToneClass(application);
+export function applicationDetailStatusToneClass(
+  application: ApplicationProgressSource,
+  options: ApplicationProgressLabelOptions = {},
+): string {
+  const tone = applicationProgressToneClass(application, options);
   return tone === "is-waiting" ? "is-warning" : tone;
 }
 

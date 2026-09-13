@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/*.js && node --check src/runtime/*.js && node --check src/tools/*.js",
+    "check": "node scripts/check-syntax.mjs",
     "test": "node --test test/*.test.js"
   }
 }

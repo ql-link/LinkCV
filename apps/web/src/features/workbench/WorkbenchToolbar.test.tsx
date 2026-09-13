@@ -37,19 +37,62 @@ describe("SelectionFormattingToolbar", () => {
     ]);
   });
 
-  it("对当前选区应用文字格式和高亮", async () => {
+  it("对当前选区应用粗体、斜体和高亮", async () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
     editor.commands.setTextSelection({ from: 1, to: 5 });
     render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
 
     await user.click(screen.getByRole("button", { name: "加粗" }));
+    await user.click(screen.getByRole("button", { name: "斜体" }));
     await user.click(screen.getByRole("button", { name: "高亮颜色" }));
     await user.click(screen.getByRole("button", { name: "高亮颜色 #fff3c4" }));
 
     const text = editor.getJSON().content?.[0]?.content?.find((node) => node.type === "text");
     expect(text?.marks).toContainEqual({ type: "bold" });
+    expect(text?.marks).toContainEqual({ type: "italic" });
     expect(text?.marks).toContainEqual({ type: "highlight", attrs: { color: "#fff3c4" } });
+    expect(editor.view.dom.querySelector("em")).toHaveTextContent("重点文字");
+  });
+
+  it("文字颜色与高亮颜色独立应用和取消", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
+    editor.commands.setTextSelection({ from: 1, to: 5 });
+    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+
+    await user.click(screen.getByRole("button", { name: "文字颜色" }));
+    await user.click(screen.getByRole("button", { name: "文字颜色 #3478f6" }));
+
+    let text = editor.getJSON().content?.[0]?.content?.find((node) => node.type === "text");
+    expect(text?.marks).toContainEqual({
+      type: "textStyle",
+      attrs: { color: "#3478f6", fontSize: null },
+    });
+    expect(text?.marks?.some((mark) => mark.type === "highlight")).not.toBe(true);
+
+    await user.click(screen.getByRole("button", { name: "高亮颜色" }));
+    await user.click(screen.getByRole("button", { name: "高亮颜色 #fff3c4" }));
+    text = editor.getJSON().content?.[0]?.content?.find((node) => node.type === "text");
+    expect(text?.marks).toContainEqual({ type: "highlight", attrs: { color: "#fff3c4" } });
+    expect(text?.marks).toContainEqual({
+      type: "textStyle",
+      attrs: { color: "#3478f6", fontSize: null },
+    });
+
+    await user.click(screen.getByRole("button", { name: "高亮颜色" }));
+    await user.click(screen.getByRole("button", { name: "取消高亮颜色" }));
+    text = editor.getJSON().content?.[0]?.content?.find((node) => node.type === "text");
+    expect(text?.marks?.some((mark) => mark.type === "highlight")).not.toBe(true);
+    expect(text?.marks).toContainEqual({
+      type: "textStyle",
+      attrs: { color: "#3478f6", fontSize: null },
+    });
+
+    await user.click(screen.getByRole("button", { name: "文字颜色" }));
+    await user.click(screen.getByRole("button", { name: "取消文字颜色" }));
+    text = editor.getJSON().content?.[0]?.content?.find((node) => node.type === "text");
+    expect(text?.marks?.some((mark) => mark.type === "textStyle")).not.toBe(true);
   });
 
   it("重新选中已有颜色和高亮的文字时显示激活状态", () => {

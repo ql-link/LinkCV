@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -41,6 +42,7 @@ BASELINE_DIR = Path(__file__).with_name("template_baselines")
 VISUAL_WIDTH = 320
 MAX_MEAN_PIXEL_ERROR = 3.0
 MAX_CHANGED_PIXEL_RATIO = 0.012
+NPM_EXECUTABLE = shutil.which("npm.cmd" if os.name == "nt" else "npm") or "npm"
 
 
 TEMPLATE_CASES = (
@@ -214,7 +216,7 @@ def _ensure_cli() -> None:
     # Always rebuild so a targeted test cannot accidentally validate a stale,
     # ignored dist-server artifact left by an earlier source revision.
     subprocess.run(
-        ["npm", "run", "build:pdf-cli"],
+        [NPM_EXECUTABLE, "run", "build:pdf-cli"],
         cwd=WEB_ROOT,
         check=True,
         stdout=subprocess.PIPE,

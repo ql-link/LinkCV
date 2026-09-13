@@ -73,7 +73,11 @@ _MUTABLE_FIELDS = (
 
 
 def create_or_resolve_job(
-    *, db: Session, user_id: int, payload: JobDescriptionCreateRequest
+    *,
+    db: Session,
+    user_id: int,
+    payload: JobDescriptionCreateRequest,
+    commit: bool = True,
 ) -> CreateJobResult:
     source = _normalize_payload_source(payload)
     duplicate = _find_duplicate(db, user_id, source)
@@ -81,7 +85,9 @@ def create_or_resolve_job(
         if payload.duplicate_resolution is None:
             raise DuplicateJobDescription(duplicate)
         return CreateJobResult(
-            job=_resolve_duplicate(db, user_id, payload, source, duplicate),
+            job=_resolve_duplicate(
+                db, user_id, payload, source, duplicate, commit=commit
+            ),
             created=False,
         )
     if payload.duplicate_resolution is not None:
@@ -105,7 +111,8 @@ def create_or_resolve_job(
         db.add(job)
         db.flush()
         db.refresh(job)
-        db.commit()
+        if commit:
+            db.commit()
     except IntegrityError as error:
         db.rollback()
         duplicate = _find_duplicate(db, user_id, source)
@@ -295,6 +302,8 @@ def _resolve_duplicate(
     payload: JobDescriptionCreateRequest,
     source: NormalizedJobSource | None,
     duplicate: JobDescription,
+    *,
+    commit: bool,
 ) -> JobDescription:
     resolution = payload.duplicate_resolution
     if resolution is None or source is None:
@@ -328,7 +337,8 @@ def _resolve_duplicate(
     try:
         db.flush()
         db.refresh(target)
-        db.commit()
+        if commit:
+            db.commit()
     except Exception:
         db.rollback()
         raise

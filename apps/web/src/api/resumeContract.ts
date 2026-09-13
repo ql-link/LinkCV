@@ -351,6 +351,7 @@ export type TemplateDefinition = {
 
 export type PresentationSettings = {
   smart_one_page?: boolean;
+  font_family?: string | null;
   font_scale?: number | null;
   line_height?: number | null;
   accent_color?: string | null;
@@ -1149,9 +1150,10 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
       "compact",
     ] as const;
     const theme = supportedThemes.find((candidate) => style.template_snapshot.template_key.startsWith(candidate)) ?? "classic";
-    const persistedFontFamily = tokens.font_family === "source-han-serif"
+    const persistedFontOverride = scoped.font_family ?? style.portable.font_family ?? tokens.font_family;
+    const persistedFontFamily = persistedFontOverride === "source-han-serif"
       ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
-      : tokens.font_family;
+      : persistedFontOverride;
     const fontFamily = /PingFang SC|Microsoft YaHei|system-ui/u.test(persistedFontFamily)
       ? '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
       : persistedFontFamily;
@@ -1250,6 +1252,7 @@ export function editorSettingsToStyle(
         [key]: {
           ...previousScoped,
           ...edgeOverrides,
+          font_family: settings.fontFamily.includes("Source Han Serif") ? "source-han-serif" : settings.fontFamily,
           font_scale: Number.isFinite(fontScale) ? fontScale : 1,
           line_height: settings.lineHeight,
           page_margin_mm: settings.pageMargin,
