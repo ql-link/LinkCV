@@ -93,7 +93,7 @@ class InterviewApplicationNotEmpty(RuntimeError):
 
 
 @dataclass(slots=True)
-class InterviewApplicationAlreadyActive(RuntimeError):
+class InterviewApplicationAlreadyExists(RuntimeError):
     application_id: int
 
 
@@ -279,7 +279,7 @@ def _latest_resume_version(db: Session, resume_id: int) -> ResumeVersion | None:
     )
 
 
-def find_unfinished_application_for_job(
+def find_application_for_job(
     db: Session, user_id: int, job_description_id: int
 ) -> JobApplication | None:
     return db.scalar(
@@ -287,7 +287,6 @@ def find_unfinished_application_for_job(
         .where(
             JobApplication.user_id == user_id,
             JobApplication.job_description_id == job_description_id,
-            JobApplication.lifecycle_status == "active",
         )
         .order_by(JobApplication.created_at.desc(), JobApplication.id.desc())
         .limit(1)
@@ -312,7 +311,7 @@ def ensure_pending_application_for_job(
     )
     if locked_job is None:
         raise InterviewNotFound
-    existing = find_unfinished_application_for_job(db, user_id, job.id)
+    existing = find_application_for_job(db, user_id, job.id)
     if existing is not None:
         return existing, False
     now = utc_now()
@@ -377,10 +376,11 @@ def create_application(
             resume_version=resume_version,
             notes=payload.notes,
         )
-        if application.applied_at is not None or current_application_stage(
-            db, application.id
-        ) is not None:
-            raise InterviewApplicationAlreadyActive(application.id)
+        if (
+            application.applied_at is not None
+            or current_application_stage(db, application.id) is not None
+        ):
+            raise InterviewApplicationAlreadyExists(application.id)
         if resume_version is not None:
             application.resume_version_id = resume_version.id
             application.resume_title_snapshot = resume_version.name
@@ -747,8 +747,7 @@ def add_application_stage(
         existing = db.scalar(
             select(JobApplicationStage).where(
                 JobApplicationStage.application_id == application_id,
-                JobApplicationStage.client_request_id
-                == str(payload.client_request_id),
+                JobApplicationStage.client_request_id == str(payload.client_request_id),
             )
         )
         if existing is not None and _stage_matches_request(existing, payload):
@@ -936,9 +935,7 @@ def update_application(
         )
         if requested_resume_version_id is not None and parsed_resume_version_id is None:
             raise InterviewNotFound
-        resume_version = _owned_resume_version(
-            db, user_id, parsed_resume_version_id
-        )
+        resume_version = _owned_resume_version(db, user_id, parsed_resume_version_id)
         if parsed_resume_version_id is not None and resume_version is None:
             raise InterviewNotFound
         provided["resume_version_id"] = parsed_resume_version_id
@@ -1110,41 +1107,17 @@ def delete_application(
             .with_for_update()
         )
     )
-    if not is_terminated:
-        if session_ids:
-            raise InterviewApplicationNotEmpty
-    else:
-        assets = list(
-            db.scalars(
-                select(InterviewAsset)
-                .where(InterviewAsset.interview_session_id.in_(session_ids))
-                .with_for_update()
-            )
+    if not is_terminated and session_ids:
+        raise InterviewApplicationNotEmpty
+    if is_terminated:
+        delete_application_records(
+            db,
+            [application.id],
+            session_ids=session_ids,
+            delete_asset_object=delete_asset_object,
         )
-        if assets and delete_asset_object is None:
-            raise InterviewApplicationNotEmpty
-        try:
-            if delete_asset_object is not None:
-                for asset in assets:
-                    delete_asset_object(asset.object_name)
-        except Exception:
-            db.rollback()
-            raise
-        db.execute(
-            delete(InterviewAsset).where(
-                InterviewAsset.interview_session_id.in_(session_ids)
-            )
-        )
-        db.execute(
-            delete(InterviewSession).where(
-                InterviewSession.application_id == application.id
-            )
-        )
-        db.execute(
-            delete(JobApplicationStage).where(
-                JobApplicationStage.application_id == application.id
-            )
-        )
+        db.commit()
+        return
 
     result = db.execute(
         delete(JobApplication).where(
@@ -1160,6 +1133,62 @@ def delete_application(
         db.rollback()
         raise InterviewApplicationNotEmpty
     db.commit()
+
+
+def delete_application_records(
+    db: Session,
+    application_ids: list[int],
+    *,
+    session_ids: list[int] | None = None,
+    delete_asset_object: Callable[[str], None] | None = None,
+) -> None:
+    """Delete complete application aggregates without committing the transaction."""
+    if not application_ids:
+        return
+    locked_session_ids = session_ids
+    if locked_session_ids is None:
+        locked_session_ids = list(
+            db.scalars(
+                select(InterviewSession.id)
+                .where(InterviewSession.application_id.in_(application_ids))
+                .with_for_update()
+            )
+        )
+    assets = (
+        list(
+            db.scalars(
+                select(InterviewAsset)
+                .where(InterviewAsset.interview_session_id.in_(locked_session_ids))
+                .with_for_update()
+            )
+        )
+        if locked_session_ids
+        else []
+    )
+    if assets and delete_asset_object is None:
+        raise InterviewApplicationNotEmpty
+    try:
+        if delete_asset_object is not None:
+            for asset in assets:
+                delete_asset_object(asset.object_name)
+    except Exception:
+        db.rollback()
+        raise
+    if locked_session_ids:
+        db.execute(
+            delete(InterviewAsset).where(
+                InterviewAsset.interview_session_id.in_(locked_session_ids)
+            )
+        )
+        db.execute(
+            delete(InterviewSession).where(InterviewSession.id.in_(locked_session_ids))
+        )
+    db.execute(
+        delete(JobApplicationStage).where(
+            JobApplicationStage.application_id.in_(application_ids)
+        )
+    )
+    db.execute(delete(JobApplication).where(JobApplication.id.in_(application_ids)))
 
 
 def _validate_schedule(
@@ -1288,9 +1317,7 @@ def create_session(
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
     expected_legacy_types = (
-        {"interview", "hr"}
-        if current_stage.stage_type == "interview"
-        else {"other"}
+        {"interview", "hr"} if current_stage.stage_type == "interview" else {"other"}
     )
     if payload.stage_type not in expected_legacy_types:
         raise InterviewInvalidTransition
@@ -1357,9 +1384,7 @@ def create_session(
             )
         )
         if existing is not None:
-            if _session_matches_create_request(
-                existing, payload, start_at, end_at
-            ):
+            if _session_matches_create_request(existing, payload, start_at, end_at):
                 return existing
             raise InterviewEditConflict
         raise

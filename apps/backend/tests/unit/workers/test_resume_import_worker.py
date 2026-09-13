@@ -381,9 +381,10 @@ def test_worker_serializes_concurrent_finalization_at_capacity() -> None:
             .where(DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE)
             .order_by(DocumentParseTask.id)
         ).all()
-        assert [task.parse_status for task in tasks] == ["failed", "succeeded"]
-        assert tasks[0].failure_reason == "quota_exceeded"
-        assert tasks[1].failure_reason is None
+        tasks_by_status = {task.parse_status: task for task in tasks}
+        assert set(tasks_by_status) == {"failed", "succeeded"}
+        assert tasks_by_status["failed"].failure_reason == "quota_exceeded"
+        assert tasks_by_status["succeeded"].failure_reason is None
         assert len(db.scalars(select(Resume)).all()) == 10
         assert resume_slot_count(db, tasks[0].user_id) == 10
 

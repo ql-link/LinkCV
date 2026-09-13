@@ -239,7 +239,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `POST`   | `/api/job-descriptions/import`      | 清洗 BOSS 页面采集字段；返回 `{job_description, application}`，新建时 `201`，解决重复或复用待投递时 `200` |
 | `GET`    | `/api/job-descriptions/:id`         | `{job_description}`                                                      |
 | `PUT`    | `/api/job-descriptions/:id`         | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段     |
-| `DELETE` | `/api/job-descriptions/:id`         | `{deleted: true}`，直接永久删除并释放来源唯一标识                        |
+| `DELETE` | `/api/job-descriptions/:id`         | `{deleted: true}`，永久删除岗位及其完整求职聚合并释放来源唯一标识         |
 
 岗位 `employment_type` 只接受 `internship`（实习）、`campus`（校招）、`full_time`（正式）或 `null`（未分类）。文字/图片识别和插件导入使用同一分类语义：实习优先于校招，校招优先于全职；无法判断不猜测。旧的 `part_time/contract/temporary` 不再接受。个人画像的 `employment_types` 是独立契约，不随岗位分类变更。
 
@@ -251,11 +251,11 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 浏览器导入请求使用 `source_url` 和嵌套 `capture`。当前只接受 `zhipin.com` 的 `/job_detail/{source_job_id}.html`；`capture.job_title`、`capture.company_name`、`capture.description_text` 清洗后必须非空。可选采集字段包括 `logo_url`、`skills`、就业类型原文、学历、经验、工作时间、城市、地址、薪资原文、公司字段/标签和招聘者字段。后端去除不可见字符、压缩空白、删除明确的详情标题与举报页尾，并确定性映射常见就业类型、远程/混合工作、`K·N薪` 和人民币时/日/月/年区间；无法可靠识别的字段保持为空，不做分析或模型推断。
 
-导入请求字段非法、非 BOSS 详情 URL 或必填采集内容缺失时返回 `400 INVALID_JOB_IMPORT`。重复来源直接返回既有 JD 及其未结束求职记录；显式 `duplicate_resolution` 仍复用普通创建的 `JD_EDIT_CONFLICT` 和 `JD_WRITE_FAILED` 语义。插件不需要也不能提交 `user_id`、来源身份哈希或数据库字段。
+导入请求字段非法、非 BOSS 详情 URL 或必填采集内容缺失时返回 `400 INVALID_JOB_IMPORT`。重复来源直接返回既有 JD 及其唯一求职记录，包括已经结束的记录，不创建再次投递；显式 `duplicate_resolution` 仍复用普通创建的 `JD_EDIT_CONFLICT` 和 `JD_WRITE_FAILED` 语义。插件不需要也不能提交 `user_id`、来源身份哈希或数据库字段。
 
-岗位创建和浏览器导入会在同一数据库事务中为该 JD 创建待投递求职记录；同一 JD 已有未结束求职记录时直接返回该记录，不重复创建，也不覆盖其投递时间、阶段或历史。显式 `duplicate_resolution` 仍用于用户确认用新采集内容更新已有 JD。普通更新及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
+岗位创建和浏览器导入会在同一数据库事务中为该 JD 创建唯一的待投递求职记录；同一 JD 已有任何求职记录时直接返回该记录，不重复创建，也不覆盖其投递时间、阶段或历史。通过求职进程接口为已有记录的 JD 再次创建返回 `409 APPLICATION_ALREADY_EXISTS` 并携带原 `application_id`。显式 `duplicate_resolution` 仍用于用户确认用新采集内容更新已有 JD。普通更新及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
 
-硬删除语句同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。成功后 JD 无法恢复，相同来源可再次写入；已有求职进程通过 `ON DELETE SET NULL` 解除来源引用并继续保存建立时的岗位快照。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
+硬删除同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。服务先锁定岗位及其求职进程，依次删除素材对象、素材记录、排期、阶段和求职进程，再删除 JD；活动和已结束进程都在清理范围内。成功后所有关联数据均无法恢复，相同来源可再次写入。素材对象清理或数据库删除失败返回 `502 JD_DELETE_FAILED`，数据库记录保留供重试；MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，重试按对象不存在视为已清理。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
 
 技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
 
@@ -269,13 +269,13 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 求职进程的初始状态必须可达：待投递占位使用 `screening / 待投递 / awaiting_schedule` 且 `applied_at` 为空；兼容调用仍可直接创建 `screening / awaiting_result`、`interview|hr / awaiting_schedule` 或 `offer / negotiating`。其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。`PUT /api/job-applications/:id` 首次把 `applied_at` 从空值写为非空时允许不绑定简历，此时 `resume_version_id` 和 `resume_title_snapshot` 保持为空；请求也可提交 `resume_id`，服务端只接受当前用户的简历，并自动绑定该简历 `version_no` 最大的最新正式版本，同时写入版本 ID 和标题快照。所选简历没有正式版本返回 `409 INTERVIEW_RESUME_VERSION_REQUIRED`，不存在或越权简历返回 `404 INTERVIEW_NOT_FOUND`。显式 `resume_version_id` 继续兼容，但不能与 `resume_id` 同时提交。首次为待投递占位或旧的 `screening / 筛选中 / awaiting_result` 占位写入 `applied_at` 时，服务端在同一次乐观锁更新中将当前阶段规范化为 `screening / 等待后续通知 / awaiting_result`；已进入明确筛选、面试或 HR 阶段的记录只补投递日期，不会被重置。
 
-`POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 可永久删除已终止记录，并同步删除其阶段、排期、复盘、素材记录和对象存储文件，但保留可复用的原始 JD；未终止记录仍须先归档，且只有没有排期记录时才能沿用旧的清理入口。素材对象删除失败时返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
+`POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。素材对象删除失败时返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
 
 | Method | Path | 行为 |
 | --- | --- | --- |
 | `GET` | `/api/interview-overview` | 返回本周指标、当前阶段流程和周排期；支持 `week_start` 与 IANA `timezone` |
 | `GET/POST` | `/api/job-applications` | 列出或创建求职进程 |
-| `GET/PUT/DELETE` | `/api/job-applications/:id` | 读取、乐观锁更新；永久删除已终止进程及其关联历史，或删除已归档且无排期记录的进程 |
+| `GET/PUT/DELETE` | `/api/job-applications/:id` | 读取、乐观锁更新；已终止且关联 JD 时永久删除整个岗位聚合，无 JD 历史记录沿用旧清理条件 |
 | `POST` | `/api/job-applications/:id/stages` | 追加并切换当前阶段；首次写入同时隐式完成投递 |
 | `POST` | `/api/job-applications/:id/terminate` | 终止待投递或进行中的求职记录 |
 | `POST` | `/api/job-applications/:id/advance` | 将已完成且等待结果的当前阶段确认通过并推进 |

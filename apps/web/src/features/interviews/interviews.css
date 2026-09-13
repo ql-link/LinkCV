@@ -587,9 +587,6 @@
 .career-application-progress.is-muted { color: var(--career-state-neutral); }
 .career-application-updated-at { color: var(--ui-text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .career-application-progress-cell { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
-.career-application-delete-button { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 5px 7px; color: var(--ui-destructive); font: inherit; cursor: pointer; }
-.career-application-delete-button:hover { background: var(--ui-destructive-subtle); }
-.career-application-delete-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
 .career-applications-empty { display: grid; min-height: 300px; place-items: center; align-content: center; gap: 8px; padding: 40px 20px; text-align: center; }
 .career-applications-empty > svg { width: 34px; height: 34px; color: var(--ui-text-muted); stroke-width: 1.4; }
 .career-applications-empty h2 { margin: 4px 0 0; font-size: 16px; }

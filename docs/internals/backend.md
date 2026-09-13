@@ -15,7 +15,7 @@
 | `src/linkcv/domain/resume/` | 唯一运行时 `CanonicalResumeDocument`、`ResumePresentation`、`TemplateDefinition`、`LayoutPlan`、`SourceGraph`、稀疏模型标注与确定性导入组合；旧快照解析器只供 `0046` 和离线导入脚本使用 |
 | `src/linkcv/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
 | `src/linkcv/application/resumes/` | 统一创建、乐观锁保存、版本创建/重命名/恢复、分享链接创建/覆盖/更新与事务规则 |
-| `src/linkcv/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新和直接永久删除 |
+| `src/linkcv/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新，以及连同求职进程聚合的永久删除 |
 | `src/linkcv/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkcv/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
 | `src/linkcv/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
@@ -41,7 +41,7 @@
 
 MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_companies` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-`job_applications` 保存一次求职尝试的岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。已终止进程可由所属用户永久删除，服务按素材对象、素材记录、排期、阶段和进程的顺序清理，原始 `job_descriptions` 记录不随之删除；活动进程仍不能直接永久删除。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
+每个 `job_descriptions` 最多关联一条 `job_applications`，后者保存岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。创建入口发现同一 JD 已有任何进程时复用原记录，已结束后也不能创建第二次投递。已终止且仍关联 JD 的进程从求职入口删除时会删除完整岗位聚合；历史遗留的无 JD 进程仍可单独清理。服务按素材对象、素材记录、排期、阶段、进程和岗位的顺序清理，活动进程不能通过求职进程接口直接永久删除。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
 
 迁移 `0058` 为 `interview_sessions` 增加固定场次/开放窗口类型和开放窗口专用的个人作答计划时间。只有测评和笔试能创建 `open_window`；它可保存至多一组个人作答计划，两端同时为空表示未计划，两端有值时必须完整落在官方 `start_at/end_at` 内。调整官方窗口不能使既有计划越界，固定场次不能写入计划。
 
@@ -99,7 +99,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0006` 新增 `llm_model_configs` 和 `llm_call_logs`。模型配置保留启停、优先级、可选价格和版本化凭据密文；调用日志按唯一 `call_id` 保存用户、实际模型快照、最终状态、计量完整性、Token、价格快照和估算成本，不保存消息或模型正文。配置和调用日志不提供级联删除，历史关联使用 `RESTRICT`。两张表及其全部字段都在 SQL-first DDL 和 SQLAlchemy 模型中维护一致的中文注释；状态字段的英文值是持久化契约，不因注释语言改变。
 
-`0007` 新增用户私有 `job_descriptions` 单表。岗位、要求、工作地点、薪资、公司与招聘者快照、来源身份、备注和乐观锁保存在同行；福利和原始抓取内容不落库。`skills` 是字符串 JSON 数组。来源 URL 只在后端规范化，随后同时保存规范化值和二进制 SHA-256；BOSS 岗位链接还保存站点原生 ID。`(user_id, source_site, source_job_id)` 与 `(user_id, source_url_hash)` 两组唯一约束处理同用户重复。`0034` 永久删除当时所有已归档 JD，随后删除 `archived_at` 和归档联合索引；JD 从此不保存生命周期状态。列表、搜索、编辑和直接删除始终带用户条件，删除成功后真实释放来源唯一键。用户外键继续使用 `ON DELETE RESTRICT`；`0033` 建立的求职进程外键使用 `ON DELETE SET NULL`，因此删除 JD 只解除来源引用，完整岗位快照和后续面试历史继续保留。
+`0007` 新增用户私有 `job_descriptions` 单表。岗位、要求、工作地点、薪资、公司与招聘者快照、来源身份、备注和乐观锁保存在同行；福利和原始抓取内容不落库。`skills` 是字符串 JSON 数组。来源 URL 只在后端规范化，随后同时保存规范化值和二进制 SHA-256；BOSS 岗位链接还保存站点原生 ID。`(user_id, source_site, source_job_id)` 与 `(user_id, source_url_hash)` 两组唯一约束处理同用户重复。`0034` 永久删除当时所有已归档 JD，随后删除 `archived_at` 和归档联合索引；JD 从此不保存生命周期状态。列表、搜索、编辑和直接删除始终带用户条件，删除成功后真实释放来源唯一键。用户外键继续使用 `ON DELETE RESTRICT`；`0033` 建立的求职进程外键物理上仍使用 `ON DELETE SET NULL`，但当前 HTTP 删除服务会先显式清理完整求职聚合和素材对象，再删除 JD，不依赖外键保留历史。
 
 `POST /api/job-descriptions/import` 是浏览器插件的受保护入口，只接受 BOSS 岗位详情 URL 和有限的页面采集字段。`application/job_descriptions/import_service.py` 先清理不可见字符、空白和明确页尾噪声，再映射就业类型、工作形态、月薪/日薪/时薪及公司标签；它还会把 `5天/周`、`6个月` 等实习安排从误传的经验字段移入 `work_schedule`，并在入库前剔除福利标签。最后构造已有 `JobDescriptionCreateRequest` 并复用统一创建与重复解决事务。该过程不调用 LLM，不保存输入 DTO，也不绕过既有用户条件、来源唯一键或乐观锁。
 

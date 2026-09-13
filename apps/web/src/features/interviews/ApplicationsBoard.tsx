@@ -1366,33 +1366,37 @@ export function ProgressCard({
             >
               <Eye size={15} aria-hidden="true" />查看详情
             </button>
-            <button type="button" role="menuitem" onClick={() => runMenuAction(() => onRequestCategory?.(item))}>
-              修改分类
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={!advanceAction.enabled || isAdvancing}
-              onClick={() => runMenuAction(() => {
-                if (!advanceAction.enabled || !advanceAction.prefill) {
-                  if (progressColumnKey(item) === "pending") onRequestMarkApplied?.(item);
-                  return;
-                }
-                onRequestNextStage?.(item, advanceAction.prefill);
-              })}
-            >
-              <ArrowRight size={15} aria-hidden="true" />推进流程
-            </button>
-            {item.status === "active" && item.archived_at === null && item.offer_status === "none" && (
-              <button
-                type="button"
-                role="menuitem"
-                className="is-danger"
-                disabled={isAdvancing}
-                onClick={() => runMenuAction(() => onRequestTerminate?.(item))}
-              >
-                <Ban size={15} aria-hidden="true" />终止求职
-              </button>
+            {columnKey !== "ended" && (
+              <>
+                <button type="button" role="menuitem" onClick={() => runMenuAction(() => onRequestCategory?.(item))}>
+                  修改分类
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!advanceAction.enabled || isAdvancing}
+                  onClick={() => runMenuAction(() => {
+                    if (!advanceAction.enabled || !advanceAction.prefill) {
+                      if (progressColumnKey(item) === "pending") onRequestMarkApplied?.(item);
+                      return;
+                    }
+                    onRequestNextStage?.(item, advanceAction.prefill);
+                  })}
+                >
+                  <ArrowRight size={15} aria-hidden="true" />推进流程
+                </button>
+                {item.status === "active" && item.archived_at === null && item.offer_status === "none" && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="is-danger"
+                    disabled={isAdvancing}
+                    onClick={() => runMenuAction(() => onRequestTerminate?.(item))}
+                  >
+                    <Ban size={15} aria-hidden="true" />终止求职
+                  </button>
+                )}
+              </>
             )}
             {columnKey === "ended" && (
               <button
@@ -1402,7 +1406,7 @@ export function ProgressCard({
                 disabled={isAdvancing}
                 onClick={() => runMenuAction(() => onRequestDelete?.(item))}
               >
-                <Trash2 size={15} aria-hidden="true" />删除记录
+                <Trash2 size={15} aria-hidden="true" />删除岗位
               </button>
             )}
           </div>
