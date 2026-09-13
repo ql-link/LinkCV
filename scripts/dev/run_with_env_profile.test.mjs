@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,7 +13,7 @@ import {
 } from "./run_with_env_profile.mjs";
 
 function fixture() {
-  const root = mkdtempSync(join(tmpdir(), "linkcv-env-"));
+  const root = mkdtempSync(join(tmpdir(), "linkresume-env-"));
   const mainRoot = join(root, "main");
   const worktree = join(root, "worktree");
   mkdirSync(join(mainRoot, ".git"), { recursive: true });
@@ -37,7 +37,7 @@ test("worktree profile uses the main worktree secret overlay", () => {
   assert.equal(result.env.VALUE, "process");
   assert.equal(result.env.BASE_ONLY, "yes");
   assert.equal(result.env.SECRET_ONLY, "yes");
-  assert.equal(result.env.LINKCV_ENV_FILE, join(paths.worktree, ".env.development"));
+  assert.equal(result.env.LINKRESUME_ENV_FILE, join(paths.worktree, ".env.development"));
 });
 
 test("local profile can run from the main worktree secret file alone", () => {
@@ -64,7 +64,7 @@ test("local profile aligns a loopback RabbitMQ URL with the Compose host port", 
   );
   writeFileSync(
     join(paths.mainRoot, ".env.local"),
-    "RABBITMQ_URL=amqp://linkcv:secret@127.0.0.1:5672/\n",
+    "RABBITMQ_URL=amqp://linkresume:secret@127.0.0.1:5672/\n",
   );
 
   const result = buildProfileEnvironment({
@@ -76,7 +76,7 @@ test("local profile aligns a loopback RabbitMQ URL with the Compose host port", 
 
   assert.equal(
     result.env.RABBITMQ_URL,
-    "amqp://linkcv:secret@127.0.0.1:5676/",
+    "amqp://linkresume:secret@127.0.0.1:5676/",
   );
 });
 
@@ -88,7 +88,7 @@ test("local profile does not rewrite a remote RabbitMQ URL", () => {
   );
   writeFileSync(
     join(paths.mainRoot, ".env.local"),
-    "RABBITMQ_URL=amqp://linkcv:secret@rabbit.example.test:5672/\n",
+    "RABBITMQ_URL=amqp://linkresume:secret@rabbit.example.test:5672/\n",
   );
 
   const result = buildProfileEnvironment({
@@ -100,11 +100,11 @@ test("local profile does not rewrite a remote RabbitMQ URL", () => {
 
   assert.equal(
     result.env.RABBITMQ_URL,
-    "amqp://linkcv:secret@rabbit.example.test:5672/",
+    "amqp://linkresume:secret@rabbit.example.test:5672/",
   );
 });
 
-test("LINKCV_SECRET_ENV_FILE explicitly overrides the shared default", () => {
+test("LINKRESUME_SECRET_ENV_FILE explicitly overrides the shared default", () => {
   const paths = fixture();
   writeFileSync(join(paths.worktree, ".env.development"), "APP_ENV=development\n");
   writeFileSync(join(paths.worktree, "custom.local"), "CUSTOM=yes\n");
@@ -112,7 +112,7 @@ test("LINKCV_SECRET_ENV_FILE explicitly overrides the shared default", () => {
   const files = resolveProfileFiles({
     cwd: paths.worktree,
     profile: ".env.development",
-    inheritedEnv: { LINKCV_SECRET_ENV_FILE: "custom.local" },
+    inheritedEnv: { LINKRESUME_SECRET_ENV_FILE: "custom.local" },
     gitCommonDir: paths.gitCommonDir,
   });
 
@@ -148,7 +148,7 @@ test("the profile launcher has platform fallbacks outside npm scripts", () => {
 });
 
 test("syncMiniprogramLocalConfig writes gitignored local.js with detected LAN IP", () => {
-  const root = mkdtempSync(join(tmpdir(), "linkcv-miniprogram-"));
+  const root = mkdtempSync(join(tmpdir(), "linkresume-miniprogram-"));
   const configDir = join(root, "apps/miniprogram/config");
   mkdirSync(configDir, { recursive: true });
 
@@ -156,4 +156,23 @@ test("syncMiniprogramLocalConfig writes gitignored local.js with detected LAN IP
   assert.ok(result);
   assert.equal(result.targetFile, join(configDir, "local.js"));
   assert.ok(result.lanIp);
+});
+
+test("generated simulator and phone addresses follow the selected launch profile and actual port", () => {
+  for (const [profile, env, port] of [
+    [".env", {}, 8000],
+    [".env", { BACKEND_PORT: "8123" }, 8123],
+    [".env.development", { BACKEND_PORT: "9999" }, 18000],
+    [".env.development", { LINKRESUME_LOCAL_BACKEND_PORT: "8000", BACKEND_PORT: "9999" }, 8000],
+    [".env.development", { LINKRESUME_LOCAL_BACKEND_PORT: "18123" }, 18123],
+  ]) {
+    const { worktree, mainRoot } = fixture();
+    mkdirSync(join(worktree, "apps/miniprogram/config"), { recursive: true });
+    const result = syncMiniprogramLocalConfig(worktree, undefined, { profile, env });
+    const config = JSON.parse(readFileSync(join(worktree, "apps/miniprogram/config/local.json"), "utf8"));
+    assert.equal(config.devtoolsApiBaseUrl, "http://127.0.0.1:" + port);
+    assert.equal(config.apiBaseUrl, "http://" + result.lanIp + ":" + port);
+    assert.ok(readFileSync(result.targetFile, "utf8").includes(config.devtoolsApiBaseUrl));
+    assert.equal(result.devtoolsApiBaseUrl, config.devtoolsApiBaseUrl);
+  }
 });

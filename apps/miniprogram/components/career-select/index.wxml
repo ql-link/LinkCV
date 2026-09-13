@@ -1,0 +1,8 @@
+<view class="select">
+  <button size="mini" class="select-button trigger {{open ? 'expanded' : ''}}" bindtap="toggle" disabled="{{disabled}}" aria-label="{{label}}" aria-expanded="{{open}}">
+    <text class="value">{{options[value].label}}</text><view class="chevron {{open ? 'up' : ''}}" />
+  </button>
+  <view wx:if="{{open}}" class="options" role="listbox" aria-label="{{label}}">
+    <button size="mini" wx:for="{{options}}" wx:key="value" class="select-button option {{index === value ? 'selected' : ''}}" data-index="{{index}}" bindtap="select" role="option" aria-selected="{{index === value}}"><text>{{item.label}}</text><text wx:if="{{index === value}}" class="check">✓</text></button>
+  </view>
+</view>

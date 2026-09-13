@@ -36,3 +36,17 @@
 .agreement-hint { display: block; margin-top: 10rpx; color: var(--ui-warning); font-size: 21rpx; line-height: 1.5; text-align: center; }
 @media (max-height: 700px) { .identity { margin-top: 80rpx; } .actions { margin-top: 64rpx; } .consent { padding-top: 48rpx; } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } .confirm-primary-button-pressed { transform: none; } }
+
+/* Figma: fixed brand above a left-aligned login flow; no custom dismiss control. */
+.page { background:#f4f6f8;padding:92px 20px max(20px,env(safe-area-inset-bottom));font-family:"LinkResume Career UI",-apple-system,"PingFang SC",sans-serif; }
+.content { max-width:none;align-items:stretch; }
+.identity { margin-top:0;align-items:flex-start;text-align:left; }
+.title { margin-top:0;font-size:26px;line-height:34px;letter-spacing:0; }
+.subtitle { max-width:none;margin-top:16px;font-size:14px;line-height:22px;color:#3f4752; }
+.actions { margin-top:76px; }
+.ui-primary-button { display:flex;align-items:center;justify-content:center;height:44px;min-height:44px;width:100%;padding:0 12px;border-radius:10px;background:#17191c;color:#fff;font-size:15px;line-height:23px; }
+.consent { margin-top:16px; }
+.agreement-copy { font-size:12px;line-height:20px; }
+
+.consent { padding-top:0;padding-bottom:0; }
+.agreement-row { justify-content:flex-start; }

@@ -2,7 +2,7 @@ import asyncio
 
 import httpx
 
-from linkcv.main import app
+from linkresume.main import app
 
 
 def test_health_endpoint() -> None:
@@ -19,6 +19,6 @@ def test_health_endpoint() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "service": "linkcv-backend",
+        "service": "linkresume-backend",
         "version": "0.1.0",
     }

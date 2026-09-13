@@ -3,9 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-import linkcv.models  # noqa: F401
-from linkcv.core.config import load_settings
-from linkcv.core.database import Base
+import linkresume.models  # noqa: F401
+from linkresume.core.config import load_settings
+from linkresume.core.database import Base
 
 config = context.config
 config.set_main_option("sqlalchemy.url", load_settings().sqlalchemy_url.replace("%", "%%"))

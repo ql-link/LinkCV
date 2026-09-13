@@ -321,7 +321,7 @@ function ResumeCard({ design, profile }: { design: ResumeDesign; profile: Profil
         <address>{profile.location} · {t.hero.cardStatus}</address>
       </header>
       <div className="landing-resume-contact">
-        <span>linkcv.example</span>
+        <span>linkresume.example</span>
         <span>{t.hero.cardPortfolio}</span>
       </div>
       <p className="landing-resume-summary">{profile.summary}</p>

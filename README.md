@@ -1,6 +1,6 @@
-# LinkCV
+# LinkResume
 
-LinkCV 是用于编辑和导出简历的前后端分离 Monorepo。
+LinkResume 是用于编辑和导出简历的前后端分离 Monorepo。
 
 ## 仓库结构
 

@@ -1,8 +1,8 @@
 import bcrypt
 import jwt
 
-from linkcv.core.config import Settings
-from linkcv.core.security import (
+from linkresume.core.config import Settings
+from linkresume.core.security import (
     create_access_token,
     decode_access_token,
     hash_password,

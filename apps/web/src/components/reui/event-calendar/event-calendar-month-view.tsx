@@ -62,6 +62,8 @@ import { PlusIcon } from "lucide-react"
 const useIsoLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect
 
+const EVENT_CALENDAR_MORE_OPEN_EVENT = "event-calendar-more-open"
+
 // An occurrence key encodes the start instant and is also the chip's React key,
 // so committing a move re-keys the chip: React remounts it and the browser
 // drops focus to <body>. The chip that owns focus is recorded here so the cell
@@ -1136,6 +1138,51 @@ function EventCalendarMoreIndicator({
   const viewConfig = useEventCalendarViewConfig()
   const [open, setOpen] = useState(false)
   const headerId = useId()
+  const popoverId = useId()
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
+
+  const setPopoverOpen = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen)
+      if (nextOpen) {
+        document.dispatchEvent(
+          new CustomEvent(EVENT_CALENDAR_MORE_OPEN_EVENT, {
+            detail: popoverId,
+          })
+        )
+      }
+    },
+    [popoverId]
+  )
+
+  useEffect(() => {
+    if (!open) return
+
+    const closeForAnotherPopover = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== popoverId) setOpen(false)
+    }
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (triggerRef.current?.contains(target)) return
+      if (contentRef.current?.contains(target)) return
+      setOpen(false)
+    }
+
+    document.addEventListener(
+      EVENT_CALENDAR_MORE_OPEN_EVENT,
+      closeForAnotherPopover
+    )
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true)
+    return () => {
+      document.removeEventListener(
+        EVENT_CALENDAR_MORE_OPEN_EVENT,
+        closeForAnotherPopover
+      )
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true)
+    }
+  }, [open, popoverId])
 
   // Grabbing a chip from this list starts a drag; close the popover so it does
   // not sit over the drop target while the event is carried to another day.
@@ -1147,8 +1194,9 @@ function EventCalendarMoreIndicator({
   }, [isDragging])
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setPopoverOpen}>
       <PopoverTrigger
+        ref={triggerRef}
         data-slot="event-calendar-more"
         data-drop-into={dropInto ? "" : undefined}
         data-drop-invalid={dropInto && !dropInto.valid ? "" : undefined}
@@ -1191,6 +1239,7 @@ function EventCalendarMoreIndicator({
           settings.i18n.labels.more(count)}
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         data-slot="event-calendar-more-popover"
         align={viewConfig.morePopoverAlign}
         // The popover is a dialog, so it needs a name. The built-in body already

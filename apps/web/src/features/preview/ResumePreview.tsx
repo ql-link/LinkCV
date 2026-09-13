@@ -16,7 +16,7 @@ export function ResumePreview({
   mode?: "card" | "full";
 }) {
   const documentHtml = useMemo(
-    () => renderResumePrintDocument({ title: resumeDocumentTitle(data) || "LinkCV Resume", data, style, layout_plan: layoutPlan }),
+    () => renderResumePrintDocument({ title: resumeDocumentTitle(data) || "LinkResume Resume", data, style, layout_plan: layoutPlan }),
     [data, layoutPlan, style],
   );
 

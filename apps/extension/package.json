@@ -1,5 +1,5 @@
 {
-  "name": "@linkcv/browser-extension",
+  "name": "@linkresume/browser-extension",
   "version": "0.1.0",
   "private": true,
   "type": "module",

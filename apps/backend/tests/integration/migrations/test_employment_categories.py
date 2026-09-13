@@ -13,12 +13,12 @@ from tests.integration.migrations.test_mysql_migrations import invoke_alembic, r
 
 
 def test_employment_categories_upgrade_and_reject_legacy_values() -> None:
-    raw = os.environ.get("LINKCV_TEST_MYSQL_URL")
+    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
     if not raw:
-        pytest.skip("LINKCV_TEST_MYSQL_URL required")
+        pytest.skip("LINKRESUME_TEST_MYSQL_URL required")
     source = make_url(raw)
     assert source.host in {"127.0.0.1", "localhost"}
-    name = f"linkcv_category_test_{uuid4().hex}"
+    name = f"linkresume_category_test_{uuid4().hex}"
     admin = create_engine(source.set(database=None))
     with admin.begin() as connection:
         connection.exec_driver_sql(f"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci")

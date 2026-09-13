@@ -10,7 +10,7 @@ from pathlib import Path
 from alembic import op
 from sqlalchemy import text
 
-from linkcv.core.migration_sql import execute_sql_file
+from linkresume.core.migration_sql import execute_sql_file
 
 revision: str = "0010"
 down_revision: str | None = "0009"
@@ -41,4 +41,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("LinkCV database migrations are forward-only")
+    raise RuntimeError("LinkResume database migrations are forward-only")

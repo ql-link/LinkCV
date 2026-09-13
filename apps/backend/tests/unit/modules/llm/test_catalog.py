@@ -1,7 +1,7 @@
 import litellm
 import pytest
 
-from linkcv.modules.llm.catalog import (
+from linkresume.modules.llm.catalog import (
     CHAT_ADAPTERS,
     assemble_model_identifier,
     chat_model_suggestions,

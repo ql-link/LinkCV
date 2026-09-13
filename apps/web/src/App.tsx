@@ -4,6 +4,7 @@ import { Brand, Button, PageLoading } from "@/components/ui";
 import { CareerNavigation, WorkspaceLayout, type CareerSection, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
+import { applyRouteSeo } from "./seo";
 import { useResumeStore } from "./store/resumeStore";
 import {
   loadAccountPage,
@@ -87,6 +88,10 @@ function AppContent() {
   const goHome = useResumeStore((state) => state.goHome);
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
+
+  useEffect(() => {
+    applyRouteSeo(route);
+  }, [route]);
 
   useEffect(() => {
     if (isInterviewMockPreview) return;
@@ -347,7 +352,7 @@ function StatusShell({ children }: { children: ReactNode }) {
   return (
     <div className="status-shell">
       <header className="status-topbar">
-        <a href="/" aria-label="返回 LinkCV 首页" className="status-brand">
+        <a href="/" aria-label="返回 LinkResume 首页" className="status-brand">
           <Brand />
         </a>
       </header>

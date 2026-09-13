@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the isolated LinkCV database without exposing credentials."""
+"""Create the isolated LinkResume database without exposing credentials."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import sqlalchemy as sa
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import OperationalError
 
-from linkcv.core.config import load_settings
+from linkresume.core.config import load_settings
 
-EXPECTED_DATABASE = "linkcv"
+EXPECTED_DATABASE = "linkresume"
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ def create_database(database_url: str) -> str:
         with engine.connect() as connection:
             connection.execute(
                 sa.text(
-                    "CREATE DATABASE IF NOT EXISTS `linkcv` "
+                    "CREATE DATABASE IF NOT EXISTS `linkresume` "
                     "CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
                 )
             )
@@ -88,10 +88,10 @@ def main() -> int:
         summary = create_database(settings.sqlalchemy_url)
     except Exception as exc:
         raise RuntimeError(
-            "LinkCV database initialization failed: "
+            "LinkResume database initialization failed: "
             f"stage=create_database {safe_failure_reason(exc)}"
         ) from None
-    print(f"LinkCV database ready: {summary}", flush=True)
+    print(f"LinkResume database ready: {summary}", flush=True)
     return 0
 
 

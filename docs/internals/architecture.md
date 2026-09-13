@@ -6,14 +6,14 @@
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 单页应用，承载用户工作区、公共分享和管理端界面 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
-| WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护和简历只读浏览；详见 [小程序架构](miniprogram.md) |
+| WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护、简历只读浏览及求职跟进；时间表与岗位详情复用面试弹窗和记录编辑器；详见 [小程序架构](miniprogram.md) |
 | Backend | `apps/backend` | FastAPI 业务 API、内部 Agent 工具、Worker、SQLAlchemy 模型与 SQL-first Alembic 迁移 |
 | Pi Agent service | `apps/pi-service` | 独立无头 Node 服务；运行 Pi Agent loop，并仅通过受控 HTTP 工具调用 FastAPI |
 | Infrastructure | `deploy` | MySQL、Redis、MinIO、消息队列、可观测性依赖和 Dev/Production Jenkins、Compose 拓扑 |
 | pi agent 工具包（第三方，一次性引入） | `third_party/pi` | Node/TypeScript AI agent 工具包和离线模型目录快照；由根级 Pi 安装、测试和检查脚本显式纳管，详见 [internals/third-party-pi.md](third-party-pi.md) |
 | AI workflow | `.ai`、`.specs`、`scripts/quality` | 项目规则、以方案为中心的本地 Spec 和质量检查 |
 
-长期文档分别提供[功能视图](../README.md#功能文档)和[架构视图](../README.md#架构文档)。功能域不等于部署单元：例如求职中心跨越 Web 与两个 FastAPI 包，小程序则作为独立客户端适配账号和简历功能。
+长期文档分别提供[功能视图](../README.md#功能文档)和[架构视图](../README.md#架构文档)。功能域不等于部署单元：例如求职中心跨越 Web 与两个 FastAPI 包，小程序则作为独立客户端适配账号、简历和求职功能。
 
 ## 本地请求路径
 
@@ -21,9 +21,9 @@ Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全�
 
 同一 Vite 配置把 `@` 解析到 `apps/web/src`，与 TypeScript、Vitest 和 `components.json` 的路径约定一致；集中 UI 组件和 shadcn 生成源码使用该别名，不影响浏览器请求路径。
 
-浏览器插件从独立的 `chrome-extension://` 源运行，默认通过 `http://127.0.0.1:5173` 或 `http://localhost:5173` 调用同一 Vite `/api` 代理，并携带用户已经在对应 Web 源站建立的 HttpOnly Cookie 会话。插件 Manifest 只声明 BOSS 站点、本地 LinkCV 源站和构建时显式配置的 LinkCV 源站权限；内容脚本不直接访问 LinkCV API。
+浏览器插件从独立的 `chrome-extension://` 源运行，默认通过 `http://127.0.0.1:5173` 或 `http://localhost:5173` 调用同一 Vite `/api` 代理，并携带用户已经在对应 Web 源站建立的 HttpOnly Cookie 会话。插件 Manifest 只声明 BOSS 站点、本地 LinkResume 源站和构建时显式配置的 LinkResume 源站权限；内容脚本不直接访问 LinkResume API。
 
-FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载浏览器路由，并在根路径挂载不出现在 OpenAPI 的 `/internal/agent` 服务间路由。智能助手请求由 FastAPI 写入 MySQL 后以服务 token 转发到独立 Pi 服务；Pi 再用另一枚 token 调用受控内部工具，浏览器不直接访问 Pi。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 和 DOCX 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，Markdown 在 Worker 内本地转换。详细接口见 [HTTP 契约](../api/http-contracts.md)。
+FastAPI 在 `apps/backend/src/linkresume/main.py` 以 `/api` 前缀挂载浏览器路由，并在根路径挂载不出现在 OpenAPI 的 `/internal/agent` 服务间路由。智能助手请求由 FastAPI 写入 MySQL 后以服务 token 转发到独立 Pi 服务；Pi 再用另一枚 token 调用受控内部工具，浏览器不直接访问 Pi。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 和 DOCX 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，Markdown 在 Worker 内本地转换。详细接口见 [HTTP 契约](../api/http-contracts.md)。
 
 ## 数据与鉴权
 

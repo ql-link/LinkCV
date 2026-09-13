@@ -3,9 +3,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from linkcv.domain.resume_document import ResumeDocument, default_resume_document
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.domain.resume_style import ResumePresentation, default_template_manifest
+from linkresume.domain.resume_document import ResumeDocument, default_resume_document
+from linkresume.domain.resume_snapshot import parse_resume_snapshot
+from linkresume.domain.resume_style import ResumePresentation, default_template_manifest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 REVISION_PATH = (
@@ -32,7 +32,7 @@ MANIFEST_REPAIR_REVISION_PATH = (
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkcv_revision_0037", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("linkresume_revision_0037", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -41,7 +41,7 @@ def load_revision():
 
 def load_deduplication_revision():
     spec = importlib.util.spec_from_file_location(
-        "linkcv_revision_0038", DEDUPLICATION_REVISION_PATH
+        "linkresume_revision_0038", DEDUPLICATION_REVISION_PATH
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -51,7 +51,7 @@ def load_deduplication_revision():
 
 def load_block_id_revision():
     spec = importlib.util.spec_from_file_location(
-        "linkcv_revision_0039", BLOCK_ID_REVISION_PATH
+        "linkresume_revision_0039", BLOCK_ID_REVISION_PATH
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -61,7 +61,7 @@ def load_block_id_revision():
 
 def load_manifest_repair_revision():
     spec = importlib.util.spec_from_file_location(
-        "linkcv_revision_0040", MANIFEST_REPAIR_REVISION_PATH
+        "linkresume_revision_0040", MANIFEST_REPAIR_REVISION_PATH
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

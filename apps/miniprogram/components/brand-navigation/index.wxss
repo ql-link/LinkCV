@@ -1,0 +1,11 @@
+:host { display:block;flex-shrink:0;font-family:"LinkResume Career UI",-apple-system,"PingFang SC",sans-serif;color:#17191c; }
+.navigation-space { flex-shrink:0; }
+/* Only the brand sits above sheets; secondary navigation stays behind their masks. */
+.brand-fixed { position:fixed;left:0;right:0;top:0;z-index:1000010;background:#f4f6f8; }
+.brand-row { height:50px;display:flex;align-items:center;padding:0 20px 4px;box-sizing:border-box; }
+.wordmark { display:block;width:114.4px;height:23.47px;flex-shrink:0; }
+.page-navigation { position:fixed;left:0;right:0;z-index:100;height:72px;padding:0 20px 8px;display:flex;flex-direction:column;gap:4px;box-sizing:border-box;background:#f4f6f8; }
+.page-navigation button.back-button[size="mini"] { display:flex;align-items:center;justify-content:flex-start;align-self:flex-start;gap:4px;flex-shrink:0;box-sizing:border-box;width:64px;height:32px;min-width:0;min-height:0;padding:0;margin:0 auto 0 0;border:0;border-radius:0;background:transparent;font-family:inherit;font-weight:400;font-size:13px;line-height:20px;color:#3f4752;text-align:left;white-space:nowrap; }
+.back-arrow, .back-label { display:block;flex-shrink:0; }
+.back-button::after { border:0; }
+.page-title { display:block;font-size:20px;line-height:28px;font-weight:700; }

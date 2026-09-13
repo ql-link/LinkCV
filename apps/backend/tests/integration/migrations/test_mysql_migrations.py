@@ -16,22 +16,22 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from linkcv.application.resumes.service import (
+from linkresume.application.resumes.service import (
     ResumeTitleConflict,
     create_resume_from_template,
 )
-from linkcv.core.database import utc_now
-from linkcv.core.errors import ApiError
-from linkcv.domain.resume import CanonicalResumeDocument, TemplateDefinition
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
-from linkcv.modules.agent.service import (
+from linkresume.core.database import utc_now
+from linkresume.core.errors import ApiError
+from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition
+from linkresume.domain.resume_snapshot import parse_resume_snapshot
+from linkresume.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
+from linkresume.modules.agent.service import (
     create_proposal,
     create_session,
     delete_resume_agent_data,
     reject_proposal,
 )
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
@@ -59,15 +59,15 @@ def canonical_editor_markdown(data: dict[str, Any]) -> str:
 
 
 def migration_test_url() -> str:
-    raw = os.environ.get("LINKCV_TEST_MYSQL_URL")
+    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
     if not raw:
         pytest.skip(
-            "LINKCV_TEST_MYSQL_URL is required for destructive MySQL migration tests"
+            "LINKRESUME_TEST_MYSQL_URL is required for destructive MySQL migration tests"
         )
     url = make_url(raw)
-    if url.database != "linkcv" or url.host not in {"127.0.0.1", "localhost"}:
+    if url.database != "linkresume" or url.host not in {"127.0.0.1", "localhost"}:
         pytest.fail(
-            "LINKCV_TEST_MYSQL_URL must target a local, disposable database named linkcv"
+            "LINKRESUME_TEST_MYSQL_URL must target a local, disposable database named linkresume"
         )
     return raw
 
@@ -80,7 +80,7 @@ def invoke_alembic(
         {
             "APP_ENV": "development",
             "DATABASE_URL": database_url,
-            "LINKCV_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
+            "LINKRESUME_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
         }
     )
     return subprocess.run(

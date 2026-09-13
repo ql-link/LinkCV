@@ -3,9 +3,9 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from linkcv.domain.resume_document import default_resume_document
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.domain.resume_style import ResumePresentation, default_template_manifest
+from linkresume.domain.resume_document import default_resume_document
+from linkresume.domain.resume_snapshot import parse_resume_snapshot
+from linkresume.domain.resume_style import ResumePresentation, default_template_manifest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 REVISION_PATH = (
@@ -17,7 +17,7 @@ REVISION_PATH = (
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkcv_revision_0041", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("linkresume_revision_0041", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -69,7 +69,7 @@ def legacy_editor_snapshot(markdown: str) -> tuple[dict, dict]:
 def test_repair_splits_sidebar_content_and_removes_page_projection() -> None:
     revision = load_revision()
     markdown = """:::: sidebar
-![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:108")
+![虚构头像](/templates/avatar-cat.jpg "linkresume-avatar:108")
 
 ### 基本信息
 
@@ -131,7 +131,7 @@ def test_repair_promotes_a_private_editor_avatar_to_content_metadata() -> None:
     revision = load_revision()
     data, style = legacy_editor_snapshot(
         """:::: sidebar
-![用户头像](/api/resumes/1/assets/avatar.png "linkcv-avatar:96")
+![用户头像](/api/resumes/1/assets/avatar.png "linkresume-avatar:96")
 ::::
 
 :::: main

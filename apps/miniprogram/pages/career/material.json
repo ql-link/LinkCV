@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "相关资料",
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index",
+    "career-tabs": "/custom-tab-bar/index"
+  },
+  "navigationStyle": "custom"
+}
