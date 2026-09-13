@@ -6,6 +6,26 @@ export type SelectionRange = {
 export type SelectionRectReader = () => DOMRect;
 export type SelectionPositionUpdater = () => void;
 
+export function selectionBubbleContainer(editorElement: Element, fallback: Element): Element {
+  return editorElement.closest(".resume-workbench") ?? fallback;
+}
+
+export function selectionEndAnchorRect(rect: Pick<DOMRect, "right" | "bottom">): DOMRect {
+  const x = rect.right;
+  const y = rect.bottom;
+  return {
+    x,
+    y,
+    top: y,
+    right: x,
+    bottom: y,
+    left: x,
+    width: 0,
+    height: 0,
+    toJSON: () => ({ x, y, top: y, right: x, bottom: y, left: x, width: 0, height: 0 }),
+  } as DOMRect;
+}
+
 export function shouldShowSelectionAgentBubble({
   editable,
   selectionEmpty,
