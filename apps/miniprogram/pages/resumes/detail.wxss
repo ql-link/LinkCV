@@ -379,3 +379,8 @@
   font-size: 19rpx;
   line-height: 1.55;
 }
+
+.preview-shell { height:calc(100vh - var(--navigation-height));overflow:hidden;display:flex;flex-direction:column; }
+.preview-shell .preview-document { min-height:0;height:100%; }
+.preview-shell .preview-viewport { flex:1;min-height:0;height:0; }
+.preview-shell .preview-state { min-height:0;height:100%; }

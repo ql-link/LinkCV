@@ -95,3 +95,7 @@
 ## 修改联动与验证
 
 岗位来源契约变化还需同步插件 `contracts.ts`、Manifest 权限和导入测试；求职状态变化需同步看板、列表、排期、复盘和 Agent 上下文。兼容期内服务端继续维护旧扁平阶段字段，旧标签只用于历史投影，新 Web 以 `current_stage`、有序 `stages`、`phase` 和 `lifecycle_status` 为准。主要验证入口为后端 `test_job_descriptions.py`、`test_interviews.py`、`test_job_description_import.py`，以及 Web `JobSmartImportDialog` 和 `InterviewCenterPage` 测试。
+
+## 小程序求职跟进
+
+微信客户端提供面试安排与求职记录两个入口，覆盖时间表、当前阶段与历史、追加阶段、记录首次投递、安排增改与取消、准备和面试文字记录、显式完成本场、Offer 待遇、终止求职及只读岗位/投递简历。岗位导入和简历编辑继续使用网页端。渠道调用与版本预览边界见[小程序架构](../internals/miniprogram.md)，数据、状态机与 Web 共用。

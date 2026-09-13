@@ -51,12 +51,13 @@ const privacySetting = async () => ({
   privacyContractName: "《LinkResume 隐私保护指引》",
 });
 
-test("app starts on resumes and exposes only resumes and profile tabs", () => {
+test("app starts on resumes and exposes resumes, career and profile tabs", () => {
   assert.equal(appConfig.pages[0], "pages/resumes/index");
   assert.equal(resumesPageConfig.disableScroll, true);
   assert.equal(resumesPageConfig.enablePullDownRefresh, false);
   assert.deepEqual(appConfig.tabBar.list, [
     { pagePath: "pages/resumes/index", text: "简历" },
+    { pagePath: "pages/career/index", text: "求职" },
     { pagePath: "pages/profile/index", text: "我的" },
   ]);
   assert.equal(appConfig.pages.includes("pages/home/index"), false);
@@ -642,4 +643,143 @@ test("demo resume contact details stay visibly fictional and the disclaimer rema
   assert.match(demoDetailScript, /phone: "138 XXXX XXXX"/);
   assert.match(demoDetailTemplate, /示例简历 · 内容为虚构信息/);
   assert.match(demoDetailTemplate, /以上姓名、联系方式与经历均为虚构，仅用于示例浏览。/);
+});
+
+test("career guest makes no private requests and opens explicit login", async () => {
+  const navigations = [];
+  await withPage("../pages/career/index", {
+    "../services/auth": { hasSession: () => false },
+    "../services/career": { listSessions: async () => { throw Error("private request"); }, listApplications: async () => { throw Error("private request"); } },
+  }, { navigateTo: ({ url }) => navigations.push(url) }, async (page) => {
+    await page.onShow(); assert.equal(page.data.guest, true); assert.equal(page.data.loading, false); page.goLogin();
+  });
+  assert.deepEqual(navigations, ["/pages/login/index?returnTo=%2Fpages%2Fcareer%2Findex"]);
+});
+
+test("career loads every application page, filters and routes to real details", async () => {
+  const navigations = [], requests = [];
+  const application = { id: "1", company_name_snapshot: "星河科技", job_title_snapshot: "前端工程师", phase: "applied", status: "active", lifecycle_status: "active", stage_state: "awaiting_schedule", current_stage: { id: "7", stage_type: "interview", stage_label: "技术二面" }, job_snapshot: {} };
+  await withPage("../pages/career/index", {
+    "../services/auth": { hasSession: () => true },
+    "../services/career": {
+      listApplications: async (options) => { requests.push(options); return options.cursor ? { items: [{ ...application, id: "2", company_name_snapshot: "云杉设计" }] } : { items: [application], next_cursor: "next" }; },
+      listSessions: async () => ({ items: [] }),
+    },
+  }, { navigateTo: ({ url }) => navigations.push(url) }, async (page) => {
+    await page.onShow(); assert.equal(page.data.applications.length, 2); assert.equal(page.data.guest, false);
+    page.search({ detail: { value: "星河" } }); assert.equal(page.data.visibleApplications.length, 1);
+    page.switchTab({ currentTarget: { dataset: { tab: "applications" } } }); assert.equal(page.data.activeTab, "applications");
+    page.openApplication({ currentTarget: { dataset: { id: "1" } } });
+    page.openSession({ currentTarget: { dataset: { id: "8" } } });
+    assert.equal(page.data.sessionId,"8");page.closeSession();assert.equal(page.data.sessionId,"");
+  });
+  assert.equal(requests[1].cursor, "next");
+  assert.deepEqual(navigations, ["/pages/career/application?id=1"]);
+});
+
+test('career detail paints its loading state before fetching and shows application before sessions finish', async () => {
+  let resolveApplication, resolveSessions;
+  const calls=[];
+  await withPage('../pages/career/application', {
+    '../services/auth': {hasSession:()=>true},
+    '../services/career': {
+      getApplication:()=>{calls.push('application');return new Promise(r=>{resolveApplication=r;});},
+      listSessions:()=>{calls.push('sessions');return new Promise(r=>{resolveSessions=r;});},
+    },
+  }, {hideLoading(){}}, async page => {
+    page.onLoad({id:'1'});
+    page.onShow();
+    assert.equal(page.data.loading,true);
+    assert.deepEqual(calls,[]);
+    const ready=page.onReady();
+    assert.deepEqual(calls,['application','sessions']);
+    resolveApplication({application:{id:'1',company_name_snapshot:'示例公司',job_title_snapshot:'工程师',job_snapshot:{},stages:[],phase:'pending',lifecycle_status:'active',status:'active'}});
+    await new Promise(r=>setImmediate(r));
+    assert.equal(page.data.app.company_name_snapshot,'示例公司');
+    assert.equal(page.data.loading,true);
+    resolveSessions({items:[]});await ready;
+    assert.equal(page.data.loading,false);
+    assert.equal(page.data.error,'');
+  });
+});
+
+test('opening a career card immediately indicates loading and handles navigation failure', async () => {
+  const events=[];let navigation;
+  await withPage('../pages/career/index', {}, {
+    showLoading:()=>events.push('loading'),hideLoading:()=>events.push('hidden'),
+    navigateTo:options=>{navigation=options;events.push('navigate');},
+    showToast:()=>events.push('error'),
+  }, page=>{
+    const event={currentTarget:{dataset:{id:'1'}}};
+    page.openApplication(event);page.openApplication(event);
+    assert.deepEqual(events,['loading','navigate']);
+    navigation.fail();
+    assert.deepEqual(events,['loading','navigate','hidden','error']);
+    page.openApplication(event);
+    assert.equal(events.at(-1),'navigate');navigation.success();
+    assert.equal(events.at(-1),'hidden');
+  });
+});
+
+test('career uses an inner refresher without native page pull-down', async () => {
+  const config = require('../pages/career/index.json');
+  assert.equal(config.disableScroll, true);
+  assert.equal(config.enablePullDownRefresh, false);
+  assert.equal(config.allowsBounceVertical, 'NO');
+  await withPage('../pages/career/index', {}, {}, async page => {
+    let finish, requests = 0;
+    page.loadPage = () => { requests++; return new Promise(resolve => { finish = resolve; }); };
+    const refresh = page.handleRefresherRefresh();
+    assert.equal(page.data.refresherTriggered, true);
+    await page.handleRefresherRefresh();
+    assert.equal(requests, 1);
+    finish();
+    await refresh;
+    assert.equal(page.data.refresherTriggered, false);
+  });
+});
+
+test('career inner refresher stops after a failed refresh and allows retry', async () => {
+  await withPage('../pages/career/index', {}, {}, async page => {
+    page.loadPage = async () => { throw new Error('network unavailable'); };
+    await assert.rejects(page.handleRefresherRefresh(), /network unavailable/);
+    assert.equal(page.data.refresherTriggered, false);
+    let retried = false;
+    page.loadPage = async () => { retried = true; };
+    await page.handleRefresherRefresh();
+    assert.equal(retried, true);
+    assert.equal(page.data.refresherTriggered, false);
+  });
+});
+
+test('profile content renders without waiting for resume counts', async () => {
+  let releaseCounts;
+  const pendingCounts = new Promise(resolve => { releaseCounts = resolve; });
+  await withPage('../pages/profile/index', {
+    '../services/auth': { hasSession: () => true },
+    '../services/account': { getProfile: async () => ({ nickname: '测试用户', avatar_url: '' }) },
+    '../services/resumes': { listResumes: () => pendingCounts },
+  }, { getWindowInfo: () => ({ statusBarHeight: 37 }) }, async page => {
+    await page.loadProfile();
+    assert.equal(page.data.loading, false);
+    assert.equal(page.data.nickname, '测试用户');
+    assert.equal(page.data.resumeCount, 0);
+    releaseCounts([{ id: 'test-resume' }]);
+    await flush();
+    assert.equal(page.data.resumeCount, 1);
+  });
+});
+
+test('login starts data and view preparation before switching immediately to the requested tab', async () => {
+  const calls = [];
+  await withPage('../pages/login/index', {
+    '../services/auth': {},
+    '../services/tabPrefetch': { schedule: () => calls.push('data') },
+    '../services/tabResources': { prepare: () => calls.push('view') },
+  }, { getWindowInfo: () => ({ statusBarHeight: 37 }), switchTab: ({ url }) => calls.push(url) }, async page => {
+    page.data.returnTo = '/pages/profile/index';
+    const entering = page.enterReturnTarget();
+    assert.deepEqual(calls, ['data', 'view', '/pages/profile/index']);
+    await entering;
+  });
 });

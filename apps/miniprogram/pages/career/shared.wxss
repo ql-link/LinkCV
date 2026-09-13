@@ -1,0 +1,33 @@
+/* Shared Figma geometry: 390px canvas, 20px gutter, 18px panel inset. */
+page { background:#f4f6f8; color:#17191c; font-family:"LinkCV Career UI",-apple-system,"PingFang SC",sans-serif; }
+.career-page { padding:8px 20px calc(24px + env(safe-area-inset-bottom)); }
+.panel { background:#fff;border-radius:14px;padding:20px 18px;margin-bottom:14px; }
+.section { display:flex;flex-direction:column;gap:10px; }
+.section + .section { border-top:1px solid rgba(219,224,232,.6);margin-top:18px;padding-top:18px; }
+.title { display:block;font-size:20px;font-weight:700;line-height:1.45; }
+.heading { display:block;font-size:18px;font-weight:700;line-height:1.45;margin:0; }
+.subtitle { display:block;font-size:14px;line-height:1.45;color:#3f4752;margin:0; }
+.hint { display:block;font-size:12px;line-height:1.45;color:#6f7a8c;margin:0; }
+.row { display:flex;align-items:center;gap:8px; }.spread { justify-content:space-between; }.grow { flex:1;min-width:0; }
+.status { display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.45;margin:0; }
+.tone-accent { color:#145ed6; }.tone-success { color:#267a4d; }.tone-warning { color:#9a5b13; }.tone-offer { color:#9a6a00; }.tone-neutral { color:#6f7a8c; }.tone-danger { color:#c43b3b; }
+.career-page button { box-sizing:border-box;width:100%;max-width:none;min-width:0;margin:0;padding:0 12px;font-family:inherit;font-size:14px;font-weight:400;line-height:1.45;border-radius:12px; }
+button::after { border:0; }
+.career-page .primary,.career-page .secondary { display:flex;align-items:center;justify-content:center;min-height:44px;padding:10px;font-size:14px;font-weight:700; }
+.primary { color:#fff;background:#17191c; }.secondary { color:#17191c;background:#fff;border:1px solid #dbe0e8; }
+button[disabled] { opacity:.45; }
+.career-page .link { display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;min-height:24px;padding:0;background:transparent;text-align:left;font-size:14px;line-height:1.45;color:#3f4752; }
+.career-page .link.tone-accent { color:#145ed6; }.chevron { margin-left:auto;color:#6f7a8c; }
+.state { padding:20px;text-align:left;margin-top:80px; }.state .primary { margin-top:16px; }
+.error { background:#fff0f0;color:#c43b3b;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;line-height:1.5; }
+.dock { position:fixed;bottom:0;left:0;right:0;z-index:10;background:#fff;padding:16px 16px max(36px,env(safe-area-inset-bottom));display:flex;gap:10px; }
+.dock .primary { flex:1;width:0;min-width:0; }.dock .secondary { flex:0 0 76px;width:76px;padding:8px 4px; }
+.with-dock { padding-bottom:calc(112px + env(safe-area-inset-bottom)); }
+.label { display:block;font-size:13px;line-height:19px;color:#6f7a8c;margin:0; }
+input,textarea,.picker-value { background:#f9fafb;border-radius:10px;padding:12px;font-family:inherit;font-size:14px;color:#17191c;box-sizing:border-box; }
+input,.picker-value { min-height:44px; }.picker-value { display:flex;align-items:center;line-height:20px; }
+textarea { width:100%;min-height:120px;line-height:20px; }.preserve { white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.45; }
+.field-row { display:flex;gap:8px; }.field-row picker { flex:1;min-width:0; }
+.empty { color:#6f7a8c;font-size:13px;line-height:1.5;padding:12px 0; }
+.native-field { display:flex;align-items:center;width:100%;height:44px;padding:0 12px;box-sizing:border-box;border-radius:10px;background:#f9fafb; }
+.career-page .native-text-input { display:block;width:100%;flex:1;min-width:0;height:20px;min-height:0;padding:0;margin:0;border:0;border-radius:0;background:transparent;font-family:inherit;font-size:14px;line-height:20px;box-sizing:content-box; }

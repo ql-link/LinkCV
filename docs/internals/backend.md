@@ -121,7 +121,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 LinkCV 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。Linux root 环境在 `runuser` 和专用 `linkcv-pdf` 账号可用时降权启动；Windows 或缺少 Unix 账号 API 时直接启动 Node，并继续使用相同的输入、输出、并发与超时边界。简历图片上传与 PDF 读取共用 10 MiB 单图上限，当前快照内所有私有图片的原始二进制总量也限制为 10 MiB；更新、模板切换和版本恢复先用对象元数据校验同一导出契约，PDF 渲染再次读取并校验作为纵深防线。渲染 JSON 输入上限为 24 MiB，以容纳 Base64 编码增量和简历快照。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
 
-小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。
+小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。`core/pdfium_lock.py` 的进程级互斥锁覆盖 PNG 栅格化和岗位资料 PDF 校验的原生调用与资源释放；预览容量限制保留，避免并行调用 PDFium 导致进程崩溃。
 
 `0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；需要恢复旧表与数据时使用迁移前备份。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
 
@@ -224,3 +224,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 普通登录用户通过 FastAPI 读取当前元数据和流式下载，MinIO Bucket policy、Endpoint 和对象键都不暴露给浏览器。下载前重新核对当前版本、对象大小和 SHA-256 元数据，页面停留期间版本已变化时要求刷新，不回退到已删除的历史对象。管理员通过独立 current 接口区分无插件、已上架和已下架三种状态。下架将 `current.json.status` 改为 `unpublished`，成功后用户下载关闭，但当前版本信息和该版本 ZIP 均保留；重新上架校验保留 ZIP 后切回 `published`，无需再次上传。永久删除与发布共用进程锁，并在插件仍已上架时先写入 unpublished 指针关闭下载，再删除 ZIP 和指针；部分失败保留 unpublished 状态，允许重复删除完成收尾。
 
 资料文件夹的上传与移动接口均要求现存的自有目标文件夹，并锁定目标文件夹直到写入提交。非空文件夹删除必须传 `confirm_contents=true`；删除过程锁定文件夹及其资料，预检任务状态，清理对象后在数据库事务中删除资料、解析任务和文件夹。数据库现有 nullable 外键保留用于历史结构兼容，公开写入接口不再产生未分类资料。
+
+## 小程序求职适配
+
+`modules/miniprogram/career_routes.py` 在专用 Bearer 渠道上复用 `application/interviews/service.py`，提供求职/场次详情、阶段追加、排期、文字记录、Offer 和终止操作。响应补齐阶段历史及当前场次完成状态；锁、幂等与归属检查沿用业务服务；排期允许时间重叠，不新建状态机或数据库表。投递简历预览仅从本人求职引用定位本人不可变简历版本，再复用小程序 PDF/PNG 渲染，不扩大简历中心的版本选择范围。

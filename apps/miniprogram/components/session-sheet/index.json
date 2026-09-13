@@ -1,0 +1,7 @@
+{
+  "component": true,
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index",
+    "schedule-sheet": "/components/schedule-sheet/index"
+  }
+}
