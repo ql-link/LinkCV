@@ -119,7 +119,6 @@ import {
 } from "./CareerDetailViews";
 import "./interviews.css";
 
-const FLOATING_ERROR_NOTICE_DURATION_MS = 5000;
 
 type InterviewStatus = "upcoming" | "active" | "completed" | "cancelled";
 type ScheduleGranularity = CalendarView;
@@ -552,7 +551,6 @@ export function InterviewCenterPage({
   const selectedIdRef = useRef<string | null>(initialSessionId ?? null);
   const loadRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
-  const scheduleToastTimeoutRef = useRef<number | null>(null);
   const noticeIdRef = useRef(0);
   const isApplicationDetailRoute = view === "applications" && Boolean(initialApplicationId);
   const isApplicationSessionDialogRoute = isApplicationDetailRoute && Boolean(initialSessionId);
@@ -574,26 +572,7 @@ export function InterviewCenterPage({
 
   const pushScheduleToast = useCallback((message: string) => {
     setScheduleToast(message);
-    if (scheduleToastTimeoutRef.current !== null) {
-      window.clearTimeout(scheduleToastTimeoutRef.current);
-    }
-    scheduleToastTimeoutRef.current = window.setTimeout(() => {
-      setScheduleToast(null);
-      scheduleToastTimeoutRef.current = null;
-    }, 4500);
   }, []);
-
-  useEffect(() => () => {
-    if (scheduleToastTimeoutRef.current !== null) {
-      window.clearTimeout(scheduleToastTimeoutRef.current);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), FLOATING_ERROR_NOTICE_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   const openCreateInterview = (startAt?: string, endAt?: string) => {
     setCreateInterviewStartAt(startAt ?? null);
@@ -896,11 +875,21 @@ export function InterviewCenterPage({
       )}
       <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}${!isStandaloneDetailRoute && view === "schedule" ? " career-schedule-content" : ""}`}>
       {notice && (
-        <FeedbackNotice key={notice.id} className="interview-error-notice" kind="error" placement="floating">
+        <FeedbackNotice
+          key={notice.id}
+          className="interview-error-notice"
+          kind="error"
+          placement="floating"
+          onDismiss={() => setNotice(null)}
+        >
           {notice.message}
         </FeedbackNotice>
       )}
-      {scheduleToast && <FeedbackNotice kind="success" placement="floating">{scheduleToast}</FeedbackNotice>}
+      {scheduleToast && (
+        <FeedbackNotice kind="success" placement="floating" onDismiss={() => setScheduleToast(null)}>
+          {scheduleToast}
+        </FeedbackNotice>
+      )}
       {(loading && !hasLoadedData) || applicationDetailPending ? (
         <PageLoading label="正在加载求职数据…" />
       ) : isApplicationDetailRoute ? (
@@ -1328,26 +1317,13 @@ function ApplicationsView({
   const [deletingApplicationId, setDeletingApplicationId] = useState<string | null>(null);
   const [dragRejectionNotice, setDragRejectionNotice] = useState<{ id: number; message: string } | null>(null);
   const dragRejectionNoticeIdRef = useRef(0);
-  const dragRejectionNoticeTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(clock);
   }, []);
-  useEffect(() => () => {
-    if (dragRejectionNoticeTimerRef.current !== null) {
-      window.clearTimeout(dragRejectionNoticeTimerRef.current);
-    }
-  }, []);
   const showDragRejectionNotice = useCallback((message: string) => {
-    if (dragRejectionNoticeTimerRef.current !== null) {
-      window.clearTimeout(dragRejectionNoticeTimerRef.current);
-    }
     dragRejectionNoticeIdRef.current += 1;
     setDragRejectionNotice({ id: dragRejectionNoticeIdRef.current, message });
-    dragRejectionNoticeTimerRef.current = window.setTimeout(() => {
-      setDragRejectionNotice(null);
-      dragRejectionNoticeTimerRef.current = null;
-    }, FLOATING_ERROR_NOTICE_DURATION_MS);
   }, []);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleApplications = sortApplications(
@@ -1390,6 +1366,7 @@ function ApplicationsView({
             kind="error"
             placement="floating"
             title="无法更新求职阶段"
+            onDismiss={() => setDragRejectionNotice(null)}
           >
             {dragRejectionNotice.message}
           </FeedbackNotice>

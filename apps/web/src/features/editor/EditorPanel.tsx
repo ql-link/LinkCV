@@ -1,7 +1,7 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { FeedbackNotice } from "@/components/ui";
 import { api } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
@@ -36,12 +36,6 @@ export function EditorPanel() {
   const pendingImageInsertRangeRef = useRef<EditorInsertRange | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!uploadError) return;
-    const timer = window.setTimeout(() => setUploadError(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [uploadError]);
 
   const handleCommand = (command: EditorCommand) => {
     if (!editorRef.current) return;
@@ -94,7 +88,7 @@ export function EditorPanel() {
         disabledCommands={isUploadingImage ? ["image"] : []}
       />
       {uploadError && (
-        <FeedbackNotice kind="error" placement="floating">
+        <FeedbackNotice kind="error" placement="floating" onDismiss={() => setUploadError(null)}>
           {uploadError}
         </FeedbackNotice>
       )}

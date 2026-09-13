@@ -228,7 +228,7 @@ export function ResumeTemplatesPage() {
                 }}
               />
               {createError && (
-                <FeedbackNotice kind="error" placement="floating">
+                <FeedbackNotice kind="error" placement="floating" onDismiss={() => setCreateError(null)}>
                   {createError}
                 </FeedbackNotice>
               )}

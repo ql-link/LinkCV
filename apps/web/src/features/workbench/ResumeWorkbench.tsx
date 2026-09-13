@@ -1307,12 +1307,6 @@ export function ResumeWorkbench() {
   }, [activeResumeId, loadVersions]);
 
   useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
     if (!zoomFeedback) return;
     const timer = window.setTimeout(() => setZoomFeedback(null), 900);
     return () => window.clearTimeout(timer);
@@ -1897,7 +1891,9 @@ export function ResumeWorkbench() {
             </motion.div>
           )}
           {toast && (
-            <FeedbackNotice kind={toast.kind} placement="floating">{toast.label}</FeedbackNotice>
+            <FeedbackNotice kind={toast.kind} placement="floating" onDismiss={() => setToast(null)}>
+              {toast.label}
+            </FeedbackNotice>
           )}
         </AnimatePresence>
 

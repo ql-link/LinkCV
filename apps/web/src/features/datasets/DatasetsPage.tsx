@@ -397,7 +397,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const [selectedDatasetIds, setSelectedDatasetIds] = useState<Set<string>>(() => new Set());
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<DatasetRecord[] | null>(null);
   const [busyAction, setBusyAction] = useState<DatasetAction>(null);
-  const [fading, setFading] = useState(false);
 
   const [folders, setFolders] = useState<DatasetFolder[]>([]);
   const [selectedFolderId, setSelectedFolderId] = useState<string>(() => initialFolderId || "all");
@@ -607,18 +606,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
       setNotice(message ? { kind: "error", message } : null);
     },
   });
-
-  useEffect(() => {
-    if (!notice) return;
-    setFading(false);
-    const visibleDuration = notice.kind === "error" ? 5000 : 3000;
-    const fadeTimer = window.setTimeout(() => setFading(true), visibleDuration);
-    const removeTimer = window.setTimeout(() => setNotice(null), visibleDuration + 300);
-    return () => {
-      window.clearTimeout(fadeTimer);
-      window.clearTimeout(removeTimer);
-    };
-  }, [notice]);
 
   useEffect(() => {
     if (menuDatasetId === null) return;
@@ -1133,6 +1120,8 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
             <FeedbackNotice
               kind="error"
               placement="floating"
+              dismissKey={syncFailure}
+              onDismiss={() => setSyncFailure(null)}
               action={(
                 <Button
                   variant="link"
@@ -1523,7 +1512,12 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
       )}
 
       {notice && !syncFailure && (
-        <FeedbackNotice className={fading ? "is-fading" : undefined} kind={notice.kind} placement="floating">
+        <FeedbackNotice
+          kind={notice.kind}
+          placement="floating"
+          dismissKey={notice.message}
+          onDismiss={() => setNotice(null)}
+        >
           <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
         </FeedbackNotice>
       )}

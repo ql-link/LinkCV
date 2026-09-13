@@ -528,7 +528,7 @@ describe("DatasetsPage", () => {
     expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument();
   });
 
-  it("失败提示展示五秒后淡出并自动移除", async () => {
+  it("失败提示展示三秒后自动移除", async () => {
     const record = { ...uploadBaseRecord, folder_id: batchFolder.id };
     vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [batchFolder], total_count: 0, uncategorized_count: 0 });
     vi.useFakeTimers();
@@ -542,9 +542,9 @@ describe("DatasetsPage", () => {
       });
 
       expect(screen.getByRole("alert")).toHaveTextContent("不支持.exe");
-      act(() => vi.advanceTimersByTime(5000));
-      expect(screen.getByRole("alert")).toHaveClass("is-fading");
-      act(() => vi.advanceTimersByTime(300));
+      act(() => vi.advanceTimersByTime(2999));
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(1));
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
