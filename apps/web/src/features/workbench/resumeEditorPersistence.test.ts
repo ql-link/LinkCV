@@ -615,6 +615,67 @@ const canonicalEditingFixture: CanonicalResumeDocument = {
 };
 
 describe("canonical resume editing projection", () => {
+  it("preserves partial font sizes in names, titles, contact values and entry fields through save and reload", () => {
+    const document = clone(canonicalEditingFixture);
+    const values = [
+      document.identity.name!, document.identity.headline!, ...document.identity.contacts,
+      document.sections[0].title!, ...Object.values(document.sections[0].entries[0].fields).filter((field) => field != null),
+    ];
+    const editor = new Editor({ extensions: resumeEditorExtensions, content: canonicalResumeDocumentToEditorDocument(document) });
+    try {
+      values.forEach((value, index) => {
+        let selection = 0;
+        editor.state.doc.descendants((node, position) => {
+          if (!node.isTextblock) return;
+          let matches = false;
+          node.forEach((child) => { if (child.attrs.blockId === value.node_id) matches = true; });
+          if (!matches) return;
+          node.forEach((child, offset) => {
+            if (child.isText && child.text?.includes(value.value)) selection = position + 1 + offset + child.text.indexOf(value.value);
+          });
+        });
+        expect(selection).toBeGreaterThan(0);
+        editor.chain().setTextSelection({ from: selection, to: selection + 1 }).setMark("textStyle", { fontSize: `${12 + index}pt` }).run();
+      });
+      const saved = canonicalResumeDocumentFromEditorDocument(editor.getJSON(), document);
+      const savedValues = [
+        saved.identity.name!, saved.identity.headline!, ...saved.identity.contacts,
+        saved.sections[0].title!, ...Object.values(saved.sections[0].entries[0].fields).filter((field) => field != null),
+      ];
+      savedValues.forEach((value, index) => {
+        expect(value.value).toBe(values[index].value);
+        expect(value.runs?.[0].text).toBe(value.value[0]);
+        expect(value.runs?.[0].style.font_size_pt).toBe(12 + index);
+        expect(value.runs?.slice(1).every((run) => run.style.font_size_pt == null)).toBe(true);
+      });
+      const restored = canonicalResumeDocumentToEditorDocument(saved);
+      expect(canonicalResumeDocumentFromEditorDocument(restored, saved)).toEqual(saved);
+      editor.commands.setContent(restored);
+      editor.chain().selectAll().setMark("textStyle", { fontSize: null }).removeEmptyTextStyle().run();
+      const reset = canonicalResumeDocumentFromEditorDocument(editor.getJSON(), saved);
+      expect(reset.identity.name?.runs).toBeUndefined();
+      expect(reset.sections[0].title?.runs).toBeUndefined();
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it("preserves font sizes on generated field and contact labels separately from their values", () => {
+    const projection = canonicalResumeDocumentToEditorDocument(canonicalEditingFixture);
+    const visit = (node: JSONContent) => {
+      if (node.type === "text" && (node.text === "邮箱：" || node.text === "组织：")) {
+        node.marks = [{ type: "textStyle", attrs: { fontSize: "18pt" } }];
+      }
+      node.content?.forEach(visit);
+    };
+    visit(projection);
+    const saved = canonicalResumeDocumentFromEditorDocument(projection, canonicalEditingFixture);
+    expect(saved.identity.contacts[0].prefix_runs?.[0].style.font_size_pt).toBe(18);
+    expect(saved.identity.contacts[0].runs).toBeUndefined();
+    expect(saved.sections[0].entries[0].fields.organization?.prefix_runs?.[0].style.font_size_pt).toBe(18);
+    expect(canonicalResumeDocumentFromEditorDocument(canonicalResumeDocumentToEditorDocument(saved), saved)).toEqual(saved);
+  });
+
   it("keeps canonical ids while using TipTap only as an editing projection", () => {
     const editor = canonicalResumeDocumentToEditorDocument(canonicalFixture);
     const serialized = JSON.stringify(editor);

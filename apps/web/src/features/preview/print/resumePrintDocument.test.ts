@@ -65,6 +65,25 @@ function canonicalLayoutPlan(data = canonicalFixture(), templateKey = "classic-c
 }
 
 describe("统一简历打印文档", () => {
+  it("renders partial font sizes in names, section titles and contact labels from the saved snapshot", () => {
+    const data = canonicalFixture();
+    const run = (text: string, size: number | null) => ({
+      inline_type: "text" as const, text, marks: [], href: null,
+      style: { color: null, font_size_pt: size, highlight_color: null },
+    });
+    data.identity.name = { ...data.identity.name!, value: "张三", runs: [run("张", 24), run("三", null)] };
+    data.sections[0].title = { ...data.sections[0].title!, runs: [run("项目", 18), run("经历", null)] };
+    data.identity.contacts = [{
+      node_id: "node_printcontact00001", source_refs: [], contact_kind: "email", label: "邮箱", value: "sample@example.com",
+      runs: [run("sample@example.com", 12.5)], prefix_runs: [run("邮箱：", 10)],
+    }];
+    const html = renderResumePrintDocument(createResumeRenderRequest("局部字号", data, defaultCanonicalPresentation, undefined, canonicalLayoutPlan(data)));
+    expect(html).toContain('font-size:24pt">张</span>三');
+    expect(html).toContain('font-size:18pt">项目</span>经历');
+    expect(html).toContain('font-size:12.5pt">sample@example.com</span>');
+    expect(html).toContain('font-size:10pt">邮箱：</span>');
+  });
+
   it("从 canonical 快照生成稳定的只读打印 DOM", () => {
     const html = renderResumePrintDocument(createResumeRenderRequest(
       "打印测试", canonicalFixture(), defaultCanonicalPresentation, undefined, canonicalLayoutPlan(),
