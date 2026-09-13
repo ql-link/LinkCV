@@ -1,0 +1,18 @@
+appId: cn.linkresume.desktop
+productName: LinkCV
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+electronLanguages:
+  - zh-CN
+  - en-US
+mac:
+  category: public.app-category.productivity
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64

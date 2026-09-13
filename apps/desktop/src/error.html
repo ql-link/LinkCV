@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LinkCV</title>
+  <style>
+    :root { color-scheme: light; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, "PingFang SC", "Noto Sans Hans", sans-serif;
+      background: #f5f7fa;
+      color: #17233b;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    main {
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(23, 35, 59, 0.08);
+      padding: 48px 56px;
+      max-width: 420px;
+      text-align: center;
+    }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+    p { font-size: 14px; line-height: 1.7; color: #5b6577; margin-bottom: 28px; }
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 10px;
+      background: #2563eb;
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 500;
+      padding: 10px 32px;
+      cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #a8b3c4; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>无法连接 LinkCV</h1>
+    <p>请检查网络连接后重试；如果问题持续存在，可以先在浏览器中访问网页版继续使用。</p>
+    <button id="retry" type="button">重试</button>
+  </main>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    let allowed = "";
+    try {
+      const url = new URL(params.get("target") ?? "");
+      if (url.protocol === "https:" || url.protocol === "http:") {
+        allowed = url.toString();
+      }
+    } catch {
+      allowed = "";
+    }
+    const retry = document.getElementById("retry");
+    if (!allowed) {
+      retry.disabled = true;
+    } else {
+      retry.addEventListener("click", () => {
+        window.location.href = allowed;
+      });
+    }
+  </script>
+</body>
+</html>
