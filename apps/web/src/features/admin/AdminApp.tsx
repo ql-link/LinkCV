@@ -246,12 +246,6 @@ function AdminWorkspace({
     setToast(message);
   };
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(""), 4000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
   const openUserDetail = (userId: string) => {
     setSelectedUserId(userId);
     setDrawer("user");
@@ -387,7 +381,7 @@ function AdminWorkspace({
         )}
       </AnimatePresence>
       {toast && (
-        <FeedbackNotice kind={adminNoticeKind(toast)} placement="floating">
+        <FeedbackNotice kind={adminNoticeKind(toast)} placement="floating" onDismiss={() => setToast("")}>
           {toast}
         </FeedbackNotice>
       )}

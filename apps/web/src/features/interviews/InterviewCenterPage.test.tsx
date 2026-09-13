@@ -301,7 +301,7 @@ afterEach(() => {
 });
 
 describe("InterviewCenterPage API projections", () => {
-  it("顶部错误提示不显示关闭按钮并在 5 秒后自动消失", async () => {
+  it("顶部错误提示不显示关闭按钮并在 3 秒后自动消失", async () => {
     vi.useFakeTimers();
     mocks.listJobApplications.mockRejectedValue(new ApiRequestError(401, "UNAUTHORIZED"));
 
@@ -312,7 +312,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByRole("alert")).not.toHaveTextContent("UNAUTHORIZED");
     expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
 
-    act(() => vi.advanceTimersByTime(4999));
+    act(() => vi.advanceTimersByTime(2999));
     expect(screen.getByRole("alert")).toBeInTheDocument();
 
     act(() => vi.advanceTimersByTime(1));
