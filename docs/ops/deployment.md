@@ -55,6 +55,8 @@ Production Job。首次加入触发器后需手动运行一次 `linkresume-prod`
 
 Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供且权限为 `600`。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
 
+首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
+
 Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小程序扫码登录；管理员仍使用独立 `/admin/login`。微信公众平台必须把 `https://linkresume.cn` 同时配置为 request 与 downloadFile 合法域名并使用有效公网 HTTPS 证书；简历以 PNG 在小程序当前页面阅读，不使用 `web-view`，个人主体无需配置业务域名。上线前还要核对既有邮箱账号：系统不会仅凭同一使用者自动把新 openid 关联到旧邮箱账号，未绑定账号会生成新的微信账号而看不到旧简历；必须先完成受控账号映射或明确接受账号分离，不能直接假设历史数据会自动归并。
 
 ### 首次 Production SQLite 切换
