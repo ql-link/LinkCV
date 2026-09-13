@@ -2,7 +2,7 @@ import hashlib
 
 import pytest
 
-from linkcv.domain.job_source import InvalidJobSource, normalize_job_source
+from linkresume.domain.job_source import InvalidJobSource, normalize_job_source
 
 
 def test_boss_mobile_and_desktop_urls_share_one_source_identity() -> None:

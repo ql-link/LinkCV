@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the machine-readable LinkCV design contract and Settings Pattern."""
+"""Validate the machine-readable LinkResume design contract and Settings Pattern."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import yaml
 
 
 REPO_ROOT = Path(
-    os.environ.get("LINKCV_REPO_ROOT", Path(__file__).resolve().parents[2])
+    os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
 DESIGN_FILE = REPO_ROOT / "DESIGN.md"
 TOKENS_FILE = REPO_ROOT / "apps" / "web" / "src" / "design-system" / "tokens.css"

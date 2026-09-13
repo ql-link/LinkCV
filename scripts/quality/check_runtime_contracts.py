@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""校验 LinkCV 当前可确定判断的运行时契约。"""
+"""校验 LinkResume 当前可确定判断的运行时契约。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import yaml
 
 
 REPO_ROOT = Path(
-    os.environ.get("LINKCV_REPO_ROOT", Path(__file__).resolve().parents[2])
+    os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
 DEFAULT_CONFIG = REPO_ROOT / "scripts" / "quality" / "runtime-contract-rules.yaml"
 
@@ -95,7 +95,7 @@ def check_contracts(contracts: list[Contract], repo_root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="校验 LinkCV 运行时契约")
+    parser = argparse.ArgumentParser(description="校验 LinkResume 运行时契约")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args(argv)
 

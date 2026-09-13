@@ -274,6 +274,6 @@ function getLocationSnapshot() {
 
 export function useAppRoute() {
   const location = useSyncExternalStore(subscribeToLocation, getLocationSnapshot, () => "/");
-  const url = new URL(location, "http://linkcv.local");
+  const url = new URL(location, "http://linkresume.local");
   return parseAppRoute(url.pathname, url.search);
 }

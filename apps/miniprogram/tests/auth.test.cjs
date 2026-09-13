@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 function loadAuth(wxMock) {
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkcv.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
   global.wx = wxMock;
   const modulePath = require.resolve("../services/auth");
   delete require.cache[modulePath];
@@ -54,8 +54,8 @@ test("creates a session only after the user accepts the privacy agreement", asyn
 
   assert.equal(user.nickname, "张三");
   assert.deepEqual(requestData, { code: "wx-code", privacy_accepted: true });
-  assert.equal(storage.get("linkcv_access_token"), "access-token");
-  assert.equal(storage.get("linkcv_privacy_agreement_v1"), true);
+  assert.equal(storage.get("linkresume_access_token"), "access-token");
+  assert.equal(storage.get("linkresume_privacy_agreement_v1"), true);
 });
 
 test("logs into an existing account without enabling registration", async () => {

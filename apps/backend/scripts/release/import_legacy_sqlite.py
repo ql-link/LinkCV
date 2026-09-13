@@ -17,20 +17,20 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-import linkcv.models  # noqa: F401  # Register every mapped model.
-from linkcv.core.config import load_settings
-from linkcv.core.database import build_engine
-from linkcv.domain.resume_document import ResumeDocument, with_default_semantics
-from linkcv.domain.resume_snapshot import ResumeSnapshot
-from linkcv.domain.resume_style import ResumePresentation, default_template_manifest
-from linkcv.domain.resume.legacy_cutover import (
+import linkresume.models  # noqa: F401  # Register every mapped model.
+from linkresume.core.config import load_settings
+from linkresume.core.database import build_engine
+from linkresume.domain.resume_document import ResumeDocument, with_default_semantics
+from linkresume.domain.resume_snapshot import ResumeSnapshot
+from linkresume.domain.resume_style import ResumePresentation, default_template_manifest
+from linkresume.domain.resume.legacy_cutover import (
     blank_canonical_document,
     convert_legacy_document,
     convert_legacy_template,
     presentation_for_legacy,
 )
-from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
 
 LEGACY_SETTING_KEYS = {
     "fontFamily",
@@ -371,8 +371,8 @@ def _require_empty_target(session: Session) -> None:
 
 
 def import_plan(engine: Engine, plan: ImportPlan, *, execute: bool) -> None:
-    if engine.url.drivername.startswith("mysql+") and engine.url.database != "linkcv":
-        raise RuntimeError("legacy import target must be the linkcv database")
+    if engine.url.drivername.startswith("mysql+") and engine.url.database != "linkresume":
+        raise RuntimeError("legacy import target must be the linkresume database")
     with Session(engine) as session:
         with session.begin():
             _require_empty_target(session)

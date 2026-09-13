@@ -7,23 +7,23 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy import select
 
-import linkcv.models  # noqa: F401
-from linkcv.core.database import Base, build_engine, build_session_factory
-from linkcv.modules.identity.models import User
-from linkcv.modules.llm.crypto import CredentialCipher
-from linkcv.modules.llm.gateway import (
+import linkresume.models  # noqa: F401
+from linkresume.core.database import Base, build_engine, build_session_factory
+from linkresume.modules.identity.models import User
+from linkresume.modules.llm.crypto import CredentialCipher
+from linkresume.modules.llm.gateway import (
     GatewayError,
     GatewayResult,
     GatewayStreamEvent,
     GatewayUsage,
 )
-from linkcv.modules.llm.models import (
+from linkresume.modules.llm.models import (
     LLMCallLog,
     LLMCapabilityBinding,
     LLMModelConfig,
 )
-from linkcv.modules.llm.schemas import ChatMessage
-from linkcv.modules.llm.service import LLMError, LLMService
+from linkresume.modules.llm.schemas import ChatMessage
+from linkresume.modules.llm.service import LLMError, LLMService
 
 TEST_USER_ID = 1
 

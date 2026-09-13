@@ -8,24 +8,24 @@ import httpx
 import pytest
 from sqlalchemy import event, select
 
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.llm.gateway import (
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.llm.gateway import (
     GatewayError,
     GatewayResult,
     GatewayStreamEvent,
     GatewayUsage,
 )
-from linkcv.modules.llm.models import (
+from linkresume.modules.llm.models import (
     LLMCallLog,
     LLMCapabilityBinding,
     LLMModelConfig,
     LLMModelValidation,
 )
-from linkcv.modules.llm.pi_probe import PiProbeCoordinator
-from linkcv.modules.llm.schemas import ChatMessage
-from linkcv.modules.llm.service import LLMError
+from linkresume.modules.llm.pi_probe import PiProbeCoordinator
+from linkresume.modules.llm.schemas import ChatMessage
+from linkresume.modules.llm.service import LLMError
 from tests.fakes import FakeRedis
 
 

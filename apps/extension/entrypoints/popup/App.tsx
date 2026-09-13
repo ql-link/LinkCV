@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { browser } from "wxt/browser";
 
 import {
-  LinkCVApiError,
-  connectToLinkCV,
+  LinkResumeApiError,
+  connectToLinkResume,
   importJob,
-  linkCVUrl,
-  type LinkCVConnection,
-} from "../../src/api/linkcv";
+  linkResumeUrl,
+  type LinkResumeConnection,
+} from "../../src/api/linkresume";
 import {
   CAPTURE_MESSAGE,
   type BossCaptureResult,
@@ -21,7 +21,7 @@ import { isBossJobUrl } from "../../src/extractor/boss";
 type Phase = "loading" | "unavailable" | "login" | "capture-error" | "preview" | "submitting" | "duplicate" | "success";
 
 const CONNECTING_MESSAGE = "正在连接 LinkResume 并读取当前页面…";
-const isDevelopmentBuild = import.meta.env.WXT_PUBLIC_LINKCV_CHANNEL !== "production";
+const isDevelopmentBuild = import.meta.env.WXT_PUBLIC_LINKRESUME_CHANNEL !== "production";
 
 interface ReadyCapture {
   sourceUrl: string;
@@ -31,7 +31,7 @@ interface ReadyCapture {
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>("loading");
-  const [connection, setConnection] = useState<LinkCVConnection | null>(null);
+  const [connection, setConnection] = useState<LinkResumeConnection | null>(null);
   const [ready, setReady] = useState<ReadyCapture | null>(null);
   const [form, setForm] = useState<BossJobCapture | null>(null);
   const [skillsText, setSkillsText] = useState("");
@@ -48,7 +48,7 @@ export default function App() {
     setMessage(CONNECTING_MESSAGE);
     try {
       const [nextConnection, capture] = await Promise.all([
-        connectToLinkCV(),
+        connectToLinkResume(),
         captureActiveBossTab(),
       ]);
       setConnection(nextConnection);
@@ -102,12 +102,12 @@ export default function App() {
       setDuplicate(null);
       setPhase("success");
     } catch (error) {
-      if (error instanceof LinkCVApiError && error.code === "JD_SOURCE_DUPLICATE" && error.duplicate) {
+      if (error instanceof LinkResumeApiError && error.code === "JD_SOURCE_DUPLICATE" && error.duplicate) {
         setDuplicate(error.duplicate);
         setPhase("duplicate");
         return;
       }
-      if (error instanceof LinkCVApiError && error.status === 401) {
+      if (error instanceof LinkResumeApiError && error.status === 401) {
         setPhase("login");
         setMessage("LinkResume 登录已失效，请重新登录后再试。");
         return;
@@ -117,9 +117,9 @@ export default function App() {
     }
   }
 
-  async function openLinkCV(path: string) {
+  async function openLinkResume(path: string) {
     if (!connection) return;
-    await browser.tabs.create({ url: linkCVUrl(connection.origin, path) });
+    await browser.tabs.create({ url: linkResumeUrl(connection.origin, path) });
   }
 
   const header = (
@@ -151,7 +151,7 @@ export default function App() {
           title="需要登录"
           message={message}
           actionLabel="打开 LinkResume 登录"
-          onAction={() => void openLinkCV("/login")}
+          onAction={() => void openLinkResume("/login")}
           secondaryLabel="我已登录，重试"
           onSecondary={() => void initialize()}
         />
@@ -172,9 +172,9 @@ export default function App() {
           tone="success"
           message={`已保存「${created.job_title}」`}
           actionLabel="打开 JD 详情"
-          onAction={() => void openLinkCV(`/jobs/${created.id}`)}
+          onAction={() => void openLinkResume(`/jobs/${created.id}`)}
           secondaryLabel="打开编辑页"
-          onSecondary={() => void openLinkCV(`/jobs/${created.id}/edit`)}
+          onSecondary={() => void openLinkResume(`/jobs/${created.id}/edit`)}
         />
       </main>
     );
@@ -197,7 +197,7 @@ export default function App() {
             {duplicate.allowed_actions.includes("update") && (
               <button className="primary" type="button" onClick={() => void submit(resolution())}>用本次内容更新</button>
             )}
-            <button className="secondary" type="button" onClick={() => void openLinkCV(`/jobs/${duplicate.existing.id}`)}>打开现有 JD</button>
+            <button className="secondary" type="button" onClick={() => void openLinkResume(`/jobs/${duplicate.existing.id}`)}>打开现有 JD</button>
             <button className="ghost" type="button" onClick={() => setPhase("preview")}>返回预览</button>
           </div>
         </section>
@@ -326,7 +326,7 @@ function captureErrorMessage(error: unknown): string {
 }
 
 function importErrorMessage(error: unknown): string {
-  if (!(error instanceof LinkCVApiError)) return "网络请求失败，请确认 LinkResume 仍在运行。";
+  if (!(error instanceof LinkResumeApiError)) return "网络请求失败，请确认 LinkResume 仍在运行。";
   const messages: Record<string, string> = {
     INVALID_JOB_IMPORT: "抓取内容不完整或格式无效，请检查必填字段。",
     JD_EDIT_CONFLICT: "现有 JD 已被修改，请重新读取后再处理。",

@@ -8,8 +8,14 @@ import {
   createSkillReadTool,
   clarificationFallbackText,
   formatContextMaterials,
+  SYSTEM_PROMPT,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
+
+test("system prompt identifies the assistant as LinkResume", () => {
+  assert.match(SYSTEM_PROMPT, /你是 LinkResume 的简历智能助手/);
+  assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
+});
 
 test("agent completion accepts a successful assistant message", () => {
   assert.doesNotThrow(() => assertAgentCompleted({ role: "assistant", stopReason: "stop" }));

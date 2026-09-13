@@ -3,19 +3,19 @@ import json
 
 import pytest
 
-from linkcv.domain.document_conversion import PdfLayoutBlock
-from linkcv.domain.resume import (
+from linkresume.domain.document_conversion import PdfLayoutBlock
+from linkresume.domain.resume import (
     ParsedSourceBlock,
     build_source_graph,
     validate_sparse_annotations,
 )
-from linkcv.integrations.resume_structuring import (
+from linkresume.integrations.resume_structuring import (
     LLMResumeStructuringClient,
     structuring_payload,
 )
-from linkcv.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
-from linkcv.modules.llm.schemas import StructuredChatResult
-from linkcv.modules.llm.service import LLMError
+from linkresume.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
+from linkresume.modules.llm.schemas import StructuredChatResult
+from linkresume.modules.llm.service import LLMError
 
 
 class FakeLLMService:

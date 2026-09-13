@@ -175,7 +175,7 @@ describe("resume semantic contract adapter", () => {
     expect(new Set(document.sections.custom_sections.map((section) => section.id)).size).toBe(2);
     expect(JSON.stringify(document)).not.toContain('"type":"doc"');
     expect(resumeDocumentToMarkdown(document)).toMatch(
-      /^# 张三\n\n## \[\[linkcv-block:blk_[a-z0-9]{16,64}:custom\]\]经历\n\n正文$/u,
+      /^# 张三\n\n## \[\[linkresume-block:blk_[a-z0-9]{16,64}:custom\]\]经历\n\n正文$/u,
     );
   });
 
@@ -206,7 +206,7 @@ describe("resume semantic contract adapter", () => {
 
   it("keeps semantic identity when a heading is renamed", () => {
     const original = resumeDocumentFromMarkdown(
-      "# [[linkcv-block:blk_1111111111111111]]张三\n\n## [[linkcv-block:blk_2222222222222222]]工作经历\n\n正文",
+      "# [[linkresume-block:blk_1111111111111111]]张三\n\n## [[linkresume-block:blk_2222222222222222]]工作经历\n\n正文",
       defaultSemanticDocument,
     );
     const classified = {
@@ -216,7 +216,7 @@ describe("resume semantic contract adapter", () => {
         : section),
     };
     const renamed = resumeDocumentFromMarkdown(
-      "# [[linkcv-block:blk_1111111111111111]]张三\n\n## [[linkcv-block:blk_2222222222222222]]职业历程\n\n正文",
+      "# [[linkresume-block:blk_1111111111111111]]张三\n\n## [[linkresume-block:blk_2222222222222222]]职业历程\n\n正文",
       classified,
     );
     const section = renamed.semantic_sections.find((item) => item.custom_section_id === "blk_2222222222222222");
@@ -554,7 +554,7 @@ describe("resume semantic contract adapter", () => {
     });
     const html = renderResumeMarkdown(markdown);
 
-    expect(markdown).toBe("[[linkcv-size:9.5pt]]**重点经历**[[/linkcv-size]]");
+    expect(markdown).toBe("[[linkresume-size:9.5pt]]**重点经历**[[/linkresume-size]]");
     expect(html).toContain('<span style="font-size:9.5pt"><strong>重点经历</strong></span>');
   });
 
@@ -589,7 +589,7 @@ describe("resume semantic contract adapter", () => {
     });
     const html = renderResumeMarkdown(markdown);
 
-    expect(markdown).toBe("[[linkcv-block:blk_1234567890abcdef]]负责平台性能优化");
+    expect(markdown).toBe("[[linkresume-block:blk_1234567890abcdef]]负责平台性能优化");
     expect(html).toContain('data-resume-block-id="blk_1234567890abcdef"');
     expect(html).toContain('class="resume-block-anchor"');
   });
@@ -632,9 +632,9 @@ describe("resume semantic contract adapter", () => {
     });
     const html = renderResumeMarkdown(markdown);
 
-    expect(markdown).toContain('"linkcv-avatar:108"');
-    expect(markdown).toContain('"linkcv-image:60:%:right"');
-    expect(markdown).toContain('"linkcv-inline-image-v2:84:30"');
+    expect(markdown).toContain('"linkresume-avatar:108"');
+    expect(markdown).toContain('"linkresume-image:60:%:right"');
+    expect(markdown).toContain('"linkresume-inline-image-v2:84:30"');
     expect(html).toContain('data-type="avatar-image"');
     expect(html).toContain('data-type="resume-image"');
     expect(html).toContain('data-inline-image');
@@ -643,7 +643,7 @@ describe("resume semantic contract adapter", () => {
   });
 
   it("兼容读取按宽高比保存的旧版行内图片", () => {
-    const html = renderResumeMarkdown('![示例 Logo](/api/resumes/1/assets/company.png "linkcv-inline-image:84:3.5") 示例公司');
+    const html = renderResumeMarkdown('![示例 Logo](/api/resumes/1/assets/company.png "linkresume-inline-image:84:3.5") 示例公司');
 
     expect(html).toContain('data-width="84"');
     expect(html).toContain('data-height="24"');

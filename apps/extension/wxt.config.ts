@@ -1,6 +1,6 @@
 import { defineConfig } from "wxt";
 
-const localLinkCVPermissions = [
+const localLinkResumePermissions = [
   "http://127.0.0.1:5173/*",
   "http://localhost:5173/*",
 ];
@@ -12,12 +12,12 @@ const bossPermissions = [
 ];
 
 const isReleaseBuild = process.env.WXT_RELEASE_BUILD === "1";
-const releaseChannel = process.env.WXT_PUBLIC_LINKCV_CHANNEL?.trim();
+const releaseChannel = process.env.WXT_PUBLIC_LINKRESUME_CHANNEL?.trim();
 const isDevelopmentBuild =
   releaseChannel === "development" || !isReleaseBuild;
 
-function configuredLinkCVPermission(): string[] {
-  const configured = process.env.WXT_PUBLIC_LINKCV_ORIGIN?.trim();
+function configuredLinkResumePermission(): string[] {
+  const configured = process.env.WXT_PUBLIC_LINKRESUME_ORIGIN?.trim();
   if (!configured) return [];
   try {
     const url = new URL(configured);
@@ -30,11 +30,11 @@ function configuredLinkCVPermission(): string[] {
 
 if (isReleaseBuild && releaseChannel !== "development" && releaseChannel !== "production") {
   throw new Error(
-    "Release builds require WXT_PUBLIC_LINKCV_CHANNEL=development or production.",
+    "Release builds require WXT_PUBLIC_LINKRESUME_CHANNEL=development or production.",
   );
 }
-if (isReleaseBuild && configuredLinkCVPermission().length !== 1) {
-  throw new Error("Release builds require one valid WXT_PUBLIC_LINKCV_ORIGIN.");
+if (isReleaseBuild && configuredLinkResumePermission().length !== 1) {
+  throw new Error("Release builds require one valid WXT_PUBLIC_LINKRESUME_ORIGIN.");
 }
 
 export default defineConfig({
@@ -51,8 +51,8 @@ export default defineConfig({
     permissions: ["activeTab"],
     host_permissions: [
       ...bossPermissions,
-      ...(isReleaseBuild ? [] : localLinkCVPermissions),
-      ...configuredLinkCVPermission(),
+      ...(isReleaseBuild ? [] : localLinkResumePermissions),
+      ...configuredLinkResumePermission(),
     ],
     action: {
       default_title: isDevelopmentBuild

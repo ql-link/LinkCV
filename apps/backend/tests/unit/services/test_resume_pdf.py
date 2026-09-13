@@ -3,14 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from linkcv.core.config import Settings
-from linkcv.core.errors import ApiError
-from linkcv.modules.resumes import pdf_service
-from linkcv.modules.resumes.image_limits import (
+from linkresume.core.config import Settings
+from linkresume.core.errors import ApiError
+from linkresume.modules.resumes import pdf_service
+from linkresume.modules.resumes.image_limits import (
     MAX_RESUME_IMAGE_BYTES,
     MAX_RESUME_PDF_IMAGE_TOTAL_BYTES,
 )
-from linkcv.modules.resumes.pdf_service import (
+from linkresume.modules.resumes.pdf_service import (
     RENDER_SLOTS,
     ResumePdfRenderer,
     _object_key,

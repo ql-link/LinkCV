@@ -38,7 +38,7 @@ def test_link_setup_creates_missing_links_and_is_idempotent(tmp_path: Path) -> N
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
     (tmp_path / ".ai" / "skills").mkdir(parents=True)
     (tmp_path / ".ai" / "prompts" / "project.md").write_text("rules", encoding="utf-8")
-    env = {"LINKCV_REPO_ROOT": str(tmp_path)}
+    env = {"LINKRESUME_REPO_ROOT": str(tmp_path)}
 
     first = run_script(LINK_SETUP, env=env)
     second = run_script(LINK_SETUP, "--check", env=env)
@@ -56,7 +56,7 @@ def test_link_setup_refuses_to_overwrite_existing_file(tmp_path: Path) -> None:
     agents = tmp_path / "AGENTS.md"
     agents.write_text("keep", encoding="utf-8")
 
-    result = run_script(LINK_SETUP, env={"LINKCV_REPO_ROOT": str(tmp_path)})
+    result = run_script(LINK_SETUP, env={"LINKRESUME_REPO_ROOT": str(tmp_path)})
 
     assert result.returncode == 1
     assert "拒绝覆盖" in result.stderr
@@ -182,7 +182,7 @@ def test_skill_check_protects_stateless_spec_contract(tmp_path: Path) -> None:
     shutil.copy2(REPO_ROOT / ".worktreeinclude", base_root / ".worktreeinclude")
     shutil.copy2(REPO_ROOT / ".gitignore", base_root / ".gitignore")
 
-    baseline = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(base_root)})
+    baseline = run_script(SKILL_CHECK, env={"LINKRESUME_REPO_ROOT": str(base_root)})
     assert baseline.returncode == 0, baseline.stderr
 
     for case_name, mutation, expected_error in cases:
@@ -262,7 +262,7 @@ def test_skill_check_protects_stateless_spec_contract(tmp_path: Path) -> None:
                 encoding="utf-8",
             )
 
-        result = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(case_root)})
+        result = run_script(SKILL_CHECK, env={"LINKRESUME_REPO_ROOT": str(case_root)})
 
         assert result.returncode == 1
         assert expected_error in result.stderr
@@ -272,7 +272,7 @@ def test_docs_sync_reports_missing_required_documents() -> None:
     result = run_script(
         DOCS_SYNC,
         "--files",
-        "apps/backend/src/linkcv/api/routes/health.py",
+        "apps/backend/src/linkresume/api/routes/health.py",
     )
 
     assert result.returncode == 1
@@ -285,7 +285,7 @@ def test_docs_sync_accepts_complete_companion_updates() -> None:
     result = run_script(
         DOCS_SYNC,
         "--files",
-        "apps/backend/src/linkcv/api/routes/health.py",
+        "apps/backend/src/linkresume/api/routes/health.py",
         "docs/api/http-contracts.md",
         "docs/internals/backend.md",
     )
@@ -315,7 +315,7 @@ def test_runtime_contracts_report_drift(tmp_path: Path) -> None:
                 shutil.copy2(REPO_ROOT / relative, target)
 
     backend_config = (
-        tmp_path / "apps" / "backend" / "src" / "linkcv" / "core" / "config.py"
+        tmp_path / "apps" / "backend" / "src" / "linkresume" / "core" / "config.py"
     )
     backend_config.write_text(
         backend_config.read_text(encoding="utf-8").replace(
@@ -327,12 +327,12 @@ def test_runtime_contracts_report_drift(tmp_path: Path) -> None:
 
     result = run_script(
         RUNTIME_CONTRACTS,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
     assert "fastapi-default-port" in result.stderr
-    assert "apps/backend/src/linkcv/core/config.py" in result.stderr
+    assert "apps/backend/src/linkresume/core/config.py" in result.stderr
 
 
 def test_skill_check_rejects_unowned_ai_top_level_entry(tmp_path: Path) -> None:
@@ -348,7 +348,7 @@ def test_skill_check_rejects_unowned_ai_top_level_entry(tmp_path: Path) -> None:
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -378,7 +378,7 @@ description: 旧版 UI 布局设计入口，仅用于验证退出工作流的 Sk
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -437,7 +437,7 @@ def test_frontend_capabilities_are_independent(tmp_path: Path) -> None:
             skills_root / skill_name,
         )
 
-    baseline = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(tmp_path)})
+    baseline = run_script(SKILL_CHECK, env={"LINKRESUME_REPO_ROOT": str(tmp_path)})
     assert baseline.returncode == 0, baseline.stderr
 
     prototype = skills_root / "frontend-prototype" / "SKILL.md"
@@ -447,7 +447,7 @@ def test_frontend_capabilities_are_independent(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(tmp_path)})
+    result = run_script(SKILL_CHECK, env={"LINKRESUME_REPO_ROOT": str(tmp_path)})
     assert result.returncode == 1
     assert "前端能力必须保持独立" in result.stderr
 
@@ -497,7 +497,7 @@ description: 用于验证未登记工作流目录会被项目级确定性检查�
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -521,7 +521,7 @@ def test_skill_check_rejects_obsolete_frontend_workflow_rule(tmp_path: Path) -> 
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -553,7 +553,7 @@ def test_skill_check_rejects_project_external_planning_rules(tmp_path: Path) -> 
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -561,7 +561,7 @@ def test_skill_check_rejects_project_external_planning_rules(tmp_path: Path) -> 
         assert legacy_marker in result.stderr
 
 
-def test_skill_check_accepts_linkcv_backend_test_paths(tmp_path: Path) -> None:
+def test_skill_check_accepts_linkresume_backend_test_paths(tmp_path: Path) -> None:
     skill_root = tmp_path / ".ai" / "skills" / "test-authoring"
     skill_root.mkdir(parents=True)
     (tmp_path / ".ai" / "prompts").mkdir(parents=True)
@@ -574,7 +574,7 @@ def test_skill_check_accepts_linkcv_backend_test_paths(tmp_path: Path) -> None:
     (skill_root / "SKILL.md").write_text(
         """---
 name: test-authoring
-description: 为 LinkCV 后端单元和集成测试提供真实路径及清晰的触发条件说明，适用于需要补充测试覆盖或调整测试分层的请求。
+description: 为 LinkResume 后端单元和集成测试提供真实路径及清晰的触发条件说明，适用于需要补充测试覆盖或调整测试分层的请求。
 ---
 
 测试放在 `apps/backend/tests/unit/` 和 `apps/backend/tests/integration/`。
@@ -584,7 +584,7 @@ description: 为 LinkCV 后端单元和集成测试提供真实路径及清晰�
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 0, result.stderr
@@ -630,7 +630,7 @@ def test_skill_check_rejects_solution_template_without_required_capability(tmp_p
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -676,7 +676,7 @@ def test_skill_check_rejects_solution_skill_without_on_demand_contract(tmp_path:
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -704,7 +704,7 @@ def test_skill_check_rejects_deprecated_solution_ddl_contract(tmp_path: Path) ->
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -736,7 +736,7 @@ def test_skill_check_rejects_fixed_solution_section_in_downstream_skill(
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -766,7 +766,7 @@ def test_skill_check_requires_flow_router_to_exclude_pure_frontend(tmp_path: Pat
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -793,7 +793,7 @@ def test_skill_check_rejects_legacy_flow_router_handoff(tmp_path: Path) -> None:
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -849,7 +849,7 @@ def test_skill_check_protects_flow_router_delivery_core_semantics(tmp_path: Path
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -877,7 +877,7 @@ def test_skill_check_rejects_mandatory_backend_extra_agent(tmp_path: Path) -> No
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1
@@ -919,7 +919,7 @@ def test_skill_check_rejects_frontend_orchestration_in_backend_workflow(
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -961,7 +961,7 @@ def test_skill_check_rejects_default_implementation_delegation(tmp_path: Path) -
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -1026,7 +1026,7 @@ def test_skill_check_protects_reduction_contracts(tmp_path: Path) -> None:
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -1126,7 +1126,7 @@ def test_skill_check_protects_flow_router_delivery_downstream_contract(
 
         result = run_script(
             SKILL_CHECK,
-            env={"LINKCV_REPO_ROOT": str(case_root)},
+            env={"LINKRESUME_REPO_ROOT": str(case_root)},
         )
 
         assert result.returncode == 1
@@ -1210,7 +1210,7 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
     shutil.copy2(REPO_ROOT / ".worktreeinclude", base_root / ".worktreeinclude")
     shutil.copy2(REPO_ROOT / ".gitignore", base_root / ".gitignore")
 
-    baseline = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(base_root)})
+    baseline = run_script(SKILL_CHECK, env={"LINKRESUME_REPO_ROOT": str(base_root)})
     assert baseline.returncode == 0, baseline.stderr
 
     for index, (relative_path, marker) in enumerate(cases):
@@ -1222,7 +1222,7 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
             encoding="utf-8",
         )
 
-        result = run_script(SKILL_CHECK, env={"LINKCV_REPO_ROOT": str(case_root)})
+        result = run_script(SKILL_CHECK, env={"LINKRESUME_REPO_ROOT": str(case_root)})
 
         assert result.returncode == 1
         assert "单向交付契约缺少必要内容" in result.stderr
@@ -1241,7 +1241,7 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
 
     legacy_result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(legacy_root)},
+        env={"LINKRESUME_REPO_ROOT": str(legacy_root)},
     )
 
     assert legacy_result.returncode == 1
@@ -1259,7 +1259,7 @@ def test_skill_check_protects_source_authority_and_one_way_delivery(
 
     old_rule_result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(old_rule_root)},
+        env={"LINKRESUME_REPO_ROOT": str(old_rule_root)},
     )
 
     assert old_rule_result.returncode == 1
@@ -1288,7 +1288,7 @@ def test_skill_check_rejects_legacy_flow_router_rule(tmp_path: Path) -> None:
 
     result = run_script(
         SKILL_CHECK,
-        env={"LINKCV_REPO_ROOT": str(tmp_path)},
+        env={"LINKRESUME_REPO_ROOT": str(tmp_path)},
     )
 
     assert result.returncode == 1

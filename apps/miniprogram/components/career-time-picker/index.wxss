@@ -1,5 +1,5 @@
 @import "../sheet-motion.wxss";
-:host { font-family:"LinkCV Career UI",-apple-system,"PingFang SC",sans-serif; color:#17191c; }
+:host { font-family:"LinkResume Career UI",-apple-system,"PingFang SC",sans-serif; color:#17191c; }
 .overlay,.duration-overlay { position:fixed;inset:0;width:100vw;height:100vh;z-index:1000001; }
 .duration-overlay { z-index:1000002; }
 .mask { position:absolute;inset:0;background:rgba(0,0,0,.32); }

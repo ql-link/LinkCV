@@ -21,7 +21,7 @@
 
 | 层级 | 入口 | 职责 |
 | --- | --- | --- |
-| 领域契约 | `src/linkcv/domain/resume/` | `CanonicalResumeDocument`、`TemplateDefinition`、`ResumePresentation`、`LayoutPlan`、`SourceGraph` 与确定性组合 |
+| 领域契约 | `src/linkresume/domain/resume/` | `CanonicalResumeDocument`、`TemplateDefinition`、`ResumePresentation`、`LayoutPlan`、`SourceGraph` 与确定性组合 |
 | 应用服务 | `application/resumes/` | 创建、保存、版本、模板切换和分享事务 |
 | HTTP/ORM | `modules/resumes/` | 简历、版本、模板、导入、资源、分享和 PDF 路由与模型 |
 | 导入 | `workers/resume_import_worker.py`、`services/resume_import_service.py` | 异步解析、结构化、规范化和结果事务 |

@@ -27,6 +27,8 @@
 
 ## 代码地图
 
+后端求职域统一位于 `apps/backend/src/linkresume/` 包：HTTP/ORM 入口放在 `modules/job_descriptions/` 与 `modules/interviews/`，跨路由业务事务放在对应的 `application/` 目录。
+
 | 层级 | 入口 | 职责 |
 | --- | --- | --- |
 | 岗位 HTTP/ORM | `modules/job_descriptions/` | 岗位模型、schema、搜索、CRUD 与导入路由 |

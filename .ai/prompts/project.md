@@ -1,6 +1,6 @@
-# LinkCV
+# LinkResume
 
-LinkCV 是 React/TypeScript + FastAPI 前后端分离 Monorepo。本文只保存所有任务都需要的入口、命令和底线；具体模块事实从 `docs/README.md` 查找，交付流程见 `.ai/skills/README.md`，本地 Spec 规则见 `.specs/README.md`。`AGENTS.md` 与 `CLAUDE.md` 都链接到本文件，只修改这一份源文件。
+LinkResume 是 React/TypeScript + FastAPI 前后端分离 Monorepo。本文只保存所有任务都需要的入口、命令和底线；具体模块事实从 `docs/README.md` 查找，交付流程见 `.ai/skills/README.md`，本地 Spec 规则见 `.specs/README.md`。`AGENTS.md` 与 `CLAUDE.md` 都链接到本文件，只修改这一份源文件。
 
 ## 1. 通用原则
 

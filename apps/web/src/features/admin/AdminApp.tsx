@@ -557,7 +557,7 @@ function Overview({
       <PageHeading
         eyebrow="管理控制台"
         title={`早上好，${user.nickname}`}
-        description="这是 LinkCV 当前的运行状态与用户情况。"
+        description="这是 LinkResume 当前的运行状态与用户情况。"
         action={
           <motion.button
             className="admin-primary-button"

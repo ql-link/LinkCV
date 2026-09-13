@@ -2,11 +2,11 @@ from decimal import Decimal
 
 import pytest
 
-from linkcv.application.job_descriptions.import_service import (
+from linkresume.application.job_descriptions.import_service import (
     InvalidJobImport,
     build_job_description_from_capture,
 )
-from linkcv.modules.job_descriptions.schemas import JobDescriptionImportRequest
+from linkresume.modules.job_descriptions.schemas import JobDescriptionImportRequest
 
 
 def import_payload(**capture_overrides: object) -> JobDescriptionImportRequest:
@@ -79,7 +79,7 @@ def test_capture_rejects_non_https_logo_url() -> None:
 
 
 def test_employment_classification_prioritizes_internship_and_campus() -> None:
-    from linkcv.application.job_descriptions.import_service import _employment_type
+    from linkresume.application.job_descriptions.import_service import _employment_type
 
     for raw, expected in [
         ("校招 全职", "campus"), ("校园招聘", "campus"), ("应届毕业生", "campus"),

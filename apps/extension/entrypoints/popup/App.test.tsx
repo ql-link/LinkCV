@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { LinkCVApiError } from "../../src/api/linkcv";
+import { LinkResumeApiError } from "../../src/api/linkresume";
 
 const mocks = vi.hoisted(() => ({
   connect: vi.fn(),
@@ -23,8 +23,8 @@ vi.mock("wxt/browser", () => ({
   },
 }));
 
-vi.mock("../../src/api/linkcv", () => ({
-  LinkCVApiError: class LinkCVApiError extends Error {
+vi.mock("../../src/api/linkresume", () => ({
+  LinkResumeApiError: class LinkResumeApiError extends Error {
     constructor(
       readonly status: number,
       readonly code: string,
@@ -37,9 +37,9 @@ vi.mock("../../src/api/linkcv", () => ({
       return this.details.duplicate ?? null;
     }
   },
-  connectToLinkCV: mocks.connect,
+  connectToLinkResume: mocks.connect,
   importJob: mocks.importJob,
-  linkCVUrl: (origin: string, path: string) => `${origin}${path}`,
+  linkResumeUrl: (origin: string, path: string) => `${origin}${path}`,
 }));
 
 let root: Root | null = null;
@@ -107,7 +107,6 @@ describe("extension popup", () => {
 
     expect(document.body.textContent).toContain("请先登录 LinkResume");
     expect(document.body.textContent).toContain("打开 LinkResume 登录");
-    expect(document.body.textContent).not.toContain("LinkCV");
   });
 
   it("allows the BOSS list page to request the selected detail capture", async () => {
@@ -121,7 +120,7 @@ describe("extension popup", () => {
 
     await renderApp();
 
-    expect(mocks.sendMessage).toHaveBeenCalledWith(9, { type: "LINKCV_CAPTURE_BOSS_JOB" });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(9, { type: "LINKRESUME_CAPTURE_BOSS_JOB" });
     expect(document.body.textContent).toContain("核对岗位信息");
   });
 
@@ -131,7 +130,7 @@ describe("extension popup", () => {
       user: { id: "7", email: "user@example.test" },
     });
     mocks.importJob.mockRejectedValueOnce(
-      new LinkCVApiError(409, "JD_SOURCE_DUPLICATE", {
+      new LinkResumeApiError(409, "JD_SOURCE_DUPLICATE", {
         duplicate: {
           existing: {
             id: "42",

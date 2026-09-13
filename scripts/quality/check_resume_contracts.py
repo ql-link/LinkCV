@@ -14,7 +14,7 @@ from referencing import Registry, Resource
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "apps" / "backend" / "src"))
 
-from linkcv.domain.resume.canonical_json import canonical_json_bytes, canonical_sha256
+from linkresume.domain.resume.canonical_json import canonical_json_bytes, canonical_sha256
 
 CONTRACTS = ROOT / "contracts" / "resume"
 MANIFEST = CONTRACTS / "fixtures" / "manifest.json"

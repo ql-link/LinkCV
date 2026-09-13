@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, call
 import pytest
 from pydantic import ValidationError
 
-from linkcv.core.mq.kafka import KafkaPublisher
-from linkcv.core.mq.message import DatasetParseMessage, ResumeImportMessage
-from linkcv.core.mq.publisher import MQPublishError
-from linkcv.core.mq.rabbitmq import RabbitMQPublisher
+from linkresume.core.mq.kafka import KafkaPublisher
+from linkresume.core.mq.message import DatasetParseMessage, ResumeImportMessage
+from linkresume.core.mq.publisher import MQPublishError
+from linkresume.core.mq.rabbitmq import RabbitMQPublisher
 
 
 def test_resume_import_message_uses_canonical_string_identifiers() -> None:
@@ -18,7 +18,7 @@ def test_resume_import_message_uses_canonical_string_identifiers() -> None:
     body = json.loads(message.body())
     assert body["mq_type"] == "RESUME_IMPORT_TASK"
     assert body["pipeline_version"] == "v2"
-    assert body["mq_name"] == "tolink.cv.resume_import.v2"
+    assert body["mq_name"] == "tolink.resume.resume_import.v2"
     assert body["payload"]["import_id"] == "42"
     assert body["payload"]["template_id"] == "7"
 
@@ -29,7 +29,7 @@ def test_dataset_parse_message_uses_shared_envelope_and_canonical_id() -> None:
     body = json.loads(message.body())
     assert body["mq_type"] == "DATASET_PARSE_TASK"
     assert body["pipeline_version"] == "v2"
-    assert body["mq_name"] == "tolink.cv.resume_import.v2"
+    assert body["mq_name"] == "tolink.resume.resume_import.v2"
     assert body["payload"]["parse_task_id"] == "42"
 
 
@@ -38,7 +38,7 @@ def test_message_requires_pipeline_version() -> None:
         ResumeImportMessage.model_validate(
             {
                 "mq_type": "RESUME_IMPORT_TASK",
-                "mq_name": "tolink.cv.resume_import.v2",
+                "mq_name": "tolink.resume.resume_import.v2",
                 "payload": {"import_id": "42", "template_id": "7"},
             }
         )
@@ -49,13 +49,13 @@ def test_message_requires_pipeline_version() -> None:
     [
         {
             "mq_type": "RESUME_IMPORT_TASK",
-            "mq_name": "tolink.cv.resume_import.v2",
+            "mq_name": "tolink.resume.resume_import.v2",
             "pipeline_version": "v2",
             "payload": {"import_id": "42", "template_id": "7", "extra": True},
         },
         {
             "mq_type": "RESUME_IMPORT_TASK",
-            "mq_name": "tolink.cv.resume_import.v2",
+            "mq_name": "tolink.resume.resume_import.v2",
             "pipeline_version": "v2",
             "payload": {"import_id": "42", "template_id": "7"},
             "extra": True,
@@ -74,7 +74,7 @@ def test_dataset_message_rejects_unknown_fields() -> None:
         DatasetParseMessage.model_validate(
             {
                 "mq_type": "DATASET_PARSE_TASK",
-                "mq_name": "tolink.cv.resume_import.v2",
+                "mq_name": "tolink.resume.resume_import.v2",
                 "pipeline_version": "v2",
                 "payload": {"parse_task_id": "42", "unexpected": True},
             }
@@ -86,7 +86,7 @@ def test_resume_import_message_rejects_noncanonical_identifiers(value: str) -> N
     with pytest.raises(ValidationError):
         ResumeImportMessage(
             pipeline_version="v2",
-            mq_name="tolink.cv.resume_import.v2",
+            mq_name="tolink.resume.resume_import.v2",
             payload={"import_id": value, "template_id": "1"},
         )
 
@@ -105,7 +105,7 @@ def test_resume_import_message_rejects_wrong_envelope_identity(
 ) -> None:
     payload = {
         "mq_type": "RESUME_IMPORT_TASK",
-        "mq_name": "tolink.cv.resume_import.v2",
+        "mq_name": "tolink.resume.resume_import.v2",
         "pipeline_version": "v2",
         "payload": {"import_id": "42", "template_id": "7"},
     }
@@ -127,10 +127,10 @@ def test_kafka_publish_uses_import_id_as_partition_key(
     def constructor(**_kwargs):
         return producer
 
-    monkeypatch.setattr("linkcv.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         confirm_timeout_seconds=1,
     )
     message = ResumeImportMessage.create(import_id=42, template_id=7)
@@ -142,7 +142,7 @@ def test_kafka_publish_uses_import_id_as_partition_key(
     asyncio.run(exercise())
 
     producer.send_and_wait.assert_awaited_once_with(
-        "tolink.cv.resume_import.v2",
+        "tolink.resume.resume_import.v2",
         value=message.body(),
         key=b"42",
     )
@@ -159,10 +159,10 @@ def test_kafka_publish_wraps_broker_failure(monkeypatch: pytest.MonkeyPatch) -> 
     def constructor(**_kwargs):
         return producer
 
-    monkeypatch.setattr("linkcv.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         confirm_timeout_seconds=1,
     )
 
@@ -186,10 +186,10 @@ def test_kafka_publish_uses_dataset_task_id_as_partition_key(
     def constructor(**_kwargs):
         return producer
 
-    monkeypatch.setattr("linkcv.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         confirm_timeout_seconds=1,
     )
     message = DatasetParseMessage.create(parse_task_id=84)
@@ -197,7 +197,7 @@ def test_kafka_publish_uses_dataset_task_id_as_partition_key(
     asyncio.run(publisher.publish(message))
 
     producer.send_and_wait.assert_awaited_once_with(
-        "tolink.cv.resume_import.v2",
+        "tolink.resume.resume_import.v2",
         value=message.body(),
         key=b"84",
     )
@@ -217,10 +217,10 @@ def test_kafka_concurrent_first_publish_starts_only_one_producer(
         producers.append(producer)
         return producer
 
-    monkeypatch.setattr("linkcv.core.mq.kafka.AIOKafkaProducer", constructor)
+    monkeypatch.setattr("linkresume.core.mq.kafka.AIOKafkaProducer", constructor)
     publisher = KafkaPublisher(
         bootstrap_servers="broker:9092",
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         confirm_timeout_seconds=1,
     )
     first = ResumeImportMessage.create(import_id=41, template_id=7)
@@ -245,9 +245,9 @@ def test_rabbitmq_publish_uses_fixed_routing_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     exchange = SimpleNamespace(
-        name="tolink.cv.resume_import.v2", publish=AsyncMock(return_value=True)
+        name="tolink.resume.resume_import.v2", publish=AsyncMock(return_value=True)
     )
-    dead_letter_exchange = SimpleNamespace(name="tolink.cv.resume_import.v2.DLX")
+    dead_letter_exchange = SimpleNamespace(name="tolink.resume.resume_import.v2.DLX")
     queue = SimpleNamespace(bind=AsyncMock())
     dead_letter_queue = SimpleNamespace(bind=AsyncMock())
     channel = SimpleNamespace(
@@ -262,13 +262,13 @@ def test_rabbitmq_publish_uses_fixed_routing_key(
         close=AsyncMock(),
     )
     monkeypatch.setattr(
-        "linkcv.core.mq.rabbitmq.aio_pika.connect_robust",
+        "linkresume.core.mq.rabbitmq.aio_pika.connect_robust",
         AsyncMock(return_value=connection),
     )
     publisher = RabbitMQPublisher(
         url="amqp://guest:guest@rabbitmq/",
-        exchange_name="tolink.cv.resume_import.v2",
-        queue_name="linkcv.resume_import.worker.v2",
+        exchange_name="tolink.resume.resume_import.v2",
+        queue_name="linkresume.resume_import.worker.v2",
         routing_key="resume.import.v2",
         confirm_timeout_seconds=1,
     )
@@ -284,24 +284,24 @@ def test_rabbitmq_publish_uses_fixed_routing_key(
     }
     outbound = exchange.publish.await_args.args[0]
     assert outbound.body == message.body()
-    assert outbound.headers == {"x-linkcv-pipeline-version": "v2"}
+    assert outbound.headers == {"x-linkresume-pipeline-version": "v2"}
     channel.declare_exchange.assert_has_awaits(
         [
-            call("tolink.cv.resume_import.v2", "direct", durable=True),
-            call("tolink.cv.resume_import.v2.DLX", "direct", durable=True),
+            call("tolink.resume.resume_import.v2", "direct", durable=True),
+            call("tolink.resume.resume_import.v2.DLX", "direct", durable=True),
         ]
     )
     channel.declare_queue.assert_has_awaits(
         [
             call(
-                "linkcv.resume_import.worker.v2",
+                "linkresume.resume_import.worker.v2",
                 durable=True,
                 arguments={
-                    "x-dead-letter-exchange": "tolink.cv.resume_import.v2.DLX",
+                    "x-dead-letter-exchange": "tolink.resume.resume_import.v2.DLX",
                     "x-dead-letter-routing-key": "resume.import.v2.DLT",
                 },
             ),
-            call("linkcv.resume_import.worker.v2.DLT", durable=True),
+            call("linkresume.resume_import.worker.v2.DLT", durable=True),
         ]
     )
     queue.bind.assert_awaited_once_with(exchange, routing_key="resume.import.v2")

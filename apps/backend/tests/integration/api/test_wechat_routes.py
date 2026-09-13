@@ -5,12 +5,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.core.security import hash_password
-from linkcv.integrations.wechat_client import WechatClient
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.identity.session_service import (
+from linkresume.core.config import Settings
+from linkresume.core.security import hash_password
+from linkresume.integrations.wechat_client import WechatClient
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.identity.session_service import (
     MINIPROGRAM_CHANNEL,
     WEB_CHANNEL,
     issue_session,

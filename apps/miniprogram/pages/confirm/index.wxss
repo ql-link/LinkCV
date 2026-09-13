@@ -38,7 +38,7 @@
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } .confirm-primary-button-pressed { transform: none; } }
 
 /* Figma: fixed brand above a left-aligned login flow; no custom dismiss control. */
-.page { background:#f4f6f8;padding:92px 20px max(20px,env(safe-area-inset-bottom));font-family:"LinkCV Career UI",-apple-system,"PingFang SC",sans-serif; }
+.page { background:#f4f6f8;padding:92px 20px max(20px,env(safe-area-inset-bottom));font-family:"LinkResume Career UI",-apple-system,"PingFang SC",sans-serif; }
 .content { max-width:none;align-items:stretch; }
 .identity { margin-top:0;align-items:flex-start;text-align:left; }
 .title { margin-top:0;font-size:26px;line-height:34px;letter-spacing:0; }

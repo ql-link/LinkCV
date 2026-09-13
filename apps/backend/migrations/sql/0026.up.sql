@@ -11,7 +11,7 @@ INSERT INTO resume_templates (`key`, name, description, data_json, style_json, i
       'id', 'custom_section_editor', 'title', '简历正文', 'items', JSON_ARRAY(JSON_OBJECT(
         'id', 'custom_item_editor', 'title', NULL, 'subtitle', NULL,
         'content', JSON_OBJECT('format', 'markdown', 'content', ':::: sidebar
-![虚构头像](/templates/avatar-administrative.svg "linkcv-avatar:108")
+![虚构头像](/templates/avatar-administrative.svg "linkresume-avatar:108")
 
 ### 基本信息
 
@@ -121,7 +121,7 @@ INSERT INTO resume_templates (`key`, name, description, data_json, style_json, i
     'sections', JSON_OBJECT('custom_sections', JSON_ARRAY(JSON_OBJECT(
       'id', 'custom_section_editor', 'title', '简历正文', 'items', JSON_ARRAY(JSON_OBJECT(
         'id', 'custom_item_editor', 'title', NULL, 'subtitle', NULL,
-        'content', JSON_OBJECT('format', 'markdown', 'content', '![虚构头像](/templates/avatar-campus.svg "linkcv-avatar:82")
+        'content', JSON_OBJECT('format', 'markdown', 'content', '![虚构头像](/templates/avatar-campus.svg "linkresume-avatar:82")
 
 # 张三｜校招 / 社招通用简历
 
@@ -204,7 +204,7 @@ GPA 3.8 / 4.0
     'sections', JSON_OBJECT('custom_sections', JSON_ARRAY(JSON_OBJECT(
       'id', 'custom_section_editor', 'title', '简历正文', 'items', JSON_ARRAY(JSON_OBJECT(
         'id', 'custom_item_editor', 'title', NULL, 'subtitle', NULL,
-        'content', JSON_OBJECT('format', 'markdown', 'content', '![虚构头像](/templates/avatar-civic.svg "linkcv-avatar:94")
+        'content', JSON_OBJECT('format', 'markdown', 'content', '![虚构头像](/templates/avatar-civic.svg "linkresume-avatar:94")
 
 # 张三｜行政事务专员
 
@@ -284,7 +284,7 @@ GPA 3.8 / 4.0
     'sections', JSON_OBJECT('custom_sections', JSON_ARRAY(JSON_OBJECT(
       'id', 'custom_section_editor', 'title', '简历正文', 'items', JSON_ARRAY(JSON_OBJECT(
         'id', 'custom_item_editor', 'title', NULL, 'subtitle', NULL,
-        'content', JSON_OBJECT('format', 'markdown', 'content', '![虚构头像](/templates/avatar-creative.svg "linkcv-avatar:112")
+        'content', JSON_OBJECT('format', 'markdown', 'content', '![虚构头像](/templates/avatar-creative.svg "linkresume-avatar:112")
 
 # 张三｜UI 设计师
 

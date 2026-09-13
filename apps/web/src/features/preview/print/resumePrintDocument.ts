@@ -122,7 +122,7 @@ export function renderResumePrintDocument(
   const extraClass = options.className ? ` ${escapeHtml(options.className)}` : "";
   const ariaLabel = options.ariaLabel ? ` aria-label="${escapeHtml(options.ariaLabel)}"` : "";
   const style = printCssVariables(request.style);
-  const title = escapeHtml(request.title.trim() || "LinkCV Resume");
+  const title = escapeHtml(request.title.trim() || "LinkResume Resume");
   const css = options.includeStyles ? "<style data-resume-print-styles>/* injected by the renderer */</style>" : "";
 
   return `<article class="${paperClasses}${extraClass}" data-resume-print-document data-render-state="${renderState}" data-render-protocol="${RESUME_RENDER_PROTOCOL_VERSION}" data-resume-title="${title}"${ariaLabel} style="${escapeHtml(style)}">${css}<div class="${contentClasses}">${content}</div></article>`;

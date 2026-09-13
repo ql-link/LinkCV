@@ -1,6 +1,6 @@
-# LinkCV Alembic 迁移约束
+# LinkResume Alembic 迁移约束
 
-本目录管理 LinkCV MySQL schema 版本。迁移采用 **SQL-first、forward-only**：表、字段、索引、外键和可表达的数据变更写在 up SQL 中，Python revision 按版本顺序执行；仓库不保存 down SQL，也不支持数据库降级。
+本目录管理 LinkResume MySQL schema 版本。迁移采用 **SQL-first、forward-only**：表、字段、索引、外键和可表达的数据变更写在 up SQL 中，Python revision 按版本顺序执行；仓库不保存 down SQL，也不支持数据库降级。
 
 ## 目录
 
@@ -37,7 +37,7 @@ apps/backend/migrations/sql/<revision>.up.sql
 
 - 每条语句以英文分号结尾，并在分号后换行。
 - 单行说明使用 `--` 注释。
-- 不允许 `CREATE DATABASE`、`DROP DATABASE` 或 `USE`；runner 已锁定目标为 `linkcv`。
+- 不允许 `CREATE DATABASE`、`DROP DATABASE` 或 `USE`；runner 已锁定目标为 `linkresume`。
 - 明确字符集、排序规则、外键、约束和索引。
 - 破坏性变更优先“扩展 → 回填 → 切换 → 收缩”。
 - 分批回填、外部调用等 SQL 无法安全表达的逻辑才允许少量 Python，并说明原因和幂等性。
@@ -55,17 +55,17 @@ npm run db:init
 共享 Dev 环境显式选择配置：
 
 ```bash
-LINKCV_ENV_FILE=.env.development npm run db:migrate
+LINKRESUME_ENV_FILE=.env.development npm run db:migrate
 ```
 
 部署通过 `scripts/release/run_alembic.py` 核对环境、MySQL host、port 和 database 后升级到 head。迁移测试只覆盖空库到 head、受支持历史版本到 head 和重复 upgrade；不执行升级降级往返：
 
 ```bash
-LINKCV_TEST_MYSQL_URL='mysql+pymysql://<user>:<password>@127.0.0.1:<port>/linkcv' \
+LINKRESUME_TEST_MYSQL_URL='mysql+pymysql://<user>:<password>@127.0.0.1:<port>/linkresume' \
   uv run --directory apps/backend pytest tests/integration/migrations
 ```
 
-测试 URL 只能指向可清理的本地 `linkcv` 库，不能指向共享 Dev 或 Production。
+测试 URL 只能指向可清理的本地 `linkresume` 库，不能指向共享 Dev 或 Production。
 
 ## 恢复策略
 
