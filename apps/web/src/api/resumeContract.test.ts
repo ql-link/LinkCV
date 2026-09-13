@@ -5,6 +5,7 @@ import {
   defaultSemanticDocument,
   defaultSemanticStyle,
   defaultCanonicalDocument,
+  defaultCanonicalPresentation,
   normalizeResumeAccentColor,
   editorSettingsToStyle,
   editorDocumentToMarkdown,
@@ -286,6 +287,16 @@ describe("resume semantic contract adapter", () => {
     expect(editorSettingsToStyle(settings, original).template_key).toBe(
       "classic-technical-cn",
     );
+  });
+
+  it("restores exact font sizes after repeated scale save/read roundtrips", () => {
+    let style = structuredClone(defaultCanonicalPresentation);
+    style.template_snapshot.tokens.font_size_pt = 9.5;
+    for (let i = 0; i < 10; i += 1) {
+      style = editorSettingsToStyle({ ...styleToEditorSettings(style), fontSize: 10.5 }, style);
+      style = JSON.parse(JSON.stringify(style));
+      expect(styleToEditorSettings(style).fontSize).toBe(10.5);
+    }
   });
 
   it("keeps presentation settings in the active template namespace", () => {

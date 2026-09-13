@@ -400,6 +400,21 @@ describe("ResumeWorkbench 页面设置步进按钮", () => {
     expect(onChange).toHaveBeenNthCalledWith(2, 11);
   });
 
+  it("字号和行距不显示浮点尾数，步进仍返回准确值", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<>
+      <SettingsStepper label="正文字号" unit="pt" value={10.500000000000002} min={8} max={16} step={0.5} onChange={onChange} />
+      <SettingsStepper label="正文行距" unit="" value={1.3500000000000001} min={1.1} max={1.8} step={0.05} onChange={onChange} />
+    </>);
+    expect(screen.getByLabelText("正文字号当前值")).toHaveTextContent(/^10\.5 pt$/);
+    expect(screen.getByLabelText("正文行距当前值")).toHaveTextContent(/^1\.35$/);
+    await user.click(screen.getByRole("button", { name: "正文字号增大" }));
+    await user.click(screen.getByRole("button", { name: "正文行距减小" }));
+    expect(onChange).toHaveBeenNthCalledWith(1, 11);
+    expect(onChange).toHaveBeenNthCalledWith(2, 1.3);
+  });
+
   it("允许上下页边距减小到 6 毫米", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

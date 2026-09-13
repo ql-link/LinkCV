@@ -168,6 +168,7 @@ def replace_editor_markdown(
             and section["title"] is not None
         ):
             section["title"]["value"] = section_after.text
+            section["title"].pop("runs", None)
         for entry in section["entries"]:
             entry_after = after.get(entry["node_id"])
             entry_before = before.get(entry["node_id"])
@@ -183,6 +184,7 @@ def replace_editor_markdown(
                 if target_field is None:
                     raise ApiError(422, "TARGET_INVALID")
                 target_field["value"] = entry_after.text
+                target_field.pop("runs", None)
         containers.append(section["blocks"])
         containers.extend(entry["blocks"] for entry in section["entries"])
     for blocks in containers:
