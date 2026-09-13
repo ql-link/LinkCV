@@ -132,6 +132,7 @@ mkdir -p "${build_dir}" "${deploy_dir}/deploy/observability" "${backup_root}"
 tar -xzf "${source_archive}" -C "${build_dir}"
 
 DOCKER_BUILDKIT=1 docker build \
+  --build-arg "DEBIAN_MIRROR=https://mirrors.aliyun.com" \
   --label "org.opencontainers.image.revision=${commit_short}" \
   -t "${image}:${tag}" \
   "${build_dir}"

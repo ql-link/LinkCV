@@ -22,6 +22,7 @@ FROM node:22-bookworm-slim AS node-runtime
 
 FROM python:3.13-slim AS runtime
 
+ARG DEBIAN_MIRROR=http://deb.debian.org
 ARG UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG UV_VERSION=0.11.30
 ENV PYTHONUNBUFFERED=1 \
@@ -36,7 +37,8 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
 WORKDIR /app/apps/backend
-RUN apt-get update && \
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends chromium && \
     rm -rf /var/lib/apt/lists/* && \
     useradd --system --create-home --home-dir /var/lib/linkresume-pdf --shell /usr/sbin/nologin linkresume-pdf && \
