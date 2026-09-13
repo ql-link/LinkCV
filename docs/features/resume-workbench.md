@@ -10,7 +10,7 @@
 
 - `/resumes`：简历列表、创建、导入、重命名、删除和分享。
 - `/resumes/new`：从启用模板创建简历。
-- `/resumes/:resumeId/edit`：正文编辑、页面设置、模板切换、版本记录、AI 侧栏和 PDF 导出。
+- `/resumes/:resumeId/edit`：正文编辑、页面设置、模板切换、版本记录、AI 侧栏和 PDF 导出；生产构建暂不显示打开 AI 侧栏的悬浮入口。
 - `/templates`：模板浏览与预览。
 - `/share/:token`：受可见性与过期时间约束的只读分享页。
 - 管理端 `/admin/templates`：严格模板包导入、预览和启停。
