@@ -16,6 +16,8 @@
 
 生产构建按页面路由拆分 React 功能包，公共 HTML 不依赖 Google Fonts 等境外样式服务；入口只加载应用壳和当前页面所需代码。产品界面的标题、正文、用户输入、按钮、导航和选择控件统一使用随应用发布的思源黑体可变字体，并以系统中文黑体作为回退；独立 AI 助手和简历编辑器侧栏仅在用户消息与 AI 回复正文中使用随应用发布的思源宋体，其余控件继续使用思源黑体。简历画布仍以用户选择的版式字体为准。简历可选字体随应用发布，霞鹜文楷使用 Medium 字重，思源宋体和 Noto Sans SC 使用 Regular 字重，均来自固定版本的本地字体文件；PDF CLI 复用这些完全相同的字体文件，并等待 `document.fonts.ready` 后才测量分页。
 
+搜索引擎只收录生产主域名 `https://linkresume.cn/` 的公共落地页，兼容入口 `/home` 使用同一个 canonical。`index.html` 提供标题、简介、Open Graph、Twitter Card 和 `Organization`/`WebSite` JSON-LD，组织 Logo 复用公开的 256×256 `favicon.png`；根目录 `robots.txt` 声明 `sitemap.xml`，站点地图只列 canonical 首页。React 路由切换会同步页面标题和 robots meta，FastAPI 的 SPA 静态回退还会为除 `/`、`/home` 和 `/index.html` 外的 HTML 深链返回 `X-Robots-Tag: noindex, nofollow, noarchive`。因此登录、管理、用户工作区、未知地址和带 token 的简历分享页都不会作为公开搜索结果入口；`/api/` 另由 `robots.txt` 禁止抓取。
+
 ## API 调用
 
 API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
