@@ -82,15 +82,6 @@ export function AccountPage() {
   const avatarReadRequestRef = useRef(0);
 
   useEffect(() => {
-    if (!notice) return;
-
-    const timer = window.setTimeout(() => {
-      setNotice(null);
-    }, 3000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
-  useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
@@ -605,7 +596,11 @@ export function AccountPage() {
         </div>
       )}
 
-      {notice && <FeedbackNotice kind={notice.kind} placement="floating">{notice.message}</FeedbackNotice>}
+      {notice && (
+        <FeedbackNotice kind={notice.kind} placement="floating" onDismiss={() => setNotice(null)}>
+          {notice.message}
+        </FeedbackNotice>
+      )}
     </main>
   );
 }

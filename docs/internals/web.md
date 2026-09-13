@@ -11,6 +11,7 @@
 - `apps/web/src/features/`：鉴权、首页、编辑器、预览、临时 JD 管理和管理端功能。
 - `apps/web/src/store/resumeStore.ts`：简历编辑状态。
 - `apps/web/src/api/client.ts`：鉴权、模板、简历与异步导入、智能助手 SSE、JD、资源、日志上报和管理员查询 API 客户端。
+- `apps/web/src/components/ui/feedback-notice.tsx`：全局操作反馈入口；浮层模式通过 Portal 挂载到页面根层，固定在视口上方居中，并统一在 3 秒后通知业务清理状态。
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
