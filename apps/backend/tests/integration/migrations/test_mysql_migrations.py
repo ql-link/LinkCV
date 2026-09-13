@@ -2877,11 +2877,56 @@ def test_professional_template_seed_conflict_is_atomic() -> None:
     engine.dispose()
 
 
-def test_professional_template_preview_refresh_refuses_customized_snapshots() -> None:
+def _set_professional_template_brand(engine, brand: str) -> None:
+    content_path = "$.sections.custom_sections[0].items[0].content.content"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET data_json = JSON_SET(data_json, :path, "
+                "REPLACE(JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)), "
+                "'linkresume-avatar:', :directive)) "
+                "WHERE `key` IN ('administrative-sidebar-cn', 'campus-professional-cn', "
+                "'civic-service-cn', 'creative-orange-cn')"
+            ),
+            {"path": content_path, "directive": f"{brand}-avatar:"},
+        )
+
+
+@pytest.mark.parametrize("brand", ["linkcv", "linkresume"])
+def test_professional_template_preview_refresh_accepts_official_brand_snapshots(
+    brand: str,
+) -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0026")
+    _set_professional_template_brand(engine, brand)
+    run_alembic(database_url, "upgrade", "0027")
+    with engine.connect() as connection:
+        contents = connection.scalars(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, "
+                "'$.sections.custom_sections[0].items[0].content.content')) "
+                "FROM resume_templates WHERE `key` IN "
+                "('administrative-sidebar-cn', 'campus-professional-cn', "
+                "'civic-service-cn', 'creative-orange-cn')"
+            )
+        ).all()
+        assert len(contents) == 4
+        assert all('/templates/avatar-cat.jpg "linkresume-avatar:' in body for body in contents)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+@pytest.mark.parametrize("brand", ["linkcv", "linkresume"])
+def test_professional_template_preview_refresh_refuses_customized_snapshots(
+    brand: str,
+) -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0026")
+    _set_professional_template_brand(engine, brand)
     content_path = "$.sections.custom_sections[0].items[0].content.content"
 
     with engine.begin() as connection:

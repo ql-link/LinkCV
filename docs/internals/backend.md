@@ -37,6 +37,8 @@
 
 ## 数据与事务
 
+历史模板迁移 `0027` 的内容指纹校验由 `core/migration_sql.py` 做限定兼容：只接受四份官方 `0026` 模板改名前、以及仅将头像指令改为 `linkresume-avatar` 后的已知指纹。其他自定义正文仍触发原有拒绝覆盖与事务回滚；已发布 SQL 文件不改写，已经越过 `0027` 的数据库不会重新执行该步骤。
+
 迁移 `0056` 将岗位 `employment_type` 检查约束收敛为 `internship/campus/full_time` 或空值。不包含自动删除或旧值回填；存在不支持的旧值时约束变更失败，须先按目标环境授权完成数据处理。发布时先升级约束，再部署新的岗位/求职接口和 Web、采集插件。迁移 forward-only，恢复旧约束使用新的向前 revision，数据恢复依赖备份。
 
 MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_companies` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
