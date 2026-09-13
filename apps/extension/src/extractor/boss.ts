@@ -155,13 +155,7 @@ export function extractBossJob(document: Document, sourceUrl: string): BossCaptu
         "a[href*='/gongsi/']",
       ]) ??
       companyFromBossInfo(detailRoot);
-    const logoUrl = firstHttpsImageUrl(detailRoot, sourceUrl, [
-      ".sider-company .company-info img",
-      ".job-detail-company img",
-      ".company-info img",
-      "img[class*='company-logo']",
-      "img[class*='company_logo']",
-    ]);
+    const logoUrl = findCompanyLogo(fieldRoots, sourceUrl);
     const resolvedSourceUrl = resolveBossSourceUrl(
       document,
       sourceUrl,
@@ -710,15 +704,41 @@ function firstAttribute(root: ParentNode, selectors: string[], attribute: string
   return undefined;
 }
 
-function firstHttpsImageUrl(root: ParentNode, baseUrl: string, selectors: string[]): string | undefined {
-  const value = firstAttribute(root, selectors, "src");
-  if (!value) return undefined;
-  try {
-    const url = new URL(value, baseUrl);
-    return url.protocol === "https:" ? url.toString() : undefined;
-  } catch {
-    return undefined;
+function findCompanyLogo(roots: ParentNode[], baseUrl: string): string | undefined {
+  const selectors = [
+    "img[class*='company-logo']", ".company-logo img",
+    "img[class*='company_logo']", "[class*='company_logo'] img",
+    ".sider-company .company-info img", ".job-detail-company img",
+    ".company-info img", ".company-logo-box img", "a[href*='/gongsi/'] img",
+  ];
+  for (const root of roots) {
+    for (const selector of selectors) {
+      for (const image of queryAll(root, selector)) {
+        if (!(image instanceof HTMLImageElement)) continue;
+        if (image.closest(".recommend-list, .job-boss-info, .boss-info, .boss-avatar")) continue;
+        const card = image.closest(CARD_OR_RECOMMENDATION_SELECTOR);
+        // A list card is trusted only when it is the already resolved current job.
+        if (card && !(root instanceof Element && (root === card || card.contains(root)))) continue;
+        const values = [
+          image.getAttribute("data-src"), image.getAttribute("data-original"),
+          image.getAttribute("data-lazy-src"), image.currentSrc, image.getAttribute("src"),
+          ...[image.getAttribute("data-srcset"), image.getAttribute("srcset")]
+            .flatMap((value) => value && !value.includes("data:")
+              ? value.split(",").map((entry) => entry.trim().split(/\s+/)[0]) : []),
+        ];
+        for (const value of values) {
+          if (!value?.trim()) continue;
+          try {
+            const url = new URL(value.trim(), baseUrl);
+            if (url.protocol === "https:" && !url.username && !url.password) return url.toString();
+          } catch {
+            // Continue past a broken or placeholder image to the next candidate.
+          }
+        }
+      }
+    }
   }
+  return undefined;
 }
 
 function firstTextAcross(roots: ParentNode[], selectors: string[]): string | undefined {

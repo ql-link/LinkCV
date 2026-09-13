@@ -31,11 +31,13 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0061` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0062` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
+
+历史模板迁移 `0027` 的内容指纹校验由 `core/migration_sql.py` 做限定兼容：只接受四份官方 `0026` 模板改名前、以及仅将头像指令改为 `linkresume-avatar` 后的已知指纹。其他自定义正文仍触发原有拒绝覆盖与事务回滚；已发布 SQL 文件不改写，已经越过 `0027` 的数据库不会重新执行该步骤。
 
 迁移 `0056` 将岗位 `employment_type` 检查约束收敛为 `internship/campus/full_time` 或空值。不包含自动删除或旧值回填；存在不支持的旧值时约束变更失败，须先按目标环境授权完成数据处理。发布时先升级约束，再部署新的岗位/求职接口和 Web、采集插件。迁移 forward-only，恢复旧约束使用新的向前 revision，数据恢复依赖备份。
 
@@ -48,6 +50,9 @@ MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_compan
 `job_descriptions.description` 保持非空字符串列，但允许空字符串表示用户尚未填写职位描述；迁移 `0055` 删除旧的非空白 CHECK，不修改存量岗位。手工创建可省略该字段，浏览器插件导入仍要求采集到非空职位描述。
 
 迁移 `0059` 为用户已有的 `job_descriptions` 增加可空 `logo_url`，只接受应用层校验通过的 HTTPS 绝对 URL；新求职记录把该字段写入既有 `job_snapshot`，不为 `job_applications` 新增重复列。该迁移同时新增无 `user_id`、无业务外键的 `global_companies` 平台资料表，保存标准化名称、Logo、官网、行业、规模、融资阶段和简介；当前没有对应路由、管理页面、自动匹配或用户岗位回填。
+
+迁移 `0062` 仅为 `job_descriptions` 增加可空 `logo_sha256 CHAR(64)`（ASCII、ascii_bin），不新增图片表、索引或外键。`application/job_descriptions/logo_service.py` 负责图片解码、压缩、内容指纹和快照图标同步。MinIO 路径为 `company-logos/<sha256>.webp`，同图跨用户复用、按岗位归属鉴权。写入时使用当前 MySQL 连接上的 `GET_LOCK` 串行化同指纹的存在检查与首次写入，完成后释放，避免并发产生重复对象版本；缺失之外的存储错误不能当作不存在。图片成功落盘后才提交岗位引用，失败不删除共享对象。暂不自动回收已无引用或事务失败遗留的 Logo 文件，删除岗位也不删除共享图。此目录不受用户独占资源的失败清理逻辑管理。部署需先执行 `0062` 再更新后端，之后更新插件；线上实际 revision 需单独查询。
+
 
 `user_dataset.sha256` 在 MySQL 使用固定长度 `CHAR(64)` 保存源文件 SHA-256 十六进制摘要；SQLite 测试仍使用通用字符串替身。该字段只用于后端完整性元数据，不向浏览器返回。
 
@@ -213,7 +218,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到 `0061`、模板初始化和物理约束验证。
+- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到 `0062`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

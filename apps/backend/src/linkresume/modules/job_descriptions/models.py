@@ -60,6 +60,21 @@ def ascii_char(length: int):
 
 class JobDescription(Base):
     __tablename__ = "job_descriptions"
+
+    logo_sha256: Mapped[str | None] = mapped_column(
+        ascii_char(64), nullable=True, comment="托管公司图片最终字节的 SHA-256"
+    )
+
+    @property
+    def logo_revision(self) -> str | None:
+        return self.logo_sha256
+
+    @property
+    def resolved_logo_url(self) -> str | None:
+        from linkresume.domain.company_logo import company_logo_url
+
+        return company_logo_url(self.id, self.logo_sha256) or self.logo_url
+
     __table_args__ = (
         PrimaryKeyConstraint("id", name="pk_job_descriptions"),
         UniqueConstraint(

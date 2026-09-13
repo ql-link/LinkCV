@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from io import BytesIO
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 from minio.error import S3Error
@@ -17,6 +18,9 @@ from linkresume.application.job_descriptions.service import (
     hard_delete_owned_job,
     list_owned_jobs,
     update_owned_job,
+)
+from linkresume.application.job_descriptions.logo_service import (
+    MAX_LOGO_BYTES, MAX_STORED_LOGO_BYTES, attach_logo,
 )
 from linkresume.application.interviews.service import ensure_pending_application_for_job
 from linkresume.application.job_descriptions.import_service import (
@@ -37,6 +41,7 @@ from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.job_descriptions.schemas import (
+    CompanyLogoResponse,
     DeleteJobDescriptionResponse,
     JobDescriptionCreateRequest,
     JobDescriptionImportRequest,
@@ -288,6 +293,72 @@ def import_job_description(
         job_description=job_record(job),
         application=JobImportApplicationRecord.model_validate(application),
     )
+
+
+@router.post("/{job_id}/logo", response_model=CompanyLogoResponse)
+def upload_company_logo(
+    job_id: str,
+    request: Request,
+    file: UploadFile = File(),
+    mode: Literal["fill_missing", "replace"] = Form(default="fill_missing"),
+    expected_revision: str | None = Form(default=None, max_length=64),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
+) -> CompanyLogoResponse:
+    job = require_owned_job(db, job_id, user.id)
+    try:
+        key = f"company-logo:upload:{user.id}"
+        count = request.app.state.redis.incr(key)
+        if count == 1:
+            request.app.state.redis.expire(key, 60)
+    except Exception as error:
+        raise ApiError(503, "COMPANY_LOGO_UNAVAILABLE") from error
+    if count > 30:
+        raise ApiError(429, "COMPANY_LOGO_RATE_LIMITED")
+    if mode == "fill_missing" and job.logo_sha256:
+        return CompanyLogoResponse(logo_url=job.resolved_logo_url, revision=job.logo_sha256)
+    data = file.file.read(MAX_LOGO_BYTES + 1)
+    result = attach_logo(db, storage, job, data, mode=mode, expected_revision=expected_revision)
+    return CompanyLogoResponse(**result)
+
+
+@router.get("/{job_id}/logo", response_model=None)
+def read_company_logo(
+    job_id: str,
+    request: Request,
+    v: str = Query(pattern=r"^[0-9a-f]{64}$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
+) -> Response:
+    job = require_owned_job(db, job_id, user.id)
+    if v != job.logo_sha256:
+        raise ApiError(404, "COMPANY_LOGO_NOT_FOUND")
+    etag = f'"{v}"'
+    headers = {"Cache-Control": "private, no-cache", "ETag": etag,
+               "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox"}
+    try:
+        remote = storage.get(f"company-logos/{v}.webp")
+        try:
+            matches = {item.strip().removeprefix("W/") for item in request.headers.get("if-none-match", "").split(",")}
+            if etag in matches or "*" in matches:
+                return Response(status_code=304, headers=headers)
+            data = remote.read(MAX_STORED_LOGO_BYTES + 1)
+            if not data or len(data) > MAX_STORED_LOGO_BYTES:
+                raise ApiError(503, "COMPANY_LOGO_READ_FAILED")
+        finally:
+            remote.close()
+            remote.release_conn()
+    except S3Error as error:
+        if error.code in {"NoSuchKey", "NoSuchObject"}:
+            raise ApiError(404, "COMPANY_LOGO_NOT_FOUND") from error
+        raise ApiError(503, "COMPANY_LOGO_READ_FAILED") from error
+    except ApiError:
+        raise
+    except Exception as error:
+        raise ApiError(503, "COMPANY_LOGO_READ_FAILED") from error
+    return Response(content=data, media_type="image/webp", headers=headers)
 
 
 @router.get("/{job_id}", response_model=JobDescriptionResponse)

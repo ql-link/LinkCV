@@ -247,21 +247,31 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用当前 `chat` 能力；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_structuring` 能力。响应中的 `draft` 与普通创建字段同构但全部可空，`warnings` 提示未识别的核心字段；调用方必须先让用户核对或补充，再另行调用创建接口。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
 
-创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，服务端只保存 URL，不下载、代理或托管图片。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
+创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
 
 浏览器导入请求使用 `source_url` 和嵌套 `capture`。当前只接受 `zhipin.com` 的 `/job_detail/{source_job_id}.html`；`capture.job_title`、`capture.company_name`、`capture.description_text` 清洗后必须非空。可选采集字段包括 `logo_url`、`skills`、就业类型原文、学历、经验、工作时间、城市、地址、薪资原文、公司字段/标签和招聘者字段。后端去除不可见字符、压缩空白、删除明确的详情标题与举报页尾，并确定性映射常见就业类型、远程/混合工作、`K·N薪` 和人民币时/日/月/年区间；无法可靠识别的字段保持为空，不做分析或模型推断。
 
 导入请求字段非法、非 BOSS 详情 URL 或必填采集内容缺失时返回 `400 INVALID_JOB_IMPORT`。重复来源直接返回既有 JD 及其唯一求职记录，包括已经结束的记录，不创建再次投递；显式 `duplicate_resolution` 仍复用普通创建的 `JD_EDIT_CONFLICT` 和 `JD_WRITE_FAILED` 语义。插件不需要也不能提交 `user_id`、来源身份哈希或数据库字段。
 
-岗位创建和浏览器导入会在同一数据库事务中为该 JD 创建唯一的待投递求职记录；同一 JD 已有任何求职记录时直接返回该记录，不重复创建，也不覆盖其投递时间、阶段或历史。通过求职进程接口为已有记录的 JD 再次创建返回 `409 APPLICATION_ALREADY_EXISTS` 并携带原 `application_id`。显式 `duplicate_resolution` 仍用于用户确认用新采集内容更新已有 JD。普通更新及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
+岗位创建和浏览器导入会在同一数据库事务中为该 JD 创建唯一的待投递求职记录；同一 JD 已有任何求职记录时直接返回该记录，不重复创建，也不覆盖其投递时间、阶段或历史。浏览器插件保留成功响应中的 `application.id`，用于打开 `/career/applications/{id}`；兼容旧服务缺少或返回空 `application` 时回退到岗位详情，不影响导入请求格式。通过求职进程接口为已有记录的 JD 再次创建返回 `409 APPLICATION_ALREADY_EXISTS` 并携带原 `application_id`。显式 `duplicate_resolution` 仍用于用户确认用新采集内容更新已有 JD。普通更新及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
 
 硬删除同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。服务先锁定岗位及其求职进程，依次删除素材对象、素材记录、排期、阶段和求职进程，再删除 JD；活动和已结束进程都在清理范围内。成功后所有关联数据均无法恢复，相同来源可再次写入。素材对象清理或数据库删除失败返回 `502 JD_DELETE_FAILED`，数据库记录保留供重试；MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，重试按对象不存在视为已清理。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
 
 技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
 
+### 公司 Logo 托管
+
+`POST /api/job-descriptions/{job_id}/logo` 接受 multipart `file`、可选 `mode=fill_missing|replace`（默认补图），换图必须携带 `expected_revision`（当前图片 SHA-256，无托管图时为 `none`）。登录并核实岗位归属后，按用户限制每分钟 30 次；原图最多 2 MiB，允许 PNG/JPEG/WebP/GIF，最多 1600 万像素。服务端统一生成最长边不超过 256 像素、不放大的 WebP，去除元数据，对最终字节计算 SHA-256。默认补图不替换已有托管图。成功返回 `{logo_url, revision}`；读取/解码/存储失败不会回滚之前成功的岗位导入。
+
+错误包括 `401` 未登录、`404 JD_NOT_FOUND` 不存在或越权、`413 COMPANY_LOGO_TOO_LARGE`、`422 COMPANY_LOGO_INVALID`、`409 COMPANY_LOGO_CONFLICT`、`429 COMPANY_LOGO_RATE_LIMITED`、`503 COMPANY_LOGO_SAVE_FAILED|COMPANY_LOGO_BUSY|COMPANY_LOGO_UNAVAILABLE`。存储成功后仅更新岗位图片指纹和所属求职快照的图标键，并递增受影响记录的锁版本。
+
+`GET /api/job-descriptions/{job_id}/logo?v={sha256}` 先检查登录、岗位归属和当前图片指纹，返回 `image/webp`、`Cache-Control: private, no-cache`、ETag 和 `nosniff`；命中 ETag 返回 304。越权、岗位不存在或指纹过期返回 404；未登录为 401；对象缺失为 `404 COMPANY_LOGO_NOT_FOUND`，存储故障为 `503 COMPANY_LOGO_READ_FAILED`。不会返回 MinIO 对象地址，也没有跨用户指纹查询接口。
+
+岗位响应增加 `resolved_logo_url` 和 `logo_revision`；原 `logo_url` 继续表达可编辑 HTTPS 外链。求职响应的 `company_logo_url` 允许 HTTPS 外链或本记录关联岗位的受控本站 Logo 路径。普通全量表单提交未变化的外链不清空托管图；明确改变外链才解除托管引用并同步图标。
+
 ## 求职中心
 
-求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `job_application_stages` 保存追加式阶段历史，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。JD 创建或导入会原子创建或复用待投递记录；求职记录保存公司、岗位和完整 JD 快照（包括创建时的可选 `logo_url`），响应以可选 `company_logo_url` 暴露该快照值，后续修改原 JD 不会改写历史快照。
+求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `job_application_stages` 保存追加式阶段历史，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。JD 创建或导入会原子创建或复用待投递记录；求职记录保存公司、岗位和完整 JD 快照（包括创建时的可选 `logo_url`），响应以可选 `company_logo_url` 暴露该快照值，后续修改原 JD 不会改写历史快照的正文和其他业务信息；补充托管图片或明确修改原 Logo 外链时，仅同步图标键并递增求职记录锁版本。
 
 待投递由 `applied_at=null` 且 `lifecycle_status=active` 表示，不生成虚构业务阶段。`POST /api/job-applications/:id/stages` 接受 `client_request_id`、稳定 `stage_type`、可选 `stage_label/interview_round_no/applied_at/resume_id` 和 `base_lock_version`，可直接进入 `screening/assessment/written_test/ai_interview/interview/offer`。普通面试必须提供非空显示名称，轮次可空；其他类型不能携带轮次。首次阶段写入同时保存投递时间，未提供时使用服务端操作时间；旧当前阶段改为已完成，新阶段成为唯一当前阶段。相同请求 UUID 和相同阶段内容幂等返回，内容不同或版本过期返回 `409 INTERVIEW_EDIT_CONFLICT`。
 

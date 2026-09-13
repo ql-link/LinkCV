@@ -47,11 +47,18 @@ export interface JobSummary {
   job_title: string;
   company_name: string;
   logo_url: string | null;
+  resolved_logo_url?: string | null;
+  logo_revision?: string | null;
   lock_version: number;
 }
 
 export interface JobRecord extends JobSummary {
   source_url: string | null;
+}
+
+export interface JobImportResult {
+  job_description: JobRecord;
+  application?: { id: string } | null;
 }
 
 export interface ImportJobPayload {

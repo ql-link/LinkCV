@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from linkresume.application.interviews.service import delete_application_records
+from linkresume.application.job_descriptions.logo_service import sync_application_logos
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import utc_now
 from linkresume.domain.job_source import (
@@ -153,6 +154,9 @@ def update_owned_job(
     provided.pop("base_lock_version", None)
     _validate_merged_salary(job, provided)
     values = {field: provided[field] for field in _MUTABLE_FIELDS if field in provided}
+    logo_changed = "logo_url" in provided and provided["logo_url"] != job.logo_url
+    if logo_changed:
+        values["logo_sha256"] = None
     values.update(
         {
             "lock_version": JobDescription.lock_version + 1,
@@ -175,6 +179,8 @@ def update_owned_job(
         updated_job = db.scalar(
             select(JobDescription).where(JobDescription.id == job.id)
         )
+        if logo_changed and updated_job is not None:
+            sync_application_logos(db, updated_job)
         db.commit()
         return updated_job
     except Exception:
@@ -357,11 +363,16 @@ def _resolve_duplicate(
     now = utc_now()
     values = _create_values(payload)
     values.pop("notes", None)
+    logo_changed = values.get("logo_url") != target.logo_url
+    if logo_changed:
+        target.logo_sha256 = None
     for field, value in values.items():
         setattr(target, field, value)
     target.lock_version += 1
     target.updated_at = now
     try:
+        if logo_changed:
+            sync_application_logos(db, target)
         db.flush()
         db.refresh(target)
         if commit:
