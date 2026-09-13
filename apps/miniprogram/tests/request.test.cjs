@@ -3,14 +3,14 @@ const assert = require("node:assert/strict");
 
 test("concurrent 401 responses share one refresh and retry once", async () => {
   const storage = new Map([
-    ["linkcv_access_token", "old-access"],
-    ["linkcv_refresh_token", "old-refresh"],
-    ["linkcv_user", { id: "1", nickname: "张三" }],
+    ["linkresume_access_token", "old-access"],
+    ["linkresume_refresh_token", "old-refresh"],
+    ["linkresume_user", { id: "1", nickname: "张三" }],
   ]);
   let refreshCalls = 0;
   let protectedCalls = 0;
 
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkcv.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
   global.wx = {
     getStorageSync: (key) => storage.get(key),
     setStorageSync: (key, value) => storage.set(key, value),
@@ -48,18 +48,18 @@ test("concurrent 401 responses share one refresh and retry once", async () => {
   assert.deepEqual(responses, [{ resumes: [] }, { resumes: [] }]);
   assert.equal(refreshCalls, 1);
   assert.equal(protectedCalls, 4);
-  assert.equal(storage.get("linkcv_refresh_token"), "new-refresh");
+  assert.equal(storage.get("linkresume_refresh_token"), "new-refresh");
 });
 
 test("transient refresh failure keeps the session and does not create a new login", async () => {
   const storage = new Map([
-    ["linkcv_access_token", "expired-access"],
-    ["linkcv_refresh_token", "still-valid-refresh"],
-    ["linkcv_user", { id: "1", nickname: "张三" }],
+    ["linkresume_access_token", "expired-access"],
+    ["linkresume_refresh_token", "still-valid-refresh"],
+    ["linkresume_user", { id: "1", nickname: "张三" }],
   ]);
   let loginCalls = 0;
 
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkcv.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
   global.wx = {
     getStorageSync: (key) => storage.get(key),
     setStorageSync: (key, value) => storage.set(key, value),
@@ -88,19 +88,19 @@ test("transient refresh failure keeps the session and does not create a new logi
   );
 
   assert.equal(loginCalls, 0);
-  assert.equal(storage.get("linkcv_refresh_token"), "still-valid-refresh");
-  assert.equal(storage.get("linkcv_access_token"), "expired-access");
+  assert.equal(storage.get("linkresume_refresh_token"), "still-valid-refresh");
+  assert.equal(storage.get("linkresume_access_token"), "expired-access");
 });
 
 test("expired refresh can only log into an existing account and never registers silently", async () => {
   const storage = new Map([
-    ["linkcv_access_token", "expired-access"],
-    ["linkcv_refresh_token", "expired-refresh"],
-    ["linkcv_user", { id: "1", nickname: "张三" }],
+    ["linkresume_access_token", "expired-access"],
+    ["linkresume_refresh_token", "expired-refresh"],
+    ["linkresume_user", { id: "1", nickname: "张三" }],
   ]);
   let loginRequestData;
 
-  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkcv.example.test" } });
+  global.getApp = () => ({ globalData: { apiBaseUrl: "https://linkresume.example.test" } });
   global.wx = {
     getStorageSync: (key) => storage.get(key),
     setStorageSync: (key, value) => storage.set(key, value),
@@ -137,6 +137,6 @@ test("expired refresh can only log into an existing account and never registers 
     code: "wx-recovery-code",
     privacy_accepted: false,
   });
-  assert.equal(storage.has("linkcv_access_token"), false);
-  assert.equal(storage.has("linkcv_refresh_token"), false);
+  assert.equal(storage.has("linkresume_access_token"), false);
+  assert.equal(storage.has("linkresume_refresh_token"), false);
 });

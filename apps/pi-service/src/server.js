@@ -5,7 +5,7 @@ import { bearerToken, tokensEqual } from "./auth.js";
 import { loadConfig } from "./config.js";
 import { validateContextMaterials } from "./context.js";
 import { executeAgentProbe, executeAgentRun } from "./runtime/agent.js";
-import { createLinkCVClient } from "./tools/linkcv-client.js";
+import { createLinkResumeClient } from "./tools/linkresume-client.js";
 
 configureHttpDispatcher();
 const config = loadConfig();
@@ -35,7 +35,7 @@ function writeEvent(response, type, payload) {
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   if (request.method === "GET" && url.pathname === "/health") {
-    return json(response, 200, { status: "ok", service: "linkcv-pi" });
+    return json(response, 200, { status: "ok", service: "linkresume-pi" });
   }
   if (!tokensEqual(bearerToken(request.headers), config.serviceToken)) {
     return json(response, 401, { error: "AGENT_SERVICE_UNAUTHORIZED" });
@@ -43,9 +43,9 @@ const server = createServer(async (request, response) => {
   if (request.method === "GET" && url.pathname === "/internal/agent/readiness") {
     const controller = new AbortController();
     try {
-      const result = await createLinkCVClient(config, "readiness", controller.signal).readiness();
+      const result = await createLinkResumeClient(config, "readiness", controller.signal).readiness();
       if (result?.ready !== true) throw new Error("AGENT_NOT_READY");
-      return json(response, 200, { ready: true, service: "linkcv-pi" });
+      return json(response, 200, { ready: true, service: "linkresume-pi" });
     } catch {
       return json(response, 503, { error: "AGENT_NOT_READY" });
     }
@@ -201,5 +201,5 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(config.port, config.host, () => {
-  process.stdout.write(`linkcv-pi listening on ${config.host}:${config.port}\n`);
+  process.stdout.write(`linkresume-pi listening on ${config.host}:${config.port}\n`);
 });

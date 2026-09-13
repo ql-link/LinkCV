@@ -29,9 +29,9 @@ from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
-from linkcv.core.migration_sql import execute_sql_file
-from linkcv.domain.resume_document import rich_text_to_markdown
-from linkcv.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
+from linkresume.core.migration_sql import execute_sql_file
+from linkresume.domain.resume_document import rich_text_to_markdown
+from linkresume.domain.resume_snapshot import ResumeSnapshot, parse_resume_snapshot
 
 revision: str = "0041"
 down_revision: str | None = "0040"
@@ -46,10 +46,10 @@ WIDE_OPEN_PATTERN = re.compile(r"^\s*::::\s+(meta|trio)\s*$")
 WIDE_CLOSE_PATTERN = re.compile(r"^\s*::::\s*$")
 HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 AVATAR_PATTERN = re.compile(
-    r'^\s*!\[[^\]]*\]\((\S+)(?:\s+"linkcv-avatar:[^"]+")\)\s*$'
+    r'^\s*!\[[^\]]*\]\((\S+)(?:\s+"linkresume-avatar:[^"]+")\)\s*$'
 )
 BLOCK_ANCHOR_PATTERN = re.compile(
-    r"\[\[linkcv-block:blk_[a-z0-9]{16,64}(?::[a-z]+)?\]\]"
+    r"\[\[linkresume-block:blk_[a-z0-9]{16,64}(?::[a-z]+)?\]\]"
 )
 ICON_PATTERN = re.compile(r":icon\[[^\]]+\]:")
 
@@ -519,5 +519,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     raise RuntimeError(
-        "LinkCV database migrations are forward-only; restore a backup or create a new forward revision"
+        "LinkResume database migrations are forward-only; restore a backup or create a new forward revision"
     )

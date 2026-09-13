@@ -8,10 +8,10 @@ from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from linkcv.core.config import Settings
-from linkcv.core.storage import StreamUploadResult
-from linkcv.main import create_app
-from linkcv.modules.resumes.models import ResumeTemplate, ResumeVersion
+from linkresume.core.config import Settings
+from linkresume.core.storage import StreamUploadResult
+from linkresume.main import create_app
+from linkresume.modules.resumes.models import ResumeTemplate, ResumeVersion
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 

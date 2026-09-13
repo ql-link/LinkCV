@@ -347,7 +347,7 @@ function StatusShell({ children }: { children: ReactNode }) {
   return (
     <div className="status-shell">
       <header className="status-topbar">
-        <a href="/" aria-label="返回 LinkCV 首页" className="status-brand">
+        <a href="/" aria-label="返回 LinkResume 首页" className="status-brand">
           <Brand />
         </a>
       </header>

@@ -65,4 +65,4 @@ export interface DuplicateDetails {
   allowed_actions: Array<"update" | "cancel">;
 }
 
-export const CAPTURE_MESSAGE = "LINKCV_CAPTURE_BOSS_JOB" as const;
+export const CAPTURE_MESSAGE = "LINKRESUME_CAPTURE_BOSS_JOB" as const;

@@ -160,7 +160,7 @@ export const en: Translations = {
   },
 
   marquee: {
-    eyebrow: 'LINKCV / ONE WORKSPACE',
+    eyebrow: 'LINKRESUME / ONE WORKSPACE',
     title: 'A resume is just the beginning',
     subtitle: 'Keep scrolling to enter the complete job hunting workspace',
     keywords: ['A4 Editor', 'Version Control', 'PDF Export', 'Smart One-Page', 'Job Library', 'Chrome Extension', 'Template Import', 'Auto Save'],

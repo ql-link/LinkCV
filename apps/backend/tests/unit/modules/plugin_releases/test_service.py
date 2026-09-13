@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from linkcv.core.errors import ApiError
-from linkcv.modules.plugin_releases.service import PluginReleaseService
+from linkresume.core.errors import ApiError
+from linkresume.modules.plugin_releases.service import PluginReleaseService
 from tests.plugin_release_fakes import FakePluginStorage, build_plugin_zip
 
 ORIGIN = "http://127.0.0.1:5173"
@@ -26,7 +26,7 @@ def test_publish_writes_immutable_package_before_pointer_and_reads_current() -> 
     assert result.cleanup_pending is False
     assert service.pointer_key == "system/plugin-releases/current.json"
     assert pointer.object_key == (
-        "system/plugin-releases/v0.1.0/linkcv-job-capture-v0.1.0.zip"
+        "system/plugin-releases/v0.1.0/linkresume-job-capture-v0.1.0.zip"
     )
     assert pointer.schema_version == 3
     assert pointer.status == "published"
@@ -178,7 +178,7 @@ def test_publish_deletes_all_non_current_packages_after_pointer_switch() -> None
     first = service.publish(
         build_plugin_zip(version="0.1.0", origin=ORIGIN)
     ).pointer
-    orphan_key = "system/plugin-releases/v0.0.9/linkcv-job-capture-v0.0.9.zip"
+    orphan_key = "system/plugin-releases/v0.0.9/linkresume-job-capture-v0.0.9.zip"
     storage.objects[orphan_key] = b"orphan"
 
     result = service.publish(build_plugin_zip(version="0.2.0", origin=ORIGIN))

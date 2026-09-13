@@ -802,13 +802,13 @@ function canonicalRunToMarkdown(
   for (const mark of run.marks) {
     if (mark === "bold") value = `**${value}**`;
     if (mark === "italic") value = `*${value}*`;
-    if (mark === "underline") value = `[[linkcv-underline]]${value}[[/linkcv-underline]]`;
+    if (mark === "underline") value = `[[linkresume-underline]]${value}[[/linkresume-underline]]`;
     if (mark === "strike") value = `~~${value}~~`;
     if (mark === "code") value = `\`${value}\``;
   }
   if (run.href && !isResumeEmailLink(run.href)) value = `[${value}](${run.href})`;
-  if (run.style.highlight_color) value = `[[linkcv-highlight:${run.style.highlight_color}]]${value}[[/linkcv-highlight]]`;
-  if (run.style.color) value = `[[linkcv-color:${run.style.color}]]${value}[[/linkcv-color]]`;
+  if (run.style.highlight_color) value = `[[linkresume-highlight:${run.style.highlight_color}]]${value}[[/linkresume-highlight]]`;
+  if (run.style.color) value = `[[linkresume-color:${run.style.color}]]${value}[[/linkresume-color]]`;
   if (run.style.font_size_pt != null) value = `${inlineFontSizeOpenMarker(run.style.font_size_pt)}${value}${INLINE_FONT_SIZE_CLOSE_MARKER}`;
   return value;
 }
@@ -835,7 +835,7 @@ function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
   if (identity.headline?.value) lines.push("", identity.headline.value);
   if (identity.contacts.length) lines.push("", identity.contacts.map((contact) => contact.label ? `${contact.label}：${contact.value}` : contact.value).join(" ｜ "));
   if (identity.avatar && !identity.avatar.system_fallback && identity.avatar.src) {
-    lines.push("", `![${identity.avatar.alt ?? "简历头像"}](${identity.avatar.src} "linkcv-avatar:${identity.avatar.width ?? 96}")`);
+    lines.push("", `![${identity.avatar.alt ?? "简历头像"}](${identity.avatar.src} "linkresume-avatar:${identity.avatar.width ?? 96}")`);
   }
   for (const section of document.sections) {
     const title = section.title?.value ?? "";
@@ -884,7 +884,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentRead) {
       )) return body;
       if (semantic.semantic_kind === "basics") return body;
       return [
-        `## [[linkcv-block:${section.id}:${semantic.semantic_kind}]]${semantic.display_title}`,
+        `## [[linkresume-block:${section.id}:${semantic.semantic_kind}]]${semantic.display_title}`,
         body,
       ].filter(Boolean).join("\n\n");
     }).filter(Boolean).join("\n\n").trim();
@@ -904,7 +904,7 @@ export function resumeDocumentToMarkdown(document: ResumeDocumentRead) {
   if (contactParts.length) lines.push("", contactParts.join(" ｜ "));
   if (basics.summary) lines.push("", richText(basics.summary));
   if (basics.photo) {
-    lines.push("", `![简历头像](${basics.photo} \"linkcv-avatar:96\")`);
+    lines.push("", `![简历头像](${basics.photo} \"linkresume-avatar:96\")`);
   }
 
   if (sections.work_experiences.length) {
@@ -1014,13 +1014,13 @@ export function resumeDocumentFromMarkdown(
 ): LegacyResumeDocument {
   const normalized = stripTemplatePageRegions(markdown)
     .split("\n")
-    .filter((line) => !/!\[[^\]]*\]\([^)]*\s+"linkcv-avatar:[^"]+"\)/u.test(line))
+    .filter((line) => !/!\[[^\]]*\]\([^)]*\s+"linkresume-avatar:[^"]+"\)/u.test(line))
     .join("\n")
     .replace(/\n{3,}/gu, "\n\n")
     .trim();
   const lines = normalized.split("\n");
   const sections: Array<{ id: string; title: string; body: string; kind: ResumeDocument["semantic_sections"][number]["semantic_kind"] }> = [];
-  const headingPattern = /^##\s+(?:\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\])?(.*)$/u;
+  const headingPattern = /^##\s+(?:\[\[linkresume-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\])?(.*)$/u;
   let start = 0;
   let current: RegExpMatchArray | null = null;
   const stableBlockId = (seed: string, index: number) => {
@@ -1076,7 +1076,7 @@ export function resumeDocumentFromMarkdown(
     start = index + 1;
   }
   pushSection(lines.length, current, sections.length);
-  const heading = normalized.match(/^#\s+(?:\[\[linkcv-block:blk_[a-z0-9]{16,64}\]\])?(.+)$/m)?.[1]?.trim();
+  const heading = normalized.match(/^#\s+(?:\[\[linkresume-block:blk_[a-z0-9]{16,64}\]\])?(.+)$/m)?.[1]?.trim();
   const customSections = sections.map((section) => ({
     id: section.id,
     title: section.title,
@@ -1155,7 +1155,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
       ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
       : persistedFontOverride;
     const fontFamily = /PingFang SC|Microsoft YaHei|system-ui/u.test(persistedFontFamily)
-      ? '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+      ? '"LinkResume Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
       : persistedFontFamily;
     void accentColor;
     return {
@@ -1183,7 +1183,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
     ? '"Source Han Serif SC", "Songti SC", STSong, SimSun, serif'
     : style.font_family;
   const fontFamily = /PingFang SC|Microsoft YaHei|system-ui/u.test(persistedFontFamily)
-    ? '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+    ? '"LinkResume Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
     : persistedFontFamily;
   return {
     fontFamily,
@@ -1282,7 +1282,7 @@ function markedText(node: JSONContent) {
   for (const mark of node.marks ?? []) {
     if (mark.type === "bold") value = `**${value}**`;
     if (mark.type === "italic") value = `*${value}*`;
-    if (mark.type === "underline") value = `[[linkcv-underline]]${value}[[/linkcv-underline]]`;
+    if (mark.type === "underline") value = `[[linkresume-underline]]${value}[[/linkresume-underline]]`;
     if (mark.type === "strike") value = `~~${value}~~`;
     if (mark.type === "code") value = `\`${value}\``;
     if (
@@ -1297,14 +1297,14 @@ function markedText(node: JSONContent) {
       && typeof mark.attrs?.color === "string"
       && /^#[0-9a-f]{6}$/iu.test(mark.attrs.color)
     ) {
-      value = `[[linkcv-highlight:${mark.attrs.color}]]${value}[[/linkcv-highlight]]`;
+      value = `[[linkresume-highlight:${mark.attrs.color}]]${value}[[/linkresume-highlight]]`;
     }
   }
   const textStyle = node.marks?.find((mark) => mark.type === "textStyle")?.attrs;
   const color = typeof textStyle?.color === "string" && /^#[0-9a-f]{6}$/iu.test(textStyle.color)
     ? textStyle.color
     : null;
-  if (color) value = `[[linkcv-color:${color}]]${value}[[/linkcv-color]]`;
+  if (color) value = `[[linkresume-color:${color}]]${value}[[/linkresume-color]]`;
   const fontSize = normalizeInlineFontSize(textStyle?.fontSize);
   if (fontSize != null) {
     value = `${inlineFontSizeOpenMarker(fontSize)}${value}${INLINE_FONT_SIZE_CLOSE_MARKER}`;
@@ -1317,14 +1317,14 @@ function nodeText(node: JSONContent): string {
   if (node.type === "hardBreak") return "\n";
   if (node.type === "resumeBlockAnchor" && typeof node.attrs?.blockId === "string") {
     const semanticKind = typeof node.attrs.semanticKind === "string" ? `:${node.attrs.semanticKind}` : "";
-    return `[[linkcv-block:${node.attrs.blockId}${semanticKind}]]`;
+    return `[[linkresume-block:${node.attrs.blockId}${semanticKind}]]`;
   }
   if (node.type === "inlineIcon" && isInlineIconName(node.attrs?.name)) return inlineIconMarkdown(node.attrs.name);
   if (node.type === "inlineImage") {
     const width = Math.min(240, Math.max(16, Number(node.attrs?.width) || 72));
     const aspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs?.aspectRatio) || 3));
     const height = Math.min(240, Math.max(16, Number(node.attrs?.height) || width / aspectRatio));
-    return markdownImage(node, `linkcv-inline-image-v2:${width}:${Number(height.toFixed(2))}`);
+    return markdownImage(node, `linkresume-inline-image-v2:${width}:${Number(height.toFixed(2))}`);
   }
   return (node.content ?? []).map(nodeText).join("");
 }
@@ -1428,7 +1428,7 @@ function nodeMarkdown(node: JSONContent): string {
   if (node.type === "avatarImage") {
     if (node.attrs?.systemFallback === true) return "";
     const size = Math.min(220, Math.max(56, Number(node.attrs?.size) || 96));
-    return markdownImage(node, `linkcv-avatar:${size}`);
+    return markdownImage(node, `linkresume-avatar:${size}`);
   }
   if (node.type === "resumeImage") {
     const widthUnit = node.attrs?.widthUnit === "px" ? "px" : "%";
@@ -1437,7 +1437,7 @@ function nodeMarkdown(node: JSONContent): string {
     const align = ["left", "center", "right", "full"].includes(String(node.attrs?.align))
       ? String(node.attrs?.align)
       : "center";
-    return markdownImage(node, `linkcv-image:${width}:${widthUnit}:${align}`);
+    return markdownImage(node, `linkresume-image:${width}:${widthUnit}:${align}`);
   }
   return (node.content ?? []).map(nodeMarkdown).filter(Boolean).join("\n\n");
 }

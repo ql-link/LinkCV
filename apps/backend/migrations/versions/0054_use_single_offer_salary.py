@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
-from linkcv.core.migration_sql import execute_sql_file
+from linkresume.core.migration_sql import execute_sql_file
 
 revision: str = "0054"
 down_revision: str | None = "0053"
@@ -26,5 +26,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     raise RuntimeError(
-        "LinkCV database migrations are forward-only; restore a backup or create a new forward revision"
+        "LinkResume database migrations are forward-only; restore a backup or create a new forward revision"
     )

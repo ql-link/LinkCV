@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Brand, Button, FeedbackNotice, IconButton, NumberStepper, TextField, TogglePill } from ".";
 
-describe("LinkCV UI components", () => {
+describe("LinkResume UI components", () => {
   it("按钮默认不会提交所在表单", () => {
     render(<Button>保存</Button>);
     expect(screen.getByRole("button", { name: "保存" })).toHaveAttribute("type", "button");

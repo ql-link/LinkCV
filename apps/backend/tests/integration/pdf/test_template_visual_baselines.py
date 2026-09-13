@@ -21,18 +21,18 @@ import pypdfium2 as pdfium
 import pytest
 from PIL import Image, ImageChops
 
-from linkcv.domain.resume import (
+from linkresume.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation as CanonicalResumePresentation,
     compile_layout_plan,
 )
-from linkcv.domain.resume.legacy_cutover import (
+from linkresume.domain.resume.legacy_cutover import (
     convert_legacy_document,
     convert_legacy_template,
     presentation_for_legacy,
 )
-from linkcv.domain.resume_document import ResumeDocument
-from linkcv.domain.resume_style import ResumePresentation as LegacyResumePresentation
+from linkresume.domain.resume_document import ResumeDocument
+from linkresume.domain.resume_style import ResumePresentation as LegacyResumePresentation
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]

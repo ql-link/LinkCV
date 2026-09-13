@@ -57,37 +57,37 @@ const md = new MarkdownIt({
 type InlineRule = Parameters<typeof md.inline.ruler.before>[2];
 const inlineFontSizeRule: InlineRule = (state, silent) => {
   const source = state.src.slice(state.pos);
-  const opening = source.match(/^\[\[linkcv-size:(\d+(?:\.\d+)?)pt\]\]/);
+  const opening = source.match(/^\[\[linkresume-size:(\d+(?:\.\d+)?)pt\]\]/);
   if (opening) {
     const points = normalizeInlineFontSize(opening[1]);
     if (points == null || !source.slice(opening[0].length).includes(INLINE_FONT_SIZE_CLOSE_MARKER)) return false;
     if (!silent) {
-      const token = state.push("linkcv_font_size_open", "span", 1);
+      const token = state.push("linkresume_font_size_open", "span", 1);
       token.attrSet("style", `font-size:${points}pt`);
     }
     state.pos += opening[0].length;
     return true;
   }
   if (!source.startsWith(INLINE_FONT_SIZE_CLOSE_MARKER)) return false;
-  if (!silent) state.push("linkcv_font_size_close", "span", -1);
+  if (!silent) state.push("linkresume_font_size_close", "span", -1);
   state.pos += INLINE_FONT_SIZE_CLOSE_MARKER.length;
   return true;
 };
 
-md.inline.ruler.before("emphasis", "linkcv_font_size", inlineFontSizeRule);
+md.inline.ruler.before("emphasis", "linkresume_font_size", inlineFontSizeRule);
 
 const inlineStyleRule: InlineRule = (state, silent) => {
   const source = state.src.slice(state.pos);
-  const opening = source.match(/^\[\[linkcv-(underline|color|highlight)(?::(#[0-9A-Fa-f]{6}))?\]\]/u);
+  const opening = source.match(/^\[\[linkresume-(underline|color|highlight)(?::(#[0-9A-Fa-f]{6}))?\]\]/u);
   if (opening) {
     const kind = opening[1];
     const color = opening[2];
     if ((kind === "color" || kind === "highlight") !== Boolean(color)) return false;
-    const closing = `[[/linkcv-${kind}]]`;
+    const closing = `[[/linkresume-${kind}]]`;
     if (!source.slice(opening[0].length).includes(closing)) return false;
     if (!silent) {
       const tag = kind === "underline" ? "u" : kind === "highlight" ? "mark" : "span";
-      const token = state.push(`linkcv_${kind}_open`, tag, 1);
+      const token = state.push(`linkresume_${kind}_open`, tag, 1);
       if (kind === "color") token.attrSet("style", `color:${color}`);
       if (kind === "highlight") {
         token.attrSet("data-color", color);
@@ -97,47 +97,47 @@ const inlineStyleRule: InlineRule = (state, silent) => {
     state.pos += opening[0].length;
     return true;
   }
-  const closing = source.match(/^\[\[\/linkcv-(underline|color|highlight)\]\]/u);
+  const closing = source.match(/^\[\[\/linkresume-(underline|color|highlight)\]\]/u);
   if (!closing) return false;
   if (!silent) {
     const kind = closing[1];
     const tag = kind === "underline" ? "u" : kind === "highlight" ? "mark" : "span";
-    state.push(`linkcv_${kind}_close`, tag, -1);
+    state.push(`linkresume_${kind}_close`, tag, -1);
   }
   state.pos += closing[0].length;
   return true;
 };
 
-md.inline.ruler.before("emphasis", "linkcv_inline_style", inlineStyleRule);
+md.inline.ruler.before("emphasis", "linkresume_inline_style", inlineStyleRule);
 
 const inlineIconRule: InlineRule = (state, silent) => {
-  const match = state.src.slice(state.pos).match(/^\[\[linkcv-icon:([A-Za-z0-9]+)\]\]/);
+  const match = state.src.slice(state.pos).match(/^\[\[linkresume-icon:([A-Za-z0-9]+)\]\]/);
   const name = match?.[1];
   if (!match || !isInlineIconName(name)) return false;
   if (!silent) {
-    const token = state.push("linkcv_inline_icon", "span", 0);
+    const token = state.push("linkresume_inline_icon", "span", 0);
     token.meta = { name };
   }
   state.pos += match[0].length;
   return true;
 };
 
-md.inline.ruler.before("emphasis", "linkcv_inline_icon", inlineIconRule);
-md.renderer.rules.linkcv_inline_icon = (tokens, index) => `<span data-inline-icon data-icon-name="${tokens[index].meta.name}" class="resume-inline-icon"></span>`;
+md.inline.ruler.before("emphasis", "linkresume_inline_icon", inlineIconRule);
+md.renderer.rules.linkresume_inline_icon = (tokens, index) => `<span data-inline-icon data-icon-name="${tokens[index].meta.name}" class="resume-inline-icon"></span>`;
 
 const resumeBlockAnchorRule: InlineRule = (state, silent) => {
-  const match = state.src.slice(state.pos).match(/^\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]/);
+  const match = state.src.slice(state.pos).match(/^\[\[linkresume-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]/);
   if (!match) return false;
   if (!silent) {
-    const token = state.push("linkcv_resume_block_anchor", "span", 0);
+    const token = state.push("linkresume_resume_block_anchor", "span", 0);
     token.meta = { blockId: match[1], semanticKind: match[2] ?? null };
   }
   state.pos += match[0].length;
   return true;
 };
 
-md.inline.ruler.before("emphasis", "linkcv_resume_block_anchor", resumeBlockAnchorRule);
-md.renderer.rules.linkcv_resume_block_anchor = (tokens, index) => {
+md.inline.ruler.before("emphasis", "linkresume_resume_block_anchor", resumeBlockAnchorRule);
+md.renderer.rules.linkresume_resume_block_anchor = (tokens, index) => {
   const kind = tokens[index].meta.semanticKind;
   return `<span data-resume-block-id="${tokens[index].meta.blockId}"${kind ? ` data-resume-semantic-kind="${kind}"` : ""} aria-hidden="true" class="resume-block-anchor"></span>`;
 };
@@ -236,25 +236,25 @@ md.renderer.rules.image = (tokens, index, options, env, self) => {
   const title = token.attrGet("title") ?? "";
   const alt = escapeAttribute(token.content || "简历图片");
   const escapedSrc = escapeAttribute(src);
-  const inlineImageV2 = title.match(/^linkcv-inline-image-v2:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  const inlineImageV2 = title.match(/^linkresume-inline-image-v2:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
   if (inlineImageV2) {
     const width = Math.min(240, Math.max(16, Number(inlineImageV2[1]) || 72));
     const height = Math.min(240, Math.max(16, Number(inlineImageV2[2]) || 24));
     return `<img data-inline-image data-src="${escapedSrc}" data-width="${width}" data-height="${height}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${height}px" src="${escapedSrc}" width="${width}" height="${height}" alt="${alt}">`;
   }
-  const legacyInlineImage = title.match(/^linkcv-inline-image:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+  const legacyInlineImage = title.match(/^linkresume-inline-image:(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
   if (legacyInlineImage) {
     const width = Math.min(240, Math.max(16, Number(legacyInlineImage[1]) || 72));
     const aspectRatio = Math.min(20, Math.max(0.1, Number(legacyInlineImage[2]) || 3));
     const height = Math.min(240, Math.max(16, width / aspectRatio));
     return `<img data-inline-image data-src="${escapedSrc}" data-width="${width}" data-height="${Number(height.toFixed(2))}" data-aspect-ratio="${aspectRatio}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${Number(height.toFixed(2))}px" src="${escapedSrc}" width="${width}" height="${Number(height.toFixed(2))}" alt="${alt}">`;
   }
-  const avatar = title.match(/^linkcv-avatar:(\d+)(:system)?$/);
+  const avatar = title.match(/^linkresume-avatar:(\d+)(:system)?$/);
   if (avatar) {
     const size = Math.min(220, Math.max(56, Number(avatar[1]) || 96));
     return `<figure data-type="avatar-image" data-src="${escapedSrc}" data-size="${size}" data-alt="${alt}"${avatar[2] ? ' data-system-fallback="true"' : ""} class="resume-media-node resume-avatar" style="width:${size}px;height:${size}px"><img src="${escapedSrc}" alt="${alt}"></figure>`;
   }
-  const bodyImage = title.match(/^linkcv-image:(\d+(?:\.\d+)?):(%|px):(left|center|right|full)$/);
+  const bodyImage = title.match(/^linkresume-image:(\d+(?:\.\d+)?):(%|px):(left|center|right|full)$/);
   if (bodyImage) {
     const widthUnit = bodyImage[2];
     const maximum = widthUnit === "%" ? 100 : 794;
@@ -435,13 +435,13 @@ function renderMarkdownContent(content: string, inline = false) {
   const icons: string[] = [];
   const tokenized = content.replace(/:icon\[([A-Za-z0-9]+)\]:/g, (source, name: string) => {
     if (!inlineIconNames.has(name)) return source;
-    const token = `LINKCVICONPLACEHOLDER${icons.length}Z`;
+    const token = `LINKRESUMEICONPLACEHOLDER${icons.length}Z`;
     icons.push(name);
     return token;
   });
   let html = inline ? md.renderInline(tokenized) : md.render(tokenized);
   icons.forEach((name, index) => {
-    html = html.split(`LINKCVICONPLACEHOLDER${index}Z`).join(
+    html = html.split(`LINKRESUMEICONPLACEHOLDER${index}Z`).join(
       renderInlineIcon(name),
     );
   });

@@ -1,9 +1,9 @@
-name: linkcv-observability-local
+name: linkresume-observability-local
 
 services:
   promtail:
     image: grafana/promtail:2.9.8
-    container_name: linkcv-local-promtail
+    container_name: linkresume-local-promtail
     restart: unless-stopped
     command:
       - -config.file=/etc/promtail/promtail-config.yml
@@ -12,7 +12,7 @@ services:
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-http://loki:3100/loki/api/v1/push}
     volumes:
       - ./observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
-      - ${LINKCV_LOG_PATH:-../.runtime/logs}:/var/log/linkcv:ro
+      - ${LINKRESUME_LOG_PATH:-../.runtime/logs}:/var/log/linkresume:ro
       - promtail-positions:/tmp
     networks:
       - shared-loki
@@ -24,4 +24,4 @@ networks:
 
 volumes:
   promtail-positions:
-    name: linkcv-local-promtail-positions
+    name: linkresume-local-promtail-positions

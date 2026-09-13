@@ -12,15 +12,15 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import func, select
 
-from linkcv.application.job_descriptions.ai_import_service import draft_warnings
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.interviews.models import JobApplication
-from linkcv.modules.job_descriptions import routes as job_description_routes
-from linkcv.modules.job_descriptions.models import JobDescription
-from linkcv.modules.job_descriptions.schemas import JobDescriptionDraft
-from linkcv.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkresume.application.job_descriptions.ai_import_service import draft_warnings
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.job_descriptions import routes as job_description_routes
+from linkresume.modules.job_descriptions.models import JobDescription
+from linkresume.modules.job_descriptions.schemas import JobDescriptionDraft
+from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
+from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
 from tests.fakes import FakeRedis
 
 
@@ -712,7 +712,7 @@ def test_delete_reports_not_found_if_target_disappears_during_atomic_delete(
         register(client)
         job = create_job(client)
         monkeypatch.setattr(
-            "linkcv.modules.job_descriptions.routes.hard_delete_owned_job",
+            "linkresume.modules.job_descriptions.routes.hard_delete_owned_job",
             lambda _db, _job_id, _user_id: False,
         )
 

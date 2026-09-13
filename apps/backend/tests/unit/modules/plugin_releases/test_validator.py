@@ -4,7 +4,7 @@ from io import BytesIO
 
 import pytest
 
-from linkcv.modules.plugin_releases.validator import (
+from linkresume.modules.plugin_releases.validator import (
     PluginPackageValidationError,
     validate_plugin_package,
 )

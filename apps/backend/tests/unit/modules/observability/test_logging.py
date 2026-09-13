@@ -3,7 +3,7 @@ import logging
 import os
 import time
 
-from linkcv.modules.observability.logging import (
+from linkresume.modules.observability.logging import (
     JsonlFileWriter,
     StructuredLogEmitter,
     StructuredLoggingHandler,
@@ -38,7 +38,7 @@ def test_structured_emitter_redacts_secrets_and_preserves_query_fields(capsys) -
     )
 
     assert recorded is True
-    assert event["service"] == "linkcv"
+    assert event["service"] == "linkresume"
     assert event["environment"] == "test"
     assert event["source"] == "web"
     assert event["request_id"] == "request_123"
@@ -90,7 +90,7 @@ def test_structured_handler_preserves_bounded_v2_message_context(capsys) -> None
     emitter = StructuredLogEmitter(environment="test")
     handler = StructuredLoggingHandler(emitter)
     record = logging.LogRecord(
-        name="linkcv.workers.document_parse_consumer",
+        name="linkresume.workers.document_parse_consumer",
         level=logging.WARNING,
         pathname=__file__,
         lineno=1,
@@ -119,7 +119,7 @@ def test_structured_handler_preserves_bounded_v2_message_context(capsys) -> None
 
 
 def test_file_writer_removes_rotated_files_older_than_seven_days(tmp_path) -> None:
-    active = tmp_path / "linkcv.jsonl"
+    active = tmp_path / "linkresume.jsonl"
     active.write_text("{}\n", encoding="utf-8")
     old = time.time() - 8 * 24 * 60 * 60
     os.utime(active, (old, old))
@@ -128,4 +128,4 @@ def test_file_writer_removes_rotated_files_older_than_seven_days(tmp_path) -> No
     writer.write("{\"event_id\":\"new\"}")
 
     assert active.read_text(encoding="utf-8") == '{"event_id":"new"}\n'
-    assert list(tmp_path.glob("linkcv.*.jsonl")) == []
+    assert list(tmp_path.glob("linkresume.*.jsonl")) == []

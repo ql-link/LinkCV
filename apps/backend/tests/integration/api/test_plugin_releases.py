@@ -3,10 +3,10 @@ import json
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.plugin_releases.validator import MAX_UPLOAD_BYTES
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.plugin_releases.validator import MAX_UPLOAD_BYTES
 from tests.fakes import FakeRedis
 from tests.plugin_release_fakes import FakePluginStorage, build_plugin_zip
 

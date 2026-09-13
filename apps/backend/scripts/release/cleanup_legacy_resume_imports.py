@@ -2,9 +2,9 @@ import argparse
 
 from sqlalchemy import text
 
-from linkcv.core.config import load_settings
-from linkcv.core.database import build_engine
-from linkcv.core.storage import AssetStorage
+from linkresume.core.config import load_settings
+from linkresume.core.database import build_engine
+from linkresume.core.storage import AssetStorage
 
 
 LIST_SQL = text(

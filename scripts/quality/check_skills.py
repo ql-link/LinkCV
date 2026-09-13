@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate LinkCV project skills and their stable artifact contracts."""
+"""Validate LinkResume project skills and their stable artifact contracts."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 REPO_ROOT = Path(
-    os.environ.get("LINKCV_REPO_ROOT", Path(__file__).resolve().parents[2])
+    os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
 AI_ROOT = REPO_ROOT / ".ai"
 SKILLS_ROOT = REPO_ROOT / ".ai" / "skills"

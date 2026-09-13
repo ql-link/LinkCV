@@ -2,17 +2,17 @@ import pytest
 from markdown_it import MarkdownIt
 from pydantic import ValidationError
 
-from linkcv.domain.resume_extraction import (
+from linkresume.domain.resume_extraction import (
     LayoutGroup,
     ResumeExtractionDraft,
     StructureDecision,
 )
-from linkcv.domain.resume_import_composition import (
+from linkresume.domain.resume_import_composition import (
     ImportLayoutRecipe,
     ResumeImportCompositionError,
     compose_canonical_resume,
 )
-from linkcv.domain.section_ir import build_section_ir, clean_source_markdown
+from linkresume.domain.section_ir import build_section_ir, clean_source_markdown
 
 
 def _decisions(ir, roles: dict[int, tuple[str, str]]) -> list[StructureDecision]:
@@ -210,7 +210,7 @@ def test_composer_keeps_contact_section_order_lists_and_section_anchor() -> None
     assert "test@example.invalid" in sections[0].items[1].content.content
     assert "example.invalid" in sections[0].items[1].content.content
     assert sections[2].items[0].content.content == "1. 第一项\n2. 第二项"
-    assert f"linkcv-block:{sections[0].id}:basics" in sections[0].items[0].content.content
+    assert f"linkresume-block:{sections[0].id}:basics" in sections[0].items[0].content.content
     assert all(section.title != "未分类内容" for section in sections)
     assert set(result.accepted_source_ids) == {block.source_id for block in ir.blocks}
 

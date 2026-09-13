@@ -1,11 +1,11 @@
-from linkcv.domain.resume.legacy_cutover import (
+from linkresume.domain.resume.legacy_cutover import (
     blank_canonical_document,
     convert_legacy_document,
     convert_legacy_template,
     presentation_for_legacy,
 )
-from linkcv.domain.resume_document import ResumeDocument, default_resume_document
-from linkcv.domain.resume_style import ResumePresentation, default_resume_style
+from linkresume.domain.resume_document import ResumeDocument, default_resume_document
+from linkresume.domain.resume_style import ResumePresentation, default_resume_style
 
 
 def canonical_template_payload(

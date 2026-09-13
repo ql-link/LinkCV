@@ -3,10 +3,10 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from linkcv.modules.datasets.models import UserDataset, DatasetReplacement
-from linkcv.modules.resumes.models import DocumentParseTask
-from linkcv.services.dataset_replacement_service import reconcile_replacements
-from linkcv.workers.dataset_parse_worker import DatasetParseProcessor
+from linkresume.modules.datasets.models import UserDataset, DatasetReplacement
+from linkresume.modules.resumes.models import DocumentParseTask
+from linkresume.services.dataset_replacement_service import reconcile_replacements
+from linkresume.workers.dataset_parse_worker import DatasetParseProcessor
 from tests.integration.api.test_user_datasets import (
     build_test_app,
     register,
@@ -158,8 +158,8 @@ def test_cross_user_content_and_replacement_are_hidden():
 
 def test_agent_reads_replaced_content_and_rejects_previous_reference():
     import pytest
-    from linkcv.core.errors import ApiError
-    from linkcv.modules.agent.resume_tools import search_materials, validate_source_ids
+    from linkresume.core.errors import ApiError
+    from linkresume.modules.agent.resume_tools import search_materials, validate_source_ids
 
     app = build_test_app()
     with TestClient(app) as client:
@@ -192,9 +192,9 @@ def test_agent_reads_replaced_content_and_rejects_previous_reference():
 
 def test_failed_candidate_is_discarded_with_folder_and_cleanup_preserves_current():
     from datetime import timedelta
-    from linkcv.core.database import utc_now
-    from linkcv.modules.datasets.models import DatasetObjectCleanup
-    from linkcv.services.dataset_content_service import cleanup_objects, enqueue_cleanup
+    from linkresume.core.database import utc_now
+    from linkresume.modules.datasets.models import DatasetObjectCleanup
+    from linkresume.services.dataset_content_service import cleanup_objects, enqueue_cleanup
 
     app = build_test_app()
     with TestClient(app) as client:

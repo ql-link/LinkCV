@@ -247,7 +247,7 @@ async function switchToScheduleMonth() {
 }
 
 beforeEach(() => {
-  window.sessionStorage.removeItem("linkcv:career-applications:column-order:v1");
+  window.sessionStorage.removeItem("linkresume:career-applications:column-order:v1");
   mocks.addJobApplicationStage.mockResolvedValue({ application });
   mocks.terminateJobApplication.mockResolvedValue({ application });
   mocks.listInterviewSessions.mockResolvedValue({ items: [session], next_cursor: null });
@@ -3271,9 +3271,9 @@ describe("InterviewCenterPage API projections", () => {
     const dataTransfer = {
       effectAllowed: "",
       dropEffect: "",
-      types: ["application/x-linkcv-board-column"],
+      types: ["application/x-linkresume-board-column"],
       setData: vi.fn(),
-      getData: vi.fn((type: string) => type === "application/x-linkcv-board-column" ? "screening" : ""),
+      getData: vi.fn((type: string) => type === "application/x-linkresume-board-column" ? "screening" : ""),
     } as unknown as DataTransfer;
 
     fireEvent.dragStart(sourceHeading, { dataTransfer });
@@ -3285,7 +3285,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(Array.from(document.querySelectorAll<HTMLElement>("[data-column-id]"))
       .map((column) => column.dataset.columnId)
       .slice(0, 4)).toEqual(["pending", "assessment", "screening", "written_test"]);
-    expect(JSON.parse(window.sessionStorage.getItem("linkcv:career-applications:column-order:v1") ?? "[]")
+    expect(JSON.parse(window.sessionStorage.getItem("linkresume:career-applications:column-order:v1") ?? "[]")
       .slice(0, 4)).toEqual(["pending", "assessment", "screening", "written_test"]);
 
     fireEvent.keyDown(screen.getByRole("button", { name: /拖动调整“筛选中”栏目位置/ }), { key: "ArrowLeft" });

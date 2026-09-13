@@ -1,0 +1,235 @@
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from linkresume.application.resumes.service import (
+    InvalidResumeVersionName,
+    LatestResumeVersionRequired,
+    ResumeVersionLimitExceeded,
+    ResumeVersionDataInvalid,
+    create_manual_version,
+    delete_resume_version,
+    find_owned_resume,
+    parse_persisted_resume_snapshot,
+    rename_resume_version,
+    restore_resume_version,
+)
+from linkresume.core.config import Settings
+from linkresume.core.database import get_db
+from linkresume.core.errors import ApiError
+from linkresume.core.storage import AssetStorage, get_storage
+from linkresume.domain.resume import compile_layout_plan
+from linkresume.modules.identity.dependencies import get_current_user, get_settings
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import ResumeVersion
+from linkresume.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
+from linkresume.modules.resumes.routes import resume_record
+from linkresume.modules.resumes.schemas import (
+    DeleteResumeVersionResponse,
+    ResumeResponse,
+    ResumeVersionListResponse,
+    ResumeVersionCreateRequest,
+    ResumeVersionRenameRequest,
+    ResumeVersionRecord,
+    ResumeVersionResponse,
+    ResumeVersionSummary,
+)
+from linkresume.modules.observability.audit import bind_audit_target
+
+router = APIRouter(prefix="/resumes/{resume_id}/versions", tags=["resume-versions"])
+
+
+def version_summary(version: ResumeVersion) -> ResumeVersionSummary:
+    return ResumeVersionSummary(
+        id=str(version.id),
+        version_no=version.version_no,
+        name=version.name,
+        reason=version.reason,
+        template_id=str(version.template_id),
+        created_at=version.created_at,
+    )
+
+
+def version_record(version: ResumeVersion) -> ResumeVersionRecord:
+    try:
+        snapshot = parse_persisted_resume_snapshot(
+            version.data_json,
+            version.style_json,
+        )
+    except (TypeError, ValueError) as error:
+        raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
+    return ResumeVersionRecord(
+        **version_summary(version).model_dump(),
+        data=snapshot.data,
+        style=snapshot.style,
+        layout_plan=compile_layout_plan(
+            snapshot.data,
+            snapshot.style.template_snapshot,
+            snapshot.style,
+        ),
+    )
+
+
+def require_owned_resume_id(db: Session, resume_id: str, user_id: int) -> int:
+    resume = find_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        raise ApiError(404, "RESUME_NOT_FOUND")
+    return resume.id
+
+
+@router.get("", response_model=ResumeVersionListResponse)
+def list_versions(
+    resume_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ResumeVersionListResponse:
+    parsed_id = require_owned_resume_id(db, resume_id, user.id)
+    versions = db.scalars(
+        select(ResumeVersion)
+        .where(ResumeVersion.resume_id == parsed_id)
+        .order_by(ResumeVersion.version_no.desc())
+    ).all()
+    return ResumeVersionListResponse(
+        versions=[version_summary(version) for version in versions]
+    )
+
+
+@router.post("", response_model=ResumeVersionResponse, status_code=201)
+def create_version(
+    resume_id: str,
+    request: Request,
+    payload: ResumeVersionCreateRequest | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> ResumeVersionResponse:
+    try:
+        version = create_manual_version(
+            db,
+            resume_id,
+            user.id,
+            settings.resume_version_limit,
+            name=payload.name if payload is not None else None,
+        )
+    except ResumeVersionLimitExceeded as error:
+        raise ApiError(409, "RESUME_VERSION_LIMIT_REACHED") from error
+    except IntegrityError as error:
+        raise ApiError(409, "VERSION_CONFLICT") from error
+    except InvalidResumeVersionName as error:
+        raise ApiError(400, "INVALID_RESUME_VERSION_NAME") from error
+    except ResumeVersionDataInvalid as error:
+        raise ApiError(422, "RESUME_VERSION_DATA_INVALID") from error
+    except ValueError as error:
+        raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
+    if version is None:
+        raise ApiError(404, "RESUME_NOT_FOUND")
+    bind_audit_target(request, version.id)
+    return ResumeVersionResponse(version=version_record(version))
+
+
+@router.patch("/{version_no}", response_model=ResumeVersionResponse)
+def rename_version(
+    resume_id: str,
+    version_no: int,
+    payload: ResumeVersionRenameRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ResumeVersionResponse:
+    try:
+        version = rename_resume_version(
+            db,
+            resume_id,
+            version_no,
+            user.id,
+            payload.name,
+        )
+    except InvalidResumeVersionName as error:
+        raise ApiError(400, "INVALID_RESUME_VERSION_NAME") from error
+    if version is None:
+        if find_owned_resume(db, resume_id, user.id) is None:
+            raise ApiError(404, "RESUME_NOT_FOUND")
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    bind_audit_target(request, version.id)
+    return ResumeVersionResponse(version=version_record(version))
+
+
+@router.delete("/{version_no}", response_model=DeleteResumeVersionResponse)
+def delete_version(
+    resume_id: str,
+    version_no: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DeleteResumeVersionResponse:
+    try:
+        deleted = delete_resume_version(db, resume_id, version_no, user.id)
+    except LatestResumeVersionRequired as error:
+        raise ApiError(409, "LATEST_RESUME_VERSION_REQUIRED") from error
+    if deleted is None:
+        if find_owned_resume(db, resume_id, user.id) is None:
+            raise ApiError(404, "RESUME_NOT_FOUND")
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    return DeleteResumeVersionResponse(deleted=deleted)
+
+
+@router.get("/{version_no}", response_model=ResumeVersionResponse)
+def get_version(
+    resume_id: str,
+    version_no: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ResumeVersionResponse:
+    parsed_id = require_owned_resume_id(db, resume_id, user.id)
+    version = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == parsed_id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if version is None:
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    return ResumeVersionResponse(version=version_record(version))
+
+
+@router.post("/{version_no}/restore", response_model=ResumeResponse)
+def restore_version(
+    resume_id: str,
+    version_no: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
+) -> ResumeResponse:
+    owned_resume_id = require_owned_resume_id(db, resume_id, user.id)
+    target = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == owned_resume_id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if target is None:
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    validate_resume_pdf_asset_contract(
+        storage,
+        target.data_json,
+        user_id=user.id,
+        resume_id=owned_resume_id,
+    )
+    try:
+        resume = restore_resume_version(
+            db,
+            resume_id,
+            version_no,
+            user.id,
+        )
+    except IntegrityError as error:
+        raise ApiError(409, "VERSION_CONFLICT") from error
+    except ResumeVersionDataInvalid as error:
+        raise ApiError(422, "RESUME_VERSION_DATA_INVALID") from error
+    except ValueError as error:
+        raise ApiError(500, "RESUME_SCHEMA_INVALID") from error
+    if resume is None:
+        if find_owned_resume(db, resume_id, user.id) is None:
+            raise ApiError(404, "RESUME_NOT_FOUND")
+        raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
+    return ResumeResponse(resume=resume_record(resume))

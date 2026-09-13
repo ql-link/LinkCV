@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from linkcv.modules.agent.service import (
+from linkresume.modules.agent.service import (
     create_proposal,
     create_session,
     reject_proposal,

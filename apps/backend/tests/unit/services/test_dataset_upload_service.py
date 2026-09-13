@@ -4,8 +4,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pypdfium2 as pdfium
 import pytest
 
-from linkcv.core.errors import ApiError
-from linkcv.services.dataset_upload_service import validate_dataset_file
+from linkresume.core.errors import ApiError
+from linkresume.services.dataset_upload_service import validate_dataset_file
 
 
 def valid_pdf() -> bytes:

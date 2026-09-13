@@ -35,7 +35,7 @@ export function resolveProfileFiles({
   const worktreeBase = absolutePath(profile, cwd);
   const mainBase = resolve(mainRoot, basename(profile));
   const base = existsSync(worktreeBase) ? worktreeBase : mainBase;
-  const configuredSecret = inheritedEnv.LINKCV_SECRET_ENV_FILE;
+  const configuredSecret = inheritedEnv.LINKRESUME_SECRET_ENV_FILE;
   const secret = configuredSecret
     ? absolutePath(configuredSecret, cwd)
     : resolve(mainRoot, `${basename(profile)}.local`);
@@ -60,8 +60,8 @@ export function buildProfileEnvironment(options) {
     ...baseEnv,
     ...secretEnv,
     ...inheritedEnv,
-    LINKCV_ENV_FILE: files.base,
-    LINKCV_SECRET_ENV_FILE: files.secret,
+    LINKRESUME_ENV_FILE: files.base,
+    LINKRESUME_SECRET_ENV_FILE: files.secret,
   };
 
   if (

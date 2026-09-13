@@ -3,9 +3,9 @@ from contextlib import ExitStack
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.resumes.models import Resume, ResumeTemplate
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.resumes.models import Resume, ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 

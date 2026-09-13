@@ -4,7 +4,7 @@ import json
 import httpx
 import pytest
 
-from linkcv.modules.observability.loki import (
+from linkresume.modules.observability.loki import (
     InvalidLogCursorError,
     LokiClient,
     decode_cursor,
@@ -21,10 +21,10 @@ def _event(event_id: str, timestamp_ns: int, **fields: object) -> str:
             "event_version": 1,
             "log_type": "system",
             "level": "ERROR",
-            "service": "linkcv",
+            "service": "linkresume",
             "environment": "test",
             "source": "backend",
-            "logger": "linkcv.http",
+            "logger": "linkresume.http",
             "message": "failed",
             **fields,
         }
@@ -76,7 +76,7 @@ def test_query_logs_uses_fixed_selector_deduplicates_and_marks_malformed() -> No
     assert result["dropped_malformed"] == 1
     assert result["next_cursor"] is not None
     assert decode_cursor(str(result["next_cursor"])) == 30
-    assert 'service="linkcv"' in seen_query
+    assert 'service="linkresume"' in seen_query
     assert 'log_type="system"' in seen_query
     assert 'request_id="x\\\" |~ \\".*"' in seen_query
 

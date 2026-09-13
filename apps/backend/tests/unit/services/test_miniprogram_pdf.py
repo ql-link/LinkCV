@@ -5,9 +5,9 @@ import pypdfium2 as pdfium
 import pytest
 from PIL import Image
 
-from linkcv.core.config import Settings
-from linkcv.core.errors import ApiError
-from linkcv.modules.miniprogram.pdf_service import ResumePdfRenderer, ResumePreviewRenderer
+from linkresume.core.config import Settings
+from linkresume.core.errors import ApiError
+from linkresume.modules.miniprogram.pdf_service import ResumePdfRenderer, ResumePreviewRenderer
 
 
 def renderer(tmp_path: Path, source: str, *, timeout: float = 1) -> ResumePdfRenderer:

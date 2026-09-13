@@ -1,6 +1,6 @@
 ---
 name: mysql-ddl-conventions
-description: 为 LinkCV 设计和审查 MySQL 8.4 表、字段、主键、外键、唯一约束、索引、时间、状态与字符集规范，并把概念数据模型落成可评审的物理 schema。适用于新建业务表、调整字段类型与约束、设计查询索引或评审 DDL，通常由 solution-generator 在方案文档的数据模型章节调用以定稿；真正写入 SQLAlchemy 模型和 Alembic revision 时转 alembic-migration。
+description: 为 LinkResume 设计和审查 MySQL 8.4 表、字段、主键、外键、唯一约束、索引、时间、状态与字符集规范，并把概念数据模型落成可评审的物理 schema。适用于新建业务表、调整字段类型与约束、设计查询索引或评审 DDL，通常由 solution-generator 在方案文档的数据模型章节调用以定稿；真正写入 SQLAlchemy 模型和 Alembic revision 时转 alembic-migration。
 ---
 
 # MySQL 表结构规范
@@ -9,7 +9,7 @@ description: 为 LinkCV 设计和审查 MySQL 8.4 表、字段、主键、外键
 
 把已确认的业务实体和访问模式转换为物理 schema 设计，输出设计依据与评审清单。本技能不直接连接数据库、不执行 DDL，也不把示例 SQL 当成已经落库的事实。
 
-LinkCV 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基础；根 revision `0001` 已创建 `users`、`resumes`。现有 ORM 与迁移链共同约束当前 schema，但不能证明每个目标环境都已经迁移到 head。后续 schema 设计必须结合当前确认需求、真实访问模式、当前模型和已有物理约束；不得因为其他项目使用某种主键、状态或时间策略就直接照搬。
+LinkResume 已有 FastAPI 业务模型、MySQL 8.4 配置和 Alembic/SQL-first 基础；根 revision `0001` 已创建 `users`、`resumes`。现有 ORM 与迁移链共同约束当前 schema，但不能证明每个目标环境都已经迁移到 head。后续 schema 设计必须结合当前确认需求、真实访问模式、当前模型和已有物理约束；不得因为其他项目使用某种主键、状态或时间策略就直接照搬。
 
 ## 2. 必读输入
 

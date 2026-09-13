@@ -4,15 +4,15 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.application.resumes import service as resume_service
-from linkcv.core.config import Settings
-from linkcv.domain.resume_style import default_resume_style
-from linkcv.main import create_app
-from linkcv.modules.llm.dependencies import get_llm_service
-from linkcv.modules.llm.service import LLMError
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
-from linkcv.modules.resumes.routes import resume_content_hash
-from linkcv.modules.resumes.schemas import (
+from linkresume.application.resumes import service as resume_service
+from linkresume.core.config import Settings
+from linkresume.domain.resume_style import default_resume_style
+from linkresume.main import create_app
+from linkresume.modules.llm.dependencies import get_llm_service
+from linkresume.modules.llm.service import LLMError
+from linkresume.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkresume.modules.resumes.routes import resume_content_hash
+from linkresume.modules.resumes.schemas import (
     SemanticClassificationModelResult,
     SemanticClassificationSuggestion,
 )

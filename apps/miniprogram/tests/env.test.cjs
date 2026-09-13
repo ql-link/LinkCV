@@ -13,10 +13,10 @@ test("release build defaults to the LinkResume production origin", () => {
 
 test("ext config API URL wins and removes a trailing slash", () => {
   global.wx = {
-    getExtConfigSync: () => ({ apiBaseUrl: "https://linkcv.example.test/" }),
+    getExtConfigSync: () => ({ apiBaseUrl: "https://linkresume.example.test/" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
   };
-  assert.equal(resolveApiBaseUrl(), "https://linkcv.example.test");
+  assert.equal(resolveApiBaseUrl(), "https://linkresume.example.test");
 });
 
 test("static runtime config supports a standalone release build", () => {
@@ -25,9 +25,9 @@ test("static runtime config supports a standalone release build", () => {
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "release" } }),
   };
   const previous = runtimeConfig.productionApiBaseUrl;
-  runtimeConfig.productionApiBaseUrl = "https://linkcv.example.test/api/";
+  runtimeConfig.productionApiBaseUrl = "https://linkresume.example.test/api/";
   try {
-    assert.equal(resolveApiBaseUrl(), "https://linkcv.example.test/api");
+    assert.equal(resolveApiBaseUrl(), "https://linkresume.example.test/api");
   } finally {
     runtimeConfig.productionApiBaseUrl = previous;
   }
@@ -130,7 +130,7 @@ test("develop DevTools build without opt-in defaults to production and does not 
     "https://linkresume.cn",
   );
   assert.equal(localConfigReads, 0);
-  assert.deepEqual(storageReads, ["linkcv_local_debug_enabled", "linkcv_api_base_url"]);
+  assert.deepEqual(storageReads, ["linkresume_local_debug_enabled", "linkresume_api_base_url"]);
 });
 
 test("real-device develop build without opt-in defaults to production", () => {
@@ -158,7 +158,7 @@ test("develop without opt-in does not depend on platform metadata", () => {
 test("develop opt-in uses the bundled local config in DevTools", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
-    getStorageSync: (key) => key === "linkcv_local_debug_enabled" ? true : "",
+    getStorageSync: (key) => key === "linkresume_local_debug_enabled" ? true : "",
     getSystemInfoSync: () => ({ platform: "devtools" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
   };
@@ -178,7 +178,7 @@ test("develop opt-in uses the bundled local config in DevTools", () => {
 test("develop local debug opt-in requires the boolean true value", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
-    getStorageSync: (key) => key === "linkcv_local_debug_enabled" ? "true" : "",
+    getStorageSync: (key) => key === "linkresume_local_debug_enabled" ? "true" : "",
     getSystemInfoSync: () => ({ platform: "devtools" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
   };
@@ -198,7 +198,7 @@ test("develop local debug opt-in requires the boolean true value", () => {
 test("develop opt-in also uses the bundled local config on a real device", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
-    getStorageSync: (key) => key === "linkcv_local_debug_enabled" ? true : "",
+    getStorageSync: (key) => key === "linkresume_local_debug_enabled" ? true : "",
     getSystemInfoSync: () => ({ platform: "ios" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
   };
@@ -213,7 +213,7 @@ test("develop opt-in also uses the bundled local config on a real device", () =>
 test("develop explicit URL storage override wins over opt-in local config", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
-    getStorageSync: (key) => key === "linkcv_local_debug_enabled"
+    getStorageSync: (key) => key === "linkresume_local_debug_enabled"
       ? true
       : "http://192.168.1.23:8000/",
     getSystemInfoSync: () => ({ platform: "android" }),
@@ -230,7 +230,7 @@ test("develop explicit URL storage override wins over opt-in local config", () =
 test("local config read failure falls back to production", () => {
   global.wx = {
     getExtConfigSync: () => ({}),
-    getStorageSync: (key) => key === "linkcv_local_debug_enabled" ? true : "",
+    getStorageSync: (key) => key === "linkresume_local_debug_enabled" ? true : "",
     getSystemInfoSync: () => ({ platform: "ios" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
   };
@@ -248,7 +248,7 @@ test("release build ignores opt-in and local config", () => {
   let localConfigReads = 0;
   global.wx = {
     getExtConfigSync: () => ({}),
-    getStorageSync: (key) => key === "linkcv_local_debug_enabled"
+    getStorageSync: (key) => key === "linkresume_local_debug_enabled"
       ? true
       : "http://192.168.1.23:8000",
     getSystemInfoSync: () => ({ platform: "android" }),
@@ -270,7 +270,7 @@ test("trial build ignores opt-in and local config", () => {
   let localConfigReads = 0;
   global.wx = {
     getExtConfigSync: () => ({}),
-    getStorageSync: (key) => key === "linkcv_local_debug_enabled"
+    getStorageSync: (key) => key === "linkresume_local_debug_enabled"
       ? true
       : "http://192.168.1.23:8000",
     getSystemInfoSync: () => ({ platform: "ios" }),
@@ -290,7 +290,7 @@ test("trial build ignores opt-in and local config", () => {
 
 test("release build rejects an insecure configured API URL", () => {
   global.wx = {
-    getExtConfigSync: () => ({ apiBaseUrl: "http://linkcv.example.test" }),
+    getExtConfigSync: () => ({ apiBaseUrl: "http://linkresume.example.test" }),
     getAccountInfoSync: () => ({ miniProgram: { envVersion: "trial" } }),
   };
   assert.throws(resolveApiBaseUrl, /必须使用 HTTPS/);

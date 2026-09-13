@@ -21,7 +21,7 @@
 1. 打开微信开发者工具，选择"导入项目"。
 2. 项目目录选择本目录 `apps/miniprogram`，不要选择仓库根目录。
 3. AppID 使用 `project.config.json` 中的项目 AppID；如果实际发布主体不同，先替换为该主体的小程序 AppID。
-4. 每次运行 `npm run dev`（或 `npm run dev:local` / `npm run dev:development`）都会自动探测局域网 IP 并更新被忽略的 `config/local.js`。开发者工具和真机上的 `develop` 默认都访问 `https://linkresume.cn`；要让当前设备使用这份自动生成的本地配置，在开发者工具或真机调试控制台执行 `wx.setStorageSync("linkcv_local_debug_enabled", true)`，重新进入小程序即可。关闭本地联调时执行 `wx.removeStorageSync("linkcv_local_debug_enabled")` 或 `wx.setStorageSync("linkcv_local_debug_enabled", false)`。如需固定内网地址，可显式执行 `wx.setStorageSync("linkcv_api_base_url", "http://<内网地址>:8000")`；该 `develop` storage 覆盖优先于 `local.js`，且只在 `develop` 生效。开发者工具中还需临时关闭"校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书"。
+4. 每次运行 `npm run dev`（或 `npm run dev:local` / `npm run dev:development`）都会自动探测局域网 IP 并更新被忽略的 `config/local.js`。开发者工具和真机上的 `develop` 默认都访问 `https://linkresume.cn`；要让当前设备使用这份自动生成的本地配置，在开发者工具或真机调试控制台执行 `wx.setStorageSync("linkresume_local_debug_enabled", true)`，重新进入小程序即可。关闭本地联调时执行 `wx.removeStorageSync("linkresume_local_debug_enabled")` 或 `wx.setStorageSync("linkresume_local_debug_enabled", false)`。如需固定内网地址，可显式执行 `wx.setStorageSync("linkresume_api_base_url", "http://<内网地址>:8000")`；该 `develop` storage 覆盖优先于 `local.js`，且只在 `develop` 生效。开发者工具中还需临时关闭"校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书"。
 5. 根级 `npm run dev:local` / `npm run dev:development` 会监听构建 PDF CLI；若单独启动后端，先执行 `npm --prefix apps/web run build:pdf-cli`。
 6. 在微信公众平台配置并发布“小程序用户隐私保护指引”；启动后端并配置与小程序 AppID 配对的 `WECHAT_APPID` 和 `WECHAT_SECRET`，再测试游客示例卡片与详情、统一微信登录、扫码确认和登录后简历图片预览。
 
@@ -35,7 +35,7 @@ module.exports = {
 };
 ```
 
-该地址是小程序包内公开的服务根地址，不是密钥。`config/local.js` 只有在环境被明确识别为 `envVersion === "develop"` 且设备本地 `linkcv_local_debug_enabled` 严格为 `true` 时才读取，开发者工具和真机均可显式启用；没有 opt-in、环境识别缺失或异常、文件读取失败或文件缺少地址时回退到 `https://linkresume.cn`。`linkcv_api_base_url` 是仅限 `develop` 的显式 URL 覆盖，优先级高于 `local.js`；体验版和正式版忽略所有开发 storage/local.js，并拒绝 HTTP 地址。每次 `npm run dev`（含 `dev:local` / `dev:development`）会重新探测并更新 `local.js` 的局域网 IP，变更后重新导入或上传包即可使用新地址。通过第三方平台代开发时可用 ext config 的 `apiBaseUrl` 覆盖，但同样必须使用 HTTPS。`WECHAT_SECRET` 只能保存在后端私密环境中，禁止写入本目录。
+该地址是小程序包内公开的服务根地址，不是密钥。`config/local.js` 只有在环境被明确识别为 `envVersion === "develop"` 且设备本地 `linkresume_local_debug_enabled` 严格为 `true` 时才读取，开发者工具和真机均可显式启用；没有 opt-in、环境识别缺失或异常、文件读取失败或文件缺少地址时回退到 `https://linkresume.cn`。`linkresume_api_base_url` 是仅限 `develop` 的显式 URL 覆盖，优先级高于 `local.js`；体验版和正式版忽略所有开发 storage/local.js，并拒绝 HTTP 地址。每次 `npm run dev`（含 `dev:local` / `dev:development`）会重新探测并更新 `local.js` 的局域网 IP，变更后重新导入或上传包即可使用新地址。通过第三方平台代开发时可用 ext config 的 `apiBaseUrl` 覆盖，但同样必须使用 HTTPS。`WECHAT_SECRET` 只能保存在后端私密环境中，禁止写入本目录。
 
 还必须在微信公众平台完成：
 

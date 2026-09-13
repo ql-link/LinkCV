@@ -2,7 +2,7 @@
 
 ## 代码来源与构建
 
-`third_party/pi` 是 [earendil-works/pi](https://github.com/earendil-works/pi) 的一次性 subtree 引入；后续修改作为 LinkCV 自有代码维护，不持续跟踪上游。它保持独立 npm workspaces，LinkCV 根级脚本通过显式的 `pi:setup`、`test:pi` 和 `check:pi` 纳入安装与质量检查。
+`third_party/pi` 是 [earendil-works/pi](https://github.com/earendil-works/pi) 的一次性 subtree 引入；后续修改作为 LinkResume 自有代码维护，不持续跟踪上游。它保持独立 npm workspaces，LinkResume 根级脚本通过显式的 `pi:setup`、`test:pi` 和 `check:pi` 纳入安装与质量检查。
 
 Pi 的模型目录由构建期静态数据提供。仓库保存与 `@earendil-works/pi-ai@0.84.2` 对应的 `packages/ai/src/providers/data/` 快照，`npm run check:model-data` 校验其完整性，`npm run build:offline` 不在 CI 或镜像构建期间访问 models.dev。升级 Pi 版本时必须同时更新并校验该快照，不能混用其他版本的 provider data。
 
@@ -18,24 +18,24 @@ Pi 的模型目录由构建期静态数据提供。仓库保存与 `@earendil-wo
 
 Pi 服务启动时使用 SDK 的 HTTP dispatcher 读取 `HTTP_PROXY`、`HTTPS_PROXY` 与 `NO_PROXY`，因此模型供应商请求和 FastAPI 内部回调遵循部署环境的代理设置；未配置代理时保持直接连接。独立助手页的 `contextMaterials` 由 FastAPI 完成所有权与版本校验后提交，Pi 仍按固定类型、字段白名单、单项和总长度上限二次校验；运行提示将这些内容明确标记为用户资料而非指令，并只向浏览器发出安全化的 `run.phase` 阶段。SDK 以 `stopReason=error` 返回的供应商超时转换为 `run.failed/AGENT_MODEL_TIMEOUT`，其他模型请求失败转换为 `AGENT_MODEL_REQUEST_FAILED`，不能以没有助手消息的 `run.completed` 结束。只有成功终态才携带安全化 Token/成本用量并把完整助手文本写入 MySQL；失败、取消和无终态 EOF 不持久化部分助手文本。
 
-Pi 服务关闭上游默认的 `read`、`bash`、`edit`、`write` coding tools，再显式注册七个受控工具：`read` 只能读取 `apps/pi-service/resources/skills/` 下的 Markdown；`request_user_input` 只生成 1–3 个结构化问题，每题提供 2–3 个选项；其余五个是 `resolve_resume_target`、`get_resume_context`、`search_resume_materials`、`analyze_resume_content` 和 `create_resume_change_proposal`，都通过 `LINKCV_BASE_URL` 回调 FastAPI 的 `/internal/agent/**`。每轮先读取 `resume-edit-workflow`；目标不唯一或缺失会改变结果的关键信息时必须调用 `request_user_input`，调用后当前轮停止其他工具和最终回答，FastAPI 将问题作为版本化消息持久化。修改请求在诊断后只能读取 `resume-edit-local`、`resume-edit-entry-star` 或 `resume-generate-from-materials` 中的一个，加载第二种执行模式会以 `SKILL_MODE_CONFLICT` 失败。这四个 Skill 使用仓库约定的 `skill-creator` 结构创建并通过校验。浏览器 Cookie、供应商 API Key 和数据库凭据都不进入工具参数。Pi 运行时模型来自 FastAPI 统一模型管理中的 `pi_agent` binding，服务每次运行按需取得解密后的短时配置，不提供第二套模型配置页面。
+Pi 服务关闭上游默认的 `read`、`bash`、`edit`、`write` coding tools，再显式注册七个受控工具：`read` 只能读取 `apps/pi-service/resources/skills/` 下的 Markdown；`request_user_input` 只生成 1–3 个结构化问题，每题提供 2–3 个选项；其余五个是 `resolve_resume_target`、`get_resume_context`、`search_resume_materials`、`analyze_resume_content` 和 `create_resume_change_proposal`，都通过 `LINKRESUME_BASE_URL` 回调 FastAPI 的 `/internal/agent/**`。每轮先读取 `resume-edit-workflow`；目标不唯一或缺失会改变结果的关键信息时必须调用 `request_user_input`，调用后当前轮停止其他工具和最终回答，FastAPI 将问题作为版本化消息持久化。修改请求在诊断后只能读取 `resume-edit-local`、`resume-edit-entry-star` 或 `resume-generate-from-materials` 中的一个，加载第二种执行模式会以 `SKILL_MODE_CONFLICT` 失败。这四个 Skill 使用仓库约定的 `skill-creator` 结构创建并通过校验。浏览器 Cookie、供应商 API Key 和数据库凭据都不进入工具参数。Pi 运行时模型来自 FastAPI 统一模型管理中的 `pi_agent` binding，服务每次运行按需取得解密后的短时配置，不提供第二套模型配置页面。
 
-管理员绑定 `pi_agent` 时，FastAPI 保存候选配置版本快照、创建调用记录并在请求期解密凭据，然后通过 `POST /internal/probes` 把模型、地址和 Key 临时交给 Pi。Pi 使用原生 provider 直连供应商，模型必须调用固定的 `linkcv_probe` Tool；只有探针与验证证据成功后才切换 binding，明文凭据不写入响应、日志或持久化 Run。
+管理员绑定 `pi_agent` 时，FastAPI 保存候选配置版本快照、创建调用记录并在请求期解密凭据，然后通过 `POST /internal/probes` 把模型、地址和 Key 临时交给 Pi。Pi 使用原生 provider 直连供应商，模型必须调用固定的 `linkresume_probe` Tool；只有探针与验证证据成功后才切换 binding，明文凭据不写入响应、日志或持久化 Run。
 
 MySQL 是用户会话、消息、运行、工具审计和修改提案的事实源。FastAPI 在每轮请求中恢复最近对话后交给无状态 Pi 运行，因此容器重启或横向扩容不会丢失产品会话。Pi 侧不得把本地文件或进程内 session 当作业务真值。
 
-Pi 的 SSE 成功响应必须发送 `run.completed`、`run.failed` 或 `run.cancelled` 后才结束；FastAPI 对 HTTP 200 后无终态 EOF 统一补发安全化失败。部署探针从公开的 FastAPI `/api/agent/readiness` 进入，经 `PI_SERVICE_TOKEN` 调 Pi，再由 Pi 以 `LINKCV_INTERNAL_AGENT_TOKEN` 回调 FastAPI 内部 readiness。该探针只验证配置与鉴权，不调用模型供应商，也不返回模型名、API Key 或内部错误详情。
+Pi 的 SSE 成功响应必须发送 `run.completed`、`run.failed` 或 `run.cancelled` 后才结束；FastAPI 对 HTTP 200 后无终态 EOF 统一补发安全化失败。部署探针从公开的 FastAPI `/api/agent/readiness` 进入，经 `PI_SERVICE_TOKEN` 调 Pi，再由 Pi 以 `LINKRESUME_INTERNAL_AGENT_TOKEN` 回调 FastAPI 内部 readiness。该探针只验证配置与鉴权，不调用模型供应商，也不返回模型名、API Key 或内部错误详情。
 
 ## 调用与信任链
 
 ```text
 Web --Cookie--> FastAPI --PI_SERVICE_TOKEN--> Pi
                                       |
-                                      +--LINKCV_INTERNAL_AGENT_TOKEN--> FastAPI internal tools
+                                      +--LINKRESUME_INTERNAL_AGENT_TOKEN--> FastAPI internal tools
 FastAPI --decrypt pi_agent binding--> Pi runtime model
 MySQL <--sessions/runs/messages/tool calls/proposals--> FastAPI
 ```
 
 FastAPI 创建不可预测的 `runId` 并把当前用户与简历绑定写入数据库；Pi 的每次内部工具调用只携带该 `runId`。内部接口据此重新校验运行仍为 active，并从数据库解析可信 user/resume，绝不接受 Pi 传入 `user_id`。Web 选区以稳定块 ID、范围、原文和 SHA-256 独立传递；FastAPI 将其解析成带 `base_lock_version` 的 locator。上下文工具只返回目标所需范围和可写块 locator，资料搜索只覆盖当前用户拥有的简历、资料集和岗位。诊断结果由 FastAPI 生成 fingerprint；提案工具提交类型化 operation，FastAPI 复验执行模式、诊断、来源版本和范围后在快照副本上生成完整候选。用户在 Web 明确确认后，FastAPI 才再次校验简历版本和目标哈希，写入简历并创建 `reason=agent` 的正式版本；冲突不自动重匹配或覆盖。
 
-服务令牌必须是两枚不同的高熵值并只放在 `.env.local`、环境级私密覆盖或 Jenkins 凭据中：`PI_SERVICE_TOKEN` 用于 FastAPI 调 Pi，`LINKCV_INTERNAL_AGENT_TOKEN` 用于 Pi 回调 FastAPI。Production 开启 `AGENT_ENABLED=true` 时缺少任一令牌都会拒绝启动。
+服务令牌必须是两枚不同的高熵值并只放在 `.env.local`、环境级私密覆盖或 Jenkins 凭据中：`PI_SERVICE_TOKEN` 用于 FastAPI 调 Pi，`LINKRESUME_INTERNAL_AGENT_TOKEN` 用于 Pi 回调 FastAPI。Production 开启 `AGENT_ENABLED=true` 时缺少任一令牌都会拒绝启动。

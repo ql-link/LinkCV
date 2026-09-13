@@ -23,13 +23,13 @@ if [[ ! -f "${source_archive}" ]]; then
   exit 5
 fi
 
-image="linkcv"
-pi_image="linkcv-pi"
+image="linkresume"
+pi_image="linkresume-pi"
 tag="dev-${commit_short}-b${build_number}"
 dev_root="/opt/tolink/dev"
-deploy_dir="${dev_root}/linkcv"
+deploy_dir="${dev_root}/linkresume"
 work_root="${dev_root}/jenkins/workspaces"
-build_dir="${work_root}/linkcv-${build_number}"
+build_dir="${work_root}/linkresume-${build_number}"
 base_env="${deploy_dir}/.env.development"
 secret_env="${deploy_dir}/.env.development.local"
 compose_file="${deploy_dir}/deploy/docker-compose.development.yml"
@@ -37,7 +37,7 @@ docker_network="tolink-dev-net"
 http_port="18002"
 
 cleanup() {
-  if [[ "${build_dir}" == "${work_root}/linkcv-${build_number}" ]]; then
+  if [[ "${build_dir}" == "${work_root}/linkresume-${build_number}" ]]; then
     rm -rf -- "${build_dir}"
   fi
 }
@@ -93,7 +93,7 @@ docker run --rm \
   -e APP_ENV=development \
   "${image}:${tag}" \
   python -c '
-from linkcv.core.config import Settings
+from linkresume.core.config import Settings
 
 if not Settings().wechat_enabled:
     raise SystemExit("Development WeChat settings are missing or unsafe")
@@ -110,20 +110,20 @@ docker run --rm \
     --expected-app-env development \
     --expected-host 100.86.10.52 \
     --expected-port 13306 \
-    --expected-database linkcv
+    --expected-database linkresume
 
 TAG="${tag}" \
 PI_TAG="${tag}" \
-LINKCV_ENV_FILE="${base_env}" \
-LINKCV_SECRET_ENV_FILE="${secret_env}" \
-LINKCV_DOCKER_NETWORK="${docker_network}" \
-LINKCV_DEV_HTTP_PORT="${http_port}" \
+LINKRESUME_ENV_FILE="${base_env}" \
+LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
+LINKRESUME_DOCKER_NETWORK="${docker_network}" \
+LINKRESUME_DEV_HTTP_PORT="${http_port}" \
   docker compose -f "${compose_file}" up -d --remove-orphans
 
 for _ in $(seq 1 30); do
-  health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-dev 2>/dev/null || true)"
-  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi-dev 2>/dev/null || true)"
-  promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-dev-promtail 2>/dev/null || true)"
+  health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume-dev 2>/dev/null || true)"
+  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume-pi-dev 2>/dev/null || true)"
+  promtail_status="$(docker inspect --format='{{.State.Status}}' linkresume-dev-promtail 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]] && [[ "${pi_health_status}" == "healthy" ]] && [[ "${promtail_status}" == "running" ]] && \
     curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
     curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
@@ -137,6 +137,6 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-docker compose -f "${compose_file}" logs --tail=100 linkcv linkcv-pi promtail
+docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi promtail
 echo "Development health check timed out." >&2
 exit 12
