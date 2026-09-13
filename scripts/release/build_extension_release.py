@@ -22,6 +22,8 @@ BOSS_PERMISSIONS = {
     "https://zhipin.com/*",
     "https://www.zhipin.com/*",
     "https://m.zhipin.com/*",
+    "https://img.bosszhipin.com/*",
+    "https://img2.bosszhipin.com/*",
 }
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 MAX_FILES = 512

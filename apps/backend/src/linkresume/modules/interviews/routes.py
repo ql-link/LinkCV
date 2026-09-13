@@ -177,8 +177,14 @@ def _application_record(
 
 
 def _application_logo_url(application: JobApplication) -> str | None:
+    from linkresume.domain.company_logo import is_job_logo_url
+
     value = application.job_snapshot.get("logo_url")
-    return value if isinstance(value, str) and value.startswith("https://") else None
+    if isinstance(value, str) and (
+        value.startswith("https://") or is_job_logo_url(value, application.job_description_id)
+    ):
+        return value
+    return None
 
 
 def _application_summary(

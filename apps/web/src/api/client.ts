@@ -511,6 +511,8 @@ export type JobDescriptionSummary = {
   job_title: string;
   company_name: string;
   logo_url: string | null;
+  resolved_logo_url?: string | null;
+  logo_revision?: string | null;
   work_city: string | null;
   salary_text: string | null;
   skills: string[];

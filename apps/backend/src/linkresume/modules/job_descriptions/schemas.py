@@ -370,6 +370,11 @@ class JobDescriptionUpdateRequest(BaseModel):
         return self
 
 
+class CompanyLogoResponse(BaseModel):
+    logo_url: str
+    revision: str
+
+
 class JobDescriptionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -377,6 +382,8 @@ class JobDescriptionSummary(BaseModel):
     job_title: str
     company_name: str
     logo_url: str | None
+    resolved_logo_url: str | None = None
+    logo_revision: str | None = None
     work_city: str | None
     salary_text: str | None
     skills: list[str]

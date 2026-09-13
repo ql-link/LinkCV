@@ -1,7 +1,7 @@
 import type {
   DuplicateDetails,
   ImportJobPayload,
-  JobRecord,
+  JobImportResult,
 } from "../contracts";
 
 interface User {
@@ -53,7 +53,7 @@ export async function connectToLinkResume(): Promise<LinkResumeConnection | null
 export async function importJob(
   origin: string,
   payload: ImportJobPayload,
-): Promise<JobRecord> {
+): Promise<JobImportResult> {
   try {
     return await importOnce(origin, payload);
   } catch (error) {
@@ -68,13 +68,29 @@ export function linkResumeUrl(origin: string, path: string): string {
   return new URL(path, `${origin}/`).toString();
 }
 
-async function importOnce(origin: string, payload: ImportJobPayload): Promise<JobRecord> {
-  const response = await rawRequest<{ job_description: JobRecord }>(
+export async function uploadCompanyLogo(origin: string, jobId: string, file: Blob): Promise<void> {
+  const form = new FormData();
+  form.append("file", file, "company-logo");
+  const send = () => rawRequest(origin, `/api/job-descriptions/${encodeURIComponent(jobId)}/logo`, {
+    method: "POST", body: form, signal: AbortSignal.timeout(20_000),
+  });
+  try {
+    await send();
+  } catch (error) {
+    if (error instanceof LinkResumeApiError && error.status === 401 && await tryRefresh(origin)) {
+      await send();
+      return;
+    }
+    throw error;
+  }
+}
+
+async function importOnce(origin: string, payload: ImportJobPayload): Promise<JobImportResult> {
+  return rawRequest<JobImportResult>(
     origin,
     "/api/job-descriptions/import",
     { method: "POST", body: JSON.stringify(payload) },
   );
-  return response.job_description;
 }
 
 async function tryRefresh(origin: string): Promise<User | null> {
@@ -96,7 +112,7 @@ async function rawRequest<T>(
   const response = await fetch(`${origin}${path}`, {
     ...init,
     credentials: "include",
-    headers: init.body ? { "Content-Type": "application/json", ...init.headers } : init.headers,
+    headers: typeof init.body === "string" ? { "Content-Type": "application/json", ...init.headers } : init.headers,
   });
   const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {

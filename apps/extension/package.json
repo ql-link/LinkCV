@@ -1,11 +1,12 @@
 {
   "name": "@linkresume/browser-extension",
-  "version": "0.1.0",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "scripts": {
     "postinstall": "wxt prepare",
     "dev": "wxt",
+    "dev:local": "node scripts/dev-local.mjs",
     "build": "wxt build",
     "zip": "wxt zip",
     "zip:release": "wxt zip",

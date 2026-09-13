@@ -8,6 +8,50 @@ function page(body: string): Document {
 }
 
 describe("BOSS detail extraction", () => {
+  it.each([
+    'data-src="//cdn.example.test/company.png" src="data:image/gif;base64,R0lGODlhAQAB"',
+    'data-original="https://cdn.example.test/company.png"',
+    'data-lazy-src="https://cdn.example.test/company.png"',
+    'srcset="https://cdn.example.test/company.png 1x, https://cdn.example.test/company@2x.png 2x"',
+  ])("reads company logo image attributes: %s", (attributes) => {
+    const result = extractBossJob(page(`
+      <h1>后端工程师</h1>
+      <div class="company-info"><h3><a title="示例公司">示例公司</a></h3></div>
+      <a class="company-logo" href="/gongsi/example.html"><img ${attributes}></a>
+      <div class="job-sec-text">职位描述：负责服务端接口开发、数据库设计、单元测试、代码评审和生产问题排查。</div>
+    `), "https://www.zhipin.com/job_detail/example.html");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.capture.logo_url).toBe("https://cdn.example.test/company.png");
+  });
+
+  it("continues past invalid images without taking a recommendation or recruiter avatar", () => {
+    const result = extractBossJob(page(`
+      <h1>后端工程师</h1>
+      <div class="recommend-list"><img class="company-logo" src="https://cdn.example.test/other.png"></div>
+      <div class="job-boss-info"><img class="company-logo" src="https://cdn.example.test/recruiter.png"></div>
+      <div class="company-info"><h3><a title="示例公司">示例公司</a></h3>
+        <img src="data:image/gif;base64,R0lGODlhAQAB">
+        <img src="http://cdn.example.test/insecure.png">
+        <img src="https://cdn.example.test/company.png">
+      </div>
+      <div class="job-sec-text">职位描述：负责服务端接口开发、数据库设计、单元测试、代码评审和生产问题排查。</div>
+    `), "https://www.zhipin.com/job_detail/example.html");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.capture.logo_url).toBe("https://cdn.example.test/company.png");
+  });
+
+  it("reads the browser-selected currentSrc for responsive company images", () => {
+    const doc = page(`
+      <h1>后端工程师</h1>
+      <div class="company-info"><h3><a title="示例公司">示例公司</a></h3><img class="company-logo"></div>
+      <div class="job-sec-text">职位描述：负责服务端接口开发、数据库设计、单元测试、代码评审和生产问题排查。</div>
+    `);
+    Object.defineProperty(doc.querySelector("img"), "currentSrc", { value: "https://cdn.example.test/current.png" });
+    const result = extractBossJob(doc, "https://www.zhipin.com/job_detail/example.html");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.capture.logo_url).toBe("https://cdn.example.test/current.png");
+  });
+
   it("extracts the detail card instead of a recommendation card", () => {
     const result = extractBossJob(
       page(`
@@ -101,6 +145,7 @@ describe("BOSS detail extraction", () => {
         <main class="job-list-wrapper">
           <section class="job-list-box">
             <article class="job-card-box active">
+              <div class="company-logo"><img data-src="https://cdn.example.test/selected-company.png"></div>
               <a href="/job_detail/java-nanjing-001.html">
                 <strong class="job-name">Java</strong><span class="salary">10-11K</span>
                 <span class="company-name">北京轩格科技有限公司</span>
@@ -108,6 +153,7 @@ describe("BOSS detail extraction", () => {
               </a>
             </article>
             <article class="job-card-box">
+              <img class="company-logo" src="https://cdn.example.test/other-company.png">
               <a href="/job_detail/java-other-002.html">
                 <strong class="job-name">Java 高级开发工程师</strong>
                 <span class="company-name">其他公司</span>
@@ -125,6 +171,7 @@ describe("BOSS detail extraction", () => {
               <div class="job-sec-text">职位描述\n岗位职责：负责业务系统设计与开发。\n任职要求：熟悉 Java 和 MySQL。</div>
             </div>
             <div class="recommend-list">
+              <img class="company-logo" src="https://cdn.example.test/recommended-company.png">
               <a class="job-card" href="/job_detail/recommended-003.html"><span class="job-name">推荐 Java 岗位</span></a>
             </div>
           </section>
@@ -139,6 +186,7 @@ describe("BOSS detail extraction", () => {
     expect(result.capture).toMatchObject({
       job_title: "Java",
       company_name: "北京轩格科技有限公司",
+      logo_url: "https://cdn.example.test/selected-company.png",
       description_text: "职位描述\n岗位职责：负责业务系统设计与开发。\n任职要求：熟悉 Java 和 MySQL。",
       salary_text: "10-11K",
       work_city: "南京",
@@ -195,9 +243,11 @@ describe("BOSS detail extraction", () => {
       page(`
         <section class="job-list-box">
           <article class="job-card-box selected" data-jobid="stale-python-id">
+            <img class="company-logo" src="https://cdn.example.test/stale-company.png">
             <strong class="job-name">Python 工程师</strong><span class="company-name">示例甲公司</span>
           </article>
           <article class="job-card-box">
+            <img class="company-logo" src="https://cdn.example.test/current-company.png">
             <a href="/job_detail/current-java-id.html">
               <strong class="job-name">Java 工程师</strong><span class="company-name">示例乙公司</span>
             </a>
@@ -215,6 +265,7 @@ describe("BOSS detail extraction", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.sourceUrl).toBe("https://www.zhipin.com/job_detail/current-java-id.html");
+    expect(result.capture.logo_url).toBe("https://cdn.example.test/current-company.png");
   });
 
   it("uses semantic anchors for the current BOSS list layout", () => {
