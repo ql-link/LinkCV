@@ -95,6 +95,67 @@ describe("AssistantPage", () => {
     expect(within(recentGroup).getByRole("button", { name: "普通对话" })).toBeInTheDocument();
   });
 
+  it("可分别收起和展开 Pinned 与最近对话", async () => {
+    const user = userEvent.setup();
+    const pinnedSession = { ...session, id: "session-pinned", title: "置顶对话", pinned: true };
+    const recentSession = { ...session, id: "session-recent", title: "普通对话", pinned: false };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [pinnedSession, recentSession] });
+
+    render(<AssistantPage />);
+
+    expect(await screen.findByRole("button", { name: "置顶对话" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "普通对话" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "收起 Pinned" }));
+    expect(screen.getByRole("button", { name: "展开 Pinned" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "置顶对话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "普通对话" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "展开 Pinned" }));
+    expect(screen.getByRole("button", { name: "置顶对话" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "收起最近对话" }));
+    expect(screen.getByRole("button", { name: "展开最近对话" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "普通对话" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "展开最近对话" }));
+    expect(screen.getByRole("button", { name: "普通对话" })).toBeVisible();
+  });
+
+  it("可拖动或通过键盘调整最近对话栏宽度", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    const { container } = render(<AssistantPage />);
+
+    const shell = container.querySelector<HTMLDivElement>(".assistant-shell");
+    expect(shell).not.toBeNull();
+    vi.spyOn(shell!, "getBoundingClientRect").mockReturnValue({
+      x: 40,
+      y: 0,
+      left: 40,
+      right: 1900,
+      top: 0,
+      bottom: 1000,
+      width: 1860,
+      height: 1000,
+      toJSON: () => ({}),
+    });
+
+    const separator = screen.getByRole("separator", { name: "调整最近对话栏宽度" });
+    expect(separator).toHaveAttribute("aria-valuenow", "240");
+    expect(shell).toHaveStyle({ "--assistant-sidebar-width": "240px" });
+
+    fireEvent.pointerDown(separator, { pointerId: 1, pointerType: "mouse", button: 0, clientX: 280 });
+    fireEvent.pointerMove(separator, { pointerId: 1, pointerType: "mouse", clientX: 360 });
+    expect(separator).toHaveAttribute("aria-valuenow", "320");
+    expect(shell).toHaveStyle({ "--assistant-sidebar-width": "320px" });
+    fireEvent.pointerUp(separator, { pointerId: 1, pointerType: "mouse", clientX: 360 });
+
+    fireEvent.keyDown(separator, { key: "Home" });
+    expect(separator).toHaveAttribute("aria-valuenow", "220");
+    fireEvent.keyDown(separator, { key: "End" });
+    expect(separator).toHaveAttribute("aria-valuenow", "420");
+  });
+
   it("通过独立会话路由直接恢复对应对话", async () => {
     const routedSession: AgentSession = {
       ...session,
