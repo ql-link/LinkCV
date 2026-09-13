@@ -275,12 +275,6 @@ export function HomeScreen({
   }, [activeImports, failedImports, query]);
   const visibleCardCount = visibleImports.length + visibleResumes.length;
 
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
   const confirmDelete = async () => {
     if (!pendingDelete || deletingResumeId) return;
     const resume = pendingDelete;
@@ -422,7 +416,11 @@ export function HomeScreen({
         </div>
       )}
 
-      {notice && <FeedbackNotice kind={notice.kind} placement="floating">{notice.message}</FeedbackNotice>}
+      {notice && (
+        <FeedbackNotice kind={notice.kind} placement="floating" onDismiss={() => setNotice(null)}>
+          {notice.message}
+        </FeedbackNotice>
+      )}
       {pendingDelete && (
         <ConfirmDialog
           kind="delete"

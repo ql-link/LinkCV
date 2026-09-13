@@ -1,5 +1,5 @@
 import { FileDown, Home, Save } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { exportResumePdf, resumePdfExportErrorMessage } from "../features/preview/pdfExport";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand, Button, FeedbackNotice, IconButton } from "@/components/ui";
@@ -20,13 +20,6 @@ export function Header() {
   const goHome = useResumeStore((state) => state.goHome);
   const [saveToast, setSaveToast] = useState<SaveToast | null>(null);
   const [isManualSaving, setIsManualSaving] = useState(false);
-
-  useEffect(() => {
-    if (!saveToast) return;
-
-    const timer = window.setTimeout(() => setSaveToast(null), 1800);
-    return () => window.clearTimeout(timer);
-  }, [saveToast]);
 
   const handleManualSave = async () => {
     setIsManualSaving(true);
@@ -94,7 +87,9 @@ export function Header() {
         </Button>
       </div>
       {saveToast && (
-        <FeedbackNotice kind={saveToast.kind} placement="floating">{saveToast.message}</FeedbackNotice>
+        <FeedbackNotice kind={saveToast.kind} placement="floating" onDismiss={() => setSaveToast(null)}>
+          {saveToast.message}
+        </FeedbackNotice>
       )}
     </header>
   );
