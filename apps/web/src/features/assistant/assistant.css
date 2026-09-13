@@ -59,9 +59,6 @@
 .assistant-recall-drawer-toggle:hover { border-color: #c6ced9; background: #f8f9fb; color: #17191c; }
 .assistant-recall-drawer-toggle:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; }
 .assistant-message-viewport { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 18px; overflow-y: auto; overscroll-behavior: contain; padding: 22px max(32px, calc((100% - var(--assistant-content-max-width)) / 2)) 24px; scroll-behavior: smooth; }
-.assistant-state-header { width: 100%; margin: 0 auto 12px; }
-.assistant-state-header h1 { margin: 0; color: #17191c; font-size: 18px; line-height: 1.35; }
-.assistant-state-header p { margin: 6px 0 0; color: #3f4752; font-size: 12px; line-height: 1.45; }
 .assistant-conversation.is-empty { justify-content: center; gap: 32px; }
 .assistant-conversation.is-empty .assistant-message-viewport { width: 100%; flex: 0 0 auto; overflow: visible; padding-top: 0; padding-bottom: 0; }
 .assistant-empty-state { display: flex; align-items: center; justify-content: center; gap: 30px; text-align: center; }
@@ -335,7 +332,6 @@
   .assistant-conversation.is-empty { justify-content: flex-start; gap: 0; }
   .assistant-mobile-toolbar { display: flex; min-height: 56px; align-items: center; border-bottom: 1px solid #dbe0e8; padding: 6px 16px; }
   .assistant-message-viewport { gap: 16px; padding: 18px 16px; scroll-behavior: auto; }
-  .assistant-state-header { margin-bottom: 4px; }
   .assistant-empty-state { flex-direction: column; gap: 16px; transform: none; }
   .assistant-empty-state h2 { font-size: 25px; }
   .assistant-message { width: 100%; }
