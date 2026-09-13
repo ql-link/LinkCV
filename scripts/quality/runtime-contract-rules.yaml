@@ -194,8 +194,8 @@ contracts:
         pattern: 'developmentStorageKey: "linkresume_api_base_url"[\s\S]*envVersion === "develop"[\s\S]*readStorageValue\(developmentStorageKey\)[\s\S]*!isDevelop[\s\S]*startsWith\("https://"\)'
         message: API 内网地址覆盖只能用于开发版，体验版和正式版必须强制 HTTPS
       - path: apps/miniprogram/config/env.js
-        pattern: 'LOCAL_DEBUG_ENABLED_STORAGE_KEY = "linkresume_local_debug_enabled"[\s\S]*const localDebugEnabled = isDevelop[\s\S]*readStorageValue\(LOCAL_DEBUG_ENABLED_STORAGE_KEY\) === true[\s\S]*const localConfig = localDebugEnabled[\s\S]*readLocalConfigSafely\(localConfigReader\)[\s\S]*: null'
-        message: 包内 local.js 只能在 develop 且显式开启 linkresume_local_debug_enabled 后读取
+        pattern: 'LOCAL_DEBUG_ENABLED_STORAGE_KEY = "linkresume_local_debug_enabled"[\s\S]*const localDebugEnabled = isDevelop[\s\S]*debugPreference !== false[\s\S]*const localConfig = localDebugEnabled[\s\S]*readLocalConfigSafely\(localConfigReader\)[\s\S]*: null'
+        message: 包内 local.js 只在明确 develop 且未显式关闭联调时读取
       - path: apps/miniprogram/config/env.js
         pattern: 'function readAccountInfoSafely\(\)[\s\S]*typeof wx\.getAccountInfoSync !== "function"[\s\S]*return null[\s\S]*try[\s\S]*const account = wx\.getAccountInfoSync\(\)[\s\S]*typeof account\.miniProgram\.envVersion !== "string"[\s\S]*return null[\s\S]*catch \{[\s\S]*return null'
         message: 小程序环境识别缺失、字段不完整或异常时必须安全失败

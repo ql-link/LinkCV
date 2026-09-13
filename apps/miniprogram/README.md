@@ -4,8 +4,8 @@
 
 ## 已实现范围
 
-- 冷启动继续进入“简历”列表页，底部仅提供“简历 / 我的”两个标签页。未登录时列表页只展示一张明确标记“示例简历 · 内容为虚构信息”的内置卡片，点击可完整浏览虚构简历；该路径不弹授权、不识别微信身份，也不请求个人简历或资料数据。
-- 登录是用户主动行为，登录入口只保留在“我的”页。用户查看并勾选小程序隐私保护指引、主动点击“继续使用微信”后，后端自动复用已有账号或创建普通账号。登录页始终可以关闭并返回原标签页。
+- 冷启动继续进入“简历”列表页，底部提供“简历 / 求职 / 我的”三个标签页。未登录时列表页只展示一张明确标记“示例简历 · 内容为虚构信息”的内置卡片，点击可完整浏览虚构简历；该路径不弹授权、不识别微信身份，也不请求个人简历或资料数据。
+- 登录是用户主动行为，登录入口位于“我的”页和求职游客引导。用户查看并勾选小程序隐私保护指引、主动点击“继续使用微信”后，后端自动复用已有账号或创建普通账号。登录页始终可以关闭并返回原标签页。
 - “简历”页登录后只加载本人真实简历，不混入示例；会话失效且恢复失败时回到游客示例态，不能静默注册。“我的”页游客态只展示登录入口，登录后才加载头像和昵称，并可编辑资料或退出登录。
 - “简历”页关闭页面级滚动，由页面内部 `scroll-view` 承担纵向滚动和下拉刷新；底部导航位于滚动区域外并固定在安全区上方，列表内容在底部预留导航高度。
 - 扫描 LinkResume 网页小程序码后进入独立的网页登录确认页；页面先说明登录目的并提供取消入口。用户主动确认后，客户端依次确认网页登录并建立小程序会话，未知微信身份可在同一次操作中完成建号。取消、失败或过期均可返回“简历”页。
@@ -21,7 +21,7 @@
 1. 打开微信开发者工具，选择"导入项目"。
 2. 项目目录选择本目录 `apps/miniprogram`，不要选择仓库根目录。
 3. AppID 使用 `project.config.json` 中的项目 AppID；如果实际发布主体不同，先替换为该主体的小程序 AppID。
-4. 每次运行 `npm run dev`（或 `npm run dev:local` / `npm run dev:development`）都会自动探测局域网 IP 并更新被忽略的 `config/local.js`。开发者工具和真机上的 `develop` 默认都访问 `https://linkresume.cn`；要让当前设备使用这份自动生成的本地配置，在开发者工具或真机调试控制台执行 `wx.setStorageSync("linkresume_local_debug_enabled", true)`，重新进入小程序即可。关闭本地联调时执行 `wx.removeStorageSync("linkresume_local_debug_enabled")` 或 `wx.setStorageSync("linkresume_local_debug_enabled", false)`。如需固定内网地址，可显式执行 `wx.setStorageSync("linkresume_api_base_url", "http://<内网地址>:8000")`；该 `develop` storage 覆盖优先于 `local.js`，且只在 `develop` 生效。开发者工具中还需临时关闭"校验合法域名、web-view（业务域名）、TLS 版本以及 HTTPS 证书"。
+4. 每次运行 `npm run dev:local` 或 `npm run dev:development` 都会生成被 Git 忽略的 `config/local.js`。开发者工具在 `develop` 下自动使用 `devtoolsApiBaseUrl`（127.0.0.1 + 实际后端端口），重新编译即可，无需手填地址。共享 Dev 默认端口为 18000，可用 `LINKRESUME_LOCAL_BACKEND_PORT` 覆盖；Local 使用 `BACKEND_PORT`，默认 8000。真机开发版自动使用生成的局域网地址，显式设为 `false` 可关闭本地联调；后端必须在该地址可达。开发者工具现有合法域名校验配置仍需符合本地联调要求。
 5. 根级 `npm run dev:local` / `npm run dev:development` 会监听构建 PDF CLI；若单独启动后端，先执行 `npm --prefix apps/web run build:pdf-cli`。
 6. 在微信公众平台配置并发布“小程序用户隐私保护指引”；启动后端并配置与小程序 AppID 配对的 `WECHAT_APPID` 和 `WECHAT_SECRET`，再测试游客示例卡片与详情、统一微信登录、扫码确认和登录后简历图片预览。
 
@@ -35,14 +35,14 @@ module.exports = {
 };
 ```
 
-该地址是小程序包内公开的服务根地址，不是密钥。`config/local.js` 只有在环境被明确识别为 `envVersion === "develop"` 且设备本地 `linkresume_local_debug_enabled` 严格为 `true` 时才读取，开发者工具和真机均可显式启用；没有 opt-in、环境识别缺失或异常、文件读取失败或文件缺少地址时回退到 `https://linkresume.cn`。`linkresume_api_base_url` 是仅限 `develop` 的显式 URL 覆盖，优先级高于 `local.js`；体验版和正式版忽略所有开发 storage/local.js，并拒绝 HTTP 地址。每次 `npm run dev`（含 `dev:local` / `dev:development`）会重新探测并更新 `local.js` 的局域网 IP，变更后重新导入或上传包即可使用新地址。通过第三方平台代开发时可用 ext config 的 `apiBaseUrl` 覆盖，但同样必须使用 HTTPS。`WECHAT_SECRET` 只能保存在后端私密环境中，禁止写入本目录。
+该地址是公开的服务根地址，不是密钥。环境必须明确为 `develop` 才允许本地联调：开发者工具默认自动读取 `local.js`，真机自动使用其中的局域网地址。设为 `false` 可关闭自动本地联调，删除开关恢复各平台默认行为。`linkresume_api_base_url` 显式覆盖优先级最高，仅在 `develop` 生效；恢复自动地址时先删除该覆盖。环境未知、文件缺失或读取失败回退正式地址。`trial/release` 完全不读取开发 storage、设备识别或 `local.js`，默认使用 `https://linkresume.cn`，仍支持 HTTPS 的 `extConfig.apiBaseUrl`，拒绝 HTTP。改变配置后需重新编译或冷启动；后端不可达时不会自动跨环境回退。服务端密钥不得写入本目录。
 
 还必须在微信公众平台完成：
 
 1. 把 `https://linkresume.cn` 同时登记为 request 与 downloadFile 合法域名，并保证公网 HTTPS 证书有效；不需要业务域名。
 2. 确认后端 `WECHAT_APPID/WECHAT_SECRET` 与待发布小程序完全匹配。
 3. 配置小程序名称、图标、服务类目并发布用户隐私保护指引；当前客户端使用微信原生 `wx.openPrivacyContract` 展示该指引，不包含自建协议页面。
-4. 上传体验版，使用真实微信先验证合规交互：冷启动直接展示“简历”页且不出现授权弹窗，游客可点击示例卡片完整浏览并切换“简历 / 我的”，登录入口只在“我的”页；再验证用户主动统一登录（未勾选时不能建号）、扫码确认、扫码取消、会话续期、本人简历和越权详情。
+4. 上传体验版，使用真实微信先验证合规交互：冷启动直接展示“简历”页且不出现授权弹窗，游客可点击示例卡片完整浏览并切换“简历 / 求职 / 我的”，登录入口只在“我的”页；再验证用户主动统一登录（未勾选时不能建号）、扫码确认、扫码取消、会话续期、本人简历和越权详情。
 5. 逐项验证简历图片预览：全部模板、复杂布局、私有图片、首次下载、页面内图片浏览、同版本本地复用和普通 Web PDF 导出回归。
 6. 在管理端停用测试普通账号，确认 Web 与小程序会话都立即失效；同时确认管理员仍只能从 Web `/admin/login` 登录。
 7. 真机验收通过后再提交微信审核和发布。
@@ -58,3 +58,9 @@ npm run test:miniprogram
 ```
 
 这些测试覆盖运行环境配置、游客首页零认证/零简历请求与示例详情零认证/零 API 请求、登录态真实列表不混入示例、隐私同意门禁、统一登录与原标签页回跳、扫码确认顺序、token 续期并发与失败行为，以及 PNG 下载、本地版本缓存和并发打开；它们不能替代微信开发者工具和真机验收。
+
+## 求职中心
+
+求职页按已确认方案提供“面试安排 / 求职记录”顶部切换，时间表、搜索筛选、求职/场次详情、阶段与安排表单、面试准备和文字记录、Offer、终止求职以及岗位/投递版本简历查看。进入游客求职页不请求私人数据，登录后加载本人真实记录。岗位导入仍使用网页端。接口与失败语义见 `docs/internals/miniprogram.md` 和 `docs/api/http-contracts.md`。
+
+共享 Dev 联调执行 `npm run dev:development` 后重新编译，开发者工具会自动使用生成的本机地址和实际端口。手机与电脑需在互通的局域网内；共享 Dev 默认只监听 127.0.0.1，真机联调时使用 `LINKRESUME_LOCAL_BACKEND_HOST=0.0.0.0 npm run dev:development` 显式启用局域网访问。重新编译并扫码后生效。

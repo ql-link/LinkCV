@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -156,4 +156,23 @@ test("syncMiniprogramLocalConfig writes gitignored local.js with detected LAN IP
   assert.ok(result);
   assert.equal(result.targetFile, join(configDir, "local.js"));
   assert.ok(result.lanIp);
+});
+
+test("generated simulator and phone addresses follow the selected launch profile and actual port", () => {
+  for (const [profile, env, port] of [
+    [".env", {}, 8000],
+    [".env", { BACKEND_PORT: "8123" }, 8123],
+    [".env.development", { BACKEND_PORT: "9999" }, 18000],
+    [".env.development", { LINKRESUME_LOCAL_BACKEND_PORT: "8000", BACKEND_PORT: "9999" }, 8000],
+    [".env.development", { LINKRESUME_LOCAL_BACKEND_PORT: "18123" }, 18123],
+  ]) {
+    const { worktree, mainRoot } = fixture();
+    mkdirSync(join(worktree, "apps/miniprogram/config"), { recursive: true });
+    const result = syncMiniprogramLocalConfig(worktree, undefined, { profile, env });
+    const config = JSON.parse(readFileSync(join(worktree, "apps/miniprogram/config/local.json"), "utf8"));
+    assert.equal(config.devtoolsApiBaseUrl, "http://127.0.0.1:" + port);
+    assert.equal(config.apiBaseUrl, "http://" + result.lanIp + ":" + port);
+    assert.ok(readFileSync(result.targetFile, "utf8").includes(config.devtoolsApiBaseUrl));
+    assert.equal(result.devtoolsApiBaseUrl, config.devtoolsApiBaseUrl);
+  }
 });

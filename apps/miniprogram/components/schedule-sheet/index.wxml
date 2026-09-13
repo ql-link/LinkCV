@@ -1,0 +1,334 @@
+<view class="sheet-overlay" style="--brand-header-height:{{brandHeight}}px;top:{{brandHeight}}px;height:calc(100vh - {{brandHeight}}px)" catchtouchmove="noop">
+  <view class="sheet-mask mask-enter" style="{{maskExitStyle}}" bindtap="close" />
+  <view
+    class="sheet {{choosing ? 'sheet-enter' : 'form-enter'}}" style="{{sheetExitStyle}}"
+    role="dialog"
+    aria-label="添加安排"
+    aria-modal="true"
+  >
+    <view class="sheet-header"
+      ><text class="sheet-title">{{choosing ? "添加安排" : sheetTitle}}</text
+      ><button
+        class="sheet-button close-button"
+        size="mini"
+        bindtap="close"
+        disabled="{{saving}}"
+        aria-label="关闭添加安排"
+      >
+        ×
+      </button></view
+    >
+    <scroll-view
+      class="sheet-content"
+      scroll-y
+      enhanced
+      show-scrollbar="{{false}}"
+    >
+      <view
+        class="content-stack {{choosing ? 'chooser-stack' : mode === 'stage' ? 'stage-stack' : 'schedule-stack'}}"
+      >
+        <block wx:if="{{choosing}}">
+          <view class="process-search"
+            ><view class="search-icon"
+              ><image
+                class="search-glyph"
+                src="/assets/career/sheet-search.svg" /></view
+            ><view class="field-input input-shell search-shell"
+              ><input
+                class="native-input search-input"
+                placeholder-class="search-placeholder"
+                placeholder-style="width:100%;text-align:center;line-height:22px;"
+                placeholder="搜索公司或岗位"
+                aria-label="搜索公司或岗位"
+                value="{{keyword}}"
+                bindinput="search"
+                maxlength="200" /></view
+          ></view>
+          <text class="sheet-hint" wx:if="{{loading}}">正在加载求职流程…</text>
+          <button
+            size="mini"
+            class="sheet-button process-option"
+            wx:for="{{filtered}}"
+            wx:key="id"
+            data-id="{{item.id}}"
+            bindtap="selectApplication"
+            disabled="{{loading}}"
+          >
+            <view class="process-identity">
+              <text class="company">{{item.company_name_snapshot}}</text>
+              <text class="process-job">{{item.job_title_snapshot}}</text>
+            </view>
+            <view class="process-progress">
+              <text class="process-stage">{{item.stageLabel}}</text>
+              <text class="process-stage-label">当前阶段</text>
+            </view>
+          </button>
+          <text
+            class="sheet-hint"
+            wx:if="{{!loading && !error && !filtered.length}}"
+            >{{keyword ? '没有匹配的求职流程，试试其他关键词。' : '暂无可推进的求职流程。请先完成当前面试；如需给当前阶段补时间，请进入求职详情添加安排。'}}</text
+          >
+        </block>
+        <block wx:else>
+          <button
+            size="mini"
+            class="sheet-button process-selected"
+            bindtap="changeApplication"
+            disabled="{{direct || saving || submissionStarted}}"
+          >
+            <view class="selected-summary"
+              ><text class="selected-company"
+                >{{app.company_name_snapshot}}</text
+              ><text class="selected-job"
+                >{{app.job_title_snapshot}}</text
+              ></view
+            ><view wx:if="{{!direct}}" class="change-label">重新选择</view>
+          </button>
+          <view
+            class="stage-types {{types.length > 4 ? 'expanded-types' : ''}}"
+            wx:if="{{mode === 'stage'}}"
+          >
+            <button
+              size="mini"
+              wx:for="{{types}}"
+              wx:key="value"
+              class="sheet-button stage-type {{form.stageType === item.value ? 'chosen' : ''}}"
+              data-type="{{item.value}}"
+              bindtap="selectType"
+              disabled="{{saving || submissionStarted}}"
+            >
+              <image
+                class="stage-icon"
+                src="/assets/career/sheet-{{item.value}}.svg"
+              /><text
+                >{{item.value === 'interview' ? '普通面试' : item.label}}</text
+              >
+            </button>
+          </view>
+
+          <view
+            wx:if="{{app.phase === 'pending' && mode === 'stage'}}"
+            class="field-group"
+            ><text class="field-label">实际投递日期（选填）</text
+            ><picker
+              mode="date"
+              value="{{form.appliedDate}}"
+              data-field="appliedDate"
+              bindchange="input"
+              disabled="{{saving || submissionStarted}}"
+              ><view class="field-input"
+                >{{form.appliedDate || '默认记录为今天'}}</view
+              ></picker
+            ><text class="field-label">关联简历（选填）</text
+            ><picker
+              range="{{resumes}}"
+              range-key="title"
+              value="{{form.resumeIndex}}"
+              data-field="resumeIndex"
+              bindchange="input"
+              disabled="{{saving || submissionStarted}}"
+              ><view class="field-input"
+                >{{resumes[form.resumeIndex].title}}</view
+              ></picker
+            ><button
+              wx:if="{{resumeError}}"
+              class="sheet-button"
+              bindtap="retryResumes"
+            >
+              {{resumeError}}
+            </button></view
+          >
+          <view wx:if="{{form.stageType === 'offer'}}" class="offer-fields"
+            ><text class="offer-title">Offer 信息</text
+            ><text class="sheet-hint">确认已经收到 Offer 后再保存。</text
+            ><view class="field-group"
+              ><text class="field-label">工作地点（选填）</text
+              ><view class="field-input input-shell"
+                ><input
+                  class="native-input"
+                  value="{{form.baseLocation}}"
+                  data-field="baseLocation"
+                  bindinput="input"
+                  maxlength="100"
+                  disabled="{{saving || submissionStarted}}" /></view></view
+            ><view class="field-group"
+              ><text class="field-label">薪资（选填）</text
+              ><view class="offer-salary"
+                ><view class="field-input input-shell"
+                  ><input
+                    class="native-input"
+                    type="digit"
+                    value="{{form.salary}}"
+                    data-field="salary"
+                    bindinput="input"
+                    maxlength="13"
+                    disabled="{{saving || submissionStarted}}" /></view
+                ><career-select
+                  options="{{currencyOptions}}"
+                  value="{{form.currencyIndex}}"
+                  data-field="currencyIndex"
+                  bind:change="input"
+                  disabled="{{saving || submissionStarted}}" /><career-select
+                  options="{{periodOptions}}"
+                  value="{{form.periodIndex}}"
+                  data-field="periodIndex"
+                  bind:change="input"
+                  disabled="{{saving || submissionStarted}}" /></view></view
+            ><view class="field-group"
+              ><text class="field-label">福利待遇（选填）</text
+              ><view class="field-input input-shell"
+                ><input
+                  class="native-input"
+                  value="{{form.benefits}}"
+                  data-field="benefits"
+                  bindinput="input"
+                  maxlength="16000"
+                  disabled="{{saving || submissionStarted}}" /></view></view
+          ></view>
+          <view
+            class="field-group"
+            wx:if="{{mode === 'stage' && form.stageType === 'interview'}}"
+            ><text class="field-label">新阶段名称 *</text
+            ><view class="field-input input-shell"
+              ><input
+                class="native-input"
+                placeholder-class="placeholder"
+                placeholder="例如：技术二面、HR 面"
+                value="{{form.stageLabel}}"
+                data-field="stageLabel"
+                bindinput="input"
+                maxlength="100"
+                disabled="{{saving || submissionStarted}}" /></view
+          ></view>
+          <block
+            wx:if="{{form.stageType !== 'screening' && form.stageType !== 'offer'}}"
+          >
+            <view class="field-group"
+              ><text class="field-label"
+                >{{form.stageType === 'written_test' ? '笔试时间 *' : form.stageType === 'interview' || form.stageType === 'ai_interview' ? '面试时间 *' : '开始时间 *'}}</text
+              ><button
+                size="mini"
+                class="sheet-button field-input time-trigger"
+                data-target="start"
+                bindtap="chooseDateTime"
+                disabled="{{saving || submissionStarted}}"
+              >
+                <text class="time-value">{{form.stageType === 'interview' || form.stageType === 'written_test' || form.stageType === 'ai_interview' ? rangeLabel : startLabel}}</text
+                ><text class="time-action">选择时间</text>
+              </button></view
+            >
+            <view
+              class="field-group"
+              wx:if="{{form.stageType === 'assessment'}}"
+              ><text class="field-label">完成期限 *</text
+              ><view class="field-input input-shell"
+                ><input
+                  class="native-input"
+                  type="number"
+                  value="{{deadlineDays}}"
+                  bindinput="inputDeadline"
+                  maxlength="4"
+                  disabled="{{saving || submissionStarted}}"
+                /><text>天</text></view
+              ></view
+            >
+            <view class="field-group" wx:elif="{{form.stageType !== 'interview' && form.stageType !== 'written_test' && form.stageType !== 'ai_interview'}}"
+              ><text class="field-label">结束时间 *</text
+              ><button
+                size="mini"
+                class="sheet-button field-input time-trigger"
+                data-target="end"
+                bindtap="chooseDateTime"
+                disabled="{{saving || submissionStarted}}"
+              >
+                <text class="time-value">{{endLabel}}</text
+                ><text class="time-action">选择时间</text>
+              </button></view
+            >
+            <view class="field-group"
+              ><text class="field-label"
+                >{{form.stageType === 'interview' || form.stageType === 'ai_interview' ? '面试方式 *' : '安排方式 *'}}</text
+              ><career-select
+                options="{{modes}}"
+                value="{{form.modeIndex}}"
+                data-field="modeIndex"
+                bind:change="input"
+                disabled="{{saving || submissionStarted}}"
+            /></view>
+            <view class="field-group">
+              <text class="field-label"
+                >{{form.modeIndex == 0 || form.modeIndex == 2 ? '链接（选填）' : '地点（选填）'}}</text
+              >
+              <view class="field-input input-shell">
+                <input
+                  wx:if="{{form.modeIndex == 0 || form.modeIndex == 2}}"
+                  class="native-input link-input"
+                  placeholder-class="placeholder"
+                  placeholder="粘贴会议链接或会议号"
+                  value="{{form.meetingUrl}}"
+                  data-field="meetingUrl"
+                  bindinput="input"
+                  maxlength="2048"
+                  disabled="{{saving || submissionStarted}}"
+                />
+                <input
+                  wx:else
+                  class="native-input"
+                  placeholder-class="placeholder"
+                  placeholder="填写地址或其他地点"
+                  value="{{form.location}}"
+                  data-field="location"
+                  bindinput="input"
+                  maxlength="500"
+                  disabled="{{saving || submissionStarted}}"
+                />
+              </view>
+            </view>
+          </block>
+        </block>
+        <view class="feedback" wx:if="{{partial}}">{{partial}}</view>
+        <view class="feedback error" wx:if="{{error}}">{{error}}</view>
+        <button
+          size="mini"
+          wx:if="{{choosing && error}}"
+          class="sheet-button retry"
+          bindtap="loadApplications"
+        >
+          重新加载
+        </button>
+        <text class="sheet-hint" wx:if="{{conflict}}"
+          >请关闭弹窗并刷新流程后重新添加。</text
+        >
+      </view>
+    </scroll-view>
+    <view class="sheet-footer" wx:if="{{!choosing}}"
+      ><button
+        size="mini"
+        class="sheet-button cancel-button"
+        bindtap="close"
+        disabled="{{saving}}"
+      >
+        取消</button
+      ><button
+        size="mini"
+        class="sheet-button submit-button {{loading || saving || !app || conflict ? 'is-disabled' : ''}}"
+        bindtap="save"
+        loading="{{saving}}"
+        disabled="{{loading || saving || !app || conflict}}"
+      >
+        {{buttonLabel || '添加安排'}}
+      </button></view
+    >
+  </view>
+  <career-time-picker
+    wx:if="{{timeEditorOpen}}"
+    date="{{pickerDate}}"
+    time="{{pickerTime}}"
+    title="{{pickerTitle}}"
+    show-duration="{{timeTarget === 'start' && (form.stageType === 'interview' || form.stageType === 'written_test' || form.stageType === 'ai_interview')}}"
+    duration="{{duration}}"
+    error="{{error}}"
+    bind:confirm="acceptDateTime"
+    bind:close="cancelTimeEditor"
+  />
+</view>

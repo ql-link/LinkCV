@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "场次详情",
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index"
+  },
+  "navigationStyle": "custom"
+}

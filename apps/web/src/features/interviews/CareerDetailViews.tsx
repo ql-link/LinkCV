@@ -113,6 +113,7 @@ function requestErrorMessage(error: unknown): string {
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
       INTERVIEW_APPLICATION_NOT_EMPTY: "请先清理该求职进程下的面试记录。",
+      INTERVIEW_APPLICATION_DELETE_FAILED: "岗位关联数据清理失败，请稍后重试。",
       INTERVIEW_SESSION_NOT_EMPTY: "请先删除这场面试关联的素材。",
       INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED: "这条安排不支持设置作答计划。",
       INTERVIEW_ANSWER_PLAN_INVALID_TIME: "作答计划时间无效，请重新选择。",
@@ -2364,6 +2365,8 @@ export function ApplicationDetailView({
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [terminateDialogOpen, setTerminateDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editScheduleDialogOpen, setEditScheduleDialogOpen] = useState(false);
   if (!application) {
     return (
@@ -2407,6 +2410,19 @@ export function ApplicationDetailView({
     && application.current_stage_type === "offer"
     && (application.offer_status === "none" || application.offer_status === "received");
   const canTerminate = active && application.offer_status === "none";
+  const canDelete = progress.columnKey === "ended";
+  const deleteEndedJob = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteJobApplication(application.id);
+      await onChanged();
+      onBack();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+    } finally {
+      setDeleting(false);
+    }
+  };
   const scheduleActionLabel = `安排${progress.stageLabel}时间`;
   const resultActionLabel = currentSession?.status === "completed"
     || isSubmittedScreening
@@ -2477,6 +2493,7 @@ export function ApplicationDetailView({
             {primaryAction === "session-record" && currentSession && <Button variant="ghost" onClick={() => navigateTo(careerApplicationPath(application.id, currentSession.id), { state: { careerSessionDialog: true } })}>{sessionRecordActionLabel}</Button>}
             {primaryAction === "offer" && <Button variant="ghost" onClick={() => setOfferDialogOpen(true)}>Offer 信息</Button>}
             {canTerminate && <Button variant="outline" icon={<Ban aria-hidden="true" />} onClick={() => setTerminateDialogOpen(true)}>终止求职</Button>}
+            {canDelete && <Button variant="ghost" icon={<Trash2 aria-hidden="true" />} onClick={() => setDeleteDialogOpen(true)}>删除岗位</Button>}
           </div>
         </div>
       </header>
@@ -2523,6 +2540,20 @@ export function ApplicationDetailView({
         />)}
       {offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
       {terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {deleteDialogOpen && (
+        <ConfirmDialog
+          kind="delete"
+          title={`永久删除「${application.company_name_snapshot} · ${application.job_title_snapshot}」？`}
+          description={application.job_description_id
+            ? "删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
+            : "该岗位资料已不存在；删除后，这次求职进程及其阶段、排期、复盘和素材都将无法恢复。"}
+          confirmLabel="永久删除"
+          busyLabel="正在删除…"
+          busy={deleting}
+          onCancel={() => setDeleteDialogOpen(false)}
+          onConfirm={deleteEndedJob}
+        />
+      )}
       {editScheduleDialogOpen && currentSession && <EditInterviewScheduleDialog session={currentSession} recordKind={currentRecordKind} onClose={() => setEditScheduleDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );

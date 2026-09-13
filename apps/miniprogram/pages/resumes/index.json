@@ -3,5 +3,6 @@
   "disableScroll": true,
   "enablePullDownRefresh": false,
   "backgroundTextStyle": "dark",
+  "allowsBounceVertical": "NO",
   "usingComponents": {}
 }

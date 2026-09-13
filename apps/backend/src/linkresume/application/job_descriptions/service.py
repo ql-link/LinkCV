@@ -5,10 +5,13 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import String, and_, cast, delete, func, or_, select, update
+from typing import Callable
+
+from sqlalchemy import String, and_, cast, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from linkresume.application.interviews.service import delete_application_records
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import utc_now
 from linkresume.domain.job_source import (
@@ -17,6 +20,7 @@ from linkresume.domain.job_source import (
     normalize_job_source,
 )
 from linkresume.modules.job_descriptions.models import JobDescription
+from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.job_descriptions.schemas import (
     JobDescriptionCreateRequest,
     JobDescriptionUpdateRequest,
@@ -178,22 +182,46 @@ def update_owned_job(
         raise
 
 
-def hard_delete_owned_job(db: Session, job_id: str, user_id: int) -> bool:
+def hard_delete_owned_job(
+    db: Session,
+    job_id: str,
+    user_id: int,
+    *,
+    delete_asset_object: Callable[[str], None] | None = None,
+) -> bool:
     parsed = parse_decimal_id(job_id)
     if parsed is None:
         return False
     try:
-        result = db.execute(
-            delete(JobDescription).where(
+        job = db.scalar(
+            select(JobDescription)
+            .where(
                 JobDescription.id == parsed,
                 JobDescription.user_id == user_id,
             )
+            .with_for_update()
         )
-        if result.rowcount == 1:
-            db.commit()
-            return True
-        db.rollback()
-        return False
+        if job is None:
+            db.rollback()
+            return False
+        application_ids = list(
+            db.scalars(
+                select(JobApplication.id)
+                .where(
+                    JobApplication.job_description_id == job.id,
+                    JobApplication.user_id == user_id,
+                )
+                .with_for_update()
+            )
+        )
+        delete_application_records(
+            db,
+            application_ids,
+            delete_asset_object=delete_asset_object,
+        )
+        db.delete(job)
+        db.commit()
+        return True
     except Exception:
         db.rollback()
         raise
@@ -247,17 +275,15 @@ def list_owned_jobs(
 
     rows = list(
         db.scalars(
-            query.order_by(JobDescription.updated_at.desc(), JobDescription.id.desc()).limit(
-                limit + 1
-            )
+            query.order_by(
+                JobDescription.updated_at.desc(), JobDescription.id.desc()
+            ).limit(limit + 1)
         ).all()
     )
     has_more = len(rows) > limit
     items = rows[:limit]
     next_cursor = (
-        _encode_cursor(items[-1], normalized_keyword)
-        if has_more and items
-        else None
+        _encode_cursor(items[-1], normalized_keyword) if has_more and items else None
     )
     return items, next_cursor
 
@@ -356,13 +382,13 @@ def _source_matches(job: JobDescription, source: NormalizedJobSource) -> bool:
 
 
 def _create_values(payload: JobDescriptionCreateRequest) -> dict[str, object]:
-    dumped = payload.model_dump(exclude={"source_type", "source_url", "duplicate_resolution"})
+    dumped = payload.model_dump(
+        exclude={"source_type", "source_url", "duplicate_resolution"}
+    )
     return {field: dumped[field] for field in _MUTABLE_FIELDS}
 
 
-def _validate_merged_salary(
-    job: JobDescription, provided: dict[str, object]
-) -> None:
+def _validate_merged_salary(job: JobDescription, provided: dict[str, object]) -> None:
     _validate_salary_values(
         provided.get("salary_min", job.salary_min),
         provided.get("salary_max", job.salary_max),

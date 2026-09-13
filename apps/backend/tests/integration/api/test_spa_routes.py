@@ -32,6 +32,14 @@ def test_spa_deep_links_fall_back_to_index_without_masking_api_404(tmp_path) -> 
         assert client.get("/jobs/job_123/edit").text == "<main>LinkResume</main>"
         deep_link_response = client.get("/resumes/resume_123/edit")
         assert deep_link_response.headers["cache-control"] == "no-cache"
+        assert deep_link_response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+        assert client.get("/login").headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+        assert client.get("/share/public-token").headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+
+        landing_response = client.get("/")
+        assert "x-robots-tag" not in landing_response.headers
+        legacy_landing_response = client.get("/home")
+        assert "x-robots-tag" not in legacy_landing_response.headers
 
         asset_response = client.get("/assets/app.js")
         assert asset_response.text == "console.log('LinkResume')"

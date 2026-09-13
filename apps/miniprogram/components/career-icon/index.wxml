@@ -1,0 +1,6 @@
+<image
+  class="icon-image"
+  src="{{src}}"
+  style="width:{{size}}rpx;height:{{size}}rpx"
+  aria-hidden="true"
+/>

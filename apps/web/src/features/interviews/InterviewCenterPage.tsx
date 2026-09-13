@@ -212,6 +212,7 @@ const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
     monthDayHeader: "EEE",
     monthDayHeaderNarrow: "EEEEE",
     monthCellDay: "d",
+    moreDayHeader: "M月d日 · EEE",
   },
 };
 type InterviewSessionCreatePayload = Parameters<
@@ -1049,6 +1050,7 @@ export function InterviewCenterPage({
       ))}
       {showCreateApplication && (
         <CreateApplicationDialog
+          applications={applications}
           initialJobId={initialJobId}
           onClose={() => setShowCreateApplication(false)}
           onCreated={(applicationId) => {
@@ -1459,7 +1461,7 @@ function ApplicationsView({
         <ConfirmDialog
           kind="delete"
           title={`永久删除「${pendingDelete.company_name_snapshot} · ${pendingDelete.job_title_snapshot}」？`}
-          description="删除后，这次求职记录及其阶段、排期、复盘和素材将无法恢复；原始岗位资料不会被删除。"
+          description="删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deletingApplicationId === pendingDelete.id}
@@ -1516,16 +1518,6 @@ function ApplicationsView({
                       <span className={`career-application-progress ${applicationProgressToneClass(item, { now, currentStageCompleted })}`} aria-label={progressLabel}>
                         {progressLabel}
                       </span>
-                      {projectApplicationProgress(item).columnKey === "ended" && (
-                        <button
-                          type="button"
-                          className="career-application-delete-button"
-                          aria-label={`删除 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职记录`}
-                          onClick={() => setPendingDelete(item)}
-                        >
-                          <Trash2 size={15} aria-hidden="true" />删除
-                        </button>
-                      )}
                     </div></td>
                     <td><span className="career-application-cell-text">{nextInterview ? `${formatApplicationSessionRange(nextInterview.start_at, nextInterview.end_at)} · ${nextInterview.stage_label}` : "暂无安排"}</span></td>
                     <td>{item.applied_at ? <time dateTime={item.applied_at}>{formatApplicationUpdatedAt(item.applied_at)}</time> : "未投递"}</td>
@@ -1883,7 +1875,7 @@ function ScheduleView({
           snapDuration={15}
           interval={60}
           scrollToHour={9}
-          fixedWeeks
+          fixedWeeks={false}
           showOutsideDays
           interactions={calendarInteractions}
           viewSettings={calendarViewSettings}
@@ -1916,6 +1908,9 @@ function ScheduleView({
             event: "interview-calendar-event",
             timedChip: "interview-calendar-timed-event",
             monthBar: "interview-calendar-month-event",
+            moreIndicator: "interview-calendar-more-indicator",
+            morePopover: "interview-calendar-more-popover",
+            morePopoverHeader: "interview-calendar-more-popover-header",
             resizeHandle: "interview-calendar-resize-handle",
             resizeGrip: "interview-calendar-resize-grip",
             viewSwitcherContent: "interview-calendar-view-menu",
@@ -2733,11 +2728,13 @@ function AssetSidebar({
 }
 
 function CreateApplicationDialog({
+  applications,
   initialJobId,
   onClose,
   onCreated,
   onNotice,
 }: {
+  applications: JobApplicationSummary[];
   initialJobId?: string;
   onClose: () => void;
   onCreated: (applicationId: string) => void;
@@ -2748,6 +2745,12 @@ function CreateApplicationDialog({
   const [notes, setNotes] = useState("");
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const applicationJobIds = new Set(
+    applications.flatMap((application) =>
+      application.job_description_id ? [application.job_description_id] : [],
+    ),
+  );
+  const availableJobs = jobs.filter((job) => !applicationJobIds.has(job.id));
 
   useEffect(() => {
     let cancelled = false;
@@ -2769,6 +2772,15 @@ function CreateApplicationDialog({
       });
     return () => { cancelled = true; };
   }, [initialJobId, onNotice]);
+
+  useEffect(() => {
+    if (availableJobs.some((job) => job.id === jobId)) return;
+    const nextJobId =
+      initialJobId && availableJobs.some((job) => job.id === initialJobId)
+        ? initialJobId
+        : availableJobs[0]?.id ?? "";
+    if (nextJobId !== jobId) setJobId(nextJobId);
+  }, [availableJobs, initialJobId, jobId]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -2806,12 +2818,12 @@ function CreateApplicationDialog({
         <form onSubmit={(event) => void submit(event)}>
           {loadingJobs ? (
             <PageLoading label="正在加载岗位库…" scope="panel" />
-          ) : jobs.length ? (
+          ) : availableJobs.length ? (
             <>
               <label>
                 目标岗位
                 <select required value={jobId} onChange={(event) => setJobId(event.target.value)}>
-                  {jobs.map((job) => (
+                  {availableJobs.map((job) => (
                     <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>
                   ))}
                 </select>
@@ -2831,7 +2843,7 @@ function CreateApplicationDialog({
             <div className="career-dialog-empty">
               <BriefcaseBusiness />
               <strong>岗位库中还没有可用岗位</strong>
-              <span>请先创建岗位，再返回这里开始求职进程。</span>
+              <span>已有求职记录的岗位不能再次投递；请导入新岗位。</span>
               <Button type="button" variant="outline" onClick={() => {
                 onClose();
                 navigateTo("/career/applications?import=1");
@@ -2840,7 +2852,10 @@ function CreateApplicationDialog({
           )}
           <footer>
             <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-            <Button type="submit" disabled={loadingJobs || !jobId || submitting}>{submitting ? "正在创建…" : "创建求职进程"}</Button>
+            <Button
+              type="submit"
+              disabled={loadingJobs || !availableJobs.some((job) => job.id === jobId) || submitting}
+            >{submitting ? "正在创建…" : "创建求职进程"}</Button>
           </footer>
         </form>
       </section>

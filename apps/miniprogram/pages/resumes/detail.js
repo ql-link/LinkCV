@@ -1,3 +1,4 @@
+const { getStatusBarHeight } = require('../../utils/system');
 const auth = require("../../services/auth");
 const cache = require("../../services/resumePreviewCache");
 const resumes = require("../../services/resumes");
@@ -54,7 +55,7 @@ function isDemoResumeId(id) {
 }
 
 Page({
-  data: {
+  data: { navigationHeight: getStatusBarHeight() + 122,
     loading: true,
     progress: 0,
     error: "",

@@ -4,6 +4,7 @@ import base64
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
+from minio.error import S3Error
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session
 
@@ -29,6 +30,7 @@ from linkresume.application.job_descriptions.ai_import_service import (
 )
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
+from linkresume.core.storage import AssetStorage, get_storage
 from linkresume.domain.job_source import InvalidJobSource
 from linkresume.modules.identity.dependencies import get_current_user
 from linkresume.modules.identity.models import User
@@ -61,7 +63,9 @@ async def read_limited_image(image: UploadFile) -> bytes:
     chunks: list[bytes] = []
     size = 0
     while True:
-        chunk = await image.read(min(1024 * 1024, MAX_JOB_IMPORT_IMAGE_BYTES + 1 - size))
+        chunk = await image.read(
+            min(1024 * 1024, MAX_JOB_IMPORT_IMAGE_BYTES + 1 - size)
+        )
         if not chunk:
             break
         size += len(chunk)
@@ -88,14 +92,23 @@ def validated_image_data_url(data: bytes) -> str:
             ):
                 raise ApiError(400, "JD_IMPORT_IMAGE_INVALID")
             decoded.verify()
-    except (UnidentifiedImageError, Image.DecompressionBombError, OSError, ValueError) as error:
+    except (
+        UnidentifiedImageError,
+        Image.DecompressionBombError,
+        OSError,
+        ValueError,
+    ) as error:
         raise ApiError(400, "JD_IMPORT_IMAGE_INVALID") from error
     return f"data:{media_type};base64,{base64.b64encode(data).decode('ascii')}"
 
 
 def raise_draft_parse_error(error: LLMError, input_type: str) -> None:
     details = {"callId": error.call_id, "inputType": input_type}
-    if error.code in {"LLM_MODEL_NOT_CONFIGURED", "LLM_CHAT_NOT_CONFIGURED", "LLM_CREDENTIALS_UNAVAILABLE"}:
+    if error.code in {
+        "LLM_MODEL_NOT_CONFIGURED",
+        "LLM_CHAT_NOT_CONFIGURED",
+        "LLM_CREDENTIALS_UNAVAILABLE",
+    }:
         raise ApiError(503, "JD_IMPORT_MODEL_NOT_CONFIGURED", details) from error
     if error.code == "LLM_TIMEOUT":
         raise ApiError(504, "JD_IMPORT_PARSE_TIMEOUT", details) from error
@@ -142,9 +155,7 @@ def create_job_and_pending_application(
         job = error.existing
         created = False
     try:
-        application, _ = ensure_pending_application_for_job(
-            db, user_id, job
-        )
+        application, _ = ensure_pending_application_for_job(db, user_id, job)
         db.commit()
         db.refresh(job)
         db.refresh(application)
@@ -188,7 +199,9 @@ async def parse_job_description_draft(
     if bool(normalized_text) == (image is not None):
         raise ApiError(
             400,
-            "JD_IMPORT_INPUT_AMBIGUOUS" if normalized_text and image is not None else "JD_IMPORT_INPUT_REQUIRED",
+            "JD_IMPORT_INPUT_AMBIGUOUS"
+            if normalized_text and image is not None
+            else "JD_IMPORT_INPUT_REQUIRED",
         )
     if normalized_text:
         if len(normalized_text) > MAX_JOB_IMPORT_TEXT_CHARS:
@@ -315,8 +328,24 @@ def delete_job_description(
     job_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> DeleteJobDescriptionResponse:
-    deleted = hard_delete_owned_job(db, job_id, user.id)
+    def delete_asset_object(object_name: str) -> None:
+        try:
+            storage.delete(object_name)
+        except S3Error as error:
+            if error.code not in {"NoSuchKey", "NoSuchObject"}:
+                raise
+
+    try:
+        deleted = hard_delete_owned_job(
+            db,
+            job_id,
+            user.id,
+            delete_asset_object=delete_asset_object,
+        )
+    except Exception as error:
+        raise ApiError(502, "JD_DELETE_FAILED") from error
     if not deleted:
         raise ApiError(404, "JD_NOT_FOUND")
     return DeleteJobDescriptionResponse(deleted=True)

@@ -1,14 +1,5 @@
-<view class="page" style="padding-top: {{statusBarHeight}}px">
-  <!-- 顶部轻柔渐变背景 -->
-  <view class="header-ambient-glow"></view>
-
-  <!-- 顶部品牌字标 -->
-  <view class="brand-row">
-    <view class="ui-brand">
-      <image class="ui-brand-wordmark" src="/assets/linkresume-wordmark.png" mode="aspectFit" aria-label="LinkResume"></image>
-    </view>
-  </view>
-
+<brand-navigation />
+<view class="page">
   <view class="content">
     <!-- 用户个人头部：自然通透的开放式无框排布 -->
     <view class="user-profile-header">

@@ -103,17 +103,28 @@ export function detectLocalLanIp() {
   return preferred ? preferred.address : "127.0.0.1";
 }
 
-export function syncMiniprogramLocalConfig(cwd, mainRoot) {
+export function syncMiniprogramLocalConfig(cwd, mainRoot, { profile = ".env", env = process.env } = {}) {
   const lanIp = detectLocalLanIp();
+  // Match start-development.sh's override; APP_ENV does not select the profile.
+  const port = basename(profile) === ".env.development"
+    ? (env.LINKRESUME_LOCAL_BACKEND_PORT || "18000")
+    : (env.BACKEND_PORT || "8000");
+  if (!/^\d+$/.test(String(port)) || Number(port) < 1 || Number(port) > 65535) {
+    throw new Error("小程序联调端口必须是 1–65535 的整数");
+  }
+  const config = {
+    apiBaseUrl: `http://${lanIp}:${port}`,
+    devtoolsApiBaseUrl: `http://127.0.0.1:${port}`,
+    detectedLanIp: lanIp,
+  };
   const roots = [cwd];
   if (mainRoot && mainRoot !== cwd) roots.push(mainRoot);
 
   const targets = [];
-  const jsContent = `// 本地自动生成的局域网联调配置（已被 .gitignore 忽略，不会提交到 Git）\nmodule.exports = {\n  apiBaseUrl: "http://${lanIp}:8000",\n  detectedLanIp: "${lanIp}",\n};\n`;
+  const jsContent = `// 本地自动生成的联调配置（已被 .gitignore 忽略，不会提交到 Git）\nmodule.exports = ${JSON.stringify(config, null, 2)};\n`;
   const jsonContent = JSON.stringify(
     {
-      apiBaseUrl: `http://${lanIp}:8000`,
-      detectedLanIp: lanIp,
+      ...config,
       updatedAt: new Date().toISOString(),
     },
     null,
@@ -130,7 +141,7 @@ export function syncMiniprogramLocalConfig(cwd, mainRoot) {
       targets.push(jsFile);
     }
   }
-  return targets.length > 0 ? { targetFile: targets[0], lanIp } : null;
+  return targets.length > 0 ? { targetFile: targets[0], lanIp, ...config } : null;
 }
 
 export function serviceScriptForProfile(profile) {
@@ -174,9 +185,9 @@ function run() {
   console.log(`基础配置：${runtime.files.base}`);
   console.log(`共享私密覆盖：${runtime.files.secret}（${secretState}）`);
 
-  const miniprogramSync = syncMiniprogramLocalConfig(process.cwd());
+  const miniprogramSync = syncMiniprogramLocalConfig(process.cwd(), undefined, { profile, env: runtime.env });
   if (miniprogramSync) {
-    console.log(`小程序联调：已自动配置局域网地址 ${miniprogramSync.lanIp}:8000 -> ${miniprogramSync.targetFile}`);
+    console.log(`小程序联调：开发者工具 ${miniprogramSync.devtoolsApiBaseUrl}；真机开发版 ${miniprogramSync.apiBaseUrl}（需要局域网监听） -> ${miniprogramSync.targetFile}`);
   }
 
   const npm = npmInvocation(runtime.env);

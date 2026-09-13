@@ -1,0 +1,8 @@
+{
+  "component": true,
+  "usingComponents": {
+    "career-icon": "/components/career-icon/index",
+    "career-time-picker": "/components/career-time-picker/index",
+    "career-select": "/components/career-select/index"
+  }
+}

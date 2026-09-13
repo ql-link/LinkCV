@@ -43,7 +43,7 @@ export LINKRESUME_ENV_FILE="$(node_path "${base_env}")"
 if [[ -f "${local_env}" ]]; then
   export LINKRESUME_SECRET_ENV_FILE="$(node_path "${local_env}")"
 fi
-export BACKEND_HOST="127.0.0.1"
+export BACKEND_HOST="${LINKRESUME_LOCAL_BACKEND_HOST:-127.0.0.1}"
 export BACKEND_PORT="${backend_port}"
 export BACKEND_PROXY_TARGET="http://127.0.0.1:${backend_port}"
 export PI_SERVICE_HOST="127.0.0.1"

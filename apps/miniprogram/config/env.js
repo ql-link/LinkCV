@@ -46,6 +46,18 @@ function readAccountInfoSafely() {
   }
 }
 
+function isDevToolsRuntime() {
+  try {
+    if (typeof wx === "undefined") return false;
+    const info = typeof wx.getDeviceInfo === "function"
+      ? wx.getDeviceInfo()
+      : typeof wx.getSystemInfoSync === "function" ? wx.getSystemInfoSync() : null;
+    return Boolean(info && info.platform === "devtools");
+  } catch {
+    return false;
+  }
+}
+
 function resolveApiBaseUrl(options = {}) {
   const localConfigReader = typeof options.readLocalConfig === "function"
     ? options.readLocalConfig
@@ -75,13 +87,17 @@ function resolveBaseUrl({
   const account = readAccountInfoSafely();
   const envVersion = account ? account.miniProgram.envVersion : null;
   const isDevelop = envVersion === "develop";
+  const isDevTools = isDevelop && isDevToolsRuntime();
+  const debugPreference = isDevelop ? readStorageValue(LOCAL_DEBUG_ENABLED_STORAGE_KEY) : undefined;
   const localDebugEnabled = isDevelop
-    && readStorageValue(LOCAL_DEBUG_ENABLED_STORAGE_KEY) === true;
+    && debugPreference !== false;
   const localConfig = localDebugEnabled
     ? readLocalConfigSafely(localConfigReader)
     : null;
-  const localOverride = localConfig && typeof localConfig[extConfigKey] === "string"
-    ? localConfig[extConfigKey]
+  const localKey = isDevTools && localConfig && typeof localConfig.devtoolsApiBaseUrl === "string"
+    ? "devtoolsApiBaseUrl" : extConfigKey;
+  const localOverride = localConfig && typeof localConfig[localKey] === "string"
+    ? localConfig[localKey]
     : "";
   const developmentOverrideValue = isDevelop
     ? readStorageValue(developmentStorageKey)

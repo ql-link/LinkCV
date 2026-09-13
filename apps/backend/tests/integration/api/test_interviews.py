@@ -85,9 +85,7 @@ def build_app(storage: FakeStorage | None = None):
         create_schema=True,
     )
     with app.state.session_factory() as session:
-        template_data, template_style = canonical_template_payload(
-            key="interview-test"
-        )
+        template_data, template_style = canonical_template_payload(key="interview-test")
         template = ResumeTemplate(
             key="interview-test",
             name="求职测试模板",
@@ -170,9 +168,7 @@ def list_resume_versions(client: TestClient, resume_id: str) -> list[dict[str, o
 def create_resume_version(
     client: TestClient, resume_id: str, name: str
 ) -> dict[str, object]:
-    response = client.post(
-        f"/api/resumes/{resume_id}/versions", json={"name": name}
-    )
+    response = client.post(f"/api/resumes/{resume_id}/versions", json={"name": name})
     assert response.status_code == 201, response.text
     return response.json()["version"]
 
@@ -301,9 +297,10 @@ def test_stage_history_is_append_only_and_stage_command_is_idempotent() -> None:
             },
         )
         assert replay.status_code == 200, replay.text
-        assert replay.json()["application"]["lock_version"] == first_application[
-            "lock_version"
-        ]
+        assert (
+            replay.json()["application"]["lock_version"]
+            == first_application["lock_version"]
+        )
 
         changed_replay = client.post(
             f"/api/job-applications/{pending['id']}/stages",
@@ -363,9 +360,9 @@ def test_invalid_stage_context_does_not_change_pending_application() -> None:
             assert rejected.status_code == 400
             assert rejected.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
 
-        unchanged = client.get(
-            f"/api/job-applications/{pending['id']}"
-        ).json()["application"]
+        unchanged = client.get(f"/api/job-applications/{pending['id']}").json()[
+            "application"
+        ]
         assert unchanged["phase"] == "pending"
         assert unchanged["current_stage"] is None
         assert unchanged["stages"] == []
@@ -466,9 +463,7 @@ def test_screening_and_offer_stages_cannot_be_scheduled() -> None:
             )
             assert staged_response.status_code == 200, staged_response.text
             staged = staged_response.json()["application"]
-            schedule = session_payload(
-                f"32000000-0000-4000-9000-{index:012d}"
-            )
+            schedule = session_payload(f"32000000-0000-4000-9000-{index:012d}")
             schedule.update(
                 {
                     "application_stage_id": staged["current_stage"]["id"],
@@ -486,7 +481,9 @@ def test_screening_and_offer_stages_cannot_be_scheduled() -> None:
             assert rejected.json() == {"error": "INVALID_INTERVIEW_REQUEST"}
 
 
-def test_interview_lifecycle_allows_overlapping_sessions_and_shares_one_record() -> None:
+def test_interview_lifecycle_allows_overlapping_sessions_and_shares_one_record() -> (
+    None
+):
     storage = FakeStorage()
     app = build_app(storage)
     with TestClient(app) as client:
@@ -801,9 +798,7 @@ def test_reschedule_scheduled_session_after_application_is_terminated() -> None:
     app = build_app(FakeStorage())
     with TestClient(app) as client:
         register(client, "terminated-application-schedule@example.test")
-        application = create_application(
-            client, create_job(client, "历史排期示例公司")
-        )
+        application = create_application(client, create_job(client, "历史排期示例公司"))
         created = client.post(
             f"/api/job-applications/{application['id']}/interview-sessions",
             json=session_payload("93333333-3333-4333-8333-333333333333"),
@@ -971,9 +966,9 @@ def test_schedule_accepts_arbitrary_minutes_for_create_and_reschedule() -> None:
         assert created.status_code == 201, created.text
         created_session = created.json()["session"]
         assert datetime.fromisoformat(created_session["start_at"]).minute == 17
-        assert datetime.fromisoformat(created_session["end_at"]) - datetime.fromisoformat(
-            created_session["start_at"]
-        ) == timedelta(minutes=60)
+        assert datetime.fromisoformat(
+            created_session["end_at"]
+        ) - datetime.fromisoformat(created_session["start_at"]) == timedelta(minutes=60)
 
         invalid_clock = client.post(
             f"/api/interview-sessions/{created_session['id']}/reschedule",
@@ -1023,9 +1018,11 @@ def test_schedule_accepts_arbitrary_minutes_for_create_and_reschedule() -> None:
         assert rescheduled.status_code == 200, rescheduled.text
         rescheduled_session = rescheduled.json()["session"]
         assert datetime.fromisoformat(rescheduled_session["start_at"]).minute == 17
-        assert datetime.fromisoformat(rescheduled_session["end_at"]) - datetime.fromisoformat(
-            rescheduled_session["start_at"]
-        ) == timedelta(minutes=75)
+        assert datetime.fromisoformat(
+            rescheduled_session["end_at"]
+        ) - datetime.fromisoformat(rescheduled_session["start_at"]) == timedelta(
+            minutes=75
+        )
 
         ambiguous = client.post(
             f"/api/interview-sessions/{created_session['id']}/reschedule",
@@ -1113,7 +1110,9 @@ def test_deleting_an_old_round_does_not_rewind_the_current_round() -> None:
         assert deleted.json()["application"]["stage_state"] == "awaiting_result"
 
 
-def test_application_creation_enforces_reachable_initial_states_and_screening_can_advance() -> None:
+def test_application_creation_enforces_reachable_initial_states_and_screening_can_advance() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client, "screening-state@example.test")
@@ -1293,7 +1292,9 @@ def test_marking_an_application_applied_normalizes_to_screening() -> None:
         assert legacy_marked.json()["application"]["current_stage_label"] == "筛选中"
 
 
-def test_marking_an_application_with_resume_id_binds_the_latest_formal_version() -> None:
+def test_marking_an_application_with_resume_id_binds_the_latest_formal_version() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client, "application-latest-resume@example.test")
@@ -1429,7 +1430,9 @@ def test_marking_an_application_cannot_bind_another_users_resume() -> None:
         assert rejected.json() == {"error": "INTERVIEW_NOT_FOUND"}
 
 
-def test_marking_an_application_keeps_explicit_resume_version_id_compatibility() -> None:
+def test_marking_an_application_keeps_explicit_resume_version_id_compatibility() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client, "application-version-compatibility@example.test")
@@ -1670,9 +1673,10 @@ def test_stale_application_write_cannot_rewind_a_normalized_or_advanced_stage() 
         assert current.status_code == 200
         assert current.json()["application"]["current_stage_label"] == "复筛"
         assert current.json()["application"]["stage_state"] == "awaiting_result"
-        assert current.json()["application"]["lock_version"] == advanced_application[
-            "lock_version"
-        ]
+        assert (
+            current.json()["application"]["lock_version"]
+            == advanced_application["lock_version"]
+        )
 
 
 def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> None:
@@ -1693,9 +1697,7 @@ def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> 
         assert completed.status_code == 200, completed.text
         archived = client.post(
             f"/api/job-applications/{with_session['id']}/archive",
-            json={
-                "base_lock_version": completed.json()["application"]["lock_version"]
-            },
+            json={"base_lock_version": completed.json()["application"]["lock_version"]},
         )
         assert archived.status_code == 200, archived.text
 
@@ -1720,9 +1722,7 @@ def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> 
         assert offered.status_code == 200, offered.text
         archived_offer = client.post(
             f"/api/job-applications/{offered.json()['application']['id']}/archive",
-            json={
-                "base_lock_version": offered.json()["application"]["lock_version"]
-            },
+            json={"base_lock_version": offered.json()["application"]["lock_version"]},
         )
         assert archived_offer.status_code == 200, archived_offer.text
 
@@ -1744,16 +1744,16 @@ def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> 
         default_sessions = client.get("/api/interview-sessions")
         assert default_sessions.status_code == 200
         assert default_sessions.json()["items"] == []
-        history_sessions = client.get(
-            "/api/interview-sessions?include_archived=true"
-        )
+        history_sessions = client.get("/api/interview-sessions?include_archived=true")
         assert [item["id"] for item in history_sessions.json()["items"]] == [
             created_body["session"]["id"]
         ]
         assert client.get("/api/job-applications").json()["items"] == []
         assert len(client.get("/api/job-applications?scope=all").json()["items"]) == 2
 
-        without_session = create_application(client, create_job(client, "已归档待排期公司"))
+        without_session = create_application(
+            client, create_job(client, "已归档待排期公司")
+        )
         archived_without_session = client.post(
             f"/api/job-applications/{without_session['id']}/archive",
             json={"base_lock_version": without_session["lock_version"]},
@@ -1767,7 +1767,9 @@ def test_archived_applications_are_hidden_and_cannot_receive_new_schedules() -> 
         assert blocked.json() == {"error": "INTERVIEW_INVALID_TRANSITION"}
 
 
-def test_interview_list_cursors_are_stable_bound_to_filters_and_reject_invalid_values() -> None:
+def test_interview_list_cursors_are_stable_bound_to_filters_and_reject_invalid_values() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client, "interview-cursor@example.test")
@@ -1776,9 +1778,7 @@ def test_interview_list_cursors_are_stable_bound_to_filters_and_reject_invalid_v
             application = create_application(
                 client, create_job(client, f"分页公司 {index + 1}")
             )
-            payload = session_payload(
-                f"99999999-9999-4999-8999-99999999999{index}"
-            )
+            payload = session_payload(f"99999999-9999-4999-8999-99999999999{index}")
             payload.update(
                 {
                     "start_at": fixture_datetime(1, 9 + index).isoformat(),
@@ -1830,14 +1830,14 @@ def test_interview_list_cursors_are_stable_bound_to_filters_and_reject_invalid_v
             },
         )
         assert wrong_filter.status_code == 400
-        assert client.get("/api/job-applications?cursor=not-a-cursor").status_code == 400
+        assert (
+            client.get("/api/job-applications?cursor=not-a-cursor").status_code == 400
+        )
         invalid_application_filter = client.get(
             "/api/interview-sessions?application_id=01"
         )
         assert invalid_application_filter.status_code == 400
-        assert invalid_application_filter.json() == {
-            "error": "INVALID_INTERVIEW_QUERY"
-        }
+        assert invalid_application_filter.json() == {"error": "INVALID_INTERVIEW_QUERY"}
         assert client.get("/api/job-applications?status=unknown").status_code == 400
         assert client.get("/api/interview-sessions?status=unknown").status_code == 400
         reversed_range = client.get(
@@ -1851,7 +1851,9 @@ def test_interview_list_cursors_are_stable_bound_to_filters_and_reject_invalid_v
         assert reversed_range.json() == {"error": "INVALID_INTERVIEW_QUERY"}
 
 
-def test_session_create_retries_are_idempotent_but_cannot_change_the_bound_payload() -> None:
+def test_session_create_retries_are_idempotent_but_cannot_change_the_bound_payload() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client, "interview-idempotency@example.test")
@@ -1877,7 +1879,7 @@ def test_session_create_retries_are_idempotent_but_cannot_change_the_bound_paylo
         assert rejected_replay.json() == {"error": "INTERVIEW_EDIT_CONFLICT"}
 
 
-def test_archived_history_can_be_cleaned_only_from_child_to_parent() -> None:
+def test_linked_application_cannot_be_deleted_separately_while_active() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "interview-cleanup@example.test")
@@ -1891,19 +1893,18 @@ def test_archived_history_can_be_cleaned_only_from_child_to_parent() -> None:
             json={"base_lock_version": created["application"]["lock_version"]},
         )
         assert archived.status_code == 200
-        blocked_parent = client.delete(
-            f"/api/job-applications/{application['id']}"
-        )
+        blocked_parent = client.delete(f"/api/job-applications/{application['id']}")
         assert blocked_parent.status_code == 409
 
         deleted_session = client.delete(
             f"/api/interview-sessions/{created['session']['id']}"
         )
         assert deleted_session.status_code == 200
-        deleted_parent = client.delete(
-            f"/api/job-applications/{application['id']}"
+        deleted_parent = client.delete(f"/api/job-applications/{application['id']}")
+        assert deleted_parent.status_code == 409
+        assert (
+            client.get(f"/api/job-applications/{application['id']}").status_code == 200
         )
-        assert deleted_parent.status_code == 200
 
 
 def test_terminated_application_delete_removes_its_history_and_asset_objects() -> None:
@@ -1948,7 +1949,76 @@ def test_terminated_application_delete_removes_its_history_and_asset_objects() -
         assert (
             client.get(f"/api/interview-assets/{asset_id}/content").status_code == 404
         )
-        assert client.get(f"/api/job-descriptions/{job_id}").status_code == 200
+        assert client.get(f"/api/job-descriptions/{job_id}").status_code == 404
+
+
+def test_job_delete_removes_active_application_history_and_asset_objects() -> None:
+    storage = FakeStorage()
+    app = build_app(storage)
+    with TestClient(app) as client:
+        register(client, "job-cascade-delete@example.test")
+        job_id = create_job(client, "岗位级联删除公司")
+        application = create_application(client, job_id)
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("abababab-abab-4bab-8bab-abababababab"),
+        ).json()
+        session_id = created["session"]["id"]
+        uploaded = client.post(
+            f"/api/interview-sessions/{session_id}/assets",
+            data={"source_type": "uploaded"},
+            files={"file": ("复盘.txt", b"fictional interview notes", "text/plain")},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        asset_id = uploaded.json()["asset"]["id"]
+
+        deleted = client.delete(f"/api/job-descriptions/{job_id}")
+
+        assert deleted.status_code == 200, deleted.text
+        assert storage.objects == {}
+        assert client.get(f"/api/job-descriptions/{job_id}").status_code == 404
+        assert (
+            client.get(f"/api/job-applications/{application['id']}").status_code == 404
+        )
+        assert client.get(f"/api/interview-sessions/{session_id}").status_code == 404
+        assert (
+            client.get(f"/api/interview-assets/{asset_id}/content").status_code == 404
+        )
+
+
+def test_terminated_job_cannot_start_a_second_application() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "single-application-per-job@example.test")
+        job_id = create_job(client, "单次投递公司")
+        application = create_application(client, job_id)
+        terminated = client.post(
+            f"/api/job-applications/{application['id']}/terminate",
+            json={
+                "client_request_id": "acacacac-acac-4cac-8cac-acacacacacac",
+                "reason": "company_rejected",
+                "base_lock_version": application["lock_version"],
+            },
+        )
+        assert terminated.status_code == 200, terminated.text
+
+        repeated = client.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": job_id,
+                "current_stage_type": "interview",
+                "current_round_no": 1,
+                "current_stage_label": "一面",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+
+        assert repeated.status_code == 409
+        assert repeated.json() == {
+            "error": "APPLICATION_ALREADY_EXISTS",
+            "application_id": application["id"],
+        }
+        assert len(client.get("/api/job-applications?scope=all").json()["items"]) == 1
 
 
 def test_active_application_cannot_be_deleted() -> None:
@@ -1970,7 +2040,8 @@ def test_terminated_application_delete_keeps_records_when_asset_cleanup_fails() 
     app = build_app(storage)
     with TestClient(app) as client:
         register(client, "failed-application-delete@example.test")
-        application = create_application(client, create_job(client, "删除失败示例公司"))
+        job_id = create_job(client, "删除失败示例公司")
+        application = create_application(client, job_id)
         created = client.post(
             f"/api/job-applications/{application['id']}/interview-sessions",
             json=session_payload("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
@@ -1999,6 +2070,7 @@ def test_terminated_application_delete_keeps_records_when_asset_cleanup_fails() 
             client.get(f"/api/job-applications/{application['id']}").status_code == 200
         )
         assert client.get(f"/api/interview-sessions/{session_id}").status_code == 200
+        assert client.get(f"/api/job-descriptions/{job_id}").status_code == 200
 
 
 def test_optimistic_lock_rejects_a_second_application_write_from_a_stale_page() -> None:
@@ -2109,22 +2181,47 @@ def test_application_employment_category_is_owned_versioned_and_snapshot_only() 
         path = f"/api/job-applications/{application['id']}"
         for category in ("internship", "campus", "full_time", None):
             version = application["lock_version"]
-            response = client.put(path, json={"employment_type": category, "base_lock_version": version})
+            response = client.put(
+                path, json={"employment_type": category, "base_lock_version": version}
+            )
             assert response.status_code == 200, response.text
             updated = response.json()["application"]
-            assert updated["job_snapshot"] == {**application["job_snapshot"], "employment_type": category}
+            assert updated["job_snapshot"] == {
+                **application["job_snapshot"],
+                "employment_type": category,
+            }
             assert updated["current_stage_type"] == application["current_stage_type"]
             assert updated["lock_version"] == version + 1
-            stale = client.put(path, json={"employment_type": "campus", "base_lock_version": version})
+            stale = client.put(
+                path, json={"employment_type": "campus", "base_lock_version": version}
+            )
             assert stale.status_code == 409
             application = updated
         for invalid in ("part_time", "contract", "temporary", "invalid"):
-            response = client.put(path, json={"employment_type": invalid, "base_lock_version": application["lock_version"]})
+            response = client.put(
+                path,
+                json={
+                    "employment_type": invalid,
+                    "base_lock_version": application["lock_version"],
+                },
+            )
             assert response.status_code == 400
         job = client.get(f"/api/job-descriptions/{job_id}").json()["job_description"]
         assert job["employment_type"] is None
         items = client.get("/api/job-applications").json()["items"]
-        assert next(item for item in items if item["id"] == other["id"])["job_snapshot"] == other["job_snapshot"]
+        assert (
+            next(item for item in items if item["id"] == other["id"])["job_snapshot"]
+            == other["job_snapshot"]
+        )
         client.post("/api/auth/logout")
         register(client, "category-other@example.com")
-        assert client.put(path, json={"employment_type": "campus", "base_lock_version": application["lock_version"]}).status_code == 404
+        assert (
+            client.put(
+                path,
+                json={
+                    "employment_type": "campus",
+                    "base_lock_version": application["lock_version"],
+                },
+            ).status_code
+            == 404
+        )

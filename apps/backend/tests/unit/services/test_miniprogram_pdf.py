@@ -101,3 +101,62 @@ def test_preview_renderer_rejects_dimensions_that_cannot_be_safely_scaled() -> N
 
     assert raised.value.status_code == 413
     assert raised.value.code == "RESUME_PREVIEW_TOO_LARGE"
+
+
+def test_preview_and_upload_serialize_native_pdfium_calls(monkeypatch) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
+    from time import sleep
+    from linkresume.services.dataset_upload_service import _validate_pdf
+
+    document = pdfium.PdfDocument.new()
+    page = document.new_page(100, 100)
+    source = io.BytesIO()
+    document.save(source)
+    page.close()
+    document.close()
+    content = source.getvalue()
+    original = pdfium.PdfDocument
+    guard = Lock()
+    active = 0
+    maximum = 0
+
+    class TrackedDocument:
+        def __init__(self, data):
+            nonlocal active, maximum
+            with guard:
+                active += 1
+                maximum = max(maximum, active)
+            sleep(0.01)
+            self.inner = original(data)
+
+        def __len__(self):
+            return len(self.inner)
+
+        def __getitem__(self, index):
+            return self.inner[index]
+
+        def close(self):
+            nonlocal active
+            self.inner.close()
+            with guard:
+                active -= 1
+
+    monkeypatch.setattr(pdfium, "PdfDocument", TrackedDocument)
+    barrier = Barrier(2)
+
+    def preview():
+        barrier.wait()
+        return ResumePreviewRenderer().render(content)
+
+    def validate():
+        barrier.wait()
+        _validate_pdf(content)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(preview)
+        second = pool.submit(validate)
+        assert first.result(timeout=10).startswith(b"\x89PNG")
+        second.result(timeout=10)
+    assert maximum == 1
+    assert active == 0

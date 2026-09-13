@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { defaultCanonicalPresentation } from "../../api/resumeContract";
 import { renderPreviewEditorContent, resumePreviewStyle } from "./PreviewPanel";
 
 describe("workbench preview content", () => {
@@ -15,6 +16,35 @@ describe("workbench preview content", () => {
       "--preview-accent": "#202632",
       "--resume-font-size": "9.5pt",
       "--resume-line-height": 1.25,
+    });
+  });
+
+  it("uses unsaved horizontal and vertical margins before persistence finishes", () => {
+    const persistedStyle = {
+      ...defaultCanonicalPresentation,
+      template_scoped: {
+        "classic-cn": {
+          page_margin_top_mm: 8,
+          page_margin_right_mm: 14,
+          page_margin_bottom_mm: 10,
+          page_margin_left_mm: 12,
+        },
+      },
+    };
+
+    const style = resumePreviewStyle({
+      fontFamily: "serif",
+      fontSize: 10,
+      lineHeight: 1.3,
+      pageMargin: 16,
+      verticalPageMargin: 12,
+    }, "#202632", persistedStyle);
+
+    expect(style).toMatchObject({
+      "--resume-page-margin-top": "12mm",
+      "--resume-page-margin-right": "16mm",
+      "--resume-page-margin-bottom": "12mm",
+      "--resume-page-margin-left": "16mm",
     });
   });
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from linkresume.core.pdfium_lock import PDFIUM_LOCK
 
 import hashlib
 import json
@@ -49,19 +50,20 @@ def safe_dataset_filename(filename: str) -> str:
 
 
 def _validate_pdf(content: bytes) -> None:
-    if not content.startswith(b"%PDF-") or b"%%EOF" not in content[-1024:]:
-        raise ApiError(400, "UNSUPPORTED_DATASET_FILE")
-    try:
-        document = pdfium.PdfDocument(content)
+    with PDFIUM_LOCK:
+        if not content.startswith(b"%PDF-") or b"%%EOF" not in content[-1024:]:
+            raise ApiError(400, "UNSUPPORTED_DATASET_FILE")
         try:
-            if len(document) < 1:
-                raise ApiError(400, "UNSUPPORTED_DATASET_FILE")
-        finally:
-            document.close()
-    except ApiError:
-        raise
-    except Exception as error:
-        raise ApiError(400, "UNSUPPORTED_DATASET_FILE") from error
+            document = pdfium.PdfDocument(content)
+            try:
+                if len(document) < 1:
+                    raise ApiError(400, "UNSUPPORTED_DATASET_FILE")
+            finally:
+                document.close()
+        except ApiError:
+            raise
+        except Exception as error:
+            raise ApiError(400, "UNSUPPORTED_DATASET_FILE") from error
 
 
 def _validate_docx(content: bytes) -> None:
