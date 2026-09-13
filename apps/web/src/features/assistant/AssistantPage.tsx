@@ -452,18 +452,6 @@ function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]
   return partialAssistant.length > 0 ? [...persisted, ...partialAssistant] : persisted;
 }
 
-function conversationHeading(state: ConversationState, hasClarification: boolean) {
-  if (hasClarification) return ["还需要确认一点", "补充关键信息后，我会继续完成这次任务。"] as const;
-  if (state.proposals.some((proposal) => proposal.status === "applied")) return ["修改已完成", "已按你确认的提案更新简历，变更内容在右侧可查看。"] as const;
-  if (state.proposals.some((proposal) => proposal.status === "pending")) return ["修改提案待确认", "确认前不会写入简历，你可以先检查每一处改动。"] as const;
-  if (state.stage === "stopped") return ["生成已停止", "已保留当前内容，你可以继续上次的要求。"] as const;
-  if (state.stage === "failed") return ["本次生成未完成", "已保留当前内容和问题草稿，可以稍后重试。"] as const;
-  if (state.stage === "streaming") return ["正在生成回答", "内容会逐步出现，你可以随时停止。"] as const;
-  if (state.running && state.phase.includes("读取")) return ["提交并读取资料", "已提交问题，正在读取本轮选择的资料并建立回答上下文。"] as const;
-  if (state.running) return ["正在召回相关资料", "AI 正在根据当前问题检索资料，右上角会同步展示本轮命中的相关文件。"] as const;
-  return null;
-}
-
 type AssistantPageProps = {
   sessionId?: string;
 };
@@ -534,7 +522,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
   const pendingClarification = pendingClarificationMessage(current.messages);
   const isEmptyConversation = current.messages.length === 0 && !current.running;
-  const conversationStateHeading = conversationHeading(current, Boolean(pendingClarification));
   const clarificationQuestions = pendingClarification?.clarification?.questions ?? [];
   const clarificationQuestion = clarificationQuestions[Math.min(clarificationPage, Math.max(0, clarificationQuestions.length - 1))];
   const latestUserMessage = [...current.messages].reverse().find((message) => message.role === "user");
@@ -1656,12 +1643,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             onScroll={handleMessageViewportScroll}
             aria-live={current.running ? "off" : "polite"}
           >
-            {!isEmptyConversation && conversationStateHeading && (
-              <header className="assistant-state-header">
-                <h1>{conversationStateHeading[0]}</h1>
-                <p>{conversationStateHeading[1]}</p>
-              </header>
-            )}
             {isEmptyConversation && (
               <section className="assistant-empty-state" aria-label="开始使用 AI 求职助手">
                 <img className="assistant-empty-feather" src={assistantFeather} alt="" />
