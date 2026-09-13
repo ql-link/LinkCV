@@ -1590,6 +1590,7 @@ function scheduleToolbarTitle(view: ScheduleGranularity, anchor: Date, weekStart
 
 function renderInterviewCalendarEvent({
   occurrence,
+  view,
 }: EventCalendarRenderEventProps<Interview | null>) {
   const interview = occurrence.event.data;
   const visibleStart = formatTime(occurrence.start);
@@ -1601,24 +1602,35 @@ function renderInterviewCalendarEvent({
     return (
       <span className="interview-calendar-event-content">
         <strong className="interview-calendar-event-title">新面试</strong>
-        <span className="interview-calendar-event-time"><i aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
       </span>
     );
   }
   if (interview.calendarRole === "open_window") {
     return (
       <span className="interview-calendar-event-content interview-calendar-open-window-content">
-        <strong className="interview-calendar-event-title">{interview.company} · {interview.stage}</strong>
+        <strong className="interview-calendar-event-title">{interview.company} · {interview.role} · {interview.stage}</strong>
         <span className="interview-calendar-window-range">{interview.date} {interview.time} – {formatDate(new Date(interview.endAt))} {interview.endTime}</span>
         <em className="interview-calendar-window-status">{interview.status === "completed" ? "已完成" : interview.status === "cancelled" ? "已取消" : "待完成"}</em>
       </span>
     );
   }
+  if (view === "month") {
+    return (
+      <span className="interview-calendar-event-content">
+        <strong className="interview-calendar-event-title">{interview.company} · {interview.role}</strong>
+        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+      </span>
+    );
+  }
   return (
-    <span className="interview-calendar-event-content">
+    <span className="interview-calendar-event-content interview-calendar-event-stack">
       <strong className="interview-calendar-event-title">{interview.company}</strong>
-      <span className="interview-calendar-event-time"><i aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
-      <em className="interview-calendar-event-stage">{interview.stage}</em>
+      <span className="interview-calendar-event-role">{interview.role}</span>
+      <span className="interview-calendar-event-meta">
+        <em className="interview-calendar-event-stage">{interview.stage}</em>
+        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+      </span>
     </span>
   );
 }
@@ -1733,7 +1745,7 @@ function ScheduleView({
         : interview.color;
       return {
         id: interview.id,
-        title: `${interview.company} ${interview.stage}`,
+        title: `${interview.company} ${interview.role} ${interview.stage}`,
         start: new Date(interview.startAt),
         end: new Date(interview.endAt),
         color: INTERVIEW_CALENDAR_COLORS[color],
@@ -1755,7 +1767,7 @@ function ScheduleView({
       end.setHours(0, 0, 0, 0);
       return {
         id: `open-window:${interview.id}`,
-        title: `${interview.company} ${interview.stage}`,
+        title: `${interview.company} ${interview.role} ${interview.stage}`,
         start,
         end,
         allDay: true,
@@ -1770,7 +1782,7 @@ function ScheduleView({
       interview.scheduleKind === "open_window" && interview.answerPlanStartAt && interview.answerPlanEndAt
         ? [{
             id: `answer-plan:${interview.id}`,
-            title: `${interview.company} ${interview.stage}`,
+            title: `${interview.company} ${interview.role} ${interview.stage}`,
             start: new Date(interview.answerPlanStartAt),
             end: new Date(interview.answerPlanEndAt),
             color: INTERVIEW_CALENDAR_COLORS[interview.color],
