@@ -79,12 +79,12 @@ import {
 } from "./pageArrangementTransition";
 import {
   normalizeResumeAccentColor,
-  resumePresentationPageMargins,
   isCanonicalResumeDocument,
   resumePresentationAccentColor,
   resumePresentationTemplateKey,
   type ResumePresentationRead,
 } from "../../api/resumeContract";
+import { liveResumePageMargins } from "../preview/resumePageMargins";
 
 type DrawerMode = "settings" | "history" | "quality" | "agent" | null;
 
@@ -98,23 +98,6 @@ const AGENT_DRAWER_MAX_WIDTH = 640;
 const AGENT_DRAWER_DEFAULT_WIDTH = 390;
 const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkcv.workbench.agent-drawer-width";
 const WORKBENCH_TITLE_CHARACTER_LIMIT = 30;
-const SEMANTIC_KIND_LABELS = {
-  profile: "个人信息",
-  work: "工作",
-  education: "教育",
-  project: "项目",
-  skills: "技能",
-  activity: "活动",
-  interests: "兴趣爱好",
-  certificates: "证书",
-  awards: "荣誉",
-  languages: "语言",
-  custom: "自定义",
-} as const;
-
-export function semanticSectionDisplayTitle(title: string) {
-  return title.replace(/:icon\[[^\]]+\]:/gu, "").trim() || "未命名章节";
-}
 
 export function truncateWorkbenchTitle(title: string) {
   const characters = Array.from(title);
@@ -166,14 +149,7 @@ export function resumeWorkbenchStyle(
   accentColor: unknown,
   style?: ResumePresentationRead,
 ) {
-  const margins = style
-    ? resumePresentationPageMargins(style)
-    : {
-        top: settings.verticalPageMargin,
-        right: settings.pageMargin,
-        bottom: settings.verticalPageMargin,
-        left: settings.pageMargin,
-      };
+  const margins = liveResumePageMargins(settings, style);
   return {
     "--resume-font-family": settings.fontFamily,
     "--resume-font-size": `${settings.fontSize}pt`,
@@ -503,8 +479,8 @@ function pageViewportMetrics(
 }
 
 const fontOptions = [
-  { label: "简历宋体", value: resumeSerifFontStack },
-  { label: "霞鹜文楷 Medium", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
+  { label: "思源宋体", value: resumeSerifFontStack },
+  { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
   { label: "系统黑体", value: '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ];
 
@@ -1091,7 +1067,6 @@ export function ResumeWorkbench() {
   const user = useResumeStore((state) => state.user);
   const updateSettings = useResumeStore((state) => state.updateSettings);
   const applyTemplate = useResumeStore((state) => state.applyTemplate);
-  const setSectionSemanticKind = useResumeStore((state) => state.setSectionSemanticKind);
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
   const saveStatus = useResumeStore((state) => state.saveStatus);
@@ -1492,13 +1467,6 @@ export function ResumeWorkbench() {
       });
   };
 
-  const editableSemanticSections = data.sections.map((section) => ({
-    id: section.node_id,
-    display_title: section.title?.value ?? "未命名章节",
-    semantic_kind: section.semantic_kind,
-    semantic_source: "canonical" as const,
-  }));
-
   const saveNamedVersion = async () => {
     if (!editor || versionNameSubmitting) return;
     const validationMessage = versionNameValidationMessage(versionName);
@@ -1786,41 +1754,6 @@ export function ResumeWorkbench() {
                       </div>
                     </WorkbenchSettingsSection>
 
-                    {editableSemanticSections.length > 0 && (
-                      <WorkbenchSettingsSection
-                        title="章节类型"
-                        description="标题与章节含义分别保存；可手动确认，或结合正文和上下文识别一次。"
-                        icon={<Sparkles aria-hidden="true" size={15} />}
-                      >
-                        <div className="workbench-semantic-settings">
-                          {editableSemanticSections.map((section) => {
-                            const displayTitle = semanticSectionDisplayTitle(section.display_title);
-                            return (
-                              <div className="workbench-semantic-row" key={section.id}>
-                                <span title={displayTitle}>{displayTitle}</span>
-                                <Select
-                                  value={section.semantic_kind}
-                                  disabled={versionOperationPending}
-                                  onValueChange={(semanticKind) => setSectionSemanticKind(
-                                    section.id,
-                                    semanticKind as keyof typeof SEMANTIC_KIND_LABELS,
-                                  )}
-                                >
-                                  <SelectTrigger aria-label={`${displayTitle}章节类型`}>
-                                    {SEMANTIC_KIND_LABELS[section.semantic_kind as keyof typeof SEMANTIC_KIND_LABELS]}
-                                  </SelectTrigger>
-                                  <SelectContent data-ui-theme="light" position="popper">
-                                    {Object.entries(SEMANTIC_KIND_LABELS).filter(([value]) => value !== "basics").map(([value, label]) => (
-                                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </WorkbenchSettingsSection>
-                    )}
                   </div>
                 ) : drawerMode === "history" ? (
                   <div
