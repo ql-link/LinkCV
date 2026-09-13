@@ -279,7 +279,7 @@ export function ResumeCreateDialog({ onClose }: ResumeCreateDialogProps) {
             )}
           </section>
 
-          {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
+          {error && <FeedbackNotice kind="error" placement="floating">{error}</FeedbackNotice>}
 
           <DialogFooter className="resume-create-actions">
             <Button type="button" variant="secondary" disabled={submitting} onClick={onClose}>

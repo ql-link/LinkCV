@@ -624,6 +624,33 @@ describe("AssistantPage", () => {
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
   });
 
+  it("发送后不在消息区顶部重复展示召回状态标题", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    let finishStream: () => void = () => {};
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-1" });
+      onEvent({ type: "run.phase", runId: "run-1", phase: "loading_context", referencedContextCount: 0 });
+      await new Promise<void>((resolve) => {
+        finishStream = resolve;
+      });
+      onEvent({ type: "run.completed", runId: "run-1" });
+    });
+
+    const { container } = render(<AssistantPage />);
+    const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(input, "你好");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("正在读取所选资料…")).toBeInTheDocument();
+    expect(screen.queryByText("正在召回相关资料")).not.toBeInTheDocument();
+    expect(container.querySelector(".assistant-state-header")).not.toBeInTheDocument();
+
+    finishStream();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+  });
+
   it("暂停后等待取消完成，重试不会重复用户消息或展示运行中提示", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });

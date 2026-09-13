@@ -65,7 +65,7 @@ describe("ResumeCreateDialog", () => {
     expect(listbox).toHaveFocus();
   });
 
-  it("名称为空时阻止提交并把错误放在弹窗内", async () => {
+  it("名称为空时阻止提交并在页面上方显示统一错误提示", async () => {
     vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates } as never);
     const createResume = vi.fn();
     useResumeStore.setState({ createResume });
@@ -74,7 +74,9 @@ describe("ResumeCreateDialog", () => {
     const dialog = await screen.findByRole("dialog", { name: "新建简历" });
     fireEvent.click(within(dialog).getByRole("button", { name: "创建并进入编辑器" }));
 
-    expect(within(dialog).getByRole("alert")).toHaveTextContent("请输入简历名称。");
+    const alert = within(dialog).getByRole("alert");
+    expect(alert).toHaveTextContent("请输入简历名称。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(createResume).not.toHaveBeenCalled();
     expect(within(dialog).getByLabelText("简历名称")).toHaveFocus();
   });
@@ -90,7 +92,9 @@ describe("ResumeCreateDialog", () => {
     fireEvent.change(within(dialog).getByLabelText("简历名称"), { target: { value: "重复名称" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "创建并进入编辑器" }));
 
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("该名称已经存在，请换一个名称。");
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("该名称已经存在，请换一个名称。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(dialog).toBeInTheDocument();
     expect(window.location.pathname).toBe("/resumes");
   });
