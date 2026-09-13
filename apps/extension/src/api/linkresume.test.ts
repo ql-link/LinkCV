@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { connectToLinkResume, importJob } from "./linkresume";
+import { connectToLinkResume, importJob, uploadCompanyLogo } from "./linkresume";
 
 function jsonResponse(status: number, body: object): Response {
   return new Response(JSON.stringify(body), {
@@ -15,6 +15,23 @@ afterEach(() => {
 });
 
 describe("LinkResume extension API client", () => {
+  it("uploads multipart data with cookies and retries after refreshing authentication", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
+      .mockResolvedValueOnce(jsonResponse(200, { user: { id: "7" } }))
+      .mockResolvedValueOnce(jsonResponse(200, { logo_url: "/api/job-descriptions/42/logo", revision: "a".repeat(64) }));
+    vi.stubGlobal("fetch", fetchMock);
+    await uploadCompanyLogo("https://linkresume.example.test", "42", new Blob(["image"]));
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://linkresume.example.test/api/job-descriptions/42/logo",
+      "https://linkresume.example.test/api/auth/refresh",
+      "https://linkresume.example.test/api/job-descriptions/42/logo",
+    ]);
+    const request = fetchMock.mock.calls[0]![1];
+    expect(request.credentials).toBe("include");
+    expect(request.body).toBeInstanceOf(FormData);
+    expect(request.headers).toBeUndefined();
+  });
   it("checks both local origins and prefers the one with an authenticated session", async () => {
     const fetchMock = vi
       .fn()
@@ -66,7 +83,7 @@ describe("LinkResume extension API client", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("refreshes an expired session once before retrying an import", async () => {
+  it.each([201, 200])("refreshes an expired session and preserves the %i import result", async (status) => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
@@ -74,7 +91,7 @@ describe("LinkResume extension API client", () => {
         jsonResponse(200, { user: { id: "7", email: "user@example.test" } }),
       )
       .mockResolvedValueOnce(
-        jsonResponse(201, {
+        jsonResponse(status, {
           job_description: {
             id: "42",
             job_title: "后端工程师",
@@ -82,6 +99,7 @@ describe("LinkResume extension API client", () => {
             source_url: "https://www.zhipin.com/job_detail/abc.html",
             lock_version: 1,
           },
+          application: { id: "application-42", phase: "pending" },
         }),
       );
     vi.stubGlobal("fetch", fetchMock);
@@ -97,7 +115,8 @@ describe("LinkResume extension API client", () => {
       },
     });
 
-    expect(result.id).toBe("42");
+    expect(result.job_description.id).toBe("42");
+    expect(result.application?.id).toBe("application-42");
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "http://127.0.0.1:5173/api/job-descriptions/import",
       "http://127.0.0.1:5173/api/auth/refresh",

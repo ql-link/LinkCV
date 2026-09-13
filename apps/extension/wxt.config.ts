@@ -9,6 +9,8 @@ const bossPermissions = [
   "https://zhipin.com/*",
   "https://www.zhipin.com/*",
   "https://m.zhipin.com/*",
+  "https://img.bosszhipin.com/*",
+  "https://img2.bosszhipin.com/*",
 ];
 
 const isReleaseBuild = process.env.WXT_RELEASE_BUILD === "1";

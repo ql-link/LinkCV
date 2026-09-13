@@ -249,6 +249,7 @@ def _job_snapshot(job: JobDescription) -> dict[str, object]:
     return {
         "schema_version": 1,
         **{field: json_value(getattr(job, field)) for field in fields},
+        "logo_url": job.resolved_logo_url,
     }
 
 

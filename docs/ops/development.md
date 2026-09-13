@@ -176,6 +176,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run refresh:pi-model-data`       | 维护时显式刷新并重新生成 Pi 模型目录快照                              |
 | `npm run test:miniprogram`            | 小程序纯逻辑 Node 测试（含访客与已登录态）                         |
 | `npm run dev:extension`               | 启动 WXT 插件开发模式                                                |
+| `npm run dev:extension:local -- --origin http://127.0.0.1:5175 --port 3002` | 监视插件源码并连接指定本地 Web；输出独立开发版侧载目录，可与正式版并存 |
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
@@ -188,6 +189,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run check`                       | 完整本地质量入口                                                     |
 
 ## 测试分层
+
+本地 Web 端口冲突时，Vite 会尝试下一个可用端口；以终端打印的实际地址为准。后端另选端口时同时设置 `BACKEND_PORT` 与 `BACKEND_PROXY_TARGET`；Pi 同步 `PI_SERVICE_PORT`、`PI_SERVICE_BASE_URL` 与回调 `LINKRESUME_BASE_URL`。插件的 `dev:extension:local` 使用 `--origin` 明确绑定该 Web 地址，`--port` 单独控制 WXT 热更新端口。默认加载 `apps/extension/.output/development/chrome-mv3`，或用 `--output-dir` 指定固定父目录；监视进程需要持续运行。正式版继续连接线上并使用原有独立目录。具体步骤见 [插件说明](../../apps/extension/README.md)。
 
 - 前端测试使用 Vitest、React Testing Library 和 jsdom，通过 Mock 隔离 API。
 - 后端单元测试不访问外部服务；集成测试使用内存 SQLite 和假 MinIO。

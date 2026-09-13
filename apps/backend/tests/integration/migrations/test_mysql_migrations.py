@@ -35,7 +35,7 @@ from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0061"
+EXPECTED_HEAD = "0062"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -3212,6 +3212,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         "job_title",
         "company_name",
         "logo_url",
+        "logo_sha256",
         "employment_type",
         "description",
         "skills",
