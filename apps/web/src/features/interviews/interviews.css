@@ -4093,30 +4093,41 @@
   font: inherit;
 }
 .career-reui-calendar .interview-calendar-event {
-  border: 0;
-  border-left: 3px solid var(--ec-event-color);
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--ec-event-color) 22%, var(--ui-surface));
   border-radius: 4px;
   background: color-mix(in srgb, var(--ec-event-color) 13%, var(--ui-surface));
   box-shadow: none;
-  padding: 5px 8px;
+  padding: 5px 8px 5px 10px;
   color: var(--ui-foreground);
+}
+.career-reui-calendar .interview-calendar-event::before {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 1px;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--ec-event-color);
+  content: "";
 }
 .career-reui-calendar .interview-calendar-event:hover {
   background: color-mix(in srgb, var(--ec-event-color) 17%, var(--ui-surface));
 }
 .career-reui-calendar .interview-calendar-event[aria-pressed="true"] {
-  border-left-color: var(--ec-event-color);
+  border-color: var(--ec-event-color);
   background: var(--ec-event-color);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ec-event-color) 24%, transparent);
   color: var(--ui-primary-foreground);
 }
 .career-reui-calendar .interview-calendar-event[aria-pressed="true"] .interview-calendar-event-title,
+.career-reui-calendar .interview-calendar-event[aria-pressed="true"] .interview-calendar-event-role,
 .career-reui-calendar .interview-calendar-event[aria-pressed="true"] .interview-calendar-event-time,
 .career-reui-calendar .interview-calendar-event[aria-pressed="true"] .interview-calendar-event-stage {
   color: var(--ui-primary-foreground);
 }
-.career-reui-calendar .interview-calendar-event[aria-pressed="true"] .interview-calendar-event-time i {
-  background: color-mix(in srgb, var(--ui-primary-foreground) 82%, transparent);
+.career-reui-calendar .interview-calendar-event[aria-pressed="true"] .interview-calendar-event-time > svg {
+  color: var(--ui-primary-foreground);
 }
 .career-reui-calendar [data-layout="nested"] .interview-calendar-event {
   box-shadow: 0 2px 5px color-mix(in srgb, var(--ec-event-color) 16%, transparent);
@@ -4126,21 +4137,27 @@
 }
 .interview-calendar-event-content { display: grid; width: 100%; min-width: 0; gap: 2px; overflow: hidden; }
 .interview-calendar-event-title,
+.interview-calendar-event-role,
 .interview-calendar-event-time,
 .interview-calendar-event-stage { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.interview-calendar-event-title { color: var(--ui-foreground); font-size: 11px; font-weight: 700; line-height: 1.25; }
-.interview-calendar-event-time { display: flex; align-items: center; gap: 5px; color: var(--ui-text-secondary); font-size: 10px; font-variant-numeric: tabular-nums; }
-.interview-calendar-event-time i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--ec-event-color); }
-.interview-calendar-event-stage { color: var(--ui-foreground); font-size: 10px; font-style: normal; font-weight: 600; line-height: 1.2; }
+.interview-calendar-event-title { color: var(--ui-foreground); font-size: var(--ui-text-xs); font-weight: 700; line-height: 1.25; }
+.interview-calendar-event-role { color: var(--ui-foreground); font-size: var(--ui-text-xs); font-weight: 650; line-height: 1.25; }
+.interview-calendar-event-stack { display: flex; height: 100%; flex-direction: column; gap: 3px; }
+.interview-calendar-event-meta { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+.interview-calendar-event-time { display: flex; align-items: center; gap: 5px; color: var(--ui-text-secondary); font-size: var(--ui-text-xs); font-variant-numeric: tabular-nums; }
+.interview-calendar-event-time > svg { width: 12px; height: 12px; flex: 0 0 auto; color: var(--ec-event-color); stroke-width: 2; }
+.interview-calendar-event-stage { color: var(--ui-foreground); font-size: var(--ui-text-xs); font-style: normal; font-weight: 600; line-height: 1.2; }
 .interview-calendar-open-window-content { position: relative; display: flex; align-items: center; gap: 8px; }
 .interview-calendar-open-window-content .interview-calendar-event-title { flex: 0 1 auto; }
-.interview-calendar-window-range { min-width: 0; flex: 1; overflow: hidden; color: var(--ui-text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.interview-calendar-window-status { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--ec-event-color) 42%, transparent); border-radius: 999px; padding: 1px 6px; color: var(--ui-foreground); font-size: 9px; font-style: normal; }
+.interview-calendar-window-range { min-width: 0; flex: 1; overflow: hidden; color: var(--ui-text-secondary); font-size: var(--ui-text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.interview-calendar-window-status { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--ec-event-color) 42%, transparent); border-radius: 999px; padding: 1px 6px; color: var(--ui-foreground); font-size: var(--ui-text-xs); font-style: normal; }
 .interview-calendar-window-more { display: flex; width: 100%; align-items: center; justify-content: center; color: var(--ui-text-secondary); font-size: 10px; font-weight: 650; }
 .career-reui-calendar [data-view="month"] .interview-calendar-event { padding: 3px 5px; }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-content { display: flex; align-items: center; gap: 5px; }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-time,
-.career-reui-calendar [data-view="month"] .interview-calendar-event-stage { display: none; }
+.career-reui-calendar [data-view="month"] .interview-calendar-event-stage,
+.career-reui-calendar [data-view="month"] .interview-calendar-event-role,
+.career-reui-calendar [data-view="month"] .interview-calendar-event-meta { display: none; }
 .career-reui-calendar .interview-calendar-resize-handle {
   z-index: 3;
   height: 10px;
@@ -4231,11 +4248,11 @@
 }
 .career-reui-calendar [data-view="month"] .interview-calendar-event {
   min-height: 28px;
-  padding: 4px 7px;
+  padding: 4px 7px 4px 9px;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ec-event-color) 22%, transparent);
 }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-title {
-  font-size: 12px;
+  font-size: var(--ui-text-xs);
   line-height: 18px;
 }
 .career-reui-calendar [data-view="month"] .interview-calendar-event-time {
@@ -4243,11 +4260,8 @@
   min-width: 0;
   margin-left: auto;
   color: var(--ui-text-muted);
-  font-size: 11px;
+  font-size: var(--ui-text-xs);
   line-height: 18px;
-}
-.career-reui-calendar [data-view="month"] .interview-calendar-event-time i {
-  display: none;
 }
 .career-reui-calendar [data-view="month"] .interview-calendar-event[aria-pressed="true"]
   .interview-calendar-event-time {

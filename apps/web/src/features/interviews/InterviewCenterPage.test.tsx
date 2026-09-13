@@ -687,6 +687,11 @@ describe("InterviewCenterPage API projections", () => {
     expect(startHandle?.querySelector('[data-slot="event-calendar-resize-grip"]')).toBeInTheDocument();
     expect(endHandle?.querySelector('[data-slot="event-calendar-resize-grip"]')).toBeInTheDocument();
     expect(event.querySelector(".interview-calendar-event-content")).toBeInTheDocument();
+    expect(within(event).getByText("腾讯")).toBeInTheDocument();
+    expect(within(event).getByText("后端开发工程师")).toBeInTheDocument();
+    expect(within(event).getByText("二面")).toBeInTheDocument();
+    const eventTime = within(event).getByText("10:00–11:00");
+    expect(eventTime.querySelector("svg")).toBeInTheDocument();
     fireEvent.click(event);
     expect(event).toHaveAttribute("aria-pressed", "true");
     const emptyScheduleColumn = calendar.querySelector<HTMLElement>('[data-ec-bounds-start="0"]');
@@ -754,7 +759,9 @@ describe("InterviewCenterPage API projections", () => {
     expect(windowEvent).toBeDefined();
     expect(answerPlanEvent).toBeDefined();
     expect(windowEvent).not.toHaveAttribute("data-draggable", "true");
+    expect(within(windowEvent!).getByText("水滴 · 后端开发工程师 · 笔试")).toBeInTheDocument();
     expect(within(answerPlanEvent!).getByText("水滴")).toBeInTheDocument();
+    expect(within(answerPlanEvent!).getByText("后端开发工程师")).toBeInTheDocument();
     expect(within(answerPlanEvent!).getByText("笔试")).toBeInTheDocument();
     expect(within(calendar).queryByText("我的作答计划")).not.toBeInTheDocument();
 
@@ -986,6 +993,7 @@ describe("InterviewCenterPage API projections", () => {
 
     const month = await screen.findByRole("grid", { name: /月面试排期$/ });
     expect(month).toBeInTheDocument();
+    expect(within(month).getByText("腾讯 · 后端开发工程师")).toBeInTheDocument();
     const blankDay = within(month).getAllByRole("gridcell")[10];
     fireEvent.click(blankDay);
     expect(screen.queryByRole("dialog", { name: "新建面试" })).not.toBeInTheDocument();
