@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.engine import Connection
 
-from linkcv.core.migration_sql import execute_sql_file
+from linkresume.core.migration_sql import execute_sql_file
 
 revision: str = "0005"
 down_revision: str | None = "0004"
@@ -207,7 +207,7 @@ def _node_markdown(node: dict[str, Any]) -> str:
         if not isinstance(size, (int, float)) or isinstance(size, bool):
             raise RuntimeError("legacy avatar size must be numeric")
         size = min(220, max(56, size))
-        return _markdown_image(node, f"linkcv-avatar:{size:g}")
+        return _markdown_image(node, f"linkresume-avatar:{size:g}")
     if node_type == "resumeImage":
         attrs = node.get("attrs") or {}
         width_unit = attrs.get("widthUnit", "%")
@@ -220,7 +220,7 @@ def _node_markdown(node: dict[str, Any]) -> str:
         align = attrs.get("align", "center")
         if align not in {"left", "center", "right", "full"}:
             raise RuntimeError("legacy resume image alignment is unsupported")
-        return _markdown_image(node, f"linkcv-image:{width:g}:{width_unit}:{align}")
+        return _markdown_image(node, f"linkresume-image:{width:g}:{width_unit}:{align}")
     if node_type == "doc":
         return "\n\n".join(
             block for child in _children(node) if (block := _node_markdown(child))
@@ -524,4 +524,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    raise RuntimeError("LinkCV database migrations are forward-only")
+    raise RuntimeError("LinkResume database migrations are forward-only")

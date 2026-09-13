@@ -5,17 +5,17 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.core.database import utc_now
-from linkcv.domain.document_conversion import (
+from linkresume.core.config import Settings
+from linkresume.core.database import utc_now
+from linkresume.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
 )
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
-from linkcv.workers.dataset_parse_worker import DatasetParseProcessor
-from linkcv.workers.resume_import_worker import WorkerTaskRetryable
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
+from linkresume.workers.dataset_parse_worker import DatasetParseProcessor
+from linkresume.workers.resume_import_worker import WorkerTaskRetryable
 from tests.fakes import FakeRedis
 
 

@@ -48,7 +48,7 @@ function assertExactlyOnceContentIds(sourceIds: string[], target: JSONContent) {
 }
 
 function markdownAnchorIds(markdown: string) {
-  return [...markdown.matchAll(/\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::[a-z]+)?\]\]/gu)]
+  return [...markdown.matchAll(/\[\[linkresume-block:(blk_[a-z0-9]{16,64})(?::[a-z]+)?\]\]/gu)]
     .map((match) => match[1]);
 }
 
@@ -209,7 +209,7 @@ function markdownBlocks(markdown: string, document: ResumeDocument): MarkdownBlo
       continue;
     }
     if (fenced) continue;
-    const match = lines[index].match(/^##\s+(?:\[\[linkcv-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\])?(.*)$/u);
+    const match = lines[index].match(/^##\s+(?:\[\[linkresume-block:(blk_[a-z0-9]{16,64})(?::(basics|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\])?(.*)$/u);
     if (!match) continue;
     flush(index);
     const title = (match[3] ?? "").replace(/:icon\[[^\]]+\]:/gu, "").trim();
@@ -530,7 +530,7 @@ export function composeResumeMarkdownForTemplate(
 ) {
   const source = stripTemplatePageRegions(resumeDocumentToMarkdown(document))
     .split("\n")
-    .filter((line) => !/!\[[^\]]*\]\([^)]*\s+"linkcv-avatar:[^"]+"\)/u.test(line))
+    .filter((line) => !/!\[[^\]]*\]\([^)]*\s+"linkresume-avatar:[^"]+"\)/u.test(line))
     .join("\n");
   const regions = [...manifest.regions].sort((left, right) => left.order - right.order);
   const slots = [...manifest.slots].sort((left, right) => left.order - right.order);
@@ -540,7 +540,7 @@ export function composeResumeMarkdownForTemplate(
     const systemFallback = !document.basics.photo && manifest.avatar.fallback_asset === "system-default";
     const source = document.basics.photo ?? (systemFallback ? SYSTEM_DEFAULT_AVATAR : null);
     if (source) projected.get(avatarSlot.region_id)?.push(
-      `![简历头像](${source} "linkcv-avatar:${manifest.avatar.size}${systemFallback ? ":system" : ""}")`,
+      `![简历头像](${source} "linkresume-avatar:${manifest.avatar.size}${systemFallback ? ":system" : ""}")`,
     );
   }
   for (const block of markdownBlocks(source, document)) {

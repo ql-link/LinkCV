@@ -359,7 +359,7 @@ describe("AssistantPage", () => {
     render(<AssistantPage />);
 
     expect(await screen.findByRole("button", { name: "模型不可用" })).toBeInTheDocument();
-    expect(screen.queryByText("LinkCV AI")).not.toBeInTheDocument();
+    expect(screen.queryByText("LinkResume AI")).not.toBeInTheDocument();
   });
 
   it("展示结构化澄清并按 AgentPanel 格式携带回答序号提交", async () => {

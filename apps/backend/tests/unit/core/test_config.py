@@ -4,8 +4,8 @@ from cryptography.fernet import Fernet
 import pytest
 from pydantic import ValidationError
 
-from linkcv.core import config
-from linkcv.core.config import Settings, settings_env_files
+from linkresume.core import config
+from linkresume.core.config import Settings, settings_env_files
 
 
 def test_settings_env_files_are_stable_and_include_local_override(
@@ -15,7 +15,7 @@ def test_settings_env_files_are_stable_and_include_local_override(
     local = tmp_path / ".env.development.local"
     base.write_text("APP_ENV=development\nMYSQL_USER=shared\n", encoding="utf-8")
     local.write_text("MYSQL_USER=local-secret-user\n", encoding="utf-8")
-    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
+    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.delenv("MYSQL_USER", raising=False)
 
@@ -34,7 +34,7 @@ def test_process_environment_has_highest_priority(
     local = tmp_path / ".env.local"
     base.write_text("MYSQL_USER=base\n", encoding="utf-8")
     local.write_text("MYSQL_USER=local\n", encoding="utf-8")
-    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
+    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
     monkeypatch.setenv("MYSQL_USER", "process")
 
     assert Settings(_env_file=settings_env_files()).mysql_user == "process"
@@ -54,8 +54,8 @@ def test_linked_worktree_defaults_to_main_worktree_secret_overlay(
     base.write_text("MYSQL_USER=base\n", encoding="utf-8")
     shared.write_text("MYSQL_USER=shared-secret\n", encoding="utf-8")
     monkeypatch.setattr(config, "REPO_ROOT", worktree)
-    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
-    monkeypatch.delenv("LINKCV_SECRET_ENV_FILE", raising=False)
+    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
+    monkeypatch.delenv("LINKRESUME_SECRET_ENV_FILE", raising=False)
     monkeypatch.delenv("MYSQL_USER", raising=False)
 
     files = settings_env_files()
@@ -71,8 +71,8 @@ def test_explicit_secret_env_file_has_priority(
     secret = tmp_path / "explicit.local"
     base.write_text("MYSQL_USER=base\n", encoding="utf-8")
     secret.write_text("MYSQL_USER=explicit\n", encoding="utf-8")
-    monkeypatch.setenv("LINKCV_ENV_FILE", str(base))
-    monkeypatch.setenv("LINKCV_SECRET_ENV_FILE", str(secret))
+    monkeypatch.setenv("LINKRESUME_ENV_FILE", str(base))
+    monkeypatch.setenv("LINKRESUME_SECRET_ENV_FILE", str(secret))
     monkeypatch.delenv("MYSQL_USER", raising=False)
 
     files = settings_env_files()
@@ -87,7 +87,7 @@ def test_mysql_and_redis_urls_encode_credentials() -> None:
         mysql_port=3306,
         mysql_user="user name",
         mysql_password="p@ss/word",
-        mysql_database="link cv",
+        mysql_database="link resume",
         redis_host="127.0.0.1",
         redis_port=6379,
         redis_db=0,
@@ -96,20 +96,20 @@ def test_mysql_and_redis_urls_encode_credentials() -> None:
 
     assert settings.sqlalchemy_url == (
         "mysql+pymysql://user%20name:p%40ss%2Fword@127.0.0.1:3306/"
-        "link%20cv?charset=utf8mb4"
+        "link%20resume?charset=utf8mb4"
     )
     assert settings.redis_url == ("redis://:redis%2F%40%20password@127.0.0.1:6379/0")
 
 
 def test_complete_urls_override_component_settings() -> None:
     settings = Settings(
-        database_url="mysql+pymysql://complete:secret@db:3306/linkcv",
+        database_url="mysql+pymysql://complete:secret@db:3306/linkresume",
         redis_url_override="redis://cache:6379/4",
         mysql_host="ignored",
         redis_host="ignored",
     )
 
-    assert settings.sqlalchemy_url == "mysql+pymysql://complete:secret@db:3306/linkcv"
+    assert settings.sqlalchemy_url == "mysql+pymysql://complete:secret@db:3306/linkresume"
     assert settings.redis_url == "redis://cache:6379/4"
 
 
@@ -208,11 +208,11 @@ def test_kafka_vendor_requires_bootstrap_servers() -> None:
 def test_document_parse_broker_defaults_use_v2_topology() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.rabbitmq_exchange_name == "tolink.cv.resume_import.v2"
-    assert settings.rabbitmq_queue == "linkcv.resume_import.worker.v2"
+    assert settings.rabbitmq_exchange_name == "tolink.resume.resume_import.v2"
+    assert settings.rabbitmq_queue == "linkresume.resume_import.worker.v2"
     assert settings.rabbitmq_routing_key == "resume.import.v2"
-    assert settings.kafka_topic == "tolink.cv.resume_import.v2"
-    assert settings.kafka_consumer_group == "linkcv.resume_import.worker.v2"
+    assert settings.kafka_topic == "tolink.resume.resume_import.v2"
+    assert settings.kafka_consumer_group == "linkresume.resume_import.worker.v2"
 
 
 def test_structuring_input_limit_cannot_exceed_markdown_limit() -> None:
@@ -258,11 +258,11 @@ def test_production_accepts_injected_secrets() -> None:
             f"production:{Fernet.generate_key().decode('ascii')}"
         ),
         linkparse_api_key="fictional-linkparse-key",
-        rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
+        rabbitmq_url="amqp://linkresume:fictional-secret@rabbitmq:5672/",
         wechat_appid="fictional-production-appid",
         wechat_secret="fictional-production-wechat-secret",
     )
-    assert settings.minio_bucket == "linkcv"
+    assert settings.minio_bucket == "linkresume"
 
 
 def test_production_rejects_reused_agent_service_token() -> None:
@@ -272,14 +272,14 @@ def test_production_rejects_reused_agent_service_token() -> None:
             app_environment="production",
             agent_enabled=True,
             pi_service_token=shared_token,
-            linkcv_internal_agent_token=shared_token,
+            linkresume_internal_agent_token=shared_token,
             jwt_secret="a-production-jwt-secret-with-more-than-32-characters",
             mysql_password="production-db-secret",
             minio_access_key="production-minio-access",
             minio_secret_key="production-minio-secret",
             llm_credential_encryption_keys=f"production:{Fernet.generate_key().decode('ascii')}",
             linkparse_api_key="fictional-linkparse-key",
-            rabbitmq_url="amqp://linkcv:fictional-secret@rabbitmq:5672/",
+            rabbitmq_url="amqp://linkresume:fictional-secret@rabbitmq:5672/",
             wechat_appid="fictional-production-appid",
             wechat_secret="fictional-production-wechat-secret",
         )

@@ -22,7 +22,7 @@ test("package 模式默认以工作区为入口且无告警", () => {
 
 test("package 模式接受 https 覆盖并规范化为源，入口保持工作区", () => {
   const target = resolveDesktopTarget("package", {
-    LINKCV_DESKTOP_ORIGIN: "https://dev.linkresume.cn/some/path",
+    LINKRESUME_DESKTOP_ORIGIN: "https://dev.linkresume.cn/some/path",
   });
   assert.equal(target.origin, "https://dev.linkresume.cn");
   assert.equal(target.loadUrl, "https://dev.linkresume.cn/resumes");
@@ -31,7 +31,7 @@ test("package 模式接受 https 覆盖并规范化为源，入口保持工作�
 
 test("package 模式接受回环地址的 http 覆盖", () => {
   const target = resolveDesktopTarget("package", {
-    LINKCV_DESKTOP_ORIGIN: "http://127.0.0.1:4173",
+    LINKRESUME_DESKTOP_ORIGIN: "http://127.0.0.1:4173",
   });
   assert.equal(target.origin, "http://127.0.0.1:4173");
   assert.deepEqual(target.warnings, []);
@@ -39,16 +39,16 @@ test("package 模式接受回环地址的 http 覆盖", () => {
 
 test("package 模式对非 http(s) 协议回落默认并告警", () => {
   const target = resolveDesktopTarget("package", {
-    LINKCV_DESKTOP_ORIGIN: "ftp://example.com",
+    LINKRESUME_DESKTOP_ORIGIN: "ftp://example.com",
   });
   assert.equal(target.origin, DEFAULT_PRODUCTION_ORIGIN);
   assert.equal(target.warnings.length, 1);
-  assert.match(target.warnings[0], /LINKCV_DESKTOP_ORIGIN/);
+  assert.match(target.warnings[0], /LINKRESUME_DESKTOP_ORIGIN/);
 });
 
 test("package 模式对非回环 http 覆盖回落默认并告警", () => {
   const target = resolveDesktopTarget("package", {
-    LINKCV_DESKTOP_ORIGIN: "http://example.com",
+    LINKRESUME_DESKTOP_ORIGIN: "http://example.com",
   });
   assert.equal(target.origin, DEFAULT_PRODUCTION_ORIGIN);
   assert.equal(target.warnings.length, 1);
@@ -56,7 +56,7 @@ test("package 模式对非回环 http 覆盖回落默认并告警", () => {
 
 test("package 模式对非法 URL 回落默认并告警", () => {
   const target = resolveDesktopTarget("package", {
-    LINKCV_DESKTOP_ORIGIN: "not a url",
+    LINKRESUME_DESKTOP_ORIGIN: "not a url",
   });
   assert.equal(target.origin, DEFAULT_PRODUCTION_ORIGIN);
   assert.equal(target.warnings.length, 1);
@@ -71,12 +71,12 @@ test("dev 模式默认加载本地 Vite 开发服务器", () => {
 
 test("dev 模式接受环境覆盖并在非法值时回落", () => {
   const overridden = resolveDesktopTarget("dev", {
-    LINKCV_DESKTOP_DEV_URL: "http://localhost:5174",
+    LINKRESUME_DESKTOP_DEV_URL: "http://localhost:5174",
   });
   assert.equal(overridden.loadUrl, "http://localhost:5174");
 
   const fallback = resolveDesktopTarget("dev", {
-    LINKCV_DESKTOP_DEV_URL: "javascript:alert(1)",
+    LINKRESUME_DESKTOP_DEV_URL: "javascript:alert(1)",
   });
   assert.equal(fallback.loadUrl, DEFAULT_DEV_URL);
   assert.equal(fallback.warnings.length, 1);
@@ -109,7 +109,7 @@ test("isLoopbackHostname 识别常见回环主机名", () => {
 });
 
 test("development 预设默认连接 Dev 环境并保持工作区入口", () => {
-  const target = resolveDesktopTarget("package", { LINKCV_DESKTOP_ENV: "development" });
+  const target = resolveDesktopTarget("package", { LINKRESUME_DESKTOP_ENV: "development" });
   assert.equal(target.preset, "development");
   assert.equal(target.origin, DEFAULT_DEVELOPMENT_ORIGIN);
   assert.equal(target.loadUrl, `${DEFAULT_DEVELOPMENT_ORIGIN}${PACKAGE_ENTRY_PATH}`);
@@ -118,8 +118,8 @@ test("development 预设默认连接 Dev 环境并保持工作区入口", () => 
 
 test("development 预设允许非回环 http 覆盖并记录不安全告警", () => {
   const target = resolveDesktopTarget("package", {
-    LINKCV_DESKTOP_ENV: "development",
-    LINKCV_DESKTOP_ORIGIN: "http://10.1.2.3:8080",
+    LINKRESUME_DESKTOP_ENV: "development",
+    LINKRESUME_DESKTOP_ORIGIN: "http://10.1.2.3:8080",
   });
   assert.equal(target.origin, "http://10.1.2.3:8080");
   assert.equal(target.warnings.length, 1);
@@ -128,8 +128,8 @@ test("development 预设允许非回环 http 覆盖并记录不安全告警", ()
 
 test("production 预设继续拒绝非回环 http", () => {
   const target = resolveDesktopTarget("package", {
-    LINKCV_DESKTOP_ENV: "production",
-    LINKCV_DESKTOP_ORIGIN: "http://100.86.10.52:18002",
+    LINKRESUME_DESKTOP_ENV: "production",
+    LINKRESUME_DESKTOP_ORIGIN: "http://100.86.10.52:18002",
   });
   assert.equal(target.preset, "production");
   assert.equal(target.origin, DEFAULT_PRODUCTION_ORIGIN);
@@ -145,12 +145,12 @@ test("构建时内置环境生效且运行时覆盖优先", () => {
   assert.equal(builtInOnly.origin, "http://100.86.10.52:18002");
   // BR7：开发版启动时保留一条非安全 http 连接告警。
   assert.deepEqual(builtInOnly.warnings, [
-    "LINKCV_DESKTOP_ORIGIN 使用非回环 http 非安全连接：http://100.86.10.52:18002",
+    "LINKRESUME_DESKTOP_ORIGIN 使用非回环 http 非安全连接：http://100.86.10.52:18002",
   ]);
 
   const runtimeOverride = resolveDesktopTarget(
     "package",
-    { LINKCV_DESKTOP_ORIGIN: "https://dev.linkresume.cn" },
+    { LINKRESUME_DESKTOP_ORIGIN: "https://dev.linkresume.cn" },
     { env: "development", origin: "http://100.86.10.52:18002" },
   );
   assert.equal(runtimeOverride.preset, "development");
@@ -158,12 +158,12 @@ test("构建时内置环境生效且运行时覆盖优先", () => {
   assert.deepEqual(runtimeOverride.warnings, []);
 });
 
-test("非法 LINKCV_DESKTOP_ENV 按 production 处理并告警", () => {
-  const target = resolveDesktopTarget("package", { LINKCV_DESKTOP_ENV: "staging" });
+test("非法 LINKRESUME_DESKTOP_ENV 按 production 处理并告警", () => {
+  const target = resolveDesktopTarget("package", { LINKRESUME_DESKTOP_ENV: "staging" });
   assert.equal(target.preset, "production");
   assert.equal(target.origin, DEFAULT_PRODUCTION_ORIGIN);
   assert.equal(target.warnings.length, 1);
-  assert.match(target.warnings[0], /LINKCV_DESKTOP_ENV/);
+  assert.match(target.warnings[0], /LINKRESUME_DESKTOP_ENV/);
 });
 
 test("dev 模式标记为开发环境预设", () => {

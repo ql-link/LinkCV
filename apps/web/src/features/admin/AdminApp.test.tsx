@@ -6,14 +6,14 @@ import { api, ApiRequestError, type AdminStatsResponse } from "../../api/client"
 
 const mockAdminUser = {
   id: "admin-1",
-  email: "admin@linkcv.cn",
+  email: "admin@linkresume.cn",
   nickname: "陈听澜",
   is_admin: true,
 };
 
 const mockRegularUser = {
   id: "user-1",
-  email: "user@linkcv.cn",
+  email: "user@linkresume.cn",
   nickname: "张三",
   is_admin: false,
 };
@@ -114,10 +114,10 @@ describe("AdminApp access control", () => {
         eventVersion: 1,
         logType: "system",
         level: "INFO",
-        service: "linkcv",
+        service: "linkresume",
         environment: "development",
         source: "backend",
-        logger: "linkcv.http",
+        logger: "linkresume.http",
         message: "http request completed",
         requestId: "request-system-1",
         taskId: null,

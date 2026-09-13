@@ -22,7 +22,7 @@ export function LandingPage({ onStart, onLogin }: LandingPageProps) {
   const pageRef = useRef<HTMLDivElement>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     try {
-      return localStorage.getItem("linkcv-theme") === "dark" ? "dark" : "light";
+      return localStorage.getItem("linkresume-theme") === "dark" ? "dark" : "light";
     } catch {
       return "light";
     }
@@ -32,7 +32,7 @@ export function LandingPage({ onStart, onLogin }: LandingPageProps) {
     setTheme((current) => {
       const next = current === "dark" ? "light" : "dark";
       try {
-        localStorage.setItem("linkcv-theme", next);
+        localStorage.setItem("linkresume-theme", next);
       } catch {
         // localStorage may be unavailable in privacy-restricted contexts.
       }

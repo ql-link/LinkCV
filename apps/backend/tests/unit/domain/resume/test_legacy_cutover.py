@@ -1,15 +1,15 @@
 import pytest
 
-from linkcv.domain.resume.legacy_cutover import (
+from linkresume.domain.resume.legacy_cutover import (
     LegacyCutoverError,
     convert_legacy_document,
     convert_legacy_template,
     presentation_for_legacy,
     rich_text_blocks,
 )
-from linkcv.domain.resume.models import ListBlock, ParagraphBlock, RowBlock
-from linkcv.domain.resume_document import RichText, default_resume_document
-from linkcv.domain.resume_style import PageStyle, default_resume_style
+from linkresume.domain.resume.models import ListBlock, ParagraphBlock, RowBlock
+from linkresume.domain.resume_document import RichText, default_resume_document
+from linkresume.domain.resume_style import PageStyle, default_resume_style
 
 
 def test_cutover_converts_legacy_markdown_icons_and_preserves_marks_links_and_unknown_text() -> None:

@@ -19,9 +19,9 @@ export interface DesktopTarget {
 }
 
 export interface DesktopEnv {
-  LINKCV_DESKTOP_ENV?: string;
-  LINKCV_DESKTOP_ORIGIN?: string;
-  LINKCV_DESKTOP_DEV_URL?: string;
+  LINKRESUME_DESKTOP_ENV?: string;
+  LINKRESUME_DESKTOP_ORIGIN?: string;
+  LINKRESUME_DESKTOP_DEV_URL?: string;
 }
 
 /** 打包时由构建脚本写入 dist/built-in-env.json 的目标环境。 */
@@ -108,25 +108,25 @@ export function resolveDesktopTarget(
   const warnings: string[] = [];
   if (mode === "dev") {
     const devUrl =
-      normalizeHttpOrigin(env.LINKCV_DESKTOP_DEV_URL, "LINKCV_DESKTOP_DEV_URL", warnings, false) ??
+      normalizeHttpOrigin(env.LINKRESUME_DESKTOP_DEV_URL, "LINKRESUME_DESKTOP_DEV_URL", warnings, false) ??
       DEFAULT_DEV_URL;
     return { mode, preset: "development", loadUrl: devUrl, origin: devUrl, warnings };
   }
 
   let preset: DesktopPreset = "production";
-  const requested = env.LINKCV_DESKTOP_ENV ?? builtIn?.env;
+  const requested = env.LINKRESUME_DESKTOP_ENV ?? builtIn?.env;
   if (requested === "development" || requested === "production") {
     preset = requested;
   } else if (requested !== undefined) {
-    warnings.push(`LINKCV_DESKTOP_ENV 仅支持 development/production，已按 production 处理：${requested}`);
+    warnings.push(`LINKRESUME_DESKTOP_ENV 仅支持 development/production，已按 production 处理：${requested}`);
   }
 
   const defaultOrigin =
     preset === "development" ? DEFAULT_DEVELOPMENT_ORIGIN : DEFAULT_PRODUCTION_ORIGIN;
   const origin =
     normalizeHttpOrigin(
-      env.LINKCV_DESKTOP_ORIGIN ?? builtIn?.origin,
-      "LINKCV_DESKTOP_ORIGIN",
+      env.LINKRESUME_DESKTOP_ORIGIN ?? builtIn?.origin,
+      "LINKRESUME_DESKTOP_ORIGIN",
       warnings,
       preset === "development",
     ) ?? defaultOrigin;

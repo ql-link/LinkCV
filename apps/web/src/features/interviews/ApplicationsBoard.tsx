@@ -65,8 +65,8 @@ type InterviewColumnGroup = {
   interviewRoundNo: number | null;
 };
 
-const BOARD_COLUMN_ORDER_STORAGE_KEY = "linkcv:career-applications:column-order:v1";
-const BOARD_COLUMN_DRAG_TYPE = "application/x-linkcv-board-column";
+const BOARD_COLUMN_ORDER_STORAGE_KEY = "linkresume:career-applications:column-order:v1";
+const BOARD_COLUMN_DRAG_TYPE = "application/x-linkresume-board-column";
 
 function readStoredColumnOrder(): string[] {
   try {

@@ -11,25 +11,25 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select, update
 
-from linkcv.core.config import Settings
-from linkcv.core.database import utc_now
-from linkcv.core.errors import ApiError
-from linkcv.main import create_app
-from linkcv.modules.agent.models import (
+from linkresume.core.config import Settings
+from linkresume.core.database import utc_now
+from linkresume.core.errors import ApiError
+from linkresume.main import create_app
+from linkresume.modules.agent.models import (
     AgentMessage,
     AgentRun,
     AgentSession,
     AgentToolCall,
     ResumeChangeProposal,
 )
-from linkcv.modules.agent.pi_client import stream_pi_run
-from linkcv.modules.agent.service import create_run
-from linkcv.modules.datasets.models import UserDataset
-from linkcv.modules.identity.models import User
-from linkcv.modules.job_descriptions.models import JobDescription
-from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
-from linkcv.modules.llm.service import LLMError
-from linkcv.modules.resumes.models import (
+from linkresume.modules.agent.pi_client import stream_pi_run
+from linkresume.modules.agent.service import create_run
+from linkresume.modules.datasets.models import UserDataset
+from linkresume.modules.identity.models import User
+from linkresume.modules.job_descriptions.models import JobDescription
+from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkresume.modules.llm.service import LLMError
+from linkresume.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
@@ -68,7 +68,7 @@ def build_app():
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="agent-routes-test-secret-at-least-32-bytes",
-            linkcv_internal_agent_token=INTERNAL_TOKEN,
+            linkresume_internal_agent_token=INTERNAL_TOKEN,
         ),
         storage=FakeStorage(),
         redis=FakeRedis(),
@@ -150,9 +150,9 @@ def internal_headers(token: str = INTERNAL_TOKEN) -> dict[str, str]:
 
 def editor_data(base: dict, markdown: str) -> dict:
     data = {**base, "sections": []}
-    heading = re.search(r"^## \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
-    entry = re.search(r"^### \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
-    bullets = re.findall(r"^- \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    heading = re.search(r"^## \[\[linkresume-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    entry = re.search(r"^### \[\[linkresume-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    bullets = re.findall(r"^- \[\[linkresume-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
     assert heading is not None and entry is not None and bullets
 
     def value(node_id: str, text: str) -> dict:
@@ -670,10 +670,10 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         resume = create_resume(client, app)
         markdown = "\n\n".join(
             [
-                "## [[linkcv-block:node_section000000001]]工作经历",
-                "### [[linkcv-block:node_entry00000000001]]示例公司 · 后端工程师",
-                "- [[linkcv-block:node_bullet0000000001]]负责平台性能优化",
-                "- [[linkcv-block:node_bullet0000000002]]负责平台性能优化",
+                "## [[linkresume-block:node_section000000001]]工作经历",
+                "### [[linkresume-block:node_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkresume-block:node_bullet0000000001]]负责平台性能优化",
+                "- [[linkresume-block:node_bullet0000000002]]负责平台性能优化",
             ]
         )
         saved = client.put(
@@ -852,9 +852,9 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
         resume = create_resume(client, app)
         markdown = "\n\n".join(
             [
-                "## [[linkcv-block:node_section000000001]]工作经历",
-                "### [[linkcv-block:node_entry00000000001]]示例公司 · 后端工程师",
-                "- [[linkcv-block:node_bullet0000000001]]负责平台性能优化",
+                "## [[linkresume-block:node_section000000001]]工作经历",
+                "### [[linkresume-block:node_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkresume-block:node_bullet0000000001]]负责平台性能优化",
             ]
         )
         saved = client.put(
@@ -1167,7 +1167,7 @@ def test_cancel_does_not_overwrite_a_run_that_completed_while_waiting(
                 other_db.commit()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.routes.cancel_pi_run", complete_during_cancel
+            "linkresume.modules.agent.routes.cancel_pi_run", complete_during_cancel
         )
 
         response = client.post(f"/api/agent/runs/{run_id}/cancel")
@@ -1221,7 +1221,7 @@ def test_pi_stream_emits_failure_when_upstream_ends_without_terminal_event(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -1291,7 +1291,7 @@ def test_pi_stream_persists_successful_usage_and_assistant_message(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -1446,7 +1446,7 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -1518,7 +1518,7 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
         return_value=SimpleNamespace(adapter="openai")
     )
     check_chain = AsyncMock()
-    monkeypatch.setattr("linkcv.modules.agent.routes.check_pi_readiness", check_chain)
+    monkeypatch.setattr("linkresume.modules.agent.routes.check_pi_readiness", check_chain)
     with TestClient(app) as client:
         internal = client.get("/internal/agent/readiness", headers=internal_headers())
         public = client.get("/api/agent/readiness")

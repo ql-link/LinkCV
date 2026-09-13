@@ -117,7 +117,7 @@ final result: passed
 
 没有剩余 P0/P1/P2 问题。
 
-- 字体与排版：沿用 LinkCV 系统字体、公司 12px、岗位 15px、状态 12px 的既有层级；新增时间元数据为 11px、500 字重，保持可读且不抢状态层级，长岗位继续单行截断。
+- 字体与排版：沿用 LinkResume 系统字体、公司 12px、岗位 15px、状态 12px 的既有层级；新增时间元数据为 11px、500 字重，保持可读且不抢状态层级，长岗位继续单行截断。
 - 间距与布局：默认 1920px 视口下看板内容宽 `1860px`，前六列各 `310px` 并全部完整可见，第七列从右侧边界开始；1440px 下列宽保持 `280px`，完整展示五列并横向滚动。卡片恢复为紧凑的 `118px` 高度，底部使用单行左右布局，状态靠左、时间靠右，并以 `8px` 弹性间距隔开。
 - 色彩与 Token：页面、卡片、边框、状态和元数据继续消费现有 `--ui-*` 与 `--career-state-*` Token；时间行使用 muted 文本色，没有引入原型外的新强调色。
 - 图片与图标：看板无栅格内容；时间使用项目现有 Lucide `Clock3`，拖动手柄和三点菜单保持原有图标与尺寸，没有用字符或 CSS 绘图替代。
@@ -184,7 +184,7 @@ final result: passed
 
 没有剩余 P0/P1/P2 问题。
 
-- 字体与排版：沿用 LinkCV 既有字体、字号、标题层级与省略规则；本次没有改动文字样式。
+- 字体与排版：沿用 LinkResume 既有字体、字号、标题层级与省略规则；本次没有改动文字样式。
 - 间距与布局：栏间 gap 为 `0px`，相邻栏共用连续的 1px 竖向分隔线；栏内 12px inset、260px 列宽、卡片高度与滚动行为保持原实现。
 - 色彩与 Token：所有栏背景实测为透明 `rgba(0, 0, 0, 0)`，自然透出项目背景；第二栏起使用由 `--ui-border` 混合得到的 68% 浅色分隔线。
 - 图片与图标：目标区域没有新增图片资产；拖拽手柄与卡片菜单继续使用项目既有 Lucide 图标。
@@ -212,7 +212,7 @@ final result: passed
 
 ## Evidence
 
-- Source visual truth: 用户提供的 `LinkCV 2.zip` 中 `design_handoff_resume_editor/design_files/ui_kits/resume-workbench/Workbench.jsx`。
+- Source visual truth: 用户提供的 `LinkResume 2.zip` 中 `design_handoff_resume_editor/design_files/ui_kits/resume-workbench/Workbench.jsx`。
 - Implementation: 本地 `http://127.0.0.1:4173/`。
 - Comparison: 在相同桌面视口下分别核对完整工作台与 A4 纸张区域；截图仅作为本地人工验收证据，不进入仓库。
 - Intended viewport: desktop `1440 × 820` CSS px，device density `1`。
@@ -260,8 +260,8 @@ final result: passed
 
 - Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-08784b34-174e-4d69-92ce-c3106fbc335c.png`、`/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-cd50507f-cb0e-4b3d-9ad4-f9bbb09343fe.png`、`/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-7701bfe9-9f1e-4a6a-a003-78ce2eb9d16e.png` 与 `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-82544ac8-2299-4835-b365-baa0e54aa995.png`。前三张分别规定内联原子引用与资料库图标，第四张规定搜索结果使用不可选择的分类标题。
 - Implementation route: `http://127.0.0.1:5173/assistant`，Chrome 已登录桌面状态。
-- Implementation screenshots: `/private/tmp/linkcv-assistant-inline-reference.png`、`/private/tmp/linkcv-assistant-dataset-icon.png` 与 `/private/tmp/linkcv-assistant-grouped-mentions.png`，均为 `1920 × 1887` px，桌面 CSS 视口与 device density 均为 `1`。
-- Combined comparison: `/private/tmp/linkcv-assistant-inline-comparison.png`，`1298 × 1068` px；上方保留两张原始参考，下方为实现截图的输入区等比聚焦裁切。
+- Implementation screenshots: `/private/tmp/linkresume-assistant-inline-reference.png`、`/private/tmp/linkresume-assistant-dataset-icon.png` 与 `/private/tmp/linkresume-assistant-grouped-mentions.png`，均为 `1920 × 1887` px，桌面 CSS 视口与 device density 均为 `1`。
+- Combined comparison: `/private/tmp/linkresume-assistant-inline-comparison.png`，`1298 × 1068` px；上方保留两张原始参考，下方为实现截图的输入区等比聚焦裁切。
 - Source pixels: `1298 × 399` 与 `329 × 64`；参考是局部功能示意而非完整同视口页面，因此只比较编辑器内部结构、引用位置和视觉层级，不对页面留白做像素级判断。
 - State: 输入真实资料名前缀 `@mock-dev-20260823-a1-2`，Tab 选择首项，再分别在引用后输入“这是什么”、按 Home 在引用前输入“你好 ”。
 
@@ -318,8 +318,8 @@ final result: passed
 - Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-998d0f84-cb0c-47e4-ad4c-a8f8447b8464.png` 提供对话页蓝色羽毛的轮廓参考；用户文字要求导航顺序改为“我的简历、简历模板、AI 助手、求职中心、资料库”，并要求重新生成黑白线性版本，不直接复用原图。
 - Generated asset: `apps/web/src/assets/assistant-feather-outline.png`，`128 × 128` RGBA 透明底；使用内置图片生成生成新线稿后，按实际 16px 导航槽位裁切缩放。
 - Implementation route: `http://127.0.0.1:5173/assistant`，Chrome 已登录桌面状态，AI 助手为激活项。
-- Implementation screenshots: `/private/tmp/linkcv-navigation-feather-active-full.png` 与聚焦导航区域 `/private/tmp/linkcv-navigation-feather-active.png`。
-- Combined comparison: `/private/tmp/linkcv-navigation-feather-comparison.png`，左侧是来源羽毛，右侧是实际导航激活态。
+- Implementation screenshots: `/private/tmp/linkresume-navigation-feather-active-full.png` 与聚焦导航区域 `/private/tmp/linkresume-navigation-feather-active.png`。
+- Combined comparison: `/private/tmp/linkresume-navigation-feather-comparison.png`，左侧是来源羽毛，右侧是实际导航激活态。
 
 ## Findings
 
@@ -357,7 +357,7 @@ final result: passed
 
 - Source visual truth: `/Users/fang/.codex/generated_images/01a0586a-25e6-7c21-b13a-8f0eb8f55d24/exec-9e20a740-0523-4238-8eb1-a3702c8d6b28.png`，即用户确认的第 3 版原型。
 - Implementation: `http://127.0.0.1:5173/career/applications/34`，真实状态为 1 条已完成笔试和 1 条文字记录。
-- Implementation screenshot: `/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/linkcv-record-card-final.png`；原型与实现聚焦对照：`/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/linkcv-record-card-comparison.png`。
+- Implementation screenshot: `/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/linkresume-record-card-final.png`；原型与实现聚焦对照：`/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/linkresume-record-card-comparison.png`。
 - Desktop viewport: `1470 × 837` CSS px；窄屏 viewport: `390 × 844` CSS px。原型像素尺寸为 `1450 × 1085`。
 - Full-view comparison: 核对求职进度、记录区与右侧岗位信息之间的宽度、层级和留白；聚焦比较按记录区裁切并归一化宽度。
 
@@ -407,14 +407,14 @@ final result: passed
 ### Visual truth and evidence
 
 - Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-daf6a511-bbdc-4902-abd4-6a9fe1656d23.png`（收起态，`235 × 136` px）与 `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-27d63f44-3a4c-4683-a67f-beba833de2f9.png`（展开态，`584 × 151` px）。
-- Implementation screenshots: `/private/tmp/linkcv-resumes-search-collapsed-desktop.png` 与 `/private/tmp/linkcv-resumes-search-expanded-desktop.png`（浏览器视口请求 `1440 × 900` CSS px，实际内容截图 `1309 × 818` px），以及 `/private/tmp/linkcv-resumes-search-expanded-mobile-fixed.png`（视口请求 `390 × 844` CSS px，实际内容截图 `354 × 767` px）。浏览器密度为 1；未把浏览器外框计入比较。
+- Implementation screenshots: `/private/tmp/linkresume-resumes-search-collapsed-desktop.png` 与 `/private/tmp/linkresume-resumes-search-expanded-desktop.png`（浏览器视口请求 `1440 × 900` CSS px，实际内容截图 `1309 × 818` px），以及 `/private/tmp/linkresume-resumes-search-expanded-mobile-fixed.png`（视口请求 `390 × 844` CSS px，实际内容截图 `354 × 767` px）。浏览器密度为 1；未把浏览器外框计入比较。
 - State: 已登录的 `/resumes`，浅色工作区；分别比较默认收起态、点击后聚焦的展开态，以及移动端展开态。
 - Full-view comparison: 桌面完整页面核对搜索框与“导入简历 / 新建简历”的相对位置、操作层级和展开后的工具栏密度；移动端完整页面核对展开时无水平溢出且两个操作按钮保持可见。
-- Focused-region comparison: 在同一次视觉比较中并列打开两张来源图与 `/private/tmp/linkcv-search-collapsed-crop.jpg`、`/private/tmp/linkcv-search-expanded-crop.jpg`，核对圆形轮廓、胶囊比例、左右图标、占位文案和边框。实现裁切保留了少量相邻按钮，用于确认真实工具栏间距。
+- Focused-region comparison: 在同一次视觉比较中并列打开两张来源图与 `/private/tmp/linkresume-search-collapsed-crop.jpg`、`/private/tmp/linkresume-search-expanded-crop.jpg`，核对圆形轮廓、胶囊比例、左右图标、占位文案和边框。实现裁切保留了少量相邻按钮，用于确认真实工具栏间距。
 
 ### Required fidelity surfaces
 
-- Fonts and typography: 输入与占位文字使用 LinkCV 的 `--ui-font-sans`、14px 控件字号；视觉权重和参考图一致，中文占位文案改为任务明确的“搜索简历…”。
+- Fonts and typography: 输入与占位文字使用 LinkResume 的 `--ui-font-sans`、14px 控件字号；视觉权重和参考图一致，中文占位文案改为任务明确的“搜索简历…”。
 - Spacing and layout rhythm: 收起态为 `44 × 44` 圆形；桌面展开为 `280 × 44` 胶囊，左右各保留 42px 图标区。尺寸略小于独立参考画布，以对齐现有工作区 40–44px 工具栏密度。移动端展开后独占一行，关闭后恢复紧凑操作行。
 - Colors and tokens: 白色表面、细灰边框、近黑图标与弱化占位文字全部映射既有 `--ui-*` Token；展开态输入焦点只加深胶囊自身边框，不叠加全局蓝色外轮廓。收起按钮与关闭按钮继续保留键盘 `focus-visible` 提示。
 - Image and asset fidelity: 视觉只包含标准搜索与关闭图标，使用项目已配置的 Lucide 图标库；没有缺失的位图、品牌资产或用 CSS/字符伪造图标。
@@ -430,7 +430,7 @@ final result: passed
 
 1. 初次移动端比较发现 P2：展开搜索与两个页面操作争抢同一行，右侧操作可能被挤出视口。
 2. 修复：只在“全部简历”页面的移动端把标题与操作区改为上下布局；展开搜索独占一行，导入和新建按钮移到下一行，其他工作区页面不受影响。
-3. 修复后重新捕获 `/private/tmp/linkcv-resumes-search-expanded-mobile-fixed.png`；搜索框、导入和新建操作均完整可见，页面无水平溢出。没有剩余 P0/P1/P2 问题。
+3. 修复后重新捕获 `/private/tmp/linkresume-resumes-search-expanded-mobile-fixed.png`；搜索框、导入和新建操作均完整可见，页面无水平溢出。没有剩余 P0/P1/P2 问题。
 4. 用户复查发现 P1：展开态同时命中组件 `:focus-within` 与项目全局 `input:focus-visible`，形成蓝色双层外框和输入区矩形边界。修复后输入框通过独立 `data-slot` 隔离全局轮廓，组件不再绘制外圈；实时浏览器计算样式确认输入与容器 `outline-style: none`，并把关闭按钮 hover 区域收敛为 `32 × 32` 圆形。
 
 ### Follow-up polish
@@ -444,7 +444,7 @@ final result: passed
 ### Visual truth and evidence
 
 - Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-99d26f5f-0378-4d16-8de1-b69ac13353ec.png`，红框标出需要移除的“全部 1”筛选胶囊与需要改造的“新建简历”按钮；同一行右侧“最近更新”描述按用户文字要求一并移除。
-- Implementation screenshots: `/private/tmp/linkcv-resumes-action-cleanup-final.png`（桌面悬浮态）、`/private/tmp/linkcv-resumes-create-button-desktop.png`（桌面默认态）与 `/private/tmp/linkcv-resumes-create-button-mobile.png`（移动端）。
+- Implementation screenshots: `/private/tmp/linkresume-resumes-action-cleanup-final.png`（桌面悬浮态）、`/private/tmp/linkresume-resumes-create-button-desktop.png`（桌面默认态）与 `/private/tmp/linkresume-resumes-create-button-mobile.png`（移动端）。
 - Full-view comparison: 在同一次视觉比较中并列打开来源截图与最终桌面实现，核对筛选行已完整移除、卡片网格自然上移，以及搜索、导入、新建三个操作保持对齐。
 
 ### Required fidelity surfaces
@@ -464,7 +464,7 @@ final result: passed
 ### Follow-up
 
 - 用户进一步要求移除“1 份简历 · 按最近更新排列”和“提示：点击简历卡片可继续编辑，分享按钮只管理当前简历的公开链接。”，实现已同步删除对应 DOM 与不再使用的提示样式。
-- Follow-up screenshot: `/private/tmp/linkcv-resumes-copy-cleanup-final.png`；浏览器正文核对两段目标文字均不存在，标题与操作区之间未留下额外占位。
+- Follow-up screenshot: `/private/tmp/linkresume-resumes-copy-cleanup-final.png`；浏览器正文核对两段目标文字均不存在，标题与操作区之间未留下额外占位。
 
 final result: passed
 
@@ -479,7 +479,7 @@ final result: passed
 ### Required fidelity surfaces
 
 - Shape and material: `outline`、`secondary` 与带文字的 `ghost` 使用透明背景、完整圆弧和单层灰色细边框；主操作、危险操作、纯图标按钮与导航控件不套用。
-- Hover and focus: 两个半边框从按钮中部向右、向左分别以 `scaleX` 展开，最终形成完整 LinkCV 蓝色描边与低强度柔光；键盘 `focus-visible` 与打开态使用相同最终反馈。
+- Hover and focus: 两个半边框从按钮中部向右、向左分别以 `scaleX` 展开，最终形成完整 LinkResume 蓝色描边与低强度柔光；键盘 `focus-visible` 与打开态使用相同最终反馈。
 - Motion: 描边只动画 `transform` 与 `opacity`，时长使用现有 `--ui-duration-base`；`prefers-reduced-motion` 将时长降至 `0.01ms`，不依赖动画完成业务动作。
 - Content and icons: 保留各业务按钮原有文字和项目既有图标，不强制添加参考图中的 `>` 符号，也不改变点击行为。
 
@@ -523,8 +523,8 @@ final result: passed
 ### Visual truth
 
 - Source: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-c1ac7690-f3aa-4dc6-be6c-f8322563511d.png`。
-- Implementation: `/tmp/linkcv-classic-technical-viewport-v5.png`。
-- Side-by-side comparison: `/tmp/linkcv-classic-technical-comparison.svg.png`。
+- Implementation: `/tmp/linkresume-classic-technical-viewport-v5.png`。
+- Side-by-side comparison: `/tmp/linkresume-classic-technical-comparison.svg.png`。
 - State: 使用虚构“张三”内容创建简历后进入真实编辑器，保存状态为“已保存”，主题为 `classic-technical`，智能一页开启。
 - Source capture: `1000 × 1414` px；implementation viewport: `1280 × 1400` CSS px / PNG px，DPR 1；A4 paper: `793.69 × 1122.52` CSS px。
 
@@ -551,9 +551,9 @@ final result: passed
 
 final result: passed
 
-## LinkCV Design System
+## LinkResume Design System
 
-- 登录、主页、编辑器与预览工作区统一使用 LinkCV 的黑白中性色、品牌标记、排版、间距、圆角、阴影与交互状态。
+- 登录、主页、编辑器与预览工作区统一使用 LinkResume 的黑白中性色、品牌标记、排版、间距、圆角、阴影与交互状态。
 - 编辑器和预览工具栏保留原有命令、分页、保存、源码与导出入口，并在窄屏下保持可滚动和可操作。
 - 简历纸张的 Markdown 渲染、主题变量、显式粗体和打印行为未被应用壳样式污染。
 
@@ -567,8 +567,8 @@ final result: passed
 ## 品牌一致性
 
 - 登录页、Landing 顶栏与 Footer、Home 侧边栏复用同一个 `Brand` 组件和同一份矢量品牌资产。
-- 品牌标记保持 32px 深色圆角方形、白色 LinkCV 符号、9px 图文间距和“LinkCV”字标。
-- 浏览器标签名称为“LinkCV”，favicon 使用同款深色圆角品牌标记。
+- 品牌标记保持 32px 深色圆角方形、白色 LinkResume 符号、9px 图文间距和“LinkResume”字标。
+- 浏览器标签名称为“LinkResume”，favicon 使用同款深色圆角品牌标记。
 
 ## 结论
 
@@ -581,7 +581,7 @@ final result: passed
 
 - Reference: current `dev` design tokens and shared `Brand` component, plus the supplied Apple Fluid Interface brief.
 - The admin module now lives under `apps/web` and routes through the current dev router.
-- Visual tokens use dev's grayscale surfaces, system font stack, radii, shadows, dark-mode variables, and LinkCV brand mark.
+- Visual tokens use dev's grayscale surfaces, system font stack, radii, shadows, dark-mode variables, and LinkResume brand mark.
 - Admin-owned motion uses Motion springs and only animates transform or opacity; its CSS contains no transitions or keyframes.
 - Reduced motion, reduced transparency, and increased contrast have explicit fallbacks.
 - Mock login, direct admin routes, section navigation, and model drawer pass component tests.
@@ -593,9 +593,9 @@ final result: passed
 
 ## Visual truth
 
-- Source: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-minimax-reference-1280x720.png`
-- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-landing-implementation-1280x720.png`
-- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-design-comparison.png`
+- Source: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-minimax-reference-1280x720.png`
+- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-landing-implementation-1280x720.png`
+- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-design-comparison.png`
 - State: public landing page, light theme, initial viewport
 - Source viewport: 1280 × 720 CSS px, DPR 1
 - Implementation viewport: 1280 × 720 CSS px, DPR 1
@@ -612,7 +612,7 @@ final result: passed
 - P0: none.
 - P1: none.
 - P2: none.
-- Deliberate adaptation: the source site's media cards are replaced by fictitious resume sheets, and its download actions are replaced by LinkCV's single resume-creation CTA. The centered hierarchy, elliptical perimeter, negative space and scroll exit behavior are preserved.
+- Deliberate adaptation: the source site's media cards are replaced by fictitious resume sheets, and its download actions are replaced by LinkResume's single resume-creation CTA. The centered hierarchy, elliptical perimeter, negative space and scroll exit behavior are preserved.
 
 ## Responsive and interaction checks
 
@@ -627,11 +627,11 @@ Final result: passed
 
 ### Visual truth
 
-- Source: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-minimax-reference-1280x720.png`，并以用户本轮明确反馈“黑白、文字真正居中、消除滚动空白”为更高优先级修订依据。
-- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-landing-blackwhite-1280x720.png`。
-- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-blackwhite-comparison.png`。
-- Transition evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-landing-transition-1280x720.png`。
-- Mobile evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-landing-blackwhite-mobile-390x844.png`。
+- Source: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-minimax-reference-1280x720.png`，并以用户本轮明确反馈“黑白、文字真正居中、消除滚动空白”为更高优先级修订依据。
+- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-landing-blackwhite-1280x720.png`。
+- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-blackwhite-comparison.png`。
+- Transition evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-landing-transition-1280x720.png`。
+- Mobile evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-landing-blackwhite-mobile-390x844.png`。
 - State: public landing page, light theme, initial and transition scroll states.
 - Desktop: source and implementation均为 1280 × 720 CSS px / PNG px，DPR 1；comparison为 2560 × 764 px。
 - Mobile: 390 × 844 CSS px / PNG px，DPR 1。
@@ -667,10 +667,10 @@ final result: passed
 ### Visual truth
 
 - Source: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/minimax-flow-reference-1280x720.png`。
-- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-resume-flow-1280x720.png`。
-- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-resume-flow-comparison.png`。
-- Focused foreground comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-resume-flow-focus-comparison.png`。
-- Scroll transition: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-resume-flow-transition-1280x720.png`。
+- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-resume-flow-1280x720.png`。
+- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-resume-flow-comparison.png`。
+- Focused foreground comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-resume-flow-focus-comparison.png`。
+- Scroll transition: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-resume-flow-transition-1280x720.png`。
 - State: public landing page, light theme, continuously moving orbit at initial scroll position.
 - Source and implementation: 1280 × 720 CSS px / PNG px, DPR 1；comparison为 2560 × 764 px，focused comparison为 2560 × 444 px。
 
@@ -679,7 +679,7 @@ final result: passed
 - Typography: 简历改为标准履历层级：姓名、职位、地区、简介、工作经历、项目经历、教育与能力；没有大面积黑色装饰块。
 - Spacing and layout: 14张简历沿同一条椭圆轨道连续运行；前场卡片保持与中心CTA错位，后场卡片围绕标题留出可读空间。
 - Colors: 保持黑、白、灰，中性细线替代原先的黑色竖条和实心头像块。
-- Image/asset quality: MiniMax使用横向媒体图片，LinkCV按产品语义使用真实HTML简历纸张；前景内容清晰，后景通过连续景深虚化，不使用占位图。
+- Image/asset quality: MiniMax使用横向媒体图片，LinkResume按产品语义使用真实HTML简历纸张；前景内容清晰，后景通过连续景深虚化，不使用占位图。
 - Copy: 首页产品文案不变；简历示例均使用虚构姓名、公司、项目和学校。
 
 ### Motion comparison history
@@ -704,8 +704,8 @@ final result: passed
 ### Visual truth
 
 - Source: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/minimax-flow-reference-1280x720.png`。
-- Implementation scroll state: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-scroll-upright-mid-1280x720.png`。
-- Combined comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-scroll-upright-comparison.png`。
+- Implementation scroll state: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-scroll-upright-mid-1280x720.png`。
+- Combined comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-scroll-upright-comparison.png`。
 - State: public landing page, light theme, Hero scroll container at `scrollTop=170`。
 
 ### Motion verification
@@ -728,10 +728,10 @@ final result: passed
 
 ### Visual truth
 
-- Previous uniform state: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-resume-flow-1280x720.png`。
-- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-varied-resume-styles-1280x720.png`。
-- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-varied-resume-styles-comparison.png`。
-- Mobile evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-varied-resume-styles-mobile-390x844.png`。
+- Previous uniform state: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-resume-flow-1280x720.png`。
+- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-varied-resume-styles-1280x720.png`。
+- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-varied-resume-styles-comparison.png`。
+- Mobile evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-varied-resume-styles-mobile-390x844.png`。
 - State: public landing page, light theme, continuous orbit at initial scroll position.
 
 ### Required fidelity surfaces
@@ -755,11 +755,11 @@ final result: passed
 
 ### Visual truth
 
-- Previous half-height color block: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-resume-flow-transition-1280x720.png`。
-- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-fullscreen-bridge-1280x720.png`。
-- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-fullscreen-bridge-comparison.png`。
-- Transition evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-fullscreen-bridge-transition-1280x837.png`。
-- Mobile evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkcv-fullscreen-bridge-mobile-390x844.png`。
+- Previous half-height color block: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-resume-flow-transition-1280x720.png`。
+- Implementation: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-fullscreen-bridge-1280x720.png`。
+- Full comparison: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-fullscreen-bridge-comparison.png`。
+- Transition evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-fullscreen-bridge-transition-1280x837.png`。
+- Mobile evidence: `/Users/fang/.codex/visualizations/2026/08/10/019fe9ed-929a-7333-9f5f-22c4921abc0c/linkresume-fullscreen-bridge-mobile-390x844.png`。
 
 ### Required fidelity surfaces
 
@@ -792,13 +792,13 @@ final result: passed
   - `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-f9e11100-b223-4546-b92b-8bd4495e25c4.png` (729 × 1021, civic reference)
   - `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-23234cd3-361e-4848-814e-4632884a1c7f.png` (737 × 1028, creative reference)
 - Browser-rendered implementation screenshots:
-  - `/private/tmp/linkcv-administrative-sidebar-cn.png`
-  - `/private/tmp/linkcv-campus-professional-cn.png`
-  - `/private/tmp/linkcv-civic-service-cn.png`
-  - `/private/tmp/linkcv-creative-orange-cn.png`
+  - `/private/tmp/linkresume-administrative-sidebar-cn.png`
+  - `/private/tmp/linkresume-campus-professional-cn.png`
+  - `/private/tmp/linkresume-civic-service-cn.png`
+  - `/private/tmp/linkresume-creative-orange-cn.png`
 - Combined comparison evidence:
-  - `/private/tmp/linkcv-full-comparison.png`
-  - `/private/tmp/linkcv-interest-comparison.png`
+  - `/private/tmp/linkresume-full-comparison.png`
+  - `/private/tmp/linkresume-interest-comparison.png`
 - Viewport: 900 × 1250 CSS px, device density 1. The rendered A4 paper measured 794 × 1123 CSS px for every template.
 - Normalization: full-view source and implementation pages were proportionally fitted into equal 350 × 370 comparison cells; the interest source and implementation region were proportionally fitted into equal-height focused cells without stretching.
 - State: read-only full preview using the production `ResumePreview`, Markdown parser, Tiptap extensions, theme classes and the `0027` template content.
@@ -906,9 +906,9 @@ final result: passed
 
 - Source: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-66ddcd04-6aed-43d4-8511-b18972b0fa1b.png`
 - Implementation: `http://127.0.0.1:5174/missing-page`
-- Final capture: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/linkcv-404-691x572-final.png`
+- Final capture: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/linkresume-404-691x572-final.png`
 - Source pixels: 691 × 572; implementation pixels: 691 × 572; CSS viewport: 691 × 572.
-- Both artifacts show the default desktop 404 state. The implementation intentionally uses LinkCV background and text tokens plus Chinese copy.
+- Both artifacts show the default desktop 404 state. The implementation intentionally uses LinkResume background and text tokens plus Chinese copy.
 
 ## Iterations
 
@@ -938,7 +938,7 @@ No focused crop was needed because every fidelity-critical element is large and 
 
 ### Comparison and interaction evidence
 
-- Preserved the existing LinkCV workspace shell instead of copying the generated image's fictional sidebar.
+- Preserved the existing LinkResume workspace shell instead of copying the generated image's fictional sidebar.
 - Matched the selected direction: centered modal, resume name above the template carousel, prominent selected card, page controls, and primary create-and-enter action.
 - Desktop dialog measured `760 × 647` CSS px; its template section had no overflow at `1280 × 720`.
 - Mobile collapses to one visible template card and keeps the footer actions available; the template area scrolls within the modal when needed.
@@ -1026,7 +1026,7 @@ final result: passed
 
 ## Required fidelity surfaces
 
-- Fonts and typography: LinkCV UI keeps the existing Inter/system stack and current utility weights. Resume typography remains owned by each real template theme. Header truncation and compact control labels remain intact.
+- Fonts and typography: LinkResume UI keeps the existing Inter/system stack and current utility weights. Resume typography remains owned by each real template theme. Header truncation and compact control labels remain intact.
 - Spacing and layout rhythm: dialog proportions, 86 px zoom rail, center alignment, side-card depth, footer separation, and 48 px desktop navigation targets match the mock's hierarchy. Mobile controls remain at least 40–44 px and do not overlap persistent actions.
 - Colors and visual tokens: implementation uses existing `--ui-*` surfaces, borders, accent, ring, radii, and shadows; no page-local brand palette was introduced.
 - Image quality and asset fidelity: no placeholder, CSS-drawn resume, or rasterized mock is used. All sheets are live `ResumePreview` instances; chevrons reuse the configured Lucide icon family.
@@ -1066,9 +1066,9 @@ final result: passed
 **Rendered implementation**
 
 - URL: `http://127.0.0.1:5180/login`
-- Desktop screenshot: `/tmp/linkcv-auth-waiting-1440-final.png` at a 1440 × 900 CSS viewport and 1× density.
-- Responsive screenshots: `/tmp/linkcv-auth-waiting-1024-final.png` and `/tmp/linkcv-auth-waiting-390-final.png`.
-- Comparison image: `/tmp/linkcv-auth-design-comparison.png`.
+- Desktop screenshot: `/tmp/linkresume-auth-waiting-1440-final.png` at a 1440 × 900 CSS viewport and 1× density.
+- Responsive screenshots: `/tmp/linkresume-auth-waiting-1024-final.png` and `/tmp/linkresume-auth-waiting-390-final.png`.
+- Comparison image: `/tmp/linkresume-auth-design-comparison.png`.
 - Normalization: the 640 × 674 source was resized to 654 × 689; the implementation's 654 × 689 left-panel content region was cropped from the 1440 × 900 screenshot. Browser chrome and the unchanged right visual region were excluded.
 
 **Full-view comparison evidence**
@@ -1079,8 +1079,8 @@ final result: passed
 
 **Focused region comparison evidence**
 
-- The entire left panel was used as the focused region because all requested changes are confined there. In `/tmp/linkcv-auth-design-comparison.png`, the source is on the left and the normalized implementation is on the right.
-- Typography: existing LinkCV display and body fonts are retained; hierarchy, weight, line height, and wrapping match the reference intent.
+- The entire left panel was used as the focused region because all requested changes are confined there. In `/tmp/linkresume-auth-design-comparison.png`, the source is on the left and the normalized implementation is on the right.
+- Typography: existing LinkResume display and body fonts are retained; hierarchy, weight, line height, and wrapping match the reference intent.
 - Spacing: desktop left inset, content width, QR scale, and the security-hint position align with the source. Responsive spacing contracts without overlapping the QR image.
 - Colors and tokens: existing surface and muted-text tokens are retained; no new page palette was introduced.
 - Image quality: the browser check used a temporary crop of the supplied QR as controlled API fixture data, while production continues to render the real backend-provided `qr_base64`. The image has explicit dimensions, high fetch priority, circular clipping, and no overlay layer.
@@ -1090,7 +1090,7 @@ final result: passed
 
 - Initial finding [P2]: the QR state still inherited the old centered content column, leaving the left content visibly lower and farther right than the source; the circular elevation was also too pronounced.
 - Fix: added a WeChat-only top reading flow and narrower left-aligned content track, removed the surrounding card shell, and replaced the custom shadow with `--ui-shadow-md`.
-- Post-fix evidence: `/tmp/linkcv-auth-waiting-1440-final.png` and `/tmp/linkcv-auth-design-comparison.png` show the corrected desktop alignment and unobstructed QR image. No actionable P0/P1/P2 mismatch remains.
+- Post-fix evidence: `/tmp/linkresume-auth-waiting-1440-final.png` and `/tmp/linkresume-auth-design-comparison.png` show the corrected desktop alignment and unobstructed QR image. No actionable P0/P1/P2 mismatch remains.
 
 **Browser checks**
 
@@ -1167,7 +1167,7 @@ final result: passed
 
 ## Visual truth and evidence
 
-- Source asset: `/Users/fang/Downloads/LinkCV-app-icons/web-brand-wordmark-1701x349.png`，原图 `1701 × 349` px、RGBA 透明背景；有效像素边界为 `(20, 20)–(1681, 329)`。
+- Source asset: `/Users/fang/Downloads/LinkResume-app-icons/web-brand-wordmark-1701x349.png`，原图 `1701 × 349` px、RGBA 透明背景；有效像素边界为 `(20, 20)–(1681, 329)`。
 - Implementation asset: `apps/miniprogram/assets/linkresume-wordmark.png`，逐文件复用用户提供的原始 PNG，没有重绘或生成替代图标。
 - Actual runtime capture: `/Users/fang/.codex/visualizations/2026/08/26/01a03cbe-fff8-73c3-9f80-d9a13eb0527a/miniprogram-brand-qa/resumes-linkresume-wordmark.png`，微信开发者工具 iPhone 15 Pro Max 模拟器、访客态“我的简历”页。
 - Focused comparison: `/tmp/linkresume-brand-comparison.jpg`，同屏比较原始字标与小程序顶部真实渲染区域。
@@ -1178,7 +1178,7 @@ final result: passed
 - Rendering: 真实模拟器截图中图形、`LinkResume` 字标和透明背景均完整可见，没有拉伸、裁切、模糊底色或错误反色。
 - Accessibility: 品牌图片暴露 `LinkResume` 可访问名称；微信开发者工具可访问性树识别为 `image LinkResume`。
 - Copy consistency: 小程序导航标题、登录与扫码确认文案、访客空状态、简历详情、隐私协议兜底名称和项目说明中的可见产品名统一为 `LinkResume`。
-- Compatibility: `linkcv_*` 本地存储键、包名、项目技术标识和示例域名保持不变，避免品牌展示替换破坏已有数据与运行契约。
+- Compatibility: `linkresume_*` 本地存储键、包名、项目技术标识和示例域名保持不变，避免品牌展示替换破坏已有数据与运行契约。
 
 ## Findings
 
@@ -1193,12 +1193,12 @@ final result: passed
 ## Evidence
 
 - Source visual truth: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-5b314263-5205-4caf-969f-8963e5e49eb3.png`
-- Browser-rendered implementation: `/private/tmp/linkcv-career-progress-qa/implementation-career-progress-source-size.png`
-- Full-view comparison: `/private/tmp/linkcv-career-progress-qa/career-progress-design-comparison.png`
-- Focused board comparison: `/private/tmp/linkcv-career-progress-qa/career-progress-focused-comparison.png`
+- Browser-rendered implementation: `/private/tmp/linkresume-career-progress-qa/implementation-career-progress-source-size.png`
+- Full-view comparison: `/private/tmp/linkresume-career-progress-qa/career-progress-design-comparison.png`
+- Focused board comparison: `/private/tmp/linkresume-career-progress-qa/career-progress-focused-comparison.png`
 - Responsive captures:
-  - `/private/tmp/linkcv-career-progress-qa/implementation-career-progress-mid.png`
-  - `/private/tmp/linkcv-career-progress-qa/implementation-career-progress-narrow.png`
+  - `/private/tmp/linkresume-career-progress-qa/implementation-career-progress-mid.png`
+  - `/private/tmp/linkresume-career-progress-qa/implementation-career-progress-narrow.png`
 - Route: `http://127.0.0.1:5174/career/applications`
 - State: signed-in Development session, empty real application list using the existing development mock projection.
 - Source pixels: 1379 x 861. Implementation pixels: 1378 x 860. Both use CSS density 1; the implementation was normalized by one pixel in each dimension for the side-by-side comparison.
@@ -1221,7 +1221,7 @@ The side-by-side full view confirms the same global shell, title/tool placement,
 
 ## Focused region comparison evidence
 
-The focused comparison covers subnavigation, summary icons/numbers/dividers, the first three columns, card avatar/title/role hierarchy, stage badges, metadata rows, add actions, and empty-column behavior. Text, borders, radii, and spacing remain visually consistent with the supplied target and current LinkCV design system.
+The focused comparison covers subnavigation, summary icons/numbers/dividers, the first three columns, card avatar/title/role hierarchy, stage badges, metadata rows, add actions, and empty-column behavior. Text, borders, radii, and spacing remain visually consistent with the supplied target and current LinkResume design system.
 
 ## Comparison history
 
@@ -1252,7 +1252,7 @@ final result: passed
 - Reference: `/var/folders/hz/b8t5g29j71b5cpf22bvdflgw0000gn/T/codex-clipboard-02afc6db-3ce5-4f4a-a158-8350dc63f911.png`
 - Route: `http://127.0.0.1:5174/career/applications`
 - Comparison viewport: `1355 × 649`
-- Comparison artifact: `/private/tmp/linkcv-career-design-comparison.png`
+- Comparison artifact: `/private/tmp/linkresume-career-design-comparison.png`
 
 ## Visual checks
 
@@ -1310,7 +1310,7 @@ final result: passed
 - `npm run test:web`: 57 files and 485 tests passed.
 - `npm run typecheck` in `apps/web`: passed.
 - `npm run build:web`: passed; only the repository's existing Vite large-chunk advisory was emitted.
-- `UV_CACHE_DIR=/private/tmp/linkcv-uv-cache npm run check:design`: passed.
+- `UV_CACHE_DIR=/private/tmp/linkresume-uv-cache npm run check:design`: passed.
 - `git diff --check`: passed.
 - Component coverage includes independent base columns, dynamic `笔试/三面` columns, real first-/second-round transition payloads, scroll restoration, Shift+wheel, blank-space panning, and drag-edge auto-scroll.
 
@@ -1340,7 +1340,7 @@ final result: passed
 ## Findings
 
 - 当前没有可执行的 P0/P1/P2 差异。
-- 字体与排版：沿用 LinkCV 现有字体栈与字号 Token；标题、星期、日期、字段标签和结果摘要的层级与参考一致，没有截断或异常换行。
+- 字体与排版：沿用 LinkResume 现有字体栈与字号 Token；标题、星期、日期、字段标签和结果摘要的层级与参考一致，没有截断或异常换行。
 - 间距与布局：实现采用左日历、右时间的双栏结构，底部次要操作与主操作分组；弹层不再与外层操作栏重叠。真实表单保留产品已有的“投递日期”字段，所以外层内容密度高于参考图，这是业务结构约束，不属于选择器漂移。
 - 颜色与 Token：边框、弱背景、蓝色选中态和黑色主按钮均复用项目 Token，视觉语义与参考一致。
 - 图片与资产：选择器没有图片资产；图标继续使用项目既有 `lucide-react` 图标，没有 CSS 图形或自制 SVG 替代。
@@ -1394,9 +1394,9 @@ The focused browser capture confirms that the native time input and clock afford
 
 ## Required fidelity surfaces
 
-- Fonts and typography: existing LinkCV font stack, label hierarchy, numeric tabular alignment, and source-like weights retained.
+- Fonts and typography: existing LinkResume font stack, label hierarchy, numeric tabular alignment, and source-like weights retained.
 - Spacing and layout rhythm: two-column ratio, full-width contextual header, four-column duration row, summary spacing, and footer separation now match the source hierarchy.
-- Colors and visual tokens: existing LinkCV surface, border, accent, muted text, and primary-button tokens map cleanly to the source.
+- Colors and visual tokens: existing LinkResume surface, border, accent, muted text, and primary-button tokens map cleanly to the source.
 - Image quality and assets: no raster assets are required inside this control; the information and chevron icons use the project's existing Lucide icon set.
 - Copy and content: `选择作答时间段`, `可安排`, `开始时间`, `预计时长`, `结束时间`, and total-duration copy match the selected design intent.
 
@@ -1408,7 +1408,7 @@ The focused browser capture confirms that the native time input and clock afford
 
 ## Findings
 
-No actionable P0, P1, or P2 visual differences remain within the requested picker scope. The outer record dialog intentionally preserves the production LinkCV width instead of adopting the wider mock frame.
+No actionable P0, P1, or P2 visual differences remain within the requested picker scope. The outer record dialog intentionally preserves the production LinkResume width instead of adopting the wider mock frame.
 
 ## Primary interactions tested
 

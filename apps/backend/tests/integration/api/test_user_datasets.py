@@ -7,13 +7,13 @@ import pypdfium2 as pdfium
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from linkcv.core.config import Settings
-from linkcv.core.mq import MQPublishError
-from linkcv.core.storage import StreamUploadResult
-from linkcv.main import create_app
-from linkcv.modules.datasets.models import UserDataset
-from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import DocumentParseTask
+from linkresume.core.config import Settings
+from linkresume.core.mq import MQPublishError
+from linkresume.core.storage import StreamUploadResult
+from linkresume.main import create_app
+from linkresume.modules.datasets.models import UserDataset
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import DocumentParseTask
 from tests.fakes import FakeRedis
 
 

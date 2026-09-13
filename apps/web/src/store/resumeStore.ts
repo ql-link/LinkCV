@@ -160,7 +160,7 @@ let pendingLocalDraftTimer: ReturnType<typeof setTimeout> | null = null;
 export const LOCAL_RESUME_DRAFT_WRITE_DELAY_MS = 250;
 
 function localResumeDraftStoragePrefix(userId: string) {
-  return `linkcv:resume-draft:v1:${encodeURIComponent(userId)}:`;
+  return `linkresume:resume-draft:v1:${encodeURIComponent(userId)}:`;
 }
 
 export function localResumeDraftStorageKey(userId: string, resumeId: string) {

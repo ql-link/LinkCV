@@ -3,10 +3,10 @@ import base64
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
 from tests.fakes import FakeRedis
 
 

@@ -6,8 +6,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from linkcv.core.config import load_settings
-from linkcv.core.database import build_engine
+from linkresume.core.config import load_settings
+from linkresume.core.database import build_engine
 
 
 def _load_revision():
@@ -17,7 +17,7 @@ def _load_revision():
         / "versions"
         / "0036_migrate_resume_snapshots_to_canonical_.py"
     )
-    spec = importlib.util.spec_from_file_location("linkcv_revision_0036_preflight", path)
+    spec = importlib.util.spec_from_file_location("linkresume_revision_0036_preflight", path)
     if spec is None or spec.loader is None:
         raise RuntimeError("cannot load canonical migration")
     module = importlib.util.module_from_spec(spec)

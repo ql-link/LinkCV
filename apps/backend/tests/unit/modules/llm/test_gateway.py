@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import litellm
 
-from linkcv.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error
-from linkcv.modules.llm.schemas import (
+from linkresume.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error
+from linkresume.modules.llm.schemas import (
     ChatImageContentPart,
     ChatImageUrl,
     ChatMessage,

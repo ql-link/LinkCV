@@ -2,7 +2,7 @@
 /* Figma 89:95 / 89:203 / 89:311: 390 × 844, sheet top 145, side padding 20. */
 :host {
   font-family:
-    "LinkCV Career UI",
+    "LinkResume Career UI",
     -apple-system,
     "PingFang SC",
     sans-serif;

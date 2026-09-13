@@ -32,8 +32,8 @@ def test_no_legacy_python_schema_baseline_is_present() -> None:
 
 def test_sql_migration_executor_rejects_database_scope_changes(tmp_path: Path) -> None:
     module = load_module(
-        "linkcv_migration_sql_test",
-        REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
+        "linkresume_migration_sql_test",
+        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
     )
     sql_file = tmp_path / "unsafe.up.sql"
     sql_file.write_text("USE other_database;", encoding="utf-8")
@@ -44,8 +44,8 @@ def test_sql_migration_executor_rejects_database_scope_changes(tmp_path: Path) -
 
 def test_sql_migration_executor_keeps_json_colons_literal(tmp_path: Path) -> None:
     module = load_module(
-        "linkcv_migration_sql_json_test",
-        REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
+        "linkresume_migration_sql_json_test",
+        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
     )
     sql_file = tmp_path / "json.up.sql"
     sql_file.write_text(
@@ -80,8 +80,8 @@ def test_sql_migration_executor_keeps_percent_literals_unparameterized(
     tmp_path: Path,
 ) -> None:
     module = load_module(
-        "linkcv_migration_sql_percent_test",
-        REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
+        "linkresume_migration_sql_percent_test",
+        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
     )
     sql_file = tmp_path / "percent.up.sql"
     sql_file.write_text(
@@ -114,8 +114,8 @@ def test_sql_migration_executor_keeps_percent_literals_unparameterized(
 
 def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
     module = load_module(
-        "linkcv_migration_sql_bom_test",
-        REPO_ROOT / "apps/backend/src/linkcv/core/migration_sql.py",
+        "linkresume_migration_sql_bom_test",
+        REPO_ROOT / "apps/backend/src/linkresume/core/migration_sql.py",
     )
     sql_file = tmp_path / "bom.up.sql"
     sql_file.write_text(
@@ -144,7 +144,7 @@ def test_sql_migration_executor_strips_utf8_bom(tmp_path: Path) -> None:
 
 def test_sql_revision_creates_only_upgrade_file(tmp_path: Path) -> None:
     module = load_module(
-        "linkcv_create_sql_revision_test",
+        "linkresume_create_sql_revision_test",
         REPO_ROOT / "scripts/db/create_sql_revision.py",
     )
     module.create_up_sql_file("0002", "add example", tmp_path)
@@ -155,7 +155,7 @@ def test_sql_revision_creates_only_upgrade_file(tmp_path: Path) -> None:
 
 def test_next_sql_revision_uses_zero_padded_sequence(tmp_path: Path) -> None:
     module = load_module(
-        "linkcv_create_sql_revision_sequence_test",
+        "linkresume_create_sql_revision_sequence_test",
         REPO_ROOT / "scripts/db/create_sql_revision.py",
     )
 
@@ -166,7 +166,7 @@ def test_next_sql_revision_uses_zero_padded_sequence(tmp_path: Path) -> None:
 
 def test_next_sql_revision_rejects_mixed_random_ids(tmp_path: Path) -> None:
     module = load_module(
-        "linkcv_create_sql_revision_invalid_sequence_test",
+        "linkresume_create_sql_revision_invalid_sequence_test",
         REPO_ROOT / "scripts/db/create_sql_revision.py",
     )
     (tmp_path / "2b158fb5d8b6_random.py").write_text("revision", encoding="utf-8")
@@ -254,15 +254,15 @@ def test_all_migrations_are_forward_only() -> None:
             continue
         revision_text = revision.read_text(encoding="utf-8")
         assert ".down.sql" not in revision_text
-        assert "LinkCV database migrations are forward-only" in revision_text
+        assert "LinkResume database migrations are forward-only" in revision_text
 
 
-def test_database_initializer_rejects_any_schema_except_linkcv() -> None:
+def test_database_initializer_rejects_any_schema_except_linkresume() -> None:
     module = load_module(
-        "linkcv_init_mysql_test", REPO_ROOT / "scripts/db/init_mysql.py"
+        "linkresume_init_mysql_test", REPO_ROOT / "scripts/db/init_mysql.py"
     )
 
-    with pytest.raises(ValueError, match="target must be 'linkcv'"):
+    with pytest.raises(ValueError, match="target must be 'linkresume'"):
         module.validated_target(
             "mysql+pymysql://user:secret@db.example:3306/tolink_rag_db"
         )
@@ -270,20 +270,20 @@ def test_database_initializer_rejects_any_schema_except_linkcv() -> None:
 
 def test_database_initializer_summary_never_contains_password() -> None:
     module = load_module(
-        "linkcv_init_mysql_summary_test", REPO_ROOT / "scripts/db/init_mysql.py"
+        "linkresume_init_mysql_summary_test", REPO_ROOT / "scripts/db/init_mysql.py"
     )
 
     target = module.validated_target(
-        "mysql+pymysql://linkcv:super-secret@db.example:3306/linkcv"
+        "mysql+pymysql://linkresume:super-secret@db.example:3306/linkresume"
     )
 
-    assert target.audit_summary == ("database=db.example:3306/linkcv user=linkcv")
+    assert target.audit_summary == ("database=db.example:3306/linkresume user=linkresume")
     assert "super-secret" not in target.audit_summary
 
 
 def test_database_initializer_reports_only_mysql_error_code() -> None:
     module = load_module(
-        "linkcv_init_mysql_error_test", REPO_ROOT / "scripts/db/init_mysql.py"
+        "linkresume_init_mysql_error_test", REPO_ROOT / "scripts/db/init_mysql.py"
     )
     error = module.OperationalError(
         "statement",
@@ -297,42 +297,42 @@ def test_database_initializer_reports_only_mysql_error_code() -> None:
 
 def test_release_runner_validates_all_expected_target_fields() -> None:
     module = load_module(
-        "linkcv_run_alembic_test", REPO_ROOT / "scripts/release/run_alembic.py"
+        "linkresume_run_alembic_test", REPO_ROOT / "scripts/release/run_alembic.py"
     )
     expected = module.ExpectedTarget(
         app_env="development",
         host="db.example",
         port=13306,
-        database="linkcv",
+        database="linkresume",
     )
 
     summary = module.validate_target(
-        "mysql+pymysql://linkcv:super-secret@db.example:13306/linkcv",
+        "mysql+pymysql://linkresume:super-secret@db.example:13306/linkresume",
         "development",
         expected,
     )
 
     assert summary == (
-        "APP_ENV=development database=db.example:13306/linkcv user=linkcv"
+        "APP_ENV=development database=db.example:13306/linkresume user=linkresume"
     )
     assert "super-secret" not in summary
 
 
 def test_release_runner_fails_before_migration_on_target_mismatch() -> None:
     module = load_module(
-        "linkcv_run_alembic_mismatch_test",
+        "linkresume_run_alembic_mismatch_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     expected = module.ExpectedTarget(
         app_env="development",
         host="expected.example",
         port=13306,
-        database="linkcv",
+        database="linkresume",
     )
 
     with pytest.raises(ValueError, match="Alembic target mismatch") as error:
         module.validate_target(
-            "mysql+pymysql://linkcv:super-secret@actual.example:3306/linkcv",
+            "mysql+pymysql://linkresume:super-secret@actual.example:3306/linkresume",
             "development",
             expected,
         )
@@ -348,7 +348,7 @@ def migration_script_directory(module: ModuleType) -> ScriptDirectory:
 
 def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None:
     module = load_module(
-        "linkcv_run_alembic_table_drift_test",
+        "linkresume_run_alembic_table_drift_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -371,7 +371,7 @@ def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None
 
 def test_release_runner_rejects_missing_tables_for_applied_revision() -> None:
     module = load_module(
-        "linkcv_run_alembic_missing_table_test",
+        "linkresume_run_alembic_missing_table_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -394,7 +394,7 @@ def test_release_runner_rejects_missing_tables_for_applied_revision() -> None:
 
 def test_release_runner_rejects_scoped_columns_ahead_of_revision() -> None:
     module = load_module(
-        "linkcv_run_alembic_column_drift_test",
+        "linkresume_run_alembic_column_drift_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -425,7 +425,7 @@ def test_release_runner_rejects_scoped_columns_ahead_of_revision() -> None:
 
 def test_release_runner_accepts_aligned_agent_schema() -> None:
     module = load_module(
-        "linkcv_run_alembic_aligned_test",
+        "linkresume_run_alembic_aligned_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -463,7 +463,7 @@ def test_release_runner_accepts_aligned_agent_schema() -> None:
 
 def test_release_runner_rejects_clarification_columns_ahead_of_revision() -> None:
     module = load_module(
-        "linkcv_run_alembic_clarification_drift_test",
+        "linkresume_run_alembic_clarification_drift_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     engine = create_engine("sqlite+pysqlite:///:memory:")
@@ -506,7 +506,7 @@ def test_release_runner_rejects_clarification_columns_ahead_of_revision() -> Non
 
 def test_release_runner_rejects_job_archive_column_still_present_after_0034() -> None:
     module = load_module(
-        "linkcv_run_alembic_removed_column_applied_test",
+        "linkresume_run_alembic_removed_column_applied_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -536,7 +536,7 @@ def test_release_runner_rejects_job_archive_column_still_present_after_0034() ->
 
 def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None:
     module = load_module(
-        "linkcv_run_alembic_removed_column_ahead_test",
+        "linkresume_run_alembic_removed_column_ahead_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -563,7 +563,7 @@ def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None
 
 def test_release_runner_rejects_missing_profile_target_column_after_0051() -> None:
     module = load_module(
-        "linkcv_run_alembic_profile_missing_target_test",
+        "linkresume_run_alembic_profile_missing_target_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -592,7 +592,7 @@ def test_release_runner_rejects_missing_profile_target_column_after_0051() -> No
 
 def test_release_runner_rejects_legacy_profile_column_after_0051() -> None:
     module = load_module(
-        "linkcv_run_alembic_profile_legacy_column_test",
+        "linkresume_run_alembic_profile_legacy_column_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -621,7 +621,7 @@ def test_release_runner_rejects_legacy_profile_column_after_0051() -> None:
 
 def test_release_runner_allows_complete_target_profile_before_0051() -> None:
     module = load_module(
-        "linkcv_run_alembic_profile_target_noop_test",
+        "linkresume_run_alembic_profile_target_noop_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}
@@ -648,7 +648,7 @@ def test_release_runner_allows_complete_target_profile_before_0051() -> None:
 
 def test_release_runner_rejects_partial_profile_before_0051() -> None:
     module = load_module(
-        "linkcv_run_alembic_profile_partial_test",
+        "linkresume_run_alembic_profile_partial_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
     )
     module.REVISION_TABLE_MARKERS = {}

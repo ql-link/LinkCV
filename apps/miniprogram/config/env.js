@@ -1,5 +1,5 @@
 const runtimeConfig = require("./runtime");
-const LOCAL_DEBUG_ENABLED_STORAGE_KEY = "linkcv_local_debug_enabled";
+const LOCAL_DEBUG_ENABLED_STORAGE_KEY = "linkresume_local_debug_enabled";
 
 function readLocalConfig() {
   if (typeof process !== "undefined" && process.env && (process.env.NODE_ENV === "test" || process.env.npm_lifecycle_event === "test")) {
@@ -64,7 +64,7 @@ function resolveApiBaseUrl(options = {}) {
     : readLocalConfig;
   return resolveBaseUrl({
     extConfigKey: "apiBaseUrl",
-    developmentStorageKey: "linkcv_api_base_url",
+    developmentStorageKey: "linkresume_api_base_url",
     productionDefault: runtimeConfig.productionApiBaseUrl,
     localConfigReader,
     label: "API",

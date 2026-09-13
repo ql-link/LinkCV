@@ -96,7 +96,7 @@ const AGENT_DRAG_THRESHOLD = 5;
 const AGENT_DRAWER_MIN_WIDTH = 320;
 const AGENT_DRAWER_MAX_WIDTH = 640;
 const AGENT_DRAWER_DEFAULT_WIDTH = 390;
-const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkcv.workbench.agent-drawer-width";
+const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkresume.workbench.agent-drawer-width";
 const WORKBENCH_TITLE_CHARACTER_LIMIT = 30;
 
 export function truncateWorkbenchTitle(title: string) {
@@ -387,7 +387,7 @@ export type { PageArrangement } from "./pageArrangementTransition";
 
 const EMPTY_IMPORT_WARNINGS: string[] = [];
 const A4_WIDTH_IN_CSS_PIXELS = (210 / 25.4) * 96;
-const PAGE_ARRANGEMENT_STORAGE_KEY = "linkcv.workbench.page-arrangement";
+const PAGE_ARRANGEMENT_STORAGE_KEY = "linkresume.workbench.page-arrangement";
 
 function currentSelectionRect(editor: Editor) {
   const { ranges } = editor.state.selection;
@@ -481,7 +481,7 @@ function pageViewportMetrics(
 const fontOptions = [
   { label: "思源宋体", value: resumeSerifFontStack },
   { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
-  { label: "系统黑体", value: '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
+  { label: "系统黑体", value: '"LinkResume Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ];
 
 const versionReasonLabels = {

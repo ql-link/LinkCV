@@ -1,1 +1,0 @@
-"""LinkCV backend package."""

@@ -15,7 +15,7 @@ import yaml
 
 
 REPO_ROOT = Path(
-    os.environ.get("LINKCV_REPO_ROOT", Path(__file__).resolve().parents[2])
+    os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
 DOCS_ROOT = REPO_ROOT / "docs"
 DEFAULT_CONFIG = REPO_ROOT / "scripts" / "quality" / "doc-sync-rules.yaml"
@@ -203,7 +203,7 @@ def find_violations(rules: list[Rule], changed: set[str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="校验 LinkCV 长期项目文档同步")
+    parser = argparse.ArgumentParser(description="校验 LinkResume 长期项目文档同步")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--staged", action="store_true")

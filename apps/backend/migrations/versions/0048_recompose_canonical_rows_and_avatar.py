@@ -20,14 +20,14 @@ from typing import Any
 import sqlalchemy as sa
 from alembic import op
 
-from linkcv.core.migration_sql import execute_sql_file
-from linkcv.domain.resume import (
+from linkresume.core.migration_sql import execute_sql_file
+from linkresume.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation,
     TemplateAvatar,
     TemplateDefinition,
 )
-from linkcv.domain.resume.legacy_cutover import recompose_flattened_rows
+from linkresume.domain.resume.legacy_cutover import recompose_flattened_rows
 
 revision: str = "0048"
 down_revision: str | None = "0047"
@@ -493,5 +493,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     raise RuntimeError(
-        "LinkCV database migrations are forward-only; restore a backup or create a new forward revision"
+        "LinkResume database migrations are forward-only; restore a backup or create a new forward revision"
     )

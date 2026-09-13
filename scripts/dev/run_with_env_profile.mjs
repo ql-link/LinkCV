@@ -35,7 +35,7 @@ export function resolveProfileFiles({
   const worktreeBase = absolutePath(profile, cwd);
   const mainBase = resolve(mainRoot, basename(profile));
   const base = existsSync(worktreeBase) ? worktreeBase : mainBase;
-  const configuredSecret = inheritedEnv.LINKCV_SECRET_ENV_FILE;
+  const configuredSecret = inheritedEnv.LINKRESUME_SECRET_ENV_FILE;
   const secret = configuredSecret
     ? absolutePath(configuredSecret, cwd)
     : resolve(mainRoot, `${basename(profile)}.local`);
@@ -60,8 +60,8 @@ export function buildProfileEnvironment(options) {
     ...baseEnv,
     ...secretEnv,
     ...inheritedEnv,
-    LINKCV_ENV_FILE: files.base,
-    LINKCV_SECRET_ENV_FILE: files.secret,
+    LINKRESUME_ENV_FILE: files.base,
+    LINKRESUME_SECRET_ENV_FILE: files.secret,
   };
 
   if (
@@ -107,7 +107,7 @@ export function syncMiniprogramLocalConfig(cwd, mainRoot, { profile = ".env", en
   const lanIp = detectLocalLanIp();
   // Match start-development.sh's override; APP_ENV does not select the profile.
   const port = basename(profile) === ".env.development"
-    ? (env.LINKCV_LOCAL_BACKEND_PORT || "18000")
+    ? (env.LINKRESUME_LOCAL_BACKEND_PORT || "18000")
     : (env.BACKEND_PORT || "8000");
   if (!/^\d+$/.test(String(port)) || Number(port) < 1 || Number(port) > 65535) {
     throw new Error("小程序联调端口必须是 1–65535 的整数");

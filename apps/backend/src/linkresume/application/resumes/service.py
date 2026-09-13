@@ -1,0 +1,906 @@
+from copy import deepcopy
+from datetime import timedelta, timezone
+from dataclasses import dataclass
+import json
+from typing import Any, TypeAlias
+
+from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, ValidationError
+
+from linkresume.application.resumes.commands import CreateResumeCommand
+from linkresume.core.database import utc_now
+from linkresume.domain.resume import (
+    CanonicalResumeDocument,
+    ResumePresentation as CanonicalResumePresentation,
+    TemplateDefinition,
+)
+from linkresume.domain.resume.layout import LayoutCompilationError, compile_layout_plan
+from linkresume.domain.resume.models import PresentationSettings
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import (
+    RESUME_IMPORT_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeTemplate,
+    ResumeVersion,
+)
+
+MAX_RESUMES_PER_USER = 10
+
+
+class ResumeLimitExceeded(RuntimeError):
+    pass
+
+
+class InvalidResumeTitle(ValueError):
+    pass
+
+
+class InvalidResumeVersionName(ValueError):
+    pass
+
+
+class ResumeTitleConflict(RuntimeError):
+    pass
+
+
+class ResumeTemplateUnavailable(RuntimeError):
+    pass
+
+
+class ResumeTemplateCompositionInvalid(RuntimeError):
+    pass
+
+
+class ResumePresentationInvalid(ValueError):
+    pass
+
+
+class ResumeVersionLimitExceeded(RuntimeError):
+    pass
+
+
+class LatestResumeVersionRequired(RuntimeError):
+    pass
+
+
+MAX_RESUME_VERSION_NAME_LENGTH = 80
+
+
+ResumeDocumentValue: TypeAlias = CanonicalResumeDocument
+ResumePresentationValue: TypeAlias = CanonicalResumePresentation
+
+
+@dataclass(frozen=True)
+class StoredResumeSnapshot:
+    """A validated canonical persisted resume pair."""
+
+    data: ResumeDocumentValue
+    style: ResumePresentationValue
+    data_json: dict[str, Any]
+    style_json: dict[str, Any]
+
+    @property
+    def content_sha256(self) -> str:
+        return self.data.content_sha256()
+
+
+@dataclass(frozen=True)
+class StoredTemplateSnapshot:
+    """A validated template row; its data is a blank canonical document."""
+
+    data: CanonicalResumeDocument
+    style: TemplateDefinition
+    data_json: dict[str, Any]
+    style_json: dict[str, Any]
+
+
+class ResumeVersionDataInvalid(ValueError):
+    """An immutable version cannot be restored as a complete snapshot."""
+
+
+def _decode_json(value: object, *, field: str) -> object:
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8")
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{field} is not valid JSON") from error
+    return value
+
+
+def _model_json(value: BaseModel) -> dict[str, Any]:
+    dumped = value.model_dump(mode="json")
+    if not isinstance(dumped, dict):
+        raise ValueError("resume snapshot root must be a JSON object")
+    return dumped
+
+
+def parse_persisted_resume_snapshot(data: object, style: object) -> StoredResumeSnapshot:
+    """Validate a current resume/version canonical data-style pair."""
+
+    decoded_data = _decode_json(data, field="data_json")
+    decoded_style = _decode_json(style, field="style_json")
+    if not isinstance(decoded_data, dict) or not isinstance(decoded_style, dict):
+        raise ValueError("resume snapshot values must be JSON objects")
+    canonical_data = CanonicalResumeDocument.model_validate(decoded_data)
+    canonical_style = CanonicalResumePresentation.model_validate(decoded_style)
+    return StoredResumeSnapshot(
+        data=canonical_data,
+        style=canonical_style,
+        data_json=_model_json(canonical_data),
+        style_json=_model_json(canonical_style),
+    )
+
+
+def parse_persisted_template_snapshot(data: object, style: object) -> StoredTemplateSnapshot:
+    """Validate a canonical template row."""
+
+    decoded_data = _decode_json(data, field="data_json")
+    decoded_style = _decode_json(style, field="style_json")
+    if not isinstance(decoded_data, dict) or not isinstance(decoded_style, dict):
+        raise ValueError("template snapshot values must be JSON objects")
+    canonical_data = CanonicalResumeDocument.model_validate(decoded_data)
+    canonical_style = TemplateDefinition.model_validate(decoded_style)
+    return StoredTemplateSnapshot(
+        data=canonical_data,
+        style=canonical_style,
+        data_json=_model_json(canonical_data),
+        style_json=_model_json(canonical_style),
+    )
+
+
+def presentation_from_template(
+    template_style: TemplateDefinition,
+    *,
+    current: ResumePresentationValue | None = None,
+) -> CanonicalResumePresentation:
+    """Turn a template definition into a complete resume presentation."""
+
+    if current is not None:
+        scoped = dict(current.template_scoped)
+        scoped.setdefault(template_style.template_key, PresentationSettings())
+        return CanonicalResumePresentation(
+            schema_version="resume-presentation.v1",
+            portable=current.portable,
+            template_scoped=scoped,
+            template_snapshot=template_style,
+        )
+    return CanonicalResumePresentation(
+        schema_version="resume-presentation.v1",
+        portable=PresentationSettings(),
+        template_scoped={template_style.template_key: PresentationSettings()},
+        template_snapshot=template_style,
+    )
+
+
+def _merge_presentation_settings(
+    current: PresentationSettings,
+    submitted: PresentationSettings,
+) -> PresentationSettings:
+    """Merge only explicitly supplied user presentation settings.
+
+    ``PresentationSettings`` has defaults for every field, so replacing the
+    model directly would make a sparse client payload reset settings that the
+    server already persisted.  ``model_fields_set`` keeps omitted fields
+    untouched while still allowing an explicit ``null`` to clear an optional
+    override.
+    """
+
+    values = current.model_dump(mode="json")
+    submitted_values = submitted.model_dump(mode="json")
+    for field_name in submitted.model_fields_set:
+        values[field_name] = submitted_values[field_name]
+    return PresentationSettings.model_validate(values)
+
+
+def merge_resume_presentation(
+    current: ResumePresentationValue,
+    submitted: ResumePresentationValue | None,
+) -> ResumePresentationValue:
+    """Keep the persisted template definition and merge allowed user settings.
+
+    A normal resume save is not a template mutation endpoint.  The current
+    server snapshot remains authoritative; a client may update portable
+    settings and settings for template keys already known by this resume.  A
+    new scoped key is rejected so a regular save cannot manufacture template
+    provenance.  Existing historical keys are deliberately retained even when
+    a client sends only the currently visible template settings.
+    """
+
+    if submitted is None:
+        return current
+
+    template_key = current.template_snapshot.template_key
+    scoped: dict[str, PresentationSettings] = {
+        key: settings.model_copy(deep=True)
+        for key, settings in current.template_scoped.items()
+    }
+    # A valid presentation normally contains its active key.  Keep the
+    # persisted map intact, but permit repairing that omission from a client
+    # payload without accepting arbitrary new template keys.
+    if template_key not in scoped:
+        scoped[template_key] = PresentationSettings()
+
+    known_keys = set(scoped)
+    unknown_keys = set(submitted.template_scoped) - known_keys
+    if unknown_keys:
+        raise ResumePresentationInvalid(
+            "template-scoped key is not owned by resume"
+        )
+    for key, settings in submitted.template_scoped.items():
+        scoped[key] = _merge_presentation_settings(scoped[key], settings)
+
+    return CanonicalResumePresentation(
+        schema_version="resume-presentation.v1",
+        portable=_merge_presentation_settings(current.portable, submitted.portable),
+        template_scoped=scoped,
+        # Never take this value from ``submitted``.  This is the resume's
+        # immutable template-definition provenance until apply-template runs.
+        template_snapshot=current.template_snapshot,
+    )
+
+
+def _assert_template_key_matches_row(
+    template: ResumeTemplate,
+    snapshot: StoredTemplateSnapshot,
+) -> None:
+    """Reject a template row whose identity disagrees with its definition."""
+
+    if template.key != snapshot.style.template_key:
+        raise ValueError("template row key does not match template definition")
+
+
+def validate_resume_template_composition(
+    snapshot: StoredResumeSnapshot,
+    template: StoredTemplateSnapshot,
+) -> None:
+    """Ensure every top-level canonical node has one template destination."""
+
+    compile_layout_plan(snapshot.data, template.style, snapshot.style)
+
+
+def default_resume_version_name(reason: str, version_no: int) -> str:
+    if reason == "initial":
+        return "初始版本"
+    if reason == "before_restore":
+        return "恢复前备份"
+    if reason == "restore":
+        return "恢复结果（历史记录）"
+    return f"版本 {version_no}"
+
+
+def parse_decimal_id(value: str) -> int | None:
+    if not value or len(value) > 20 or not value.isascii() or not value.isdecimal():
+        return None
+    parsed = int(value)
+    return parsed if 0 < parsed <= 2**64 - 1 and str(parsed) == value else None
+
+
+def find_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | None:
+    parsed_id = parse_decimal_id(resume_id)
+    if parsed_id is None:
+        return None
+    return db.scalar(
+        select(Resume).where(Resume.id == parsed_id, Resume.user_id == user_id)
+    )
+
+
+def lock_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | None:
+    parsed_id = parse_decimal_id(resume_id)
+    if parsed_id is None:
+        return None
+    return db.scalar(
+        select(Resume)
+        .where(Resume.id == parsed_id, Resume.user_id == user_id)
+        .with_for_update()
+    )
+
+
+def has_resume_capacity(db: Session, user_id: int) -> bool:
+    return resume_slot_count(db, user_id) < MAX_RESUMES_PER_USER
+
+
+def resume_slot_count(db: Session, user_id: int) -> int:
+    resume_count = db.scalar(
+        select(func.count(Resume.id)).where(Resume.user_id == user_id)
+    )
+    active_import_count = db.scalar(
+        select(func.count(DocumentParseTask.id)).where(
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+            DocumentParseTask.user_id == user_id,
+            or_(
+                DocumentParseTask.upload_status == "uploading",
+                DocumentParseTask.parse_status == "processing",
+            ),
+        )
+    )
+    return int(resume_count or 0) + int(active_import_count or 0)
+
+
+def close_stale_resume_imports(
+    db: Session,
+    *,
+    user_id: int,
+    upload_stale_seconds: int,
+    parse_stale_seconds: int,
+) -> None:
+    now = utc_now()
+    upload_cutoff = now - timedelta(seconds=upload_stale_seconds)
+    parse_cutoff = now - timedelta(seconds=parse_stale_seconds)
+    records = db.scalars(
+        select(DocumentParseTask)
+        .where(
+            DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
+            DocumentParseTask.user_id == user_id,
+            or_(
+                and_(
+                    DocumentParseTask.upload_status == "uploading",
+                    DocumentParseTask.updated_at < upload_cutoff,
+                ),
+                and_(
+                    DocumentParseTask.parse_status == "processing",
+                    DocumentParseTask.updated_at < parse_cutoff,
+                ),
+            ),
+        )
+        .with_for_update()
+    ).all()
+    for record in records:
+        created_at = record.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        elapsed_ms = round((now - created_at).total_seconds() * 1000)
+        elapsed_ms = min(max(0, elapsed_ms), 2**32 - 1)
+        if record.upload_status == "uploading":
+            record.upload_status = "failed"
+            record.upload_duration_ms = elapsed_ms
+        else:
+            record.parse_status = "failed"
+            record.parse_duration_ms = elapsed_ms
+            record.failure_reason = "timeout"
+    if records:
+        db.commit()
+
+
+def normalize_resume_title(value: str | None) -> str:
+    if value is None:
+        raise InvalidResumeTitle
+    normalized = " ".join(value.split())
+    if not normalized or len(normalized) > 255:
+        raise InvalidResumeTitle
+    return normalized
+
+
+def resume_title_key(value: str) -> str:
+    return normalize_resume_title(value).casefold()
+
+
+def _assert_unique_resume_title(
+    db: Session,
+    *,
+    user_id: int,
+    title: str,
+    exclude_resume_id: int | None = None,
+) -> None:
+    expected_key = resume_title_key(title)
+    rows = db.execute(
+        select(Resume.id, Resume.title).where(Resume.user_id == user_id)
+    ).all()
+    if any(
+        resume_id != exclude_resume_id
+        and resume_title_key(existing_title) == expected_key
+        for resume_id, existing_title in rows
+    ):
+        raise ResumeTitleConflict
+
+
+def persist_resume_with_initial_version(
+    command: CreateResumeCommand,
+    db: Session,
+) -> Resume:
+    snapshot = parse_persisted_resume_snapshot(
+        _model_json(command.data),
+        _model_json(command.style),
+    )
+    resume = Resume(
+        user_id=command.user_id,
+        template_id=command.template_id,
+        title=command.title,
+        data_json=deepcopy(snapshot.data_json),
+        style_json=deepcopy(snapshot.style_json),
+        source_type=command.source_type,
+    )
+    db.add(resume)
+    db.flush()
+    db.add(
+        ResumeVersion(
+            resume_id=resume.id,
+            template_id=command.template_id,
+            version_no=1,
+            data_json=deepcopy(snapshot.data_json),
+            style_json=deepcopy(snapshot.style_json),
+            reason="initial",
+            name=default_resume_version_name("initial", 1),
+        )
+    )
+    db.flush()
+    db.refresh(resume)
+    return resume
+
+
+def create_resume_with_initial_version(
+    command: CreateResumeCommand,
+    db: Session,
+) -> Resume:
+    try:
+        locked_user_id = db.scalar(
+            select(User.id).where(User.id == command.user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise RuntimeError("resume owner no longer exists")
+        if not has_resume_capacity(db, command.user_id):
+            raise ResumeLimitExceeded
+
+        normalized_command = CreateResumeCommand(
+            **{**command.__dict__, "title": normalize_resume_title(command.title)}
+        )
+        resume = persist_resume_with_initial_version(normalized_command, db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return resume
+
+
+def create_resume_from_template(
+    *,
+    db: Session,
+    user_id: int,
+    title: str | None,
+    template_id: int,
+) -> Resume:
+    from linkresume.modules.resumes.models import ResumeTemplate
+
+    normalized_title = normalize_resume_title(title)
+    try:
+        locked_user_id = db.scalar(
+            select(User.id).where(User.id == user_id).with_for_update()
+        )
+        if locked_user_id is None:
+            raise RuntimeError("resume owner no longer exists")
+        if not has_resume_capacity(db, user_id):
+            raise ResumeLimitExceeded
+        _assert_unique_resume_title(db, user_id=user_id, title=normalized_title)
+        template = db.scalar(
+            select(ResumeTemplate)
+            .where(
+                ResumeTemplate.id == template_id,
+                ResumeTemplate.is_active == 1,
+            )
+            .with_for_update()
+        )
+        if template is None:
+            raise ResumeTemplateUnavailable
+        try:
+            template_snapshot = parse_persisted_template_snapshot(
+                template.data_json,
+                template.style_json,
+            )
+            _assert_template_key_matches_row(template, template_snapshot)
+            resume_style = presentation_from_template(template_snapshot.style)
+            resume_snapshot = parse_persisted_resume_snapshot(
+                template_snapshot.data_json,
+                _model_json(resume_style),
+            )
+            validate_resume_template_composition(resume_snapshot, template_snapshot)
+        except (TypeError, ValueError, ValidationError) as error:
+            raise ResumeTemplateUnavailable from error
+        resume = persist_resume_with_initial_version(
+            CreateResumeCommand(
+                user_id=user_id,
+                title=normalized_title,
+                data=resume_snapshot.data,
+                style=resume_snapshot.style,
+                source_type="template",
+                template_id=template.id,
+            ),
+            db,
+        )
+        db.commit()
+        return resume
+    except Exception:
+        db.rollback()
+        raise
+
+
+def update_resume_snapshot(
+    *,
+    db: Session,
+    resume: Resume,
+    user_id: int,
+    base_lock_version: int,
+    title: str | None,
+    data: ResumeDocumentValue | None,
+    style: ResumePresentationValue | None,
+) -> Resume | None:
+    current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    next_data = data if data is not None else current.data
+    next_style = merge_resume_presentation(current.style, style)
+    try:
+        snapshot = parse_persisted_resume_snapshot(
+            _model_json(next_data),
+            _model_json(next_style),
+        )
+    except (TypeError, ValueError, ValidationError):
+        raise
+    try:
+        # Compile against the persisted template snapshot, never against a
+        # client-provided definition.  This is done before the conditional
+        # update so a non-renderable document cannot partially save.
+        validate_resume_template_composition(
+            snapshot,
+            StoredTemplateSnapshot(
+                data=snapshot.data,
+                style=snapshot.style.template_snapshot,
+                data_json=snapshot.data_json,
+                style_json=_model_json(snapshot.style.template_snapshot),
+            ),
+        )
+    except (LayoutCompilationError, TypeError, ValueError, ValidationError) as error:
+        raise ResumeTemplateCompositionInvalid from error
+    next_title = resume.title
+    if title is not None:
+        next_title = normalize_resume_title(title)
+        db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        if resume_title_key(next_title) != resume_title_key(resume.title):
+            _assert_unique_resume_title(
+                db,
+                user_id=user_id,
+                title=next_title,
+                exclude_resume_id=resume.id,
+            )
+    values = {
+        "title": next_title,
+        "data_json": snapshot.data_json,
+        "style_json": snapshot.style_json,
+        "lock_version": Resume.lock_version + 1,
+        "updated_at": utc_now(),
+    }
+    result = db.execute(
+        update(Resume)
+        .where(
+            Resume.id == resume.id,
+            Resume.user_id == user_id,
+            Resume.lock_version == base_lock_version,
+        )
+        .values(**values)
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        return None
+    updated = db.scalar(select(Resume).where(Resume.id == resume.id))
+    db.commit()
+    return updated
+
+
+def apply_resume_template(
+    *,
+    db: Session,
+    resume: Resume,
+    user_id: int,
+    template_id: int,
+    base_lock_version: int,
+    title: str | None = None,
+    data: ResumeDocumentValue | None = None,
+) -> Resume | None:
+    """Atomically save current content and switch presentation provenance."""
+    template = db.scalar(
+        select(ResumeTemplate).where(
+            ResumeTemplate.id == template_id,
+            ResumeTemplate.is_active == 1,
+        ).with_for_update()
+    )
+    if template is None:
+        raise ResumeTemplateUnavailable
+    try:
+        target = parse_persisted_template_snapshot(
+            template.data_json,
+            template.style_json,
+        )
+        _assert_template_key_matches_row(template, target)
+        current = parse_persisted_resume_snapshot(
+            resume.data_json,
+            resume.style_json,
+        )
+    except (TypeError, ValueError, ValidationError) as error:
+        raise ResumeTemplateUnavailable from error
+
+    candidate_data = data if data is not None else current.data
+    try:
+        candidate_style = presentation_from_template(
+            target.style,
+            current=current.style,
+        )
+        candidate = parse_persisted_resume_snapshot(
+            _model_json(candidate_data),
+            _model_json(candidate_style),
+        )
+        validate_resume_template_composition(candidate, target)
+    except (LayoutCompilationError, TypeError, ValueError, ValidationError) as error:
+        raise ResumeTemplateCompositionInvalid from error
+
+    next_title = resume.title
+    if title is not None:
+        next_title = normalize_resume_title(title)
+        db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+        if resume_title_key(next_title) != resume_title_key(resume.title):
+            _assert_unique_resume_title(
+                db,
+                user_id=user_id,
+                title=next_title,
+                exclude_resume_id=resume.id,
+            )
+
+    result = db.execute(
+        update(Resume)
+        .where(
+            Resume.id == resume.id,
+            Resume.user_id == user_id,
+            Resume.lock_version == base_lock_version,
+        )
+        .values(
+            title=next_title,
+            template_id=template.id,
+            # Content is the resume's single source of truth. The target
+            # template contributes presentation and layout manifest only.
+            data_json=deepcopy(candidate.data_json),
+            style_json=deepcopy(candidate.style_json),
+            lock_version=Resume.lock_version + 1,
+            updated_at=utc_now(),
+        )
+    )
+    if result.rowcount != 1:
+        db.rollback()
+        return None
+    updated = db.scalar(select(Resume).where(Resume.id == resume.id))
+    db.commit()
+    return updated
+
+
+def _next_version_number(db: Session, resume_id: int) -> int:
+    current = db.scalar(
+        select(func.max(ResumeVersion.version_no)).where(
+            ResumeVersion.resume_id == resume_id
+        )
+    )
+    return int(current or 0) + 1
+
+
+def normalize_resume_version_name(value: str | None, *, default: str) -> str:
+    normalized = default if value is None else " ".join(value.split())
+    if not normalized or len(normalized) > MAX_RESUME_VERSION_NAME_LENGTH:
+        raise InvalidResumeVersionName
+    return normalized
+
+
+def _append_version(
+    db: Session,
+    resume: Resume,
+    reason: str,
+    name: str | None = None,
+) -> ResumeVersion:
+    if resume.template_id is None:
+        raise ResumeVersionDataInvalid("resume has no template identity")
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    template = db.scalar(
+        select(ResumeTemplate).where(ResumeTemplate.id == resume.template_id)
+    )
+    if template is None:
+        raise ResumeVersionDataInvalid("resume template no longer exists")
+    if template.key != snapshot.style.template_snapshot.template_key:
+        raise ResumeVersionDataInvalid("resume template key does not match snapshot")
+    try:
+        validate_resume_template_composition(
+            snapshot,
+            StoredTemplateSnapshot(
+                data=snapshot.data,
+                style=snapshot.style.template_snapshot,
+                data_json=snapshot.data_json,
+                style_json=_model_json(snapshot.style.template_snapshot),
+            ),
+        )
+    except (LayoutCompilationError, TypeError, ValueError, ValidationError) as error:
+        raise ResumeVersionDataInvalid("resume snapshot is not renderable") from error
+    version_no = _next_version_number(db, resume.id)
+    version = ResumeVersion(
+        resume_id=resume.id,
+        version_no=version_no,
+        template_id=resume.template_id,
+        data_json=deepcopy(snapshot.data_json),
+        style_json=deepcopy(snapshot.style_json),
+        reason=reason,
+        name=normalize_resume_version_name(
+            name,
+            default=default_resume_version_name(reason, version_no),
+        ),
+    )
+    db.add(version)
+    db.flush()
+    return version
+
+
+def _version_count(db: Session, resume_id: int) -> int:
+    count = db.scalar(
+        select(func.count(ResumeVersion.id)).where(ResumeVersion.resume_id == resume_id)
+    )
+    return int(count or 0)
+
+
+def append_resume_version(
+    db: Session,
+    resume: Resume,
+    *,
+    reason: str,
+    version_limit: int,
+    name: str | None = None,
+) -> ResumeVersion:
+    """Append a version while the caller holds the resume row lock."""
+    if _version_count(db, resume.id) >= version_limit:
+        raise ResumeVersionLimitExceeded
+    return _append_version(db, resume, reason, name)
+
+
+def create_manual_version(
+    db: Session,
+    resume_id: str,
+    user_id: int,
+    version_limit: int,
+    name: str | None = None,
+) -> ResumeVersion | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    try:
+        version = append_resume_version(
+            db,
+            resume,
+            reason="manual",
+            version_limit=version_limit,
+            name=name,
+        )
+        db.refresh(version)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return version
+
+
+def rename_resume_version(
+    db: Session,
+    resume_id: str,
+    version_no: int,
+    user_id: int,
+    name: str,
+) -> ResumeVersion | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    version = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == resume.id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if version is None:
+        return None
+    try:
+        version.name = normalize_resume_version_name(name, default=version.name)
+        db.flush()
+        db.refresh(version)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return version
+
+
+def restore_resume_version(
+    db: Session,
+    resume_id: str,
+    version_no: int,
+    user_id: int,
+) -> Resume | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    target = db.scalar(
+        select(ResumeVersion).where(
+            ResumeVersion.resume_id == resume.id,
+            ResumeVersion.version_no == version_no,
+        )
+    )
+    if target is None:
+        return None
+
+    template = db.scalar(
+        select(ResumeTemplate).where(ResumeTemplate.id == target.template_id)
+    )
+    if template is None:
+        raise ResumeVersionDataInvalid("version template no longer exists")
+    try:
+        target_snapshot = parse_persisted_resume_snapshot(
+            target.data_json,
+            target.style_json,
+        )
+        if template.key != target_snapshot.style.template_snapshot.template_key:
+            raise ResumeVersionDataInvalid(
+                "version template key does not match template identity"
+            )
+        # A version owns both its content and presentation snapshot.  The
+        # current template row is used only to verify identity; its mutable
+        # definition must never overwrite or recompile the historical style.
+        validate_resume_template_composition(
+            target_snapshot,
+            StoredTemplateSnapshot(
+                data=target_snapshot.data,
+                style=target_snapshot.style.template_snapshot,
+                data_json=target_snapshot.data_json,
+                style_json=_model_json(target_snapshot.style.template_snapshot),
+            ),
+        )
+    except (TypeError, ValueError, ValidationError) as error:
+        if isinstance(error, ResumeVersionDataInvalid):
+            raise
+        raise ResumeVersionDataInvalid("version snapshot is invalid") from error
+    try:
+        resume.template_id = target.template_id
+        resume.data_json = deepcopy(target_snapshot.data_json)
+        resume.style_json = deepcopy(target_snapshot.style_json)
+        resume.lock_version += 1
+        resume.updated_at = utc_now()
+        db.flush()
+        db.refresh(resume)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return resume
+
+
+def delete_resume_version(
+    db: Session,
+    resume_id: str,
+    version_no: int,
+    user_id: int,
+) -> bool | None:
+    resume = lock_owned_resume(db, resume_id, user_id)
+    if resume is None:
+        return None
+    try:
+        version = db.scalar(
+            select(ResumeVersion).where(
+                ResumeVersion.resume_id == resume.id,
+                ResumeVersion.version_no == version_no,
+            )
+        )
+        if version is None:
+            return None
+        latest_version_no = db.scalar(
+            select(func.max(ResumeVersion.version_no)).where(
+                ResumeVersion.resume_id == resume.id
+            )
+        )
+        if version.version_no == latest_version_no:
+            raise LatestResumeVersionRequired
+        db.execute(delete(ResumeVersion).where(ResumeVersion.id == version.id))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return True

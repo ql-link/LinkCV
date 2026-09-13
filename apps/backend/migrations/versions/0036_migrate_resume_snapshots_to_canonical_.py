@@ -18,9 +18,9 @@ from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
-from linkcv.core.migration_sql import execute_sql_file
-from linkcv.domain.resume_document import ResumeDocument, with_default_semantics
-from linkcv.domain.resume_style import (
+from linkresume.core.migration_sql import execute_sql_file
+from linkresume.domain.resume_document import ResumeDocument, with_default_semantics
+from linkresume.domain.resume_style import (
     ResumePresentation,
     default_template_manifest,
 )
@@ -174,5 +174,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     raise RuntimeError(
-        "LinkCV database migrations are forward-only; restore a backup or create a new forward revision"
+        "LinkResume database migrations are forward-only; restore a backup or create a new forward revision"
     )

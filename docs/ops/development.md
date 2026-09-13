@@ -12,15 +12,15 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务、macOS 桌面壳和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkcv` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0061`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务、macOS 桌面壳和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0061`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录。
 
-本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。Local profile 同时设置回环地址的 `RABBITMQ_URL` 与 `RABBITMQ_PORT` 时，启动器在进程环境中让 URL 端口跟随 `RABBITMQ_PORT`，不修改文件，也不重写远程 RabbitMQ 地址。启动器复用当前 npm 的 JavaScript 入口，在 Windows 和 Unix 上都通过同一 profile 启动服务。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKCV_SECRET_ENV_FILE=/absolute/path/to/override.local`。
+本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。Local profile 同时设置回环地址的 `RABBITMQ_URL` 与 `RABBITMQ_PORT` 时，启动器在进程环境中让 URL 端口跟随 `RABBITMQ_PORT`，不修改文件，也不重写远程 RabbitMQ 地址。启动器复用当前 npm 的 JavaScript 入口，在 Windows 和 Unix 上都通过同一 profile 启动服务。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKRESUME_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
-FastAPI 和 Worker 单独启动时也支持 `LINKCV_ENV_FILE` + `LINKCV_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
+FastAPI 和 Worker 单独启动时也支持 `LINKRESUME_ENV_FILE` + `LINKRESUME_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
 
 `APP_ENV=local|development` 时，Web 登录页开放普通邮箱密码注册和登录，注册成功后直接进入空的简历主页；`APP_ENV=production` 时两个普通入口均隐藏且后端返回 404，普通用户和已绑定微信的管理员都可通过微信身份进入，管理台仍提供独立的 `/admin/login` 密码入口。
 
-`npm run dev:development` 先通过 `scripts/dev/run_with_env_profile.mjs` 加载当前 worktree 的 `.env.development` 与 Git 主工作目录共享的 `.env.development.local`，再转入 `scripts/dev/start-development.sh` 同时启动 Web、FastAPI、解析 Worker 与 Pi。Agent 启动脚本把 Web 到 FastAPI、FastAPI 到 Pi 及 Pi 回调 FastAPI 改为本机回环地址，并把仅在 Docker 网络内可解析的 RabbitMQ 主机名在进程内替换为 Development 主机地址；原始 URL 的账号、密码和 vhost 不会被输出或改写到文件。Windows 上即使 `bash` 解析到 WSL，脚本也会回退调用 `node.exe` 并把 env、日志和脚本路径转换为 Windows 路径；仓库通过 `.gitattributes` 强制 shell 脚本使用 LF，避免 Git Bash 或 WSL 把 CRLF 误解析为命令字符。默认使用 FastAPI 18000、Pi 8010 和 AMQP 5672，可用 `LINKCV_LOCAL_BACKEND_PORT`、`LINKCV_LOCAL_PI_PORT`、`LINKCV_LOCAL_RABBITMQ_HOST`、`LINKCV_LOCAL_RABBITMQ_PORT` 覆盖。两枚仅用于本地进程间鉴权的 Agent token 首次启动时自动生成到被忽略且权限为 600 的 `.runtime/development-agent.env`；脚本不会生成 LLM 密钥环，共享 Development 的 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 仍必须从受控密钥来源写入 `.env.development.local`。
+`npm run dev:development` 先通过 `scripts/dev/run_with_env_profile.mjs` 加载当前 worktree 的 `.env.development` 与 Git 主工作目录共享的 `.env.development.local`，再转入 `scripts/dev/start-development.sh` 同时启动 Web、FastAPI、解析 Worker 与 Pi。Agent 启动脚本把 Web 到 FastAPI、FastAPI 到 Pi 及 Pi 回调 FastAPI 改为本机回环地址，并把仅在 Docker 网络内可解析的 RabbitMQ 主机名在进程内替换为 Development 主机地址；原始 URL 的账号、密码和 vhost 不会被输出或改写到文件。Windows 上即使 `bash` 解析到 WSL，脚本也会回退调用 `node.exe` 并把 env、日志和脚本路径转换为 Windows 路径；仓库通过 `.gitattributes` 强制 shell 脚本使用 LF，避免 Git Bash 或 WSL 把 CRLF 误解析为命令字符。默认使用 FastAPI 18000、Pi 8010 和 AMQP 5672，可用 `LINKRESUME_LOCAL_BACKEND_PORT`、`LINKRESUME_LOCAL_PI_PORT`、`LINKRESUME_LOCAL_RABBITMQ_HOST`、`LINKRESUME_LOCAL_RABBITMQ_PORT` 覆盖。两枚仅用于本地进程间鉴权的 Agent token 首次启动时自动生成到被忽略且权限为 600 的 `.runtime/development-agent.env`；脚本不会生成 LLM 密钥环，共享 Development 的 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 仍必须从受控密钥来源写入 `.env.development.local`。
 
 LLM 模型 API key 通过管理员 API 加密进入 MySQL，Fernet 根密钥环必须留在私密 env。格式为 `LLM_CREDENTIAL_ENCRYPTION_KEYS=<keyId>:<fernetKey>`；轮换时把新 key 放在首项，旧 key 以逗号分隔继续保留。可用以下命令生成一个虚构开发 key，输出只应写入被 Git 忽略的 `.env.local` 或 `.env.development.local`：
 
@@ -32,13 +32,13 @@ uv run --directory apps/backend python -c "from cryptography.fernet import Ferne
 
 local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存或解密模型凭据会返回 `LLM_CREDENTIALS_UNAVAILABLE`。Production 必须配置有效密钥环，否则后端拒绝启动。真实模型联调还需要管理员账号、供应商凭据和余额；自动化测试使用 Fake gateway，不访问外部服务。
 
-`.env.development` 复用 LinkRag Dev 的 MySQL、Redis 与 MinIO 服务地址，但数据库固定为独立的 `linkcv`，Redis 固定使用隔离的 DB 2，MinIO 固定使用独立 `linkcv` bucket；不得改为 `tolink_rag_db` 或 DB 0。首次初始化使用：
+`.env.development` 复用 LinkRag Dev 的 MySQL、Redis 与 MinIO 服务地址，但数据库固定为独立的 `linkresume`，Redis 固定使用隔离的 DB 2，MinIO 固定使用独立 `linkresume` bucket；不得改为 `tolink_rag_db` 或 DB 0。首次初始化使用：
 
 ```bash
-LINKCV_ENV_FILE=.env.development npm run db:init
+LINKRESUME_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkcv`，再升级到当前 Alembic head `0061`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
+命令先校验并创建 `linkresume`，再升级到当前 Alembic head `0061`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
@@ -58,7 +58,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | ------------- | -------: | --------------------------------------------------- |
 | Vite Web      |     5173 | Vite 默认值                                         |
 | FastAPI       |     8000 | `BACKEND_HOST`、`BACKEND_PORT`                      |
-| FastAPI（`dev:development`） | 18000 | `LINKCV_LOCAL_BACKEND_PORT`             |
+| FastAPI（`dev:development`） | 18000 | `LINKRESUME_LOCAL_BACKEND_PORT`             |
 | Pi Agent      |     8010 | `PI_SERVICE_HOST`、`PI_SERVICE_PORT`                 |
 | MySQL         |     3306 | `MYSQL_HOST`、`MYSQL_PORT`                          |
 | Redis         |     6379 | `REDIS_HOST`、`REDIS_PORT`、`REDIS_DB`、`REDIS_URL` |
@@ -67,7 +67,7 @@ LINKCV_ENV_FILE=.env.development npm run db:init
 | RabbitMQ AMQP |     5672 | `RABBITMQ_PORT`、`RABBITMQ_URL`                     |
 | RabbitMQ UI   |    15672 | `RABBITMQ_MANAGEMENT_PORT`                          |
 
-`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。`AGENT_ENABLED` 控制用户 Agent 入口；`PI_SERVICE_BASE_URL` 是 FastAPI 调 Pi 的内网地址，`LINKCV_BASE_URL` 是 Pi 回调 FastAPI 的内网地址。`PI_SERVICE_TOKEN` 与 `LINKCV_INTERNAL_AGENT_TOKEN` 必须使用两枚不同的高熵值，只写入被忽略的本地或环境私密覆盖。`AGENT_RUN_TIMEOUT_SECONDS`、`AGENT_TOOL_TIMEOUT_SECONDS` 和 `AGENT_PROPOSAL_TTL_DAYS` 分别限制运行、工具调用和待确认提案寿命。Production 开启 Agent 时缺 token 会拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
+`BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。`AGENT_ENABLED` 控制用户 Agent 入口；`PI_SERVICE_BASE_URL` 是 FastAPI 调 Pi 的内网地址，`LINKRESUME_BASE_URL` 是 Pi 回调 FastAPI 的内网地址。`PI_SERVICE_TOKEN` 与 `LINKRESUME_INTERNAL_AGENT_TOKEN` 必须使用两枚不同的高熵值，只写入被忽略的本地或环境私密覆盖。`AGENT_RUN_TIMEOUT_SECONDS`、`AGENT_TOOL_TIMEOUT_SECONDS` 和 `AGENT_PROPOSAL_TTL_DAYS` 分别限制运行、工具调用和待确认提案寿命。Production 开启 Agent 时缺 token 会拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
 
 Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都维护相同别名。新增 shadcn 组件时从 `apps/web` 运行 CLI，使 `components.json` 能把源码写入 `src/components/ui/`。
 
@@ -76,7 +76,7 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | 环境变量 | 默认/环境值 | 作用 |
 | --- | --- | --- |
 | `LOG_LEVEL` | `INFO` | Python 根日志级别 |
-| `LOG_SERVICE_NAME` | `linkcv` | JSONL 与 Loki 的固定服务标识，非 `linkcv` 输入会归一化 |
+| `LOG_SERVICE_NAME` | `linkresume` | JSONL 与 Loki 的固定服务标识，非 `linkresume` 输入会归一化 |
 | `LOG_DIRECTORY` | local `.runtime/logs`；容器 `/app/logs` | 本地 JSONL 缓冲目录；为空时只写 stderr |
 | `LOG_RETENTION_DAYS` | `7` | 本地轮转文件清理窗口，非 7 输入会归一化 |
 | `LOKI_QUERY_URL` | local 空；Dev/Production 为对应内网 DNS | 仅 FastAPI 管理查询使用，Web 不读取 |
@@ -85,9 +85,9 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 
 本地直接运行 FastAPI 不要求 Loki 或 Promtail；JSONL 仍写入 `.runtime/logs`，管理查询在 `LOKI_QUERY_URL` 为空时返回 `503 LOG_QUERY_UNAVAILABLE`。不要把 Loki 地址或任意 LogQL 暴露给浏览器。真实日志联调使用虚构账号和内容，并检查 request ID、审计目标、脱敏与七天时间窗。
 
-需要与本机 LinkRag 的 Loki 联调时，先确认 LinkRag 本地 Compose 的 `loki` 和 `promtail` 已启动，再执行 `npm run observability:up`。该命令启动独立的 `linkcv-local-promtail`，默认加入 `tolink-rag-local_tolink-net`、读取 `.runtime/logs`，并推送到网络内的 `http://loki:3100`。LinkRag 和 LinkCV 因此各自维护 Promtail 与 positions，互不读取对方文件；停止 LinkCV 采集器使用 `npm run observability:down`，不会停止或删除共享 Loki。
+需要与本机 LinkRag 的 Loki 联调时，先确认 LinkRag 本地 Compose 的 `loki` 和 `promtail` 已启动，再执行 `npm run observability:up`。该命令启动独立的 `linkresume-local-promtail`，默认加入 `tolink-rag-local_tolink-net`、读取 `.runtime/logs`，并推送到网络内的 `http://loki:3100`。LinkRag 和 LinkResume 因此各自维护 Promtail 与 positions，互不读取对方文件；停止 LinkResume 采集器使用 `npm run observability:down`，不会停止或删除共享 Loki。
 
-如 LinkRag 使用了其他 Compose project/network，可通过 `LOKI_DOCKER_NETWORK` 覆盖网络名；LinkCV 日志目录可通过 `LINKCV_LOG_PATH` 覆盖。需要让本地 FastAPI 管理端查询该 Loki 时，为进程设置 `LOKI_QUERY_URL=http://127.0.0.1:3100`，该地址不传给浏览器。
+如 LinkRag 使用了其他 Compose project/network，可通过 `LOKI_DOCKER_NETWORK` 覆盖网络名；LinkResume 日志目录可通过 `LINKRESUME_LOG_PATH` 覆盖。需要让本地 FastAPI 管理端查询该 Loki 时，为进程设置 `LOKI_QUERY_URL=http://127.0.0.1:3100`，该地址不传给浏览器。
 
 ## 简历导入与版本配置
 
@@ -124,11 +124,11 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `PDF_RENDERER_MAX_SMART_HEIGHT_MM` | `2000` | 智能一页 PDF 的最大物理页高，超出返回 413 |
 | `MQ_VENDOR` | `rabbitmq` | Broker 实现，可显式切换为 `kafka` |
 | `RABBITMQ_URL` | 本地 RabbitMQ | AMQP 地址；Dev/Production 由私密覆盖提供 |
-| `RABBITMQ_EXCHANGE_NAME` | `tolink.cv.resume_import.v2` | V2 durable direct exchange；不得与旧消费者共用 |
-| `RABBITMQ_QUEUE` | `linkcv.resume_import.worker.v2` | V2 durable Worker queue |
+| `RABBITMQ_EXCHANGE_NAME` | `tolink.resume.resume_import.v2` | V2 durable direct exchange；不得与旧消费者共用 |
+| `RABBITMQ_QUEUE` | `linkresume.resume_import.worker.v2` | V2 durable Worker queue |
 | `RABBITMQ_ROUTING_KEY` | `resume.import.v2` | RabbitMQ V2 固定业务路由 |
-| `KAFKA_TOPIC` | `tolink.cv.resume_import.v2` | Kafka V2 topic |
-| `KAFKA_CONSUMER_GROUP` | `linkcv.resume_import.worker.v2` | Kafka V2 consumer group |
+| `KAFKA_TOPIC` | `tolink.resume.resume_import.v2` | Kafka V2 topic |
+| `KAFKA_CONSUMER_GROUP` | `linkresume.resume_import.worker.v2` | Kafka V2 consumer group |
 | `LINKPARSE_BASE_URL` | `http://100.86.10.52:18743` | PDF/DOCX 解析服务地址 |
 | `LINKPARSE_API_KEY` | 空 | LinkParse Bearer 凭据，只放 `.local` 或进程环境 |
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF/DOCX 解析路径 |
@@ -147,13 +147,13 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 
 PDF 模板视觉门禁位于 `apps/backend/tests/integration/pdf/test_template_visual_baselines.py`。测试会先重新构建当前 PDF CLI，再让全部内置启用模板经真实 Chromium 生成 PDF、由 PDFium 栅格化，并与仓库中的低分辨率 PNG 基线比较。日常运行不得更新基线；只有维护者人工检查全部差异后，才可显式执行 `UPDATE_TEMPLATE_BASELINES=1 uv run --directory apps/backend pytest tests/integration/pdf/test_template_visual_baselines.py -q` 更新并重新审查基线。
 
-Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。PDF 请求固定使用 `include_images=false` 并额外发送 `include_layout=true`；LinkCV 先以 LinkParse Markdown 作为可编辑文字基线，再独立尝试消费有界的 V1 layout。可安全解析的页码、bbox、源顺序和物理块会作为精简结构化模型提示；严格关系、计数、warning allowlist 和 Markdown 一致性检查只决定是否采用确定性重建 Markdown。显式 layout 请求遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，只在同一 deadline 内补发一次不含 `include_layout` 的 Markdown 请求，之后按原映射结束，不会无限重试。layout 缺失、降级、字段不合法或不一致时保留原始 Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；仍安全的提示可以继续传入模型，旧版 LinkParse 只返回 Markdown 时保持兼容。文字与图片混排的 PDF 继续解析文字，源图片不会被单独提取为资产或进入导入后的简历；完整原始 PDF 仍保存在私有对象存储并发送给 LinkParse。含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
+Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。PDF 请求固定使用 `include_images=false` 并额外发送 `include_layout=true`；LinkResume 先以 LinkParse Markdown 作为可编辑文字基线，再独立尝试消费有界的 V1 layout。可安全解析的页码、bbox、源顺序和物理块会作为精简结构化模型提示；严格关系、计数、warning allowlist 和 Markdown 一致性检查只决定是否采用确定性重建 Markdown。显式 layout 请求遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，只在同一 deadline 内补发一次不含 `include_layout` 的 Markdown 请求，之后按原映射结束，不会无限重试。layout 缺失、降级、字段不合法或不一致时保留原始 Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；仍安全的提示可以继续传入模型，旧版 LinkParse 只返回 Markdown 时保持兼容。文字与图片混排的 PDF 继续解析文字，源图片不会被单独提取为资产或进入导入后的简历；完整原始 PDF 仍保存在私有对象存储并发送给 LinkParse。含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
 简历导入使用数据库驱动的统一 LLM 服务和当前 `resume_structuring` binding。模型只返回稳定源块的语义/布局映射，不能生成正文或决定丢弃；程序负责完整闭包、来源顺序、联系信息同排、有序/嵌套 CommonMark 与模板布局配方。模型地址、模型调用名与 API Key 通过管理员 API 管理，凭据由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 加解密；调用不自动重试，也不回退其他候选。环境只保留密钥环与统一的 `LLM_TIMEOUT_SECONDS`，不再配置导入专用 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 或重试参数。
 
 共享 Development 验证必须使用 `npm run dev:development`，不得先启动本地 MySQL、Redis、MinIO 或 RabbitMQ。升级前先只读确认真实 `alembic_version`；若仍为 `0046`，确认 0043 Dataset 可靠性标记列存在、无在途简历导入，完成四张简历相关表与对象存储备份，并记录模板、简历和版本快照摘要。维护窗口连续执行 `0047`–`0051`，复核 head 为 `0051`、历史 `blank-cn` 绑定仅为 inactive、全部简历/版本模板外键非空、活动导入任务已有冻结模板定义、所有 canonical 快照通过图标规范化预检，且用户画像结构通过 `0051` 的完整旧结构或当前结构门禁，再启动 Web、FastAPI、Worker 与 Pi。基线、在途任务、退役模板、canonical 图标或用户画像结构预检，以及备份核对任一不通过时停止升级，不猜测模板、不重跑或改写已执行 revision。
 
-共享 Development 中不得让当前 worktree 与已部署旧 Worker 竞争同一队列。`npm run dev:development` 会根据当前 worktree 的绝对路径自动生成独立的 queue 与 routing key，并同时传给本地 FastAPI 与 Worker；需要固定名称时可成对设置 `LINKCV_LOCAL_RABBITMQ_QUEUE` 与 `LINKCV_LOCAL_RABBITMQ_ROUTING_KEY`。共享 Dev 容器继续使用上表 V2 topology。V2 消息正文要求 `pipeline_version="v2"`，RabbitMQ 同时携带 `x-linkcv-pipeline-version=v2` 诊断 header；缺版本、V1、未知版本或未知字段都进入当前 V2 DLT，不调用业务 Processor。
+共享 Development 中不得让当前 worktree 与已部署旧 Worker 竞争同一队列。`npm run dev:development` 会根据当前 worktree 的绝对路径自动生成独立的 queue 与 routing key，并同时传给本地 FastAPI 与 Worker；需要固定名称时可成对设置 `LINKRESUME_LOCAL_RABBITMQ_QUEUE` 与 `LINKRESUME_LOCAL_RABBITMQ_ROUTING_KEY`。共享 Dev 容器继续使用上表 V2 topology。V2 消息正文要求 `pipeline_version="v2"`，RabbitMQ 同时携带 `x-linkresume-pipeline-version=v2` 诊断 header；缺版本、V1、未知版本或未知字段都进入当前 V2 DLT，不调用业务 Processor。
 
 `.env.example`、`.env.development` 与 `.env.production` 的固定 MQ 名称均与上表 V2 topology 一致；本地 worktree 隔离覆盖只改变 queue 与 routing key，不改变消息版本契约。
 
@@ -164,7 +164,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | 命令                                  | 作用                                                                 |
 | ------------------------------------- | -------------------------------------------------------------------- |
 | `npm run db:migrate`                  | 将数据库升级到 Alembic 最新版本                                      |
-| `npm run db:init`                     | 仅允许创建 `linkcv` 数据库并升级到 Alembic head                      |
+| `npm run db:init`                     | 仅允许创建 `linkresume` 数据库并升级到 Alembic head                      |
 | `npm run db:revision -- -m <message>` | 创建 forward-only 的 SQL revision，以及同 ID 的 `.up.sql` 文件       |
 | `npm run dev:development`             | 使用共享 Development 中间件，一键启动 Web、FastAPI、Worker 与 Pi    |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
@@ -179,7 +179,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run dev:desktop`                 | 等待本地 Vite 就绪后打开 Electron 桌面窗口（加载本地页面，支持热更新） |
 | `npm run build:desktop`             | 打包未签名 macOS 正式版 dmg（连生产源，仅微信扫码登录）           |
-| `npm run build:desktop:dev`         | 打包未签名 macOS 开发版 dmg（LinkCV-Dev，连内网 Dev，密码登录） |
+| `npm run build:desktop:dev`         | 打包未签名 macOS 开发版 dmg（LinkResume-Dev，连内网 Dev，密码登录） |
 | `npm run test:desktop`                | 桌面壳配置解析与导航守卫的 Node 测试                                  |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
@@ -191,7 +191,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run check:app`                   | 执行设计门禁、类型检查、构建、应用测试和 Pi 质量检查                 |
 | `npm run check`                       | 完整本地质量入口                                                     |
 
-桌面壳的打包规范：产物只落在被 Git 忽略的 `apps/desktop/release/`，不提交任何 dmg 或构建产物；应用图标使用 `apps/desktop/build/icon.png`（复制自 `apps/web/src/assets/linkresume-mark.png`，品牌图更新时需同步该副本）；目标环境在构建期由 `scripts/write-build-env.mjs` 写入产物，正式版强制 https，开发版允许内网 http 并在启动日志提示；开发版使用独立应用名 LinkCV-Dev 与 appId，不与正式版互相覆盖。完整引导见 `desktop-release` Skill。
+桌面壳的打包规范：产物只落在被 Git 忽略的 `apps/desktop/release/`，不提交任何 dmg 或构建产物；应用图标使用 `apps/desktop/build/icon.png`（复制自 `apps/web/src/assets/linkresume-mark.png`，品牌图更新时需同步该副本）；目标环境在构建期由 `scripts/write-build-env.mjs` 写入产物，正式版强制 https，开发版允许内网 http 并在启动日志提示；开发版使用独立应用名 LinkResume-Dev 与 appId，不与正式版互相覆盖。完整引导见 `desktop-release` Skill。
 
 ## 测试分层
 
@@ -202,10 +202,10 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 ### 小程序求职联调
 
-求职页和五个详情/操作子页通过 `/api/miniprogram/career/*` 访问 FastAPI。使用共享 Dev 中间件时执行 `npm run dev:development`，默认本地后端端口为 18000；可用 `LINKCV_LOCAL_BACKEND_PORT=8000 npm run dev:development` 指定 8000。开发者工具重新编译后自动使用生成的本机地址和实际端口；如之前手填过 `linkcv_api_base_url`，删除该覆盖可恢复自动识别。共享 Dev 启动器只监听 127.0.0.1，真机联调需单独提供实际可达的开发后端，不应把局域网地址生成成功视为真机连通。
+求职页和五个详情/操作子页通过 `/api/miniprogram/career/*` 访问 FastAPI。使用共享 Dev 中间件时执行 `npm run dev:development`，默认本地后端端口为 18000；可用 `LINKRESUME_LOCAL_BACKEND_PORT=8000 npm run dev:development` 指定 8000。开发者工具重新编译后自动使用生成的本机地址和实际端口；如之前手填过 `linkresume_api_base_url`，删除该覆盖可恢复自动识别。共享 Dev 启动器只监听 127.0.0.1，真机联调需单独提供实际可达的开发后端，不应把局域网地址生成成功视为真机连通。
 
 求职数据沿用网页端已存在的岗位和求职记录，客户端不混入示例数据。检查时间表、阶段和安排的保存、文字记录、取消与完成动作时使用虚构测试记录；特别核对阶段成功而排期失败后的原位重试、两端修改冲突和投递时简历版本。`npm run test:miniprogram` 覆盖逻辑与请求测试，后端 `tests/integration/api/test_miniprogram_career.py` 覆盖专用渠道的业务和权限；原生编译与模拟器、真机交互检查分别进行。
 
-真机小程序联调时，可用 `LINKCV_LOCAL_BACKEND_HOST=0.0.0.0 npm run dev:development` 显式允许手机访问本地 FastAPI；默认仍仅监听回环地址。端口可通过 `LINKCV_LOCAL_BACKEND_PORT` 指定，生成的小程序配置同步跟随该端口。手机与电脑需要处于互通的局域网，开发版重新编译扫码后自动读取局域网地址；体验版与正式版不读取该本地配置。
+真机小程序联调时，可用 `LINKRESUME_LOCAL_BACKEND_HOST=0.0.0.0 npm run dev:development` 显式允许手机访问本地 FastAPI；默认仍仅监听回环地址。端口可通过 `LINKRESUME_LOCAL_BACKEND_PORT` 指定，生成的小程序配置同步跟随该端口。手机与电脑需要处于互通的局域网，开发版重新编译扫码后自动读取局域网地址；体验版与正式版不读取该本地配置。
 
 求职界面联调时，分别从时间表面试块和岗位详情面试卡片打开同一场次，核对共用详情弹窗、取消/结束后的按钮状态和返回原列表的位置。在同一面试弹窗内保存问题、复盘总结与改进计划后，应看到记录更新，且场次状态不变。新增阶段、补当前阶段排期和修改现有安排分别核对不会重复创建阶段；岗位完整内容按快照字段展示，底部栏不遮挡最后一节。相关纯逻辑用例位于 `apps/miniprogram/tests/career-detail.test.cjs` 与 `schedule-sheet.test.cjs`，不能替代模拟器排版和真机键盘验收。

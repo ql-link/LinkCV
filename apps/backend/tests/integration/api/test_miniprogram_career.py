@@ -5,11 +5,11 @@ from datetime import UTC, datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
-from linkcv.modules.job_descriptions.models import JobDescription
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from linkresume.modules.job_descriptions.models import JobDescription
 from tests.fakes import FakeRedis
 
 
@@ -578,7 +578,7 @@ def test_application_resume_preview_uses_attached_version_not_latest():
             headers=headers,
         )
         assert preview.status_code == 200, preview.text
-        assert preview.headers["x-linkcv-preview-version-id"] == initial["id"]
+        assert preview.headers["x-linkresume-preview-version-id"] == initial["id"]
         assert preview.headers["cache-control"] == "private, no-store"
         assert (
             app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]

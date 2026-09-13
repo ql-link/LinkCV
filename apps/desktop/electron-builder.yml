@@ -1,5 +1,5 @@
 appId: cn.linkresume.desktop
-productName: LinkCV
+productName: LinkResume
 directories:
   output: release
 files:

@@ -1,5 +1,5 @@
 /* Shared Figma geometry: 390px canvas, 20px gutter, 18px panel inset. */
-page { background:#f4f6f8; color:#17191c; font-family:"LinkCV Career UI",-apple-system,"PingFang SC",sans-serif; }
+page { background:#f4f6f8; color:#17191c; font-family:"LinkResume Career UI",-apple-system,"PingFang SC",sans-serif; }
 .career-page { padding:8px 20px calc(24px + env(safe-area-inset-bottom)); }
 .panel { background:#fff;border-radius:14px;padding:20px 18px;margin-bottom:14px; }
 .section { display:flex;flex-direction:column;gap:10px; }

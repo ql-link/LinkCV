@@ -19,15 +19,15 @@ function readBuiltInEnv(): BuiltInDesktopEnv | null {
 }
 
 const target = resolveDesktopTarget(
-  process.env.LINKCV_DESKTOP_MODE === "dev" ? "dev" : "package",
+  process.env.LINKRESUME_DESKTOP_MODE === "dev" ? "dev" : "package",
   process.env,
   readBuiltInEnv(),
 );
 if (target.preset === "development") {
-  console.log(`[linkcv-desktop] 开发版客户端，连接 ${target.origin}`);
+  console.log(`[linkresume-desktop] 开发版客户端，连接 ${target.origin}`);
 }
 for (const warning of target.warnings) {
-  console.warn(`[linkcv-desktop] ${warning}`);
+  console.warn(`[linkresume-desktop] ${warning}`);
 }
 
 /** Electron 在导航被取代时上报的 errorCode（ABORTED），不是加载失败。 */
@@ -67,7 +67,7 @@ function createMainWindow(): void {
   const win = new BrowserWindow({
     width: 1280,
     height: 832,
-    title: "LinkCV",
+    title: "LinkResume",
     autoHideMenuBar: true,
     titleBarStyle: "hiddenInset",
     webPreferences: {

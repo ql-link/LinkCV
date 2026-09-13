@@ -3,9 +3,9 @@ import json
 
 import httpx
 
-from linkcv.core.config import Settings
-from linkcv.modules.llm.pi_probe import PiProbeCoordinator
-from linkcv.modules.llm.service import RuntimeModelConfig
+from linkresume.core.config import Settings
+from linkresume.modules.llm.pi_probe import PiProbeCoordinator
+from linkresume.modules.llm.service import RuntimeModelConfig
 
 
 def test_coordinator_requires_matching_backend_and_pi_tool_evidence() -> None:

@@ -5,20 +5,20 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
-from linkcv.application.resumes.commands import CreateResumeCommand
-from linkcv.application.resumes.service import (
+from linkresume.application.resumes.commands import CreateResumeCommand
+from linkresume.application.resumes.service import (
     close_stale_resume_imports,
     persist_resume_with_initial_version,
     resume_slot_count,
 )
-from linkcv.core.config import Settings
-from linkcv.core.mq import MQPublishError
-from linkcv.domain.document_conversion import DocumentMarkdownResult
-from linkcv.domain.resume import CanonicalResumeDocument, ResumePresentation
-from linkcv.domain.resume import SparseResumeAnnotations
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import (
+from linkresume.core.config import Settings
+from linkresume.core.mq import MQPublishError
+from linkresume.domain.document_conversion import DocumentMarkdownResult
+from linkresume.domain.resume import CanonicalResumeDocument, ResumePresentation
+from linkresume.domain.resume import SparseResumeAnnotations
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
@@ -361,7 +361,7 @@ def test_publisher_initialization_failure_does_not_overwrite_worker_success(
         raise RuntimeError("publisher initialization failed after delivery")
 
     monkeypatch.setattr(
-        "linkcv.modules.resumes.import_routes.build_mq_publisher",
+        "linkresume.modules.resumes.import_routes.build_mq_publisher",
         deliver_before_initialization,
     )
     app.state.mq_publisher = None

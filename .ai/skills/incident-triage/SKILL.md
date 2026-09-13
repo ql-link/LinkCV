@@ -1,6 +1,6 @@
 ---
 name: incident-triage
-description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQL、MinIO、构建和部署链路分诊故障，从日志与现象区分网络或 Tailscale、配置漂移、缺失迁移、登录态、数据不一致、代码缺陷和外部依赖。适用于用户贴报错、服务启动失败、接口不可达、登录或保存异常、上传失败、测试或 CI 故障并要求查原因；默认只读诊断，修复需另行授权。
+description: 沿 LinkResume 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQL、MinIO、构建和部署链路分诊故障，从日志与现象区分网络或 Tailscale、配置漂移、缺失迁移、登录态、数据不一致、代码缺陷和外部依赖。适用于用户贴报错、服务启动失败、接口不可达、登录或保存异常、上传失败、测试或 CI 故障并要求查原因；默认只读诊断，修复需另行授权。
 ---
 
 # 故障分诊
@@ -42,7 +42,7 @@ description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQ
 
 ### A. 服务无法启动或页面打不开
 
-- 先核对实际启动命令、`LINKCV_ENV_FILE`、`LINKCV_SECRET_ENV_FILE` 与启动器打印路径，区分 Local profile 和共享 Dev profile；
+- 先核对实际启动命令、`LINKRESUME_ENV_FILE`、`LINKRESUME_SECRET_ENV_FILE` 与启动器打印路径，区分 Local profile 和共享 Dev profile；
 - 分别运行或读取 `npm run dev:web`、`npm run dev:backend` 的真实错误；
 - 核对 Node、Python、uv、依赖锁、工作目录和端口占用；
 - 区分进程未启动、监听地址不对、端口冲突、依赖缺失和浏览器访问目标错误；
@@ -57,7 +57,7 @@ description: 沿 LinkCV 的浏览器、Vite 代理、FastAPI、SQLAlchemy、MySQ
 
 ### C. 登录、Cookie、简历保存或权限异常
 
-- 当前事实源是 `apps/backend/src/linkcv/modules/identity/`、`modules/resumes/`、`core/security.py` 和 `core/database.py`；
+- 当前事实源是 `apps/backend/src/linkresume/modules/identity/`、`modules/resumes/`、`core/security.py` 和 `core/database.py`；
 - 核对 `resume_session` JWT Cookie 是否由正确路由设置、浏览器是否携带、签名和有效期是否符合当前环境；
 - 区分浏览器登录、CLI 登录和其他 Agent 的凭据，它们不是同一身份；
 - 核对查询是否按 `user_id` 限制，以及 401、403、404 的契约语义。

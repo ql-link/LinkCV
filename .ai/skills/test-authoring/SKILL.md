@@ -1,6 +1,6 @@
 ---
 name: test-authoring
-description: 为 LinkCV 的 React/TypeScript 前端和 FastAPI/Python 后端设计、编写或修订自动化测试。适用于用户要求补单元测试、组件测试、后端集成测试、测试夹具或 Mock，或者实现阶段出现需要专门设计的测试覆盖；只负责编写测试及必要的测试配置，最终执行与结果报告转 run-all-tests，人工端到端验收不属于本技能。
+description: 为 LinkResume 的 React/TypeScript 前端和 FastAPI/Python 后端设计、编写或修订自动化测试。适用于用户要求补单元测试、组件测试、后端集成测试、测试夹具或 Mock，或者实现阶段出现需要专门设计的测试覆盖；只负责编写测试及必要的测试配置，最终执行与结果报告转 run-all-tests，人工端到端验收不属于本技能。
 ---
 
 # 自动化测试编写
@@ -14,7 +14,7 @@ description: 为 LinkCV 的 React/TypeScript 前端和 FastAPI/Python 后端设�
 - 仅运行现有测试或汇报仓库是否通过，此类请求转 `run-all-tests`；
 - 为让错误实现通过而降低断言或删除测试；
 - 在纯测试请求中顺带修改生产行为，发现后端生产缺陷时转唯一后端入口 `flow-router`；纯前端缺陷返回当前前端任务；
-- 编写或宣称已经具备自动化端到端测试。LinkCV 的跨端业务流程当前由人工验证。
+- 编写或宣称已经具备自动化端到端测试。LinkResume 的跨端业务流程当前由人工验证。
 
 实现任务中的简单邻近测试可由 `implementation-execution` 直接补充；需要独立测试设计、复杂 Mock、分层调整或用户明确要求补测试时使用本技能。
 
@@ -39,7 +39,7 @@ description: 为 LinkCV 的 React/TypeScript 前端和 FastAPI/Python 后端设�
 
 ### 后端
 
-- `apps/backend/tests/unit/` 放不访问网络、数据库或外部服务的快速单元测试，目录尽量镜像 `src/linkcv/`；
+- `apps/backend/tests/unit/` 放不访问网络、数据库或外部服务的快速单元测试，目录尽量镜像 `src/linkresume/`；
 - `apps/backend/tests/integration/` 放模块组合和 FastAPI HTTP 边界测试；当前路由测试使用 `httpx.ASGITransport`，不启动真实端口；
 - `apps/backend/tests/tooling/` 只验证仓库脚本和 AI 工作流工具，不混入业务单元测试；
 - 对数据库、对象存储和第三方 API 使用明确夹具或替身，不读取真实密钥和用户数据。SQLite 和假 MinIO 是测试替身，不能用来证明 MySQL 或真实 MinIO 已就绪。

@@ -1,6 +1,6 @@
 ---
 name: alembic-migration
-description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、up SQL、数据回填、向前升级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，是否方案先行由 flow-router 的关键取舍、发布协调和可回退性门槛决定。
+description: 为 LinkResume 编写、校验和排查 forward-only 的 SQLAlchemy 与 SQL-first Alembic schema 迁移，覆盖 revision 链、up SQL、数据回填、向前升级、兼容发布和文档同步。适用于新增业务 revision，新增或修改表、字段、关系、约束、索引，处理多 head、模型与数据库漂移或迁移失败；单纯设计字段与索引先使用 mysql-ddl-conventions，是否方案先行由 flow-router 的关键取舍、发布协调和可回退性门槛决定。
 ---
 
 # Alembic 迁移
@@ -11,9 +11,9 @@ description: 为 LinkCV 编写、校验和排查 forward-only 的 SQLAlchemy 与
 
 本技能负责迁移本身；字段与索引设计转 `mysql-ddl-conventions`，完整业务实现返回 `flow-router`，由当前 Codex 使用 `implementation-execution` 继续完成，长期文档维护转 `doc-maintenance-sync`。
 
-## 2. LinkCV 基线
+## 2. LinkResume 基线
 
-- LinkCV 使用 MySQL 8.4 与 SQL-first Alembic；Python revision 的 `upgrade()` 调用同 ID 的 up SQL。
+- LinkResume 使用 MySQL 8.4 与 SQL-first Alembic；Python revision 的 `upgrade()` 调用同 ID 的 up SQL。
 - 迁移是 forward-only：仓库不保存 `.down.sql`，所有 `downgrade()` 明确拒绝执行。
 - 数据库恢复依赖发布前备份；schema 或数据修正通过新的向前 revision 完成。
 - 后端 SQLite 测试不能替代真实 MySQL 迁移验证；仓库 head 也不代表目标环境已升级。

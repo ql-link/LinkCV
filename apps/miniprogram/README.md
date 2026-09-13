@@ -21,7 +21,7 @@
 1. 打开微信开发者工具，选择"导入项目"。
 2. 项目目录选择本目录 `apps/miniprogram`，不要选择仓库根目录。
 3. AppID 使用 `project.config.json` 中的项目 AppID；如果实际发布主体不同，先替换为该主体的小程序 AppID。
-4. 每次运行 `npm run dev:local` 或 `npm run dev:development` 都会生成被 Git 忽略的 `config/local.js`。开发者工具在 `develop` 下自动使用 `devtoolsApiBaseUrl`（127.0.0.1 + 实际后端端口），重新编译即可，无需手填地址。共享 Dev 默认端口为 18000，可用 `LINKCV_LOCAL_BACKEND_PORT` 覆盖；Local 使用 `BACKEND_PORT`，默认 8000。真机开发版自动使用生成的局域网地址，显式设为 `false` 可关闭本地联调；后端必须在该地址可达。开发者工具现有合法域名校验配置仍需符合本地联调要求。
+4. 每次运行 `npm run dev:local` 或 `npm run dev:development` 都会生成被 Git 忽略的 `config/local.js`。开发者工具在 `develop` 下自动使用 `devtoolsApiBaseUrl`（127.0.0.1 + 实际后端端口），重新编译即可，无需手填地址。共享 Dev 默认端口为 18000，可用 `LINKRESUME_LOCAL_BACKEND_PORT` 覆盖；Local 使用 `BACKEND_PORT`，默认 8000。真机开发版自动使用生成的局域网地址，显式设为 `false` 可关闭本地联调；后端必须在该地址可达。开发者工具现有合法域名校验配置仍需符合本地联调要求。
 5. 根级 `npm run dev:local` / `npm run dev:development` 会监听构建 PDF CLI；若单独启动后端，先执行 `npm --prefix apps/web run build:pdf-cli`。
 6. 在微信公众平台配置并发布“小程序用户隐私保护指引”；启动后端并配置与小程序 AppID 配对的 `WECHAT_APPID` 和 `WECHAT_SECRET`，再测试游客示例卡片与详情、统一微信登录、扫码确认和登录后简历图片预览。
 
@@ -35,7 +35,7 @@ module.exports = {
 };
 ```
 
-该地址是公开的服务根地址，不是密钥。环境必须明确为 `develop` 才允许本地联调：开发者工具默认自动读取 `local.js`，真机自动使用其中的局域网地址。设为 `false` 可关闭自动本地联调，删除开关恢复各平台默认行为。`linkcv_api_base_url` 显式覆盖优先级最高，仅在 `develop` 生效；恢复自动地址时先删除该覆盖。环境未知、文件缺失或读取失败回退正式地址。`trial/release` 完全不读取开发 storage、设备识别或 `local.js`，默认使用 `https://linkresume.cn`，仍支持 HTTPS 的 `extConfig.apiBaseUrl`，拒绝 HTTP。改变配置后需重新编译或冷启动；后端不可达时不会自动跨环境回退。服务端密钥不得写入本目录。
+该地址是公开的服务根地址，不是密钥。环境必须明确为 `develop` 才允许本地联调：开发者工具默认自动读取 `local.js`，真机自动使用其中的局域网地址。设为 `false` 可关闭自动本地联调，删除开关恢复各平台默认行为。`linkresume_api_base_url` 显式覆盖优先级最高，仅在 `develop` 生效；恢复自动地址时先删除该覆盖。环境未知、文件缺失或读取失败回退正式地址。`trial/release` 完全不读取开发 storage、设备识别或 `local.js`，默认使用 `https://linkresume.cn`，仍支持 HTTPS 的 `extConfig.apiBaseUrl`，拒绝 HTTP。改变配置后需重新编译或冷启动；后端不可达时不会自动跨环境回退。服务端密钥不得写入本目录。
 
 还必须在微信公众平台完成：
 
@@ -63,4 +63,4 @@ npm run test:miniprogram
 
 求职页按已确认方案提供“面试安排 / 求职记录”顶部切换，时间表、搜索筛选、求职/场次详情、阶段与安排表单、面试准备和文字记录、Offer、终止求职以及岗位/投递版本简历查看。进入游客求职页不请求私人数据，登录后加载本人真实记录。岗位导入仍使用网页端。接口与失败语义见 `docs/internals/miniprogram.md` 和 `docs/api/http-contracts.md`。
 
-共享 Dev 联调执行 `npm run dev:development` 后重新编译，开发者工具会自动使用生成的本机地址和实际端口。手机与电脑需在互通的局域网内；共享 Dev 默认只监听 127.0.0.1，真机联调时使用 `LINKCV_LOCAL_BACKEND_HOST=0.0.0.0 npm run dev:development` 显式启用局域网访问。重新编译并扫码后生效。
+共享 Dev 联调执行 `npm run dev:development` 后重新编译，开发者工具会自动使用生成的本机地址和实际端口。手机与电脑需在互通的局域网内；共享 Dev 默认只监听 127.0.0.1，真机联调时使用 `LINKRESUME_LOCAL_BACKEND_HOST=0.0.0.0 npm run dev:development` 显式启用局域网访问。重新编译并扫码后生效。

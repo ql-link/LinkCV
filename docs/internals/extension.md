@@ -10,13 +10,13 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| `wxt.config.ts` | MV3 Manifest、BOSS 与 LinkCV 精确站点权限 |
+| `wxt.config.ts` | MV3 Manifest、BOSS 与 LinkResume 精确站点权限 |
 | `entrypoints/boss.content.ts` | 只响应弹窗消息的 BOSS 内容脚本 |
 | `src/extractor/boss.ts` | 多选择器详情识别、列表卡片排除和页面字段提取 |
 | `entrypoints/popup/` | 登录状态、可编辑预览、提交、重复来源和结果反馈 |
-| `src/api/linkcv.ts` | 本地 LinkCV 源站探测、Cookie 会话刷新和导入客户端 |
+| `src/api/linkresume.ts` | 本地 LinkResume 源站探测、Cookie 会话刷新和导入客户端 |
 
-内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 LinkResume `host_permissions` 的扩展弹窗才发送受保护 API 请求。普通本地构建使用“LinkResume 岗位采集（开发版）”名称，保留 `127.0.0.1:5173` 和 `localhost:5173` 候选，并优先选择已有登录态的源站。发布脚本设置 `WXT_RELEASE_BUILD=1`，并分别注入 `development` 或 `production` 渠道及唯一 `WXT_PUBLIC_LINKCV_ORIGIN`；发布包运行时不回退到其他环境，Manifest 也只包含对应 LinkResume Origin 与受控 BOSS Origin。Development 包保留“开发版”名称，Production 包使用“LinkResume 岗位采集”。
+内容脚本和 API 客户端分开：BOSS 页面上下文只返回采集字段，带 LinkResume `host_permissions` 的扩展弹窗才发送受保护 API 请求。普通本地构建使用“LinkResume 岗位采集（开发版）”名称，保留 `127.0.0.1:5173` 和 `localhost:5173` 候选，并优先选择已有登录态的源站。发布脚本设置 `WXT_RELEASE_BUILD=1`，并分别注入 `development` 或 `production` 渠道及唯一 `WXT_PUBLIC_LINKRESUME_ORIGIN`；发布包运行时不回退到其他环境，Manifest 也只包含对应 LinkResume Origin 与受控 BOSS Origin。Development 包保留“开发版”名称，Production 包使用“LinkResume 岗位采集”。
 
 ## 提取与失败策略
 
@@ -33,7 +33,7 @@ BOSS DOM 不是稳定公共契约。站点结构变化时优先新增最窄的�
 ```bash
 uv run --directory apps/backend python ../../scripts/release/build_extension_release.py \
   --development-origin http://127.0.0.1:5173 \
-  --production-origin https://linkcv.example.test \
+  --production-origin https://linkresume.example.test \
   --output-dir ../../.tmp/plugin-release
 ```
 

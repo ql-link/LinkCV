@@ -30,7 +30,7 @@ npm run build:extension
 普通本地开发构建在 Manifest 中标记为“开发版”，默认只允许请求本地 `127.0.0.1:5173` 和 `localhost:5173`。需要联调其他 LinkResume Web 源站时，在构建时提供完整源站，不要包含路径：
 
 ```bash
-WXT_PUBLIC_LINKCV_ORIGIN=https://linkresume.example.com npm run build:extension
+WXT_PUBLIC_LINKRESUME_ORIGIN=https://linkresume.example.com npm run build:extension
 ```
 
 该值会同时进入运行时 API 候选地址和 Manifest 的精确 `host_permissions`。

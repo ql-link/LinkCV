@@ -8,7 +8,7 @@ import config from "../dist/config.cjs";
 const require = createRequire(import.meta.url);
 const scriptRoot = dirname(fileURLToPath(import.meta.url));
 
-const devUrl = process.env.LINKCV_DESKTOP_DEV_URL ?? config.DEFAULT_DEV_URL;
+const devUrl = process.env.LINKRESUME_DESKTOP_DEV_URL ?? config.DEFAULT_DEV_URL;
 
 function validateDevUrl(value) {
   try {
@@ -19,7 +19,7 @@ function validateDevUrl(value) {
   } catch {
     // 落入下方统一报错。
   }
-  console.error(`[linkcv-desktop] LINKCV_DESKTOP_DEV_URL 非法：${value}`);
+  console.error(`[linkresume-desktop] LINKRESUME_DESKTOP_DEV_URL 非法：${value}`);
   process.exit(1);
 }
 
@@ -39,13 +39,13 @@ async function reachable(url) {
 }
 
 async function waitForDevServer() {
-  process.stdout.write(`[linkcv-desktop] 等待开发服务器就绪：${target}\n`);
+  process.stdout.write(`[linkresume-desktop] 等待开发服务器就绪：${target}\n`);
   while (Date.now() - startedAt < timeoutMs) {
     if (await reachable(target)) return;
     await new Promise((resolve) => setTimeout(resolve, intervalMs));
   }
   console.error(
-    "[linkcv-desktop] 等待超时。请先启动开发服务（npm run dev:local 或 npm run dev:development），再运行 npm run dev:desktop。",
+    "[linkresume-desktop] 等待超时。请先启动开发服务（npm run dev:local 或 npm run dev:development），再运行 npm run dev:desktop。",
   );
   process.exit(1);
 }
@@ -64,13 +64,13 @@ await waitForDevServer();
 
 const binary = electronBinary();
 if (!binary) {
-  console.error("[linkcv-desktop] 未找到 electron，请先在 apps/desktop 执行 npm install。");
+  console.error("[linkresume-desktop] 未找到 electron，请先在 apps/desktop 执行 npm install。");
   process.exit(1);
 }
 
 const child = spawn(binary, ["."], {
   cwd: join(scriptRoot, ".."),
-  env: { ...process.env, LINKCV_DESKTOP_MODE: "dev", LINKCV_DESKTOP_DEV_URL: target },
+  env: { ...process.env, LINKRESUME_DESKTOP_MODE: "dev", LINKRESUME_DESKTOP_DEV_URL: target },
   stdio: "inherit",
 });
 child.on("exit", (code) => {

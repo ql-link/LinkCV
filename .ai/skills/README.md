@@ -1,4 +1,4 @@
-# LinkCV 项目技能
+# LinkResume 项目技能
 
 `.ai/skills/` 是项目技能的唯一来源。Codex 从 `.agents/skills` 发现这些技能，Claude 从 `.claude/skills` 发现同一份内容。
 

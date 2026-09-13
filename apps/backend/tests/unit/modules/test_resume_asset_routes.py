@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from linkcv.core.errors import ApiError
-from linkcv.modules.resumes import resume_asset_routes
-from linkcv.modules.resumes.image_limits import MAX_RESUME_IMAGE_BYTES
+from linkresume.core.errors import ApiError
+from linkresume.modules.resumes import resume_asset_routes
+from linkresume.modules.resumes.image_limits import MAX_RESUME_IMAGE_BYTES
 
 
 class RecordingStorage:

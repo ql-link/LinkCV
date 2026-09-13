@@ -1,4 +1,4 @@
-:host { display:block;flex-shrink:0;font-family:"LinkCV Career UI",-apple-system,"PingFang SC",sans-serif;color:#17191c; }
+:host { display:block;flex-shrink:0;font-family:"LinkResume Career UI",-apple-system,"PingFang SC",sans-serif;color:#17191c; }
 .navigation-space { flex-shrink:0; }
 /* Only the brand sits above sheets; secondary navigation stays behind their masks. */
 .brand-fixed { position:fixed;left:0;right:0;top:0;z-index:1000010;background:#f4f6f8; }

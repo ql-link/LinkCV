@@ -5,7 +5,7 @@
 | 模块 | 位置 | 当前职责 |
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 单页应用，承载用户工作区、公共分享和管理端界面 |
-| Desktop shell | `apps/desktop` | Electron macOS 桌面壳：加载线上 LinkCV Web 端（开发窗口连本地 Vite，打包产物按目标环境连 Dev 或生产），与业务代码和后端零耦合；窗口采用无标题栏沉浸形态，业务迭代不需要修改壳。打包、环境区分（本地/开发版/正式版）与产物管理由 `desktop-release` Skill 引导 |
+| Desktop shell | `apps/desktop` | Electron macOS 桌面壳：加载线上 LinkResume Web 端（开发窗口连本地 Vite，打包产物按目标环境连 Dev 或生产），与业务代码和后端零耦合；窗口采用无标题栏沉浸形态，业务迭代不需要修改壳。打包、环境区分（本地/开发版/正式版）与产物管理由 `desktop-release` Skill 引导 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护、简历只读浏览及求职跟进；时间表与岗位详情复用面试弹窗和记录编辑器；详见 [小程序架构](miniprogram.md) |
 | Backend | `apps/backend` | FastAPI 业务 API、内部 Agent 工具、Worker、SQLAlchemy 模型与 SQL-first Alembic 迁移 |
@@ -22,9 +22,9 @@ Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全�
 
 同一 Vite 配置把 `@` 解析到 `apps/web/src`，与 TypeScript、Vitest 和 `components.json` 的路径约定一致；集中 UI 组件和 shadcn 生成源码使用该别名，不影响浏览器请求路径。
 
-浏览器插件从独立的 `chrome-extension://` 源运行，默认通过 `http://127.0.0.1:5173` 或 `http://localhost:5173` 调用同一 Vite `/api` 代理，并携带用户已经在对应 Web 源站建立的 HttpOnly Cookie 会话。插件 Manifest 只声明 BOSS 站点、本地 LinkCV 源站和构建时显式配置的 LinkCV 源站权限；内容脚本不直接访问 LinkCV API。
+浏览器插件从独立的 `chrome-extension://` 源运行，默认通过 `http://127.0.0.1:5173` 或 `http://localhost:5173` 调用同一 Vite `/api` 代理，并携带用户已经在对应 Web 源站建立的 HttpOnly Cookie 会话。插件 Manifest 只声明 BOSS 站点、本地 LinkResume 源站和构建时显式配置的 LinkResume 源站权限；内容脚本不直接访问 LinkResume API。
 
-FastAPI 在 `apps/backend/src/linkcv/main.py` 以 `/api` 前缀挂载浏览器路由，并在根路径挂载不出现在 OpenAPI 的 `/internal/agent` 服务间路由。智能助手请求由 FastAPI 写入 MySQL 后以服务 token 转发到独立 Pi 服务；Pi 再用另一枚 token 调用受控内部工具，浏览器不直接访问 Pi。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 和 DOCX 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，Markdown 在 Worker 内本地转换。详细接口见 [HTTP 契约](../api/http-contracts.md)。
+FastAPI 在 `apps/backend/src/linkresume/main.py` 以 `/api` 前缀挂载浏览器路由，并在根路径挂载不出现在 OpenAPI 的 `/internal/agent` 服务间路由。智能助手请求由 FastAPI 写入 MySQL 后以服务 token 转发到独立 Pi 服务；Pi 再用另一枚 token 调用受控内部工具，浏览器不直接访问 Pi。Vite 为最长 180 秒的同步导入设置 190 秒代理预算，避免代理先于后端业务 deadline 关闭连接。PDF 和 DOCX 导入由 FastAPI 使用后端 Secret 直接访问 `http://100.86.10.52:18743/v1/parse`；浏览器不连接 LinkParse，Markdown 在 Worker 内本地转换。详细接口见 [HTTP 契约](../api/http-contracts.md)。
 
 ## 数据与鉴权
 

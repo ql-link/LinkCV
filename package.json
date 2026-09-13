@@ -1,5 +1,5 @@
 {
-  "name": "linkcv",
+  "name": "linkresume",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -22,8 +22,8 @@
     "dev:web": "npm --prefix apps/web run dev",
     "dev:pdf": "npm --prefix apps/web run dev:pdf-cli",
     "dev:extension": "npm --prefix apps/extension run dev",
-    "dev:backend": "uv run --directory apps/backend python -m linkcv",
-    "dev:worker": "uv run --directory apps/backend python -m linkcv.workers",
+    "dev:backend": "uv run --directory apps/backend python -m linkresume",
+    "dev:worker": "uv run --directory apps/backend python -m linkresume.workers",
     "dev:pi": "npm --prefix apps/pi-service start",
     "dev:desktop": "npm --prefix apps/desktop run dev",
     "db:migrate": "uv run --directory apps/backend alembic upgrade head",

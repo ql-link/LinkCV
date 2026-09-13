@@ -522,7 +522,7 @@ export function AdminLogsCenter({
   return (
     <>
       <header className="admin-page-heading">
-        <div><h1>日志中心</h1><p>统一查询 LinkCV 系统日志、业务审计和既有 LLM 调用记录。</p></div>
+        <div><h1>日志中心</h1><p>统一查询 LinkResume 系统日志、业务审计和既有 LLM 调用记录。</p></div>
         <button className="admin-secondary-button" type="button" onClick={() => window.location.reload()}><RefreshCw size={15} />刷新</button>
       </header>
       <nav className="observability-tabs" aria-label="日志类型">

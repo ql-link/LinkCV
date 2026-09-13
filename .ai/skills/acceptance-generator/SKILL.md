@@ -1,6 +1,6 @@
 ---
 name: acceptance-generator
-description: 把用户已经确认的 LinkCV 方案文档转换为可观察、可断言的 Gherkin 验收契约。适用于 solution.md 选定契约验收路径后创建或修订 acceptance.feature，覆盖主流程、权限、校验、异常、边界、状态流转、持久化、重试和回归行为；只展开已确认规则，不重新讨论需求，发现新业务选择时返回 solution-generator。
+description: 把用户已经确认的 LinkResume 方案文档转换为可观察、可断言的 Gherkin 验收契约。适用于 solution.md 选定契约验收路径后创建或修订 acceptance.feature，覆盖主流程、权限、校验、异常、边界、状态流转、持久化、重试和回归行为；只展开已确认规则，不重新讨论需求，发现新业务选择时返回 solution-generator。
 ---
 
 # 验收契约生成与收敛
@@ -50,7 +50,7 @@ description: 把用户已经确认的 LinkCV 方案文档转换为可观察、�
 
 使用标准 Gherkin 关键字 `Feature`、`Background`、`Scenario`、`Scenario Outline`、`Given`、`When`、`Then`、`And`。这些关键字属于机器语法，场景名称、步骤和注释统一使用中文。
 
-当前 LinkCV 已建立前端单元和组件测试基础，但尚无自动化端到端测试框架。本文件首先是可执行化的验收契约；只有存在真实映射且已经运行的自动化测试时，才能声称对应场景被自动验证。跨端流程仍需人工验收。
+当前 LinkResume 已建立前端单元和组件测试基础，但尚无自动化端到端测试框架。本文件首先是可执行化的验收契约；只有存在真实映射且已经运行的自动化测试时，才能声称对应场景被自动验证。跨端流程仍需人工验收。
 
 ## 5. 场景写作规则
 

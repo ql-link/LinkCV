@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from linkcv.services.dataset_content_service import read_markdown, strip_word_page_markers
+from linkresume.services.dataset_content_service import read_markdown, strip_word_page_markers
 
 
 @pytest.mark.parametrize('newline', ['\n', '\r\n'])

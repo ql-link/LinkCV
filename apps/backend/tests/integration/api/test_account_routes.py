@@ -3,12 +3,12 @@ import base64
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.core.security import verify_password
-from linkcv.integrations.wechat_client import WechatApiError
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import ResumeTemplate
+from linkresume.core.config import Settings
+from linkresume.core.security import verify_password
+from linkresume.integrations.wechat_client import WechatApiError
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import ResumeTemplate
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage

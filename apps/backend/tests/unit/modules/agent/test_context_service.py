@@ -2,13 +2,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from linkcv.core.errors import ApiError
-from linkcv.modules.agent.context_service import (
+from linkresume.core.errors import ApiError
+from linkresume.modules.agent.context_service import (
     _ensure_fresh,
     _make_material,
     _snapshot,
 )
-from linkcv.modules.agent.schemas import AgentContextRef, MessageCreateRequest
+from linkresume.modules.agent.schemas import AgentContextRef, MessageCreateRequest
 
 
 def test_context_reference_accepts_web_display_shape_but_keeps_server_marker() -> None:
