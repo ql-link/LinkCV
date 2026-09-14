@@ -16,7 +16,7 @@
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。Local profile 同时设置回环地址的 `RABBITMQ_URL` 与 `RABBITMQ_PORT` 时，启动器在进程环境中让 URL 端口跟随 `RABBITMQ_PORT`，不修改文件，也不重写远程 RabbitMQ 地址。启动器复用当前 npm 的 JavaScript 入口，在 Windows 和 Unix 上都通过同一 profile 启动服务。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKRESUME_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
-FastAPI 和 Worker 单独启动时也支持 `LINKRESUME_ENV_FILE` + `LINKRESUME_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
+FastAPI 和 Worker 单独启动时也支持 `LINKRESUME_ENV_FILE` + `LINKRESUME_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。Production Web 另从 `.env.production` 读取公开的 `WEB_ASSET_OSS_URL` 作为构建地址；OSS 上传凭据只放在生产主机独立的 `.env.oss-cdn.local`（沿用旧文件名以兼容现有主机配置），不进入应用配置。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
 
 `APP_ENV=local|development` 时，Web 登录页开放普通邮箱密码注册和登录，注册成功后直接进入空的简历主页；`APP_ENV=production` 时两个普通入口均隐藏且后端返回 404，普通用户和已绑定微信的管理员都可通过微信身份进入，管理台仍提供独立的 `/admin/login` 密码入口。
 
@@ -169,6 +169,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run dev:development`             | 使用共享 Development 中间件，一键启动 Web、FastAPI、Worker 与 Pi    |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
 | `npm run check:web`                   | Web 设计规则、测试、类型检查和生产构建                               |
+| `npm run build:web`                   | 构建 Web 页面分包并输出各静态资源的原始与 gzip 体积                  |
+| `VITE_ASSET_BASE_URL=https://example-bucket.oss-cn-shanghai.aliyuncs.com/LinkResume/ npm run build:web` | 验证 HTTPS OSS 资源地址构建；本地日常构建保持变量为空 |
 | `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
 | `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
 | `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |
