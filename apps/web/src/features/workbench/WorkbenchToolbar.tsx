@@ -1,6 +1,9 @@
 import type { Editor } from "@tiptap/react";
 import { AnimatePresence, motion } from "motion/react";
 import {
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
   Baseline,
   Bold,
   Highlighter,
@@ -12,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { INLINE_FONT_SIZE_MIN, INLINE_FONT_SIZE_MAX, INLINE_FONT_SIZE_STEP, normalizeInlineFontSize } from "../../lib/resumeInlineStyle";
 import { api, type AgentSelectionContext } from "../../api/client";
 import { validateResumeImageFile } from "./resumeImageLimits";
 
@@ -145,6 +149,55 @@ function ColorControl({ editor, type }: { editor: Editor; type: "color" | "highl
   );
 }
 
+function FontSizeControl({ editor }: { editor: Editor }) {
+  const sizes = new Set<number>();
+  let hasOverride = false;
+  const { from, to } = editor.state.selection;
+  editor.state.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return;
+    const explicit = normalizeInlineFontSize(node.marks.find((mark) => mark.type.name === "textStyle")?.attrs.fontSize);
+    hasOverride ||= explicit != null;
+    // Computed CSS includes template/heading sizes but excludes canvas transforms.
+    const dom = editor.view.nodeDOM(pos);
+    const element = dom instanceof HTMLElement ? dom : dom?.parentElement;
+    const cssSize = element ? getComputedStyle(element).fontSize : "";
+    const points = Number.parseFloat(cssSize) * (cssSize.endsWith("pt") ? 1 : 0.75);
+    sizes.add(explicit ?? normalizeInlineFontSize(points) ?? 12);
+  });
+  const size = [...sizes][0] ?? 12;
+  const mixed = sizes.size > 1;
+  const adjust = (direction: number) => {
+    if (editor.state.selection.empty) return;
+    const points = Math.min(INLINE_FONT_SIZE_MAX, Math.max(INLINE_FONT_SIZE_MIN,
+      Number((size + direction * INLINE_FONT_SIZE_STEP).toFixed(1))));
+    editor.chain().focus().setMark("textStyle", { fontSize: points + "pt" }).run();
+  };
+
+  return (
+    <div className="selection-font-size-control" role="group" aria-label="字号调整">
+      <output
+        aria-label="所选文字字号"
+        title={mixed ? "混合字号，箭头以选区首字字号为基准统一调整" : "所选文字当前字号"}
+      >
+        {mixed ? "混合" : <>{size}<small>pt</small></>}
+      </output>
+      <div className="selection-font-size-arrows">
+        <ToolButton label="增大字号" disabled={!mixed && size >= INLINE_FONT_SIZE_MAX} onClick={() => adjust(1)}>
+          <ChevronUp aria-hidden="true" size={13} />
+        </ToolButton>
+        <ToolButton label="减小字号" disabled={!mixed && size <= INLINE_FONT_SIZE_MIN} onClick={() => adjust(-1)}>
+          <ChevronDown aria-hidden="true" size={13} />
+        </ToolButton>
+      </div>
+      <ToolButton label="恢复默认字号" disabled={!hasOverride} onClick={() => {
+        if (!editor.state.selection.empty) editor.chain().focus().setMark("textStyle", { fontSize: null }).removeEmptyTextStyle().run();
+      }}>
+        <RotateCcw aria-hidden="true" size={14} />
+      </ToolButton>
+    </div>
+  );
+}
+
 export const selectionAgentActions = ["优化表达", "生成亮点", "调整专业度", "解释内容", "继续改写"] as const;
 
 async function sha256Text(value: string) {
@@ -250,7 +303,8 @@ export function SelectionFormattingToolbar({
   if (editor.state.selection.empty) return null;
 
   return (
-    <div className="selection-formatting-toolbar" role="toolbar" aria-label="所选文字工具栏">
+    <div className="selection-formatting-toolbar" data-ui-theme="light" role="toolbar" aria-label="所选文字工具栏">
+      <FontSizeControl editor={editor} />
       <ToolButton label="加粗" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Bold aria-hidden="true" size={18} /></ToolButton>
       <ToolButton label="斜体" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic aria-hidden="true" size={18} /></ToolButton>
       <ToolButton label="下划线" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><Underline aria-hidden="true" size={18} /></ToolButton>

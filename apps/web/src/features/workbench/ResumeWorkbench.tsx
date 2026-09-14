@@ -1029,7 +1029,7 @@ export function SettingsStepper({ label, unit, value, min, max, step, onChange, 
       <span>{label}</span>
       <div className="workbench-value-control">
         <button type="button" aria-label={`${label}减小`} disabled={disabled || value <= min} onClick={() => onChange(steppedSettingValue(value, -1, min, max, step))}><Minus aria-hidden="true" size={14} /></button>
-        <output aria-label={`${label}当前值`}>{value}{unit ? ` ${unit}` : ""}</output>
+        <output aria-label={`${label}当前值`}>{Number(value.toFixed(2))}{unit ? ` ${unit}` : ""}</output>
         <button type="button" aria-label={`${label}增大`} disabled={disabled || value >= max} onClick={() => onChange(steppedSettingValue(value, 1, min, max, step))}><Plus aria-hidden="true" size={14} /></button>
       </div>
     </div>

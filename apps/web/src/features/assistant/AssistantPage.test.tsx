@@ -256,6 +256,7 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(screen.getByText("这是已恢复的回答")).toBeInTheDocument());
     expect(api.getAgentSession).toHaveBeenCalledWith("session-1");
     expect(window.location.pathname).toBe("/assistant/session-1");
+    expect(screen.getAllByRole("button", { name: "添加资料" })).toHaveLength(1);
   });
 
   it("把历史用户消息中的文件引用渲染为正文内联单元", async () => {

@@ -2083,7 +2083,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
               </div>
             </div>
             <div className="assistant-input-shell">
-              {!isEmptyConversation && <button type="button" className="assistant-input-add" aria-label="添加资料" onClick={openContextPicker}><Plus size={20} /></button>}
               {contextMention && (
                 <div ref={mentionMenuRef} id="assistant-context-mention-list" className="assistant-context-mention-menu" role="listbox" aria-label="可引用的资料和简历">
                   <header>
