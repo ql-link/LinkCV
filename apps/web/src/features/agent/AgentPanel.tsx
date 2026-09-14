@@ -16,7 +16,7 @@ import {
   api,
 } from "../../api/client";
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
-import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
+import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoading } from "@/components/ui";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 
 type AgentPanelProps = {
@@ -691,7 +691,11 @@ export function AgentPanel({
         ))}
       </div>}
 
-      {error && <div className="agent-error" role="alert">{error}</div>}
+      {error && (
+        <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError(null)}>
+          {error}
+        </FeedbackNotice>
+      )}
 
       {messages.some((message) => message.role === "assistant") && !running && !pendingClarification && (
         <button type="button" className="agent-regenerate" onClick={regenerateLastAnswer}>

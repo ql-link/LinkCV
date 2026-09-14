@@ -697,14 +697,18 @@ describe("AssistantPage", () => {
       throw new Error("network disconnected");
     });
 
-    render(<AssistantPage />);
+    const { container } = render(<AssistantPage />);
     const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
     await user.type(input, "请分析");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("未完成的回复")).toBeInTheDocument();
-    expect(await screen.findByRole("alert")).toHaveTextContent("请稍后重试");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("请稍后重试");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert.parentElement).toBe(document.body);
+    expect(container.querySelector(".assistant-error-notice")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("请分析");
   });
 

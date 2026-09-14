@@ -202,7 +202,11 @@ export function ResumeCreatePage() {
                   })}
                 </div>}
               </div>
-              {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
+              {error && (
+                <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError(null)}>
+                  {error}
+                </FeedbackNotice>
+              )}
               <Button
                 className="create-submit"
                 disabled={submitting}
@@ -251,7 +255,11 @@ export function ResumeCreatePage() {
                 />
                 <small>已根据文件名自动填写，可修改。</small>
               </label>
-              {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
+              {error && (
+                <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError(null)}>
+                  {error}
+                </FeedbackNotice>
+              )}
               <Button
                 className="create-submit"
                 icon={<FileUp size={15} />}

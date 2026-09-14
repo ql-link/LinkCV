@@ -330,8 +330,6 @@
 
 .job-source-link:hover { text-decoration: underline; }
 
-.job-detail-error { margin-bottom: 16px; }
-
 .job-quick-edit {
   position: relative;
   width: 100%;
@@ -667,7 +665,6 @@
 .job-smart-image-preview small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .job-smart-image-preview strong { font-size: var(--ui-text-sm); }
 .job-smart-image-preview small { margin-top: 4px; color: var(--ui-text-muted); font-size: var(--ui-text-xs); }
-.job-smart-error { margin: 0; border-radius: var(--ui-radius-md); background: var(--ui-destructive-subtle); padding: 10px 12px; color: var(--ui-destructive); font-size: var(--ui-text-sm); }
 .job-smart-footer { flex-direction: row; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--ui-border); padding: 14px 28px; }
 .job-create-draft-warning { margin: 16px 28px 0; border-radius: var(--ui-radius-md); background: var(--ui-warning-subtle); padding: 10px 12px; color: var(--ui-warning); font-size: var(--ui-text-sm); }
 
