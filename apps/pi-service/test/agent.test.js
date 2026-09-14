@@ -14,7 +14,12 @@ import {
 import { validateContextMaterials } from "../src/context.js";
 
 test("system prompt identifies the assistant as LinkResume", () => {
-  assert.match(SYSTEM_PROMPT, /你是 LinkResume 的简历智能助手/);
+  assert.match(SYSTEM_PROMPT, /你是 LinkResume 的职业与简历智能助手/);
+  assert.match(SYSTEM_PROMPT, /career-assistant-router/);
+  assert.match(SYSTEM_PROMPT, /list_user_resources/);
+  assert.match(SYSTEM_PROMPT, /resolve_resume_reference/);
+  assert.match(SYSTEM_PROMPT, /不绑定或改写会话/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /通过 `@`/);
   assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
 });
 
@@ -81,7 +86,7 @@ test("agent completion rejects missing and aborted assistant messages", () => {
   );
 });
 
-test("assistant output filter hides tool-call narration and emits only the final reply", () => {
+test("assistant output filter forwards every visible text delta immediately", () => {
   const emitted = [];
   const filter = createAssistantOutputFilter(
     (type, payload) => emitted.push({ type, payload }),
@@ -90,35 +95,48 @@ test("assistant output filter hides tool-call narration and emits only the final
 
   filter({
     type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "我先读取 Skill，再调用定位工具。" },
+    assistantMessageEvent: { type: "text_delta", delta: "已生成一份" },
   });
-  filter({
-    type: "message_end",
-    message: { role: "assistant", stopReason: "toolUse" },
-  });
+  assert.deepEqual(emitted, [{
+    type: "assistant.delta",
+    payload: { runId: "run-1", delta: "已生成一份" },
+  }]);
+
   filter({
     type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "已生成一份待确认的修改提案。" },
+    assistantMessageEvent: { type: "toolcall_delta", delta: "内部工具参数" },
+  });
+  assert.equal(emitted.length, 1);
+
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "待确认的修改提案。" },
   });
   filter({
     type: "message_end",
     message: { role: "assistant", stopReason: "stop" },
   });
 
-  assert.deepEqual(emitted, [{
-    type: "assistant.delta",
-    payload: { runId: "run-1", delta: "已生成一份待确认的修改提案。" },
-  }]);
+  assert.deepEqual(emitted, [
+    {
+      type: "assistant.delta",
+      payload: { runId: "run-1", delta: "已生成一份" },
+    },
+    {
+      type: "assistant.delta",
+      payload: { runId: "run-1", delta: "待确认的修改提案。" },
+    },
+  ]);
 });
 
-test("assistant output filter does not expose failed or aborted model text", () => {
+test("assistant output filter keeps already streamed partial text observable on failure", () => {
   const emitted = [];
   const filter = createAssistantOutputFilter((...event) => emitted.push(event), "run-2");
 
   for (const stopReason of ["error", "aborted"]) {
     filter({
       type: "message_update",
-      assistantMessageEvent: { type: "text_delta", delta: "内部错误详情" },
+      assistantMessageEvent: { type: "text_delta", delta: "已生成的部分回复" },
     });
     filter({
       type: "message_end",
@@ -126,7 +144,10 @@ test("assistant output filter does not expose failed or aborted model text", () 
     });
   }
 
-  assert.deepEqual(emitted, []);
+  assert.deepEqual(emitted, [
+    ["assistant.delta", { runId: "run-2", delta: "已生成的部分回复" }],
+    ["assistant.delta", { runId: "run-2", delta: "已生成的部分回复" }],
+  ]);
 });
 
 test("assistant output filter suppresses final prose after a clarification request", () => {
@@ -168,6 +189,20 @@ test("read tool can load a registered resume skill", async () => {
 
   assert.match(result.content[0].text, /name: resume-edit-workflow/);
   assert.equal(loadedPath, "resume-edit-workflow/SKILL.md");
+});
+
+test("read tool can load every P1 career workflow", async () => {
+  const tool = createSkillReadTool();
+  for (const path of [
+    "career-assistant-router/SKILL.md",
+    "resume-translation/SKILL.md",
+    "interview-guide/SKILL.md",
+    "career-planning/SKILL.md",
+    "resume-title-generator/SKILL.md",
+  ]) {
+    const result = await tool.execute(`read-${path}`, { path });
+    assert.match(result.content[0].text, /^---/);
+  }
 });
 
 test("read tool rejects files outside the registered skills directory", async () => {

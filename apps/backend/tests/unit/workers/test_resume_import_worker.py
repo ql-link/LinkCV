@@ -286,6 +286,40 @@ def test_worker_creates_one_resume_and_repeated_delivery_is_idempotent() -> None
         )
 
 
+def test_worker_appends_next_number_when_import_title_already_exists() -> None:
+    app, _storage, processor, import_id, template_id = build_processor()
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, import_id)
+        template = db.get(ResumeTemplate, template_id)
+        assert task is not None
+        assert template is not None
+        data, style = canonical_resume_payload(key=template.key)
+        for title in ("我的简历", "我的简历1"):
+            persist_resume_with_initial_version(
+                CreateResumeCommand(
+                    user_id=task.user_id,
+                    title=title,
+                    data=CanonicalResumeDocument.model_validate(data),
+                    style=ResumePresentation.model_validate(style),
+                    source_type="template",
+                    template_id=template.id,
+                ),
+                db,
+            )
+        db.commit()
+
+    asyncio.run(processor.process(import_id=import_id, template_id=template_id))
+
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, import_id)
+        assert task is not None
+        assert task.parse_status == "succeeded"
+        imported = db.scalar(select(Resume).where(Resume.parse_task_id == task.id))
+        assert imported is not None
+        assert imported.title == "我的简历2"
+
+
 @pytest.mark.parametrize(
     ("existing_count", "expected_status", "expected_resume_count"),
     [(9, "succeeded", 10), (10, "failed", 10)],

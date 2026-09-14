@@ -35,7 +35,7 @@ from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0062"
+EXPECTED_HEAD = "0063"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -289,11 +289,15 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "operations_json",
         "rationale_json",
         "source_refs_json",
+        "proposed_title",
+        "result_resume_id",
     }
     assert scoped_proposal_columns <= set(proposal_columns)
     assert proposal_columns["proposal_mode"]["nullable"] is False
     assert proposal_columns["proposal_mode"]["type"].length == 32
     assert proposal_columns["target_content_hash"]["type"].length == 71
+    assert proposal_columns["proposed_title"]["type"].length == 255
+    assert proposal_columns["result_resume_id"]["nullable"] is True
     for json_column in {
         "target_locator_json",
         "diagnosis_json",
@@ -302,7 +306,10 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "source_refs_json",
     }:
         assert proposal_columns[json_column]["type"].__class__.__name__ == "JSON"
-    assert "ck_resume_change_proposals_mode" in {
+    assert {
+        "ck_resume_change_proposals_mode",
+        "ck_resume_change_proposals_translation_result",
+    } <= {
         constraint["name"]
         for constraint in inspector.get_check_constraints("resume_change_proposals")
     }

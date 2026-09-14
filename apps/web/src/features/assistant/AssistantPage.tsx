@@ -46,6 +46,7 @@ import {
 } from "../agent/AgentPanel";
 import {
   AgentClarification,
+  AgentActiveRun,
   AgentContextRef,
   AgentContextSnapshot,
   AgentContextType,
@@ -58,7 +59,7 @@ import {
   api,
 } from "../../api/client";
 import { Button, ConfirmDialog, FeedbackNotice } from "@/components/ui";
-import { assistantPath, navigateTo } from "../../routing";
+import { assistantPath, navigateTo, rememberAssistantSession } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { DatasetsPage } from "../datasets/DatasetsPage";
 import { ResumeWorkbench } from "../workbench/ResumeWorkbench";
@@ -419,7 +420,6 @@ function safeAgentError(error: unknown) {
     AGENT_CONTEXT_NOT_FOUND: "所选资料已不可用，请重新选择。",
     AGENT_CONTEXT_STALE: "所选资料已发生变化，请刷新选择后重试。",
     AGENT_CONTEXT_READ_FAILED: "所选资料暂时无法读取，请稍后重试。",
-    AGENT_SESSION_RESUME_MISMATCH: "这个会话已经绑定另一份简历，请新建对话后继续。",
     AGENT_SESSION_NOT_FOUND: "对话不存在或已无法访问。",
     AGENT_UNAVAILABLE: "智能助手暂时不可用，草稿和已选资料不会丢失。",
     AGENT_MODEL_UNAVAILABLE: "当前模型暂时不可用，请稍后重试。",
@@ -482,7 +482,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [contextDrafts, setContextDrafts] = useState<AgentContextSnapshot[]>([]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [clarificationPage, setClarificationPage] = useState(0);
-  const [resumeMismatch, setResumeMismatch] = useState<AgentContextSnapshot | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
@@ -521,7 +520,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const streamRequestRef = useRef(0);
   const mentionRequestRef = useRef(0);
   const activeKeyRef = useRef(activeKey);
-  const conversationStatesRef = useRef(conversationStates);
   const abortRef = useRef<AbortController | null>(null);
   const assistantShellRef = useRef<HTMLDivElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -534,7 +532,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const followMessagesRef = useRef(true);
   const isComposingRef = useRef(false);
   activeKeyRef.current = activeKey;
-  conversationStatesRef.current = conversationStates;
 
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
   const pendingClarification = pendingClarificationMessage(current.messages);
@@ -580,6 +577,26 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       return { ...states, [key]: { ...existing, ...patch } };
     });
   }, []);
+
+  const syncComposerFromDom = (
+    editor: HTMLDivElement,
+    options: { restoreCaret: boolean; updateMention: boolean },
+  ) => {
+    const nextDraft = composerValue(editor);
+    const caret = composerCaretOffset(editor);
+    const retainedContextKeys = new Set(
+      Array.from(editor.querySelectorAll<HTMLElement>("[data-context-key]"))
+        .map((element) => element.dataset.contextKey)
+        .filter((key): key is string => Boolean(key)),
+    );
+    pendingComposerCaretRef.current = options.restoreCaret ? caret : null;
+    updateConversation(activeKey, (state) => ({
+      draft: nextDraft,
+      contexts: state.contexts.filter((context) => retainedContextKeys.has(contextKey(context))),
+      invalidContextIds: state.invalidContextIds.filter((id) => retainedContextKeys.has(id)),
+    }));
+    if (options.updateMention) setContextMention(contextMentionAt(nextDraft, caret));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -691,12 +708,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   }, [mobileMenuOpen]);
 
   useEffect(() => () => {
-    const key = activeKeyRef.current;
-    const runId = conversationStatesRef.current[key]?.runId;
     streamRequestRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
-    if (runId) void api.cancelAgentRun(runId).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -842,19 +856,21 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       setMobileMenuOpen(false);
       return;
     }
-    const previousKey = activeKeyRef.current;
+    streamRequestRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
     activeKeyRef.current = sessionIdToSelect;
-    await cancelCurrentRun(previousKey);
     setActiveKey(sessionIdToSelect);
     navigateTo(assistantPath(sessionIdToSelect));
     setMobileMenuOpen(false);
-    setResumeMismatch(null);
     updateConversation(sessionIdToSelect, { error: null });
     try {
-      const detail = await api.getAgentSession(sessionIdToSelect);
-      const proposalResult = detail.session.resume_id
-        ? await api.listAgentProposals(detail.session.resume_id, sessionIdToSelect)
-        : { proposals: [] };
+      const [activeRun, detail] = await Promise.all([
+        api.getActiveAgentRun(sessionIdToSelect).catch(() => ({ run: null })),
+        api.getAgentSession(sessionIdToSelect),
+      ]);
+      rememberAssistantSession(detail.session.id);
+      const proposalResult = await api.listAgentProposals(null, sessionIdToSelect);
       updateConversation(sessionIdToSelect, {
         session: detail.session,
         messages: detail.session.messages ?? [],
@@ -864,14 +880,22 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         clarificationAnswers: {},
         clarificationAttempted: false,
         error: null,
+        running: Boolean(activeRun.run),
+        cancelling: false,
+        stage: activeRun.run ? "thinking" : "idle",
+        runId: activeRun.run?.run_id ?? null,
+        startedAt: activeRun.run ? new Date(activeRun.run.started_at).getTime() : null,
+        phase: activeRun.run ? "AI 正在处理…" : "正在准备…",
       });
       setSessions((items) => [detail.session, ...items.filter((item) => item.id !== detail.session.id)]);
+      if (activeRun.run) reconnectToRun(sessionIdToSelect, activeRun.run);
     } catch (error) {
       updateConversation(sessionIdToSelect, { error: safeAgentError(error) });
     }
   };
 
   const createNewConversation = async () => {
+    rememberAssistantSession(null);
     setDatasetsOpen(false);
     if (activeKeyRef.current === NEW_CONVERSATION_KEY) {
       setMobileMenuOpen(false);
@@ -879,12 +903,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       window.setTimeout(() => inputRef.current?.focus(), 0);
       return;
     }
-    const previousKey = activeKeyRef.current;
+    streamRequestRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
     activeKeyRef.current = NEW_CONVERSATION_KEY;
-    await cancelCurrentRun(previousKey);
     setActiveKey(NEW_CONVERSATION_KEY);
     navigateTo(assistantPath());
-    setResumeMismatch(null);
     setMobileMenuOpen(false);
     updateConversation(NEW_CONVERSATION_KEY, {
       ...blankConversation(),
@@ -931,21 +955,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   };
 
   const toggleContextDraft = (context: AgentContextSnapshot) => {
-    const boundResumeId = current.session.resume_id;
-    const contextResumeId = resumeIdForContext(context);
-    if (boundResumeId && contextResumeId && boundResumeId !== contextResumeId) {
-      setResumeMismatch(context);
-      closeContextPicker();
-      updateConversation(activeKey, { error: "这个会话已经绑定另一份简历，请新建对话后继续。" });
-      return;
-    }
     setContextDrafts((items) => {
       if (items.some((item) => contextKey(item) === contextKey(context))) {
         return items.filter((item) => contextKey(item) !== contextKey(context));
       }
       return [...items.filter((item) => item.type !== context.type), context];
     });
-    setResumeMismatch(null);
   };
 
   const confirmContextDrafts = () => {
@@ -968,14 +983,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const selectMentionContext = (context: AgentContextSnapshot) => {
     if (!contextMention) return;
-    const boundResumeId = current.session.resume_id;
-    const contextResumeId = resumeIdForContext(context);
-    if (boundResumeId && contextResumeId && boundResumeId !== contextResumeId) {
-      setResumeMismatch(context);
-      setContextMention(null);
-      updateConversation(activeKey, { error: "这个会话已经绑定另一份简历，请新建对话后继续。" });
-      return;
-    }
     const nextCaret = contextMention.start + context.label.length + 2;
     const contexts = [...current.contexts.filter((item) => item.type !== context.type), context].slice(0, 10);
     const invalidContextIds = current.invalidContextIds.filter((id) => contexts.some((item) => contextKey(item) === id));
@@ -983,7 +990,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     pendingComposerCaretRef.current = nextCaret;
     refreshComposerView(draft, contexts, invalidContextIds);
     updateConversation(activeKey, { contexts, invalidContextIds, draft, error: null });
-    setResumeMismatch(null);
     setContextMention(null);
     window.setTimeout(() => {
       if (!inputRef.current) return;
@@ -1086,10 +1092,60 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     }
   };
 
+  const reconnectToRun = (key: string, run: AgentActiveRun) => {
+    const requestNumber = streamRequestRef.current + 1;
+    streamRequestRef.current = requestNumber;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    updateConversation(key, (state) => ({
+      running: true,
+      cancelling: false,
+      stage: "thinking",
+      runId: run.run_id,
+      startedAt: new Date(run.started_at).getTime(),
+      error: null,
+      messages: state.messages.filter((message) => !message.temporary),
+    }));
+    void api.streamAgentRun(
+      run.run_id,
+      controller.signal,
+      (event) => handleEvent(key, requestNumber, event),
+    ).then(async () => {
+      if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
+      const detail = await api.getAgentSession(key);
+      const proposalResult = await api.listAgentProposals(null, key).catch(() => ({ proposals: [] }));
+      if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
+      updateConversation(key, (latest) => ({
+        session: detail.session,
+        messages: mergeSessionMessages(detail.session.messages ?? [], latest.messages),
+        proposals: proposalResult.proposals.length > 0 ? proposalResult.proposals : latest.proposals,
+        running: false,
+        stage: latest.stage === "failed" || latest.stage === "stopped" ? latest.stage : "idle",
+        runId: null,
+        startedAt: null,
+        ...(latest.stage === "failed" || latest.stage === "stopped" ? {} : {
+          contexts: [],
+          invalidContextIds: [],
+        }),
+      }));
+      setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+    }).catch((error) => {
+      if (controller.signal.aborted || streamRequestRef.current !== requestNumber) return;
+      updateConversation(key, {
+        error: safeAgentError(error),
+        running: false,
+        stage: "failed",
+        runId: null,
+        startedAt: null,
+      });
+    }).finally(() => {
+      if (abortRef.current === controller) abortRef.current = null;
+    });
+  };
+
   const ensureSession = async (state: ConversationState) => {
     if (state.session.id !== NEW_CONVERSATION_KEY) return state.session;
-    const requestedResumeId = state.contexts.map(resumeIdForContext).find((value): value is string => Boolean(value));
-    const result = await api.createAgentSession(requestedResumeId ?? null);
+    const result = await api.createAgentSession();
     const newState = { ...state, session: result.session };
     setConversationStates((states) => {
       const next = { ...states, [result.session.id]: newState };
@@ -1097,6 +1153,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       return next;
     });
     activeKeyRef.current = result.session.id;
+    rememberAssistantSession(result.session.id);
     setSessions((items) => [result.session, ...items.filter((item) => item.id !== result.session.id)]);
     setActiveKey(result.session.id);
     navigateTo(assistantPath(result.session.id), { replace: true });
@@ -1109,13 +1166,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     const state = conversationStates[key] ?? blankConversation();
     const statePendingClarification = pendingClarificationMessage(state.messages);
     if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) return;
-    const boundResumeId = state.session.resume_id;
-    const requestedResumeId = state.contexts.map(resumeIdForContext).find((value): value is string => Boolean(value));
-    if (boundResumeId && requestedResumeId && boundResumeId !== requestedResumeId) {
-      updateConversation(key, { error: "这个会话已经绑定另一份简历，请新建对话后继续。" });
-      return;
-    }
-
     let session: AgentSession;
     try {
       session = await ensureSession(state);
@@ -1180,9 +1230,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       );
       if (streamRequestRef.current !== requestNumber) return;
       const detail = await api.getAgentSession(session.id);
-      const proposalResult = detail.session.resume_id
-        ? await api.listAgentProposals(detail.session.resume_id, session.id).catch(() => ({ proposals: [] }))
-        : { proposals: [] };
+      const proposalResult = await api.listAgentProposals(null, session.id).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber) return;
       updateConversation(requestKey, (latest) => {
         const messages = mergeSessionMessages(detail.session.messages, latest.messages);
@@ -1343,13 +1391,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     }
   };
 
-  const openNewConversationWithContext = async () => {
-    const context = resumeMismatch;
-    await createNewConversation();
-    if (context) updateConversation(NEW_CONVERSATION_KEY, { contexts: [context] });
-    setResumeMismatch(null);
-  };
-
   const replaceSession = (updatedSession: AgentSession) => {
     setSessions((items) => sortSessions([
       updatedSession,
@@ -1410,6 +1451,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       });
       setPendingDeleteSession(null);
       if (activeKeyRef.current === session.id) {
+        rememberAssistantSession(null);
         activeKeyRef.current = NEW_CONVERSATION_KEY;
         setActiveKey(NEW_CONVERSATION_KEY);
         updateConversation(NEW_CONVERSATION_KEY, {
@@ -1943,13 +1985,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             </div>
           )}
 
-          {resumeMismatch && (
-            <div className="assistant-mismatch-notice" role="alert">
-              <CircleAlert size={17} aria-hidden="true" />
-              <span>已绑定简历的对话不能切换目标简历。</span>
-              <button type="button" onClick={() => void openNewConversationWithContext()}>新建对话使用此简历</button>
-            </div>
-          )}
           {current.error && (
             <FeedbackNotice
               kind="error"
@@ -2146,25 +2181,24 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 contentEditable={!(current.running || current.cancelling || Boolean(pendingClarification))}
                 suppressContentEditableWarning
                 onInput={(event) => {
-                  const editor = event.currentTarget;
-                  const nextDraft = composerValue(editor);
-                  const caret = composerCaretOffset(editor);
-                  const retainedContextKeys = new Set(
-                    Array.from(editor.querySelectorAll<HTMLElement>("[data-context-key]"))
-                      .map((element) => element.dataset.contextKey)
-                      .filter((key): key is string => Boolean(key)),
-                  );
-                  pendingComposerCaretRef.current = caret;
-                  updateConversation(activeKey, (state) => ({
-                    draft: nextDraft,
-                    contexts: state.contexts.filter((context) => retainedContextKeys.has(contextKey(context))),
-                    invalidContextIds: state.invalidContextIds.filter((id) => retainedContextKeys.has(id)),
-                  }));
-                  setContextMention(contextMentionAt(nextDraft, caret));
+                  const composing = (event.nativeEvent as InputEvent).isComposing || isComposingRef.current;
+                  syncComposerFromDom(event.currentTarget, {
+                    restoreCaret: !composing,
+                    updateMention: !composing,
+                  });
                 }}
                 onKeyDown={handleInputKeyDown}
-                onCompositionStart={() => { isComposingRef.current = true; }}
-                onCompositionEnd={() => { isComposingRef.current = false; }}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                  pendingComposerCaretRef.current = null;
+                }}
+                onCompositionEnd={(event) => {
+                  isComposingRef.current = false;
+                  syncComposerFromDom(event.currentTarget, {
+                    restoreCaret: true,
+                    updateMention: true,
+                  });
+                }}
               >
                 {composerSegments(composerView.draft, composerView.contexts).map((segment) => segment.kind === "text" ? segment.text : (
                   <span

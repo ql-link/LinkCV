@@ -12,6 +12,7 @@ from urllib.parse import quote, urlsplit
 
 from fastapi import Request
 from minio import Minio
+from minio.commonconfig import CopySource
 from urllib3 import PoolManager, Retry, Timeout
 
 from linkresume.core.config import Settings
@@ -179,6 +180,14 @@ class AssetStorage:
     def delete(self, object_name: str) -> None:
         self.ensure_bucket()
         self.client.remove_object(self.bucket, object_name)
+
+    def copy(self, source_name: str, target_name: str) -> None:
+        self.ensure_bucket()
+        self.client.copy_object(
+            self.bucket,
+            target_name,
+            CopySource(self.bucket, source_name),
+        )
 
     def delete_prefix(self, prefix: str) -> None:
         self.ensure_bucket()

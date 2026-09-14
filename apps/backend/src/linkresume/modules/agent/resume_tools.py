@@ -40,6 +40,13 @@ ACTION_TERMS = (
     "推动",
     "协调",
     "交付",
+    "参与",
+    "协助",
+    "支持",
+    "维护",
+    "测试",
+    "分析",
+    "管理",
 )
 RESULT_TERMS = (
     "提升",
@@ -52,6 +59,13 @@ RESULT_TERMS = (
     "结果",
     "转化率",
     "点击率",
+    "完成",
+    "交付",
+    "发布",
+    "落地",
+    "解决",
+    "稳定",
+    "覆盖",
 )
 
 
@@ -625,13 +639,13 @@ def diagnose_content(
     if len(content) > 1_500:
         ats_issues.append("目标内容过长")
     issues: list[dict[str, str]] = []
-    if not metrics:
+    if not result_present:
         issues.append(
             {
                 "code": "MISSING_RESULT_EVIDENCE",
-                "severity": "high",
-                "evidence": "目标内容没有可识别的量化结果",
-                "question": "可以补充效率、质量、转化率、规模或交付结果吗？",
+                "severity": "medium",
+                "evidence": "目标内容没有可识别的结果、交付物或影响证据",
+                "question": "可以补充真实的交付物、质量变化、影响范围或业务结果吗？",
             }
         )
     if not action_present:
@@ -651,7 +665,7 @@ def diagnose_content(
         "missing_keywords": missing_keywords,
     }
     if job is not None and job_keywords:
-        job_match["match_score"] = round(
+        job_match["keyword_coverage_score"] = round(
             100 * (len(job_keywords) - len(missing_keywords)) / len(job_keywords)
         )
     return {
@@ -663,7 +677,8 @@ def diagnose_content(
         "quantification": {
             "has_result_metric": bool(metrics),
             "evidence": metrics,
-            "missing_evidence": [] if metrics else ["结果指标"],
+            "has_qualitative_result": result_present and not bool(metrics),
+            "missing_evidence": [] if result_present else ["结果或交付证据"],
         },
         "star": {
             "situation": "unclear",

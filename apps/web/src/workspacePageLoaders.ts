@@ -25,7 +25,8 @@ const workspacePageLoaders: Record<string, () => Promise<unknown>> = {
 
 export function preloadWorkspacePage(path: string) {
   const pathname = path.split("?", 1)[0] ?? path;
-  const loader = workspacePageLoaders[pathname];
+  const loader = workspacePageLoaders[pathname]
+    ?? (pathname.startsWith("/assistant/") ? workspacePageLoaders["/assistant"] : undefined);
   if (loader) void loader().catch(() => undefined);
 }
 

@@ -399,6 +399,48 @@ def _assert_unique_resume_title(
         raise ResumeTitleConflict
 
 
+def ensure_unique_resume_title(
+    db: Session,
+    *,
+    user_id: int,
+    title: str,
+    exclude_resume_id: int | None = None,
+) -> None:
+    """Public domain guard for workflows that create a resume transactionally."""
+    _assert_unique_resume_title(
+        db,
+        user_id=user_id,
+        title=title,
+        exclude_resume_id=exclude_resume_id,
+    )
+
+
+def next_available_resume_title(db: Session, *, user_id: int, title: str) -> str:
+    """Return a normalized import title that is unique for the user.
+
+    Callers that create resumes concurrently must hold the user's row lock for
+    the duration of title allocation and persistence.
+    """
+
+    base_title = normalize_resume_title(title)
+    existing_keys = {
+        resume_title_key(existing_title)
+        for (existing_title,) in db.execute(
+            select(Resume.title).where(Resume.user_id == user_id)
+        ).all()
+    }
+    if resume_title_key(base_title) not in existing_keys:
+        return base_title
+
+    suffix = 1
+    while True:
+        suffix_text = str(suffix)
+        candidate = f"{base_title[: 255 - len(suffix_text)].rstrip()}{suffix_text}"
+        if resume_title_key(candidate) not in existing_keys:
+            return candidate
+        suffix += 1
+
+
 def persist_resume_with_initial_version(
     command: CreateResumeCommand,
     db: Session,
