@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -551,6 +551,35 @@ describe("AssistantPage", () => {
     expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
   });
 
+  it("粘贴消息气泡文字时只保留纯文本，不带入来源 HTML 样式", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    render(<AssistantPage />);
+    const editor = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(editor, "前后");
+    const textNode = editor.firstChild;
+    expect(textNode).not.toBeNull();
+    const range = document.createRange();
+    range.setStart(textNode!, 1);
+    range.collapse(true);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+
+    fireEvent.paste(editor, {
+      clipboardData: {
+        getData: (type: string) => type === "text/plain"
+          ? "复制内容"
+          : '<span style="background:#f1f2f3;text-shadow:1px 1px #000">复制内容</span>',
+      },
+    });
+
+    await waitFor(() => expect(editor).toHaveTextContent("前复制内容后"));
+    expect(editor.querySelector("span")).not.toBeInTheDocument();
+    expect(editor.innerHTML).not.toContain("background");
+    expect(editor.innerHTML).not.toContain("text-shadow");
+  });
+
   it("模型菜单展示当前绑定的真实模型，不伪造可切换项", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
@@ -863,6 +892,51 @@ describe("AssistantPage", () => {
     expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "停止生成" }));
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
+  });
+
+  it("在思考区累计工具阶段文字，并在最终正文开始前一次清空", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "listAgentContexts").mockResolvedValue({ contexts: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({
+      session: {
+        ...session,
+        messages: [
+          { sequence_no: 1, role: "user", content: "准备面试", created_at: session.created_at },
+          { sequence_no: 2, role: "assistant", content: "面试重点包括项目证据。", created_at: session.created_at },
+        ],
+      },
+    });
+    let beginFinalResponse!: () => void;
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-activity" });
+      onEvent({ type: "assistant.activity.delta", runId: "run-activity", delta: "I'll read the router skill." });
+      onEvent({ type: "assistant.activity.delta", runId: "run-activity", delta: "\n读取授权简历上下文…\n" });
+      onEvent({ type: "assistant.activity.delta", runId: "run-activity", delta: "\nI'll inspect the resume." });
+      await new Promise<void>((resolve) => {
+        beginFinalResponse = resolve;
+      });
+      onEvent({ type: "assistant.activity.clear", runId: "run-activity" });
+      onEvent({ type: "assistant.delta", runId: "run-activity", delta: "面试重点包括" });
+      onEvent({ type: "assistant.delta", runId: "run-activity", delta: "项目证据。" });
+      onEvent({ type: "run.completed", runId: "run-activity" });
+    });
+
+    render(<AssistantPage />);
+    const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(input, "准备面试");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("I'll inspect the resume.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "查看过程" }));
+    expect(screen.getByText(/I'll read the router skill\.[\s\S]*读取授权简历上下文…[\s\S]*I'll inspect the resume\./)).toBeInTheDocument();
+
+    await act(async () => beginFinalResponse());
+    expect(await screen.findByText("面试重点包括项目证据。")).toBeInTheDocument();
+    expect(screen.queryByText("I'll inspect the resume.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看过程" })).not.toBeInTheDocument();
   });
 
   it("发送后不在消息区顶部重复展示召回状态标题", async () => {
