@@ -79,7 +79,8 @@ export const LineInsertMenuExtension = Extension.create<LineInsertMenuOptions>({
               }, {
                 key: `line-insert-menu-${position}`,
                 side: -1,
-                ignoreSelection: true,
+                // 行首定位可能落到按钮内部，交给 ProseMirror 将光标同步回正文。
+                ignoreSelection: false,
               }),
             ));
           },

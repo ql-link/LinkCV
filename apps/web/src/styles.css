@@ -2017,70 +2017,6 @@ select:not([data-slot]):focus-visible {
   padding-left: 10px;
   text-align: right;
 }
-.resume-row-divider {
-  position: absolute;
-  z-index: 2;
-  top: -2px;
-  bottom: -2px;
-  left: var(--resume-row-left);
-  width: 14px;
-  transform: translateX(-50%);
-  border: 0;
-  background: transparent;
-  padding: 0;
-  cursor: col-resize;
-  touch-action: none;
-}
-.resume-row-divider::before {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  left: 50%;
-  width: 1px;
-  transform: translateX(-50%);
-  background: var(--ui-accent);
-  content: "";
-  opacity: 0;
-  transition: opacity var(--ui-duration-fast) var(--ui-ease-press);
-}
-.resume-row-divider:hover::before,
-.resume-row-divider:focus-visible::before,
-.resume-row-divider[data-dragging="true"]::before {
-  width: 2px;
-  opacity: 1;
-}
-.resume-row-divider:focus-visible { outline: 0; }
-.resume-row-divider:focus-visible::after {
-  position: absolute;
-  inset: 0;
-  border-radius: var(--ui-radius-xs);
-  box-shadow: 0 0 0 2px var(--ui-ring);
-  content: "";
-}
-.resume-row-divider-value {
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 4px);
-  min-width: 36px;
-  transform: translate(-50%, 2px);
-  border-radius: var(--ui-radius-xs);
-  background: var(--ui-foreground);
-  padding: 2px 5px;
-  color: var(--ui-surface);
-  font: 500 var(--ui-text-xs)/1.3 var(--ui-font);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press);
-}
-.resume-row-divider:hover .resume-row-divider-value,
-.resume-row-divider:focus-visible .resume-row-divider-value,
-.resume-row-divider[data-dragging="true"] .resume-row-divider-value {
-  transform: translate(-50%, 0);
-  opacity: 1;
-}
-.resume-layout-row:has(.resume-row-divider[data-dragging="true"]) [data-node-view-content-react] {
-  user-select: none;
-}
 .resume-layout-row.is-active {
   background: rgba(52, 120, 246, 0.055);
   box-shadow: 0 0 0 1px rgba(52, 120, 246, 0.2);
@@ -2701,7 +2637,5 @@ select:not([data-slot]):focus-visible {
   .workbench-canvas,
   .workbench-drawer,
   .agent-floating-entry,
-  .workbench-zoom-feedback-wrap,
-  .resume-row-divider::before,
-  .resume-row-divider-value { transition: none !important; }
+  .workbench-zoom-feedback-wrap { transition: none !important; }
 }
