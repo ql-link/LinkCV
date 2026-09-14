@@ -208,6 +208,7 @@ describe("JobDetailPage", () => {
     fireEvent.keyDown(titleInput, { key: "Enter" });
 
     expect(screen.getByRole("alert")).toHaveTextContent("该字段为必填项");
+    expect(screen.getByRole("alert")).toHaveClass("ui-feedback-notice", "is-floating");
     expect(screen.getByLabelText("职位名称")).toBeInTheDocument();
     expect(update).not.toHaveBeenCalled();
   });
@@ -294,6 +295,7 @@ describe("JobDetailPage", () => {
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith(activeJob.id));
     expect(screen.getByRole("alert")).toHaveTextContent("岗位服务暂时不可用");
+    expect(screen.getByRole("alert")).toHaveClass("ui-feedback-notice", "is-floating");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });

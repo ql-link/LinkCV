@@ -195,9 +195,8 @@
 .assistant-proposal-diff ins { background: var(--ui-success-subtle); text-decoration: none; }
 .assistant-proposal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .assistant-proposal-actions .ui-button { min-height: 40px; }
-.assistant-mismatch-notice, .assistant-error-notice { display: flex; align-items: center; gap: 8px; margin: 0 30px 9px; border: 1px solid color-mix(in srgb, var(--ui-warning) 35%, #dbe0e8); border-radius: 8px; background: var(--ui-warning-subtle); padding: 9px 12px; color: var(--ui-warning); font-size: 13px; }
+.assistant-mismatch-notice { display: flex; align-items: center; gap: 8px; margin: 0 30px 9px; border: 1px solid color-mix(in srgb, var(--ui-warning) 35%, #dbe0e8); border-radius: 8px; background: var(--ui-warning-subtle); padding: 9px 12px; color: var(--ui-warning); font-size: 13px; }
 .assistant-mismatch-notice button { margin-left: auto; background: transparent; color: #0d52eb; cursor: pointer; font-weight: 600; }
-.assistant-error-notice { border-color: color-mix(in srgb, var(--ui-destructive) 32%, #dbe0e8); background: var(--ui-destructive-subtle); color: var(--ui-destructive); }
 
 .assistant-composer { position: relative; display: grid; width: min(var(--assistant-content-max-width), calc(100% - 64px)); flex: 0 0 auto; gap: 4px; order: 2; margin: 0 auto; padding: 0 0 19px; }
 .assistant-conversation:not(.is-empty) .assistant-composer { padding-bottom: 0; transform: translateY(34px); }
@@ -344,7 +343,7 @@
   .assistant-proposal-card > header small { display: none; }
   .assistant-proposal-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .assistant-proposal-actions .ui-button:first-child { grid-column: 1 / -1; }
-  .assistant-mismatch-notice, .assistant-error-notice { margin: 0 16px 8px; align-items: flex-start; font-size: 12px; }
+  .assistant-mismatch-notice { margin: 0 16px 8px; align-items: flex-start; font-size: 12px; }
   .assistant-composer, .assistant-conversation.is-empty .assistant-composer { width: 100%; margin: 0; padding: 0 16px max(16px, env(safe-area-inset-bottom)); transform: none; }
   .assistant-conversation:not(.is-empty) .assistant-composer { transform: none; }
   .assistant-conversation.is-empty .assistant-message-viewport { width: auto; flex: 1 1 auto; overflow-y: auto; padding-top: 18px; padding-bottom: 20px; }
