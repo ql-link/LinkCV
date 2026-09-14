@@ -2010,6 +2010,45 @@ function addDatePickerMonths(date: Date, months: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
+const APPLIED_DATE_PICKER_MAX_WIDTH = 320;
+const APPLIED_DATE_PICKER_MAX_HEIGHT = 360;
+const APPLIED_DATE_PICKER_VIEWPORT_GUTTER = 32;
+const APPLIED_DATE_PICKER_GAP = 8;
+
+function appliedDatePickerPosition(
+  trigger: DOMRect,
+  host: DOMRect,
+  viewportWidth: number,
+  viewportHeight: number,
+  renderedHeight = APPLIED_DATE_PICKER_MAX_HEIGHT,
+): { left: number; top: number } {
+  const pickerWidth = Math.min(
+    APPLIED_DATE_PICKER_MAX_WIDTH,
+    Math.max(0, viewportWidth - APPLIED_DATE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const maximumLeft = Math.max(
+    APPLIED_DATE_PICKER_VIEWPORT_GUTTER,
+    viewportWidth - pickerWidth - APPLIED_DATE_PICKER_VIEWPORT_GUTTER,
+  );
+  const boundedLeft = Math.min(
+    Math.max(trigger.left, APPLIED_DATE_PICKER_VIEWPORT_GUTTER),
+    maximumLeft,
+  );
+  const pickerHeight = Math.min(
+    renderedHeight || APPLIED_DATE_PICKER_MAX_HEIGHT,
+    Math.max(0, viewportHeight - APPLIED_DATE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const belowTop = trigger.bottom + APPLIED_DATE_PICKER_GAP;
+  const aboveTop = trigger.top - APPLIED_DATE_PICKER_GAP - pickerHeight;
+  const boundedTop = belowTop + pickerHeight <= viewportHeight - APPLIED_DATE_PICKER_VIEWPORT_GUTTER
+    ? belowTop
+    : Math.max(APPLIED_DATE_PICKER_VIEWPORT_GUTTER, aboveTop);
+  return {
+    left: boundedLeft - host.left,
+    top: boundedTop - host.top,
+  };
+}
+
 function buildDatePickerDays(month: Date): Date[] {
   const firstDay = startOfDatePickerMonth(month);
   const gridStart = new Date(firstDay);
@@ -2032,8 +2071,11 @@ function AppliedAtDatePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [displayMonth, setDisplayMonth] = useState(() => startOfDatePickerMonth(parseDatePickerValue(value) ?? new Date()));
+  const [popoverHost, setPopoverHost] = useState<HTMLElement | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const selectedDate = parseDatePickerValue(value);
   const selectedValue = selectedDate ? formatDatePickerValue(selectedDate) : null;
   const calendarDays = useMemo(() => buildDatePickerDays(displayMonth), [displayMonth]);
@@ -2046,8 +2088,37 @@ function AppliedAtDatePicker({
 
   useEffect(() => {
     if (!open) return;
+    const positionPopover = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const nextHost = window.innerWidth > 640
+        ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog") ?? null
+        : null;
+      if (nextHost !== popoverHost) {
+        setPopoverHost(nextHost);
+        return;
+      }
+      if (!nextHost) {
+        setPopoverPosition(null);
+        return;
+      }
+      setPopoverPosition(appliedDatePickerPosition(
+        trigger.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+        popoverRef.current?.getBoundingClientRect().height,
+      ));
+    };
+    positionPopover();
+    window.addEventListener("resize", positionPopover);
+    window.addEventListener("scroll", positionPopover, true);
     const handlePointerDown = (event: Event) => {
-      if (!pickerRef.current?.contains(event.target as Node)) closePicker();
+      const target = event.target as Node;
+      if (
+        !pickerRef.current?.contains(target)
+        && !popoverRef.current?.contains(target)
+      ) closePicker();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -2059,14 +2130,30 @@ function AppliedAtDatePicker({
     document.addEventListener("click", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
+      window.removeEventListener("resize", positionPopover);
+      window.removeEventListener("scroll", positionPopover, true);
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("click", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [open]);
+  }, [open, popoverHost]);
 
   const openPicker = () => {
     setDisplayMonth(startOfDatePickerMonth(selectedDate ?? new Date()));
+    const nextHost = window.innerWidth > 640
+      ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog") ?? null
+      : null;
+    setPopoverHost(nextHost);
+    if (nextHost && triggerRef.current) {
+      setPopoverPosition(appliedDatePickerPosition(
+        triggerRef.current.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+      ));
+    } else {
+      setPopoverPosition(null);
+    }
     setOpen(true);
   };
 
@@ -2103,82 +2190,86 @@ function AppliedAtDatePicker({
         <CalendarDays aria-hidden="true" />
       </button>
       {open && (
-        <div
-          id={`${id}-calendar`}
-          className="career-date-picker-popover"
-          role="dialog"
-          aria-label="选择投递时间"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              closePicker();
-            }
-          }}
-        >
-          <header className="career-date-picker-header">
-            <strong aria-live="polite">{monthLabel}</strong>
-            <div>
-              <button
-                type="button"
-                aria-label="上一月"
-                title="上一月"
-                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, -1))}
-              >
-                <ChevronLeft aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label="下一月"
-                title="下一月"
-                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, 1))}
-              >
-                <ChevronRight aria-hidden="true" />
-              </button>
-            </div>
-          </header>
-          <div className="career-date-picker-calendar" role="grid" aria-label={`${monthLabel}日期`}>
-            <div className="career-date-picker-weekdays" role="row">
-              {DATE_PICKER_WEEKDAYS.map((weekday) => (
-                <span key={weekday} role="columnheader">{weekday}</span>
-              ))}
-            </div>
-            <div className="career-date-picker-days">
-              {Array.from({ length: 6 }, (_, weekIndex) => (
-                <div key={weekIndex} className="career-date-picker-week" role="row">
-                  {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
-                    const dateValue = formatDatePickerValue(date);
-                    const isSelected = dateValue === selectedValue;
-                    const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
-                      && date.getFullYear() === displayMonth.getFullYear();
-                    return (
-                      <div
-                        key={dateValue}
-                        role="gridcell"
-                        aria-label={formatDatePickerDay(date)}
-                        aria-selected={isSelected}
-                        className={!isCurrentMonth ? "is-adjacent-month" : undefined}
-                      >
-                        <button
-                          type="button"
+        <SchedulePickerPortal host={popoverHost}>
+          <div
+            ref={popoverRef}
+            id={`${id}-calendar`}
+            className="career-date-picker-popover career-applied-date-picker-popover"
+            role="dialog"
+            aria-label="选择投递时间"
+            style={popoverPosition ? { left: popoverPosition.left, right: "auto", top: popoverPosition.top } : undefined}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closePicker();
+              }
+            }}
+          >
+            <header className="career-date-picker-header">
+              <strong aria-live="polite">{monthLabel}</strong>
+              <div>
+                <button
+                  type="button"
+                  aria-label="上一月"
+                  title="上一月"
+                  onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, -1))}
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="下一月"
+                  title="下一月"
+                  onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, 1))}
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </div>
+            </header>
+            <div className="career-date-picker-calendar" role="grid" aria-label={`${monthLabel}日期`}>
+              <div className="career-date-picker-weekdays" role="row">
+                {DATE_PICKER_WEEKDAYS.map((weekday) => (
+                  <span key={weekday} role="columnheader">{weekday}</span>
+                ))}
+              </div>
+              <div className="career-date-picker-days">
+                {Array.from({ length: 6 }, (_, weekIndex) => (
+                  <div key={weekIndex} className="career-date-picker-week" role="row">
+                    {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
+                      const dateValue = formatDatePickerValue(date);
+                      const isSelected = dateValue === selectedValue;
+                      const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
+                        && date.getFullYear() === displayMonth.getFullYear();
+                      return (
+                        <div
+                          key={dateValue}
+                          role="gridcell"
                           aria-label={formatDatePickerDay(date)}
-                          className={isSelected ? "is-selected" : undefined}
-                          onClick={() => selectDate(date)}
+                          aria-selected={isSelected}
+                          className={!isCurrentMonth ? "is-adjacent-month" : undefined}
                         >
-                          {date.getDate()}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                          <button
+                            type="button"
+                            aria-label={formatDatePickerDay(date)}
+                            className={isSelected ? "is-selected" : undefined}
+                            onClick={() => selectDate(date)}
+                          >
+                            {date.getDate()}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
+            <footer className="career-date-picker-footer">
+              <button type="button" disabled={!value} onClick={() => { onChange(""); closePicker(); }}>清除</button>
+              <button type="button" onClick={today}>今天</button>
+            </footer>
           </div>
-          <footer className="career-date-picker-footer">
-            <button type="button" disabled={!value} onClick={() => { onChange(""); closePicker(); }}>清除</button>
-            <button type="button" onClick={today}>今天</button>
-          </footer>
-        </div>
+        </SchedulePickerPortal>
       )}
     </div>
   );

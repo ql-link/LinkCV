@@ -173,9 +173,11 @@ export type CanonicalSourceReferenced = {
 
 export type CanonicalTextValue = CanonicalSourceReferenced & {
   value: string;
+  runs?: CanonicalTextRun[] | null;
+  prefix_runs?: CanonicalTextRun[] | null;
 };
 
-export type CanonicalContact = CanonicalSourceReferenced & {
+export type CanonicalContact = CanonicalTextValue & {
   contact_kind: "phone" | "email" | "website" | "location" | "github" | "linkedin" | "other";
   value: string;
   label?: string | null;
@@ -828,17 +830,25 @@ function canonicalBlockToMarkdown(block: CanonicalContentBlock): string {
   }).join("\n");
 }
 
+function canonicalValueToMarkdown(value: CanonicalTextValue, prefix = "") {
+  const renderedPrefix = value.prefix_runs?.map((run) => run.text).join("") === prefix
+    ? value.prefix_runs.map(canonicalRunToMarkdown).join("") : prefix;
+  const renderedValue = value.runs?.map((run) => run.text).join("") === value.value
+    ? value.runs.map(canonicalRunToMarkdown).join("") : value.value;
+  return renderedPrefix + renderedValue;
+}
+
 function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
   const lines: string[] = [];
   const identity = document.identity;
-  if (identity.name?.value) lines.push(`# ${identity.name.value}`);
-  if (identity.headline?.value) lines.push("", identity.headline.value);
-  if (identity.contacts.length) lines.push("", identity.contacts.map((contact) => contact.label ? `${contact.label}：${contact.value}` : contact.value).join(" ｜ "));
+  if (identity.name?.value) lines.push(`# ${canonicalValueToMarkdown(identity.name)}`);
+  if (identity.headline?.value) lines.push("", canonicalValueToMarkdown(identity.headline));
+  if (identity.contacts.length) lines.push("", identity.contacts.map((contact) => canonicalValueToMarkdown(contact, contact.label ? `${contact.label}：` : "")).join(" ｜ "));
   if (identity.avatar && !identity.avatar.system_fallback && identity.avatar.src) {
     lines.push("", `![${identity.avatar.alt ?? "简历头像"}](${identity.avatar.src} "linkresume-avatar:${identity.avatar.width ?? 96}")`);
   }
   for (const section of document.sections) {
-    const title = section.title?.value ?? "";
+    const title = section.title ? canonicalValueToMarkdown(section.title) : "";
     const titleIcon = section.title_icon && isInlineIconName(section.title_icon.name)
       ? inlineIconMarkdown(section.title_icon.name)
       : "";
@@ -846,11 +856,11 @@ function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
       lines.push("", `## ${[titleIcon, title].filter(Boolean).join(" ")}`);
     }
     for (const entry of section.entries) {
-      const heading = entry.fields.name?.value ?? entry.fields.organization?.value ?? entry.fields.role?.value;
-      if (heading) lines.push("", `### ${heading}`);
+      const heading = entry.fields.name ?? entry.fields.organization ?? entry.fields.role;
+      if (heading?.value) lines.push("", `### ${canonicalValueToMarkdown(heading)}`);
       for (const key of ["organization", "role", "location", "start_date", "end_date", "degree", "major", "url"] as const) {
         const field = entry.fields[key];
-        if (field?.value && field.value !== heading) lines.push(`${field.value}`);
+        if (field?.value && field.value !== heading?.value) lines.push(canonicalValueToMarkdown(field));
       }
       for (const block of entry.blocks) {
         const value = canonicalBlockToMarkdown(block);
@@ -1134,7 +1144,8 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
     const scoped = style.template_scoped[style.template_snapshot.template_key] ?? {};
     const tokens = style.template_snapshot.tokens;
     const fontScale = scoped.font_scale ?? style.portable.font_scale ?? 1;
-    const fontSize = tokens.font_size_pt * (typeof fontScale === "number" && Number.isFinite(fontScale) ? fontScale : 1);
+    // Strip binary floating-point noise after restoring a saved font scale.
+    const fontSize = Number((tokens.font_size_pt * (typeof fontScale === "number" && Number.isFinite(fontScale) ? fontScale : 1)).toPrecision(15));
     const lineHeight = scoped.line_height ?? style.portable.line_height ?? tokens.line_height;
     const margins = resumePresentationPageMargins(style);
     const pageMargin = margins.left;

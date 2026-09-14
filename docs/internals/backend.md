@@ -6,6 +6,8 @@
 
 ## 当前职责与结构
 
+结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `TextRun` 和字号边界，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
+
 `apps/backend` 承接健康检查、Web/小程序双通道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
 
 | 位置 | 职责 |
@@ -51,7 +53,7 @@ MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_compan
 
 迁移 `0059` 为用户已有的 `job_descriptions` 增加可空 `logo_url`，只接受应用层校验通过的 HTTPS 绝对 URL；新求职记录把该字段写入既有 `job_snapshot`，不为 `job_applications` 新增重复列。该迁移同时新增无 `user_id`、无业务外键的 `global_companies` 平台资料表，保存标准化名称、Logo、官网、行业、规模、融资阶段和简介；当前没有对应路由、管理页面、自动匹配或用户岗位回填。
 
-迁移 `0062` 仅为 `job_descriptions` 增加可空 `logo_sha256 CHAR(64)`（ASCII、ascii_bin），不新增图片表、索引或外键。`application/job_descriptions/logo_service.py` 负责图片解码、压缩、内容指纹和快照图标同步。MinIO 路径为 `company-logos/<sha256>.webp`，同图跨用户复用、按岗位归属鉴权。写入时使用当前 MySQL 连接上的 `GET_LOCK` 串行化同指纹的存在检查与首次写入，完成后释放，避免并发产生重复对象版本；缺失之外的存储错误不能当作不存在。图片成功落盘后才提交岗位引用，失败不删除共享对象。暂不自动回收已无引用或事务失败遗留的 Logo 文件，删除岗位也不删除共享图。此目录不受用户独占资源的失败清理逻辑管理。部署需先执行 `0062` 再更新后端，之后更新插件；线上实际 revision 需单独查询。
+迁移 `0062` 为 `job_descriptions` 增加可空 `logo_sha256 CHAR(64)`（ASCII、ascii_bin），不新增图片表、索引或外键。它还兼容一个已登记的 Development 历史分叉：该环境的旧 `0059` 创建了 `user_preferences`，却因 revision ID 后续被公司 Logo 迁移复用而缺少 `job_descriptions.logo_url` 与 `global_companies`。`0062` 接受这一完整旧形态、已经包含 Logo 基础结构的完整当前形态，以及 MySQL 隐式提交首条或全部目标 DDL 后留下的已知重试前缀；需要补齐基础结构时只做增量添加，目标结构已完整时只推进 revision，未知的部分结构在 DDL 前拒绝继续，已有 `user_preferences` 保留不删。`application/job_descriptions/logo_service.py` 负责图片解码、压缩、内容指纹和快照图标同步。MinIO 路径为 `company-logos/<sha256>.webp`，同图跨用户复用、按岗位归属鉴权。写入时使用当前 MySQL 连接上的 `GET_LOCK` 串行化同指纹的存在检查与首次写入，完成后释放，避免并发产生重复对象版本；缺失之外的存储错误不能当作不存在。图片成功落盘后才提交岗位引用，失败不删除共享对象。暂不自动回收已无引用或事务失败遗留的 Logo 文件，删除岗位也不删除共享图。此目录不受用户独占资源的失败清理逻辑管理。部署需先执行 `0062` 再更新后端，之后更新插件；线上实际 revision 需单独查询。
 
 
 `user_dataset.sha256` 在 MySQL 使用固定长度 `CHAR(64)` 保存源文件 SHA-256 十六进制摘要；SQLite 测试仍使用通用字符串替身。该字段只用于后端完整性元数据，不向浏览器返回。

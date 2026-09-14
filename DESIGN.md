@@ -9,7 +9,7 @@ colors:
   accent: "#145ED6"
   accent-hover: "#0F4EB4"
   accent-subtle: "#E9F1FD"
-  background: "#F5F5F7"
+  background: "#FAFAF9"
   surface: "#FFFFFF"
   surface-subtle: "#FAFAFC"
   surface-muted: "#EDF1F5"
