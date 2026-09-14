@@ -5,8 +5,6 @@ import math
 from threading import BoundedSemaphore
 
 import pypdfium2 as pdfium
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from linkcv.core.pdfium_lock import PDFIUM_LOCK
 from linkcv.core.errors import ApiError
@@ -16,61 +14,12 @@ from linkcv.modules.resumes.pdf_service import (
     ResumePdfRenderer,
     build_render_assets,
 )
-from linkcv.modules.resumes.models import ResumeVersion
 
 MAX_PREVIEW_OUTPUT_BYTES = 15 * 1024 * 1024
 MAX_PREVIEW_DIMENSION = 8192
 MAX_PREVIEW_PIXELS = 24_000_000
 PREVIEW_TARGET_WIDTH = 1440
 PREVIEW_SLOTS = BoundedSemaphore(2)
-
-
-def select_readable_version(
-    db: Session,
-    resume_id: int,
-    *,
-    version_id: int | None = None,
-) -> ResumeVersion | None:
-    query = select(ResumeVersion).where(ResumeVersion.resume_id == resume_id)
-    manual = db.scalar(
-        query.where(ResumeVersion.reason == "manual").order_by(
-            ResumeVersion.version_no.desc(), ResumeVersion.id.desc()
-        )
-    )
-    selected = manual or db.scalar(
-        query.where(ResumeVersion.reason == "initial").order_by(
-            ResumeVersion.version_no.desc(), ResumeVersion.id.desc()
-        )
-    )
-    if version_id is not None and (selected is None or selected.id != version_id):
-        return None
-    return selected
-
-
-def select_readable_versions(
-    db: Session,
-    resume_ids: list[int],
-) -> dict[int, ResumeVersion]:
-    if not resume_ids:
-        return {}
-    versions = db.scalars(
-        select(ResumeVersion)
-        .where(
-            ResumeVersion.resume_id.in_(resume_ids),
-            ResumeVersion.reason.in_(("manual", "initial")),
-        )
-        .order_by(
-            ResumeVersion.resume_id,
-            ResumeVersion.version_no.desc(),
-            ResumeVersion.id.desc(),
-        )
-    ).all()
-    selected: dict[int, ResumeVersion] = {}
-    for version in versions:
-        current = selected.get(version.resume_id)
-        if current is None or (current.reason == "initial" and version.reason == "manual"):
-            selected[version.resume_id] = version
-    return selected
 
 
 class ResumePreviewRenderer:
@@ -144,6 +93,4 @@ __all__ = [
     "ResumePdfRenderer",
     "ResumePreviewRenderer",
     "build_render_assets",
-    "select_readable_version",
-    "select_readable_versions",
 ]

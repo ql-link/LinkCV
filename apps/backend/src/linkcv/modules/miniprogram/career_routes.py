@@ -539,7 +539,14 @@ def preview_application_resume(
         raise ApiError(409, "RESUME_VERSION_UNAVAILABLE")
     resume, version = row
     preview = preview_renderer.render(
-        _render_pdf(resume, version, user, storage, pdf_renderer)
+        _render_pdf(
+            resume,
+            version.data_json,
+            version.style_json,
+            user,
+            storage,
+            pdf_renderer,
+        )
     )
     return Response(
         content=preview,

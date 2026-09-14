@@ -20,8 +20,6 @@ from linkcv.modules.miniprogram.pdf_service import (
     ResumePdfRenderer,
     ResumePreviewRenderer,
     build_render_assets,
-    select_readable_version,
-    select_readable_versions,
 )
 from linkcv.modules.miniprogram.schemas import (
     MiniprogramResumeListResponse,
@@ -29,7 +27,7 @@ from linkcv.modules.miniprogram.schemas import (
     MiniprogramResumeResponse,
     MiniprogramResumeSummary,
 )
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkcv.modules.resumes.models import Resume
 from linkcv.modules.resumes.routes import resume_record, resume_summary
 
 router = APIRouter(prefix="/miniprogram/resumes", tags=["miniprogram"])
@@ -45,20 +43,25 @@ def get_preview_renderer(request: Request) -> ResumePreviewRenderer:
     return renderer or ResumePreviewRenderer()
 
 
+def _draft_revision(resume: Resume) -> str:
+    return f"draft:{resume.lock_version}"
+
+
 def _render_pdf(
     resume: Resume,
-    version: ResumeVersion,
+    data_json: dict[str, Any],
+    style_json: dict[str, Any],
     user: User,
     storage: AssetStorage,
     renderer: ResumePdfRenderer,
 ) -> bytes:
     assets = build_render_assets(
         storage,
-        version.data_json,
+        data_json,
         user_id=user.id,
         resume_id=resume.id,
     )
-    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
+    snapshot = parse_persisted_resume_snapshot(data_json, style_json)
     style = deepcopy(snapshot.style_json)
     # The mini-program contract is a single long page even when the Web
     # editing preference is fixed A4, because preview.png rasterizes one page.
@@ -80,23 +83,11 @@ def _render_pdf(
     )
 
 
-def _summary(resume: Resume, version: ResumeVersion) -> MiniprogramResumeSummary:
-    payload: dict[str, Any] = resume_summary(resume).model_dump()
-    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
-    layout_plan = compile_layout_plan(
-        snapshot.data,
-        snapshot.style.template_snapshot,
-        snapshot.style,
-    )
-    payload["preview"] = {
-        "data": snapshot.data_json,
-        "style": snapshot.style_json,
-        "layout_plan": layout_plan.model_dump(mode="json"),
-    }
+def _summary(resume: Resume) -> MiniprogramResumeSummary:
     return MiniprogramResumeSummary(
-        **payload,
-        pdf_version_id=str(version.id),
-        pdf_version_no=version.version_no,
+        **resume_summary(resume).model_dump(),
+        pdf_version_id=_draft_revision(resume),
+        pdf_version_no=resume.lock_version,
     )
 
 
@@ -122,13 +113,8 @@ def list_resumes(
         .where(Resume.user_id == user.id)
         .order_by(Resume.updated_at.desc(), Resume.id.desc())
     ).all()
-    versions = select_readable_versions(db, [resume.id for resume in resumes])
     return MiniprogramResumeListResponse(
-        resumes=[
-            _summary(resume, versions[resume.id])
-            for resume in resumes
-            if resume.id in versions
-        ]
+        resumes=[_summary(resume) for resume in resumes]
     )
 
 
@@ -141,29 +127,11 @@ def get_resume(
     resume = find_owned_resume(db, resume_id, user.id)
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    version = select_readable_version(db, resume.id)
-    if version is None:
-        raise ApiError(409, "RESUME_VERSION_UNAVAILABLE")
-    payload: dict[str, Any] = resume_record(resume).model_dump()
-    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
-    layout_plan = compile_layout_plan(
-        snapshot.data,
-        snapshot.style.template_snapshot,
-        snapshot.style,
-    )
-    payload["data"] = snapshot.data_json
-    payload["style"] = snapshot.style_json
-    payload["layout_plan"] = layout_plan.model_dump(mode="json")
-    payload["preview"] = {
-        "data": snapshot.data_json,
-        "style": snapshot.style_json,
-        "layout_plan": layout_plan.model_dump(mode="json"),
-    }
     return MiniprogramResumeResponse(
         resume=MiniprogramResumeRecord(
-            **payload,
-            pdf_version_id=str(version.id),
-            pdf_version_no=version.version_no,
+            **resume_record(resume).model_dump(),
+            pdf_version_id=_draft_revision(resume),
+            pdf_version_no=resume.lock_version,
         )
     )
 
@@ -171,7 +139,7 @@ def get_resume(
 @router.get("/{resume_id}/pdf", response_model=None)
 def download_resume_pdf(
     resume_id: str,
-    version_id: int | None = Query(default=None, ge=1),
+    version_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_miniprogram_user),
     storage: AssetStorage = Depends(get_storage),
@@ -180,18 +148,20 @@ def download_resume_pdf(
     resume = find_owned_resume(db, resume_id, user.id)
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    version = select_readable_version(db, resume.id, version_id=version_id)
-    if version is None:
+    revision = _draft_revision(resume)
+    if version_id is not None and version_id != revision:
         raise ApiError(409, "RESUME_VERSION_UNAVAILABLE")
-    pdf = _render_pdf(resume, version, user, storage, renderer)
+    pdf = _render_pdf(
+        resume, resume.data_json, resume.style_json, user, storage, renderer
+    )
     return Response(
         content=pdf,
         media_type="application/pdf",
         headers={
             "Cache-Control": "private, no-store",
             "Content-Disposition": 'inline; filename="resume.pdf"',
-            "X-LinkCV-Pdf-Version-Id": str(version.id),
-            "X-LinkCV-Pdf-Version-No": str(version.version_no),
+            "X-LinkCV-Pdf-Version-Id": revision,
+            "X-LinkCV-Pdf-Version-No": str(resume.lock_version),
             "X-Content-Type-Options": "nosniff",
         },
     )
@@ -200,7 +170,7 @@ def download_resume_pdf(
 @router.get("/{resume_id}/preview.png", response_model=None)
 def download_resume_preview(
     resume_id: str,
-    version_id: int | None = Query(default=None, ge=1),
+    version_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_miniprogram_user),
     storage: AssetStorage = Depends(get_storage),
@@ -210,10 +180,12 @@ def download_resume_preview(
     resume = find_owned_resume(db, resume_id, user.id)
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    version = select_readable_version(db, resume.id, version_id=version_id)
-    if version is None:
+    revision = _draft_revision(resume)
+    if version_id is not None and version_id != revision:
         raise ApiError(409, "RESUME_VERSION_UNAVAILABLE")
-    pdf = _render_pdf(resume, version, user, storage, pdf_renderer)
+    pdf = _render_pdf(
+        resume, resume.data_json, resume.style_json, user, storage, pdf_renderer
+    )
     preview = preview_renderer.render(pdf)
     return Response(
         content=preview,
@@ -221,8 +193,8 @@ def download_resume_preview(
         headers={
             "Cache-Control": "private, no-store",
             "Content-Disposition": 'inline; filename="resume-preview.png"',
-            "X-LinkCV-Preview-Version-Id": str(version.id),
-            "X-LinkCV-Preview-Version-No": str(version.version_no),
+            "X-LinkCV-Preview-Version-Id": revision,
+            "X-LinkCV-Preview-Version-No": str(resume.lock_version),
             "X-Content-Type-Options": "nosniff",
         },
     )

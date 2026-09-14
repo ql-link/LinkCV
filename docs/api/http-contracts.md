@@ -40,16 +40,16 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/miniprogram/resumes` | `{resumes}`；本人简历摘要，按更新时间倒序；`preview` 与 `pdf_version_id/pdf_version_no` 来自最新手动版本，无手动版本时来自初始版本 |
-| `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；返回本人当前可读正式版本及 PDF 版本标识，不返回自动保存草稿；不存在或越权统一 `404 RESUME_NOT_FOUND` |
-| `GET` | `/api/miniprogram/resumes/:id/pdf?version_id=...` | 当前可读正式版本的文字 PDF；`version_id` 必须仍等于最新可读版本，响应 `application/pdf`、`private, no-store` 并携带版本响应头 |
-| `GET` | `/api/miniprogram/resumes/:id/preview.png?version_id=...` | 当前可读正式版本的智能一页 PNG；响应 `image/png`、`private, no-store` 并携带版本响应头，供小程序在当前页面内显示和本机缓存 |
+| `GET` | `/api/miniprogram/resumes` | `{resumes}`；本人简历摘要，按更新时间倒序；`preview` 与 `pdf_version_id/pdf_version_no` 来自当前实时草稿（`resumes.data_json/style_json`），`pdf_version_id` 为 `draft:{lock_version}` 草稿修订标识 |
+| `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；返回本人简历当前草稿及草稿修订标识，与 Web 工作台所见一致；不存在或越权统一 `404 RESUME_NOT_FOUND` |
+| `GET` | `/api/miniprogram/resumes/:id/pdf?version_id=...` | 当前草稿的文字 PDF；`version_id` 必须仍等于当前草稿修订 `draft:{lock_version}`，响应 `application/pdf`、`private, no-store` 并携带版本响应头 |
+| `GET` | `/api/miniprogram/resumes/:id/preview.png?version_id=...` | 当前草稿的智能一页 PNG；响应 `image/png`、`private, no-store` 并携带版本响应头，供小程序在当前页面内显示和本机缓存 |
 | `GET` | `/api/miniprogram/account/profile` | `{nickname, avatar_url}`；本人资料，`avatar_url` 恒为 `/api/miniprogram/account/avatar` 或 `null` |
 | `PATCH` | `/api/miniprogram/account/profile` | 同上；JSON `{nickname}`，去空白后非空且不超过 50 字，否则 `400 INVALID_NICKNAME` |
 | `PUT` | `/api/miniprogram/account/avatar` | `{url}`；JSON `{dataUrl, fileName?}`，复用 `/api/account/avatar` 的解码、10MB 上限与 MinIO 归属键规则，替换后删除旧头像对象 |
 | `GET` | `/api/miniprogram/account/avatar` | 本人头像二进制流（`image/*`、`private`）；无头像返回 `404 ASSET_NOT_FOUND`。普通 `/api/assets/*` 仍只接受 Web Cookie，小程序只能经此专用端点读取头像 |
 
-四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览选择最新 `reason=manual` 快照，没有手动版本时回退 `reason=initial`；客户端版本过期或无可读版本返回 `409 RESUME_VERSION_UNAVAILABLE`。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从该版本真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PNG 栅格化进入进程级 PDFium 互斥区；预览槽位耗尽仍返回 `503 RESUME_PDF_BUSY`，不改变版本与归属校验。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
+四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。四个端点统一渲染当前草稿，`pdf_version_id`/`version_id` 取值为 `draft:{lock_version}`，草稿每次保存递增；客户端修订过期返回 `409 RESUME_VERSION_UNAVAILABLE`。求职场景的「投递简历」预览不受此影响，仍只读取求职实际绑定的不可变版本。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从该版本真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PNG 栅格化进入进程级 PDFium 互斥区；预览槽位耗尽仍返回 `503 RESUME_PDF_BUSY`，不改变版本与归属校验。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
 
 ### 用户中心
 
