@@ -53,7 +53,7 @@ it.each(["txt", "md"])("shows local %s content after upload without waiting for 
   await rememberTextThumbnail(item, file);
   const fetch = vi.spyOn(api, "getDatasetContent");
   render(<DocumentThumbnail dataset={item} fallback="Placeholder" />);
-  expect(screen.getByText(format === "txt" ? "# Local title" : "Local title")).toBeInTheDocument();
+  expect(await screen.findByText(format === "txt" ? "# Local title" : "Local title")).toBeInTheDocument();
   expect(fetch).not.toHaveBeenCalled();
 });
 

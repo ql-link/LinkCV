@@ -32,7 +32,7 @@ Jenkins loads and registers the trigger from the updated `Jenkinsfile`.
 Subsequent pull-request merges into `master` emit a push event and start the
 Production job automatically.
 
-Jenkins 只归档当前提交，并使用 `/var/jenkins_home/.ssh/cloud_prod` 上传到 Cloud；`deploy/scripts/build-production-on-cloud.sh` 在 `/opt/tolink/LinkResume` 所在的真实生产主机完成双镜像构建、迁移、Compose 更新、双健康检查和成对回滚。私密 `/opt/tolink/LinkResume/.env.production.local` 必须预先由部署密钥存储写入并设置为 `600`。
+Jenkins 只归档当前提交，并使用 `/var/jenkins_home/.ssh/cloud_prod` 上传到 Cloud；`deploy/scripts/build-production-on-cloud.sh` 在 `/opt/tolink/LinkResume` 所在的真实生产主机完成双镜像构建、OSS 静态资源发布、迁移、Compose 更新、双健康检查和成对回滚。应用私密 `/opt/tolink/LinkResume/.env.production.local` 与仅供发布脚本使用的 `/opt/tolink/LinkResume/.env.oss-cdn.local` 都必须预先由部署密钥存储写入并设置为 `600`；后者沿用旧文件名以兼容现有主机配置，格式见 `deploy/oss-cdn.env.example`，不会传入 Compose。
 
 ```dotenv
 MYSQL_USER=<deployment-user>
@@ -54,7 +54,7 @@ LINKRESUME_INTERNAL_AGENT_TOKEN=<different-at-least-32-random-characters>
 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`，否则会覆盖通过
 `tolink-app-net` 使用的生产 Docker DNS 地址。
 
-Production Cloud 需要 Docker、Docker Compose、外部网络 `tolink-app-net` 和至少一个可回滚的上一版本镜像对。远端脚本按同一 `prod-<commit>-b<build>` 标签构建 `linkresume` 与 `linkresume-pi`，部署时同时提供 `TAG` 与 `PI_TAG`：
+Production Cloud 需要 Docker、Docker Compose、`ossutil 2.x`、外部网络 `tolink-app-net` 和至少一个可回滚的上一版本镜像对。远端脚本按同一 `prod-<commit>-b<build>` 标签构建 `linkresume` 与 `linkresume-pi`，先从 Web 镜像提取 `/app/web/assets` 上传到 OSS 的 `LinkResume/assets/` 前缀并通过 OSS 公网 HTTPS 地址逐项验证，再进入迁移和应用切换；部署时同时提供 `TAG` 与 `PI_TAG`：
 
 ```bash
 export TAG=prod-<commit>-b<build>
