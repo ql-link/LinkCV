@@ -1463,7 +1463,7 @@ The complete split state (conversation on the left and editable `ResumeWorkbench
 - The top-left visibility control expands the full conversation sidebar again; closing the embedded workbench restores it.
 - Selecting “新建对话” or a history item exits the embedded dataset view and returns to the conversation surface.
 - Focused component verification: 3 files and 100 tests passed.
-- Full Web gate: design rules, 66 test files / 758 tests, TypeScript, Vite and PDF builds passed on the latest `origin/master` baseline after the final layout adjustment.
+- Full Web gate: design rules, 67 test files / 772 tests, TypeScript, Vite and PDF builds passed after integrating the latest `origin/dev` and resolving the final layout conflicts.
 
 ## Findings
 
