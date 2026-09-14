@@ -906,6 +906,79 @@ describe("canonical resume editing projection", () => {
     });
   });
 
+  it("preserves a trailing empty ordered-list item and non-text inline content", () => {
+    const editor = canonicalResumeDocumentToEditorDocument(canonicalEditingFixture);
+    const list = editor.content?.find((node) => node.type === "bulletList")!;
+    list.type = "orderedList";
+    list.attrs = { start: 3 };
+    list.content?.push(
+      {
+        type: "listItem",
+        content: [{
+          type: "paragraph",
+          content: [{ type: "inlineIcon", attrs: { name: "Star" } }],
+        }],
+      },
+      {
+        type: "listItem",
+        content: [{
+          type: "paragraph",
+          content: [{
+            type: "inlineImage",
+            attrs: {
+              src: "/api/resumes/1/assets/list-item.png",
+              width: 48,
+              height: 48,
+              alt: "项目图标",
+            },
+          }],
+        }],
+      },
+      { type: "listItem", content: [{ type: "paragraph", content: [] }] },
+    );
+
+    const persisted = canonicalResumeDocumentFromEditorDocument(editor, canonicalEditingFixture);
+    const workList = persisted.sections[0].entries[0].blocks.find(
+      (block) => block.block_type === "ordered_list",
+    );
+    expect(workList?.block_type).toBe("ordered_list");
+    if (!workList || workList.block_type !== "ordered_list") return;
+    expect(workList.start).toBe(3);
+    expect(workList.items).toHaveLength(5);
+    expect(workList.items[0].node_id).toBe("node_pppppppppppppppp");
+    expect(workList.items[1].node_id).toBe("node_qqqqqqqqqqqqqqqq");
+    expect(workList.items[2].runs).toEqual([{ inline_type: "icon", name: "Star" }]);
+    expect(workList.items[3].runs).toEqual([
+      expect.objectContaining({
+        inline_type: "media",
+        media_kind: "inline_image",
+        src: "/api/resumes/1/assets/list-item.png",
+      }),
+    ]);
+    expect(workList.items[4].runs).toEqual([]);
+  });
+
+  it("preserves a list block when all of its items are empty", () => {
+    const editor = canonicalResumeDocumentToEditorDocument(canonicalEditingFixture);
+    const list = editor.content?.find((node) => node.type === "bulletList")!;
+    list.content = list.content?.map((item) => ({
+      ...item,
+      content: item.content?.map((paragraph) => ({
+        ...paragraph,
+        content: paragraph.content?.filter((child) => child.type === "resumeBlockAnchor"),
+      })),
+    }));
+
+    const persisted = canonicalResumeDocumentFromEditorDocument(editor, canonicalEditingFixture);
+    const workList = persisted.sections[0].entries[0].blocks.find(
+      (block) => block.block_type === "bullet_list",
+    );
+    expect(workList?.block_type).toBe("bullet_list");
+    if (!workList || workList.block_type !== "bullet_list") return;
+    expect(workList.items).toHaveLength(2);
+    expect(workList.items.every((item) => item.runs.length === 0)).toBe(true);
+  });
+
   it("fails explicitly for unsupported nested lists and invalid rows", () => {
     const nested = canonicalResumeDocumentToEditorDocument(canonicalEditingFixture);
     const list = nested.content?.find((node) => node.type === "bulletList")!;

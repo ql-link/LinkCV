@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 
-from linkcv.core.migration_sql import sql_statements
+from linkresume.core.migration_sql import sql_statements
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 REVISION_PATH = (
@@ -21,7 +21,7 @@ SQL_PATH = BACKEND_ROOT / "migrations" / "sql" / "0051.up.sql"
 
 
 def load_revision() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("linkcv_revision_0051", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("linkresume_revision_0051", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

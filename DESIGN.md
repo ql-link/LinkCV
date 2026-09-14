@@ -1,7 +1,7 @@
 ---
 version: alpha
-name: LinkCV Product UI
-description: An Apple-inspired, task-first interface with warm neutral surfaces, near-black primary actions and LinkCV blue as the interaction accent.
+name: LinkResume Product UI
+description: An Apple-inspired, task-first interface with warm neutral surfaces, near-black primary actions and LinkResume blue as the interaction accent.
 colors:
   primary: "#17191C"
   primary-hover: "#2C3137"
@@ -30,38 +30,48 @@ colors:
   scrim: "rgba(15, 18, 22, 0.46)"
 typography:
   page-title:
-    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1.75rem
     fontWeight: 600
     lineHeight: 1.25
     letterSpacing: -0.02em
   section-title:
-    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1.25rem
     fontWeight: 600
     lineHeight: 1.25
   subsection-title:
-    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 600
     lineHeight: 1.25
   body-md:
-    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 400
     lineHeight: 1.55
   body-sm:
-    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 0.875rem
+    fontWeight: 400
+    lineHeight: 1.55
+  content-md:
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 1rem
+    fontWeight: 400
+    lineHeight: 1.55
+  content-sm:
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 400
     lineHeight: 1.55
   label-sm:
-    fontFamily: "Inter, LXGW WenKai, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 600
     lineHeight: 1.25
   metadata:
-    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, LXGW WenKai, monospace"
+    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, Source Han Sans SC, monospace"
     fontSize: 0.75rem
     fontWeight: 500
     lineHeight: 1.25
@@ -132,7 +142,7 @@ components:
   input-field:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.on-surface}"
-    typography: "{typography.body-sm}"
+    typography: "{typography.content-sm}"
     rounded: "{rounded.md}"
     height: 40px
   input-border:
@@ -206,7 +216,7 @@ sourceHierarchy:
     role: "确定性校验设计契约和共享 Pattern 映射"
 settingsPattern:
   id: settings
-  name: "LinkCV Settings Pattern"
+  name: "LinkResume Settings Pattern"
   tokenContract:
     --ui-settings-content-max: "60rem"
     --ui-settings-section-inset: "var(--ui-space-5)"
@@ -261,17 +271,17 @@ settingsPattern:
     metadata: "var(--ui-text-xs)"
 ---
 
-# LinkCV Product Design System
+# LinkResume Product Design System
 
 ## Overview
 
-LinkCV 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：温和的中性表面、近黑色主操作、蓝色交互反馈和接近无感的界面层级。它不是 Apple 官网的产品陈列复刻，而是适合简历管理、编辑和后台操作的中等密度工具。用户进入页面后应能迅速判断当前位置、主要内容和下一步操作。
+LinkResume 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：温和的中性表面、近黑色主操作、蓝色交互反馈和接近无感的界面层级。它不是 Apple 官网的产品陈列复刻，而是适合简历管理、编辑和后台操作的中等密度工具。用户进入页面后应能迅速判断当前位置、主要内容和下一步操作。
 
 这套系统面向简历管理、岗位管理、设置、编辑工作台和管理端等软件功能。公共营销落地页可以拥有独立的品牌构图；登录页可以保留一处简短品牌表达，但表单仍服从本系统；简历纸张和 PDF 使用文档排版规则，不使用软件界面 Token。
 
 ## Colors
 
-界面以暖中性浅灰背景、白色表面和近黑文本构成。近黑 `primary`（#17191C）用于主要操作和结构性强调；LinkCV 蓝 `accent`（#145ED6）用于链接、选中状态和焦点关联，不把整页染成蓝色。
+界面以暖中性浅灰背景、白色表面和近黑文本构成。近黑 `primary`（#17191C）用于主要操作和结构性强调；LinkResume 蓝 `accent`（#145ED6）用于链接、选中状态和焦点关联，不把整页染成蓝色。
 
 - `background` 承载页面画布，`surface` 承载输入、弹窗和必要容器；`surface-subtle` 与 `surface-muted` 只做低层级分组。
 - `on-surface-secondary` 用于真实有用的补充说明，`muted` 用于元信息、占位和弱化内容。
@@ -283,9 +293,10 @@ LinkCV 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率：�
 
 排版强调快速扫描。页面通常只使用页面标题、区域标题、正文和辅助信息四级，不通过连续增加字号或字重制造层级。
 
-- 全项目中文统一使用随应用发布的霞鹜文楷；英文正文保留 Inter，营销与品牌英文标题保留 Space Grotesk，通过字号、字重和紧凑字距建立层级。
+- 产品界面的标题、正文、输入和按钮统一使用随应用发布的思源黑体可变字体，通过字号、字重和紧凑字距建立层级；简历画布继续尊重用户选择的版式字体。
 - 正文默认 16px，密集控件和说明使用 14px。
-- 技术标识、时间、版本和短元数据的拉丁字符可以使用等宽字体，其中的中文仍回退到霞鹜文楷；正文不使用等宽字体。
+- 技术标识、时间、版本和短元数据的拉丁字符可以使用等宽字体，其中的中文回退到思源黑体；正文不使用等宽字体。
+- 独立 AI 助手和简历编辑器侧栏的用户消息与 AI 回复正文使用思源宋体，空状态、输入编辑器、会话导航和操作控件仍使用全局思源黑体。
 - 删除“欢迎使用”“轻松完成”“一站式管理”等不能帮助用户决策的文案；说明文字只解释限制、后果或下一步动作。
 
 设置页使用 `subsection-title`（16px/600）作为区域标题；核心正文、字段标签和控件使用 14–16px，只有时间、短状态和其他元信息使用 12px `metadata`。不把账户页个案字号直接推广为全局规则。
@@ -340,7 +351,7 @@ Settings Pattern 只约束显式选择它的共享组件或页面，不是所有
 
 ## Components
 
-- **Buttons:** `primary` 使用 LinkCV 蓝且只用于区域内最重要的动作；页面级单一 CTA 可以使用 `button-primary-pill`，普通提交仍使用紧凑圆角。带文字的 `secondary`、`outline` 和 `ghost` 统一为透明全圆角细边框，悬浮或键盘聚焦时由边框中部向左右两半扩展 LinkCV 蓝色描边，并显示克制柔光；减少动态效果时直接切换最终边框。纯图标按钮、导航标签与不可逆的 `destructive` 不继承该外观，不可逆操作仍需确认后果。
+- **Buttons:** `primary` 使用 LinkResume 蓝且只用于区域内最重要的动作；页面级单一 CTA 可以使用 `button-primary-pill`，普通提交仍使用紧凑圆角。带文字的 `secondary`、`outline` 和 `ghost` 统一为透明全圆角细边框，悬浮或键盘聚焦时由边框中部向左右两半扩展 LinkResume 蓝色描边，并显示克制柔光；减少动态效果时直接切换最终边框。纯图标按钮、导航标签与不可逆的 `destructive` 不继承该外观，不可逆操作仍需确认后果。
 - **Inputs:** 始终提供可访问标签；帮助文字和错误贴近字段；提交中禁止重复操作，不能只用 placeholder 代替标签。
 - **Lists:** 优先展示对象身份、状态和主要动作；次要元信息降级；必须设计加载、空、错误和继续加载状态。
 - **Dialogs:** 只用于需要打断当前任务的确认或短流程。移动端保留至少 16px 外边距，危险动作提供明确标题和后果。
@@ -348,7 +359,7 @@ Settings Pattern 只约束显式选择它的共享组件或页面，不是所有
 - **Feedback:** 成功反馈简短且不阻塞；错误保留可行动信息；状态不能只依赖短暂动画或颜色。
 - **Tooltips:** 只补充图标按钮或陌生术语，不承载完成任务所必需的信息。
 
-基础交互优先复用 shadcn primitive，LinkCV 的共享实现集中在 `apps/web/src/components/ui/`。组件进入项目后使用本文件的语义和 Token 校准，不保留与项目冲突的 registry 默认视觉。
+基础交互优先复用 shadcn primitive，LinkResume 的共享实现集中在 `apps/web/src/components/ui/`。组件进入项目后使用本文件的语义和 Token 校准，不保留与项目冲突的 registry 默认视觉。
 
 ## Do's and Don'ts
 

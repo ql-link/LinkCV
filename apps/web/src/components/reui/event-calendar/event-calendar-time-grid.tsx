@@ -444,6 +444,8 @@ function useEventCalendarAllDayBars(days: Date[]): {
       })
       const packed = Array.from(merged.values()).sort(
         (a, b) =>
+          (b.seg.occurrence.event.priority ?? 0) -
+            (a.seg.occurrence.event.priority ?? 0) ||
           a.colStart - b.colStart ||
           b.colEnd - b.colStart - (a.colEnd - a.colStart) ||
           a.seg.occurrence.key.localeCompare(b.seg.occurrence.key)

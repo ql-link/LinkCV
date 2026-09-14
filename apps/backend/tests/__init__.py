@@ -1,1 +1,1 @@
-"""Shared test support for the LinkCV backend."""
+"""Shared test support for the LinkResume backend."""

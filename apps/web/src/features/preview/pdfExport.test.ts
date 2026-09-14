@@ -47,9 +47,17 @@ describe("resume PDF export orchestration", () => {
       resumeId: "resume-1",
       title: "简历",
       saveCurrentResume: vi.fn().mockResolvedValue(undefined),
-      getSnapshot: () => ({ activeResumeId: "resume-1", lockVersion: 8, saveStatus: "error" }),
+      getSnapshot: () => ({
+        activeResumeId: "resume-1",
+        lockVersion: 8,
+        saveStatus: "error",
+        saveError: "RESUME_PDF_ASSETS_TOO_LARGE",
+      }),
       downloadResumePdf,
-    })).rejects.toMatchObject({ code: "RESUME_SAVE_FAILED" });
+    })).rejects.toMatchObject({
+      code: "RESUME_SAVE_FAILED",
+      saveError: "RESUME_PDF_ASSETS_TOO_LARGE",
+    });
 
     expect(downloadResumePdf).not.toHaveBeenCalled();
   });
@@ -85,6 +93,11 @@ describe("resume PDF export errors and filenames", () => {
       .toBe("PDF 服务暂时不可用，请稍后重试");
     expect(resumePdfExportErrorMessage(new ResumePdfExportError("RESUME_SAVE_FAILED")))
       .toBe("简历保存失败，请修正后重试");
+    expect(resumePdfExportErrorMessage(
+      new ResumePdfExportError("RESUME_SAVE_FAILED", "RESUME_PDF_ASSETS_TOO_LARGE"),
+    )).toBe("简历中引用的图片总大小不能超过 10MB");
+    expect(resumePdfExportErrorMessage(new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE")))
+      .toBe("简历中引用的图片总大小不能超过 10MB");
   });
 
   it("释放下载 URL，即使锚点点击抛出异常", () => {

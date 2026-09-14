@@ -18,7 +18,7 @@ export { PageLoading, type PageLoadingProps } from "./page-loading";
 export { PageHeader, type PageHeaderProps } from "./page-header";
 export { RandomLetterSwap, type RandomLetterSwapProps } from "./random-letter-swap";
 export { SelectField } from "./select-field";
-export { Select, SelectContent, SelectItem, SelectTrigger } from "./select";
+export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./select";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
 export {

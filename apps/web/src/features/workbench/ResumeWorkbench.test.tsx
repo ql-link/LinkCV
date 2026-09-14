@@ -18,7 +18,6 @@ import {
   SaveResumeAction,
   SaveVersionAction,
   ResumeTemplateSwitcher,
-  semanticSectionDisplayTitle,
   VersionRenameAction,
   WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
@@ -54,10 +53,60 @@ describe("ResumeWorkbench 标题", () => {
     });
   });
 
-  it("在章节类型面板隐藏内部图标标记", () => {
-    expect(semanticSectionDisplayTitle(":icon[GraduationCap]: 教育经历")).toBe("教育经历");
-    expect(semanticSectionDisplayTitle(":icon[Star]: 自我评价")).toBe("自我评价");
-    expect(semanticSectionDisplayTitle(":icon[Star]:")).toBe("未命名章节");
+  it("页面边距本地修改后立即覆盖尚未保存的规范样式", () => {
+    const persistedStyle = {
+      ...defaultCanonicalPresentation,
+      template_scoped: {
+        "classic-cn": {
+          page_margin_top_mm: 8,
+          page_margin_right_mm: 14,
+          page_margin_bottom_mm: 10,
+          page_margin_left_mm: 12,
+        },
+      },
+    };
+
+    const unchanged = resumeWorkbenchStyle({
+      fontFamily: "serif",
+      fontSize: 10,
+      lineHeight: 1.3,
+      pageMargin: 12,
+      verticalPageMargin: 8,
+    }, "#202632", persistedStyle);
+    expect(unchanged).toMatchObject({
+      "--resume-page-margin-top": "8mm",
+      "--resume-page-margin-right": "14mm",
+      "--resume-page-margin-bottom": "10mm",
+      "--resume-page-margin-left": "12mm",
+    });
+
+    const horizontalChanged = resumeWorkbenchStyle({
+      fontFamily: "serif",
+      fontSize: 10,
+      lineHeight: 1.3,
+      pageMargin: 16,
+      verticalPageMargin: 8,
+    }, "#202632", persistedStyle);
+    expect(horizontalChanged).toMatchObject({
+      "--resume-page-margin-top": "8mm",
+      "--resume-page-margin-right": "16mm",
+      "--resume-page-margin-bottom": "10mm",
+      "--resume-page-margin-left": "16mm",
+    });
+
+    const verticalChanged = resumeWorkbenchStyle({
+      fontFamily: "serif",
+      fontSize: 10,
+      lineHeight: 1.3,
+      pageMargin: 12,
+      verticalPageMargin: 12,
+    }, "#202632", persistedStyle);
+    expect(verticalChanged).toMatchObject({
+      "--resume-page-margin-top": "12mm",
+      "--resume-page-margin-right": "14mm",
+      "--resume-page-margin-bottom": "12mm",
+      "--resume-page-margin-left": "12mm",
+    });
   });
 
   it("只在标题超过 30 个字符时省略", () => {
@@ -314,13 +363,14 @@ describe("ResumeWorkbench 字体选择", () => {
     render(<FontPreviewSelect value={serifFont} onChange={onChange} />);
 
     const trigger = screen.getByRole("combobox", { name: "字体" });
-    expect(trigger).toHaveTextContent("简历宋体");
+    expect(trigger).toHaveTextContent("思源宋体");
     expect(trigger).not.toHaveTextContent("张三的简历 Resume");
 
     await user.click(trigger);
     expect(screen.getByRole("listbox")).toHaveAttribute("data-ui-theme", "light");
     const wenkaiOption = screen.getByRole("option", { name: /霞鹜文楷/ });
-    expect(wenkaiOption).toHaveTextContent("霞鹜文楷 Medium");
+    expect(wenkaiOption).toHaveTextContent("霞鹜文楷");
+    expect(wenkaiOption).not.toHaveTextContent("Medium");
     expect(wenkaiOption).not.toHaveTextContent("张三的简历 Resume");
     expect(wenkaiOption.querySelector(".workbench-font-option-copy")).toHaveStyle({
       fontFamily: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif',
@@ -333,7 +383,7 @@ describe("ResumeWorkbench 字体选择", () => {
   it("版本操作期间禁用字体选择", () => {
     render(<FontPreviewSelect value="missing-font" onChange={vi.fn()} disabled />);
     expect(screen.getByRole("combobox", { name: "字体" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "字体" })).toHaveTextContent("简历宋体");
+    expect(screen.getByRole("combobox", { name: "字体" })).toHaveTextContent("思源宋体");
   });
 });
 
@@ -438,6 +488,16 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
 
     rerender(<WorkbenchSaveStatus dirty={false} saveStatus="saved" />);
     expect(screen.getByRole("status")).toHaveTextContent("已保存");
+
+    rerender(
+      <WorkbenchSaveStatus
+        dirty
+        saveStatus="error"
+        error="RESUME_PDF_ASSETS_TOO_LARGE"
+      />,
+    );
+    expect(screen.getByRole("status"))
+      .toHaveTextContent("保存失败 · 简历中引用的图片总大小不能超过 10MB");
   });
 
   it("顶部保存简历按钮触发主记录保存并在保存期间禁用重复操作", async () => {
@@ -526,6 +586,13 @@ describe("ResumeWorkbench 版本上限提示", () => {
 
   it("其他错误继续使用通用失败提示", () => {
     expect(versionOperationErrorMessage(new Error("HTTP_500"), "create")).toBeNull();
+  });
+
+  it("恢复版本时展示图片契约错误", () => {
+    const error = new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE");
+
+    expect(versionOperationErrorMessage(error, "restore"))
+      .toBe("简历中引用的图片总大小不能超过 10MB");
   });
 });
 

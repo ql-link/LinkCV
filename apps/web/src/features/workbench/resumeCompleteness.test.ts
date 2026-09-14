@@ -6,7 +6,7 @@ const completeResume = `# 李明
 
 前端开发工程师，3 年 React 与 TypeScript 项目经验
 
-电话：13912345678 ｜ 邮箱：liming@linkcv.test
+电话：13912345678 ｜ 邮箱：liming@linkresume.test
 
 ## 工作经历
 
@@ -83,7 +83,7 @@ describe("evaluateResumeCompleteness", () => {
       defaultResumeMarkdown
         .replace("# 张三", "# 李明")
         .replace("13800000000", "13912345678")
-        .replace("zhangsan@example.com", "liming@linkcv.test"),
+        .replace("zhangsan@example.com", "liming@linkresume.test"),
     );
 
     expect(result.rawScore).toBeGreaterThan(60);
@@ -94,7 +94,7 @@ describe("evaluateResumeCompleteness", () => {
   it("优先把教育经历识别为教育章节而不是普通经历", () => {
     const result = evaluateResumeCompleteness(`# 李明
 
-电话：13912345678 ｜ 邮箱：liming@linkcv.test
+电话：13912345678 ｜ 邮箱：liming@linkresume.test
 
 ## 教育经历
 

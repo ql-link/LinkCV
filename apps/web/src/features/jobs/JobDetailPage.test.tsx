@@ -1,12 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type JobDescriptionRecord } from "../../api/client";
+import { api, type JobApplicationSummary, type JobDescriptionRecord } from "../../api/client";
 import { JobDetailPage } from "./JobDetailPage";
 
 const activeJob: JobDescriptionRecord = {
   id: "job-1",
   job_title: "Java 开发实习生",
   company_name: "示例科技",
+  logo_url: null,
   employment_type: "internship",
   description: "参与后端业务开发。",
   skills: ["Java", "MySQL"],
@@ -66,6 +67,28 @@ describe("JobDetailPage", () => {
     expect(screen.queryByText("编辑")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除" })).toBeInTheDocument();
     expect(screen.queryByText("活动岗位")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "这个岗位的求职记录" })).not.toBeInTheDocument();
+  });
+
+  it("已有已结束进程时不再提供再次求职入口", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    vi.mocked(api.listJobApplications).mockResolvedValue({
+      items: [{
+        id: "application-ended",
+        job_description_id: activeJob.id,
+        status: "closed",
+        lifecycle_status: "terminated",
+        archived_at: null,
+        created_at: "2026-09-01T08:00:00Z",
+      } as JobApplicationSummary],
+      next_cursor: null,
+    });
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+
+    expect(await screen.findByRole("button", { name: "删除" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "再次开始求职" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "开始求职" })).not.toBeInTheDocument();
   });
 
   it("从求职记录进入岗位详情时返回对应记录", async () => {
@@ -266,6 +289,7 @@ describe("JobDetailPage", () => {
     render(<JobDetailPage jobId={activeJob.id} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("求职进程、阶段、排期、复盘和素材都将无法恢复");
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith(activeJob.id));

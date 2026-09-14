@@ -158,7 +158,7 @@ export const zh = {
   },
 
   marquee: {
-    eyebrow: 'LINKCV / ONE WORKSPACE',
+    eyebrow: 'LINKRESUME / ONE WORKSPACE',
     title: '一份简历，只是开始',
     subtitle: '继续向下，进入完整的求职工作台',
     keywords: ['A4 纸面编辑', '版本管理', 'PDF 导出', '智能一页', '岗位库', 'Chrome 插件', '模板导入', '自动保存'],

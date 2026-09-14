@@ -3,8 +3,8 @@ from io import BytesIO
 
 import pytest
 
-from linkcv.core.config import Settings
-from linkcv.core.storage import (
+from linkresume.core.config import Settings
+from linkresume.core.storage import (
     AssetStorage,
     UploadTooLarge,
     build_asset_object_name,

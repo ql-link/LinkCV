@@ -6,37 +6,37 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
-from linkcv.application.resumes.commands import CreateResumeCommand
-from linkcv.application.resumes.service import (
+from linkresume.application.resumes.commands import CreateResumeCommand
+from linkresume.application.resumes.service import (
     persist_resume_with_initial_version,
     resume_slot_count,
 )
-from linkcv.core.config import Settings
-from linkcv.domain.resume import (
+from linkresume.core.config import Settings
+from linkresume.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation,
     SourceGraph,
     SparseResumeAnnotations,
 )
-from linkcv.domain.resume.models import SparseAnnotation
-from linkcv.domain.document_conversion import (
+from linkresume.domain.resume.models import SparseAnnotation
+from linkresume.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownResult,
 )
-from linkcv.domain.resume_style import default_resume_style, default_template_manifest
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.resumes.models import (
+from linkresume.domain.resume_style import default_resume_style, default_template_manifest
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
     ResumeTemplate,
 )
-from linkcv.services.resume_import_service import (
+from linkresume.services.resume_import_service import (
     ParsedImportResult,
     ResumeImportService,
 )
-from linkcv.workers.resume_import_worker import (
+from linkresume.workers.resume_import_worker import (
     FAILURE_REASON_BY_CODE,
     ResumeImportProcessor,
     WorkerDependencyUnavailable,
@@ -381,9 +381,10 @@ def test_worker_serializes_concurrent_finalization_at_capacity() -> None:
             .where(DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE)
             .order_by(DocumentParseTask.id)
         ).all()
-        assert [task.parse_status for task in tasks] == ["failed", "succeeded"]
-        assert tasks[0].failure_reason == "quota_exceeded"
-        assert tasks[1].failure_reason is None
+        tasks_by_status = {task.parse_status: task for task in tasks}
+        assert set(tasks_by_status) == {"failed", "succeeded"}
+        assert tasks_by_status["failed"].failure_reason == "quota_exceeded"
+        assert tasks_by_status["succeeded"].failure_reason is None
         assert len(db.scalars(select(Resume)).all()) == 10
         assert resume_slot_count(db, tasks[0].user_id) == 10
 

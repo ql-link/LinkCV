@@ -1,13 +1,18 @@
 import { ApiRequestError, api, type ResumePdfDownload } from "../../api/client";
+import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 
 export type ResumePdfExportSnapshot = {
   activeResumeId: string | null;
   lockVersion: number;
   saveStatus: "idle" | "saving" | "saved" | "error";
+  saveError?: string | null;
 };
 
 export class ResumePdfExportError extends Error {
-  constructor(readonly code: "RESUME_NOT_READY" | "RESUME_SAVE_FAILED" | "RESUME_EXPORT_CANCELLED") {
+  constructor(
+    readonly code: "RESUME_NOT_READY" | "RESUME_SAVE_FAILED" | "RESUME_EXPORT_CANCELLED",
+    readonly saveError?: string | null,
+  ) {
     super(code);
     this.name = "ResumePdfExportError";
   }
@@ -54,7 +59,9 @@ export function isResumePdfExportCancelled(error: unknown): boolean {
 export function resumePdfExportErrorMessage(error: unknown): string {
   if (isResumePdfExportCancelled(error)) return "";
   if (error instanceof ResumePdfExportError) {
-    if (error.code === "RESUME_SAVE_FAILED") return "简历保存失败，请修正后重试";
+    if (error.code === "RESUME_SAVE_FAILED") {
+      return resumeImageContractErrorMessage(error.saveError) ?? "简历保存失败，请修正后重试";
+    }
     return "简历暂时无法导出，请稍后重试";
   }
   if (error instanceof ApiRequestError) {
@@ -64,7 +71,9 @@ export function resumePdfExportErrorMessage(error: unknown): string {
       case "RESUME_PDF_PAGE_TOO_TALL":
         return "简历内容过长，请调整内容后重试";
       case "RESUME_PDF_ASSETS_TOO_LARGE":
+        return "简历中引用的图片总大小不能超过 10MB";
       case "RESUME_PDF_ASSET_TOO_LARGE":
+        return "图片不能超过 10MB";
       case "RESUME_PDF_ASSET_READ_FAILED":
       case "RESUME_PDF_IMAGE_UNAVAILABLE":
       case "RESUME_PDF_IMAGE_UNSUPPORTED":
@@ -114,7 +123,7 @@ export async function exportResumePdf({
     throw new ResumePdfExportError("RESUME_NOT_READY");
   }
   if (snapshot.saveStatus === "saving" || snapshot.saveStatus === "error") {
-    throw new ResumePdfExportError("RESUME_SAVE_FAILED");
+    throw new ResumePdfExportError("RESUME_SAVE_FAILED", snapshot.saveError);
   }
 
   const result = await downloadResumePdf(resumeId, snapshot.lockVersion, signal);

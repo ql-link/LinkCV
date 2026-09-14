@@ -242,8 +242,6 @@
   text-align: center;
 }
 
-.resume-create-form > .feedback-notice { margin: 0 32px 18px; }
-
 .resume-create-actions {
   gap: var(--ui-space-3);
   border-top: 1px solid var(--ui-border);
@@ -277,8 +275,6 @@
   .resume-create-template-card.is-current { transform: none; }
   .resume-create-template-card:not(.is-selected) .resume-create-template-preview { margin-top: 0; }
   .resume-create-pagination { padding-top: 12px; }
-  .resume-create-form > .feedback-notice { margin: 0 20px 14px; }
-
   .resume-create-actions {
     flex-direction: column-reverse;
     gap: var(--ui-space-2);

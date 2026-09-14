@@ -28,7 +28,9 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 import {
@@ -74,6 +76,13 @@ const PHASE_LABELS: Record<string, string> = {
 };
 
 const MESSAGE_FOLLOW_THRESHOLD = 96;
+const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 240;
+const ASSISTANT_SIDEBAR_MIN_WIDTH = 220;
+const ASSISTANT_SIDEBAR_MAX_WIDTH = 420;
+
+function clampAssistantSidebarWidth(width: number) {
+  return Math.min(ASSISTANT_SIDEBAR_MAX_WIDTH, Math.max(ASSISTANT_SIDEBAR_MIN_WIDTH, width));
+}
 
 type LocalMessage = AgentMessage & {
   temporary?: boolean;
@@ -443,18 +452,6 @@ function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]
   return partialAssistant.length > 0 ? [...persisted, ...partialAssistant] : persisted;
 }
 
-function conversationHeading(state: ConversationState, hasClarification: boolean) {
-  if (hasClarification) return ["还需要确认一点", "补充关键信息后，我会继续完成这次任务。"] as const;
-  if (state.proposals.some((proposal) => proposal.status === "applied")) return ["修改已完成", "已按你确认的提案更新简历，变更内容在右侧可查看。"] as const;
-  if (state.proposals.some((proposal) => proposal.status === "pending")) return ["修改提案待确认", "确认前不会写入简历，你可以先检查每一处改动。"] as const;
-  if (state.stage === "stopped") return ["生成已停止", "已保留当前内容，你可以继续上次的要求。"] as const;
-  if (state.stage === "failed") return ["本次生成未完成", "已保留当前内容和问题草稿，可以稍后重试。"] as const;
-  if (state.stage === "streaming") return ["正在生成回答", "内容会逐步出现，你可以随时停止。"] as const;
-  if (state.running && state.phase.includes("读取")) return ["提交并读取资料", "已提交问题，正在读取本轮选择的资料并建立回答上下文。"] as const;
-  if (state.running) return ["正在召回相关资料", "AI 正在根据当前问题检索资料，右上角会同步展示本轮命中的相关文件。"] as const;
-  return null;
-}
-
 type AssistantPageProps = {
   sessionId?: string;
 };
@@ -486,6 +483,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [renameDraft, setRenameDraft] = useState("");
   const [pendingDeleteSession, setPendingDeleteSession] = useState<AgentSession | null>(null);
   const [sessionActionBusyId, setSessionActionBusyId] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(ASSISTANT_SIDEBAR_DEFAULT_WIDTH);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
+  const [pinnedSessionsExpanded, setPinnedSessionsExpanded] = useState(true);
+  const [recentSessionsExpanded, setRecentSessionsExpanded] = useState(true);
   const [recallDrawerOpen, setRecallDrawerOpen] = useState(false);
   const [recallReferencesOpen, setRecallReferencesOpen] = useState(false);
   const [recallModificationsOpen, setRecallModificationsOpen] = useState(false);
@@ -505,6 +506,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const activeKeyRef = useRef(activeKey);
   const conversationStatesRef = useRef(conversationStates);
   const abortRef = useRef<AbortController | null>(null);
+  const assistantShellRef = useRef<HTMLDivElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const contextCloseButtonRef = useRef<HTMLButtonElement>(null);
   const modelSelectorRef = useRef<HTMLDivElement>(null);
@@ -520,7 +522,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
   const pendingClarification = pendingClarificationMessage(current.messages);
   const isEmptyConversation = current.messages.length === 0 && !current.running;
-  const conversationStateHeading = conversationHeading(current, Boolean(pendingClarification));
   const clarificationQuestions = pendingClarification?.clarification?.questions ?? [];
   const clarificationQuestion = clarificationQuestions[Math.min(clarificationPage, Math.max(0, clarificationQuestions.length - 1))];
   const latestUserMessage = [...current.messages].reverse().find((message) => message.role === "user");
@@ -589,6 +590,18 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!sidebarResizing) return undefined;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [sidebarResizing]);
 
   useEffect(() => {
     if (!sessionMenuId) return undefined;
@@ -1377,6 +1390,28 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const pinnedSessions = sessions.filter((session) => Boolean(session.pinned));
   const recentSessions = sessions.filter((session) => !session.pinned);
+  const resizeSidebar = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidebarResizing || !assistantShellRef.current) return;
+    const shellLeft = assistantShellRef.current.getBoundingClientRect().left;
+    setSidebarWidth(clampAssistantSidebarWidth(event.clientX - shellLeft));
+  };
+  const finishSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidebarResizing) return;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setSidebarResizing(false);
+  };
+  const resizeSidebarWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    let nextWidth: number | null = null;
+    if (event.key === "ArrowLeft") nextWidth = sidebarWidth - 10;
+    if (event.key === "ArrowRight") nextWidth = sidebarWidth + 10;
+    if (event.key === "Home") nextWidth = ASSISTANT_SIDEBAR_MIN_WIDTH;
+    if (event.key === "End") nextWidth = ASSISTANT_SIDEBAR_MAX_WIDTH;
+    if (nextWidth === null) return;
+    event.preventDefault();
+    setSidebarWidth(clampAssistantSidebarWidth(nextWidth));
+  };
   const renderSessionItem = (session: AgentSession, index: number) => {
     const isActive = session.id === activeKey;
     const isRenaming = renamingSessionId === session.id;
@@ -1473,9 +1508,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           <X size={18} />
         </button>
       </div>
-      <Button variant="outline" className="assistant-new-button" onClick={() => void createNewConversation()}>
+      <button type="button" className="assistant-new-button" onClick={() => void createNewConversation()}>
         <Plus size={16} aria-hidden="true" />新建对话
-      </Button>
+      </button>
       {(sessionsLoading || sessionsError || sessions.length === 0) && (
         <div className="assistant-sidebar-section-title">最近对话</div>
       )}
@@ -1496,13 +1531,51 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         <div className="assistant-session-list">
           {pinnedSessions.length > 0 && (
             <section className="assistant-session-group" aria-label="Pinned">
-              <div className="assistant-sidebar-section-title">Pinned</div>
-              {pinnedSessions.map((session, index) => renderSessionItem(session, index))}
+              <div className="assistant-sidebar-section-heading">
+                <span className="assistant-sidebar-section-title">Pinned</span>
+                <button
+                  type="button"
+                  className="assistant-session-group-toggle"
+                  aria-label={`${pinnedSessionsExpanded ? "收起" : "展开"} Pinned`}
+                  aria-expanded={pinnedSessionsExpanded}
+                  aria-controls="assistant-pinned-sessions"
+                  onClick={() => {
+                    setSessionMenuId(null);
+                    setPinnedSessionsExpanded((expanded) => !expanded);
+                  }}
+                >
+                  {pinnedSessionsExpanded
+                    ? <ChevronUp size={16} aria-hidden="true" />
+                    : <ChevronDown size={16} aria-hidden="true" />}
+                </button>
+              </div>
+              <div id="assistant-pinned-sessions" className="assistant-session-group-items" hidden={!pinnedSessionsExpanded}>
+                {pinnedSessions.map((session, index) => renderSessionItem(session, index))}
+              </div>
             </section>
           )}
           <section className="assistant-session-group" aria-label="最近对话">
-            <div className="assistant-sidebar-section-title">最近对话</div>
-            {recentSessions.map((session, index) => renderSessionItem(session, pinnedSessions.length + index))}
+            <div className="assistant-sidebar-section-heading">
+              <span className="assistant-sidebar-section-title">最近对话</span>
+              <button
+                type="button"
+                className="assistant-session-group-toggle"
+                aria-label={`${recentSessionsExpanded ? "收起" : "展开"}最近对话`}
+                aria-expanded={recentSessionsExpanded}
+                aria-controls="assistant-recent-sessions"
+                onClick={() => {
+                  setSessionMenuId(null);
+                  setRecentSessionsExpanded((expanded) => !expanded);
+                }}
+              >
+                {recentSessionsExpanded
+                  ? <ChevronUp size={16} aria-hidden="true" />
+                  : <ChevronDown size={16} aria-hidden="true" />}
+              </button>
+            </div>
+            <div id="assistant-recent-sessions" className="assistant-session-group-items" hidden={!recentSessionsExpanded}>
+              {recentSessions.map((session, index) => renderSessionItem(session, pinnedSessions.length + index))}
+            </div>
           </section>
         </div>
       )}
@@ -1511,8 +1584,34 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   return (
     <main className="assistant-page">
-      <div className="assistant-shell">
+      <div
+        ref={assistantShellRef}
+        className="assistant-shell"
+        style={{ "--assistant-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
         {sidebar}
+        <div
+          className={`assistant-sidebar-resizer${sidebarResizing ? " is-resizing" : ""}`}
+          role="separator"
+          aria-label="调整最近对话栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={ASSISTANT_SIDEBAR_MIN_WIDTH}
+          aria-valuemax={ASSISTANT_SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          aria-valuetext={`${sidebarWidth} 像素`}
+          tabIndex={0}
+          onKeyDown={resizeSidebarWithKeyboard}
+          onPointerDown={(event) => {
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            setSidebarResizing(true);
+          }}
+          onPointerMove={resizeSidebar}
+          onPointerUp={finishSidebarResize}
+          onPointerCancel={finishSidebarResize}
+          onLostPointerCapture={() => setSidebarResizing(false)}
+        />
         <section className={`assistant-conversation${isEmptyConversation ? " is-empty" : ""}`} aria-label="AI 求职助手工作区">
           <header className="assistant-mobile-toolbar">
             <button
@@ -1544,12 +1643,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             onScroll={handleMessageViewportScroll}
             aria-live={current.running ? "off" : "polite"}
           >
-            {!isEmptyConversation && conversationStateHeading && (
-              <header className="assistant-state-header">
-                <h1>{conversationStateHeading[0]}</h1>
-                <p>{conversationStateHeading[1]}</p>
-              </header>
-            )}
             {isEmptyConversation && (
               <section className="assistant-empty-state" aria-label="开始使用 AI 求职助手">
                 <img className="assistant-empty-feather" src={assistantFeather} alt="" />

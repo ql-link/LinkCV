@@ -1,12 +1,16 @@
 import CodeMirror from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { FeedbackNotice } from "@/components/ui";
 import { api } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { EditorCommand, EditorToolbar } from "./EditorToolbar";
 import { EditorInsertRange, insertEditorText, runEditorCommand } from "./editorCommands";
+import {
+  RESUME_IMAGE_ACCEPT,
+  validateResumeImageFile,
+} from "../workbench/resumeImageLimits";
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -33,12 +37,6 @@ export function EditorPanel() {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!uploadError) return;
-    const timer = window.setTimeout(() => setUploadError(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [uploadError]);
-
   const handleCommand = (command: EditorCommand) => {
     if (!editorRef.current) return;
     if (command === "image") {
@@ -53,6 +51,12 @@ export function EditorPanel() {
   const handleImageFile = async (file: File) => {
     const view = editorRef.current;
     if (!view) return;
+
+    const validationMessage = validateResumeImageFile(file);
+    if (validationMessage) {
+      setUploadError(validationMessage);
+      return;
+    }
 
     setIsUploadingImage(true);
     try {
@@ -84,7 +88,7 @@ export function EditorPanel() {
         disabledCommands={isUploadingImage ? ["image"] : []}
       />
       {uploadError && (
-        <FeedbackNotice kind="error" placement="floating">
+        <FeedbackNotice kind="error" placement="floating" onDismiss={() => setUploadError(null)}>
           {uploadError}
         </FeedbackNotice>
       )}
@@ -92,7 +96,7 @@ export function EditorPanel() {
         ref={fileInputRef}
         className="visually-hidden"
         type="file"
-        accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
+        accept={RESUME_IMAGE_ACCEPT}
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (file) handleImageFile(file);

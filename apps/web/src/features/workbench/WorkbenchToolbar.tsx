@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type AgentSelectionContext } from "../../api/client";
+import { validateResumeImageFile } from "./resumeImageLimits";
 
 const textColors = ["#1d1d1f", "#3478f6", "#34c759", "#ff9f0a", "#ff3b30", "#8a8a8e"];
 const highlightColors = ["#fff3c4", "#d1f5db", "#dbe8ff", "#ffe0d1", "#f0f0f0"];
@@ -272,12 +273,9 @@ export function readImage(
   onLoad: (src: string, metadata: UploadedImageMetadata) => void,
   onError: (message: string) => void,
 ) {
-  if (!file.type.startsWith("image/")) {
-    onError("请选择图片文件");
-    return;
-  }
-  if (file.size > 8 * 1024 * 1024) {
-    onError("图片不能超过 8MB");
+  const validationMessage = validateResumeImageFile(file);
+  if (validationMessage) {
+    onError(validationMessage);
     return;
   }
   const reader = new FileReader();

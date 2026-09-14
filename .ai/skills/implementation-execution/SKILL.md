@@ -1,6 +1,6 @@
 ---
 name: implementation-execution
-description: 在 LinkCV 中按 flow-router 七维判断或已确认 solution.md 直接执行后端实现，包括纯后端任务以及混合任务中的 FastAPI、数据、公共契约、配置、迁移和部署范围；不负责前端页面实现、验收或前端能力编排。
+description: 在 LinkResume 中按 flow-router 七维判断或已确认 solution.md 直接执行后端实现，包括纯后端任务以及混合任务中的 FastAPI、数据、公共契约、配置、迁移和部署范围；不负责前端页面实现、验收或前端能力编排。
 ---
 
 # 实施执行

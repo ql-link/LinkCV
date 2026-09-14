@@ -56,7 +56,7 @@ export function SharePage({ token }: { token: string }) {
   const documentHtml = useMemo(
     () => payload
       ? renderResumePrintDocument({
-        title: resumeDocumentTitle(payload.data) || "LinkCV Resume",
+        title: resumeDocumentTitle(payload.data) || "LinkResume Resume",
         data: payload.data,
         style: payload.style,
         layout_plan: payload.layout_plan,
@@ -79,7 +79,7 @@ export function SharePage({ token }: { token: string }) {
           </span>
           <h1>这条分享链接已失效</h1>
           <p>链接可能已过期、被重新生成，或由分享者主动关闭。你可以联系分享者获取新的链接。</p>
-          <Button variant="outline" onClick={() => window.location.assign("/")}>返回 LinkCV 首页</Button>
+          <Button variant="outline" onClick={() => window.location.assign("/")}>返回 LinkResume 首页</Button>
         </section>
       </main>
     );

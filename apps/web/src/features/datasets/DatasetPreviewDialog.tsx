@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, type DatasetContent, type DatasetRecord } from "../../api/client";
 import {
   Button,
@@ -54,7 +54,6 @@ export function DatasetPreviewDialog({
   const [open, setOpen] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<PreviewState>({ status: "loading" });
-  const previewRef = useRef<HTMLElement | null>(null);
   const displayName = dataset.file_name.toLowerCase().endsWith(`.${dataset.file_format.toLowerCase()}`)
     ? dataset.file_name.slice(0, -(dataset.file_format.length + 1))
     : dataset.file_name;
@@ -80,15 +79,6 @@ export function DatasetPreviewDialog({
     [state],
   );
 
-  useEffect(() => {
-    if (state.status !== "loaded") return;
-    const container = previewRef.current;
-    if (!container) return;
-
-    const controller = new AbortController();
-    void renderDatasetMermaid(container, controller.signal);
-    return () => controller.abort();
-  }, [rendered, state.status]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -118,14 +108,22 @@ export function DatasetPreviewDialog({
             </div>
           )}
           {state.status === "loaded" && (
-            <article
-              ref={previewRef}
-              className="dataset-markdown-preview"
-              dangerouslySetInnerHTML={{ __html: rendered }}
-            />
+            <PreviewContent html={rendered} />
           )}
         </div>
       </DialogContent>
     </Dialog>
   );
 }
+
+// Preserve Mermaid's generated SVG when the surrounding list refreshes.
+const PreviewContent = memo(function PreviewContent({ html }: { html: string }) {
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const controller = new AbortController();
+    void renderDatasetMermaid(ref.current, controller.signal);
+    return () => controller.abort();
+  }, [html]);
+  return <article ref={ref} className="dataset-markdown-preview" dangerouslySetInnerHTML={{ __html: html }} />;
+});

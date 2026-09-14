@@ -10,14 +10,14 @@ if (environment.RABBITMQ_URL) {
   const rabbitmqUrl = new URL(environment.RABBITMQ_URL);
   const containerHostname = /(^|\.)[a-z0-9-]+-rabbitmq$/i.test(rabbitmqUrl.hostname);
   if (containerHostname) {
-    const localHost = environment.LINKCV_LOCAL_RABBITMQ_HOST || environment.MYSQL_HOST;
+    const localHost = environment.LINKRESUME_LOCAL_RABBITMQ_HOST || environment.MYSQL_HOST;
     if (!localHost) {
       throw new Error(
         "RABBITMQ_URL uses a container hostname, but no local RabbitMQ host is configured",
       );
     }
     rabbitmqUrl.hostname = localHost;
-    rabbitmqUrl.port = environment.LINKCV_LOCAL_RABBITMQ_PORT || "5672";
+    rabbitmqUrl.port = environment.LINKRESUME_LOCAL_RABBITMQ_PORT || "5672";
     environment.RABBITMQ_URL = rabbitmqUrl.toString();
   }
 }

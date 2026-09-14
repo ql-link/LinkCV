@@ -31,4 +31,4 @@ metadata:
 - 一次运行只能使用一个执行模式。
 - 提案必须引用刚完成的目标定位、诊断 fingerprint 和授权来源。
 - 提案只是 before/after 候选；不得声称已经修改简历。
-- 只有用户在 LinkCV 页面确认后，FastAPI 才能正式写入。
+- 只有用户在 LinkResume 页面确认后，FastAPI 才能正式写入。

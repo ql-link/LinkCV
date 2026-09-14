@@ -8,7 +8,7 @@ SET data_json = IF(
   JSON_SET(
     data_json,
     '$.sections.custom_sections[0].items[0].content.content', ':::: sidebar
-![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:108")
+![虚构头像](/templates/avatar-cat.jpg "linkresume-avatar:108")
 
 ### 基本信息
 
@@ -128,7 +128,7 @@ SET data_json = IF(
     = '8b3135432b9d769cd293a3ced56ed82ea74d1d4b98412ce95dfbb044a0e3d8ac',
   JSON_SET(
     data_json,
-    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:82")
+    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkresume-avatar:82")
 
 # 张三｜校招 / 社招通用简历
 
@@ -218,7 +218,7 @@ SET data_json = IF(
     = '33817a3f33a2ada648e7432c75fd866d5011bbafa20f47f70b8978db5e22f010',
   JSON_SET(
     data_json,
-    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:94")
+    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkresume-avatar:94")
 
 # 张三｜行政事务专员
 
@@ -314,7 +314,7 @@ SET data_json = IF(
     = 'b519411ea8d11e028771068db1fd62ca4eb99f702c042ec2c3ab0c0533d38c98',
   JSON_SET(
     data_json,
-    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkcv-avatar:112")
+    '$.sections.custom_sections[0].items[0].content.content', '![虚构头像](/templates/avatar-cat.jpg "linkresume-avatar:112")
 
 # 张三｜UI 设计师
 

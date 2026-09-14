@@ -12,15 +12,15 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import func, select
 
-from linkcv.application.job_descriptions.ai_import_service import draft_warnings
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.interviews.models import JobApplication
-from linkcv.modules.job_descriptions import routes as job_description_routes
-from linkcv.modules.job_descriptions.models import JobDescription
-from linkcv.modules.job_descriptions.schemas import JobDescriptionDraft
-from linkcv.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkresume.application.job_descriptions.ai_import_service import draft_warnings
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.job_descriptions import routes as job_description_routes
+from linkresume.modules.job_descriptions.models import JobDescription
+from linkresume.modules.job_descriptions.schemas import JobDescriptionDraft
+from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
+from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
 from tests.fakes import FakeRedis
 
 
@@ -33,7 +33,9 @@ class DraftGateway:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    async def complete(self, *, model, messages, api_base, api_key, disable_thinking=False):
+    async def complete(
+        self, *, model, messages, api_base, api_key, disable_thinking=False
+    ):
         self.calls.append({"model": model, "messages": messages, "api_key": api_key})
         content = (
             '{"job_title":"视觉工程师","company_name":"示例科技",'
@@ -78,7 +80,9 @@ def configure_draft_models(app) -> None:
             adapter="deepseek",
             model_call_name="chat-model",
             model_name="deepseek/chat-model",
-            encrypted_api_key=app.state.llm_service.encrypt_credential("fictional-chat-key"),
+            encrypted_api_key=app.state.llm_service.encrypt_credential(
+                "fictional-chat-key"
+            ),
             enabled=True,
             priority=100,
             config_version=1,
@@ -87,7 +91,9 @@ def configure_draft_models(app) -> None:
             adapter="deepseek",
             model_call_name="vision-model",
             model_name="deepseek/vision-model",
-            encrypted_api_key=app.state.llm_service.encrypt_credential("fictional-vision-key"),
+            encrypted_api_key=app.state.llm_service.encrypt_credential(
+                "fictional-vision-key"
+            ),
             enabled=True,
             priority=100,
             config_version=1,
@@ -142,7 +148,38 @@ def create_job(client: TestClient, **overrides: object) -> dict[str, object]:
     return response.json()["job_description"]
 
 
-def test_parse_text_and_image_drafts_use_separate_models_without_creating_jobs() -> None:
+def test_job_logo_url_round_trips_and_rejects_non_https_urls() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        created = create_job(
+            client,
+            logo_url=" https://cdn.example.test/logos/example.png ",
+        )
+        assert created["logo_url"] == "https://cdn.example.test/logos/example.png"
+
+        detail = client.get(f"/api/job-descriptions/{created['id']}")
+        assert detail.status_code == 200
+        assert detail.json()["job_description"]["logo_url"] == created["logo_url"]
+
+        rejected = client.post(
+            "/api/job-descriptions",
+            json=payload(logo_url="http://cdn.example.test/logos/example.png"),
+        )
+        assert rejected.status_code == 400
+        assert rejected.json() == {"error": "INVALID_JOB_DESCRIPTION"}
+
+        updated = client.put(
+            f"/api/job-descriptions/{created['id']}",
+            json={"logo_url": None, "base_lock_version": created["lock_version"]},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["job_description"]["logo_url"] is None
+
+
+def test_parse_text_and_image_drafts_use_separate_models_without_creating_jobs() -> (
+    None
+):
     gateway = DraftGateway()
     app = build_app(llm_gateway=gateway, with_llm_key=True)
     configure_draft_models(app)
@@ -172,8 +209,10 @@ def test_parse_text_and_image_drafts_use_separate_models_without_creating_jobs()
         ]
         image_messages = gateway.calls[1]["messages"]
         assert isinstance(image_messages[-1].content, list)
-        assert image_messages[-1].content[-1].image_url.url.startswith(
-            "data:image/png;base64,"
+        assert (
+            image_messages[-1]
+            .content[-1]
+            .image_url.url.startswith("data:image/png;base64,")
         )
         with app.state.session_factory() as db:
             assert db.scalar(select(func.count()).select_from(JobDescription)) == 0
@@ -184,10 +223,13 @@ def test_parse_draft_validates_auth_mutual_exclusion_and_image_content() -> None
     app = build_app(llm_gateway=gateway, with_llm_key=True)
     configure_draft_models(app)
     with TestClient(app) as client:
-        assert client.post(
-            "/api/job-descriptions/parse-draft",
-            files={"text": (None, "岗位文字")},
-        ).status_code == 401
+        assert (
+            client.post(
+                "/api/job-descriptions/parse-draft",
+                files={"text": (None, "岗位文字")},
+            ).status_code
+            == 401
+        )
         register(client)
 
         both = client.post(
@@ -283,12 +325,14 @@ def test_manual_crud_search_and_direct_delete_release_source() -> None:
 
         listed = client.get("/api/job-descriptions").json()
         assert [item["id"] for item in listed["items"]] == [job["id"]]
-        assert client.get("/api/job-descriptions?keyword=mysql").json()["items"][0][
-            "id"
-        ] == job["id"]
-        assert client.get("/api/job-descriptions?keyword=nanJING").json()["items"][
-            0
-        ]["id"] == job["id"]
+        assert (
+            client.get("/api/job-descriptions?keyword=mysql").json()["items"][0]["id"]
+            == job["id"]
+        )
+        assert (
+            client.get("/api/job-descriptions?keyword=nanJING").json()["items"][0]["id"]
+            == job["id"]
+        )
 
         updated = client.put(
             f"/api/job-descriptions/{job['id']}",
@@ -316,19 +360,27 @@ def test_manual_crud_search_and_direct_delete_release_source() -> None:
         assert stale.status_code == 409
         assert stale.json() == {"error": "JD_EDIT_CONFLICT"}
 
-        assert client.post(
-            f"/api/job-descriptions/{job['id']}/archive",
-            json={"base_lock_version": 2},
-        ).status_code == 404
-        assert client.post(
-            f"/api/job-descriptions/{job['id']}/restore",
-            json={"base_lock_version": 2},
-        ).status_code == 404
+        assert (
+            client.post(
+                f"/api/job-descriptions/{job['id']}/archive",
+                json={"base_lock_version": 2},
+            ).status_code
+            == 404
+        )
+        assert (
+            client.post(
+                f"/api/job-descriptions/{job['id']}/restore",
+                json={"base_lock_version": 2},
+            ).status_code
+            == 404
+        )
 
+        application_id = client.get("/api/job-applications").json()["items"][0]["id"]
         deleted = client.delete(f"/api/job-descriptions/{job['id']}")
         assert deleted.status_code == 200
         assert deleted.json() == {"deleted": True}
         assert client.get(f"/api/job-descriptions/{job['id']}").status_code == 404
+        assert client.get(f"/api/job-applications/{application_id}").status_code == 404
 
         replacement = create_job(
             client,
@@ -362,9 +414,12 @@ def test_external_boss_duplicate_update_preserves_source_identity_and_notes() ->
         body = reused.json()
         assert body["job_description"]["id"] == original["id"]
         assert body["application"]["phase"] == "pending"
-        assert client.get(f"/api/job-descriptions/{original['id']}").json()[
-            "job_description"
-        ]["job_title"] == "Java 开发实习生"
+        assert (
+            client.get(f"/api/job-descriptions/{original['id']}").json()[
+                "job_description"
+            ]["job_title"]
+            == "Java 开发实习生"
+        )
 
         duplicate_payload["duplicate_resolution"] = {
             "action": "update",
@@ -383,7 +438,7 @@ def test_external_boss_duplicate_update_preserves_source_identity_and_notes() ->
         assert len(client.get("/api/job-descriptions").json()["items"]) == 1
 
 
-def test_duplicate_job_reuses_unfinished_application_and_restarts_after_termination() -> None:
+def test_duplicate_job_reuses_the_same_application_after_termination() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "duplicate-application@example.test")
@@ -410,9 +465,9 @@ def test_duplicate_job_reuses_unfinished_application_and_restarts_after_terminat
         assert reused.status_code == 200, reused.text
         assert reused.json()["application"]["id"] == application["id"]
         assert reused.json()["application"]["phase"] == "applied"
-        unchanged = client.get(
-            f"/api/job-applications/{application['id']}"
-        ).json()["application"]
+        unchanged = client.get(f"/api/job-applications/{application['id']}").json()[
+            "application"
+        ]
         assert unchanged["current_stage"]["stage_type"] == "written_test"
         assert len(unchanged["stages"]) == 1
 
@@ -426,16 +481,18 @@ def test_duplicate_job_reuses_unfinished_application_and_restarts_after_terminat
         )
         assert terminated.status_code == 200, terminated.text
 
-        restarted = client.post("/api/job-descriptions", json=request_body)
-        assert restarted.status_code == 200, restarted.text
-        replacement = restarted.json()["application"]
-        assert replacement["id"] != application["id"]
-        assert replacement["phase"] == "pending"
-        replacement_detail = client.get(
-            f"/api/job-applications/{replacement['id']}"
-        ).json()["application"]
-        assert replacement_detail["current_stage"] is None
-        assert replacement_detail["stages"] == []
+        reused_after_termination = client.post(
+            "/api/job-descriptions", json=request_body
+        )
+        assert reused_after_termination.status_code == 200, (
+            reused_after_termination.text
+        )
+        same_application = reused_after_termination.json()["application"]
+        assert same_application["id"] == application["id"]
+        assert same_application["lifecycle_status"] == "terminated"
+        listed = client.get("/api/job-applications", params={"include_archived": True})
+        assert listed.status_code == 200
+        assert [item["id"] for item in listed.json()["items"]] == [application["id"]]
 
 
 def test_job_creation_rolls_back_when_pending_application_creation_fails(
@@ -461,7 +518,9 @@ def test_job_creation_rolls_back_when_pending_application_creation_fails(
         assert db.scalar(select(func.count()).select_from(JobApplication)) == 0
 
 
-def test_browser_capture_import_is_cleaned_stored_and_uses_existing_duplicate_flow() -> None:
+def test_browser_capture_import_is_cleaned_stored_and_uses_existing_duplicate_flow() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client)
@@ -502,9 +561,7 @@ def test_browser_capture_import_is_cleaned_stored_and_uses_existing_duplicate_fl
             "job_description_id": created["id"],
             "base_lock_version": created["lock_version"],
         }
-        resolved = client.post(
-            "/api/job-descriptions/import", json=resolved_payload
-        )
+        resolved = client.post("/api/job-descriptions/import", json=resolved_payload)
         assert resolved.status_code == 200
         assert resolved.json()["job_description"]["job_title"] == "更新后的岗位"
 
@@ -517,7 +574,11 @@ def test_browser_capture_import_rejects_invalid_contract_without_writing() -> No
             import_payload(source_url="https://example.test/jobs/42"),
             import_payload(capture={"description_text": "  "}),
             import_payload(capture={"job_title": "x" * 201}),
-            {"source_url": "https://www.zhipin.com/job_detail/abc.html", "capture": {}, "unexpected": True},
+            {
+                "source_url": "https://www.zhipin.com/job_detail/abc.html",
+                "capture": {},
+                "unexpected": True,
+            },
         ]
 
         for invalid in invalid_payloads:
@@ -542,7 +603,12 @@ def test_validation_is_atomic_and_source_fields_are_immutable() -> None:
                 source_url="https://example.test/jobs/no-description",
             ),
             payload(salary_min="10", salary_currency="CNY"),
-            payload(salary_min="20", salary_max="10", salary_currency="CNY", salary_period="day"),
+            payload(
+                salary_min="20",
+                salary_max="10",
+                salary_currency="CNY",
+                salary_period="day",
+            ),
             payload(user_id="999"),
         ]
         for invalid in invalid_payloads:
@@ -567,9 +633,12 @@ def test_validation_is_atomic_and_source_fields_are_immutable() -> None:
         )
         assert immutable.status_code == 400
         assert immutable.json() == {"error": "INVALID_JOB_DESCRIPTION"}
-        assert client.get(f"/api/job-descriptions/{job['id']}").json()[
-            "job_description"
-        ]["lock_version"] == 1
+        assert (
+            client.get(f"/api/job-descriptions/{job['id']}").json()["job_description"][
+                "lock_version"
+            ]
+            == 1
+        )
 
         with app.state.session_factory() as session:
             assert session.scalar(select(func.count(JobDescription.id))) == 1
@@ -579,15 +648,23 @@ def test_authentication_ownership_and_user_scoped_uniqueness() -> None:
     app = build_app()
     with TestClient(app) as anonymous:
         assert anonymous.get("/api/job-descriptions").status_code == 401
-        assert anonymous.post("/api/job-descriptions", json=payload()).status_code == 401
-        assert anonymous.post(
-            "/api/job-descriptions/import", json=import_payload()
-        ).status_code == 401
+        assert (
+            anonymous.post("/api/job-descriptions", json=payload()).status_code == 401
+        )
+        assert (
+            anonymous.post(
+                "/api/job-descriptions/import", json=import_payload()
+            ).status_code
+            == 401
+        )
         assert anonymous.get("/api/job-descriptions/1").status_code == 401
-        assert anonymous.put(
-            "/api/job-descriptions/1",
-            json={"notes": "x", "base_lock_version": 1},
-        ).status_code == 401
+        assert (
+            anonymous.put(
+                "/api/job-descriptions/1",
+                json={"notes": "x", "base_lock_version": 1},
+            ).status_code
+            == 401
+        )
         assert anonymous.delete("/api/job-descriptions/1").status_code == 401
 
     with TestClient(app) as owner:
@@ -609,7 +686,11 @@ def test_authentication_ownership_and_user_scoped_uniqueness() -> None:
             ),
             ("delete", f"/api/job-descriptions/{owned['id']}", None),
         ]:
-            response = getattr(stranger, method)(path, json=body) if body else getattr(stranger, method)(path)
+            response = (
+                getattr(stranger, method)(path, json=body)
+                if body
+                else getattr(stranger, method)(path)
+            )
             assert response.status_code == 404
             assert response.json() == {"error": "JD_NOT_FOUND"}
 
@@ -619,10 +700,14 @@ def test_authentication_ownership_and_user_scoped_uniqueness() -> None:
             source_url="https://m.zhipin.com/job_detail/shared42.html",
         )
         assert other["id"] != owned["id"]
-        assert [item["id"] for item in stranger.get("/api/job-descriptions").json()["items"]] == [other["id"]]
+        assert [
+            item["id"] for item in stranger.get("/api/job-descriptions").json()["items"]
+        ] == [other["id"]]
 
 
-def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_stable() -> None:
+def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_stable() -> (
+    None
+):
     app = build_app()
     with TestClient(app) as client:
         register(client)
@@ -658,15 +743,19 @@ def test_source_less_manual_jobs_are_not_content_deduplicated_and_pagination_is_
         assert invalid_encoding.status_code == 400
         assert invalid_encoding.json() == {"error": "INVALID_JOB_QUERY"}
 
-        naive_cursor = base64.urlsafe_b64encode(
-            json.dumps(
-                {
-                    "updated_at": "2026-07-29T12:00:00",
-                    "id": first["id"],
-                    "keyword_hash": hashlib.sha256(b"").hexdigest(),
-                }
-            ).encode("utf-8")
-        ).decode("ascii").rstrip("=")
+        naive_cursor = (
+            base64.urlsafe_b64encode(
+                json.dumps(
+                    {
+                        "updated_at": "2026-07-29T12:00:00",
+                        "id": first["id"],
+                        "keyword_hash": hashlib.sha256(b"").hexdigest(),
+                    }
+                ).encode("utf-8")
+            )
+            .decode("ascii")
+            .rstrip("=")
+        )
         invalid_timezone = client.get(
             "/api/job-descriptions",
             params={"cursor": naive_cursor},
@@ -683,8 +772,8 @@ def test_delete_reports_not_found_if_target_disappears_during_atomic_delete(
         register(client)
         job = create_job(client)
         monkeypatch.setattr(
-            "linkcv.modules.job_descriptions.routes.hard_delete_owned_job",
-            lambda _db, _job_id, _user_id: False,
+            "linkresume.modules.job_descriptions.routes.hard_delete_owned_job",
+            lambda _db, _job_id, _user_id, **_kwargs: False,
         )
 
         response = client.delete(f"/api/job-descriptions/{job['id']}")

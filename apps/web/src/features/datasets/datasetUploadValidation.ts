@@ -69,6 +69,10 @@ export function datasetUploadErrorMessage(
   switch (error.message) {
     case "INVALID_IDEMPOTENCY_KEY":
       return "上传请求无效，请重试。";
+    case "DATASET_FOLDER_REQUIRED":
+      return "请先进入文件夹再上传资料。";
+    case "FOLDER_NOT_FOUND":
+      return "目标文件夹已不存在或不可访问，请重新选择文件夹。";
     case "INVALID_DATASET_FILENAME":
       return "文件名无效，请重命名后再上传。";
     case "UNSUPPORTED_DATASET_FILE":

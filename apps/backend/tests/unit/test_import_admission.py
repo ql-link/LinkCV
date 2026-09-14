@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from linkcv.services.import_admission import (
+from linkresume.services.import_admission import (
     ImportAdmissionController,
     ImportAdmissionRejected,
 )

@@ -22,6 +22,7 @@ FROM node:22-bookworm-slim AS node-runtime
 
 FROM python:3.13-slim AS runtime
 
+ARG DEBIAN_MIRROR=http://deb.debian.org
 ARG UV_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ARG UV_VERSION=0.11.30
 ENV PYTHONUNBUFFERED=1 \
@@ -36,11 +37,12 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
 WORKDIR /app/apps/backend
-RUN apt-get update && \
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends chromium && \
     rm -rf /var/lib/apt/lists/* && \
-    useradd --system --create-home --home-dir /var/lib/linkcv-pdf --shell /usr/sbin/nologin linkcv-pdf && \
-    install -d -o linkcv-pdf -g linkcv-pdf /tmp/linkcv-pdf
+    useradd --system --create-home --home-dir /var/lib/linkresume-pdf --shell /usr/sbin/nologin linkresume-pdf && \
+    install -d -o linkresume-pdf -g linkresume-pdf /tmp/linkresume-pdf
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m pip install --index-url "${UV_INDEX_URL}" "uv==${UV_VERSION}"
 COPY apps/backend/pyproject.toml apps/backend/uv.lock ./
@@ -65,4 +67,4 @@ RUN mkdir -p /app/logs
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python /app/scripts/release/run_alembic.py --expected-app-env \"$APP_ENV\" --expected-host \"$MYSQL_HOST\" --expected-port \"$MYSQL_PORT\" --expected-database \"$MYSQL_DATABASE\" && exec uvicorn linkcv.main:app --host 0.0.0.0 --port 8000 --no-access-log"]
+CMD ["sh", "-c", "python /app/scripts/release/run_alembic.py --expected-app-env \"$APP_ENV\" --expected-host \"$MYSQL_HOST\" --expected-port \"$MYSQL_PORT\" --expected-database \"$MYSQL_DATABASE\" && exec uvicorn linkresume.main:app --host 0.0.0.0 --port 8000 --no-access-log"]

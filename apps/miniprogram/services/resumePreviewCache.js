@@ -1,5 +1,5 @@
-const CACHE_KEY = "linkcv_resume_preview_cache_v1";
-const LEGACY_CACHE_KEYS = ["linkcv_resume_pdf_cache_v1", "linkcv_resume_pdf_cache_v2"];
+const CACHE_KEY = "linkresume_resume_preview_cache_v1";
+const LEGACY_CACHE_KEYS = ["linkresume_resume_pdf_cache_v1", "linkresume_resume_pdf_cache_v2"];
 let legacyCleanupPromise;
 
 function cacheIndex() {
@@ -20,7 +20,7 @@ function safePart(value) {
 }
 
 function resumePreviewPath(ownerId, resumeId, versionId) {
-  return `${wx.env.USER_DATA_PATH}/linkcv-preview-v1-${safePart(ownerId)}-${safePart(resumeId)}-${safePart(versionId)}.png`;
+  return `${wx.env.USER_DATA_PATH}/linkresume-preview-v1-${safePart(ownerId)}-${safePart(resumeId)}-${safePart(versionId)}.png`;
 }
 
 function accessFile(filePath) {

@@ -27,7 +27,7 @@
 .tab-bar-item-hover .tab-label { color: #17191c; }
 .tab-label {
   margin-top: 1px;
-  font-family: "LinkCV Career UI", -apple-system, sans-serif;
+  font-family: "LinkResume Career UI", -apple-system, sans-serif;
   font-size: 11px;
   line-height: 1.45;
   font-weight: 400;

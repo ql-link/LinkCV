@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { rememberTextThumbnail } from "./datasetThumbnails";
 
 import {
   api,
@@ -81,7 +82,9 @@ function datasetUploadFileIdentity(file: File): string {
 type UseDatasetUploadsOptions = {
   limits?: DatasetLimits;
   concurrency?: number;
+  folderId?: string | null;
   onAccepted?: (dataset: DatasetRecord) => void;
+  onConflict?: (file:File,error:ApiRequestError,folderId:string)=>Promise<DatasetRecord|null>;
   onLimitExceeded?: (message: string) => void;
 };
 
@@ -175,15 +178,19 @@ function formatBatchLimitMessage(limit: number, retained = false): string {
 export function useDatasetUploads({
   limits = DEFAULT_DATASET_LIMITS,
   concurrency = 3,
+  folderId,
   onAccepted,
+  onConflict,
   onLimitExceeded,
 }: UseDatasetUploadsOptions = {}) {
+  const onConflictRef = useRef(onConflict); onConflictRef.current=onConflict;
   const [items, setItems] = useState<DatasetUploadItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const itemSequence = useRef(0);
   const itemsRef = useRef<DatasetUploadItem[]>([]);
   const limitsRef = useRef<DatasetLimits>(normalizeDatasetLimits(limits));
   const concurrencyRef = useRef(3);
+  const folderIdRef = useRef(folderId);
   const onAcceptedRef = useRef(onAccepted);
   const onLimitExceededRef = useRef(onLimitExceeded);
   const uploadingRef = useRef(false);
@@ -194,6 +201,7 @@ export function useDatasetUploads({
   concurrencyRef.current = Number.isFinite(concurrency) && concurrency > 0
     ? Math.floor(concurrency)
     : 3;
+  folderIdRef.current = folderId;
   onAcceptedRef.current = onAccepted;
   onLimitExceededRef.current = onLimitExceeded;
 
@@ -341,6 +349,14 @@ export function useDatasetUploads({
       });
     }
 
+    const targetFolderId = folderIdRef.current;
+    if (!targetFolderId) {
+      return emptyBatchResult({
+        failedCount: selected.length,
+        failures: selected.map((item) => ({ fileName: item.file.name, reason: "请先进入文件夹再上传资料。" })),
+      });
+    }
+
     uploadingRef.current = true;
     if (mountedRef.current) setUploading(true);
     const selectedIds = new Set(selected.map((item) => item.id));
@@ -376,7 +392,10 @@ export function useDatasetUploads({
       }));
 
       try {
-        const dataset = await api.uploadDataset(item.file, item.idempotencyKey);
+        let dataset: DatasetRecord | null;
+        try {dataset = await api.uploadDataset(item.file, item.idempotencyKey, targetFolderId);}
+        catch(error){if(error instanceof ApiRequestError && error.message==="DATASET_NAME_CONFLICT" && onConflictRef.current) dataset=await onConflictRef.current(item.file,error,targetFolderId);else throw error;}
+        if(!dataset){commitItems(current=>current.filter(x=>x.id!==item.id));return;}
         if (dataset.upload_status !== "succeeded") {
           failedCount += 1;
           ambiguousRetryKeysRef.current.set(datasetUploadFileIdentity(item.file), item.idempotencyKey);
@@ -393,6 +412,7 @@ export function useDatasetUploads({
         ambiguousRetryKeysRef.current.delete(datasetUploadFileIdentity(item.file));
         // The response is authoritative. Upsert before the batch-wide list
         // refresh so an accepted row remains visible even if that refresh fails.
+        if(!dataset.replacement) await rememberTextThumbnail(dataset, item.file);
         onAcceptedRef.current?.(dataset);
         commitItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
       } catch (error) {

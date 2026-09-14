@@ -62,6 +62,8 @@ import { PlusIcon } from "lucide-react"
 const useIsoLayoutEffect =
   typeof window !== "undefined" ? useLayoutEffect : useEffect
 
+const EVENT_CALENDAR_MORE_OPEN_EVENT = "event-calendar-more-open"
+
 // An occurrence key encodes the start instant and is also the chip's React key,
 // so committing a move re-keys the chip: React remounts it and the browser
 // drops focus to <body>. The chip that owns focus is recorded here so the cell
@@ -367,12 +369,19 @@ function EventCalendarMonthWeek({
     }
     return start === -1 ? null : { col: start, span: end - start + 1 }
   }
-  // bars fit within the cap; deeper lanes fall into each day's "+N more"
-  const visibleBars = bars.filter((b) => (b.lane ?? 0) < cap)
+  // In contained auto-fit mode the overflow indicator consumes one row just
+  // like an event chip. If bars already occupy every measured row, reserve the
+  // last lane for "+N more"; otherwise the indicator is squeezed underneath
+  // the fixed day-number footer and only its upper half remains visible.
+  const hasHiddenBars = bars.some((b) => (b.lane ?? 0) >= cap)
+  const visibleBarCap =
+    autoFit && hasHiddenBars ? Math.max(0, cap - 1) : cap
+  // bars fit within the adjusted cap; deeper lanes fall into each day's "+N more"
+  const visibleBars = bars.filter((b) => (b.lane ?? 0) < visibleBarCap)
   const covers = (b: EventCalendarSegment, dayOffset: number) =>
     (b.colStart ?? 0) <= dayOffset &&
     dayOffset < (b.colStart ?? 0) + (b.colSpan ?? 1)
-  // Occurrence keys of the bars hidden in each column (lane >= cap). Threaded to
+  // Occurrence keys of the bars hidden in each column (lane >= visibleBarCap). Threaded to
   // the cell so its "+N more" popover can list the hidden bars WITHOUT re-listing
   // the visible ones (day buckets carry no lane, so the week row - which owns bar
   // laning - is the only place that knows which bars are hidden).
@@ -380,7 +389,10 @@ function EventCalendarMonthWeek({
     (_, col) =>
       new Set(
         bars
-          .filter((b) => (b.lane ?? 0) >= cap && covers(b, offsets[col]))
+          .filter(
+            (b) =>
+              (b.lane ?? 0) >= visibleBarCap && covers(b, offsets[col])
+          )
           .map((b) => b.occurrence.key)
       )
   )
@@ -1126,6 +1138,51 @@ function EventCalendarMoreIndicator({
   const viewConfig = useEventCalendarViewConfig()
   const [open, setOpen] = useState(false)
   const headerId = useId()
+  const popoverId = useId()
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const contentRef = useRef<HTMLDivElement | null>(null)
+
+  const setPopoverOpen = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen)
+      if (nextOpen) {
+        document.dispatchEvent(
+          new CustomEvent(EVENT_CALENDAR_MORE_OPEN_EVENT, {
+            detail: popoverId,
+          })
+        )
+      }
+    },
+    [popoverId]
+  )
+
+  useEffect(() => {
+    if (!open) return
+
+    const closeForAnotherPopover = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== popoverId) setOpen(false)
+    }
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (triggerRef.current?.contains(target)) return
+      if (contentRef.current?.contains(target)) return
+      setOpen(false)
+    }
+
+    document.addEventListener(
+      EVENT_CALENDAR_MORE_OPEN_EVENT,
+      closeForAnotherPopover
+    )
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true)
+    return () => {
+      document.removeEventListener(
+        EVENT_CALENDAR_MORE_OPEN_EVENT,
+        closeForAnotherPopover
+      )
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true)
+    }
+  }, [open, popoverId])
 
   // Grabbing a chip from this list starts a drag; close the popover so it does
   // not sit over the drop target while the event is carried to another day.
@@ -1137,8 +1194,9 @@ function EventCalendarMoreIndicator({
   }, [isDragging])
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setPopoverOpen}>
       <PopoverTrigger
+        ref={triggerRef}
         data-slot="event-calendar-more"
         data-drop-into={dropInto ? "" : undefined}
         data-drop-invalid={dropInto && !dropInto.valid ? "" : undefined}
@@ -1181,6 +1239,7 @@ function EventCalendarMoreIndicator({
           settings.i18n.labels.more(count)}
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         data-slot="event-calendar-more-popover"
         align={viewConfig.morePopoverAlign}
         // The popover is a dialog, so it needs a name. The built-in body already

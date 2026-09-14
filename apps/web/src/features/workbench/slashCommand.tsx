@@ -8,6 +8,7 @@ import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeIn
 import { convertCurrentLineToResumeRow, insertInlineIcon, workbenchBlockCommands, type WorkbenchBlockCommand } from "./editorCommands";
 import { inlineIconComponents } from "./editorExtensions";
 import { readImage } from "./WorkbenchToolbar";
+import { RESUME_IMAGE_ACCEPT } from "./resumeImageLimits";
 
 export type CommandMenuState = {
   x: number;
@@ -103,7 +104,7 @@ function chooseImage(
 ) {
   const input = document.createElement("input");
   input.type = "file";
-  input.accept = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml";
+  input.accept = RESUME_IMAGE_ACCEPT;
   input.onchange = () => {
     const file = input.files?.[0];
     if (file) readImage(file, resumeId, (src, metadata) => onLoad(file, src, metadata), onNotice);

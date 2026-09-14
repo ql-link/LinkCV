@@ -1,10 +1,10 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { Brand, Button, FeedbackNotice, IconButton, NumberStepper, TextField, TogglePill } from ".";
 
-describe("LinkCV UI components", () => {
+describe("LinkResume UI components", () => {
   it("按钮默认不会提交所在表单", () => {
     render(<Button>保存</Button>);
     expect(screen.getByRole("button", { name: "保存" })).toHaveAttribute("type", "button");
@@ -46,10 +46,13 @@ describe("LinkCV UI components", () => {
   });
 
   it("异常提醒使用统一的顶部居中卡片和明确的告警语义", () => {
+    const host = document.createElement("section");
+    document.body.appendChild(host);
     render(
-      <FeedbackNotice kind="error" placement="floating">
+      <FeedbackNotice kind="error" placement="floating" onDismiss={() => undefined}>
         请求暂时无法完成，请稍后重试。
       </FeedbackNotice>,
+      { container: host },
     );
 
     const notice = screen.getByRole("alert");
@@ -57,6 +60,24 @@ describe("LinkCV UI components", () => {
     expect(notice).toHaveAttribute("aria-live", "assertive");
     expect(notice).toHaveTextContent("操作失败");
     expect(notice).toHaveTextContent("请求暂时无法完成，请稍后重试。");
+    expect(host).not.toContainElement(notice);
+    expect(notice.parentElement).toBe(document.body);
+  });
+
+  it("顶部浮层提示统一在三秒后关闭", () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn();
+    render(
+      <FeedbackNotice kind="success" placement="floating" onDismiss={onDismiss}>
+        保存成功
+      </FeedbackNotice>,
+    );
+
+    act(() => vi.advanceTimersByTime(2999));
+    expect(onDismiss).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("提醒卡片的操作按钮使用独立的右侧区域", () => {

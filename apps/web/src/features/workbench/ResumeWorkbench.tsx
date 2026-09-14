@@ -1,4 +1,4 @@
-import { posToDOMRect, type Editor, type JSONContent } from "@tiptap/core";
+import { type Editor, type JSONContent } from "@tiptap/core";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
@@ -25,6 +25,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { flushSync } from "react-dom";
 import type { Instance as TippyInstance } from "tippy.js";
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { resumeImageContractErrorMessage } from "./resumeImageLimits";
 import {
   Button,
   ConfirmDialog,
@@ -50,6 +51,8 @@ import { SelectionFormattingToolbar } from "./WorkbenchToolbar";
 import {
   createSelectionBubbleAnchor,
   refreshSelectionBubblePosition,
+  selectionBubbleContainer,
+  selectionEndAnchorRect,
   shouldShowSelectionAgentBubble,
 } from "./selectionBubbleAnchor";
 import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
@@ -78,12 +81,12 @@ import {
 } from "./pageArrangementTransition";
 import {
   normalizeResumeAccentColor,
-  resumePresentationPageMargins,
   isCanonicalResumeDocument,
   resumePresentationAccentColor,
   resumePresentationTemplateKey,
   type ResumePresentationRead,
 } from "../../api/resumeContract";
+import { liveResumePageMargins } from "../preview/resumePageMargins";
 
 type DrawerMode = "settings" | "history" | "quality" | "agent" | null;
 
@@ -95,25 +98,8 @@ const AGENT_DRAG_THRESHOLD = 5;
 const AGENT_DRAWER_MIN_WIDTH = 320;
 const AGENT_DRAWER_MAX_WIDTH = 640;
 const AGENT_DRAWER_DEFAULT_WIDTH = 390;
-const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkcv.workbench.agent-drawer-width";
+const AGENT_DRAWER_WIDTH_STORAGE_KEY = "linkresume.workbench.agent-drawer-width";
 const WORKBENCH_TITLE_CHARACTER_LIMIT = 30;
-const SEMANTIC_KIND_LABELS = {
-  profile: "个人信息",
-  work: "工作",
-  education: "教育",
-  project: "项目",
-  skills: "技能",
-  activity: "活动",
-  interests: "兴趣爱好",
-  certificates: "证书",
-  awards: "荣誉",
-  languages: "语言",
-  custom: "自定义",
-} as const;
-
-export function semanticSectionDisplayTitle(title: string) {
-  return title.replace(/:icon\[[^\]]+\]:/gu, "").trim() || "未命名章节";
-}
 
 export function truncateWorkbenchTitle(title: string) {
   const characters = Array.from(title);
@@ -165,14 +151,7 @@ export function resumeWorkbenchStyle(
   accentColor: unknown,
   style?: ResumePresentationRead,
 ) {
-  const margins = style
-    ? resumePresentationPageMargins(style)
-    : {
-        top: settings.verticalPageMargin,
-        right: settings.pageMargin,
-        bottom: settings.verticalPageMargin,
-        left: settings.pageMargin,
-      };
+  const margins = liveResumePageMargins(settings, style);
   return {
     "--resume-font-family": settings.fontFamily,
     "--resume-font-size": `${settings.fontSize}pt`,
@@ -410,16 +389,23 @@ export type { PageArrangement } from "./pageArrangementTransition";
 
 const EMPTY_IMPORT_WARNINGS: string[] = [];
 const A4_WIDTH_IN_CSS_PIXELS = (210 / 25.4) * 96;
-const PAGE_ARRANGEMENT_STORAGE_KEY = "linkcv.workbench.page-arrangement";
+const PAGE_ARRANGEMENT_STORAGE_KEY = "linkresume.workbench.page-arrangement";
 
 function currentSelectionRect(editor: Editor) {
   const { ranges } = editor.state.selection;
-  const from = Math.min(...ranges.map((range) => range.$from.pos));
   const to = Math.max(...ranges.map((range) => range.$to.pos));
-  return posToDOMRect(editor.view, from, to);
+  return selectionEndAnchorRect(editor.view.coordsAtPos(to, -1));
 }
 
-function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; children: ReactNode }) {
+function StableSelectionToolbarBubble({
+  editor,
+  scale,
+  children,
+}: {
+  editor: Editor;
+  scale: number;
+  children: ReactNode;
+}) {
   const anchorRef = useRef<ReturnType<typeof createSelectionBubbleAnchor> | null>(null);
   const tippyRef = useRef<TippyInstance | null>(null);
   if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
@@ -434,22 +420,27 @@ function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; ch
         () => { void tippyRef.current?.popperInstance?.update(); },
       );
     };
+    tippyRef.current?.setProps({ offset: [0, 8 * scale] });
     scrollArea?.addEventListener("scroll", refresh, { passive: true });
     window.addEventListener("resize", refresh, { passive: true });
+    refresh();
     return () => {
       scrollArea?.removeEventListener("scroll", refresh);
       window.removeEventListener("resize", refresh);
     };
-  }, [anchor, editor]);
+  }, [anchor, editor, scale]);
 
   return (
     <BubbleMenu
       editor={editor}
       tippyOptions={{
+        // Keep Tippy outside the zoomed paper so viewport coordinates are not
+        // scaled twice, but inside React's root so delegated button events work.
+        appendTo: () => selectionBubbleContainer(editor.view.dom, document.body),
         duration: 150,
         maxWidth: "none",
-        placement: "top",
-        offset: [0, 8],
+        placement: "bottom-start",
+        offset: [0, 8 * scale],
         getReferenceClientRect: () => anchor.getRect(() => currentSelectionRect(editor)),
         onCreate: (instance) => { tippyRef.current = instance; },
         onDestroy: (instance) => {
@@ -464,12 +455,17 @@ function StableSelectionToolbarBubble({ editor, children }: { editor: Editor; ch
         });
         anchor.observe(
           visible ? { from, to } : { from, to: from },
-          () => posToDOMRect(view, from, to),
+          () => selectionEndAnchorRect(view.coordsAtPos(to, -1)),
         );
         return visible;
       }}
     >
-      {children}
+      <div
+        className="selection-toolbar-bubble-scale"
+        style={{ "--selection-toolbar-scale": scale } as React.CSSProperties}
+      >
+        {children}
+      </div>
     </BubbleMenu>
   );
 }
@@ -502,9 +498,9 @@ function pageViewportMetrics(
 }
 
 const fontOptions = [
-  { label: "简历宋体", value: resumeSerifFontStack },
-  { label: "霞鹜文楷 Medium", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
-  { label: "系统黑体", value: '"LinkCV Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
+  { label: "思源宋体", value: resumeSerifFontStack },
+  { label: "霞鹜文楷", value: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif' },
+  { label: "系统黑体", value: '"LinkResume Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif' },
 ];
 
 const versionReasonLabels = {
@@ -538,6 +534,10 @@ function versionTime(value: string) {
 }
 
 export function versionOperationErrorMessage(error: unknown, operation: "create" | "restore") {
+  if (error instanceof ApiRequestError) {
+    const imageError = resumeImageContractErrorMessage(error.message);
+    if (imageError) return imageError;
+  }
   if (operation !== "create" || !(error instanceof ApiRequestError) || error.message !== "RESUME_VERSION_LIMIT_REACHED") {
     return null;
   }
@@ -796,9 +796,10 @@ function WorkbenchSettingsSection({
 type WorkbenchSaveStatusProps = {
   saveStatus: "idle" | "saving" | "saved" | "error";
   dirty: boolean;
+  error?: string | null;
 };
 
-export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusProps) {
+export function WorkbenchSaveStatus({ saveStatus, dirty, error }: WorkbenchSaveStatusProps) {
   const kind = saveStatus === "saving"
     ? "saving"
     : saveStatus === "error"
@@ -806,10 +807,11 @@ export function WorkbenchSaveStatus({ saveStatus, dirty }: WorkbenchSaveStatusPr
       : dirty
         ? "editing"
         : "saved";
+  const imageError = resumeImageContractErrorMessage(error);
   const label = kind === "saving"
     ? "保存中…"
     : kind === "error"
-      ? "保存失败 · 请重试"
+      ? `保存失败 · ${imageError ?? "请重试"}`
       : kind === "editing"
         ? "编辑中"
         : "已保存";
@@ -1084,10 +1086,10 @@ export function ResumeWorkbench() {
   const user = useResumeStore((state) => state.user);
   const updateSettings = useResumeStore((state) => state.updateSettings);
   const applyTemplate = useResumeStore((state) => state.applyTemplate);
-  const setSectionSemanticKind = useResumeStore((state) => state.setSectionSemanticKind);
   const previewScale = useResumeStore((state) => state.previewScale);
   const setPreviewScale = useResumeStore((state) => state.setPreviewScale);
   const saveStatus = useResumeStore((state) => state.saveStatus);
+  const saveError = useResumeStore((state) => state.error);
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const versions = useResumeStore((state) => state.versions);
@@ -1324,12 +1326,6 @@ export function ResumeWorkbench() {
   }, [activeResumeId, loadVersions]);
 
   useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  useEffect(() => {
     if (!zoomFeedback) return;
     const timer = window.setTimeout(() => setZoomFeedback(null), 900);
     return () => window.clearTimeout(timer);
@@ -1439,8 +1435,13 @@ export function ResumeWorkbench() {
   const saveResume = async () => {
     if (!editor || saveStatus === "saving" || versionOperationPending || versionNameSubmitting) return;
     await saveCurrentResume();
-    const saveFailed = useResumeStore.getState().saveStatus === "error";
-    setToast({ kind: saveFailed ? "error" : "success", label: saveFailed ? "简历保存失败，请稍后重试" : "简历已保存" });
+    const savedState = useResumeStore.getState();
+    const saveFailed = savedState.saveStatus === "error";
+    const imageError = resumeImageContractErrorMessage(savedState.error);
+    setToast({
+      kind: saveFailed ? "error" : "success",
+      label: saveFailed ? imageError ?? "简历保存失败，请稍后重试" : "简历已保存",
+    });
   };
 
   const exportPdf = () => {
@@ -1461,6 +1462,7 @@ export function ResumeWorkbench() {
           activeResumeId: state.activeResumeId,
           lockVersion: state.lockVersion,
           saveStatus: state.saveStatus,
+          saveError: state.error,
         };
       },
     })
@@ -1478,13 +1480,6 @@ export function ResumeWorkbench() {
       });
   };
 
-  const editableSemanticSections = data.sections.map((section) => ({
-    id: section.node_id,
-    display_title: section.title?.value ?? "未命名章节",
-    semantic_kind: section.semantic_kind,
-    semantic_source: "canonical" as const,
-  }));
-
   const saveNamedVersion = async () => {
     if (!editor || versionNameSubmitting) return;
     const validationMessage = versionNameValidationMessage(versionName);
@@ -1496,8 +1491,12 @@ export function ResumeWorkbench() {
     setVersionNameError(null);
     setVersionNameSubmitting(true);
     await saveCurrentResume();
-    if (useResumeStore.getState().saveStatus === "error") {
-      setToast({ kind: "error", label: "保存失败，请稍后重试" });
+    const savedState = useResumeStore.getState();
+    if (savedState.saveStatus === "error") {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，请稍后重试",
+      });
       setVersionNameSubmitting(false);
       return;
     }
@@ -1523,8 +1522,11 @@ export function ResumeWorkbench() {
       setRestoredEditorContent(editor, restored);
       setToast({ kind: "success", label: `已恢复 ${versionTime(createdAt)} 的版本` });
       return true;
-    } catch {
-      setToast({ kind: "error", label: "版本恢复失败，请稍后重试" });
+    } catch (error) {
+      setToast({
+        kind: "error",
+        label: versionOperationErrorMessage(error, "restore") ?? "版本恢复失败，请稍后重试",
+      });
       return false;
     } finally {
       setWorkbenchEditorEditable(editor, true);
@@ -1546,8 +1548,12 @@ export function ResumeWorkbench() {
     pdfExportAbortRef.current?.abort();
     if (dirty) {
       await saveCurrentResume();
-      if (useResumeStore.getState().error) {
-        setToast({ kind: "error", label: "保存失败，已留在当前页面，请重试" });
+      const savedState = useResumeStore.getState();
+      if (savedState.error) {
+        setToast({
+          kind: "error",
+          label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，已留在当前页面，请重试",
+        });
         return;
       }
     }
@@ -1557,8 +1563,12 @@ export function ResumeWorkbench() {
 
   const prepareAgentProposalConfirmation = async () => {
     await saveCurrentResume();
-    if (useResumeStore.getState().error) {
-      setToast({ kind: "error", label: "当前草稿保存失败，提案没有应用" });
+    const savedState = useResumeStore.getState();
+    if (savedState.error) {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "当前草稿保存失败，提案没有应用",
+      });
       return false;
     }
     return true;
@@ -1566,8 +1576,12 @@ export function ResumeWorkbench() {
 
   const prepareAgentRun = async () => {
     await saveCurrentResume();
-    if (useResumeStore.getState().error) {
-      setToast({ kind: "error", label: "当前草稿保存失败，智能助手没有读取所选内容" });
+    const savedState = useResumeStore.getState();
+    if (savedState.error) {
+      setToast({
+        kind: "error",
+        label: resumeImageContractErrorMessage(savedState.error) ?? "当前草稿保存失败，智能助手没有读取所选内容",
+      });
       return false;
     }
     return true;
@@ -1594,7 +1608,7 @@ export function ResumeWorkbench() {
           </div>
           <div className="workbench-header-center">
             <WorkbenchTitleInput value={title} onChange={setTitle} disabled={versionOperationPending} />
-            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} />
+            <WorkbenchSaveStatus dirty={dirty} saveStatus={saveStatus} error={saveError} />
           </div>
           <div className="workbench-header-actions">
             <div className="workbench-header-tool-group" role="group" aria-label="编辑面板">
@@ -1616,8 +1630,11 @@ export function ResumeWorkbench() {
                     await applyTemplate(template.id, editor.getJSON());
                     editor.commands.setContent(useResumeStore.getState().editorContent, false);
                     setToast({ kind: "success", label: `已切换为“${template.name}”，内容已按新模板重新排版` });
-                  } catch {
-                    setToast({ kind: "error", label: "模板切换失败，当前简历未被替换" });
+                  } catch (error) {
+                    const imageError = error instanceof ApiRequestError
+                      ? resumeImageContractErrorMessage(error.message)
+                      : null;
+                    setToast({ kind: "error", label: imageError ?? "模板切换失败，当前简历未被替换" });
                     throw new Error("TEMPLATE_APPLY_FAILED");
                   }
                 }}
@@ -1644,7 +1661,7 @@ export function ResumeWorkbench() {
         )}
 
         {activeResumeId && editor && (
-          <StableSelectionToolbarBubble editor={editor}>
+          <StableSelectionToolbarBubble editor={editor} scale={renderedPreviewScale}>
             <SelectionFormattingToolbar
               editor={editor}
               onAgentAction={(instruction, selectionContext) => {
@@ -1681,7 +1698,7 @@ export function ResumeWorkbench() {
             </div>
           </div>
 
-          {activeResumeId && (
+          {activeResumeId && !import.meta.env.PROD && (
             <AgentFloatingEntry
               open={drawerMode === "agent"}
               onToggle={() => setDrawerMode((mode) => mode === "agent" ? null : "agent")}
@@ -1750,41 +1767,6 @@ export function ResumeWorkbench() {
                       </div>
                     </WorkbenchSettingsSection>
 
-                    {editableSemanticSections.length > 0 && (
-                      <WorkbenchSettingsSection
-                        title="章节类型"
-                        description="标题与章节含义分别保存；可手动确认，或结合正文和上下文识别一次。"
-                        icon={<Sparkles aria-hidden="true" size={15} />}
-                      >
-                        <div className="workbench-semantic-settings">
-                          {editableSemanticSections.map((section) => {
-                            const displayTitle = semanticSectionDisplayTitle(section.display_title);
-                            return (
-                              <div className="workbench-semantic-row" key={section.id}>
-                                <span title={displayTitle}>{displayTitle}</span>
-                                <Select
-                                  value={section.semantic_kind}
-                                  disabled={versionOperationPending}
-                                  onValueChange={(semanticKind) => setSectionSemanticKind(
-                                    section.id,
-                                    semanticKind as keyof typeof SEMANTIC_KIND_LABELS,
-                                  )}
-                                >
-                                  <SelectTrigger aria-label={`${displayTitle}章节类型`}>
-                                    {SEMANTIC_KIND_LABELS[section.semantic_kind as keyof typeof SEMANTIC_KIND_LABELS]}
-                                  </SelectTrigger>
-                                  <SelectContent data-ui-theme="light" position="popper">
-                                    {Object.entries(SEMANTIC_KIND_LABELS).filter(([value]) => value !== "basics").map(([value, label]) => (
-                                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </WorkbenchSettingsSection>
-                    )}
                   </div>
                 ) : drawerMode === "history" ? (
                   <div
@@ -1928,7 +1910,9 @@ export function ResumeWorkbench() {
             </motion.div>
           )}
           {toast && (
-            <FeedbackNotice kind={toast.kind} placement="floating">{toast.label}</FeedbackNotice>
+            <FeedbackNotice kind={toast.kind} placement="floating" onDismiss={() => setToast(null)}>
+              {toast.label}
+            </FeedbackNotice>
           )}
         </AnimatePresence>
 

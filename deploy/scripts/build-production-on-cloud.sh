@@ -28,17 +28,21 @@ if [[ "${import_legacy_sqlite}" != "true" && "${import_legacy_sqlite}" != "false
   exit 6
 fi
 
-image="linkcv"
-pi_image="linkcv-pi"
+image="linkresume"
+pi_image="linkresume-pi"
 tag="prod-${commit_short}-b${build_number}"
-prod_root="/opt/tolink/LinkCV"
+prod_root="/opt/tolink/LinkResume"
 deploy_dir="${prod_root}"
 work_root="${prod_root}/jenkins/workspaces"
-build_dir="${work_root}/linkcv-${build_number}"
+build_dir="${work_root}/linkresume-${build_number}"
 base_env="${deploy_dir}/.env.production"
 secret_env="${deploy_dir}/.env.production.local"
 compose_file="${deploy_dir}/deploy/docker-compose.production.yml"
 old_compose_file="${deploy_dir}/deploy/docker-compose.yml"
+legacy_prod_root="/opt/tolink/LinkCV"
+legacy_base_env="${legacy_prod_root}/.env.production"
+legacy_secret_env="${legacy_prod_root}/.env.production.local"
+legacy_compose_file="${legacy_prod_root}/deploy/docker-compose.production.yml"
 legacy_sqlite="${deploy_dir}/data/resume_app.sqlite"
 backup_root="${deploy_dir}/backups/production-cutover"
 docker_network="tolink-app-net"
@@ -46,7 +50,7 @@ http_port="4174"
 cutover_started="false"
 
 cleanup() {
-  if [[ "${build_dir}" == "${work_root}/linkcv-${build_number}" ]]; then
+  if [[ "${build_dir}" == "${work_root}/linkresume-${build_number}" ]]; then
     rm -rf -- "${build_dir}"
   fi
 }
@@ -83,7 +87,7 @@ required_secret_keys=(
   WECHAT_APPID
   WECHAT_SECRET
   PI_SERVICE_TOKEN
-  LINKCV_INTERNAL_AGENT_TOKEN
+  LINKRESUME_INTERNAL_AGENT_TOKEN
 )
 for required_key in "${required_secret_keys[@]}"; do
   if ! grep -Eq "^${required_key}=.+$" "${secret_env}"; then
@@ -92,9 +96,9 @@ for required_key in "${required_secret_keys[@]}"; do
   fi
 done
 pi_service_token="$(grep -E '^PI_SERVICE_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2-)"
-internal_agent_token="$(grep -E '^LINKCV_INTERNAL_AGENT_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2-)"
+internal_agent_token="$(grep -E '^LINKRESUME_INTERNAL_AGENT_TOKEN=.+' "${secret_env}" | tail -n 1 | cut -d= -f2-)"
 if [[ "${pi_service_token}" == "${internal_agent_token}" ]]; then
-  echo "PI_SERVICE_TOKEN and LINKCV_INTERNAL_AGENT_TOKEN must be different" >&2
+  echo "PI_SERVICE_TOKEN and LINKRESUME_INTERNAL_AGENT_TOKEN must be different" >&2
   exit 12
 fi
 for forbidden_key in DATABASE_URL REDIS_URL MINIO_ENDPOINT; do
@@ -106,7 +110,9 @@ done
 
 docker network inspect "${docker_network}" >/dev/null
 port_owners="$(docker ps --filter "publish=${http_port}" --format '{{.Names}}')"
-if [[ -n "${port_owners}" && "${port_owners}" != "linkcv" ]]; then
+if [[ -n "${port_owners}" && \
+  "${port_owners}" != "linkresume" && \
+  "${port_owners}" != "linkcv" ]]; then
   echo "Production port ${http_port} is owned by another container" >&2
   exit 14
 fi
@@ -126,6 +132,7 @@ mkdir -p "${build_dir}" "${deploy_dir}/deploy/observability" "${backup_root}"
 tar -xzf "${source_archive}" -C "${build_dir}"
 
 DOCKER_BUILDKIT=1 docker build \
+  --build-arg "DEBIAN_MIRROR=https://mirrors.aliyun.com" \
   --label "org.opencontainers.image.revision=${commit_short}" \
   -t "${image}:${tag}" \
   "${build_dir}"
@@ -146,20 +153,27 @@ for deployed_file in \
   fi
 done
 
-old_image="$(docker inspect --format='{{.Config.Image}}' linkcv 2>/dev/null || true)"
-old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkcv-pi 2>/dev/null || true)"
+old_container="linkresume"
+old_image="$(docker inspect --format='{{.Config.Image}}' linkresume 2>/dev/null || true)"
+old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkresume-pi 2>/dev/null || true)"
+if [[ -z "${old_image}" ]]; then
+  old_container="linkcv"
+  old_image="$(docker inspect --format='{{.Config.Image}}' linkcv 2>/dev/null || true)"
+  old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkcv-pi 2>/dev/null || true)"
+fi
 printf '%s\n' "${old_image}" >"${backup_dir}/previous-image.txt"
 printf '%s\n' "${old_pi_image}" >"${backup_dir}/previous-pi-image.txt"
+printf '%s\n' "${old_container}" >"${backup_dir}/previous-container.txt"
 
 backup_compose_file="${backup_dir}/docker-compose.production.yml"
-if [[ "${old_image}" == linkcv:prod-* ]]; then
+if [[ "${old_image}" == linkresume:prod-* ]]; then
   if [[ ! -f "${backup_compose_file}" || ! -f "${backup_dir}/.env.production" ]]; then
     echo "Previous Production configuration is unavailable for rollback" >&2
     exit 20
   fi
-  if grep -q 'linkcv-pi:' "${backup_compose_file}"; then
-    if [[ "${old_pi_image}" != linkcv-pi:prod-* ]] || \
-      [[ "${old_pi_image#linkcv-pi:}" != "${old_image#linkcv:}" ]]; then
+  if grep -q 'linkresume-pi:' "${backup_compose_file}"; then
+    if [[ "${old_pi_image}" != linkresume-pi:prod-* ]] || \
+      [[ "${old_pi_image#linkresume-pi:}" != "${old_image#linkresume:}" ]]; then
       echo "Previous Production application and Pi images are not a matching rollback pair" >&2
       exit 20
     fi
@@ -167,37 +181,67 @@ if [[ "${old_image}" == linkcv:prod-* ]]; then
 fi
 
 rollback_old_application() {
-  if [[ "${old_image}" != linkcv:* ]]; then
+  TAG="${tag}" PI_TAG="${tag}" \
+    docker compose -f "${compose_file}" down --remove-orphans || true
+
+  if [[ "${old_container}" == "linkcv" && "${old_image}" == linkcv:* ]]; then
+    if [[ ! -f "${legacy_compose_file}" || \
+      ! -f "${legacy_base_env}" || \
+      ! -f "${legacy_secret_env}" ]]; then
+      echo "Legacy Production configuration is unavailable" >&2
+      return 1
+    fi
+    old_tag="${old_image#linkcv:}"
+    TAG="${old_tag}" \
+    PI_TAG="${old_tag}" \
+    LINKCV_ENV_FILE="${legacy_base_env}" \
+    LINKCV_SECRET_ENV_FILE="${legacy_secret_env}" \
+    LINKCV_DOCKER_NETWORK="${docker_network}" \
+    LINKCV_HTTP_PORT="${http_port}" \
+      docker compose -f "${legacy_compose_file}" up -d --remove-orphans
+    for _ in $(seq 1 30); do
+      if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
+        curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
+        echo "Legacy Production application restored: ${old_image}"
+        return 0
+      fi
+      sleep 2
+    done
+    echo "Legacy Production application rollback health check failed" >&2
+    return 1
+  fi
+
+  if [[ "${old_image}" != linkresume:* ]]; then
     echo "Automatic application rollback is unavailable" >&2
     return 1
   fi
-  old_tag="${old_image#linkcv:}"
+  old_tag="${old_image#linkresume:}"
   rollback_has_pi="false"
-  if [[ "${old_image}" == linkcv:prod-* ]]; then
-    if grep -q 'linkcv-pi:' "${backup_compose_file}"; then
-      if [[ "${old_pi_image}" != linkcv-pi:prod-* ]]; then
+  if [[ "${old_image}" == linkresume:prod-* ]]; then
+    if grep -q 'linkresume-pi:' "${backup_compose_file}"; then
+      if [[ "${old_pi_image}" != linkresume-pi:prod-* ]]; then
         echo "Previous Pi image is unavailable for paired rollback" >&2
         return 1
       fi
       rollback_has_pi="true"
       TAG="${old_tag}" \
       PI_TAG="${old_tag}" \
-      LINKCV_ENV_FILE="${backup_dir}/.env.production" \
-      LINKCV_SECRET_ENV_FILE="${secret_env}" \
-      LINKCV_DOCKER_NETWORK="${docker_network}" \
-      LINKCV_HTTP_PORT="${http_port}" \
+      LINKRESUME_ENV_FILE="${backup_dir}/.env.production" \
+      LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
+      LINKRESUME_DOCKER_NETWORK="${docker_network}" \
+      LINKRESUME_HTTP_PORT="${http_port}" \
         docker compose -f "${backup_compose_file}" up -d --remove-orphans
     else
       TAG="${old_tag}" \
-      LINKCV_ENV_FILE="${backup_dir}/.env.production" \
-      LINKCV_SECRET_ENV_FILE="${secret_env}" \
-      LINKCV_DOCKER_NETWORK="${docker_network}" \
-      LINKCV_HTTP_PORT="${http_port}" \
+      LINKRESUME_ENV_FILE="${backup_dir}/.env.production" \
+      LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
+      LINKRESUME_DOCKER_NETWORK="${docker_network}" \
+      LINKRESUME_HTTP_PORT="${http_port}" \
         docker compose -f "${backup_compose_file}" up -d --remove-orphans
     fi
   elif [[ -f "${old_compose_file}" ]]; then
     TAG="${old_tag}" \
-    LINKCV_ENV_FILE="${deploy_dir}/.env" \
+    LINKRESUME_ENV_FILE="${deploy_dir}/.env" \
       docker compose -f "${old_compose_file}" up -d --remove-orphans
   else
     echo "Legacy Production compose file is unavailable" >&2
@@ -242,12 +286,12 @@ docker run --rm \
     --expected-app-env production \
     --expected-host tolink-mysql \
     --expected-port 3306 \
-    --expected-database linkcv
+    --expected-database linkresume
 
 if [[ "${import_legacy_sqlite}" == "true" ]]; then
   sqlite_backup="${backup_dir}/resume_app.sqlite"
   cutover_started="true"
-  docker stop linkcv >/dev/null
+  docker stop linkresume >/dev/null
   if ! sqlite3 "${legacy_sqlite}" ".backup '${sqlite_backup}'"; then
     echo "Failed to create a consistent legacy SQLite backup" >&2
     exit 18
@@ -275,19 +319,27 @@ fi
 
 cutover_started="true"
 
+if [[ "${old_container}" == "linkcv" && "${old_image}" == linkcv:* ]]; then
+  for legacy_container in linkcv linkcv-pi linkcv-worker linkcv-promtail; do
+    if docker inspect "${legacy_container}" >/dev/null 2>&1; then
+      docker stop "${legacy_container}" >/dev/null
+    fi
+  done
+fi
+
 TAG="${tag}" \
 PI_TAG="${tag}" \
-LINKCV_ENV_FILE="${base_env}" \
-LINKCV_SECRET_ENV_FILE="${secret_env}" \
-LINKCV_DOCKER_NETWORK="${docker_network}" \
-LINKCV_HTTP_PORT="${http_port}" \
+LINKRESUME_ENV_FILE="${base_env}" \
+LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
+LINKRESUME_DOCKER_NETWORK="${docker_network}" \
+LINKRESUME_HTTP_PORT="${http_port}" \
   docker compose -f "${compose_file}" up -d --remove-orphans
 
 for _ in $(seq 1 30); do
-  health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv 2>/dev/null || true)"
-  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkcv-pi 2>/dev/null || true)"
-  worker_status="$(docker inspect --format='{{.State.Status}}' linkcv-worker 2>/dev/null || true)"
-  promtail_status="$(docker inspect --format='{{.State.Status}}' linkcv-promtail 2>/dev/null || true)"
+  health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume 2>/dev/null || true)"
+  pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume-pi 2>/dev/null || true)"
+  worker_status="$(docker inspect --format='{{.State.Status}}' linkresume-worker 2>/dev/null || true)"
+  promtail_status="$(docker inspect --format='{{.State.Status}}' linkresume-promtail 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]] && \
     [[ "${pi_health_status}" == "healthy" ]] && \
     [[ "${worker_status}" == "running" ]] && \
@@ -307,7 +359,7 @@ for _ in $(seq 1 30); do
 done
 
 TAG="${tag}" PI_TAG="${tag}" \
-  docker compose -f "${compose_file}" logs --tail=100 linkcv linkcv-pi linkcv-worker promtail || true
+  docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi linkresume-worker promtail || true
 echo "Production health check timed out; restoring previous application" >&2
 rollback_old_application || true
 cutover_started="false"

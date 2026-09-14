@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.core.config import Settings
-from linkcv.main import create_app
-from linkcv.modules.identity.models import User
-from linkcv.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
-from linkcv.modules.resumes.models import ResumeTemplate
+from linkresume.core.config import Settings
+from linkresume.main import create_app
+from linkresume.modules.identity.models import User
+from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, issue_session
+from linkresume.modules.resumes.models import ResumeTemplate
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
@@ -134,7 +134,7 @@ def test_pdf_uses_current_draft_and_rejects_stale_version_id() -> None:
         )
         assert downloaded.status_code == 200
         assert downloaded.content.startswith(b"%PDF-")
-        assert downloaded.headers["x-linkcv-pdf-version-id"] == revision
+        assert downloaded.headers["x-linkresume-pdf-version-id"] == revision
         assert downloaded.headers["cache-control"] == "private, no-store"
         assert app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]["value"] == "尚未手动保存的草稿"
         assert app.state.resume_pdf_renderer.payloads[-1]["style"]["portable"]["smart_one_page"] is True
@@ -147,7 +147,7 @@ def test_pdf_uses_current_draft_and_rejects_stale_version_id() -> None:
         assert preview.status_code == 200
         assert preview.headers["content-type"] == "image/png"
         assert preview.content.startswith(b"\x89PNG\r\n\x1a\n")
-        assert preview.headers["x-linkcv-preview-version-id"] == revision
+        assert preview.headers["x-linkresume-preview-version-id"] == revision
         assert preview.headers["cache-control"] == "private, no-store"
         assert app.state.resume_preview_renderer.pdf_inputs[-1].startswith(b"%PDF-")
 

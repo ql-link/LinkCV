@@ -10,7 +10,7 @@ import { readFile, realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 
-import { createLinkCVClient } from "../tools/linkcv-client.js";
+import { createLinkResumeClient } from "../tools/linkresume-client.js";
 
 const objectSchema = (properties, required = []) => ({
   type: "object",
@@ -19,7 +19,7 @@ const objectSchema = (properties, required = []) => ({
   additionalProperties: false,
 });
 
-const SYSTEM_PROMPT = `你是 LinkCV 的简历智能助手，只能服务当前已授权运行。
+export const SYSTEM_PROMPT = `你是 LinkResume 的简历智能助手，只能服务当前已授权运行。
 每轮必须先用 read 读取 resume-edit-workflow/SKILL.md，并严格执行其中的定位、读取和诊断顺序。
 修改请求在诊断后只能选择并读取一个执行 Skill：resume-edit-local、resume-edit-entry-star、resume-generate-from-materials；禁止同轮混用。
 必须先调用 resolve_resume_target；未唯一定位或缺失会改变结果的关键信息时，必须调用 request_user_input 生成结构化问题，不能用普通文本代替澄清，也不能生成提案。调用 request_user_input 后本轮立即停止其他工具和最终回答。随后调用 get_resume_context 和 analyze_resume_content。
@@ -89,7 +89,7 @@ export function createSkillReadTool(onRead = () => undefined) {
   return defineTool({
     name: "read",
     label: "读取 Skill",
-    description: "读取已注册的 LinkCV Agent Skill Markdown；不能访问其他服务端文件。",
+    description: "读取已注册的 LinkResume Agent Skill Markdown；不能访问其他服务端文件。",
     parameters: objectSchema({
       path: { type: "string", minLength: 1, maxLength: 1024 },
       offset: { type: "integer", minimum: 1 },
@@ -204,9 +204,9 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
   const { modelRuntime, model } = await configuredModel(modelConfig);
   let toolCallId = null;
   const probeTool = defineTool({
-    name: "linkcv_probe",
-    label: "LinkCV Pi 探针",
-    description: "完成 LinkCV Pi Agent 能力验证。",
+    name: "linkresume_probe",
+    label: "LinkResume Pi 探针",
+    description: "完成 LinkResume Pi Agent 能力验证。",
     parameters: objectSchema({ nonce: { type: "string" } }, ["nonce"]),
     execute: async (callId, params) => {
       if (params.nonce !== nonce) throw new Error("AGENT_PROBE_NONCE_MISMATCH");
@@ -223,7 +223,7 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
     agentDir: fileURLToPath(new URL("../../resources/", import.meta.url)),
     settingsManager,
     systemPromptOverride: () =>
-      "你正在执行连接验证。必须且只能调用一次 linkcv_probe，并原样传入用户提供的 nonce；不要调用其他工具。",
+      "你正在执行连接验证。必须且只能调用一次 linkresume_probe，并原样传入用户提供的 nonce；不要调用其他工具。",
   });
   await resourceLoader.reload();
   const { session } = await createAgentSession({
@@ -231,7 +231,7 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
     modelRuntime,
     thinkingLevel: "off",
     noTools: "builtin",
-    tools: ["linkcv_probe"],
+    tools: ["linkresume_probe"],
     customTools: [probeTool],
     resourceLoader,
     sessionManager: SessionManager.inMemory(),
@@ -267,7 +267,7 @@ export async function executeAgentRun({
   emit,
   signal,
 }) {
-  const client = createLinkCVClient(config, runId, signal);
+  const client = createLinkResumeClient(config, runId, signal);
   const runtimeConfig = await client.runtimeConfig();
   const { modelRuntime, model } = await configuredModel({
     adapter: runtimeConfig.provider === "google" ? "gemini" : runtimeConfig.provider,
@@ -589,7 +589,7 @@ export async function executeAgentRun({
     }
     const authorizedContext = formatContextMaterials(contextMaterials);
     const conversation = history.length
-      ? `${authorizedContext ? `${authorizedContext}\n\n` : ""}以下是由 LinkCV 数据库恢复的同一会话最近记录，仅作为对话上下文：\n${JSON.stringify(history)}\n\n用户本轮请求：\n${content}`
+      ? `${authorizedContext ? `${authorizedContext}\n\n` : ""}以下是由 LinkResume 数据库恢复的同一会话最近记录，仅作为对话上下文：\n${JSON.stringify(history)}\n\n用户本轮请求：\n${content}`
       : `${authorizedContext ? `${authorizedContext}\n\n` : ""}用户本轮请求：\n${content}`;
     await session.prompt(conversation);
     assertAgentCompleted(finalAssistantMessage);

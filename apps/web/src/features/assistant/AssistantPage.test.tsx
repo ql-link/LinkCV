@@ -95,6 +95,67 @@ describe("AssistantPage", () => {
     expect(within(recentGroup).getByRole("button", { name: "普通对话" })).toBeInTheDocument();
   });
 
+  it("可分别收起和展开 Pinned 与最近对话", async () => {
+    const user = userEvent.setup();
+    const pinnedSession = { ...session, id: "session-pinned", title: "置顶对话", pinned: true };
+    const recentSession = { ...session, id: "session-recent", title: "普通对话", pinned: false };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [pinnedSession, recentSession] });
+
+    render(<AssistantPage />);
+
+    expect(await screen.findByRole("button", { name: "置顶对话" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "普通对话" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "收起 Pinned" }));
+    expect(screen.getByRole("button", { name: "展开 Pinned" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "置顶对话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "普通对话" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "展开 Pinned" }));
+    expect(screen.getByRole("button", { name: "置顶对话" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "收起最近对话" }));
+    expect(screen.getByRole("button", { name: "展开最近对话" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "普通对话" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "展开最近对话" }));
+    expect(screen.getByRole("button", { name: "普通对话" })).toBeVisible();
+  });
+
+  it("可拖动或通过键盘调整最近对话栏宽度", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    const { container } = render(<AssistantPage />);
+
+    const shell = container.querySelector<HTMLDivElement>(".assistant-shell");
+    expect(shell).not.toBeNull();
+    vi.spyOn(shell!, "getBoundingClientRect").mockReturnValue({
+      x: 40,
+      y: 0,
+      left: 40,
+      right: 1900,
+      top: 0,
+      bottom: 1000,
+      width: 1860,
+      height: 1000,
+      toJSON: () => ({}),
+    });
+
+    const separator = screen.getByRole("separator", { name: "调整最近对话栏宽度" });
+    expect(separator).toHaveAttribute("aria-valuenow", "240");
+    expect(shell).toHaveStyle({ "--assistant-sidebar-width": "240px" });
+
+    fireEvent.pointerDown(separator, { pointerId: 1, pointerType: "mouse", button: 0, clientX: 280 });
+    fireEvent.pointerMove(separator, { pointerId: 1, pointerType: "mouse", clientX: 360 });
+    expect(separator).toHaveAttribute("aria-valuenow", "320");
+    expect(shell).toHaveStyle({ "--assistant-sidebar-width": "320px" });
+    fireEvent.pointerUp(separator, { pointerId: 1, pointerType: "mouse", clientX: 360 });
+
+    fireEvent.keyDown(separator, { key: "Home" });
+    expect(separator).toHaveAttribute("aria-valuenow", "220");
+    fireEvent.keyDown(separator, { key: "End" });
+    expect(separator).toHaveAttribute("aria-valuenow", "420");
+  });
+
   it("通过独立会话路由直接恢复对应对话", async () => {
     const routedSession: AgentSession = {
       ...session,
@@ -298,7 +359,7 @@ describe("AssistantPage", () => {
     render(<AssistantPage />);
 
     expect(await screen.findByRole("button", { name: "模型不可用" })).toBeInTheDocument();
-    expect(screen.queryByText("LinkCV AI")).not.toBeInTheDocument();
+    expect(screen.queryByText("LinkResume AI")).not.toBeInTheDocument();
   });
 
   it("展示结构化澄清并按 AgentPanel 格式携带回答序号提交", async () => {
@@ -561,6 +622,33 @@ describe("AssistantPage", () => {
     expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "停止生成" }));
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
+  });
+
+  it("发送后不在消息区顶部重复展示召回状态标题", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    let finishStream: () => void = () => {};
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-1" });
+      onEvent({ type: "run.phase", runId: "run-1", phase: "loading_context", referencedContextCount: 0 });
+      await new Promise<void>((resolve) => {
+        finishStream = resolve;
+      });
+      onEvent({ type: "run.completed", runId: "run-1" });
+    });
+
+    const { container } = render(<AssistantPage />);
+    const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(input, "你好");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("正在读取所选资料…")).toBeInTheDocument();
+    expect(screen.queryByText("正在召回相关资料")).not.toBeInTheDocument();
+    expect(container.querySelector(".assistant-state-header")).not.toBeInTheDocument();
+
+    finishStream();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
   });
 
   it("暂停后等待取消完成，重试不会重复用户消息或展示运行中提示", async () => {

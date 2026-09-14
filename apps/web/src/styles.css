@@ -141,12 +141,26 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 button {
   border: 0;
+  font-family: var(--ui-font-sans);
+}
+
+nav,
+[role="navigation"],
+select {
+  font-family: var(--ui-font-sans);
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  font-family: var(--ui-font-content);
 }
 
 button:not([data-slot]):focus-visible,
@@ -990,7 +1004,7 @@ select:not([data-slot]):focus-visible {
   right: 7mm;
   bottom: 4mm;
   color: #9ca3af;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--ui-font-sans);
   font-size: 7pt;
   line-height: 1;
 }
@@ -1662,6 +1676,11 @@ select:not([data-slot]):focus-visible {
   background: var(--ui-surface);
   padding: 7px 8px;
   box-shadow: var(--ui-shadow-md);
+}
+
+.selection-toolbar-bubble-scale {
+  width: max-content;
+  zoom: var(--selection-toolbar-scale, 1);
 }
 
 .workbench-tool-button { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 0; border-radius: var(--ui-radius-sm); background: transparent; color: var(--ui-text-secondary); cursor: pointer; font-size: 0.75rem; }
@@ -2344,7 +2363,7 @@ select:not([data-slot]):focus-visible {
 .agent-message { display: grid; max-width: 92%; gap: 5px; }
 .agent-message-row { display: flex; align-items: flex-end; gap: 8px; }
 .agent-message-bubble { display: grid; min-width: 0; gap: 8px; border-radius: var(--ui-radius-lg); background: color-mix(in srgb, var(--ui-accent-subtle) 74%, var(--ui-surface)); padding: 12px 14px; }
-.agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
+.agent-message-content { display: grid; gap: 7px; min-width: 0; margin: 0; color: var(--ui-text-secondary); font-family: var(--resume-serif-font); font-size: 0.8125rem; line-height: 1.62; overflow-wrap: anywhere; }
 .agent-message-content p,
 .agent-message-content ul,
 .agent-message-content ol,
@@ -2418,13 +2437,13 @@ select:not([data-slot]):focus-visible {
 .agent-clarification label > span { display: grid; gap: 2px; }
 .agent-clarification label strong { font-size: 0.75rem; }
 .agent-clarification label small { color: var(--ui-text-muted); font-size: 0.65625rem; line-height: 1.4; }
-.agent-clarification-other { height: 38px; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-sm); outline: 0; background: var(--ui-surface); padding: 0 10px; color: var(--ui-foreground); font: 0.75rem/1 var(--ui-font-sans); }
+.agent-clarification-other { height: 38px; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-sm); outline: 0; background: var(--ui-surface); padding: 0 10px; color: var(--ui-foreground); font: 0.75rem/1 var(--ui-font-content); }
 .agent-clarification-other:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 15%, transparent); }
 .agent-clarification-error { color: var(--ui-destructive); font-size: 0.65625rem; }
 .agent-clarification > .ui-button { justify-self: stretch; }
 .agent-composer > label { color: var(--ui-text-secondary); font-size: 0.75rem; font-weight: 600; }
 .agent-input-shell { position: relative; display: grid; }
-.agent-composer textarea { min-height: 78px; resize: none; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-xl); outline: 0; background: var(--ui-surface); padding: 15px 58px 15px 16px; color: var(--ui-foreground); font: 400 0.8125rem/1.55 var(--ui-font-sans); box-shadow: 0 4px 16px rgba(15, 18, 22, 0.035); }
+.agent-composer textarea { min-height: 78px; resize: none; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-xl); outline: 0; background: var(--ui-surface); padding: 15px 58px 15px 16px; color: var(--ui-foreground); font: 400 0.8125rem/1.55 var(--ui-font-content); box-shadow: 0 4px 16px rgba(15, 18, 22, 0.035); }
 .agent-composer textarea:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 15%, transparent); }
 .agent-composer textarea::placeholder { color: var(--ui-text-subtle); }
 .agent-send-button { position: absolute; right: 12px; bottom: 12px; display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; background: var(--ui-accent); padding: 0; color: var(--ui-primary-foreground); cursor: pointer; box-shadow: 0 5px 14px color-mix(in srgb, var(--ui-accent) 24%, transparent); }
@@ -2461,11 +2480,6 @@ select:not([data-slot]):focus-visible {
 .workbench-typography-settings > .workbench-field .workbench-font-select > svg { position: absolute; right: 7px; }
 .workbench-typography-settings > .workbench-value-row { padding: 14px 0; }
 .workbench-typography-settings > .workbench-value-row:last-child { padding-bottom: 0; }
-.workbench-semantic-settings { display: grid; gap: 10px; }
-.workbench-semantic-row { display: grid; grid-template-columns: minmax(0, 1fr) 108px; align-items: center; gap: 12px; }
-.workbench-semantic-row > span { overflow: hidden; color: #344054; font-size: 0.75rem; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
-.workbench-semantic-row [role="combobox"] { width: 108px; height: 30px; justify-content: space-between; font-size: 0.75rem; }
-.workbench-semantic-settings > button { justify-self: stretch; gap: 7px; margin-top: 4px; }
 .workbench-field { display: grid; gap: 8px; color: var(--ui-text-secondary); font-size: 0.8125rem; }
 .workbench-field > span { font-weight: 600; }
 .workbench-font-select { height: 40px; align-items: center; border-color: var(--ui-input); background: var(--ui-surface); padding: 7px 10px; color: var(--ui-foreground); }
@@ -2473,10 +2487,10 @@ select:not([data-slot]):focus-visible {
 .workbench-font-select[data-state="open"] { border-color: var(--ui-ring); box-shadow: 0 0 0 1px var(--ui-ring); }
 .workbench-font-select > .workbench-font-current { min-width: 0; flex: 1; overflow: hidden; color: var(--ui-foreground); font-size: 0.875rem; font-weight: 500; line-height: 1.35; text-align: left; text-overflow: ellipsis; white-space: nowrap; -webkit-line-clamp: unset; }
 .workbench-font-select-content { min-width: var(--radix-select-trigger-width); border-color: var(--ui-border); background: var(--ui-surface-elevated); color: var(--ui-foreground); box-shadow: var(--ui-shadow-sm); }
-.workbench-font-option { min-height: 40px; padding-block: 7px; padding-left: 10px; }
+.workbench-font-option { min-height: 40px; justify-content: center; padding-block: 7px; padding-inline: 32px; text-align: center; }
 .workbench-font-option[data-highlighted] { background: var(--ui-accent-subtle); color: var(--ui-foreground); }
 .workbench-font-option[data-state="checked"] { color: var(--ui-accent); }
-.workbench-font-option-copy { min-width: 0; overflow: hidden; padding-right: 4px; font-size: 0.875rem; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.workbench-font-option-copy { min-width: 0; overflow: hidden; font-size: 0.875rem; font-weight: 500; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 
 .workbench-setting-toggle,
 .workbench-setting-action,

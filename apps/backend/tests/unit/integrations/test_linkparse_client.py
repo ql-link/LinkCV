@@ -5,8 +5,8 @@ from time import monotonic
 import httpx
 import pytest
 
-from linkcv.domain.document_conversion import DocumentConversionFailure
-from linkcv.integrations.linkparse_client import LinkParseClient
+from linkresume.domain.document_conversion import DocumentConversionFailure
+from linkresume.integrations.linkparse_client import LinkParseClient
 
 
 def client(handler, *, key="fixture-key", response_max_bytes=1024 * 1024):

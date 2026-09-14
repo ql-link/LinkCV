@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(os.environ.get("LINKCV_REPO_ROOT", Path(__file__).resolve().parents[2])).resolve()
+REPO_ROOT = Path(os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])).resolve()
 LINKS = {
     "AGENTS.md": ".ai/prompts/project.md",
     "CLAUDE.md": ".ai/prompts/project.md",

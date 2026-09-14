@@ -1,6 +1,5 @@
 .career-module-header {
   --career-nav-accent: #f97316;
-  min-height: 76px;
   box-sizing: border-box;
 }
 
@@ -78,7 +77,6 @@
 }
 
 @media (max-width: 640px) {
-  .career-module-header { min-height: 0; }
   .career-module-header .page-hero-module-navigation { min-height: 44px; order: 3; }
   .career-subnav { width: 100%; }
   .career-subnav a { min-height: 44px; padding-inline: 10px; }

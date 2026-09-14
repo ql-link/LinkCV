@@ -16,26 +16,26 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from linkcv.application.resumes.service import (
+from linkresume.application.resumes.service import (
     ResumeTitleConflict,
     create_resume_from_template,
 )
-from linkcv.core.database import utc_now
-from linkcv.core.errors import ApiError
-from linkcv.domain.resume import CanonicalResumeDocument, TemplateDefinition
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
-from linkcv.modules.agent.service import (
+from linkresume.core.database import utc_now
+from linkresume.core.errors import ApiError
+from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition
+from linkresume.domain.resume_snapshot import parse_resume_snapshot
+from linkresume.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
+from linkresume.modules.agent.service import (
     create_proposal,
     create_session,
     delete_resume_agent_data,
     reject_proposal,
 )
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0057"
+EXPECTED_HEAD = "0062"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -59,15 +59,15 @@ def canonical_editor_markdown(data: dict[str, Any]) -> str:
 
 
 def migration_test_url() -> str:
-    raw = os.environ.get("LINKCV_TEST_MYSQL_URL")
+    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
     if not raw:
         pytest.skip(
-            "LINKCV_TEST_MYSQL_URL is required for destructive MySQL migration tests"
+            "LINKRESUME_TEST_MYSQL_URL is required for destructive MySQL migration tests"
         )
     url = make_url(raw)
-    if url.database != "linkcv" or url.host not in {"127.0.0.1", "localhost"}:
+    if url.database != "linkresume" or url.host not in {"127.0.0.1", "localhost"}:
         pytest.fail(
-            "LINKCV_TEST_MYSQL_URL must target a local, disposable database named linkcv"
+            "LINKRESUME_TEST_MYSQL_URL must target a local, disposable database named linkresume"
         )
     return raw
 
@@ -80,7 +80,7 @@ def invoke_alembic(
         {
             "APP_ENV": "development",
             "DATABASE_URL": database_url,
-            "LINKCV_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
+            "LINKRESUME_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
         }
     )
     return subprocess.run(
@@ -132,6 +132,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "resume_versions",
         "document_parse_tasks",
         "job_descriptions",
+        "global_companies",
         "agent_sessions",
         "agent_runs",
         "agent_messages",
@@ -258,6 +259,17 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         for column in inspector.get_columns("interview_sessions")
     }
     assert interview_columns["application_stage_id"]["nullable"] is True
+    assert interview_columns["schedule_kind"]["nullable"] is False
+    assert str(interview_columns["schedule_kind"]["default"]).strip("'") == "fixed_slot"
+    assert interview_columns["answer_plan_start_at"]["nullable"] is True
+    assert interview_columns["answer_plan_end_at"]["nullable"] is True
+    assert {
+        "ck_interview_sessions_schedule_kind",
+        "ck_interview_sessions_answer_plan",
+    } <= {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("interview_sessions")
+    }
     interview_foreign_keys = {
         foreign_key["name"]: foreign_key
         for foreign_key in inspector.get_foreign_keys("interview_sessions")
@@ -436,6 +448,8 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         for foreign_key in inspector.get_foreign_keys("resumes")
     )
     assert {column["name"] for column in inspector.get_columns("user_dataset")} == {
+        "content_revision", "content_object_name", "content_sha256", "content_updated_at", "last_content_request_id",
+        "folder_id",
         "id",
         "user_id",
         "idempotency_key",
@@ -461,6 +475,19 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "parse_task_id" not in foreign_key["constrained_columns"]
         for foreign_key in inspector.get_foreign_keys("user_dataset")
     )
+    folder_foreign_keys = {
+        fk["name"]: fk for fk in inspector.get_foreign_keys("user_dataset")
+    }
+    assert folder_foreign_keys["fk_user_dataset_folder"]["referred_table"] == "user_dataset_folders"
+    assert folder_foreign_keys["fk_user_dataset_folder"]["options"]["ondelete"] == "SET NULL"
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("user_dataset_folders")
+    } == {"uk_user_dataset_folders_user_name"}
+    dataset_indexes = {index["name"]: index for index in inspector.get_indexes("user_dataset")}
+    assert dataset_indexes["idx_user_dataset_user_folder"]["column_names"] == [
+        "user_id", "folder_id", "created_at"
+    ]
     assert "storage_cleanup_jobs" not in inspector.get_table_names()
     assert "resume_imports" not in inspector.get_table_names()
 
@@ -2850,11 +2877,56 @@ def test_professional_template_seed_conflict_is_atomic() -> None:
     engine.dispose()
 
 
-def test_professional_template_preview_refresh_refuses_customized_snapshots() -> None:
+def _set_professional_template_brand(engine, brand: str) -> None:
+    content_path = "$.sections.custom_sections[0].items[0].content.content"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET data_json = JSON_SET(data_json, :path, "
+                "REPLACE(JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)), "
+                "'linkresume-avatar:', :directive)) "
+                "WHERE `key` IN ('administrative-sidebar-cn', 'campus-professional-cn', "
+                "'civic-service-cn', 'creative-orange-cn')"
+            ),
+            {"path": content_path, "directive": f"{brand}-avatar:"},
+        )
+
+
+@pytest.mark.parametrize("brand", ["linkcv", "linkresume"])
+def test_professional_template_preview_refresh_accepts_official_brand_snapshots(
+    brand: str,
+) -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0026")
+    _set_professional_template_brand(engine, brand)
+    run_alembic(database_url, "upgrade", "0027")
+    with engine.connect() as connection:
+        contents = connection.scalars(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, "
+                "'$.sections.custom_sections[0].items[0].content.content')) "
+                "FROM resume_templates WHERE `key` IN "
+                "('administrative-sidebar-cn', 'campus-professional-cn', "
+                "'civic-service-cn', 'creative-orange-cn')"
+            )
+        ).all()
+        assert len(contents) == 4
+        assert all('/templates/avatar-cat.jpg "linkresume-avatar:' in body for body in contents)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+@pytest.mark.parametrize("brand", ["linkcv", "linkresume"])
+def test_professional_template_preview_refresh_refuses_customized_snapshots(
+    brand: str,
+) -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0026")
+    _set_professional_template_brand(engine, brand)
     content_path = "$.sections.custom_sections[0].items[0].content.content"
 
     with engine.begin() as connection:
@@ -3184,6 +3256,8 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         "user_id",
         "job_title",
         "company_name",
+        "logo_url",
+        "logo_sha256",
         "employment_type",
         "description",
         "skills",
@@ -3228,6 +3302,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     assert columns["salary_currency"]["type"].length == 3
     assert columns["salary_currency"]["type"].collation == "ascii_bin"
     assert columns["company_size"]["type"].length == 50
+    assert columns["logo_url"]["type"].length == 2048
     assert columns["company_financing_stage"]["type"].length == 50
     assert columns["description"]["type"].__class__.__name__ == "LONGTEXT"
     assert columns["company_description"]["type"].__class__.__name__ == "LONGTEXT"
@@ -3273,6 +3348,39 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
     assert foreign_key["constrained_columns"] == ["user_id"]
     assert foreign_key["referred_table"] == "users"
     assert foreign_key["options"]["ondelete"] == "RESTRICT"
+
+    global_columns = {
+        column["name"]: column
+        for column in inspector.get_columns("global_companies")
+    }
+    assert set(global_columns) == {
+        "id",
+        "company_name",
+        "normalized_name",
+        "legal_name",
+        "logo_url",
+        "website_url",
+        "industry",
+        "company_size",
+        "financing_stage",
+        "description",
+        "created_at",
+        "updated_at",
+    }
+    assert global_columns["id"]["type"].unsigned is True
+    assert global_columns["logo_url"]["type"].length == 2048
+    assert global_columns["description"]["type"].__class__.__name__ == "LONGTEXT"
+    assert {
+        constraint["name"]
+        for constraint in inspector.get_unique_constraints("global_companies")
+    } == {"uk_global_companies_normalized_name"}
+    assert {
+        "ck_global_companies_company_name_not_blank",
+        "ck_global_companies_normalized_name_not_blank",
+    } <= {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("global_companies")
+    }
 
     with engine.begin() as connection:
         first_user = connection.execute(
@@ -3742,4 +3850,25 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
         connection.execute(text("DELETE FROM users"))
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_mysql_dataset_edit_upgrade_from_0060_preserves_existing_files() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0060")
+    engine = create_engine(database_url)
+    with engine.begin() as conn:
+        user_id = conn.execute(text("INSERT INTO users (email,password_hash,nickname) VALUES ('dataset-migration@example.invalid','fictional','张三')")).lastrowid
+        task_id = conn.execute(text("INSERT INTO document_parse_tasks (user_id,source_type,file_name,file_format,object_name,upload_status) VALUES (:uid,'dataset','fictional.md','md','users/fictional/datasets/source.md','uploading')"), {"uid":user_id}).lastrowid
+        conn.execute(text("INSERT INTO user_dataset (user_id,parse_task_id,file_name,file_format,content_type,file_size,sha256,object_name,idempotency_key,request_fingerprint) VALUES (:uid,:tid,'fictional.md','md','text/markdown',10,:digest,'users/fictional/datasets/source.md','fictional-key',:digest)"), {"uid":user_id,"tid":task_id,"digest":"a"*64})
+    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "head")
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT file_name,content_revision,content_object_name FROM user_dataset")).one()
+        assert row == ("fictional.md",0,None)
+    inspector = inspect(engine)
+    assert {"dataset_replacements","dataset_object_cleanup"} <= set(inspector.get_table_names())
+    assert {"uk_dataset_replacements_active","uk_dataset_replacements_user_request","uk_dataset_replacements_task"} <= {item["name"] for item in inspector.get_unique_constraints("dataset_replacements")}
+    assert {"ck_dataset_replacements_active","ck_dataset_replacements_status"} <= {item["name"] for item in inspector.get_check_constraints("dataset_replacements")}
     engine.dispose()
