@@ -168,6 +168,7 @@ if [[ -z "${web_asset_oss_prefix}" ]]; then
 fi
 
 DOCKER_BUILDKIT=1 docker build \
+  --build-arg "DEBIAN_MIRROR=https://mirrors.aliyun.com" \
   --build-arg "VITE_ASSET_BASE_URL=${web_asset_oss_url}" \
   --label "org.opencontainers.image.revision=${commit_short}" \
   -t "${image}:${tag}" \
