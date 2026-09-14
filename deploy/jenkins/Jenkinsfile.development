@@ -5,6 +5,7 @@ pipeline {
     timestamps()
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
+    skipDefaultCheckout(true)
   }
 
   parameters {
@@ -39,7 +40,9 @@ pipeline {
   stages {
     stage('Checkout') {
       steps {
-        checkout scm
+        retry(3) {
+          checkout scm
+        }
         script {
           env.COMMIT_SHORT = sh(
             script: 'git rev-parse --short=8 HEAD',
