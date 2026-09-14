@@ -1668,6 +1668,7 @@ select:not([data-slot]):focus-visible {
   display: flex;
   width: max-content;
   max-width: calc(100vw - 24px);
+  flex-wrap: wrap;
   align-items: center;
   gap: 3px;
   overflow: visible;
@@ -1688,6 +1689,12 @@ select:not([data-slot]):focus-visible {
 .workbench-tool-button.active { background: var(--ui-accent-subtle); color: var(--ui-accent); }
 .workbench-tool-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 .workbench-tool-button:disabled { cursor: default; opacity: 0.28; }
+.selection-font-size-control { display: flex; flex: 0 0 auto; align-items: center; gap: 1px; }
+.selection-font-size-control output { display: inline-flex; min-width: 50px; align-items: baseline; justify-content: center; gap: 3px; color: var(--ui-text-secondary); font-size: var(--ui-text-xs); font-variant-numeric: tabular-nums; }
+.selection-font-size-control output small { color: var(--ui-text-muted); font-size: var(--ui-text-xs); }
+.selection-formatting-toolbar .selection-font-size-control .workbench-tool-button { width: 28px; flex-basis: 28px; }
+.selection-font-size-arrows { display: flex; flex-direction: column; }
+.selection-formatting-toolbar .selection-font-size-arrows .workbench-tool-button { height: 17px; flex-basis: 17px; border-radius: var(--ui-radius-xs); padding: 0; }
 .workbench-toolbar-divider { width: 1px; height: 20px; flex: 0 0 1px; margin: 0 6px; background: var(--ui-border); }
 .selection-agent-trigger { display: inline-flex; height: 34px; align-items: center; gap: 6px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 0 9px; color: var(--ui-accent); cursor: pointer; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
 .selection-agent-trigger:hover,

@@ -1,5 +1,5 @@
 import { Editor } from "@tiptap/core";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resumeEditorExtensions } from "./editorExtensions";
@@ -10,10 +10,11 @@ let editor: Editor | null = null;
 afterEach(() => {
   editor?.destroy();
   editor = null;
+  document.getElementById("font-size-fixture")?.remove();
 });
 
 describe("SelectionFormattingToolbar", () => {
-  it("只在选中文字后显示截图指定的八个工具", () => {
+  it("只在选中文字后显示字号和格式工具", () => {
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
     editor.commands.setTextSelection(1);
     const onAgentAction = vi.fn();
@@ -25,7 +26,11 @@ describe("SelectionFormattingToolbar", () => {
     rerender(<SelectionFormattingToolbar editor={editor} onAgentAction={onAgentAction} />);
 
     const toolbar = screen.getByRole("toolbar", { name: "所选文字工具栏" });
+    expect(within(toolbar).getByLabelText("所选文字字号")).toHaveTextContent("12pt");
     expect(within(toolbar).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "增大字号",
+      "减小字号",
+      "恢复默认字号",
       "加粗",
       "斜体",
       "下划线",
@@ -35,6 +40,106 @@ describe("SelectionFormattingToolbar", () => {
       "增加缩进",
       "AI 修改",
     ]);
+  });
+
+  it("只改变选中的单字字号，支持恢复默认并保留其他格式和撤销", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: '<p><strong><span style="color:#3478f6">重点文字</span></strong></p>' });
+    editor.commands.setTextSelection({ from: 2, to: 3 });
+    const originalSelection = { from: editor.state.selection.from, to: editor.state.selection.to };
+    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+
+    await user.click(screen.getByRole("button", { name: "增大字号" }));
+    expect(editor.state.selection.from).toBe(originalSelection.from);
+    expect(editor.state.selection.to).toBe(originalSelection.to);
+    expect(editor.view.dom.querySelector('[style*="font-size"]')).toHaveTextContent("点");
+    expect(editor.view.dom.querySelectorAll('[style*="font-size"]')).toHaveLength(1);
+    expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("12.5pt");
+    act(() => { editor!.commands.undo(); });
+    expect(editor.view.dom.querySelector('[style*="font-size"]')).toBeNull();
+    act(() => { editor!.commands.redo(); });
+    expect(editor.view.dom.querySelector('[style*="font-size"]')).toHaveTextContent("点");
+
+    await user.click(screen.getByRole("button", { name: "恢复默认字号" }));
+    expect(editor.view.dom.querySelector('[style*="font-size"]')).toBeNull();
+    expect(editor.view.dom.querySelector("strong")).toHaveTextContent("重点文字");
+    expect(editor.getHTML()).toContain("color: rgb(52, 120, 246)");
+  });
+
+  it("混合字号选区可统一为一个字号，跨段落保留边界外的文字", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: '<p>第一段</p><p><span style="font-size:14pt">第二段</span></p><p>不改变</p>' });
+    editor.commands.setTextSelection({ from: 1, to: 9 });
+    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("混合");
+    await user.click(screen.getByRole("button", { name: "增大字号" }));
+    const paragraphs = editor.view.dom.querySelectorAll("p");
+    expect(paragraphs[0].querySelector("span[style]")).toHaveStyle({ fontSize: "12.5pt" });
+    expect(paragraphs[1].querySelector("span[style]")).toHaveStyle({ fontSize: "12.5pt" });
+    expect(paragraphs[2].querySelector("span[style]")).toBeNull();
+    expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("12.5pt");
+  });
+
+  it("连续点击保持选区，支持非半点字号与重新选择", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: '<p><span style="font-size:11.2pt">甲</span>乙</p>' });
+    editor.commands.setTextSelection({ from: 1, to: 2 });
+    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    const selectedText = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to);
+    const control = screen.getByLabelText("所选文字字号");
+    expect(control).toHaveTextContent("11.2pt");
+    await user.click(screen.getByRole("button", { name: "增大字号" }));
+    await user.click(screen.getByRole("button", { name: "增大字号" }));
+    await user.click(screen.getByRole("button", { name: "减小字号" }));
+    expect(control).toHaveTextContent("11.7pt");
+    expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe(selectedText);
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    act(() => {
+      editor!.state.doc.descendants((node, pos) => {
+        if (node.isText && node.text === "乙") editor!.commands.setTextSelection({ from: pos, to: pos + 1 });
+      });
+    });
+    expect(control).toHaveTextContent("12pt");
+  });
+
+  it("显示标题继承的实际字号并从该字号直接步进", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: '<h2>工作经历</h2><p>正文</p>' });
+    const host = document.createElement("div");
+    host.id = "font-size-fixture";
+    host.innerHTML = "<style>#font-size-fixture h2 { font-size: 32px; }</style>";
+    host.append(editor.view.dom);
+    document.body.append(host);
+    editor.commands.setTextSelection({ from: 1, to: 5 });
+    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("24pt");
+    expect(screen.getByRole("button", { name: "恢复默认字号" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "增大字号" }));
+    expect(editor.view.dom.querySelector("h2 span[style]")).toHaveStyle({ fontSize: "24.5pt" });
+    act(() => { editor!.commands.selectAll(); });
+    await user.click(screen.getByRole("button", { name: "减小字号" }));
+    expect(editor.view.dom.querySelector("h2 span[style]")).toHaveStyle({ fontSize: "24pt" });
+    expect(editor.view.dom.querySelector("p span[style]")).toHaveStyle({ fontSize: "24pt" });
+  });
+
+  it("到达上下限后禁用对应箭头，键盘可以直接调整", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: '<p><span style="font-size:47.8pt">甲</span><span style="font-size:6.2pt">乙</span></p>' });
+    editor.commands.setTextSelection({ from: 1, to: 2 });
+    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    const increase = screen.getByRole("button", { name: "增大字号" });
+    act(() => { increase.focus(); });
+    await user.keyboard("{Enter}");
+    expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("48pt");
+    expect(increase).toBeDisabled();
+    act(() => {
+      editor!.state.doc.descendants((node, pos) => {
+        if (node.isText && node.text === "乙") editor!.commands.setTextSelection({ from: pos, to: pos + 1 });
+      });
+    });
+    await user.click(screen.getByRole("button", { name: "减小字号" }));
+    expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("6pt");
+    expect(screen.getByRole("button", { name: "减小字号" })).toBeDisabled();
   });
 
   it("对当前选区应用粗体、斜体和高亮", async () => {
