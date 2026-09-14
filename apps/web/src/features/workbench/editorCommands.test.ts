@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   convertCurrentLineToResumeRow,
   convertResumeRowToParagraph,
+  exitVisuallyBlankResumeListItem,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
 } from "./editorCommands";
@@ -255,13 +256,13 @@ describe("convertCurrentLineToResumeRow", () => {
     expect(editor.getText()).toContain("下一行");
   });
 
-  it("通过加号设置的空列表项可以直接按 Backspace 删除", () => {
+  it.each(["bulletList", "orderedList"])("%s 的空列表项按 Backspace 后保留无标号的空白行", (listType) => {
     editor = new Editor({
       extensions: resumeEditorExtensions,
       content: {
         type: "doc",
         content: [{
-          type: "bulletList",
+          type: listType,
           content: [
             { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "保留项" }] }] },
             { type: "listItem", content: [{ type: "paragraph" }] },
@@ -274,9 +275,131 @@ describe("convertCurrentLineToResumeRow", () => {
     editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
 
     const list = editor.state.doc.firstChild;
-    expect(list?.type.name).toBe("bulletList");
+    expect(list?.type.name).toBe(listType);
     expect(list?.childCount).toBe(1);
     expect(list?.textContent).toBe("保留项");
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.lastChild?.type.name).toBe("paragraph");
+    expect(editor.state.doc.lastChild?.textContent).toBe("");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.lastChild);
+    expect(editor.isActive("listItem")).toBe(false);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.childCount).toBe(1);
+    expect(editor.state.doc.firstChild?.textContent).toBe("保留项");
+    expect(editor.state.selection.$from.parent.textContent).toBe("保留项");
+  });
+
+  it.each([
+    ["bulletList", "Backspace"],
+    ["orderedList", "Backspace"],
+    ["bulletList", "Enter"],
+    ["orderedList", "Enter"],
+  ])("%s 回车续项后按 %s 退出列表并可在新行输入正文", (listType, exitKey) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: listType,
+          content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "保留项" }] }] }],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph"));
+    editor.commands.setTextSelection(editor.state.selection.$from.end());
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.firstChild?.childCount).toBe(2);
+    expect(editor.isActive("listItem")).toBe(true);
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: exitKey, bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.firstChild?.type.name).toBe(listType);
+    expect(editor.state.doc.firstChild?.childCount).toBe(1);
+    expect(editor.state.doc.firstChild?.textContent).toBe("保留项");
+    expect(editor.state.doc.lastChild?.type.name).toBe("paragraph");
+    expect(editor.state.doc.lastChild?.textContent).toBe("");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.lastChild);
+    expect(editor.isActive("listItem")).toBe(false);
+
+    editor.commands.insertContent("新的正文");
+
+    expect(editor.state.doc.lastChild?.textContent).toBe("新的正文");
+    expect(editor.state.doc.firstChild?.textContent).toBe("保留项");
+  });
+
+  it.each(["ul", "ol"])("%s 中间的空列表项退出后保留前后列表内容", (tag) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: `<${tag}><li><p>前一项</p></li><li><p></p></li><li><p>后一项</p></li></${tag}>`,
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    const listType = tag === "ul" ? "bulletList" : "orderedList";
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual([listType, "paragraph", listType]);
+    expect(editor.state.doc.firstChild?.textContent).toBe("前一项");
+    expect(editor.state.doc.lastChild?.textContent).toBe("后一项");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.child(1));
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+  });
+
+  it.each(["ul", "ol"])("%s 唯一的空项退出后保留原位置的空白行", (tag) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: `<p>上一行</p><${tag}><li><p></p></li></${tag}><p>下一行</p>`,
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["paragraph", "paragraph", "paragraph"]);
+    expect(editor.state.doc.firstChild?.textContent).toBe("上一行");
+    expect(editor.state.doc.lastChild?.textContent).toBe("下一行");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.child(1));
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+  });
+
+  it.each(["Backspace", "Enter"])("嵌套空列表项按 %s 逐层退出并保留正文", (key) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: "<ul><li><p>父项</p><ol><li><p></p></li></ol></li></ul>",
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
+    expect(editor.state.doc.firstChild?.childCount).toBe(2);
+    expect(editor.state.doc.firstChild?.firstChild?.childCount).toBe(1);
+    expect(editor.state.doc.firstChild?.textContent).toBe("父项");
+    expect(editor.state.selection.$from.depth).toBe(3);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.firstChild?.textContent).toBe("父项");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.lastChild);
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+    expect(editor.isActive("listItem")).toBe(false);
+  });
+
+  it("空首段之后仍有嵌套正文时不会误判为空列表项", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: "<ul><li><p></p><ul><li><p>子项正文</p></li></ul></li></ul>",
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph"));
+    const before = editor.getJSON();
+
+    expect(exitVisuallyBlankResumeListItem(editor)).toBe(false);
+    expect(removeVisuallyBlankResumeLine(editor)).toBe(false);
+    expect(editor.getJSON()).toEqual(before);
   });
 
   it("完全清空的左右分栏可以直接按 Backspace 删除", () => {
