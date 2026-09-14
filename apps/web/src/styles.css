@@ -1459,6 +1459,8 @@ select:not([data-slot]):focus-visible {
   font-family: var(--ui-font-sans);
 }
 
+.resume-workbench.is-embedded { height: 100%; }
+
 .resume-workbench button,
 .resume-workbench select { touch-action: manipulation; }
 
