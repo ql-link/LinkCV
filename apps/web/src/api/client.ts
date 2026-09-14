@@ -373,6 +373,8 @@ export type AgentStreamEvent =
       label?: string;
       referencedContextCount?: number;
     }
+  | { type: "assistant.activity.delta"; runId: string; delta: string }
+  | { type: "assistant.activity.clear"; runId: string }
   | { type: "assistant.delta"; runId: string; delta: string }
   | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
@@ -1291,7 +1293,7 @@ async function consumeAgentStream(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
-    "run.started", "run.phase", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
+    "run.started", "run.phase", "assistant.activity.delta", "assistant.activity.clear", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
   while (true) {

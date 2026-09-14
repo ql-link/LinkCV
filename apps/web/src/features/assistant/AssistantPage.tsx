@@ -216,6 +216,25 @@ function placeComposerCaret(element: HTMLElement, targetOffset: number) {
   selection.addRange(range);
 }
 
+function insertComposerPlainText(element: HTMLElement, text: string) {
+  const selection = window.getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  const insertionRange = range && element.contains(range.commonAncestorContainer)
+    ? range
+    : document.createRange();
+  if (!range || !element.contains(range.commonAncestorContainer)) {
+    insertionRange.selectNodeContents(element);
+    insertionRange.collapse(false);
+  }
+  insertionRange.deleteContents();
+  const textNode = document.createTextNode(text);
+  insertionRange.insertNode(textNode);
+  insertionRange.setStartAfter(textNode);
+  insertionRange.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(insertionRange);
+}
+
 type ConversationState = {
   session: AgentSession;
   messages: LocalMessage[];
@@ -227,6 +246,7 @@ type ConversationState = {
   stage: "idle" | "submitting" | "thinking" | "streaming" | "stopped" | "failed";
   runId: string | null;
   phase: string;
+  activityText: string;
   referencedContextCount: number;
   startedAt: number | null;
   detailsOpen: boolean;
@@ -265,6 +285,7 @@ function blankConversation(): ConversationState {
     stage: "idle",
     runId: null,
     phase: "正在准备…",
+    activityText: "",
     referencedContextCount: 0,
     startedAt: null,
     detailsOpen: false,
@@ -827,6 +848,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const elapsedSeconds = current.startedAt ? Math.max(0, Math.floor((clock - current.startedAt) / 1_000)) : 0;
   const detailsReady = current.running && current.stage !== "streaming" && elapsedSeconds >= 8;
+  const activityLines = current.activityText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const latestActivity = activityLines[activityLines.length - 1] ?? "";
+  const processDetailsReady = detailsReady || activityLines.length > 0;
   const runtimeModelLabel = runtimeModel?.name ?? (runtimeModelLoading ? "正在读取模型" : "模型不可用");
 
   const cancelCurrentRun = useCallback(async (key = activeKeyRef.current) => {
@@ -840,6 +864,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       running: false,
       cancelling: Boolean(runId),
       stage: "stopped",
+      activityText: "",
       runId: null,
       startedAt: null,
       error: null,
@@ -890,6 +915,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         runId: activeRun.run?.run_id ?? null,
         startedAt: activeRun.run ? new Date(activeRun.run.started_at).getTime() : null,
         phase: activeRun.run ? "AI 正在处理…" : "正在准备…",
+        activityText: "",
       });
       setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
       if (activeRun.run) reconnectToRun(sessionIdToSelect, activeRun.run);
@@ -1018,6 +1044,18 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       });
       return;
     }
+    if (event.type === "assistant.activity.delta") {
+      updateConversation(key, (state) => ({
+        activityText: state.activityText + event.delta,
+        stage: "thinking",
+        error: null,
+      }));
+      return;
+    }
+    if (event.type === "assistant.activity.clear") {
+      updateConversation(key, { activityText: "", detailsOpen: false });
+      return;
+    }
     if (event.type === "assistant.delta") {
       updateConversation(key, (state) => {
         const messages = [...state.messages];
@@ -1037,7 +1075,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             status: "streaming",
           });
         }
-        return { messages, stage: "streaming", error: null };
+        return { messages, stage: "streaming", activityText: "", detailsOpen: false, error: null };
       });
       return;
     }
@@ -1056,6 +1094,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           },
         ],
         stage: "thinking",
+        activityText: "",
         error: null,
         clarificationAnswers: {},
         clarificationAttempted: false,
@@ -1073,6 +1112,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       updateConversation(key, (state) => ({
         error: safeAgentError(new ApiRequestError(502, event.error)),
         stage: "failed",
+        activityText: "",
         messages: state.messages.map((message, index, messages) => (
           index === messages.length - 1 && message.role === "assistant" && message.temporary
             ? { ...message, status: "failed" as const }
@@ -1085,6 +1125,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       updateConversation(key, (state) => ({
         running: false,
         stage: "stopped",
+        activityText: "",
         runId: null,
         startedAt: null,
         messages: state.messages.map((message, index, messages) => (
@@ -1105,6 +1146,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       running: true,
       cancelling: false,
       stage: "thinking",
+      activityText: "",
       runId: run.run_id,
       startedAt: new Date(run.started_at).getTime(),
       error: null,
@@ -1207,6 +1249,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       stage: "submitting",
       runId: null,
       phase: sentContexts.length > 0 ? "正在读取所选资料…" : "正在准备…",
+      activityText: "",
       referencedContextCount: sentContexts.length,
       startedAt: Date.now(),
       detailsOpen: false,
@@ -1877,16 +1920,18 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                   <strong>{current.phase || "AI 正在处理…"}</strong>
                   <span>{elapsedSeconds} 秒</span>
                 </div>
-                {detailsReady && (
+                {latestActivity && <p className="assistant-thinking-latest">{latestActivity}</p>}
+                {processDetailsReady && (
                   <>
                     <button type="button" className="assistant-thinking-details-toggle" onClick={() => updateConversation(activeKey, { detailsOpen: !current.detailsOpen })}>
-                      {current.detailsOpen ? "收起详情" : "查看详情"}
+                      {current.detailsOpen ? "收起过程" : "查看过程"}
                       {current.detailsOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                     </button>
                     {current.detailsOpen && (
                       <div className="assistant-thinking-details">
                         <div><Check size={16} aria-hidden="true" /><strong>已读取 {current.referencedContextCount} 项资料</strong></div>
                         {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.label}</span>)}
+                        {current.activityText.trim() && <p className="assistant-thinking-activity">{current.activityText.trim()}</p>}
                         <div className="assistant-thinking-current"><Target size={16} aria-hidden="true" /><span>{PHASE_LABELS.comparing_context === current.phase ? current.phase : "AI 正在处理…"}</span></div>
                       </div>
                     )}
@@ -2190,6 +2235,17 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                   syncComposerFromDom(event.currentTarget, {
                     restoreCaret: !composing,
                     updateMention: !composing,
+                  });
+                }}
+                onPaste={(event) => {
+                  event.preventDefault();
+                  insertComposerPlainText(
+                    event.currentTarget,
+                    event.clipboardData.getData("text/plain"),
+                  );
+                  syncComposerFromDom(event.currentTarget, {
+                    restoreCaret: true,
+                    updateMention: true,
                   });
                 }}
                 onKeyDown={handleInputKeyDown}
