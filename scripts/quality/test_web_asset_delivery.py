@@ -59,6 +59,7 @@ class WebAssetDeliveryTest(unittest.TestCase):
         self.assertIn("cp -r", invocation)
         self.assertIn("oss://linkresume-static-test/LinkResume/assets/", invocation)
         self.assertIn("--acl default", invocation)
+        self.assertNotIn("--disable-ignore-error", invocation)
         self.assertIn(
             "--cache-control public,max-age=31536000,immutable",
             invocation,

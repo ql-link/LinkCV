@@ -64,7 +64,6 @@ destination="oss://${WEB_ASSET_OSS_BUCKET}/${WEB_ASSET_OSS_PREFIX}/assets/"
 echo "Uploading ${asset_count} immutable Web assets to ${destination}"
 ossutil cp -r "${asset_dir}/" "${destination}" \
   --force \
-  --disable-ignore-error \
   --acl default \
   --cache-control "public,max-age=31536000,immutable"
 
