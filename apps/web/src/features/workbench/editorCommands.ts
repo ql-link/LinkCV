@@ -180,8 +180,26 @@ function hasVisibleResumeContent(node: ProseMirrorNode) {
   return visible;
 }
 
+/** 去掉空列表项的一层标号，保留段落、定位锚点和光标所在的空白行。 */
+export function exitVisuallyBlankResumeListItem(editor: Editor) {
+  return editor.commands.command(({ state, commands }) => {
+    const { $from, empty } = state.selection;
+    if (!empty || $from.parent.type.name !== "paragraph" || $from.depth < 2) return false;
+
+    const listItem = $from.node(-1);
+    if (listItem.type.name !== "listItem" || hasVisibleResumeContent(listItem)) return false;
+
+    const anchor = $from.parent.firstChild;
+    const atVisualStart = $from.parentOffset === 0
+      || (anchor?.type.name === "resumeBlockAnchor" && $from.parentOffset === anchor.nodeSize);
+    if (!atVisualStart) return false;
+
+    return commands.liftListItem("listItem");
+  });
+}
+
 /**
- * 删除通过行首加号创建、但内容已经清空的结构行。
+ * 删除内容已经清空的普通行或分栏；空列表项由退出列表命令保留为空白行。
  * resumeBlockAnchor 只负责稳定定位，不应让一个视觉空行变成“删不掉”的非空节点。
  */
 export function removeVisuallyBlankResumeLine(editor: Editor) {
@@ -213,19 +231,7 @@ export function removeVisuallyBlankResumeLine(editor: Editor) {
       to = $from.after(rowDepth);
       replaceWithParagraph = $from.node(rowDepth - 1).childCount === 1;
     } else if (listItemDepth > 0) {
-      const listItem = $from.node(listItemDepth);
-      if (hasVisibleResumeContent(listItem)) return false;
-
-      const listDepth = listItemDepth - 1;
-      const list = $from.node(listDepth);
-      if (list.childCount > 1) {
-        from = $from.before(listItemDepth);
-        to = $from.after(listItemDepth);
-      } else {
-        from = $from.before(listDepth);
-        to = $from.after(listDepth);
-        replaceWithParagraph = $from.node(listDepth - 1).childCount === 1;
-      }
+      return false;
     } else {
       const blockDepth = $from.depth;
       const containerDepth = blockDepth - 1;
