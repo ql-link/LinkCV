@@ -206,6 +206,69 @@ describe("AssistantPage", () => {
     expect(screen.getByRole("button", { name: "普通对话" })).toBeVisible();
   });
 
+  it("打开历史会话时保持最近对话的原有顺序", async () => {
+    const user = userEvent.setup();
+    const newestSession = { ...session, id: "session-newest", title: "最近更新的对话", updated_at: "2026-08-26T06:00:00Z" };
+    const olderSession = { ...session, id: "session-older", title: "较早的对话", updated_at: "2026-08-26T05:00:00Z" };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [newestSession, olderSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({
+      session: { ...olderSession, updated_at: "2026-08-26T07:00:00Z" },
+    });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    render(<AssistantPage />);
+
+    const recentGroup = await screen.findByRole("region", { name: "最近对话" });
+    const sessionTitles = () => Array.from(recentGroup.querySelectorAll(".assistant-session-open > span"))
+      .map((element) => element.textContent);
+    expect(sessionTitles()).toEqual(["最近更新的对话", "较早的对话"]);
+
+    await user.click(within(recentGroup).getByRole("button", { name: "较早的对话" }));
+
+    await waitFor(() => expect(api.getAgentSession).toHaveBeenCalledWith("session-older"));
+    expect(sessionTitles()).toEqual(["最近更新的对话", "较早的对话"]);
+  });
+
+  it("历史会话发起新消息时才移动到最近对话首位", async () => {
+    const user = userEvent.setup();
+    const newestSession = { ...session, id: "session-newest", title: "最近更新的对话", updated_at: "2026-08-26T06:00:00Z" };
+    const olderSession = { ...session, id: "session-older", title: "较早的对话", updated_at: "2026-08-26T05:00:00Z" };
+    const refreshedOlderSession = {
+      ...olderSession,
+      updated_at: "2026-08-26T07:00:00Z",
+      messages: [{ sequence_no: 1, role: "user" as const, content: "继续这个话题", created_at: "2026-08-26T07:00:00Z" }],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [newestSession, olderSession] });
+    vi.spyOn(api, "getAgentSession")
+      .mockResolvedValueOnce({ session: olderSession })
+      .mockResolvedValueOnce({ session: refreshedOlderSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    let finishStream!: () => void;
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-promote" });
+      await new Promise<void>((resolve) => {
+        finishStream = resolve;
+      });
+      onEvent({ type: "run.completed", runId: "run-promote" });
+    });
+
+    render(<AssistantPage />);
+
+    const recentGroup = await screen.findByRole("region", { name: "最近对话" });
+    const sessionTitles = () => Array.from(recentGroup.querySelectorAll(".assistant-session-open > span"))
+      .map((element) => element.textContent);
+    await user.click(within(recentGroup).getByRole("button", { name: "较早的对话" }));
+    await waitFor(() => expect(api.getAgentSession).toHaveBeenCalledWith("session-older"));
+
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "继续这个话题");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
+    expect(sessionTitles()).toEqual(["较早的对话", "最近更新的对话"]);
+    finishStream();
+    await waitFor(() => expect(api.getAgentSession).toHaveBeenCalledTimes(2));
+  });
+
   it("可拖动或通过键盘调整最近对话栏宽度", async () => {
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     const { container } = render(<AssistantPage />);
