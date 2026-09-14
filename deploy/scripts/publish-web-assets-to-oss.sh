@@ -81,7 +81,6 @@ verify_asset() {
     --head \
     --header "Origin: https://linkresume.cn" \
     --retry 2 \
-    --retry-all-errors \
     --connect-timeout 5 \
     --max-time 20 \
     "${asset_url}")"

@@ -70,6 +70,10 @@ class WebAssetDeliveryTest(unittest.TestCase):
             '--header "Origin: https://linkresume.cn"',
             PUBLISH_SCRIPT.read_text(encoding="utf-8"),
         )
+        self.assertNotIn(
+            "--retry-all-errors",
+            PUBLISH_SCRIPT.read_text(encoding="utf-8"),
+        )
 
     def test_publish_rejects_javascript_without_cors_header(self) -> None:
         result, _ = self._run_publish(cors=False)
