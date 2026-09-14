@@ -46,7 +46,15 @@ Page({
       if (!this.data.guest) this.enterGuestMode();
       return;
     }
-    if (this.data.guest) this.loadPage();
+    if (this.data.guest) {
+      this.loadPage();
+      return;
+    }
+    if (!this._shown) {
+      this._shown = true;
+      return;
+    }
+    this.loadPage({ silent: true });
   },
 
   handleRefresherRefresh() {
