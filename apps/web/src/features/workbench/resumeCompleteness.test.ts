@@ -31,6 +31,18 @@ const completeResume = `# 李明
 3. Vitest 与组件测试`;
 
 describe("evaluateResumeCompleteness", () => {
+  it("单字或段落的字号与颜色不改变完整度评分", () => {
+    const styled = completeResume
+      .replace("# 李明", "# [[linkresume-block:node_aaaaaaaaaaaaaaaa:identity]][[linkresume-block:node_bbbbbbbbbbbbbbbb]]李明")
+      .replace("李明", "[[linkresume-size:24pt]]李[[/linkresume-size]]明")
+      .replace("13912345678", "139[[linkresume-size:12pt]]1234[[/linkresume-size]]5678")
+      .replace("专业技能", "专业[[linkresume-color:#3478f6]][[linkresume-size:18pt]]技[[/linkresume-size]][[/linkresume-color]]能")
+      .replace("liming@linkresume.test", "liming@[[linkresume-size:10.5pt]]linkresume[[/linkresume-size]].test");
+    expect(evaluateResumeCompleteness(styled)).toEqual(evaluateResumeCompleteness(completeResume));
+    const sample = defaultResumeMarkdown.replace("张三", "[[linkresume-block:node_aaaaaaaaaaaaaaaa]][[linkresume-size:24pt]]张[[/linkresume-size]]三");
+    expect(evaluateResumeCompleteness(sample)).toEqual(evaluateResumeCompleteness(defaultResumeMarkdown));
+  });
+
   it("为结构完整且没有示例占位符的简历计算 100 分", () => {
     const result = evaluateResumeCompleteness(completeResume);
 

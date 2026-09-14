@@ -43,6 +43,8 @@ Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `l
 
 ## 扩展边界
 
+`resume_tools.replace_editor_markdown` 在修改结构化字段的 `value` 时同步清除该字段的旧 `runs`，随后仍走 canonical 校验；字段样式模型见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
+
 新增 Agent 工具必须限制资源类型、动作和用户归属，并保持提案确认边界。简历工具只能操作 canonical 内容节点，不得直接持久化模板 region、slot、CSS 或分页投影；读取和保存必须复用简历应用服务的严格解析与校验入口。新增模型能力需同步能力目录、数据库约束、探针、管理端、调用来源和 HTTP 契约。
 
 ## 故障与降级

@@ -11,6 +11,7 @@ import {
   type CanonicalRowBlock,
   type CanonicalRowCell,
   type CanonicalTextRun,
+  type CanonicalTextValue,
   type ResumeDocument,
   type ResumeDocumentRead,
   type RichText,
@@ -265,6 +266,16 @@ const canonicalFieldLabels: Array<[CanonicalFieldKey, string]> = [
   ["major", "专业"],
 ];
 
+function styledValueToEditor(value: CanonicalTextValue, prefix = ""): JSONContent[] {
+  const prefixNodes = !prefix ? [] : value.prefix_runs?.map((run) => run.text).join("") === prefix
+    ? value.prefix_runs.map(canonicalRunToEditor)
+    : [{ type: "text", text: prefix }];
+  const nodes = value.runs?.map((run) => run.text).join("") === value.value
+    ? value.runs.map(canonicalRunToEditor)
+    : value.value ? [{ type: "text", text: value.value }] : [];
+  return [...prefixNodes, ...nodes];
+}
+
 function canonicalFieldLine(
   key: CanonicalFieldKey,
   value: NonNullable<CanonicalResumeEntry["fields"][CanonicalFieldKey]>,
@@ -274,7 +285,7 @@ function canonicalFieldLine(
     type: "paragraph",
     content: [
       canonicalAnchor(value.node_id, { role: "entry-field", fieldKey: key, sourceRefs: value.source_refs }),
-      { type: "text", text: `${label}：${value.value}` },
+      ...styledValueToEditor(value, `${label}：`),
     ],
   };
 }
@@ -288,7 +299,7 @@ function canonicalEntryToEditor(entry: CanonicalResumeEntry): JSONContent[] {
       content: [
         canonicalAnchor(entry.node_id, { role: "entry", sourceRefs: entry.source_refs }),
         ...(name ? [canonicalAnchor(name.node_id, { role: "entry-field", fieldKey: "name", sourceRefs: name.source_refs })] : []),
-        ...(name?.value ? [{ type: "text", text: name.value }] : []),
+        ...(name ? styledValueToEditor(name) : []),
       ],
     },
     ...canonicalFieldLabels
@@ -315,7 +326,7 @@ function canonicalSectionToEditor(section: CanonicalResumeSection): JSONContent[
         }),
         ...(title ? [canonicalAnchor(title.node_id, { role: "section-title", sourceRefs: title.source_refs })] : []),
         ...(section.title_icon ? [{ type: "inlineIcon", attrs: { name: section.title_icon.name } }] : []),
-        ...(title?.value ? [{ type: "text", text: title.value }] : []),
+        ...(title ? styledValueToEditor(title) : []),
       ],
     },
     ...section.entries.flatMap(canonicalEntryToEditor),
@@ -350,7 +361,7 @@ export function canonicalResumeDocumentToEditorDocument(document: CanonicalResum
       content: [
         canonicalAnchor(identity.node_id, { role: "identity", sourceRefs: [] }),
         canonicalAnchor(identity.name.node_id, { role: "identity-name", sourceRefs: identity.name.source_refs }),
-        { type: "text", text: identity.name.value },
+        ...styledValueToEditor(identity.name),
       ],
     });
   }
@@ -359,7 +370,7 @@ export function canonicalResumeDocumentToEditorDocument(document: CanonicalResum
       type: "paragraph",
       content: [
         canonicalAnchor(identity.headline.node_id, { role: "identity-headline", sourceRefs: identity.headline.source_refs }),
-        { type: "text", text: identity.headline.value },
+        ...styledValueToEditor(identity.headline),
       ],
     });
   }
@@ -374,7 +385,7 @@ export function canonicalResumeDocumentToEditorDocument(document: CanonicalResum
           label: contact.label,
           sourceRefs: contact.source_refs,
         }),
-        { type: "text", text: contact.label ? `${contact.label}：${contact.value}` : contact.value },
+        ...styledValueToEditor(contact, contact.label ? `${contact.label}：` : ""),
       ]),
     });
   }
@@ -744,6 +755,32 @@ function canonicalV1TextWithoutAnchors(node: JSONContent): string {
   if (node.type === "hardBreak") return "\n";
   if (node.type === "resumeBlockAnchor") return "";
   return (node.content ?? []).map(canonicalV1TextWithoutAnchors).join("");
+}
+
+function styledValueFromEditor(node: JSONContent, value: string, prefix = ""): Pick<CanonicalTextValue, "runs" | "prefix_runs"> {
+  const nodes = (node.content ?? []).flatMap((child): JSONContent[] => (
+    child.type === "text" ? [child] : child.type === "hardBreak" ? [{ type: "text", text: "\n" }] : []
+  ));
+  const text = nodes.map((child) => child.text ?? "").join("");
+  const start = text.lastIndexOf(value);
+  if (start < 0) return {};
+  const sliceRuns = (from: number, to: number) => {
+    let offset = 0;
+    const sliced = nodes.flatMap((child) => {
+      const length = child.text!.length;
+      const part = child.text!.slice(Math.max(0, from - offset), Math.max(0, Math.min(length, to - offset)));
+      offset += length;
+      return part ? [{ ...child, text: part }] : [];
+    });
+    const runs = canonicalRunsFromEditor(sliced).filter((run): run is CanonicalTextRun => run.inline_type === "text");
+    return runs.some((run) => run.marks.length || run.href || Object.values(run.style).some((style) => style != null)) ? runs : undefined;
+  };
+  const runs = sliceRuns(start, start + value.length);
+  const prefixStart = text.indexOf(prefix);
+  const prefixRuns = prefix && prefixStart >= 0 && prefixStart + prefix.length <= start
+    ? sliceRuns(prefixStart, prefixStart + prefix.length)
+    : undefined;
+  return { ...(runs ? { runs } : {}), ...(prefixRuns ? { prefix_runs: prefixRuns } : {}) };
 }
 
 function canonicalV1AssertTextOnly(node: JSONContent, context: string) {
@@ -1275,6 +1312,7 @@ function canonicalV1EntryFromEditor(
       node_id: nameId,
       source_refs: canonicalV1SourceRefsForNode(nameAnchor ?? heading, nameId, context),
       value: nameValue,
+      ...styledValueFromEditor(heading, nameValue),
     }
     : null;
   const values: Partial<Record<CanonicalFieldKey, CanonicalResumeEntry["fields"][CanonicalFieldKey]>> = { name };
@@ -1301,6 +1339,7 @@ function canonicalV1EntryFromEditor(
         node_id: fieldId,
         source_refs: canonicalV1SourceRefsForNode(anchor ?? node, fieldId, context),
         value,
+        ...styledValueFromEditor(node, value, `${canonicalFieldLabels.find(([fieldKey]) => fieldKey === key)?.[1] ?? key}：`),
       };
       return;
     }
@@ -1343,10 +1382,11 @@ function canonicalV1ContactsFromEditor(
     return anchoredNodes.flatMap((node, nodeIndex) => {
       canonicalV1AssertTextOnly(node, "contact");
       const contacts: CanonicalContact[] = [];
-      let current: { anchor: JSONContent; text: string } | null = null;
+      let current: { anchor: JSONContent; text: string; content: JSONContent[] } | null = null;
       const flush = () => {
         if (!current) return;
         const anchor = current.anchor;
+        const content = current.content;
         const raw = current.text.replace(/(?:\s*[|｜;；]\s*)$/u, "").trim();
         current = null;
         if (!raw) return;
@@ -1374,13 +1414,15 @@ function canonicalV1ContactsFromEditor(
           contact_kind: contactKind,
           value,
           label,
+          ...styledValueFromEditor({ type: "paragraph", content }, value, label ? `${label}：` : ""),
         });
       };
       for (const child of node.content ?? []) {
         if (child.type === "resumeBlockAnchor" && child.attrs?.role === "contact") {
           flush();
-          current = { anchor: child, text: "" };
+          current = { anchor: child, text: "", content: [] };
         } else if (current) {
+          current.content.push(child);
           if (child.type === "text") current.text += child.text ?? "";
           else if (child.type === "hardBreak") current.text += "\n";
           else if (child.type !== "resumeBlockAnchor") {
@@ -1423,6 +1465,7 @@ function canonicalV1ContactsFromEditor(
         contact_kind: previous?.contact_kind ?? canonicalV1InferContactKind(value),
         value,
         label: previous?.label ?? null,
+        ...styledValueFromEditor(node, value, previous?.label ? `${previous.label}：` : ""),
       };
     }).filter((contact) => contact !== null);
   }) as CanonicalContact[];
@@ -1479,6 +1522,7 @@ function canonicalV1SectionFromEditor(
       node_id: titleId,
       source_refs: canonicalV1SourceRefsForNode(titleAnchor ?? heading, titleId, context),
       value: titleValue,
+      ...styledValueFromEditor(heading, titleValue),
     }
     : null;
   const entryPositions = body
@@ -1633,6 +1677,7 @@ function canonicalV1Reverse(
       node_id: nameId,
       source_refs: canonicalV1SourceRefsForNode(nameAnchor ?? identityHeading!, nameId, context),
       value: nameValue,
+      ...styledValueFromEditor(identityHeading!, nameValue),
     }
     : null;
   const identityParagraphs = identityNodes.filter((node) => node.type === "paragraph");
@@ -1668,6 +1713,7 @@ function canonicalV1Reverse(
       node_id: headlineId,
       source_refs: canonicalV1SourceRefsForNode(headlineAnchor ?? headlineNode!, headlineId, context),
       value: headlineValue,
+      ...styledValueFromEditor(headlineNode!, headlineValue),
     }
     : null;
   const contactNodes = identityParagraphs.filter((node) => node !== headlineNode && looksLikeOldContact(node));

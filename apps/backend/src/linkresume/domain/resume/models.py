@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from linkresume.domain.resume.canonical_json import canonical_json_bytes, canonical_sha256
 
@@ -78,9 +78,28 @@ class SourceReferenced(ClosedModel):
 
 class TextValue(SourceReferenced):
     value: str = Field(max_length=20_000)
+    runs: list[TextRun] | None = Field(default=None, max_length=1000)
+    prefix_runs: list[TextRun] | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_styled_value(self) -> "TextValue":
+        if self.runs is not None and "".join(run.text for run in self.runs) != self.value:
+            raise ValueError("text value runs must match value")
+        if self.prefix_runs is not None and sum(len(run.text) for run in self.prefix_runs) > 101:
+            raise ValueError("text value prefix is too long")
+        return self
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_styles(self, handler):
+        # Keep unstyled historical snapshots and their content digests stable.
+        data = handler(self)
+        for key in ("runs", "prefix_runs"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
 
 
-class Contact(SourceReferenced):
+class Contact(TextValue):
     contact_kind: Literal[
         "phone", "email", "website", "location", "github", "linkedin", "other"
     ]
