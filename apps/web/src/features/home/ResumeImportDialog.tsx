@@ -154,7 +154,11 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
           />
         </div>
 
-        {error && <FeedbackNotice kind="error">{error}</FeedbackNotice>}
+        {error && (
+          <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError(null)}>
+            {error}
+          </FeedbackNotice>
+        )}
 
         <AlertDialogFooter className="home-import-actions">
           <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>

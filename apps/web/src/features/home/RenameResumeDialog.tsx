@@ -15,13 +15,11 @@ import {
 export function RenameResumeDialog({
   initialTitle,
   busy,
-  error,
   onCancel,
   onSubmit,
 }: {
   initialTitle: string;
   busy: boolean;
-  error: string | null;
   onCancel: () => void;
   onSubmit: (title: string) => void | Promise<void>;
 }) {
@@ -58,10 +56,8 @@ export function RenameResumeDialog({
             maxLength={255}
             value={title}
             disabled={busy}
-            aria-invalid={Boolean(error)}
             onChange={(event) => setTitle(event.target.value)}
           />
-          {error && <p className="home-rename-error" role="alert">{error}</p>}
           <div className="home-confirm-actions home-rename-actions">
             <AlertDialogCancel asChild>
               <Button variant="secondary" disabled={busy}>取消</Button>

@@ -159,6 +159,30 @@ const value = 1;
     }));
   });
 
+  it("把运行失败显示为页面根层的统一顶部反馈", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "streamAgentMessage").mockRejectedValue(new ApiRequestError(503, "AGENT_UNAVAILABLE"));
+
+    const { container } = render(
+      <AgentPanel
+        resumeId="resume-1"
+        onBeforeConfirm={vi.fn().mockResolvedValue(true)}
+        onApplied={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("告诉助手你想改善什么"), "检查简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("智能助手暂时不可用");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert.parentElement).toBe(document.body);
+    expect(container.querySelector(".agent-error")).not.toBeInTheDocument();
+  });
+
   it("流式展示回答与提案，并在用户确认后应用到简历", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });

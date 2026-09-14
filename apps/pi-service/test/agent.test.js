@@ -9,12 +9,38 @@ import {
   clarificationFallbackText,
   formatContextMaterials,
   SYSTEM_PROMPT,
+  USER_FACING_RESPONSE_PROMPT,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
 
 test("system prompt identifies the assistant as LinkResume", () => {
   assert.match(SYSTEM_PROMPT, /你是 LinkResume 的简历智能助手/);
   assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
+});
+
+test("system prompt applies the user-facing response style after agent policy", () => {
+  assert.match(USER_FACING_RESPONSE_PROMPT, /第一句话必须包含用户问题的答案/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /一至三句连续正文/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /这是硬上限/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /不能成为新的事项、单独段落或列表后的补充/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /必须使用真正的 Markdown 列表/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /不得用正文中的“第一、第二、第三”模拟列表/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /恰好对应数量的 Markdown 列表项/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /整项使用一至两句完整句子/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /最多三个/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /只报告本轮实际观察到的结果/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /内容说完后立即结束/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /在内部静默检查输出形状/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /删除“其次”“另外”“同时”等引出的次要事项/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /不得为了说明优先级而提及、对比或概括其他问题/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /列表后不得再有任何文字/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /“只分析，不修改”是行为边界/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /先重写草稿再输出/);
+  assert.ok(
+    SYSTEM_PROMPT.indexOf("你是 LinkResume 的简历智能助手") <
+      SYSTEM_PROMPT.indexOf("以下规则只约束用户最终能够看到的自然语言回复"),
+  );
+  assert.doesNotMatch(SYSTEM_PROMPT, /Claude Code|IS_TEXT_OUTPUT_VISIBLE_TO_USER/);
 });
 
 test("agent completion accepts a successful assistant message", () => {

@@ -10,6 +10,34 @@ const documentsRoot = resolve(process.env.HOME ?? "", "Documents");
 const backendPort = process.env.BACKEND_PORT ?? "8000";
 const backendTarget = process.env.BACKEND_PROXY_TARGET ?? `http://127.0.0.1:${backendPort}`;
 
+export function resolveAssetBase(rawValue = process.env.VITE_ASSET_BASE_URL) {
+  const value = rawValue?.trim();
+  if (!value) return "/";
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("VITE_ASSET_BASE_URL must be an absolute HTTPS URL");
+  }
+  if (
+    parsed.protocol !== "https:"
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash
+  ) {
+    throw new Error(
+      "VITE_ASSET_BASE_URL must be an HTTPS URL without credentials, query, or fragment",
+    );
+  }
+
+  const normalizedPath = parsed.pathname.replace(/\/+$/, "");
+  return `${parsed.origin}${normalizedPath}/`;
+}
+
+const assetBase = resolveAssetBase();
+
 const mimeTypes = {
   ".apng": "image/apng",
   ".avif": "image/avif",
@@ -87,6 +115,26 @@ function localAssetPlugin() {
 }
 
 export default defineConfig({
+  base: assetBase,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (
+            id.includes("/node_modules/react/")
+            || id.includes("/node_modules/react-dom/")
+            || id.includes("/node_modules/scheduler/")
+            || id.includes("/node_modules/zustand/")
+            || id.includes("/node_modules/use-sync-external-store/")
+          ) {
+            return "vendor-react";
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": resolve(webRoot, "src"),
