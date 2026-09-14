@@ -4155,6 +4155,73 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.queryByRole("dialog", { name: "添加下一阶段" })).not.toBeInTheDocument();
   });
 
+  it("portals the applied date picker outside the drag dialog scroll panel", async () => {
+    const previousInnerWidth = window.innerWidth;
+    const previousInnerHeight = window.innerHeight;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 900 });
+    const pendingApplication = {
+      ...application,
+      id: "90",
+      current_stage_type: "screening" as const,
+      current_round_no: null,
+      current_stage_label: "待投递",
+      stage_state: "awaiting_schedule" as const,
+      applied_at: null,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [pendingApplication], next_cursor: null });
+
+    try {
+      render(<InterviewCenterPage view="applications" />);
+
+      switchToApplicationBoard();
+      const card = await screen.findByRole("article", { name: "腾讯 后端开发工程师" });
+      const target = document.querySelector('[data-column-key="screening"]') as HTMLElement;
+      const dataTransfer = { effectAllowed: "", dropEffect: "", setData: vi.fn(), getData: vi.fn().mockReturnValue("90") } as unknown as DataTransfer;
+      fireEvent.dragStart(card, { dataTransfer });
+      fireEvent.dragOver(target, { dataTransfer });
+      fireEvent.drop(target, { dataTransfer });
+
+      const dialog = await screen.findByRole("dialog", { name: "投递岗位" });
+      vi.spyOn(dialog, "getBoundingClientRect").mockReturnValue({
+        x: 250,
+        y: 200,
+        top: 200,
+        right: 950,
+        bottom: 460,
+        left: 250,
+        width: 700,
+        height: 260,
+        toJSON: () => ({}),
+      });
+      const panel = dialog.querySelector(".career-next-stage-panel") as HTMLElement;
+      panel.scrollTop = 44;
+      const trigger = within(dialog).getByRole("button", { name: "投递时间" });
+      vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue({
+        x: 280,
+        y: 330,
+        top: 330,
+        right: 920,
+        bottom: 370,
+        left: 280,
+        width: 640,
+        height: 40,
+        toJSON: () => ({}),
+      });
+      fireEvent.click(trigger);
+
+      const picker = within(dialog).getByRole("dialog", { name: "选择投递时间" });
+      expect(picker.parentElement).toBe(dialog);
+      expect(panel.contains(picker)).toBe(false);
+      expect(picker).toHaveStyle({ left: "30px", right: "auto", top: "178px" });
+      expect(panel.scrollTop).toBe(44);
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: previousInnerWidth });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: previousInnerHeight });
+    }
+  });
+
   it("allows a scheduled assessment to move directly to a later stage", async () => {
     const assessmentApplication = {
       ...application,

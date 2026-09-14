@@ -1,6 +1,28 @@
 version: 1
 
 contracts:
+  - id: production-web-assets-oss
+    description: Production 只把哈希 Web assets 发布到 OSS 的 LinkResume 前缀并在应用切换前通过 OSS HTTPS 验证
+    assertions:
+      - path: apps/web/vite.config.mjs
+        pattern: 'resolveAssetBase[\s\S]*VITE_ASSET_BASE_URL[\s\S]*parsed\.protocol !== "https:"[\s\S]*base: assetBase'
+        message: Vite 必须只接受可选 HTTPS 静态资源域名并保持本地同源默认值
+      - path: Dockerfile
+        pattern: 'ARG VITE_ASSET_BASE_URL=[\s\S]*ENV VITE_ASSET_BASE_URL=\$\{VITE_ASSET_BASE_URL\}[\s\S]*RUN npm run build'
+        message: Web 镜像构建必须显式接收静态资源 base
+      - path: deploy/scripts/build-production-on-cloud.sh
+        pattern: 'oss_secret_env="\$\{deploy_dir\}/\.env\.oss-cdn\.local"[\s\S]*WEB_ASSET_OSS_PREFIX[\s\S]*--build-arg "VITE_ASSET_BASE_URL=\$\{web_asset_oss_url\}"[\s\S]*publish-web-assets-to-oss\.sh[\s\S]*python /app/scripts/db/init_mysql\.py'
+        message: Production 必须使用独立凭据文件并在数据库与应用切换前发布静态资源
+      - path: deploy/scripts/publish-web-assets-to-oss.sh
+        pattern: 'ossutil cp -r[\s\S]*--acl default[\s\S]*max-age=31536000,immutable[\s\S]*access-control-allow-origin'
+        message: 静态资源必须只上传指定前缀、长期缓存并验证跨域模块加载头
+      - path: .env.production
+        pattern: '(?m)^WEB_ASSET_OSS_URL=https://qingluo-public\.oss-cn-shanghai\.aliyuncs\.com/LinkResume/$[\s\S]*^WEB_ASSET_OSS_PREFIX=LinkResume$'
+        message: Production 必须固定与 Bucket、Region 和前缀一致的 OSS HTTPS 地址
+      - path: deploy/oss-cdn.env.example
+        pattern: 'WEB_ASSET_OSS_BUCKET=[\s\S]*OSS_ACCESS_KEY_ID=[\s\S]*OSS_ACCESS_KEY_SECRET=[\s\S]*OSS_REGION='
+        message: OSS 发布必须提供不含真实值的独立凭据模板
+
   - id: development-local-agent-startup
     description: Development 本地脚本向四个进程加载同一配置并使用回环服务地址
     assertions:
@@ -557,3 +579,19 @@ contracts:
       - path: .env.development
         pattern: '(?m)^MINIO_BUCKET=linkresume$'
         message: LinkResume Dev 必须使用独立 linkresume Bucket
+
+  - id: desktop-shell-window-contract
+    description: 桌面壳固定无标题栏沉浸形态、隐藏滚动条、顶部拖动区，并以工作区为入口跳过宣传落地页
+    assertions:
+      - path: apps/desktop/src/main.ts
+        pattern: 'titleBarStyle: "hiddenInset"'
+        message: 桌面壳窗口必须保持无标题栏沉浸形态（红绿灯内嵌，不显示横栏与程序名）
+      - path: apps/desktop/src/main.ts
+        pattern: '-webkit-app-region: drag'
+        message: 桌面壳必须注入顶部透明拖动区，保证无标题栏窗口可移动
+      - path: apps/desktop/src/main.ts
+        pattern: '::-webkit-scrollbar \{[\s\S]*width: 0;[\s\S]*height: 0;'
+        message: 桌面壳必须注入隐藏滚动条样式（滚动能力保留，不显示竖条）
+      - path: apps/desktop/src/config.ts
+        pattern: 'PACKAGE_ENTRY_PATH = "/resumes"'
+        message: 打包版必须以工作区为入口跳过宣传落地页（浏览器端落地页行为不变）

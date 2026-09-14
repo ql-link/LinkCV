@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import {
   CheckSquare,
   ChevronLeft,
@@ -34,16 +34,12 @@ import {
   DialogTitle,
   ExpandableSearch,
   FeedbackNotice,
-  FileUpload,
   Input,
   Label,
   PageLoading,
 } from "@/components/ui";
-import { DatasetPreviewDialog } from "./DatasetPreviewDialog";
-import { DatasetUploadConflictDialog, type DatasetConflict } from "./DatasetUploadConflictDialog";
 import { CreateFolderCard, FolderCard } from "./components/FolderCard";
 import { FileCard } from "./components/FileCard";
-import { MoveToFolderDialog } from "./components/MoveToFolderDialog";
 import { datasetsPath, navigateTo } from "../../routing";
 import {
   datasetFormatError,
@@ -52,7 +48,11 @@ import {
   formatDatasetFileSize,
   normalizeDatasetLimits,
 } from "./datasetUploadValidation";
-import { useDatasetUploads, type DatasetUploadFailure } from "./useDatasetUploads";
+import type { DatasetUploadBatchResult, DatasetUploadFailure } from "./useDatasetUploads";
+
+const DatasetPreviewDialog = lazy(() => import("./DatasetPreviewDialog").then((module) => ({ default: module.DatasetPreviewDialog })));
+const DatasetUploadDialog = lazy(() => import("./DatasetUploadDialog").then((module) => ({ default: module.DatasetUploadDialog })));
+const MoveToFolderDialog = lazy(() => import("./components/MoveToFolderDialog").then((module) => ({ default: module.MoveToFolderDialog })));
 
 export const MAX_DATASET_BYTES = DEFAULT_DATASET_LIMITS.max_file_bytes;
 export const MAX_DATASET_BATCH_FILES = DEFAULT_DATASET_LIMITS.max_files_per_batch;
@@ -328,33 +328,6 @@ function DatasetRow({
   );
 }
 
-function DatasetDropzone({
-  disabled,
-  uploading,
-  limits,
-  onFilesSelect,
-}: {
-  disabled: boolean;
-  uploading: boolean;
-  limits: DatasetLimits;
-  onFilesSelect: (files: File[]) => void;
-}) {
-  const accept = limits.allowed_extensions.join(",");
-  return (
-    <FileUpload
-      className="dataset-file-upload"
-      accept={`${accept},application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document`}
-      inputLabel="选择资料文件"
-      supportingText={uploading
-        ? "正在上传…"
-        : `支持 PDF、DOCX、Markdown、TXT · 单个不超过 ${formatFileSize(limits.max_file_bytes)}`}
-      disabled={disabled}
-      multiple
-      onFilesSelect={onFilesSelect}
-    />
-  );
-}
-
 const ACCEPTED_SYNC_FAILURE = "资料已接受，但列表同步失败";
 
 function upsertDataset(items: DatasetRecord[], dataset: DatasetRecord): DatasetRecord[] {
@@ -377,16 +350,18 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const previewTriggerRef = useRef<HTMLElement | null>(null);
   const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
   const locallyAccepted = useRef(new Map<string, DatasetRecord>());
+  const uploadRetryKeys = useRef(new Map<string, string>());
   const pageMounted = useRef(true);
   const [datasets, setDatasets] = useState<DatasetRecord[]>([]);
   const [limits, setLimits] = useState<DatasetLimits>(DEFAULT_DATASET_LIMITS);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [initialUploadFiles, setInitialUploadFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [syncFailure, setSyncFailure] = useState<string | null>(null);
-  const [conflicts,setConflicts] = useState<DatasetConflict[]>([]);
   const [pendingReplacementIds,setPendingReplacementIds] = useState<Set<string>>(new Set());
   const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<DatasetRecord | null>(null);
@@ -587,26 +562,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
     ? selectedFolderId
     : null;
 
-  const {
-    uploading,
-    uploadFiles,
-  } = useDatasetUploads({
-    limits,
-    concurrency: DATASET_UPLOAD_CONCURRENCY,
-    folderId: effectiveUploadFolderId,
-    onConflict: (file,error,folderId) => new Promise(resolve=>{setConflicts(current=>[...current,{id:crypto.randomUUID(),file,folderId,candidates:(error.payload?.candidates??[]) as DatasetConflict["candidates"],suggestedName:String(error.payload?.suggested_name??file.name),resolve}]);}),
-    onAccepted: (dataset) => {
-      if (!pageMounted.current) return;
-      setPendingReplacementIds(ids=>{const next=new Set(ids);next.delete(dataset.id);return next;});
-      locallyAccepted.current.set(dataset.id, dataset);
-      setDatasets((current) => upsertDataset(current, dataset));
-      setLoadFailed(false);
-    },
-    onLimitExceeded: (message) => {
-      setNotice(message ? { kind: "error", message } : null);
-    },
-  });
-
   useEffect(() => {
     if (menuDatasetId === null) return;
     const closeMenu = () => {
@@ -720,6 +675,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
 
   const openUploadDialog = () => {
     if (!canUploadHere) return;
+    setInitialUploadFiles([]);
     setDialogOpen(true);
     setNotice(null);
   };
@@ -727,6 +683,7 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
   const closeUploadDialog = () => {
     if (uploading) return;
     setDialogOpen(false);
+    setInitialUploadFiles([]);
   };
 
   const handleDragEnter = (e: React.DragEvent) => {
@@ -756,50 +713,60 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
     setPageDragOver(false);
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length > 0) {
-      appendFiles(files);
+      if (!canUploadHere || !effectiveUploadFolderId) {
+        setNotice({ kind: "error", message: "请先进入文件夹再上传资料。" });
+        return;
+      }
+      setNotice(null);
+      setInitialUploadFiles(files);
+      setDialogOpen(true);
     }
   };
 
-  const appendFiles = (files: File[]) => {
-    if (files.length === 0 || uploading) return;
-    if (!canUploadHere || !effectiveUploadFolderId) {
-      setNotice({ kind: "error", message: "请先进入文件夹再上传资料。" });
-      return;
+  const handleUploadAccepted = (dataset: DatasetRecord) => {
+    if (!pageMounted.current) return;
+    setPendingReplacementIds((ids) => {
+      const next = new Set(ids);
+      next.delete(dataset.id);
+      return next;
+    });
+    locallyAccepted.current.set(dataset.id, dataset);
+    setDatasets((current) => upsertDataset(current, dataset));
+    setLoadFailed(false);
+  };
+
+  const handleUploadComplete = async (result: DatasetUploadBatchResult) => {
+    if (!pageMounted.current) return;
+
+    if (result.attemptedCount > 0) {
+      await Promise.all([
+        refreshDatasets({ accepted: result.acceptedCount > 0 }),
+        refreshFolders(),
+      ]);
     }
-    setNotice(null);
-    void (async () => {
-      const result = await uploadFiles(files);
-      if (!pageMounted.current) return;
 
-      if (result.attemptedCount > 0) {
-        await Promise.all([
-          refreshDatasets({ accepted: result.acceptedCount > 0 }),
-          refreshFolders(),
-        ]);
-      }
-
-      setDialogOpen(false);
-      if (result.failures.length > 0) {
-        setNotice({
-          kind: "error",
-          message: formatUploadFailureNotice(result.failures, result.limitMessage),
-        });
-      } else if (result.deferredCount > 0) {
-        setNotice({
-          kind: "error",
-          message: `资料已保存，但解析提交失败（${result.deferredCount} 份），请在列表中重新解析。`,
-        });
-      } else if (result.acceptedCount > 0) {
-        setNotice({
-          kind: "success",
-          message: result.limitMessage
-            ? `已上传 ${result.acceptedCount} 份资料，${result.limitMessage}`
-            : `已上传 ${result.acceptedCount} 份资料，正在后台解析。`,
-        });
-      } else if (result.limitMessage) {
-        setNotice({ kind: "error", message: result.limitMessage });
-      }
-    })();
+    setDialogOpen(false);
+    setInitialUploadFiles([]);
+    if (result.failures.length > 0) {
+      setNotice({
+        kind: "error",
+        message: formatUploadFailureNotice(result.failures, result.limitMessage),
+      });
+    } else if (result.deferredCount > 0) {
+      setNotice({
+        kind: "error",
+        message: `资料已保存，但解析提交失败（${result.deferredCount} 份），请在列表中重新解析。`,
+      });
+    } else if (result.acceptedCount > 0) {
+      setNotice({
+        kind: "success",
+        message: result.limitMessage
+          ? `已上传 ${result.acceptedCount} 份资料，${result.limitMessage}`
+          : `已上传 ${result.acceptedCount} 份资料，正在后台解析。`,
+      });
+    } else if (result.limitMessage) {
+      setNotice({ kind: "error", message: result.limitMessage });
+    }
   };
 
   const openPreview = (dataset: DatasetRecord, trigger: HTMLElement) => {
@@ -1265,29 +1232,21 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
         </div>
       )}
 
-      {dialogOpen && (
-        <Dialog open onOpenChange={(open) => {
-          if (!open && !uploading) setDialogOpen(false);
-        }}>
-          <DialogContent className="dataset-upload-dialog [&>[data-slot=dialog-close]]:hidden" aria-describedby={undefined}>
-            <DialogHeader className="dataset-upload-dialog-header">
-              <DialogTitle className="dataset-upload-dialog-title">上传资料</DialogTitle>
-              <button
-                type="button"
-                className="dataset-dialog-close"
-                aria-label="关闭上传窗口"
-                disabled={uploading}
-                onClick={() => {
-                  if (!uploading) setDialogOpen(false);
-                }}
-              >
-                <X size={18} aria-hidden="true" />
-              </button>
-            </DialogHeader>
-
-            <DatasetDropzone disabled={uploading || !effectiveUploadFolderId} uploading={uploading} limits={limits} onFilesSelect={appendFiles} />
-          </DialogContent>
-        </Dialog>
+      {dialogOpen && effectiveUploadFolderId && (
+        <Suspense fallback={<PageLoading label="正在准备上传组件…" scope="panel" />}>
+          <DatasetUploadDialog
+            concurrency={DATASET_UPLOAD_CONCURRENCY}
+            folderId={effectiveUploadFolderId}
+            initialFiles={initialUploadFiles}
+            limits={limits}
+            onAccepted={handleUploadAccepted}
+            onComplete={handleUploadComplete}
+            onLimitExceeded={(message) => setNotice({ kind: "error", message })}
+            onUploadingChange={setUploading}
+            onClose={closeUploadDialog}
+            retryKeys={uploadRetryKeys.current}
+          />
+        </Suspense>
       )}
 
       {renameTarget && (
@@ -1482,34 +1441,36 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
         />
       )}
 
-      {moveTarget && (
-        <MoveToFolderDialog
-          open
-          onOpenChange={(open) => {
-            if (!open) setMoveTarget(null);
-          }}
-          folders={folders}
-          currentFolderId={moveTarget.folder_id ?? null}
-          itemCount={1}
-          singleItemName={datasetDisplayName(moveTarget)}
-          onMove={confirmSingleMove}
-        />
-      )}
+      <Suspense fallback={null}>
+        {moveTarget && (
+          <MoveToFolderDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setMoveTarget(null);
+            }}
+            folders={folders}
+            currentFolderId={moveTarget.folder_id ?? null}
+            itemCount={1}
+            singleItemName={datasetDisplayName(moveTarget)}
+            onMove={confirmSingleMove}
+          />
+        )}
 
-      {batchMoveOpen && (
-        <MoveToFolderDialog
-          open
-          onOpenChange={setBatchMoveOpen}
-          folders={folders}
-          currentFolderId={
-            selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
-              ? selectedFolderId
-              : null
-          }
-          itemCount={selectedDatasetCount}
-          onMove={confirmBatchMove}
-        />
-      )}
+        {batchMoveOpen && (
+          <MoveToFolderDialog
+            open
+            onOpenChange={setBatchMoveOpen}
+            folders={folders}
+            currentFolderId={
+              selectedFolderId !== "all" && selectedFolderId !== "uncategorized"
+                ? selectedFolderId
+                : null
+            }
+            itemCount={selectedDatasetCount}
+            onMove={confirmBatchMove}
+          />
+        )}
+      </Suspense>
 
       {notice && !syncFailure && (
         <FeedbackNotice
@@ -1521,9 +1482,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
           <span className="dataset-notice-message" title={notice.message}>{notice.message}</span>
         </FeedbackNotice>
       )}
-
-      {conflicts[0] && <DatasetUploadConflictDialog key={conflicts[0].id} conflict={conflicts[0]} onDone={()=>setConflicts(current=>current.slice(1))}/>}
-
 
       {batchMode && (
         <div
@@ -1583,7 +1541,9 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
           </div>
         </div>
       )}
-      {previewDataset && <DatasetPreviewDialog dataset={previewDataset} returnFocusTo={previewTriggerRef.current} onClose={() => setPreviewDataset(null)} />}
+      <Suspense fallback={null}>
+        {previewDataset && <DatasetPreviewDialog dataset={previewDataset} returnFocusTo={previewTriggerRef.current} onClose={() => setPreviewDataset(null)} />}
+      </Suspense>
     </main>
   );
 }
