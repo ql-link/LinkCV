@@ -173,6 +173,7 @@ describe("JobSmartImportDialog", () => {
     });
 
     expect(screen.getByRole("alert")).toHaveTextContent("仅支持 PNG、JPEG 或 WebP 图片");
+    expect(screen.getByRole("alert")).toHaveClass("ui-feedback-notice", "is-floating");
     expect(text).toHaveValue("一段有效岗位文字");
   });
 
@@ -192,6 +193,7 @@ describe("JobSmartImportDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "开始识别" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("识别超时");
+    expect(screen.getByRole("alert")).toHaveClass("ui-feedback-notice", "is-floating");
     expect(text).toHaveValue("招聘后端工程师");
     expect(parse).toHaveBeenCalledTimes(1);
 

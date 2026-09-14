@@ -3075,12 +3075,6 @@ select:not([data-slot]):focus-visible,
   font-weight: 600;
 }
 
-.home-rename-error {
-  margin: 0;
-  color: var(--ui-destructive);
-  font-size: var(--ui-text-xs);
-}
-
 .home-rename-actions { margin-top: 8px; }
 
 /* Account layout and media styles live in features/account/account.css. */

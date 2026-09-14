@@ -1,7 +1,7 @@
 import { ClipboardPaste, Image as ImageIcon, SquarePen } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, type JobDescriptionCreatePayload, type JobDescriptionDraft, type JobDuplicateDetails } from "../../api/client";
-import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, FileUpload, Input, Label, Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui";
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, FeedbackNotice, FileUpload, Input, Label, Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui";
 import { SelectValue } from "@/components/ui/select";
 import { careerApplicationPath, jobDetailPath, navigateTo } from "../../routing";
 import { JobDuplicateDialog } from "./JobDuplicateDialog";
@@ -257,7 +257,11 @@ export function JobSmartImportDialog({ onClose, onParsed, unified = false }: {
               <small className="job-smart-image-meta">PNG、JPEG 或 WebP · 最大 10 MiB</small>
               <p className="job-smart-hint">系统只提取岗位核心信息，创建后仍可在求职记录中修改。</p>
             </div>}
-            {error && <p className="job-smart-error" role="alert">{error}</p>}
+            {error && (
+              <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError("")}>
+                {error}
+              </FeedbackNotice>
+            )}
           </div>
           <DialogFooter className="job-smart-footer">
             <Button type="button" variant="ghost" disabled={busy} onClick={close}>取消</Button>

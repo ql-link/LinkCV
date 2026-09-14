@@ -224,6 +224,10 @@ export function resumeCompletenessTone(score: number): ResumeCompletenessTone {
 }
 
 export function evaluateResumeCompleteness(markdown: string): ResumeCompletenessResult {
+  // Inline formatting can split names, phone numbers and semantic headings.
+  // Score the visible text without inserting spaces between styled fragments.
+  markdown = markdown.replace(/\[\[(?:linkresume-(?:size:\d+(?:\.\d+)?pt|(?:color|highlight):#[0-9a-fA-F]{6}|underline)|\/linkresume-(?:size|color|highlight|underline))\]\]/gu, "");
+  markdown = markdown.replace(/\[\[linkresume-block:(?:node|blk)_[a-z0-9]{16,64}(?::[a-z_]+)?\]\]/gu, "");
   const parsed = parseMarkdown(markdown);
   const name = parsed.h1.length === 1 ? parsed.h1[0] : "";
   const sampleIdentity = SAMPLE_IDENTITIES.includes(name);

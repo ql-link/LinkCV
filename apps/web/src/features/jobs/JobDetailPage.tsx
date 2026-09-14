@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, BriefcaseBusiness, ExternalLink, MapPin, Trash2, WalletCards } from "lucide-react";
 import { api, ApiRequestError, type JobApplicationSummary, type JobDescriptionRecord } from "../../api/client";
-import { Button, ConfirmDialog, PageLoading } from "@/components/ui";
+import { Button, ConfirmDialog, FeedbackNotice, PageLoading } from "@/components/ui";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { careerApplicationPath, navigateTo, startCareerApplicationPath } from "../../routing";
 import { jobFormFromRecord, jobPayloadFromForm, type JobFormState } from "./jobFormModel";
@@ -112,7 +112,11 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
             <Button variant="ghost" icon={<Trash2 size={15} />} disabled={busy} onClick={() => setDeleteOpen(true)}>删除</Button>
           </div>
         </div>
-        {error && <div className="job-error job-detail-error" role="alert">{error}</div>}
+        {error && (
+          <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError(null)}>
+            {error}
+          </FeedbackNotice>
+        )}
         <JobDocument job={job} editingField={editingField} busy={busy} onEdit={setEditingField} onSave={saveField} onSaveFields={saveFields} />
       </article>
       {deleteOpen && <ConfirmDialog kind="delete" title={`永久删除「${job.job_title}」？`} description="删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busy} onCancel={() => setDeleteOpen(false)} onConfirm={deleteJob} />}

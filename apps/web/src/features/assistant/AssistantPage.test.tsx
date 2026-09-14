@@ -4,7 +4,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api, ApiRequestError, type AgentContextSnapshot, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
+import { useResumeStore } from "../../store/resumeStore";
 import { AssistantPage } from "./AssistantPage";
+
+vi.mock("../datasets/DatasetsPage", () => ({
+  DatasetsPage: ({ embedded }: { embedded?: boolean }) => (
+    <section aria-label="嵌入式资料库" data-embedded={embedded ? "true" : "false"} />
+  ),
+}));
+
+vi.mock("../workbench/ResumeWorkbench", () => ({
+  ResumeWorkbench: ({ embedded, onClose }: { embedded?: boolean; onClose?: () => void }) => (
+    <section aria-label="嵌入式简历编辑器" data-embedded={embedded ? "true" : "false"}>
+      <button type="button" onClick={onClose}>关闭简历</button>
+    </section>
+  ),
+}));
+
+const originalResumeStore = useResumeStore.getState();
 
 const session: AgentSession = {
   id: "session-1",
@@ -20,6 +37,11 @@ const session: AgentSession = {
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/assistant");
+  useResumeStore.setState({
+    ...originalResumeStore,
+    resumes: [],
+    activeResumeId: null,
+  }, true);
   vi.spyOn(api, "getAgentModel").mockResolvedValue({
     model: { adapter: "openai", name: "deepseek/deepseek-v4-flash" },
   });
@@ -32,6 +54,66 @@ afterEach(() => {
 });
 
 describe("AssistantPage", () => {
+  it("在新建对话下方只保留资料库，并在助手页内切换资料视图", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    render(<AssistantPage />);
+
+    const shortcuts = await screen.findByRole("navigation", { name: "助手快捷入口" });
+    expect(within(shortcuts).queryByRole("link", { name: "简历" })).not.toBeInTheDocument();
+    const datasetsButton = within(shortcuts).getByRole("button", { name: "资料库" });
+    expect(datasetsButton.querySelector(".lucide-folder-open")).toBeInTheDocument();
+
+    await user.click(datasetsButton);
+    expect(screen.getByRole("region", { name: "嵌入式资料库" })).toHaveAttribute("data-embedded", "true");
+    expect(window.location.pathname).toBe("/assistant");
+
+    await user.click(datasetsButton);
+    expect(screen.queryByRole("region", { name: "嵌入式资料库" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "AI 求职助手工作区" })).toBeInTheDocument();
+  });
+
+  it("从右上角选择简历后嵌入编辑器并自动完全收起左栏", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    const listResumes = vi.fn().mockResolvedValue(undefined);
+    const loadResume = vi.fn().mockResolvedValue(undefined);
+    useResumeStore.setState({
+      resumes: [{
+        id: "resume-1",
+        title: "Java 开发实习简历",
+        source_type: "blank",
+        lock_version: 1,
+        created_at: "2026-09-14T02:00:00Z",
+        updated_at: "2026-09-14T03:00:00Z",
+      }],
+      listResumes,
+      loadResume,
+    });
+
+    render(<AssistantPage />);
+
+    expect(screen.queryByRole("link", { name: "待投清单" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "我的简历" }));
+    expect(listResumes).toHaveBeenCalledOnce();
+    const picker = screen.getByRole("dialog", { name: "选择我的简历" });
+    await user.click(within(picker).getByRole("button", { name: /Java 开发实习简历/ }));
+
+    await waitFor(() => expect(loadResume).toHaveBeenCalledWith("resume-1"));
+    expect(screen.getByRole("region", { name: "嵌入式简历编辑器" })).toHaveAttribute("data-embedded", "true");
+    expect(screen.queryByRole("complementary", { name: "对话列表" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "展开会话侧栏" })).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(screen.getByRole("button", { name: "展开会话侧栏" }));
+    expect(screen.getByRole("complementary", { name: "对话列表" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "收起会话侧栏" })).toHaveAttribute("aria-expanded", "true");
+
+    await user.click(screen.getByRole("button", { name: "关闭简历" }));
+    expect(screen.queryByRole("region", { name: "嵌入式简历编辑器" })).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "对话列表" })).toBeInTheDocument();
+  });
+
   it("为每条历史对话提供置顶、重命名和删除菜单", async () => {
     const user = userEvent.setup();
     const listedSession = { ...session, title: "待整理对话", pinned: false };
@@ -176,6 +258,7 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(screen.getByText("这是已恢复的回答")).toBeInTheDocument());
     expect(api.getAgentSession).toHaveBeenCalledWith("session-1");
     expect(window.location.pathname).toBe("/assistant/session-1");
+    expect(screen.getAllByRole("button", { name: "添加资料" })).toHaveLength(1);
   });
 
   it("刷新后重新连接仍在运行的对话并恢复输出", async () => {
@@ -563,7 +646,8 @@ describe("AssistantPage", () => {
 
     render(<AssistantPage />);
     await user.click(screen.getByRole("button", { name: "添加资料" }));
-    await user.click(await screen.findByRole("button", { name: /我的简历/ }));
+    const contextPicker = await screen.findByRole("dialog", { name: "选择资料" });
+    await user.click(within(contextPicker).getByRole("button", { name: /我的简历/ }));
     await user.click(screen.getByRole("button", { name: "添加 1 项" }));
     const input = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
     await user.type(input, "请优化我的简历");
@@ -790,14 +874,18 @@ describe("AssistantPage", () => {
       throw new Error("network disconnected");
     });
 
-    render(<AssistantPage />);
+    const { container } = render(<AssistantPage />);
     const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
     await user.type(input, "请分析");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("未完成的回复")).toBeInTheDocument();
-    expect(await screen.findByRole("alert")).toHaveTextContent("请稍后重试");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("请稍后重试");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert.parentElement).toBe(document.body);
+    expect(container.querySelector(".assistant-error-notice")).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("请分析");
   });
 
