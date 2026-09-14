@@ -895,7 +895,6 @@ final result: passed
 - Sign in, open a template preview, capture the same desktop state, and compare shell dimensions, tool rail, paper scale, footer, and responsive overflow.
 
 final result: blocked
-
 ---
 
 # 2026-08-23 404 页面 Design QA
@@ -1427,3 +1426,60 @@ No actionable P0, P1, or P2 visual differences remain within the requested picke
 - [x] Verify the rendered Development route.
 
 final result: passed
+
+---
+
+# AI 助手内嵌简历 Design QA
+
+## 对照目标
+
+- Source visual truth: `/Users/jixu/.codex/generated_images/01a09ee8-0196-7312-92df-32f05ded1c75/exec-69f92138-292a-4fda-8441-9528777fa8fb.png`
+- Browser-rendered implementation:
+  - `/Users/jixu/.codex/visualizations/2026/09/14/01a09ee8-0196-7312-92df-32f05ded1c75/assistant-resume-picker-current.png`
+  - `/Users/jixu/.codex/visualizations/2026/09/14/01a09ee8-0196-7312-92df-32f05ded1c75/assistant-sidebar-collapsed-current.png`
+- Combined comparison: `/Users/jixu/.codex/visualizations/2026/09/14/01a09ee8-0196-7312-92df-32f05ded1c75/assistant-resume-comparison-current.jpg`
+- Browser viewport: 779 × 1010 CSS px, device scale factor 1.
+- State: authenticated preview account on `/assistant`; the account has no resume records, so the actual embedded editor state cannot be opened in this runtime.
+
+## Full-view comparison evidence
+
+The combined comparison places the confirmed full resume-open design and the browser-rendered collapsed state in one artifact. The implementation matches the confirmed shell behavior that can be observed without resume data: after collapse, the entire left conversation column, divider, resize handle and reserved width disappear; only the compact top-left expand control remains and the assistant workspace consumes the released width.
+
+The complete split state (conversation on the left and editable `ResumeWorkbench` on the right) is covered by the component test, TypeScript build and reuse of the production workbench component, but it is not counted as browser-verified visual evidence because the preview account has no selectable resumes and `dev:local` cannot start without the checkout's `.env` and `.env.local` files.
+
+## Required fidelity surfaces
+
+- Sidebar behavior: passed for the browser-observable collapsed and expanded states. No icon rail, divider or blank gutter remains while collapsed.
+- Entry hierarchy: passed. “我的简历” is in the assistant workspace's upper-right action group rather than the conversation sidebar.
+- Resume picker: passed for placement, hierarchy, empty state, dismissal and local URL preservation.
+- Embedded editable resume: blocked for browser visual comparison; component behavior and production build passed.
+- Existing resume editing controls: passed by implementation inspection. The assistant embeds the existing `ResumeWorkbench`; no assistant-specific “AI 对话” or “手动编辑” controls were added.
+- Dataset switch: passed in the browser. Selecting “资料库” replaces the assistant's main content without navigating away from `/assistant`.
+
+## Interaction evidence
+
+- Opening “我的简历” keeps the route on `/assistant` and displays the resume picker.
+- Selecting a resume is asserted to load the selected resume, mount the embedded workbench, and completely remove the conversation sidebar.
+- The top-left visibility control expands the full conversation sidebar again; closing the embedded workbench restores it.
+- Selecting “新建对话” or a history item exits the embedded dataset view and returns to the conversation surface.
+- Focused component verification: 3 files and 100 tests passed.
+- Full Web gate: design rules, 67 test files / 772 tests, TypeScript, Vite and PDF builds passed after integrating the latest `origin/dev` and resolving the final layout conflicts.
+
+## Findings
+
+- P1 verification blocker: the current preview identity has no resume data, while the checkout has no local environment files required to start the backend-backed `dev:local` profile. Therefore the real browser cannot reach the selected-resume editor state in this run.
+- No actionable P0, P1 or P2 implementation mismatch was found in the states that could be rendered and compared.
+
+## Implementation checklist
+
+- [x] Remove the resume entry from the left conversation sidebar.
+- [x] Add “我的简历” to the upper-right assistant workspace actions.
+- [x] Open a local resume picker without route navigation.
+- [x] Embed the selected existing resume editor on the right.
+- [x] Completely hide the conversation sidebar when a resume opens.
+- [x] Keep one compact top-left collapse/expand control.
+- [x] Reuse the existing resume editing tools without adding duplicate AI/manual controls.
+- [x] Keep the dataset switch inside the assistant workspace.
+- [ ] Capture and compare the real browser selected-resume editor state against the confirmed design.
+
+final result: blocked
