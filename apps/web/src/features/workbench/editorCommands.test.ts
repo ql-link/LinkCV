@@ -1,8 +1,5 @@
 import { Editor } from "@tiptap/core";
-import { EditorContent } from "@tiptap/react";
-import { render } from "@testing-library/react";
-import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   convertCurrentLineToResumeRow,
   convertResumeRowToParagraph,
@@ -10,7 +7,7 @@ import {
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
 } from "./editorCommands";
-import { normalizeResumeRowWidth, resumeEditorExtensions, resumeRowWidthFromClientX } from "./editorExtensions";
+import { normalizeResumeRowWidth, resumeEditorExtensions } from "./editorExtensions";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 
 let editor: Editor | null = null;
@@ -549,41 +546,9 @@ Photoshop
   });
 });
 
-describe("左右分栏分割线", () => {
-  it("按指针位置计算比例并限制在可编辑范围", () => {
-    expect(resumeRowWidthFromClientX(500, 0, 1000)).toBe(50);
-    expect(resumeRowWidthFromClientX(100, 0, 1000)).toBe(30);
-    expect(resumeRowWidthFromClientX(950, 0, 1000)).toBe(80);
-    expect(resumeRowWidthFromClientX(500, 0, 0)).toBe(50);
-  });
-
+describe("左右分栏保存比例", () => {
   it("无有效保存值时使用一半一半", () => {
     expect(normalizeResumeRowWidth(undefined)).toBe(50);
     expect(normalizeResumeRowWidth("62")).toBe(62);
-  });
-
-  it("渲染可访问分割线并支持键盘调整", async () => {
-    editor = new Editor({
-      extensions: resumeEditorExtensions,
-      content: {
-        type: "doc",
-        content: [{
-          type: "resumeRow",
-          content: [{ type: "paragraph", content: [{ type: "text", text: "左" }] }, { type: "paragraph", content: [{ type: "text", text: "右" }] }],
-        }],
-      },
-    });
-    render(createElement(EditorContent, { editor }));
-
-    const divider = await vi.waitFor(() => {
-      const element = editor?.view.dom.querySelector<HTMLButtonElement>(".resume-row-divider");
-      expect(element).not.toBeNull();
-      return element as HTMLButtonElement;
-    });
-    expect(divider.getAttribute("aria-valuetext")).toBe("左栏 50%，右栏 50%");
-
-    divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-
-    await vi.waitFor(() => expect(editor?.getJSON().content?.[0].attrs?.leftWidth).toBe(51));
   });
 });

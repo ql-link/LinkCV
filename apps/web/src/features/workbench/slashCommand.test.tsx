@@ -2,6 +2,7 @@ import { Editor } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
 import Paragraph from "@tiptap/extension-paragraph";
 import Text from "@tiptap/extension-text";
+import { EditorContent } from "@tiptap/react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -31,6 +32,60 @@ describe("命令面板过滤", () => {
 });
 
 describe("逐行插入入口", () => {
+  it("光标落入左栏行首按钮时同步回正文并保留连续输入", async () => {
+    const editor = new Editor({
+      extensions: [...resumeEditorExtensions, LineInsertMenuExtension],
+      editorProps: { handleScrollToSelection: () => true },
+      content: '<div data-type="resume-row"><p><strong>左侧文字</strong></p><p>右侧文字</p></div>',
+    });
+    render(<EditorContent editor={editor} />);
+    try {
+      editor.commands.setTextSelection(editor.state.doc.content.size - 2);
+      editor.view.focus();
+      const button = await vi.waitFor(() => {
+        const element = editor.view.dom.querySelector<HTMLButtonElement>(".resume-line-add");
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      // 模拟浏览器在行首不可编辑 widget 内报告折叠光标。
+      const selection = window.getSelection()!;
+      selection.setBaseAndExtent(button.firstChild!, 0, button.firstChild!, 0);
+      document.dispatchEvent(new Event("selectionchange"));
+
+      await vi.waitFor(() => {
+        expect(editor.state.selection.from).toBe(editableLineStartPositions(editor.state)[0]);
+      });
+      for (const character of "abc测试") {
+        editor.view.dispatch(editor.state.tr.insertText(character));
+      }
+      expect(editor.state.doc.firstChild?.child(0).textContent).toBe("abc测试左侧文字");
+      expect(editor.state.doc.firstChild?.child(1).textContent).toBe("右侧文字");
+      expect(button.textContent).toBe("+");
+
+      // 用 DOM 变更模拟输入法逐步替换组合文本，再连续提交两次中文。
+      let committed = "abc测试";
+      for (const candidates of [["n", "ni", "你"], ["h", "hao", "好"]]) {
+        editor.view.dom.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+        for (const candidate of candidates) {
+          const paragraph = editor.view.dom.querySelector(".resume-line-add")!.parentElement!;
+          const text = [...paragraph.childNodes].find((child) => child.nodeType === Node.TEXT_NODE)!;
+          text.textContent = committed + candidate;
+          selection.setBaseAndExtent(text, text.textContent.length, text, text.textContent.length);
+          editor.view.dom.dispatchEvent(new CompositionEvent("compositionupdate", { data: candidate, bubbles: true }));
+          await vi.waitFor(() => {
+            expect(editor.state.doc.firstChild?.child(0).textContent).toBe(`${committed}${candidate}左侧文字`);
+          });
+        }
+        editor.view.dom.dispatchEvent(new CompositionEvent("compositionend", { data: candidates[2], bubbles: true }));
+        committed += candidates[2];
+      }
+      expect(editor.state.doc.firstChild?.child(0).textContent).toBe("abc测试你好左侧文字");
+      expect(editor.state.doc.firstChild?.child(1).textContent).toBe("右侧文字");
+    } finally {
+      editor.destroy();
+    }
+  });
+
   it("为空白行和非空行都提供加号，并能把光标放到对应行开头", () => {
     const onOpen = vi.fn();
     const editor = new Editor({
