@@ -18,6 +18,8 @@ test("system prompt identifies the assistant as LinkResume", () => {
   assert.match(SYSTEM_PROMPT, /career-assistant-router/);
   assert.match(SYSTEM_PROMPT, /list_user_resources/);
   assert.match(SYSTEM_PROMPT, /resolve_resume_reference/);
+  assert.match(SYSTEM_PROMPT, /begin_final_response/);
+  assert.match(SYSTEM_PROMPT, /临时工作过程/);
   assert.match(SYSTEM_PROMPT, /不绑定或改写会话/);
   assert.doesNotMatch(SYSTEM_PROMPT, /通过 `@`/);
   assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
@@ -86,20 +88,23 @@ test("agent completion rejects missing and aborted assistant messages", () => {
   );
 });
 
-test("assistant output filter forwards every visible text delta immediately", () => {
+test("assistant output filter keeps tool-stage text in activity and streams final text immediately", () => {
   const emitted = [];
+  let finalResponse = false;
   const filter = createAssistantOutputFilter(
     (type, payload) => emitted.push({ type, payload }),
     "run-1",
+    { isFinalResponse: () => finalResponse },
   );
 
+  filter({ type: "message_start", message: { role: "assistant" } });
   filter({
     type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "已生成一份" },
+    assistantMessageEvent: { type: "text_delta", delta: "I'll read the router skill." },
   });
   assert.deepEqual(emitted, [{
-    type: "assistant.delta",
-    payload: { runId: "run-1", delta: "已生成一份" },
+    type: "assistant.activity.delta",
+    payload: { runId: "run-1", delta: "I'll read the router skill." },
   }]);
 
   filter({
@@ -108,46 +113,56 @@ test("assistant output filter forwards every visible text delta immediately", ()
   });
   assert.equal(emitted.length, 1);
 
+  filter({ type: "message_start", message: { role: "assistant" } });
   filter({
     type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "待确认的修改提案。" },
+    assistantMessageEvent: { type: "text_delta", delta: "I'll inspect the resume." },
   });
+
+  finalResponse = true;
+  filter({ type: "message_start", message: { role: "assistant" } });
   filter({
-    type: "message_end",
-    message: { role: "assistant", stopReason: "stop" },
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "面试重点包括" },
+  });
+  assert.equal(emitted.at(-1).type, "assistant.delta");
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "项目证据。" },
   });
 
   assert.deepEqual(emitted, [
     {
-      type: "assistant.delta",
-      payload: { runId: "run-1", delta: "已生成一份" },
+      type: "assistant.activity.delta",
+      payload: { runId: "run-1", delta: "I'll read the router skill." },
+    },
+    {
+      type: "assistant.activity.delta",
+      payload: { runId: "run-1", delta: "\nI'll inspect the resume." },
     },
     {
       type: "assistant.delta",
-      payload: { runId: "run-1", delta: "待确认的修改提案。" },
+      payload: { runId: "run-1", delta: "面试重点包括" },
+    },
+    {
+      type: "assistant.delta",
+      payload: { runId: "run-1", delta: "项目证据。" },
     },
   ]);
 });
 
-test("assistant output filter keeps already streamed partial text observable on failure", () => {
+test("assistant output filter does not expose tool arguments", () => {
   const emitted = [];
   const filter = createAssistantOutputFilter((...event) => emitted.push(event), "run-2");
-
-  for (const stopReason of ["error", "aborted"]) {
-    filter({
-      type: "message_update",
-      assistantMessageEvent: { type: "text_delta", delta: "已生成的部分回复" },
-    });
-    filter({
-      type: "message_end",
-      message: { role: "assistant", stopReason },
-    });
-  }
-
-  assert.deepEqual(emitted, [
-    ["assistant.delta", { runId: "run-2", delta: "已生成的部分回复" }],
-    ["assistant.delta", { runId: "run-2", delta: "已生成的部分回复" }],
-  ]);
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "toolcall_delta", delta: '{"secret":"value"}' },
+  });
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "thinking_delta", delta: "hidden reasoning" },
+  });
+  assert.deepEqual(emitted, []);
 });
 
 test("assistant output filter suppresses final prose after a clarification request", () => {
@@ -155,7 +170,7 @@ test("assistant output filter suppresses final prose after a clarification reque
   const filter = createAssistantOutputFilter(
     (...event) => emitted.push(event),
     "run-3",
-    () => true,
+    { shouldSuppress: () => true },
   );
   filter({
     type: "message_update",
@@ -182,11 +197,16 @@ test("clarification fallback remains readable for clients that ignore the struct
 
 test("read tool can load a registered resume skill", async () => {
   let loadedPath;
-  const tool = createSkillReadTool((path) => { loadedPath = path; });
+  let started = false;
+  const tool = createSkillReadTool(
+    (path) => { loadedPath = path; },
+    () => { started = true; },
+  );
   const result = await tool.execute("read-1", {
     path: "resume-edit-workflow/SKILL.md",
   });
 
+  assert.equal(started, true);
   assert.match(result.content[0].text, /name: resume-edit-workflow/);
   assert.equal(loadedPath, "resume-edit-workflow/SKILL.md");
 });
