@@ -31,7 +31,7 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0062` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0063` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -51,7 +51,7 @@ MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_compan
 
 迁移 `0059` 为用户已有的 `job_descriptions` 增加可空 `logo_url`，只接受应用层校验通过的 HTTPS 绝对 URL；新求职记录把该字段写入既有 `job_snapshot`，不为 `job_applications` 新增重复列。该迁移同时新增无 `user_id`、无业务外键的 `global_companies` 平台资料表，保存标准化名称、Logo、官网、行业、规模、融资阶段和简介；当前没有对应路由、管理页面、自动匹配或用户岗位回填。
 
-迁移 `0062` 仅为 `job_descriptions` 增加可空 `logo_sha256 CHAR(64)`（ASCII、ascii_bin），不新增图片表、索引或外键。`application/job_descriptions/logo_service.py` 负责图片解码、压缩、内容指纹和快照图标同步。MinIO 路径为 `company-logos/<sha256>.webp`，同图跨用户复用、按岗位归属鉴权。写入时使用当前 MySQL 连接上的 `GET_LOCK` 串行化同指纹的存在检查与首次写入，完成后释放，避免并发产生重复对象版本；缺失之外的存储错误不能当作不存在。图片成功落盘后才提交岗位引用，失败不删除共享对象。暂不自动回收已无引用或事务失败遗留的 Logo 文件，删除岗位也不删除共享图。此目录不受用户独占资源的失败清理逻辑管理。部署需先执行 `0062` 再更新后端，之后更新插件；线上实际 revision 需单独查询。
+迁移 `0062` 为 `job_descriptions` 增加公司图片内容指纹。迁移 `0063` 扩展智能助手提案，增加 `translate_resume` 模式、候选标题和翻译结果简历标识；确认翻译提案时创建独立简历，原简历不变。两者均为 forward-only，线上实际 revision 需单独查询。
 
 
 `user_dataset.sha256` 在 MySQL 使用固定长度 `CHAR(64)` 保存源文件 SHA-256 十六进制摘要；SQLite 测试仍使用通用字符串替身。该字段只用于后端完整性元数据，不向浏览器返回。
@@ -98,7 +98,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 发布 runner 对 `0051` 已应用状态额外要求 `user_profiles` 的目标画像列存在且旧列（含中间 `professional_directions`）消失；若 `0051` 尚未应用但目标画像结构已经完整，则允许 revision 自身执行安全 no-op，部分或混合结构仍在 DDL 前拒绝。
 
-普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名并允许与已有简历同名；Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
+普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名；若同一用户已存在规范键同名标题，Worker 在用户行锁内依次追加数字后缀 `1`、`2` 直到可用。Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
 `0003` 曾把模板外键改为 `ON DELETE SET NULL`，允许目录项删除后暂时保留历史 `source_type=template/template_id=NULL`；`0047` canonical cutover 后，`resumes.template_id` 与 `resume_versions.template_id` 均为非空并使用 `ON DELETE RESTRICT`，退役目录项通过 inactive tombstone 保留关系身份。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此早期 `ck_resumes_source_fields` 只约束来源证据字段；当前模板身份由非空外键和统一创建/切换服务共同保证。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；恢复旧 JSON 必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改，修正通过新的向前 revision 完成。
 
@@ -157,7 +157,9 @@ scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有�
 
 ## 统一 LLM 调用
 
-智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。登录用户可通过 `GET /api/agent/model` 读取当前 `pi_agent` binding 的非敏感 `{adapter, name}` 摘要；该查询只解析绑定配置，不解密凭据，也不返回配置 ID、地址、价格或验证记录。`context_service.py` 为独立助手页列出简历、历史版本、解析成功的资料库文件、岗位、求职进程和面试的轻量引用；发送时在同一事务链中按当前用户重新查询、锁定并核对版本标记。资料库引用还会校验解析成功状态和 `users/{uid}/datasets/converted/` 对象前缀，再读取有界 Markdown；只有字段白名单内且有长度上限的资料会交给 Pi，消息元数据只保存展示用引用快照。未绑定会话第一次成功发送含简历归属的上下文时绑定该简历，已绑定会话拒绝切换到另一份简历。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文；成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退。Pi 对 FastAPI 只允许调用目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内四个已注册 Skill Markdown，不访问业务存储或其他服务端文件。内部路由从可信 `runId` 反查用户与简历，不接受调用方传入用户身份。完整边界见 [Pi 集成文档](third-party-pi.md)。
+Agent 的 Pi SSE 由 `modules/agent/run_stream.py` 在 FastAPI 进程内独立消费并缓冲；浏览器切页、切换会话或刷新只断开当前订阅，返回后可按本人会话查询 active run 并重放事件。只有显式取消才停止模型运行；后端进程重启而缓冲丢失时，遗留 running run 以 `AGENT_STREAM_INCOMPLETE` 失败收口，不重复调用模型。
+
+智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。登录用户可通过 `GET /api/agent/model` 读取当前 `pi_agent` binding 的非敏感 `{adapter, name}` 摘要；该查询只解析绑定配置，不解密凭据，也不返回配置 ID、地址、价格或验证记录。`context_service.py` 为独立助手页列出简历、历史版本、解析成功的资料库文件、岗位、求职进程和面试的轻量引用；发送时在同一事务链中按当前用户重新查询、锁定并核对版本标记。Pi 的 `list_user_resources` 复用同一 owner-scoped 列表逻辑，只允许列出简历、已解析资料和面试记录的轻量元数据，不返回正文。资料库引用还会校验解析成功状态和 `users/{uid}/datasets/converted/` 对象前缀，再读取有界 Markdown；只有字段白名单内且有长度上限的资料会交给 Pi，消息元数据只保存展示用引用快照。编辑器创建会话时仍可保存其默认简历；独立助手每轮选择的简历上下文不会写入会话，也不阻止后续轮次选择其他本人简历。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文；成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退。Pi 对 FastAPI 只允许调用资源目录、目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内已注册 Skill Markdown，不访问业务存储或其他服务端文件。内部路由从可信 `runId` 反查用户与简历，不接受调用方传入用户身份；目标 locator 中的简历 ID 仍会按该用户复验。完整边界见 [Pi 集成文档](third-party-pi.md)。
 
 `LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务按调用方传入的能力解析唯一当前 binding；当前能力未绑定时，Chat 返回 `LLM_CHAT_NOT_CONFIGURED`，其他能力返回 `LLM_MODEL_NOT_CONFIGURED`。单次逻辑调用只调用当前模型一次，供应商失败直接收口，不重试、不遍历其他候选、不自动切换 binding。结构化调用把 Pydantic JSON Schema 作为系统指令加入 messages，不向供应商传递 `response_format`；模型文本由 LinkResume 本地提取 JSON 对象并执行 Pydantic 严格校验，非法结果以 `LLM_RESPONSE_INVALID` 收口且不追加模型调用。
 
@@ -218,7 +220,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到 `0062`、模板初始化和物理约束验证。
+- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到 `0063`、模板初始化和物理约束验证。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

@@ -11,6 +11,8 @@ import {
   legacyCareerRedirect,
   navigateTo,
   parseAppRoute,
+  rememberedAssistantPath,
+  rememberAssistantSession,
   sharePath,
 } from "./routing";
 
@@ -76,6 +78,14 @@ describe("LinkResume routes", () => {
   it("builds assistant conversation paths with encoded session identifiers", () => {
     expect(assistantPath()).toBe("/assistant");
     expect(assistantPath("session/a b")).toBe("/assistant/session%2Fa%20b");
+  });
+
+  it("remembers the last assistant conversation for workspace navigation", () => {
+    rememberAssistantSession("session/a b");
+    expect(rememberedAssistantPath()).toBe("/assistant/session%2Fa%20b");
+
+    rememberAssistantSession(null);
+    expect(rememberedAssistantPath()).toBe("/assistant");
   });
 
   it("parses the admin login route and its safe next target", () => {

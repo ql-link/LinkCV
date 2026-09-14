@@ -37,6 +37,14 @@ export function createLinkResumeClient(config, runId, signal) {
     readiness: () => request("/internal/agent/readiness"),
     runtimeConfig: () => request(`/internal/agent/runtime-config?run_id=${encodeURIComponent(runId)}`),
     context: () => request(`/internal/agent/runs/${encodeURIComponent(runId)}/context`),
+    resolveResumeReference: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/resumes:resolve-reference`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    listUserResources: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/resources:list`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
     resolveTarget: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/targets:resolve`, {
       method: "POST",
       body: JSON.stringify(payload),
@@ -58,6 +66,10 @@ export function createLinkResumeClient(config, runId, signal) {
       body: JSON.stringify(payload),
     }),
     scopedProposal: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/proposals:v2`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    translationProposal: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/proposals:translation`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

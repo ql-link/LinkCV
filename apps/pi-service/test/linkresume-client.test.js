@@ -49,18 +49,24 @@ test("scoped tools call run-bound LinkResume endpoints", async (context) => {
     new AbortController().signal,
   );
 
+  await client.resolveResumeReference({ title: "张三的测试简历" });
+  await client.listUserResources({ types: ["resume", "dataset", "interview"] });
   await client.resolveTarget({ quoted_text: "目标" });
   await client.scopedContext({ target: { resume_id: "1" }, scope: "target" });
   await client.searchMaterials({ query: "Java" });
   await client.diagnose({ target: { resume_id: "1" }, scope: "target" });
   await client.scopedProposal({ mode: "polish_local" });
+  await client.translationProposal({ target_language: "en" });
 
   assert.deepEqual(calls.map((call) => new URL(call.url).pathname), [
+    "/internal/agent/runs/run%2Fwith%20spaces/resumes:resolve-reference",
+    "/internal/agent/runs/run%2Fwith%20spaces/resources:list",
     "/internal/agent/runs/run%2Fwith%20spaces/targets:resolve",
     "/internal/agent/runs/run%2Fwith%20spaces/context:read",
     "/internal/agent/runs/run%2Fwith%20spaces/materials:search",
     "/internal/agent/runs/run%2Fwith%20spaces/diagnoses",
     "/internal/agent/runs/run%2Fwith%20spaces/proposals:v2",
+    "/internal/agent/runs/run%2Fwith%20spaces/proposals:translation",
   ]);
   assert.ok(calls.every((call) => call.options.method === "POST"));
 });

@@ -8,7 +8,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import assistantFeatherOutline from "../assets/assistant-feather-outline.png";
-import { navigateTo } from "../routing";
+import { navigateTo, rememberedAssistantPath } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { Brand, PageHeader } from "@/components/ui";
 import RandomLetterSwapNav from "@/components/ui/m-random-letter-swap-1";
@@ -95,7 +95,10 @@ export function WorkspaceNavigation({
   onItemIntent = preloadWorkspacePage,
 }: WorkspaceNavigationProps) {
   const displayName = nickname || email || "个人资料";
-  const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "";
+  const navigationItems = NAV_ITEMS.map((item) => (
+    item.key === "assistant" ? { ...item, href: rememberedAssistantPath() } : item
+  ));
+  const activeHref = navigationItems.find((item) => item.key === active)?.href ?? "";
 
   return (
     <header className="dashboard-topbar">
@@ -119,7 +122,7 @@ export function WorkspaceNavigation({
             activeItem={activeHref}
             className="dashboard-tabs"
             currentType="page"
-            links={NAV_ITEMS}
+            links={navigationItems}
             navigationMode="client"
             onItemClick={navigateTo}
             onItemIntent={(href) => { void onItemIntent(href); }}

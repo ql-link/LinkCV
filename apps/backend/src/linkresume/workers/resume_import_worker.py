@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from linkresume.application.resumes.commands import CreateResumeCommand
 from linkresume.application.resumes.service import (
     MAX_RESUMES_PER_USER,
+    next_available_resume_title,
     presentation_from_template,
     persist_resume_with_initial_version,
     resume_slot_count,
@@ -529,10 +530,15 @@ class ResumeImportProcessor:
                         "RESUME_STRUCTURE_INVALID",
                         stage="resume_persistence",
                     )
+                available_title = next_available_resume_title(
+                    db,
+                    user_id=record.user_id,
+                    title=title,
+                )
                 resume = persist_resume_with_initial_version(
                     CreateResumeCommand(
                         user_id=record.user_id,
-                        title=title,
+                        title=available_title,
                         data=parsed.document,
                         style=presentation,
                         source_type="import",
