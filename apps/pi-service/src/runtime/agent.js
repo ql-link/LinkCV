@@ -27,7 +27,8 @@ const AGENT_POLICY_PROMPT = `你是 LinkResume 的职业与简历智能助手，
 用户明确询问自己有哪些简历、资料或面试记录，或者需要从这些对象中选择时，可以调用 list_user_resources；它只返回轻量目录。用户明确指定简历名称、ID 或目录中的某一版本用于当前请求时，调用 resolve_resume_reference 解析本轮目标，再读取简历上下文；这项授权只作用于当前运行，不绑定或改写会话。名称同名时根据用户给出的版本条件选择目录中的 ID 后再次解析，不得猜测用户未表达的选择。
 任何写入都必须生成待确认提案，绝不能声称已经直接修改或创建简历，也不能编造事实、角色或量化数据。
 只允许使用 read 读取已注册 Skill；禁止读取其他文件、执行 Shell、浏览网络或调用未注册工具。
-工具选择、调用、参数校验、失败重试和内部执行顺序不得向用户叙述；只输出需要用户澄清的内容或工具执行完成后的最终结果。`;
+工具选择、调用、参数校验、失败重试和内部执行顺序不得写入最终回复。工具阶段可以用简短自然语言说明正在做什么，这些内容只进入临时工作过程，不作为最终回复保存。
+完成本轮所需的全部 Skill、读取、分析或提案工具后，必须调用 begin_final_response，再生成最终回复。调用 begin_final_response 前不得提前生成最终回复；调用后工具会被关闭，只能直接输出面向用户的最终内容。调用 request_user_input 时不得再调用 begin_final_response。`;
 
 export const USER_FACING_RESPONSE_PROMPT = `以下规则只约束用户最终能够看到的自然语言回复，不约束工具参数、结构化澄清事件或提案字段。若与权限、事实约束、工具调用顺序或结构化协议冲突，以后者为准。
 
@@ -122,7 +123,10 @@ async function configuredModel(modelConfig) {
   };
 }
 
-export function createSkillReadTool(onRead = () => undefined) {
+export function createSkillReadTool(
+  onRead = () => undefined,
+  onStart = () => undefined,
+) {
   return defineTool({
     name: "read",
     label: "读取 Skill",
@@ -133,6 +137,7 @@ export function createSkillReadTool(onRead = () => undefined) {
       limit: { type: "integer", minimum: 1, maximum: 2000 },
     }, ["path"]),
     execute: async (_toolCallId, params) => {
+      onStart();
       const root = await realpath(SKILLS_ROOT);
       const normalizedPath = process.platform === "win32" && /^\/[a-zA-Z]:[\\/]/.test(params.path)
         ? params.path.slice(1)
@@ -203,15 +208,40 @@ export function agentUsage(stats) {
   };
 }
 
-export function createAssistantOutputFilter(emit, runId, shouldSuppress = () => false) {
+export function createAssistantOutputFilter(
+  emit,
+  runId,
+  {
+    isFinalResponse = () => true,
+    shouldSuppress = () => false,
+    onFinalText = () => {},
+  } = {},
+) {
+  let workingMessageHasText = false;
+  let workingOutputHasText = false;
   return (event) => {
+    if (event.type === "message_start" && event.message?.role === "assistant") {
+      workingMessageHasText = false;
+      return;
+    }
     if (
       event.type !== "message_update" ||
       event.assistantMessageEvent.type !== "text_delta" ||
       !event.assistantMessageEvent.delta ||
       shouldSuppress()
     ) return;
-    emit("assistant.delta", { runId, delta: event.assistantMessageEvent.delta });
+    if (isFinalResponse()) {
+      onFinalText();
+      emit("assistant.delta", { runId, delta: event.assistantMessageEvent.delta });
+      return;
+    }
+    const separator = workingOutputHasText && !workingMessageHasText ? "\n" : "";
+    emit("assistant.activity.delta", {
+      runId,
+      delta: `${separator}${event.assistantMessageEvent.delta}`,
+    });
+    workingMessageHasText = true;
+    workingOutputHasText = true;
   };
 }
 
@@ -307,6 +337,9 @@ export async function executeAgentRun({
   let resumeContextLoaded = false;
   let diagnosisResult = null;
   let pendingClarification = null;
+  let outputMode = "working";
+  let finalResponseHasText = false;
+  let session = null;
   const executionSkills = new Map([
     ["resume-edit-local/SKILL.md", "polish_local"],
     ["resume-edit-entry-star/SKILL.md", "rewrite_entry_star"],
@@ -356,6 +389,9 @@ export async function executeAgentRun({
     execute: async (toolCallId, params) => {
       if (pendingClarification) throw new Error("USER_INPUT_REQUIRED");
       const startedAt = Date.now();
+      if (outputMode === "working") {
+        emit("assistant.activity.delta", { runId, delta: `\n${label}…\n` });
+      }
       emit("tool.started", { runId, tool: name, callKey: toolCallId });
       await client.toolEvent({ call_key: toolCallId, tool_name: name, status: "running" });
       try {
@@ -426,6 +462,7 @@ export async function executeAgentRun({
         }
       }
       pendingClarification = { version: 1, questions: params.questions };
+      emit("assistant.activity.clear", { runId });
       emit("clarification.requested", { runId, clarification: pendingClarification });
       emit("assistant.delta", { runId, delta: clarificationFallbackText(pendingClarification) });
       return { text: "已向用户请求补充信息；本轮到此结束。" };
@@ -637,7 +674,40 @@ export async function executeAgentRun({
       };
     },
   });
-  const skillReadTool = createSkillReadTool(onSkillRead);
+  const skillReadTool = createSkillReadTool(onSkillRead, () => {
+    if (outputMode === "working") {
+      emit("assistant.activity.delta", { runId, delta: "\n读取工作流…\n" });
+    }
+  });
+  // This is an internal stream-state transition, not a business tool call.
+  // Auditing it would post an unsupported tool_name to FastAPI and abort the
+  // run before the final assistant turn can start.
+  const beginFinalResponseTool = defineTool({
+    name: "begin_final_response",
+    label: "进入最终回复",
+    description: "仅在本轮全部 Skill、读取、分析和提案工具已经完成后调用。调用后清空临时工作过程、关闭所有工具，并在下一轮直接输出最终回复。",
+    parameters: objectSchema({}),
+    execute: async () => {
+      if (!routerLoaded) throw new Error("ROUTER_SKILL_REQUIRED");
+      if (!session) throw new Error("AGENT_SESSION_UNAVAILABLE");
+      outputMode = "final";
+      emit("assistant.activity.clear", { runId });
+      emit("run.phase", {
+        runId,
+        phase: "drafting",
+        label: RUN_PHASE_LABELS.drafting,
+        referencedContextCount: contextMaterials.length,
+      });
+      session.setActiveToolsByName([]);
+      return {
+        content: [{
+          type: "text",
+          text: "最终回复通道已开启。现在直接回答用户，不要说明工具、过程或该通道。",
+        }],
+        details: {},
+      };
+    },
+  });
 
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: true },
@@ -650,7 +720,7 @@ export async function executeAgentRun({
     systemPromptOverride: () => SYSTEM_PROMPT,
   });
   await resourceLoader.reload();
-  const { session } = await createAgentSession({
+  ({ session } = await createAgentSession({
     model,
     modelRuntime,
     thinkingLevel: "off",
@@ -666,6 +736,7 @@ export async function executeAgentRun({
       "create_resume_change_proposal",
       "create_resume_translation_proposal",
       "request_user_input",
+      "begin_final_response",
     ],
     customTools: [
       skillReadTool,
@@ -678,16 +749,22 @@ export async function executeAgentRun({
       createProposalTool,
       createTranslationProposalTool,
       requestUserInputTool,
+      beginFinalResponseTool,
     ],
     resourceLoader,
     sessionManager: SessionManager.inMemory(),
     settingsManager,
-  });
+  }));
+  session.agent.shouldStopAfterTurn = () => pendingClarification !== null;
   let finalAssistantMessage;
   const filterAssistantOutput = createAssistantOutputFilter(
     emit,
     runId,
-    () => pendingClarification !== null,
+    {
+      isFinalResponse: () => outputMode === "final",
+      shouldSuppress: () => pendingClarification !== null,
+      onFinalText: () => { finalResponseHasText = true; },
+    },
   );
   const unsubscribe = session.subscribe((event) => {
     filterAssistantOutput(event);
@@ -725,6 +802,12 @@ export async function executeAgentRun({
       : `${authorizedContext ? `${authorizedContext}\n\n` : ""}用户本轮请求：\n${content}`;
     await session.prompt(conversation);
     assertAgentCompleted(finalAssistantMessage);
+    if (!pendingClarification && outputMode !== "final") {
+      throw new Error("AGENT_FINAL_RESPONSE_REQUIRED");
+    }
+    if (!pendingClarification && !finalResponseHasText) {
+      throw new Error("AGENT_EMPTY_RESPONSE");
+    }
     return agentUsage(session.getSessionStats());
   } finally {
     signal.removeEventListener("abort", abort);

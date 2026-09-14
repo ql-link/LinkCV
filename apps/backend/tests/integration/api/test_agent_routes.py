@@ -1888,6 +1888,11 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
             async def aiter_lines(self):
                 frames = (
                     (
+                        "assistant.activity.delta",
+                        {"runId": run_id, "delta": "I'll ask for the target role."},
+                    ),
+                    ("assistant.activity.clear", {"runId": run_id}),
+                    (
                         "clarification.requested",
                         {"runId": run_id, "clarification": clarification},
                     ),
@@ -1919,6 +1924,8 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
         events = b"".join(
             asyncio.run(_collect_stream_events(app, run_id, "请优化简历"))
         ).decode()
+        assert "event: assistant.activity.delta" in events
+        assert "event: assistant.activity.clear" in events
         assert "event: clarification.requested" in events
         with app.state.session_factory() as db:
             message = db.scalar(
@@ -1933,6 +1940,13 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
             assert message is not None
             assert message.message_type == "clarification"
             assert message.metadata_json == clarification
+            assert message.content == (
+                "继续前需要确认：\n"
+                "1. 你的目标岗位是什么？\n"
+                "   选项：后端开发 / 产品经理 / 其他"
+            )
+            assert "I'll ask" not in message.content
+            assert "请选择目标岗位" not in message.content
 
 
 async def _collect_stream_events(app, run_id: str, content: str) -> list[bytes]:

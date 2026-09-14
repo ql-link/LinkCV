@@ -20,6 +20,8 @@ RUN_PHASE_LABELS = {
 _VISIBLE_EVENTS = {
     "run.started",
     "run.phase",
+    "assistant.activity.delta",
+    "assistant.activity.clear",
     "assistant.delta",
     "clarification.requested",
     "proposal.created",
@@ -338,7 +340,11 @@ def _finalize(
                     sequence_no=sequence_no,
                     role="assistant",
                     message_type="clarification" if clarification else "text",
-                    content=assistant_content or _clarification_text(clarification),
+                    content=(
+                        _clarification_text(clarification)
+                        if clarification
+                        else assistant_content
+                    ),
                     metadata_json=clarification,
                 )
             )

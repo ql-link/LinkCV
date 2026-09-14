@@ -182,9 +182,11 @@
 .assistant-thinking-line { display: flex; min-width: 0; align-items: center; gap: 12px; }
 .assistant-thinking-line strong { overflow: hidden; color: #6e7582; font-size: 15px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-thinking-line > span { color: #8791a1; font-size: 12px; white-space: nowrap; }
+.assistant-thinking-latest { grid-column: 2; overflow: hidden; margin: -6px 0 0; color: #8791a1; font-size: 13px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-thinking-details-toggle { grid-column: 2; justify-self: start; display: inline-flex; align-items: center; gap: 4px; background: transparent; color: #0d52eb; cursor: pointer; font-size: 13px; }
 .assistant-thinking-details { display: flex; grid-column: 2; flex-wrap: wrap; gap: 8px; border: 1px solid #dbe0e8; border-radius: 11px; padding: 14px; color: #3f4752; font-size: 13px; }
 .assistant-thinking-details > div { display: inline-flex; width: 100%; align-items: center; gap: 7px; }
+.assistant-thinking-activity { width: 100%; max-height: 180px; overflow: auto; margin: 2px 0; color: #606978; line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .assistant-context-panel { position: absolute; z-index: 4; top: 62px; right: 18px; width: 309px; max-height: min(360px, calc(100% - 82px)); overflow: auto; border: 1px solid #dbe0e8; border-radius: 12px; background: #fff; box-shadow: 0 10px 28px rgb(31 36 46 / 10%); }
 .assistant-context-panel-section + .assistant-context-panel-section { border-top: 1px solid #e6e9ee; }
@@ -245,9 +247,9 @@
 .assistant-context-mention-group > button > svg { flex: 0 0 auto; color: #687484; }
 .assistant-context-mention-group > button > span { display: flex; min-width: 0; flex: 1; }
 .assistant-context-mention-group > button strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-composer-editor { width: 100%; min-height: 61px; max-height: 220px; overflow-y: auto; border: 1px solid #c3ccd6; border-radius: 19px; outline: none; background: #fff; padding: 17px 58px 15px 46px; color: #17191c; font: 400 15px/1.55 var(--ui-font-sans); white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 2px 8px rgb(15 18 22 / 6%); }
+.assistant-composer-editor { width: 100%; min-height: 61px; max-height: 220px; overflow-y: auto; border: 1px solid #c3ccd6; border-radius: 19px; outline: none; background: #fff; padding: 17px 58px 15px 46px; color: #17191c; font: 400 15px/1.55 var(--ui-font-sans); white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: none; }
 .assistant-conversation:not(.is-empty) .assistant-composer-editor { max-height: calc(6lh + 34px); padding-left: 16px; }
-.assistant-conversation.is-empty .assistant-composer-editor { height: 152px; min-height: 152px; max-height: 152px; padding: 25px 72px 54px 26px; border-color: #b8bfcc; font-size: 18px; box-shadow: 0 8px 18px rgb(31 36 46 / 9%); }
+.assistant-conversation.is-empty .assistant-composer-editor { height: 152px; min-height: 152px; max-height: 152px; padding: 25px 72px 54px 26px; border-color: #b8bfcc; font-size: 18px; box-shadow: none; }
 .assistant-composer-editor:empty::before { color: #8791a1; content: attr(data-placeholder); pointer-events: none; }
 .assistant-composer-editor[aria-disabled="true"] { cursor: not-allowed; background: #fafbfc; }
 .assistant-composer-context-token { display: inline-flex; max-width: min(330px, 75%); min-height: 26px; align-items: center; gap: 5px; margin: 0 3px; border: 1px solid #d9e2f2; border-radius: 7px; background: #f5f8fd; padding: 1px 4px 1px 7px; color: #315a9b; font: 500 12px/1.4 var(--ui-font-sans); vertical-align: 1px; white-space: nowrap; }
