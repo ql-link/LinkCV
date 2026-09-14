@@ -1184,7 +1184,11 @@ function UserProfileEditDialog({
         </div>
 
         <DialogFooter className="account-profile-edit-footer">
-          {notice && <FeedbackNotice kind={notice.kind}>{notice.message}</FeedbackNotice>}
+          {notice && (
+            <FeedbackNotice kind={notice.kind} placement="floating" onDismiss={() => setNotice(null)}>
+              {notice.message}
+            </FeedbackNotice>
+          )}
           <div className="account-profile-edit-footer-actions">
             <Button
               variant="outline"

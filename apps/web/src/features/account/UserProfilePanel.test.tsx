@@ -389,9 +389,9 @@ describe("UserProfilePanel", () => {
     await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "保存画像" }));
 
-    expect(
-      await screen.findByText("数据已被其他写入方修改，已刷新为最新版本，请确认后重试。"),
-    ).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("数据已被其他写入方修改，已刷新为最新版本，请确认后重试。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(screen.getByLabelText("移除 深圳")).toBeInTheDocument();
     expect(putSpy).toHaveBeenCalledOnce();
   });

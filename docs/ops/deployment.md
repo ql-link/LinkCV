@@ -8,7 +8,7 @@ Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件
 
 其中 `0051` 的发布门禁还核对 `user_profiles` 的画像目标列和已删除旧列。未应用但已经是完整目标结构时允许 migration 自身做 no-op；已应用后若目标列缺失或旧列残留，runner 会在任何后续 DDL 前停止。
 
-仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先用 `linkresume` 镜像以显式目标参数运行迁移 runner，再更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。
+仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先用 `linkresume` 镜像以显式目标参数运行迁移 runner，再更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。
 
 Dev 与 Production Compose 各自部署一个 `grafana/promtail:2.9.8`，读取 LinkResume 应用挂载的环境独立日志命名卷，并把 positions 保存到另一个独立命名卷。Promtail 只提升 `service`、`environment`、`log_type`、`level` 四个低基数字段为 Loki labels；request/user/target/operation 等高基数字段保留在 JSON body。Dev 推送并查询 `http://tolink-dev-loki:3100`，Production 使用 `http://tolink-loki:3100`；两者都是 LinkRag 已有、保留七天的共享实例，本仓库不创建或修改 Loki。应用写本地 JSONL，Promtail 异步采集，因此 Loki 暂时不可用不会阻断业务请求。
 
@@ -34,7 +34,7 @@ Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `ro
 
 ## Production Pipeline
 
-Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，只负责 checkout、可选质量检查和 `git archive`；随后通过专用 SSH 密钥把当前提交归档上传到 Cloud `100.77.31.79`，由 `deploy/scripts/build-production-on-cloud.sh` 在真实生产主机本地构建、迁移和部署。Production 不再使用 Primary 的 Docker socket 创建生产镜像或容器。
+Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，只负责 checkout、可选质量检查和 `git archive`；随后通过专用 SSH 密钥把当前提交归档上传到 Cloud `100.77.31.79`，由 `deploy/scripts/build-production-on-cloud.sh` 在真实生产主机本地构建、发布 Web 静态资源、迁移和部署。Production 不再使用 Primary 的 Docker socket 创建生产镜像或容器。
 
 - 镜像：`linkresume:prod-<commit>-b<build-number>`、`linkresume-pi:prod-<commit>-b<build-number>`
 - 部署目录：`/opt/tolink/LinkResume`
@@ -45,7 +45,9 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，
 - 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkresume`
 
-Production 公网 Nginx 对 `/assets/` 保留一年 `immutable` 缓存，并为 JS、CSS、JSON 和 SVG 开启 gzip；FastAPI 静态文件层提供相同的压缩与缓存兜底。`index.html` 不做长期缓存，保证新部署能及时引用新的哈希资源。网关调整后必须同时验证 `Content-Encoding: gzip`、`Cache-Control`、LinkResume 健康接口和共享网关上的其他域名。
+Production Web 只把 Vite 生成的哈希 `/assets/*` 发布到阿里云 OSS Bucket 的 `LinkResume/assets/` 前缀，并由浏览器直接通过 `https://qingluo-public.oss-cn-shanghai.aliyuncs.com/LinkResume/` 读取；不使用 CDN、自定义静态域名或独立证书。`index.html`、SPA 路由和 `/api/*` 仍由 `https://linkresume.cn` 的公网 Nginx 与 FastAPI 提供。根 `Dockerfile` 通过 `VITE_ASSET_BASE_URL` 把 OSS 地址写进生产 HTML，同时继续在镜像 `/app/web/assets` 保留同一份资源。发布脚本从即将部署的不可变镜像提取该目录，使用 `ossutil 2.x` 上传到 Bucket 的 `LinkResume/assets/` 前缀并设置一年 `immutable`，随后逐项通过携带 `Origin: https://linkresume.cn` 的 OSS HTTPS HEAD 检查状态、缓存头及 JavaScript/字体的跨域响应；全部成功后才允许初始化数据库、迁移和切换应用。上传或 OSS 验证失败发生在切换前，旧生产版本继续服务。
+
+`index.html` 继续 `no-cache`，新版本能及时引用新的哈希资源。发布过程不删除 `LinkResume/` 下的历史 OSS 对象，因为上一版镜像回退后仍会引用旧哈希；未来清理必须基于明确的保留发布清单独立实施。当前 `qingluo-public` 是多个项目前缀共用的公共读 Bucket，发布对象使用 `default` ACL 继承 Bucket 权限，不修改 Bucket ACL；RAM 写权限必须限制在 `qingluo-public/LinkResume/*`。Bucket CORS 必须允许 `https://linkresume.cn` 和 `https://www.linkresume.cn` 对公开对象发起 `GET`、`HEAD`，允许请求头 `*`，从而保证浏览器可加载跨域 JavaScript 与字体；该规则不授予上传、修改或删除权限。对象的长期缓存由上传时写入的 `Cache-Control` 控制。
 
 `linkresume-prod` 的 Generic Webhook Trigger 复用 Jenkins Secret Text 凭据
 `linkresume-dev-webhook-token`，但只接受 `refs/heads/master`。同一个 GitHub push
@@ -53,7 +55,7 @@ webhook 因此会分别把 `dev` 推送交给 Dev Job、把 PR 合并产生的 `
 Production Job。首次加入触发器后需手动运行一次 `linkresume-prod`，让 Jenkins 从根
 `Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
 
-Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供且权限为 `600`。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
+Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；应用私密覆盖必须由部署密钥存储预先提供到 `.env.production.local` 且权限为 `600`。OSS 发布凭据使用另一个不进入 Compose 的 `/opt/tolink/LinkResume/.env.oss-cdn.local`，格式见 `deploy/oss-cdn.env.example`；文件必须为 `600`，包含目标 Bucket、OSS Region 和专用最小权限 RAM 凭据，可选设置 OSS Endpoint。发布脚本通过 ossutil 官方环境变量读取凭据，不把 AccessKey 放入命令参数、镜像、应用进程或日志。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
 
 首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
 
@@ -100,13 +102,14 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前仓库 head `0061`；`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录。
+- 当前仓库 head `0062`；`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹，并只对已登记的 Development 旧 `0059` 完整结构执行缺失基础 DDL 的增量补齐；已有 `user_preferences` 不删除。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。
 - 回滚到旧镜像时仍要保留新旧完整 LLM 密钥环，直到确认没有运行实例或密文依赖待移除的 key。
 - 只有首次 Production 切换会通过受控工具把旧 Express/SQLite 的账号和简历导入 MySQL；本地原型 SQLite 不进入远端数据库。旧 SQLite 只作为切换前应用的短时回退依据，不能接收或合并新 MySQL 写入。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkresume` 数据库或 Redis volume。
+- 静态资源回滚不删除 OSS 中的新旧哈希对象；应用回到上一镜像后，其 `index.html` 会重新引用仍然保留的旧对象。OSS 上传或公网验证故障发生在发布验证阶段时不得继续数据库迁移或应用切换；已上传但未引用的新对象可以保留。
 - 日志链路回滚可恢复上一版应用与 Compose，并让 `--remove-orphans` 停止 LinkResume Promtail；不得删除日志或 positions 命名卷，也不得修改共享 Loki。重新启用采集器后可能至少一次重复投递，管理查询会按 `event_id` 去重。
 - 简历导入回滚采用上一版 Web 与 FastAPI 整体镜像；不删除新简历、MinIO 原件或 Redis 幂等 key，也不静默切回未验收的旧转换服务。
 - 进入新契约后应用替换必须同时覆盖 Web、FastAPI 与 Worker，避免页面、任务状态和消费者契约错配。

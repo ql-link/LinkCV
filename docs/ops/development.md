@@ -12,11 +12,11 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0061`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0063`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹并兼容已登记的 Development 旧 `0059` 结构，`0063` 增加整篇翻译提案的候选标题和结果简历关联。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。Local profile 同时设置回环地址的 `RABBITMQ_URL` 与 `RABBITMQ_PORT` 时，启动器在进程环境中让 URL 端口跟随 `RABBITMQ_PORT`，不修改文件，也不重写远程 RabbitMQ 地址。启动器复用当前 npm 的 JavaScript 入口，在 Windows 和 Unix 上都通过同一 profile 启动服务。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKRESUME_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
-FastAPI 和 Worker 单独启动时也支持 `LINKRESUME_ENV_FILE` + `LINKRESUME_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
+FastAPI 和 Worker 单独启动时也支持 `LINKRESUME_ENV_FILE` + `LINKRESUME_SECRET_ENV_FILE`；未显式指定私密文件且当前目录是 linked worktree 时，会自动寻找主工作目录中的同名 `.local`。Production 仍使用 `.env.production` + `.env.production.local`：仓库文件维护 Cloud Docker DNS 地址，私密文件只提供账号、密码和密钥，不覆盖 `DATABASE_URL`、`REDIS_URL` 或 `MINIO_ENDPOINT`。Production Web 另从 `.env.production` 读取公开的 `WEB_ASSET_OSS_URL` 作为构建地址；OSS 上传凭据只放在生产主机独立的 `.env.oss-cdn.local`（沿用旧文件名以兼容现有主机配置），不进入应用配置。进程环境变量优先级最高，启动日志只显示配置文件路径，不输出变量值。
 
 `APP_ENV=local|development` 时，Web 登录页开放普通邮箱密码注册和登录，注册成功后直接进入空的简历主页；`APP_ENV=production` 时两个普通入口均隐藏且后端返回 404，普通用户和已绑定微信的管理员都可通过微信身份进入，管理台仍提供独立的 `/admin/login` 密码入口。
 
@@ -38,7 +38,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKRESUME_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkresume`，再升级到当前 Alembic head `0061`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
+命令先校验并创建 `linkresume`，再升级到当前 Alembic head `0063`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试素材默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
@@ -169,6 +169,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run dev:development`             | 使用共享 Development 中间件，一键启动 Web、FastAPI、Worker 与 Pi    |
 | `npm run test:web`                    | 前端 Vitest 单元和组件测试                                           |
 | `npm run check:web`                   | Web 设计规则、测试、类型检查和生产构建                               |
+| `npm run build:web`                   | 构建 Web 页面分包并输出各静态资源的原始与 gzip 体积                  |
+| `VITE_ASSET_BASE_URL=https://example-bucket.oss-cn-shanghai.aliyuncs.com/LinkResume/ npm run build:web` | 验证 HTTPS OSS 资源地址构建；本地日常构建保持变量为空 |
 | `npm run dev:pi`                      | 单独启动无头 Pi Agent 服务                                           |
 | `npm run test:pi`                     | 运行 Pi 服务单元测试                                                  |
 | `npm run check:pi`                    | 校验静态模型目录、离线构建 Pi 并测试服务                              |

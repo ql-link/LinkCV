@@ -213,8 +213,16 @@ class ResumeChangeProposal(Base):
         ),
         CheckConstraint(
             "proposal_mode IN ('legacy_snapshot', 'polish_local', "
-            "'rewrite_entry_star', 'generate_from_materials')",
+            "'rewrite_entry_star', 'generate_from_materials', 'translate_resume')",
             name="ck_resume_change_proposals_mode",
+        ),
+        CheckConstraint(
+            "(proposal_mode = 'translate_resume' AND "
+            "((status = 'applied' AND result_resume_id IS NOT NULL) OR "
+            "(status <> 'applied' AND result_resume_id IS NULL))) OR "
+            "(proposal_mode <> 'translate_resume' AND proposed_title IS NULL "
+            "AND result_resume_id IS NULL)",
+            name="ck_resume_change_proposals_translation_result",
         ),
         CheckConstraint(
             "base_lock_version >= 1 AND "
@@ -256,7 +264,7 @@ class ResumeChangeProposal(Base):
         String(32),
         nullable=False,
         default="legacy_snapshot",
-        comment="提案模式：旧快照、局部润色、经历整体优化或资料生成",
+        comment="提案模式：旧快照、局部润色、经历整体优化、资料生成或整篇翻译",
     )
     target_locator_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSON(), nullable=True, comment="稳定目标定位；旧快照提案为空"
@@ -275,6 +283,12 @@ class ResumeChangeProposal(Base):
     )
     source_refs_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON(), nullable=True, comment="提案引用的职位或资料来源；旧提案为空"
+    )
+    proposed_title: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="翻译结果的新简历标题"
+    )
+    result_resume_id: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT, nullable=True, comment="翻译确认后创建的简历标识"
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     applied_lock_version: Mapped[int | None] = mapped_column(

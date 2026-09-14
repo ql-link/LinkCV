@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -69,6 +69,7 @@ const value = 1;
 
     expect(screen.getByRole("heading", { level: 2, name: "一级标题" })).toHaveClass("is-level-1");
     expect(screen.getByRole("separator")).toBeInTheDocument();
+    expect(container.querySelector(".agent-table-scroll table")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "位置" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "补充量化结果" })).toBeInTheDocument();
     expect(screen.getByText("第一项")).toBeInTheDocument();
@@ -77,10 +78,29 @@ const value = 1;
     expect(screen.getByRole("link", { name: "参考链接" })).toHaveAttribute("rel", "noopener noreferrer");
     expect(container.querySelector("s")).toHaveTextContent("删除内容");
     expect(container.querySelector("pre code")).toHaveTextContent("const value = 1;");
+    expect(screen.getByRole("group", { name: "ts 代码" })).toHaveTextContent("ts");
+    expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("复制");
     expect(screen.getByRole("img", { name: "远程图片" })).toHaveTextContent("[图片：远程图片]");
     expect(container.querySelector("img")).not.toBeInTheDocument();
     expect(container.querySelector("script")).not.toBeInTheDocument();
     expect(container).toHaveTextContent('<script>alert("unsafe")</script>');
+  });
+
+  it("保留普通换行并可复制围栏代码", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const { container } = render(<AgentMarkdown content={`第一行
+第二行
+
+\`\`\`typescript
+const answer = 42;
+\`\`\``} />);
+
+    expect(container.querySelector("p br")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("const answer = 42;"));
+    expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("已复制");
   });
 
   it("用户消息头像使用当前用户图片，并在缺少图片时回退到昵称首字", async () => {
@@ -157,6 +177,30 @@ const value = 1;
       content: "优化表达",
       selection_context: selectionContext,
     }));
+  });
+
+  it("把运行失败显示为页面根层的统一顶部反馈", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "streamAgentMessage").mockRejectedValue(new ApiRequestError(503, "AGENT_UNAVAILABLE"));
+
+    const { container } = render(
+      <AgentPanel
+        resumeId="resume-1"
+        onBeforeConfirm={vi.fn().mockResolvedValue(true)}
+        onApplied={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("告诉助手你想改善什么"), "检查简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("智能助手暂时不可用");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert.parentElement).toBe(document.body);
+    expect(container.querySelector(".agent-error")).not.toBeInTheDocument();
   });
 
   it("流式展示回答与提案，并在用户确认后应用到简历", async () => {

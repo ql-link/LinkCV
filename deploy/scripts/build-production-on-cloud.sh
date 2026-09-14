@@ -37,6 +37,7 @@ work_root="${prod_root}/jenkins/workspaces"
 build_dir="${work_root}/linkresume-${build_number}"
 base_env="${deploy_dir}/.env.production"
 secret_env="${deploy_dir}/.env.production.local"
+oss_secret_env="${deploy_dir}/.env.oss-cdn.local"
 compose_file="${deploy_dir}/deploy/docker-compose.production.yml"
 old_compose_file="${deploy_dir}/deploy/docker-compose.yml"
 legacy_prod_root="/opt/tolink/LinkCV"
@@ -48,8 +49,12 @@ backup_root="${deploy_dir}/backups/production-cutover"
 docker_network="tolink-app-net"
 http_port="4174"
 cutover_started="false"
+asset_container=""
 
 cleanup() {
+  if [[ -n "${asset_container}" ]]; then
+    docker rm -f "${asset_container}" >/dev/null 2>&1 || true
+  fi
   if [[ "${build_dir}" == "${work_root}/linkresume-${build_number}" ]]; then
     rm -rf -- "${build_dir}"
   fi
@@ -68,6 +73,32 @@ trap finish EXIT
 if [[ ! -f "${secret_env}" ]]; then
   echo "Missing Production secret env file: ${secret_env}" >&2
   exit 10
+fi
+
+if [[ ! -f "${oss_secret_env}" ]]; then
+  echo "Missing Production OSS secret env file: ${oss_secret_env}" >&2
+  exit 10
+fi
+oss_secret_mode="$(stat -c '%a' "${oss_secret_env}")"
+if [[ "${oss_secret_mode}" != "600" ]]; then
+  echo "Production OSS secret env file must use mode 600, got ${oss_secret_mode}" >&2
+  exit 11
+fi
+required_oss_keys=(
+  WEB_ASSET_OSS_BUCKET
+  OSS_ACCESS_KEY_ID
+  OSS_ACCESS_KEY_SECRET
+  OSS_REGION
+)
+for required_key in "${required_oss_keys[@]}"; do
+  if ! grep -Eq "^${required_key}=.+$" "${oss_secret_env}"; then
+    echo "Missing required Production OSS setting: ${required_key}" >&2
+    exit 12
+  fi
+done
+if ! command -v ossutil >/dev/null 2>&1; then
+  echo "Production host requires ossutil 2.x on PATH" >&2
+  exit 12
 fi
 secret_mode="$(stat -c '%a' "${secret_env}")"
 if [[ "${secret_mode}" != "600" ]]; then
@@ -131,8 +162,20 @@ rm -rf -- "${build_dir}"
 mkdir -p "${build_dir}" "${deploy_dir}/deploy/observability" "${backup_root}"
 tar -xzf "${source_archive}" -C "${build_dir}"
 
+web_asset_oss_url="$(grep -E '^WEB_ASSET_OSS_URL=.+' "${build_dir}/.env.production" | tail -n 1 | cut -d= -f2-)"
+web_asset_oss_prefix="$(grep -E '^WEB_ASSET_OSS_PREFIX=.+' "${build_dir}/.env.production" | tail -n 1 | cut -d= -f2-)"
+if [[ "${web_asset_oss_url}" != https://*/ ]]; then
+  echo "Production WEB_ASSET_OSS_URL must be an HTTPS URL ending with /" >&2
+  exit 17
+fi
+if [[ -z "${web_asset_oss_prefix}" ]]; then
+  echo "Production WEB_ASSET_OSS_PREFIX is required" >&2
+  exit 17
+fi
+
 DOCKER_BUILDKIT=1 docker build \
   --build-arg "DEBIAN_MIRROR=https://mirrors.aliyun.com" \
+  --build-arg "VITE_ASSET_BASE_URL=${web_asset_oss_url}" \
   --label "org.opencontainers.image.revision=${commit_short}" \
   -t "${image}:${tag}" \
   "${build_dir}"
@@ -141,6 +184,29 @@ DOCKER_BUILDKIT=1 docker build \
   -f "${build_dir}/deploy/Dockerfile.pi" \
   -t "${pi_image}:${tag}" \
   "${build_dir}"
+
+asset_export_dir="${build_dir}/web-assets"
+mkdir -p "${asset_export_dir}"
+asset_container="$(docker create "${image}:${tag}")"
+docker cp "${asset_container}:/app/web/assets/." "${asset_export_dir}/"
+docker rm "${asset_container}" >/dev/null
+asset_container=""
+
+read_oss_setting() {
+  local key="$1"
+  grep -E "^${key}=.+$" "${oss_secret_env}" | tail -n 1 | cut -d= -f2-
+}
+export WEB_ASSET_OSS_URL="${web_asset_oss_url}"
+export WEB_ASSET_OSS_BUCKET="$(read_oss_setting WEB_ASSET_OSS_BUCKET)"
+export WEB_ASSET_OSS_PREFIX="${web_asset_oss_prefix}"
+export OSS_ACCESS_KEY_ID="$(read_oss_setting OSS_ACCESS_KEY_ID)"
+export OSS_ACCESS_KEY_SECRET="$(read_oss_setting OSS_ACCESS_KEY_SECRET)"
+export OSS_REGION="$(read_oss_setting OSS_REGION)"
+if grep -Eq '^OSS_ENDPOINT=.+$' "${oss_secret_env}"; then
+  export OSS_ENDPOINT="$(read_oss_setting OSS_ENDPOINT)"
+fi
+bash "${build_dir}/deploy/scripts/publish-web-assets-to-oss.sh" "${asset_export_dir}"
+unset WEB_ASSET_OSS_URL WEB_ASSET_OSS_BUCKET WEB_ASSET_OSS_PREFIX OSS_ACCESS_KEY_ID OSS_ACCESS_KEY_SECRET OSS_REGION OSS_ENDPOINT
 
 backup_dir="${backup_root}/build-${build_number}"
 mkdir -m 0700 -p "${backup_dir}"
