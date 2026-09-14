@@ -4,6 +4,8 @@
 
 Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `llm` 模块组成：`agent` 管理持久化会话、会话展示状态与提案，Pi 执行 agent loop，`llm` 管理模型选择、凭据、验证与计量。普通用户功能见 [AI 求职助手](../features/ai-assistant.md)，第三方 Pi 包边界见 [third_party/pi](third-party-pi.md)。
 
+Web 运行时的浅色页面背景由共享暖白 Token 提供；该视觉 Token 不进入 Agent、消息或模型调用契约。
+
 ## 组件入口
 
 - `modules/agent/routes.py`：用户会话、当前模型摘要、消息 SSE、运行重连、取消和提案确认。
