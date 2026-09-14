@@ -2,11 +2,14 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from linkresume.application.resumes.service import parse_persisted_resume_snapshot
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.application.resumes.service import parse_persisted_resume_snapshot
+from linkresume.modules.agent.context_service import list_contexts
 from linkresume.modules.agent.schemas import (
     AgentReadinessResponse,
+    AgentResourceListRequest,
+    AgentResourceListResponse,
     ContextReadRequest,
     DiagnosisRequest,
     DiagnosisResponse,
@@ -16,11 +19,14 @@ from linkresume.modules.agent.schemas import (
     ProposalResponse,
     ProposalV2CreateRequest,
     ResumeContextResponse,
+    ResumeReferenceResolveRequest,
+    ResumeReferenceResolveResponse,
+    RuntimeConfigResponse,
     ScopedResumeContextResponse,
     TargetResolveRequest,
     TargetResolveResponse,
-    RuntimeConfigResponse,
     ToolEventRequest,
+    TranslationProposalCreateRequest,
 )
 from linkresume.modules.agent.resume_tools import (
     diagnose_content,
@@ -36,8 +42,10 @@ from linkresume.modules.agent.security import require_pi_service
 from linkresume.modules.agent.service import (
     create_proposal,
     create_scoped_proposal,
+    create_translation_proposal,
     get_active_run,
     proposal_record,
+    resolve_resume_reference,
     upsert_tool_event,
 )
 from linkresume.modules.llm.service import LLMError, LLMService
@@ -62,13 +70,20 @@ PI_PROVIDER_BY_ADAPTER = {
 }
 
 
-def _run_resume(db: Session, run_id: str) -> tuple[object, object, Resume, object]:
+def _run_resume(
+    db: Session, run_id: str, resume_id: str | None = None
+) -> tuple[object, object, Resume, object]:
     run, session = get_active_run(db, run_id)
-    if session.resume_id is None:
+    selected_resume_id = resume_id or (
+        str(session.resume_id) if session.resume_id is not None else None
+    )
+    if selected_resume_id is None:
         raise ApiError(409, "AGENT_RESUME_REQUIRED")
+    if not selected_resume_id.isascii() or not selected_resume_id.isdecimal():
+        raise ApiError(404, "RESUME_NOT_FOUND")
     resume = db.scalar(
         select(Resume).where(
-            Resume.id == session.resume_id, Resume.user_id == session.user_id
+            Resume.id == int(selected_resume_id), Resume.user_id == session.user_id
         )
     )
     if resume is None:
@@ -167,13 +182,60 @@ def resolve_run_target(
     )
 
 
+@router.post(
+    "/runs/{run_id}/resumes:resolve-reference",
+    response_model=ResumeReferenceResolveResponse,
+)
+def resolve_run_resume_reference(
+    run_id: str,
+    payload: ResumeReferenceResolveRequest,
+    db: Session = Depends(get_db),
+) -> ResumeReferenceResolveResponse:
+    _, session = get_active_run(db, run_id)
+    return ResumeReferenceResolveResponse.model_validate(
+        resolve_resume_reference(
+            db,
+            session=session,
+            title=payload.title,
+            resume_id=payload.resume_id,
+        )
+    )
+
+
+@router.post(
+    "/runs/{run_id}/resources:list",
+    response_model=AgentResourceListResponse,
+)
+def list_run_user_resources(
+    run_id: str,
+    payload: AgentResourceListRequest,
+    db: Session = Depends(get_db),
+) -> AgentResourceListResponse:
+    _, session = get_active_run(db, run_id)
+    selected_types = set(payload.types)
+    resources = []
+    for resource_type in ("resume", "dataset", "interview"):
+        if resource_type not in selected_types:
+            continue
+        resources.extend(
+            list_contexts(
+                db,
+                user_id=session.user_id,
+                context_type=resource_type,
+                query=payload.query,
+                limit=payload.limit,
+            )
+        )
+    return AgentResourceListResponse(resources=resources)
+
+
 @router.post("/runs/{run_id}/context:read", response_model=ScopedResumeContextResponse)
 def read_scoped_run_context(
     run_id: str,
     payload: ContextReadRequest,
     db: Session = Depends(get_db),
 ) -> ScopedResumeContextResponse:
-    _, _, resume, snapshot = _run_resume(db, run_id)
+    _, _, resume, snapshot = _run_resume(db, run_id, payload.target.resume_id)
     content = target_content(resume, snapshot.data, payload.target, payload.scope)
     return ScopedResumeContextResponse(
         run_id=run_id,
@@ -217,7 +279,9 @@ def diagnose_run_target(
     request: Request,
     db: Session = Depends(get_db),
 ) -> DiagnosisResponse:
-    _, session, resume, snapshot = _run_resume(db, run_id)
+    _, session, resume, snapshot = _run_resume(
+        db, run_id, payload.target.resume_id
+    )
     content = target_content(resume, snapshot.data, payload.target, payload.scope)
     source_refs = validate_source_ids(
         db, user_id=session.user_id, source_ids=payload.source_ids
@@ -285,6 +349,28 @@ def create_scoped_run_proposal(
         payload=payload,
         ttl_days=request.app.state.settings.agent_proposal_ttl_days,
         fingerprint_secret=_fingerprint_secret(request),
+    )
+    return ProposalResponse(proposal=proposal_record(proposal, run.public_id))
+
+
+@router.post(
+    "/runs/{run_id}/proposals:translation",
+    response_model=ProposalResponse,
+    status_code=201,
+)
+def create_translation_run_proposal(
+    run_id: str,
+    payload: TranslationProposalCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> ProposalResponse:
+    run, session = get_active_run(db, run_id)
+    proposal = create_translation_proposal(
+        db,
+        run=run,
+        session=session,
+        payload=payload,
+        ttl_days=request.app.state.settings.agent_proposal_ttl_days,
     )
     return ProposalResponse(proposal=proposal_record(proposal, run.public_id))
 

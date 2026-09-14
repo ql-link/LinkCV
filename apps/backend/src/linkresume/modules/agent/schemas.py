@@ -186,6 +186,34 @@ class AgentContextListResponse(BaseModel):
     contexts: list[AgentContextListItem]
 
 
+AgentResourceType = Literal["resume", "dataset", "interview"]
+
+
+class AgentResourceListRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    types: list[AgentResourceType] = Field(
+        default_factory=lambda: ["resume", "dataset", "interview"],
+        min_length=1,
+        max_length=3,
+    )
+    query: str | None = Field(default=None, max_length=200)
+    limit: int = Field(default=20, ge=1, le=50)
+
+    @field_validator("types")
+    @classmethod
+    def require_unique_resource_types(
+        cls, value: list[AgentResourceType]
+    ) -> list[AgentResourceType]:
+        if len(value) != len(set(value)):
+            raise ValueError("resource types must be unique")
+        return value
+
+
+class AgentResourceListResponse(BaseModel):
+    resources: list[AgentContextListItem]
+
+
 class MessageCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -287,6 +315,14 @@ class RunResponse(BaseModel):
     status: Literal["running", "succeeded", "failed", "cancelled"]
 
 
+class ActiveRunRecord(RunResponse):
+    started_at: datetime
+
+
+class ActiveRunResponse(BaseModel):
+    run: ActiveRunRecord | None
+
+
 class AgentReadinessResponse(BaseModel):
     ready: bool
 
@@ -326,12 +362,15 @@ class ProposalRecord(BaseModel):
         "polish_local",
         "rewrite_entry_star",
         "generate_from_materials",
+        "translate_resume",
     ] = "legacy_snapshot"
     target: dict[str, Any] | None = None
     diagnosis: dict[str, Any] | None = None
     operations: list[dict[str, Any]] = Field(default_factory=list)
     rationale: list[dict[str, str]] = Field(default_factory=list)
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
+    proposed_title: str | None = None
+    result_resume_id: str | None = None
     status: Literal["pending", "applied", "rejected", "expired", "conflicted"]
     applied_lock_version: int | None
     expires_at: datetime
@@ -351,12 +390,15 @@ class ToolEventRequest(BaseModel):
 
     call_key: str = Field(min_length=1, max_length=128)
     tool_name: Literal[
+        "list_user_resources",
         "get_resume_context",
         "create_resume_proposal",
+        "resolve_resume_reference",
         "resolve_resume_target",
         "search_resume_materials",
         "analyze_resume_content",
         "create_resume_change_proposal",
+        "create_resume_translation_proposal",
         "request_user_input",
     ]
     status: Literal["running", "succeeded", "failed", "cancelled"]
@@ -411,6 +453,31 @@ class TargetResolveResponse(BaseModel):
     status: Literal["resolved", "ambiguous", "not_found"]
     target: ResumeTargetLocator | None = None
     candidates: list[TargetCandidate] = Field(default_factory=list)
+
+
+class ResumeReferenceResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    resume_id: str | None = Field(default=None, pattern=r"^[0-9]+$")
+
+    @model_validator(mode="after")
+    def require_reference(self) -> "ResumeReferenceResolveRequest":
+        if self.title is None and self.resume_id is None:
+            raise ValueError("title or resume_id is required")
+        return self
+
+
+class ResumeReferenceCandidate(BaseModel):
+    resume_id: str
+    title: str
+    updated_at: datetime
+
+
+class ResumeReferenceResolveResponse(BaseModel):
+    status: Literal["resolved", "ambiguous", "not_found"]
+    target: ResumeTargetLocator | None = None
+    candidates: list[ResumeReferenceCandidate] = Field(default_factory=list)
 
 
 class ContextReadRequest(BaseModel):
@@ -491,6 +558,20 @@ class ProposalV2CreateRequest(BaseModel):
     operations: list[ProposalOperation] = Field(min_length=1, max_length=20)
     rationale: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     source_ids: list[str] = Field(default_factory=list, max_length=20)
+    summary: str = Field(min_length=1, max_length=4_000)
+
+
+class TranslationProposalCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    call_key: str = Field(min_length=1, max_length=128)
+    target: ResumeTargetLocator
+    target_language: str = Field(
+        min_length=2, max_length=32, pattern=r"^[A-Za-z][A-Za-z0-9-]{1,31}$"
+    )
+    proposed_title: str = Field(min_length=1, max_length=255)
+    data: ResumeDocument
+    style: ResumePresentation
     summary: str = Field(min_length=1, max_length=4_000)
 
 

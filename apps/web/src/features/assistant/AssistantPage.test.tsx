@@ -45,10 +45,12 @@ beforeEach(() => {
   vi.spyOn(api, "getAgentModel").mockResolvedValue({
     model: { adapter: "openai", name: "deepseek/deepseek-v4-flash" },
   });
+  vi.spyOn(api, "getActiveAgentRun").mockResolvedValue({ run: null });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  window.sessionStorage.clear();
 });
 
 describe("AssistantPage", () => {
@@ -259,6 +261,74 @@ describe("AssistantPage", () => {
     expect(screen.getAllByRole("button", { name: "添加资料" })).toHaveLength(1);
   });
 
+  it("刷新后重新连接仍在运行的对话并恢复输出", async () => {
+    const runningSession: AgentSession = {
+      ...session,
+      title: "生成中的对话",
+      messages: [
+        { sequence_no: 1, role: "user", content: "请继续分析", created_at: session.created_at },
+      ],
+    };
+    const completedSession: AgentSession = {
+      ...runningSession,
+      messages: [
+        ...runningSession.messages,
+        { sequence_no: 2, role: "assistant", content: "完整分析结果", created_at: session.created_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [runningSession] });
+    vi.mocked(api.getActiveAgentRun).mockResolvedValue({
+      run: { run_id: "run-active", status: "running", started_at: session.created_at },
+    });
+    vi.spyOn(api, "getAgentSession")
+      .mockResolvedValueOnce({ session: runningSession })
+      .mockResolvedValueOnce({ session: completedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "streamAgentRun").mockImplementation(async (_runId, _signal, onEvent) => {
+      onEvent({ type: "run.phase", runId: "run-active", phase: "drafting", referencedContextCount: 0 });
+      onEvent({ type: "assistant.delta", runId: "run-active", delta: "正在生成的内容" });
+      onEvent({ type: "run.completed", runId: "run-active" });
+    });
+
+    render(<AssistantPage sessionId="session-1" />);
+
+    expect(await screen.findByText("完整分析结果")).toBeInTheDocument();
+    expect(api.streamAgentRun).toHaveBeenCalledWith(
+      "run-active",
+      expect.any(AbortSignal),
+      expect.any(Function),
+    );
+    expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument();
+  });
+
+  it("离开助手页面只断开浏览器订阅，不取消后台运行", async () => {
+    const runningSession: AgentSession = {
+      ...session,
+      messages: [
+        { sequence_no: 1, role: "user", content: "请分析", created_at: session.created_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [runningSession] });
+    vi.mocked(api.getActiveAgentRun).mockResolvedValue({
+      run: { run_id: "run-active", status: "running", started_at: session.created_at },
+    });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: runningSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "streamAgentRun").mockImplementation(async (_runId, signal) => {
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    });
+    const cancel = vi.spyOn(api, "cancelAgentRun").mockResolvedValue({
+      run_id: "run-active",
+      status: "cancelled",
+    });
+
+    const view = render(<AssistantPage sessionId="session-1" />);
+    expect(await screen.findByRole("button", { name: "停止生成" })).toBeInTheDocument();
+    view.unmount();
+
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
   it("把历史用户消息中的文件引用渲染为正文内联单元", async () => {
     const routedSession: AgentSession = {
       ...session,
@@ -392,6 +462,30 @@ describe("AssistantPage", () => {
     window.getSelection()?.addRange(range);
     await user.keyboard("你好 ");
     expect(editor).toHaveTextContent("你好 资料1.md 这是什么");
+  });
+
+  it("中文输入法组合期间不重设光标，确认候选词后再同步输入", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    render(<AssistantPage />);
+    const editor = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
+    editor.focus();
+    const focus = vi.spyOn(editor, "focus");
+
+    fireEvent.compositionStart(editor);
+    editor.textContent = "n";
+    fireEvent.input(editor, { data: "n", inputType: "insertCompositionText", isComposing: true });
+    editor.textContent = "ni";
+    fireEvent.input(editor, { data: "i", inputType: "insertCompositionText", isComposing: true });
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(editor).toHaveTextContent("ni");
+
+    editor.textContent = "你";
+    fireEvent.compositionEnd(editor, { data: "你" });
+
+    expect(editor).toHaveTextContent("你");
+    expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
   });
 
   it("模型菜单展示当前绑定的真实模型，不伪造可切换项", async () => {

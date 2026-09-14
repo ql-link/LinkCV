@@ -1,5 +1,7 @@
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import timedelta, timezone
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -9,10 +11,18 @@ from sqlalchemy.orm import Session
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
 from linkresume.application.resumes.service import (
+    InvalidResumeTitle,
+    ResumeTitleConflict,
     ResumeVersionLimitExceeded,
     append_resume_version,
+    ensure_unique_resume_title,
+    has_resume_capacity,
+    normalize_resume_title,
     parse_persisted_resume_snapshot,
+    persist_resume_with_initial_version,
+    resume_title_key,
 )
+from linkresume.application.resumes.commands import CreateResumeCommand
 from linkresume.modules.agent.models import (
     AgentMessage,
     AgentRun,
@@ -26,17 +36,95 @@ from linkresume.modules.agent.schemas import (
     AgentSessionRecord,
     ProposalRecord,
     ResumeTargetLocator,
+    TranslationProposalCreateRequest,
 )
 from linkresume.modules.agent.resume_tools import (
     apply_operations,
     editor_markdown,
     replace_editor_markdown,
+    resolve_target,
     target_content,
     validate_source_ids,
     verify_diagnosis_fingerprint,
 )
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import Resume
+from linkresume.modules.resumes.models import Resume, ResumeVersion
+
+
+TRANSLATION_IMMUTABLE_KEYS = {
+    "schema_version",
+    "node_id",
+    "inline_type",
+    "block_type",
+    "semantic_kind",
+    "kind",
+    "url",
+    "source_refs",
+    "start_date",
+    "end_date",
+}
+TRANSLATION_IMMUTABLE_CONTACT_KINDS = {
+    "phone",
+    "email",
+    "website",
+    "github",
+    "linkedin",
+}
+TRANSLATION_TOKEN_PATTERN = re.compile(
+    r"https?://[^\s)'\"<>]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\d+(?:\.\d+)?",
+    re.IGNORECASE,
+)
+
+
+def validate_translation_snapshot(
+    source: object,
+    translated: object,
+    *,
+    path: tuple[str, ...] = (),
+    contact_kind: str | None = None,
+) -> None:
+    """Reject structural, identifier and factual-token changes in translations."""
+
+    if type(source) is not type(translated):
+        raise ApiError(422, "RESUME_TRANSLATION_INVALID")
+    if isinstance(source, dict):
+        if source.keys() != translated.keys():
+            raise ApiError(422, "RESUME_TRANSLATION_INVALID")
+        nested_contact_kind = source.get("kind") if isinstance(source.get("kind"), str) else contact_kind
+        for key in source:
+            validate_translation_snapshot(
+                source[key],
+                translated[key],
+                path=(*path, key),
+                contact_kind=nested_contact_kind,
+            )
+        return
+    if isinstance(source, list):
+        if len(source) != len(translated):
+            raise ApiError(422, "RESUME_TRANSLATION_INVALID")
+        for index, (source_item, translated_item) in enumerate(zip(source, translated, strict=True)):
+            validate_translation_snapshot(
+                source_item,
+                translated_item,
+                path=(*path, str(index)),
+                contact_kind=contact_kind,
+            )
+        return
+    if isinstance(source, str):
+        leaf_key = path[-1] if path else ""
+        immutable = any(key in TRANSLATION_IMMUTABLE_KEYS for key in path)
+        immutable = immutable or leaf_key.endswith("_id") or leaf_key.endswith("_ids")
+        immutable = immutable or leaf_key in {"document_id", "href"}
+        immutable = immutable or (
+            contact_kind in TRANSLATION_IMMUTABLE_CONTACT_KINDS and path[-1:] == ("value",)
+        )
+        if immutable and source != translated:
+            raise ApiError(422, "RESUME_TRANSLATION_INVALID")
+        if TRANSLATION_TOKEN_PATTERN.findall(source) != TRANSLATION_TOKEN_PATTERN.findall(translated):
+            raise ApiError(422, "RESUME_TRANSLATION_INVALID")
+        return
+    if source != translated:
+        raise ApiError(422, "RESUME_TRANSLATION_INVALID")
 
 
 def session_record(
@@ -105,6 +193,12 @@ def proposal_record(
         operations=proposal.operations_json or [],
         rationale=proposal.rationale_json or [],
         source_refs=proposal.source_refs_json or [],
+        proposed_title=proposal.proposed_title,
+        result_resume_id=(
+            str(proposal.result_resume_id)
+            if proposal.result_resume_id is not None
+            else None
+        ),
         status=proposal.status,
         applied_lock_version=proposal.applied_lock_version,
         expires_at=proposal.expires_at,
@@ -263,16 +357,6 @@ def create_run(
     if not normalized_content:
         raise ApiError(400, "INVALID_AGENT_MESSAGE")
     context_snapshots = context_snapshots or []
-    context_resume_ids = {
-        item.resume_id for item in context_snapshots if item.resume_id is not None
-    }
-    target_resume_ids = {
-        item.resume_id
-        for item in context_snapshots
-        if item.type in {"resume", "resume_version"} and item.resume_id is not None
-    }
-    if len(target_resume_ids) > 1:
-        raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
 
     # Serialize run creation for the whole account so opening multiple sessions
     # cannot bypass the concurrency guard and multiply model cost. The
@@ -313,22 +397,6 @@ def create_run(
             or latest_message.message_type != "clarification"
         ):
             raise ApiError(409, "AGENT_CLARIFICATION_STALE")
-    target_resume_id = next(iter(target_resume_ids), None)
-    expected_resume_id = (
-        str(session.resume_id) if session.resume_id is not None else target_resume_id
-    )
-    if expected_resume_id is not None and any(
-        resume_id != expected_resume_id for resume_id in context_resume_ids
-    ):
-        raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
-    if target_resume_id is not None:
-        if session.resume_id is not None and str(session.resume_id) != target_resume_id:
-            raise ApiError(409, "AGENT_SESSION_RESUME_MISMATCH")
-        if session.resume_id is None:
-            # Context resolution already checked ownership and held the source
-            # row where possible.  The session binding and user message are
-            # committed below together with the run.
-            session.resume_id = int(target_resume_id)
     running = db.scalars(
         select(AgentRun)
         .join(AgentSession, AgentSession.id == AgentRun.session_id)
@@ -414,6 +482,88 @@ def get_active_run(db: Session, public_id: str) -> tuple[AgentRun, AgentSession]
     return run, session
 
 
+def resolve_resume_reference(
+    db: Session,
+    *,
+    session: AgentSession,
+    title: str | None,
+    resume_id: str | None,
+) -> dict[str, Any]:
+    """Resolve an owned resume for this run without mutating the session."""
+
+    resumes = list(
+        db.scalars(
+        select(Resume)
+        .where(Resume.user_id == session.user_id)
+        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        ).all()
+    )
+    if resume_id is not None:
+        if not resume_id.isascii() or not resume_id.isdecimal():
+            return {"status": "not_found", "target": None, "candidates": []}
+        matches = [resume for resume in resumes if resume.id == int(resume_id)]
+        if title is not None and matches:
+            try:
+                title_key = resume_title_key(title)
+            except InvalidResumeTitle as error:
+                raise ApiError(400, "INVALID_RESUME_TITLE") from error
+            matches = [
+                resume
+                for resume in matches
+                if resume_title_key(resume.title) == title_key
+            ]
+    else:
+        try:
+            title_key = resume_title_key(title or "")
+        except InvalidResumeTitle as error:
+            raise ApiError(400, "INVALID_RESUME_TITLE") from error
+        matches = [
+            resume for resume in resumes if resume_title_key(resume.title) == title_key
+        ]
+    if not matches:
+        return {"status": "not_found", "target": None, "candidates": []}
+    if len(matches) > 1:
+        return {
+            "status": "ambiguous",
+            "target": None,
+            "candidates": [
+                {
+                    "resume_id": str(resume.id),
+                    "title": resume.title,
+                    "updated_at": resume.updated_at,
+                }
+                for resume in matches[:10]
+            ],
+        }
+
+    resume = matches[0]
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    resolved = resolve_target(
+        resume,
+        snapshot.data,
+        selection_context=None,
+        quoted_text=None,
+        scope_hint="resume",
+    )
+    return resolved
+
+
+def _owned_resume_for_target(
+    db: Session, *, user_id: int, resume_id: str, lock: bool = False
+) -> Resume:
+    if not resume_id.isascii() or not resume_id.isdecimal():
+        raise ApiError(404, "RESUME_NOT_FOUND")
+    query = select(Resume).where(
+        Resume.id == int(resume_id), Resume.user_id == user_id
+    )
+    if lock:
+        query = query.with_for_update()
+    resume = db.scalar(query)
+    if resume is None:
+        raise ApiError(404, "RESUME_NOT_FOUND")
+    return resume
+
+
 def create_proposal(
     db: Session,
     *,
@@ -471,15 +621,12 @@ def create_scoped_proposal(
     ttl_days: int,
     fingerprint_secret: str,
 ) -> ResumeChangeProposal:
-    if session.resume_id is None:
-        raise ApiError(409, "AGENT_RESUME_REQUIRED")
-    resume = db.scalar(
-        select(Resume)
-        .where(Resume.id == session.resume_id, Resume.user_id == session.user_id)
-        .with_for_update()
+    resume = _owned_resume_for_target(
+        db,
+        user_id=session.user_id,
+        resume_id=payload.target.resume_id,
+        lock=True,
     )
-    if resume is None:
-        raise ApiError(404, "RESUME_NOT_FOUND")
     existing = db.scalar(
         select(ResumeChangeProposal).where(
             ResumeChangeProposal.run_id == run.id,
@@ -558,6 +705,78 @@ def create_scoped_proposal(
     return proposal
 
 
+def create_translation_proposal(
+    db: Session,
+    *,
+    run: AgentRun,
+    session: AgentSession,
+    payload: TranslationProposalCreateRequest,
+    ttl_days: int,
+) -> ResumeChangeProposal:
+    resume = _owned_resume_for_target(
+        db,
+        user_id=session.user_id,
+        resume_id=payload.target.resume_id,
+        lock=True,
+    )
+    existing = db.scalar(
+        select(ResumeChangeProposal).where(
+            ResumeChangeProposal.run_id == run.id,
+            ResumeChangeProposal.call_key == payload.call_key,
+        )
+    )
+    if existing is not None:
+        return existing
+    existing_mode = db.scalar(
+        select(ResumeChangeProposal.proposal_mode).where(
+            ResumeChangeProposal.run_id == run.id,
+            ResumeChangeProposal.proposal_mode != "legacy_snapshot",
+        )
+    )
+    if existing_mode is not None and existing_mode != "translate_resume":
+        raise ApiError(409, "SKILL_MODE_CONFLICT")
+    if (
+        payload.target.resume_id != str(resume.id)
+        or payload.target.base_lock_version != resume.lock_version
+        or payload.target.surface != "semantic"
+        or payload.target.section != "resume"
+        or payload.target.field != "data"
+    ):
+        raise ApiError(409, "TARGET_STALE")
+    source_snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    target_content(resume, source_snapshot.data, payload.target, "resume")
+    translated_snapshot = parse_persisted_resume_snapshot(payload.data, payload.style)
+    if source_snapshot.style_json != translated_snapshot.style_json:
+        raise ApiError(422, "RESUME_TRANSLATION_INVALID")
+    validate_translation_snapshot(source_snapshot.data_json, translated_snapshot.data_json)
+    try:
+        proposed_title = normalize_resume_title(payload.proposed_title)
+    except Exception as error:
+        raise ApiError(400, "INVALID_RESUME_TITLE") from error
+    proposal = ResumeChangeProposal(
+        public_id=str(uuid4()),
+        run_id=run.id,
+        call_key=payload.call_key,
+        resume_id=resume.id,
+        user_id=session.user_id,
+        base_lock_version=resume.lock_version,
+        proposed_data_json=translated_snapshot.data_json,
+        proposed_style_json=translated_snapshot.style_json,
+        summary=payload.summary.strip(),
+        proposal_mode="translate_resume",
+        target_locator_json=payload.target.model_dump(mode="json"),
+        target_content_hash=payload.target.expected_text_hash,
+        diagnosis_json={"target_language": payload.target_language.lower()},
+        proposed_title=proposed_title,
+        status="pending",
+        expires_at=utc_now() + timedelta(days=ttl_days),
+    )
+    db.add(proposal)
+    db.commit()
+    db.refresh(proposal)
+    return proposal
+
+
 def confirm_proposal(
     db: Session,
     *,
@@ -565,6 +784,11 @@ def confirm_proposal(
     user_id: int,
     version_limit: int,
     validate_resume_data: Callable[[dict[str, Any], int], None] | None = None,
+    prepare_translation_assets: Callable[
+        [dict[str, Any], int, int], tuple[dict[str, Any], list[str]]
+    ]
+    | None = None,
+    delete_asset: Callable[[str], None] | None = None,
 ) -> tuple[ResumeChangeProposal, Resume]:
     proposal = db.scalar(
         select(ResumeChangeProposal)
@@ -584,6 +808,16 @@ def confirm_proposal(
     if resume is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
     if proposal.status == "applied":
+        if proposal.proposal_mode == "translate_resume":
+            result = db.scalar(
+                select(Resume).where(
+                    Resume.id == proposal.result_resume_id,
+                    Resume.user_id == user_id,
+                )
+            )
+            if result is None:
+                raise ApiError(409, "AGENT_PROPOSAL_RESULT_NOT_FOUND")
+            return proposal, result
         return proposal, resume
     if proposal.status != "pending":
         raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
@@ -598,6 +832,70 @@ def confirm_proposal(
         proposal.status = "conflicted"
         db.commit()
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
+    if proposal.proposal_mode == "translate_resume":
+        copied_assets: list[str] = []
+        try:
+            locked_user_id = db.scalar(
+                select(User.id).where(User.id == user_id).with_for_update()
+            )
+            if locked_user_id is None:
+                raise ApiError(404, "USER_NOT_FOUND")
+            if not has_resume_capacity(db, user_id):
+                raise ApiError(409, "RESUME_LIMIT_REACHED")
+            try:
+                title = normalize_resume_title(proposal.proposed_title)
+                ensure_unique_resume_title(db, user_id=user_id, title=title)
+            except ResumeTitleConflict as error:
+                raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
+            except Exception as error:
+                raise ApiError(400, "INVALID_RESUME_TITLE") from error
+            snapshot = parse_persisted_resume_snapshot(
+                proposal.proposed_data_json, proposal.proposed_style_json
+            )
+            result = persist_resume_with_initial_version(
+                CreateResumeCommand(
+                    user_id=user_id,
+                    title=title,
+                    data=snapshot.data,
+                    style=snapshot.style,
+                    source_type=resume.source_type,
+                    template_id=resume.template_id,
+                ),
+                db,
+            )
+            translated_data = deepcopy(snapshot.data_json)
+            if prepare_translation_assets is not None:
+                translated_data, copied_assets = prepare_translation_assets(
+                    translated_data, resume.id, result.id
+                )
+            if validate_resume_data is not None:
+                validate_resume_data(translated_data, result.id)
+            result.data_json = translated_data
+            initial_version = db.scalar(
+                select(ResumeVersion).where(
+                    ResumeVersion.resume_id == result.id,
+                    ResumeVersion.version_no == 1,
+                )
+            )
+            if initial_version is None:
+                raise RuntimeError("translation initial version missing")
+            initial_version.data_json = deepcopy(translated_data)
+            proposal.status = "applied"
+            proposal.result_resume_id = result.id
+            proposal.applied_lock_version = proposal.base_lock_version
+            proposal.applied_at = utc_now()
+            db.commit()
+            db.refresh(result)
+            return proposal, result
+        except Exception:
+            db.rollback()
+            if delete_asset is not None:
+                for object_name in reversed(copied_assets):
+                    try:
+                        delete_asset(object_name)
+                    except Exception:
+                        pass
+            raise
     if proposal.target_locator_json is not None:
         try:
             current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
