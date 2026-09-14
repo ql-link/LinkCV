@@ -37,10 +37,12 @@ import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLi
 import { useResumeStore } from "../../store/resumeStore";
 import {
   exitResumeRowToBlankParagraph,
+  exitVisuallyBlankResumeListItem,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
 } from "./editorCommands";
 import { RESUME_IMAGE_ACCEPT, validateResumeImageFile } from "./resumeImageLimits";
+import { ResumeBulletListInputRules } from "./editorInputRules";
 
 export const inlineIconComponents = {
   Mail,
@@ -606,7 +608,9 @@ export const ResumeRowExitKeymap = Extension.create({
   name: "resumeRowExitKeymap",
   addKeyboardShortcuts() {
     return {
-      Backspace: () => removeBlankParagraphAfterResumeRow(this.editor)
+      Enter: () => exitVisuallyBlankResumeListItem(this.editor),
+      Backspace: () => exitVisuallyBlankResumeListItem(this.editor)
+        || removeBlankParagraphAfterResumeRow(this.editor)
         || removeVisuallyBlankResumeLine(this.editor),
     };
   },
@@ -840,6 +844,7 @@ export const resumeEditorExtensions: Extensions = [
   StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
   ResumeBlockAnchor,
   ResumeBlockIdentity,
+  ResumeBulletListInputRules,
   Underline,
   FontSize,
   Color,
