@@ -1071,7 +1071,12 @@ export function FontPreviewSelect({
   );
 }
 
-export function ResumeWorkbench() {
+type ResumeWorkbenchProps = {
+  embedded?: boolean;
+  onClose?: () => void;
+};
+
+export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchProps = {}) {
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const importWarningsByResumeId = useResumeStore((state) => state.importWarningsByResumeId);
   const dismissImportWarnings = useResumeStore((state) => state.dismissImportWarnings);
@@ -1557,6 +1562,10 @@ export function ResumeWorkbench() {
         return;
       }
     }
+    if (embedded && onClose) {
+      onClose();
+      return;
+    }
     goHome();
     navigateTo("/resumes");
   };
@@ -1600,10 +1609,16 @@ export function ResumeWorkbench() {
 
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", bounce: 0, duration: 0.34 }}>
-      <div className="resume-workbench" data-ui-theme="light">
+      <div className={`resume-workbench${embedded ? " is-embedded" : ""}`} data-ui-theme="light">
         <header className="workbench-header">
           <div className="workbench-header-left">
-            <IconButton className="workbench-icon-action workbench-back-action" label="返回全部简历" onClick={() => void leaveSafely()}><Home size={16} /></IconButton>
+            <IconButton
+              className="workbench-icon-action workbench-back-action"
+              label={embedded ? "关闭简历" : "返回全部简历"}
+              onClick={() => void leaveSafely()}
+            >
+              {embedded ? <X size={16} /> : <Home size={16} />}
+            </IconButton>
             <span className="workbench-context-label">简历编辑</span>
           </div>
           <div className="workbench-header-center">

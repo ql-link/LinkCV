@@ -373,7 +373,13 @@ function mergeDatasetResponse(
   return missingAccepted.length > 0 ? [...missingAccepted, ...datasets] : datasets;
 }
 
-export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } = {}) {
+export function DatasetsPage({
+  initialFolderId,
+  embedded = false,
+}: {
+  initialFolderId?: string;
+  embedded?: boolean;
+} = {}) {
   const previewTriggerRef = useRef<HTMLElement | null>(null);
   const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
   const locallyAccepted = useRef(new Map<string, DatasetRecord>());
@@ -646,14 +652,14 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
 
   const handleSelectFolder = (folderId: string) => {
     setSelectedFolderId(folderId);
-    navigateTo(datasetsPath(folderId));
+    if (!embedded) navigateTo(datasetsPath(folderId));
   };
 
   const handleBackToAll = () => {
     setBatchMode(false);
     setSelectedDatasetIds(new Set());
     setSelectedFolderId("all");
-    navigateTo(datasetsPath("all"));
+    if (!embedded) navigateTo(datasetsPath("all"));
   };
 
   useEffect(() => {
@@ -991,9 +997,11 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
     setBusyAction(null);
   };
 
+  const PageRoot = embedded ? "section" : "main";
+
   return (
-    <main
-      className="dashboard-content datasets-page"
+    <PageRoot
+      className={`dashboard-content datasets-page${embedded ? " is-embedded" : ""}`}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -1584,6 +1592,6 @@ export function DatasetsPage({ initialFolderId }: { initialFolderId?: string } =
         </div>
       )}
       {previewDataset && <DatasetPreviewDialog dataset={previewDataset} returnFocusTo={previewTriggerRef.current} onClose={() => setPreviewDataset(null)} />}
-    </main>
+    </PageRoot>
   );
 }

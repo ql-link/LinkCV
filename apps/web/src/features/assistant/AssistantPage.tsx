@@ -10,9 +10,12 @@ import {
   CircleAlert,
   Database,
   FileText,
+  FolderOpen,
   Menu,
   MessageCircleQuestion,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Pin,
   Plus,
@@ -56,6 +59,9 @@ import {
 } from "../../api/client";
 import { Button, ConfirmDialog } from "@/components/ui";
 import { assistantPath, navigateTo } from "../../routing";
+import { useResumeStore } from "../../store/resumeStore";
+import { DatasetsPage } from "../datasets/DatasetsPage";
+import { ResumeWorkbench } from "../workbench/ResumeWorkbench";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import "./assistant.css";
 
@@ -485,6 +491,13 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [sessionActionBusyId, setSessionActionBusyId] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(ASSISTANT_SIDEBAR_DEFAULT_WIDTH);
   const [sidebarResizing, setSidebarResizing] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [resumePickerOpen, setResumePickerOpen] = useState(false);
+  const [resumeListLoading, setResumeListLoading] = useState(false);
+  const [embeddedResumeId, setEmbeddedResumeId] = useState<string | null>(null);
+  const [resumeOpeningId, setResumeOpeningId] = useState<string | null>(null);
+  const [resumeOpenError, setResumeOpenError] = useState<string | null>(null);
+  const [datasetsOpen, setDatasetsOpen] = useState(false);
   const [pinnedSessionsExpanded, setPinnedSessionsExpanded] = useState(true);
   const [recentSessionsExpanded, setRecentSessionsExpanded] = useState(true);
   const [recallDrawerOpen, setRecallDrawerOpen] = useState(false);
@@ -501,6 +514,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     contexts: [] as AgentContextSnapshot[],
     invalidContextIds: [] as string[],
   }));
+  const resumes = useResumeStore((state) => state.resumes);
+  const listResumes = useResumeStore((state) => state.listResumes);
+  const loadResume = useResumeStore((state) => state.loadResume);
+  const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const streamRequestRef = useRef(0);
   const mentionRequestRef = useRef(0);
   const activeKeyRef = useRef(activeKey);
@@ -620,6 +637,24 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       window.removeEventListener("keydown", closeMenuWithKeyboard);
     };
   }, [sessionMenuId]);
+
+  useEffect(() => {
+    if (!resumePickerOpen) return undefined;
+    const closePicker = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".assistant-resume-picker-wrap")) return;
+      setResumePickerOpen(false);
+    };
+    const closePickerWithKeyboard = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setResumePickerOpen(false);
+    };
+    document.addEventListener("pointerdown", closePicker);
+    window.addEventListener("keydown", closePickerWithKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", closePicker);
+      window.removeEventListener("keydown", closePickerWithKeyboard);
+    };
+  }, [resumePickerOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -802,6 +837,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   }, [conversationStates, updateConversation]);
 
   const selectSession = async (sessionIdToSelect: string) => {
+    setDatasetsOpen(false);
     if (sessionIdToSelect === activeKeyRef.current) {
       setMobileMenuOpen(false);
       return;
@@ -836,6 +872,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   };
 
   const createNewConversation = async () => {
+    setDatasetsOpen(false);
     if (activeKeyRef.current === NEW_CONVERSATION_KEY) {
       setMobileMenuOpen(false);
       navigateTo(assistantPath());
@@ -1511,6 +1548,21 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       <button type="button" className="assistant-new-button" onClick={() => void createNewConversation()}>
         <Plus size={16} aria-hidden="true" />新建对话
       </button>
+      <nav className="assistant-sidebar-shortcuts" aria-label="助手快捷入口">
+        <button
+          type="button"
+          className={`assistant-sidebar-shortcut${datasetsOpen ? " is-active" : ""}`}
+          aria-pressed={datasetsOpen}
+          onClick={() => {
+            setDatasetsOpen((open) => !open);
+            setResumePickerOpen(false);
+            setMobileMenuOpen(false);
+          }}
+        >
+          <FolderOpen size={16} aria-hidden="true" />
+          <span>资料库</span>
+        </button>
+      </nav>
       {(sessionsLoading || sessionsError || sessions.length === 0) && (
         <div className="assistant-sidebar-section-title">最近对话</div>
       )}
@@ -1582,15 +1634,56 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     </aside>
   );
 
+  const toggleResumePicker = () => {
+    const opening = !resumePickerOpen;
+    setResumePickerOpen(opening);
+    setResumeOpenError(null);
+    if (opening) {
+      setResumeListLoading(true);
+      void listResumes()
+        .catch(() => setResumeOpenError("简历列表暂时无法读取，请稍后重试。"))
+        .finally(() => setResumeListLoading(false));
+    }
+  };
+
+  const openEmbeddedResume = async (resumeId: string) => {
+    if (resumeOpeningId) return;
+    setResumeOpeningId(resumeId);
+    setResumeOpenError(null);
+    try {
+      if (embeddedResumeId && embeddedResumeId !== resumeId) {
+        await saveCurrentResume();
+        if (useResumeStore.getState().saveStatus === "error") {
+          setResumeOpenError("当前简历尚未保存，暂时不能切换。请稍后重试。");
+          return;
+        }
+      }
+      await loadResume(resumeId);
+      setEmbeddedResumeId(resumeId);
+      setDatasetsOpen(false);
+      setSidebarCollapsed(true);
+      setResumePickerOpen(false);
+    } catch {
+      setResumeOpenError("这份简历暂时无法打开，请稍后重试。");
+    } finally {
+      setResumeOpeningId(null);
+    }
+  };
+
+  const closeEmbeddedResume = () => {
+    setEmbeddedResumeId(null);
+    setSidebarCollapsed(false);
+  };
+
   return (
-    <main className="assistant-page">
+    <main className={`assistant-page${embeddedResumeId ? " is-resume-open" : ""}`}>
       <div
         ref={assistantShellRef}
-        className="assistant-shell"
+        className={`assistant-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${embeddedResumeId ? " is-resume-open" : ""}`}
         style={{ "--assistant-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
-        {sidebar}
-        <div
+        {!sidebarCollapsed && sidebar}
+        {!sidebarCollapsed && <div
           className={`assistant-sidebar-resizer${sidebarResizing ? " is-resizing" : ""}`}
           role="separator"
           aria-label="调整最近对话栏宽度"
@@ -1611,8 +1704,58 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           onPointerUp={finishSidebarResize}
           onPointerCancel={finishSidebarResize}
           onLostPointerCapture={() => setSidebarResizing(false)}
-        />
+        />}
+        <button
+          type="button"
+          className="assistant-sidebar-visibility-toggle"
+          aria-label={sidebarCollapsed ? "展开会话侧栏" : "收起会话侧栏"}
+          aria-expanded={!sidebarCollapsed}
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
+        </button>
+
+        <div className="assistant-main-area">
+        {datasetsOpen && !embeddedResumeId ? (
+          <DatasetsPage embedded />
+        ) : (
         <section className={`assistant-conversation${isEmptyConversation ? " is-empty" : ""}`} aria-label="AI 求职助手工作区">
+          <div className="assistant-workspace-actions">
+            <div className="assistant-resume-picker-wrap">
+              <button
+                type="button"
+                className="assistant-workspace-pill"
+                aria-haspopup="dialog"
+                aria-expanded={resumePickerOpen}
+                onClick={toggleResumePicker}
+              >
+                <FileText size={15} aria-hidden="true" />
+                我的简历
+              </button>
+              {resumePickerOpen && (
+                <section className="assistant-resume-picker" role="dialog" aria-label="选择我的简历">
+                  <header>我的简历</header>
+                  {resumeOpenError && <p className="assistant-resume-picker-error" role="alert">{resumeOpenError}</p>}
+                  {!resumeOpenError && resumeListLoading && resumes.length === 0 && <p className="assistant-resume-picker-empty">正在读取简历…</p>}
+                  {!resumeOpenError && !resumeListLoading && resumes.length === 0 && <p className="assistant-resume-picker-empty">暂无可用简历</p>}
+                  {resumes.map((resume) => (
+                    <button
+                      type="button"
+                      key={resume.id}
+                      disabled={resumeOpeningId !== null}
+                      onClick={() => void openEmbeddedResume(resume.id)}
+                    >
+                      <FileText size={17} aria-hidden="true" />
+                      <span>
+                        <strong>{resume.title}</strong>
+                        <small>{resumeOpeningId === resume.id ? "正在打开…" : `更新于 ${new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(resume.updated_at))}`}</small>
+                      </span>
+                    </button>
+                  ))}
+                </section>
+              )}
+            </div>
+          </div>
           <header className="assistant-mobile-toolbar">
             <button
               type="button"
@@ -2050,6 +2193,14 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             </div>
           </form>
         </section>
+        )}
+
+        {embeddedResumeId && (
+          <section className="assistant-resume-pane" aria-label="简历编辑区">
+            <ResumeWorkbench embedded onClose={closeEmbeddedResume} />
+          </section>
+        )}
+        </div>
       </div>
 
       {mobileMenuOpen && (
