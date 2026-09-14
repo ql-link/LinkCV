@@ -285,6 +285,10 @@ function sortSessions(items: AgentSession[]) {
   });
 }
 
+function promoteSession(items: AgentSession[], session: AgentSession) {
+  return [session, ...items.filter((item) => item.id !== session.id)];
+}
+
 function contextKey(context: Pick<AgentContextRef, "type" | "id">) {
   return `${context.type}:${context.id}`;
 }
@@ -887,7 +891,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         startedAt: activeRun.run ? new Date(activeRun.run.started_at).getTime() : null,
         phase: activeRun.run ? "AI 正在处理…" : "正在准备…",
       });
-      setSessions((items) => [detail.session, ...items.filter((item) => item.id !== detail.session.id)]);
+      setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
       if (activeRun.run) reconnectToRun(sessionIdToSelect, activeRun.run);
     } catch (error) {
       updateConversation(sessionIdToSelect, { error: safeAgentError(error) });
@@ -1154,7 +1158,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     });
     activeKeyRef.current = result.session.id;
     rememberAssistantSession(result.session.id);
-    setSessions((items) => [result.session, ...items.filter((item) => item.id !== result.session.id)]);
+    setSessions((items) => promoteSession(items, result.session));
     setActiveKey(result.session.id);
     navigateTo(assistantPath(result.session.id), { replace: true });
     return result.session;
@@ -1174,6 +1178,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       return;
     }
     const requestKey = session.id;
+    setSessions((items) => promoteSession(items, session));
     const requestNumber = streamRequestRef.current + 1;
     streamRequestRef.current = requestNumber;
     const controller = new AbortController();
