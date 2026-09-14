@@ -34,7 +34,7 @@ Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `ro
 
 ## Production Pipeline
 
-Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，只负责 checkout、可选质量检查和 `git archive`；随后通过专用 SSH 密钥把当前提交归档上传到 Cloud `100.77.31.79`，由 `deploy/scripts/build-production-on-cloud.sh` 在真实生产主机本地构建、迁移和部署。Production 不再使用 Primary 的 Docker socket 创建生产镜像或容器。
+Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，只负责 checkout、可选质量检查和 `git archive`；随后通过专用 SSH 密钥把当前提交归档上传到 Cloud `100.77.31.79`，由 `deploy/scripts/build-production-on-cloud.sh` 在真实生产主机本地构建、发布 Web 静态资源、迁移和部署。Production 不再使用 Primary 的 Docker socket 创建生产镜像或容器。
 
 - 镜像：`linkresume:prod-<commit>-b<build-number>`、`linkresume-pi:prod-<commit>-b<build-number>`
 - 部署目录：`/opt/tolink/LinkResume`
@@ -45,7 +45,9 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，
 - 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkresume`
 
-Production 公网 Nginx 对 `/assets/` 保留一年 `immutable` 缓存，并为 JS、CSS、JSON 和 SVG 开启 gzip；FastAPI 静态文件层提供相同的压缩与缓存兜底。`index.html` 不做长期缓存，保证新部署能及时引用新的哈希资源。网关调整后必须同时验证 `Content-Encoding: gzip`、`Cache-Control`、LinkResume 健康接口和共享网关上的其他域名。
+Production Web 只把 Vite 生成的哈希 `/assets/*` 发布到阿里云 OSS Bucket 的 `LinkResume/assets/` 前缀，并由浏览器直接通过 `https://qingluo-public.oss-cn-shanghai.aliyuncs.com/LinkResume/` 读取；不使用 CDN、自定义静态域名或独立证书。`index.html`、SPA 路由和 `/api/*` 仍由 `https://linkresume.cn` 的公网 Nginx 与 FastAPI 提供。根 `Dockerfile` 通过 `VITE_ASSET_BASE_URL` 把 OSS 地址写进生产 HTML，同时继续在镜像 `/app/web/assets` 保留同一份资源。发布脚本从即将部署的不可变镜像提取该目录，使用 `ossutil 2.x` 上传到 Bucket 的 `LinkResume/assets/` 前缀并设置一年 `immutable`，随后逐项通过携带 `Origin: https://linkresume.cn` 的 OSS HTTPS HEAD 检查状态、缓存头及 JavaScript/字体的跨域响应；全部成功后才允许初始化数据库、迁移和切换应用。上传或 OSS 验证失败发生在切换前，旧生产版本继续服务。
+
+`index.html` 继续 `no-cache`，新版本能及时引用新的哈希资源。发布过程不删除 `LinkResume/` 下的历史 OSS 对象，因为上一版镜像回退后仍会引用旧哈希；未来清理必须基于明确的保留发布清单独立实施。当前 `qingluo-public` 是多个项目前缀共用的公共读 Bucket，发布对象使用 `default` ACL 继承 Bucket 权限，不修改 Bucket ACL；RAM 写权限必须限制在 `qingluo-public/LinkResume/*`。Bucket CORS 必须允许 `https://linkresume.cn` 和 `https://www.linkresume.cn` 对公开对象发起 `GET`、`HEAD`，允许请求头 `*`，从而保证浏览器可加载跨域 JavaScript 与字体；该规则不授予上传、修改或删除权限。对象的长期缓存由上传时写入的 `Cache-Control` 控制。
 
 `linkresume-prod` 的 Generic Webhook Trigger 复用 Jenkins Secret Text 凭据
 `linkresume-dev-webhook-token`，但只接受 `refs/heads/master`。同一个 GitHub push
@@ -53,7 +55,7 @@ webhook 因此会分别把 `dev` 推送交给 Dev Job、把 PR 合并产生的 `
 Production Job。首次加入触发器后需手动运行一次 `linkresume-prod`，让 Jenkins 从根
 `Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
 
-Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；私密覆盖必须由部署密钥存储预先提供且权限为 `600`。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
+Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；应用私密覆盖必须由部署密钥存储预先提供到 `.env.production.local` 且权限为 `600`。OSS 发布凭据使用另一个不进入 Compose 的 `/opt/tolink/LinkResume/.env.oss-cdn.local`，格式见 `deploy/oss-cdn.env.example`；文件必须为 `600`，包含目标 Bucket、OSS Region 和专用最小权限 RAM 凭据，可选设置 OSS Endpoint。发布脚本通过 ossutil 官方环境变量读取凭据，不把 AccessKey 放入命令参数、镜像、应用进程或日志。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
 
 Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小程序扫码登录；管理员仍使用独立 `/admin/login`。微信公众平台必须把 `https://linkresume.cn` 同时配置为 request 与 downloadFile 合法域名并使用有效公网 HTTPS 证书；简历以 PNG 在小程序当前页面阅读，不使用 `web-view`，个人主体无需配置业务域名。上线前还要核对既有邮箱账号：系统不会仅凭同一使用者自动把新 openid 关联到旧邮箱账号，未绑定账号会生成新的微信账号而看不到旧简历；必须先完成受控账号映射或明确接受账号分离，不能直接假设历史数据会自动归并。
 
@@ -105,6 +107,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 回滚到旧镜像时仍要保留新旧完整 LLM 密钥环，直到确认没有运行实例或密文依赖待移除的 key。
 - 只有首次 Production 切换会通过受控工具把旧 Express/SQLite 的账号和简历导入 MySQL；本地原型 SQLite 不进入远端数据库。旧 SQLite 只作为切换前应用的短时回退依据，不能接收或合并新 MySQL 写入。
 - 新增环境配置的回滚只恢复应用与 Compose；不得自动删除已有 `linkresume` 数据库或 Redis volume。
+- 静态资源回滚不删除 OSS 中的新旧哈希对象；应用回到上一镜像后，其 `index.html` 会重新引用仍然保留的旧对象。OSS 上传或公网验证故障发生在发布验证阶段时不得继续数据库迁移或应用切换；已上传但未引用的新对象可以保留。
 - 日志链路回滚可恢复上一版应用与 Compose，并让 `--remove-orphans` 停止 LinkResume Promtail；不得删除日志或 positions 命名卷，也不得修改共享 Loki。重新启用采集器后可能至少一次重复投递，管理查询会按 `event_id` 去重。
 - 简历导入回滚采用上一版 Web 与 FastAPI 整体镜像；不删除新简历、MinIO 原件或 Redis 幂等 key，也不静默切回未验收的旧转换服务。
 - 进入新契约后应用替换必须同时覆盖 Web、FastAPI 与 Worker，避免页面、任务状态和消费者契约错配。

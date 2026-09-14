@@ -3,6 +3,8 @@
 FROM node:22-bookworm-slim AS web-build
 
 ARG NPM_REGISTRY=https://registry.npmmirror.com
+ARG VITE_ASSET_BASE_URL=
+ENV VITE_ASSET_BASE_URL=${VITE_ASSET_BASE_URL}
 WORKDIR /app/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \

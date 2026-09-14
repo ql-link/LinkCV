@@ -13,6 +13,7 @@ import {
   loadHomePage,
   loadInterviewCenterPage,
   loadResumeTemplatesPage,
+  scheduleAuthenticatedWorkspacePreload,
 } from "./workspacePageLoaders";
 
 export const RESUME_AUTOSAVE_INTERVAL_MS = 10_000;
@@ -103,6 +104,11 @@ function AppContent() {
     if (isAdminArea || isInterviewMockPreview) return;
     void hydrate();
   }, [hydrate, isAdminArea, isInterviewMockPreview]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || isAdminArea || isInterviewMockPreview) return;
+    return scheduleAuthenticatedWorkspacePreload();
+  }, [authStatus, isAdminArea, isInterviewMockPreview]);
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
