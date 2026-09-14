@@ -54,7 +54,7 @@ import {
   ApiRequestError,
   api,
 } from "../../api/client";
-import { Button, ConfirmDialog } from "@/components/ui";
+import { Button, ConfirmDialog, FeedbackNotice } from "@/components/ui";
 import { assistantPath, navigateTo } from "../../routing";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import "./assistant.css";
@@ -1807,7 +1807,16 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
               <button type="button" onClick={() => void openNewConversationWithContext()}>新建对话使用此简历</button>
             </div>
           )}
-          {current.error && <div className="assistant-error-notice" role="alert"><CircleAlert size={17} aria-hidden="true" />{current.error}</div>}
+          {current.error && (
+            <FeedbackNotice
+              kind="error"
+              placement="floating"
+              title="本次请求未完成"
+              onDismiss={() => updateConversation(activeKey, { error: null })}
+            >
+              {current.error}
+            </FeedbackNotice>
+          )}
 
           <form className="assistant-composer" onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
             {pendingClarification?.clarification && (

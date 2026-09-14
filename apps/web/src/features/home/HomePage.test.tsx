@@ -147,7 +147,10 @@ describe("HomeScreen", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "保存名称" }));
 
-    expect(await within(dialog).findByRole("alert")).toHaveTextContent("保存名称失败，请刷新列表后重试。");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("保存名称失败，请刷新列表后重试。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(dialog).not.toContainElement(alert);
     expect(dialog).toBeInTheDocument();
   });
 

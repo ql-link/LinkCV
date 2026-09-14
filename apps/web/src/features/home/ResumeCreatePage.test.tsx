@@ -84,7 +84,9 @@ describe("ResumeCreatePage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /创建并进入编辑器/ }));
 
-    expect(await screen.findByText("该名称已经存在，请换一个名称。")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("该名称已经存在，请换一个名称。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(window.location.pathname).toBe("/resumes/new");
   });
 
@@ -120,9 +122,9 @@ describe("ResumeCreatePage", () => {
     fireEvent.change(await screen.findByLabelText(/选择 Markdown/), { target: { files: [file] } });
     fireEvent.click(screen.getByRole("button", { name: /导入并开始解析/ }));
 
-    expect(
-      await screen.findByText("内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。"),
-    ).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(window.location.pathname).toBe("/resumes/new");
   });
 });
