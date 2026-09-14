@@ -241,8 +241,7 @@ async def cancel_pi_run(app, run_public_id: str) -> None:
                 headers={"Authorization": f"Bearer {token.get_secret_value()}"},
             )
     except httpx.HTTPError:
-        # Cancellation is best-effort. The database state remains authoritative and
-        # the streaming connection closing also aborts the Pi-side session.
+        # Cancellation is best-effort. The database state remains authoritative.
         return
 
 

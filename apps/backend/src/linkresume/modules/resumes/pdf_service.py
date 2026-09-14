@@ -7,10 +7,11 @@ import re
 import signal
 import shutil
 import subprocess
+from copy import deepcopy
 from pathlib import Path
 from threading import BoundedSemaphore
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from minio.error import S3Error
 
@@ -139,6 +140,75 @@ def validate_resume_pdf_asset_contract(
         total += size
         if total > MAX_RESUME_PDF_IMAGE_TOTAL_BYTES:
             raise ApiError(413, "RESUME_PDF_ASSETS_TOO_LARGE")
+
+
+def clone_resume_private_assets(
+    storage: AssetStorage,
+    data: dict[str, Any],
+    *,
+    user_id: int,
+    source_resume_id: int,
+    target_resume_id: int,
+) -> tuple[dict[str, Any], list[str]]:
+    """Copy source-resume private images and rewrite their API URLs.
+
+    Account-level assets stay shared. The returned object names let the caller
+    compensate if its database transaction cannot commit.
+    """
+
+    source_prefix = f"/api/resumes/{source_resume_id}/assets/"
+    replacements: dict[str, str] = {}
+    copied: list[str] = []
+    total = 0
+    try:
+        for source in sorted(_private_sources(data)):
+            if not source.startswith(source_prefix):
+                continue
+            source_key = _object_key(source, user_id, source_resume_id)
+            if source_key is None:
+                raise ApiError(422, "RESUME_TRANSLATION_ASSET_COPY_FAILED")
+            asset_name = unquote(source[len(source_prefix) :])
+            target_key = f"users/{user_id}/resumes/{target_resume_id}/assets/{asset_name}"
+            try:
+                metadata = storage.stat(source_key)
+                size = getattr(metadata, "size", None)
+                if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                    raise ApiError(502, "RESUME_TRANSLATION_ASSET_COPY_FAILED")
+                if size > MAX_RESUME_IMAGE_BYTES:
+                    raise ApiError(413, "RESUME_PDF_ASSET_TOO_LARGE")
+                total += size
+                if total > MAX_RESUME_PDF_IMAGE_TOTAL_BYTES:
+                    raise ApiError(413, "RESUME_PDF_ASSETS_TOO_LARGE")
+                storage.copy(source_key, target_key)
+            except ApiError:
+                raise
+            except Exception as error:
+                raise ApiError(502, "RESUME_TRANSLATION_ASSET_COPY_FAILED") from error
+            copied.append(target_key)
+            replacements[source] = (
+                f"/api/resumes/{target_resume_id}/assets/{quote(asset_name, safe='')}"
+            )
+
+        def rewrite(value: Any) -> Any:
+            if isinstance(value, str):
+                updated = value
+                for old, new in replacements.items():
+                    updated = updated.replace(old, new)
+                return updated
+            if isinstance(value, list):
+                return [rewrite(item) for item in value]
+            if isinstance(value, dict):
+                return {key: rewrite(item) for key, item in value.items()}
+            return value
+
+        return rewrite(deepcopy(data)), copied
+    except Exception:
+        for object_name in reversed(copied):
+            try:
+                storage.delete(object_name)
+            except Exception:
+                pass
+        raise
 
 
 def build_render_assets(

@@ -37,19 +37,20 @@ work_root="${prod_root}/jenkins/workspaces"
 build_dir="${work_root}/linkresume-${build_number}"
 base_env="${deploy_dir}/.env.production"
 secret_env="${deploy_dir}/.env.production.local"
+oss_secret_env="${deploy_dir}/.env.oss-cdn.local"
 compose_file="${deploy_dir}/deploy/docker-compose.production.yml"
 old_compose_file="${deploy_dir}/deploy/docker-compose.yml"
-legacy_prod_root="/opt/tolink/LinkCV"
-legacy_base_env="${legacy_prod_root}/.env.production"
-legacy_secret_env="${legacy_prod_root}/.env.production.local"
-legacy_compose_file="${legacy_prod_root}/deploy/docker-compose.production.yml"
 legacy_sqlite="${deploy_dir}/data/resume_app.sqlite"
 backup_root="${deploy_dir}/backups/production-cutover"
 docker_network="tolink-app-net"
 http_port="4174"
 cutover_started="false"
+asset_container=""
 
 cleanup() {
+  if [[ -n "${asset_container}" ]]; then
+    docker rm -f "${asset_container}" >/dev/null 2>&1 || true
+  fi
   if [[ "${build_dir}" == "${work_root}/linkresume-${build_number}" ]]; then
     rm -rf -- "${build_dir}"
   fi
@@ -68,6 +69,32 @@ trap finish EXIT
 if [[ ! -f "${secret_env}" ]]; then
   echo "Missing Production secret env file: ${secret_env}" >&2
   exit 10
+fi
+
+if [[ ! -f "${oss_secret_env}" ]]; then
+  echo "Missing Production OSS secret env file: ${oss_secret_env}" >&2
+  exit 10
+fi
+oss_secret_mode="$(stat -c '%a' "${oss_secret_env}")"
+if [[ "${oss_secret_mode}" != "600" ]]; then
+  echo "Production OSS secret env file must use mode 600, got ${oss_secret_mode}" >&2
+  exit 11
+fi
+required_oss_keys=(
+  WEB_ASSET_OSS_BUCKET
+  OSS_ACCESS_KEY_ID
+  OSS_ACCESS_KEY_SECRET
+  OSS_REGION
+)
+for required_key in "${required_oss_keys[@]}"; do
+  if ! grep -Eq "^${required_key}=.+$" "${oss_secret_env}"; then
+    echo "Missing required Production OSS setting: ${required_key}" >&2
+    exit 12
+  fi
+done
+if ! command -v ossutil >/dev/null 2>&1; then
+  echo "Production host requires ossutil 2.x on PATH" >&2
+  exit 12
 fi
 secret_mode="$(stat -c '%a' "${secret_env}")"
 if [[ "${secret_mode}" != "600" ]]; then
@@ -110,9 +137,7 @@ done
 
 docker network inspect "${docker_network}" >/dev/null
 port_owners="$(docker ps --filter "publish=${http_port}" --format '{{.Names}}')"
-if [[ -n "${port_owners}" && \
-  "${port_owners}" != "linkresume" && \
-  "${port_owners}" != "linkcv" ]]; then
+if [[ -n "${port_owners}" && "${port_owners}" != "linkresume" ]]; then
   echo "Production port ${http_port} is owned by another container" >&2
   exit 14
 fi
@@ -131,8 +156,19 @@ rm -rf -- "${build_dir}"
 mkdir -p "${build_dir}" "${deploy_dir}/deploy/observability" "${backup_root}"
 tar -xzf "${source_archive}" -C "${build_dir}"
 
+web_asset_oss_url="$(grep -E '^WEB_ASSET_OSS_URL=.+' "${build_dir}/.env.production" | tail -n 1 | cut -d= -f2-)"
+web_asset_oss_prefix="$(grep -E '^WEB_ASSET_OSS_PREFIX=.+' "${build_dir}/.env.production" | tail -n 1 | cut -d= -f2-)"
+if [[ "${web_asset_oss_url}" != https://*/ ]]; then
+  echo "Production WEB_ASSET_OSS_URL must be an HTTPS URL ending with /" >&2
+  exit 17
+fi
+if [[ -z "${web_asset_oss_prefix}" ]]; then
+  echo "Production WEB_ASSET_OSS_PREFIX is required" >&2
+  exit 17
+fi
+
 DOCKER_BUILDKIT=1 docker build \
-  --build-arg "DEBIAN_MIRROR=https://mirrors.aliyun.com" \
+  --build-arg "VITE_ASSET_BASE_URL=${web_asset_oss_url}" \
   --label "org.opencontainers.image.revision=${commit_short}" \
   -t "${image}:${tag}" \
   "${build_dir}"
@@ -141,6 +177,29 @@ DOCKER_BUILDKIT=1 docker build \
   -f "${build_dir}/deploy/Dockerfile.pi" \
   -t "${pi_image}:${tag}" \
   "${build_dir}"
+
+asset_export_dir="${build_dir}/web-assets"
+mkdir -p "${asset_export_dir}"
+asset_container="$(docker create "${image}:${tag}")"
+docker cp "${asset_container}:/app/web/assets/." "${asset_export_dir}/"
+docker rm "${asset_container}" >/dev/null
+asset_container=""
+
+read_oss_setting() {
+  local key="$1"
+  grep -E "^${key}=.+$" "${oss_secret_env}" | tail -n 1 | cut -d= -f2-
+}
+export WEB_ASSET_OSS_URL="${web_asset_oss_url}"
+export WEB_ASSET_OSS_BUCKET="$(read_oss_setting WEB_ASSET_OSS_BUCKET)"
+export WEB_ASSET_OSS_PREFIX="${web_asset_oss_prefix}"
+export OSS_ACCESS_KEY_ID="$(read_oss_setting OSS_ACCESS_KEY_ID)"
+export OSS_ACCESS_KEY_SECRET="$(read_oss_setting OSS_ACCESS_KEY_SECRET)"
+export OSS_REGION="$(read_oss_setting OSS_REGION)"
+if grep -Eq '^OSS_ENDPOINT=.+$' "${oss_secret_env}"; then
+  export OSS_ENDPOINT="$(read_oss_setting OSS_ENDPOINT)"
+fi
+bash "${build_dir}/deploy/scripts/publish-web-assets-to-oss.sh" "${asset_export_dir}"
+unset WEB_ASSET_OSS_URL WEB_ASSET_OSS_BUCKET WEB_ASSET_OSS_PREFIX OSS_ACCESS_KEY_ID OSS_ACCESS_KEY_SECRET OSS_REGION OSS_ENDPOINT
 
 backup_dir="${backup_root}/build-${build_number}"
 mkdir -m 0700 -p "${backup_dir}"
@@ -153,17 +212,10 @@ for deployed_file in \
   fi
 done
 
-old_container="linkresume"
 old_image="$(docker inspect --format='{{.Config.Image}}' linkresume 2>/dev/null || true)"
 old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkresume-pi 2>/dev/null || true)"
-if [[ -z "${old_image}" ]]; then
-  old_container="linkcv"
-  old_image="$(docker inspect --format='{{.Config.Image}}' linkcv 2>/dev/null || true)"
-  old_pi_image="$(docker inspect --format='{{.Config.Image}}' linkcv-pi 2>/dev/null || true)"
-fi
 printf '%s\n' "${old_image}" >"${backup_dir}/previous-image.txt"
 printf '%s\n' "${old_pi_image}" >"${backup_dir}/previous-pi-image.txt"
-printf '%s\n' "${old_container}" >"${backup_dir}/previous-container.txt"
 
 backup_compose_file="${backup_dir}/docker-compose.production.yml"
 if [[ "${old_image}" == linkresume:prod-* ]]; then
@@ -181,36 +233,6 @@ if [[ "${old_image}" == linkresume:prod-* ]]; then
 fi
 
 rollback_old_application() {
-  TAG="${tag}" PI_TAG="${tag}" \
-    docker compose -f "${compose_file}" down --remove-orphans || true
-
-  if [[ "${old_container}" == "linkcv" && "${old_image}" == linkcv:* ]]; then
-    if [[ ! -f "${legacy_compose_file}" || \
-      ! -f "${legacy_base_env}" || \
-      ! -f "${legacy_secret_env}" ]]; then
-      echo "Legacy Production configuration is unavailable" >&2
-      return 1
-    fi
-    old_tag="${old_image#linkcv:}"
-    TAG="${old_tag}" \
-    PI_TAG="${old_tag}" \
-    LINKCV_ENV_FILE="${legacy_base_env}" \
-    LINKCV_SECRET_ENV_FILE="${legacy_secret_env}" \
-    LINKCV_DOCKER_NETWORK="${docker_network}" \
-    LINKCV_HTTP_PORT="${http_port}" \
-      docker compose -f "${legacy_compose_file}" up -d --remove-orphans
-    for _ in $(seq 1 30); do
-      if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
-        curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
-        echo "Legacy Production application restored: ${old_image}"
-        return 0
-      fi
-      sleep 2
-    done
-    echo "Legacy Production application rollback health check failed" >&2
-    return 1
-  fi
-
   if [[ "${old_image}" != linkresume:* ]]; then
     echo "Automatic application rollback is unavailable" >&2
     return 1
@@ -318,14 +340,6 @@ if [[ "${import_legacy_sqlite}" == "true" ]]; then
 fi
 
 cutover_started="true"
-
-if [[ "${old_container}" == "linkcv" && "${old_image}" == linkcv:* ]]; then
-  for legacy_container in linkcv linkcv-pi linkcv-worker linkcv-promtail; do
-    if docker inspect "${legacy_container}" >/dev/null 2>&1; then
-      docker stop "${legacy_container}" >/dev/null
-    fi
-  done
-fi
 
 TAG="${tag}" \
 PI_TAG="${tag}" \

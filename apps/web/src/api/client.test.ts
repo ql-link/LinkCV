@@ -259,6 +259,27 @@ describe("Agent SSE client", () => {
     ).resolves.toBeUndefined();
     expect(onEvent).toHaveBeenCalledWith({ type: "run.completed", runId: "run-1" });
   });
+
+  it("按 run 地址重新订阅仍使用同一套 SSE 协议", async () => {
+    const onEvent = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(
+      streamResponse([
+        'event: assistant.delta\ndata: {"runId":"run/1","delta":"恢复内容"}\n\n',
+        'event: run.completed\ndata: {"runId":"run/1"}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.streamAgentRun("run/1", new AbortController().signal, onEvent);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/agent/runs/run%2F1/events");
+    expect(onEvent).toHaveBeenNthCalledWith(1, {
+      type: "assistant.delta",
+      runId: "run/1",
+      delta: "恢复内容",
+    });
+    expect(onEvent).toHaveBeenNthCalledWith(2, { type: "run.completed", runId: "run/1" });
+  });
 });
 
 describe("Agent session list API", () => {
@@ -268,11 +289,24 @@ describe("Agent session list API", () => {
 
     await api.listAgentSessions("resume/42");
     await api.listAgentSessions();
+    await api.getActiveAgentRun("session/1");
 
     expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
       "/api/agent/sessions?resume_id=resume%2F42",
       "/api/agent/sessions",
+      "/api/agent/sessions/session%2F1/active-run",
     ]);
+  });
+
+  it("可只按会话读取本轮产生的简历提案", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { proposals: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.listAgentProposals(null, "session/1");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/agent/proposals?session_id=session%2F1",
+    );
   });
 });
 

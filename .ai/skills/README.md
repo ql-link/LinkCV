@@ -54,6 +54,7 @@
 | 技能 | 职责 | 边界或产出 |
 | --- | --- | --- |
 | `incident-triage` | 沿 Web、代理、后端、数据和基础设施链路定位故障 | 修复代码先重新分级；迁移转 `alembic-migration` |
+| `desktop-release` | 引导 macOS Desktop shell 的开发启动、验证打包与正式发布前检查 | 只执行用户选定的桌面模式；不代替业务实现、Git 交付、签名公证或外部分发授权 |
 
 运行 `npm run check:ai` 校验技能的头部元数据、占位内容、链接、过期技术栈引用，以及方案模板的完整章节库、重点条件章节、施工契约和按需选择能力。长期模块知识从 [docs/README.md](../../docs/README.md) 按需读取；三个契约治理技能共享 [契约面与事实源映射](../../docs/internals/contract-governance.md)，不各自复制模块映射。
 

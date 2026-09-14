@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type DatasetRecord } from "../../../api/client";
-import { renderDatasetMarkdown } from "../datasetMarkdown";
 import { getLocalThumbnail, THUMBNAIL_TEXT_LIMIT } from "../datasetThumbnails";
 
 export function DocumentThumbnail({ dataset, fallback }: { dataset: DatasetRecord; fallback: ReactNode }) {
   const host = useRef<HTMLDivElement>(null);
   const [text, setText] = useState<string | undefined>(() => dataset.replacement?.status === "pending" ? undefined : getLocalThumbnail(dataset));
+  const [html, setHtml] = useState("");
   useEffect(() => {
     let cancelled = false;
     setText(dataset.replacement?.status === "pending" ? undefined : getLocalThumbnail(dataset));
@@ -27,8 +27,21 @@ export function DocumentThumbnail({ dataset, fallback }: { dataset: DatasetRecor
     return () => { cancelled = true; observer.disconnect(); };
   }, [dataset.id, dataset.replacement?.status, dataset.content_revision, dataset.created_at, dataset.upload_status, dataset.parse_status]);
 
-  const html = useMemo(() => text === undefined ? "" : renderDatasetMarkdown(text)
-    .replace(/<a\b[^>]*>/g, "<span>").replace(/<\/a>/g, "</span>"), [text]);
+  useEffect(() => {
+    let cancelled = false;
+    if (text === undefined) {
+      setHtml("");
+      return;
+    }
+    void import("../datasetMarkdown").then(({ renderDatasetMarkdown }) => {
+      if (cancelled) return;
+      setHtml(renderDatasetMarkdown(text)
+        .replace(/<a\b[^>]*>/g, "<span>").replace(/<\/a>/g, "</span>"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [text]);
 
   return <div ref={host} className="dataset-thumbnail-host">
     {dataset.replacement?.status === "pending" || text === undefined ? fallback : <div className="dataset-paper-thumbnail">

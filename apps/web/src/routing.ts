@@ -30,6 +30,7 @@ const jobDetailPathPattern = /^\/(?:career\/jobs|jobs)\/([^/]+)$/;
 const jobEditPathPattern = /^\/(?:career\/jobs|jobs)\/([^/]+)\/edit$/;
 const applicationDetailPathPattern = /^\/career\/applications\/([^/]+)$/;
 const sharePathPattern = /^\/share\/([^/]+)$/;
+const LAST_ASSISTANT_SESSION_KEY = "linkresume.assistant.last-session";
 
 function normalizePathname(pathname: string) {
   if (pathname === "/") return pathname;
@@ -179,6 +180,23 @@ export function editorPath(resumeId: string) {
 
 export function assistantPath(sessionId?: string | null) {
   return sessionId ? `/assistant/${encodeURIComponent(sessionId)}` : "/assistant";
+}
+
+export function rememberAssistantSession(sessionId?: string | null) {
+  try {
+    if (sessionId) window.sessionStorage.setItem(LAST_ASSISTANT_SESSION_KEY, sessionId);
+    else window.sessionStorage.removeItem(LAST_ASSISTANT_SESSION_KEY);
+  } catch {
+    // Storage can be unavailable in hardened browser contexts; navigation still works without recall.
+  }
+}
+
+export function rememberedAssistantPath() {
+  try {
+    return assistantPath(window.sessionStorage.getItem(LAST_ASSISTANT_SESSION_KEY));
+  } catch {
+    return assistantPath();
+  }
 }
 
 export function jobDetailPath(jobId: string, fromApplicationId?: string) {

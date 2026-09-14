@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from linkresume.core.database import get_db, utc_now
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import AssetStorage, get_storage
+from linkresume.modules.agent.context_service import list_contexts, resolve_contexts
 from linkresume.modules.agent.models import (
     AgentMessage,
     AgentRun,
@@ -19,6 +20,8 @@ from linkresume.modules.agent.pi_client import (
     stream_pi_run,
 )
 from linkresume.modules.agent.schemas import (
+    ActiveRunRecord,
+    ActiveRunResponse,
     AgentContextListResponse,
     AgentModelResponse,
     AgentReadinessResponse,
@@ -31,7 +34,7 @@ from linkresume.modules.agent.schemas import (
     SessionResponse,
     SessionUpdateRequest,
 )
-from linkresume.modules.agent.context_service import list_contexts, resolve_contexts
+from linkresume.modules.agent.run_stream import get_agent_run_stream_hub
 from linkresume.modules.agent.service import (
     confirm_proposal,
     create_run,
@@ -47,7 +50,10 @@ from linkresume.modules.identity.dependencies import get_current_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.service import LLMError
 from linkresume.modules.resumes.routes import resume_record
-from linkresume.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
+from linkresume.modules.resumes.pdf_service import (
+    clone_resume_private_assets,
+    validate_resume_pdf_asset_contract,
+)
 from linkresume.modules.resumes.schemas import ResumeResponse
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -96,28 +102,31 @@ def list_agent_contexts(
 
 @router.get("/proposals", response_model=ProposalListResponse)
 def list_agent_proposals(
-    resume_id: str,
+    resume_id: str | None = None,
     session_id: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProposalListResponse:
-    if not resume_id.isascii() or not resume_id.isdecimal():
+    if resume_id is None and session_id is None:
+        raise ApiError(400, "AGENT_PROPOSAL_SCOPE_REQUIRED")
+    if resume_id is not None and (
+        not resume_id.isascii() or not resume_id.isdecimal()
+    ):
         raise ApiError(404, "RESUME_NOT_FOUND")
     query = (
         select(ResumeChangeProposal, AgentRun)
         .join(AgentRun, AgentRun.id == ResumeChangeProposal.run_id)
         .where(
-            ResumeChangeProposal.resume_id == int(resume_id),
             ResumeChangeProposal.user_id == user.id,
             ResumeChangeProposal.status == "pending",
         )
         .order_by(ResumeChangeProposal.created_at.desc())
         .limit(20)
     )
+    if resume_id is not None:
+        query = query.where(ResumeChangeProposal.resume_id == int(resume_id))
     if session_id is not None:
         session = get_owned_session(db, session_id, user.id)
-        if session.resume_id != int(resume_id):
-            raise ApiError(404, "AGENT_SESSION_NOT_FOUND")
         query = query.where(AgentRun.session_id == session.id)
     rows = db.execute(query).all()
     return ProposalListResponse(
@@ -211,8 +220,92 @@ def get_agent_session(
     return SessionResponse(session=session_record(record, list(reversed(messages))))
 
 
+@router.get(
+    "/sessions/{session_id}/active-run",
+    response_model=ActiveRunResponse,
+)
+def get_active_agent_run(
+    session_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ActiveRunResponse:
+    session = get_owned_session(db, session_id, user.id)
+    run = db.scalar(
+        select(AgentRun)
+        .where(AgentRun.session_id == session.id, AgentRun.status == "running")
+        .order_by(AgentRun.id.desc())
+        .limit(1)
+    )
+    return ActiveRunResponse(
+        run=(
+            ActiveRunRecord(
+                run_id=run.public_id,
+                status="running",
+                started_at=run.started_at,
+            )
+            if run is not None
+            else None
+        )
+    )
+
+
+@router.get("/runs/{run_id}/events")
+async def reconnect_agent_run(
+    run_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    row = db.execute(
+        select(AgentRun, AgentSession)
+        .join(AgentSession, AgentSession.id == AgentRun.session_id)
+        .where(AgentRun.public_id == run_id, AgentSession.user_id == user.id)
+    ).one_or_none()
+    if row is None:
+        raise ApiError(404, "AGENT_RUN_NOT_FOUND")
+    run, _ = row
+    hub = get_agent_run_stream_hub(request.app)
+    if hub.contains(run.public_id):
+        return StreamingResponse(
+            hub.subscribe(run.public_id),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    if run.status == "running":
+        result = db.execute(
+            update(AgentRun)
+            .where(AgentRun.id == run.id, AgentRun.status == "running")
+            .values(
+                status="failed",
+                error_code="AGENT_STREAM_INCOMPLETE",
+                completed_at=utc_now(),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        db.commit()
+        if result.rowcount:
+            event_status = "failed"
+            event_payload = {
+                "runId": run.public_id,
+                "error": "AGENT_STREAM_INCOMPLETE",
+            }
+        else:
+            db.refresh(run)
+            event_status = "completed" if run.status == "succeeded" else run.status
+            event_payload = {"runId": run.public_id, "replayed": True}
+    else:
+        event_status = "completed" if run.status == "succeeded" else run.status
+        event_payload = {"runId": run.public_id, "replayed": True}
+
+    async def replay_terminal():
+        yield sse_event(f"run.{event_status}", event_payload)
+
+    return StreamingResponse(replay_terminal(), media_type="text/event-stream")
+
+
 @router.post("/sessions/{session_id}/messages")
-def send_agent_message(
+async def send_agent_message(
     session_id: str,
     payload: MessageCreateRequest,
     request: Request,
@@ -263,7 +356,9 @@ def send_agent_message(
             yield sse_event(f"run.{event_status}", payload)
 
         return StreamingResponse(replay(), media_type="text/event-stream")
-    return StreamingResponse(
+    hub = get_agent_run_stream_hub(request.app)
+    hub.start(
+        run.public_id,
         stream_pi_run(
             request.app,
             run.public_id,
@@ -275,6 +370,9 @@ def send_agent_message(
                 else None
             ),
         ),
+    )
+    return StreamingResponse(
+        hub.subscribe(run.public_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -333,6 +431,14 @@ def confirm_agent_proposal(
             user_id=user.id,
             resume_id=resume_id,
         ),
+        prepare_translation_assets=lambda data, source_resume_id, target_resume_id: clone_resume_private_assets(
+            storage,
+            data,
+            user_id=user.id,
+            source_resume_id=source_resume_id,
+            target_resume_id=target_resume_id,
+        ),
+        delete_asset=storage.delete,
     )
     return ResumeResponse(resume=resume_record(resume))
 
