@@ -462,26 +462,7 @@ export const ResumeImage = Node.create({
 
 function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
   const [active, setActive] = useState(false);
-  const [dragWidth, setDragWidth] = useState<number | null>(null);
-  const draggingPointer = useRef<number | null>(null);
-  const leftWidth = normalizeResumeRowWidth(dragWidth ?? node.attrs.leftWidth);
-
-  const updateWidthFromClientX = (clientX: number, element: HTMLElement) => {
-    const row = element.closest<HTMLElement>(".resume-layout-row");
-    if (!row) return leftWidth;
-    const bounds = row.getBoundingClientRect();
-    const next = resumeRowWidthFromClientX(clientX, bounds.left, bounds.width);
-    setDragWidth(next);
-    return next;
-  };
-
-  const commitWidth = (width: number) => {
-    const position = getPos();
-    if (typeof position === "number") {
-      editor.view.dispatch(editor.state.tr.setNodeMarkup(position, undefined, { ...node.attrs, leftWidth: width }));
-    }
-    setDragWidth(null);
-  };
+  const leftWidth = normalizeResumeRowWidth(node.attrs.leftWidth);
 
   useEffect(() => {
     const updateActiveState = () => {
@@ -510,59 +491,6 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
       style={{ "--resume-row-left": `${leftWidth}%` } as React.CSSProperties}
     >
       <NodeViewContent />
-      {editor.isEditable && <button
-        type="button"
-        role="separator"
-        aria-label="调整左右分栏比例"
-        aria-orientation="vertical"
-        aria-valuemin={RESUME_ROW_WIDTH_MIN}
-        aria-valuemax={RESUME_ROW_WIDTH_MAX}
-        aria-valuenow={leftWidth}
-        aria-valuetext={`左栏 ${leftWidth}%，右栏 ${100 - leftWidth}%`}
-        className="resume-row-divider"
-        contentEditable={false}
-        data-dragging={dragWidth !== null}
-        title="拖动调整左右分栏比例；双击恢复各 50%"
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          draggingPointer.current = event.pointerId;
-          event.currentTarget.setPointerCapture(event.pointerId);
-          updateWidthFromClientX(event.clientX, event.currentTarget);
-        }}
-        onPointerMove={(event) => {
-          if (draggingPointer.current !== event.pointerId) return;
-          updateWidthFromClientX(event.clientX, event.currentTarget);
-        }}
-        onPointerUp={(event) => {
-          if (draggingPointer.current !== event.pointerId) return;
-          const next = updateWidthFromClientX(event.clientX, event.currentTarget);
-          draggingPointer.current = null;
-          event.currentTarget.releasePointerCapture(event.pointerId);
-          commitWidth(next);
-        }}
-        onPointerCancel={() => {
-          draggingPointer.current = null;
-          setDragWidth(null);
-        }}
-        onDoubleClick={(event) => {
-          event.preventDefault();
-          commitWidth(50);
-        }}
-        onKeyDown={(event) => {
-          const step = event.shiftKey ? 5 : 1;
-          let next = leftWidth;
-          if (event.key === "ArrowLeft") next = normalizeResumeRowWidth(leftWidth - step);
-          else if (event.key === "ArrowRight") next = normalizeResumeRowWidth(leftWidth + step);
-          else if (event.key === "Home") next = RESUME_ROW_WIDTH_MIN;
-          else if (event.key === "End") next = RESUME_ROW_WIDTH_MAX;
-          else return;
-          event.preventDefault();
-          commitWidth(next);
-        }}
-      >
-        <span className="resume-row-divider-value" aria-hidden="true">{leftWidth}%</span>
-      </button>}
     </NodeViewWrapper>
   );
 }
@@ -574,11 +502,6 @@ export function normalizeResumeRowWidth(value: unknown) {
   const width = Number(value);
   if (!Number.isFinite(width)) return 50;
   return Math.min(RESUME_ROW_WIDTH_MAX, Math.max(RESUME_ROW_WIDTH_MIN, Math.round(width)));
-}
-
-export function resumeRowWidthFromClientX(clientX: number, rowLeft: number, rowWidth: number) {
-  if (!Number.isFinite(rowWidth) || rowWidth <= 0) return 50;
-  return normalizeResumeRowWidth(((clientX - rowLeft) / rowWidth) * 100);
 }
 
 export const ResumeRow = Node.create({
