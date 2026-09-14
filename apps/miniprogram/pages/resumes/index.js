@@ -1,8 +1,11 @@
 const auth = require("../../services/auth");
 const cache = require("../../services/resumePreviewCache");
 const resumes = require("../../services/resumes");
+const { isDevelopEnv } = require("../../config/env");
 const { formatUpdatedAt } = require("../../utils/resume");
 const { getStatusBarHeight } = require("../../utils/system");
+
+const AUTO_REFRESH_INTERVAL_MS = 5000;
 
 const DEMO_RESUME_ID = "__linkresume_demo_resume__";
 const DEMO_RESUME_LABEL = "示例简历 · 内容为虚构信息";
@@ -43,9 +46,11 @@ Page({
       this.getTabBar().setData({ selected: 0 });
     }
     if (!auth.hasSession()) {
+      this._stopAutoRefresh();
       if (!this.data.guest) this.enterGuestMode();
       return;
     }
+    this._startAutoRefresh();
     if (this.data.guest) {
       this.loadPage();
       return;
@@ -55,6 +60,34 @@ Page({
       return;
     }
     this.loadPage({ silent: true });
+  },
+
+  onHide() {
+    this._stopAutoRefresh();
+  },
+
+  onUnload() {
+    this._stopAutoRefresh();
+  },
+
+  _startAutoRefresh() {
+    if (this._refreshTimer || !isDevelopEnv()) return;
+    this._refreshTimer = setInterval(() => {
+      if (!auth.hasSession()) {
+        this._stopAutoRefresh();
+        if (!this.data.guest) this.enterGuestMode();
+        return;
+      }
+      if (this.data.loading) return;
+      this.loadPage({ silent: true });
+    }, AUTO_REFRESH_INTERVAL_MS);
+  },
+
+  _stopAutoRefresh() {
+    if (this._refreshTimer) {
+      clearInterval(this._refreshTimer);
+      this._refreshTimer = null;
+    }
   },
 
   handleRefresherRefresh() {

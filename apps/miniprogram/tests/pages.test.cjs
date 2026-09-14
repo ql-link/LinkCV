@@ -584,6 +584,96 @@ test("resumes page handles inner refresher silently and resets refresher state",
   assert.equal(finalLoading, false);
 });
 
+test("resumes page refetches the list on every show after the first", async () => {
+  let resumeRequests = 0;
+  let finalItems = null;
+  await withPage("../pages/resumes", {
+    "../services/auth": {
+      hasSession: () => true,
+      ensureSession: async () => ({ id: "u1", nickname: "张三" }),
+    },
+    "../services/resumes": {
+      listResumes: async () => {
+        resumeRequests += 1;
+        return [
+          { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", pdf_version_id: `draft:${resumeRequests}` },
+        ];
+      },
+    },
+    "../services/resumePreviewCache": {
+      getCachedResumePreview: async () => null,
+      resumePreviewPath: () => "/tmp/fallback.png",
+    },
+    "../services/tabPrefetch": { schedule: () => {} },
+  }, { navigateTo() {} }, async (page) => {
+    page.onLoad();
+    page.onShow();
+    await flush();
+    assert.equal(resumeRequests, 1, "first show must not duplicate the onLoad fetch");
+
+    page.onShow();
+    await flush();
+    assert.equal(resumeRequests, 2, "returning to the tab must refetch");
+
+    page.onShow();
+    await flush();
+    assert.equal(resumeRequests, 3);
+    assert.equal(page.data.loading, false, "silent refresh must not flip the full-page loading state");
+    finalItems = page.data.items;
+  });
+
+  assert.equal(finalItems.length, 1);
+  assert.equal(finalItems[0].pdf_version_id, "draft:3");
+});
+
+test("resumes page auto-refreshes while visible in develop env and stops on hide", async () => {
+  let resumeRequests = 0;
+  let tick = null;
+  let cleared = false;
+  const previousSetInterval = global.setInterval;
+  const previousClearInterval = global.clearInterval;
+  global.setInterval = (fn) => { tick = fn; return 1; };
+  global.clearInterval = () => { cleared = true; };
+  try {
+    await withPage("../pages/resumes", {
+      "../services/auth": {
+        hasSession: () => true,
+        ensureSession: async () => ({ id: "u1", nickname: "张三" }),
+      },
+      "../services/resumes": {
+        listResumes: async () => {
+          resumeRequests += 1;
+          return [
+            { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", pdf_version_id: `draft:${resumeRequests}` },
+          ];
+        },
+      },
+      "../services/resumePreviewCache": {
+        getCachedResumePreview: async () => null,
+        resumePreviewPath: () => "/tmp/fallback.png",
+      },
+      "../services/tabPrefetch": { schedule: () => {} },
+    }, {
+      getAccountInfoSync: () => ({ miniProgram: { envVersion: "develop" } }),
+      navigateTo() {},
+    }, async (page) => {
+      page.onLoad();
+      page.onShow();
+      await flush();
+      assert.equal(resumeRequests, 1);
+      assert.equal(typeof tick, "function", "develop env must start the auto refresh timer");
+      tick();
+      await flush();
+      assert.equal(resumeRequests, 2, "timer tick must silently refetch while visible");
+      page.onHide();
+      assert.equal(cleared, true, "leaving the page must stop the timer");
+    });
+  } finally {
+    global.setInterval = previousSetInterval;
+    global.clearInterval = previousClearInterval;
+  }
+});
+
 test("profile tab shows a guest state without requesting account data", async () => {
   const navigations = [];
   await withPage("../pages/profile", {
