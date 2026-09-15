@@ -189,6 +189,8 @@ asset_export_dir="${build_dir}/web-assets"
 mkdir -p "${asset_export_dir}"
 asset_container="$(docker create "${image}:${tag}")"
 docker cp "${asset_container}:/app/web/assets/." "${asset_export_dir}/"
+favicon_path="${build_dir}/favicon.png"
+docker cp "${asset_container}:/app/web/favicon.png" "${favicon_path}"
 docker rm "${asset_container}" >/dev/null
 asset_container=""
 
@@ -205,7 +207,7 @@ export OSS_REGION="$(read_oss_setting OSS_REGION)"
 if grep -Eq '^OSS_ENDPOINT=.+$' "${oss_secret_env}"; then
   export OSS_ENDPOINT="$(read_oss_setting OSS_ENDPOINT)"
 fi
-bash "${build_dir}/deploy/scripts/publish-web-assets-to-oss.sh" "${asset_export_dir}"
+bash "${build_dir}/deploy/scripts/publish-web-assets-to-oss.sh" "${asset_export_dir}" "${favicon_path}"
 unset WEB_ASSET_OSS_URL WEB_ASSET_OSS_BUCKET WEB_ASSET_OSS_PREFIX OSS_ACCESS_KEY_ID OSS_ACCESS_KEY_SECRET OSS_REGION OSS_ENDPOINT
 
 backup_dir="${backup_root}/build-${build_number}"

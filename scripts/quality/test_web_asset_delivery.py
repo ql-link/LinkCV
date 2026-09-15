@@ -58,6 +58,7 @@ class WebAssetDeliveryTest(unittest.TestCase):
         invocation = ossutil_log.read_text(encoding="utf-8")
         self.assertIn("cp -r", invocation)
         self.assertIn("oss://linkresume-static-test/LinkResume/assets/", invocation)
+        self.assertIn("oss://linkresume-static-test/LinkResume/favicon.png", invocation)
         self.assertIn("--acl default", invocation)
         self.assertNotIn("--disable-ignore-error", invocation)
         self.assertIn(
@@ -74,6 +75,7 @@ class WebAssetDeliveryTest(unittest.TestCase):
             "--retry-all-errors",
             PUBLISH_SCRIPT.read_text(encoding="utf-8"),
         )
+        self.assertIn("production favicon", result.stdout)
 
     def test_publish_rejects_javascript_without_cors_header(self) -> None:
         result, _ = self._run_publish(cors=False)
@@ -97,6 +99,8 @@ class WebAssetDeliveryTest(unittest.TestCase):
         self.assertLess(publish_at, cutover_at)
         self.assertIn('--build-arg "VITE_ASSET_BASE_URL=${web_asset_oss_url}"', body)
         self.assertIn('oss_secret_env="${deploy_dir}/.env.oss-cdn.local"', body)
+        self.assertIn('docker cp "${asset_container}:/app/web/favicon.png"', body)
+        self.assertIn('publish-web-assets-to-oss.sh" "${asset_export_dir}" "${favicon_path}"', body)
 
     def _run_publish(
         self,
@@ -108,11 +112,13 @@ class WebAssetDeliveryTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         asset_dir = root / "assets"
+        favicon_path = root / "favicon.png"
         fake_bin = root / "bin"
         asset_dir.mkdir()
         fake_bin.mkdir()
         (asset_dir / "index-abc123.js").write_text("export {};", encoding="utf-8")
         (asset_dir / "index-abc123.css").write_text("body{}", encoding="utf-8")
+        favicon_path.write_bytes(b"fake-png")
 
         ossutil_log = root / "ossutil.log"
         self._write_executable(
@@ -124,6 +130,7 @@ class WebAssetDeliveryTest(unittest.TestCase):
             fake_bin / "curl",
             "#!/usr/bin/env bash\n"
             "printf 'HTTP/2 200\\r\\n'\n"
+            "printf 'Content-Type: image/png\\r\\n'\n"
             "printf 'Cache-Control: public,max-age=31536000,immutable\\r\\n'\n"
             f"printf '{cors_header}'\n",
         )
@@ -142,7 +149,7 @@ class WebAssetDeliveryTest(unittest.TestCase):
             }
         )
         result = subprocess.run(
-            ["bash", str(PUBLISH_SCRIPT), str(asset_dir)],
+            ["bash", str(PUBLISH_SCRIPT), str(asset_dir), str(favicon_path)],
             cwd=REPO_ROOT,
             env=environment,
             capture_output=True,
