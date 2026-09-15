@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <web-assets-directory>" >&2
+if [[ $# -ne 2 ]]; then
+  echo "Usage: $0 <web-assets-directory> <favicon-path>" >&2
   exit 2
 fi
 
 asset_dir="$1"
+favicon_path="$2"
 required_commands=(curl find ossutil python3)
 for required_command in "${required_commands[@]}"; do
   if ! command -v "${required_command}" >/dev/null 2>&1; then
@@ -32,6 +33,10 @@ done
 
 if [[ ! -d "${asset_dir}" ]]; then
   echo "Web asset directory does not exist: ${asset_dir}" >&2
+  exit 5
+fi
+if [[ ! -f "${favicon_path}" ]]; then
+  echo "Web favicon does not exist: ${favicon_path}" >&2
   exit 5
 fi
 if [[ "${WEB_ASSET_OSS_URL}" != https://*/ ]]; then
@@ -66,6 +71,13 @@ ossutil cp -r "${asset_dir}/" "${destination}" \
   --force \
   --acl default \
   --cache-control "public,max-age=31536000,immutable"
+
+favicon_destination="oss://${WEB_ASSET_OSS_BUCKET}/${WEB_ASSET_OSS_PREFIX}/favicon.png"
+echo "Uploading production favicon to ${favicon_destination}"
+ossutil cp "${favicon_path}" "${favicon_destination}" \
+  --force \
+  --acl default \
+  --cache-control "public,max-age=3600"
 
 verify_asset() {
   local local_path="$1"
@@ -103,4 +115,24 @@ while IFS= read -r -d '' asset_path; do
   verify_asset "${asset_path}"
 done < <(find "${asset_dir}" -type f -print0)
 
-echo "Verified ${asset_count} immutable Web assets through ${WEB_ASSET_OSS_URL}"
+favicon_url="${WEB_ASSET_OSS_URL}favicon.png"
+favicon_headers="$(curl \
+  --fail \
+  --silent \
+  --show-error \
+  --location \
+  --head \
+  --retry 2 \
+  --connect-timeout 5 \
+  --max-time 20 \
+  "${favicon_url}")"
+if ! grep -Eiq '^HTTP/[0-9.]+[[:space:]]+2[0-9][0-9]([[:space:]]|$)' <<<"${favicon_headers}"; then
+  echo "Production favicon is not publicly available: ${favicon_url}" >&2
+  exit 9
+fi
+if ! grep -Eiq '^content-type:[[:space:]]*image/png([;[:space:]]|$)' <<<"${favicon_headers}"; then
+  echo "Production favicon does not return image/png: ${favicon_url}" >&2
+  exit 9
+fi
+
+echo "Verified ${asset_count} immutable Web assets and production favicon through ${WEB_ASSET_OSS_URL}"
