@@ -1,0 +1,88 @@
+/* 挂窗样式对齐 career-time-picker 的月历：同一套主色、字号和黑色选中格，
+   只是换成一张带边框和投影的浮层，而不是遮罩弹窗。 */
+.calendar {
+  background: #fff;
+  border: 1px solid #dbe0e8;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 12px 28px rgba(23, 25, 28, .12);
+  font-family:
+    "LinkCV Career UI",
+    -apple-system,
+    "PingFang SC",
+    sans-serif;
+  color: #17191c;
+}
+.month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+}
+.month-label {
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 600;
+}
+.month-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 24px;
+  color: #3f4752;
+}
+.month-action-pressed {
+  background: #edf1f5;
+}
+.weekdays {
+  display: flex;
+  height: 18px;
+  margin-top: 8px;
+  color: #8791a1;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+.weekday {
+  flex: 1;
+  min-width: 0;
+}
+.days {
+  margin-top: 4px;
+}
+.week {
+  display: flex;
+  gap: 4px;
+}
+.week + .week {
+  margin-top: 4px;
+}
+.day {
+  display: flex;
+  flex: 1;
+  width: 0;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 34px;
+  font-variant-numeric: tabular-nums;
+}
+.day.adjacent {
+  color: #8791a1;
+}
+.day.selected {
+  background: #17191c;
+  color: #fff;
+}
+.day-pressed {
+  background: #edf1f5;
+}
+.day.selected.day-pressed {
+  background: #383c42;
+}

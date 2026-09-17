@@ -7,6 +7,27 @@ const stageNames = {
   interview: "普通面试",
   offer: "已收到 Offer",
 };
+// Solid fills that keep white fallback initials at 4.5:1 or better.
+const logoColors = {
+  red: "#c43b3b",
+  orange: "#b45309",
+  yellow: "#8a6a00",
+  green: "#267a4d",
+  blue: "#145ed6",
+  purple: "#6d28d9",
+  gray: "#5f6b7d",
+};
+const chineseCount = { 2: "两", 3: "三", 4: "四", 5: "五" };
+function logoBackground(color) {
+  return logoColors[color] || logoColors.gray;
+}
+// Public HTTPS only: the snapshot comes from a user-controlled job page.
+function logoSource(value) {
+  return typeof value === "string" && value.startsWith("https://") ? value : "";
+}
+function logoInitial(name) {
+  return (name || "").trim().slice(0, 1) || "企";
+}
 const modes = [
   { value: "video", label: "视频面试" },
   { value: "onsite", label: "现场面试" },
@@ -58,7 +79,7 @@ function range(session) {
 function sessionView(session) {
   const status =
     session.status === "completed"
-      ? { label: "面试已结束", tone: "success", icon: "check" }
+      ? { label: "已完成面试", tone: "success", icon: "check" }
       : session.status === "cancelled"
         ? { label: "已取消", tone: "neutral", icon: "cancel" }
         : new Date(session.end_at).getTime() <= Date.now()
@@ -74,6 +95,7 @@ function sessionView(session) {
             };
   return {
     ...session,
+    companyLogo: logoSource(session.company_logo_url),
     statusLabel: status.label,
     tone: status.tone,
     icon: status.icon,
@@ -102,6 +124,29 @@ function sessionView(session) {
     modeLabel: (modes.find((m) => m.value === session.mode) || modes[3]).label,
   };
 }
+// Same state words as the Web projection: a finished application says why it ended.
+function terminalStatus(app) {
+  if (app.archived_at) return { label: "已归档", tone: "neutral", icon: "cancel" };
+  if (app.lifecycle_status === "terminated") {
+    if (app.termination_reason === "company_rejected")
+      return { label: "未通过", tone: "danger", icon: "cancel" };
+    if (
+      app.termination_reason === "user_withdrew" ||
+      app.termination_reason === "offer_declined"
+    )
+      return { label: "已主动结束", tone: "neutral", icon: "cancel" };
+    return { label: "已终止", tone: "neutral", icon: "cancel" };
+  }
+  if (app.status === "rejected")
+    return { label: "未通过", tone: "danger", icon: "cancel" };
+  if (app.status === "withdrawn")
+    return { label: "已主动结束", tone: "neutral", icon: "cancel" };
+  if (app.status === "closed")
+    return app.offer_status === "declined"
+      ? { label: "已主动结束", tone: "neutral", icon: "cancel" }
+      : { label: "已结束", tone: "neutral", icon: "cancel" };
+  return null;
+}
 function applicationView(app, sessions = []) {
   const stage = app.current_stage;
   const kind = stage && stage.stage_type;
@@ -120,16 +165,24 @@ function applicationView(app, sessions = []) {
     kind === "offer" ||
     app.offer_status === "received" ||
     app.offer_status === "accepted";
+  const accepted =
+    !app.archived_at &&
+    app.status === "closed" &&
+    app.offer_status === "accepted";
+  const terminal = terminalStatus(app);
   let status = { label: "待投递", tone: "neutral", icon: "file" };
-  if (ended) status = { label: "已终止", tone: "neutral", icon: "cancel" };
-  else if (offer)
+  if (accepted || terminal) {
+    status = accepted
+      ? { label: "已收到 Offer", tone: "offer", icon: "offer" }
+      : terminal;
+  } else if (offer)
     status = { label: "已收到 Offer", tone: "offer", icon: "offer" };
   else if (app.phase === "applied") {
     status =
       kind === "screening"
         ? { label: "筛选中", tone: "neutral", icon: "screening" }
         : completed && !scheduled
-          ? { label: "本阶段已结束", tone: "success", icon: "check" }
+          ? { label: "已完成", tone: "success", icon: "check" }
           : scheduled
             ? {
                 label: sessionView(scheduled).statusLabel,
@@ -149,10 +202,11 @@ function applicationView(app, sessions = []) {
                     tone: "accent",
                     icon: "clock",
                   }
-                : { label: "待安排", tone: "accent", icon: "clock" };
+                : { label: "等待安排", tone: "accent", icon: "clock" };
   }
   return {
     ...app,
+    companyLogo: logoSource(app.company_logo_url),
     stageLabel: stage
       ? stage.stage_label
       : app.phase === "pending"
@@ -193,6 +247,8 @@ function applicationCard(app) {
       "id",
       "company_name_snapshot",
       "job_title_snapshot",
+      "companyLogo",
+      "calendar_color",
       "phase",
       "stageLabel",
       "statusLabel",
@@ -214,6 +270,8 @@ function sessionCard(session) {
       "id",
       "application_stage_id",
       "company_name",
+      "companyLogo",
+      "calendar_color",
       "stage_label",
       "start_at",
       "end_at",
@@ -230,6 +288,59 @@ function sessionCard(session) {
   );
 }
 // Interval partitioning keeps simultaneous interviews visible, including overnight events.
+// 轴只铺开当天真正有安排的那一段，前后各留 1 小时。原先固定从 08:00 起、到最后一个场次
+// 结束为止：一场 20:00 的面试会把轴拖到 13 小时，每小时只剩 36.8px，而块内两行文字本身
+// 要 41.4px，文字被压扁。跨度不足时向两侧补到最小跨度，否则单独一场面试会把块撑满整板。
+// 每小时保底 56px（112rpx），轴因此跟着当天真实跨度变长：短于可视高度时仍填满看板，
+// 长于可视高度时随页面滚动，块不会再被压到文字以下。
+const TIMELINE_DEFAULT_FIRST_HOUR = 8;
+const TIMELINE_DEFAULT_LAST_HOUR = 18;
+const TIMELINE_PAD_HOURS = 1;
+const TIMELINE_MIN_SPAN_HOURS = 5;
+const TIMELINE_HOUR_RPX = 112;
+// 块内两行要 51.4px：上下内边距 4px + 标题行 24px（24px 公司标识比 13px 文字高，撑起标题行）
+// + 行距 2px + 时间行 17.4px。按每小时 56px 的底数折算，51.4px 对应 55 分钟；更短的场次放不下
+// 时间行，只留公司·阶段，避免两行一起被压扁。改块内标识尺寸、字号或内边距时这个数要跟着重算。
+const TIMELINE_TWO_LINE_MINUTES = 55;
+// 超过两小时的块（测评这类占一整天的居多）改顶对齐：居中会把标题推到看板中段，
+// 滚动条还在顶部时看不到字，整块看起来就是一根没有内容的色带。
+const TIMELINE_CENTER_MAX_MINUTES = 120;
+// 24px 的公司标识要 30 分钟（28px 块高）才放得下——居中会把 4px 内边距压成 2px，
+// 再短的块就会把标识上下切掉，那种情况下只留公司·阶段。
+const TIMELINE_LOGO_MIN_MINUTES = 30;
+function timelineSpan(items) {
+  if (!items.length)
+    return {
+      first: TIMELINE_DEFAULT_FIRST_HOUR,
+      last: TIMELINE_DEFAULT_LAST_HOUR,
+    };
+  // 跨天的场次在当天这一侧已经裁到 0 / 1440 分钟，所以 from、to 始终落在当天内。
+  let first = Math.max(
+    0,
+    Math.floor(Math.min(...items.map((s) => s.from)) / 60) - TIMELINE_PAD_HOURS,
+  );
+  // 轴底边最远到 24:00：跨天的测评在当天是一整块，轴只到 23:00 会让它溢出看板。
+  // 只有场次真的排进 23 点这一小时（或铺满全天）时才会出现 24:00 刻度。
+  let last = Math.min(
+    24,
+    Math.ceil(Math.max(...items.map((s) => s.to)) / 60) + TIMELINE_PAD_HOURS,
+  );
+  const grow = TIMELINE_MIN_SPAN_HOURS - (last - first);
+  if (grow > 0) {
+    first -= Math.ceil(grow / 2);
+    last += Math.floor(grow / 2);
+    // 顶到 0 点或 24 点就补不动了，把余量挪到另一侧。
+    if (first < 0) {
+      last = Math.min(24, last - first);
+      first = 0;
+    }
+    if (last > 24) {
+      first = Math.max(0, first - (last - 24));
+      last = 24;
+    }
+  }
+  return { first, last };
+}
 function timeline(sessions, date) {
   const start = new Date(iso(date, "00:00")).getTime();
   const end = start + 86400000;
@@ -246,13 +357,19 @@ function timeline(sessions, date) {
       to: Math.min(1440, (new Date(s.end_at) - start) / 60000),
     }))
     .sort((a, b) => a.from - b.from || a.to - b.to);
-  const first = Math.min(8, ...items.map((s) => Math.floor(s.from / 60)));
-  const last = Math.max(18, ...items.map((s) => Math.ceil(s.to / 60)));
+  const { first, last } = timelineSpan(items);
   let cluster = [],
     ends = [],
     clusterEnd = -1;
+  const conflicts = [];
   const finish = () => {
+    if (!cluster.length) return;
     for (const item of cluster) item.columns = ends.length;
+    if (ends.length > 1)
+      conflicts.push({
+        count: cluster.length,
+        end: Math.max(...cluster.map((item) => item.to)),
+      });
   };
   for (const item of items) {
     if (item.from >= clusterEnd) {
@@ -273,15 +390,33 @@ function timeline(sessions, date) {
       { length: last - first + 1 },
       (_, i) => `${String(first + i).padStart(2, "0")}:00`,
     ),
-    height: (last - first) * 88 + 40,
-    minimumHeight: (last - first) * 60,
+    minimumHeight: (last - first) * TIMELINE_HOUR_RPX,
     items: items.map((s) => ({
       ...s,
       fluidStyle: `top:${((s.from - first * 60) / ((last - first) * 60)) * 100}%;height:${((s.to - s.from) / ((last - first) * 60)) * 100}%;left:${(s.column / s.columns) * 100}%;width:${100 / s.columns}%;`,
-      style: `top:${((s.from - first * 60) / 60) * 88}rpx;height:${Math.max(16, ((s.to - s.from) / 60) * 88 - 6)}rpx;left:${(s.column / s.columns) * 100}%;width:${100 / s.columns}%;`,
       compactTime: `${dateParts(s.start_at).time}–${dateParts(s.end_at).time}`,
+      // 放不下两行就只留标题行，宁可少一行也不要把两行一起压扁。
+      showTime: s.to - s.from >= TIMELINE_TWO_LINE_MINUTES,
+      // 窄块优先让宽度给公司名和阶段，太短的块放不下标识。
+      showLogo: s.columns === 1 && s.to - s.from >= TIMELINE_LOGO_MIN_MINUTES,
+      // 常规时长的块内容居中；超过两小时改顶对齐。
+      centerContent: s.to - s.from <= TIMELINE_CENTER_MAX_MINUTES,
+      // Narrow columns drop the mode so the stage label survives truncation.
+      compactStage:
+        s.columns > 1
+          ? s.stage_label
+          : `${s.stage_label} · ${s.shortModeLabel}`,
     })),
-    hasConflict: items.some((s) => s.columns > 1),
+    conflicts: conflicts.map((c) => ({
+      key: String(c.end),
+      label: `${chineseCount[c.count] || c.count}项安排时间重叠，请核对`,
+      // Anchored to the cluster's bottom edge; clamped so the hint stays on the board.
+      top: Math.min(
+        96,
+        ((c.end - first * 60) / ((last - first) * 60)) * 100,
+      ),
+    })),
+    hasConflict: conflicts.length > 0,
   };
 }
 function uuid() {
@@ -350,6 +485,9 @@ module.exports = {
   TZ,
   stageNames,
   modes,
+  logoBackground,
+  logoSource,
+  logoInitial,
   dateParts,
   shortDate,
   dayLabel,

@@ -37,6 +37,45 @@ test('picker cancel does not confirm and minute 59 is retained',async()=>{
   }finally{global.Component=old;}
 });
 
+test('date popover renders the month grid and only reports the picked day', () => {
+  const previous = global.Component;
+  const modulePath = require.resolve('../components/career-date-popover/index');
+  let definition;
+  try {
+    global.Component = value => { definition = value; };
+    delete require.cache[modulePath];
+    require(modulePath);
+    const events = [];
+    const popover = {
+      ...definition.methods,
+      data: structuredClone(definition.data),
+      properties: { date: '2026-12-31' },
+      setData(data) { Object.assign(this.data, data); },
+      triggerEvent(name, detail) { events.push({ name, detail }); },
+    };
+    // 属性观察者负责首次渲染，和 company-logo 一致，不需要额外的 attached。
+    definition.observers.date.call(popover, '2026-12-31');
+    assert.equal(popover.data.monthLabel, '2026年12月');
+    assert.equal(popover.data.weeks.length, 6);
+    assert.ok(popover.data.weeks.every(week => week.days.length === 7));
+    const days = popover.data.weeks.flatMap(week => week.days);
+    assert.equal(days.length, 42);
+    assert.deepEqual(days.filter(day => day.selected).map(day => day.value), ['2026-12-31']);
+    // 翻月只换月份，不改选中日期；12 月 31 日会以邻月格的形式留在 1 月的网格里。
+    popover.navigate({ currentTarget: { dataset: { delta: 1 } } });
+    assert.equal(popover.data.monthLabel, '2027年1月');
+    const january = popover.data.weeks.flatMap(w => w.days);
+    assert.deepEqual(january.filter(d => d.selected).map(d => d.value), ['2026-12-31']);
+    assert.equal(january.find(d => d.selected).adjacent, true);
+    assert.equal(events.length, 0);
+    // 空日期不产生事件；选中一天只上报日期，收起挂窗由调用方处理。
+    popover.selectDate({ currentTarget: { dataset: {} } });
+    assert.equal(events.length, 0);
+    popover.selectDate({ currentTarget: { dataset: { date: '2027-01-04' } } });
+    assert.deepEqual(events, [{ name: 'select', detail: { date: '2027-01-04' } }]);
+  } finally { global.Component = previous; }
+});
+
 test('time picker edits duration locally and returns it only on confirmation', async () => {
   const previous = global.Component;
   const modulePath = require.resolve('../components/career-time-picker/index');

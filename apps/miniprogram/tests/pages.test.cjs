@@ -634,6 +634,15 @@ test("profile nickname editor never overlays a transparent native input on visib
   assert.match(profileTemplate, /bindconfirm="handleNicknameConfirm"/);
   assert.match(profileTemplate, /bindblur="handleNicknameBlur"/);
   assert.match(profileStyle, /\.name-display-layer\.is-hidden\s*\{[^}]*visibility:\s*hidden;/s);
+  // 展示层用 visibility 隐藏、仍占位，所以盒子尺寸由展示层决定；而展示层按当前昵称排布，
+  // 短昵称或空昵称时 input 的占位文案会更宽更高。盒子必须额外给出输入态的尺寸下限。
+  assert.match(profileStyle, /\.name-edit-box\s*\{[^}]*min-width:\s*\d+rpx;/s);
+  assert.match(profileStyle, /\.name-edit-box\s*\{[^}]*min-height:\s*\d+rpx;/s);
+  // career-font.wxss 只有 400/600 两个字重面。展示层请求 700 时 WebView 会退回 600 且不合成，
+  // 原生 input 却可能合成加粗，于是编辑前后看起来是两种字体——两层都必须用实际存在的字重。
+  assert.match(profileStyle, /\.user-name-text\s*\{[^}]*font-weight:\s*600;/s);
+  assert.match(profileStyle, /\.user-name-input\s*\{[^}]*font-weight:\s*600;/s);
+  assert.match(profileStyle, /\.user-name-input\s*\{[^}]*font-family:\s*inherit;/s);
   assert.doesNotMatch(profileTemplate, /user-name-input-overlay/);
   assert.doesNotMatch(profileStyle, /\.user-name-input\s*\{[^}]*opacity:\s*0;/s);
 });
@@ -749,6 +758,54 @@ test('career inner refresher stops after a failed refresh and allows retry', asy
     await page.handleRefresherRefresh();
     assert.equal(retried, true);
     assert.equal(page.data.refresherTriggered, false);
+  });
+});
+
+test('career date stepper walks days and the calendar popover replaces the native picker', async () => {
+  const c = require('../utils/career');
+  const template = fs.readFileSync(path.join(__dirname, '../pages/career/index.wxml'), 'utf8');
+  // 原生日历控件换成了「箭头 + 挂窗」；导航 tab 仍用 calendar 图标，这里只看工具栏。
+  const toolbar = template.slice(template.indexOf('schedule-toolbar'), template.indexOf('<view class="time-grid"'));
+  assert.equal(/<picker[\s>]/.test(toolbar), false);
+  assert.equal(toolbar.includes('name="calendar"'), false);
+  assert.equal((toolbar.match(/bindtap="shiftDay"/g) || []).length, 2);
+  assert.match(toolbar, /catchtap="toggleDatePicker"/);
+  // 日期控件必须 catchtap：.career-home 上挂着 closeDatePicker，用 bindtap 会在同一次点击里
+  // 先开再冒泡关掉，挂窗永远打不开。
+  assert.equal(/bindtap="toggleDatePicker"/.test(toolbar), false);
+  assert.match(template, /<view class="career-home" bindtap="closeDatePicker"/);
+  assert.match(toolbar, /<career-date-popover/);
+  await withPage('../pages/career/index', {}, {}, async (page) => {
+    const start = page.data.date;
+    let loads = 0;
+    page.loadPage = () => { loads++; return Promise.resolve(); };
+    assert.equal(page.data.datePickerOpen, false);
+    page.toggleDatePicker();
+    assert.equal(page.data.datePickerOpen, true);
+    page.toggleDatePicker();
+    assert.equal(page.data.datePickerOpen, false);
+    // 两侧箭头各走一天，走完就收起挂窗并重新加载当天。
+    page.shiftDay({ currentTarget: { dataset: { delta: '-1' } } });
+    assert.equal(page.data.date, c.shiftDate(start, -1));
+    assert.equal(page.data.dateLabel, c.dayLabel(c.shiftDate(start, -1)));
+    assert.equal(loads, 1);
+    page.shiftDay({ currentTarget: { dataset: { delta: '1' } } });
+    assert.equal(page.data.date, start);
+    assert.equal(loads, 2);
+    // 选中同一天不重复请求。
+    page.selectDate({ detail: { date: start } });
+    assert.equal(loads, 2);
+    page.selectDate({ detail: { date: c.shiftDate(start, 3) } });
+    assert.equal(page.data.date, c.shiftDate(start, 3));
+    assert.equal(loads, 3);
+    // 挂窗不是遮罩型，靠页面空白处点击收起。
+    page.toggleDatePicker();
+    assert.equal(page.data.datePickerOpen, true);
+    page.closeDatePicker();
+    assert.equal(page.data.datePickerOpen, false);
+    page.toggleDatePicker();
+    page.switchTab({ currentTarget: { dataset: { tab: 'applications' } } });
+    assert.equal(page.data.datePickerOpen, false);
   });
 });
 

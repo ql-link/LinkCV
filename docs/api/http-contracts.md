@@ -261,7 +261,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 ## 求职中心
 
-求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `job_application_stages` 保存追加式阶段历史，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。JD 创建或导入会原子创建或复用待投递记录；求职记录保存公司、岗位和完整 JD 快照（包括创建时的可选 `logo_url`），响应以可选 `company_logo_url` 暴露该快照值，后续修改原 JD 不会改写历史快照。
+求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `job_application_stages` 保存追加式阶段历史，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。JD 创建或导入会原子创建或复用待投递记录；求职记录保存公司、岗位和完整 JD 快照（包括创建时的可选 `logo_url`），响应以可选 `company_logo_url` 暴露该快照值，后续修改原 JD 不会改写历史快照。Web 与小程序两侧共用同一个快照投影，只输出 `https://` 开头的绝对 URL，其余取值一律投影为 `null`。
 
 待投递由 `applied_at=null` 且 `lifecycle_status=active` 表示，不生成虚构业务阶段。`POST /api/job-applications/:id/stages` 接受 `client_request_id`、稳定 `stage_type`、可选 `stage_label/interview_round_no/applied_at/resume_id` 和 `base_lock_version`，可直接进入 `screening/assessment/written_test/ai_interview/interview/offer`。普通面试必须提供非空显示名称，轮次可空；其他类型不能携带轮次。首次阶段写入同时保存投递时间，未提供时使用服务端操作时间；旧当前阶段改为已完成，新阶段成为唯一当前阶段。相同请求 UUID 和相同阶段内容幂等返回，内容不同或版本过期返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
@@ -418,12 +418,12 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 
 | 方法 | 路径 | 语义 |
 | --- | --- | --- |
-| GET | `/applications` | 游标分页，复用 scope/keyword/status/stage_type/limit；返回 items/next_cursor，包含 current_stage、stages 和 current_session_status，用于区分场次已完成与等待结果 |
+| GET | `/applications` | 游标分页，复用 scope/keyword/status/stage_type/limit；返回 items/next_cursor，包含 current_stage、stages、current_session_status（用于区分场次已完成与等待结果）和 company_logo_url |
 | GET | `/applications/:id` | 本次求职的岗位快照、阶段历史、Offer 和锁版本 |
 | POST | `/applications/:id/stages` | 复用 AddApplicationStageRequest；client_request_id 幂等追加阶段，首次追加同时记录投递事实与可选正式简历版本 |
 | POST | `/applications/:id/terminate` | 复用 TerminateApplicationRequest；保留历史 |
 | POST | `/applications/:id/offer` | 复用 OfferApplicationRequest，保存已收到 Offer 的待遇 |
-| GET | `/sessions` | 游标分页，支持 application_id、带时区的 start_at/end_at、status、upcoming、scope、limit，时间窗口按重叠查询 |
+| GET | `/sessions` | 游标分页，支持 application_id、带时区的 start_at/end_at、status、upcoming、scope、limit，时间窗口按重叠查询；每项附带 company_name、job_title、company_logo_url 和 calendar_color 公司标识快照 |
 | POST | `/applications/:id/sessions` | 复用 InterviewSessionCreateRequest；关联当前阶段，幂等创建安排 |
 | GET | `/sessions/:id` | 返回 session/application，含准备和文字记录 |
 | PUT | `/sessions/:id` | 复用 InterviewSessionUpdateRequest，更新方式、链接、地点、准备或文字记录 |
