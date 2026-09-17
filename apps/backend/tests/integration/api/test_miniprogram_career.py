@@ -53,7 +53,12 @@ def register_user(web_client: TestClient, email: str) -> None:
 
 
 def create_job(
-    app, email: str, title: str = "前端工程师", company: str = "字节跳动"
+    app,
+    email: str,
+    title: str = "前端工程师",
+    company: str = "字节跳动",
+    *,
+    logo_url: str | None = None,
 ) -> int:
     with app.state.session_factory() as session:
         user = session.scalar(select(User).where(User.email == email))
@@ -62,6 +67,7 @@ def create_job(
             user_id=user.id,
             job_title=title,
             company_name=company,
+            logo_url=logo_url,
             description="职位描述内容",
             source_type="manual",
             skills=[],
@@ -98,6 +104,80 @@ def test_career_overview_and_lists_require_miniprogram_auth() -> None:
         sessions_resp = client.get("/api/miniprogram/career/sessions", headers=headers)
         assert sessions_resp.status_code == 200
         assert "items" in sessions_resp.json()
+
+
+def test_mini_career_projects_company_logo_url() -> None:
+    app = build_app()
+    root = "/api/miniprogram/career"
+    email = "mini-logo@example.test"
+    logo = "https://cdn.example.test/logos/xinghe.png"
+    with TestClient(app) as client:
+        register_user(client, email)
+        with_logo = create_job(app, email, "前端工程师", "星河示例科技", logo_url=logo)
+        without_logo = create_job(app, email, "后端工程师", "无标识示例科技")
+        client.post("/api/auth/login", json={"email": email, "password": "password-123"})
+        created = {}
+        for job_id in (with_logo, without_logo):
+            response = client.post(
+                "/api/job-applications",
+                json={
+                    "job_description_id": str(job_id),
+                    "current_stage_type": "screening",
+                    "current_stage_label": "待投递",
+                    "stage_state": "awaiting_schedule",
+                },
+            )
+            assert response.status_code == 201, response.text
+            application = response.json()["application"]
+            created[application["company_name_snapshot"]] = application
+        client.cookies.clear()
+        headers = mini_headers(app, email)
+
+        listed = client.get(f"{root}/applications", headers=headers)
+        assert listed.status_code == 200, listed.text
+        assert {
+            item["company_name_snapshot"]: item["company_logo_url"]
+            for item in listed.json()["items"]
+        } == {"星河示例科技": logo, "无标识示例科技": None}
+
+        branded = created["星河示例科技"]
+        detail = client.get(f"{root}/applications/{branded['id']}", headers=headers)
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["application"]["company_logo_url"] == logo
+
+        # 时间表事件只携带场次摘要，公司标识必须由场次接口一并返回。
+        staged = client.post(
+            f"{root}/applications/{branded['id']}/stages",
+            headers=headers,
+            json={
+                "base_lock_version": branded["lock_version"],
+                "client_request_id": str(uuid.uuid4()),
+                "stage_type": "interview",
+                "stage_label": "技术二面",
+            },
+        )
+        assert staged.status_code == 200, staged.text
+        stage_id = staged.json()["application"]["current_stage"]["id"]
+        now = datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(days=1)
+        scheduled = client.post(
+            f"{root}/applications/{branded['id']}/sessions",
+            headers=headers,
+            json={
+                "client_request_id": str(uuid.uuid4()),
+                "application_stage_id": stage_id,
+                "stage_type": "interview",
+                "round_no": 1,
+                "stage_label": "技术二面",
+                "start_at": now.isoformat(),
+                "end_at": (now + timedelta(hours=1)).isoformat(),
+                "timezone": "Asia/Shanghai",
+                "mode": "video",
+            },
+        )
+        assert scheduled.status_code == 201, scheduled.text
+        sessions = client.get(f"{root}/sessions", headers=headers)
+        assert sessions.status_code == 200, sessions.text
+        assert [item["company_logo_url"] for item in sessions.json()["items"]] == [logo]
 
 
 def test_career_workflow_advance_close_and_complete() -> None:

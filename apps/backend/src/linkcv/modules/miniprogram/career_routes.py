@@ -28,6 +28,7 @@ from linkcv.application.interviews.service import (
     require_owned_session,
     add_application_stage,
     list_application_stages,
+    application_logo_url,
     create_session,
     update_session,
     reschedule_session,
@@ -100,6 +101,7 @@ def _application_record(
     current = next((stage for stage in stages if stage.current_marker == 1), None)
     return JobApplicationRecord.model_validate(application).model_copy(
         update={
+            "company_logo_url": application_logo_url(application),
             "current_stage": ApplicationStageRecord.model_validate(current)
             if current
             else None,
@@ -151,6 +153,7 @@ def _session_summary(item: SessionWithApplication) -> InterviewSessionSummary:
         **InterviewSessionRecord.model_validate(item.session).model_dump(),
         company_name=item.application.company_name_snapshot,
         job_title=item.application.job_title_snapshot,
+        company_logo_url=application_logo_url(item.application),
         calendar_color=item.application.calendar_color,
         application_stage_state=item.application.stage_state,
     )

@@ -115,6 +115,17 @@ class SessionWithApplication:
     application: JobApplication
 
 
+def application_logo_url(application: JobApplication) -> str | None:
+    """Project the captured company logo, keeping only public HTTPS sources.
+
+    The snapshot is imported from user-controlled job pages, so anything that is
+    not an absolute HTTPS URL stays unrendered rather than becoming a mixed-content
+    or `javascript:` source in a consumer.
+    """
+    value = application.job_snapshot.get("logo_url")
+    return value if isinstance(value, str) and value.startswith("https://") else None
+
+
 @dataclass(frozen=True, slots=True)
 class StageChangeResult:
     application: JobApplication
