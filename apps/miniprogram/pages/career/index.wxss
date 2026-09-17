@@ -82,11 +82,13 @@
   animation: career-tab-in-from-left 240ms cubic-bezier(.22, 1, .36, 1);
 }
 /* 未登录的整页提示不再套白色卡片：沿用简历页 .state-card 的写法——居中、无底色、
-   无边框圆角，直接在页面底色上排版。guest 时不论停在哪个 tab 都要撑满可用高度，
-   否则切到求职记录那一栏就退回顶部。 */
+   无边框圆角，直接在页面底色上排版。页面按 scroll-view 可视区铺满（`.career-page`
+   那条 min-height 是按时间表算的，比可视区矮，整页提示不能沿用），这样游客停在
+   面试安排还是求职记录，提示都落在真正的中线上。 */
 .guest-body {
   display: flex;
   flex-direction: column;
+  min-height: 100%;
 }
 .state-card {
   flex: 1;
@@ -98,10 +100,6 @@
   box-sizing: border-box;
   background: transparent;
   text-align: center;
-}
-.state-card .hint {
-  max-width: 260px;
-  margin-top: 8px;
 }
 .state-card .primary {
   margin-top: 16px;

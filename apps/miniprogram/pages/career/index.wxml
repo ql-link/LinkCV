@@ -45,11 +45,10 @@
   >
   <view
     class="career-page {{activeTab === 'schedule' ? 'schedule-body' : 'applications-body'}}{{guest ? ' guest-body' : ''}}"
-    style="{{activeTab === 'schedule' || guest ? 'min-height:calc(100vh - ' + statusBarHeight + 'px - 168px - env(safe-area-inset-bottom))' : ''}}"
+    style="{{!guest && activeTab === 'schedule' ? 'min-height:calc(100vh - ' + statusBarHeight + 'px - 168px - env(safe-area-inset-bottom))' : ''}}"
   >
     <view wx:if="{{guest}}" class="state-card"
       ><text class="title">登录后查看求职进展</text
-      ><text class="hint">在这里查看本账号的面试安排、求职记录与阶段历史。</text
       ><button class="primary" bindtap="goLogin">登录账号</button></view
     >
     <view wx:elif="{{error}}" class="panel state"
