@@ -4,7 +4,9 @@
   "enablePullDownRefresh": false,
   "allowsBounceVertical": "NO",
   "usingComponents": {
+    "career-date-popover": "/components/career-date-popover/index",
     "career-icon": "/components/career-icon/index",
+    "company-logo": "/components/company-logo/index",
     "schedule-sheet": "/components/schedule-sheet/index",
     "session-sheet": "/components/session-sheet/index"
   }

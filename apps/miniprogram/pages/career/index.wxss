@@ -25,12 +25,6 @@
   z-index: 20;
   background: #f4f6f8;
 }
-.brand {
-  height: 96rpx;
-  padding: 0 20px;
-  display: flex;
-  align-items: center;
-}
 .navigation {
   height: 64px;
   padding: 4px 24px 8px;
@@ -52,6 +46,7 @@
   color: #6f7a8c;
   font-size: 16px;
   white-space: nowrap;
+  transition: color 160ms ease;
 }
 .nav-item.active {
   color: #145ed6;
@@ -65,33 +60,99 @@
   background: #145ed6;
   bottom: 0;
   border-radius: 1.5px;
+  /* 指示线由 wx:if 挂载，每次选中都会重新播放这段入场。 */
+  animation: career-underline-in 200ms ease-out;
 }
 .career-page {
   padding-top: 8px;
+}
+/* 两个 tab 共用同一套外层内边距（Figma 的 8,20,12,20）。底部安全区由 .career-home
+   统一预留，这里不再重复叠加。两个类各自挂不同的入场动画名——类名一换，动画名跟着换，
+   切换 tab 时动画才会重新播放；用同一个动画名则不会重启。 */
+.applications-body {
+  box-sizing: border-box;
+  padding: 8px 20px 12px;
+  animation: career-tab-in-from-right 240ms cubic-bezier(.22, 1, .36, 1);
 }
 .schedule-body {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 8px 20px 16px;
+  padding: 8px 20px 12px;
+  animation: career-tab-in-from-left 240ms cubic-bezier(.22, 1, .36, 1);
+}
+/* 未登录的整页提示不再套白色卡片：沿用简历页 .state-card 的写法——居中、无底色、
+   无边框圆角，直接在页面底色上排版。页面按 scroll-view 可视区铺满（`.career-page`
+   那条 min-height 是按时间表算的，比可视区矮，整页提示不能沿用），这样游客停在
+   面试安排还是求职记录，提示都落在真正的中线上。 */
+.guest-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.state-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  box-sizing: border-box;
+  background: transparent;
+  text-align: center;
+}
+.state-card .primary {
+  /* 标题“登录后查看求职进展”在 20px 下正好 180px 宽，按钮比它再窄就会被标题夹住；
+     200px 比标题略宽一圈，同时不再像满宽那样横贯整页。 */
+  width: 200px;
+  margin-top: 16px;
 }
 .schedule-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
+  /* 日期挂窗的定位参照。 */
+  position: relative;
   margin: 0;
-  padding: 16px;
-  border-radius: 16px;
+  /* 圆角跟随 shared.wxss 的 .panel（14px），内边距与求职记录卡统一为 14px：
+     两边都按 350 宽带 14px 内陷排版，内层内容宽度都是 322，切 tab 时不会有横向错步。 */
+  padding: 14px;
 }
 .schedule-toolbar {
   flex-shrink: 0;
   gap: 12px;
   height: 28px;
 }
-.date-control {
-  display: inline-flex;
+.date-stepper {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  min-width: 0;
+}
+/* 两侧箭头各走一天，点日期本身打开月历挂窗。箭头在这里比原来的日历图标更能说明
+   「可以前后翻」，日期本身也不再是一个看不出可点的纯文字。 */
+.date-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: #3f4752;
+  /* 单角引号本身比字号小一圈，20px 时太细，压不住 17px 的日期。 */
+  font-size: 24px;
+  line-height: 1;
+}
+.date-arrow-pressed {
+  background: #edf1f5;
+}
+.date-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 日期位数变化时两侧箭头不跟着抖。 */
+  min-width: 118px;
   min-height: 28px;
   color: #17191c;
   font-size: 17px;
@@ -101,6 +162,14 @@
 }
 .date-control-pressed {
   background: #edf1f5;
+}
+/* 挂窗贴着工具栏下沿挂在面板里，不铺遮罩，所以看起来是浮层而不是弹窗。 */
+.date-popover {
+  position: absolute;
+  top: 50px;
+  left: 14px;
+  right: 14px;
+  z-index: 30;
 }
 .schedule-toolbar .add-schedule {
   display: inline-flex;
@@ -130,8 +199,7 @@
 .time-grid {
   position: relative;
   flex: 1;
-  margin-top: 20px;
-  margin-bottom: 7px;
+  margin-top: 12px;
 }
 .hour {
   font-family:
@@ -166,33 +234,52 @@
 }
 .event {
   position: absolute;
+  display: flex;
+  flex-direction: column;
+  /* 每小时 56px 的底数让块有余量：两行内容 46px，居中排比顶头排更稳，长块也不会头重脚轻。 */
+  justify-content: center;
+  gap: 2px;
   background: #e9f1fd;
+  color: #145ed6;
   border: 0;
   border-radius: 8px;
   padding: 4px 8px;
   box-sizing: border-box;
   overflow: hidden;
-  box-shadow:
-    inset 0 -2px #fff,
-    inset -2px 0 #fff;
+  /* 只留右侧的假缝：并排时用来分隔两栏。加在底部会在单栏时把块底削掉 2px。 */
+  box-shadow: inset -2px 0 #fff;
+}
+/* 超过两小时的块改顶对齐，见 career.js 的 TIMELINE_CENTER_MAX_MINUTES。 */
+.event.event-top {
+  justify-content: flex-start;
 }
 .event.tone-success {
   background: #eaf7f0;
+  color: #267a4d;
 }
 .event.tone-warning {
   background: #fff6e8;
+  color: #9a5b13;
+}
+.event.tone-neutral {
+  background: #edf1f5;
+  color: #6f7a8c;
 }
 .event-title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  /* 两行都不许收缩：块偏矮时 flex 会把行高压下去，文字看起来是被压扁而不是被裁掉。 */
+  flex-shrink: 0;
 }
 .event-company {
   display: block;
-  flex: 1;
+  /* 窄块优先保住公司名：自己不收缩，但最多占 68%，留出阶段的位置。 */
+  flex-shrink: 0;
+  max-width: 68%;
   min-width: 0;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.45;
   color: #17191c;
@@ -201,19 +288,35 @@
   text-overflow: ellipsis;
 }
 .event-stage {
-  max-width: 42%;
-  font-size: 10px;
+  display: block;
+  min-width: 0;
+  flex-shrink: 1;
+  font-size: 12px;
   line-height: 1.45;
+  color: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .event-time {
   display: block;
-  font-size: 11px;
+  min-width: 0;
+  flex-shrink: 0;
+  font-size: 12px;
   line-height: 1.45;
+  color: #6f7a8c;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conflict-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: #9a5b13;
 }
 .schedule-empty {
   position: absolute;
@@ -238,15 +341,6 @@
   font-size: 25rpx;
   color: #6f7a8c;
 }
-.card-bottom {
-  border-top: 1rpx solid #edf1f5;
-  margin-top: 26rpx;
-  padding-top: 16rpx;
-}
-.detail-link {
-  font-size: 24rpx;
-  color: #3f4752;
-}
 .search career-icon {
   display: inline-flex;
   flex-shrink: 0;
@@ -264,9 +358,6 @@
   background: transparent;
   color: var(--ui-foreground);
   font-weight: 600;
-}
-.filter-offer {
-  color: #9a6a00;
 }
 .application-card {
   padding: 32rpx;
@@ -286,50 +377,25 @@
   margin-left: 16rpx;
   flex-shrink: 0;
 }
-.card-stage {
-  margin-top: 16rpx;
-  gap: 12rpx;
-}
 .stage-name {
   font-size: 27rpx;
 }
+/* 徽标一律无底色：文字颜色由 shared.wxss 的 .tone-* 提供，图标另带 tone。
+   两个右侧标签直接落在白卡上，文字与卡片内容右缘对齐，不再有胶囊底造成的错位。 */
 .status-badge {
   display: flex;
   align-items: center;
   gap: 8rpx;
-  padding: 4rpx 12rpx;
-  border-radius: 12rpx;
   font-size: 22rpx;
   white-space: nowrap;
 }
-.status-badge.tone-accent {
-  background: #e9f1fd;
-}
-.status-badge.tone-success {
-  background: var(--ui-success-subtle);
-}
-.status-badge.tone-warning {
-  background: var(--ui-warning-subtle);
-}
-.status-badge.tone-offer {
-  background: #fff6dd;
-}
 .status-badge.tone-neutral {
-  background: var(--ui-surface-muted);
+  color: #566173;
 }
 .application-card .hint {
   margin-top: 16rpx;
   font-size: 23rpx;
 }
-.card-bottom {
-  margin-top: 16rpx;
-  padding-top: 16rpx;
-  border-color: rgba(219, 224, 232, 0.65);
-}
-.detail-link {
-  font-size: 23rpx;
-}
-
 /* Figma 27:2 — real data uses the same record-card geometry. */
 .filters {
   margin: 12px 0;
@@ -362,33 +428,18 @@
   color: #6f7a8c;
   margin-left: 12px;
 }
-.card-stage {
-  margin-top: 8px;
-  gap: 8px;
-}
 .stage-name {
   font-size: 14px;
   font-weight: 700;
   line-height: 1.45;
 }
 .status-badge {
-  padding: 3px 8px;
   gap: 6px;
-  border-radius: 6px;
   font-size: 12px;
   line-height: 1.45;
 }
 .application-card .hint {
   margin-top: 8px;
-  font-size: 12px;
-  line-height: 1.45;
-}
-.card-bottom {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(219, 224, 232, 0.6);
-}
-.detail-link {
   font-size: 12px;
   line-height: 1.45;
 }
@@ -430,11 +481,15 @@
   background: #145ed6;
 }
 .career-page .application-card {
-  padding: 12px 14px;
+  /* 与面试安排的面板统一为 14px，见 .schedule-panel 的说明。 */
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-bottom: 12px;
+}
+.career-page .application-card .card-title {
+  gap: 12px;
 }
 .card-identity {
   flex: 1;
@@ -447,46 +502,65 @@
   font-weight: 700;
 }
 .job-name {
-  font-size: 13px;
-  font-weight: 400;
+  font-size: 14px;
+  font-weight: 600;
 }
 .application-card .employment {
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: #edf1f5;
+  /* 招聘类型同样无底色，只用文字颜色区分实习 / 校招 / 正式。 */
+  color: #566173;
   font-size: 11px;
   line-height: 16px;
   white-space: nowrap;
 }
 .application-card .employment-internship {
-  background: #eaf7f0;
   color: #267a4d;
 }
 .application-card .employment-campus {
-  background: #e9f1fd;
   color: #145ed6;
 }
-.card-info {
-  padding: 10px;
-  border-radius: 9px;
-  background: #f9fafb;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* 卡片整体可点，按压反馈与同页的日期选择、添加安排保持一致。 */
+.career-page .application-card-pressed {
+  background: var(--ui-secondary-hover);
 }
+/* 压平后阶段行直接落在白卡上，meta 用一条细分隔线收尾，不再套一层灰块。
+   数字用等宽，避免「下次安排」这类变宽数字在列表滚动时抖动——与时间表的 .hour/.event-time 一致。 */
 .card-meta {
+  padding-top: 10px;
+  border-top: 1px solid rgba(219, 224, 232, .6);
   font-size: 12px;
   line-height: 18px;
   color: #3f4752;
+  font-variant-numeric: tabular-nums;
+}
+/* 阶段与状态合成一句：「简历初筛 · 筛选中」，两者同字号同字重、状态用 tone 色。
+   状态不再是挂在行尾的小字，读的时候和阶段是同一个「当前状态」短语。 */
+.card-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.card-state .stage-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-sep {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: #6f7a8c;
 }
 .application-card .stage-name {
   font-size: 14px;
   line-height: 20px;
 }
 .application-card .status-badge {
-  font-size: 12px;
-  padding: 3px 8px;
-  line-height: 17px;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
 }
 
 /* The native input needs the full field height so its caret is not clipped on devices. */
@@ -514,4 +588,26 @@
   background: transparent;
   font-size: 13px;
   line-height: normal;
+}
+
+/* 「面试安排 / 求职记录」切换过渡：内容从对应方向淡入，导航指示线缩放展开。
+   两个 tab 各自引用不同的 @keyframes，切换时动画名随之改变才会重新播放。 */
+@keyframes career-tab-in-from-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes career-tab-in-from-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes career-underline-in {
+  from { opacity: 0; transform: scaleX(.4); }
+  to { opacity: 1; transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-body,
+  .applications-body,
+  .underline { animation: none; }
+  .nav-item { transition: none; }
 }

@@ -2,6 +2,7 @@
   "component": true,
   "usingComponents": {
     "career-icon": "/components/career-icon/index",
+    "company-logo": "/components/company-logo/index",
     "schedule-sheet": "/components/schedule-sheet/index"
   }
 }

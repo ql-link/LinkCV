@@ -158,7 +158,7 @@
 /* Figma 90:160: two aligned columns, 5px text gap and 18px vertical inset. */
 .sheet-overlay .process-option {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
   width: 100%;
   padding: 18px 16px;

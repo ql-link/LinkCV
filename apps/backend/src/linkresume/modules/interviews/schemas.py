@@ -599,6 +599,7 @@ class InterviewSessionRecord(BaseModel):
 class InterviewSessionSummary(InterviewSessionRecord):
     company_name: str
     job_title: str
+    company_logo_url: str | None = None
     calendar_color: CalendarColor
     application_stage_state: ApplicationStageState
 

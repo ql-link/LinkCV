@@ -32,6 +32,7 @@ from linkresume.application.interviews.service import (
     SessionWithApplication,
     add_application_stage,
     advance_application,
+    application_logo_url,
     cancel_interview,
     close_application,
     complete_interview,
@@ -163,7 +164,7 @@ def _application_record(
     current = next((stage for stage in stages if stage.current_marker == 1), None)
     return JobApplicationRecord.model_validate(application).model_copy(
         update={
-            "company_logo_url": _application_logo_url(application),
+            "company_logo_url": application_logo_url(application),
             "current_stage": (
                 ApplicationStageRecord.model_validate(current) if current else None
             ),
@@ -174,17 +175,6 @@ def _application_record(
             ),
         }
     )
-
-
-def _application_logo_url(application: JobApplication) -> str | None:
-    from linkresume.domain.company_logo import is_job_logo_url
-
-    value = application.job_snapshot.get("logo_url")
-    if isinstance(value, str) and (
-        value.startswith("https://") or is_job_logo_url(value, application.job_description_id)
-    ):
-        return value
-    return None
 
 
 def _application_summary(

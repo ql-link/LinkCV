@@ -54,6 +54,12 @@
             bindtap="selectApplication"
             disabled="{{loading}}"
           >
+            <company-logo
+              name="{{item.company_name_snapshot}}"
+              logo="{{item.companyLogo}}"
+              color="{{item.calendar_color}}"
+              size="{{44}}"
+            />
             <view class="process-identity">
               <text class="company">{{item.company_name_snapshot}}</text>
               <text class="process-job">{{item.job_title_snapshot}}</text>

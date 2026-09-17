@@ -23,6 +23,7 @@ Page({
     statusBarHeight: getStatusBarHeight(),
     activeTab: "schedule",
     scheduleSheetOpen: false,
+    datePickerOpen: false,
     sessionId: "",
     date: c.dateParts().date,
     dateLabel: c.dayLabel(c.dateParts().date),
@@ -119,10 +120,30 @@ Page({
     return this.loadPage();
   },
   switchTab(e) {
-    this.setData({ activeTab: e.currentTarget.dataset.tab });
+    this.setData({
+      activeTab: e.currentTarget.dataset.tab,
+      datePickerOpen: false,
+    });
   },
-  changeDate(e) {
-    this.setData({ date: e.detail.value });
+  toggleDatePicker() {
+    this.setData({ datePickerOpen: !this.data.datePickerOpen });
+  },
+  // 挂窗不是遮罩型，靠点页面空白处收起，所以打开它的日期控件必须用 catchtap：
+  // 用 bindtap 的话同一次点击会先开、再冒泡到这里关掉，挂窗永远打不开。
+  closeDatePicker() {
+    if (this.data.datePickerOpen) this.setData({ datePickerOpen: false });
+  },
+  shiftDay(e) {
+    this.closeDatePicker();
+    return this.setDate(c.shiftDate(this.data.date, Number(e.currentTarget.dataset.delta)));
+  },
+  selectDate(e) {
+    this.closeDatePicker();
+    return this.setDate(e.detail.date);
+  },
+  setDate(date) {
+    if (!date || date === this.data.date) return;
+    this.setData({ date, dateLabel: c.dayLabel(date) });
     return this.loadPage();
   },
   focusSearch() {

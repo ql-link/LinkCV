@@ -15,10 +15,21 @@
   >
   <block wx:if="{{session && !loading}}"
     ><view class="editor-identity"
-      ><text class="heading">{{session.stage_label}}</text
-      ><text class="subtitle"
-        >{{app.company_name_snapshot}} · {{app.job_title_snapshot}}</text
-      ><text class="hint">{{sessionLabel}}</text></view
+      ><view class="identity-heading"
+        ><company-logo
+          name="{{app.company_name_snapshot}}"
+          logo="{{app.company_logo_url}}"
+          color="{{app.calendar_color}}"
+          size="{{36}}"
+        /><view class="identity-copy"
+          ><text class="heading">{{session.stage_label}}</text
+          ><text class="subtitle"
+            >{{app.company_name_snapshot}} · {{app.job_title_snapshot}}</text
+          ></view
+        ></view
+      ><view class="identity-rule" aria-hidden="true" /><text class="hint"
+        >{{sessionLabel}}</text
+      ></view
     >
     <view class="panel editor-fields"
       ><block wx:if="{{mode === 'record'}}"
