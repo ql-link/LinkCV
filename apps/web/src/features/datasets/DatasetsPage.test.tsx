@@ -81,8 +81,12 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
-function openUploadDialog() {
+async function openUploadDialog() {
+  await import("./DatasetUploadDialog");
   fireEvent.click(screen.getByRole("button", { name: "上传资料" }));
+  await act(async () => {
+    await Promise.resolve();
+  });
   return screen.getByRole("dialog", { name: "上传资料" });
 }
 
@@ -116,7 +120,7 @@ describe("DatasetsPage", () => {
     }));
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
     await screen.findByRole("heading", { name: batchFolder.name });
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([1, 2, 3, 4].map((index) => new File(["test"], `${index}.md`)));
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(3));
     act(() => {
@@ -450,7 +454,7 @@ describe("DatasetsPage", () => {
       .mockResolvedValue({ datasets: [accepted] });
 
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    const dialog = openUploadDialog();
+    const dialog = await openUploadDialog();
     const input = screen.getByLabelText("选择资料文件");
     expect(input).toHaveAttribute("multiple");
     expect(dialog.querySelector(".dataset-file-upload")).toBeInTheDocument();
@@ -484,7 +488,7 @@ describe("DatasetsPage", () => {
         <DatasetsPage initialFolderId={batchFolder.id} />
       </StrictMode>,
     );
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([new File(["# 严格模式"], "严格模式.md", { type: "text/markdown" })]);
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
@@ -501,7 +505,7 @@ describe("DatasetsPage", () => {
       parse_status: "queued",
     });
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([new File(["# 兼容"], "兼容浏览器.md")]);
 
     await waitFor(() => expect(upload).toHaveBeenCalledWith(
@@ -520,7 +524,7 @@ describe("DatasetsPage", () => {
     });
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
     await screen.findByText("还没有资料");
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([new File(["# 失败"], "无法生成.md")]);
 
     const alert = await screen.findByRole("alert");
@@ -528,13 +532,13 @@ describe("DatasetsPage", () => {
     expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument();
   });
 
-  it("失败提示展示五秒后淡出并自动移除", async () => {
+  it("失败提示展示三秒后自动移除", async () => {
     const record = { ...uploadBaseRecord, folder_id: batchFolder.id };
     vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [batchFolder], total_count: 0, uncategorized_count: 0 });
     vi.useFakeTimers();
     try {
       render(<DatasetsPage initialFolderId={batchFolder.id} />);
-      openUploadDialog();
+      await openUploadDialog();
       await act(async () => {
         selectFiles([new File(["binary"], "不支持.exe")]);
         await Promise.resolve();
@@ -542,9 +546,9 @@ describe("DatasetsPage", () => {
       });
 
       expect(screen.getByRole("alert")).toHaveTextContent("不支持.exe");
-      act(() => vi.advanceTimersByTime(5000));
-      expect(screen.getByRole("alert")).toHaveClass("is-fading");
-      act(() => vi.advanceTimersByTime(300));
+      act(() => vi.advanceTimersByTime(2999));
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(1));
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -566,7 +570,7 @@ describe("DatasetsPage", () => {
       return { ...record, file_name: file.name };
     });
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([
       new File(["1"], "一.md"),
       new File(["2"], "二.md"),
@@ -597,7 +601,7 @@ describe("DatasetsPage", () => {
       .mockResolvedValue({ datasets: [failedSaved] });
     const upload = vi.spyOn(api, "uploadDataset").mockRejectedValue(new ApiRequestError(502, "DATASET_QUEUE_UNAVAILABLE"));
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([new File(["# x"], "队列失败.md")]);
 
     await waitFor(() => expect(upload).toHaveBeenCalledWith(expect.any(File), expect.stringMatching(/^[0-9a-f-]{36}$/), batchFolder.id));
@@ -616,7 +620,7 @@ describe("DatasetsPage", () => {
       () => new Promise((resolve) => { resolveUpload = resolve; }),
     );
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    const dialog = openUploadDialog();
+    const dialog = await openUploadDialog();
     selectFiles([new File(["x"], "资料.md")]);
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText("选择资料文件")).toBeDisabled();
@@ -651,7 +655,7 @@ describe("DatasetsPage", () => {
     expect(screen.getByRole("heading", { name: "前端岗位" })).toBeInTheDocument();
 
     // 点击上传资料
-    const dialog = openUploadDialog();
+    const dialog = await openUploadDialog();
     expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
 
     // 上传文件并验证 folder_id 传递
@@ -676,7 +680,7 @@ describe("DatasetsPage", () => {
     vi.spyOn(api, "uploadDataset").mockResolvedValue(accepted);
 
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([new File(["# x"], "刚上传.md", { type: "text/markdown" })]);
 
     await waitFor(() => expect(screen.getByText("刚上传")).toBeInTheDocument());
@@ -698,7 +702,7 @@ describe("DatasetsPage", () => {
     vi.spyOn(api, "uploadDataset").mockResolvedValue(accepted);
 
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([new File(["# x"], "同步失败.md", { type: "text/markdown" })]);
 
     expect(await screen.findByText("同步失败")).toBeInTheDocument();
@@ -720,13 +724,13 @@ describe("DatasetsPage", () => {
       .mockResolvedValueOnce(accepted);
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
     const file = new File(["# x"], "明确失败.md", { type: "text/markdown" });
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([file]);
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     const firstKey = upload.mock.calls[0]?.[1];
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
 
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([file]);
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
@@ -744,13 +748,13 @@ describe("DatasetsPage", () => {
       .mockResolvedValueOnce(accepted);
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
     const file = new File(["# x"], "网络重试.md", { type: "text/markdown" });
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([file]);
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
     const firstKey = upload.mock.calls[0]?.[1];
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument());
 
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([file]);
 
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
@@ -773,7 +777,7 @@ describe("DatasetsPage", () => {
     });
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
     await screen.findByText("还没有资料");
-    openUploadDialog();
+    await openUploadDialog();
     selectFiles([
       new File(["x"], "小文件.md"),
       new File(["xyz"], "超限.md"),
@@ -907,7 +911,7 @@ describe("DatasetsPage", () => {
 
     // 移动弹窗展示
     expect(screen.queryByRole("radio", { name: "未分类" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: /移动「个人履历」到文件夹/ })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: /移动「个人履历」到文件夹/ })).toBeInTheDocument();
 
     // 选择“工作经历”分类
     const folderOption = screen.getByRole("radio", { name: /工作经历/ });

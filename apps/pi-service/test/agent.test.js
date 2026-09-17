@@ -8,8 +8,47 @@ import {
   createSkillReadTool,
   clarificationFallbackText,
   formatContextMaterials,
+  SYSTEM_PROMPT,
+  USER_FACING_RESPONSE_PROMPT,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
+
+test("system prompt identifies the assistant as LinkResume", () => {
+  assert.match(SYSTEM_PROMPT, /你是 LinkResume 的职业与简历智能助手/);
+  assert.match(SYSTEM_PROMPT, /career-assistant-router/);
+  assert.match(SYSTEM_PROMPT, /list_user_resources/);
+  assert.match(SYSTEM_PROMPT, /resolve_resume_reference/);
+  assert.match(SYSTEM_PROMPT, /begin_final_response/);
+  assert.match(SYSTEM_PROMPT, /临时工作过程/);
+  assert.match(SYSTEM_PROMPT, /不绑定或改写会话/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /通过 `@`/);
+  assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
+});
+
+test("system prompt applies the user-facing response style after agent policy", () => {
+  assert.match(USER_FACING_RESPONSE_PROMPT, /第一句话必须包含用户问题的答案/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /一至三句连续正文/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /这是硬上限/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /不能成为新的事项、单独段落或列表后的补充/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /必须使用真正的 Markdown 列表/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /不得用正文中的“第一、第二、第三”模拟列表/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /恰好对应数量的 Markdown 列表项/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /整项使用一至两句完整句子/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /最多三个/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /只报告本轮实际观察到的结果/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /内容说完后立即结束/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /在内部静默检查输出形状/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /删除“其次”“另外”“同时”等引出的次要事项/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /不得为了说明优先级而提及、对比或概括其他问题/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /列表后不得再有任何文字/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /“只分析，不修改”是行为边界/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /先重写草稿再输出/);
+  assert.ok(
+    SYSTEM_PROMPT.indexOf("你是 LinkResume 的简历智能助手") <
+      SYSTEM_PROMPT.indexOf("以下规则只约束用户最终能够看到的自然语言回复"),
+  );
+  assert.doesNotMatch(SYSTEM_PROMPT, /Claude Code|IS_TEXT_OUTPUT_VISIBLE_TO_USER/);
+});
 
 test("agent completion accepts a successful assistant message", () => {
   assert.doesNotThrow(() => assertAgentCompleted({ role: "assistant", stopReason: "stop" }));
@@ -49,51 +88,80 @@ test("agent completion rejects missing and aborted assistant messages", () => {
   );
 });
 
-test("assistant output filter hides tool-call narration and emits only the final reply", () => {
+test("assistant output filter keeps tool-stage text in activity and streams final text immediately", () => {
   const emitted = [];
+  let finalResponse = false;
   const filter = createAssistantOutputFilter(
     (type, payload) => emitted.push({ type, payload }),
     "run-1",
+    { isFinalResponse: () => finalResponse },
   );
 
+  filter({ type: "message_start", message: { role: "assistant" } });
   filter({
     type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "我先读取 Skill，再调用定位工具。" },
+    assistantMessageEvent: { type: "text_delta", delta: "I'll read the router skill." },
   });
-  filter({
-    type: "message_end",
-    message: { role: "assistant", stopReason: "toolUse" },
-  });
+  assert.deepEqual(emitted, [{
+    type: "assistant.activity.delta",
+    payload: { runId: "run-1", delta: "I'll read the router skill." },
+  }]);
+
   filter({
     type: "message_update",
-    assistantMessageEvent: { type: "text_delta", delta: "已生成一份待确认的修改提案。" },
+    assistantMessageEvent: { type: "toolcall_delta", delta: "内部工具参数" },
   });
+  assert.equal(emitted.length, 1);
+
+  filter({ type: "message_start", message: { role: "assistant" } });
   filter({
-    type: "message_end",
-    message: { role: "assistant", stopReason: "stop" },
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "I'll inspect the resume." },
   });
 
-  assert.deepEqual(emitted, [{
-    type: "assistant.delta",
-    payload: { runId: "run-1", delta: "已生成一份待确认的修改提案。" },
-  }]);
+  finalResponse = true;
+  filter({ type: "message_start", message: { role: "assistant" } });
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "面试重点包括" },
+  });
+  assert.equal(emitted.at(-1).type, "assistant.delta");
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "项目证据。" },
+  });
+
+  assert.deepEqual(emitted, [
+    {
+      type: "assistant.activity.delta",
+      payload: { runId: "run-1", delta: "I'll read the router skill." },
+    },
+    {
+      type: "assistant.activity.delta",
+      payload: { runId: "run-1", delta: "\nI'll inspect the resume." },
+    },
+    {
+      type: "assistant.delta",
+      payload: { runId: "run-1", delta: "面试重点包括" },
+    },
+    {
+      type: "assistant.delta",
+      payload: { runId: "run-1", delta: "项目证据。" },
+    },
+  ]);
 });
 
-test("assistant output filter does not expose failed or aborted model text", () => {
+test("assistant output filter does not expose tool arguments", () => {
   const emitted = [];
   const filter = createAssistantOutputFilter((...event) => emitted.push(event), "run-2");
-
-  for (const stopReason of ["error", "aborted"]) {
-    filter({
-      type: "message_update",
-      assistantMessageEvent: { type: "text_delta", delta: "内部错误详情" },
-    });
-    filter({
-      type: "message_end",
-      message: { role: "assistant", stopReason },
-    });
-  }
-
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "toolcall_delta", delta: '{"secret":"value"}' },
+  });
+  filter({
+    type: "message_update",
+    assistantMessageEvent: { type: "thinking_delta", delta: "hidden reasoning" },
+  });
   assert.deepEqual(emitted, []);
 });
 
@@ -102,7 +170,7 @@ test("assistant output filter suppresses final prose after a clarification reque
   const filter = createAssistantOutputFilter(
     (...event) => emitted.push(event),
     "run-3",
-    () => true,
+    { shouldSuppress: () => true },
   );
   filter({
     type: "message_update",
@@ -129,13 +197,32 @@ test("clarification fallback remains readable for clients that ignore the struct
 
 test("read tool can load a registered resume skill", async () => {
   let loadedPath;
-  const tool = createSkillReadTool((path) => { loadedPath = path; });
+  let started = false;
+  const tool = createSkillReadTool(
+    (path) => { loadedPath = path; },
+    () => { started = true; },
+  );
   const result = await tool.execute("read-1", {
     path: "resume-edit-workflow/SKILL.md",
   });
 
+  assert.equal(started, true);
   assert.match(result.content[0].text, /name: resume-edit-workflow/);
   assert.equal(loadedPath, "resume-edit-workflow/SKILL.md");
+});
+
+test("read tool can load every P1 career workflow", async () => {
+  const tool = createSkillReadTool();
+  for (const path of [
+    "career-assistant-router/SKILL.md",
+    "resume-translation/SKILL.md",
+    "interview-guide/SKILL.md",
+    "career-planning/SKILL.md",
+    "resume-title-generator/SKILL.md",
+  ]) {
+    const result = await tool.execute(`read-${path}`, { path });
+    assert.match(result.content[0].text, /^---/);
+  }
 });
 
 test("read tool rejects files outside the registered skills directory", async () => {

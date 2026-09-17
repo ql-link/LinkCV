@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from linkcv.modules.agent.pi_client import (
+from linkresume.modules.agent.pi_client import (
     _finalize,
     _safe_phase_payload,
     cancel_pi_run,
@@ -69,7 +69,7 @@ def test_cancel_and_readiness_use_their_own_pi_endpoints(
             return Response()
 
     monkeypatch.setattr(
-        "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+        "linkresume.modules.agent.pi_client.httpx.AsyncClient",
         lambda **_kwargs: HttpClient(),
     )
     app = SimpleNamespace(

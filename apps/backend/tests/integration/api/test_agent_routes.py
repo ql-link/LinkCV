@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 import hashlib
 import re
 from datetime import timedelta
@@ -11,25 +12,25 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from sqlalchemy import select, update
 
-from linkcv.core.config import Settings
-from linkcv.core.database import utc_now
-from linkcv.core.errors import ApiError
-from linkcv.main import create_app
-from linkcv.modules.agent.models import (
+from linkresume.core.config import Settings
+from linkresume.core.database import utc_now
+from linkresume.core.errors import ApiError
+from linkresume.main import create_app
+from linkresume.modules.agent.models import (
     AgentMessage,
     AgentRun,
     AgentSession,
     AgentToolCall,
     ResumeChangeProposal,
 )
-from linkcv.modules.agent.pi_client import stream_pi_run
-from linkcv.modules.agent.service import create_run
-from linkcv.modules.datasets.models import UserDataset
-from linkcv.modules.identity.models import User
-from linkcv.modules.job_descriptions.models import JobDescription
-from linkcv.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
-from linkcv.modules.llm.service import LLMError
-from linkcv.modules.resumes.models import (
+from linkresume.modules.agent.pi_client import stream_pi_run
+from linkresume.modules.agent.service import create_run
+from linkresume.modules.datasets.models import UserDataset
+from linkresume.modules.identity.models import User
+from linkresume.modules.job_descriptions.models import JobDescription
+from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkresume.modules.llm.service import LLMError
+from linkresume.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
@@ -37,7 +38,10 @@ from linkcv.modules.resumes.models import (
     ResumeVersion,
 )
 from tests.fakes import FakeRedis
-from tests.canonical_resume_fixtures import canonical_template_payload
+from tests.canonical_resume_fixtures import (
+    canonical_resume_payload,
+    canonical_template_payload,
+)
 
 
 INTERNAL_TOKEN = "internal-agent-token-for-tests-000000000001"
@@ -57,7 +61,10 @@ class FakeStorage:
         return SimpleNamespace(size=len(self.objects[object_name]))
 
     def delete(self, object_name: str) -> None:
-        pass
+        self.objects.pop(object_name, None)
+
+    def copy(self, source_name: str, target_name: str) -> None:
+        self.objects[target_name] = self.objects[source_name]
 
     def delete_prefix(self, prefix: str) -> None:
         pass
@@ -68,7 +75,7 @@ def build_app():
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="agent-routes-test-secret-at-least-32-bytes",
-            linkcv_internal_agent_token=INTERNAL_TOKEN,
+            linkresume_internal_agent_token=INTERNAL_TOKEN,
         ),
         storage=FakeStorage(),
         redis=FakeRedis(),
@@ -97,10 +104,10 @@ def register(client: TestClient, email: str) -> None:
     assert response.status_code == 201
 
 
-def create_resume(client: TestClient, app) -> dict:
+def create_resume(client: TestClient, app, title: str = "张三的测试简历") -> dict:
     response = client.post(
         "/api/resumes",
-        json={"title": "张三的测试简历", "template_id": app.state.test_template_id},
+        json={"title": title, "template_id": app.state.test_template_id},
     )
     assert response.status_code == 201
     return response.json()["resume"]
@@ -126,7 +133,9 @@ def bind_pi_agent_model(app) -> None:
         db.commit()
 
 
-def create_active_run(app, session_public_id: str) -> str:
+def create_active_run(
+    app, session_public_id: str, *, message_content: str | None = None
+) -> str:
     with app.state.session_factory() as db:
         session = db.scalar(
             select(AgentSession).where(AgentSession.public_id == session_public_id)
@@ -140,6 +149,17 @@ def create_active_run(app, session_public_id: str) -> str:
             started_at=utc_now(),
         )
         db.add(run)
+        db.flush()
+        if message_content is not None:
+            db.add(
+                AgentMessage(
+                    session_id=session.id,
+                    run_id=run.id,
+                    sequence_no=1,
+                    role="user",
+                    content=message_content,
+                )
+            )
         db.commit()
         return run.public_id
 
@@ -150,9 +170,9 @@ def internal_headers(token: str = INTERNAL_TOKEN) -> dict[str, str]:
 
 def editor_data(base: dict, markdown: str) -> dict:
     data = {**base, "sections": []}
-    heading = re.search(r"^## \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
-    entry = re.search(r"^### \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
-    bullets = re.findall(r"^- \[\[linkcv-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    heading = re.search(r"^## \[\[linkresume-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    entry = re.search(r"^### \[\[linkresume-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
+    bullets = re.findall(r"^- \[\[linkresume-block:(node_[a-z0-9]+)\]\](.+)$", markdown, re.MULTILINE)
     assert heading is not None and entry is not None and bullets
 
     def value(node_id: str, text: str) -> dict:
@@ -232,7 +252,158 @@ def test_session_is_owned_and_internal_context_requires_service_token() -> None:
         assert context.json()["lock_version"] == 1
 
 
-def test_context_catalog_is_owner_scoped_and_message_snapshot_binds_first_resume() -> (
+def test_explicit_resume_title_resolves_for_run_without_binding_session() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-reference-owner@example.test")
+        resume = create_resume(client, app)
+        created = client.post("/api/agent/sessions", json={})
+        assert created.status_code == 201
+        session_id = created.json()["session"]["id"]
+        run_id = create_active_run(
+            app,
+            session_id,
+            message_content="请整体分析简历：张三的测试简历",
+        )
+
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"title": "张三的测试简历"},
+        )
+
+        assert resolved.status_code == 200
+        assert resolved.json()["status"] == "resolved"
+        target = resolved.json()["target"]
+        assert target["resume_id"] == resume["id"]
+        context = client.post(
+            f"/internal/agent/runs/{run_id}/context:read",
+            headers=internal_headers(),
+            json={"target": target, "scope": "resume"},
+        )
+        assert context.status_code == 200
+        assert context.json()["title"] == "张三的测试简历"
+        assert context.json()["data"]["schema_version"] == "canonical-resume.v1"
+        detail = client.get(f"/api/agent/sessions/{session_id}")
+        assert detail.status_code == 200
+        assert detail.json()["session"]["resume_id"] is None
+
+
+def test_resume_reference_can_use_title_selected_from_prior_catalog_result() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-reference-guard@example.test")
+        create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(
+            app,
+            session_id,
+            message_content="请分析我的简历",
+        )
+
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"title": "张三的测试简历"},
+        )
+
+        assert resolved.status_code == 200
+        assert resolved.json()["status"] == "resolved"
+        assert resolved.json()["target"]["resume_id"] is not None
+        detail = client.get(f"/api/agent/sessions/{session_id}")
+        assert detail.json()["session"]["resume_id"] is None
+
+
+def test_resume_reference_does_not_expose_another_users_named_resume() -> None:
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-reference-empty@example.test")
+        session_id = owner.post("/api/agent/sessions", json={}).json()["session"]["id"]
+
+        register(stranger, "agent-reference-stranger@example.test")
+        stranger_resume = create_resume(stranger, app)
+        run_id = create_active_run(
+            app,
+            session_id,
+            message_content="请分析张三的测试简历",
+        )
+
+        hidden = owner.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"title": "张三的测试简历"},
+        )
+
+        assert hidden.status_code == 200
+        assert hidden.json() == {
+            "status": "not_found",
+            "target": None,
+            "candidates": [],
+        }
+        hidden_by_id = owner.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"resume_id": stranger_resume["id"]},
+        )
+        assert hidden_by_id.status_code == 200
+        assert hidden_by_id.json() == {
+            "status": "not_found",
+            "target": None,
+            "candidates": [],
+        }
+        detail = owner.get(f"/api/agent/sessions/{session_id}")
+        assert detail.json()["session"]["resume_id"] is None
+
+
+def test_resume_reference_does_not_auto_select_duplicate_import_titles() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-reference-duplicate@example.test")
+        resume = create_resume(client, app)
+        with app.state.session_factory() as db:
+            source = db.get(Resume, int(resume["id"]))
+            assert source is not None
+            duplicate = Resume(
+                    user_id=source.user_id,
+                    template_id=source.template_id,
+                    title=source.title,
+                    data_json=deepcopy(source.data_json),
+                    style_json=deepcopy(source.style_json),
+                    source_type="import",
+                )
+            db.add(duplicate)
+            db.commit()
+            duplicate_id = str(duplicate.id)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(
+            app,
+            session_id,
+            message_content="请分析张三的测试简历",
+        )
+
+        ambiguous = client.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"title": "张三的测试简历"},
+        )
+
+        assert ambiguous.status_code == 200
+        assert ambiguous.json()["status"] == "ambiguous"
+        assert len(ambiguous.json()["candidates"]) == 2
+
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"resume_id": duplicate_id},
+        )
+        assert resolved.status_code == 200
+        assert resolved.json()["status"] == "resolved"
+        assert resolved.json()["target"]["resume_id"] == duplicate_id
+        detail = client.get(f"/api/agent/sessions/{session_id}")
+        assert detail.json()["session"]["resume_id"] is None
+
+
+def test_context_catalog_is_owner_scoped_and_message_snapshot_does_not_bind_session() -> (
     None
 ):
     app = build_app()
@@ -271,7 +442,7 @@ def test_context_catalog_is_owner_scoped_and_message_snapshot_binds_first_resume
                 select(AgentSession).where(AgentSession.public_id == session["id"])
             )
             assert record is not None
-            assert str(record.resume_id) == owner_resume["id"]
+            assert record.resume_id is None
             message = db.scalar(
                 select(AgentMessage).where(AgentMessage.session_id == record.id)
             )
@@ -298,6 +469,189 @@ def test_context_catalog_is_owner_scoped_and_message_snapshot_binds_first_resume
         )
         assert hidden.status_code == 404
         assert hidden.json() == {"error": "AGENT_CONTEXT_NOT_FOUND"}
+
+
+def test_bound_editor_session_accepts_different_resume_as_run_context() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-context-switch@example.test")
+        default_resume = create_resume(client, app)
+        selected_resume = create_resume(client, app, "第二份测试简历")
+        session = client.post(
+            "/api/agent/sessions", json={"resume_id": default_resume["id"]}
+        ).json()["session"]
+
+        sent = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "这一轮分析第二份简历",
+                "idempotency_key": "context-switch-001",
+                "contexts": [
+                    {
+                        "type": "resume",
+                        "id": selected_resume["id"],
+                        "lock_version": selected_resume["lock_version"],
+                    }
+                ],
+            },
+        )
+
+        assert sent.status_code == 200
+        detail = client.get(f"/api/agent/sessions/{session['id']}")
+        assert detail.json()["session"]["resume_id"] == default_resume["id"]
+
+
+def test_internal_resource_catalog_lists_owned_resume_dataset_and_interview_metadata() -> (
+    None
+):
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-resource-owner@example.test")
+        owner_resume = create_resume(owner, app)
+        with app.state.session_factory() as db:
+            owner_user_id = db.scalar(
+                select(User.id).where(User.email == "agent-resource-owner@example.test")
+            )
+            assert owner_user_id is not None
+            task = DocumentParseTask(
+                source_type=DATASET_SOURCE_TYPE,
+                user_id=owner_user_id,
+                file_name="面试准备资料.md",
+                file_format="md",
+                object_name=f"users/{owner_user_id}/datasets/source/interview.md",
+                converted_object_name=(
+                    f"users/{owner_user_id}/datasets/converted/interview.md"
+                ),
+                upload_status="succeeded",
+                upload_duration_ms=1,
+                parse_status="succeeded",
+                parse_duration_ms=1,
+            )
+            db.add(task)
+            db.flush()
+            dataset = UserDataset(
+                user_id=owner_user_id,
+                idempotency_key="agent-resource-catalog-001",
+                request_fingerprint="3" * 64,
+                parse_task_id=task.id,
+                file_name="面试准备资料.md",
+                file_format="md",
+                content_type="text/markdown",
+                file_size=32,
+                object_name=task.object_name,
+                sha256="4" * 64,
+            )
+            db.add(dataset)
+            db.commit()
+
+        job = owner.post(
+            "/api/job-descriptions",
+            json={
+                "job_title": "后端开发工程师",
+                "company_name": "示例科技",
+                "description": "负责虚构业务的服务端开发。",
+                "source_type": "manual",
+            },
+        )
+        assert job.status_code == 201, job.text
+        job_id = job.json()["job_description"]["id"]
+        application = owner.post(
+            "/api/job-applications",
+            json={
+                "job_description_id": job_id,
+                "current_stage_type": "interview",
+                "current_round_no": 1,
+                "current_stage_label": "一面",
+                "stage_state": "awaiting_schedule",
+            },
+        )
+        assert application.status_code == 201, application.text
+        application_id = application.json()["application"]["id"]
+        start_at = (utc_now() + timedelta(days=1)).replace(second=0, microsecond=0)
+        interview = owner.post(
+            f"/api/job-applications/{application_id}/interview-sessions",
+            json={
+                "client_request_id": "55555555-5555-4555-8555-555555555555",
+                "stage_type": "interview",
+                "round_no": 1,
+                "stage_label": "一面",
+                "start_at": start_at.isoformat(),
+                "end_at": (start_at + timedelta(hours=1)).isoformat(),
+                "timezone": "Asia/Shanghai",
+                "mode": "video",
+            },
+        )
+        assert interview.status_code == 201, interview.text
+        interview_id = interview.json()["session"]["id"]
+
+        register(stranger, "agent-resource-stranger@example.test")
+        stranger_resume = create_resume(stranger, app)
+
+        agent_session = owner.post("/api/agent/sessions", json={}).json()["session"]
+        run_id = create_active_run(app, agent_session["id"])
+        denied = owner.post(
+            f"/internal/agent/runs/{run_id}/resources:list",
+            json={},
+        )
+        assert denied.status_code == 401
+        assert denied.json() == {"error": "AGENT_SERVICE_UNAUTHORIZED"}
+
+        listed = owner.post(
+            f"/internal/agent/runs/{run_id}/resources:list",
+            headers=internal_headers(),
+            json={},
+        )
+        assert listed.status_code == 200, listed.text
+        resources = listed.json()["resources"]
+        assert [item["type"] for item in resources] == [
+            "resume",
+            "dataset",
+            "interview",
+        ]
+        assert owner_resume["id"] in {item["id"] for item in resources}
+        assert stranger_resume["id"] not in {item["id"] for item in resources}
+        assert interview_id in {item["id"] for item in resources}
+        assert all("content" not in item and "data" not in item for item in resources)
+
+        interviews = owner.post(
+            f"/internal/agent/runs/{run_id}/resources:list",
+            headers=internal_headers(),
+            json={"types": ["interview"], "query": "示例科技", "limit": 5},
+        )
+        assert interviews.status_code == 200, interviews.text
+        assert [item["id"] for item in interviews.json()["resources"]] == [
+            interview_id
+        ]
+
+
+def test_active_run_lookup_is_owned_and_missing_stream_is_finalized() -> None:
+    app = build_app()
+    with TestClient(app) as owner, TestClient(app) as stranger:
+        register(owner, "agent-active-run-owner@example.test")
+        session_id = owner.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        register(stranger, "agent-active-run-stranger@example.test")
+        hidden = stranger.get(f"/api/agent/sessions/{session_id}/active-run")
+        assert hidden.status_code == 404
+        assert hidden.json() == {"error": "AGENT_SESSION_NOT_FOUND"}
+
+        active = owner.get(f"/api/agent/sessions/{session_id}/active-run")
+        assert active.status_code == 200
+        assert active.json()["run"] == {
+            "run_id": run_id,
+            "status": "running",
+            "started_at": active.json()["run"]["started_at"],
+        }
+
+        replay = owner.get(f"/api/agent/runs/{run_id}/events")
+        assert replay.status_code == 200
+        assert "event: run.failed" in replay.text
+        assert "AGENT_STREAM_INCOMPLETE" in replay.text
+
+        after = owner.get(f"/api/agent/sessions/{session_id}/active-run")
+        assert after.status_code == 200
+        assert after.json() == {"run": None}
 
 
 def test_stale_context_is_rejected_before_run_or_message_creation() -> None:
@@ -670,10 +1024,10 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         resume = create_resume(client, app)
         markdown = "\n\n".join(
             [
-                "## [[linkcv-block:node_section000000001]]工作经历",
-                "### [[linkcv-block:node_entry00000000001]]示例公司 · 后端工程师",
-                "- [[linkcv-block:node_bullet0000000001]]负责平台性能优化",
-                "- [[linkcv-block:node_bullet0000000002]]负责平台性能优化",
+                "## [[linkresume-block:node_section000000001]]工作经历",
+                "### [[linkresume-block:node_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkresume-block:node_bullet0000000001]]负责平台性能优化",
+                "- [[linkresume-block:node_bullet0000000002]]负责平台性能优化",
             ]
         )
         saved = client.put(
@@ -852,9 +1206,9 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
         resume = create_resume(client, app)
         markdown = "\n\n".join(
             [
-                "## [[linkcv-block:node_section000000001]]工作经历",
-                "### [[linkcv-block:node_entry00000000001]]示例公司 · 后端工程师",
-                "- [[linkcv-block:node_bullet0000000001]]负责平台性能优化",
+                "## [[linkresume-block:node_section000000001]]工作经历",
+                "### [[linkresume-block:node_entry00000000001]]示例公司 · 后端工程师",
+                "- [[linkresume-block:node_bullet0000000001]]负责平台性能优化",
             ]
         )
         saved = client.put(
@@ -974,6 +1328,118 @@ def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None
         current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
         assert current["lock_version"] == 2
         assert current["data"]["identity"]["headline"]["value"] == "用户刚刚手动修改"
+
+
+def test_translation_proposal_creates_one_independent_editable_resume() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-translation@example.test")
+        source = create_resume(client, app)
+        source_data, source_style = canonical_resume_payload(key="agent-test")
+        source = client.put(
+            f"/api/resumes/{source['id']}",
+            json={
+                "data": source_data,
+                "style": source_style,
+                "base_lock_version": source["lock_version"],
+            },
+        ).json()["resume"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"resume_id": source["id"]},
+        )
+        assert resolved.status_code == 200
+        target = resolved.json()["target"]
+        translated_data = deepcopy(source["data"])
+        translated_data["identity"]["name"]["value"] = "Zhang San"
+
+        proposed = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:translation",
+            headers=internal_headers(),
+            json={
+                "call_key": "translate-resume-1",
+                "target": target,
+                "target_language": "en",
+                "proposed_title": "English Resume",
+                "data": translated_data,
+                "style": source["style"],
+                "summary": "忠实翻译为英文并保留原稿",
+            },
+        )
+        assert proposed.status_code == 201
+        proposal = proposed.json()["proposal"]
+        assert proposal["proposal_mode"] == "translate_resume"
+        assert proposal["proposed_title"] == "English Resume"
+
+        listed = client.get(f"/api/agent/proposals?session_id={session_id}")
+        assert listed.status_code == 200
+        assert [item["id"] for item in listed.json()["proposals"]] == [proposal["id"]]
+
+        confirmed = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        assert confirmed.status_code == 200
+        result = confirmed.json()["resume"]
+        assert result["id"] != source["id"]
+        assert result["title"] == "English Resume"
+        assert result["data"]["identity"]["name"]["value"] == "Zhang San"
+
+        current_source = client.get(f"/api/resumes/{source['id']}").json()["resume"]
+        assert current_source["lock_version"] == source["lock_version"]
+        assert current_source["data"]["identity"]["name"]["value"] != "Zhang San"
+
+        repeated = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        assert repeated.status_code == 200
+        assert repeated.json()["resume"]["id"] == result["id"]
+        with app.state.session_factory() as db:
+            assert len(db.scalars(select(Resume)).all()) == 2
+            versions = db.scalars(
+                select(ResumeVersion).where(ResumeVersion.resume_id == int(result["id"]))
+            ).all()
+            assert len(versions) == 1
+
+
+def test_translation_proposal_rejects_changed_factual_tokens() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-invalid-translation@example.test")
+        source = create_resume(client, app)
+        source_data, source_style = canonical_resume_payload(key="agent-test")
+        source = client.put(
+            f"/api/resumes/{source['id']}",
+            json={
+                "data": source_data,
+                "style": source_style,
+                "base_lock_version": source["lock_version"],
+            },
+        ).json()["resume"]
+        session_id = client.post(
+            "/api/agent/sessions", json={"resume_id": source["id"]}
+        ).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        target = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"scope_hint": "resume"},
+        ).json()["target"]
+        translated_data = deepcopy(source["data"])
+        translated_data["identity"]["node_id"] = "node_changed000000001"
+
+        response = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:translation",
+            headers=internal_headers(),
+            json={
+                "call_key": "translate-invalid-1",
+                "target": target,
+                "target_language": "en",
+                "proposed_title": "Invalid Translation",
+                "data": translated_data,
+                "style": source["style"],
+                "summary": "不应创建",
+            },
+        )
+        assert response.status_code in {422, 400}
 
 
 def test_proposal_confirmation_respects_resume_version_limit() -> None:
@@ -1167,7 +1633,7 @@ def test_cancel_does_not_overwrite_a_run_that_completed_while_waiting(
                 other_db.commit()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.routes.cancel_pi_run", complete_during_cancel
+            "linkresume.modules.agent.routes.cancel_pi_run", complete_during_cancel
         )
 
         response = client.post(f"/api/agent/runs/{run_id}/cancel")
@@ -1221,7 +1687,7 @@ def test_pi_stream_emits_failure_when_upstream_ends_without_terminal_event(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -1291,7 +1757,7 @@ def test_pi_stream_persists_successful_usage_and_assistant_message(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
@@ -1422,6 +1888,11 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
             async def aiter_lines(self):
                 frames = (
                     (
+                        "assistant.activity.delta",
+                        {"runId": run_id, "delta": "I'll ask for the target role."},
+                    ),
+                    ("assistant.activity.clear", {"runId": run_id}),
+                    (
                         "clarification.requested",
                         {"runId": run_id, "clarification": clarification},
                     ),
@@ -1446,13 +1917,15 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
                 return FakeStreamResponse()
 
         monkeypatch.setattr(
-            "linkcv.modules.agent.pi_client.httpx.AsyncClient",
+            "linkresume.modules.agent.pi_client.httpx.AsyncClient",
             lambda **_kwargs: FakeHttpClient(),
         )
 
         events = b"".join(
             asyncio.run(_collect_stream_events(app, run_id, "请优化简历"))
         ).decode()
+        assert "event: assistant.activity.delta" in events
+        assert "event: assistant.activity.clear" in events
         assert "event: clarification.requested" in events
         with app.state.session_factory() as db:
             message = db.scalar(
@@ -1467,6 +1940,13 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
             assert message is not None
             assert message.message_type == "clarification"
             assert message.metadata_json == clarification
+            assert message.content == (
+                "继续前需要确认：\n"
+                "1. 你的目标岗位是什么？\n"
+                "   选项：后端开发 / 产品经理 / 其他"
+            )
+            assert "I'll ask" not in message.content
+            assert "请选择目标岗位" not in message.content
 
 
 async def _collect_stream_events(app, run_id: str, content: str) -> list[bytes]:
@@ -1481,8 +1961,8 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
         run_id = create_active_run(app, session_id)
         path = f"/internal/agent/runs/{run_id}/tool-events"
         running = {
-            "call_key": "context-call-1",
-            "tool_name": "get_resume_context",
+            "call_key": "resource-list-call-1",
+            "tool_name": "list_user_resources",
             "status": "running",
         }
         succeeded = {**running, "status": "succeeded", "duration_ms": 17}
@@ -1503,7 +1983,9 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
         assert regressed.json() == {"error": "AGENT_TOOL_CALL_TERMINAL"}
         with app.state.session_factory() as db:
             record = db.scalar(
-                select(AgentToolCall).where(AgentToolCall.call_key == "context-call-1")
+                select(AgentToolCall).where(
+                    AgentToolCall.call_key == "resource-list-call-1"
+                )
             )
             assert record is not None
             assert record.status == "succeeded"
@@ -1518,7 +2000,7 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
         return_value=SimpleNamespace(adapter="openai")
     )
     check_chain = AsyncMock()
-    monkeypatch.setattr("linkcv.modules.agent.routes.check_pi_readiness", check_chain)
+    monkeypatch.setattr("linkresume.modules.agent.routes.check_pi_readiness", check_chain)
     with TestClient(app) as client:
         internal = client.get("/internal/agent/readiness", headers=internal_headers())
         public = client.get("/api/agent/readiness")

@@ -86,6 +86,7 @@ type UseDatasetUploadsOptions = {
   onAccepted?: (dataset: DatasetRecord) => void;
   onConflict?: (file:File,error:ApiRequestError,folderId:string)=>Promise<DatasetRecord|null>;
   onLimitExceeded?: (message: string) => void;
+  retryKeys?: Map<string, string>;
 };
 
 type DatasetUploadStateUpdater =
@@ -182,6 +183,7 @@ export function useDatasetUploads({
   onAccepted,
   onConflict,
   onLimitExceeded,
+  retryKeys,
 }: UseDatasetUploadsOptions = {}) {
   const onConflictRef = useRef(onConflict); onConflictRef.current=onConflict;
   const [items, setItems] = useState<DatasetUploadItem[]>([]);
@@ -195,7 +197,7 @@ export function useDatasetUploads({
   const onLimitExceededRef = useRef(onLimitExceeded);
   const uploadingRef = useRef(false);
   const mountedRef = useRef(true);
-  const ambiguousRetryKeysRef = useRef(new Map<string, string>());
+  const ambiguousRetryKeysRef = useRef(retryKeys ?? new Map<string, string>());
 
   limitsRef.current = normalizeDatasetLimits(limits);
   concurrencyRef.current = Number.isFinite(concurrency) && concurrency > 0

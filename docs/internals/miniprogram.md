@@ -14,7 +14,7 @@
 - `config/`：开发、体验和正式环境 API 地址选择。
 - `custom-tab-bar/`：游客和登录态共用的“简历 / 求职 / 我的”渠道导航。
 - `components/brand-navigation/`：所有页面共用的固定品牌栏，读取设备状态栏高度并保留微信原生胶囊区域。二级页在品牌栏下依次显示返回和标题；登录、扫码确认不显示自定义返回或关闭按钮。表单返回交由原有编辑行为处理。求职弹窗的遮罩与最大高度避开品牌栏，简历预览从剩余视口计算缩放区域。
-- `components/company-logo/`：所有求职页共用的公司标识，按调用方给的尺寸渲染岗位快照 Logo；没有 Logo、不是 HTTPS 绝对 URL 或图片加载失败时，回落到公司名称首字加实心底色。底色取该条求职记录已有的 `calendar_color`，不新增字段。
+- `components/company-logo/`：所有求职页共用的公司标识，按调用方给的尺寸渲染岗位快照 Logo；没有 Logo、不是 HTTPS 绝对 URL 或图片加载失败时，回落到公司名称首字加实心底色。底色取该条求职记录已有的 `calendar_color`，不新增字段。服务端的投影还会放行岗位自己托管 Logo 的相对地址（`/api/job-descriptions/{id}/logo?v=...`），但该端点需要 Bearer，而 `<image>` 带不了凭据，所以小程序只渲染 HTTPS 绝对 URL，托管地址同样按不可渲染处理并回落到首字。
 - `components/career-date-popover/`：求职时间表的日期挂窗，复用面试时间选择器的月历排布但不做遮罩覆盖；它只上报选中的日期，收起由调用方负责。
 - 登录与扫码确认复用同一套左对齐操作流：标题组、主操作和协议行在品牌栏下方整体垂直居中，标题组与主操作之间留 40px。
 
@@ -24,7 +24,7 @@
 
 ## 后端适配
 
-`apps/backend/src/linkcv/modules/miniprogram/` 提供本人简历列表/详情、PDF、PNG 预览和本人资料适配；登录协议仍由 `modules/identity/wechat_routes.py` 和统一 session 服务负责。小程序 Bearer 依赖只允许访问明确白名单接口，不能复用 Web Cookie 权限面。启用管理员与普通账号都可使用这些本人业务接口和扫码确认能力，停用账号仍会被拒绝；扫码确认会建立独立的 Web Cookie 与小程序 Bearer 会话。
+`apps/backend/src/linkresume/modules/miniprogram/` 提供本人简历列表/详情、PDF、PNG 预览和本人资料适配；登录协议仍由 `modules/identity/wechat_routes.py` 和统一 session 服务负责。小程序 Bearer 依赖只允许访问明确白名单接口，不能复用 Web Cookie 权限面。启用管理员与普通账号都可使用这些本人业务接口和扫码确认能力，停用账号仍会被拒绝；扫码确认会建立独立的 Web Cookie 与小程序 Bearer 会话。
 
 | 入口 | 职责 |
 | --- | --- |
@@ -43,7 +43,7 @@
 
 ## 网络边界
 
-游客冷启动不请求身份或个人数据。用户从“我的”主动进入登录页并确认微信隐私保护指引后，后端才复用已有 openid 账号或在明确同意时创建普通账号；重试路径不能静默完成首次建号，`privacy_accepted` 也不等同于服务端持久化的同意审计记录。环境明确为 `develop` 时，开发者工具默认读取生成的 `local.js`，优先使用 `devtoolsApiBaseUrl` 的本机地址；真机开发版同样自动读取 `local.js` 中的局域网地址。开关为 `false` 可关闭自动本地联调，删除开关恢复平台默认。显式 `linkcv_api_base_url` 覆盖优先于自动配置，且同样只在 `develop` 生效。环境异常、本地文件不可用时回退 `https://linkresume.cn`；`trial/release` 完全不读取开发 storage、设备信息或 `local.js`，第三方平台覆盖也必须使用 HTTPS。启动器生成的端口跟随实际 profile：共享 Dev 使用 `LINKCV_LOCAL_BACKEND_PORT`（默认 18000），Local 使用 `BACKEND_PORT`（默认 8000）。配置在冷启动时解析，网络失败不会触发跨环境回退。新增小程序写能力必须先在所属业务功能建立权限与契约，再由该客户端做渠道适配。
+游客冷启动不请求身份或个人数据。用户从“我的”主动进入登录页并确认微信隐私保护指引后，后端才复用已有 openid 账号或在明确同意时创建普通账号；重试路径不能静默完成首次建号，`privacy_accepted` 也不等同于服务端持久化的同意审计记录。环境明确为 `develop` 时，开发者工具默认读取生成的 `local.js`，优先使用 `devtoolsApiBaseUrl` 的本机地址；真机开发版同样自动读取 `local.js` 中的局域网地址。开关为 `false` 可关闭自动本地联调，删除开关恢复平台默认。显式 `linkresume_api_base_url` 覆盖优先于自动配置，且同样只在 `develop` 生效。环境异常、本地文件不可用时回退 `https://linkresume.cn`；`trial/release` 完全不读取开发 storage、设备信息或 `local.js`，第三方平台覆盖也必须使用 HTTPS。启动器生成的端口跟随实际 profile：共享 Dev 使用 `LINKRESUME_LOCAL_BACKEND_PORT`（默认 18000），Local 使用 `BACKEND_PORT`（默认 8000）。配置在冷启动时解析，网络失败不会触发跨环境回退。新增小程序写能力必须先在所属业务功能建立权限与契约，再由该客户端做渠道适配。
 
 ## 个人资料交互
 

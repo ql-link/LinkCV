@@ -4,8 +4,8 @@
 .env.development.local
 
 # Personal PyCharm run configurations for the two development profiles.
-.idea/runConfigurations/LinkCV_Local_Dev.xml
-.idea/runConfigurations/LinkCV_Shared_Dev.xml
+.idea/runConfigurations/LinkResume_Local_Dev.xml
+.idea/runConfigurations/LinkResume_Shared_Dev.xml
 
 # Local Spec documents copied once into new Codex-managed worktrees.
 .specs/*/

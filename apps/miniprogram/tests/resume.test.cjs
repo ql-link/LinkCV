@@ -34,8 +34,8 @@ test("resume service uses metadata and PNG preview download APIs", async () => {
 test("preview cache hits only the same owner, resume and version", async () => {
   const storage = {};
   const files = new Set();
-  const legacyPath = "/user/linkcv-resume-7-42-8.pdf";
-  storage.linkcv_resume_pdf_cache_v1 = {
+  const legacyPath = "/user/linkresume-resume-7-42-8.pdf";
+  storage.linkresume_resume_pdf_cache_v1 = {
     "7:42": { ownerId: "7", versionId: "8", filePath: legacyPath },
   };
   files.add(legacyPath);
@@ -56,11 +56,11 @@ test("preview cache hits only the same owner, resume and version", async () => {
   delete require.cache[require.resolve("../services/resumePreviewCache")];
   const cache = require("../services/resumePreviewCache");
   const path = cache.resumePreviewPath("7", "42", "9");
-  assert.match(path, /linkcv-preview-v1-/);
+  assert.match(path, /linkresume-preview-v1-/);
   files.add(path);
   await cache.commitResumePreview("7", "42", "9", path);
 
-  assert.equal(storage.linkcv_resume_pdf_cache_v1, undefined);
+  assert.equal(storage.linkresume_resume_pdf_cache_v1, undefined);
   assert.equal(files.has(legacyPath), false);
   assert.equal(await cache.getCachedResumePreview("7", "42", "9"), path);
   assert.equal(await cache.getCachedResumePreview("8", "42", "9"), null);

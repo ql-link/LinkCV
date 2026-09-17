@@ -15,6 +15,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FeedbackNotice,
   Input,
   Label,
   PageLoading,
@@ -220,7 +221,6 @@ export function ResumeTemplatesPage() {
                 placeholder="例如：2026 产品经理简历"
                 value={title}
                 aria-invalid={createError ? "true" : undefined}
-                aria-describedby={createError ? "template-resume-title-error" : undefined}
                 disabled={submitting}
                 onChange={(event) => {
                   setTitle(event.target.value);
@@ -228,9 +228,9 @@ export function ResumeTemplatesPage() {
                 }}
               />
               {createError && (
-                <p id="template-resume-title-error" className="text-sm text-destructive" role="alert">
+                <FeedbackNotice kind="error" placement="floating" onDismiss={() => setCreateError(null)}>
                   {createError}
-                </p>
+                </FeedbackNotice>
               )}
             </div>
             <DialogFooter>

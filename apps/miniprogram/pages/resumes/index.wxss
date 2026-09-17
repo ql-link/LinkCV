@@ -1,5 +1,5 @@
 .page, button, input, textarea {
-  font-family: "LinkCV Career UI", -apple-system, "PingFang SC", sans-serif;
+  font-family: "LinkResume Career UI", -apple-system, "PingFang SC", sans-serif;
 }
 
 .page {

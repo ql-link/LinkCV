@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from linkcv.domain.resume import TemplateDefinition
+from linkresume.domain.resume import TemplateDefinition
 from tests.canonical_resume_fixtures import canonical_template_payload
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
@@ -20,7 +20,7 @@ SQL_PATH = BACKEND_ROOT / "migrations" / "sql" / "0049.up.sql"
 
 
 def load_revision():
-    spec = importlib.util.spec_from_file_location("linkcv_revision_0049", REVISION_PATH)
+    spec = importlib.util.spec_from_file_location("linkresume_revision_0049", REVISION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

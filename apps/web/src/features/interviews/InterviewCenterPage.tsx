@@ -119,7 +119,6 @@ import {
 } from "./CareerDetailViews";
 import "./interviews.css";
 
-const FLOATING_ERROR_NOTICE_DURATION_MS = 5000;
 
 type InterviewStatus = "upcoming" | "active" | "completed" | "cancelled";
 type ScheduleGranularity = CalendarView;
@@ -212,6 +211,7 @@ const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
     monthDayHeader: "EEE",
     monthDayHeaderNarrow: "EEEEE",
     monthCellDay: "d",
+    moreDayHeader: "M月d日 · EEE",
   },
 };
 type InterviewSessionCreatePayload = Parameters<
@@ -551,7 +551,6 @@ export function InterviewCenterPage({
   const selectedIdRef = useRef<string | null>(initialSessionId ?? null);
   const loadRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
-  const scheduleToastTimeoutRef = useRef<number | null>(null);
   const noticeIdRef = useRef(0);
   const isApplicationDetailRoute = view === "applications" && Boolean(initialApplicationId);
   const isApplicationSessionDialogRoute = isApplicationDetailRoute && Boolean(initialSessionId);
@@ -573,26 +572,7 @@ export function InterviewCenterPage({
 
   const pushScheduleToast = useCallback((message: string) => {
     setScheduleToast(message);
-    if (scheduleToastTimeoutRef.current !== null) {
-      window.clearTimeout(scheduleToastTimeoutRef.current);
-    }
-    scheduleToastTimeoutRef.current = window.setTimeout(() => {
-      setScheduleToast(null);
-      scheduleToastTimeoutRef.current = null;
-    }, 4500);
   }, []);
-
-  useEffect(() => () => {
-    if (scheduleToastTimeoutRef.current !== null) {
-      window.clearTimeout(scheduleToastTimeoutRef.current);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), FLOATING_ERROR_NOTICE_DURATION_MS);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   const openCreateInterview = (startAt?: string, endAt?: string) => {
     setCreateInterviewStartAt(startAt ?? null);
@@ -895,11 +875,21 @@ export function InterviewCenterPage({
       )}
       <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}${!isStandaloneDetailRoute && view === "schedule" ? " career-schedule-content" : ""}`}>
       {notice && (
-        <FeedbackNotice key={notice.id} className="interview-error-notice" kind="error" placement="floating">
+        <FeedbackNotice
+          key={notice.id}
+          className="interview-error-notice"
+          kind="error"
+          placement="floating"
+          onDismiss={() => setNotice(null)}
+        >
           {notice.message}
         </FeedbackNotice>
       )}
-      {scheduleToast && <FeedbackNotice kind="success" placement="floating">{scheduleToast}</FeedbackNotice>}
+      {scheduleToast && (
+        <FeedbackNotice kind="success" placement="floating" onDismiss={() => setScheduleToast(null)}>
+          {scheduleToast}
+        </FeedbackNotice>
+      )}
       {(loading && !hasLoadedData) || applicationDetailPending ? (
         <PageLoading label="正在加载求职数据…" />
       ) : isApplicationDetailRoute ? (
@@ -1049,6 +1039,7 @@ export function InterviewCenterPage({
       ))}
       {showCreateApplication && (
         <CreateApplicationDialog
+          applications={applications}
           initialJobId={initialJobId}
           onClose={() => setShowCreateApplication(false)}
           onCreated={(applicationId) => {
@@ -1326,26 +1317,13 @@ function ApplicationsView({
   const [deletingApplicationId, setDeletingApplicationId] = useState<string | null>(null);
   const [dragRejectionNotice, setDragRejectionNotice] = useState<{ id: number; message: string } | null>(null);
   const dragRejectionNoticeIdRef = useRef(0);
-  const dragRejectionNoticeTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const clock = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(clock);
   }, []);
-  useEffect(() => () => {
-    if (dragRejectionNoticeTimerRef.current !== null) {
-      window.clearTimeout(dragRejectionNoticeTimerRef.current);
-    }
-  }, []);
   const showDragRejectionNotice = useCallback((message: string) => {
-    if (dragRejectionNoticeTimerRef.current !== null) {
-      window.clearTimeout(dragRejectionNoticeTimerRef.current);
-    }
     dragRejectionNoticeIdRef.current += 1;
     setDragRejectionNotice({ id: dragRejectionNoticeIdRef.current, message });
-    dragRejectionNoticeTimerRef.current = window.setTimeout(() => {
-      setDragRejectionNotice(null);
-      dragRejectionNoticeTimerRef.current = null;
-    }, FLOATING_ERROR_NOTICE_DURATION_MS);
   }, []);
   const normalizedQuery = query.trim().toLowerCase();
   const visibleApplications = sortApplications(
@@ -1388,6 +1366,7 @@ function ApplicationsView({
             kind="error"
             placement="floating"
             title="无法更新求职阶段"
+            onDismiss={() => setDragRejectionNotice(null)}
           >
             {dragRejectionNotice.message}
           </FeedbackNotice>
@@ -1459,7 +1438,7 @@ function ApplicationsView({
         <ConfirmDialog
           kind="delete"
           title={`永久删除「${pendingDelete.company_name_snapshot} · ${pendingDelete.job_title_snapshot}」？`}
-          description="删除后，这次求职记录及其阶段、排期、复盘和素材将无法恢复；原始岗位资料不会被删除。"
+          description="删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deletingApplicationId === pendingDelete.id}
@@ -1516,16 +1495,6 @@ function ApplicationsView({
                       <span className={`career-application-progress ${applicationProgressToneClass(item, { now, currentStageCompleted })}`} aria-label={progressLabel}>
                         {progressLabel}
                       </span>
-                      {projectApplicationProgress(item).columnKey === "ended" && (
-                        <button
-                          type="button"
-                          className="career-application-delete-button"
-                          aria-label={`删除 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职记录`}
-                          onClick={() => setPendingDelete(item)}
-                        >
-                          <Trash2 size={15} aria-hidden="true" />删除
-                        </button>
-                      )}
                     </div></td>
                     <td><span className="career-application-cell-text">{nextInterview ? `${formatApplicationSessionRange(nextInterview.start_at, nextInterview.end_at)} · ${nextInterview.stage_label}` : "暂无安排"}</span></td>
                     <td>{item.applied_at ? <time dateTime={item.applied_at}>{formatApplicationUpdatedAt(item.applied_at)}</time> : "未投递"}</td>
@@ -1590,6 +1559,7 @@ function scheduleToolbarTitle(view: ScheduleGranularity, anchor: Date, weekStart
 
 function renderInterviewCalendarEvent({
   occurrence,
+  view,
 }: EventCalendarRenderEventProps<Interview | null>) {
   const interview = occurrence.event.data;
   const visibleStart = formatTime(occurrence.start);
@@ -1601,24 +1571,35 @@ function renderInterviewCalendarEvent({
     return (
       <span className="interview-calendar-event-content">
         <strong className="interview-calendar-event-title">新面试</strong>
-        <span className="interview-calendar-event-time"><i aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
       </span>
     );
   }
   if (interview.calendarRole === "open_window") {
     return (
       <span className="interview-calendar-event-content interview-calendar-open-window-content">
-        <strong className="interview-calendar-event-title">{interview.company} · {interview.stage}</strong>
+        <strong className="interview-calendar-event-title">{interview.company} · {interview.role} · {interview.stage}</strong>
         <span className="interview-calendar-window-range">{interview.date} {interview.time} – {formatDate(new Date(interview.endAt))} {interview.endTime}</span>
         <em className="interview-calendar-window-status">{interview.status === "completed" ? "已完成" : interview.status === "cancelled" ? "已取消" : "待完成"}</em>
       </span>
     );
   }
+  if (view === "month") {
+    return (
+      <span className="interview-calendar-event-content">
+        <strong className="interview-calendar-event-title">{interview.company} · {interview.role}</strong>
+        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+      </span>
+    );
+  }
   return (
-    <span className="interview-calendar-event-content">
+    <span className="interview-calendar-event-content interview-calendar-event-stack">
       <strong className="interview-calendar-event-title">{interview.company}</strong>
-      <span className="interview-calendar-event-time"><i aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
-      <em className="interview-calendar-event-stage">{interview.stage}</em>
+      <span className="interview-calendar-event-role">{interview.role}</span>
+      <span className="interview-calendar-event-meta">
+        <em className="interview-calendar-event-stage">{interview.stage}</em>
+        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+      </span>
     </span>
   );
 }
@@ -1733,7 +1714,7 @@ function ScheduleView({
         : interview.color;
       return {
         id: interview.id,
-        title: `${interview.company} ${interview.stage}`,
+        title: `${interview.company} ${interview.role} ${interview.stage}`,
         start: new Date(interview.startAt),
         end: new Date(interview.endAt),
         color: INTERVIEW_CALENDAR_COLORS[color],
@@ -1755,7 +1736,7 @@ function ScheduleView({
       end.setHours(0, 0, 0, 0);
       return {
         id: `open-window:${interview.id}`,
-        title: `${interview.company} ${interview.stage}`,
+        title: `${interview.company} ${interview.role} ${interview.stage}`,
         start,
         end,
         allDay: true,
@@ -1770,7 +1751,7 @@ function ScheduleView({
       interview.scheduleKind === "open_window" && interview.answerPlanStartAt && interview.answerPlanEndAt
         ? [{
             id: `answer-plan:${interview.id}`,
-            title: `${interview.company} ${interview.stage}`,
+            title: `${interview.company} ${interview.role} ${interview.stage}`,
             start: new Date(interview.answerPlanStartAt),
             end: new Date(interview.answerPlanEndAt),
             color: INTERVIEW_CALENDAR_COLORS[interview.color],
@@ -1883,7 +1864,7 @@ function ScheduleView({
           snapDuration={15}
           interval={60}
           scrollToHour={9}
-          fixedWeeks
+          fixedWeeks={false}
           showOutsideDays
           interactions={calendarInteractions}
           viewSettings={calendarViewSettings}
@@ -1916,6 +1897,9 @@ function ScheduleView({
             event: "interview-calendar-event",
             timedChip: "interview-calendar-timed-event",
             monthBar: "interview-calendar-month-event",
+            moreIndicator: "interview-calendar-more-indicator",
+            morePopover: "interview-calendar-more-popover",
+            morePopoverHeader: "interview-calendar-more-popover-header",
             resizeHandle: "interview-calendar-resize-handle",
             resizeGrip: "interview-calendar-resize-grip",
             viewSwitcherContent: "interview-calendar-view-menu",
@@ -2733,11 +2717,13 @@ function AssetSidebar({
 }
 
 function CreateApplicationDialog({
+  applications,
   initialJobId,
   onClose,
   onCreated,
   onNotice,
 }: {
+  applications: JobApplicationSummary[];
   initialJobId?: string;
   onClose: () => void;
   onCreated: (applicationId: string) => void;
@@ -2748,6 +2734,12 @@ function CreateApplicationDialog({
   const [notes, setNotes] = useState("");
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const applicationJobIds = new Set(
+    applications.flatMap((application) =>
+      application.job_description_id ? [application.job_description_id] : [],
+    ),
+  );
+  const availableJobs = jobs.filter((job) => !applicationJobIds.has(job.id));
 
   useEffect(() => {
     let cancelled = false;
@@ -2769,6 +2761,15 @@ function CreateApplicationDialog({
       });
     return () => { cancelled = true; };
   }, [initialJobId, onNotice]);
+
+  useEffect(() => {
+    if (availableJobs.some((job) => job.id === jobId)) return;
+    const nextJobId =
+      initialJobId && availableJobs.some((job) => job.id === initialJobId)
+        ? initialJobId
+        : availableJobs[0]?.id ?? "";
+    if (nextJobId !== jobId) setJobId(nextJobId);
+  }, [availableJobs, initialJobId, jobId]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -2806,12 +2807,12 @@ function CreateApplicationDialog({
         <form onSubmit={(event) => void submit(event)}>
           {loadingJobs ? (
             <PageLoading label="正在加载岗位库…" scope="panel" />
-          ) : jobs.length ? (
+          ) : availableJobs.length ? (
             <>
               <label>
                 目标岗位
                 <select required value={jobId} onChange={(event) => setJobId(event.target.value)}>
-                  {jobs.map((job) => (
+                  {availableJobs.map((job) => (
                     <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>
                   ))}
                 </select>
@@ -2831,7 +2832,7 @@ function CreateApplicationDialog({
             <div className="career-dialog-empty">
               <BriefcaseBusiness />
               <strong>岗位库中还没有可用岗位</strong>
-              <span>请先创建岗位，再返回这里开始求职进程。</span>
+              <span>已有求职记录的岗位不能再次投递；请导入新岗位。</span>
               <Button type="button" variant="outline" onClick={() => {
                 onClose();
                 navigateTo("/career/applications?import=1");
@@ -2840,7 +2841,10 @@ function CreateApplicationDialog({
           )}
           <footer>
             <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-            <Button type="submit" disabled={loadingJobs || !jobId || submitting}>{submitting ? "正在创建…" : "创建求职进程"}</Button>
+            <Button
+              type="submit"
+              disabled={loadingJobs || !availableJobs.some((job) => job.id === jobId) || submitting}
+            >{submitting ? "正在创建…" : "创建求职进程"}</Button>
           </footer>
         </form>
       </section>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the deployment target before running LinkCV Alembic migrations."""
+"""Validate the deployment target before running LinkResume Alembic migrations."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Connection, make_url
 
-from linkcv.core.config import load_settings
+from linkresume.core.config import load_settings
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2] / "apps" / "backend"
 

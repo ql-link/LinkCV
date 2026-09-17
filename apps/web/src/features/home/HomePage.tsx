@@ -256,7 +256,6 @@ export function HomeScreen({
   const [sharingResume, setSharingResume] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
   const [renamingResumeId, setRenamingResumeId] = useState<string | null>(null);
-  const [renameError, setRenameError] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -274,12 +273,6 @@ export function HomeScreen({
     ].filter(({ task }) => task.source_filename.toLocaleLowerCase().includes(normalizedQuery));
   }, [activeImports, failedImports, query]);
   const visibleCardCount = visibleImports.length + visibleResumes.length;
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 5000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   const confirmDelete = async () => {
     if (!pendingDelete || deletingResumeId) return;
@@ -304,13 +297,12 @@ export function HomeScreen({
       return;
     }
     setRenamingResumeId(resume.id);
-    setRenameError(null);
     try {
       await onRename(resume.id, title);
       setNotice({ kind: "success", message: `已将简历重命名为“${title}”。` });
       setPendingRename(null);
     } catch {
-      setRenameError("保存名称失败，请刷新列表后重试。");
+      setNotice({ kind: "error", message: "保存名称失败，请刷新列表后重试。" });
     } finally {
       setRenamingResumeId(null);
     }
@@ -387,7 +379,6 @@ export function HomeScreen({
                   onOpen={() => void onOpen(resume.id)}
                   onShare={() => setSharingResume(resume)}
                   onRename={() => {
-                    setRenameError(null);
                     setPendingRename(resume);
                   }}
                   onDelete={() => setPendingDelete(resume)}
@@ -422,7 +413,11 @@ export function HomeScreen({
         </div>
       )}
 
-      {notice && <FeedbackNotice kind={notice.kind} placement="floating">{notice.message}</FeedbackNotice>}
+      {notice && (
+        <FeedbackNotice kind={notice.kind} placement="floating" onDismiss={() => setNotice(null)}>
+          {notice.message}
+        </FeedbackNotice>
+      )}
       {pendingDelete && (
         <ConfirmDialog
           kind="delete"
@@ -439,9 +434,7 @@ export function HomeScreen({
         <RenameResumeDialog
           initialTitle={pendingRename.title}
           busy={renamingResumeId === pendingRename.id}
-          error={renameError}
           onCancel={() => {
-            setRenameError(null);
             setPendingRename(null);
           }}
           onSubmit={confirmRename}

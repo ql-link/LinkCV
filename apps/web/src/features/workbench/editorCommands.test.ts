@@ -1,15 +1,13 @@
 import { Editor } from "@tiptap/core";
-import { EditorContent } from "@tiptap/react";
-import { render } from "@testing-library/react";
-import { createElement } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   convertCurrentLineToResumeRow,
   convertResumeRowToParagraph,
+  exitVisuallyBlankResumeListItem,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
 } from "./editorCommands";
-import { normalizeResumeRowWidth, resumeEditorExtensions, resumeRowWidthFromClientX } from "./editorExtensions";
+import { normalizeResumeRowWidth, resumeEditorExtensions } from "./editorExtensions";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 
 let editor: Editor | null = null;
@@ -255,13 +253,13 @@ describe("convertCurrentLineToResumeRow", () => {
     expect(editor.getText()).toContain("下一行");
   });
 
-  it("通过加号设置的空列表项可以直接按 Backspace 删除", () => {
+  it.each(["bulletList", "orderedList"])("%s 的空列表项按 Backspace 后保留无标号的空白行", (listType) => {
     editor = new Editor({
       extensions: resumeEditorExtensions,
       content: {
         type: "doc",
         content: [{
-          type: "bulletList",
+          type: listType,
           content: [
             { type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "保留项" }] }] },
             { type: "listItem", content: [{ type: "paragraph" }] },
@@ -274,9 +272,131 @@ describe("convertCurrentLineToResumeRow", () => {
     editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
 
     const list = editor.state.doc.firstChild;
-    expect(list?.type.name).toBe("bulletList");
+    expect(list?.type.name).toBe(listType);
     expect(list?.childCount).toBe(1);
     expect(list?.textContent).toBe("保留项");
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.lastChild?.type.name).toBe("paragraph");
+    expect(editor.state.doc.lastChild?.textContent).toBe("");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.lastChild);
+    expect(editor.isActive("listItem")).toBe(false);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.childCount).toBe(1);
+    expect(editor.state.doc.firstChild?.textContent).toBe("保留项");
+    expect(editor.state.selection.$from.parent.textContent).toBe("保留项");
+  });
+
+  it.each([
+    ["bulletList", "Backspace"],
+    ["orderedList", "Backspace"],
+    ["bulletList", "Enter"],
+    ["orderedList", "Enter"],
+  ])("%s 回车续项后按 %s 退出列表并可在新行输入正文", (listType, exitKey) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: listType,
+          content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "保留项" }] }] }],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph"));
+    editor.commands.setTextSelection(editor.state.selection.$from.end());
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.firstChild?.childCount).toBe(2);
+    expect(editor.isActive("listItem")).toBe(true);
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: exitKey, bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.firstChild?.type.name).toBe(listType);
+    expect(editor.state.doc.firstChild?.childCount).toBe(1);
+    expect(editor.state.doc.firstChild?.textContent).toBe("保留项");
+    expect(editor.state.doc.lastChild?.type.name).toBe("paragraph");
+    expect(editor.state.doc.lastChild?.textContent).toBe("");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.lastChild);
+    expect(editor.isActive("listItem")).toBe(false);
+
+    editor.commands.insertContent("新的正文");
+
+    expect(editor.state.doc.lastChild?.textContent).toBe("新的正文");
+    expect(editor.state.doc.firstChild?.textContent).toBe("保留项");
+  });
+
+  it.each(["ul", "ol"])("%s 中间的空列表项退出后保留前后列表内容", (tag) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: `<${tag}><li><p>前一项</p></li><li><p></p></li><li><p>后一项</p></li></${tag}>`,
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    const listType = tag === "ul" ? "bulletList" : "orderedList";
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual([listType, "paragraph", listType]);
+    expect(editor.state.doc.firstChild?.textContent).toBe("前一项");
+    expect(editor.state.doc.lastChild?.textContent).toBe("后一项");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.child(1));
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+  });
+
+  it.each(["ul", "ol"])("%s 唯一的空项退出后保留原位置的空白行", (tag) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: `<p>上一行</p><${tag}><li><p></p></li></${tag}><p>下一行</p>`,
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["paragraph", "paragraph", "paragraph"]);
+    expect(editor.state.doc.firstChild?.textContent).toBe("上一行");
+    expect(editor.state.doc.lastChild?.textContent).toBe("下一行");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.child(1));
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+  });
+
+  it.each(["Backspace", "Enter"])("嵌套空列表项按 %s 逐层退出并保留正文", (key) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: "<ul><li><p>父项</p><ol><li><p></p></li></ol></li></ul>",
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.firstChild?.type.name).toBe("bulletList");
+    expect(editor.state.doc.firstChild?.childCount).toBe(2);
+    expect(editor.state.doc.firstChild?.firstChild?.childCount).toBe(1);
+    expect(editor.state.doc.firstChild?.textContent).toBe("父项");
+    expect(editor.state.selection.$from.depth).toBe(3);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+
+    expect(editor.state.doc.childCount).toBe(2);
+    expect(editor.state.doc.firstChild?.textContent).toBe("父项");
+    expect(editor.state.selection.$from.parent).toBe(editor.state.doc.lastChild);
+    expect(editor.state.selection.$from.parent.textContent).toBe("");
+    expect(editor.isActive("listItem")).toBe(false);
+  });
+
+  it("空首段之后仍有嵌套正文时不会误判为空列表项", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: "<ul><li><p></p><ul><li><p>子项正文</p></li></ul></li></ul>",
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph"));
+    const before = editor.getJSON();
+
+    expect(exitVisuallyBlankResumeListItem(editor)).toBe(false);
+    expect(removeVisuallyBlankResumeLine(editor)).toBe(false);
+    expect(editor.getJSON()).toEqual(before);
   });
 
   it("完全清空的左右分栏可以直接按 Backspace 删除", () => {
@@ -426,41 +546,9 @@ Photoshop
   });
 });
 
-describe("左右分栏分割线", () => {
-  it("按指针位置计算比例并限制在可编辑范围", () => {
-    expect(resumeRowWidthFromClientX(500, 0, 1000)).toBe(50);
-    expect(resumeRowWidthFromClientX(100, 0, 1000)).toBe(30);
-    expect(resumeRowWidthFromClientX(950, 0, 1000)).toBe(80);
-    expect(resumeRowWidthFromClientX(500, 0, 0)).toBe(50);
-  });
-
+describe("左右分栏保存比例", () => {
   it("无有效保存值时使用一半一半", () => {
     expect(normalizeResumeRowWidth(undefined)).toBe(50);
     expect(normalizeResumeRowWidth("62")).toBe(62);
-  });
-
-  it("渲染可访问分割线并支持键盘调整", async () => {
-    editor = new Editor({
-      extensions: resumeEditorExtensions,
-      content: {
-        type: "doc",
-        content: [{
-          type: "resumeRow",
-          content: [{ type: "paragraph", content: [{ type: "text", text: "左" }] }, { type: "paragraph", content: [{ type: "text", text: "右" }] }],
-        }],
-      },
-    });
-    render(createElement(EditorContent, { editor }));
-
-    const divider = await vi.waitFor(() => {
-      const element = editor?.view.dom.querySelector<HTMLButtonElement>(".resume-row-divider");
-      expect(element).not.toBeNull();
-      return element as HTMLButtonElement;
-    });
-    expect(divider.getAttribute("aria-valuetext")).toBe("左栏 50%，右栏 50%");
-
-    divider.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
-
-    await vi.waitFor(() => expect(editor?.getJSON().content?.[0].attrs?.leftWidth).toBe(51));
   });
 });

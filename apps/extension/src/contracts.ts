@@ -47,11 +47,18 @@ export interface JobSummary {
   job_title: string;
   company_name: string;
   logo_url: string | null;
+  resolved_logo_url?: string | null;
+  logo_revision?: string | null;
   lock_version: number;
 }
 
 export interface JobRecord extends JobSummary {
   source_url: string | null;
+}
+
+export interface JobImportResult {
+  job_description: JobRecord;
+  application?: { id: string } | null;
 }
 
 export interface ImportJobPayload {
@@ -65,4 +72,4 @@ export interface DuplicateDetails {
   allowed_actions: Array<"update" | "cancel">;
 }
 
-export const CAPTURE_MESSAGE = "LINKCV_CAPTURE_BOSS_JOB" as const;
+export const CAPTURE_MESSAGE = "LINKRESUME_CAPTURE_BOSS_JOB" as const;

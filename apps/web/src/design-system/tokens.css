@@ -4,12 +4,12 @@
   color: var(--ui-foreground);
 
   /* Canonical product colors. */
-  --ui-background: #f4f6f8;
+  --ui-background: #fcfcfc;
   --ui-foreground: #17191c;
   --ui-surface: #ffffff;
   --ui-surface-elevated: #ffffff;
-  --ui-surface-subtle: #f9fafb;
-  --ui-surface-muted: #edf1f5;
+  --ui-surface-subtle: #fcfcfc;
+  --ui-surface-muted: #fcfcfc;
   --ui-text-secondary: #3f4752;
   --ui-text-muted: #6f7a8c;
   --ui-text-subtle: #8791a1;
@@ -17,7 +17,7 @@
   --ui-primary-hover: #2c3137;
   --ui-primary-foreground: #ffffff;
   --ui-secondary: #ffffff;
-  --ui-secondary-hover: #f2f4f7;
+  --ui-secondary-hover: #fcfcfc;
   --ui-secondary-foreground: #24282e;
   --ui-accent: #145ed6;
   --ui-accent-hover: #0f4eb4;
@@ -25,9 +25,9 @@
   --ui-assistant-accent: #0e7490;
   --ui-template-accent: #7c3aed;
   --ui-career-accent: #f97316;
-  --ui-border: #dbe0e8;
-  --ui-border-strong: #c3ccd6;
-  --ui-input: #d5dbe3;
+  --ui-border: #ded7cc;
+  --ui-border-strong: #c9c0b3;
+  --ui-input: #d6cec2;
   --ui-ring: #3979db;
   --ui-destructive: #c43b3b;
   --ui-destructive-hover: #aa3030;
@@ -90,7 +90,7 @@
   /* Legacy aliases. New UI code must use --ui-* tokens. */
   --gray-050: var(--ui-background);
   --gray-100: var(--ui-surface-muted);
-  --gray-200: #e4e8ed;
+  --gray-200: #f6f6f7;
   --gray-300: var(--ui-border);
   --gray-400: var(--ui-border-strong);
   --gray-500: #a3adb8;

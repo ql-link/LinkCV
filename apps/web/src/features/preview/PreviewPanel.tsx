@@ -5,12 +5,12 @@ import { useResumeStore, type ResumeSettings } from "../../store/resumeStore";
 import {
   normalizeResumeAccentColor,
   resumePresentationAccentColor,
-  resumePresentationPageMargins,
   type ResumePresentationRead,
 } from "../../api/resumeContract";
 import { PreviewToolbar } from "./PreviewToolbar";
 import { SourceModal } from "./SourceModal";
 import { renderResumeEditorDocument } from "./print/resumeEditorRenderer";
+import { liveResumePageMargins } from "./resumePageMargins";
 
 type PageFragment = {
   html: string;
@@ -25,14 +25,7 @@ export function resumePreviewStyle(
   accentColor: string,
   style?: ResumePresentationRead,
 ) {
-  const margins = style
-    ? resumePresentationPageMargins(style)
-    : {
-        top: settings.verticalPageMargin,
-        right: settings.pageMargin,
-        bottom: settings.verticalPageMargin,
-        left: settings.pageMargin,
-      };
+  const margins = liveResumePageMargins(settings, style);
   return {
     "--resume-font-family": settings.fontFamily,
     "--resume-font-size": `${settings.fontSize}pt`,

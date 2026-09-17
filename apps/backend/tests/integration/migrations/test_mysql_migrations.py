@@ -16,26 +16,26 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from linkcv.application.resumes.service import (
+from linkresume.application.resumes.service import (
     ResumeTitleConflict,
     create_resume_from_template,
 )
-from linkcv.core.database import utc_now
-from linkcv.core.errors import ApiError
-from linkcv.domain.resume import CanonicalResumeDocument, TemplateDefinition
-from linkcv.domain.resume_snapshot import parse_resume_snapshot
-from linkcv.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
-from linkcv.modules.agent.service import (
+from linkresume.core.database import utc_now
+from linkresume.core.errors import ApiError
+from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition
+from linkresume.domain.resume_snapshot import parse_resume_snapshot
+from linkresume.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
+from linkresume.modules.agent.service import (
     create_proposal,
     create_session,
     delete_resume_agent_data,
     reject_proposal,
 )
-from linkcv.modules.resumes.models import Resume, ResumeVersion
+from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0061"
+EXPECTED_HEAD = "0063"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -59,15 +59,15 @@ def canonical_editor_markdown(data: dict[str, Any]) -> str:
 
 
 def migration_test_url() -> str:
-    raw = os.environ.get("LINKCV_TEST_MYSQL_URL")
+    raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
     if not raw:
         pytest.skip(
-            "LINKCV_TEST_MYSQL_URL is required for destructive MySQL migration tests"
+            "LINKRESUME_TEST_MYSQL_URL is required for destructive MySQL migration tests"
         )
     url = make_url(raw)
-    if url.database != "linkcv" or url.host not in {"127.0.0.1", "localhost"}:
+    if url.database != "linkresume" or url.host not in {"127.0.0.1", "localhost"}:
         pytest.fail(
-            "LINKCV_TEST_MYSQL_URL must target a local, disposable database named linkcv"
+            "LINKRESUME_TEST_MYSQL_URL must target a local, disposable database named linkresume"
         )
     return raw
 
@@ -80,7 +80,7 @@ def invoke_alembic(
         {
             "APP_ENV": "development",
             "DATABASE_URL": database_url,
-            "LINKCV_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
+            "LINKRESUME_ENV_FILE": str(REPO_ROOT / ".env.nonexistent-migration-test"),
         }
     )
     return subprocess.run(
@@ -289,11 +289,15 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "operations_json",
         "rationale_json",
         "source_refs_json",
+        "proposed_title",
+        "result_resume_id",
     }
     assert scoped_proposal_columns <= set(proposal_columns)
     assert proposal_columns["proposal_mode"]["nullable"] is False
     assert proposal_columns["proposal_mode"]["type"].length == 32
     assert proposal_columns["target_content_hash"]["type"].length == 71
+    assert proposal_columns["proposed_title"]["type"].length == 255
+    assert proposal_columns["result_resume_id"]["nullable"] is True
     for json_column in {
         "target_locator_json",
         "diagnosis_json",
@@ -302,7 +306,10 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "source_refs_json",
     }:
         assert proposal_columns[json_column]["type"].__class__.__name__ == "JSON"
-    assert "ck_resume_change_proposals_mode" in {
+    assert {
+        "ck_resume_change_proposals_mode",
+        "ck_resume_change_proposals_translation_result",
+    } <= {
         constraint["name"]
         for constraint in inspector.get_check_constraints("resume_change_proposals")
     }
@@ -2877,11 +2884,56 @@ def test_professional_template_seed_conflict_is_atomic() -> None:
     engine.dispose()
 
 
-def test_professional_template_preview_refresh_refuses_customized_snapshots() -> None:
+def _set_professional_template_brand(engine, brand: str) -> None:
+    content_path = "$.sections.custom_sections[0].items[0].content.content"
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE resume_templates SET data_json = JSON_SET(data_json, :path, "
+                "REPLACE(JSON_UNQUOTE(JSON_EXTRACT(data_json, :path)), "
+                "'linkresume-avatar:', :directive)) "
+                "WHERE `key` IN ('administrative-sidebar-cn', 'campus-professional-cn', "
+                "'civic-service-cn', 'creative-orange-cn')"
+            ),
+            {"path": content_path, "directive": f"{brand}-avatar:"},
+        )
+
+
+@pytest.mark.parametrize("brand", ["linkcv", "linkresume"])
+def test_professional_template_preview_refresh_accepts_official_brand_snapshots(
+    brand: str,
+) -> None:
     database_url = migration_test_url()
     engine = create_engine(database_url)
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0026")
+    _set_professional_template_brand(engine, brand)
+    run_alembic(database_url, "upgrade", "0027")
+    with engine.connect() as connection:
+        contents = connection.scalars(
+            text(
+                "SELECT JSON_UNQUOTE(JSON_EXTRACT(data_json, "
+                "'$.sections.custom_sections[0].items[0].content.content')) "
+                "FROM resume_templates WHERE `key` IN "
+                "('administrative-sidebar-cn', 'campus-professional-cn', "
+                "'civic-service-cn', 'creative-orange-cn')"
+            )
+        ).all()
+        assert len(contents) == 4
+        assert all('/templates/avatar-cat.jpg "linkresume-avatar:' in body for body in contents)
+    run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+@pytest.mark.parametrize("brand", ["linkcv", "linkresume"])
+def test_professional_template_preview_refresh_refuses_customized_snapshots(
+    brand: str,
+) -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0026")
+    _set_professional_template_brand(engine, brand)
     content_path = "$.sections.custom_sections[0].items[0].content.content"
 
     with engine.begin() as connection:
@@ -3212,6 +3264,7 @@ def test_job_descriptions_mysql_schema_and_source_uniqueness() -> None:
         "job_title",
         "company_name",
         "logo_url",
+        "logo_sha256",
         "employment_type",
         "description",
         "skills",

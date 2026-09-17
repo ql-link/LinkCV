@@ -21,7 +21,9 @@ const chineseCount = { 2: "两", 3: "三", 4: "四", 5: "五" };
 function logoBackground(color) {
   return logoColors[color] || logoColors.gray;
 }
-// Public HTTPS only: the snapshot comes from a user-controlled job page.
+// Public HTTPS only: the snapshot comes from a user-controlled job page. 服务端还会投影
+// 岗位自己托管 Logo 的相对地址，但 `/api/job-descriptions/{id}/logo` 需要 Bearer，而
+// `<image>` 带不了凭据，所以这里同样按不可渲染处理，由 company-logo 回落到公司名称首字。
 function logoSource(value) {
   return typeof value === "string" && value.startsWith("https://") ? value : "";
 }

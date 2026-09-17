@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from linkcv.core.migration_sql import sql_statements
+from linkresume.core.migration_sql import sql_statements
 
 BACKEND_ROOT = Path(__file__).resolve().parents[3]
 REVISION_PATH = (
@@ -19,7 +19,7 @@ SQL_PATH = BACKEND_ROOT / "migrations" / "sql" / "0046.up.sql"
 
 def load_revision():
     spec = importlib.util.spec_from_file_location(
-        "linkcv_revision_0046", REVISION_PATH
+        "linkresume_revision_0046", REVISION_PATH
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

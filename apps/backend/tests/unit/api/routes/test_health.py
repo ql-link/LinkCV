@@ -1,4 +1,4 @@
-from linkcv.api.routes.health import health
+from linkresume.api.routes.health import health
 
 
 def test_health_response_values() -> None:
@@ -6,6 +6,6 @@ def test_health_response_values() -> None:
 
     assert response.model_dump() == {
         "status": "ok",
-        "service": "linkcv-backend",
+        "service": "linkresume-backend",
         "version": "0.1.0",
     }

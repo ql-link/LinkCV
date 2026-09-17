@@ -1,7 +1,7 @@
 import { ChevronLeft, CircleCheck, History, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import MarkdownIt from "markdown-it";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import {
   AgentMessage,
@@ -16,7 +16,7 @@ import {
   api,
 } from "../../api/client";
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
-import { Avatar, AvatarFallback, AvatarImage, Button, PageLoading } from "@/components/ui";
+import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoading } from "@/components/ui";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 
 type AgentPanelProps = {
@@ -173,7 +173,7 @@ export function AgentUserAvatar({ avatarUrl, displayName = "用户" }: { avatarU
 const agentMarkdown = new MarkdownIt({
   html: false,
   linkify: true,
-  breaks: false,
+  breaks: true,
   typographer: false,
 });
 
@@ -207,8 +207,56 @@ agentMarkdown.renderer.rules.image = (tokens, index) => {
   return `<span class="agent-markdown-image" role="img" aria-label="${alt}">[图片：${alt}]</span>`;
 };
 
+agentMarkdown.renderer.rules.table_open = () => '<div class="agent-table-scroll"><table>';
+agentMarkdown.renderer.rules.table_close = () => "</table></div>";
+
+agentMarkdown.renderer.rules.fence = (tokens, index) => {
+  const token = tokens[index];
+  const language = token.info.trim().split(/\s+/u)[0]?.replace(/[^\w-]/gu, "") ?? "";
+  const escapedLanguage = agentMarkdown.utils.escapeHtml(language);
+  const escapedSource = agentMarkdown.utils.escapeHtml(token.content.replace(/\n$/u, ""));
+  const languageClass = escapedLanguage ? ` class="language-${escapedLanguage}"` : "";
+  const label = escapedLanguage ? `${escapedLanguage} 代码` : "代码";
+
+  return [
+    `<div class="agent-code-block" role="group" aria-label="${label}">`,
+    '<div class="agent-code-toolbar">',
+    `<span class="agent-code-language">${escapedLanguage}</span>`,
+    '<button class="agent-code-copy" type="button" data-agent-copy-code aria-label="复制代码">复制</button>',
+    "</div>",
+    '<div class="agent-code-scroll">',
+    `<pre><code${languageClass}>${escapedSource}</code></pre>`,
+    "</div>",
+    "</div>",
+  ].join("");
+};
+
+async function copyAgentCode(event: ReactMouseEvent<HTMLDivElement>) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest<HTMLButtonElement>("[data-agent-copy-code]");
+  if (!button || !event.currentTarget.contains(button)) return;
+  const source = button.closest(".agent-code-block")?.querySelector("code")?.textContent ?? "";
+
+  try {
+    await navigator.clipboard.writeText(source);
+    button.textContent = "已复制";
+  } catch {
+    button.textContent = "复制失败";
+  }
+  window.setTimeout(() => {
+    button.textContent = "复制";
+  }, 1500);
+}
+
 export function AgentMarkdown({ content }: { content: string }) {
-  return <div className="agent-message-content" dangerouslySetInnerHTML={{ __html: agentMarkdown.render(content) }} />;
+  return (
+    <div
+      className="agent-message-content agent-standard-markdown"
+      dangerouslySetInnerHTML={{ __html: agentMarkdown.render(content) }}
+      onClick={(event) => void copyAgentCode(event)}
+    />
+  );
 }
 
 export function AgentPanel({
@@ -691,7 +739,11 @@ export function AgentPanel({
         ))}
       </div>}
 
-      {error && <div className="agent-error" role="alert">{error}</div>}
+      {error && (
+        <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError(null)}>
+          {error}
+        </FeedbackNotice>
+      )}
 
       {messages.some((message) => message.role === "assistant") && !running && !pendingClarification && (
         <button type="button" className="agent-regenerate" onClick={regenerateLastAnswer}>

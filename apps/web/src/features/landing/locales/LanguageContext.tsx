@@ -4,7 +4,7 @@ import { en } from './en'
 
 export type Language = 'zh' | 'en'
 
-const STORAGE_KEY = 'linkcv-lang'
+const STORAGE_KEY = 'linkresume-lang'
 
 const translations: Record<Language, Translations> = { zh, en }
 

@@ -7,13 +7,13 @@ import pytest
 from aiokafka.structs import TopicPartition
 from pydantic import BaseModel, ValidationError
 
-from linkcv.core.config import Settings
-from linkcv.core.mq.message import DatasetParseMessage, ResumeImportMessage
-from linkcv.workers.document_parse_consumer import (
+from linkresume.core.config import Settings
+from linkresume.core.mq.message import DatasetParseMessage, ResumeImportMessage
+from linkresume.workers.document_parse_consumer import (
     _handle_kafka_message,
     _handle_rabbit_message,
 )
-from linkcv.workers.resume_import_worker import (
+from linkresume.workers.resume_import_worker import (
     WorkerDependencyUnavailable,
     WorkerTaskRetryable,
 )
@@ -35,7 +35,7 @@ def message_body() -> bytes:
 def rabbit_incoming(*, retries: int = 0):
     return SimpleNamespace(
         body=message_body(),
-        headers={"x-linkcv-pipeline-version": "v2", "x-linkcv-retry": retries},
+        headers={"x-linkresume-pipeline-version": "v2", "x-linkresume-retry": retries},
         content_type="application/json",
         message_id="message-42",
         type="RESUME_IMPORT_TASK",
@@ -81,7 +81,7 @@ def test_rabbit_success_acks_original_message() -> None:
 def test_rabbit_body_identity_is_authoritative_over_observability_header() -> None:
     processor = SimpleNamespace(process=AsyncMock(), mark_retry_exhausted=Mock())
     incoming = rabbit_incoming()
-    incoming.headers["x-linkcv-pipeline-version"] = "v1"
+    incoming.headers["x-linkresume-pipeline-version"] = "v1"
 
     asyncio.run(
         _handle_rabbit_message(
@@ -221,7 +221,7 @@ def test_rabbit_processing_validation_error_uses_bounded_retry() -> None:
 
     exchange.publish.assert_awaited_once()
     republished = exchange.publish.await_args.args[0]
-    assert republished.headers["x-linkcv-retry"] == 1
+    assert republished.headers["x-linkresume-retry"] == 1
     dead_letter_exchange.publish.assert_not_awaited()
     processor.mark_retry_exhausted.assert_not_called()
     incoming.ack.assert_awaited_once()
@@ -296,8 +296,8 @@ def test_rabbit_retry_logs_safe_attempt_and_stage(caplog) -> None:
     republished = exchange.publish.await_args.args[0]
     assert republished.body == incoming.body
     assert republished.headers == {
-        "x-linkcv-pipeline-version": "v2",
-        "x-linkcv-retry": 1,
+        "x-linkresume-pipeline-version": "v2",
+        "x-linkresume-retry": 1,
     }
     assert "stable-code" not in caplog.text
 
@@ -365,7 +365,7 @@ def test_kafka_retry_exhaustion_publishes_dlt_before_exact_commit() -> None:
     )
     producer = SimpleNamespace(send_and_wait=AsyncMock(return_value=object()))
     incoming = SimpleNamespace(
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         partition=3,
         offset=17,
         value=message_body(),
@@ -386,7 +386,7 @@ def test_kafka_retry_exhaustion_publishes_dlt_before_exact_commit() -> None:
     assert processor.process.await_count == 3
     processor.mark_retry_exhausted.assert_called_once_with(42)
     producer.send_and_wait.assert_awaited_once_with(
-        "tolink.cv.resume_import.v2.DLT",
+        "tolink.resume.resume_import.v2.DLT",
         value=incoming.value,
         key=b"42",
     )
@@ -401,7 +401,7 @@ def test_kafka_dispatches_dataset_v2_message_to_dataset_processor() -> None:
     consumer = SimpleNamespace(commit=AsyncMock())
     producer = SimpleNamespace(send_and_wait=AsyncMock(return_value=object()))
     incoming = SimpleNamespace(
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         partition=1,
         offset=8,
         value=DatasetParseMessage.create(parse_task_id=84).body(),
@@ -449,7 +449,7 @@ def test_kafka_rejects_non_v2_messages_before_processor(mutation: str) -> None:
     consumer = SimpleNamespace(commit=AsyncMock())
     producer = SimpleNamespace(send_and_wait=AsyncMock(return_value=object()))
     incoming = SimpleNamespace(
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         partition=0,
         offset=3,
         value=encoded,
@@ -469,7 +469,7 @@ def test_kafka_rejects_non_v2_messages_before_processor(mutation: str) -> None:
 
     resume.process.assert_not_awaited()
     producer.send_and_wait.assert_awaited_once_with(
-        "tolink.cv.resume_import.v2.DLT",
+        "tolink.resume.resume_import.v2.DLT",
         value=encoded,
         key=b"42",
     )
@@ -489,7 +489,7 @@ def test_kafka_terminal_state_write_failure_does_not_commit_offset() -> None:
     )
     producer = SimpleNamespace(send_and_wait=AsyncMock(return_value=object()))
     incoming = SimpleNamespace(
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         partition=3,
         offset=17,
         value=message_body(),
@@ -510,7 +510,7 @@ def test_kafka_terminal_state_write_failure_does_not_commit_offset() -> None:
     assert processor.process.await_count == 3
     processor.mark_retry_exhausted.assert_called_once_with(42)
     producer.send_and_wait.assert_awaited_once_with(
-        "tolink.cv.resume_import.v2.DLT",
+        "tolink.resume.resume_import.v2.DLT",
         value=incoming.value,
         key=b"42",
     )
@@ -535,7 +535,7 @@ def test_kafka_dlt_failure_does_not_commit_offset() -> None:
         send_and_wait=AsyncMock(side_effect=OSError("broker unavailable"))
     )
     incoming = SimpleNamespace(
-        topic="tolink.cv.resume_import.v2",
+        topic="tolink.resume.resume_import.v2",
         partition=0,
         offset=5,
         value=message_body(),

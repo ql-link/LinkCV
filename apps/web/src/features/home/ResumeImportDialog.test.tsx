@@ -65,7 +65,10 @@ describe("ResumeImportDialog", () => {
     });
     fireEvent.click(await screen.findByRole("button", { name: "导入并开始解析" }));
 
-    expect(await screen.findByText("内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("内容结构化模型未配置或凭据不可用，请联系管理员配置后重试。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert.parentElement).toBe(document.body);
     expect(screen.getByText("resume.md")).toBeInTheDocument();
     expect(screen.getByRole("alertdialog", { name: "导入简历" })).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();

@@ -176,7 +176,9 @@ describe("ResumeTemplatesPage", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "创建简历" }))[0]);
     fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    expect(await screen.findByText("请输入简历名称。")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("请输入简历名称。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(createResume).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
@@ -192,7 +194,9 @@ describe("ResumeTemplatesPage", () => {
     fireEvent.change(screen.getByLabelText("简历名称"), { target: { value: "重复名称" } });
     fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
-    expect(await screen.findByText("该名称已经存在，请换一个名称。")).toBeInTheDocument();
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("该名称已经存在，请换一个名称。");
+    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/templates");
   });

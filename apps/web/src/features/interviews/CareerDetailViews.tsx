@@ -113,6 +113,7 @@ function requestErrorMessage(error: unknown): string {
       INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
       UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
       INTERVIEW_APPLICATION_NOT_EMPTY: "请先清理该求职进程下的面试记录。",
+      INTERVIEW_APPLICATION_DELETE_FAILED: "岗位关联数据清理失败，请稍后重试。",
       INTERVIEW_SESSION_NOT_EMPTY: "请先删除这场面试关联的素材。",
       INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED: "这条安排不支持设置作答计划。",
       INTERVIEW_ANSWER_PLAN_INVALID_TIME: "作答计划时间无效，请重新选择。",
@@ -2009,6 +2010,45 @@ function addDatePickerMonths(date: Date, months: number): Date {
   return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
+const APPLIED_DATE_PICKER_MAX_WIDTH = 320;
+const APPLIED_DATE_PICKER_MAX_HEIGHT = 360;
+const APPLIED_DATE_PICKER_VIEWPORT_GUTTER = 32;
+const APPLIED_DATE_PICKER_GAP = 8;
+
+function appliedDatePickerPosition(
+  trigger: DOMRect,
+  host: DOMRect,
+  viewportWidth: number,
+  viewportHeight: number,
+  renderedHeight = APPLIED_DATE_PICKER_MAX_HEIGHT,
+): { left: number; top: number } {
+  const pickerWidth = Math.min(
+    APPLIED_DATE_PICKER_MAX_WIDTH,
+    Math.max(0, viewportWidth - APPLIED_DATE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const maximumLeft = Math.max(
+    APPLIED_DATE_PICKER_VIEWPORT_GUTTER,
+    viewportWidth - pickerWidth - APPLIED_DATE_PICKER_VIEWPORT_GUTTER,
+  );
+  const boundedLeft = Math.min(
+    Math.max(trigger.left, APPLIED_DATE_PICKER_VIEWPORT_GUTTER),
+    maximumLeft,
+  );
+  const pickerHeight = Math.min(
+    renderedHeight || APPLIED_DATE_PICKER_MAX_HEIGHT,
+    Math.max(0, viewportHeight - APPLIED_DATE_PICKER_VIEWPORT_GUTTER * 2),
+  );
+  const belowTop = trigger.bottom + APPLIED_DATE_PICKER_GAP;
+  const aboveTop = trigger.top - APPLIED_DATE_PICKER_GAP - pickerHeight;
+  const boundedTop = belowTop + pickerHeight <= viewportHeight - APPLIED_DATE_PICKER_VIEWPORT_GUTTER
+    ? belowTop
+    : Math.max(APPLIED_DATE_PICKER_VIEWPORT_GUTTER, aboveTop);
+  return {
+    left: boundedLeft - host.left,
+    top: boundedTop - host.top,
+  };
+}
+
 function buildDatePickerDays(month: Date): Date[] {
   const firstDay = startOfDatePickerMonth(month);
   const gridStart = new Date(firstDay);
@@ -2031,8 +2071,11 @@ function AppliedAtDatePicker({
 }) {
   const [open, setOpen] = useState(false);
   const [displayMonth, setDisplayMonth] = useState(() => startOfDatePickerMonth(parseDatePickerValue(value) ?? new Date()));
+  const [popoverHost, setPopoverHost] = useState<HTMLElement | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const selectedDate = parseDatePickerValue(value);
   const selectedValue = selectedDate ? formatDatePickerValue(selectedDate) : null;
   const calendarDays = useMemo(() => buildDatePickerDays(displayMonth), [displayMonth]);
@@ -2045,8 +2088,37 @@ function AppliedAtDatePicker({
 
   useEffect(() => {
     if (!open) return;
+    const positionPopover = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const nextHost = window.innerWidth > 640
+        ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog") ?? null
+        : null;
+      if (nextHost !== popoverHost) {
+        setPopoverHost(nextHost);
+        return;
+      }
+      if (!nextHost) {
+        setPopoverPosition(null);
+        return;
+      }
+      setPopoverPosition(appliedDatePickerPosition(
+        trigger.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+        popoverRef.current?.getBoundingClientRect().height,
+      ));
+    };
+    positionPopover();
+    window.addEventListener("resize", positionPopover);
+    window.addEventListener("scroll", positionPopover, true);
     const handlePointerDown = (event: Event) => {
-      if (!pickerRef.current?.contains(event.target as Node)) closePicker();
+      const target = event.target as Node;
+      if (
+        !pickerRef.current?.contains(target)
+        && !popoverRef.current?.contains(target)
+      ) closePicker();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -2058,14 +2130,30 @@ function AppliedAtDatePicker({
     document.addEventListener("click", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown, true);
     return () => {
+      window.removeEventListener("resize", positionPopover);
+      window.removeEventListener("scroll", positionPopover, true);
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("click", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown, true);
     };
-  }, [open]);
+  }, [open, popoverHost]);
 
   const openPicker = () => {
     setDisplayMonth(startOfDatePickerMonth(selectedDate ?? new Date()));
+    const nextHost = window.innerWidth > 640
+      ? pickerRef.current?.closest<HTMLElement>(".career-next-stage-dialog") ?? null
+      : null;
+    setPopoverHost(nextHost);
+    if (nextHost && triggerRef.current) {
+      setPopoverPosition(appliedDatePickerPosition(
+        triggerRef.current.getBoundingClientRect(),
+        nextHost.getBoundingClientRect(),
+        window.innerWidth,
+        window.innerHeight,
+      ));
+    } else {
+      setPopoverPosition(null);
+    }
     setOpen(true);
   };
 
@@ -2102,82 +2190,86 @@ function AppliedAtDatePicker({
         <CalendarDays aria-hidden="true" />
       </button>
       {open && (
-        <div
-          id={`${id}-calendar`}
-          className="career-date-picker-popover"
-          role="dialog"
-          aria-label="选择投递时间"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              closePicker();
-            }
-          }}
-        >
-          <header className="career-date-picker-header">
-            <strong aria-live="polite">{monthLabel}</strong>
-            <div>
-              <button
-                type="button"
-                aria-label="上一月"
-                title="上一月"
-                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, -1))}
-              >
-                <ChevronLeft aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                aria-label="下一月"
-                title="下一月"
-                onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, 1))}
-              >
-                <ChevronRight aria-hidden="true" />
-              </button>
-            </div>
-          </header>
-          <div className="career-date-picker-calendar" role="grid" aria-label={`${monthLabel}日期`}>
-            <div className="career-date-picker-weekdays" role="row">
-              {DATE_PICKER_WEEKDAYS.map((weekday) => (
-                <span key={weekday} role="columnheader">{weekday}</span>
-              ))}
-            </div>
-            <div className="career-date-picker-days">
-              {Array.from({ length: 6 }, (_, weekIndex) => (
-                <div key={weekIndex} className="career-date-picker-week" role="row">
-                  {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
-                    const dateValue = formatDatePickerValue(date);
-                    const isSelected = dateValue === selectedValue;
-                    const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
-                      && date.getFullYear() === displayMonth.getFullYear();
-                    return (
-                      <div
-                        key={dateValue}
-                        role="gridcell"
-                        aria-label={formatDatePickerDay(date)}
-                        aria-selected={isSelected}
-                        className={!isCurrentMonth ? "is-adjacent-month" : undefined}
-                      >
-                        <button
-                          type="button"
+        <SchedulePickerPortal host={popoverHost}>
+          <div
+            ref={popoverRef}
+            id={`${id}-calendar`}
+            className="career-date-picker-popover career-applied-date-picker-popover"
+            role="dialog"
+            aria-label="选择投递时间"
+            style={popoverPosition ? { left: popoverPosition.left, right: "auto", top: popoverPosition.top } : undefined}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closePicker();
+              }
+            }}
+          >
+            <header className="career-date-picker-header">
+              <strong aria-live="polite">{monthLabel}</strong>
+              <div>
+                <button
+                  type="button"
+                  aria-label="上一月"
+                  title="上一月"
+                  onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, -1))}
+                >
+                  <ChevronLeft aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="下一月"
+                  title="下一月"
+                  onClick={() => setDisplayMonth((current) => addDatePickerMonths(current, 1))}
+                >
+                  <ChevronRight aria-hidden="true" />
+                </button>
+              </div>
+            </header>
+            <div className="career-date-picker-calendar" role="grid" aria-label={`${monthLabel}日期`}>
+              <div className="career-date-picker-weekdays" role="row">
+                {DATE_PICKER_WEEKDAYS.map((weekday) => (
+                  <span key={weekday} role="columnheader">{weekday}</span>
+                ))}
+              </div>
+              <div className="career-date-picker-days">
+                {Array.from({ length: 6 }, (_, weekIndex) => (
+                  <div key={weekIndex} className="career-date-picker-week" role="row">
+                    {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
+                      const dateValue = formatDatePickerValue(date);
+                      const isSelected = dateValue === selectedValue;
+                      const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
+                        && date.getFullYear() === displayMonth.getFullYear();
+                      return (
+                        <div
+                          key={dateValue}
+                          role="gridcell"
                           aria-label={formatDatePickerDay(date)}
-                          className={isSelected ? "is-selected" : undefined}
-                          onClick={() => selectDate(date)}
+                          aria-selected={isSelected}
+                          className={!isCurrentMonth ? "is-adjacent-month" : undefined}
                         >
-                          {date.getDate()}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                          <button
+                            type="button"
+                            aria-label={formatDatePickerDay(date)}
+                            className={isSelected ? "is-selected" : undefined}
+                            onClick={() => selectDate(date)}
+                          >
+                            {date.getDate()}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
+            <footer className="career-date-picker-footer">
+              <button type="button" disabled={!value} onClick={() => { onChange(""); closePicker(); }}>清除</button>
+              <button type="button" onClick={today}>今天</button>
+            </footer>
           </div>
-          <footer className="career-date-picker-footer">
-            <button type="button" disabled={!value} onClick={() => { onChange(""); closePicker(); }}>清除</button>
-            <button type="button" onClick={today}>今天</button>
-          </footer>
-        </div>
+        </SchedulePickerPortal>
       )}
     </div>
   );
@@ -2364,6 +2456,8 @@ export function ApplicationDetailView({
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [terminateDialogOpen, setTerminateDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [editScheduleDialogOpen, setEditScheduleDialogOpen] = useState(false);
   if (!application) {
     return (
@@ -2407,6 +2501,19 @@ export function ApplicationDetailView({
     && application.current_stage_type === "offer"
     && (application.offer_status === "none" || application.offer_status === "received");
   const canTerminate = active && application.offer_status === "none";
+  const canDelete = progress.columnKey === "ended";
+  const deleteEndedJob = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteJobApplication(application.id);
+      await onChanged();
+      onBack();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+    } finally {
+      setDeleting(false);
+    }
+  };
   const scheduleActionLabel = `安排${progress.stageLabel}时间`;
   const resultActionLabel = currentSession?.status === "completed"
     || isSubmittedScreening
@@ -2477,6 +2584,7 @@ export function ApplicationDetailView({
             {primaryAction === "session-record" && currentSession && <Button variant="ghost" onClick={() => navigateTo(careerApplicationPath(application.id, currentSession.id), { state: { careerSessionDialog: true } })}>{sessionRecordActionLabel}</Button>}
             {primaryAction === "offer" && <Button variant="ghost" onClick={() => setOfferDialogOpen(true)}>Offer 信息</Button>}
             {canTerminate && <Button variant="outline" icon={<Ban aria-hidden="true" />} onClick={() => setTerminateDialogOpen(true)}>终止求职</Button>}
+            {canDelete && <Button variant="ghost" icon={<Trash2 aria-hidden="true" />} onClick={() => setDeleteDialogOpen(true)}>删除岗位</Button>}
           </div>
         </div>
       </header>
@@ -2523,6 +2631,20 @@ export function ApplicationDetailView({
         />)}
       {offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
       {terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {deleteDialogOpen && (
+        <ConfirmDialog
+          kind="delete"
+          title={`永久删除「${application.company_name_snapshot} · ${application.job_title_snapshot}」？`}
+          description={application.job_description_id
+            ? "删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
+            : "该岗位资料已不存在；删除后，这次求职进程及其阶段、排期、复盘和素材都将无法恢复。"}
+          confirmLabel="永久删除"
+          busyLabel="正在删除…"
+          busy={deleting}
+          onCancel={() => setDeleteDialogOpen(false)}
+          onConfirm={deleteEndedJob}
+        />
+      )}
       {editScheduleDialogOpen && currentSession && <EditInterviewScheduleDialog session={currentSession} recordKind={currentRecordKind} onClose={() => setEditScheduleDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );

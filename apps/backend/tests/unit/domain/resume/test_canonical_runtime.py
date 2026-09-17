@@ -1,6 +1,6 @@
 import pytest
 
-from linkcv.domain.resume import (
+from linkresume.domain.resume import (
     CanonicalCompositionError,
     ParsedSourceBlock,
     SparseResumeAnnotations,

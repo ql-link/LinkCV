@@ -3,7 +3,7 @@ import type { JSONContent } from "@tiptap/core";
 export const INLINE_FONT_SIZE_MIN = 6;
 export const INLINE_FONT_SIZE_MAX = 48;
 export const INLINE_FONT_SIZE_STEP = 0.5;
-export const INLINE_FONT_SIZE_CLOSE_MARKER = "[[/linkcv-size]]";
+export const INLINE_FONT_SIZE_CLOSE_MARKER = "[[/linkresume-size]]";
 
 export function normalizeInlineFontSize(value: unknown) {
   const points = typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : Number.NaN;
@@ -17,5 +17,5 @@ export function inlineFontSizeFromNode(node: JSONContent) {
 }
 
 export function inlineFontSizeOpenMarker(points: number) {
-  return `[[linkcv-size:${normalizeInlineFontSize(points) ?? INLINE_FONT_SIZE_MIN}pt]]`;
+  return `[[linkresume-size:${normalizeInlineFontSize(points) ?? INLINE_FONT_SIZE_MIN}pt]]`;
 }

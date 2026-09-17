@@ -1,24 +1,24 @@
 services:
-  linkcv-pi:
-    image: linkcv-pi:${PI_TAG:?PI_TAG is required}
-    container_name: linkcv-pi
+  linkresume-pi:
+    image: linkresume-pi:${PI_TAG:?PI_TAG is required}
+    container_name: linkresume-pi
     restart: always
     env_file:
-      - ${LINKCV_ENV_FILE:-../.env.production}
-      - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
+      - ${LINKRESUME_ENV_FILE:-../.env.production}
+      - ${LINKRESUME_SECRET_ENV_FILE:-../.env.production.local}
     environment:
       APP_ENV: production
-      LINKCV_BASE_URL: http://linkcv:8000
+      LINKRESUME_BASE_URL: http://linkresume:8000
       PI_SERVICE_HOST: 0.0.0.0
       PI_SERVICE_PORT: 8010
       TZ: Asia/Shanghai
     networks:
-      - linkcv-runtime
+      - linkresume-runtime
     labels:
-      com.linkcv.environment: production
-      com.linkcv.role: pi-agent
+      com.linkresume.environment: production
+      com.linkresume.role: pi-agent
     depends_on:
-      linkcv:
+      linkresume:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8010/health').then(r=>{if(!r.ok)process.exit(1)})"]
@@ -27,13 +27,13 @@ services:
       retries: 3
       start_period: 20s
 
-  linkcv:
-    image: linkcv:${TAG:-latest}
-    container_name: linkcv
+  linkresume:
+    image: linkresume:${TAG:-latest}
+    container_name: linkresume
     restart: always
     env_file:
-      - ${LINKCV_ENV_FILE:-../.env.production}
-      - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
+      - ${LINKRESUME_ENV_FILE:-../.env.production}
+      - ${LINKRESUME_SECRET_ENV_FILE:-../.env.production.local}
     environment:
       APP_ENV: production
       BACKEND_HOST: 0.0.0.0
@@ -41,13 +41,13 @@ services:
       WEB_DIST_DIR: /app/web
       TZ: Asia/Shanghai
     ports:
-      - "${LINKCV_HTTP_PORT:-4174}:8000"
+      - "${LINKRESUME_HTTP_PORT:-4174}:8000"
     volumes:
-      - linkcv-production-logs:/app/logs
+      - linkresume-production-logs:/app/logs
     networks:
-      - linkcv-runtime
+      - linkresume-runtime
     labels:
-      com.linkcv.environment: production
+      com.linkresume.environment: production
     healthcheck:
       test:
         [
@@ -63,52 +63,52 @@ services:
 
   promtail:
     image: grafana/promtail:2.9.8
-    container_name: linkcv-promtail
+    container_name: linkresume-promtail
     restart: always
     command:
       - -config.file=/etc/promtail/promtail-config.yml
       - -config.expand-env=true
     env_file:
-      - ${LINKCV_ENV_FILE:-../.env.production}
+      - ${LINKRESUME_ENV_FILE:-../.env.production}
     volumes:
       - ./observability/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
-      - linkcv-production-logs:/var/log/linkcv:ro
-      - linkcv-production-promtail-positions:/tmp
+      - linkresume-production-logs:/var/log/linkresume:ro
+      - linkresume-production-promtail-positions:/tmp
     networks:
-      - linkcv-runtime
+      - linkresume-runtime
     depends_on:
-      linkcv:
+      linkresume:
         condition: service_started
-      linkcv-worker:
+      linkresume-worker:
         condition: service_started
 
-  linkcv-worker:
-    image: linkcv:${TAG:-latest}
-    container_name: linkcv-worker
-    command: ["python", "-m", "linkcv.workers"]
+  linkresume-worker:
+    image: linkresume:${TAG:-latest}
+    container_name: linkresume-worker
+    command: ["python", "-m", "linkresume.workers"]
     restart: always
     env_file:
-      - ${LINKCV_ENV_FILE:-../.env.production}
-      - ${LINKCV_SECRET_ENV_FILE:-../.env.production.local}
+      - ${LINKRESUME_ENV_FILE:-../.env.production}
+      - ${LINKRESUME_SECRET_ENV_FILE:-../.env.production.local}
     environment:
       APP_ENV: production
       LOG_DIRECTORY: /app/logs/worker
       TZ: Asia/Shanghai
     volumes:
-      - linkcv-production-logs:/app/logs
+      - linkresume-production-logs:/app/logs
     networks:
-      - linkcv-runtime
+      - linkresume-runtime
     labels:
-      com.linkcv.environment: production
-      com.linkcv.role: resume-import-worker
+      com.linkresume.environment: production
+      com.linkresume.role: resume-import-worker
 
 networks:
-  linkcv-runtime:
+  linkresume-runtime:
     external: true
-    name: ${LINKCV_DOCKER_NETWORK:-tolink-app-net}
+    name: ${LINKRESUME_DOCKER_NETWORK:-tolink-app-net}
 
 volumes:
-  linkcv-production-logs:
-    name: linkcv-production-logs
-  linkcv-production-promtail-positions:
-    name: linkcv-production-promtail-positions
+  linkresume-production-logs:
+    name: linkresume-production-logs
+  linkresume-production-promtail-positions:
+    name: linkresume-production-promtail-positions

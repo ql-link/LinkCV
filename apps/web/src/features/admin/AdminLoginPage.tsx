@@ -73,8 +73,8 @@ export function AdminLoginPage({ next = null }: { next?: string | null }) {
   };
 
   const fillDemo = () => {
-    setEmail("admin@linkcv.demo");
-    setPassword("linkcv-demo");
+    setEmail("admin@linkresume.demo");
+    setPassword("linkresume-demo");
     setError("");
   };
 
@@ -91,7 +91,7 @@ export function AdminLoginPage({ next = null }: { next?: string | null }) {
         transition={{ type: "spring", stiffness: 310, damping: 34, mass: 0.9 }}
       >
         <section className="admin-login-context" aria-label="管理台范围">
-          <a className="admin-wordmark" href="/" aria-label="返回 LinkCV">
+          <a className="admin-wordmark" href="/" aria-label="返回 LinkResume">
             <Brand />
           </a>
           <motion.div
@@ -106,7 +106,7 @@ export function AdminLoginPage({ next = null }: { next?: string | null }) {
             <h1>
               欢迎回到
               <br />
-              LinkCV 管理台
+              LinkResume 管理台
             </h1>
             <p>在一个视图中掌握服务状态，处理真正需要关注的事项。</p>
             <ul className="login-scope-list">

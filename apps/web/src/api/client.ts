@@ -330,6 +330,12 @@ export type AgentSession = {
   messages: AgentMessage[];
 };
 
+export type AgentActiveRun = {
+  run_id: string;
+  status: "running";
+  started_at: string;
+};
+
 export type AgentProposal = {
   id: string;
   run_id: string;
@@ -339,7 +345,7 @@ export type AgentProposal = {
   style: CanonicalResumePresentation;
   layout_plan?: LayoutPlan | null;
   summary: string;
-  proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials";
+  proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials" | "translate_resume";
   target?: Record<string, unknown> | null;
   diagnosis?: Record<string, unknown> | null;
   operations?: Array<{
@@ -350,6 +356,8 @@ export type AgentProposal = {
   }>;
   rationale?: Array<Record<string, string>>;
   source_refs?: Array<Record<string, unknown>>;
+  proposed_title?: string | null;
+  result_resume_id?: string | null;
   status: "pending" | "applied" | "rejected" | "expired" | "conflicted";
   applied_lock_version: number | null;
   expires_at: string;
@@ -365,6 +373,8 @@ export type AgentStreamEvent =
       label?: string;
       referencedContextCount?: number;
     }
+  | { type: "assistant.activity.delta"; runId: string; delta: string }
+  | { type: "assistant.activity.clear"; runId: string }
   | { type: "assistant.delta"; runId: string; delta: string }
   | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
@@ -511,6 +521,8 @@ export type JobDescriptionSummary = {
   job_title: string;
   company_name: string;
   logo_url: string | null;
+  resolved_logo_url?: string | null;
+  logo_revision?: string | null;
   work_city: string | null;
   salary_text: string | null;
   skills: string[];
@@ -1235,13 +1247,53 @@ async function streamAgentMessage(
     if (response.status >= 500) reportApi5xx(error);
     throw error;
   }
+  await consumeAgentStream(response, requestId, onEvent);
+}
+
+async function streamAgentRun(
+  runId: string,
+  signal: AbortSignal,
+  onEvent: (event: AgentStreamEvent) => void,
+  retryAuth = true,
+): Promise<void> {
+  const path = `/api/agent/runs/${encodeURIComponent(runId)}/events`;
+  const requestId = createRequestId();
+  const response = await fetch(path, {
+    method: "GET",
+    headers: { "X-Request-ID": requestId },
+    credentials: "include",
+    signal,
+  });
+  if (response.status === 401 && retryAuth && await refreshSession()) {
+    return streamAgentRun(runId, signal, onEvent, false);
+  }
+  if (!response.ok || !response.body) {
+    const data = await response.json().catch(() => ({}));
+    const error = new ApiRequestError(
+      response.status,
+      typeof data.error === "string" ? data.error : `HTTP_${response.status}`,
+      data && typeof data === "object" ? data as Record<string, unknown> : null,
+      response.headers.get("X-Request-ID") ?? requestId,
+    );
+    if (response.status >= 500) reportApi5xx(error);
+    throw error;
+  }
+  await consumeAgentStream(response, requestId, onEvent);
+}
+
+async function consumeAgentStream(
+  response: Response,
+  requestId: string,
+  onEvent: (event: AgentStreamEvent) => void,
+): Promise<void> {
+  if (!response.body) throw new ApiRequestError(502, "AGENT_STREAM_INCOMPLETE", null, requestId);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
-    "run.started", "run.phase", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
+    "run.started", "run.phase", "assistant.activity.delta", "assistant.activity.clear", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
   while (true) {
@@ -1373,13 +1425,21 @@ export const api = {
     const query = params.toString();
     return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
   },
-  listAgentProposals: (resumeId: string, sessionId?: string) =>
-    request<{ proposals: AgentProposal[] }>(
-      `/api/agent/proposals?resume_id=${encodeURIComponent(resumeId)}${sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`,
-    ),
+  listAgentProposals: (resumeId?: string | null, sessionId?: string) => {
+    const params = new URLSearchParams();
+    if (resumeId) params.set("resume_id", resumeId);
+    if (sessionId) params.set("session_id", sessionId);
+    return request<{ proposals: AgentProposal[] }>(
+      `/api/agent/proposals?${params.toString()}`,
+    );
+  },
   getAgentSession: (sessionId: string) =>
     request<{ session: AgentSession }>(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
+    ),
+  getActiveAgentRun: (sessionId: string) =>
+    request<{ run: AgentActiveRun | null }>(
+      `/api/agent/sessions/${encodeURIComponent(sessionId)}/active-run`,
     ),
   createAgentSession: (resumeId?: string | null, title?: string) =>
     request<{ session: AgentSession }>("/api/agent/sessions", {
@@ -1397,6 +1457,7 @@ export const api = {
   deleteAgentSession: (sessionId: string) =>
     request<void>(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
   streamAgentMessage,
+  streamAgentRun,
   cancelAgentRun: (runId: string) =>
     request<{ run_id: string; status: string }>(
       `/api/agent/runs/${encodeURIComponent(runId)}/cancel`,

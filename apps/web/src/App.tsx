@@ -4,6 +4,7 @@ import { Brand, Button, PageLoading } from "@/components/ui";
 import { CareerNavigation, WorkspaceLayout, type CareerSection, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
+import { applyRouteSeo } from "./seo";
 import { useResumeStore } from "./store/resumeStore";
 import {
   loadAccountPage,
@@ -12,6 +13,7 @@ import {
   loadHomePage,
   loadInterviewCenterPage,
   loadResumeTemplatesPage,
+  scheduleAuthenticatedWorkspacePreload,
 } from "./workspacePageLoaders";
 
 export const RESUME_AUTOSAVE_INTERVAL_MS = 10_000;
@@ -89,6 +91,10 @@ function AppContent() {
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
 
   useEffect(() => {
+    applyRouteSeo(route);
+  }, [route]);
+
+  useEffect(() => {
     if (isInterviewMockPreview) return;
     const redirect = legacyCareerRedirect(window.location.pathname, window.location.search);
     if (redirect) navigateTo(redirect, { replace: true });
@@ -98,6 +104,11 @@ function AppContent() {
     if (isAdminArea || isInterviewMockPreview) return;
     void hydrate();
   }, [hydrate, isAdminArea, isInterviewMockPreview]);
+
+  useEffect(() => {
+    if (authStatus !== "authenticated" || isAdminArea || isInterviewMockPreview) return;
+    return scheduleAuthenticatedWorkspacePreload();
+  }, [authStatus, isAdminArea, isInterviewMockPreview]);
 
   useEffect(() => {
     if (isAdminArea || isInterviewMockPreview) return;
@@ -347,7 +358,7 @@ function StatusShell({ children }: { children: ReactNode }) {
   return (
     <div className="status-shell">
       <header className="status-topbar">
-        <a href="/" aria-label="返回 LinkCV 首页" className="status-brand">
+        <a href="/" aria-label="返回 LinkResume 首页" className="status-brand">
           <Brand />
         </a>
       </header>

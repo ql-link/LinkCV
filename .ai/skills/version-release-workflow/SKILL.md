@@ -3,7 +3,7 @@ name: version-release-workflow
 description: 将已合并到 Dev 但尚未进入 Master 的指定分支提取为净功能差异，汇总到短生命周期的 release/version 分支，生成版本说明并创建或按授权合并唯一的 Master 发布 PR；适用于用户明确要求版本发布、指定版本号和来源分支时。
 ---
 
-# LinkCV 版本发布工作流
+# LinkResume 版本发布工作流
 
 ## 目标
 

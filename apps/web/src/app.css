@@ -2042,6 +2042,10 @@ select:not([data-slot]):focus-visible,
   gap: 10px;
 }
 
+.template-library-content > .page-hero.is-module {
+  min-height: 76px;
+}
+
 .page-hero.is-module {
   align-items: center;
   gap: 24px;
@@ -3075,12 +3079,6 @@ select:not([data-slot]):focus-visible,
   font-weight: 600;
 }
 
-.home-rename-error {
-  margin: 0;
-  color: var(--ui-destructive);
-  font-size: var(--ui-text-xs);
-}
-
 .home-rename-actions { margin-top: 8px; }
 
 /* Account layout and media styles live in features/account/account.css. */
@@ -3862,7 +3860,7 @@ select:not([data-slot]):focus-visible,
   gap: 3px;
   margin: 0;
   border-radius: 10px;
-  background: #f4f6f8;
+  background: var(--ui-surface-muted);
   padding: 10px 14px;
   color: var(--muted);
   font-size: 12px;
@@ -3947,7 +3945,7 @@ select:not([data-slot]):focus-visible,
   display: flex;
   gap: 4px;
   border-radius: 10px;
-  background: #f4f6f8;
+  background: var(--ui-surface-muted);
   padding: 3px;
 }
 
@@ -4616,7 +4614,7 @@ select:not([data-slot]):focus-visible,
 .macos-paper-sheet.is-back {
   inset: -4px 10px 4px;
   z-index: 1;
-  background: #f8fafc;
+  background: var(--ui-surface-subtle);
   opacity: 0.9;
   transform: rotate(2.5deg);
 }

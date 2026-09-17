@@ -1,4 +1,4 @@
-:host { display: block; width: 100%; font-family: "LinkCV Career UI", -apple-system, "PingFang SC", sans-serif; }
+:host { display: block; width: 100%; font-family: "LinkResume Career UI", -apple-system, "PingFang SC", sans-serif; }
 .select { width: 100%; }
 .select .select-button { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: none; min-width: 0; min-height: 44px; height: auto; margin: 0; padding: 12px; box-sizing: border-box; border: 0; border-radius: 10px; background: #f9fafb; color: #17191c; font-family: inherit; font-size: 14px; font-weight: 400; line-height: 20px; text-align: left; }
 .select-button::after { border: 0; }

@@ -5,6 +5,7 @@ import { CareerNavigation, WorkspaceLayout, WorkspaceNavigation, WorkspacePageHe
 
 afterEach(() => {
   vi.restoreAllMocks();
+  window.sessionStorage.clear();
   window.history.replaceState(null, "", "/");
 });
 
@@ -95,6 +96,17 @@ describe("WorkspaceNavigation", () => {
     fireEvent.click(accountLink);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
+  });
+
+  it("离开助手后通过顶部导航返回最近一次对话", () => {
+    window.sessionStorage.setItem("linkresume.assistant.last-session", "session/a b");
+    render(<WorkspaceNavigation active="resumes" email="user@example.test" />);
+
+    const assistantLink = screen.getByRole("link", { name: "AI 助手" });
+    expect(assistantLink).toHaveAttribute("href", "/assistant/session%2Fa%20b");
+
+    fireEvent.click(assistantLink);
+    expect(window.location.pathname).toBe("/assistant/session%2Fa%20b");
   });
 
   it("求职中心只保留求职记录和面试排期两个按流程排序的主入口", () => {

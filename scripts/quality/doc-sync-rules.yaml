@@ -4,8 +4,8 @@ rules:
   - id: fastapi-http-contract
     description: FastAPI 路由变化必须同步 HTTP 契约和后端模块文档
     when_changed:
-      - apps/backend/src/linkcv/api/**/*.py
-      - apps/backend/src/linkcv/modules/**/*.py
+      - apps/backend/src/linkresume/api/**/*.py
+      - apps/backend/src/linkresume/modules/**/*.py
     must_update:
       - docs/api/http-contracts.md
       - docs/internals/backend.md
@@ -13,7 +13,7 @@ rules:
   - id: identity-feature
     description: 身份、账号和会话变化必须同步账号功能文档
     when_changed:
-      - apps/backend/src/linkcv/modules/identity/**/*.py
+      - apps/backend/src/linkresume/modules/identity/**/*.py
       - apps/web/src/features/auth/**/*
       - apps/web/src/features/account/**/*
     must_update:
@@ -22,7 +22,7 @@ rules:
   - id: resume-feature
     description: 简历聚合、模板、版本、分享、导入和工作台变化必须同步简历功能文档
     when_changed:
-      - apps/backend/src/linkcv/modules/resumes/**/*.py
+      - apps/backend/src/linkresume/modules/resumes/**/*.py
       - apps/web/src/features/home/**/*
       - apps/web/src/features/workbench/**/*
       - apps/web/src/features/templates/**/*
@@ -33,8 +33,8 @@ rules:
   - id: career-center-feature
     description: 岗位、求职进程和面试变化必须同步求职中心功能文档
     when_changed:
-      - apps/backend/src/linkcv/modules/job_descriptions/**/*.py
-      - apps/backend/src/linkcv/modules/interviews/**/*.py
+      - apps/backend/src/linkresume/modules/job_descriptions/**/*.py
+      - apps/backend/src/linkresume/modules/interviews/**/*.py
       - apps/web/src/features/jobs/**/*
       - apps/web/src/features/interviews/**/*
     must_update:
@@ -43,8 +43,8 @@ rules:
   - id: agent-feature-and-runtime
     description: Agent、模型治理或 Pi 运行时变化必须同步助手功能和运行时架构文档
     when_changed:
-      - apps/backend/src/linkcv/modules/agent/**/*.py
-      - apps/backend/src/linkcv/modules/llm/**/*.py
+      - apps/backend/src/linkresume/modules/agent/**/*.py
+      - apps/backend/src/linkresume/modules/llm/**/*.py
       - apps/pi-service/**/*
       - apps/web/src/features/agent/**/*
       - apps/web/src/features/assistant/**/*
@@ -55,7 +55,7 @@ rules:
   - id: dataset-feature
     description: 用户资料集变化必须同步资料集功能文档
     when_changed:
-      - apps/backend/src/linkcv/modules/datasets/**/*.py
+      - apps/backend/src/linkresume/modules/datasets/**/*.py
       - apps/web/src/features/datasets/**/*
     must_update:
       - docs/features/datasets.md
@@ -63,7 +63,7 @@ rules:
   - id: observability-architecture
     description: 可观测性和审计变化必须同步可观测性架构文档
     when_changed:
-      - apps/backend/src/linkcv/modules/observability/**/*.py
+      - apps/backend/src/linkresume/modules/observability/**/*.py
       - apps/web/src/features/observability/**/*
       - apps/web/src/features/admin/AdminObservabilityPanels.tsx
     must_update:
@@ -72,7 +72,7 @@ rules:
   - id: plugin-delivery-architecture
     description: 插件制品发布生命周期变化必须同步插件制品架构文档
     when_changed:
-      - apps/backend/src/linkcv/modules/plugin_releases/**/*.py
+      - apps/backend/src/linkresume/modules/plugin_releases/**/*.py
       - apps/web/src/features/admin/PluginReleasePanel.tsx
       - apps/web/src/features/jobs/PluginInstallDialog.tsx
     must_update:
@@ -134,8 +134,8 @@ rules:
   - id: backend-persistence
     description: 数据模型和迁移变化必须同步后端文档
     when_changed:
-      - apps/backend/src/linkcv/core/database.py
-      - apps/backend/src/linkcv/modules/**/models.py
+      - apps/backend/src/linkresume/core/database.py
+      - apps/backend/src/linkresume/modules/**/models.py
       - apps/backend/migrations/**/*.py
       - apps/backend/migrations/**/*.sql
     must_update:
@@ -147,7 +147,7 @@ rules:
       - .env.example
       - .env.development
       - .env.production
-      - apps/backend/src/linkcv/core/config.py
+      - apps/backend/src/linkresume/core/config.py
       - package.json
       - scripts/dev/**/*
       - deploy/docker-compose.yml

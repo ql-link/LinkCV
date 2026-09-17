@@ -4,15 +4,15 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from linkcv.application.resumes import service as resume_service
-from linkcv.core.config import Settings
-from linkcv.domain.resume_style import default_resume_style
-from linkcv.main import create_app
-from linkcv.modules.llm.dependencies import get_llm_service
-from linkcv.modules.llm.service import LLMError
-from linkcv.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
-from linkcv.modules.resumes.routes import resume_content_hash
-from linkcv.modules.resumes.schemas import (
+from linkresume.application.resumes import service as resume_service
+from linkresume.core.config import Settings
+from linkresume.domain.resume_style import default_resume_style
+from linkresume.main import create_app
+from linkresume.modules.llm.dependencies import get_llm_service
+from linkresume.modules.llm.service import LLMError
+from linkresume.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkresume.modules.resumes.routes import resume_content_hash
+from linkresume.modules.resumes.schemas import (
     SemanticClassificationModelResult,
     SemanticClassificationSuggestion,
 )
@@ -143,6 +143,53 @@ def set_headline(data: dict, value: str | None) -> dict:
         else None
     )
     return data
+
+
+def test_structured_font_sizes_survive_save_versions_and_template_switch() -> None:
+    app = build_app()
+    with app.state.session_factory() as session:
+        target_data, target_style = canonical_template_payload(key="font-target-cn")
+        target = ResumeTemplate(key="font-target-cn", name="字号测试模板", data_json=target_data, style_json=target_style, is_active=1)
+        session.add(target)
+        session.commit()
+        target_id = str(target.id)
+    with TestClient(app) as client:
+        register(client)
+        resume = add_unclassified_section(client, create_resume(client, app).json()["resume"])
+        data = set_headline(deepcopy(resume["data"]), "后端工程师")
+        data["identity"]["name"] = {"node_id": "node_styledname000001", "source_refs": [], "value": "张三"}
+        fields = [data["identity"]["name"], data["identity"]["headline"], data["sections"][0]["title"]]
+        for index, field in enumerate(fields):
+            field["runs"] = [
+                {"inline_type": "text", "text": field["value"][0], "marks": [], "href": None,
+                 "style": {"color": None, "font_size_pt": 18 + index, "highlight_color": None}},
+                {"inline_type": "text", "text": field["value"][1:], "marks": [], "href": None,
+                 "style": {"color": None, "font_size_pt": None, "highlight_color": None}},
+            ]
+        url = f"/api/resumes/{resume['id']}"
+        response = client.put(url, json={"data": data, "base_lock_version": resume["lock_version"]})
+        assert response.status_code == 200, response.text
+        saved = response.json()["resume"]
+        assert client.get(url).json()["resume"]["data"] == data
+        version = client.post(url + "/versions", json={"name": "局部字号版本"})
+        assert version.status_code == 201
+
+        invalid = deepcopy(data)
+        invalid["identity"]["name"]["runs"][0]["text"] = "李"
+        rejected = client.put(url, json={"data": invalid, "base_lock_version": saved["lock_version"]})
+        assert rejected.status_code == 400
+        assert rejected.json() == {"error": "INVALID_RESUME_DOCUMENT"}
+        assert client.get(url).json()["resume"]["data"] == data
+
+        changed = deepcopy(data)
+        changed["identity"]["name"].pop("runs")
+        assert client.put(url, json={"data": changed, "base_lock_version": saved["lock_version"]}).status_code == 200
+        restored = client.post(url + f"/versions/{version.json()['version']['version_no']}/restore")
+        assert restored.status_code == 200
+        assert restored.json()["resume"]["data"] == data
+        switched = client.post(url + "/apply-template", json={"template_id": target_id, "base_lock_version": restored.json()["resume"]["lock_version"]})
+        assert switched.status_code == 200
+        assert switched.json()["resume"]["data"] == data
 
 
 def test_blank_create_update_versions_and_restore() -> None:

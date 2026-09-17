@@ -6,7 +6,7 @@ const completeResume = `# 李明
 
 前端开发工程师，3 年 React 与 TypeScript 项目经验
 
-电话：13912345678 ｜ 邮箱：liming@linkcv.test
+电话：13912345678 ｜ 邮箱：liming@linkresume.test
 
 ## 工作经历
 
@@ -31,6 +31,18 @@ const completeResume = `# 李明
 3. Vitest 与组件测试`;
 
 describe("evaluateResumeCompleteness", () => {
+  it("单字或段落的字号与颜色不改变完整度评分", () => {
+    const styled = completeResume
+      .replace("# 李明", "# [[linkresume-block:node_aaaaaaaaaaaaaaaa:identity]][[linkresume-block:node_bbbbbbbbbbbbbbbb]]李明")
+      .replace("李明", "[[linkresume-size:24pt]]李[[/linkresume-size]]明")
+      .replace("13912345678", "139[[linkresume-size:12pt]]1234[[/linkresume-size]]5678")
+      .replace("专业技能", "专业[[linkresume-color:#3478f6]][[linkresume-size:18pt]]技[[/linkresume-size]][[/linkresume-color]]能")
+      .replace("liming@linkresume.test", "liming@[[linkresume-size:10.5pt]]linkresume[[/linkresume-size]].test");
+    expect(evaluateResumeCompleteness(styled)).toEqual(evaluateResumeCompleteness(completeResume));
+    const sample = defaultResumeMarkdown.replace("张三", "[[linkresume-block:node_aaaaaaaaaaaaaaaa]][[linkresume-size:24pt]]张[[/linkresume-size]]三");
+    expect(evaluateResumeCompleteness(sample)).toEqual(evaluateResumeCompleteness(defaultResumeMarkdown));
+  });
+
   it("为结构完整且没有示例占位符的简历计算 100 分", () => {
     const result = evaluateResumeCompleteness(completeResume);
 
@@ -83,7 +95,7 @@ describe("evaluateResumeCompleteness", () => {
       defaultResumeMarkdown
         .replace("# 张三", "# 李明")
         .replace("13800000000", "13912345678")
-        .replace("zhangsan@example.com", "liming@linkcv.test"),
+        .replace("zhangsan@example.com", "liming@linkresume.test"),
     );
 
     expect(result.rawScore).toBeGreaterThan(60);
@@ -94,7 +106,7 @@ describe("evaluateResumeCompleteness", () => {
   it("优先把教育经历识别为教育章节而不是普通经历", () => {
     const result = evaluateResumeCompleteness(`# 李明
 
-电话：13912345678 ｜ 邮箱：liming@linkcv.test
+电话：13912345678 ｜ 邮箱：liming@linkresume.test
 
 ## 教育经历
 

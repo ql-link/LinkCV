@@ -10,9 +10,12 @@ import {
   CircleAlert,
   Database,
   FileText,
+  FolderOpen,
   Menu,
   MessageCircleQuestion,
   MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Pin,
   Plus,
@@ -28,7 +31,9 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 
 import {
@@ -41,6 +46,7 @@ import {
 } from "../agent/AgentPanel";
 import {
   AgentClarification,
+  AgentActiveRun,
   AgentContextRef,
   AgentContextSnapshot,
   AgentContextType,
@@ -52,8 +58,11 @@ import {
   ApiRequestError,
   api,
 } from "../../api/client";
-import { Button, ConfirmDialog } from "@/components/ui";
-import { assistantPath, navigateTo } from "../../routing";
+import { Button, ConfirmDialog, FeedbackNotice } from "@/components/ui";
+import { assistantPath, navigateTo, rememberAssistantSession } from "../../routing";
+import { useResumeStore } from "../../store/resumeStore";
+import { DatasetsPage } from "../datasets/DatasetsPage";
+import { ResumeWorkbench } from "../workbench/ResumeWorkbench";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import "./assistant.css";
 
@@ -74,6 +83,13 @@ const PHASE_LABELS: Record<string, string> = {
 };
 
 const MESSAGE_FOLLOW_THRESHOLD = 96;
+const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 240;
+const ASSISTANT_SIDEBAR_MIN_WIDTH = 220;
+const ASSISTANT_SIDEBAR_MAX_WIDTH = 420;
+
+function clampAssistantSidebarWidth(width: number) {
+  return Math.min(ASSISTANT_SIDEBAR_MAX_WIDTH, Math.max(ASSISTANT_SIDEBAR_MIN_WIDTH, width));
+}
 
 type LocalMessage = AgentMessage & {
   temporary?: boolean;
@@ -200,6 +216,25 @@ function placeComposerCaret(element: HTMLElement, targetOffset: number) {
   selection.addRange(range);
 }
 
+function insertComposerPlainText(element: HTMLElement, text: string) {
+  const selection = window.getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  const insertionRange = range && element.contains(range.commonAncestorContainer)
+    ? range
+    : document.createRange();
+  if (!range || !element.contains(range.commonAncestorContainer)) {
+    insertionRange.selectNodeContents(element);
+    insertionRange.collapse(false);
+  }
+  insertionRange.deleteContents();
+  const textNode = document.createTextNode(text);
+  insertionRange.insertNode(textNode);
+  insertionRange.setStartAfter(textNode);
+  insertionRange.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(insertionRange);
+}
+
 type ConversationState = {
   session: AgentSession;
   messages: LocalMessage[];
@@ -211,6 +246,7 @@ type ConversationState = {
   stage: "idle" | "submitting" | "thinking" | "streaming" | "stopped" | "failed";
   runId: string | null;
   phase: string;
+  activityText: string;
   referencedContextCount: number;
   startedAt: number | null;
   detailsOpen: boolean;
@@ -249,6 +285,7 @@ function blankConversation(): ConversationState {
     stage: "idle",
     runId: null,
     phase: "正在准备…",
+    activityText: "",
     referencedContextCount: 0,
     startedAt: null,
     detailsOpen: false,
@@ -267,6 +304,10 @@ function sortSessions(items: AgentSession[]) {
     if (pinnedDifference !== 0) return pinnedDifference;
     return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
   });
+}
+
+function promoteSession(items: AgentSession[], session: AgentSession) {
+  return [session, ...items.filter((item) => item.id !== session.id)];
 }
 
 function contextKey(context: Pick<AgentContextRef, "type" | "id">) {
@@ -404,7 +445,6 @@ function safeAgentError(error: unknown) {
     AGENT_CONTEXT_NOT_FOUND: "所选资料已不可用，请重新选择。",
     AGENT_CONTEXT_STALE: "所选资料已发生变化，请刷新选择后重试。",
     AGENT_CONTEXT_READ_FAILED: "所选资料暂时无法读取，请稍后重试。",
-    AGENT_SESSION_RESUME_MISMATCH: "这个会话已经绑定另一份简历，请新建对话后继续。",
     AGENT_SESSION_NOT_FOUND: "对话不存在或已无法访问。",
     AGENT_UNAVAILABLE: "智能助手暂时不可用，草稿和已选资料不会丢失。",
     AGENT_MODEL_UNAVAILABLE: "当前模型暂时不可用，请稍后重试。",
@@ -443,18 +483,6 @@ function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]
   return partialAssistant.length > 0 ? [...persisted, ...partialAssistant] : persisted;
 }
 
-function conversationHeading(state: ConversationState, hasClarification: boolean) {
-  if (hasClarification) return ["还需要确认一点", "补充关键信息后，我会继续完成这次任务。"] as const;
-  if (state.proposals.some((proposal) => proposal.status === "applied")) return ["修改已完成", "已按你确认的提案更新简历，变更内容在右侧可查看。"] as const;
-  if (state.proposals.some((proposal) => proposal.status === "pending")) return ["修改提案待确认", "确认前不会写入简历，你可以先检查每一处改动。"] as const;
-  if (state.stage === "stopped") return ["生成已停止", "已保留当前内容，你可以继续上次的要求。"] as const;
-  if (state.stage === "failed") return ["本次生成未完成", "已保留当前内容和问题草稿，可以稍后重试。"] as const;
-  if (state.stage === "streaming") return ["正在生成回答", "内容会逐步出现，你可以随时停止。"] as const;
-  if (state.running && state.phase.includes("读取")) return ["提交并读取资料", "已提交问题，正在读取本轮选择的资料并建立回答上下文。"] as const;
-  if (state.running) return ["正在召回相关资料", "AI 正在根据当前问题检索资料，右上角会同步展示本轮命中的相关文件。"] as const;
-  return null;
-}
-
 type AssistantPageProps = {
   sessionId?: string;
 };
@@ -479,13 +507,23 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [contextDrafts, setContextDrafts] = useState<AgentContextSnapshot[]>([]);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [clarificationPage, setClarificationPage] = useState(0);
-  const [resumeMismatch, setResumeMismatch] = useState<AgentContextSnapshot | null>(null);
   const [clock, setClock] = useState(() => Date.now());
   const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [pendingDeleteSession, setPendingDeleteSession] = useState<AgentSession | null>(null);
   const [sessionActionBusyId, setSessionActionBusyId] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(ASSISTANT_SIDEBAR_DEFAULT_WIDTH);
+  const [sidebarResizing, setSidebarResizing] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [resumePickerOpen, setResumePickerOpen] = useState(false);
+  const [resumeListLoading, setResumeListLoading] = useState(false);
+  const [embeddedResumeId, setEmbeddedResumeId] = useState<string | null>(null);
+  const [resumeOpeningId, setResumeOpeningId] = useState<string | null>(null);
+  const [resumeOpenError, setResumeOpenError] = useState<string | null>(null);
+  const [datasetsOpen, setDatasetsOpen] = useState(false);
+  const [pinnedSessionsExpanded, setPinnedSessionsExpanded] = useState(true);
+  const [recentSessionsExpanded, setRecentSessionsExpanded] = useState(true);
   const [recallDrawerOpen, setRecallDrawerOpen] = useState(false);
   const [recallReferencesOpen, setRecallReferencesOpen] = useState(false);
   const [recallModificationsOpen, setRecallModificationsOpen] = useState(false);
@@ -500,11 +538,15 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     contexts: [] as AgentContextSnapshot[],
     invalidContextIds: [] as string[],
   }));
+  const resumes = useResumeStore((state) => state.resumes);
+  const listResumes = useResumeStore((state) => state.listResumes);
+  const loadResume = useResumeStore((state) => state.loadResume);
+  const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
   const streamRequestRef = useRef(0);
   const mentionRequestRef = useRef(0);
   const activeKeyRef = useRef(activeKey);
-  const conversationStatesRef = useRef(conversationStates);
   const abortRef = useRef<AbortController | null>(null);
+  const assistantShellRef = useRef<HTMLDivElement>(null);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const contextCloseButtonRef = useRef<HTMLButtonElement>(null);
   const modelSelectorRef = useRef<HTMLDivElement>(null);
@@ -515,12 +557,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const followMessagesRef = useRef(true);
   const isComposingRef = useRef(false);
   activeKeyRef.current = activeKey;
-  conversationStatesRef.current = conversationStates;
 
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
   const pendingClarification = pendingClarificationMessage(current.messages);
   const isEmptyConversation = current.messages.length === 0 && !current.running;
-  const conversationStateHeading = conversationHeading(current, Boolean(pendingClarification));
   const clarificationQuestions = pendingClarification?.clarification?.questions ?? [];
   const clarificationQuestion = clarificationQuestions[Math.min(clarificationPage, Math.max(0, clarificationQuestions.length - 1))];
   const latestUserMessage = [...current.messages].reverse().find((message) => message.role === "user");
@@ -563,6 +603,26 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     });
   }, []);
 
+  const syncComposerFromDom = (
+    editor: HTMLDivElement,
+    options: { restoreCaret: boolean; updateMention: boolean },
+  ) => {
+    const nextDraft = composerValue(editor);
+    const caret = composerCaretOffset(editor);
+    const retainedContextKeys = new Set(
+      Array.from(editor.querySelectorAll<HTMLElement>("[data-context-key]"))
+        .map((element) => element.dataset.contextKey)
+        .filter((key): key is string => Boolean(key)),
+    );
+    pendingComposerCaretRef.current = options.restoreCaret ? caret : null;
+    updateConversation(activeKey, (state) => ({
+      draft: nextDraft,
+      contexts: state.contexts.filter((context) => retainedContextKeys.has(contextKey(context))),
+      invalidContextIds: state.invalidContextIds.filter((id) => retainedContextKeys.has(id)),
+    }));
+    if (options.updateMention) setContextMention(contextMentionAt(nextDraft, caret));
+  };
+
   useEffect(() => {
     let cancelled = false;
     void api.listAgentSessions()
@@ -591,6 +651,18 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   }, []);
 
   useEffect(() => {
+    if (!sidebarResizing) return undefined;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [sidebarResizing]);
+
+  useEffect(() => {
     if (!sessionMenuId) return undefined;
     const closeMenu = (event: PointerEvent) => {
       const target = event.target;
@@ -607,6 +679,24 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       window.removeEventListener("keydown", closeMenuWithKeyboard);
     };
   }, [sessionMenuId]);
+
+  useEffect(() => {
+    if (!resumePickerOpen) return undefined;
+    const closePicker = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(".assistant-resume-picker-wrap")) return;
+      setResumePickerOpen(false);
+    };
+    const closePickerWithKeyboard = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setResumePickerOpen(false);
+    };
+    document.addEventListener("pointerdown", closePicker);
+    window.addEventListener("keydown", closePickerWithKeyboard);
+    return () => {
+      document.removeEventListener("pointerdown", closePicker);
+      window.removeEventListener("keydown", closePickerWithKeyboard);
+    };
+  }, [resumePickerOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -643,12 +733,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   }, [mobileMenuOpen]);
 
   useEffect(() => () => {
-    const key = activeKeyRef.current;
-    const runId = conversationStatesRef.current[key]?.runId;
     streamRequestRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
-    if (runId) void api.cancelAgentRun(runId).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -761,6 +848,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const elapsedSeconds = current.startedAt ? Math.max(0, Math.floor((clock - current.startedAt) / 1_000)) : 0;
   const detailsReady = current.running && current.stage !== "streaming" && elapsedSeconds >= 8;
+  const activityLines = current.activityText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const latestActivity = activityLines[activityLines.length - 1] ?? "";
+  const processDetailsReady = detailsReady || activityLines.length > 0;
   const runtimeModelLabel = runtimeModel?.name ?? (runtimeModelLoading ? "正在读取模型" : "模型不可用");
 
   const cancelCurrentRun = useCallback(async (key = activeKeyRef.current) => {
@@ -774,6 +864,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       running: false,
       cancelling: Boolean(runId),
       stage: "stopped",
+      activityText: "",
       runId: null,
       startedAt: null,
       error: null,
@@ -789,23 +880,26 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   }, [conversationStates, updateConversation]);
 
   const selectSession = async (sessionIdToSelect: string) => {
+    setDatasetsOpen(false);
     if (sessionIdToSelect === activeKeyRef.current) {
       setMobileMenuOpen(false);
       return;
     }
-    const previousKey = activeKeyRef.current;
+    streamRequestRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
     activeKeyRef.current = sessionIdToSelect;
-    await cancelCurrentRun(previousKey);
     setActiveKey(sessionIdToSelect);
     navigateTo(assistantPath(sessionIdToSelect));
     setMobileMenuOpen(false);
-    setResumeMismatch(null);
     updateConversation(sessionIdToSelect, { error: null });
     try {
-      const detail = await api.getAgentSession(sessionIdToSelect);
-      const proposalResult = detail.session.resume_id
-        ? await api.listAgentProposals(detail.session.resume_id, sessionIdToSelect)
-        : { proposals: [] };
+      const [activeRun, detail] = await Promise.all([
+        api.getActiveAgentRun(sessionIdToSelect).catch(() => ({ run: null })),
+        api.getAgentSession(sessionIdToSelect),
+      ]);
+      rememberAssistantSession(detail.session.id);
+      const proposalResult = await api.listAgentProposals(null, sessionIdToSelect);
       updateConversation(sessionIdToSelect, {
         session: detail.session,
         messages: detail.session.messages ?? [],
@@ -815,26 +909,36 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         clarificationAnswers: {},
         clarificationAttempted: false,
         error: null,
+        running: Boolean(activeRun.run),
+        cancelling: false,
+        stage: activeRun.run ? "thinking" : "idle",
+        runId: activeRun.run?.run_id ?? null,
+        startedAt: activeRun.run ? new Date(activeRun.run.started_at).getTime() : null,
+        phase: activeRun.run ? "AI 正在处理…" : "正在准备…",
+        activityText: "",
       });
-      setSessions((items) => [detail.session, ...items.filter((item) => item.id !== detail.session.id)]);
+      setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+      if (activeRun.run) reconnectToRun(sessionIdToSelect, activeRun.run);
     } catch (error) {
       updateConversation(sessionIdToSelect, { error: safeAgentError(error) });
     }
   };
 
   const createNewConversation = async () => {
+    rememberAssistantSession(null);
+    setDatasetsOpen(false);
     if (activeKeyRef.current === NEW_CONVERSATION_KEY) {
       setMobileMenuOpen(false);
       navigateTo(assistantPath());
       window.setTimeout(() => inputRef.current?.focus(), 0);
       return;
     }
-    const previousKey = activeKeyRef.current;
+    streamRequestRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
     activeKeyRef.current = NEW_CONVERSATION_KEY;
-    await cancelCurrentRun(previousKey);
     setActiveKey(NEW_CONVERSATION_KEY);
     navigateTo(assistantPath());
-    setResumeMismatch(null);
     setMobileMenuOpen(false);
     updateConversation(NEW_CONVERSATION_KEY, {
       ...blankConversation(),
@@ -881,21 +985,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   };
 
   const toggleContextDraft = (context: AgentContextSnapshot) => {
-    const boundResumeId = current.session.resume_id;
-    const contextResumeId = resumeIdForContext(context);
-    if (boundResumeId && contextResumeId && boundResumeId !== contextResumeId) {
-      setResumeMismatch(context);
-      closeContextPicker();
-      updateConversation(activeKey, { error: "这个会话已经绑定另一份简历，请新建对话后继续。" });
-      return;
-    }
     setContextDrafts((items) => {
       if (items.some((item) => contextKey(item) === contextKey(context))) {
         return items.filter((item) => contextKey(item) !== contextKey(context));
       }
       return [...items.filter((item) => item.type !== context.type), context];
     });
-    setResumeMismatch(null);
   };
 
   const confirmContextDrafts = () => {
@@ -918,14 +1013,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const selectMentionContext = (context: AgentContextSnapshot) => {
     if (!contextMention) return;
-    const boundResumeId = current.session.resume_id;
-    const contextResumeId = resumeIdForContext(context);
-    if (boundResumeId && contextResumeId && boundResumeId !== contextResumeId) {
-      setResumeMismatch(context);
-      setContextMention(null);
-      updateConversation(activeKey, { error: "这个会话已经绑定另一份简历，请新建对话后继续。" });
-      return;
-    }
     const nextCaret = contextMention.start + context.label.length + 2;
     const contexts = [...current.contexts.filter((item) => item.type !== context.type), context].slice(0, 10);
     const invalidContextIds = current.invalidContextIds.filter((id) => contexts.some((item) => contextKey(item) === id));
@@ -933,7 +1020,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     pendingComposerCaretRef.current = nextCaret;
     refreshComposerView(draft, contexts, invalidContextIds);
     updateConversation(activeKey, { contexts, invalidContextIds, draft, error: null });
-    setResumeMismatch(null);
     setContextMention(null);
     window.setTimeout(() => {
       if (!inputRef.current) return;
@@ -958,6 +1044,18 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       });
       return;
     }
+    if (event.type === "assistant.activity.delta") {
+      updateConversation(key, (state) => ({
+        activityText: state.activityText + event.delta,
+        stage: "thinking",
+        error: null,
+      }));
+      return;
+    }
+    if (event.type === "assistant.activity.clear") {
+      updateConversation(key, { activityText: "", detailsOpen: false });
+      return;
+    }
     if (event.type === "assistant.delta") {
       updateConversation(key, (state) => {
         const messages = [...state.messages];
@@ -977,7 +1075,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             status: "streaming",
           });
         }
-        return { messages, stage: "streaming", error: null };
+        return { messages, stage: "streaming", activityText: "", detailsOpen: false, error: null };
       });
       return;
     }
@@ -996,6 +1094,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           },
         ],
         stage: "thinking",
+        activityText: "",
         error: null,
         clarificationAnswers: {},
         clarificationAttempted: false,
@@ -1013,6 +1112,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       updateConversation(key, (state) => ({
         error: safeAgentError(new ApiRequestError(502, event.error)),
         stage: "failed",
+        activityText: "",
         messages: state.messages.map((message, index, messages) => (
           index === messages.length - 1 && message.role === "assistant" && message.temporary
             ? { ...message, status: "failed" as const }
@@ -1025,6 +1125,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       updateConversation(key, (state) => ({
         running: false,
         stage: "stopped",
+        activityText: "",
         runId: null,
         startedAt: null,
         messages: state.messages.map((message, index, messages) => (
@@ -1036,10 +1137,61 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     }
   };
 
+  const reconnectToRun = (key: string, run: AgentActiveRun) => {
+    const requestNumber = streamRequestRef.current + 1;
+    streamRequestRef.current = requestNumber;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    updateConversation(key, (state) => ({
+      running: true,
+      cancelling: false,
+      stage: "thinking",
+      activityText: "",
+      runId: run.run_id,
+      startedAt: new Date(run.started_at).getTime(),
+      error: null,
+      messages: state.messages.filter((message) => !message.temporary),
+    }));
+    void api.streamAgentRun(
+      run.run_id,
+      controller.signal,
+      (event) => handleEvent(key, requestNumber, event),
+    ).then(async () => {
+      if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
+      const detail = await api.getAgentSession(key);
+      const proposalResult = await api.listAgentProposals(null, key).catch(() => ({ proposals: [] }));
+      if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
+      updateConversation(key, (latest) => ({
+        session: detail.session,
+        messages: mergeSessionMessages(detail.session.messages ?? [], latest.messages),
+        proposals: proposalResult.proposals.length > 0 ? proposalResult.proposals : latest.proposals,
+        running: false,
+        stage: latest.stage === "failed" || latest.stage === "stopped" ? latest.stage : "idle",
+        runId: null,
+        startedAt: null,
+        ...(latest.stage === "failed" || latest.stage === "stopped" ? {} : {
+          contexts: [],
+          invalidContextIds: [],
+        }),
+      }));
+      setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+    }).catch((error) => {
+      if (controller.signal.aborted || streamRequestRef.current !== requestNumber) return;
+      updateConversation(key, {
+        error: safeAgentError(error),
+        running: false,
+        stage: "failed",
+        runId: null,
+        startedAt: null,
+      });
+    }).finally(() => {
+      if (abortRef.current === controller) abortRef.current = null;
+    });
+  };
+
   const ensureSession = async (state: ConversationState) => {
     if (state.session.id !== NEW_CONVERSATION_KEY) return state.session;
-    const requestedResumeId = state.contexts.map(resumeIdForContext).find((value): value is string => Boolean(value));
-    const result = await api.createAgentSession(requestedResumeId ?? null);
+    const result = await api.createAgentSession();
     const newState = { ...state, session: result.session };
     setConversationStates((states) => {
       const next = { ...states, [result.session.id]: newState };
@@ -1047,7 +1199,8 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       return next;
     });
     activeKeyRef.current = result.session.id;
-    setSessions((items) => [result.session, ...items.filter((item) => item.id !== result.session.id)]);
+    rememberAssistantSession(result.session.id);
+    setSessions((items) => promoteSession(items, result.session));
     setActiveKey(result.session.id);
     navigateTo(assistantPath(result.session.id), { replace: true });
     return result.session;
@@ -1059,13 +1212,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     const state = conversationStates[key] ?? blankConversation();
     const statePendingClarification = pendingClarificationMessage(state.messages);
     if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) return;
-    const boundResumeId = state.session.resume_id;
-    const requestedResumeId = state.contexts.map(resumeIdForContext).find((value): value is string => Boolean(value));
-    if (boundResumeId && requestedResumeId && boundResumeId !== requestedResumeId) {
-      updateConversation(key, { error: "这个会话已经绑定另一份简历，请新建对话后继续。" });
-      return;
-    }
-
     let session: AgentSession;
     try {
       session = await ensureSession(state);
@@ -1074,6 +1220,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       return;
     }
     const requestKey = session.id;
+    setSessions((items) => promoteSession(items, session));
     const requestNumber = streamRequestRef.current + 1;
     streamRequestRef.current = requestNumber;
     const controller = new AbortController();
@@ -1102,6 +1249,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       stage: "submitting",
       runId: null,
       phase: sentContexts.length > 0 ? "正在读取所选资料…" : "正在准备…",
+      activityText: "",
       referencedContextCount: sentContexts.length,
       startedAt: Date.now(),
       detailsOpen: false,
@@ -1130,9 +1278,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       );
       if (streamRequestRef.current !== requestNumber) return;
       const detail = await api.getAgentSession(session.id);
-      const proposalResult = detail.session.resume_id
-        ? await api.listAgentProposals(detail.session.resume_id, session.id).catch(() => ({ proposals: [] }))
-        : { proposals: [] };
+      const proposalResult = await api.listAgentProposals(null, session.id).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber) return;
       updateConversation(requestKey, (latest) => {
         const messages = mergeSessionMessages(detail.session.messages, latest.messages);
@@ -1293,13 +1439,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     }
   };
 
-  const openNewConversationWithContext = async () => {
-    const context = resumeMismatch;
-    await createNewConversation();
-    if (context) updateConversation(NEW_CONVERSATION_KEY, { contexts: [context] });
-    setResumeMismatch(null);
-  };
-
   const replaceSession = (updatedSession: AgentSession) => {
     setSessions((items) => sortSessions([
       updatedSession,
@@ -1360,6 +1499,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       });
       setPendingDeleteSession(null);
       if (activeKeyRef.current === session.id) {
+        rememberAssistantSession(null);
         activeKeyRef.current = NEW_CONVERSATION_KEY;
         setActiveKey(NEW_CONVERSATION_KEY);
         updateConversation(NEW_CONVERSATION_KEY, {
@@ -1377,6 +1517,28 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const pinnedSessions = sessions.filter((session) => Boolean(session.pinned));
   const recentSessions = sessions.filter((session) => !session.pinned);
+  const resizeSidebar = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidebarResizing || !assistantShellRef.current) return;
+    const shellLeft = assistantShellRef.current.getBoundingClientRect().left;
+    setSidebarWidth(clampAssistantSidebarWidth(event.clientX - shellLeft));
+  };
+  const finishSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!sidebarResizing) return;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setSidebarResizing(false);
+  };
+  const resizeSidebarWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    let nextWidth: number | null = null;
+    if (event.key === "ArrowLeft") nextWidth = sidebarWidth - 10;
+    if (event.key === "ArrowRight") nextWidth = sidebarWidth + 10;
+    if (event.key === "Home") nextWidth = ASSISTANT_SIDEBAR_MIN_WIDTH;
+    if (event.key === "End") nextWidth = ASSISTANT_SIDEBAR_MAX_WIDTH;
+    if (nextWidth === null) return;
+    event.preventDefault();
+    setSidebarWidth(clampAssistantSidebarWidth(nextWidth));
+  };
   const renderSessionItem = (session: AgentSession, index: number) => {
     const isActive = session.id === activeKey;
     const isRenaming = renamingSessionId === session.id;
@@ -1473,9 +1635,24 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           <X size={18} />
         </button>
       </div>
-      <Button variant="outline" className="assistant-new-button" onClick={() => void createNewConversation()}>
+      <button type="button" className="assistant-new-button" onClick={() => void createNewConversation()}>
         <Plus size={16} aria-hidden="true" />新建对话
-      </Button>
+      </button>
+      <nav className="assistant-sidebar-shortcuts" aria-label="助手快捷入口">
+        <button
+          type="button"
+          className={`assistant-sidebar-shortcut${datasetsOpen ? " is-active" : ""}`}
+          aria-pressed={datasetsOpen}
+          onClick={() => {
+            setDatasetsOpen((open) => !open);
+            setResumePickerOpen(false);
+            setMobileMenuOpen(false);
+          }}
+        >
+          <FolderOpen size={16} aria-hidden="true" />
+          <span>资料库</span>
+        </button>
+      </nav>
       {(sessionsLoading || sessionsError || sessions.length === 0) && (
         <div className="assistant-sidebar-section-title">最近对话</div>
       )}
@@ -1496,24 +1673,179 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         <div className="assistant-session-list">
           {pinnedSessions.length > 0 && (
             <section className="assistant-session-group" aria-label="Pinned">
-              <div className="assistant-sidebar-section-title">Pinned</div>
-              {pinnedSessions.map((session, index) => renderSessionItem(session, index))}
+              <div className="assistant-sidebar-section-heading">
+                <span className="assistant-sidebar-section-title">Pinned</span>
+                <button
+                  type="button"
+                  className="assistant-session-group-toggle"
+                  aria-label={`${pinnedSessionsExpanded ? "收起" : "展开"} Pinned`}
+                  aria-expanded={pinnedSessionsExpanded}
+                  aria-controls="assistant-pinned-sessions"
+                  onClick={() => {
+                    setSessionMenuId(null);
+                    setPinnedSessionsExpanded((expanded) => !expanded);
+                  }}
+                >
+                  {pinnedSessionsExpanded
+                    ? <ChevronUp size={16} aria-hidden="true" />
+                    : <ChevronDown size={16} aria-hidden="true" />}
+                </button>
+              </div>
+              <div id="assistant-pinned-sessions" className="assistant-session-group-items" hidden={!pinnedSessionsExpanded}>
+                {pinnedSessions.map((session, index) => renderSessionItem(session, index))}
+              </div>
             </section>
           )}
           <section className="assistant-session-group" aria-label="最近对话">
-            <div className="assistant-sidebar-section-title">最近对话</div>
-            {recentSessions.map((session, index) => renderSessionItem(session, pinnedSessions.length + index))}
+            <div className="assistant-sidebar-section-heading">
+              <span className="assistant-sidebar-section-title">最近对话</span>
+              <button
+                type="button"
+                className="assistant-session-group-toggle"
+                aria-label={`${recentSessionsExpanded ? "收起" : "展开"}最近对话`}
+                aria-expanded={recentSessionsExpanded}
+                aria-controls="assistant-recent-sessions"
+                onClick={() => {
+                  setSessionMenuId(null);
+                  setRecentSessionsExpanded((expanded) => !expanded);
+                }}
+              >
+                {recentSessionsExpanded
+                  ? <ChevronUp size={16} aria-hidden="true" />
+                  : <ChevronDown size={16} aria-hidden="true" />}
+              </button>
+            </div>
+            <div id="assistant-recent-sessions" className="assistant-session-group-items" hidden={!recentSessionsExpanded}>
+              {recentSessions.map((session, index) => renderSessionItem(session, pinnedSessions.length + index))}
+            </div>
           </section>
         </div>
       )}
     </aside>
   );
 
+  const toggleResumePicker = () => {
+    const opening = !resumePickerOpen;
+    setResumePickerOpen(opening);
+    setResumeOpenError(null);
+    if (opening) {
+      setResumeListLoading(true);
+      void listResumes()
+        .catch(() => setResumeOpenError("简历列表暂时无法读取，请稍后重试。"))
+        .finally(() => setResumeListLoading(false));
+    }
+  };
+
+  const openEmbeddedResume = async (resumeId: string) => {
+    if (resumeOpeningId) return;
+    setResumeOpeningId(resumeId);
+    setResumeOpenError(null);
+    try {
+      if (embeddedResumeId && embeddedResumeId !== resumeId) {
+        await saveCurrentResume();
+        if (useResumeStore.getState().saveStatus === "error") {
+          setResumeOpenError("当前简历尚未保存，暂时不能切换。请稍后重试。");
+          return;
+        }
+      }
+      await loadResume(resumeId);
+      setEmbeddedResumeId(resumeId);
+      setDatasetsOpen(false);
+      setSidebarCollapsed(true);
+      setResumePickerOpen(false);
+    } catch {
+      setResumeOpenError("这份简历暂时无法打开，请稍后重试。");
+    } finally {
+      setResumeOpeningId(null);
+    }
+  };
+
+  const closeEmbeddedResume = () => {
+    setEmbeddedResumeId(null);
+    setSidebarCollapsed(false);
+  };
+
   return (
-    <main className="assistant-page">
-      <div className="assistant-shell">
-        {sidebar}
+    <main className={`assistant-page${embeddedResumeId ? " is-resume-open" : ""}`}>
+      <div
+        ref={assistantShellRef}
+        className={`assistant-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${embeddedResumeId ? " is-resume-open" : ""}`}
+        style={{ "--assistant-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
+        {!sidebarCollapsed && sidebar}
+        {!sidebarCollapsed && <div
+          className={`assistant-sidebar-resizer${sidebarResizing ? " is-resizing" : ""}`}
+          role="separator"
+          aria-label="调整最近对话栏宽度"
+          aria-orientation="vertical"
+          aria-valuemin={ASSISTANT_SIDEBAR_MIN_WIDTH}
+          aria-valuemax={ASSISTANT_SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          aria-valuetext={`${sidebarWidth} 像素`}
+          tabIndex={0}
+          onKeyDown={resizeSidebarWithKeyboard}
+          onPointerDown={(event) => {
+            if (event.pointerType === "mouse" && event.button !== 0) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            setSidebarResizing(true);
+          }}
+          onPointerMove={resizeSidebar}
+          onPointerUp={finishSidebarResize}
+          onPointerCancel={finishSidebarResize}
+          onLostPointerCapture={() => setSidebarResizing(false)}
+        />}
+        <button
+          type="button"
+          className="assistant-sidebar-visibility-toggle"
+          aria-label={sidebarCollapsed ? "展开会话侧栏" : "收起会话侧栏"}
+          aria-expanded={!sidebarCollapsed}
+          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
+        </button>
+
+        <div className="assistant-main-area">
+        {datasetsOpen && !embeddedResumeId ? (
+          <DatasetsPage embedded />
+        ) : (
         <section className={`assistant-conversation${isEmptyConversation ? " is-empty" : ""}`} aria-label="AI 求职助手工作区">
+          <div className="assistant-workspace-actions">
+            <div className="assistant-resume-picker-wrap">
+              <button
+                type="button"
+                className="assistant-workspace-pill"
+                aria-haspopup="dialog"
+                aria-expanded={resumePickerOpen}
+                onClick={toggleResumePicker}
+              >
+                <FileText size={15} aria-hidden="true" />
+                我的简历
+              </button>
+              {resumePickerOpen && (
+                <section className="assistant-resume-picker" role="dialog" aria-label="选择我的简历">
+                  <header>我的简历</header>
+                  {resumeOpenError && <p className="assistant-resume-picker-error" role="alert">{resumeOpenError}</p>}
+                  {!resumeOpenError && resumeListLoading && resumes.length === 0 && <p className="assistant-resume-picker-empty">正在读取简历…</p>}
+                  {!resumeOpenError && !resumeListLoading && resumes.length === 0 && <p className="assistant-resume-picker-empty">暂无可用简历</p>}
+                  {resumes.map((resume) => (
+                    <button
+                      type="button"
+                      key={resume.id}
+                      disabled={resumeOpeningId !== null}
+                      onClick={() => void openEmbeddedResume(resume.id)}
+                    >
+                      <FileText size={17} aria-hidden="true" />
+                      <span>
+                        <strong>{resume.title}</strong>
+                        <small>{resumeOpeningId === resume.id ? "正在打开…" : `更新于 ${new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(resume.updated_at))}`}</small>
+                      </span>
+                    </button>
+                  ))}
+                </section>
+              )}
+            </div>
+          </div>
           <header className="assistant-mobile-toolbar">
             <button
               type="button"
@@ -1544,12 +1876,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             onScroll={handleMessageViewportScroll}
             aria-live={current.running ? "off" : "polite"}
           >
-            {!isEmptyConversation && conversationStateHeading && (
-              <header className="assistant-state-header">
-                <h1>{conversationStateHeading[0]}</h1>
-                <p>{conversationStateHeading[1]}</p>
-              </header>
-            )}
             {isEmptyConversation && (
               <section className="assistant-empty-state" aria-label="开始使用 AI 求职助手">
                 <img className="assistant-empty-feather" src={assistantFeather} alt="" />
@@ -1594,16 +1920,18 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                   <strong>{current.phase || "AI 正在处理…"}</strong>
                   <span>{elapsedSeconds} 秒</span>
                 </div>
-                {detailsReady && (
+                {latestActivity && <p className="assistant-thinking-latest">{latestActivity}</p>}
+                {processDetailsReady && (
                   <>
                     <button type="button" className="assistant-thinking-details-toggle" onClick={() => updateConversation(activeKey, { detailsOpen: !current.detailsOpen })}>
-                      {current.detailsOpen ? "收起详情" : "查看详情"}
+                      {current.detailsOpen ? "收起过程" : "查看过程"}
                       {current.detailsOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                     </button>
                     {current.detailsOpen && (
                       <div className="assistant-thinking-details">
                         <div><Check size={16} aria-hidden="true" /><strong>已读取 {current.referencedContextCount} 项资料</strong></div>
                         {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.label}</span>)}
+                        {current.activityText.trim() && <p className="assistant-thinking-activity">{current.activityText.trim()}</p>}
                         <div className="assistant-thinking-current"><Target size={16} aria-hidden="true" /><span>{PHASE_LABELS.comparing_context === current.phase ? current.phase : "AI 正在处理…"}</span></div>
                       </div>
                     )}
@@ -1707,14 +2035,16 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             </div>
           )}
 
-          {resumeMismatch && (
-            <div className="assistant-mismatch-notice" role="alert">
-              <CircleAlert size={17} aria-hidden="true" />
-              <span>已绑定简历的对话不能切换目标简历。</span>
-              <button type="button" onClick={() => void openNewConversationWithContext()}>新建对话使用此简历</button>
-            </div>
+          {current.error && (
+            <FeedbackNotice
+              kind="error"
+              placement="floating"
+              title="本次请求未完成"
+              onDismiss={() => updateConversation(activeKey, { error: null })}
+            >
+              {current.error}
+            </FeedbackNotice>
           )}
-          {current.error && <div className="assistant-error-notice" role="alert"><CircleAlert size={17} aria-hidden="true" />{current.error}</div>}
 
           <form className="assistant-composer" onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
             {pendingClarification?.clarification && (
@@ -1847,7 +2177,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
               </div>
             </div>
             <div className="assistant-input-shell">
-              {!isEmptyConversation && <button type="button" className="assistant-input-add" aria-label="添加资料" onClick={openContextPicker}><Plus size={20} /></button>}
               {contextMention && (
                 <div ref={mentionMenuRef} id="assistant-context-mention-list" className="assistant-context-mention-menu" role="listbox" aria-label="可引用的资料和简历">
                   <header>
@@ -1902,25 +2231,35 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 contentEditable={!(current.running || current.cancelling || Boolean(pendingClarification))}
                 suppressContentEditableWarning
                 onInput={(event) => {
-                  const editor = event.currentTarget;
-                  const nextDraft = composerValue(editor);
-                  const caret = composerCaretOffset(editor);
-                  const retainedContextKeys = new Set(
-                    Array.from(editor.querySelectorAll<HTMLElement>("[data-context-key]"))
-                      .map((element) => element.dataset.contextKey)
-                      .filter((key): key is string => Boolean(key)),
+                  const composing = (event.nativeEvent as InputEvent).isComposing || isComposingRef.current;
+                  syncComposerFromDom(event.currentTarget, {
+                    restoreCaret: !composing,
+                    updateMention: !composing,
+                  });
+                }}
+                onPaste={(event) => {
+                  event.preventDefault();
+                  insertComposerPlainText(
+                    event.currentTarget,
+                    event.clipboardData.getData("text/plain"),
                   );
-                  pendingComposerCaretRef.current = caret;
-                  updateConversation(activeKey, (state) => ({
-                    draft: nextDraft,
-                    contexts: state.contexts.filter((context) => retainedContextKeys.has(contextKey(context))),
-                    invalidContextIds: state.invalidContextIds.filter((id) => retainedContextKeys.has(id)),
-                  }));
-                  setContextMention(contextMentionAt(nextDraft, caret));
+                  syncComposerFromDom(event.currentTarget, {
+                    restoreCaret: true,
+                    updateMention: true,
+                  });
                 }}
                 onKeyDown={handleInputKeyDown}
-                onCompositionStart={() => { isComposingRef.current = true; }}
-                onCompositionEnd={() => { isComposingRef.current = false; }}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                  pendingComposerCaretRef.current = null;
+                }}
+                onCompositionEnd={(event) => {
+                  isComposingRef.current = false;
+                  syncComposerFromDom(event.currentTarget, {
+                    restoreCaret: true,
+                    updateMention: true,
+                  });
+                }}
               >
                 {composerSegments(composerView.draft, composerView.contexts).map((segment) => segment.kind === "text" ? segment.text : (
                   <span
@@ -1957,6 +2296,14 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             </div>
           </form>
         </section>
+        )}
+
+        {embeddedResumeId && (
+          <section className="assistant-resume-pane" aria-label="简历编辑区">
+            <ResumeWorkbench embedded onClose={closeEmbeddedResume} />
+          </section>
+        )}
+        </div>
       </div>
 
       {mobileMenuOpen && (

@@ -1,6 +1,6 @@
-# LinkCV 项目文档
+# LinkResume 项目文档
 
-`docs/` 保存 LinkCV 当前已经实现的长期项目知识，供开发者、运维人员和 AI 按需调阅。代码与运行配置是事实源；文档负责解释模块职责、调用关系和稳定契约。
+`docs/` 保存 LinkResume 当前已经实现的长期项目知识，供开发者、运维人员和 AI 按需调阅。代码与运行配置是事实源；文档负责解释模块职责、调用关系和稳定契约。
 
 临时需求与交付产物不放在这里：方案文档、Acceptance、实施报告和人工验收记录属于 [`.specs/`](../.specs/README.md)。尚未实现的计划不得写成当前项目事实。
 
@@ -19,6 +19,7 @@
 | 了解 third_party/pi 引入方式与对接约束 | [internals/third-party-pi.md](internals/third-party-pi.md) |
 | 对接或修改 HTTP API | [api/http-contracts.md](api/http-contracts.md) |
 | 配置本地开发环境 | [ops/development.md](ops/development.md) |
+| 人工验收 AI 助手与简历流程 | [ops/assistant-resume-manual-testing.md](ops/assistant-resume-manual-testing.md) |
 | 创建业务分支并完成 Dev 交付 | [ops/development.md#分支与发布流程](ops/development.md#分支与发布流程) |
 | 编写或运行应用测试 | [ops/development.md#测试分层](ops/development.md#测试分层) |
 | 理解当前构建与部署拓扑 | [ops/deployment.md](ops/deployment.md) |
