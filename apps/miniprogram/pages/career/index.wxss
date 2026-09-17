@@ -81,6 +81,31 @@
   padding: 8px 20px 12px;
   animation: career-tab-in-from-left 240ms cubic-bezier(.22, 1, .36, 1);
 }
+/* 未登录的整页提示不再套白色卡片：沿用简历页 .state-card 的写法——居中、无底色、
+   无边框圆角，直接在页面底色上排版。guest 时不论停在哪个 tab 都要撑满可用高度，
+   否则切到求职记录那一栏就退回顶部。 */
+.guest-body {
+  display: flex;
+  flex-direction: column;
+}
+.state-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  box-sizing: border-box;
+  background: transparent;
+  text-align: center;
+}
+.state-card .hint {
+  max-width: 260px;
+  margin-top: 8px;
+}
+.state-card .primary {
+  margin-top: 16px;
+}
 .schedule-panel {
   flex: 1;
   display: flex;
