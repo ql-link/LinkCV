@@ -7,12 +7,22 @@
   <block wx:elif="{{app}}"
     ><block wx:if="{{kind === 'job'}}">
       <view class="panel job-hero"
-        ><text class="subtitle">{{app.company_name_snapshot}}</text
-        ><text class="title">{{app.job_title_snapshot}}</text
-        ><text class="salary" wx:if="{{job.salary}}">{{job.salary}}</text
-        ><text class="subtitle"
-          >{{job.city}}{{job.city ? ' · ' : ''}}{{job.employment}}</text
-        ><text class="hint">本次求职保存的岗位内容 · 仅供查看</text></view
+        ><view class="hero-head"
+          ><company-logo
+            name="{{app.company_name_snapshot}}"
+            logo="{{app.company_logo_url}}"
+            color="{{app.calendar_color}}"
+            size="{{56}}"
+          /><view class="hero-copy"
+            ><text class="subtitle">{{app.company_name_snapshot}}</text
+            ><text class="title">{{app.job_title_snapshot}}</text></view
+          ></view
+        ><view class="hero-rule" aria-hidden="true" /><view class="hero-facts"
+          ><text class="salary" wx:if="{{job.salary}}">{{job.salary}}</text
+          ><text class="subtitle"
+            >{{job.city}}{{job.city ? ' · ' : ''}}{{job.employment}}</text
+          ><text class="hint">本次求职保存的岗位内容 · 仅供查看</text></view
+        ></view
       >
       <view class="panel" wx:if="{{job.description}}"
         ><text class="heading">职位描述</text

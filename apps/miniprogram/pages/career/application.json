@@ -3,6 +3,7 @@
   "usingComponents": {
     "career-icon": "/components/career-icon/index",
     "career-tabs": "/custom-tab-bar/index",
+    "company-logo": "/components/company-logo/index",
     "session-sheet": "/components/session-sheet/index"
   },
   "navigationStyle": "custom"

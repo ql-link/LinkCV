@@ -108,7 +108,6 @@
 }
 
 .record-editor {
-  background: #fff;
   min-height: 100vh;
   box-sizing: border-box;
   padding: 12px 20px calc(108px + env(safe-area-inset-bottom));
@@ -116,26 +115,41 @@
 .editor-identity {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 16px;
   margin-bottom: 16px;
-  background: #f9fafb;
-  border-radius: 12px;
+  background: #fff;
+  border-radius: 14px;
   overflow-wrap: anywhere;
 }
+.editor-identity .identity-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.editor-identity .identity-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.editor-identity .identity-rule { height: 1px; background: #dbe0e8; }
 .editor-identity .heading {
   font-size: 20px;
   line-height: 28px;
 }
 .editor-identity .subtitle {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 20px;
 }
 .editor-identity .hint { font-size: 13px; line-height: 18px; }
 .record-editor .editor-fields {
-  padding: 0;
+  padding: 16px;
   margin-bottom: 16px;
-  background: transparent;
+  background: #fff;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   gap: 16px;
