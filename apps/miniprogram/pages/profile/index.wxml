@@ -16,9 +16,6 @@
             <image class="avatar-img" wx:if="{{localAvatarPath}}" src="{{localAvatarPath}}" mode="aspectFill"></image>
             <view class="avatar-text" wx:else>{{nickname ? nickname[0] : '客'}}</view>
           </button>
-          <view class="avatar-edit-badge" aria-hidden="true">
-            <text class="edit-badge-icon">✎</text>
-          </view>
         </block>
       </view>
 
