@@ -102,6 +102,9 @@
   text-align: center;
 }
 .state-card .primary {
+  /* 标题“登录后查看求职进展”在 20px 下正好 180px 宽，按钮比它再窄就会被标题夹住；
+     200px 比标题略宽一圈，同时不再像满宽那样横贯整页。 */
+  width: 200px;
   margin-top: 16px;
 }
 .schedule-panel {
