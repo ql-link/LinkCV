@@ -1521,6 +1521,27 @@ select:not([data-slot]):focus-visible {
   padding-right: 8px;
 }
 
+.workbench-history-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.workbench-history-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: var(--ui-text-secondary);
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+.workbench-history-button:hover:not(:disabled) { color: var(--ui-foreground); }
+.workbench-history-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
+.workbench-history-button:disabled { cursor: default; opacity: 0.3; }
+
 .workbench-output-actions { gap: 10px; }
 
 .workbench-template-state-dialog { width: min(420px, calc(100vw - 32px)); }
@@ -1696,6 +1717,11 @@ select:not([data-slot]):focus-visible {
   width: max-content;
   zoom: var(--selection-toolbar-scale, 1);
 }
+/* 不支持 CSS zoom 的浏览器改用 transform，保证弹窗跟随画布缩放。 */
+.selection-toolbar-bubble-scale.is-scale-fallback {
+  transform: scale(var(--selection-toolbar-scale, 1));
+  transform-origin: top left;
+}
 
 .workbench-tool-button { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border: 0; border-radius: var(--ui-radius-sm); background: transparent; color: var(--ui-text-secondary); cursor: pointer; font-size: 0.75rem; }
 .workbench-tool-button:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
@@ -1708,19 +1734,6 @@ select:not([data-slot]):focus-visible {
 .selection-formatting-toolbar .selection-font-size-control .workbench-tool-button { width: 28px; flex-basis: 28px; }
 .selection-font-size-arrows { display: flex; flex-direction: column; }
 .selection-formatting-toolbar .selection-font-size-arrows .workbench-tool-button { height: 17px; flex-basis: 17px; border-radius: var(--ui-radius-xs); padding: 0; }
-.workbench-toolbar-divider { width: 1px; height: 20px; flex: 0 0 1px; margin: 0 6px; background: var(--ui-border); }
-.selection-agent-trigger { display: inline-flex; height: 34px; align-items: center; gap: 6px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 0 9px; color: var(--ui-accent); cursor: pointer; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
-.selection-agent-trigger:hover,
-.selection-agent-trigger.is-open { background: var(--ui-accent-subtle); }
-.selection-agent-trigger:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
-.selection-agent-menu { right: 0; left: auto; width: 344px; align-items: stretch; flex-direction: column; gap: 10px; transform-origin: bottom right; padding: 12px; }
-.selection-agent-menu-head { display: grid; gap: 3px; padding: 1px 2px; }
-.selection-agent-menu-head > span { display: inline-flex; align-items: center; gap: 6px; color: var(--ui-foreground); font-size: 0.75rem; font-weight: 700; }
-.selection-agent-menu-head > span svg { color: var(--ui-template-accent); }
-.selection-agent-menu-head small { color: var(--ui-text-muted); font-size: 0.6875rem; }
-.selection-agent-menu > div[role="menu"] { display: flex; flex-wrap: wrap; gap: 6px; }
-.selection-agent-menu button[role="menuitem"] { height: 30px; border: 1px solid var(--ui-border); border-radius: 999px; background: var(--ui-surface); padding: 0 10px; color: var(--ui-text-secondary); cursor: pointer; font-size: 0.71875rem; }
-.selection-agent-menu button[role="menuitem"]:hover { border-color: color-mix(in srgb, var(--ui-template-accent) 35%, var(--ui-border)); background: color-mix(in srgb, var(--ui-template-accent) 7%, var(--ui-surface)); color: var(--ui-template-accent); }
 .workbench-popover-anchor { position: relative; display: flex; flex: 0 0 auto; }
 .workbench-popover {
   position: absolute;
@@ -2055,11 +2068,14 @@ select:not([data-slot]):focus-visible {
   padding-left: 0;
   text-align: left;
 }
-/* 3/4 栏等分时始终显示分栏分隔线，让每栏边界可见 */
+/* 分隔线只在光标位于该行时出现，平时保持纸面干净；内边距恒定，避免选中时刻文字跳动 */
 .resume-layout-row.is-equal [data-node-view-content-react] > p + p,
 .resume-layout-row.is-equal [data-node-view-content-react] > p:last-child {
-  border-left: 1px solid var(--resume-column-guide);
   padding-left: 12px;
+}
+.resume-layout-row.is-active [data-node-view-content-react] > p + p,
+.resume-layout-row.is-active [data-node-view-content-react] > p:last-child {
+  border-left: 1px solid var(--resume-column-guide);
 }
 .resume-layout-row.is-active {
   background: rgba(52, 120, 246, 0.055);
@@ -2655,8 +2671,6 @@ select:not([data-slot]):focus-visible {
   .workbench-save-action.ui-button { width: auto; min-width: 96px; padding-inline: 12px; font-size: 0.75rem; }
   .selection-formatting-toolbar { max-width: calc(100vw - 16px); gap: 1px; padding-inline: 5px; }
   .selection-formatting-toolbar .workbench-tool-button { width: 32px; height: 34px; flex-basis: 32px; }
-  .selection-formatting-toolbar .workbench-toolbar-divider { margin-inline: 3px; }
-  .selection-formatting-toolbar .selection-agent-trigger { padding-inline: 7px; }
   .workbench-settings select,
   .media-size-field input,
   .media-size-field select,
@@ -2678,7 +2692,6 @@ select:not([data-slot]):focus-visible {
   .workbench-drawer > .agent-panel { padding: 0; }
   .agent-floating-entry { right: 16px; bottom: 16px; }
   .agent-floating-entry.is-open { display: none; }
-  .selection-agent-menu { width: min(344px, calc(100vw - 32px)); }
   .avatar-scale-hint { padding: 8px 10px; font-size: 0.6875rem; }
   .avatar-replace-action { min-height: 36px; padding-inline: 10px; font-size: 0.6875rem; }
 }

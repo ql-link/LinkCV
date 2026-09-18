@@ -3,20 +3,18 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   ChevronDown,
   ChevronUp,
-  RotateCcw,
   Baseline,
   Bold,
   Highlighter,
-  IndentIncrease,
   Italic,
-  List,
-  Sparkles,
+  Redo2,
   Underline,
+  Undo2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { INLINE_FONT_SIZE_MIN, INLINE_FONT_SIZE_MAX, INLINE_FONT_SIZE_STEP, normalizeInlineFontSize } from "../../lib/resumeInlineStyle";
-import { api, type AgentSelectionContext } from "../../api/client";
+import { api } from "../../api/client";
 import { validateResumeImageFile } from "./resumeImageLimits";
 
 const textColors = ["#1d1d1f", "#3478f6", "#34c759", "#ff9f0a", "#ff3b30", "#8a8a8e"];
@@ -47,10 +45,6 @@ function ToolButton({ label, active, disabled, children, onClick }: ToolButtonPr
       {children}
     </motion.button>
   );
-}
-
-function Divider() {
-  return <span className="workbench-toolbar-divider" aria-hidden="true" />;
 }
 
 type AnchoredPopoverProps = {
@@ -151,12 +145,10 @@ function ColorControl({ editor, type }: { editor: Editor; type: "color" | "highl
 
 function FontSizeControl({ editor }: { editor: Editor }) {
   const sizes = new Set<number>();
-  let hasOverride = false;
   const { from, to } = editor.state.selection;
   editor.state.doc.nodesBetween(from, to, (node, pos) => {
     if (!node.isText) return;
     const explicit = normalizeInlineFontSize(node.marks.find((mark) => mark.type.name === "textStyle")?.attrs.fontSize);
-    hasOverride ||= explicit != null;
     // Computed CSS includes template/heading sizes but excludes canvas transforms.
     const dom = editor.view.nodeDOM(pos);
     const element = dom instanceof HTMLElement ? dom : dom?.parentElement;
@@ -189,105 +181,11 @@ function FontSizeControl({ editor }: { editor: Editor }) {
           <ChevronDown aria-hidden="true" size={13} />
         </ToolButton>
       </div>
-      <ToolButton label="恢复默认字号" disabled={!hasOverride} onClick={() => {
-        if (!editor.state.selection.empty) editor.chain().focus().setMark("textStyle", { fontSize: null }).removeEmptyTextStyle().run();
-      }}>
-        <RotateCcw aria-hidden="true" size={14} />
-      </ToolButton>
     </div>
   );
 }
 
-export const selectionAgentActions = ["优化表达", "生成亮点", "调整专业度", "解释内容", "继续改写"] as const;
-
-async function sha256Text(value: string) {
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
-}
-
-export async function agentSelectionContext(editor: Editor): Promise<AgentSelectionContext | null> {
-  const { from, to } = editor.state.selection;
-  const selectedText = editor.state.doc.textBetween(from, to, "\n").trim();
-  if (!selectedText) return null;
-  const blockIds = new Set<string>();
-  editor.state.doc.nodesBetween(from, to, (node) => {
-    if (!node.isTextblock) return;
-    const anchor = node.firstChild;
-    if (anchor?.type.name === "resumeBlockAnchor" && typeof anchor.attrs.blockId === "string") {
-      blockIds.add(anchor.attrs.blockId);
-    }
-  });
-  if (!blockIds.size) return null;
-  return {
-    block_ids: [...blockIds],
-    from,
-    to,
-    selected_text: selectedText,
-    selected_text_hash: await sha256Text(selectedText),
-  };
-}
-
-function SelectionAgentControl({
-  editor,
-  onAgentAction,
-}: {
-  editor: Editor;
-  onAgentAction: (instruction: string, selection: AgentSelectionContext) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLDivElement | null>(null);
-  useDismissPopover(open, () => setOpen(false), anchorRef);
-
-  return (
-    <div ref={anchorRef} className="workbench-popover-anchor selection-agent-anchor">
-      <button
-        type="button"
-        className={`selection-agent-trigger${open ? " is-open" : ""}`}
-        aria-label="AI 修改"
-        aria-expanded={open}
-        aria-haspopup="menu"
-        title="AI 修改"
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Sparkles aria-hidden="true" size={17} />
-        <span>AI 修改</span>
-      </button>
-      <AnchoredPopover open={open} className="selection-agent-menu">
-        <div className="selection-agent-menu-head">
-          <span><Sparkles aria-hidden="true" size={14} />用 AI 处理所选内容</span>
-          <small>结果将在右侧助手中展示</small>
-        </div>
-        <div role="menu" aria-label="所选文字 AI 快捷操作">
-          {selectionAgentActions.map((action) => (
-            <button
-              type="button"
-              role="menuitem"
-              key={action}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                void agentSelectionContext(editor).then((selection) => {
-                  if (selection) onAgentAction(action, selection);
-                });
-                setOpen(false);
-              }}
-            >
-              {action}
-            </button>
-          ))}
-        </div>
-      </AnchoredPopover>
-    </div>
-  );
-}
-
-export function SelectionFormattingToolbar({
-  editor,
-  onAgentAction,
-}: {
-  editor: Editor;
-  onAgentAction: (instruction: string, selection: AgentSelectionContext) => void;
-}) {
+export function SelectionFormattingToolbar({ editor }: { editor: Editor }) {
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -310,11 +208,44 @@ export function SelectionFormattingToolbar({
       <ToolButton label="下划线" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><Underline aria-hidden="true" size={18} /></ToolButton>
       <ColorControl editor={editor} type="color" />
       <ColorControl editor={editor} type="highlight" />
-      <Divider />
-      <ToolButton label="无序列表" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}><List aria-hidden="true" size={18} /></ToolButton>
-      <ToolButton label="增加缩进" disabled={!editor.can().sinkListItem("listItem")} onClick={() => editor.chain().focus().sinkListItem("listItem").run()}><IndentIncrease aria-hidden="true" size={18} /></ToolButton>
-      <Divider />
-      <SelectionAgentControl editor={editor} onAgentAction={onAgentAction} />
+    </div>
+  );
+}
+
+const isApplePlatform = typeof navigator !== "undefined"
+  && /Mac|iPhone|iPad/.test(navigator.platform ?? "");
+
+export function WorkbenchHistoryActions({ editor }: { editor: Editor }) {
+  const [, refresh] = useState(0);
+
+  useEffect(() => {
+    const update = () => refresh((value) => value + 1);
+    editor.on("transaction", update);
+    return () => { editor.off("transaction", update); };
+  }, [editor]);
+
+  const shortcut = (key: string) => isApplePlatform ? `⌘${key}` : `Ctrl+${key}`;
+  const actions = [
+    { key: "Z", label: "撤销", Icon: Undo2, run: () => editor.chain().focus().undo().run(), enabled: editor.can().undo() },
+    { key: "Y", label: "重做", Icon: Redo2, run: () => editor.chain().focus().redo().run(), enabled: editor.can().redo() },
+  ] as const;
+
+  return (
+    <div className="workbench-history-actions" role="group" aria-label="撤销与重做">
+      {actions.map(({ key, label, Icon, run, enabled }) => (
+        <button
+          type="button"
+          className="workbench-history-button"
+          key={label}
+          aria-label={`${label}（${shortcut(key)}）`}
+          title={`${label}（${shortcut(key)}）`}
+          disabled={!enabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={run}
+        >
+          <Icon aria-hidden="true" size={17} />
+        </button>
+      ))}
     </div>
   );
 }
