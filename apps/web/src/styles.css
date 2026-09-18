@@ -1593,6 +1593,7 @@ select:not([data-slot]):focus-visible {
   align-items: stretch;
   flex-direction: column;
   gap: 2px;
+  translate: none;
   transform-origin: top right;
   padding: 6px;
 }
@@ -1781,23 +1782,31 @@ select:not([data-slot]):focus-visible {
 .workbench-tool-button.active { background: var(--ui-accent-subtle); color: var(--ui-accent); }
 .workbench-tool-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
 .workbench-tool-button:disabled { cursor: default; opacity: 0.28; }
-.selection-font-size-control { display: flex; flex: 0 0 auto; align-items: center; gap: 1px; }
-.selection-font-size-control output { display: inline-flex; min-width: 50px; align-items: baseline; justify-content: center; gap: 3px; color: var(--ui-text-secondary); font-size: var(--ui-text-xs); font-variant-numeric: tabular-nums; }
-.selection-font-size-control output small { color: var(--ui-text-muted); font-size: var(--ui-text-xs); }
-.selection-formatting-toolbar .selection-font-size-control .workbench-tool-button { width: 28px; flex-basis: 28px; }
-.selection-font-size-arrows { display: flex; flex-direction: column; }
-.selection-formatting-toolbar .selection-font-size-arrows .workbench-tool-button { height: 17px; flex-basis: 17px; border-radius: var(--ui-radius-xs); padding: 0; }
+/* 带下拉箭头的按钮保持正方形以外的宽度，让图标与箭头并排而不是上下堆叠。 */
+.workbench-tool-button.has-caret {
+  display: inline-flex;
+  width: auto;
+  min-width: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding-inline: 6px;
+}
+.workbench-tool-caret { flex: 0 0 auto; opacity: 0.5; }
 .workbench-popover-anchor { position: relative; display: flex; flex: 0 0 auto; }
 .workbench-popover {
   position: absolute;
-  top: auto;
-  bottom: calc(100% + 8px);
+  top: calc(100% + 8px);
+  bottom: auto;
   left: 50%;
   z-index: 80;
   display: flex;
   align-items: center;
   gap: 6px;
-  transform-origin: bottom center;
+  /* Motion 会写内联 transform，居中用独立的 translate 属性，避免被覆盖。 */
+  translate: -50% 0;
+  transform-origin: top center;
   border: 1px solid var(--ui-border);
   border-radius: var(--ui-radius-md);
   background: color-mix(in srgb, var(--ui-surface) 94%, transparent);
@@ -1807,11 +1816,47 @@ select:not([data-slot]):focus-visible {
   -webkit-backdrop-filter: blur(22px) saturate(180%);
 }
 
-.color-popover { transform: translateX(-50%); }
-.color-swatch { width: 22px; height: 22px; flex: 0 0 22px; border: 1px solid var(--ui-border); border-radius: 50%; cursor: pointer; }
-.color-swatch.is-active { border-color: var(--ui-foreground); box-shadow: 0 0 0 2px var(--ui-surface), 0 0 0 3px var(--ui-foreground); }
-.color-swatch-clear { display: grid; place-items: center; background: var(--ui-surface); color: var(--ui-text-muted); }
-.color-swatch-clear:hover { border-color: var(--ui-border-strong); color: var(--ui-foreground); }
+.selection-toolbar-divider { width: 1px; flex: 0 0 1px; align-self: stretch; margin: 4px 3px; background: var(--ui-border); }
+
+.color-popover { flex-direction: column; align-items: stretch; gap: 8px; }
+.color-section { display: flex; flex-direction: column; gap: 6px; }
+.color-section-label { display: inline-flex; align-items: center; gap: 4px; color: var(--ui-text-muted); font-size: var(--ui-text-xs); }
+.color-section-row { display: flex; align-items: center; gap: 6px; }
+/* 字号步进器：三段一体，两侧 − / + 中间显示当前值。选择器带上弹层前缀，避免被工具栏的移动端尺寸覆盖。 */
+.selection-font-size-control { display: inline-flex; align-items: stretch; height: 30px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); overflow: hidden; }
+.color-popover .selection-font-size-control .workbench-tool-button { width: 30px; height: auto; flex: 0 0 30px; border-radius: 0; color: var(--ui-text-secondary); }
+.color-popover .selection-font-size-control .workbench-tool-button:not(:disabled):hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
+.color-popover .selection-font-size-control .workbench-tool-button:disabled { opacity: 0.3; }
+.color-popover .selection-font-size-control output { display: inline-flex; min-width: 50px; align-items: center; justify-content: center; gap: 2px; border-inline: 1px solid var(--ui-border); padding-inline: 8px; color: var(--ui-text-secondary); font-size: var(--ui-text-xs); font-variant-numeric: tabular-nums; }
+.color-popover .selection-font-size-control output small { color: var(--ui-text-muted); font-size: var(--ui-text-xs); }
+.color-letter { position: relative; display: grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border: 1px solid transparent; border-radius: var(--ui-radius-xs); background: transparent; color: var(--ui-text-secondary); cursor: pointer; font-size: 0.9375rem; font-weight: 600; line-height: 1; }
+.color-letter:hover { background: var(--ui-surface-muted); }
+.color-letter.is-active { border-color: var(--ui-ring); background: var(--ui-surface-muted); }
+/* 背景色固定 7 列，深浅两行对齐。 */
+.color-blocks { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.color-block { position: relative; width: 100%; aspect-ratio: 1; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-xs); background: var(--ui-surface); cursor: pointer; }
+.color-block:hover { border-color: var(--ui-border-strong); }
+.color-block.is-active { border-color: var(--ui-foreground); box-shadow: 0 0 0 2px var(--ui-surface), 0 0 0 3px var(--ui-foreground); }
+/* 斜杠统一表示「取消颜色」，字体颜色和背景颜色两行用同一个符号。 */
+.color-slash { position: absolute; top: 50%; left: 50%; width: 20px; height: 1.5px; border-radius: 1px; background: var(--ui-destructive); transform: translate(-50%, -50%) rotate(-45deg); }
+.color-reset { width: 100%; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); padding: 6px 10px; color: var(--ui-text-secondary); cursor: pointer; font-size: var(--ui-text-xs); }
+.color-reset:hover { border-color: var(--ui-border-strong); color: var(--ui-foreground); }
+
+.selection-menu-popover { min-width: 148px; flex-direction: column; align-items: stretch; gap: 2px; }
+.selection-menu-item { display: flex; align-items: center; gap: 8px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 7px 8px; color: var(--ui-text-secondary); cursor: pointer; font-size: var(--ui-text-sm); text-align: left; }
+.selection-menu-item span { flex: 1; }
+.selection-menu-item:hover { background: var(--ui-surface-muted); color: var(--ui-foreground); }
+.selection-menu-item.is-active { background: var(--ui-accent-subtle); color: var(--ui-accent); }
+
+.link-popover { width: 232px; flex-direction: column; align-items: stretch; gap: 6px; }
+.link-popover-field { width: 100%; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); padding: 6px 8px; color: var(--ui-foreground); font-size: var(--ui-text-sm); }
+.link-popover-field:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
+.link-popover-error { margin: 0; color: var(--ui-destructive); font-size: var(--ui-text-xs); }
+.link-popover-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.link-popover-button { border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: var(--ui-surface); padding: 5px 10px; color: var(--ui-text-secondary); cursor: pointer; font-size: var(--ui-text-xs); }
+.link-popover-button:hover { border-color: var(--ui-border-strong); color: var(--ui-foreground); }
+.link-popover-button.is-primary { border-color: transparent; background: var(--ui-accent); color: var(--ui-primary-foreground); }
+.link-popover-button.is-primary:hover { background: var(--ui-accent-hover); color: var(--ui-primary-foreground); }
 
 .workbench-canvas {
   position: relative;
@@ -2780,6 +2825,7 @@ select:not([data-slot]):focus-visible {
   .workbench-popover.workbench-more-menu { right: auto; left: 0; transform-origin: top left; }
   .selection-formatting-toolbar { max-width: calc(100vw - 16px); gap: 1px; padding-inline: 5px; }
   .selection-formatting-toolbar .workbench-tool-button { width: 32px; height: 34px; flex-basis: 32px; }
+  .selection-formatting-toolbar .workbench-tool-button.has-caret { width: auto; min-width: 32px; flex-basis: auto; }
   .workbench-settings select,
   .media-size-field input,
   .media-size-field select,
