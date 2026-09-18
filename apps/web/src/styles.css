@@ -1208,6 +1208,14 @@ select:not([data-slot]):focus-visible {
   text-align: left;
 }
 
+.resume-row-cell:last-child {
+  text-align: right;
+}
+
+.resume-row-cell + .resume-row-cell:not(:last-child) {
+  text-align: center;
+}
+
 .resume-row.single.right {
   text-align: right;
   font-style: italic;
@@ -2063,15 +2071,20 @@ select:not([data-slot]):focus-visible {
   grid-template-columns: repeat(var(--resume-row-columns), minmax(0, 1fr));
   gap: 10px;
 }
-.resume-layout-row.is-equal [data-node-view-content-react] > p,
-.resume-layout-row.is-equal [data-node-view-content-react] > p:last-child {
+.resume-layout-row.is-equal [data-node-view-content-react] > p {
   padding-left: 0;
   text-align: left;
 }
-/* 分隔线只在光标位于该行时出现，平时保持纸面干净；内边距恒定，避免选中时刻文字跳动 */
-.resume-layout-row.is-equal [data-node-view-content-react] > p + p,
+/* 首栏贴左、末栏贴右、中间各栏居中；内边距恒定，避免选中时刻文字跳动 */
+.resume-layout-row.is-equal [data-node-view-content-react] > p + p {
+  padding-left: 12px;
+}
 .resume-layout-row.is-equal [data-node-view-content-react] > p:last-child {
   padding-left: 12px;
+  text-align: right;
+}
+.resume-layout-row.is-equal [data-node-view-content-react] > p + p:not(:last-child) {
+  text-align: center;
 }
 .resume-layout-row.is-active [data-node-view-content-react] > p + p,
 .resume-layout-row.is-active [data-node-view-content-react] > p:last-child {
