@@ -289,16 +289,29 @@ class RowCell(SourceReferenced):
     blocks: list[ParagraphBlock] = Field(min_length=1, max_length=1)
 
 
+# Fixed-cardinality row kinds map to their authored cell count.  `equal` is
+# the user-authored variant: the editor lets a row be split into 3 or 4 equal
+# columns, which the template-provided `meta`/`trio` shapes cannot express
+# because they carry their own (non-equal) column ratios.
+ROW_CELL_COUNTS: dict[str, tuple[int, ...]] = {
+    "pair": (2,),
+    "meta": (4,),
+    "trio": (3,),
+    "equal": (3, 4),
+}
+
+
 class RowBlock(SourceReferenced):
     block_type: Literal["row"]
-    row_kind: Literal["pair", "meta", "trio"]
+    row_kind: Literal["pair", "meta", "trio", "equal"]
     cells: list[RowCell] = Field(min_length=1, max_length=4)
     left_width_percent: float | None = Field(default=None, ge=30, le=80)
 
     @model_validator(mode="after")
     def validate_shape(self) -> "RowBlock":
-        expected = {"pair": 2, "meta": 4, "trio": 3}[self.row_kind]
-        if len(self.cells) != expected:
+        allowed = ROW_CELL_COUNTS[self.row_kind]
+        if len(self.cells) not in allowed:
+            expected = " or ".join(str(count) for count in allowed)
             raise ValueError(
                 f"{self.row_kind} rows require exactly {expected} cells"
             )
@@ -309,7 +322,7 @@ class RowBlock(SourceReferenced):
         return self
 
     @property
-    def kind(self) -> Literal["pair", "meta", "trio"]:
+    def kind(self) -> Literal["pair", "meta", "trio", "equal"]:
         """A short alias for adapters that call the row variant `kind`."""
 
         return self.row_kind

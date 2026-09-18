@@ -623,7 +623,7 @@ select:not([data-slot]):focus-visible,
 
 .theme-classic-technical .resume-row-right,
 .theme-classic-technical .resume-row.single.right,
-.theme-classic-technical .resume-layout-row [data-node-view-content-react] > p:last-child {
+.theme-classic-technical .resume-layout-row:not(.is-equal) [data-node-view-content-react] > p:last-child {
   font-style: normal;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1009,7 +1009,7 @@ select:not([data-slot]):focus-visible,
 .theme-civic-service .resume-content h2 { border-bottom-color: #b8cff1; }
 .theme-civic-service .resume-row-right,
 .theme-civic-service .resume-row.single.right,
-.theme-civic-service .resume-layout-row p:last-child { font-style: normal; }
+.theme-civic-service .resume-layout-row:not(.is-equal) p:last-child { font-style: normal; }
 
 /* 橙弧创意设计 */
 .theme-creative-orange .resume-content {
@@ -1085,7 +1085,7 @@ select:not([data-slot]):focus-visible,
 .theme-creative-orange .resume-layout-trio-row { margin: 1.5mm 0; }
 .theme-creative-orange .resume-row-right,
 .theme-creative-orange .resume-row.single.right,
-.theme-creative-orange .resume-layout-row p:last-child { font-style: normal; font-variant-numeric: tabular-nums; }
+.theme-creative-orange .resume-layout-row:not(.is-equal) p:last-child { font-style: normal; font-variant-numeric: tabular-nums; }
 
 .resume-readonly-preview-card {
   position: absolute;

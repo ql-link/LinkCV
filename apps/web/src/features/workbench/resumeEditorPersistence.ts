@@ -226,9 +226,11 @@ function canonicalBlockToEditor(
   }
   if (block.block_type === "row") {
     return {
-      type: block.row_kind === "pair"
-        ? "resumeRow"
-        : block.row_kind === "meta" ? "resumeMetaRow" : "resumeTrioRow",
+      // pair and equal both project to the user-editable resume row; only the
+      // legacy template shapes keep their own node types.
+      type: block.row_kind === "meta"
+        ? "resumeMetaRow"
+        : block.row_kind === "trio" ? "resumeTrioRow" : "resumeRow",
       ...(block.row_kind === "pair"
         ? { attrs: { leftWidth: block.left_width_percent ?? 50 } }
         : {}),
@@ -493,14 +495,33 @@ function canonicalRunsFromEditor(
   return result;
 }
 
+type EditorRowKind = "pair" | "meta" | "trio" | "equal";
+
+const EDITOR_ROW_CELL_COUNTS: Record<EditorRowKind, number[]> = {
+  pair: [2],
+  meta: [4],
+  trio: [3],
+  equal: [3, 4],
+};
+
+/**
+ * A user-editable resume row carries its column count as its paragraph count:
+ * 2 columns keep the adjustable left/right split (`pair`), 3 and 4 columns are
+ * the equal columns the column menu creates (`equal`).  The legacy template
+ * rows keep their own kinds so their designed ratios survive a round trip.
+ */
+function editorRowKind(node: JSONContent, cellCount: number): EditorRowKind | null {
+  if (node.type === "resumeMetaRow") return "meta";
+  if (node.type === "resumeTrioRow") return "trio";
+  if (node.type !== "resumeRow") return null;
+  return cellCount === 2 ? "pair" : "equal";
+}
+
 function canonicalBlockFromEditor(node: JSONContent, index: number): CanonicalContentBlock | null {
   if (node.type === "resumeRow" || node.type === "resumeMetaRow" || node.type === "resumeTrioRow") {
-    const rowKind = node.type === "resumeRow"
-      ? "pair"
-      : node.type === "resumeMetaRow" ? "meta" : "trio";
-    const expected = rowKind === "pair" ? 2 : rowKind === "meta" ? 4 : 3;
     const cells = node.content ?? [];
-    if (cells.length !== expected) return null;
+    const rowKind = editorRowKind(node, cells.length);
+    if (!rowKind || !EDITOR_ROW_CELL_COUNTS[rowKind].includes(cells.length)) return null;
     const firstCellAnchors = editorAnchorIds(cells[0] ?? {});
     const rowId = firstCellAnchors[0] ?? generatedCanonicalNodeId("row", index);
     const canonicalCells: CanonicalRowBlock["cells"] = cells.map((cell, cellIndex) => {
@@ -522,10 +543,10 @@ function canonicalBlockFromEditor(node: JSONContent, index: number): CanonicalCo
       }];
       return { node_id: cellId, source_refs: [], blocks };
     });
-    const leftWidth = node.type === "resumeRow"
+    const leftWidth = rowKind === "pair"
       ? Number(node.attrs?.leftWidth ?? 50)
       : null;
-    if (node.type === "resumeRow" && (!Number.isFinite(leftWidth) || leftWidth == null || leftWidth < 30 || leftWidth > 80)) return null;
+    if (rowKind === "pair" && (!Number.isFinite(leftWidth) || leftWidth == null || leftWidth < 30 || leftWidth > 80)) return null;
     return {
       node_id: rowId,
       source_refs: [],
@@ -930,12 +951,10 @@ function canonicalV1BlockFromEditor(
 ): CanonicalContentBlock {
   const previousAtIndex = previousBlocks[index];
   if (node.type === "resumeRow" || node.type === "resumeMetaRow" || node.type === "resumeTrioRow") {
-    const rowKind = node.type === "resumeRow"
-      ? "pair"
-      : node.type === "resumeMetaRow" ? "meta" : "trio";
-    const expected = rowKind === "pair" ? 2 : rowKind === "meta" ? 4 : 3;
     const cells = node.content ?? [];
-    if (cells.length !== expected) throw new Error("RESUME_EDITOR_ROW_CARDINALITY:" + rowKind);
+    const rowKind = editorRowKind(node, cells.length);
+    if (!rowKind) throw new Error("RESUME_EDITOR_ROW_UNSUPPORTED");
+    if (!EDITOR_ROW_CELL_COUNTS[rowKind].includes(cells.length)) throw new Error("RESUME_EDITOR_ROW_CARDINALITY:" + rowKind);
     const previousRow = previousAtIndex?.block_type === "row" ? previousAtIndex : undefined;
     const firstCell = cells[0];
     if (!firstCell || firstCell.type !== "paragraph") {
@@ -988,7 +1007,7 @@ function canonicalV1BlockFromEditor(
         }],
       };
     });
-    const width = node.type === "resumeRow" ? Number(node.attrs?.leftWidth ?? 50) : null;
+    const width = rowKind === "pair" ? Number(node.attrs?.leftWidth ?? 50) : null;
     if (rowKind === "pair" && (width == null || !Number.isFinite(width) || width < 30 || width > 80)) {
       throw new Error("RESUME_EDITOR_INVALID_ROW_WIDTH");
     }

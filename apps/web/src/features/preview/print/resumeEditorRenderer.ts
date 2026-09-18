@@ -116,7 +116,13 @@ export function renderResumeEditorNode(node: JSONContent): string {
   }
   if (node.type === "horizontalRule") return "<hr>";
   if (node.type === "resumeRow") {
-    const [left, right] = node.content ?? [];
+    const cells = node.content ?? [];
+    if (cells.length > 2) {
+      return `<div class="resume-row equal" data-type="resume-row" data-block="equal" data-columns="${cells.length}" style="--resume-row-columns:${cells.length}">${cells
+        .map((cell) => `<p class="resume-row-cell">${inlineContent(cell)}</p>`)
+        .join("")}</div>`;
+    }
+    const [left, right] = cells;
     const leftWidth = Math.min(80, Math.max(30, Number(node.attrs?.leftWidth) || 50));
     return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}" style="--resume-row-left:${leftWidth}%"><p class="resume-row-left">${left ? inlineContent(left) : ""}</p><p class="resume-row-right">${right ? inlineContent(right) : ""}</p></div>`;
   }

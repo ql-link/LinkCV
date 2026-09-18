@@ -738,6 +738,8 @@ describe("canonical resume editing projection", () => {
     ["pair", 2, 64],
     ["meta", 4, null],
     ["trio", 3, null],
+    ["equal", 3, null],
+    ["equal", 4, null],
   ] as const)("round-trips canonical %s rows through TipTap", (rowKind, count, width) => {
     const row = {
       node_id: `node_row${rowKind}0000000000000001`,
@@ -768,7 +770,7 @@ describe("canonical resume editing projection", () => {
     };
     const editor = canonicalResumeDocumentToEditorDocument(document);
     const projectedRow = editor.content?.find((node) => node.type === (
-      rowKind === "pair" ? "resumeRow" : rowKind === "meta" ? "resumeMetaRow" : "resumeTrioRow"
+      rowKind === "meta" ? "resumeMetaRow" : rowKind === "trio" ? "resumeTrioRow" : "resumeRow"
     ));
     expect(projectedRow?.content).toHaveLength(count);
     expect(JSON.stringify(projectedRow)).toContain(`node_row${rowKind}0000000000000001`);
