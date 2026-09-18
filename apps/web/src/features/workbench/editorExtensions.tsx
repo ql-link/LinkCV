@@ -16,6 +16,7 @@ import {
   Award,
   Briefcase,
   Calendar,
+  Check,
   Code2,
   GitFork,
   Globe,
@@ -31,6 +32,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
 import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
@@ -40,6 +42,7 @@ import {
   exitVisuallyBlankResumeListItem,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
+  setResumeRowColumns,
 } from "./editorCommands";
 import { RESUME_IMAGE_ACCEPT, validateResumeImageFile } from "./resumeImageLimits";
 import { ResumeBulletListInputRules } from "./editorInputRules";
@@ -460,9 +463,94 @@ export const ResumeImage = Node.create({
   addNodeView: () => ReactNodeViewRenderer(MediaNodeView),
 });
 
+function ResumeColumnMenu({
+  position,
+  columns,
+  onSelect,
+  onClose,
+}: {
+  position: { x: number; y: number };
+  columns: number;
+  onSelect: (columns: 2 | 3 | 4) => void;
+  onClose: () => void;
+}) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const options: Array<2 | 3 | 4> = [2, 3, 4];
+  const currentIndex = Math.max(0, options.indexOf(columns as 2 | 3 | 4));
+  const [focused, setFocused] = useState(currentIndex);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !rootRef.current?.contains(target)) onClose();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [onClose]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setFocused((value) => (
+          event.key === "ArrowDown"
+            ? (value + 1) % options.length
+            : (value - 1 + options.length) % options.length
+        ));
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        onSelect(options[focused]);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [focused, onClose, onSelect]);
+
+  return createPortal(
+    <div
+      ref={rootRef}
+      className="resume-column-menu"
+      role="menu"
+      aria-label="分栏栏数"
+      style={{
+        left: Math.max(12, Math.min(position.x, window.innerWidth - 212)),
+        top: Math.max(12, Math.min(position.y, window.innerHeight - 168)),
+      }}
+    >
+      <div className="resume-column-menu-heading">分栏栏数</div>
+      {options.map((option) => (
+        <button
+          type="button"
+          role="menuitemradio"
+          aria-checked={option === columns}
+          className={option === focused ? "is-selected" : ""}
+          key={option}
+          onMouseEnter={() => setFocused(options.indexOf(option))}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onSelect(option)}
+        >
+          <span>{option} 栏</span>
+          {option === columns && <Check aria-hidden="true" size={14} />}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  );
+}
+
 function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
   const [active, setActive] = useState(false);
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const leftWidth = normalizeResumeRowWidth(node.attrs.leftWidth);
+  const columns = node.childCount;
+  const equalColumns = columns > 2;
 
   useEffect(() => {
     const updateActiveState = () => {
@@ -485,12 +573,38 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     };
   }, [editor, getPos, node.nodeSize]);
 
+  const applyColumns = (next: 2 | 3 | 4) => {
+    setMenuAt(null);
+    const position = getPos();
+    if (typeof position !== "number") return;
+    if (!setResumeRowColumns(editor, position, next)) return;
+    editor.commands.focus();
+  };
+
   return (
     <NodeViewWrapper
-      className={`resume-layout-row${active ? " is-active" : ""}`}
-      style={{ "--resume-row-left": `${leftWidth}%` } as React.CSSProperties}
+      // 不要用 `columns-3` 这种名字：它会被 Tailwind 的 columns-{n} 工具类命中，
+      // 把整行变成 CSS 多列容器，导致每栏被压窄、文字折成两行。
+      className={`resume-layout-row${equalColumns ? ` is-equal equal-columns-${columns}` : ""}${active || menuAt ? " is-active" : ""}`}
+      style={equalColumns
+        ? { "--resume-row-columns": columns } as React.CSSProperties
+        : { "--resume-row-left": `${leftWidth}%` } as React.CSSProperties}
+      onContextMenu={(event: React.MouseEvent) => {
+        if (!editor.isEditable) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setMenuAt({ x: event.clientX, y: event.clientY });
+      }}
     >
       <NodeViewContent />
+      {menuAt && (
+        <ResumeColumnMenu
+          position={menuAt}
+          columns={columns}
+          onSelect={applyColumns}
+          onClose={() => setMenuAt(null)}
+        />
+      )}
     </NodeViewWrapper>
   );
 }
@@ -507,7 +621,10 @@ export function normalizeResumeRowWidth(value: unknown) {
 export const ResumeRow = Node.create({
   name: "resumeRow",
   group: "block",
-  content: "paragraph paragraph",
+  // 2 cells keep the adjustable left/right split; 3 and 4 cells are the equal
+  // columns the right-click column menu creates.  The column count is the
+  // paragraph count, so the two can never drift apart.
+  content: "paragraph paragraph paragraph? paragraph?",
   defining: true,
   isolating: true,
   addKeyboardShortcuts() {

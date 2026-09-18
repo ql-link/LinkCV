@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as SchemaValidationError
 from pydantic import ValidationError
 
 from linkresume.domain.resume import (
@@ -320,6 +321,63 @@ def test_canonical_rows_are_strict_fixed_cardinality_content_blocks() -> None:
         }]
         with pytest.raises(ValidationError):
             CanonicalResumeDocument.model_validate(invalid)
+
+
+def test_canonical_equal_rows_allow_only_three_or_four_equal_cells() -> None:
+    def row_payload(*, count: int, width: float | None) -> dict:
+        return {
+            "node_id": "node_dddddddddddddddd",
+            "source_refs": [],
+            "block_type": "row",
+            "row_kind": "equal",
+            "left_width_percent": width,
+            "cells": [
+                {
+                    "node_id": f"node_{index:016x}",
+                    "source_refs": [],
+                    "blocks": [
+                        {
+                            "node_id": f"node_{index + 100:016x}",
+                            "source_refs": [],
+                            "block_type": "paragraph",
+                            "runs": [],
+                        }
+                    ],
+                }
+                for index in range(10, 10 + count)
+            ],
+        }
+
+    root = Path(__file__).resolve().parents[6]
+    schema = json.loads(
+        (root / "contracts/resume/canonical-resume.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    validator = Draft202012Validator(schema)
+
+    for count in (3, 4):
+        payload = document_payload()
+        payload["sections"][0]["blocks"] = [row_payload(count=count, width=None)]
+        document = CanonicalResumeDocument.model_validate(payload)
+        block = document.sections[0].blocks[0]
+        assert block.row_kind == "equal"
+        assert block.kind == "equal"
+        assert block.left_width_percent is None
+        assert len(block.cells) == count
+        validator.validate(payload)
+
+    for invalid_row in (
+        row_payload(count=2, width=None),
+        row_payload(count=5, width=None),
+        row_payload(count=4, width=60),
+    ):
+        payload = document_payload()
+        payload["sections"][0]["blocks"] = [invalid_row]
+        with pytest.raises(ValidationError):
+            CanonicalResumeDocument.model_validate(payload)
+        with pytest.raises(SchemaValidationError):
+            validator.validate(payload)
 
 
 def test_template_avatar_is_strict_and_must_reference_a_region() -> None:

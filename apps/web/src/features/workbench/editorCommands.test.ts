@@ -6,6 +6,7 @@ import {
   exitVisuallyBlankResumeListItem,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
+  setResumeRowColumns,
 } from "./editorCommands";
 import { normalizeResumeRowWidth, resumeEditorExtensions } from "./editorExtensions";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
@@ -550,5 +551,124 @@ describe("左右分栏保存比例", () => {
   it("无有效保存值时使用一半一半", () => {
     expect(normalizeResumeRowWidth(undefined)).toBe(50);
     expect(normalizeResumeRowWidth("62")).toBe(62);
+  });
+});
+
+describe("switchResumeRowColumns", () => {
+  const blockId = (seed: string) => `node_${seed.repeat(16).slice(0, 16)}`;
+
+  function createRowEditor(cells: Array<{ text: string; anchor?: string }>) {
+    return new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          attrs: { leftWidth: 50 },
+          content: cells.map((cell, index) => ({
+            type: "paragraph",
+            content: [
+              ...(cell.anchor
+                ? [{
+                  type: "resumeBlockAnchor",
+                  attrs: { blockId: cell.anchor, role: index === 0 ? "row" : "row-cell" },
+                }]
+                : []),
+              ...(cell.text ? [{ type: "text", text: cell.text }] : []),
+            ],
+          })),
+        }],
+      },
+    });
+  }
+
+  function rowTexts(targetEditor: Editor) {
+    const texts: string[] = [];
+    targetEditor.state.doc.firstChild?.forEach((child) => texts.push(child.textContent));
+    return texts;
+  }
+
+  function anchorCount(node: { descendants: (callback: (child: { type: { name: string } }) => boolean) => void }) {
+    let count = 0;
+    node.descendants((child) => {
+      if (child.type.name === "resumeBlockAnchor") count += 1;
+      return true;
+    });
+    return count;
+  }
+
+  it("从 2 栏扩到 4 栏只补空栏并保留已有文字", () => {
+    editor = createRowEditor([{ text: "星河云科技" }, { text: "2022.9 – 2026.6" }]);
+
+    expect(setResumeRowColumns(editor, 0, 4)).toBe(true);
+    expect(editor.state.doc.firstChild?.childCount).toBe(4);
+    expect(rowTexts(editor)).toEqual(["星河云科技", "2022.9 – 2026.6", "", ""]);
+  });
+
+  it("降栏时把被去掉栏的文字合并进相邻保留栏", () => {
+    editor = createRowEditor([{ text: "A" }, { text: "B" }, { text: "C" }, { text: "D" }]);
+
+    expect(setResumeRowColumns(editor, 0, 2)).toBe(true);
+    expect(editor.state.doc.firstChild?.childCount).toBe(2);
+    expect(rowTexts(editor)).toEqual(["A", "B　C　D"]);
+  });
+
+  it("合并时丢弃被去掉栏的定位锚点，只搬运行内内容", () => {
+    editor = createRowEditor([
+      { text: "A", anchor: blockId("a") },
+      { text: "B", anchor: blockId("b") },
+      { text: "C", anchor: blockId("c") },
+      { text: "D", anchor: blockId("d") },
+    ]);
+
+    expect(setResumeRowColumns(editor, 0, 2)).toBe(true);
+    const merged = editor.state.doc.firstChild?.child(1);
+    expect(merged?.textContent).toBe("B　C　D");
+    expect(anchorCount(merged!)).toBe(1);
+  });
+
+  it("被去掉的栏为空时不产生多余分隔符", () => {
+    editor = createRowEditor([{ text: "A" }, { text: "B" }, { text: "" }, { text: "" }]);
+
+    expect(setResumeRowColumns(editor, 0, 2)).toBe(true);
+    expect(rowTexts(editor)).toEqual(["A", "B"]);
+  });
+
+  it("3 栏降为 2 栏同样合并最后一栏", () => {
+    editor = createRowEditor([{ text: "A" }, { text: "B" }, { text: "C" }]);
+
+    expect(setResumeRowColumns(editor, 0, 2)).toBe(true);
+    expect(rowTexts(editor)).toEqual(["A", "B　C"]);
+  });
+
+  it("栏数相同时不改动正文", () => {
+    editor = createRowEditor([{ text: "A" }, { text: "B" }, { text: "C" }]);
+    // 先让构造期的初始事务（含定位锚点补写）落地，再监听后续事务。
+    editor.view.dispatch(editor.state.tr);
+    const changed: unknown[] = [];
+    const onTransaction = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      if (transaction.docChanged) changed.push(1);
+    };
+    editor.on("transaction", onTransaction);
+
+    expect(setResumeRowColumns(editor, 0, 3)).toBe(false);
+    editor.off("transaction", onTransaction);
+    expect(changed).toHaveLength(0);
+    expect(rowTexts(editor)).toEqual(["A", "B", "C"]);
+  });
+
+  it("来回切换后文字不丢失", () => {
+    editor = createRowEditor([{ text: "A" }, { text: "B" }]);
+
+    expect(setResumeRowColumns(editor, 0, 4)).toBe(true);
+    expect(rowTexts(editor)).toEqual(["A", "B", "", ""]);
+    expect(setResumeRowColumns(editor, 0, 2)).toBe(true);
+    expect(rowTexts(editor)).toEqual(["A", "B"]);
+  });
+
+  it("目标位置不是分栏行时不做改动", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>正文</p>" });
+
+    expect(setResumeRowColumns(editor, 0, 3)).toBe(false);
   });
 });
