@@ -3,7 +3,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resumeEditorExtensions } from "./editorExtensions";
-import { SelectionFormattingToolbar } from "./WorkbenchToolbar";
+import { SelectionFormattingToolbar, WorkbenchHistoryActions } from "./WorkbenchToolbar";
 
 let editor: Editor | null = null;
 
@@ -17,37 +17,44 @@ describe("SelectionFormattingToolbar", () => {
   it("只在选中文字后显示字号和格式工具", () => {
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
     editor.commands.setTextSelection(1);
-    const onAgentAction = vi.fn();
-    const { rerender } = render(<SelectionFormattingToolbar editor={editor} onAgentAction={onAgentAction} />);
+    const { rerender } = render(<SelectionFormattingToolbar editor={editor} />);
 
     expect(screen.queryByRole("toolbar", { name: "所选文字工具栏" })).not.toBeInTheDocument();
 
     editor.commands.setTextSelection({ from: 1, to: 5 });
-    rerender(<SelectionFormattingToolbar editor={editor} onAgentAction={onAgentAction} />);
+    rerender(<SelectionFormattingToolbar editor={editor} />);
 
     const toolbar = screen.getByRole("toolbar", { name: "所选文字工具栏" });
     expect(within(toolbar).getByLabelText("所选文字字号")).toHaveTextContent("12pt");
     expect(within(toolbar).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
       "增大字号",
       "减小字号",
-      "恢复默认字号",
       "加粗",
       "斜体",
       "下划线",
       "文字颜色",
       "高亮颜色",
-      "无序列表",
-      "增加缩进",
-      "AI 修改",
     ]);
   });
 
-  it("只改变选中的单字字号，支持恢复默认并保留其他格式和撤销", async () => {
+  it("列表、缩进、恢复默认字号和 AI 修改都不再出现在选中弹窗里", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
+    editor.commands.setTextSelection({ from: 1, to: 5 });
+    render(<SelectionFormattingToolbar editor={editor} />);
+
+    const toolbar = screen.getByRole("toolbar", { name: "所选文字工具栏" });
+    expect(within(toolbar).queryByLabelText("无序列表")).not.toBeInTheDocument();
+    expect(within(toolbar).queryByLabelText("增加缩进")).not.toBeInTheDocument();
+    expect(within(toolbar).queryByLabelText("恢复默认字号")).not.toBeInTheDocument();
+    expect(within(toolbar).queryByLabelText("AI 修改")).not.toBeInTheDocument();
+  });
+
+  it("只改变选中的单字字号，保留其他格式并支持撤销重做", async () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: '<p><strong><span style="color:#3478f6">重点文字</span></strong></p>' });
     editor.commands.setTextSelection({ from: 2, to: 3 });
     const originalSelection = { from: editor.state.selection.from, to: editor.state.selection.to };
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
 
     await user.click(screen.getByRole("button", { name: "增大字号" }));
     expect(editor.state.selection.from).toBe(originalSelection.from);
@@ -60,9 +67,8 @@ describe("SelectionFormattingToolbar", () => {
     act(() => { editor!.commands.redo(); });
     expect(editor.view.dom.querySelector('[style*="font-size"]')).toHaveTextContent("点");
 
-    await user.click(screen.getByRole("button", { name: "恢复默认字号" }));
-    expect(editor.view.dom.querySelector('[style*="font-size"]')).toBeNull();
-    expect(editor.view.dom.querySelector("strong")).toHaveTextContent("重点文字");
+    // 字号只落在选中的单字上，加粗和颜色都保留。
+    expect(editor.view.dom.querySelector("strong")).toHaveTextContent("重");
     expect(editor.getHTML()).toContain("color: rgb(52, 120, 246)");
   });
 
@@ -70,7 +76,7 @@ describe("SelectionFormattingToolbar", () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: '<p>第一段</p><p><span style="font-size:14pt">第二段</span></p><p>不改变</p>' });
     editor.commands.setTextSelection({ from: 1, to: 9 });
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
     expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("混合");
     await user.click(screen.getByRole("button", { name: "增大字号" }));
     const paragraphs = editor.view.dom.querySelectorAll("p");
@@ -84,7 +90,7 @@ describe("SelectionFormattingToolbar", () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: '<p><span style="font-size:11.2pt">甲</span>乙</p>' });
     editor.commands.setTextSelection({ from: 1, to: 2 });
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
     const selectedText = editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to);
     const control = screen.getByLabelText("所选文字字号");
     expect(control).toHaveTextContent("11.2pt");
@@ -111,9 +117,8 @@ describe("SelectionFormattingToolbar", () => {
     host.append(editor.view.dom);
     document.body.append(host);
     editor.commands.setTextSelection({ from: 1, to: 5 });
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
     expect(screen.getByLabelText("所选文字字号")).toHaveTextContent("24pt");
-    expect(screen.getByRole("button", { name: "恢复默认字号" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "增大字号" }));
     expect(editor.view.dom.querySelector("h2 span[style]")).toHaveStyle({ fontSize: "24.5pt" });
     act(() => { editor!.commands.selectAll(); });
@@ -126,7 +131,7 @@ describe("SelectionFormattingToolbar", () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: '<p><span style="font-size:47.8pt">甲</span><span style="font-size:6.2pt">乙</span></p>' });
     editor.commands.setTextSelection({ from: 1, to: 2 });
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
     const increase = screen.getByRole("button", { name: "增大字号" });
     act(() => { increase.focus(); });
     await user.keyboard("{Enter}");
@@ -146,7 +151,7 @@ describe("SelectionFormattingToolbar", () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
     editor.commands.setTextSelection({ from: 1, to: 5 });
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
 
     await user.click(screen.getByRole("button", { name: "加粗" }));
     await user.click(screen.getByRole("button", { name: "斜体" }));
@@ -164,7 +169,7 @@ describe("SelectionFormattingToolbar", () => {
     const user = userEvent.setup();
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>重点文字</p>" });
     editor.commands.setTextSelection({ from: 1, to: 5 });
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
 
     await user.click(screen.getByRole("button", { name: "文字颜色" }));
     await user.click(screen.getByRole("button", { name: "文字颜色 #3478f6" }));
@@ -220,30 +225,12 @@ describe("SelectionFormattingToolbar", () => {
     });
     editor.commands.setTextSelection({ from: 1, to: 5 });
 
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={() => undefined} />);
+    render(<SelectionFormattingToolbar editor={editor} />);
 
     expect(screen.getByRole("button", { name: "文字颜色" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "高亮颜色" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("把所选文字和快捷指令交给右侧智能助手", async () => {
-    const user = userEvent.setup();
-    const onAgentAction = vi.fn();
-    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>负责平台性能优化</p>" });
-    editor.commands.setTextSelection({ from: 1, to: 9 });
-
-    render(<SelectionFormattingToolbar editor={editor} onAgentAction={onAgentAction} />);
-
-    await user.click(screen.getByRole("button", { name: "AI 修改" }));
-    expect(screen.getByRole("menu", { name: "所选文字 AI 快捷操作" })).toBeInTheDocument();
-    await user.click(screen.getByRole("menuitem", { name: "优化表达" }));
-
-    expect(onAgentAction).toHaveBeenCalledWith("优化表达", expect.objectContaining({
-      block_ids: [expect.stringMatching(/^node_[a-z0-9]{16,64}$/)],
-      selected_text: "负责平台性能优化",
-      selected_text_hash: "sha256:3d4d668a9062835f402347676f24927855bb46bc4f627768d160265c63d16c87",
-    }));
-  });
 });
 
 describe("简历邮箱文本", () => {
@@ -274,5 +261,39 @@ describe("简历邮箱文本", () => {
 
     expect(applied).toBe(false);
     expect(editor.getJSON().content?.[0]?.content?.[0]?.marks).toBeUndefined();
+  });
+});
+
+describe("WorkbenchHistoryActions", () => {
+  it("没有可撤销内容时两个按钮都禁用", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>正文</p>" });
+    render(<WorkbenchHistoryActions editor={editor} />);
+
+    const group = screen.getByRole("group", { name: "撤销与重做" });
+    expect(within(group).getByRole("button", { name: /撤销/ })).toBeDisabled();
+    expect(within(group).getByRole("button", { name: /重做/ })).toBeDisabled();
+  });
+
+  it("编辑后可以撤销并重做，按钮状态跟着历史变化", async () => {
+    const user = userEvent.setup();
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>正文</p>" });
+    render(<WorkbenchHistoryActions editor={editor} />);
+    const group = screen.getByRole("group", { name: "撤销与重做" });
+    const undo = () => within(group).getByRole("button", { name: /撤销/ });
+    const redo = () => within(group).getByRole("button", { name: /重做/ });
+
+    act(() => { editor!.commands.insertContentAt(4, "新"); });
+    expect(undo()).toBeEnabled();
+    expect(redo()).toBeDisabled();
+
+    await user.click(undo());
+    expect(editor.view.dom.textContent).toBe("正文");
+    expect(undo()).toBeDisabled();
+    expect(redo()).toBeEnabled();
+
+    await user.click(redo());
+    expect(editor.view.dom.textContent).toBe("正文新");
+    expect(undo()).toBeEnabled();
+    expect(redo()).toBeDisabled();
   });
 });
