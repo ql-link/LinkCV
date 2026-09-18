@@ -380,6 +380,91 @@ def test_canonical_equal_rows_allow_only_three_or_four_equal_cells() -> None:
             validator.validate(payload)
 
 
+def test_canonical_equal_rows_carry_optional_column_widths() -> None:
+    def cells(count: int) -> list[dict]:
+        return [
+            {
+                "node_id": f"node_{index:016x}",
+                "source_refs": [],
+                "blocks": [
+                    {
+                        "node_id": f"node_{index + 100:016x}",
+                        "source_refs": [],
+                        "block_type": "paragraph",
+                        "runs": [],
+                    }
+                ],
+            }
+            for index in range(10, 10 + count)
+        ]
+
+    def row_payload(
+        *, kind: str = "equal", count: int, widths: list[float] | None
+    ) -> dict:
+        payload = {
+            "node_id": "node_dddddddddddddddd",
+            "source_refs": [],
+            "block_type": "row",
+            "row_kind": kind,
+            "left_width_percent": None,
+            "cells": cells(count),
+        }
+        if widths is not None:
+            payload["column_widths_percent"] = widths
+        return payload
+
+    root = Path(__file__).resolve().parents[6]
+    schema = json.loads(
+        (root / "contracts/resume/canonical-resume.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    validator = Draft202012Validator(schema)
+
+    for count, widths in ((3, [50, 30, 20]), (4, [40, 20, 20, 20])):
+        payload = document_payload()
+        payload["sections"][0]["blocks"] = [
+            row_payload(count=count, widths=widths)
+        ]
+        document = CanonicalResumeDocument.model_validate(payload)
+        block = document.sections[0].blocks[0]
+        assert block.column_widths_percent == [float(value) for value in widths]
+        validator.validate(payload)
+
+    # 未自定义宽度的行不能在序列化结果中出现该字段，否则存量正文摘要会改变。
+    untouched = document_payload()
+    untouched["sections"][0]["blocks"] = [row_payload(count=3, widths=None)]
+    untouched_block = CanonicalResumeDocument.model_validate(untouched)
+    dumped = untouched_block.sections[0].blocks[0].model_dump(mode="json")
+    assert "column_widths_percent" not in dumped
+    assert not any(
+        "column_widths_percent" in json.dumps(
+            block.model_dump(mode="json"), ensure_ascii=False
+        )
+        for section in untouched_block.sections
+        for block in section.blocks
+    )
+
+    for invalid_row in (
+        row_payload(kind="trio", count=3, widths=[40, 30, 30]),
+        row_payload(count=4, widths=[30, 30, 30]),
+        row_payload(count=3, widths=[5, 45, 50]),
+        row_payload(count=3, widths=[85, 10, 5]),
+    ):
+        payload = document_payload()
+        payload["sections"][0]["blocks"] = [invalid_row]
+        with pytest.raises(ValidationError):
+            CanonicalResumeDocument.model_validate(payload)
+        with pytest.raises(SchemaValidationError):
+            validator.validate(payload)
+
+    # 总和必须为 100 无法用 JSON Schema 表达，只由模型校验兜住。
+    payload = document_payload()
+    payload["sections"][0]["blocks"] = [row_payload(count=3, widths=[40, 40, 40])]
+    with pytest.raises(ValidationError):
+        CanonicalResumeDocument.model_validate(payload)
+
+
 def test_template_avatar_is_strict_and_must_reference_a_region() -> None:
     template = TemplateDefinition.model_validate(template_payload())
     assert template.avatar.size_px == 96

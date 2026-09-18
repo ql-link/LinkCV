@@ -780,6 +780,84 @@ describe("canonical resume editing projection", () => {
     expect(restored.sections[0].blocks[0]).toEqual(row);
   });
 
+  it("round-trips custom column widths on equal rows", () => {
+    const widths = [50, 30, 20];
+    const row = {
+      node_id: "node_rowwidths000000000001",
+      source_refs: ["src_aaaaaaaaaaaaaaaa"],
+      block_type: "row" as const,
+      row_kind: "equal" as const,
+      left_width_percent: null,
+      column_widths_percent: widths,
+      cells: widths.map((_, index) => ({
+        node_id: `node_widthcell${index.toString().padStart(8, "0")}`,
+        source_refs: [],
+        blocks: [{
+          node_id: `node_widthblock${index.toString().padStart(8, "0")}`,
+          source_refs: [],
+          block_type: "paragraph" as const,
+          runs: [{
+            inline_type: "text" as const,
+            text: `列${index + 1}`,
+            marks: [],
+            href: null,
+            style: { color: null, font_size_pt: null, highlight_color: null },
+          }],
+        }],
+      })),
+    };
+    const document = {
+      ...canonicalFixture,
+      sections: [{ ...canonicalFixture.sections[0], blocks: [row] }],
+    };
+
+    const editor = canonicalResumeDocumentToEditorDocument(document);
+    const projectedRow = editor.content?.find((node) => node.type === "resumeRow");
+    expect(projectedRow?.attrs?.columnWidths).toEqual(widths);
+
+    const restored = canonicalResumeDocumentFromEditorDocument(editor, document);
+    expect(restored.sections[0].blocks[0]).toEqual(row);
+  });
+
+  it("未调整过宽度的等分行往返后不产生宽度字段", () => {
+    const cell = (index: number) => ({
+      node_id: `node_plaincell${index.toString().padStart(9, "0")}`,
+      source_refs: [],
+      blocks: [{
+        node_id: `node_plainblock${index.toString().padStart(8, "0")}`,
+        source_refs: [],
+        block_type: "paragraph" as const,
+        runs: [{
+          inline_type: "text" as const,
+          text: `列${index + 1}`,
+          marks: [],
+          href: null,
+          style: { color: null, font_size_pt: null, highlight_color: null },
+        }],
+      }],
+    });
+    const row = {
+      node_id: "node_rowplain0000000000001",
+      source_refs: [],
+      block_type: "row" as const,
+      row_kind: "equal" as const,
+      left_width_percent: null,
+      cells: [cell(0), cell(1), cell(2)],
+    };
+    const document = {
+      ...canonicalFixture,
+      sections: [{ ...canonicalFixture.sections[0], blocks: [row] }],
+    };
+
+    const editor = canonicalResumeDocumentToEditorDocument(document);
+    expect(editor.content?.find((node) => node.type === "resumeRow")?.attrs?.columnWidths ?? null)
+      .toBeNull();
+
+    const restored = canonicalResumeDocumentFromEditorDocument(editor, document);
+    const restoredBlock = restored.sections[0].blocks[0] as Record<string, unknown>;
+    expect("column_widths_percent" in restoredBlock).toBe(false);
+  });
+
   it("persists identity name/headline/contact/avatar add-delete and retains source refs", () => {
     const editor = canonicalResumeDocumentToEditorDocument(canonicalEditingFixture);
     const heading = editor.content?.find((node) => node.type === "heading" && node.attrs?.level === 1)!;

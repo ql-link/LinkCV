@@ -300,12 +300,18 @@ ROW_CELL_COUNTS: dict[str, tuple[int, ...]] = {
     "equal": (3, 4),
 }
 
+# 等分栏每栏的最小宽度：任何一栏都不允许被压到消失。
+MIN_COLUMN_WIDTH_PERCENT = 10.0
+COLUMN_WIDTH_SUM_TOLERANCE = 0.01
+
 
 class RowBlock(SourceReferenced):
     block_type: Literal["row"]
     row_kind: Literal["pair", "meta", "trio", "equal"]
     cells: list[RowCell] = Field(min_length=1, max_length=4)
     left_width_percent: float | None = Field(default=None, ge=30, le=80)
+    # 等分栏每栏的宽度占比。为空表示等分，也就是用户从未拖动过分隔线。
+    column_widths_percent: list[float] | None = None
 
     @model_validator(mode="after")
     def validate_shape(self) -> "RowBlock":
@@ -319,7 +325,38 @@ class RowBlock(SourceReferenced):
             raise ValueError("pair rows require left_width_percent")
         if self.row_kind != "pair" and self.left_width_percent is not None:
             raise ValueError("only pair rows may declare left_width_percent")
+        self._validate_column_widths()
         return self
+
+    def _validate_column_widths(self) -> None:
+        widths = self.column_widths_percent
+        if widths is None:
+            return
+        if self.row_kind != "equal":
+            raise ValueError("only equal rows may declare column_widths_percent")
+        if len(widths) != len(self.cells):
+            raise ValueError(
+                "column_widths_percent must declare one width per cell"
+            )
+        if abs(sum(widths) - 100.0) > COLUMN_WIDTH_SUM_TOLERANCE:
+            raise ValueError("column_widths_percent must sum to 100")
+        # 留下的其余各栏也必须容纳各自的最小宽度，因此单栏上限随格数变化。
+        max_width = 100.0 - MIN_COLUMN_WIDTH_PERCENT * (len(widths) - 1)
+        if any(
+            width < MIN_COLUMN_WIDTH_PERCENT or width > max_width
+            for width in widths
+        ):
+            raise ValueError(
+                "column_widths_percent is outside the allowed range"
+            )
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_widths(self, handler):
+        # 未自定义宽度时不输出该字段，保持存量正文与其内容摘要逐字节不变。
+        data = handler(self)
+        if data.get("column_widths_percent") is None:
+            data.pop("column_widths_percent", None)
+        return data
 
     @property
     def kind(self) -> Literal["pair", "meta", "trio", "equal"]:

@@ -215,6 +215,74 @@ describe("逐行插入入口", () => {
     expect(onClose).toHaveBeenCalledOnce();
     editor.destroy();
   });
+
+  it("光标位于分栏行内时显示当前状态，再点一次取消分栏", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "公司实习" }] },
+            { type: "paragraph", content: [{ type: "text", text: "2025.01" }] },
+          ],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(2);
+
+    render(
+      <SlashCommandMenu
+        editor={editor}
+        resumeId="42"
+        state={{ x: 10, y: 10, query: "", replaceRange: null }}
+        onClose={onClose}
+        onNotice={vi.fn()}
+      />,
+    );
+
+    const option = screen.getByRole("option", { name: /左右分栏.*当前行 · 点击取消分栏/ });
+    expect(option).toHaveAttribute("aria-current", "true");
+    // 只用颜色表示当前块，不加勾选之类的额外图标。
+    expect(option.querySelector("svg")).toBeNull();
+
+    await user.click(option);
+
+    expect(editor.getJSON().content?.[0]).toMatchObject({ type: "paragraph" });
+    expect(editor.getText()).toBe("公司实习　2025.01");
+    expect(onClose).toHaveBeenCalledOnce();
+    editor.destroy();
+  });
+
+  it.each([
+    ["<p>正文</p>", /^正文/],
+    ["<h2>章节</h2>", /标题 2/],
+    ["<ul><li><p>分点</p></li></ul>", /无序列表/],
+    ["<ol><li><p>编号</p></li></ol>", /有序列表/],
+  ])("标题、列表与正文同样标出当前块状态：%s", (html, name) => {
+    const editor = new Editor({ extensions: resumeEditorExtensions, content: html });
+    let position = 2;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText) position = pos + 1;
+    });
+    editor.commands.setTextSelection(position);
+
+    render(
+      <SlashCommandMenu
+        editor={editor}
+        resumeId="42"
+        state={{ x: 10, y: 10, query: "", replaceRange: null }}
+        onClose={vi.fn()}
+        onNotice={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("option", { name })).toHaveAttribute("aria-current", "true");
+    editor.destroy();
+  });
 });
 
 describe("行首图标", () => {

@@ -17,6 +17,7 @@ import {
   type RichText,
 } from "../../api/resumeContract";
 import { inlineIconMarkdown, isInlineIconName } from "../../lib/resumeInlineIcon";
+import { normalizeResumeRowColumnWidths } from "./resumeRowColumns";
 import { stripTemplateProjectionFromEditorDocument } from "./templateLayout";
 
 type SemanticKind = ResumeDocument["semantic_sections"][number]["semantic_kind"];
@@ -225,15 +226,18 @@ function canonicalBlockToEditor(
     };
   }
   if (block.block_type === "row") {
+    const attrs = block.row_kind === "pair"
+      ? { leftWidth: block.left_width_percent ?? 50 }
+      : block.row_kind === "equal" && block.column_widths_percent
+        ? { columnWidths: block.column_widths_percent }
+        : null;
     return {
       // pair and equal both project to the user-editable resume row; only the
       // legacy template shapes keep their own node types.
       type: block.row_kind === "meta"
         ? "resumeMetaRow"
         : block.row_kind === "trio" ? "resumeTrioRow" : "resumeRow",
-      ...(block.row_kind === "pair"
-        ? { attrs: { leftWidth: block.left_width_percent ?? 50 } }
-        : {}),
+      ...(attrs ? { attrs } : {}),
       content: block.cells.map((cell, index) => canonicalCellToEditor(cell, block.node_id, block.source_refs, index)),
     };
   }
@@ -547,6 +551,9 @@ function canonicalBlockFromEditor(node: JSONContent, index: number): CanonicalCo
       ? Number(node.attrs?.leftWidth ?? 50)
       : null;
     if (rowKind === "pair" && (!Number.isFinite(leftWidth) || leftWidth == null || leftWidth < 30 || leftWidth > 80)) return null;
+    const columnWidths = rowKind === "equal"
+      ? normalizeResumeRowColumnWidths(node.attrs?.columnWidths, cells.length)
+      : null;
     return {
       node_id: rowId,
       source_refs: [],
@@ -554,6 +561,8 @@ function canonicalBlockFromEditor(node: JSONContent, index: number): CanonicalCo
       row_kind: rowKind,
       cells: canonicalCells,
       left_width_percent: leftWidth,
+      // 缺省表示等分；未调整过宽度的行不写入该字段，保持正文逐字节不变。
+      ...(columnWidths ? { column_widths_percent: columnWidths } : {}),
     };
   }
   if (node.type === "paragraph") {
@@ -1011,6 +1020,9 @@ function canonicalV1BlockFromEditor(
     if (rowKind === "pair" && (width == null || !Number.isFinite(width) || width < 30 || width > 80)) {
       throw new Error("RESUME_EDITOR_INVALID_ROW_WIDTH");
     }
+    const columnWidths = rowKind === "equal"
+      ? normalizeResumeRowColumnWidths(node.attrs?.columnWidths, cells.length)
+      : null;
     return {
       node_id: rowId,
       source_refs: rowSourceRefs,
@@ -1018,6 +1030,7 @@ function canonicalV1BlockFromEditor(
       row_kind: rowKind,
       cells: canonicalCells,
       left_width_percent: width,
+      ...(columnWidths ? { column_widths_percent: columnWidths } : {}),
     };
   }
   if (node.type === "paragraph") {

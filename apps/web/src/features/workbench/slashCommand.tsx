@@ -5,7 +5,14 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
-import { convertCurrentLineToResumeRow, insertInlineIcon, workbenchBlockCommands, type WorkbenchBlockCommand } from "./editorCommands";
+import {
+  convertCurrentLineToResumeRow,
+  convertResumeRowToParagraph,
+  currentWorkbenchBlockCommandId,
+  insertInlineIcon,
+  workbenchBlockCommands,
+  type WorkbenchBlockCommand,
+} from "./editorCommands";
 import { inlineIconComponents } from "./editorExtensions";
 import { readImage } from "./WorkbenchToolbar";
 import { RESUME_IMAGE_ACCEPT } from "./resumeImageLimits";
@@ -127,6 +134,12 @@ export function runWorkbenchBlockCommand(
   if (command.id === "bullet-list") return editor.chain().focus().toggleBulletList().run();
   if (command.id === "ordered-list") return editor.chain().focus().toggleOrderedList().run();
   if (command.id === "resume-row") {
+    // 已经是分栏行时，同一个入口改为取消分栏，把这一行合并回普通正文。
+    if (currentWorkbenchBlockCommandId(editor) === "resume-row") {
+      const merged = convertResumeRowToParagraph(editor);
+      if (!merged) onNotice("这一行无法取消分栏");
+      return merged;
+    }
     const changed = convertCurrentLineToResumeRow(editor);
     if (!changed) onNotice("请先把光标放在要左右对齐的正文行中");
     return changed;
@@ -166,6 +179,8 @@ export function SlashCommandMenu({
   onNotice: (message: string) => void;
 }) {
   const commands = useMemo(() => filterWorkbenchCommands(state.query), [state.query]);
+  // 菜单打开时光标所在行的真实块类型，用来标出当前状态。
+  const currentCommandId = currentWorkbenchBlockCommandId(editor);
   const [selected, setSelected] = useState(0);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [selectedIcon, setSelectedIcon] = useState(0);
@@ -263,21 +278,25 @@ export function SlashCommandMenu({
             );
           })}
         </div>
-      ) : commands.length === 0 ? <p>没有匹配命令</p> : commands.map((command, index) => (
-        <button
-          type="button"
-          role="option"
-          aria-selected={index === selected}
-          className={index === selected ? "is-selected" : ""}
-          key={command.id}
-          onMouseEnter={() => setSelected(index)}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => execute(command)}
-        >
-          <span>{command.label}</span>
-          <small>{command.keywords[0]}</small>
-        </button>
-      ))}
+      ) : commands.length === 0 ? <p>没有匹配命令</p> : commands.map((command, index) => {
+        const current = command.id === currentCommandId;
+        return (
+          <button
+            type="button"
+            role="option"
+            aria-selected={index === selected}
+            aria-current={current ? "true" : undefined}
+            className={`${index === selected ? "is-selected" : ""}${current ? " is-current" : ""}`}
+            key={command.id}
+            onMouseEnter={() => setSelected(index)}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => execute(command)}
+          >
+            <span>{command.label}</span>
+            <small>{command.id === "resume-row" && current ? "当前行 · 点击取消分栏" : command.keywords[0]}</small>
+          </button>
+        );
+      })}
     </div>
   );
 }
