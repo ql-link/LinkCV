@@ -1,23 +1,20 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
-import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
+import { ApiRequestError } from "../../api/client";
+import { defaultCanonicalPresentation } from "../../api/resumeContract";
 import {
   ImportWarningBanner,
   AgentFloatingEntry,
   clampAgentDrawerWidth,
   clampAgentFloatingPosition,
-  defaultWorkbenchDrawerMode,
-  ExportPdfAction,
   FontPreviewSelect,
   normalizeVersionName,
   PageArrangementControl,
   SettingsStepper,
-  SaveResumeAction,
   SaveVersionAction,
-  ResumeTemplateSwitcher,
+  WorkbenchTemplateAction,
   VersionRenameAction,
   WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
@@ -27,8 +24,9 @@ import {
   truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
-  WorkbenchDesignAction,
-  WorkbenchPanelSwitcher,
+  WorkbenchDrawerHeader,
+  WorkbenchMoreMenu,
+  WorkbenchSettingsAction,
   WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
@@ -214,143 +212,58 @@ describe("ResumeWorkbench 抽屉布局", () => {
     expect(clampAgentDrawerWidth(600, 500)).toBe(476);
     expect(clampAgentDrawerWidth(390, 300)).toBe(320);
   });
-
-  it("桌面默认展开设置，小屏默认保留完整编辑画布", () => {
-    expect(defaultWorkbenchDrawerMode(1440)).toBe("settings");
-    expect(defaultWorkbenchDrawerMode(1024)).toBe("settings");
-    expect(defaultWorkbenchDrawerMode(980)).toBeNull();
-    expect(defaultWorkbenchDrawerMode(390)).toBeNull();
-  });
 });
 
 describe("ResumeWorkbench 编辑面板入口", () => {
-  it("从顶部设计按钮打开或收起编辑面板", async () => {
+  it("从顶部设置按钮打开或收起编辑面板", async () => {
     const user = userEvent.setup();
     const onToggle = vi.fn();
-    const { rerender } = render(<WorkbenchDesignAction panelOpen={false} onToggle={onToggle} />);
+    const { rerender } = render(<WorkbenchSettingsAction panelOpen={false} onToggle={onToggle} />);
 
-    const design = screen.getByRole("button", { name: "设计" });
-    expect(design).toHaveAttribute("aria-expanded", "false");
-    await user.click(design);
+    const action = screen.getByRole("button", { name: "设置" });
+    expect(action).toHaveAttribute("aria-expanded", "false");
+    await user.click(action);
     expect(onToggle).toHaveBeenCalledOnce();
 
-    rerender(<WorkbenchDesignAction panelOpen onToggle={onToggle} />);
-    expect(screen.getByRole("button", { name: "设计" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "设计" })).toHaveClass("is-active");
+    rerender(<WorkbenchSettingsAction panelOpen onToggle={onToggle} />);
+    expect(screen.getByRole("button", { name: "设置" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "设置" })).toHaveClass("is-active");
   });
 
-  it("在右侧面板内切换页面设置和版本记录", async () => {
+  it("抽屉标题区只提供标题和关闭，不再有面板切换", async () => {
     const user = userEvent.setup();
-    const onSettings = vi.fn();
-    const onHistory = vi.fn();
     const onClose = vi.fn();
     render(
-      <WorkbenchPanelSwitcher
-        activePanel="settings"
-        onSettings={onSettings}
-        onHistory={onHistory}
+      <WorkbenchDrawerHeader
+        titleId="workbench-settings-title"
+        title="设置"
+        closeLabel="关闭设置面板"
         onClose={onClose}
       />,
     );
 
-    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "版本记录" })).toHaveAttribute("aria-selected", "false");
-    await user.click(screen.getByRole("tab", { name: "页面设置" }));
-    await user.click(screen.getByRole("tab", { name: "版本记录" }));
-    await user.keyboard("{ArrowLeft}");
-    expect(screen.getByRole("tab", { name: "页面设置" })).toHaveFocus();
-    await user.click(screen.getByRole("button", { name: "关闭编辑面板" }));
-    expect(onSettings).toHaveBeenCalledTimes(2);
-    expect(onHistory).toHaveBeenCalledOnce();
+    expect(screen.getByRole("heading", { name: "设置" })).toHaveAttribute("id", "workbench-settings-title");
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "关闭设置面板" }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
 
-describe("ResumeWorkbench 简历模板", () => {
-  it("展示现有模板并在切换时保留当前模板状态", async () => {
+describe("ResumeWorkbench 简历模板入口", () => {
+  it("从顶部简历模板按钮打开或收起模板面板", async () => {
     const user = userEvent.setup();
-    const templates: ResumeTemplate[] = [
-      {
-        id: "1",
-        key: "classic-cn",
-        name: "经典模板",
-        description: "清晰稳妥的单栏结构",
-        data: defaultCanonicalDocument,
-        style: defaultCanonicalPresentation,
-        switchable: true,
-        incompatibility_reason: null,
-      },
-      {
-        id: "2",
-        key: "creative-orange-cn",
-        name: "创意橙色",
-        description: "强调视觉层级的创意版式",
-        data: defaultCanonicalDocument,
-        style: {
-          ...defaultCanonicalPresentation,
-          template_snapshot: {
-            ...defaultCanonicalPresentation.template_snapshot,
-            template_key: "creative-orange-cn",
-          },
-        },
-        switchable: true,
-        incompatibility_reason: null,
-      },
-    ];
-    vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates });
-    const onApply = vi.fn();
+    const onToggle = vi.fn();
+    const { rerender } = render(<WorkbenchTemplateAction panelOpen={false} onToggle={onToggle} />);
 
-    render(
-      <ResumeTemplateSwitcher
-        currentTemplateKey="classic-cn"
-        onApply={onApply}
-      />,
-    );
+    const action = screen.getByRole("button", { name: "简历模板" });
+    expect(action).toHaveAttribute("aria-expanded", "false");
+    await user.click(action);
+    expect(onToggle).toHaveBeenCalledOnce();
 
-    await user.click(screen.getByRole("button", { name: "简历模板" }));
-    const previewDialog = await screen.findByRole("dialog", { name: "经典模板" });
-    expect(previewDialog).toHaveClass("template-preview-dialog");
-    expect(screen.getByRole("button", { name: "当前模板" })).toBeDisabled();
-
-    await user.click(screen.getByRole("button", { name: "下一个模板：创意橙色" }));
-    expect(await screen.findByRole("dialog", { name: "创意橙色" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "应用模板" }));
-    expect(onApply).toHaveBeenCalledWith(templates[1]);
-    expect(screen.queryByRole("dialog", { name: "创意橙色" })).not.toBeInTheDocument();
-  });
-
-  it("模板加载失败时保留弹窗并允许重新加载", async () => {
-    const user = userEvent.setup();
-    const listTemplates = vi
-      .spyOn(api, "listResumeTemplates")
-      .mockRejectedValueOnce(new Error("HTTP_503"))
-      .mockResolvedValueOnce({
-        templates: [{
-          id: "1",
-          key: "classic-cn",
-          name: "经典模板",
-          description: null,
-          data: defaultCanonicalDocument,
-          style: defaultCanonicalPresentation,
-          switchable: true,
-          incompatibility_reason: null,
-        }],
-      });
-
-    render(
-      <ResumeTemplateSwitcher
-        currentTemplateKey="creative-orange-cn"
-        onApply={vi.fn()}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "简历模板" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("模板暂时无法加载");
-    await user.click(screen.getByRole("button", { name: "重新加载" }));
-
-    expect(await screen.findByRole("dialog", { name: "经典模板" })).toHaveClass("template-preview-dialog");
-    expect(screen.getByRole("button", { name: "应用模板" })).toBeEnabled();
-    expect(listTemplates).toHaveBeenCalledTimes(2);
+    rerender(<WorkbenchTemplateAction panelOpen onToggle={onToggle} />);
+    expect(screen.getByRole("button", { name: "简历模板" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "简历模板" })).toHaveClass("is-active");
   });
 });
 
@@ -515,19 +428,6 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
       .toHaveTextContent("保存失败 · 简历中引用的图片总大小不能超过 10MB");
   });
 
-  it("顶部保存简历按钮触发主记录保存并在保存期间禁用重复操作", async () => {
-    const user = userEvent.setup();
-    const onSave = vi.fn();
-    const { rerender } = render(<SaveResumeAction pending={false} onSave={onSave} />);
-
-    await user.click(screen.getByRole("button", { name: "保存简历" }));
-    expect(onSave).toHaveBeenCalledOnce();
-
-    rerender(<SaveResumeAction pending onSave={onSave} />);
-    expect(screen.getByRole("button", { name: "正在保存简历" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "正在保存简历" })).toHaveTextContent("保存中…");
-  });
-
   it("页面设置中的保存版本入口保留命名版本操作", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
@@ -542,28 +442,63 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
   });
 });
 
-describe("ResumeWorkbench PDF 导出按钮", () => {
-  it("点击按钮直接导出文字版 PDF", async () => {
-    const user = userEvent.setup();
-    const onExport = vi.fn();
-    render(<ExportPdfAction onExport={onExport} />);
+describe("ResumeWorkbench 更多操作菜单", () => {
+  const renderMenu = (overrides: Partial<ComponentProps<typeof WorkbenchMoreMenu>> = {}) => {
+    const handlers = {
+      onHistory: vi.fn(),
+      onExport: vi.fn(),
+      onCompleteness: vi.fn(),
+      onDelete: vi.fn(),
+      exportPending: false,
+      ...overrides,
+    };
+    render(<WorkbenchMoreMenu {...handlers} />);
+    return handlers;
+  };
 
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "导出 PDF" }));
-    expect(onExport).toHaveBeenCalledOnce();
+  it("默认收起，展开后按顺序展示四项操作", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+
+    expect(screen.queryByRole("menu", { name: "更多操作" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "更多操作" }));
+
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "历史版本",
+      "导出 PDF",
+      "简历完整度分析",
+      "删除简历",
+    ]);
   });
 
-  it("PDF 生成期间禁用重复下载", async () => {
+  it.each([
+    ["历史版本", "onHistory"],
+    ["导出 PDF", "onExport"],
+    ["简历完整度分析", "onCompleteness"],
+    ["删除简历", "onDelete"],
+  ] as const)("点击 %s 触发对应操作", async (label, handler) => {
     const user = userEvent.setup();
-    const onExport = vi.fn();
-    render(<ExportPdfAction onExport={onExport} pending />);
+    const handlers = renderMenu();
 
-    const pdfAction = screen.getByRole("button", { name: "正在导出 PDF" });
-    expect(pdfAction).toBeDisabled();
-    await user.click(pdfAction);
-    expect(onExport).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "更多操作" }));
+    await user.click(screen.getByRole("menuitem", { name: label }));
+
+    expect(handlers[handler]).toHaveBeenCalledOnce();
   });
 
+  it("PDF 生成期间禁用菜单中的导出项", async () => {
+    const user = userEvent.setup();
+    const handlers = renderMenu({ exportPending: true });
+
+    await user.click(screen.getByRole("button", { name: "更多操作" }));
+    const exportItem = screen.getByRole("menuitem", { name: "导出中…" });
+    expect(exportItem).toBeDisabled();
+    await user.click(exportItem);
+    expect(handlers.onExport).not.toHaveBeenCalled();
+  });
+});
+
+describe("ResumeWorkbench PDF 导出错误", () => {
   it("把服务端快照过期错误显示为可重试提示", () => {
     expect(resumePdfExportErrorMessage(new ApiRequestError(409, "RESUME_PDF_SNAPSHOT_STALE")))
       .toBe("简历内容已变化，请重新导出");
