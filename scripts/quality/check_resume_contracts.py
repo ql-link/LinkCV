@@ -107,8 +107,12 @@ def _semantic_checks(name: str, instance: dict[str, object]) -> None:
                     continue
                 kind = block.get("row_kind")
                 cells = block.get("cells")
-                expected = {"pair": 2, "meta": 4, "trio": 3}.get(kind)
-                if expected is None or not isinstance(cells, list) or len(cells) != expected:
+                expected = {"pair": (2,), "meta": (4,), "trio": (3,), "equal": (3, 4)}.get(kind)
+                if (
+                    expected is None
+                    or not isinstance(cells, list)
+                    or len(cells) not in expected
+                ):
                     raise ValueError("canonical row has the wrong cell cardinality")
                 width = block.get("left_width_percent")
                 if kind == "pair" and not isinstance(width, (int, float)):

@@ -199,14 +199,15 @@
         "node_id": {"$ref": "#/$defs/nodeId"},
         "source_refs": {"$ref": "#/$defs/sourceRefs"},
         "block_type": {"const": "row"},
-        "row_kind": {"enum": ["pair", "meta", "trio"]},
+        "row_kind": {"enum": ["pair", "meta", "trio", "equal"]},
         "cells": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/rowCell"}},
         "left_width_percent": {"type": ["number", "null"], "minimum": 30, "maximum": 80}
       },
       "allOf": [
         {"if": {"properties": {"row_kind": {"const": "pair"}}}, "then": {"properties": {"cells": {"minItems": 2, "maxItems": 2}, "left_width_percent": {"type": "number", "minimum": 30, "maximum": 80}}}},
         {"if": {"properties": {"row_kind": {"const": "meta"}}}, "then": {"properties": {"cells": {"minItems": 4, "maxItems": 4}, "left_width_percent": {"type": "null"}}}},
-        {"if": {"properties": {"row_kind": {"const": "trio"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 3}, "left_width_percent": {"type": "null"}}}}
+        {"if": {"properties": {"row_kind": {"const": "trio"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 3}, "left_width_percent": {"type": "null"}}}},
+        {"if": {"properties": {"row_kind": {"const": "equal"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 4}, "left_width_percent": {"type": "null"}}}}
       ]
     },
     "block": {"oneOf": [{"$ref": "#/$defs/paragraph"}, {"$ref": "#/$defs/list"}, {"$ref": "#/$defs/mediaBlock"}, {"$ref": "#/$defs/row"}]},
