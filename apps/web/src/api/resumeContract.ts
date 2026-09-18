@@ -255,6 +255,8 @@ export type CanonicalRowBlock = CanonicalSourceReferenced & {
   row_kind: "pair" | "meta" | "trio" | "equal";
   cells: CanonicalRowCell[];
   left_width_percent: number | null;
+  // 等分栏每栏的宽度占比。缺省表示等分，此时字段不出现在 JSON 中。
+  column_widths_percent?: number[] | null;
 };
 
 export type CanonicalContentBlock =

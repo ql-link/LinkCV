@@ -119,6 +119,31 @@ def _semantic_checks(name: str, instance: dict[str, object]) -> None:
                     raise ValueError("pair row requires a width")
                 if kind != "pair" and width is not None:
                     raise ValueError("fixed row cannot declare a width")
+                widths = block.get("column_widths_percent")
+                if widths is not None:
+                    if kind != "equal":
+                        raise ValueError(
+                            "only equal rows may declare column widths"
+                        )
+                    if (
+                        not isinstance(widths, list)
+                        or len(widths) != len(cells)
+                        or any(
+                            isinstance(value, bool)
+                            or not isinstance(value, (int, float))
+                            for value in widths
+                        )
+                    ):
+                        raise ValueError(
+                            "column widths must declare one number per cell"
+                        )
+                    if abs(sum(widths) - 100) > 0.01:
+                        raise ValueError("column widths must sum to 100")
+                    ceiling = 100 - 10 * (len(widths) - 1)
+                    if any(value < 10 or value > ceiling for value in widths):
+                        raise ValueError(
+                            "column width is outside the allowed range"
+                        )
                 for cell in cells:
                     if not isinstance(cell, dict):
                         raise ValueError("row cell must be an object")

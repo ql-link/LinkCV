@@ -1,6 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import { isInlineIconName } from "../../../lib/resumeInlineIcon";
 import { renderInlineIcon } from "../../../parser/resumeMarkdown";
+import {
+  normalizeResumeRowColumnWidths,
+  resumeRowColumnTracks,
+} from "../../workbench/resumeRowColumns";
 
 function escapeHtml(value: string) {
   return value
@@ -118,7 +122,11 @@ export function renderResumeEditorNode(node: JSONContent): string {
   if (node.type === "resumeRow") {
     const cells = node.content ?? [];
     if (cells.length > 2) {
-      return `<div class="resume-row equal" data-type="resume-row" data-block="equal" data-columns="${cells.length}" style="--resume-row-columns:${cells.length}">${cells
+      const widths = normalizeResumeRowColumnWidths(node.attrs?.columnWidths, cells.length);
+      const tracks = widths
+        ? `;--resume-row-tracks:${resumeRowColumnTracks(widths)}`
+        : "";
+      return `<div class="resume-row equal" data-type="resume-row" data-block="equal" data-columns="${cells.length}" style="--resume-row-columns:${cells.length}${tracks}">${cells
         .map((cell) => `<p class="resume-row-cell">${inlineContent(cell)}</p>`)
         .join("")}</div>`;
     }

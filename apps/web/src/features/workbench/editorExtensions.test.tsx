@@ -193,3 +193,133 @@ describe("分栏栏数菜单", () => {
     expect(screen.queryByRole("menu", { name: "分栏栏数" })).not.toBeInTheDocument();
   });
 });
+
+describe("分栏分隔线拖拽", () => {
+  const ROW_WIDTH = 600;
+
+  async function renderRow(cells: string[], selectInsideRow: boolean) {
+    const instance = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "正文" }] },
+          {
+            type: "resumeRow",
+            attrs: { leftWidth: 50 },
+            content: cells.map((text) => ({
+              type: "paragraph",
+              content: [{ type: "text", text }],
+            })),
+          },
+        ],
+      },
+    });
+    editor = instance;
+    let rowPosition = 0;
+    instance.state.doc.descendants((node, position) => {
+      if (node.type.name === "resumeRow") rowPosition = position;
+    });
+    instance.commands.setTextSelection(selectInsideRow ? rowPosition + 3 : 2);
+    const { container } = render(<EditorContent editor={instance} />);
+    await act(async () => { await Promise.resolve(); });
+    const row = container.querySelector<HTMLElement>(".resume-layout-row");
+    if (!row) throw new Error("分栏行未渲染");
+    return row;
+  }
+
+  function handles(row: HTMLElement) {
+    return Array.from(row.querySelectorAll<HTMLElement>(".resume-column-handle"));
+  }
+
+  function stubRowWidth() {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+      width: ROW_WIDTH,
+      height: 30,
+      top: 0,
+      left: 0,
+      right: ROW_WIDTH,
+      bottom: 30,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+  }
+
+  function drag(handle: HTMLElement, fromX: number, toX: number) {
+    fireEvent(handle, new MouseEvent("pointerdown", { clientX: fromX, bubbles: true, cancelable: true }));
+    fireEvent(window, new MouseEvent("pointermove", { clientX: toX, bubbles: true }));
+    fireEvent(window, new MouseEvent("pointerup", { bubbles: true }));
+  }
+
+  function clickOnly(handle: HTMLElement, x: number) {
+    fireEvent(handle, new MouseEvent("pointerdown", { clientX: x, bubbles: true, cancelable: true }));
+    fireEvent(window, new MouseEvent("pointerup", { bubbles: true }));
+  }
+
+  function storedWidths() {
+    return editor?.state.doc.lastChild?.attrs.columnWidths ?? null;
+  }
+
+  it("光标进入 3 栏行时才显示两条分隔线手柄", async () => {
+    const outside = await renderRow(["甲", "乙", "丙"], false);
+    expect(handles(outside)).toHaveLength(0);
+
+    const inside = await renderRow(["甲", "乙", "丙"], true);
+    expect(handles(inside)).toHaveLength(2);
+    expect(handles(inside)[0].style.left).toMatch(/^33\.33/);
+    expect(handles(inside)[1].style.left).toMatch(/^66\.66/);
+  });
+
+  it("4 栏行显示三条手柄，2 栏行不显示", async () => {
+    expect(handles(await renderRow(["甲", "乙", "丙", "丁"], true))).toHaveLength(3);
+    expect(handles(await renderRow(["甲", "乙"], true))).toHaveLength(0);
+  });
+
+  it("拖动分隔线只改相邻两栏，其余栏不变", async () => {
+    const row = await renderRow(["甲", "乙", "丙"], true);
+    stubRowWidth();
+
+    drag(handles(row)[0], 100, 160);
+
+    expect(storedWidths()).toEqual([43.33, 23.34, 33.33]);
+  });
+
+  it("第二条分隔线只影响第二、第三栏", async () => {
+    const row = await renderRow(["甲", "乙", "丙"], true);
+    stubRowWidth();
+
+    drag(handles(row)[1], 300, 240);
+
+    expect(storedWidths()).toEqual([33.33, 23.33, 43.34]);
+  });
+
+  it("拖到最小宽度后不再变化", async () => {
+    const row = await renderRow(["甲", "乙", "丙"], true);
+    stubRowWidth();
+
+    drag(handles(row)[0], 100, 100 + ROW_WIDTH);
+
+    expect(storedWidths()).toEqual([56.67, 10, 33.33]);
+  });
+
+  it("只点一下分隔线不写入宽度", async () => {
+    const row = await renderRow(["甲", "乙", "丙"], true);
+    stubRowWidth();
+
+    clickOnly(handles(row)[0], 100);
+
+    expect(storedWidths()).toBeNull();
+  });
+
+  it("双击分隔线恢复等分", async () => {
+    const row = await renderRow(["甲", "乙", "丙"], true);
+    stubRowWidth();
+    drag(handles(row)[0], 100, 160);
+    expect(storedWidths()).toEqual([43.33, 23.34, 33.33]);
+
+    fireEvent.doubleClick(handles(row)[0]);
+
+    expect(storedWidths()).toBeNull();
+  });
+});

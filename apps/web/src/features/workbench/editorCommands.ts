@@ -2,6 +2,7 @@ import type { Editor } from "@tiptap/react";
 import { Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { InlineIconName } from "../../lib/resumeInlineIcon";
+import { normalizeResumeRowColumnWidths } from "./resumeRowColumns";
 
 export type WorkbenchBlockCommandId =
   | "paragraph"
@@ -84,6 +85,10 @@ export function convertCurrentLineToResumeRow(editor: Editor) {
   });
 }
 
+/**
+ * 把分栏行合并回一个普通段落，2/3/4 栏都适用：非空栏之间用一个全角空格分隔，
+ * 文字不丢失。第一栏保留自己的定位锚点，其余栏的锚点随格子一起消失。
+ */
 export function convertResumeRowToParagraph(editor: Editor) {
   return editor.commands.command(({ state, dispatch }) => {
     const { $from } = state.selection;
@@ -93,15 +98,21 @@ export function convertResumeRowToParagraph(editor: Editor) {
 
     const row = $from.node(rowDepth);
     const paragraphType = state.schema.nodes.paragraph;
-    if (!paragraphType || row.childCount !== 2) return false;
+    if (!paragraphType || row.childCount < 2) return false;
 
-    const left = row.child(0);
-    const right = row.child(1);
-    const separator = left.content.size > 0 && right.content.size > 0
-      ? Fragment.from(state.schema.text("　"))
-      : Fragment.empty;
-    const content = left.content.append(separator).append(right.content);
-    const paragraph = paragraphType.create(left.attrs, content);
+    let content = row.child(0).content;
+    for (let index = 1; index < row.childCount; index += 1) {
+      const cell = row.child(index);
+      const inline: ProseMirrorNode[] = [];
+      cell.forEach((child) => {
+        if (child.type.name !== "resumeBlockAnchor") inline.push(child);
+      });
+      if (!inline.length) continue;
+      if (content.size > 0) content = content.append(Fragment.from(state.schema.text("　")));
+      content = content.append(Fragment.fromArray(inline));
+    }
+
+    const paragraph = paragraphType.create(row.child(0).attrs, content);
     const from = $from.before(rowDepth);
     const transaction = state.tr.replaceWith(from, from + row.nodeSize, paragraph);
     transaction.setSelection(TextSelection.near(transaction.doc.resolve(from + paragraph.nodeSize - 1)));
@@ -110,13 +121,32 @@ export function convertResumeRowToParagraph(editor: Editor) {
   });
 }
 
+/**
+ * 光标当前所在的块类型，用于让插入菜单标出这一行真实处于什么状态。
+ * 列表和分栏行是段落的祖先，标题本身是文本块，因此从最内层逐级向外判断。
+ */
+export function currentWorkbenchBlockCommandId(
+  editor: Editor,
+): WorkbenchBlockCommandId | null {
+  const { $from } = editor.state.selection;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const node = $from.node(depth);
+    const name = node.type.name;
+    if (name === "bulletList") return "bullet-list";
+    if (name === "orderedList") return "ordered-list";
+    if (name === "resumeRow") return "resume-row";
+    if (name === "heading") {
+      const level = Number(node.attrs.level);
+      return level === 1 || level === 2 || level === 3
+        ? (`heading-${level}` as WorkbenchBlockCommandId)
+        : null;
+    }
+  }
+  return $from.parent.type.name === "paragraph" ? "paragraph" : null;
+}
+
 export type ResumeRowColumnCount = 2 | 3 | 4;
 
-/**
- * 把一行分栏改成指定的栏数。行内段落数就是栏数：增加栏数只补空栏，减少栏数
- * 会把被去掉栏的文字按顺序追加到最后一个保留栏，避免静默丢字。
- * 2 栏仍是带左右比例的原有形状，3/4 栏是右侧栏数菜单产生的等分栏。
- */
 export function setResumeRowColumns(
   editor: Editor,
   rowPosition: number,
@@ -158,12 +188,38 @@ export function setResumeRowColumns(
       }
     }
 
+    // 栏数变化后旧占比没有对应关系，宽度回到等分。
     const transaction = state.tr.replaceWith(
       rowPosition,
       rowPosition + row.nodeSize,
-      row.type.create(row.attrs, cells),
+      row.type.create({ ...row.attrs, columnWidths: null }, cells),
     );
     dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
+/**
+ * 写入或清空某一行的自定义栏宽；传 null 表示恢复等分。
+ * 只有 3/4 栏的分栏行才有栏宽，2 栏沿用左右比例。
+ */
+export function setResumeRowColumnWidths(
+  editor: Editor,
+  rowPosition: number,
+  widths: number[] | null,
+) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const row = state.doc.nodeAt(rowPosition);
+    if (!row || row.type.name !== "resumeRow" || row.childCount < 3) return false;
+    const normalized = widths === null
+      ? null
+      : normalizeResumeRowColumnWidths(widths, row.childCount);
+    if (widths !== null && !normalized) return false;
+    if ((row.attrs.columnWidths ?? null) === null && normalized === null) return false;
+    dispatch?.(state.tr.setNodeMarkup(rowPosition, undefined, {
+      ...row.attrs,
+      columnWidths: normalized,
+    }));
     return true;
   });
 }

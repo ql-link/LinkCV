@@ -1198,14 +1198,22 @@ select:not([data-slot]):focus-visible {
 }
 
 .resume-row.equal {
-  grid-template-columns: repeat(var(--resume-row-columns, 2), minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: var(--resume-row-tracks, repeat(var(--resume-row-columns, 2), minmax(0, 1fr)));
+  gap: 0;
 }
 
 .resume-row-cell {
   min-width: 0;
   margin: 0;
   text-align: left;
+}
+
+.resume-row-cell:not(:last-child) {
+  padding-right: 12px;
+}
+
+.resume-row-cell + .resume-row-cell {
+  padding-left: 12px;
 }
 
 .resume-row-cell:last-child {
@@ -2029,6 +2037,8 @@ select:not([data-slot]):focus-visible {
 .workbench-command-menu > button { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 8px 10px; color: var(--ui-foreground); cursor: pointer; font: 500 var(--ui-text-sm)/1.3 var(--ui-font); text-align: left; }
 .workbench-command-menu > button small { color: var(--ui-text-muted); font-size: var(--ui-text-xs); }
 .workbench-command-menu > button.is-selected { background: var(--ui-accent-subtle); color: var(--ui-accent); }
+.workbench-command-menu > button.is-current { color: var(--ui-accent); }
+.workbench-command-menu > button.is-current small { color: var(--ui-accent); }
 .workbench-inline-icon-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
 .workbench-inline-icon-picker > button { display: grid; min-width: 0; min-height: 58px; place-items: center; gap: 4px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 7px 4px; color: var(--ui-text-secondary); cursor: pointer; font: 500 var(--ui-text-xs)/1.2 var(--ui-font); }
 .workbench-inline-icon-picker > button:hover,
@@ -2105,14 +2115,18 @@ select:not([data-slot]):focus-visible {
   text-align: right;
 }
 .resume-layout-row.is-equal [data-node-view-content-react] {
-  grid-template-columns: repeat(var(--resume-row-columns), minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: var(--resume-row-tracks, repeat(var(--resume-row-columns), minmax(0, 1fr)));
+  gap: 0;
 }
 .resume-layout-row.is-equal [data-node-view-content-react] > p {
   padding-left: 0;
   text-align: left;
 }
-/* 首栏贴左、末栏贴右、中间各栏居中；内边距恒定，避免选中时刻文字跳动 */
+/* 首栏贴左、末栏贴右、中间各栏居中；内边距恒定，避免选中时刻文字跳动。
+   间距由单元格内边距提供，分隔线因此正好落在网格轨道边界上。 */
+.resume-layout-row.is-equal [data-node-view-content-react] > p:not(:last-child) {
+  padding-right: 12px;
+}
 .resume-layout-row.is-equal [data-node-view-content-react] > p + p {
   padding-left: 12px;
 }
@@ -2127,6 +2141,33 @@ select:not([data-slot]):focus-visible {
 .resume-layout-row.is-active [data-node-view-content-react] > p:last-child {
   border-left: 1px solid var(--resume-column-guide);
 }
+/* 分隔线的手柄：只在光标位于该行时出现，覆盖在分隔线两侧的可抓取区域上。 */
+.resume-column-handles { position: absolute; inset: 0; pointer-events: none; }
+.resume-column-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+.resume-column-handle::before {
+  position: absolute;
+  inset: 0 6px;
+  border-radius: 1px;
+  background: var(--ui-accent);
+  content: "";
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.resume-column-handle:hover::before,
+.resume-column-handle:focus-visible::before { opacity: 0.45; }
+.resume-column-handle:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -1px; }
 .resume-layout-row.is-active {
   background: rgba(52, 120, 246, 0.055);
   box-shadow: 0 0 0 1px rgba(52, 120, 246, 0.2);
