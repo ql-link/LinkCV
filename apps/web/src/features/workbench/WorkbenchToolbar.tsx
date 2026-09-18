@@ -50,15 +50,19 @@ function ToolButton({ label, active, disabled, children, onClick }: ToolButtonPr
 type AnchoredPopoverProps = {
   open: boolean;
   className?: string;
+  role?: React.AriaRole;
+  ariaLabel?: string;
   children: React.ReactNode;
 };
 
-function AnchoredPopover({ open, className = "", children }: AnchoredPopoverProps) {
+export function AnchoredPopover({ open, className = "", role, ariaLabel, children }: AnchoredPopoverProps) {
   return (
     <AnimatePresence>
       {open && (
         <motion.div
           className={`workbench-popover ${className}`}
+          role={role}
+          aria-label={ariaLabel}
           initial={{ opacity: 0, scale: 0.92, y: 3 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.92, y: 3 }}
@@ -71,7 +75,7 @@ function AnchoredPopover({ open, className = "", children }: AnchoredPopoverProp
   );
 }
 
-function useDismissPopover(open: boolean, close: () => void, anchorRef: React.RefObject<HTMLDivElement | null>) {
+export function useDismissPopover(open: boolean, close: () => void, anchorRef: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {

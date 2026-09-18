@@ -3,22 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { defaultResumeMarkdown } from "../../parser/defaultResume";
 import { evaluateResumeCompleteness } from "./resumeCompleteness";
-import { ResumeCompletenessAction, ResumeCompletenessPanel } from "./ResumeCompletenessPanel";
-
-describe("ResumeCompletenessAction", () => {
-  it("展示当前分数并提供抽屉状态", async () => {
-    const user = userEvent.setup();
-    const onToggle = vi.fn();
-    render(<ResumeCompletenessAction score={72} panelOpen={false} onToggle={onToggle} />);
-
-    const action = screen.getByRole("button", { name: "简历完整度 72 分" });
-    expect(action).toHaveTextContent("完整度 72");
-    expect(action).toHaveClass("is-medium");
-    expect(action).toHaveAttribute("aria-expanded", "false");
-    await user.click(action);
-    expect(onToggle).toHaveBeenCalledOnce();
-  });
-});
+import { ResumeCompletenessPanel } from "./ResumeCompletenessPanel";
 
 describe("ResumeCompletenessPanel", () => {
   it("解释示例内容封顶，并显示待完善建议", () => {

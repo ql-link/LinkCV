@@ -1,6 +1,5 @@
-import { AlertTriangle, Check, CircleAlert, ClipboardCheck, Minus, X } from "lucide-react";
+import { AlertTriangle, Check, CircleAlert, Minus, X } from "lucide-react";
 import type { CSSProperties } from "react";
-import { Button } from "@/components/ui";
 import type {
   ResumeCompletenessCheck,
   ResumeCompletenessResult,
@@ -37,34 +36,6 @@ function CompletenessCheckRow({ item }: { item: ResumeCompletenessCheck }) {
         {item.recommendation && <em>{item.recommendation}</em>}
       </span>
     </li>
-  );
-}
-
-export function ResumeCompletenessAction({
-  score,
-  panelOpen,
-  onToggle,
-}: {
-  score: number;
-  panelOpen: boolean;
-  onToggle: () => void;
-}) {
-  const tone = resumeCompletenessTone(score);
-  return (
-    <Button
-      aria-label={`简历完整度 ${score} 分`}
-      aria-controls="workbench-side-panel"
-      aria-expanded={panelOpen}
-      aria-pressed={panelOpen}
-      className={`workbench-action workbench-quality-action is-${tone}${panelOpen ? " is-active" : ""}`}
-      icon={<ClipboardCheck aria-hidden="true" />}
-      size="sm"
-      title={`简历完整度 ${score} 分`}
-      variant="secondary"
-      onClick={onToggle}
-    >
-      完整度 {score}
-    </Button>
   );
 }
 
