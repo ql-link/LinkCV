@@ -51,4 +51,28 @@ describe("renderResumeEditorDocument 分栏行", () => {
     expect(html).toContain("--resume-row-columns:3");
     expect(html.match(/class="resume-row-cell"/g)).toHaveLength(3);
   });
+
+  it("带自定义宽度时输出对应轨道，未调整过则保持等分", () => {
+    const custom = renderResumeEditorDocument(withRow({
+      type: "resumeRow",
+      attrs: { leftWidth: 50, columnWidths: [50, 30, 20] },
+      content: ["A", "B", "C"].map(textCell),
+    }));
+    expect(custom).toContain("--resume-row-tracks:50fr 30fr 20fr");
+
+    const untouched = renderResumeEditorDocument(withRow({
+      type: "resumeRow",
+      attrs: { leftWidth: 50 },
+      content: ["A", "B", "C"].map(textCell),
+    }));
+    expect(untouched).not.toContain("--resume-row-tracks");
+
+    // 非法的宽度数组退回等分，不影响渲染。
+    const invalid = renderResumeEditorDocument(withRow({
+      type: "resumeRow",
+      attrs: { leftWidth: 50, columnWidths: [40, 40, 40] },
+      content: ["A", "B", "C"].map(textCell),
+    }));
+    expect(invalid).not.toContain("--resume-row-tracks");
+  });
 });

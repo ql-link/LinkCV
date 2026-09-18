@@ -3,11 +3,20 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   convertCurrentLineToResumeRow,
   convertResumeRowToParagraph,
+  currentWorkbenchBlockCommandId,
   exitVisuallyBlankResumeListItem,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
+  setResumeRowColumnWidths,
   setResumeRowColumns,
 } from "./editorCommands";
+import {
+  equalResumeRowColumnWidths,
+  normalizeResumeRowColumnWidths,
+  resizeResumeRowColumns,
+  resumeRowColumnTracks,
+  resumeRowDividerOffsets,
+} from "./resumeRowColumns";
 import { normalizeResumeRowWidth, resumeEditorExtensions } from "./editorExtensions";
 import { renderResumeMarkdown } from "../../parser/resumeMarkdown";
 
@@ -670,5 +679,121 @@ describe("switchResumeRowColumns", () => {
     editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>正文</p>" });
 
     expect(setResumeRowColumns(editor, 0, 3)).toBe(false);
+  });
+
+  it("改栏数时清空自定义宽度并回到等分", () => {
+    editor = createRowEditor([{ text: "A" }, { text: "B" }, { text: "C" }]);
+    expect(setResumeRowColumnWidths(editor, 0, [50, 30, 20])).toBe(true);
+    expect(editor.state.doc.firstChild?.attrs.columnWidths).toEqual([50, 30, 20]);
+
+    expect(setResumeRowColumns(editor, 0, 4)).toBe(true);
+    expect(editor.state.doc.firstChild?.attrs.columnWidths).toBeNull();
+  });
+
+  it("2 栏行不接受自定义宽度", () => {
+    editor = createRowEditor([{ text: "A" }, { text: "B" }]);
+
+    expect(setResumeRowColumnWidths(editor, 0, [50, 50])).toBe(false);
+    expect(editor.state.doc.firstChild?.attrs.columnWidths ?? null).toBeNull();
+  });
+
+  it("取消分栏把 3/4 栏合并回一个普通段落", () => {
+    editor = createRowEditor([{ text: "甲" }, { text: "乙" }, { text: "丙" }]);
+    editor.commands.setTextSelection(2);
+
+    expect(convertResumeRowToParagraph(editor)).toBe(true);
+    expect(editor.getJSON().content?.[0]?.type).toBe("paragraph");
+    expect(editor.getText()).toBe("甲　乙　丙");
+  });
+
+  it("取消分栏跳过空栏，不产生多余分隔符", () => {
+    editor = createRowEditor([{ text: "甲" }, { text: "" }, { text: "丙" }]);
+    editor.commands.setTextSelection(2);
+
+    expect(convertResumeRowToParagraph(editor)).toBe(true);
+    expect(editor.getText()).toBe("甲　丙");
+  });
+
+  it("取消分栏后不残留已消失栏的定位锚点", () => {
+    editor = createRowEditor([
+      { text: "甲", anchor: blockId("a") },
+      { text: "乙", anchor: blockId("b") },
+      { text: "丙", anchor: blockId("c") },
+    ]);
+    editor.commands.setTextSelection(2);
+
+    expect(convertResumeRowToParagraph(editor)).toBe(true);
+    // 第一栏保留自己的锚点，其余栏的锚点随格子一起消失。
+    expect(anchorCount(editor.state.doc)).toBe(1);
+  });
+
+  it("识别光标所在的块类型", () => {
+    editor = createRowEditor([{ text: "甲" }, { text: "乙" }, { text: "丙" }]);
+    editor.commands.setTextSelection(2);
+    expect(currentWorkbenchBlockCommandId(editor)).toBe("resume-row");
+
+    editor = new Editor({ extensions: resumeEditorExtensions, content: "<p>正文</p>" });
+    editor.commands.setTextSelection(2);
+    expect(currentWorkbenchBlockCommandId(editor)).toBe("paragraph");
+  });
+
+  it.each([
+    ["<h1>姓名</h1>", "heading-1"],
+    ["<h2>章节</h2>", "heading-2"],
+    ["<h3>小标题</h3>", "heading-3"],
+  ])("识别标题层级：%s", (html, expected) => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: html });
+    editor.commands.setTextSelection(2);
+    expect(currentWorkbenchBlockCommandId(editor)).toBe(expected);
+  });
+
+  it.each([
+    ["<ul><li><p>分点</p></li></ul>", "bullet-list"],
+    ["<ol><li><p>编号</p></li></ol>", "ordered-list"],
+  ])("识别列表类型：%s", (html, expected) => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: html });
+    let position = 2;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.isText) position = pos + 1;
+    });
+    editor.commands.setTextSelection(position);
+    expect(currentWorkbenchBlockCommandId(editor)).toBe(expected);
+  });
+});
+
+describe("分栏栏宽", () => {
+  it("归一化只接受长度等于栏数、各栏有下限且总和为 100 的宽度", () => {
+    expect(normalizeResumeRowColumnWidths([50, 30, 20], 3)).toEqual([50, 30, 20]);
+    expect(normalizeResumeRowColumnWidths([40, 20, 20, 20], 4)).toEqual([40, 20, 20, 20]);
+    expect(normalizeResumeRowColumnWidths([33.333, 33.333, 33.334], 3)).toEqual([33.33, 33.33, 33.34]);
+    // 舍入后总和必须仍是一整行 100，否则后端保存会拒绝。
+    const rounded = normalizeResumeRowColumnWidths([43.333, 23.333, 16.667, 16.667], 4);
+    expect(rounded).not.toBeNull();
+    expect(rounded!.reduce((total, width) => total + width, 0)).toBe(100);
+
+    expect(normalizeResumeRowColumnWidths(null, 3)).toBeNull();
+    expect(normalizeResumeRowColumnWidths([50, 50], 2)).toBeNull();
+    expect(normalizeResumeRowColumnWidths([30, 30, 30], 4)).toBeNull();
+    expect(normalizeResumeRowColumnWidths([5, 45, 50], 3)).toBeNull();
+    expect(normalizeResumeRowColumnWidths([85, 10, 5], 3)).toBeNull();
+    expect(normalizeResumeRowColumnWidths([40, 40, 40], 3)).toBeNull();
+    expect(normalizeResumeRowColumnWidths([40, 30, "x"], 3)).toBeNull();
+  });
+
+  it("拖动分隔线只改相邻两栏且两栏之和不变", () => {
+    expect(resizeResumeRowColumns([40, 30, 30], 0, 10)).toEqual([50, 20, 30]);
+    expect(resizeResumeRowColumns([40, 30, 30], 1, -10)).toEqual([40, 20, 40]);
+    expect(resizeResumeRowColumns([40, 30, 30], 0, 0)).toEqual([40, 30, 30]);
+  });
+
+  it("两侧都夹在最小宽度内，不会把某一栏拖没", () => {
+    expect(resizeResumeRowColumns([40, 30, 30], 0, 999)).toEqual([60, 10, 30]);
+    expect(resizeResumeRowColumns([40, 30, 30], 0, -999)).toEqual([10, 60, 30]);
+  });
+
+  it("等分宽度与分隔线位置按栏数推算", () => {
+    expect(equalResumeRowColumnWidths(4)).toEqual([25, 25, 25, 25]);
+    expect(resumeRowDividerOffsets([50, 30, 20])).toEqual([50, 80]);
+    expect(resumeRowColumnTracks([50, 30, 20])).toBe("50fr 30fr 20fr");
   });
 });
