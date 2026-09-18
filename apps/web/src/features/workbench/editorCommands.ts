@@ -110,6 +110,64 @@ export function convertResumeRowToParagraph(editor: Editor) {
   });
 }
 
+export type ResumeRowColumnCount = 2 | 3 | 4;
+
+/**
+ * 把一行分栏改成指定的栏数。行内段落数就是栏数：增加栏数只补空栏，减少栏数
+ * 会把被去掉栏的文字按顺序追加到最后一个保留栏，避免静默丢字。
+ * 2 栏仍是带左右比例的原有形状，3/4 栏是右侧栏数菜单产生的等分栏。
+ */
+export function setResumeRowColumns(
+  editor: Editor,
+  rowPosition: number,
+  columns: ResumeRowColumnCount,
+) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const row = state.doc.nodeAt(rowPosition);
+    if (!row || row.type.name !== "resumeRow") return false;
+
+    const current = row.childCount;
+    if (current === columns || current < 2) return false;
+
+    const paragraphType = state.schema.nodes.paragraph;
+    if (!paragraphType) return false;
+
+    const kept = Math.min(current, columns);
+    const cells: ProseMirrorNode[] = [];
+    for (let index = 0; index < kept; index += 1) cells.push(row.child(index));
+
+    if (columns < current) {
+      const target = cells[kept - 1];
+      const merged: ProseMirrorNode[] = [];
+      target.forEach((child) => merged.push(child));
+      for (let index = kept; index < current; index += 1) {
+        // Anchors identify a cell that no longer exists; only inline content
+        // moves across, so the merged run carries no dangling identity.
+        const dropped: ProseMirrorNode[] = [];
+        row.child(index).forEach((child) => {
+          if (child.type.name !== "resumeBlockAnchor") dropped.push(child);
+        });
+        if (!dropped.length) continue;
+        if (merged.length > 0) merged.push(state.schema.text("　"));
+        merged.push(...dropped);
+      }
+      cells[kept - 1] = paragraphType.create(target.attrs, merged);
+    } else {
+      for (let index = current; index < columns; index += 1) {
+        cells.push(paragraphType.create());
+      }
+    }
+
+    const transaction = state.tr.replaceWith(
+      rowPosition,
+      rowPosition + row.nodeSize,
+      row.type.create(row.attrs, cells),
+    );
+    dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
 export function exitResumeRowToBlankParagraph(editor: Editor) {
   return editor.commands.command(({ state, dispatch }) => {
     const { $from } = state.selection;

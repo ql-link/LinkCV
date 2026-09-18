@@ -1,4 +1,4 @@
-import { Editor } from "@tiptap/core";
+import { Editor, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { describe, expect, it } from "vitest";
 import {
@@ -711,5 +711,45 @@ describe("resume semantic contract adapter", () => {
     expect(html).toContain("<svg");
     expect(html).toContain(":icon[NotAllowed]:");
     expect(html).not.toContain('data-icon-name="NotAllowed"');
+  });
+
+  it("keeps every cell of a 3/4-column row in the markdown projection", () => {
+    const cell = (text: string) => ({ type: "paragraph", content: [{ type: "text", text }] });
+    const fourColumns: JSONContent = {
+      type: "doc",
+      content: [{
+        type: "resumeRow",
+        attrs: { leftWidth: 50 },
+        content: ["公司", "职位", "地点", "2022.9"].map(cell),
+      }],
+    };
+    const threeColumns: JSONContent = {
+      type: "doc",
+      content: [{
+        type: "resumeRow",
+        attrs: { leftWidth: 50 },
+        content: ["公司", "职位", "2022.9"].map(cell),
+      }],
+    };
+
+    const four = editorDocumentToMarkdown(fourColumns);
+    expect(four).toBe(":::: meta\n公司\n职位\n地点\n2022.9\n::::");
+    expect(editorDocumentToMarkdown(threeColumns)).toBe(":::: trio\n公司\n职位\n2022.9\n::::");
+  });
+
+  it("still renders 2-column rows as the left/right marker pair", () => {
+    const markdown = editorDocumentToMarkdown({
+      type: "doc",
+      content: [{
+        type: "resumeRow",
+        attrs: { leftWidth: 64 },
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "公司" }] },
+          { type: "paragraph", content: [{ type: "text", text: "2022.9" }] },
+        ],
+      }],
+    });
+
+    expect(markdown).toBe("::: left 64\n公司\n:::\n\n::: right\n2022.9\n:::");
   });
 });

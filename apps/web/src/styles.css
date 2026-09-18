@@ -1197,6 +1197,17 @@ select:not([data-slot]):focus-visible {
   display: block;
 }
 
+.resume-row.equal {
+  grid-template-columns: repeat(var(--resume-row-columns, 2), minmax(0, 1fr));
+  gap: 10px;
+}
+
+.resume-row-cell {
+  min-width: 0;
+  margin: 0;
+  text-align: left;
+}
+
 .resume-row.single.right {
   text-align: right;
   font-style: italic;
@@ -1966,6 +1977,23 @@ select:not([data-slot]):focus-visible {
 .workbench-inline-icon-picker > button:focus-visible,
 .workbench-inline-icon-picker > button.is-selected { outline: 0; background: var(--ui-accent-subtle); color: var(--ui-accent); }
 
+.resume-column-menu {
+  position: fixed;
+  z-index: 120;
+  width: min(200px, calc(100vw - 24px));
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-elevated);
+  padding: 7px;
+  box-shadow: var(--ui-shadow-md);
+  color: var(--ui-foreground);
+  font-family: var(--ui-font);
+}
+.resume-column-menu-heading { padding: 6px 9px 8px; color: var(--ui-text-muted); font-size: var(--ui-text-xs); font-weight: 600; }
+.resume-column-menu > button { display: flex; width: 100%; min-height: 36px; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: var(--ui-radius-sm); background: transparent; padding: 7px 10px; color: var(--ui-foreground); cursor: pointer; font: 500 var(--ui-text-sm)/1.3 var(--ui-font); text-align: left; }
+.resume-column-menu > button.is-selected { background: var(--ui-accent-subtle); color: var(--ui-accent); }
+.resume-column-menu > button[aria-checked="true"] { color: var(--ui-accent); }
+
 
 .version-diff-dialog { width: min(880px, calc(100vw - 32px)); max-width: 880px; }
 .version-diff-body { display: grid; max-height: min(62vh, 660px); gap: 16px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
@@ -1995,6 +2023,7 @@ select:not([data-slot]):focus-visible {
 .resume-workbench .resume-content ::selection { background: rgba(52, 120, 246, 0.2); }
 
 .resume-layout-row {
+  --resume-column-guide: rgba(31, 41, 55, 0.16);
   position: relative;
   margin: 2px 0;
   border-radius: 5px;
@@ -2017,11 +2046,30 @@ select:not([data-slot]):focus-visible {
   padding-left: 10px;
   text-align: right;
 }
+.resume-layout-row.is-equal [data-node-view-content-react] {
+  grid-template-columns: repeat(var(--resume-row-columns), minmax(0, 1fr));
+  gap: 10px;
+}
+.resume-layout-row.is-equal [data-node-view-content-react] > p,
+.resume-layout-row.is-equal [data-node-view-content-react] > p:last-child {
+  padding-left: 0;
+  text-align: left;
+}
+/* 3/4 栏等分时始终显示分栏分隔线，让每栏边界可见 */
+.resume-layout-row.is-equal [data-node-view-content-react] > p + p,
+.resume-layout-row.is-equal [data-node-view-content-react] > p:last-child {
+  border-left: 1px solid var(--resume-column-guide);
+  padding-left: 12px;
+}
 .resume-layout-row.is-active {
   background: rgba(52, 120, 246, 0.055);
   box-shadow: 0 0 0 1px rgba(52, 120, 246, 0.2);
 }
-.resume-layout-row.is-active [data-node-view-content-react] > p:last-child:has(> br.ProseMirror-trailingBreak)::before {
+/* 光标在行内时才给左右分栏补一条分隔线，避免常态下改变纸面观感 */
+.resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:last-child {
+  border-left: 1px solid var(--resume-column-guide);
+}
+.resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:last-child:has(> br.ProseMirror-trailingBreak)::before {
   float: right;
   height: 0;
   color: #8a8a8e;
@@ -2030,11 +2078,20 @@ select:not([data-slot]):focus-visible {
   font-size: 0.85em;
   pointer-events: none;
 }
-.resume-layout-row.is-active [data-node-view-content-react] > p:first-child:has(> br.ProseMirror-trailingBreak)::before {
+.resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:first-child:has(> br.ProseMirror-trailingBreak)::before {
   float: left;
   height: 0;
   color: #8a8a8e;
   content: "左侧内容…";
+  font-family: var(--ui-font);
+  font-size: 0.85em;
+  pointer-events: none;
+}
+.resume-layout-row.is-equal [data-node-view-content-react] > p:first-child:has(> br.ProseMirror-trailingBreak)::before {
+  float: left;
+  height: 0;
+  color: #8a8a8e;
+  content: "每栏独立输入…";
   font-family: var(--ui-font);
   font-size: 0.85em;
   pointer-events: none;

@@ -250,7 +250,9 @@ export type CanonicalRowCell = CanonicalSourceReferenced & {
 
 export type CanonicalRowBlock = CanonicalSourceReferenced & {
   block_type: "row";
-  row_kind: "pair" | "meta" | "trio";
+  // `equal` is the user-authored 3/4-column split; it carries no width because
+  // its columns are always equal.  `meta`/`trio` stay template-owned.
+  row_kind: "pair" | "meta" | "trio" | "equal";
   cells: CanonicalRowCell[];
   left_width_percent: number | null;
 };
@@ -1416,7 +1418,15 @@ function nodeMarkdown(node: JSONContent): string {
   }
   if (node.type === "horizontalRule") return "---";
   if (node.type === "resumeRow") {
-    const [left, right] = node.content ?? [];
+    const cells = node.content ?? [];
+    // 3/4-column rows reuse the existing meta/trio marker vocabulary: the
+    // Agent surface already understands those tags, and the equal split is
+    // presentational, not part of the text it reads.
+    if (cells.length > 2) {
+      const kind = cells.length === 4 ? "meta" : "trio";
+      return `:::: ${kind}\n${cells.map((cell) => nodeText(cell)).join("\n")}\n::::`;
+    }
+    const [left, right] = cells;
     const leftWidth = Math.min(80, Math.max(30, Number(node.attrs?.leftWidth) || 50));
     return `::: left ${leftWidth}\n${left ? nodeText(left) : ""}\n:::\n\n::: right\n${right ? nodeText(right) : ""}\n:::`;
   }
