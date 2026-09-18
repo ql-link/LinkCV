@@ -47,7 +47,7 @@ import {
 } from "@/components/ui";
 import { resumeSerifFontStack, useResumeStore, type ResumeSettings } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
-import { SelectionFormattingToolbar } from "./WorkbenchToolbar";
+import { SelectionFormattingToolbar, WorkbenchHistoryActions } from "./WorkbenchToolbar";
 import {
   createSelectionBubbleAnchor,
   refreshSelectionBubblePosition,
@@ -57,7 +57,7 @@ import {
 } from "./selectionBubbleAnchor";
 import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
-import { AgentPanel, type AgentSelectionDraft } from "../agent/AgentPanel";
+import { AgentPanel } from "../agent/AgentPanel";
 import {
   LineInsertMenuExtension,
   SlashCommandMenu,
@@ -397,6 +397,10 @@ function currentSelectionRect(editor: Editor) {
   return selectionEndAnchorRect(editor.view.coordsAtPos(to, -1));
 }
 
+const supportsCssZoom = typeof CSS !== "undefined"
+  && typeof CSS.supports === "function"
+  && CSS.supports("zoom", "1");
+
 function StableSelectionToolbarBubble({
   editor,
   scale,
@@ -410,6 +414,8 @@ function StableSelectionToolbarBubble({
   const tippyRef = useRef<TippyInstance | null>(null);
   if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
   const anchor = anchorRef.current;
+  // 画布缩小时工具栏跟着缩小；放大到 100% 以上时保持基准尺寸，避免遮挡正文。
+  const bubbleScale = Math.min(scale, 1);
 
   useEffect(() => {
     const scrollArea = editor.view.dom.closest(".workbench-paper-scroll");
@@ -420,7 +426,7 @@ function StableSelectionToolbarBubble({
         () => { void tippyRef.current?.popperInstance?.update(); },
       );
     };
-    tippyRef.current?.setProps({ offset: [0, 8 * scale] });
+    tippyRef.current?.setProps({ offset: [0, 8 * bubbleScale] });
     scrollArea?.addEventListener("scroll", refresh, { passive: true });
     window.addEventListener("resize", refresh, { passive: true });
     refresh();
@@ -428,7 +434,9 @@ function StableSelectionToolbarBubble({
       scrollArea?.removeEventListener("scroll", refresh);
       window.removeEventListener("resize", refresh);
     };
-  }, [anchor, editor, scale]);
+    // 依赖未裁剪的 scale：放大到 100% 以上时弹窗尺寸不变，但选区位置已经移动，
+    // 仍然必须重新读取锚点，否则弹窗会停在缩放前的位置。
+  }, [anchor, editor, scale, bubbleScale]);
 
   return (
     <BubbleMenu
@@ -440,7 +448,7 @@ function StableSelectionToolbarBubble({
         duration: 150,
         maxWidth: "none",
         placement: "bottom-start",
-        offset: [0, 8 * scale],
+        offset: [0, 8 * bubbleScale],
         getReferenceClientRect: () => anchor.getRect(() => currentSelectionRect(editor)),
         onCreate: (instance) => { tippyRef.current = instance; },
         onDestroy: (instance) => {
@@ -461,8 +469,8 @@ function StableSelectionToolbarBubble({
       }}
     >
       <div
-        className="selection-toolbar-bubble-scale"
-        style={{ "--selection-toolbar-scale": scale } as React.CSSProperties}
+        className={`selection-toolbar-bubble-scale${supportsCssZoom ? "" : " is-scale-fallback"}`}
+        style={{ "--selection-toolbar-scale": bubbleScale } as React.CSSProperties}
       >
         {children}
       </div>
@@ -1116,7 +1124,6 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
       return AGENT_DRAWER_DEFAULT_WIDTH;
     }
   });
-  const [agentDraft, setAgentDraft] = useState<AgentSelectionDraft | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [pendingVersionDelete, setPendingVersionDelete] = useState<{
@@ -1620,6 +1627,7 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
               {embedded ? <X size={16} /> : <Home size={16} />}
             </IconButton>
             <span className="workbench-context-label">简历编辑</span>
+            {editor && <WorkbenchHistoryActions editor={editor} />}
           </div>
           <div className="workbench-header-center">
             <WorkbenchTitleInput value={title} onChange={setTitle} disabled={versionOperationPending} />
@@ -1677,13 +1685,7 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
 
         {activeResumeId && editor && (
           <StableSelectionToolbarBubble editor={editor} scale={renderedPreviewScale}>
-            <SelectionFormattingToolbar
-              editor={editor}
-              onAgentAction={(instruction, selectionContext) => {
-                setAgentDraft({ id: Date.now(), instruction, selectionContext });
-                setDrawerMode("agent");
-              }}
-            />
+            <SelectionFormattingToolbar editor={editor} />
           </StableSelectionToolbarBubble>
         )}
 
@@ -1903,7 +1905,6 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
                       onBeforeConfirm={prepareAgentProposalConfirmation}
                       onApplied={refreshAppliedAgentProposal}
                       onClose={() => setDrawerMode(null)}
-                      draft={agentDraft}
                     />
                   </>
                 ) : null}
