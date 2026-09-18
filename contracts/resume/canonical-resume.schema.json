@@ -201,13 +201,16 @@
         "block_type": {"const": "row"},
         "row_kind": {"enum": ["pair", "meta", "trio", "equal"]},
         "cells": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/rowCell"}},
-        "left_width_percent": {"type": ["number", "null"], "minimum": 30, "maximum": 80}
+        "left_width_percent": {"type": ["number", "null"], "minimum": 30, "maximum": 80},
+        "column_widths_percent": {"type": ["array", "null"], "minItems": 3, "maxItems": 4, "items": {"type": "number", "minimum": 10, "maximum": 90}}
       },
       "allOf": [
-        {"if": {"properties": {"row_kind": {"const": "pair"}}}, "then": {"properties": {"cells": {"minItems": 2, "maxItems": 2}, "left_width_percent": {"type": "number", "minimum": 30, "maximum": 80}}}},
-        {"if": {"properties": {"row_kind": {"const": "meta"}}}, "then": {"properties": {"cells": {"minItems": 4, "maxItems": 4}, "left_width_percent": {"type": "null"}}}},
-        {"if": {"properties": {"row_kind": {"const": "trio"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 3}, "left_width_percent": {"type": "null"}}}},
-        {"if": {"properties": {"row_kind": {"const": "equal"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 4}, "left_width_percent": {"type": "null"}}}}
+        {"if": {"properties": {"row_kind": {"const": "pair"}}}, "then": {"properties": {"cells": {"minItems": 2, "maxItems": 2}, "left_width_percent": {"type": "number", "minimum": 30, "maximum": 80}, "column_widths_percent": {"type": "null"}}}},
+        {"if": {"properties": {"row_kind": {"const": "meta"}}}, "then": {"properties": {"cells": {"minItems": 4, "maxItems": 4}, "left_width_percent": {"type": "null"}, "column_widths_percent": {"type": "null"}}}},
+        {"if": {"properties": {"row_kind": {"const": "trio"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 3}, "left_width_percent": {"type": "null"}, "column_widths_percent": {"type": "null"}}}},
+        {"if": {"properties": {"row_kind": {"const": "equal"}}}, "then": {"properties": {"cells": {"minItems": 3, "maxItems": 4}, "left_width_percent": {"type": "null"}, "column_widths_percent": {"type": ["array", "null"], "minItems": 3, "maxItems": 4, "items": {"type": "number", "minimum": 10, "maximum": 90}}}}},
+        {"if": {"properties": {"cells": {"maxItems": 3}}}, "then": {"properties": {"column_widths_percent": {"maxItems": 3}}}},
+        {"if": {"properties": {"cells": {"minItems": 4}}}, "then": {"properties": {"column_widths_percent": {"minItems": 4}}}}
       ]
     },
     "block": {"oneOf": [{"$ref": "#/$defs/paragraph"}, {"$ref": "#/$defs/list"}, {"$ref": "#/$defs/mediaBlock"}, {"$ref": "#/$defs/row"}]},
