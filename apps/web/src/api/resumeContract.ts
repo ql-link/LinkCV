@@ -171,10 +171,13 @@ export type CanonicalSourceReferenced = {
   source_refs: CanonicalSourceId[];
 };
 
+export type CanonicalTextAlign = "left" | "center" | "right";
+
 export type CanonicalTextValue = CanonicalSourceReferenced & {
   value: string;
   runs?: CanonicalTextRun[] | null;
   prefix_runs?: CanonicalTextRun[] | null;
+  align?: CanonicalTextAlign | null;
 };
 
 export type CanonicalContact = CanonicalTextValue & {
@@ -221,6 +224,7 @@ export type CanonicalInlineMedia = CanonicalMediaReference & {
 export type CanonicalParagraphBlock = CanonicalSourceReferenced & {
   block_type: "paragraph";
   runs: Array<CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia>;
+  align?: CanonicalTextAlign | null;
 };
 
 export type CanonicalListItem = CanonicalSourceReferenced & {
@@ -819,12 +823,20 @@ function canonicalRunToMarkdown(
   return value;
 }
 
+function canonicalAlignedMarkdown(align: CanonicalTextAlign | null | undefined, content: string) {
+  return content && (align === "left" || align === "center" || align === "right")
+    ? `::: text-align ${align}\n${content}\n:::`
+    : content;
+}
+
 function canonicalBlockToMarkdown(block: CanonicalContentBlock): string {
   if (block.block_type === "media") {
     if (!block.src || block.src.startsWith("data:") || block.src.startsWith("blob:")) return "";
     return `![${block.alt ?? "简历图片"}](${block.src})`;
   }
-  if (block.block_type === "paragraph") return block.runs.map(canonicalRunToMarkdown).join("");
+  if (block.block_type === "paragraph") {
+    return canonicalAlignedMarkdown(block.align, block.runs.map(canonicalRunToMarkdown).join(""));
+  }
   if (block.block_type === "row") {
     return block.cells.map((cell) => cell.blocks.map(canonicalBlockToMarkdown).filter(Boolean).join("\n")).join(" ｜ ");
   }
@@ -845,9 +857,20 @@ function canonicalValueToMarkdown(value: CanonicalTextValue, prefix = "") {
 function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
   const lines: string[] = [];
   const identity = document.identity;
-  if (identity.name?.value) lines.push(`# ${canonicalValueToMarkdown(identity.name)}`);
-  if (identity.headline?.value) lines.push("", canonicalValueToMarkdown(identity.headline));
-  if (identity.contacts.length) lines.push("", identity.contacts.map((contact) => canonicalValueToMarkdown(contact, contact.label ? `${contact.label}：` : "")).join(" ｜ "));
+  if (identity.name?.value) {
+    lines.push(canonicalAlignedMarkdown(identity.name.align, `# ${canonicalValueToMarkdown(identity.name)}`));
+  }
+  if (identity.headline?.value) {
+    lines.push("", canonicalAlignedMarkdown(identity.headline.align, canonicalValueToMarkdown(identity.headline)));
+  }
+  if (identity.contacts.length) {
+    // The contact row shares one alignment; the first non-empty contact owns it.
+    const contactAlign = identity.contacts.find((contact) => contact.value)?.align;
+    const contactLine = identity.contacts
+      .map((contact) => canonicalValueToMarkdown(contact, contact.label ? `${contact.label}：` : ""))
+      .join(" ｜ ");
+    lines.push("", canonicalAlignedMarkdown(contactAlign, contactLine));
+  }
   if (identity.avatar && !identity.avatar.system_fallback && identity.avatar.src) {
     lines.push("", `![${identity.avatar.alt ?? "简历头像"}](${identity.avatar.src} "linkresume-avatar:${identity.avatar.width ?? 96}")`);
   }
@@ -857,14 +880,21 @@ function canonicalDocumentToMarkdown(document: CanonicalResumeDocument) {
       ? inlineIconMarkdown(section.title_icon.name)
       : "";
     if (title || titleIcon) {
-      lines.push("", `## ${[titleIcon, title].filter(Boolean).join(" ")}`);
+      lines.push("", canonicalAlignedMarkdown(
+        section.title?.align,
+        `## ${[titleIcon, title].filter(Boolean).join(" ")}`,
+      ));
     }
     for (const entry of section.entries) {
       const heading = entry.fields.name ?? entry.fields.organization ?? entry.fields.role;
-      if (heading?.value) lines.push("", `### ${canonicalValueToMarkdown(heading)}`);
+      if (heading?.value) {
+        lines.push("", canonicalAlignedMarkdown(heading.align, `### ${canonicalValueToMarkdown(heading)}`));
+      }
       for (const key of ["organization", "role", "location", "start_date", "end_date", "degree", "major", "url"] as const) {
         const field = entry.fields[key];
-        if (field?.value && field.value !== heading?.value) lines.push(canonicalValueToMarkdown(field));
+        if (field?.value && field.value !== heading?.value) {
+          lines.push(canonicalAlignedMarkdown(field.align, canonicalValueToMarkdown(field)));
+        }
       }
       for (const block of entry.blocks) {
         const value = canonicalBlockToMarkdown(block);

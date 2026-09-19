@@ -84,6 +84,33 @@ describe("统一简历打印文档", () => {
     expect(html).toContain('font-size:10pt">邮箱：</span>');
   });
 
+  it("把保存快照里的文字对齐渲染到打印 DOM", () => {
+    const data = canonicalFixture();
+    data.identity.name = { ...data.identity.name!, align: "center" };
+    data.identity.contacts = [{
+      node_id: "node_printcontact00001", source_refs: [], contact_kind: "email",
+      label: "邮箱", value: "sample@example.com", align: "center",
+    }];
+    data.sections[0].title = { ...data.sections[0].title!, align: "right" };
+    const paragraph = data.sections[0].blocks[0];
+    if (paragraph.block_type === "paragraph") paragraph.align = "right";
+
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "对齐", data, defaultCanonicalPresentation, undefined, canonicalLayoutPlan(data),
+    ));
+    expect(html).toContain('<h1 style="text-align:center"');
+    expect(html).toContain('<h2 style="text-align:right"');
+    expect(html).toContain('<p style="text-align:center"');
+    expect(html).toContain('<p style="text-align:right"');
+  });
+
+  it("未设置对齐的快照不产生对齐样式", () => {
+    const html = renderResumePrintDocument(createResumeRenderRequest(
+      "无对齐", canonicalFixture(), defaultCanonicalPresentation, undefined, canonicalLayoutPlan(),
+    ));
+    expect(html.includes("text-align")).toBe(false);
+  });
+
   it("从 canonical 快照生成稳定的只读打印 DOM", () => {
     const html = renderResumePrintDocument(createResumeRenderRequest(
       "打印测试", canonicalFixture(), defaultCanonicalPresentation, undefined, canonicalLayoutPlan(),
