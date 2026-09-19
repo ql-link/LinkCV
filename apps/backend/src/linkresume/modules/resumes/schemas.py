@@ -275,4 +275,5 @@ class PublicSharePayload(BaseModel):
     data: ResumeData
     style: ResumePresentationData
     layout_plan: LayoutPlan
+    assets: dict[str, str]
     sharer: PublicShareSharer

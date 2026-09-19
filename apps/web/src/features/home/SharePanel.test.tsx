@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type PublicSharePayload, type ResumeShareState } from "../../api/client";
+import { api, type ResumeShareState } from "../../api/client";
 import { SharePanel } from "./SharePanel";
 
 vi.mock("../../api/client", async (importOriginal) => {
@@ -31,14 +31,10 @@ const shareState: ResumeShareState = {
   share_created_at: "2026-08-05T08:00:00Z",
 };
 
-const publicPayload = {
-  data: {} as PublicSharePayload["data"],
-  style: {} as PublicSharePayload["style"],
-  sharer: { nickname: "于晏", avatar_url: null },
-} satisfies PublicSharePayload;
-
 beforeEach(() => {
-  mockedFetchPublic.mockResolvedValue(publicPayload);
+  Object.assign(navigator, {
+    clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
 });
 
 afterEach(() => {
@@ -46,189 +42,108 @@ afterEach(() => {
 });
 
 describe("SharePanel", () => {
-  it("未分享时创建链接并展示可复制的链接", async () => {
+  it("未分享时无需二次确认即可创建链接", async () => {
     mockedGetState.mockResolvedValue({ share: null });
     mockedCreate.mockResolvedValue({ share: shareState });
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "创建分享链接" })).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "创建分享链接" }));
-    const dialog = await screen.findByRole("dialog", { name: "创建分享链接？" });
-    expect(dialog).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
+    expect(
+      screen.getByText("分享内容会同步展示最近一次自动保存成功的草稿。"),
+    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "创建分享链接" }));
 
     await waitFor(() => {
-      const link = screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc$/);
-      expect(link).toBeInTheDocument();
+      expect(mockedCreate).toHaveBeenCalledWith("1", {
+        visibility: "public",
+        expires_at: null,
+      });
     });
-    expect(mockedCreate).toHaveBeenCalledWith("1", { visibility: "public", expires_at: null });
+    expect(screen.queryByRole("dialog", { name: "创建分享链接？" })).not.toBeInTheDocument();
+    expect(await screen.findByDisplayValue(/\/share\/token_abc$/)).toBeInTheDocument();
   });
 
-  it("取消创建时不生成链接", async () => {
-    mockedGetState.mockResolvedValue({ share: null });
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "创建分享链接" })).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "创建分享链接" }));
-    const dialog = await screen.findByRole("dialog", { name: "创建分享链接？" });
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-
-    expect(dialog).not.toBeInTheDocument();
-    expect(mockedCreate).not.toHaveBeenCalled();
-  });
-
-  it("创建前可选择仅自己可见再创建", async () => {
+  it("创建前选择的可见性与有效期直接用于创建", async () => {
     mockedGetState.mockResolvedValue({ share: null });
     mockedCreate.mockResolvedValue({
       share: { ...shareState, share_visibility: "private" },
     });
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "创建分享链接" })).toBeInTheDocument(),
-    );
-
+    await screen.findByRole("button", { name: "创建分享链接" });
     fireEvent.click(screen.getByRole("button", { name: "仅自己可见" }));
-    fireEvent.click(screen.getByRole("button", { name: "创建分享链接" }));
-    const dialog = await screen.findByRole("dialog", { name: "创建分享链接？" });
-    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
-
-    await waitFor(() =>
-      expect(mockedCreate).toHaveBeenCalledWith("1", {
-        visibility: "private",
-        expires_at: null,
-      }),
-    );
-  });
-
-  it("创建前可选择有效期七天", async () => {
-    mockedGetState.mockResolvedValue({ share: null });
-    mockedCreate.mockResolvedValue({
-      share: { ...shareState, share_expires_at: new Date(Date.now() + 7 * 86400000).toISOString() },
-    });
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "创建分享链接" })).toBeInTheDocument(),
-    );
-
     fireEvent.click(screen.getByRole("button", { name: "7 天" }));
     fireEvent.click(screen.getByRole("button", { name: "创建分享链接" }));
-    const dialog = await screen.findByRole("dialog", { name: "创建分享链接？" });
-    fireEvent.click(screen.getByRole("button", { name: "确认创建" }));
 
     await waitFor(() =>
       expect(mockedCreate).toHaveBeenCalledWith("1", {
-        visibility: "public",
-        expires_at: expect.any(String),
-      }),
-    );
-  });
-
-  it("已分享时可修改有效期并保存", async () => {
-    mockedGetState.mockResolvedValue({ share: shareState });
-    mockedUpdate.mockResolvedValue({
-      share: { ...shareState, share_expires_at: new Date(Date.now() + 30 * 86400000).toISOString() },
-    });
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
-    await waitFor(() =>
-      expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc/)).toBeInTheDocument(),
-    );
-
-    // 点击仅本地暂存，不立即提交
-    fireEvent.click(screen.getByRole("button", { name: "一个月" }));
-    expect(mockedUpdate).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "保存链接配置" }));
-    const dialog = await screen.findByRole("dialog", { name: "保存链接配置？" });
-    expect(dialog).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "确认保存" }));
-
-    await waitFor(() =>
-      expect(mockedUpdate).toHaveBeenCalledWith("1", {
-        visibility: "public",
-        expires_at: expect.any(String),
-      }),
-    );
-    expect(screen.queryByRole("button", { name: "覆盖链接" })).not.toBeInTheDocument();
-  });
-
-  it("可修改可见性为仅自己可见并保存", async () => {
-    mockedGetState.mockResolvedValue({ share: shareState });
-    mockedUpdate.mockResolvedValue({
-      share: { ...shareState, share_visibility: "private" },
-    });
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
-    await waitFor(() =>
-      expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc/)).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "仅自己可见" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存链接配置" }));
-    const dialog = await screen.findByRole("dialog", { name: "保存链接配置？" });
-    fireEvent.click(screen.getByRole("button", { name: "确认保存" }));
-
-    await waitFor(() =>
-      expect(mockedUpdate).toHaveBeenCalledWith("1", {
         visibility: "private",
-        expires_at: null,
+        expires_at: expect.any(String),
       }),
     );
   });
 
-  it("修改配置后在确认弹窗取消则不提交", async () => {
+  it("链接默认明文显示并可一键复制", async () => {
     mockedGetState.mockResolvedValue({ share: shareState });
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
+    const link = await screen.findByDisplayValue(/\/share\/token_abc$/);
+    expect(link).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "复制链接" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "一个月" })).toBeInTheDocument(),
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        expect.stringMatching(/\/share\/token_abc$/),
+      ),
+    );
+  });
+
+  it("可见性与有效期改动立即分别保存", async () => {
+    mockedGetState.mockResolvedValue({ share: shareState });
+    mockedUpdate
+      .mockResolvedValueOnce({ share: { ...shareState, share_visibility: "private" } })
+      .mockResolvedValueOnce({
+        share: {
+          ...shareState,
+          share_visibility: "private",
+          share_expires_at: new Date(Date.now() + 30 * 86400000).toISOString(),
+        },
+      });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    await screen.findByDisplayValue(/\/share\/token_abc$/);
+    fireEvent.click(screen.getByRole("button", { name: "仅自己可见" }));
+    await waitFor(() =>
+      expect(mockedUpdate).toHaveBeenNthCalledWith(1, "1", { visibility: "private" }),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "一个月" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存链接配置" }));
-    const dialog = await screen.findByRole("dialog", { name: "保存链接配置？" });
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-
-    expect(dialog).not.toBeInTheDocument();
-    expect(mockedUpdate).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockedUpdate).toHaveBeenNthCalledWith(2, "1", {
+        expires_at: expect.any(String),
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "保存链接配置" })).not.toBeInTheDocument();
   });
 
-  it("链接默认遮蔽，点击查看后展示完整链接，可再次隐藏", async () => {
-    mockedGetState.mockResolvedValue({ share: shareState });
+  it("显示服务端真实到期时间且不再下载公开 payload 探测状态", async () => {
+    mockedGetState.mockResolvedValue({
+      share: { ...shareState, share_expires_at: "2099-01-02T03:04:00Z" },
+    });
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
-    await waitFor(() =>
-      expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc$/)).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "查看" }));
-    expect(screen.getByDisplayValue(/\/share\/token_abc$/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "隐藏" }));
-    expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_abc$/)).toBeInTheDocument();
+    const statuses = await screen.findAllByText(/有效至.*2099/);
+    expect(statuses.length).toBeGreaterThan(0);
+    expect(mockedFetchPublic).not.toHaveBeenCalled();
   });
 
-  it("重新生成链接需二次确认，旧链接作废且保留配置", async () => {
+  it("重新生成链接仍需二次确认并保留配置", async () => {
     mockedGetState.mockResolvedValue({ share: shareState });
     mockedCreate.mockResolvedValue({ share: { ...shareState, share_token: "token_new" } });
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "重新生成链接" })).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "重新生成链接" }));
-    const dialog = await screen.findByRole("dialog", { name: "重新生成分享链接？" });
-    expect(dialog).toBeInTheDocument();
-
+    fireEvent.click(await screen.findByRole("button", { name: "重新生成链接" }));
+    expect(await screen.findByRole("dialog", { name: "重新生成分享链接？" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认重新生成" }));
 
     await waitFor(() =>
@@ -237,95 +152,37 @@ describe("SharePanel", () => {
         expires_at: null,
       }),
     );
-    await waitFor(() =>
-      expect(screen.getByDisplayValue(/\/share\/toke\*\*\*\*\*_new$/)).toBeInTheDocument(),
-    );
+    expect(await screen.findByDisplayValue(/\/share\/token_new$/)).toBeInTheDocument();
   });
 
-  it("在重新生成确认弹窗取消则不生成", async () => {
+  it("删除链接仍需二次确认", async () => {
     mockedGetState.mockResolvedValue({ share: shareState });
+    mockedDelete.mockResolvedValue({ deleted: true });
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "重新生成链接" })).toBeInTheDocument(),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "删除链接" }));
+    expect(await screen.findByRole("alertdialog", { name: "删除分享链接？" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "重新生成链接" }));
-    const dialog = await screen.findByRole("dialog", { name: "重新生成分享链接？" });
-    fireEvent.click(screen.getByRole("button", { name: "取消" }));
-
-    expect(dialog).not.toBeInTheDocument();
-    expect(mockedCreate).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockedDelete).toHaveBeenCalledWith("1"));
+    expect(await screen.findByRole("button", { name: "创建分享链接" })).toBeInTheDocument();
   });
 
-  it("公共链接探测成功后显示链接可用", async () => {
-    mockedGetState.mockResolvedValue({ share: shareState });
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent("链接当前可用"),
-    );
-    expect(mockedFetchPublic).toHaveBeenCalledWith("token_abc");
-  });
-
-  it("链接过期时显示已过期，不发起探测", async () => {
+  it("过期链接显示真实过期状态且可通过快捷有效期恢复", async () => {
     mockedGetState.mockResolvedValue({
-      share: {
-        ...shareState,
-        share_expires_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-      },
+      share: { ...shareState, share_expires_at: "2020-01-01T00:00:00Z" },
+    });
+    mockedUpdate.mockResolvedValue({
+      share: { ...shareState, share_expires_at: new Date(Date.now() + 7 * 86400000).toISOString() },
     });
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("链接已过期"),
     );
-    expect(mockedFetchPublic).not.toHaveBeenCalled();
-  });
-
-  it("公共链接探测失败时显示链接已失效", async () => {
-    mockedGetState.mockResolvedValue({ share: shareState });
-    mockedFetchPublic.mockRejectedValue(new Error("unavailable"));
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
+    fireEvent.click(screen.getByRole("button", { name: "7 天" }));
     await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent("链接已失效"),
+      expect(mockedUpdate).toHaveBeenCalledWith("1", { expires_at: expect.any(String) }),
     );
-  });
-
-  it("仅自己可见链接不进行公开探测但视为可用", async () => {
-    mockedGetState.mockResolvedValue({
-      share: { ...shareState, share_visibility: "private" },
-    });
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("status")).toHaveTextContent("链接当前可用"),
-    );
-    expect(mockedFetchPublic).not.toHaveBeenCalled();
-  });
-
-  it("删除链接需二次确认并清空分享状态", async () => {
-    mockedGetState.mockResolvedValue({ share: shareState });
-    mockedDelete.mockResolvedValue({ deleted: true });
-    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "删除链接" })).toBeInTheDocument(),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "删除链接" }));
-    const dialog = await screen.findByRole("alertdialog", { name: "删除分享链接？" });
-    expect(dialog).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-
-    await waitFor(() => expect(mockedDelete).toHaveBeenCalledWith("1"));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "创建分享链接" })).toBeInTheDocument(),
-    );
-    // 删除后创建配置重置为默认：所有人可见 + 永久
-    expect(screen.getByRole("button", { name: "所有人可见" }).className).toContain("active");
-    expect(screen.getByRole("button", { name: "永久" }).className).toContain("active");
   });
 });

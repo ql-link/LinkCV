@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from linkresume.application.resumes.share_service import (
@@ -6,14 +6,22 @@ from linkresume.application.resumes.share_service import (
     create_or_overwrite_share,
     delete_share,
     resolve_public_share,
+    resolve_public_share_access,
     share_state_of,
     update_share,
 )
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
+from linkresume.core.storage import AssetStorage, get_storage
 from linkresume.modules.identity.dependencies import get_current_user, get_optional_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import Resume
+from linkresume.modules.resumes.pdf_routes import (
+    get_pdf_renderer,
+    render_resume_pdf,
+    resume_pdf_response,
+)
+from linkresume.modules.resumes.pdf_service import ResumePdfRenderer
 from linkresume.modules.resumes.schemas import (
     DeleteResumeShareResponse,
     PublicSharePayload,
@@ -102,10 +110,35 @@ def delete_share_state(
 @public_router.get("/{token}", response_model=PublicSharePayload)
 def get_public_share(
     token: str,
+    response: Response,
     db: Session = Depends(get_db),
     viewer: User | None = Depends(get_optional_user),
+    storage: AssetStorage = Depends(get_storage),
 ) -> PublicSharePayload:
+    response.headers["Cache-Control"] = "private, no-store"
     try:
-        return resolve_public_share(db, token, viewer)
+        return resolve_public_share(db, token, viewer, storage)
     except ShareLinkUnavailable as error:
         raise ApiError(404, "SHARE_LINK_UNAVAILABLE") from error
+
+
+@public_router.get("/{token}/pdf", response_model=None)
+def download_public_share_pdf(
+    token: str,
+    db: Session = Depends(get_db),
+    viewer: User | None = Depends(get_optional_user),
+    storage: AssetStorage = Depends(get_storage),
+    renderer: ResumePdfRenderer = Depends(get_pdf_renderer),
+) -> Response:
+    try:
+        resume, owner = resolve_public_share_access(db, token, viewer)
+    except ShareLinkUnavailable as error:
+        raise ApiError(404, "SHARE_LINK_UNAVAILABLE") from error
+    pdf = render_resume_pdf(
+        resume,
+        owner.id,
+        storage,
+        renderer,
+        smart_one_page=True,
+    )
+    return resume_pdf_response(resume, pdf)

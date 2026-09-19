@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
-import { api, type ResumeShareState } from "../../api/client";
-import { ConfirmDialog, PageLoading } from "@/components/ui";
-
-type LinkStatus = "available" | "expired" | "unavailable" | null;
+import { useCallback, useEffect, useState } from "react";
+import { api, type ResumeShareState, type ResumeShareUpdatePayload } from "../../api/client";
+import { ConfirmDialog, FeedbackNotice, PageLoading } from "@/components/ui";
 
 function parseShareExpiry(expiresAt: string | null) {
   if (!expiresAt) return null;
@@ -13,6 +11,20 @@ function parseShareExpiry(expiresAt: string | null) {
 function isShareExpired(expiresAt: string | null) {
   const time = parseShareExpiry(expiresAt);
   return time !== null && time < Date.now();
+}
+
+function formatShareExpiry(expiresAt: string | null) {
+  if (!expiresAt) return "长期有效";
+  const time = parseShareExpiry(expiresAt);
+  if (time === null) return "到期时间不可用";
+  return `有效至 ${new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(time))}`;
 }
 
 type SharePanelProps = {
@@ -45,19 +57,10 @@ function shareUrl(token: string) {
   return `${window.location.origin}/share/${token}`;
 }
 
-/** 像 API key 一样遮蔽链接：保留 token 前后几位，中间打码。 */
-function maskShareUrl(url: string) {
-  const idx = url.lastIndexOf("/");
-  const head = url.slice(0, idx + 1);
-  const token = url.slice(idx + 1);
-  if (token.length <= 8) return `${head}${token.slice(0, 2)}*****${token.slice(-2)}`;
-  return `${head}${token.slice(0, 4)}*****${token.slice(-4)}`;
-}
-
 function matchExpiry(expiresAt: string | null): ExpiryKey | null {
   if (!expiresAt) return "forever";
-  // 后端返回的 SQLite naive datetime 无时区标记，按 UTC 解析与前端生成的 ISO 对齐
-  const time = Date.parse(expiresAt.endsWith("Z") ? expiresAt : `${expiresAt}Z`);
+  const time = parseShareExpiry(expiresAt);
+  if (time === null) return null;
   for (const option of EXPIRY_OPTIONS) {
     if (option.key === "forever") continue;
     if (Math.abs(time - Date.parse(option.expiresAt() as string)) < 60 * 60 * 1000) {
@@ -73,28 +76,16 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [linkStatus, setLinkStatus] = useState<LinkStatus>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [createVisibility, setCreateVisibility] = useState<"private" | "public">("public");
   const [createExpiry, setCreateExpiry] = useState<ExpiryKey>("forever");
-  const [confirmCreate, setConfirmCreate] = useState(false);
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmSave, setConfirmSave] = useState(false);
-  const [revealed, setRevealed] = useState(false);
-  // 已分享界面的可见性/有效期先本地暂存，用户确认保存后才提交
-  const [draftVisibility, setDraftVisibility] = useState<"private" | "public">("public");
-  const [draftExpiry, setDraftExpiry] = useState<ExpiryKey | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
     const result = await api.getShareState(resumeId);
     setShare(result.share);
-    if (result.share) {
-      // 与 share 在同一批次初始化，避免界面已可交互时，后续 effect
-      // 又把用户刚选择的有效期覆盖回服务端旧值。
-      setDraftVisibility(result.share.share_visibility);
-      setDraftExpiry(matchExpiry(result.share.share_expires_at));
-    }
   }, [resumeId]);
 
   useEffect(() => {
@@ -112,48 +103,18 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     };
   }, [load]);
 
-  // 链接加载或保存成功后，把暂存值同步为最新服务端状态
-  useLayoutEffect(() => {
-    if (!share) return;
-    setDraftVisibility(share.share_visibility);
-    setDraftExpiry(matchExpiry(share.share_expires_at));
-  }, [share]);
-
-  // 链接可用性：本地按过期时间判断，公共链接加载时静默探测兜底
-  useEffect(() => {
-    if (!share) {
-      setLinkStatus(null);
-      return;
-    }
-    if (isShareExpired(share.share_expires_at)) {
-      setLinkStatus("expired");
-      return;
-    }
-    if (share.share_visibility !== "public") {
-      setLinkStatus("available");
-      return;
-    }
-    setLinkStatus(null);
-    let cancelled = false;
-    void api
-      .fetchPublicShare(share.share_token)
-      .then(() => {
-        if (!cancelled) setLinkStatus("available");
-      })
-      .catch(() => {
-        if (!cancelled) setLinkStatus("unavailable");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [share]);
-
-  const runAction = async (action: () => Promise<void>, failureMessage: string) => {
+  const runAction = async (
+    action: () => Promise<void>,
+    failureMessage: string,
+    successMessage?: string,
+  ) => {
     if (busy) return;
     setBusy(true);
     setError(null);
+    setSuccess(null);
     try {
       await action();
+      if (successMessage) setSuccess(successMessage);
     } catch {
       setError(failureMessage);
     } finally {
@@ -168,9 +129,8 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         visibility,
         expires_at: option.expiresAt(),
       });
-      setRevealed(false);
       setShare(result.share);
-    }, "生成分享链接失败，请稍后重试。");
+    }, "生成分享链接失败，请稍后重试。", "分享链接已创建。");
 
   const regenerate = () =>
     runAction(async () => {
@@ -179,19 +139,14 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         visibility: share.share_visibility,
         expires_at: share.share_expires_at ?? null,
       });
-      setRevealed(false);
       setShare(result.share);
-    }, "重新生成分享链接失败，请稍后重试。");
+    }, "重新生成分享链接失败，请稍后重试。", "分享链接已重新生成。");
 
-  const saveConfig = () =>
+  const updateConfig = (payload: ResumeShareUpdatePayload, successMessage: string) =>
     runAction(async () => {
-      const option = EXPIRY_OPTIONS.find((item) => item.key === draftExpiry);
-      const result = await api.updateShare(resumeId, {
-        visibility: draftVisibility,
-        expires_at: option ? option.expiresAt() : share?.share_expires_at ?? null,
-      });
+      const result = await api.updateShare(resumeId, payload);
       setShare(result.share);
-    }, "保存链接配置失败，请稍后重试。");
+    }, "更新链接配置失败，请稍后重试。", successMessage);
 
   const copyLink = async () => {
     if (!share) return;
@@ -204,24 +159,24 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     }
   };
 
-  const visibilityLabel = (value: "private" | "public") => (value === "public" ? "所有人可见" : "仅自己可见");
-  const currentExpiryLabel =
-    EXPIRY_OPTIONS.find((option) => option.key === matchExpiry(share?.share_expires_at ?? null))?.label ?? "保持当前";
-  const nextExpiryLabel =
-    EXPIRY_OPTIONS.find((option) => option.key === draftExpiry)?.label ?? "保持当前";
-  const hasChanges =
-    !!share &&
-    (draftVisibility !== share.share_visibility || draftExpiry !== matchExpiry(share.share_expires_at));
+  const visibilityLabel = (value: "private" | "public") =>
+    value === "public" ? "所有人可见" : "仅自己可见";
+  const currentExpiry = matchExpiry(share?.share_expires_at ?? null);
+  const expired = !!share && isShareExpired(share.share_expires_at);
 
   return (
     <div
       className="share-panel-backdrop"
       role="presentation"
       onMouseDown={(event) => {
-        // 仅点击遮罩空白处关闭；避免弹窗内按钮的 mousedown 冒泡误关面板
         if (event.target === event.currentTarget) onClose();
       }}
     >
+      {success && (
+        <FeedbackNotice kind="success" placement="floating" onDismiss={() => setSuccess(null)}>
+          {success}
+        </FeedbackNotice>
+      )}
       <section
         className="share-panel"
         role="dialog"
@@ -233,9 +188,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
           <div className="share-panel-title">
             <h2>分享简历</h2>
             <p className="share-panel-doc">{resumeTitle}</p>
-            <p className="share-panel-sub">
-              {share ? "分享链接只展示最近一次正式保存的版本。" : "分享内容来自最近一次正式保存的版本，当前草稿不会公开。"}
-            </p>
+            <p className="share-panel-sub">分享内容会同步展示最近一次自动保存成功的草稿。</p>
           </div>
           <button type="button" className="share-panel-close" aria-label="关闭" onClick={onClose}>
             ×
@@ -253,10 +206,6 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
           </div>
         ) : !share ? (
           <div className="share-panel-body">
-            <p className="share-panel-banner is-info">
-              <strong>尚未创建分享链接</strong>
-              <span>创建后可复制链接，并随时调整可见范围和有效期。</span>
-            </p>
             <div className="share-panel-field">
               <label>谁可以看</label>
               <div className="share-panel-visibility">
@@ -294,50 +243,34 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                 ))}
               </div>
             </div>
-            <p className="share-panel-rules">
-              <strong>链接更新规则</strong>
-              <span>保存新的简历版本后，已创建的分享链接会自动展示最新正式版本。</span>
-            </p>
             <div className="share-panel-footer">
               <button
                 type="button"
                 className="share-panel-primary"
                 disabled={busy}
-                onClick={() => setConfirmCreate(true)}
+                onClick={() => void createOrOverwrite(createVisibility, createExpiry)}
               >
-                创建分享链接
+                {busy ? "正在创建…" : "创建分享链接"}
               </button>
             </div>
             {error && <p className="share-panel-error">{error}</p>}
           </div>
         ) : (
           <div className="share-panel-body">
-            {linkStatus && (
-              <p className={`share-panel-status is-${linkStatus}`} role="status">
-                {linkStatus === "available" && "链接当前可用"}
-                {linkStatus === "expired" && "链接已过期，可延长有效期恢复"}
-                {linkStatus === "unavailable" && "链接已失效，请重新生成"}
-                <span className="share-panel-status-summary">
-                  {visibilityLabel(share.share_visibility)} · {currentExpiryLabel}有效
-                </span>
-              </p>
-            )}
+            <p className={`share-panel-status is-${expired ? "expired" : "available"}`} role="status">
+              {expired ? "链接已过期，选择新的有效期即可恢复" : "链接当前可用"}
+              <span className="share-panel-status-summary">
+                {visibilityLabel(share.share_visibility)} · {formatShareExpiry(share.share_expires_at)}
+              </span>
+            </p>
             <div className="share-panel-field">
               <label>分享链接</label>
               <div className="share-panel-link-row">
                 <input
                   readOnly
-                  value={revealed ? shareUrl(share.share_token) : maskShareUrl(shareUrl(share.share_token))}
+                  value={shareUrl(share.share_token)}
                   onFocus={(event) => event.currentTarget.select()}
                 />
-                <button
-                  type="button"
-                  className="share-panel-copy"
-                  onClick={() => setRevealed((value) => !value)}
-                  disabled={busy}
-                >
-                  {revealed ? "隐藏" : "查看"}
-                </button>
                 <button type="button" className="share-panel-copy" onClick={() => void copyLink()} disabled={busy}>
                   {copied ? "已复制" : "复制链接"}
                 </button>
@@ -349,17 +282,17 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
               <div className="share-panel-visibility">
                 <button
                   type="button"
-                  className={draftVisibility === "public" ? "active" : ""}
-                  onClick={() => setDraftVisibility("public")}
-                  disabled={busy}
+                  className={share.share_visibility === "public" ? "active" : ""}
+                  onClick={() => void updateConfig({ visibility: "public" }, "已设为所有人可见。")}
+                  disabled={busy || share.share_visibility === "public"}
                 >
                   所有人可见
                 </button>
                 <button
                   type="button"
-                  className={draftVisibility === "private" ? "active" : ""}
-                  onClick={() => setDraftVisibility("private")}
-                  disabled={busy}
+                  className={share.share_visibility === "private" ? "active" : ""}
+                  onClick={() => void updateConfig({ visibility: "private" }, "已设为仅自己可见。")}
+                  disabled={busy || share.share_visibility === "private"}
                 >
                   仅自己可见
                 </button>
@@ -373,107 +306,49 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                   <button
                     key={option.key}
                     type="button"
-                    className={draftExpiry === option.key ? "active" : ""}
-                    onClick={() => setDraftExpiry(option.key)}
-                    disabled={busy}
+                    className={currentExpiry === option.key ? "active" : ""}
+                    onClick={() => void updateConfig(
+                      { expires_at: option.expiresAt() },
+                      `有效期已更新为${option.label}。`,
+                    )}
+                    disabled={busy || currentExpiry === option.key}
                   >
                     {option.label}
                   </button>
                 ))}
               </div>
-              {share.share_expires_at &&
-                Date.parse(
-                  share.share_expires_at.endsWith("Z")
-                    ? share.share_expires_at
-                    : `${share.share_expires_at}Z`,
-                ) < Date.now() && (
-                  <p className="share-panel-expiry">
-                    <span className="share-panel-expired">已过期，切换有效期即可恢复</span>
-                  </p>
-                )}
+              <p className="share-panel-expiry">{formatShareExpiry(share.share_expires_at)}</p>
             </div>
 
-            {hasChanges && (
-              <p className="share-panel-dirty">
-                当前配置：{visibilityLabel(share!.share_visibility)} · {currentExpiryLabel}，修改后未保存
-              </p>
-            )}
-
-            <p className="share-panel-banner is-warning">
-              重新生成链接会立即使旧地址失效，已转发的旧链接将无法访问。
-            </p>
-
-            <div className="share-panel-actions">
-              <button
-                type="button"
-                className="share-panel-save"
-                disabled={busy}
-                onClick={() => setConfirmSave(true)}
-              >
-                保存链接配置
-              </button>
-              <button
-                type="button"
-                className="share-panel-regenerate"
-                disabled={busy}
-                onClick={() => setConfirmRegenerate(true)}
-              >
-                重新生成链接
-              </button>
-              <button
-                type="button"
-                className="share-panel-danger"
-                disabled={busy}
-                onClick={() => setConfirmDelete(true)}
-              >
-                删除链接
-              </button>
+            <div className="share-panel-danger-zone">
+              <div>
+                <strong>链接管理</strong>
+                <span>重新生成会立即使已经转发的旧地址失效。</span>
+              </div>
+              <div className="share-panel-actions">
+                <button
+                  type="button"
+                  className="share-panel-regenerate"
+                  disabled={busy}
+                  onClick={() => setConfirmRegenerate(true)}
+                >
+                  重新生成链接
+                </button>
+                <button
+                  type="button"
+                  className="share-panel-danger"
+                  disabled={busy}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  删除链接
+                </button>
+              </div>
             </div>
             {error && <p className="share-panel-error">{error}</p>}
           </div>
         )}
       </section>
 
-      {confirmCreate && (
-        <ConfirmDialog
-          kind="create"
-          title="创建分享链接？"
-          description={`「${resumeTitle}」将生成一个${
-            createVisibility === "public" ? "所有人可见" : "仅自己可见"
-          }、有效期${
-            EXPIRY_OPTIONS.find((option) => option.key === createExpiry)!.label
-          }的分享链接。`}
-          confirmLabel="确认创建"
-          busyLabel="正在创建…"
-          busy={busy}
-          onCancel={() => setConfirmCreate(false)}
-          onConfirm={() => {
-            setConfirmCreate(false);
-            void createOrOverwrite(createVisibility, createExpiry);
-          }}
-        />
-      )}
-      {confirmSave && (
-        <ConfirmDialog
-          kind="save"
-          title="保存链接配置？"
-          description={
-            <>
-              当前配置：{visibilityLabel(share!.share_visibility)} · {currentExpiryLabel}
-              <br />
-              将更新为：{visibilityLabel(draftVisibility)} · {nextExpiryLabel}
-            </>
-          }
-          confirmLabel="确认保存"
-          busyLabel="正在保存…"
-          busy={busy}
-          onCancel={() => setConfirmSave(false)}
-          onConfirm={() => {
-            setConfirmSave(false);
-            void saveConfig();
-          }}
-        />
-      )}
       {confirmRegenerate && (
         <ConfirmDialog
           kind="warning"
@@ -505,7 +380,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
               setCreateVisibility("public");
               setCreateExpiry("forever");
               setShare(null);
-            }, "删除分享链接失败，请稍后重试。");
+            }, "删除分享链接失败，请稍后重试。", "分享链接已删除。");
           }}
         />
       )}

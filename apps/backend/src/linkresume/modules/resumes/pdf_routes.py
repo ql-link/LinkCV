@@ -32,29 +32,40 @@ def get_pdf_renderer(request: Request) -> ResumePdfRenderer:
     return renderer or ResumePdfRenderer(request.app.state.settings)
 
 
-def _download_name(title: str) -> str:
+def download_name(title: str) -> str:
     # Keep the ASCII fallback safe for all Content-Disposition parsers.  The
     # RFC 5987 filename* value below retains the user's title where supported.
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", title).strip("-._")
     return (normalized or "resume")[:96] + ".pdf"
 
 
-def _render_resume_pdf(
+def render_resume_pdf(
     resume: Resume,
-    user: User,
+    user_id: int,
     storage: AssetStorage,
     renderer: ResumePdfRenderer,
+    *,
+    smart_one_page: bool | None = None,
 ) -> bytes:
     snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    style = snapshot.style
+    if smart_one_page is not None:
+        style = style.model_copy(
+            update={
+                "portable": style.portable.model_copy(
+                    update={"smart_one_page": smart_one_page}
+                )
+            }
+        )
     layout_plan = compile_layout_plan(
         snapshot.data,
-        snapshot.style.template_snapshot,
-        snapshot.style,
+        style.template_snapshot,
+        style,
     )
     assets = build_render_assets(
         storage,
         resume.data_json,
-        user_id=user.id,
+        user_id=user_id,
         resume_id=resume.id,
     )
     return renderer.render(
@@ -62,10 +73,27 @@ def _render_resume_pdf(
             "protocol_version": RENDER_PROTOCOL_VERSION,
             "title": resume.title,
             "data": snapshot.data_json,
-            "style": snapshot.style_json,
+            "style": style.model_dump(mode="json"),
             "layout_plan": layout_plan.model_dump(mode="json"),
             "assets": assets,
         }
+    )
+
+
+def resume_pdf_response(resume: Resume, pdf: bytes) -> Response:
+    encoded_title = quote(resume.title.encode("utf-8"), safe="")
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": (
+                f'attachment; filename="{download_name(resume.title)}"; '
+                f"filename*=UTF-8''{encoded_title}.pdf"
+            ),
+            "X-LinkResume-Pdf-Lock-Version": str(resume.lock_version),
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -83,18 +111,5 @@ def download_resume_pdf(
         raise ApiError(404, "RESUME_NOT_FOUND")
     if resume.lock_version != lock_version:
         raise ApiError(409, "RESUME_PDF_SNAPSHOT_STALE")
-    pdf = _render_resume_pdf(resume, user, storage, renderer)
-    encoded_title = quote(resume.title.encode("utf-8"), safe="")
-    return Response(
-        content=pdf,
-        media_type="application/pdf",
-        headers={
-            "Cache-Control": "private, no-store",
-            "Content-Disposition": (
-                f'attachment; filename="{_download_name(resume.title)}"; '
-                f"filename*=UTF-8''{encoded_title}.pdf"
-            ),
-            "X-LinkResume-Pdf-Lock-Version": str(resume.lock_version),
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    pdf = render_resume_pdf(resume, user.id, storage, renderer)
+    return resume_pdf_response(resume, pdf)

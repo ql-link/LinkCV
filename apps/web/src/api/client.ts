@@ -403,6 +403,7 @@ export type PublicSharePayload = {
   data: CanonicalResumeDocument;
   style: CanonicalResumePresentation;
   layout_plan?: LayoutPlan | null;
+  assets: Record<string, string>;
   sharer: PublicShareSharer;
 };
 
@@ -1534,6 +1535,8 @@ export const api = {
     }),
   fetchPublicShare: (token: string) =>
     request<PublicSharePayload>(`/api/share/${encodeURIComponent(token)}`),
+  downloadPublicSharePdf: (token: string, signal?: AbortSignal) =>
+    requestResumePdf(`/api/share/${encodeURIComponent(token)}/pdf`, signal),
   importResume: (file: File, templateId: string, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);
