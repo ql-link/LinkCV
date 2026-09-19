@@ -80,6 +80,7 @@ class TextValue(SourceReferenced):
     value: str = Field(max_length=20_000)
     runs: list[TextRun] | None = Field(default=None, max_length=1000)
     prefix_runs: list[TextRun] | None = Field(default=None, max_length=100)
+    align: Literal["left", "center", "right"] | None = None
 
     @model_validator(mode="after")
     def validate_styled_value(self) -> "TextValue":
@@ -93,7 +94,7 @@ class TextValue(SourceReferenced):
     def serialize_optional_styles(self, handler):
         # Keep unstyled historical snapshots and their content digests stable.
         data = handler(self)
-        for key in ("runs", "prefix_runs"):
+        for key in ("runs", "prefix_runs", "align"):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
@@ -176,6 +177,15 @@ class InlineIcon(ClosedModel):
 class ParagraphBlock(SourceReferenced):
     block_type: Literal["paragraph"]
     runs: list[InlineContent] = Field(max_length=2000)
+    align: Literal["left", "center", "right"] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_align(self, handler):
+        # Keep unaligned historical snapshots and their content digests stable.
+        data = handler(self)
+        if data.get("align") is None:
+            data.pop("align", None)
+        return data
 
 
 class MediaReference(SourceReferenced):
