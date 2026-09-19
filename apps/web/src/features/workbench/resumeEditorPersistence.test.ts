@@ -446,6 +446,81 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+const aligned = <T>(value: T, align: "left" | "center" | "right" | null): T =>
+  align ? { ...value, align } : value;
+
+function alignmentFixture(withAlign: boolean): CanonicalResumeDocument {
+  const align = withAlign;
+  return {
+    schema_version: "canonical-resume.v1",
+    document_id: "node_aaaaaaaaaaaaaaaa",
+    identity: {
+      node_id: "node_bbbbbbbbbbbbbbbb",
+      name: aligned({
+        node_id: "node_cccccccccccccccc",
+        source_refs: ["src_nameaaaaaaaaaaaa"],
+        value: "张三",
+      }, align ? "center" : null),
+      headline: aligned({
+        node_id: "node_dddddddddddddddd",
+        source_refs: [],
+        value: "后端工程师",
+      }, align ? "right" : null),
+      contacts: [
+        aligned({
+          node_id: "node_eeeeeeeeeeeeeeee",
+          source_refs: [],
+          contact_kind: "phone" as const,
+          value: "138 0000 0000",
+          label: "电话",
+        }, align ? "center" : null),
+        {
+          node_id: "node_ffffffffffffffff",
+          source_refs: [],
+          contact_kind: "email" as const,
+          value: "zhangsan@example.invalid",
+          label: "邮箱",
+        },
+      ],
+      avatar: null,
+    },
+    sections: [{
+      node_id: "node_hhhhhhhhhhhhhhhh",
+      source_refs: [],
+      semantic_kind: "work",
+      title: aligned({
+        node_id: "node_iiiiiiiiiiiiiiii",
+        source_refs: [],
+        value: "工作经历",
+      }, align ? "right" : null),
+      entries: [{
+        node_id: "node_jjjjjjjjjjjjjjjj",
+        source_refs: [],
+        fields: {
+          name: aligned({
+            node_id: "node_kkkkkkkkkkkkkkkk",
+            source_refs: [],
+            value: "示例公司",
+          }, align ? "center" : null),
+          location: aligned({
+            node_id: "node_llllllllllllllll",
+            source_refs: [],
+            value: "上海",
+          }, align ? "left" : null),
+        },
+        blocks: [aligned({
+          node_id: "node_mmmmmmmmmmmmmmmm",
+          source_refs: [],
+          block_type: "paragraph" as const,
+          runs: [canonicalTextRun("负责服务治理")],
+        }, align ? "right" : null)],
+      }],
+      blocks: [],
+    }],
+    source_dispositions: [],
+  };
+}
+
 const canonicalEditingFixture: CanonicalResumeDocument = {
   schema_version: "canonical-resume.v1",
   document_id: "node_aaaaaaaaaaaaaaaa",
@@ -1118,6 +1193,85 @@ describe("canonical resume editing projection", () => {
     if (!workList || workList.block_type !== "bullet_list") return;
     expect(workList.items).toHaveLength(2);
     expect(workList.items.every((item) => item.runs.length === 0)).toBe(true);
+  });
+
+  it("往返保留正文段落与标题式文字的对齐", () => {
+    const editor = canonicalResumeDocumentToEditorDocument(alignmentFixture(true));
+    const content = editor.content ?? [];
+    const byAnchor = (anchorId: string) => content.find((node) => JSON.stringify(node).includes(anchorId))!;
+
+    expect(content.find((node) => node.type === "heading" && node.attrs?.level === 1)?.attrs?.textAlign).toBe("center");
+    expect(byAnchor("node_dddddddddddddddd").attrs?.textAlign).toBe("right");
+    expect(content.find((node) => node.type === "heading" && node.attrs?.level === 2)?.attrs?.textAlign).toBe("right");
+    expect(content.find((node) => node.type === "heading" && node.attrs?.level === 3)?.attrs?.textAlign).toBe("center");
+    expect(byAnchor("node_llllllllllllllll").attrs?.textAlign).toBe("left");
+    expect(byAnchor("node_mmmmmmmmmmmmmmmm").attrs?.textAlign).toBe("right");
+
+    const persisted = canonicalResumeDocumentFromEditorDocument(editor, alignmentFixture(true));
+    expect(persisted.identity.name?.align).toBe("center");
+    expect(persisted.identity.headline?.align).toBe("right");
+    expect(persisted.sections[0].title?.align).toBe("right");
+    expect(persisted.sections[0].entries[0].fields.name?.align).toBe("center");
+    expect(persisted.sections[0].entries[0].fields.location?.align).toBe("left");
+    const paragraph = persisted.sections[0].entries[0].blocks[0];
+    expect(paragraph.block_type === "paragraph" ? paragraph.align : null).toBe("right");
+  });
+
+  it("未设置对齐时不写入对齐字段", () => {
+    const persisted = canonicalResumeDocumentFromEditorDocument(
+      canonicalResumeDocumentToEditorDocument(alignmentFixture(false)),
+      alignmentFixture(false),
+    );
+    expect(JSON.stringify(persisted).includes("align")).toBe(false);
+  });
+
+  it("联系方式整行共用一个对齐取值", () => {
+    const editor = canonicalResumeDocumentToEditorDocument(alignmentFixture(true));
+    const contactRow = (editor.content ?? []).find(
+      (node) => node.type === "paragraph" && JSON.stringify(node).includes('"role":"contact"'),
+    )!;
+    expect(contactRow.attrs?.textAlign).toBe("center");
+
+    const persisted = canonicalResumeDocumentFromEditorDocument(editor, alignmentFixture(true));
+    expect(persisted.identity.contacts.map((contact) => contact.align)).toEqual(["center", "center"]);
+
+    // 行内首个联系方式为空时，以第一条非空联系方式为准。
+    const leadingEmpty = alignmentFixture(true);
+    leadingEmpty.identity.contacts = [
+      { node_id: "node_oooooooooooooooo", source_refs: [], contact_kind: "phone", value: "", label: "电话", align: "left" },
+      { node_id: "node_pppppppppppppppp", source_refs: [], contact_kind: "email", value: "zhangsan@example.invalid", label: "邮箱", align: "center" },
+    ];
+    const projected = canonicalResumeDocumentToEditorDocument(leadingEmpty);
+    const projectedRow = (projected.content ?? []).find(
+      (node) => node.type === "paragraph" && JSON.stringify(node).includes('"role":"contact"'),
+    )!;
+    expect(projectedRow.attrs?.textAlign).toBe("center");
+  });
+
+  it("对齐不改变节点标识、顺序与来源引用", () => {
+    const plain = canonicalResumeDocumentFromEditorDocument(
+      canonicalResumeDocumentToEditorDocument(alignmentFixture(false)),
+      alignmentFixture(false),
+    );
+    const aligned = canonicalResumeDocumentFromEditorDocument(
+      canonicalResumeDocumentToEditorDocument(alignmentFixture(true)),
+      alignmentFixture(true),
+    );
+    const identityOf = (document: CanonicalResumeDocument) => [
+      document.identity.node_id,
+      document.identity.name?.node_id,
+      ...document.identity.contacts.map((contact) => contact.node_id),
+    ];
+    const sectionsOf = (document: CanonicalResumeDocument) => document.sections.map((section) => [
+      section.node_id,
+      section.title?.node_id,
+      ...section.entries.map((entry) => entry.node_id),
+      ...section.entries[0].blocks.map((block) => block.node_id),
+    ]);
+
+    expect(identityOf(aligned)).toEqual(identityOf(plain));
+    expect(sectionsOf(aligned)).toEqual(sectionsOf(plain));
+    expect(aligned.identity.name?.source_refs).toEqual(plain.identity.name?.source_refs);
   });
 
   it("fails explicitly for unsupported nested lists and invalid rows", () => {

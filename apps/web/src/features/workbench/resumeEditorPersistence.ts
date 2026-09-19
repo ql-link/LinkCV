@@ -10,6 +10,7 @@ import {
   type CanonicalResumeSection,
   type CanonicalRowBlock,
   type CanonicalRowCell,
+  type CanonicalTextAlign,
   type CanonicalTextRun,
   type CanonicalTextValue,
   type ResumeDocument,
@@ -222,6 +223,7 @@ function canonicalBlockToEditor(
   if (block.block_type === "paragraph") {
     return {
       type: "paragraph",
+      attrs: { textAlign: block.align ?? null },
       content: [canonicalAnchor(block.node_id, { role, sourceRefs: block.source_refs }), ...canonicalRunsToEditor(block.runs)],
     };
   }
@@ -289,6 +291,7 @@ function canonicalFieldLine(
   const label = canonicalFieldLabels.find(([fieldKey]) => fieldKey === key)?.[1] ?? key;
   return {
     type: "paragraph",
+    attrs: { textAlign: value.align ?? null },
     content: [
       canonicalAnchor(value.node_id, { role: "entry-field", fieldKey: key, sourceRefs: value.source_refs }),
       ...styledValueToEditor(value, `${label}：`),
@@ -301,7 +304,7 @@ function canonicalEntryToEditor(entry: CanonicalResumeEntry): JSONContent[] {
   return [
     {
       type: "heading",
-      attrs: { level: 3 },
+      attrs: { level: 3, textAlign: name?.align ?? null },
       content: [
         canonicalAnchor(entry.node_id, { role: "entry", sourceRefs: entry.source_refs }),
         ...(name ? [canonicalAnchor(name.node_id, { role: "entry-field", fieldKey: "name", sourceRefs: name.source_refs })] : []),
@@ -323,7 +326,7 @@ function canonicalSectionToEditor(section: CanonicalResumeSection): JSONContent[
   return [
     {
       type: "heading",
-      attrs: { level: 2 },
+      attrs: { level: 2, textAlign: title?.align ?? null },
       content: [
         canonicalAnchor(section.node_id, {
           role: "section",
@@ -363,7 +366,7 @@ export function canonicalResumeDocumentToEditorDocument(document: CanonicalResum
   if (identity.name) {
     content.push({
       type: "heading",
-      attrs: { level: 1 },
+      attrs: { level: 1, textAlign: identity.name.align ?? null },
       content: [
         canonicalAnchor(identity.node_id, { role: "identity", sourceRefs: [] }),
         canonicalAnchor(identity.name.node_id, { role: "identity-name", sourceRefs: identity.name.source_refs }),
@@ -374,6 +377,7 @@ export function canonicalResumeDocumentToEditorDocument(document: CanonicalResum
   if (identity.headline) {
     content.push({
       type: "paragraph",
+      attrs: { textAlign: identity.headline.align ?? null },
       content: [
         canonicalAnchor(identity.headline.node_id, { role: "identity-headline", sourceRefs: identity.headline.source_refs }),
         ...styledValueToEditor(identity.headline),
@@ -381,8 +385,12 @@ export function canonicalResumeDocumentToEditorDocument(document: CanonicalResum
     });
   }
   if (identity.contacts.length) {
+    // One editable row carries every contact, so the row shares the alignment
+    // of its first non-empty contact.
+    const contactAlign = identity.contacts.find((contact) => contact.value)?.align ?? null;
     content.push({
       type: "paragraph",
+      attrs: { textAlign: contactAlign },
       content: identity.contacts.flatMap((contact, index) => [
         ...(index ? [{ type: "text", text: " ｜ " }] : []),
         canonicalAnchor(contact.node_id, {
@@ -787,7 +795,16 @@ function canonicalV1TextWithoutAnchors(node: JSONContent): string {
   return (node.content ?? []).map(canonicalV1TextWithoutAnchors).join("");
 }
 
-function styledValueFromEditor(node: JSONContent, value: string, prefix = ""): Pick<CanonicalTextValue, "runs" | "prefix_runs"> {
+function canonicalTextAlignFromEditor(node: JSONContent): CanonicalTextAlign | undefined {
+  const align = node.attrs?.textAlign;
+  return align === "left" || align === "center" || align === "right" ? align : undefined;
+}
+
+function styledValueFromEditor(
+  node: JSONContent,
+  value: string,
+  prefix = "",
+): Pick<CanonicalTextValue, "runs" | "prefix_runs" | "align"> {
   const nodes = (node.content ?? []).flatMap((child): JSONContent[] => (
     child.type === "text" ? [child] : child.type === "hardBreak" ? [{ type: "text", text: "\n" }] : []
   ));
@@ -810,7 +827,12 @@ function styledValueFromEditor(node: JSONContent, value: string, prefix = ""): P
   const prefixRuns = prefix && prefixStart >= 0 && prefixStart + prefix.length <= start
     ? sliceRuns(prefixStart, prefixStart + prefix.length)
     : undefined;
-  return { ...(runs ? { runs } : {}), ...(prefixRuns ? { prefix_runs: prefixRuns } : {}) };
+  const align = canonicalTextAlignFromEditor(node);
+  return {
+    ...(runs ? { runs } : {}),
+    ...(prefixRuns ? { prefix_runs: prefixRuns } : {}),
+    ...(align ? { align } : {}),
+  };
 }
 
 function canonicalV1AssertTextOnly(node: JSONContent, context: string) {
@@ -1038,6 +1060,7 @@ function canonicalV1BlockFromEditor(
       editorAnchorId(node),
       seed + "-paragraph-" + index,
     );
+    const align = canonicalTextAlignFromEditor(node);
     return {
       node_id: nodeId,
       source_refs: canonicalV1SourceRefsForNode(node, nodeId, context),
@@ -1047,6 +1070,7 @@ function canonicalV1BlockFromEditor(
         context,
         seed + "-paragraph-" + index,
       ),
+      ...(align ? { align } : {}),
     };
   }
   if (node.type === "bulletList" || node.type === "orderedList") {
@@ -1413,6 +1437,9 @@ function canonicalV1ContactsFromEditor(
   if (anchoredNodes.length) {
     return anchoredNodes.flatMap((node, nodeIndex) => {
       canonicalV1AssertTextOnly(node, "contact");
+      // The editable contact row is one paragraph, so every contact in it
+      // shares the row alignment.
+      const rowAlign = canonicalTextAlignFromEditor(node);
       const contacts: CanonicalContact[] = [];
       let current: { anchor: JSONContent; text: string; content: JSONContent[] } | null = null;
       const flush = () => {
@@ -1447,6 +1474,7 @@ function canonicalV1ContactsFromEditor(
           value,
           label,
           ...styledValueFromEditor({ type: "paragraph", content }, value, label ? `${label}：` : ""),
+          ...(rowAlign ? { align: rowAlign } : {}),
         });
       };
       for (const child of node.content ?? []) {

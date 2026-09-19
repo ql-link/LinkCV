@@ -678,6 +678,46 @@ describe("resume semantic contract adapter", () => {
     expect(renderResumeMarkdown(markdown)).toContain('data-left-width="62"');
   });
 
+  it("在源码 Markdown 中保留规范内容的对齐", () => {
+    const run = { inline_type: "text" as const, text: "负责示例模块", marks: [], href: null, style: { color: null, font_size_pt: null, highlight_color: null } };
+    const document: CanonicalResumeDocument = {
+      schema_version: "canonical-resume.v1",
+      document_id: "node_aaaaaaaaaaaaaaaa",
+      identity: {
+        node_id: "node_bbbbbbbbbbbbbbbb",
+        name: { node_id: "node_cccccccccccccccc", source_refs: [], value: "张三", align: "center" },
+        headline: { node_id: "node_dddddddddddddddd", source_refs: [], value: "后端工程师", align: "right" },
+        contacts: [
+          { node_id: "node_eeeeeeeeeeeeeeee", source_refs: [], contact_kind: "phone", value: "138 0000 0000", label: "电话", align: "center" },
+          { node_id: "node_ffffffffffffffff", source_refs: [], contact_kind: "email", value: "zhangsan@example.invalid", label: "邮箱" },
+        ],
+        avatar: null,
+      },
+      sections: [{
+        node_id: "node_hhhhhhhhhhhhhhhh",
+        source_refs: [],
+        semantic_kind: "work",
+        title: { node_id: "node_iiiiiiiiiiiiiiii", source_refs: [], value: "工作经历", align: "right" },
+        entries: [],
+        blocks: [{ node_id: "node_mmmmmmmmmmmmmmmm", source_refs: [], block_type: "paragraph", runs: [run], align: "center" }],
+      }],
+      source_dispositions: [],
+    };
+
+    const markdown = resumeDocumentToMarkdown(document);
+    expect(markdown).toContain("::: text-align center\n# 张三\n:::");
+    expect(markdown).toContain("::: text-align right\n后端工程师\n:::");
+    // 整行联系方式共用一个对齐取值。
+    expect(markdown).toContain("::: text-align center\n电话：138 0000 0000 ｜ 邮箱：zhangsan@example.invalid\n:::");
+    expect(markdown).toContain("::: text-align right\n## 工作经历\n:::");
+    expect(markdown).toContain("::: text-align center\n负责示例模块\n:::");
+  });
+
+  it("未设置对齐的规范内容不产生对齐标记", () => {
+    const markdown = resumeDocumentToMarkdown(defaultCanonicalDocument);
+    expect(markdown.includes("::: text-align")).toBe(false);
+  });
+
   it("不会把列表项段落对齐写成无效的块指令", () => {
     const markdown = editorDocumentToMarkdown({
       type: "doc",
