@@ -40,6 +40,7 @@ import { useResumeStore } from "../../store/resumeStore";
 import {
   exitResumeRowToBlankParagraph,
   exitVisuallyBlankResumeListItem,
+  hasVisibleResumeContent,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
   setResumeRowColumnWidths,
@@ -559,6 +560,12 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
   const leftWidth = normalizeResumeRowWidth(node.attrs.leftWidth);
   const columns = node.childCount;
   const equalColumns = columns > 2;
+  // 占位提示按“这一栏还没有可见内容”显示，不能用 ProseMirror 的尾部换行判断：
+  // 栏内文字后面可能残留定位锚点，同样会补出 ProseMirror-trailingBreak。
+  const blankColumns: number[] = [];
+  for (let index = 0; index < columns; index += 1) {
+    if (!hasVisibleResumeContent(node.child(index))) blankColumns.push(index);
+  }
   const columnWidths = equalColumns
     ? normalizeResumeRowColumnWidths(node.attrs.columnWidths, columns)
     : null;
@@ -636,6 +643,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
       // 不要用 `columns-3` 这种名字：它会被 Tailwind 的 columns-{n} 工具类命中，
       // 把整行变成 CSS 多列容器，导致每栏被压窄、文字折成两行。
       className={`resume-layout-row${equalColumns ? ` is-equal equal-columns-${columns}` : ""}${active || menuAt ? " is-active" : ""}`}
+      data-blank-columns={blankColumns.join(" ")}
       style={equalColumns
         ? {
           "--resume-row-columns": columns,
