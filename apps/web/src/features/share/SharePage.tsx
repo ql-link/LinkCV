@@ -148,16 +148,20 @@ export function SharePage({ token }: { token: string }) {
             <span>访问 LinkResume</span>
             <ExternalLink size={13} strokeWidth={1.8} aria-hidden="true" />
           </a>
-          {pdfError ? <span className="share-page-download-error" role="alert">{pdfError}</span> : null}
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Download size={14} />}
-            disabled={pdfPending}
-            onClick={downloadPdf}
-          >
-            {pdfPending ? "正在生成…" : "下载 PDF"}
-          </Button>
+          {payload.allow_download ? (
+            <>
+              {pdfError ? <span className="share-page-download-error" role="alert">{pdfError}</span> : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Download size={14} />}
+                disabled={pdfPending}
+                onClick={downloadPdf}
+              >
+                {pdfPending ? "正在生成…" : "下载 PDF"}
+              </Button>
+            </>
+          ) : null}
         </span>
       </header>
       <section className="share-page-paper-scroll">

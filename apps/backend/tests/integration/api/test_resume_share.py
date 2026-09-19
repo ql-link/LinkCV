@@ -131,6 +131,7 @@ def test_create_share_public_read_and_overwrite() -> None:
         share = created.json()["share"]
         assert share["share_visibility"] == "public"
         assert share["share_expires_at"] is None
+        assert share["share_allow_download"] is True
         assert share["share_created_at"]
         first_token = share["share_token"]
         assert len(first_token) >= 20
@@ -139,7 +140,15 @@ def test_create_share_public_read_and_overwrite() -> None:
         public = guest.get(f"/api/share/{first_token}")
         assert public.status_code == 200
         payload = public.json()
-        assert set(payload) == {"data", "style", "layout_plan", "assets", "sharer"}
+        assert set(payload) == {
+            "data",
+            "style",
+            "layout_plan",
+            "assets",
+            "sharer",
+            "allow_download",
+        }
+        assert payload["allow_download"] is True
         assert payload["assets"] == {}
         assert set(payload["sharer"]) == {"nickname", "avatar_url"}
         assert payload["sharer"]["nickname"]
@@ -251,6 +260,36 @@ def test_public_share_pdf_uses_server_renderer_and_smart_one_page() -> None:
             "layout_plan",
             "assets",
         }
+
+
+def test_share_download_permission_hides_capability_and_blocks_pdf_for_everyone() -> None:
+    app = build_app()
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "download-owner@example.com")
+
+        created = create_resume(owner, app).json()["resume"]
+        share = owner.post(
+            f"/api/resumes/{created['id']}/share",
+            json={"allow_download": False},
+        ).json()["share"]
+        token = share["share_token"]
+        assert share["share_allow_download"] is False
+
+        public = guest.get(f"/api/share/{token}")
+        assert public.status_code == 200
+        assert public.json()["allow_download"] is False
+        assert guest.get(f"/api/share/{token}/pdf").status_code == 404
+        assert owner.get(f"/api/share/{token}/pdf").status_code == 404
+
+        enabled = owner.patch(
+            f"/api/resumes/{created['id']}/share",
+            json={"allow_download": True},
+        )
+        assert enabled.status_code == 200
+        assert enabled.json()["share"]["share_allow_download"] is True
+        assert guest.get(f"/api/share/{token}/pdf").status_code == 200
 
 
 def test_create_share_with_requested_visibility() -> None:

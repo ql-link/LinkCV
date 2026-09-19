@@ -78,6 +78,7 @@ const publicPayload: PublicSharePayload = {
     "/api/resumes/1/assets/avatar.png": "data:image/png;base64,ZmFrZQ==",
   },
   sharer: { nickname: "于晏", avatar_url: null },
+  allow_download: true,
 };
 
 afterEach(() => {
@@ -155,6 +156,15 @@ describe("SharePage", () => {
     (await screen.findByRole("button", { name: "下载 PDF" })).click();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("PDF 生成失败，请稍后重试");
+  });
+
+  it("分享者关闭下载后不显示 PDF 下载入口", async () => {
+    mockedFetch.mockResolvedValue({ ...publicPayload, allow_download: false });
+    render(<SharePage token="token_123" />);
+
+    await waitFor(() => expect(screen.getByText("张三")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "下载 PDF" })).not.toBeInTheDocument();
+    expect(mockedDownload).not.toHaveBeenCalled();
   });
 
   it("公开读取失败时统一显示失效页", async () => {

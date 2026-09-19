@@ -233,6 +233,7 @@ class ResumeShareState(BaseModel):
     share_token: str
     share_visibility: Literal["private", "public"]
     share_expires_at: datetime | None = None
+    share_allow_download: bool
     share_created_at: datetime
 
 
@@ -247,6 +248,7 @@ class ResumeShareCreateRequest(BaseModel):
 
     visibility: Literal["private", "public"] | None = None
     expires_at: datetime | None = None
+    allow_download: bool = Field(default=True, strict=True)
 
 
 class ResumeShareUpdateRequest(BaseModel):
@@ -254,6 +256,7 @@ class ResumeShareUpdateRequest(BaseModel):
 
     visibility: Literal["private", "public"] | None = None
     expires_at: datetime | None = None
+    allow_download: bool = Field(default=True, strict=True)
 
 
 class DeleteResumeShareResponse(BaseModel):
@@ -277,3 +280,4 @@ class PublicSharePayload(BaseModel):
     layout_plan: LayoutPlan
     assets: dict[str, str]
     sharer: PublicShareSharer
+    allow_download: bool

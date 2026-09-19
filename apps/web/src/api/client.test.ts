@@ -737,6 +737,7 @@ describe("API resume share", () => {
       share_token: "token_abc",
       share_visibility: "public",
       share_expires_at: null,
+      share_allow_download: true,
       share_created_at: "2026-08-05T00:00:00Z",
     };
     const fetchMock = vi
@@ -751,6 +752,7 @@ describe("API resume share", () => {
           style: defaultSemanticStyle,
           assets: {},
           sharer: { nickname: "于晏", avatar_url: null },
+          allow_download: true,
         }),
       );
     vi.stubGlobal("fetch", fetchMock);

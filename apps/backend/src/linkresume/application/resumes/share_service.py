@@ -46,6 +46,7 @@ def share_state_of(resume: Resume) -> ResumeShareState | None:
         share_token=resume.share_token,
         share_visibility=resume.share_visibility,  # type: ignore[arg-type]
         share_expires_at=resume.share_expires_at,
+        share_allow_download=bool(resume.share_allow_download),
         share_created_at=resume.share_created_at,  # type: ignore[arg-type]
     )
 
@@ -57,6 +58,7 @@ def create_or_overwrite_share(
     *,
     visibility: str | None = None,
     expires_at=None,
+    allow_download: bool = True,
 ) -> Resume | None:
     """无链接时生成新链接；已有链接时作废旧 token 并生成新 token。"""
     resume = find_owned_resume(db, resume_id, user_id)
@@ -67,6 +69,7 @@ def create_or_overwrite_share(
             resume.share_token = _generate_share_token()
             resume.share_visibility = visibility or DEFAULT_SHARE_VISIBILITY
             resume.share_expires_at = expires_at
+            resume.share_allow_download = int(allow_download)
             resume.share_created_at = utc_now()
             try:
                 db.commit()
@@ -106,6 +109,7 @@ def update_share(
     *,
     visibility: str | None,
     expires_at,
+    allow_download: bool | None,
     provided_fields: set[str],
 ) -> Resume:
     """续期（延长/清除 expires_at）或修改可见性。未开启分享时抛失效异常。"""
@@ -118,6 +122,8 @@ def update_share(
         resume.share_visibility = visibility  # type: ignore[assignment]
     if "expires_at" in provided_fields:
         resume.share_expires_at = expires_at
+    if "allow_download" in provided_fields:
+        resume.share_allow_download = int(bool(allow_download))
     db.commit()
     db.refresh(resume)
     return resume
@@ -148,6 +154,7 @@ def resolve_public_share(
         ),
         assets=assets,
         sharer=PublicShareSharer(nickname=owner.nickname, avatar_url=owner.avatar_url),
+        allow_download=bool(resume.share_allow_download),
     )
 
 

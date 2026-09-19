@@ -66,6 +66,7 @@ def create_share(
         user.id,
         visibility=request.visibility if request else None,
         expires_at=request.expires_at if request else None,
+        allow_download=request.allow_download if request else True,
     )
     if updated is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
@@ -87,6 +88,7 @@ def update_share_state(
             user.id,
             visibility=request.visibility,
             expires_at=request.expires_at,
+            allow_download=request.allow_download,
             provided_fields=request.model_fields_set,
         )
     except ShareLinkUnavailable as error:
@@ -134,6 +136,8 @@ def download_public_share_pdf(
         resume, owner = resolve_public_share_access(db, token, viewer)
     except ShareLinkUnavailable as error:
         raise ApiError(404, "SHARE_LINK_UNAVAILABLE") from error
+    if not resume.share_allow_download:
+        raise ApiError(404, "SHARE_LINK_UNAVAILABLE")
     pdf = render_resume_pdf(
         resume,
         owner.id,

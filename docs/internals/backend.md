@@ -33,7 +33,7 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0063` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0064` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -56,6 +56,8 @@ MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_compan
 迁移 `0062` 为 `job_descriptions` 增加可空 `logo_sha256 CHAR(64)`（ASCII、ascii_bin），不新增图片表、索引或外键。它还兼容一个已登记的 Development 历史分叉：该环境的旧 `0059` 创建了 `user_preferences`，却因 revision ID 后续被公司 Logo 迁移复用而缺少 `job_descriptions.logo_url` 与 `global_companies`。`0062` 接受这一完整旧形态、已经包含 Logo 基础结构的完整当前形态，以及 MySQL 隐式提交首条或全部目标 DDL 后留下的已知重试前缀；需要补齐基础结构时只做增量添加，目标结构已完整时只推进 revision，未知的部分结构在 DDL 前拒绝继续，已有 `user_preferences` 保留不删。`application/job_descriptions/logo_service.py` 负责图片解码、压缩、内容指纹和快照图标同步。MinIO 路径为 `company-logos/<sha256>.webp`，同图跨用户复用、按岗位归属鉴权。写入时使用当前 MySQL 连接上的 `GET_LOCK` 串行化同指纹的存在检查与首次写入，完成后释放，避免并发产生重复对象版本；缺失之外的存储错误不能当作不存在。图片成功落盘后才提交岗位引用，失败不删除共享对象。暂不自动回收已无引用或事务失败遗留的 Logo 文件，删除岗位也不删除共享图。此目录不受用户独占资源的失败清理逻辑管理。部署需先执行 `0062` 再更新后端，之后更新插件；线上实际 revision 需单独查询。
 
 迁移 `0063` 扩展智能助手提案，增加 `translate_resume` 模式、候选标题和翻译结果简历标识；确认翻译提案时创建独立简历，原简历不变。该迁移同样为 forward-only，线上实际 revision 需单独查询。
+
+迁移 `0064` 为 `resumes` 增加非空 `share_allow_download`，旧记录和数据库缺省值均为 `1`。管理接口可即时修改该值；关闭后公开分享 JSON 仍返回当前草稿以供页面展示，但公开 PDF 路由对所有访问者统一拒绝。该迁移为单次增列与检查约束 DDL，不需要数据回填；部署时先升级 schema，再发布依赖该列的后端与 Web，线上实际 revision 需单独查询。
 
 
 `user_dataset.sha256` 在 MySQL 使用固定长度 `CHAR(64)` 保存源文件 SHA-256 十六进制摘要；SQLite 测试仍使用通用字符串替身。该字段只用于后端完整性元数据，不向浏览器返回。
