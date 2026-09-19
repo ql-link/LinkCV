@@ -323,3 +323,80 @@ describe("分栏分隔线拖拽", () => {
     expect(storedWidths()).toBeNull();
   });
 });
+
+describe("分栏空栏占位提示", () => {
+  type InlineNode = { type: string; text?: string; attrs?: Record<string, unknown> };
+
+  async function renderRow(cells: InlineNode[][]) {
+    const instance = new Editor({
+      extensions: resumeEditorExtensions,
+      editorProps: { handleScrollToSelection: () => true },
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          attrs: { leftWidth: 50 },
+          content: cells.map((inline) => ({
+            type: "paragraph",
+            ...(inline.length ? { content: inline } : {}),
+          })),
+        }],
+      },
+    });
+    editor = instance;
+    const { container } = render(<EditorContent editor={instance} />);
+    await act(async () => { await Promise.resolve(); });
+    const row = container.querySelector<HTMLElement>(".resume-layout-row");
+    if (!row) throw new Error("分栏行未渲染");
+    return { row, instance, blanks: () => row.dataset.blankColumns?.split(" ") ?? [] };
+  }
+
+  async function typeInto(instance: Editor, text: string) {
+    await act(async () => {
+      instance.commands.setTextSelection(2);
+      for (const character of text) {
+        instance.view.dispatch(instance.state.tr.insertText(character));
+      }
+      await Promise.resolve();
+    });
+  }
+
+  it("只有没有可见内容的栏带占位提示", async () => {
+    const { blanks } = await renderRow([[{ type: "text", text: "星河云科技" }], []]);
+
+    expect(blanks()).toEqual(["1"]);
+  });
+
+  it("左栏输入文字后该栏不再是空栏", async () => {
+    const { row, instance, blanks } = await renderRow([[], []]);
+    expect(blanks()).toEqual(["0", "1"]);
+
+    await typeInto(instance, "AIBDCC · 2026（在投）· 第一作者");
+
+    // 输入后残留的定位锚点仍然会让 ProseMirror 补上 trailingBreak，
+    // 但它不再代表这一栏空着，否则占位文字会和输入内容重叠。
+    expect(row.querySelector("p:first-child > br.ProseMirror-trailingBreak")).not.toBeNull();
+    expect(blanks()).toEqual(["1"]);
+  });
+
+  it("行内图标算可见内容", async () => {
+    const { blanks } = await renderRow([[
+      { type: "inlineIcon", attrs: { name: "Mail" } },
+    ], []]);
+
+    expect(blanks()).toEqual(["1"]);
+  });
+
+  it("等分栏首栏输入文字后只剩后面各栏是空栏", async () => {
+    const { instance, blanks } = await renderRow([[], [], []]);
+    await act(async () => {
+      setResumeRowColumns(instance, 0, 3);
+      await Promise.resolve();
+    });
+    expect(blanks()).toEqual(["0", "1", "2"]);
+
+    await typeInto(instance, "第一栏");
+
+    expect(blanks()).toEqual(["1", "2"]);
+  });
+});
