@@ -31,13 +31,24 @@
         <block wx:if="{{session}}">
           <view class="identity">
             <view class="identity-heading">
-              <text class="session-title">{{session.stage_label}}</text>
-              <view class="session-status tone-{{session.tone}}">
-                <career-icon name="{{session.icon}}" tone="{{session.tone}}" size="32" />
-                <text>{{session.statusLabel}}</text>
+              <company-logo
+                name="{{app.company_name_snapshot}}"
+                logo="{{app.company_logo_url}}"
+                color="{{app.calendar_color}}"
+                size="{{36}}"
+              />
+              <view class="identity-copy">
+                <view class="identity-title">
+                  <text class="session-title">{{session.stage_label}}</text>
+                  <view class="session-status tone-{{session.tone}}">
+                    <career-icon name="{{session.icon}}" tone="{{session.tone}}" size="32" />
+                    <text>{{session.statusLabel}}</text>
+                  </view>
+                </view>
+                <text class="company-role">{{app.company_name_snapshot}} · {{app.job_title_snapshot}}</text>
               </view>
             </view>
-            <text class="company-role">{{app.company_name_snapshot}} · {{app.job_title_snapshot}}</text>
+            <view class="identity-rule" aria-hidden="true" />
             <view class="time-row">
               <image class="detail-icon" src="/assets/career/detail-calendar.svg" />
               <text class="session-date">{{dateLabel}}</text>

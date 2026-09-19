@@ -17,7 +17,7 @@
       ><text class="subtitle">{{item.job_title_snapshot}}</text
       ><view class="status tone-accent"
         ><career-icon name="clock" tone="accent" />{{item.stageLabel}} ·
-        待安排<text class="chevron">›</text></view
+        {{item.statusLabel}}<text class="chevron">›</text></view
       ></view
     ><view class="panel empty" wx:if="{{!applications.length}}"
       >暂无待安排阶段。如需安排新一轮面试，请先在对应求职详情中添加下一阶段。</view

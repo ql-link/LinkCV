@@ -24,6 +24,7 @@
         "value": {"type": "string", "maxLength": 20000},
         "runs": {"type": ["array", "null"], "maxItems": 1000, "items": {"$ref": "#/$defs/textRun"}},
         "prefix_runs": {"type": ["array", "null"], "maxItems": 100, "items": {"$ref": "#/$defs/textRun"}},
+        "align": {"enum": ["left", "center", "right", null]},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       }
     },
@@ -37,6 +38,7 @@
         "runs": {"type": ["array", "null"], "maxItems": 1000, "items": {"$ref": "#/$defs/textRun"}},
         "prefix_runs": {"type": ["array", "null"], "maxItems": 100, "items": {"$ref": "#/$defs/textRun"}},
         "label": {"type": ["string", "null"], "maxLength": 100},
+        "align": {"enum": ["left", "center", "right", null]},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       }
     },
@@ -161,6 +163,7 @@
         "node_id": {"$ref": "#/$defs/nodeId"},
         "block_type": {"const": "paragraph"},
         "runs": {"type": "array", "maxItems": 2000, "items": {"$ref": "#/$defs/inlineContent"}},
+        "align": {"enum": ["left", "center", "right", null]},
         "source_refs": {"$ref": "#/$defs/sourceRefs"}
       }
     },
