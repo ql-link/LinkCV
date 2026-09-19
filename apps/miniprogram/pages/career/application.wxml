@@ -9,15 +9,20 @@
   >
   <block wx:if="{{app}}">
     <view class="detail-hero"
-      ><view class="row spread"
-        ><text class="company-title grow">{{app.company_name_snapshot}}</text
-        ><button class="advance" wx:if="{{app.canAdvance}}" disabled="{{loading}}" bindtap="stage">
-          <text class="advance-plus" aria-hidden="true">+</text><text>{{app.canSchedule ? '添加安排' : '推进流程'}}</text>
-        </button></view
-      ><view class="row"
-        ><text class="subtitle">{{app.job_title_snapshot}}</text
-        ><text class="employment">{{app.employmentLabel}}</text></view
-      ></view
+      ><company-logo
+        name="{{app.company_name_snapshot}}"
+        logo="{{app.companyLogo}}"
+        color="{{app.calendar_color}}"
+        size="{{48}}"
+      /><view class="hero-copy"
+        ><text class="company-title">{{app.company_name_snapshot}}</text
+        ><view class="hero-meta"
+          ><text class="subtitle">{{app.job_title_snapshot}}</text
+          ><text class="employment">{{app.employmentLabel}}</text></view
+        ></view
+      ><button class="advance" wx:if="{{app.canAdvance}}" disabled="{{loading}}" bindtap="stage">
+        <text class="advance-plus" aria-hidden="true">+</text><text>{{app.canSchedule ? '添加安排' : '推进流程'}}</text>
+      </button></view
     >
     <view class="panel progress-panel"
       ><text class="heading">求职进度</text
@@ -56,8 +61,9 @@
         data-id="{{item.id}}"
         bindtap="openSession"
         role="button"
-        ><view class="row spread"
-          ><text class="session-name grow">{{item.stage_label}}</text
+        ><view class="card-state"
+          ><text class="session-name">{{item.stage_label}}</text
+          ><text class="stage-sep">·</text
           ><view class="status-badge tone-{{item.tone}}"
             ><career-icon
               name="{{item.icon}}"

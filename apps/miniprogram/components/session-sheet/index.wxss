@@ -3,20 +3,24 @@
 .detail-stack { display:flex; flex-direction:column; gap:20px; min-height:100%; box-sizing:border-box; }
 .detail-stack > view, .detail-stack > button { flex-shrink:0; }
 .identity { display:flex; flex-direction:column; gap:12px; padding:16px; background:#f9fafb; border-radius:12px; }
-.identity-heading, .time-row, .meeting-row, .meeting-mode { display:flex; align-items:center; gap:10px; min-width:0; }
+.identity-heading { display:flex; align-items:center; gap:12px; min-width:0; }
+.identity-copy { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
+.identity-title { display:flex; align-items:center; gap:10px; min-width:0; }
+.identity-rule { height:1px; background:#dbe0e8; }
+.time-row, .meeting-row, .meeting-mode { display:flex; align-items:center; gap:10px; min-width:0; }
 .session-title { flex:1; min-width:0; font-size:20px; line-height:28px; font-weight:700; color:#17191c; overflow-wrap:anywhere; }
-.session-status { display:flex; align-items:center; gap:4px; flex-shrink:0; padding:4px 8px; border-radius:6px; font-size:12px; line-height:18px; }
-.session-status.tone-accent { background:#e9f1fd; color:#145ed6; }
-.session-status.tone-success { background:#eaf7f0; color:#267a4d; }
-.session-status.tone-warning { background:#fff6e8; color:#9a5b13; }
-.session-status.tone-neutral { background:#edf1f5; color:#6f7a8c; }
-.company-role { font-size:14px; line-height:20px; color:#3f4752; overflow-wrap:anywhere; }
+.session-status { display:flex; align-items:center; gap:4px; flex-shrink:0; font-size:12px; line-height:18px; }
+.session-status.tone-accent { color:#145ed6; }
+.session-status.tone-success { color:#267a4d; }
+.session-status.tone-warning { color:#9a5b13; }
+.session-status.tone-neutral { color:#566173; }
+.company-role { font-size:13px; line-height:20px; color:#3f4752; overflow-wrap:anywhere; }
 .time-row, .meeting-mode { gap:8px; }
 .detail-icon { display:block; width:16px; height:16px; flex-shrink:0; }
-.session-date { flex-shrink:0; font-size:14px; line-height:21px; color:#3f4752; }
-.session-time { flex:1; min-width:0; text-align:right; font-size:20px; line-height:26px; color:#17191c; }
+.session-date { flex-shrink:0; font-size:13px; line-height:19px; color:#3f4752; }
+.session-time { flex-shrink:0; font-size:18px; line-height:26px; color:#17191c; }
 .session-time.cross-day { font-size:16px; line-height:24px; }
-.meeting-mode { flex:1; font-size:14px; line-height:20px; color:#3f4752; }
+.meeting-mode { flex:1; font-size:13px; line-height:19px; color:#3f4752; }
 .muted { font-size:12px; line-height:18px; color:#6f7a8c; }
 .meeting-address { overflow-wrap:anywhere; word-break:break-all; }
 .location-text { flex:1; min-width:0; }

@@ -1,0 +1,42 @@
+<view class="calendar" catchtap="noop" role="dialog" aria-label="选择日期">
+  <view class="month">
+    <view
+      class="month-action"
+      hover-class="month-action-pressed"
+      data-delta="-1"
+      bindtap="navigate"
+      role="button"
+      aria-label="上一月"
+      >‹</view
+    >
+    <text class="month-label">{{monthLabel}}</text>
+    <view
+      class="month-action"
+      hover-class="month-action-pressed"
+      data-delta="1"
+      bindtap="navigate"
+      role="button"
+      aria-label="下一月"
+      >›</view
+    >
+  </view>
+  <view class="weekdays"
+    ><text class="weekday" wx:for="{{weekdays}}" wx:key="*this">{{item}}</text></view
+  >
+  <view class="days"
+    ><view class="week" wx:for="{{weeks}}" wx:for-item="week" wx:key="key"
+      ><view
+        class="day {{item.adjacent ? 'adjacent' : ''}} {{item.selected ? 'selected' : ''}}"
+        hover-class="day-pressed"
+        wx:for="{{week.days}}"
+        wx:key="value"
+        data-date="{{item.value}}"
+        bindtap="selectDate"
+        role="button"
+        aria-label="{{item.value}}"
+        aria-pressed="{{item.selected}}"
+        >{{item.day}}</view
+      ></view
+    ></view
+  >
+</view>

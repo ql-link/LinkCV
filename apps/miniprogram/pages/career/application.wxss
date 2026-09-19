@@ -4,15 +4,40 @@
 }
 .detail-hero {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0 6px;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
   margin-bottom: 12px;
+  background: #fff;
+  border-radius: 14px;
+}
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 .company-title {
   font-size: 22px;
   line-height: 30px;
   font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.hero-meta .subtitle {
+  min-width: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: #3f4752;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .detail-page .advance {
   display: flex;
@@ -118,25 +143,42 @@
   font-size: 15px;
   line-height: 22px;
 }
+/* 与求职记录卡同款：「阶段 · 状态」合成一句，状态不再是挂在行尾的小字。
+   这里阶段是 Regular 15，状态就跟它同字号同字重，靠 tone 色区分。 */
+.session-card .card-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.session-card .session-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-card .stage-sep {
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 22px;
+  color: #6f7a8c;
+}
+.session-card .status-badge {
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 22px;
+}
+/* 状态徽标无底色：文字颜色由 shared.wxss 的 .tone-* 提供，图标另带 tone。 */
 .status-badge {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
-  border-radius: 6px;
   font-size: 12px;
   line-height: 17px;
   white-space: nowrap;
-  background: #edf1f5;
 }
-.status-badge.tone-accent {
-  background: #e9f1fd;
-}
-.status-badge.tone-success {
-  background: #eaf7f0;
-}
-.status-badge.tone-warning {
-  background: #fff6e8;
+.status-badge.tone-neutral {
+  color: #566173;
 }
 .detail-link {
   color: #145ed6;

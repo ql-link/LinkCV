@@ -53,7 +53,6 @@
 }
 
 .avatar-box {
-  position: relative;
   width: 136rpx;
   height: 136rpx;
   flex-shrink: 0;
@@ -126,31 +125,6 @@
   margin-top: 8rpx;
 }
 
-.avatar-edit-badge {
-  position: absolute;
-  right: -2rpx;
-  bottom: -2rpx;
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 50%;
-  background: #0f172a;
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 4rpx solid #ffffff;
-  box-sizing: border-box;
-  box-shadow: 0 4rpx 10rpx rgba(15, 23, 42, 0.22);
-  z-index: 10;
-  pointer-events: none;
-}
-
-.edit-badge-icon {
-  font-size: 22rpx;
-  line-height: 1;
-  transform: translate(1rpx, -1rpx);
-}
-
 .profile-info {
   flex: 1;
   min-width: 0;
@@ -183,6 +157,12 @@
   display: inline-flex;
   align-items: center;
   max-width: 360rpx;
+  /* 输入态是用绝对定位的 input 覆盖展示层，盒子尺寸由展示层决定，而展示层只按
+     当前昵称排布。昵称短或为空时，input 的占位文案「点击输入微信昵称」比盒子更宽，
+     input 自身 38rpx 的字又比盒子更高，于是两侧被裁。这两个下限按输入态给：
+     占位文案 8 字 × 32rpx，以及 38rpx × line-height 1.3。 */
+  min-width: 300rpx;
+  min-height: 50rpx;
 }
 
 .name-display-layer {
@@ -197,7 +177,10 @@
 .user-name-text {
   color: #0f172a;
   font-size: 38rpx;
-  font-weight: 700;
+  /* 内嵌字体只提供 400/600 两个字重面，这里必须用确实存在的 600；
+     请求 700 时 WebView 的 <text> 会退回 600，而原生 <input> 可能合成加粗，
+     两态看起来就成了两种字体。 */
+  font-weight: 600;
   letter-spacing: -0.5rpx;
   line-height: 1.3;
   overflow: hidden;
@@ -231,9 +214,12 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+  /* 原生 input 不继承字体，这里显式 inherit，和 career 各页 input 的写法一致；
+     字重同样取实际存在的 600，避免和展示层出现合成差异。 */
+  font-family: inherit;
   color: #0f172a;
   font-size: 38rpx;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.5rpx;
   line-height: 1.3;
   box-sizing: border-box;
