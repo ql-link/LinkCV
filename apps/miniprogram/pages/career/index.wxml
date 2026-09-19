@@ -1,7 +1,7 @@
 <page-meta
   page-style="overflow:hidden"
 />
-<view class="career-home">
+<view class="career-home" bindtap="closeDatePicker">
   <brand-navigation />
   <view class="home-header">
     <view class="navigation">
@@ -44,12 +44,11 @@
     bindrefresherrefresh="handleRefresherRefresh"
   >
   <view
-    class="career-page {{activeTab === 'schedule' ? 'schedule-body' : ''}}"
-    style="{{activeTab === 'schedule' ? 'min-height:calc(100vh - ' + statusBarHeight + 'px - 168px - env(safe-area-inset-bottom))' : ''}}"
+    class="career-page {{activeTab === 'schedule' ? 'schedule-body' : 'applications-body'}}{{guest ? ' guest-body' : ''}}"
+    style="{{!guest && activeTab === 'schedule' ? 'min-height:calc(100vh - ' + statusBarHeight + 'px - 168px - env(safe-area-inset-bottom))' : ''}}"
   >
-    <view wx:if="{{guest}}" class="panel state"
+    <view wx:if="{{guest}}" class="state-card"
       ><text class="title">登录后查看求职进展</text
-      ><text class="hint">在这里查看本账号的面试安排、求职记录与阶段历史。</text
       ><button class="primary" bindtap="goLogin">登录账号</button></view
     >
     <view wx:elif="{{error}}" class="panel state"
@@ -60,22 +59,36 @@
     <block wx:elif="{{activeTab === 'schedule'}}">
       <view class="panel schedule-panel">
         <view class="schedule-toolbar row spread">
-          <picker
-            mode="date"
-            value="{{date}}"
-            bindchange="changeDate"
-            aria-label="选择日期"
-          >
-            <view
+          <view class="date-stepper"
+            ><view
+              class="date-arrow"
+              hover-class="date-arrow-pressed"
+              hover-stay-time="120"
+              data-delta="-1"
+              bindtap="shiftDay"
+              role="button"
+              aria-label="前一天"
+              >‹</view
+            ><view
               class="date-control"
               hover-class="date-control-pressed"
               hover-stay-time="120"
+              catchtap="toggleDatePicker"
               role="button"
-              ><career-icon name="calendar" size="28" /><text
-                >{{dateLabel}}</text
-              ></view
-            >
-          </picker>
+              aria-label="选择日期，当前 {{dateLabel}}"
+              aria-expanded="{{datePickerOpen}}"
+              >{{dateLabel}}</view
+            ><view
+              class="date-arrow"
+              hover-class="date-arrow-pressed"
+              hover-stay-time="120"
+              data-delta="1"
+              bindtap="shiftDay"
+              role="button"
+              aria-label="后一天"
+              >›</view
+            ></view
+          >
           <button
             class="add-schedule"
             size="mini"
@@ -85,6 +98,11 @@
             添加安排
           </button>
         </view>
+        <view class="date-popover" wx:if="{{datePickerOpen}}"
+          ><career-date-popover
+            date="{{date}}"
+            bind:select="selectDate"
+        /></view>
         <view
           class="time-grid"
           style="min-height:{{timeline.minimumHeight}}rpx"
@@ -101,19 +119,34 @@
             <view
               wx:for="{{timeline.items}}"
               wx:key="id"
-              class="event tone-{{item.tone}}"
+              class="event tone-{{item.tone}} {{item.centerContent ? '' : 'event-top'}}"
               style="{{item.fluidStyle}}"
               data-id="{{item.id}}"
               bindtap="openSession"
               role="button"
-              aria-label="{{item.company_name}}，{{item.stage_label}}，{{item.compactTime}}，{{item.statusLabel}}"
+              aria-label="{{item.company_name}}，{{item.stage_label}}，{{item.modeLabel}}，{{item.compactTime}}，{{item.statusLabel}}"
             >
               <view class="event-title"
-                ><text class="event-company">{{item.company_name}}</text
-                ><text class="event-stage">{{item.stage_label}}</text></view
+                ><company-logo
+                  wx:if="{{item.showLogo}}"
+                  name="{{item.company_name}}"
+                  logo="{{item.companyLogo}}"
+                  color="{{item.calendar_color}}"
+                  size="{{24}}"
+                /><text class="event-company">{{item.company_name}}</text
+                ><text class="event-stage">{{item.compactStage}}</text></view
               >
-              <text class="event-time">{{item.compactTime}}</text>
+              <text class="event-time" wx:if="{{item.showTime}}"
+                >{{item.compactTime}}</text
+              >
             </view>
+            <text
+              wx:for="{{timeline.conflicts}}"
+              wx:key="key"
+              class="conflict-hint"
+              style="top:calc({{item.top}}% + 6px)"
+              >{{item.label}}</text
+            >
           </view>
           <text class="schedule-empty" wx:if="{{!timeline.items.length}}"
             >当天暂无安排</text
@@ -147,10 +180,16 @@
         wx:key="id"
         data-id="{{item.id}}"
         bindtap="openApplication"
+        hover-class="application-card-pressed"
         role="button"
       >
         <view class="row spread card-title"
-          ><text class="card-identity"
+          ><company-logo
+            name="{{item.company_name_snapshot}}"
+            logo="{{item.companyLogo}}"
+            color="{{item.calendar_color}}"
+            size="{{36}}"
+          /><text class="card-identity"
             ><text class="company-name">{{item.company_name_snapshot}}</text
             ><text class="job-name"> · {{item.job_title_snapshot}}</text></text
           ><text
@@ -158,19 +197,19 @@
             >{{item.employmentLabel}}</text
           ></view
         >
-        <view class="card-info"
-          ><view class="row spread"
-            ><text class="stage-name grow">{{item.stageLabel}}</text
-            ><view class="status-badge tone-{{item.tone}}"
-              ><career-icon
-                name="{{item.icon}}"
-                tone="{{item.tone}}"
-                size="30"
-              /><text>{{item.statusLabel}}</text></view
-            ></view
-          ><text class="card-meta"
-            >{{item.nextLabel ? '下次安排 · ' + item.nextLabel : item.phase === 'pending' ? '尚未记录投递信息' : '投递日期 · ' + item.appliedLabel}}</text
+        <view class="card-state"
+          ><text class="stage-name">{{item.stageLabel}}</text
+          ><text class="stage-sep">·</text
+          ><view class="status-badge tone-{{item.tone}}"
+            ><career-icon
+              name="{{item.icon}}"
+              tone="{{item.tone}}"
+              size="30"
+            /><text>{{item.statusLabel}}</text></view
           ></view
+        >
+        <text class="card-meta"
+          >{{item.nextLabel ? '下次安排 · ' + item.nextLabel : item.phase === 'pending' ? '尚未记录投递信息' : '投递日期 · ' + item.appliedLabel}}</text
         >
       </view>
       <view class="panel state" wx:if="{{!visibleApplications.length}}"

@@ -1,0 +1,10 @@
+<view class="company-logo" style="{{style}}" aria-hidden="true">
+  <image
+    wx:if="{{src}}"
+    class="company-logo-image"
+    src="{{src}}"
+    mode="aspectFill"
+    binderror="handleError"
+  />
+  <text wx:else class="company-logo-initial">{{initial}}</text>
+</view>

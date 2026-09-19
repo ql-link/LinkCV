@@ -108,9 +108,9 @@ def test_upload_dedup_access_cache_and_delete_are_isolated_per_user():
         with app.state.session_factory() as db:
             after = db.get(JobApplication, application_id).job_snapshot
             assert after == {**before, 'logo_url': logo['logo_url']}
-        from linkresume.modules.interviews.routes import _application_logo_url
+        from linkresume.application.interviews.service import application_logo_url
         with app.state.session_factory() as db:
-            assert _application_logo_url(db.get(JobApplication, application_id)) == logo['logo_url']
+            assert application_logo_url(db.get(JobApplication, application_id)) == logo['logo_url']
         assert upload(client, first, picture('blue')).json() == logo
         assert storage.writes == 1
 
@@ -196,7 +196,7 @@ def test_missing_logo_can_be_filled_later_and_uploads_are_rate_limited():
 
 
 def test_snapshot_cannot_supply_another_job_or_external_relative_path():
-    from linkresume.modules.interviews.routes import _application_logo_url
+    from linkresume.application.interviews.service import application_logo_url
     app = build_app()
     with TestClient(app) as client:
         register(client)
@@ -205,7 +205,7 @@ def test_snapshot_cannot_supply_another_job_or_external_relative_path():
             application = db.scalar(select(JobApplication))
             for value in ['/api/assets/private', '//example.test/image', '/api/job-descriptions/999/logo?v=' + 'a' * 64]:
                 application.job_snapshot = {'logo_url': value}
-                assert _application_logo_url(application) is None
+                assert application_logo_url(application) is None
 
 
 def test_write_failure_does_not_attach_or_delete_a_shared_object():

@@ -21,11 +21,17 @@
   font-size: 13px;
   line-height: 21px;
 }
+/* Two classes deep so these beat `.material-page .panel`. */
+.material-page .job-hero { gap: 14px; padding: 16px; }
+.hero-head { display:flex; align-items:center; gap:16px; min-width:0; }
+.hero-copy { display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
+.hero-rule { height:1px; background:#dbe0e8; }
+.hero-facts { display:flex; flex-direction:column; gap:6px; }
+.hero-facts .hint { font-size:13px; line-height:21px; }
 .salary {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 13px;
   color: #145ed6;
-  line-height: 24px;
+  line-height: 21px;
 }
 .body-copy {
   font-size: 13px;
