@@ -1,24 +1,41 @@
 import type { Editor } from "@tiptap/react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ChevronDown,
-  ChevronUp,
+  ALargeSmall,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Baseline,
   Bold,
+  Check,
+  ChevronDown,
+  Heading1,
+  Heading2,
+  Heading3,
   Highlighter,
   Italic,
+  Link2,
+  Minus,
+  Pilcrow,
+  Plus,
   Redo2,
+  Strikethrough,
+  Type,
   Underline,
   Undo2,
-  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { INLINE_FONT_SIZE_MIN, INLINE_FONT_SIZE_MAX, INLINE_FONT_SIZE_STEP, normalizeInlineFontSize } from "../../lib/resumeInlineStyle";
+import { INLINE_FONT_SIZE_MAX, INLINE_FONT_SIZE_MIN, INLINE_FONT_SIZE_STEP, normalizeInlineFontSize } from "../../lib/resumeInlineStyle";
+import { isResumeEmailLink } from "../../lib/resumeLink";
 import { api } from "../../api/client";
 import { validateResumeImageFile } from "./resumeImageLimits";
 
-const textColors = ["#1d1d1f", "#3478f6", "#34c759", "#ff9f0a", "#ff3b30", "#8a8a8e"];
-const highlightColors = ["#fff3c4", "#d1f5db", "#dbe8ff", "#ffe0d1", "#f0f0f0"];
+const textColors = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#3478f6", "#af52de", "#8a8a8e"];
+// 浅色在前、饱和色在后，铺成两行网格；弹层里的第一格是「无背景」。
+const highlightColors = [
+  "#fff3c4", "#d1f5db", "#dbe8ff", "#ffe0d1", "#f3e3ff", "#f0f0f0",
+  "#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#3478f6", "#af52de", "#8a8a8e",
+];
 
 type ToolButtonProps = {
   label: string;
@@ -26,13 +43,14 @@ type ToolButtonProps = {
   disabled?: boolean;
   children: React.ReactNode;
   onClick: () => void;
+  caret?: boolean;
 };
 
-function ToolButton({ label, active, disabled, children, onClick }: ToolButtonProps) {
+function ToolButton({ label, active, disabled, children, onClick, caret }: ToolButtonProps) {
   return (
     <motion.button
       type="button"
-      className={`workbench-tool-button${active ? " active" : ""}`}
+      className={`workbench-tool-button${active ? " active" : ""}${caret ? " has-caret" : ""}`}
       aria-label={label}
       aria-pressed={active === undefined ? undefined : active}
       title={label}
@@ -43,6 +61,7 @@ function ToolButton({ label, active, disabled, children, onClick }: ToolButtonPr
       onClick={onClick}
     >
       {children}
+      {caret ? <ChevronDown className="workbench-tool-caret" aria-hidden="true" size={13} /> : null}
     </motion.button>
   );
 }
@@ -63,9 +82,9 @@ export function AnchoredPopover({ open, className = "", role, ariaLabel, childre
           className={`workbench-popover ${className}`}
           role={role}
           aria-label={ariaLabel}
-          initial={{ opacity: 0, scale: 0.92, y: 3 }}
+          initial={{ opacity: 0, scale: 0.96, y: -4 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.92, y: 3 }}
+          exit={{ opacity: 0, scale: 0.96, y: -4 }}
           transition={{ type: "spring", bounce: 0, duration: 0.3 }}
         >
           {children}
@@ -93,58 +112,15 @@ export function useDismissPopover(open: boolean, close: () => void, anchorRef: R
   }, [anchorRef, close, open]);
 }
 
-function ColorControl({ editor, type }: { editor: Editor; type: "color" | "highlight" }) {
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLDivElement | null>(null);
-  const colors = type === "color" ? textColors : highlightColors;
-  const Icon = type === "color" ? Baseline : Highlighter;
-  const label = type === "color" ? "文字颜色" : "高亮颜色";
-  const currentColor = type === "color"
-    ? editor.getAttributes("textStyle").color
-    : editor.getAttributes("highlight").color;
-  const applied = typeof currentColor === "string" && currentColor.length > 0;
-  const clearLabel = type === "color" ? "取消文字颜色" : "取消高亮颜色";
-  useDismissPopover(open, () => setOpen(false), anchorRef);
-
-  return (
-    <div ref={anchorRef} className="workbench-popover-anchor">
-      <ToolButton label={label} active={open || applied} onClick={() => setOpen((value) => !value)}><Icon aria-hidden="true" size={18} /></ToolButton>
-      <AnchoredPopover open={open} className="color-popover">
-        <motion.button
-          type="button"
-          className="color-swatch color-swatch-clear"
-          aria-label={clearLabel}
-          title={clearLabel}
-          whileTap={{ scale: 0.9 }}
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            if (type === "color") editor.chain().focus().unsetColor().run();
-            else editor.chain().focus().unsetHighlight().run();
-            setOpen(false);
-          }}
-        >
-          <X aria-hidden="true" size={14} />
-        </motion.button>
-        {colors.map((color) => (
-          <motion.button
-            type="button"
-            key={color}
-            className={`color-swatch${currentColor === color ? " is-active" : ""}`}
-            style={{ background: color }}
-            aria-label={`${label} ${color}`}
-            aria-pressed={currentColor === color}
-            whileTap={{ scale: 0.9 }}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              if (type === "color") editor.chain().focus().setColor(color).run();
-              else editor.chain().focus().setHighlight({ color }).run();
-              setOpen(false);
-            }}
-          />
-        ))}
-      </AnchoredPopover>
-    </div>
-  );
+function selectionHasInlineFontSize(editor: Editor) {
+  const { from, to } = editor.state.selection;
+  let found = false;
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (found || !node.isText) return;
+    const explicit = node.marks.find((mark) => mark.type.name === "textStyle")?.attrs.fontSize;
+    found = normalizeInlineFontSize(explicit) !== null;
+  });
+  return found;
 }
 
 function FontSizeControl({ editor }: { editor: Editor }) {
@@ -153,7 +129,7 @@ function FontSizeControl({ editor }: { editor: Editor }) {
   editor.state.doc.nodesBetween(from, to, (node, pos) => {
     if (!node.isText) return;
     const explicit = normalizeInlineFontSize(node.marks.find((mark) => mark.type.name === "textStyle")?.attrs.fontSize);
-    // Computed CSS includes template/heading sizes but excludes canvas transforms.
+    // 计算样式包含标题和主题字号，但不含画布缩放。
     const dom = editor.view.nodeDOM(pos);
     const element = dom instanceof HTMLElement ? dom : dom?.parentElement;
     const cssSize = element ? getComputedStyle(element).fontSize : "";
@@ -171,22 +147,318 @@ function FontSizeControl({ editor }: { editor: Editor }) {
 
   return (
     <div className="selection-font-size-control" role="group" aria-label="字号调整">
+      <ToolButton label="减小字号" disabled={!mixed && size <= INLINE_FONT_SIZE_MIN} onClick={() => adjust(-1)}>
+        <Minus aria-hidden="true" size={14} />
+      </ToolButton>
       <output
         aria-label="所选文字字号"
         title={mixed ? "混合字号，箭头以选区首字字号为基准统一调整" : "所选文字当前字号"}
       >
         {mixed ? "混合" : <>{size}<small>pt</small></>}
       </output>
-      <div className="selection-font-size-arrows">
-        <ToolButton label="增大字号" disabled={!mixed && size >= INLINE_FONT_SIZE_MAX} onClick={() => adjust(1)}>
-          <ChevronUp aria-hidden="true" size={13} />
-        </ToolButton>
-        <ToolButton label="减小字号" disabled={!mixed && size <= INLINE_FONT_SIZE_MIN} onClick={() => adjust(-1)}>
-          <ChevronDown aria-hidden="true" size={13} />
-        </ToolButton>
-      </div>
+      <ToolButton label="增大字号" disabled={!mixed && size >= INLINE_FONT_SIZE_MAX} onClick={() => adjust(1)}>
+        <Plus aria-hidden="true" size={14} />
+      </ToolButton>
     </div>
   );
+}
+
+function FontControl({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const textColor = editor.getAttributes("textStyle").color;
+  const highlightColor = editor.getAttributes("highlight").color;
+  const applied = (typeof textColor === "string" && textColor.length > 0)
+    || (typeof highlightColor === "string" && highlightColor.length > 0)
+    || selectionHasInlineFontSize(editor);
+  useDismissPopover(open, () => setOpen(false), anchorRef);
+
+  const pickTextColor = (color: string | null) => {
+    if (color) editor.chain().focus().setColor(color).run();
+    else editor.chain().focus().unsetColor().run();
+    setOpen(false);
+  };
+  const pickHighlight = (color: string | null) => {
+    if (color) editor.chain().focus().setHighlight({ color }).run();
+    else editor.chain().focus().unsetHighlight().run();
+    setOpen(false);
+  };
+
+  return (
+    <div ref={anchorRef} className="workbench-popover-anchor">
+      <ToolButton label="字体" active={open || applied} caret onClick={() => setOpen((value) => !value)}>
+        <Baseline aria-hidden="true" size={18} />
+      </ToolButton>
+      <AnchoredPopover open={open} className="color-popover" role="group" ariaLabel="字体">
+        <div className="color-section">
+          <span className="color-section-label"><ALargeSmall aria-hidden="true" size={13} />字号</span>
+          <div className="color-section-row">
+            <FontSizeControl editor={editor} />
+          </div>
+        </div>
+        <div className="color-section">
+          <span className="color-section-label"><Baseline aria-hidden="true" size={13} />字体颜色</span>
+          <div className="color-section-row">
+            <motion.button
+              type="button"
+              className={`color-letter is-none${textColor ? "" : " is-active"}`}
+              aria-label="取消文字颜色"
+              aria-pressed={!textColor}
+              title="取消文字颜色"
+              whileTap={{ scale: 0.9 }}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => pickTextColor(null)}
+            >
+              <span aria-hidden="true">A</span>
+              <span className="color-slash" aria-hidden="true" />
+            </motion.button>
+            {textColors.map((color) => (
+              <motion.button
+                type="button"
+                key={color}
+                className={`color-letter${textColor === color ? " is-active" : ""}`}
+                style={{ color }}
+                aria-label={`文字颜色 ${color}`}
+                aria-pressed={textColor === color}
+                title={`文字颜色 ${color}`}
+                whileTap={{ scale: 0.9 }}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pickTextColor(color)}
+              >
+                <span aria-hidden="true">A</span>
+              </motion.button>
+            ))}
+          </div>
+        </div>
+        <div className="color-section">
+          <span className="color-section-label"><Highlighter aria-hidden="true" size={13} />背景颜色</span>
+          <div className="color-section-row color-blocks">
+            <motion.button
+              type="button"
+              className={`color-block is-none${highlightColor ? "" : " is-active"}`}
+              aria-label="取消背景颜色"
+              aria-pressed={!highlightColor}
+              title="取消背景颜色"
+              whileTap={{ scale: 0.9 }}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => pickHighlight(null)}
+            >
+              <span className="color-slash" aria-hidden="true" />
+            </motion.button>
+            {highlightColors.map((color) => (
+              <motion.button
+                type="button"
+                key={color}
+                className={`color-block${highlightColor === color ? " is-active" : ""}`}
+                style={{ background: color }}
+                aria-label={`背景颜色 ${color}`}
+                aria-pressed={highlightColor === color}
+                title={`背景颜色 ${color}`}
+                whileTap={{ scale: 0.9 }}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => pickHighlight(color)}
+              />
+            ))}
+          </div>
+        </div>
+        <motion.button
+          type="button"
+          className="color-reset"
+          aria-label="恢复默认颜色"
+          title="同时清除文字颜色和背景颜色"
+          whileTap={{ scale: 0.98 }}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            editor.chain().focus().unsetColor().unsetHighlight().run();
+            setOpen(false);
+          }}
+        >
+          恢复默认
+        </motion.button>
+      </AnchoredPopover>
+    </div>
+  );
+}
+
+function LinkControl({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState("");
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const active = editor.isActive("link");
+  const currentHref = typeof editor.getAttributes("link").href === "string"
+    ? editor.getAttributes("link").href as string
+    : "";
+  useDismissPopover(open, () => { setOpen(false); setError(""); }, anchorRef);
+
+  const apply = () => {
+    const href = value.trim();
+    if (!href) {
+      setError("请输入链接地址");
+      return;
+    }
+    if (isResumeEmailLink(href)) {
+      setError("邮箱属于简历联系方式，不设为链接");
+      return;
+    }
+    if (!editor.chain().focus().extendMarkRange("link").setLink({ href }).run()) {
+      setError("链接地址无效，请填写完整网址");
+      return;
+    }
+    setOpen(false);
+    setError("");
+  };
+
+  return (
+    <div ref={anchorRef} className="workbench-popover-anchor">
+      <ToolButton
+        label="链接"
+        active={open || active}
+        onClick={() => {
+          if (open) {
+            setOpen(false);
+            setError("");
+            return;
+          }
+          setValue(currentHref);
+          setError("");
+          setOpen(true);
+        }}
+      >
+        <Link2 aria-hidden="true" size={18} />
+      </ToolButton>
+      <AnchoredPopover open={open} className="link-popover">
+        <input
+          className="link-popover-field"
+          type="url"
+          inputMode="url"
+          aria-label="链接地址"
+          placeholder="https://example.com"
+          value={value}
+          onChange={(event) => { setValue(event.target.value); setError(""); }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              apply();
+            }
+          }}
+        />
+        {error ? <p className="link-popover-error" role="alert">{error}</p> : null}
+        <div className="link-popover-actions">
+          {active ? (
+            <motion.button
+              type="button"
+              className="link-popover-button"
+              whileTap={{ scale: 0.97 }}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                editor.chain().focus().extendMarkRange("link").unsetLink().run();
+                setOpen(false);
+              }}
+            >
+              取消链接
+            </motion.button>
+          ) : null}
+          <motion.button
+            type="button"
+            className="link-popover-button is-primary"
+            whileTap={{ scale: 0.97 }}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={apply}
+          >
+            应用
+          </motion.button>
+        </div>
+      </AnchoredPopover>
+    </div>
+  );
+}
+
+type SelectionMenuOption = {
+  label: string;
+  Icon: typeof AlignLeft;
+  isActive: () => boolean;
+  run: () => void;
+};
+
+function SelectionMenu({
+  label,
+  icon,
+  options,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  options: SelectionMenuOption[];
+}) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  useDismissPopover(open, () => setOpen(false), anchorRef);
+
+  return (
+    <div ref={anchorRef} className="workbench-popover-anchor">
+      <ToolButton label={label} active={open} caret onClick={() => setOpen((value) => !value)}>
+        {icon}
+      </ToolButton>
+      <AnchoredPopover open={open} className="selection-menu-popover" role="menu" ariaLabel={label}>
+        {options.map(({ label: optionLabel, Icon, isActive, run }) => (
+          <motion.button
+            type="button"
+            key={optionLabel}
+            role="menuitemradio"
+            aria-checked={isActive()}
+            className={`selection-menu-item${isActive() ? " is-active" : ""}`}
+            whileTap={{ scale: 0.98 }}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => { run(); setOpen(false); }}
+          >
+            <Icon aria-hidden="true" size={16} />
+            <span>{optionLabel}</span>
+            {isActive() ? <Check aria-hidden="true" size={14} /> : null}
+          </motion.button>
+        ))}
+      </AnchoredPopover>
+    </div>
+  );
+}
+
+const blockTypeOptions: { label: string; level: 1 | 2 | 3 | null; Icon: typeof AlignLeft }[] = [
+  { label: "正文", level: null, Icon: Pilcrow },
+  { label: "一级标题", level: 1, Icon: Heading1 },
+  { label: "二级标题", level: 2, Icon: Heading2 },
+  { label: "三级标题", level: 3, Icon: Heading3 },
+];
+
+function BlockTypeControl({ editor }: { editor: Editor }) {
+  const options = blockTypeOptions.map(({ label, level, Icon }) => ({
+    label,
+    Icon,
+    isActive: () => (level === null ? editor.isActive("paragraph") : editor.isActive("heading", { level })),
+    run: () => {
+      if (level === null) editor.chain().focus().setParagraph().run();
+      else editor.chain().focus().setHeading({ level }).run();
+    },
+  }));
+
+  return <SelectionMenu label="本行类型" icon={<Type aria-hidden="true" size={18} />} options={options} />;
+}
+
+const alignOptions: { label: string; align: "left" | "center" | "right"; Icon: typeof AlignLeft }[] = [
+  { label: "左对齐", align: "left", Icon: AlignLeft },
+  { label: "居中对齐", align: "center", Icon: AlignCenter },
+  { label: "右对齐", align: "right", Icon: AlignRight },
+];
+
+function AlignControl({ editor }: { editor: Editor }) {
+  const options = alignOptions.map(({ label, align, Icon }) => ({
+    label,
+    Icon,
+    isActive: () => editor.isActive({ textAlign: align }),
+    run: () => { editor.chain().focus().setTextAlign(align).run(); },
+  }));
+  const activeAlign = alignOptions.find(({ align }) => editor.isActive({ textAlign: align })) ?? alignOptions[0];
+  const ActiveIcon = activeAlign.Icon;
+
+  return <SelectionMenu label="对齐方式" icon={<ActiveIcon aria-hidden="true" size={18} />} options={options} />;
 }
 
 export function SelectionFormattingToolbar({ editor }: { editor: Editor }) {
@@ -206,12 +478,15 @@ export function SelectionFormattingToolbar({ editor }: { editor: Editor }) {
 
   return (
     <div className="selection-formatting-toolbar" data-ui-theme="light" role="toolbar" aria-label="所选文字工具栏">
-      <FontSizeControl editor={editor} />
       <ToolButton label="加粗" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Bold aria-hidden="true" size={18} /></ToolButton>
+      <ToolButton label="删除线" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough aria-hidden="true" size={18} /></ToolButton>
       <ToolButton label="斜体" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic aria-hidden="true" size={18} /></ToolButton>
       <ToolButton label="下划线" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><Underline aria-hidden="true" size={18} /></ToolButton>
-      <ColorControl editor={editor} type="color" />
-      <ColorControl editor={editor} type="highlight" />
+      <LinkControl editor={editor} />
+      <FontControl editor={editor} />
+      <span className="selection-toolbar-divider" aria-hidden="true" />
+      <BlockTypeControl editor={editor} />
+      <AlignControl editor={editor} />
     </div>
   );
 }
