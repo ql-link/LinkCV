@@ -386,12 +386,14 @@ export type ResumeShareState = {
   share_token: string;
   share_visibility: "private" | "public";
   share_expires_at: string | null;
+  share_allow_download: boolean;
   share_created_at: string;
 };
 
 export type ResumeShareUpdatePayload = {
   visibility?: "private" | "public";
   expires_at?: string | null;
+  allow_download?: boolean;
 };
 
 export type PublicShareSharer = {
@@ -403,7 +405,9 @@ export type PublicSharePayload = {
   data: CanonicalResumeDocument;
   style: CanonicalResumePresentation;
   layout_plan?: LayoutPlan | null;
+  assets: Record<string, string>;
   sharer: PublicShareSharer;
+  allow_download: boolean;
 };
 
 export type UploadedAsset = {
@@ -1517,7 +1521,7 @@ export const api = {
     request<{ share: ResumeShareState | null }>(`/api/resumes/${id}/share`),
   createShare: (
     id: string,
-    payload?: { visibility?: "private" | "public"; expires_at?: string | null },
+    payload?: ResumeShareUpdatePayload,
   ) =>
     request<{ share: ResumeShareState }>(`/api/resumes/${id}/share`, {
       method: "POST",
@@ -1534,6 +1538,8 @@ export const api = {
     }),
   fetchPublicShare: (token: string) =>
     request<PublicSharePayload>(`/api/share/${encodeURIComponent(token)}`),
+  downloadPublicSharePdf: (token: string, signal?: AbortSignal) =>
+    requestResumePdf(`/api/share/${encodeURIComponent(token)}/pdf`, signal),
   importResume: (file: File, templateId: string, idempotencyKey: string) => {
     const formData = new FormData();
     formData.append("file", file);

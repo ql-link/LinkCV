@@ -33,7 +33,7 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0063` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0064` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
@@ -56,6 +56,8 @@ MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_compan
 迁移 `0062` 为 `job_descriptions` 增加可空 `logo_sha256 CHAR(64)`（ASCII、ascii_bin），不新增图片表、索引或外键。它还兼容一个已登记的 Development 历史分叉：该环境的旧 `0059` 创建了 `user_preferences`，却因 revision ID 后续被公司 Logo 迁移复用而缺少 `job_descriptions.logo_url` 与 `global_companies`。`0062` 接受这一完整旧形态、已经包含 Logo 基础结构的完整当前形态，以及 MySQL 隐式提交首条或全部目标 DDL 后留下的已知重试前缀；需要补齐基础结构时只做增量添加，目标结构已完整时只推进 revision，未知的部分结构在 DDL 前拒绝继续，已有 `user_preferences` 保留不删。`application/job_descriptions/logo_service.py` 负责图片解码、压缩、内容指纹和快照图标同步。MinIO 路径为 `company-logos/<sha256>.webp`，同图跨用户复用、按岗位归属鉴权。写入时使用当前 MySQL 连接上的 `GET_LOCK` 串行化同指纹的存在检查与首次写入，完成后释放，避免并发产生重复对象版本；缺失之外的存储错误不能当作不存在。图片成功落盘后才提交岗位引用，失败不删除共享对象。暂不自动回收已无引用或事务失败遗留的 Logo 文件，删除岗位也不删除共享图。此目录不受用户独占资源的失败清理逻辑管理。部署需先执行 `0062` 再更新后端，之后更新插件；线上实际 revision 需单独查询。
 
 迁移 `0063` 扩展智能助手提案，增加 `translate_resume` 模式、候选标题和翻译结果简历标识；确认翻译提案时创建独立简历，原简历不变。该迁移同样为 forward-only，线上实际 revision 需单独查询。
+
+迁移 `0064` 为 `resumes` 增加非空 `share_allow_download`，旧记录和数据库缺省值均为 `1`。管理接口可即时修改该值；关闭后公开分享 JSON 仍返回当前草稿以供页面展示，但公开 PDF 路由对所有访问者统一拒绝。该迁移为单次增列与检查约束 DDL，不需要数据回填；部署时先升级 schema，再发布依赖该列的后端与 Web，线上实际 revision 需单独查询。
 
 
 `user_dataset.sha256` 在 MySQL 使用固定长度 `CHAR(64)` 保存源文件 SHA-256 十六进制摘要；SQLite 测试仍使用通用字符串替身。该字段只用于后端完整性元数据，不向浏览器返回。
@@ -118,7 +120,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0009` 曾新增 `admin_operation_logs` 管理操作审计表，记录管理员对用户的 enable/disable 操作。字段包括 `id`（BIGINT UNSIGNED PK）、`actor_user_id`（操作人，FK → users.id）、`target_user_id`（目标用户，FK → users.id）、`action`（受 CHECK 约束的 VARCHAR，只允许 "disable"/"enable"）和 `created_at`。该表仅写入不读取，管理端无查询入口，`0011` 将其删除；enable/disable 操作不再持久化审计记录。
 
-`0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照，公开读取时实时取 `resume_versions` 中 `version_no` 最大的正式版本。
+`0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照；当前公开读取实时使用 `resumes` 主记录中最近一次保存成功的草稿。
 
 `0018` 新增 `user_dataset` 用户知识库数据集表，`0022` 让资料通过唯一 `parse_task_id` 关联通用解析任务，`0043` 增加数据库幂等键、请求指纹和可靠调度字段。`0060` 新增 `user_dataset_folders` 文件夹分类表并在 `user_dataset` 增加 `folder_id` 字段（`ON DELETE SET NULL` 外键），支持文件夹 CRUD、按分类查询、单项/批量移动与带文件夹上传。删除非空文件夹需显式确认，预检无活动任务后清理内部资料记录、解析任务及 MinIO 对象，不再退回未分类。`POST /api/datasets` 要求提供当前用户拥有的现存文件夹，缺少目标返回 `400 DATASET_FOLDER_REQUIRED`，非法或不可访问目标返回 `404 FOLDER_NOT_FOUND`，不再自动存入未分类；创建资料前锁定文件夹以防删除竞争，并执行有界格式与内容校验，在用户行锁内检查数量和总容量，再创建 `uploading` 预留；MinIO 成功后提交为 `upload_status=succeeded/parse_status=queued`，RabbitMQ confirm 失败仍返回已受理记录。Worker 扫描器周期补发未分发或超时的 `queued` 任务，消费方用数据库条件更新把任务原子抢占为 `processing`；陈旧处理任务在尝试上限内回到 `queued`，超过上限收口失败。每次尝试把转换 Markdown 保存为 `users/{uid}/datasets/converted/{task_id}-{attempt}.md`，条件提交失败会删除本次对象，避免陈旧消费者覆盖较新结果；读取仍兼容历史 `{task_id}.md`。上传失败预留由 Worker 清理，只有对象删除成功才删除数据库记录。列表只暴露上传成功资料；重试把失败任务重新置为 `queued`，活动任务禁止删除。本模块不使用 Outbox，不提供分片、RAG 或源文件下载。
 
@@ -218,7 +220,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 ## 简历分享
 
-`application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 简历与最新版本存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取 `resume_versions` 最新正式版本并脱敏返回 `data/style/sharer`，不保存快照，因此所有者后续保存新版本会立即反映到分享页。
+`application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}` 与 `/api/share/{token}/pdf`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 分享记录对应用户与简历存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取简历主记录中最近一次保存成功的 `data/style` 草稿并返回 `data/style/layout_plan/assets/sharer`，不保存分享快照，因此自动保存成功后无需创建正式版本即可反映到分享页，尚未保存成功的浏览器本地编辑不会公开。`assets` 复用 PDF 的受控解析边界，从分享记录反查用户和简历后只读取当前草稿引用的本人 PNG/JPEG，并以内存 data URI 返回；单图和快照图片原始总量均限制为 10 MiB，响应使用 `private, no-store`，匿名请求不能指定或读取任意对象键。公开 PDF 复用 `pdf_routes.py` 的受控渲染与下载响应，只把当前草稿的 `portable.smart_one_page` 在渲染副本中强制设为 `true`，不回写数据库，也不渲染分享页面外壳。
 
 ## 测试约定
 

@@ -280,7 +280,8 @@ export function removeBlankParagraphAfterResumeRow(editor: Editor) {
   });
 }
 
-function hasVisibleResumeContent(node: ProseMirrorNode) {
+/** 定位锚点不算内容，只按文字、行内图标和行内图片判断这一块是否可见地空着。 */
+export function hasVisibleResumeContent(node: ProseMirrorNode) {
   let visible = false;
   node.descendants((child) => {
     if (child.type.name === "resumeBlockAnchor") return false;

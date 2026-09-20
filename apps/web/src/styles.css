@@ -2226,7 +2226,9 @@ select:not([data-slot]):focus-visible {
 .resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:last-child {
   border-left: 1px solid var(--resume-column-guide);
 }
-.resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:last-child:has(> br.ProseMirror-trailingBreak)::before {
+/* 提示文字只在光标所在行、且该栏确实没有可见内容时出现；
+   栏内有文字但末尾残留定位锚点时同样会补出 ProseMirror-trailingBreak，不能用它判断空栏。 */
+.resume-layout-row.is-active:not(.is-equal)[data-blank-columns~="1"] [data-node-view-content-react] > p:last-child::before {
   float: right;
   height: 0;
   color: #8a8a8e;
@@ -2235,7 +2237,7 @@ select:not([data-slot]):focus-visible {
   font-size: 0.85em;
   pointer-events: none;
 }
-.resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:first-child:has(> br.ProseMirror-trailingBreak)::before {
+.resume-layout-row.is-active:not(.is-equal)[data-blank-columns~="0"] [data-node-view-content-react] > p:first-child::before {
   float: left;
   height: 0;
   color: #8a8a8e;
@@ -2244,7 +2246,7 @@ select:not([data-slot]):focus-visible {
   font-size: 0.85em;
   pointer-events: none;
 }
-.resume-layout-row.is-equal [data-node-view-content-react] > p:first-child:has(> br.ProseMirror-trailingBreak)::before {
+.resume-layout-row.is-equal[data-blank-columns~="0"] [data-node-view-content-react] > p:first-child::before {
   float: left;
   height: 0;
   color: #8a8a8e;
