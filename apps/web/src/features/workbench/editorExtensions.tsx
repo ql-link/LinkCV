@@ -774,6 +774,11 @@ function fixedRow(name: "resumeMetaRow" | "resumeTrioRow", count: 3 | 4, classNa
     content: Array.from({ length: count }, () => "paragraph").join(" "),
     defining: true,
     isolating: true,
+    addKeyboardShortcuts() {
+      return {
+        Enter: () => exitResumeRowToBlankParagraph(this.editor),
+      };
+    },
     parseHTML: () => [{ tag: `div[data-type='${className}']` }],
     renderHTML: ({ HTMLAttributes }) => [
       "div",
