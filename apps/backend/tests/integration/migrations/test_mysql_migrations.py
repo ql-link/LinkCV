@@ -35,7 +35,16 @@ from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0063"
+EXPECTED_HEAD = "0074"
+
+
+def atlas_template_keys() -> set[str]:
+    import re
+
+    sql = (BACKEND_ROOT / "migrations/sql/0068.up.sql").read_text(encoding="utf-8")
+    keys = set(re.findall(r"\('((?:atlas-)[a-z-]+-cn)'", sql))
+    assert len(keys) == 37
+    return keys
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -56,6 +65,42 @@ def canonical_editor_markdown(data: dict[str, Any]) -> str:
         else:
             parts.append(f"## {semantic['display_title']}\n\n{body}")
     return "\n\n".join(parts)
+
+
+def studio_template_keys() -> set[str]:
+    import re
+
+    sql = (BACKEND_ROOT / "migrations/sql/0069.up.sql").read_text(encoding="utf-8")
+    keys = set(re.findall(r"\('(studio-[a-z-]+-cn)'", sql))
+    assert len(keys) == 6
+    return keys
+
+
+def open_template_keys() -> set[str]:
+    import re
+
+    sql = (BACKEND_ROOT / "migrations/sql/0070.up.sql").read_text(encoding="utf-8")
+    keys = set(re.findall(r"\('(open-[a-z-]+-cn)'", sql))
+    assert len(keys) == 6
+    return keys
+
+
+def original_template_keys() -> set[str]:
+    import re
+
+    sql = (BACKEND_ROOT / "migrations/sql/0071.up.sql").read_text(encoding="utf-8")
+    keys = set(re.findall(r"\('(original-[a-z-]+-cn)'", sql))
+    assert len(keys) == 3
+    return keys
+
+
+def editorial_template_keys() -> set[str]:
+    import re
+
+    sql = (BACKEND_ROOT / "migrations/sql/0072.up.sql").read_text(encoding="utf-8")
+    keys = set(re.findall(r"\('(original-[a-z-]+-cn)'", sql))
+    assert keys == {"original-axis-cn", "original-warm-cn"}
+    return keys
 
 
 def migration_test_url() -> str:
@@ -111,6 +156,90 @@ def reset_test_database_to_base(database_url: str) -> None:
                     connection.exec_driver_sql(f"DROP TABLE `{escaped_name}`")
             finally:
                 connection.exec_driver_sql("SET FOREIGN_KEY_CHECKS = 1")
+    finally:
+        engine.dispose()
+
+
+def test_mysql_0067_refresh_preserves_custom_templates() -> None:
+    from linkresume.core.migration_sql import execute_sql_file
+
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0066")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("UPDATE resume_templates SET data_json = JSON_SET(data_json, '$.identity.name.value', '自定义样本') WHERE `key` = 'sage-paper-cn'")
+            connection.exec_driver_sql("UPDATE resume_templates SET style_json = JSON_SET(style_json, '$.tokens.font_size_pt', 11) WHERE `key` = 'centered-portrait-cn'")
+            before = {row[0]: tuple(row[1:]) for row in connection.exec_driver_sql("SELECT `key`, data_json, style_json, is_active FROM resume_templates")}
+        run_alembic(database_url, "upgrade", "0067")
+        with engine.begin() as connection:
+            after = {row[0]: tuple(row[1:]) for row in connection.exec_driver_sql("SELECT `key`, data_json, style_json, is_active FROM resume_templates")}
+            changed = {key for key in before if before[key] != after[key]}
+            assert changed == {"right-rail-cn", "blue-ribbon-cn", "timeline-gutter-cn", "mist-masthead-cn"}
+            for key in changed:
+                assert before[key][1:] == after[key][1:]
+            execute_sql_file(connection, BACKEND_ROOT / "migrations/sql/0067.up.sql")
+            repeated = {row[0]: tuple(row[1:]) for row in connection.exec_driver_sql("SELECT `key`, data_json, style_json, is_active FROM resume_templates")}
+            assert repeated == after
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("revision,previous,count,prefix,keys,first_key", [
+    ("0068", "0067", 51, "atlas", atlas_template_keys(), "atlas-folio-serif-cn"),
+    ("0069", "0068", 57, "studio", studio_template_keys(), "studio-modular-cards-cn"),
+    ("0070", "0069", 63, "open", open_template_keys(), "open-even-cn"),
+    ("0071", "0070", 66, "original", original_template_keys(), "original-vermilion-cn"),
+    ("0072", "0071", 68, "original", original_template_keys() | editorial_template_keys(), "original-axis-cn"),
+    ("0073", "0072", 69, "original", original_template_keys() | editorial_template_keys() | {"original-index-cn"}, "original-index-cn"),
+    ("0074", "0073", 72, "original", original_template_keys() | editorial_template_keys() | {"original-index-cn", "original-offset-cn", "original-marginal-cn", "original-hanging-cn"}, "original-offset-cn"),
+])
+def test_mysql_catalog_creation_and_conflict_guard(revision, previous, count, prefix, keys, first_key) -> None:
+    from linkresume.core.migration_sql import execute_sql_file
+
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", previous)
+    engine = create_engine(database_url)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    try:
+        with engine.begin() as connection:
+            old = dict(connection.exec_driver_sql("SELECT `key`, data_json FROM resume_templates").all())
+            user_id = connection.exec_driver_sql("INSERT INTO users (email, password_hash, nickname) VALUES ('atlas-existing@example.invalid', '$2b$12$fictional', '张三')").lastrowid
+            template_id = connection.scalar(text("SELECT id FROM resume_templates WHERE `key` = 'right-rail-cn'"))
+        with factory() as db:
+            existing = create_resume_from_template(db=db, user_id=user_id, title="已有虚构简历", template_id=template_id)
+            existing_id = existing.id
+            snapshot = (existing.data_json, existing.style_json)
+        run_alembic(database_url, "upgrade", revision)
+        with engine.begin() as connection:
+            assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates WHERE is_active=1")) == count
+            rows = connection.execute(text("SELECT id, `key` FROM resume_templates WHERE `key` LIKE :prefix"), {"prefix": f"{prefix}-%"}).all()
+            assert {row[1] for row in rows} == keys
+            after = dict(connection.exec_driver_sql("SELECT `key`, data_json FROM resume_templates").all())
+            assert all(after[key] == data for key, data in old.items())
+            execute_sql_file(connection, BACKEND_ROOT / f"migrations/sql/{revision}.up.sql")
+        with factory() as db:
+            existing = db.get(Resume, existing_id)
+            assert (existing.data_json, existing.style_json) == snapshot
+        for index, (template_id, key) in enumerate(rows):
+            with engine.begin() as connection:
+                user_id = connection.execute(text("INSERT INTO users (email, password_hash, nickname) VALUES (:email, '$2b$12$fictional', '张三')"), {"email": f"atlas-{index}@example.invalid"}).lastrowid
+            with factory() as db:
+                resume = create_resume_from_template(db=db, user_id=user_id, title="目录创建验证", template_id=template_id)
+                assert resume.style_json["template_snapshot"]["template_key"] == key
+                assert len(resume.data_json["sections"]) == 5
+                assert db.scalar(select(ResumeVersion.id).where(ResumeVersion.resume_id == resume.id)) is not None
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE resume_templates SET is_active=0 WHERE `key`=:key"), {"key": first_key})
+            execute_sql_file(connection, BACKEND_ROOT / f"migrations/sql/{revision}.up.sql")
+            assert connection.scalar(text("SELECT is_active FROM resume_templates WHERE `key`=:key"), {"key": first_key}) == 0
+            connection.execute(text("UPDATE resume_templates SET name='自定义名称' WHERE `key`=:key"), {"key": first_key})
+        with pytest.raises(DBAPIError), engine.begin() as connection:
+            execute_sql_file(connection, BACKEND_ROOT / f"migrations/sql/{revision}.up.sql")
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT name FROM resume_templates WHERE `key`=:key"), {"key": first_key}) == "自定义名称"
     finally:
         engine.dispose()
 
@@ -575,6 +704,15 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
                 )
             )
         ) == {
+            *atlas_template_keys(),
+            *studio_template_keys(),
+            *open_template_keys(),
+            *original_template_keys(),
+            *editorial_template_keys(),
+            "original-index-cn",
+            "original-offset-cn",
+            "original-marginal-cn",
+            "original-hanging-cn",
             "administrative-sidebar-cn",
             "campus-professional-cn",
             "classic-cn",
@@ -582,15 +720,26 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             "civic-service-cn",
             "creative-orange-cn",
             "modern-two-column-cn",
+            "right-rail-cn",
+            "sage-paper-cn",
+            "blue-ribbon-cn",
+            "timeline-gutter-cn",
+            "centered-portrait-cn",
+            "mist-masthead-cn",
             "compact-tech-cn",
         }
         for row in connection.execute(
             text(
                 "SELECT `key`, data_json, style_json FROM resume_templates "
                 "WHERE `key` IN "
-                "('administrative-sidebar-cn', 'campus-professional-cn', "
-                "'classic-cn', 'classic-technical-cn', 'civic-service-cn', "
-                "'creative-orange-cn', 'modern-two-column-cn', 'compact-tech-cn')"
+                "('administrative-sidebar-cn', 'administrative-sidebar-hr-cn', "
+                "'campus-professional-cn', 'campus-professional-graduate-cn', "
+                "'classic-cn', 'classic-social-general-cn', "
+                "'classic-technical-cn', 'classic-technical-frontend-cn', "
+                "'civic-service-cn', 'civic-service-finance-cn', "
+                "'compact-data-analyst-cn', 'compact-tech-cn', "
+                "'creative-orange-cn', 'creative-orange-new-media-cn', "
+                "'modern-product-manager-cn', 'modern-two-column-cn')"
             )
         ).mappings():
             data_json = (
@@ -1042,12 +1191,12 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
             == 0
         )
         assert connection.scalar(text("SELECT COUNT(*) FROM users")) == 1
-        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 9
+        assert connection.scalar(text("SELECT COUNT(*) FROM resume_templates")) == 81
         assert (
             connection.scalar(
                 text("SELECT COUNT(*) FROM resume_templates WHERE is_active = 1")
             )
-            == 9
+            == 73
         )
         assert connection.scalar(text("SELECT COUNT(*) FROM resumes")) == 1
         assert connection.scalar(text("SELECT COUNT(*) FROM resume_versions")) == 1
