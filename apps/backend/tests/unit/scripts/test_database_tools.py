@@ -30,6 +30,41 @@ def test_no_legacy_python_schema_baseline_is_present() -> None:
     ).exists()
 
 
+def test_remote_deployments_stop_old_runtime_before_forward_migration() -> None:
+    development = (
+        REPO_ROOT / "deploy/scripts/build-development-on-primary.sh"
+    ).read_text(encoding="utf-8")
+    development_window = development[
+        development.index("# Stop every process") : development.index(
+            'TAG="${tag}"', development.index("# Stop every process")
+        )
+    ]
+    assert development_window.index("docker stop") < development_window.index(
+        "run_alembic.py"
+    )
+
+    production = (
+        REPO_ROOT / "deploy/scripts/build-production-on-cloud.sh"
+    ).read_text(encoding="utf-8")
+    production_window = production[
+        production.index("# Forward-only migrations") : production.index(
+            'if [[ "${import_legacy_sqlite}"',
+            production.index("# Forward-only migrations"),
+        )
+    ]
+    assert production_window.index("docker stop") < production_window.index(
+        "run_alembic.py"
+    )
+    assert 'schema_migration_started="true"' in production_window
+    timeout_path = production[
+        production.index('if [[ "${schema_migration_started}" == "true"') :
+    ]
+    protected_path = timeout_path[: timeout_path.index("else")]
+    compatible_path = timeout_path[timeout_path.index("else") :]
+    assert "rollback_old_application" not in protected_path
+    assert "rollback_old_application" in compatible_path
+
+
 def test_sql_migration_executor_rejects_database_scope_changes(tmp_path: Path) -> None:
     module = load_module(
         "linkresume_migration_sql_test",
@@ -442,6 +477,8 @@ def test_release_runner_accepts_aligned_agent_schema() -> None:
                     if revision in {"0031", "0032"}
                 )
             )
+            if table_name == "agent_sessions":
+                marker_columns.add("resume_id")
             if marker_columns:
                 columns = ", ".join(f"{column} TEXT" for column in marker_columns)
                 connection.execute(
@@ -452,6 +489,13 @@ def test_release_runner_accepts_aligned_agent_schema() -> None:
             else:
                 connection.execute(
                     text(f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY)")
+                )
+            if table_name == "agent_sessions":
+                connection.execute(
+                    text(
+                        "CREATE INDEX idx_agent_sessions_resume_pinned_updated "
+                        "ON agent_sessions (resume_id)"
+                    )
                 )
 
     with engine.connect() as connection:
@@ -554,6 +598,126 @@ def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None
     with (
         engine.connect() as connection,
         pytest.raises(RuntimeError, match="0034 columns removed before revision"),
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_agent_resume_binding_still_present_after_0064() -> None:
+    module = load_module(
+        "linkresume_run_alembic_agent_binding_applied_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0064')"))
+        connection.execute(
+            text(
+                "CREATE TABLE agent_sessions "
+                "(id INTEGER PRIMARY KEY, resume_id INTEGER)"
+            )
+        )
+
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0064 removed columns still exist"),
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_agent_resume_binding_removed_before_0064() -> None:
+    module = load_module(
+        "linkresume_run_alembic_agent_binding_ahead_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0063')"))
+        connection.execute(
+            text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)")
+        )
+
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0064 columns removed before revision"),
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_agent_resume_index_still_present_after_0064() -> None:
+    module = load_module(
+        "linkresume_run_alembic_agent_index_applied_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0064')"))
+        connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)"))
+        connection.execute(
+            text(
+                "CREATE INDEX idx_agent_sessions_resume_pinned_updated "
+                "ON agent_sessions (id)"
+            )
+        )
+
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0064 removed indexes still exist"),
+    ):
+        module.validate_schema_revision_alignment(
+            connection, migration_script_directory(module)
+        )
+    engine.dispose()
+
+
+def test_release_runner_rejects_agent_resume_index_removed_before_0064() -> None:
+    module = load_module(
+        "linkresume_run_alembic_agent_index_ahead_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    module.REVISION_TABLE_MARKERS = {}
+    module.REVISION_COLUMN_MARKERS = {}
+    module.REVISION_REMOVED_COLUMN_MARKERS = {}
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        )
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0063')"))
+        connection.execute(
+            text(
+                "CREATE TABLE agent_sessions "
+                "(id INTEGER PRIMARY KEY, resume_id INTEGER)"
+            )
+        )
+
+    with (
+        engine.connect() as connection,
+        pytest.raises(RuntimeError, match="0064 indexes removed before revision"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)

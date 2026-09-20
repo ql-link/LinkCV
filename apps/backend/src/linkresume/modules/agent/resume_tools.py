@@ -18,8 +18,32 @@ from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 
 
+ENTRY_FIELD_KEYS = (
+    "name",
+    "organization",
+    "role",
+    "location",
+    "start_date",
+    "end_date",
+    "url",
+    "degree",
+    "major",
+)
+ENTRY_FIELD_LABELS = {
+    "name": "姓名",
+    "organization": "组织",
+    "role": "角色",
+    "location": "地点",
+    "start_date": "开始",
+    "end_date": "结束",
+    "url": "链接",
+    "degree": "学位",
+    "major": "专业",
+}
 BLOCK_MARKER_PATTERN = re.compile(
-    r"\[\[linkresume-block:(node_[a-z0-9]{16,64})(?::(?:identity|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\]"
+    r"\[\[linkresume-block:(node_[a-z0-9]{16,64})"
+    r"(?::(?:(?:identity|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom)"
+    r"|entry-field:(name|organization|role|location|start_date|end_date|url|degree|major)))?\]\]"
 )
 SECTION_HEADING_PATTERN = re.compile(
     r"^##\s+\[\[linkresume-block:(node_[a-z0-9]{16,64})(?::(?:profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\](.*)$",
@@ -84,6 +108,7 @@ class EditorBlock:
     section_label: str | None
     entry_id: str | None
     entry_label: str | None
+    field: str | None
 
 
 def _inline_text(runs: list[Any]) -> str:
@@ -120,20 +145,26 @@ def editor_markdown(data: CanonicalResumeDocument) -> str | None:
             f"## [[linkresume-block:{section.node_id}:{section.semantic_kind}]]{title}"
         )
         for entry in section.entries:
-            entry_label = next(
+            primary_field = next(
                 (
-                    value.value
-                    for value in (
-                        entry.fields.name,
-                        entry.fields.organization,
-                        entry.fields.role,
-                        entry.fields.degree,
-                    )
-                    if value is not None
+                    (field_key, getattr(entry.fields, field_key))
+                    for field_key in ("name", "organization", "role", "degree")
+                    if getattr(entry.fields, field_key) is not None
                 ),
-                "经历",
+                None,
             )
+            entry_label = primary_field[1].value if primary_field is not None else "经历"
             parts.append(f"### [[linkresume-block:{entry.node_id}]]{entry_label}")
+            for field_key in ENTRY_FIELD_KEYS:
+                if primary_field is not None and field_key == primary_field[0]:
+                    continue
+                value = getattr(entry.fields, field_key)
+                if value is None:
+                    continue
+                parts.append(
+                    f"[[linkresume-block:{value.node_id}:entry-field:{field_key}]]"
+                    f"{ENTRY_FIELD_LABELS[field_key]}：{value.value}"
+                )
             parts.extend(_canonical_blocks_markdown(entry.blocks))
         parts.extend(_canonical_blocks_markdown(section.blocks))
     return "\n\n".join(part for part in parts if part).strip() or None
@@ -150,6 +181,12 @@ def _canonical_blocks_markdown(blocks: list[Any]) -> list[str]:
                 parts.append(f"{prefix}[[linkresume-block:{item.node_id}]]{_inline_text(item.runs)}")
         elif block.block_type == "media":
             parts.append(f"[[linkresume-block:{block.node_id}]]{block.alt or block.src}")
+        elif block.block_type == "row":
+            for cell in block.cells:
+                for paragraph in cell.blocks:
+                    parts.append(
+                        f"[[linkresume-block:{paragraph.node_id}]]{_inline_text(paragraph.runs)}"
+                    )
     return parts
 
 
@@ -191,17 +228,41 @@ def replace_editor_markdown(
                 and entry_before is not None
                 and entry_after.text != entry_before.text
             ):
-                target_field = next(
-                    (field for field in entry["fields"].values() if field is not None),
+                target_field_item = next(
+                    (
+                        (field_key, field)
+                        for field_key, field in entry["fields"].items()
+                        if field is not None
+                    ),
                     None,
                 )
-                if target_field is None:
+                if target_field_item is None:
                     raise ApiError(422, "TARGET_INVALID")
-                target_field["value"] = entry_after.text
-                target_field.pop("runs", None)
+                field_key, target_field = target_field_item
+                if entry_after.text:
+                    target_field["value"] = entry_after.text
+                    target_field.pop("runs", None)
+                else:
+                    entry["fields"][field_key] = None
+            for field_key, target_field in list(entry["fields"].items()):
+                if target_field is None:
+                    continue
+                field_after = after.get(target_field["node_id"])
+                field_before = before.get(target_field["node_id"])
+                if (
+                    field_after is None
+                    or field_before is None
+                    or field_after.text == field_before.text
+                ):
+                    continue
+                if field_after.text:
+                    target_field["value"] = field_after.text
+                    target_field.pop("runs", None)
+                else:
+                    entry["fields"][field_key] = None
         containers.append(section["blocks"])
         containers.extend(entry["blocks"] for entry in section["entries"])
-    for blocks in containers:
+    def update_blocks(blocks: list[dict[str, Any]]) -> None:
         for block in blocks:
             if block["block_type"] == "paragraph" and block["node_id"] in after:
                 current = before.get(block["node_id"])
@@ -214,6 +275,12 @@ def replace_editor_markdown(
                     replacement = after.get(item["node_id"])
                     if current is not None and replacement is not None and replacement.text != current.text:
                         item["runs"] = plain_run(replacement.text)
+            elif block["block_type"] == "row":
+                for cell in block["cells"]:
+                    update_blocks(cell["blocks"])
+
+    for blocks in containers:
+        update_blocks(blocks)
 
     # Inserted nodes are attached after their immediately preceding canonical
     # block in the same section/entry container. They never rewrite unrelated
@@ -268,6 +335,13 @@ def parse_editor_blocks(markdown: str) -> list[EditorBlock]:
         )
         prefix = markdown[line_start : match.start()]
         raw = markdown[match.end() : next_start].strip()
+        field = match.group(2)
+        if field is not None:
+            label = ENTRY_FIELD_LABELS[field]
+            if raw.startswith(f"{label}："):
+                raw = raw[len(label) + 1 :].strip()
+            elif raw.startswith(f"{label}:"):
+                raw = raw[len(label) + 1 :].strip()
         heading = re.fullmatch(r"(#{1,3})\s*", prefix)
         if heading and len(heading.group(1)) == 2:
             section_id, section_label = match.group(1), raw
@@ -285,6 +359,7 @@ def parse_editor_blocks(markdown: str) -> list[EditorBlock]:
                 section_label=section_label,
                 entry_id=entry_id,
                 entry_label=entry_label,
+                field=field,
             )
         )
     return blocks
@@ -300,7 +375,7 @@ def _locator(
         "surface": "editor",
         "section": block.section_id,
         "entry_id": block.entry_id,
-        "field": "markdown",
+        "field": block.field or "markdown",
         "item_id": None,
         "block_id": block.block_id,
         "selected_text": selected_text,
@@ -420,7 +495,9 @@ def target_content(resume: Resume, data: Any, target: Any, scope: str) -> str:
         serialized = json.dumps(
             data.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
         )
-        if scope != "resume" or text_hash(serialized) != target.expected_text_hash:
+        if scope != "resume":
+            raise ApiError(422, "SCOPE_FORBIDDEN")
+        if text_hash(serialized) != target.expected_text_hash:
             raise ApiError(409, "TARGET_STALE")
         return serialized
     markdown = editor_markdown(data)
@@ -769,7 +846,7 @@ def apply_operations(
         main_target.surface != "editor"
         or main_target.section != main_block.section_id
         or main_target.entry_id != main_block.entry_id
-        or main_target.field != "markdown"
+        or main_target.field != (main_block.field or "markdown")
     ):
         raise ApiError(422, "PATCH_OUT_OF_SCOPE")
     updated = markdown
@@ -786,7 +863,7 @@ def apply_operations(
             target.resume_id != main_target.resume_id
             or target.base_lock_version != main_target.base_lock_version
             or target.surface != "editor"
-            or target.field != "markdown"
+            or target.field != main_target.field
             or operation.expected_text_hash != target.expected_text_hash
         ):
             raise ApiError(422, "PATCH_OUT_OF_SCOPE")
@@ -801,7 +878,8 @@ def apply_operations(
         if block is None:
             raise ApiError(409, "TARGET_STALE")
         if (
-            target.section != block.section_id
+            target.field != (block.field or "markdown")
+            or target.section != block.section_id
             or target.entry_id != block.entry_id
             or (
                 mode == "rewrite_entry_star"

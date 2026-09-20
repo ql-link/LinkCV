@@ -32,18 +32,17 @@ def assert_for_update(statement: object) -> None:
     assert getattr(statement, "_for_update_arg", None) is not None
 
 
-def test_create_session_locks_resume_lifecycle_row() -> None:
-    db = RecordingSession([SimpleNamespace(id=7, title="张三的简历")])
+def test_create_session_has_no_resume_binding_field() -> None:
+    db = RecordingSession([])
 
     record = create_session(
         db,  # type: ignore[arg-type]
         user_id=3,
-        resume_id="7",
         title=None,
     )
 
-    assert record.resume_id == 7
-    assert_for_update(db.scalar_statements[0])
+    assert not hasattr(record, "resume_id")
+    assert db.scalar_statements == []
 
 
 def test_create_proposal_locks_resume_before_idempotency_lookup() -> None:
@@ -53,7 +52,8 @@ def test_create_proposal_locks_resume_before_idempotency_lookup() -> None:
     proposal = create_proposal(
         db,  # type: ignore[arg-type]
         run=SimpleNamespace(id=11),
-        session=SimpleNamespace(resume_id=7, user_id=3),
+        session=SimpleNamespace(user_id=3),
+        resume_id="7",
         call_key="proposal-call",
         data=data,
         style=style,

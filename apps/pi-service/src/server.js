@@ -105,12 +105,22 @@ const server = createServer(async (request, response) => {
     } catch {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
     }
+    const clarificationAnswers = payload.clarificationAnswers ?? [];
     if (
       typeof payload.runId !== "string" ||
       typeof payload.content !== "string" ||
       !payload.content.trim() ||
       payload.content.length > 32_768 ||
       !Array.isArray(payload.history ?? []) ||
+      !Array.isArray(clarificationAnswers) ||
+      clarificationAnswers.length > 3 ||
+      clarificationAnswers.some((answer) =>
+        !answer ||
+        typeof answer !== "object" ||
+        typeof answer.question_id !== "string" ||
+        typeof answer.option_id !== "string" ||
+        typeof answer.value !== "string"
+      ) ||
       (payload.history ?? []).some((message) =>
         !message ||
         !["user", "assistant"].includes(message.role) ||
@@ -122,7 +132,8 @@ const server = createServer(async (request, response) => {
         typeof payload.selectionContext.from !== "number" ||
         typeof payload.selectionContext.to !== "number" ||
         typeof payload.selectionContext.selected_text !== "string" ||
-        typeof payload.selectionContext.selected_text_hash !== "string"
+        typeof payload.selectionContext.selected_text_hash !== "string" ||
+        !contextMaterials.some((item) => item.type === "resume")
       ))
     ) {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
@@ -149,6 +160,7 @@ const server = createServer(async (request, response) => {
         runId: payload.runId,
         content: payload.content.trim(),
         history: payload.history ?? [],
+        clarificationAnswers,
         selectionContext: payload.selectionContext ?? null,
         contextMaterials,
         emit: (type, data) => writeEvent(response, type, data),

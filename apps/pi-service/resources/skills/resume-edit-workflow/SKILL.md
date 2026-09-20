@@ -11,7 +11,7 @@ metadata:
 
 ## 固定流程
 
-1. 若用户在独立助手中明确指定简历名称、ID 或目录中的某一版本，先调用 `resolve_resume_reference`；否则调用 `resolve_resume_target`。该选择只作用于当前运行，不绑定会话。编辑器选区优先使用稳定块标识；引用文本出现零处或多处时停止并请用户明确位置。
+1. 若用户在独立助手中明确指定简历名称、ID 或目录中的某一版本，先调用 `resolve_resume_reference`；若任务是局部编辑，再调用 `resolve_resume_target` 在刚解析出的同一份简历内定位字段或正文，不能退回依赖会话绑定。未点名简历时直接调用 `resolve_resume_target`。该选择只作用于当前运行，不绑定会话。编辑器选区优先使用稳定块标识；引用文本出现零处或多处时停止并请用户明确位置。
 2. 调用 `get_resume_context` 读取目标及完成任务所需的最小上下文。只有整篇诊断才允许读取整份简历。
 3. 需要岗位、历史简历或资料依据时调用 `search_resume_materials`。没有授权来源时不得补造事实。
 4. 调用 `analyze_resume_content`。修改请求必须取得当前目标的 `diagnosis_fingerprint`；纯分析请求在解释结构化结果后结束。
@@ -35,3 +35,5 @@ metadata:
 - 保持角色边界：参与、协助、配合不能升级为主导、负责或领导。
 - 岗位关键词结果只是覆盖情况，不是岗位匹配或录用概率。
 - 只有用户在 LinkResume 页面确认后，FastAPI 才能正式写入。
+- 用户明确要求删除已定位的局部文本或字段时，使用 `replace_target_text` 且 `new_text` 为空字符串；不得为了满足“改写”形式而保留占位符。
+- 会话历史中的结构化 `clarification` 与 `clarification_answers` 是已经确认的选择。只要目标版本仍有效，不得换一种说法重复询问同一个范围、动作或位置；应继续定位、诊断并生成提案。

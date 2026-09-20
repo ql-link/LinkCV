@@ -91,6 +91,9 @@ export function agentErrorMessage(error: unknown) {
     SOURCE_REQUIRED: "从资料生成内容前需要先选择可追溯的授权资料。",
     SOURCE_FORBIDDEN: "引用资料不存在、已变化或不属于当前账号。",
     AGENT_CLARIFICATION_STALE: "这个问题已经更新，请按当前问题重新回答。",
+    AGENT_CLARIFICATION_CONTEXT_CONFLICT: "这次回答选择了另一份资料，请继续使用原问题对应的资料。",
+    AGENT_CLARIFICATION_CONTEXT_INVALID: "原问题的资料记录已损坏，请重新发起修改请求。",
+    AGENT_RESUME_REQUIRED: "需要先打开或选择一份简历。",
   };
   return messages[code] ?? "智能助手没有完成这次请求，请稍后重试。";
 }
@@ -155,6 +158,20 @@ export function clarificationAnswerText(
     const selected = question.options.find((option) => option.id === answer?.optionId);
     return `${question.header}：${answer?.optionId === "__other__" ? answer.other.trim() : selected?.label ?? ""}`;
   }).join("\n");
+}
+
+export function clarificationAnswerPayload(
+  clarification: AgentClarification,
+  answers: Record<string, ClarificationAnswer>,
+) {
+  return clarification.questions.map((question) => {
+    const answer = answers[question.id];
+    return {
+      question_id: question.id,
+      option_id: answer.optionId,
+      ...(answer.optionId === "__other__" ? { value: answer.other.trim() } : {}),
+    };
+  });
 }
 
 function avatarFallback(displayName: string) {
@@ -271,7 +288,7 @@ export function AgentPanel({
   onClose = () => undefined,
   draft,
 }: AgentPanelProps) {
-  const [sessionBinding, setSessionBinding] = useState<{ resumeId: string; sessionId: string } | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [conversationView, setConversationView] = useState<"conversation" | "history">("conversation");
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -295,14 +312,13 @@ export function AgentPanel({
   const messageListRef = useRef<HTMLDivElement>(null);
   const handledDraftIdRef = useRef<number | null>(null);
   activeResumeIdRef.current = resumeId;
-  const sessionId = sessionBinding?.resumeId === resumeId ? sessionBinding.sessionId : null;
   const pendingClarification = pendingClarificationMessage(messages);
 
   useEffect(() => {
     streamRequestRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
-    setSessionBinding(null);
+    setSessionId(null);
     setMessages([]);
     setProposals([]);
     setInput("");
@@ -347,11 +363,11 @@ export function AgentPanel({
   const ensureSession = async () => {
     if (sessionId) return sessionId;
     const requestedResumeId = resumeId;
-    const result = await api.createAgentSession(requestedResumeId);
+    const result = await api.createAgentSession();
     if (activeResumeIdRef.current !== requestedResumeId) {
       throw new DOMException("Agent resume changed", "AbortError");
     }
-    setSessionBinding({ resumeId: requestedResumeId, sessionId: result.session.id });
+    setSessionId(result.session.id);
     return result.session.id;
   };
 
@@ -397,10 +413,14 @@ export function AgentPanel({
     }
   };
 
-  const runMessage = async (content: string, replyToSequenceNo?: number) => {
+  const runMessage = async (
+    content: string,
+    replyToSequenceNo?: number,
+    clarificationAnswersPayload?: ReturnType<typeof clarificationAnswerPayload>,
+  ) => {
     if (!content || loading || running || (pendingClarification && replyToSequenceNo === undefined)) return;
     const runSelectionContext = selectedContext;
-    if (runSelectionContext && !await onBeforeRun()) return;
+    if (!await onBeforeRun()) return;
     const requestedResumeId = resumeId;
     setInput("");
     setError(null);
@@ -425,8 +445,10 @@ export function AgentPanel({
         {
           content,
           idempotency_key: idempotencyKey,
+          contexts: [{ type: "resume", id: requestedResumeId }],
           ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
+          ...(clarificationAnswersPayload ? { clarification_answers: clarificationAnswersPayload } : {}),
         },
         controller.signal,
         (streamEvent) => {
@@ -500,7 +522,7 @@ export function AgentPanel({
     if (runId) void api.cancelAgentRun(runId).catch(() => undefined);
     abortRef.current?.abort();
     abortRef.current = null;
-    setSessionBinding(null);
+    setSessionId(null);
     setMessages([]);
     setProposals([]);
     setInput("");
@@ -519,7 +541,7 @@ export function AgentPanel({
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const result = await api.listAgentSessions(resumeId);
+      const result = await api.listAgentSessions();
       setSessions(result.sessions);
     } catch (reason) {
       setHistoryError(agentErrorMessage(reason));
@@ -546,10 +568,10 @@ export function AgentPanel({
     try {
       const [detail, proposalResult] = await Promise.all([
         api.getAgentSession(selectedSession.id),
-        api.listAgentProposals(resumeId, selectedSession.id),
+        api.listAgentProposals(null, selectedSession.id),
       ]);
       if (sessionRequestRef.current !== requestId) return;
-      setSessionBinding({ resumeId, sessionId: selectedSession.id });
+      setSessionId(selectedSession.id);
       setMessages(detail.session.messages);
       setProposals(proposalResult.proposals);
       setConversationView("conversation");
@@ -571,6 +593,7 @@ export function AgentPanel({
     void runMessage(
       clarificationAnswerText(pendingClarification.clarification, clarificationAnswers),
       pendingClarification.sequence_no,
+      clarificationAnswerPayload(pendingClarification.clarification, clarificationAnswers),
     );
   };
 

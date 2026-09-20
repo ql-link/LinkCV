@@ -24,7 +24,7 @@ from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition
 from linkresume.domain.resume_snapshot import parse_resume_snapshot
-from linkresume.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
+from linkresume.modules.agent.models import AgentRun, ResumeChangeProposal
 from linkresume.modules.agent.service import (
     create_proposal,
     create_session,
@@ -35,7 +35,7 @@ from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0063"
+EXPECTED_HEAD = "0064"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -157,6 +157,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         column["name"]: column for column in inspector.get_columns("agent_sessions")
     }
     assert session_columns["pinned"]["nullable"] is False
+    assert "resume_id" not in session_columns
     assert str(session_columns["pinned"]["default"]).strip("'").lower() in {
         "0",
         "false",
@@ -171,12 +172,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "updated_at",
         "id",
     ]
-    assert session_indexes["idx_agent_sessions_resume_pinned_updated"] == [
-        "resume_id",
-        "pinned",
-        "updated_at",
-        "id",
-    ]
+    assert "idx_agent_sessions_resume_pinned_updated" not in session_indexes
     application_columns = {
         column["name"]: column
         for column in inspector.get_columns("job_applications")
@@ -1096,6 +1092,119 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert "resume_imports" not in inspect(engine).get_table_names()
     assert "document_parse_tasks" in inspect(engine).get_table_names()
     engine.dispose()
+
+
+def test_0064_removes_resume_binding_without_deleting_conversations() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0063")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('agent-0064@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            template_id = connection.scalar(
+                text(
+                    "SELECT id FROM resume_templates "
+                    "WHERE `key` = 'classic-technical-cn'"
+                )
+            )
+            assert template_id is not None
+            resume_id = connection.execute(
+                text(
+                    "INSERT INTO resumes "
+                    "(user_id, template_id, title, data_json, style_json, source_type) "
+                    "SELECT :user_id, id, '张三的历史简历', data_json, style_json, 'template' "
+                    "FROM resume_templates WHERE id = :template_id"
+                ),
+                {"user_id": user_id, "template_id": template_id},
+            ).lastrowid
+            connection.execute(
+                text(
+                    "INSERT INTO agent_sessions "
+                    "(public_id, user_id, resume_id, title, pinned, status) "
+                    "VALUES ('00000000-0000-4000-8000-000000000064', "
+                    ":user_id, :resume_id, '张三的历史对话', FALSE, 'active')"
+                ),
+                {"user_id": user_id, "resume_id": resume_id},
+            )
+            session_id = connection.scalar(
+                text(
+                    "SELECT id FROM agent_sessions "
+                    "WHERE public_id = '00000000-0000-4000-8000-000000000064'"
+                )
+            )
+            run_id = connection.execute(
+                text(
+                    "INSERT INTO agent_runs "
+                    "(public_id, session_id, idempotency_key, status, started_at) "
+                    "VALUES ('00000000-0000-4000-8000-000000000164', "
+                    ":session_id, 'legacy-message-0064', 'succeeded', UTC_TIMESTAMP(6))"
+                ),
+                {"session_id": session_id},
+            ).lastrowid
+            connection.execute(
+                text(
+                    "INSERT INTO agent_messages "
+                    "(session_id, run_id, sequence_no, role, message_type, content, metadata_json) "
+                    "VALUES (:session_id, :run_id, 1, 'user', 'text', "
+                    "'请优化当前简历', NULL)"
+                ),
+                {"session_id": session_id, "run_id": run_id},
+            )
+
+        run_alembic(database_url, "upgrade", "head")
+
+        inspector = inspect(engine)
+        columns = {
+            column["name"] for column in inspector.get_columns("agent_sessions")
+        }
+        indexes = {
+            index["name"] for index in inspector.get_indexes("agent_sessions")
+        }
+        with engine.connect() as connection:
+            preserved = connection.execute(
+                text(
+                    "SELECT public_id, title FROM agent_sessions "
+                    "WHERE public_id = '00000000-0000-4000-8000-000000000064'"
+                )
+            ).mappings().one()
+            metadata = connection.scalar(
+                text(
+                    "SELECT metadata_json FROM agent_messages "
+                    "WHERE session_id = :session_id AND sequence_no = 1"
+                ),
+                {"session_id": session_id},
+            )
+
+        assert "resume_id" not in columns
+        assert "idx_agent_sessions_resume_pinned_updated" not in indexes
+        assert dict(preserved) == {
+            "public_id": "00000000-0000-4000-8000-000000000064",
+            "title": "张三的历史对话",
+        }
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+        assert metadata["contexts"] == [
+            {
+                "type": "resume",
+                "id": str(resume_id),
+                "version": "1",
+                "lock_version": 1,
+                "resume_id": str(resume_id),
+                "label": "张三的历史简历",
+                "description": None,
+                "updated_at": metadata["contexts"][0]["updated_at"],
+            }
+        ]
+    finally:
+        reset_test_database_to_base(database_url)
+        run_alembic(database_url, "upgrade", "head")
+        engine.dispose()
 
 
 def test_storage_cleanup_forward_migration_refuses_pending_tasks() -> None:
@@ -3043,7 +3152,7 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
     engine.dispose()
 
 
-def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
+def test_mysql_agent_session_creation_is_independent_from_resume_deletion() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -3098,7 +3207,6 @@ def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
                 create_session(
                     db,
                     user_id=user_id,
-                    resume_id=str(resume_id),
                     title=None,
                 )
             except ApiError as error:
@@ -3113,19 +3221,12 @@ def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
             assert create_started.wait(timeout=5)
             sleep(0.2)
             try:
-                assert not create_future.done()
+                assert create_future.result(timeout=5) == "created"
             finally:
                 allow_delete_commit.set()
             delete_future.result(timeout=5)
-            assert create_future.result(timeout=5) == "RESUME_NOT_FOUND"
 
         with engine.connect() as connection:
-            assert (
-                connection.scalar(
-                    select(AgentSession.id).where(AgentSession.resume_id == resume_id)
-                )
-                is None
-            )
             assert (
                 connection.scalar(select(Resume.id).where(Resume.id == resume_id))
                 is None
@@ -3165,7 +3266,6 @@ def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
         agent_session = create_session(
             db,
             user_id=user_id,
-            resume_id=str(resume.id),
             title=None,
         )
         run = AgentRun(
@@ -3181,6 +3281,7 @@ def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
             db,
             run=run,
             session=agent_session,
+            resume_id=str(resume.id),
             call_key="proposal-confirm-reject-race",
             data=resume.data_json,
             style=resume.style_json,

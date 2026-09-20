@@ -65,6 +65,12 @@ ALLOWED_FIELDS = {
     "validation_paths",
     "validation_types",
     "warning_count",
+    "scope",
+    "selection_present",
+    "candidate_count",
+    "question_count",
+    "target_field",
+    "base_lock_version",
 }
 
 
@@ -183,8 +189,18 @@ class StructuredLogEmitter:
         for key, value in fields.items():
             if key not in ALLOWED_FIELDS or value is None:
                 continue
-            if key in {"attempt", "duration_ms", "http_status", "warning_count"}:
+            if key in {
+                "attempt",
+                "duration_ms",
+                "http_status",
+                "warning_count",
+                "candidate_count",
+                "question_count",
+                "base_lock_version",
+            }:
                 event[key] = max(0, int(value))
+            elif key == "selection_present":
+                event[key] = bool(value)
             elif key == "actor_user_id":
                 candidate = str(value)
                 if candidate.isdecimal():

@@ -24,7 +24,8 @@ const AGENT_POLICY_PROMPT = `你是 LinkResume 的职业与简历智能助手，
 简历编辑请求进入 resume-edit-workflow，并严格执行其中的定位、读取和诊断顺序；诊断后只能选择一个执行 Skill：resume-edit-local、resume-edit-entry-star、resume-generate-from-materials。
 整份简历翻译进入 resume-translation，只能调用 create_resume_translation_proposal；翻译与润色、重写不得混用。面试指南、职业规划和标题建议是只读工作流，不得创建提案。
 未唯一定位或缺失会改变结果的关键信息时，必须调用 request_user_input 生成结构化问题，不能用普通文本代替澄清。调用 request_user_input 后本轮立即停止其他工具和最终回答。
-用户明确询问自己有哪些简历、资料或面试记录，或者需要从这些对象中选择时，可以调用 list_user_resources；它只返回轻量目录。用户明确指定简历名称、ID 或目录中的某一版本用于当前请求时，调用 resolve_resume_reference 解析本轮目标，再读取简历上下文；这项授权只作用于当前运行，不绑定或改写会话。名称同名时根据用户给出的版本条件选择目录中的 ID 后再次解析，不得猜测用户未表达的选择。
+若本轮收到“已由服务端校验的结构化澄清答案”，它是当前用户已确认范围的权威值；必须直接继续原任务，不得因展示文本的表达差异重复询问同一问题。
+用户明确询问自己有哪些简历、资料或面试记录，或者需要从这些对象中选择时，可以调用 list_user_resources；它只返回轻量目录。用户明确指定简历名称、ID 或目录中的某一版本用于当前请求时，调用 resolve_resume_reference 解析本轮目标；局部编辑必须再调用 resolve_resume_target，并沿用已解析的同一份简历。这项授权只作用于当前运行，不绑定或改写会话。名称同名时根据用户给出的版本条件选择目录中的 ID 后再次解析，不得猜测用户未表达的选择。
 任何写入都必须生成待确认提案，绝不能声称已经直接修改或创建简历，也不能编造事实、角色或量化数据。
 只允许使用 read 读取已注册 Skill；禁止读取其他文件、执行 Shell、浏览网络或调用未注册工具。
 工具选择、调用、参数校验、失败重试和内部执行顺序不得写入最终回复。工具阶段可以用简短自然语言说明正在做什么，这些内容只进入临时工作过程，不作为最终回复保存。
@@ -89,6 +90,20 @@ export function formatContextMaterials(materials = []) {
     JSON.stringify(bounded),
     "</authorized-context-materials>",
   ].join("\n");
+}
+
+export function buildAgentConversation({
+  authorizedContext = "",
+  history = [],
+  clarificationAnswers = [],
+  content,
+}) {
+  const confirmedAnswers = clarificationAnswers.length
+    ? `已由服务端校验的结构化澄清答案（本轮权威值）：\n${JSON.stringify(clarificationAnswers)}\n\n`
+    : "";
+  return history.length
+    ? `${authorizedContext ? `${authorizedContext}\n\n` : ""}以下是由 LinkResume 数据库恢复的同一会话最近记录，仅作为对话上下文：\n${JSON.stringify(history)}\n\n${confirmedAnswers}用户本轮请求：\n${content}`
+    : `${authorizedContext ? `${authorizedContext}\n\n` : ""}${confirmedAnswers}用户本轮请求：\n${content}`;
 }
 
 const SKILLS_ROOT = fileURLToPath(new URL("../../resources/skills/", import.meta.url));
@@ -316,6 +331,7 @@ export async function executeAgentRun({
   runId,
   content,
   history,
+  clarificationAnswers = [],
   selectionContext,
   contextMaterials = [],
   emit,
@@ -340,6 +356,7 @@ export async function executeAgentRun({
   let outputMode = "working";
   let finalResponseHasText = false;
   let session = null;
+  const resumeContextId = contextMaterials.find((item) => item.type === "resume")?.resume_id ?? null;
   const executionSkills = new Map([
     ["resume-edit-local/SKILL.md", "polish_local"],
     ["resume-edit-entry-star/SKILL.md", "rewrite_entry_star"],
@@ -402,6 +419,8 @@ export async function executeAgentRun({
           status: "succeeded",
           ...(output.targetType ? { target_type: output.targetType } : {}),
           ...(output.targetId ? { target_id: output.targetId } : {}),
+          stage: name,
+          ...(output.audit ?? {}),
           duration_ms: Date.now() - startedAt,
         });
         if (output.proposal) emit("proposal.created", { runId, proposal: output.proposal });
@@ -415,6 +434,8 @@ export async function executeAgentRun({
           call_key: toolCallId,
           tool_name: name,
           status: "failed",
+          stage: name,
+          result: "failed",
           error_code: error.code ?? "AGENT_TOOL_FAILED",
           duration_ms: Date.now() - startedAt,
         }).catch(() => {});
@@ -465,7 +486,10 @@ export async function executeAgentRun({
       emit("assistant.activity.clear", { runId });
       emit("clarification.requested", { runId, clarification: pendingClarification });
       emit("assistant.delta", { runId, delta: clarificationFallbackText(pendingClarification) });
-      return { text: "已向用户请求补充信息；本轮到此结束。" };
+      return {
+        text: "已向用户请求补充信息；本轮到此结束。",
+        audit: { result: "clarification_requested", question_count: params.questions.length },
+      };
     },
   });
 
@@ -479,7 +503,9 @@ export async function executeAgentRun({
     }),
     run: async (params) => {
       requireWorkflow("resume_edit", "resume_translation");
+      const requestedResumeId = resolvedTarget?.resume_id ?? resumeContextId;
       const result = await client.resolveTarget({
+        ...(requestedResumeId ? { resume_id: requestedResumeId } : {}),
         ...(selectionContext ? { selection_context: selectionContext } : {}),
         ...(params.quoted_text ? { quoted_text: params.quoted_text } : {}),
         scope_hint: params.scope_hint ?? "target",
@@ -487,7 +513,19 @@ export async function executeAgentRun({
       resolvedTarget = result.status === "resolved" ? result.target : null;
       resumeContextLoaded = false;
       diagnosisResult = null;
-      return { value: result, targetType: "resume", targetId: result.target?.resume_id };
+      return {
+        value: result,
+        targetType: "resume",
+        targetId: result.target?.resume_id ?? requestedResumeId,
+        audit: {
+          result: result.status,
+          scope: params.scope_hint ?? "target",
+          selection_present: Boolean(selectionContext),
+          candidate_count: result.candidates?.length ?? 0,
+          ...(result.target?.field ? { target_field: result.target.field } : {}),
+          ...(result.target?.base_lock_version != null ? { base_lock_version: result.target.base_lock_version } : {}),
+        },
+      };
     },
   });
 
@@ -509,7 +547,16 @@ export async function executeAgentRun({
       resolvedTarget = result.status === "resolved" ? result.target : null;
       resumeContextLoaded = false;
       diagnosisResult = null;
-      return { value: result, targetType: "resume", targetId: result.target?.resume_id };
+      return {
+        value: result,
+        targetType: "resume",
+        targetId: result.target?.resume_id,
+        audit: {
+          result: result.status,
+          candidate_count: result.candidates?.length ?? 0,
+          ...(result.target?.base_lock_version != null ? { base_lock_version: result.target.base_lock_version } : {}),
+        },
+      };
     },
   });
 
@@ -550,7 +597,17 @@ export async function executeAgentRun({
       if (!resolvedTarget) throw new Error("TARGET_RESOLUTION_REQUIRED");
       const result = await client.scopedContext({ target: resolvedTarget, scope: params.scope });
       if (params.scope === "resume") resumeContextLoaded = true;
-      return { value: result, targetType: "resume", targetId: result.resume_id };
+      return {
+        value: result,
+        targetType: "resume",
+        targetId: result.resume_id,
+        audit: {
+          result: "context_loaded",
+          scope: params.scope,
+          target_field: result.target?.field ?? resolvedTarget.field,
+          base_lock_version: result.lock_version,
+        },
+      };
     },
   });
 
@@ -609,7 +666,7 @@ export async function executeAgentRun({
         items: objectSchema({
           op: { type: "string", enum: ["replace_target_text", "insert_after_target"] },
           target: { type: "object" },
-          new_text: { type: "string", minLength: 1, maxLength: 20000 },
+          new_text: { type: "string", minLength: 0, maxLength: 20000 },
           expected_text_hash: { type: "string", pattern: "^sha256:[a-f0-9]{64}$" },
         }, ["op", "target", "new_text", "expected_text_hash"]),
       },
@@ -797,9 +854,12 @@ export async function executeAgentRun({
       });
     }
     const authorizedContext = formatContextMaterials(contextMaterials);
-    const conversation = history.length
-      ? `${authorizedContext ? `${authorizedContext}\n\n` : ""}以下是由 LinkResume 数据库恢复的同一会话最近记录，仅作为对话上下文：\n${JSON.stringify(history)}\n\n用户本轮请求：\n${content}`
-      : `${authorizedContext ? `${authorizedContext}\n\n` : ""}用户本轮请求：\n${content}`;
+    const conversation = buildAgentConversation({
+      authorizedContext,
+      history,
+      clarificationAnswers,
+      content,
+    });
     await session.prompt(conversation);
     assertAgentCompleted(finalAssistantMessage);
     if (!pendingClarification && outputMode !== "final") {

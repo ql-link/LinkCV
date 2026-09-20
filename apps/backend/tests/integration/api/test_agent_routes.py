@@ -5,7 +5,7 @@ import re
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +16,7 @@ from linkresume.core.config import Settings
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
 from linkresume.main import create_app
+from linkresume.modules.agent import routes as agent_routes
 from linkresume.modules.agent.models import (
     AgentMessage,
     AgentRun,
@@ -23,7 +24,10 @@ from linkresume.modules.agent.models import (
     AgentToolCall,
     ResumeChangeProposal,
 )
-from linkresume.modules.agent.pi_client import stream_pi_run
+from linkresume.modules.agent.pi_client import (
+    _current_clarification_answers,
+    stream_pi_run,
+)
 from linkresume.modules.agent.service import create_run
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
@@ -70,7 +74,19 @@ class FakeStorage:
         pass
 
 
-def build_app():
+class CapturingEmitter:
+    def __init__(self) -> None:
+        self.system_events: list[dict[str, object]] = []
+
+    def system(self, level: str, message: str, **fields: object) -> bool:
+        self.system_events.append({"level": level, "message": message, **fields})
+        return True
+
+    def audit(self, **fields: object) -> tuple[bool, str]:
+        return True, uuid4().hex
+
+
+def build_app(*, event_emitter=None):
     app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
@@ -79,6 +95,7 @@ def build_app():
         ),
         storage=FakeStorage(),
         redis=FakeRedis(),
+        event_emitter=event_emitter,
         create_schema=True,
     )
     with app.state.session_factory() as db:
@@ -228,9 +245,14 @@ def test_session_is_owned_and_internal_context_requires_service_token() -> None:
         resume = create_resume(owner, app)
         created = owner.post(
             "/api/agent/sessions",
-            json={"resume_id": resume["id"], "title": "岗位定制"},
+            json={"title": "岗位定制"},
         )
         assert created.status_code == 201
+        legacy_create = owner.post(
+            "/api/agent/sessions", json={"resume_id": resume["id"]}
+        )
+        assert legacy_create.status_code == 201
+        assert "resume_id" not in legacy_create.json()["session"]
         session_id = created.json()["session"]["id"]
         run_id = create_active_run(app, session_id)
 
@@ -239,12 +261,14 @@ def test_session_is_owned_and_internal_context_requires_service_token() -> None:
         assert hidden.status_code == 404
         assert hidden.json() == {"error": "AGENT_SESSION_NOT_FOUND"}
 
-        denied = owner.get(f"/internal/agent/runs/{run_id}/context")
+        denied = owner.get(
+            f"/internal/agent/runs/{run_id}/context?resume_id={resume['id']}"
+        )
         assert denied.status_code == 401
         assert denied.json() == {"error": "AGENT_SERVICE_UNAUTHORIZED"}
 
         context = owner.get(
-            f"/internal/agent/runs/{run_id}/context",
+            f"/internal/agent/runs/{run_id}/context?resume_id={resume['id']}",
             headers=internal_headers(),
         )
         assert context.status_code == 200
@@ -286,7 +310,26 @@ def test_explicit_resume_title_resolves_for_run_without_binding_session() -> Non
         assert context.json()["data"]["schema_version"] == "canonical-resume.v1"
         detail = client.get(f"/api/agent/sessions/{session_id}")
         assert detail.status_code == 200
-        assert detail.json()["session"]["resume_id"] is None
+        assert "resume_id" not in detail.json()["session"]
+
+
+def test_run_without_message_resume_context_cannot_resolve_a_resume_target() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-no-resume-context@example.test")
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
+        run_id = create_active_run(app, session["id"])
+
+        unresolved = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"quoted_text": "张三"},
+        )
+
+        assert unresolved.status_code == 409
+        assert unresolved.json() == {"error": "AGENT_RESUME_REQUIRED"}
+        detail = client.get(f"/api/agent/sessions/{session['id']}")
+        assert "resume_id" not in detail.json()["session"]
 
 
 def test_resume_reference_can_use_title_selected_from_prior_catalog_result() -> None:
@@ -311,7 +354,7 @@ def test_resume_reference_can_use_title_selected_from_prior_catalog_result() -> 
         assert resolved.json()["status"] == "resolved"
         assert resolved.json()["target"]["resume_id"] is not None
         detail = client.get(f"/api/agent/sessions/{session_id}")
-        assert detail.json()["session"]["resume_id"] is None
+        assert "resume_id" not in detail.json()["session"]
 
 
 def test_resume_reference_does_not_expose_another_users_named_resume() -> None:
@@ -352,7 +395,7 @@ def test_resume_reference_does_not_expose_another_users_named_resume() -> None:
             "candidates": [],
         }
         detail = owner.get(f"/api/agent/sessions/{session_id}")
-        assert detail.json()["session"]["resume_id"] is None
+        assert "resume_id" not in detail.json()["session"]
 
 
 def test_resume_reference_does_not_auto_select_duplicate_import_titles() -> None:
@@ -400,13 +443,14 @@ def test_resume_reference_does_not_auto_select_duplicate_import_titles() -> None
         assert resolved.json()["status"] == "resolved"
         assert resolved.json()["target"]["resume_id"] == duplicate_id
         detail = client.get(f"/api/agent/sessions/{session_id}")
-        assert detail.json()["session"]["resume_id"] is None
+        assert "resume_id" not in detail.json()["session"]
 
 
 def test_context_catalog_is_owner_scoped_and_message_snapshot_does_not_bind_session() -> (
     None
 ):
-    app = build_app()
+    emitter = CapturingEmitter()
+    app = build_app(event_emitter=emitter)
     with TestClient(app) as owner, TestClient(app) as stranger:
         register(owner, "agent-context-owner@example.test")
         owner_resume = create_resume(owner, app)
@@ -426,14 +470,7 @@ def test_context_catalog_is_owner_scoped_and_message_snapshot_does_not_bind_sess
             json={
                 "content": "请分析这份简历",
                 "idempotency_key": "context-snapshot-001",
-                "contexts": [
-                    {
-                        "type": "resume",
-                        "id": owner_resume["id"],
-                        "lock_version": owner_resume["lock_version"],
-                        "label": "客户端标签不可信",
-                    }
-                ],
+                "contexts": [{"type": "resume", "id": owner_resume["id"]}],
             },
         )
         assert sent.status_code == 200
@@ -442,63 +479,149 @@ def test_context_catalog_is_owner_scoped_and_message_snapshot_does_not_bind_sess
                 select(AgentSession).where(AgentSession.public_id == session["id"])
             )
             assert record is not None
-            assert record.resume_id is None
             message = db.scalar(
                 select(AgentMessage).where(AgentMessage.session_id == record.id)
             )
             assert message is not None
+            run = db.get(AgentRun, message.run_id)
+            assert run is not None
+            assert run.public_id == str(
+                uuid5(
+                    NAMESPACE_URL,
+                    f"linkresume:agent-message:{session['id']}:context-snapshot-001",
+                )
+            )
             assert message.metadata_json is not None
             assert (
                 message.metadata_json["contexts"][0]["label"] == owner_resume["title"]
             )
             assert "data" not in message.metadata_json["contexts"][0]
+        context_events = [
+            event
+            for event in emitter.system_events
+            if event.get("stage") == "context_preflight"
+            and event.get("operation_id") == run.public_id
+        ]
+        assert [event["result"] for event in context_events] == [
+            "started",
+            "succeeded",
+        ]
+        assert context_events[-1]["candidate_count"] == 1
+        assert any(
+            event.get("stage") == "run_creation"
+            and event.get("operation_id") == run.public_id
+            and event.get("result") == "created"
+            for event in emitter.system_events
+        )
 
         hidden = owner.post(
             f"/api/agent/sessions/{session['id']}/messages",
             json={
                 "content": "读取另一用户资料",
                 "idempotency_key": "context-owner-check-001",
-                "contexts": [
-                    {
-                        "type": "resume",
-                        "id": stranger_resume["id"],
-                        "lock_version": stranger_resume["lock_version"],
-                    }
-                ],
+                "contexts": [{"type": "resume", "id": stranger_resume["id"]}],
             },
         )
         assert hidden.status_code == 404
         assert hidden.json() == {"error": "AGENT_CONTEXT_NOT_FOUND"}
+        failed_preflight = next(
+            event
+            for event in reversed(emitter.system_events)
+            if event.get("stage") == "context_preflight"
+            and event.get("result") == "failed"
+        )
+        assert failed_preflight["error_code"] == "AGENT_CONTEXT_NOT_FOUND"
+        assert failed_preflight["operation_id"]
 
 
-def test_bound_editor_session_accepts_different_resume_as_run_context() -> None:
+def test_resume_context_is_persisted_on_message_without_binding_session() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "agent-context-switch@example.test")
-        default_resume = create_resume(client, app)
         selected_resume = create_resume(client, app, "第二份测试简历")
-        session = client.post(
-            "/api/agent/sessions", json={"resume_id": default_resume["id"]}
-        ).json()["session"]
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
 
         sent = client.post(
             f"/api/agent/sessions/{session['id']}/messages",
             json={
                 "content": "这一轮分析第二份简历",
                 "idempotency_key": "context-switch-001",
-                "contexts": [
-                    {
-                        "type": "resume",
-                        "id": selected_resume["id"],
-                        "lock_version": selected_resume["lock_version"],
-                    }
-                ],
+                "contexts": [{"type": "resume", "id": selected_resume["id"]}],
             },
         )
 
         assert sent.status_code == 200
         detail = client.get(f"/api/agent/sessions/{session['id']}")
-        assert detail.json()["session"]["resume_id"] == default_resume["id"]
+        assert "resume_id" not in detail.json()["session"]
+        contexts = detail.json()["session"]["messages"][0]["contexts"]
+        assert contexts[0]["id"] == selected_resume["id"]
+        with app.state.session_factory() as db:
+            stored = db.scalar(
+                select(AgentSession).where(AgentSession.public_id == session["id"])
+            )
+            assert stored is not None
+
+
+def test_context_preflight_logs_unexpected_failure_without_request_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    emitter = CapturingEmitter()
+    app = build_app(event_emitter=emitter)
+
+    def fail_context_resolution(*_args, **_kwargs):
+        raise RuntimeError("private diagnostic detail")
+
+    monkeypatch.setattr(agent_routes, "resolve_contexts", fail_context_resolution)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        register(client, "agent-context-failure@example.test")
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
+        failed = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "不应进入结构化日志的用户正文",
+                "idempotency_key": "context-unexpected-failure-001",
+            },
+        )
+
+    assert failed.status_code == 500
+    event = next(
+        item
+        for item in reversed(emitter.system_events)
+        if item.get("stage") == "context_preflight"
+        and item.get("result") == "failed"
+    )
+    assert event["level"] == "ERROR"
+    assert event["error_code"] == "AGENT_CONTEXT_PREFLIGHT_FAILED"
+    assert event["exception_type"] == "RuntimeError"
+    assert event["operation_id"]
+    assert "content" not in event
+    assert "private diagnostic detail" not in str(event)
+
+
+def test_selection_context_requires_resume_context_on_the_same_message() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-selection-context@example.test")
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
+        selected_text = "负责平台性能优化"
+
+        sent = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "优化选中的内容",
+                "idempotency_key": "selection-without-resume-001",
+                "selection_context": {
+                    "block_ids": ["node_bullet0000000001"],
+                    "from": 0,
+                    "to": len(selected_text),
+                    "selected_text": selected_text,
+                    "selected_text_hash": "sha256:"
+                    + hashlib.sha256(selected_text.encode()).hexdigest(),
+                },
+            },
+        )
+
+        assert sent.status_code == 422
 
 
 def test_internal_resource_catalog_lists_owned_resume_dataset_and_interview_metadata() -> (
@@ -884,9 +1007,7 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
     with TestClient(app) as client:
         register(client, "agent-proposal@example.test")
         resume = create_resume(client, app)
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": resume["id"]}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposed_data = resume["data"]
         proposed_data["identity"]["headline"] = {
@@ -896,6 +1017,7 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
         }
         payload = {
             "call_key": "proposal-call-1",
+            "resume_id": resume["id"],
             "data": proposed_data,
             "style": resume["style"],
             "summary": "调整简历标题表达",
@@ -988,15 +1110,14 @@ def test_proposal_confirmation_rejects_images_above_pdf_total() -> None:
                 ],
             }
         ]
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": resume_id}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposal = client.post(
             f"/internal/agent/runs/{run_id}/proposals",
             headers=internal_headers(),
             json={
                 "call_key": "proposal-image-total",
+                "resume_id": resume_id,
                 "data": proposed_data,
                 "style": resume["style"],
                 "summary": "保留现有图片并调整文字",
@@ -1038,15 +1159,13 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
             },
         )
         assert saved.status_code == 200
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": resume["id"]}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
 
         ambiguous = client.post(
             f"/internal/agent/runs/{run_id}/targets:resolve",
             headers=internal_headers(),
-            json={"quoted_text": "负责平台性能优化"},
+            json={"resume_id": resume["id"], "quoted_text": "负责平台性能优化"},
         )
         assert ambiguous.status_code == 200
         assert ambiguous.json()["status"] == "ambiguous"
@@ -1057,6 +1176,7 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
             f"/internal/agent/runs/{run_id}/targets:resolve",
             headers=internal_headers(),
             json={
+                "resume_id": resume["id"],
                 "selection_context": {
                     "block_ids": [
                         "node_entry00000000001",
@@ -1080,6 +1200,7 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
             f"/internal/agent/runs/{run_id}/targets:resolve",
             headers=internal_headers(),
             json={
+                "resume_id": resume["id"],
                 "selection_context": {
                     "block_ids": ["node_bullet0000000002"],
                     "from": 10,
@@ -1219,9 +1340,7 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
             },
         )
         assert saved.status_code == 200
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": resume["id"]}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
 
         selected_entry = "示例公司 · 后端工程师\n负责平台性能优化"
@@ -1229,6 +1348,7 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
             f"/internal/agent/runs/{run_id}/targets:resolve",
             headers=internal_headers(),
             json={
+                "resume_id": resume["id"],
                 "selection_context": {
                     "block_ids": [
                         "node_entry00000000001",
@@ -1287,20 +1407,101 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
         assert role["value"] == "示例公司 · 高级后端工程师"
 
 
+def test_named_resume_local_field_can_be_resolved_and_deleted_without_session_binding() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-named-field-delete@example.test")
+        resume = create_resume(client, app, title="示例后端简历")
+        markdown = "\n\n".join(
+            [
+                "## [[linkresume-block:node_section000000001]]工作经历",
+                "### [[linkresume-block:node_entry00000000001]]示例公司",
+                "- [[linkresume-block:node_bullet0000000001]]负责服务开发",
+            ]
+        )
+        data = editor_data(resume["data"], markdown)
+        data["sections"][0]["entries"][0]["fields"]["location"] = {
+            "node_id": "node_location000000001",
+            "source_refs": [],
+            "value": "123",
+        }
+        saved = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": 1},
+        )
+        assert saved.status_code == 200
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        reference = client.post(
+            f"/internal/agent/runs/{run_id}/resumes:resolve-reference",
+            headers=internal_headers(),
+            json={"title": "示例后端简历"},
+        )
+        assert reference.status_code == 200
+        resume_target = reference.json()["target"]
+        wrong_scope = client.post(
+            f"/internal/agent/runs/{run_id}/context:read",
+            headers=internal_headers(),
+            json={"target": resume_target, "scope": "target"},
+        )
+        assert wrong_scope.status_code == 422
+        assert wrong_scope.json() == {"error": "SCOPE_FORBIDDEN"}
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"resume_id": resume_target["resume_id"], "quoted_text": "123"},
+        )
+        assert resolved.status_code == 200
+        target = resolved.json()["target"]
+        assert target["field"] == "location"
+        assert target["block_id"] == "node_location000000001"
+
+        diagnosed = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": target, "scope": "target"},
+        )
+        assert diagnosed.status_code == 200
+        proposed = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                "call_key": "delete-location-placeholder",
+                "mode": "polish_local",
+                "target": target,
+                "diagnosis": diagnosed.json()["diagnosis"],
+                "diagnosis_fingerprint": diagnosed.json()["diagnosis_fingerprint"],
+                "operations": [{
+                    "op": "replace_target_text",
+                    "target": target,
+                    "new_text": "",
+                    "expected_text_hash": target["expected_text_hash"],
+                }],
+                "summary": "删除已确认的占位内容",
+            },
+        )
+        assert proposed.status_code == 201
+        proposal_id = proposed.json()["proposal"]["id"]
+        confirmed = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+        assert confirmed.status_code == 200
+        fields = confirmed.json()["resume"]["data"]["sections"][0]["entries"][0]["fields"]
+        assert fields["location"] is None
+
+
 def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "agent-conflict@example.test")
         resume = create_resume(client, app)
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": resume["id"]}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposal = client.post(
             f"/internal/agent/runs/{run_id}/proposals",
             headers=internal_headers(),
             json={
                 "call_key": "proposal-conflict",
+                "resume_id": resume["id"],
                 "data": resume["data"],
                 "style": resume["style"],
                 "summary": "不会覆盖并发编辑",
@@ -1414,14 +1615,12 @@ def test_translation_proposal_rejects_changed_factual_tokens() -> None:
                 "base_lock_version": source["lock_version"],
             },
         ).json()["resume"]
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": source["id"]}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         target = client.post(
             f"/internal/agent/runs/{run_id}/targets:resolve",
             headers=internal_headers(),
-            json={"scope_hint": "resume"},
+            json={"resume_id": source["id"], "scope_hint": "resume"},
         ).json()["target"]
         translated_data = deepcopy(source["data"])
         translated_data["identity"]["node_id"] = "node_changed000000001"
@@ -1453,9 +1652,7 @@ def test_proposal_confirmation_respects_resume_version_limit() -> None:
             json={"name": "人工保留版本"},
         )
         assert manual.status_code == 201
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": resume["id"]}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposed_data = resume["data"]
         proposed_data["identity"]["headline"] = {
@@ -1468,6 +1665,7 @@ def test_proposal_confirmation_respects_resume_version_limit() -> None:
             headers=internal_headers(),
             json={
                 "call_key": "proposal-version-limit",
+                "resume_id": resume["id"],
                 "data": proposed_data,
                 "style": resume["style"],
                 "summary": "版本空间已满时不得应用",
@@ -1563,20 +1761,19 @@ def test_stale_run_is_failed_before_starting_a_replacement() -> None:
             assert stale.error_code == "AGENT_TIMEOUT"
 
 
-def test_deleting_resume_explicitly_cleans_agent_rows_without_foreign_keys() -> None:
+def test_deleting_resume_cleans_proposals_but_preserves_independent_conversation() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "agent-delete@example.test")
         resume = create_resume(client, app)
-        session_id = client.post(
-            "/api/agent/sessions", json={"resume_id": resume["id"]}
-        ).json()["session"]["id"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposal = client.post(
             f"/internal/agent/runs/{run_id}/proposals",
             headers=internal_headers(),
             json={
                 "call_key": "delete-cleanup-proposal",
+                "resume_id": resume["id"],
                 "data": resume["data"],
                 "style": resume["style"],
                 "summary": "删除简历时一并清理",
@@ -1607,10 +1804,10 @@ def test_deleting_resume_explicitly_cleans_agent_rows_without_foreign_keys() -> 
 
         assert client.delete(f"/api/resumes/{resume['id']}").json() == {"deleted": True}
         with app.state.session_factory() as db:
-            assert db.scalar(select(AgentSession.id)) is None
-            assert db.scalar(select(AgentRun.id)) is None
-            assert db.scalar(select(AgentMessage.id)) is None
-            assert db.scalar(select(AgentToolCall.id)) is None
+            assert db.scalar(select(AgentSession.id)) is not None
+            assert db.scalar(select(AgentRun.id)) is not None
+            assert db.scalar(select(AgentMessage.id)) is not None
+            assert db.scalar(select(AgentToolCall.id)) is not None
             assert db.scalar(select(ResumeChangeProposal.id)) is None
 
 
@@ -1649,7 +1846,8 @@ def test_cancel_does_not_overwrite_a_run_that_completed_while_waiting(
 def test_pi_stream_emits_failure_when_upstream_ends_without_terminal_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app = build_app()
+    emitter = CapturingEmitter()
+    app = build_app(event_emitter=emitter)
     app.state.settings.agent_enabled = True
     app.state.settings.pi_service_token = SecretStr(
         "pi-service-token-for-tests-00000000000001"
@@ -1699,6 +1897,33 @@ def test_pi_stream_emits_failure_when_upstream_ends_without_terminal_event(
         assert "event: assistant.delta" in events
         assert "event: run.failed" in events
         assert "AGENT_UPSTREAM_FAILED" in events
+        stage_results = [
+            (item.get("stage"), item.get("result"), item.get("error_code"))
+            for item in emitter.system_events
+            if item.get("message") == "agent run stage"
+        ]
+        assert ("pi_dispatch", "started", None) in stage_results
+        assert ("pi_dispatch", "succeeded", None) in stage_results
+        assert ("model_execution", "started", None) in stage_results
+        assert (
+            "model_execution",
+            "failed",
+            "AGENT_UPSTREAM_FAILED",
+        ) in stage_results
+        assert (
+            "stream_terminal",
+            "failed",
+            "AGENT_UPSTREAM_FAILED",
+        ) in stage_results
+        assert ("run_finalize", "started", None) in stage_results
+        assert ("run_finalize", "succeeded", None) in stage_results
+        assert "请优化简历" not in str(emitter.system_events)
+        agent_stage_events = [
+            item
+            for item in emitter.system_events
+            if item.get("message") == "agent run stage"
+        ]
+        assert all(item.get("operation_id") == run_id for item in agent_stage_events)
         with app.state.session_factory() as db:
             run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
             assert run is not None
@@ -1790,16 +2015,26 @@ def test_new_session_uses_first_message_title_and_rejects_stale_clarification_re
     with TestClient(app) as client:
         register(client, "agent-clarification-reply@example.test")
         resume = create_resume(client, app)
-        session = client.post(
-            "/api/agent/sessions", json={"resume_id": resume["id"]}
-        ).json()["session"]
+        other_resume = create_resume(client, app, "另一份测试简历")
+        session = client.post("/api/agent/sessions", json={}).json()["session"]
         assert session["title"] == "新对话"
+        selected_text = "禾赛科技标题行右侧的 123"
+        selection_context = {
+            "block_ids": ["node_entryfield00000001"],
+            "from": 1,
+            "to": len(selected_text) + 1,
+            "selected_text": selected_text,
+            "selected_text_hash": "sha256:"
+            + hashlib.sha256(selected_text.encode()).hexdigest(),
+        }
 
         first = client.post(
             f"/api/agent/sessions/{session['id']}/messages",
             json={
                 "content": "优化这段项目经历的表达并突出技术影响",
                 "idempotency_key": "first_message_001",
+                "contexts": [{"type": "resume", "id": resume["id"]}],
+                "selection_context": selection_context,
             },
         )
         assert first.status_code == 200
@@ -1812,9 +2047,21 @@ def test_new_session_uses_first_message_title_and_rejects_stale_clarification_re
             )
             assert record is not None
             latest_sequence = max(item["sequence_no"] for item in detail["messages"])
+            source_message = db.scalar(
+                select(AgentMessage)
+                .where(
+                    AgentMessage.session_id == record.id,
+                    AgentMessage.role == "user",
+                )
+                .order_by(AgentMessage.sequence_no.asc())
+                .limit(1)
+            )
+            assert source_message is not None
+            assert source_message.run_id is not None
             db.add(
                 AgentMessage(
                     session_id=record.id,
+                    run_id=source_message.run_id,
                     sequence_no=latest_sequence + 1,
                     role="assistant",
                     message_type="clarification",
@@ -1847,6 +2094,93 @@ def test_new_session_uses_first_message_title_and_rejects_stale_clarification_re
         )
         assert stale.status_code == 409
         assert stale.json() == {"error": "AGENT_CLARIFICATION_STALE"}
+
+        conflict = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "修改范围：实习经历",
+                "idempotency_key": "conflicting_context_reply_001",
+                "reply_to_sequence_no": latest_sequence + 1,
+                "contexts": [{"type": "resume", "id": other_resume["id"]}],
+                "clarification_answers": [
+                    {"question_id": "scope", "option_id": "internship"}
+                ],
+            },
+        )
+        assert conflict.status_code == 409
+        assert conflict.json() == {
+            "error": "AGENT_CLARIFICATION_CONTEXT_CONFLICT"
+        }
+
+        changed_selection_text = "另一处 123"
+        selection_conflict = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "修改范围：实习经历",
+                "idempotency_key": "conflicting_selection_reply_001",
+                "reply_to_sequence_no": latest_sequence + 1,
+                "selection_context": {
+                    "block_ids": ["node_entryfield00000002"],
+                    "from": 1,
+                    "to": len(changed_selection_text) + 1,
+                    "selected_text": changed_selection_text,
+                    "selected_text_hash": "sha256:"
+                    + hashlib.sha256(changed_selection_text.encode()).hexdigest(),
+                },
+                "clarification_answers": [
+                    {"question_id": "scope", "option_id": "internship"}
+                ],
+            },
+        )
+        assert selection_conflict.status_code == 409
+        assert selection_conflict.json() == {
+            "error": "AGENT_CLARIFICATION_CONTEXT_CONFLICT"
+        }
+
+        accepted = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "修改范围：实习经历",
+                "idempotency_key": "structured_reply_001",
+                "reply_to_sequence_no": latest_sequence + 1,
+                "clarification_answers": [
+                    {"question_id": "scope", "option_id": "internship"}
+                ],
+            },
+        )
+        assert accepted.status_code == 200
+        with app.state.session_factory() as db:
+            stored = db.scalar(
+                select(AgentMessage)
+                .join(AgentSession, AgentSession.id == AgentMessage.session_id)
+                .where(
+                    AgentSession.public_id == session["id"],
+                    AgentMessage.role == "user",
+                    AgentMessage.content == "修改范围：实习经历",
+                )
+            )
+            assert stored is not None
+            assert stored.metadata_json is not None
+            assert stored.metadata_json["reply_to_sequence_no"] == latest_sequence + 1
+            assert stored.metadata_json["clarification_answers"] == [
+                {
+                    "question_id": "scope",
+                    "option_id": "internship",
+                    "value": "实习经历",
+                }
+            ]
+            assert stored.metadata_json["contexts"][0]["type"] == "resume"
+            assert stored.metadata_json["contexts"][0]["id"] == resume["id"]
+            assert stored.metadata_json["selection_context"] == selection_context
+            structured_run = db.get(AgentRun, stored.run_id)
+            assert structured_run is not None
+        assert _current_clarification_answers(app, structured_run.public_id) == [
+            {
+                "question_id": "scope",
+                "option_id": "internship",
+                "value": "实习经历",
+            }
+        ]
 
 
 def test_pi_stream_persists_structured_clarification_only_after_success(
@@ -1954,7 +2288,8 @@ async def _collect_stream_events(app, run_id: str, content: str) -> list[bytes]:
 
 
 def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
-    app = build_app()
+    emitter = CapturingEmitter()
+    app = build_app(event_emitter=emitter)
     with TestClient(app) as client:
         register(client, "agent-tool-terminal@example.test")
         session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
@@ -1965,7 +2300,18 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
             "tool_name": "list_user_resources",
             "status": "running",
         }
-        succeeded = {**running, "status": "succeeded", "duration_ms": 17}
+        succeeded = {
+            **running,
+            "status": "succeeded",
+            "duration_ms": 17,
+            "stage": "list_user_resources",
+            "result": "resolved",
+            "scope": "target",
+            "selection_present": True,
+            "candidate_count": 1,
+            "target_field": "location",
+            "base_lock_version": 7,
+        }
 
         assert (
             client.post(path, headers=internal_headers(), json=running).status_code
@@ -1990,6 +2336,23 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
             assert record is not None
             assert record.status == "succeeded"
             assert record.duration_ms == 17
+        completed_event = next(
+            item
+            for item in emitter.system_events
+            if item.get("action") == "list_user_resources"
+            and item.get("result") == "resolved"
+        )
+        assert completed_event == {
+            **completed_event,
+            "stage": "list_user_resources",
+            "scope": "target",
+            "selection_present": True,
+            "candidate_count": 1,
+            "target_field": "location",
+            "base_lock_version": 7,
+            "duration_ms": 17,
+        }
+        assert "content" not in completed_event
 
 
 def test_agent_readiness_checks_model_config_and_full_service_chain(
@@ -2173,9 +2536,7 @@ def test_agent_session_delete_cleans_only_target_dependencies_in_order() -> None
     with TestClient(app) as client:
         register(client, "agent-session-delete-cleanup@example.test")
         target_resume = create_resume(client, app)
-        target = client.post(
-            "/api/agent/sessions", json={"resume_id": target_resume["id"]}
-        ).json()["session"]
+        target = client.post("/api/agent/sessions", json={}).json()["session"]
         other = client.post("/api/agent/sessions", json={}).json()["session"]
         target_run_id = create_active_run(app, target["id"])
         other_run_id = create_active_run(app, other["id"])
@@ -2185,6 +2546,7 @@ def test_agent_session_delete_cleans_only_target_dependencies_in_order() -> None
             headers=internal_headers(),
             json={
                 "call_key": "session-delete-proposal",
+                "resume_id": target_resume["id"],
                 "data": target_resume["data"],
                 "style": target_resume["style"],
                 "summary": "会话删除测试提案",

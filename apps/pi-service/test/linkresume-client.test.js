@@ -51,7 +51,7 @@ test("scoped tools call run-bound LinkResume endpoints", async (context) => {
 
   await client.resolveResumeReference({ title: "张三的测试简历" });
   await client.listUserResources({ types: ["resume", "dataset", "interview"] });
-  await client.resolveTarget({ quoted_text: "目标" });
+  await client.resolveTarget({ resume_id: "1", quoted_text: "目标" });
   await client.scopedContext({ target: { resume_id: "1" }, scope: "target" });
   await client.searchMaterials({ query: "Java" });
   await client.diagnose({ target: { resume_id: "1" }, scope: "target" });
@@ -69,4 +69,5 @@ test("scoped tools call run-bound LinkResume endpoints", async (context) => {
     "/internal/agent/runs/run%2Fwith%20spaces/proposals:translation",
   ]);
   assert.ok(calls.every((call) => call.options.method === "POST"));
+  assert.deepEqual(JSON.parse(calls[2].options.body), { resume_id: "1", quoted_text: "目标" });
 });

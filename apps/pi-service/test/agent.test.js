@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   agentUsage,
   assertAgentCompleted,
+  buildAgentConversation,
   createAssistantOutputFilter,
   createSkillReadTool,
   clarificationFallbackText,
@@ -48,6 +49,23 @@ test("system prompt applies the user-facing response style after agent policy", 
       SYSTEM_PROMPT.indexOf("以下规则只约束用户最终能够看到的自然语言回复"),
   );
   assert.doesNotMatch(SYSTEM_PROMPT, /Claude Code|IS_TEXT_OUTPUT_VISIBLE_TO_USER/);
+});
+
+test("current structured clarification answers are authoritative in the agent prompt", () => {
+  const prompt = buildAgentConversation({
+    history: [{ role: "assistant", content: "你想修改哪一部分？" }],
+    clarificationAnswers: [{
+      question_id: "scope",
+      option_id: "internship",
+      value: "实习经历",
+    }],
+    content: "修改范围：其他展示文本",
+  });
+
+  assert.match(prompt, /本轮权威值/);
+  assert.match(prompt, /"question_id":"scope"/);
+  assert.match(prompt, /"value":"实习经历"/);
+  assert.match(prompt, /用户本轮请求/);
 });
 
 test("agent completion accepts a successful assistant message", () => {
