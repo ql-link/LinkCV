@@ -320,7 +320,6 @@ export type AgentContextListResponse = {
 
 export type AgentSession = {
   id: string;
-  resume_id: string | null;
   title: string;
   pinned: boolean;
   status: "active" | "archived";
@@ -1223,6 +1222,11 @@ async function streamAgentMessage(
     selection_context?: AgentSelectionContext;
     contexts?: AgentContextRef[];
     reply_to_sequence_no?: number;
+    clarification_answers?: Array<{
+      question_id: string;
+      option_id: string;
+      value?: string;
+    }>;
   },
   signal: AbortSignal,
   onEvent: (event: AgentStreamEvent) => void,
@@ -1409,10 +1413,8 @@ export const api = {
       `/api/resumes/${encodeURIComponent(id)}/pdf?lock_version=${encodeURIComponent(lockVersion)}`,
       signal,
     ),
-  listAgentSessions: (resumeId?: string) =>
-    request<{ sessions: AgentSession[] }>(
-      `/api/agent/sessions${resumeId ? `?resume_id=${encodeURIComponent(resumeId)}` : ""}`,
-    ),
+  listAgentSessions: () =>
+    request<{ sessions: AgentSession[] }>("/api/agent/sessions"),
   getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
   getAgentModel: () => request<{ model: AgentModelSummary }>("/api/agent/model"),
   listAgentContexts: (options: {
@@ -1445,11 +1447,10 @@ export const api = {
     request<{ run: AgentActiveRun | null }>(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}/active-run`,
     ),
-  createAgentSession: (resumeId?: string | null, title?: string) =>
+  createAgentSession: (title?: string) =>
     request<{ session: AgentSession }>("/api/agent/sessions", {
       method: "POST",
       body: {
-        ...(resumeId ? { resume_id: resumeId } : {}),
         ...(title ? { title } : {}),
       },
     }),

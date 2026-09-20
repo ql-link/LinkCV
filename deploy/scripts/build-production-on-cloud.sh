@@ -49,6 +49,7 @@ backup_root="${deploy_dir}/backups/production-cutover"
 docker_network="tolink-app-net"
 http_port="4174"
 cutover_started="false"
+schema_migration_started="false"
 asset_container=""
 
 cleanup() {
@@ -61,7 +62,8 @@ cleanup() {
 }
 finish() {
   exit_status=$?
-  if [[ "${exit_status}" -ne 0 && "${cutover_started}" == "true" ]] && \
+  if [[ "${exit_status}" -ne 0 && "${cutover_started}" == "true" && \
+    "${schema_migration_started}" != "true" ]] && \
     declare -F rollback_old_application >/dev/null; then
     rollback_old_application || true
   fi
@@ -344,6 +346,20 @@ docker run --rm \
   "${image}:${tag}" \
   python /app/scripts/db/init_mysql.py
 
+# Forward-only migrations may remove columns used by the previous LinkResume
+# image. Stop its readers and writers before migration, and never auto-restore
+# it afterward unless the database is restored as well. The one-time legacy
+# LinkCV stack uses SQLite and remains online until its separate import window.
+if [[ "${old_container}" == "linkresume" ]]; then
+  cutover_started="true"
+  for runtime_container in linkresume linkresume-worker linkresume-pi; do
+    if docker inspect "${runtime_container}" >/dev/null 2>&1; then
+      docker stop "${runtime_container}" >/dev/null
+    fi
+  done
+  schema_migration_started="true"
+fi
+
 docker run --rm \
   --network "${docker_network}" \
   --env-file "${base_env}" \
@@ -359,7 +375,9 @@ docker run --rm \
 if [[ "${import_legacy_sqlite}" == "true" ]]; then
   sqlite_backup="${backup_dir}/resume_app.sqlite"
   cutover_started="true"
-  docker stop linkresume >/dev/null
+  if docker inspect "${old_container}" >/dev/null 2>&1; then
+    docker stop "${old_container}" >/dev/null
+  fi
   if ! sqlite3 "${legacy_sqlite}" ".backup '${sqlite_backup}'"; then
     echo "Failed to create a consistent legacy SQLite backup" >&2
     exit 18
@@ -428,7 +446,11 @@ done
 
 TAG="${tag}" PI_TAG="${tag}" \
   docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi linkresume-worker promtail || true
-echo "Production health check timed out; restoring previous application" >&2
-rollback_old_application || true
+if [[ "${schema_migration_started}" == "true" ]]; then
+  echo "Production health check timed out; previous application was not restored because a forward-only schema migration started. Restore the database backup before using an older image." >&2
+else
+  echo "Production health check timed out; restoring the schema-compatible previous application." >&2
+  rollback_old_application || true
+fi
 cutover_started="false"
 exit 17

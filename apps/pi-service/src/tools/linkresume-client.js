@@ -36,7 +36,9 @@ export function createLinkResumeClient(config, runId, signal) {
   return {
     readiness: () => request("/internal/agent/readiness"),
     runtimeConfig: () => request(`/internal/agent/runtime-config?run_id=${encodeURIComponent(runId)}`),
-    context: () => request(`/internal/agent/runs/${encodeURIComponent(runId)}/context`),
+    context: (resumeId) => request(
+      `/internal/agent/runs/${encodeURIComponent(runId)}/context?resume_id=${encodeURIComponent(resumeId)}`,
+    ),
     resolveResumeReference: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/resumes:resolve-reference`, {
       method: "POST",
       body: JSON.stringify(payload),

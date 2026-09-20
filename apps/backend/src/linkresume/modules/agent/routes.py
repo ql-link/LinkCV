@@ -1,8 +1,9 @@
+from uuid import NAMESPACE_URL, uuid5
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-
 from linkresume.core.database import get_db, utc_now
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import AssetStorage, get_storage
@@ -22,6 +23,7 @@ from linkresume.modules.agent.pi_client import (
 from linkresume.modules.agent.schemas import (
     ActiveRunRecord,
     ActiveRunResponse,
+    AgentContextRef,
     AgentContextListResponse,
     AgentModelResponse,
     AgentReadinessResponse,
@@ -36,6 +38,7 @@ from linkresume.modules.agent.schemas import (
 )
 from linkresume.modules.agent.run_stream import get_agent_run_stream_hub
 from linkresume.modules.agent.service import (
+    clarification_context_state,
     confirm_proposal,
     create_run,
     create_session,
@@ -55,6 +58,35 @@ from linkresume.modules.resumes.pdf_service import (
     validate_resume_pdf_asset_contract,
 )
 from linkresume.modules.resumes.schemas import ResumeResponse
+
+
+def _merge_message_contexts(
+    explicit: list[AgentContextRef] | None,
+    inherited: list[AgentContextRef],
+) -> list[AgentContextRef]:
+    merged = {item.type: item for item in inherited}
+    for item in explicit or []:
+        inherited_item = merged.get(item.type)
+        if inherited_item is not None and (
+            inherited_item.id != item.id
+            or inherited_item.version_id != item.version_id
+        ):
+            raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
+        if inherited_item is None:
+            merged[item.type] = item
+    return list(merged.values())
+
+
+def _message_operation_id(session: AgentSession, idempotency_key: str) -> str:
+    """Keep concurrent retries on the same observable operation chain."""
+
+    return str(
+        uuid5(
+            NAMESPACE_URL,
+            f"linkresume:agent-message:{session.public_id}:{idempotency_key}",
+        )
+    )
+
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -145,7 +177,6 @@ def create_agent_session(
             create_session(
                 db,
                 user_id=user.id,
-                resume_id=payload.resume_id,
                 title=payload.title,
             )
         )
@@ -154,15 +185,10 @@ def create_agent_session(
 
 @router.get("/sessions", response_model=SessionListResponse)
 def list_agent_sessions(
-    resume_id: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> SessionListResponse:
     query = select(AgentSession).where(AgentSession.user_id == user.id)
-    if resume_id is not None:
-        if not resume_id.isascii() or not resume_id.isdecimal():
-            raise ApiError(404, "RESUME_NOT_FOUND")
-        query = query.where(AgentSession.resume_id == int(resume_id))
     records = db.scalars(
         query.order_by(
             AgentSession.pinned.desc(),
@@ -325,25 +351,138 @@ async def send_agent_message(
             AgentRun.idempotency_key == payload.idempotency_key,
         )
     )
-    resolved_contexts = (
-        resolve_contexts(
-            db,
-            user_id=user.id,
-            refs=payload.contexts,
-            storage=request.app.state.storage,
-            settings=request.app.state.settings,
-        )
-        if existing_run is None
-        else None
+    operation_id = (
+        existing_run.public_id
+        if existing_run is not None
+        else _message_operation_id(session, payload.idempotency_key)
     )
-    run, created = create_run(
-        db,
-        session=session,
-        content=payload.content,
-        idempotency_key=payload.idempotency_key,
-        timeout_seconds=request.app.state.settings.agent_run_timeout_seconds,
-        reply_to_sequence_no=payload.reply_to_sequence_no,
-        context_snapshots=resolved_contexts.snapshots if resolved_contexts else None,
+    request.state.operation_id = operation_id
+    resolved_contexts = None
+    resolved_selection = payload.selection_context
+    if existing_run is None:
+        request.app.state.event_emitter.system(
+            "INFO",
+            "agent context preflight",
+            logger="linkresume.agent",
+            actor_user_id=user.id,
+            operation_id=operation_id,
+            action="send_agent_message",
+            stage="context_preflight",
+            result="started",
+            scope=(
+                "clarification_reply"
+                if payload.reply_to_sequence_no is not None
+                else "message"
+            ),
+            selection_present=payload.selection_context is not None,
+        )
+        try:
+            inherited_contexts, inherited_selection = clarification_context_state(
+                db,
+                session=session,
+                reply_to_sequence_no=payload.reply_to_sequence_no,
+            )
+            if (
+                inherited_selection is not None
+                and payload.selection_context is not None
+                and inherited_selection != payload.selection_context
+            ):
+                raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
+            resolved_selection = inherited_selection or payload.selection_context
+            context_refs = _merge_message_contexts(
+                payload.contexts, inherited_contexts
+            )
+            if resolved_selection is not None and not any(
+                item.type == "resume" for item in context_refs
+            ):
+                raise ApiError(422, "AGENT_RESUME_REQUIRED")
+            resolved_contexts = resolve_contexts(
+                db,
+                user_id=user.id,
+                refs=context_refs,
+                storage=request.app.state.storage,
+                settings=request.app.state.settings,
+            )
+        except Exception as error:
+            public_error = isinstance(error, ApiError)
+            request.app.state.event_emitter.system(
+                "WARNING" if public_error else "ERROR",
+                "agent context preflight",
+                logger="linkresume.agent",
+                actor_user_id=user.id,
+                operation_id=operation_id,
+                action="send_agent_message",
+                stage="context_preflight",
+                result="failed",
+                error_code=(
+                    error.code if public_error else "AGENT_CONTEXT_PREFLIGHT_FAILED"
+                ),
+                exception_type=None if public_error else type(error).__name__,
+                scope=(
+                    "clarification_reply"
+                    if payload.reply_to_sequence_no is not None
+                    else "message"
+                ),
+                selection_present=payload.selection_context is not None,
+            )
+            raise
+        request.app.state.event_emitter.system(
+            "INFO",
+            "agent context preflight",
+            logger="linkresume.agent",
+            actor_user_id=user.id,
+            operation_id=operation_id,
+            action="send_agent_message",
+            stage="context_preflight",
+            result="succeeded",
+            scope=(
+                "clarification_reply"
+                if payload.reply_to_sequence_no is not None
+                else "message"
+            ),
+            selection_present=payload.selection_context is not None,
+            candidate_count=len(resolved_contexts.snapshots),
+        )
+    try:
+        run, created = create_run(
+            db,
+            session=session,
+            content=payload.content,
+            idempotency_key=payload.idempotency_key,
+            timeout_seconds=request.app.state.settings.agent_run_timeout_seconds,
+            public_id=operation_id,
+            reply_to_sequence_no=payload.reply_to_sequence_no,
+            clarification_answers=payload.clarification_answers,
+            context_snapshots=(
+                resolved_contexts.snapshots if resolved_contexts else None
+            ),
+            selection_context=resolved_selection,
+        )
+    except Exception as error:
+        public_error = isinstance(error, ApiError)
+        request.app.state.event_emitter.system(
+            "WARNING" if public_error else "ERROR",
+            "agent run creation",
+            logger="linkresume.agent",
+            actor_user_id=user.id,
+            operation_id=operation_id,
+            action="send_agent_message",
+            stage="run_creation",
+            result="failed",
+            error_code=error.code if public_error else "AGENT_RUN_CREATION_FAILED",
+            exception_type=None if public_error else type(error).__name__,
+        )
+        raise
+    request.state.operation_id = run.public_id
+    request.app.state.event_emitter.system(
+        "INFO",
+        "agent run creation",
+        logger="linkresume.agent",
+        actor_user_id=user.id,
+        operation_id=run.public_id,
+        action="send_agent_message",
+        stage="run_creation",
+        result="created" if created else "replayed",
     )
     if not created:
 
@@ -363,12 +502,9 @@ async def send_agent_message(
             request.app,
             run.public_id,
             payload.content.strip(),
-            payload.selection_context,
-            (
-                resolved_contexts.materials
-                if payload.contexts is not None and resolved_contexts is not None
-                else None
-            ),
+            resolved_selection,
+            resolved_contexts.materials if resolved_contexts is not None else None,
+            actor_user_id=user.id,
         ),
     )
     return StreamingResponse(
