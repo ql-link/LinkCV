@@ -2213,7 +2213,13 @@ select:not([data-slot]):focus-visible {
 .resume-column-handle:hover::before,
 .resume-column-handle:focus-visible::before { opacity: 0.45; }
 .resume-column-handle:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -1px; }
-.resume-layout-row.is-active {
+.resume-layout-row.is-active,
+[data-type="resume-trio-row"].is-active,
+[data-type="resume-meta-row"].is-active,
+.resume-layout-column.is-active,
+.resume-layout-columns.is-active,
+.react-renderer.is-active > .resume-layout-row {
+  border-radius: 5px;
   background: rgba(52, 120, 246, 0.055);
   box-shadow: 0 0 0 1px rgba(52, 120, 246, 0.2);
 }

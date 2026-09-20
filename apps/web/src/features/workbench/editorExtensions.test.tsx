@@ -10,6 +10,74 @@ import { setResumeRowColumns } from "./editorCommands";
 
 let editor: Editor | null = null;
 
+function nodePos(typeName: string) {
+  let pos = -1;
+  editor!.state.doc.descendants((node, nodePos) => {
+    if (node.type.name === typeName) pos = nodePos;
+  });
+  return pos;
+}
+
+const nodeAt = (typeName: string) => editor!.state.doc.nodeAt(nodePos(typeName));
+
+function createEditor(content: object) {
+  editor = new Editor({ extensions: resumeEditorExtensions, content });
+  return editor;
+}
+
+// 布局节点内首个/末个可见叶子的边界（跳过结构锚点，兼容锚点是否已注入）。
+function leafRange(pos: number, node: PMNode) {
+  let first = -1;
+  let last = -1;
+  node.descendants((child, offset) => {
+    if (child.isLeaf) {
+      if (child.type.name !== "resumeBlockAnchor") {
+        const childPos = pos + 1 + offset;
+        if (first < 0) first = childPos;
+        last = childPos + child.nodeSize;
+      }
+      return false;
+    }
+    return true;
+  });
+  return { first, last };
+}
+
+function rowTextRange() {
+  const pos = nodePos("resumeRow");
+  const node = editor!.state.doc.nodeAt(pos)!;
+  const { first, last } = leafRange(pos, node);
+  return { pos, node, from: first, to: last };
+}
+
+function setTextSel(from: number, to: number) {
+  const { doc, tr } = editor!.state;
+  editor!.view.dispatch(tr.setSelection(TextSelection.create(doc, from, to)));
+}
+
+function fakeClipboardEvent(type: "copy" | "cut") {
+  const store: Record<string, string> = {};
+  const event = {
+    type,
+    clipboardData: {
+      clearData: () => { Object.keys(store).forEach((k) => delete store[k]); },
+      setData: (t: string, v: string) => { store[t] = v; },
+      getData: (t: string) => store[t] ?? "",
+    },
+    preventDefault: vi.fn(),
+  };
+  const handled = editor!.view.someProp(
+    "handleDOMEvents",
+    (handlers: Record<string, unknown>) => (
+      typeof handlers?.[type] === "function"
+        ? (handlers[type] as (v: unknown, e: unknown) => boolean)(editor!.view, event)
+        : null
+    ),
+  );
+  return { event, store, handled };
+}
+
+
 // jsdom 没有 ClipboardEvent，view.pasteHTML 需要一个占位类。
 if (!globalThis.ClipboardEvent) {
   (globalThis as Record<string, unknown>).ClipboardEvent = class extends Event {};
@@ -503,72 +571,6 @@ describe("分栏结构剪切复制", () => {
     ],
   };
 
-  function nodePos(typeName: string) {
-    let pos = -1;
-    editor!.state.doc.descendants((node, nodePos) => {
-      if (node.type.name === typeName) pos = nodePos;
-    });
-    return pos;
-  }
-
-  const nodeAt = (typeName: string) => editor!.state.doc.nodeAt(nodePos(typeName));
-
-  function createEditor(content: object) {
-    editor = new Editor({ extensions: resumeEditorExtensions, content });
-    return editor;
-  }
-
-  // 布局节点内首个/末个可见叶子的边界（跳过结构锚点，兼容锚点是否已注入）。
-  function leafRange(pos: number, node: PMNode) {
-    let first = -1;
-    let last = -1;
-    node.descendants((child, offset) => {
-      if (child.isLeaf) {
-        if (child.type.name !== "resumeBlockAnchor") {
-          const childPos = pos + 1 + offset;
-          if (first < 0) first = childPos;
-          last = childPos + child.nodeSize;
-        }
-        return false;
-      }
-      return true;
-    });
-    return { first, last };
-  }
-
-  function rowTextRange() {
-    const pos = nodePos("resumeRow");
-    const node = editor!.state.doc.nodeAt(pos)!;
-    const { first, last } = leafRange(pos, node);
-    return { pos, node, from: first, to: last };
-  }
-
-  function setTextSel(from: number, to: number) {
-    const { doc, tr } = editor!.state;
-    editor!.view.dispatch(tr.setSelection(TextSelection.create(doc, from, to)));
-  }
-
-  function fakeClipboardEvent(type: "copy" | "cut") {
-    const store: Record<string, string> = {};
-    const event = {
-      type,
-      clipboardData: {
-        clearData: () => { Object.keys(store).forEach((k) => delete store[k]); },
-        setData: (t: string, v: string) => { store[t] = v; },
-        getData: (t: string) => store[t] ?? "",
-      },
-      preventDefault: vi.fn(),
-    };
-    const handled = editor!.view.someProp(
-      "handleDOMEvents",
-      (handlers: Record<string, unknown>) => (
-        typeof handlers?.[type] === "function"
-          ? (handlers[type] as (v: unknown, e: unknown) => boolean)(editor!.view, event)
-          : null
-      ),
-    );
-    return { event, store, handled };
-  }
 
   it("选区覆盖整行内容时返回行节点", () => {
     createEditor(ROW_DOC);
@@ -708,5 +710,77 @@ describe("分栏结构剪切复制", () => {
     const { store } = fakeClipboardEvent("cut");
     expect(store["text/html"]).toContain('data-type="resume-columns"');
     expect(nodePos("resumeColumns")).toBe(-1);
+  });
+});
+
+describe("分栏激活外框", () => {
+  const activeClasses = () =>
+    [...editor!.view.dom.querySelectorAll(".is-active")].map((el) => el.className);
+
+  const COLUMNS_DOC = {
+    type: "doc",
+    content: [{
+      type: "resumeColumns",
+      content: [
+        {
+          type: "resumeColumn",
+          attrs: { variant: "sidebar" },
+          content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏" }] }],
+        },
+        {
+          type: "resumeColumn",
+          content: [
+            {
+              type: "resumeTrioRow",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "公司" }] },
+                { type: "paragraph", content: [{ type: "text", text: "日期" }] },
+                { type: "paragraph", content: [{ type: "text", text: "岗位" }] },
+              ],
+            },
+            { type: "paragraph", content: [{ type: "text", text: "列内段落" }] },
+          ],
+        },
+      ],
+    }],
+  };
+
+  it("光标在三栏行内时该行显示 is-active", () => {
+    createEditor(COLUMNS_DOC);
+    const pos = nodePos("resumeTrioRow");
+    setTextSel(pos + 3, pos + 3);
+    const trio = editor!.view.dom.querySelector('[data-type="resume-trio-row"]');
+    expect(trio?.classList.contains("is-active")).toBe(true);
+  });
+
+  it("光标在列内普通段落时该列显示 is-active", () => {
+    createEditor(COLUMNS_DOC);
+    // “列内段落”在第二个 resumeColumn 里
+    let paraPos = -1;
+    editor!.state.doc.descendants((n, p) => {
+      if (n.type.name === "paragraph" && n.textContent === "列内段落") paraPos = p;
+    });
+    setTextSel(paraPos + 3, paraPos + 3);
+    const col = [...editor!.view.dom.querySelectorAll('[data-type="resume-column"]')]
+      .find((el) => el.classList.contains("is-active"));
+    expect(col?.classList.contains("resume-layout-column-main")).toBe(true);
+    expect(editor!.view.dom.querySelector('[data-type="resume-trio-row"]')?.classList.contains("is-active")).toBe(false);
+  });
+
+  it("选区完整覆盖三栏行时外框落在该行而不是外层容器", () => {
+    createEditor(COLUMNS_DOC);
+    const pos = nodePos("resumeTrioRow");
+    const node = editor!.state.doc.nodeAt(pos)!;
+    const { first, last } = leafRange(pos, node);
+    setTextSel(first, last);
+    const trio = editor!.view.dom.querySelector('[data-type="resume-trio-row"]');
+    expect(trio?.classList.contains("is-active")).toBe(true);
+    expect(editor!.view.dom.querySelector('[data-type="resume-columns"]')?.classList.contains("is-active")).toBeFalsy();
+  });
+
+  it("光标在普通正文里没有激活外框", () => {
+    createEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "普通段落" }] }] });
+    setTextSel(2, 2);
+    expect(activeClasses()).toHaveLength(0);
   });
 });

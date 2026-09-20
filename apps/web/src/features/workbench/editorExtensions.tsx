@@ -8,9 +8,9 @@ import TextStyle from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from "@tiptap/pm/model";
-import type { EditorView } from "@tiptap/pm/view";
+import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import {
   AlignCenter,
   AlignLeft,
@@ -1138,6 +1138,43 @@ export const fullyCoveredResumeLayoutNode = (selection: TextSelection): { node: 
   return null;
 };
 
+// 光标或选区落在某个分栏/布局节点内部时，给它加 is-active 外框。
+// resumeRow 的 NodeView 自己会加同样的类，这里兜底静态渲染的
+// trio/meta 行与整组分栏容器；非折叠选区优先标出将被整体剪切的结构节点。
+const RESUME_LAYOUT_FRAME_NAMES = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow", "resumeColumn", "resumeColumns"]);
+
+const innermostFramedNode = (state: EditorState): { node: PMNode; pos: number } | null => {
+  const { $from, to } = state.selection;
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth);
+    if (!RESUME_LAYOUT_FRAME_NAMES.has(node.type.name)) continue;
+    const pos = $from.before(depth);
+    if (to <= pos + node.nodeSize) return { node, pos };
+    return null;
+  }
+  return null;
+};
+
+export const ResumeLayoutActiveFrame = Extension.create({
+  name: "resumeLayoutActiveFrame",
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      key: new PluginKey("resumeLayoutActiveFrame"),
+      props: {
+        decorations: (state) => {
+          const target = state.selection instanceof TextSelection && !state.selection.empty
+            ? fullyCoveredResumeLayoutNode(state.selection) ?? innermostFramedNode(state)
+            : innermostFramedNode(state);
+          if (!target) return null;
+          return DecorationSet.create(state.doc, [
+            Decoration.node(target.pos, target.pos + target.node.nodeSize, { class: "is-active" }),
+          ]);
+        },
+      },
+    })];
+  },
+});
+
 export const ResumeLayoutClipboard = Extension.create({
   name: "resumeLayoutClipboard",
   addProseMirrorPlugins() {
@@ -1223,4 +1260,5 @@ export const resumeEditorExtensions: Extensions = [
   InlineIcon,
   ResumeAtomPointerSelection,
   ResumeLayoutClipboard,
+  ResumeLayoutActiveFrame,
 ];
