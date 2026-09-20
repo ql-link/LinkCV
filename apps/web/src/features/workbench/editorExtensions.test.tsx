@@ -753,7 +753,7 @@ describe("分栏激活外框", () => {
     expect(trio?.classList.contains("is-active")).toBe(true);
   });
 
-  it("光标在列内普通段落时该列显示 is-active", () => {
+  it("光标在列内普通段落时不显示任何外框", () => {
     createEditor(COLUMNS_DOC);
     // “列内段落”在第二个 resumeColumn 里
     let paraPos = -1;
@@ -761,10 +761,7 @@ describe("分栏激活外框", () => {
       if (n.type.name === "paragraph" && n.textContent === "列内段落") paraPos = p;
     });
     setTextSel(paraPos + 3, paraPos + 3);
-    const col = [...editor!.view.dom.querySelectorAll('[data-type="resume-column"]')]
-      .find((el) => el.classList.contains("is-active"));
-    expect(col?.classList.contains("resume-layout-column-main")).toBe(true);
-    expect(editor!.view.dom.querySelector('[data-type="resume-trio-row"]')?.classList.contains("is-active")).toBe(false);
+    expect(activeClasses()).toHaveLength(0);
   });
 
   it("选区完整覆盖三栏行时外框落在该行而不是外层容器", () => {

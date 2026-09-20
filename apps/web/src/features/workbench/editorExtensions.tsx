@@ -1138,10 +1138,11 @@ export const fullyCoveredResumeLayoutNode = (selection: TextSelection): { node: 
   return null;
 };
 
-// 光标或选区落在某个分栏/布局节点内部时，给它加 is-active 外框。
-// resumeRow 的 NodeView 自己会加同样的类，这里兜底静态渲染的
-// trio/meta 行与整组分栏容器；非折叠选区优先标出将被整体剪切的结构节点。
-const RESUME_LAYOUT_FRAME_NAMES = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow", "resumeColumn", "resumeColumns"]);
+// 光标或选区落在某个分栏行/页头行内部时，给它加 is-active 外框。
+// resumeRow 的 NodeView 自己会加同样的类，这里兜底静态渲染的 trio/meta 行；
+// 栏/分栏容器不给常态外框（正文几乎都住在栏里，点了会整片染色），
+// 只有选区完整覆盖整个结构、即将被整体剪切时才标出容器本身。
+const RESUME_LAYOUT_FRAME_NAMES = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow"]);
 
 const innermostFramedNode = (state: EditorState): { node: PMNode; pos: number } | null => {
   const { $from, to } = state.selection;

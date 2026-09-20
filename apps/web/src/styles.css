@@ -2216,7 +2216,6 @@ select:not([data-slot]):focus-visible {
 .resume-layout-row.is-active,
 [data-type="resume-trio-row"].is-active,
 [data-type="resume-meta-row"].is-active,
-.resume-layout-column.is-active,
 .resume-layout-columns.is-active,
 .react-renderer.is-active > .resume-layout-row {
   border-radius: 5px;
