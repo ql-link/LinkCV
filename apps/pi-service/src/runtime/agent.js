@@ -19,6 +19,27 @@ const objectSchema = (properties, required = []) => ({
   additionalProperties: false,
 });
 
+export function materializeProposalOperations(operations, scopedContext) {
+  const targetsByBlockId = new Map();
+  for (const candidate of [scopedContext?.target, ...(scopedContext?.blocks ?? []).map((item) => item?.target)]) {
+    if (candidate?.block_id) targetsByBlockId.set(candidate.block_id, candidate);
+  }
+  return operations.map((operation) => {
+    const target = targetsByBlockId.get(operation.block_id);
+    if (!target?.expected_text_hash) {
+      const error = new Error("PATCH_OUT_OF_SCOPE");
+      error.code = "PATCH_OUT_OF_SCOPE";
+      throw error;
+    }
+    return {
+      op: operation.op,
+      target,
+      new_text: operation.new_text,
+      expected_text_hash: target.expected_text_hash,
+    };
+  });
+}
+
 const AGENT_POLICY_PROMPT = `你是 LinkResume 的职业与简历智能助手，只能服务当前已授权运行。
 每轮必须先用 read 读取 career-assistant-router/SKILL.md。仅盘点用户已有简历、资料或面试记录时，可以直接调用 list_user_resources；其他请求再按路由结果读取且只读取一个主工作流 Skill。
 简历编辑请求进入 resume-edit-workflow，并严格执行其中的定位、读取和诊断顺序；诊断后只能选择一个执行 Skill：resume-edit-local、resume-edit-entry-star、resume-generate-from-materials。
@@ -350,6 +371,7 @@ export async function executeAgentRun({
   let selectedWorkflow = null;
   let selectedMode = null;
   let resolvedTarget = null;
+  let scopedContextResult = null;
   let resumeContextLoaded = false;
   let diagnosisResult = null;
   let pendingClarification = null;
@@ -511,6 +533,7 @@ export async function executeAgentRun({
         scope_hint: params.scope_hint ?? "target",
       });
       resolvedTarget = result.status === "resolved" ? result.target : null;
+      scopedContextResult = null;
       resumeContextLoaded = false;
       diagnosisResult = null;
       return {
@@ -545,6 +568,7 @@ export async function executeAgentRun({
         ...(params.resume_id ? { resume_id: params.resume_id } : {}),
       });
       resolvedTarget = result.status === "resolved" ? result.target : null;
+      scopedContextResult = null;
       resumeContextLoaded = false;
       diagnosisResult = null;
       return {
@@ -596,6 +620,7 @@ export async function executeAgentRun({
       requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title");
       if (!resolvedTarget) throw new Error("TARGET_RESOLUTION_REQUIRED");
       const result = await client.scopedContext({ target: resolvedTarget, scope: params.scope });
+      scopedContextResult = result;
       if (params.scope === "resume") resumeContextLoaded = true;
       return {
         value: result,
@@ -665,10 +690,9 @@ export async function executeAgentRun({
         maxItems: 20,
         items: objectSchema({
           op: { type: "string", enum: ["replace_target_text", "insert_after_target"] },
-          target: { type: "object" },
+          block_id: { type: "string", pattern: "^node_[a-z0-9]{16,64}$" },
           new_text: { type: "string", minLength: 0, maxLength: 20000 },
-          expected_text_hash: { type: "string", pattern: "^sha256:[a-f0-9]{64}$" },
-        }, ["op", "target", "new_text", "expected_text_hash"]),
+        }, ["op", "block_id", "new_text"]),
       },
       rationale: { type: "array", items: { type: "object" }, maxItems: 20 },
       source_ids: { type: "array", items: { type: "string" }, maxItems: 20 },
@@ -677,15 +701,17 @@ export async function executeAgentRun({
     run: async (params, toolCallId) => {
       requireWorkflow("resume_edit");
       if (!resolvedTarget) throw new Error("TARGET_RESOLUTION_REQUIRED");
+      if (!scopedContextResult) throw new Error("CONTEXT_READ_REQUIRED");
       if (!diagnosisResult) throw new Error("DIAGNOSIS_REQUIRED");
       if (!selectedMode || selectedMode !== params.mode) throw new Error("SKILL_MODE_CONFLICT");
+      const operations = materializeProposalOperations(params.operations, scopedContextResult);
       const result = await client.scopedProposal({
           call_key: toolCallId,
           mode: params.mode,
           target: resolvedTarget,
           diagnosis: diagnosisResult.diagnosis,
           diagnosis_fingerprint: diagnosisResult.diagnosis_fingerprint,
-          operations: params.operations,
+          operations,
           rationale: params.rationale ?? [],
           source_ids: params.source_ids ?? [],
           summary: params.summary,

@@ -9,6 +9,7 @@ import {
   createSkillReadTool,
   clarificationFallbackText,
   formatContextMaterials,
+  materializeProposalOperations,
   SYSTEM_PROMPT,
   USER_FACING_RESPONSE_PROMPT,
 } from "../src/runtime/agent.js";
@@ -66,6 +67,46 @@ test("current structured clarification answers are authoritative in the agent pr
   assert.match(prompt, /"question_id":"scope"/);
   assert.match(prompt, /"value":"实习经历"/);
   assert.match(prompt, /用户本轮请求/);
+});
+
+test("proposal operations use only server-read locators and hashes", () => {
+  const target = {
+    resume_id: "88",
+    base_lock_version: 1,
+    surface: "editor",
+    section: "skills",
+    entry_id: null,
+    field: "markdown",
+    item_id: null,
+    block_id: "node_skillblock000001",
+    selected_text: "Go：能够构建服务。",
+    expected_text_hash: `sha256:${"a".repeat(64)}`,
+  };
+  assert.deepEqual(
+    materializeProposalOperations(
+      [{
+        op: "replace_target_text",
+        block_id: target.block_id,
+        new_text: "Go：使用 Gin 构建服务。",
+        target: { resume_id: "999" },
+        expected_text_hash: `sha256:${"b".repeat(64)}`,
+      }],
+      { target, blocks: [{ target }] },
+    ),
+    [{
+      op: "replace_target_text",
+      target,
+      new_text: "Go：使用 Gin 构建服务。",
+      expected_text_hash: target.expected_text_hash,
+    }],
+  );
+  assert.throws(
+    () => materializeProposalOperations(
+      [{ op: "replace_target_text", block_id: "node_unknownblock0001", new_text: "x" }],
+      { target, blocks: [{ target }] },
+    ),
+    /PATCH_OUT_OF_SCOPE/,
+  );
 });
 
 test("agent completion accepts a successful assistant message", () => {

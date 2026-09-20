@@ -1407,6 +1407,78 @@ def test_whole_block_proposal_materializes_before_text_and_confirms() -> None:
         assert role["value"] == "示例公司 · 高级后端工程师"
 
 
+def test_section_anchor_can_authorize_one_local_child_block() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-section-anchor@example.test")
+        resume = create_resume(client, app)
+        markdown = "\n\n".join(
+            [
+                "## [[linkresume-block:node_section000000001]]专业技能",
+                "### [[linkresume-block:node_entry00000000001]]技能清单",
+                "- [[linkresume-block:node_bullet0000000001]]熟悉 Go 服务开发",
+                "- [[linkresume-block:node_bullet0000000002]]熟悉可观测性工具",
+            ]
+        )
+        saved = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={
+                "data": editor_data(resume["data"], markdown),
+                "base_lock_version": 1,
+            },
+        )
+        assert saved.status_code == 200
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        resolved = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"resume_id": resume["id"], "quoted_text": "专业技能"},
+        )
+        assert resolved.status_code == 200
+        section_target = resolved.json()["target"]
+        context = client.post(
+            f"/internal/agent/runs/{run_id}/context:read",
+            headers=internal_headers(),
+            json={"target": section_target, "scope": "section"},
+        )
+        assert context.status_code == 200
+        child_target = next(
+            item["target"]
+            for item in context.json()["blocks"]
+            if item["target"]["block_id"] == "node_bullet0000000002"
+        )
+        diagnosed = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": section_target, "scope": "section"},
+        )
+        assert diagnosed.status_code == 200
+
+        proposed = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                "call_key": "section-child-proposal",
+                "mode": "polish_local",
+                "target": section_target,
+                "diagnosis": diagnosed.json()["diagnosis"],
+                "diagnosis_fingerprint": diagnosed.json()["diagnosis_fingerprint"],
+                "operations": [
+                    {
+                        "op": "replace_target_text",
+                        "target": child_target,
+                        "new_text": "熟悉 OpenTelemetry 与 Prometheus",
+                        "expected_text_hash": child_target["expected_text_hash"],
+                    }
+                ],
+                "summary": "细化可观测性技能表述",
+            },
+        )
+        assert proposed.status_code == 201
+
+
 def test_named_resume_local_field_can_be_resolved_and_deleted_without_session_binding() -> None:
     app = build_app()
     with TestClient(app) as client:

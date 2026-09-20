@@ -867,8 +867,23 @@ def apply_operations(
             or operation.expected_text_hash != target.expected_text_hash
         ):
             raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        if mode in {"polish_local", "generate_from_materials"} and (
-            target.block_id != main_target.block_id
+        main_is_section_anchor = main_block.block_id == main_block.section_id
+        main_is_entry_anchor = main_block.block_id == main_block.entry_id
+        local_target_is_authorized = (
+            target.block_id == main_target.block_id
+            or (
+                mode == "polish_local"
+                and main_is_section_anchor
+                and target.section == main_target.section
+            )
+            or (
+                mode == "polish_local"
+                and main_is_entry_anchor
+                and target.entry_id == main_target.entry_id
+            )
+        )
+        if mode in {"polish_local", "generate_from_materials"} and not (
+            local_target_is_authorized
         ):
             raise ApiError(422, "PATCH_OUT_OF_SCOPE")
         blocks = parse_editor_blocks(updated)

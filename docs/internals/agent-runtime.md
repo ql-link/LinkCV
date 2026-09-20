@@ -24,7 +24,7 @@ FastAPI 使用进程内后台任务独立消费 Pi 流，浏览器的初始 POST
 
 1. FastAPI 创建独立的 Agent session/run/message；session 不保存默认简历。发送前通过唯一的 `contexts` 协议重新解析浏览器选择的简历、资料库文件等轻量引用；简历界面同样提交 `{type:"resume",id}`，并在这一边界转换为当前消息的快照与有界材料，再以服务 token 调用 Pi。Web 持久化并回读消息时仍以结构化 `contexts` 识别引用，在用户气泡正文的原位置渲染内联文件单元，不依赖或重复展示文件名标签；运行阶段只在当前消息附近呈现，不在消息区顶部复制状态标题。已有对话的 Web 输入框最多随草稿增长到 6 行，超出后仅在编辑区内滚动；新建对话继续使用独立的大输入框布局。这些输入框尺寸和位置只属于客户端呈现，不进入消息协议或持久化数据。成功终态清空下一轮输入草稿与引用，失败或停止终态保留；独立助手把请求、运行和提案失败投影到页面根层的统一顶部反馈浮层，不改变服务端错误码或终态。助手 Markdown 在共享渲染边界处理标题、软换行、分隔线、表格、列表、引用、链接和代码等常见语法，围栏代码提供复制操作，禁用原始 HTML，并把远程图片降级为文字占位。独立助手和简历编辑器侧栏的用户消息、AI 回复正文与周边 UI 统一使用随应用发布的思源黑体；用户消息气泡与无气泡 AI 正文的呈现差异不进入消息协议或持久化数据。
 2. 登录后的 Web 可通过 `/api/agent/model` 读取当前 `pi_agent` 绑定的非敏感 `adapter/name` 摘要；此查询只解析绑定配置，不解密凭据。
-3. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前消息已授权的简历、岗位、进程、面试或资料集上下文。`resolve_resume_target` 优先沿用本轮已经解析的 locator，其次使用本轮唯一的 `resume` context；`agent_sessions` 不再包含简历字段。工具阶段的可见 `text_delta` 逐个转换为 `assistant.activity.delta`，跨多次工具调用累计在临时活动区；隐藏思考和工具调用 delta 不进入用户正文。`begin_final_response` 执行时发送 `assistant.activity.clear` 并关闭工具，下一轮可见 `text_delta` 才逐个转换为 `assistant.delta`。`list_user_resources` 可从当前 run 反查用户，并列出其简历、已解析资料和面试记录的轻量目录；目录不包含正文。用户明确指定简历名称、ID 或目录中的某一版本后，`resolve_resume_reference` 按当前用户归属解析本轮目标；局部编辑时 `resolve_resume_target` 显式携带已解析的 resume ID，在同一份简历内继续定位字段。目标 locator 随后传给范围读取、诊断和提案接口。求职进程的阶段摘要以追加式当前阶段和生命周期为真值，旧扁平字段只作迁移兼容；公开选择的 `dataset` 仅限解析成功且转换对象键属于当前用户前缀的资料。
+3. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前消息已授权的简历、岗位、进程、面试或资料集上下文。`resolve_resume_target` 优先沿用本轮已经解析的 locator，其次使用本轮唯一的 `resume` context；`agent_sessions` 不再包含简历字段。工具阶段的可见 `text_delta` 逐个转换为 `assistant.activity.delta`，跨多次工具调用累计在临时活动区；隐藏思考和工具调用 delta 不进入用户正文。`begin_final_response` 执行时发送 `assistant.activity.clear` 并关闭工具，下一轮可见 `text_delta` 才逐个转换为 `assistant.delta`。`list_user_resources` 可从当前 run 反查用户，并列出其简历、已解析资料和面试记录的轻量目录；目录不包含正文。用户明确指定简历名称、ID 或目录中的某一版本后，`resolve_resume_reference` 按当前用户归属解析本轮目标；局部编辑时 `resolve_resume_target` 显式携带已解析的 resume ID，在同一份简历内继续定位字段。范围读取结果中的 locator 由 Pi 运行时保留；模型创建修改操作时只引用已读取的 `block_id`，运行时再注入服务端 locator 与 expected-text hash，不能让模型复制或改写这些授权字段。求职进程的阶段摘要以追加式当前阶段和生命周期为真值，旧扁平字段只作迁移兼容；公开选择的 `dataset` 仅限解析成功且转换对象键属于当前用户前缀的资料。
 4. 模型调用按 `llm_capability_bindings` 选择候选，解密运行凭据并写入 `llm_call_logs`。
 5. Pi 每轮先加载 `career-assistant-router`，再选择唯一主工作流。简历上下文通过统一的 persisted canonical 解析边界读取；结构化 `InlineIcon/title_icon` 只在 Agent Markdown 边界序列化为白名单 `:icon[Name]:`。普通简历改动保存为范围化 canonical 提案；整篇翻译保存为独立 `translate_resume` 提案，服务端复验结构、节点、日期、数字、链接、联系方式和样式不变。确认普通提案时更新当前快照；确认翻译提案时创建新 Resume 与初始版本，并复制源 Resume 私有图片。图片缺失、不支持、复制失败或超过限额时不应用提案，已复制对象在事务失败时补偿删除。
 
@@ -52,7 +52,7 @@ FastAPI 使用进程内后台任务独立消费 Pi 流，浏览器的初始 POST
 
 `resume_tools.replace_editor_markdown` 在修改结构化字段的 `value` 时同步清除该字段的旧 `runs`，随后仍走 canonical 校验；字段样式模型见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
 
-Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的 canonical 节点；locator 的 `field` 标识具体经历字段。`replace_target_text` 允许空字符串以表达删除，确认时把空的可选经历字段收敛为 `null`；新增 operation 仍要求非空。语义整份 locator 使用非 `resume` scope 时返回 `SCOPE_FORBIDDEN`，只有版本或内容摘要变化才返回 `TARGET_STALE`。
+Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的 canonical 节点；locator 的 `field` 标识具体经历字段。`polish_local` 仍只允许一个替换 operation：普通块锚点只能修改自身，section 或 entry 标题锚点可以授权其范围内一个已读取的子块，不能跨 section/entry。`replace_target_text` 允许空字符串以表达删除，确认时把空的可选经历字段收敛为 `null`；新增 operation 仍要求非空。语义整份 locator 使用非 `resume` scope 时返回 `SCOPE_FORBIDDEN`，只有版本或内容摘要变化才返回 `TARGET_STALE`。
 
 新增 Agent 工具必须限制资源类型、动作和用户归属，并保持提案确认边界。资源目录查询只允许 `resume/dataset/interview`，必须从 run 反查用户且只返回轻量元数据；按名称解析简历仍只能接受本轮用户原文中明确出现的完整名称，目录结果本身不能授权读取正文。面试、职业规划和标题工作流只有只读能力；普通编辑和整篇翻译使用不同提案工具。简历工具只能操作 canonical 内容节点，不得直接持久化模板 region、slot、CSS 或分页投影；读取和保存必须复用简历应用服务的严格解析与校验入口。新增模型能力需同步能力目录、数据库约束、探针、管理端、调用来源和 HTTP 契约。
 
@@ -64,6 +64,7 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 - 模型未绑定、凭据不可解密、探针失败、供应商超时和计量缺失分别保留稳定状态；调用日志只记录非敏感错误码。
 - 单个浏览器 SSE 订阅断开不改变 run；后端进程重启导致运行中缓冲不存在时以 `AGENT_STREAM_INCOMPLETE` 收口。取消和失败不会生成可确认提案。
 - 内部工具失败只影响当前调用；数据库事务由 FastAPI 控制，Pi 不能直接连接 MySQL、Redis 或对象存储。
+- Pi 运行异常在进程日志中记录结构化 `agent_run_failed` 终点，只包含 run ID、稳定内部错误码、取消标记和时间，不记录对话或简历正文；浏览器仍只接收白名单公开错误码。
 - 删除未绑定模型可清理配置、密钥和验证证据，但历史调用日志保留模型快照；已绑定候选不能编辑或删除。
 
 ## 修改联动与验证

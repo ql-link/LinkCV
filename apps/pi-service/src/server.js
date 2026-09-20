@@ -31,6 +31,13 @@ function writeEvent(response, type, payload) {
   response.write(`event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`);
 }
 
+function agentFailureCode(error) {
+  const message = typeof error?.message === "string" ? error.message : "";
+  return /^[A-Z][A-Z0-9_]{2,127}$/.test(message)
+    ? message
+    : (error?.name || "UNKNOWN_AGENT_ERROR");
+}
+
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
@@ -171,6 +178,7 @@ const server = createServer(async (request, response) => {
     } catch (error) {
       const timedOut = controller.signal.aborted && controller.signal.reason === "timeout";
       const cancelled = controller.signal.aborted && !timedOut;
+      const internalErrorCode = agentFailureCode(error);
       const safeErrorCodes = new Set([
         "AGENT_MODEL_UNSUPPORTED",
         "AGENT_MODEL_TIMEOUT",
@@ -187,12 +195,21 @@ const server = createServer(async (request, response) => {
         "USER_INPUT_REQUIRED",
         "AGENT_CLARIFICATION_INVALID",
       ]);
+      console.error(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: "ERROR",
+        service: "linkresume-pi",
+        event: "agent_run_failed",
+        run_id: payload.runId,
+        error_code: timedOut ? "AGENT_TIMEOUT" : internalErrorCode,
+        cancelled,
+      }));
       writeEvent(response, cancelled ? "run.cancelled" : "run.failed", {
         runId: payload.runId,
         ...(cancelled ? {} : {
           error: timedOut
             ? "AGENT_TIMEOUT"
-            : safeErrorCodes.has(error?.message) ? error.message : "AGENT_EXECUTION_FAILED",
+            : safeErrorCodes.has(internalErrorCode) ? internalErrorCode : "AGENT_EXECUTION_FAILED",
         }),
       });
     } finally {
