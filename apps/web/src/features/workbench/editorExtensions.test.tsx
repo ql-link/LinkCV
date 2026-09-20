@@ -365,14 +365,14 @@ describe("叶子节点指针选区", () => {
     return { image, container, from: atomPosition() };
   }
 
-  function stubDomSelectionFocus(node: Node | null) {
+  function stubDomSelectionFocus(node: Node | null, focusOffset = 0) {
     const view = editor!.view as unknown as {
       input: { lastSelectionOrigin: string | null };
       domSelectionRange(): { anchorNode: Node | null; anchorOffset: number; focusNode: Node | null; focusOffset: number };
     };
     view.input.lastSelectionOrigin = "pointer";
     const original = view.domSelectionRange.bind(view);
-    view.domSelectionRange = () => ({ ...original(), focusNode: node });
+    view.domSelectionRange = () => ({ ...original(), focusNode: node, focusOffset });
   }
 
   function createBetween(anchor: number, head: number) {
@@ -457,5 +457,25 @@ describe("叶子节点指针选区", () => {
     const textNode = container.querySelector(".ProseMirror p")!.firstChild!;
     stubDomSelectionFocus(textNode);
     expect(createBetween(2, from)).toBeNull();
+  });
+
+  it("焦点落在父容器挨着图片的偏移处时也覆盖图片", async () => {
+    const { container, image, from } = await renderInlineImageDoc();
+    const paragraph = image.closest("p")!;
+    const atomWrapper = container.querySelector(".resume-inline-image")!.parentElement!;
+    const index = Array.prototype.indexOf.call(paragraph.childNodes, atomWrapper);
+    expect(index).toBeGreaterThanOrEqual(0);
+
+    // 焦点=(段落元素, atom 前的 offset)，Chrome 悬停图片时的常见形态
+    stubDomSelectionFocus(paragraph, index);
+    const forward = createBetween(2, from);
+    expect(forward).not.toBeNull();
+    expect(forward!.to).toBe(from + 1);
+
+    // offset 落在 atom 之后一侧，向后拖同样覆盖
+    stubDomSelectionFocus(paragraph, index + 1);
+    const backward = createBetween(from + 3, from + 1);
+    expect(backward).not.toBeNull();
+    expect(backward!.from).toBe(from);
   });
 });

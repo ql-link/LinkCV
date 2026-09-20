@@ -962,7 +962,7 @@ interface ResumePointerViewInternals extends EditorView {
     nearestDesc(dom: DOMNode, onlyNodes?: boolean): ResumeLeafViewDesc | null | undefined;
   } | null;
   input: { lastSelectionOrigin: string | null };
-  domSelectionRange(): { focusNode: DOMNode | null };
+  domSelectionRange(): { focusNode: DOMNode | null; focusOffset: number };
 }
 
 const leafSelectionDescAt = (view: EditorView, dom: DOMNode | null): ResumeLeafViewDesc | null => {
@@ -1003,8 +1003,17 @@ export const ResumeAtomPointerSelection = Extension.create({
           createSelectionBetween(view, $anchor, $head) {
             const internals = view as ResumePointerViewInternals;
             if (internals.input?.lastSelectionOrigin !== "pointer") return null;
-            const { focusNode } = internals.domSelectionRange();
-            const desc = leafSelectionDescAt(view, focusNode);
+            const { focusNode, focusOffset } = internals.domSelectionRange();
+            let desc = leafSelectionDescAt(view, focusNode);
+            // Chrome 常把落在叶子 DOM 上的 DOM 焦点记为「父容器 + 子偏移」，
+            // 即边界恰好挨着该叶子的 react-renderer 外层，这里也要认出来。
+            if (!desc && focusNode instanceof Element) {
+              for (const index of [focusOffset - 1, focusOffset]) {
+                const child = focusNode.childNodes[index];
+                desc = child ? leafSelectionDescAt(view, child) : null;
+                if (desc) break;
+              }
+            }
             if (!desc) return null;
             const from = desc.posBefore;
             const to = desc.posAfter;
@@ -1047,13 +1056,20 @@ export const ResumeAtomPointerSelection = Extension.create({
                 win.removeEventListener("mouseup", dispose);
                 win.removeEventListener("pointercancel", dispose);
               };
+              const atomDom = desc.dom as Element;
               const onMove = (rawMove: Event) => {
                 const move = rawMove as MouseEvent;
                 if (view.isDestroyed || !(move.buttons & 1)) return dispose();
                 const pos = view.posAtCoords({ left: move.clientX, top: move.clientY });
                 if (!pos) return;
                 const doc = view.state.doc;
-                if (pos.inside === atomFrom) {
+                // 指针仍在节点 DOM 矩形内（含微小抖动）时保持节点选中，
+                // 避免本想点选却拖出一点距离就把相邻文字抹进选区。
+                const rect = atomDom.getBoundingClientRect();
+                const inRect =
+                  move.clientX >= rect.left && move.clientX <= rect.right &&
+                  move.clientY >= rect.top && move.clientY <= rect.bottom;
+                if (pos.inside === atomFrom || inRect) {
                   setSelection(NodeSelection.create(doc, atomFrom));
                   return;
                 }
