@@ -323,3 +323,139 @@ describe("分栏分隔线拖拽", () => {
     expect(storedWidths()).toBeNull();
   });
 });
+
+describe("叶子节点指针选区", () => {
+  const IMAGE_DOC = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "前文文字" },
+          { type: "inlineImage", attrs: { src: "data:image/png;base64,dGVzdA==", width: 24, alt: "行内图" } },
+          { type: "text", text: "后文文字" },
+        ],
+      },
+      { type: "paragraph", content: [{ type: "text", text: "下一段" }] },
+    ],
+  };
+  // jsdom 没有 elementFromPoint/caretFromPoint；补上避免 ProseMirror 原生
+  // mousedown 路径（本测试不接管的分支）崩溃。
+  if (!document.elementFromPoint) {
+    Object.defineProperty(document, "elementFromPoint", { value: () => null, configurable: true });
+  }
+
+  // 段落开头还有 resumeBlockAnchor 原子，运行时动态定位图片位置。
+  function atomPosition() {
+    let pos = -1;
+    editor!.state.doc.descendants((node, nodePos) => {
+      if (node.type.name === "inlineImage") pos = nodePos;
+    });
+    if (pos < 0) throw new Error("行内图片未找到");
+    return pos;
+  }
+
+  async function renderInlineImageDoc() {
+    const instance = new Editor({ extensions: resumeEditorExtensions, content: IMAGE_DOC });
+    editor = instance;
+    const { container } = render(<EditorContent editor={instance} />);
+    await act(async () => { await Promise.resolve(); });
+    const image = container.querySelector<HTMLElement>(".resume-inline-image img");
+    if (!image) throw new Error("行内图片未渲染");
+    return { image, container, from: atomPosition() };
+  }
+
+  function stubDomSelectionFocus(node: Node | null) {
+    const view = editor!.view as unknown as {
+      input: { lastSelectionOrigin: string | null };
+      domSelectionRange(): { anchorNode: Node | null; anchorOffset: number; focusNode: Node | null; focusOffset: number };
+    };
+    view.input.lastSelectionOrigin = "pointer";
+    const original = view.domSelectionRange.bind(view);
+    view.domSelectionRange = () => ({ ...original(), focusNode: node });
+  }
+
+  function createBetween(anchor: number, head: number) {
+    const view = editor!.view;
+    const doc = view.state.doc;
+    return view.someProp("createSelectionBetween", (f) => f(view, doc.resolve(anchor), doc.resolve(head))) ?? null;
+  }
+
+  it("在行内图片上按下鼠标直接选中节点本身", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(image, down);
+    fireEvent(window, new MouseEvent("mouseup", { bubbles: true }));
+
+    expect(down.defaultPrevented).toBe(true);
+    const sel = editor!.state.selection;
+    expect(sel.constructor.name).toBe("NodeSelection");
+    expect(sel.from).toBe(from);
+    expect(sel.to).toBe(from + 1);
+  });
+
+  it("按下图片工具条输入框时交给节点自身处理，不接管", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    act(() => { editor!.commands.setNodeSelection(from); });
+    const toolbarInput = await screen.findByLabelText("行内图片宽度");
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(toolbarInput, down);
+
+    expect(down.defaultPrevented).toBe(false);
+    expect(editor!.state.selection.constructor.name).toBe("NodeSelection");
+    expect(image).toBeInTheDocument();
+  });
+
+  it("Shift 点击图片不接管，交给原生范围扩展", async () => {
+    const { image } = await renderInlineImageDoc();
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, shiftKey: true });
+    fireEvent(image, down);
+
+    expect(down.defaultPrevented).toBe(false);
+  });
+
+  it("在普通文本上按下鼠标不接管", async () => {
+    const { container } = await renderInlineImageDoc();
+    const paragraph = container.querySelector(".ProseMirror p")!;
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(paragraph, down);
+
+    expect(down.defaultPrevented).toBe(false);
+  });
+
+  it("向前拖选焦点停在图片上时端点覆盖图片", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image);
+
+    // Chrome 把焦点映射到 atom 起点（图片未被覆盖）时应推到图后文本位
+    const created = createBetween(2, from);
+    expect(created).not.toBeNull();
+    expect(created!.from).toBe(2);
+    expect(created!.to).toBe(from + 1);
+  });
+
+  it("向后拖选焦点停在图片上时端点覆盖图片", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image);
+
+    const created = createBetween(from + 3, from + 1);
+    expect(created).not.toBeNull();
+    expect(created!.from).toBe(from);
+    expect(created!.to).toBe(from + 3);
+  });
+
+  it("端点已经覆盖图片时不改写选区", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image);
+
+    expect(createBetween(2, from + 1)).toBeNull();
+    expect(createBetween(from + 3, from)).toBeNull();
+  });
+
+  it("焦点不在叶子节点内部时返回 null 交给默认处理", async () => {
+    const { container, from } = await renderInlineImageDoc();
+    const textNode = container.querySelector(".ProseMirror p")!.firstChild!;
+    stubDomSelectionFocus(textNode);
+    expect(createBetween(2, from)).toBeNull();
+  });
+});
