@@ -121,12 +121,12 @@ def update_share(
     return resume
 
 
-def resolve_public_share(
+def resolve_share_resume(
     db: Session,
     token: str,
     viewer: User | None,
-) -> PublicSharePayload:
-    """公开读取：校验 token、有效期与可见性后返回最新正式版本的脱敏数据。"""
+) -> Resume:
+    """分享令牌解析：链接不存在、已过期或对当前查看者不可见时抛失效异常。"""
     resume = db.scalar(select(Resume).where(Resume.share_token == token))
     if resume is None:
         raise ShareLinkUnavailable
@@ -139,6 +139,52 @@ def resolve_public_share(
     if resume.share_visibility == "private":
         if viewer is None or viewer.id != resume.user_id:
             raise ShareLinkUnavailable
+    return resume
+
+
+_ACCOUNT_ASSET_URL_PREFIX = "/api/assets/"
+
+
+def share_asset_url_prefix(token: str) -> str:
+    """公开资产的 URL 前缀；尾段是经过 url-encode 的完整对象键。"""
+    return f"/api/share/{token}/assets/"
+
+
+def _rewrite_share_asset_url(value: str, resume: Resume, token: str) -> str:
+    """把登录态资产地址改写为分享域地址，匿名访问者才能渲染简历内图片。"""
+    share_prefix = share_asset_url_prefix(token)
+    resume_prefix = f"/api/resumes/{resume.id}/assets/"
+    if value.startswith(resume_prefix):
+        asset_name = value[len(resume_prefix) :]
+        return (
+            f"{share_prefix}users/{resume.user_id}"
+            f"/resumes/{resume.id}/assets/{asset_name}"
+        )
+    if value.startswith(_ACCOUNT_ASSET_URL_PREFIX):
+        return share_prefix + value[len(_ACCOUNT_ASSET_URL_PREFIX) :]
+    return value
+
+
+def _rewrite_share_asset_urls(value: object, resume: Resume, token: str) -> object:
+    if isinstance(value, str):
+        return _rewrite_share_asset_url(value, resume, token)
+    if isinstance(value, dict):
+        return {
+            key: _rewrite_share_asset_urls(item, resume, token)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_rewrite_share_asset_urls(item, resume, token) for item in value]
+    return value
+
+
+def resolve_public_share(
+    db: Session,
+    token: str,
+    viewer: User | None,
+) -> PublicSharePayload:
+    """公开读取：校验 token、有效期与可见性后返回最新正式版本的脱敏数据。"""
+    resume = resolve_share_resume(db, token, viewer)
     owner = db.get(User, resume.user_id)
     if owner is None:
         raise ShareLinkUnavailable
@@ -150,7 +196,13 @@ def resolve_public_share(
     )
     if version is None:
         raise ShareLinkUnavailable
-    snapshot = parse_persisted_resume_snapshot(version.data_json, version.style_json)
+    snapshot = parse_persisted_resume_snapshot(
+        _rewrite_share_asset_urls(version.data_json, resume, token),
+        _rewrite_share_asset_urls(version.style_json, resume, token),
+    )
+    avatar_url = owner.avatar_url
+    if avatar_url is not None:
+        avatar_url = _rewrite_share_asset_url(avatar_url, resume, token)
     return PublicSharePayload(
         data=snapshot.data,
         style=snapshot.style,
@@ -159,5 +211,5 @@ def resolve_public_share(
             snapshot.style.template_snapshot,
             snapshot.style,
         ),
-        sharer=PublicShareSharer(nickname=owner.nickname, avatar_url=owner.avatar_url),
+        sharer=PublicShareSharer(nickname=owner.nickname, avatar_url=avatar_url),
     )

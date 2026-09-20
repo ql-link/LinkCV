@@ -1,4 +1,7 @@
+import base64
+from collections.abc import Iterator
 from contextlib import ExitStack
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -10,9 +13,35 @@ from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
 
 
+class FakeObjectResponse:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+    def stream(self, _size: int) -> Iterator[bytes]:
+        yield self.data
+
+    def close(self) -> None:
+        pass
+
+    def release_conn(self) -> None:
+        pass
+
+
 class FakeStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
     def ensure_bucket(self) -> None:
         pass
+
+    def upload(self, object_name: str, data: bytes, _content_type: str) -> None:
+        self.objects[object_name] = data
+
+    def get(self, object_name: str) -> FakeObjectResponse:
+        return FakeObjectResponse(self.objects[object_name])
+
+    def stat(self, object_name: str) -> SimpleNamespace:
+        return SimpleNamespace(size=len(self.objects[object_name]))
 
     def delete(self, _object_name: str) -> None:
         pass
@@ -330,3 +359,87 @@ def test_delete_resume_invalidates_share_and_ownership_is_enforced() -> None:
             assert session.scalar(
                 select(Resume).where(Resume.share_token == token)
             ) is None
+
+
+def test_public_share_rewrites_and_serves_resume_assets() -> None:
+    """匿名访问者通过分享域地址读取简历内嵌图片，且不能越权读他人资产。"""
+    app = build_app()
+    image = base64.b64encode(b"png-bytes").decode("ascii")
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "owner@example.com")
+
+        resume = create_resume(owner, app).json()["resume"]
+        resume_id = resume["id"]
+        uploaded = owner.post(
+            f"/api/resumes/{resume_id}/assets",
+            json={
+                "file_name": "logo.png",
+                "data_url": f"data:image/png;base64,{image}",
+            },
+        )
+        assert uploaded.status_code == 201
+        asset_url = uploaded.json()["asset"]["url"]
+        assert asset_url.startswith(f"/api/resumes/{resume_id}/assets/")
+
+        # 正文引用资产地址并保存正式版本
+        data = owner.get(f"/api/resumes/{resume_id}").json()["resume"]["data"]
+        data["identity"]["avatar"] = {
+            "node_id": "node_avatar00000000001",
+            "source_refs": [],
+            "media_kind": "avatar",
+            "src": asset_url,
+            "alt": None,
+            "width": 96,
+            "width_unit": "px",
+            "height_px": None,
+            "align": None,
+            "system_fallback": False,
+        }
+        saved = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": 1},
+        )
+        assert saved.status_code == 200
+        assert owner.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+
+        token = owner.post(f"/api/resumes/{resume_id}/share").json()["share"][
+            "share_token"
+        ]
+
+        payload = guest.get(f"/api/share/{token}").json()
+        share_src = payload["data"]["identity"]["avatar"]["src"]
+        share_prefix = f"/api/share/{token}/assets/"
+        assert share_src.startswith(share_prefix)
+        assert f"users/1/resumes/{resume_id}/assets/" in share_src
+        assert not share_src.startswith("/api/resumes/")
+
+        # 匿名读取分享域资产地址，内容与原资产一致
+        fetched = guest.get(share_src)
+        assert fetched.status_code == 200
+        assert fetched.content == b"png-bytes"
+        assert fetched.headers["content-type"] == "image/png"
+
+        # 失效 token 的资产地址同样失效
+        assert (
+            guest.get("/api/share/not-a-real-token/assets/users/1/assets/x.png")
+            .json()["error"]
+            == "SHARE_LINK_UNAVAILABLE"
+        )
+
+        # 越权：不能借分享 token 读取其他用户的资产
+        assert (
+            guest.get(f"{share_prefix}users/999/assets/secret.png").status_code
+            == 404
+        )
+        # 白名单前缀内的路径逃逸与其他简历目录同样被拒绝
+        assert (
+            guest.get(f"{share_prefix}users/1/assets/%2E%2E/resumes/1/x.png")
+            .status_code
+            == 404
+        )
+        assert (
+            guest.get(f"{share_prefix}users/1/resumes/999/assets/x.png").status_code
+            == 404
+        )

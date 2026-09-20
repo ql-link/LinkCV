@@ -194,7 +194,7 @@ class MediaReference(SourceReferenced):
         str,
         Field(
             pattern=(
-                r"^(?:https?://[^\s]{1,2040}|/(?:api/assets|api/resumes|templates)/[^\s]{1,2020})$"
+                r"^(?:https?://[^\s]{1,2040}|/(?:api/assets|api/resumes|api/share|templates)/[^\s]{1,2020})$"
             )
         ),
     ]

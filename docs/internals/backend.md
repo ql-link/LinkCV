@@ -220,6 +220,8 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 `application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 简历与最新版本存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取 `resume_versions` 最新正式版本并脱敏返回 `data/style/sharer`，不保存快照，因此所有者后续保存新版本会立即反映到分享页。
 
+简历与账号资产地址（`/api/resumes/{id}/assets/…`、`/api/assets/…`）要求所有者登录态，匿名分享访问者无法直接读取，因此公开响应在序列化前把 `data`、`style` 与 `sharer.avatar_url` 中的这两类地址实时改写为分享域地址 `/api/share/{token}/assets/{object_key}`（尾段是 url-encode 的对象键，canonical 校验放行 `api/share` 形态）。`GET /api/share/{token}/assets/{object_key}` 复用同一 token 解析与可见性校验，然后按对象键白名单放行：只允许 `users/{uid}/assets/`（分享者账号资产）与 `users/{uid}/resumes/{rid}/assets/`（该简历自身资产）两个前缀，越权前缀、`..` 段、失效 token 统一 404；命中后按私有对象流式返回，响应头与登录态资产接口一致（`private, immutable`、`sandbox`、`nosniff`）。
+
 ## 测试约定
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。

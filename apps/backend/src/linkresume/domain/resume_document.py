@@ -89,7 +89,7 @@ def _is_safe_resume_asset(value: str) -> bool:
         _is_safe_http_url(value)
         or (
             not any(character.isspace() or ord(character) < 32 for character in value)
-            and value.startswith(("/api/assets/", "/api/resumes/", "/templates/"))
+            and value.startswith(("/api/assets/", "/api/resumes/", "/api/share/", "/templates/"))
         )
     )
 
@@ -529,7 +529,7 @@ class ResumeBasics(DomainModel):
     def validate_photo_reference(self) -> "ResumeBasics":
         if self.photo and not (
             _is_safe_http_url(self.photo)
-            or self.photo.startswith(("/api/assets/", "/api/resumes/"))
+            or self.photo.startswith(("/api/assets/", "/api/resumes/", "/api/share/"))
         ):
             raise ValueError("photo must use a private API path or HTTP(S) URL")
         return self

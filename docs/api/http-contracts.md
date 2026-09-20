@@ -149,7 +149,8 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 | `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at}`，无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at}`，可续期或改为仅自己可见     |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
-| `GET`    | `/api/share/{token}`        | 否   | `{data, style, sharer}`；`sharer` 为 `{nickname, avatar_url}`             |
+| `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, sharer}`；`data`/`style` 中的 `/api/resumes/{id}/assets/` 与 `/api/assets/` 引用实时改写为 `/api/share/{token}/assets/` 分享域地址 |
+| `GET`    | `/api/share/{token}/assets/{object_key}` | 否   | 流式返回分享简历内嵌图片；对象键只允许落在分享者的 `users/{uid}/assets/` 或该简历 `users/{uid}/resumes/{rid}/assets/` 前缀下，token 失效、越权前缀与不存在统一 404 |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
 
