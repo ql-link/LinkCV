@@ -43,11 +43,22 @@ class FakeStorage:
     def stat(self, object_name: str) -> SimpleNamespace:
         return SimpleNamespace(size=len(self.objects[object_name]))
 
-    def delete(self, _object_name: str) -> None:
-        pass
+    def delete(self, object_name: str) -> None:
+        self.objects.pop(object_name, None)
 
-    def delete_prefix(self, _prefix: str) -> None:
-        pass
+    def delete_prefix(self, prefix: str) -> None:
+        for object_name in list(self.objects):
+            if object_name.startswith(prefix):
+                self.objects.pop(object_name)
+
+
+class FakeRenderer:
+    def __init__(self) -> None:
+        self.payloads: list[dict] = []
+
+    def render(self, payload: dict) -> bytes:
+        self.payloads.append(payload)
+        return b"%PDF-1.3\nshared-resume"
 
 
 def build_app():
@@ -61,6 +72,7 @@ def build_app():
         redis=FakeRedis(),
         create_schema=True,
     )
+    app.state.resume_pdf_renderer = FakeRenderer()
     with app.state.session_factory() as session:
         template_data, template_style = canonical_template_payload(key="share-test")
         template = ResumeTemplate(
@@ -119,6 +131,7 @@ def test_create_share_public_read_and_overwrite() -> None:
         share = created.json()["share"]
         assert share["share_visibility"] == "public"
         assert share["share_expires_at"] is None
+        assert share["share_allow_download"] is True
         assert share["share_created_at"]
         first_token = share["share_token"]
         assert len(first_token) >= 20
@@ -127,7 +140,16 @@ def test_create_share_public_read_and_overwrite() -> None:
         public = guest.get(f"/api/share/{first_token}")
         assert public.status_code == 200
         payload = public.json()
-        assert set(payload) == {"data", "style", "layout_plan", "sharer"}
+        assert set(payload) == {
+            "data",
+            "style",
+            "layout_plan",
+            "assets",
+            "sharer",
+            "allow_download",
+        }
+        assert payload["allow_download"] is True
+        assert payload["assets"] == {}
         assert set(payload["sharer"]) == {"nickname", "avatar_url"}
         assert payload["sharer"]["nickname"]
         assert payload["data"]["schema_version"] == "canonical-resume.v1"
@@ -143,6 +165,131 @@ def test_create_share_public_read_and_overwrite() -> None:
 
         # 不存在的 token 同样 404
         assert guest.get("/api/share/not-a-real-token").status_code == 404
+
+
+def test_public_share_embeds_only_images_from_the_current_saved_draft() -> None:
+    app = build_app()
+    image = b"fictional-png"
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "image-owner@example.com")
+
+        created = create_resume(owner, app).json()["resume"]
+        resume_id = created["id"]
+        uploaded = owner.post(
+            f"/api/resumes/{resume_id}/assets",
+            json={
+                "file_name": "avatar.png",
+                "data_url": (
+                    "data:image/png;base64,"
+                    + base64.b64encode(image).decode("ascii")
+                ),
+            },
+        )
+        assert uploaded.status_code == 201
+        asset_url = uploaded.json()["asset"]["url"]
+
+        data = created["data"]
+        data["identity"]["avatar"] = {
+            "node_id": "node_avatar00000000001",
+            "source_refs": [],
+            "media_kind": "avatar",
+            "src": asset_url,
+            "alt": "虚构头像",
+            "width": 96,
+            "width_unit": "px",
+            "height_px": None,
+            "align": None,
+            "system_fallback": False,
+        }
+        saved = owner.put(
+            f"/api/resumes/{resume_id}",
+            json={"data": data, "base_lock_version": created["lock_version"]},
+        )
+        assert saved.status_code == 200
+
+        token = owner.post(f"/api/resumes/{resume_id}/share").json()["share"][
+            "share_token"
+        ]
+        public = guest.get(f"/api/share/{token}")
+
+        assert public.status_code == 200
+        assert public.headers["cache-control"] == "private, no-store"
+        assert public.json()["assets"] == {
+            asset_url: (
+                "data:image/png;base64,"
+                + base64.b64encode(image).decode("ascii")
+            )
+        }
+
+
+def test_public_share_pdf_uses_server_renderer_and_smart_one_page() -> None:
+    app = build_app()
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "pdf-share-owner@example.com")
+
+        created = create_resume(owner, app).json()["resume"]
+        token = owner.post(f"/api/resumes/{created['id']}/share").json()["share"][
+            "share_token"
+        ]
+
+        downloaded = guest.get(f"/api/share/{token}/pdf")
+
+        assert downloaded.status_code == 200
+        assert downloaded.content == b"%PDF-1.3\nshared-resume"
+        assert downloaded.headers["content-type"] == "application/pdf"
+        assert downloaded.headers["cache-control"] == "private, no-store"
+        assert downloaded.headers["x-content-type-options"] == "nosniff"
+        assert downloaded.headers["x-linkresume-pdf-lock-version"] == str(
+            created["lock_version"]
+        )
+        assert "%E5%88%86%E4%BA%AB%E6%B5%8B%E8%AF%95%E7%AE%80%E5%8E%86.pdf" in (
+            downloaded.headers["content-disposition"]
+        )
+        rendered = app.state.resume_pdf_renderer.payloads[-1]
+        assert rendered["protocol_version"] == 1
+        assert rendered["style"]["portable"]["smart_one_page"] is True
+        assert set(rendered) == {
+            "protocol_version",
+            "title",
+            "data",
+            "style",
+            "layout_plan",
+            "assets",
+        }
+
+
+def test_share_download_permission_hides_capability_and_blocks_pdf_for_everyone() -> None:
+    app = build_app()
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "download-owner@example.com")
+
+        created = create_resume(owner, app).json()["resume"]
+        share = owner.post(
+            f"/api/resumes/{created['id']}/share",
+            json={"allow_download": False},
+        ).json()["share"]
+        token = share["share_token"]
+        assert share["share_allow_download"] is False
+
+        public = guest.get(f"/api/share/{token}")
+        assert public.status_code == 200
+        assert public.json()["allow_download"] is False
+        assert guest.get(f"/api/share/{token}/pdf").status_code == 404
+        assert owner.get(f"/api/share/{token}/pdf").status_code == 404
+
+        enabled = owner.patch(
+            f"/api/resumes/{created['id']}/share",
+            json={"allow_download": True},
+        )
+        assert enabled.status_code == 200
+        assert enabled.json()["share"]["share_allow_download"] is True
+        assert guest.get(f"/api/share/{token}/pdf").status_code == 200
 
 
 def test_create_share_with_requested_visibility() -> None:
@@ -232,8 +379,11 @@ def test_private_visibility_access_matrix() -> None:
         # 未登录与非所有者一律失效
         assert guest.get(f"/api/share/{token}").status_code == 404
         assert other.get(f"/api/share/{token}").status_code == 404
+        assert guest.get(f"/api/share/{token}/pdf").status_code == 404
+        assert other.get(f"/api/share/{token}/pdf").status_code == 404
         # 所有者登录可读
         assert owner.get(f"/api/share/{token}").status_code == 200
+        assert owner.get(f"/api/share/{token}/pdf").status_code == 200
 
         # 改回 public 后免登录可读
         owner.patch(f"/api/resumes/{resume_id}/share", json={"visibility": "public"})
@@ -287,7 +437,7 @@ def test_expiry_renew_and_delete() -> None:
         assert owner.delete(f"/api/resumes/{resume_id}/share").status_code == 200
 
 
-def test_share_content_tracks_latest_formal_version() -> None:
+def test_share_content_tracks_current_saved_draft() -> None:
     app = build_app()
     with ExitStack() as stack:
         owner = stack.enter_context(TestClient(app))
@@ -301,25 +451,21 @@ def test_share_content_tracks_latest_formal_version() -> None:
             "share_token"
         ]
 
-        # 草稿修改（未保存正式版本）：分享内容不变
+        # 自动保存草稿后，无需创建正式版本，分享内容立即更新。
         draft_data = resume["data"]
         draft_data["identity"]["headline"] = {
             "node_id": "node_headline00000001",
             "source_refs": [],
             "value": "草稿改动",
         }
-        owner.put(
+        saved = owner.put(
             f"/api/resumes/{resume_id}",
-            json={"data": draft_data, "base_lock_version": 1},
+            json={
+                "data": draft_data,
+                "base_lock_version": resume["lock_version"],
+            },
         )
-        assert (
-            guest.get(f"/api/share/{token}").json()["data"]["identity"]["headline"]
-            is None
-        )
-
-        # 保存正式版本：分享内容更新为最新正式版本
-        manual = owner.post(f"/api/resumes/{resume_id}/versions")
-        assert manual.status_code == 201
+        assert saved.status_code == 200
         assert (
             guest.get(f"/api/share/{token}").json()["data"]["identity"]["headline"]["value"]
             == "草稿改动"
@@ -359,87 +505,3 @@ def test_delete_resume_invalidates_share_and_ownership_is_enforced() -> None:
             assert session.scalar(
                 select(Resume).where(Resume.share_token == token)
             ) is None
-
-
-def test_public_share_rewrites_and_serves_resume_assets() -> None:
-    """匿名访问者通过分享域地址读取简历内嵌图片，且不能越权读他人资产。"""
-    app = build_app()
-    image = base64.b64encode(b"png-bytes").decode("ascii")
-    with ExitStack() as stack:
-        owner = stack.enter_context(TestClient(app))
-        guest = stack.enter_context(TestClient(app))
-        register(owner, "owner@example.com")
-
-        resume = create_resume(owner, app).json()["resume"]
-        resume_id = resume["id"]
-        uploaded = owner.post(
-            f"/api/resumes/{resume_id}/assets",
-            json={
-                "file_name": "logo.png",
-                "data_url": f"data:image/png;base64,{image}",
-            },
-        )
-        assert uploaded.status_code == 201
-        asset_url = uploaded.json()["asset"]["url"]
-        assert asset_url.startswith(f"/api/resumes/{resume_id}/assets/")
-
-        # 正文引用资产地址并保存正式版本
-        data = owner.get(f"/api/resumes/{resume_id}").json()["resume"]["data"]
-        data["identity"]["avatar"] = {
-            "node_id": "node_avatar00000000001",
-            "source_refs": [],
-            "media_kind": "avatar",
-            "src": asset_url,
-            "alt": None,
-            "width": 96,
-            "width_unit": "px",
-            "height_px": None,
-            "align": None,
-            "system_fallback": False,
-        }
-        saved = owner.put(
-            f"/api/resumes/{resume_id}",
-            json={"data": data, "base_lock_version": 1},
-        )
-        assert saved.status_code == 200
-        assert owner.post(f"/api/resumes/{resume_id}/versions").status_code == 201
-
-        token = owner.post(f"/api/resumes/{resume_id}/share").json()["share"][
-            "share_token"
-        ]
-
-        payload = guest.get(f"/api/share/{token}").json()
-        share_src = payload["data"]["identity"]["avatar"]["src"]
-        share_prefix = f"/api/share/{token}/assets/"
-        assert share_src.startswith(share_prefix)
-        assert f"users/1/resumes/{resume_id}/assets/" in share_src
-        assert not share_src.startswith("/api/resumes/")
-
-        # 匿名读取分享域资产地址，内容与原资产一致
-        fetched = guest.get(share_src)
-        assert fetched.status_code == 200
-        assert fetched.content == b"png-bytes"
-        assert fetched.headers["content-type"] == "image/png"
-
-        # 失效 token 的资产地址同样失效
-        assert (
-            guest.get("/api/share/not-a-real-token/assets/users/1/assets/x.png")
-            .json()["error"]
-            == "SHARE_LINK_UNAVAILABLE"
-        )
-
-        # 越权：不能借分享 token 读取其他用户的资产
-        assert (
-            guest.get(f"{share_prefix}users/999/assets/secret.png").status_code
-            == 404
-        )
-        # 白名单前缀内的路径逃逸与其他简历目录同样被拒绝
-        assert (
-            guest.get(f"{share_prefix}users/1/assets/%2E%2E/resumes/1/x.png")
-            .status_code
-            == 404
-        )
-        assert (
-            guest.get(f"{share_prefix}users/1/resumes/999/assets/x.png").status_code
-            == 404
-        )

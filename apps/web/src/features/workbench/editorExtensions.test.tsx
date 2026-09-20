@@ -1,12 +1,87 @@
 import { Editor } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
+import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { EditorContent } from "@tiptap/react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resumeEditorExtensions } from "./editorExtensions";
+import { resumeEditorExtensions, fullyCoveredResumeLayoutNode } from "./editorExtensions";
 import { setResumeRowColumns } from "./editorCommands";
 
 let editor: Editor | null = null;
+
+function nodePos(typeName: string) {
+  let pos = -1;
+  editor!.state.doc.descendants((node, nodePos) => {
+    if (node.type.name === typeName) pos = nodePos;
+  });
+  return pos;
+}
+
+const nodeAt = (typeName: string) => editor!.state.doc.nodeAt(nodePos(typeName));
+
+function createEditor(content: object) {
+  editor = new Editor({ extensions: resumeEditorExtensions, content });
+  return editor;
+}
+
+// 布局节点内首个/末个可见叶子的边界（跳过结构锚点，兼容锚点是否已注入）。
+function leafRange(pos: number, node: PMNode) {
+  let first = -1;
+  let last = -1;
+  node.descendants((child, offset) => {
+    if (child.isLeaf) {
+      if (child.type.name !== "resumeBlockAnchor") {
+        const childPos = pos + 1 + offset;
+        if (first < 0) first = childPos;
+        last = childPos + child.nodeSize;
+      }
+      return false;
+    }
+    return true;
+  });
+  return { first, last };
+}
+
+function rowTextRange() {
+  const pos = nodePos("resumeRow");
+  const node = editor!.state.doc.nodeAt(pos)!;
+  const { first, last } = leafRange(pos, node);
+  return { pos, node, from: first, to: last };
+}
+
+function setTextSel(from: number, to: number) {
+  const { doc, tr } = editor!.state;
+  editor!.view.dispatch(tr.setSelection(TextSelection.create(doc, from, to)));
+}
+
+function fakeClipboardEvent(type: "copy" | "cut") {
+  const store: Record<string, string> = {};
+  const event = {
+    type,
+    clipboardData: {
+      clearData: () => { Object.keys(store).forEach((k) => delete store[k]); },
+      setData: (t: string, v: string) => { store[t] = v; },
+      getData: (t: string) => store[t] ?? "",
+    },
+    preventDefault: vi.fn(),
+  };
+  const handled = editor!.view.someProp(
+    "handleDOMEvents",
+    (handlers: Record<string, unknown>) => (
+      typeof handlers?.[type] === "function"
+        ? (handlers[type] as (v: unknown, e: unknown) => boolean)(editor!.view, event)
+        : null
+    ),
+  );
+  return { event, store, handled };
+}
+
+
+// jsdom 没有 ClipboardEvent，view.pasteHTML 需要一个占位类。
+if (!globalThis.ClipboardEvent) {
+  (globalThis as Record<string, unknown>).ClipboardEvent = class extends Event {};
+}
 
 afterEach(() => {
   editor?.destroy();
@@ -321,5 +396,466 @@ describe("分栏分隔线拖拽", () => {
     fireEvent.doubleClick(handles(row)[0]);
 
     expect(storedWidths()).toBeNull();
+  });
+});
+
+describe("叶子节点指针选区", () => {
+  const IMAGE_DOC = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "前文文字" },
+          { type: "inlineImage", attrs: { src: "data:image/png;base64,dGVzdA==", width: 24, alt: "行内图" } },
+          { type: "text", text: "后文文字" },
+        ],
+      },
+      { type: "paragraph", content: [{ type: "text", text: "下一段" }] },
+    ],
+  };
+  // jsdom 没有 elementFromPoint/caretFromPoint；补上避免 ProseMirror 原生
+  // mousedown 路径（本测试不接管的分支）崩溃。
+  if (!document.elementFromPoint) {
+    Object.defineProperty(document, "elementFromPoint", { value: () => null, configurable: true });
+  }
+
+  // 段落开头还有 resumeBlockAnchor 原子，运行时动态定位图片位置。
+  function atomPosition() {
+    let pos = -1;
+    editor!.state.doc.descendants((node, nodePos) => {
+      if (node.type.name === "inlineImage") pos = nodePos;
+    });
+    if (pos < 0) throw new Error("行内图片未找到");
+    return pos;
+  }
+
+  async function renderInlineImageDoc() {
+    const instance = new Editor({ extensions: resumeEditorExtensions, content: IMAGE_DOC });
+    editor = instance;
+    const { container } = render(<EditorContent editor={instance} />);
+    await act(async () => { await Promise.resolve(); });
+    const image = container.querySelector<HTMLElement>(".resume-inline-image img");
+    if (!image) throw new Error("行内图片未渲染");
+    return { image, container, from: atomPosition() };
+  }
+
+  function stubDomSelectionFocus(node: Node | null, focusOffset = 0) {
+    const view = editor!.view as unknown as {
+      input: { lastSelectionOrigin: string | null };
+      domSelectionRange(): { anchorNode: Node | null; anchorOffset: number; focusNode: Node | null; focusOffset: number };
+    };
+    view.input.lastSelectionOrigin = "pointer";
+    const original = view.domSelectionRange.bind(view);
+    view.domSelectionRange = () => ({ ...original(), focusNode: node, focusOffset });
+  }
+
+  function createBetween(anchor: number, head: number) {
+    const view = editor!.view;
+    const doc = view.state.doc;
+    return view.someProp("createSelectionBetween", (f) => f(view, doc.resolve(anchor), doc.resolve(head))) ?? null;
+  }
+
+  it("在行内图片上按下鼠标直接选中节点本身", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(image, down);
+    fireEvent(window, new MouseEvent("mouseup", { bubbles: true }));
+
+    expect(down.defaultPrevented).toBe(true);
+    const sel = editor!.state.selection;
+    expect(sel.constructor.name).toBe("NodeSelection");
+    expect(sel.from).toBe(from);
+    expect(sel.to).toBe(from + 1);
+  });
+
+  it("按下图片工具条输入框时交给节点自身处理，不接管", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    act(() => { editor!.commands.setNodeSelection(from); });
+    const toolbarInput = await screen.findByLabelText("行内图片宽度");
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(toolbarInput, down);
+
+    expect(down.defaultPrevented).toBe(false);
+    expect(editor!.state.selection.constructor.name).toBe("NodeSelection");
+    expect(image).toBeInTheDocument();
+  });
+
+  it("Shift 点击图片不接管，交给原生范围扩展", async () => {
+    const { image } = await renderInlineImageDoc();
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0, shiftKey: true });
+    fireEvent(image, down);
+
+    expect(down.defaultPrevented).toBe(false);
+  });
+
+  it("在普通文本上按下鼠标不接管", async () => {
+    const { container } = await renderInlineImageDoc();
+    const paragraph = container.querySelector(".ProseMirror p")!;
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    fireEvent(paragraph, down);
+
+    expect(down.defaultPrevented).toBe(false);
+  });
+
+  it("向前拖选焦点停在图片上时端点覆盖图片", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image);
+
+    // Chrome 把焦点映射到 atom 起点（图片未被覆盖）时应推到图后文本位
+    const created = createBetween(2, from);
+    expect(created).not.toBeNull();
+    expect(created!.from).toBe(2);
+    expect(created!.to).toBe(from + 1);
+  });
+
+  it("向后拖选焦点停在图片上时端点覆盖图片", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image);
+
+    const created = createBetween(from + 3, from + 1);
+    expect(created).not.toBeNull();
+    expect(created!.from).toBe(from);
+    expect(created!.to).toBe(from + 3);
+  });
+
+  it("端点已经覆盖图片时不改写选区", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image);
+
+    expect(createBetween(2, from + 1)).toBeNull();
+    expect(createBetween(from + 3, from)).toBeNull();
+  });
+
+  it("焦点不在叶子节点内部时返回 null 交给默认处理", async () => {
+    const { container, from } = await renderInlineImageDoc();
+    const textNode = container.querySelector(".ProseMirror p")!.firstChild!;
+    stubDomSelectionFocus(textNode);
+    expect(createBetween(2, from)).toBeNull();
+  });
+
+  it("焦点落在父容器挨着图片的偏移处时也覆盖图片", async () => {
+    const { container, image, from } = await renderInlineImageDoc();
+    const paragraph = image.closest("p")!;
+    const atomWrapper = container.querySelector(".resume-inline-image")!.parentElement!;
+    const index = Array.prototype.indexOf.call(paragraph.childNodes, atomWrapper);
+    expect(index).toBeGreaterThanOrEqual(0);
+
+    // 焦点=(段落元素, atom 前的 offset)，Chrome 悬停图片时的常见形态
+    stubDomSelectionFocus(paragraph, index);
+    const forward = createBetween(2, from);
+    expect(forward).not.toBeNull();
+    expect(forward!.to).toBe(from + 1);
+
+    // offset 落在 atom 之后一侧，向后拖同样覆盖
+    stubDomSelectionFocus(paragraph, index + 1);
+    const backward = createBetween(from + 3, from + 1);
+    expect(backward).not.toBeNull();
+    expect(backward!.from).toBe(from);
+  });
+});
+
+describe("分栏结构剪切复制", () => {
+  const ROW_DOC = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "上文段落" }] },
+      {
+        type: "resumeRow",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "左栏文字" }] },
+          { type: "paragraph", content: [{ type: "text", text: "右栏文字" }] },
+        ],
+      },
+      { type: "paragraph", content: [{ type: "text", text: "下文段落" }] },
+    ],
+  };
+
+
+  it("选区覆盖整行内容时返回行节点", () => {
+    createEditor(ROW_DOC);
+    const { from, to } = rowTextRange();
+    setTextSel(from, to);
+    const target = fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection);
+    expect(target?.node.type.name).toBe("resumeRow");
+    expect(target?.node.nodeSize).toBe(nodeAt("resumeRow")!.nodeSize);
+  });
+
+  it("选区只覆盖部分内容时不接管", () => {
+    createEditor(ROW_DOC);
+    const { pos, node, to } = rowTextRange();
+    setTextSel(pos + 4, to); // 少选了第一个字
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+    // 跨过行外文字也不接管（默认切片已携带整行结构）
+    setTextSel(2, pos + node.nodeSize - 2);
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+  });
+
+  it("只选一栏内容时不接管", () => {
+    createEditor(ROW_DOC);
+    const pos = nodePos("resumeRow");
+    const cell = editor!.state.doc.nodeAt(pos + 1)!;
+    const { first, last } = leafRange(pos + 1, cell);
+    setTextSel(first, last);
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+  });
+
+  it("剪切整行内容：剪贴板带结构标记且行节点被删除", () => {
+    createEditor(ROW_DOC);
+    const { from, to } = rowTextRange();
+    setTextSel(from, to);
+    const { event, store, handled } = fakeClipboardEvent("cut");
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(store["text/html"]).toContain('data-type="resume-row"');
+    expect(store["text/plain"]).toContain("左栏文字");
+    expect(nodePos("resumeRow")).toBe(-1);
+    const json = editor!.getJSON();
+    const texts = JSON.stringify(json);
+    expect(texts).toContain("上文段落");
+    expect(texts).not.toContain("左栏文字");
+  });
+
+  it("复制整行内容：剪贴板带结构标记且文档不变", () => {
+    createEditor(ROW_DOC);
+    const { from, to } = rowTextRange();
+    setTextSel(from, to);
+    const { store, handled } = fakeClipboardEvent("copy");
+
+    expect(handled).toBe(true);
+    expect(store["text/html"]).toContain('data-type="resume-row"');
+    expect(nodeAt("resumeRow")!.nodeSize).toBeGreaterThan(0);
+  });
+
+  it("普通文字选区复制走默认行为", () => {
+    createEditor(ROW_DOC);
+    setTextSel(2, 5);
+    const { handled } = fakeClipboardEvent("copy");
+    expect(handled).toBeFalsy();
+  });
+
+  it("结构剪贴板 HTML 粘贴回编辑器时还原为分栏行", () => {
+    createEditor({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "上文" }] },
+        {
+          type: "resumeColumns",
+          content: [
+            { type: "resumeColumn", attrs: { variant: "sidebar" }, content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏" }] }] },
+            {
+              type: "resumeColumn",
+              content: [
+                {
+                  type: "resumeRow",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "2023.07 知行文创" }] },
+                    { type: "paragraph", content: [{ type: "text", text: "行政助理" }] },
+                  ],
+                },
+                { type: "paragraph", content: [{ type: "text", text: "在列内段落" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const view = editor!.view;
+    const pos = nodePos("resumeRow");
+    const row = view.state.doc.nodeAt(pos)!;
+    const { dom } = view.serializeForClipboard(new Slice(Fragment.from(row), 0, 0));
+    const html = dom.innerHTML;
+    expect(html).toContain('data-type="resume-row"');
+
+    let tailEnd = -1;
+    view.state.doc.descendants((n, p) => {
+      if (n.type.name === "paragraph" && p > pos) tailEnd = p + n.nodeSize - 1;
+    });
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, tailEnd)));
+
+    view.pasteHTML(html);
+    let rows = 0;
+    view.state.doc.descendants((n) => { if (n.type.name === "resumeRow") rows++; });
+    expect(rows).toBe(2);
+  });
+
+  it("覆盖双栏容器全部内容时剪切整个 resumeColumns", () => {
+    createEditor({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "头部" }] },
+        {
+          type: "resumeColumns",
+          content: [
+            {
+              type: "resumeColumn",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏甲" }] }],
+            },
+            {
+              type: "resumeColumn",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "主栏乙" }] }],
+            },
+          ],
+        },
+      ],
+    });
+    const pos = nodePos("resumeColumns");
+    const node = editor!.state.doc.nodeAt(pos)!;
+    const { first, last } = leafRange(pos, node);
+    setTextSel(first, last);
+    const target = fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection);
+    expect(target?.node.type.name).toBe("resumeColumns");
+
+    const { store } = fakeClipboardEvent("cut");
+    expect(store["text/html"]).toContain('data-type="resume-columns"');
+    expect(nodePos("resumeColumns")).toBe(-1);
+  });
+});
+
+describe("分栏激活外框", () => {
+  const activeClasses = () =>
+    [...editor!.view.dom.querySelectorAll(".is-active")].map((el) => el.className);
+
+  const COLUMNS_DOC = {
+    type: "doc",
+    content: [{
+      type: "resumeColumns",
+      content: [
+        {
+          type: "resumeColumn",
+          attrs: { variant: "sidebar" },
+          content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏" }] }],
+        },
+        {
+          type: "resumeColumn",
+          content: [
+            {
+              type: "resumeTrioRow",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "公司" }] },
+                { type: "paragraph", content: [{ type: "text", text: "日期" }] },
+                { type: "paragraph", content: [{ type: "text", text: "岗位" }] },
+              ],
+            },
+            { type: "paragraph", content: [{ type: "text", text: "列内段落" }] },
+          ],
+        },
+      ],
+    }],
+  };
+
+  it("光标在三栏行内时该行显示 is-active", () => {
+    createEditor(COLUMNS_DOC);
+    const pos = nodePos("resumeTrioRow");
+    setTextSel(pos + 3, pos + 3);
+    const trio = editor!.view.dom.querySelector('[data-type="resume-trio-row"]');
+    expect(trio?.classList.contains("is-active")).toBe(true);
+  });
+
+  it("光标在列内普通段落时不显示任何外框", () => {
+    createEditor(COLUMNS_DOC);
+    // “列内段落”在第二个 resumeColumn 里
+    let paraPos = -1;
+    editor!.state.doc.descendants((n, p) => {
+      if (n.type.name === "paragraph" && n.textContent === "列内段落") paraPos = p;
+    });
+    setTextSel(paraPos + 3, paraPos + 3);
+    expect(activeClasses()).toHaveLength(0);
+  });
+
+  it("选区完整覆盖三栏行时外框落在该行而不是外层容器", () => {
+    createEditor(COLUMNS_DOC);
+    const pos = nodePos("resumeTrioRow");
+    const node = editor!.state.doc.nodeAt(pos)!;
+    const { first, last } = leafRange(pos, node);
+    setTextSel(first, last);
+    const trio = editor!.view.dom.querySelector('[data-type="resume-trio-row"]');
+    expect(trio?.classList.contains("is-active")).toBe(true);
+    expect(editor!.view.dom.querySelector('[data-type="resume-columns"]')?.classList.contains("is-active")).toBeFalsy();
+  });
+
+  it("光标在普通正文里没有激活外框", () => {
+    createEditor({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "普通段落" }] }] });
+    setTextSel(2, 2);
+    expect(activeClasses()).toHaveLength(0);
+  });
+});
+
+
+describe("分栏空栏占位提示", () => {
+  type InlineNode = { type: string; text?: string; attrs?: Record<string, unknown> };
+
+  async function renderRow(cells: InlineNode[][]) {
+    const instance = new Editor({
+      extensions: resumeEditorExtensions,
+      editorProps: { handleScrollToSelection: () => true },
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeRow",
+          attrs: { leftWidth: 50 },
+          content: cells.map((inline) => ({
+            type: "paragraph",
+            ...(inline.length ? { content: inline } : {}),
+          })),
+        }],
+      },
+    });
+    editor = instance;
+    const { container } = render(<EditorContent editor={instance} />);
+    await act(async () => { await Promise.resolve(); });
+    const row = container.querySelector<HTMLElement>(".resume-layout-row");
+    if (!row) throw new Error("分栏行未渲染");
+    return { row, instance, blanks: () => row.dataset.blankColumns?.split(" ") ?? [] };
+  }
+
+  async function typeInto(instance: Editor, text: string) {
+    await act(async () => {
+      instance.commands.setTextSelection(2);
+      for (const character of text) {
+        instance.view.dispatch(instance.state.tr.insertText(character));
+      }
+      await Promise.resolve();
+    });
+  }
+
+  it("只有没有可见内容的栏带占位提示", async () => {
+    const { blanks } = await renderRow([[{ type: "text", text: "星河云科技" }], []]);
+
+    expect(blanks()).toEqual(["1"]);
+  });
+
+  it("左栏输入文字后该栏不再是空栏", async () => {
+    const { row, instance, blanks } = await renderRow([[], []]);
+    expect(blanks()).toEqual(["0", "1"]);
+
+    await typeInto(instance, "AIBDCC · 2026（在投）· 第一作者");
+
+    // 输入后残留的定位锚点仍然会让 ProseMirror 补上 trailingBreak，
+    // 但它不再代表这一栏空着，否则占位文字会和输入内容重叠。
+    expect(row.querySelector("p:first-child > br.ProseMirror-trailingBreak")).not.toBeNull();
+    expect(blanks()).toEqual(["1"]);
+  });
+
+  it("行内图标算可见内容", async () => {
+    const { blanks } = await renderRow([[
+      { type: "inlineIcon", attrs: { name: "Mail" } },
+    ], []]);
+
+    expect(blanks()).toEqual(["1"]);
+  });
+
+  it("等分栏首栏输入文字后只剩后面各栏是空栏", async () => {
+    const { instance, blanks } = await renderRow([[], [], []]);
+    await act(async () => {
+      setResumeRowColumns(instance, 0, 3);
+      await Promise.resolve();
+    });
+    expect(blanks()).toEqual(["0", "1", "2"]);
+
+    await typeInto(instance, "第一栏");
+
+    expect(blanks()).toEqual(["1", "2"]);
   });
 });

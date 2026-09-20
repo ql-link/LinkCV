@@ -1,8 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link2Off, Printer } from "lucide-react";
+import { Download, ExternalLink, Link2Off } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
 import { resumeDocumentTitle } from "../../api/resumeContract";
+import {
+  downloadPdfBlob,
+  resumePdfExportErrorMessage,
+  resumePdfFilename,
+} from "../preview/pdfExport";
 import "../preview/print/resume-print.css";
 import { renderResumePrintDocument } from "../preview/print/resumePrintDocument";
 
@@ -99,6 +104,9 @@ function useRestoreStandardFontSize() {
 export function SharePage({ token }: { token: string }) {
   const [payload, setPayload] = useState<PublicSharePayload | null>(null);
   const [status, setStatus] = useState<ShareStatus>("loading");
+  const [pdfPending, setPdfPending] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const pdfAbortRef = useRef<AbortController | null>(null);
   const { wrapRef, innerRef, fit, zoomSupported } = usePaperFit(
     status === "ready" && payload !== null,
   );
@@ -121,28 +129,70 @@ export function SharePage({ token }: { token: string }) {
       });
     return () => {
       cancelled = true;
+      pdfAbortRef.current?.abort();
     };
   }, [token]);
+
+  const downloadPdf = () => {
+    if (!payload || pdfPending) return;
+    pdfAbortRef.current?.abort();
+    const controller = new AbortController();
+    pdfAbortRef.current = controller;
+    setPdfPending(true);
+    setPdfError(null);
+    void api.downloadPublicSharePdf(token, controller.signal)
+      .then((result) => {
+        downloadPdfBlob(
+          result.blob,
+          resumePdfFilename(
+            result.filename,
+            resumeDocumentTitle(payload.data) || "resume",
+          ),
+        );
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPdfError(resumePdfExportErrorMessage(error));
+        }
+      })
+      .finally(() => {
+        if (pdfAbortRef.current === controller) {
+          pdfAbortRef.current = null;
+          setPdfPending(false);
+        }
+      });
+  };
 
   const documentHtml = useMemo(
     () => payload
       ? renderResumePrintDocument({
         title: resumeDocumentTitle(payload.data) || "LinkResume Resume",
         data: payload.data,
-        style: payload.style,
+        style: {
+          ...payload.style,
+          portable: {
+            ...payload.style.portable,
+            smart_one_page: true,
+          },
+        },
         layout_plan: payload.layout_plan,
+        assets: payload.assets,
       }, { className: "share-page-paper", ariaLabel: "分享简历内容" })
       : "",
     [payload],
   );
 
   if (status === "loading") {
-    return <PageLoading label="正在加载分享内容…" scope="page" />;
+    return (
+      <div className="share-page-loading" data-ui-theme="light">
+        <PageLoading label="正在加载分享内容…" scope="page" />
+      </div>
+    );
   }
 
   if (status === "unavailable" || !payload) {
     return (
-      <main className="share-unavailable">
+      <main className="share-unavailable" data-ui-theme="light">
         <ShareBrand />
         <section className="share-unavailable-card">
           <span className="share-unavailable-icon" aria-hidden="true">
@@ -172,19 +222,32 @@ export function SharePage({ token }: { token: string }) {
       };
 
   return (
-    <main className="share-page">
+    <main className="share-page" data-ui-theme="light">
       <header className="share-page-header">
-        <ShareBrand />
-        <span className="share-page-header-note">
-          由 {payload.sharer.nickname} 分享
-        </span>
+        <div className="share-page-header-identity">
+          <ShareBrand />
+          <span className="share-page-header-divider" aria-hidden="true" />
+          <span className="share-page-header-note">由 {payload.sharer.nickname} 分享</span>
+        </div>
         <span className="share-page-header-actions">
-          <Button variant="outline" size="sm" icon={<Printer size={14} />} onClick={() => window.print()}>
-            打印
-          </Button>
-          <Button size="sm" onClick={() => window.print()}>
-            下载 PDF
-          </Button>
+          <a className="share-page-home-link" href="/">
+            <span>访问 LinkResume</span>
+            <ExternalLink size={13} strokeWidth={1.8} aria-hidden="true" />
+          </a>
+          {payload.allow_download ? (
+            <>
+              {pdfError ? <span className="share-page-download-error" role="alert">{pdfError}</span> : null}
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Download size={14} />}
+                disabled={pdfPending}
+                onClick={downloadPdf}
+              >
+                {pdfPending ? "正在生成…" : "下载 PDF"}
+              </Button>
+            </>
+          ) : null}
         </span>
       </header>
       <section className="share-page-paper-scroll">
@@ -201,7 +264,6 @@ export function SharePage({ token }: { token: string }) {
           />
         </div>
       </section>
-      <footer className="share-page-footer">由 linkresume 生成</footer>
     </main>
   );
 }

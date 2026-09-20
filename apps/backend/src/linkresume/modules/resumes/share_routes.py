@@ -1,8 +1,4 @@
-from urllib.parse import unquote
-
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
-from minio.error import S3Error
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from linkresume.application.resumes.share_service import (
@@ -10,21 +6,22 @@ from linkresume.application.resumes.share_service import (
     create_or_overwrite_share,
     delete_share,
     resolve_public_share,
-    resolve_share_resume,
+    resolve_public_share_access,
     share_state_of,
     update_share,
 )
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.core.storage import (
-    AssetStorage,
-    get_storage,
-    infer_image_content_type,
-)
+from linkresume.core.storage import AssetStorage, get_storage
 from linkresume.modules.identity.dependencies import get_current_user, get_optional_user
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.asset_routes import stream_object
 from linkresume.modules.resumes.models import Resume
+from linkresume.modules.resumes.pdf_routes import (
+    get_pdf_renderer,
+    render_resume_pdf,
+    resume_pdf_response,
+)
+from linkresume.modules.resumes.pdf_service import ResumePdfRenderer
 from linkresume.modules.resumes.schemas import (
     DeleteResumeShareResponse,
     PublicSharePayload,
@@ -69,6 +66,7 @@ def create_share(
         user.id,
         visibility=request.visibility if request else None,
         expires_at=request.expires_at if request else None,
+        allow_download=request.allow_download if request else True,
     )
     if updated is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
@@ -90,6 +88,7 @@ def update_share_state(
             user.id,
             visibility=request.visibility,
             expires_at=request.expires_at,
+            allow_download=request.allow_download,
             provided_fields=request.model_fields_set,
         )
     except ShareLinkUnavailable as error:
@@ -113,57 +112,37 @@ def delete_share_state(
 @public_router.get("/{token}", response_model=PublicSharePayload)
 def get_public_share(
     token: str,
-    db: Session = Depends(get_db),
-    viewer: User | None = Depends(get_optional_user),
-) -> PublicSharePayload:
-    try:
-        return resolve_public_share(db, token, viewer)
-    except ShareLinkUnavailable as error:
-        raise ApiError(404, "SHARE_LINK_UNAVAILABLE") from error
-
-
-def _share_asset_object_key(resume: Resume, object_key: str) -> str:
-    """分享域只允许读取分享者的账号资产与该简历自身资产目录。"""
-    owner_prefix = f"users/{resume.user_id}/"
-    allowed_prefixes = (
-        f"{owner_prefix}assets/",
-        f"{owner_prefix}resumes/{resume.id}/assets/",
-    )
-    if not object_key.startswith(allowed_prefixes):
-        raise ApiError(404, "ASSET_NOT_FOUND")
-    if ".." in object_key.split("/"):
-        raise ApiError(404, "ASSET_NOT_FOUND")
-    return object_key
-
-
-@public_router.get("/{token}/assets/{object_key:path}", response_model=None)
-def read_public_share_asset(
-    token: str,
-    object_key: str,
+    response: Response,
     db: Session = Depends(get_db),
     viewer: User | None = Depends(get_optional_user),
     storage: AssetStorage = Depends(get_storage),
-) -> StreamingResponse:
-    """分享简历内嵌图片的公开读取：沿用分享可见性校验，按对象键白名单前缀放行。"""
+) -> PublicSharePayload:
+    response.headers["Cache-Control"] = "private, no-store"
     try:
-        resume = resolve_share_resume(db, token, viewer)
+        return resolve_public_share(db, token, viewer, storage)
     except ShareLinkUnavailable as error:
         raise ApiError(404, "SHARE_LINK_UNAVAILABLE") from error
-    object_key = _share_asset_object_key(resume, unquote(object_key))
+
+
+@public_router.get("/{token}/pdf", response_model=None)
+def download_public_share_pdf(
+    token: str,
+    db: Session = Depends(get_db),
+    viewer: User | None = Depends(get_optional_user),
+    storage: AssetStorage = Depends(get_storage),
+    renderer: ResumePdfRenderer = Depends(get_pdf_renderer),
+) -> Response:
     try:
-        response = storage.get(object_key)
-    except S3Error as error:
-        if error.code in {"NoSuchKey", "NoSuchObject"}:
-            raise ApiError(404, "ASSET_NOT_FOUND") from error
-        raise ApiError(502, "ASSET_READ_FAILED") from error
-    except Exception as error:
-        raise ApiError(502, "ASSET_READ_FAILED") from error
-    return StreamingResponse(
-        stream_object(response),
-        media_type=infer_image_content_type(object_key),
-        headers={
-            "Cache-Control": "private, max-age=31536000, immutable",
-            "Content-Security-Policy": "sandbox",
-            "X-Content-Type-Options": "nosniff",
-        },
+        resume, owner = resolve_public_share_access(db, token, viewer)
+    except ShareLinkUnavailable as error:
+        raise ApiError(404, "SHARE_LINK_UNAVAILABLE") from error
+    if not resume.share_allow_download:
+        raise ApiError(404, "SHARE_LINK_UNAVAILABLE")
+    pdf = render_resume_pdf(
+        resume,
+        owner.id,
+        storage,
+        renderer,
+        smart_one_page=True,
     )
+    return resume_pdf_response(resume, pdf)

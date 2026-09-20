@@ -27,7 +27,7 @@ function safeFontSize(value: unknown) {
 
 function safeAsset(value: unknown) {
   return typeof value === "string"
-    && /^(?:https?:\/\/|\/api\/assets\/|\/api\/resumes\/|\/api\/share\/|\/templates\/)/iu.test(value)
+    && /^(?:https?:\/\/|\/api\/assets\/|\/api\/resumes\/|\/templates\/)/iu.test(value)
     ? value
     : "";
 }

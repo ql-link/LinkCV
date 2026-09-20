@@ -74,16 +74,13 @@ def _run_resume(
     db: Session, run_id: str, resume_id: str | None = None
 ) -> tuple[object, object, Resume, object]:
     run, session = get_active_run(db, run_id)
-    selected_resume_id = resume_id or (
-        str(session.resume_id) if session.resume_id is not None else None
-    )
-    if selected_resume_id is None:
+    if resume_id is None:
         raise ApiError(409, "AGENT_RESUME_REQUIRED")
-    if not selected_resume_id.isascii() or not selected_resume_id.isdecimal():
+    if not resume_id.isascii() or not resume_id.isdecimal():
         raise ApiError(404, "RESUME_NOT_FOUND")
     resume = db.scalar(
         select(Resume).where(
-            Resume.id == int(selected_resume_id), Resume.user_id == session.user_id
+            Resume.id == int(resume_id), Resume.user_id == session.user_id
         )
     )
     if resume is None:
@@ -141,19 +138,9 @@ async def get_runtime_config(
 
 @router.get("/runs/{run_id}/context", response_model=ResumeContextResponse)
 def get_run_context(
-    run_id: str, db: Session = Depends(get_db)
+    run_id: str, resume_id: str, db: Session = Depends(get_db)
 ) -> ResumeContextResponse:
-    _, session = get_active_run(db, run_id)
-    if session.resume_id is None:
-        raise ApiError(409, "AGENT_RESUME_REQUIRED")
-    resume = db.scalar(
-        select(Resume).where(
-            Resume.id == session.resume_id, Resume.user_id == session.user_id
-        )
-    )
-    if resume is None:
-        raise ApiError(404, "RESUME_NOT_FOUND")
-    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    _, _, resume, snapshot = _run_resume(db, run_id, resume_id)
     return ResumeContextResponse(
         run_id=run_id,
         resume_id=str(resume.id),
@@ -170,7 +157,7 @@ def resolve_run_target(
     payload: TargetResolveRequest,
     db: Session = Depends(get_db),
 ) -> TargetResolveResponse:
-    _, _, resume, snapshot = _run_resume(db, run_id)
+    _, _, resume, snapshot = _run_resume(db, run_id, payload.resume_id)
     return TargetResolveResponse.model_validate(
         resolve_target(
             resume,
@@ -323,6 +310,7 @@ def create_run_proposal(
         db,
         run=run,
         session=session,
+        resume_id=payload.resume_id,
         call_key=payload.call_key,
         data=payload.data,
         style=payload.style,
@@ -379,7 +367,28 @@ def create_translation_run_proposal(
 def record_tool_event(
     run_id: str,
     payload: ToolEventRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> None:
-    run, _ = get_active_run(db, run_id)
+    run, session = get_active_run(db, run_id)
     upsert_tool_event(db, run=run, payload=payload)
+    request.app.state.event_emitter.system(
+        "WARNING" if payload.status == "failed" else "INFO",
+        "agent tool stage",
+        logger="linkresume.agent",
+        actor_user_id=session.user_id,
+        operation_id=run.public_id,
+        action=payload.tool_name,
+        stage=payload.stage or payload.tool_name,
+        result=payload.result or payload.status,
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        error_code=payload.error_code,
+        duration_ms=payload.duration_ms,
+        scope=payload.scope,
+        selection_present=payload.selection_present,
+        candidate_count=payload.candidate_count,
+        question_count=payload.question_count,
+        target_field=payload.target_field,
+        base_lock_version=payload.base_lock_version,
+    )

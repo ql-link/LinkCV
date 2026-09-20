@@ -100,6 +100,15 @@ if not Settings().wechat_enabled:
 '
 docker network inspect "${docker_network}" >/dev/null
 
+# Stop every process that can read or write the old AgentSession schema before
+# applying forward-only migrations.  A failed migration intentionally leaves
+# the old application stopped until an operator verifies schema compatibility.
+for runtime_container in linkresume-dev linkresume-worker-dev linkresume-pi-dev; do
+  if docker inspect "${runtime_container}" >/dev/null 2>&1; then
+    docker stop "${runtime_container}" >/dev/null
+  fi
+done
+
 docker run --rm \
   --network "${docker_network}" \
   --env-file "${base_env}" \
