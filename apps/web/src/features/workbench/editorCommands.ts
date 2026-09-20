@@ -224,11 +224,14 @@ export function setResumeRowColumnWidths(
   });
 }
 
+// 栏数固定的行（等分行、页头三行/四行）内容表达式不允许再分段，回车统一落到行外新段落。
+export const RESUME_FIXED_ROW_NODE_NAMES = new Set(["resumeRow", "resumeTrioRow", "resumeMetaRow"]);
+
 export function exitResumeRowToBlankParagraph(editor: Editor) {
   return editor.commands.command(({ state, dispatch }) => {
     const { $from } = state.selection;
     let rowDepth = $from.depth;
-    while (rowDepth > 0 && $from.node(rowDepth).type.name !== "resumeRow") rowDepth -= 1;
+    while (rowDepth > 0 && !RESUME_FIXED_ROW_NODE_NAMES.has($from.node(rowDepth).type.name)) rowDepth -= 1;
     if (rowDepth === 0) return false;
 
     const paragraphType = state.schema.nodes.paragraph;
@@ -267,7 +270,7 @@ export function removeBlankParagraphAfterResumeRow(editor: Editor) {
     ) return false;
 
     const paragraphIndex = $from.index(0);
-    if (paragraphIndex === 0 || state.doc.child(paragraphIndex - 1).type.name !== "resumeRow") return false;
+    if (paragraphIndex === 0 || !RESUME_FIXED_ROW_NODE_NAMES.has(state.doc.child(paragraphIndex - 1).type.name)) return false;
 
     const from = $from.before();
     const transaction = state.tr.delete(from, from + paragraph.nodeSize);
@@ -277,7 +280,8 @@ export function removeBlankParagraphAfterResumeRow(editor: Editor) {
   });
 }
 
-function hasVisibleResumeContent(node: ProseMirrorNode) {
+/** 定位锚点不算内容，只按文字、行内图标和行内图片判断这一块是否可见地空着。 */
+export function hasVisibleResumeContent(node: ProseMirrorNode) {
   let visible = false;
   node.descendants((child) => {
     if (child.type.name === "resumeBlockAnchor") return false;

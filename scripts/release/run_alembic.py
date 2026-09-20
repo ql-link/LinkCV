@@ -61,12 +61,12 @@ REVISION_REMOVED_COLUMN_MARKERS = {
     "0034": {
         "job_descriptions": frozenset({"archived_at"}),
     },
-    "0064": {
+    "0065": {
         "agent_sessions": frozenset({"resume_id"}),
     },
 }
 REVISION_REMOVED_INDEX_MARKERS = {
-    "0064": {
+    "0065": {
         "agent_sessions": frozenset({"idx_agent_sessions_resume_pinned_updated"}),
     },
 }

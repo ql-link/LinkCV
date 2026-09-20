@@ -2,14 +2,14 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SQL_PATH = REPO_ROOT / "apps/backend/migrations/sql/0064.up.sql"
+SQL_PATH = REPO_ROOT / "apps/backend/migrations/sql/0065.up.sql"
 REVISION_PATH = (
     REPO_ROOT
-    / "apps/backend/migrations/versions/0064_remove_agent_session_resume_binding.py"
+    / "apps/backend/migrations/versions/0065_remove_agent_session_resume_binding.py"
 )
 
 
-def test_0064_backfills_message_context_before_removing_binding() -> None:
+def test_0065_backfills_message_context_before_removing_binding() -> None:
     sql = SQL_PATH.read_text(encoding="utf-8")
     revision = REVISION_PATH.read_text(encoding="utf-8")
 
@@ -23,6 +23,6 @@ def test_0064_backfills_message_context_before_removing_binding() -> None:
     assert "DROP INDEX idx_agent_sessions_resume_pinned_updated" in sql
     assert "DROP COLUMN resume_id" in sql
     assert "DROP TABLE" not in sql.upper()
-    assert 'revision: str = "0064"' in revision
-    assert 'down_revision: str | None = "0063"' in revision
+    assert 'revision: str = "0065"' in revision
+    assert 'down_revision: str | None = "0064"' in revision
     assert "forward-only" in revision

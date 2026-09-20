@@ -605,7 +605,7 @@ def test_release_runner_rejects_job_archive_column_removed_before_0034() -> None
     engine.dispose()
 
 
-def test_release_runner_rejects_agent_resume_binding_still_present_after_0064() -> None:
+def test_release_runner_rejects_agent_resume_binding_still_present_after_0065() -> None:
     module = load_module(
         "linkresume_run_alembic_agent_binding_applied_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
@@ -617,7 +617,7 @@ def test_release_runner_rejects_agent_resume_binding_still_present_after_0064() 
         connection.execute(
             text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
         )
-        connection.execute(text("INSERT INTO alembic_version VALUES ('0064')"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0065')"))
         connection.execute(
             text(
                 "CREATE TABLE agent_sessions "
@@ -627,7 +627,7 @@ def test_release_runner_rejects_agent_resume_binding_still_present_after_0064() 
 
     with (
         engine.connect() as connection,
-        pytest.raises(RuntimeError, match="0064 removed columns still exist"),
+        pytest.raises(RuntimeError, match="0065 removed columns still exist"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -635,7 +635,7 @@ def test_release_runner_rejects_agent_resume_binding_still_present_after_0064() 
     engine.dispose()
 
 
-def test_release_runner_rejects_agent_resume_binding_removed_before_0064() -> None:
+def test_release_runner_rejects_agent_resume_binding_removed_before_0065() -> None:
     module = load_module(
         "linkresume_run_alembic_agent_binding_ahead_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
@@ -647,14 +647,14 @@ def test_release_runner_rejects_agent_resume_binding_removed_before_0064() -> No
         connection.execute(
             text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
         )
-        connection.execute(text("INSERT INTO alembic_version VALUES ('0063')"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0064')"))
         connection.execute(
             text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)")
         )
 
     with (
         engine.connect() as connection,
-        pytest.raises(RuntimeError, match="0064 columns removed before revision"),
+        pytest.raises(RuntimeError, match="0065 columns removed before revision"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -662,7 +662,7 @@ def test_release_runner_rejects_agent_resume_binding_removed_before_0064() -> No
     engine.dispose()
 
 
-def test_release_runner_rejects_agent_resume_index_still_present_after_0064() -> None:
+def test_release_runner_rejects_agent_resume_index_still_present_after_0065() -> None:
     module = load_module(
         "linkresume_run_alembic_agent_index_applied_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
@@ -675,7 +675,7 @@ def test_release_runner_rejects_agent_resume_index_still_present_after_0064() ->
         connection.execute(
             text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
         )
-        connection.execute(text("INSERT INTO alembic_version VALUES ('0064')"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0065')"))
         connection.execute(text("CREATE TABLE agent_sessions (id INTEGER PRIMARY KEY)"))
         connection.execute(
             text(
@@ -686,7 +686,7 @@ def test_release_runner_rejects_agent_resume_index_still_present_after_0064() ->
 
     with (
         engine.connect() as connection,
-        pytest.raises(RuntimeError, match="0064 removed indexes still exist"),
+        pytest.raises(RuntimeError, match="0065 removed indexes still exist"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)
@@ -694,7 +694,7 @@ def test_release_runner_rejects_agent_resume_index_still_present_after_0064() ->
     engine.dispose()
 
 
-def test_release_runner_rejects_agent_resume_index_removed_before_0064() -> None:
+def test_release_runner_rejects_agent_resume_index_removed_before_0065() -> None:
     module = load_module(
         "linkresume_run_alembic_agent_index_ahead_test",
         REPO_ROOT / "scripts/release/run_alembic.py",
@@ -707,7 +707,7 @@ def test_release_runner_rejects_agent_resume_index_removed_before_0064() -> None
         connection.execute(
             text("CREATE TABLE alembic_version (version_num VARCHAR(32))")
         )
-        connection.execute(text("INSERT INTO alembic_version VALUES ('0063')"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('0064')"))
         connection.execute(
             text(
                 "CREATE TABLE agent_sessions "
@@ -717,7 +717,7 @@ def test_release_runner_rejects_agent_resume_index_removed_before_0064() -> None
 
     with (
         engine.connect() as connection,
-        pytest.raises(RuntimeError, match="0064 indexes removed before revision"),
+        pytest.raises(RuntimeError, match="0065 indexes removed before revision"),
     ):
         module.validate_schema_revision_alignment(
             connection, migration_script_directory(module)

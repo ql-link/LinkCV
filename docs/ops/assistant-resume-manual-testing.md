@@ -37,7 +37,7 @@ npm run dev:development
 1. Web 页面可打开；
 2. `GET /api/health` 返回 HTTP 200；
 3. Pi 的 `/health` 返回 HTTP 200；
-4. Development 数据库已升级到 Alembic `0064`；
+4. Development 数据库已升级到 Alembic `0065`；
 5. 管理端已为 `pi_agent` 绑定可用模型；
 6. 浏览器已登录专用测试账号。
 
@@ -47,7 +47,7 @@ npm run dev:development
 LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend alembic current
 ```
 
-输出应包含 `0064 (head)`。这只能证明 Alembic 记录，需要排查 schema 漂移时还要核对 `resume_change_proposals` 是否真实存在 `proposed_title` 和 `result_resume_id` 列，并确认 `agent_sessions` 已不存在 `resume_id`。不要在截图、文档或缺陷记录中粘贴数据库密码、Cookie、内部 Bearer token 或模型密钥。
+输出应包含 `0065 (head)`。这只能证明 Alembic 记录，需要排查 schema 漂移时还要核对 `resume_change_proposals` 是否真实存在 `proposed_title` 和 `result_resume_id` 列，并确认 `agent_sessions` 已不存在 `resume_id`。不要在截图、文档或缺陷记录中粘贴数据库密码、Cookie、内部 Bearer token 或模型密钥。
 
 ### 2.2 建议的虚构测试数据
 
@@ -439,13 +439,13 @@ LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend alembic cur
 
 ## 7. 提案列表与迁移回归
 
-### TC-DB-01 `0064` schema 与提案列表
+### TC-DB-01 `0065` schema 与提案列表
 
 状态：`未执行`
 
 步骤：
 
-1. 确认目标数据库 Alembic revision 为 `0064`。
+1. 确认目标数据库 Alembic revision 为 `0065`。
 2. 核对 `agent_sessions` 不再包含 `resume_id` 列和 `idx_agent_sessions_resume_pinned_updated` 索引；确认升级前已有对话仍存在，且原来只有会话绑定、没有消息上下文的历史用户消息已经得到对应简历快照。
 3. 新建对话并发送普通问候。
 4. 再执行 TC-AI-05，创建翻译提案。
@@ -454,7 +454,7 @@ LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend alembic cur
 期望结果：
 
 - 普通问候不会因为加载提案列表而出现“智能助手没有完成这次请求，请稍后重试”；
-- 旧会话、运行和消息未被 `0064` 删除，旧绑定已转成消息级只读上下文且不会覆盖已有上下文；
+- 旧会话、运行和消息未被 `0065` 删除，旧绑定已转成消息级只读上下文且不会覆盖已有上下文；
 - 提案列表可读取 `proposed_title` 和 `result_resume_id`；
 - 未确认时 `result_resume_id` 为空；确认翻译后它指向新创建的简历；
 - 辅助提案列表加载失败不得把一个仍在进行或已经完成的模型运行误报为失败。
@@ -518,7 +518,7 @@ git diff --check
 
 | 现象 | 优先检查 |
 | --- | --- |
-| 普通问候后出现“智能助手没有完成” | Development 数据库是否实际升级到 `0064`；提案列表请求是否查询缺失字段 |
+| 普通问候后出现“智能助手没有完成” | Development 数据库是否实际升级到 `0065`；提案列表请求是否查询缺失字段 |
 | 回答结束后一次性出现 | Pi 是否逐个转发 `text_delta`；SSE 是否有多个 `assistant.delta`；Web 是否即时追加 delta |
 | 切页或刷新后会话为空 | 当前会话 URL、最近会话恢复、`active-run` 查询和 run 事件重放 |
 | 切页后生成被取消 | 页面卸载时是否错误调用 cancel，而不是仅断开浏览器订阅 |

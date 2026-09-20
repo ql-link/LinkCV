@@ -6,7 +6,7 @@ Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件
 
 根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22、锁定的 `playwright-core` 运行库和 Debian Chromium 复制/安装到运行镜像。PDF 子进程以专用非登录用户 `linkresume-pdf` 运行，保留 Chromium 沙箱；固定路径为 `/usr/bin/chromium`，智能一页默认上限为 2000mm。独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；Production Cloud 还通过 `DEBIAN_MIRROR` build arg 使用阿里云 Debian 镜像，apt 继续校验 Debian 仓库签名，本地及其他构建默认使用官方 `deb.debian.org`。构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 结构化澄清消息字段、`0033` 面试中心三张表等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
 
-其中 `0051` 的发布门禁还核对 `user_profiles` 的画像目标列和已删除旧列。未应用但已经是完整目标结构时允许 migration 自身做 no-op；已应用后若目标列缺失或旧列残留，runner 会在任何后续 DDL 前停止。`0064` 门禁同样会拦截提前删除或在 revision 已应用后仍残留的 `agent_sessions.resume_id`。
+其中 `0051` 的发布门禁还核对 `user_profiles` 的画像目标列和已删除旧列。未应用但已经是完整目标结构时允许 migration 自身做 no-op；已应用后若目标列缺失或旧列残留，runner 会在任何后续 DDL 前停止。`0065` 门禁同样会拦截提前删除或在 revision 已应用后仍残留的 `agent_sessions.resume_id`。
 
 仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先停止会读写旧 schema 的当前 LinkResume Web、Worker 和 Pi，再用新 `linkresume` 镜像以显式目标参数运行迁移 runner、更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。首次从 SQLite `linkcv` 切换是例外：旧栈在独立导入窗口前保持服务。
 
@@ -56,6 +56,7 @@ Production Job。首次加入触发器后需手动运行一次 `linkresume-prod`
 `Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
 
 Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；应用私密覆盖必须由部署密钥存储预先提供到 `.env.production.local` 且权限为 `600`。OSS 发布凭据使用另一个不进入 Compose 的 `/opt/tolink/LinkResume/.env.oss-cdn.local`，格式见 `deploy/oss-cdn.env.example`；文件必须为 `600`，包含目标 Bucket、OSS Region 和专用最小权限 RAM 凭据，可选设置 OSS Endpoint。发布脚本通过 ossutil 官方环境变量读取凭据，不把 AccessKey 放入命令参数、镜像、应用进程或日志。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
+首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
 
 首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
 
@@ -89,7 +90,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 执行 `0051` 前必须确认目标数据库已有可恢复备份并停止画像写入。runner 和 revision 只接受完整的旧画像结构或完整的当前画像结构；旧结构会在本 revision 内完成 0045/0046 规则的前向转换，当前结构只验证后推进版本。已应用 `0051` 的数据库还必须通过目标画像列存在、旧列（包括中间 `professional_directions`）消失的门禁。未知或部分结构在任何 DDL 前停止；MySQL DDL 失败只能依赖备份整体恢复或新的 forward revision，不能执行 downgrade。
 
-执行 `0064` 前必须验证可恢复的 MySQL 备份，并停止旧 Web、Worker 和 Pi 容器。该 revision 先更新缺少上下文的历史 Agent 用户消息，再删除旧应用仍会访问的 `agent_sessions.resume_id` 及索引；迁移时间同时受历史消息回填量影响。迁移开始后发布脚本不得自动恢复旧镜像。若新应用健康检查失败，保持旧容器停止，核对实际 schema 后选择前向修复，或先恢复迁移前数据库备份再恢复与之匹配的旧镜像。runner 同时核对该列和 `idx_agent_sessions_resume_pinned_updated` 索引，拒绝 revision 与物理 schema 不一致的数据库。
+执行 `0065` 前必须验证可恢复的 MySQL 备份，并停止旧 Web、Worker 和 Pi 容器。该 revision 先更新缺少上下文的历史 Agent 用户消息，再删除旧应用仍会访问的 `agent_sessions.resume_id` 及索引；迁移时间同时受历史消息回填量影响。迁移开始后发布脚本不得自动恢复旧镜像。若新应用健康检查失败，保持旧容器停止，核对实际 schema 后选择前向修复，或先恢复迁移前数据库备份再恢复与之匹配的旧镜像。runner 同时核对该列和 `idx_agent_sessions_resume_pinned_updated` 索引，拒绝 revision 与物理 schema 不一致的数据库。
 
 两条 Pipeline 都提供 `RUN_TESTS` 参数；开启后会在镜像构建前运行 `npm run setup && npm run check`。常规 PR/push 质量检查仍由 GitHub Actions 执行。
 
@@ -104,7 +105,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前仓库 head `0064`；`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹，并只对已登记的 Development 旧 `0059` 完整结构执行缺失基础 DDL 的增量补齐；已有 `user_preferences` 不删除。`0063` 为独立简历翻译提案增加新标题与结果简历字段，`0064` 先把旧绑定回填为消息上下文，再删除 Agent 会话上已废弃的持久化简历绑定字段及其复合索引，会话、运行和消息记录保留。
+- 当前仓库 head `0065`；`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹，并只对已登记的 Development 旧 `0059` 完整结构执行缺失基础 DDL 的增量补齐；已有 `user_preferences` 不删除。`0063` 为独立简历翻译提案增加新标题与结果简历字段，`0064` 增加分享页 PDF 下载权限，`0065` 先把旧绑定回填为消息上下文，再删除 Agent 会话上已废弃的持久化简历绑定字段及其复合索引，会话、运行和消息记录保留。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。

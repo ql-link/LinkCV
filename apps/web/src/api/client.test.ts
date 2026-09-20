@@ -456,6 +456,28 @@ describe("resume PDF download API", () => {
       requestId: "request-pdf-1",
     });
   });
+
+  it("公开分享 PDF 使用编码后的 token 且不要求锁版本", async () => {
+    const blob = new Blob(["%PDF-share"], { type: "application/pdf" });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        "Content-Disposition": "attachment; filename*=UTF-8''%E5%88%86%E4%BA%AB%E7%AE%80%E5%8E%86.pdf",
+      }),
+      blob: vi.fn().mockResolvedValue(blob),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.downloadPublicSharePdf("token/abc")).resolves.toEqual({
+      blob,
+      filename: "分享简历.pdf",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/share/token%2Fabc/pdf",
+      expect.objectContaining({ method: "GET", credentials: "include" }),
+    );
+  });
 });
 
 describe("JD API client", () => {
@@ -713,6 +735,7 @@ describe("API resume share", () => {
       share_token: "token_abc",
       share_visibility: "public",
       share_expires_at: null,
+      share_allow_download: true,
       share_created_at: "2026-08-05T00:00:00Z",
     };
     const fetchMock = vi
@@ -725,7 +748,9 @@ describe("API resume share", () => {
         jsonResponse(200, {
           data: defaultSemanticDocument,
           style: defaultSemanticStyle,
+          assets: {},
           sharer: { nickname: "于晏", avatar_url: null },
+          allow_download: true,
         }),
       );
     vi.stubGlobal("fetch", fetchMock);

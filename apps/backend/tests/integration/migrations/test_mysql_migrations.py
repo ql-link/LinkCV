@@ -35,7 +35,7 @@ from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0064"
+EXPECTED_HEAD = "0065"
 
 
 def canonical_editor_markdown(data: dict[str, Any]) -> str:
@@ -358,6 +358,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "share_token",
         "share_visibility",
         "share_expires_at",
+        "share_allow_download",
         "share_created_at",
         "created_at",
         "updated_at",
@@ -525,6 +526,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
+    assert resume_columns["share_allow_download"]["nullable"] is False
+    assert resume_columns["share_allow_download"]["type"].unsigned is True
+    assert str(resume_columns["share_allow_download"]["default"]).strip("'") == "1"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
@@ -536,6 +540,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_check_constraints("resumes")
     } == {
         "ck_resumes_lock_version",
+        "ck_resumes_share_allow_download",
         "ck_resumes_share_fields",
         "ck_resumes_share_visibility",
         "ck_resumes_source_type",
@@ -758,6 +763,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "share_token",
         "share_visibility",
         "share_expires_at",
+        "share_allow_download",
         "share_created_at",
         "created_at",
         "updated_at",
@@ -888,6 +894,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
+    assert resume_columns["share_allow_download"]["nullable"] is False
+    assert resume_columns["share_allow_download"]["type"].unsigned is True
+    assert str(resume_columns["share_allow_download"]["default"]).strip("'") == "1"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert call_columns["user_id"]["type"].unsigned is True
     assert call_columns["source"]["type"].length == 32
@@ -905,6 +914,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_check_constraints("resumes")
     } == {
         "ck_resumes_lock_version",
+        "ck_resumes_share_allow_download",
         "ck_resumes_share_fields",
         "ck_resumes_share_visibility",
         "ck_resumes_source_type",
@@ -1094,10 +1104,10 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     engine.dispose()
 
 
-def test_0064_removes_resume_binding_without_deleting_conversations() -> None:
+def test_0065_removes_resume_binding_without_deleting_conversations() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0063")
+    run_alembic(database_url, "upgrade", "0064")
     engine = create_engine(database_url)
     try:
         with engine.begin() as connection:
@@ -1205,6 +1215,58 @@ def test_0064_removes_resume_binding_without_deleting_conversations() -> None:
         reset_test_database_to_base(database_url)
         run_alembic(database_url, "upgrade", "head")
         engine.dispose()
+
+
+def test_resume_share_download_permission_upgrade_preserves_existing_shares() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0063")
+    engine = create_engine(database_url)
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('share-migration@example.invalid', 'fictional', '张三')"
+            )
+        ).lastrowid
+        template_id = connection.scalar(
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-cn'")
+        )
+        resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type, "
+                "share_token, share_visibility, share_created_at) "
+                "VALUES (:user_id, :template_id, '虚构迁移简历', JSON_OBJECT(), "
+                "JSON_OBJECT(), 'template', 'fictional-share-token', 'public', "
+                "'2026-09-20 00:00:00')"
+            ),
+            {"user_id": user_id, "template_id": template_id},
+        ).lastrowid
+
+    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "head")
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT share_token, share_allow_download FROM resumes WHERE id = :id"
+            ),
+            {"id": resume_id},
+        ).one()
+        assert row == ("fictional-share-token", 1)
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0065"
+
+    with pytest.raises(DBAPIError):
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE resumes SET share_allow_download = 2 WHERE id = :id"),
+                {"id": resume_id},
+            )
+
+    engine.dispose()
+    reset_test_database_to_base(database_url)
 
 
 def test_storage_cleanup_forward_migration_refuses_pending_tasks() -> None:

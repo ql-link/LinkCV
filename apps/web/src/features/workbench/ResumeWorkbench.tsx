@@ -752,6 +752,9 @@ export function setWorkbenchEditorEditable(editor: RestorableEditor, editable: b
 }
 
 function plainParagraphsFromHtml(html: string) {
+  // 编辑器内部复制/剪切产生的 HTML 带 data-pm-slice 标记与 resume-* 节点结构，
+  // 原样交给 schema 解析才能保住分栏、图片等格式；外部来源的 HTML 仍拍平为纯段落。
+  if (html.includes("data-pm-slice")) return html;
   const root = document.createElement("div");
   root.innerHTML = html;
   const blockTags = new Set(["ADDRESS", "ARTICLE", "BLOCKQUOTE", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "P", "PRE", "SECTION", "TR"]);
