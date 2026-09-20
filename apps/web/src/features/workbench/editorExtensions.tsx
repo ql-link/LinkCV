@@ -42,6 +42,7 @@ import {
   exitVisuallyBlankResumeListItem,
   insertParagraphBeforeHeadingStart,
   mergeHeadingStartIntoPreviousBlock,
+  removeBlankLineBeforeHeading,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
   setResumeRowColumnWidths,
@@ -730,6 +731,7 @@ export const ResumeRowExitKeymap = Extension.create({
         || removeBlankParagraphAfterResumeRow(this.editor)
         || removeVisuallyBlankResumeLine(this.editor)
         || mergeHeadingStartIntoPreviousBlock(this.editor),
+      Delete: () => removeBlankLineBeforeHeading(this.editor),
     };
   },
 });
