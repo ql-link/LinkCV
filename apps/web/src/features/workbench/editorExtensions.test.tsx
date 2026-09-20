@@ -1,12 +1,19 @@
 import { Editor } from "@tiptap/core";
+import { TextSelection } from "@tiptap/pm/state";
+import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { EditorContent } from "@tiptap/react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resumeEditorExtensions } from "./editorExtensions";
+import { resumeEditorExtensions, fullyCoveredResumeLayoutNode } from "./editorExtensions";
 import { setResumeRowColumns } from "./editorCommands";
 
 let editor: Editor | null = null;
+
+// jsdom 没有 ClipboardEvent，view.pasteHTML 需要一个占位类。
+if (!globalThis.ClipboardEvent) {
+  (globalThis as Record<string, unknown>).ClipboardEvent = class extends Event {};
+}
 
 afterEach(() => {
   editor?.destroy();
@@ -477,5 +484,229 @@ describe("叶子节点指针选区", () => {
     const backward = createBetween(from + 3, from + 1);
     expect(backward).not.toBeNull();
     expect(backward!.from).toBe(from);
+  });
+});
+
+describe("分栏结构剪切复制", () => {
+  const ROW_DOC = {
+    type: "doc",
+    content: [
+      { type: "paragraph", content: [{ type: "text", text: "上文段落" }] },
+      {
+        type: "resumeRow",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "左栏文字" }] },
+          { type: "paragraph", content: [{ type: "text", text: "右栏文字" }] },
+        ],
+      },
+      { type: "paragraph", content: [{ type: "text", text: "下文段落" }] },
+    ],
+  };
+
+  function nodePos(typeName: string) {
+    let pos = -1;
+    editor!.state.doc.descendants((node, nodePos) => {
+      if (node.type.name === typeName) pos = nodePos;
+    });
+    return pos;
+  }
+
+  const nodeAt = (typeName: string) => editor!.state.doc.nodeAt(nodePos(typeName));
+
+  function createEditor(content: object) {
+    editor = new Editor({ extensions: resumeEditorExtensions, content });
+    return editor;
+  }
+
+  // 布局节点内首个/末个可见叶子的边界（跳过结构锚点，兼容锚点是否已注入）。
+  function leafRange(pos: number, node: PMNode) {
+    let first = -1;
+    let last = -1;
+    node.descendants((child, offset) => {
+      if (child.isLeaf) {
+        if (child.type.name !== "resumeBlockAnchor") {
+          const childPos = pos + 1 + offset;
+          if (first < 0) first = childPos;
+          last = childPos + child.nodeSize;
+        }
+        return false;
+      }
+      return true;
+    });
+    return { first, last };
+  }
+
+  function rowTextRange() {
+    const pos = nodePos("resumeRow");
+    const node = editor!.state.doc.nodeAt(pos)!;
+    const { first, last } = leafRange(pos, node);
+    return { pos, node, from: first, to: last };
+  }
+
+  function setTextSel(from: number, to: number) {
+    const { doc, tr } = editor!.state;
+    editor!.view.dispatch(tr.setSelection(TextSelection.create(doc, from, to)));
+  }
+
+  function fakeClipboardEvent(type: "copy" | "cut") {
+    const store: Record<string, string> = {};
+    const event = {
+      type,
+      clipboardData: {
+        clearData: () => { Object.keys(store).forEach((k) => delete store[k]); },
+        setData: (t: string, v: string) => { store[t] = v; },
+        getData: (t: string) => store[t] ?? "",
+      },
+      preventDefault: vi.fn(),
+    };
+    const handled = editor!.view.someProp(
+      "handleDOMEvents",
+      (handlers: Record<string, unknown>) => (
+        typeof handlers?.[type] === "function"
+          ? (handlers[type] as (v: unknown, e: unknown) => boolean)(editor!.view, event)
+          : null
+      ),
+    );
+    return { event, store, handled };
+  }
+
+  it("选区覆盖整行内容时返回行节点", () => {
+    createEditor(ROW_DOC);
+    const { from, to } = rowTextRange();
+    setTextSel(from, to);
+    const target = fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection);
+    expect(target?.node.type.name).toBe("resumeRow");
+    expect(target?.node.nodeSize).toBe(nodeAt("resumeRow")!.nodeSize);
+  });
+
+  it("选区只覆盖部分内容时不接管", () => {
+    createEditor(ROW_DOC);
+    const { pos, node, to } = rowTextRange();
+    setTextSel(pos + 4, to); // 少选了第一个字
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+    // 跨过行外文字也不接管（默认切片已携带整行结构）
+    setTextSel(2, pos + node.nodeSize - 2);
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+  });
+
+  it("只选一栏内容时不接管", () => {
+    createEditor(ROW_DOC);
+    const pos = nodePos("resumeRow");
+    const cell = editor!.state.doc.nodeAt(pos + 1)!;
+    const { first, last } = leafRange(pos + 1, cell);
+    setTextSel(first, last);
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+  });
+
+  it("剪切整行内容：剪贴板带结构标记且行节点被删除", () => {
+    createEditor(ROW_DOC);
+    const { from, to } = rowTextRange();
+    setTextSel(from, to);
+    const { event, store, handled } = fakeClipboardEvent("cut");
+
+    expect(handled).toBe(true);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(store["text/html"]).toContain('data-type="resume-row"');
+    expect(store["text/plain"]).toContain("左栏文字");
+    expect(nodePos("resumeRow")).toBe(-1);
+    const json = editor!.getJSON();
+    const texts = JSON.stringify(json);
+    expect(texts).toContain("上文段落");
+    expect(texts).not.toContain("左栏文字");
+  });
+
+  it("复制整行内容：剪贴板带结构标记且文档不变", () => {
+    createEditor(ROW_DOC);
+    const { from, to } = rowTextRange();
+    setTextSel(from, to);
+    const { store, handled } = fakeClipboardEvent("copy");
+
+    expect(handled).toBe(true);
+    expect(store["text/html"]).toContain('data-type="resume-row"');
+    expect(nodeAt("resumeRow")!.nodeSize).toBeGreaterThan(0);
+  });
+
+  it("普通文字选区复制走默认行为", () => {
+    createEditor(ROW_DOC);
+    setTextSel(2, 5);
+    const { handled } = fakeClipboardEvent("copy");
+    expect(handled).toBeFalsy();
+  });
+
+  it("结构剪贴板 HTML 粘贴回编辑器时还原为分栏行", () => {
+    createEditor({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "上文" }] },
+        {
+          type: "resumeColumns",
+          content: [
+            { type: "resumeColumn", attrs: { variant: "sidebar" }, content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏" }] }] },
+            {
+              type: "resumeColumn",
+              content: [
+                {
+                  type: "resumeRow",
+                  content: [
+                    { type: "paragraph", content: [{ type: "text", text: "2023.07 知行文创" }] },
+                    { type: "paragraph", content: [{ type: "text", text: "行政助理" }] },
+                  ],
+                },
+                { type: "paragraph", content: [{ type: "text", text: "在列内段落" }] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const view = editor!.view;
+    const pos = nodePos("resumeRow");
+    const row = view.state.doc.nodeAt(pos)!;
+    const { dom } = view.serializeForClipboard(new Slice(Fragment.from(row), 0, 0));
+    const html = dom.innerHTML;
+    expect(html).toContain('data-type="resume-row"');
+
+    let tailEnd = -1;
+    view.state.doc.descendants((n, p) => {
+      if (n.type.name === "paragraph" && p > pos) tailEnd = p + n.nodeSize - 1;
+    });
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, tailEnd)));
+
+    view.pasteHTML(html);
+    let rows = 0;
+    view.state.doc.descendants((n) => { if (n.type.name === "resumeRow") rows++; });
+    expect(rows).toBe(2);
+  });
+
+  it("覆盖双栏容器全部内容时剪切整个 resumeColumns", () => {
+    createEditor({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "头部" }] },
+        {
+          type: "resumeColumns",
+          content: [
+            {
+              type: "resumeColumn",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏甲" }] }],
+            },
+            {
+              type: "resumeColumn",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "主栏乙" }] }],
+            },
+          ],
+        },
+      ],
+    });
+    const pos = nodePos("resumeColumns");
+    const node = editor!.state.doc.nodeAt(pos)!;
+    const { first, last } = leafRange(pos, node);
+    setTextSel(first, last);
+    const target = fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection);
+    expect(target?.node.type.name).toBe("resumeColumns");
+
+    const { store } = fakeClipboardEvent("cut");
+    expect(store["text/html"]).toContain('data-type="resume-columns"');
+    expect(nodePos("resumeColumns")).toBe(-1);
   });
 });

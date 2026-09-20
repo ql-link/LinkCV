@@ -9,7 +9,7 @@ import Underline from "@tiptap/extension-underline";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
-import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
+import { Fragment, Slice, type Node as PMNode, type ResolvedPos } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import {
   AlignCenter,
@@ -1098,6 +1098,81 @@ export const ResumeAtomPointerSelection = Extension.create({
   },
 });
 
+// 文本选区恰好覆盖某个布局节点（分栏行/等分行/meta 行/双栏容器）的全部内容时，
+// 复制与剪切应带走整个结构节点：只处理文字会在原地留下空壳分栏，
+// 而剪贴板里没有结构标记，粘贴出来就退化成纯文本。
+const RESUME_LAYOUT_NODE_NAMES = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow", "resumeColumns"]);
+
+// 选区是否覆盖了 node 内所有可见内容（resumeBlockAnchor 是结构性锚点，不可见，不参与判断）。
+const coversEntireNode = (node: PMNode, pos: number, from: number, to: number): boolean => {
+  let covered = true;
+  node.descendants((child, offset) => {
+    if (!covered) return false;
+    if (child.type.name === "resumeBlockAnchor") return false;
+    if (child.isLeaf) {
+      const childFrom = pos + 1 + offset;
+      covered = childFrom >= from && childFrom + child.nodeSize <= to;
+      return false;
+    }
+    return true;
+  });
+  return covered;
+};
+
+// 自内向外找第一个被选区完全包住内容的布局节点；
+// 找到的第一个布局节点没被选区覆盖时直接放弃，避免外层的更大结构被误删。
+export const fullyCoveredResumeLayoutNode = (selection: TextSelection): { node: PMNode; pos: number } | null => {
+  const { $from, to } = selection;
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth);
+    if (!RESUME_LAYOUT_NODE_NAMES.has(node.type.name)) continue;
+    const pos = $from.before(depth);
+    if (to > pos + node.nodeSize - 1) continue;
+    return coversEntireNode(node, pos, selection.from, to) ? { node, pos } : null;
+  }
+  return null;
+};
+
+export const ResumeLayoutClipboard = Extension.create({
+  name: "resumeLayoutClipboard",
+  addProseMirrorPlugins() {
+    const copyWholeLayout = (view: EditorView, event: Event, cut: boolean): boolean => {
+      const selection = view.state.selection;
+      if (!(selection instanceof TextSelection) || selection.empty) return false;
+      const target = fullyCoveredResumeLayoutNode(selection);
+      const data = (event as ClipboardEvent).clipboardData;
+      if (!target || !data) return false;
+      const { dom, text } = view.serializeForClipboard(new Slice(Fragment.from(target.node), 0, 0));
+      event.preventDefault();
+      data.clearData();
+      data.setData("text/html", dom.innerHTML);
+      data.setData("text/plain", text);
+      if (cut) {
+        try {
+          view.dispatch(
+            view.state.tr.delete(target.pos, target.pos + target.node.nodeSize).scrollIntoView(),
+          );
+        } catch {
+          // 删掉唯一内容导致文档非法时退化为默认剪切（清掉文字、保留壳）。
+          return false;
+        }
+      }
+      return true;
+    };
+    return [
+      new Plugin({
+        key: new PluginKey("resumeLayoutClipboard"),
+        props: {
+          handleDOMEvents: {
+            copy: (view, event) => copyWholeLayout(view, event, false),
+            cut: (view, event) => copyWholeLayout(view, event, true),
+          },
+        },
+      }),
+    ];
+  },
+});
+
 export const FontSize = TextStyle.extend({
   addAttributes() {
     return {
@@ -1142,4 +1217,5 @@ export const resumeEditorExtensions: Extensions = [
   InlineImage,
   InlineIcon,
   ResumeAtomPointerSelection,
+  ResumeLayoutClipboard,
 ];
