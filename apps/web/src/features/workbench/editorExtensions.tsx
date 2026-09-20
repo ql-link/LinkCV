@@ -40,6 +40,8 @@ import { useResumeStore } from "../../store/resumeStore";
 import {
   exitResumeRowToBlankParagraph,
   exitVisuallyBlankResumeListItem,
+  insertParagraphBeforeHeadingStart,
+  mergeHeadingStartIntoPreviousBlock,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
   setResumeRowColumnWidths,
@@ -498,6 +500,8 @@ function ResumeColumnMenu({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // 输入法组合期间的按键（选词回车、取消 Esc、翻页方向键）不归菜单处理。
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
@@ -720,10 +724,12 @@ export const ResumeRowExitKeymap = Extension.create({
   name: "resumeRowExitKeymap",
   addKeyboardShortcuts() {
     return {
-      Enter: () => exitVisuallyBlankResumeListItem(this.editor),
+      Enter: () => exitVisuallyBlankResumeListItem(this.editor)
+        || insertParagraphBeforeHeadingStart(this.editor),
       Backspace: () => exitVisuallyBlankResumeListItem(this.editor)
         || removeBlankParagraphAfterResumeRow(this.editor)
-        || removeVisuallyBlankResumeLine(this.editor),
+        || removeVisuallyBlankResumeLine(this.editor)
+        || mergeHeadingStartIntoPreviousBlock(this.editor),
     };
   },
 });

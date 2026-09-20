@@ -1,5 +1,5 @@
 import type { Editor } from "@tiptap/react";
-import { Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Fragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { InlineIconName } from "../../lib/resumeInlineIcon";
 import { normalizeResumeRowColumnWidths } from "./resumeRowColumns";
@@ -272,6 +272,62 @@ export function removeBlankParagraphAfterResumeRow(editor: Editor) {
     const from = $from.before();
     const transaction = state.tr.delete(from, from + paragraph.nodeSize);
     transaction.setSelection(TextSelection.near(transaction.doc.resolve(from - 1), -1));
+    dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
+/**
+ * 光标是否停在文本块的视觉行首。隐藏的 resumeBlockAnchor 占据行首两个可停靠
+ * 位置（锚点前 parentOffset 0 与锚点后 parentOffset === nodeSize），都算行首。
+ */
+function atVisualTextblockStart($from: ResolvedPos) {
+  const anchor = $from.parent.firstChild?.type.name === "resumeBlockAnchor"
+    ? $from.parent.firstChild
+    : null;
+  return $from.parentOffset === 0 || (anchor !== null && $from.parentOffset === anchor.nodeSize);
+}
+
+/**
+ * 标题行首回车：在标题上方插入一个空段落，而不是拆出一个空标题。
+ * 光标留在标题行首，与段落行首回车（上方多出空行、光标不动）行为一致。
+ */
+export function insertParagraphBeforeHeadingStart(editor: Editor) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const { $from, empty } = state.selection;
+    if (!empty || $from.depth !== 1 || $from.parent.type.name !== "heading") return false;
+    if (!atVisualTextblockStart($from)) return false;
+    const paragraphType = state.schema.nodes.paragraph;
+    if (!paragraphType) return false;
+
+    const transaction = state.tr.insert($from.before(), paragraphType.create());
+    dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
+/**
+ * 非空标题在行首退格时把整行合并进上一个文本块。默认的 joinBackward 会被
+ * 行首隐藏锚点拦成空操作，导致标题既删不掉也合并不上去，这里显式处理。
+ */
+export function mergeHeadingStartIntoPreviousBlock(editor: Editor) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const { $from, empty } = state.selection;
+    if (!empty || $from.depth !== 1 || $from.parent.type.name !== "heading") return false;
+    if (!atVisualTextblockStart($from)) return false;
+
+    const before = $from.before();
+    const nodeBefore = state.doc.resolve(before).nodeBefore;
+    if (!nodeBefore?.isTextblock) return false;
+
+    const anchor = $from.parent.firstChild?.type.name === "resumeBlockAnchor"
+      ? $from.parent.firstChild
+      : null;
+    const transaction = state.tr;
+    // 先去掉本行的定位锚点，避免合并后残留在段落中间。
+    if (anchor) transaction.delete($from.start(), $from.start() + anchor.nodeSize);
+    transaction.join(before);
+    transaction.setSelection(TextSelection.near(transaction.doc.resolve(before), -1));
     dispatch?.(transaction.scrollIntoView());
     return true;
   });

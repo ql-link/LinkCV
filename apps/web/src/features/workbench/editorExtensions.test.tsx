@@ -186,6 +186,25 @@ describe("分栏栏数菜单", () => {
     expect(row).toHaveStyle({ "--resume-row-columns": "3" });
   });
 
+  it("输入法组合期间的按键不触发栏数切换或关闭菜单", async () => {
+    const row = await renderRow(["星河云科技", "2022.9 – 2026.6"]);
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menu", { name: "分栏栏数" })).toBeInTheDocument();
+
+    const composingEnter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    Object.defineProperty(composingEnter, "isComposing", { value: true });
+    act(() => { document.dispatchEvent(composingEnter); });
+
+    // 组合中的 Enter 不归菜单处理：菜单不关、栏数不变。
+    expect(screen.getByRole("menu", { name: "分栏栏数" })).toBeInTheDocument();
+    expect(editor?.state.doc.firstChild?.childCount).toBe(2);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    expect(screen.queryByRole("menu", { name: "分栏栏数" })).not.toBeInTheDocument();
+  });
+
   it("只读编辑器里的分栏行不弹出栏数菜单", async () => {
     const row = await renderRow(["A", "B"], false);
     fireEvent.contextMenu(row);
