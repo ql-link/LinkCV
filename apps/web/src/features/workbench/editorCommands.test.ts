@@ -220,6 +220,63 @@ describe("convertCurrentLineToResumeRow", () => {
     expect(editor.state.doc.firstChild?.textContent).toBe("左栏右栏");
   });
 
+  it.each([
+    ["resumeTrioRow", 3],
+    ["resumeMetaRow", 4],
+  ])("%s 末格按 Enter 会退出行并进入后续空白行", (type, cells) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type,
+          content: Array.from({ length: cells }, (_, i) => ({
+            type: "paragraph",
+            content: [{ type: "text", text: `格${i}` }],
+          })),
+        }],
+      },
+    });
+    const row = editor.state.doc.firstChild!;
+    // 最后一个单元格的文本末尾
+    editor.commands.setTextSelection(row.nodeSize - 2);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content).toMatchObject([
+      { type },
+      { type: "paragraph" },
+    ]);
+    expect(editor.state.selection.$from.parent).toEqual(editor.state.doc.child(1));
+    // 行结构原样保留，仍然是固定栏数
+    expect(editor.state.doc.firstChild?.childCount).toBe(cells);
+  });
+
+  it("固定行退出后的空白行可以按 Backspace 删除并回到末格", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeTrioRow",
+          content: [
+            { type: "paragraph", content: [{ type: "text", text: "公司" }] },
+            { type: "paragraph", content: [{ type: "text", text: "日期" }] },
+            { type: "paragraph", content: [{ type: "text", text: "岗位" }] },
+          ],
+        }],
+      },
+    });
+    const row = editor.state.doc.firstChild!;
+    editor.commands.setTextSelection(row.nodeSize - 2);
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content).toHaveLength(1);
+    expect(editor.getJSON().content?.[0]).toMatchObject({ type: "resumeTrioRow" });
+  });
+
   it("不会把分栏后的非空正文误判成可删除空行", () => {
     editor = new Editor({
       extensions: resumeEditorExtensions,

@@ -118,6 +118,10 @@ class Resume(Base):
             "share_visibility IS NULL OR share_visibility IN ('private', 'public')",
             name="ck_resumes_share_visibility",
         ),
+        CheckConstraint(
+            "share_allow_download IN (0, 1)",
+            name="ck_resumes_share_allow_download",
+        ),
         {"comment": "用户简历当前版本"},
     )
 
@@ -173,6 +177,13 @@ class Resume(Base):
         timestamp_type(),
         nullable=True,
         comment="分享过期时间（UTC），NULL 表示长期有效",
+    )
+    share_allow_download: Mapped[int] = mapped_column(
+        unsigned_tinyint_type(),
+        nullable=False,
+        default=1,
+        server_default="1",
+        comment="是否允许通过分享页下载 PDF：0 禁止 / 1 允许",
     )
     share_created_at: Mapped[datetime | None] = mapped_column(
         timestamp_type(), nullable=True, comment="分享创建时间（UTC）"

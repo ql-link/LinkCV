@@ -41,6 +41,7 @@ import {
   agentErrorMessage,
   clarificationAllowsCustom,
   clarificationAnswerText,
+  clarificationAnswerPayload,
   pendingClarificationMessage,
   type ClarificationAnswer,
 } from "../agent/AgentPanel";
@@ -53,6 +54,7 @@ import {
   AgentModelSummary,
   AgentMessage,
   AgentProposal,
+  AgentSelectionContext,
   AgentSession,
   AgentStreamEvent,
   ApiRequestError,
@@ -262,7 +264,6 @@ function blankSession(): AgentSession {
   const timestamp = new Date().toISOString();
   return {
     id: NEW_CONVERSATION_KEY,
-    resume_id: null,
     title: "新对话",
     pinned: false,
     status: "active",
@@ -445,6 +446,8 @@ function safeAgentError(error: unknown) {
     AGENT_CONTEXT_NOT_FOUND: "所选资料已不可用，请重新选择。",
     AGENT_CONTEXT_STALE: "所选资料已发生变化，请刷新选择后重试。",
     AGENT_CONTEXT_READ_FAILED: "所选资料暂时无法读取，请稍后重试。",
+    AGENT_CLARIFICATION_CONTEXT_CONFLICT: "这次回答选择了另一份资料，请继续使用原问题对应的资料。",
+    AGENT_CLARIFICATION_CONTEXT_INVALID: "原问题的资料记录已损坏，请重新发起请求。",
     AGENT_SESSION_NOT_FOUND: "对话不存在或已无法访问。",
     AGENT_UNAVAILABLE: "智能助手暂时不可用，草稿和已选资料不会丢失。",
     AGENT_MODEL_UNAVAILABLE: "当前模型暂时不可用，请稍后重试。",
@@ -519,6 +522,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [resumePickerOpen, setResumePickerOpen] = useState(false);
   const [resumeListLoading, setResumeListLoading] = useState(false);
   const [embeddedResumeId, setEmbeddedResumeId] = useState<string | null>(null);
+  const [embeddedSelectionContext, setEmbeddedSelectionContext] = useState<AgentSelectionContext | null>(null);
   const [resumeOpeningId, setResumeOpeningId] = useState<string | null>(null);
   const [resumeOpenError, setResumeOpenError] = useState<string | null>(null);
   const [datasetsOpen, setDatasetsOpen] = useState(false);
@@ -1206,12 +1210,25 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     return result.session;
   };
 
-  const runMessage = async (content: string, replyToSequenceNo?: number) => {
+  const runMessage = async (
+    content: string,
+    replyToSequenceNo?: number,
+    clarificationAnswersPayload?: ReturnType<typeof clarificationAnswerPayload>,
+  ) => {
     const trimmed = content.trim();
     const key = activeKeyRef.current;
     const state = conversationStates[key] ?? blankConversation();
     const statePendingClarification = pendingClarificationMessage(state.messages);
     if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) return;
+    const runSelectionContext = embeddedResumeId ? embeddedSelectionContext : null;
+    const runResumeContextId = embeddedResumeId;
+    if (runResumeContextId) {
+      await saveCurrentResume();
+      if (useResumeStore.getState().saveStatus === "error") {
+        updateConversation(key, { error: "当前简历保存失败，智能助手没有读取所选内容。" });
+        return;
+      }
+    }
     let session: AgentSession;
     try {
       session = await ensureSession(state);
@@ -1226,12 +1243,18 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     const controller = new AbortController();
     abortRef.current = controller;
     const sentContexts = state.contexts;
-    const requestContexts: AgentContextRef[] = sentContexts.map(({ type, id, version_id: versionId, version }) => ({
+    let requestContexts: AgentContextRef[] = sentContexts.map(({ type, id, version_id: versionId, version }) => ({
       type,
       id,
       ...(versionId ? { version_id: versionId } : {}),
       ...(version ? { version } : {}),
     }));
+    if (runResumeContextId) {
+      requestContexts = [
+        { type: "resume", id: runResumeContextId },
+        ...requestContexts.filter((item) => item.type !== "resume"),
+      ];
+    }
     const existingState = conversationStates[requestKey] ?? state;
     let reusedTemporaryPrompt = false;
     const existingMessages = existingState.messages.filter((message) => {
@@ -1271,6 +1294,8 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           content: trimmed,
           idempotency_key: idempotencyKey(),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
+          ...(clarificationAnswersPayload ? { clarification_answers: clarificationAnswersPayload } : {}),
+          ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
           ...(requestContexts.length > 0 ? { contexts: requestContexts } : {}),
         },
         controller.signal,
@@ -1353,6 +1378,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     void runMessage(
       clarificationAnswerText(pendingClarification.clarification, answers),
       pendingClarification.sequence_no,
+      clarificationAnswerPayload(pendingClarification.clarification, answers),
     );
   };
 
@@ -1740,6 +1766,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     if (resumeOpeningId) return;
     setResumeOpeningId(resumeId);
     setResumeOpenError(null);
+    setEmbeddedSelectionContext(null);
     try {
       if (embeddedResumeId && embeddedResumeId !== resumeId) {
         await saveCurrentResume();
@@ -1762,6 +1789,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const closeEmbeddedResume = () => {
     setEmbeddedResumeId(null);
+    setEmbeddedSelectionContext(null);
     setSidebarCollapsed(false);
   };
 
@@ -2300,7 +2328,11 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
         {embeddedResumeId && (
           <section className="assistant-resume-pane" aria-label="简历编辑区">
-            <ResumeWorkbench embedded onClose={closeEmbeddedResume} />
+            <ResumeWorkbench
+              embedded
+              onClose={closeEmbeddedResume}
+              onAgentSelectionChange={setEmbeddedSelectionContext}
+            />
           </section>
         )}
         </div>
