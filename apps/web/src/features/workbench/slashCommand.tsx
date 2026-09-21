@@ -216,6 +216,8 @@ export function SlashCommandMenu({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // 输入法组合期间的按键（选词回车、取消 Esc、翻页方向键）不归菜单处理。
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();

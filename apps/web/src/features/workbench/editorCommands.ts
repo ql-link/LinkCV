@@ -1,5 +1,5 @@
 import type { Editor } from "@tiptap/react";
-import { Fragment, type Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Fragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { InlineIconName } from "../../lib/resumeInlineIcon";
 import { normalizeResumeRowColumnWidths } from "./resumeRowColumns";
@@ -275,6 +275,97 @@ export function removeBlankParagraphAfterResumeRow(editor: Editor) {
     const from = $from.before();
     const transaction = state.tr.delete(from, from + paragraph.nodeSize);
     transaction.setSelection(TextSelection.near(transaction.doc.resolve(from - 1), -1));
+    dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
+/**
+ * 光标是否停在文本块的视觉行首。隐藏的 resumeBlockAnchor 占据行首两个可停靠
+ * 位置（锚点前 parentOffset 0 与锚点后 parentOffset === nodeSize），都算行首。
+ */
+function atVisualTextblockStart($from: ResolvedPos) {
+  const anchor = $from.parent.firstChild?.type.name === "resumeBlockAnchor"
+    ? $from.parent.firstChild
+    : null;
+  return $from.parentOffset === 0 || (anchor !== null && $from.parentOffset === anchor.nodeSize);
+}
+
+/**
+ * 标题行首回车：在标题上方插入一个空段落，而不是拆出一个空标题。
+ * 光标留在标题行首，与段落行首回车（上方多出空行、光标不动）行为一致。
+ */
+export function insertParagraphBeforeHeadingStart(editor: Editor) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const { $from, empty } = state.selection;
+    if (!empty || $from.depth !== 1 || $from.parent.type.name !== "heading") return false;
+    if (!atVisualTextblockStart($from)) return false;
+    const paragraphType = state.schema.nodes.paragraph;
+    if (!paragraphType) return false;
+
+    const transaction = state.tr.insert($from.before(), paragraphType.create());
+    dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
+/**
+ * 行首退格的显式处理：上一块为空行时删掉这个空行（当前行类型不变）；
+ * 当前行是标题且上一块有内容时把整行合并进上一个文本块。默认的
+ * joinBackward/deleteBarrier 会命中行首隐藏锚点，被锚点重建拦成空操作，
+ * 而对空行直接 join 又会把标题降级成正文，所以两条路径都显式接管。
+ */
+export function mergeHeadingStartIntoPreviousBlock(editor: Editor) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const { $from, empty } = state.selection;
+    if (!empty || $from.depth !== 1 || !$from.parent.isTextblock) return false;
+    if (!atVisualTextblockStart($from)) return false;
+
+    const before = $from.before();
+    const nodeBefore = state.doc.resolve(before).nodeBefore;
+    if (!nodeBefore?.isTextblock) return false;
+
+    const anchor = $from.parent.firstChild?.type.name === "resumeBlockAnchor"
+      ? $from.parent.firstChild
+      : null;
+    const transaction = state.tr;
+    if (nodeBefore.textContent.length === 0) {
+      // 上一块是空行：删除它并把光标留在当前行行首，当前行保持原类型。
+      const blankFrom = before - nodeBefore.nodeSize;
+      transaction.delete(blankFrom, before);
+      transaction.setSelection(TextSelection.create(transaction.doc, blankFrom + 1 + (anchor?.nodeSize ?? 0)));
+    } else {
+      if ($from.parent.type.name !== "heading") return false;
+      // 先去掉本行的定位锚点，避免合并后残留在段落中间。
+      if (anchor) transaction.delete($from.start(), $from.start() + anchor.nodeSize);
+      transaction.join(before);
+      transaction.setSelection(TextSelection.near(transaction.doc.resolve(before), -1));
+    }
+    dispatch?.(transaction.scrollIntoView());
+    return true;
+  });
+}
+
+/**
+ * 空行（含隐藏锚点、无可见文字）里按 Delete 时删除本空行，光标落到下一块
+ * 行首。默认 joinForward 会把下一块并进空行——若下一块是标题还会把它降级。
+ */
+export function removeBlankLineBeforeBlock(editor: Editor) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const { $from, empty } = state.selection;
+    if (!empty || $from.depth !== 1 || !$from.parent.isTextblock) return false;
+    if ($from.parent.textContent.length > 0) return false;
+    if (!atVisualTextblockStart($from) && $from.parentOffset !== $from.parent.content.size) return false;
+
+    const after = $from.after();
+    const nodeAfter = state.doc.resolve(after).nodeAfter;
+    if (!nodeAfter) return false;
+
+    const anchorAfter = nodeAfter.firstChild?.type.name === "resumeBlockAnchor"
+      ? nodeAfter.firstChild
+      : null;
+    const transaction = state.tr.delete($from.before(), after);
+    transaction.setSelection(TextSelection.create(transaction.doc, $from.before() + 1 + (anchorAfter?.nodeSize ?? 0)));
     dispatch?.(transaction.scrollIntoView());
     return true;
   });
