@@ -2355,6 +2355,8 @@ select:not([data-slot]):focus-visible {
   padding: 5px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
   backdrop-filter: blur(18px) saturate(180%);
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .media-context-toolbar button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--ui-text-muted); cursor: pointer; }
@@ -2377,6 +2379,7 @@ select:not([data-slot]):focus-visible {
   line-height: 0;
 }
 .resume-inline-image img { display: block; width: 100%; height: 100%; }
+.resume-inline-image.ProseMirror-selectednode { outline: none; }
 .inline-image-toolbar { line-height: normal; }
 .inline-image-size-field > span { width: auto; height: auto; margin-left: 7px; background: transparent; color: var(--ui-text-muted); font: 0.68rem/1 var(--ui-font); }
 .inline-image-size-field input { width: 44px; padding-left: 3px; }
