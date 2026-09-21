@@ -2359,6 +2359,7 @@ select:not([data-slot]):focus-visible {
   user-select: none;
 }
 
+.media-context-toolbar input { -webkit-user-select: text; user-select: text; }
 .media-context-toolbar button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--ui-text-muted); cursor: pointer; }
 .media-context-toolbar button:hover { background: var(--ui-accent-subtle); color: var(--ui-accent); }
 .media-context-toolbar span { width: 1px; height: 18px; background: var(--ui-border); }
@@ -2380,6 +2381,8 @@ select:not([data-slot]):focus-visible {
 }
 .resume-inline-image img { display: block; width: 100%; height: 100%; }
 .resume-inline-image.ProseMirror-selectednode { outline: none; }
+.resume-inline-image::selection,
+.resume-inline-image *:not(input)::selection { background: transparent; }
 .inline-image-toolbar { line-height: normal; }
 .inline-image-size-field > span { width: auto; height: auto; margin-left: 7px; background: transparent; color: var(--ui-text-muted); font: 0.68rem/1 var(--ui-font); }
 .inline-image-size-field input { width: 44px; padding-left: 3px; }
