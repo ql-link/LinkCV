@@ -18,9 +18,9 @@ def test_every_adapted_template_ships_pinned_source_and_full_license() -> None:
     notices = (ROOT / "apps/web/public/third-party/template-notices.txt").read_text(encoding="utf-8")
     for _, definition in SAMPLES:
         assert definition["template_key"] in notices
-    assert len(re.findall(r"Source: https://github.com/[^\s]+/tree/[0-9a-f]{40}", notices)) == 6
-    assert notices.count("Permission is hereby granted, free of charge") == 6
-    assert notices.count('THE SOFTWARE IS PROVIDED "AS IS"') == 6
+    assert len(re.findall(r"Source: https://github.com/[^\s]+/tree/[0-9a-f]{40}", notices)) >= 6
+    assert notices.count("Permission is hereby granted, free of charge") >= 6
+    assert notices.count('THE SOFTWARE IS PROVIDED "AS IS"') >= 6
 
 
 def test_six_new_templates_are_registered_and_insert_only() -> None:

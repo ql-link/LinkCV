@@ -23,6 +23,8 @@ import { atlasThemes } from "./atlasThemes";
 import { studioThemes } from "./studioThemes";
 import { openThemes } from "./openThemes";
 import { originalThemes } from "./originalThemes";
+import { careerThemes } from "./careerThemes";
+import { featuredThemes } from "./featuredThemes";
 
 describe("resume semantic contract adapter", () => {
   it("uses a safe fallback for invalid persisted accent colors", () => {
@@ -293,7 +295,7 @@ describe("resume semantic contract adapter", () => {
     );
   });
 
-  it.each([...atlasThemes, ...studioThemes, ...openThemes, ...originalThemes, "right-rail", "sage-paper", "blue-ribbon", "timeline-gutter", "centered-portrait", "mist-masthead"] as const)("preserves the %s visual family through save and reload", (theme) => {
+  it.each([...atlasThemes, ...studioThemes, ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes, "right-rail", "sage-paper", "blue-ribbon", "timeline-gutter", "centered-portrait", "mist-masthead"] as const)("preserves the %s visual family through save and reload", (theme) => {
     const original = structuredClone(defaultCanonicalPresentation);
     original.template_snapshot.template_key = `${theme}-cn`;
     original.template_scoped = { [`${theme}-cn`]: {} };

@@ -1590,6 +1590,66 @@ select:not([data-slot]):focus-visible,
 [class*="theme-open-"] .resume-avatar {float:right;margin:0 0 12px 20px;overflow:hidden;border-radius:50%}
 [class*="theme-open-"] .resume-avatar img[src] {width:100%;height:100%;object-fit:cover;transform:none}
 
+/* Career series: scoped MIT layout adaptations; no upstream fonts or assets. */
+[class*="theme-career-"] .resume-content {color:#30363b}
+[class*="theme-career-"] .resume-content h1 {font-size:29pt;line-height:1.25;letter-spacing:.06em;text-align:left;margin:0 0 6px;color:var(--preview-accent)}
+[class*="theme-career-"] .resume-content h1 + p {font-size:12pt;margin:0 0 8px;text-align:left}
+[class*="theme-career-"] .resume-content h2 {clear:both;font-size:12pt;line-height:1.4;margin:17px 0 8px;padding:0 0 5px;border:0;border-bottom:1px solid #d7dcdf;color:var(--preview-accent)}
+[class*="theme-career-"] .resume-content h3 {font-size:10.5pt;line-height:1.45;margin:10px 0 4px;font-weight:700}
+[class*="theme-career-"] .resume-content p {margin:4px 0 7px}
+[class*="theme-career-"] .resume-content :is(ul,ol) {padding-left:18px;margin:5px 0 10px}
+[class*="theme-career-"] .resume-content li {margin:3px 0;line-height:inherit}
+[class*="theme-career-"] .resume-content h3 + p {color:#59636b;font-size:.94em}
+
+/* Kendall: centered identity, gray employment ribbons and a supporting column. */
+.theme-career-kendall .resume-content > h1,
+.theme-career-kendall .resume-content > h1 + p,
+.theme-career-kendall .resume-content > h1 + p + p {text-align:center}
+.theme-career-kendall .resume-content > h1 + p + p {padding-bottom:14px;border-bottom:3px double #bac9c7}
+.theme-career-kendall :is(.resume-columns,.resume-layout-columns) {display:grid;grid-template-columns:minmax(0,2.15fr) minmax(0,1fr);gap:25px;align-items:start;min-height:0;margin-top:14px}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1;min-width:0}
+.theme-career-kendall :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;min-width:0;border-left:1px solid #d5dfdc;padding-left:18px}
+.theme-career-kendall :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+.theme-career-kendall .resume-content h2 {border:0;padding:0;font-size:12pt}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) h3 {background:#edf2f0;padding:7px 10px;margin-bottom:0;border-left:3px solid var(--preview-accent)}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) h3 + p {background:#edf2f0;padding:0 10px 6px;margin-top:0;border-left:3px solid var(--preview-accent)}
+
+/* Stack Overflow: compact timeline spine and quiet uppercase-like section bands. */
+.theme-career-stack .resume-content > h1 {color:#27343c;border-left:6px solid var(--preview-accent);padding-left:14px}
+.theme-career-stack .resume-content > h1 + p {padding-left:20px}
+.theme-career-stack .resume-content h2 {background:#f1f4f6;border:0;padding:6px 10px;letter-spacing:.14em;font-size:11pt;color:#39464d}
+.theme-career-stack .resume-content h3 {position:relative;margin-left:9px;padding-left:17px;border-left:2px solid #d2dce1}
+.theme-career-stack .resume-content h3::before {content:"";position:absolute;left:-5px;top:6px;width:8px;height:8px;background:var(--preview-accent);border-radius:50%}
+.theme-career-stack .resume-content h3 + p {margin-left:9px;padding-left:17px;border-left:2px solid #d2dce1}
+.theme-career-stack .resume-content :is(ul,ol) {margin-left:9px;padding-left:32px;border-left:2px solid #d2dce1}
+
+/* Spartan: open page, lightweight section labels and inset narrative. */
+.theme-career-spartan .resume-content > h1 {font-size:30pt;color:#25282b;letter-spacing:.02em}
+.theme-career-spartan .resume-content > h1 + p {color:#796b64;font-size:13pt}
+.theme-career-spartan .resume-content h2 {font-weight:400;font-size:10.5pt;color:#796b64;border:0;border-top:1px solid #e3dcd6;padding-top:7px;margin-top:12px;letter-spacing:.18em}
+.theme-career-spartan .resume-content h2 ~ :is(h3,p,ul,ol) {margin-left:24px}
+.theme-career-spartan .resume-content h3 {margin-top:7px;color:#24272b}
+.theme-career-spartan .resume-content li::marker {color:#9a8272}
+.theme-career-spartan .resume-content :is(ul,ol) {margin-top:3px;margin-bottom:7px}
+
+/* Onepage: a real section-label gutter with dashed separators. */
+.theme-career-onepage .resume-content > h1 {font-size:27pt;letter-spacing:.12em}
+.theme-career-onepage .resume-content > h1 + p + p {padding-bottom:12px;border-bottom:2px solid var(--preview-accent)}
+.theme-career-onepage .resume-content > h2 {float:left;clear:both;width:75px;margin:15px 0 0;border:0;padding:0;font-size:10.5pt}
+.theme-career-onepage .resume-content > h2 ~ :is(h3,p,ul,ol) {margin-left:96px}
+.theme-career-onepage .resume-content > h2 + :is(h3,p) {border-top:1px dashed #cad5d9;padding-top:13px;margin-top:15px}
+.theme-career-onepage .resume-content ul {list-style-type:circle}
+
+/* RenderCV Classic: centered typographic header and partial heading rules. */
+.theme-career-classic .resume-content > h1,
+.theme-career-classic .resume-content > h1 + p,
+.theme-career-classic .resume-content > h1 + p + p {text-align:center}
+.theme-career-classic .resume-content > h1 {font-size:30pt;letter-spacing:.04em}
+.theme-career-classic .resume-content h2 {display:flex;align-items:center;gap:14px;border:0;padding:0;font-size:13pt;margin-top:17px}
+.theme-career-classic .resume-content h2::after {content:"";height:1px;flex:1;background:var(--preview-accent);opacity:.55}
+.theme-career-classic .resume-content h3 {margin-top:8px}
+.theme-career-classic .resume-content li {margin:2px 0}
+
 /* Even: muted masthead with a section-label gutter, not a sidebar of content. */
 .theme-open-even .resume-content > :is(h1,p) {background:#f0f2f3;padding:8px 20px;margin:0}
 .theme-open-even .resume-content > h1 {padding-top:20px;color:#262d33;font-weight:400}
@@ -1725,6 +1785,443 @@ select:not([data-slot]):focus-visible,
 .theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) h3::before {content:"";position:absolute;left:-26px;top:.45em;width:9px;height:9px;background:#547bc1;border-radius:50%;box-shadow:0 0 0 3px #edf3fb}
 .theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {text-align:center;border-bottom:0}
 .theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {border-bottom:3px solid #a9bedf;padding-bottom:6px}
+
+/* Featured blue catalog: editable typography shared by preview, editor and PDF. */
+[class*="theme-featured-"] :is(.resume-columns,.resume-layout-columns) {min-height:0;clear:both}
+[class*="theme-featured-"] .resume-content h3 {color:#242a35;font-weight:600}
+[class*="theme-featured-"] .resume-avatar {overflow:hidden}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content {color:#242a35;line-height:1.5}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h1 {font-size:23pt;text-align:left;line-height:1.2;margin:0 0 8px;color:var(--preview-accent)}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h1 + p {text-align:left;margin:0 0 8px;font-size:11pt}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h2 {font-size:11pt;line-height:1.4;border:0;margin:18px 0 8px;color:var(--preview-accent);clear:both}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h3 {font-size:10.5pt;margin:12px 0 4px;float:none;max-width:none}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content p {margin:4px 0 7px}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h3 + p {font-size:9pt;color:#5e6877;text-align:left;padding:0}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content ul {margin:5px 0 10px;padding-left:17px}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content li {margin:3px 0}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-avatar {border-radius:2px;border:0;box-shadow:none;margin:0 0 12px 18px}
+:is(.theme-featured-campus,.theme-featured-sales,.theme-featured-finance) :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,2.4fr) minmax(0,1fr);gap:22px;margin-top:18px;align-items:stretch}
+:is(.theme-featured-campus,.theme-featured-sales,.theme-featured-finance) :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1}
+:is(.theme-featured-campus,.theme-featured-sales,.theme-featured-finance) :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;padding:16px 14px;background:#f1f4fc}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2.25fr);gap:24px;margin-top:0;align-items:stretch}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-main,.resume-layout-column-main) {grid-column:2;grid-row:1}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1;grid-row:1;background:#dce5fc;padding:20px 15px}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:none;display:block;margin:0 auto 12px}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {font-size:19pt}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {border-bottom:1px solid #91aee9;padding-bottom:5px}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) p {font-size:9pt;overflow-wrap:anywhere}
+
+/* 40: continuous blue masthead, summary inside, pale supporting rail below. */
+.theme-featured-campus .resume-content > :is(h1,p,h2) {background:var(--preview-accent);color:white;padding:6px 18px;margin:0}
+.theme-featured-campus .resume-content > h1 {padding-top:14px;border-radius:6px 6px 0 0}
+.theme-featured-campus .resume-content > h1 + p {margin:0;color:white}
+.theme-featured-campus .resume-content > h2 {font-size:10pt;clear:none;padding-top:10px}
+.theme-featured-campus .resume-content > h2 + p {padding-bottom:18px;border-radius:0 0 6px 6px}
+.theme-featured-campus .resume-avatar {position:relative;margin:18px 18px 8px 20px}
+.theme-featured-campus :is(.resume-column-main,.resume-layout-column-main) h2 {border-left:3px solid var(--preview-accent);padding-left:9px}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) h2 {margin-top:12px;margin-bottom:5px}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) h3 {margin-top:8px}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) li {margin:2px 0}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) ul {margin-bottom:6px}
+
+/* 60: the identity belongs to the pale full-height left rail. */
+.theme-featured-professional :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {text-align:center;color:#252e40}
+.theme-featured-professional :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p {text-align:center}
+.theme-featured-professional :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p + p {border:1px solid #91aee9;border-radius:4px;padding:9px}
+.theme-featured-professional :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0}
+
+/* 70: open identity above capsule chapter rules; unlike 110, no contact panel. */
+.theme-featured-intern .resume-avatar {float:left;margin:0 20px 12px 0}
+.theme-featured-intern .resume-content h2 {position:relative;isolation:isolate;background:#edf1fc;border-radius:20px;color:#fff;padding:5px 16px}
+.theme-featured-intern .resume-content h2::before {content:"";position:absolute;inset:0 auto 0 0;width:112px;max-width:100%;background:var(--preview-accent);border-radius:20px;z-index:-1}
+.theme-featured-intern .resume-content > h1 + p + p {padding-bottom:10px;border-bottom:1px solid #edf1fc}
+
+/* 120: white identity/main column, saturated supporting column extending down. */
+.theme-featured-sales :is(.resume-columns,.resume-layout-columns) {margin-top:0;min-height:255mm}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:var(--preview-accent);color:white}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) :is(h2,h3,p) {color:white}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 + p {color:white}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {border-bottom:1px solid #8cacf7;padding-bottom:6px}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) p {font-size:9pt}
+.theme-featured-sales .resume-avatar {float:left;margin:0 16px 12px 0}
+.theme-featured-sales .resume-content h1 {font-size:20pt;color:#242a35}
+.theme-featured-sales :is(.resume-column-main,.resume-layout-column-main) h2 {border-bottom:1px solid #aeb6c5;padding-bottom:4px;color:#242a35}
+
+/* 160: blue identity tile and adjacent light summary, then two continuous rails. */
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:#dce5fc;padding-top:0}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(h1,p):not(h2 ~ *) {background:var(--preview-accent);color:white;margin:0 -15px;padding:6px 15px}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h1 {padding-top:16px!important}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h1 + p {margin-bottom:0;font-size:9pt}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:left;margin:14px 10px 8px 0;position:relative}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0;padding:12px 14px 0;background:#dce5fc}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child + p {background:#dce5fc;margin-top:0;padding:8px 14px 14px}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) h2:not(:first-child) {border-bottom:1px solid #a7bff0;padding-bottom:5px}
+
+/* 90: continuous slim experience rules and discrete skill cards. */
+.theme-featured-finance .resume-content > h1 + p + p {border-top:2px solid #86aaff;padding-top:9px;clear:both}
+.theme-featured-finance :is(.resume-column-main,.resume-layout-column-main) > :is(h3,p,ul) {border-left:2px solid #bdd0f8;padding-left:14px}
+.theme-featured-finance :is(.resume-column-main,.resume-layout-column-main) > ul {padding-left:30px}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:white;border-left:1px solid #cfdbf2;padding-top:0}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {background:#eff3fc;padding:10px 10px 4px;margin-bottom:0;border-top:2px solid #a7bef1}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 ~ p {background:#eff3fc;padding:4px 10px;margin:0 0 6px}
+
+/* 130: full-width blue chapter strips; English cues are decoration, not data. */
+.theme-featured-people .resume-content h1 {color:#242a35}
+.resume-paper.theme-featured-people .resume-content {font-size:var(--resume-font-size,var(--preview-font-size));line-height:var(--resume-line-height,var(--preview-line-height))}
+.theme-featured-people .resume-content h2 {margin-top:12px;margin-bottom:6px}
+.theme-featured-people .resume-content h3 {margin-top:8px}
+.theme-featured-people .resume-content :is(ul,ol) {margin-top:4px;margin-bottom:6px}
+.theme-featured-people .resume-content li {margin:2px 0}
+.theme-featured-people .resume-content h3:has(+ p + p) {float:left;max-width:65%;margin-right:10px}
+.theme-featured-people .resume-content h3 + p:has(+ p) {text-align:right;padding-top:8px}
+.theme-featured-people .resume-content h3 + p + p {clear:both}
+.theme-featured-people .resume-content h2 {background:#4776d2;color:white;padding:5px 12px;font-weight:600}
+.theme-featured-people .resume-content h2::after {font-size:8pt;font-weight:400;margin-left:12px;letter-spacing:.02em}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="education"])::after {content:"Education"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="work"])::after {content:"Experience"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="project"])::after {content:"Projects"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="profile"])::after {content:"Profile"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="skills"])::after {content:"Skills"}
+
+/* 170/180: rounded blue identity card with two chapter-navigation variants. */
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content {
+  position:relative;
+  color:#202633;
+  line-height:1.42;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > h1 {
+  box-sizing:border-box;
+  min-height:42px;
+  margin:0 0 0 82px;
+  padding:14px 86px 2px 16px;
+  border-radius:9px 9px 0 0;
+  background:var(--preview-accent);
+  color:#fff;
+  font-size:22pt;
+  line-height:1.1;
+  text-align:left;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > h1 + p {
+  margin:0 0 0 82px;
+  padding:2px 86px 3px 16px;
+  background:var(--preview-accent);
+  color:#fff;
+  font-size:10pt;
+  text-align:left;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > h1 + p + p {
+  margin:0 0 20px 82px;
+  padding:3px 86px 13px 16px;
+  border-radius:0 0 9px 9px;
+  background:var(--preview-accent);
+  color:#fff;
+  font-size:8.5pt;
+  text-align:left;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-avatar {
+  position:absolute;
+  z-index:1;
+  top:14px;
+  left:8px;
+  float:none;
+  margin:0;
+  border:3px solid #fff;
+  border-radius:5px;
+  box-shadow:0 2px 8px rgb(30 54 102 / 16%);
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h2 {
+  color:var(--preview-accent);
+  font-size:11pt;
+  font-weight:700;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3 {
+  margin:9px 0 2px;
+  color:#202633;
+  font-size:10pt;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3:has(+ p + p) {
+  float:left;
+  max-width:65%;
+  margin-right:10px;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3 + p:has(+ p) {
+  margin:9px 0 2px;
+  color:#48566f;
+  font-size:8.5pt;
+  text-align:right;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3 + p + p {clear:both}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content p {margin:3px 0 6px}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content ul {margin:3px 0 8px;padding-left:17px}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content li {margin:2px 0}
+
+.theme-featured-card-dashed .resume-content h2 {
+  margin:14px 0 6px;
+  padding-bottom:4px;
+  border-bottom:1px dashed color-mix(in srgb,var(--preview-accent) 78%,white);
+}
+.theme-featured-card-dashed .resume-content h2:first-of-type {margin-top:4px}
+
+.theme-featured-card-rail .resume-content {
+  display:grid;
+  grid-template-columns:94px minmax(0,1fr);
+  column-gap:20px;
+  align-items:start;
+}
+.theme-featured-card-rail .resume-content > * {grid-column:2}
+.theme-featured-card-rail .resume-content > .resume-avatar {grid-column:1}
+.theme-featured-card-rail .resume-content > h2 {
+  grid-column:1;
+  align-self:start;
+  margin:14px 0 0;
+  padding-top:1px;
+  border:0;
+  text-align:right;
+}
+.theme-featured-card-rail .resume-content > h2 + :is(h3,p) {
+  margin-top:14px;
+  padding-top:1px;
+  border-top:1px solid color-mix(in srgb,var(--preview-accent) 56%,white);
+}
+.theme-featured-card-rail .resume-content > h1,
+.theme-featured-card-rail .resume-content > h1 + p,
+.theme-featured-card-rail .resume-content > h1 + p + p {
+  width:auto;
+  margin-left:0;
+}
+.theme-featured-card-rail .resume-content > h1 + p,
+.theme-featured-card-rail .resume-content > h1 + p + p {
+  box-shadow:0 -4px 0 var(--preview-accent);
+}
+.theme-featured-card-rail .resume-content > h1 + p + p {margin-bottom:8px}
+
+/* 190: quiet centered masthead with a conventional, scan-friendly business body. */
+.theme-featured-classic-business .resume-content {
+  position:relative;
+  color:#222936;
+  line-height:1.4;
+}
+.theme-featured-classic-business .resume-avatar {
+  position:absolute;
+  z-index:1;
+  top:12px;
+  left:50%;
+  float:none;
+  margin:0;
+  transform:translateX(-50%);
+  border:0;
+  border-radius:4px;
+  box-shadow:0 3px 10px rgb(37 62 111 / 18%);
+}
+.theme-featured-classic-business .resume-content > h1 {
+  margin:0;
+  padding:88px 18px 2px;
+  background:#edf3fd;
+  color:var(--preview-accent);
+  font-size:22pt;
+  line-height:1.08;
+  text-align:center;
+}
+.theme-featured-classic-business .resume-content > h1 + p {
+  margin:0;
+  padding:2px 18px 5px;
+  background:#edf3fd;
+  color:#52617a;
+  font-size:9.5pt;
+  text-align:center;
+}
+.theme-featured-classic-business .resume-content > h1 + p + p {
+  margin:0 0 12px;
+  padding:5px 18px 12px;
+  background:#edf3fd;
+  color:#52617a;
+  font-size:8.5pt;
+  text-align:center;
+}
+.theme-featured-classic-business .resume-content h2 {
+  margin:12px 0 5px;
+  padding-bottom:3px;
+  border-bottom:1.5px solid var(--preview-accent);
+  color:var(--preview-accent);
+  font-size:10.5pt;
+  font-weight:700;
+}
+.theme-featured-classic-business .resume-content h3 {
+  margin:7px 0 1px;
+  color:#252b36;
+  font-size:9.5pt;
+  font-weight:650;
+}
+.theme-featured-classic-business .resume-content h3:has(+ p + p) {
+  float:left;
+  max-width:68%;
+  margin-right:10px;
+}
+.theme-featured-classic-business .resume-content h3 + p:has(+ p) {
+  margin:7px 0 1px;
+  color:#4b5669;
+  font-size:8pt;
+  text-align:right;
+}
+.theme-featured-classic-business .resume-content h3 + p + p {clear:both}
+.theme-featured-classic-business .resume-content p {margin:2px 0 4px}
+.theme-featured-classic-business .resume-content ul {margin:2px 0 6px;padding-left:17px}
+.theme-featured-classic-business .resume-content li {margin:1px 0}
+
+/* 200: warm identity card, compact achievement cards and a dedicated skills rail. */
+.resume-paper.theme-featured-vitality {background:#fffaf7}
+.theme-featured-vitality .resume-content {
+  position:relative;
+  color:#30333a;
+  line-height:1.42;
+}
+.theme-featured-vitality .resume-avatar {
+  position:absolute;
+  z-index:1;
+  top:12px;
+  right:10px;
+  float:none;
+  margin:0;
+  border:0;
+  border-radius:4px;
+  box-shadow:0 3px 10px rgb(82 58 44 / 18%);
+}
+.theme-featured-vitality .resume-content > h1,
+.theme-featured-vitality .resume-content > h1 + p,
+.theme-featured-vitality .resume-content > h1 + p + p,
+.theme-featured-vitality .resume-content > h1 + p + p + h2,
+.theme-featured-vitality .resume-content > h1 + p + p + h2 + p {
+  box-sizing:border-box;
+  margin:0;
+  padding-right:90px;
+  padding-left:18px;
+  background:#fff;
+}
+.theme-featured-vitality .resume-content > h1 {
+  padding-top:18px;
+  padding-bottom:2px;
+  border:1px solid #f2e5de;
+  border-bottom:0;
+  border-radius:9px 9px 0 0;
+  color:var(--preview-accent);
+  font-size:22pt;
+  line-height:1.1;
+  text-align:left;
+}
+.theme-featured-vitality .resume-content > h1 + p {
+  padding-top:1px;
+  padding-bottom:7px;
+  border-right:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  color:#4d5562;
+  font-size:9.5pt;
+  text-align:left;
+}
+.theme-featured-vitality .resume-content > h1 + p + p {
+  padding-top:3px;
+  padding-bottom:13px;
+  border-right:1px solid #f2e5de;
+  border-bottom:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  color:#67707c;
+  font-size:8pt;
+  text-align:left;
+}
+.theme-featured-vitality .resume-content > h1 + p + p + h2 {
+  margin-top:0;
+  padding-top:10px;
+  padding-bottom:4px;
+  border-right:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  color:#30333a;
+  font-size:0;
+}
+.theme-featured-vitality .resume-content > h1 + p + p + h2::before {
+  display:block;
+  height:1px;
+  background:#f0e4de;
+  content:"";
+}
+.theme-featured-vitality .resume-content > h1 + p + p + h2 + p {
+  margin-bottom:14px;
+  padding-top:5px;
+  padding-bottom:12px;
+  border-right:1px solid #f2e5de;
+  border-bottom:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  border-radius:0 0 9px 9px;
+  box-shadow:0 2px 8px rgb(82 58 44 / 6%);
+}
+.theme-featured-vitality :is(.resume-columns,.resume-layout-columns) {
+  display:grid;
+  grid-template-columns:minmax(0,2.35fr) minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+  clear:both;
+}
+.theme-featured-vitality :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1;min-width:0}
+.theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;min-width:0}
+.theme-featured-vitality .resume-content h2 {
+  margin:10px 0 6px;
+  padding-left:8px;
+  border:0;
+  border-left:3px solid var(--preview-accent);
+  color:var(--preview-accent);
+  font-size:10.5pt;
+  font-weight:700;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 {
+  margin:0;
+  padding:10px 11px 2px;
+  border:1px solid #f1e9e4;
+  border-bottom:0;
+  border-radius:6px 6px 0 0;
+  background:#fff;
+  color:#30333a;
+  font-size:9.5pt;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p {
+  margin:0;
+  padding:3px 11px 7px;
+  border-right:1px solid #f1e9e4;
+  border-left:1px solid #f1e9e4;
+  background:#fff;
+  color:#657080;
+  font-size:8pt;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p:not(:has(+ p)):not(:has(+ ul)) {
+  margin-bottom:7px;
+  padding-bottom:10px;
+  border-bottom:1px solid #f1e9e4;
+  border-radius:0 0 6px 6px;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p + p {
+  margin:0;
+  padding:3px 11px 7px;
+  border-right:1px solid #f1e9e4;
+  border-left:1px solid #f1e9e4;
+  background:#fff;
+  color:#30333a;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p + p:not(:has(+ ul)) {
+  margin-bottom:7px;
+  padding-bottom:10px;
+  border-bottom:1px solid #f1e9e4;
+  border-radius:0 0 6px 6px;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) :is(h3 + p + ul,h3 + p + p + ul) {
+  margin:0 0 7px;
+  padding:0 11px 10px 27px;
+  border-right:1px solid #f1e9e4;
+  border-bottom:1px solid #f1e9e4;
+  border-left:1px solid #f1e9e4;
+  border-radius:0 0 6px 6px;
+  background:#fff;
+}
+.theme-featured-vitality .resume-content li {margin:2px 0}
+.theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {color:#34373e}
+.theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 + p {color:var(--preview-accent)}
 
 /* 深蓝行政双栏 */
 .theme-administrative-sidebar,

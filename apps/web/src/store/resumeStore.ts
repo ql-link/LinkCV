@@ -41,12 +41,16 @@ import type { AtlasTheme } from "../api/atlasThemes";
 import type { StudioTheme } from "../api/studioThemes";
 import type { OpenTheme } from "../api/openThemes";
 import type { OriginalTheme } from "../api/originalThemes";
+import type { CareerTheme } from "../api/careerThemes";
+import type { FeaturedTheme } from "../api/featuredThemes";
 
 export type ResumeTheme =
   | AtlasTheme
   | StudioTheme
   | OpenTheme
   | OriginalTheme
+  | CareerTheme
+  | FeaturedTheme
   | "classic"
   | "modern"
   | "compact"

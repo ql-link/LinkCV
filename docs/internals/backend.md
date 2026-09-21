@@ -1,5 +1,7 @@
 # FastAPI 后端
 
+迁移 `0079` 在 `0078` 之后新增经典商务与活力，默认启用模板达到 85 套；无 schema 变化，不覆盖旧模板、简历或版本。`0078` 的卡片虚线、卡片分栏与 `0079` 两套模板均复用 `0077` 已验证的虚构产品经理样本，只新增独立呈现快照。重复执行保留启停状态，同 key 数据或定义冲突拒绝覆盖。发布先提供 Featured 主题的 Web/PDF 渲染器，再升级目录；需撤回时停用新增目录，历史简历快照保留。
+
 ## 功能与架构导航
 
 本页维护 FastAPI/Worker 运行结构、事务、迁移、外部集成和后端通用约定。用户能力与业务规则分别见[账号](../features/identity-account.md)、[简历](../features/resume-workbench.md)、[求职中心](../features/career-center.md)、[AI 助手](../features/ai-assistant.md)和[资料集](../features/datasets.md)；独立运行子系统见[小程序适配](miniprogram.md)、[Agent/LLM](agent-runtime.md)、[可观测性](observability.md)和[插件制品](plugin-delivery.md)。具体 URL、schema 和稳定错误仍以 [HTTP 接口契约](../api/http-contracts.md) 为准。
@@ -33,11 +35,13 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0074` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0079` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
+
+迁移 `0075` 停用废弃的「经典单栏」(`classic-cn`)、「现代双栏」(`modern-two-column-cn`) 和「紧凑技术型」(`compact-tech-cn`)，默认启用目录为 69 套。只修改这三个稳定 key 的启用状态，保留模板记录、已有简历及历史版本；普通目录、创建和切换入口沿用启用校验。重复执行不影响其他模板；如需恢复，通过管理端重新启用或新增向前迁移，不改写历史迁移。
 
 历史模板迁移 `0027` 的内容指纹校验由 `core/migration_sql.py` 做限定兼容：只接受四份官方 `0026` 模板改名前、以及仅将头像指令改为 `linkresume-avatar` 后的已知指纹。其他自定义正文仍触发原有拒绝覆盖与事务回滚；已发布 SQL 文件不改写，已经越过 `0027` 的数据库不会重新执行该步骤。
 
@@ -259,3 +263,5 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 迁移 `0073` 追加「非对称索引」，默认目录达到 69 套。身份置于 header，简介和技能置于 main/sidebar；工作、教育、项目及其他章节依次由 footer 区域承载。无新增表结构或正文类型，保持目录冲突拒绝与用户快照不变。
 
 迁移 `0074` 追加「错位页眉」「折页边注」「悬挂章节」，默认目录达到 72 套。错位页眉与悬挂章节在 header 中连续承载身份、简介、工作和项目，教育/技能占 main/sidebar；折页边注将工作置于 main、简介/技能置于短 sidebar，项目和教育由 footer 恢复全宽。附加章节均由 universal fallback 保留，不修改已有模板、简历及版本，无 schema 变化。
+
+迁移 `0076` 新增五套 `career-*` 跨行业模板，默认启用目录达到 74 套，覆盖财务、制造业社招，师范、护理校招与市场实习。仅插入目录项，不改变 schema、旧模板或用户快照；重复执行保留启停状态，同 key 定义冲突拒绝覆盖。发布时先部署支持 Career 主题的 Web/打印渲染器，再执行迁移；上游固定提交和 MIT 声明见[模板来源](resume-template-sources.md)。
