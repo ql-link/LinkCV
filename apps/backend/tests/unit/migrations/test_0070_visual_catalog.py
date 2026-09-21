@@ -13,7 +13,7 @@ from linkresume.domain.resume import (
 )
 
 ROOT = Path(__file__).resolve().parents[5]
-SQL = (ROOT / "apps/backend/migrations/sql/0068.up.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "apps/backend/migrations/sql/0070.up.sql").read_text(encoding="utf-8")
 PAYLOADS = [json.loads(value.replace("''", "'")) for value in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", SQL)]
 TEMPLATES = list(zip(PAYLOADS[0::2], PAYLOADS[1::2], strict=True))
 

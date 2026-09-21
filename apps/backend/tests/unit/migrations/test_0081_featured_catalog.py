@@ -7,17 +7,17 @@ from pathlib import Path
 from linkresume.domain.resume import TemplateDefinition
 
 ROOT = Path(__file__).resolve().parents[5]
-SQL = (ROOT / "apps/backend/migrations/sql/0078.up.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "apps/backend/migrations/sql/0081.up.sql").read_text(encoding="utf-8")
 DEFINITIONS = [
     TemplateDefinition.model_validate(json.loads(value.replace("''", "'")))
     for value in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", SQL)
 ]
 
 
-def test_card_catalog_reuses_fictional_content_and_registers_both_layouts() -> None:
+def test_new_visual_catalog_reuses_fictional_content_and_registers_both_layouts() -> None:
     registry = (ROOT / "apps/web/src/api/featuredThemes.ts").read_text(encoding="utf-8")
     keys = {definition.template_key for definition in DEFINITIONS}
-    assert keys == {"featured-card-dashed-cn", "featured-card-rail-cn"}
+    assert keys == {"featured-classic-business-cn", "featured-vitality-cn"}
     assert keys <= {f"{key}-cn" for key in re.findall(r'"(featured-[a-z-]+)"', registry)}
     assert SQL.count("WHERE source.`key` = 'featured-product-cn'") == 2
     assert SQL.count("ON DUPLICATE KEY UPDATE") == 2
@@ -26,10 +26,17 @@ def test_card_catalog_reuses_fictional_content_and_registers_both_layouts() -> N
     assert "https://" not in SQL
 
 
-def test_card_layouts_keep_single_column_content_and_safe_avatar_fallback() -> None:
-    assert len(DEFINITIONS) == 2
+def test_classic_business_is_single_column_and_vitality_owns_a_supporting_rail() -> None:
+    definitions = {definition.template_key: definition for definition in DEFINITIONS}
+    classic = definitions["featured-classic-business-cn"]
+    vitality = definitions["featured-vitality-cn"]
+
+    assert [region.region_id for region in classic.regions] == ["header", "main"]
+    assert [region.region_id for region in vitality.regions] == ["header", "main", "sidebar"]
+    assert vitality.avatar.region_id == "header"
+    assert vitality.tokens.accent_color == "#f06b32"
+    support = next(slot for slot in vitality.slots if slot.region_id == "sidebar")
+    assert set(support.accepts) == {"skills", "certificates", "languages", "interests"}
     for definition in DEFINITIONS:
-        assert [region.region_id for region in definition.regions] == ["header", "main"]
         assert definition.avatar.visibility == "show"
         assert definition.avatar.fallback_asset == "system-default"
-        assert definition.tokens.accent_color == "#2864e8"

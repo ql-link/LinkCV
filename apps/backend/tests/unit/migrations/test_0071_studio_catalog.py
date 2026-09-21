@@ -14,11 +14,11 @@ PAYLOADS = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^
 SAMPLES = list(zip(PAYLOADS[::2], PAYLOADS[1::2], strict=True))
 
 
-def test_three_new_templates_are_registered_and_insert_only() -> None:
-    registry = (ROOT / "apps/web/src/api/originalThemes.ts").read_text(encoding="utf-8")
+def test_six_new_templates_are_registered_and_insert_only() -> None:
+    registry = (ROOT / "apps/web/src/api/studioThemes.ts").read_text(encoding="utf-8")
     keys = {t["template_key"] for _, t in SAMPLES}
-    assert len(SAMPLES) == len(keys) == 3
-    assert keys <= {f"{key}-cn" for key in re.findall(r'"(original-[a-z-]+)"', registry)}
+    assert len(SAMPLES) == len(keys) == 6
+    assert keys == {f"{key}-cn" for key in re.findall(r'"(studio-[a-z-]+)"', registry)}
     assert "UPDATE resumes" not in SQL
     assert "UPDATE resume_versions" not in SQL
     assert ", is_active, NULL)" in SQL  # Preserve disabled rows; reject incompatible stable keys.
@@ -34,7 +34,7 @@ def test_samples_have_substance_and_can_switch_without_dropping_nodes(raw: dict,
     assert len(sections["work"].entries) == 2
     assert len(sections["project"].entries) == 1
     assert len(sections["skills"].entries) == 3
-    assert len(sections["project"].entries[0].blocks[-1].items) == 3
+    assert len(sections["project"].entries[0].blocks[1].items) == 3
     assert template.tokens.font_size_pt >= 10
     for other, _ in SAMPLES:
         candidate = CanonicalResumeDocument.model_validate(other)

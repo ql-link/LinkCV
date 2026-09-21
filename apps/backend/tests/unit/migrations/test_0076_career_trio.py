@@ -9,7 +9,7 @@ import pytest
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition, compile_layout_plan
 
 ROOT = Path(__file__).resolve().parents[5]
-SQL = (ROOT / "apps/backend/migrations/sql/0074.up.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "apps/backend/migrations/sql/0076.up.sql").read_text(encoding="utf-8")
 VALUES = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", SQL)]
 TEMPLATES = VALUES[1::2]
 
@@ -33,7 +33,7 @@ def test_trio_is_append_only_and_contains_complete_careers() -> None:
 @pytest.mark.parametrize("raw_template", TEMPLATES, ids=[t["template_key"] for t in TEMPLATES])
 def test_trio_covers_renamed_and_optional_sections_without_loss(raw_template: dict) -> None:
     template = TemplateDefinition.model_validate(raw_template)
-    for revision in ("0071", "0072", "0073", "0074"):
+    for revision in ("0073", "0074", "0075", "0076"):
         sql = (ROOT / f"apps/backend/migrations/sql/{revision}.up.sql").read_text(encoding="utf-8")
         values = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", sql)]
         for raw in values[::2]:

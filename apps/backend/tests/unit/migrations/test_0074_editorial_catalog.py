@@ -9,7 +9,7 @@ import pytest
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition, compile_layout_plan
 
 ROOT = Path(__file__).resolve().parents[5]
-SQL = (ROOT / "apps/backend/migrations/sql/0072.up.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "apps/backend/migrations/sql/0074.up.sql").read_text(encoding="utf-8")
 PAYLOADS = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", SQL)]
 SAMPLES = list(zip(PAYLOADS[::2], PAYLOADS[1::2], strict=True))
 
@@ -31,7 +31,7 @@ def test_editorial_samples_and_cross_template_coverage(raw: dict, definition: di
     assert len(sections["project"].entries) == 1
     assert len(sections["skills"].entries) == 3
     assert template.tokens.font_size_pt >= 10.5
-    for revision in ("0071", "0072"):
+    for revision in ("0073", "0074"):
         sql = (ROOT / f"apps/backend/migrations/sql/{revision}.up.sql").read_text(encoding="utf-8")
         values = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", sql)]
         for other in values[::2]:

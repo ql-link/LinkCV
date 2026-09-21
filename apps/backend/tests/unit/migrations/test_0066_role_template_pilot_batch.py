@@ -14,7 +14,7 @@ from linkresume.domain.resume import (
 
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
-SQL_PATH = REPO_ROOT / "apps/backend/migrations/sql/0064.up.sql"
+SQL_PATH = REPO_ROOT / "apps/backend/migrations/sql/0066.up.sql"
 
 EXPECTED_TEMPLATES = {
     "campus-professional-graduate-cn": "校招通用 · 成长型",
@@ -85,7 +85,7 @@ def test_0064_keeps_the_pilot_batch_fictional_and_self_contained() -> None:
         assert rejected_source_value not in up_sql
 
 
-@pytest.mark.parametrize("revision", ["0065", "0066"])
+@pytest.mark.parametrize("revision", ["0067", "0068"])
 def test_visual_templates_compile_with_full_content_coverage(revision: str) -> None:
     payloads = _payloads((SQL_PATH.parent / f"{revision}.up.sql").read_text(encoding="utf-8"))
     assert len(payloads) == 6
@@ -104,7 +104,7 @@ def test_visual_templates_compile_with_full_content_coverage(revision: str) -> N
 
 
 def test_0067_refresh_is_bounded_and_preserves_layouts() -> None:
-    sql = (SQL_PATH.parent / "0067.up.sql").read_text(encoding="utf-8")
+    sql = (SQL_PATH.parent / "0069.up.sql").read_text(encoding="utf-8")
     payloads = _payloads(sql)
     assert len(payloads) == 18
     assert sql.count("UPDATE resume_templates SET data_json") == 6

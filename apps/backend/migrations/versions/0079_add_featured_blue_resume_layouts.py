@@ -1,8 +1,8 @@
-"""add six MIT licensed layout adaptations.
+"""add featured blue resume layouts.
 
-Revision ID: 0070
-Revises: 0069
-Create Date: 2026-09-20 22:27:52.644597
+Revision ID: 0079
+Revises: 0078
+Create Date: 2026-09-21 07:45:59.574820
 """
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,8 +10,8 @@ from pathlib import Path
 from alembic import op
 from linkresume.core.migration_sql import execute_sql_file
 
-revision: str = '0070'
-down_revision: str | None = '0069'
+revision: str = '0079'
+down_revision: str | None = '0078'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -19,7 +19,7 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 
 def upgrade() -> None:
-    execute_sql_file(op.get_bind(), SQL_DIR / "0070.up.sql")
+    execute_sql_file(op.get_bind(), SQL_DIR / "0079.up.sql")
 
 
 def downgrade() -> None:

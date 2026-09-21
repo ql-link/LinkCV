@@ -9,7 +9,7 @@ import pytest
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition, compile_layout_plan
 
 ROOT = Path(__file__).resolve().parents[5]
-SQL = (ROOT / "apps/backend/migrations/sql/0076.up.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "apps/backend/migrations/sql/0078.up.sql").read_text(encoding="utf-8")
 VALUES = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", SQL)]
 SAMPLES = list(zip(VALUES[::2], VALUES[1::2], strict=True))
 

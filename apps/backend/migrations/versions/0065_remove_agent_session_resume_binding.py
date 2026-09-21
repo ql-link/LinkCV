@@ -1,17 +1,18 @@
-"""add axis and warm editorial resume layouts.
+"""remove agent session resume binding.
 
-Revision ID: 0072
-Revises: 0071
-Create Date: 2026-09-21 00:11:48.930143
+Revision ID: 0065
+Revises: 0064
+Create Date: 2026-09-20 01:14:30.096498
 """
+
 from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
 from linkresume.core.migration_sql import execute_sql_file
 
-revision: str = '0072'
-down_revision: str | None = '0071'
+revision: str = "0065"
+down_revision: str | None = "0064"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -19,7 +20,7 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 
 def upgrade() -> None:
-    execute_sql_file(op.get_bind(), SQL_DIR / "0072.up.sql")
+    execute_sql_file(op.get_bind(), SQL_DIR / "0065.up.sql")
 
 
 def downgrade() -> None:

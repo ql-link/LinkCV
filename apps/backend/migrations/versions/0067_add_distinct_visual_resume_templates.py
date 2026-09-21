@@ -1,8 +1,8 @@
-"""add offset marginal and hanging resume templates.
+"""add distinct visual resume templates.
 
-Revision ID: 0074
-Revises: 0073
-Create Date: 2026-09-21 01:02:05.189495
+Revision ID: 0067
+Revises: 0066
+Create Date: 2026-09-20 17:16:42.137333
 """
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,8 +10,8 @@ from pathlib import Path
 from alembic import op
 from linkresume.core.migration_sql import execute_sql_file
 
-revision: str = '0074'
-down_revision: str | None = '0073'
+revision: str = '0067'
+down_revision: str | None = '0066'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -19,7 +19,7 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 
 def upgrade() -> None:
-    execute_sql_file(op.get_bind(), SQL_DIR / "0074.up.sql")
+    execute_sql_file(op.get_bind(), SQL_DIR / "0067.up.sql")
 
 
 def downgrade() -> None:

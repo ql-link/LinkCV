@@ -1,8 +1,8 @@
-"""add three image designed original resume layouts.
+"""add six reference inspired resume layouts.
 
 Revision ID: 0071
 Revises: 0070
-Create Date: 2026-09-20 23:07:26.235527
+Create Date: 2026-09-20 21:50:59.620523
 """
 from collections.abc import Sequence
 from pathlib import Path

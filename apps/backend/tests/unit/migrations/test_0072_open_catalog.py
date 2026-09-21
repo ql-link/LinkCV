@@ -9,16 +9,25 @@ import pytest
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition, compile_layout_plan
 
 ROOT = Path(__file__).resolve().parents[5]
-SQL = (ROOT / "apps/backend/migrations/sql/0069.up.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "apps/backend/migrations/sql/0072.up.sql").read_text(encoding="utf-8")
 PAYLOADS = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", SQL)]
 SAMPLES = list(zip(PAYLOADS[::2], PAYLOADS[1::2], strict=True))
 
 
+def test_every_adapted_template_ships_pinned_source_and_full_license() -> None:
+    notices = (ROOT / "apps/web/public/third-party/template-notices.txt").read_text(encoding="utf-8")
+    for _, definition in SAMPLES:
+        assert definition["template_key"] in notices
+    assert len(re.findall(r"Source: https://github.com/[^\s]+/tree/[0-9a-f]{40}", notices)) >= 6
+    assert notices.count("Permission is hereby granted, free of charge") >= 6
+    assert notices.count('THE SOFTWARE IS PROVIDED "AS IS"') >= 6
+
+
 def test_six_new_templates_are_registered_and_insert_only() -> None:
-    registry = (ROOT / "apps/web/src/api/studioThemes.ts").read_text(encoding="utf-8")
+    registry = (ROOT / "apps/web/src/api/openThemes.ts").read_text(encoding="utf-8")
     keys = {t["template_key"] for _, t in SAMPLES}
     assert len(SAMPLES) == len(keys) == 6
-    assert keys == {f"{key}-cn" for key in re.findall(r'"(studio-[a-z-]+)"', registry)}
+    assert keys == {f"{key}-cn" for key in re.findall(r'"(open-[a-z-]+)"', registry)}
     assert "UPDATE resumes" not in SQL
     assert "UPDATE resume_versions" not in SQL
     assert ", is_active, NULL)" in SQL  # Preserve disabled rows; reject incompatible stable keys.

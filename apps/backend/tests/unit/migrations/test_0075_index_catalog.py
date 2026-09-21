@@ -7,7 +7,7 @@ from pathlib import Path
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition, compile_layout_plan
 
 ROOT = Path(__file__).resolve().parents[5]
-SQL = (ROOT / "apps/backend/migrations/sql/0073.up.sql").read_text(encoding="utf-8")
+SQL = (ROOT / "apps/backend/migrations/sql/0075.up.sql").read_text(encoding="utf-8")
 DATA, DEFINITION = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", SQL)]
 
 
@@ -24,7 +24,7 @@ def test_only_approved_index_is_appended() -> None:
 
 def test_index_regions_cover_existing_original_samples_without_loss() -> None:
     template = TemplateDefinition.model_validate(DEFINITION)
-    for revision in ("0071", "0072", "0073"):
+    for revision in ("0073", "0074", "0075"):
         sql = (ROOT / f"apps/backend/migrations/sql/{revision}.up.sql").read_text(encoding="utf-8")
         values = [json.loads(v.replace("''", "'")) for v in re.findall(r"CAST\('((?:[^']|'')*)' AS JSON\)", sql)]
         for raw in values[::2]:

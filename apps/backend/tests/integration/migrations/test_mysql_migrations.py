@@ -24,7 +24,7 @@ from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition
 from linkresume.domain.resume_snapshot import parse_resume_snapshot
-from linkresume.modules.agent.models import AgentRun, AgentSession, ResumeChangeProposal
+from linkresume.modules.agent.models import AgentRun, ResumeChangeProposal
 from linkresume.modules.agent.service import (
     create_proposal,
     create_session,
@@ -35,17 +35,17 @@ from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0079"
-FEATURED_0077_KEYS = {f"featured-{name}-cn" for name in ("campus", "professional", "intern", "sales", "product", "finance", "people")}
-FEATURED_0078_KEYS = FEATURED_0077_KEYS | {"featured-card-dashed-cn", "featured-card-rail-cn"}
-FEATURED_KEYS = FEATURED_0078_KEYS | {"featured-classic-business-cn", "featured-vitality-cn"}
+EXPECTED_HEAD = "0081"
+FEATURED_0079_KEYS = {f"featured-{name}-cn" for name in ("campus", "professional", "intern", "sales", "product", "finance", "people")}
+FEATURED_0080_KEYS = FEATURED_0079_KEYS | {"featured-card-dashed-cn", "featured-card-rail-cn"}
+FEATURED_KEYS = FEATURED_0080_KEYS | {"featured-classic-business-cn", "featured-vitality-cn"}
 CAREER_KEYS = {"career-kendall-cn", "career-stack-cn", "career-spartan-cn", "career-onepage-cn", "career-classic-cn"}
 
 
 def atlas_template_keys() -> set[str]:
     import re
 
-    sql = (BACKEND_ROOT / "migrations/sql/0068.up.sql").read_text(encoding="utf-8")
+    sql = (BACKEND_ROOT / "migrations/sql/0070.up.sql").read_text(encoding="utf-8")
     keys = set(re.findall(r"\('((?:atlas-)[a-z-]+-cn)'", sql))
     assert len(keys) == 37
     return keys
@@ -74,7 +74,7 @@ def canonical_editor_markdown(data: dict[str, Any]) -> str:
 def studio_template_keys() -> set[str]:
     import re
 
-    sql = (BACKEND_ROOT / "migrations/sql/0069.up.sql").read_text(encoding="utf-8")
+    sql = (BACKEND_ROOT / "migrations/sql/0071.up.sql").read_text(encoding="utf-8")
     keys = set(re.findall(r"\('(studio-[a-z-]+-cn)'", sql))
     assert len(keys) == 6
     return keys
@@ -83,7 +83,7 @@ def studio_template_keys() -> set[str]:
 def open_template_keys() -> set[str]:
     import re
 
-    sql = (BACKEND_ROOT / "migrations/sql/0070.up.sql").read_text(encoding="utf-8")
+    sql = (BACKEND_ROOT / "migrations/sql/0072.up.sql").read_text(encoding="utf-8")
     keys = set(re.findall(r"\('(open-[a-z-]+-cn)'", sql))
     assert len(keys) == 6
     return keys
@@ -92,7 +92,7 @@ def open_template_keys() -> set[str]:
 def original_template_keys() -> set[str]:
     import re
 
-    sql = (BACKEND_ROOT / "migrations/sql/0071.up.sql").read_text(encoding="utf-8")
+    sql = (BACKEND_ROOT / "migrations/sql/0073.up.sql").read_text(encoding="utf-8")
     keys = set(re.findall(r"\('(original-[a-z-]+-cn)'", sql))
     assert len(keys) == 3
     return keys
@@ -101,7 +101,7 @@ def original_template_keys() -> set[str]:
 def editorial_template_keys() -> set[str]:
     import re
 
-    sql = (BACKEND_ROOT / "migrations/sql/0072.up.sql").read_text(encoding="utf-8")
+    sql = (BACKEND_ROOT / "migrations/sql/0074.up.sql").read_text(encoding="utf-8")
     keys = set(re.findall(r"\('(original-[a-z-]+-cn)'", sql))
     assert keys == {"original-axis-cn", "original-warm-cn"}
     return keys
@@ -171,7 +171,7 @@ def test_mysql_0075_retires_only_legacy_templates_and_preserves_resumes() -> Non
 
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0074")
+    run_alembic(database_url, "upgrade", "0076")
     engine = create_engine(database_url)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     retired = {"classic-cn", "modern-two-column-cn", "compact-tech-cn"}
@@ -200,7 +200,7 @@ def test_mysql_0075_retires_only_legacy_templates_and_preserves_resumes() -> Non
             resumes = snapshot(connection, "resumes")
             versions = snapshot(connection, "resume_versions")
 
-        run_alembic(database_url, "upgrade", "0075")
+        run_alembic(database_url, "upgrade", "0077")
         for _ in range(2):
             with engine.begin() as connection:
                 after = connection.exec_driver_sql(
@@ -214,7 +214,7 @@ def test_mysql_0075_retires_only_legacy_templates_and_preserves_resumes() -> Non
                 assert sum(row.is_active for row in after) == 69
                 assert snapshot(connection, "resumes") == resumes
                 assert snapshot(connection, "resume_versions") == versions
-                execute_sql_file(connection, BACKEND_ROOT / "migrations/sql/0075.up.sql")
+                execute_sql_file(connection, BACKEND_ROOT / "migrations/sql/0077.up.sql")
         with factory() as db:
             visible = list_templates(db=db, _user=None).templates
             assert not retired.intersection(item.key for item in visible)
@@ -233,21 +233,21 @@ def test_mysql_0067_refresh_preserves_custom_templates() -> None:
 
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0066")
+    run_alembic(database_url, "upgrade", "0068")
     engine = create_engine(database_url)
     try:
         with engine.begin() as connection:
             connection.exec_driver_sql("UPDATE resume_templates SET data_json = JSON_SET(data_json, '$.identity.name.value', '自定义样本') WHERE `key` = 'sage-paper-cn'")
             connection.exec_driver_sql("UPDATE resume_templates SET style_json = JSON_SET(style_json, '$.tokens.font_size_pt', 11) WHERE `key` = 'centered-portrait-cn'")
             before = {row[0]: tuple(row[1:]) for row in connection.exec_driver_sql("SELECT `key`, data_json, style_json, is_active FROM resume_templates")}
-        run_alembic(database_url, "upgrade", "0067")
+        run_alembic(database_url, "upgrade", "0069")
         with engine.begin() as connection:
             after = {row[0]: tuple(row[1:]) for row in connection.exec_driver_sql("SELECT `key`, data_json, style_json, is_active FROM resume_templates")}
             changed = {key for key in before if before[key] != after[key]}
             assert changed == {"right-rail-cn", "blue-ribbon-cn", "timeline-gutter-cn", "mist-masthead-cn"}
             for key in changed:
                 assert before[key][1:] == after[key][1:]
-            execute_sql_file(connection, BACKEND_ROOT / "migrations/sql/0067.up.sql")
+            execute_sql_file(connection, BACKEND_ROOT / "migrations/sql/0069.up.sql")
             repeated = {row[0]: tuple(row[1:]) for row in connection.exec_driver_sql("SELECT `key`, data_json, style_json, is_active FROM resume_templates")}
             assert repeated == after
     finally:
@@ -255,17 +255,17 @@ def test_mysql_0067_refresh_preserves_custom_templates() -> None:
 
 
 @pytest.mark.parametrize("revision,previous,count,prefix,keys,first_key", [
-    ("0068", "0067", 51, "atlas", atlas_template_keys(), "atlas-folio-serif-cn"),
-    ("0069", "0068", 57, "studio", studio_template_keys(), "studio-modular-cards-cn"),
-    ("0070", "0069", 63, "open", open_template_keys(), "open-even-cn"),
-    ("0071", "0070", 66, "original", original_template_keys(), "original-vermilion-cn"),
-    ("0072", "0071", 68, "original", original_template_keys() | editorial_template_keys(), "original-axis-cn"),
-    ("0073", "0072", 69, "original", original_template_keys() | editorial_template_keys() | {"original-index-cn"}, "original-index-cn"),
-    ("0074", "0073", 72, "original", original_template_keys() | editorial_template_keys() | {"original-index-cn", "original-offset-cn", "original-marginal-cn", "original-hanging-cn"}, "original-offset-cn"),
-    ("0076", "0075", 74, "career", CAREER_KEYS, "career-kendall-cn"),
-    ("0077", "0076", 81, "featured", FEATURED_0077_KEYS, "featured-campus-cn"),
-    ("0078", "0077", 83, "featured", FEATURED_0078_KEYS, "featured-card-dashed-cn"),
-    ("0079", "0078", 85, "featured", FEATURED_KEYS, "featured-classic-business-cn"),
+    ("0070", "0069", 51, "atlas", atlas_template_keys(), "atlas-folio-serif-cn"),
+    ("0071", "0070", 57, "studio", studio_template_keys(), "studio-modular-cards-cn"),
+    ("0072", "0071", 63, "open", open_template_keys(), "open-even-cn"),
+    ("0073", "0072", 66, "original", original_template_keys(), "original-vermilion-cn"),
+    ("0074", "0073", 68, "original", original_template_keys() | editorial_template_keys(), "original-axis-cn"),
+    ("0075", "0074", 69, "original", original_template_keys() | editorial_template_keys() | {"original-index-cn"}, "original-index-cn"),
+    ("0076", "0075", 72, "original", original_template_keys() | editorial_template_keys() | {"original-index-cn", "original-offset-cn", "original-marginal-cn", "original-hanging-cn"}, "original-offset-cn"),
+    ("0078", "0077", 74, "career", CAREER_KEYS, "career-kendall-cn"),
+    ("0079", "0078", 81, "featured", FEATURED_0079_KEYS, "featured-campus-cn"),
+    ("0080", "0079", 83, "featured", FEATURED_0080_KEYS, "featured-card-dashed-cn"),
+    ("0081", "0080", 85, "featured", FEATURED_KEYS, "featured-classic-business-cn"),
 ])
 def test_mysql_catalog_creation_and_conflict_guard(revision, previous, count, prefix, keys, first_key) -> None:
     from linkresume.core.migration_sql import execute_sql_file
@@ -359,6 +359,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         column["name"]: column for column in inspector.get_columns("agent_sessions")
     }
     assert session_columns["pinned"]["nullable"] is False
+    assert "resume_id" not in session_columns
     assert str(session_columns["pinned"]["default"]).strip("'").lower() in {
         "0",
         "false",
@@ -373,12 +374,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "updated_at",
         "id",
     ]
-    assert session_indexes["idx_agent_sessions_resume_pinned_updated"] == [
-        "resume_id",
-        "pinned",
-        "updated_at",
-        "id",
-    ]
+    assert "idx_agent_sessions_resume_pinned_updated" not in session_indexes
     application_columns = {
         column["name"]: column
         for column in inspector.get_columns("job_applications")
@@ -564,6 +560,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "share_token",
         "share_visibility",
         "share_expires_at",
+        "share_allow_download",
         "share_created_at",
         "created_at",
         "updated_at",
@@ -731,6 +728,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
+    assert resume_columns["share_allow_download"]["nullable"] is False
+    assert resume_columns["share_allow_download"]["type"].unsigned is True
+    assert str(resume_columns["share_allow_download"]["default"]).strip("'") == "1"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert {
         constraint["name"] for constraint in inspector.get_check_constraints("users")
@@ -742,6 +742,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_check_constraints("resumes")
     } == {
         "ck_resumes_lock_version",
+        "ck_resumes_share_allow_download",
         "ck_resumes_share_fields",
         "ck_resumes_share_visibility",
         "ck_resumes_source_type",
@@ -983,6 +984,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         "share_token",
         "share_visibility",
         "share_expires_at",
+        "share_allow_download",
         "share_created_at",
         "created_at",
         "updated_at",
@@ -1113,6 +1115,9 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert resume_columns["user_id"]["type"].unsigned is True
     assert resume_columns["data_json"]["type"].__class__.__name__ == "JSON"
     assert resume_columns["style_json"]["type"].__class__.__name__ == "JSON"
+    assert resume_columns["share_allow_download"]["nullable"] is False
+    assert resume_columns["share_allow_download"]["type"].unsigned is True
+    assert str(resume_columns["share_allow_download"]["default"]).strip("'") == "1"
     assert resume_columns["created_at"]["type"].fsp == 6
     assert call_columns["user_id"]["type"].unsigned is True
     assert call_columns["source"]["type"].length == 32
@@ -1130,6 +1135,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
         constraint["name"] for constraint in inspector.get_check_constraints("resumes")
     } == {
         "ck_resumes_lock_version",
+        "ck_resumes_share_allow_download",
         "ck_resumes_share_fields",
         "ck_resumes_share_visibility",
         "ck_resumes_source_type",
@@ -1317,6 +1323,171 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert "resume_imports" not in inspect(engine).get_table_names()
     assert "document_parse_tasks" in inspect(engine).get_table_names()
     engine.dispose()
+
+
+def test_0065_removes_resume_binding_without_deleting_conversations() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0064")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (email, password_hash, nickname) "
+                    "VALUES ('agent-0064@example.invalid', '$2b$12$fictional', '张三')"
+                )
+            ).lastrowid
+            template_id = connection.scalar(
+                text(
+                    "SELECT id FROM resume_templates "
+                    "WHERE `key` = 'classic-technical-cn'"
+                )
+            )
+            assert template_id is not None
+            resume_id = connection.execute(
+                text(
+                    "INSERT INTO resumes "
+                    "(user_id, template_id, title, data_json, style_json, source_type) "
+                    "SELECT :user_id, id, '张三的历史简历', data_json, style_json, 'template' "
+                    "FROM resume_templates WHERE id = :template_id"
+                ),
+                {"user_id": user_id, "template_id": template_id},
+            ).lastrowid
+            connection.execute(
+                text(
+                    "INSERT INTO agent_sessions "
+                    "(public_id, user_id, resume_id, title, pinned, status) "
+                    "VALUES ('00000000-0000-4000-8000-000000000064', "
+                    ":user_id, :resume_id, '张三的历史对话', FALSE, 'active')"
+                ),
+                {"user_id": user_id, "resume_id": resume_id},
+            )
+            session_id = connection.scalar(
+                text(
+                    "SELECT id FROM agent_sessions "
+                    "WHERE public_id = '00000000-0000-4000-8000-000000000064'"
+                )
+            )
+            run_id = connection.execute(
+                text(
+                    "INSERT INTO agent_runs "
+                    "(public_id, session_id, idempotency_key, status, started_at) "
+                    "VALUES ('00000000-0000-4000-8000-000000000164', "
+                    ":session_id, 'legacy-message-0064', 'succeeded', UTC_TIMESTAMP(6))"
+                ),
+                {"session_id": session_id},
+            ).lastrowid
+            connection.execute(
+                text(
+                    "INSERT INTO agent_messages "
+                    "(session_id, run_id, sequence_no, role, message_type, content, metadata_json) "
+                    "VALUES (:session_id, :run_id, 1, 'user', 'text', "
+                    "'请优化当前简历', NULL)"
+                ),
+                {"session_id": session_id, "run_id": run_id},
+            )
+
+        run_alembic(database_url, "upgrade", "head")
+
+        inspector = inspect(engine)
+        columns = {
+            column["name"] for column in inspector.get_columns("agent_sessions")
+        }
+        indexes = {
+            index["name"] for index in inspector.get_indexes("agent_sessions")
+        }
+        with engine.connect() as connection:
+            preserved = connection.execute(
+                text(
+                    "SELECT public_id, title FROM agent_sessions "
+                    "WHERE public_id = '00000000-0000-4000-8000-000000000064'"
+                )
+            ).mappings().one()
+            metadata = connection.scalar(
+                text(
+                    "SELECT metadata_json FROM agent_messages "
+                    "WHERE session_id = :session_id AND sequence_no = 1"
+                ),
+                {"session_id": session_id},
+            )
+
+        assert "resume_id" not in columns
+        assert "idx_agent_sessions_resume_pinned_updated" not in indexes
+        assert dict(preserved) == {
+            "public_id": "00000000-0000-4000-8000-000000000064",
+            "title": "张三的历史对话",
+        }
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+        assert metadata["contexts"] == [
+            {
+                "type": "resume",
+                "id": str(resume_id),
+                "version": "1",
+                "lock_version": 1,
+                "resume_id": str(resume_id),
+                "label": "张三的历史简历",
+                "description": None,
+                "updated_at": metadata["contexts"][0]["updated_at"],
+            }
+        ]
+    finally:
+        reset_test_database_to_base(database_url)
+        run_alembic(database_url, "upgrade", "head")
+        engine.dispose()
+
+
+def test_resume_share_download_permission_upgrade_preserves_existing_shares() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0063")
+    engine = create_engine(database_url)
+
+    with engine.begin() as connection:
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (email, password_hash, nickname) "
+                "VALUES ('share-migration@example.invalid', 'fictional', '张三')"
+            )
+        ).lastrowid
+        template_id = connection.scalar(
+            text("SELECT id FROM resume_templates WHERE `key` = 'classic-cn'")
+        )
+        resume_id = connection.execute(
+            text(
+                "INSERT INTO resumes "
+                "(user_id, template_id, title, data_json, style_json, source_type, "
+                "share_token, share_visibility, share_created_at) "
+                "VALUES (:user_id, :template_id, '虚构迁移简历', JSON_OBJECT(), "
+                "JSON_OBJECT(), 'template', 'fictional-share-token', 'public', "
+                "'2026-09-20 00:00:00')"
+            ),
+            {"user_id": user_id, "template_id": template_id},
+        ).lastrowid
+
+    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "head")
+
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT share_token, share_allow_download FROM resumes WHERE id = :id"
+            ),
+            {"id": resume_id},
+        ).one()
+        assert row == ("fictional-share-token", 1)
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
+
+    with pytest.raises(DBAPIError):
+        with engine.begin() as connection:
+            connection.execute(
+                text("UPDATE resumes SET share_allow_download = 2 WHERE id = :id"),
+                {"id": resume_id},
+            )
+
+    engine.dispose()
+    reset_test_database_to_base(database_url)
 
 
 def test_storage_cleanup_forward_migration_refuses_pending_tasks() -> None:
@@ -3264,7 +3435,7 @@ def test_mysql_serializes_concurrent_normalized_resume_titles() -> None:
     engine.dispose()
 
 
-def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
+def test_mysql_agent_session_creation_is_independent_from_resume_deletion() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
@@ -3319,7 +3490,6 @@ def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
                 create_session(
                     db,
                     user_id=user_id,
-                    resume_id=str(resume_id),
                     title=None,
                 )
             except ApiError as error:
@@ -3334,19 +3504,12 @@ def test_mysql_serializes_agent_session_creation_with_resume_deletion() -> None:
             assert create_started.wait(timeout=5)
             sleep(0.2)
             try:
-                assert not create_future.done()
+                assert create_future.result(timeout=5) == "created"
             finally:
                 allow_delete_commit.set()
             delete_future.result(timeout=5)
-            assert create_future.result(timeout=5) == "RESUME_NOT_FOUND"
 
         with engine.connect() as connection:
-            assert (
-                connection.scalar(
-                    select(AgentSession.id).where(AgentSession.resume_id == resume_id)
-                )
-                is None
-            )
             assert (
                 connection.scalar(select(Resume.id).where(Resume.id == resume_id))
                 is None
@@ -3386,7 +3549,6 @@ def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
         agent_session = create_session(
             db,
             user_id=user_id,
-            resume_id=str(resume.id),
             title=None,
         )
         run = AgentRun(
@@ -3402,6 +3564,7 @@ def test_mysql_reject_cannot_overwrite_an_applied_proposal() -> None:
             db,
             run=run,
             session=agent_session,
+            resume_id=str(resume.id),
             call_key="proposal-confirm-reject-race",
             data=resume.data_json,
             style=resume.style_json,

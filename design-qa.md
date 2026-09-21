@@ -1,9 +1,9 @@
-# 简历模板 0079 视觉对照 — 2026-09-21
+# 简历模板 0081 视觉对照 — 2026-09-21
 
 ## Evidence
 
 - Source visual truth: `/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/codex-clipboard-f07e232d-25c2-4806-89ec-26f024fb6417.png`（经典商务，`458 × 648` px）与 `/var/folders/q0/866dc7b55j3c61s7h1hfx1r40000gn/T/codex-clipboard-fc6c427c-de15-4ab5-849b-753538a75ae6.png`（活力，`458 × 650` px）。
-- Implementation screenshot path: Codex in-app Browser tab 4 的浏览器渲染内联 PNG；浏览器接口不提供可持久化文件路径。临时核对路由为 `http://127.0.0.1:5173/template-qa-0079.html`，核对后移除，不进入发布制品。
+- Implementation screenshot path: Codex in-app Browser tab 4 的浏览器渲染内联 PNG；浏览器接口不提供可持久化文件路径。临时核对路由为 `http://127.0.0.1:5173/template-qa-0081.html`，核对后移除，不进入发布制品。
 - Viewport and density: `1280 × 720` CSS px、density `1`；另外捕获完整 A4 纸张。来源密度未知，因此按 `210 × 297mm` 纸张边界和相同纵横比归一化比较，不用截图像素推断绝对字号。
 - State: 浅色主题、项目安全头像回退、虚构产品经理内容；分别核对经典商务单栏与活力双栏。
 

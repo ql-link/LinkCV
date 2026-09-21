@@ -1,8 +1,8 @@
-"""add timeline portrait and masthead templates.
+"""retire three legacy resume templates.
 
-Revision ID: 0066
-Revises: 0065
-Create Date: 2026-09-20 17:31:32.125374
+Revision ID: 0077
+Revises: 0076
+Create Date: 2026-09-21 01:26:48.080899
 """
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,8 +10,8 @@ from pathlib import Path
 from alembic import op
 from linkresume.core.migration_sql import execute_sql_file
 
-revision: str = '0066'
-down_revision: str | None = '0065'
+revision: str = '0077'
+down_revision: str | None = '0076'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -19,7 +19,7 @@ SQL_DIR = Path(__file__).parent.parent / "sql"
 
 
 def upgrade() -> None:
-    execute_sql_file(op.get_bind(), SQL_DIR / "0066.up.sql")
+    execute_sql_file(op.get_bind(), SQL_DIR / "0077.up.sql")
 
 
 def downgrade() -> None:
