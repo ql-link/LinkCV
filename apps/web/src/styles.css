@@ -1939,7 +1939,7 @@ select:not([data-slot]):focus-visible {
   font-family: var(--resume-font-family);
   font-size: var(--resume-font-size);
   line-height: var(--resume-line-height);
-  caret-color: var(--ui-accent);
+  caret-color: currentColor;
 }
 
 .resume-workbench :where(.resume-content.ProseMirror > :not(.resume-avatar-node-view)) { position: relative; }
@@ -2133,7 +2133,7 @@ select:not([data-slot]):focus-visible {
 .resume-workbench .resume-content li { margin: 1px 0; }
 .resume-workbench .resume-content strong { color: inherit; font-weight: 600; }
 .resume-workbench .resume-content a { color: #3478f6; text-decoration-thickness: 1px; text-underline-offset: 2px; }
-.resume-workbench .resume-content ::selection { background: rgba(52, 120, 246, 0.2); }
+.resume-workbench .resume-content ::selection { background: color-mix(in srgb, currentColor 26%, transparent); }
 
 .resume-layout-row {
   --resume-column-guide: rgba(31, 41, 55, 0.16);
