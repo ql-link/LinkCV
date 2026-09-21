@@ -35,7 +35,7 @@ from linkresume.modules.resumes.models import Resume, ResumeVersion
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 BACKEND_ROOT = REPO_ROOT / "apps/backend"
-EXPECTED_HEAD = "0081"
+EXPECTED_HEAD = "0063"
 FEATURED_0079_KEYS = {f"featured-{name}-cn" for name in ("campus", "professional", "intern", "sales", "product", "finance", "people")}
 FEATURED_0080_KEYS = FEATURED_0079_KEYS | {"featured-card-dashed-cn", "featured-card-rail-cn"}
 FEATURED_KEYS = FEATURED_0080_KEYS | {"featured-classic-business-cn", "featured-vitality-cn"}
@@ -78,6 +78,9 @@ def studio_template_keys() -> set[str]:
     keys = set(re.findall(r"\('(studio-[a-z-]+-cn)'", sql))
     assert len(keys) == 6
     return keys
+
+
+TEMPLATE_CATALOG_HEAD = "0081"
 
 
 def open_template_keys() -> set[str]:
@@ -1259,7 +1262,7 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     with engine.connect() as connection:
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == EXPECTED_HEAD
+            == TEMPLATE_CATALOG_HEAD
         )
         assert (
             connection.scalar(
@@ -1477,7 +1480,7 @@ def test_resume_share_download_permission_upgrade_preserves_existing_shares() ->
             {"id": resume_id},
         ).one()
         assert row == ("fictional-share-token", 1)
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == EXPECTED_HEAD
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == TEMPLATE_CATALOG_HEAD
 
     with pytest.raises(DBAPIError):
         with engine.begin() as connection:
@@ -2614,7 +2617,7 @@ def test_0051_repairs_a_stamped_legacy_profile_schema() -> None:
             assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == 1
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == EXPECTED_HEAD
+                == TEMPLATE_CATALOG_HEAD
             )
     finally:
         engine.dispose()
@@ -2679,7 +2682,7 @@ def test_0051_advances_an_already_final_profile_schema_without_data_changes() ->
             assert after == before
             assert (
                 connection.scalar(text("SELECT version_num FROM alembic_version"))
-                == EXPECTED_HEAD
+                == TEMPLATE_CATALOG_HEAD
             )
     finally:
         engine.dispose()
@@ -2769,7 +2772,7 @@ def test_0053_and_0054_merge_offer_statuses_and_use_single_salary() -> None:
             assert salaries == [20000, 18000]
             assert connection.scalar(
                 text("SELECT version_num FROM alembic_version")
-            ) == EXPECTED_HEAD
+            ) == TEMPLATE_CATALOG_HEAD
 
         with pytest.raises(DBAPIError):
             with engine.begin() as connection:
@@ -3985,7 +3988,7 @@ def test_mysql_0008_clears_legacy_llm_data_and_supports_forward_upgrade() -> Non
         assert connection.scalar(text("SELECT COUNT(*) FROM llm_call_logs")) == 1
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == EXPECTED_HEAD
+            == TEMPLATE_CATALOG_HEAD
         )
 
     activation_barrier = Barrier(2)
@@ -4204,7 +4207,7 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
     with engine.connect() as connection:
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == EXPECTED_HEAD
+            == TEMPLATE_CATALOG_HEAD
         )
         assert connection.scalar(
             text(
