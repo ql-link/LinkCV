@@ -8,7 +8,7 @@ import TextStyle from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey } from "@tiptap/pm/state";
 import {
   AlignCenter,
   AlignLeft,
@@ -789,22 +789,66 @@ function InlineIconView({ node }: NodeViewProps) {
   return <NodeViewWrapper as="span" className="resume-inline-icon"><Icon size="1em" /></NodeViewWrapper>;
 }
 
-function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeViewProps) {
+function InlineImageView({ node, editor, selected, getPos, deleteNode }: NodeViewProps) {
   const width = Math.min(240, Math.max(16, Number(node.attrs.width) || 72));
   const legacyAspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs.aspectRatio) || 3));
   const height = Math.min(240, Math.max(16, Number(node.attrs.height) || width / legacyAspectRatio));
   const [widthDraft, setWidthDraft] = useState(String(width));
   const [heightDraft, setHeightDraft] = useState(String(Math.round(height)));
-  useEffect(() => setWidthDraft(String(width)), [width]);
-  useEffect(() => setHeightDraft(String(Math.round(height))), [height]);
-  const commitSize = (dimension: "width" | "height") => {
-    const draft = dimension === "width" ? widthDraft : heightDraft;
-    const fallback = dimension === "width" ? width : height;
-    const next = Number(draft);
-    if (Number.isFinite(next)) updateAttributes({ [dimension]: Math.round(Math.min(240, Math.max(16, next))) });
-    else if (dimension === "width") setWidthDraft(String(Math.round(fallback)));
-    else setHeightDraft(String(Math.round(fallback)));
+  const editingDimensionRef = useRef<"width" | "height" | null>(null);
+  useEffect(() => {
+    if (editingDimensionRef.current !== "width") setWidthDraft(String(width));
+  }, [width]);
+  useEffect(() => {
+    if (editingDimensionRef.current !== "height") setHeightDraft(String(Math.round(height)));
+  }, [height]);
+  useEffect(() => {
+    if (selected) return;
+    editingDimensionRef.current = null;
+    setWidthDraft(String(width));
+    setHeightDraft(String(Math.round(height)));
+  }, [selected, width, height]);
+  // setNodeMarkup 通过替换节点生效，会把节点选区映射成普通光标；同事务里重新选回节点，
+  // 否则每次属性写入都会卸载这个工具条、打断正在输入的控件。
+  const updateImageAttrs = (attrs: Record<string, unknown>) => {
+    const position = getPos();
+    if (typeof position !== "number") return;
+    editor.commands.command(({ tr }) => {
+      tr.setNodeMarkup(position, undefined, { ...node.attrs, ...attrs });
+      tr.setSelection(NodeSelection.create(tr.doc, position));
+      return true;
+    });
   };
+  const clampSize = (value: number) => Math.round(Math.min(240, Math.max(16, value)));
+  const applySize = (dimension: "width" | "height", draft: string) => {
+    const next = Number(draft);
+    if (draft.trim() === "" || !Number.isFinite(next)) return;
+    updateImageAttrs({ [dimension]: clampSize(next) });
+  };
+  const commitSize = (dimension: "width" | "height") => {
+    editingDimensionRef.current = null;
+    if (dimension === "width") setWidthDraft(String(width));
+    else setHeightDraft(String(Math.round(height)));
+  };
+  const sizeInputHandlers = (dimension: "width" | "height") => ({
+    onFocus: (event: React.FocusEvent<HTMLInputElement>) => {
+      editingDimensionRef.current = dimension;
+      event.currentTarget.select();
+    },
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      const draft = event.target.value;
+      if (dimension === "width") setWidthDraft(draft);
+      else setHeightDraft(draft);
+      applySize(dimension, draft);
+    },
+    onBlur: () => commitSize(dimension),
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        commitSize(dimension);
+        event.currentTarget.blur();
+      }
+    },
+  });
   return (
     <NodeViewWrapper
       as="span"
@@ -824,14 +868,7 @@ function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeV
               max="240"
               step="1"
               value={widthDraft}
-              onChange={(event) => setWidthDraft(event.target.value)}
-              onBlur={() => commitSize("width")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitSize("width");
-                  event.currentTarget.blur();
-                }
-              }}
+              {...sizeInputHandlers("width")}
             />
             <output>px</output>
           </label>
@@ -846,14 +883,7 @@ function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeV
               max="240"
               step="1"
               value={heightDraft}
-              onChange={(event) => setHeightDraft(event.target.value)}
-              onBlur={() => commitSize("height")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitSize("height");
-                  event.currentTarget.blur();
-                }
-              }}
+              {...sizeInputHandlers("height")}
             />
             <output>px</output>
           </label>
@@ -864,7 +894,7 @@ function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeV
             aria-label="行内图片替代文字"
             value={node.attrs.alt ?? ""}
             placeholder="例如：示例公司 Logo…"
-            onChange={(event) => updateAttributes({ alt: event.target.value })}
+            onChange={(event) => updateImageAttrs({ alt: event.target.value })}
           />
           <button type="button" aria-label="删除行内图片" onClick={deleteNode}><Trash2 size={14} /></button>
         </span>

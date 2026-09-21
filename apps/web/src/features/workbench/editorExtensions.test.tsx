@@ -323,3 +323,116 @@ describe("分栏分隔线拖拽", () => {
     expect(storedWidths()).toBeNull();
   });
 });
+
+describe("行内图片尺寸调整", () => {
+  function renderInlineImage(attrs: Record<string, unknown> = {}) {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "paragraph",
+          content: [
+            { type: "resumeBlockAnchor", attrs: { blockId: "node_0123456789abcdef" } },
+            { type: "text", text: "前" },
+            {
+              type: "inlineImage",
+              attrs: {
+                src: "data:image/png;base64,dGVzdA==",
+                width: 72,
+                height: 24,
+                aspectRatio: 3,
+                alt: "公司 Logo",
+                ...attrs,
+              },
+            },
+            { type: "text", text: "后" },
+          ],
+        }],
+      },
+    });
+    const { container } = render(<EditorContent editor={editor!} />);
+    let imagePos = -1;
+    editor!.state.doc.descendants((node, pos) => {
+      if (node.type.name === "inlineImage") imagePos = pos;
+      return true;
+    });
+    act(() => {
+      editor!.commands.setNodeSelection(imagePos);
+    });
+    return container;
+  }
+
+  function inlineImageAttrs() {
+    let attrs: Record<string, unknown> | null = null;
+    editor!.state.doc.descendants((node) => {
+      if (node.type.name === "inlineImage") attrs = node.attrs;
+      return true;
+    });
+    return attrs!;
+  }
+
+  it("输入合法数值时画布即时生效，无需失焦", () => {
+    const container = renderInlineImage();
+    const widthInput = container.querySelector<HTMLInputElement>('input[name="inline-image-width"]')!;
+    const heightInput = container.querySelector<HTMLInputElement>('input[name="inline-image-height"]')!;
+
+    fireEvent.change(widthInput, { target: { value: "120" } });
+    expect(inlineImageAttrs().width).toBe(120);
+    expect(container.querySelector(".inline-image-toolbar")).not.toBeNull();
+
+    fireEvent.change(heightInput, { target: { value: "100" } });
+    expect(inlineImageAttrs().height).toBe(100);
+    expect(container.querySelector(".inline-image-toolbar")).not.toBeNull();
+  });
+
+  it("越界输入即时钳制到 16–240", () => {
+    const container = renderInlineImage();
+    const widthInput = container.querySelector<HTMLInputElement>('input[name="inline-image-width"]')!;
+
+    fireEvent.change(widthInput, { target: { value: "999" } });
+    expect(inlineImageAttrs().width).toBe(240);
+
+    fireEvent.change(widthInput, { target: { value: "3" } });
+    expect(inlineImageAttrs().width).toBe(16);
+  });
+
+  it("聚焦输入期间画布变化不回写正在编辑的文本", () => {
+    const container = renderInlineImage();
+    const widthInput = container.querySelector<HTMLInputElement>('input[name="inline-image-width"]')!;
+
+    act(() => { widthInput.focus(); });
+    fireEvent.change(widthInput, { target: { value: "1" } });
+
+    expect(inlineImageAttrs().width).toBe(16);
+    expect(widthInput.value).toBe("1");
+  });
+
+  it("失焦后输入框归一化为实际尺寸", () => {
+    const container = renderInlineImage();
+    const widthInput = container.querySelector<HTMLInputElement>('input[name="inline-image-width"]')!;
+
+    act(() => { widthInput.focus(); });
+    fireEvent.change(widthInput, { target: { value: "1" } });
+    fireEvent.blur(widthInput);
+    expect(widthInput.value).toBe("16");
+
+    act(() => { widthInput.focus(); });
+    fireEvent.change(widthInput, { target: { value: "" } });
+    fireEvent.blur(widthInput);
+    expect(inlineImageAttrs().width).toBe(16);
+    expect(widthInput.value).toBe("16");
+  });
+
+  it("回车提交并失焦", () => {
+    const container = renderInlineImage();
+    const heightInput = container.querySelector<HTMLInputElement>('input[name="inline-image-height"]')!;
+
+    act(() => { heightInput.focus(); });
+    fireEvent.change(heightInput, { target: { value: "80" } });
+    fireEvent.keyDown(heightInput, { key: "Enter" });
+
+    expect(inlineImageAttrs().height).toBe(80);
+    expect(document.activeElement).not.toBe(heightInput);
+  });
+});
