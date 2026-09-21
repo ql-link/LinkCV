@@ -1039,7 +1039,8 @@ select:not([data-slot]):focus-visible {
   letter-spacing: -0.02em;
 }
 
-.resume-content h1 + p {
+.resume-content h1 + p,
+.resume-content p.resume-identity-headline {
   margin-top: 0;
   text-align: center;
   font-size: 8.8pt;

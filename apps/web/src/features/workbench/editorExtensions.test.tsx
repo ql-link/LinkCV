@@ -342,3 +342,59 @@ describe("分栏分隔线拖拽", () => {
     expect(storedWidths()).toBeNull();
   });
 });
+
+describe("姓名下 headline 行样式标记", () => {
+  let editor: Editor | null = null;
+  afterEach(() => editor?.destroy());
+
+  function headlineParagraphs() {
+    return Array.from(editor!.view.dom.querySelectorAll("p.resume-identity-headline"));
+  }
+
+  it("h1 之后的首个有内容段落带 headline 类", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+          { type: "paragraph", content: [{ type: "text", text: "前端工程师" }] },
+          { type: "paragraph", content: [{ type: "text", text: "第二段" }] },
+        ],
+      },
+    });
+    expect(headlineParagraphs()).toHaveLength(1);
+    expect(headlineParagraphs()[0].textContent).toContain("前端工程师");
+  });
+
+  it("h1 与 headline 之间有空行时 headline 行仍带类", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "前端工程师" }] },
+        ],
+      },
+    });
+    expect(headlineParagraphs()).toHaveLength(1);
+    expect(headlineParagraphs()[0].textContent).toContain("前端工程师");
+  });
+
+  it("中间隔着标题或先有内容段落时不打类", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+        ],
+      },
+    });
+    expect(headlineParagraphs()).toHaveLength(0);
+  });
+});

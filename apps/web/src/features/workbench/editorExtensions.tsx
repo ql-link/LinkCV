@@ -9,6 +9,7 @@ import Underline from "@tiptap/extension-underline";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
   AlignCenter,
   AlignLeft,
@@ -154,6 +155,41 @@ export const ResumeBlockIdentity = Extension.create({
           transaction.insert(position, anchorType.create({ blockId: createResumeBlockId() }));
         }
         return transaction;
+      },
+    })];
+  },
+});
+
+const identityHeadlineClass = "resume-identity-headline";
+
+/**
+ * 姓名行（h1）与下方的 headline 行是一个整体，主题用 `h1 + p` 相邻选择器
+ * 给 headline 行加居中小字样式。一旦在中间插入空行，相邻关系断开、
+ * headline 行退回普通正文样式。这里改为按结构打类：一级标题之后、
+ * 只隔空段落的首个有内容段落固定携带该类，样式不再依赖 DOM 相邻。
+ */
+export const ResumeIdentityHeadline = Extension.create({
+  name: "resumeIdentityHeadline",
+  addProseMirrorPlugins() {
+    return [new Plugin({
+      props: {
+        decorations(state) {
+          const decorations: Decoration[] = [];
+          let pendingHeadline = false;
+          state.doc.forEach((node, position) => {
+            if (node.type.name === "heading" && node.attrs.level === 1) {
+              pendingHeadline = true;
+              return;
+            }
+            if (pendingHeadline && node.type.name === "paragraph") {
+              if (node.textContent.length === 0) return;
+              decorations.push(Decoration.node(position, position + node.nodeSize, { class: identityHeadlineClass }));
+            }
+            pendingHeadline = false;
+          });
+          if (!decorations.length) return DecorationSet.empty;
+          return DecorationSet.create(state.doc, decorations);
+        },
       },
     })];
   },
@@ -964,6 +1000,7 @@ export const resumeEditorExtensions: Extensions = [
   StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
   ResumeBlockAnchor,
   ResumeBlockIdentity,
+  ResumeIdentityHeadline,
   ResumeBulletListInputRules,
   Underline,
   FontSize,

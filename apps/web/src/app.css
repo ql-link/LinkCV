@@ -550,7 +550,8 @@ select:not([data-slot]):focus-visible,
   letter-spacing: 0.08em;
 }
 
-.theme-classic-technical .resume-content h1 + p {
+.theme-classic-technical .resume-content h1 + p,
+.theme-classic-technical .resume-content p.resume-identity-headline {
   margin: 0 0 7px;
   text-align: center;
   font-size: 8.5pt;
@@ -764,7 +765,9 @@ select:not([data-slot]):focus-visible,
 }
 
 .theme-administrative-sidebar .resume-column-main h1 + p,
-.theme-administrative-sidebar .resume-layout-column-main h1 + p {
+.theme-administrative-sidebar .resume-layout-column-main h1 + p,
+.theme-administrative-sidebar .resume-column-main p.resume-identity-headline,
+.theme-administrative-sidebar .resume-layout-column-main p.resume-identity-headline {
   color: #294f73;
   text-align: left;
   font-size: 11pt;
@@ -888,7 +891,8 @@ select:not([data-slot]):focus-visible,
   font-weight: 800;
 }
 
-.theme-campus-professional .resume-content h1 + p {
+.theme-campus-professional .resume-content h1 + p,
+.theme-campus-professional .resume-content p.resume-identity-headline {
   margin-right: 25mm;
   color: #666d76;
   text-align: left;
@@ -994,7 +998,8 @@ select:not([data-slot]):focus-visible,
   font-weight: 800;
 }
 
-.theme-civic-service .resume-content h1 + p {
+.theme-civic-service .resume-content h1 + p,
+.theme-civic-service .resume-content p.resume-identity-headline {
   position: absolute;
   z-index: 1;
   top: 23mm;
@@ -1064,7 +1069,8 @@ select:not([data-slot]):focus-visible,
   font-weight: 800;
 }
 
-.theme-creative-orange .resume-content h1 + p {
+.theme-creative-orange .resume-content h1 + p,
+.theme-creative-orange .resume-content p.resume-identity-headline {
   margin: 0 0 5mm;
   color: #50545a;
   text-align: center;
