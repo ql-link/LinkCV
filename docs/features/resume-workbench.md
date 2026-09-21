@@ -13,6 +13,7 @@
 - `/resumes/:resumeId/edit`：正文编辑、页面设置、模板切换、版本记录、AI 侧栏和 PDF 导出；生产构建暂不显示打开 AI 侧栏的悬浮入口。
 - `/assistant` 内嵌工作台：从助手页右上角“我的简历”选择已有简历后，在对话右侧复用同一套正文编辑、自动保存、模板、版本和 PDF 能力；发送请求前先保存脏草稿，并把当前简历作为该条消息的上下文，选中文字时再附带稳定节点、范围、原文和摘要；会话本身不绑定简历，关闭动作返回助手对话，不切换到简历列表路由。
 - `/templates`：模板浏览与预览。
+- 默认目录在迁移 `0081` 后包含 85 套启用模板，已下架经典单栏、现代双栏、紧凑技术型三套废弃设计。其中 Atlas 系列提供 37 套排版，Studio 系列提供六套卡片、双色分区、肖像、胶囊与时间轴样式。新增 Open 系列六套 MIT 授权排版，来源见[模板授权记录](../internals/resume-template-sources.md)。Original 系列包含朱砂编辑笺、横向分庭、墨绿档案签、横轴履历、暖灰书页、非对称索引、错位页眉、折页边注、悬挂章节九套经图像设计确认的原创模板。Career 系列新增青墨财务档案、橙标精益履历、留白师范履历、细线护理履历与蓝线传播履历，分别覆盖财务、制造业社招，教师、护理校招和市场营销实习；校招、实习突出教育与实践，并标明预计毕业和资格状态。各模板使用虚构示例内容；创建时保存模板快照，后续目录更新不覆盖已有简历。Featured 系列包含蓝幕校招、浅蓝社招、清蓝实习、钴蓝右栏、蓝色拼版、蓝线财务和蓝带人事，并增加卡片虚线、卡片分栏、经典商务与活力四套版式；已有的分层胶囊章节、节点时间轴不重复新增。
 - `/share/:token`：受可见性与过期时间约束的只读分享页。
 - 管理端 `/admin/templates`：严格模板包导入、预览和启停。
 
@@ -93,4 +94,4 @@
 
 ## 修改联动与验证
 
-修改快照结构时需同步 Python/TypeScript 契约、迁移、模板包、编辑器、预览、分享、PDF 和小程序预览；修改导入需同步 Worker、MQ、LinkParse、LLM 和开发/部署说明。主要测试入口包括后端 `test_resume_lifecycle.py`、`test_resume_imports.py`、`test_resume_share.py`、`test_resume_pdf.py`、模板管理与迁移测试，前端 `ResumeWorkbench`、`resumeStore`、`resumeContract`、打印、模板和分享测试，以及 Worker/导入服务单元测试。
+修改快照结构时需同步 Python/TypeScript 契约、迁移、模板包、编辑器、预览、分享、PDF 和小程序预览；修改导入需同步 Worker、MQ、LinkParse、LLM 和开发/部署说明。主要测试入口包括后端 `test_resume_lifecycle.py`、`test_resume_imports.py`、`test_resume_share.py`、`test_resume_pdf.py`、模板管理与迁移测试，前端 `ResumeWorkbench`、`resumeStore`、`resumeContract`、打印、模板和分享测试，以及 Worker/导入服务单元测试。视觉模板目录测试直接读取 `0070–0076`、`0078–0081` 的 SQL 模板快照，并按 Atlas、Studio、Open、Original、Career、Featured 的主题清单核对模板身份与打印渲染；迁移重编号时必须同步这些测试输入。
