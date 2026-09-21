@@ -41,6 +41,7 @@
 | `manual-acceptance` | 生成并记录人工端到端验收；方案先行任务写 Spec，直接实现使用会话级记录 | 自动化汇总和质量审查 |
 | `code-review-and-quality` | 审查正确性、契约与风险 | PR 收口 |
 | `feature-completion-audit` | 对照原始需求独立核验完成度、遗漏和偏离 | 按缺口返回规格、实现、测试或审查 |
+| `testing-local-stack` | 在无 Docker、无 CDP 的机器上用 brew 中间件起本地全栈，并以 DevTools 采样器做 DOM 断言 | 只提供环境配方与断言手段，不改变交付流程 |
 
 ## 数据库与迁移
 
