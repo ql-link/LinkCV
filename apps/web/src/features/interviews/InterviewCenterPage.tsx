@@ -452,11 +452,11 @@ async function listAllInterviewSessions(
   return items;
 }
 
-function currentApplicationStageCompleted(
+function currentApplicationStageSession(
   application: JobApplicationSummary,
   sessions: InterviewSessionSummary[],
-): boolean {
-  const currentSession = sessions
+): InterviewSessionSummary | null {
+  return sessions
     .filter((session) => (
       session.application_id === application.id
       && session.status !== "cancelled"
@@ -467,7 +467,6 @@ function currentApplicationStageCompleted(
         ? session
         : latest
     ), null);
-  return currentSession?.status === "completed";
 }
 
 function canAddScheduledStage(application: JobApplicationSummary): boolean {
@@ -1325,6 +1324,18 @@ function ApplicationsView({
     dragRejectionNoticeIdRef.current += 1;
     setDragRejectionNotice({ id: dragRejectionNoticeIdRef.current, message });
   }, []);
+  const currentStageSessionByApplicationId = new Map(
+    applications.map((application) => [
+      application.id,
+      currentApplicationStageSession(application, sessions),
+    ]),
+  );
+  const completedScheduleStartAtByApplicationId = new Map<string, string>();
+  for (const [applicationId, session] of currentStageSessionByApplicationId) {
+    if (session?.status === "completed") {
+      completedScheduleStartAtByApplicationId.set(applicationId, session.start_at);
+    }
+  }
   const normalizedQuery = query.trim().toLowerCase();
   const visibleApplications = sortApplications(
     applications.filter((item) => !normalizedQuery
@@ -1332,6 +1343,7 @@ function ApplicationsView({
         .toLowerCase()
         .includes(normalizedQuery)),
     sortMode,
+    completedScheduleStartAtByApplicationId,
   );
   const categories = [["internship", "实习"], ["campus", "校招"], ["full_time", "正式"], ["", "未分类"]] as const;
   const categoryKey = (item: JobApplicationSummary) => categories.some(([key]) => key === item.job_snapshot?.employment_type) ? String(item.job_snapshot?.employment_type ?? "") : "";
@@ -1339,9 +1351,7 @@ function ApplicationsView({
     ? categories.map(([key, label]) => ({ key, label, items: visibleApplications.filter((item) => categoryKey(item) === key) })).filter((group) => group.items.length)
     : [{ key: "all", label: "", items: visibleApplications }];
   const completedCurrentStageApplicationIds = new Set(
-    visibleApplications
-      .filter((application) => currentApplicationStageCompleted(application, sessions))
-      .map((application) => application.id),
+    completedScheduleStartAtByApplicationId.keys(),
   );
   const deleteEndedApplication = async () => {
     if (!pendingDelete) return;
@@ -1379,6 +1389,7 @@ function ApplicationsView({
         onRequestCategory={setCategoryApplication}
         visibleApplications={visibleApplications}
         completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
+        completedScheduleStartAtByApplicationId={completedScheduleStartAtByApplicationId}
         now={now}
         sortMode={sortMode}
         displayMode={displayMode}
