@@ -91,4 +91,4 @@
 
 ## 修改联动与验证
 
-修改快照结构时需同步 Python/TypeScript 契约、迁移、模板包、编辑器、预览、分享、PDF 和小程序预览；修改导入需同步 Worker、MQ、LinkParse、LLM 和开发/部署说明。主要测试入口包括后端 `test_resume_lifecycle.py`、`test_resume_imports.py`、`test_resume_share.py`、`test_resume_pdf.py`、模板管理与迁移测试，前端 `ResumeWorkbench`、`resumeStore`、`resumeContract`、打印、模板和分享测试，以及 Worker/导入服务单元测试。
+修改快照结构时需同步 Python/TypeScript 契约、迁移、模板包、编辑器、预览、分享、PDF 和小程序预览；修改导入需同步 Worker、MQ、LinkParse、LLM 和开发/部署说明。主要测试入口包括后端 `test_resume_lifecycle.py`、`test_resume_imports.py`、`test_resume_share.py`、`test_resume_pdf.py`、模板管理与迁移测试，前端 `ResumeWorkbench`、`resumeStore`、`resumeContract`、打印、模板和分享测试，以及 Worker/导入服务单元测试。视觉模板目录测试直接读取 `0070–0076`、`0078–0081` 的 SQL 模板快照，并按 Atlas、Studio、Open、Original、Career、Featured 的主题清单核对模板身份与打印渲染；迁移重编号时必须同步这些测试输入。

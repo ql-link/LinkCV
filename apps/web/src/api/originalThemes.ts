@@ -1,4 +1,4 @@
-/** Original layouts based on approved image references (0071–0074). */
+/** Original layouts based on approved image references (0073–0076). */
 export const originalThemes = [
   "original-vermilion",
   "original-balanced",

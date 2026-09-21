@@ -13,7 +13,7 @@ import { renderResumePrintDocument } from "../preview/print/resumePrintDocument"
 
 const lateFeaturedThemes = featuredThemes.filter((theme) => theme.startsWith("featured-card-") || ["featured-classic-business", "featured-vitality"].includes(theme));
 const baseThemes = [...atlasThemes, ...studioThemes, ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes.filter((theme) => !lateFeaturedThemes.includes(theme))];
-const sql = ["0068", "0069", "0070", "0071", "0072", "0073", "0074", "0076", "0077"].map((revision) => readFileSync(resolve(process.cwd(), `../backend/migrations/sql/${revision}.up.sql`), "utf8")).join("\n");
+const sql = ["0070", "0071", "0072", "0073", "0074", "0075", "0076", "0078", "0079"].map((revision) => readFileSync(resolve(process.cwd(), `../backend/migrations/sql/${revision}.up.sql`), "utf8")).join("\n");
 const payloads = [...sql.matchAll(/CAST\('((?:[^']|'')*)' AS JSON\)/g)]
   .map((match) => JSON.parse(match[1].replace(/''/g, "'")));
 const baseSamples = baseThemes.map((theme, index) => ({
@@ -22,7 +22,7 @@ const baseSamples = baseThemes.map((theme, index) => ({
   template: payloads[index * 2 + 1] as TemplateDefinition,
 }));
 const productData = baseSamples.find(({ theme }) => theme === "featured-product")!.data;
-const latePayloads = ["0078", "0079"].flatMap((revision) => [...readFileSync(resolve(process.cwd(), `../backend/migrations/sql/${revision}.up.sql`), "utf8").matchAll(/CAST\('((?:[^']|'')*)' AS JSON\)/g)])
+const latePayloads = ["0080", "0081"].flatMap((revision) => [...readFileSync(resolve(process.cwd(), `../backend/migrations/sql/${revision}.up.sql`), "utf8").matchAll(/CAST\('((?:[^']|'')*)' AS JSON\)/g)])
   .map((match) => JSON.parse(match[1].replace(/''/g, "'")) as TemplateDefinition);
 const lateSamples = lateFeaturedThemes.map((theme, index) => ({
   theme,

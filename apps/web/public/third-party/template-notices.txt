@@ -164,7 +164,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Additional cross-industry adaptations (0076)
+Additional cross-industry adaptations (0078)
 career-classic-cn also adapts RenderCV Classic (examples/classic.typ) at the RenderCV commit and MIT notice above.
 
 Template: career-kendall-cn

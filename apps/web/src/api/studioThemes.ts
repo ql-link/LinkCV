@@ -1,4 +1,4 @@
-/** Six independently implemented reference-inspired layouts (migration 0069). */
+/** Six independently implemented reference-inspired layouts (migration 0071). */
 export const studioThemes = [
   "studio-modular-cards",
   "studio-skill-cards",
