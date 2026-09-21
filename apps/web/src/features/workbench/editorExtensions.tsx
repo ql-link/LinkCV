@@ -8,8 +8,7 @@ import TextStyle from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import { NodeViewContent, NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import {
   AlignCenter,
   AlignLeft,
@@ -34,6 +33,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import * as PMView from "@tiptap/pm/view";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
 import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
@@ -139,11 +139,11 @@ export const ResumeAdaptiveCaret = Extension.create({
       props: {
         decorations(state) {
           const { selection } = state;
-          if (!editor.isEditable || !(selection instanceof TextSelection) || !selection.empty) {
-            return DecorationSet.empty;
+          if (!editor.isEditable || !selection.empty || !selection.$head.parent.inlineContent) {
+            return PMView.DecorationSet.empty;
           }
-          return DecorationSet.create(state.doc, [
-            Decoration.widget(selection.head, (view) => {
+          return PMView.DecorationSet.create(state.doc, [
+            PMView.Decoration.widget(selection.head, (view) => {
               const caret = view.dom.ownerDocument.createElement("span");
               caret.className = "resume-adaptive-caret";
               caret.setAttribute("aria-hidden", "true");
