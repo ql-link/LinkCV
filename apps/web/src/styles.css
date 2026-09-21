@@ -2355,17 +2355,13 @@ select:not([data-slot]):focus-visible {
   padding: 5px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
   backdrop-filter: blur(18px) saturate(180%);
-  -webkit-user-select: none;
-  user-select: none;
 }
 
-.media-context-toolbar input { -webkit-user-select: text; user-select: text; }
 .media-context-toolbar button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--ui-text-muted); cursor: pointer; }
 .media-context-toolbar button:hover { background: var(--ui-accent-subtle); color: var(--ui-accent); }
 .media-context-toolbar span { width: 1px; height: 18px; background: var(--ui-border); }
 .media-size-field { display: inline-flex; height: 30px; align-items: center; overflow: hidden; border: 1px solid var(--ui-border); border-radius: 7px; background: rgba(255, 255, 255, 0.82); }
 .media-size-field input { width: 54px; height: 100%; border: 0; outline: 0; padding: 0 4px 0 8px; background: transparent; color: var(--ui-foreground); font: 600 0.75rem/1 var(--ui-font); text-align: right; }
-.media-size-field input:focus-visible { outline: 0; }
 .media-size-field select { width: 43px; height: 100%; border: 0; border-left: 1px solid var(--ui-border); outline: 0; background: transparent; color: var(--ui-text-muted); font: 0.72rem/1 var(--ui-font); }
 .media-size-field output { width: 30px; color: var(--ui-text-muted); font: 0.72rem/1 var(--ui-font); text-align: center; }
 .media-alt-field { width: 104px; height: 30px; border: 1px solid var(--ui-border); border-radius: 7px; outline: 0; background: rgba(255, 255, 255, 0.82); padding: 0 8px; color: var(--ui-foreground); font: 0.72rem/1 var(--ui-font); }
@@ -2381,10 +2377,14 @@ select:not([data-slot]):focus-visible {
   line-height: 0;
 }
 .resume-inline-image img { display: block; width: 100%; height: 100%; }
-.resume-inline-image.ProseMirror-selectednode { outline: none; }
-.resume-workbench .resume-content .resume-inline-image::selection,
-.resume-workbench .resume-content .resume-inline-image *:not(input)::selection { background: transparent; }
-.inline-image-toolbar { line-height: normal; }
+.resume-workbench .node-inlineImage.ProseMirror-selectednode { outline: none; }
+.resume-workbench .resume-content .node-inlineImage::selection,
+.resume-workbench .resume-content .node-inlineImage ::selection { background: transparent; color: inherit; }
+.resume-workbench .resume-content .node-inlineImage input:focus::selection { background: rgba(52, 120, 246, 0.2); }
+.inline-image-toolbar { line-height: normal; -webkit-user-select: none; user-select: none; }
+.inline-image-toolbar input { -webkit-user-select: text; user-select: text; }
+.inline-image-toolbar .media-size-field input:focus-visible { outline: none; outline-offset: 0; }
+.inline-image-toolbar .media-size-field:has(input:focus-visible) { border-color: var(--ui-border-strong); }
 .inline-image-size-field > span { width: auto; height: auto; margin-left: 7px; background: transparent; color: var(--ui-text-muted); font: 0.68rem/1 var(--ui-font); }
 .inline-image-size-field input { width: 44px; padding-left: 3px; }
 .resume-inline-icon { display: inline-flex; margin: 0 2px; vertical-align: -0.12em; color: #4b5563; }
