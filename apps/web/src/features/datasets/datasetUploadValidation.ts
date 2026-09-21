@@ -4,6 +4,8 @@ export const DEFAULT_DATASET_LIMITS: DatasetLimits = {
   max_file_bytes: 10 * 1024 * 1024,
   max_files_per_batch: 10,
   allowed_extensions: [".pdf", ".docx", ".md", ".txt"],
+  max_media_file_bytes: 500 * 1024 * 1024,
+  media_allowed_extensions: [".webm", ".m4a", ".mp3", ".wav", ".ogg", ".mp4", ".mov"],
 };
 
 export function normalizeDatasetLimits(limits?: Partial<DatasetLimits> | null): DatasetLimits {
@@ -11,6 +13,10 @@ export function normalizeDatasetLimits(limits?: Partial<DatasetLimits> | null): 
   const maxFilesPerBatch = Number(limits?.max_files_per_batch);
   const allowedExtensions = Array.isArray(limits?.allowed_extensions)
     ? limits.allowed_extensions.filter((extension): extension is string => typeof extension === "string")
+    : [];
+  const maxMediaFileBytes = Number(limits?.max_media_file_bytes);
+  const mediaAllowedExtensions = Array.isArray(limits?.media_allowed_extensions)
+    ? limits.media_allowed_extensions.filter((extension): extension is string => typeof extension === "string")
     : [];
 
   return {
@@ -23,6 +29,12 @@ export function normalizeDatasetLimits(limits?: Partial<DatasetLimits> | null): 
     allowed_extensions: allowedExtensions.length > 0
       ? allowedExtensions.map((extension) => extension.startsWith(".") ? extension.toLowerCase() : `.${extension.toLowerCase()}`)
       : DEFAULT_DATASET_LIMITS.allowed_extensions,
+    max_media_file_bytes: Number.isFinite(maxMediaFileBytes) && maxMediaFileBytes > 0
+      ? maxMediaFileBytes
+      : DEFAULT_DATASET_LIMITS.max_media_file_bytes,
+    media_allowed_extensions: mediaAllowedExtensions.length > 0
+      ? mediaAllowedExtensions.map((extension) => extension.startsWith(".") ? extension.toLowerCase() : `.${extension.toLowerCase()}`)
+      : DEFAULT_DATASET_LIMITS.media_allowed_extensions,
   };
 }
 
@@ -37,11 +49,20 @@ function formatUnit(value: number): string {
   return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
 }
 
-function supportedExtension(file: File, limits: DatasetLimits): boolean {
+function fileExtension(file: File): string {
+  return file.name.includes(".")
+    ? `.${file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase()}`
+    : "";
+}
+
+export function isMediaDatasetFile(file: File | { name: string }, limits: DatasetLimits = DEFAULT_DATASET_LIMITS): boolean {
   const extension = file.name.includes(".")
     ? `.${file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase()}`
     : "";
-  return limits.allowed_extensions.some((allowed) => allowed.toLowerCase() === extension);
+  const normalized = normalizeDatasetLimits(limits);
+  return (normalized.media_allowed_extensions ?? []).some(
+    (allowed) => allowed.toLowerCase() === extension,
+  );
 }
 
 export function datasetFormatError(
@@ -50,8 +71,22 @@ export function datasetFormatError(
 ): string | null {
   const limits = normalizeDatasetLimits(rawLimits);
   if (file.size === 0) return "文件为空，请重新选择。";
-  if (!supportedExtension(file, limits)) {
-    return "仅支持 DOCX、PDF、Markdown 和 TXT 文件。";
+  const extension = fileExtension(file);
+  const isMedia = (limits.media_allowed_extensions ?? []).some(
+    (allowed) => allowed.toLowerCase() === extension,
+  );
+  const isDocument = limits.allowed_extensions.some(
+    (allowed) => allowed.toLowerCase() === extension,
+  );
+  if (!isMedia && !isDocument) {
+    return "仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件。";
+  }
+  if (isMedia) {
+    const mediaLimit = limits.max_media_file_bytes ?? DEFAULT_DATASET_LIMITS.max_media_file_bytes!;
+    if (file.size > mediaLimit) {
+      return `音视频文件过大，最大支持 ${formatDatasetFileSize(mediaLimit)}。`;
+    }
+    return null;
   }
   if (file.size > limits.max_file_bytes) {
     return `文件过大，最大支持 ${formatDatasetFileSize(limits.max_file_bytes)}。`;
@@ -77,7 +112,9 @@ export function datasetUploadErrorMessage(
       return "文件名无效，请重命名后再上传。";
     case "UNSUPPORTED_DATASET_FILE":
     case "UNSUPPORTED_DATASET_FORMAT":
-      return "仅支持 DOCX、PDF、Markdown 和 TXT 文件。";
+      return "仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件。";
+    case "DATASET_FILE_EXTENSION_MISMATCH":
+      return "文件内容与扩展名不匹配，请检查后重试。";
     case "EMPTY_DATASET_FILE":
       return "文件为空，请重新选择。";
     case "DATASET_FILE_TOO_LARGE":
@@ -93,6 +130,10 @@ export function datasetUploadErrorMessage(
       return "当前资料数量已达上限。";
     case "DATASET_STORAGE_LIMIT_REACHED":
       return "当前资料容量已达上限。";
+    case "DATASET_MEDIA_COUNT_LIMIT_REACHED":
+      return "音视频资料数量已达上限。";
+    case "DATASET_MEDIA_STORAGE_LIMIT_REACHED":
+      return "音视频资料容量已达上限。";
     case "DATASET_UPLOAD_RATE_LIMITED":
       return "上传过于频繁，请稍后重试。";
     case "DATASET_ADMISSION_UNAVAILABLE":

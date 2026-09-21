@@ -2,7 +2,7 @@
 
 ## 功能范围
 
-LinkResume 资料集功能允许用户上传 PDF、DOCX、Markdown 和纯文本材料，查看可恢复的异步解析状态，在弹窗中只读查看解析后的 Markdown，并在 AI 助手中作为显式上下文引用。系统提供单级平铺文件夹分类管理，支持自建文件夹、资料分类归纳与批量移动；删除文件夹经用户确认后永久删除其中的资料。当前不是通用知识库平台，不提供多层级目录树、跨用户共享、全文检索或 RAG 索引。
+LinkResume 资料集功能允许用户上传 PDF、DOCX、Markdown、纯文本材料与音视频文件（webm/m4a/mp3/wav/ogg/mp4/mov），查看可恢复的异步解析状态，在弹窗中只读查看解析后的 Markdown，并在 AI 助手中作为显式上下文引用。音视频只保存与播放/下载，不进入解析队列；文档与媒体分别受独立配额约束（文档 200 个/1 GiB，媒体默认 50 个/5 GiB、单文件 500 MiB）。面试素材与资料库使用同一套文件实体：在面试场次中上传的资料自动关联该场次，资料库上传的普通文件可在面试详情中通过“从资料库选择”关联；一个文件最多关联一个场次，解除关联与删除场次都不删除文件，物理删除只在资料库进行。系统提供单级平铺文件夹分类管理，支持自建文件夹、资料分类归纳与批量移动；删除文件夹经用户确认后永久删除其中的资料。当前不是通用知识库平台，不提供多层级目录树、跨用户共享、全文检索或 RAG 索引。
 
 接口字段与失败语义见 [HTTP 接口契约](../api/http-contracts.md)，异步处理架构见 [Backend 架构](../internals/backend.md)。
 
@@ -27,6 +27,7 @@ Web `/datasets` 在主体首页采用与 macOS 访达一致的纯粹网格布局
 | HTTP/ORM | `modules/datasets/routes.py`、`models.py`、`schemas.py` | 上传、列表、文件夹 CRUD、分类移动、重试、删除、内容读取与资料元数据 |
 | 正文与替换服务 | `services/dataset_content_service.py`、`dataset_replacement_service.py` | 当前正文读取、同名判断、替换切换及旧对象回收 |
 | 上传服务 | `services/dataset_upload_service.py` | 文件真实性校验、流式摘要与存储、幂等预留和准入限制 |
+| 统一入库 | `services/dataset_ingest_service.py` | 资料库与面试素材共用的上传入库链路；文档记录先行预留，媒体短锁预检后流式落盘再按实际字节收口 |
 | 共用任务 | `modules/resumes/models.py::DocumentParseTask` | 上传和解析状态真值 |
 | Worker | `workers/dataset_parse_worker.py`、`document_parse_consumer.py` | 格式分派、转换、MQ 补发、租约恢复和结果收口 |
 | 外部适配 | `integrations/document_converter.py`、`linkparse_client.py` | 本地转换与 LinkParse 调用 |
@@ -37,18 +38,18 @@ Web `/datasets` 在主体首页采用与 macOS 访达一致的纯粹网格布局
 
 - 新上传必须指定当前用户拥有的现存文件夹，服务端拒绝缺失或不可访问的目标；单项和批量移动也必须指定现存文件夹，不能移至未分类。
 - `user_dataset_folders` 保存用户自建分类文件夹，同一用户下名称唯一（上限 50 个）。
-- `user_dataset` 保存用户归属、`folder_id`（为 NULL 表示未分类）、文件名、格式、MIME、大小、对象键、SHA-256、用户范围的 `idempotency_key`、请求指纹和 `parse_task_id`；同一用户与幂等键只能对应同一份请求。
+- `user_dataset` 保存用户归属、`folder_id`（为 NULL 表示未分类）、文件名、格式、MIME、大小、对象键、SHA-256、用户范围的 `idempotency_key`、请求指纹和 `parse_task_id`；同一用户与幂等键只能对应同一份请求。`asset_kind` 区分 `document|audio|video`；可空的 `interview_session_id`、`interview_source_type`、`duration_ms` 表达与面试场次的关联，解除关联时两列同时清空。
 - 文件夹删除需要用户确认永久删除范围；服务端先检查全部资料，存在上传或解析中任务时拒绝整次删除。确认后清理源文件、解析结果、资料及任务记录，最后删除文件夹，不产生未分类资料。对象存储清理失败返回错误，保留数据库记录供重试；跨对象存储与数据库不具备原子回滚，部分对象可能已删除。
 - 原始文件进入私有对象存储；Worker 本地规范化 Markdown/TXT，通过 LinkParse 解析 PDF/DOCX。
 - 资料转换结果保存前移除独立成行的 `<!-- WORD_PAGE:数字 -->` 分页标记；历史正文读取时同样过滤，无需重新上传。代码块、行内示例和其他注释保持原样，源文件不改写。
-- 解析状态以 `document_parse_tasks` 为真值；资料与任务在同一事务创建。源文件写入成功后任务进入 `queued`，RabbitMQ 发布失败不把上传伪装成失败，由 Worker 定时扫描补发。
+- 解析状态以 `document_parse_tasks` 为真值；资料与任务在同一事务创建。源文件写入成功后任务进入 `queued`，RabbitMQ 发布失败不把上传伪装成失败，由 Worker 定时扫描补发。媒体资料的解析任务直接落地为终态（`succeeded/succeeded`），不进队列、不占 Worker。
 - Worker 通过条件更新原子认领 `queued → processing`，`parse_attempt_count` 同时作为尝试版本；重复消息不能重复解析，旧 Worker 的晚到结果不能覆盖新尝试。
 - 当前 Markdown 优先使用 `user_dataset.content_object_name`，历史资料回退到成功解析任务的转换对象。只有通过资料与任务归属校验后才返回；缩略图和 Agent 均读取同一份最新正文。
 - `parse_task_id` 是跨模块任务引用并受唯一约束保护，但没有数据库外键。
 
 ## 扩展边界
 
-新增文件格式需同步服务端真实性校验、Worker 分派、对象存储、前端接受类型和 HTTP 契约。当前删除是终态资料的同步永久删除；`queued` 和 `processing` 资料不可删除。目录树、共享、检索、回收站或异步删除需要新的产品与持久化设计，不能作为当前功能宣称。
+新增文件格式需同步服务端真实性校验、Worker 分派（媒体除外）、对象存储、前端接受类型和 HTTP 契约。面试素材在迁移 `0064` 后并入本表；存量 `interview_assets` 记录由 `scripts/release/migrate_interview_assets.py` 一次性搬入（幂等可重跑），旧表暂留待后续 revision 删除。当前删除是终态资料的同步永久删除；`queued` 和 `processing` 资料不可删除。目录树、共享、检索、回收站或异步删除需要新的产品与持久化设计，不能作为当前功能宣称。
 
 ## 关键流程
 

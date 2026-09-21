@@ -2685,7 +2685,7 @@ function AssetSidebar({
   };
   const remove = async (asset: InterviewAssetRecord) => {
     try {
-      await api.deleteInterviewAsset(asset.id);
+      await api.unlinkSessionAsset(detail.session.id, asset.id);
       onChanged();
     } catch (error) {
       onNotice(errorMessage(error));
@@ -2701,7 +2701,7 @@ function AssetSidebar({
               <span><FileText /></span>
               <div><strong>{asset.original_file_name}</strong><small>{formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? "现场录制" : "文件上传"}</small></div>
               <button type="button" aria-label={`下载 ${asset.original_file_name}`} onClick={() => void download(asset)}><Download /></button>
-              <button type="button" aria-label={`删除 ${asset.original_file_name}`} onClick={() => void remove(asset)}><Trash2 /></button>
+              <button type="button" aria-label={`移除 ${asset.original_file_name}`} onClick={() => void remove(asset)}><Trash2 /></button>
             </article>
           )) : <p className="asset-empty">还没有素材</p>}
         </div>
@@ -2709,18 +2709,18 @@ function AssetSidebar({
           ref={fileInput}
           className="visually-hidden"
           type="file"
-          aria-label="面试音频文件"
-          accept="audio/*,.aac,.aiff,.amr,.flac,.m4a,.mp3,.oga,.ogg,.opus,.wav,.webm,.wma"
+          aria-label="面试素材文件"
+          accept=".webm,.m4a,.mp3,.wav,.ogg,.mp4,.mov,.pdf,.docx,.md,.txt"
           onChange={(event) => {
             const file = event.target.files?.[0];
             const extension = file?.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-            const audioExtensions = new Set([".aac", ".aiff", ".amr", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".webm", ".wma"]);
-            if (file && (file.type.toLowerCase().startsWith("audio/") || audioExtensions.has(extension ?? ""))) void upload(file);
-            else if (file) onNotice("仅支持音频文件，请选择音频格式。");
+            const supportedExtensions = new Set([".webm", ".m4a", ".mp3", ".wav", ".ogg", ".mp4", ".mov", ".pdf", ".docx", ".md", ".txt"]);
+            if (file && supportedExtensions.has(extension ?? "")) void upload(file);
+            else if (file) onNotice("仅支持音视频与文档格式文件。");
             event.target.value = "";
           }}
         />
-        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>上传音频</Button>
+        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>上传文件</Button>
       </section>
       <InterviewContextSidebar className="record-context-card" interview={selected} />
     </aside>

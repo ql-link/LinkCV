@@ -6936,6 +6936,28 @@ select:not([data-slot]):focus-visible,
   transition: transform var(--ui-duration-fast) var(--ui-ease-standard);
 }
 
+.dataset-interview-badge {
+  display: inline-block;
+  margin-top: 4px;
+  max-width: 180px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--accent-soft, #e8f1ff);
+  color: var(--action-blue, #2563eb);
+  font-size: var(--ui-text-xs);
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-name-badges {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .macos-file-subrow {
   display: flex;
   align-items: center;

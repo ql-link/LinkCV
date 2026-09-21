@@ -1,6 +1,6 @@
 import {api} from "../../../api/client";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
-import { FolderInput, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { Download, FolderInput, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 
 import type { DatasetRecord } from "../../../api/client";
 import { DatasetSelectionCheckbox } from "../DatasetsPage";
@@ -25,6 +25,7 @@ type FileCardProps = {
   onMove: (dataset: DatasetRecord) => void;
   onRetry: (dataset: DatasetRecord) => void;
   onDelete: (dataset: DatasetRecord) => void;
+  onDownload: (dataset: DatasetRecord) => void;
 };
 
 export function FileCard({
@@ -46,6 +47,7 @@ export function FileCard({
   onMove,
   onRetry,
   onDelete,
+  onDownload,
 }: FileCardProps) {
   const graphicId = useId();
   const [replacementError,setReplacementError]=useState("");
@@ -115,6 +117,11 @@ export function FileCard({
           {displayName}
         </strong>
         {uploadDate && <time className="dataset-file-date" dateTime={dataset.created_at}>上传于 {uploadDate}</time>}
+        {dataset.interview_label && (
+          <span className="dataset-interview-badge" title={`面试素材：${dataset.interview_label}`}>
+            面试 · {dataset.interview_label}
+          </span>
+        )}
       </div>
 
       {replacing&&<p role="status">{dataset.replacement?.upload_status==="uploading"?"正在上传…":"正在解析…"}</p>}
@@ -177,6 +184,12 @@ export function FileCard({
                     aria-label={`${displayName} 操作`}
                     onClick={(event) => event.stopPropagation()}
                   >
+                    {(dataset.asset_kind === "audio" || dataset.asset_kind === "video") && (
+                      <button type="button" role="menuitem" onClick={() => onDownload(dataset)}>
+                        <Download size={14} aria-hidden="true" />
+                        下载
+                      </button>
+                    )}
                     <button type="button" role="menuitem" onClick={() => onRename(dataset)}>
                       <Pencil size={14} aria-hidden="true" />
                       重命名

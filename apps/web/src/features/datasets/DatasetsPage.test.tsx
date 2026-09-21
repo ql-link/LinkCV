@@ -585,7 +585,7 @@ describe("DatasetsPage", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("部分文件上传失败：");
     expect(alert).toHaveTextContent("失败.md：上传失败，请稍后重试");
-    expect(alert).toHaveTextContent("错误.exe：仅支持 DOCX、PDF、Markdown 和 TXT 文件");
+    expect(alert).toHaveTextContent("错误.exe：仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件");
     expect(alert.querySelector(".dataset-notice-message")?.textContent).not.toContain("\n");
     expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument();
 

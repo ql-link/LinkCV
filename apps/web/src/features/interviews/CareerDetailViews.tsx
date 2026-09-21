@@ -41,6 +41,7 @@ import {
 import {
   ApiRequestError,
   api,
+  type DatasetRecord,
   type InterviewAssetRecord,
   type InterviewSessionDetail,
   type InterviewSessionRecord,
@@ -2662,22 +2663,104 @@ function formatDuration(durationMs: number | null): string | null {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
+function AttachDatasetDialog({
+  sessionId,
+  onClose,
+  onChanged,
+  onNotice,
+}: {
+  sessionId: string;
+  onClose: () => void;
+  onChanged: () => void;
+  onNotice: (notice: string) => void;
+}) {
+  const [datasets, setDatasets] = useState<DatasetRecord[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void api.listDatasets().then((response) => {
+      if (cancelled) return;
+      setDatasets(
+        response.datasets.filter(
+          (item) =>
+            !item.interview_session_id && item.upload_status === "succeeded",
+        ),
+      );
+    }).catch((error) => {
+      if (!cancelled) onNotice(requestErrorMessage(error));
+    });
+    return () => { cancelled = true; };
+  }, [onNotice]);
+  const attach = async (dataset: DatasetRecord) => {
+    setBusyId(dataset.id);
+    try {
+      await api.attachInterviewAsset(sessionId, dataset.id);
+      onChanged();
+      onClose();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+      setBusyId(null);
+    }
+  };
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="career-content-dialog">
+        <DialogHeader className="career-content-dialog-header">
+          <DialogTitle>从资料库选择</DialogTitle>
+          <DialogDescription>选择一份未关联到其他场次的资料，关联到本场面试。</DialogDescription>
+        </DialogHeader>
+        <div className="career-session-assets">
+          {datasets === null && <p>正在加载资料库…</p>}
+          {datasets !== null && datasets.length === 0 && (
+            <p>资料库中没有可关联的文件。可以先在资料库页面上传。</p>
+          )}
+          {datasets?.map((dataset) => (
+            <article key={dataset.id}>
+              <span className="career-session-asset-icon"><FileText aria-hidden="true" /></span>
+              <div>
+                <strong title={dataset.file_name}>{dataset.file_name}</strong>
+                <small>{formatBytes(dataset.file_size)}</small>
+              </div>
+              <div className="career-session-asset-actions">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busyId !== null}
+                  onClick={() => void attach(dataset)}
+                >
+                  {busyId === dataset.id ? "关联中…" : "关联"}
+                </Button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <DialogFooter className="career-content-dialog-footer">
+          <Button variant="outline" onClick={onClose}>取消</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SessionAssetList({
   assets,
   recordKind,
   hasTextRecord,
+  sessionId,
   onChanged,
   onNotice,
 }: {
   assets: InterviewAssetRecord[];
   recordKind: "笔试" | "面试";
   hasTextRecord: boolean;
+  sessionId: string;
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
   const play = async (asset: InterviewAssetRecord) => {
     setBusyAssetId(asset.id);
@@ -2711,7 +2794,7 @@ function SessionAssetList({
   const remove = async (asset: InterviewAssetRecord) => {
     setBusyAssetId(asset.id);
     try {
-      await api.deleteInterviewAsset(asset.id);
+      await api.unlinkSessionAsset(sessionId, asset.id);
       onChanged();
     } catch (error) {
       onNotice(requestErrorMessage(error));
@@ -2721,21 +2804,25 @@ function SessionAssetList({
   };
   return (
     <>
+      <div className="career-session-asset-toolbar">
+        <Button size="sm" variant="outline" onClick={() => setAttachOpen(true)}>从资料库选择</Button>
+      </div>
       {assets.length ? <div className="career-session-assets">{assets.map((asset) => <article key={asset.id}>
         <span className="career-session-asset-icon"><FileAudio aria-hidden="true" /></span>
         <div><strong title={asset.original_file_name}>{asset.original_file_name}</strong><small>{formatDuration(asset.duration_ms) ?? formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? "现场录制" : "文件上传"}</small></div>
         <div className="career-session-asset-actions">
           {asset.asset_type === "audio" && <Button size="sm" variant="outline" disabled={busyAssetId === asset.id} onClick={() => void play(asset)}>{busyAssetId === asset.id ? "加载中…" : activeAssetId === asset.id ? "重新播放" : "播放录音"}</Button>}
           <button type="button" aria-label={`下载 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void download(asset)}><Download aria-hidden="true" /></button>
-          <button type="button" aria-label={`删除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void remove(asset)}><Trash2 aria-hidden="true" /></button>
+          <button type="button" aria-label={`移除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void remove(asset)}><Trash2 aria-hidden="true" /></button>
         </div>
         {audioUrl && activeAssetId === asset.id && <audio className="career-session-audio-player" controls autoPlay src={audioUrl} aria-label={`${recordKind}录音播放器`} />}
-      </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，或粘贴文字记录。</p></div>}
+      </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，从资料库选择，或粘贴文字记录。</p></div>}
+      {attachOpen && <AttachDatasetDialog sessionId={sessionId} onClose={() => setAttachOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </>
   );
 }
 
-const AUDIO_FILE_ACCEPT = "audio/*,.aac,.aiff,.amr,.flac,.m4a,.mp3,.oga,.ogg,.opus,.wav,.webm,.wma";
+const AUDIO_FILE_ACCEPT = ".webm,.m4a,.mp3,.wav,.ogg,.mp4,.mov,.pdf,.docx,.md,.txt";
 const AUDIO_FILE_EXTENSIONS = new Set(
   AUDIO_FILE_ACCEPT
     .split(",")
@@ -2776,7 +2863,7 @@ function AddInterviewContentDialog({
     if (!candidate) return;
     if (!isAudioFile(candidate)) {
       if (inputRef.current) inputRef.current.value = "";
-      onNotice("仅支持音频文件，请选择音频格式。");
+      onNotice("仅支持音视频与文档格式文件。");
       return;
     }
     setContentMode("audio");
@@ -2816,7 +2903,7 @@ function AddInterviewContentDialog({
       <DialogContent className="career-content-dialog">
         <DialogHeader className="career-content-dialog-header"><DialogTitle>{isEditing ? `编辑${recordKind}文字记录` : `添加${recordKind}内容`}</DialogTitle><DialogDescription>{isEditing ? `修改已保存的${recordKind}文字记录。` : `选择一种方式保存本场${recordKind}记录。`}</DialogDescription></DialogHeader>
         {!isEditing && <div className="career-content-method-switch" role="tablist" aria-label={`${recordKind}记录添加方式`}>
-          <button type="button" role="tab" aria-selected={contentMode === "audio"} className={contentMode === "audio" ? "is-active" : undefined} onClick={() => switchContentMode("audio")}><Import aria-hidden="true" />上传音频</button>
+          <button type="button" role="tab" aria-selected={contentMode === "audio"} className={contentMode === "audio" ? "is-active" : undefined} onClick={() => switchContentMode("audio")}><Import aria-hidden="true" />上传文件</button>
           <button type="button" role="tab" aria-selected={contentMode === "text"} className={contentMode === "text" ? "is-active" : undefined} onClick={() => switchContentMode("text")}><FileText aria-hidden="true" />粘贴文字</button>
         </div>}
         {!isEditing && contentMode === "audio" &&
@@ -2832,10 +2919,10 @@ function AddInterviewContentDialog({
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }}
             >
               <Import aria-hidden="true" />
-              <strong>{file ? file.name : "点击选择或拖放音频文件"}</strong>
-              <span>{file ? `${formatBytes(file.size)} · 已选择` : "支持 MP3、M4A、WAV 等常见音频格式"}</span>
+              <strong>{file ? file.name : "点击选择或拖放文件"}</strong>
+              <span>{file ? `${formatBytes(file.size)} · 已选择` : "支持音视频与 PDF、DOCX、Markdown、TXT"}</span>
             </div>
-            <input ref={inputRef} className="visually-hidden" type="file" accept={AUDIO_FILE_ACCEPT} aria-label="音频文件" onChange={(event) => selectAudioFile(event.target.files?.[0])} />
+            <input ref={inputRef} className="visually-hidden" type="file" accept={AUDIO_FILE_ACCEPT} aria-label="面试素材文件" onChange={(event) => selectAudioFile(event.target.files?.[0])} />
           </section>
         }
         {(isEditing || contentMode === "text") && <section className="career-content-text-method">
@@ -3318,8 +3405,8 @@ export function InterviewSessionDetailView({
         {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} onChanged={() => onChanged(session.id)} />}
         {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开{isAssessment ? "笔试" : "会议"}链接 <ExternalLink aria-hidden="true" /></a>}
         <section className="career-session-content-section">
-          <header><h2>{recordTitle}</h2><span>支持上传音频或粘贴文字</span></header>
-          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
+          <header><h2>{recordTitle}</h2><span>支持上传音视频、从资料库选择或粘贴文字</span></header>
+          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
           {questions.trim() && <article className={`career-session-transcript${textExpanded ? " is-expanded" : ""}`}>
             <header>
               <div className="career-session-transcript-title">

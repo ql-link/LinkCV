@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, time, timedelta
 from io import BytesIO
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
@@ -29,6 +30,20 @@ def fixture_datetime(day_offset: int, hour: int, minute: int = 0) -> datetime:
     )
 
 
+class FakeObjectResponse:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def stream(self, _chunk_size: int):
+        yield self._data
+
+    def close(self) -> None:
+        pass
+
+    def release_conn(self) -> None:
+        pass
+
+
 class FakeStorage:
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
@@ -51,8 +66,25 @@ class FakeStorage:
         self.objects[object_name] = data
         return StreamUploadResult(len(data), hashlib.sha256(data).hexdigest())
 
+    def get(self, object_name: str) -> FakeObjectResponse:
+        return FakeObjectResponse(self.objects[object_name])
+
+    def stat(self, object_name: str) -> None:
+        if object_name not in self.objects:
+            raise KeyError(object_name)
+
+    def copy(self, source_object_name: str, target_object_name: str) -> None:
+        self.objects[target_object_name] = self.objects[source_object_name]
+
+    def list_names(self, prefix: str) -> list[str]:
+        return [name for name in self.objects if name.startswith(prefix)]
+
     def delete(self, object_name: str) -> None:
         self.objects.pop(object_name, None)
+
+
+def asset_headers(key: str | None = None) -> dict[str, str]:
+    return {"Idempotency-Key": key or str(uuid4())}
 
 
 class FailingUploadStorage(FakeStorage):
@@ -74,11 +106,12 @@ class FailingDeleteStorage(FakeStorage):
         raise RuntimeError("simulated storage outage")
 
 
-def build_app(storage: FakeStorage | None = None):
+def build_app(storage: FakeStorage | None = None, **settings_overrides):
     app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="integration-test-secret-with-32-bytes",
+            **settings_overrides,
         ),
         storage=storage or FakeStorage(),
         redis=FakeRedis(),
@@ -556,6 +589,7 @@ def test_interview_lifecycle_allows_overlapping_sessions_and_shares_one_record()
             f"/api/interview-sessions/{first_session['id']}/assets",
             data={"source_type": "recorded", "duration_ms": "60000"},
             files={"file": ("interview.webm", b"fake-audio", "audio/webm")},
+            headers=asset_headers(),
         )
         assert uploaded.status_code == 201, uploaded.text
         asset = uploaded.json()["asset"]
@@ -581,9 +615,21 @@ def test_interview_lifecycle_allows_overlapping_sessions_and_shares_one_record()
             "offers_received": 0,
         }
 
-        blocked_delete = client.delete(f"/api/interview-sessions/{first_session['id']}")
-        assert blocked_delete.status_code == 409
-        assert blocked_delete.json() == {"error": "INTERVIEW_SESSION_NOT_EMPTY"}
+        deleted_session = client.delete(
+            f"/api/interview-sessions/{first_session['id']}"
+        )
+        assert deleted_session.status_code == 200
+        library = client.get("/api/datasets")
+        assert library.status_code == 200
+        library_items = library.json()["datasets"]
+        assert len(library_items) == 1
+        assert library_items[0]["id"] == asset["id"]
+        assert library_items[0]["asset_kind"] == "audio"
+        assert library_items[0]["interview_session_id"] is None
+        assert (
+            client.get(f"/api/interview-assets/{asset['id']}/content").status_code
+            == 404
+        )
 
 
 def test_reschedule_allows_overlapping_sessions() -> None:
@@ -1907,7 +1953,7 @@ def test_linked_application_cannot_be_deleted_separately_while_active() -> None:
         )
 
 
-def test_terminated_application_delete_removes_its_history_and_asset_objects() -> None:
+def test_terminated_application_delete_unlinks_history_but_keeps_files() -> None:
     storage = FakeStorage()
     app = build_app(storage)
     with TestClient(app) as client:
@@ -1923,6 +1969,7 @@ def test_terminated_application_delete_removes_its_history_and_asset_objects() -
             f"/api/interview-sessions/{session_id}/assets",
             data={"source_type": "uploaded"},
             files={"file": ("复盘.txt", b"fictional interview notes", "text/plain")},
+            headers=asset_headers(),
         )
         assert uploaded.status_code == 201, uploaded.text
         asset_id = uploaded.json()["asset"]["id"]
@@ -1941,7 +1988,8 @@ def test_terminated_application_delete_removes_its_history_and_asset_objects() -
         deleted = client.delete(f"/api/job-applications/{application['id']}")
         assert deleted.status_code == 200, deleted.text
         assert deleted.json() == {"deleted": True}
-        assert storage.objects == {}
+        # Files stay in the user's library; only the session link is removed.
+        assert len(storage.objects) == 1
         assert (
             client.get(f"/api/job-applications/{application['id']}").status_code == 404
         )
@@ -1949,10 +1997,17 @@ def test_terminated_application_delete_removes_its_history_and_asset_objects() -
         assert (
             client.get(f"/api/interview-assets/{asset_id}/content").status_code == 404
         )
+        library = client.get("/api/datasets")
+        assert library.status_code == 200
+        library_items = library.json()["datasets"]
+        assert len(library_items) == 1
+        assert library_items[0]["id"] == asset_id
+        assert library_items[0]["interview_session_id"] is None
+        assert library_items[0]["asset_kind"] == "document"
         assert client.get(f"/api/job-descriptions/{job_id}").status_code == 404
 
 
-def test_job_delete_removes_active_application_history_and_asset_objects() -> None:
+def test_job_delete_removes_application_history_but_keeps_files() -> None:
     storage = FakeStorage()
     app = build_app(storage)
     with TestClient(app) as client:
@@ -1968,6 +2023,7 @@ def test_job_delete_removes_active_application_history_and_asset_objects() -> No
             f"/api/interview-sessions/{session_id}/assets",
             data={"source_type": "uploaded"},
             files={"file": ("复盘.txt", b"fictional interview notes", "text/plain")},
+            headers=asset_headers(),
         )
         assert uploaded.status_code == 201, uploaded.text
         asset_id = uploaded.json()["asset"]["id"]
@@ -1975,7 +2031,7 @@ def test_job_delete_removes_active_application_history_and_asset_objects() -> No
         deleted = client.delete(f"/api/job-descriptions/{job_id}")
 
         assert deleted.status_code == 200, deleted.text
-        assert storage.objects == {}
+        assert len(storage.objects) == 1
         assert client.get(f"/api/job-descriptions/{job_id}").status_code == 404
         assert (
             client.get(f"/api/job-applications/{application['id']}").status_code == 404
@@ -1984,6 +2040,8 @@ def test_job_delete_removes_active_application_history_and_asset_objects() -> No
         assert (
             client.get(f"/api/interview-assets/{asset_id}/content").status_code == 404
         )
+        library = client.get("/api/datasets")
+        assert len(library.json()["datasets"]) == 1
 
 
 def test_terminated_job_cannot_start_a_second_application() -> None:
@@ -2035,7 +2093,7 @@ def test_active_application_cannot_be_deleted() -> None:
         )
 
 
-def test_terminated_application_delete_keeps_records_when_asset_cleanup_fails() -> None:
+def test_terminated_application_delete_never_touches_storage() -> None:
     storage = FailingDeleteStorage()
     app = build_app(storage)
     with TestClient(app) as client:
@@ -2051,6 +2109,7 @@ def test_terminated_application_delete_keeps_records_when_asset_cleanup_fails() 
             f"/api/interview-sessions/{session_id}/assets",
             data={"source_type": "uploaded"},
             files={"file": ("复盘.txt", b"fictional interview notes", "text/plain")},
+            headers=asset_headers(),
         )
         assert uploaded.status_code == 201, uploaded.text
         terminated = client.post(
@@ -2064,13 +2123,12 @@ def test_terminated_application_delete_keeps_records_when_asset_cleanup_fails() 
         assert terminated.status_code == 200, terminated.text
 
         deleted = client.delete(f"/api/job-applications/{application['id']}")
-        assert deleted.status_code == 502
-        assert deleted.json() == {"error": "INTERVIEW_APPLICATION_DELETE_FAILED"}
+        assert deleted.status_code == 200, deleted.text
+        assert len(storage.objects) == 1
         assert (
-            client.get(f"/api/job-applications/{application['id']}").status_code == 200
+            client.get(f"/api/job-applications/{application['id']}").status_code == 404
         )
-        assert client.get(f"/api/interview-sessions/{session_id}").status_code == 200
-        assert client.get(f"/api/job-descriptions/{job_id}").status_code == 200
+        assert client.get(f"/api/interview-sessions/{session_id}").status_code == 404
 
 
 def test_optimistic_lock_rejects_a_second_application_write_from_a_stale_page() -> None:
@@ -2140,9 +2198,10 @@ def test_asset_storage_failure_does_not_create_visible_metadata() -> None:
             f"/api/interview-sessions/{session_id}/assets",
             data={"source_type": "uploaded"},
             files={"file": ("interview.webm", b"fake-audio", "audio/webm")},
+            headers=asset_headers(),
         )
         assert failed.status_code == 502
-        assert failed.json() == {"error": "INTERVIEW_ASSET_UPLOAD_FAILED"}
+        assert failed.json() == {"error": "DATASET_STORAGE_UNAVAILABLE"}
         detail = client.get(f"/api/interview-sessions/{session_id}")
         assert detail.status_code == 200
         assert detail.json()["assets"] == []
@@ -2165,10 +2224,14 @@ def test_media_recorder_ogg_audio_uses_the_shared_asset_store() -> None:
             f"/api/interview-sessions/{created.json()['session']['id']}/assets",
             data={"source_type": "recorded", "duration_ms": "30000"},
             files={"file": ("interview.ogg", b"fake-ogg", "audio/ogg")},
+            headers=asset_headers(),
         )
         assert uploaded.status_code == 201, uploaded.text
         assert uploaded.json()["asset"]["asset_type"] == "audio"
         assert len(storage.objects) == 1
+        object_name = next(iter(storage.objects))
+        assert "/datasets/" in object_name
+        assert "/interviews/" not in object_name
 
 
 def test_application_employment_category_is_owned_versioned_and_snapshot_only() -> None:
@@ -2225,3 +2288,252 @@ def test_application_employment_category_is_owned_versioned_and_snapshot_only() 
             ).status_code
             == 404
         )
+
+
+def upload_library_asset(
+    client: TestClient,
+    *,
+    filename: str,
+    content: bytes,
+    content_type: str,
+):
+    folder = client.post("/api/datasets/folders", json={"name": "资料库文件夹"}).json()
+    return client.post(
+        "/api/datasets",
+        files={"file": (filename, content, content_type)},
+        data={"folder_id": folder["id"]},
+        headers=asset_headers(),
+    )
+
+
+def test_session_asset_upload_requires_idempotency_key() -> None:
+    app = build_app(FakeStorage())
+    with TestClient(app) as client:
+        register(client, "no-idempotency@example.test")
+        application = create_application(client, create_job(client, "示例科技"))
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("22222222-2222-4222-8222-222222222222"),
+        )
+        session_id = created.json()["session"]["id"]
+
+        missing = client.post(
+            f"/api/interview-sessions/{session_id}/assets",
+            data={"source_type": "recorded"},
+            files={"file": ("rec.webm", b"audio", "audio/webm")},
+        )
+        assert missing.status_code == 400
+        assert missing.json()["error"] == "INVALID_IDEMPOTENCY_KEY"
+
+        malformed = client.post(
+            f"/api/interview-sessions/{session_id}/assets",
+            data={"source_type": "recorded"},
+            files={"file": ("rec.webm", b"audio", "audio/webm")},
+            headers={"Idempotency-Key": "not-a-uuid"},
+        )
+        assert malformed.status_code == 400
+        assert malformed.json()["error"] == "INVALID_IDEMPOTENCY_KEY"
+
+
+def test_session_document_upload_auto_links_and_queues_parse() -> None:
+    storage = FakeStorage()
+    app = build_app(storage)
+    with TestClient(app) as client:
+        register(client, "doc-upload@example.test")
+        application = create_application(client, create_job(client, "文档科技"))
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("33333333-3333-4333-8333-333333333333"),
+        )
+        session_id = created.json()["session"]["id"]
+
+        uploaded = client.post(
+            f"/api/interview-sessions/{session_id}/assets",
+            data={"source_type": "uploaded"},
+            files={"file": ("notes.txt", b"interview notes", "text/plain")},
+            headers=asset_headers(),
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        asset = uploaded.json()["asset"]
+        assert asset["asset_type"] == "document"
+        assert asset["source_type"] == "uploaded"
+        object_names = list(storage.objects)
+        assert len(object_names) == 1
+        assert object_names[0].startswith("users/1/datasets/")
+
+        library = client.get("/api/datasets")
+        assert library.status_code == 200
+        items = library.json()["datasets"]
+        assert len(items) == 1
+        item = items[0]
+        assert item["id"] == asset["id"]
+        assert item["asset_kind"] == "document"
+        assert item["interview_session_id"] == session_id
+        assert item["interview_source_type"] == "uploaded"
+        assert item["interview_label"] == "文档科技·一面"
+        assert item["parse_status"] == "queued"
+
+
+def test_attach_and_unlink_library_dataset() -> None:
+    storage = FakeStorage()
+    app = build_app(storage)
+    with TestClient(app) as client, TestClient(app) as other:
+        register(client, "attach-owner@example.test")
+        register(other, "attach-stranger@example.test")
+        application = create_application(client, create_job(client, "关联科技"))
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("55555555-5555-4555-8555-555555555555"),
+        )
+        session_id = created.json()["session"]["id"]
+
+        library_upload = upload_library_asset(
+            client,
+            filename="library.mp3",
+            content=b"library-audio",
+            content_type="audio/mpeg",
+        )
+        assert library_upload.status_code == 200, library_upload.text
+        dataset_id = library_upload.json()["id"]
+        assert library_upload.json()["asset_kind"] == "audio"
+        assert library_upload.json()["interview_session_id"] is None
+
+        attached = client.post(
+            f"/api/interview-sessions/{session_id}/assets/attach",
+            json={"dataset_id": dataset_id},
+        )
+        assert attached.status_code == 201, attached.text
+        asset = attached.json()["asset"]
+        assert asset["id"] == dataset_id
+        assert asset["interview_session_id"] == session_id
+        assert asset["source_type"] == "uploaded"
+
+        detail = client.get(f"/api/interview-sessions/{session_id}")
+        assert [item["id"] for item in detail.json()["assets"]] == [dataset_id]
+
+        reattach = client.post(
+            f"/api/interview-sessions/{session_id}/assets/attach",
+            json={"dataset_id": dataset_id},
+        )
+        assert reattach.status_code == 201
+
+        stranger_attach = other.post(
+            f"/api/interview-sessions/{session_id}/assets/attach",
+            json={"dataset_id": dataset_id},
+        )
+        assert stranger_attach.status_code == 404
+        assert stranger_attach.json()["error"] == "INTERVIEW_NOT_FOUND"
+
+        other_application = create_application(
+            client, create_job(client, "第二家公司")
+        )
+        other_session = client.post(
+            f"/api/job-applications/{other_application['id']}/interview-sessions",
+            json=session_payload("66666666-6666-4666-8666-666666666666"),
+        )
+        other_session_id = other_session.json()["session"]["id"]
+        conflict = client.post(
+            f"/api/interview-sessions/{other_session_id}/assets/attach",
+            json={"dataset_id": dataset_id},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["error"] == "DATASET_ALREADY_LINKED"
+
+        missing = client.post(
+            f"/api/interview-sessions/{session_id}/assets/attach",
+            json={"dataset_id": "99999999"},
+        )
+        assert missing.status_code == 404
+        assert missing.json()["error"] == "DATASET_NOT_FOUND"
+
+        unlinked = client.delete(
+            f"/api/interview-sessions/{session_id}/assets/{dataset_id}"
+        )
+        assert unlinked.status_code == 200
+        assert unlinked.json() == {"unlinked": True}
+
+        detail = client.get(f"/api/interview-sessions/{session_id}")
+        assert detail.json()["assets"] == []
+        assert (
+            client.get(f"/api/interview-assets/{dataset_id}/content").status_code
+            == 404
+        )
+        source = client.get(f"/api/datasets/{dataset_id}/source")
+        assert source.status_code == 200
+        assert source.content == b"library-audio"
+        item = client.get("/api/datasets").json()["datasets"][0]
+        assert item["interview_session_id"] is None
+        assert item["interview_source_type"] is None
+
+
+def test_delete_interview_asset_unlinks_instead_of_deleting() -> None:
+    storage = FakeStorage()
+    app = build_app(storage)
+    with TestClient(app) as client:
+        register(client, "unlink-alias@example.test")
+        application = create_application(client, create_job(client, "解除科技"))
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("77777777-7777-4777-8777-777777777777"),
+        )
+        session_id = created.json()["session"]["id"]
+
+        uploaded = client.post(
+            f"/api/interview-sessions/{session_id}/assets",
+            data={"source_type": "recorded"},
+            files={"file": ("rec.webm", b"session-audio", "audio/webm")},
+            headers=asset_headers(),
+        )
+        asset_id = uploaded.json()["asset"]["id"]
+
+        deleted = client.delete(f"/api/interview-assets/{asset_id}")
+        assert deleted.status_code == 200
+        assert deleted.json() == {"deleted": True}
+        assert len(storage.objects) == 1
+
+        again = client.delete(f"/api/interview-assets/{asset_id}")
+        assert again.status_code == 404
+        assert again.json()["error"] == "INTERVIEW_ASSET_NOT_FOUND"
+
+        item = client.get("/api/datasets").json()["datasets"][0]
+        assert item["interview_session_id"] is None
+
+
+def test_media_upload_via_dataset_endpoint_is_terminal() -> None:
+    app = build_app(FakeStorage())
+    with TestClient(app) as client:
+        register(client, "media-library@example.test")
+
+        uploaded = upload_library_asset(
+            client,
+            filename="voice.m4a",
+            content=b"m4a-bytes",
+            content_type="audio/mp4",
+        )
+        assert uploaded.status_code == 200, uploaded.text
+        record = uploaded.json()
+        assert record["asset_kind"] == "audio"
+        assert record["upload_status"] == "succeeded"
+        assert record["parse_status"] == "succeeded"
+        assert record["interview_session_id"] is None
+
+def test_media_capacity_limit_rejects_extra_media() -> None:
+    app = build_app(FakeStorage(), media_max_count_per_user=1)
+    with TestClient(app) as client:
+        register(client, "media-quota@example.test")
+        uploaded = upload_library_asset(
+            client,
+            filename="a.mp3",
+            content=b"a" * 16,
+            content_type="audio/mpeg",
+        )
+        assert uploaded.status_code == 200
+
+        rejected = client.post(
+            "/api/datasets",
+            files={"file": ("b.mp3", b"b" * 16, "audio/mpeg")},
+            data={"folder_id": uploaded.json()["folder_id"]},
+            headers=asset_headers(),
+        )
+        assert rejected.status_code == 409
+        assert rejected.json()["error"] == "DATASET_MEDIA_COUNT_LIMIT_REACHED"

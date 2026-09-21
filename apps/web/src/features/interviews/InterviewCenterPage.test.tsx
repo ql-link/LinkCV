@@ -2713,7 +2713,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(recordHero).queryByRole("button", { name: "删除记录" })).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "面试概况" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "面试记录", level: 2 })).toBeInTheDocument();
-    expect(screen.getByText("支持上传音频或粘贴文字")).toBeInTheDocument();
+    expect(screen.getByText("支持上传音视频、从资料库选择或粘贴文字")).toBeInTheDocument();
     expect(await screen.findByText("如何保证接口幂等？")).toBeInTheDocument();
     expect(screen.queryByText("尚未添加面试内容")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑记录" })).toBeInTheDocument();
@@ -2735,9 +2735,9 @@ describe("InterviewCenterPage API projections", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "添加面试内容" }));
     const dialog = await screen.findByRole("dialog", { name: "添加面试内容" });
-    const fileInput = within(dialog).getByLabelText("音频文件");
-    expect(fileInput).toHaveAttribute("accept", expect.stringContaining("audio/*"));
-    expect(fileInput).not.toHaveAttribute("accept", expect.stringContaining(".pdf"));
+    const fileInput = within(dialog).getByLabelText("面试素材文件");
+    expect(fileInput).toHaveAttribute("accept", expect.stringContaining(".webm"));
+    expect(fileInput).toHaveAttribute("accept", expect.stringContaining(".pdf"));
     fireEvent.click(within(dialog).getByRole("tab", { name: "粘贴文字" }));
     fireEvent.change(within(dialog).getByPlaceholderText("粘贴面试过程、逐字稿或整理后的文字记录…"), {
       target: { value: "新的面试文字记录" },
@@ -2989,14 +2989,14 @@ describe("InterviewCenterPage API projections", () => {
     expect(await screen.findByRole("heading", { name: "面试概况" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "添加面试内容" }));
     const dialog = await screen.findByRole("dialog", { name: "添加面试内容" });
-    const fileInput = within(dialog).getByLabelText("音频文件");
+    const fileInput = within(dialog).getByLabelText("面试素材文件");
     const dropzone = dialog.querySelector(".career-content-dropzone") as HTMLElement;
-    const invalidFile = new File(["notes"], "notes.pdf", { type: "application/pdf" });
+    const invalidFile = new File(["notes"], "notes.exe", { type: "application/octet-stream" });
     const audioFile = new File(["audio"], "interview.m4a", { type: "audio/mp4" });
 
     fireEvent.change(fileInput, { target: { files: [invalidFile] } });
-    await waitFor(() => expect(document.querySelector(".interview-error-notice")).toHaveTextContent("仅支持音频文件"));
-    expect(dropzone).toHaveTextContent("点击选择或拖放音频文件");
+    await waitFor(() => expect(document.querySelector(".interview-error-notice")).toHaveTextContent("仅支持音视频与文档格式文件"));
+    expect(dropzone).toHaveTextContent("点击选择或拖放文件");
 
     fireEvent.change(fileInput, { target: { files: [audioFile] } });
     expect(dropzone).toHaveTextContent("interview.m4a");
@@ -3004,7 +3004,7 @@ describe("InterviewCenterPage API projections", () => {
     const textInput = within(dialog).getByPlaceholderText("粘贴面试过程、逐字稿或整理后的文字记录…");
     fireEvent.change(textInput, { target: { value: "新的面试文字记录" } });
 
-    expect(within(dialog).queryByLabelText("音频文件")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("面试素材文件")).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "保存内容" }));
 
     await waitFor(() => expect(mocks.updateInterviewSession).toHaveBeenCalledWith("31", {
@@ -4701,9 +4701,9 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.queryByRole("heading", { name: "需要改进" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /开始录音/ })).not.toBeInTheDocument();
     expect(screen.getByText("interview.m4a")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "上传音频" })).toBeInTheDocument();
-    expect(screen.getByLabelText("面试音频文件")).toHaveAttribute("accept", expect.stringContaining("audio/*"));
-    expect(screen.getByLabelText("面试音频文件")).not.toHaveAttribute("accept", expect.stringContaining("video/*"));
+    expect(screen.getByRole("button", { name: "上传文件" })).toBeInTheDocument();
+    expect(screen.getByLabelText("面试素材文件")).toHaveAttribute("accept", expect.stringContaining(".m4a"));
+    expect(screen.getByLabelText("面试素材文件")).toHaveAttribute("accept", expect.stringContaining(".mp4"));
     await waitFor(() => expect(mocks.getInterviewSession).toHaveBeenCalledWith("31"));
     expect(mocks.listInterviewSessions).toHaveBeenCalledWith({
       include_archived: true,

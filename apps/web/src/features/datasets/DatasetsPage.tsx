@@ -3,6 +3,7 @@ import {
   CheckSquare,
   ChevronLeft,
   Database,
+  Download,
   FolderOpen,
   FolderInput,
   FolderPlus,
@@ -152,6 +153,10 @@ export function datasetDisplayName(dataset: Pick<DatasetRecord, "file_name" | "f
     : dataset.file_name;
 }
 
+export function isMediaDataset(dataset: Pick<DatasetRecord, "asset_kind">): boolean {
+  return dataset.asset_kind === "audio" || dataset.asset_kind === "video";
+}
+
 function datasetVisualStatus(dataset: DatasetRecord): DatasetVisualStatus {
   if (dataset.parse_status === "succeeded") return "succeeded";
   if (dataset.parse_status === "failed" || dataset.upload_status === "failed") return "failed";
@@ -164,6 +169,12 @@ function datasetStatusLabel(status: DatasetVisualStatus) {
   if (status === "succeeded") return "可用";
   if (status === "failed") return "解析失败";
   return "正在解析";
+}
+
+export function datasetAssetKindLabel(dataset: Pick<DatasetRecord, "asset_kind">): string | null {
+  if (dataset.asset_kind === "audio") return "音频";
+  if (dataset.asset_kind === "video") return "视频";
+  return null;
 }
 
 function datasetStatusReason(dataset: DatasetRecord) {
@@ -233,6 +244,7 @@ function DatasetRow({
   onMove,
   onRetry,
   onDelete,
+  onDownload,
 }: {
   dataset: DatasetRecord;
   batchMode: boolean;
@@ -247,9 +259,11 @@ function DatasetRow({
   onMove: (dataset: DatasetRecord) => void;
   onRetry: (dataset: DatasetRecord) => void;
   onDelete: (dataset: DatasetRecord) => void;
+  onDownload: (dataset: DatasetRecord) => void;
 }) {
   const displayName = datasetDisplayName(dataset);
-  const canPreview = datasetVisualStatus(dataset) === "succeeded";
+  const media = isMediaDataset(dataset);
+  const canPreview = !media && datasetVisualStatus(dataset) === "succeeded";
   const isInteractive = canPreview && !batchMode;
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!isInteractive || (event.key !== "Enter" && event.key !== " ")) return;
@@ -268,6 +282,12 @@ function DatasetRow({
     >
       <div className="dataset-cell dataset-cell-name">
         <strong className="dataset-name" title={displayName}>{displayName}</strong>
+        {(datasetAssetKindLabel(dataset) || dataset.interview_label) && (
+          <span className="dataset-name-badges">
+            {datasetAssetKindLabel(dataset) && <span className="dataset-kind-badge">{datasetAssetKindLabel(dataset)}</span>}
+            {dataset.interview_label && <span className="dataset-interview-badge" title={`面试素材：${dataset.interview_label}`}>面试 · {dataset.interview_label}</span>}
+          </span>
+        )}
       </div>
       <div className="dataset-cell dataset-cell-time">{formatDateTime(dataset.created_at)}</div>
       <div className="dataset-cell dataset-cell-size">{formatFileSize(dataset.file_size)}</div>
@@ -305,6 +325,11 @@ function DatasetRow({
                 aria-label={`${displayName} 操作`}
                 onClick={(event) => event.stopPropagation()}
               >
+                {media && datasetVisualStatus(dataset) === "succeeded" && (
+                  <button type="button" role="menuitem" onClick={() => onDownload(dataset)}>
+                    <Download size={15} aria-hidden="true" />下载
+                  </button>
+                )}
                 <button type="button" role="menuitem" onClick={() => onRename(dataset)}>
                   <Pencil size={15} aria-hidden="true" />重命名
                 </button>
@@ -831,6 +856,21 @@ export function DatasetsPage({
     }
   };
 
+  const downloadDataset = async (dataset: DatasetRecord) => {
+    setMenuDatasetId(null);
+    try {
+      const blob = await api.downloadDatasetSource(dataset.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = dataset.file_name;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setSyncFailure(datasetUploadErrorMessage(error, "下载失败，请稍后重试。"));
+    }
+  };
+
   const startDelete = (dataset: DatasetRecord) => {
     setMenuDatasetId(null);
     setDeleteTarget(dataset);
@@ -1167,7 +1207,7 @@ export function DatasetsPage({
                             menuOpen={menuDatasetId === dataset.id}
                             busy={busyAction?.id === dataset.id}
                             displayName={datasetDisplayName(dataset)}
-                            isInteractive={datasetVisualStatus(dataset) === "succeeded" && !batchMode}
+                            isInteractive={!isMediaDataset(dataset) && datasetVisualStatus(dataset) === "succeeded" && !batchMode}
                             statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
                             statusKind={datasetVisualStatus(dataset)}
                             statusReason={datasetStatusReason(dataset)}
@@ -1178,6 +1218,7 @@ export function DatasetsPage({
                             onMove={(item) => setMoveTarget(item)}
                             onRetry={(item) => void startRetry(item)}
                             onDelete={startDelete}
+                            onDownload={(item) => void downloadDataset(item)}
                           />
                         ))}
                       </div>
@@ -1218,7 +1259,7 @@ export function DatasetsPage({
                           menuOpen={menuDatasetId === dataset.id}
                           busy={busyAction?.id === dataset.id}
                           displayName={datasetDisplayName(dataset)}
-                          isInteractive={datasetVisualStatus(dataset) === "succeeded" && !batchMode}
+                          isInteractive={!isMediaDataset(dataset) && datasetVisualStatus(dataset) === "succeeded" && !batchMode}
                           statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
                           statusKind={datasetVisualStatus(dataset)}
                           statusReason={datasetStatusReason(dataset)}
@@ -1229,6 +1270,7 @@ export function DatasetsPage({
                           onMove={(item) => setMoveTarget(item)}
                           onRetry={(item) => void startRetry(item)}
                           onDelete={startDelete}
+                          onDownload={(item) => void downloadDataset(item)}
                         />
                       ))}
                     </div>
