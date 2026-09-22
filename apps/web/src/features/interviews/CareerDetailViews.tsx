@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -25,18 +26,23 @@ import {
   FileAudio,
   FilePenLine,
   FileText,
+  FolderOpen,
   Import,
   Info,
   ListFilter,
   MapPin,
   Mail,
   MoreHorizontal,
+  Pause,
   Pencil,
+  Play,
   Send,
   Sparkles,
   Trash2,
   Users,
   Video,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   ApiRequestError,
@@ -2663,15 +2669,19 @@ function formatDuration(durationMs: number | null): string | null {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
-function AttachDatasetDialog({
+function formatPlaybackTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
+  const wholeSeconds = Math.floor(seconds);
+  return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, "0")}`;
+}
+
+function DatasetPicker({
   sessionId,
-  onClose,
-  onChanged,
+  onAttached,
   onNotice,
 }: {
   sessionId: string;
-  onClose: () => void;
-  onChanged: () => void;
+  onAttached: () => void;
   onNotice: (notice: string) => void;
 }) {
   const [datasets, setDatasets] = useState<DatasetRecord[] | null>(null);
@@ -2695,50 +2705,40 @@ function AttachDatasetDialog({
     setBusyId(dataset.id);
     try {
       await api.attachInterviewAsset(sessionId, dataset.id);
-      onChanged();
-      onClose();
+      onAttached();
     } catch (error) {
       onNotice(requestErrorMessage(error));
       setBusyId(null);
     }
   };
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="career-content-dialog">
-        <DialogHeader className="career-content-dialog-header">
-          <DialogTitle>从资料库选择</DialogTitle>
-          <DialogDescription>选择一份未关联到其他场次的资料，关联到本场面试。</DialogDescription>
-        </DialogHeader>
-        <div className="career-session-assets">
-          {datasets === null && <p>正在加载资料库…</p>}
-          {datasets !== null && datasets.length === 0 && (
-            <p>资料库中没有可关联的文件。可以先在资料库页面上传。</p>
-          )}
-          {datasets?.map((dataset) => (
-            <article key={dataset.id}>
-              <span className="career-session-asset-icon"><FileText aria-hidden="true" /></span>
-              <div>
-                <strong title={dataset.file_name}>{dataset.file_name}</strong>
-                <small>{formatBytes(dataset.file_size)}</small>
-              </div>
-              <div className="career-session-asset-actions">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busyId !== null}
-                  onClick={() => void attach(dataset)}
-                >
-                  {busyId === dataset.id ? "关联中…" : "关联"}
-                </Button>
-              </div>
-            </article>
-          ))}
-        </div>
-        <DialogFooter className="career-content-dialog-footer">
-          <Button variant="outline" onClick={onClose}>取消</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <section className="career-content-library-method" aria-label="可选择的资料库文件">
+      <div className="career-session-assets">
+        {datasets === null && <p>正在加载资料库…</p>}
+        {datasets !== null && datasets.length === 0 && (
+          <p>资料库中没有可关联的文件。可以先在资料库页面上传。</p>
+        )}
+        {datasets?.map((dataset) => (
+          <article key={dataset.id}>
+            <span className="career-session-asset-icon"><FileText aria-hidden="true" /></span>
+            <div>
+              <strong title={dataset.file_name}>{dataset.file_name}</strong>
+              <small>{formatBytes(dataset.file_size)}</small>
+            </div>
+            <div className="career-session-asset-actions">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busyId !== null}
+                onClick={() => void attach(dataset)}
+              >
+                {busyId === dataset.id ? "关联中…" : "关联"}
+              </Button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -2757,11 +2757,27 @@ function SessionAssetList({
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioVolumeRef = useRef<HTMLDivElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null);
-  const [attachOpen, setAttachOpen] = useState(false);
+  const [assetToRemove, setAssetToRemove] = useState<InterviewAssetRecord | null>(null);
+  const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
+  const [audioCurrentSeconds, setAudioCurrentSeconds] = useState(0);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioMuted, setAudioMuted] = useState(false);
+  const [audioVolume, setAudioVolume] = useState(1);
+  const [audioVolumeOpen, setAudioVolumeOpen] = useState(false);
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
+  useEffect(() => {
+    if (!audioVolumeOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!audioVolumeRef.current?.contains(event.target as Node)) setAudioVolumeOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [audioVolumeOpen]);
   const play = async (asset: InterviewAssetRecord) => {
     setBusyAssetId(asset.id);
     try {
@@ -2769,6 +2785,10 @@ function SessionAssetList({
       const url = URL.createObjectURL(blob);
       setAudioUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return url; });
       setActiveAssetId(asset.id);
+      setAudioDurationSeconds((asset.duration_ms ?? 0) / 1000);
+      setAudioCurrentSeconds(0);
+      setAudioPlaying(false);
+      setAudioVolumeOpen(false);
     } catch (error) {
       onNotice(requestErrorMessage(error));
     } finally {
@@ -2795,6 +2815,7 @@ function SessionAssetList({
     setBusyAssetId(asset.id);
     try {
       await api.unlinkSessionAsset(sessionId, asset.id);
+      setAssetToRemove(null);
       onChanged();
     } catch (error) {
       onNotice(requestErrorMessage(error));
@@ -2802,22 +2823,102 @@ function SessionAssetList({
       setBusyAssetId(null);
     }
   };
+  const toggleAudioPlayback = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      if (audio.duration && audio.currentTime >= audio.duration) audio.currentTime = 0;
+      void audio.play().catch(() => onNotice("暂时无法播放这段录音。"));
+      return;
+    }
+    audio.pause();
+  };
+  const seekAudio = (nextTime: number) => {
+    const audio = audioRef.current;
+    if (!audio || audioDurationSeconds <= 0) return;
+    audio.currentTime = Math.min(Math.max(nextTime, 0), audioDurationSeconds);
+    setAudioCurrentSeconds(audio.currentTime);
+  };
+  const changeAudioVolume = (nextVolume: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const normalizedVolume = Math.min(1, Math.max(0, nextVolume));
+    if (normalizedVolume === 0) {
+      audio.muted = true;
+      setAudioMuted(true);
+      return;
+    }
+    audio.volume = normalizedVolume;
+    audio.muted = false;
+    setAudioVolume(normalizedVolume);
+    setAudioMuted(false);
+  };
+  const audioProgress = audioDurationSeconds > 0
+    ? Math.min(100, Math.max(0, (audioCurrentSeconds / audioDurationSeconds) * 100))
+    : 0;
   return (
     <>
-      <div className="career-session-asset-toolbar">
-        <Button size="sm" variant="outline" onClick={() => setAttachOpen(true)}>从资料库选择</Button>
-      </div>
       {assets.length ? <div className="career-session-assets">{assets.map((asset) => <article key={asset.id}>
         <span className="career-session-asset-icon"><FileAudio aria-hidden="true" /></span>
         <div><strong title={asset.original_file_name}>{asset.original_file_name}</strong><small>{formatDuration(asset.duration_ms) ?? formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? "现场录制" : "文件上传"}</small></div>
         <div className="career-session-asset-actions">
-          {asset.asset_type === "audio" && <Button size="sm" variant="outline" disabled={busyAssetId === asset.id} onClick={() => void play(asset)}>{busyAssetId === asset.id ? "加载中…" : activeAssetId === asset.id ? "重新播放" : "播放录音"}</Button>}
+          {asset.asset_type === "audio" && <button type="button" aria-label={`${activeAssetId === asset.id ? "重新播放" : "播放录音"} ${asset.original_file_name}`} title={activeAssetId === asset.id ? "重新播放" : "播放录音"} disabled={busyAssetId === asset.id} onClick={() => void play(asset)}><Play aria-hidden="true" /></button>}
           <button type="button" aria-label={`下载 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void download(asset)}><Download aria-hidden="true" /></button>
-          <button type="button" aria-label={`移除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void remove(asset)}><Trash2 aria-hidden="true" /></button>
+          <button type="button" aria-label={`移除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => setAssetToRemove(asset)}><Trash2 aria-hidden="true" /></button>
         </div>
-        {audioUrl && activeAssetId === asset.id && <audio className="career-session-audio-player" controls autoPlay src={audioUrl} aria-label={`${recordKind}录音播放器`} />}
+        {audioUrl && activeAssetId === asset.id && <div className="career-session-audio-player" role="group" aria-label={`${recordKind}录音播放器`}>
+          <audio
+            ref={audioRef}
+            autoPlay
+            src={audioUrl}
+            onLoadedMetadata={(event) => setAudioDurationSeconds(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : (asset.duration_ms ?? 0) / 1000)}
+            onDurationChange={(event) => { if (Number.isFinite(event.currentTarget.duration)) setAudioDurationSeconds(event.currentTarget.duration); }}
+            onTimeUpdate={(event) => setAudioCurrentSeconds(event.currentTarget.currentTime)}
+            onPlay={() => setAudioPlaying(true)}
+            onPause={() => setAudioPlaying(false)}
+            onEnded={() => setAudioPlaying(false)}
+          />
+          <button type="button" aria-label={audioPlaying ? "暂停录音" : "播放录音"} onClick={toggleAudioPlayback}>{audioPlaying ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}</button>
+          <span>{formatPlaybackTime(audioCurrentSeconds)} / {formatPlaybackTime(audioDurationSeconds)}</span>
+          <input
+            type="range"
+            aria-label="录音播放进度"
+            min="0"
+            max={audioDurationSeconds || 0}
+            step="0.1"
+            value={Math.min(audioCurrentSeconds, audioDurationSeconds || 0)}
+            disabled={audioDurationSeconds <= 0}
+            style={{ "--audio-progress": `${audioProgress}%` } as CSSProperties}
+            onChange={(event) => seekAudio(Number(event.target.value))}
+          />
+          <div ref={audioVolumeRef} className="career-session-audio-volume">
+            {audioVolumeOpen && <div className="career-session-audio-volume-popover" id="career-session-audio-volume-control">
+              <input
+                type="range"
+                aria-label="录音音量"
+                aria-orientation="vertical"
+                aria-valuetext={`${Math.round((audioMuted ? 0 : audioVolume) * 100)}%`}
+                min="0"
+                max="1"
+                step="0.05"
+                value={audioMuted ? 0 : audioVolume}
+                onChange={(event) => changeAudioVolume(Number(event.target.value))}
+              />
+            </div>}
+            <button type="button" aria-label="调整音量" title="调整音量" aria-expanded={audioVolumeOpen} aria-controls="career-session-audio-volume-control" onClick={() => setAudioVolumeOpen((open) => !open)}>{audioMuted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>
+          </div>
+        </div>}
       </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，从资料库选择，或粘贴文字记录。</p></div>}
-      {attachOpen && <AttachDatasetDialog sessionId={sessionId} onClose={() => setAttachOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
+      {assetToRemove && <ConfirmDialog
+        kind="delete"
+        title={`从${recordKind}记录中移除文件？`}
+        description={`确定移除「${assetToRemove.original_file_name}」吗？资料库中的原文件不会被删除。`}
+        confirmLabel="移除文件"
+        busyLabel="移除中…"
+        busy={busyAssetId === assetToRemove.id}
+        onCancel={() => setAssetToRemove(null)}
+        onConfirm={() => void remove(assetToRemove)}
+      />}
     </>
   );
 }
@@ -2855,7 +2956,7 @@ function AddInterviewContentDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(initialText);
   const [file, setFile] = useState<File | null>(null);
-  const [contentMode, setContentMode] = useState<"audio" | "text">("audio");
+  const [contentMode, setContentMode] = useState<"audio" | "library" | "text">("audio");
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const isEditing = mode === "edit";
@@ -2870,7 +2971,7 @@ function AddInterviewContentDialog({
     setFile(candidate);
     setText("");
   };
-  const switchContentMode = (nextMode: "audio" | "text") => {
+  const switchContentMode = (nextMode: "audio" | "library" | "text") => {
     setContentMode(nextMode);
     if (nextMode === "audio") {
       setText("");
@@ -2904,6 +3005,7 @@ function AddInterviewContentDialog({
         <DialogHeader className="career-content-dialog-header"><DialogTitle>{isEditing ? `编辑${recordKind}文字记录` : `添加${recordKind}内容`}</DialogTitle><DialogDescription>{isEditing ? `修改已保存的${recordKind}文字记录。` : `选择一种方式保存本场${recordKind}记录。`}</DialogDescription></DialogHeader>
         {!isEditing && <div className="career-content-method-switch" role="tablist" aria-label={`${recordKind}记录添加方式`}>
           <button type="button" role="tab" aria-selected={contentMode === "audio"} className={contentMode === "audio" ? "is-active" : undefined} onClick={() => switchContentMode("audio")}><Import aria-hidden="true" />上传文件</button>
+          <button type="button" role="tab" aria-selected={contentMode === "library"} className={contentMode === "library" ? "is-active" : undefined} onClick={() => switchContentMode("library")}><FolderOpen aria-hidden="true" />从资料库选择</button>
           <button type="button" role="tab" aria-selected={contentMode === "text"} className={contentMode === "text" ? "is-active" : undefined} onClick={() => switchContentMode("text")}><FileText aria-hidden="true" />粘贴文字</button>
         </div>}
         {!isEditing && contentMode === "audio" &&
@@ -2925,11 +3027,15 @@ function AddInterviewContentDialog({
             <input ref={inputRef} className="visually-hidden" type="file" accept={AUDIO_FILE_ACCEPT} aria-label="面试素材文件" onChange={(event) => selectAudioFile(event.target.files?.[0])} />
           </section>
         }
+        {!isEditing && contentMode === "library" && <DatasetPicker sessionId={session.id} onAttached={() => { onClose(); onChanged(); }} onNotice={onNotice} />}
         {(isEditing || contentMode === "text") && <section className="career-content-text-method">
           {isEditing && <h3>{recordKind}文字记录</h3>}
           <textarea aria-label={`${recordKind}文字记录`} value={text} onChange={(event) => setText(event.target.value)} placeholder={`粘贴${recordKind}过程、逐字稿或整理后的文字记录…`} />
         </section>}
-        <DialogFooter className="career-content-dialog-footer"><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy || (isEditing || contentMode === "text" ? !text.trim() : !file)} onClick={() => void save()}>{busy ? "保存中…" : isEditing ? "保存修改" : "保存内容"}</Button></DialogFooter>
+        <DialogFooter className="career-content-dialog-footer">
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          {(isEditing || contentMode !== "library") && <Button disabled={busy || (isEditing || contentMode === "text" ? !text.trim() : !file)} onClick={() => void save()}>{busy ? "保存中…" : isEditing ? "保存修改" : "保存内容"}</Button>}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -3405,7 +3511,7 @@ export function InterviewSessionDetailView({
         {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} onChanged={() => onChanged(session.id)} />}
         {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开{isAssessment ? "笔试" : "会议"}链接 <ExternalLink aria-hidden="true" /></a>}
         <section className="career-session-content-section">
-          <header><h2>{recordTitle}</h2><span>支持上传音视频、从资料库选择或粘贴文字</span></header>
+          <header><h2>{recordTitle}</h2></header>
           <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
           {questions.trim() && <article className={`career-session-transcript${textExpanded ? " is-expanded" : ""}`}>
             <header>
