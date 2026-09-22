@@ -296,6 +296,7 @@ export function compareApplicationsBySortMode(
   left: JobApplicationSummary,
   right: JobApplicationSummary,
   sortMode: ApplicationSortMode,
+  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string> = new Map(),
 ): number {
   if (sortMode === "earliest_added") return compareApplicationsByCreatedAt(left, right);
 
@@ -310,14 +311,38 @@ export function compareApplicationsBySortMode(
   }
   if (leftScheduleAt !== null && rightScheduleAt === null) return -1;
   if (leftScheduleAt === null && rightScheduleAt !== null) return 1;
+
+  // Upcoming work is ordered nearest-first above. Once the current stage is
+  // completed, the most recent historical schedule should lead its group.
+  const leftCompletedScheduleAt = validApplicationTimestamp(
+    completedScheduleStartAtByApplicationId.get(left.id),
+  );
+  const rightCompletedScheduleAt = validApplicationTimestamp(
+    completedScheduleStartAtByApplicationId.get(right.id),
+  );
+  if (
+    leftCompletedScheduleAt !== null
+    && rightCompletedScheduleAt !== null
+    && leftCompletedScheduleAt !== rightCompletedScheduleAt
+  ) {
+    return rightCompletedScheduleAt - leftCompletedScheduleAt;
+  }
+  if (leftCompletedScheduleAt !== null && rightCompletedScheduleAt === null) return -1;
+  if (leftCompletedScheduleAt === null && rightCompletedScheduleAt !== null) return 1;
   return compareApplicationsByCreatedAt(left, right);
 }
 
 export function sortApplications(
   applications: readonly JobApplicationSummary[],
   sortMode: ApplicationSortMode,
+  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string> = new Map(),
 ): JobApplicationSummary[] {
-  return [...applications].sort((left, right) => compareApplicationsBySortMode(left, right, sortMode));
+  return [...applications].sort((left, right) => compareApplicationsBySortMode(
+    left,
+    right,
+    sortMode,
+    completedScheduleStartAtByApplicationId,
+  ));
 }
 
 function applicationDropBlockReason(
@@ -579,6 +604,7 @@ export function ApplicationsBoard({
   hiddenColumnIds,
   groupByCategory = false,
   completedCurrentStageApplicationIds,
+  completedScheduleStartAtByApplicationId,
   now,
   sortMode = "recent_schedule",
   displayMode,
@@ -594,6 +620,7 @@ export function ApplicationsBoard({
   hiddenColumnIds?: ReadonlySet<string>;
   groupByCategory?: boolean;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
+  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
   displayMode: "board" | "list";
@@ -639,6 +666,7 @@ export function ApplicationsBoard({
           layoutApplications={visibleApplications}
           hiddenColumnIds={hiddenColumnIds}
           completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
+          completedScheduleStartAtByApplicationId={completedScheduleStartAtByApplicationId}
           now={now}
           sortMode={sortMode}
           columnOrder={columnOrder}
@@ -662,6 +690,7 @@ export function ProgressBoard({
   layoutApplications = applications,
   hiddenColumnIds,
   completedCurrentStageApplicationIds,
+  completedScheduleStartAtByApplicationId,
   now,
   sortMode = "recent_schedule",
   columnOrder,
@@ -678,6 +707,7 @@ export function ProgressBoard({
   layoutApplications?: JobApplicationSummary[];
   hiddenColumnIds?: ReadonlySet<string>;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
+  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
   columnOrder: string[];
@@ -709,7 +739,11 @@ export function ProgressBoard({
   const allColumns = useMemo(
     () => {
       const memberIds = new Set(applications.map((item) => item.id));
-      const boardColumns = buildBoardColumns(sortApplications(layoutApplications, sortMode)).map((column) => ({
+      const boardColumns = buildBoardColumns(sortApplications(
+        layoutApplications,
+        sortMode,
+        completedScheduleStartAtByApplicationId,
+      )).map((column) => ({
         ...column, items: column.items.filter((item) => memberIds.has(item.id)),
       }));
       const columnIndex = new Map(columnOrder.map((id, index) => [id, index]));
@@ -718,7 +752,7 @@ export function ProgressBoard({
         - (columnIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER)
       ));
     },
-    [applications, columnOrder, layoutApplications, sortMode],
+    [applications, columnOrder, completedScheduleStartAtByApplicationId, layoutApplications, sortMode],
   );
   const columns = hiddenColumnIds?.size
     ? allColumns.filter((column) => !hiddenColumnIds.has(column.id))
@@ -1234,7 +1268,7 @@ export function ProgressCard({
   onOpen: () => void;
 }) {
   const statusLabel = applicationCardStatusLabel(item, currentStageCompleted, now);
-  const timeLabel = applicationCardTimeLabel(item);
+  const timeLabel = currentStageCompleted ? null : applicationCardTimeLabel(item);
   const stageToneClass = projectApplicationProgressToneClass(item, {
     currentStageCompleted,
     now,
@@ -1322,10 +1356,12 @@ export function ProgressCard({
         </span>
         <span className="progress-card-footer">
           <span className={`progress-card-stage ${stageToneClass}`}>{statusLabel}</span>
-          <span className="progress-card-time">
-            <Clock3 aria-hidden="true" />
-            <span>{timeLabel}</span>
-          </span>
+          {timeLabel && (
+            <span className="progress-card-time">
+              <Clock3 aria-hidden="true" />
+              <span>{timeLabel}</span>
+            </span>
+          )}
         </span>
       </button>
       <div
