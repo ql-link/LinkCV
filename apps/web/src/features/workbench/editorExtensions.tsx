@@ -19,6 +19,8 @@ import {
   Briefcase,
   Calendar,
   Check,
+  ChevronDown,
+  ChevronUp,
   Code2,
   GitFork,
   Globe,
@@ -847,21 +849,24 @@ function InlineIconView({ node }: NodeViewProps) {
   return <NodeViewWrapper as="span" className="resume-inline-icon"><Icon size="1em" /></NodeViewWrapper>;
 }
 
-function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeViewProps) {
+function InlineImageView({ node, editor, selected, getPos, deleteNode }: NodeViewProps) {
   const width = Math.min(240, Math.max(16, Number(node.attrs.width) || 72));
   const legacyAspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs.aspectRatio) || 3));
   const height = Math.min(240, Math.max(16, Number(node.attrs.height) || width / legacyAspectRatio));
-  const [widthDraft, setWidthDraft] = useState(String(width));
-  const [heightDraft, setHeightDraft] = useState(String(Math.round(height)));
-  useEffect(() => setWidthDraft(String(width)), [width]);
-  useEffect(() => setHeightDraft(String(Math.round(height))), [height]);
-  const commitSize = (dimension: "width" | "height") => {
-    const draft = dimension === "width" ? widthDraft : heightDraft;
-    const fallback = dimension === "width" ? width : height;
-    const next = Number(draft);
-    if (Number.isFinite(next)) updateAttributes({ [dimension]: Math.round(Math.min(240, Math.max(16, next))) });
-    else if (dimension === "width") setWidthDraft(String(Math.round(fallback)));
-    else setHeightDraft(String(Math.round(fallback)));
+  // setNodeMarkup 通过替换节点生效，会把节点选区映射成普通光标；同事务里重新选回节点，
+  // 否则每次属性写入都会卸载这个工具条、打断连续拖拽。
+  const updateImageAttrs = (attrs: Record<string, unknown>) => {
+    const position = getPos();
+    if (typeof position !== "number") return;
+    editor.commands.command(({ tr }) => {
+      tr.setNodeMarkup(position, undefined, { ...node.attrs, ...attrs });
+      tr.setSelection(NodeSelection.create(tr.doc, position));
+      return true;
+    });
+  };
+  const clampSize = (value: number) => Math.round(Math.min(240, Math.max(16, value)));
+  const resizeDimension = (dimension: "width" | "height", nextValue: number) => {
+    updateImageAttrs({ [dimension]: clampSize(nextValue) });
   };
   return (
     <NodeViewWrapper
@@ -871,59 +876,20 @@ function InlineImageView({ node, selected, updateAttributes, deleteNode }: NodeV
     >
       {selected && (
         <span className="media-context-toolbar inline-image-toolbar" contentEditable={false}>
-          <label className="media-size-field inline-image-size-field" aria-label="行内图片宽度">
-            <span>宽</span>
-            <input
-              type="number"
-              name="inline-image-width"
-              autoComplete="off"
-              inputMode="numeric"
-              min="16"
-              max="240"
-              step="1"
-              value={widthDraft}
-              onChange={(event) => setWidthDraft(event.target.value)}
-              onBlur={() => commitSize("width")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitSize("width");
-                  event.currentTarget.blur();
-                }
-              }}
-            />
-            <output>px</output>
-          </label>
-          <label className="media-size-field inline-image-size-field" aria-label="行内图片高度">
-            <span>高</span>
-            <input
-              type="number"
-              name="inline-image-height"
-              autoComplete="off"
-              inputMode="numeric"
-              min="16"
-              max="240"
-              step="1"
-              value={heightDraft}
-              onChange={(event) => setHeightDraft(event.target.value)}
-              onBlur={() => commitSize("height")}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitSize("height");
-                  event.currentTarget.blur();
-                }
-              }}
-            />
-            <output>px</output>
-          </label>
-          <input
-            className="media-alt-field"
-            name="inline-image-alt"
-            autoComplete="off"
-            aria-label="行内图片替代文字"
-            value={node.attrs.alt ?? ""}
-            placeholder="例如：示例公司 Logo…"
-            onChange={(event) => updateAttributes({ alt: event.target.value })}
-          />
+          <span className="inline-image-dimension-group">
+            <output aria-live="polite">宽 {width}px</output>
+            <span className="inline-image-stepper">
+              <button type="button" aria-label="增大行内图片宽度" title="增大宽度" onClick={() => resizeDimension("width", width + 1)}><ChevronUp aria-hidden="true" size={12} /></button>
+              <button type="button" aria-label="减小行内图片宽度" title="减小宽度" onClick={() => resizeDimension("width", width - 1)}><ChevronDown aria-hidden="true" size={12} /></button>
+            </span>
+          </span>
+          <span className="inline-image-dimension-group">
+            <output aria-live="polite">高 {Math.round(height)}px</output>
+            <span className="inline-image-stepper">
+              <button type="button" aria-label="增大行内图片高度" title="增大高度" onClick={() => resizeDimension("height", height + 1)}><ChevronUp aria-hidden="true" size={12} /></button>
+              <button type="button" aria-label="减小行内图片高度" title="减小高度" onClick={() => resizeDimension("height", height - 1)}><ChevronDown aria-hidden="true" size={12} /></button>
+            </span>
+          </span>
           <button type="button" aria-label="删除行内图片" onClick={deleteNode}><Trash2 size={14} /></button>
         </span>
       )}
@@ -1017,7 +983,10 @@ interface ResumePointerViewInternals extends EditorView {
   docView: {
     nearestDesc(dom: DOMNode, onlyNodes?: boolean): ResumeLeafViewDesc | null | undefined;
   } | null;
-  input: { lastSelectionOrigin: string | null };
+  input: {
+    lastSelectionOrigin: string | null;
+    mouseDown: { allowDefault: boolean } | null;
+  };
   domSelectionRange(): { focusNode: DOMNode | null; focusOffset: number };
 }
 
@@ -1028,6 +997,8 @@ const leafSelectionDescAt = (view: EditorView, dom: DOMNode | null): ResumeLeafV
   if (!node || !node.isLeaf || !NodeSelection.isSelectable(node)) return null;
   return desc;
 };
+
+const RESUME_NODE_INTERACTIVE_SELECTOR = "input, textarea, select, button, a, [contenteditable='true'], .media-resize-handle, .media-context-toolbar, .avatar-replace-action, .avatar-scale-hint";
 
 // `pos` 落在非文本容器边界时，沿 `dir` 找最近的文本位置；本身是文本位置时原样返回。
 const inlinePosNear = (doc: PMNode, pos: number, dir: 1 | -1): ResolvedPos | null => {
@@ -1056,9 +1027,28 @@ export const ResumeAtomPointerSelection = Extension.create({
       new Plugin({
         key: new PluginKey("resumeAtomPointerSelection"),
         props: {
+          handleClick(view, pos, event) {
+            if (!(view.state.selection instanceof NodeSelection)) return false;
+            if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey) return false;
+            if (!(event.target instanceof Element)) return false;
+            if (leafSelectionDescAt(view, event.target)) return false;
+            const interactive = event.target.closest(RESUME_NODE_INTERACTIVE_SELECTOR);
+            if (interactive && interactive !== view.dom) return false;
+            const selection = TextSelection.near(view.state.doc.resolve(pos));
+            if (!(selection instanceof TextSelection)) return false;
+            view.dispatch(view.state.tr.setSelection(selection).setMeta("pointer", true));
+            return true;
+          },
           createSelectionBetween(view, $anchor, $head) {
             const internals = view as ResumePointerViewInternals;
             if (internals.input?.lastSelectionOrigin !== "pointer") return null;
+            // 这个钩子只补偿浏览器原生拖选落在叶子节点上的端点。普通点击时 Chrome
+            // 可能仍报告上一次 NodeSelection 对应的 DOM 范围；若继续修正该残留范围，
+            // 点击正文也会重新选中旧图片，表现为光标完全无法落下。
+            if (!internals.input.mouseDown?.allowDefault) return null;
+            // 普通单击的 anchor/head 相同，必须交给 ProseMirror 默认映射点击位置。
+            // 此时 DOM selection 仍可能残留在上一次叶子节点上，用它修正会让光标停在旧位置。
+            if ($anchor.pos === $head.pos) return null;
             const { focusNode, focusOffset } = internals.domSelectionRange();
             let desc = leafSelectionDescAt(view, focusNode);
             // Chrome 常把落在叶子 DOM 上的 DOM 焦点记为「父容器 + 子偏移」，
@@ -1091,7 +1081,7 @@ export const ResumeAtomPointerSelection = Extension.create({
               if (!desc) return false;
               // 节点视图内的交互控件（工具条、尺寸柄等）照常走默认行为；
               // 判断范围限定在该节点的 DOM 内，避免命中编辑器根节点的 contenteditable。
-              const interactive = event.target.closest("input, textarea, select, button, a, [contenteditable='true'], .media-resize-handle, .media-context-toolbar, .avatar-replace-action, .avatar-scale-hint");
+              const interactive = event.target.closest(RESUME_NODE_INTERACTIVE_SELECTOR);
               if (interactive && desc.dom.contains(interactive)) return false;
               event.preventDefault();
               if (!view.hasFocus()) view.focus();
