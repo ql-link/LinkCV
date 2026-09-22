@@ -51,11 +51,15 @@ function proposalChanges(
 ) {
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
-      label: operation.op === "insert_after_target" ? `新增内容 ${index + 1}` : `修改内容 ${index + 1}`,
+      label: operation.op === "insert_after_target"
+        ? `新增内容 ${index + 1}`
+        : operation.op === "delete_target"
+          ? `删除内容 ${index + 1}`
+          : `修改内容 ${index + 1}`,
       before: typeof operation.target.selected_text === "string"
         ? operation.target.selected_text
         : "当前定位内容",
-      after: operation.new_text,
+      after: operation.op === "delete_target" ? "删除该条目" : operation.new_text,
     }));
   }
   if (!currentData || !currentStyle) return [];
@@ -406,6 +410,8 @@ export function AgentPanel({
       setToolStatus(agentToolLabels[event.tool] ?? "正在处理…");
     } else if (event.type === "tool.completed") {
       setToolStatus(null);
+    } else if (event.type === "assistant.activity.status") {
+      setToolStatus(event.status === "running" ? `${event.label}…` : null);
     } else if (event.type === "proposal.created") {
       setProposals((current) => [event.proposal, ...current.filter((item) => item.id !== event.proposal.id)]);
     } else if (event.type === "run.failed") {

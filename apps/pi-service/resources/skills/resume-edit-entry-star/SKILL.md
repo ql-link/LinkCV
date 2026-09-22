@@ -17,7 +17,7 @@ metadata:
 - 减少重复内容，把已有的情境、任务、行动和结果组织成清晰结构。
 - 根据授权岗位突出原文已经具备的相关关键词。
 - 结果可以是数字，也可以是可验证的交付物、质量变化、影响范围或业务作用。
-- 为同一经历提交多个 `replace_target_text` operation。
+- 为同一经历提交多个 `replace_target_text` operation；需要删除该经历正文中的完整 paragraph/list item 时可以提交 `delete_target`。
 
 ## 禁止
 

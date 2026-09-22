@@ -190,6 +190,8 @@ const server = createServer(async (request, response) => {
         "SKILL_MODE_CONFLICT",
         "TARGET_STALE",
         "PATCH_OUT_OF_SCOPE",
+        "COMPOUND_PLAN_REQUIRED",
+        "EDIT_PLAN_TARGET_LIMIT",
         "SOURCE_REQUIRED",
         "SOURCE_FORBIDDEN",
         "USER_INPUT_REQUIRED",

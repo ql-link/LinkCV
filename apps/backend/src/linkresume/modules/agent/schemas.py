@@ -104,6 +104,7 @@ class AgentContextRef(BaseModel):
 
     type: AgentContextType
     id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+    presentation: Literal["mention", "implicit"] = "mention"
     version_id: str | None = Field(
         default=None,
         validation_alias=AliasChoices("version_id", "versionId"),
@@ -162,6 +163,8 @@ class AgentContextListItem(BaseModel):
 
 class AgentContextSnapshot(AgentContextListItem):
     """The immutable, display-only reference persisted on a user message."""
+
+    presentation: Literal["mention", "implicit"] = "mention"
 
 
 class AgentContextMaterial(BaseModel):
@@ -229,6 +232,7 @@ class MessageCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     content: str = Field(min_length=1, max_length=32_768)
+    revision_proposal_id: str | None = Field(default=None, min_length=1, max_length=36)
     idempotency_key: str = Field(
         min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
     )
@@ -301,6 +305,7 @@ class AgentClarification(BaseModel):
 
 class AgentMessageRecord(BaseModel):
     sequence_no: int
+    run_id: str | None = None
     role: Literal["user", "assistant"]
     message_type: Literal["text", "clarification"] = "text"
     content: str
@@ -369,6 +374,7 @@ class ProposalCreateRequest(BaseModel):
 
 
 class ProposalRecord(BaseModel):
+    superseded_by: str | None = None
     id: str
     run_id: str
     resume_id: str
@@ -417,6 +423,7 @@ class ToolEventRequest(BaseModel):
         "search_resume_materials",
         "analyze_resume_content",
         "create_resume_change_proposal",
+        "execute_local_resume_edit_plan",
         "create_resume_translation_proposal",
         "request_user_input",
     ]
@@ -569,15 +576,17 @@ class DiagnosisResponse(BaseModel):
 class ProposalOperation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    op: Literal["replace_target_text", "insert_after_target"]
+    op: Literal["replace_target_text", "insert_after_target", "delete_target"]
     target: ResumeTargetLocator
     new_text: str = Field(max_length=20_000)
     expected_text_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def require_insert_content(self) -> "ProposalOperation":
+    def validate_operation_content(self) -> "ProposalOperation":
         if self.op == "insert_after_target" and not self.new_text.strip():
             raise ValueError("insert operation requires content")
+        if self.op == "delete_target" and self.new_text:
+            raise ValueError("delete operation cannot carry content")
         return self
 
 

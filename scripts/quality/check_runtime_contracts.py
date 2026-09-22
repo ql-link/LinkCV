@@ -17,6 +17,10 @@ REPO_ROOT = Path(
     os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
 DEFAULT_CONFIG = REPO_ROOT / "scripts" / "quality" / "runtime-contract-rules.yaml"
+PI_AGENT_RUNTIME = Path("apps/pi-service/src/runtime/agent.js")
+BACKEND_AGENT_SCHEMAS = Path(
+    "apps/backend/src/linkresume/modules/agent/schemas.py"
+)
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,39 @@ def check_contracts(contracts: list[Contract], repo_root: Path) -> list[str]:
     return errors
 
 
+def check_agent_tool_audit_contract(repo_root: Path) -> list[str]:
+    pi_path = repo_root / PI_AGENT_RUNTIME
+    schema_path = repo_root / BACKEND_AGENT_SCHEMAS
+    if not pi_path.is_file() or not schema_path.is_file():
+        return [
+            "agent-tool-audit-contract: 无法读取 Pi 工具或 FastAPI 审计 schema"
+        ]
+
+    pi_tools = set(
+        re.findall(
+            r'\bauditedTool\(\{\s*name:\s*"([a-z0-9_]+)"',
+            pi_path.read_text(encoding="utf-8"),
+        )
+    )
+    schema_match = re.search(
+        r"class ToolEventRequest\(BaseModel\):[\s\S]*?"
+        r"tool_name: Literal\[([\s\S]*?)\n\s*\]",
+        schema_path.read_text(encoding="utf-8"),
+    )
+    if not pi_tools or schema_match is None:
+        return [
+            "agent-tool-audit-contract: 无法解析 Pi 审计工具或 FastAPI tool_name 白名单"
+        ]
+    allowed_tools = set(re.findall(r'"([a-z0-9_]+)"', schema_match.group(1)))
+    missing = sorted(pi_tools - allowed_tools)
+    if not missing:
+        return []
+    return [
+        "agent-tool-audit-contract: Pi 审计工具未加入 FastAPI tool_name 白名单："
+        + ", ".join(missing)
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="校验 LinkResume 运行时契约")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -102,6 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         contracts = load_contracts(args.config)
         errors = check_contracts(contracts, REPO_ROOT)
+        errors.extend(check_agent_tool_audit_contract(REPO_ROOT))
     except ValueError as exc:
         print(f"ERROR {exc}", file=sys.stderr)
         return 2

@@ -255,6 +255,7 @@ export type ResumeVersion = {
 };
 
 export type AgentMessage = {
+  run_id?: string | null;
   sequence_no: number;
   role: "user" | "assistant";
   message_type?: "text" | "clarification";
@@ -302,6 +303,7 @@ export type AgentContextType =
 export type AgentContextRef = {
   type: AgentContextType;
   id: string;
+  presentation?: "mention" | "implicit";
   version_id?: string | null;
   version?: string | null;
 };
@@ -336,6 +338,7 @@ export type AgentActiveRun = {
 };
 
 export type AgentProposal = {
+  superseded_by?: string | null;
   id: string;
   run_id: string;
   resume_id: string;
@@ -348,7 +351,7 @@ export type AgentProposal = {
   target?: Record<string, unknown> | null;
   diagnosis?: Record<string, unknown> | null;
   operations?: Array<{
-    op: "replace_target_text" | "insert_after_target";
+    op: "replace_target_text" | "insert_after_target" | "delete_target";
     target: Record<string, unknown>;
     new_text: string;
     expected_text_hash: string;
@@ -373,6 +376,14 @@ export type AgentStreamEvent =
       referencedContextCount?: number;
     }
   | { type: "assistant.activity.delta"; runId: string; delta: string }
+  | {
+      type: "assistant.activity.status";
+      runId: string;
+      callKey: string;
+      label: string;
+      status: "running" | "succeeded" | "failed";
+      errorCode?: string;
+    }
   | { type: "assistant.activity.clear"; runId: string }
   | { type: "assistant.delta"; runId: string; delta: string }
   | { type: "clarification.requested"; runId: string; clarification: AgentClarification }
@@ -1219,6 +1230,7 @@ async function streamAgentMessage(
   payload: {
     content: string;
     idempotency_key: string;
+    revision_proposal_id?: string;
     selection_context?: AgentSelectionContext;
     contexts?: AgentContextRef[];
     reply_to_sequence_no?: number;
@@ -1301,7 +1313,7 @@ async function consumeAgentStream(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
-    "run.started", "run.phase", "assistant.activity.delta", "assistant.activity.clear", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
+    "run.started", "run.phase", "assistant.activity.delta", "assistant.activity.status", "assistant.activity.clear", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
   while (true) {
@@ -1431,10 +1443,11 @@ export const api = {
     const query = params.toString();
     return request<AgentContextListResponse>(`/api/agent/contexts${query ? `?${query}` : ""}`);
   },
-  listAgentProposals: (resumeId?: string | null, sessionId?: string) => {
+  listAgentProposals: (resumeId?: string | null, sessionId?: string, includeHistory = false) => {
     const params = new URLSearchParams();
     if (resumeId) params.set("resume_id", resumeId);
     if (sessionId) params.set("session_id", sessionId);
+    if (includeHistory) params.set("include_history", "true");
     return request<{ proposals: AgentProposal[] }>(
       `/api/agent/proposals?${params.toString()}`,
     );

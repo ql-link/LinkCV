@@ -1624,14 +1624,14 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
   return (
     <MotionConfig reducedMotion="user" transition={{ type: "spring", bounce: 0, duration: 0.34 }}>
       <div className={`resume-workbench${embedded ? " is-embedded" : ""}`} data-ui-theme="light">
-        <header className="workbench-header">
+        {!embedded && <header className="workbench-header">
           <div className="workbench-header-left">
             <IconButton
               className="workbench-icon-action workbench-back-action"
-              label={embedded ? "关闭简历" : "返回全部简历"}
+              label="返回全部简历"
               onClick={() => void leaveSafely()}
             >
-              {embedded ? <X size={16} /> : <Home size={16} />}
+              <Home size={16} />
             </IconButton>
             <span className="workbench-context-label">简历编辑</span>
             {editor && <WorkbenchHistoryActions editor={editor} />}
@@ -1658,7 +1658,7 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
               onDelete={() => setDeleteDialogOpen(true)}
             />
           </div>
-        </header>
+        </header>}
 
         {activeResumeId && importWarnings.length > 0 && (
           <ImportWarningBanner

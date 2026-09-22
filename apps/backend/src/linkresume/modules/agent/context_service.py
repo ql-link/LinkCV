@@ -130,7 +130,9 @@ def _snapshot(
 
 
 def _list_item(snapshot: AgentContextSnapshot) -> AgentContextListItem:
-    return AgentContextListItem.model_validate(snapshot.model_dump())
+    return AgentContextListItem.model_validate(
+        snapshot.model_dump(exclude={"presentation"})
+    )
 
 
 def _resume_item(resume: Resume) -> AgentContextListItem:
@@ -474,7 +476,7 @@ def _make_material(
     if len(encoded) > MAX_ITEM_CHARS:
         content = {"summary": _clip(encoded, MAX_ITEM_CHARS)}
     return AgentContextMaterial(
-        **snapshot.model_dump(),
+        **snapshot.model_dump(exclude={"presentation"}),
         content=content,
     )
 
@@ -812,6 +814,7 @@ def resolve_contexts(
             _, snapshot, material = _resolve_application(db, user_id=user_id, ref=ref)
         else:
             _, _, snapshot, material = _resolve_interview(db, user_id=user_id, ref=ref)
+        snapshot.presentation = ref.presentation
         snapshots.append(snapshot)
         materials.append(material)
 

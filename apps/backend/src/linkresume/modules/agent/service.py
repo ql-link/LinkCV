@@ -6,7 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
@@ -39,6 +39,7 @@ from linkresume.modules.agent.schemas import (
     AgentSelectionContext,
     AgentSessionRecord,
     ProposalRecord,
+    ProposalOperation,
     ResumeTargetLocator,
     TranslationProposalCreateRequest,
 )
@@ -134,6 +135,10 @@ def validate_translation_snapshot(
 def session_record(
     session: AgentSession, messages: list[AgentMessage] | None = None
 ) -> AgentSessionRecord:
+    db = object_session(session)
+    run_ids = dict(db.execute(select(AgentRun.id, AgentRun.public_id).where(
+        AgentRun.id.in_({item.run_id for item in messages or []})
+    )).all()) if db is not None and messages else {}
     def message_contexts(item: AgentMessage) -> list[AgentContextSnapshot] | None:
         if item.message_type != "text" or not isinstance(item.metadata_json, dict):
             return None
@@ -162,6 +167,7 @@ def session_record(
         messages=[
             AgentMessageRecord(
                 sequence_no=item.sequence_no,
+                run_id=run_ids.get(item.run_id),
                 role=item.role,
                 message_type=item.message_type,
                 content=item.content,
@@ -183,6 +189,7 @@ def proposal_record(
         proposal.proposed_data_json, proposal.proposed_style_json
     )
     return ProposalRecord(
+        superseded_by=proposal_superseded_by(proposal),
         id=proposal.public_id,
         run_id=run_public_id,
         resume_id=str(proposal.resume_id),
@@ -207,6 +214,64 @@ def proposal_record(
         expires_at=proposal.expires_at,
         created_at=proposal.created_at,
     )
+
+
+def proposal_superseded_by(proposal: ResumeChangeProposal) -> str | None:
+    db = object_session(proposal)
+    if db is None:
+        return None
+    message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == proposal.run_id, AgentMessage.role == "user"
+    ))
+    return ((message.metadata_json or {}).get("superseded_proposals", {}).get(proposal.public_id)
+            if message is not None else None)
+
+
+def revision_source(db: Session, session: AgentSession, public_id: str) -> ResumeChangeProposal:
+    proposal = db.scalar(select(ResumeChangeProposal).join(AgentRun, AgentRun.id == ResumeChangeProposal.run_id).where(
+        ResumeChangeProposal.public_id == public_id,
+        ResumeChangeProposal.user_id == session.user_id,
+        AgentRun.session_id == session.id,
+    ))
+    if proposal is None:
+        raise ApiError(404, "AGENT_PROPOSAL_NOT_FOUND")
+    if proposal.status != "pending":
+        raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
+    return proposal
+
+
+def supersede_revision_source(db: Session, run: AgentRun, proposal: ResumeChangeProposal) -> None:
+    message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == run.id, AgentMessage.role == "user"
+    ).with_for_update())
+    source_id = (message.metadata_json or {}).get("revision_proposal_id") if message else None
+    if not source_id:
+        return
+    source = db.scalar(select(ResumeChangeProposal).join(AgentRun, AgentRun.id == ResumeChangeProposal.run_id).where(
+        ResumeChangeProposal.public_id == source_id,
+        ResumeChangeProposal.user_id == proposal.user_id,
+        AgentRun.session_id == run.session_id,
+    ).with_for_update())
+    if source is None or source.resume_id != proposal.resume_id:
+        raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
+    if source.status != "pending":
+        replacement_id = proposal_superseded_by(source)
+        replacement = db.scalar(select(ResumeChangeProposal).where(
+            ResumeChangeProposal.public_id == replacement_id,
+            ResumeChangeProposal.run_id == run.id,
+        )) if replacement_id else None
+        if replacement is not None:
+            return
+        raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
+    original_message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == source.run_id, AgentMessage.role == "user"
+    ).with_for_update())
+    if original_message is None:
+        raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
+    metadata = deepcopy(original_message.metadata_json or {})
+    metadata.setdefault("superseded_proposals", {})[source.public_id] = proposal.public_id
+    original_message.metadata_json = metadata
+    source.status = "rejected"
 
 
 def get_owned_session(db: Session, public_id: str, user_id: int) -> AgentSession:
@@ -389,6 +454,7 @@ def clarification_context_state(
                 AgentContextRef(
                     type=snapshot.type,
                     id=snapshot.id,
+                    presentation=snapshot.presentation,
                     version_id=snapshot.version_id,
                     version=snapshot.version,
                 )
@@ -415,6 +481,7 @@ def create_run(
     clarification_answers: list[ClarificationAnswerSelection] | None = None,
     context_snapshots: list[AgentContextSnapshot] | None = None,
     selection_context: AgentSelectionContext | None = None,
+    revision_proposal_id: str | None = None,
 ) -> tuple[AgentRun, bool]:
     normalized_content = content.strip()
     if not normalized_content:
@@ -445,6 +512,16 @@ def create_run(
     )
     if existing is not None:
         return existing, False
+    if revision_proposal_id is None and reply_to_sequence_no is not None:
+        reply = db.scalar(select(AgentMessage).where(
+            AgentMessage.session_id == session.id, AgentMessage.sequence_no == reply_to_sequence_no,
+            AgentMessage.role == "assistant", AgentMessage.message_type == "clarification",
+        ))
+        original = db.scalar(select(AgentMessage).where(
+            AgentMessage.run_id == reply.run_id, AgentMessage.role == "user"
+        )) if reply else None
+        revision_proposal_id = (original.metadata_json or {}).get("revision_proposal_id") if original else None
+    revision = revision_source(db, session, revision_proposal_id) if revision_proposal_id else None
     normalized_answers: list[dict[str, str]] = []
     if reply_to_sequence_no is not None:
         latest_message = db.scalar(
@@ -545,6 +622,9 @@ def create_run(
             metadata_json=(
                 {
                     "version": 1,
+                    **({"revision_proposal_id": revision.public_id,
+                        "revision_proposal": {"summary": revision.summary, "operations": revision.operations_json or [],
+                                              "resume_id": str(revision.resume_id)}} if revision else {}),
                     **(
                         {
                             "contexts": [
@@ -573,7 +653,7 @@ def create_run(
                         else {}
                     ),
                 }
-                if context_snapshots or selection_context is not None or normalized_answers
+                if context_snapshots or selection_context is not None or normalized_answers or revision
                 else None
             ),
         )
@@ -723,6 +803,7 @@ def create_proposal(
         status="pending",
         expires_at=utc_now() + timedelta(days=ttl_days),
     )
+    supersede_revision_source(db, run, proposal)
     db.add(proposal)
     db.commit()
     db.refresh(proposal)
@@ -816,6 +897,7 @@ def create_scoped_proposal(
         status="pending",
         expires_at=utc_now() + timedelta(days=ttl_days),
     )
+    supersede_revision_source(db, run, proposal)
     db.add(proposal)
     db.commit()
     db.refresh(proposal)
@@ -888,6 +970,7 @@ def create_translation_proposal(
         status="pending",
         expires_at=utc_now() + timedelta(days=ttl_days),
     )
+    supersede_revision_source(db, run, proposal)
     db.add(proposal)
     db.commit()
     db.refresh(proposal)
@@ -945,7 +1028,20 @@ def confirm_proposal(
         proposal.status = "expired"
         db.commit()
         raise ApiError(410, "AGENT_PROPOSAL_EXPIRED")
-    if resume.lock_version != proposal.base_lock_version:
+    can_rebase_scoped_proposal = bool(
+        proposal.proposal_mode
+        in {"polish_local", "rewrite_entry_star", "generate_from_materials"}
+        and proposal.target_locator_json
+        and proposal.operations_json
+    )
+    should_rebase_scoped_proposal = (
+        resume.lock_version != proposal.base_lock_version
+        and can_rebase_scoped_proposal
+    )
+    if (
+        resume.lock_version != proposal.base_lock_version
+        and not should_rebase_scoped_proposal
+    ):
         proposal.status = "conflicted"
         db.commit()
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
@@ -1013,18 +1109,60 @@ def confirm_proposal(
                     except Exception:
                         pass
             raise
-    if proposal.target_locator_json is not None:
+    if should_rebase_scoped_proposal:
         try:
-            current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
-            target = ResumeTargetLocator.model_validate(proposal.target_locator_json)
-            target_content(resume, current.data, target, "target")
-        except (ApiError, ValueError):
+            current = parse_persisted_resume_snapshot(
+                resume.data_json, resume.style_json
+            )
+            rebased_target_payload = deepcopy(proposal.target_locator_json)
+            rebased_target_payload["base_lock_version"] = resume.lock_version
+            rebased_target = ResumeTargetLocator.model_validate(
+                rebased_target_payload
+            )
+            rebased_operations: list[ProposalOperation] = []
+            for stored_operation in proposal.operations_json or []:
+                operation_payload = deepcopy(stored_operation)
+                target_payload = deepcopy(operation_payload["target"])
+                target_payload["base_lock_version"] = resume.lock_version
+                operation_payload["target"] = target_payload
+                rebased_operations.append(
+                    ProposalOperation.model_validate(operation_payload)
+                )
+            target_content(resume, current.data, rebased_target, "target")
+            markdown = editor_markdown(current.data)
+            if markdown is None:
+                raise ApiError(422, "TARGET_INVALID")
+            updated_markdown = apply_operations(
+                markdown,
+                mode=proposal.proposal_mode,
+                main_target=rebased_target,
+                operations=rebased_operations,
+            )
+            snapshot = parse_persisted_resume_snapshot(
+                replace_editor_markdown(current.data, updated_markdown),
+                current.style,
+            )
+        except (ApiError, KeyError, TypeError, ValueError):
             proposal.status = "conflicted"
             db.commit()
             raise ApiError(409, "TARGET_STALE")
-    snapshot = parse_persisted_resume_snapshot(
-        proposal.proposed_data_json, proposal.proposed_style_json
-    )
+    else:
+        if proposal.target_locator_json is not None:
+            try:
+                current = parse_persisted_resume_snapshot(
+                    resume.data_json, resume.style_json
+                )
+                target = ResumeTargetLocator.model_validate(
+                    proposal.target_locator_json
+                )
+                target_content(resume, current.data, target, "target")
+            except (ApiError, ValueError):
+                proposal.status = "conflicted"
+                db.commit()
+                raise ApiError(409, "TARGET_STALE")
+        snapshot = parse_persisted_resume_snapshot(
+            proposal.proposed_data_json, proposal.proposed_style_json
+        )
     proposed_data = snapshot.data.model_dump(mode="json")
     if validate_resume_data is not None:
         validate_resume_data(proposed_data, resume.id)
