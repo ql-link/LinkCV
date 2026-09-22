@@ -45,6 +45,7 @@ from linkresume.modules.agent.service import (
     delete_session,
     get_owned_session,
     proposal_record,
+    revision_source,
     reject_proposal,
     session_record,
     update_session,
@@ -136,6 +137,7 @@ def list_agent_contexts(
 def list_agent_proposals(
     resume_id: str | None = None,
     session_id: str | None = None,
+    include_history: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ProposalListResponse:
@@ -150,11 +152,12 @@ def list_agent_proposals(
         .join(AgentRun, AgentRun.id == ResumeChangeProposal.run_id)
         .where(
             ResumeChangeProposal.user_id == user.id,
-            ResumeChangeProposal.status == "pending",
         )
         .order_by(ResumeChangeProposal.created_at.desc())
-        .limit(20)
+        .limit(200 if include_history else 20)
     )
+    if not include_history:
+        query = query.where(ResumeChangeProposal.status == "pending")
     if resume_id is not None:
         query = query.where(ResumeChangeProposal.resume_id == int(resume_id))
     if session_id is not None:
@@ -392,6 +395,11 @@ async def send_agent_message(
             context_refs = _merge_message_contexts(
                 payload.contexts, inherited_contexts
             )
+            if payload.revision_proposal_id:
+                source = revision_source(db, session, payload.revision_proposal_id)
+                context_refs = [AgentContextRef(type="resume", id=str(source.resume_id)),
+                                *(item for item in context_refs if item.type != "resume")]
+                resolved_selection = None
             if resolved_selection is not None and not any(
                 item.type == "resume" for item in context_refs
             ):
@@ -457,6 +465,7 @@ async def send_agent_message(
                 resolved_contexts.snapshots if resolved_contexts else None
             ),
             selection_context=resolved_selection,
+            revision_proposal_id=payload.revision_proposal_id,
         )
     except Exception as error:
         public_error = isinstance(error, ApiError)
