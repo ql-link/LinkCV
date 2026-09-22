@@ -245,6 +245,7 @@ describe("Agent SSE client", () => {
       vi.fn().mockResolvedValue(
         streamResponse([
           'event: assistant.activity.delta\ndata: {"runId":"run-1","delta":"正在读取工作流"}\n\n',
+          'event: assistant.activity.status\ndata: {"runId":"run-1","callKey":"task-1","label":"修改任务 1/1：定位内容","status":"running"}\n\n',
           'event: assistant.activity.clear\ndata: {"runId":"run-1"}\n\n',
           'event: run.completed\ndata: {"runId":"run-1"}\n\n',
         ]),
@@ -264,8 +265,15 @@ describe("Agent SSE client", () => {
       runId: "run-1",
       delta: "正在读取工作流",
     });
-    expect(onEvent).toHaveBeenNthCalledWith(2, { type: "assistant.activity.clear", runId: "run-1" });
-    expect(onEvent).toHaveBeenNthCalledWith(3, { type: "run.completed", runId: "run-1" });
+    expect(onEvent).toHaveBeenNthCalledWith(2, {
+      type: "assistant.activity.status",
+      runId: "run-1",
+      callKey: "task-1",
+      label: "修改任务 1/1：定位内容",
+      status: "running",
+    });
+    expect(onEvent).toHaveBeenNthCalledWith(3, { type: "assistant.activity.clear", runId: "run-1" });
+    expect(onEvent).toHaveBeenNthCalledWith(4, { type: "run.completed", runId: "run-1" });
   });
 
   it("按 run 地址重新订阅仍使用同一套 SSE 协议", async () => {

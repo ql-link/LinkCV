@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../../api/client";
 import { defaultCanonicalPresentation } from "../../api/resumeContract";
 import {
+  ResumeWorkbench,
   ImportWarningBanner,
   AgentFloatingEntry,
   clampAgentDrawerWidth,
@@ -33,6 +34,24 @@ import {
   resumeWorkbenchStyle,
 } from "./ResumeWorkbench";
 import { resumePdfExportErrorMessage } from "../preview/pdfExport";
+
+describe("ResumeWorkbench 顶部工具栏显示范围", () => {
+  it("AI 助手内嵌模式不显示顶部工具栏", () => {
+    render(<ResumeWorkbench embedded />);
+    expect(screen.queryByRole("button", { name: "设置" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "关闭简历" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "简历模板" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument();
+  });
+
+  it("独立简历编辑页保留顶部工具栏", () => {
+    render(<ResumeWorkbench />);
+    expect(screen.getByRole("button", { name: "返回全部简历" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "简历模板" })).toBeInTheDocument();
+    expect(screen.getByRole("banner")).toBeInTheDocument();
+  });
+});
 
 describe("ResumeWorkbench 标题", () => {
   it("把持久化强调色注入可编辑简历根节点", () => {

@@ -74,6 +74,16 @@ contracts:
         pattern: 'message\.stopReason === "error"[\s\S]*AGENT_MODEL_REQUEST_FAILED[\s\S]*assertAgentCompleted\(finalAssistantMessage\)'
         message: Pi 服务不得把模型供应商错误误报为运行成功
 
+  - id: agent-tool-audit-contract
+    description: Pi 有状态业务工具必须串行执行并全部进入 FastAPI 工具审计白名单
+    assertions:
+      - path: apps/pi-service/src/runtime/agent.js
+        pattern: 'auditedTool[\s\S]*executionMode: "sequential"[\s\S]*execute_local_resume_edit_plan'
+        message: Pi 审计业务工具必须声明串行执行并注册批量局部修改工具
+      - path: apps/backend/src/linkresume/modules/agent/schemas.py
+        pattern: 'class ToolEventRequest[\s\S]*"execute_local_resume_edit_plan"'
+        message: FastAPI 工具审计白名单必须接受批量局部修改工具
+
   - id: observability-loki-promtail-contract
     description: LinkResume 三套环境固定七天 JSONL 契约，Dev/Production 使用独立 Promtail 和共享 Loki
     assertions:
