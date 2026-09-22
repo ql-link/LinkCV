@@ -2423,14 +2423,41 @@ select:not([data-slot]):focus-visible {
   display: inline-block;
   max-width: 40%;
   margin-right: 0.4em;
-  vertical-align: middle;
+  vertical-align: top;
   line-height: 0;
 }
 .resume-inline-image img { display: block; width: 100%; height: 100%; }
-.resume-inline-image.is-selected { outline: 2px solid rgba(52, 120, 246, 0.38); outline-offset: 2px; }
-.inline-image-toolbar { line-height: normal; }
-.inline-image-size-field > span { width: auto; height: auto; margin-left: 7px; background: transparent; color: var(--ui-text-muted); font: 0.68rem/1 var(--ui-font); }
-.inline-image-size-field input { width: 44px; padding-left: 3px; }
+.resume-inline-image.is-selected::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: 2px;
+  background: rgba(15, 23, 42, 0.07);
+  box-shadow: 0 0 0 1.5px rgba(52, 120, 246, 0.38), 0 4px 12px rgba(15, 23, 42, 0.14);
+  content: "";
+  pointer-events: none;
+}
+.resume-workbench .node-inlineImage.ProseMirror-selectednode { outline: none; }
+.resume-workbench .resume-content .node-inlineImage::selection,
+.resume-workbench .resume-content .node-inlineImage ::selection { background: transparent; color: inherit; }
+.resume-workbench .resume-content .node-inlineImage input:focus::selection { background: rgba(52, 120, 246, 0.2); }
+.inline-image-toolbar { left: 0; gap: 7px; transform: none; line-height: normal; -webkit-user-select: none; user-select: none; }
+.inline-image-toolbar .inline-image-dimension-group {
+  display: inline-flex;
+  width: auto;
+  height: 30px;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.84);
+  padding: 2px;
+}
+.inline-image-toolbar .inline-image-dimension-group output { min-width: 60px; padding: 0 6px; color: var(--ui-text-muted); font: 600 0.7rem/1 var(--ui-font-sans); text-align: left; white-space: nowrap; }
+.inline-image-toolbar .inline-image-stepper { display: flex; width: 22px; height: 26px; flex-direction: column; gap: 0; background: transparent; }
+.inline-image-toolbar .inline-image-dimension-group button { width: 22px; height: 13px; border-radius: 4px; color: var(--ui-text-muted); }
+.inline-image-toolbar .inline-image-dimension-group button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 1px; }
+.inline-image-toolbar > button:last-child { margin-left: 1px; }
 .resume-inline-icon { display: inline-flex; margin: 0 2px; vertical-align: -0.12em; color: #4b5563; }
 
 .workbench-drawer {

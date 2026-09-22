@@ -444,6 +444,91 @@ describe("分栏分隔线拖拽", () => {
   });
 });
 
+describe("行内图片尺寸调整", () => {
+  function renderInlineImage(attrs: Record<string, unknown> = {}) {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "paragraph",
+          content: [
+            { type: "resumeBlockAnchor", attrs: { blockId: "node_0123456789abcdef" } },
+            { type: "text", text: "前" },
+            {
+              type: "inlineImage",
+              attrs: {
+                src: "data:image/png;base64,dGVzdA==",
+                width: 72,
+                height: 24,
+                aspectRatio: 3,
+                alt: "公司 Logo",
+                ...attrs,
+              },
+            },
+            { type: "text", text: "后" },
+          ],
+        }],
+      },
+    });
+    const { container } = render(<EditorContent editor={editor!} />);
+    let imagePos = -1;
+    editor!.state.doc.descendants((node, pos) => {
+      if (node.type.name === "inlineImage") imagePos = pos;
+      return true;
+    });
+    act(() => {
+      editor!.commands.setNodeSelection(imagePos);
+    });
+    return container;
+  }
+
+  function inlineImageAttrs() {
+    let attrs: Record<string, unknown> | null = null;
+    editor!.state.doc.descendants((node) => {
+      if (node.type.name === "inlineImage") attrs = node.attrs;
+      return true;
+    });
+    return attrs!;
+  }
+
+  it("选中后在数值右侧上下排列宽高的增大与减小按钮", () => {
+    const container = renderInlineImage();
+    expect(screen.getByText("宽 72px")).toBeInTheDocument();
+    expect(screen.getByText("高 24px")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "减小行内图片宽度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "增大行内图片宽度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "减小行内图片高度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "增大行内图片高度" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除行内图片" })).toBeInTheDocument();
+    expect(container.querySelector(".inline-image-toolbar input")).toBeNull();
+    expect(screen.queryByLabelText("行内图片替代文字")).not.toBeInTheDocument();
+  });
+
+  it("点击四个独立箭头时分别减小与增大宽高", () => {
+    renderInlineImage();
+    fireEvent.click(screen.getByRole("button", { name: "减小行内图片宽度" }));
+    expect(inlineImageAttrs().width).toBe(71);
+    expect(screen.getByText("宽 71px")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "增大行内图片宽度" }));
+    expect(inlineImageAttrs().width).toBe(72);
+
+    fireEvent.click(screen.getByRole("button", { name: "减小行内图片高度" }));
+    expect(inlineImageAttrs().height).toBe(23);
+    expect(screen.getByText("高 23px")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "增大行内图片高度" }));
+    expect(inlineImageAttrs().height).toBe(24);
+  });
+
+  it("尺寸按钮将结果限制在 16–240", () => {
+    renderInlineImage({ width: 240, height: 16 });
+    fireEvent.click(screen.getByRole("button", { name: "增大行内图片宽度" }));
+    expect(inlineImageAttrs().width).toBe(240);
+    fireEvent.click(screen.getByRole("button", { name: "减小行内图片高度" }));
+    expect(inlineImageAttrs().height).toBe(16);
+  });
+});
+
 
 describe("姓名下 headline 行样式标记", () => {
   let editor: Editor | null = null;
@@ -543,12 +628,13 @@ describe("叶子节点指针选区", () => {
     return { image, container, from: atomPosition() };
   }
 
-  function stubDomSelectionFocus(node: Node | null, focusOffset = 0) {
+  function stubDomSelectionFocus(node: Node | null, focusOffset = 0, allowDefault = true) {
     const view = editor!.view as unknown as {
-      input: { lastSelectionOrigin: string | null };
+      input: { lastSelectionOrigin: string | null; mouseDown: { allowDefault: boolean; done(): void } | null };
       domSelectionRange(): { anchorNode: Node | null; anchorOffset: number; focusNode: Node | null; focusOffset: number };
     };
     view.input.lastSelectionOrigin = "pointer";
+    view.input.mouseDown = { allowDefault, done: () => {} };
     const original = view.domSelectionRange.bind(view);
     view.domSelectionRange = () => ({ ...original(), focusNode: node, focusOffset });
   }
@@ -560,24 +646,28 @@ describe("叶子节点指针选区", () => {
   }
 
   it("在行内图片上按下鼠标直接选中节点本身", async () => {
-    const { image, from } = await renderInlineImageDoc();
+    const { image } = await renderInlineImageDoc();
     const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
     fireEvent(image, down);
     fireEvent(window, new MouseEvent("mouseup", { bubbles: true }));
 
     expect(down.defaultPrevented).toBe(true);
+    // focus 可能会在空块首次交互时注入 resumeBlockAnchor，因此要用交互后的文档位置断言。
+    const from = atomPosition();
     const sel = editor!.state.selection;
     expect(sel.constructor.name).toBe("NodeSelection");
     expect(sel.from).toBe(from);
     expect(sel.to).toBe(from + 1);
   });
 
-  it("按下图片工具条输入框时交给节点自身处理，不接管", async () => {
+  it("按下图片调整控件时交给节点自身处理，不接管", async () => {
     const { image, from } = await renderInlineImageDoc();
     act(() => { editor!.commands.setNodeSelection(from); });
-    const toolbarInput = await screen.findByLabelText("行内图片宽度");
+    const resizeControl = await screen.findByRole("button", {
+      name: "减小行内图片宽度",
+    });
     const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
-    fireEvent(toolbarInput, down);
+    fireEvent(resizeControl, down);
 
     expect(down.defaultPrevented).toBe(false);
     expect(editor!.state.selection.constructor.name).toBe("NodeSelection");
@@ -599,6 +689,21 @@ describe("叶子节点指针选区", () => {
     fireEvent(paragraph, down);
 
     expect(down.defaultPrevented).toBe(false);
+  });
+
+  it("图片选中后单击正文恢复文本光标", async () => {
+    const { container, from } = await renderInlineImageDoc();
+    act(() => { editor!.commands.setNodeSelection(from); });
+    const paragraph = container.querySelector(".ProseMirror p")!;
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
+    Object.defineProperty(click, "target", { value: paragraph });
+
+    const handled = editor!.view.someProp("handleClick", (handler) => handler(editor!.view, 2, click));
+
+    expect(handled).toBe(true);
+    expect(editor!.state.selection.constructor.name).toBe("TextSelection");
+    expect(editor!.state.selection.empty).toBe(true);
+    expect(editor!.state.selection.from).toBe(2);
   });
 
   it("向前拖选焦点停在图片上时端点覆盖图片", async () => {
@@ -634,6 +739,22 @@ describe("叶子节点指针选区", () => {
     const { container, from } = await renderInlineImageDoc();
     const textNode = container.querySelector(".ProseMirror p")!.firstChild!;
     stubDomSelectionFocus(textNode);
+    expect(createBetween(2, from)).toBeNull();
+  });
+
+  it("普通折叠点击不使用残留的叶子节点焦点改写光标位置", async () => {
+    const { image } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image);
+
+    expect(createBetween(2, 2)).toBeNull();
+  });
+
+  it("图片选中后单击正文不使用残留的图片范围改写光标位置", async () => {
+    const { image, from } = await renderInlineImageDoc();
+    stubDomSelectionFocus(image, 0, false);
+
+    // Chrome 可能仍把 DOM 范围报告为旧图片两侧；普通点击没有发生拖选，
+    // 必须返回 null 让 ProseMirror 按实际点击坐标放置文本光标。
     expect(createBetween(2, from)).toBeNull();
   });
 
@@ -962,4 +1083,3 @@ describe("分栏空栏占位提示", () => {
     expect(blanks()).toEqual(["1", "2"]);
   });
 });
-
