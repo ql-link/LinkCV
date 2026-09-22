@@ -683,6 +683,1547 @@ select:not([data-slot]):focus-visible,
   font-size: 0.7em;
 }
 
+/* New visual families: shared by editor, template preview and PDF HTML. */
+:is(.theme-right-rail, .theme-sage-paper, .theme-blue-ribbon) .resume-content h1 {
+  text-align: left;
+  font-size: 25pt;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  margin: 0 0 8px;
+  color: #25313c;
+}
+
+:is(.theme-right-rail, .theme-sage-paper, .theme-blue-ribbon) .resume-content h1 + p {
+  text-align: left;
+  margin: 0 0 10px;
+  font-size: 11pt;
+  color: #54616a;
+}
+
+:is(.theme-right-rail, .theme-sage-paper, .theme-blue-ribbon) .resume-content h3 {
+  margin: 12px 0 4px;
+  font-size: 11pt;
+  color: #25313c;
+}
+
+:is(.theme-right-rail, .theme-sage-paper, .theme-blue-ribbon) .resume-content p {
+  margin: 4px 0;
+}
+
+:is(.theme-right-rail, .theme-sage-paper, .theme-blue-ribbon) .resume-content ul {
+  margin: 7px 0 16px;
+  padding-left: 18px;
+}
+
+:is(.theme-right-rail, .theme-sage-paper, .theme-blue-ribbon) .resume-avatar {
+  border-radius: 4px;
+  margin: 0 0 16px 20px;
+}
+
+/* Full-width identity above a broad left column and a narrow right rail. */
+:is(.theme-right-rail, .theme-sage-paper, .theme-blue-ribbon) .resume-avatar img[src] {
+  transform: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.theme-right-rail .resume-columns,
+.theme-right-rail .resume-layout-columns {
+  clear: both;
+  grid-template-columns: minmax(0, 2.4fr) minmax(0, 1fr);
+  gap: 28px;
+  min-height: 0;
+  margin-top: 28px;
+}
+
+.theme-right-rail :is(.resume-column-main, .resume-layout-column-main) {
+  grid-column: 1;
+  grid-row: 1;
+  padding-left: 16px;
+  border-left: 2px solid #527bb6;
+}
+
+.theme-right-rail :is(.resume-column-sidebar, .resume-layout-column-sidebar) {
+  grid-column: 2;
+  grid-row: 1;
+  padding-left: 16px;
+  border-left: 2px solid #527bb6;
+}
+
+.theme-right-rail .resume-content h2 {
+  border: 0;
+  margin: 22px 0 10px;
+  padding: 0;
+  color: #3b63a6;
+  font-size: 12pt;
+  letter-spacing: 0.04em;
+}
+
+.theme-right-rail :is(.resume-column, .resume-layout-column) > h2:first-child {
+  margin-top: 0;
+}
+
+.theme-right-rail :is(.resume-column-sidebar, .resume-layout-column-sidebar) ul {
+  list-style: none;
+  padding: 0;
+}
+
+.theme-right-rail :is(.resume-column-sidebar, .resume-layout-column-sidebar) li {
+  margin: 0 0 10px;
+  padding: 7px 9px;
+  background: #eef3fa;
+  color: #385373;
+  border-radius: 3px;
+}
+
+/* A tinted paper surface with a left portrait and an understated green rhythm. */
+.resume-preview-paper.theme-sage-paper,
+.resume-workbench .resume-paper.theme-sage-paper,
+.theme-sage-paper .resume-content {
+  background-color: #edf2e8;
+}
+
+.theme-sage-paper .resume-content {
+  box-shadow: 0 0 0 14mm #edf2e8;
+}
+
+.theme-sage-paper .resume-avatar {
+  float: left;
+  margin: 0 20px 16px 0;
+}
+
+.theme-sage-paper .resume-content h1 {
+  padding-top: 5px;
+  font-size: 22pt;
+  color: #344b32;
+}
+
+.theme-sage-paper .resume-content h2 {
+  clear: both;
+  border: 0;
+  border-top: 1px solid #acbf9c;
+  margin: 24px 0 8px;
+  padding: 8px 0 0;
+  color: #567238;
+  font-size: 11.5pt;
+  letter-spacing: 0.08em;
+}
+
+.theme-sage-paper .resume-content li::marker {
+  color: #78924f;
+}
+
+/* Section-wide ribbons, with a darker leading stripe and generous separation. */
+.theme-blue-ribbon .resume-content h2 {
+  clear: both;
+  margin: 24px 0 12px;
+  padding: 7px 13px;
+  border: 0;
+  border-left: 6px solid #315cb6;
+  background: #dce6fb;
+  color: #264785;
+  font-size: 12pt;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+}
+
+.theme-blue-ribbon .resume-content h1 {
+  padding-top: 10px;
+  color: #29467d;
+}
+
+.theme-blue-ribbon .resume-content h3 + p {
+  color: #667085;
+  font-size: 9.5pt;
+}
+
+/* Additional visual families: timeline gutter, centered portrait, blue masthead. */
+:is(.theme-timeline-gutter, .theme-centered-portrait, .theme-mist-masthead) .resume-content h1 {
+  margin: 0 0 8px;
+  font-size: 24pt;
+  line-height: 1.2;
+  color: #29364b;
+  text-align: left;
+}
+
+:is(.theme-timeline-gutter, .theme-centered-portrait, .theme-mist-masthead) .resume-content h1 + p {
+  text-align: left;
+  font-size: 10.5pt;
+  color: #65718a;
+  margin: 0 0 9px;
+}
+
+:is(.theme-timeline-gutter, .theme-centered-portrait, .theme-mist-masthead) .resume-content p {
+  margin: 4px 0;
+}
+
+:is(.theme-timeline-gutter, .theme-centered-portrait, .theme-mist-masthead) .resume-content h3 {
+  margin: 13px 0 5px;
+  color: #29364b;
+  font-size: 11pt;
+}
+
+:is(.theme-timeline-gutter, .theme-centered-portrait, .theme-mist-masthead) .resume-content ul {
+  padding-left: 18px;
+  margin: 7px 0 18px;
+}
+
+:is(.theme-timeline-gutter, .theme-centered-portrait, .theme-mist-masthead) .resume-avatar {
+  border-radius: 5px;
+}
+
+:is(.theme-timeline-gutter, .theme-centered-portrait, .theme-mist-masthead) .resume-avatar img[src] {
+  width: 100%;
+  height: 100%;
+  transform: none;
+  object-fit: cover;
+}
+
+.theme-timeline-gutter .resume-content.ProseMirror,
+.theme-timeline-gutter .resume-content.resume-print-content {
+  box-sizing: border-box;
+  padding-left: 120px;
+}
+
+.theme-timeline-gutter .resume-avatar {
+  float: left;
+  margin: 0 20px 20px -92px;
+}
+
+.theme-timeline-gutter .resume-content h2 {
+  clear: both;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 26px 0 14px -120px;
+  padding: 0;
+  border: 0;
+  font-size: 11pt;
+  color: #4e7097;
+}
+
+.theme-timeline-gutter .resume-content h2::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #9bafc7;
+  border-right: 7px solid #4e7097;
+}
+
+.theme-timeline-gutter .resume-content h3 + p {
+  float: left;
+  width: 105px;
+  margin: -23px 0 0 -120px;
+  font-size: 9pt;
+  line-height: 1.45;
+  color: #4e7097;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.theme-timeline-gutter .resume-content h3 {
+  clear: both;
+}
+
+.theme-centered-portrait .resume-avatar {
+  float: none;
+  display: block;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+}
+
+.theme-centered-portrait .resume-content h1,
+.theme-centered-portrait .resume-content h1 + p,
+.theme-centered-portrait .resume-content h1 + p + p {
+  text-align: center;
+}
+
+.theme-centered-portrait .resume-content h2 {
+  clear: both;
+  margin: 24px auto 13px;
+  border: 0;
+  padding: 0;
+  text-align: center;
+  font-size: 12pt;
+  letter-spacing: 0.1em;
+  color: #525e85;
+}
+
+.theme-centered-portrait .resume-content h2::after {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 2px;
+  margin: 7px auto 0;
+  background: #aab2cd;
+}
+
+.theme-centered-portrait .resume-content h3 {
+  text-align: center;
+  background: #f4f5f9;
+  margin: 10px 0 0;
+  padding: 10px 14px 3px;
+  border-radius: 5px 5px 0 0;
+}
+
+.theme-centered-portrait .resume-content h3 + p {
+  text-align: center;
+  margin: 0;
+  padding: 3px 14px 10px;
+  background: #f4f5f9;
+  color: #68718a;
+  font-size: 9.5pt;
+}
+
+.theme-centered-portrait .resume-content h3 + p + ul {
+  margin-top: 0;
+  padding: 0 18px 12px 30px;
+  background: #f4f5f9;
+  border-radius: 0 0 5px 5px;
+}
+
+.theme-mist-masthead .resume-content {
+  background: linear-gradient(#e6edfa 0 155px, transparent 155px);
+}
+
+.theme-mist-masthead .resume-content h1 {
+  padding: 18px 20px 0;
+}
+
+.theme-mist-masthead .resume-content h1 + p,
+.theme-mist-masthead .resume-content h1 + p + p {
+  padding: 0 20px 10px;
+}
+
+.theme-mist-masthead .resume-avatar {
+  float: right;
+  margin: 18px 20px 15px;
+}
+
+.theme-mist-masthead .resume-columns,
+.theme-mist-masthead .resume-layout-columns {
+  clear: both;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+  min-height: 0;
+  margin-top: 24px;
+}
+
+.theme-mist-masthead :is(.resume-column-main, .resume-layout-column-main) {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.theme-mist-masthead :is(.resume-column-sidebar, .resume-layout-column-sidebar) {
+  grid-column: 2;
+  grid-row: 1;
+  border-left: 1px solid #d8dfec;
+  padding-left: 24px;
+}
+
+.theme-mist-masthead .resume-content h2 {
+  clear: both;
+  border: 0;
+  border-bottom: 1px solid #92a7c9;
+  padding: 0 0 6px;
+  margin: 18px 0 10px;
+  color: #3e5b90;
+  font-size: 11.5pt;
+}
+
+/* Atlas catalog: 37 authored layouts; typography is shared by editor and print. */
+[class*="theme-atlas-"] .resume-content {color:#25303a;overflow-wrap:anywhere}
+[class*="theme-atlas-"] .resume-content.ProseMirror,
+[class*="theme-atlas-"] .resume-content.resume-print-content {box-sizing:border-box;padding:var(--atlas-inset,0)}
+[class*="theme-atlas-"] .resume-content h1 {margin:0 0 7px;color:var(--preview-accent,#334155);font-size:28pt;line-height:1.25;font-weight:650}
+[class*="theme-atlas-"] .resume-content h1 + p {margin:0 0 8px;color:inherit;font-size:11pt}
+[class*="theme-atlas-"] .resume-content h2 {clear:both;margin:18px 0 9px;padding:0 0 5px;border:0;border-bottom:1px solid #c2cbd2;color:var(--preview-accent,#334155);font-size:11.5pt;line-height:1.4;font-weight:650}
+[class*="theme-atlas-"] .resume-content h3 {margin:12px 0 5px;color:inherit;font-size:10.5pt;line-height:1.45;font-weight:600}
+[class*="theme-atlas-"] .resume-content p {margin:5px 0 8px}
+[class*="theme-atlas-"] .resume-content ul, [class*="theme-atlas-"] .resume-content ol {margin:6px 0 10px;padding-left:18px}
+[class*="theme-atlas-"] .resume-content li {margin:3px 0}
+[class*="theme-atlas-"] .resume-avatar {float:right;margin:0 0 14px 20px;border-radius:4px;overflow:hidden;box-sizing:border-box}
+[class*="theme-atlas-"] .resume-avatar img[src] {transform:none;width:100%;height:100%;object-fit:cover}
+[class*="theme-atlas-"] :is(.resume-columns,.resume-layout-columns) {clear:both;display:grid;grid-template-columns:var(--atlas-columns,minmax(0,1fr) minmax(0,2.1fr));gap:24px;margin-top:22px;min-height:0;align-items:stretch}
+[class*="theme-atlas-"] :is(.resume-column-main,.resume-layout-column-main) {grid-column:var(--atlas-main,2);grid-row:1;min-width:0}
+[class*="theme-atlas-"] :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:var(--atlas-side,1);grid-row:1;min-width:0;box-sizing:border-box;padding:var(--atlas-side-pad,0);background:var(--atlas-side-bg,transparent);color:var(--atlas-side-color,inherit)}
+[class*="theme-atlas-"] :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {font-size:24pt;color:inherit}
+[class*="theme-atlas-"] :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:none;display:block;margin:0 auto 16px}
+[class*="theme-atlas-"] :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+
+/* 书页宋体 — 无头像居中姓名、双线分节与衬线正文，适合正式文书。 */
+.theme-atlas-folio-serif .resume-content h1 {text-align:center;letter-spacing:.2em;font-size:30pt;margin-bottom:12px}
+.theme-atlas-folio-serif .resume-content h1 + p, .theme-atlas-folio-serif .resume-content h1 + p + p {text-align:center}
+.theme-atlas-folio-serif .resume-content h2 {border-top:3px double currentColor;border-bottom:1px solid currentColor;text-align:center;padding:6px 0;margin-top:22px}
+.theme-atlas-folio-serif .resume-content h3 {font-weight:700}
+
+/* 技术账页 — 等宽章节编号、左对齐身份与细线条目，强调技术记录感。 */
+.theme-atlas-mono-ledger .resume-content {counter-reset:section}
+.theme-atlas-mono-ledger .resume-content h1 {border-bottom:3px solid var(--preview-accent);padding-bottom:12px;letter-spacing:.12em}
+.theme-atlas-mono-ledger .resume-content h2 {counter-increment:section;border-bottom:1px solid #aeb9c6;font-family:monospace;letter-spacing:.08em}
+.theme-atlas-mono-ledger .resume-content h2::before {content:counter(section, decimal-leading-zero) " / ";font-family:monospace;color:var(--preview-accent)}
+.theme-atlas-mono-ledger .resume-content h3 {border-left:2px solid #aeb9c6;padding-left:10px}
+
+/* 中轴横线 — 居中身份、向两侧延展的章节线与圆形头像。 */
+.theme-atlas-centered-rule .resume-avatar {float:none;display:block;margin:0 auto 10px;border-radius:50%}
+.theme-atlas-centered-rule .resume-content h1, .theme-atlas-centered-rule .resume-content h1 + p, .theme-atlas-centered-rule .resume-content h1 + p + p {text-align:center}
+.theme-atlas-centered-rule .resume-content h2 {display:flex;align-items:center;gap:16px;justify-content:center;border:0}
+.theme-atlas-centered-rule .resume-content h2::before, .theme-atlas-centered-rule .resume-content h2::after {content:"";flex:1;height:1px;background:#aeb8c4}
+.theme-atlas-centered-rule .resume-content h3 {margin-top:14px}
+
+/* 信笺边框 — 内嵌双层细框、左侧肖像与居中章节标签。 */
+.theme-atlas-framed-letter {--atlas-inset:22px}
+.theme-atlas-framed-letter .resume-content {border:4px double #bdb2a8}
+.theme-atlas-framed-letter .resume-avatar {float:left;margin:0 18px 12px 0}
+.theme-atlas-framed-letter .resume-content h1 {font-size:25pt;padding-top:5px}
+.theme-atlas-framed-letter .resume-content h2 {text-align:center;border:1px solid #d4c9bd;padding:6px;background:#faf7f1;letter-spacing:.1em}
+.theme-atlas-framed-letter .resume-content h1 + p + p {clear:both}
+
+/* 折角索引 — 姓名折角边框、偏右头像与左边线章节。 */
+.theme-atlas-corner-bracket .resume-content h1 {display:inline-block;border-top:3px solid var(--preview-accent);border-left:3px solid var(--preview-accent);padding:10px 18px;margin-bottom:10px}
+.theme-atlas-corner-bracket .resume-avatar {border-radius:0;border-right:5px solid #dce7ef;padding-right:5px}
+.theme-atlas-corner-bracket .resume-content h2 {border-left:5px solid var(--preview-accent);border-bottom:0;padding:4px 10px;background:#eff4f8}
+.theme-atlas-corner-bracket .resume-content h3 {padding-left:10px;border-left:1px solid #b5c8d7}
+
+/* 编辑部头版 — 大号姓名、上方粗线与黑底章节签，适合内容表达。 */
+.theme-atlas-editorial-banner .resume-content {border-top:12px solid #222}
+.theme-atlas-editorial-banner .resume-content h1 {font-size:38pt;font-weight:800;letter-spacing:-.05em;margin-top:15px}
+.theme-atlas-editorial-banner .resume-content h1 + p + p {border-bottom:2px solid #222;padding-bottom:12px}
+.theme-atlas-editorial-banner .resume-content h2 {display:table;background:#222;color:#fff;padding:5px 12px;font-size:10.5pt;border:0}
+.theme-atlas-editorial-banner .resume-content h3 {letter-spacing:.04em}
+
+/* 姓名铭牌 — 姓名竖线铭牌、右侧头像与双线分区标题。 */
+.theme-atlas-split-nameplate .resume-content h1 {border-left:8px solid var(--preview-accent);padding:10px 20px;background:#f5f0eb;max-width:68%;font-size:31pt}
+.theme-atlas-split-nameplate .resume-avatar {border:1px solid #b8a897;padding:5px;border-radius:0}
+.theme-atlas-split-nameplate .resume-content h2 {border-top:1px solid #beae9e;border-bottom:1px solid #beae9e;padding:5px 0;letter-spacing:.13em}
+.theme-atlas-split-nameplate .resume-content h3 {font-weight:650}
+
+/* 下划标签 — 紧凑左侧身份、短下划章节标签与细边条目。 */
+.theme-atlas-underline-tabs .resume-content h1 {font-size:24pt;letter-spacing:.15em}
+.theme-atlas-underline-tabs .resume-content h1 + p + p {border-bottom:1px solid #bbc8c8;padding-bottom:14px}
+.theme-atlas-underline-tabs .resume-content h2 {display:table;border-bottom:4px solid var(--preview-accent);padding:0 20px 5px 0}
+.theme-atlas-underline-tabs .resume-content h3 {border-left:1px solid #8aa5a5;padding-left:9px}
+.theme-atlas-underline-tabs .resume-content ul {padding-left:24px}
+
+/* 数字章节 — 圆角数字章号、右侧肖像和留白分区。 */
+.theme-atlas-numbered-sections .resume-content {counter-reset:section}
+.theme-atlas-numbered-sections .resume-avatar {border-radius:16px}
+.theme-atlas-numbered-sections .resume-content h1 {font-size:32pt;letter-spacing:.08em}
+.theme-atlas-numbered-sections .resume-content h2 {counter-increment:section;border:0;display:flex;align-items:center;gap:10px}
+.theme-atlas-numbered-sections .resume-content h2::before {content:counter(section, decimal-leading-zero);background:#ebedf5;color:var(--preview-accent);padding:4px 8px;border-radius:8px;font:600 11pt monospace}
+.theme-atlas-numbered-sections .resume-content h3 {border-bottom:1px dotted #b1b8cc;padding-bottom:3px}
+
+/* 点线手记 — 点线分隔、左侧圆头像与点状经历标记。 */
+.theme-atlas-dotted-journal .resume-avatar {float:left;margin:0 18px 12px 0;border:2px dotted #b49aaa;border-radius:50%;padding:4px}
+.theme-atlas-dotted-journal .resume-content h1 {padding-top:8px}
+.theme-atlas-dotted-journal .resume-content h1 + p + p {clear:both;border-bottom:2px dotted #c6b6c2;padding-bottom:12px}
+.theme-atlas-dotted-journal .resume-content h2 {border-bottom:2px dotted #c6b6c2;padding-bottom:6px}
+.theme-atlas-dotted-journal .resume-content h3::before {content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--preview-accent);margin-right:8px}
+
+/* 线装笔记 — 贯穿正文的左侧装订线、章节侧标与方形头像。 */
+.theme-atlas-ruled-notebook {--atlas-inset:0 0 0 28px}
+.theme-atlas-ruled-notebook .resume-content {border-left:2px solid #a8c4d0}
+.theme-atlas-ruled-notebook .resume-avatar {float:left;margin:0 18px 15px 0;border-radius:0}
+.theme-atlas-ruled-notebook .resume-content h1 + p + p {clear:both}
+.theme-atlas-ruled-notebook .resume-content h2 {border-bottom:1px solid #cadbe2;margin-left:-29px;padding-left:28px;padding-bottom:7px}
+.theme-atlas-ruled-notebook .resume-content h3 {border-bottom:1px dotted #c3d1d8;padding-bottom:4px}
+
+/* 极简坐标 — 无头像的大字姓名与左侧章节栏，正文沿同一轴对齐。 */
+.theme-atlas-minimal-axis {--atlas-inset:0 0 0 94px}
+.theme-atlas-minimal-axis .resume-content h1 {font-size:36pt;margin-left:-94px;letter-spacing:.04em}
+.theme-atlas-minimal-axis .resume-content h1 + p, .theme-atlas-minimal-axis .resume-content h1 + p + p {margin-left:-94px}
+.theme-atlas-minimal-axis .resume-content h2 {margin-left:-94px;border-top:1px solid #bfc4ca;border-bottom:0;padding-top:10px;letter-spacing:.08em;font-size:10pt}
+.theme-atlas-minimal-axis .resume-content h3 {font-weight:700}
+
+/* 石墨侧栏 — 左侧深色身份与技能栏，右侧用细线组织经历。 */
+.theme-atlas-slate-sidebar {--atlas-columns:minmax(0,1fr) minmax(0,2.3fr);--atlas-side-bg:#344052;--atlas-side-color:#fff;--atlas-side-pad:22px}
+.theme-atlas-slate-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {color:#fff;border-bottom:1px solid #83909f}
+.theme-atlas-slate-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {color:#fff}
+.theme-atlas-slate-sidebar .resume-avatar {border:4px solid #93a0af;border-radius:50%}
+.theme-atlas-slate-sidebar :is(.resume-column-main,.resume-layout-column-main) h2 {letter-spacing:.1em;border-bottom:2px solid #344052}
+
+/* 米白档案 — 全宽身份、左侧米色教育栏与右侧带标签的经历区。 */
+.theme-atlas-ivory-sidebar {--atlas-columns:minmax(0,1fr) minmax(0,2fr);--atlas-side-bg:#f4f0e7;--atlas-side-pad:20px}
+.theme-atlas-ivory-sidebar .resume-content > h1 {border-bottom:3px double #a3947e;padding-bottom:12px}
+.theme-atlas-ivory-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-top:5px solid #b7a383}
+.theme-atlas-ivory-sidebar :is(.resume-column-main,.resume-layout-column-main) h2 {display:table;border:0;background:#f4f0e7;padding:5px 12px}
+.theme-atlas-ivory-sidebar .resume-avatar {border-radius:0}
+
+/* 林间分栏 — 左侧圆形肖像与浅绿信息栏，右侧分区使用短色条。 */
+.theme-atlas-forest-sidebar {--atlas-columns:minmax(0,1fr) minmax(0,2.1fr);--atlas-side-bg:#edf3ee;--atlas-side-pad:20px}
+.theme-atlas-forest-sidebar .resume-avatar {border-radius:50%;border:5px solid #d3e2d7}
+.theme-atlas-forest-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-radius:50px 50px 0 0;text-align:center}
+.theme-atlas-forest-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {text-align:left}
+.theme-atlas-forest-sidebar :is(.resume-column-main,.resume-layout-column-main) h2 {border:0;border-left:6px solid #66866e;padding-left:10px}
+
+/* 肖像长廊 — 左侧居中身份细框与右侧宽正文，强调肖像和履历对照。 */
+.theme-atlas-portrait-rail {--atlas-columns:minmax(0,1fr) minmax(0,2.25fr);--atlas-side-pad:18px}
+.theme-atlas-portrait-rail :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border:1px solid #b4b9c4;text-align:center}
+.theme-atlas-portrait-rail .resume-avatar {border:1px solid #b4b9c4;padding:6px;border-radius:0}
+.theme-atlas-portrait-rail :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {border-bottom:4px double #b4b9c4;padding-bottom:14px}
+.theme-atlas-portrait-rail .resume-content h2 {border:0;text-align:center;letter-spacing:.13em}
+.theme-atlas-portrait-rail :is(.resume-column-main,.resume-layout-column-main) h3 {border-top:1px solid #d3d7de;padding-top:9px}
+
+/* 方格资料 — 全宽姓名、左侧盒状能力区与右侧方形章节标记。 */
+.theme-atlas-boxed-sidebar {--atlas-columns:minmax(0,1fr) minmax(0,2fr);--atlas-side-pad:16px}
+.theme-atlas-boxed-sidebar .resume-content > h1 {font-size:33pt;border-bottom:6px solid var(--preview-accent);padding-bottom:12px}
+.theme-atlas-boxed-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border:2px solid #c3d2df;background:#f8fafc}
+.theme-atlas-boxed-sidebar .resume-content h2 {border:0}
+.theme-atlas-boxed-sidebar .resume-content h2::before {content:"";width:9px;height:9px;border:2px solid currentColor;display:inline-block;margin-right:8px}
+.theme-atlas-boxed-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) li {border-bottom:1px solid #d6e0e7;padding-bottom:8px;margin-bottom:8px}
+
+/* 铜线履历 — 上方横向身份、左侧竖线资料栏和右侧衬线标题。 */
+.theme-atlas-copper-sidebar {--atlas-columns:minmax(0,1fr) minmax(0,2.35fr);--atlas-side-pad:0 18px 0 0}
+.theme-atlas-copper-sidebar .resume-content > h1 {font-size:30pt;letter-spacing:.2em;border-bottom:1px solid #b9977c;padding-bottom:12px}
+.theme-atlas-copper-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-right:3px double #b9977c}
+.theme-atlas-copper-sidebar .resume-content h2 {border:0;border-bottom:1px solid #b9977c;padding-bottom:7px;letter-spacing:.08em}
+.theme-atlas-copper-sidebar .resume-avatar {border-radius:50%;border:1px solid #b9977c;padding:4px}
+
+/* 窄栏索引 — 左侧窄技能索引、右侧个人简介与履历，标题采用编号横线。 */
+.theme-atlas-narrow-index {--atlas-columns:minmax(0,1fr) minmax(0,3fr);--atlas-side-pad:0 14px 0 0}
+.theme-atlas-narrow-index .resume-content {counter-reset:section}
+.theme-atlas-narrow-index .resume-content > h1 {font-size:36pt;letter-spacing:.1em}
+.theme-atlas-narrow-index :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-right:1px solid #b8c5d0;font-size:.9em}
+.theme-atlas-narrow-index .resume-content h2 {counter-increment:section;border-top:1px solid #b8c5d0;border-bottom:0;padding-top:8px}
+.theme-atlas-narrow-index .resume-content h2::before {content:counter(section,decimal-leading-zero) "  ";font-family:monospace}
+.theme-atlas-narrow-index :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {list-style:none;padding:0}
+
+/* 墨色名片 — 深色左侧姓名名片、下方白底资料与右侧空心标题框。 */
+.theme-atlas-ink-sidebar {--atlas-columns:minmax(0,1fr) minmax(0,2.2fr);--atlas-side-pad:0 16px 16px}
+.theme-atlas-ink-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border:1px solid #bdc2ca}
+.theme-atlas-ink-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {background:#282f38;color:#fff;margin:0 -16px 0;padding:22px 16px 10px}
+.theme-atlas-ink-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p {background:#282f38;color:#fff;margin:0 -16px 14px;padding:0 16px 22px}
+.theme-atlas-ink-sidebar .resume-content h2 {border:1px solid #7c8996;padding:6px 10px;font-size:10.5pt}
+
+/* 沙丘边栏 — 左侧宽经历、右侧米色身份栏与圆形肖像，柔和分区。 */
+.theme-atlas-sand-sidebar {--atlas-main:1;--atlas-side:2}
+.theme-atlas-sand-sidebar {--atlas-columns:minmax(0,2.2fr) minmax(0,1fr);--atlas-side-bg:#f3ede3;--atlas-side-pad:20px}
+.theme-atlas-sand-sidebar .resume-avatar {border-radius:50%;border:4px solid #ded2c0}
+.theme-atlas-sand-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-radius:60px 60px 0 0;text-align:center}
+.theme-atlas-sand-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {text-align:left}
+.theme-atlas-sand-sidebar :is(.resume-column-main,.resume-layout-column-main) h2 {border:0;border-bottom:3px double #b9a78e}
+
+/* 梅影侧记 — 全宽居中姓名、右侧紫灰资料块和左侧细条章节。 */
+.theme-atlas-plum-sidebar {--atlas-main:1;--atlas-side:2}
+.theme-atlas-plum-sidebar {--atlas-columns:minmax(0,2.1fr) minmax(0,1fr);--atlas-side-bg:#f3edf3;--atlas-side-pad:18px}
+.theme-atlas-plum-sidebar .resume-content > h1, .theme-atlas-plum-sidebar .resume-content > h1 + p, .theme-atlas-plum-sidebar .resume-content > h1 + p + p {text-align:center}
+.theme-atlas-plum-sidebar .resume-content > h1 {font-size:32pt;letter-spacing:.17em}
+.theme-atlas-plum-sidebar :is(.resume-column-main,.resume-layout-column-main) h2 {border:0;border-left:3px solid #91728a;padding-left:12px}
+.theme-atlas-plum-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-top:6px solid #91728a}
+.theme-atlas-plum-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {border-bottom:1px solid #cbb9c7}
+
+/* 悬浮名片 — 右侧独立头像名片、主栏开放式履历与粗短章节线。 */
+.theme-atlas-floating-profile {--atlas-main:1;--atlas-side:2}
+.theme-atlas-floating-profile {--atlas-columns:minmax(0,2.2fr) minmax(0,1fr);--atlas-side-pad:20px}
+.theme-atlas-floating-profile :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border:1px solid #b6cece;border-radius:16px;background:#f7fafa}
+.theme-atlas-floating-profile .resume-avatar {border-radius:12px;border-bottom:6px solid #a5c2c1}
+.theme-atlas-floating-profile .resume-content h2 {border:0}
+.theme-atlas-floating-profile .resume-content h2::after {content:"";display:block;width:32px;height:4px;background:#729896;margin-top:7px}
+.theme-atlas-floating-profile .resume-content h3 {border-bottom:1px dotted #baccca;padding-bottom:3px}
+
+/* 右框履历 — 全宽左侧身份、右侧双线边框资料与主栏编号标题。 */
+.theme-atlas-right-outline {--atlas-main:1;--atlas-side:2}
+.theme-atlas-right-outline {--atlas-columns:minmax(0,2.15fr) minmax(0,1fr);--atlas-side-pad:17px}
+.theme-atlas-right-outline .resume-content {counter-reset:section}
+.theme-atlas-right-outline .resume-content > h1 {border-left:4px solid #536272;padding-left:15px}
+.theme-atlas-right-outline :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border:4px double #a9b3be}
+.theme-atlas-right-outline .resume-content h2 {counter-increment:section;border:0}
+.theme-atlas-right-outline .resume-content h2::before {content:counter(section) ". ";font-weight:400}
+.theme-atlas-right-outline .resume-avatar {border-radius:0;border-bottom:3px solid #536272}
+
+/* 青石分区 — 右侧深青能力栏与横向姓名带，主栏使用开放式小标题。 */
+.theme-atlas-teal-sidebar {--atlas-main:1;--atlas-side:2}
+.theme-atlas-teal-sidebar {--atlas-columns:minmax(0,2.2fr) minmax(0,1fr);--atlas-side-bg:#235a62;--atlas-side-color:#fff;--atlas-side-pad:20px}
+.theme-atlas-teal-sidebar .resume-content > h1 {background:#e8f1f2;padding:15px 20px;max-width:72%;font-size:30pt}
+.theme-atlas-teal-sidebar .resume-avatar {border-radius:0;border:4px solid #e8f1f2}
+.theme-atlas-teal-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2, .theme-atlas-teal-sidebar :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {color:#fff;border-color:#9bbbc1}
+.theme-atlas-teal-sidebar :is(.resume-column-main,.resume-layout-column-main) h2 {border:0;letter-spacing:.15em}
+.theme-atlas-teal-sidebar :is(.resume-column-main,.resume-layout-column-main) h3 {border-top:1px solid #bdd1d4;padding-top:9px}
+
+/* 右侧便笺 — 左侧双线章节、右侧教育和能力便笺，头像与姓名左对齐。 */
+.theme-atlas-right-cards {--atlas-main:1;--atlas-side:2}
+.theme-atlas-right-cards {--atlas-columns:minmax(0,2fr) minmax(0,1fr);--atlas-side-pad:0}
+.theme-atlas-right-cards .resume-avatar {float:left;margin:0 18px 12px 0;border-radius:50%}
+.theme-atlas-right-cards .resume-content > h1 + p + p {clear:both}
+.theme-atlas-right-cards :is(.resume-column-main,.resume-layout-column-main) h2 {border-top:1px solid #afaf9b;border-bottom:1px solid #afaf9b;padding:5px 0}
+.theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {background:#eaeadd;padding:7px 12px;border:0}
+.theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3, .theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) p, .theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {background:#f5f5ef;padding:8px 12px;margin:0}
+.theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {padding-left:26px}
+
+/* 纵向书签 — 右侧顶部色块身份书签与下方技能，左侧窄色带分节。 */
+.theme-atlas-ribbon-profile {--atlas-main:1;--atlas-side:2}
+.theme-atlas-ribbon-profile {--atlas-columns:minmax(0,2.3fr) minmax(0,1fr);--atlas-side-pad:0 16px 16px}
+.theme-atlas-ribbon-profile :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-left:1px solid #c6bccd;background:#f7f4f9}
+.theme-atlas-ribbon-profile :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {background:#69577a;color:#fff;margin:0 -16px 0;padding:28px 16px 12px}
+.theme-atlas-ribbon-profile :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p {background:#69577a;color:#fff;margin:0 -16px 16px;padding:0 16px 24px;border-radius:0 0 30px 0}
+.theme-atlas-ribbon-profile :is(.resume-column-main,.resume-layout-column-main) h2 {border:0;border-left:5px solid #a08caf;padding-left:12px}
+.theme-atlas-ribbon-profile .resume-content h3 {font-weight:650}
+
+/* 双栏账册 — 全宽身份与等宽双栏，中间双线分隔，章节用编号索引。 */
+.theme-atlas-twin-ledger {--atlas-main:1;--atlas-side:2}
+.theme-atlas-twin-ledger {--atlas-columns:minmax(0,1fr) minmax(0,1fr);--atlas-side-pad:0 0 0 20px}
+.theme-atlas-twin-ledger .resume-content {counter-reset:section}
+.theme-atlas-twin-ledger .resume-content > h1 {border-bottom:4px double #798795;padding-bottom:12px;font-size:32pt}
+.theme-atlas-twin-ledger :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-left:3px double #a6b1bb}
+.theme-atlas-twin-ledger .resume-content h2 {counter-increment:section;border:0;border-bottom:1px solid #a6b1bb}
+.theme-atlas-twin-ledger .resume-content h2::before {content:counter(section,decimal-leading-zero) " / ";font:600 10pt monospace}
+
+/* 双栏卡片 — 居中肖像与两个浅底内容面板，章节使用短横线。 */
+.theme-atlas-twin-cards {--atlas-main:1;--atlas-side:2}
+.theme-atlas-twin-cards {--atlas-columns:minmax(0,1fr) minmax(0,1fr);--atlas-side-pad:18px;--atlas-side-bg:#f0f4f1}
+.theme-atlas-twin-cards .resume-avatar {float:none;display:block;margin:0 auto 9px;border-radius:50%}
+.theme-atlas-twin-cards .resume-content > h1, .theme-atlas-twin-cards .resume-content > h1 + p, .theme-atlas-twin-cards .resume-content > h1 + p + p {text-align:center}
+.theme-atlas-twin-cards :is(.resume-column-main,.resume-layout-column-main) {padding:18px;background:#f0f4f1}
+.theme-atlas-twin-cards .resume-content h2 {border:0}
+.theme-atlas-twin-cards .resume-content h2::after {content:"";display:block;width:30px;height:2px;background:#88a393;margin-top:5px}
+
+/* 报刊双栏 — 大号衬线刊头、双线页眉和等宽正文，强调印刷感。 */
+.theme-atlas-newspaper {--atlas-main:1;--atlas-side:2}
+.theme-atlas-newspaper {--atlas-columns:minmax(0,1fr) minmax(0,1fr);--atlas-side-pad:0 0 0 20px}
+.theme-atlas-newspaper .resume-content > h1 {font-size:38pt;text-align:center;border-top:5px double #333;padding-top:12px;letter-spacing:.2em}
+.theme-atlas-newspaper .resume-content > h1 + p, .theme-atlas-newspaper .resume-content > h1 + p + p {text-align:center}
+.theme-atlas-newspaper .resume-content > h1 + p + p {border-bottom:5px double #333;padding-bottom:14px}
+.theme-atlas-newspaper :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-left:1px solid #aaa}
+.theme-atlas-newspaper .resume-content h2 {text-align:center;border:0;border-bottom:1px solid #333;font-weight:700}
+
+/* 十字分栏 — 通栏身份与粗横线、细竖线交叉分区，姓名居右。 */
+.theme-atlas-crossbar {--atlas-main:1;--atlas-side:2}
+.theme-atlas-crossbar {--atlas-columns:minmax(0,1fr) minmax(0,1fr);--atlas-side-pad:0 0 0 22px}
+.theme-atlas-crossbar .resume-avatar {float:left;margin:0 18px 14px 0;border-radius:0}
+.theme-atlas-crossbar .resume-content > h1, .theme-atlas-crossbar .resume-content > h1 + p {text-align:right}
+.theme-atlas-crossbar .resume-content > h1 + p + p {clear:both;text-align:right;border-bottom:6px solid #496075;padding-bottom:12px}
+.theme-atlas-crossbar :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-left:1px solid #496075}
+.theme-atlas-crossbar .resume-content h2 {border:0;letter-spacing:.18em}
+
+/* 左右拼版 — 左侧浅底项目教育、右侧白底工作经历，使用错位章节签。 */
+.theme-atlas-split-panel {--atlas-columns:minmax(0,1fr) minmax(0,1fr);--atlas-side-bg:#f1eef5;--atlas-side-pad:20px}
+.theme-atlas-split-panel .resume-content > h1 {font-size:34pt;border-left:8px solid #a89bb7;padding-left:17px}
+.theme-atlas-split-panel :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-top:8px solid #a89bb7}
+.theme-atlas-split-panel :is(.resume-column-main,.resume-layout-column-main) {padding-top:24px}
+.theme-atlas-split-panel .resume-content h2 {display:table;border:0;border-bottom:2px solid #a89bb7;padding:0 10px 5px 0}
+.theme-atlas-split-panel .resume-content h3 {font-weight:700}
+
+/* 错位刊头 — 左侧色条姓名与右侧圆头像、非对称双栏分区。 */
+.theme-atlas-offset-masthead {--atlas-main:1;--atlas-side:2}
+.theme-atlas-offset-masthead {--atlas-columns:minmax(0,2fr) minmax(0,1fr);--atlas-side-pad:0 0 0 18px}
+.theme-atlas-offset-masthead .resume-content > h1 {font-size:34pt;border-left:12px solid #8faebf;padding:13px 20px;background:#edf3f7;max-width:68%}
+.theme-atlas-offset-masthead .resume-avatar {border-radius:50%;border:5px solid #e3edf3}
+.theme-atlas-offset-masthead :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-left:1px dashed #9db5c4;padding-top:22px}
+.theme-atlas-offset-masthead .resume-content h2 {border:0;border-bottom:3px solid #d8e4ec;padding-bottom:5px}
+
+/* 胶囊页眉 — 圆角浅底姓名带、圆形头像与胶囊章节标签。 */
+.theme-atlas-capsule-head .resume-content h1 {background:#edf1e8;border-radius:40px;padding:16px 24px;max-width:70%;font-size:30pt}
+.theme-atlas-capsule-head .resume-avatar {border-radius:50%;border:4px solid #dce5d2}
+.theme-atlas-capsule-head .resume-content h2 {display:table;border:1px solid #bac7ac;border-radius:20px;padding:4px 16px;background:#f7f9f4}
+.theme-atlas-capsule-head .resume-content h3 {padding-left:10px;border-left:3px solid #b1c29f}
+.theme-atlas-capsule-head .resume-content ul {margin-left:8px}
+
+/* 斜切页眉 — 斜切几何页眉、右侧方形头像与开放式单栏正文。 */
+.theme-atlas-diagonal-head .resume-content > h1 {background:linear-gradient(125deg,#e5edf4 0%,#e5edf4 75%,transparent 75%);padding:20px 24px;font-size:34pt;max-width:78%}
+.theme-atlas-diagonal-head .resume-avatar {border-radius:0;border-bottom:5px solid #9db5c8}
+.theme-atlas-diagonal-head .resume-content h2 {border:0;border-bottom:2px solid #8fa9be;padding-bottom:5px;font-size:12pt}
+.theme-atlas-diagonal-head .resume-content h2::before {content:"";display:inline-block;width:12px;height:12px;background:#8fa9be;transform:skew(-20deg);margin-right:10px}
+.theme-atlas-diagonal-head .resume-content h3 {font-weight:700}
+
+/* 拱形肖像 — 居中拱形头像、大字姓名与左右延展的短线章节。 */
+.theme-atlas-arch-portrait .resume-avatar {float:none;display:block;margin:0 auto 10px;border-radius:50% 50% 0 0;border:1px solid #c5b2a4;padding:4px}
+.theme-atlas-arch-portrait .resume-content h1 {font-size:32pt;text-align:center;letter-spacing:.18em}
+.theme-atlas-arch-portrait .resume-content h1 + p, .theme-atlas-arch-portrait .resume-content h1 + p + p {text-align:center}
+.theme-atlas-arch-portrait .resume-content h2 {display:flex;align-items:center;justify-content:center;gap:15px;border:0;font-size:11pt}
+.theme-atlas-arch-portrait .resume-content h2::before, .theme-atlas-arch-portrait .resume-content h2::after {content:"";width:34px;height:2px;background:#b99f8c}
+.theme-atlas-arch-portrait .resume-content h3 {text-align:center;border-bottom:1px dotted #c5b2a4;padding-bottom:4px}
+
+/* 页尾能力带 — 全宽身份、中部履历双栏、底部通栏技能，形成三段阅读结构。 */
+.theme-atlas-top-bottom {--atlas-main:1;--atlas-side:2}
+.theme-atlas-top-bottom {--atlas-columns:minmax(0,1.8fr) minmax(0,1fr);--atlas-side-pad:0 0 0 20px}
+.theme-atlas-top-bottom .resume-content > h1 {border-bottom:4px solid #84a5a6;padding-bottom:12px;font-size:31pt}
+.theme-atlas-top-bottom .resume-avatar {border-radius:12px}
+.theme-atlas-top-bottom :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-left:1px solid #b3cccc}
+.theme-atlas-top-bottom .resume-content > h2 {background:#e9f1f1;border:0;padding:7px 12px}
+.theme-atlas-top-bottom .resume-content > ul {border-bottom:2px solid #84a5a6;padding-bottom:12px}
+.theme-atlas-top-bottom .resume-content h2 {letter-spacing:.08em}
+
+/* Original ImageGen-approved layouts: all content remains editable canonical text. */
+[class*="theme-original-"] .resume-content {color:#202630;overflow-wrap:anywhere}
+[class*="theme-original-"] .resume-content h1 {font-family:"Source Han Serif SC",serif;font-size:36pt;line-height:1.2;font-weight:700;margin:0 0 12px;color:var(--preview-accent);text-align:left}
+[class*="theme-original-"] .resume-content h1 + p {font-size:14pt;font-weight:600;line-height:1.4;margin:0 0 10px;text-align:left}
+[class*="theme-original-"] .resume-content h2 {font-family:"Source Han Serif SC",serif;font-size:14pt;line-height:1.4;font-weight:700;clear:both;border:0;margin:20px 0 10px;padding:0;color:var(--preview-accent)}
+[class*="theme-original-"] .resume-content h3 {font-size:11pt;line-height:1.5;font-weight:650;margin:16px 0 5px;color:inherit}
+[class*="theme-original-"] .resume-content p {margin:5px 0 10px}
+[class*="theme-original-"] .resume-content :is(ul,ol) {padding-left:18px;margin:7px 0 16px}
+[class*="theme-original-"] .resume-content li {margin:5px 0}
+/* Only paired date + role paragraphs use the aligned heading/date treatment.
+   Long headings can wrap; following role/body clears both floats. */
+[class*="theme-original-"] .resume-content h3:has(+ p + p) {float:left;max-width:calc(100% - 125px);margin-right:10px}
+[class*="theme-original-"] .resume-content h3 + p:has(+ p) {text-align:right;padding-top:16px;margin-bottom:4px;color:var(--preview-accent);font-size:9.5pt}
+[class*="theme-original-"] .resume-content h3 + p + p {clear:both;margin-top:0}
+[class*="theme-original-"] :is(.resume-columns,.resume-layout-columns) {display:grid;gap:24px;align-items:stretch;min-height:0;clear:both}
+[class*="theme-original-"] :is(.resume-column,.resume-layout-column) {min-width:0}
+[class*="theme-original-"] :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+
+/* 朱砂编辑笺: horizontal identity, numbered editorial chapters and one body column. */
+.theme-original-vermilion .resume-content {counter-reset:original-section}
+.theme-original-vermilion .resume-content > h1 {float:left;border-right:2px solid var(--preview-accent);padding:0 22px 10px 0;margin:0 18px 18px 0;color:#171c25;font-size:46pt}
+.theme-original-vermilion .resume-content > h1 + p {padding-top:8px;font-family:"Source Han Serif SC",serif;color:#171c25}
+.theme-original-vermilion .resume-content > h2 {counter-increment:original-section;position:relative;padding-left:42px;color:#171c25;margin-top:12px}
+.theme-original-vermilion .resume-content > h2::before {content:counter(original-section,decimal-leading-zero);position:absolute;left:0;color:var(--preview-accent);font-variant-numeric:tabular-nums}
+.theme-original-vermilion .resume-content > h2:first-of-type {border-top:1px solid #303640;padding-top:16px}
+.theme-original-vermilion .resume-content > h2 ~ :is(h3,p,ul,ol) {margin-left:42px}
+.theme-original-vermilion .resume-content h3 {margin-top:10px}
+.theme-original-vermilion .resume-content h3 + p:has(+ p) {padding-top:10px;color:#4b5260}
+.theme-original-vermilion .resume-content h3:is(:has(+ p + h3),:has(+ p:last-child)) {float:left;max-width:95px;clear:both;margin:4px 12px 0 42px}
+.theme-original-vermilion .resume-content h3:is(:has(+ p + h3),:has(+ p:last-child)) + p {margin-left:138px;padding-top:4px}
+
+/* 横向分庭: full-width identity/profile, genuinely equal work and project columns. */
+.theme-original-balanced .resume-content {color:#193e50}
+.theme-original-balanced .resume-content > h1 {font-size:56pt;margin-bottom:8px}
+.theme-original-balanced .resume-content > h1 + p {font-family:"Source Han Serif SC",serif;font-size:17pt}
+.theme-original-balanced .resume-content > h1 + p + p {text-align:right;margin-top:-42px;padding-bottom:22px;border-bottom:1px solid #708f9a}
+.theme-original-balanced .resume-content > h2 {font-size:11pt;margin:18px 0 6px}
+.theme-original-balanced .resume-content > h2 + p {padding-bottom:18px;border-bottom:1px solid #708f9a;margin-bottom:22px}
+.theme-original-balanced :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px;border-bottom:1px solid #708f9a;padding-bottom:18px}
+.theme-original-balanced :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1}
+.theme-original-balanced :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;border-left:1px solid #a2b7bf;padding-left:20px}
+.theme-original-balanced .resume-content h3:has(+ p + p) {max-width:calc(100% - 120px);margin-right:5px}
+.theme-original-balanced .resume-content h3 + p:has(+ p) {font-size:9pt}
+.theme-original-balanced :is(.resume-column-main,.resume-layout-column-main) {line-height:1.65}
+.theme-original-balanced :is(.resume-column-main,.resume-layout-column-main) > h3:not(:first-of-type) {margin-top:26px}
+.theme-original-balanced :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3:is(:has(+ p + h3),:has(+ p:last-child)) {float:left;clear:both;margin:4px 8px 0 0}
+.theme-original-balanced :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3:is(:has(+ p + h3),:has(+ p:last-child)) + p {margin-top:4px}
+
+/* 墨绿档案签: identity and capabilities on the sage rail, experience on white. */
+.theme-original-dossier :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:24px;margin:0}
+.theme-original-dossier .resume-content {font-size:1.05em;line-height:1.6}
+.theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) {grid-column:2;grid-row:1;padding-top:20px}
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1;grid-row:1;background:#e0ebdf;padding:24px 20px;color:#183b2d}
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {font-size:44pt}
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p {font-size:13pt}
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p + p {line-height:1.9;margin:20px 0 26px}
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {border-top:1px solid #89a38e;padding-top:22px;margin-top:26px}
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3,
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3:has(+ p + p) {float:none;max-width:none;margin-top:16px}
+.theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 + p:has(+ p) {text-align:left;padding-top:0;font-size:10pt}
+.theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) {container-type:inline-size}
+.theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) h2 {display:table;position:relative;background:var(--preview-accent);color:white;padding:3px 14px;margin-top:34px;max-width:100%;box-sizing:border-box}
+.theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) h2::after {content:"";position:absolute;left:100%;bottom:0;width:max(0px,calc(100cqw - 100%));border-bottom:1px solid var(--preview-accent)}
+.theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) li::marker {color:var(--preview-accent)}
+
+/* Approved A/C: chronology rail and warm editorial sheet. No raster text. */
+:is(.theme-original-axis,.theme-original-warm) .resume-content {line-height:1.4}
+:is(.theme-original-axis,.theme-original-warm) .resume-content p {margin:4px 0 7px}
+:is(.theme-original-axis,.theme-original-warm) .resume-content :is(ul,ol) {margin-top:5px;margin-bottom:10px}
+:is(.theme-original-axis,.theme-original-warm) .resume-content li {margin:3px 0}
+:is(.theme-original-axis,.theme-original-warm) .resume-content h3:has(+ p + p) {float:none;max-width:none;margin-right:0}
+:is(.theme-original-axis,.theme-original-warm) .resume-content h3 + p:has(+ p) {text-align:left;padding-top:0;margin-bottom:4px}
+:is(.theme-original-axis,.theme-original-warm) .resume-content h3 + p + p {clear:none}
+:is(.theme-original-axis,.theme-original-warm) :is(.resume-columns,.resume-layout-columns) {margin-top:24px;padding:18px 20px;gap:22px;grid-template-columns:minmax(0,1fr) minmax(0,2.3fr);background:#f1f3f5}
+:is(.theme-original-axis,.theme-original-warm) :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-right:1px solid #cdd1d6;padding-right:18px}
+:is(.theme-original-axis,.theme-original-warm) :is(.resume-column,.resume-layout-column) h2 {font-size:12pt;margin-top:0}
+:is(.theme-original-axis,.theme-original-warm) :is(.resume-column,.resume-layout-column) h3 {font-size:10pt;margin:8px 0 4px}
+:is(.theme-original-axis,.theme-original-warm) :is(.resume-column,.resume-layout-column) p {font-size:9.5pt;margin:4px 0 8px}
+
+.theme-original-axis .resume-content > h1 {font-family:inherit;font-size:29pt;line-height:1.1;margin-bottom:7px}
+.theme-original-axis .resume-content > h1 + p {font-size:14pt;margin-bottom:10px}
+.theme-original-axis .resume-content > h1 + p + p {font-size:9pt;text-align:right;margin-top:-28px;padding-bottom:12px;border-bottom:1px solid #bfc5cb}
+.theme-original-axis .resume-content > h2 {font-family:inherit;font-size:13pt;border-top:1px solid #bfc5cb;padding-top:12px;margin-top:22px}
+.theme-original-axis .resume-content > h2:first-of-type {border:0;padding:0;font-size:11pt;margin-top:10px}
+.theme-original-axis .resume-content > h3 {margin:12px 0 5px 110px;position:relative}
+.theme-original-axis .resume-content > h3:has(+ p + p)::before {content:"";position:absolute;left:-25px;top:.55em;width:6px;height:6px;border-radius:50%;background:var(--preview-accent)}
+.theme-original-axis .resume-content > h3 + p:has(+ p) {float:left;width:80px;margin:0;transform:translateY(-27px);font-size:9pt;line-height:1.45;overflow-wrap:normal}
+.theme-original-axis .resume-content > h3 + p + p {margin-left:87px;border-left:1px solid #cdd1d6;padding-left:22px}
+.theme-original-axis .resume-content > ul {margin-left:87px;padding-left:38px;border-left:1px solid #cdd1d6;margin-top:0;padding-bottom:8px}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:14px;align-content:start}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > h2 {grid-column:1/-1}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > h3:nth-of-type(1) {grid-column:1;grid-row:2}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > h3:nth-of-type(2) {grid-column:2;grid-row:2}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > h3:nth-of-type(3) {grid-column:3;grid-row:2}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > p:nth-of-type(1) {grid-column:1;grid-row:3}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > p:nth-of-type(2) {grid-column:2;grid-row:3}
+.theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > p:nth-of-type(3) {grid-column:3;grid-row:3}
+
+.resume-paper.theme-original-warm {background:#faf7f0}
+.theme-original-warm .resume-content {color:#443a32}
+.theme-original-warm .resume-content > h1 {text-align:center;font-size:29pt;margin-bottom:8px}
+.theme-original-warm .resume-content > h1 + p {text-align:center;font-family:"Source Han Serif SC",serif;font-size:13pt}
+.theme-original-warm .resume-content > h1 + p + p {text-align:center;font-size:9.5pt;border-bottom:1px solid #bcae9b;padding-bottom:20px;margin-bottom:8px}
+.theme-original-warm .resume-content > h2 {float:left;clear:both;width:82px;font-size:12pt;line-height:1.6;margin:20px 0 0;padding-top:12px;border-top:1px solid #bcae9b}
+.theme-original-warm .resume-content > h2 ~ :is(h3,p,ul,ol) {margin-left:106px}
+.theme-original-warm .resume-content > h2 + :is(h3,p) {padding-top:12px;border-top:1px solid #bcae9b;margin-top:20px}
+.theme-original-warm .resume-content > h3:has(+ p + p) {float:none;max-width:none;margin-right:0;padding-right:120px}
+.theme-original-warm .resume-content > h3 + p:has(+ p) {float:right;text-align:right;padding-top:0;margin-top:-25px;margin-left:0;font-size:9pt}
+.theme-original-warm .resume-content > h3 + p + p {clear:none;font-size:10pt}
+.theme-original-warm .resume-content > ul {border-left:1px solid #c5b7a4;padding-left:20px;padding-bottom:6px}
+.theme-original-warm :is(.resume-columns,.resume-layout-columns) {display:block;background:none;padding:0;border-top:1px solid #bcae9b}
+.theme-original-warm :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border:0;padding:14px 0 12px 106px;position:relative}
+.theme-original-warm :is(.resume-column,.resume-layout-column) > h2 {font-family:"Source Han Serif SC",serif;font-size:12pt;position:absolute;left:0;top:14px;width:82px;margin:0}
+.theme-original-warm :is(.resume-column-main,.resume-layout-column-main) {position:relative;border-top:1px solid #bcae9b;padding:14px 0 0 106px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:22px;align-content:start}
+.theme-original-warm :is(.resume-column-main,.resume-layout-column-main) > h3:nth-of-type(1) {grid-column:1;grid-row:1}
+.theme-original-warm :is(.resume-column-main,.resume-layout-column-main) > p:nth-of-type(1) {grid-column:1;grid-row:2}
+.theme-original-warm :is(.resume-column-main,.resume-layout-column-main) > h3:nth-of-type(2) {grid-column:1;grid-row:3}
+.theme-original-warm :is(.resume-column-main,.resume-layout-column-main) > p:nth-of-type(2) {grid-column:1;grid-row:4}
+.theme-original-warm :is(.resume-column-main,.resume-layout-column-main) > h3:nth-of-type(3) {grid-column:2;grid-row:1}
+.theme-original-warm :is(.resume-column-main,.resume-layout-column-main) > p:nth-of-type(3) {grid-column:2;grid-row:2 / span 3}
+
+/* 非对称索引: a short 2:1 profile/skills deck above a full career history.
+   Semantic anchors identify sections even when their titles are edited. */
+.theme-original-index .resume-content {display:flow-root;line-height:1.5;color:#202a31}
+.theme-original-index .resume-content h1 {font-family:inherit;font-size:32pt;line-height:1.15;color:#18232a;float:left;max-width:44%;margin:0 20px 14px 0}
+.theme-original-index .resume-content > h1 + p {text-align:right;font-size:13pt;padding-top:4px;margin:0 0 8px}
+.theme-original-index .resume-content > h1 + p + p {text-align:right;font-size:9pt;margin:0 0 18px}
+.theme-original-index .resume-content h2 {font-family:inherit;color:#202a31;font-size:12pt;letter-spacing:.02em;margin:18px 0 10px;border-left:3px solid var(--preview-accent);padding-left:9px}
+.theme-original-index .resume-content h3 {font-size:10.5pt;margin:12px 0 5px}
+.theme-original-index .resume-content p {margin:4px 0 8px}
+.theme-original-index .resume-content li {margin:4px 0}
+.theme-original-index .resume-content :is(ul,ol) {margin:6px 0 18px;padding-left:18px}
+.theme-original-index :is(.resume-columns,.resume-layout-columns) {clear:both;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:24px;border-top:1px solid #b4c2c5;border-bottom:1px solid #b4c2c5;padding:18px 0;margin:0 0 22px}
+.theme-original-index :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1}
+.theme-original-index :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;border-left:1px solid #d4e1e2;padding-left:18px;font-size:9.5pt}
+.theme-original-index :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {font-size:9.5pt;margin-top:9px}
+.theme-original-index :is(.resume-column-sidebar,.resume-layout-column-sidebar) p {margin-bottom:7px}
+.theme-original-index .resume-content > h2 {position:relative;padding-right:70px}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="work"])::after {content:"WORK";position:absolute;right:0;top:0;font-size:8pt;letter-spacing:.08em;color:var(--preview-accent);font-weight:400}
+.theme-original-index .resume-content > h3:has(+ p + p) {max-width:calc(100% - 140px)}
+.theme-original-index .resume-content > h3 + p:has(+ p) {padding-top:12px;color:#53656b;font-size:9pt}
+.theme-original-index .resume-content > ul {border-right:1px solid #cee0e2;padding-right:18px}
+/* Education precedes projects in the backend footer-region order, allowing a
+   natural-height right float without fixed rows or truncated entry counts. */
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="education"]),
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="education"]) ~ * {float:right;clear:right;width:27%;max-width:none;box-sizing:border-box;padding-right:0;margin-left:0}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="education"]) ~ h3:has(+ p + p) {float:right;max-width:none;margin-right:0}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="education"]) ~ p {text-align:left;padding-top:0;font-size:9.5pt;clear:right}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="project"]),
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="project"]) ~ * {float:none;clear:left;width:67%;max-width:67%;padding-right:0;margin-right:0;text-align:left}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="project"]) ~ h3:has(+ p + p) {float:none;max-width:67%}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="project"]) ~ p {font-size:10pt;padding-top:0;clear:left}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="education"]) {margin-top:0}
+.theme-original-index .resume-content > h2:has([data-resume-semantic-kind="project"]) ~ ul {box-sizing:border-box;border-right:0;padding-right:12px}
+/* Optional extra sections return to normal full-width flow. */
+.theme-original-index .resume-content > h2:not(:has([data-resume-semantic-kind="work"],[data-resume-semantic-kind="education"],[data-resume-semantic-kind="project"])),
+.theme-original-index .resume-content > h2:not(:has([data-resume-semantic-kind="work"],[data-resume-semantic-kind="education"],[data-resume-semantic-kind="project"])) ~ * {float:none;clear:both;width:auto;max-width:none}
+
+/* Approved career-history trio: shared type, three different layout skeletons. */
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content {display:flow-root;color:#252b30;line-height:1.5}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content h1 {font-family:inherit;font-size:29pt;line-height:1.2;color:#20272c;margin:0 0 8px}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content h2 {font-family:inherit;font-size:11pt;line-height:1.5;margin:20px 0 10px;display:flex;align-items:center;gap:12px}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content h2::after {content:"";flex:1;border-top:1px solid currentColor;opacity:.65}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content h3 {font-size:10.5pt;margin:12px 0 5px}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content h3 + p:has(+ p) {padding-top:12px;font-size:9pt;color:#49525a}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content p {margin:4px 0 8px}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content li {margin:4px 0}
+:is(.theme-original-offset,.theme-original-marginal,.theme-original-hanging) .resume-content :is(ul,ol) {margin:6px 0 14px;padding-left:18px}
+:is(.theme-original-offset,.theme-original-hanging) :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:24px;margin-top:12px}
+:is(.theme-original-offset,.theme-original-hanging) :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1}
+:is(.theme-original-offset,.theme-original-hanging) :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;border-left:1px solid #c5d0d7;padding-left:20px}
+:is(.theme-original-offset,.theme-original-hanging) :is(.resume-column,.resume-layout-column) {font-size:9.5pt}
+:is(.theme-original-offset,.theme-original-hanging) .resume-content :is(.resume-column,.resume-layout-column) h3 {float:none;max-width:none;margin-right:0}
+:is(.theme-original-offset,.theme-original-hanging) .resume-content :is(.resume-column,.resume-layout-column) h3 + p:has(+ p) {text-align:left;padding-top:0}
+:is(.theme-original-offset,.theme-original-hanging) :is(.resume-column,.resume-layout-column) ul {list-style:none;padding:0;margin-bottom:0}
+
+/* A — header is staggered across three grid tracks; career rows remain full width.
+   Auto rows grow with editable text, including long names and renamed sections. */
+.theme-original-offset .resume-content {display:grid;grid-template-columns:minmax(0,30fr) minmax(0,45fr) minmax(0,25fr);align-content:start}
+.theme-original-offset .resume-content > * {grid-column:1/-1;min-width:0}
+.theme-original-offset .resume-content > h1 {grid-column:1;grid-row:1;margin-right:16px}
+.theme-original-offset .resume-content > h1 + p {grid-column:1;grid-row:2;font-size:11pt;margin-right:16px}
+.theme-original-offset .resume-content > h1 + p + p {grid-column:2/-1;grid-row:1;text-align:right;font-size:9pt;align-self:start}
+.theme-original-offset .resume-content > h2:has([data-resume-semantic-kind="profile"]) {grid-column:2/-1;grid-row:2;margin:0 0 5px;font-size:9.5pt}
+.theme-original-offset .resume-content > h2:has([data-resume-semantic-kind="profile"])::after {display:none}
+.theme-original-offset .resume-content > h2:has([data-resume-semantic-kind="profile"]) + p {grid-column:2/-1;margin:0 0 8px;font-size:10pt}
+.theme-original-offset .resume-content > h3:has(+ p + p) {grid-column:1/3;float:none;max-width:none;margin-right:14px}
+.theme-original-offset .resume-content > h3 + p:has(+ p) {grid-column:3;align-self:start}
+.theme-original-offset .resume-content > h3 + p + p {font-size:10pt}
+
+/* B — only work shares a row with a short marginal note; footer returns to full width. */
+.theme-original-marginal .resume-content > h1 {float:left;max-width:48%;margin-right:20px}
+.theme-original-marginal .resume-content > h1 + p {font-size:12pt;text-align:right;margin-bottom:9px}
+.theme-original-marginal .resume-content > h1 + p + p {font-size:9pt;text-align:right;margin-bottom:22px}
+.theme-original-marginal :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,2.6fr) minmax(0,1fr);gap:20px;align-items:start;margin:18px 0 0}
+.theme-original-marginal :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1}
+.theme-original-marginal :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;border-left:1px solid #bcaeaa;padding-left:17px;font-size:9.5pt}
+.theme-original-marginal :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {font-size:10pt;display:block;margin-bottom:8px}
+.theme-original-marginal :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2::after {display:none}
+.theme-original-marginal :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {list-style:none;padding:0;margin-bottom:0}
+.theme-original-marginal :is(.resume-column-main,.resume-layout-column-main) h3:has(+ p + p) {max-width:calc(100% - 110px)}
+.theme-original-marginal :is(.resume-column-main,.resume-layout-column-main) h3 + p:has(+ p) {font-size:8.5pt}
+.theme-original-marginal .resume-content h3 {margin-top:20px}
+.theme-original-marginal .resume-content h3 + p:has(+ p) {padding-top:20px}
+.theme-original-marginal .resume-content > h2 {margin-top:26px}
+.theme-original-marginal .resume-content p {margin-bottom:12px}
+.theme-original-marginal .resume-content :is(ul,ol) {margin-bottom:24px}
+.theme-original-marginal .resume-content li {margin:12px 0}
+.theme-original-marginal :is(.resume-column-sidebar,.resume-layout-column-sidebar) li {margin:8px 0}
+
+/* C — hanging labels occupy only the chapter gutter, never a content sidebar. */
+.theme-original-hanging .resume-content > h1 {float:left;max-width:48%;margin-right:20px}
+.theme-original-hanging .resume-content > h1 + p {text-align:right;font-size:12pt;margin-bottom:9px}
+.theme-original-hanging .resume-content > h1 + p + p {text-align:right;font-size:9pt;margin-bottom:18px}
+.theme-original-hanging .resume-content > h2 {float:left;clear:both;width:84px;font-size:10pt;margin:0;padding-top:3px;display:block}
+.theme-original-hanging .resume-content > h2::after {display:none}
+.theme-original-hanging .resume-content > h2 ~ :is(h3,p,ul,ol) {margin-left:106px}
+.theme-original-hanging .resume-content > h2 + :is(h3,p) {border-left:2px solid #8fbdc1;padding-left:13px;margin-top:18px}
+.theme-original-hanging .resume-content > h3:has(+ p + p) {float:none;max-width:none;margin-right:0;padding-right:130px}
+.theme-original-hanging .resume-content > h3 + p:has(+ p) {float:right;max-width:120px;margin:-25px 0 5px;padding:0;text-align:right}
+.theme-original-hanging .resume-content > h3 + p + p {clear:none;font-size:10pt;padding-left:15px}
+.theme-original-hanging .resume-content > :is(ul,ol) {border-left:1px solid #cbdfe1;padding-left:28px;padding-bottom:6px}
+.theme-original-hanging .resume-content > h2:has([data-resume-semantic-kind="profile"]) {float:none;width:auto;margin-top:0;font-size:9.5pt;border:0}
+.theme-original-hanging .resume-content > h2:has([data-resume-semantic-kind="profile"]) + p {margin:4px 0 18px;padding:0 0 14px;border-left:0;border-bottom:1px solid #9bbec2}
+.theme-original-hanging :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:32px;margin-top:16px}
+.theme-original-hanging :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border:0;padding:0}
+.theme-original-hanging .resume-content li {margin:12px 0}
+.theme-original-hanging .resume-content > :is(ul,ol) {margin-bottom:22px}
+.theme-original-hanging .resume-content > h3 {border-left:2px solid #8fbdc1;padding-left:13px}
+
+/* Open layouts adapt MIT-licensed sources. Full copyrights, pinned sources and
+   permissions: public/third-party/template-notices.txt. No upstream assets. */
+[class*="theme-open-"] .resume-content {color:#30343a;overflow-wrap:anywhere}
+[class*="theme-open-"] .resume-content h1 {margin:0 0 8px;font-size:30pt;line-height:1.15;color:var(--preview-accent);text-align:left}
+[class*="theme-open-"] .resume-content h1 + p {font-size:12pt;margin:0 0 8px;text-align:left}
+[class*="theme-open-"] .resume-content h2 {clear:both;margin:18px 0 9px;padding:0 0 5px;border:0;border-bottom:1px solid #d4d8dd;color:var(--preview-accent);font-size:12pt;line-height:1.35;font-weight:650}
+[class*="theme-open-"] .resume-content h3 {margin:12px 0 5px;font-size:10.5pt;line-height:1.4;color:inherit}
+[class*="theme-open-"] .resume-content p {margin:4px 0 8px}
+[class*="theme-open-"] .resume-content :is(ul,ol) {margin:5px 0 11px;padding-left:18px}
+[class*="theme-open-"] .resume-content li {margin:3px 0}
+[class*="theme-open-"] :is(.resume-columns,.resume-layout-columns) {display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1fr);gap:26px;clear:both;margin-top:20px;align-items:start;min-height:0}
+[class*="theme-open-"] :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1;min-width:0}
+[class*="theme-open-"] :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;min-width:0}
+[class*="theme-open-"] :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+[class*="theme-open-"] .resume-avatar {float:right;margin:0 0 12px 20px;overflow:hidden;border-radius:50%}
+[class*="theme-open-"] .resume-avatar img[src] {width:100%;height:100%;object-fit:cover;transform:none}
+
+/* Career series: scoped MIT layout adaptations; no upstream fonts or assets. */
+[class*="theme-career-"] .resume-content {color:#30363b}
+[class*="theme-career-"] .resume-content h1 {font-size:29pt;line-height:1.25;letter-spacing:.06em;text-align:left;margin:0 0 6px;color:var(--preview-accent)}
+[class*="theme-career-"] .resume-content h1 + p {font-size:12pt;margin:0 0 8px;text-align:left}
+[class*="theme-career-"] .resume-content h2 {clear:both;font-size:12pt;line-height:1.4;margin:17px 0 8px;padding:0 0 5px;border:0;border-bottom:1px solid #d7dcdf;color:var(--preview-accent)}
+[class*="theme-career-"] .resume-content h3 {font-size:10.5pt;line-height:1.45;margin:10px 0 4px;font-weight:700}
+[class*="theme-career-"] .resume-content p {margin:4px 0 7px}
+[class*="theme-career-"] .resume-content :is(ul,ol) {padding-left:18px;margin:5px 0 10px}
+[class*="theme-career-"] .resume-content li {margin:3px 0;line-height:inherit}
+[class*="theme-career-"] .resume-content h3 + p {color:#59636b;font-size:.94em}
+
+/* Kendall: centered identity, gray employment ribbons and a supporting column. */
+.theme-career-kendall .resume-content > h1,
+.theme-career-kendall .resume-content > h1 + p,
+.theme-career-kendall .resume-content > h1 + p + p {text-align:center}
+.theme-career-kendall .resume-content > h1 + p + p {padding-bottom:14px;border-bottom:3px double #bac9c7}
+.theme-career-kendall :is(.resume-columns,.resume-layout-columns) {display:grid;grid-template-columns:minmax(0,2.15fr) minmax(0,1fr);gap:25px;align-items:start;min-height:0;margin-top:14px}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1;min-width:0}
+.theme-career-kendall :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;min-width:0;border-left:1px solid #d5dfdc;padding-left:18px}
+.theme-career-kendall :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+.theme-career-kendall .resume-content h2 {border:0;padding:0;font-size:12pt}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) h3 {background:#edf2f0;padding:7px 10px;margin-bottom:0;border-left:3px solid var(--preview-accent)}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) h3 + p {background:#edf2f0;padding:0 10px 6px;margin-top:0;border-left:3px solid var(--preview-accent)}
+
+/* Stack Overflow: compact timeline spine and quiet uppercase-like section bands. */
+.theme-career-stack .resume-content > h1 {color:#27343c;border-left:6px solid var(--preview-accent);padding-left:14px}
+.theme-career-stack .resume-content > h1 + p {padding-left:20px}
+.theme-career-stack .resume-content h2 {background:#f1f4f6;border:0;padding:6px 10px;letter-spacing:.14em;font-size:11pt;color:#39464d}
+.theme-career-stack .resume-content h3 {position:relative;margin-left:9px;padding-left:17px;border-left:2px solid #d2dce1}
+.theme-career-stack .resume-content h3::before {content:"";position:absolute;left:-5px;top:6px;width:8px;height:8px;background:var(--preview-accent);border-radius:50%}
+.theme-career-stack .resume-content h3 + p {margin-left:9px;padding-left:17px;border-left:2px solid #d2dce1}
+.theme-career-stack .resume-content :is(ul,ol) {margin-left:9px;padding-left:32px;border-left:2px solid #d2dce1}
+
+/* Spartan: open page, lightweight section labels and inset narrative. */
+.theme-career-spartan .resume-content > h1 {font-size:30pt;color:#25282b;letter-spacing:.02em}
+.theme-career-spartan .resume-content > h1 + p {color:#796b64;font-size:13pt}
+.theme-career-spartan .resume-content h2 {font-weight:400;font-size:10.5pt;color:#796b64;border:0;border-top:1px solid #e3dcd6;padding-top:7px;margin-top:12px;letter-spacing:.18em}
+.theme-career-spartan .resume-content h2 ~ :is(h3,p,ul,ol) {margin-left:24px}
+.theme-career-spartan .resume-content h3 {margin-top:7px;color:#24272b}
+.theme-career-spartan .resume-content li::marker {color:#9a8272}
+.theme-career-spartan .resume-content :is(ul,ol) {margin-top:3px;margin-bottom:7px}
+
+/* Onepage: a real section-label gutter with dashed separators. */
+.theme-career-onepage .resume-content > h1 {font-size:27pt;letter-spacing:.12em}
+.theme-career-onepage .resume-content > h1 + p + p {padding-bottom:12px;border-bottom:2px solid var(--preview-accent)}
+.theme-career-onepage .resume-content > h2 {float:left;clear:both;width:75px;margin:15px 0 0;border:0;padding:0;font-size:10.5pt}
+.theme-career-onepage .resume-content > h2 ~ :is(h3,p,ul,ol) {margin-left:96px}
+.theme-career-onepage .resume-content > h2 + :is(h3,p) {border-top:1px dashed #cad5d9;padding-top:13px;margin-top:15px}
+.theme-career-onepage .resume-content ul {list-style-type:circle}
+
+/* RenderCV Classic: centered typographic header and partial heading rules. */
+.theme-career-classic .resume-content > h1,
+.theme-career-classic .resume-content > h1 + p,
+.theme-career-classic .resume-content > h1 + p + p {text-align:center}
+.theme-career-classic .resume-content > h1 {font-size:30pt;letter-spacing:.04em}
+.theme-career-classic .resume-content h2 {display:flex;align-items:center;gap:14px;border:0;padding:0;font-size:13pt;margin-top:17px}
+.theme-career-classic .resume-content h2::after {content:"";height:1px;flex:1;background:var(--preview-accent);opacity:.55}
+.theme-career-classic .resume-content h3 {margin-top:8px}
+.theme-career-classic .resume-content li {margin:2px 0}
+
+/* Even: muted masthead with a section-label gutter, not a sidebar of content. */
+.theme-open-even .resume-content > :is(h1,p) {background:#f0f2f3;padding:8px 20px;margin:0}
+.theme-open-even .resume-content > h1 {padding-top:20px;color:#262d33;font-weight:400}
+.theme-open-even .resume-content > h1 + p {font-size:15pt;color:#69737c}
+.theme-open-even .resume-content > h1 + p + p {padding-bottom:20px}
+.theme-open-even .resume-content > h2 {float:left;clear:both;width:94px;margin:20px 0 0;border:0;padding:0;color:#69737c;font-weight:400;font-size:12pt;text-align:right}
+.theme-open-even .resume-content > h2 ~ :is(h3,p,ul,ol) {margin-left:116px;background:none;padding-right:0;padding-top:0;padding-bottom:0}
+.theme-open-even .resume-content > h2 + :is(h3,p) {padding-top:20px;margin-top:0}
+.theme-open-even .resume-content > h2 ~ p {padding-left:0}
+
+/* RenderCV moderncv: short solid section rules and indented body. */
+.theme-open-moderncv .resume-content h1 {font-weight:400;font-size:32pt}
+.theme-open-moderncv .resume-content h2 {border:0;position:relative;padding-left:96px;font-size:14pt;font-weight:400;margin-top:14px}
+.theme-open-moderncv .resume-content h3 {margin-top:8px}
+.theme-open-moderncv .resume-content h2::before {content:"";position:absolute;left:0;top:.48em;width:76px;height:5px;background:var(--preview-accent)}
+.theme-open-moderncv .resume-content h2 ~ :is(h3,p,ul,ol) {margin-left:96px}
+.theme-open-moderncv .resume-content h3 + p {color:#69737c}
+
+/* Caffeine: top keyline, short section underlines, compact left capability rail. */
+.resume-paper.theme-open-caffeine {border-top:8px solid var(--preview-accent)}
+.theme-open-caffeine .resume-avatar {float:left;margin:0 18px 12px 0;border:2px solid var(--preview-accent)}
+.theme-open-caffeine .resume-content h1 {font-size:27pt}
+.theme-open-caffeine :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2.25fr);gap:30px;margin-top:26px}
+.theme-open-caffeine :is(.resume-column-main,.resume-layout-column-main) {grid-column:2}
+.theme-open-caffeine :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1}
+.theme-open-caffeine .resume-content h2 {border:0;padding-bottom:12px;position:relative;letter-spacing:.12em}
+.theme-open-caffeine .resume-content h2::after {content:"";position:absolute;left:0;bottom:0;width:46px;border-bottom:2px solid var(--preview-accent)}
+.theme-open-caffeine :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {color:var(--preview-accent);margin-top:20px}
+
+/* Classy: a centered display name and bold, unruled chapter typography. */
+.theme-open-classy .resume-content > h1 {font-size:38pt;font-weight:800;letter-spacing:.12em;text-align:center}
+.theme-open-classy .resume-content > h1 + p,
+.theme-open-classy .resume-content > h1 + p + p {text-align:center}
+.theme-open-classy .resume-content h2 {font-size:17pt;font-weight:800;border:0;padding:0;margin-top:12px;letter-spacing:.08em}
+.theme-open-classy .resume-content h3 {margin-top:8px}
+.theme-open-classy .resume-content h3 {font-weight:700}
+.theme-open-classy .resume-content h3 + p:not(:has(+ ul)) {display:inline-block;background:#303030;color:#fff;padding:5px 10px;margin-top:1px}
+.theme-open-classy .resume-content li::marker {color:#7c7c7c}
+
+/* Actual: display masthead, editorial 70/30 split and paired highlights. */
+.theme-open-actual .resume-content > h1 {font-size:43pt;letter-spacing:-.06em;font-weight:800;color:#202020}
+.theme-open-actual .resume-content > h1 + p {font-size:19pt;font-weight:300;margin-bottom:12px}
+.theme-open-actual .resume-content > h1 + p + p {border-bottom:3px solid #222;padding-bottom:14px}
+.theme-open-actual :is(.resume-column-main,.resume-layout-column-main) > ul {columns:2;column-gap:24px;padding-left:16px}
+.theme-open-actual :is(.resume-column-main,.resume-layout-column-main) > ul > li {break-inside:avoid-column;margin-top:0;margin-bottom:9px}
+.theme-open-actual .resume-content h2 {border:0;font-size:14pt;color:#222;margin-top:22px}
+.theme-open-actual :is(.resume-column-sidebar,.resume-layout-column-sidebar) {border-left:1px solid #d8d8d8;padding-left:20px}
+
+/* Class: blue identity banner and clearly separated skills/experience columns. */
+.theme-open-class .resume-content > h1 {background:var(--preview-accent);color:#fff;padding:24px 22px 4px;margin:0;font-size:28pt}
+.theme-open-class .resume-content > h1 + p {background:var(--preview-accent);color:#fff;padding:4px 22px 22px;margin:0}
+.theme-open-class .resume-content > h1 + p + p {padding:14px 0 12px;border-bottom:1px solid #d5dbe3;margin:0}
+.theme-open-class .resume-content h2 {border:0;font-size:13pt;color:#262b32}
+.theme-open-class :is(.resume-column-main,.resume-layout-column-main) > h2:not(:first-child) {border-top:1px solid #d5dbe3;padding-top:16px;margin-top:18px}
+.theme-open-class :is(.resume-column-sidebar,.resume-layout-column-sidebar) {padding:16px;background:#f1f4f8;border-top:3px solid var(--preview-accent)}
+
+/* Studio: six reference-inspired layouts, shared by editable and print DOM.
+   No fixed heights or clipping: longer user content remains in normal flow. */
+[class*="theme-studio-"] .resume-content {color:#263244;overflow-wrap:anywhere}
+[class*="theme-studio-"] .resume-content h1 {margin:0 0 8px;font-size:29pt;line-height:1.2;color:var(--preview-accent);text-align:left}
+[class*="theme-studio-"] .resume-content h1 + p {font-size:11pt;margin:0 0 8px;text-align:left}
+[class*="theme-studio-"] .resume-content h2 {clear:both;margin:20px 0 10px;padding:0 0 6px;border:0;border-bottom:1px solid #bccbde;color:var(--preview-accent);font-size:12pt;line-height:1.4;font-weight:650}
+[class*="theme-studio-"] .resume-content h3 {margin:14px 0 6px;font-size:10.5pt;font-weight:650;line-height:1.45;color:inherit}
+[class*="theme-studio-"] .resume-content p {margin:5px 0 9px}
+[class*="theme-studio-"] .resume-content :is(ul,ol) {margin:7px 0 13px;padding-left:18px}
+[class*="theme-studio-"] .resume-content li {margin:4px 0}
+[class*="theme-studio-"] .resume-avatar {float:right;box-sizing:border-box;margin:0 0 16px 20px;border-radius:8px;overflow:hidden}
+[class*="theme-studio-"] .resume-avatar img[src] {width:100%;height:100%;object-fit:cover;transform:none}
+[class*="theme-studio-"] :is(.resume-columns,.resume-layout-columns) {display:grid;grid-template-columns:minmax(0,2.15fr) minmax(0,1fr);gap:24px;clear:both;margin-top:22px;align-items:stretch;min-height:0}
+[class*="theme-studio-"] :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1;min-width:0}
+[class*="theme-studio-"] :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;min-width:0}
+[class*="theme-studio-"] :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+[class*="theme-studio-"] :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {font-size:10.5pt}
+
+/* 4: independently styled modular panels, with joined entry fragments. */
+.resume-paper.theme-studio-modular-cards {background:#eef2f7}
+.theme-studio-modular-cards .resume-content > :is(h1,p,h2) {background:white;padding-left:18px;padding-right:18px;margin-top:0;margin-bottom:0}
+.theme-studio-modular-cards .resume-content > h1 {padding-top:18px;border-radius:12px 12px 0 0}
+.theme-studio-modular-cards .resume-content > h2 {padding-top:16px;border:0;font-size:10pt}
+.theme-studio-modular-cards .resume-content > h2 + p {padding-top:6px;padding-bottom:18px;border-radius:0 0 12px 12px}
+.theme-studio-modular-cards .resume-avatar {position:relative;margin:18px 18px 10px 20px}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 {background:#fff;border-radius:8px 8px 0 0;padding:12px 14px 5px;margin-bottom:0}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p {background:#fff;padding:0 14px 10px;margin:0;border-radius:0 0 8px 8px;color:#526278}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p:has(+ ul) {border-radius:0}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p + ul {background:#fff;padding:0 14px 12px 30px;margin-top:0;border-radius:0 0 8px 8px}
+.theme-studio-modular-cards .resume-content h2 {border-left:4px solid #547bc1;padding-left:10px;border-bottom:0}
+
+/* 6: grouped skill cards, with independent work-entry side rules. */
+.theme-studio-skill-cards .resume-content > h1 + p + p {clear:both;border-top:2px solid #5276ba;padding:8px 12px;background:#eff3fb}
+.theme-studio-skill-cards :is(.resume-column-main,.resume-layout-column-main) > :is(h3,p,ul) {border-left:2px solid #c7d5eb;padding-left:14px}
+.theme-studio-skill-cards :is(.resume-column-main,.resume-layout-column-main) > ul {padding-left:30px}
+.theme-studio-skill-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h3 {padding:12px 12px 5px;background:#edf2fb;border-radius:8px 8px 0 0;margin-bottom:0;border-top:3px solid #8eabda}
+.theme-studio-skill-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h3 + p {padding:0 12px 12px;background:#edf2fb;margin-top:0;border-radius:0 0 8px 8px}
+.theme-studio-skill-cards .resume-avatar {border-radius:3px}
+
+/* 9: two-tone identity rail and a separate opening summary panel. */
+.theme-studio-duotone-grid :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2.15fr);gap:24px;margin-top:0}
+.theme-studio-duotone-grid :is(.resume-column-main,.resume-layout-column-main) {grid-column:2}
+.theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1;background:#e9eef9;padding:20px 16px}
+.theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:none;margin:0 auto 16px;display:block;border:3px solid #fff}
+.theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {font-size:25pt;margin:0 -16px;padding:14px 16px 6px;background:#315696;color:white}
+.theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p,
+.theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p + p {background:#315696;color:white;margin:0 -16px;padding:4px 16px 10px}
+.theme-studio-duotone-grid :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {background:#e1e9f7;border:0;padding:14px 16px 0;margin-bottom:0}
+.theme-studio-duotone-grid :is(.resume-column-main,.resume-layout-column-main) > h2:first-child + p {background:#e1e9f7;padding:8px 16px 16px;margin-top:0;border-radius:0 0 8px 8px}
+
+/* 11: the large photo is a real avatar node, never a background image. */
+.theme-studio-portrait-feature :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2fr);margin-top:0;gap:28px}
+.theme-studio-portrait-feature :is(.resume-column-main,.resume-layout-column-main) {grid-column:2}
+.theme-studio-portrait-feature :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1;border-right:1px solid #dce3ed;padding-right:20px}
+.theme-studio-portrait-feature :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:none;display:block;margin:0 auto 18px;border-radius:4px;max-width:100%}
+.theme-studio-portrait-feature :is(.resume-column-main,.resume-layout-column-main) h1 {background:#315b95;color:#fff;font-size:25pt;padding:14px 16px 6px;margin-bottom:0}
+.theme-studio-portrait-feature :is(.resume-column-main,.resume-layout-column-main) h1 + p,
+.theme-studio-portrait-feature :is(.resume-column-main,.resume-layout-column-main) h1 + p + p {background:#315b95;color:#fff;padding:4px 16px 12px;margin:0}
+.theme-studio-portrait-feature :is(.resume-column-main,.resume-layout-column-main) h2 {border-bottom:2px solid #829bbd;letter-spacing:.08em}
+
+/* 110: connected portrait/contact masthead and two-layer capsule rules. */
+.theme-studio-layered-capsule .resume-avatar {float:left;margin:0 20px 8px 14px;position:relative;border:4px solid white}
+.theme-studio-layered-capsule .resume-content h1 {padding-top:4px}
+.theme-studio-layered-capsule .resume-content h1 + p + p {background:#edf0fc;border-radius:0 10px 10px 10px;padding:12px 16px;margin-top:0;min-height:36px}
+.theme-studio-layered-capsule .resume-content h2 {border:0;border-radius:24px;background:linear-gradient(to right,#4168ba 0 112px,#edf0fc 112px);color:#fff;padding:5px 18px;font-size:11pt;letter-spacing:.04em;margin-top:14px}
+.theme-studio-layered-capsule .resume-content h3 {margin-top:8px}
+.theme-studio-layered-capsule .resume-content :is(ul,ol) {margin-top:4px;margin-bottom:8px}
+.theme-studio-layered-capsule .resume-content p {margin-top:3px;margin-bottom:6px}
+
+/* 240: centered identity, a compact index, and continuous timeline rules. */
+.theme-studio-node-timeline .resume-avatar {float:none;display:block;margin:0 auto 10px;border-radius:5px}
+.theme-studio-node-timeline .resume-content > :is(h1,p) {text-align:center}
+.theme-studio-node-timeline :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2.2fr);gap:28px}
+.theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) {grid-column:2;border-left:2px solid #b7cbed;padding-left:20px}
+.theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1}
+.theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) h3 {position:relative}
+.theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) h3::before {content:"";position:absolute;left:-26px;top:.45em;width:9px;height:9px;background:#547bc1;border-radius:50%;box-shadow:0 0 0 3px #edf3fb}
+.theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {text-align:center;border-bottom:0}
+.theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {border-bottom:3px solid #a9bedf;padding-bottom:6px}
+
+/* Featured blue catalog: editable typography shared by preview, editor and PDF. */
+[class*="theme-featured-"] :is(.resume-columns,.resume-layout-columns) {min-height:0;clear:both}
+[class*="theme-featured-"] .resume-content h3 {color:#242a35;font-weight:600}
+[class*="theme-featured-"] .resume-avatar {overflow:hidden}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content {color:#242a35;line-height:1.5}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h1 {font-size:23pt;text-align:left;line-height:1.2;margin:0 0 8px;color:var(--preview-accent)}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h1 + p {text-align:left;margin:0 0 8px;font-size:11pt}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h2 {font-size:11pt;line-height:1.4;border:0;margin:18px 0 8px;color:var(--preview-accent);clear:both}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h3 {font-size:10.5pt;margin:12px 0 4px;float:none;max-width:none}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content p {margin:4px 0 7px}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content h3 + p {font-size:9pt;color:#5e6877;text-align:left;padding:0}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content ul {margin:5px 0 10px;padding-left:17px}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-content li {margin:3px 0}
+:is(.theme-featured-campus,.theme-featured-professional,.theme-featured-intern,.theme-featured-sales,.theme-featured-product,.theme-featured-finance,.theme-featured-people) .resume-avatar {border-radius:2px;border:0;box-shadow:none;margin:0 0 12px 18px}
+:is(.theme-featured-campus,.theme-featured-sales,.theme-featured-finance) :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,2.4fr) minmax(0,1fr);gap:22px;margin-top:18px;align-items:stretch}
+:is(.theme-featured-campus,.theme-featured-sales,.theme-featured-finance) :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1}
+:is(.theme-featured-campus,.theme-featured-sales,.theme-featured-finance) :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;padding:16px 14px;background:#f1f4fc}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2.25fr);gap:24px;margin-top:0;align-items:stretch}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-main,.resume-layout-column-main) {grid-column:2;grid-row:1}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1;grid-row:1;background:#dce5fc;padding:20px 15px}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:none;display:block;margin:0 auto 12px}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {font-size:19pt}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {border-bottom:1px solid #91aee9;padding-bottom:5px}
+:is(.theme-featured-professional,.theme-featured-product) :is(.resume-column-sidebar,.resume-layout-column-sidebar) p {font-size:9pt;overflow-wrap:anywhere}
+
+/* 40: continuous blue masthead, summary inside, pale supporting rail below. */
+.theme-featured-campus .resume-content > :is(h1,p,h2) {background:var(--preview-accent);color:white;padding:6px 18px;margin:0}
+.theme-featured-campus .resume-content > h1 {padding-top:14px;border-radius:6px 6px 0 0}
+.theme-featured-campus .resume-content > h1 + p {margin:0;color:white}
+.theme-featured-campus .resume-content > h2 {font-size:10pt;clear:none;padding-top:10px}
+.theme-featured-campus .resume-content > h2 + p {padding-bottom:18px;border-radius:0 0 6px 6px}
+.theme-featured-campus .resume-avatar {position:relative;margin:18px 18px 8px 20px}
+.theme-featured-campus :is(.resume-column-main,.resume-layout-column-main) h2 {border-left:3px solid var(--preview-accent);padding-left:9px}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) h2 {margin-top:12px;margin-bottom:5px}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) h3 {margin-top:8px}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) li {margin:2px 0}
+.theme-featured-campus .resume-content :is(.resume-column,.resume-layout-column) ul {margin-bottom:6px}
+
+/* 60: the identity belongs to the pale full-height left rail. */
+.theme-featured-professional :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {text-align:center;color:#252e40}
+.theme-featured-professional :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p {text-align:center}
+.theme-featured-professional :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p + p {border:1px solid #91aee9;border-radius:4px;padding:9px}
+.theme-featured-professional :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0}
+
+/* 70: open identity above capsule chapter rules; unlike 110, no contact panel. */
+.theme-featured-intern .resume-avatar {float:left;margin:0 20px 12px 0}
+.theme-featured-intern .resume-content h2 {position:relative;isolation:isolate;background:#edf1fc;border-radius:20px;color:#fff;padding:5px 16px}
+.theme-featured-intern .resume-content h2::before {content:"";position:absolute;inset:0 auto 0 0;width:112px;max-width:100%;background:var(--preview-accent);border-radius:20px;z-index:-1}
+.theme-featured-intern .resume-content > h1 + p + p {padding-bottom:10px;border-bottom:1px solid #edf1fc}
+
+/* 120: white identity/main column, saturated supporting column extending down. */
+.theme-featured-sales :is(.resume-columns,.resume-layout-columns) {margin-top:0;min-height:255mm}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:var(--preview-accent);color:white}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) :is(h2,h3,p) {color:white}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 + p {color:white}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {border-bottom:1px solid #8cacf7;padding-bottom:6px}
+.theme-featured-sales :is(.resume-column-sidebar,.resume-layout-column-sidebar) p {font-size:9pt}
+.theme-featured-sales .resume-avatar {float:left;margin:0 16px 12px 0}
+.theme-featured-sales .resume-content h1 {font-size:20pt;color:#242a35}
+.theme-featured-sales :is(.resume-column-main,.resume-layout-column-main) h2 {border-bottom:1px solid #aeb6c5;padding-bottom:4px;color:#242a35}
+
+/* 160: blue identity tile and adjacent light summary, then two continuous rails. */
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:#dce5fc;padding-top:0}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(h1,p):not(h2 ~ *) {background:var(--preview-accent);color:white;margin:0 -15px;padding:6px 15px}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h1 {padding-top:16px!important}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h1 + p {margin-bottom:0;font-size:9pt}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:left;margin:14px 10px 8px 0;position:relative}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0;padding:12px 14px 0;background:#dce5fc}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child + p {background:#dce5fc;margin-top:0;padding:8px 14px 14px}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) h2:not(:first-child) {border-bottom:1px solid #a7bff0;padding-bottom:5px}
+
+/* 90: continuous slim experience rules and discrete skill cards. */
+.theme-featured-finance .resume-content > h1 + p + p {border-top:2px solid #86aaff;padding-top:9px;clear:both}
+.theme-featured-finance :is(.resume-column-main,.resume-layout-column-main) > :is(h3,p,ul) {border-left:2px solid #bdd0f8;padding-left:14px}
+.theme-featured-finance :is(.resume-column-main,.resume-layout-column-main) > ul {padding-left:30px}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:white;border-left:1px solid #cfdbf2;padding-top:0}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {background:#eff3fc;padding:10px 10px 4px;margin-bottom:0;border-top:2px solid #a7bef1}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 ~ p {background:#eff3fc;padding:4px 10px;margin:0 0 6px}
+
+/* 130: full-width blue chapter strips; English cues are decoration, not data. */
+.theme-featured-people .resume-content h1 {color:#242a35}
+.resume-paper.theme-featured-people .resume-content {font-size:var(--resume-font-size,var(--preview-font-size));line-height:var(--resume-line-height,var(--preview-line-height))}
+.theme-featured-people .resume-content h2 {margin-top:12px;margin-bottom:6px}
+.theme-featured-people .resume-content h3 {margin-top:8px}
+.theme-featured-people .resume-content :is(ul,ol) {margin-top:4px;margin-bottom:6px}
+.theme-featured-people .resume-content li {margin:2px 0}
+.theme-featured-people .resume-content h3:has(+ p + p) {float:left;max-width:65%;margin-right:10px}
+.theme-featured-people .resume-content h3 + p:has(+ p) {text-align:right;padding-top:8px}
+.theme-featured-people .resume-content h3 + p + p {clear:both}
+.theme-featured-people .resume-content h2 {background:#4776d2;color:white;padding:5px 12px;font-weight:600}
+.theme-featured-people .resume-content h2::after {font-size:8pt;font-weight:400;margin-left:12px;letter-spacing:.02em}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="education"])::after {content:"Education"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="work"])::after {content:"Experience"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="project"])::after {content:"Projects"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="profile"])::after {content:"Profile"}
+.theme-featured-people .resume-content h2:has([data-resume-semantic-kind="skills"])::after {content:"Skills"}
+
+/* 170/180: rounded blue identity card with two chapter-navigation variants. */
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content {
+  position:relative;
+  color:#202633;
+  line-height:1.42;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > h1 {
+  box-sizing:border-box;
+  min-height:42px;
+  margin:0 0 0 82px;
+  padding:14px 86px 2px 16px;
+  border-radius:9px 9px 0 0;
+  background:var(--preview-accent);
+  color:#fff;
+  font-size:22pt;
+  line-height:1.1;
+  text-align:left;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > h1 + p {
+  margin:0 0 0 82px;
+  padding:2px 86px 3px 16px;
+  background:var(--preview-accent);
+  color:#fff;
+  font-size:10pt;
+  text-align:left;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > h1 + p + p {
+  margin:0 0 20px 82px;
+  padding:3px 86px 13px 16px;
+  border-radius:0 0 9px 9px;
+  background:var(--preview-accent);
+  color:#fff;
+  font-size:8.5pt;
+  text-align:left;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-avatar {
+  position:absolute;
+  z-index:1;
+  top:14px;
+  left:8px;
+  float:none;
+  margin:0;
+  border:3px solid #fff;
+  border-radius:5px;
+  box-shadow:0 2px 8px rgb(30 54 102 / 16%);
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h2 {
+  color:var(--preview-accent);
+  font-size:11pt;
+  font-weight:700;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3 {
+  margin:9px 0 2px;
+  color:#202633;
+  font-size:10pt;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3:has(+ p + p) {
+  float:left;
+  max-width:65%;
+  margin-right:10px;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3 + p:has(+ p) {
+  margin:9px 0 2px;
+  color:#48566f;
+  font-size:8.5pt;
+  text-align:right;
+}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content h3 + p + p {clear:both}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content p {margin:3px 0 6px}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content ul {margin:3px 0 8px;padding-left:17px}
+:is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content li {margin:2px 0}
+
+.theme-featured-card-dashed .resume-content h2 {
+  margin:14px 0 6px;
+  padding-bottom:4px;
+  border-bottom:1px dashed color-mix(in srgb,var(--preview-accent) 78%,white);
+}
+.theme-featured-card-dashed .resume-content h2:first-of-type {margin-top:4px}
+
+.theme-featured-card-rail .resume-content {
+  display:grid;
+  grid-template-columns:94px minmax(0,1fr);
+  column-gap:20px;
+  align-items:start;
+}
+.theme-featured-card-rail .resume-content > * {grid-column:2}
+.theme-featured-card-rail .resume-content > .resume-avatar {grid-column:1}
+.theme-featured-card-rail .resume-content > h2 {
+  grid-column:1;
+  align-self:start;
+  margin:14px 0 0;
+  padding-top:1px;
+  border:0;
+  text-align:right;
+}
+.theme-featured-card-rail .resume-content > h2 + :is(h3,p) {
+  margin-top:14px;
+  padding-top:1px;
+  border-top:1px solid color-mix(in srgb,var(--preview-accent) 56%,white);
+}
+.theme-featured-card-rail .resume-content > h1,
+.theme-featured-card-rail .resume-content > h1 + p,
+.theme-featured-card-rail .resume-content > h1 + p + p {
+  width:auto;
+  margin-left:0;
+}
+.theme-featured-card-rail .resume-content > h1 + p,
+.theme-featured-card-rail .resume-content > h1 + p + p {
+  box-shadow:0 -4px 0 var(--preview-accent);
+}
+.theme-featured-card-rail .resume-content > h1 + p + p {margin-bottom:8px}
+
+/* 190: quiet centered masthead with a conventional, scan-friendly business body. */
+.theme-featured-classic-business .resume-content {
+  position:relative;
+  color:#222936;
+  line-height:1.4;
+}
+.theme-featured-classic-business .resume-avatar {
+  position:absolute;
+  z-index:1;
+  top:12px;
+  left:50%;
+  float:none;
+  margin:0;
+  transform:translateX(-50%);
+  border:0;
+  border-radius:4px;
+  box-shadow:0 3px 10px rgb(37 62 111 / 18%);
+}
+.theme-featured-classic-business .resume-content > h1 {
+  margin:0;
+  padding:88px 18px 2px;
+  background:#edf3fd;
+  color:var(--preview-accent);
+  font-size:22pt;
+  line-height:1.08;
+  text-align:center;
+}
+.theme-featured-classic-business .resume-content > h1 + p {
+  margin:0;
+  padding:2px 18px 5px;
+  background:#edf3fd;
+  color:#52617a;
+  font-size:9.5pt;
+  text-align:center;
+}
+.theme-featured-classic-business .resume-content > h1 + p + p {
+  margin:0 0 12px;
+  padding:5px 18px 12px;
+  background:#edf3fd;
+  color:#52617a;
+  font-size:8.5pt;
+  text-align:center;
+}
+.theme-featured-classic-business .resume-content h2 {
+  margin:12px 0 5px;
+  padding-bottom:3px;
+  border-bottom:1.5px solid var(--preview-accent);
+  color:var(--preview-accent);
+  font-size:10.5pt;
+  font-weight:700;
+}
+.theme-featured-classic-business .resume-content h3 {
+  margin:7px 0 1px;
+  color:#252b36;
+  font-size:9.5pt;
+  font-weight:650;
+}
+.theme-featured-classic-business .resume-content h3:has(+ p + p) {
+  float:left;
+  max-width:68%;
+  margin-right:10px;
+}
+.theme-featured-classic-business .resume-content h3 + p:has(+ p) {
+  margin:7px 0 1px;
+  color:#4b5669;
+  font-size:8pt;
+  text-align:right;
+}
+.theme-featured-classic-business .resume-content h3 + p + p {clear:both}
+.theme-featured-classic-business .resume-content p {margin:2px 0 4px}
+.theme-featured-classic-business .resume-content ul {margin:2px 0 6px;padding-left:17px}
+.theme-featured-classic-business .resume-content li {margin:1px 0}
+
+/* 200: warm identity card, compact achievement cards and a dedicated skills rail. */
+.resume-paper.theme-featured-vitality {background:#fffaf7}
+.theme-featured-vitality .resume-content {
+  position:relative;
+  color:#30333a;
+  line-height:1.42;
+}
+.theme-featured-vitality .resume-avatar {
+  position:absolute;
+  z-index:1;
+  top:12px;
+  right:10px;
+  float:none;
+  margin:0;
+  border:0;
+  border-radius:4px;
+  box-shadow:0 3px 10px rgb(82 58 44 / 18%);
+}
+.theme-featured-vitality .resume-content > h1,
+.theme-featured-vitality .resume-content > h1 + p,
+.theme-featured-vitality .resume-content > h1 + p + p,
+.theme-featured-vitality .resume-content > h1 + p + p + h2,
+.theme-featured-vitality .resume-content > h1 + p + p + h2 + p {
+  box-sizing:border-box;
+  margin:0;
+  padding-right:90px;
+  padding-left:18px;
+  background:#fff;
+}
+.theme-featured-vitality .resume-content > h1 {
+  padding-top:18px;
+  padding-bottom:2px;
+  border:1px solid #f2e5de;
+  border-bottom:0;
+  border-radius:9px 9px 0 0;
+  color:var(--preview-accent);
+  font-size:22pt;
+  line-height:1.1;
+  text-align:left;
+}
+.theme-featured-vitality .resume-content > h1 + p {
+  padding-top:1px;
+  padding-bottom:7px;
+  border-right:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  color:#4d5562;
+  font-size:9.5pt;
+  text-align:left;
+}
+.theme-featured-vitality .resume-content > h1 + p + p {
+  padding-top:3px;
+  padding-bottom:13px;
+  border-right:1px solid #f2e5de;
+  border-bottom:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  color:#67707c;
+  font-size:8pt;
+  text-align:left;
+}
+.theme-featured-vitality .resume-content > h1 + p + p + h2 {
+  margin-top:0;
+  padding-top:10px;
+  padding-bottom:4px;
+  border-right:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  color:#30333a;
+  font-size:0;
+}
+.theme-featured-vitality .resume-content > h1 + p + p + h2::before {
+  display:block;
+  height:1px;
+  background:#f0e4de;
+  content:"";
+}
+.theme-featured-vitality .resume-content > h1 + p + p + h2 + p {
+  margin-bottom:14px;
+  padding-top:5px;
+  padding-bottom:12px;
+  border-right:1px solid #f2e5de;
+  border-bottom:1px solid #f2e5de;
+  border-left:1px solid #f2e5de;
+  border-radius:0 0 9px 9px;
+  box-shadow:0 2px 8px rgb(82 58 44 / 6%);
+}
+.theme-featured-vitality :is(.resume-columns,.resume-layout-columns) {
+  display:grid;
+  grid-template-columns:minmax(0,2.35fr) minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+  clear:both;
+}
+.theme-featured-vitality :is(.resume-column-main,.resume-layout-column-main) {grid-column:1;grid-row:1;min-width:0}
+.theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:2;grid-row:1;min-width:0}
+.theme-featured-vitality .resume-content h2 {
+  margin:10px 0 6px;
+  padding-left:8px;
+  border:0;
+  border-left:3px solid var(--preview-accent);
+  color:var(--preview-accent);
+  font-size:10.5pt;
+  font-weight:700;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > h2:first-child {margin-top:0}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 {
+  margin:0;
+  padding:10px 11px 2px;
+  border:1px solid #f1e9e4;
+  border-bottom:0;
+  border-radius:6px 6px 0 0;
+  background:#fff;
+  color:#30333a;
+  font-size:9.5pt;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p {
+  margin:0;
+  padding:3px 11px 7px;
+  border-right:1px solid #f1e9e4;
+  border-left:1px solid #f1e9e4;
+  background:#fff;
+  color:#657080;
+  font-size:8pt;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p:not(:has(+ p)):not(:has(+ ul)) {
+  margin-bottom:7px;
+  padding-bottom:10px;
+  border-bottom:1px solid #f1e9e4;
+  border-radius:0 0 6px 6px;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p + p {
+  margin:0;
+  padding:3px 11px 7px;
+  border-right:1px solid #f1e9e4;
+  border-left:1px solid #f1e9e4;
+  background:#fff;
+  color:#30333a;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) h3 + p + p:not(:has(+ ul)) {
+  margin-bottom:7px;
+  padding-bottom:10px;
+  border-bottom:1px solid #f1e9e4;
+  border-radius:0 0 6px 6px;
+}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) :is(h3 + p + ul,h3 + p + p + ul) {
+  margin:0 0 7px;
+  padding:0 11px 10px 27px;
+  border-right:1px solid #f1e9e4;
+  border-bottom:1px solid #f1e9e4;
+  border-left:1px solid #f1e9e4;
+  border-radius:0 0 6px 6px;
+  background:#fff;
+}
+.theme-featured-vitality .resume-content li {margin:2px 0}
+.theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {color:#34373e}
+.theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 + p {color:var(--preview-accent)}
+
 /* 深蓝行政双栏 */
 .theme-administrative-sidebar,
 .theme-administrative-sidebar .resume-content {
