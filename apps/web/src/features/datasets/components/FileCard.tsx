@@ -1,15 +1,16 @@
 import {api} from "../../../api/client";
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import { Download, FolderInput, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 
 import type { DatasetRecord } from "../../../api/client";
 import { DatasetSelectionCheckbox } from "../DatasetsPage";
-import { DocumentThumbnail } from "./DocumentThumbnail";
+import { DatasetFileTypeIcon } from "./DatasetFileTypeIcon";
 
 type FileCardProps = {
   dataset: DatasetRecord;
   batchMode: boolean;
   selected: boolean;
+  active: boolean;
   selectionDisabled: boolean;
   menuOpen: boolean;
   busy: boolean;
@@ -18,7 +19,7 @@ type FileCardProps = {
   statusLabel: string;
   statusKind: "queued" | "processing" | "succeeded" | "failed";
   statusReason: string | null;
-  onPreview: (dataset: DatasetRecord, trigger: HTMLElement) => void;
+  onSelect: (dataset: DatasetRecord) => void;
   onToggleSelection: (id: string, checked: boolean) => void;
   onToggleMenu: (id: string) => void;
   onRename: (dataset: DatasetRecord) => void;
@@ -32,6 +33,7 @@ export function FileCard({
   dataset,
   batchMode,
   selected,
+  active,
   selectionDisabled,
   menuOpen,
   busy,
@@ -40,7 +42,7 @@ export function FileCard({
   statusLabel,
   statusKind,
   statusReason,
-  onPreview,
+  onSelect,
   onToggleSelection,
   onToggleMenu,
   onRename,
@@ -49,7 +51,6 @@ export function FileCard({
   onDelete,
   onDownload,
 }: FileCardProps) {
-  const graphicId = useId();
   const [replacementError,setReplacementError]=useState("");
   const [replacementBusy,setReplacementBusy]=useState(false);
   const retryRequest=useRef<string|null>(null);
@@ -73,7 +74,7 @@ export function FileCard({
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!isInteractive || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
-    onPreview(dataset, event.currentTarget);
+    onSelect(dataset);
   };
 
   const format = (dataset.file_format || "file").toLowerCase();
@@ -81,47 +82,32 @@ export function FileCard({
   const uploadDate = Number.isNaN(uploadedAt.getTime()) ? "" : new Intl.DateTimeFormat("zh-CN", {
     year: "numeric", month: "2-digit", day: "2-digit",
   }).format(uploadedAt).replace(/\//g, "-");
+  const mediaReady = (dataset.asset_kind === "audio" || dataset.asset_kind === "video")
+    && dataset.upload_status === "succeeded";
 
   return (
     <article
-      className={`macos-file-item${isInteractive ? " is-clickable" : ""}`}
+      className={`macos-file-item${isInteractive ? " is-clickable" : ""}${active ? " is-active" : ""}`}
       role={isInteractive ? "button" : undefined}
       tabIndex={isInteractive ? 0 : undefined}
-      aria-label={isInteractive ? `打开「${displayName}」解析预览` : undefined}
-      onClick={isInteractive ? (event) => onPreview(dataset, event.currentTarget) : undefined}
+      aria-label={isInteractive ? `选择「${displayName}」查看详情` : undefined}
+      aria-pressed={isInteractive ? active : undefined}
+      onClick={isInteractive ? () => onSelect(dataset) : undefined}
       onKeyDown={handleKeyDown}
     >
       <div className="dataset-cell dataset-cell-name">
         <div className="macos-file-graphic" aria-hidden="true">
-          <DocumentThumbnail dataset={replacing?{...dataset,parse_status:"processing"}:dataset} fallback={<>
-          <svg className="dataset-document-icon" viewBox="0 0 96 112" fill="none">
-            <defs>
-              <linearGradient id={`${graphicId}-paper`} x1="20" y1="4" x2="76" y2="108" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#f8fcff" />
-                <stop offset="1" stopColor="#c9e7fb" />
-              </linearGradient>
-              <linearGradient id={`${graphicId}-fold`} x1="63" y1="5" x2="84" y2="30" gradientUnits="userSpaceOnUse">
-                <stop stopColor="#b7ddf6" />
-                <stop offset="1" stopColor="#e9f6ff" />
-              </linearGradient>
-            </defs>
-            <path d="M18 4h43l25 25v69a10 10 0 0 1-10 10H18A10 10 0 0 1 8 98V14A10 10 0 0 1 18 4Z" fill={`url(#${graphicId}-paper)`} stroke="#a6cde6" />
-            <path d="M61 5v17a8 8 0 0 0 8 8h16" fill={`url(#${graphicId}-fold)`} stroke="#a6cde6" strokeLinejoin="round" />
-            <path d="M18 6h41M10 17v78" stroke="white" strokeOpacity="0.85" strokeLinecap="round" />
-          </svg>
+          <DatasetFileTypeIcon dataset={dataset} />
           <span className="dataset-document-format">{format.toUpperCase()}</span>
-          </>} />
         </div>
 
         <strong className="dataset-name macos-file-name" title={displayName}>
           {displayName}
         </strong>
         {uploadDate && <time className="dataset-file-date" dateTime={dataset.created_at}>上传于 {uploadDate}</time>}
-        {dataset.interview_label && (
-          <span className="dataset-interview-badge" title={`面试素材：${dataset.interview_label}`}>
-            面试 · {dataset.interview_label}
-          </span>
-        )}
+        <span className={`dataset-file-association${dataset.interview_label ? " is-linked" : ""}`} title={dataset.interview_label ?? undefined}>
+          {dataset.interview_label ? <><b>已关联 1 项</b><span>面试</span></> : "未关联内容"}
+        </span>
       </div>
 
       {replacing&&<p role="status">{dataset.replacement?.upload_status==="uploading"?"正在上传…":"正在解析…"}</p>}
@@ -134,7 +120,7 @@ export function FileCard({
       {/* 底部信息与操作框 */}
       <div className="macos-file-caption">
         <div className="macos-file-subrow">
-          {statusKind !== "succeeded" && statusKind !== "failed" && <span className={`dataset-status is-${statusKind}`} data-status={statusKind} title={statusReason ?? undefined}>
+          {!mediaReady && statusKind !== "succeeded" && statusKind !== "failed" && <span className={`dataset-status is-${statusKind}`} data-status={statusKind} title={statusReason ?? undefined}>
             <span className="dataset-status-mark" aria-hidden="true" />
             {statusLabel}
           </span>}

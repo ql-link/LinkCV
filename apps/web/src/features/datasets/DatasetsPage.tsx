@@ -40,6 +40,7 @@ import {
   PageLoading,
 } from "@/components/ui";
 import { CreateFolderCard, FolderCard } from "./components/FolderCard";
+import { DatasetDetailInspector } from "./components/DatasetDetailInspector";
 import { FileCard } from "./components/FileCard";
 import { datasetsPath, navigateTo } from "../../routing";
 import {
@@ -395,6 +396,7 @@ export function DatasetsPage({
   const [syncFailure, setSyncFailure] = useState<string | null>(null);
   const [pendingReplacementIds,setPendingReplacementIds] = useState<Set<string>>(new Set());
   const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
+  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<DatasetRecord | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -631,6 +633,7 @@ export function DatasetsPage({
   }, []);
 
   const handleSelectFolder = (folderId: string) => {
+    setActiveDatasetId(null);
     setSelectedFolderId(folderId);
     if (!embedded) navigateTo(datasetsPath(folderId));
   };
@@ -638,6 +641,7 @@ export function DatasetsPage({
   const handleBackToAll = () => {
     setBatchMode(false);
     setSelectedDatasetIds(new Set());
+    setActiveDatasetId(null);
     setSelectedFolderId("all");
     if (!embedded) navigateTo(datasetsPath("all"));
   };
@@ -913,6 +917,15 @@ export function DatasetsPage({
     });
   }, [datasets, keyword, selectedFolderId, pendingReplacementIds]);
 
+  const activeDataset = useMemo(
+    () => filteredDatasets.find((dataset) => dataset.id === activeDatasetId) ?? null,
+    [activeDatasetId, filteredDatasets],
+  );
+
+  useEffect(() => {
+    if (activeDatasetId !== null && activeDataset === null) setActiveDatasetId(null);
+  }, [activeDataset, activeDatasetId]);
+
   const selectedDatasetCount = selectedDatasetIds.size;
   const filteredDatasetIds = filteredDatasets.map((dataset) => dataset.id);
   const allFilteredSelected = filteredDatasetIds.length > 0
@@ -929,6 +942,7 @@ export function DatasetsPage({
       return;
     }
     setSelectedDatasetIds(new Set());
+    setActiveDatasetId(null);
     setBatchMode(true);
   };
 
@@ -1203,15 +1217,16 @@ export function DatasetsPage({
                             dataset={dataset}
                             batchMode={batchMode}
                             selected={selectedDatasetIds.has(dataset.id)}
+                            active={activeDatasetId === dataset.id}
                             selectionDisabled={batchDeleteBusy}
                             menuOpen={menuDatasetId === dataset.id}
                             busy={busyAction?.id === dataset.id}
                             displayName={datasetDisplayName(dataset)}
-                            isInteractive={!isMediaDataset(dataset) && datasetVisualStatus(dataset) === "succeeded" && !batchMode}
+                            isInteractive={!batchMode}
                             statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
                             statusKind={datasetVisualStatus(dataset)}
                             statusReason={datasetStatusReason(dataset)}
-                            onPreview={openPreview}
+                            onSelect={(item) => setActiveDatasetId(item.id)}
                             onToggleSelection={toggleDatasetSelection}
                             onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
                             onRename={startRename}
@@ -1248,22 +1263,24 @@ export function DatasetsPage({
                       </section>
                     )
                   ) : (
-                    <div className="dataset-unified-grid" aria-label="文件夹内部资料列表">
-                      {filteredDatasets.map((dataset) => (
+                    <div className="dataset-folder-content">
+                      <div className="dataset-unified-grid dataset-folder-files-grid" aria-label="文件夹内部资料列表">
+                        {filteredDatasets.map((dataset) => (
                         <FileCard
                           key={dataset.id}
                           dataset={dataset}
                           batchMode={batchMode}
                           selected={selectedDatasetIds.has(dataset.id)}
+                          active={activeDatasetId === dataset.id}
                           selectionDisabled={batchDeleteBusy}
                           menuOpen={menuDatasetId === dataset.id}
                           busy={busyAction?.id === dataset.id}
                           displayName={datasetDisplayName(dataset)}
-                          isInteractive={!isMediaDataset(dataset) && datasetVisualStatus(dataset) === "succeeded" && !batchMode}
+                          isInteractive={!batchMode}
                           statusLabel={datasetStatusLabel(datasetVisualStatus(dataset))}
                           statusKind={datasetVisualStatus(dataset)}
                           statusReason={datasetStatusReason(dataset)}
-                          onPreview={openPreview}
+                          onSelect={(item) => setActiveDatasetId(item.id)}
                           onToggleSelection={toggleDatasetSelection}
                           onToggleMenu={(id) => setMenuDatasetId((current) => current === id ? null : id)}
                           onRename={startRename}
@@ -1272,7 +1289,23 @@ export function DatasetsPage({
                           onDelete={startDelete}
                           onDownload={(item) => void downloadDataset(item)}
                         />
-                      ))}
+                        ))}
+                      </div>
+                      <DatasetDetailInspector
+                        dataset={activeDataset}
+                        displayName={activeDataset ? datasetDisplayName(activeDataset) : ""}
+                        available={Boolean(activeDataset && (
+                          isMediaDataset(activeDataset)
+                            ? activeDataset.upload_status === "succeeded"
+                            : datasetVisualStatus(activeDataset) === "succeeded"
+                        ))}
+                        onManage={() => navigateTo("/career/applications")}
+                        onOpen={(trigger) => {
+                          if (!activeDataset) return;
+                          if (isMediaDataset(activeDataset)) void downloadDataset(activeDataset);
+                          else openPreview(activeDataset, trigger);
+                        }}
+                      />
                     </div>
                   )}
                 </div>

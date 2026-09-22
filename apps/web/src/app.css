@@ -7747,3 +7747,343 @@ select:not([data-slot]):focus-visible,
 
 .dataset-replacement-feedback { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; color: var(--ui-text-muted); font-size: 12px; }
 .dataset-replacement-feedback button { text-decoration: underline; }
+
+/* 资料库文件详情方案：文件区 + 持久详情栏 */
+.dataset-folder-content {
+  display: grid;
+  grid-template-columns: minmax(0, 936px) 384px;
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+}
+
+.dataset-folder-files-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 24px;
+  align-content: start;
+  min-width: 0;
+}
+
+.datasets-page .dataset-folder-files-grid .macos-file-item {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 192px;
+  padding: 12px 10px;
+  align-items: flex-start;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  transition: background-color var(--ui-duration-fast) var(--ui-ease-standard);
+}
+
+.datasets-page .dataset-folder-files-grid .macos-file-item:hover {
+  background: color-mix(in srgb, var(--ui-accent-subtle) 46%, transparent);
+}
+
+.datasets-page .dataset-folder-files-grid .macos-file-item.is-active {
+  background: #eef4fd;
+}
+
+.datasets-page .dataset-folder-files-grid .macos-file-item.is-clickable:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+
+.datasets-page .dataset-folder-files-grid .macos-file-graphic {
+  width: 48px;
+  height: 65px;
+  margin: 0 0 5px;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.dataset-file-type-icon {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.dataset-file-type-icon.is-generic {
+  color: var(--ui-text-secondary);
+  stroke-width: 1.5;
+}
+
+.datasets-page .dataset-folder-files-grid .dataset-document-format {
+  position: static;
+  width: auto;
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 13px;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.datasets-page .dataset-folder-files-grid .dataset-name.macos-file-name {
+  width: 100%;
+  max-width: 148px;
+  min-height: 36px;
+  color: var(--ui-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.datasets-page .dataset-folder-files-grid .dataset-file-date {
+  margin-top: 2px;
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.dataset-file-association {
+  display: flex;
+  min-height: 14px;
+  margin-top: 5px;
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 14px;
+  flex-direction: column;
+}
+
+.dataset-file-association.is-linked {
+  color: var(--ui-accent);
+}
+
+.dataset-file-association b {
+  font-weight: 600;
+}
+
+.datasets-page .dataset-folder-files-grid .macos-file-caption {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  pointer-events: none;
+}
+
+.datasets-page .dataset-folder-files-grid .macos-file-subrow {
+  min-height: 0;
+}
+
+.datasets-page .dataset-folder-files-grid .dataset-row-actions.macos-file-actions {
+  top: 8px;
+  right: 6px;
+  left: auto;
+  pointer-events: auto;
+}
+
+.datasets-page .dataset-folder-files-grid .dataset-status,
+.datasets-page .dataset-folder-files-grid .dataset-file-retry {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  pointer-events: auto;
+}
+
+.datasets-page .dataset-folder-files-grid .dataset-file-retry {
+  padding: 0;
+}
+
+.dataset-detail-inspector {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 394px;
+  padding: 24px 24px 20px;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  background: var(--ui-surface);
+}
+
+.dataset-detail-header,
+.dataset-detail-section-heading,
+.dataset-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dataset-detail-header h2 {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.dataset-detail-header > span {
+  border-radius: 999px;
+  background: #eef5ff;
+  padding: 4px 9px;
+  color: #2672ea;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.dataset-detail-file-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 18px;
+}
+
+.dataset-detail-file-summary > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dataset-detail-file-summary strong {
+  overflow: hidden;
+  color: var(--ui-foreground);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-detail-file-summary span {
+  overflow: hidden;
+  color: #7a8494;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-detail-divider {
+  height: 1px;
+  margin: 18px 0;
+  background: #e9ecf0;
+}
+
+.dataset-detail-section-heading h3 {
+  margin: 0;
+  color: var(--ui-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.dataset-detail-section-heading button,
+.dataset-detail-actions button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: #2672ea;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.dataset-detail-section-heading button:hover,
+.dataset-detail-actions button:hover {
+  color: var(--ui-accent-hover);
+}
+
+.dataset-detail-section-heading button:focus-visible,
+.dataset-detail-actions button:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 3px;
+}
+
+.dataset-detail-associations {
+  min-height: 112px;
+  margin-top: 16px;
+}
+
+.dataset-detail-associations section {
+  display: grid;
+  gap: 5px;
+}
+
+.dataset-detail-associations section > span {
+  color: #2672ea;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.dataset-detail-associations section > strong {
+  color: var(--ui-foreground);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.dataset-detail-associations section > small,
+.dataset-detail-associations p,
+.dataset-detail-actions > span {
+  margin: 0;
+  color: #7a8494;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+.dataset-detail-actions {
+  min-height: 20px;
+  justify-content: flex-end;
+}
+
+.dataset-detail-empty {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 180px;
+  padding-top: 45px;
+  align-items: center;
+  flex-direction: column;
+  color: var(--ui-text-muted);
+  text-align: center;
+}
+
+.dataset-detail-empty strong {
+  margin-top: 8px;
+  color: var(--ui-text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.dataset-detail-empty span {
+  margin-top: 3px;
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+@media (max-width: 1180px) {
+  .dataset-folder-content {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+
+@media (max-width: 900px) {
+  .dataset-folder-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dataset-detail-inspector,
+  .dataset-detail-empty {
+    width: 100%;
+  }
+
+  .dataset-detail-empty {
+    min-height: 150px;
+    padding-top: 28px;
+  }
+}
