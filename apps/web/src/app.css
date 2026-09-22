@@ -4572,6 +4572,28 @@ select:not([data-slot]):focus-visible,
   overflow-y: auto;
 }
 
+.share-page-paper-wrap {
+  flex-shrink: 0;
+  /* 移动端 webview 的字体放大只抬字号、不动 210mm 纸宽，会让纸面整体重排变形 */
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+}
+
+/* 屏幕缩放（zoom/transform 回退）只服务小屏预览，打印仍输出原始 A4 文字版 */
+@media print {
+  .share-page-paper-wrap {
+    zoom: 1 !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .share-page-paper-inner {
+    width: auto !important;
+    transform: none !important;
+  }
+}
+
 @media screen {
   .share-page .share-page-paper {
     border: 1px solid #cfd4dc;
