@@ -88,7 +88,6 @@ afterEach(() => {
   editor = null;
   vi.restoreAllMocks();
 });
-
 describe("简历头像上下文操作", () => {
   it("头像 NodeView 外层不会成为模板绝对定位的包含块", () => {
     editor = new Editor({
@@ -261,6 +260,25 @@ describe("分栏栏数菜单", () => {
     expect(row).toHaveStyle({ "--resume-row-columns": "3" });
   });
 
+  it("输入法组合期间的按键不触发栏数切换或关闭菜单", async () => {
+    const row = await renderRow(["星河云科技", "2022.9 – 2026.6"]);
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menu", { name: "分栏栏数" })).toBeInTheDocument();
+
+    const composingEnter = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+    Object.defineProperty(composingEnter, "isComposing", { value: true });
+    act(() => { document.dispatchEvent(composingEnter); });
+
+    // 组合中的 Enter 不归菜单处理：菜单不关、栏数不变。
+    expect(screen.getByRole("menu", { name: "分栏栏数" })).toBeInTheDocument();
+    expect(editor?.state.doc.firstChild?.childCount).toBe(2);
+
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    });
+    expect(screen.queryByRole("menu", { name: "分栏栏数" })).not.toBeInTheDocument();
+  });
+
   it("只读编辑器里的分栏行不弹出栏数菜单", async () => {
     const row = await renderRow(["A", "B"], false);
     fireEvent.contextMenu(row);
@@ -398,6 +416,64 @@ describe("分栏分隔线拖拽", () => {
     expect(storedWidths()).toBeNull();
   });
 });
+
+
+describe("姓名下 headline 行样式标记", () => {
+  let editor: Editor | null = null;
+  afterEach(() => editor?.destroy());
+
+  function headlineParagraphs() {
+    return Array.from(editor!.view.dom.querySelectorAll("p.resume-identity-headline"));
+  }
+
+  it("h1 之后的首个有内容段落带 headline 类", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+          { type: "paragraph", content: [{ type: "text", text: "前端工程师" }] },
+          { type: "paragraph", content: [{ type: "text", text: "第二段" }] },
+        ],
+      },
+    });
+    expect(headlineParagraphs()).toHaveLength(1);
+    expect(headlineParagraphs()[0].textContent).toContain("前端工程师");
+  });
+
+  it("h1 与 headline 之间有空行时 headline 行仍带类", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "前端工程师" }] },
+        ],
+      },
+    });
+    expect(headlineParagraphs()).toHaveLength(1);
+    expect(headlineParagraphs()[0].textContent).toContain("前端工程师");
+  });
+
+  it("中间隔着标题或先有内容段落时不打类", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+        ],
+      },
+    });
+    expect(headlineParagraphs()).toHaveLength(0);
+  });
+});
+
 
 describe("叶子节点指针选区", () => {
   const IMAGE_DOC = {

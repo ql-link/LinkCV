@@ -5,6 +5,9 @@ import {
   convertResumeRowToParagraph,
   currentWorkbenchBlockCommandId,
   exitVisuallyBlankResumeListItem,
+  insertParagraphBeforeHeadingStart,
+  mergeHeadingStartIntoPreviousBlock,
+  removeBlankLineBeforeBlock,
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
   setResumeRowColumnWidths,
@@ -318,6 +321,249 @@ describe("convertCurrentLineToResumeRow", () => {
     expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["paragraph", "paragraph"]);
     expect(editor.getText()).toContain("上一行");
     expect(editor.getText()).toContain("下一行");
+  });
+
+  it.each([1, 2, 3])("%s 级标题行首回车在上方插入空段落而不是空标题", (level) => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "示例姓名" }] },
+          { type: "heading", attrs: { level }, content: [{ type: "text", text: "教育背景" }] },
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "heading"));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    const content = editor.getJSON().content;
+    expect(content?.map((node) => node.type)).toEqual(["paragraph", "paragraph", "heading", "paragraph"]);
+    expect(content?.[1].content).toEqual([expect.objectContaining({ type: "resumeBlockAnchor" })]);
+    expect(content?.[2].content).toEqual(expect.arrayContaining([{ type: "text", text: "教育背景" }]));
+    // 光标留在标题行首，与段落行首回车后光标不动的行为一致。
+    expect(editor.state.selection.$from.parent.type.name).toBe("heading");
+    expect(editor.state.selection.$from.parent.textContent).toBe("教育背景");
+    expect(editor.state.selection.$from.parentOffset).toBeLessThanOrEqual(1);
+  });
+
+  it("光标位于标题锚点之前时回车同样插入空段落", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "示例姓名" }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+        ],
+      },
+    });
+    let headingPosition = -1;
+    editor.state.doc.descendants((node, position) => {
+      if (headingPosition < 0 && node.type.name === "heading") headingPosition = position;
+    });
+    editor.commands.setTextSelection(headingPosition + 1);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["paragraph", "paragraph", "heading"]);
+    expect(editor.state.selection.$from.parent.textContent).toBe("教育背景");
+  });
+
+  it("标题中间回车仍按原样拆分标题", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] }],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "heading") + 2);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["heading", "heading"]);
+    expect(editor.getJSON().content?.[0].content).toEqual(expect.arrayContaining([{ type: "text", text: "教育" }]));
+    expect(editor.getJSON().content?.[1].content).toEqual(expect.arrayContaining([{ type: "text", text: "背景" }]));
+  });
+
+  it("非空标题行首退格把标题合并进上一段落，不留空标题节点", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "示例姓名" }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "heading"));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    const content = editor.getJSON().content;
+    expect(content?.map((node) => node.type)).toEqual(["paragraph", "paragraph"]);
+    expect(editor.getText()).toContain("示例姓名教育背景");
+    // 合并后段落中不应残留第二个定位锚点。
+    const anchors = content?.[0].content?.filter((node) => node.type === "resumeBlockAnchor");
+    expect(anchors).toHaveLength(1);
+    expect(editor.state.selection.$from.parent.textContent).toBe("示例姓名教育背景");
+  });
+
+  it("标题是文档首块或上一块不是文本块时行首退格不合并", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "resumeRow", content: [
+            { type: "paragraph", content: [{ type: "text", text: "左栏" }] },
+            { type: "paragraph", content: [{ type: "text", text: "右栏" }] },
+          ] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "heading"));
+
+    expect(mergeHeadingStartIntoPreviousBlock(editor)).toBe(false);
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["resumeRow", "heading"]);
+  });
+
+  it("行首之外的位置不会误触发插入段落或合并", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "示例姓名" }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "heading") + 2);
+
+    expect(insertParagraphBeforeHeadingStart(editor)).toBe(false);
+    expect(mergeHeadingStartIntoPreviousBlock(editor)).toBe(false);
+  });
+
+  it("标题行首退格且上一块是空段落时删除空行、保留标题", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph" },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "heading"));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    const content = editor.getJSON().content;
+    expect(content?.map((node) => node.type)).toEqual(["heading", "paragraph"]);
+    expect(editor.getText()).toContain("教育背景");
+    // 光标留在标题行首，标题仍是标题。
+    expect(editor.state.selection.$from.parent.type.name).toBe("heading");
+    expect(editor.state.selection.$from.parent.textContent).toBe("教育背景");
+  });
+
+  it("空行里按 Delete 时删除空行、光标落到下一行行首", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph" },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+        ],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph"));
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+
+    const content = editor.getJSON().content;
+    expect(content?.map((node) => node.type)).toEqual(["heading", "paragraph"]);
+    expect(editor.state.selection.$from.parent.type.name).toBe("heading");
+    expect(editor.state.selection.$from.parent.textContent).toBe("教育背景");
+  });
+
+  it("非空段落或下一块不是标题时 Delete 不误触发", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "示例姓名" }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+        ],
+      },
+    });
+    // 非空段落行尾。
+    let end = -1;
+    editor.state.doc.descendants((node, position) => {
+      if (end < 0 && node.type.name === "paragraph") end = position + node.nodeSize - 1;
+    });
+    editor.commands.setTextSelection(end);
+    expect(removeBlankLineBeforeBlock(editor)).toBe(false);
+
+    // 空段落下一块是正文：同样删除空行。
+    const editor2 = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "示例正文" }] },
+        ],
+      },
+    });
+    // 首个事务后隐藏锚点才插入；先落一次光标让锚点就位，再定位空行行首。
+    editor2.commands.setTextSelection(1);
+    editor2.commands.setTextSelection(2);
+    expect(removeBlankLineBeforeBlock(editor2)).toBe(true);
+    expect(editor2.getJSON().content).toHaveLength(1);
+    editor2.destroy();
+  });
+
+  it("正文行首退格且上一块是空段落时删除空行", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+          { type: "paragraph" },
+          { type: "paragraph", content: [{ type: "text", text: "示例大学" }] },
+        ],
+      },
+    });
+    // 首个事务后隐藏锚点才插入；先落一次光标让锚点就位，再定位正文行首。
+    editor.commands.setTextSelection(1);
+    let target = -1;
+    editor.state.doc.descendants((node, position) => {
+      if (target < 0 && node.type.name === "paragraph" && node.textContent === "示例大学") {
+        target = position + 2;
+      }
+    });
+    editor.commands.setTextSelection(target);
+
+    editor.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }));
+
+    const content = editor.getJSON().content;
+    expect(content?.map((node) => node.type)).toEqual(["heading", "paragraph"]);
+    expect(editor.getText()).toContain("示例大学");
+    expect(editor.state.selection.$from.parent.textContent).toBe("示例大学");
   });
 
   it.each(["bulletList", "orderedList"])("%s 的空列表项按 Backspace 后保留无标号的空白行", (listType) => {

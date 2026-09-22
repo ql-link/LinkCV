@@ -328,3 +328,67 @@ describe("行首图标", () => {
     editor.destroy();
   });
 });
+
+describe("命令菜单的输入法保护", () => {
+  function composingKeydown(key: string) {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    Object.defineProperty(event, "isComposing", { value: true });
+    return event;
+  }
+
+  function renderMenu() {
+    const editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "示例姓名" }] },
+          { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "教育背景" }] },
+        ],
+      },
+    });
+    const onClose = vi.fn();
+    render(
+      <SlashCommandMenu
+        editor={editor}
+        resumeId="42"
+        state={{ x: 10, y: 10, query: "", replaceRange: null }}
+        onClose={onClose}
+        onNotice={vi.fn()}
+      />,
+    );
+    return { editor, onClose };
+  }
+
+  it("组合期间的 Enter / 方向键 / Escape 都不触发菜单动作", () => {
+    const { editor, onClose } = renderMenu();
+    expect(document.querySelector(".workbench-command-menu")).not.toBeNull();
+
+    for (const key of ["Enter", "ArrowDown", "ArrowUp", "Escape"]) {
+      document.dispatchEvent(composingKeydown(key));
+    }
+
+    expect(onClose).not.toHaveBeenCalled();
+    // 文档没有被任何菜单命令改写。
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["paragraph", "heading"]);
+    expect(editor.getText()).toContain("教育背景");
+    editor.destroy();
+  });
+
+  it("非组合态 Enter 仍然执行当前选中命令", () => {
+    const { editor, onClose } = renderMenu();
+    // 光标移进标题，执行默认选中的「正文」命令后标题应变回段落。
+    let headingPosition = -1;
+    editor.state.doc.descendants((node, position) => {
+      if (headingPosition < 0 && node.type.name === "heading") headingPosition = position;
+    });
+    editor.commands.setTextSelection(headingPosition + 2);
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["paragraph", "paragraph"]);
+    expect(editor.getText()).toContain("教育背景");
+    editor.destroy();
+  });
+});
