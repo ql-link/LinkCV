@@ -32,7 +32,7 @@ Jenkins loads and registers the trigger from the updated `Jenkinsfile`.
 Subsequent pull-request merges into `master` emit a push event and start the
 Production job automatically.
 
-Jenkins 只归档当前提交，并使用 `/var/jenkins_home/.ssh/cloud_prod` 上传到 Cloud；`deploy/scripts/build-production-on-cloud.sh` 在 `/opt/tolink/LinkResume` 所在的真实生产主机完成双镜像构建、OSS 静态资源发布、迁移、Compose 更新、双健康检查和成对回滚。应用私密 `/opt/tolink/LinkResume/.env.production.local` 与仅供发布脚本使用的 `/opt/tolink/LinkResume/.env.oss-cdn.local` 都必须预先由部署密钥存储写入并设置为 `600`；后者沿用旧文件名以兼容现有主机配置，格式见 `deploy/oss-cdn.env.example`，不会传入 Compose。
+Jenkins 只归档当前提交，并使用 `/var/jenkins_home/.ssh/cloud_prod` 上传到 Cloud；`deploy/scripts/build-production-on-cloud.sh` 在 `/opt/tolink/LinkResume` 所在的真实生产主机完成双镜像构建、OSS 静态资源发布、停止旧运行时、迁移、Compose 更新和双健康检查。迁移开始后不自动回滚到可能与新 schema 不兼容的旧镜像；必须先恢复数据库备份才能恢复旧应用。应用私密 `/opt/tolink/LinkResume/.env.production.local` 与仅供发布脚本使用的 `/opt/tolink/LinkResume/.env.oss-cdn.local` 都必须预先由部署密钥存储写入并设置为 `600`；后者沿用旧文件名以兼容现有主机配置，格式见 `deploy/oss-cdn.env.example`，不会传入 Compose。
 
 ```dotenv
 MYSQL_USER=<deployment-user>
@@ -66,4 +66,4 @@ export LINKRESUME_HTTP_PORT=4174
 docker compose -f /opt/tolink/LinkResume/deploy/docker-compose.production.yml up -d --remove-orphans
 ```
 
-受保护的 Production 迁移目标是 `production / tolink-mysql:3306 / linkresume`。镜像构建不连接 MySQL；迁移成功后才更新 Compose。发布必须同时满足 `linkresume`、`linkresume-pi` 健康，Worker/Promtail 运行，以及 `/api/health`、`/api/agent/readiness` 可用。失败时脚本使用备份的上一版 Compose 和上一对镜像标签回滚；若上一版尚未包含 Pi，则使用其原 Compose 回滚，不能拿新 Compose 拼接旧单镜像。Redis 和 MinIO 继续通过同一外部网络访问 `tolink-redis:6379` 与 `http://tolink-minio:9000`。
+受保护的 Production 迁移目标是 `production / tolink-mysql:3306 / linkresume`。镜像构建不连接 MySQL；旧 LinkResume Web、Worker 和 Pi 停止后才运行 forward-only 迁移，迁移成功后才更新 Compose。发布必须同时满足 `linkresume`、`linkresume-pi` 健康，Worker/Promtail 运行，以及 `/api/health`、`/api/agent/readiness` 可用。迁移开始后失败会保持旧容器停止；只能前向修复，或先恢复数据库备份再使用备份的上一版 Compose 和成对镜像。Redis 和 MinIO 继续通过同一外部网络访问 `tolink-redis:6379` 与 `http://tolink-minio:9000`。

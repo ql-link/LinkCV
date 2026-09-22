@@ -145,7 +145,7 @@ export default defineConfig({
   },
   server: {
     // 允许隧道域名（如 *.trycloudflare.com）访问本地 dev server，便于分享预览链接验收
-    allowedHosts: true,
+    allowedHosts: [".trycloudflare.com"],
     proxy: {
       "/api": {
         target: backendTarget,

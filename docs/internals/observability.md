@@ -19,6 +19,8 @@ LinkResume 可观测性子系统负责请求上下文、结构化系统日志、
 
 中间件建立请求上下文，身份依赖绑定 actor，业务路由在通过归属检查后绑定 target，响应完成时输出成功或受控失败事件。Promtail 采集容器 JSONL 并写入共享 Loki；管理端只经 FastAPI 使用固定字段、时间窗口和游标查询。
 
+Agent 消息入口在解析上下文前由会话 ID 和幂等键确定性生成本轮 `operation_id`，并依次记录 `context_preflight` 和 `run_creation`；并发重试因此也落在同一观测链。成功创建的 `agent_runs.public_id` 复用同一值，FastAPI 到 Pi 的代理继续记录 `pi_dispatch`、`model_execution`、`stream_terminal` 和 `run_finalize` 的开始、结果、安全错误码与耗时；后续每次内部工具调用除写入 `agent_tool_calls` 的幂等终态外，也以它串联工具名、状态、scope、是否带选区、候选数量、目标字段、基础 lock version、耗时和稳定错误码。上下文不存在、越权、过期、澄清链冲突、Pi 连接失败、模型执行失败、缺失 SSE 终态和持久化失败都能按该 ID 定位。日志不记录用户提示词、澄清答案、简历正文、候选摘录或工具参数，因此可以定位阶段而不复制业务内容。
+
 LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) 管理；本子系统不复制模型计量。审计内容必须排除 Cookie、token、模型密钥、简历正文和文件内容等敏感数据。
 
 ## 事件与存储边界

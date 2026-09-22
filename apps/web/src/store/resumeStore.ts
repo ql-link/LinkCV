@@ -37,7 +37,20 @@ import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 import { buildNamedImportFile } from "../lib/resumeImport";
 
+import type { AtlasTheme } from "../api/atlasThemes";
+import type { StudioTheme } from "../api/studioThemes";
+import type { OpenTheme } from "../api/openThemes";
+import type { OriginalTheme } from "../api/originalThemes";
+import type { CareerTheme } from "../api/careerThemes";
+import type { FeaturedTheme } from "../api/featuredThemes";
+
 export type ResumeTheme =
+  | AtlasTheme
+  | StudioTheme
+  | OpenTheme
+  | OriginalTheme
+  | CareerTheme
+  | FeaturedTheme
   | "classic"
   | "modern"
   | "compact"
@@ -45,7 +58,13 @@ export type ResumeTheme =
   | "administrative-sidebar"
   | "campus-professional"
   | "civic-service"
-  | "creative-orange";
+  | "creative-orange"
+  | "right-rail"
+  | "sage-paper"
+  | "blue-ribbon"
+  | "timeline-gutter"
+  | "centered-portrait"
+  | "mist-masthead";
 
 export type ResumeSettings = {
   fontFamily: string;

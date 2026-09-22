@@ -61,6 +61,14 @@ REVISION_REMOVED_COLUMN_MARKERS = {
     "0034": {
         "job_descriptions": frozenset({"archived_at"}),
     },
+    "0065": {
+        "agent_sessions": frozenset({"resume_id"}),
+    },
+}
+REVISION_REMOVED_INDEX_MARKERS = {
+    "0065": {
+        "agent_sessions": frozenset({"idx_agent_sessions_resume_pinned_updated"}),
+    },
 }
 
 # 0051 repairs a profile table that may have been stamped past the actual
@@ -251,6 +259,28 @@ def validate_schema_revision_alignment(
             elif revision not in applied and missing:
                 drift.append(
                     f"{revision} columns removed before revision on {table_name}: "
+                    f"{', '.join(sorted(missing))}"
+                )
+
+    for revision, table_markers in REVISION_REMOVED_INDEX_MARKERS.items():
+        for table_name, removed_indexes in table_markers.items():
+            if table_name not in existing_tables:
+                continue
+            existing_indexes = {
+                str(index["name"])
+                for index in inspector.get_indexes(table_name)
+                if index.get("name") is not None
+            }
+            present = removed_indexes & existing_indexes
+            missing = removed_indexes - existing_indexes
+            if revision in applied and present:
+                drift.append(
+                    f"{revision} removed indexes still exist on {table_name}: "
+                    f"{', '.join(sorted(present))}"
+                )
+            elif revision not in applied and missing:
+                drift.append(
+                    f"{revision} indexes removed before revision on {table_name}: "
                     f"{', '.join(sorted(missing))}"
                 )
 

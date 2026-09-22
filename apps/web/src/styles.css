@@ -1039,7 +1039,8 @@ select:not([data-slot]):focus-visible {
   letter-spacing: -0.02em;
 }
 
-.resume-content h1 + p {
+.resume-content h1 + p,
+.resume-content p.resume-identity-headline {
   margin-top: 0;
   text-align: center;
   font-size: 8.8pt;
@@ -1939,7 +1940,39 @@ select:not([data-slot]):focus-visible {
   font-family: var(--resume-font-family);
   font-size: var(--resume-font-size);
   line-height: var(--resume-line-height);
-  caret-color: var(--ui-accent);
+  caret-color: transparent;
+}
+
+.resume-workbench .resume-content.ProseMirror * { caret-color: transparent; }
+
+.resume-adaptive-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.15em;
+  margin-inline: -1px;
+  vertical-align: -0.2em;
+  background: #fff;
+  mix-blend-mode: difference;
+  pointer-events: none;
+  animation: resume-adaptive-caret-blink 1s steps(1, end) infinite;
+}
+
+.resume-content.ProseMirror:not(.ProseMirror-focused) .resume-adaptive-caret { visibility: hidden; }
+.resume-content.ProseMirror.is-composing .resume-adaptive-caret { visibility: hidden; }
+.resume-content.ProseMirror.is-composing,
+.resume-content.ProseMirror.is-composing * { caret-color: auto; }
+
+@keyframes resume-adaptive-caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resume-adaptive-caret { animation: none; }
+}
+
+@media print {
+  .resume-adaptive-caret { display: none; }
 }
 
 .resume-workbench :where(.resume-content.ProseMirror > :not(.resume-avatar-node-view)) { position: relative; }
@@ -2133,7 +2166,7 @@ select:not([data-slot]):focus-visible {
 .resume-workbench .resume-content li { margin: 1px 0; }
 .resume-workbench .resume-content strong { color: inherit; font-weight: 600; }
 .resume-workbench .resume-content a { color: #3478f6; text-decoration-thickness: 1px; text-underline-offset: 2px; }
-.resume-workbench .resume-content ::selection { background: rgba(52, 120, 246, 0.2); }
+.resume-workbench .resume-content ::selection { background: color-mix(in srgb, currentColor 26%, transparent); }
 
 .resume-layout-row {
   --resume-column-guide: rgba(31, 41, 55, 0.16);
@@ -2213,7 +2246,12 @@ select:not([data-slot]):focus-visible {
 .resume-column-handle:hover::before,
 .resume-column-handle:focus-visible::before { opacity: 0.45; }
 .resume-column-handle:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: -1px; }
-.resume-layout-row.is-active {
+.resume-layout-row.is-active,
+[data-type="resume-trio-row"].is-active,
+[data-type="resume-meta-row"].is-active,
+.resume-layout-columns.is-active,
+.react-renderer.is-active > .resume-layout-row {
+  border-radius: 5px;
   background: rgba(52, 120, 246, 0.055);
   box-shadow: 0 0 0 1px rgba(52, 120, 246, 0.2);
 }
@@ -2221,7 +2259,9 @@ select:not([data-slot]):focus-visible {
 .resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:last-child {
   border-left: 1px solid var(--resume-column-guide);
 }
-.resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:last-child:has(> br.ProseMirror-trailingBreak)::before {
+/* 提示文字只在光标所在行、且该栏确实没有可见内容时出现；
+   栏内有文字但末尾残留定位锚点时同样会补出 ProseMirror-trailingBreak，不能用它判断空栏。 */
+.resume-layout-row.is-active:not(.is-equal)[data-blank-columns~="1"] [data-node-view-content-react] > p:last-child::before {
   float: right;
   height: 0;
   color: #8a8a8e;
@@ -2230,7 +2270,7 @@ select:not([data-slot]):focus-visible {
   font-size: 0.85em;
   pointer-events: none;
 }
-.resume-layout-row.is-active:not(.is-equal) [data-node-view-content-react] > p:first-child:has(> br.ProseMirror-trailingBreak)::before {
+.resume-layout-row.is-active:not(.is-equal)[data-blank-columns~="0"] [data-node-view-content-react] > p:first-child::before {
   float: left;
   height: 0;
   color: #8a8a8e;
@@ -2239,7 +2279,7 @@ select:not([data-slot]):focus-visible {
   font-size: 0.85em;
   pointer-events: none;
 }
-.resume-layout-row.is-equal [data-node-view-content-react] > p:first-child:has(> br.ProseMirror-trailingBreak)::before {
+.resume-layout-row.is-equal[data-blank-columns~="0"] [data-node-view-content-react] > p:first-child::before {
   float: left;
   height: 0;
   color: #8a8a8e;
@@ -2355,6 +2395,16 @@ select:not([data-slot]):focus-visible {
   padding: 5px;
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
   backdrop-filter: blur(18px) saturate(180%);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 节点选中态的 DOM 选区包住整个节点视图子树，工具条内容不该跟着染色。 */
+.resume-workbench .resume-content .media-context-toolbar ::selection,
+.resume-workbench .resume-content .media-context-toolbar::selection,
+.resume-workbench .resume-content .media-resize-handle::selection {
+  background: transparent;
+  color: inherit;
 }
 
 .media-context-toolbar button { display: grid; width: 30px; height: 30px; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--ui-text-muted); cursor: pointer; }

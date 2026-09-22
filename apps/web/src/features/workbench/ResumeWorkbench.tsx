@@ -27,7 +27,7 @@ import {
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import type { Instance as TippyInstance } from "tippy.js";
-import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
+import { api, ApiRequestError, type AgentSelectionContext, type ResumeTemplate } from "../../api/client";
 import { resumeImageContractErrorMessage } from "./resumeImageLimits";
 import {
   Button,
@@ -752,6 +752,9 @@ export function setWorkbenchEditorEditable(editor: RestorableEditor, editable: b
 }
 
 function plainParagraphsFromHtml(html: string) {
+  // 编辑器内部复制/剪切产生的 HTML 带 data-pm-slice 标记与 resume-* 节点结构，
+  // 原样交给 schema 解析才能保住分栏、图片等格式；外部来源的 HTML 仍拍平为纯段落。
+  if (html.includes("data-pm-slice")) return html;
   const root = document.createElement("div");
   root.innerHTML = html;
   const blockTags = new Set(["ADDRESS", "ARTICLE", "BLOCKQUOTE", "DIV", "H1", "H2", "H3", "H4", "H5", "H6", "LI", "P", "PRE", "SECTION", "TR"]);
@@ -995,9 +998,52 @@ export function FontPreviewSelect({
 type ResumeWorkbenchProps = {
   embedded?: boolean;
   onClose?: () => void;
+  onAgentSelectionChange?: (context: AgentSelectionContext | null) => void;
 };
 
-export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchProps = {}) {
+const AGENT_TARGET_ANCHOR_ROLES = new Set([
+  "entry-field", "contact", "row-block", "list-item",
+  "section-block", "entry-block", "block",
+]);
+
+async function selectionContextFromEditor(editor: Editor): Promise<AgentSelectionContext | null> {
+  const { from, to, empty } = editor.state.selection;
+  if (empty) return null;
+  const selectedText = editor.state.doc.textBetween(from, to, "\n", "\ufffc");
+  if (!selectedText.trim()) return null;
+  const blockIds: string[] = [];
+  editor.state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isTextblock) return true;
+    const anchors: Array<{ blockId: string; role: string }> = [];
+    node.forEach((child) => {
+      if (child.type.name !== "resumeBlockAnchor") return;
+      if (typeof child.attrs.blockId !== "string" || typeof child.attrs.role !== "string") return;
+      anchors.push({ blockId: child.attrs.blockId, role: child.attrs.role });
+    });
+    const directTargets = anchors.filter((anchor) => AGENT_TARGET_ANCHOR_ROLES.has(anchor.role));
+    const structural = anchors.find((anchor) => (
+      (anchors.some((item) => item.role === "section-title") && anchor.role === "section")
+      || (anchors.some((item) => item.role === "identity-name") && anchor.role === "identity")
+      || (anchors.some((item) => item.role === "entry-field") && anchor.role === "entry")
+    ));
+    (structural ? [structural] : directTargets.length ? directTargets : anchors.slice(0, 1))
+      .forEach((anchor) => blockIds.push(anchor.blockId));
+    return false;
+  });
+  const uniqueBlockIds = [...new Set(blockIds)];
+  if (!uniqueBlockIds.length) return null;
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(selectedText));
+  const hash = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+  return {
+    block_ids: uniqueBlockIds,
+    from,
+    to,
+    selected_text: selectedText,
+    selected_text_hash: `sha256:${hash}`,
+  };
+}
+
+export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionChange }: ResumeWorkbenchProps = {}) {
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const importWarningsByResumeId = useResumeStore((state) => state.importWarningsByResumeId);
   const dismissImportWarnings = useResumeStore((state) => state.dismissImportWarnings);
@@ -1071,6 +1117,9 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
   const lastPageAnchorRef = useRef<ReturnType<typeof capturePageViewportAnchor> | null>(null);
   const arrangementLayoutRunRef = useRef(0);
   const agentDrawerResizeRef = useRef<{ pointerId: number; clientX: number; width: number; currentWidth: number } | null>(null);
+  const agentSelectionCallbackRef = useRef(onAgentSelectionChange);
+  const agentSelectionRevisionRef = useRef(0);
+  agentSelectionCallbackRef.current = onAgentSelectionChange;
   const completeness = useMemo(() => evaluateResumeCompleteness(markdown), [markdown]);
 
   const persistAgentDrawerWidth = useCallback((width: number) => {
@@ -1192,6 +1241,19 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
     setZoomFeedback({ scale, sequence: Date.now() });
   }, []);
 
+  const publishAgentSelection = (current: Editor) => {
+    const revision = ++agentSelectionRevisionRef.current;
+    if (current.state.selection.empty) {
+      agentSelectionCallbackRef.current?.(null);
+      return;
+    }
+    void selectionContextFromEditor(current).then((context) => {
+      if (agentSelectionRevisionRef.current === revision) {
+        agentSelectionCallbackRef.current?.(context);
+      }
+    });
+  };
+
   const editor = useEditor({
     // The editor view owns document transactions; surrounding controls subscribe
     // explicitly, so an extra React render per keystroke only destabilizes input.
@@ -1212,6 +1274,7 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
     },
     onUpdate: ({ editor: current }) => {
       setEditorContent(current.getJSON());
+      publishAgentSelection(current);
       const { from, $from } = current.state.selection;
       if (!current.state.selection.empty) {
         setCommandMenu(null);
@@ -1233,7 +1296,13 @@ export function ResumeWorkbench({ embedded = false, onClose }: ResumeWorkbenchPr
         replaceRange: { from: slashFrom, to: from },
       });
     },
+    onSelectionUpdate: ({ editor: current }) => publishAgentSelection(current),
   }, [activeResumeId]);
+
+  useEffect(() => () => {
+    agentSelectionRevisionRef.current += 1;
+    agentSelectionCallbackRef.current?.(null);
+  }, []);
 
   useEffect(() => {
     if (editor) setWorkbenchEditorEditable(editor, !versionOperationPending);

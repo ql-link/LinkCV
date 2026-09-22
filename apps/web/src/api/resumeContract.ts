@@ -1,4 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
+import { atlasThemes, type AtlasTheme } from "./atlasThemes";
+import { studioThemes, type StudioTheme } from "./studioThemes";
+import { openThemes, type OpenTheme } from "./openThemes";
+import { originalThemes, type OriginalTheme } from "./originalThemes";
+import { careerThemes, type CareerTheme } from "./careerThemes";
+import { featuredThemes, type FeaturedTheme } from "./featuredThemes";
 import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
 import type { InlineIconName } from "../lib/resumeInlineIcon";
 import { isResumeEmailLink } from "../lib/resumeLink";
@@ -713,6 +719,12 @@ type EditorSettings = {
   pageMargin: number;
   verticalPageMargin: number;
   theme:
+    | AtlasTheme
+    | StudioTheme
+    | OpenTheme
+    | OriginalTheme
+    | CareerTheme
+    | FeaturedTheme
     | "classic"
     | "modern"
     | "compact"
@@ -720,7 +732,13 @@ type EditorSettings = {
     | "administrative-sidebar"
     | "campus-professional"
     | "civic-service"
-    | "creative-orange";
+    | "creative-orange"
+    | "right-rail"
+    | "sage-paper"
+    | "blue-ribbon"
+    | "timeline-gutter"
+    | "centered-portrait"
+    | "mist-masthead";
   smartOnePage: boolean;
   showSource: boolean;
 };
@@ -1186,6 +1204,15 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
     const verticalPageMargin = margins.top;
     const accentColor = scoped.accent_color ?? style.portable.accent_color ?? tokens.accent_color;
     const supportedThemes = [
+      ...atlasThemes,
+      ...studioThemes,
+      ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes,
+      "timeline-gutter",
+      "centered-portrait",
+      "mist-masthead",
+      "right-rail",
+      "sage-paper",
+      "blue-ribbon",
       "classic-technical",
       "administrative-sidebar",
       "campus-professional",
@@ -1215,6 +1242,15 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
     };
   }
   const supportedThemes = [
+    ...atlasThemes,
+    ...studioThemes,
+    ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes,
+    "timeline-gutter",
+    "centered-portrait",
+    "mist-masthead",
+    "right-rail",
+    "sage-paper",
+    "blue-ribbon",
     "classic-technical",
     "administrative-sidebar",
     "campus-professional",
