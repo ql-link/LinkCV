@@ -73,6 +73,12 @@ html[data-resume-pdf-cli] body {
 
 html[data-resume-pdf-cli] [data-resume-print-document] .resume-print-content { min-height: 0; }
 
+/* These column templates own the A4 canvas but are intentionally inset.
+   The CLI uses zero @page margins for column layouts, so preserve their gutters. */
+html[data-resume-pdf-cli] [data-resume-print-document]:is(.theme-original-balanced, .theme-original-dossier, .theme-original-axis, .theme-original-warm, .theme-original-index, .theme-original-offset, .theme-original-marginal, .theme-original-hanging, .theme-career-kendall, .theme-featured-campus, .theme-featured-professional, .theme-featured-sales, .theme-featured-product, .theme-featured-finance, .theme-featured-card-dashed, .theme-featured-card-rail, .theme-featured-classic-business, .theme-featured-vitality) {
+  padding: var(--resume-page-margin-top) var(--resume-page-margin-right) var(--resume-page-margin-bottom) var(--resume-page-margin-left) !important;
+}
+
 @media print {
   [data-resume-print-document] {
     box-shadow: none !important;

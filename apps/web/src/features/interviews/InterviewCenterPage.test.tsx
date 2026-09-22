@@ -364,25 +364,59 @@ describe("InterviewCenterPage API projections", () => {
       next_session_start_at: "2026-09-01T01:00:00Z",
       next_session_end_at: "2026-09-01T02:00:00Z",
     });
+    const completedOlder = makeSummary("completed-older", {
+      created_at: "2026-08-04T01:00:00Z",
+    });
+    const completedRecent = makeSummary("completed-recent", {
+      created_at: "2026-08-05T01:00:00Z",
+    });
+    const completedScheduleStartAtByApplicationId = new Map([
+      [completedOlder.id, "2026-08-20T01:00:00Z"],
+      [completedRecent.id, "2026-08-28T01:00:00Z"],
+    ]);
 
     expect(sortApplications(
-      [scheduledLate, noSchedule, pending, scheduledEarly, invalidSchedule, scheduledSameTimeOlder],
+      [
+        scheduledLate,
+        completedOlder,
+        noSchedule,
+        pending,
+        completedRecent,
+        scheduledEarly,
+        invalidSchedule,
+        scheduledSameTimeOlder,
+      ],
       "recent_schedule",
+      completedScheduleStartAtByApplicationId,
     ).map((item) => item.id)).toEqual([
       "scheduled-same-older",
       "scheduled-early",
       "scheduled-late",
+      "completed-recent",
+      "completed-older",
       "no-schedule",
       "invalid-schedule",
       "pending",
     ]);
     expect(sortApplications(
-      [scheduledLate, noSchedule, pending, scheduledEarly, invalidSchedule, scheduledSameTimeOlder],
+      [
+        scheduledLate,
+        completedOlder,
+        noSchedule,
+        pending,
+        completedRecent,
+        scheduledEarly,
+        invalidSchedule,
+        scheduledSameTimeOlder,
+      ],
       "earliest_added",
+      completedScheduleStartAtByApplicationId,
     ).map((item) => item.id)).toEqual([
       "no-schedule",
       "invalid-schedule",
       "pending",
+      "completed-older",
+      "completed-recent",
       "scheduled-same-older",
       "scheduled-late",
       "scheduled-early",
@@ -1461,7 +1495,8 @@ describe("InterviewCenterPage API projections", () => {
     switchToApplicationBoard();
     const completedAssessmentCard = screen.getByRole("article", { name: "已完成笔试公司 已完成笔试岗位" });
     expect(within(completedAssessmentCard).getByText("已完成")).toHaveClass("is-success");
-    expect(completedAssessmentCard.querySelector(".progress-card-updated-at")).not.toBeInTheDocument();
+    expect(completedAssessmentCard.querySelector(".progress-card-time")).not.toBeInTheDocument();
+    expect(completedAssessmentCard).not.toHaveTextContent("尚未安排时间");
   });
 
   it("projects an accepted Offer into the Offer stage with a stable success label", () => {

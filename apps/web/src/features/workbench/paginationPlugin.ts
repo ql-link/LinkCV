@@ -177,6 +177,13 @@ export const PaginationExtension = Extension.create({
         const measure = () => {
           frame = 0;
           const relevantMeasure = pendingRelevantMeasure;
+          // 输入法组合中不派发事务：dispatch 会强制 flush DOM 观察者，把还没
+          // 提交的组合文本提前写进文档并重绘，打断中文输入法。组合结束后的
+          // 下一次 update 会带着这个标记重新测量。
+          if (editorView.composing) {
+            pendingRelevantMeasure ||= relevantMeasure;
+            return;
+          }
           pendingRelevantMeasure = false;
           const editor = editorView.dom as HTMLElement;
           // Drag previews hide the source range and insert a real flow placeholder.

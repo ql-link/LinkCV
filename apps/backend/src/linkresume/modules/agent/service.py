@@ -32,7 +32,11 @@ from linkresume.modules.agent.models import (
 )
 from linkresume.modules.agent.schemas import (
     AgentMessageRecord,
+    AgentClarification,
+    ClarificationAnswerSelection,
+    AgentContextRef,
     AgentContextSnapshot,
+    AgentSelectionContext,
     AgentSessionRecord,
     ProposalRecord,
     ResumeTargetLocator,
@@ -149,7 +153,6 @@ def session_record(
 
     return AgentSessionRecord(
         id=session.public_id,
-        resume_id=str(session.resume_id) if session.resume_id is not None else None,
         title=session.title,
         pinned=bool(getattr(session, "pinned", False)),
         status=session.status,
@@ -309,31 +312,14 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
         raise
 
 
-def create_session(
-    db: Session, *, user_id: int, resume_id: str | None, title: str | None
-) -> AgentSession:
-    parsed_resume_id: int | None = None
-    if resume_id is not None:
-        if not resume_id.isascii() or not resume_id.isdecimal():
-            raise ApiError(404, "RESUME_NOT_FOUND")
-        parsed_resume_id = int(resume_id)
-        resume = db.scalar(
-            select(Resume)
-            .where(Resume.id == parsed_resume_id, Resume.user_id == user_id)
-            .with_for_update()
-        )
-        if resume is None:
-            raise ApiError(404, "RESUME_NOT_FOUND")
-        default_title = "新对话"
-    else:
-        default_title = "新对话"
+def create_session(db: Session, *, user_id: int, title: str | None) -> AgentSession:
+    default_title = "新对话"
     normalized_title = " ".join((title or default_title).split())
     if not normalized_title or len(normalized_title) > 128:
         raise ApiError(400, "INVALID_AGENT_SESSION")
     record = AgentSession(
         public_id=str(uuid4()),
         user_id=user_id,
-        resume_id=parsed_resume_id,
         title=normalized_title,
         status="active",
     )
@@ -343,6 +329,80 @@ def create_session(
     return record
 
 
+def clarification_context_state(
+    db: Session,
+    *,
+    session: AgentSession,
+    reply_to_sequence_no: int | None,
+) -> tuple[list[AgentContextRef], AgentSelectionContext | None]:
+    """Recover the originating message contexts and selection.
+
+    Snapshots are display-only when read from history.  This function converts
+    them back to references so ``resolve_contexts`` must re-check ownership,
+    existence and version freshness before the next run starts.  Selection is
+    parsed again so a reloaded client cannot replace the confirmed target with
+    malformed historical metadata.
+    """
+
+    if reply_to_sequence_no is None:
+        return [], None
+    latest_message = db.scalar(
+        select(AgentMessage)
+        .where(AgentMessage.session_id == session.id)
+        .order_by(AgentMessage.sequence_no.desc())
+        .limit(1)
+    )
+    if (
+        latest_message is None
+        or latest_message.sequence_no != reply_to_sequence_no
+        or latest_message.role != "assistant"
+        or latest_message.message_type != "clarification"
+    ):
+        raise ApiError(409, "AGENT_CLARIFICATION_STALE")
+    if latest_message.run_id is None:
+        return [], None
+    source_message = db.scalar(
+        select(AgentMessage)
+        .where(
+            AgentMessage.session_id == session.id,
+            AgentMessage.run_id == latest_message.run_id,
+            AgentMessage.role == "user",
+        )
+        .order_by(AgentMessage.sequence_no.asc())
+        .limit(1)
+    )
+    if source_message is None:
+        return [], None
+    if source_message.metadata_json is None:
+        return [], None
+    if not isinstance(source_message.metadata_json, dict):
+        raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_INVALID")
+    raw_contexts = source_message.metadata_json.get("contexts", [])
+    raw_selection = source_message.metadata_json.get("selection_context")
+    if not isinstance(raw_contexts, list):
+        raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_INVALID")
+    refs: list[AgentContextRef] = []
+    try:
+        for raw in raw_contexts:
+            snapshot = AgentContextSnapshot.model_validate(raw)
+            refs.append(
+                AgentContextRef(
+                    type=snapshot.type,
+                    id=snapshot.id,
+                    version_id=snapshot.version_id,
+                    version=snapshot.version,
+                )
+            )
+        selection = (
+            AgentSelectionContext.model_validate(raw_selection)
+            if raw_selection is not None
+            else None
+        )
+    except Exception as error:
+        raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_INVALID") from error
+    return refs, selection
+
+
 def create_run(
     db: Session,
     *,
@@ -350,8 +410,11 @@ def create_run(
     content: str,
     idempotency_key: str,
     timeout_seconds: float,
+    public_id: str | None = None,
     reply_to_sequence_no: int | None = None,
+    clarification_answers: list[ClarificationAnswerSelection] | None = None,
     context_snapshots: list[AgentContextSnapshot] | None = None,
+    selection_context: AgentSelectionContext | None = None,
 ) -> tuple[AgentRun, bool]:
     normalized_content = content.strip()
     if not normalized_content:
@@ -382,6 +445,7 @@ def create_run(
     )
     if existing is not None:
         return existing, False
+    normalized_answers: list[dict[str, str]] = []
     if reply_to_sequence_no is not None:
         latest_message = db.scalar(
             select(AgentMessage)
@@ -397,6 +461,37 @@ def create_run(
             or latest_message.message_type != "clarification"
         ):
             raise ApiError(409, "AGENT_CLARIFICATION_STALE")
+        try:
+            clarification = AgentClarification.model_validate(latest_message.metadata_json)
+        except Exception as error:
+            raise ApiError(409, "AGENT_CLARIFICATION_STALE") from error
+        if clarification_answers is not None:
+            answer_by_question = {
+                item.question_id: item for item in clarification_answers
+            }
+            if set(answer_by_question) != {item.id for item in clarification.questions}:
+                raise ApiError(422, "AGENT_CLARIFICATION_INVALID")
+            for question in clarification.questions:
+                answer = answer_by_question[question.id]
+                option = next(
+                    (item for item in question.options if item.id == answer.option_id),
+                    None,
+                )
+                if answer.option_id == "__other__":
+                    value = (answer.value or "").strip()
+                    if not value:
+                        raise ApiError(422, "AGENT_CLARIFICATION_INVALID")
+                elif option is not None:
+                    value = option.label
+                else:
+                    raise ApiError(422, "AGENT_CLARIFICATION_INVALID")
+                normalized_answers.append(
+                    {
+                        "question_id": question.id,
+                        "option_id": answer.option_id,
+                        "value": value,
+                    }
+                )
     running = db.scalars(
         select(AgentRun)
         .join(AgentSession, AgentSession.id == AgentRun.session_id)
@@ -421,7 +516,7 @@ def create_run(
     if fresh_running:
         raise ApiError(409, "AGENT_RUN_IN_PROGRESS")
     run = AgentRun(
-        public_id=str(uuid4()),
+        public_id=public_id or str(uuid4()),
         session_id=session.id,
         idempotency_key=idempotency_key,
         status="running",
@@ -450,11 +545,35 @@ def create_run(
             metadata_json=(
                 {
                     "version": 1,
-                    "contexts": [
-                        item.model_dump(mode="json") for item in context_snapshots
-                    ],
+                    **(
+                        {
+                            "contexts": [
+                                item.model_dump(mode="json")
+                                for item in context_snapshots
+                            ]
+                        }
+                        if context_snapshots
+                        else {}
+                    ),
+                    **(
+                        {
+                            "selection_context": selection_context.model_dump(
+                                mode="json", by_alias=True
+                            )
+                        }
+                        if selection_context is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "reply_to_sequence_no": reply_to_sequence_no,
+                            "clarification_answers": normalized_answers,
+                        }
+                        if normalized_answers
+                        else {}
+                    ),
                 }
-                if context_snapshots
+                if context_snapshots or selection_context is not None or normalized_answers
                 else None
             ),
         )
@@ -569,21 +688,19 @@ def create_proposal(
     *,
     run: AgentRun,
     session: AgentSession,
+    resume_id: str,
     call_key: str,
     data: object,
     style: object,
     summary: str,
     ttl_days: int,
 ) -> ResumeChangeProposal:
-    if session.resume_id is None:
-        raise ApiError(409, "AGENT_RESUME_REQUIRED")
-    resume = db.scalar(
-        select(Resume)
-        .where(Resume.id == session.resume_id, Resume.user_id == session.user_id)
-        .with_for_update()
+    resume = _owned_resume_for_target(
+        db,
+        user_id=session.user_id,
+        resume_id=resume_id,
+        lock=True,
     )
-    if resume is None:
-        raise ApiError(404, "RESUME_NOT_FOUND")
     existing = db.scalar(
         select(ResumeChangeProposal).where(
             ResumeChangeProposal.run_id == run.id,
@@ -956,34 +1073,13 @@ def reject_proposal(
 
 
 def delete_resume_agent_data(db: Session, *, resume_id: int, user_id: int) -> None:
-    """Delete Agent-owned rows explicitly because the Agent schema has no FKs."""
-    session_ids = list(
-        db.scalars(
-            select(AgentSession.id).where(
-                AgentSession.resume_id == resume_id,
-                AgentSession.user_id == user_id,
-            )
-        ).all()
-    )
+    """Delete resume-scoped proposals without deleting independent conversations."""
     db.execute(
         delete(ResumeChangeProposal).where(
             ResumeChangeProposal.resume_id == resume_id,
             ResumeChangeProposal.user_id == user_id,
         )
     )
-    if not session_ids:
-        return
-    run_ids = list(
-        db.scalars(
-            select(AgentRun.id).where(AgentRun.session_id.in_(session_ids))
-        ).all()
-    )
-    if run_ids:
-        db.execute(delete(AgentToolCall).where(AgentToolCall.run_id.in_(run_ids)))
-        db.execute(delete(AgentMessage).where(AgentMessage.run_id.in_(run_ids)))
-        db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
-    db.execute(delete(AgentMessage).where(AgentMessage.session_id.in_(session_ids)))
-    db.execute(delete(AgentSession).where(AgentSession.id.in_(session_ids)))
 
 
 def upsert_tool_event(db: Session, *, run: AgentRun, payload: object) -> AgentToolCall:

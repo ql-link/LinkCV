@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import AsyncIterator
 from decimal import Decimal, InvalidOperation
 
@@ -36,20 +37,93 @@ def sse_event(event_type: str, data: dict[str, object]) -> bytes:
     return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
 
 
+def _emit_agent_stage(
+    app,
+    run_public_id: str,
+    *,
+    actor_user_id: int | None,
+    stage: str,
+    result: str,
+    error_code: str | None = None,
+    duration_ms: int | None = None,
+    selection_present: bool | None = None,
+    candidate_count: int | None = None,
+    exception_type: str | None = None,
+) -> None:
+    """Emit bounded run-stage telemetry without affecting the Agent result."""
+
+    try:
+        app.state.event_emitter.system(
+            "WARNING" if result == "failed" else "INFO",
+            "agent run stage",
+            logger="linkresume.agent",
+            actor_user_id=actor_user_id,
+            operation_id=run_public_id,
+            action="stream_pi_run",
+            stage=stage,
+            result=result,
+            error_code=error_code,
+            duration_ms=duration_ms,
+            selection_present=selection_present,
+            candidate_count=candidate_count,
+            exception_type=exception_type,
+        )
+    except Exception:
+        # Observability is deliberately fail-open for an already authorized run.
+        return
+
+
 async def stream_pi_run(
     app,
     run_public_id: str,
     content: str,
     selection_context=None,
     context_materials: list[AgentContextMaterial] | None = None,
+    actor_user_id: int | None = None,
 ) -> AsyncIterator[bytes]:
     settings = app.state.settings
     token = settings.pi_service_token
     if not settings.agent_enabled or token is None:
+        _emit_agent_stage(
+            app,
+            run_public_id,
+            actor_user_id=actor_user_id,
+            stage="pi_dispatch",
+            result="failed",
+            error_code="AGENT_UNAVAILABLE",
+            selection_present=selection_context is not None,
+            candidate_count=len(context_materials or []),
+        )
         yield sse_event(
             "run.failed", {"runId": run_public_id, "error": "AGENT_UNAVAILABLE"}
         )
-        _finalize(app, run_public_id, "failed", error_code="AGENT_UNAVAILABLE")
+        _emit_agent_stage(
+            app,
+            run_public_id,
+            actor_user_id=actor_user_id,
+            stage="run_finalize",
+            result="started",
+        )
+        try:
+            _finalize(app, run_public_id, "failed", error_code="AGENT_UNAVAILABLE")
+        except Exception as error:
+            _emit_agent_stage(
+                app,
+                run_public_id,
+                actor_user_id=actor_user_id,
+                stage="run_finalize",
+                result="failed",
+                error_code="AGENT_FINALIZE_FAILED",
+                exception_type=type(error).__name__,
+            )
+            raise
+        _emit_agent_stage(
+            app,
+            run_public_id,
+            actor_user_id=actor_user_id,
+            stage="run_finalize",
+            result="succeeded",
+        )
         return
 
     assistant_parts: list[str] = []
@@ -64,6 +138,18 @@ async def stream_pi_run(
     headers = {"Authorization": f"Bearer {token.get_secret_value()}"}
     timeout = httpx.Timeout(settings.agent_run_timeout_seconds, connect=5.0)
     history = _conversation_history(app, run_public_id)
+    clarification_answers = _current_clarification_answers(app, run_public_id)
+    dispatch_started = time.monotonic()
+    model_started: float | None = None
+    _emit_agent_stage(
+        app,
+        run_public_id,
+        actor_user_id=actor_user_id,
+        stage="pi_dispatch",
+        result="started",
+        selection_present=selection_context is not None,
+        candidate_count=len(context_materials or []),
+    )
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
@@ -74,6 +160,11 @@ async def stream_pi_run(
                     "runId": run_public_id,
                     "content": content,
                     "history": history,
+                    **(
+                        {"clarificationAnswers": clarification_answers}
+                        if clarification_answers
+                        else {}
+                    ),
                     **(
                         {
                             "selectionContext": selection_context.model_dump(
@@ -107,7 +198,32 @@ async def stream_pi_run(
                         "run.failed", {"runId": run_public_id, "error": error}
                     )
                     final_error = error
+                    _emit_agent_stage(
+                        app,
+                        run_public_id,
+                        actor_user_id=actor_user_id,
+                        stage="pi_dispatch",
+                        result="failed",
+                        error_code=error,
+                        duration_ms=int((time.monotonic() - dispatch_started) * 1000),
+                    )
                     return
+                _emit_agent_stage(
+                    app,
+                    run_public_id,
+                    actor_user_id=actor_user_id,
+                    stage="pi_dispatch",
+                    result="succeeded",
+                    duration_ms=int((time.monotonic() - dispatch_started) * 1000),
+                )
+                model_started = time.monotonic()
+                _emit_agent_stage(
+                    app,
+                    run_public_id,
+                    actor_user_id=actor_user_id,
+                    stage="model_execution",
+                    result="started",
+                )
                 event_name: str | None = None
                 async for line in response.aiter_lines():
                     if line.startswith("event: "):
@@ -186,25 +302,89 @@ async def stream_pi_run(
                     )
     except httpx.TimeoutException:
         final_error = "AGENT_TIMEOUT"
+        if model_started is None:
+            _emit_agent_stage(
+                app,
+                run_public_id,
+                actor_user_id=actor_user_id,
+                stage="pi_dispatch",
+                result="failed",
+                error_code=final_error,
+                duration_ms=int((time.monotonic() - dispatch_started) * 1000),
+            )
         yield sse_event("run.failed", {"runId": run_public_id, "error": final_error})
     except httpx.HTTPError:
         final_error = "AGENT_UNAVAILABLE"
+        if model_started is None:
+            _emit_agent_stage(
+                app,
+                run_public_id,
+                actor_user_id=actor_user_id,
+                stage="pi_dispatch",
+                result="failed",
+                error_code=final_error,
+                duration_ms=int((time.monotonic() - dispatch_started) * 1000),
+            )
         yield sse_event("run.failed", {"runId": run_public_id, "error": final_error})
     finally:
-        _finalize(
+        if model_started is not None:
+            _emit_agent_stage(
+                app,
+                run_public_id,
+                actor_user_id=actor_user_id,
+                stage="model_execution",
+                result=final_status,
+                error_code=final_error,
+                duration_ms=int((time.monotonic() - model_started) * 1000),
+            )
+            _emit_agent_stage(
+                app,
+                run_public_id,
+                actor_user_id=actor_user_id,
+                stage="stream_terminal",
+                result=final_status if terminal_received else "failed",
+                error_code=final_error,
+            )
+        _emit_agent_stage(
             app,
             run_public_id,
-            final_status,
-            error_code=final_error,
-            assistant_content="".join(assistant_parts).strip() or None,
-            clarification=(
-                clarification.model_dump(mode="json", exclude_none=True)
-                if clarification
-                else None
-            ),
-            input_tokens=final_input_tokens,
-            output_tokens=final_output_tokens,
-            estimated_cost=final_estimated_cost,
+            actor_user_id=actor_user_id,
+            stage="run_finalize",
+            result="started",
+        )
+        try:
+            _finalize(
+                app,
+                run_public_id,
+                final_status,
+                error_code=final_error,
+                assistant_content="".join(assistant_parts).strip() or None,
+                clarification=(
+                    clarification.model_dump(mode="json", exclude_none=True)
+                    if clarification
+                    else None
+                ),
+                input_tokens=final_input_tokens,
+                output_tokens=final_output_tokens,
+                estimated_cost=final_estimated_cost,
+            )
+        except Exception as error:
+            _emit_agent_stage(
+                app,
+                run_public_id,
+                actor_user_id=actor_user_id,
+                stage="run_finalize",
+                result="failed",
+                error_code="AGENT_FINALIZE_FAILED",
+                exception_type=type(error).__name__,
+            )
+            raise
+        _emit_agent_stage(
+            app,
+            run_public_id,
+            actor_user_id=actor_user_id,
+            stage="run_finalize",
+            result="succeeded",
         )
 
 
@@ -265,7 +445,7 @@ async def check_pi_readiness(app) -> None:
         raise ApiError(503, "AGENT_NOT_READY") from error
 
 
-def _conversation_history(app, run_public_id: str) -> list[dict[str, str]]:
+def _conversation_history(app, run_public_id: str) -> list[dict[str, object]]:
     with app.state.session_factory() as db:
         run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_public_id))
         if run is None:
@@ -277,7 +457,7 @@ def _conversation_history(app, run_public_id: str) -> list[dict[str, str]]:
             .limit(41)
         ).all()
         remaining = 24_000
-        history: list[dict[str, str]] = []
+        history: list[dict[str, object]] = []
         for message in messages:
             if message.run_id == run.id:
                 continue
@@ -286,9 +466,64 @@ def _conversation_history(app, run_public_id: str) -> list[dict[str, str]]:
                 continue
             value = value[-remaining:]
             remaining -= len(value)
-            history.append({"role": message.role, "content": value})
+            item: dict[str, object] = {
+                "role": message.role,
+                "content": value,
+                "message_type": message.message_type,
+            }
+            if isinstance(message.metadata_json, dict):
+                if message.message_type == "clarification":
+                    item["clarification"] = message.metadata_json
+                else:
+                    answers = message.metadata_json.get("clarification_answers")
+                    if isinstance(answers, list):
+                        item["clarification_answers"] = answers
+                        item["reply_to_sequence_no"] = message.metadata_json.get(
+                            "reply_to_sequence_no"
+                        )
+            history.append(item)
         history.reverse()
         return history
+
+
+def _current_clarification_answers(
+    app, run_public_id: str
+) -> list[dict[str, str]]:
+    """Return only the normalized answers already validated by create_run."""
+
+    with app.state.session_factory() as db:
+        message = db.scalar(
+            select(AgentMessage)
+            .join(AgentRun, AgentRun.id == AgentMessage.run_id)
+            .where(
+                AgentRun.public_id == run_public_id,
+                AgentMessage.role == "user",
+            )
+            .order_by(AgentMessage.sequence_no.asc())
+            .limit(1)
+        )
+        if message is None or not isinstance(message.metadata_json, dict):
+            return []
+        raw_answers = message.metadata_json.get("clarification_answers")
+        if not isinstance(raw_answers, list):
+            return []
+        answers: list[dict[str, str]] = []
+        for raw in raw_answers:
+            if not isinstance(raw, dict):
+                return []
+            question_id = raw.get("question_id")
+            option_id = raw.get("option_id")
+            value = raw.get("value")
+            if not all(isinstance(item, str) for item in (question_id, option_id, value)):
+                return []
+            answers.append(
+                {
+                    "question_id": question_id,
+                    "option_id": option_id,
+                    "value": value,
+                }
+            )
+        return answers
 
 
 def _finalize(

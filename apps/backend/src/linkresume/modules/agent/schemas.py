@@ -20,7 +20,10 @@ from linkresume.domain.resume import ResumePresentation
 class SessionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    resume_id: str | None = None
+    # Compatibility-only input for browser tabs that loaded the pre-0064 Web
+    # bundle.  The service deliberately ignores it: resume context belongs to
+    # messages, never to a session.
+    resume_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
     title: str | None = Field(default=None, min_length=1, max_length=128)
 
 
@@ -214,6 +217,14 @@ class AgentResourceListResponse(BaseModel):
     resources: list[AgentContextListItem]
 
 
+class ClarificationAnswerSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str = Field(min_length=1, max_length=48, pattern=r"^[A-Za-z0-9_-]+$")
+    option_id: str = Field(min_length=1, max_length=48, pattern=r"^(?:[A-Za-z0-9_-]+|__other__)$")
+    value: str | None = Field(default=None, max_length=500)
+
+
 class MessageCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -224,6 +235,9 @@ class MessageCreateRequest(BaseModel):
     selection_context: AgentSelectionContext | None = None
     contexts: list[AgentContextRef] | None = Field(default=None, max_length=10)
     reply_to_sequence_no: int | None = Field(default=None, ge=1)
+    clarification_answers: list[ClarificationAnswerSelection] | None = Field(
+        default=None, min_length=1, max_length=3
+    )
 
     @field_validator("content")
     @classmethod
@@ -234,11 +248,16 @@ class MessageCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_context_types(self) -> "MessageCreateRequest":
-        if self.contexts is None:
-            return self
-        context_types = [item.type for item in self.contexts]
-        if len(context_types) != len(set(context_types)):
-            raise ValueError("agent context types must be unique")
+        if self.contexts is not None:
+            context_types = [item.type for item in self.contexts]
+            if len(context_types) != len(set(context_types)):
+                raise ValueError("agent context types must be unique")
+        if self.clarification_answers is not None:
+            question_ids = [item.question_id for item in self.clarification_answers]
+            if len(question_ids) != len(set(question_ids)):
+                raise ValueError("clarification answer question ids must be unique")
+        if self.clarification_answers is not None and self.reply_to_sequence_no is None:
+            raise ValueError("clarification answers require a reply target")
         return self
 
 
@@ -292,7 +311,6 @@ class AgentMessageRecord(BaseModel):
 
 class AgentSessionRecord(BaseModel):
     id: str
-    resume_id: str | None
     title: str
     pinned: bool
     status: Literal["active", "archived"]
@@ -344,6 +362,7 @@ class ProposalCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     call_key: str = Field(min_length=1, max_length=128)
+    resume_id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
     data: ResumeDocument
     style: ResumePresentation
     summary: str = Field(min_length=1, max_length=4_000)
@@ -406,6 +425,14 @@ class ToolEventRequest(BaseModel):
     target_id: str | None = Field(default=None, max_length=64)
     error_code: str | None = Field(default=None, max_length=64)
     duration_ms: int | None = Field(default=None, ge=0)
+    stage: str | None = Field(default=None, max_length=64)
+    result: str | None = Field(default=None, max_length=64)
+    scope: str | None = Field(default=None, max_length=32)
+    selection_present: bool | None = None
+    candidate_count: int | None = Field(default=None, ge=0, le=100)
+    question_count: int | None = Field(default=None, ge=0, le=3)
+    target_field: str | None = Field(default=None, max_length=64)
+    base_lock_version: int | None = Field(default=None, ge=0)
 
 
 class PiRunRequest(BaseModel):
@@ -413,7 +440,7 @@ class PiRunRequest(BaseModel):
 
     run_id: str
     content: str = Field(min_length=1, max_length=32_768)
-    history: list[dict[str, str]] = Field(default_factory=list, max_length=41)
+    history: list[dict[str, Any]] = Field(default_factory=list, max_length=41)
     selection_context: AgentSelectionContext | None = None
     context_materials: list[AgentContextMaterial] = Field(
         default_factory=list, max_length=10
@@ -444,6 +471,7 @@ class TargetCandidate(BaseModel):
 class TargetResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    resume_id: str | None = Field(default=None, pattern=r"^[0-9]+$")
     selection_context: AgentSelectionContext | None = None
     quoted_text: str | None = Field(default=None, min_length=1, max_length=20_000)
     scope_hint: Literal["target", "resume"] = "target"
@@ -543,8 +571,14 @@ class ProposalOperation(BaseModel):
 
     op: Literal["replace_target_text", "insert_after_target"]
     target: ResumeTargetLocator
-    new_text: str = Field(min_length=1, max_length=20_000)
+    new_text: str = Field(max_length=20_000)
     expected_text_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def require_insert_content(self) -> "ProposalOperation":
+        if self.op == "insert_after_target" and not self.new_text.strip():
+            raise ValueError("insert operation requires content")
+        return self
 
 
 class ProposalV2CreateRequest(BaseModel):

@@ -44,13 +44,6 @@ class AgentSession(Base):
             "updated_at",
             "id",
         ),
-        Index(
-            "idx_agent_sessions_resume_pinned_updated",
-            "resume_id",
-            "pinned",
-            "updated_at",
-            "id",
-        ),
         {"comment": "用户智能助手会话"},
     )
 
@@ -59,7 +52,6 @@ class AgentSession(Base):
     )
     public_id: Mapped[str] = mapped_column(String(36), nullable=False)
     user_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
-    resume_id: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
     pi_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     title: Mapped[str] = mapped_column(String(128), nullable=False)
     pinned: Mapped[bool] = mapped_column(

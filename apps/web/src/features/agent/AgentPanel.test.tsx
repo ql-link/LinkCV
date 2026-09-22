@@ -8,7 +8,6 @@ import { agentErrorMessage, AgentMarkdown, AgentPanel, AgentUserAvatar } from ".
 
 const session: AgentSession = {
   id: "session-1",
-  resume_id: "resume-1",
   title: "简历助手",
   pinned: false,
   status: "active",
@@ -124,10 +123,15 @@ const answer = 42;
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    const streamMessage = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    const onBeforeRun = vi.fn().mockResolvedValue(true);
 
     render(
       <AgentPanel
         resumeId="resume-1"
+        onBeforeRun={onBeforeRun}
         onBeforeConfirm={vi.fn().mockResolvedValue(true)}
         onApplied={vi.fn()}
       />,
@@ -138,6 +142,12 @@ const answer = 42;
     await user.click(screen.getByRole("button", { name: "优化内容" }));
     expect(screen.getByLabelText("告诉助手你想改善什么")).toHaveValue("让经历更贴合目标岗位");
     expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(streamMessage).toHaveBeenCalledOnce());
+    expect(onBeforeRun).toHaveBeenCalledOnce();
+    expect(streamMessage.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      contexts: [{ type: "resume", id: "resume-1" }],
+    }));
   });
 
   it("把选中文字作为上下文带入真实 Agent 请求", async () => {
@@ -175,6 +185,7 @@ const answer = 42;
     expect(onBeforeRun).toHaveBeenCalledOnce();
     expect(streamMessage.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       content: "优化表达",
+      contexts: [{ type: "resume", id: "resume-1" }],
       selection_context: selectionContext,
     }));
   });
@@ -297,7 +308,7 @@ const answer = 42;
 
     expect(await screen.findByText("这是历史对话")).toBeInTheDocument();
     expect(getSession).toHaveBeenCalledWith("session-1");
-    expect(api.listAgentProposals).toHaveBeenCalledWith("resume-1", "session-1");
+    expect(api.listAgentProposals).toHaveBeenCalledWith(null, "session-1");
   });
 
   it("把结构化澄清问题显示在输入框上方，并携带问题序号提交完整回答", async () => {
@@ -383,6 +394,10 @@ const answer = 42;
     expect(streamMessage.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
       content: "修改范围：实习经历\n目标岗位：用户运营",
       reply_to_sequence_no: 2,
+      clarification_answers: [
+        { question_id: "experience", option_id: "internship" },
+        { question_id: "target_role", option_id: "operation" },
+      ],
     }));
   });
 

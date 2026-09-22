@@ -14,9 +14,26 @@ vi.mock("../datasets/DatasetsPage", () => ({
 }));
 
 vi.mock("../workbench/ResumeWorkbench", () => ({
-  ResumeWorkbench: ({ embedded, onClose }: { embedded?: boolean; onClose?: () => void }) => (
+  ResumeWorkbench: ({ embedded, onClose, onAgentSelectionChange }: {
+    embedded?: boolean;
+    onClose?: () => void;
+    onAgentSelectionChange?: (context: {
+      block_ids: string[];
+      from: number;
+      to: number;
+      selected_text: string;
+      selected_text_hash: string;
+    }) => void;
+  }) => (
     <section aria-label="嵌入式简历编辑器" data-embedded={embedded ? "true" : "false"}>
       <button type="button" onClick={onClose}>关闭简历</button>
+      <button type="button" onClick={() => onAgentSelectionChange?.({
+        block_ids: ["node_location000000001"],
+        from: 10,
+        to: 13,
+        selected_text: "123",
+        selected_text_hash: `sha256:${"a".repeat(64)}`,
+      })}>模拟选区</button>
     </section>
   ),
 }));
@@ -25,7 +42,6 @@ const originalResumeStore = useResumeStore.getState();
 
 const session: AgentSession = {
   id: "session-1",
-  resume_id: "1",
   title: "新对话",
   pinned: false,
   status: "active",
@@ -112,6 +128,89 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "关闭简历" }));
     expect(screen.queryByRole("region", { name: "嵌入式简历编辑器" })).not.toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "对话列表" })).toBeInTheDocument();
+  });
+
+  it("从嵌入式简历发送消息时保存草稿并携带稳定选区", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    const saveCurrentResume = vi.fn().mockResolvedValue(undefined);
+    useResumeStore.setState({
+      resumes: [{
+        id: "1",
+        title: "Java 开发实习简历",
+        source_type: "blank",
+        lock_version: 1,
+        created_at: "2026-09-14T02:00:00Z",
+        updated_at: "2026-09-14T03:00:00Z",
+      }],
+      listResumes: vi.fn().mockResolvedValue(undefined),
+      loadResume: vi.fn().mockResolvedValue(undefined),
+      saveCurrentResume,
+      error: null,
+    });
+    render(<AssistantPage />);
+    await user.click(await screen.findByRole("button", { name: "我的简历" }));
+    await user.click(within(screen.getByRole("dialog", { name: "选择我的简历" }))
+      .getByRole("button", { name: /Java 开发实习简历/ }));
+    await user.click(await screen.findByRole("button", { name: "模拟选区" }));
+    const input = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(input, "删除这处占位内容");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(stream).toHaveBeenCalledOnce());
+    expect(saveCurrentResume).toHaveBeenCalledOnce();
+    expect(stream.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      contexts: [{ type: "resume", id: "1" }],
+      selection_context: expect.objectContaining({
+        block_ids: ["node_location000000001"],
+        selected_text: "123",
+      }),
+    }));
+  });
+
+  it("切换嵌入式简历时不会沿用上一份简历的选区", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    useResumeStore.setState({
+      resumes: [
+        {
+          id: "1", title: "第一份简历", source_type: "blank", lock_version: 1,
+          created_at: "2026-09-14T02:00:00Z", updated_at: "2026-09-14T03:00:00Z",
+        },
+        {
+          id: "2", title: "第二份简历", source_type: "blank", lock_version: 1,
+          created_at: "2026-09-14T02:00:00Z", updated_at: "2026-09-14T03:00:00Z",
+        },
+      ],
+      listResumes: vi.fn().mockResolvedValue(undefined),
+      loadResume: vi.fn().mockResolvedValue(undefined),
+      saveCurrentResume: vi.fn().mockResolvedValue(undefined),
+      error: null,
+    });
+
+    render(<AssistantPage />);
+    await user.click(await screen.findByRole("button", { name: "我的简历" }));
+    await user.click(within(screen.getByRole("dialog", { name: "选择我的简历" }))
+      .getByRole("button", { name: /第一份简历/ }));
+    await user.click(await screen.findByRole("button", { name: "模拟选区" }));
+    await user.click(screen.getByRole("button", { name: "我的简历" }));
+    await user.click(within(screen.getByRole("dialog", { name: "选择我的简历" }))
+      .getByRole("button", { name: /第二份简历/ }));
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "优化当前简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => expect(stream).toHaveBeenCalledOnce());
+    expect(stream.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      contexts: [{ type: "resume", id: "2" }],
+    }));
+    expect(stream.mock.calls[0]?.[1]).not.toHaveProperty("selection_context");
   });
 
   it("为每条历史对话提供置顶、重命名和删除菜单", async () => {
@@ -703,6 +802,10 @@ describe("AssistantPage", () => {
     expect(stream.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
       content: "修改范围：项目经历\n目标岗位：自定义岗位",
       reply_to_sequence_no: 2,
+      clarification_answers: [
+        { question_id: "scope", option_id: "project" },
+        { question_id: "role", option_id: "__other__", value: "自定义岗位" },
+      ],
     }));
   });
 

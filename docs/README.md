@@ -44,6 +44,7 @@
 | --- | --- | --- |
 | 整体架构 | [internals/architecture.md](internals/architecture.md) | Monorepo、请求路径、数据和配置真值 |
 | Web 客户端 | [internals/web.md](internals/web.md) | `apps/web` |
+| 简历模板第三方来源 | [internals/resume-template-sources.md](internals/resume-template-sources.md) | 模板授权、固定上游版本与素材边界 |
 | FastAPI 与 Worker | [internals/backend.md](internals/backend.md) | `apps/backend` |
 | 微信小程序 | [internals/miniprogram.md](internals/miniprogram.md) | `apps/miniprogram`、后端渠道适配 |
 | 浏览器采集插件 | [internals/extension.md](internals/extension.md) | `apps/extension` |

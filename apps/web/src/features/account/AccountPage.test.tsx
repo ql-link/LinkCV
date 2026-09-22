@@ -31,7 +31,6 @@ const profile: AccountProfile = {
 const sessions: AgentSession[] = [
   {
     id: "session-1",
-    resume_id: null,
     title: "优化项目经历",
     pinned: false,
     status: "active",
@@ -42,7 +41,6 @@ const sessions: AgentSession[] = [
   },
   {
     id: "session-2",
-    resume_id: null,
     title: "准备面试回答",
     pinned: false,
     status: "archived",
