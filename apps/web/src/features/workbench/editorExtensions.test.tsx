@@ -193,6 +193,32 @@ describe("简历头像上下文操作", () => {
   });
 });
 
+describe("自适应编辑光标", () => {
+  it("只为可编辑的折叠文本选区渲染加粗光标", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: "<p>光标测试</p>",
+    });
+    const { container } = render(<EditorContent editor={editor} />);
+
+    act(() => { editor?.commands.focus("start"); });
+    expect(container.querySelector(".resume-adaptive-caret")).not.toBeNull();
+
+    const editorRoot = container.querySelector<HTMLElement>(".ProseMirror")!;
+    fireEvent.compositionStart(editorRoot);
+    expect(editorRoot).toHaveClass("is-composing");
+    fireEvent.compositionEnd(editorRoot);
+    expect(editorRoot).not.toHaveClass("is-composing");
+
+    act(() => { editor?.commands.setTextSelection({ from: 1, to: 3 }); });
+    expect(container.querySelector(".resume-adaptive-caret")).toBeNull();
+
+    act(() => { editor?.setEditable(false); });
+    act(() => { editor?.commands.setTextSelection(1); });
+    expect(container.querySelector(".resume-adaptive-caret")).toBeNull();
+  });
+});
+
 describe("分栏栏数菜单", () => {
   async function renderRow(cells: string[], editable = true) {
     const instance = new Editor({
