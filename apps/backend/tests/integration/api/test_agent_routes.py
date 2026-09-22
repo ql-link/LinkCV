@@ -546,7 +546,11 @@ def test_resume_context_is_persisted_on_message_without_binding_session() -> Non
             json={
                 "content": "这一轮分析第二份简历",
                 "idempotency_key": "context-switch-001",
-                "contexts": [{"type": "resume", "id": selected_resume["id"]}],
+                "contexts": [{
+                    "type": "resume",
+                    "id": selected_resume["id"],
+                    "presentation": "implicit",
+                }],
             },
         )
 
@@ -555,6 +559,7 @@ def test_resume_context_is_persisted_on_message_without_binding_session() -> Non
         assert "resume_id" not in detail.json()["session"]
         contexts = detail.json()["session"]["messages"][0]["contexts"]
         assert contexts[0]["id"] == selected_resume["id"]
+        assert contexts[0]["presentation"] == "implicit"
         with app.state.session_factory() as db:
             stored = db.scalar(
                 select(AgentSession).where(AgentSession.public_id == session["id"])
@@ -1055,6 +1060,56 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
             )
             assert version is not None
             assert version.name == "智能助手修改"
+
+
+def test_revision_supersedes_only_after_replacement_and_is_session_scoped() -> None:
+    from linkresume.modules.agent.pi_client import _revision_prompt
+    from linkresume.modules.agent.service import revision_source
+
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "revision@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        original_run = create_active_run(app, session_id, message_content="优化标题")
+        payload = {"call_key": "original", "resume_id": resume["id"], "data": resume["data"],
+                   "style": resume["style"], "summary": "原始建议"}
+        response = client.post(f"/internal/agent/runs/{original_run}/proposals", headers=internal_headers(), json=payload)
+        assert response.status_code == 201
+        source_id = response.json()["proposal"]["id"]
+        other_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        with app.state.session_factory() as db:
+            other = db.scalar(select(AgentSession).where(AgentSession.public_id == other_id))
+            with pytest.raises(ApiError) as error:
+                revision_source(db, other, source_id)
+            assert error.value.code == "AGENT_PROPOSAL_NOT_FOUND"
+            db.execute(update(AgentRun).where(AgentRun.public_id == original_run).values(status="succeeded"))
+            session = db.scalar(select(AgentSession).where(AgentSession.public_id == session_id))
+            revision, _ = create_run(db, session=session, content="写得简洁一些", idempotency_key="revision-request-1",
+                                     timeout_seconds=60, revision_proposal_id=source_id)
+            revision_id = revision.public_id
+        before = client.get(f"/api/agent/proposals?session_id={session_id}").json()["proposals"]
+        assert before[0]["status"] == "pending"
+        assert before[0]["superseded_by"] is None
+        assert "原始建议" in _revision_prompt(app, revision_id, "写得简洁一些")
+        invalid = client.post(f"/internal/agent/runs/{revision_id}/proposals", headers=internal_headers(),
+                              json={**payload, "call_key": "invalid", "data": {}})
+        assert invalid.status_code >= 400
+        retained = client.get(f"/api/agent/proposals?session_id={session_id}").json()["proposals"]
+        assert next(item for item in retained if item["id"] == source_id)["status"] == "pending"
+        replacement = client.post(f"/internal/agent/runs/{revision_id}/proposals", headers=internal_headers(),
+                                  json={**payload, "call_key": "replacement", "summary": "新的建议"})
+        assert replacement.status_code == 201
+        replay = client.post(f"/internal/agent/runs/{revision_id}/proposals", headers=internal_headers(),
+                             json={**payload, "call_key": "replacement", "summary": "新的建议"})
+        assert replay.json()["proposal"]["id"] == replacement.json()["proposal"]["id"]
+        after = client.get(f"/api/agent/proposals?session_id={session_id}&include_history=true").json()["proposals"]
+        original = next(item for item in after if item["id"] == source_id)
+        assert original["status"] == "rejected"
+        assert original["superseded_by"] == replacement.json()["proposal"]["id"]
+        assert client.post(f"/api/agent/proposals/{source_id}/confirm").status_code == 409
+        detail = client.get(f"/api/agent/sessions/{session_id}").json()["session"]
+        assert detail["messages"][0]["run_id"] == original_run
 
 
 def test_proposal_confirmation_rejects_images_above_pdf_total() -> None:
@@ -1559,6 +1614,213 @@ def test_named_resume_local_field_can_be_resolved_and_deleted_without_session_bi
         assert confirmed.status_code == 200
         fields = confirmed.json()["resume"]["data"]["sections"][0]["entries"][0]["fields"]
         assert fields["location"] is None
+
+
+def test_compound_cleanup_proposals_delete_nodes_and_rebase_disjoint_targets() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-compound-cleanup@example.test")
+        resume = create_resume(client, app, title="张三-后端开发-测试")
+        markdown = "\n\n".join(
+            [
+                "## [[linkresume-block:node_section000000001]]项目经历",
+                "### [[linkresume-block:node_entry00000000001]]LinkRag 项目",
+                "- [[linkresume-block:node_bullet0000000001]]实现真实检索链路",
+                "- [[linkresume-block:node_bullet0000000002]]1",
+                "- [[linkresume-block:node_bullet0000000003]]1",
+                "- [[linkresume-block:node_bullet0000000004]]1",
+            ]
+        )
+        data = editor_data(resume["data"], markdown)
+        data["sections"][0]["entries"][0]["fields"]["location"] = {
+            "node_id": "node_location000000001",
+            "source_refs": [],
+            "value": "asd",
+        }
+        saved = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": 1},
+        )
+        assert saved.status_code == 200
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+
+        field_resolved = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"resume_id": resume["id"], "quoted_text": "asd"},
+        ).json()["target"]
+        field_diagnosis = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": field_resolved, "scope": "target"},
+        ).json()
+        field_proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                "call_key": "delete-education-placeholder",
+                "mode": "polish_local",
+                "target": field_resolved,
+                "diagnosis": field_diagnosis["diagnosis"],
+                "diagnosis_fingerprint": field_diagnosis["diagnosis_fingerprint"],
+                "operations": [{
+                    "op": "replace_target_text",
+                    "target": field_resolved,
+                    "new_text": "",
+                    "expected_text_hash": field_resolved["expected_text_hash"],
+                }],
+                "summary": "删除教育占位字段",
+            },
+        )
+        assert field_proposal.status_code == 201
+
+        entry_target = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"resume_id": resume["id"], "quoted_text": "LinkRag 项目"},
+        ).json()["target"]
+        entry_context = client.post(
+            f"/internal/agent/runs/{run_id}/context:read",
+            headers=internal_headers(),
+            json={"target": entry_target, "scope": "entry"},
+        ).json()
+        placeholder_targets = [
+            item["target"] for item in entry_context["blocks"] if item["content"] == "1"
+        ]
+        assert len(placeholder_targets) == 3
+        entry_diagnosis = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": entry_target, "scope": "entry"},
+        ).json()
+        proposal_ids = [field_proposal.json()["proposal"]["id"]]
+        for index, placeholder_target in enumerate(placeholder_targets, start=1):
+            proposed = client.post(
+                f"/internal/agent/runs/{run_id}/proposals:v2",
+                headers=internal_headers(),
+                json={
+                    "call_key": f"delete-linkrag-placeholder-{index}",
+                    "mode": "polish_local",
+                    "target": entry_target,
+                    "diagnosis": entry_diagnosis["diagnosis"],
+                    "diagnosis_fingerprint": entry_diagnosis["diagnosis_fingerprint"],
+                    "operations": [{
+                        "op": "delete_target",
+                        "target": placeholder_target,
+                        "new_text": "",
+                        "expected_text_hash": placeholder_target["expected_text_hash"],
+                    }],
+                    "summary": f"删除 LinkRag 占位条目 {index}",
+                },
+            )
+            assert proposed.status_code == 201
+            proposal_ids.append(proposed.json()["proposal"]["id"])
+
+        listed = client.get(
+            f"/api/agent/proposals?session_id={session_id}"
+        ).json()["proposals"]
+        assert len(listed) == 4
+        assert [item["operations"][0]["op"] for item in listed].count(
+            "delete_target"
+        ) == 3
+
+        result = None
+        for proposal_id in proposal_ids:
+            result = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+            assert result.status_code == 200
+        assert result is not None
+        confirmed_entry = result.json()["resume"]["data"]["sections"][0]["entries"][0]
+        assert confirmed_entry["fields"]["location"] is None
+        assert [
+            run["text"]
+            for item in confirmed_entry["blocks"][0]["items"]
+            for run in item["runs"]
+            if run["inline_type"] == "text"
+        ] == ["实现真实检索链路"]
+        assert result.json()["resume"]["lock_version"] == 6
+
+
+def test_scoped_proposal_rebase_rejects_a_changed_operation_target() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-scoped-stale-target@example.test")
+        resume = create_resume(client, app)
+        markdown = "\n\n".join(
+            [
+                "## [[linkresume-block:node_section000000001]]项目经历",
+                "### [[linkresume-block:node_entry00000000001]]LinkRag 项目",
+                "- [[linkresume-block:node_bullet0000000001]]1",
+            ]
+        )
+        saved = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={
+                "data": editor_data(resume["data"], markdown),
+                "base_lock_version": 1,
+            },
+        )
+        assert saved.status_code == 200
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        entry_target = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"resume_id": resume["id"], "quoted_text": "LinkRag 项目"},
+        ).json()["target"]
+        entry_context = client.post(
+            f"/internal/agent/runs/{run_id}/context:read",
+            headers=internal_headers(),
+            json={"target": entry_target, "scope": "entry"},
+        ).json()
+        placeholder_target = next(
+            item["target"] for item in entry_context["blocks"] if item["content"] == "1"
+        )
+        diagnosis = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": entry_target, "scope": "entry"},
+        ).json()
+
+        proposed = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                "call_key": "delete-stale-placeholder",
+                "mode": "polish_local",
+                "target": entry_target,
+                "diagnosis": diagnosis["diagnosis"],
+                "diagnosis_fingerprint": diagnosis["diagnosis_fingerprint"],
+                "operations": [{
+                    "op": "delete_target",
+                    "target": placeholder_target,
+                    "new_text": "",
+                    "expected_text_hash": placeholder_target["expected_text_hash"],
+                }],
+                "summary": "删除占位条目",
+            },
+        )
+        assert proposed.status_code == 201
+
+        current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
+        current["data"]["sections"][0]["entries"][0]["blocks"][0]["items"][0][
+            "runs"
+        ][0]["text"] = "用户已修改"
+        changed = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": current["data"], "base_lock_version": current["lock_version"]},
+        )
+        assert changed.status_code == 200
+        stale = client.post(
+            f"/api/agent/proposals/{proposed.json()['proposal']['id']}/confirm"
+        )
+        assert stale.status_code == 409
+        assert stale.json() == {"error": "TARGET_STALE"}
+        current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
+        assert current["lock_version"] == 3
+        assert current["data"]["sections"][0]["entries"][0]["blocks"][0]["items"][0][
+            "runs"
+        ][0]["text"] == "用户已修改"
 
 
 def test_proposal_confirmation_never_overwrites_concurrent_resume_edit() -> None:
@@ -2105,7 +2367,11 @@ def test_new_session_uses_first_message_title_and_rejects_stale_clarification_re
             json={
                 "content": "优化这段项目经历的表达并突出技术影响",
                 "idempotency_key": "first_message_001",
-                "contexts": [{"type": "resume", "id": resume["id"]}],
+                "contexts": [{
+                    "type": "resume",
+                    "id": resume["id"],
+                    "presentation": "implicit",
+                }],
                 "selection_context": selection_context,
             },
         )
@@ -2243,6 +2509,7 @@ def test_new_session_uses_first_message_title_and_rejects_stale_clarification_re
             ]
             assert stored.metadata_json["contexts"][0]["type"] == "resume"
             assert stored.metadata_json["contexts"][0]["id"] == resume["id"]
+            assert stored.metadata_json["contexts"][0]["presentation"] == "implicit"
             assert stored.metadata_json["selection_context"] == selection_context
             structured_run = db.get(AgentRun, stored.run_id)
             assert structured_run is not None
@@ -2297,6 +2564,15 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
                         "assistant.activity.delta",
                         {"runId": run_id, "delta": "I'll ask for the target role."},
                     ),
+                    (
+                        "assistant.activity.status",
+                        {
+                            "runId": run_id,
+                            "callKey": "task-1",
+                            "label": "修改任务 1/1：定位内容",
+                            "status": "running",
+                        },
+                    ),
                     ("assistant.activity.clear", {"runId": run_id}),
                     (
                         "clarification.requested",
@@ -2331,6 +2607,7 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
             asyncio.run(_collect_stream_events(app, run_id, "请优化简历"))
         ).decode()
         assert "event: assistant.activity.delta" in events
+        assert "event: assistant.activity.status" in events
         assert "event: assistant.activity.clear" in events
         assert "event: clarification.requested" in events
         with app.state.session_factory() as db:
@@ -2368,15 +2645,15 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
         run_id = create_active_run(app, session_id)
         path = f"/internal/agent/runs/{run_id}/tool-events"
         running = {
-            "call_key": "resource-list-call-1",
-            "tool_name": "list_user_resources",
+            "call_key": "local-edit-plan-call-1",
+            "tool_name": "execute_local_resume_edit_plan",
             "status": "running",
         }
         succeeded = {
             **running,
             "status": "succeeded",
             "duration_ms": 17,
-            "stage": "list_user_resources",
+            "stage": "execute_local_resume_edit_plan",
             "result": "resolved",
             "scope": "target",
             "selection_present": True,
@@ -2402,7 +2679,7 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
         with app.state.session_factory() as db:
             record = db.scalar(
                 select(AgentToolCall).where(
-                    AgentToolCall.call_key == "resource-list-call-1"
+                    AgentToolCall.call_key == "local-edit-plan-call-1"
                 )
             )
             assert record is not None
@@ -2411,12 +2688,12 @@ def test_tool_event_terminal_state_is_idempotent_and_cannot_regress() -> None:
         completed_event = next(
             item
             for item in emitter.system_events
-            if item.get("action") == "list_user_resources"
+            if item.get("action") == "execute_local_resume_edit_plan"
             and item.get("result") == "resolved"
         )
         assert completed_event == {
             **completed_event,
-            "stage": "list_user_resources",
+            "stage": "execute_local_resume_edit_plan",
             "scope": "target",
             "selection_present": True,
             "candidate_count": 1,

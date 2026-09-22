@@ -262,25 +262,53 @@ def replace_editor_markdown(
                     entry["fields"][field_key] = None
         containers.append(section["blocks"])
         containers.extend(entry["blocks"] for entry in section["entries"])
-    def update_blocks(blocks: list[dict[str, Any]]) -> None:
+    deleted_ids = set(before) - set(after)
+    handled_deleted_ids: set[str] = set()
+
+    def update_blocks(blocks: list[dict[str, Any]], *, allow_delete: bool) -> None:
+        retained: list[dict[str, Any]] = []
         for block in blocks:
-            if block["block_type"] == "paragraph" and block["node_id"] in after:
-                current = before.get(block["node_id"])
-                replacement = after[block["node_id"]].text
-                if current is not None and replacement != current.text:
-                    block["runs"] = plain_run(replacement)
+            if block["block_type"] == "paragraph":
+                node_id = block["node_id"]
+                if allow_delete and node_id in deleted_ids:
+                    handled_deleted_ids.add(node_id)
+                    continue
+                if node_id in after:
+                    current = before.get(node_id)
+                    replacement = after[node_id].text
+                    if current is not None and replacement != current.text:
+                        block["runs"] = plain_run(replacement)
             elif block["block_type"] in {"ordered_list", "bullet_list"}:
+                retained_items: list[dict[str, Any]] = []
                 for item in block["items"]:
-                    current = before.get(item["node_id"])
-                    replacement = after.get(item["node_id"])
-                    if current is not None and replacement is not None and replacement.text != current.text:
+                    node_id = item["node_id"]
+                    if allow_delete and node_id in deleted_ids:
+                        handled_deleted_ids.add(node_id)
+                        continue
+                    current = before.get(node_id)
+                    replacement = after.get(node_id)
+                    if (
+                        current is not None
+                        and replacement is not None
+                        and replacement.text != current.text
+                    ):
                         item["runs"] = plain_run(replacement.text)
+                    retained_items.append(item)
+                block["items"] = retained_items
+                if allow_delete and not retained_items:
+                    continue
             elif block["block_type"] == "row":
                 for cell in block["cells"]:
-                    update_blocks(cell["blocks"])
+                    update_blocks(cell["blocks"], allow_delete=False)
+            retained.append(block)
+        blocks[:] = retained
 
     for blocks in containers:
-        update_blocks(blocks)
+        update_blocks(blocks, allow_delete=True)
+
+    unsupported_deleted_ids = deleted_ids - handled_deleted_ids
+    if unsupported_deleted_ids:
+        raise ApiError(422, "PATCH_OUT_OF_SCOPE")
 
     # Inserted nodes are attached after their immediately preceding canonical
     # block in the same section/entry container. They never rewrite unrelated
@@ -829,7 +857,8 @@ def apply_operations(
     markdown: str, *, mode: str, main_target: Any, operations: list[Any]
 ) -> str:
     if mode == "polish_local" and (
-        len(operations) != 1 or operations[0].op != "replace_target_text"
+        len(operations) != 1
+        or operations[0].op not in {"replace_target_text", "delete_target"}
     ):
         raise ApiError(422, "PATCH_OUT_OF_SCOPE")
     if mode == "generate_from_materials" and any(
@@ -852,6 +881,8 @@ def apply_operations(
     updated = markdown
     for operation in operations:
         if BLOCK_MARKER_PATTERN.search(operation.new_text):
+            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
+        if operation.op == "delete_target" and operation.new_text:
             raise ApiError(422, "PATCH_OUT_OF_SCOPE")
         if (
             mode in {"polish_local", "rewrite_entry_star"}
@@ -921,6 +952,14 @@ def apply_operations(
                 raise ApiError(409, "TARGET_STALE")
             replacement = segment.replace(expected, operation.new_text, 1)
             updated = updated[: block.start] + replacement + updated[block.end :]
+        elif operation.op == "delete_target":
+            if (
+                expected != block.text
+                or block.field is not None
+                or block.block_id in {block.section_id, block.entry_id}
+            ):
+                raise ApiError(422, "PATCH_OUT_OF_SCOPE")
+            updated = updated[: block.start] + updated[block.end :]
         else:
             generated_id = f"node_{uuid4().hex}"
             new_text = operation.new_text.strip()

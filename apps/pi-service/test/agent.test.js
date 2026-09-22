@@ -6,14 +6,47 @@ import {
   assertAgentCompleted,
   buildAgentConversation,
   createAssistantOutputFilter,
+  createResumeContextPolicy,
+  createSerialExecutor,
   createSkillReadTool,
   clarificationFallbackText,
+  executeLocalResumeEditPlan,
   formatContextMaterials,
   materializeProposalOperations,
+  prepareLocalResumeEditPlanArguments,
   SYSTEM_PROMPT,
   USER_FACING_RESPONSE_PROMPT,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
+
+const codedTestError = (code) => Object.assign(new Error(code), { code });
+
+test("selected resume identity wins over duplicate title search and model supplied IDs", async () => {
+  const calls = [];
+  const policy = createResumeContextPolicy([{ type: "resume", id: "83", resume_id: "83" }]);
+  const result = await policy.resolveReference({
+    resolveTarget: async (params) => { calls.push(params); return { status: "resolved", target: { resume_id: params.resume_id } }; },
+    resolveResumeReference: async () => { throw new Error("must not search duplicate titles"); },
+  }, { title: "张三的简历", resume_id: "78" });
+  assert.equal(result.target.resume_id, "83");
+  assert.deepEqual(calls, [{ resume_id: "83", scope_hint: "resume" }]);
+  assert.equal(policy.canListResources(null), false);
+  assert.equal(policy.canListResources("resume_edit"), false);
+  assert.equal(policy.canListResources("resource_catalog"), true);
+  assert.deepEqual(policy.unresolvedQuestions([
+    { purpose: "resume_identity", id: "which_resume" },
+    { purpose: "edit_scope", id: "scope" },
+  ]), [{ purpose: "edit_scope", id: "scope" }]);
+});
+
+test("without a selected resume, explicit names can be resolved and identity clarified", async () => {
+  const policy = createResumeContextPolicy([{ type: "resume_version", id: "83", resume_id: "83" }]);
+  const params = { title: "张三的简历" };
+  const result = await policy.resolveReference({ resolveResumeReference: async (value) => value }, params);
+  assert.deepEqual(result, params);
+  assert.equal(policy.canListResources("resume_edit"), true);
+  assert.equal(policy.unresolvedQuestions([{ purpose: "resume_identity" }]).length, 1);
+});
 
 test("system prompt identifies the assistant as LinkResume", () => {
   assert.match(SYSTEM_PROMPT, /你是 LinkResume 的职业与简历智能助手/);
@@ -107,6 +140,242 @@ test("proposal operations use only server-read locators and hashes", () => {
     ),
     /PATCH_OUT_OF_SCOPE/,
   );
+  assert.deepEqual(
+    materializeProposalOperations(
+      [{ op: "delete_target", block_id: target.block_id, new_text: "" }],
+      { target, blocks: [{ target }] },
+    ),
+    [{
+      op: "delete_target",
+      target,
+      new_text: "",
+      expected_text_hash: target.expected_text_hash,
+    }],
+  );
+});
+
+test("serial executor never overlaps stateful agent tools", async () => {
+  const executeSerially = createSerialExecutor();
+  let active = 0;
+  let maximumActive = 0;
+  const order = [];
+  const run = (value) => executeSerially(async () => {
+    active += 1;
+    maximumActive = Math.max(maximumActive, active);
+    order.push(`start:${value}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    order.push(`end:${value}`);
+    active -= 1;
+  });
+
+  await Promise.all([run(1), run(2), run(3)]);
+
+  assert.equal(maximumActive, 1);
+  assert.deepEqual(order, ["start:1", "end:1", "start:2", "end:2", "start:3", "end:3"]);
+});
+
+test("local edit plan normalizes deletion text without hiding missing replacement text", () => {
+  const prepared = prepareLocalResumeEditPlanArguments({
+    tasks: [
+      { quoted_text: "占位", match: "unique", op: "delete_target", summary: "删除占位" },
+      { quoted_text: "旧内容", match: "unique", op: "replace_target_text", summary: "替换内容" },
+    ],
+  });
+
+  assert.equal(prepared.tasks[0].new_text, "");
+  assert.equal("new_text" in prepared.tasks[1], false);
+});
+
+test("skill reads opt into Pi sequential execution", () => {
+  assert.equal(createSkillReadTool().executionMode, "sequential");
+});
+
+test("compound local edit plan freezes selectors and creates proposals serially", async () => {
+  const target = (blockId, content, extra = {}) => ({
+    resume_id: "88",
+    base_lock_version: 1,
+    surface: "editor",
+    section: "section-projects",
+    entry_id: null,
+    field: "markdown",
+    block_id: blockId,
+    selected_text: content,
+    expected_text_hash: `sha256:${blockId.padEnd(64, "a").slice(0, 64)}`,
+    ...extra,
+  });
+  const fieldTarget = target("node_field0000000001", "asd", { section: "section-education", field: "location" });
+  const parentTarget = target("node_entry0000000001", "LinkRag 项目", { entry_id: "node_entry0000000001" });
+  const placeholderTargets = [
+    target("node_bullet000000001", "1", { entry_id: "node_entry0000000001" }),
+    target("node_bullet000000002", "1", { entry_id: "node_entry0000000001" }),
+  ];
+  const calls = [];
+  let activeProposals = 0;
+  let maximumActiveProposals = 0;
+  const client = {
+    resolveTarget: async ({ quoted_text: quotedText }) => {
+      calls.push(`resolve:${quotedText}`);
+      return { status: "resolved", target: quotedText === "asd" ? fieldTarget : parentTarget };
+    },
+    scopedContext: async ({ target: currentTarget, scope }) => {
+      calls.push(`context:${currentTarget.block_id}:${scope}`);
+      if (currentTarget === parentTarget) {
+        return { target: parentTarget, blocks: placeholderTargets.map((item) => ({ target: item, content: "1" })) };
+      }
+      return { target: currentTarget, blocks: [{ target: currentTarget, content: currentTarget.selected_text }] };
+    },
+    diagnose: async ({ target: currentTarget }) => {
+      calls.push(`diagnose:${currentTarget.block_id}`);
+      return { diagnosis: { issues: [] }, diagnosis_fingerprint: `fingerprint:${currentTarget.block_id}` };
+    },
+    scopedProposal: async (payload) => {
+      activeProposals += 1;
+      maximumActiveProposals = Math.max(maximumActiveProposals, activeProposals);
+      calls.push(`proposal:${payload.target.block_id}`);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      activeProposals -= 1;
+      return { proposal: { id: `proposal-${payload.target.block_id}` } };
+    },
+  };
+  const activities = [];
+  const proposals = [];
+  const tasks = [
+    { quoted_text: "asd", match: "unique", op: "replace_target_text", new_text: "", summary: "删除占位字段" },
+    { quoted_text: "1", parent_quoted_text: "LinkRag 项目", parent_scope: "entry", match: "all", op: "delete_target", new_text: "", summary: "删除占位条目" },
+  ];
+  const pending = executeLocalResumeEditPlan({
+    client,
+    resumeId: "88",
+    tasks,
+    toolCallId: "plan-1",
+    onActivity: (activity) => activities.push(activity),
+    onProposal: (proposal) => proposals.push(proposal),
+  });
+  tasks[0].quoted_text = "changed after execution started";
+  const results = await pending;
+
+  assert.equal(maximumActiveProposals, 1);
+  assert.deepEqual(results.map((item) => item.status), ["succeeded", "succeeded"]);
+  assert.equal(proposals.length, 3);
+  assert.equal(calls[0], "resolve:asd");
+  assert.deepEqual(calls.filter((item) => item.startsWith("proposal:")), [
+    "proposal:node_field0000000001",
+    "proposal:node_bullet000000001",
+    "proposal:node_bullet000000002",
+  ]);
+  assert.ok(activities.some((item) => item.callKey === "plan-1:task:2:target:2" && item.status === "succeeded"));
+});
+
+test("compound local edit plan records a failed task once and continues", async () => {
+  let resolveCalls = 0;
+  const activities = [];
+  const results = await executeLocalResumeEditPlan({
+    client: {
+      resolveTarget: async ({ quoted_text: quotedText }) => {
+        resolveCalls += 1;
+        if (quotedText === "missing") return { status: "not_found", target: null };
+        return {
+          status: "resolved",
+          target: {
+            resume_id: "88",
+            base_lock_version: 1,
+            surface: "editor",
+            section: "section-skills",
+            entry_id: null,
+            field: "markdown",
+            block_id: "node_skill00000000001",
+            selected_text: quotedText,
+            expected_text_hash: `sha256:${"a".repeat(64)}`,
+          },
+        };
+      },
+      scopedContext: async ({ target: currentTarget }) => ({ target: currentTarget, blocks: [{ target: currentTarget }] }),
+      diagnose: async () => ({ diagnosis: {}, diagnosis_fingerprint: "fingerprint" }),
+      scopedProposal: async ({ target: currentTarget }) => {
+        if (currentTarget.selected_text === "broken") throw codedTestError("PATCH_OUT_OF_SCOPE");
+        return { proposal: { id: "proposal-1" } };
+      },
+    },
+    resumeId: "88",
+    toolCallId: "plan-2",
+    onActivity: (activity) => activities.push(activity),
+    tasks: [
+      { quoted_text: "missing", match: "unique", op: "delete_target", new_text: "", summary: "不存在" },
+      { quoted_text: "broken", match: "unique", op: "delete_target", new_text: "", summary: "提案失败" },
+      { quoted_text: "占位", match: "unique", op: "replace_target_text", new_text: "", summary: "删除占位" },
+    ],
+  });
+
+  assert.equal(resolveCalls, 3);
+  assert.deepEqual(results.map((item) => item.status), ["failed", "failed", "succeeded"]);
+  assert.equal(results[0].error_code, "TARGET_NOT_FOUND");
+  assert.equal(results[1].error_code, "PATCH_OUT_OF_SCOPE");
+  assert.ok(activities.some((item) => (
+    item.callKey === "plan-2:task:2:target:1" &&
+    item.status === "failed" &&
+    item.errorCode === "PATCH_OUT_OF_SCOPE"
+  )));
+});
+
+test("compound local edit plan rejects replacement tasks without replacement text", async () => {
+  const activities = [];
+  const results = await executeLocalResumeEditPlan({
+    client: {},
+    resumeId: "88",
+    toolCallId: "plan-missing-text",
+    onActivity: (activity) => activities.push(activity),
+    tasks: [{ quoted_text: "旧内容", match: "unique", op: "replace_target_text", summary: "替换内容" }],
+  });
+
+  assert.deepEqual(results, [{
+    task: 1,
+    status: "failed",
+    error_code: "TASK_NEW_TEXT_REQUIRED",
+    proposal_ids: [],
+  }]);
+  assert.ok(activities.some((item) => (
+    item.callKey === "plan-missing-text:task:1" &&
+    item.status === "failed" &&
+    item.errorCode === "TASK_NEW_TEXT_REQUIRED"
+  )));
+});
+
+test("compound local edit plan stops immediately after cancellation", async () => {
+  const controller = new AbortController();
+  let resolveCalls = 0;
+  const target = {
+    resume_id: "88",
+    base_lock_version: 1,
+    surface: "editor",
+    section: "section-skills",
+    entry_id: null,
+    field: "markdown",
+    block_id: "node_skill00000000001",
+    selected_text: "占位",
+    expected_text_hash: `sha256:${"a".repeat(64)}`,
+  };
+
+  await assert.rejects(executeLocalResumeEditPlan({
+    client: {
+      resolveTarget: async () => {
+        resolveCalls += 1;
+        return { status: "resolved", target };
+      },
+      scopedContext: async () => {
+        controller.abort();
+        throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      },
+    },
+    resumeId: "88",
+    toolCallId: "plan-3",
+    signal: controller.signal,
+    tasks: [
+      { quoted_text: "first", match: "unique", op: "delete_target", new_text: "", summary: "第一项" },
+      { quoted_text: "second", match: "unique", op: "delete_target", new_text: "", summary: "第二项" },
+    ],
+  }), { name: "AbortError" });
+
+  assert.equal(resolveCalls, 1);
 });
 
 test("agent completion accepts a successful assistant message", () => {
@@ -124,6 +393,17 @@ test("agent completion classifies model timeouts", () => {
   assert.throws(
     () => assertAgentCompleted({ role: "assistant", stopReason: "error", errorMessage: "Request timed out." }),
     /AGENT_MODEL_TIMEOUT/,
+  );
+});
+
+test("agent completion preserves a tool failure code exposed by the SDK", () => {
+  assert.throws(
+    () => assertAgentCompleted({
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: "Tool create_resume_change_proposal failed: PATCH_OUT_OF_SCOPE",
+    }),
+    /PATCH_OUT_OF_SCOPE/,
   );
 });
 
@@ -273,6 +553,7 @@ test("read tool can load a registered resume skill", async () => {
 test("read tool can load every P1 career workflow", async () => {
   const tool = createSkillReadTool();
   for (const path of [
+    "resource-catalog/SKILL.md",
     "career-assistant-router/SKILL.md",
     "resume-translation/SKILL.md",
     "interview-guide/SKILL.md",

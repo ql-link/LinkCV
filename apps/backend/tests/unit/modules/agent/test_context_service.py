@@ -18,11 +18,13 @@ def test_context_reference_accepts_web_display_shape_but_keeps_server_marker() -
         label="客户端标签不可信",
         updated_at="2026-08-26T00:00:00Z",
         lock_version=3,
+        presentation="implicit",
     )
 
     assert ref.version == "3"
     assert ref.label == "客户端标签不可信"
     assert ref.lock_version == 3
+    assert ref.presentation == "implicit"
 
 
 def test_message_contexts_limit_and_duplicate_type_are_rejected() -> None:

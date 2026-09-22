@@ -238,6 +238,7 @@ function insertComposerPlainText(element: HTMLElement, text: string) {
 }
 
 type ConversationState = {
+  revisionProposalId?: string;
   session: AgentSession;
   messages: LocalMessage[];
   proposals: AgentProposal[];
@@ -249,6 +250,12 @@ type ConversationState = {
   runId: string | null;
   phase: string;
   activityText: string;
+  activities: Array<{
+    callKey: string;
+    label: string;
+    status: "running" | "succeeded" | "failed";
+    errorCode?: string;
+  }>;
   referencedContextCount: number;
   startedAt: number | null;
   detailsOpen: boolean;
@@ -287,6 +294,7 @@ function blankConversation(): ConversationState {
     runId: null,
     phase: "正在准备…",
     activityText: "",
+    activities: [],
     referencedContextCount: 0,
     startedAt: null,
     detailsOpen: false,
@@ -334,9 +342,10 @@ function ContextSourceIcon({ type, size }: { type: AgentContextType; size: numbe
 }
 
 function UserMessageContent({ content, contexts }: { content: string; contexts: AgentContextSnapshot[] }) {
+  const visibleContexts = contexts.filter((context) => context.presentation !== "implicit");
   return (
     <div className="assistant-user-message-content">
-      {composerSegments(content, contexts).map((segment) => segment.kind === "text" ? segment.text : (
+      {composerSegments(content, visibleContexts).map((segment) => segment.kind === "text" ? segment.text : (
         <span
           className="assistant-message-context-token"
           key={segment.key}
@@ -425,6 +434,7 @@ function normalizeContext(value: unknown, fallbackType: AgentContextType): Agent
   return {
     type: type as AgentContextType,
     id: String(id),
+    presentation: item.presentation === "implicit" ? "implicit" : "mention",
     version_id: typeof item.version_id === "string" ? item.version_id : null,
     version: typeof item.version === "string" ? item.version : null,
     resume_id: typeof item.resume_id === "string" ? item.resume_id : null,
@@ -563,6 +573,39 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   activeKeyRef.current = activeKey;
 
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
+  const [proposalViews, setProposalViews] = useState<Record<string, { id?: string; collapsed?: boolean; group?: string }>>({});
+  const proposalView = proposalViews[activeKey] ?? {};
+  const turnUsers = current.messages.filter((item) => item.role === "user");
+  const proposalGroup = (proposal: AgentProposal) => {
+    const owner = turnUsers.find((item) => item.run_id === proposal.run_id)
+      ?? [...turnUsers].reverse().find((item) => !item.run_id && new Date(item.created_at).getTime() <= new Date(proposal.created_at).getTime());
+    return owner ? String(owner.sequence_no) : `history-${proposal.run_id}`;
+  };
+  const newestGroup = String(turnUsers.slice(-1)[0]?.sequence_no ?? "none");
+  const visibleGroup = proposalView.group ?? newestGroup;
+  const visibleProposals = current.proposals.filter((item) => proposalGroup(item) === visibleGroup);
+  const selectedProposal = visibleProposals.find((item) => item.id === proposalView.id)
+    ?? visibleProposals.find((item) => item.status === "pending") ?? visibleProposals[0];
+  const selectedProposalIndex = visibleProposals.findIndex((item) => item.id === selectedProposal?.id);
+  const pendingProposalCount = visibleProposals.filter((item) => item.status === "pending").length;
+  const updateProposalView = (patch: { id?: string; collapsed?: boolean; group?: string }) => {
+    setProposalViews((views) => ({ ...views, [activeKey]: { ...views[activeKey], ...patch } }));
+  };
+  const proposalSummary = (group: string) => {
+    const proposals = current.proposals.filter((item) => proposalGroup(item) === group);
+    if (!proposals.length) return null;
+    const count = proposals.filter((item) => item.status === "pending").length;
+    return <button type="button" className="assistant-proposal-summary"
+      aria-label={count ? `${count} 项修改待确认 · 查看修改` : "查看修改记录"}
+      onClick={() => updateProposalView({ group, id: group === visibleGroup ? proposalView.id : undefined, collapsed: false })}>
+      <span className="assistant-proposal-summary-icon" aria-hidden="true"><FileText size={19} /></span>
+      <span className="assistant-proposal-summary-copy">
+        <strong>{count ? `${count} 项修改待确认` : "简历修改记录"}</strong>
+        <span>{count ? "确认后才会写入简历" : `共 ${proposals.length} 项修改 · 查看处理结果`}</span>
+      </span>
+      <span className="assistant-proposal-summary-action">{count ? "查看修改" : "查看记录"}<ChevronRight size={15} aria-hidden="true" /></span>
+    </button>;
+  };
   const pendingClarification = pendingClarificationMessage(current.messages);
   const isEmptyConversation = current.messages.length === 0 && !current.running;
   const clarificationQuestions = pendingClarification?.clarification?.questions ?? [];
@@ -852,9 +895,21 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const elapsedSeconds = current.startedAt ? Math.max(0, Math.floor((clock - current.startedAt) / 1_000)) : 0;
   const detailsReady = current.running && current.stage !== "streaming" && elapsedSeconds >= 8;
-  const activityLines = current.activityText.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const latestActivity = activityLines[activityLines.length - 1] ?? "";
-  const processDetailsReady = detailsReady || activityLines.length > 0;
+  const structuredActivityLabels = new Set(current.activities.map((activity) => activity.label.replace(/[…：].*$/, "")));
+  const activityLines = current.activityText
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line && !structuredActivityLabels.has(line.replace(/[…：].*$/, "")));
+  const activityStatusText = (activity: ConversationState["activities"][number]) => {
+    if (activity.status === "succeeded") return `${activity.label} ✓`;
+    if (activity.status === "failed") return `${activity.label}（失败：${activity.errorCode ?? "AGENT_TOOL_FAILED"}）`;
+    return `${activity.label}…`;
+  };
+  const latestStructuredActivity = current.activities[current.activities.length - 1];
+  const latestActivity = latestStructuredActivity
+    ? activityStatusText(latestStructuredActivity)
+    : activityLines[activityLines.length - 1] ?? "";
+  const processDetailsReady = detailsReady || activityLines.length > 0 || current.activities.length > 0;
   const runtimeModelLabel = runtimeModel?.name ?? (runtimeModelLoading ? "正在读取模型" : "模型不可用");
 
   const cancelCurrentRun = useCallback(async (key = activeKeyRef.current) => {
@@ -864,15 +919,17 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     const runId = state.runId;
     abortRef.current?.abort();
     abortRef.current = null;
+    refreshComposerView("", state.contexts, state.invalidContextIds);
     updateConversation(key, (latest) => ({
       running: false,
       cancelling: Boolean(runId),
       stage: "stopped",
       activityText: "",
+      activities: [],
       runId: null,
       startedAt: null,
       error: null,
-      draft: latest.draft || [...latest.messages].reverse().find((message) => message.role === "user" && message.temporary)?.content || latest.draft,
+      draft: "",
       messages: latest.messages.map((message, index, messages) => (
         index === messages.length - 1 && message.role === "assistant" && message.temporary
           ? { ...message, status: "stopped" as const }
@@ -881,7 +938,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     }));
     if (runId) await api.cancelAgentRun(runId).catch(() => undefined);
     updateConversation(key, { cancelling: false });
-  }, [conversationStates, updateConversation]);
+  }, [conversationStates, refreshComposerView, updateConversation]);
 
   const selectSession = async (sessionIdToSelect: string) => {
     setDatasetsOpen(false);
@@ -903,7 +960,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         api.getAgentSession(sessionIdToSelect),
       ]);
       rememberAssistantSession(detail.session.id);
-      const proposalResult = await api.listAgentProposals(null, sessionIdToSelect);
+      const proposalResult = await api.listAgentProposals(null, sessionIdToSelect, true);
       updateConversation(sessionIdToSelect, {
         session: detail.session,
         messages: detail.session.messages ?? [],
@@ -1035,7 +1092,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const handleEvent = (key: string, requestNumber: number, event: AgentStreamEvent) => {
     if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
     if (event.type === "run.started") {
-      updateConversation(key, { runId: event.runId, stage: "thinking" });
+      updateConversation(key, (state) => {
+        const latestUser = state.messages.filter((message) => message.role === "user").slice(-1)[0];
+        return { runId: event.runId, revisionProposalId: undefined, stage: "thinking", messages: state.messages.map((message) => message === latestUser ? { ...message, run_id: event.runId } : message) };
+      });
       return;
     }
     if (event.type === "run.phase") {
@@ -1056,8 +1116,27 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       }));
       return;
     }
+    if (event.type === "assistant.activity.status") {
+      updateConversation(key, (state) => {
+        const activity = {
+          callKey: event.callKey,
+          label: event.label,
+          status: event.status,
+          ...(event.errorCode ? { errorCode: event.errorCode } : {}),
+        };
+        const index = state.activities.findIndex((item) => item.callKey === event.callKey);
+        return {
+          activities: index < 0
+            ? [...state.activities, activity]
+            : state.activities.map((item, itemIndex) => itemIndex === index ? activity : item),
+          stage: "thinking",
+          error: null,
+        };
+      });
+      return;
+    }
     if (event.type === "assistant.activity.clear") {
-      updateConversation(key, { activityText: "", detailsOpen: false });
+      updateConversation(key, { activityText: "", activities: [], detailsOpen: false });
       return;
     }
     if (event.type === "assistant.delta") {
@@ -1073,13 +1152,14 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           messages.push({
             sequence_no: -1,
             role: "assistant",
+            run_id: event.runId,
             content: event.delta,
             created_at: new Date().toISOString(),
             temporary: true,
             status: "streaming",
           });
         }
-        return { messages, stage: "streaming", activityText: "", detailsOpen: false, error: null };
+        return { messages, stage: "streaming", activityText: "", activities: [], detailsOpen: false, error: null };
       });
       return;
     }
@@ -1099,6 +1179,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         ],
         stage: "thinking",
         activityText: "",
+        activities: [],
         error: null,
         clarificationAnswers: {},
         clarificationAttempted: false,
@@ -1117,6 +1198,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         error: safeAgentError(new ApiRequestError(502, event.error)),
         stage: "failed",
         activityText: "",
+        activities: [],
         messages: state.messages.map((message, index, messages) => (
           index === messages.length - 1 && message.role === "assistant" && message.temporary
             ? { ...message, status: "failed" as const }
@@ -1130,6 +1212,8 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         running: false,
         stage: "stopped",
         activityText: "",
+        activities: [],
+        draft: "",
         runId: null,
         startedAt: null,
         messages: state.messages.map((message, index, messages) => (
@@ -1151,6 +1235,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       cancelling: false,
       stage: "thinking",
       activityText: "",
+      activities: [],
       runId: run.run_id,
       startedAt: new Date(run.started_at).getTime(),
       error: null,
@@ -1163,7 +1248,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     ).then(async () => {
       if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
       const detail = await api.getAgentSession(key);
-      const proposalResult = await api.listAgentProposals(null, key).catch(() => ({ proposals: [] }));
+      const proposalResult = await api.listAgentProposals(null, key, true).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
       updateConversation(key, (latest) => ({
         session: detail.session,
@@ -1220,9 +1305,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     const state = conversationStates[key] ?? blankConversation();
     const statePendingClarification = pendingClarificationMessage(state.messages);
     if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) return;
-    const runSelectionContext = embeddedResumeId ? embeddedSelectionContext : null;
-    const runResumeContextId = embeddedResumeId;
-    if (runResumeContextId) {
+    const explicitResume = state.contexts.find((item) => item.type === "resume");
+    const revisionResume = state.proposals.find((item) => item.id === state.revisionProposalId)?.resume_id;
+    const runResumeContextId = revisionResume ?? explicitResume?.id ?? embeddedResumeId;
+    const usesEmbeddedResume = Boolean(embeddedResumeId && runResumeContextId === embeddedResumeId);
+    const runSelectionContext = usesEmbeddedResume ? embeddedSelectionContext : null;
+    if (usesEmbeddedResume) {
       await saveCurrentResume();
       if (useResumeStore.getState().saveStatus === "error") {
         updateConversation(key, { error: "当前简历保存失败，智能助手没有读取所选内容。" });
@@ -1237,21 +1325,27 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       return;
     }
     const requestKey = session.id;
+    setProposalViews((views) => ({ ...views, [requestKey]: {} }));
     setSessions((items) => promoteSession(items, session));
     const requestNumber = streamRequestRef.current + 1;
     streamRequestRef.current = requestNumber;
     const controller = new AbortController();
     abortRef.current = controller;
     const sentContexts = state.contexts;
-    let requestContexts: AgentContextRef[] = sentContexts.map(({ type, id, version_id: versionId, version }) => ({
+    let requestContexts: AgentContextRef[] = sentContexts.map(({ type, id, presentation, version_id: versionId, version }) => ({
       type,
       id,
+      ...(presentation ? { presentation } : {}),
       ...(versionId ? { version_id: versionId } : {}),
       ...(version ? { version } : {}),
     }));
     if (runResumeContextId) {
+      const explicitCurrentResume = requestContexts.find((item) => (
+        item.type === "resume" && item.id === runResumeContextId
+      ));
       requestContexts = [
-        { type: "resume", id: runResumeContextId },
+        explicitCurrentResume
+          ?? { type: "resume", id: runResumeContextId, presentation: "implicit" },
         ...requestContexts.filter((item) => item.type !== "resume"),
       ];
     }
@@ -1273,6 +1367,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       runId: null,
       phase: sentContexts.length > 0 ? "正在读取所选资料…" : "正在准备…",
       activityText: "",
+      activities: [],
       referencedContextCount: sentContexts.length,
       startedAt: Date.now(),
       detailsOpen: false,
@@ -1293,6 +1388,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         {
           content: trimmed,
           idempotency_key: idempotencyKey(),
+          ...(state.revisionProposalId ? { revision_proposal_id: state.revisionProposalId } : {}),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
           ...(clarificationAnswersPayload ? { clarification_answers: clarificationAnswersPayload } : {}),
           ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
@@ -1303,7 +1399,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       );
       if (streamRequestRef.current !== requestNumber) return;
       const detail = await api.getAgentSession(session.id);
-      const proposalResult = await api.listAgentProposals(null, session.id).catch(() => ({ proposals: [] }));
+      const proposalResult = await api.listAgentProposals(null, session.id, true).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber) return;
       updateConversation(requestKey, (latest) => {
         const messages = mergeSessionMessages(detail.session.messages, latest.messages);
@@ -1313,9 +1409,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             stage: "idle" as const,
             contexts: [],
             invalidContextIds: [],
-          } : {
+          } : latest.stage === "failed" ? {
             stage: latest.stage,
             draft: latest.draft || trimmed,
+          } : {
+            stage: latest.stage,
+            draft: "",
           }),
           session: detail.session,
           messages,
@@ -1338,7 +1437,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         cancelling: false,
         runId: null,
         startedAt: null,
-        draft: latest.draft || trimmed,
+        draft: runStillStopping ? "" : latest.draft || trimmed,
         invalidContextIds: invalid
           ? latest.contexts.map(contextKey)
           : latest.invalidContextIds,
@@ -1420,10 +1519,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     void cancelCurrentRun();
   };
 
-  const continueProposal = () => {
+  const continueProposal = (proposal: AgentProposal) => {
     pendingComposerCaretRef.current = "继续调整：".length;
     refreshComposerView("继续调整：", current.contexts, current.invalidContextIds);
-    updateConversation(activeKey, { draft: "继续调整：", error: null });
+    updateConversation(activeKey, { draft: "继续调整：", revisionProposalId: proposal.id, error: null });
     window.setTimeout(() => {
       if (!inputRef.current) return;
       placeComposerCaret(inputRef.current, "继续调整：".length);
@@ -1930,6 +2029,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                   {message.status === "stopped" && <small className="assistant-stopped-label">已停止生成</small>}
                   {message.status === "failed" && <small className="assistant-stopped-label">生成未完成</small>}
                   <time className="visually-hidden" dateTime={message.created_at}>{formatTime(message.created_at)}</time>
+                  {(() => {
+                    const messageIndex = current.messages.indexOf(message);
+                    const source = current.messages.slice(0, messageIndex + 1).filter((item) => item.role === "user").slice(-1)[0];
+                    const next = current.messages[messageIndex + 1];
+                    return source && (!next || next.role === "user") ? proposalSummary(String(source.sequence_no)) : null;
+                  })()}
                 </div>
               </article>
             ))}
@@ -1959,7 +2064,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                       <div className="assistant-thinking-details">
                         <div><Check size={16} aria-hidden="true" /><strong>已读取 {current.referencedContextCount} 项资料</strong></div>
                         {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.label}</span>)}
-                        {current.activityText.trim() && <p className="assistant-thinking-activity">{current.activityText.trim()}</p>}
+                        {activityLines.length > 0 && <p className="assistant-thinking-activity">{activityLines.join("\n")}</p>}
+                        {current.activities.map((activity) => (
+                          <p className="assistant-thinking-activity" key={activity.callKey}>{activityStatusText(activity)}</p>
+                        ))}
                         <div className="assistant-thinking-current"><Target size={16} aria-hidden="true" /><span>{PHASE_LABELS.comparing_context === current.phase ? current.phase : "AI 正在处理…"}</span></div>
                       </div>
                     )}
@@ -1967,6 +2075,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 )}
               </section>
             )}
+            {[...new Set(current.proposals.map(proposalGroup))].filter((group) => group.startsWith("history-")).map((group) => <div key={group}>{proposalSummary(group)}</div>)}
           </div>
 
           {recallDrawerOpen && (
@@ -2018,22 +2127,31 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             </aside>
           )}
 
-          {current.proposals.length > 0 && (
+          {visibleProposals.length > 0 && (
             <div className="assistant-proposal-list" aria-label="待确认简历修改提案">
-              {current.proposals.map((proposal) => {
+              <div className="assistant-proposal-dock-header">
+                <strong>{visibleGroup !== newestGroup ? "历史修改建议 · " : ""}{pendingProposalCount > 0 ? `${pendingProposalCount} 项待确认修改` : "修改记录"}</strong>
+                <button type="button" aria-expanded={!proposalView.collapsed} aria-controls="assistant-proposal-detail" onClick={() => updateProposalView({ collapsed: !proposalView.collapsed })}>
+                  {proposalView.collapsed ? "展开修改" : "收起修改"}
+                </button>
+              </div>
+              <div id="assistant-proposal-detail" hidden={Boolean(proposalView.collapsed)}>
+              {(selectedProposal ? [selectedProposal] : []).map((proposal) => {
                 const changes = proposal.operations?.length
                   ? proposal.operations.map((operation) => ({
                     before: typeof operation.target.selected_text === "string"
                       ? operation.target.selected_text
                       : "当前定位内容",
-                    after: operation.new_text,
+                    after: operation.op === "delete_target"
+                      ? "删除该条目"
+                      : operation.new_text,
                   }))
                   : [{ before: "当前简历快照", after: "候选简历快照" }];
                 const actionable = proposal.status === "pending";
                 return (
                   <article className={`assistant-proposal-card is-${proposal.status}`} key={proposal.id}>
                     <header>
-                      <div><FileText size={17} aria-hidden="true" /><strong>简历修改提案</strong><span>{actionable ? "等待确认" : proposal.status === "applied" ? "已应用" : proposal.status === "rejected" ? "已放弃" : "无法应用"}</span></div>
+                      <div><FileText size={17} aria-hidden="true" /><strong>简历修改提案</strong><span>{proposal.superseded_by ? "已被替代" : actionable ? "等待确认" : proposal.status === "applied" ? "已应用" : proposal.status === "rejected" ? "已放弃" : "无法应用"}</span></div>
                       <small>基于版本 {proposal.base_lock_version}</small>
                     </header>
                     <dl className="assistant-proposal-meta">
@@ -2053,13 +2171,19 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                         <Button variant="accent" size="sm" disabled={current.busyProposalId !== null || current.running} onClick={() => void applyProposal(proposal)}>
                           {current.busyProposalId === proposal.id ? "处理中…" : "应用修改"}
                         </Button>
-                        <Button variant="outline" size="sm" disabled={current.busyProposalId !== null} onClick={continueProposal}>继续调整</Button>
+                        <Button variant="outline" size="sm" disabled={current.busyProposalId !== null || current.running} onClick={() => continueProposal(proposal)}>继续调整</Button>
                         <Button variant="ghost" size="sm" disabled={current.busyProposalId !== null} onClick={() => void rejectProposal(proposal)}>放弃</Button>
                       </div>
                     )}
                   </article>
                 );
               })}
+                <div className="assistant-proposal-pagination" aria-label="切换修改提案">
+                  <button type="button" aria-label="上一项修改" disabled={selectedProposalIndex <= 0} onClick={() => updateProposalView({ id: visibleProposals[selectedProposalIndex - 1].id })}>‹</button>
+                  <span aria-live="polite">{selectedProposalIndex + 1} / {visibleProposals.length}</span>
+                  <button type="button" aria-label="下一项修改" disabled={selectedProposalIndex >= visibleProposals.length - 1} onClick={() => updateProposalView({ id: visibleProposals[selectedProposalIndex + 1].id })}>›</button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2075,6 +2199,10 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           )}
 
           <form className="assistant-composer" onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
+            {current.revisionProposalId && <div className="assistant-proposal-revision-context">
+              <span>继续调整所选修改建议</span>
+              <button type="button" onClick={() => updateConversation(activeKey, { revisionProposalId: undefined })}>取消关联</button>
+            </div>}
             {pendingClarification?.clarification && (
               <section className={`assistant-clarification${current.clarificationCollapsed ? " is-collapsed" : ""}`} aria-label="需要你确认">
                 {current.clarificationCollapsed ? (
