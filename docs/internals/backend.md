@@ -51,7 +51,7 @@
 
 MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_companies` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-每个 `job_descriptions` 最多关联一条 `job_applications`，后者保存岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。创建入口发现同一 JD 已有任何进程时复用原记录，已结束后也不能创建第二次投递。已终止且仍关联 JD 的进程从求职入口删除时会删除完整岗位聚合；历史遗留的无 JD 进程仍可单独清理。服务先解除场次关联的资料库文件绑定（文件保留在库中），再按排期、阶段、进程和岗位的顺序清理，活动进程不能通过求职进程接口直接永久删除。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；迁移 `0064` 把面试素材并入 `user_dataset`（新增 `asset_kind`、场次关联与来源列，`document_parse_tasks` 扩展支持音视频格式），存量 `interview_assets` 由发布脚本搬入资料库，旧表暂留待后续 revision 删除；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
+每个 `job_descriptions` 最多关联一条 `job_applications`，后者保存岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。创建入口发现同一 JD 已有任何进程时复用原记录，已结束后也不能创建第二次投递。已终止且仍关联 JD 的进程从求职入口删除时会删除完整岗位聚合；历史遗留的无 JD 进程仍可单独清理。服务先解除场次关联的资料库文件绑定（文件保留在库中），再按排期、阶段、进程和岗位的顺序清理，活动进程不能通过求职进程接口直接永久删除。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；迁移 `0082` 把面试素材并入 `user_dataset`（新增 `asset_kind`、场次关联与来源列，`document_parse_tasks` 扩展支持音视频格式），存量 `interview_assets` 由发布脚本搬入资料库，旧表暂留待后续 revision 删除。`interview_session_id` 保留 `ON DELETE SET NULL`；由于 MySQL 禁止该外键列参与 CHECK，统一入库和面试服务在应用层保证场次 ID 与来源成对设置或清空。旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
 
 迁移 `0058` 为 `interview_sessions` 增加固定场次/开放窗口类型和开放窗口专用的个人作答计划时间。只有测评和笔试能创建 `open_window`；它可保存至多一组个人作答计划，两端同时为空表示未计划，两端有值时必须完整落在官方 `start_at/end_at` 内。调整官方窗口不能使既有计划越界，固定场次不能写入计划。
 
@@ -226,7 +226,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 - 知识库原文件：`users/{user_id}/datasets/...`。
 - 知识库转换存档：`users/{user_id}/datasets/converted/{parse_task_id}.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
-- 面试素材：`users/{user_id}/datasets/...`（迁移 `0064` 后与资料库同前缀同规则；历史 `users/{user_id}/interviews/{application_id}/{session_id}/...` 对象由迁移脚本搬迁并删除）。
+- 面试素材：`users/{user_id}/datasets/...`（迁移 `0082` 后与资料库同前缀同规则；历史 `users/{user_id}/interviews/{application_id}/{session_id}/...` 对象由迁移脚本搬迁并删除）。
 
 简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resumes.parse_task_id` 读取对应 `document_parse_tasks`，删除源文件、转换存档和任务记录，再删除简历资源、版本和简历；任务记录异常缺失时只记录告警，不阻断简历删除。面试录音、视频和文档使用流式上传，服务端在传输中计算 SHA-256 并执行 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 上限，不把完整文件读入内存；浏览器录制和事后上传复用 `dataset_ingest_service` 同一入库链路，最终落在 `users/{user_id}/datasets/` 前缀并以 `user_dataset.interview_session_id` 关联场次。MinIO 与 MySQL 不是同一事务，元数据提交失败会尽力补偿删除新对象，对象删除成功后的数据库提交失败仍无法恢复对象。
 
@@ -244,7 +244,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到 `0065`、模板初始化和物理约束验证。
+- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 另以一次性 MySQL 8.4 服务固定验证 `0081 → 0082`。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

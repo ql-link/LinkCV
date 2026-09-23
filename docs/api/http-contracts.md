@@ -325,7 +325,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 面试模块的求职进程、岗位、简历版本、单场面试和素材 ID 与项目其他 BIGINT 资源一致，在 JSON、查询参数和路径中都使用无前导零的十进制字符串；前端不得把这些 ID 转成 JavaScript `number`。
 
-素材上传是 `multipart/form-data`，必须携带 canonical UUID `Idempotency-Key`；`source_type=recorded|uploaded` 仅记录来源路径。上传复用资料库入库链路：文件落入 `users/{user_id}/datasets/` 前缀，`user_dataset.interview_session_id` 记录场次关联，场次侧不再持有独立素材记录。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256；单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制，媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`/`MEDIA_MAX_TOTAL_BYTES_PER_USER` 控制。格式、大小、配额和对象存储失败复用资料库的 `DATASET_*` 错误码。文档类素材上传后进入解析队列，音视频落地为终态、不参与解析。`POST /interview-sessions/:id/assets/attach` 要求资料属本人、`upload_status=succeeded` 且未关联其他场次；重复关联本场次幂等返回，已关联其他场次返回 `409 DATASET_ALREADY_LINKED`，资料不存在或越权返回 `404 DATASET_NOT_FOUND`。解除关联只清空 `interview_session_id`/`interview_source_type`，物理删除只能在资料库进行；删除场次或求职进程同样只解除关联。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
+素材上传是 `multipart/form-data`，必须携带 canonical UUID `Idempotency-Key`；`source_type=recorded|uploaded` 仅记录来源路径。上传复用资料库入库链路：文件落入 `users/{user_id}/datasets/` 前缀，`user_dataset.interview_session_id` 记录场次关联，场次侧不再持有独立素材记录。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256；单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制，媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`/`MEDIA_MAX_TOTAL_BYTES_PER_USER` 控制。格式、大小、配额和对象存储失败复用资料库的 `DATASET_*` 错误码。文档类素材上传后进入解析队列，音视频落地为终态、不参与解析。`POST /interview-sessions/:id/assets/attach` 要求资料属本人、`upload_status=succeeded` 且未关联其他场次；重复关联本场次幂等返回，已关联其他场次返回 `409 DATASET_ALREADY_LINKED`，资料不存在或越权返回 `404 DATASET_NOT_FOUND`。统一入库和关联服务保证 `interview_session_id` 与 `interview_source_type` 同时设置或同时为空；该内部一致性校验不增加新的请求或响应字段。解除关联只清空这两列，物理删除只能在资料库进行；删除场次或求职进程同样只解除关联。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
 
 ## 对象资源
 

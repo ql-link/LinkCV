@@ -93,6 +93,18 @@ def is_media_filename(filename: str) -> bool:
     return extension.suffix.lower().lstrip(".") in SUPPORTED_DATASET_MEDIA_TYPES
 
 
+def validate_interview_context(
+    *,
+    interview_session_id: int | None,
+    interview_source_type: str | None,
+) -> None:
+    """Keep the optional interview association fields as one application value."""
+    if (interview_session_id is None) != (interview_source_type is None):
+        raise ValueError(
+            "interview_session_id and interview_source_type must be set together"
+        )
+
+
 def validate_declared_media(
     *,
     filename: str,
@@ -625,6 +637,10 @@ async def ingest_dataset_upload(
     idempotency_key: str,
 ) -> IngestResult:
     """Route the upload to the buffered document path or the streaming media path."""
+    validate_interview_context(
+        interview_session_id=interview_session_id,
+        interview_source_type=interview_source_type,
+    )
     probe = file_name_override or upload.filename or ""
     if is_media_filename(probe):
         return await ingest_media_upload(

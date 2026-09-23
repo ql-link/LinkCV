@@ -106,10 +106,6 @@ class UserDataset(Base):
             name="ck_user_dataset_interview_context",
         ),
         CheckConstraint(
-            "interview_session_id IS NULL OR interview_source_type IS NOT NULL",
-            name="ck_user_dataset_interview_source",
-        ),
-        CheckConstraint(
             "duration_ms IS NULL OR "
             "(asset_kind IN ('audio', 'video') AND duration_ms > 0)",
             name="ck_user_dataset_duration",

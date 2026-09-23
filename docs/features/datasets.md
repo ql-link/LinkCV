@@ -38,7 +38,7 @@ Web `/datasets` 在主体首页采用与 macOS 访达一致的纯粹网格布局
 
 - 新上传必须指定当前用户拥有的现存文件夹，服务端拒绝缺失或不可访问的目标；单项和批量移动也必须指定现存文件夹，不能移至未分类。
 - `user_dataset_folders` 保存用户自建分类文件夹，同一用户下名称唯一（上限 50 个）。
-- `user_dataset` 保存用户归属、`folder_id`（为 NULL 表示未分类）、文件名、格式、MIME、大小、对象键、SHA-256、用户范围的 `idempotency_key`、请求指纹和 `parse_task_id`；同一用户与幂等键只能对应同一份请求。`asset_kind` 区分 `document|audio|video`；可空的 `interview_session_id`、`interview_source_type`、`duration_ms` 表达与面试场次的关联，解除关联时两列同时清空。
+- `user_dataset` 保存用户归属、`folder_id`（为 NULL 表示未分类）、文件名、格式、MIME、大小、对象键、SHA-256、用户范围的 `idempotency_key`、请求指纹和 `parse_task_id`；同一用户与幂等键只能对应同一份请求。`asset_kind` 区分 `document|audio|video`；可空的 `interview_session_id`、`interview_source_type`、`duration_ms` 表达与面试场次的关联。统一入库、关联、解绑和删除服务保证场次 ID 与来源成对设置或清空；数据库保留场次外键的 `ON DELETE SET NULL`，不使用 MySQL 禁止的跨字段 CHECK 约束该外键列。
 - 文件夹删除需要用户确认永久删除范围；服务端先检查全部资料，存在上传或解析中任务时拒绝整次删除。确认后清理源文件、解析结果、资料及任务记录，最后删除文件夹，不产生未分类资料。对象存储清理失败返回错误，保留数据库记录供重试；跨对象存储与数据库不具备原子回滚，部分对象可能已删除。
 - 原始文件进入私有对象存储；Worker 本地规范化 Markdown/TXT，通过 LinkParse 解析 PDF/DOCX。
 - 资料转换结果保存前移除独立成行的 `<!-- WORD_PAGE:数字 -->` 分页标记；历史正文读取时同样过滤，无需重新上传。代码块、行内示例和其他注释保持原样，源文件不改写。
@@ -49,7 +49,7 @@ Web `/datasets` 在主体首页采用与 macOS 访达一致的纯粹网格布局
 
 ## 扩展边界
 
-新增文件格式需同步服务端真实性校验、Worker 分派（媒体除外）、对象存储、前端接受类型和 HTTP 契约。面试素材在迁移 `0064` 后并入本表；存量 `interview_assets` 记录由 `scripts/release/migrate_interview_assets.py` 一次性搬入（幂等可重跑），旧表暂留待后续 revision 删除。当前删除是终态资料的同步永久删除；`queued` 和 `processing` 资料不可删除。目录树、共享、检索、回收站或异步删除需要新的产品与持久化设计，不能作为当前功能宣称。
+新增文件格式需同步服务端真实性校验、Worker 分派（媒体除外）、对象存储、前端接受类型和 HTTP 契约。面试素材在迁移 `0082` 后并入本表；存量 `interview_assets` 记录由 `scripts/release/migrate_interview_assets.py` 一次性搬入（幂等可重跑），旧表暂留待后续 revision 删除。当前删除是终态资料的同步永久删除；`queued` 和 `processing` 资料不可删除。目录树、共享、检索、回收站或异步删除需要新的产品与持久化设计，不能作为当前功能宣称。
 
 ## 关键流程
 

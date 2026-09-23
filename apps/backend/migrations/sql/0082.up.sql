@@ -31,9 +31,6 @@ ALTER TABLE user_dataset
     interview_source_type IS NULL
       OR interview_source_type IN ('recorded', 'uploaded')
   ),
-  ADD CONSTRAINT ck_user_dataset_interview_source CHECK (
-    interview_session_id IS NULL OR interview_source_type IS NOT NULL
-  ),
   ADD CONSTRAINT ck_user_dataset_duration CHECK (
     duration_ms IS NULL
       OR (asset_kind IN ('audio', 'video') AND duration_ms > 0)
