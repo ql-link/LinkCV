@@ -108,7 +108,7 @@ def migration_test_url() -> str:
     return raw
 
 
-TEMPLATE_CATALOG_HEAD = "0081"
+TEMPLATE_CATALOG_HEAD = "0082"
 FEATURED_0079_KEYS = {f"featured-{name}-cn" for name in ("campus", "professional", "intern", "sales", "product", "finance", "people")}
 FEATURED_0080_KEYS = FEATURED_0079_KEYS | {"featured-card-dashed-cn", "featured-card-rail-cn"}
 FEATURED_KEYS = FEATURED_0080_KEYS | {"featured-classic-business-cn", "featured-vitality-cn"}
@@ -4244,6 +4244,45 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
         connection.execute(text("DELETE FROM users"))
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_mysql_0082_accepts_nullable_interview_session_foreign_key() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0081")
+    run_alembic(database_url, "upgrade", "0082")
+
+    engine = create_engine(database_url)
+    inspector = inspect(engine)
+    column_names = {
+        column["name"] for column in inspector.get_columns("user_dataset")
+    }
+    check_names = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("user_dataset")
+    }
+    foreign_keys = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspector.get_foreign_keys("user_dataset")
+    }
+
+    assert {
+        "asset_kind",
+        "interview_session_id",
+        "interview_source_type",
+        "duration_ms",
+        "legacy_interview_asset_id",
+    } <= column_names
+    assert "ck_user_dataset_interview_source" not in check_names
+    assert foreign_keys["fk_user_dataset_interview_session"]["options"] == {
+        "ondelete": "SET NULL"
+    }
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0082"
+        )
     engine.dispose()
 
 
