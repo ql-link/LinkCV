@@ -2753,6 +2753,30 @@ def test_agent_model_returns_stable_error_when_pi_binding_is_missing() -> None:
     assert response.json() == {"error": "LLM_MODEL_NOT_CONFIGURED"}
 
 
+def test_runtime_config_snapshots_requested_model_on_run() -> None:
+    app = build_app()
+    app.state.llm_service.agent_runtime_model = AsyncMock(return_value=SimpleNamespace(
+        id=42, config_version=3, adapter="openrouter",
+        model_call_name="example/model-1", api_base=None, api_key="test-key",
+    ))
+    with TestClient(app) as client:
+        register(client, "model-snapshot@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        response = client.get(
+            "/internal/agent/runtime-config",
+            params={"run_id": run_id}, headers=internal_headers(),
+        )
+        assert response.status_code == 200
+        assert response.json()["model"] == "example/model-1"
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            assert run is not None
+            assert run.model_name == "openrouter/example/model-1"
+            assert run.model_config_id == 42
+            assert run.model_config_version == 3
+
+
 def test_agent_model_does_not_expose_llm_call_id_on_service_error() -> None:
     app = build_app()
     app.state.llm_service.agent_model_summary = AsyncMock(

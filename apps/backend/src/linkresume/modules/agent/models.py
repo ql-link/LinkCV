@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -96,6 +97,7 @@ class AgentRun(Base):
         ),
         Index("idx_agent_runs_session_created", "session_id", "created_at", "id"),
         Index("idx_agent_runs_status_updated", "status", "updated_at", "id"),
+        Index("idx_agent_runs_created", "created_at", "id"),
         {"comment": "智能助手单次运行"},
     )
 
@@ -110,6 +112,7 @@ class AgentRun(Base):
     model_config_version: Mapped[int | None] = mapped_column(
         UNSIGNED_BIGINT, nullable=True
     )
+    model_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
@@ -123,6 +126,70 @@ class AgentRun(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AgentOperation(Base):
+    __tablename__ = "agent_operations"
+    __table_args__ = (
+        UniqueConstraint("public_id", name="uk_agent_operations_public_id"),
+        CheckConstraint(
+            "state IN ('preflighting', 'failed', 'run_created')",
+            name="ck_agent_operations_state",
+        ),
+        Index("idx_agent_operations_state_created", "state", "created_at", "id"),
+        Index("idx_agent_operations_created", "created_at", "id"),
+        Index("idx_agent_operations_session", "session_id", "id"),
+        {"comment": "智能助手消息操作排障摘要"},
+    )
+
+    id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    session_id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey("agent_sessions.id", ondelete="RESTRICT", name="fk_agent_operations_session"),
+        nullable=False,
+    )
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now()
+    )
+
+
+class AgentStageEvent(Base):
+    __tablename__ = "agent_stage_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_operation_id", "event_key", name="uk_agent_stage_events_operation_key"
+        ),
+        CheckConstraint(
+            "result IN ('started', 'succeeded', 'failed', 'cancelled')",
+            name="ck_agent_stage_events_result",
+        ),
+        Index(
+            "idx_agent_stage_events_operation_time",
+            "agent_operation_id", "occurred_at", "id",
+        ),
+        {"comment": "智能助手安全阶段事件"},
+    )
+
+    id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
+    agent_operation_id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey("agent_operations.id", ondelete="CASCADE", name="fk_agent_stage_events_operation"),
+        nullable=False,
+    )
+    event_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    stage: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+    tool_call_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    proposal_id: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now()
     )
 
 

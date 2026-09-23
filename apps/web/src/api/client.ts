@@ -1013,6 +1013,41 @@ export type LogListResponse = {
   droppedMalformed: number;
 };
 
+export type AgentOperationItem = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  status: string;
+  error_code: string | null;
+  failure_stage: string | null;
+  model_name: string | null;
+  legacy: boolean;
+};
+
+export type AgentOperationDetail = {
+  id: string;
+  user_id: string;
+  status: string;
+  error_code: string | null;
+  failure_stage: string | null;
+  model_name: string | null;
+  timeline_status: "complete" | "incomplete" | "legacy";
+  gap_reason: string | null;
+  events: Array<{
+    id: string;
+    stage: string;
+    result: string;
+    error_code: string | null;
+    duration_ms: number | null;
+    tool_call_key: string | null;
+    proposal_id: string | null;
+    occurred_at: string;
+  }>;
+  next_cursor: string | null;
+  tools: Array<{ call_key: string; tool_name: string; status: string; error_code: string | null; duration_ms: number | null }>;
+  proposals: Array<{ id: string; status: string; created_at: string; applied_at: string | null }>;
+};
+
 export type SystemLogQuery = {
   from?: string;
   to?: string;
@@ -2260,6 +2295,10 @@ export const api = {
     request<LogListResponse>(withLogQuery("/api/admin/logs/audit", params)),
   adminLogSummary: (params: { from?: string; to?: string } = {}) =>
     request<LogSummary>(withLogQuery("/api/admin/logs/summary", params)),
+  adminListAgentOperations: (params: { from?: string; to?: string; status?: string; errorCode?: string; cursor?: string; limit?: number } = {}) =>
+    request<{ items: AgentOperationItem[]; next_cursor: string | null }>(withLogQuery("/api/admin/agent-operations", params)),
+  adminGetAgentOperation: (id: string, params: { cursor?: string; limit?: number } = {}) =>
+    request<AgentOperationDetail>(withLogQuery(`/api/admin/agent-operations/${encodeURIComponent(id)}`, params)),
 };
 
 function withLogQuery(path: string, params: Record<string, unknown>): string {

@@ -9,8 +9,11 @@ from sqlalchemy import func, select
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
-from linkresume.modules.agent.models import AgentMessage, AgentRun, AgentSession
+from linkresume.modules.agent.models import (
+    AgentMessage, AgentOperation, AgentRun, AgentSession, AgentStageEvent,
+)
 from linkresume.modules.agent.schemas import AgentClarification, AgentContextMaterial
+from linkresume.modules.agent.trace import event_key, operation_for_run, record_event
 
 
 RUN_PHASE_LABELS = {
@@ -51,7 +54,18 @@ def _emit_agent_stage(
     candidate_count: int | None = None,
     exception_type: str | None = None,
 ) -> None:
-    """Emit bounded run-stage telemetry without affecting the Agent result."""
+    """Persist a bounded stage event and emit the existing system log."""
+
+    if stage != "run_finalize" and result in {"started", "succeeded", "failed", "cancelled"}:
+        with app.state.session_factory() as db:
+            operation = operation_for_run(db, run_public_id)
+            if operation is not None:
+                record_event(
+                    db, operation, key=event_key(run_public_id, stage, result),
+                    stage=stage, result=result, error_code=error_code,
+                    duration_ms=duration_ms,
+                )
+                db.commit()
 
     try:
         app.state.event_emitter.system(
@@ -572,6 +586,28 @@ def _finalize(
         run.output_tokens = output_tokens if status == "succeeded" else None
         run.estimated_cost = estimated_cost if status == "succeeded" else None
         run.completed_at = utc_now()
+        operation = db.scalar(select(AgentOperation).where(
+            AgentOperation.public_id == run_public_id
+        ).with_for_update())
+        if operation is not None:
+            if status == "failed":
+                failed_stage = db.scalar(select(AgentStageEvent).where(
+                    AgentStageEvent.agent_operation_id == operation.id,
+                    AgentStageEvent.result == "failed",
+                    AgentStageEvent.stage != "run_finalize",
+                ).order_by(AgentStageEvent.id.desc()).limit(1))
+                failure_stage = failed_stage.stage if failed_stage is not None else (
+                    "stream_terminal" if error_code == "AGENT_UPSTREAM_FAILED"
+                    else "model_execution"
+                )
+                operation.failure_stage = failure_stage
+            else:
+                operation.failure_stage = None
+            record_event(
+                db, operation, key=event_key(run_public_id, "run_finalize", status),
+                stage="run_finalize", result=status,
+                error_code=error_code if status == "failed" else None,
+            )
         if status == "succeeded" and (assistant_content or clarification):
             sequence_no = (
                 int(

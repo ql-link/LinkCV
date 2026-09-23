@@ -30,6 +30,7 @@ import {
 import { Brand, FeedbackNotice, PageLoading, type FeedbackNoticeKind } from "@/components/ui";
 import { ModelsPanel } from "./AdminLlmPanels";
 import { AdminLogsCenter } from "./AdminObservabilityPanels";
+import { AdminAgentTracePanel } from "./AdminAgentTracePanel";
 import { AdminTemplatePanel } from "./AdminTemplatePanel";
 import { PluginReleasePanel } from "./PluginReleasePanel";
 import "./admin.css";
@@ -43,7 +44,7 @@ import {
   type AdminUserDetail as AdminUserDetailType,
 } from "../../api/client";
 import { adminLoginPath, navigateTo } from "../../routing";
-type AdminSection = "overview" | "users" | "templates" | "models" | "plugins" | "logs";
+type AdminSection = "overview" | "users" | "templates" | "models" | "plugins" | "logs" | "agentTrace";
 
 function initialAdminSection(): AdminSection {
   const path = window.location.pathname;
@@ -52,6 +53,7 @@ function initialAdminSection(): AdminSection {
   if (path.startsWith("/admin/llm")) return "models";
   if (path.startsWith("/admin/plugins")) return "plugins";
   if (path.startsWith("/admin/logs")) return "logs";
+  if (path.startsWith("/admin/agent-operations")) return "agentTrace";
   return "overview";
 }
 
@@ -62,6 +64,7 @@ const adminSectionPaths: Record<AdminSection, string> = {
   models: "/admin/llm/models",
   plugins: "/admin/plugins",
   logs: "/admin/logs/system",
+  agentTrace: "/admin/agent-operations",
 };
 
 const spring = {
@@ -361,6 +364,7 @@ function AdminWorkspace({
                   onSessionExpired={onSessionExpired}
                 />
               )}
+              {section === "agentTrace" && <AdminAgentTracePanel />}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -396,6 +400,7 @@ const sectionLabels: Record<AdminSection, string> = {
   models: "模型配置",
   plugins: "插件发布",
   logs: "日志中心",
+  agentTrace: "Agent 调用排障",
 };
 
 function SidebarContent({
@@ -418,6 +423,7 @@ function SidebarContent({
     { id: "models", label: "模型配置", icon: Bot },
     { id: "plugins", label: "插件发布", icon: PackageOpen },
     { id: "logs", label: "日志中心", icon: Activity },
+    { id: "agentTrace", label: "Agent 调用排障", icon: Bot },
   ];
   return (
     <>

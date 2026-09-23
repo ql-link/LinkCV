@@ -4251,7 +4251,7 @@ def test_mysql_0082_accepts_nullable_interview_session_foreign_key() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "0081")
-    run_alembic(database_url, "upgrade", "head")
+    run_alembic(database_url, "upgrade", "0082")
 
     engine = create_engine(database_url)
     inspector = inspect(engine)

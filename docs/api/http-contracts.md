@@ -355,6 +355,8 @@ PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在�
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
 
+Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations` 接受 `from`、`to`（带时区且最多 31 天）、`status`、`errorCode`、`cursor`、`limit`，返回 `{items, next_cursor}`。每项含操作 ID、内部 `user_id`、创建时间、状态、错误码、失败阶段、运行时请求的 `model_name` 快照和 `legacy` 标志。`GET /api/admin/agent-operations/:operationId` 返回同一模型快照、状态、`timeline_status`、按事件 ID 分页的 `events`、工具摘要和提案摘要；尚未选中模型或无法可靠还原的旧记录返回 `model_name: null`。阶段事件不含消息或简历正文。旧运行可查询但标记 `legacy`，不补造阶段事件；会话删除后相关轨迹一并删除。
+
 | Method | Path | 查询参数 | 成功结果 |
 | --- | --- | --- | --- |
 | `GET` | `/api/admin/logs/system` | `from`、`to`、`level`、`source`、`dependency`、`requestId`、`taskId`、`operationId`、`errorCode`、`keyword`、`cursor`、`limit` | `{items, nextCursor, partial, droppedMalformed}` |

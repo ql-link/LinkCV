@@ -1,5 +1,7 @@
 # Agent 与统一 LLM 运行时架构
 
+Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operations` 在上下文预检前落库，保存运行创建前失败摘要；`agent_stage_events` 按同一操作记录阶段转换。运行创建后状态仍以 `agent_runs` 为真值，工具终态仍以 `agent_tool_calls` 为真值，提案状态仍以 `resume_change_proposals` 为真值。`agent_runs.model_name` 保存运行时请求的模型标识快照，配置后续修改或删除不改变它；无法可靠还原的旧运行保持空值。新表只提供安全排障时间线，不复制提示词、简历正文、上下文或工具参数；管理员通过 `/api/admin/agent-operations` 查询，删除会话时同步清理。
+
 ## 运行时边界
 
 Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `llm` 模块组成：`agent` 管理持久化会话、会话展示状态与提案，Pi 执行 agent loop，`llm` 管理模型选择、凭据、验证与计量。普通用户功能见 [AI 求职助手](../features/ai-assistant.md)，第三方 Pi 包边界见 [third_party/pi](third-party-pi.md)。
