@@ -56,6 +56,7 @@ Production Job。首次加入触发器后需手动运行一次 `linkresume-prod`
 `Jenkinsfile` 加载并注册触发器；后续 `master` push 自动构建。
 
 Jenkins 容器需预置权限为 `600` 的 `/var/jenkins_home/.ssh/cloud_prod`，Cloud 只授权这把发布密钥并限制来源。Production Pipeline 会把仓库中的非敏感 `.env.production`、Compose 和 Promtail 配置复制到部署目录；应用私密覆盖必须由部署密钥存储预先提供到 `.env.production.local` 且权限为 `600`。OSS 发布凭据使用另一个不进入 Compose 的 `/opt/tolink/LinkResume/.env.oss-cdn.local`，格式见 `deploy/oss-cdn.env.example`；文件必须为 `600`，包含目标 Bucket、OSS Region 和专用最小权限 RAM 凭据，可选设置 OSS Endpoint。发布脚本通过 ossutil 官方环境变量读取凭据，不把 AccessKey 放入命令参数、镜像、应用进程或日志。除 JWT、MySQL 和 MinIO 凭据外，新版本还要求覆盖提供有效的 `LLM_CREDENTIAL_ENCRYPTION_KEYS`、`LINKPARSE_API_KEY`、`RABBITMQ_URL`、`WECHAT_APPID`、`WECHAT_SECRET` 与两枚不同的 `PI_SERVICE_TOKEN`/`LINKRESUME_INTERNAL_AGENT_TOKEN`，否则相关 preflight、Settings、Pi 服务或微信登录会安全失败。生产网络还必须允许后端访问 `api.weixin.qq.com`。LLM 密钥环用于解密 MySQL 中的模型凭据，不是供应商 API key；轮换时先发布“新 key 在首项、旧 key 仍保留”的配置，确认旧密文已经重包后才能移除旧 key。LinkParse Key、微信 AppSecret 和 Agent 服务令牌都只供服务端使用，不进入 Web 或小程序制品。
+首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
 
 首次从旧 `linkcv` 生产栈切换到 `linkresume` 时，发布前必须为新资源完成数据库与对象存储的一致性迁移，并保留旧 `/opt/tolink/LinkCV` 配置、数据库、bucket 和镜像。Cloud 发布脚本允许仍由 `linkcv` 独占 4174 的受控首次切换：新镜像构建和迁移完成后才停止旧 Web、Worker、Pi 与 Promtail，再整体启动 `linkresume`；新栈健康检查失败时先撤下新 Compose，再用旧目录、旧配置和原镜像标签恢复 `linkcv`。首次切换验证完成前不得删除任何旧资源。
 

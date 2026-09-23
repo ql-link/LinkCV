@@ -221,7 +221,8 @@ class DocumentParseTask(Base):
             name="ck_document_parse_tasks_source_type",
         ),
         CheckConstraint(
-            "file_format IN ('md', 'docx', 'pdf', 'txt')",
+            "file_format IN ('md', 'docx', 'pdf', 'txt', 'webm', 'm4a', 'mp3', "
+            "'wav', 'ogg', 'mp4', 'mov')",
             name="ck_document_parse_tasks_file_format",
         ),
         CheckConstraint(

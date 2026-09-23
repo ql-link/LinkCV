@@ -295,7 +295,7 @@ class JobDescriptionUpdateRequest(BaseModel):
     notes: str | None = Field(default=None, max_length=16_000)
     base_lock_version: int = Field(ge=1)
 
-    @field_validator("job_title", "company_name", "description")
+    @field_validator("job_title", "company_name")
     @classmethod
     def trim_required_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -304,6 +304,13 @@ class JobDescriptionUpdateRequest(BaseModel):
         if not normalized:
             raise ValueError("required text cannot be blank")
         return normalized
+
+    @field_validator("description")
+    @classmethod
+    def trim_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
 
     @field_validator(
         "education_requirement",

@@ -149,6 +149,26 @@ describe("JobDetailPage", () => {
     expect(window.location.pathname).toBe(`/career/jobs/${activeJob.id}`);
   });
 
+  it("原岗位描述为空时仍可修改职位名称", async () => {
+    const jobWithoutDescription = { ...activeJob, description: "" };
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: jobWithoutDescription });
+    const updatedJob = { ...jobWithoutDescription, job_title: "Java 工程师-P4", lock_version: 3 };
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    const titleInput = screen.getByLabelText("职位名称");
+    fireEvent.change(titleInput, { target: { value: updatedJob.job_title } });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
+      job_title: updatedJob.job_title,
+      description: "",
+      base_lock_version: activeJob.lock_version,
+    })));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("按 Escape 取消当前字段编辑", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     const update = vi.spyOn(api, "updateJobDescription");
@@ -235,6 +255,24 @@ describe("JobDetailPage", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({ description: updatedJob.description })));
   });
 
+  it("允许把职位描述清空后保存", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const updatedJob = { ...activeJob, description: "", lock_version: 3 };
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位描述" }));
+    const description = screen.getByLabelText("职位描述");
+    fireEvent.change(description, { target: { value: "" } });
+    fireEvent.keyDown(description, { key: "Enter" });
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
+      description: "",
+      base_lock_version: activeJob.lock_version,
+    })));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("结构化薪资作为一组字段编辑并一次性保存", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     const updatedJob = { ...activeJob, salary_min: "150.00", salary_max: "170.00", salary_currency: "CNY", salary_period: "day" as const, salary_months_per_year: 13, lock_version: 3 };
@@ -290,7 +328,8 @@ describe("JobDetailPage", () => {
     render(<JobDetailPage jobId={activeJob.id} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除" }));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("求职进程、阶段、排期、复盘和素材都将无法恢复");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("求职进程、阶段、排期和复盘都将无法恢复");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("关联素材的原文件仍保留在资料库");
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith(activeJob.id));

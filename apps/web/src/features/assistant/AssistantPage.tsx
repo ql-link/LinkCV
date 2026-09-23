@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -266,6 +267,12 @@ type ConversationState = {
   clarificationAttempted: boolean;
   clarificationCollapsed: boolean;
 };
+
+type ProposalBatchProgress = {
+  viewKey: string;
+  completed: number;
+  total: number;
+} | null;
 
 function blankSession(): AgentSession {
   const timestamp = new Date().toISOString();
@@ -532,6 +539,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [resumePickerOpen, setResumePickerOpen] = useState(false);
   const [resumeListLoading, setResumeListLoading] = useState(false);
   const [embeddedResumeId, setEmbeddedResumeId] = useState<string | null>(null);
+  const [embeddedResumeRefreshVersion, setEmbeddedResumeRefreshVersion] = useState(0);
   const [embeddedSelectionContext, setEmbeddedSelectionContext] = useState<AgentSelectionContext | null>(null);
   const [resumeOpeningId, setResumeOpeningId] = useState<string | null>(null);
   const [resumeOpenError, setResumeOpenError] = useState<string | null>(null);
@@ -573,8 +581,8 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   activeKeyRef.current = activeKey;
 
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
-  const [proposalViews, setProposalViews] = useState<Record<string, { id?: string; collapsed?: boolean; group?: string }>>({});
-  const proposalView = proposalViews[activeKey] ?? {};
+  const [proposalViews, setProposalViews] = useState<Record<string, { id?: string }>>({});
+  const [proposalBatchProgress, setProposalBatchProgress] = useState<ProposalBatchProgress>(null);
   const turnUsers = current.messages.filter((item) => item.role === "user");
   const proposalGroup = (proposal: AgentProposal) => {
     const owner = turnUsers.find((item) => item.run_id === proposal.run_id)
@@ -582,29 +590,99 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     return owner ? String(owner.sequence_no) : `history-${proposal.run_id}`;
   };
   const newestGroup = String(turnUsers.slice(-1)[0]?.sequence_no ?? "none");
-  const visibleGroup = proposalView.group ?? newestGroup;
-  const visibleProposals = current.proposals.filter((item) => proposalGroup(item) === visibleGroup);
-  const selectedProposal = visibleProposals.find((item) => item.id === proposalView.id)
-    ?? visibleProposals.find((item) => item.status === "pending") ?? visibleProposals[0];
-  const selectedProposalIndex = visibleProposals.findIndex((item) => item.id === selectedProposal?.id);
-  const pendingProposalCount = visibleProposals.filter((item) => item.status === "pending").length;
-  const updateProposalView = (patch: { id?: string; collapsed?: boolean; group?: string }) => {
-    setProposalViews((views) => ({ ...views, [activeKey]: { ...views[activeKey], ...patch } }));
-  };
-  const proposalSummary = (group: string) => {
+  const proposalPanel = (group: string) => {
     const proposals = current.proposals.filter((item) => proposalGroup(item) === group);
     if (!proposals.length) return null;
-    const count = proposals.filter((item) => item.status === "pending").length;
-    return <button type="button" className="assistant-proposal-summary"
-      aria-label={count ? `${count} 项修改待确认 · 查看修改` : "查看修改记录"}
-      onClick={() => updateProposalView({ group, id: group === visibleGroup ? proposalView.id : undefined, collapsed: false })}>
-      <span className="assistant-proposal-summary-icon" aria-hidden="true"><FileText size={19} /></span>
-      <span className="assistant-proposal-summary-copy">
-        <strong>{count ? `${count} 项修改待确认` : "简历修改记录"}</strong>
-        <span>{count ? "确认后才会写入简历" : `共 ${proposals.length} 项修改 · 查看处理结果`}</span>
-      </span>
-      <span className="assistant-proposal-summary-action">{count ? "查看修改" : "查看记录"}<ChevronRight size={15} aria-hidden="true" /></span>
-    </button>;
+    const viewKey = `${activeKey}:${group}`;
+    const view = proposalViews[viewKey] ?? {};
+    const selected = proposals.find((item) => item.id === view.id)
+      ?? proposals.find((item) => item.status === "pending") ?? proposals[0];
+    const selectedIndex = proposals.findIndex((item) => item.id === selected?.id);
+    const pendingCount = proposals.filter((item) => item.status === "pending").length;
+    const batchProgress = proposalBatchProgress?.viewKey === viewKey ? proposalBatchProgress : null;
+    const batchInProgress = proposalBatchProgress !== null;
+    const selectedStatus = !selected || selected.status === "pending"
+      ? null
+      : selected.superseded_by
+        ? "已被替代"
+        : selected.status === "applied"
+          ? "已应用"
+          : selected.status === "rejected"
+            ? "已放弃"
+            : "无法应用";
+    const updateView = (patch: { id?: string }) => {
+      setProposalViews((views) => ({ ...views, [viewKey]: { ...views[viewKey], ...patch } }));
+    };
+    return (
+      <div className="assistant-proposal-list" aria-label="待确认简历修改提案">
+        <div className="assistant-proposal-dock-header">
+          <div>
+            <strong>{group !== newestGroup ? "历史修改建议 · " : ""}{pendingCount > 0 ? `${pendingCount} 项待确认修改` : "修改记录"}</strong>
+            {selectedStatus && <span className={`is-${selected?.status}`}>{selectedStatus}</span>}
+          </div>
+          <div className="assistant-proposal-pagination" aria-label="切换修改提案">
+            <button type="button" aria-label="上一项修改" disabled={selectedIndex <= 0 || batchInProgress} onClick={() => updateView({ id: proposals[selectedIndex - 1].id })}>‹</button>
+            <span aria-live="polite">{selectedIndex + 1} / {proposals.length}</span>
+            <button type="button" aria-label="下一项修改" disabled={selectedIndex >= proposals.length - 1 || batchInProgress} onClick={() => updateView({ id: proposals[selectedIndex + 1].id })}>›</button>
+          </div>
+        </div>
+        <div className="assistant-proposal-detail">
+          {(selected ? [selected] : []).map((proposal) => {
+            const changes = proposal.operations?.length
+              ? proposal.operations.map((operation) => ({
+                before: typeof operation.target.selected_text === "string"
+                  ? operation.target.selected_text
+                  : "当前定位内容",
+                after: operation.op === "delete_target"
+                  ? "删除该条目"
+                  : operation.new_text,
+              }))
+              : [{ before: "当前简历快照", after: "候选简历快照" }];
+            const actionable = proposal.status === "pending";
+            return (
+              <article className={`assistant-proposal-card is-${proposal.status}`} key={proposal.id}>
+                <dl className="assistant-proposal-meta">
+                  <div><dt>目标简历</dt><dd>{proposalResumeLabel(current, proposal.resume_id)}</dd></div>
+                  <div><dt>修改理由</dt><dd>{proposal.summary}</dd></div>
+                </dl>
+                <div className="assistant-proposal-diff">
+                  {changes.map((change, index) => (
+                    <div className="assistant-proposal-change" key={`${proposal.id}-${index}`}>
+                      <div><span className="is-deleted">修改前</span><del>{change.before}</del></div>
+                      <div><span className="is-added">修改后</span><ins>{change.after}</ins></div>
+                    </div>
+                  ))}
+                </div>
+                <div className="assistant-proposal-toolbar">
+                  {actionable && (
+                    <>
+                      <Button variant={pendingCount > 1 ? "outline" : "accent"} size="sm" disabled={current.busyProposalId !== null || current.running || batchInProgress} onClick={() => void applyProposal(proposal)}>
+                        {current.busyProposalId === proposal.id ? "处理中…" : pendingCount > 1 ? "应用当前项" : "应用修改"}
+                      </Button>
+                      <Button variant="outline" size="sm" disabled={current.busyProposalId !== null || current.running || batchInProgress} onClick={() => continueProposal(proposal)}>继续调整</Button>
+                      <Button variant="ghost" size="sm" disabled={current.busyProposalId !== null || batchInProgress} onClick={() => void rejectProposal(proposal)}>放弃</Button>
+                      {(pendingCount > 1 || batchProgress) && (
+                        <Button
+                          className="assistant-proposal-batch-action"
+                          variant="accent"
+                          size="sm"
+                          disabled={current.busyProposalId !== null || current.running || batchInProgress}
+                          onClick={() => void applyAllProposals(viewKey, proposals)}
+                        >
+                          {batchProgress
+                            ? `正在应用（${batchProgress.completed}/${batchProgress.total}）`
+                            : `全部应用（${pendingCount}项）`}
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
   const pendingClarification = pendingClarificationMessage(current.messages);
   const isEmptyConversation = current.messages.length === 0 && !current.running;
@@ -1533,11 +1611,33 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const applyProposal = async (proposal: AgentProposal) => {
     updateConversation(activeKey, { busyProposalId: proposal.id, error: null });
     try {
-      await api.confirmAgentProposal(proposal.id);
+      const refreshEmbeddedResume = embeddedResumeId === proposal.resume_id
+        && useResumeStore.getState().activeResumeId === proposal.resume_id;
+      if (refreshEmbeddedResume) {
+        await saveCurrentResume();
+        if (useResumeStore.getState().saveStatus === "error") {
+          updateConversation(activeKey, {
+            busyProposalId: null,
+            error: "当前简历保存失败，修改尚未应用。请先重试保存。",
+          });
+          return;
+        }
+      }
+      const result = await api.confirmAgentProposal(proposal.id);
       updateConversation(activeKey, (state) => ({
         proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
         busyProposalId: null,
       }));
+      if (refreshEmbeddedResume && result.resume.id === embeddedResumeId) {
+        try {
+          await loadResume(result.resume.id);
+          setEmbeddedResumeRefreshVersion((version) => version + 1);
+        } catch {
+          updateConversation(activeKey, {
+            error: "修改已经应用，但右侧简历刷新失败。请重新打开这份简历。",
+          });
+        }
+      }
     } catch (error) {
       updateConversation(activeKey, (state) => ({
         proposals: isConflictError(error)
@@ -1546,6 +1646,69 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         busyProposalId: null,
         error: safeAgentError(error),
       }));
+    }
+  };
+
+  const applyAllProposals = async (viewKey: string, proposals: AgentProposal[]) => {
+    const pendingProposals = proposals.filter((proposal) => proposal.status === "pending");
+    if (pendingProposals.length < 2 || proposalBatchProgress || current.busyProposalId !== null || current.running) return;
+    const conversationKey = activeKey;
+    const refreshEmbeddedResume = pendingProposals.some((proposal) => (
+      embeddedResumeId === proposal.resume_id
+      && useResumeStore.getState().activeResumeId === proposal.resume_id
+    ));
+    setProposalBatchProgress({ viewKey, completed: 0, total: pendingProposals.length });
+    updateConversation(conversationKey, { error: null });
+    let completed = 0;
+    let appliedToEmbeddedResume = false;
+    try {
+      if (refreshEmbeddedResume) {
+        await saveCurrentResume();
+        if (useResumeStore.getState().saveStatus === "error") {
+          updateConversation(conversationKey, {
+            error: "当前简历保存失败，批量修改尚未开始。请先重试保存。",
+          });
+          return;
+        }
+      }
+      for (const proposal of pendingProposals) {
+        updateConversation(conversationKey, { busyProposalId: proposal.id });
+        try {
+          const result = await api.confirmAgentProposal(proposal.id);
+          appliedToEmbeddedResume = appliedToEmbeddedResume
+            || (refreshEmbeddedResume && result.resume.id === embeddedResumeId);
+          completed += 1;
+          updateConversation(conversationKey, (state) => ({
+            proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
+            busyProposalId: null,
+          }));
+          setProposalBatchProgress({ viewKey, completed, total: pendingProposals.length });
+        } catch (error) {
+          updateConversation(conversationKey, (state) => ({
+            proposals: isConflictError(error)
+              ? state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "conflicted" } : item)
+              : state.proposals,
+            busyProposalId: null,
+            error: completed > 0
+              ? `已应用 ${completed} 项，批量处理已停止：${safeAgentError(error)}`
+              : safeAgentError(error),
+          }));
+          break;
+        }
+      }
+      if (appliedToEmbeddedResume && embeddedResumeId) {
+        try {
+          await loadResume(embeddedResumeId);
+          setEmbeddedResumeRefreshVersion((version) => version + 1);
+        } catch {
+          updateConversation(conversationKey, {
+            error: "修改已经应用，但右侧简历刷新失败。请重新打开这份简历。",
+          });
+        }
+      }
+    } finally {
+      updateConversation(conversationKey, { busyProposalId: null });
+      setProposalBatchProgress(null);
     }
   };
 
@@ -2009,11 +2172,16 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 <h2>你好，今天想完成什么？</h2>
               </section>
             )}
-            {current.messages.filter((message) => message !== pendingClarification).map((message, index) => (
-              <article
-                key={`${message.sequence_no}-${message.created_at}-${index}`}
-                className={`assistant-message is-${message.role}${message.status ? ` is-${message.status}` : ""}`}
-              >
+            {current.messages.filter((message) => message !== pendingClarification).map((message, index) => {
+              const messageIndex = current.messages.indexOf(message);
+              const source = current.messages.slice(0, messageIndex + 1).filter((item) => item.role === "user").slice(-1)[0];
+              const next = current.messages[messageIndex + 1];
+              const proposalGroupAfterMessage = source && (!next || next.role === "user")
+                ? String(source.sequence_no)
+                : null;
+              return (
+              <Fragment key={`${message.sequence_no}-${message.created_at}-${index}`}>
+              <article className={`assistant-message is-${message.role}${message.status ? ` is-${message.status}` : ""}`}>
                 {message.role === "assistant" && (
                   <span
                     className="assistant-feather-motion"
@@ -2029,15 +2197,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                   {message.status === "stopped" && <small className="assistant-stopped-label">已停止生成</small>}
                   {message.status === "failed" && <small className="assistant-stopped-label">生成未完成</small>}
                   <time className="visually-hidden" dateTime={message.created_at}>{formatTime(message.created_at)}</time>
-                  {(() => {
-                    const messageIndex = current.messages.indexOf(message);
-                    const source = current.messages.slice(0, messageIndex + 1).filter((item) => item.role === "user").slice(-1)[0];
-                    const next = current.messages[messageIndex + 1];
-                    return source && (!next || next.role === "user") ? proposalSummary(String(source.sequence_no)) : null;
-                  })()}
                 </div>
               </article>
-            ))}
+              {proposalGroupAfterMessage && proposalPanel(proposalGroupAfterMessage)}
+              </Fragment>
+              );
+            })}
             {current.running && current.stage !== "streaming" && (
               <section className="assistant-thinking" aria-label="AI 正在思考" aria-live="polite">
                 <span
@@ -2075,7 +2240,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 )}
               </section>
             )}
-            {[...new Set(current.proposals.map(proposalGroup))].filter((group) => group.startsWith("history-")).map((group) => <div key={group}>{proposalSummary(group)}</div>)}
+            {[...new Set(current.proposals.map(proposalGroup))]
+              .filter((group) => group.startsWith("history-"))
+              .map((group) => <div className="assistant-orphan-proposal" key={group}>{proposalPanel(group)}</div>)}
           </div>
 
           {recallDrawerOpen && (
@@ -2125,66 +2292,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 </div>
               </section>
             </aside>
-          )}
-
-          {visibleProposals.length > 0 && (
-            <div className="assistant-proposal-list" aria-label="待确认简历修改提案">
-              <div className="assistant-proposal-dock-header">
-                <strong>{visibleGroup !== newestGroup ? "历史修改建议 · " : ""}{pendingProposalCount > 0 ? `${pendingProposalCount} 项待确认修改` : "修改记录"}</strong>
-                <button type="button" aria-expanded={!proposalView.collapsed} aria-controls="assistant-proposal-detail" onClick={() => updateProposalView({ collapsed: !proposalView.collapsed })}>
-                  {proposalView.collapsed ? "展开修改" : "收起修改"}
-                </button>
-              </div>
-              <div id="assistant-proposal-detail" hidden={Boolean(proposalView.collapsed)}>
-              {(selectedProposal ? [selectedProposal] : []).map((proposal) => {
-                const changes = proposal.operations?.length
-                  ? proposal.operations.map((operation) => ({
-                    before: typeof operation.target.selected_text === "string"
-                      ? operation.target.selected_text
-                      : "当前定位内容",
-                    after: operation.op === "delete_target"
-                      ? "删除该条目"
-                      : operation.new_text,
-                  }))
-                  : [{ before: "当前简历快照", after: "候选简历快照" }];
-                const actionable = proposal.status === "pending";
-                return (
-                  <article className={`assistant-proposal-card is-${proposal.status}`} key={proposal.id}>
-                    <header>
-                      <div><FileText size={17} aria-hidden="true" /><strong>简历修改提案</strong><span>{proposal.superseded_by ? "已被替代" : actionable ? "等待确认" : proposal.status === "applied" ? "已应用" : proposal.status === "rejected" ? "已放弃" : "无法应用"}</span></div>
-                      <small>基于版本 {proposal.base_lock_version}</small>
-                    </header>
-                    <dl className="assistant-proposal-meta">
-                      <div><dt>目标简历</dt><dd>{proposalResumeLabel(current, proposal.resume_id)}</dd></div>
-                      <div><dt>修改理由</dt><dd>{proposal.summary}</dd></div>
-                    </dl>
-                    <div className="assistant-proposal-diff">
-                      {changes.map((change, index) => (
-                        <div className="assistant-proposal-change" key={`${proposal.id}-${index}`}>
-                          <div><span className="is-deleted">修改前</span><del>{change.before}</del></div>
-                          <div><span className="is-added">修改后</span><ins>{change.after}</ins></div>
-                        </div>
-                      ))}
-                    </div>
-                    {actionable && (
-                      <div className="assistant-proposal-actions">
-                        <Button variant="accent" size="sm" disabled={current.busyProposalId !== null || current.running} onClick={() => void applyProposal(proposal)}>
-                          {current.busyProposalId === proposal.id ? "处理中…" : "应用修改"}
-                        </Button>
-                        <Button variant="outline" size="sm" disabled={current.busyProposalId !== null || current.running} onClick={() => continueProposal(proposal)}>继续调整</Button>
-                        <Button variant="ghost" size="sm" disabled={current.busyProposalId !== null} onClick={() => void rejectProposal(proposal)}>放弃</Button>
-                      </div>
-                    )}
-                  </article>
-                );
-              })}
-                <div className="assistant-proposal-pagination" aria-label="切换修改提案">
-                  <button type="button" aria-label="上一项修改" disabled={selectedProposalIndex <= 0} onClick={() => updateProposalView({ id: visibleProposals[selectedProposalIndex - 1].id })}>‹</button>
-                  <span aria-live="polite">{selectedProposalIndex + 1} / {visibleProposals.length}</span>
-                  <button type="button" aria-label="下一项修改" disabled={selectedProposalIndex >= visibleProposals.length - 1} onClick={() => updateProposalView({ id: visibleProposals[selectedProposalIndex + 1].id })}>›</button>
-                </div>
-              </div>
-            </div>
           )}
 
           {current.error && (
@@ -2456,8 +2563,17 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
         {embeddedResumeId && (
           <section className="assistant-resume-pane" aria-label="简历编辑区">
+            <button
+              type="button"
+              className="assistant-resume-close"
+              aria-label="关闭右侧简历"
+              onClick={closeEmbeddedResume}
+            >
+              <X size={18} aria-hidden="true" />
+            </button>
             <ResumeWorkbench
               embedded
+              externalRefreshVersion={embeddedResumeRefreshVersion}
               onClose={closeEmbeddedResume}
               onAgentSelectionChange={setEmbeddedSelectionContext}
             />

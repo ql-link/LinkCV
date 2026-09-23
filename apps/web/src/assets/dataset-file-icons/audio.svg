@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="音频">
+  <rect x="13" y="5" width="29" height="38" rx="6" fill="#936CE6"/>
+  <path d="M18 19v10M23 14v20M28 18v12M33 11v26M38 17v14" stroke="#CDBCF4" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="5" y="11" width="30" height="29" rx="5" fill="#7350CB"/>
+  <path d="M11 22v7m5-12v17m5-13v9m5-15v21m5-14v7" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+</svg>
