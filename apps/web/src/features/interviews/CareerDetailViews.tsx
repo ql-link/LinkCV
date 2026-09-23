@@ -2643,8 +2643,8 @@ export function ApplicationDetailView({
           kind="delete"
           title={`永久删除「${application.company_name_snapshot} · ${application.job_title_snapshot}」？`}
           description={application.job_description_id
-            ? "删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
-            : "该岗位资料已不存在；删除后，这次求职进程及其阶段、排期、复盘和素材都将无法恢复。"}
+            ? "删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。"
+            : "该岗位资料已不存在；删除后，这次求职进程及其阶段、排期和复盘都将无法恢复，关联素材的原文件仍保留在资料库。"}
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deleting}

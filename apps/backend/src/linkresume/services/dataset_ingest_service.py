@@ -531,6 +531,10 @@ async def ingest_media_upload(
     # Phase B (short lock): authoritative capacity on actual bytes, then insert.
     try:
         content_service.lock_user(db, user.id)
+        # Phase A releases the user lock while object storage receives the file.
+        # Recheck the name after reacquiring the lock so a concurrent upload
+        # cannot create two active datasets with the same normalized name.
+        check_name(db, user.id, folder_id, declared.file_name)
         check_media_capacity(
             db,
             user_id=user.id,

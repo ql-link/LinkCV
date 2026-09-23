@@ -3585,7 +3585,8 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(within(card).getByRole("menuitem", { name: "删除岗位" }));
 
     const dialog = screen.getByRole("alertdialog", { name: "永久删除「已结束示例公司 · 后端开发工程师」？" });
-    expect(dialog).toHaveTextContent("岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复");
+    expect(dialog).toHaveTextContent("岗位及其求职进程、阶段、排期和复盘都将无法恢复");
+    expect(dialog).toHaveTextContent("关联素材的原文件仍保留在资料库");
     fireEvent.click(within(dialog).getByRole("button", { name: "永久删除" }));
 
     await waitFor(() => expect(mocks.deleteJobApplication).toHaveBeenCalledWith("ended-delete-board"));

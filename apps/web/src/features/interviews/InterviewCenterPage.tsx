@@ -1449,7 +1449,7 @@ function ApplicationsView({
         <ConfirmDialog
           kind="delete"
           title={`永久删除「${pendingDelete.company_name_snapshot} · ${pendingDelete.job_title_snapshot}」？`}
-          description="删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
+          description="删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。"
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deletingApplicationId === pendingDelete.id}

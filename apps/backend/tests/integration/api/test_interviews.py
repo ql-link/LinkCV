@@ -10,9 +10,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
 from linkresume.core.config import Settings
+from linkresume.core.errors import ApiError
 from linkresume.core.storage import StreamUploadResult
 from linkresume.main import create_app
 from linkresume.modules.resumes.models import ResumeTemplate, ResumeVersion
+from linkresume.services import dataset_ingest_service
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 
@@ -2516,6 +2518,37 @@ def test_media_upload_via_dataset_endpoint_is_terminal() -> None:
         assert record["upload_status"] == "succeeded"
         assert record["parse_status"] == "succeeded"
         assert record["interview_session_id"] is None
+
+
+def test_media_upload_rechecks_name_after_streaming(monkeypatch) -> None:
+    storage = FakeStorage()
+    app = build_app(storage)
+    original_check_name = dataset_ingest_service.check_name
+    check_count = 0
+
+    def reject_concurrent_name(*args, **kwargs) -> None:
+        nonlocal check_count
+        check_count += 1
+        if check_count == 2:
+            raise ApiError(409, "DATASET_NAME_CONFLICT")
+        original_check_name(*args, **kwargs)
+
+    monkeypatch.setattr(dataset_ingest_service, "check_name", reject_concurrent_name)
+
+    with TestClient(app) as client:
+        register(client, "media-concurrent-name@example.test")
+        rejected = upload_library_asset(
+            client,
+            filename="voice.m4a",
+            content=b"m4a-bytes",
+            content_type="audio/mp4",
+        )
+
+    assert rejected.status_code == 409
+    assert rejected.json()["error"] == "DATASET_NAME_CONFLICT"
+    assert check_count == 2
+    assert storage.objects == {}
+
 
 def test_media_capacity_limit_rejects_extra_media() -> None:
     app = build_app(FakeStorage(), media_max_count_per_user=1)
