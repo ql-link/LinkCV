@@ -328,7 +328,8 @@ describe("JobDetailPage", () => {
     render(<JobDetailPage jobId={activeJob.id} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除" }));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("求职进程、阶段、排期、复盘和素材都将无法恢复");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("求职进程、阶段、排期和复盘都将无法恢复");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("关联素材的原文件仍保留在资料库");
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith(activeJob.id));

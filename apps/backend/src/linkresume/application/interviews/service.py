@@ -28,7 +28,6 @@ from linkresume.application.interviews.state import (
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import utc_now
 from linkresume.modules.interviews.models import (
-    InterviewAsset,
     InterviewSession,
     JobApplication,
     JobApplicationStage,
@@ -48,8 +47,15 @@ from linkresume.modules.interviews.schemas import (
     TerminateApplicationRequest,
     UpdateAnswerPlanRequest,
 )
+from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.job_descriptions.models import JobDescription
-from linkresume.modules.resumes.models import Resume, ResumeVersion
+from linkresume.modules.resumes.models import (
+    DATASET_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeVersion,
+)
+from linkresume.services import dataset_content_service as dataset_content
 
 
 class InterviewNotFound(LookupError):
@@ -98,6 +104,14 @@ class InterviewApplicationAlreadyExists(RuntimeError):
 
 
 class InterviewSessionNotEmpty(RuntimeError):
+    pass
+
+
+class DatasetAlreadyLinked(RuntimeError):
+    pass
+
+
+class InterviewAssetNotLinked(RuntimeError):
     pass
 
 
@@ -1106,6 +1120,8 @@ def delete_application(
     *,
     delete_asset_object: Callable[[str], None] | None = None,
 ) -> None:
+    # delete_asset_object is retained for signature compatibility; linked
+    # datasets are only unlinked (FK ON DELETE SET NULL), never removed here.
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -1162,7 +1178,12 @@ def delete_application_records(
     session_ids: list[int] | None = None,
     delete_asset_object: Callable[[str], None] | None = None,
 ) -> None:
-    """Delete complete application aggregates without committing the transaction."""
+    """Delete complete application aggregates without committing the transaction.
+
+    Datasets linked to the deleted sessions are only unlinked; the files stay
+    in the user's library (``interview_session_id`` set to NULL).
+    `delete_asset_object` is unused and kept only for call-site compatibility.
+    """
     if not application_ids:
         return
     locked_session_ids = session_ids
@@ -1174,31 +1195,11 @@ def delete_application_records(
                 .with_for_update()
             )
         )
-    assets = (
-        list(
-            db.scalars(
-                select(InterviewAsset)
-                .where(InterviewAsset.interview_session_id.in_(locked_session_ids))
-                .with_for_update()
-            )
-        )
-        if locked_session_ids
-        else []
-    )
-    if assets and delete_asset_object is None:
-        raise InterviewApplicationNotEmpty
-    try:
-        if delete_asset_object is not None:
-            for asset in assets:
-                delete_asset_object(asset.object_name)
-    except Exception:
-        db.rollback()
-        raise
     if locked_session_ids:
         db.execute(
-            delete(InterviewAsset).where(
-                InterviewAsset.interview_session_id.in_(locked_session_ids)
-            )
+            update(UserDataset)
+            .where(UserDataset.interview_session_id.in_(locked_session_ids))
+            .values(interview_session_id=None, interview_source_type=None)
         )
         db.execute(
             delete(InterviewSession).where(InterviewSession.id.in_(locked_session_ids))
@@ -1699,13 +1700,11 @@ def cancel_interview(
 
 def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication:
     result = require_owned_session(db, user_id, session_id, for_update=True)
-    asset_count = db.scalar(
-        select(func.count(InterviewAsset.id)).where(
-            InterviewAsset.interview_session_id == session_id
-        )
+    db.execute(
+        update(UserDataset)
+        .where(UserDataset.interview_session_id == session_id)
+        .values(interview_session_id=None, interview_source_type=None)
     )
-    if asset_count:
-        raise InterviewSessionNotEmpty
     db.delete(result.session)
     remaining_scheduled = db.scalar(
         select(func.count(InterviewSession.id)).where(
@@ -1727,66 +1726,86 @@ def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication
     return result.application
 
 
-def list_assets(db: Session, user_id: int, session_id: int) -> list[InterviewAsset]:
+def list_assets(db: Session, user_id: int, session_id: int) -> list[UserDataset]:
     require_owned_session(db, user_id, session_id)
     return list(
         db.scalars(
-            select(InterviewAsset)
-            .where(InterviewAsset.interview_session_id == session_id)
-            .order_by(InterviewAsset.created_at.desc(), InterviewAsset.id.desc())
+            select(UserDataset)
+            .join(
+                DocumentParseTask,
+                DocumentParseTask.id == UserDataset.parse_task_id,
+            )
+            .where(
+                UserDataset.interview_session_id == session_id,
+                UserDataset.user_id == user_id,
+                DocumentParseTask.upload_status == "succeeded",
+            )
+            .order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
         )
     )
 
 
 def find_owned_asset(
     db: Session, user_id: int, asset_id: int
-) -> tuple[InterviewAsset, SessionWithApplication] | None:
+) -> tuple[UserDataset, DocumentParseTask] | None:
+    """Find an owned dataset addressed through the interview-assets namespace."""
     row = db.execute(
-        select(InterviewAsset, InterviewSession, JobApplication)
+        select(UserDataset, DocumentParseTask)
         .join(
-            InterviewSession, InterviewSession.id == InterviewAsset.interview_session_id
+            DocumentParseTask,
+            DocumentParseTask.id == UserDataset.parse_task_id,
         )
-        .join(JobApplication, JobApplication.id == InterviewSession.application_id)
-        .where(InterviewAsset.id == asset_id, JobApplication.user_id == user_id)
+        .where(
+            UserDataset.id == asset_id,
+            UserDataset.user_id == user_id,
+            DocumentParseTask.user_id == user_id,
+            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+        )
     ).one_or_none()
     if row is None:
         return None
-    return row[0], SessionWithApplication(session=row[1], application=row[2])
+    return row[0], row[1]
 
 
-def create_asset_record(
-    db: Session,
-    *,
-    session_id: int,
-    source_type: str,
-    asset_type: str,
-    original_file_name: str,
-    content_type: str,
-    file_size: int,
-    duration_ms: int | None,
-    object_name: str,
-    sha256: str,
-) -> InterviewAsset:
-    asset = InterviewAsset(
-        interview_session_id=session_id,
-        source_type=source_type,
-        asset_type=asset_type,
-        original_file_name=original_file_name,
-        content_type=content_type,
-        file_size=file_size,
-        duration_ms=duration_ms,
-        object_name=object_name,
-        sha256=sha256,
-        created_at=utc_now(),
-    )
-    db.add(asset)
+def attach_dataset_to_session(
+    db: Session, user_id: int, session_id: int, dataset_id: int
+) -> UserDataset:
+    """Link an owned, unlinked dataset to an owned session (idempotent)."""
+    require_owned_session(db, user_id, session_id, for_update=True)
+    dataset, task = dataset_content.owned(db, user_id, dataset_id, lock=True)
+    if task.upload_status != "succeeded":
+        raise InvalidInterviewRequest
+    if dataset.interview_session_id is not None:
+        if dataset.interview_session_id == session_id:
+            return dataset
+        raise DatasetAlreadyLinked
+    dataset.interview_session_id = session_id
+    dataset.interview_source_type = "uploaded"
     db.commit()
-    db.refresh(asset)
-    return asset
+    db.refresh(dataset)
+    return dataset
 
 
-def delete_asset_record(db: Session, asset: InterviewAsset) -> None:
-    db.delete(asset)
+def unlink_session_dataset(
+    db: Session, user_id: int, session_id: int, dataset_id: int
+) -> None:
+    """Remove the session link; the dataset file stays in the library."""
+    require_owned_session(db, user_id, session_id, for_update=True)
+    dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
+    if dataset.interview_session_id != session_id:
+        raise InterviewAssetNotLinked
+    dataset.interview_session_id = None
+    dataset.interview_source_type = None
+    db.commit()
+
+
+def unlink_owned_dataset(db: Session, user_id: int, dataset_id: int) -> None:
+    """Legacy `interview-assets/{id}` removal: unlink from whatever session."""
+    dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
+    if dataset.interview_session_id is None:
+        raise InterviewAssetNotLinked
+    dataset.interview_session_id = None
+    dataset.interview_source_type = None
     db.commit()
 
 

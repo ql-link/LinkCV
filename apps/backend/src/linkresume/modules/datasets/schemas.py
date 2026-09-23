@@ -84,6 +84,18 @@ class UserDatasetRecord(BaseModel):
     content_updated_at: datetime | None = None
     replacement: dict | None = None
     folder_name: str | None = None
+    asset_kind: str = "document"
+    interview_session_id: str | None = None
+    interview_source_type: str | None = None
+    duration_ms: int | None = None
+    interview_label: str | None = None
+
+    @field_validator("interview_session_id", mode="before")
+    @classmethod
+    def stringify_session_id(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return str(value)
 
     @field_validator("id", mode="before")
     @classmethod
@@ -102,11 +114,21 @@ class UserDatasetLimits(BaseModel):
     max_file_bytes: int
     max_files_per_batch: int
     allowed_extensions: list[str]
+    max_media_file_bytes: int
+    media_allowed_extensions: list[str]
+    media_max_count: int
+    media_max_total_bytes: int
 
 
 class UserDatasetListResponse(BaseModel):
     datasets: list[UserDatasetRecord]
     limits: UserDatasetLimits
+
+
+class DatasetAttachRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: str = Field(min_length=1)
 
 
 class UserDatasetContentResponse(BaseModel):

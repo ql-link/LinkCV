@@ -249,6 +249,16 @@ class Settings(BaseSettings):
         alias="DATASET_UPLOAD_RESERVATION_TTL_SECONDS",
         ge=1,
     )
+    media_max_count_per_user: int = Field(
+        default=50,
+        alias="MEDIA_MAX_COUNT_PER_USER",
+        ge=1,
+    )
+    media_max_total_bytes_per_user: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        alias="MEDIA_MAX_TOTAL_BYTES_PER_USER",
+        ge=1,
+    )
     interview_asset_upload_max_bytes: int = Field(
         default=500 * 1024 * 1024,
         alias="INTERVIEW_ASSET_UPLOAD_MAX_BYTES",
@@ -508,6 +518,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATASET_UPLOAD_USER_CONCURRENCY cannot exceed "
                 "DATASET_UPLOAD_GLOBAL_CONCURRENCY"
+            )
+        if (
+            self.media_max_total_bytes_per_user
+            < self.interview_asset_upload_max_bytes
+        ):
+            raise ValueError(
+                "MEDIA_MAX_TOTAL_BYTES_PER_USER must be >= "
+                "INTERVIEW_ASSET_UPLOAD_MAX_BYTES"
             )
         if self.dataset_max_total_bytes_per_user < self.dataset_upload_max_bytes:
             raise ValueError(

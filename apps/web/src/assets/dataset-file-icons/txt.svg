@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="TXT">
+  <rect x="15" y="5" width="27" height="38" rx="5" fill="#58AEB2"/>
+  <path d="M31 12h7m-7 6h7m-7 6h7m-7 6h7m-7 6h7" stroke="#A8D9DB" stroke-width="2" stroke-linecap="round"/>
+  <rect x="5" y="11" width="32" height="29" rx="5" fill="#2C8F93"/>
+  <text x="21" y="29.5" fill="#fff" font-family="Arial, sans-serif" font-size="9.5" font-weight="700" letter-spacing="-.45" text-anchor="middle">TXT</text>
+</svg>

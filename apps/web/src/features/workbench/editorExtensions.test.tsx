@@ -88,6 +88,7 @@ afterEach(() => {
   editor = null;
   vi.restoreAllMocks();
 });
+
 describe("简历头像上下文操作", () => {
   it("头像 NodeView 外层不会成为模板绝对定位的包含块", () => {
     editor = new Editor({
