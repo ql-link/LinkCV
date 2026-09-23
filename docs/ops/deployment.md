@@ -98,7 +98,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 `.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。业务需求从最新 `origin/master` 创建独立业务分支，完成后向 `dev` 提 PR。本地和 CI 复用同一质量入口，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
 
-CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
+CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。Quality 使用一次性 MySQL 8.4 服务，在完整 `npm run check` 前单独验证 `0081 → 0082` 的 SQL-first 迁移；该数据库只包含虚构测试数据，不连接 Development 或 Production。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
 
 ## 恢复与应用回退
 

@@ -12,6 +12,21 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: linkresume
+          MYSQL_USER: linkresume
+          MYSQL_PASSWORD: linkresume-test
+          MYSQL_ROOT_PASSWORD: linkresume-root-test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ulinkresume -plinkresume-test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -39,6 +54,13 @@ jobs:
       - run: npm ci --prefix third_party/pi
       - run: npm run prepare:pi
       - run: uv sync --directory apps/backend --dev
+      - name: Verify MySQL 0081 to 0082 migration
+        run: >-
+          uv run --directory apps/backend pytest
+          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0082_accepts_nullable_interview_session_foreign_key
+          -q
+        env:
+          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
       - run: npm run check
         env:
           DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
