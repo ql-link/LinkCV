@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Markdown">
+  <rect x="12" y="5" width="29" height="34" rx="5" fill="#F8FAFC" stroke="#E4E7EC" stroke-width="2.5"/>
+  <rect x="5" y="11" width="30" height="29" rx="5" fill="#344054"/>
+  <text x="20" y="29.5" fill="#fff" font-family="Arial, sans-serif" font-size="10.5" font-weight="700" letter-spacing="-.45" text-anchor="middle">MD</text>
+</svg>

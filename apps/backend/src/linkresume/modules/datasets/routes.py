@@ -1,9 +1,11 @@
 import asyncio
 import logging
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import PurePath
 from time import monotonic
+from urllib.parse import quote
 import unicodedata
 from uuid import UUID
 
@@ -18,6 +20,8 @@ from fastapi import (
     Response,
     UploadFile,
 )
+from fastapi.responses import StreamingResponse
+from minio.error import S3Error
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, object_session
@@ -51,8 +55,10 @@ from linkresume.modules.datasets.schemas import (
 )
 from linkresume.modules.identity.dependencies import get_current_user, get_settings
 from linkresume.modules.identity.models import User
+from linkresume.modules.interviews.models import InterviewSession, JobApplication
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from linkresume.services.dataset_upload_service import validate_dataset_file
+from linkresume.services import dataset_ingest_service as ingest
 from linkresume.services import dataset_content_service as content_service
 from linkresume.services import dataset_replacement_service as replacement_service
 from linkresume.modules.datasets.models import DatasetReplacement
@@ -68,6 +74,7 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
 logger = logging.getLogger(__name__)
 
 ALLOWED_DATASET_EXTENSIONS = [".pdf", ".docx", ".md", ".txt"]
+ALLOWED_MEDIA_EXTENSIONS = [".webm", ".m4a", ".mp3", ".wav", ".ogg", ".mp4", ".mov"]
 
 
 def read_dataset_markdown(
@@ -260,6 +267,7 @@ def ensure_dataset_capacity(
         )
         .where(
             UserDataset.user_id == user_id,
+            UserDataset.asset_kind == "document",
             DocumentParseTask.user_id == user_id,
             DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
             DocumentParseTask.upload_status != "failed",
@@ -305,12 +313,32 @@ def load_owned_dataset(
     ).one_or_none()
 
 
+def interview_label_for(db: Session, session_id: int) -> str | None:
+    row = db.execute(
+        select(
+            JobApplication.company_name_snapshot,
+            InterviewSession.stage_label,
+        )
+        .join(
+            JobApplication,
+            JobApplication.id == InterviewSession.application_id,
+        )
+        .where(InterviewSession.id == session_id)
+    ).one_or_none()
+    if row is None:
+        return None
+    return f"{row[0]}·{row[1]}"
+
+
 def dataset_record(
     dataset: UserDataset,
     task: DocumentParseTask,
 ) -> UserDatasetRecord:
     db = object_session(dataset)
     operation = content_service.active_replacement(db, dataset) if db else None
+    label = None
+    if db is not None and dataset.interview_session_id is not None:
+        label = interview_label_for(db, dataset.interview_session_id)
     return UserDatasetRecord(
         id=str(dataset.id),
         folder_id=str(dataset.folder_id) if dataset.folder_id is not None else None,
@@ -324,6 +352,11 @@ def dataset_record(
         content_revision=str(dataset.content_revision or 0),
         content_updated_at=dataset.content_updated_at,
         replacement=replacement_service.summary(db, operation, dataset) if db else None,
+        asset_kind=dataset.asset_kind,
+        interview_session_id=dataset.interview_session_id,
+        interview_source_type=dataset.interview_source_type,
+        duration_ms=dataset.duration_ms,
+        interview_label=label,
     )
 
 
@@ -364,185 +397,46 @@ async def upload_dataset(
         ) from error
 
     try:
-        try:
-            content = await file.read(settings.dataset_upload_max_bytes + 1)
-        finally:
-            await file.close()
-        if (
-            file_name
-            and PurePath(file_name).suffix.lower()
-            != PurePath(file.filename or "").suffix.lower()
-        ):
-            raise ApiError(422, "DATASET_FILE_EXTENSION_MISMATCH")
-        validated = await asyncio.to_thread(
-            validate_dataset_file,
-            filename=file_name or file.filename or "",
-            content=content,
-            max_bytes=settings.dataset_upload_max_bytes,
-        )
-
-        content_service.lock_user(db, user.id)
-        folder_exists = db.execute(
-            select(UserDatasetFolder.id)
-            .where(
-                UserDatasetFolder.id == assigned_folder_id,
-                UserDatasetFolder.user_id == user.id,
-            )
-            .with_for_update()
-        ).scalar_one_or_none()
-        if folder_exists is None:
-            raise ApiError(404, "FOLDER_NOT_FOUND")
-
-        existing = load_dataset_by_idempotency(
+        result = await ingest.ingest_dataset_upload(
             db,
-            user_id=user.id,
-            idempotency_key=idempotency_key,
-        )
-        if existing is not None:
-            if existing[0].folder_id != assigned_folder_id:
-                raise ApiError(409, "IDEMPOTENCY_KEY_REUSED")
-            return replay_dataset_upload(
-                existing,
-                request_fingerprint=validated.request_fingerprint,
-                response=response,
-            )
-
-        replacement_service.check_name(
-            db, user.id, assigned_folder_id, validated.file_name
-        )
-        ensure_dataset_capacity(
-            db,
-            user_id=user.id,
-            incoming_bytes=validated.file_size,
-            max_count=settings.dataset_max_count_per_user,
-            max_total_bytes=settings.dataset_max_total_bytes_per_user,
-        )
-        object_name = build_dataset_object_name(user.id, validated.file_name)
-        task = DocumentParseTask(
-            source_type=DATASET_SOURCE_TYPE,
-            user_id=user.id,
-            file_name=validated.file_name,
-            file_format=validated.file_format,
-            object_name=object_name,
-            upload_status="uploading",
-            upload_duration_ms=None,
-            parse_status=None,
-        )
-        dataset = UserDataset(
-            user_id=user.id,
+            user=user,
+            settings=settings,
+            storage=storage,
+            upload=file,
+            file_name_override=file_name,
             folder_id=assigned_folder_id,
-            file_name=validated.file_name,
-            file_format=validated.file_format,
-            content_type=validated.content_type,
-            file_size=validated.file_size,
-            object_name=object_name,
-            sha256=validated.sha256,
             idempotency_key=idempotency_key,
-            request_fingerprint=validated.request_fingerprint,
         )
-        db.add(task)
-        try:
-            db.flush()
-            dataset.parse_task_id = task.id
-            db.add(dataset)
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            existing = load_dataset_by_idempotency(
-                db,
-                user_id=user.id,
-                idempotency_key=idempotency_key,
-            )
-            if existing is None:
-                raise ApiError(500, "DATASET_RECORD_FAILED")
-            return replay_dataset_upload(
-                existing,
-                request_fingerprint=validated.request_fingerprint,
-                response=response,
-            )
-        except Exception as error:
-            db.rollback()
-            raise ApiError(500, "DATASET_RECORD_FAILED") from error
-
-        upload_started = monotonic()
-        try:
-            await asyncio.to_thread(
-                storage.upload_stream,
-                object_name,
-                BytesIO(validated.content),
-                validated.content_type,
-                max_bytes=settings.dataset_upload_max_bytes,
-            )
-        except Exception as error:
-            upload_duration_ms = min(
-                max(0, round((monotonic() - upload_started) * 1000)),
-                2**32 - 1,
-            )
-            task.upload_status = "failed"
-            task.upload_duration_ms = upload_duration_ms
-            task.failure_reason = "storage_unavailable"
-            db.commit()
+        dataset, task = result.dataset, result.task
+        if not result.replayed and task.parse_status == "queued":
             try:
-                await asyncio.to_thread(storage.delete, object_name)
-            except Exception:
-                logger.warning(
-                    "dataset failed upload cleanup failed",
-                    extra={
-                        "dataset_id": dataset.id,
-                        "error_code": "ASSET_DELETE_FAILED",
-                    },
+                publisher = get_dataset_publisher(request, settings)
+                await publisher.publish(
+                    DatasetParseMessage.create(parse_task_id=task.id)
                 )
-            raise ApiError(502, "DATASET_STORAGE_UNAVAILABLE") from error
-
-        upload_duration_ms = min(
-            max(0, round((monotonic() - upload_started) * 1000)),
-            2**32 - 1,
-        )
-        try:
-            task.upload_status = "succeeded"
-            task.upload_duration_ms = upload_duration_ms
-            task.parse_status = "queued"
-            task.failure_reason = None
-            db.commit()
-        except Exception as error:
-            db.rollback()
-            try:
-                await asyncio.to_thread(storage.delete, object_name)
-            except Exception:
-                pass
-            try:
-                failed_task = db.get(DocumentParseTask, task.id)
-                if failed_task is not None and failed_task.upload_status == "uploading":
-                    failed_task.upload_status = "failed"
-                    failed_task.upload_duration_ms = upload_duration_ms
-                    failed_task.failure_reason = "record_failed"
-                    db.commit()
-            except Exception:
-                db.rollback()
-            raise ApiError(500, "DATASET_RECORD_FAILED") from error
-
-        try:
-            publisher = get_dataset_publisher(request, settings)
-            await publisher.publish(DatasetParseMessage.create(parse_task_id=task.id))
-        except MQPublishError:
-            logger.warning(
-                "dataset parse publish deferred",
-                extra={"dataset_id": dataset.id, "parse_task_id": task.id},
-            )
-        else:
-            task.last_dispatched_at = datetime.now(UTC)
-            try:
-                db.commit()
-            except Exception:
-                db.rollback()
+            except MQPublishError:
                 logger.warning(
-                    "dataset dispatch timestamp update failed",
+                    "dataset parse publish deferred",
                     extra={"dataset_id": dataset.id, "parse_task_id": task.id},
                 )
+            else:
+                task.last_dispatched_at = datetime.now(UTC)
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    logger.warning(
+                        "dataset dispatch timestamp update failed",
+                        extra={"dataset_id": dataset.id, "parse_task_id": task.id},
+                    )
+                db.refresh(dataset)
+                db.refresh(task)
 
-        db.refresh(dataset)
-        db.refresh(task)
-        response.status_code = 202
+        response.status_code = (
+            200
+            if task.upload_status == "succeeded" and task.parse_status == "succeeded"
+            else 202
+        )
         return dataset_record(dataset, task)
     finally:
         await admission_context.__aexit__(None, None, None)
@@ -587,6 +481,10 @@ def list_datasets(
             max_file_bytes=settings.dataset_upload_max_bytes,
             max_files_per_batch=settings.dataset_max_files_per_batch,
             allowed_extensions=ALLOWED_DATASET_EXTENSIONS,
+            max_media_file_bytes=settings.interview_asset_upload_max_bytes,
+            media_allowed_extensions=ALLOWED_MEDIA_EXTENSIONS,
+            media_max_count=settings.media_max_count_per_user,
+            media_max_total_bytes=settings.media_max_total_bytes_per_user,
         ),
     )
 
@@ -1082,6 +980,51 @@ def delete_dataset(
         raise
     return UserDatasetDeleteResponse(
         deleted=dataset_result.rowcount == 1 and task_result.rowcount == 1
+    )
+
+
+def _stream_object(response) -> Iterator[bytes]:
+    try:
+        for chunk in response.stream(64 * 1024):
+            yield chunk
+    finally:
+        response.close()
+        response.release_conn()
+
+
+@router.get("/{dataset_id}/source", response_model=None)
+def get_dataset_source(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    storage: AssetStorage = Depends(get_storage),
+) -> StreamingResponse:
+    dataset, task = content_service.owned(db, user.id, dataset_id)
+    if task.upload_status != "succeeded":
+        raise ApiError(409, "DATASET_CONTENT_UNAVAILABLE")
+    if not source_object_is_owned(dataset, task, user.id):
+        raise ApiError(502, "DATASET_SOURCE_UNAVAILABLE")
+    try:
+        response_object = storage.get(dataset.object_name)
+    except S3Error as error:
+        if error.code in {"NoSuchKey", "NoSuchObject"}:
+            raise ApiError(404, "DATASET_NOT_FOUND") from error
+        raise ApiError(502, "DATASET_SOURCE_UNAVAILABLE") from error
+    except Exception as error:
+        raise ApiError(502, "DATASET_SOURCE_UNAVAILABLE") from error
+    encoded = quote(dataset.file_name)
+    disposition = (
+        "inline" if dataset.asset_kind in {"audio", "video"} else "attachment"
+    )
+    return StreamingResponse(
+        _stream_object(response_object),
+        media_type=dataset.content_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{encoded}",
+            "Content-Security-Policy": "sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
