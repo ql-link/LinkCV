@@ -53,6 +53,10 @@ function sameBreaks(left: PageBreak[], right: PageBreak[]) {
       && Math.abs((item.inlineOffset ?? -1) - (right[index]?.inlineOffset ?? -1)) < 0.5);
 }
 
+function samePositions(left: number[], right: number[]) {
+  return left.length === right.length && left.every((position, index) => position === right[index]);
+}
+
 function breakDecoration(pageBreak: PageBreak, marginPx: number, bottomMarginPx: number, inList: boolean) {
   return Decoration.widget(pageBreak.position, () => {
     const marker = document.createElement(pageBreak.continuation ? "span" : inList ? "li" : "div");
@@ -75,11 +79,18 @@ function breakDecoration(pageBreak: PageBreak, marginPx: number, bottomMarginPx:
 }
 
 export function paginationCandidates(editor: HTMLElement) {
+  const isEmptyTrailingParagraph = (element: HTMLElement) => element.matches("p")
+    && !paginationTextNodes(element).some((node) => node.textContent?.trim())
+    && !element.querySelector("img:not(.ProseMirror-separator), .resume-inline-icon, .resume-inline-image");
+  const trimEmptyTail = (elements: HTMLElement[]) => {
+    while (elements.length && isEmptyTrailingParagraph(elements[elements.length - 1])) elements.pop();
+    return elements;
+  };
   const expand = (element: Element): HTMLElement[] => {
     if (!(element instanceof HTMLElement)
       || element.classList.contains("workbench-page-break")) return [];
     if (element.matches(".resume-columns, .resume-layout-columns, .resume-column, .resume-layout-column")) {
-      return Array.from(element.children).flatMap(expand);
+      return trimEmptyTail(Array.from(element.children).flatMap(expand));
     }
     if (element.matches("ol, ul")) {
       return Array.from(element.children).filter((child): child is HTMLElement => (
@@ -88,7 +99,25 @@ export function paginationCandidates(editor: HTMLElement) {
     }
     return [element];
   };
-  return Array.from(editor.children).flatMap(expand);
+  return trimEmptyTail(Array.from(editor.children).flatMap(expand));
+}
+
+export function paginationTrailingEmptyParagraphs(editor: HTMLElement) {
+  const isEmpty = (element: Element) => element.matches("p")
+    && !paginationTextNodes(element as HTMLElement).some((node) => node.textContent?.trim())
+    && !element.querySelector("img:not(.ProseMirror-separator), .resume-inline-icon, .resume-inline-image");
+  const containers = [editor, ...editor.querySelectorAll<HTMLElement>(
+    ".resume-column, .resume-layout-column",
+  )];
+  return containers.flatMap((container) => {
+    const trailing: HTMLElement[] = [];
+    for (const child of Array.from(container.children).reverse()) {
+      if (!(child instanceof HTMLElement) || child.classList.contains("workbench-page-break")) continue;
+      if (!isEmpty(child)) break;
+      trailing.push(child);
+    }
+    return trailing;
+  });
 }
 
 function paginationFlow(element: HTMLElement) {
@@ -165,16 +194,24 @@ export const PaginationExtension = Extension.create({
       state: {
         init: () => DecorationSet.empty,
         apply(transaction, current) {
-          const meta = transaction.getMeta(META_KEY) as { breaks: PageBreak[]; marginPx: number; bottomMarginPx: number } | undefined;
+          const meta = transaction.getMeta(META_KEY) as { breaks: PageBreak[]; marginPx: number; bottomMarginPx: number; collapsedPositions: number[] } | undefined;
           if (meta) {
             return DecorationSet.create(
               transaction.doc,
-              meta.breaks.map((item) => breakDecoration(
-                item,
-                meta.marginPx,
-                meta.bottomMarginPx,
-                ["bulletList", "orderedList"].includes(transaction.doc.resolve(item.position).parent.type.name),
-              )),
+              [
+                ...meta.collapsedPositions.flatMap((position) => {
+                  const node = transaction.doc.nodeAt(position);
+                  return node?.type.name === "paragraph"
+                    ? [Decoration.node(position, position + node.nodeSize, { class: "pagination-trailing-empty" })]
+                    : [];
+                }),
+                ...meta.breaks.map((item) => breakDecoration(
+                  item,
+                  meta.marginPx,
+                  meta.bottomMarginPx,
+                  ["bulletList", "orderedList"].includes(transaction.doc.resolve(item.position).parent.type.name),
+                )),
+              ],
             );
           }
           return current.map(transaction.mapping, transaction.doc);
@@ -192,6 +229,7 @@ export const PaginationExtension = Extension.create({
         let lastBreaks: PageBreak[] = [];
         let lastMarginPx = -1;
         let lastBottomMarginPx = -1;
+        let lastCollapsedPositions: number[] = [];
 
         const measure = () => {
           frame = 0;
@@ -218,11 +256,12 @@ export const PaginationExtension = Extension.create({
           }
           if (!paper || paper.classList.contains("smart-one-page")) {
             if (paper) setPageStripMetrics(paper, 1);
-            if (lastBreaks.length > 0) {
+            if (lastBreaks.length > 0 || lastCollapsedPositions.length > 0) {
               lastBreaks = [];
+              lastCollapsedPositions = [];
               lastMarginPx = 0;
               lastBottomMarginPx = 0;
-              editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: [], marginPx: 0, bottomMarginPx: 0 }));
+              editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: [], marginPx: 0, bottomMarginPx: 0, collapsedPositions: [] }));
             }
             return;
           }
@@ -237,6 +276,14 @@ export const PaginationExtension = Extension.create({
           const bottomMarginPx = (bottomMargin / 25.4) * 96;
           const contentHeight = pageContentHeight(topMargin, bottomMargin);
           const sourceCandidates = paginationCandidates(editor);
+          const collapsedPositions = paginationTrailingEmptyParagraphs(editor)
+            .map((element) => editorView.posAtDOM(element, 0) - 1)
+            .filter((position) => {
+              const node = editorView.state.doc.nodeAt(position);
+              return node?.type.name === "paragraph"
+                && !(editorView.state.selection.from > position
+                  && editorView.state.selection.from < position + node.nodeSize);
+            });
           let measurementPaper: HTMLElement | null = null;
           let measurementEditor = editor;
           if (paper.classList.contains("pages-horizontal")) {
@@ -251,7 +298,11 @@ export const PaginationExtension = Extension.create({
           }
           const editorRect = measurementEditor.getBoundingClientRect();
           const paperRect = measurementPaper?.getBoundingClientRect() ?? paper.getBoundingClientRect();
-          const scale = measurementEditor.offsetHeight > 0 ? editorRect.height / measurementEditor.offsetHeight : 1;
+          // offsetHeight is rounded to an integer and changes when page-break
+          // widgets are inserted. Deriving zoom from it feeds those changes back
+          // into every measured block position, especially near an A4 seam.
+          const zoom = Number.parseFloat(getComputedStyle(measurementPaper ?? paper).zoom);
+          const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
           const markers = Array.from(measurementEditor.querySelectorAll<HTMLElement>(".workbench-page-break"));
           const candidates = paginationCandidates(measurementEditor);
           const markerMeasurements = markers.map((marker) => ({
@@ -338,12 +389,14 @@ export const PaginationExtension = Extension.create({
           const nextBreaks = flowBreaks.flat().sort((left, right) => left.position - right.position);
           setPageStripMetrics(paper, Math.max(1, ...nextBreaks.map((pageBreak) => pageBreak.page)));
           if (!sameBreaks(lastBreaks, nextBreaks)
+            || !samePositions(lastCollapsedPositions, collapsedPositions)
             || Math.abs(lastMarginPx - marginPx) >= 0.5
             || Math.abs(lastBottomMarginPx - bottomMarginPx) >= 0.5) {
             lastBreaks = nextBreaks;
+            lastCollapsedPositions = collapsedPositions;
             lastMarginPx = marginPx;
             lastBottomMarginPx = bottomMarginPx;
-            editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: nextBreaks, marginPx, bottomMarginPx }));
+            editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: nextBreaks, marginPx, bottomMarginPx, collapsedPositions }));
           }
         };
 

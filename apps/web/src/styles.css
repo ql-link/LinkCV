@@ -1966,6 +1966,11 @@ select:not([data-slot]):focus-visible {
 
 .resume-workbench .resume-content.ProseMirror * { caret-color: currentColor; }
 
+/* Keep trailing blank editor nodes in the document without letting them paint extra paper. */
+.resume-workbench .resume-content.ProseMirror p.pagination-trailing-empty {
+  display: none;
+}
+
 .resume-workbench :where(.resume-content.ProseMirror > :not(.resume-avatar-node-view)) { position: relative; }
 
 .workbench-page-break {
@@ -2168,9 +2173,10 @@ select:not([data-slot]):focus-visible {
 }
 .resume-layout-row [data-node-view-content-react] {
   display: grid;
-  grid-template-columns: minmax(0, calc(var(--resume-row-left) - 6px)) minmax(0, 1fr);
+  /* 双栏也用轨道边界作为分隔线位置；内边距保留原有文字间距。 */
+  grid-template-columns: minmax(0, var(--resume-row-left)) minmax(0, 1fr);
   align-items: baseline;
-  gap: 12px;
+  gap: 0;
 }
 .resume-layout-row [data-node-view-content-react] > p {
   min-width: 0;
@@ -2179,8 +2185,11 @@ select:not([data-slot]):focus-visible {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.resume-layout-row:not(.is-equal) [data-node-view-content-react] > p:first-child {
+  padding-right: 6px;
+}
 .resume-layout-row [data-node-view-content-react] > p:last-child {
-  padding-left: 10px;
+  padding-left: 16px;
   text-align: right;
 }
 .resume-layout-row.is-equal [data-node-view-content-react] {

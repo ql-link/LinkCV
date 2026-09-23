@@ -728,6 +728,18 @@ select:not([data-slot]):focus-visible,
   object-fit: cover;
 }
 
+.theme-right-rail .resume-content h1 {
+  padding-top: 12px;
+  padding-left: 16px;
+  position: relative;
+  top: 18px;
+}
+
+.theme-right-rail .resume-avatar {
+  margin-top: 12px;
+  margin-right: 16px;
+}
+
 .theme-right-rail .resume-columns,
 .theme-right-rail .resume-layout-columns {
   clear: both;
@@ -799,6 +811,8 @@ select:not([data-slot]):focus-visible,
 
 .theme-sage-paper .resume-content h1 {
   padding-top: 5px;
+  position: relative;
+  top: 14px;
   font-size: 22pt;
   color: #344b32;
 }
@@ -1108,8 +1122,8 @@ select:not([data-slot]):focus-visible,
 .theme-atlas-framed-letter .resume-content h1 + p + p {clear:both}
 
 /* 折角索引 — 姓名折角边框、偏右头像与左边线章节。 */
-.theme-atlas-corner-bracket .resume-content h1 {display:inline-block;border-top:3px solid var(--preview-accent);border-left:3px solid var(--preview-accent);padding:10px 18px;margin-bottom:10px}
-.theme-atlas-corner-bracket .resume-avatar {border-radius:0;border-right:5px solid #dce7ef;padding-right:5px}
+.theme-atlas-corner-bracket .resume-content h1 {display:inline-block;border-left:3px solid var(--preview-accent);padding:10px 18px;margin-bottom:10px}
+.theme-atlas-corner-bracket .resume-avatar {border-radius:0;margin-right:16px}
 .theme-atlas-corner-bracket .resume-content h2 {border-left:5px solid var(--preview-accent);border-bottom:0;padding:4px 10px;background:#eff4f8}
 .theme-atlas-corner-bracket .resume-content h3 {padding-left:10px;border-left:1px solid #b5c8d7}
 
@@ -1756,6 +1770,7 @@ select:not([data-slot]):focus-visible,
 .resume-paper.theme-studio-modular-cards {background:#eef2f7}
 .theme-studio-modular-cards .resume-content > :is(h1,p,h2) {background:white;padding-left:18px;padding-right:18px;margin-top:0;margin-bottom:0}
 .theme-studio-modular-cards .resume-content > h1 {padding-top:18px;border-radius:12px 12px 0 0}
+.theme-studio-modular-cards .resume-content > h1:not(:has(+ p)) {padding-bottom:18px;border-radius:12px;margin-bottom:14px}
 .theme-studio-modular-cards .resume-content > h2 {padding-top:16px;border:0;font-size:10pt}
 .theme-studio-modular-cards .resume-content > h2 + p {padding-top:6px;padding-bottom:18px;border-radius:0 0 12px 12px}
 .theme-studio-modular-cards .resume-avatar {position:relative;margin:18px 18px 10px 20px}
@@ -1764,6 +1779,15 @@ select:not([data-slot]):focus-visible,
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p:has(+ ul) {border-radius:0}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p + ul {background:#fff;padding:0 14px 12px 30px;margin-top:0;border-radius:0 0 8px 8px}
 .theme-studio-modular-cards .resume-content h2 {border-left:4px solid #547bc1;padding-left:10px;border-bottom:0}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) {margin:10px 0 0;padding:10px 14px 5px;border-radius:8px 8px 0 0;background:#fff}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row):not(:has(+ :is(p,ul,ol))) {padding-bottom:11px;border-radius:8px;margin-bottom:8px}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p,
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + p {margin:0;padding:3px 14px 7px;background:#fff}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p:not(:has(+ :is(p,ul,ol))),
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + p:not(:has(+ :is(ul,ol))) {margin-bottom:8px;padding-bottom:11px;border-radius:0 0 8px 8px}
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + :is(ul,ol),
+.theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + p + :is(ul,ol) {margin:0 0 8px;padding:0 14px 11px 30px;border-radius:0 0 8px 8px;background:#fff}
+.theme-studio-modular-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > p {margin:0 0 7px;padding:8px 11px;border-radius:8px;background:#fff}
 
 /* 6: grouped skill cards, with independent work-entry side rules. */
 .theme-studio-skill-cards .resume-content > h1 + p + p {clear:both;border-top:2px solid #5276ba;padding:8px 12px;background:#eff3fb}
@@ -1798,7 +1822,8 @@ select:not([data-slot]):focus-visible,
 .theme-studio-layered-capsule .resume-avatar {float:left;margin:0 20px 8px 14px;position:relative;border:4px solid white}
 .theme-studio-layered-capsule .resume-content h1 {padding-top:4px}
 .theme-studio-layered-capsule .resume-content h1 + p + p {background:#edf0fc;border-radius:0 10px 10px 10px;padding:12px 16px;margin-top:0;min-height:36px}
-.theme-studio-layered-capsule .resume-content h2 {border:0;border-radius:24px;background:linear-gradient(to right,#4168ba 0 112px,#edf0fc 112px);color:#fff;padding:5px 18px;font-size:11pt;letter-spacing:.04em;margin-top:14px}
+.theme-studio-layered-capsule .resume-content h2 {position:relative;box-sizing:border-box;width:fit-content;max-width:100%;overflow-wrap:anywhere;border:0;border-radius:24px 0 0 24px;background:#4168ba;color:#fff;padding:5px 18px;font-size:11pt;letter-spacing:.04em;margin-top:14px}
+.theme-studio-layered-capsule .resume-content h2::after {content:"";position:absolute;inset:0 auto 0 100%;width:max(0px,calc(100cqw - 100%));border-radius:0 24px 24px 0;background:#edf0fc;pointer-events:none}
 .theme-studio-layered-capsule .resume-content h3 {margin-top:8px}
 .theme-studio-layered-capsule .resume-content :is(ul,ol) {margin-top:4px;margin-bottom:8px}
 .theme-studio-layered-capsule .resume-content p {margin-top:3px;margin-bottom:6px}
@@ -1860,8 +1885,8 @@ select:not([data-slot]):focus-visible,
 
 /* 70: open identity above capsule chapter rules; unlike 110, no contact panel. */
 .theme-featured-intern .resume-avatar {float:left;margin:0 20px 12px 0}
-.theme-featured-intern .resume-content h2 {position:relative;isolation:isolate;background:#edf1fc;border-radius:20px;color:#fff;padding:5px 16px}
-.theme-featured-intern .resume-content h2::before {content:"";position:absolute;inset:0 auto 0 0;width:112px;max-width:100%;background:var(--preview-accent);border-radius:20px;z-index:-1}
+.theme-featured-intern .resume-content h2 {position:relative;box-sizing:border-box;width:fit-content;max-width:100%;overflow-wrap:anywhere;border-radius:20px 0 0 20px;background:var(--preview-accent);color:#fff;padding:5px 16px}
+.theme-featured-intern .resume-content h2::after {content:"";position:absolute;inset:0 auto 0 100%;width:max(0px,calc(100cqw - 100%));border-radius:0 20px 20px 0;background:#edf1fc;pointer-events:none}
 .theme-featured-intern .resume-content > h1 + p + p {padding-bottom:10px;border-bottom:1px solid #edf1fc}
 
 /* 120: white identity/main column, saturated supporting column extending down. */
@@ -2136,6 +2161,13 @@ select:not([data-slot]):focus-visible,
   line-height:1.1;
   text-align:left;
 }
+.theme-featured-vitality .resume-content > h1:not(:has(+ p)) {
+  min-height:100px;
+  margin-bottom:14px;
+  padding-bottom:18px;
+  border-bottom:1px solid #f2e5de;
+  border-radius:9px;
+}
 .theme-featured-vitality .resume-content > h1 + p {
   padding-top:1px;
   padding-bottom:7px;
@@ -2250,6 +2282,15 @@ select:not([data-slot]):focus-visible,
 .theme-featured-vitality .resume-content li {margin:2px 0}
 .theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {color:#34373e}
 .theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 + p {color:var(--preview-accent)}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) {margin:8px 0 0;padding:10px 11px 4px;border:1px solid #f1e9e4;border-bottom:0;border-radius:6px 6px 0 0;background:#fff}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row):not(:has(+ :is(p,ul,ol))) {margin-bottom:7px;padding-bottom:10px;border-bottom:1px solid #f1e9e4;border-radius:6px}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p,
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + p {margin:0;padding:3px 11px 7px;border-right:1px solid #f1e9e4;border-left:1px solid #f1e9e4;background:#fff}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p:not(:has(+ :is(p,ul,ol))),
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + p:not(:has(+ :is(ul,ol))) {margin-bottom:7px;padding-bottom:10px;border-bottom:1px solid #f1e9e4;border-radius:0 0 6px 6px}
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + :is(ul,ol),
+.theme-featured-vitality :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p + p + :is(ul,ol) {margin:0 0 7px;padding:0 11px 10px 27px;border:1px solid #f1e9e4;border-top:0;border-radius:0 0 6px 6px;background:#fff}
+.theme-featured-vitality :is(.resume-column-sidebar,.resume-layout-column-sidebar) > p {margin:0 0 6px;padding:7px 9px;border:1px solid #f1e9e4;border-radius:6px;background:#fff}
 
 /* 深蓝行政双栏 */
 .theme-administrative-sidebar,
@@ -2438,6 +2479,12 @@ select:not([data-slot]):focus-visible,
   color: #555b63;
 }
 
+/* 色块标题以文字宽度为下限，余下的装饰线/浅色轨道延伸到栏末。 */
+:is(.theme-campus-professional,.theme-civic-service,.theme-studio-layered-capsule,.theme-featured-intern) .resume-content,
+:is(.theme-campus-professional,.theme-civic-service,.theme-studio-layered-capsule,.theme-featured-intern) :is(.resume-column,.resume-layout-column) {
+  container-type: inline-size;
+}
+
 .theme-campus-professional .resume-avatar {
   position: absolute;
   overflow: hidden;
@@ -2470,9 +2517,13 @@ select:not([data-slot]):focus-visible,
 .theme-campus-professional .resume-content h2,
 .theme-civic-service .resume-content h2 {
   position: relative;
+  box-sizing: border-box;
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   margin: 5mm 0 2.5mm;
-  border-bottom: 1px solid #bfd4ff;
-  padding: 1.6mm 5mm 1.5mm 4mm;
+  border: 0;
+  padding: 1.6mm 10mm 1.5mm 4mm;
   color: #fff;
   font-size: 10.5pt;
   font-weight: 700;
@@ -2485,10 +2536,21 @@ select:not([data-slot]):focus-visible,
   position: absolute;
   inset: 0 auto 0 0;
   z-index: -1;
-  width: 31mm;
+  width: 100%;
   background: #4f8df7;
-  clip-path: polygon(0 0, 83% 0, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, calc(100% - 6mm) 0, 100% 100%, 0 100%);
   content: "";
+}
+
+.theme-campus-professional .resume-content h2::after,
+.theme-civic-service .resume-content h2::after {
+  position: absolute;
+  bottom: 0;
+  left: 100%;
+  width: max(0px, calc(100cqw - 100%));
+  border-bottom: 1px solid #bfd4ff;
+  content: "";
+  pointer-events: none;
 }
 
 .theme-campus-professional .resume-meta-row,
@@ -2509,6 +2571,7 @@ select:not([data-slot]):focus-visible,
 
 /* 蓝色政务行政 */
 .theme-civic-service .resume-content {
+  --civic-masthead-height: 39mm;
   position: relative;
   box-sizing: border-box;
   padding-top: 45mm !important;
@@ -2534,7 +2597,7 @@ select:not([data-slot]):focus-visible,
   top: 0;
   right: 0;
   left: 0;
-  height: 39mm;
+  height: var(--civic-masthead-height);
   z-index: 0;
   background: #3476d2;
   content: "";
@@ -2544,12 +2607,13 @@ select:not([data-slot]):focus-visible,
   position: absolute;
   overflow: hidden;
   z-index: 2;
-  top: 8mm;
+  top: calc(var(--civic-masthead-height) / 2);
   right: 10mm;
   float: none;
   margin: 0;
   border: 2px solid rgba(255, 255, 255, 0.55);
   border-radius: 9px;
+  transform: translateY(-50%);
 }
 
 .theme-civic-service .resume-avatar img { border-radius: 7px; }
@@ -2557,20 +2621,21 @@ select:not([data-slot]):focus-visible,
 .theme-civic-service .resume-content h1 {
   position: absolute;
   z-index: 1;
-  top: 12mm;
+  top: calc(var(--civic-masthead-height) / 2);
   left: 10mm;
   margin: 0 30mm 0 0;
   color: #fff;
   text-align: left;
   font-size: 19pt;
   font-weight: 800;
+  transform: translateY(-50%);
 }
 
 .theme-civic-service .resume-content h1 + p,
 .theme-civic-service .resume-content p.resume-identity-headline {
   position: absolute;
   z-index: 1;
-  top: 23mm;
+  top: calc(var(--civic-masthead-height) / 2 + 8mm);
   left: 10mm;
   margin: 0;
   color: #eef5ff;
@@ -2579,7 +2644,7 @@ select:not([data-slot]):focus-visible,
 }
 
 .theme-civic-service .resume-content h2::before { background: #3476d2; }
-.theme-civic-service .resume-content h2 { border-bottom-color: #b8cff1; }
+.theme-civic-service .resume-content h2::after { border-bottom-color: #b8cff1; }
 .theme-civic-service .resume-row-right,
 .theme-civic-service .resume-row.single.right,
 .theme-civic-service .resume-layout-row:not(.is-equal) p:last-child { font-style: normal; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paginationCandidates, paginationMutationRequiresMeasure, paginationTextNodes } from "./paginationPlugin";
+import { paginationCandidates, paginationMutationRequiresMeasure, paginationTextNodes, paginationTrailingEmptyParagraphs } from "./paginationPlugin";
 
 describe("分页测量触发条件", () => {
   it("忽略页面排列类名和分页插件内部尺寸变量", () => {
@@ -44,6 +44,34 @@ describe("分页测量触发条件", () => {
     editor.innerHTML = '<div class="resume-layout-columns"><section class="resume-layout-column"><h2>左栏</h2><p>左侧内容</p></section><section class="resume-layout-column"><h2>右栏</h2><ul><li>右侧分点</li></ul></section></div>';
     expect(paginationCandidates(editor).map((element) => element.textContent)).toEqual([
       "左栏", "左侧内容", "右栏", "右侧分点",
+    ]);
+  });
+
+  it("忽略每栏及根层末尾的空段落，但保留内容之间的空行", () => {
+    const editor = document.createElement("div");
+    editor.innerHTML = '<div class="resume-layout-columns"><section class="resume-layout-column"><p>左一</p><p></p><p>左二</p><p><button class="resume-line-add">+</button><img class="ProseMirror-separator" alt=""><br></p></section><section class="resume-layout-column"><p>右侧</p><p><br></p></section></div><p>尾部正文</p><p></p>';
+
+    expect(paginationCandidates(editor).map((element) => element.textContent)).toEqual([
+      "左一", "", "左二", "右侧", "尾部正文",
+    ]);
+  });
+
+  it("保留末尾仅含图标或图片的段落", () => {
+    const editor = document.createElement("div");
+    editor.innerHTML = '<p>正文</p><p><span class="resume-inline-icon"></span></p><p><img src="data:image/png;base64,AA==" alt="示意图"></p><p><br></p>';
+
+    expect(paginationCandidates(editor)).toHaveLength(3);
+  });
+
+  it("仅标出每栏及根层末尾的空段落，不折叠正文间空行或媒体", () => {
+    const editor = document.createElement("div");
+    editor.innerHTML = '<div class="resume-layout-columns"><section class="resume-layout-column"><p>正文</p><p><br></p><p>下一段</p><p><button class="resume-line-add">+</button><br></p><p><br></p></section><section class="resume-layout-column"><p>头像<img src="sample.png" alt="示意图"></p><p><br></p></section></div><p>根层正文</p><p><br></p>';
+
+    expect(paginationTrailingEmptyParagraphs(editor)).toEqual([
+      editor.lastElementChild,
+      editor.querySelectorAll(".resume-layout-column:first-child > p")[4],
+      editor.querySelectorAll(".resume-layout-column:first-child > p")[3],
+      editor.querySelector(".resume-layout-column:last-child > p:last-child"),
     ]);
   });
 

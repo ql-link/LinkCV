@@ -51,6 +51,7 @@ import {
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
   setResumeRowColumnWidths,
+  setResumeRowLeftWidth,
   setResumeRowColumns,
 } from "./editorCommands";
 import {
@@ -615,7 +616,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     : null;
   // 未自定义宽度时按等分渲染，分隔线位置也按等分推算。
   const effectiveWidths = columnWidths ?? equalResumeRowColumnWidths(columns);
-  const dividerOffsets = equalColumns ? resumeRowDividerOffsets(effectiveWidths) : [];
+  const dividerOffsets = equalColumns ? resumeRowDividerOffsets(effectiveWidths) : [leftWidth];
 
   useEffect(() => {
     const updateActiveState = () => {
@@ -652,6 +653,12 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     setResumeRowColumnWidths(editor, position, next);
   };
 
+  const applyPairWidth = (next: number) => {
+    const position = getPos();
+    if (typeof position !== "number") return;
+    setResumeRowLeftWidth(editor, position, next);
+  };
+
   const startDividerDrag = (
     event: React.PointerEvent<HTMLButtonElement>,
     dividerIndex: number,
@@ -663,19 +670,21 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     event.stopPropagation();
     const startX = event.clientX;
     const base = effectiveWidths;
+    const baseLeftWidth = leftWidth;
     let moved = false;
 
     const move = (moveEvent: PointerEvent) => {
       moved = true;
       const deltaPercent = ((moveEvent.clientX - startX) / rowWidth) * 100;
-      applyWidths(resizeResumeRowColumns(base, dividerIndex, deltaPercent));
+      if (equalColumns) applyWidths(resizeResumeRowColumns(base, dividerIndex, deltaPercent));
+      else applyPairWidth(baseLeftWidth + deltaPercent);
     };
     const finish = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
       // 只是点了一下分隔线时不写入宽度，未调整过的行保持不携带宽度数据。
-      if (!moved) applyWidths(null);
+      if (!moved && equalColumns) applyWidths(null);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish, { once: true });
@@ -704,7 +713,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
       }}
     >
       <NodeViewContent />
-      {equalColumns && editor.isEditable && active && (
+      {editor.isEditable && active && (
         <span className="resume-column-handles" contentEditable={false}>
           {dividerOffsets.map((offset, index) => (
             <button
@@ -716,7 +725,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
               title="拖动调整两栏宽度，双击恢复等分"
               onMouseDown={(event) => event.preventDefault()}
               onPointerDown={(event) => startDividerDrag(event, index)}
-              onDoubleClick={() => applyWidths(null)}
+              onDoubleClick={() => equalColumns ? applyWidths(null) : applyPairWidth(50)}
             />
           ))}
         </span>
@@ -739,7 +748,7 @@ export const RESUME_ROW_WIDTH_MAX = 80;
 export function normalizeResumeRowWidth(value: unknown) {
   const width = Number(value);
   if (!Number.isFinite(width)) return 50;
-  return Math.min(RESUME_ROW_WIDTH_MAX, Math.max(RESUME_ROW_WIDTH_MIN, Math.round(width)));
+  return Number(Math.min(RESUME_ROW_WIDTH_MAX, Math.max(RESUME_ROW_WIDTH_MIN, width)).toFixed(2));
 }
 
 export const ResumeRow = Node.create({
