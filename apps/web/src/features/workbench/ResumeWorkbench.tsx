@@ -997,6 +997,7 @@ export function FontPreviewSelect({
 
 type ResumeWorkbenchProps = {
   embedded?: boolean;
+  externalRefreshVersion?: number;
   onClose?: () => void;
   onAgentSelectionChange?: (context: AgentSelectionContext | null) => void;
 };
@@ -1043,7 +1044,12 @@ async function selectionContextFromEditor(editor: Editor): Promise<AgentSelectio
   };
 }
 
-export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionChange }: ResumeWorkbenchProps = {}) {
+export function ResumeWorkbench({
+  embedded = false,
+  externalRefreshVersion = 0,
+  onClose,
+  onAgentSelectionChange,
+}: ResumeWorkbenchProps = {}) {
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const importWarningsByResumeId = useResumeStore((state) => state.importWarningsByResumeId);
   const dismissImportWarnings = useResumeStore((state) => state.dismissImportWarnings);
@@ -1298,6 +1304,11 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
     },
     onSelectionUpdate: ({ editor: current }) => publishAgentSelection(current),
   }, [activeResumeId]);
+
+  useEffect(() => {
+    if (!editor || externalRefreshVersion <= 0) return;
+    setRestoredEditorContent(editor, useResumeStore.getState().editorContent);
+  }, [editor, externalRefreshVersion]);
 
   useEffect(() => () => {
     agentSelectionRevisionRef.current += 1;

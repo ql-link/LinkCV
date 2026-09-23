@@ -152,11 +152,11 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，可续期、修改可见性或下载权限 |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
 | `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download}`；`sharer` 为 `{nickname, avatar_url}` |
-| `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的智能一页 PDF；沿用分享 token 的访问规则并要求允许下载 |
+| `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的 A4 分页 PDF；沿用分享 token 的访问规则并要求允许下载 |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_allow_download, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`share_allow_download` 为布尔值，旧记录和创建缺省值均为 `true`。`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
 
-公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按分享页的智能一页模式生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
+公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按 A4 分页生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
 
 `POST` 创建或覆盖请求可选 `{visibility, expires_at, allow_download}`，分别指定可见性（缺省 `public`）、有效期（缺省永久，即 `expires_at` 为 `null`）和 PDF 下载权限（缺省 `true`）。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）、切换可见性或更新下载权限；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、分享记录对应的用户或简历不存在，以及直接请求已关闭下载的 PDF。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
 
@@ -195,7 +195,7 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 
 ## 知识库资料
 
-`POST /api/datasets` 使用 `multipart/form-data`，必填字段为 `file` 和 `folder_id`（当前用户拥有的现存文件夹），并要求 canonical UUID `Idempotency-Key`。缺少或空白文件夹返回 `400 DATASET_FOLDER_REQUIRED`；非法、不存在、已删除或越权文件夹统一返回 `404 FOLDER_NOT_FOUND`，不创建资料、解析任务或存储对象，不再降级到未分类。支持 docx/pdf/md/txt 四种格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）。服务端先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。受理返回 `202`：
+`POST /api/datasets` 使用 `multipart/form-data`，必填字段为 `file` 和 `folder_id`（当前用户拥有的现存文件夹），并要求 canonical UUID `Idempotency-Key`。缺少或空白文件夹返回 `400 DATASET_FOLDER_REQUIRED`；非法、不存在、已删除或越权文件夹统一返回 `404 FOLDER_NOT_FOUND`，不创建资料、解析任务或存储对象，不再降级到未分类。支持 docx/pdf/md/txt 四种文档格式与 webm/m4a/mp3/wav/ogg/mp4/mov 七种音视频格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。文档单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）；媒体单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 控制（默认 500 MiB），且媒体资料独立受 `MEDIA_MAX_COUNT_PER_USER`（默认 50）与 `MEDIA_MAX_TOTAL_BYTES_PER_USER`（默认 5 GiB）约束，超限返回 `409 DATASET_MEDIA_COUNT_LIMIT_REACHED`/`DATASET_MEDIA_STORAGE_LIMIT_REACHED`。文档上传先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。媒体上传在短锁内完成归属与申报容量检查、流式落盘后再以实际字节复核并直接落地终态任务，不进入解析队列。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。文档受理返回 `202`，媒体上传成功返回 `200`：
 
 ```json
 {
@@ -211,7 +211,9 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 }
 ```
 
-`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，支持可选 Query 参数 `folder_id`（传数值 ID 过滤具体文件夹，传 `uncategorized` 过滤未分类资料，不传则返回全部）；按上传时间倒序。响应为 `{datasets, limits}`，每项数据包含 `folder_id`。`limits` 包含单文件字节数、单批文件数和允许扩展名，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown, content_format: "markdown", content_revision, content_updated_at}` 并带 ETag；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。
+`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，支持可选 Query 参数 `folder_id`（传数值 ID 过滤具体文件夹，传 `uncategorized` 过滤未分类资料，不传则返回全部）；按上传时间倒序。响应为 `{datasets, limits}`，每项数据包含 `folder_id`、`asset_kind`（`document|audio|video`）、可空的 `interview_session_id`/`interview_source_type`/`duration_ms` 与派生 `interview_label`（场次关联的“公司·阶段”标签）。`limits` 包含文档单文件字节数、单批文件数、文档允许扩展名，以及媒体单文件字节数 `max_media_file_bytes`、媒体允许扩展名 `media_allowed_extensions`、媒体个数 `media_max_count` 与总量 `media_max_total_bytes`，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown, content_format: "markdown", content_revision, content_updated_at}` 并带 ETag；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。
+
+`GET /api/datasets/:id/source` 流式返回资料的原始上传文件：音视频以 `inline` 分发支持播放，文档以附件下载；仅 `upload_status=succeeded` 的资料可读，否则返回 `409 DATASET_CONTENT_UNAVAILABLE`；资料不存在或越权返回 `404 DATASET_NOT_FOUND`，对象读取失败返回 `502`。
 
 `GET /api/datasets/folders` 列出当前用户自建的全部文件夹及其所含资料数，响应为 `{folders: [{id, name, dataset_count, created_at, updated_at}], total_count, uncategorized_count}`。`POST /api/datasets/folders` 接受 `{name: string}` 创建新文件夹（1~64 字符，去首尾空格，禁止斜杠与控制字符，用户内唯一，每用户上限 50 个；超限 `429 FOLDER_LIMIT_EXCEEDED`，重名 `409 FOLDER_NAME_DUPLICATE`，非法名称 `400 INVALID_FOLDER_NAME`）。`PATCH /api/datasets/folders/:id` 接受 `{name: string}` 重命名文件夹。`DELETE /api/datasets/folders/:id` 删除空文件夹；非空文件夹必须传 `confirm_contents=true`，否则返回 `409 FOLDER_DELETE_CONFIRMATION_REQUIRED`。确认后永久清理其中的源文件、转换对象、资料与解析任务，再删除文件夹，返回 `{deleted: true, affected_dataset_count}`。任一资料上传或解析中返回 `409 DATASET_BUSY`，清理对象失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录供重试。
 
@@ -258,7 +260,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用当前 `chat` 能力；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_structuring` 能力。响应中的 `draft` 与普通创建字段同构但全部可空，`warnings` 提示未识别的核心字段；调用方必须先让用户核对或补充，再另行调用创建接口。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
 
-创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
+创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。普通更新同样允许把 `description` 清空为空字符串，但不接受 `null`；`job_title` 和 `company_name` 更新后仍必须非空。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
 
 浏览器导入请求使用 `source_url` 和嵌套 `capture`。当前只接受 `zhipin.com` 的 `/job_detail/{source_job_id}.html`；`capture.job_title`、`capture.company_name`、`capture.description_text` 清洗后必须非空。可选采集字段包括 `logo_url`、`skills`、就业类型原文、学历、经验、工作时间、城市、地址、薪资原文、公司字段/标签和招聘者字段。后端去除不可见字符、压缩空白、删除明确的详情标题与举报页尾，并确定性映射常见就业类型、远程/混合工作、`K·N薪` 和人民币时/日/月/年区间；无法可靠识别的字段保持为空，不做分析或模型推断。
 
@@ -266,7 +268,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 岗位创建和浏览器导入会在同一数据库事务中为该 JD 创建唯一的待投递求职记录；同一 JD 已有任何求职记录时直接返回该记录，不重复创建，也不覆盖其投递时间、阶段或历史。浏览器插件保留成功响应中的 `application.id`，用于打开 `/career/applications/{id}`；兼容旧服务缺少或返回空 `application` 时回退到岗位详情，不影响导入请求格式。通过求职进程接口为已有记录的 JD 再次创建返回 `409 APPLICATION_ALREADY_EXISTS` 并携带原 `application_id`。显式 `duplicate_resolution` 仍用于用户确认用新采集内容更新已有 JD。普通更新及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
 
-硬删除同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。服务先锁定岗位及其求职进程，依次删除素材对象、素材记录、排期、阶段和求职进程，再删除 JD；活动和已结束进程都在清理范围内。成功后所有关联数据均无法恢复，相同来源可再次写入。素材对象清理或数据库删除失败返回 `502 JD_DELETE_FAILED`，数据库记录保留供重试；MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，重试按对象不存在视为已清理。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
+硬删除同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。服务先锁定岗位及其求职进程，解除关联资料与场次的绑定（文件保留在资料库），删除排期、阶段和求职进程，再删除 JD；活动和已结束进程都在清理范围内。成功后所有关联数据均无法恢复，相同来源可再次写入。数据库删除失败返回 `502 JD_DELETE_FAILED`，数据库记录保留供重试。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
 
 技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
 
@@ -290,7 +292,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 求职进程的初始状态必须可达：待投递占位使用 `screening / 待投递 / awaiting_schedule` 且 `applied_at` 为空；兼容调用仍可直接创建 `screening / awaiting_result`、`interview|hr / awaiting_schedule` 或 `offer / negotiating`。其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。`PUT /api/job-applications/:id` 首次把 `applied_at` 从空值写为非空时允许不绑定简历，此时 `resume_version_id` 和 `resume_title_snapshot` 保持为空；请求也可提交 `resume_id`，服务端只接受当前用户的简历，并自动绑定该简历 `version_no` 最大的最新正式版本，同时写入版本 ID 和标题快照。所选简历没有正式版本返回 `409 INTERVIEW_RESUME_VERSION_REQUIRED`，不存在或越权简历返回 `404 INTERVIEW_NOT_FOUND`。显式 `resume_version_id` 继续兼容，但不能与 `resume_id` 同时提交。首次为待投递占位或旧的 `screening / 筛选中 / awaiting_result` 占位写入 `applied_at` 时，服务端在同一次乐观锁更新中将当前阶段规范化为 `screening / 等待后续通知 / awaiting_result`；已进入明确筛选、面试或 HR 阶段的记录只补投递日期，不会被重置。
 
-`POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。素材对象删除失败时返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
+`POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。删除只解除资料库文件与场次的关联，不再清理素材对象；数据库删除失败返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
 
 | Method | Path | 行为 |
 | --- | --- | --- |
@@ -309,9 +311,11 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间接受有效 24 小时制 `HH:mm`（小时 `00–23`、分钟 `00–59`） |
 | `PUT` | `/api/interview-sessions/:id/answer-plan` | 设置或清除开放笔试/测评的一组个人作答计划时间 |
 | `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
-| `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传录音、视频和文档素材 |
-| `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取素材 |
-| `DELETE` | `/api/interview-assets/:id` | 所有权校验后删除素材记录和对象存储文件 |
+| `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传素材；上传与资料库共用同一入库链路，成功后自动关联该场次 |
+| `POST` | `/api/interview-sessions/:id/assets/attach` | 把本人资料库中未关联的资料（`{dataset_id}`）关联到本场次 |
+| `DELETE` | `/api/interview-sessions/:id/assets/:dataset_id` | 解除资料与场次的关联，文件保留在资料库 |
+| `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取仍关联场次的素材；已解除关联返回 `404` |
+| `DELETE` | `/api/interview-assets/:id` | 解除素材与场次的关联，不删除文件 |
 
 排期请求可携带 `application_stage_id` 和 `schedule_kind=fixed_slot|open_window`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期，且只有测评、笔试支持开放窗口。创建与改期请求在 `start_at` 之外必须且只能提交 `end_at` 或正整数 `duration_minutes` 之一；提交持续分钟时由服务端计算并保存 `end_at`，旧的显式结束时间写法继续兼容。开放窗口的个人作答计划同样可用 `answer_plan_start_at + duration_minutes` 让服务端推算结束时间，也兼容 `answer_plan_start_at/answer_plan_end_at` 成对设置；清除时两端同时为空。计划必须完整落在官方窗口内，否则返回 `INTERVIEW_ANSWER_PLAN_INVALID_TIME`、`INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW` 或 `INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED`。不支持开放窗口的阶段返回 `INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED`。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。同一用户的多个排期允许时间重叠。调整排期只要求场次仍为 `scheduled` 且所属求职进程未归档，不受求职进程是否已经结束影响。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
 
@@ -321,7 +325,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 面试模块的求职进程、岗位、简历版本、单场面试和素材 ID 与项目其他 BIGINT 资源一致，在 JSON、查询参数和路径中都使用无前导零的十进制字符串；前端不得把这些 ID 转成 JavaScript `number`。
 
-素材上传是 `multipart/form-data`，`source_type=recorded|uploaded` 仅记录来源路径，两者写入同一 MinIO 私有前缀。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256，默认上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制；空文件、不支持格式、超限和对象存储失败分别返回 `EMPTY_INTERVIEW_ASSET`、`UNSUPPORTED_INTERVIEW_ASSET`、`INTERVIEW_ASSET_TOO_LARGE` 和 `INTERVIEW_ASSET_UPLOAD_FAILED`。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
+素材上传是 `multipart/form-data`，必须携带 canonical UUID `Idempotency-Key`；`source_type=recorded|uploaded` 仅记录来源路径。上传复用资料库入库链路：文件落入 `users/{user_id}/datasets/` 前缀，`user_dataset.interview_session_id` 记录场次关联，场次侧不再持有独立素材记录。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256；单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制，媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`/`MEDIA_MAX_TOTAL_BYTES_PER_USER` 控制。格式、大小、配额和对象存储失败复用资料库的 `DATASET_*` 错误码。文档类素材上传后进入解析队列，音视频落地为终态、不参与解析。`POST /interview-sessions/:id/assets/attach` 要求资料属本人、`upload_status=succeeded` 且未关联其他场次；重复关联本场次幂等返回，已关联其他场次返回 `409 DATASET_ALREADY_LINKED`，资料不存在或越权返回 `404 DATASET_NOT_FOUND`。统一入库和关联服务保证 `interview_session_id` 与 `interview_source_type` 同时设置或同时为空；该内部一致性校验不增加新的请求或响应字段。解除关联只清空这两列，物理删除只能在资料库进行；删除场次或求职进程同样只解除关联。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
 
 ## 对象资源
 

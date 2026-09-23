@@ -88,6 +88,7 @@ afterEach(() => {
   editor = null;
   vi.restoreAllMocks();
 });
+
 describe("简历头像上下文操作", () => {
   it("头像 NodeView 外层不会成为模板绝对定位的包含块", () => {
     editor = new Editor({
@@ -104,6 +105,7 @@ describe("简历头像上下文操作", () => {
     const avatar = container.querySelector<HTMLElement>(".resume-avatar");
 
     expect(avatar?.parentElement).toHaveClass("resume-avatar-node-view");
+    expect(avatar).toHaveStyle({ width: "96px", height: "calc(96px * var(--resume-avatar-height-ratio, 1.4))" });
   });
 
   it("只有选中已有头像时显示更换头像操作", async () => {
@@ -193,8 +195,8 @@ describe("简历头像上下文操作", () => {
   });
 });
 
-describe("自适应编辑光标", () => {
-  it("只为可编辑的折叠文本选区渲染加粗光标", () => {
+describe("原生编辑光标", () => {
+  it("折叠文本选区不插入遮挡文字的光标装饰", () => {
     editor = new Editor({
       extensions: resumeEditorExtensions,
       content: "<p>光标测试</p>",
@@ -202,20 +204,8 @@ describe("自适应编辑光标", () => {
     const { container } = render(<EditorContent editor={editor} />);
 
     act(() => { editor?.commands.focus("start"); });
-    expect(container.querySelector(".resume-adaptive-caret")).not.toBeNull();
-
-    const editorRoot = container.querySelector<HTMLElement>(".ProseMirror")!;
-    fireEvent.compositionStart(editorRoot);
-    expect(editorRoot).toHaveClass("is-composing");
-    fireEvent.compositionEnd(editorRoot);
-    expect(editorRoot).not.toHaveClass("is-composing");
-
-    act(() => { editor?.commands.setTextSelection({ from: 1, to: 3 }); });
     expect(container.querySelector(".resume-adaptive-caret")).toBeNull();
-
-    act(() => { editor?.setEditable(false); });
-    act(() => { editor?.commands.setTextSelection(1); });
-    expect(container.querySelector(".resume-adaptive-caret")).toBeNull();
+    expect(editor.state.selection.empty).toBe(true);
   });
 });
 
@@ -390,9 +380,47 @@ describe("分栏分隔线拖拽", () => {
     expect(handles(inside)[1].style.left).toMatch(/^66\.66/);
   });
 
-  it("4 栏行显示三条手柄，2 栏行不显示", async () => {
+  it("4 栏行显示三条手柄，2 栏行显示一条手柄", async () => {
     expect(handles(await renderRow(["甲", "乙", "丙", "丁"], true))).toHaveLength(3);
-    expect(handles(await renderRow(["甲", "乙"], true))).toHaveLength(0);
+    const pair = await renderRow(["甲", "乙"], true);
+    expect(handles(pair)).toHaveLength(1);
+    expect(handles(pair)[0].style.left).toBe("50%");
+  });
+
+  it("2 栏拖动只更新左右比例，且限制在 30%–80%", async () => {
+    const row = await renderRow(["甲", "乙"], true);
+    stubRowWidth();
+
+    drag(handles(row)[0], 300, 420);
+    expect(editor?.state.doc.lastChild?.attrs).toMatchObject({ leftWidth: 70, columnWidths: null });
+    expect(row.style.getPropertyValue("--resume-row-left")).toBe("70%");
+    expect(handles(row)[0].style.left).toBe("70%");
+
+    drag(handles(row)[0], 420, 1020);
+    expect(editor?.state.doc.lastChild?.attrs.leftWidth).toBe(80);
+    drag(handles(row)[0], 480, -120);
+    expect(editor?.state.doc.lastChild?.attrs.leftWidth).toBe(30);
+  });
+
+  it("2 栏小幅拖动保留小数精度，不按整百分比跳动", async () => {
+    const row = await renderRow(["甲", "乙"], true);
+    stubRowWidth();
+
+    drag(handles(row)[0], 300, 303);
+    expect(editor?.state.doc.lastChild?.attrs.leftWidth).toBe(50.5);
+    expect(row.style.getPropertyValue("--resume-row-left")).toBe("50.5%");
+    expect(handles(row)[0].style.left).toBe("50.5%");
+  });
+
+  it("2 栏只点不改比例，双击恢复 50%", async () => {
+    const row = await renderRow(["甲", "乙"], true);
+    stubRowWidth();
+    clickOnly(handles(row)[0], 300);
+    expect(editor?.state.doc.lastChild?.attrs.leftWidth).toBe(50);
+    drag(handles(row)[0], 300, 360);
+    expect(editor?.state.doc.lastChild?.attrs.leftWidth).toBe(60);
+    fireEvent.doubleClick(handles(row)[0]);
+    expect(editor?.state.doc.lastChild?.attrs.leftWidth).toBe(50);
   });
 
   it("拖动分隔线只改相邻两栏，其余栏不变", async () => {

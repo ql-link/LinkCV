@@ -106,11 +106,11 @@ export function DatasetUploadDialog({
 
           <FileUpload
             className="dataset-file-upload"
-            accept={`${limits.allowed_extensions.join(",")},application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document`}
+            accept={`${limits.allowed_extensions.join(",")},${(limits.media_allowed_extensions ?? []).join(",")},application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,audio/*,video/mp4,video/webm,video/quicktime`}
             inputLabel="选择资料文件"
             supportingText={busy
               ? "正在上传…"
-              : `支持 PDF、DOCX、Markdown、TXT · 单个不超过 ${formatDatasetFileSize(limits.max_file_bytes)}`}
+              : `支持 PDF、DOCX、Markdown、TXT 与音视频 · 文档不超过 ${formatDatasetFileSize(limits.max_file_bytes)}、音视频不超过 ${formatDatasetFileSize(limits.max_media_file_bytes ?? 500 * 1024 * 1024)}`}
             disabled={busy}
             multiple
             onFilesSelect={(files) => { void submitFiles(files); }}

@@ -224,7 +224,7 @@ def test_public_share_embeds_only_images_from_the_current_saved_draft() -> None:
         }
 
 
-def test_public_share_pdf_uses_server_renderer_and_smart_one_page() -> None:
+def test_public_share_pdf_uses_server_renderer_and_a4_pages() -> None:
     app = build_app()
     with ExitStack() as stack:
         owner = stack.enter_context(TestClient(app))
@@ -232,6 +232,14 @@ def test_public_share_pdf_uses_server_renderer_and_smart_one_page() -> None:
         register(owner, "pdf-share-owner@example.com")
 
         created = create_resume(owner, app).json()["resume"]
+        with app.state.session_factory() as session:
+            resume = session.get(Resume, int(created["id"]))
+            assert resume is not None
+            resume.style_json = {
+                **resume.style_json,
+                "portable": {**resume.style_json["portable"], "smart_one_page": True},
+            }
+            session.commit()
         token = owner.post(f"/api/resumes/{created['id']}/share").json()["share"][
             "share_token"
         ]
@@ -251,7 +259,7 @@ def test_public_share_pdf_uses_server_renderer_and_smart_one_page() -> None:
         )
         rendered = app.state.resume_pdf_renderer.payloads[-1]
         assert rendered["protocol_version"] == 1
-        assert rendered["style"]["portable"]["smart_one_page"] is True
+        assert rendered["style"]["portable"]["smart_one_page"] is False
         assert set(rendered) == {
             "protocol_version",
             "title",

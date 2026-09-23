@@ -1,5 +1,5 @@
 import { Check, LoaderCircle, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { api, type ResumeTemplate } from "../../api/client";
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
@@ -21,6 +21,9 @@ export function WorkbenchTemplatePanel({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const selectedCardRef = useRef<HTMLButtonElement>(null);
+  const centeredOnOpenRef = useRef(false);
 
   const loadTemplates = useCallback(async () => {
     setLoading(true);
@@ -38,6 +41,19 @@ export function WorkbenchTemplatePanel({
   useEffect(() => {
     void loadTemplates();
   }, [loadTemplates]);
+
+  useLayoutEffect(() => {
+    if (loading || failed || centeredOnOpenRef.current) return;
+    const body = bodyRef.current;
+    const selectedCard = selectedCardRef.current;
+    if (!body || !selectedCard) return;
+    const bodyRect = body.getBoundingClientRect();
+    const cardRect = selectedCard.getBoundingClientRect();
+    body.scrollTop = Math.max(0,
+      body.scrollTop + cardRect.top - bodyRect.top - (body.clientHeight - cardRect.height) / 2,
+    );
+    centeredOnOpenRef.current = true;
+  }, [failed, loading, templates]);
 
   const applyTemplate = async (template: ResumeTemplate) => {
     if (disabled || applyingId || resumePresentationTemplateKey(template.style) === currentTemplateKey) return;
@@ -66,7 +82,7 @@ export function WorkbenchTemplatePanel({
         </button>
       </header>
 
-      <div className="workbench-template-panel-body">
+      <div className="workbench-template-panel-body" ref={bodyRef}>
         {loading ? <PageLoading label="正在加载简历模板…" scope="panel" /> : null}
 
         {!loading && failed ? (
@@ -100,6 +116,7 @@ export function WorkbenchTemplatePanel({
                 <li key={template.id}>
                   <button
                     type="button"
+                    ref={selected ? selectedCardRef : null}
                     className={`workbench-template-card${selected ? " is-selected" : ""}`}
                     aria-pressed={selected}
                     aria-label={selected ? `${template.name}（当前模板）` : `应用模板：${template.name}`}

@@ -53,6 +53,16 @@ const batchFolder = {
 const batchRecord: DatasetRecord = { ...record, folder_id: "f-batch" };
 const batchProcessingRecord: DatasetRecord = { ...processingRecord, folder_id: "f-batch" };
 const batchFailedRecord: DatasetRecord = { ...failedRecord, folder_id: "f-batch" };
+const audioRecord: DatasetRecord = {
+  ...record,
+  id: "4",
+  file_name: "第一轮面试录音.mp3",
+  file_format: "mp3",
+  file_size: 8 * 1024 * 1024,
+  asset_kind: "audio",
+  parse_status: null,
+  interview_label: "虚构测试公司 · 第一轮面试",
+};
 
 async function enterBatchFolder() {
   expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
@@ -329,16 +339,33 @@ describe("DatasetsPage", () => {
     expect(screen.queryByRole("button", { name: "批量操作" })).not.toBeInTheDocument();
   });
 
-  it("点击解析完成的文件打开只读预览弹窗", async () => {
+  it("选择解析完成的文件后从详情栏打开只读预览弹窗", async () => {
     vi.spyOn(api, "getDatasetContent").mockResolvedValue({id:record.id,file_name:record.file_name,file_format:record.file_format,markdown:"# 预览正文"});
     vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
     const navigate=vi.spyOn(routing,"navigateTo").mockImplementation(()=>{});
     vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [batchFolder], total_count: 3, uncategorized_count: 0 });
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
-    fireEvent.click(await screen.findByRole("button", { name: "打开「岗位要求」解析预览" }));
+    expect(await screen.findByText("选择一个文件")).toBeInTheDocument();
+    const card = screen.getByRole("button", { name: "选择「岗位要求」查看详情" });
+    fireEvent.click(card);
+    expect(card).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("complementary", { name: "岗位要求 文件详情" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看文件 →" }));
     expect(navigate).not.toHaveBeenCalled();
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.queryByRole("button", {name:"编辑"})).not.toBeInTheDocument();
+  });
+
+  it("上传完成的音频可在详情栏查看且不显示等待解析", async () => {
+    vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [audioRecord] });
+    vi.mocked(api.listDatasetFolders).mockResolvedValue({ folders: [batchFolder], total_count: 1, uncategorized_count: 0 });
+    render(<DatasetsPage initialFolderId={batchFolder.id} />);
+
+    const card = await screen.findByRole("button", { name: "选择「第一轮面试录音」查看详情" });
+    expect(screen.queryByText("等待解析")).not.toBeInTheDocument();
+    fireEvent.click(card);
+    expect(screen.getByRole("complementary", { name: "第一轮面试录音 文件详情" })).toHaveTextContent("虚构测试公司 · 第一轮面试");
+    expect(screen.getByRole("button", { name: "查看文件 →" })).toBeInTheDocument();
   });
 
   it("菜单操作不会冒泡触发行预览，并按失败状态提供重试", async () => {
@@ -366,7 +393,7 @@ describe("DatasetsPage", () => {
     expect(await screen.findByText("正在解析")).toBeInTheDocument();
   });
 
-  it("点击菜单外区域会关闭菜单，点击资料行时只关闭而不打开预览", async () => {
+  it("点击菜单外区域会关闭菜单，点击资料卡只选中文件而不直接打开预览", async () => {
     vi.spyOn(api, "listDatasets").mockResolvedValue({ datasets: [record] });
     const navigate=vi.spyOn(routing,"navigateTo").mockImplementation(()=>{});
     const getContent = vi.spyOn(api, "getDatasetContent").mockResolvedValue({
@@ -379,19 +406,20 @@ describe("DatasetsPage", () => {
     render(<DatasetsPage initialFolderId={batchFolder.id} />);
 
     const menuButton = await screen.findByRole("button", { name: /操作菜单/ });
-    const row = screen.getByRole("button", { name: "打开「岗位要求」解析预览" });
+    const row = screen.getByRole("button", { name: "选择「岗位要求」查看详情" });
     fireEvent.click(menuButton);
     expect(screen.getByRole("menu")).toBeInTheDocument();
 
     fireEvent.click(row);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(getContent).not.toHaveBeenCalled();
+    expect(row).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(menuButton);
     fireEvent.click(document.body);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
-    fireEvent.click(row);
+    fireEvent.click(screen.getByRole("button", { name: "查看文件 →" }));
     expect(navigate).not.toHaveBeenCalled();
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
@@ -585,7 +613,7 @@ describe("DatasetsPage", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("部分文件上传失败：");
     expect(alert).toHaveTextContent("失败.md：上传失败，请稍后重试");
-    expect(alert).toHaveTextContent("错误.exe：仅支持 DOCX、PDF、Markdown 和 TXT 文件");
+    expect(alert).toHaveTextContent("错误.exe：仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件");
     expect(alert.querySelector(".dataset-notice-message")?.textContent).not.toContain("\n");
     expect(screen.queryByRole("dialog", { name: "上传资料" })).not.toBeInTheDocument();
 

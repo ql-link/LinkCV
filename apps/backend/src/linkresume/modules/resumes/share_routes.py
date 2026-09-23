@@ -143,6 +143,6 @@ def download_public_share_pdf(
         owner.id,
         storage,
         renderer,
-        smart_one_page=True,
+        smart_one_page=False,
     )
     return resume_pdf_response(resume, pdf)
