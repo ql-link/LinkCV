@@ -448,6 +448,12 @@ export type DatasetRecord = {
   file_name: string;
   file_format: string;
   file_size: number;
+  asset_kind?: "document" | "audio" | "video";
+  interview_session_id?: string | null;
+  interview_source_type?: "recorded" | "uploaded" | null;
+  duration_ms?: number | null;
+  /** “公司·场次” label resolved server-side for linked interview assets. */
+  interview_label?: string | null;
   upload_status: "uploading" | "succeeded" | "failed";
   parse_status: "queued" | "processing" | "succeeded" | "failed" | null;
   failure_reason:
@@ -484,6 +490,10 @@ export type DatasetLimits = {
   max_file_bytes: number;
   max_files_per_batch: number;
   allowed_extensions: string[];
+  max_media_file_bytes?: number;
+  media_allowed_extensions?: string[];
+  media_max_count?: number;
+  media_max_total_bytes?: number;
 };
 
 export type DatasetListResponse = {
@@ -2035,11 +2045,27 @@ export const api = {
     if (durationMs) formData.append("duration_ms", String(durationMs));
     return request<{ asset: InterviewAssetRecord }>(
       `/api/interview-sessions/${sessionId}/assets`,
-      { method: "POST", formData },
+      {
+        method: "POST",
+        formData,
+        headers: { "Idempotency-Key": createRequestId() },
+      },
     );
   },
+  attachInterviewAsset: (sessionId: string, datasetId: string) =>
+    request<{ asset: InterviewAssetRecord }>(
+      `/api/interview-sessions/${sessionId}/assets/attach`,
+      { method: "POST", body: { dataset_id: datasetId } },
+    ),
+  unlinkSessionAsset: (sessionId: string, datasetId: string) =>
+    request<{ unlinked: boolean }>(
+      `/api/interview-sessions/${sessionId}/assets/${datasetId}`,
+      { method: "DELETE" },
+    ),
   downloadInterviewAsset: (assetId: string) =>
     requestBlob(`/api/interview-assets/${assetId}/content`),
+  downloadDatasetSource: (datasetId: string) =>
+    requestBlob(`/api/datasets/${datasetId}/source`),
   deleteInterviewAsset: (assetId: string) =>
     request<{ deleted: boolean }>(`/api/interview-assets/${assetId}`, {
       method: "DELETE",

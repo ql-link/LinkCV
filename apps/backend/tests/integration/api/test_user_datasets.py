@@ -252,6 +252,10 @@ def test_upload_and_list_own_datasets() -> None:
             "max_file_bytes": app.state.settings.dataset_upload_max_bytes,
             "max_files_per_batch": 10,
             "allowed_extensions": [".pdf", ".docx", ".md", ".txt"],
+            "max_media_file_bytes": app.state.settings.interview_asset_upload_max_bytes,
+            "media_allowed_extensions": [".webm", ".m4a", ".mp3", ".wav", ".ogg", ".mp4", ".mov"],
+            "media_max_count": app.state.settings.media_max_count_per_user,
+            "media_max_total_bytes": app.state.settings.media_max_total_bytes_per_user,
         }
         records = listed.json()["datasets"]
         assert [item["file_name"] for item in records] == ["resume.pdf", "notes.md"]

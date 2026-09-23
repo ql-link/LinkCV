@@ -15,7 +15,6 @@ from linkresume.core.storage import (
     build_import_object_name,
     build_legacy_converted_markdown_object_name,
     build_source_graph_object_name,
-    build_interview_asset_object_name,
     decode_image_data_url,
 )
 
@@ -63,13 +62,6 @@ def test_dataset_object_name_is_user_scoped() -> None:
     object_name = build_dataset_object_name(42, "notes.md")
     assert object_name.startswith("users/42/datasets/")
     assert object_name.endswith("-notes.md")
-
-
-def test_interview_asset_name_is_scoped_to_user_application_and_session() -> None:
-    object_name = build_interview_asset_object_name(42, 7, 9, "面试录音.m4a")
-
-    assert object_name.startswith("users/42/interviews/7/9/")
-    assert object_name.endswith("-面试录音.m4a")
 
 
 class FakeMinioClient:

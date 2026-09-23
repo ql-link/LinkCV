@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Word">
+  <rect x="15" y="5" width="27" height="38" rx="5" fill="#2B7CD3"/>
+  <path d="M31 11h11v6H31zm0 8h11v6H31zm0 8h11v6H31zm0 8h11v4a4 4 0 0 1-4 4h-7z" fill="#57A4E8" opacity=".78"/>
+  <rect x="5" y="10" width="28" height="30" rx="5" fill="#145DB2"/>
+  <text x="19" y="31.5" fill="#fff" font-family="Arial, sans-serif" font-size="18" font-weight="700" text-anchor="middle">W</text>
+</svg>
