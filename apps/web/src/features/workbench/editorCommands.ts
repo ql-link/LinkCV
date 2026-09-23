@@ -224,6 +224,18 @@ export function setResumeRowColumnWidths(
   });
 }
 
+/** 两栏沿用 leftWidth，不写入仅供 3/4 栏使用的 columnWidths。 */
+export function setResumeRowLeftWidth(editor: Editor, rowPosition: number, width: number) {
+  return editor.commands.command(({ state, dispatch }) => {
+    const row = state.doc.nodeAt(rowPosition);
+    if (!row || row.type.name !== "resumeRow" || row.childCount !== 2 || !Number.isFinite(width)) return false;
+    const next = Number(Math.min(80, Math.max(30, width)).toFixed(2));
+    if (row.attrs.leftWidth === next) return false;
+    dispatch?.(state.tr.setNodeMarkup(rowPosition, undefined, { ...row.attrs, leftWidth: next }));
+    return true;
+  });
+}
+
 // 栏数固定的行（等分行、页头三行/四行）内容表达式不允许再分段，回车统一落到行外新段落。
 export const RESUME_FIXED_ROW_NODE_NAMES = new Set(["resumeRow", "resumeTrioRow", "resumeMetaRow"]);
 

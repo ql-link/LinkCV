@@ -60,6 +60,10 @@ const publicPayload: PublicSharePayload = {
   },
   style: {
     ...defaultCanonicalPresentation,
+    portable: {
+      ...defaultCanonicalPresentation.portable,
+      smart_one_page: true,
+    },
     template_snapshot: {
       ...defaultCanonicalPresentation.template_snapshot,
       template_key: "classic-technical-cn",
@@ -118,11 +122,9 @@ describe("SharePage", () => {
     expect(screen.getByLabelText("分享简历内容")).toHaveClass(
       "theme-classic-technical",
     );
-    expect(screen.getByLabelText("分享简历内容")).toHaveClass("smart-one-page");
-    expect(screen.getByLabelText("分享简历内容")).toHaveAttribute(
-      "style",
-      expect.stringContaining("--preview-accent:#202632"),
-    );
+    expect(screen.getByLabelText("分享简历内容")).not.toHaveClass("smart-one-page");
+    await waitFor(() => expect(screen.getByLabelText("分享简历内容")).toHaveAttribute("data-page-count", "1"));
+    expect((screen.getByLabelText("分享简历内容") as HTMLElement).style.getPropertyValue("--preview-accent")).toBe("#202632");
   });
 
   it("下载 PDF 时调用公开服务端渲染接口而不是浏览器打印", async () => {
@@ -136,6 +138,8 @@ describe("SharePage", () => {
     render(<SharePage token="token/123" />);
 
     const download = await screen.findByRole("button", { name: "下载 PDF" });
+    const paper = screen.getByLabelText("分享简历内容");
+    await waitFor(() => expect(paper).toHaveAttribute("data-page-count", "1"));
     download.click();
 
     await waitFor(() => expect(mockedDownload).toHaveBeenCalledWith(
@@ -146,6 +150,7 @@ describe("SharePage", () => {
     expect(createObjectURL).toHaveBeenCalledWith(blob);
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:share-pdf");
     expect(print).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("分享简历内容")).toBe(paper);
   });
 
   it("PDF 生成失败时在按钮旁显示可见错误", async () => {
