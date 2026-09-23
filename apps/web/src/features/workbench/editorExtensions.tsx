@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import * as PMView from "@tiptap/pm/view";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
 import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
@@ -86,7 +85,6 @@ export const inlineIconNames = resumeInlineIconOptions.map((option) => option.na
 // accepted only when the explicit maintenance adapter projects an old row.
 const BLOCK_ID_PATTERN = /^(?:blk|node)_[a-z0-9]{16,64}$/;
 const blockIdentityPluginKey = new PluginKey("resume-block-identity");
-const adaptiveCaretPluginKey = new PluginKey("resume-adaptive-caret");
 
 export function createResumeBlockId() {
   const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
@@ -136,47 +134,6 @@ export const ResumeBlockAnchor = Node.create({
     "aria-hidden": "true",
     class: "resume-block-anchor",
   }],
-});
-
-export const ResumeAdaptiveCaret = Extension.create({
-  name: "resumeAdaptiveCaret",
-  addProseMirrorPlugins() {
-    const editor = this.editor;
-    return [new Plugin({
-      key: adaptiveCaretPluginKey,
-      props: {
-        decorations(state) {
-          const { selection } = state;
-          if (!editor.isEditable || !selection.empty || !selection.$head.parent.inlineContent) {
-            return PMView.DecorationSet.empty;
-          }
-          return PMView.DecorationSet.create(state.doc, [
-            PMView.Decoration.widget(selection.head, (view) => {
-              const caret = view.dom.ownerDocument.createElement("span");
-              caret.className = "resume-adaptive-caret";
-              caret.setAttribute("aria-hidden", "true");
-              caret.setAttribute("contenteditable", "false");
-              return caret;
-            }, { key: "resume-adaptive-caret", side: -1 }),
-          ]);
-        },
-        handleDOMEvents: {
-          compositionstart(view) {
-            view.dom.classList.add("is-composing");
-            return false;
-          },
-          compositionend(view) {
-            view.dom.classList.remove("is-composing");
-            return false;
-          },
-          blur(view) {
-            view.dom.classList.remove("is-composing");
-            return false;
-          },
-        },
-      },
-    })];
-  },
 });
 
 export const ResumeBlockIdentity = Extension.create({
@@ -1315,7 +1272,6 @@ export const FontSize = TextStyle.extend({
 
 export const resumeEditorExtensions: Extensions = [
   StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
-  ResumeAdaptiveCaret,
   ResumeBlockAnchor,
   ResumeBlockIdentity,
   ResumeIdentityHeadline,

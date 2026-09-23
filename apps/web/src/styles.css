@@ -1916,6 +1916,27 @@ select:not([data-slot]):focus-visible {
 
 .resume-workbench .resume-paper:not(.smart-one-page):not(.pages-horizontal) {
   min-height: var(--resume-page-stack-height, 297mm);
+  /* A continuous editor can contain full-height sidebars and borders. Clip the
+     entire rendered paper at each A4 seam so their paint cannot bridge pages. */
+  -webkit-mask-image: repeating-linear-gradient(to bottom, #000 0 297mm, transparent 297mm calc(297mm + 24px));
+  mask-image: repeating-linear-gradient(to bottom, #000 0 297mm, transparent 297mm calc(297mm + 24px));
+}
+
+.resume-workbench .resume-paper:not(.smart-one-page):not(.pages-horizontal) .resume-content {
+  /* The editor starts at the first page's top margin. Keep each later page's
+     top/bottom margins free of long sidebar and list backgrounds as well. */
+  -webkit-mask-image: repeating-linear-gradient(
+    to bottom,
+    #000 0 calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))),
+    transparent calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))) calc(297mm + 24px)
+  );
+  mask-image: repeating-linear-gradient(
+    to bottom,
+    #000 0 calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))),
+    transparent calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))) calc(297mm + 24px)
+  );
+  -webkit-mask-clip: no-clip;
+  mask-clip: no-clip;
 }
 
 .resume-workbench .resume-paper.smart-one-page {
@@ -1940,40 +1961,10 @@ select:not([data-slot]):focus-visible {
   font-family: var(--resume-font-family);
   font-size: var(--resume-font-size);
   line-height: var(--resume-line-height);
-  caret-color: transparent;
+  caret-color: currentColor;
 }
 
-.resume-workbench .resume-content.ProseMirror * { caret-color: transparent; }
-
-.resume-adaptive-caret {
-  display: inline-block;
-  width: 2px;
-  height: 1.15em;
-  margin-inline: -1px;
-  vertical-align: -0.2em;
-  background: #fff;
-  mix-blend-mode: difference;
-  pointer-events: none;
-  animation: resume-adaptive-caret-blink 1s steps(1, end) infinite;
-}
-
-.resume-content.ProseMirror:not(.ProseMirror-focused) .resume-adaptive-caret { visibility: hidden; }
-.resume-content.ProseMirror.is-composing .resume-adaptive-caret { visibility: hidden; }
-.resume-content.ProseMirror.is-composing,
-.resume-content.ProseMirror.is-composing * { caret-color: auto; }
-
-@keyframes resume-adaptive-caret-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .resume-adaptive-caret { animation: none; }
-}
-
-@media print {
-  .resume-adaptive-caret { display: none; }
-}
+.resume-workbench .resume-content.ProseMirror * { caret-color: currentColor; }
 
 .resume-workbench :where(.resume-content.ProseMirror > :not(.resume-avatar-node-view)) { position: relative; }
 
@@ -1982,7 +1973,7 @@ select:not([data-slot]):focus-visible {
   left: calc(-1 * var(--resume-page-margin-x));
   display: block;
   width: 210mm;
-  height: calc(var(--page-break-remaining-height, 0px) + (2 * var(--page-break-margin)) + 24px);
+  height: calc(var(--page-break-remaining-height, 0px) + var(--page-break-margin) + var(--page-break-bottom-margin, var(--page-break-margin)) + 24px);
   margin-block: 0;
   background: transparent;
   list-style: none;

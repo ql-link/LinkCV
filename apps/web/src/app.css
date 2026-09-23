@@ -784,6 +784,10 @@ select:not([data-slot]):focus-visible,
   background-color: #edf2e8;
 }
 
+.resume-workbench .resume-paper.theme-sage-paper:not(.smart-one-page):not(.pages-horizontal) {
+  background: repeating-linear-gradient(to bottom,#edf2e8 0 297mm,transparent 297mm calc(297mm + 24px));
+}
+
 .theme-sage-paper .resume-content {
   box-shadow: 0 0 0 14mm #edf2e8;
 }
@@ -1075,6 +1079,29 @@ select:not([data-slot]):focus-visible,
 /* 信笺边框 — 内嵌双层细框、左侧肖像与居中章节标签。 */
 .theme-atlas-framed-letter {--atlas-inset:22px}
 .theme-atlas-framed-letter .resume-content {border:4px double #bdb2a8}
+.resume-workbench .theme-atlas-framed-letter .resume-content {border-color:transparent}
+.resume-workbench .theme-atlas-framed-letter:not(.smart-one-page):not(.pages-horizontal)::after {
+  --frame-top:calc(var(--resume-page-margin-top,var(--resume-page-margin-y)) - 8px);
+  --frame-bottom:calc(297mm - var(--resume-page-margin-bottom,var(--resume-page-margin-y)) + 8px);
+  content:"";
+  position:absolute;
+  inset:0 var(--resume-page-margin-right,var(--resume-page-margin-x)) 0 var(--resume-page-margin-left,var(--resume-page-margin-x));
+  z-index:1;
+  pointer-events:none;
+  border-inline:4px double #bdb2a8;
+  background:repeating-linear-gradient(to bottom,
+    transparent 0 var(--frame-top),
+    #bdb2a8 var(--frame-top) calc(var(--frame-top) + 1px),
+    transparent calc(var(--frame-top) + 1px) calc(var(--frame-top) + 3px),
+    #bdb2a8 calc(var(--frame-top) + 3px) calc(var(--frame-top) + 4px),
+    transparent calc(var(--frame-top) + 4px) calc(var(--frame-bottom) - 4px),
+    #bdb2a8 calc(var(--frame-bottom) - 4px) calc(var(--frame-bottom) - 3px),
+    transparent calc(var(--frame-bottom) - 3px) calc(var(--frame-bottom) - 1px),
+    #bdb2a8 calc(var(--frame-bottom) - 1px) var(--frame-bottom),
+    transparent var(--frame-bottom) calc(297mm + 24px));
+  -webkit-mask-image:repeating-linear-gradient(to bottom,transparent 0 var(--frame-top),#000 var(--frame-top) var(--frame-bottom),transparent var(--frame-bottom) calc(297mm + 24px));
+  mask-image:repeating-linear-gradient(to bottom,transparent 0 var(--frame-top),#000 var(--frame-top) var(--frame-bottom),transparent var(--frame-bottom) calc(297mm + 24px));
+}
 .theme-atlas-framed-letter .resume-avatar {float:left;margin:0 18px 12px 0}
 .theme-atlas-framed-letter .resume-content h1 {font-size:25pt;padding-top:5px}
 .theme-atlas-framed-letter .resume-content h2 {text-align:center;border:1px solid #d4c9bd;padding:6px;background:#faf7f1;letter-spacing:.1em}

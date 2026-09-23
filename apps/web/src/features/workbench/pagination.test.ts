@@ -26,7 +26,31 @@ describe("computePageBreaks", () => {
       position: 12,
       page: 2,
       contentOffset: 140,
-      remainingContentHeight: 0,
+      remainingContentHeight: -40,
+    }]);
+  });
+
+  it("保留页尾间距超出的高度，避免后一页逐页下移", () => {
+    expect(computePageBreaks([
+      { position: 1, top: 0, height: 96 },
+      { position: 8, top: 106, height: 15 },
+    ], 100)).toEqual([{
+      position: 8,
+      page: 2,
+      contentOffset: 106,
+      remainingContentHeight: -6,
+    }]);
+  });
+
+  it("文字贴近页尾时提前分页，避免被页面裁切半行", () => {
+    expect(computePageBreaks([
+      { position: 1, top: 0, height: 80 },
+      { position: 8, top: 81, height: 17 },
+    ], 100)).toEqual([{
+      position: 8,
+      page: 2,
+      contentOffset: 81,
+      remainingContentHeight: 19,
     }]);
   });
 
@@ -76,5 +100,46 @@ describe("computePageBreaks", () => {
 
   it("根据 A4 高度扣除上下边距", () => {
     expect(pageContentHeight(20)).toBeCloseTo((257 / 25.4) * 96, 5);
+    expect(pageContentHeight(8, 10)).toBeCloseTo((279 / 25.4) * 96, 5);
+  });
+
+  it("章节标题与紧随内容放不下时从标题前分页", () => {
+    expect(computePageBreaks([
+      { position: 1, top: 0, height: 75 },
+      { position: 10, top: 75, height: 15, keepWithNext: true },
+      { position: 20, top: 90, height: 30 },
+    ], 100)).toEqual([{
+      position: 10,
+      page: 2,
+      contentOffset: 75,
+      remainingContentHeight: 25,
+    }]);
+  });
+
+  it("并行双栏占用整页后，根层后续章节沿物理页继续分页", () => {
+    expect(computePageBreaks([
+      { position: 1, top: 0, height: 60 },
+      { position: 10, top: 170, height: 15, keepWithNext: true },
+      { position: 20, top: 185, height: 30 },
+      { position: 30, top: 215, height: 30 },
+    ], 100, 120)).toEqual([{
+      position: 30,
+      page: 3,
+      contentOffset: 215,
+      remainingContentHeight: 5,
+    }]);
+  });
+
+  it("章节标题和空副标题之后的经历行一起换页", () => {
+    expect(computePageBreaks([
+      { position: 1, top: 930, height: 23, keepWithNext: true },
+      { position: 5, top: 963, height: 17, keepWithNext: true },
+      { position: 9, top: 982, height: 45 },
+    ], 1000)).toEqual([{
+      position: 1,
+      page: 2,
+      contentOffset: 930,
+      remainingContentHeight: 70,
+    }]);
   });
 });

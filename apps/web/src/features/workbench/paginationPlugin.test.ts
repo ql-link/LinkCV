@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paginationCandidates, paginationMutationRequiresMeasure } from "./paginationPlugin";
+import { paginationCandidates, paginationMutationRequiresMeasure, paginationTextNodes } from "./paginationPlugin";
 
 describe("分页测量触发条件", () => {
   it("忽略页面排列类名和分页插件内部尺寸变量", () => {
@@ -37,5 +37,19 @@ describe("分页测量触发条件", () => {
     ].join("");
 
     expect(paginationCandidates(editor).map((element) => element.textContent)).toEqual(["目标标题", "第一分点", "第二分点"]);
+  });
+
+  it("双栏内容按栏展开，避免把整组作为一个超高块", () => {
+    const editor = document.createElement("div");
+    editor.innerHTML = '<div class="resume-layout-columns"><section class="resume-layout-column"><h2>左栏</h2><p>左侧内容</p></section><section class="resume-layout-column"><h2>右栏</h2><ul><li>右侧分点</li></ul></section></div>';
+    expect(paginationCandidates(editor).map((element) => element.textContent)).toEqual([
+      "左栏", "左侧内容", "右栏", "右侧分点",
+    ]);
+  });
+
+  it("测量列表正文时不把行首按钮和分页占位当作文字", () => {
+    const item = document.createElement("li");
+    item.innerHTML = '<p><button class="resume-line-add">+</button>完整正文<span class="workbench-page-break">忽略</span>续排</p>';
+    expect(paginationTextNodes(item).map((node) => node.textContent)).toEqual(["完整正文", "续排"]);
   });
 });

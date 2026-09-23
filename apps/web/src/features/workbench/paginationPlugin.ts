@@ -1,7 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { computePageBreaks, pageContentHeight, type PageBlock, type PageBreak } from "./pagination";
+import { A4_HEIGHT_CSS_PX, computePageBreaks, pageContentHeight, type PageBlock, type PageBreak } from "./pagination";
 
 export const paginationPluginKey = new PluginKey<DecorationSet>("resumePagination");
 const META_KEY = "resume-pagination-breaks";
@@ -11,6 +11,8 @@ const PAGINATION_STYLE_PROPERTIES = [
   "--resume-line-height",
   "--resume-page-margin-x",
   "--resume-page-margin-y",
+  "--resume-page-margin-top",
+  "--resume-page-margin-bottom",
 ];
 
 function classSignature(value: string | null) {
@@ -51,7 +53,7 @@ function sameBreaks(left: PageBreak[], right: PageBreak[]) {
       && Math.abs((item.inlineOffset ?? -1) - (right[index]?.inlineOffset ?? -1)) < 0.5);
 }
 
-function breakDecoration(pageBreak: PageBreak, marginPx: number, inList: boolean) {
+function breakDecoration(pageBreak: PageBreak, marginPx: number, bottomMarginPx: number, inList: boolean) {
   return Decoration.widget(pageBreak.position, () => {
     const marker = document.createElement(pageBreak.continuation ? "span" : inList ? "li" : "div");
     marker.className = `workbench-page-break${pageBreak.continuation ? " is-list-continuation" : ""}`;
@@ -60,6 +62,7 @@ function breakDecoration(pageBreak: PageBreak, marginPx: number, inList: boolean
     marker.setAttribute("contenteditable", "false");
     marker.setAttribute("aria-hidden", "true");
     marker.style.setProperty("--page-break-margin", `${marginPx}px`);
+    marker.style.setProperty("--page-break-bottom-margin", `${bottomMarginPx}px`);
     marker.style.setProperty("--page-break-remaining-height", `${pageBreak.remainingContentHeight}px`);
     if (pageBreak.inlineOffset !== undefined) {
       marker.style.setProperty("--page-break-inline-offset", `${pageBreak.inlineOffset}px`);
@@ -72,16 +75,30 @@ function breakDecoration(pageBreak: PageBreak, marginPx: number, inList: boolean
 }
 
 export function paginationCandidates(editor: HTMLElement) {
-  return Array.from(editor.children).flatMap((element) => {
+  const expand = (element: Element): HTMLElement[] => {
     if (!(element instanceof HTMLElement)
       || element.classList.contains("workbench-page-break")) return [];
+    if (element.matches(".resume-columns, .resume-layout-columns, .resume-column, .resume-layout-column")) {
+      return Array.from(element.children).flatMap(expand);
+    }
     if (element.matches("ol, ul")) {
       return Array.from(element.children).filter((child): child is HTMLElement => (
         child instanceof HTMLElement && child.matches("li:not(.workbench-page-break)")
       ));
     }
     return [element];
-  });
+  };
+  return Array.from(editor.children).flatMap(expand);
+}
+
+function paginationFlow(element: HTMLElement) {
+  const column = element.closest<HTMLElement>(".resume-column, .resume-layout-column");
+  if (!column) return "root";
+  const columns = column.parentElement;
+  const editor = column.closest<HTMLElement>(".resume-content");
+  if (!columns || !editor) return "root";
+  const groupIndex = Array.from(editor.querySelectorAll(".resume-columns, .resume-layout-columns")).indexOf(columns);
+  return `group-${groupIndex}-column-${Array.from(columns.children).indexOf(column)}`;
 }
 
 function setPageStripMetrics(paper: HTMLElement, pageCount: number) {
@@ -99,11 +116,11 @@ function setPageStripMetrics(paper: HTMLElement, pageCount: number) {
   if (paper.style.getPropertyValue("--resume-page-stack-height") !== height) paper.style.setProperty("--resume-page-stack-height", height);
 }
 
-function contentTextNodes(element: HTMLElement) {
+export function paginationTextNodes(element: HTMLElement) {
   const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
-      if (!node.textContent || !parent || parent.closest(".workbench-page-break, .media-context-toolbar, .media-resize-handle")) {
+      if (!node.textContent || !parent || parent.closest(".workbench-page-break, .media-context-toolbar, .media-resize-handle, .resume-line-add")) {
         return NodeFilter.FILTER_REJECT;
       }
       return NodeFilter.FILTER_ACCEPT;
@@ -148,13 +165,14 @@ export const PaginationExtension = Extension.create({
       state: {
         init: () => DecorationSet.empty,
         apply(transaction, current) {
-          const meta = transaction.getMeta(META_KEY) as { breaks: PageBreak[]; marginPx: number } | undefined;
+          const meta = transaction.getMeta(META_KEY) as { breaks: PageBreak[]; marginPx: number; bottomMarginPx: number } | undefined;
           if (meta) {
             return DecorationSet.create(
               transaction.doc,
               meta.breaks.map((item) => breakDecoration(
                 item,
                 meta.marginPx,
+                meta.bottomMarginPx,
                 ["bulletList", "orderedList"].includes(transaction.doc.resolve(item.position).parent.type.name),
               )),
             );
@@ -173,6 +191,7 @@ export const PaginationExtension = Extension.create({
         let deferredRelevantMeasure = false;
         let lastBreaks: PageBreak[] = [];
         let lastMarginPx = -1;
+        let lastBottomMarginPx = -1;
 
         const measure = () => {
           frame = 0;
@@ -202,14 +221,21 @@ export const PaginationExtension = Extension.create({
             if (lastBreaks.length > 0) {
               lastBreaks = [];
               lastMarginPx = 0;
-              editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: [], marginPx: 0 }));
+              lastBottomMarginPx = 0;
+              editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: [], marginPx: 0, bottomMarginPx: 0 }));
             }
             return;
           }
 
-          const marginValue = getComputedStyle(paper).getPropertyValue("--resume-page-margin-y");
-          const marginMm = Number.parseFloat(marginValue) || 0;
-          const marginPx = (marginMm / 25.4) * 96;
+          const computedPaper = getComputedStyle(paper);
+          const defaultMargin = Number.parseFloat(computedPaper.getPropertyValue("--resume-page-margin-y")) || 0;
+          const configuredTopMargin = Number.parseFloat(computedPaper.getPropertyValue("--resume-page-margin-top"));
+          const configuredBottomMargin = Number.parseFloat(computedPaper.getPropertyValue("--resume-page-margin-bottom"));
+          const topMargin = Number.isFinite(configuredTopMargin) ? configuredTopMargin : defaultMargin;
+          const bottomMargin = Number.isFinite(configuredBottomMargin) ? configuredBottomMargin : defaultMargin;
+          const marginPx = (topMargin / 25.4) * 96;
+          const bottomMarginPx = (bottomMargin / 25.4) * 96;
+          const contentHeight = pageContentHeight(topMargin, bottomMargin);
           const sourceCandidates = paginationCandidates(editor);
           let measurementPaper: HTMLElement | null = null;
           let measurementEditor = editor;
@@ -228,22 +254,31 @@ export const PaginationExtension = Extension.create({
           const scale = measurementEditor.offsetHeight > 0 ? editorRect.height / measurementEditor.offsetHeight : 1;
           const markers = Array.from(measurementEditor.querySelectorAll<HTMLElement>(".workbench-page-break"));
           const candidates = paginationCandidates(measurementEditor);
-          const markerMeasurements = markers.map((marker) => ({ rect: marker.getBoundingClientRect(), height: marker.offsetHeight }));
+          const markerMeasurements = markers.map((marker) => ({
+            rect: marker.getBoundingClientRect(),
+            height: marker.offsetHeight,
+            flow: paginationFlow(marker),
+          }));
           const blocks = candidates.flatMap((element, index) => {
             const sourceElement = sourceCandidates[index];
             if (!sourceElement) return [];
             try {
+              const flow = paginationFlow(element);
+              const flowMarkers = markerMeasurements.filter((marker) => marker.flow === flow);
               const rect = element.getBoundingClientRect();
-              const insertedHeight = markerHeightBefore(markerMeasurements, rect.top);
-              const position = editorView.posAtDOM(sourceElement, 0) - (sourceElement.matches("li") ? 1 : 0);
+              const insertedHeight = markerHeightBefore(flowMarkers, rect.top);
+              // A whole-block break must sit before the node. Putting the widget
+              // at the first text position leaves headings and their decorations
+              // on the previous page while only the following body moves.
+              const position = editorView.posAtDOM(sourceElement, 0) - 1;
               const normalizedHeight = rect.height / Math.max(scale, 0.01)
-                - markerMeasurements
+                - flowMarkers
                   .filter((marker) => marker.rect.top >= rect.top && marker.rect.top < rect.bottom)
                   .reduce((total, marker) => total + marker.height, 0);
 
-              if (element.matches("li") || normalizedHeight > pageContentHeight(marginMm)) {
-                const measurementNodes = contentTextNodes(element);
-                const sourceNodes = contentTextNodes(sourceElement);
+              if (element.matches("li") || normalizedHeight > contentHeight) {
+                const measurementNodes = paginationTextNodes(element);
+                const sourceNodes = paginationTextNodes(sourceElement);
                 const lines: PageBlock[] = [];
                 measurementNodes.forEach((textNode, nodeIndex) => {
                   const sourceNode = sourceNodes[nodeIndex];
@@ -254,7 +289,7 @@ export const PaginationExtension = Extension.create({
                   lineRects.forEach((lineRect) => {
                     const offset = firstOffsetOnLine(textNode, lineRect.top);
                     const top = (lineRect.top - editorRect.top) / Math.max(scale, 0.01)
-                      - markerHeightBefore(markerMeasurements, lineRect.top);
+                      - markerHeightBefore(flowMarkers, lineRect.top);
                     const height = lineRect.height / Math.max(scale, 0.01);
                     const previous = lines[lines.length - 1];
                     if (previous && Math.abs(previous.top - top) < 1) {
@@ -268,6 +303,7 @@ export const PaginationExtension = Extension.create({
                         : Math.max(1, editorView.posAtDOM(sourceNode, offset)),
                       top,
                       height,
+                      flow,
                       ...(firstLine ? {} : {
                         continuation: true,
                         inlineOffset: (lineRect.left - paperRect.left) / Math.max(scale, 0.01),
@@ -282,18 +318,32 @@ export const PaginationExtension = Extension.create({
                 position: Math.max(1, position),
                 top: (rect.top - editorRect.top) / Math.max(scale, 0.01) - insertedHeight,
                 height: normalizedHeight,
+                flow,
+                ...(element.matches("h2, h3") ? { keepWithNext: true } : {}),
               }];
             } catch {
               return [];
             }
           });
           measurementPaper?.remove();
-          const nextBreaks = computePageBreaks(blocks, pageContentHeight(marginMm));
-          setPageStripMetrics(paper, nextBreaks.length + 1);
-          if (!sameBreaks(lastBreaks, nextBreaks) || Math.abs(lastMarginPx - marginPx) >= 0.5) {
+          const grouped = new Map<string, PageBlock[]>();
+          blocks.forEach((block) => {
+            const flow = block.flow ?? "root";
+            if (!grouped.has(flow)) grouped.set(flow, []);
+            grouped.get(flow)?.push(block);
+          });
+          const flowBreaks = Array.from(grouped.values()).map((flowBlocks) => (
+            computePageBreaks(flowBlocks, contentHeight, A4_HEIGHT_CSS_PX + 24)
+          ));
+          const nextBreaks = flowBreaks.flat().sort((left, right) => left.position - right.position);
+          setPageStripMetrics(paper, Math.max(1, ...nextBreaks.map((pageBreak) => pageBreak.page)));
+          if (!sameBreaks(lastBreaks, nextBreaks)
+            || Math.abs(lastMarginPx - marginPx) >= 0.5
+            || Math.abs(lastBottomMarginPx - bottomMarginPx) >= 0.5) {
             lastBreaks = nextBreaks;
             lastMarginPx = marginPx;
-            editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: nextBreaks, marginPx }));
+            lastBottomMarginPx = bottomMarginPx;
+            editorView.dispatch(editorView.state.tr.setMeta(META_KEY, { breaks: nextBreaks, marginPx, bottomMarginPx }));
           }
         };
 
