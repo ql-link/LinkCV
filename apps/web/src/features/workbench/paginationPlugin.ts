@@ -1,7 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import { A4_HEIGHT_CSS_PX, computePageBreaks, pageContentHeight, type PageBlock, type PageBreak } from "./pagination";
+import { A4_HEIGHT_CSS_PX, PAGE_CONTINUATION_INSET_PX, computePageBreaks, pageContentHeight, type PageBlock, type PageBreak } from "./pagination";
 
 export const paginationPluginKey = new PluginKey<DecorationSet>("resumePagination");
 const META_KEY = "resume-pagination-breaks";
@@ -384,7 +384,7 @@ export const PaginationExtension = Extension.create({
             grouped.get(flow)?.push(block);
           });
           const flowBreaks = Array.from(grouped.values()).map((flowBlocks) => (
-            computePageBreaks(flowBlocks, contentHeight, A4_HEIGHT_CSS_PX + 24)
+            computePageBreaks(flowBlocks, contentHeight, A4_HEIGHT_CSS_PX + 24, PAGE_CONTINUATION_INSET_PX)
           ));
           const nextBreaks = flowBreaks.flat().sort((left, right) => left.position - right.position);
           setPageStripMetrics(paper, Math.max(1, ...nextBreaks.map((pageBreak) => pageBreak.page)));

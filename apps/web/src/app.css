@@ -1161,6 +1161,8 @@ select:not([data-slot]):focus-visible,
 .theme-atlas-dotted-journal .resume-content h1 + p + p {clear:both;border-bottom:2px dotted #c6b6c2;padding-bottom:12px}
 .theme-atlas-dotted-journal .resume-content h2 {border-bottom:2px dotted #c6b6c2;padding-bottom:6px}
 .theme-atlas-dotted-journal .resume-content h3::before {content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--preview-accent);margin-right:8px}
+.theme-atlas-dotted-journal .resume-content :is(.node-resumeRow,.resume-row) {position:relative}
+.theme-atlas-dotted-journal .resume-content :is(.node-resumeRow,.resume-row)::before {content:"";position:absolute;left:-12px;top:.55em;width:6px;height:6px;border-radius:50%;background:var(--preview-accent)}
 
 /* 线装笔记 — 贯穿正文的左侧装订线、章节侧标与方形头像。 */
 .theme-atlas-ruled-notebook {--atlas-inset:0 0 0 28px}
@@ -1290,6 +1292,7 @@ select:not([data-slot]):focus-visible,
 .theme-atlas-right-cards :is(.resume-column-main,.resume-layout-column-main) h2 {border-top:1px solid #afaf9b;border-bottom:1px solid #afaf9b;padding:5px 0}
 .theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {background:#eaeadd;padding:7px 12px;border:0}
 .theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3, .theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) p, .theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {background:#f5f5ef;padding:8px 12px;margin:0}
+.theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(.node-resumeRow,.resume-row) {background:#f5f5ef;padding:8px 12px;margin:0}
 .theme-atlas-right-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) ul {padding-left:26px}
 
 /* 纵向书签 — 右侧顶部色块身份书签与下方技能，左侧窄色带分节。 */
@@ -1446,7 +1449,7 @@ select:not([data-slot]):focus-visible,
 .theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3:has(+ p + p) {float:none;max-width:none;margin-top:16px}
 .theme-original-dossier :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 + p:has(+ p) {text-align:left;padding-top:0;font-size:10pt}
 .theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) {container-type:inline-size}
-.theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) h2 {display:table;position:relative;background:var(--preview-accent);color:white;padding:3px 14px;margin-top:34px;max-width:100%;box-sizing:border-box}
+.theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) h2 {display:table;position:relative;background:var(--preview-accent);color:white;padding:5px 14px;margin-top:34px;max-width:100%;box-sizing:border-box}
 .theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) h2::after {content:"";position:absolute;left:100%;bottom:0;width:max(0px,calc(100cqw - 100%));border-bottom:1px solid var(--preview-accent)}
 .theme-original-dossier :is(.resume-column-main,.resume-layout-column-main) li::marker {color:var(--preview-accent)}
 
@@ -1473,7 +1476,11 @@ select:not([data-slot]):focus-visible,
 .theme-original-axis .resume-content > h3:has(+ p + p)::before {content:"";position:absolute;left:-25px;top:.55em;width:6px;height:6px;border-radius:50%;background:var(--preview-accent)}
 .theme-original-axis .resume-content > h3 + p:has(+ p) {float:left;width:80px;margin:0;transform:translateY(-27px);font-size:9pt;line-height:1.45;overflow-wrap:normal}
 .theme-original-axis .resume-content > h3 + p + p {margin-left:87px;border-left:1px solid #cdd1d6;padding-left:22px}
-.theme-original-axis .resume-content > ul {margin-left:87px;padding-left:38px;border-left:1px solid #cdd1d6;margin-top:0;padding-bottom:8px}
+.theme-original-axis .resume-content > :is(ul,ol) {margin-left:87px;padding-left:38px;border-left:1px solid #cdd1d6;margin-top:0;padding-bottom:8px}
+.theme-original-axis .resume-content > :is(.node-resumeRow,.resume-row) {position:relative;margin:12px 0 5px 110px}
+.theme-original-axis .resume-content > :is(.node-resumeRow,.resume-row)::before {content:"";position:absolute;left:-25px;top:.55em;width:6px;height:6px;border-radius:50%;background:var(--preview-accent)}
+.theme-original-axis .resume-content > :is(.node-resumeRow,.resume-row) + p,
+.theme-original-axis .resume-content > :is(.node-resumeRow,.resume-row) + p + p {margin-left:87px;border-left:1px solid #cdd1d6;padding-left:22px}
 .theme-original-axis :is(.resume-column-main,.resume-layout-column-main) {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:14px;align-content:start}
 .theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > h2 {grid-column:1/-1}
 .theme-original-axis :is(.resume-column-main,.resume-layout-column-main) > h3:nth-of-type(1) {grid-column:1;grid-row:2}
@@ -1655,6 +1662,8 @@ select:not([data-slot]):focus-visible,
 .theme-career-kendall .resume-content h2 {border:0;padding:0;font-size:12pt}
 .theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) h3 {background:#edf2f0;padding:7px 10px;margin-bottom:0;border-left:3px solid var(--preview-accent)}
 .theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) h3 + p {background:#edf2f0;padding:0 10px 6px;margin-top:0;border-left:3px solid var(--preview-accent)}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) > :is(.node-resumeRow,.resume-row) {background:#edf2f0;padding:7px 10px;margin-bottom:0;border-left:3px solid var(--preview-accent)}
+.theme-career-kendall :is(.resume-column-main,.resume-layout-column-main) > :is(.node-resumeRow,.resume-row) + p {background:#edf2f0;padding:0 10px 6px;margin-top:0;border-left:3px solid var(--preview-accent)}
 
 /* Stack Overflow: compact timeline spine and quiet uppercase-like section bands. */
 .theme-career-stack .resume-content > h1 {color:#27343c;border-left:6px solid var(--preview-accent);padding-left:14px}
@@ -1664,6 +1673,9 @@ select:not([data-slot]):focus-visible,
 .theme-career-stack .resume-content h3::before {content:"";position:absolute;left:-5px;top:6px;width:8px;height:8px;background:var(--preview-accent);border-radius:50%}
 .theme-career-stack .resume-content h3 + p {margin-left:9px;padding-left:17px;border-left:2px solid #d2dce1}
 .theme-career-stack .resume-content :is(ul,ol) {margin-left:9px;padding-left:32px;border-left:2px solid #d2dce1}
+.theme-career-stack .resume-content :is(.node-resumeRow,.resume-row) {position:relative;margin-left:9px;padding-left:17px;border-left:2px solid #d2dce1}
+.theme-career-stack .resume-content :is(.node-resumeRow,.resume-row)::before {content:"";position:absolute;left:-5px;top:6px;width:8px;height:8px;background:var(--preview-accent);border-radius:50%}
+.theme-career-stack .resume-content :is(.node-resumeRow,.resume-row) + p {margin-left:9px;padding-left:17px;border-left:2px solid #d2dce1}
 
 /* Spartan: open page, lightweight section labels and inset narrative. */
 .theme-career-spartan .resume-content > h1 {font-size:30pt;color:#25282b;letter-spacing:.02em}
@@ -1792,9 +1804,12 @@ select:not([data-slot]):focus-visible,
 /* 6: grouped skill cards, with independent work-entry side rules. */
 .theme-studio-skill-cards .resume-content > h1 + p + p {clear:both;border-top:2px solid #5276ba;padding:8px 12px;background:#eff3fb}
 .theme-studio-skill-cards :is(.resume-column-main,.resume-layout-column-main) > :is(h3,p,ul) {border-left:2px solid #c7d5eb;padding-left:14px}
+.theme-studio-skill-cards :is(.resume-column-main,.resume-layout-column-main) > :is(.node-resumeRow,.resume-row) {border-left:2px solid #c7d5eb;padding-left:14px}
 .theme-studio-skill-cards :is(.resume-column-main,.resume-layout-column-main) > ul {padding-left:30px}
 .theme-studio-skill-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h3 {padding:12px 12px 5px;background:#edf2fb;border-radius:8px 8px 0 0;margin-bottom:0;border-top:3px solid #8eabda}
 .theme-studio-skill-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h3 + p {padding:0 12px 12px;background:#edf2fb;margin-top:0;border-radius:0 0 8px 8px}
+.theme-studio-skill-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(.node-resumeRow,.resume-row) {padding:12px 12px 5px;background:#edf2fb;border-radius:8px 8px 0 0;margin-bottom:0;border-top:3px solid #8eabda}
+.theme-studio-skill-cards :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(.node-resumeRow,.resume-row) + p {padding:0 12px 12px;background:#edf2fb;margin-top:0;border-radius:0 0 8px 8px}
 .theme-studio-skill-cards .resume-avatar {border-radius:3px}
 
 /* 9: two-tone identity rail and a separate opening summary panel. */
@@ -1805,7 +1820,8 @@ select:not([data-slot]):focus-visible,
 .theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 {font-size:25pt;margin:0 -16px;padding:14px 16px 6px;background:#315696;color:white}
 .theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p,
 .theme-studio-duotone-grid :is(.resume-column-sidebar,.resume-layout-column-sidebar) h1 + p + p {background:#315696;color:white;margin:0 -16px;padding:4px 16px 10px}
-.theme-studio-duotone-grid :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {background:#e1e9f7;border:0;padding:14px 16px 0;margin-bottom:0}
+.theme-studio-duotone-grid :is(.resume-column-main,.resume-layout-column-main) > h2 {box-sizing:border-box;background:#e1e9f7;border:0;padding:8px 16px;margin:20px 0 10px}
+.theme-studio-duotone-grid :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0;margin-bottom:0}
 .theme-studio-duotone-grid :is(.resume-column-main,.resume-layout-column-main) > h2:first-child + p {background:#e1e9f7;padding:8px 16px 16px;margin-top:0;border-radius:0 0 8px 8px}
 
 /* 11: the large photo is a real avatar node, never a background image. */
@@ -1834,8 +1850,8 @@ select:not([data-slot]):focus-visible,
 .theme-studio-node-timeline :is(.resume-columns,.resume-layout-columns) {grid-template-columns:minmax(0,1fr) minmax(0,2.2fr);gap:28px}
 .theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) {grid-column:2;border-left:2px solid #b7cbed;padding-left:20px}
 .theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) {grid-column:1}
-.theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) h3 {position:relative}
-.theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) h3::before {content:"";position:absolute;left:-26px;top:.45em;width:9px;height:9px;background:#547bc1;border-radius:50%;box-shadow:0 0 0 3px #edf3fb}
+.theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) :is(h3,.node-resumeRow,.resume-row) {position:relative}
+.theme-studio-node-timeline :is(.resume-column-main,.resume-layout-column-main) :is(h3,.node-resumeRow,.resume-row)::before {content:"";position:absolute;left:-26px;top:.45em;width:9px;height:9px;background:#547bc1;border-radius:50%;box-shadow:0 0 0 3px #edf3fb}
 .theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) h2 {text-align:center;border-bottom:0}
 .theme-studio-node-timeline :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {border-bottom:3px solid #a9bedf;padding-bottom:6px}
 
@@ -1906,17 +1922,19 @@ select:not([data-slot]):focus-visible,
 .theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h1 {padding-top:16px!important}
 .theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h1 + p {margin-bottom:0;font-size:9pt}
 .theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:left;margin:14px 10px 8px 0;position:relative}
-.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0;padding:12px 14px 0;background:#dce5fc}
-.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child + p {background:#dce5fc;margin-top:0;padding:8px 14px 14px}
-.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) h2:not(:first-child) {border-bottom:1px solid #a7bff0;padding-bottom:5px}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) h2 {box-sizing:border-box;background:#dce5fc;color:var(--preview-accent);padding:8px 14px;margin:18px 0 8px}
+.theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0}
 
 /* 90: continuous slim experience rules and discrete skill cards. */
 .theme-featured-finance .resume-content > h1 + p + p {border-top:2px solid #86aaff;padding-top:9px;clear:both}
 .theme-featured-finance :is(.resume-column-main,.resume-layout-column-main) > :is(h3,p,ul) {border-left:2px solid #bdd0f8;padding-left:14px}
+.theme-featured-finance :is(.resume-column-main,.resume-layout-column-main) > :is(.node-resumeRow,.resume-row) {border-left:2px solid #bdd0f8;padding-left:14px}
 .theme-featured-finance :is(.resume-column-main,.resume-layout-column-main) > ul {padding-left:30px}
 .theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:white;border-left:1px solid #cfdbf2;padding-top:0}
 .theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 {background:#eff3fc;padding:10px 10px 4px;margin-bottom:0;border-top:2px solid #a7bef1}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(.node-resumeRow,.resume-row) {background:#eff3fc;padding:10px 10px 4px;margin-bottom:0;border-top:2px solid #a7bef1}
 .theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) h3 ~ p {background:#eff3fc;padding:4px 10px;margin:0 0 6px}
+.theme-featured-finance :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(.node-resumeRow,.resume-row) ~ p {background:#eff3fc;padding:4px 10px;margin:0 0 6px}
 
 /* 130: full-width blue chapter strips; English cues are decoration, not data. */
 .theme-featured-people .resume-content h1 {color:#242a35}
@@ -2692,6 +2710,26 @@ select:not([data-slot]):focus-visible,
   translate: -50% 0;
   border: 3px solid #fff;
   box-shadow: 0 2px 8px rgba(50, 34, 18, 0.22);
+}
+
+/* Only templates whose portrait is intentionally round keep a square frame. */
+:is(
+  .theme-centered-portrait,
+  .theme-creative-orange,
+  .theme-atlas-centered-rule,
+  .theme-atlas-dotted-journal,
+  .theme-atlas-slate-sidebar,
+  .theme-atlas-forest-sidebar,
+  .theme-atlas-copper-sidebar,
+  .theme-atlas-sand-sidebar,
+  .theme-atlas-right-cards,
+  .theme-atlas-twin-cards,
+  .theme-atlas-offset-masthead,
+  .theme-atlas-capsule-head,
+  .theme-atlas-arch-portrait,
+  [class*="theme-open-"]
+) .resume-avatar {
+  --resume-avatar-height-ratio: 1;
 }
 
 .theme-creative-orange .resume-content h1 {
@@ -6218,8 +6256,64 @@ select:not([data-slot]):focus-visible,
   text-size-adjust: none;
 }
 
+.share-page .share-page-paper {
+  height: auto;
+  min-height: var(--share-page-stack-height, 297mm);
+  overflow: visible;
+  filter: drop-shadow(0 1px 2px rgba(15, 18, 22, 0.08)) drop-shadow(0 18px 32px rgba(15, 18, 22, 0.14));
+  -webkit-mask-image: repeating-linear-gradient(to bottom, #000 0 297mm, transparent 297mm calc(297mm + 24px));
+  mask-image: repeating-linear-gradient(to bottom, #000 0 297mm, transparent 297mm calc(297mm + 24px));
+}
+
+.share-page-break {
+  position: relative;
+  left: calc(-1 * var(--resume-page-margin-left));
+  display: block;
+  width: 210mm;
+  height: calc(var(--share-break-remaining) + var(--share-break-top) + var(--share-break-bottom) + 24px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+}
+
+.share-page-break.is-text-continuation {
+  left: calc(-1 * var(--share-break-inline-offset, 0px));
+}
+
+.share-page .resume-print-content li.share-page-break {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.share-page-break::marker { content: none; }
+
 /* 屏幕缩放（zoom/transform 回退）只服务小屏预览，打印仍输出原始 A4 文字版 */
 @media print {
+  .share-page {
+    display: block;
+    height: auto;
+    background: #fff;
+  }
+
+  .share-page-header { display: none; }
+
+  .share-page-paper-scroll {
+    display: block;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .share-page .share-page-paper {
+    min-height: 0;
+    filter: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .share-page-break { display: none !important; }
+
   .share-page-paper-wrap {
     zoom: 1 !important;
     width: auto !important;

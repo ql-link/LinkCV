@@ -346,7 +346,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
       ref={mediaRef}
       as={isAvatar ? "figure" : "div"}
       className={`resume-media-node ${isAvatar ? "resume-avatar" : `resume-image align-${align}`}${selected ? " is-selected" : ""}`}
-      style={isAvatar ? { width: size, height: size } : { width: `${size}${widthUnit}` }}
+      style={isAvatar ? { width: size, height: `calc(${size}px * var(--resume-avatar-height-ratio, 1.4))` } : { width: `${size}${widthUnit}` }}
       role={isAvatar ? "group" : undefined}
       aria-label={isAvatar ? "简历头像；按住 Command 或 Control 并滚动鼠标滚轮缩放，也可按住修饰键使用上下方向键调整" : undefined}
       tabIndex={isAvatar && selected ? 0 : undefined}
@@ -431,7 +431,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
             src={node.attrs.src}
             alt={node.attrs.alt || "简历头像"}
             width={size}
-            height={size}
+            height={Math.round(size * 1.4)}
             draggable={false}
           />
         </span>
@@ -455,7 +455,7 @@ export const AvatarImage = Node.create({
   selectable: true,
   addAttributes: () => ({
     src: { default: "" },
-    size: { default: 96 },
+    size: { default: 94 },
     alt: { default: "简历头像" },
     systemFallback: { default: false },
     nodeId: { default: null },
@@ -465,7 +465,7 @@ export const AvatarImage = Node.create({
     tag: "figure[data-type='avatar-image']",
     getAttrs: (element) => element instanceof HTMLElement ? {
       src: element.dataset.src ?? "",
-      size: Number(element.dataset.size) || 96,
+      size: Number(element.dataset.size) || 94,
       alt: element.dataset.alt ?? "简历头像",
       systemFallback: element.dataset.systemFallback === "true",
       nodeId: normalizeResumeBlockId(element.dataset.nodeId),

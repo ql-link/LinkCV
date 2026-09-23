@@ -104,6 +104,7 @@ describe("简历头像上下文操作", () => {
     const avatar = container.querySelector<HTMLElement>(".resume-avatar");
 
     expect(avatar?.parentElement).toHaveClass("resume-avatar-node-view");
+    expect(avatar).toHaveStyle({ width: "96px", height: "calc(96px * var(--resume-avatar-height-ratio, 1.4))" });
   });
 
   it("只有选中已有头像时显示更换头像操作", async () => {

@@ -152,11 +152,11 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，可续期、修改可见性或下载权限 |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
 | `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download}`；`sharer` 为 `{nickname, avatar_url}` |
-| `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的智能一页 PDF；沿用分享 token 的访问规则并要求允许下载 |
+| `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的 A4 分页 PDF；沿用分享 token 的访问规则并要求允许下载 |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_allow_download, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`share_allow_download` 为布尔值，旧记录和创建缺省值均为 `true`。`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
 
-公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按分享页的智能一页模式生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
+公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按 A4 分页生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
 
 `POST` 创建或覆盖请求可选 `{visibility, expires_at, allow_download}`，分别指定可见性（缺省 `public`）、有效期（缺省永久，即 `expires_at` 为 `null`）和 PDF 下载权限（缺省 `true`）。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）、切换可见性或更新下载权限；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、分享记录对应的用户或简历不存在，以及直接请求已关闭下载的 PDF。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
 

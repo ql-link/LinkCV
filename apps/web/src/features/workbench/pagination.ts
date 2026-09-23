@@ -18,13 +18,14 @@ export type PageBreak = {
 };
 
 export const A4_HEIGHT_CSS_PX = (297 / 25.4) * 96;
+export const PAGE_CONTINUATION_INSET_PX = 12;
 const TEXT_CLIP_GUARD_PX = 3;
 
 /**
  * 按测量块计算分页边界。调用方可把超高文本块展开成带 continuation 的文本行；
  * 无法展开的超高块仍允许溢出，并从它的底部开始计算下一页。
  */
-export function computePageBreaks(blocks: PageBlock[], pageContentHeight: number, pagePeriod?: number): PageBreak[] {
+export function computePageBreaks(blocks: PageBlock[], pageContentHeight: number, pagePeriod?: number, continuationInset = 0): PageBreak[] {
   if (!Number.isFinite(pageContentHeight) || pageContentHeight <= 0) return [];
 
   const breaks: PageBreak[] = [];
@@ -38,7 +39,9 @@ export function computePageBreaks(blocks: PageBlock[], pageContentHeight: number
     // A break may start just beyond the page edge (for example after a block
     // margin). Preserve that overshoot so the next page starts at its actual
     // A4 position instead of drifting farther down on every page.
-    const remainingContentHeight = pageContentHeight - consumedHeight;
+    // The first break moves content past the next page's top inset. Later
+    // breaks already start after that inset, so they must not add it again.
+    const remainingContentHeight = pageContentHeight - consumedHeight + (page === 1 ? continuationInset : 0);
     page += 1;
     pageStart = contentOffset;
     breaks.push({
@@ -82,7 +85,7 @@ export function computePageBreaks(blocks: PageBlock[], pageContentHeight: number
     if (breakBeforeNextBlock) {
       pushBreak(block, top);
       breakBeforeNextBlock = false;
-    } else if (top > pageStart && bottom + nextRequiredHeight - pageStart > pageContentHeight - TEXT_CLIP_GUARD_PX) {
+    } else if (top > pageStart && bottom + nextRequiredHeight - pageStart > pageContentHeight - (page > 1 ? continuationInset : 0) - TEXT_CLIP_GUARD_PX) {
       pushBreak(block, top);
     }
 

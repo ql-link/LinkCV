@@ -103,6 +103,18 @@ describe("computePageBreaks", () => {
     expect(pageContentHeight(8, 10)).toBeCloseTo((279 / 25.4) * 96, 5);
   });
 
+  it("为续页色块留顶部内边距，但不逐页累积偏移", () => {
+    expect(computePageBreaks([
+      { position: 1, top: 0, height: 80 },
+      { position: 2, top: 80, height: 25 },
+      { position: 3, top: 105, height: 60 },
+      { position: 4, top: 165, height: 25 },
+    ], 100, 120, 12)).toEqual([
+      { position: 2, page: 2, contentOffset: 80, remainingContentHeight: 32 },
+      { position: 4, page: 3, contentOffset: 165, remainingContentHeight: 15 },
+    ]);
+  });
+
   it("章节标题与紧随内容放不下时从标题前分页", () => {
     expect(computePageBreaks([
       { position: 1, top: 0, height: 75 },
