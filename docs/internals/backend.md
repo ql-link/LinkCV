@@ -55,7 +55,7 @@ MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_compan
 
 迁移 `0058` 为 `interview_sessions` 增加固定场次/开放窗口类型和开放窗口专用的个人作答计划时间。只有测评和笔试能创建 `open_window`；它可保存至多一组个人作答计划，两端同时为空表示未计划，两端有值时必须完整落在官方 `start_at/end_at` 内。调整官方窗口不能使既有计划越界，固定场次不能写入计划。
 
-`job_descriptions.description` 保持非空字符串列，但允许空字符串表示用户尚未填写职位描述；迁移 `0055` 删除旧的非空白 CHECK，不修改存量岗位。手工创建可省略该字段，浏览器插件导入仍要求采集到非空职位描述。
+`job_descriptions.description` 保持非空字符串列，但允许空字符串表示用户尚未填写职位描述；迁移 `0055` 删除旧的非空白 CHECK，不修改存量岗位。手工创建可省略该字段，普通岗位更新可把它清空为空字符串，更新 DTO 仍拒绝 `null`；浏览器插件导入仍要求采集到非空职位描述。
 
 迁移 `0059` 为用户已有的 `job_descriptions` 增加可空 `logo_url`，只接受应用层校验通过的 HTTPS 绝对 URL；新求职记录把该字段写入既有 `job_snapshot`，不为 `job_applications` 新增重复列。该迁移同时新增无 `user_id`、无业务外键的 `global_companies` 平台资料表，保存标准化名称、Logo、官网、行业、规模、融资阶段和简介；当前没有对应路由、管理页面、自动匹配或用户岗位回填。
 

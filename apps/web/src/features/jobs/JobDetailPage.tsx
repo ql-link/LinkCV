@@ -54,7 +54,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   const saveFields = async (changes: Partial<JobFormState>) => {
     if (!job || busy) return;
     const nextForm = { ...jobFormFromRecord(job), ...changes } as JobFormState;
-    if (!nextForm.job_title.trim() || !nextForm.company_name.trim() || !nextForm.description.trim()) {
+    if (!nextForm.job_title.trim() || !nextForm.company_name.trim()) {
       setError("该字段为必填项，不能保存空内容。");
       return;
     }

@@ -149,6 +149,26 @@ describe("JobDetailPage", () => {
     expect(window.location.pathname).toBe(`/career/jobs/${activeJob.id}`);
   });
 
+  it("原岗位描述为空时仍可修改职位名称", async () => {
+    const jobWithoutDescription = { ...activeJob, description: "" };
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: jobWithoutDescription });
+    const updatedJob = { ...jobWithoutDescription, job_title: "Java 工程师-P4", lock_version: 3 };
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    const titleInput = screen.getByLabelText("职位名称");
+    fireEvent.change(titleInput, { target: { value: updatedJob.job_title } });
+    fireEvent.keyDown(titleInput, { key: "Enter" });
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
+      job_title: updatedJob.job_title,
+      description: "",
+      base_lock_version: activeJob.lock_version,
+    })));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("按 Escape 取消当前字段编辑", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     const update = vi.spyOn(api, "updateJobDescription");
@@ -233,6 +253,24 @@ describe("JobDetailPage", () => {
     fireEvent.keyDown(description, { key: "Enter" });
 
     await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({ description: updatedJob.description })));
+  });
+
+  it("允许把职位描述清空后保存", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const updatedJob = { ...activeJob, description: "", lock_version: 3 };
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: updatedJob });
+
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位描述" }));
+    const description = screen.getByLabelText("职位描述");
+    fireEvent.change(description, { target: { value: "" } });
+    fireEvent.keyDown(description, { key: "Enter" });
+
+    await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({
+      description: "",
+      base_lock_version: activeJob.lock_version,
+    })));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("结构化薪资作为一组字段编辑并一次性保存", async () => {
