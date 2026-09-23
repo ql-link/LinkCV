@@ -48,6 +48,7 @@ from linkresume.modules.agent.service import (
     resolve_resume_reference,
     upsert_tool_event,
 )
+from linkresume.modules.llm.catalog import assemble_model_identifier
 from linkresume.modules.llm.service import LLMError, LLMService
 from linkresume.modules.resumes.models import Resume
 
@@ -125,6 +126,7 @@ async def get_runtime_config(
         raise ApiError(503, "AGENT_MODEL_UNSUPPORTED")
     run.model_config_id = config.id
     run.model_config_version = config.config_version
+    run.model_name = assemble_model_identifier(config.adapter, config.model_call_name)
     db.commit()
     return RuntimeConfigResponse(
         provider=provider,

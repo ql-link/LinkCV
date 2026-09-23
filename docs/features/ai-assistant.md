@@ -81,3 +81,7 @@ LinkResume AI 助手提供独立对话工作区和简历编辑器侧栏，允许
 ## 修改联动与验证
 
 修改 SSE 事件、上下文类型、提案 operation 或澄清结构时，需同步 `schemas.py`、Pi 协议、Web 两个客户端、接口契约和 Agent 测试；模型能力变化还需同步[运行时架构](../internals/agent-runtime.md)。主要验证入口为 `test_agent_routes.py`、`modules/agent/test_context_service.py`、`test_pi_client.py`、`test_service.py`，以及 Web `AssistantPage` 和 `AgentPanel` 测试；完整 Pi 运行时检查使用跨平台的 `npm run check:pi`。
+
+## 管理员调用排障
+
+管理员可在独立的「Agent 调用排障」页面按一次消息操作查看阶段轨迹。服务端从已校验归属的会话反查用户 ID，记录预检、运行创建、Pi 执行、工具调用、提案创建和确认的受控状态与错误码；页面不展示用户消息或简历正文。旧运行只提供原有摘要，标记为历史记录。

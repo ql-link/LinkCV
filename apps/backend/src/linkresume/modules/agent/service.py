@@ -25,6 +25,7 @@ from linkresume.application.resumes.service import (
 from linkresume.application.resumes.commands import CreateResumeCommand
 from linkresume.modules.agent.models import (
     AgentMessage,
+    AgentOperation,
     AgentRun,
     AgentSession,
     AgentToolCall,
@@ -51,6 +52,9 @@ from linkresume.modules.agent.resume_tools import (
     target_content,
     validate_source_ids,
     verify_diagnosis_fingerprint,
+)
+from linkresume.modules.agent.trace import (
+    SAFE_CODE, TOOL_STAGES, event_key, operation_for_run, record_event,
 )
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import Resume, ResumeVersion
@@ -365,6 +369,7 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
         db.execute(delete(AgentMessage).where(AgentMessage.session_id == session.id))
         if run_ids:
             db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+        db.execute(delete(AgentOperation).where(AgentOperation.session_id == session.id))
         db.execute(
             delete(AgentSession).where(
                 AgentSession.id == session.id,
@@ -482,6 +487,8 @@ def create_run(
     context_snapshots: list[AgentContextSnapshot] | None = None,
     selection_context: AgentSelectionContext | None = None,
     revision_proposal_id: str | None = None,
+    operation: AgentOperation | None = None,
+    trace_request_id: str | None = None,
 ) -> tuple[AgentRun, bool]:
     normalized_content = content.strip()
     if not normalized_content:
@@ -511,6 +518,14 @@ def create_run(
         )
     )
     if existing is not None:
+        if operation is not None and trace_request_id is not None:
+            operation.state = "run_created"
+            operation.error_code = None
+            operation.failure_stage = None
+            record_event(db, operation,
+                         key=event_key(trace_request_id, "run_creation", "replayed"),
+                         stage="run_creation", result="succeeded")
+            db.commit()
         return existing, False
     if revision_proposal_id is None and reply_to_sequence_no is not None:
         reply = db.scalar(select(AgentMessage).where(
@@ -662,6 +677,13 @@ def create_run(
         title_source = " ".join(normalized_content.split())
         session.title = title_source[:24] + ("…" if len(title_source) > 24 else "")
     session.last_message_at = now
+    if operation is not None and trace_request_id is not None:
+        operation.state = "run_created"
+        operation.error_code = None
+        operation.failure_stage = None
+        record_event(db, operation,
+                     key=event_key(trace_request_id, "run_creation", "succeeded"),
+                     stage="run_creation", result="succeeded")
     db.commit()
     db.refresh(run)
     return run, True
@@ -989,6 +1011,7 @@ def confirm_proposal(
     ]
     | None = None,
     delete_asset: Callable[[str], None] | None = None,
+    trace_request_id: str | None = None,
 ) -> tuple[ResumeChangeProposal, Resume]:
     proposal = db.scalar(
         select(ResumeChangeProposal)
@@ -1000,6 +1023,18 @@ def confirm_proposal(
     )
     if proposal is None:
         raise ApiError(404, "AGENT_PROPOSAL_NOT_FOUND")
+    def trace_confirmation(result: str, error_code: str | None = None) -> None:
+        if trace_request_id is None:
+            return
+        source_run = db.get(AgentRun, proposal.run_id)
+        operation = operation_for_run(db, source_run.public_id) if source_run else None
+        if operation is not None:
+            record_event(
+                db, operation,
+                key=event_key(trace_request_id, proposal.public_id, result, error_code or ""),
+                stage="proposal_confirmation", result=result,
+                proposal_id=proposal.id, error_code=error_code,
+            )
     resume = db.scalar(
         select(Resume)
         .where(Resume.id == proposal.resume_id, Resume.user_id == user_id)
@@ -1016,16 +1051,25 @@ def confirm_proposal(
                 )
             )
             if result is None:
+                trace_confirmation("failed", "AGENT_PROPOSAL_RESULT_NOT_FOUND")
+                db.commit()
                 raise ApiError(409, "AGENT_PROPOSAL_RESULT_NOT_FOUND")
+            trace_confirmation("succeeded")
+            db.commit()
             return proposal, result
+        trace_confirmation("succeeded")
+        db.commit()
         return proposal, resume
     if proposal.status != "pending":
+        trace_confirmation("failed", "AGENT_PROPOSAL_NOT_PENDING")
+        db.commit()
         raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
     expires_at = proposal.expires_at
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at <= utc_now():
         proposal.status = "expired"
+        trace_confirmation("failed", "AGENT_PROPOSAL_EXPIRED")
         db.commit()
         raise ApiError(410, "AGENT_PROPOSAL_EXPIRED")
     can_rebase_scoped_proposal = bool(
@@ -1043,6 +1087,7 @@ def confirm_proposal(
         and not should_rebase_scoped_proposal
     ):
         proposal.status = "conflicted"
+        trace_confirmation("failed", "RESUME_EDIT_CONFLICT")
         db.commit()
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
     if proposal.proposal_mode == "translate_resume":
@@ -1097,6 +1142,7 @@ def confirm_proposal(
             proposal.result_resume_id = result.id
             proposal.applied_lock_version = proposal.base_lock_version
             proposal.applied_at = utc_now()
+            trace_confirmation("succeeded")
             db.commit()
             db.refresh(result)
             return proposal, result
@@ -1144,6 +1190,7 @@ def confirm_proposal(
             )
         except (ApiError, KeyError, TypeError, ValueError):
             proposal.status = "conflicted"
+            trace_confirmation("failed", "TARGET_STALE")
             db.commit()
             raise ApiError(409, "TARGET_STALE")
     else:
@@ -1158,6 +1205,7 @@ def confirm_proposal(
                 target_content(resume, current.data, target, "target")
             except (ApiError, ValueError):
                 proposal.status = "conflicted"
+                trace_confirmation("failed", "TARGET_STALE")
                 db.commit()
                 raise ApiError(409, "TARGET_STALE")
         snapshot = parse_persisted_resume_snapshot(
@@ -1183,6 +1231,7 @@ def confirm_proposal(
     proposal.status = "applied"
     proposal.applied_lock_version = resume.lock_version
     proposal.applied_at = utc_now()
+    trace_confirmation("succeeded")
     db.commit()
     db.refresh(resume)
     return proposal, resume
@@ -1252,6 +1301,20 @@ def upsert_tool_event(db: Session, *, run: AgentRun, payload: object) -> AgentTo
     record.target_id = payload.target_id
     record.error_code = payload.error_code
     record.duration_ms = payload.duration_ms
+    operation = operation_for_run(db, run.public_id) if getattr(run, "public_id", None) else None
+    if operation is not None:
+        record_event(
+            db, operation,
+            key=event_key(run.public_id, call_key, payload.status),
+            stage=TOOL_STAGES[payload.tool_name],
+            result="started" if payload.status == "running" else payload.status,
+            tool_call_key=call_key,
+            error_code=(
+                payload.error_code if payload.error_code and SAFE_CODE.fullmatch(payload.error_code)
+                else "AGENT_TOOL_FAILED" if payload.status == "failed" else None
+            ),
+            duration_ms=payload.duration_ms,
+        )
     db.commit()
     db.refresh(record)
     return record

@@ -35,13 +35,13 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0065` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0083` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
 
-上表的 head 表示本批模板接入前的共享基线；目标 `dev` 已推进至 `0065`，本批模板迁移从 `0066` 连续追加到 `0081`，合入后的仓库 head 为 `0081`。
+上表的 head 表示本批模板接入前的共享基线；本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列，当前仓库 head 为 `0083`；目标环境的实际 revision 必须单独查询。
 
 迁移 `0077` 停用废弃的「经典单栏」(`classic-cn`)、「现代双栏」(`modern-two-column-cn`) 和「紧凑技术型」(`compact-tech-cn`)，默认启用目录为 69 套。只修改这三个稳定 key 的启用状态，保留模板记录、已有简历及历史版本；普通目录、创建和切换入口沿用启用校验。重复执行不影响其他模板；如需恢复，通过管理端重新启用或新增向前迁移，不改写历史迁移。
 
@@ -183,7 +183,7 @@ Agent 的 Pi SSE 由 `modules/agent/run_stream.py` 在 FastAPI 进程内独立�
 
 智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。登录用户可通过 `GET /api/agent/model` 读取当前 `pi_agent` binding 的非敏感 `{adapter, name}` 摘要；该查询只解析绑定配置，不解密凭据，也不返回配置 ID、地址、价格或验证记录。`context_service.py` 为独立助手页列出简历、历史版本、解析成功的资料库文件、岗位、求职进程和面试的轻量引用；发送时在同一事务链中按当前用户重新查询、锁定并核对版本标记。Pi 的 `list_user_resources` 复用同一 owner-scoped 列表逻辑，只允许列出简历、已解析资料和面试记录的轻量元数据，不返回正文。资料库引用还会校验解析成功状态和 `users/{uid}/datasets/converted/` 对象前缀，再读取有界 Markdown；只有字段白名单内且有长度上限的资料会交给 Pi，消息元数据只保存展示用引用快照。
 
-Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发送前保存当前草稿，并通过统一 `contexts` 协议提交 owner-scoped `resume` 引用，选区只在同一上下文内定位并随用户消息保存。回答结构化澄清时，FastAPI 从原 run 的用户消息继承引用与选区并重新校验归属、存在性和版本；同类型目标或选区冲突时拒绝创建新 run。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文，并保留结构化澄清问题和已复验答案；代理会转发 Pi 的临时活动增量、按 `callKey` 更新的结构化活动状态和清空事件，但只把正式 `assistant.delta` 汇总为助手正文，结构化澄清也始终使用服务端生成的安全文本。成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本或临时活动写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退，并同步输出不含提示词或简历正文的阶段日志；Pi 运行失败额外输出只含 run ID、内部错误码和取消标记的结构化终点日志。Pi 对 FastAPI 只允许调用资源目录、目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内已注册 Skill Markdown，不访问业务存储或其他服务端文件。范围上下文的 locator 与哈希由 Pi 运行时保留并注入 operation；`polish_local` 每张提案仍限定一个局部 operation，复合请求则一次提交不可变任务清单，并由 Pi 在同一 run 内串行完成每个独立目标的定位、读取、诊断和提案。section 或 entry 标题锚点可以为重复短文本提供多个已读取子块的稳定 ID，不能把多目标识别当成工具失败；单项失败只记录稳定终态并继续后续任务，批处理重放不重复创建提案。内部路由从可信 `runId` 反查用户，不接受调用方传入用户身份；消息上下文、显式解析结果和目标 locator 中的简历 ID 都会按该用户复验。完整边界见 [Pi 集成文档](third-party-pi.md)。
+Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发送前保存当前草稿，并通过统一 `contexts` 协议提交 owner-scoped `resume` 引用，选区只在同一上下文内定位并随用户消息保存。回答结构化澄清时，FastAPI 从原 run 的用户消息继承引用与选区并重新校验归属、存在性和版本；同类型目标或选区冲突时拒绝创建新 run。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID、配置版本及请求模型标识快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文，并保留结构化澄清问题和已复验答案；代理会转发 Pi 的临时活动增量、按 `callKey` 更新的结构化活动状态和清空事件，但只把正式 `assistant.delta` 汇总为助手正文，结构化澄清也始终使用服务端生成的安全文本。成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本或临时活动写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退，并同步输出不含提示词或简历正文的阶段日志；Pi 运行失败额外输出只含 run ID、内部错误码和取消标记的结构化终点日志。Pi 对 FastAPI 只允许调用资源目录、目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内已注册 Skill Markdown，不访问业务存储或其他服务端文件。范围上下文的 locator 与哈希由 Pi 运行时保留并注入 operation；`polish_local` 每张提案仍限定一个局部 operation，复合请求则一次提交不可变任务清单，并由 Pi 在同一 run 内串行完成每个独立目标的定位、读取、诊断和提案。section 或 entry 标题锚点可以为重复短文本提供多个已读取子块的稳定 ID，不能把多目标识别当成工具失败；单项失败只记录稳定终态并继续后续任务，批处理重放不重复创建提案。内部路由从可信 `runId` 反查用户，不接受调用方传入用户身份；消息上下文、显式解析结果和目标 locator 中的简历 ID 都会按该用户复验。完整边界见 [Pi 集成文档](third-party-pi.md)。
 
 `LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务按调用方传入的能力解析唯一当前 binding；当前能力未绑定时，Chat 返回 `LLM_CHAT_NOT_CONFIGURED`，其他能力返回 `LLM_MODEL_NOT_CONFIGURED`。单次逻辑调用只调用当前模型一次，供应商失败直接收口，不重试、不遍历其他候选、不自动切换 binding。结构化调用把 Pydantic JSON Schema 作为系统指令加入 messages，不向供应商传递 `response_format`；模型文本由 LinkResume 本地提取 JSON 对象并执行 Pydantic 严格校验，非法结果以 `LLM_RESPONSE_INVALID` 收口且不追加模型调用。
 
