@@ -299,6 +299,21 @@ def test_manual_create_allows_omitted_job_description() -> None:
         assert response.json()["job_description"]["description"] == ""
 
 
+def test_manual_update_allows_blank_job_description() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client)
+        job = create_job(client, description="已有职位描述")
+
+        response = client.put(
+            f"/api/job-descriptions/{job['id']}",
+            json={"description": "   ", "base_lock_version": job["lock_version"]},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["job_description"]["description"] == ""
+
+
 def test_manual_crud_search_and_direct_delete_release_source() -> None:
     app = build_app()
     with TestClient(app) as client:
