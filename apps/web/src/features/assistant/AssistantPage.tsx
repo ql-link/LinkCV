@@ -533,6 +533,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [resumeListLoading, setResumeListLoading] = useState(false);
   const [embeddedResumeId, setEmbeddedResumeId] = useState<string | null>(null);
   const [embeddedSelectionContext, setEmbeddedSelectionContext] = useState<AgentSelectionContext | null>(null);
+  const [embeddedResumeRefreshVersion, setEmbeddedResumeRefreshVersion] = useState(0);
   const [resumeOpeningId, setResumeOpeningId] = useState<string | null>(null);
   const [resumeOpenError, setResumeOpenError] = useState<string | null>(null);
   const [datasetsOpen, setDatasetsOpen] = useState(false);
@@ -1533,11 +1534,34 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const applyProposal = async (proposal: AgentProposal) => {
     updateConversation(activeKey, { busyProposalId: proposal.id, error: null });
     try {
-      await api.confirmAgentProposal(proposal.id);
+      const refreshEmbeddedResume = embeddedResumeId === proposal.resume_id
+        && useResumeStore.getState().activeResumeId === proposal.resume_id;
+      if (refreshEmbeddedResume) {
+        await saveCurrentResume();
+        if (useResumeStore.getState().saveStatus === "error") {
+          updateConversation(activeKey, {
+            busyProposalId: null,
+            error: "当前简历尚未保存，提案没有应用。请稍后重试。",
+          });
+          return;
+        }
+      }
+
+      const result = await api.confirmAgentProposal(proposal.id);
       updateConversation(activeKey, (state) => ({
         proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
         busyProposalId: null,
       }));
+      if (refreshEmbeddedResume && result.resume.id === embeddedResumeId) {
+        try {
+          await loadResume(result.resume.id);
+          setEmbeddedResumeRefreshVersion((version) => version + 1);
+        } catch {
+          updateConversation(activeKey, {
+            error: "修改已经应用，但右侧简历刷新失败。请重新打开这份简历查看最新内容。",
+          });
+        }
+      }
     } catch (error) {
       updateConversation(activeKey, (state) => ({
         proposals: isConflictError(error)
@@ -2458,8 +2482,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           <section className="assistant-resume-pane" aria-label="简历编辑区">
             <ResumeWorkbench
               embedded
-              onClose={closeEmbeddedResume}
               onAgentSelectionChange={setEmbeddedSelectionContext}
+              externalRefreshVersion={embeddedResumeRefreshVersion}
+              onClose={closeEmbeddedResume}
             />
           </section>
         )}

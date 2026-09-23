@@ -14,8 +14,14 @@ vi.mock("../datasets/DatasetsPage", () => ({
 }));
 
 vi.mock("../workbench/ResumeWorkbench", () => ({
-  ResumeWorkbench: ({ embedded, onClose, onAgentSelectionChange }: {
+  ResumeWorkbench: ({
+    embedded,
+    externalRefreshVersion,
+    onClose,
+    onAgentSelectionChange,
+  }: {
     embedded?: boolean;
+    externalRefreshVersion?: number;
     onClose?: () => void;
     onAgentSelectionChange?: (context: {
       block_ids: string[];
@@ -25,7 +31,11 @@ vi.mock("../workbench/ResumeWorkbench", () => ({
       selected_text_hash: string;
     }) => void;
   }) => (
-    <section aria-label="嵌入式简历编辑器" data-embedded={embedded ? "true" : "false"}>
+    <section
+      aria-label="嵌入式简历编辑器"
+      data-embedded={embedded ? "true" : "false"}
+      data-refresh-version={externalRefreshVersion ?? 0}
+    >
       <button type="button" onClick={onClose}>关闭简历</button>
       <button type="button" onClick={() => onAgentSelectionChange?.({
         block_ids: ["node_location000000001"],
@@ -1096,6 +1106,79 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "发送" }));
     await waitFor(() => expect(stream).toHaveBeenCalledTimes(2));
     expect(stream.mock.calls[1][1].revision_proposal_id).toBe("proposal-1");
+  });
+
+  it("应用提案后立即刷新右侧已打开的目标简历", async () => {
+    const user = userEvent.setup();
+    const proposal: AgentProposal = {
+      id: "proposal-refresh",
+      run_id: "run-refresh",
+      resume_id: "resume-1",
+      base_lock_version: 3,
+      data: defaultCanonicalDocument,
+      style: defaultCanonicalPresentation,
+      summary: "清理错误占位内容",
+      operations: [{
+        op: "replace_target_text",
+        target: { selected_text: "N南京易课信息技术有限公司" },
+        new_text: "南京易课信息技术有限公司",
+        expected_text_hash: `sha256:${"c".repeat(64)}`,
+      }],
+      status: "pending",
+      applied_lock_version: null,
+      expires_at: "2026-08-27T08:00:00Z",
+      created_at: session.created_at,
+    };
+    const proposalSession = {
+      ...session,
+      title: "简历清理提案",
+      messages: [{
+        sequence_no: 1,
+        role: "user" as const,
+        content: "清理错误占位内容",
+        created_at: session.created_at,
+      }],
+    };
+    const loadResume = vi.fn().mockResolvedValue(undefined);
+    const saveCurrentResume = vi.fn().mockResolvedValue(undefined);
+    useResumeStore.setState({
+      resumes: [{
+        id: "resume-1",
+        title: "Java 开发实习简历",
+        source_type: "blank",
+        lock_version: 3,
+        created_at: "2026-09-14T02:00:00Z",
+        updated_at: "2026-09-14T03:00:00Z",
+      }],
+      activeResumeId: null,
+      saveStatus: "saved",
+      listResumes: vi.fn().mockResolvedValue(undefined),
+      loadResume,
+      saveCurrentResume,
+    });
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [proposalSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: proposalSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [proposal] });
+    vi.spyOn(api, "confirmAgentProposal").mockResolvedValue({
+      resume: { id: "resume-1" } as never,
+    });
+
+    render(<AssistantPage />);
+    await user.click(await screen.findByRole("button", { name: "简历清理提案" }));
+    await user.click(screen.getByRole("button", { name: "我的简历" }));
+    await user.click(within(screen.getByRole("dialog", { name: "选择我的简历" }))
+      .getByRole("button", { name: /Java 开发实习简历/ }));
+    useResumeStore.setState({ activeResumeId: "resume-1" });
+
+    const workbench = screen.getByRole("region", { name: "嵌入式简历编辑器" });
+    expect(workbench).toHaveAttribute("data-refresh-version", "0");
+    await user.click(screen.getByRole("button", { name: "应用修改" }));
+
+    await waitFor(() => expect(api.confirmAgentProposal).toHaveBeenCalledWith("proposal-refresh"));
+    expect(saveCurrentResume).toHaveBeenCalledOnce();
+    await waitFor(() => expect(loadResume).toHaveBeenCalledTimes(2));
+    expect(workbench).toHaveAttribute("data-refresh-version", "1");
+    expect(screen.getByText("已应用")).toBeInTheDocument();
   });
 
   it("生成中只保留输入区的停止入口，并保留已显示内容", async () => {
