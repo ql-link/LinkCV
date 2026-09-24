@@ -1521,3 +1521,52 @@ The complete split state (conversation on the left and editable `ResumeWorkbench
 - [ ] Capture and compare the real browser selected-resume editor state against the confirmed design.
 
 final result: blocked
+---
+
+# 添加下一阶段弹窗视觉对照 — 2026-09-24
+
+## Evidence
+
+- Source visual truth: `/Users/jixu/.codex/generated_images/01a0ceb8-1768-7d70-8980-528472f7bc04/exec-9759adf3-a40f-4999-9ff8-f1b1ccd271fe.png`.
+- Implementation scope: 求职中心“添加下一阶段”弹窗的前端结构与样式。
+- Automated verification: `UV_CACHE_DIR=/private/tmp/linkcv-uv-cache npm run check:web` 通过，72 个测试文件、1083 个测试全部通过，生产构建成功。
+- Preserved behavior: 阶段数据、保存接口、校验语义、面试记录列表和后端代码均未修改。
+
+## Findings
+
+代码结构已按参考图实现左侧纵向阶段导航、当前状态标签、右侧分区表单、底部操作区、主次按钮和窄屏降级布局；“本次补录”等易误解文案未加入界面。
+
+final result: blocked
+
+本地 Web 服务可访问，但 Codex 内置浏览器只有普通登录页会话，没有已登录的求职中心会话。为避免再次误入管理台或擅自登录，本次未生成运行态对照截图。
+
+---
+
+# 求职中心时间选择弹窗方案 A 视觉对照 — 2026-09-24
+
+## Evidence
+
+- Source visual truth: `/Users/jixu/.codex/generated_images/01a0ceb8-1768-7d70-8980-528472f7bc04/exec-8b70e3f9-8faa-4459-8d26-fde87f544644.png` 中的“方案 A — 紧凑的纵向表单”。
+- Implementation scope: `ScheduleDateTimePicker` 公共组件以及所有笔试、面试、作答计划和修改安排入口。
+- Implementation screenshot: unavailable. Development 路由 `http://127.0.0.1:5173/career/applications/21?session=31` 跳转到普通用户登录页；未擅自登录，也未进入管理台。
+- Intended viewport: desktop `640 × 420` px 弹层；窄于 `640px` 时改为纵向排列。
+- Automated verification: `UV_CACHE_DIR=/private/tmp/linkcv-uv-cache npm run check:web` 通过，72 个测试文件、1084 项测试通过，生产构建成功。
+
+## Findings
+
+- 字体与排版：沿用项目字体与 `--ui-text-*` 层级；右侧标签和按钮字号按方案 A 收敛。
+- 间距与布局：桌面端保留左右分栏，右侧开始时间为整行控件，预计时长改为二乘二等宽按钮；移动端上下排列。
+- 颜色与 Token：日历和右侧均使用 `--ui-surface`，只在选中和聚焦态使用强调色，不再使用右侧蓝色或灰蓝色背景块。
+- 图片与资产：该组件没有图片资产，继续使用项目现有图标库。
+- 文案与内容：移除“结束时间”“请选择开始时间和时长”和非时长模式的选择摘要；保留超出可安排范围时的必要错误提示。
+
+## Comparison history
+
+1. 代码层面对照已完成；公共组件结构与方案 A 一致，并通过自动化测试和构建。
+2. 真实浏览器视觉捕获被登录态阻塞，无法把来源图与实现截图放入同一比较输入，因此不能按视觉检查标准判定通过。
+
+## Follow-up polish
+
+- 登录后需要在真实求职中心分别打开一个固定时长入口和一个普通日期时间入口，核对弹层位置、白色背景、二乘二按钮及移动端堆叠。
+
+final result: blocked
