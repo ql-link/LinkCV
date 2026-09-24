@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from linkresume.application.resumes.commands import CreateResumeCommand
 from linkresume.application.resumes.service import (
     close_stale_resume_imports,
-    persist_resume_with_initial_version,
+    persist_resume,
     resume_slot_count,
 )
 from linkresume.core.config import Settings
@@ -343,7 +343,7 @@ def test_publisher_initialization_failure_does_not_overwrite_worker_success(
             assert record is not None
             assert template is not None
             data, style = canonical_resume_payload(key=template.key)
-            resume = persist_resume_with_initial_version(
+            resume = persist_resume(
                 CreateResumeCommand(
                     user_id=record.user_id,
                     title="delivered-during-init",
@@ -390,7 +390,7 @@ def test_publish_confirm_failure_does_not_overwrite_worker_success() -> None:
                 assert record is not None
                 assert template is not None
                 data, style = canonical_resume_payload(key=template.key)
-                resume = persist_resume_with_initial_version(
+                resume = persist_resume(
                     CreateResumeCommand(
                         user_id=record.user_id,
                         title="delivered-resume",

@@ -2,7 +2,11 @@
 
 Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operations` 在上下文预检前落库，保存运行创建前失败摘要；`agent_stage_events` 按同一操作记录阶段转换。运行创建后状态仍以 `agent_runs` 为真值，工具终态仍以 `agent_tool_calls` 为真值，提案状态仍以 `resume_change_proposals` 为真值。`agent_runs.model_name` 保存运行时请求的模型标识快照，配置后续修改或删除不改变它；无法可靠还原的旧运行保持空值。新表只提供安全排障时间线，不复制提示词、简历正文、上下文或工具参数；管理员通过 `/api/admin/agent-operations` 查询，删除会话时同步清理。
 
+普通提案确认的事务边界为当前 Resume 与提案状态，不调用历史版本追加服务。scoped 模式始终在最新 canonical 内容重放 operation 并保留当前 presentation；旧完整快照模式继续严格检查内部锁。翻译需要检查新简历额度，锁顺序为 User、Proposal、源 Resume，与创建简历的 User-before-Resume 顺序一致。普通提案提交失败显式 rollback，幂等确认直接返回当前结果而不重放。
+
 ## 运行时边界
+
+新 scoped 提案保存有界 preview 与操作，不再保存整篇 data/style；旧快照与翻译仍保留完整内容。新上下文目录不列出 resume_version，显式请求或澄清继承这种退休引用时返回 409 AGENT_CONTEXT_RETIRED，不能悄悄替换为当前简历；历史消息中的展示快照继续可读。
 
 Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `llm` 模块组成：`agent` 管理持久化会话、会话展示状态与提案，Pi 执行 agent loop，`llm` 管理模型选择、凭据、验证与计量。普通用户功能见 [AI 求职助手](../features/ai-assistant.md)，第三方 Pi 包边界见 [third_party/pi](third-party-pi.md)。
 

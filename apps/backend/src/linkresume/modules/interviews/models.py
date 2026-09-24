@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CHAR,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -150,6 +151,7 @@ class JobApplication(Base):
         ),
         Index("idx_job_applications_job_description", "job_description_id"),
         Index("idx_job_applications_resume_version", "resume_version_id"),
+        Index("idx_job_applications_resume", "resume_id"),
         {"comment": "用户一次完整求职尝试", "sqlite_autoincrement": True},
     )
 
@@ -166,6 +168,11 @@ class JobApplication(Base):
             name="fk_job_applications_job_description",
             ondelete="SET NULL",
         ),
+        nullable=True,
+    )
+    resume_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey("resumes.id", name="fk_job_applications_resume", ondelete="SET NULL"),
         nullable=True,
     )
     resume_version_id: Mapped[int | None] = mapped_column(

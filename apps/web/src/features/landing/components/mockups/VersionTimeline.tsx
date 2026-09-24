@@ -1,20 +1,20 @@
-import { History, RotateCcw, Check } from 'lucide-react'
+import { Files, FileText, Check } from 'lucide-react'
 
 const versions = [
-  { tag: 'v12', note: '投递前终稿 · 调整技能顺序', time: '今天 21:47', current: true },
-  { tag: 'v11', note: '补充项目数据指标', time: '今天 18:02' },
-  { tag: 'v10', note: '按 JD 关键词重写自我评价', time: '昨天 22:15' },
-  { tag: 'v9', note: '切换为左右双栏布局', time: '3 天前' },
+  { tag: '产品', note: '产品经理 · 突出业务成果', time: '今天 21:47', current: true },
+  { tag: '运营', note: '产品运营 · 补充数据指标', time: '今天 18:02' },
+  { tag: '设计', note: '交互设计 · 展示项目经历', time: '昨天 22:15' },
+  { tag: '通用', note: '通用简历 · 完整经历', time: '3 天前' },
 ]
 
-/** 版本历史面板模拟图 */
+/** 独立简历列表模拟图 */
 export function VersionTimeline() {
   return (
     <div className="w-full overflow-hidden rounded-lg border border-black/[0.07] bg-white shadow-sm dark:border-white/10 dark:bg-[#0e0e11] dark:shadow-none">
       <div className="flex items-center justify-between border-b border-black/[0.06] dark:border-white/[0.07] px-4 py-3">
         <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-          <History className="h-3.5 w-3.5" />
-          <span>历史版本</span>
+          <Files className="h-3.5 w-3.5" />
+          <span>我的简历</span>
         </div>
         <span className="font-mono text-[10px] text-zinc-600">autosave: on</span>
       </div>
@@ -40,8 +40,8 @@ export function VersionTimeline() {
               <span className="hidden shrink-0 font-mono text-[10px] text-zinc-600 sm:block">{v.time}</span>
               {!v.current && (
                 <span className="flex shrink-0 items-center gap-1 text-[10px] text-zinc-400 transition-colors group-hover:text-zinc-700 dark:text-zinc-600 dark:group-hover:text-zinc-300">
-                  <RotateCcw className="h-3 w-3" />
-                  恢复
+                  <FileText className="h-3 w-3" />
+                  查看
                 </span>
               )}
             </li>

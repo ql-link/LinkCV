@@ -20,6 +20,7 @@ module.exports = {
     request(`${root}/applications${query(options)}`),
   listSessions: (options) => request(`${root}/sessions${query(options)}`),
   getApplication: (value) => request(`${root}/applications/${id(value)}`),
+  bindResume: (value, data) => write(`/applications/${id(value)}/resume`, data, "PUT"),
   getSession: (value) => request(`${root}/sessions/${id(value)}`),
   addStage: (value, data) => write(`/applications/${id(value)}/stages`, data),
   saveOffer: (value, data) => write(`/applications/${id(value)}/offer`, data),

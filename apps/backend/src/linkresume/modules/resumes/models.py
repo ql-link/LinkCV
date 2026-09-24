@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CHAR,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -108,6 +109,12 @@ class Resume(Base):
         CheckConstraint("lock_version >= 1", name="ck_resumes_lock_version"),
         UniqueConstraint("parse_task_id", name="uk_resumes_parse_task_id"),
         UniqueConstraint("share_token", name="uk_resumes_share_token"),
+        UniqueConstraint("user_id", "creation_request_id", name="uk_resumes_user_creation_request"),
+        CheckConstraint(
+            "(creation_request_id IS NULL AND creation_request_hash IS NULL) OR "
+            "(creation_request_id IS NOT NULL AND creation_request_hash IS NOT NULL)",
+            name="ck_resumes_creation_request_pair",
+        ),
         CheckConstraint(
             "(share_token IS NULL AND share_visibility IS NULL AND share_created_at IS NULL) "
             "OR (share_token IS NOT NULL AND share_visibility IS NOT NULL "
@@ -122,8 +129,11 @@ class Resume(Base):
             "share_allow_download IN (0, 1)",
             name="ck_resumes_share_allow_download",
         ),
-        {"comment": "用户简历当前版本"},
+        {"comment": "用户简历当前内容"},
     )
+
+    creation_request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    creation_request_hash: Mapped[str | None] = mapped_column(CHAR(64), nullable=True)
 
     id: Mapped[int] = mapped_column(
         unsigned_bigint_type(), autoincrement=True, comment="简历自增主键"

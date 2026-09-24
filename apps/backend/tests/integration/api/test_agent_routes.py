@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import select, update
+from sqlalchemy import delete, event, select, update
 
 from linkresume.core.config import Settings
 from linkresume.core.database import utc_now
@@ -463,6 +463,9 @@ def test_context_catalog_is_owner_scoped_and_message_snapshot_does_not_bind_sess
             owner_resume["id"]
         ]
         assert all("data" not in item for item in catalog.json()["contexts"])
+        retired = owner.get("/api/agent/contexts?type=resume_version")
+        assert retired.status_code == 409
+        assert retired.json() == {"error": "AGENT_CONTEXT_RETIRED"}
 
         session = owner.post("/api/agent/sessions", json={}).json()["session"]
         sent = owner.post(
@@ -1058,8 +1061,20 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
                     ResumeVersion.reason == "agent",
                 )
             )
-            assert version is not None
-            assert version.name == "智能助手修改"
+            assert version is None
+
+        # Retrying an applied proposal must not undo edits saved afterwards.
+        later_data = deepcopy(confirmed.json()["resume"]["data"])
+        later_data["identity"]["headline"]["value"] = "之后手动保存的标题"
+        later = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": later_data, "base_lock_version": 2},
+        )
+        assert later.status_code == 200
+        retried = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+        assert retried.status_code == 200
+        assert retried.json()["resume"]["data"] == later_data
+        assert retried.json()["resume"]["lock_version"] == 3
 
 
 def test_revision_supersedes_only_after_replacement_and_is_session_scoped() -> None:
@@ -1932,7 +1947,7 @@ def test_translation_proposal_creates_one_independent_editable_resume() -> None:
             versions = db.scalars(
                 select(ResumeVersion).where(ResumeVersion.resume_id == int(result["id"]))
             ).all()
-            assert len(versions) == 1
+            assert len(versions) == 0
 
 
 def test_translation_proposal_rejects_changed_factual_tokens() -> None:
@@ -1975,46 +1990,194 @@ def test_translation_proposal_rejects_changed_factual_tokens() -> None:
         assert response.status_code in {422, 400}
 
 
-def test_proposal_confirmation_respects_resume_version_limit() -> None:
+@pytest.mark.parametrize("legacy_count", [0, 3, 10])
+def test_proposal_confirmation_does_not_access_history(legacy_count: int) -> None:
     app = build_app()
-    app.state.settings.resume_version_limit = 2
     with TestClient(app) as client:
-        register(client, "agent-version-limit@example.test")
+        register(client, "agent-current-content@example.test")
         resume = create_resume(client, app)
-        manual = client.post(
-            f"/api/resumes/{resume['id']}/versions",
-            json={"name": "人工保留版本"},
-        )
-        assert manual.status_code == 201
+        with app.state.session_factory() as db:
+            db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == int(resume["id"])))
+            for number in range(1, legacy_count + 1):
+                db.add(ResumeVersion(
+                    resume_id=int(resume["id"]), template_id=int(app.state.test_template_id),
+                    version_no=number, data_json=resume["data"], style_json=resume["style"],
+                    reason="manual", name=f"旧内容 {number}",
+                ))
+            db.commit()
         session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposed_data = resume["data"]
         proposed_data["identity"]["headline"] = {
             "node_id": "node_headline00000001",
             "source_refs": [],
-            "value": "不应应用的智能助手标题",
+            "value": "直接应用到当前正文",
         }
         proposal = client.post(
             f"/internal/agent/runs/{run_id}/proposals",
             headers=internal_headers(),
             json={
-                "call_key": "proposal-version-limit",
+                "call_key": "proposal-current-content",
                 "resume_id": resume["id"],
                 "data": proposed_data,
                 "style": resume["style"],
-                "summary": "版本空间已满时不得应用",
+                "summary": "修改当前正文",
             },
         )
 
-        result = client.post(
-            f"/api/agent/proposals/{proposal.json()['proposal']['id']}/confirm"
-        )
+        statements: list[str] = []
+        def capture_sql(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement.lower())
+        with app.state.session_factory() as db:
+            engine = db.get_bind()
+        event.listen(engine, "before_cursor_execute", capture_sql)
+        try:
+            result = client.post(
+                f"/api/agent/proposals/{proposal.json()['proposal']['id']}/confirm"
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", capture_sql)
 
-        assert result.status_code == 409
-        assert result.json() == {"error": "RESUME_VERSION_LIMIT_REACHED"}
+        assert result.status_code == 200
+        assert not any("resume_versions" in sql for sql in statements)
         current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
-        assert current["lock_version"] == 1
-        assert current["data"]["identity"]["headline"] is None
+        assert current["lock_version"] == 2
+        assert current["data"]["identity"]["headline"]["value"] == "直接应用到当前正文"
+        with app.state.session_factory() as db:
+            assert len(db.scalars(select(ResumeVersion)).all()) == legacy_count
+            stored = db.scalar(select(ResumeChangeProposal))
+            assert stored.status == "applied"
+
+
+def test_nine_scoped_proposals_replay_current_content_and_preserve_style() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "nine-proposals@example.test")
+        resume = create_resume(client, app)
+        markdown = "\n\n".join([
+            "## [[linkresume-block:node_section000000001]]项目经历",
+            "### [[linkresume-block:node_entry00000000001]]示例项目",
+            *[f"- [[linkresume-block:node_bullet{index:010d}]]技术架构{index}:Java" for index in range(9)],
+        ])
+        resume = client.put(f"/api/resumes/{resume['id']}", json={
+            "data": editor_data(resume["data"], markdown), "base_lock_version": 1,
+        }).json()["resume"]
+        with app.state.session_factory() as db:
+            db.execute(delete(ResumeVersion))
+            db.commit()
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal_ids = []
+        for index in range(9):
+            target = client.post(
+                f"/internal/agent/runs/{run_id}/targets:resolve", headers=internal_headers(),
+                json={"resume_id": resume["id"], "quoted_text": f"技术架构{index}:Java"},
+            ).json()["target"]
+            diagnosis = client.post(
+                f"/internal/agent/runs/{run_id}/diagnoses", headers=internal_headers(),
+                json={"target": target, "scope": "target"},
+            ).json()
+            response = client.post(
+                f"/internal/agent/runs/{run_id}/proposals:v2", headers=internal_headers(),
+                json={
+                    "call_key": f"punctuation-{index}", "mode": "polish_local", "target": target,
+                    "diagnosis": diagnosis["diagnosis"],
+                    "diagnosis_fingerprint": diagnosis["diagnosis_fingerprint"],
+                    "operations": [{"op": "replace_target_text", "target": target,
+                                    "new_text": f"技术架构{index}：Java",
+                                    "expected_text_hash": target["expected_text_hash"]}],
+                    "summary": "规范标点",
+                },
+            )
+            assert response.status_code == 201, response.text
+            proposal_ids.append(response.json()["proposal"]["id"])
+        # A scoped proposal's obsolete full preview must never be execution input,
+        # even when the resume's lock has not changed since proposal creation.
+        with app.state.session_factory() as db:
+            for proposal in db.scalars(select(ResumeChangeProposal)):
+                proposal.proposed_data_json = {}
+                proposal.proposed_style_json = {}
+            db.commit()
+        first = client.post(f"/api/agent/proposals/{proposal_ids[0]}/confirm")
+        assert first.status_code == 200
+        current = first.json()["resume"]
+        current["style"]["portable"]["smart_one_page"] = True
+        manual = client.put(f"/api/resumes/{resume['id']}", json={
+            "style": current["style"], "base_lock_version": current["lock_version"],
+        })
+        assert manual.status_code == 200
+        for proposal_id in proposal_ids[1:]:
+            response = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+            assert response.status_code == 200
+        result = response.json()["resume"]
+        assert result["lock_version"] == 12
+        assert result["style"] == manual.json()["resume"]["style"]
+        from linkresume.modules.agent.resume_tools import editor_markdown
+        from linkresume.application.resumes.service import parse_persisted_resume_snapshot
+        content = editor_markdown(parse_persisted_resume_snapshot(result["data"], result["style"]).data)
+        for index in range(9):
+            assert f"技术架构{index}：Java" in content
+        with app.state.session_factory() as db:
+            assert db.scalars(select(ResumeVersion)).all() == []
+            assert all(p.status == "applied" for p in db.scalars(select(ResumeChangeProposal)))
+
+
+def test_corrupt_scoped_proposal_does_not_fall_back_to_full_snapshot() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "scoped-missing-operation@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals", headers=internal_headers(),
+            json={"call_key": "corrupt-operation", "resume_id": resume["id"],
+                  "data": resume["data"], "style": resume["style"], "summary": "存量异常提案"},
+        ).json()["proposal"]
+        with app.state.session_factory() as db:
+            stored = db.scalar(select(ResumeChangeProposal))
+            stored.proposal_mode = "polish_local"
+            stored.operations_json = []
+            db.commit()
+        response = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        assert response.status_code == 409
+        assert response.json() == {"error": "TARGET_STALE"}
+        with app.state.session_factory() as db:
+            assert db.scalar(select(ResumeChangeProposal)).status == "conflicted"
+            assert db.get(Resume, int(resume["id"])).lock_version == 1
+
+
+def test_confirm_commit_failure_rolls_back_resume_and_proposal() -> None:
+    from sqlalchemy.orm import Session
+
+    app = build_app()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        register(client, "proposal-commit-failure@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals", headers=internal_headers(),
+            json={"call_key": "commit-failure", "resume_id": resume["id"],
+                  "data": resume["data"], "style": resume["style"], "summary": "测试事务失败"},
+        ).json()["proposal"]
+
+        def fail_applied_commit(db):
+            if any(isinstance(item, ResumeChangeProposal) and item.status == "applied" for item in db.dirty):
+                raise RuntimeError("simulated commit failure")
+
+        event.listen(Session, "before_commit", fail_applied_commit)
+        try:
+            response = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        finally:
+            event.remove(Session, "before_commit", fail_applied_commit)
+        assert response.status_code == 500
+        with app.state.session_factory() as db:
+            assert db.scalar(select(ResumeChangeProposal)).status == "pending"
+            current = db.get(Resume, int(resume["id"]))
+            assert current.lock_version == resume["lock_version"]
+            assert current.data_json == resume["data"]
+        assert client.post(f"/api/agent/proposals/{proposal['id']}/confirm").status_code == 200
 
 
 def test_run_concurrency_is_limited_across_user_sessions() -> None:

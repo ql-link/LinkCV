@@ -1,4 +1,5 @@
 from __future__ import annotations
+from linkresume.application.interviews.resume_binding_service import current_resume_title
 
 import asyncio
 import logging
@@ -167,6 +168,7 @@ def _application_record(
     current = next((stage for stage in stages if stage.current_marker == 1), None)
     return JobApplicationRecord.model_validate(application).model_copy(
         update={
+            "resume_title_snapshot": current_resume_title(db, application),
             "company_logo_url": application_logo_url(application),
             "current_stage": (
                 ApplicationStageRecord.model_validate(current) if current else None

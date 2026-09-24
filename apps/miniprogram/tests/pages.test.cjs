@@ -45,6 +45,85 @@ async function withPage(pageRelativePath, mockedModules, wxMock, run) {
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
+for (const scenario of ["clear", "unbound", "list-failure"]) {
+  test(`pending application resume selection: ${scenario}`, async () => {
+    const writes = [];
+    const application = {
+      id: "1", resume_id: scenario === "unbound" ? null : "3",
+      lock_version: 8, phase: "pending", current_stage: null,
+    };
+    await withPage("../pages/career/form", {
+      "../services/auth": { hasSession: () => true },
+      "../services/career": {
+        getApplication: async () => ({ application }),
+        addStage: async (id, body) => {
+          writes.push({ id, body });
+          return { application: { ...application, phase: "applied", lock_version: 9 } };
+        },
+      },
+      "../services/resumes": {
+        listResumes: async () => {
+          if (scenario === "list-failure") throw new Error("offline");
+          return [{ id: "3", title: "原简历" }];
+        },
+      },
+    }, { setNavigationBarTitle() {}, showToast() {}, navigateBack() {} }, async page => {
+      await page.onLoad({ applicationId: "1", mode: "stage" });
+      if (scenario === "clear") assert.equal(page.data.form.resumeIndex, 1);
+      page.data.form.stageType = "screening";
+      page.data.form.resumeIndex = 0;
+      await page.save();
+      assert.equal(writes.length, 1);
+      assert.equal(writes[0].body.base_lock_version, 8);
+      if (scenario === "list-failure") {
+        assert.equal(Object.hasOwn(writes[0].body, "resume_id"), false);
+      } else {
+        assert.equal(writes[0].body.resume_id, null);
+      }
+    });
+  });
+}
+
+test("career resume form preserves current selection and supports rebinding without a source lock", async () => {
+  const writes = [];
+  const application = { id: "1", resume_id: "3", lock_version: 8, phase: "applied", current_stage: { stage_type: "screening" } };
+  await withPage("../pages/career/form", {
+    "../services/auth": { hasSession: () => true },
+    "../services/career": {
+      getApplication: async () => ({ application }),
+      bindResume: async (id, body) => { writes.push({ id, body }); },
+    },
+    "../services/resumes": { listResumes: async () => [{ id: "3", title: "原简历" }, { id: "4", title: "新简历" }] },
+  }, { setNavigationBarTitle() {}, showToast() {}, navigateBack() {} }, async page => {
+    await page.onLoad({ applicationId: "1", mode: "resume" });
+    assert.equal(page.data.form.resumeIndex, 1);
+    assert.equal(page.data.buttonLabel, "保存简历关联");
+    page.data.form.resumeIndex = 2;
+    await page.save();
+    assert.deepEqual(writes, [{ id: "1", body: { resume_id: "4", base_lock_version: 8 } }]);
+    page.data.form.resumeIndex = 0;
+    await page.save();
+    assert.equal(writes[1].body.resume_id, null);
+  });
+});
+
+test("career resume form does not silently clear a binding when the list fails", async () => {
+  let writes = 0;
+  await withPage("../pages/career/form", {
+    "../services/auth": { hasSession: () => true },
+    "../services/career": {
+      getApplication: async () => ({ application: { id: "1", resume_id: "3", lock_version: 8, phase: "applied" } }),
+      bindResume: async () => { writes++; },
+    },
+    "../services/resumes": { listResumes: async () => { throw new Error("offline"); } },
+  }, { setNavigationBarTitle() {} }, async page => {
+    await page.onLoad({ applicationId: "1", mode: "resume" });
+    await page.save();
+    assert.equal(writes, 0);
+    assert.match(page.data.error, /重新加载/);
+  });
+});
+
 const privacySetting = async () => ({
   supported: true,
   needAuthorization: false,
@@ -63,13 +142,41 @@ test("app starts on resumes and exposes resumes, career and profile tabs", () =>
   assert.equal(appConfig.pages.includes("pages/home/index"), false);
 });
 
+test("resume detail refreshes a conflicting lock only once and never commits a stale preview", async () => {
+  let reads = 0;
+  let downloads = 0;
+  let commits = 0;
+  await withPage("../pages/resumes/detail", {
+    "../services/resumes": {
+      getResume: async () => ({ lock_version: ++reads }),
+      downloadResumePreview: async () => {
+        downloads += 1;
+        throw Object.assign(new Error("RESUME_EDIT_CONFLICT"), { statusCode: 409 });
+      },
+    },
+    "../services/auth": { getCurrentUser: () => ({ id: "7" }) },
+    "../services/resumePreviewCache": {
+      getCachedResumePreview: async () => null,
+      resumePreviewPath: (_user, _resume, lock) => `/user/preview-${lock}.png`,
+      removeFile: async () => {},
+      commitResumePreview: async () => { commits += 1; },
+    },
+  }, {}, async (page) => {
+    await page.openPreview("resume-1");
+    assert.equal(reads, 2);
+    assert.equal(downloads, 2);
+    assert.equal(commits, 0);
+    assert.match(page.data.error, /仍在修改/);
+  });
+});
+
 test("resume detail downloads, embeds and commits the selected preview version", async () => {
   const calls = [];
   const previewImages = [];
   let finalState = null;
   await withPage("../pages/resumes/detail", {
     "../services/resumes": {
-      getResume: async (id) => { calls.push(["metadata", id]); return { pdf_version_id: "9" }; },
+      getResume: async (id) => { calls.push(["metadata", id]); return { lock_version: "9" }; },
       downloadResumePreview: async (id, versionId, filePath) => {
         calls.push(["download", id, versionId, filePath]);
         return filePath;
@@ -524,8 +631,8 @@ test("resumes page lists resumes and populates preview thumbnail from cache", as
     },
     "../services/resumes": {
       listResumes: async () => [
-        { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", pdf_version_id: "v1" },
-        { id: "__linkresume_demo_resume__", title: "示例简历 · 内容为虚构信息", isDemo: true, pdf_version_id: "demo" },
+        { id: "r1", title: "前端工程师", updated_at: "2026-08-26T10:00:00Z", lock_version: "v1" },
+        { id: "__linkresume_demo_resume__", title: "示例简历 · 内容为虚构信息", isDemo: true, lock_version: "demo" },
       ],
     },
     "../services/resumePreviewCache": {

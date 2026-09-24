@@ -1,5 +1,7 @@
 # 当前架构
 
+简历日常读写以 resumes 当前内容为唯一事实源；lock_version 仅用于并发和缓存，不是用户可管理的历史。Web 支持复制为独立简历，小程序 v2 读取当前内容。求职记录通过 job_applications.resume_id 关联当前简历；修改源简历影响后续查看，删除源简历解除关联但保留求职记录。旧 resume_versions 仅用于存量保全和关联迁移。
+
 ## Monorepo 组成
 
 | 模块 | 位置 | 当前职责 |

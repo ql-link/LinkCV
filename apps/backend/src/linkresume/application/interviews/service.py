@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from linkresume.application.interviews.resume_binding_service import bind_resume
+from linkresume.core.errors import ApiError
+
 import base64
 import hashlib
 import json
@@ -286,33 +289,6 @@ def _job_snapshot(job: JobDescription) -> dict[str, object]:
     }
 
 
-def _owned_resume_version(
-    db: Session, user_id: int, version_id: int | None
-) -> ResumeVersion | None:
-    if version_id is None:
-        return None
-    return db.scalar(
-        select(ResumeVersion)
-        .join(Resume, Resume.id == ResumeVersion.resume_id)
-        .where(ResumeVersion.id == version_id, Resume.user_id == user_id)
-    )
-
-
-def _owned_resume(db: Session, user_id: int, resume_id: int) -> Resume | None:
-    return db.scalar(
-        select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
-    )
-
-
-def _latest_resume_version(db: Session, resume_id: int) -> ResumeVersion | None:
-    return db.scalar(
-        select(ResumeVersion)
-        .where(ResumeVersion.resume_id == resume_id)
-        .order_by(ResumeVersion.version_no.desc(), ResumeVersion.id.desc())
-        .limit(1)
-    )
-
-
 def find_application_for_job(
     db: Session, user_id: int, job_description_id: int
 ) -> JobApplication | None:
@@ -332,7 +308,6 @@ def ensure_pending_application_for_job(
     user_id: int,
     job: JobDescription,
     *,
-    resume_version: ResumeVersion | None = None,
     notes: str | None = None,
 ) -> tuple[JobApplication, bool]:
     locked_job = db.scalar(
@@ -352,11 +327,11 @@ def ensure_pending_application_for_job(
     application = JobApplication(
         user_id=user_id,
         job_description_id=job.id,
-        resume_version_id=resume_version.id if resume_version else None,
+        resume_id=None,
         company_name_snapshot=locked_job.company_name,
         job_title_snapshot=locked_job.job_title,
         job_snapshot=_job_snapshot(locked_job),
-        resume_title_snapshot=resume_version.name if resume_version else None,
+        resume_title_snapshot=None,
         calendar_color=secrets.choice(CALENDAR_COLORS),
         current_stage_type="screening",
         current_round_no=None,
@@ -392,22 +367,14 @@ def create_application(
     )
     if job is None:
         raise InterviewNotFound
-    resume_version_id = (
-        parse_decimal_id(payload.resume_version_id)
-        if payload.resume_version_id is not None
-        else None
-    )
-    if payload.resume_version_id is not None and resume_version_id is None:
-        raise InterviewNotFound
-    resume_version = _owned_resume_version(db, user_id, resume_version_id)
-    if resume_version_id is not None and resume_version is None:
-        raise InterviewNotFound
+    if payload.resume_version_id is not None:
+        raise ApiError(410, "RESUME_VERSION_RETIRED")
     try:
         application, _created = ensure_pending_application_for_job(
             db,
             user_id,
             job,
-            resume_version=resume_version,
+
             notes=payload.notes,
         )
         if (
@@ -415,13 +382,10 @@ def create_application(
             or current_application_stage(db, application.id) is not None
         ):
             raise InterviewApplicationAlreadyExists(application.id)
-        if resume_version is not None:
-            application.resume_version_id = resume_version.id
-            application.resume_title_snapshot = resume_version.name
+        bind_resume(db, application, payload)
         if payload.notes is not None:
             application.notes = payload.notes
-        db.commit()
-        db.refresh(application)
+        db.flush()
     except Exception:
         db.rollback()
         raise
@@ -429,6 +393,8 @@ def create_application(
         payload.current_stage_type == "screening"
         and payload.current_stage_label == "待投递"
     ):
+        db.commit()
+        db.refresh(application)
         return application
 
     legacy_stage_type = payload.current_stage_type
@@ -458,7 +424,7 @@ def create_application(
                 payload.current_round_no if stage_type == "interview" else None
             ),
             applied_at=payload.applied_at,
-            resume_version_id=payload.resume_version_id,
+
             base_lock_version=application.lock_version,
         ),
     )
@@ -652,33 +618,6 @@ def _stage_matches_request(
     )
 
 
-def _resolve_stage_resume(
-    db: Session,
-    user_id: int,
-    payload: AddApplicationStageRequest,
-) -> ResumeVersion | None:
-    if payload.resume_id is not None:
-        resume_id = parse_decimal_id(payload.resume_id)
-        if resume_id is None:
-            raise InterviewNotFound
-        resume = _owned_resume(db, user_id, resume_id)
-        if resume is None:
-            raise InterviewNotFound
-        version = _latest_resume_version(db, resume.id)
-        if version is None:
-            raise InterviewResumeVersionRequired
-        return version
-    if payload.resume_version_id is not None:
-        version_id = parse_decimal_id(payload.resume_version_id)
-        if version_id is None:
-            raise InterviewNotFound
-        version = _owned_resume_version(db, user_id, version_id)
-        if version is None:
-            raise InterviewNotFound
-        return version
-    return None
-
-
 def add_application_stage(
     db: Session,
     user_id: int,
@@ -715,7 +654,7 @@ def add_application_stage(
         raise InterviewEditConflict
 
     stage_label = _stage_label(payload.stage_type, payload.stage_label)
-    resume_version = _resolve_stage_resume(db, user_id, payload)
+    bind_resume(db, application, payload)
     now = utc_now()
     previous = current_application_stage(db, application.id)
     if previous is not None:
@@ -759,9 +698,7 @@ def add_application_stage(
         if payload.applied_at is not None
         else application.applied_at or now
     )
-    if resume_version is not None:
-        application.resume_version_id = resume_version.id
-        application.resume_title_snapshot = resume_version.name
+
     for key, value in _legacy_stage_projection(
         payload.stage_type, stage_label, payload.interview_round_no
     ).items():
@@ -882,7 +819,11 @@ def update_application(
     application_id: int,
     payload: JobApplicationUpdateRequest,
 ) -> JobApplication:
-    application = require_owned_application(db, user_id, application_id)
+    application = db.scalar(select(JobApplication).where(JobApplication.id == application_id, JobApplication.user_id == user_id).with_for_update())
+    if application is None:
+        raise InterviewNotFound
+    if application.lock_version != payload.base_lock_version:
+        raise InterviewEditConflict
     provided = payload.model_dump(exclude_unset=True)
     provided.pop("base_lock_version", None)
     is_pending = application.applied_at is None
@@ -942,40 +883,10 @@ def update_application(
                     "stage_state": "awaiting_result",
                 }
             )
-    if "resume_id" in provided:
-        requested_resume_id = provided.pop("resume_id")
-        if requested_resume_id is not None:
-            parsed_resume_id = (
-                parse_decimal_id(requested_resume_id)
-                if isinstance(requested_resume_id, str)
-                else None
-            )
-            if parsed_resume_id is None:
-                raise InterviewNotFound
-            resume = _owned_resume(db, user_id, parsed_resume_id)
-            if resume is None:
-                raise InterviewNotFound
-            resume_version = _latest_resume_version(db, resume.id)
-            if resume_version is None:
-                raise InterviewResumeVersionRequired
-            provided["resume_version_id"] = str(resume_version.id)
-            provided["resume_title_snapshot"] = resume_version.name
-    if "resume_version_id" in provided:
-        requested_resume_version_id = provided["resume_version_id"]
-        parsed_resume_version_id = (
-            parse_decimal_id(requested_resume_version_id)
-            if isinstance(requested_resume_version_id, str)
-            else None
-        )
-        if requested_resume_version_id is not None and parsed_resume_version_id is None:
-            raise InterviewNotFound
-        resume_version = _owned_resume_version(db, user_id, parsed_resume_version_id)
-        if parsed_resume_version_id is not None and resume_version is None:
-            raise InterviewNotFound
-        provided["resume_version_id"] = parsed_resume_version_id
-        provided["resume_title_snapshot"] = (
-            resume_version.name if resume_version else None
-        )
+    bind_resume(db, application, payload)
+    for key in ("resume_id", "resume_version_id"):
+        provided.pop(key, None)
+    db.flush()
     return _commit_application_update(
         db, application, payload.base_lock_version, provided
     )

@@ -67,7 +67,17 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class JobApplicationCreateRequest(StrictModel):
+class ResumeBindingRequest(StrictModel):
+    resume_id: DatabaseId | None = None
+    resume_version_id: DatabaseId | None = None
+
+
+class ResumeAssociationUpdateRequest(StrictModel):
+    resume_id: DatabaseId | None
+    base_lock_version: int = Field(ge=1)
+
+
+class JobApplicationCreateRequest(ResumeBindingRequest):
     job_description_id: DatabaseId
     resume_version_id: DatabaseId | None = None
     current_stage_type: LegacyApplicationStageType = "screening"
@@ -125,7 +135,7 @@ class JobApplicationCreateRequest(StrictModel):
         return self
 
 
-class JobApplicationUpdateRequest(StrictModel):
+class JobApplicationUpdateRequest(ResumeBindingRequest):
     employment_type: EmploymentType | None = None
     calendar_color: CalendarColor | None = None
     is_favorite: bool | None = None
@@ -219,7 +229,7 @@ class CloseApplicationRequest(LifecycleRequest):
     offer_status: Literal["accepted", "declined"] | None = None
 
 
-class AddApplicationStageRequest(LifecycleRequest):
+class AddApplicationStageRequest(LifecycleRequest, ResumeBindingRequest):
     client_request_id: UUID
     stage_type: ApplicationStageType
     stage_label: str | None = Field(default=None, max_length=100)
@@ -467,6 +477,7 @@ class JobApplicationRecord(BaseModel):
     id: DatabaseId
     job_description_id: DatabaseId | None
     resume_version_id: DatabaseId | None
+    resume_id: DatabaseId | None = None
     company_name_snapshot: str
     job_title_snapshot: str
     company_logo_url: str | None = None
@@ -501,6 +512,7 @@ class JobApplicationRecord(BaseModel):
     @field_validator(
         "id",
         "job_description_id",
+        "resume_id",
         "resume_version_id",
         mode="before",
     )

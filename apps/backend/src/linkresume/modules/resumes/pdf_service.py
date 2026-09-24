@@ -179,12 +179,13 @@ def clone_resume_private_assets(
                 total += size
                 if total > MAX_RESUME_PDF_IMAGE_TOTAL_BYTES:
                     raise ApiError(413, "RESUME_PDF_ASSETS_TOO_LARGE")
+                # A failed response can still mean the object was created.
+                copied.append(target_key)
                 storage.copy(source_key, target_key)
             except ApiError:
                 raise
             except Exception as error:
                 raise ApiError(502, "RESUME_TRANSLATION_ASSET_COPY_FAILED") from error
-            copied.append(target_key)
             replacements[source] = (
                 f"/api/resumes/{target_resume_id}/assets/{quote(asset_name, safe='')}"
             )

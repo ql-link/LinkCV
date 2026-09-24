@@ -601,7 +601,6 @@ def confirm_agent_proposal(
             db,
             public_id=proposal_id,
             user_id=user.id,
-            version_limit=request.app.state.settings.resume_version_limit,
             validate_resume_data=lambda data, resume_id: validate_resume_pdf_asset_contract(
                 storage,
                 data,

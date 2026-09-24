@@ -238,8 +238,8 @@ contracts:
         pattern: 'const developmentOverride = typeof developmentOverrideValue === "string"[\s\S]*const configured = \([\s\S]*developmentOverride[\s\S]*\|\| localOverride[\s\S]*\|\| extBaseUrl[\s\S]*\|\| productionDefault'
         message: develop 的显式 linkresume_api_base_url 必须优先于 local.js，其他环境只能回退生产地址
       - path: apps/miniprogram/services/resumes.js
-        pattern: 'downloadResumePreview[\s\S]*version_id=[\s\S]*/api/miniprogram/resumes/[\s\S]*/preview\.png'
-        message: 小程序必须通过后端专用只读接口查询并下载正式版本 PNG 预览
+        pattern: 'downloadResumePreview[\s\S]*lock_version=[\s\S]*/api/miniprogram/v2/resumes/[\s\S]*/preview\.png'
+        message: 小程序必须通过 v2 接口与 lock_version 查询并下载当前内容 PNG 预览
 
   - id: environment-profile-database-isolation
     description: 三套环境都使用独立 linkresume 数据库

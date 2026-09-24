@@ -1340,7 +1340,7 @@ def test_marking_an_application_applied_normalizes_to_screening() -> None:
         assert legacy_marked.json()["application"]["current_stage_label"] == "筛选中"
 
 
-def test_marking_an_application_with_resume_id_binds_the_latest_formal_version() -> (
+def test_marking_an_application_with_resume_id_links_current_resume() -> (
     None
 ):
     app = build_app()
@@ -1348,12 +1348,6 @@ def test_marking_an_application_with_resume_id_binds_the_latest_formal_version()
         register(client, "application-latest-resume@example.test")
         resume = create_resume(client, app, "后端岗位简历")
         resume_id = str(resume["id"])
-        create_resume_version(client, resume_id, "后端岗位初版")
-        latest = create_resume_version(client, resume_id, "后端岗位终版")
-        versions = list_resume_versions(client, resume_id)
-        assert versions[0]["id"] == latest["id"]
-        assert versions[0]["version_no"] > versions[1]["version_no"]
-
         created = client.post(
             "/api/job-applications",
             json={
@@ -1376,8 +1370,9 @@ def test_marking_an_application_with_resume_id_binds_the_latest_formal_version()
         )
         assert marked.status_code == 200, marked.text
         bound = marked.json()["application"]
-        assert bound["resume_version_id"] == latest["id"]
-        assert bound["resume_title_snapshot"] == "后端岗位终版"
+        assert bound["resume_version_id"] is None
+        assert bound["resume_id"] == resume_id
+        assert bound["resume_title_snapshot"] == "后端岗位简历"
 
 
 def test_marking_an_application_without_a_resume_succeeds() -> None:
@@ -1411,7 +1406,7 @@ def test_marking_an_application_without_a_resume_succeeds() -> None:
         assert updated["lock_version"] == application["lock_version"] + 1
 
 
-def test_marking_an_application_rejects_a_resume_without_a_formal_version() -> None:
+def test_marking_an_application_accepts_current_resume_without_history() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "application-no-resume-version@example.test")
@@ -1443,8 +1438,8 @@ def test_marking_an_application_rejects_a_resume_without_a_formal_version() -> N
                 "base_lock_version": application["lock_version"],
             },
         )
-        assert rejected.status_code == 409
-        assert rejected.json() == {"error": "INTERVIEW_RESUME_VERSION_REQUIRED"}
+        assert rejected.status_code == 200, rejected.text
+        assert rejected.json()["application"]["resume_id"] == resume_id
 
 
 def test_marking_an_application_cannot_bind_another_users_resume() -> None:
@@ -1475,17 +1470,17 @@ def test_marking_an_application_cannot_bind_another_users_resume() -> None:
             },
         )
         assert rejected.status_code == 404
-        assert rejected.json() == {"error": "INTERVIEW_NOT_FOUND"}
+        assert rejected.json() == {"error": "RESUME_NOT_FOUND"}
 
 
-def test_marking_an_application_keeps_explicit_resume_version_id_compatibility() -> (
+def test_marking_an_application_rejects_retired_resume_version_binding() -> (
     None
 ):
     app = build_app()
     with TestClient(app) as client:
         register(client, "application-version-compatibility@example.test")
         resume = create_resume(client, app, "兼容版本简历")
-        version = list_resume_versions(client, str(resume["id"]))[0]
+        version = {"id": "999999"}
         created = client.post(
             "/api/job-applications",
             json={
@@ -1506,10 +1501,8 @@ def test_marking_an_application_keeps_explicit_resume_version_id_compatibility()
                 "base_lock_version": application["lock_version"],
             },
         )
-        assert marked.status_code == 200, marked.text
-        bound = marked.json()["application"]
-        assert bound["resume_version_id"] == version["id"]
-        assert bound["resume_title_snapshot"] == version["name"]
+        assert marked.status_code == 410, marked.text
+        assert marked.json() == {"error": "RESUME_VERSION_RETIRED"}
 
 
 def test_application_update_rejects_resume_id_and_resume_version_id_together() -> None:
@@ -1517,7 +1510,7 @@ def test_application_update_rejects_resume_id_and_resume_version_id_together() -
     with TestClient(app) as client:
         register(client, "application-resume-fields-exclusive@example.test")
         resume = create_resume(client, app, "互斥字段简历")
-        version = list_resume_versions(client, str(resume["id"]))[0]
+        version = {"id": "999999"}
         application = create_application(client, create_job(client, "互斥字段公司"))
 
         rejected = client.put(

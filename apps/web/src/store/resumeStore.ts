@@ -94,6 +94,8 @@ type ResumeState = {
   versions: ResumeVersion[];
   versionsLoading: boolean;
   versionOperationPending: boolean;
+  proposalApplyingResumeId: string | null;
+  proposalContentRevision: number;
   importWarningsByResumeId: Record<string, ImportWarning[]>;
   activeResumeId: string | null;
   lockVersion: number;
@@ -124,6 +126,7 @@ type ResumeState = {
   deleteResume: (id: string) => Promise<void>;
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
+  confirmResumeProposal: (proposalId: string, resumeId: string) => Promise<ResumeRecord>;
   loadVersions: () => Promise<void>;
   createVersion: (name?: string) => Promise<void>;
   renameVersion: (versionNo: number, name: string) => Promise<void>;
@@ -457,6 +460,8 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   versions: [],
   versionsLoading: false,
   versionOperationPending: false,
+  proposalApplyingResumeId: null,
+  proposalContentRevision: 0,
   importWarningsByResumeId: {},
   activeResumeId: null,
   lockVersion: 0,
@@ -759,6 +764,55 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     await queuedSave;
   },
 
+  confirmResumeProposal: async (proposalId, resumeId) => {
+    if (get().proposalApplyingResumeId || get().versionOperationPending) {
+      throw new ApiRequestError(409, "RESUME_WRITE_PENDING");
+    }
+    const userId = get().user?.id;
+    set({ proposalApplyingResumeId: resumeId });
+    try {
+      if (get().activeResumeId === resumeId) {
+        await get().saveCurrentResume();
+        const saved = get();
+        if (saved.activeResumeId !== resumeId || saved.dirty || saved.saveStatus === "error") {
+          throw new ApiRequestError(409, "RESUME_DRAFT_SAVE_FAILED");
+        }
+      }
+      const confirmation = saveQueue.then(async () => {
+        let resume: ResumeRecord;
+        try {
+          ({ resume } = await api.confirmAgentProposal(proposalId));
+        } catch (error) {
+          if (error instanceof ApiRequestError && error.status < 500) throw error;
+          // A lost response is not proof of rollback. Reconcile the persisted
+          // status before inviting a retry; never resubmit automatically.
+          try {
+            const { proposals } = await api.listAgentProposals(resumeId, undefined, true);
+            const persisted = proposals.find((item) => item.id === proposalId);
+            if (persisted?.status !== "applied") throw error;
+            ({ resume } = await api.getResume(persisted.result_resume_id ?? resumeId));
+          } catch {
+            throw new ApiRequestError(503, "AGENT_PROPOSAL_RESULT_UNKNOWN");
+          }
+        }
+        // A translation returns another resume. Never replace its source editor,
+        // or a different document opened while the request was in flight.
+        if (get().user?.id !== userId) return resume;
+        set((current) => ({
+          resumes: mergeResumeSummary(current.resumes, resume),
+          ...(current.activeResumeId === resume.id && !current.dirty
+            ? { ...applyResume(resume, current), proposalContentRevision: current.proposalContentRevision + 1 }
+            : {}),
+        }));
+        return resume;
+      });
+      saveQueue = confirmation.then(() => undefined, () => undefined);
+      return await confirmation;
+    } finally {
+      set({ proposalApplyingResumeId: null });
+    }
+  },
+
   loadVersions: async () => {
     const resumeId = get().activeResumeId;
     if (!resumeId) {
@@ -879,18 +933,19 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   setTitle: (title) =>
     set((state) =>
-      title === state.title
+      (state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId) || title === state.title
         ? {}
         : { title, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
     ),
   setMarkdown: (markdown) =>
     set((state) =>
-      markdown === state.markdown
+      (state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId) || markdown === state.markdown
         ? {}
         : { markdown, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
     ),
   setEditorContent: (editorContent) =>
     set((state) => {
+      if (state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId) return {};
       if (JSON.stringify(editorContent) === JSON.stringify(state.editorContent)) return {};
       const canonical = stripTemplateProjectionFromEditorDocument(editorContent, state.data);
       return {
@@ -903,18 +958,18 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }),
   setSplitRatio: (splitRatio) =>
     set((state) =>
-      splitRatio === state.splitRatio
+      (state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId) || splitRatio === state.splitRatio
         ? {}
         : { splitRatio, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
     ),
   setPreviewScale: (previewScale) =>
     set((state) =>
-      previewScale === state.previewScale
+      (state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId) || previewScale === state.previewScale
         ? {}
         : { previewScale, dirty: true, editVersion: state.editVersion + 1, saveStatus: "idle" },
     ),
   updateSettings: (settings) =>
-    set((state) => ({
+    set((state) => state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId ? {} : ({
       settings: { ...state.settings, ...settings },
       dirty: true,
       editVersion: state.editVersion + 1,
@@ -922,6 +977,9 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     })),
   applyTemplate: async (templateId, editorDocument) => {
     let state = get();
+    if (state.proposalApplyingResumeId === state.activeResumeId && state.proposalApplyingResumeId) {
+      throw new ApiRequestError(409, "RESUME_WRITE_PENDING");
+    }
     if (!state.activeResumeId) throw new Error("RESUME_NOT_FOUND");
     if (state.versionOperationPending) throw new Error("RESUME_TEMPLATE_APPLY_PENDING");
     const resumeId = state.activeResumeId;
