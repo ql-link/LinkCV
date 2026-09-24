@@ -127,6 +127,33 @@ type ScheduleCreatedInfo = {
   stage: string;
   startAt: string;
 };
+
+const HIDDEN_APPLICATION_BOARD_COLUMNS_STORAGE_KEY = "linkresume:career-applications:hidden-columns:v1";
+
+function readStoredHiddenApplicationBoardColumnIds(): Set<string> {
+  try {
+    const value = window.sessionStorage.getItem(HIDDEN_APPLICATION_BOARD_COLUMNS_STORAGE_KEY);
+    if (!value) return new Set();
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string")
+      ? new Set(parsed)
+      : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function storeHiddenApplicationBoardColumnIds(columnIds: ReadonlySet<string>) {
+  try {
+    window.sessionStorage.setItem(
+      HIDDEN_APPLICATION_BOARD_COLUMNS_STORAGE_KEY,
+      JSON.stringify(Array.from(columnIds).sort()),
+    );
+  } catch {
+    // A blocked storage backend must not prevent in-memory column visibility changes.
+  }
+}
+
 type Interview = {
   id: string;
   applicationId: string;
@@ -531,7 +558,9 @@ export function InterviewCenterPage({
   const [query, setQuery] = useState("");
   const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("board");
   const [groupByCategory, setGroupByCategory] = useState(false);
-  const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(() => new Set());
+  const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(
+    readStoredHiddenApplicationBoardColumnIds,
+  );
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -863,6 +892,7 @@ export function InterviewCenterPage({
                       const next = new Set(current);
                       if (visible) next.delete(columnId);
                       else next.add(columnId);
+                      storeHiddenApplicationBoardColumnIds(next);
                       return next;
                     });
                   }}
