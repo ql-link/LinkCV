@@ -52,6 +52,7 @@ class ResumeTemplate(Base):
         PrimaryKeyConstraint("id", name="pk_resume_templates"),
         UniqueConstraint("key", name="uk_resume_templates_key"),
         CheckConstraint("is_active IN (0, 1)", name="ck_resume_templates_is_active"),
+        CheckConstraint("sort_order BETWEEN 0 AND 1000000", name="ck_resume_templates_sort_order"),
         {"comment": "简历模板"},
     )
 
@@ -72,6 +73,20 @@ class ResumeTemplate(Base):
     )
     style_json: Mapped[dict[str, Any]] = mapped_column(
         JSON(), nullable=False, comment="ResumePresentation 默认样式"
+    )
+    style_categories_json: Mapped[list[str] | None] = mapped_column(
+        JSON(), nullable=True, comment="模板视觉风格分类；NULL 表示尚未标注"
+    )
+    use_cases_json: Mapped[list[str] | None] = mapped_column(
+        JSON(), nullable=True, comment="模板适用求职场景；NULL 表示尚未标注"
+    )
+    style_review_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending",
+        comment="风格审核状态：pending、classified、unsure",
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer(), nullable=False, default=1000, server_default="1000",
+        comment="模板展示顺序，数字越小越靠前；相同值按 ID 排序",
     )
     is_active: Mapped[int] = mapped_column(
         unsigned_tinyint_type(),

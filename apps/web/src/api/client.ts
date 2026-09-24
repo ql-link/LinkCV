@@ -146,6 +146,8 @@ export type ResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
+  style_categories: string[];
+  use_cases: string[];
   data: CanonicalResumeDocument;
   style: CanonicalResumePresentation;
   layout_plan?: LayoutPlan | null;
@@ -183,6 +185,10 @@ export type AdminResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
+  style_categories: string[];
+  use_cases: string[];
+  style_review_status: "pending" | "classified" | "unsure";
+  sort_order: number;
   data: CanonicalResumeDocument | null;
   style: CanonicalResumePresentation | null;
   layout_plan?: LayoutPlan | null;
@@ -1627,6 +1633,13 @@ export const api = {
   listAdminResumeTemplates: () =>
     request<{ templates: AdminResumeTemplateWire[] }>("/api/admin/resume-templates")
       .then(({ templates }) => ({ templates: templates.map(adminResumeTemplateFromWire) })),
+  updateAdminResumeTemplateClassification: (
+    id: string,
+    payload: { style_categories: string[]; use_cases: string[]; style_review_status: "pending" | "classified" | "unsure" },
+  ) => request<{ template: AdminResumeTemplateWire }>(`/api/admin/resume-templates/${id}/classification`, {
+    method: "PUT",
+    body: payload,
+  }).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
   importAdminResumeTemplate: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -1639,6 +1652,11 @@ export const api = {
     request<{ template: AdminResumeTemplateWire }>(
       `/api/admin/resume-templates/${id}/status`,
       { method: "PUT", body: { active } },
+    ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
+  updateAdminResumeTemplateSortOrder: (id: string, sortOrder: number) =>
+    request<{ template: AdminResumeTemplateWire }>(
+      `/api/admin/resume-templates/${id}/sort-order`,
+      { method: "PUT", body: { sort_order: sortOrder } },
     ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
   uploadResumeAsset: (
     resumeId: string,

@@ -187,6 +187,8 @@ class ResumeTemplateRecord(BaseModel):
     key: str
     name: str
     description: str | None
+    style_categories: list[str]
+    use_cases: list[str]
     data: TemplateData
     style: TemplateStyle
     layout_plan: LayoutPlan

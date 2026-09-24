@@ -37,13 +37,13 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0083` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0087` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
 
-上表的 head 表示本批模板接入前的共享基线；本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列，当前仓库 head 为 `0084`；目标环境的实际 revision 必须单独查询。
+本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列；`0084` 扩展当前简历与求职进程的关联；`0085` 为模板增加多选风格、场景及风格审核状态，并按稳定 key 给当时的 85 套启用模板写入初版分类；`0086` 增加模板展示排序值；`0087` 在没有人工排序值时按原有 ID 顺序填入 10、20、30……，已有人工排序值的环境整体跳过回填。当前仓库 head 为 `0087`；目标环境的实际 revision 必须单独查询。
 
 迁移 `0077` 停用废弃的「经典单栏」(`classic-cn`)、「现代双栏」(`modern-two-column-cn`) 和「紧凑技术型」(`compact-tech-cn`)，默认启用目录为 69 套。只修改这三个稳定 key 的启用状态，保留模板记录、已有简历及历史版本；普通目录、创建和切换入口沿用启用校验。重复执行不影响其他模板；如需恢复，通过管理端重新启用或新增向前迁移，不改写历史迁移。
 

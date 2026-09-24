@@ -1,10 +1,12 @@
 import { Check, LoaderCircle, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { api, type ResumeTemplate } from "../../api/client";
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Button, PageLoading } from "@/components/ui";
 import { ResumePreview } from "../preview/ResumePreview";
+import { TemplateFilterPopover } from "../templates/TemplateFilterPopover";
 
 export function WorkbenchTemplatePanel({
   currentTemplateKey,
@@ -21,6 +23,18 @@ export function WorkbenchTemplatePanel({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [selectedUseCases, setSelectedUseCases] = useState<string[]>([]);
+  const shouldReduceMotion = useReducedMotion();
+  const filteredTemplates = useMemo(() => templates.filter((template) =>
+    (selectedStyles.length === 0 || selectedStyles.some((style) => template.style_categories?.includes(style)))
+    && (selectedUseCases.length === 0 || selectedUseCases.some((useCase) => template.use_cases?.includes(useCase))),
+  ), [templates, selectedStyles, selectedUseCases]);
+  const filterKey = `${selectedStyles.slice().sort().join(",")}|${selectedUseCases.slice().sort().join(",")}`;
+  const applyFilters = (styles: string[], useCases: string[]) => {
+    setSelectedStyles(styles);
+    setSelectedUseCases(useCases);
+  };
   const bodyRef = useRef<HTMLDivElement>(null);
   const selectedCardRef = useRef<HTMLButtonElement>(null);
   const centeredOnOpenRef = useRef(false);
@@ -53,7 +67,7 @@ export function WorkbenchTemplatePanel({
       body.scrollTop + cardRect.top - bodyRect.top - (body.clientHeight - cardRect.height) / 2,
     );
     centeredOnOpenRef.current = true;
-  }, [failed, loading, templates]);
+  }, [failed, loading, filteredTemplates]);
 
   const applyTemplate = async (template: ResumeTemplate) => {
     if (disabled || applyingId || resumePresentationTemplateKey(template.style) === currentTemplateKey) return;
@@ -82,7 +96,19 @@ export function WorkbenchTemplatePanel({
         </button>
       </header>
 
-      <div className="workbench-template-panel-body" ref={bodyRef}>
+      {!loading && !failed && templates.length > 0 ? (
+        <div className="workbench-template-filters">
+          <span aria-live="polite">{filteredTemplates.length} 套模板</span>
+          <TemplateFilterPopover
+            compact
+            styles={selectedStyles}
+            useCases={selectedUseCases}
+            onChange={applyFilters}
+          />
+        </div>
+      ) : null}
+
+      <div className={`workbench-template-panel-body${!loading && !failed && templates.length > 0 ? " is-filterable" : ""}`} ref={bodyRef}>
         {loading ? <PageLoading label="正在加载简历模板…" scope="panel" /> : null}
 
         {!loading && failed ? (
@@ -108,8 +134,18 @@ export function WorkbenchTemplatePanel({
         ) : null}
 
         {!loading && !failed && templates.length > 0 ? (
-          <ul className="workbench-template-grid" aria-label="可用简历模板">
-            {templates.map((template) => {
+          <AnimatePresence initial={false} mode="wait">
+          {filteredTemplates.length > 0 ? (
+          <motion.ul
+            key={filterKey}
+            className="workbench-template-grid"
+            aria-label="可用简历模板"
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, pointerEvents: "none" }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
+          >
+            {filteredTemplates.map((template) => {
               const selected = resumePresentationTemplateKey(template.style) === currentTemplateKey;
               const busy = applyingId === template.id;
               return (
@@ -145,7 +181,22 @@ export function WorkbenchTemplatePanel({
                 </li>
               );
             })}
-          </ul>
+          </motion.ul>
+          ) : (
+            <motion.div
+              key={filterKey}
+              className="workbench-template-state workbench-template-filter-empty"
+              initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, pointerEvents: "none" }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
+            >
+              <strong>没有符合条件的模板</strong>
+              <p>试试减少一个筛选条件。</p>
+              <Button variant="outline" size="sm" onClick={() => applyFilters([], [])}>清除筛选</Button>
+            </motion.div>
+          )}
+          </AnimatePresence>
         ) : null}
       </div>
     </div>

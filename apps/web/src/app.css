@@ -3833,6 +3833,39 @@ select:not([data-slot]):focus-visible,
   padding: 28px 32px 48px;
 }
 
+.template-library-filters {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 24px;
+  border-radius: var(--ui-radius-xl);
+  padding: 0;
+}
+
+.template-library-filter-summary button:focus-visible {
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 2px;
+}
+
+.template-library-filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-text-sm);
+}
+
+.template-library-filter-summary button {
+  border: 0;
+  background: transparent;
+  color: var(--ui-accent);
+  cursor: pointer;
+}
+
+.template-library-filter-empty { max-width: none; min-height: 260px; }
+
 .template-library-grid,
 .home-card-grid {
   display: grid;
@@ -3951,6 +3984,21 @@ select:not([data-slot]):focus-visible,
   line-height: var(--ui-leading-tight);
   overflow-wrap: anywhere;
   text-wrap: balance;
+}
+
+.template-library-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.template-library-card-tags span {
+  border-radius: var(--ui-radius-full);
+  background: var(--ui-accent-subtle);
+  padding: 2px 7px;
+  color: var(--ui-accent);
+  font-size: var(--ui-text-xs);
 }
 
 .template-library-card-copy p {
