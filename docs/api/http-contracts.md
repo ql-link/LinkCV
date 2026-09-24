@@ -72,8 +72,8 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
-| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表                           |
-| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`                                                     |
+| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组；按 `sort_order`、ID 升序 |
+| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组 |
 | `GET`    | `/api/resumes`              | 是   | `{resumes}`，摘要含可选 `preview`，按更新时间倒序                |
 | `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
@@ -191,7 +191,7 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 
 ## 简历模板管理
 
-`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回启用、停用和结构无效的全部模板；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用且相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用。模板包必须携带合法 `TemplateManifest`，包含受支持 renderer、区域、插槽、唯一自定义兜底区和头像策略；同时拒绝未知字段、脚本、任意 HTML/CSS、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
+`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回按 `sort_order`、ID 升序排列的全部模板（包括启用、停用和结构无效项），包含 `style_categories`、`use_cases`、`style_review_status` 和 `sort_order`；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用、分类为空，排序值取当前最大值加 10（上限 1000000），相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用；`PUT /:id/sort-order` 接收整数 `sort_order`（0–1000000），保存后普通用户的模板列表和编辑器模板侧栏按该值升序展示，相同值按 ID 升序，非法值返回 422、不存在返回 `404 TEMPLATE_NOT_FOUND`；`PUT /:id/classification` 接收完整的风格数组、场景数组和风格状态（`pending/classified/unsure`），校验标签枚举、重复值及状态与风格数组的一致性后覆盖该模板分类，不存在返回 `404 TEMPLATE_NOT_FOUND`。模板包必须携带合法 `TemplateManifest`，包含受支持 renderer、区域、插槽、唯一自定义兜底区和头像策略；同时拒绝未知字段、脚本、任意 HTML/CSS、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
 
 ## 知识库资料
 

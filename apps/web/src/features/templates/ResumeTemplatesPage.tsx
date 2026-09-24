@@ -1,5 +1,6 @@
 import { Eye, LayoutTemplate, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { api, ApiRequestError, type ResumeTemplate } from "../../api/client";
 import { WorkspacePageHero } from "../../components/WorkspaceLayout";
@@ -7,6 +8,7 @@ import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { ResumePreview } from "../preview/ResumePreview";
 import { TemplatePreviewDialog } from "./TemplatePreviewDialog";
+import { TemplateFilterPopover } from "./TemplateFilterPopover";
 import {
   Button,
   Dialog,
@@ -48,6 +50,20 @@ export function ResumeTemplatesPage() {
   const [title, setTitle] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [selectedUseCases, setSelectedUseCases] = useState<string[]>([]);
+  const shouldReduceMotion = useReducedMotion();
+  const filteredTemplates = useMemo(() => templates.filter((template) =>
+    (selectedStyles.length === 0 || selectedStyles.some((style) => template.style_categories?.includes(style)))
+    && (selectedUseCases.length === 0 || selectedUseCases.some((useCase) => template.use_cases?.includes(useCase))),
+  ), [templates, selectedStyles, selectedUseCases]);
+  const filterKey = `${selectedStyles.slice().sort().join(",")}|${selectedUseCases.slice().sort().join(",")}`;
+  const hasFilters = selectedStyles.length > 0 || selectedUseCases.length > 0;
+
+  const applyFilters = (styles: string[], useCases: string[]) => {
+    setSelectedStyles(styles);
+    setSelectedUseCases(useCases);
+  };
 
   const loadTemplates = useCallback(async () => {
     setLoading(true);
@@ -146,8 +162,29 @@ export function ResumeTemplatesPage() {
         )}
 
         {!failed && templates.length > 0 && (
-          <div className="template-library-grid">
-            {templates.map((template) => (
+          <>
+          <div className="template-library-filters" aria-label="筛选简历模板">
+            <div className="template-library-filter-summary" aria-live="polite">
+              <span>找到 {filteredTemplates.length} 套模板</span>
+              {hasFilters && <button type="button" onClick={() => applyFilters([], [])}>清除筛选</button>}
+            </div>
+            <TemplateFilterPopover
+              styles={selectedStyles}
+              useCases={selectedUseCases}
+              onChange={applyFilters}
+            />
+          </div>
+          <AnimatePresence initial={false} mode="wait">
+          {filteredTemplates.length > 0 ? (
+          <motion.div
+            key={filterKey}
+            className="template-library-grid"
+            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, pointerEvents: "none" }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
+          >
+            {filteredTemplates.map((template) => (
               <article className="template-library-card" key={template.id}>
                 <button
                   className="template-library-preview-trigger"
@@ -168,6 +205,12 @@ export function ResumeTemplatesPage() {
                 <div className="template-library-card-copy">
                   <div>
                     <h2>{template.name}</h2>
+                    {(template.style_categories?.length || template.use_cases?.length) ? (
+                      <div className="template-library-card-tags">
+                        {template.style_categories?.map((style) => <span key={`style-${style}`}>{style}</span>)}
+                        {template.use_cases?.map((useCase) => <span key={`case-${useCase}`}>{useCase}</span>)}
+                      </div>
+                    ) : null}
                     <p>{template.description || "可直接创建并在编辑器中调整内容与样式。"}</p>
                   </div>
                   <Button
@@ -181,13 +224,29 @@ export function ResumeTemplatesPage() {
                 </div>
               </article>
             ))}
-          </div>
+          </motion.div>
+          ) : (
+            <motion.div
+              key={filterKey}
+              className="template-library-state template-library-filter-empty"
+              initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, pointerEvents: "none" }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
+            >
+              <h2>没有符合条件的模板</h2>
+              <p>试试减少一个筛选条件。</p>
+              <Button variant="outline" onClick={() => applyFilters([], [])}>清除筛选</Button>
+            </motion.div>
+          )}
+          </AnimatePresence>
+          </>
         )}
         </section>
       )}
 
       <TemplatePreviewDialog
-        templates={templates}
+        templates={filteredTemplates}
         template={previewTemplate}
         primaryActionLabel="创建简历"
         onTemplateChange={setPreviewTemplate}

@@ -25,6 +25,8 @@ function buildTemplate(id: string, key: string, name: string): ResumeTemplate {
     key,
     name,
     description: null,
+    style_categories: [],
+    use_cases: [],
     data: defaultCanonicalDocument,
     style: {
       ...defaultCanonicalPresentation,
@@ -60,7 +62,7 @@ describe("WorkbenchTemplatePanel", () => {
     renderPanel();
 
     const grid = await screen.findByRole("list", { name: "可用简历模板" });
-    const cards = screen.getAllByRole("button").filter((button) => button.textContent?.trim());
+    const cards = Array.from(document.querySelectorAll(".workbench-template-card"));
 
     expect(grid).toBeInTheDocument();
     expect(cards.map((card) => card.textContent)).toEqual(["经典单栏", "现代双栏"]);
@@ -110,6 +112,24 @@ describe("WorkbenchTemplatePanel", () => {
 
     await user.click(screen.getByRole("button", { name: "应用模板：现代双栏" }));
     expect(onApply).toHaveBeenCalledWith(templates[1]);
+  });
+
+  it("在模板侧栏点选分类后立即更新列表", async () => {
+    const user = userEvent.setup();
+    const classified = templates.map((template, index) => ({
+      ...template,
+      style_categories: [index === 0 ? "经典" : "现代"],
+      use_cases: [index === 0 ? "校招" : "社招"],
+    }));
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates: classified });
+    renderPanel();
+    await screen.findByRole("list", { name: "可用简历模板" });
+
+    await user.click(screen.getByRole("button", { name: "筛选简历模板" }));
+    await user.click(screen.getByRole("button", { name: "现代" }));
+    expect(screen.getByText("1 套模板")).toBeInTheDocument();
+    await vi.waitFor(() => expect(screen.queryByRole("button", { name: "经典单栏（当前模板）" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "应用模板：现代双栏" })).toBeInTheDocument();
   });
 
   it("应用期间禁用全部模板卡片", async () => {

@@ -8,6 +8,8 @@ function template(id: string, key: string): ResumeTemplate {
     key,
     name: key,
     description: null,
+    style_categories: [],
+    use_cases: [],
     data: {} as never,
     style: {} as never,
     switchable: true,
