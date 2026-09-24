@@ -9,7 +9,7 @@ metadata:
 
 仅在 `career-assistant-router` 已选择面试工作流后使用。优先使用本轮授权的岗位要求、简历证据、投递阶段和已有面试记录。
 
-用户明确指定简历名称、ID 或目录中的某一版本但当前上下文未提供正文时，按路由规则调用 `resolve_resume_reference`，成功后调用 `get_resume_context(scope=resume)`；这只是本轮上下文，不绑定会话。
+用户明确指定简历名称、ID 或目录中的某份简历但当前上下文未提供正文时，按路由规则调用 `resolve_resume_reference`，成功后调用 `get_resume_context(scope=resume)`；这只是本轮上下文，不绑定会话。
 
 输出按需要组合：面试重点、可能问题、可引用的真实经历、STAR 回答骨架、反问清单和复盘行动。明确区分“已知上下文事实”与“通用建议”；不能把岗位要求写成用户已经掌握的能力，也不能捏造公司内部流程。
 

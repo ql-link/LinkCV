@@ -277,6 +277,10 @@ def replace_editor_markdown(
                     current = before.get(node_id)
                     replacement = after[node_id].text
                     if current is not None and replacement != current.text:
+                        if not replacement:
+                            if not allow_delete:
+                                raise ApiError(422, "PATCH_OUT_OF_SCOPE")
+                            continue
                         block["runs"] = plain_run(replacement)
             elif block["block_type"] in {"ordered_list", "bullet_list"}:
                 retained_items: list[dict[str, Any]] = []
@@ -292,6 +296,8 @@ def replace_editor_markdown(
                         and replacement is not None
                         and replacement.text != current.text
                     ):
+                        if not replacement.text:
+                            continue
                         item["runs"] = plain_run(replacement.text)
                     retained_items.append(item)
                 block["items"] = retained_items
@@ -607,14 +613,23 @@ def search_materials(
     limit: int,
     storage: Any,
     max_bytes: int,
+    allowed_refs: set[tuple[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     needle = query.casefold()
     sources: list[dict[str, str]] = []
 
+    def allowed_ids(source_type: str) -> list[int] | None:
+        if allowed_refs is None:
+            return None
+        return [int(resource_id) for kind, resource_id in allowed_refs
+                if kind == source_type]
+
     def add(
         source_id: str, source_type: str, title: str, content: str, version: str
     ) -> None:
-        if len(sources) >= limit or needle not in content.casefold():
+        resource_id = source_id.split(":", 2)[1]
+        if (allowed_refs is not None and (source_type, resource_id) not in allowed_refs
+                or len(sources) >= limit or needle not in content.casefold()):
             return
         position = content.casefold().find(needle)
         start = max(0, position - 160)
@@ -629,11 +644,12 @@ def search_materials(
         )
 
     if "resume" in types:
+        resume_ids = allowed_ids("resume")
+        statement = select(Resume).where(Resume.user_id == user_id)
+        if resume_ids is not None:
+            statement = statement.where(Resume.id.in_(resume_ids))
         for resume in db.scalars(
-            select(Resume)
-            .where(Resume.user_id == user_id)
-            .order_by(Resume.updated_at.desc())
-            .limit(20)
+            statement.order_by(Resume.updated_at.desc()).limit(20)
         ):
             content = json.dumps(resume.data_json, ensure_ascii=False)
             add(
@@ -644,11 +660,12 @@ def search_materials(
                 str(resume.lock_version),
             )
     if "job" in types and len(sources) < limit:
+        job_ids = allowed_ids("job")
+        statement = select(JobDescription).where(JobDescription.user_id == user_id)
+        if job_ids is not None:
+            statement = statement.where(JobDescription.id.in_(job_ids))
         for job in db.scalars(
-            select(JobDescription)
-            .where(JobDescription.user_id == user_id)
-            .order_by(JobDescription.updated_at.desc())
-            .limit(20)
+            statement.order_by(JobDescription.updated_at.desc()).limit(20)
         ):
             content = "\n".join(
                 [
@@ -666,7 +683,8 @@ def search_materials(
                 str(job.lock_version),
             )
     if "dataset" in types and len(sources) < limit:
-        rows = db.execute(
+        dataset_ids = allowed_ids("dataset")
+        statement = (
             select(UserDataset, DocumentParseTask)
             .join(DocumentParseTask, DocumentParseTask.id == UserDataset.parse_task_id)
             .where(
@@ -675,9 +693,10 @@ def search_materials(
                 DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                 DocumentParseTask.parse_status == "succeeded",
             )
-            .order_by(UserDataset.created_at.desc())
-            .limit(20)
-        ).all()
+        )
+        if dataset_ids is not None:
+            statement = statement.where(UserDataset.id.in_(dataset_ids))
+        rows = db.execute(statement.order_by(UserDataset.created_at.desc()).limit(20)).all()
         for dataset, task in rows:
             if len(sources) >= limit or not (dataset.content_object_name or task.converted_object_name):
                 continue

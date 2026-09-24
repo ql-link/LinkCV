@@ -375,10 +375,17 @@ function proposalResumeLabel(state: ConversationState, resumeId: string) {
   return referenced?.label ?? `简历 #${resumeId}`;
 }
 
+export function parseAgentTimestamp(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const normalized = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`;
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function formatTime(value: string | null | undefined) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
+  const timestamp = parseAgentTimestamp(value);
+  if (timestamp === null) return "";
+  const date = new Date(timestamp);
   return new Intl.DateTimeFormat("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
@@ -1053,7 +1060,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         cancelling: false,
         stage: activeRun.run ? "thinking" : "idle",
         runId: activeRun.run?.run_id ?? null,
-        startedAt: activeRun.run ? new Date(activeRun.run.started_at).getTime() : null,
+        startedAt: activeRun.run ? parseAgentTimestamp(activeRun.run.started_at) : null,
         phase: activeRun.run ? "AI 正在处理…" : "正在准备…",
         activityText: "",
       });
@@ -1316,7 +1323,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       activityText: "",
       activities: [],
       runId: run.run_id,
-      startedAt: new Date(run.started_at).getTime(),
+      startedAt: parseAgentTimestamp(run.started_at),
       error: null,
       messages: state.messages.filter((message) => !message.temporary),
     }));
@@ -1411,6 +1418,13 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     const controller = new AbortController();
     abortRef.current = controller;
     const sentContexts = state.contexts;
+    const originalResume = replyToSequenceNo === undefined ? undefined : [...state.messages]
+      .reverse()
+      .find((message) => message.role === "user" && message.sequence_no < replyToSequenceNo)
+      ?.contexts?.find((item) => item.type === "resume");
+    const replacesInheritedResume = Boolean(
+      originalResume && explicitResume && originalResume.id !== explicitResume.id
+    );
     let requestContexts: AgentContextRef[] = sentContexts.map(({ type, id, presentation, version_id: versionId, version }) => ({
       type,
       id,
@@ -1469,6 +1483,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           idempotency_key: idempotencyKey(),
           ...(state.revisionProposalId ? { revision_proposal_id: state.revisionProposalId } : {}),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
+          ...(replacesInheritedResume ? { replace_inherited_resume: true } : {}),
           ...(clarificationAnswersPayload ? { clarification_answers: clarificationAnswersPayload } : {}),
           ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
           ...(requestContexts.length > 0 ? { contexts: requestContexts } : {}),
@@ -2308,6 +2323,9 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                         <ChevronDown size={18} aria-hidden="true" />
                       </button>
                     </header>
+                    {latestTurnContexts.some((item) => item.type === "resume") && (
+                      <p className="assistant-clarification-context-hint">需要改用另一份简历时，先点下方“添加资料”选择目标简历，再提交回答。</p>
+                    )}
                     <div className="assistant-clarification-questions">
                   {clarificationQuestion && [clarificationQuestion].map((question) => {
                     const answer = current.clarificationAnswers[question.id] ?? { optionId: "", other: "" };

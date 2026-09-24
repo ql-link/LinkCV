@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from time import monotonic
 
 from sqlalchemy import delete, or_, select, update
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import NoReferencedTableError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkresume.core.config import Settings
@@ -19,6 +19,7 @@ from linkresume.domain.document_conversion import (
     DocumentConversionFailure,
     DocumentMarkdownConverter,
 )
+from linkresume.modules.interviews import models as _interview_models  # noqa: F401
 from linkresume.modules.datasets.models import UserDataset, DatasetReplacement, DatasetObjectCleanup
 from linkresume.services import dataset_content_service as content_service
 from linkresume.services import dataset_replacement_service as replacement_service
@@ -491,6 +492,23 @@ class DatasetParseProcessor:
                             dataset.content_updated_at = utc_now()
                 db.commit()
         except SQLAlchemyError as error:
+            logger.error(
+                "dataset conversion commit failed",
+                extra={
+                    "parse_task_id": parse_task_id,
+                    "parse_attempt": attempt,
+                    "exception_type": type(error).__name__,
+                },
+                exc_info=True,
+            )
+            if isinstance(error, NoReferencedTableError):
+                self._mark_failed(
+                    parse_task_id,
+                    started,
+                    "internal_error",
+                    attempt=attempt if self._uses_attempt_fields() else None,
+                )
+                return False
             raise WorkerDependencyUnavailable("database unavailable") from error
         if not owned_attempt:
             # Attempt-scoped object names prevent a late worker from overwriting

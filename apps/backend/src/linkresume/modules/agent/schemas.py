@@ -239,6 +239,7 @@ class MessageCreateRequest(BaseModel):
     selection_context: AgentSelectionContext | None = None
     contexts: list[AgentContextRef] | None = Field(default=None, max_length=10)
     reply_to_sequence_no: int | None = Field(default=None, ge=1)
+    replace_inherited_resume: bool = False
     clarification_answers: list[ClarificationAnswerSelection] | None = Field(
         default=None, min_length=1, max_length=3
     )
@@ -311,6 +312,7 @@ class AgentMessageRecord(BaseModel):
     content: str
     clarification: AgentClarification | None = None
     contexts: list[AgentContextSnapshot] | None = None
+    tasks: list[dict[str, Any]] | None = None
     created_at: datetime
 
 
@@ -427,6 +429,9 @@ class ToolEventRequest(BaseModel):
         "execute_local_resume_edit_plan",
         "create_resume_translation_proposal",
         "request_user_input",
+        "plan_agent_request",
+        "start_agent_task",
+        "finish_agent_task",
     ]
     status: Literal["running", "succeeded", "failed", "cancelled"]
     target_type: str | None = Field(default=None, max_length=32)
@@ -441,6 +446,68 @@ class ToolEventRequest(BaseModel):
     question_count: int | None = Field(default=None, ge=0, le=3)
     target_field: str | None = Field(default=None, max_length=64)
     base_lock_version: int | None = Field(default=None, ge=0)
+
+
+class AgentTaskContextRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: AgentContextType
+    id: str = Field(pattern=r"^[1-9][0-9]{0,19}$")
+
+
+class AgentTaskSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+    workflow: Literal[
+        "resource_catalog", "resume_edit", "resume_translation",
+        "interview_guide", "career_planning", "resume_title",
+    ]
+    output: Literal["proposal", "advice", "catalog"]
+    label: str = Field(min_length=1, max_length=120)
+    depends_on: list[str] = Field(default_factory=list, max_length=8)
+    context_refs: list[AgentTaskContextRef] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_output(self) -> "AgentTaskSpec":
+        expected = {
+            "resource_catalog": "catalog",
+            "resume_translation": "proposal",
+            "interview_guide": "advice",
+            "career_planning": "advice",
+            "resume_title": "advice",
+        }
+        if self.workflow in expected and self.output != expected[self.workflow]:
+            raise ValueError("task output does not match workflow")
+        if self.workflow == "resume_edit" and self.output not in {"proposal", "advice"}:
+            raise ValueError("resume edit output must be proposal or advice")
+        return self
+
+
+class AgentTaskPlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tasks: list[AgentTaskSpec] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_dependencies(self) -> "AgentTaskPlanRequest":
+        seen: set[str] = set()
+        for task in self.tasks:
+            if task.id in seen or len(task.depends_on) != len(set(task.depends_on)):
+                raise ValueError("duplicate task or dependency")
+            if any(dependency not in seen for dependency in task.depends_on):
+                raise ValueError("dependencies must precede task")
+            seen.add(task.id)
+        return self
+
+
+class AgentTaskStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["running", "completed", "partial", "blocked", "failed"]
+    proposal_ids: list[str] = Field(default_factory=list, max_length=20)
+    error_code: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
+    result: str | None = Field(default=None, max_length=2000)
 
 
 class PiRunRequest(BaseModel):

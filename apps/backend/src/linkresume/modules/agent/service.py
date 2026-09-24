@@ -1,6 +1,8 @@
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import timedelta, timezone
+from hashlib import sha256
+import json
 import re
 from typing import Any
 from uuid import uuid4
@@ -29,6 +31,7 @@ from linkresume.modules.agent.models import (
     AgentToolCall,
     ResumeChangeProposal,
 )
+from linkresume.modules.agent.context_service import resolve_contexts
 from linkresume.modules.agent.schemas import (
     AgentMessageRecord,
     AgentClarification,
@@ -37,6 +40,9 @@ from linkresume.modules.agent.schemas import (
     AgentContextSnapshot,
     AgentSelectionContext,
     AgentSessionRecord,
+    AgentTaskPlanRequest,
+    AgentTaskSpec,
+    AgentTaskStatusRequest,
     ProposalRecord,
     ProposalOperation,
     ResumeTargetLocator,
@@ -55,7 +61,7 @@ from linkresume.modules.agent.trace import (
     SAFE_CODE, TOOL_STAGES, event_key, operation_for_run, record_event,
 )
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import Resume, ResumeVersion
+from linkresume.modules.resumes.models import Resume
 
 
 TRANSLATION_IMMUTABLE_KEYS = {
@@ -177,6 +183,9 @@ def session_record(
                     item.metadata_json if item.message_type == "clarification" else None
                 ),
                 contexts=message_contexts(item),
+                tasks=(item.metadata_json.get("agent_tasks")
+                       if item.role == "user" and isinstance(item.metadata_json, dict)
+                       else None),
                 created_at=item.created_at,
             )
             for item in (messages or [])
@@ -854,14 +863,6 @@ def create_scoped_proposal(
     )
     if existing is not None:
         return existing
-    existing_mode = db.scalar(
-        select(ResumeChangeProposal.proposal_mode).where(
-            ResumeChangeProposal.run_id == run.id,
-            ResumeChangeProposal.proposal_mode != "legacy_snapshot",
-        )
-    )
-    if existing_mode is not None and existing_mode != payload.mode:
-        raise ApiError(409, "SKILL_MODE_CONFLICT")
     if (
         payload.target.resume_id != str(resume.id)
         or payload.target.base_lock_version != resume.lock_version
@@ -895,9 +896,12 @@ def create_scoped_proposal(
         main_target=payload.target,
         operations=payload.operations,
     )
-    updated_snapshot = parse_persisted_resume_snapshot(
-        replace_editor_markdown(snapshot.data, updated_markdown), snapshot.style
-    )
+    try:
+        parse_persisted_resume_snapshot(
+            replace_editor_markdown(snapshot.data, updated_markdown), snapshot.style
+        )
+    except ValueError as error:
+        raise ApiError(422, "PATCH_OUT_OF_SCOPE") from error
     proposal = ResumeChangeProposal(
         public_id=str(uuid4()),
         run_id=run.id,
@@ -952,14 +956,6 @@ def create_translation_proposal(
     )
     if existing is not None:
         return existing
-    existing_mode = db.scalar(
-        select(ResumeChangeProposal.proposal_mode).where(
-            ResumeChangeProposal.run_id == run.id,
-            ResumeChangeProposal.proposal_mode != "legacy_snapshot",
-        )
-    )
-    if existing_mode is not None and existing_mode != "translate_resume":
-        raise ApiError(409, "SKILL_MODE_CONFLICT")
     if (
         payload.target.resume_id != str(resume.id)
         or payload.target.base_lock_version != resume.lock_version
@@ -1261,6 +1257,252 @@ def delete_resume_agent_data(db: Session, *, resume_id: int, user_id: int) -> No
             ResumeChangeProposal.user_id == user_id,
         )
     )
+
+
+def _run_task_message(db: Session, run: AgentRun) -> AgentMessage:
+    status = db.scalar(select(AgentRun.status).where(AgentRun.id == run.id).with_for_update())
+    if status != "running":
+        raise ApiError(409, "AGENT_RUN_NOT_ACTIVE")
+    message = db.scalar(
+        select(AgentMessage).where(
+            AgentMessage.run_id == run.id,
+            AgentMessage.role == "user",
+        ).with_for_update()
+    )
+    if message is None:
+        raise ApiError(409, "AGENT_TASK_MESSAGE_NOT_FOUND")
+    return message
+
+
+def save_task_plan(
+    db: Session, *, run: AgentRun, payload: AgentTaskPlanRequest
+) -> list[dict[str, Any]]:
+    message = _run_task_message(db, run)
+    metadata = dict(message.metadata_json or {})
+    authorized = {
+        (item.get("type"), item.get("id"))
+        for item in (metadata.get("contexts") or [])
+        if isinstance(item, dict)
+    }
+    for task in payload.tasks:
+        if any((ref.type, ref.id) not in authorized for ref in task.context_refs):
+            raise ApiError(409, "AGENT_TASK_CONTEXT_NOT_AUTHORIZED")
+    tasks = [
+        {**task.model_dump(mode="json"), "status": "planned", "proposal_ids": []}
+        for task in payload.tasks
+    ]
+    existing = metadata.get("agent_tasks")
+    if existing is not None:
+        fields = set(AgentTaskSpec.model_fields)
+        if not isinstance(existing, list) or [
+            {key: item.get(key) for key in fields} for item in existing
+        ] != [
+            {key: item.get(key) for key in fields} for item in tasks
+        ]:
+            raise ApiError(409, "AGENT_TASK_PLAN_CONFLICT")
+        return existing
+    metadata["agent_tasks"] = tasks
+    message.metadata_json = metadata
+    db.commit()
+    return tasks
+
+
+TASK_SOURCE_ROLES = {
+    "resume": "user_resume_statement",
+    "dataset": "user_uploaded_material",
+    "job": "job_requirement",
+    "application": "application_record",
+    "interview": "interview_record",
+}
+
+
+def task_authorized_refs(
+    db: Session, *, run: AgentRun, require_running: bool = True,
+) -> set[tuple[str, str]] | None:
+    """None means a legacy run without a task plan; a planned run is scoped."""
+    message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == run.id, AgentMessage.role == "user",
+    ))
+    tasks = (message.metadata_json or {}).get("agent_tasks") if message else None
+    if not isinstance(tasks, list):
+        return None
+    active = [item for item in tasks if item.get("status") == "running"]
+    if require_running and len(active) != 1:
+        raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+    if not active:
+        return set()
+    return {
+        (item["type"], item["id"])
+        for item in [
+            *(active[0].get("context_refs") or []),
+            *(active[0].get("resolved_refs") or []),
+        ]
+    }
+
+
+def require_task_resource(
+    db: Session, *, run: AgentRun, resource_type: str, resource_id: str,
+) -> None:
+    allowed = task_authorized_refs(db, run=run)
+    if allowed is not None and (resource_type, resource_id) not in allowed:
+        raise ApiError(409, "AGENT_TASK_CONTEXT_NOT_AUTHORIZED")
+
+
+def require_task_sources(
+    db: Session, *, run: AgentRun, source_ids: list[str],
+) -> None:
+    allowed = task_authorized_refs(db, run=run)
+    if allowed is None:
+        return
+    for source_id in source_ids:
+        parts = source_id.split(":", 2)
+        if len(parts) < 3 or (parts[0], parts[1]) not in allowed:
+            raise ApiError(409, "AGENT_TASK_CONTEXT_NOT_AUTHORIZED")
+
+
+def authorize_resolved_task_resume(
+    db: Session, *, run: AgentRun, resume_id: str,
+) -> None:
+    message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == run.id, AgentMessage.role == "user",
+    ).with_for_update())
+    if message is None:
+        return
+    metadata = dict(message.metadata_json or {})
+    tasks = deepcopy(metadata.get("agent_tasks"))
+    if not isinstance(tasks, list):
+        return
+    active = [item for item in tasks if item.get("status") == "running"]
+    if len(active) != 1:
+        raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+    refs = active[0].setdefault("resolved_refs", [])
+    ref = {"type": "resume", "id": resume_id}
+    if ref not in refs:
+        refs.append(ref)
+    metadata["agent_tasks"] = tasks
+    message.metadata_json = metadata
+    db.commit()
+
+
+def get_task_materials(
+    db: Session, *, run: AgentRun, task_id: str, storage: Any, settings: Any,
+) -> dict[str, Any]:
+    """Revalidate source state before exposing material to one planned task."""
+    message = _run_task_message(db, run)
+    metadata = dict(message.metadata_json or {})
+    tasks = deepcopy(metadata.get("agent_tasks"))
+    if not isinstance(tasks, list):
+        raise ApiError(409, "AGENT_TASK_PLAN_REQUIRED")
+    task = next((item for item in tasks if item.get("id") == task_id), None)
+    if task is None:
+        raise ApiError(404, "AGENT_TASK_NOT_FOUND")
+    if task.get("status") != "running":
+        raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+    snapshots = {
+        (item.get("type"), item.get("id")): item
+        for item in metadata.get("contexts", [])
+        if isinstance(item, dict)
+    }
+    refs = []
+    for selected in task.get("context_refs", []):
+        snapshot = snapshots.get((selected["type"], selected["id"]))
+        if snapshot is None:
+            raise ApiError(409, "AGENT_TASK_CONTEXT_NOT_AUTHORIZED")
+        refs.append(AgentContextRef(
+            type=selected["type"], id=selected["id"],
+            version=snapshot["version"],
+        ))
+    resolved = resolve_contexts(
+        db, user_id=db.scalar(select(AgentSession.user_id).where(
+            AgentSession.id == run.session_id,
+        )), refs=refs,
+        storage=storage, settings=settings,
+    )
+    materials = [item.model_dump(mode="json") for item in resolved.materials]
+    receipts = [{
+        "type": item["type"], "id": item["id"], "version": item["version"],
+        "source_role": TASK_SOURCE_ROLES.get(item["type"], "source_material"),
+        "claim_status": "source_only",
+        "content_sha256": sha256(json.dumps(
+            item["content"], ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest(),
+    } for item in materials]
+    task["material_receipts"] = receipts
+    metadata["agent_tasks"] = tasks
+    message.metadata_json = metadata
+    db.commit()
+    return {"materials": materials, "sources": receipts}
+
+
+def update_task_status(
+    db: Session,
+    *,
+    run: AgentRun,
+    task_id: str,
+    payload: AgentTaskStatusRequest,
+) -> list[dict[str, Any]]:
+    message = _run_task_message(db, run)
+    metadata = dict(message.metadata_json or {})
+    tasks = deepcopy(metadata.get("agent_tasks"))
+    if not isinstance(tasks, list):
+        raise ApiError(409, "AGENT_TASK_PLAN_REQUIRED")
+    task = next((item for item in tasks if item.get("id") == task_id), None)
+    if task is None:
+        raise ApiError(404, "AGENT_TASK_NOT_FOUND")
+    if task["status"] == payload.status and payload.status != "running":
+        if (task.get("proposal_ids", []) == payload.proposal_ids
+                and task.get("error_code") == payload.error_code
+                and task.get("result") == payload.result):
+            return tasks
+        raise ApiError(409, "AGENT_TASK_STATUS_CONFLICT")
+    if payload.status == "blocked" and task["status"] == "planned":
+        by_id = {item["id"]: item for item in tasks}
+        if not any(by_id[dep]["status"] in {"failed", "blocked", "partial"}
+                   for dep in task["depends_on"]):
+            raise ApiError(409, "AGENT_TASK_STATUS_CONFLICT")
+    elif payload.status == "running":
+        if payload.proposal_ids or payload.error_code or payload.result:
+            raise ApiError(422, "AGENT_TASK_RESULT_INVALID")
+        if task["status"] != "planned":
+            raise ApiError(409, "AGENT_TASK_STATUS_CONFLICT")
+        by_id = {item["id"]: item for item in tasks}
+        if any(by_id[dep]["status"] != "completed" for dep in task["depends_on"]):
+            raise ApiError(409, "AGENT_TASK_DEPENDENCY_PENDING")
+        if any(item["status"] == "running" for item in tasks):
+            raise ApiError(409, "AGENT_TASK_ALREADY_RUNNING")
+    elif task["status"] != "running":
+        raise ApiError(409, "AGENT_TASK_STATUS_CONFLICT")
+    if len(payload.proposal_ids) != len(set(payload.proposal_ids)):
+        raise ApiError(422, "AGENT_TASK_RESULT_INVALID")
+    if task["output"] != "proposal" and payload.proposal_ids:
+        raise ApiError(422, "AGENT_TASK_RESULT_INVALID")
+    if payload.status == "partial" and task["output"] == "proposal" and not payload.proposal_ids:
+        raise ApiError(422, "AGENT_TASK_RESULT_INVALID")
+    if payload.status in {"blocked", "failed"} and payload.proposal_ids:
+        raise ApiError(422, "AGENT_TASK_RESULT_INVALID")
+    if payload.status in {"completed", "partial"} and task["output"] == "proposal":
+        if not payload.proposal_ids:
+            raise ApiError(409, "AGENT_TASK_PROPOSAL_REQUIRED")
+    if payload.status in {"completed", "partial"} and task["output"] != "proposal" and not payload.result:
+        raise ApiError(409, "AGENT_TASK_RESULT_REQUIRED")
+    if payload.proposal_ids:
+        found = set(db.scalars(select(ResumeChangeProposal.public_id).where(
+            ResumeChangeProposal.run_id == run.id,
+            ResumeChangeProposal.public_id.in_(payload.proposal_ids),
+        )).all())
+        if found != set(payload.proposal_ids):
+            raise ApiError(409, "AGENT_TASK_PROPOSAL_NOT_FOUND")
+    task.update({
+        "status": payload.status,
+        "proposal_ids": payload.proposal_ids,
+        "error_code": payload.error_code,
+        "result": payload.result,
+    })
+    metadata["agent_tasks"] = tasks
+    message.metadata_json = metadata
+    db.commit()
+    return tasks
 
 
 def upsert_tool_event(db: Session, *, run: AgentRun, payload: object) -> AgentToolCall:

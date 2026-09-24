@@ -1,5 +1,6 @@
 const CONTEXT_TYPES = new Set([
   "resume",
+  "dataset",
   "job",
   "application",
   "interview",
@@ -21,6 +22,7 @@ const MAX_CONTEXT_ITEM_CHARS = 24_000;
 const MAX_CONTEXT_TOTAL_CHARS = 60_000;
 const CONTENT_FIELDS_BY_TYPE = {
   resume: new Set(["resume_markdown", "summary"]),
+  dataset: new Set(["dataset_markdown"]),
   job: new Set([
     "job_title",
     "company_name",

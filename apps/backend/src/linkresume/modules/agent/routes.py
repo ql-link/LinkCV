@@ -68,7 +68,13 @@ from linkresume.modules.resumes.schemas import ResumeResponse
 def _merge_message_contexts(
     explicit: list[AgentContextRef] | None,
     inherited: list[AgentContextRef],
+    *,
+    replace_inherited_resume: bool = False,
 ) -> list[AgentContextRef]:
+    if replace_inherited_resume and not any(
+        item.type == "resume" for item in explicit or []
+    ):
+        raise ApiError(422, "AGENT_RESUME_REQUIRED")
     merged = {item.type: item for item in inherited}
     for item in explicit or []:
         inherited_item = merged.get(item.type)
@@ -76,8 +82,9 @@ def _merge_message_contexts(
             inherited_item.id != item.id
             or inherited_item.version_id != item.version_id
         ):
-            raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
-        if inherited_item is None:
+            if not (replace_inherited_resume and item.type == "resume"):
+                raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
+        if inherited_item is None or (replace_inherited_resume and item.type == "resume"):
             merged[item.type] = item
     return list(merged.values())
 
@@ -394,15 +401,33 @@ async def send_agent_message(
                 session=session,
                 reply_to_sequence_no=payload.reply_to_sequence_no,
             )
+            if payload.replace_inherited_resume and payload.reply_to_sequence_no is None:
+                raise ApiError(422, "AGENT_CLARIFICATION_INVALID")
+            inherited_resume = next(
+                (item for item in inherited_contexts if item.type == "resume"), None
+            )
+            explicit_resume = next(
+                (item for item in payload.contexts or [] if item.type == "resume"), None
+            )
+            resume_switched = bool(
+                payload.replace_inherited_resume
+                and inherited_resume is not None
+                and explicit_resume is not None
+                and inherited_resume.id != explicit_resume.id
+            )
             if (
-                inherited_selection is not None
+                inherited_selection is not None and not resume_switched
                 and payload.selection_context is not None
                 and inherited_selection != payload.selection_context
             ):
                 raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
-            resolved_selection = inherited_selection or payload.selection_context
+            resolved_selection = (
+                payload.selection_context if resume_switched
+                else inherited_selection or payload.selection_context
+            )
             context_refs = _merge_message_contexts(
-                payload.contexts, inherited_contexts
+                payload.contexts, inherited_contexts,
+                replace_inherited_resume=payload.replace_inherited_resume,
             )
             if payload.revision_proposal_id:
                 source = revision_source(db, session, payload.revision_proposal_id)
