@@ -9,8 +9,12 @@ from sqlalchemy import func, select
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
-from linkresume.modules.agent.models import AgentMessage, AgentRun, AgentSession
+from linkresume.modules.agent.models import (
+    AgentMessage, AgentOperation, AgentRun, AgentSession, AgentStageEvent,
+    ResumeChangeProposal,
+)
 from linkresume.modules.agent.schemas import AgentClarification, AgentContextMaterial
+from linkresume.modules.agent.trace import event_key, operation_for_run, record_event
 
 
 RUN_PHASE_LABELS = {
@@ -51,7 +55,18 @@ def _emit_agent_stage(
     candidate_count: int | None = None,
     exception_type: str | None = None,
 ) -> None:
-    """Emit bounded run-stage telemetry without affecting the Agent result."""
+    """Persist a bounded stage event and emit the existing system log."""
+
+    if stage != "run_finalize" and result in {"started", "succeeded", "failed", "cancelled"}:
+        with app.state.session_factory() as db:
+            operation = operation_for_run(db, run_public_id)
+            if operation is not None:
+                record_event(
+                    db, operation, key=event_key(run_public_id, stage, result),
+                    stage=stage, result=result, error_code=error_code,
+                    duration_ms=duration_ms,
+                )
+                db.commit()
 
     try:
         app.state.event_emitter.system(
@@ -181,9 +196,14 @@ async def stream_pi_run(
                     **(
                         {
                             "contextMaterials": [
-                                item.model_dump(mode="json")
-                                if isinstance(item, AgentContextMaterial)
-                                else item
+                                {
+                                    **(
+                                        item.model_dump(mode="json")
+                                        if isinstance(item, AgentContextMaterial)
+                                        else item
+                                    ),
+                                    "content": {},
+                                }
                                 for item in (context_materials or [])
                             ]
                         }
@@ -462,6 +482,7 @@ def _conversation_history(app, run_public_id: str) -> list[dict[str, object]]:
         ).all()
         remaining = 24_000
         history: list[dict[str, object]] = []
+        included_tasks = False
         for message in messages:
             if message.run_id == run.id:
                 continue
@@ -485,6 +506,18 @@ def _conversation_history(app, run_public_id: str) -> list[dict[str, object]]:
                         item["reply_to_sequence_no"] = message.metadata_json.get(
                             "reply_to_sequence_no"
                         )
+                    raw_tasks = message.metadata_json.get("agent_tasks")
+                    if not included_tasks and isinstance(raw_tasks, list):
+                        item["agent_tasks"] = [
+                            {
+                                key: (task[key][:300] if key == "result" and isinstance(task[key], str)
+                                      else task[key])
+                                for key in ("id", "workflow", "label", "status", "proposal_ids", "error_code", "result")
+                                if key in task
+                            }
+                            for task in raw_tasks[:8] if isinstance(task, dict)
+                        ]
+                        included_tasks = True
             history.append(item)
         history.reverse()
         return history
@@ -572,6 +605,29 @@ def _finalize(
         run.output_tokens = output_tokens if status == "succeeded" else None
         run.estimated_cost = estimated_cost if status == "succeeded" else None
         run.completed_at = utc_now()
+        _finalize_unclosed_tasks(db, run, status, error_code, clarification is not None)
+        operation = db.scalar(select(AgentOperation).where(
+            AgentOperation.public_id == run_public_id
+        ).with_for_update())
+        if operation is not None:
+            if status == "failed":
+                failed_stage = db.scalar(select(AgentStageEvent).where(
+                    AgentStageEvent.agent_operation_id == operation.id,
+                    AgentStageEvent.result == "failed",
+                    AgentStageEvent.stage != "run_finalize",
+                ).order_by(AgentStageEvent.id.desc()).limit(1))
+                failure_stage = failed_stage.stage if failed_stage is not None else (
+                    "stream_terminal" if error_code == "AGENT_UPSTREAM_FAILED"
+                    else "model_execution"
+                )
+                operation.failure_stage = failure_stage
+            else:
+                operation.failure_stage = None
+            record_event(
+                db, operation, key=event_key(run_public_id, "run_finalize", status),
+                stage="run_finalize", result=status,
+                error_code=error_code if status == "failed" else None,
+            )
         if status == "succeeded" and (assistant_content or clarification):
             sequence_no = (
                 int(
@@ -601,6 +657,49 @@ def _finalize(
             )
             session.last_message_at = utc_now()
         db.commit()
+
+
+def _finalize_unclosed_tasks(db, run: AgentRun, status: str, error_code: str | None, clarified: bool) -> None:
+    message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == run.id, AgentMessage.role == "user",
+    ).with_for_update())
+    if message is None or not isinstance(message.metadata_json, dict):
+        return
+    metadata = dict(message.metadata_json)
+    raw_tasks = metadata.get("agent_tasks")
+    if not isinstance(raw_tasks, list):
+        return
+    tasks = [dict(task) for task in raw_tasks if isinstance(task, dict)]
+    assigned = {
+        proposal_id for task in tasks for proposal_id in (task.get("proposal_ids") or [])
+    }
+    proposals = db.scalars(select(ResumeChangeProposal.public_id).where(
+        ResumeChangeProposal.run_id == run.id,
+    )).all()
+    orphan_ids = [proposal_id for proposal_id in proposals if proposal_id not in assigned]
+    changed = False
+    for task in tasks:
+        if task.get("status") not in {"running", "planned"}:
+            continue
+        was_running = task["status"] == "running"
+        proposal_ids = list(task.get("proposal_ids") or [])
+        if was_running:
+            proposal_ids.extend(orphan_ids)
+            orphan_ids = []
+        task["proposal_ids"] = proposal_ids
+        task["status"] = (
+            "partial" if proposal_ids else
+            "blocked" if clarified or not was_running or status == "cancelled" else
+            "failed"
+        )
+        task["error_code"] = (
+            "USER_INPUT_REQUIRED" if clarified else
+            error_code or ("AGENT_RUN_CANCELLED" if status == "cancelled" else "AGENT_TASKS_INCOMPLETE")
+        )
+        changed = True
+    if changed:
+        metadata["agent_tasks"] = tasks
+        message.metadata_json = metadata
 
 
 def _clarification_text(value: dict[str, object] | None) -> str:

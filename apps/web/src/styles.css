@@ -1557,6 +1557,9 @@ select:not([data-slot]):focus-visible {
 .workbench-template-panel-head h2 { margin: 0; color: var(--ui-foreground); font-size: 0.9375rem; }
 .workbench-template-panel-head small { color: var(--ui-text-muted); font-size: 0.6875rem; font-weight: 500; }
 .workbench-template-panel-body { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px 24px; }
+.workbench-template-panel-body.is-filterable { padding-top: 0; }
+.workbench-template-filters { display: flex; min-height: 60px; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 10px 18px 16px; }
+.workbench-template-filters > span { color: var(--ui-text-muted); font-size: 12px; }
 
 .workbench-template-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .workbench-template-grid > li { display: flex; }
@@ -1916,6 +1919,27 @@ select:not([data-slot]):focus-visible {
 
 .resume-workbench .resume-paper:not(.smart-one-page):not(.pages-horizontal) {
   min-height: var(--resume-page-stack-height, 297mm);
+  /* A continuous editor can contain full-height sidebars and borders. Clip the
+     entire rendered paper at each A4 seam so their paint cannot bridge pages. */
+  -webkit-mask-image: repeating-linear-gradient(to bottom, #000 0 297mm, transparent 297mm calc(297mm + 24px));
+  mask-image: repeating-linear-gradient(to bottom, #000 0 297mm, transparent 297mm calc(297mm + 24px));
+}
+
+.resume-workbench .resume-paper:not(.smart-one-page):not(.pages-horizontal) .resume-content {
+  /* The editor starts at the first page's top margin. Keep each later page's
+     top/bottom margins free of long sidebar and list backgrounds as well. */
+  -webkit-mask-image: repeating-linear-gradient(
+    to bottom,
+    #000 0 calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))),
+    transparent calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))) calc(297mm + 24px)
+  );
+  mask-image: repeating-linear-gradient(
+    to bottom,
+    #000 0 calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))),
+    transparent calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))) calc(297mm + 24px)
+  );
+  -webkit-mask-clip: no-clip;
+  mask-clip: no-clip;
 }
 
 .resume-workbench .resume-paper.smart-one-page {
@@ -1940,39 +1964,14 @@ select:not([data-slot]):focus-visible {
   font-family: var(--resume-font-family);
   font-size: var(--resume-font-size);
   line-height: var(--resume-line-height);
-  caret-color: transparent;
+  caret-color: currentColor;
 }
 
-.resume-workbench .resume-content.ProseMirror * { caret-color: transparent; }
+.resume-workbench .resume-content.ProseMirror * { caret-color: currentColor; }
 
-.resume-adaptive-caret {
-  display: inline-block;
-  width: 2px;
-  height: 1.15em;
-  margin-inline: -1px;
-  vertical-align: -0.2em;
-  background: #fff;
-  mix-blend-mode: difference;
-  pointer-events: none;
-  animation: resume-adaptive-caret-blink 1s steps(1, end) infinite;
-}
-
-.resume-content.ProseMirror:not(.ProseMirror-focused) .resume-adaptive-caret { visibility: hidden; }
-.resume-content.ProseMirror.is-composing .resume-adaptive-caret { visibility: hidden; }
-.resume-content.ProseMirror.is-composing,
-.resume-content.ProseMirror.is-composing * { caret-color: auto; }
-
-@keyframes resume-adaptive-caret-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .resume-adaptive-caret { animation: none; }
-}
-
-@media print {
-  .resume-adaptive-caret { display: none; }
+/* Keep trailing blank editor nodes in the document without letting them paint extra paper. */
+.resume-workbench .resume-content.ProseMirror p.pagination-trailing-empty {
+  display: none;
 }
 
 .resume-workbench :where(.resume-content.ProseMirror > :not(.resume-avatar-node-view)) { position: relative; }
@@ -1982,7 +1981,7 @@ select:not([data-slot]):focus-visible {
   left: calc(-1 * var(--resume-page-margin-x));
   display: block;
   width: 210mm;
-  height: calc(var(--page-break-remaining-height, 0px) + (2 * var(--page-break-margin)) + 24px);
+  height: calc(var(--page-break-remaining-height, 0px) + var(--page-break-margin) + var(--page-break-bottom-margin, var(--page-break-margin)) + 24px);
   margin-block: 0;
   background: transparent;
   list-style: none;
@@ -2177,9 +2176,10 @@ select:not([data-slot]):focus-visible {
 }
 .resume-layout-row [data-node-view-content-react] {
   display: grid;
-  grid-template-columns: minmax(0, calc(var(--resume-row-left) - 6px)) minmax(0, 1fr);
+  /* 双栏也用轨道边界作为分隔线位置；内边距保留原有文字间距。 */
+  grid-template-columns: minmax(0, var(--resume-row-left)) minmax(0, 1fr);
   align-items: baseline;
-  gap: 12px;
+  gap: 0;
 }
 .resume-layout-row [data-node-view-content-react] > p {
   min-width: 0;
@@ -2188,8 +2188,11 @@ select:not([data-slot]):focus-visible {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+.resume-layout-row:not(.is-equal) [data-node-view-content-react] > p:first-child {
+  padding-right: 6px;
+}
 .resume-layout-row [data-node-view-content-react] > p:last-child {
-  padding-left: 10px;
+  padding-left: 16px;
   text-align: right;
 }
 .resume-layout-row.is-equal [data-node-view-content-react] {
@@ -2291,7 +2294,7 @@ select:not([data-slot]):focus-visible {
 
 .resume-media-node { position: relative; z-index: 2; }
 .resume-media-node img { display: block; width: 100%; height: auto; }
-.resume-avatar { float: right; margin: 0 0 8px 16px; border-radius: 50%; }
+.resume-avatar { float: right; margin: 0 0 8px 16px; border-radius: 4px; }
 .resume-avatar-image-frame { display: block; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
 .resume-avatar img { height: 100%; border-radius: inherit; object-fit: cover; }
 .resume-image.align-left { float: left; margin: 4px 16px 8px 0; }
@@ -2299,8 +2302,7 @@ select:not([data-slot]):focus-visible {
 .resume-image.align-center { margin: 10px auto; }
 .resume-image.align-full { width: 100% !important; margin: 10px 0; }
 .resume-media-node.is-selected { outline: 2px solid rgba(52, 120, 246, 0.38); outline-offset: 2px; }
-.resume-workbench .resume-avatar.is-selected { overflow: visible; border-radius: 50%; outline: 1px solid var(--ui-accent); outline-offset: 2px; }
-.resume-workbench .resume-avatar.is-selected img { border-radius: 50%; }
+.resume-workbench .resume-avatar.is-selected { overflow: visible; outline: 1px solid var(--ui-accent); outline-offset: 2px; }
 .resume-avatar.is-selected:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 3px; }
 
 .avatar-scale-hint,
@@ -2330,7 +2332,7 @@ select:not([data-slot]):focus-visible {
 }
 
 .avatar-scale-hint {
-  bottom: calc(100% - 12px);
+  top: 6px;
   left: calc(100% + 12px);
   width: max-content;
   min-width: max-content;

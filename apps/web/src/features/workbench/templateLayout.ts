@@ -27,6 +27,16 @@ type CanonicalProjectionNode = {
 };
 
 export const SYSTEM_DEFAULT_AVATAR = "/templates/avatar-cat.jpg";
+// CSS pixels at 96 dpi: a standard 25 × 35 mm one-inch portrait is about 94 × 132 px.
+export const DEFAULT_AVATAR_WIDTH_PX = 94;
+
+function avatarDisplayWidth(size: unknown, templateSize: number) {
+  const width = Number(size);
+  // Older templates supplied different unadjusted defaults. Keep genuinely resized photos.
+  return !Number.isFinite(width) || width === 96 || width === templateSize
+    ? DEFAULT_AVATAR_WIDTH_PX
+    : width;
+}
 
 function blockAnchorIds(node: JSONContent): string[] {
   const own = node.type === "resumeBlockAnchor" && typeof node.attrs?.blockId === "string"
@@ -361,7 +371,7 @@ function canonicalRegionContent(
       if (!avatarRegion) throw new Error("TEMPLATE_AVATAR_REGION_INVALID");
       avatarRegion.push({
         ...group.node,
-        attrs: { ...group.node.attrs, size: template.avatar.size_px, systemFallback: false },
+        attrs: { ...group.node.attrs, size: avatarDisplayWidth(group.node.attrs?.size, template.avatar.size_px), systemFallback: false },
       });
       continue;
     }
@@ -402,7 +412,7 @@ export function composeEditorDocumentForLayoutPlan(
   ) {
     const avatarRegion = regionContent.get(template.avatar.region_id);
     if (!avatarRegion) throw new Error("TEMPLATE_AVATAR_REGION_INVALID");
-    avatarRegion.unshift(avatarNode(SYSTEM_DEFAULT_AVATAR, template.avatar.size_px, true));
+    avatarRegion.unshift(avatarNode(SYSTEM_DEFAULT_AVATAR, DEFAULT_AVATAR_WIDTH_PX, true));
   }
   const sourceIds = blockAnchorIds(editorDocument);
   if (template.regions.some((region) => region.region_kind === "sidebar")) {
@@ -540,7 +550,7 @@ export function composeResumeMarkdownForTemplate(
     const systemFallback = !document.basics.photo && manifest.avatar.fallback_asset === "system-default";
     const source = document.basics.photo ?? (systemFallback ? SYSTEM_DEFAULT_AVATAR : null);
     if (source) projected.get(avatarSlot.region_id)?.push(
-      `![简历头像](${source} "linkresume-avatar:${manifest.avatar.size}${systemFallback ? ":system" : ""}")`,
+      `![简历头像](${source} "linkresume-avatar:${DEFAULT_AVATAR_WIDTH_PX}${systemFallback ? ":system" : ""}")`,
     );
   }
   for (const block of markdownBlocks(source, document)) {
@@ -587,12 +597,12 @@ function visibleAvatar(
   userPhoto: string | null,
 ) {
   if (manifest.avatar.visibility === "hide") return null;
-  if (userPhoto) return avatarNode(userPhoto, manifest.avatar.size, false);
+  if (userPhoto) return avatarNode(userPhoto, DEFAULT_AVATAR_WIDTH_PX, false);
   if (existing && existing.attrs?.systemFallback !== true) {
-    return { ...existing, attrs: { ...existing.attrs, size: manifest.avatar.size } };
+    return { ...existing, attrs: { ...existing.attrs, size: avatarDisplayWidth(existing.attrs?.size, manifest.avatar.size) } };
   }
   return manifest.avatar.fallback_asset === "system-default"
-    ? avatarNode(SYSTEM_DEFAULT_AVATAR, manifest.avatar.size, true)
+    ? avatarNode(SYSTEM_DEFAULT_AVATAR, DEFAULT_AVATAR_WIDTH_PX, true)
     : null;
 }
 

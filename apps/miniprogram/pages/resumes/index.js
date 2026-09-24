@@ -77,11 +77,11 @@ Page({
 
     for (let i = 0; i < updated.length; i++) {
       const item = updated[i];
-      const versionId = item.pdf_version_id;
-      if (!versionId) continue;
+      const lockVersion = item.lock_version;
+      if (!lockVersion) continue;
 
       try {
-        const cached = await cache.getCachedResumePreview(user.id, item.id, versionId);
+        const cached = await cache.getCachedResumePreview(user.id, item.id, lockVersion);
         if (cached) {
           if (updated[i].previewUrl !== cached) {
             updated[i] = { ...updated[i], previewUrl: cached };
@@ -90,12 +90,12 @@ Page({
           continue;
         }
 
-        const filePath = cache.resumePreviewPath(user.id, item.id, versionId);
+        const filePath = cache.resumePreviewPath(user.id, item.id, lockVersion);
         resumes
-          .downloadResumePreview(item.id, versionId, filePath)
+          .downloadResumePreview(item.id, lockVersion, filePath)
           .then(async (downloaded) => {
             await cache.validateResumePreview(downloaded);
-            await cache.commitResumePreview(user.id, item.id, versionId, downloaded);
+            await cache.commitResumePreview(user.id, item.id, lockVersion, downloaded);
             const currentItems = this.data.items || [];
             const idx = currentItems.findIndex((it) => it.id === item.id);
             if (idx >= 0) {
@@ -131,7 +131,7 @@ Page({
         .filter((item) => item && String(item.id) !== DEMO_RESUME_ID && !item.isDemo)
         .map((item) => {
           const existing = currentItems.find((it) => it.id === item.id);
-          const previewUrl = existing && existing.pdf_version_id === item.pdf_version_id
+          const previewUrl = existing && existing.lock_version === item.lock_version
             ? (existing.previewUrl || "")
             : "";
           return {

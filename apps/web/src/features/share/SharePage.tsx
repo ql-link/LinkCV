@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Download, ExternalLink, Link2Off } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";
 import { api, type PublicSharePayload } from "../../api/client";
@@ -10,6 +10,7 @@ import {
 } from "../preview/pdfExport";
 import "../preview/print/resume-print.css";
 import { renderResumePrintDocument } from "../preview/print/resumePrintDocument";
+import { paginateShareDocument } from "./sharePagination";
 
 declare global {
   interface Window {
@@ -42,6 +43,34 @@ type PaperFit = {
   // transform 回退路径下纸面的占位高度（缩放后）；zoom 路径由布局自动收缩，为 null
   height: number | null;
 };
+
+const SharePaperInner = memo(function SharePaperInner({
+  html,
+  innerRef,
+  scale,
+  zoomSupported,
+}: {
+  html: string;
+  innerRef: React.RefObject<HTMLDivElement | null>;
+  scale: number;
+  zoomSupported: boolean;
+}) {
+  const style: React.CSSProperties = zoomSupported
+    ? {}
+    : {
+        width: PAPER_WIDTH_PX,
+        transform: `scale(${scale})`,
+        transformOrigin: "top left",
+      };
+  return (
+    <div
+      ref={innerRef}
+      className="share-page-paper-inner"
+      style={style}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+});
 
 // 纸面缩放以滚动容器的实际内容宽度为准；CSS zoom 不可用时回退 transform: scale
 function usePaperFit(active: boolean) {
@@ -172,7 +201,7 @@ export function SharePage({ token }: { token: string }) {
           ...payload.style,
           portable: {
             ...payload.style.portable,
-            smart_one_page: true,
+            smart_one_page: false,
           },
         },
         layout_plan: payload.layout_plan,
@@ -181,6 +210,30 @@ export function SharePage({ token }: { token: string }) {
       : "",
     [payload],
   );
+
+  useLayoutEffect(() => {
+    if (status !== "ready" || !documentHtml) return;
+    const paper = innerRef.current?.querySelector<HTMLElement>(".share-page-paper");
+    if (!paper) return;
+    let active = true;
+    const paginate = () => {
+      if (active && paper.isConnected) paginateShareDocument(paper);
+    };
+    paginate();
+    void document.fonts?.ready.then(paginate);
+    const images = Array.from(paper.querySelectorAll("img"));
+    images.forEach((item) => {
+      item.addEventListener("load", paginate);
+      item.addEventListener("error", paginate);
+    });
+    return () => {
+      active = false;
+      images.forEach((item) => {
+        item.removeEventListener("load", paginate);
+        item.removeEventListener("error", paginate);
+      });
+    };
+  }, [documentHtml, fit.height, fit.scale, innerRef, status]);
 
   if (status === "loading") {
     return (
@@ -213,14 +266,6 @@ export function SharePage({ token }: { token: string }) {
         height: fit.height ?? undefined,
         overflow: "hidden",
       };
-  const innerStyle: React.CSSProperties = zoomSupported
-    ? {}
-    : {
-        width: PAPER_WIDTH_PX,
-        transform: `scale(${fit.scale})`,
-        transformOrigin: "top left",
-      };
-
   return (
     <main className="share-page" data-ui-theme="light">
       <header className="share-page-header">
@@ -256,11 +301,11 @@ export function SharePage({ token }: { token: string }) {
           className="share-page-paper-wrap"
           style={wrapStyle}
         >
-          <div
-            ref={innerRef}
-            className="share-page-paper-inner"
-            style={innerStyle}
-            dangerouslySetInnerHTML={{ __html: documentHtml }}
+          <SharePaperInner
+            html={documentHtml}
+            innerRef={innerRef}
+            scale={fit.scale}
+            zoomSupported={zoomSupported}
           />
         </div>
       </section>

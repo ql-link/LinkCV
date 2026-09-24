@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from linkresume.application.interviews.resume_binding_service import bind_resume
+from linkresume.core.errors import ApiError
+
 import base64
 import hashlib
 import json
@@ -28,7 +31,6 @@ from linkresume.application.interviews.state import (
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import utc_now
 from linkresume.modules.interviews.models import (
-    InterviewAsset,
     InterviewSession,
     JobApplication,
     JobApplicationStage,
@@ -48,8 +50,15 @@ from linkresume.modules.interviews.schemas import (
     TerminateApplicationRequest,
     UpdateAnswerPlanRequest,
 )
+from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.job_descriptions.models import JobDescription
-from linkresume.modules.resumes.models import Resume, ResumeVersion
+from linkresume.modules.resumes.models import (
+    DATASET_SOURCE_TYPE,
+    DocumentParseTask,
+    Resume,
+    ResumeVersion,
+)
+from linkresume.services import dataset_content_service as dataset_content
 
 
 class InterviewNotFound(LookupError):
@@ -98,6 +107,14 @@ class InterviewApplicationAlreadyExists(RuntimeError):
 
 
 class InterviewSessionNotEmpty(RuntimeError):
+    pass
+
+
+class DatasetAlreadyLinked(RuntimeError):
+    pass
+
+
+class InterviewAssetNotLinked(RuntimeError):
     pass
 
 
@@ -272,33 +289,6 @@ def _job_snapshot(job: JobDescription) -> dict[str, object]:
     }
 
 
-def _owned_resume_version(
-    db: Session, user_id: int, version_id: int | None
-) -> ResumeVersion | None:
-    if version_id is None:
-        return None
-    return db.scalar(
-        select(ResumeVersion)
-        .join(Resume, Resume.id == ResumeVersion.resume_id)
-        .where(ResumeVersion.id == version_id, Resume.user_id == user_id)
-    )
-
-
-def _owned_resume(db: Session, user_id: int, resume_id: int) -> Resume | None:
-    return db.scalar(
-        select(Resume).where(Resume.id == resume_id, Resume.user_id == user_id)
-    )
-
-
-def _latest_resume_version(db: Session, resume_id: int) -> ResumeVersion | None:
-    return db.scalar(
-        select(ResumeVersion)
-        .where(ResumeVersion.resume_id == resume_id)
-        .order_by(ResumeVersion.version_no.desc(), ResumeVersion.id.desc())
-        .limit(1)
-    )
-
-
 def find_application_for_job(
     db: Session, user_id: int, job_description_id: int
 ) -> JobApplication | None:
@@ -318,7 +308,6 @@ def ensure_pending_application_for_job(
     user_id: int,
     job: JobDescription,
     *,
-    resume_version: ResumeVersion | None = None,
     notes: str | None = None,
 ) -> tuple[JobApplication, bool]:
     locked_job = db.scalar(
@@ -338,11 +327,11 @@ def ensure_pending_application_for_job(
     application = JobApplication(
         user_id=user_id,
         job_description_id=job.id,
-        resume_version_id=resume_version.id if resume_version else None,
+        resume_id=None,
         company_name_snapshot=locked_job.company_name,
         job_title_snapshot=locked_job.job_title,
         job_snapshot=_job_snapshot(locked_job),
-        resume_title_snapshot=resume_version.name if resume_version else None,
+        resume_title_snapshot=None,
         calendar_color=secrets.choice(CALENDAR_COLORS),
         current_stage_type="screening",
         current_round_no=None,
@@ -378,22 +367,14 @@ def create_application(
     )
     if job is None:
         raise InterviewNotFound
-    resume_version_id = (
-        parse_decimal_id(payload.resume_version_id)
-        if payload.resume_version_id is not None
-        else None
-    )
-    if payload.resume_version_id is not None and resume_version_id is None:
-        raise InterviewNotFound
-    resume_version = _owned_resume_version(db, user_id, resume_version_id)
-    if resume_version_id is not None and resume_version is None:
-        raise InterviewNotFound
+    if payload.resume_version_id is not None:
+        raise ApiError(410, "RESUME_VERSION_RETIRED")
     try:
         application, _created = ensure_pending_application_for_job(
             db,
             user_id,
             job,
-            resume_version=resume_version,
+
             notes=payload.notes,
         )
         if (
@@ -401,13 +382,10 @@ def create_application(
             or current_application_stage(db, application.id) is not None
         ):
             raise InterviewApplicationAlreadyExists(application.id)
-        if resume_version is not None:
-            application.resume_version_id = resume_version.id
-            application.resume_title_snapshot = resume_version.name
+        bind_resume(db, application, payload)
         if payload.notes is not None:
             application.notes = payload.notes
-        db.commit()
-        db.refresh(application)
+        db.flush()
     except Exception:
         db.rollback()
         raise
@@ -415,6 +393,8 @@ def create_application(
         payload.current_stage_type == "screening"
         and payload.current_stage_label == "待投递"
     ):
+        db.commit()
+        db.refresh(application)
         return application
 
     legacy_stage_type = payload.current_stage_type
@@ -444,7 +424,7 @@ def create_application(
                 payload.current_round_no if stage_type == "interview" else None
             ),
             applied_at=payload.applied_at,
-            resume_version_id=payload.resume_version_id,
+
             base_lock_version=application.lock_version,
         ),
     )
@@ -638,33 +618,6 @@ def _stage_matches_request(
     )
 
 
-def _resolve_stage_resume(
-    db: Session,
-    user_id: int,
-    payload: AddApplicationStageRequest,
-) -> ResumeVersion | None:
-    if payload.resume_id is not None:
-        resume_id = parse_decimal_id(payload.resume_id)
-        if resume_id is None:
-            raise InterviewNotFound
-        resume = _owned_resume(db, user_id, resume_id)
-        if resume is None:
-            raise InterviewNotFound
-        version = _latest_resume_version(db, resume.id)
-        if version is None:
-            raise InterviewResumeVersionRequired
-        return version
-    if payload.resume_version_id is not None:
-        version_id = parse_decimal_id(payload.resume_version_id)
-        if version_id is None:
-            raise InterviewNotFound
-        version = _owned_resume_version(db, user_id, version_id)
-        if version is None:
-            raise InterviewNotFound
-        return version
-    return None
-
-
 def add_application_stage(
     db: Session,
     user_id: int,
@@ -701,7 +654,7 @@ def add_application_stage(
         raise InterviewEditConflict
 
     stage_label = _stage_label(payload.stage_type, payload.stage_label)
-    resume_version = _resolve_stage_resume(db, user_id, payload)
+    bind_resume(db, application, payload)
     now = utc_now()
     previous = current_application_stage(db, application.id)
     if previous is not None:
@@ -745,9 +698,7 @@ def add_application_stage(
         if payload.applied_at is not None
         else application.applied_at or now
     )
-    if resume_version is not None:
-        application.resume_version_id = resume_version.id
-        application.resume_title_snapshot = resume_version.name
+
     for key, value in _legacy_stage_projection(
         payload.stage_type, stage_label, payload.interview_round_no
     ).items():
@@ -868,7 +819,11 @@ def update_application(
     application_id: int,
     payload: JobApplicationUpdateRequest,
 ) -> JobApplication:
-    application = require_owned_application(db, user_id, application_id)
+    application = db.scalar(select(JobApplication).where(JobApplication.id == application_id, JobApplication.user_id == user_id).with_for_update())
+    if application is None:
+        raise InterviewNotFound
+    if application.lock_version != payload.base_lock_version:
+        raise InterviewEditConflict
     provided = payload.model_dump(exclude_unset=True)
     provided.pop("base_lock_version", None)
     is_pending = application.applied_at is None
@@ -928,40 +883,10 @@ def update_application(
                     "stage_state": "awaiting_result",
                 }
             )
-    if "resume_id" in provided:
-        requested_resume_id = provided.pop("resume_id")
-        if requested_resume_id is not None:
-            parsed_resume_id = (
-                parse_decimal_id(requested_resume_id)
-                if isinstance(requested_resume_id, str)
-                else None
-            )
-            if parsed_resume_id is None:
-                raise InterviewNotFound
-            resume = _owned_resume(db, user_id, parsed_resume_id)
-            if resume is None:
-                raise InterviewNotFound
-            resume_version = _latest_resume_version(db, resume.id)
-            if resume_version is None:
-                raise InterviewResumeVersionRequired
-            provided["resume_version_id"] = str(resume_version.id)
-            provided["resume_title_snapshot"] = resume_version.name
-    if "resume_version_id" in provided:
-        requested_resume_version_id = provided["resume_version_id"]
-        parsed_resume_version_id = (
-            parse_decimal_id(requested_resume_version_id)
-            if isinstance(requested_resume_version_id, str)
-            else None
-        )
-        if requested_resume_version_id is not None and parsed_resume_version_id is None:
-            raise InterviewNotFound
-        resume_version = _owned_resume_version(db, user_id, parsed_resume_version_id)
-        if parsed_resume_version_id is not None and resume_version is None:
-            raise InterviewNotFound
-        provided["resume_version_id"] = parsed_resume_version_id
-        provided["resume_title_snapshot"] = (
-            resume_version.name if resume_version else None
-        )
+    bind_resume(db, application, payload)
+    for key in ("resume_id", "resume_version_id"):
+        provided.pop(key, None)
+    db.flush()
     return _commit_application_update(
         db, application, payload.base_lock_version, provided
     )
@@ -1106,6 +1031,8 @@ def delete_application(
     *,
     delete_asset_object: Callable[[str], None] | None = None,
 ) -> None:
+    # delete_asset_object is retained for signature compatibility; linked
+    # datasets are only unlinked (FK ON DELETE SET NULL), never removed here.
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -1162,7 +1089,12 @@ def delete_application_records(
     session_ids: list[int] | None = None,
     delete_asset_object: Callable[[str], None] | None = None,
 ) -> None:
-    """Delete complete application aggregates without committing the transaction."""
+    """Delete complete application aggregates without committing the transaction.
+
+    Datasets linked to the deleted sessions are only unlinked; the files stay
+    in the user's library (``interview_session_id`` set to NULL).
+    `delete_asset_object` is unused and kept only for call-site compatibility.
+    """
     if not application_ids:
         return
     locked_session_ids = session_ids
@@ -1174,31 +1106,11 @@ def delete_application_records(
                 .with_for_update()
             )
         )
-    assets = (
-        list(
-            db.scalars(
-                select(InterviewAsset)
-                .where(InterviewAsset.interview_session_id.in_(locked_session_ids))
-                .with_for_update()
-            )
-        )
-        if locked_session_ids
-        else []
-    )
-    if assets and delete_asset_object is None:
-        raise InterviewApplicationNotEmpty
-    try:
-        if delete_asset_object is not None:
-            for asset in assets:
-                delete_asset_object(asset.object_name)
-    except Exception:
-        db.rollback()
-        raise
     if locked_session_ids:
         db.execute(
-            delete(InterviewAsset).where(
-                InterviewAsset.interview_session_id.in_(locked_session_ids)
-            )
+            update(UserDataset)
+            .where(UserDataset.interview_session_id.in_(locked_session_ids))
+            .values(interview_session_id=None, interview_source_type=None)
         )
         db.execute(
             delete(InterviewSession).where(InterviewSession.id.in_(locked_session_ids))
@@ -1699,13 +1611,11 @@ def cancel_interview(
 
 def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication:
     result = require_owned_session(db, user_id, session_id, for_update=True)
-    asset_count = db.scalar(
-        select(func.count(InterviewAsset.id)).where(
-            InterviewAsset.interview_session_id == session_id
-        )
+    db.execute(
+        update(UserDataset)
+        .where(UserDataset.interview_session_id == session_id)
+        .values(interview_session_id=None, interview_source_type=None)
     )
-    if asset_count:
-        raise InterviewSessionNotEmpty
     db.delete(result.session)
     remaining_scheduled = db.scalar(
         select(func.count(InterviewSession.id)).where(
@@ -1727,66 +1637,86 @@ def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication
     return result.application
 
 
-def list_assets(db: Session, user_id: int, session_id: int) -> list[InterviewAsset]:
+def list_assets(db: Session, user_id: int, session_id: int) -> list[UserDataset]:
     require_owned_session(db, user_id, session_id)
     return list(
         db.scalars(
-            select(InterviewAsset)
-            .where(InterviewAsset.interview_session_id == session_id)
-            .order_by(InterviewAsset.created_at.desc(), InterviewAsset.id.desc())
+            select(UserDataset)
+            .join(
+                DocumentParseTask,
+                DocumentParseTask.id == UserDataset.parse_task_id,
+            )
+            .where(
+                UserDataset.interview_session_id == session_id,
+                UserDataset.user_id == user_id,
+                DocumentParseTask.upload_status == "succeeded",
+            )
+            .order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
         )
     )
 
 
 def find_owned_asset(
     db: Session, user_id: int, asset_id: int
-) -> tuple[InterviewAsset, SessionWithApplication] | None:
+) -> tuple[UserDataset, DocumentParseTask] | None:
+    """Find an owned dataset addressed through the interview-assets namespace."""
     row = db.execute(
-        select(InterviewAsset, InterviewSession, JobApplication)
+        select(UserDataset, DocumentParseTask)
         .join(
-            InterviewSession, InterviewSession.id == InterviewAsset.interview_session_id
+            DocumentParseTask,
+            DocumentParseTask.id == UserDataset.parse_task_id,
         )
-        .join(JobApplication, JobApplication.id == InterviewSession.application_id)
-        .where(InterviewAsset.id == asset_id, JobApplication.user_id == user_id)
+        .where(
+            UserDataset.id == asset_id,
+            UserDataset.user_id == user_id,
+            DocumentParseTask.user_id == user_id,
+            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+        )
     ).one_or_none()
     if row is None:
         return None
-    return row[0], SessionWithApplication(session=row[1], application=row[2])
+    return row[0], row[1]
 
 
-def create_asset_record(
-    db: Session,
-    *,
-    session_id: int,
-    source_type: str,
-    asset_type: str,
-    original_file_name: str,
-    content_type: str,
-    file_size: int,
-    duration_ms: int | None,
-    object_name: str,
-    sha256: str,
-) -> InterviewAsset:
-    asset = InterviewAsset(
-        interview_session_id=session_id,
-        source_type=source_type,
-        asset_type=asset_type,
-        original_file_name=original_file_name,
-        content_type=content_type,
-        file_size=file_size,
-        duration_ms=duration_ms,
-        object_name=object_name,
-        sha256=sha256,
-        created_at=utc_now(),
-    )
-    db.add(asset)
+def attach_dataset_to_session(
+    db: Session, user_id: int, session_id: int, dataset_id: int
+) -> UserDataset:
+    """Link an owned, unlinked dataset to an owned session (idempotent)."""
+    require_owned_session(db, user_id, session_id, for_update=True)
+    dataset, task = dataset_content.owned(db, user_id, dataset_id, lock=True)
+    if task.upload_status != "succeeded":
+        raise InvalidInterviewRequest
+    if dataset.interview_session_id is not None:
+        if dataset.interview_session_id == session_id:
+            return dataset
+        raise DatasetAlreadyLinked
+    dataset.interview_session_id = session_id
+    dataset.interview_source_type = "uploaded"
     db.commit()
-    db.refresh(asset)
-    return asset
+    db.refresh(dataset)
+    return dataset
 
 
-def delete_asset_record(db: Session, asset: InterviewAsset) -> None:
-    db.delete(asset)
+def unlink_session_dataset(
+    db: Session, user_id: int, session_id: int, dataset_id: int
+) -> None:
+    """Remove the session link; the dataset file stays in the library."""
+    require_owned_session(db, user_id, session_id, for_update=True)
+    dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
+    if dataset.interview_session_id != session_id:
+        raise InterviewAssetNotLinked
+    dataset.interview_session_id = None
+    dataset.interview_source_type = None
+    db.commit()
+
+
+def unlink_owned_dataset(db: Session, user_id: int, dataset_id: int) -> None:
+    """Legacy `interview-assets/{id}` removal: unlink from whatever session."""
+    dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
+    if dataset.interview_session_id is None:
+        raise InterviewAssetNotLinked
+    dataset.interview_session_id = None
+    dataset.interview_source_type = None
     db.commit()
 
 

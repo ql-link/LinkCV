@@ -1,5 +1,7 @@
 # FastAPI 后端
 
+`modules/agent/service.py:confirm_proposal` 的普通修改只原子更新当前 Resume 与提案状态，不读取或新增历史版本；数据库提交失败会回滚两者。翻译仍走独立新建路径，并在 Proposal/Resume 之前锁定 User 以协调账户简历额度。迁移 `0084` 增加复制幂等字段、可空 scoped 全文及有界预览、求职 resume_id 外键并按所有者映射旧引用；旧历史表和求职旧外键暂不删除。部署需停止旧写入、备份、升级并切换消费方，不能直接回滚到依赖历史写入的旧代码。
+
 迁移 `0081` 在 `0080` 之后新增经典商务与活力，默认启用模板达到 85 套；无 schema 变化，不覆盖旧模板、简历或版本。`0080` 的卡片虚线、卡片分栏与 `0081` 两套模板均复用 `0079` 已验证的虚构产品经理样本，只新增独立呈现快照。重复执行保留启停状态，同 key 数据或定义冲突拒绝覆盖。发布先提供 Featured 主题的 Web/PDF 渲染器，再升级目录；需撤回时停用新增目录，历史简历快照保留。
 
 ## 功能与架构导航
@@ -18,7 +20,7 @@
 | `src/linkresume/core/` | 配置、数据库、错误、安全、Redis 和 MinIO 基础设施 |
 | `src/linkresume/domain/resume/` | 唯一运行时 `CanonicalResumeDocument`、`ResumePresentation`、`TemplateDefinition`、`LayoutPlan`、`SourceGraph`、稀疏模型标注与确定性导入组合；旧快照解析器只供 `0046` 和离线导入脚本使用 |
 | `src/linkresume/domain/job_source.py` | JD 来源 URL 校验、规范化、站点识别和 SHA-256 身份计算 |
-| `src/linkresume/application/resumes/` | 统一创建、乐观锁保存、版本创建/重命名/恢复、分享链接创建/覆盖/更新与事务规则 |
+| `src/linkresume/application/resumes/` | 统一创建、乐观锁保存、当前内容复制和存量取回、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkresume/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新，以及连同求职进程聚合的永久删除 |
 | `src/linkresume/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkresume/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
@@ -27,7 +29,7 @@
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
-| `src/linkresume/modules/miniprogram/` | 本人正式版本只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
+| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
 | `src/linkresume/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由 |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
@@ -35,13 +37,13 @@
 | `src/linkresume/modules/llm/` | 多能力模型绑定、验证证据、模型凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0065` |
+| `migrations/` | SQL-first Alembic revision；当前 head 为 `0087` |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
 
-上表的 head 表示本批模板接入前的共享基线；目标 `dev` 已推进至 `0065`，本批模板迁移从 `0066` 连续追加到 `0081`，合入后的仓库 head 为 `0081`。
+本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列；`0084` 扩展当前简历与求职进程的关联；`0085` 为模板增加多选风格、场景及风格审核状态，并按稳定 key 给当时的 85 套启用模板写入初版分类；`0086` 增加模板展示排序值；`0087` 在没有人工排序值时按原有 ID 顺序填入 10、20、30……，已有人工排序值的环境整体跳过回填。当前仓库 head 为 `0087`；目标环境的实际 revision 必须单独查询。
 
 迁移 `0077` 停用废弃的「经典单栏」(`classic-cn`)、「现代双栏」(`modern-two-column-cn`) 和「紧凑技术型」(`compact-tech-cn`)，默认启用目录为 69 套。只修改这三个稳定 key 的启用状态，保留模板记录、已有简历及历史版本；普通目录、创建和切换入口沿用启用校验。重复执行不影响其他模板；如需恢复，通过管理端重新启用或新增向前迁移，不改写历史迁移。
 
@@ -51,11 +53,11 @@
 
 MySQL 包含用户、简历、LLM 治理、`job_descriptions` 和 `global_companies` 等业务表。当前可编辑简历状态保存在 `resumes.data_json/style_json`，历史版本同时快照两份 JSON。HTTP 中的 ID 是十进制字符串，ORM 和数据库使用整数。
 
-每个 `job_descriptions` 最多关联一条 `job_applications`，后者保存岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。创建入口发现同一 JD 已有任何进程时复用原记录，已结束后也不能创建第二次投递。已终止且仍关联 JD 的进程从求职入口删除时会删除完整岗位聚合；历史遗留的无 JD 进程仍可单独清理。服务按素材对象、素材记录、排期、阶段、进程和岗位的顺序清理，活动进程不能通过求职进程接口直接永久删除。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
+每个 `job_descriptions` 最多关联一条 `job_applications`，后者保存岗位快照、投递事实、生命周期、Offer 详情和乐观锁；`applied_at` 为空表示待投递，`lifecycle_status=terminated` 保存终止时间与原因。创建入口发现同一 JD 已有任何进程时复用原记录，已结束后也不能创建第二次投递。已终止且仍关联 JD 的进程从求职入口删除时会删除完整岗位聚合；历史遗留的无 JD 进程仍可单独清理。服务先解除场次关联的资料库文件绑定（文件保留在库中），再按排期、阶段、进程和岗位的顺序清理，活动进程不能通过求职进程接口直接永久删除。迁移 `0057` 新增追加式 `job_application_stages` 作为当前阶段和阶段历史真值，并为 `interview_sessions` 增加可空阶段外键；迁移 `0082` 把面试素材并入 `user_dataset`（新增 `asset_kind`、场次关联与来源列，`document_parse_tasks` 扩展支持音视频格式），存量 `interview_assets` 由发布脚本搬入资料库，旧表暂留待后续 revision 删除。`interview_session_id` 保留 `ON DELETE SET NULL`；由于 MySQL 禁止该外键列参与 CHECK，统一入库和面试服务在应用层保证场次 ID 与来源成对设置或清空。旧扁平阶段字段和旧动作接口保留一个兼容期。迁移 `0053` 增加可空 Offer 详情并将历史 OC/书面 Offer 状态不可逆地合并为 `received`；迁移 `0054` 把薪资区间收敛为单个 `offer_salary`，旧记录优先保留下限、仅缺少下限时取上限，并继续要求数值薪资与币种、计薪周期同时存在；迁移 `0055` 允许手工创建的岗位描述为空。
 
 迁移 `0058` 为 `interview_sessions` 增加固定场次/开放窗口类型和开放窗口专用的个人作答计划时间。只有测评和笔试能创建 `open_window`；它可保存至多一组个人作答计划，两端同时为空表示未计划，两端有值时必须完整落在官方 `start_at/end_at` 内。调整官方窗口不能使既有计划越界，固定场次不能写入计划。
 
-`job_descriptions.description` 保持非空字符串列，但允许空字符串表示用户尚未填写职位描述；迁移 `0055` 删除旧的非空白 CHECK，不修改存量岗位。手工创建可省略该字段，浏览器插件导入仍要求采集到非空职位描述。
+`job_descriptions.description` 保持非空字符串列，但允许空字符串表示用户尚未填写职位描述；迁移 `0055` 删除旧的非空白 CHECK，不修改存量岗位。手工创建可省略该字段，普通岗位更新可把它清空为空字符串，更新 DTO 仍拒绝 `null`；浏览器插件导入仍要求采集到非空职位描述。
 
 迁移 `0059` 为用户已有的 `job_descriptions` 增加可空 `logo_url`，只接受应用层校验通过的 HTTPS 绝对 URL；新求职记录把该字段写入既有 `job_snapshot`，不为 `job_applications` 新增重复列。该迁移同时新增无 `user_id`、无业务外键的 `global_companies` 平台资料表，保存标准化名称、Logo、官网、行业、规模、融资阶段和简介；当前没有对应路由、管理页面、自动匹配或用户岗位回填。
 
@@ -120,7 +122,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 发布 runner 对 `0051` 已应用状态额外要求 `user_profiles` 的目标画像列存在且旧列（含中间 `professional_directions`）消失；若 `0051` 尚未应用但目标画像结构已经完整，则允许 revision 自身执行安全 no-op，部分或混合结构仍在 DDL 前拒绝。
 
-普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历和 initial 版本。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名；若同一用户已存在规范键同名标题，Worker 在用户行锁内依次追加数字后缀 `1`、`2` 直到可用。Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
+普通创建必须提供名称和启用模板，在用户行锁内完成容量、名称规范键和模板快照校验，再以 `source_type=template` 原子创建当前简历。正式简历与活动导入任务共享每用户 10 个名额。异步导入同样必须提供启用模板，其标题来自安全化源文件名；若同一用户已存在规范键同名标题，Worker 在用户行锁内依次追加数字后缀 `1`、`2` 直到可用。Web 默认选择 `classic-technical-cn`，不可用时只回退到其他非空白启用模板，解析内容作为 data，所选模板提供 style。自动保存使用 `resume_id + user_id + base_lock_version` 条件更新并递增锁，不创建版本。模板切换使用同一乐观锁边界的独立原子服务：当前 `data_json` 保持不变，目标启用模板提供 `style_json` 与 `template_id`，成功后只递增一次锁；目标无效或版本冲突不会写入部分结果。手动正式版本在创建和重命名时保存 1–80 字符的名称；旧调用方缺省时按版本号生成“版本 N”。手动版本、重命名、删除版本与恢复都先锁定所属简历；重命名只更新名称，恢复直接替换当前简历且不创建新版本；每份简历最多保存 10 个版本。`0023` 为 `resume_versions.name` 回填历史名称，历史初始版本、恢复前备份和 restore 记录使用系统名称。
 
 `0003` 曾把模板外键改为 `ON DELETE SET NULL`，允许目录项删除后暂时保留历史 `source_type=template/template_id=NULL`；`0047` canonical cutover 后，`resumes.template_id` 与 `resume_versions.template_id` 均为非空并使用 `ON DELETE RESTRICT`，退役目录项通过 inactive tombstone 保留关系身份。MySQL 8.4 禁止 `SET NULL` 外键列参与 CHECK，因此早期 `ck_resumes_source_fields` 只约束来源证据字段；当前模板身份由非空外键和统一创建/切换服务共同保证。`0004` 曾新增对象存储清理任务表；`0010` 在删除链路改为同步后移除该表，upgrade 会先锁表并在存在待处理任务时拒绝删表。部署流水线先迁移再替换应用，因此迁移到 `0010` 前须确认任务表为空；迁移和容器替换之间的旧应用删除请求可能短暂失败。`0005` 在批量转换前核对旧节点和样式字段，只接受可完整表达的上一版结构；遇到未知字段、危险 Markdown 或无法保留的内嵌图片会中止。`0012` 删除 `resumes` 和 `resume_versions` 的旧版内容与样式备份列；恢复旧 JSON 必须使用迁移前的外部数据库备份。已进入共享环境的 revision 不原地修改，修正通过新的向前 revision 完成。
 
@@ -148,13 +150,13 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `modules/resumes/pdf_service.py` 是 Web 与小程序共用的 PDF 边界：从快照提取 LinkResume 私有图片引用，按用户/简历对象键读取 PNG/JPEG 并转为内存 data URL，再以有界 stdin/stdout 协议启动一次性 Node/Chromium 进程。Linux root 环境在 `runuser` 和专用 `linkresume-pdf` 账号可用时降权启动；Windows 或缺少 Unix 账号 API 时直接启动 Node，并继续使用相同的输入、输出、并发与超时边界。简历图片上传与 PDF 读取共用 10 MiB 单图上限，当前快照内所有私有图片的原始二进制总量也限制为 10 MiB；更新、模板切换和版本恢复先用对象元数据校验同一导出契约，PDF 渲染再次读取并校验作为纵深防线。渲染 JSON 输入上限为 24 MiB，以容纳 Base64 编码增量和简历快照。渲染器不监听端口、不读取任意对象键、不联网抓取正文资源，也不把快照或输出写入持久临时文件；并发、输入、单图、图片总量、输出、超时和智能页高都有上限。Web `GET /api/resumes/{id}/pdf` 校验当前 Cookie 用户和 `lock_version`，直接渲染 `resumes` 当前快照。
 
-小程序简历接口仍从 `resume_versions` 选择最新 `reason=manual` 快照，没有手动版本时选择 `reason=initial`，因此不会暴露自动保存草稿。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。`core/pdfium_lock.py` 的进程级互斥锁覆盖 PNG 栅格化和岗位资料 PDF 校验的原生调用与资源释放；预览容量限制保留，避免并行调用 PDFium 导致进程崩溃。
+小程序 v2 简历接口读取 resumes 当前已保存正文，PDF/PNG 必须提交匹配的 lock_version；旧协议明确返回 426。PDF/PNG 请求再次核对小程序会话、本人归属和当前版本标识，在请求副本中设置 `style.portable.smart_one_page=true`，并用同一 canonical 正文、模板快照和后端 `LayoutPlan` 渲染，不修改持久版本。PNG 路由继续用 `pypdfium2`/PDFium 把唯一页面渲染为最大宽度 1440 像素的 RGB 图片；页面尺寸、总像素和输出字节都有上限，并发栅格化槽位固定。异常以稳定 4xx/503 错误收口。`core/pdfium_lock.py` 的进程级互斥锁覆盖 PNG 栅格化和岗位资料 PDF 校验的原生调用与资源释放；预览容量限制保留，避免并行调用 PDFium 导致进程崩溃。
 
 `0021` 将 `resume_imports` 一次性迁移为通用 `document_parse_tasks`：任务表保存 `source_type=resume_import`、源文件和上传/解析状态，不再持有最终简历指针；`resumes.parse_task_id` 以无外键的可空唯一列记录来源任务，由 Worker 在创建简历和完成任务的同一事务中维护。迁移沿用原任务主键并回填来源指针，随后删除旧表；需要恢复旧表与数据时使用迁移前备份。转换后的 Markdown 尽力存入 `converted_object_name`，历史迁移记录保持为空，生命周期检查不依赖该字段。
 
 `0022` 扩展 `document_parse_tasks.source_type` 与文件格式约束以支持资料解析，并新增两个消费方共用的可空 `failure_reason`。迁移会删除上线前的全部 `user_dataset` 行；对象存储源文件必须在迁移前、确认数据库与对象存储备份后，通过 `scripts/release/cleanup_legacy_user_datasets.py --execute` 清理。该数据删除只能从备份恢复。`0023` 为 `resume_versions` 增加非空 `name`，先按版本原因和编号回填存量快照，再允许新建正式版本时保存用户名称；执行前必须确认数据库备份。
 
-`0028`–`0029` 扩展并收敛多能力模型配置；`0030` 新增 `agent_sessions`、`agent_runs`、`agent_messages`、`agent_tool_calls` 和 `resume_change_proposals`；`0031` 为提案增加兼容模式、稳定 locator、目标哈希、结构化诊断、类型化 operation、修改依据和资料引用；`0032` 为消息增加 `message_type` 和可空 `metadata_json`，存储版本化的结构化澄清问题，存量消息回填并保持为 `text`；`0052` 为会话增加非空 `pinned` 状态并扩展置顶排序索引；`0065` 回填旧会话的消息级简历快照后删除会话级简历列和对应索引。五张 Agent 表不建立数据库外键，关联 ID、所有权、引用完整性和删除清理由 FastAPI 在事务中显式维护；查询仍使用实际访问路径对应的索引。`0031` 对旧记录使用 `legacy_snapshot` 且新增 JSON 字段可空，因此旧 pending 提案仍可确认。MySQL 保存产品会话和审计真值；Pi 容器不持有业务数据库连接。范围化提案由 FastAPI 在当前快照副本上应用经过模式和作用域校验的 operation 后保存完整候选简历与样式；`delete_target` 会从 section/entry 正文的 canonical 树移除完整 paragraph/list item，不以空文本模拟删除。确认事务使用行锁、目标哈希和当前快照重放不相交的范围化 operation，随后更新 `resumes` 并创建 `resume_versions.reason=agent` 的不可变版本；旧快照和翻译提案仍严格使用乐观锁。数据库迁移统一 forward-only，恢复旧数据库状态依赖备份，问题修正通过新的向前 revision 完成。
+`0028`–`0029` 扩展并收敛多能力模型配置；`0030` 新增 `agent_sessions`、`agent_runs`、`agent_messages`、`agent_tool_calls` 和 `resume_change_proposals`；`0031` 为提案增加兼容模式、稳定 locator、目标哈希、结构化诊断、类型化 operation、修改依据和资料引用；`0032` 为消息增加 `message_type` 和可空 `metadata_json`，存储版本化的结构化澄清问题，存量消息回填并保持为 `text`；`0052` 为会话增加非空 `pinned` 状态并扩展置顶排序索引；`0065` 回填旧会话的消息级简历快照后删除会话级简历列和对应索引。五张 Agent 表不建立数据库外键，关联 ID、所有权、引用完整性和删除清理由 FastAPI 在事务中显式维护；查询仍使用实际访问路径对应的索引。`0031` 对旧记录使用 `legacy_snapshot` 且新增 JSON 字段可空，因此旧 pending 提案仍可确认。MySQL 保存产品会话和审计真值；Pi 容器不持有业务数据库连接。范围化提案由 FastAPI 在当前快照副本上应用经过模式和作用域校验的 operation 后保存完整候选简历与样式；`delete_target` 会从 section/entry 正文的 canonical 树移除完整 paragraph/list item，不以空文本模拟删除。确认事务使用行锁、目标哈希和当前快照重放不相交的范围化 operation，随后只更新当前 `resumes` 与提案状态，不创建历史记录；旧快照和翻译提案仍严格使用乐观锁。数据库迁移统一 forward-only，恢复旧数据库状态依赖备份，问题修正通过新的向前 revision 完成。
 
 `0033` 新增 `job_applications`、`interview_sessions` 和 `interview_assets`；`0057` 再把求职生命周期、阶段历史和排期拆开。岗位 JD 创建或导入时在同一事务内创建或复用待投递 `job_applications`，因此正常入口不会只产生 JD。待投递记录可通过一次阶段命令直接进入 `screening/assessment/written_test/ai_interview/interview/offer`，不需要单独写“已投递”；命令可补填带时区的 `applied_at`，省略时以后端有效操作时间为准。每次推进追加一条 `job_application_stages`，旧当前阶段完成并保留，普通面试名称由用户填写且轮次可空。终止命令独立保存生命周期、时间和原因，并关闭当前阶段。
 
@@ -181,9 +183,11 @@ scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有�
 
 Agent 的 Pi SSE 由 `modules/agent/run_stream.py` 在 FastAPI 进程内独立消费并缓冲；浏览器切页、切换会话或刷新只断开当前订阅，返回后可按本人会话查询 active run 并重放事件。只有显式取消才停止模型运行；后端进程重启而缓冲丢失时，遗留 running run 以 `AGENT_STREAM_INCOMPLETE` 失败收口，不重复调用模型。
 
-智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。登录用户可通过 `GET /api/agent/model` 读取当前 `pi_agent` binding 的非敏感 `{adapter, name}` 摘要；该查询只解析绑定配置，不解密凭据，也不返回配置 ID、地址、价格或验证记录。`context_service.py` 为独立助手页列出简历、历史版本、解析成功的资料库文件、岗位、求职进程和面试的轻量引用；发送时在同一事务链中按当前用户重新查询、锁定并核对版本标记。Pi 的 `list_user_resources` 复用同一 owner-scoped 列表逻辑，只允许列出简历、已解析资料和面试记录的轻量元数据，不返回正文。资料库引用还会校验解析成功状态和 `users/{uid}/datasets/converted/` 对象前缀，再读取有界 Markdown；只有字段白名单内且有长度上限的资料会交给 Pi，消息元数据只保存展示用引用快照。
+一次 Agent run 的任务清单保存在所属用户消息的 `metadata_json.agent_tasks`，不增加并行的任务表。内部计划接口校验任务数、工作流与产物组合、唯一任务 ID 和有序依赖；内部状态接口校验状态转换及同一 run 的提案 ID。Pi 按任务切换工作流，简历提案仍由 FastAPI 复验目标、诊断和操作。`agent_runs.status` 表示运行终态，任务是否完成以各任务状态和真实提案为准；会话回读可提供这些任务结果。
 
-Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发送前保存当前草稿，并通过统一 `contexts` 协议提交 owner-scoped `resume` 引用，选区只在同一上下文内定位并随用户消息保存。回答结构化澄清时，FastAPI 从原 run 的用户消息继承引用与选区并重新校验归属、存在性和版本；同类型目标或选区冲突时拒绝创建新 run。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID 与配置版本快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文，并保留结构化澄清问题和已复验答案；代理会转发 Pi 的临时活动增量、按 `callKey` 更新的结构化活动状态和清空事件，但只把正式 `assistant.delta` 汇总为助手正文，结构化澄清也始终使用服务端生成的安全文本。成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本或临时活动写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退，并同步输出不含提示词或简历正文的阶段日志；Pi 运行失败额外输出只含 run ID、内部错误码和取消标记的结构化终点日志。Pi 对 FastAPI 只允许调用资源目录、目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内已注册 Skill Markdown，不访问业务存储或其他服务端文件。范围上下文的 locator 与哈希由 Pi 运行时保留并注入 operation；`polish_local` 每张提案仍限定一个局部 operation，复合请求则一次提交不可变任务清单，并由 Pi 在同一 run 内串行完成每个独立目标的定位、读取、诊断和提案。section 或 entry 标题锚点可以为重复短文本提供多个已读取子块的稳定 ID，不能把多目标识别当成工具失败；单项失败只记录稳定终态并继续后续任务，批处理重放不重复创建提案。内部路由从可信 `runId` 反查用户，不接受调用方传入用户身份；消息上下文、显式解析结果和目标 locator 中的简历 ID 都会按该用户复验。完整边界见 [Pi 集成文档](third-party-pi.md)。
+智能助手的浏览器请求先由 FastAPI 创建运行并写入 MySQL，再代理到独立 `apps/pi-service`。登录用户可通过 `GET /api/agent/model` 读取当前 `pi_agent` binding 的非敏感 `{adapter, name}` 摘要；该查询只解析绑定配置，不解密凭据，也不返回配置 ID、地址、价格或验证记录。`context_service.py` 为独立助手页列出简历、解析成功的资料库文件、岗位、求职进程和面试的轻量引用；发送时在同一事务链中按当前用户重新查询、锁定并核对版本标记。Pi 的 `list_user_resources` 复用同一 owner-scoped 列表逻辑，只允许列出简历、已解析资料和面试记录的轻量元数据，不返回正文。资料库引用还会校验解析成功状态和 `users/{uid}/datasets/converted/` 对象前缀，再读取有界 Markdown；只有字段白名单内且有长度上限的资料会交给 Pi，消息元数据只保存展示用引用快照。
+
+Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发送前保存当前草稿，并通过统一 `contexts` 协议提交 owner-scoped `resume` 引用，选区只在同一上下文内定位并随用户消息保存。回答结构化澄清时，FastAPI 从原 run 的用户消息继承引用与选区并重新校验归属、存在性和版本；同类型目标或选区冲突时拒绝创建新 run。Pi 通过服务间 HTTP 读取当前 `pi_agent` binding 的解密运行配置，并把所选模型 ID、配置版本及请求模型标识快照到 `agent_runs`；它不使用 LiteLLM，也不提供独立模型治理。FastAPI 每轮从当前 `agent_session` 的消息恢复有限上下文，并保留结构化澄清问题和已复验答案；代理会转发 Pi 的临时活动增量、按 `callKey` 更新的结构化活动状态和清空事件，但只把正式 `assistant.delta` 汇总为助手正文，结构化澄清也始终使用服务端生成的安全文本。成功运行把完整助手文本或结构化澄清消息、Token 和可用的估算成本写回数据库，失败、取消或缺失终态时只保存运行终态，不把已经流出的半条文本或临时活动写成历史助手消息。澄清回答以助手消息序号做并发校验，只有它仍是当前会话最后一条结构化澄清消息时才允许创建下一轮。取消与流式收口以条件更新和运行行锁保证终态只写一次。工具审计先锁运行行再按 call key 幂等写入，终态不可回退，并同步输出不含提示词或简历正文的阶段日志；Pi 运行失败额外输出只含 run ID、内部错误码和取消标记的结构化终点日志。Pi 对 FastAPI 只允许调用资源目录、目标解析、范围上下文、当前用户资料召回、结构化诊断和范围化提案工具；受限 `read` 仅加载 Pi 镜像内已注册 Skill Markdown，不访问业务存储或其他服务端文件。范围上下文的 locator 与哈希由 Pi 运行时保留并注入 operation；`polish_local` 每张提案仍限定一个局部 operation，复合请求则一次提交不可变任务清单，并由 Pi 在同一 run 内串行完成每个独立目标的定位、读取、诊断和提案。section 或 entry 标题锚点可以为重复短文本提供多个已读取子块的稳定 ID，不能把多目标识别当成工具失败；单项失败只记录稳定终态并继续后续任务，批处理重放不重复创建提案。内部路由从可信 `runId` 反查用户，不接受调用方传入用户身份；消息上下文、显式解析结果和目标 locator 中的简历 ID 都会按该用户复验。完整边界见 [Pi 集成文档](third-party-pi.md)。
 
 `LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册 HTTP route。调用方只提供可信 `user_id`、稳定 `source`、messages，以及结构化调用所需的响应模型；不传候选 ID、adapter、模型名、地址或密钥。服务按调用方传入的能力解析唯一当前 binding；当前能力未绑定时，Chat 返回 `LLM_CHAT_NOT_CONFIGURED`，其他能力返回 `LLM_MODEL_NOT_CONFIGURED`。单次逻辑调用只调用当前模型一次，供应商失败直接收口，不重试、不遍历其他候选、不自动切换 binding。结构化调用把 Pydantic JSON Schema 作为系统指令加入 messages，不向供应商传递 `response_format`；模型文本由 LinkResume 本地提取 JSON 对象并执行 Pydantic 严格校验，非法结果以 `LLM_RESPONSE_INVALID` 收口且不追加模型调用。
 
@@ -226,9 +230,9 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 - 知识库原文件：`users/{user_id}/datasets/...`。
 - 知识库转换存档：`users/{user_id}/datasets/converted/{parse_task_id}.md`。
 - 简历资源：`users/{user_id}/resumes/{resume_id}/assets/...`。
-- 面试素材：`users/{user_id}/interviews/{application_id}/{session_id}/...`。
+- 面试素材：`users/{user_id}/datasets/...`（迁移 `0082` 后与资料库同前缀同规则；历史 `users/{user_id}/interviews/{application_id}/{session_id}/...` 对象由迁移脚本搬迁并删除）。
 
-简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resumes.parse_task_id` 读取对应 `document_parse_tasks`，删除源文件、转换存档和任务记录，再删除简历资源、版本和简历；任务记录异常缺失时只记录告警，不阻断简历删除。面试录音、视频和文档使用流式上传，服务端在传输中计算 SHA-256 并执行 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 上限，不把完整文件读入内存；浏览器录制和事后上传最终进入同一私有前缀。MinIO 与 MySQL 不是同一事务，元数据提交失败会尽力补偿删除新对象，对象删除成功后的数据库提交失败仍无法恢复对象。
+简历级读取先校验所属简历。资源删除会递归检查当前和历史 `data_json` 引用；仍在使用时拒绝删除。删除导入生成的正式简历时通过 `resumes.parse_task_id` 读取对应 `document_parse_tasks`，删除源文件、转换存档和任务记录，再删除简历资源、版本和简历；任务记录异常缺失时只记录告警，不阻断简历删除。面试录音、视频和文档使用流式上传，服务端在传输中计算 SHA-256 并执行 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 上限，不把完整文件读入内存；浏览器录制和事后上传复用 `dataset_ingest_service` 同一入库链路，最终落在 `users/{user_id}/datasets/` 前缀并以 `user_dataset.interview_session_id` 关联场次。MinIO 与 MySQL 不是同一事务，元数据提交失败会尽力补偿删除新对象，对象删除成功后的数据库提交失败仍无法恢复对象。
 
 ## 用户中心
 
@@ -238,13 +242,13 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 ## 简历分享
 
-`application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}` 与 `/api/share/{token}/pdf`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 分享记录对应用户与简历存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取简历主记录中最近一次保存成功的 `data/style` 草稿并返回 `data/style/layout_plan/assets/sharer`，不保存分享快照，因此自动保存成功后无需创建正式版本即可反映到分享页，尚未保存成功的浏览器本地编辑不会公开。`assets` 复用 PDF 的受控解析边界，从分享记录反查用户和简历后只读取当前草稿引用的本人 PNG/JPEG，并以内存 data URI 返回；单图和快照图片原始总量均限制为 10 MiB，响应使用 `private, no-store`，匿名请求不能指定或读取任意对象键。公开 PDF 复用 `pdf_routes.py` 的受控渲染与下载响应，只把当前草稿的 `portable.smart_one_page` 在渲染副本中强制设为 `true`，不回写数据库，也不渲染分享页面外壳。
+`application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}` 与 `/api/share/{token}/pdf`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 分享记录对应用户与简历存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取简历主记录中最近一次保存成功的 `data/style` 草稿并返回 `data/style/layout_plan/assets/sharer`，不保存分享快照，因此自动保存成功后无需创建正式版本即可反映到分享页，尚未保存成功的浏览器本地编辑不会公开。`assets` 复用 PDF 的受控解析边界，从分享记录反查用户和简历后只读取当前草稿引用的本人 PNG/JPEG，并以内存 data URI 返回；单图和快照图片原始总量均限制为 10 MiB，响应使用 `private, no-store`，匿名请求不能指定或读取任意对象键。公开 PDF 复用 `pdf_routes.py` 的受控渲染与下载响应，只把当前草稿的 `portable.smart_one_page` 在渲染副本中强制设为 `false` 以输出 A4 分页，不回写数据库，也不渲染分享页面外壳。
 
 ## 测试约定
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到 `0065`、模板初始化和物理约束验证。
+- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 另以一次性 MySQL 8.4 服务固定验证 `0081 → 0082`。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 

@@ -40,16 +40,16 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `GET` | `/api/miniprogram/resumes` | `{resumes}`；本人简历摘要，按更新时间倒序；`preview` 与 `pdf_version_id/pdf_version_no` 来自最新手动版本，无手动版本时来自初始版本 |
-| `GET` | `/api/miniprogram/resumes/:id` | `{resume}`；返回本人当前可读正式版本及 PDF 版本标识，不返回自动保存草稿；不存在或越权统一 `404 RESUME_NOT_FOUND` |
-| `GET` | `/api/miniprogram/resumes/:id/pdf?version_id=...` | 当前可读正式版本的文字 PDF；`version_id` 必须仍等于最新可读版本，响应 `application/pdf`、`private, no-store` 并携带版本响应头 |
-| `GET` | `/api/miniprogram/resumes/:id/preview.png?version_id=...` | 当前可读正式版本的智能一页 PNG；响应 `image/png`、`private, no-store` 并携带版本响应头，供小程序在当前页面内显示和本机缓存 |
+| `GET` | `/api/miniprogram/v2/resumes/:id/pdf?lock_version=...` | 当前已保存内容的文字 PDF，响应 X-LinkResume-Lock-Version 与 private, no-store |
+| `GET` | `/api/miniprogram/v2/resumes/:id` | `{resume}` 当前正文及内部 lock_version；越权或不存在返回 404 |
+| `GET` | `/api/miniprogram/v2/resumes/:id/pdf?lock_version=...` | 当前已保存内容的文字 PDF，响应 X-LinkResume-Lock-Version 与 private, no-store |
+| `GET` | `/api/miniprogram/v2/resumes/:id/preview.png?lock_version=...` | 当前已保存内容的智能一页 PNG，响应 X-LinkResume-Lock-Version 与 private, no-store |
 | `GET` | `/api/miniprogram/account/profile` | `{nickname, avatar_url}`；本人资料，`avatar_url` 恒为 `/api/miniprogram/account/avatar` 或 `null` |
 | `PATCH` | `/api/miniprogram/account/profile` | 同上；JSON `{nickname}`，去空白后非空且不超过 50 字，否则 `400 INVALID_NICKNAME` |
 | `PUT` | `/api/miniprogram/account/avatar` | `{url}`；JSON `{dataUrl, fileName?}`，复用 `/api/account/avatar` 的解码、10MB 上限与 MinIO 归属键规则，替换后删除旧头像对象 |
 | `GET` | `/api/miniprogram/account/avatar` | 本人头像二进制流（`image/*`、`private`）；无头像返回 `404 ASSET_NOT_FOUND`。普通 `/api/assets/*` 仍只接受 Web Cookie，小程序只能经此专用端点读取头像 |
 
-四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览选择最新 `reason=manual` 快照，没有手动版本时回退 `reason=initial`；客户端版本过期或无可读版本返回 `409 RESUME_VERSION_UNAVAILABLE`。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从该版本真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PNG 栅格化进入进程级 PDFium 互斥区；预览槽位耗尽仍返回 `503 RESUME_PDF_BUSY`，不改变版本与归属校验。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
+四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览读取当前已保存内容；必填 lock_version 不匹配返回 409 RESUME_EDIT_CONFLICT。旧四个简历协议端点返回 426 CLIENT_UPDATE_REQUIRED。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从当前内容真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PNG 栅格化进入进程级 PDFium 互斥区；预览槽位耗尽仍返回 `503 RESUME_PDF_BUSY`，不改变版本与归属校验。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
 
 ### 用户中心
 
@@ -72,8 +72,8 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
-| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表                           |
-| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`                                                     |
+| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组；按 `sort_order`、ID 升序 |
+| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组 |
 | `GET`    | `/api/resumes`              | 是   | `{resumes}`，摘要含可选 `preview`，按更新时间倒序                |
 | `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
@@ -91,20 +91,16 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和恢复历史版本均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
 
-每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建在同一事务写入当前简历及 `version_no=1/reason=initial` 快照。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
+每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建只写当前简历，不创建历史记录。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
-## 历史版本
+## 当前内容复制与存量取回
 
-| Method   | Path                                            | 鉴权 | 成功结果                                               |
-| -------- | ----------------------------------------------- | ---- | ------------------------------------------------------ |
-| `GET`    | `/api/resumes/:id/versions`                     | 是   | `{versions}`，正式版本号倒序；每项含 `name`            |
-| `POST`   | `/api/resumes/:id/versions`                     | 是   | `201 {version}`，创建带名称的 `manual` 快照            |
-| `GET`    | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}` 完整快照，含 `name`                        |
-| `PATCH`  | `/api/resumes/:id/versions/:version_no`         | 是   | `{version}`；只更新指定正式版本的 `name`               |
-| `DELETE` | `/api/resumes/:id/versions/:version_no`         | 是   | `{deleted}`；删除指定旧版本                            |
-| `POST`   | `/api/resumes/:id/versions/:version_no/restore` | 是   | `{resume}`；直接用目标正式版本替换当前简历，不创建新版本 |
+日常简历不提供历史管理。旧 GET /versions 和 GET /versions/:version_no 仅用于存量保全；旧 POST、PATCH、DELETE 与 restore 在归属校验后返回 410 RESUME_VERSION_RETIRED。不存在或越权先返回 404，历史表及其图片引用仍保留。
 
-版本号单调递增且不复用；每份简历默认最多保存 10 个正式版本。创建和重命名请求中的 `name` 会去除首尾空白并折叠连续空白，规范化后必须为 1–80 个字符；创建缺省名称兼容旧调用方并按版本号生成“版本 N”。非法名称返回 `400 INVALID_RESUME_VERSION_NAME`。`PATCH` 重命名只更新指定版本的名称，不改变 `data/style` 快照、不创建新版本，也不改变当前简历标题。恢复直接使用已存在的目标快照替换当前简历，不创建新的 `before_restore` 或 `restore` 版本，也不占用版本空间。创建版本空间不足时返回 `409 RESUME_VERSION_LIMIT_REACHED`，不会自动删除任何历史版本；用户删除旧版本后才能继续。最新版本作为当前恢复基准不可删除，尝试删除返回 `409 LATEST_RESUME_VERSION_REQUIRED`。版本不存在返回 `404 RESUME_VERSION_NOT_FOUND`，并发兜底失败返回 `409 VERSION_CONFLICT`。历史数据中的 `before_restore`、`restore` 原因仍可读取，但新恢复操作不会再生成这两类记录。旧版本名称由 `0023` 按原因回填，Web 版本抽屉只展示这些正式版本，不单独展示当前草稿。
+- POST /api/resumes/:id/copy 接受 {title,base_lock_version,client_request_id}，请求 ID 必须为 UUID；成功 201 {resume}，相同请求重试 200 返回同一副本。
+- POST /api/resumes/:id/versions/:version_no/copy 接受 {title,client_request_id}，只复制指定存量内容为新简历，不覆盖当前内容。
+- 同请求 ID 不同参数返回 409 RESUME_COPY_REQUEST_CONFLICT；过期锁返回 409 RESUME_EDIT_CONFLICT；标题冲突与简历数量上限分别为 RESUME_TITLE_CONFLICT、RESUME_LIMIT_REACHED；图片复制失败返回 502 RESUME_COPY_ASSET_FAILED，不保留半成品。
+- 副本保留正文和模板快照（包括已下架模板），源简历专属图片复制到新命名空间，不继承分享链接和导入任务。不创建新的 resume_versions 行。
 
 ## 简历智能助手
 
@@ -112,32 +108,38 @@ Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再
 
 消息请求另支持可选 `revision_proposal_id`，只接受当前用户、当前会话内的 pending 提案。服务端从该提案确定本轮目标简历并提供原提案上下文，不采信客户端传来的提案正文；澄清续答继承该关联。会话消息返回可空 `run_id`，供客户端按来源轮次归组。提案列表默认仅返回最近 20 项 pending 提案，增加 `include_history=true` 可返回最近 200 项全部状态，仍受用户及查询过滤条件约束。提案返回可空 `superseded_by`：替代提案成功创建时，在同一事务中把原提案置为 rejected 并在原消息元数据记录替代 ID；有此字段的界面显示“已被替代”，不能再确认。新消息、取消或创建失败本身不会放弃原提案。
 
+Pi 在执行前通过服务间 `POST /internal/agent/runs/:runId/tasks:plan` 保存 1–8 项任务；每项包含唯一 `id`、`workflow`、`output`、`label`、只引用前序任务的 `depends_on` 和可选的本轮已授权 `context_refs`。任务通过 `POST /internal/agent/runs/:runId/tasks/:taskId:status` 依次更新为 `running` 和 `completed|partial|blocked|failed`。计划与结果写在该 run 的用户消息元数据中，会话回读时该消息可返回 `tasks`；提案类任务的 `proposal_ids` 必须确属同一 run。服务端拒绝未授权资料引用、重复改写计划、非法状态转换和未完成依赖。`run.status=succeeded` 只表示模型运行正常结束，不代替各任务的业务结果。
+
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
 | `GET` | `/api/agent/model` | `200 {model: {adapter, name}}`；登录后读取当前 `pi_agent` 绑定的非敏感模型摘要，不返回配置 ID、地址、凭据、价格或验证记录 |
-| `GET` | `/api/agent/contexts[?type=:type&q=:query&prefix=:bool&limit=:limit]` | `{contexts}`；返回当前用户可选的轻量资料引用，类型为 `resume`、`resume_version`、`dataset`、`job`、`application` 或 `interview`；`prefix=true` 时按名称前缀匹配；`dataset` 只包含解析成功且转换对象有效的本人资料，不返回正文 |
+| `GET` | `/api/agent/contexts[?type=:type&q=:query&prefix=:bool&limit=:limit]` | `{contexts}`；返回当前用户可选的轻量资料引用，类型为 `resume`、`dataset`、`job`、`application` 或 `interview`；`prefix=true` 时按名称前缀匹配；`dataset` 只包含解析成功且转换对象有效的本人资料，不返回正文 |
 | `GET` | `/api/agent/sessions` | `{sessions}`；返回当前用户最近更新的至多 50 个独立会话，不按简历绑定或过滤 |
 | `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{title?,resume_id?}`，其中 `resume_id` 只为旧 Web 缓存兼容而接收并忽略，不校验、不持久化也不返回绑定语义；会话不保存默认简历 |
 | `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
 | `PATCH` | `/api/agent/sessions/:sessionId` | `200 {session}`；请求至少包含一个字段，可更新 `title`（trim 后 1–128 字符）或 `pinned`（布尔值） |
 | `DELETE` | `/api/agent/sessions/:sessionId` | `204`；无运行中任务时永久删除该会话及其 Agent 依赖数据 |
-| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, contexts?, reply_to_sequence_no?, clarification_answers?}`；`contexts` 是唯一的本轮资料协议，最多 10 项且同类型只能选择一项，每项携带服务端返回的 `type`、`id` 和版本标记；当前简历使用 `{type:"resume",id}`，独立助手中自动附带的已打开简历额外使用 `presentation:"implicit"`，该兼容新增字段只控制用户消息是否展示引用单元，不改变授权或模型材料。服务端按当前用户解析为消息级快照和材料，不写入会话。选区包含稳定块 ID、编辑器范围、原文和 SHA-256，并随来源消息持久化；回答结构化澄清问题时携带对应助手消息序号，服务端同时继承并复验原上下文、展示来源与选区，当前 Web 发送 `{question_id,option_id,value?}` 数组 |
+| `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, contexts?, reply_to_sequence_no?, clarification_answers?, replace_inherited_resume?}`；`contexts` 是唯一的本轮资料协议，最多 10 项且同类型只能选择一项，每项携带服务端返回的 `type`、`id` 和版本标记；当前简历使用 `{type:"resume",id}`，独立助手中自动附带的已打开简历额外使用 `presentation:"implicit"`，该兼容新增字段只控制用户消息是否展示引用单元，不改变授权或模型材料。服务端按当前用户解析为消息级快照和材料，不写入会话。选区包含稳定块 ID、编辑器范围、原文和 SHA-256，并随来源消息持久化；回答结构化澄清问题时携带对应助手消息序号，服务端同时继承并复验原上下文、展示来源与选区，当前 Web 发送 `{question_id,option_id,value?}` 数组 |
 | `GET` | `/api/agent/sessions/:sessionId/active-run` | `{run: {run_id,status,started_at} \| null}`；只返回本人会话当前仍在运行的 run，用于刷新或返回助手页后恢复状态 |
 | `GET` | `/api/agent/runs/:runId/events` | SSE；重新订阅本人 run 的缓冲事件，运行完成后仍以既有 `run.*` 终态结束 |
 | `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
 | `GET` | `/api/agent/proposals?resume_id=:id&session_id=:sessionId` | `{proposals}`，只返回当前待确认提案；两个过滤条件至少提供一个，`session_id` 按本人会话过滤且不要求会话绑定该简历 |
-| `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；普通范围化提案更新源简历并创建 `agent` 版本；若仅有无关提案先行应用导致版本变化，服务端按目标哈希在当前快照安全重放，目标自身变化才返回 `TARGET_STALE`；旧快照与 `translate_resume` 仍要求原始版本，翻译提案返回新创建的独立简历 |
+| `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；普通范围化提案只更新源简历的当前内容；若仅有无关提案先行应用导致版本变化，服务端按目标哈希在当前快照安全重放，目标自身变化才返回 `TARGET_STALE`；旧快照与 `translate_resume` 仍要求原始版本，翻译提案返回新创建的独立简历 |
 | `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
 
-SSE 事件包括 `run.started`、`run.phase`、`assistant.activity.delta`、`assistant.activity.status`、`assistant.activity.clear`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。Pi 在工具阶段把模型主动生成的可见 `text_delta` 和兼容的工具执行标签逐个发送为临时 `assistant.activity.delta`；结构化 `assistant.activity.status` 携带 `{runId,callKey,label,status,errorCode?}`，其中 `status` 为 `running|succeeded|failed`，浏览器必须按 `callKey` 原位更新而不是追加重复步骤，失败时只暴露稳定错误码。隐藏思考 delta、工具调用参数和工具结果不进入这些事件；原有 `tool.started/tool.completed` 继续只服务运行兼容与业务工具审计。全部业务工具完成后，模型必须调用不进入工具审计的内部切换工具；Pi 先发送一次 `assistant.activity.clear` 并关闭本轮工具，再把下一轮每个正式回复 `text_delta` 实时发送为 `assistant.delta`，不等待整条 assistant message 结束。临时活动只保存在运行事件缓冲中，不进入助手消息正文；结构化澄清也会先清空活动区，并只持久化服务端生成的澄清文本。`run.phase` 只允许服务端定义的稳定阶段和安全化文案，并可携带实际引用资料数量，不暴露工具参数或推理内容。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。服务端从该澄清所属 run 的用户消息继承原始 `contexts` 和 `selection_context`，重新校验资源存在性、归属和版本，再与客户端本轮引用合并；同类资源目标或选区不同返回 `409 AGENT_CLARIFICATION_CONTEXT_CONFLICT`，历史快照损坏返回 `409 AGENT_CLARIFICATION_CONTEXT_INVALID`。服务端按原问题复验 `clarification_answers` 的问题与选项并保存规范化答案；历史客户端可以只发送展示文本，但当前 Web 不依赖该兼容路径。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。
+SSE 事件包括 `run.started`、`run.phase`、`assistant.activity.delta`、`assistant.activity.status`、`assistant.activity.clear`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。Pi 在工具阶段把模型主动生成的可见 `text_delta` 和兼容的工具执行标签逐个发送为临时 `assistant.activity.delta`；结构化 `assistant.activity.status` 携带 `{runId,callKey,label,status,errorCode?}`，其中 `status` 为 `running|succeeded|failed`，浏览器必须按 `callKey` 原位更新而不是追加重复步骤，失败时只暴露稳定错误码。隐藏思考 delta、工具调用参数和工具结果不进入这些事件；原有 `tool.started/tool.completed` 继续只服务运行兼容与业务工具审计。全部业务工具完成后，模型必须调用不进入工具审计的内部切换工具；Pi 先发送一次 `assistant.activity.clear` 并关闭本轮工具，再把下一轮每个正式回复 `text_delta` 实时发送为 `assistant.delta`，不等待整条 assistant message 结束。临时活动只保存在运行事件缓冲中，不进入助手消息正文；结构化澄清也会先清空活动区，并只持久化服务端生成的澄清文本。`run.phase` 只允许服务端定义的稳定阶段和安全化文案，并可携带实际引用资料数量，不暴露工具参数或推理内容。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。服务端从该澄清所属 run 的用户消息继承原始 `contexts` 和 `selection_context`，重新校验资源存在性、归属和版本，再与客户端本轮引用合并；未经显式替换的同类资源目标或选区不同返回 `409 AGENT_CLARIFICATION_CONTEXT_CONFLICT`；仅当澄清续答显式携带新的简历引用与 `replace_inherited_resume:true` 时允许更换简历，服务端重新验证归属与当前内容并丢弃原简历选区，其他资料仍沿用冲突保护；历史快照损坏返回 `409 AGENT_CLARIFICATION_CONTEXT_INVALID`。服务端按原问题复验 `clarification_answers` 的问题与选项并保存规范化答案；历史客户端可以只发送展示文本，但当前 Web 不依赖该兼容路径。澄清续答要改用另一份简历时，必须同时提交新简历引用与 `replace_inherited_resume=true`；服务端重新校验归属和当前内容，丢弃旧简历选区。该标记不允许在普通新消息中使用，也不能替换其他类型的资料。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。
 FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器订阅断开不会取消模型运行；Web 返回助手页时先查询当前 run，再从头重放该 run 的缓冲事件，因此刷新、SPA 路由切换或切换其他会话不会丢失思考/输出状态。只有显式调用 cancel 才取消运行。事件缓冲是 FastAPI 进程内状态；若后端进程重启而数据库仍残留 running run，重连会以 `AGENT_STREAM_INCOMPLETE` 失败收口，不会重复调用模型。
 
 `/api/agent/model` 成功响应严格只有 `{model: {adapter, name}}`，其中 `adapter` 和 `name` 来自当前 `pi_agent` binding 与配置的 `model_call_name`；查询只解析绑定配置，不为展示目的解密凭据。未绑定或绑定配置不存在时返回 `503 LLM_MODEL_NOT_CONFIGURED`；其他受控 `LLMError` 也只映射为 `503` 错误码，不向浏览器暴露 `call_id`。
 
 `AgentSessionRecord` 始终包含布尔 `pinned`，不包含默认 `resume_id`；会话列表先按 `pinned DESC`，再按 `updated_at DESC, id DESC`。PATCH 只更新会话标题或置顶状态，不创建消息、不启动模型调用；标题会先去除并归一化空白，空标题、超长标题、空请求或显式 `null` 返回请求校验错误。PATCH/DELETE 都按当前用户校验归属，其他用户统一返回 `404 AGENT_SESSION_NOT_FOUND`。DELETE 会锁定会话和运行；存在 `status=running` 的运行返回 `409 AGENT_RUN_IN_PROGRESS` 且不修改数据，否则在一个事务内按 proposal、tool call、message、run、session 顺序清理，不影响其他会话或用户。
 
-独立助手页选择的资料不是可信正文：FastAPI 按当前用户重新查询每项资源、核对版本标记、拒绝不存在、越权或已过期的引用，并仅把受控字段和有界正文作为本轮只读 `contextMaterials` 交给 Pi。用户消息只持久化轻量引用快照，后续读取不会把历史正文重新注入。独立助手每轮选择的简历不会绑定会话；用户明确指定名称、ID 或轻量目录中的某一版本时，Pi 调用受限解析工具，FastAPI 按当前用户归属解析本轮目标。名称同名时返回候选；用户已给出更新时间等版本条件后，Pi 可用对应候选 ID 精确解析，不要求重新通过 `@` 选择。目标 locator 随范围读取、诊断和提案请求传递，跨用户结果继续不可见。Agent 不能直接写简历：普通修改先解析稳定 locator、读取最小范围、生成结构化诊断并创建类型化 operation 提案；复合局部请求必须一次提交完整任务清单，由 Pi 冻结后串行执行每个目标的定位、读取、诊断和独立提案，不能用共享可变目标状态并行创建提案。同一批处理调用在当前 run 内幂等，单项失败不会自动重试或阻止后续任务；整篇翻译创建 `translate_resume` 提案。确认普通范围化提案时，如果版本只因其他不相交提案或手工编辑变化，服务端在当前快照重新校验该提案的目标哈希并安全重放 operation；目标文本自身变化返回 `409 TARGET_STALE`，旧快照和翻译提案的版本变化仍返回 `409 RESUME_EDIT_CONFLICT`。确认翻译提案时源简历保持不变，创建新的 Resume 与初始版本，并以 `result_resume_id` 保证重复确认幂等。源 Resume 私有图片复制到新命名空间，账户级图片保持共享引用。翻译还可能返回 `RESUME_TITLE_CONFLICT`、`RESUME_LIMIT_REACHED`、`RESUME_TRANSLATION_INVALID` 或 `RESUME_TRANSLATION_ASSET_COPY_FAILED`。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`，普通提案正式版本已达上限时返回 `409 RESUME_VERSION_LIMIT_REACHED`。服务或模型错误继续使用安全化公开 code，供应商原始错误和 API Key 不进入浏览器响应。
+独立助手页选择的资料不是可信正文：FastAPI 按当前用户重新查询每项资源、核对版本标记、拒绝不存在、越权或已过期的引用，初始传给 Pi 的 `contextMaterials` 只含受控目录字段，不含正文。任务清单的 `context_refs` 必须是本轮引用的子集；启动任务后，内部材料接口再次校验当前归属和版本，只返回该任务引用的有界正文，并在任务结果中保存不含正文、包含内容指纹的来源收据。材料已变化时该任务受阻，不让旧正文继续进入模型。用户消息只持久化轻量引用快照，后续读取不会把历史正文重新注入。独立助手每轮选择的简历不会绑定会话；用户明确指定名称、ID 或轻量目录中的某份简历时，Pi 调用受限解析工具，FastAPI 按当前用户归属解析本轮目标。名称同名时返回候选；用户已给出更新时间等版本条件后，Pi 可用对应候选 ID 精确解析，不要求重新通过 `@` 选择。目标 locator 随范围读取、诊断和提案请求传递，跨用户结果继续不可见。Agent 不能直接写简历：普通修改先解析稳定 locator、读取最小范围、生成结构化诊断并创建类型化 operation 提案；复合局部请求必须一次提交完整任务清单，由 Pi 冻结后串行执行每个目标的定位、读取、诊断和独立提案，不能用共享可变目标状态并行创建提案。同一批处理调用在当前 run 内幂等，单项失败不会自动重试或阻止后续任务；整篇翻译创建 `translate_resume` 提案。
+
+确认普通范围化提案时，服务端始终在当前正文重新校验目标哈希并重放 operation，保留当前样式；不相交提案或手工编辑引起的内部锁变化不阻止应用。目标自身变化返回 `409 TARGET_STALE`，旧完整快照和翻译提案仍严格检查内部锁，变化返回 `409 RESUME_EDIT_CONFLICT`。普通确认原子提交当前正文和提案状态，不读取或写入历史版本，不再返回 `RESUME_VERSION_LIMIT_REACHED`；重复确认直接返回当前简历，不重放、不回退之后的编辑。响应仍为 `{resume}`。
+
+确认翻译提案时源简历保持不变，创建新的 Resume，不创建历史记录，并以 `result_resume_id` 保证重复确认幂等。源 Resume 私有图片复制到新命名空间，账户级图片保持共享引用。翻译还可能返回 `RESUME_TITLE_CONFLICT`、`RESUME_LIMIT_REACHED`、`RESUME_TRANSLATION_INVALID` 或 `RESUME_TRANSLATION_ASSET_COPY_FAILED`。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`。服务或模型错误继续使用安全化公开 code，供应商原始错误和 API Key 不进入浏览器响应。
 
 `/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`POST /runs/:runId/resources:list` 接受可选的 `{types,query,limit}`，其中类型只允许 `resume/dataset/interview`；它从 run 反查当前用户，按类型分别限制数量，并只返回 ID、名称、状态、版本和更新时间等轻量目录，不返回简历、资料或面试正文。`POST /runs/:runId/resumes:resolve-reference` 接受至少一个 `{title?,resume_id?}`，只解析属于当前用户的简历并返回整份简历 locator，不修改会话；名称不存在或同名不唯一返回 `not_found/ambiguous`，候选 ID 可用于用户已明确版本后的精确解析。除兼容的完整上下文和快照提案接口外，范围化编辑工具继续使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`；`targets:resolve` 可携带当前运行已由 `resolve-reference` 得到的 `resume_id`，仍由 FastAPI 复验当前用户归属。Pi 的模型工具只提交 `context:read` 已返回的 `block_id`、操作类型和新文本，Pi 运行时用同一读取结果补入完整 locator 与 expected-text hash 后再请求 `proposals:v2`，未知块在进入 FastAPI 前即拒绝。经历字段 locator 的 `field` 使用具体字段键；空字符串 `replace_target_text` 清空块内选区或可选字段，`delete_target` 删除 section/entry 正文中的完整 paragraph/list item canonical 节点且禁止携带新文本，`insert_after_target` 仍禁止空内容。整篇翻译使用 `POST /runs/:runId/proposals:translation`。目标出现零处或多处时不允许创建提案；用户已经明确父 section/entry 时，Pi 可先读取该范围，再按返回的不同 `block_id` 为重复短文本分别创建提案。诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件的 `tool_name` 白名单包含批量局部修改工具 `execute_local_resume_edit_plan`，并以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。工具参数在 Pi 执行函数前校验失败时以 `AGENT_TOOL_ARGUMENT_INVALID` 记为 failed，不上传原始参数。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 
@@ -152,11 +154,11 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，可续期、修改可见性或下载权限 |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
 | `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download}`；`sharer` 为 `{nickname, avatar_url}` |
-| `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的智能一页 PDF；沿用分享 token 的访问规则并要求允许下载 |
+| `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的 A4 分页 PDF；沿用分享 token 的访问规则并要求允许下载 |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_allow_download, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`share_allow_download` 为布尔值，旧记录和创建缺省值均为 `true`。`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
 
-公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按分享页的智能一页模式生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
+公开读取在通过 token、过期时间和 `private` 所有者校验后，从分享记录反查用户与简历，实时读取简历主记录中最近一次保存成功的 `data/style` 草稿，并把该草稿引用的本人私有 PNG/JPEG 解析为 `assets` 映射中的 data URI；无需创建正式版本，自动保存成功后公开内容立即更新，尚未保存成功的浏览器本地编辑不会公开。浏览器不直接匿名访问私有资源路由。对象键不能由匿名请求指定，单图和快照图片原始总量继续分别受 10 MiB 上限约束。JSON 与 PDF 成功响应都使用 `Cache-Control: private, no-store`。公开 PDF 复用编辑器的受控 Node/Chromium 渲染器，固定按 A4 分页生成，只包含简历文档，不包含分享页头部或操作按钮，并返回 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。`allow_download=false` 时公开 JSON 仍可读取并用于隐藏入口，但 PDF 路由对未登录访问者、其他登录用户和分享者本人统一返回 `404 SHARE_LINK_UNAVAILABLE`。
 
 `POST` 创建或覆盖请求可选 `{visibility, expires_at, allow_download}`，分别指定可见性（缺省 `public`）、有效期（缺省永久，即 `expires_at` 为 `null`）和 PDF 下载权限（缺省 `true`）。`PATCH` 用 `model_fields_set` 区分传入字段，可单独续期（延长或清除 `expires_at`）、切换可见性或更新下载权限；未开启分享时返回 `404 SHARE_LINK_UNAVAILABLE`。token 使用 `secrets.token_urlsafe(16)`（约 160 bit 熵）且全局唯一，冲突重试 3 次。为避免枚举探测，以下场景在管理侧与公开侧统一返回 `404 SHARE_LINK_UNAVAILABLE`：token 不存在、已删除、已过期、`private` 无权查看、分享记录对应的用户或简历不存在，以及直接请求已关闭下载的 PDF。过期后可再次 `PATCH expires_at` 恢复访问，不需重建链接。
 
@@ -181,7 +183,7 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 }
 ```
 
-RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange、`linkresume.resume_import.worker.v2` queue 和固定 `resume.import.v2` routing key；Kafka 兼容实现使用同名 V2 topic、独立 V2 consumer group，并以规范任务 ID 作为消息 key。Resume 与 Dataset 消息正文都强制 `pipeline_version="v2"`，旧版或未知消息不会进入业务 Processor。独立 Worker 从私有对象存储读取文件，Markdown 本地转换，DOCX/PDF 经 LinkParse，再走 `SourceLayoutIR → 模型映射决策 → 规范组合器`。`SourceLayoutIR` 保存源块全局顺序、跨度、列表类型、起始序号、项目序号和嵌套深度；模型只能为每个稳定源块选择语义/布局角色和受限分组，不能返回正文或决定丢弃。程序要求每个源块恰好使用一次，再按任务受理时冻结的模板定义生成 canonical 简历：联系信息保持同一信息行；单块左右经历头必须有显式 `entry_header` 决策与原文分隔符，普通正文不猜测；同语义嵌套 heading 保留在父章节；有序与嵌套列表使用合法 CommonMark，超过 50 个源引用时分片并延续实际序号；章节保持来源顺序，不生成“未分类内容”。转换存档写到 `users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；只有任务仍为本人 `processing` 时才允许上传并写回对象引用。解析成功时以安全化文件名的 stem 作为标题；同一用户已有规范键同名标题时，在用户行锁内依次追加数字后缀 `1`、`2` 直到可用。解析内容作为 data，受理时冻结的模板 ID 与完整 `TemplateDefinition` 快照提供 style。Worker 持久化前只锁定模板行并核对关系 key 仍指向同一模板身份，不重读当前样式，也不要求模板继续启用，因此受理后的模板更新或停用不会改变任务结果。正式简历、initial 版本、`resumes.parse_task_id` 结果关联和任务成功状态在一个数据库事务内提交；响应仍以 `result_resume_id` 返回关联结果。
+RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange、`linkresume.resume_import.worker.v2` queue 和固定 `resume.import.v2` routing key；Kafka 兼容实现使用同名 V2 topic、独立 V2 consumer group，并以规范任务 ID 作为消息 key。Resume 与 Dataset 消息正文都强制 `pipeline_version="v2"`，旧版或未知消息不会进入业务 Processor。独立 Worker 从私有对象存储读取文件，Markdown 本地转换，DOCX/PDF 经 LinkParse，再走 `SourceLayoutIR → 模型映射决策 → 规范组合器`。`SourceLayoutIR` 保存源块全局顺序、跨度、列表类型、起始序号、项目序号和嵌套深度；模型只能为每个稳定源块选择语义/布局角色和受限分组，不能返回正文或决定丢弃。程序要求每个源块恰好使用一次，再按任务受理时冻结的模板定义生成 canonical 简历：联系信息保持同一信息行；单块左右经历头必须有显式 `entry_header` 决策与原文分隔符，普通正文不猜测；同语义嵌套 heading 保留在父章节；有序与嵌套列表使用合法 CommonMark，超过 50 个源引用时分片并延续实际序号；章节保持来源顺序，不生成“未分类内容”。转换存档写到 `users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；只有任务仍为本人 `processing` 时才允许上传并写回对象引用。解析成功时以安全化文件名的 stem 作为标题；同一用户已有规范键同名标题时，在用户行锁内依次追加数字后缀 `1`、`2` 直到可用。解析内容作为 data，受理时冻结的模板 ID 与完整 `TemplateDefinition` 快照提供 style。Worker 持久化前只锁定模板行并核对关系 key 仍指向同一模板身份，不重读当前样式，也不要求模板继续启用，因此受理后的模板更新或停用不会改变任务结果。正式简历、`resumes.parse_task_id` 结果关联和任务成功状态在一个数据库事务内提交；响应仍以 `result_resume_id` 返回关联结果。
 
 缺少或使用非 canonical Header 返回 `400 INVALID_IDEMPOTENCY_KEY`。同一用户、Key 和请求指纹在 15 分钟映射窗口内重放同一导入记录：活动状态返回 `202`，成功终态返回 `200`，失败终态返回 `409 IMPORT_PREVIOUSLY_FAILED`；同 Key 异指纹返回 `409 IDEMPOTENCY_KEY_REUSED`。记录绑定前的短窗口返回 `409 IMPORT_ACCEPTANCE_IN_PROGRESS`，Redis 不可用返回 `503 IMPORT_IDEMPOTENCY_UNAVAILABLE`。记录创建后的错误响应在顶层 `import` 字段附带同一任务摘要。
 
@@ -191,11 +193,11 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 
 ## 简历模板管理
 
-`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回启用、停用和结构无效的全部模板；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用且相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用。模板包必须携带合法 `TemplateManifest`，包含受支持 renderer、区域、插槽、唯一自定义兜底区和头像策略；同时拒绝未知字段、脚本、任意 HTML/CSS、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
+`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回按 `sort_order`、ID 升序排列的全部模板（包括启用、停用和结构无效项），包含 `style_categories`、`use_cases`、`style_review_status` 和 `sort_order`；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用、分类为空，排序值取当前最大值加 10（上限 1000000），相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用；`PUT /:id/sort-order` 接收整数 `sort_order`（0–1000000），保存后普通用户的模板列表和编辑器模板侧栏按该值升序展示，相同值按 ID 升序，非法值返回 422、不存在返回 `404 TEMPLATE_NOT_FOUND`；`PUT /:id/classification` 接收完整的风格数组、场景数组和风格状态（`pending/classified/unsure`），校验标签枚举、重复值及状态与风格数组的一致性后覆盖该模板分类，不存在返回 `404 TEMPLATE_NOT_FOUND`。模板包必须携带合法 `TemplateManifest`，包含受支持 renderer、区域、插槽、唯一自定义兜底区和头像策略；同时拒绝未知字段、脚本、任意 HTML/CSS、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
 
 ## 知识库资料
 
-`POST /api/datasets` 使用 `multipart/form-data`，必填字段为 `file` 和 `folder_id`（当前用户拥有的现存文件夹），并要求 canonical UUID `Idempotency-Key`。缺少或空白文件夹返回 `400 DATASET_FOLDER_REQUIRED`；非法、不存在、已删除或越权文件夹统一返回 `404 FOLDER_NOT_FOUND`，不创建资料、解析任务或存储对象，不再降级到未分类。支持 docx/pdf/md/txt 四种格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）。服务端先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。受理返回 `202`：
+`POST /api/datasets` 使用 `multipart/form-data`，必填字段为 `file` 和 `folder_id`（当前用户拥有的现存文件夹），并要求 canonical UUID `Idempotency-Key`。缺少或空白文件夹返回 `400 DATASET_FOLDER_REQUIRED`；非法、不存在、已删除或越权文件夹统一返回 `404 FOLDER_NOT_FOUND`，不创建资料、解析任务或存储对象，不再降级到未分类。支持 docx/pdf/md/txt 四种文档格式与 webm/m4a/mp3/wav/ogg/mp4/mov 七种音视频格式（扩展名大小写不敏感），服务端还会检查 PDF 结构、DOCX ZIP 结构与解压边界、文本编码和 NUL 字节，不信任浏览器 MIME。文档单文件上限由 `DATASET_UPLOAD_MAX_BYTES` 控制（默认 10 MiB）；媒体单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 控制（默认 500 MiB），且媒体资料独立受 `MEDIA_MAX_COUNT_PER_USER`（默认 50）与 `MEDIA_MAX_TOTAL_BYTES_PER_USER`（默认 5 GiB）约束，超限返回 `409 DATASET_MEDIA_COUNT_LIMIT_REACHED`/`DATASET_MEDIA_STORAGE_LIMIT_REACHED`。文档上传先建立 `uploading` 容量预留，再写入 MinIO；成功后把任务提交为 `upload_status=succeeded/parse_status=queued`。媒体上传在短锁内完成归属与申报容量检查、流式落盘后再以实际字节复核并直接落地终态任务，不进入解析队列。首次 RabbitMQ 发布失败不使请求失败，数据库中的 `queued` 是持久待分发标记，Worker 扫描器会重新发布。文档受理返回 `202`，媒体上传成功返回 `200`：
 
 ```json
 {
@@ -211,7 +213,9 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 }
 ```
 
-`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，支持可选 Query 参数 `folder_id`（传数值 ID 过滤具体文件夹，传 `uncategorized` 过滤未分类资料，不传则返回全部）；按上传时间倒序。响应为 `{datasets, limits}`，每项数据包含 `folder_id`。`limits` 包含单文件字节数、单批文件数和允许扩展名，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown, content_format: "markdown", content_revision, content_updated_at}` 并带 ETag；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。
+`GET /api/datasets` 只返回当前用户 `upload_status=succeeded` 的正式资料，支持可选 Query 参数 `folder_id`（传数值 ID 过滤具体文件夹，传 `uncategorized` 过滤未分类资料，不传则返回全部）；按上传时间倒序。响应为 `{datasets, limits}`，每项数据包含 `folder_id`、`asset_kind`（`document|audio|video`）、可空的 `interview_session_id`/`interview_source_type`/`duration_ms` 与派生 `interview_label`（场次关联的“公司·阶段”标签）。`limits` 包含文档单文件字节数、单批文件数、文档允许扩展名，以及媒体单文件字节数 `max_media_file_bytes`、媒体允许扩展名 `media_allowed_extensions`、媒体个数 `media_max_count` 与总量 `media_max_total_bytes`，供前端提前反馈。列表从关联任务返回 `queued/processing/succeeded/failed` 解析状态。失败分类为 `format_unsupported/content_invalid/size_exceeded/service_unavailable/timeout/quota_exceeded/internal_error`。`GET /api/datasets/:id/content` 只允许资料所有者读取解析成功且已保存转换对象的 Markdown，返回 `{id, file_name, file_format, markdown, content_format: "markdown", content_revision, content_updated_at}` 并带 ETag；资料不存在或越权统一返回 `404 DATASET_NOT_FOUND`，解析尚未成功或转换存档未保存返回 `409 DATASET_CONTENT_UNAVAILABLE`，对象读取、大小或 UTF-8 校验失败返回 `502 DATASET_CONTENT_READ_FAILED`。
+
+`GET /api/datasets/:id/source` 流式返回资料的原始上传文件：音视频以 `inline` 分发支持播放，文档以附件下载；仅 `upload_status=succeeded` 的资料可读，否则返回 `409 DATASET_CONTENT_UNAVAILABLE`；资料不存在或越权返回 `404 DATASET_NOT_FOUND`，对象读取失败返回 `502`。
 
 `GET /api/datasets/folders` 列出当前用户自建的全部文件夹及其所含资料数，响应为 `{folders: [{id, name, dataset_count, created_at, updated_at}], total_count, uncategorized_count}`。`POST /api/datasets/folders` 接受 `{name: string}` 创建新文件夹（1~64 字符，去首尾空格，禁止斜杠与控制字符，用户内唯一，每用户上限 50 个；超限 `429 FOLDER_LIMIT_EXCEEDED`，重名 `409 FOLDER_NAME_DUPLICATE`，非法名称 `400 INVALID_FOLDER_NAME`）。`PATCH /api/datasets/folders/:id` 接受 `{name: string}` 重命名文件夹。`DELETE /api/datasets/folders/:id` 删除空文件夹；非空文件夹必须传 `confirm_contents=true`，否则返回 `409 FOLDER_DELETE_CONFIRMATION_REQUIRED`。确认后永久清理其中的源文件、转换对象、资料与解析任务，再删除文件夹，返回 `{deleted: true, affected_dataset_count}`。任一资料上传或解析中返回 `409 DATASET_BUSY`，清理对象失败返回 `502 ASSET_DELETE_FAILED` 并保留数据库记录供重试。
 
@@ -258,7 +262,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用当前 `chat` 能力；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_structuring` 能力。响应中的 `draft` 与普通创建字段同构但全部可空，`warnings` 提示未识别的核心字段；调用方必须先让用户核对或补充，再另行调用创建接口。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
 
-创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
+创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。普通更新同样允许把 `description` 清空为空字符串，但不接受 `null`；`job_title` 和 `company_name` 更新后仍必须非空。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
 
 浏览器导入请求使用 `source_url` 和嵌套 `capture`。当前只接受 `zhipin.com` 的 `/job_detail/{source_job_id}.html`；`capture.job_title`、`capture.company_name`、`capture.description_text` 清洗后必须非空。可选采集字段包括 `logo_url`、`skills`、就业类型原文、学历、经验、工作时间、城市、地址、薪资原文、公司字段/标签和招聘者字段。后端去除不可见字符、压缩空白、删除明确的详情标题与举报页尾，并确定性映射常见就业类型、远程/混合工作、`K·N薪` 和人民币时/日/月/年区间；无法可靠识别的字段保持为空，不做分析或模型推断。
 
@@ -266,7 +270,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 岗位创建和浏览器导入会在同一数据库事务中为该 JD 创建唯一的待投递求职记录；同一 JD 已有任何求职记录时直接返回该记录，不重复创建，也不覆盖其投递时间、阶段或历史。浏览器插件保留成功响应中的 `application.id`，用于打开 `/career/applications/{id}`；兼容旧服务缺少或返回空 `application` 时回退到岗位详情，不影响导入请求格式。通过求职进程接口为已有记录的 JD 再次创建返回 `409 APPLICATION_ALREADY_EXISTS` 并携带原 `application_id`。显式 `duplicate_resolution` 仍用于用户确认用新采集内容更新已有 JD。普通更新及重复解决使用 `lock_version`，并发过期返回 `409 JD_EDIT_CONFLICT`。
 
-硬删除同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。服务先锁定岗位及其求职进程，依次删除素材对象、素材记录、排期、阶段和求职进程，再删除 JD；活动和已结束进程都在清理范围内。成功后所有关联数据均无法恢复，相同来源可再次写入。素材对象清理或数据库删除失败返回 `502 JD_DELETE_FAILED`，数据库记录保留供重试；MinIO 与 MySQL 不构成原子事务，多个对象可能只删除一部分，重试按对象不存在视为已清理。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
+硬删除同时约束记录 ID 和当前用户，不要求中间状态或 `lock_version`。服务先锁定岗位及其求职进程，解除关联资料与场次的绑定（文件保留在资料库），删除排期、阶段和求职进程，再删除 JD；活动和已结束进程都在清理范围内。成功后所有关联数据均无法恢复，相同来源可再次写入。数据库删除失败返回 `502 JD_DELETE_FAILED`，数据库记录保留供重试。不存在和不属于当前用户的记录返回 `404 JD_NOT_FOUND`。
 
 技能以最多 100 个字符串的 JSON 数组保存，写入时去空和去重。数值薪资非空时必须同时给出三字母币种与计薪周期，最高值不得低于最低值。请求字段、长度或组合非法返回 `400 INVALID_JOB_DESCRIPTION`，来源非法返回 `400 INVALID_JOB_SOURCE`。福利、原始抓取数据和插件 API Key 不属于当前契约。
 
@@ -288,9 +292,9 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 `PUT /api/job-applications/:id` 可提交 `employment_type`（上述三类或 `null`）及 `base_lock_version`，在同一次版本校验中更新当前记录的 `job_snapshot.employment_type`，保留其他快照属性和阶段。它不改原岗位或其他求职进程。非法分类返回 `400 INVALID_INTERVIEW_REQUEST`，非本人记录返回 `404 INTERVIEW_NOT_FOUND`，过期版本返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
-求职进程的初始状态必须可达：待投递占位使用 `screening / 待投递 / awaiting_schedule` 且 `applied_at` 为空；兼容调用仍可直接创建 `screening / awaiting_result`、`interview|hr / awaiting_schedule` 或 `offer / negotiating`。其他阶段与等待状态组合返回 `400 INVALID_INTERVIEW_REQUEST`。`PUT /api/job-applications/:id` 首次把 `applied_at` 从空值写为非空时允许不绑定简历，此时 `resume_version_id` 和 `resume_title_snapshot` 保持为空；请求也可提交 `resume_id`，服务端只接受当前用户的简历，并自动绑定该简历 `version_no` 最大的最新正式版本，同时写入版本 ID 和标题快照。所选简历没有正式版本返回 `409 INTERVIEW_RESUME_VERSION_REQUIRED`，不存在或越权简历返回 `404 INTERVIEW_NOT_FOUND`。显式 `resume_version_id` 继续兼容，但不能与 `resume_id` 同时提交。首次为待投递占位或旧的 `screening / 筛选中 / awaiting_result` 占位写入 `applied_at` 时，服务端在同一次乐观锁更新中将当前阶段规范化为 `screening / 等待后续通知 / awaiting_result`；已进入明确筛选、面试或 HR 阶段的记录只补投递日期，不会被重置。
+求职绑定只提交 resume_id，不要求简历内容锁：省略保持关联，显式 null 解除，非空关联本人当前简历。无效或他人简历返回 404 RESUME_NOT_FOUND，非空旧 resume_version_id 返回 410 RESUME_VERSION_RETIRED。绑定和求职写入同事务提交，不复制正文或图片。响应 resume_id 为当前关联，兼容字段 resume_title_snapshot 动态返回当前标题，无关联时为空；不返回 resume_snapshot。源简历编辑影响后续查看，删除源简历清空关联但保留求职记录。
 
-`POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。素材对象删除失败时返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
+`POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。删除只解除资料库文件与场次的关联，不再清理素材对象；数据库删除失败返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
 
 | Method | Path | 行为 |
 | --- | --- | --- |
@@ -309,9 +313,11 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间接受有效 24 小时制 `HH:mm`（小时 `00–23`、分钟 `00–59`） |
 | `PUT` | `/api/interview-sessions/:id/answer-plan` | 设置或清除开放笔试/测评的一组个人作答计划时间 |
 | `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
-| `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传录音、视频和文档素材 |
-| `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取素材 |
-| `DELETE` | `/api/interview-assets/:id` | 所有权校验后删除素材记录和对象存储文件 |
+| `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传素材；上传与资料库共用同一入库链路，成功后自动关联该场次 |
+| `POST` | `/api/interview-sessions/:id/assets/attach` | 把本人资料库中未关联的资料（`{dataset_id}`）关联到本场次 |
+| `DELETE` | `/api/interview-sessions/:id/assets/:dataset_id` | 解除资料与场次的关联，文件保留在资料库 |
+| `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取仍关联场次的素材；已解除关联返回 `404` |
+| `DELETE` | `/api/interview-assets/:id` | 解除素材与场次的关联，不删除文件 |
 
 排期请求可携带 `application_stage_id` 和 `schedule_kind=fixed_slot|open_window`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期，且只有测评、笔试支持开放窗口。创建与改期请求在 `start_at` 之外必须且只能提交 `end_at` 或正整数 `duration_minutes` 之一；提交持续分钟时由服务端计算并保存 `end_at`，旧的显式结束时间写法继续兼容。开放窗口的个人作答计划同样可用 `answer_plan_start_at + duration_minutes` 让服务端推算结束时间，也兼容 `answer_plan_start_at/answer_plan_end_at` 成对设置；清除时两端同时为空。计划必须完整落在官方窗口内，否则返回 `INTERVIEW_ANSWER_PLAN_INVALID_TIME`、`INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW` 或 `INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED`。不支持开放窗口的阶段返回 `INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED`。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。同一用户的多个排期允许时间重叠。调整排期只要求场次仍为 `scheduled` 且所属求职进程未归档，不受求职进程是否已经结束影响。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
 
@@ -321,7 +327,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 面试模块的求职进程、岗位、简历版本、单场面试和素材 ID 与项目其他 BIGINT 资源一致，在 JSON、查询参数和路径中都使用无前导零的十进制字符串；前端不得把这些 ID 转成 JavaScript `number`。
 
-素材上传是 `multipart/form-data`，`source_type=recorded|uploaded` 仅记录来源路径，两者写入同一 MinIO 私有前缀。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256，默认上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制；空文件、不支持格式、超限和对象存储失败分别返回 `EMPTY_INTERVIEW_ASSET`、`UNSUPPORTED_INTERVIEW_ASSET`、`INTERVIEW_ASSET_TOO_LARGE` 和 `INTERVIEW_ASSET_UPLOAD_FAILED`。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
+素材上传是 `multipart/form-data`，必须携带 canonical UUID `Idempotency-Key`；`source_type=recorded|uploaded` 仅记录来源路径。上传复用资料库入库链路：文件落入 `users/{user_id}/datasets/` 前缀，`user_dataset.interview_session_id` 记录场次关联，场次侧不再持有独立素材记录。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256；单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制，媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`/`MEDIA_MAX_TOTAL_BYTES_PER_USER` 控制。格式、大小、配额和对象存储失败复用资料库的 `DATASET_*` 错误码。文档类素材上传后进入解析队列，音视频落地为终态、不参与解析。`POST /interview-sessions/:id/assets/attach` 要求资料属本人、`upload_status=succeeded` 且未关联其他场次；重复关联本场次幂等返回，已关联其他场次返回 `409 DATASET_ALREADY_LINKED`，资料不存在或越权返回 `404 DATASET_NOT_FOUND`。统一入库和关联服务保证 `interview_session_id` 与 `interview_source_type` 同时设置或同时为空；该内部一致性校验不增加新的请求或响应字段。解除关联只清空这两列，物理删除只能在资料库进行；删除场次或求职进程同样只解除关联。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
 
 ## 对象资源
 
@@ -350,6 +356,8 @@ PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在�
 简历导入的后端内部日志使用 `operation_id`/`task_id` 串联阶段和重试，失败时只记录稳定错误码、失败阶段和不含字段值的验证元数据；这些内部字段不扩展本节的 HTTP 请求或响应结构。
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
+
+Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations` 接受 `from`、`to`（带时区且最多 31 天）、`status`、`errorCode`、`cursor`、`limit`，返回 `{items, next_cursor}`。每项含操作 ID、内部 `user_id`、创建时间、状态、错误码、失败阶段、运行时请求的 `model_name` 快照和 `legacy` 标志。`GET /api/admin/agent-operations/:operationId` 返回同一模型快照、状态、`timeline_status`、按事件 ID 分页的 `events`、工具摘要和提案摘要；尚未选中模型或无法可靠还原的旧记录返回 `model_name: null`。阶段事件不含消息或简历正文。旧运行可查询但标记 `legacy`，不补造阶段事件；会话删除后相关轨迹一并删除。
 
 | Method | Path | 查询参数 | 成功结果 |
 | --- | --- | --- | --- |
@@ -441,7 +449,7 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 | --- | --- | --- |
 | GET | `/applications` | 游标分页，复用 scope/keyword/status/stage_type/limit；返回 items/next_cursor，包含 current_stage、stages、current_session_status（用于区分场次已完成与等待结果）和 company_logo_url |
 | GET | `/applications/:id` | 本次求职的岗位快照、阶段历史、Offer 和锁版本 |
-| POST | `/applications/:id/stages` | 复用 AddApplicationStageRequest；client_request_id 幂等追加阶段，首次追加同时记录投递事实与可选正式简历版本 |
+| POST | `/applications/:id/stages` | 复用 AddApplicationStageRequest；client_request_id 幂等追加阶段，首次追加同时记录投递事实与可选当前简历附件 |
 | POST | `/applications/:id/terminate` | 复用 TerminateApplicationRequest；保留历史 |
 | POST | `/applications/:id/offer` | 复用 OfferApplicationRequest，保存已收到 Offer 的待遇 |
 | GET | `/sessions` | 游标分页，支持 application_id、带时区的 start_at/end_at、status、upcoming、scope、limit，时间窗口按重叠查询；每项附带 company_name、job_title、company_logo_url 和 calendar_color 公司标识快照 |
@@ -451,6 +459,7 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 | POST | `/sessions/:id/reschedule` | 复用 RescheduleInterviewRequest；更新开始结束时间与时区 |
 | POST | `/sessions/:id/complete` | 复用 CompleteInterviewRequest，只完成本场 |
 | POST | `/sessions/:id/cancel` | 复用 CancelInterviewRequest，取消安排，保留记录 |
-| GET | `/applications/:id/resume-preview.png` | 仅渲染本次求职实际绑定的不可变简历版本，另校验简历仍归本人所有；不接受 version_id 覆盖，返回 PNG、private/no-store 和版本头；版本缺失返回 409 RESUME_VERSION_UNAVAILABLE |
+| PUT | `/applications/:id/resume` | 仅接受 resume_id（必填可空）和 base_lock_version；关联、更换或解除本人简历，不推进阶段；复用求职乐观锁与归属校验 |
+| GET | `/applications/:id/resume-preview.png` | 按本人求职记录关联的当前简历渲染；返回 PNG、private/no-store 和 X-LinkResume-Lock-Version；无关联或源已删除返回 409 APPLICATION_RESUME_UNAVAILABLE |
 
 修改复用 base_lock_version；过期锁返回 `409 INTERVIEW_EDIT_CONFLICT`，非法阶段动作返回 `409 INTERVIEW_INVALID_TRANSITION`，排期允许时间重叠；兼容字段 `allow_conflict` 不再影响是否可保存。非法 ID、不存在或越权统一 `404 INTERVIEW_NOT_FOUND`。日期查询缺时区或范围倒置返回 `400 INVALID_INTERVIEW_QUERY`。阶段与安排分别提交，阶段成功后排期失败不会回滚阶段。原 overview、advance、close 兼容端点保留，新页面使用 stages/terminate。Web API、数据库 schema 和代理配置未改变。

@@ -2,10 +2,11 @@ import hashlib
 import json
 import logging
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, load_only
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
+from linkresume.application.resumes.copy_service import copy_resume
 
 from linkresume.application.resumes.service import (
     InvalidResumeTitle,
@@ -33,6 +34,7 @@ from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.agent.service import delete_resume_agent_data
 from linkresume.modules.identity.dependencies import get_current_user
 from linkresume.modules.identity.models import User
+from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -43,6 +45,7 @@ from linkresume.modules.resumes.pdf_service import validate_resume_pdf_asset_con
 from linkresume.modules.resumes.schemas import (
     DeleteResumeResponse,
     ResumeCreateRequest,
+    ResumeCopyRequest,
     ResumeListResponse,
     ResumePreview,
     ResumeRecord,
@@ -56,6 +59,17 @@ from linkresume.modules.resumes.schemas import (
 from linkresume.modules.observability.audit import bind_audit_target
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 logger = logging.getLogger(__name__)
+
+
+@router.post("/{resume_id}/copy", response_model=ResumeResponse, status_code=201)
+def copy_current_resume(resume_id: str, payload: ResumeCopyRequest, response: Response,
+                        db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                        storage: AssetStorage = Depends(get_storage)) -> ResumeResponse:
+    result, created = copy_resume(db, storage, user_id=user.id, resume_id=resume_id,
+                                  title=payload.title, base_lock_version=payload.base_lock_version,
+                                  client_request_id=str(payload.client_request_id))
+    response.status_code = 201 if created else 200
+    return ResumeResponse(resume=resume_record(result))
 
 
 def resume_content_hash(data: object) -> str:
@@ -377,6 +391,10 @@ def delete_resume(
                 )
             )
         delete_resume_agent_data(db, resume_id=resume.id, user_id=user.id)
+        db.execute(update(JobApplication).where(
+            JobApplication.resume_id == resume.id,
+            JobApplication.user_id == user.id,
+        ).values(resume_id=None, resume_title_snapshot=None))
         db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()

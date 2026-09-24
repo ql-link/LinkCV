@@ -48,6 +48,20 @@ function openResumeMenu(title = "Frontend Resume") {
 }
 
 describe("HomeScreen", () => {
+  it("复制使用当前锁和稳定请求 ID，列表刷新失败不误报复制失败", async () => {
+    const copied = { ...resumes[0], id: "copy-1", title: "独立简历", data: defaultCanonicalDocument, style: defaultCanonicalPresentation };
+    const copy = vi.spyOn(api, "copyResume").mockResolvedValue({ resume: copied } as Awaited<ReturnType<typeof api.copyResume>>);
+    vi.spyOn(useResumeStore.getState(), "listResumes").mockRejectedValue(new Error("NETWORK_ERROR"));
+    renderHome();
+    fireEvent.click(within(openResumeMenu()).getByRole("menuitem", { name: "复制为新简历" }));
+    fireEvent.change(screen.getByLabelText("简历名称"), { target: { value: "独立简历" } });
+    fireEvent.click(screen.getByRole("button", { name: "创建副本" }));
+    await waitFor(() => expect(copy).toHaveBeenCalledOnce());
+    expect(copy).toHaveBeenCalledWith("1", { title: "独立简历", base_lock_version: 1, client_request_id: expect.any(String) });
+    expect(await screen.findByText(/副本已创建/)).toBeInTheDocument();
+    expect(useResumeStore.getState().resumes.some((item) => item.id === "copy-1")).toBe(true);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     window.history.replaceState(null, "", "/resumes");

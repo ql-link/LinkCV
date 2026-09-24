@@ -146,6 +146,8 @@ export type ResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
+  style_categories: string[];
+  use_cases: string[];
   data: CanonicalResumeDocument;
   style: CanonicalResumePresentation;
   layout_plan?: LayoutPlan | null;
@@ -183,6 +185,10 @@ export type AdminResumeTemplate = {
   key: string;
   name: string;
   description: string | null;
+  style_categories: string[];
+  use_cases: string[];
+  style_review_status: "pending" | "classified" | "unsure";
+  sort_order: number;
   data: CanonicalResumeDocument | null;
   style: CanonicalResumePresentation | null;
   layout_plan?: LayoutPlan | null;
@@ -267,6 +273,18 @@ export type AgentMessage = {
    * workspace was introduced remain readable.
    */
   contexts?: AgentContextSnapshot[] | null;
+  tasks?: Array<{
+    id: string;
+    workflow: string;
+    output: "proposal" | "advice" | "catalog";
+    label: string;
+    depends_on: string[];
+    context_refs: Array<{ type: string; id: string }>;
+    status: "planned" | "running" | "completed" | "partial" | "blocked" | "failed";
+    proposal_ids: string[];
+    error_code?: string | null;
+    result?: string | null;
+  }> | null;
   created_at: string;
 };
 
@@ -343,8 +361,9 @@ export type AgentProposal = {
   run_id: string;
   resume_id: string;
   base_lock_version: number;
-  data: CanonicalResumeDocument;
-  style: CanonicalResumePresentation;
+  data: CanonicalResumeDocument | null;
+  style: CanonicalResumePresentation | null;
+  preview?: { changes: Array<{ target: Record<string, unknown>; op: string; before: string; after: string }> } | null;
   layout_plan?: LayoutPlan | null;
   summary: string;
   proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials" | "translate_resume";
@@ -448,6 +467,12 @@ export type DatasetRecord = {
   file_name: string;
   file_format: string;
   file_size: number;
+  asset_kind?: "document" | "audio" | "video";
+  interview_session_id?: string | null;
+  interview_source_type?: "recorded" | "uploaded" | null;
+  duration_ms?: number | null;
+  /** “公司·场次” label resolved server-side for linked interview assets. */
+  interview_label?: string | null;
   upload_status: "uploading" | "succeeded" | "failed";
   parse_status: "queued" | "processing" | "succeeded" | "failed" | null;
   failure_reason:
@@ -484,6 +509,10 @@ export type DatasetLimits = {
   max_file_bytes: number;
   max_files_per_batch: number;
   allowed_extensions: string[];
+  max_media_file_bytes?: number;
+  media_allowed_extensions?: string[];
+  media_max_count?: number;
+  media_max_total_bytes?: number;
 };
 
 export type DatasetListResponse = {
@@ -657,6 +686,7 @@ export type ApplicationStageRecord = {
 
 export type JobApplicationRecord = {
   id: string;
+  resume_id?: string | null;
   job_description_id: string | null;
   resume_version_id: string | null;
   company_name_snapshot: string;
@@ -1003,6 +1033,41 @@ export type LogListResponse = {
   droppedMalformed: number;
 };
 
+export type AgentOperationItem = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  status: string;
+  error_code: string | null;
+  failure_stage: string | null;
+  model_name: string | null;
+  legacy: boolean;
+};
+
+export type AgentOperationDetail = {
+  id: string;
+  user_id: string;
+  status: string;
+  error_code: string | null;
+  failure_stage: string | null;
+  model_name: string | null;
+  timeline_status: "complete" | "incomplete" | "legacy";
+  gap_reason: string | null;
+  events: Array<{
+    id: string;
+    stage: string;
+    result: string;
+    error_code: string | null;
+    duration_ms: number | null;
+    tool_call_key: string | null;
+    proposal_id: string | null;
+    occurred_at: string;
+  }>;
+  next_cursor: string | null;
+  tools: Array<{ call_key: string; tool_name: string; status: string; error_code: string | null; duration_ms: number | null }>;
+  proposals: Array<{ id: string; status: string; created_at: string; applied_at: string | null }>;
+};
+
 export type SystemLogQuery = {
   from?: string;
   to?: string;
@@ -1234,6 +1299,7 @@ async function streamAgentMessage(
     selection_context?: AgentSelectionContext;
     contexts?: AgentContextRef[];
     reply_to_sequence_no?: number;
+    replace_inherited_resume?: boolean;
     clarification_answers?: Array<{
       question_id: string;
       option_id: string;
@@ -1413,6 +1479,8 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+  copyResume: (id: string, payload: { title: string; base_lock_version: number; client_request_id: string }) =>
+    request<{ resume: ResumeRecord }>(`/api/resumes/${id}/copy`, { method: "POST", body: payload }),
   classifyResumeSemantics: (
     id: string,
     payload: { content_hash: string; section_ids?: string[] },
@@ -1578,6 +1646,13 @@ export const api = {
   listAdminResumeTemplates: () =>
     request<{ templates: AdminResumeTemplateWire[] }>("/api/admin/resume-templates")
       .then(({ templates }) => ({ templates: templates.map(adminResumeTemplateFromWire) })),
+  updateAdminResumeTemplateClassification: (
+    id: string,
+    payload: { style_categories: string[]; use_cases: string[]; style_review_status: "pending" | "classified" | "unsure" },
+  ) => request<{ template: AdminResumeTemplateWire }>(`/api/admin/resume-templates/${id}/classification`, {
+    method: "PUT",
+    body: payload,
+  }).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
   importAdminResumeTemplate: (file: File) => {
     const formData = new FormData();
     formData.append("file", file);
@@ -1590,6 +1665,11 @@ export const api = {
     request<{ template: AdminResumeTemplateWire }>(
       `/api/admin/resume-templates/${id}/status`,
       { method: "PUT", body: { active } },
+    ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
+  updateAdminResumeTemplateSortOrder: (id: string, sortOrder: number) =>
+    request<{ template: AdminResumeTemplateWire }>(
+      `/api/admin/resume-templates/${id}/sort-order`,
+      { method: "PUT", body: { sort_order: sortOrder } },
     ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
   uploadResumeAsset: (
     resumeId: string,
@@ -1759,6 +1839,7 @@ export const api = {
   },
   createJobApplication: (payload: {
     job_description_id: string;
+    resume_id?: string | null;
     resume_version_id?: string | null;
     current_stage_type?: LegacyApplicationStageType;
     current_round_no?: number | null;
@@ -2035,11 +2116,27 @@ export const api = {
     if (durationMs) formData.append("duration_ms", String(durationMs));
     return request<{ asset: InterviewAssetRecord }>(
       `/api/interview-sessions/${sessionId}/assets`,
-      { method: "POST", formData },
+      {
+        method: "POST",
+        formData,
+        headers: { "Idempotency-Key": createRequestId() },
+      },
     );
   },
+  attachInterviewAsset: (sessionId: string, datasetId: string) =>
+    request<{ asset: InterviewAssetRecord }>(
+      `/api/interview-sessions/${sessionId}/assets/attach`,
+      { method: "POST", body: { dataset_id: datasetId } },
+    ),
+  unlinkSessionAsset: (sessionId: string, datasetId: string) =>
+    request<{ unlinked: boolean }>(
+      `/api/interview-sessions/${sessionId}/assets/${datasetId}`,
+      { method: "DELETE" },
+    ),
   downloadInterviewAsset: (assetId: string) =>
     requestBlob(`/api/interview-assets/${assetId}/content`),
+  downloadDatasetSource: (datasetId: string) =>
+    requestBlob(`/api/datasets/${datasetId}/source`),
   deleteInterviewAsset: (assetId: string) =>
     request<{ deleted: boolean }>(`/api/interview-assets/${assetId}`, {
       method: "DELETE",
@@ -2234,6 +2331,10 @@ export const api = {
     request<LogListResponse>(withLogQuery("/api/admin/logs/audit", params)),
   adminLogSummary: (params: { from?: string; to?: string } = {}) =>
     request<LogSummary>(withLogQuery("/api/admin/logs/summary", params)),
+  adminListAgentOperations: (params: { from?: string; to?: string; status?: string; errorCode?: string; cursor?: string; limit?: number } = {}) =>
+    request<{ items: AgentOperationItem[]; next_cursor: string | null }>(withLogQuery("/api/admin/agent-operations", params)),
+  adminGetAgentOperation: (id: string, params: { cursor?: string; limit?: number } = {}) =>
+    request<AgentOperationDetail>(withLogQuery(`/api/admin/agent-operations/${encodeURIComponent(id)}`, params)),
 };
 
 function withLogQuery(path: string, params: Record<string, unknown>): string {

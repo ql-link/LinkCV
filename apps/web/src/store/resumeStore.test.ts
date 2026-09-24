@@ -143,6 +143,8 @@ beforeEach(() => {
     versions: [],
     versionsLoading: false,
     versionOperationPending: false,
+    proposalApplyingResumeId: null,
+    proposalContentRevision: 0,
     importWarningsByResumeId: {},
     activeResumeId: "1",
     lockVersion: 1,
@@ -158,6 +160,115 @@ beforeEach(() => {
     editVersion: 1,
     saveStatus: "idle",
     error: null,
+  });
+});
+
+describe("proposal confirmation write coordination", () => {
+  it("先保存草稿，阻止交错编辑，确认后同步正文和内部锁", async () => {
+    const saving = deferred<{ resume: ResumeRecord }>();
+    const confirming = deferred<{ resume: ResumeRecord }>();
+    const update = vi.spyOn(api, "updateResume").mockReturnValue(saving.promise);
+    const confirm = vi.spyOn(api, "confirmAgentProposal").mockReturnValue(confirming.promise);
+    const originalTitle = useResumeStore.getState().title;
+    const originalContent = useResumeStore.getState().editorContent;
+    const operation = useResumeStore.getState().confirmResumeProposal("proposal-1", "1");
+    await vi.waitFor(() => expect(update).toHaveBeenCalledOnce());
+    expect(confirm).not.toHaveBeenCalled();
+    useResumeStore.getState().setTitle("不能交错写入");
+    useResumeStore.getState().setEditorContent(editorDocument("不能交错写入"));
+    expect(useResumeStore.getState().title).toBe(originalTitle);
+    expect(useResumeStore.getState().editorContent).toEqual(originalContent);
+    saving.resolve({ resume: record(2, "已保存草稿") });
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-1"));
+    const autosave = useResumeStore.getState().saveCurrentResume();
+    confirming.resolve({ resume: record(3, "AI 修改后的正文") });
+    await operation;
+    await autosave;
+    expect(update).toHaveBeenCalledOnce();
+    expect(useResumeStore.getState()).toMatchObject({
+      dirty: false, lockVersion: 3, proposalApplyingResumeId: null, proposalContentRevision: 1,
+    });
+    expect(useResumeStore.getState().markdown).toContain("AI 修改后的正文");
+  });
+
+  it("草稿保存失败时不确认，保留内容并解除互斥", async () => {
+    vi.spyOn(api, "updateResume").mockRejectedValue(new Error("SAVE_FAILED"));
+    const confirm = vi.spyOn(api, "confirmAgentProposal");
+    const before = useResumeStore.getState().editorContent;
+    await expect(useResumeStore.getState().confirmResumeProposal("proposal-1", "1"))
+      .rejects.toThrow("RESUME_DRAFT_SAVE_FAILED");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(useResumeStore.getState()).toMatchObject({ dirty: true, proposalApplyingResumeId: null });
+    expect(useResumeStore.getState().editorContent).toEqual(before);
+  });
+
+  it("切换简历后迟到的结果只更新列表，不覆盖当前编辑器", async () => {
+    useResumeStore.setState({ dirty: false });
+    const response = deferred<{ resume: ResumeRecord }>();
+    vi.spyOn(api, "confirmAgentProposal").mockReturnValue(response.promise);
+    const operation = useResumeStore.getState().confirmResumeProposal("proposal-1", "1");
+    await vi.waitFor(() => expect(api.confirmAgentProposal).toHaveBeenCalled());
+    useResumeStore.setState({ activeResumeId: "2", title: "另一份简历", markdown: "其他正文" });
+    useResumeStore.getState().setTitle("另一份简历的新标题");
+    response.resolve({ resume: record(2, "AI 修改") });
+    await operation;
+    expect(useResumeStore.getState()).toMatchObject({
+      activeResumeId: "2", title: "另一份简历的新标题", markdown: "其他正文", dirty: true,
+    });
+    expect(useResumeStore.getState().resumes).toEqual(expect.arrayContaining([expect.objectContaining({ id: "1", lock_version: 2 })]));
+  });
+
+  it("确认失败不改写内容，重复点击不并发确认", async () => {
+    useResumeStore.setState({ dirty: false });
+    const response = deferred<{ resume: ResumeRecord }>();
+    vi.spyOn(api, "confirmAgentProposal").mockReturnValue(response.promise);
+    const first = useResumeStore.getState().confirmResumeProposal("proposal-1", "1");
+    await expect(useResumeStore.getState().confirmResumeProposal("proposal-1", "1"))
+      .rejects.toThrow("RESUME_WRITE_PENDING");
+    response.resolve({ resume: record(2, "成功正文") });
+    await first;
+    expect(api.confirmAgentProposal).toHaveBeenCalledOnce();
+    vi.mocked(api.confirmAgentProposal).mockRejectedValue(new ApiRequestError(409, "TARGET_STALE"));
+    const before = useResumeStore.getState().editorContent;
+    await expect(useResumeStore.getState().confirmResumeProposal("proposal-2", "1"))
+      .rejects.toThrow("TARGET_STALE");
+    expect(useResumeStore.getState().editorContent).toEqual(before);
+    expect(useResumeStore.getState().proposalApplyingResumeId).toBeNull();
+  });
+
+  it("确认响应丢失后读取真实状态并恢复正文，不自动重发确认", async () => {
+    useResumeStore.setState({ dirty: false });
+    const confirm = vi.spyOn(api, "confirmAgentProposal").mockRejectedValue(new TypeError("network lost"));
+    const list = vi.spyOn(api, "listAgentProposals").mockResolvedValue({
+      proposals: [{ id: "proposal-1", status: "applied", result_resume_id: null } as never],
+    });
+    vi.spyOn(api, "getResume").mockResolvedValue({ resume: record(2, "实际已写入") });
+    await useResumeStore.getState().confirmResumeProposal("proposal-1", "1");
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(list).toHaveBeenCalledWith("1", undefined, true);
+    expect(useResumeStore.getState().markdown).toContain("实际已写入");
+    expect(useResumeStore.getState().proposalApplyingResumeId).toBeNull();
+  });
+
+  it("无法确定提交结果时保留正文，不伪造已应用", async () => {
+    useResumeStore.setState({ dirty: false });
+    vi.spyOn(api, "confirmAgentProposal").mockRejectedValue(new TypeError("network lost"));
+    vi.spyOn(api, "listAgentProposals").mockRejectedValue(new TypeError("still offline"));
+    const before = useResumeStore.getState().editorContent;
+    await expect(useResumeStore.getState().confirmResumeProposal("proposal-1", "1"))
+      .rejects.toThrow("AGENT_PROPOSAL_RESULT_UNKNOWN");
+    expect(useResumeStore.getState().editorContent).toEqual(before);
+    expect(useResumeStore.getState().proposalApplyingResumeId).toBeNull();
+  });
+
+  it("翻译结果加入列表，但不替换源简历编辑器", async () => {
+    useResumeStore.setState({ dirty: false });
+    vi.spyOn(api, "confirmAgentProposal").mockResolvedValue({ resume: { ...record(1, "译文"), id: "2" } });
+    const before = useResumeStore.getState().editorContent;
+    await useResumeStore.getState().confirmResumeProposal("translation-1", "1");
+    expect(useResumeStore.getState().activeResumeId).toBe("1");
+    expect(useResumeStore.getState().editorContent).toEqual(before);
+    expect(useResumeStore.getState().resumes[0].id).toBe("2");
   });
 });
 

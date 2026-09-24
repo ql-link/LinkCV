@@ -108,7 +108,7 @@ Page({
     return task;
   },
 
-  async loadPreview(id) {
+  async loadPreview(id, conflictRetry = false) {
     if (isDemoResumeId(id)) {
       this.showDemo(id);
       return;
@@ -119,28 +119,30 @@ Page({
       const user = auth.getCurrentUser();
       if (!user || !user.id) throw new Error("登录状态已失效");
       const resume = await resumes.getResume(id);
-      const versionId = resume.pdf_version_id;
-      let filePath = await cache.getCachedResumePreview(user.id, id, versionId);
+      const lockVersion = resume.lock_version;
+      let filePath = await cache.getCachedResumePreview(user.id, id, lockVersion);
       if (filePath) {
         this.setData({ loading: false, progress: 100, previewPath: filePath });
         return;
       }
 
-      filePath = cache.resumePreviewPath(user.id, id, versionId);
+      filePath = cache.resumePreviewPath(user.id, id, lockVersion);
       pendingFilePath = filePath;
       const downloadedPath = await resumes.downloadResumePreview(
         id,
-        versionId,
+        lockVersion,
         filePath,
         ({ progress }) => this.setData({ progress: Math.max(0, Math.min(100, progress || 0)) }),
       );
       await cache.validateResumePreview(downloadedPath);
-      await cache.commitResumePreview(user.id, id, versionId, downloadedPath);
+      await cache.commitResumePreview(user.id, id, lockVersion, downloadedPath);
       pendingFilePath = "";
       this.setData({ loading: false, progress: 100, previewPath: downloadedPath });
     } catch (error) {
       if (pendingFilePath) await cache.removeFile(pendingFilePath);
+      if (error.statusCode === 409 && !conflictRetry) return this.loadPreview(id, true);
       let message = error.message || "加载失败";
+      if (error.statusCode === 409) message = "简历仍在修改，请稍后重新加载";
       if (error.statusCode === 404) message = "简历不存在或无权查看";
       if (error.statusCode === 413) message = "简历内容过长，暂时无法生成预览图";
       if (error.statusCode >= 500) message = "预览图生成失败，请稍后重试";

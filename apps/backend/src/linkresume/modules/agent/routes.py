@@ -37,6 +37,10 @@ from linkresume.modules.agent.schemas import (
     SessionUpdateRequest,
 )
 from linkresume.modules.agent.run_stream import get_agent_run_stream_hub
+from linkresume.modules.agent.trace import (
+    begin_operation, event_key, fail_run_creation, finish_preflight,
+    operation_for_run, record_event,
+)
 from linkresume.modules.agent.service import (
     clarification_context_state,
     confirm_proposal,
@@ -64,7 +68,13 @@ from linkresume.modules.resumes.schemas import ResumeResponse
 def _merge_message_contexts(
     explicit: list[AgentContextRef] | None,
     inherited: list[AgentContextRef],
+    *,
+    replace_inherited_resume: bool = False,
 ) -> list[AgentContextRef]:
+    if replace_inherited_resume and not any(
+        item.type == "resume" for item in explicit or []
+    ):
+        raise ApiError(422, "AGENT_RESUME_REQUIRED")
     merged = {item.type: item for item in inherited}
     for item in explicit or []:
         inherited_item = merged.get(item.type)
@@ -72,8 +82,9 @@ def _merge_message_contexts(
             inherited_item.id != item.id
             or inherited_item.version_id != item.version_id
         ):
-            raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
-        if inherited_item is None:
+            if not (replace_inherited_resume and item.type == "resume"):
+                raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
+        if inherited_item is None or (replace_inherited_resume and item.type == "resume"):
             merged[item.type] = item
     return list(merged.values())
 
@@ -362,7 +373,12 @@ async def send_agent_message(
     request.state.operation_id = operation_id
     resolved_contexts = None
     resolved_selection = payload.selection_context
+    trace_operation = None
     if existing_run is None:
+        trace_operation = begin_operation(
+            db, public_id=operation_id, session_id=session.id,
+            request_id=request.state.request_id,
+        )
         request.app.state.event_emitter.system(
             "INFO",
             "agent context preflight",
@@ -385,15 +401,33 @@ async def send_agent_message(
                 session=session,
                 reply_to_sequence_no=payload.reply_to_sequence_no,
             )
+            if payload.replace_inherited_resume and payload.reply_to_sequence_no is None:
+                raise ApiError(422, "AGENT_CLARIFICATION_INVALID")
+            inherited_resume = next(
+                (item for item in inherited_contexts if item.type == "resume"), None
+            )
+            explicit_resume = next(
+                (item for item in payload.contexts or [] if item.type == "resume"), None
+            )
+            resume_switched = bool(
+                payload.replace_inherited_resume
+                and inherited_resume is not None
+                and explicit_resume is not None
+                and inherited_resume.id != explicit_resume.id
+            )
             if (
-                inherited_selection is not None
+                inherited_selection is not None and not resume_switched
                 and payload.selection_context is not None
                 and inherited_selection != payload.selection_context
             ):
                 raise ApiError(409, "AGENT_CLARIFICATION_CONTEXT_CONFLICT")
-            resolved_selection = inherited_selection or payload.selection_context
+            resolved_selection = (
+                payload.selection_context if resume_switched
+                else inherited_selection or payload.selection_context
+            )
             context_refs = _merge_message_contexts(
-                payload.contexts, inherited_contexts
+                payload.contexts, inherited_contexts,
+                replace_inherited_resume=payload.replace_inherited_resume,
             )
             if payload.revision_proposal_id:
                 source = revision_source(db, session, payload.revision_proposal_id)
@@ -413,6 +447,15 @@ async def send_agent_message(
             )
         except Exception as error:
             public_error = isinstance(error, ApiError)
+            db.rollback()
+            trace_operation = begin_operation(
+                db, public_id=operation_id, session_id=session.id,
+                request_id=request.state.request_id,
+            )
+            finish_preflight(
+                db, trace_operation, request_id=request.state.request_id,
+                error_code=error.code if public_error else "AGENT_CONTEXT_PREFLIGHT_FAILED",
+            )
             request.app.state.event_emitter.system(
                 "WARNING" if public_error else "ERROR",
                 "agent context preflight",
@@ -434,6 +477,7 @@ async def send_agent_message(
                 selection_present=payload.selection_context is not None,
             )
             raise
+        finish_preflight(db, trace_operation, request_id=request.state.request_id)
         request.app.state.event_emitter.system(
             "INFO",
             "agent context preflight",
@@ -466,9 +510,21 @@ async def send_agent_message(
             ),
             selection_context=resolved_selection,
             revision_proposal_id=payload.revision_proposal_id,
+            operation=trace_operation,
+            trace_request_id=request.state.request_id if trace_operation else None,
         )
     except Exception as error:
         public_error = isinstance(error, ApiError)
+        if trace_operation is not None:
+            db.rollback()
+            trace_operation = begin_operation(
+                db, public_id=operation_id, session_id=session.id,
+                request_id=request.state.request_id,
+            )
+            fail_run_creation(
+                db, trace_operation, request_id=request.state.request_id,
+                error_code=error.code if public_error else "AGENT_RUN_CREATION_FAILED",
+            )
         request.app.state.event_emitter.system(
             "WARNING" if public_error else "ERROR",
             "agent run creation",
@@ -565,26 +621,46 @@ def confirm_agent_proposal(
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
-    _, resume = confirm_proposal(
-        db,
-        public_id=proposal_id,
-        user_id=user.id,
-        version_limit=request.app.state.settings.resume_version_limit,
-        validate_resume_data=lambda data, resume_id: validate_resume_pdf_asset_contract(
-            storage,
-            data,
+    try:
+        _, resume = confirm_proposal(
+            db,
+            public_id=proposal_id,
             user_id=user.id,
-            resume_id=resume_id,
-        ),
-        prepare_translation_assets=lambda data, source_resume_id, target_resume_id: clone_resume_private_assets(
-            storage,
-            data,
-            user_id=user.id,
-            source_resume_id=source_resume_id,
-            target_resume_id=target_resume_id,
-        ),
-        delete_asset=storage.delete,
-    )
+            validate_resume_data=lambda data, resume_id: validate_resume_pdf_asset_contract(
+                storage,
+                data,
+                user_id=user.id,
+                resume_id=resume_id,
+            ),
+            prepare_translation_assets=lambda data, source_resume_id, target_resume_id: clone_resume_private_assets(
+                storage,
+                data,
+                user_id=user.id,
+                source_resume_id=source_resume_id,
+                target_resume_id=target_resume_id,
+            ),
+            delete_asset=storage.delete,
+            trace_request_id=request.state.request_id,
+        )
+    except Exception as error:
+        db.rollback()
+        proposal = db.scalar(select(ResumeChangeProposal).where(
+            ResumeChangeProposal.public_id == proposal_id,
+            ResumeChangeProposal.user_id == user.id,
+        ))
+        if proposal is not None:
+            source_run = db.get(AgentRun, proposal.run_id)
+            operation = operation_for_run(db, source_run.public_id) if source_run else None
+            if operation is not None:
+                code = error.code if isinstance(error, ApiError) else "AGENT_CONFIRMATION_FAILED"
+                record_event(
+                    db, operation,
+                    key=event_key(request.state.request_id, proposal.public_id, "failed", code),
+                    stage="proposal_confirmation", result="failed",
+                    proposal_id=proposal.id, error_code=code,
+                )
+                db.commit()
+        raise
     return ResumeResponse(resume=resume_record(resume))
 
 

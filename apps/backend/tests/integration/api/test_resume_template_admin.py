@@ -66,6 +66,112 @@ def test_template_admin_requires_admin() -> None:
             "/api/admin/resume-templates/import",
             files={"file": ("template.json", package(), "application/json")},
         ).status_code == 403
+        assert client.put(
+            "/api/admin/resume-templates/1/classification",
+            json={"style_categories": ["现代"], "use_cases": ["社招"], "style_review_status": "classified"},
+        ).status_code == 403
+        assert client.put(
+            "/api/admin/resume-templates/1/sort-order",
+            json={"sort_order": 0},
+        ).status_code == 403
+
+
+def test_admin_sort_order_controls_user_and_admin_lists() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, app, admin=True)
+        ids = []
+        for position, key in enumerate(("first-cn", "second-cn", "third-cn"), start=1):
+            imported = client.post(
+                "/api/admin/resume-templates/import",
+                files={"file": ("template.json", package(key), "application/json")},
+            ).json()["template"]
+            assert imported["sort_order"] == position * 10
+            ids.append(imported["id"])
+            assert client.put(
+                f"/api/admin/resume-templates/{imported['id']}/status",
+                json={"active": True},
+            ).status_code == 200
+
+        def ordered_ids(path: str) -> list[str]:
+            return [item["id"] for item in client.get(path).json()["templates"]]
+
+        assert ordered_ids("/api/resume-templates") == ids
+        for value in (-1, 1000001, "1", 1.5):
+            assert client.put(
+                f"/api/admin/resume-templates/{ids[2]}/sort-order",
+                json={"sort_order": value},
+            ).status_code == 422
+        assert client.put(
+            "/api/admin/resume-templates/999999/sort-order",
+            json={"sort_order": 0},
+        ).status_code == 404
+        assert ordered_ids("/api/resume-templates") == ids
+
+        moved = client.put(
+            f"/api/admin/resume-templates/{ids[2]}/sort-order",
+            json={"sort_order": 0},
+        )
+        assert moved.status_code == 200
+        assert moved.json()["template"]["sort_order"] == 0
+        assert ordered_ids("/api/admin/resume-templates") == [ids[2], ids[0], ids[1]]
+        assert ordered_ids("/api/resume-templates") == [ids[2], ids[0], ids[1]]
+
+        assert client.put(
+            f"/api/admin/resume-templates/{ids[0]}/sort-order",
+            json={"sort_order": 0},
+        ).status_code == 200
+        assert ordered_ids("/api/resume-templates") == [ids[0], ids[2], ids[1]]
+
+
+def test_admin_classification_is_persisted_and_visible_to_users() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, app, admin=True)
+        imported = client.post(
+            "/api/admin/resume-templates/import",
+            files={"file": ("template.json", package(), "application/json")},
+        ).json()["template"]
+        template_id = imported["id"]
+        assert imported["style_categories"] == []
+        assert imported["use_cases"] == []
+        assert imported["style_review_status"] == "pending"
+
+        invalid = client.put(
+            f"/api/admin/resume-templates/{template_id}/classification",
+            json={"style_categories": ["现代", "现代"], "use_cases": ["社招"], "style_review_status": "classified"},
+        )
+        assert invalid.status_code == 422
+        mismatched = client.put(
+            f"/api/admin/resume-templates/{template_id}/classification",
+            json={"style_categories": [], "use_cases": ["社招"], "style_review_status": "classified"},
+        )
+        assert mismatched.status_code == 422
+        assert client.put(
+            "/api/admin/resume-templates/999999/classification",
+            json={"style_categories": [], "use_cases": [], "style_review_status": "pending"},
+        ).status_code == 404
+
+        saved = client.put(
+            f"/api/admin/resume-templates/{template_id}/classification",
+            json={"style_categories": ["现代", "创意"], "use_cases": ["实习", "校招"], "style_review_status": "classified"},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["template"]["style_categories"] == ["现代", "创意"]
+        assert client.get("/api/admin/resume-templates").json()["templates"][0]["use_cases"] == ["实习", "校招"]
+
+        client.put(f"/api/admin/resume-templates/{template_id}/status", json={"active": True})
+        user_template = client.get("/api/resume-templates").json()["templates"][0]
+        assert user_template["style_categories"] == ["现代", "创意"]
+        assert user_template["use_cases"] == ["实习", "校招"]
+
+        unsure = client.put(
+            f"/api/admin/resume-templates/{template_id}/classification",
+            json={"style_categories": [], "use_cases": ["校招"], "style_review_status": "unsure"},
+        )
+        assert unsure.status_code == 200
+        assert unsure.json()["template"]["style_review_status"] == "unsure"
+        assert client.get(f"/api/resume-templates/{template_id}").json()["template"]["style_categories"] == []
 
 
 def test_admin_imports_inactive_template_then_enables_it_idempotently() -> None:

@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from linkresume.application.resumes.commands import CreateResumeCommand
 from linkresume.application.resumes.service import (
-    persist_resume_with_initial_version,
+    persist_resume,
     resume_slot_count,
 )
 from linkresume.core.config import Settings
@@ -296,7 +296,7 @@ def test_worker_appends_next_number_when_import_title_already_exists() -> None:
         assert template is not None
         data, style = canonical_resume_payload(key=template.key)
         for title in ("我的简历", "我的简历1"):
-            persist_resume_with_initial_version(
+            persist_resume(
                 CreateResumeCommand(
                     user_id=task.user_id,
                     title=title,
@@ -338,7 +338,7 @@ def test_worker_keeps_final_resume_count_with_active_task_placeholder(
         assert template is not None
         data, style = canonical_resume_payload(key=template.key)
         for number in range(existing_count):
-            persist_resume_with_initial_version(
+            persist_resume(
                 CreateResumeCommand(
                     user_id=task.user_id,
                     title=f"existing-{number}",
@@ -371,7 +371,7 @@ def test_worker_serializes_concurrent_finalization_at_capacity() -> None:
         assert template is not None
         data, style = canonical_resume_payload(key=template.key)
         for number in range(9):
-            persist_resume_with_initial_version(
+            persist_resume(
                 CreateResumeCommand(
                     user_id=task.user_id,
                     title=f"concurrent-existing-{number}",

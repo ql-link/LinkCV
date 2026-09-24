@@ -863,6 +863,7 @@ describe("左右分栏保存比例", () => {
   it("无有效保存值时使用一半一半", () => {
     expect(normalizeResumeRowWidth(undefined)).toBe(50);
     expect(normalizeResumeRowWidth("62")).toBe(62);
+    expect(normalizeResumeRowWidth("62.346")).toBe(62.35);
   });
 });
 

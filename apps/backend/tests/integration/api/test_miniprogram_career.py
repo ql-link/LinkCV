@@ -600,7 +600,7 @@ def test_mini_overlapping_schedules_cancel_and_offer():
         assert Decimal(offer.json()["application"]["offer_salary"]) == Decimal("20000")
 
 
-def test_application_resume_preview_uses_attached_version_not_latest():
+def test_application_resume_preview_uses_latest_current_content():
     from tests.integration.api.test_miniprogram_resume_pdf import (
         build_app as build_pdf_app,
     )
@@ -618,7 +618,6 @@ def test_application_resume_preview_uses_attached_version_not_latest():
             json={"title": "张三的投递简历", "template_id": app.state.test_template_id},
         ).json()["resume"]
         rid = resume["id"]
-        initial = client.get(f"/api/resumes/{rid}/versions").json()["versions"][0]
         client.cookies.clear()
         staged = client.post(
             f"/api/miniprogram/career/applications/{aid}/stages",
@@ -631,7 +630,8 @@ def test_application_resume_preview_uses_attached_version_not_latest():
             },
         )
         assert staged.status_code == 200, staged.text
-        assert staged.json()["application"]["resume_version_id"] == initial["id"]
+        linked_id = staged.json()["application"]["resume_id"]
+        assert linked_id == rid
         client.post(
             "/api/auth/login",
             json={"email": "owner@example.test", "password": "password-123"},
@@ -649,18 +649,37 @@ def test_application_resume_preview_uses_attached_version_not_latest():
             ).status_code
             == 200
         )
-        latest = client.post(f"/api/resumes/{rid}/versions", json={}).json()["version"]
-        assert latest["id"] != initial["id"]
         client.cookies.clear()
         preview = client.get(
             f"/api/miniprogram/career/applications/{aid}/resume-preview.png",
-            params={"version_id": latest["id"]},
+
             headers=headers,
         )
         assert preview.status_code == 200, preview.text
-        assert preview.headers["x-linkresume-preview-version-id"] == initial["id"]
+        assert preview.headers["x-linkresume-lock-version"] == "2"
         assert preview.headers["cache-control"] == "private, no-store"
         assert (
             app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]
-            is None
+            == data["identity"]["name"]
         )
+        binding_url = f"/api/miniprogram/career/applications/{aid}/resume"
+        application = staged.json()["application"]
+        cleared = client.put(binding_url, headers=headers, json={
+            "resume_id": None, "base_lock_version": application["lock_version"],
+        })
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["application"]["resume_id"] is None
+        assert client.get(
+            f"/api/miniprogram/career/applications/{aid}/resume-preview.png", headers=headers,
+        ).status_code == 409
+        assert client.put(binding_url, headers=headers, json={
+            "resume_id": rid, "base_lock_version": application["lock_version"],
+        }).status_code == 409
+        rebound = client.put(binding_url, headers=headers, json={
+            "resume_id": rid, "base_lock_version": cleared.json()["application"]["lock_version"],
+        })
+        assert rebound.status_code == 200, rebound.text
+        assert rebound.json()["application"]["resume_id"] == rid
+        assert client.put(binding_url, json={
+            "resume_id": rid, "base_lock_version": rebound.json()["application"]["lock_version"],
+        }).status_code == 401

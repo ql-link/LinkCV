@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import select, update
+from sqlalchemy import delete, event, select, update
 
 from linkresume.core.config import Settings
 from linkresume.core.database import utc_now
@@ -25,7 +25,9 @@ from linkresume.modules.agent.models import (
     ResumeChangeProposal,
 )
 from linkresume.modules.agent.pi_client import (
+    _conversation_history,
     _current_clarification_answers,
+    _finalize,
     stream_pi_run,
 )
 from linkresume.modules.agent.service import create_run
@@ -181,8 +183,404 @@ def create_active_run(
         return run.public_id
 
 
+def authorize_run_resume(app, run_id: str, resume: dict) -> None:
+    with app.state.session_factory() as db:
+        message = db.scalar(select(AgentMessage).join(
+            AgentRun, AgentRun.id == AgentMessage.run_id,
+        ).where(AgentRun.public_id == run_id, AgentMessage.role == "user"))
+        assert message is not None
+        message.metadata_json = {"contexts": [{
+            "type": "resume", "id": resume["id"],
+            "version": str(resume["lock_version"]),
+        }]}
+        db.commit()
+
+
 def internal_headers(token: str = INTERNAL_TOKEN) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_agent_task_plan_is_persisted_and_results_are_checked() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-tasks@example.test")
+        session = client.post("/api/agent/sessions", json={"title": "复合任务"})
+        assert session.status_code == 201
+        run_id = create_active_run(
+            app, session.json()["session"]["id"],
+            message_content="分析简历，再准备面试题",
+        )
+        base = f"/internal/agent/runs/{run_id}/tasks"
+        plan = {"tasks": [
+            {"id": "diagnose", "workflow": "resume_edit", "output": "advice", "label": "分析简历"},
+            {"id": "interview", "workflow": "interview_guide", "output": "advice",
+             "label": "准备面试题", "depends_on": ["diagnose"]},
+        ]}
+        invalid = client.post(f"{base}:plan", headers=internal_headers(), json={
+            "tasks": [plan["tasks"][1], plan["tasks"][0]],
+        })
+        assert invalid.status_code == 422
+        unauthorized = client.post(f"{base}:plan", headers=internal_headers(), json={
+            "tasks": [{**plan["tasks"][0], "context_refs": [{"type": "resume", "id": "999"}]}],
+        })
+        assert unauthorized.status_code == 409
+        created = client.post(f"{base}:plan", headers=internal_headers(), json=plan)
+        assert created.status_code == 200
+        assert created.json()["tasks"][0]["status"] == "planned"
+        replay = client.post(f"{base}:plan", headers=internal_headers(), json=plan)
+        assert replay.status_code == 200
+        early = client.post(f"{base}/interview:status", headers=internal_headers(), json={"status": "running"})
+        assert early.status_code == 409
+        started = client.post(f"{base}/diagnose:status", headers=internal_headers(), json={"status": "running"})
+        assert started.status_code == 200
+        empty = client.post(f"{base}/diagnose:status", headers=internal_headers(), json={"status": "completed"})
+        assert empty.status_code == 409
+        completed = client.post(f"{base}/diagnose:status", headers=internal_headers(), json={
+            "status": "completed", "result": "存在两处表述可改进",
+        })
+        assert completed.status_code == 200
+        interview = client.post(f"{base}/interview:status", headers=internal_headers(), json={"status": "running"})
+        assert interview.status_code == 200
+        finished = client.post(f"{base}/interview:status", headers=internal_headers(), json={
+            "status": "completed", "result": "准备三个基于真实项目的问题",
+        })
+        assert finished.status_code == 200
+        public = client.get(f"/api/agent/sessions/{session.json()['session']['id']}")
+        assert public.status_code == 200
+        assert [task["status"] for task in public.json()["session"]["messages"][0]["tasks"]] == [
+            "completed", "completed",
+        ]
+        with app.state.session_factory() as db:
+            message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == db.scalar(
+                select(AgentRun.id).where(AgentRun.public_id == run_id)
+            )))
+            assert [task["status"] for task in message.metadata_json["agent_tasks"]] == ["completed", "completed"]
+
+
+def test_task_materials_are_rechecked_and_isolated_from_other_task_sources() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "task-materials@example.test")
+        resume = create_resume(client, app)
+        job = client.post("/api/job-descriptions", json={
+            "job_title": "后端工程师", "company_name": "示例公司",
+            "description": "负责 Go API 和 MySQL 查询", "skills": ["Go"],
+            "source_type": "manual",
+        }).json()["job_description"]
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id, message_content="分析简历并准备面试")
+        with app.state.session_factory() as db:
+            message = db.scalar(select(AgentMessage).join(
+                AgentRun, AgentRun.id == AgentMessage.run_id,
+            ).where(AgentRun.public_id == run_id, AgentMessage.role == "user"))
+            assert message is not None
+            message.metadata_json = {"contexts": [
+                {"type": "resume", "id": resume["id"], "version": str(resume["lock_version"])},
+                {"type": "job", "id": job["id"], "version": str(job["lock_version"])},
+            ]}
+            db.commit()
+        base = f"/internal/agent/runs/{run_id}"
+        plan = {"tasks": [
+            {"id": "resume", "workflow": "resume_edit", "output": "advice",
+             "label": "分析简历", "context_refs": [{"type": "resume", "id": resume["id"]}]},
+            {"id": "interview", "workflow": "interview_guide", "output": "advice",
+             "label": "岗位面试题", "context_refs": [{"type": "job", "id": job["id"]}]},
+        ]}
+        assert client.post(f"{base}/tasks:plan", headers=internal_headers(), json=plan).status_code == 200
+        assert client.post(f"{base}/tasks/resume:status", headers=internal_headers(), json={
+            "status": "running",
+        }).status_code == 200
+        package = client.get(f"{base}/tasks/resume/materials", headers=internal_headers())
+        assert package.status_code == 200
+        assert [(item["type"], item["id"]) for item in package.json()["materials"]] == [
+            ("resume", resume["id"]),
+        ]
+        assert package.json()["sources"][0]["source_role"] == "user_resume_statement"
+        assert len(package.json()["sources"][0]["content_sha256"]) == 64
+        assert "content" not in package.json()["sources"][0]
+        assert "Go API" not in str(package.json())
+        assert client.get(f"{base}/context?resume_id={resume['id']}", headers=internal_headers()).status_code == 200
+        blocked_search = client.post(f"{base}/materials:search", headers=internal_headers(), json={
+            "query": "Go API", "types": ["job"],
+        })
+        assert blocked_search.status_code == 200
+        assert blocked_search.json()["sources"] == []
+        assert client.post(f"{base}/tasks/resume:status", headers=internal_headers(), json={
+            "status": "completed", "result": "已分析",
+        }).status_code == 200
+        assert client.post(f"{base}/tasks/interview:status", headers=internal_headers(), json={
+            "status": "running",
+        }).status_code == 200
+        second = client.get(f"{base}/tasks/interview/materials", headers=internal_headers())
+        assert second.status_code == 200
+        assert [(item["type"], item["id"]) for item in second.json()["materials"]] == [
+            ("job", job["id"]),
+        ]
+        assert second.json()["sources"][0]["source_role"] == "job_requirement"
+        denied = client.get(f"{base}/context?resume_id={resume['id']}", headers=internal_headers())
+        assert denied.status_code == 409
+        assert denied.json()["error"] == "AGENT_TASK_CONTEXT_NOT_AUTHORIZED"
+        replay = client.post(f"{base}/tasks:plan", headers=internal_headers(), json=plan)
+        assert replay.status_code == 200
+
+
+def test_task_materials_refuse_a_source_changed_after_plan() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "task-material-stale@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id, message_content="分析当前简历")
+        authorize_run_resume(app, run_id, resume)
+        base = f"/internal/agent/runs/{run_id}"
+        plan = {"tasks": [{
+            "id": "review", "workflow": "resume_edit", "output": "advice",
+            "label": "分析当前简历",
+            "context_refs": [{"type": "resume", "id": resume["id"]}],
+        }]}
+        assert client.post(f"{base}/tasks:plan", headers=internal_headers(), json=plan).status_code == 200
+        with app.state.session_factory() as db:
+            stored = db.get(Resume, int(resume["id"]))
+            assert stored is not None
+            stored.lock_version += 1
+            db.commit()
+        assert client.post(f"{base}/tasks/review:status", headers=internal_headers(), json={
+            "status": "running",
+        }).status_code == 200
+        stale = client.get(f"{base}/tasks/review/materials", headers=internal_headers())
+        assert stale.status_code == 409
+        assert stale.json()["error"] == "AGENT_CONTEXT_STALE"
+
+
+def test_dataset_task_materials_are_rechecked_and_have_source_receipts() -> None:
+    app = build_app()
+    source_bytes = b"fictional source file"
+    source_hash = hashlib.sha256(source_bytes).hexdigest()
+    content = "虚构项目经历：将 Go API 的 P99 延迟降低。"
+    with TestClient(app) as client:
+        email = "agent-task-dataset@example.test"
+        register(client, email)
+        with app.state.session_factory() as db:
+            owner = db.scalar(select(User).where(User.email == email))
+            assert owner is not None
+            converted_object = f"users/{owner.id}/datasets/converted/source.md"
+            task = DocumentParseTask(
+                source_type=DATASET_SOURCE_TYPE,
+                user_id=owner.id,
+                file_name="source.md",
+                file_format="md",
+                object_name=f"users/{owner.id}/datasets/source/source.md",
+                converted_object_name=converted_object,
+                upload_status="succeeded",
+                upload_duration_ms=1,
+                parse_status="succeeded",
+                parse_duration_ms=1,
+                parse_attempt_count=1,
+            )
+            db.add(task)
+            db.flush()
+            dataset = UserDataset(
+                user_id=owner.id,
+                idempotency_key=uuid4().hex,
+                request_fingerprint=source_hash,
+                parse_task_id=task.id,
+                file_name="source.md",
+                file_format="md",
+                content_type="text/markdown",
+                file_size=len(source_bytes),
+                object_name=task.object_name,
+                sha256=source_hash,
+                asset_kind="document",
+            )
+            db.add(dataset)
+            db.commit()
+            dataset_id = str(dataset.id)
+            dataset_version = dataset.sha256
+        app.state.storage.objects[converted_object] = content.encode("utf-8")
+
+        session_id = client.post("/api/agent/sessions", json={}).json()[
+            "session"
+        ]["id"]
+        run_id = create_active_run(app, session_id, message_content="分析已选资料")
+        with app.state.session_factory() as db:
+            message = db.scalar(select(AgentMessage).join(
+                AgentRun, AgentRun.id == AgentMessage.run_id,
+            ).where(
+                AgentRun.public_id == run_id,
+                AgentMessage.role == "user",
+            ))
+            assert message is not None
+            message.metadata_json = {"contexts": [{
+                "type": "dataset", "id": dataset_id, "version": dataset_version,
+            }]}
+            db.commit()
+        base = f"/internal/agent/runs/{run_id}"
+        plan = {"tasks": [
+            {"id": "dataset_read", "workflow": "career_planning", "output": "advice",
+             "label": "读取资料", "context_refs": [{"type": "dataset", "id": dataset_id}]},
+            {"id": "dataset_stale", "workflow": "career_planning", "output": "advice",
+             "label": "复验资料", "context_refs": [{"type": "dataset", "id": dataset_id}]},
+        ]}
+        assert client.post(f"{base}/tasks:plan", headers=internal_headers(), json=plan).status_code == 200
+        assert client.post(f"{base}/tasks/dataset_read:status", headers=internal_headers(), json={
+            "status": "running",
+        }).status_code == 200
+        package = client.get(f"{base}/tasks/dataset_read/materials", headers=internal_headers())
+        assert package.status_code == 200, package.text
+        assert package.json()["materials"][0]["content"]["dataset_markdown"] == content
+        assert package.json()["sources"][0]["source_role"] == "user_uploaded_material"
+        assert package.json()["sources"][0]["claim_status"] == "source_only"
+        assert len(package.json()["sources"][0]["content_sha256"]) == 64
+        assert client.post(f"{base}/tasks/dataset_read:status", headers=internal_headers(), json={
+            "status": "completed", "result": "读取完成",
+        }).status_code == 200
+
+        with app.state.session_factory() as db:
+            changed = db.get(UserDataset, int(dataset_id))
+            assert changed is not None
+            changed.sha256 = "b" * 64
+            db.commit()
+        assert client.post(f"{base}/tasks/dataset_stale:status", headers=internal_headers(), json={
+            "status": "running",
+        }).status_code == 200
+        stale = client.get(f"{base}/tasks/dataset_stale/materials", headers=internal_headers())
+        assert stale.status_code == 409
+        assert stale.json() == {"error": "AGENT_CONTEXT_STALE"}
+
+
+def test_read_only_task_can_record_partial_delivery_without_a_proposal() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-partial-advice@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id, message_content="给出三条建议")
+        base = f"/internal/agent/runs/{run_id}/tasks"
+        assert client.post(f"{base}:plan", headers=internal_headers(), json={"tasks": [{
+            "id": "advice", "workflow": "career_planning", "output": "advice", "label": "三条建议",
+        }]}).status_code == 200
+        assert client.post(f"{base}/advice:status", headers=internal_headers(), json={
+            "status": "running",
+        }).status_code == 200
+        missing = client.post(f"{base}/advice:status", headers=internal_headers(), json={
+            "status": "partial",
+        })
+        assert missing.status_code == 409
+        recorded = client.post(f"{base}/advice:status", headers=internal_headers(), json={
+            "status": "partial", "result": "只完成其中一条", "error_code": "ADVICE_INCOMPLETE",
+        })
+        assert recorded.status_code == 200
+        assert recorded.json()["tasks"][0]["status"] == "partial"
+        assert recorded.json()["tasks"][0]["proposal_ids"] == []
+
+
+def test_agent_task_completion_requires_a_proposal_from_the_same_run() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-proposal-task@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id, message_content="修改简历")
+        authorize_run_resume(app, run_id, resume)
+        base = f"/internal/agent/runs/{run_id}/tasks"
+        assert client.post(f"{base}:plan", headers=internal_headers(), json={"tasks": [{
+            "id": "edit", "workflow": "resume_edit", "output": "proposal", "label": "修改简历",
+            "context_refs": [{"type": "resume", "id": resume["id"]}],
+        }]}).status_code == 200
+        assert client.post(f"{base}/edit:status", headers=internal_headers(), json={"status": "running"}).status_code == 200
+        missing = client.post(f"{base}/edit:status", headers=internal_headers(), json={
+            "status": "completed", "proposal_ids": [str(uuid4())],
+        })
+        assert missing.status_code == 409
+        proposal = client.post(f"/internal/agent/runs/{run_id}/proposals", headers=internal_headers(), json={
+            "call_key": "task-edit-proposal", "resume_id": resume["id"],
+            "data": resume["data"], "style": resume["style"], "summary": "待确认修改",
+        })
+        assert proposal.status_code == 201
+        completed = client.post(f"{base}/edit:status", headers=internal_headers(), json={
+            "status": "completed", "proposal_ids": [proposal.json()["proposal"]["id"]],
+        })
+        assert completed.status_code == 200
+        assert completed.json()["tasks"][0]["proposal_ids"] == [proposal.json()["proposal"]["id"]]
+
+
+def test_next_agent_run_receives_bounded_previous_task_results() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-task-history@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        with app.state.session_factory() as db:
+            session = db.scalar(select(AgentSession).where(AgentSession.public_id == session_id))
+            first, _ = create_run(db, session=session, content="先修改简历再准备面试", idempotency_key="task-history-first",
+                                  timeout_seconds=60)
+            message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == first.id))
+            message.metadata_json = {"agent_tasks": [{
+                "id": "edit", "workflow": "resume_edit", "label": "修改简历", "status": "completed",
+                "proposal_ids": ["proposal-1"], "result": "甲" * 500,
+            }]}
+            first.status = "succeeded"
+            db.commit()
+            second, _ = create_run(db, session=session, content="继续准备面试", idempotency_key="task-history-second",
+                                   timeout_seconds=60)
+            second_id = second.public_id
+        history = _conversation_history(app, second_id)
+        assert history[-1]["agent_tasks"][0]["proposal_ids"] == ["proposal-1"]
+        assert len(history[-1]["agent_tasks"][0]["result"]) == 300
+
+
+def test_failed_dependency_blocks_only_its_dependent_task() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-task-dependency@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id, message_content="修改并基于结果准备面试")
+        base = f"/internal/agent/runs/{run_id}/tasks"
+        plan = {"tasks": [
+            {"id": "edit", "workflow": "resume_edit", "output": "proposal", "label": "修改简历"},
+            {"id": "interview", "workflow": "interview_guide", "output": "advice",
+             "label": "基于结果准备面试", "depends_on": ["edit"]},
+        ]}
+        assert client.post(f"{base}:plan", headers=internal_headers(), json=plan).status_code == 200
+        assert client.post(f"{base}/edit:status", headers=internal_headers(), json={"status": "running"}).status_code == 200
+        failed = client.post(f"{base}/edit:status", headers=internal_headers(), json={
+            "status": "failed", "error_code": "TARGET_NOT_FOUND",
+        })
+        assert failed.status_code == 200
+        cannot_start = client.post(f"{base}/interview:status", headers=internal_headers(), json={
+            "status": "running",
+        })
+        assert cannot_start.status_code == 409
+        blocked = client.post(f"{base}/interview:status", headers=internal_headers(), json={
+            "status": "blocked", "error_code": "AGENT_TASK_DEPENDENCY_PENDING",
+            "result": "依赖任务未完成",
+        })
+        assert blocked.status_code == 200
+        assert [task["status"] for task in blocked.json()["tasks"]] == ["failed", "blocked"]
+
+
+def test_run_failure_keeps_a_created_proposal_in_the_task_result() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-task-interrupted@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id, message_content="修改简历")
+        authorize_run_resume(app, run_id, resume)
+        base = f"/internal/agent/runs/{run_id}/tasks"
+        assert client.post(f"{base}:plan", headers=internal_headers(), json={"tasks": [{
+            "id": "edit", "workflow": "resume_edit", "output": "proposal", "label": "修改简历",
+            "context_refs": [{"type": "resume", "id": resume["id"]}],
+        }]}).status_code == 200
+        assert client.post(f"{base}/edit:status", headers=internal_headers(), json={"status": "running"}).status_code == 200
+        proposal = client.post(f"/internal/agent/runs/{run_id}/proposals", headers=internal_headers(), json={
+            "call_key": "interrupted-proposal", "resume_id": resume["id"],
+            "data": resume["data"], "style": resume["style"], "summary": "待确认修改",
+        })
+        assert proposal.status_code == 201
+        _finalize(app, run_id, "failed", error_code="AGENT_UPSTREAM_FAILED")
+        session = client.get(f"/api/agent/sessions/{session_id}").json()["session"]
+        task = session["messages"][0]["tasks"][0]
+        assert task["status"] == "partial"
+        assert task["proposal_ids"] == [proposal.json()["proposal"]["id"]]
 
 
 def editor_data(base: dict, markdown: str) -> dict:
@@ -463,6 +861,9 @@ def test_context_catalog_is_owner_scoped_and_message_snapshot_does_not_bind_sess
             owner_resume["id"]
         ]
         assert all("data" not in item for item in catalog.json()["contexts"])
+        retired = owner.get("/api/agent/contexts?type=resume_version")
+        assert retired.status_code == 409
+        assert retired.json() == {"error": "AGENT_CONTEXT_RETIRED"}
 
         session = owner.post("/api/agent/sessions", json={}).json()["session"]
         sent = owner.post(
@@ -1058,8 +1459,20 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
                     ResumeVersion.reason == "agent",
                 )
             )
-            assert version is not None
-            assert version.name == "智能助手修改"
+            assert version is None
+
+        # Retrying an applied proposal must not undo edits saved afterwards.
+        later_data = deepcopy(confirmed.json()["resume"]["data"])
+        later_data["identity"]["headline"]["value"] = "之后手动保存的标题"
+        later = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": later_data, "base_lock_version": 2},
+        )
+        assert later.status_code == 200
+        retried = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+        assert retried.status_code == 200
+        assert retried.json()["resume"]["data"] == later_data
+        assert retried.json()["resume"]["lock_version"] == 3
 
 
 def test_revision_supersedes_only_after_replacement_and_is_session_scoped() -> None:
@@ -1616,6 +2029,67 @@ def test_named_resume_local_field_can_be_resolved_and_deleted_without_session_bi
         assert fields["location"] is None
 
 
+def test_empty_replacement_deletes_standalone_paragraph_without_http_500() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-empty-paragraph@example.test")
+        resume = create_resume(client, app)
+        data = editor_data(resume["data"], "\n\n".join([
+            "## [[linkresume-block:node_section000000001]]教育经历",
+            "### [[linkresume-block:node_entry00000000001]]北辰科技大学",
+            "- [[linkresume-block:node_bullet0000000001]]2021.09 - 2025.06",
+        ]))
+        entry = data["sections"][0]["entries"][0]
+        paragraph = {
+            "node_id": f"node_{uuid4().hex}", "source_refs": [],
+            "block_type": "paragraph",
+            "runs": deepcopy(entry["blocks"][0]["items"][0]["runs"]),
+        }
+        paragraph["runs"][0]["text"] = "asd"
+        entry["blocks"].append(paragraph)
+        saved = client.put(
+            f"/api/resumes/{resume['id']}",
+            json={"data": data, "base_lock_version": resume["lock_version"]},
+        )
+        assert saved.status_code == 200
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        target = client.post(
+            f"/internal/agent/runs/{run_id}/targets:resolve",
+            headers=internal_headers(),
+            json={"resume_id": resume["id"], "quoted_text": "asd"},
+        ).json()["target"]
+        diagnosis = client.post(
+            f"/internal/agent/runs/{run_id}/diagnoses",
+            headers=internal_headers(),
+            json={"target": target, "scope": "target"},
+        ).json()
+        proposed = client.post(
+            f"/internal/agent/runs/{run_id}/proposals:v2",
+            headers=internal_headers(),
+            json={
+                "call_key": "delete-standalone-placeholder",
+                "mode": "polish_local",
+                "target": target,
+                "diagnosis": diagnosis["diagnosis"],
+                "diagnosis_fingerprint": diagnosis["diagnosis_fingerprint"],
+                "operations": [{
+                    "op": "replace_target_text", "target": target,
+                    "new_text": "", "expected_text_hash": target["expected_text_hash"],
+                }],
+                "summary": "删除占位段落",
+            },
+        )
+        assert proposed.status_code == 201
+        confirmed = client.post(
+            f"/api/agent/proposals/{proposed.json()['proposal']['id']}/confirm"
+        )
+        assert confirmed.status_code == 200
+        blocks = confirmed.json()["resume"]["data"]["sections"][0]["entries"][0]["blocks"]
+        assert all(block["node_id"] != paragraph["node_id"] for block in blocks)
+        assert blocks[0] == entry["blocks"][0]
+
+
 def test_compound_cleanup_proposals_delete_nodes_and_rebase_disjoint_targets() -> None:
     app = build_app()
     with TestClient(app) as client:
@@ -1932,7 +2406,7 @@ def test_translation_proposal_creates_one_independent_editable_resume() -> None:
             versions = db.scalars(
                 select(ResumeVersion).where(ResumeVersion.resume_id == int(result["id"]))
             ).all()
-            assert len(versions) == 1
+            assert len(versions) == 0
 
 
 def test_translation_proposal_rejects_changed_factual_tokens() -> None:
@@ -1975,46 +2449,194 @@ def test_translation_proposal_rejects_changed_factual_tokens() -> None:
         assert response.status_code in {422, 400}
 
 
-def test_proposal_confirmation_respects_resume_version_limit() -> None:
+@pytest.mark.parametrize("legacy_count", [0, 3, 10])
+def test_proposal_confirmation_does_not_access_history(legacy_count: int) -> None:
     app = build_app()
-    app.state.settings.resume_version_limit = 2
     with TestClient(app) as client:
-        register(client, "agent-version-limit@example.test")
+        register(client, "agent-current-content@example.test")
         resume = create_resume(client, app)
-        manual = client.post(
-            f"/api/resumes/{resume['id']}/versions",
-            json={"name": "人工保留版本"},
-        )
-        assert manual.status_code == 201
+        with app.state.session_factory() as db:
+            db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == int(resume["id"])))
+            for number in range(1, legacy_count + 1):
+                db.add(ResumeVersion(
+                    resume_id=int(resume["id"]), template_id=int(app.state.test_template_id),
+                    version_no=number, data_json=resume["data"], style_json=resume["style"],
+                    reason="manual", name=f"旧内容 {number}",
+                ))
+            db.commit()
         session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposed_data = resume["data"]
         proposed_data["identity"]["headline"] = {
             "node_id": "node_headline00000001",
             "source_refs": [],
-            "value": "不应应用的智能助手标题",
+            "value": "直接应用到当前正文",
         }
         proposal = client.post(
             f"/internal/agent/runs/{run_id}/proposals",
             headers=internal_headers(),
             json={
-                "call_key": "proposal-version-limit",
+                "call_key": "proposal-current-content",
                 "resume_id": resume["id"],
                 "data": proposed_data,
                 "style": resume["style"],
-                "summary": "版本空间已满时不得应用",
+                "summary": "修改当前正文",
             },
         )
 
-        result = client.post(
-            f"/api/agent/proposals/{proposal.json()['proposal']['id']}/confirm"
-        )
+        statements: list[str] = []
+        def capture_sql(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement.lower())
+        with app.state.session_factory() as db:
+            engine = db.get_bind()
+        event.listen(engine, "before_cursor_execute", capture_sql)
+        try:
+            result = client.post(
+                f"/api/agent/proposals/{proposal.json()['proposal']['id']}/confirm"
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", capture_sql)
 
-        assert result.status_code == 409
-        assert result.json() == {"error": "RESUME_VERSION_LIMIT_REACHED"}
+        assert result.status_code == 200
+        assert not any("resume_versions" in sql for sql in statements)
         current = client.get(f"/api/resumes/{resume['id']}").json()["resume"]
-        assert current["lock_version"] == 1
-        assert current["data"]["identity"]["headline"] is None
+        assert current["lock_version"] == 2
+        assert current["data"]["identity"]["headline"]["value"] == "直接应用到当前正文"
+        with app.state.session_factory() as db:
+            assert len(db.scalars(select(ResumeVersion)).all()) == legacy_count
+            stored = db.scalar(select(ResumeChangeProposal))
+            assert stored.status == "applied"
+
+
+def test_nine_scoped_proposals_replay_current_content_and_preserve_style() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "nine-proposals@example.test")
+        resume = create_resume(client, app)
+        markdown = "\n\n".join([
+            "## [[linkresume-block:node_section000000001]]项目经历",
+            "### [[linkresume-block:node_entry00000000001]]示例项目",
+            *[f"- [[linkresume-block:node_bullet{index:010d}]]技术架构{index}:Java" for index in range(9)],
+        ])
+        resume = client.put(f"/api/resumes/{resume['id']}", json={
+            "data": editor_data(resume["data"], markdown), "base_lock_version": 1,
+        }).json()["resume"]
+        with app.state.session_factory() as db:
+            db.execute(delete(ResumeVersion))
+            db.commit()
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal_ids = []
+        for index in range(9):
+            target = client.post(
+                f"/internal/agent/runs/{run_id}/targets:resolve", headers=internal_headers(),
+                json={"resume_id": resume["id"], "quoted_text": f"技术架构{index}:Java"},
+            ).json()["target"]
+            diagnosis = client.post(
+                f"/internal/agent/runs/{run_id}/diagnoses", headers=internal_headers(),
+                json={"target": target, "scope": "target"},
+            ).json()
+            response = client.post(
+                f"/internal/agent/runs/{run_id}/proposals:v2", headers=internal_headers(),
+                json={
+                    "call_key": f"punctuation-{index}", "mode": "polish_local", "target": target,
+                    "diagnosis": diagnosis["diagnosis"],
+                    "diagnosis_fingerprint": diagnosis["diagnosis_fingerprint"],
+                    "operations": [{"op": "replace_target_text", "target": target,
+                                    "new_text": f"技术架构{index}：Java",
+                                    "expected_text_hash": target["expected_text_hash"]}],
+                    "summary": "规范标点",
+                },
+            )
+            assert response.status_code == 201, response.text
+            proposal_ids.append(response.json()["proposal"]["id"])
+        # A scoped proposal's obsolete full preview must never be execution input,
+        # even when the resume's lock has not changed since proposal creation.
+        with app.state.session_factory() as db:
+            for proposal in db.scalars(select(ResumeChangeProposal)):
+                proposal.proposed_data_json = {}
+                proposal.proposed_style_json = {}
+            db.commit()
+        first = client.post(f"/api/agent/proposals/{proposal_ids[0]}/confirm")
+        assert first.status_code == 200
+        current = first.json()["resume"]
+        current["style"]["portable"]["smart_one_page"] = True
+        manual = client.put(f"/api/resumes/{resume['id']}", json={
+            "style": current["style"], "base_lock_version": current["lock_version"],
+        })
+        assert manual.status_code == 200
+        for proposal_id in proposal_ids[1:]:
+            response = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+            assert response.status_code == 200
+        result = response.json()["resume"]
+        assert result["lock_version"] == 12
+        assert result["style"] == manual.json()["resume"]["style"]
+        from linkresume.modules.agent.resume_tools import editor_markdown
+        from linkresume.application.resumes.service import parse_persisted_resume_snapshot
+        content = editor_markdown(parse_persisted_resume_snapshot(result["data"], result["style"]).data)
+        for index in range(9):
+            assert f"技术架构{index}：Java" in content
+        with app.state.session_factory() as db:
+            assert db.scalars(select(ResumeVersion)).all() == []
+            assert all(p.status == "applied" for p in db.scalars(select(ResumeChangeProposal)))
+
+
+def test_corrupt_scoped_proposal_does_not_fall_back_to_full_snapshot() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "scoped-missing-operation@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals", headers=internal_headers(),
+            json={"call_key": "corrupt-operation", "resume_id": resume["id"],
+                  "data": resume["data"], "style": resume["style"], "summary": "存量异常提案"},
+        ).json()["proposal"]
+        with app.state.session_factory() as db:
+            stored = db.scalar(select(ResumeChangeProposal))
+            stored.proposal_mode = "polish_local"
+            stored.operations_json = []
+            db.commit()
+        response = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        assert response.status_code == 409
+        assert response.json() == {"error": "TARGET_STALE"}
+        with app.state.session_factory() as db:
+            assert db.scalar(select(ResumeChangeProposal)).status == "conflicted"
+            assert db.get(Resume, int(resume["id"])).lock_version == 1
+
+
+def test_confirm_commit_failure_rolls_back_resume_and_proposal() -> None:
+    from sqlalchemy.orm import Session
+
+    app = build_app()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        register(client, "proposal-commit-failure@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        proposal = client.post(
+            f"/internal/agent/runs/{run_id}/proposals", headers=internal_headers(),
+            json={"call_key": "commit-failure", "resume_id": resume["id"],
+                  "data": resume["data"], "style": resume["style"], "summary": "测试事务失败"},
+        ).json()["proposal"]
+
+        def fail_applied_commit(db):
+            if any(isinstance(item, ResumeChangeProposal) and item.status == "applied" for item in db.dirty):
+                raise RuntimeError("simulated commit failure")
+
+        event.listen(Session, "before_commit", fail_applied_commit)
+        try:
+            response = client.post(f"/api/agent/proposals/{proposal['id']}/confirm")
+        finally:
+            event.remove(Session, "before_commit", fail_applied_commit)
+        assert response.status_code == 500
+        with app.state.session_factory() as db:
+            assert db.scalar(select(ResumeChangeProposal)).status == "pending"
+            current = db.get(Resume, int(resume["id"]))
+            assert current.lock_version == resume["lock_version"]
+            assert current.data_json == resume["data"]
+        assert client.post(f"/api/agent/proposals/{proposal['id']}/confirm").status_code == 200
 
 
 def test_run_concurrency_is_limited_across_user_sessions() -> None:
@@ -2521,6 +3143,62 @@ def test_new_session_uses_first_message_title_and_rejects_stale_clarification_re
             }
         ]
 
+        with app.state.session_factory() as db:
+            record = db.scalar(select(AgentSession).where(AgentSession.public_id == session["id"]))
+            assert record is not None
+            run = db.get(AgentRun, structured_run.id)
+            assert run is not None
+            run.status = "succeeded"
+            db.add(AgentMessage(
+                session_id=record.id,
+                run_id=run.id,
+                sequence_no=latest_sequence + 3,
+                role="assistant",
+                message_type="clarification",
+                content="请确认目标简历",
+                metadata_json={
+                    "version": 1,
+                    "questions": [{
+                        "id": "target",
+                        "header": "目标简历",
+                        "question": "请选择要修改的简历",
+                        "options": [
+                            {"id": "current", "label": "当前简历"},
+                            {"id": "other", "label": "另一份简历"},
+                        ],
+                    }],
+                },
+            ))
+            db.commit()
+
+        switched = client.post(
+            f"/api/agent/sessions/{session['id']}/messages",
+            json={
+                "content": "目标简历：另一份简历",
+                "idempotency_key": "switched_resume_reply_001",
+                "reply_to_sequence_no": latest_sequence + 3,
+                "replace_inherited_resume": True,
+                "contexts": [{"type": "resume", "id": other_resume["id"]}],
+                "clarification_answers": [
+                    {"question_id": "target", "option_id": "other"}
+                ],
+            },
+        )
+        assert switched.status_code == 200
+        with app.state.session_factory() as db:
+            switched_message = db.scalar(
+                select(AgentMessage)
+                .join(AgentSession, AgentSession.id == AgentMessage.session_id)
+                .where(
+                    AgentSession.public_id == session["id"],
+                    AgentMessage.role == "user",
+                    AgentMessage.content == "目标简历：另一份简历",
+                )
+            )
+            assert switched_message is not None
+            assert switched_message.metadata_json["contexts"][0]["id"] == other_resume["id"]
+            assert switched_message.metadata_json.get("selection_context") is None
+
 
 def test_pi_stream_persists_structured_clarification_only_after_success(
     monkeypatch: pytest.MonkeyPatch,
@@ -2751,6 +3429,30 @@ def test_agent_model_returns_stable_error_when_pi_binding_is_missing() -> None:
 
     assert response.status_code == 503
     assert response.json() == {"error": "LLM_MODEL_NOT_CONFIGURED"}
+
+
+def test_runtime_config_snapshots_requested_model_on_run() -> None:
+    app = build_app()
+    app.state.llm_service.agent_runtime_model = AsyncMock(return_value=SimpleNamespace(
+        id=42, config_version=3, adapter="openrouter",
+        model_call_name="example/model-1", api_base=None, api_key="test-key",
+    ))
+    with TestClient(app) as client:
+        register(client, "model-snapshot@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        response = client.get(
+            "/internal/agent/runtime-config",
+            params={"run_id": run_id}, headers=internal_headers(),
+        )
+        assert response.status_code == 200
+        assert response.json()["model"] == "example/model-1"
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            assert run is not None
+            assert run.model_name == "openrouter/example/model-1"
+            assert run.model_config_id == 42
+            assert run.model_config_version == 3
 
 
 def test_agent_model_does_not_expose_llm_call_id_on_service_error() -> None:

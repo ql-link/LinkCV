@@ -137,9 +137,7 @@ def test_authentication_and_resume_crud() -> None:
             initial_version = session.scalar(
                 select(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
             )
-            assert initial_version is not None
-            assert initial_version.version_no == 1
-            assert initial_version.reason == "initial"
+            assert initial_version is None
         listed = client.get("/api/resumes").json()["resumes"]
         assert [item["id"] for item in listed] == [resume_id]
 
@@ -239,7 +237,13 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
             json={"data": data, "base_lock_version": 1},
         )
         assert saved.status_code == 200
-        assert owner.post(f"/api/resumes/{resume_id}/versions").status_code == 201
+        # Imported pre-cutover archives must continue protecting their images.
+        with app.state.session_factory() as session:
+            row = session.get(Resume, int(resume_id))
+            session.add(ResumeVersion(resume_id=row.id, template_id=row.template_id,
+                version_no=1, name="存量归档", reason="manual",
+                data_json=row.data_json, style_json=row.style_json))
+            session.commit()
 
         data["identity"]["avatar"] = None
         saved_without_photo = owner.put(
@@ -347,6 +351,12 @@ def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> Non
         object_key = f"users/1/resumes/{resume_id}/image.png"
         storage.objects[object_key] = b"private-resume-image"
         storage.fail_cleanup = True
+        with app.state.session_factory() as session:
+            row = session.get(Resume, int(resume_id))
+            session.add(ResumeVersion(resume_id=row.id, template_id=row.template_id,
+                version_no=1, name="存量归档", reason="manual",
+                data_json=row.data_json, style_json=row.style_json))
+            session.commit()
 
         deleted = client.delete(f"/api/resumes/{resume_id}")
 
@@ -561,13 +571,13 @@ def test_miniprogram_bearer_can_only_read_its_own_resumes() -> None:
         )
     headers = {"Authorization": f"Bearer {credentials.access_token}"}
     with TestClient(app) as mini_client:
-        listed = mini_client.get("/api/miniprogram/resumes", headers=headers)
+        listed = mini_client.get("/api/miniprogram/v2/resumes", headers=headers)
         assert [item["id"] for item in listed.json()["resumes"]] == [owner_resume_id]
         assert mini_client.get(
-            f"/api/miniprogram/resumes/{owner_resume_id}", headers=headers
+            f"/api/miniprogram/v2/resumes/{owner_resume_id}", headers=headers
         ).status_code == 200
         assert mini_client.get(
-            f"/api/miniprogram/resumes/{stranger_resume_id}", headers=headers
+            f"/api/miniprogram/v2/resumes/{stranger_resume_id}", headers=headers
         ).status_code == 404
         assert mini_client.get("/api/resumes", headers=headers).status_code == 401
         assert mini_client.post(
@@ -579,4 +589,4 @@ def test_miniprogram_bearer_can_only_read_its_own_resumes() -> None:
             "/api/auth/login",
             json={"email": "mini-owner@example.test", "password": "password-123"},
         )
-        assert web_client.get("/api/miniprogram/resumes").status_code == 401
+        assert web_client.get("/api/miniprogram/v2/resumes").status_code == 401

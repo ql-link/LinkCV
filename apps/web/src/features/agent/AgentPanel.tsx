@@ -18,6 +18,7 @@ import {
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoading } from "@/components/ui";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
+import { useResumeStore } from "../../store/resumeStore";
 
 type AgentPanelProps = {
   resumeId: string;
@@ -49,6 +50,9 @@ function proposalChanges(
   currentData?: CanonicalResumeDocument,
   currentStyle?: CanonicalResumePresentation,
 ) {
+  if (proposal.preview?.changes.length) {
+    return proposal.preview.changes.map((change, index) => ({ label: `修改内容 ${index + 1}`, before: change.before, after: change.after }));
+  }
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
       label: operation.op === "insert_after_target"
@@ -62,7 +66,7 @@ function proposalChanges(
       after: operation.op === "delete_target" ? "删除该条目" : operation.new_text,
     }));
   }
-  if (!currentData || !currentStyle) return [];
+  if (!currentData || !currentStyle || !proposal.data || !proposal.style) return [];
   const changes: Array<{ label: string; before: string; after: string }> = [];
   if (JSON.stringify(currentData) !== JSON.stringify(proposal.data)) {
     changes.push({ label: "简历正文", before: "当前内容", after: "有修改" });
@@ -87,6 +91,9 @@ export function agentErrorMessage(error: unknown) {
     AGENT_TIMEOUT: "智能助手本轮运行超时，请稍后重试。",
     AGENT_RUN_IN_PROGRESS: "上一条请求仍在处理中，请等待或取消后重试。",
     RESUME_EDIT_CONFLICT: "简历已发生新的修改，这份提案没有应用。请重新生成建议。",
+    RESUME_DRAFT_SAVE_FAILED: "当前草稿保存失败，提案没有应用。请先保存后重试。",
+    RESUME_WRITE_PENDING: "正在保存或应用修改，请稍后重试。",
+    AGENT_PROPOSAL_RESULT_UNKNOWN: "暂时无法确认修改结果，请刷新提案状态后再操作。",
     TARGET_STALE: "所选内容已发生变化，请重新选择后再试。",
     TARGET_RESOLUTION_REQUIRED: "还不能唯一定位要处理的内容，请重新选择或说得更具体。",
     DIAGNOSIS_REQUIRED: "诊断依据已失效，请重新分析后再生成修改。",
@@ -631,7 +638,7 @@ export function AgentPanel({
     setError(null);
     try {
       if (!await onBeforeConfirm()) return;
-      await api.confirmAgentProposal(proposal.id);
+      await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
       setProposals((current) => current.filter((item) => item.id !== proposal.id));
       await onApplied();
     } catch (reason) {
@@ -723,7 +730,6 @@ export function AgentPanel({
           <article className="agent-proposal" key={proposal.id}>
           <header>
             <span><CircleCheck aria-hidden="true" size={15} />待你确认</span>
-            <small>基于版本 {proposal.base_lock_version}</small>
           </header>
           <p>{proposal.summary}</p>
           {proposal.rationale && proposal.rationale.length > 0 && (

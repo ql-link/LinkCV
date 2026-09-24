@@ -11,6 +11,13 @@ function textCell(text: string): JSONContent {
 }
 
 describe("renderResumeEditorDocument 分栏行", () => {
+  it("renders avatar with the same portrait ratio as the editor", () => {
+    const html = renderResumeEditorDocument({
+      type: "doc",
+      content: [{ type: "avatarImage", attrs: { src: "/templates/avatar-cat.jpg", size: 94 } }],
+    });
+    expect(html).toContain("width:94px;height:calc(94px * var(--resume-avatar-height-ratio, 1.4))");
+  });
   it("2 栏仍是带左右比例的左右分栏", () => {
     const html = renderResumeEditorDocument(withRow({
       type: "resumeRow",

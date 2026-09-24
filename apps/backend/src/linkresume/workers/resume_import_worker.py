@@ -15,7 +15,7 @@ from linkresume.application.resumes.service import (
     MAX_RESUMES_PER_USER,
     next_available_resume_title,
     presentation_from_template,
-    persist_resume_with_initial_version,
+    persist_resume,
     resume_slot_count,
 )
 from linkresume.core.config import Settings
@@ -535,7 +535,7 @@ class ResumeImportProcessor:
                     user_id=record.user_id,
                     title=title,
                 )
-                resume = persist_resume_with_initial_version(
+                resume = persist_resume(
                     CreateResumeCommand(
                         user_id=record.user_id,
                         title=available_title,

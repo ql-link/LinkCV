@@ -1,6 +1,8 @@
 from __future__ import annotations
+from linkresume.application.interviews.resume_binding_service import current_resume_title
 
 import asyncio
+import logging
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from pathlib import PurePath
@@ -8,18 +10,29 @@ from typing import Any, Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from minio.error import S3Error
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.application.interviews.service import (
+    DatasetAlreadyLinked,
     InterviewApplicationNotEmpty,
     InterviewApplicationAlreadyExists,
     InterviewAnswerPlanInvalidTime,
     InterviewAnswerPlanNotSupported,
     InterviewAnswerPlanOutsideWindow,
+    InterviewAssetNotLinked,
     InterviewEditConflict,
     InterviewInvalidTransition,
     InterviewNotFound,
@@ -33,14 +46,13 @@ from linkresume.application.interviews.service import (
     add_application_stage,
     advance_application,
     application_logo_url,
+    attach_dataset_to_session,
     cancel_interview,
     close_application,
     complete_interview,
     create_application,
-    create_asset_record,
     create_session,
     delete_application,
-    delete_asset_record,
     delete_session,
     find_owned_asset,
     list_applications,
@@ -54,6 +66,8 @@ from linkresume.application.interviews.service import (
     reschedule_session,
     set_application_archived,
     terminate_application,
+    unlink_owned_dataset,
+    unlink_session_dataset,
     update_application,
     update_answer_plan,
     update_session,
@@ -63,17 +77,26 @@ from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.config import Settings
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
+from linkresume.core.mq import DatasetParseMessage, MQPublishError
 from linkresume.core.storage import (
     AssetStorage,
-    EmptyUpload,
-    UploadTooLarge,
-    build_interview_asset_object_name,
     get_storage,
+)
+from linkresume.modules.datasets.models import UserDataset
+from linkresume.modules.datasets.routes import (
+    canonical_dataset_idempotency_key,
+    get_dataset_admission,
+    get_dataset_publisher,
+)
+from linkresume.modules.datasets.schemas import DatasetAttachRequest
+from linkresume.services import dataset_ingest_service as ingest
+from linkresume.services.import_admission import (
+    ImportAdmissionController,
+    ImportAdmissionRejected,
 )
 from linkresume.modules.identity.dependencies import get_current_user, get_settings
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import (
-    InterviewAsset,
     InterviewSession,
     JobApplication,
 )
@@ -117,26 +140,7 @@ from linkresume.modules.observability.audit import bind_audit_target
 
 
 router = APIRouter(tags=["interviews"])
-
-SUPPORTED_ASSET_TYPES: dict[str, tuple[str, frozenset[str]]] = {
-    ".webm": ("audio", frozenset({"audio/webm", "video/webm"})),
-    ".m4a": ("audio", frozenset({"audio/mp4", "audio/x-m4a"})),
-    ".mp3": ("audio", frozenset({"audio/mpeg", "audio/mp3"})),
-    ".wav": ("audio", frozenset({"audio/wav", "audio/x-wav"})),
-    ".ogg": ("audio", frozenset({"audio/ogg", "application/ogg"})),
-    ".mp4": ("video", frozenset({"video/mp4", "audio/mp4"})),
-    ".mov": ("video", frozenset({"video/quicktime"})),
-    ".pdf": ("document", frozenset({"application/pdf"})),
-    ".docx": (
-        "document",
-        frozenset(
-            {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
-        ),
-    ),
-    ".txt": ("document", frozenset({"text/plain"})),
-    ".md": ("document", frozenset({"text/markdown", "text/plain"})),
-}
-
+logger = logging.getLogger(__name__)
 
 def _database_id(
     value: str,
@@ -164,6 +168,7 @@ def _application_record(
     current = next((stage for stage in stages if stage.current_marker == 1), None)
     return JobApplicationRecord.model_validate(application).model_copy(
         update={
+            "resume_title_snapshot": current_resume_title(db, application),
             "company_logo_url": application_logo_url(application),
             "current_stage": (
                 ApplicationStageRecord.model_validate(current) if current else None
@@ -208,8 +213,19 @@ def _session_summary(item: SessionWithApplication) -> InterviewSessionSummary:
     )
 
 
-def _asset_record(asset: InterviewAsset) -> InterviewAssetRecord:
-    return InterviewAssetRecord.model_validate(asset)
+def _asset_record(dataset: UserDataset) -> InterviewAssetRecord:
+    return InterviewAssetRecord(
+        id=str(dataset.id),
+        interview_session_id=str(dataset.interview_session_id),
+        source_type=dataset.interview_source_type or "uploaded",
+        asset_type=dataset.asset_kind,  # type: ignore[arg-type]
+        original_file_name=dataset.file_name,
+        content_type=dataset.content_type,
+        file_size=dataset.file_size,
+        duration_ms=dataset.duration_ms,
+        sha256=dataset.sha256,
+        created_at=dataset.created_at,
+    )
 
 
 def _raise_service_error(error: Exception) -> None:
@@ -245,6 +261,10 @@ def _raise_service_error(error: Exception) -> None:
         raise ApiError(409, "INTERVIEW_APPLICATION_NOT_EMPTY") from error
     if isinstance(error, InterviewSessionNotEmpty):
         raise ApiError(409, "INTERVIEW_SESSION_NOT_EMPTY") from error
+    if isinstance(error, DatasetAlreadyLinked):
+        raise ApiError(409, "DATASET_ALREADY_LINKED") from error
+    if isinstance(error, InterviewAssetNotLinked):
+        raise ApiError(404, "INTERVIEW_ASSET_NOT_FOUND") from error
     raise error
 
 
@@ -516,15 +536,7 @@ def delete_application_route(
     application_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResponse:
-    def delete_asset_object(object_name: str) -> None:
-        try:
-            storage.delete(object_name)
-        except S3Error as error:
-            if error.code not in {"NoSuchKey", "NoSuchObject"}:
-                raise
-
     try:
         parsed_application_id = _database_id(application_id)
         application = require_owned_application(db, user.id, parsed_application_id)
@@ -535,17 +547,11 @@ def delete_application_route(
                 db,
                 str(application.job_description_id),
                 user.id,
-                delete_asset_object=delete_asset_object,
             )
             if not deleted:
                 raise InterviewNotFound
         else:
-            delete_application(
-                db,
-                user.id,
-                parsed_application_id,
-                delete_asset_object=delete_asset_object,
-            )
+            delete_application(db, user.id, parsed_application_id)
     except S3Error as error:
         raise ApiError(502, "INTERVIEW_APPLICATION_DELETE_FAILED") from error
     except Exception as error:
@@ -765,13 +771,6 @@ def get_interview_assets(
     return InterviewAssetListResponse(items=[_asset_record(asset) for asset in assets])
 
 
-def _safe_file_name(file_name: str) -> str:
-    safe = file_name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].strip()
-    if not safe or len(safe) > 255 or any(ord(character) < 32 for character in safe):
-        raise ApiError(400, "INVALID_INTERVIEW_ASSET")
-    return safe
-
-
 @router.post(
     "/interview-sessions/{session_id}/assets",
     response_model=InterviewAssetResponse,
@@ -783,72 +782,125 @@ async def post_interview_asset(
     file: UploadFile = File(...),
     source_type: AssetSourceType = Form(...),
     duration_ms: int | None = Form(default=None, ge=1),
+    idempotency_key_header: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
+    dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),
 ) -> InterviewAssetResponse:
     try:
-        item = require_owned_session(db, user.id, _database_id(session_id))
+        item = require_owned_session(
+            db, user.id, _database_id(session_id), for_update=True
+        )
     except Exception as error:
         _raise_service_error(error)
         raise AssertionError("unreachable")
-    filename = _safe_file_name(file.filename or "")
-    extension = PurePath(filename).suffix.lower()
-    declared_type = (file.content_type or "application/octet-stream").lower()
-    declared_type = declared_type.split(";", 1)[0].strip()
-    type_contract = SUPPORTED_ASSET_TYPES.get(extension)
-    if type_contract is None or declared_type not in type_contract[1]:
-        raise ApiError(400, "UNSUPPORTED_INTERVIEW_ASSET")
-    if file.size is not None and file.size > settings.interview_asset_upload_max_bytes:
-        raise ApiError(413, "INTERVIEW_ASSET_TOO_LARGE")
-    object_name = build_interview_asset_object_name(
-        user.id, item.application.id, item.session.id, filename
-    )
+    idempotency_key = canonical_dataset_idempotency_key(idempotency_key_header)
     try:
-        upload = await asyncio.to_thread(
-            storage.upload_stream,
-            object_name,
-            file.file,
-            declared_type,
-            max_bytes=settings.interview_asset_upload_max_bytes,
-        )
-    except UploadTooLarge as error:
-        raise ApiError(413, "INTERVIEW_ASSET_TOO_LARGE") from error
-    except EmptyUpload as error:
-        raise ApiError(400, "EMPTY_INTERVIEW_ASSET") from error
-    except Exception as error:
-        raise ApiError(502, "INTERVIEW_ASSET_UPLOAD_FAILED") from error
-    finally:
+        admission_context = dataset_admission.acquire(user.id)
+        await admission_context.__aenter__()
+    except ImportAdmissionRejected as error:
         await file.close()
+        raise ApiError(
+            429,
+            "DATASET_UPLOAD_RATE_LIMITED",
+            headers={"Retry-After": "60"},
+        ) from error
     try:
-        asset = create_asset_record(
+        result = await ingest.ingest_dataset_upload(
             db,
-            session_id=session_id,
-            source_type=source_type,
-            asset_type=(
-                "video"
-                if declared_type.startswith("video/")
-                else "audio"
-                if declared_type.startswith("audio/")
-                else type_contract[0]
-            ),
-            original_file_name=filename,
-            content_type=declared_type,
-            file_size=upload.file_size,
+            user=user,
+            settings=settings,
+            storage=storage,
+            upload=file,
+            file_name_override=None,
+            folder_id=None,
+            interview_session_id=item.session.id,
+            interview_source_type=source_type,
             duration_ms=duration_ms,
-            object_name=object_name,
-            sha256=upload.sha256,
+            idempotency_key=idempotency_key,
         )
-    except Exception as error:
-        db.rollback()
+    finally:
+        await admission_context.__aexit__(None, None, None)
+    if not result.replayed and result.task.parse_status == "queued":
         try:
-            storage.delete(object_name)
-        except Exception:
-            pass
-        raise ApiError(500, "INTERVIEW_ASSET_RECORD_FAILED") from error
-    bind_audit_target(request, asset.id)
-    return InterviewAssetResponse(asset=_asset_record(asset))
+            publisher = get_dataset_publisher(request, settings)
+            await publisher.publish(
+                DatasetParseMessage.create(parse_task_id=result.task.id)
+            )
+        except MQPublishError:
+            logger.warning(
+                "dataset parse publish deferred",
+                extra={
+                    "dataset_id": result.dataset.id,
+                    "parse_task_id": result.task.id,
+                },
+            )
+        else:
+            result.task.last_dispatched_at = datetime.now(UTC)
+            db.commit()
+            db.refresh(result.task)
+    bind_audit_target(request, result.dataset.id)
+    return InterviewAssetResponse(asset=_asset_record(result.dataset))
+
+
+@router.post(
+    "/interview-sessions/{session_id}/assets/attach",
+    response_model=InterviewAssetResponse,
+    status_code=201,
+)
+def attach_interview_asset(
+    request: Request,
+    session_id: str,
+    payload: DatasetAttachRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InterviewAssetResponse:
+    try:
+        parsed_dataset_id = _database_id(payload.dataset_id, "DATASET_NOT_FOUND")
+        dataset = attach_dataset_to_session(
+            db,
+            user.id,
+            _database_id(session_id),
+            parsed_dataset_id,
+        )
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+    bind_audit_target(request, dataset.id)
+    return InterviewAssetResponse(asset=_asset_record(dataset))
+
+
+@router.delete(
+    "/interview-sessions/{session_id}/assets/{dataset_id}",
+    response_model=None,
+    status_code=200,
+)
+def unlink_interview_asset(
+    session_id: str,
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        unlink_session_dataset(
+            db,
+            user.id,
+            _database_id(session_id),
+            _database_id(dataset_id, "INTERVIEW_ASSET_NOT_FOUND"),
+        )
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+    return {"unlinked": True}
 
 
 def _stream_object(response: Any) -> Iterator[bytes]:
@@ -870,22 +922,24 @@ def get_interview_asset_content(
     owned = find_owned_asset(
         db, user.id, _database_id(asset_id, "INTERVIEW_ASSET_NOT_FOUND")
     )
-    if owned is None:
+    if owned is None or owned[0].interview_session_id is None:
         raise ApiError(404, "INTERVIEW_ASSET_NOT_FOUND")
-    asset, _ = owned
+    dataset, _task = owned
     try:
-        response = storage.get(asset.object_name)
+        response = storage.get(dataset.object_name)
     except S3Error as error:
         if error.code in {"NoSuchKey", "NoSuchObject"}:
             raise ApiError(404, "INTERVIEW_ASSET_NOT_FOUND") from error
         raise ApiError(502, "INTERVIEW_ASSET_READ_FAILED") from error
     except Exception as error:
         raise ApiError(502, "INTERVIEW_ASSET_READ_FAILED") from error
-    encoded = quote(asset.original_file_name)
-    disposition = "inline" if asset.asset_type in {"audio", "video"} else "attachment"
+    encoded = quote(dataset.file_name)
+    disposition = (
+        "inline" if dataset.asset_kind in {"audio", "video"} else "attachment"
+    )
     return StreamingResponse(
         _stream_object(response),
-        media_type=asset.content_type,
+        media_type=dataset.content_type,
         headers={
             "Cache-Control": "private, no-store",
             "Content-Disposition": f"{disposition}; filename*=UTF-8''{encoded}",
@@ -900,24 +954,16 @@ def delete_interview_asset(
     asset_id: str,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-    storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResponse:
-    owned = find_owned_asset(
-        db, user.id, _database_id(asset_id, "INTERVIEW_ASSET_NOT_FOUND")
-    )
-    if owned is None:
-        raise ApiError(404, "INTERVIEW_ASSET_NOT_FOUND")
-    asset, _ = owned
     try:
-        storage.delete(asset.object_name)
-    except S3Error as error:
-        if error.code not in {"NoSuchKey", "NoSuchObject"}:
-            raise ApiError(502, "INTERVIEW_ASSET_DELETE_FAILED") from error
+        unlink_owned_dataset(
+            db, user.id, _database_id(asset_id, "INTERVIEW_ASSET_NOT_FOUND")
+        )
+    except ApiError as error:
+        if error.code == "DATASET_NOT_FOUND":
+            raise ApiError(404, "INTERVIEW_ASSET_NOT_FOUND") from error
+        raise
     except Exception as error:
-        raise ApiError(502, "INTERVIEW_ASSET_DELETE_FAILED") from error
-    try:
-        delete_asset_record(db, asset)
-    except Exception as error:
-        db.rollback()
-        raise ApiError(500, "INTERVIEW_ASSET_RECORD_DELETE_FAILED") from error
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
     return DeleteResponse(deleted=True)

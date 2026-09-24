@@ -127,6 +127,33 @@ type ScheduleCreatedInfo = {
   stage: string;
   startAt: string;
 };
+
+const HIDDEN_APPLICATION_BOARD_COLUMNS_STORAGE_KEY = "linkresume:career-applications:hidden-columns:v1";
+
+function readStoredHiddenApplicationBoardColumnIds(): Set<string> {
+  try {
+    const value = window.sessionStorage.getItem(HIDDEN_APPLICATION_BOARD_COLUMNS_STORAGE_KEY);
+    if (!value) return new Set();
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string")
+      ? new Set(parsed)
+      : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function storeHiddenApplicationBoardColumnIds(columnIds: ReadonlySet<string>) {
+  try {
+    window.sessionStorage.setItem(
+      HIDDEN_APPLICATION_BOARD_COLUMNS_STORAGE_KEY,
+      JSON.stringify(Array.from(columnIds).sort()),
+    );
+  } catch {
+    // A blocked storage backend must not prevent in-memory column visibility changes.
+  }
+}
+
 type Interview = {
   id: string;
   applicationId: string;
@@ -531,7 +558,9 @@ export function InterviewCenterPage({
   const [query, setQuery] = useState("");
   const [applicationDisplayMode, setApplicationDisplayMode] = useState<"board" | "list">("board");
   const [groupByCategory, setGroupByCategory] = useState(false);
-  const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(() => new Set());
+  const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(
+    readStoredHiddenApplicationBoardColumnIds,
+  );
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -863,6 +892,7 @@ export function InterviewCenterPage({
                       const next = new Set(current);
                       if (visible) next.delete(columnId);
                       else next.add(columnId);
+                      storeHiddenApplicationBoardColumnIds(next);
                       return next;
                     });
                   }}
@@ -1449,7 +1479,7 @@ function ApplicationsView({
         <ConfirmDialog
           kind="delete"
           title={`永久删除「${pendingDelete.company_name_snapshot} · ${pendingDelete.job_title_snapshot}」？`}
-          description="删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
+          description="删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。"
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deletingApplicationId === pendingDelete.id}
@@ -2685,7 +2715,7 @@ function AssetSidebar({
   };
   const remove = async (asset: InterviewAssetRecord) => {
     try {
-      await api.deleteInterviewAsset(asset.id);
+      await api.unlinkSessionAsset(detail.session.id, asset.id);
       onChanged();
     } catch (error) {
       onNotice(errorMessage(error));
@@ -2701,7 +2731,7 @@ function AssetSidebar({
               <span><FileText /></span>
               <div><strong>{asset.original_file_name}</strong><small>{formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? "现场录制" : "文件上传"}</small></div>
               <button type="button" aria-label={`下载 ${asset.original_file_name}`} onClick={() => void download(asset)}><Download /></button>
-              <button type="button" aria-label={`删除 ${asset.original_file_name}`} onClick={() => void remove(asset)}><Trash2 /></button>
+              <button type="button" aria-label={`移除 ${asset.original_file_name}`} onClick={() => void remove(asset)}><Trash2 /></button>
             </article>
           )) : <p className="asset-empty">还没有素材</p>}
         </div>
@@ -2709,18 +2739,18 @@ function AssetSidebar({
           ref={fileInput}
           className="visually-hidden"
           type="file"
-          aria-label="面试音频文件"
-          accept="audio/*,.aac,.aiff,.amr,.flac,.m4a,.mp3,.oga,.ogg,.opus,.wav,.webm,.wma"
+          aria-label="面试素材文件"
+          accept=".webm,.m4a,.mp3,.wav,.ogg,.mp4,.mov,.pdf,.docx,.md,.txt"
           onChange={(event) => {
             const file = event.target.files?.[0];
             const extension = file?.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-            const audioExtensions = new Set([".aac", ".aiff", ".amr", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".webm", ".wma"]);
-            if (file && (file.type.toLowerCase().startsWith("audio/") || audioExtensions.has(extension ?? ""))) void upload(file);
-            else if (file) onNotice("仅支持音频文件，请选择音频格式。");
+            const supportedExtensions = new Set([".webm", ".m4a", ".mp3", ".wav", ".ogg", ".mp4", ".mov", ".pdf", ".docx", ".md", ".txt"]);
+            if (file && supportedExtensions.has(extension ?? "")) void upload(file);
+            else if (file) onNotice("仅支持音视频与文档格式文件。");
             event.target.value = "";
           }}
         />
-        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>上传音频</Button>
+        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>上传文件</Button>
       </section>
       <InterviewContextSidebar className="record-context-card" interview={selected} />
     </aside>

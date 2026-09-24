@@ -12,6 +12,21 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: linkresume
+          MYSQL_USER: linkresume
+          MYSQL_PASSWORD: linkresume-test
+          MYSQL_ROOT_PASSWORD: linkresume-root-test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ulinkresume -plinkresume-test"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -25,6 +40,7 @@ jobs:
             apps/web/package-lock.json
             apps/extension/package-lock.json
             apps/pi-service/package-lock.json
+            apps/desktop/package-lock.json
             third_party/pi/package-lock.json
       - uses: astral-sh/setup-uv@v8.3.2
         with:
@@ -32,9 +48,26 @@ jobs:
       - run: npm ci --prefix apps/web
       - run: npm ci --prefix apps/extension
       - run: npm ci --prefix apps/pi-service
+      - run: npm ci --prefix apps/desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
       - run: npm ci --prefix third_party/pi
       - run: npm run prepare:pi
       - run: uv sync --directory apps/backend --dev
+      - name: Verify MySQL 0081 to 0082 migration
+        run: >-
+          uv run --directory apps/backend pytest
+          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0082_accepts_nullable_interview_session_foreign_key
+          -q
+        env:
+          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
+      - name: Verify MySQL 0083 to 0084 migration
+        run: >-
+          uv run --directory apps/backend pytest
+          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0084_adds_current_resume_link_without_attachment_storage
+          -q
+        env:
+          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
       - run: npm run check
         env:
           DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

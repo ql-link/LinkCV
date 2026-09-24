@@ -75,6 +75,19 @@ export function createLinkResumeClient(config, runId, signal) {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+    planTasks: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/tasks:plan`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    taskMaterials: (taskId) => request(
+      `/internal/agent/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}/materials`,
+    ),
+    taskStatus: (taskId, payload) => request(
+      `/internal/agent/runs/${encodeURIComponent(runId)}/tasks/${encodeURIComponent(taskId)}:status`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    ),
     toolEvent: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/tool-events`, {
       method: "POST",
       body: JSON.stringify(payload),

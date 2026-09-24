@@ -1,5 +1,5 @@
-const CACHE_KEY = "linkresume_resume_preview_cache_v1";
-const LEGACY_CACHE_KEYS = ["linkresume_resume_pdf_cache_v1", "linkresume_resume_pdf_cache_v2"];
+const CACHE_KEY = "linkresume_resume_preview_cache_v2";
+const LEGACY_CACHE_KEYS = ["linkresume_resume_preview_cache_v1", "linkresume_resume_pdf_cache_v1", "linkresume_resume_pdf_cache_v2"];
 let legacyCleanupPromise;
 
 function cacheIndex() {
@@ -19,8 +19,8 @@ function safePart(value) {
   return String(value).replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80);
 }
 
-function resumePreviewPath(ownerId, resumeId, versionId) {
-  return `${wx.env.USER_DATA_PATH}/linkresume-preview-v1-${safePart(ownerId)}-${safePart(resumeId)}-${safePart(versionId)}.png`;
+function resumePreviewPath(ownerId, resumeId, lockVersion) {
+  return `${wx.env.USER_DATA_PATH}/linkresume-preview-v2-${safePart(ownerId)}-${safePart(resumeId)}-${safePart(lockVersion)}.png`;
 }
 
 function accessFile(filePath) {
@@ -74,24 +74,24 @@ function clearLegacyCaches() {
   return legacyCleanupPromise;
 }
 
-async function getCachedResumePreview(ownerId, resumeId, versionId) {
+async function getCachedResumePreview(ownerId, resumeId, lockVersion) {
   await clearLegacyCaches();
   const index = cacheIndex();
   const key = entryKey(ownerId, resumeId);
   const entry = index[key];
-  if (!entry || String(entry.versionId) !== String(versionId)) return null;
+  if (!entry || String(entry.lockVersion) !== String(lockVersion)) return null;
   if (await accessFile(entry.filePath)) return entry.filePath;
   delete index[key];
   saveIndex(index);
   return null;
 }
 
-async function commitResumePreview(ownerId, resumeId, versionId, filePath) {
+async function commitResumePreview(ownerId, resumeId, lockVersion, filePath) {
   await clearLegacyCaches();
   const index = cacheIndex();
   const key = entryKey(ownerId, resumeId);
   const previous = index[key];
-  index[key] = { ownerId: String(ownerId), versionId: String(versionId), filePath };
+  index[key] = { ownerId: String(ownerId), lockVersion: String(lockVersion), filePath };
   saveIndex(index);
   if (previous && previous.filePath !== filePath) await removeFile(previous.filePath);
 }

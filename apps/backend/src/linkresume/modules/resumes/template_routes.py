@@ -34,6 +34,8 @@ def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
         key=template.key,
         name=template.name,
         description=template.description,
+        style_categories=template.style_categories_json or [],
+        use_cases=template.use_cases_json or [],
         data=snapshot.data,
         style=snapshot.style,
         layout_plan=compile_layout_plan(snapshot.data, snapshot.style),
@@ -48,7 +50,7 @@ def list_templates(
     templates = db.scalars(
         select(ResumeTemplate)
         .where(ResumeTemplate.is_active == 1)
-        .order_by(ResumeTemplate.id)
+        .order_by(ResumeTemplate.sort_order, ResumeTemplate.id)
     ).all()
     records: list[ResumeTemplateRecord] = []
     for template in templates:

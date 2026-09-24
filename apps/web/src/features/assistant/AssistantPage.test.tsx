@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError, type AgentContextSnapshot, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { useResumeStore } from "../../store/resumeStore";
-import { AssistantPage } from "./AssistantPage";
+import { AssistantPage, parseAgentTimestamp } from "./AssistantPage";
 
 vi.mock("../datasets/DatasetsPage", () => ({
   DatasetsPage: ({ embedded }: { embedded?: boolean }) => (
@@ -14,8 +14,9 @@ vi.mock("../datasets/DatasetsPage", () => ({
 }));
 
 vi.mock("../workbench/ResumeWorkbench", () => ({
-  ResumeWorkbench: ({ embedded, onClose, onAgentSelectionChange }: {
+  ResumeWorkbench: ({ embedded, externalRefreshVersion, onClose, onAgentSelectionChange }: {
     embedded?: boolean;
+    externalRefreshVersion?: number;
     onClose?: () => void;
     onAgentSelectionChange?: (context: {
       block_ids: string[];
@@ -25,7 +26,11 @@ vi.mock("../workbench/ResumeWorkbench", () => ({
       selected_text_hash: string;
     }) => void;
   }) => (
-    <section aria-label="嵌入式简历编辑器" data-embedded={embedded ? "true" : "false"}>
+    <section
+      aria-label="嵌入式简历编辑器"
+      data-embedded={embedded ? "true" : "false"}
+      data-refresh-version={externalRefreshVersion ?? 0}
+    >
       <button type="button" onClick={onClose}>关闭简历</button>
       <button type="button" onClick={() => onAgentSelectionChange?.({
         block_ids: ["node_location000000001"],
@@ -70,6 +75,11 @@ afterEach(() => {
 });
 
 describe("AssistantPage", () => {
+  it("把服务端无时区的 UTC 时间按 UTC 解析，避免刷新后进度多出八小时", () => {
+    expect(parseAgentTimestamp("2026-09-24T12:35:00")).toBe(Date.parse("2026-09-24T12:35:00Z"));
+    expect(parseAgentTimestamp("2026-09-24T20:35:00+08:00")).toBe(Date.parse("2026-09-24T12:35:00Z"));
+  });
+
   it("在新建对话下方只保留资料库，并在助手页内切换资料视图", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
@@ -125,9 +135,233 @@ describe("AssistantPage", () => {
     expect(screen.getByRole("complementary", { name: "对话列表" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起会话侧栏" })).toHaveAttribute("aria-expanded", "true");
 
-    await user.click(screen.getByRole("button", { name: "关闭简历" }));
+    const closeResumeButton = screen.getByRole("button", { name: "关闭右侧简历" });
+    expect(closeResumeButton).toBeVisible();
+    await user.click(closeResumeButton);
     expect(screen.queryByRole("region", { name: "嵌入式简历编辑器" })).not.toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "对话列表" })).toBeInTheDocument();
+  });
+
+  it("应用当前右侧简历的修改后直接更新状态并刷新嵌入式编辑器", async () => {
+    const user = userEvent.setup();
+    const proposal: AgentProposal = {
+      id: "proposal-refresh",
+      run_id: "run-refresh",
+      resume_id: "1",
+      base_lock_version: 1,
+      data: defaultCanonicalDocument,
+      style: defaultCanonicalPresentation,
+      summary: "更新教育经历学校名称",
+      operations: [{
+        op: "replace_target_text",
+        target: { selected_text: "Q 业大学" },
+        new_text: "安徽工业大学",
+        expected_text_hash: `sha256:${"a".repeat(64)}`,
+      }],
+      status: "pending",
+      applied_lock_version: null,
+      expires_at: "2026-09-24T08:00:00Z",
+      created_at: session.created_at,
+    };
+    const proposalSession: AgentSession = {
+      ...session,
+      title: "修改教育经历",
+      messages: [{
+        sequence_no: 1,
+        role: "user",
+        run_id: "run-refresh",
+        content: "把学校名称改为安徽工业大学",
+        contexts: [{ type: "resume", id: "1", resume_id: "1", version: "1", label: "后端开发简历" }],
+        created_at: session.created_at,
+      }],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [proposalSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: proposalSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [proposal] });
+    const saveCurrentResume = vi.fn().mockResolvedValue(undefined);
+    const loadResume = vi.fn().mockImplementation(async (id: string) => {
+      useResumeStore.setState({ activeResumeId: id, saveStatus: "idle" });
+    });
+    const confirm = vi.spyOn(api, "confirmAgentProposal").mockResolvedValue({
+      resume: {
+        id: "1",
+        title: "后端开发简历",
+        source_type: "blank",
+        lock_version: 2,
+        created_at: "2026-09-14T02:00:00Z",
+        updated_at: "2026-09-23T04:00:00Z",
+        template_id: null,
+        data: defaultCanonicalDocument,
+        style: defaultCanonicalPresentation,
+      },
+    });
+    useResumeStore.setState({
+      resumes: [{
+        id: "1",
+        title: "后端开发简历",
+        source_type: "blank",
+        lock_version: 1,
+        created_at: "2026-09-14T02:00:00Z",
+        updated_at: "2026-09-14T03:00:00Z",
+      }],
+      listResumes: vi.fn().mockResolvedValue(undefined),
+      loadResume,
+      saveCurrentResume,
+      saveStatus: "idle",
+      error: null,
+    });
+
+    render(<AssistantPage />);
+    await user.click(await screen.findByRole("button", { name: "修改教育经历" }));
+    await user.click(screen.getByRole("button", { name: "我的简历" }));
+    await user.click(within(screen.getByRole("dialog", { name: "选择我的简历" }))
+      .getByRole("button", { name: /后端开发简历/ }));
+    const embeddedEditor = screen.getByRole("region", { name: "嵌入式简历编辑器" });
+    expect(embeddedEditor).toHaveAttribute("data-refresh-version", "0");
+
+    await user.click(screen.getByRole("button", { name: "应用修改" }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-refresh"));
+    expect(saveCurrentResume).toHaveBeenCalledOnce();
+    expect(loadResume).toHaveBeenCalledTimes(1);
+    expect(loadResume).toHaveBeenLastCalledWith("1");
+    await waitFor(() => expect(embeddedEditor).toHaveAttribute("data-refresh-version", "1"));
+    expect(useResumeStore.getState().resumes[0].lock_version).toBe(2);
+    expect(screen.getByText("已应用")).toBeInTheDocument();
+  });
+
+  it("按列表顺序应用当前卡片内的全部待确认修改", async () => {
+    const user = userEvent.setup();
+    const proposal = (id: string, selectedText: string): AgentProposal => ({
+      id,
+      run_id: "run-batch",
+      resume_id: "resume-batch",
+      base_lock_version: 1,
+      data: defaultCanonicalDocument,
+      style: defaultCanonicalPresentation,
+      summary: `修改 ${selectedText}`,
+      operations: [{
+        op: "replace_target_text",
+        target: { selected_text: selectedText },
+        new_text: `${selectedText}（已优化）`,
+        expected_text_hash: `sha256:${"a".repeat(64)}`,
+      }],
+      status: "pending",
+      applied_lock_version: null,
+      expires_at: "2026-09-24T08:00:00Z",
+      created_at: session.created_at,
+    });
+    const proposals = [proposal("proposal-batch-1", "第一项"), proposal("proposal-batch-2", "第二项")];
+    const proposalSession: AgentSession = {
+      ...session,
+      title: "批量应用提案",
+      messages: [
+        { sequence_no: 1, role: "user", run_id: "run-batch", content: "统一优化两项内容", created_at: session.created_at },
+        { sequence_no: 2, role: "assistant", run_id: "run-batch", content: "已生成两项修改", created_at: session.updated_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [proposalSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: proposalSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals });
+    const confirm = vi.spyOn(api, "confirmAgentProposal").mockImplementation(async (proposalId) => ({
+      resume: {
+        id: "resume-batch",
+        title: "批量测试简历",
+        source_type: "blank",
+        lock_version: proposalId === "proposal-batch-1" ? 2 : 3,
+        created_at: session.created_at,
+        updated_at: session.updated_at,
+        template_id: null,
+        data: defaultCanonicalDocument,
+        style: defaultCanonicalPresentation,
+      },
+    }));
+
+    render(<AssistantPage />);
+    await user.click(await screen.findByRole("button", { name: "批量应用提案" }));
+    const panel = screen.getByLabelText("待确认简历修改提案");
+    expect(within(panel).getByRole("button", { name: "应用当前项" })).toBeVisible();
+    const applyAll = within(panel).getByRole("button", { name: "全部应用（2项）" });
+    await user.click(applyAll);
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
+    expect(confirm.mock.calls.map(([proposalId]) => proposalId)).toEqual([
+      "proposal-batch-1",
+      "proposal-batch-2",
+    ]);
+    await waitFor(() => expect(within(panel).queryByRole("button", { name: /全部应用/ })).not.toBeInTheDocument());
+    expect(within(panel).getByText("已应用")).toBeInTheDocument();
+  });
+
+  it("全部应用遇到冲突时保留已成功项并停止后续修改", async () => {
+    const user = userEvent.setup();
+    const proposal = (id: string, selectedText: string): AgentProposal => ({
+      id,
+      run_id: "run-batch-conflict",
+      resume_id: "resume-batch",
+      base_lock_version: 1,
+      data: defaultCanonicalDocument,
+      style: defaultCanonicalPresentation,
+      summary: `修改 ${selectedText}`,
+      operations: [{
+        op: "replace_target_text",
+        target: { selected_text: selectedText },
+        new_text: `${selectedText}（已优化）`,
+        expected_text_hash: `sha256:${"b".repeat(64)}`,
+      }],
+      status: "pending",
+      applied_lock_version: null,
+      expires_at: "2026-09-24T08:00:00Z",
+      created_at: session.created_at,
+    });
+    const proposals = [
+      proposal("proposal-batch-success", "第一项"),
+      proposal("proposal-batch-conflict", "第二项"),
+      proposal("proposal-batch-unhandled", "第三项"),
+    ];
+    const proposalSession: AgentSession = {
+      ...session,
+      title: "批量应用冲突",
+      messages: [
+        { sequence_no: 1, role: "user", run_id: "run-batch-conflict", content: "统一优化三项内容", created_at: session.created_at },
+        { sequence_no: 2, role: "assistant", run_id: "run-batch-conflict", content: "已生成三项修改", created_at: session.updated_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [proposalSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: proposalSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals });
+    const confirm = vi.spyOn(api, "confirmAgentProposal")
+      .mockResolvedValueOnce({
+        resume: {
+          id: "resume-batch",
+          title: "批量测试简历",
+          source_type: "blank",
+          lock_version: 2,
+          created_at: session.created_at,
+          updated_at: session.updated_at,
+          template_id: null,
+          data: defaultCanonicalDocument,
+          style: defaultCanonicalPresentation,
+        },
+      })
+      .mockRejectedValueOnce(new ApiRequestError(409, "TARGET_STALE"));
+
+    render(<AssistantPage />);
+    await user.click(await screen.findByRole("button", { name: "批量应用冲突" }));
+    const panel = screen.getByLabelText("待确认简历修改提案");
+    await user.click(within(panel).getByRole("button", { name: "全部应用（3项）" }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
+    expect(confirm.mock.calls.map(([proposalId]) => proposalId)).toEqual([
+      "proposal-batch-success",
+      "proposal-batch-conflict",
+    ]);
+    expect(await screen.findByText(/已应用 1 项，批量处理已停止/)).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "应用修改" })).toBeEnabled();
+    await user.click(within(panel).getByRole("button", { name: "上一项修改" }));
+    expect(within(panel).getByText("无法应用")).toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "上一项修改" }));
+    expect(within(panel).getByText("已应用")).toBeInTheDocument();
   });
 
   it("从嵌入式简历发送消息时保存草稿并携带稳定选区", async () => {
@@ -885,6 +1119,65 @@ describe("AssistantPage", () => {
     }));
   });
 
+  it("澄清时显式选择另一份简历会提交替换原简历的意图", async () => {
+    const user = userEvent.setup();
+    const sourceResume = { type: "resume" as const, id: "1", version: "3", label: "原简历", presentation: "mention" as const };
+    const nextResume = { type: "resume" as const, id: "2", version: "1", label: "目标简历", presentation: "mention" as const };
+    const clarification = {
+      version: 1 as const,
+      questions: [{
+        id: "target",
+        header: "目标简历",
+        question: "要使用哪份简历？",
+        options: [{ id: "current", label: "原简历" }, { id: "other", label: "另一份简历" }],
+      }],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentContexts").mockResolvedValue({ contexts: [sourceResume, nextResume] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({
+      session: {
+        ...session,
+        messages: [
+          { sequence_no: 1, role: "user", content: "请修改原简历", contexts: [sourceResume], created_at: session.created_at },
+          { sequence_no: 2, role: "assistant", message_type: "clarification", clarification, content: "请确认目标简历", created_at: session.created_at },
+        ],
+      },
+    });
+    const stream = vi.spyOn(api, "streamAgentMessage")
+      .mockImplementationOnce(async (_id, _payload, _signal, onEvent) => {
+        onEvent({ type: "run.started", runId: "run-1" });
+        onEvent({ type: "clarification.requested", runId: "run-1", clarification });
+        onEvent({ type: "run.completed", runId: "run-1" });
+      })
+      .mockImplementationOnce(async (_id, _payload, _signal, onEvent) => {
+        onEvent({ type: "run.started", runId: "run-2" });
+        onEvent({ type: "run.completed", runId: "run-2" });
+      });
+
+    render(<AssistantPage />);
+    await user.click(screen.getByRole("button", { name: "添加资料" }));
+    let picker = await screen.findByRole("dialog", { name: "选择资料" });
+    await user.click(within(picker).getByRole("button", { name: /原简历/ }));
+    await user.click(within(picker).getByRole("button", { name: "添加 1 项" }));
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "请修改原简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(await screen.findByRole("region", { name: "需要你确认" })).toHaveTextContent("先点下方“添加资料”选择目标简历");
+    await user.click(screen.getByRole("button", { name: "添加资料" }));
+    picker = await screen.findByRole("dialog", { name: "选择资料" });
+    await user.click(within(picker).getByRole("button", { name: /目标简历/ }));
+    await user.click(within(picker).getByRole("button", { name: "添加 1 项" }));
+    await user.click(screen.getByRole("radio", { name: /另一份简历/ }));
+    await user.click(screen.getByRole("button", { name: "提交回答" }));
+
+    await waitFor(() => expect(stream).toHaveBeenCalledTimes(2));
+    expect(stream.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      reply_to_sequence_no: 2,
+      replace_inherited_resume: true,
+      contexts: [expect.objectContaining({ type: "resume", id: "2" })],
+    }));
+  });
+
   it("发送时保留展示快照，但只向 Agent 发送精简上下文引用", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
@@ -1001,6 +1294,13 @@ describe("AssistantPage", () => {
           }],
           created_at: session.created_at,
         },
+        {
+          sequence_no: 4,
+          role: "assistant",
+          run_id: "run-1",
+          content: "已生成简历修改提案",
+          created_at: session.updated_at,
+        },
       ],
     };
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [proposalSession] });
@@ -1054,6 +1354,11 @@ describe("AssistantPage", () => {
     expect(screen.getByText("主导订单服务重构")).toBeInTheDocument();
     expect(screen.getByText("1")).toBeInTheDocument();
     expect(screen.getByText("删除该条目")).toBeInTheDocument();
+    const inlineProposalPanel = screen.getByLabelText("待确认简历修改提案");
+    const proposalReply = screen.getByText("已生成简历修改提案").closest(".assistant-message");
+    expect(proposalReply?.nextElementSibling).toBe(inlineProposalPanel);
+    expect(within(inlineProposalPanel).getByText("删除该条目")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "2 项修改待确认 · 查看修改" })).not.toBeInTheDocument();
 
     expect(screen.getByText("1 / 2")).toBeVisible();
     expect(screen.getByRole("button", { name: "上一项修改" })).toBeDisabled();
@@ -1063,12 +1368,12 @@ describe("AssistantPage", () => {
     expect(screen.queryByText("将接口 P95 延迟降低 32%")).not.toBeInTheDocument();
     expect(screen.getByText("2 / 2")).toBeVisible();
     expect(screen.getByRole("button", { name: "下一项修改" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "收起修改" }));
-    expect(screen.getByText("另一项优化内容")).not.toBeVisible();
-    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toBeVisible();
-    expect(screen.getByText("确认后才会写入简历")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "2 项修改待确认 · 查看修改" }));
+    expect(screen.queryByText(/基于版本/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "收起修改" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "展开修改" })).not.toBeInTheDocument();
     expect(screen.getByText("另一项优化内容")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "2 项修改待确认 · 查看修改" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "上一项修改" }));
     expect(screen.getByText("将接口 P95 延迟降低 32%")).toBeVisible();
 
@@ -1079,16 +1384,15 @@ describe("AssistantPage", () => {
     const reject = vi.spyOn(api, "rejectAgentProposal");
     vi.mocked(api.getAgentSession).mockResolvedValue({ session: { ...proposalSession, messages: [
       ...proposalSession.messages,
-      { role: "user", sequence_no: 4, run_id: "run-2", content: "解释一下缓存", created_at: "2026-08-27T09:00:00Z" },
-      { role: "assistant", sequence_no: 5, run_id: "run-2", content: "缓存说明", created_at: "2026-08-27T09:01:00Z" },
+      { role: "user", sequence_no: 5, run_id: "run-2", content: "解释一下缓存", created_at: "2026-08-27T09:00:00Z" },
+      { role: "assistant", sequence_no: 6, run_id: "run-2", content: "缓存说明", created_at: "2026-08-27T09:01:00Z" },
     ] } });
     await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "解释一下缓存");
     await user.click(screen.getByRole("button", { name: "发送" }));
     await screen.findByText("缓存说明");
     expect(stream).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: "收起修改" })).not.toBeInTheDocument();
     expect(reject).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "2 项修改待确认 · 查看修改" }));
+    expect(screen.queryByRole("button", { name: "2 项修改待确认 · 查看修改" })).not.toBeInTheDocument();
     expect(screen.getByText("历史修改建议 · 2 项待确认修改")).toBeVisible();
     expect(screen.getByText("将接口 P95 延迟降低 32%")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "继续调整" }));

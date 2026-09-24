@@ -31,6 +31,9 @@ LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) �
 | 业务审计 | 中间件 + 业务路由绑定 | JSONL → Loki | 操作者、动作、目标和结果追踪 |
 | Web 客户端事件 | 受限上报接口 | 结构化日志链 | 浏览器异常与兼容事件 |
 | LLM 调用日志 | `modules/llm` | MySQL | 模型、状态、Token、成本和验证证据 |
+| Agent 阶段轨迹 | `modules/agent/trace.py` | MySQL `agent_operations`、`agent_stage_events` | 按用户 ID、操作 ID 查询运行与提案的安全阶段事件 |
+
+Agent 轨迹由 FastAPI 在预检、运行创建、Pi 代理、工具事件、运行收尾和提案确认处直接写入 MySQL。管理端的「Agent 调用排障」是独立页面；列表包含旧 `agent_runs`，旧运行详情标记为 `legacy`。轨迹只保存受控阶段、结果、稳定错误码、耗时与关联键；用户原话、简历正文和工具参数仍留在各自业务数据中，不复制进轨迹。
 
 request ID 是跨日志关联键，不是用户身份；actor 只能来自已验证会话或成功登录结果，target 只能来自路由参数与通过归属校验的业务实体。
 

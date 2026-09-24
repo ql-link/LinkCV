@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+import sys
 from datetime import timedelta
 from unittest.mock import AsyncMock
 
@@ -43,6 +45,24 @@ class FakeStorage:
         if self.fail_delete:
             raise OSError("storage unavailable")
         self.objects.pop(object_name, None)
+
+
+def test_dataset_worker_entry_registers_interview_foreign_key_in_fresh_process() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from linkresume.workers import __main__; "
+            "from linkresume.modules.datasets.models import UserDataset; "
+            "from sqlalchemy.orm import configure_mappers; "
+            "configure_mappers(); "
+            "next(iter(UserDataset.__table__.c.interview_session_id.foreign_keys)).column",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr[-1000:]
 
 
 class FakeConverter:
