@@ -316,8 +316,9 @@ class ResumeChangeProposal(Base):
     resume_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     user_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     base_lock_version: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
-    proposed_data_json: Mapped[dict[str, Any]] = mapped_column(JSON(), nullable=False)
-    proposed_style_json: Mapped[dict[str, Any]] = mapped_column(JSON(), nullable=False)
+    proposed_data_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)
+    proposed_style_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)
+    preview_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)
     summary: Mapped[str] = mapped_column(Text(), nullable=False)
     proposal_mode: Mapped[str] = mapped_column(
         String(32),

@@ -439,7 +439,8 @@ function errorText(error) {
         "所选简历没有可用的正式版本，请重新选择。",
       INVALID_INTERVIEW_TIME: "请检查开始和结束时间。",
       UNAUTHORIZED: "登录已失效，请重新登录。",
-      RESUME_VERSION_UNAVAILABLE: "投递时的简历版本已不可用。",
+      APPLICATION_RESUME_UNAVAILABLE: "尚未关联简历或简历已删除，请重新选择简历。",
+      RESUME_NOT_FOUND: "简历不存在或已删除，请重新选择。",
     }[error.message] || "操作未完成，请检查网络后重试。"
   );
 }

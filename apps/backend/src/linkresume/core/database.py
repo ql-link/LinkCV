@@ -35,5 +35,8 @@ def get_db(request: Request) -> Generator[Session, None, None]:
     session = request.app.state.session_factory()
     try:
         yield session
+    except BaseException:
+        session.rollback()
+        raise
     finally:
         session.close()

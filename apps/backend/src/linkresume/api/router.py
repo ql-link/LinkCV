@@ -14,6 +14,7 @@ from linkresume.modules.llm.admin_routes import router as llm_admin_router
 from linkresume.modules.miniprogram.account_routes import router as miniprogram_account_router
 from linkresume.modules.miniprogram.career_routes import router as miniprogram_career_router
 from linkresume.modules.miniprogram.routes import router as miniprogram_router
+from linkresume.modules.miniprogram.routes import v2_router as miniprogram_v2_router
 from linkresume.modules.observability.routes import router as observability_router
 from linkresume.modules.plugin_releases.admin_routes import router as plugin_release_admin_router
 from linkresume.modules.plugin_releases.routes import router as plugin_release_router
@@ -47,6 +48,7 @@ api_router.include_router(account_router)
 api_router.include_router(job_description_router)
 api_router.include_router(llm_admin_router)
 api_router.include_router(miniprogram_router)
+api_router.include_router(miniprogram_v2_router)
 api_router.include_router(miniprogram_account_router)
 api_router.include_router(miniprogram_career_router)
 api_router.include_router(observability_router)

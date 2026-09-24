@@ -61,6 +61,13 @@ jobs:
           -q
         env:
           LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
+      - name: Verify MySQL 0083 to 0084 migration
+        run: >-
+          uv run --directory apps/backend pytest
+          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0084_adds_current_resume_link_without_attachment_storage
+          -q
+        env:
+          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
       - run: npm run check
         env:
           DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

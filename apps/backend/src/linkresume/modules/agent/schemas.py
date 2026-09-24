@@ -379,8 +379,9 @@ class ProposalRecord(BaseModel):
     run_id: str
     resume_id: str
     base_lock_version: int
-    data: ResumeDocument
-    style: ResumePresentation
+    data: ResumeDocument | None
+    style: ResumePresentation | None
+    preview: dict[str, Any] | None = None
     summary: str
     proposal_mode: Literal[
         "legacy_snapshot",

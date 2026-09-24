@@ -13,13 +13,11 @@ from linkresume.core.errors import ApiError
 from linkresume.application.resumes.service import (
     InvalidResumeTitle,
     ResumeTitleConflict,
-    ResumeVersionLimitExceeded,
-    append_resume_version,
     ensure_unique_resume_title,
     has_resume_capacity,
     normalize_resume_title,
     parse_persisted_resume_snapshot,
-    persist_resume_with_initial_version,
+    persist_resume,
     resume_title_key,
 )
 from linkresume.application.resumes.commands import CreateResumeCommand
@@ -191,15 +189,16 @@ def proposal_record(
 ) -> ProposalRecord:
     snapshot = parse_persisted_resume_snapshot(
         proposal.proposed_data_json, proposal.proposed_style_json
-    )
+    ) if proposal.proposed_data_json is not None and proposal.proposed_style_json is not None else None
     return ProposalRecord(
         superseded_by=proposal_superseded_by(proposal),
         id=proposal.public_id,
         run_id=run_public_id,
         resume_id=str(proposal.resume_id),
         base_lock_version=proposal.base_lock_version,
-        data=snapshot.data,
-        style=snapshot.style,
+        data=snapshot.data if snapshot else None,
+        style=snapshot.style if snapshot else None,
+        preview=proposal.preview_json,
         summary=proposal.summary,
         proposal_mode=proposal.proposal_mode,
         target=proposal.target_locator_json,
@@ -906,8 +905,13 @@ def create_scoped_proposal(
         resume_id=resume.id,
         user_id=session.user_id,
         base_lock_version=resume.lock_version,
-        proposed_data_json=updated_snapshot.data.model_dump(mode="json"),
-        proposed_style_json=updated_snapshot.style.model_dump(mode="json"),
+        proposed_data_json=None,
+        proposed_style_json=None,
+        preview_json={"changes": [{
+            "target": operation.target.model_dump(mode="json"), "op": operation.op,
+            "before": target_content(resume, snapshot.data, operation.target, "target"),
+            "after": operation.new_text,
+        } for operation in payload.operations]},
         summary=payload.summary.strip(),
         proposal_mode=payload.mode,
         target_locator_json=payload.target.model_dump(mode="json"),
@@ -1004,7 +1008,6 @@ def confirm_proposal(
     *,
     public_id: str,
     user_id: int,
-    version_limit: int,
     validate_resume_data: Callable[[dict[str, Any], int], None] | None = None,
     prepare_translation_assets: Callable[
         [dict[str, Any], int, int], tuple[dict[str, Any], list[str]]
@@ -1013,6 +1016,17 @@ def confirm_proposal(
     delete_asset: Callable[[str], None] | None = None,
     trace_request_id: str | None = None,
 ) -> tuple[ResumeChangeProposal, Resume]:
+    # Read only the mode before acquiring locks. Translation allocates a new
+    # resume, so its lock order must agree with other quota-checked creations.
+    mode = db.scalar(
+        select(ResumeChangeProposal.proposal_mode).where(
+            ResumeChangeProposal.public_id == public_id,
+            ResumeChangeProposal.user_id == user_id,
+        )
+    )
+    if mode == "translate_resume":
+        if db.scalar(select(User.id).where(User.id == user_id).with_for_update()) is None:
+            raise ApiError(404, "USER_NOT_FOUND")
     proposal = db.scalar(
         select(ResumeChangeProposal)
         .where(
@@ -1072,19 +1086,18 @@ def confirm_proposal(
         trace_confirmation("failed", "AGENT_PROPOSAL_EXPIRED")
         db.commit()
         raise ApiError(410, "AGENT_PROPOSAL_EXPIRED")
-    can_rebase_scoped_proposal = bool(
-        proposal.proposal_mode
-        in {"polish_local", "rewrite_entry_star", "generate_from_materials"}
-        and proposal.target_locator_json
-        and proposal.operations_json
-    )
-    should_rebase_scoped_proposal = (
-        resume.lock_version != proposal.base_lock_version
-        and can_rebase_scoped_proposal
-    )
+    can_rebase_scoped_proposal = proposal.proposal_mode in {
+        "polish_local", "rewrite_entry_star", "generate_from_materials"
+    }
+    if can_rebase_scoped_proposal and (
+        not proposal.target_locator_json or not proposal.operations_json
+    ):
+        proposal.status = "conflicted"
+        db.commit()
+        raise ApiError(409, "TARGET_STALE")
     if (
         resume.lock_version != proposal.base_lock_version
-        and not should_rebase_scoped_proposal
+        and not can_rebase_scoped_proposal
     ):
         proposal.status = "conflicted"
         trace_confirmation("failed", "RESUME_EDIT_CONFLICT")
@@ -1093,11 +1106,6 @@ def confirm_proposal(
     if proposal.proposal_mode == "translate_resume":
         copied_assets: list[str] = []
         try:
-            locked_user_id = db.scalar(
-                select(User.id).where(User.id == user_id).with_for_update()
-            )
-            if locked_user_id is None:
-                raise ApiError(404, "USER_NOT_FOUND")
             if not has_resume_capacity(db, user_id):
                 raise ApiError(409, "RESUME_LIMIT_REACHED")
             try:
@@ -1110,7 +1118,7 @@ def confirm_proposal(
             snapshot = parse_persisted_resume_snapshot(
                 proposal.proposed_data_json, proposal.proposed_style_json
             )
-            result = persist_resume_with_initial_version(
+            result = persist_resume(
                 CreateResumeCommand(
                     user_id=user_id,
                     title=title,
@@ -1129,15 +1137,6 @@ def confirm_proposal(
             if validate_resume_data is not None:
                 validate_resume_data(translated_data, result.id)
             result.data_json = translated_data
-            initial_version = db.scalar(
-                select(ResumeVersion).where(
-                    ResumeVersion.resume_id == result.id,
-                    ResumeVersion.version_no == 1,
-                )
-            )
-            if initial_version is None:
-                raise RuntimeError("translation initial version missing")
-            initial_version.data_json = deepcopy(translated_data)
             proposal.status = "applied"
             proposal.result_resume_id = result.id
             proposal.applied_lock_version = proposal.base_lock_version
@@ -1155,7 +1154,9 @@ def confirm_proposal(
                     except Exception:
                         pass
             raise
-    if should_rebase_scoped_proposal:
+    # Scoped operations, never their full-document preview, are authoritative.
+    # Always replay against current content and preserve the current presentation.
+    if can_rebase_scoped_proposal:
         try:
             current = parse_persisted_resume_snapshot(
                 resume.data_json, resume.style_json
@@ -1217,22 +1218,15 @@ def confirm_proposal(
     resume.data_json = proposed_data
     resume.style_json = snapshot.style.model_dump(mode="json")
     resume.lock_version += 1
-    try:
-        append_resume_version(
-            db,
-            resume,
-            reason="agent",
-            version_limit=version_limit,
-            name="智能助手修改",
-        )
-    except ResumeVersionLimitExceeded as error:
-        db.rollback()
-        raise ApiError(409, "RESUME_VERSION_LIMIT_REACHED") from error
     proposal.status = "applied"
     proposal.applied_lock_version = resume.lock_version
     proposal.applied_at = utc_now()
     trace_confirmation("succeeded")
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(resume)
     return proposal, resume
 

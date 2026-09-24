@@ -170,7 +170,6 @@ class Settings(BaseSettings):
         alias="MINIO_SECRET_KEY",
     )
     minio_bucket: str = Field(default="linkresume", alias="MINIO_BUCKET")
-    resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
     pdf_renderer_script: str | None = Field(default=None, alias="PDF_RENDERER_SCRIPT")
     pdf_renderer_timeout_seconds: float = Field(
         default=20,

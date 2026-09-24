@@ -220,7 +220,6 @@ describe("ResumeWorkbench 抽屉布局", () => {
   it("为普通抽屉和更宽的智能助手抽屉提供对应画布状态", () => {
     expect(workbenchCanvasClassName(null)).toBe("workbench-canvas");
     expect(workbenchCanvasClassName("settings")).toBe("workbench-canvas has-drawer");
-    expect(workbenchCanvasClassName("history")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("quality")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("agent")).toBe("workbench-canvas has-drawer has-agent-drawer");
   });
@@ -464,7 +463,6 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
 describe("ResumeWorkbench 更多操作菜单", () => {
   const renderMenu = (overrides: Partial<ComponentProps<typeof WorkbenchMoreMenu>> = {}) => {
     const handlers = {
-      onHistory: vi.fn(),
       onExport: vi.fn(),
       onCompleteness: vi.fn(),
       onDelete: vi.fn(),
@@ -475,7 +473,7 @@ describe("ResumeWorkbench 更多操作菜单", () => {
     return handlers;
   };
 
-  it("默认收起，展开后按顺序展示四项操作", async () => {
+  it("默认收起，展开后展示日常操作，不再提供历史版本入口", async () => {
     const user = userEvent.setup();
     renderMenu();
 
@@ -483,7 +481,6 @@ describe("ResumeWorkbench 更多操作菜单", () => {
     await user.click(screen.getByRole("button", { name: "更多操作" }));
 
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      "历史版本",
       "导出 PDF",
       "简历完整度分析",
       "删除简历",
@@ -491,7 +488,6 @@ describe("ResumeWorkbench 更多操作菜单", () => {
   });
 
   it.each([
-    ["历史版本", "onHistory"],
     ["导出 PDF", "onExport"],
     ["简历完整度分析", "onCompleteness"],
     ["删除简历", "onDelete"],

@@ -343,8 +343,9 @@ export type AgentProposal = {
   run_id: string;
   resume_id: string;
   base_lock_version: number;
-  data: CanonicalResumeDocument;
-  style: CanonicalResumePresentation;
+  data: CanonicalResumeDocument | null;
+  style: CanonicalResumePresentation | null;
+  preview?: { changes: Array<{ target: Record<string, unknown>; op: string; before: string; after: string }> } | null;
   layout_plan?: LayoutPlan | null;
   summary: string;
   proposal_mode?: "legacy_snapshot" | "polish_local" | "rewrite_entry_star" | "generate_from_materials" | "translate_resume";
@@ -667,6 +668,7 @@ export type ApplicationStageRecord = {
 
 export type JobApplicationRecord = {
   id: string;
+  resume_id?: string | null;
   job_description_id: string | null;
   resume_version_id: string | null;
   company_name_snapshot: string;
@@ -1458,6 +1460,8 @@ export const api = {
     }),
   getResume: (id: string) =>
     request<{ resume: ResumeRecord }>(`/api/resumes/${id}`),
+  copyResume: (id: string, payload: { title: string; base_lock_version: number; client_request_id: string }) =>
+    request<{ resume: ResumeRecord }>(`/api/resumes/${id}/copy`, { method: "POST", body: payload }),
   classifyResumeSemantics: (
     id: string,
     payload: { content_hash: string; section_ids?: string[] },
@@ -1804,6 +1808,7 @@ export const api = {
   },
   createJobApplication: (payload: {
     job_description_id: string;
+    resume_id?: string | null;
     resume_version_id?: string | null;
     current_stage_type?: LegacyApplicationStageType;
     current_round_no?: number | null;

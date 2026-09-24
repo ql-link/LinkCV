@@ -59,8 +59,8 @@ function stagePayload(app, form, requestId, resumes) {
     ...(app.phase === "pending" && form.appliedDate
       ? { applied_at: c.iso(form.appliedDate, "00:00") }
       : {}),
-    ...(app.phase === "pending" && Number(form.resumeIndex) > 0
-      ? { resume_id: resumes[Number(form.resumeIndex)].id }
+    ...(app.phase === "pending" && resumes[Number(form.resumeIndex)]
+      ? { resume_id: resumes[Number(form.resumeIndex)].id || null }
       : {}),
   };
 }

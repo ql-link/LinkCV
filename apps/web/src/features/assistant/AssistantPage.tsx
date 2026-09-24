@@ -72,7 +72,6 @@ import "./assistant.css";
 const NEW_CONVERSATION_KEY = "__assistant_new__";
 const CONTEXT_TYPES: Array<{ type: AgentContextType; label: string; icon: typeof FileText }> = [
   { type: "resume", label: "当前简历", icon: FileText },
-  { type: "resume_version", label: "简历版本", icon: FileText },
   { type: "dataset", label: "资料", icon: Database },
   { type: "job", label: "岗位", icon: BriefcaseBusiness },
   { type: "application", label: "求职进程", icon: Target },
@@ -473,7 +472,9 @@ function safeAgentError(error: unknown) {
     TARGET_STALE: "提案定位内容已发生变化，请重新定位后再试。",
     AGENT_PROPOSAL_EXPIRED: "这份提案已过期，请重新生成建议。",
     AGENT_PROPOSAL_NOT_PENDING: "这份提案已经处理过，不能重复应用。",
-    RESUME_VERSION_LIMIT_REACHED: "简历版本数量已达上限，提案没有应用。",
+    RESUME_DRAFT_SAVE_FAILED: "当前草稿保存失败，提案没有应用。请先保存后重试。",
+    RESUME_WRITE_PENDING: "正在保存或应用修改，请稍后重试。",
+    AGENT_PROPOSAL_RESULT_UNKNOWN: "暂时无法确认修改结果，请刷新提案状态后再操作。",
   };
   return messages[code] ?? agentErrorMessage(error);
 }
@@ -628,7 +629,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         </div>
         <div className="assistant-proposal-detail">
           {(selected ? [selected] : []).map((proposal) => {
-            const changes = proposal.operations?.length
+            const changes = proposal.preview?.changes ?? (proposal.operations?.length
               ? proposal.operations.map((operation) => ({
                 before: typeof operation.target.selected_text === "string"
                   ? operation.target.selected_text
@@ -637,7 +638,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                   ? "删除该条目"
                   : operation.new_text,
               }))
-              : [{ before: "当前简历快照", after: "候选简历快照" }];
+              : [{ before: "当前简历内容", after: "候选简历内容" }]);
             const actionable = proposal.status === "pending";
             return (
               <article className={`assistant-proposal-card is-${proposal.status}`} key={proposal.id}>
@@ -1613,30 +1614,13 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     try {
       const refreshEmbeddedResume = embeddedResumeId === proposal.resume_id
         && useResumeStore.getState().activeResumeId === proposal.resume_id;
-      if (refreshEmbeddedResume) {
-        await saveCurrentResume();
-        if (useResumeStore.getState().saveStatus === "error") {
-          updateConversation(activeKey, {
-            busyProposalId: null,
-            error: "当前简历保存失败，修改尚未应用。请先重试保存。",
-          });
-          return;
-        }
-      }
-      const result = await api.confirmAgentProposal(proposal.id);
+      const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
       updateConversation(activeKey, (state) => ({
         proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
         busyProposalId: null,
       }));
-      if (refreshEmbeddedResume && result.resume.id === embeddedResumeId) {
-        try {
-          await loadResume(result.resume.id);
-          setEmbeddedResumeRefreshVersion((version) => version + 1);
-        } catch {
-          updateConversation(activeKey, {
-            error: "修改已经应用，但右侧简历刷新失败。请重新打开这份简历。",
-          });
-        }
+      if (refreshEmbeddedResume && result.id === embeddedResumeId) {
+        setEmbeddedResumeRefreshVersion((version) => version + 1);
       }
     } catch (error) {
       updateConversation(activeKey, (state) => ({
@@ -1662,21 +1646,12 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     let completed = 0;
     let appliedToEmbeddedResume = false;
     try {
-      if (refreshEmbeddedResume) {
-        await saveCurrentResume();
-        if (useResumeStore.getState().saveStatus === "error") {
-          updateConversation(conversationKey, {
-            error: "当前简历保存失败，批量修改尚未开始。请先重试保存。",
-          });
-          return;
-        }
-      }
       for (const proposal of pendingProposals) {
         updateConversation(conversationKey, { busyProposalId: proposal.id });
         try {
-          const result = await api.confirmAgentProposal(proposal.id);
+          const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
           appliedToEmbeddedResume = appliedToEmbeddedResume
-            || (refreshEmbeddedResume && result.resume.id === embeddedResumeId);
+            || (refreshEmbeddedResume && result.id === embeddedResumeId);
           completed += 1;
           updateConversation(conversationKey, (state) => ({
             proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
@@ -1697,14 +1672,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         }
       }
       if (appliedToEmbeddedResume && embeddedResumeId) {
-        try {
-          await loadResume(embeddedResumeId);
-          setEmbeddedResumeRefreshVersion((version) => version + 1);
-        } catch {
-          updateConversation(conversationKey, {
-            error: "修改已经应用，但右侧简历刷新失败。请重新打开这份简历。",
-          });
-        }
+        setEmbeddedResumeRefreshVersion((version) => version + 1);
       }
     } finally {
       updateConversation(conversationKey, { busyProposalId: null });

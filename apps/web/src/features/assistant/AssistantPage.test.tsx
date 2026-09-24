@@ -137,7 +137,7 @@ describe("AssistantPage", () => {
     expect(screen.getByRole("complementary", { name: "对话列表" })).toBeInTheDocument();
   });
 
-  it("应用当前右侧简历的修改后重新加载并刷新嵌入式编辑器", async () => {
+  it("应用当前右侧简历的修改后直接更新状态并刷新嵌入式编辑器", async () => {
     const user = userEvent.setup();
     const proposal: AgentProposal = {
       id: "proposal-refresh",
@@ -218,9 +218,10 @@ describe("AssistantPage", () => {
 
     await waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-refresh"));
     expect(saveCurrentResume).toHaveBeenCalledOnce();
-    expect(loadResume).toHaveBeenCalledTimes(2);
+    expect(loadResume).toHaveBeenCalledTimes(1);
     expect(loadResume).toHaveBeenLastCalledWith("1");
     await waitFor(() => expect(embeddedEditor).toHaveAttribute("data-refresh-version", "1"));
+    expect(useResumeStore.getState().resumes[0].lock_version).toBe(2);
     expect(screen.getByText("已应用")).toBeInTheDocument();
   });
 
