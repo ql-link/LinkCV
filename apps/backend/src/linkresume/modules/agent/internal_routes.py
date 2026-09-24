@@ -8,6 +8,8 @@ from linkresume.core.errors import ApiError
 from linkresume.modules.agent.context_service import list_contexts
 from linkresume.modules.agent.schemas import (
     AgentReadinessResponse,
+    AgentTaskPlanRequest,
+    AgentTaskStatusRequest,
     AgentResourceListRequest,
     AgentResourceListResponse,
     ContextReadRequest,
@@ -43,9 +45,16 @@ from linkresume.modules.agent.service import (
     create_proposal,
     create_scoped_proposal,
     create_translation_proposal,
+    authorize_resolved_task_resume,
+    get_task_materials,
     get_active_run,
     proposal_record,
     resolve_resume_reference,
+    save_task_plan,
+    require_task_resource,
+    require_task_sources,
+    task_authorized_refs,
+    update_task_status,
     upsert_tool_event,
 )
 from linkresume.modules.llm.catalog import assemble_model_identifier
@@ -79,6 +88,9 @@ def _run_resume(
         raise ApiError(409, "AGENT_RESUME_REQUIRED")
     if not resume_id.isascii() or not resume_id.isdecimal():
         raise ApiError(404, "RESUME_NOT_FOUND")
+    require_task_resource(
+        db, run=run, resource_type="resume", resource_id=resume_id,
+    )
     resume = db.scalar(
         select(Resume).where(
             Resume.id == int(resume_id), Resume.user_id == session.user_id
@@ -180,15 +192,15 @@ def resolve_run_resume_reference(
     payload: ResumeReferenceResolveRequest,
     db: Session = Depends(get_db),
 ) -> ResumeReferenceResolveResponse:
-    _, session = get_active_run(db, run_id)
-    return ResumeReferenceResolveResponse.model_validate(
-        resolve_resume_reference(
-            db,
-            session=session,
-            title=payload.title,
-            resume_id=payload.resume_id,
-        )
+    run, session = get_active_run(db, run_id)
+    result = resolve_resume_reference(
+        db, session=session, title=payload.title, resume_id=payload.resume_id,
     )
+    if result.get("status") == "resolved" and result.get("target"):
+        authorize_resolved_task_resume(
+            db, run=run, resume_id=str(result["target"]["resume_id"]),
+        )
+    return ResumeReferenceResolveResponse.model_validate(result)
 
 
 @router.post(
@@ -247,7 +259,8 @@ def search_run_materials(
     request: Request,
     db: Session = Depends(get_db),
 ) -> MaterialSearchResponse:
-    _, session = get_active_run(db, run_id)
+    run, session = get_active_run(db, run_id)
+    allowed = task_authorized_refs(db, run=run)
     return MaterialSearchResponse(
         sources=search_materials(
             db,
@@ -257,6 +270,7 @@ def search_run_materials(
             limit=payload.limit,
             storage=request.app.state.storage,
             max_bytes=request.app.state.settings.dataset_upload_max_bytes,
+            allowed_refs=allowed,
         )
     )
 
@@ -268,9 +282,14 @@ def diagnose_run_target(
     request: Request,
     db: Session = Depends(get_db),
 ) -> DiagnosisResponse:
-    _, session, resume, snapshot = _run_resume(
+    run, session, resume, snapshot = _run_resume(
         db, run_id, payload.target.resume_id
     )
+    if payload.job_id is not None:
+        require_task_resource(
+            db, run=run, resource_type="job", resource_id=payload.job_id,
+        )
+    require_task_sources(db, run=run, source_ids=payload.source_ids)
     content = target_content(resume, snapshot.data, payload.target, payload.scope)
     source_refs = validate_source_ids(
         db, user_id=session.user_id, source_ids=payload.source_ids
@@ -308,6 +327,9 @@ def create_run_proposal(
     db: Session = Depends(get_db),
 ) -> ProposalResponse:
     run, session = get_active_run(db, run_id)
+    require_task_resource(
+        db, run=run, resource_type="resume", resource_id=payload.resume_id,
+    )
     proposal = create_proposal(
         db,
         run=run,
@@ -332,6 +354,10 @@ def create_scoped_run_proposal(
     db: Session = Depends(get_db),
 ) -> ProposalResponse:
     run, session = get_active_run(db, run_id)
+    require_task_resource(
+        db, run=run, resource_type="resume", resource_id=payload.target.resume_id,
+    )
+    require_task_sources(db, run=run, source_ids=payload.source_ids)
     proposal = create_scoped_proposal(
         db,
         run=run,
@@ -355,6 +381,9 @@ def create_translation_run_proposal(
     db: Session = Depends(get_db),
 ) -> ProposalResponse:
     run, session = get_active_run(db, run_id)
+    require_task_resource(
+        db, run=run, resource_type="resume", resource_id=payload.target.resume_id,
+    )
     proposal = create_translation_proposal(
         db,
         run=run,
@@ -363,6 +392,44 @@ def create_translation_run_proposal(
         ttl_days=request.app.state.settings.agent_proposal_ttl_days,
     )
     return ProposalResponse(proposal=proposal_record(proposal, run.public_id))
+
+
+@router.post("/runs/{run_id}/tasks:plan")
+def plan_run_tasks(
+    run_id: str,
+    payload: AgentTaskPlanRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    run, _ = get_active_run(db, run_id)
+    return {"tasks": save_task_plan(db, run=run, payload=payload)}
+
+
+@router.get("/runs/{run_id}/tasks/{task_id}/materials")
+def read_run_task_materials(
+    run_id: str,
+    task_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    run, _ = get_active_run(db, run_id)
+    return get_task_materials(
+        db, run=run, task_id=task_id,
+        storage=request.app.state.storage,
+        settings=request.app.state.settings,
+    )
+
+
+@router.post("/runs/{run_id}/tasks/{task_id}:status")
+def set_run_task_status(
+    run_id: str,
+    task_id: str,
+    payload: AgentTaskStatusRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    run, _ = get_active_run(db, run_id)
+    return {"tasks": update_task_status(
+        db, run=run, task_id=task_id, payload=payload,
+    )}
 
 
 @router.post("/runs/{run_id}/tool-events", status_code=204)

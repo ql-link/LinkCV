@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, ApiRequestError, type AgentContextSnapshot, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { useResumeStore } from "../../store/resumeStore";
-import { AssistantPage } from "./AssistantPage";
+import { AssistantPage, parseAgentTimestamp } from "./AssistantPage";
 
 vi.mock("../datasets/DatasetsPage", () => ({
   DatasetsPage: ({ embedded }: { embedded?: boolean }) => (
@@ -75,6 +75,11 @@ afterEach(() => {
 });
 
 describe("AssistantPage", () => {
+  it("把服务端无时区的 UTC 时间按 UTC 解析，避免刷新后进度多出八小时", () => {
+    expect(parseAgentTimestamp("2026-09-24T12:35:00")).toBe(Date.parse("2026-09-24T12:35:00Z"));
+    expect(parseAgentTimestamp("2026-09-24T20:35:00+08:00")).toBe(Date.parse("2026-09-24T12:35:00Z"));
+  });
+
   it("在新建对话下方只保留资料库，并在助手页内切换资料视图", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
@@ -1111,6 +1116,65 @@ describe("AssistantPage", () => {
         { question_id: "scope", option_id: "project" },
         { question_id: "role", option_id: "__other__", value: "自定义岗位" },
       ],
+    }));
+  });
+
+  it("澄清时显式选择另一份简历会提交替换原简历的意图", async () => {
+    const user = userEvent.setup();
+    const sourceResume = { type: "resume" as const, id: "1", version: "3", label: "原简历", presentation: "mention" as const };
+    const nextResume = { type: "resume" as const, id: "2", version: "1", label: "目标简历", presentation: "mention" as const };
+    const clarification = {
+      version: 1 as const,
+      questions: [{
+        id: "target",
+        header: "目标简历",
+        question: "要使用哪份简历？",
+        options: [{ id: "current", label: "原简历" }, { id: "other", label: "另一份简历" }],
+      }],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentContexts").mockResolvedValue({ contexts: [sourceResume, nextResume] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({
+      session: {
+        ...session,
+        messages: [
+          { sequence_no: 1, role: "user", content: "请修改原简历", contexts: [sourceResume], created_at: session.created_at },
+          { sequence_no: 2, role: "assistant", message_type: "clarification", clarification, content: "请确认目标简历", created_at: session.created_at },
+        ],
+      },
+    });
+    const stream = vi.spyOn(api, "streamAgentMessage")
+      .mockImplementationOnce(async (_id, _payload, _signal, onEvent) => {
+        onEvent({ type: "run.started", runId: "run-1" });
+        onEvent({ type: "clarification.requested", runId: "run-1", clarification });
+        onEvent({ type: "run.completed", runId: "run-1" });
+      })
+      .mockImplementationOnce(async (_id, _payload, _signal, onEvent) => {
+        onEvent({ type: "run.started", runId: "run-2" });
+        onEvent({ type: "run.completed", runId: "run-2" });
+      });
+
+    render(<AssistantPage />);
+    await user.click(screen.getByRole("button", { name: "添加资料" }));
+    let picker = await screen.findByRole("dialog", { name: "选择资料" });
+    await user.click(within(picker).getByRole("button", { name: /原简历/ }));
+    await user.click(within(picker).getByRole("button", { name: "添加 1 项" }));
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "请修改原简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    expect(await screen.findByRole("region", { name: "需要你确认" })).toHaveTextContent("先点下方“添加资料”选择目标简历");
+    await user.click(screen.getByRole("button", { name: "添加资料" }));
+    picker = await screen.findByRole("dialog", { name: "选择资料" });
+    await user.click(within(picker).getByRole("button", { name: /目标简历/ }));
+    await user.click(within(picker).getByRole("button", { name: "添加 1 项" }));
+    await user.click(screen.getByRole("radio", { name: /另一份简历/ }));
+    await user.click(screen.getByRole("button", { name: "提交回答" }));
+
+    await waitFor(() => expect(stream).toHaveBeenCalledTimes(2));
+    expect(stream.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      reply_to_sequence_no: 2,
+      replace_inherited_resume: true,
+      contexts: [expect.objectContaining({ type: "resume", id: "2" })],
     }));
   });
 

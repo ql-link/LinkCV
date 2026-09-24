@@ -273,6 +273,18 @@ export type AgentMessage = {
    * workspace was introduced remain readable.
    */
   contexts?: AgentContextSnapshot[] | null;
+  tasks?: Array<{
+    id: string;
+    workflow: string;
+    output: "proposal" | "advice" | "catalog";
+    label: string;
+    depends_on: string[];
+    context_refs: Array<{ type: string; id: string }>;
+    status: "planned" | "running" | "completed" | "partial" | "blocked" | "failed";
+    proposal_ids: string[];
+    error_code?: string | null;
+    result?: string | null;
+  }> | null;
   created_at: string;
 };
 
@@ -1287,6 +1299,7 @@ async function streamAgentMessage(
     selection_context?: AgentSelectionContext;
     contexts?: AgentContextRef[];
     reply_to_sequence_no?: number;
+    replace_inherited_resume?: boolean;
     clarification_answers?: Array<{
       question_id: string;
       option_id: string;
