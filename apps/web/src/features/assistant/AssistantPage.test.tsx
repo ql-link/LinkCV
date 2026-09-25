@@ -773,6 +773,28 @@ describe("AssistantPage", () => {
     expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument();
   });
 
+  it.each(["run.completed", "run.failed"] as const)("恢复的对话收到 %s 后，同步失败不改变真实终态", async (terminal) => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [session] });
+    vi.mocked(api.getActiveAgentRun).mockResolvedValue({
+      run: { run_id: "run-active", status: "running", started_at: session.created_at },
+    });
+    vi.spyOn(api, "getAgentSession").mockResolvedValueOnce({ session })
+      .mockRejectedValue(new ApiRequestError(401, "UNAUTHORIZED"));
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "streamAgentRun").mockImplementation(async (_runId, _signal, onEvent) => {
+      onEvent({ type: "assistant.delta", runId: "run-active", delta: "恢复的分析结果" });
+      onEvent(terminal === "run.completed"
+        ? { type: terminal, runId: "run-active" }
+        : { type: terminal, runId: "run-active", error: "AGENT_UNAVAILABLE" });
+    });
+    render(<AssistantPage sessionId="session-1" />);
+    expect(await screen.findByText("恢复的分析结果")).toBeVisible();
+    await waitFor(() => expect(api.getAgentSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    if (terminal === "run.completed") expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    else expect(screen.getByText("生成未完成")).toBeVisible();
+  });
+
   it("离开助手页面只断开浏览器订阅，不取消后台运行", async () => {
     const runningSession: AgentSession = {
       ...session,
@@ -1400,6 +1422,27 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "发送" }));
     await waitFor(() => expect(stream).toHaveBeenCalledTimes(2));
     expect(stream.mock.calls[1][1].revision_proposal_id).toBe("proposal-1");
+  });
+
+  it.each([401, 503])("已完成对话的历史同步返回 %s 时保留回复，不误报对话失败", async (status) => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    const getSession = vi.spyOn(api, "getAgentSession").mockRejectedValue(new ApiRequestError(status, "UNAUTHORIZED"));
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-sync" });
+      onEvent({ type: "assistant.delta", runId: "run-sync", delta: "已经完成的分析结果" });
+      onEvent({ type: "run.completed", runId: "run-sync" });
+    });
+    render(<AssistantPage />);
+    await user.type(await screen.findByRole("textbox", { name: "告诉助手你想完成什么" }), "分析简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(getSession).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    expect(screen.getByText("已经完成的分析结果")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
   it("生成中只保留输入区的停止入口，并保留已显示内容", async () => {

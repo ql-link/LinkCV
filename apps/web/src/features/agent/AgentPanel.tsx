@@ -475,17 +475,20 @@ export function AgentPanel({
         streamRequestRef.current !== streamRequestId ||
         activeResumeIdRef.current !== requestedResumeId
       ) return;
-      const detail = await api.getAgentSession(currentSessionId);
+      // Keep the delivered reply/proposals if post-run synchronization fails.
+      const detail = await api.getAgentSession(currentSessionId).catch(() => null);
       if (
         streamRequestRef.current === streamRequestId &&
         activeResumeIdRef.current === requestedResumeId
       ) {
-        setMessages(detail.session.messages);
-        const proposalResult = await api.listAgentProposals(requestedResumeId, currentSessionId);
+        if (detail) setMessages(detail.session.messages);
+        const proposalResult = await api.listAgentProposals(requestedResumeId, currentSessionId).catch(() => null);
         if (
           streamRequestRef.current === streamRequestId &&
           activeResumeIdRef.current === requestedResumeId
-        ) setProposals(proposalResult.proposals);
+        ) {
+          if (proposalResult) setProposals(proposalResult.proposals);
+        }
       }
     } catch (reason) {
       if (

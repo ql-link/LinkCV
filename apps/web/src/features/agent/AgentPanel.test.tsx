@@ -190,6 +190,26 @@ const answer = 42;
     }));
   });
 
+  it("完成后的会话和提案同步失败不会覆盖已经收到的回复", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentProposals").mockResolvedValueOnce({ proposals: [] })
+      .mockRejectedValue(new ApiRequestError(401, "UNAUTHORIZED"));
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    const getSession = vi.spyOn(api, "getAgentSession").mockRejectedValue(new ApiRequestError(401, "UNAUTHORIZED"));
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-sync" });
+      onEvent({ type: "assistant.delta", runId: "run-sync", delta: "已经完成的分析结果" });
+      onEvent({ type: "run.completed", runId: "run-sync" });
+    });
+    render(<AgentPanel resumeId="resume-1" onBeforeConfirm={vi.fn().mockResolvedValue(true)} onApplied={vi.fn()} />);
+    await user.type(screen.getByLabelText("告诉助手你想改善什么"), "检查简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(getSession).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    expect(screen.getByText("已经完成的分析结果")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("把运行失败显示为页面根层的统一顶部反馈", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });

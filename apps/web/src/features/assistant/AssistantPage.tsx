@@ -507,7 +507,7 @@ function messageText(message: LocalMessage) {
 function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]) {
   const persistedAssistant = persisted.some((message) => message.role === "assistant");
   if (persistedAssistant) return persisted;
-  const partialAssistant = current.filter((message) => message.role === "assistant" && message.temporary);
+  const partialAssistant = current.filter((message) => message.role === "assistant" && message.sequence_no < 0);
   return partialAssistant.length > 0 ? [...persisted, ...partialAssistant] : persisted;
 }
 
@@ -1279,6 +1279,17 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       }));
       return;
     }
+    if (event.type === "run.completed") {
+      updateConversation(key, (state) => {
+        const lastPrompt = state.messages.map((message) => message.role).lastIndexOf("user");
+        return {
+          messages: state.messages.map((message, index) => index >= lastPrompt
+            ? { ...message, temporary: false, status: undefined }
+            : message),
+        };
+      });
+      return;
+    }
     if (event.type === "run.failed") {
       updateConversation(key, (state) => ({
         error: safeAgentError(new ApiRequestError(502, event.error)),
@@ -1333,12 +1344,14 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       (event) => handleEvent(key, requestNumber, event),
     ).then(async () => {
       if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
-      const detail = await api.getAgentSession(key);
+      // The stream terminal is authoritative. A failed history refresh must
+      // not turn a completed run into a failed conversation.
+      const detail = await api.getAgentSession(key).catch(() => null);
       const proposalResult = await api.listAgentProposals(null, key, true).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
       updateConversation(key, (latest) => ({
-        session: detail.session,
-        messages: mergeSessionMessages(detail.session.messages ?? [], latest.messages),
+        session: detail?.session ?? latest.session,
+        messages: detail ? mergeSessionMessages(detail.session.messages ?? [], latest.messages) : latest.messages,
         proposals: proposalResult.proposals.length > 0 ? proposalResult.proposals : latest.proposals,
         running: false,
         stage: latest.stage === "failed" || latest.stage === "stopped" ? latest.stage : "idle",
@@ -1349,7 +1362,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           invalidContextIds: [],
         }),
       }));
-      setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+      if (detail) setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
     }).catch((error) => {
       if (controller.signal.aborted || streamRequestRef.current !== requestNumber) return;
       updateConversation(key, {
@@ -1492,11 +1505,11 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         (event) => handleEvent(requestKey, requestNumber, event),
       );
       if (streamRequestRef.current !== requestNumber) return;
-      const detail = await api.getAgentSession(session.id);
+      const detail = await api.getAgentSession(session.id).catch(() => null);
       const proposalResult = await api.listAgentProposals(null, session.id, true).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber) return;
       updateConversation(requestKey, (latest) => {
-        const messages = mergeSessionMessages(detail.session.messages, latest.messages);
+        const messages = detail ? mergeSessionMessages(detail.session.messages, latest.messages) : latest.messages;
         const runCompleted = latest.stage !== "failed" && latest.stage !== "stopped";
         return {
           ...(runCompleted ? {
@@ -1510,7 +1523,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
             stage: latest.stage,
             draft: "",
           }),
-          session: detail.session,
+          session: detail?.session ?? latest.session,
           messages,
           proposals: proposalResult.proposals.length > 0 ? proposalResult.proposals : latest.proposals,
           running: false,
@@ -1518,7 +1531,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           startedAt: null,
         };
       });
-      setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+      if (detail) setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
     } catch (error) {
       if (controller.signal.aborted || streamRequestRef.current !== requestNumber) return;
       const code = error instanceof ApiRequestError ? error.message : "";
