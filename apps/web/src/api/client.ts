@@ -1154,7 +1154,7 @@ function reportApi5xx(error: ApiRequestError): void {
 
 async function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = request<{ user: User }>(
+    const refresh = () => request<{ user: User }>(
       "/api/auth/refresh",
       { method: "POST" },
       false,
@@ -1165,8 +1165,17 @@ async function refreshSession(): Promise<boolean> {
           return false;
         }
         throw error;
+      });
+    // Cookies are shared across tabs, but module-level promises are not. A
+    // second tab must recheck access after the first has rotated the refresh
+    // token, otherwise replay protection can revoke the shared session.
+    const locks = globalThis.navigator?.locks;
+    refreshInFlight = (locks
+      ? locks.request("linkresume-session-refresh", async () => {
+        const current = await request<{ user: User | null }>("/api/auth/me", {}, false);
+        return current.user ? true : refresh();
       })
-      .finally(() => {
+      : refresh()).finally(() => {
         refreshInFlight = null;
       });
   }
@@ -1319,7 +1328,8 @@ async function streamAgentMessage(
     credentials: "include",
     signal,
   });
-  if (response.status === 401 && retryAuth && await refreshSession()) {
+  if (response.status === 401 && retryAuth && !signal.aborted && await refreshSession()) {
+    signal.throwIfAborted();
     return streamAgentMessage(sessionId, payload, signal, onEvent, false);
   }
   if (!response.ok || !response.body) {
@@ -1350,7 +1360,8 @@ async function streamAgentRun(
     credentials: "include",
     signal,
   });
-  if (response.status === 401 && retryAuth && await refreshSession()) {
+  if (response.status === 401 && retryAuth && !signal.aborted && await refreshSession()) {
+    signal.throwIfAborted();
     return streamAgentRun(runId, signal, onEvent, false);
   }
   if (!response.ok || !response.body) {
@@ -1399,6 +1410,12 @@ async function consumeAgentStream(
         }
       } catch {
         // Ignore an isolated malformed or future event without losing the stream.
+      }
+      if (terminalReceived) {
+        // A terminal event already confirms the outcome. Transport teardown
+        // after it must not turn a completed response into a network failure.
+        void reader.cancel?.().catch(() => undefined);
+        return;
       }
     }
     if (done) break;

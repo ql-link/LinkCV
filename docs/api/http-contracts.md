@@ -6,6 +6,8 @@
 
 ## 健康检查与鉴权
 
+Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话发送重试保持原 `idempotency_key`，恢复订阅保持原 run ID，取消后不重发。跨标签页续期协调与浏览器兼容边界见[账号功能](../features/identity-account.md)。收到 Agent SSE 终态后即可结束订阅，后续连接关闭或会话回读失败不改变已经收到的运行终态。
+
 `GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择普通邮箱密码入口。普通用户邮箱密码登录和注册仅在 `APP_ENV=local|development` 时开放；Production 的 `POST /api/auth/login` 与 `POST /api/auth/register` 都返回 `404 NOT_FOUND`。普通改密和微信绑定接口仍不公开；`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`。这些环境受限路由不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
 
 | Method | Path | 成功结果 |
