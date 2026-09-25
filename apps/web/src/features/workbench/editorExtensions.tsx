@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import * as PMView from "@tiptap/pm/view";
 import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
 import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
@@ -52,6 +51,7 @@ import {
   removeBlankParagraphAfterResumeRow,
   removeVisuallyBlankResumeLine,
   setResumeRowColumnWidths,
+  setResumeRowLeftWidth,
   setResumeRowColumns,
 } from "./editorCommands";
 import {
@@ -86,7 +86,6 @@ export const inlineIconNames = resumeInlineIconOptions.map((option) => option.na
 // accepted only when the explicit maintenance adapter projects an old row.
 const BLOCK_ID_PATTERN = /^(?:blk|node)_[a-z0-9]{16,64}$/;
 const blockIdentityPluginKey = new PluginKey("resume-block-identity");
-const adaptiveCaretPluginKey = new PluginKey("resume-adaptive-caret");
 
 export function createResumeBlockId() {
   const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
@@ -136,47 +135,6 @@ export const ResumeBlockAnchor = Node.create({
     "aria-hidden": "true",
     class: "resume-block-anchor",
   }],
-});
-
-export const ResumeAdaptiveCaret = Extension.create({
-  name: "resumeAdaptiveCaret",
-  addProseMirrorPlugins() {
-    const editor = this.editor;
-    return [new Plugin({
-      key: adaptiveCaretPluginKey,
-      props: {
-        decorations(state) {
-          const { selection } = state;
-          if (!editor.isEditable || !selection.empty || !selection.$head.parent.inlineContent) {
-            return PMView.DecorationSet.empty;
-          }
-          return PMView.DecorationSet.create(state.doc, [
-            PMView.Decoration.widget(selection.head, (view) => {
-              const caret = view.dom.ownerDocument.createElement("span");
-              caret.className = "resume-adaptive-caret";
-              caret.setAttribute("aria-hidden", "true");
-              caret.setAttribute("contenteditable", "false");
-              return caret;
-            }, { key: "resume-adaptive-caret", side: -1 }),
-          ]);
-        },
-        handleDOMEvents: {
-          compositionstart(view) {
-            view.dom.classList.add("is-composing");
-            return false;
-          },
-          compositionend(view) {
-            view.dom.classList.remove("is-composing");
-            return false;
-          },
-          blur(view) {
-            view.dom.classList.remove("is-composing");
-            return false;
-          },
-        },
-      },
-    })];
-  },
 });
 
 export const ResumeBlockIdentity = Extension.create({
@@ -388,7 +346,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
       ref={mediaRef}
       as={isAvatar ? "figure" : "div"}
       className={`resume-media-node ${isAvatar ? "resume-avatar" : `resume-image align-${align}`}${selected ? " is-selected" : ""}`}
-      style={isAvatar ? { width: size, height: size } : { width: `${size}${widthUnit}` }}
+      style={isAvatar ? { width: size, height: `calc(${size}px * var(--resume-avatar-height-ratio, 1.4))` } : { width: `${size}${widthUnit}` }}
       role={isAvatar ? "group" : undefined}
       aria-label={isAvatar ? "简历头像；按住 Command 或 Control 并滚动鼠标滚轮缩放，也可按住修饰键使用上下方向键调整" : undefined}
       tabIndex={isAvatar && selected ? 0 : undefined}
@@ -473,7 +431,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
             src={node.attrs.src}
             alt={node.attrs.alt || "简历头像"}
             width={size}
-            height={size}
+            height={Math.round(size * 1.4)}
             draggable={false}
           />
         </span>
@@ -497,7 +455,7 @@ export const AvatarImage = Node.create({
   selectable: true,
   addAttributes: () => ({
     src: { default: "" },
-    size: { default: 96 },
+    size: { default: 94 },
     alt: { default: "简历头像" },
     systemFallback: { default: false },
     nodeId: { default: null },
@@ -507,7 +465,7 @@ export const AvatarImage = Node.create({
     tag: "figure[data-type='avatar-image']",
     getAttrs: (element) => element instanceof HTMLElement ? {
       src: element.dataset.src ?? "",
-      size: Number(element.dataset.size) || 96,
+      size: Number(element.dataset.size) || 94,
       alt: element.dataset.alt ?? "简历头像",
       systemFallback: element.dataset.systemFallback === "true",
       nodeId: normalizeResumeBlockId(element.dataset.nodeId),
@@ -658,7 +616,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     : null;
   // 未自定义宽度时按等分渲染，分隔线位置也按等分推算。
   const effectiveWidths = columnWidths ?? equalResumeRowColumnWidths(columns);
-  const dividerOffsets = equalColumns ? resumeRowDividerOffsets(effectiveWidths) : [];
+  const dividerOffsets = equalColumns ? resumeRowDividerOffsets(effectiveWidths) : [leftWidth];
 
   useEffect(() => {
     const updateActiveState = () => {
@@ -695,6 +653,12 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     setResumeRowColumnWidths(editor, position, next);
   };
 
+  const applyPairWidth = (next: number) => {
+    const position = getPos();
+    if (typeof position !== "number") return;
+    setResumeRowLeftWidth(editor, position, next);
+  };
+
   const startDividerDrag = (
     event: React.PointerEvent<HTMLButtonElement>,
     dividerIndex: number,
@@ -706,19 +670,21 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     event.stopPropagation();
     const startX = event.clientX;
     const base = effectiveWidths;
+    const baseLeftWidth = leftWidth;
     let moved = false;
 
     const move = (moveEvent: PointerEvent) => {
       moved = true;
       const deltaPercent = ((moveEvent.clientX - startX) / rowWidth) * 100;
-      applyWidths(resizeResumeRowColumns(base, dividerIndex, deltaPercent));
+      if (equalColumns) applyWidths(resizeResumeRowColumns(base, dividerIndex, deltaPercent));
+      else applyPairWidth(baseLeftWidth + deltaPercent);
     };
     const finish = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
       // 只是点了一下分隔线时不写入宽度，未调整过的行保持不携带宽度数据。
-      if (!moved) applyWidths(null);
+      if (!moved && equalColumns) applyWidths(null);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish, { once: true });
@@ -747,7 +713,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
       }}
     >
       <NodeViewContent />
-      {equalColumns && editor.isEditable && active && (
+      {editor.isEditable && active && (
         <span className="resume-column-handles" contentEditable={false}>
           {dividerOffsets.map((offset, index) => (
             <button
@@ -759,7 +725,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
               title="拖动调整两栏宽度，双击恢复等分"
               onMouseDown={(event) => event.preventDefault()}
               onPointerDown={(event) => startDividerDrag(event, index)}
-              onDoubleClick={() => applyWidths(null)}
+              onDoubleClick={() => equalColumns ? applyWidths(null) : applyPairWidth(50)}
             />
           ))}
         </span>
@@ -782,7 +748,7 @@ export const RESUME_ROW_WIDTH_MAX = 80;
 export function normalizeResumeRowWidth(value: unknown) {
   const width = Number(value);
   if (!Number.isFinite(width)) return 50;
-  return Math.min(RESUME_ROW_WIDTH_MAX, Math.max(RESUME_ROW_WIDTH_MIN, Math.round(width)));
+  return Number(Math.min(RESUME_ROW_WIDTH_MAX, Math.max(RESUME_ROW_WIDTH_MIN, width)).toFixed(2));
 }
 
 export const ResumeRow = Node.create({
@@ -1315,7 +1281,6 @@ export const FontSize = TextStyle.extend({
 
 export const resumeEditorExtensions: Extensions = [
   StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
-  ResumeAdaptiveCaret,
   ResumeBlockAnchor,
   ResumeBlockIdentity,
   ResumeIdentityHeadline,

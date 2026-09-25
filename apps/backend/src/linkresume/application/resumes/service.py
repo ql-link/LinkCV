@@ -23,7 +23,6 @@ from linkresume.modules.resumes.models import (
     DocumentParseTask,
     Resume,
     ResumeTemplate,
-    ResumeVersion,
 )
 
 MAX_RESUMES_PER_USER = 10
@@ -37,8 +36,6 @@ class InvalidResumeTitle(ValueError):
     pass
 
 
-class InvalidResumeVersionName(ValueError):
-    pass
 
 
 class ResumeTitleConflict(RuntimeError):
@@ -57,15 +54,8 @@ class ResumePresentationInvalid(ValueError):
     pass
 
 
-class ResumeVersionLimitExceeded(RuntimeError):
-    pass
 
 
-class LatestResumeVersionRequired(RuntimeError):
-    pass
-
-
-MAX_RESUME_VERSION_NAME_LENGTH = 80
 
 
 ResumeDocumentValue: TypeAlias = CanonicalResumeDocument
@@ -96,8 +86,6 @@ class StoredTemplateSnapshot:
     style_json: dict[str, Any]
 
 
-class ResumeVersionDataInvalid(ValueError):
-    """An immutable version cannot be restored as a complete snapshot."""
 
 
 def _decode_json(value: object, *, field: str) -> object:
@@ -264,14 +252,6 @@ def validate_resume_template_composition(
     compile_layout_plan(snapshot.data, template.style, snapshot.style)
 
 
-def default_resume_version_name(reason: str, version_no: int) -> str:
-    if reason == "initial":
-        return "初始版本"
-    if reason == "before_restore":
-        return "恢复前备份"
-    if reason == "restore":
-        return "恢复结果（历史记录）"
-    return f"版本 {version_no}"
 
 
 def parse_decimal_id(value: str) -> int | None:
@@ -441,7 +421,7 @@ def next_available_resume_title(db: Session, *, user_id: int, title: str) -> str
         suffix += 1
 
 
-def persist_resume_with_initial_version(
+def persist_resume(
     command: CreateResumeCommand,
     db: Session,
 ) -> Resume:
@@ -459,23 +439,11 @@ def persist_resume_with_initial_version(
     )
     db.add(resume)
     db.flush()
-    db.add(
-        ResumeVersion(
-            resume_id=resume.id,
-            template_id=command.template_id,
-            version_no=1,
-            data_json=deepcopy(snapshot.data_json),
-            style_json=deepcopy(snapshot.style_json),
-            reason="initial",
-            name=default_resume_version_name("initial", 1),
-        )
-    )
-    db.flush()
     db.refresh(resume)
     return resume
 
 
-def create_resume_with_initial_version(
+def create_resume(
     command: CreateResumeCommand,
     db: Session,
 ) -> Resume:
@@ -491,7 +459,7 @@ def create_resume_with_initial_version(
         normalized_command = CreateResumeCommand(
             **{**command.__dict__, "title": normalize_resume_title(command.title)}
         )
-        resume = persist_resume_with_initial_version(normalized_command, db)
+        resume = persist_resume(normalized_command, db)
         db.commit()
     except Exception:
         db.rollback()
@@ -542,7 +510,7 @@ def create_resume_from_template(
             validate_resume_template_composition(resume_snapshot, template_snapshot)
         except (TypeError, ValueError, ValidationError) as error:
             raise ResumeTemplateUnavailable from error
-        resume = persist_resume_with_initial_version(
+        resume = persist_resume(
             CreateResumeCommand(
                 user_id=user_id,
                 title=normalized_title,
@@ -712,237 +680,3 @@ def apply_resume_template(
     updated = db.scalar(select(Resume).where(Resume.id == resume.id))
     db.commit()
     return updated
-
-
-def _next_version_number(db: Session, resume_id: int) -> int:
-    current = db.scalar(
-        select(func.max(ResumeVersion.version_no)).where(
-            ResumeVersion.resume_id == resume_id
-        )
-    )
-    return int(current or 0) + 1
-
-
-def normalize_resume_version_name(value: str | None, *, default: str) -> str:
-    normalized = default if value is None else " ".join(value.split())
-    if not normalized or len(normalized) > MAX_RESUME_VERSION_NAME_LENGTH:
-        raise InvalidResumeVersionName
-    return normalized
-
-
-def _append_version(
-    db: Session,
-    resume: Resume,
-    reason: str,
-    name: str | None = None,
-) -> ResumeVersion:
-    if resume.template_id is None:
-        raise ResumeVersionDataInvalid("resume has no template identity")
-    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
-    template = db.scalar(
-        select(ResumeTemplate).where(ResumeTemplate.id == resume.template_id)
-    )
-    if template is None:
-        raise ResumeVersionDataInvalid("resume template no longer exists")
-    if template.key != snapshot.style.template_snapshot.template_key:
-        raise ResumeVersionDataInvalid("resume template key does not match snapshot")
-    try:
-        validate_resume_template_composition(
-            snapshot,
-            StoredTemplateSnapshot(
-                data=snapshot.data,
-                style=snapshot.style.template_snapshot,
-                data_json=snapshot.data_json,
-                style_json=_model_json(snapshot.style.template_snapshot),
-            ),
-        )
-    except (LayoutCompilationError, TypeError, ValueError, ValidationError) as error:
-        raise ResumeVersionDataInvalid("resume snapshot is not renderable") from error
-    version_no = _next_version_number(db, resume.id)
-    version = ResumeVersion(
-        resume_id=resume.id,
-        version_no=version_no,
-        template_id=resume.template_id,
-        data_json=deepcopy(snapshot.data_json),
-        style_json=deepcopy(snapshot.style_json),
-        reason=reason,
-        name=normalize_resume_version_name(
-            name,
-            default=default_resume_version_name(reason, version_no),
-        ),
-    )
-    db.add(version)
-    db.flush()
-    return version
-
-
-def _version_count(db: Session, resume_id: int) -> int:
-    count = db.scalar(
-        select(func.count(ResumeVersion.id)).where(ResumeVersion.resume_id == resume_id)
-    )
-    return int(count or 0)
-
-
-def append_resume_version(
-    db: Session,
-    resume: Resume,
-    *,
-    reason: str,
-    version_limit: int,
-    name: str | None = None,
-) -> ResumeVersion:
-    """Append a version while the caller holds the resume row lock."""
-    if _version_count(db, resume.id) >= version_limit:
-        raise ResumeVersionLimitExceeded
-    return _append_version(db, resume, reason, name)
-
-
-def create_manual_version(
-    db: Session,
-    resume_id: str,
-    user_id: int,
-    version_limit: int,
-    name: str | None = None,
-) -> ResumeVersion | None:
-    resume = lock_owned_resume(db, resume_id, user_id)
-    if resume is None:
-        return None
-    try:
-        version = append_resume_version(
-            db,
-            resume,
-            reason="manual",
-            version_limit=version_limit,
-            name=name,
-        )
-        db.refresh(version)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    return version
-
-
-def rename_resume_version(
-    db: Session,
-    resume_id: str,
-    version_no: int,
-    user_id: int,
-    name: str,
-) -> ResumeVersion | None:
-    resume = lock_owned_resume(db, resume_id, user_id)
-    if resume is None:
-        return None
-    version = db.scalar(
-        select(ResumeVersion).where(
-            ResumeVersion.resume_id == resume.id,
-            ResumeVersion.version_no == version_no,
-        )
-    )
-    if version is None:
-        return None
-    try:
-        version.name = normalize_resume_version_name(name, default=version.name)
-        db.flush()
-        db.refresh(version)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    return version
-
-
-def restore_resume_version(
-    db: Session,
-    resume_id: str,
-    version_no: int,
-    user_id: int,
-) -> Resume | None:
-    resume = lock_owned_resume(db, resume_id, user_id)
-    if resume is None:
-        return None
-    target = db.scalar(
-        select(ResumeVersion).where(
-            ResumeVersion.resume_id == resume.id,
-            ResumeVersion.version_no == version_no,
-        )
-    )
-    if target is None:
-        return None
-
-    template = db.scalar(
-        select(ResumeTemplate).where(ResumeTemplate.id == target.template_id)
-    )
-    if template is None:
-        raise ResumeVersionDataInvalid("version template no longer exists")
-    try:
-        target_snapshot = parse_persisted_resume_snapshot(
-            target.data_json,
-            target.style_json,
-        )
-        if template.key != target_snapshot.style.template_snapshot.template_key:
-            raise ResumeVersionDataInvalid(
-                "version template key does not match template identity"
-            )
-        # A version owns both its content and presentation snapshot.  The
-        # current template row is used only to verify identity; its mutable
-        # definition must never overwrite or recompile the historical style.
-        validate_resume_template_composition(
-            target_snapshot,
-            StoredTemplateSnapshot(
-                data=target_snapshot.data,
-                style=target_snapshot.style.template_snapshot,
-                data_json=target_snapshot.data_json,
-                style_json=_model_json(target_snapshot.style.template_snapshot),
-            ),
-        )
-    except (TypeError, ValueError, ValidationError) as error:
-        if isinstance(error, ResumeVersionDataInvalid):
-            raise
-        raise ResumeVersionDataInvalid("version snapshot is invalid") from error
-    try:
-        resume.template_id = target.template_id
-        resume.data_json = deepcopy(target_snapshot.data_json)
-        resume.style_json = deepcopy(target_snapshot.style_json)
-        resume.lock_version += 1
-        resume.updated_at = utc_now()
-        db.flush()
-        db.refresh(resume)
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    return resume
-
-
-def delete_resume_version(
-    db: Session,
-    resume_id: str,
-    version_no: int,
-    user_id: int,
-) -> bool | None:
-    resume = lock_owned_resume(db, resume_id, user_id)
-    if resume is None:
-        return None
-    try:
-        version = db.scalar(
-            select(ResumeVersion).where(
-                ResumeVersion.resume_id == resume.id,
-                ResumeVersion.version_no == version_no,
-            )
-        )
-        if version is None:
-            return None
-        latest_version_no = db.scalar(
-            select(func.max(ResumeVersion.version_no)).where(
-                ResumeVersion.resume_id == resume.id
-            )
-        )
-        if version.version_no == latest_version_no:
-            raise LatestResumeVersionRequired
-        db.execute(delete(ResumeVersion).where(ResumeVersion.id == version.id))
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    return True

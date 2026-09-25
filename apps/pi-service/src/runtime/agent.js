@@ -7,6 +7,7 @@ import {
   SettingsManager,
 } from "../../../../third_party/pi/packages/coding-agent/dist/index.js";
 import { readFile, realpath } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -33,6 +34,16 @@ export function createResumeContextPolicy(materials = []) {
       !resumeId || question.purpose !== "resume_identity"
     )),
   });
+}
+
+export function explicitNumberedGoalCount(content) {
+  const numbers = new Set(
+    [...content.matchAll(/(?:^|[：:，,；;\n])\s*([1-9]\d?)(?=(?:[.、．)]\s*)?[\p{Script=Han}A-Za-z])/gu)]
+      .map((match) => Number(match[1])),
+  );
+  let count = 0;
+  while (numbers.has(count + 1)) count += 1;
+  return count >= 3 ? count : 0;
 }
 
 export function materializeProposalOperations(operations, scopedContext) {
@@ -69,6 +80,22 @@ export function createSerialExecutor() {
       release();
     }
   };
+}
+
+export function enableToolOnce(session, name) {
+  const activeTools = session.getActiveToolNames();
+  if (!activeTools.includes(name)) session.setActiveToolsByName([...activeTools, name]);
+}
+
+export function isExplicitResumeReference(params, content, clarificationAnswers = []) {
+  const supplied = [content, ...clarificationAnswers.map((answer) => answer?.value)]
+    .filter((value) => typeof value === "string");
+  if (params.title) return supplied.some((value) => value.includes(params.title));
+  if (params.resume_id) {
+    const pattern = new RegExp(`(?:^|\\D)${params.resume_id}(?:\\D|$)`);
+    return supplied.some((value) => pattern.test(value));
+  }
+  return false;
 }
 
 export function prepareLocalResumeEditPlanArguments(args) {
@@ -108,6 +135,46 @@ function resolvedTarget(result) {
   throw codedError(result?.status === "ambiguous" ? "TARGET_AMBIGUOUS" : "TARGET_NOT_FOUND");
 }
 
+export function proposalCallKey(mode, target, operations, sourceIds = []) {
+  const digest = createHash("sha256").update(JSON.stringify({
+    mode,
+    resume_id: target.resume_id,
+    block_id: target.block_id,
+    expected_text_hash: target.expected_text_hash,
+    source_ids: [...sourceIds].sort(),
+    operations: operations.map(({ op, new_text, target: operationTarget }) => ({
+      op,
+      new_text,
+      block_id: operationTarget.block_id,
+    })),
+  })).digest("hex");
+  return `proposal:${digest}`;
+}
+
+export function translationCallKey(target, params) {
+  return `translation:${createHash("sha256").update(JSON.stringify({
+    resume_id: target.resume_id,
+    expected_text_hash: target.expected_text_hash,
+    target_language: params.target_language,
+    proposed_title: params.proposed_title,
+    data: params.data,
+    style: params.style,
+  })).digest("hex")}`;
+}
+
+export async function retryIdempotentProposal(request, payload, signal) {
+  try {
+    return await request(payload);
+  } catch (error) {
+    if (signal?.aborted || (typeof error?.status === "number" && error.status < 500)) {
+      throw error;
+    }
+    // The server may have committed before a transport/5xx response was lost.
+    // Reuse the same call key so the second POST returns that proposal.
+    return request(payload);
+  }
+}
+
 export async function executeLocalResumeEditPlan({
   client,
   resumeId,
@@ -125,6 +192,7 @@ export async function executeLocalResumeEditPlan({
   for (const [taskIndex, task] of plan.entries()) {
     const taskKey = `${toolCallId}:task:${taskIndex + 1}`;
     const taskPrefix = `修改任务 ${taskIndex + 1}/${plan.length}`;
+    const taskProposals = [];
     try {
       if (task.op === "replace_target_text" && typeof task.new_text !== "string") {
         throw codedError("TASK_NEW_TEXT_REQUIRED");
@@ -158,7 +226,6 @@ export async function executeLocalResumeEditPlan({
       expandedTargetCount += targets.length;
       if (expandedTargetCount > 20) throw codedError("EDIT_PLAN_TARGET_LIMIT");
 
-      const taskProposals = [];
       for (const [targetIndex, target] of targets.entries()) {
         const targetKey = `${taskKey}:target:${targetIndex + 1}`;
         const targetSuffix = targets.length > 1 ? `（${targetIndex + 1}/${targets.length}）` : "";
@@ -173,8 +240,8 @@ export async function executeLocalResumeEditPlan({
             block_id: target.block_id,
             new_text: task.op === "delete_target" ? "" : task.new_text,
           }], context);
-          const proposal = await client.scopedProposal({
-            call_key: `${toolCallId}:proposal:${taskIndex + 1}:${targetIndex + 1}`,
+          const proposal = await retryIdempotentProposal(client.scopedProposal, {
+            call_key: proposalCallKey("polish_local", target, operation),
             mode: "polish_local",
             target,
             diagnosis: diagnosis.diagnosis,
@@ -183,7 +250,7 @@ export async function executeLocalResumeEditPlan({
             rationale: task.rationale,
             source_ids: [],
             summary: targets.length > 1 ? `${task.summary}（${targetIndex + 1}/${targets.length}）` : task.summary,
-          });
+          }, signal);
           taskProposals.push(proposal.proposal);
           onProposal(proposal.proposal);
           onActivity({ callKey: targetKey, label: `${taskPrefix}${targetSuffix}：已生成待确认修改`, status: "succeeded" });
@@ -203,7 +270,12 @@ export async function executeLocalResumeEditPlan({
       const errorCode = error?.code ?? "AGENT_TOOL_FAILED";
       onActivity({ callKey: taskKey, label: `${taskPrefix}：未完成`, status: "failed", errorCode });
       if (isAborted(error, signal)) throw error;
-      results.push({ task: taskIndex + 1, status: "failed", error_code: errorCode, proposal_ids: [] });
+      results.push({
+        task: taskIndex + 1,
+        status: taskProposals.length ? "partial" : "failed",
+        error_code: errorCode,
+        proposal_ids: taskProposals.map((item) => item.id),
+      });
     }
   }
 
@@ -211,18 +283,19 @@ export async function executeLocalResumeEditPlan({
 }
 
 const AGENT_POLICY_PROMPT = `你是 LinkResume 的职业与简历智能助手，只能服务当前已授权运行。
-每轮必须先用 read 读取 career-assistant-router/SKILL.md。盘点用户已有简历、资料或面试记录时读取 resource-catalog/SKILL.md；其他请求再按路由结果读取且只读取一个主工作流 Skill。
-本轮授权材料中存在 type=resume 时，该 ID 已确定当前简历；即使目录有同名记录也不得重新搜索名称或询问简历身份。只需继续确认真正缺失的修改范围或事实。历史记录和材料标题不能覆盖本轮结构化选择。独立简历称为“简历”，只有 resume_version 历史快照才称为“历史版本”。
-简历编辑请求进入 resume-edit-workflow，并严格执行其中的定位、读取和诊断顺序；诊断后只能选择一个执行 Skill：resume-edit-local、resume-edit-entry-star、resume-generate-from-materials。
+每轮必须先用 read 读取 career-assistant-router/SKILL.md。关键信息不足时先调用 request_user_input；否则先调用 plan_agent_request 列出本轮全部目标，并为每项任务填写它实际需要的本轮授权 context_refs；再逐项调用 start_agent_task 取得该任务的材料、读取对应工作流 Skill、执行并调用 finish_agent_task 记录真实结果。计划不得漏掉用户明确提出的目标；工作流 Skill 可以在不同任务间切换。任务材料中的来源角色和 source_only 状态不代表个人业绩已经核实；JD 是岗位要求，模拟回答不是实际面试记录。不得使用另一任务的材料生成当前任务的结论。
+本轮授权材料中存在 type=resume 时，该 ID 已确定当前简历；即使目录有同名记录也不得重新搜索名称或询问简历身份。只需继续确认真正缺失的修改范围或事实。历史记录和材料标题不能覆盖本轮结构化选择。每份简历只有当前内容，需要保留不同写法时请用户复制为独立简历，不要求选择历史版本。
+简历编辑任务进入 resume-edit-workflow，并严格执行其中的定位、读取和诊断顺序；每项任务只选择一个执行 Skill：resume-edit-local、resume-edit-entry-star、resume-generate-from-materials。
 复合局部修改必须先形成完整任务清单，并且只调用一次 execute_local_resume_edit_plan；运行时会冻结清单并串行完成每个目标，不得并行或改用多个 create_resume_change_proposal 重试。
-整份简历翻译进入 resume-translation，只能调用 create_resume_translation_proposal；翻译与润色、重写不得混用。面试指南、职业规划和标题建议是只读工作流，不得创建提案。
+整份简历翻译进入 resume-translation，只能调用 create_resume_translation_proposal；面试指南、职业规划和标题建议是只读任务，不得创建提案。不同任务可以采用不同方法，但候选提案未经用户确认不能当作当前简历事实。
 未唯一定位或缺失会改变结果的关键信息时，必须调用 request_user_input 生成结构化问题，不能用普通文本代替澄清。调用 request_user_input 后本轮立即停止其他工具和最终回答。
 若本轮收到“已由服务端校验的结构化澄清答案”，它是当前用户已确认范围的权威值；必须直接继续原任务，不得因展示文本的表达差异重复询问同一问题。
-用户明确询问自己有哪些简历、资料或面试记录时，先读取 resource-catalog/SKILL.md 再调用 list_user_resources；它只返回轻量目录。仅在本轮没有 type=resume 材料时，才按用户指定的简历名称或 ID 调用 resolve_resume_reference 解析目标；局部编辑必须再调用 resolve_resume_target，并沿用已解析的同一份简历。这项授权只作用于当前运行，不绑定或改写会话。仅在缺少结构化目标且名称同名时，才根据用户给出的条件选择候选简历 ID，不得猜测用户未表达的选择。
+会话历史中的 agent_tasks 是上一轮已保存的任务结果。澄清续答时参考其中已完成任务和提案 ID，只为尚未完成的目标建立本轮计划；不要重复创建已成功的提案。
+用户明确询问自己有哪些简历、资料或面试记录时，先规划资源盘点任务，启动后读取 resource-catalog/SKILL.md 再调用 list_user_resources；它只返回轻量目录。仅在本轮没有 type=resume 材料时，才按用户本轮原话或已校验澄清答案中明确指定的简历名称或 ID 调用 resolve_resume_reference 解析目标；局部编辑必须再调用 resolve_resume_target，并沿用已解析的同一份简历。这项授权只作用于当前运行，不绑定或改写会话。目录只能供用户选择，不能由 Agent 自行选最近或唯一的一份；同名时根据用户给出的条件选择候选简历 ID，不得猜测用户未表达的选择。
 任何写入都必须生成待确认提案，绝不能声称已经直接修改或创建简历，也不能编造事实、角色或量化数据。
 只允许使用 read 读取已注册 Skill；禁止读取其他文件、执行 Shell、浏览网络或调用未注册工具。
 工具选择、调用、参数校验、失败重试和内部执行顺序不得写入最终回复。工具阶段可以用简短自然语言说明正在做什么，这些内容只进入临时工作过程，不作为最终回复保存。
-完成本轮所需的全部 Skill、读取、分析或提案工具后，必须调用 begin_final_response，再生成最终回复。调用 begin_final_response 前不得提前生成最终回复；调用后工具会被关闭，只能直接输出面向用户的最终内容。调用 request_user_input 时不得再调用 begin_final_response。`;
+每项任务必须如实记录完成、部分完成、受阻或失败。不能因为已生成自然语言就把未生成提案的修改任务标为完成。全部任务收口后必须调用 begin_final_response，再生成最终回复。调用 begin_final_response 前不得提前生成最终回复；调用后工具会被关闭，只能直接输出面向用户的最终内容。调用 request_user_input 时不得再调用 begin_final_response。`;
 
 export const USER_FACING_RESPONSE_PROMPT = `以下规则只约束用户最终能够看到的自然语言回复，不约束工具参数、结构化澄清事件或提案字段。若与权限、事实约束、工具调用顺序或结构化协议冲突，以后者为准。
 
@@ -282,6 +355,18 @@ export function formatContextMaterials(materials = []) {
     "<authorized-context-materials>",
     JSON.stringify(bounded),
     "</authorized-context-materials>",
+  ].join("\n");
+}
+
+export function formatContextCatalog(materials = []) {
+  if (!Array.isArray(materials) || materials.length === 0) return "";
+  return [
+    "以下只列出本轮已校验的资料身份，不包含正文。制定计划时为每项任务填写需要的 context_refs；启动任务后才能看到该任务的当前材料。目录名称不能证明其中的事实。",
+    "<authorized-context-catalog>",
+    JSON.stringify(materials.map(({ type, id, version, label, updated_at }) => ({
+      type, id, version, label, updated_at,
+    }))),
+    "</authorized-context-catalog>",
   ].join("\n");
 }
 
@@ -546,6 +631,10 @@ export async function executeAgentRun({
   });
 
   let routerLoaded = false;
+  let taskPlan = null;
+  let activeTask = null;
+  let activeWorkflowRead = false;
+  let activeTaskProposalIds = [];
   let selectedWorkflow = null;
   let selectedMode = null;
   let resolvedTarget = null;
@@ -554,6 +643,7 @@ export async function executeAgentRun({
   let diagnosisResult = null;
   let pendingClarification = null;
   let directLocalProposalAttempted = false;
+  let directLocalProposalKey = null;
   let localEditPlanResult = null;
   let outputMode = "working";
   let finalResponseHasText = false;
@@ -582,12 +672,10 @@ export async function executeAgentRun({
     const workflow = workflowSkills.get(path);
     if (workflow) {
       if (!routerLoaded) throw new Error("ROUTER_SKILL_REQUIRED");
-      if (selectedWorkflow && selectedWorkflow !== workflow) {
-        throw new Error("WORKFLOW_MODE_CONFLICT");
-      }
-      selectedWorkflow = workflow;
+      if (!activeTask || activeTask.workflow !== workflow) throw codedError("TASK_WORKFLOW_REQUIRED");
+      activeWorkflowRead = true;
       if (session && resumePolicy.canListResources(workflow)) {
-        session.setActiveToolsByName([...session.getActiveToolNames(), "list_user_resources"]);
+        enableToolOnce(session, "list_user_resources");
       }
       return;
     }
@@ -600,7 +688,7 @@ export async function executeAgentRun({
 
   const requireWorkflow = (...allowed) => {
     if (!routerLoaded) throw new Error("ROUTER_SKILL_REQUIRED");
-    if (!selectedWorkflow || (allowed.length && !allowed.includes(selectedWorkflow))) {
+    if (!activeTask || !activeWorkflowRead || !selectedWorkflow || (allowed.length && !allowed.includes(selectedWorkflow))) {
       throw new Error("WORKFLOW_SKILL_REQUIRED");
     }
   };
@@ -650,7 +738,12 @@ export async function executeAgentRun({
               ...(output.audit ?? {}),
               duration_ms: Date.now() - startedAt,
             });
-            if (output.proposal) emit("proposal.created", { runId, proposal: output.proposal });
+            if (output.proposal) {
+              if (activeTask && !activeTaskProposalIds.includes(output.proposal.id)) {
+                activeTaskProposalIds.push(output.proposal.id);
+              }
+              emit("proposal.created", { runId, proposal: output.proposal });
+            }
             if (outputMode === "working") {
               emit("assistant.activity.status", { runId, callKey: toolCallId, label, status: "succeeded" });
             }
@@ -685,6 +778,136 @@ export async function executeAgentRun({
     });
   };
 
+  const planAgentRequestTool = auditedTool({
+    name: "plan_agent_request",
+    label: "确认本轮任务",
+    description: "在业务工具之前提交完整任务清单。任务按依赖顺序排列；计划一旦保存就不能悄悄替换。显式编号目标超过八项时会返回 AGENT_TASK_LIMIT_EXCEEDED，此时须调用 request_user_input 询问本轮优先范围。",
+    parameters: objectSchema({
+      tasks: {
+        type: "array", minItems: 1, maxItems: 8,
+        items: objectSchema({
+          id: { type: "string", pattern: "^[a-z][a-z0-9_]{0,31}$" },
+          workflow: { type: "string", enum: ["resource_catalog", "resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title"] },
+          output: { type: "string", enum: ["proposal", "advice", "catalog"] },
+          label: { type: "string", minLength: 1, maxLength: 120 },
+          depends_on: { type: "array", maxItems: 8, items: { type: "string" } },
+          context_refs: { type: "array", maxItems: 10, items: objectSchema({
+            type: { type: "string", enum: ["resume", "dataset", "job", "application", "interview"] },
+            id: { type: "string", pattern: "^[1-9][0-9]{0,19}$" },
+          }, ["type", "id"]) },
+        }, ["id", "workflow", "output", "label"]),
+      },
+    }, ["tasks"]),
+    run: async (params) => {
+      if (!routerLoaded) throw codedError("ROUTER_SKILL_REQUIRED");
+      if (taskPlan) {
+        const submitted = params.tasks.map(({ id, workflow, output, label, depends_on, context_refs }) => (
+          { id, workflow, output, label, depends_on: depends_on ?? [], context_refs: context_refs ?? [] }
+        ));
+        const existing = taskPlan.map(({ id, workflow, output, label, depends_on, context_refs }) => (
+          { id, workflow, output, label, depends_on, context_refs }
+        ));
+        if (JSON.stringify(submitted) !== JSON.stringify(existing)) {
+          throw codedError("AGENT_TASK_PLAN_CONFLICT");
+        }
+        return { value: { tasks: taskPlan }, audit: { candidate_count: taskPlan.length } };
+      }
+      if (explicitNumberedGoalCount(content) > 8) {
+        throw codedError("AGENT_TASK_LIMIT_EXCEEDED");
+      }
+      const result = await client.planTasks(params);
+      taskPlan = result.tasks;
+      return { value: result, audit: { candidate_count: taskPlan.length } };
+    },
+  });
+
+  const startAgentTaskTool = auditedTool({
+    name: "start_agent_task",
+    label: "开始任务",
+    description: "按任务清单启动一项任务，然后读取该任务的方法规则并执行。",
+    parameters: objectSchema({ task_id: { type: "string", minLength: 1, maxLength: 32 } }, ["task_id"]),
+    run: async ({ task_id: taskId }) => {
+      if (!taskPlan) throw codedError("AGENT_TASK_PLAN_REQUIRED");
+      if (activeTask) throw codedError("AGENT_TASK_ALREADY_RUNNING");
+      let result;
+      try {
+        result = await client.taskStatus(taskId, { status: "running" });
+      } catch (error) {
+        if (error?.code !== "AGENT_TASK_DEPENDENCY_PENDING") throw error;
+        result = await client.taskStatus(taskId, {
+          status: "blocked", error_code: "AGENT_TASK_DEPENDENCY_PENDING",
+          result: "依赖任务未完成",
+        });
+        taskPlan = result.tasks;
+        return { value: { task: taskPlan.find((task) => task.id === taskId) } };
+      }
+      taskPlan = result.tasks;
+      activeTask = taskPlan.find((task) => task.id === taskId);
+      let taskContext;
+      try {
+        taskContext = await client.taskMaterials(taskId);
+      } catch (error) {
+        const code = error?.code ?? "AGENT_TASK_CONTEXT_READ_FAILED";
+        result = await client.taskStatus(taskId, {
+          status: "blocked", error_code: code,
+          result: "任务所需材料已变化或不可读取",
+        });
+        taskPlan = result.tasks;
+        activeTask = null;
+        return { value: { task: taskPlan.find((task) => task.id === taskId), material_error: code } };
+      }
+      selectedWorkflow = activeTask.workflow;
+      activeWorkflowRead = false;
+      selectedMode = null;
+      resolvedTarget = null;
+      scopedContextResult = null;
+      resumeContextLoaded = false;
+      diagnosisResult = null;
+      directLocalProposalAttempted = false;
+      directLocalProposalKey = null;
+      localEditPlanResult = null;
+      activeTaskProposalIds = [];
+      return { value: {
+        task: activeTask,
+        authorized_materials: taskContext.materials,
+        sources: taskContext.sources,
+      } };
+    },
+  });
+
+  const finishAgentTaskTool = auditedTool({
+    name: "finish_agent_task",
+    label: "记录任务结果",
+    description: "按真实工具结果标记当前任务完成、部分完成、受阻或失败；提案 ID 由运行时提供。",
+    parameters: objectSchema({
+      status: { type: "string", enum: ["completed", "partial", "blocked", "failed"] },
+      result: { type: "string", minLength: 1, maxLength: 2000 },
+      error_code: { type: "string", pattern: "^[A-Z][A-Z0-9_]{0,63}$" },
+    }, ["status"]),
+    run: async (params) => {
+      if (!activeTask) throw codedError("AGENT_TASK_NOT_RUNNING");
+      if (!activeWorkflowRead) throw codedError("WORKFLOW_SKILL_REQUIRED");
+      const batchFailed = localEditPlanResult?.tasks.some((task) => task.status !== "succeeded");
+      const status = batchFailed
+        ? (activeTaskProposalIds.length ? "partial" : "failed")
+        : ["failed", "blocked"].includes(params.status) && activeTaskProposalIds.length
+          ? "partial" : params.status;
+      const errorCode = params.error_code ?? (batchFailed
+        ? localEditPlanResult.tasks.find((task) => task.error_code)?.error_code : undefined);
+      const result = await client.taskStatus(activeTask.id, {
+        status,
+        proposal_ids: activeTaskProposalIds,
+        ...(params.result ? { result: params.result } : {}),
+        ...(errorCode ? { error_code: errorCode } : {}),
+      });
+      taskPlan = result.tasks;
+      activeTask = null;
+      selectedWorkflow = null;
+      selectedMode = null;
+      return { value: result };
+    },
+  });
+
   const requestUserInputTool = auditedTool({
     name: "request_user_input",
     label: "向用户澄清",
@@ -715,7 +938,7 @@ export async function executeAgentRun({
       },
     }, ["questions"]),
     run: async (params) => {
-      requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title");
+      if (!routerLoaded) throw codedError("ROUTER_SKILL_REQUIRED");
       const unresolved = resumePolicy.unresolvedQuestions(params.questions);
       if (!unresolved.length) {
         return { value: { resume_id: resumeContextId, status: "already_resolved", next: "resolve_resume_target" } };
@@ -731,6 +954,16 @@ export async function executeAgentRun({
         if (new Set(optionIds).size !== optionIds.length) {
           throw new Error("AGENT_CLARIFICATION_INVALID");
         }
+      }
+      if (activeTask) {
+        const result = await client.taskStatus(activeTask.id, {
+          status: activeTaskProposalIds.length ? "partial" : "blocked",
+          proposal_ids: activeTaskProposalIds,
+          result: "等待用户澄清", error_code: "USER_INPUT_REQUIRED",
+        });
+        taskPlan = result.tasks;
+        activeTask = null;
+        selectedWorkflow = null;
       }
       pendingClarification = { version: 1, questions: params.questions };
       emit("assistant.activity.clear", { runId });
@@ -791,6 +1024,9 @@ export async function executeAgentRun({
     run: async (params) => {
       requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title");
       if (!resumeContextId && !params.title && !params.resume_id) throw new Error("RESUME_REFERENCE_REQUIRED");
+      if (!resumeContextId && !isExplicitResumeReference(params, content, clarificationAnswers)) {
+        throw codedError("RESUME_REFERENCE_NOT_EXPLICIT");
+      }
       const result = await resumePolicy.resolveReference(client, {
         ...(params.title ? { title: params.title } : {}),
         ...(params.resume_id ? { resume_id: params.resume_id } : {}),
@@ -828,6 +1064,8 @@ export async function executeAgentRun({
     }),
     run: async (params) => {
       if (!routerLoaded) throw new Error("ROUTER_SKILL_REQUIRED");
+      if (!activeTask) throw codedError("AGENT_TASK_NOT_RUNNING");
+      if (!activeWorkflowRead) throw codedError("WORKFLOW_SKILL_REQUIRED");
       if (!resumePolicy.canListResources(selectedWorkflow)) {
         return { value: { status: "already_resolved", resume_id: resumeContextId, next: "resolve_resume_target" } };
       }
@@ -849,6 +1087,11 @@ export async function executeAgentRun({
     }, ["scope"]),
     run: async (params) => {
       requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title");
+      if (!resolvedTarget && resumeContextId && params.scope === "resume") {
+        const selected = await client.resolveTarget({ resume_id: resumeContextId, scope_hint: "resume" });
+        if (selected.status !== "resolved" || !selected.target) throw codedError("TARGET_NOT_FOUND");
+        resolvedTarget = selected.target;
+      }
       if (!resolvedTarget) throw new Error("TARGET_RESOLUTION_REQUIRED");
       const result = await client.scopedContext({ target: resolvedTarget, scope: params.scope });
       scopedContextResult = result;
@@ -931,18 +1174,22 @@ export async function executeAgentRun({
     }, ["mode", "operations", "summary"]),
     run: async (params, toolCallId) => {
       requireWorkflow("resume_edit");
+      if (activeTask.output !== "proposal") throw codedError("AGENT_TASK_OUTPUT_CONFLICT");
       if (!resolvedTarget) throw new Error("TARGET_RESOLUTION_REQUIRED");
       if (!scopedContextResult) throw new Error("CONTEXT_READ_REQUIRED");
       if (!diagnosisResult) throw new Error("DIAGNOSIS_REQUIRED");
       if (!selectedMode || selectedMode !== params.mode) throw new Error("SKILL_MODE_CONFLICT");
       if (params.mode === "polish_local") {
         if (params.operations.length !== 1) throw codedError("COMPOUND_PLAN_REQUIRED");
-        if (localEditPlanResult || directLocalProposalAttempted) throw codedError("COMPOUND_PLAN_REQUIRED");
-        directLocalProposalAttempted = true;
+        if (localEditPlanResult) throw codedError("COMPOUND_PLAN_REQUIRED");
       }
       const operations = materializeProposalOperations(params.operations, scopedContextResult);
-      const result = await client.scopedProposal({
-          call_key: toolCallId,
+      const callKey = proposalCallKey(params.mode, resolvedTarget, operations, params.source_ids ?? []);
+      if (params.mode === "polish_local" && directLocalProposalAttempted && directLocalProposalKey !== callKey) {
+        throw codedError("COMPOUND_PLAN_REQUIRED");
+      }
+      const result = await retryIdempotentProposal(client.scopedProposal, {
+          call_key: callKey,
           mode: params.mode,
           target: resolvedTarget,
           diagnosis: diagnosisResult.diagnosis,
@@ -951,7 +1198,11 @@ export async function executeAgentRun({
           rationale: params.rationale ?? [],
           source_ids: params.source_ids ?? [],
           summary: params.summary,
-        });
+        }, signal);
+      if (params.mode === "polish_local") {
+        directLocalProposalAttempted = true;
+        directLocalProposalKey = callKey;
+      }
       return {
         value: result,
         proposal: result.proposal,
@@ -986,6 +1237,7 @@ export async function executeAgentRun({
     }, ["tasks"]),
     run: async (params, toolCallId) => {
       requireWorkflow("resume_edit");
+      if (activeTask.output !== "proposal") throw codedError("AGENT_TASK_OUTPUT_CONFLICT");
       if (selectedMode !== "polish_local") throw new Error("SKILL_MODE_CONFLICT");
       if (directLocalProposalAttempted) throw codedError("COMPOUND_PLAN_REQUIRED");
       if (localEditPlanResult) {
@@ -1001,14 +1253,17 @@ export async function executeAgentRun({
         toolCallId,
         signal,
         onActivity: (activity) => emit("assistant.activity.status", { runId, ...activity }),
-        onProposal: (proposal) => emit("proposal.created", { runId, proposal }),
+        onProposal: (proposal) => {
+          if (!activeTaskProposalIds.includes(proposal.id)) activeTaskProposalIds.push(proposal.id);
+          emit("proposal.created", { runId, proposal });
+        },
       });
       const created = results.reduce((total, item) => total + item.proposal_ids.length, 0);
       localEditPlanResult = Object.freeze({ tasks: results, created_proposal_count: created });
       return {
         value: localEditPlanResult,
         audit: {
-          result: results.some((item) => item.status === "failed") ? "partial" : "succeeded",
+          result: results.some((item) => item.status !== "succeeded") ? "partial" : "succeeded",
           candidate_count: results.length,
         },
       };
@@ -1025,18 +1280,19 @@ export async function executeAgentRun({
       style: { type: "object" },
       summary: { type: "string", minLength: 1, maxLength: 4000 },
     }, ["target_language", "proposed_title", "data", "style", "summary"]),
-    run: async (params, toolCallId) => {
+    run: async (params) => {
       requireWorkflow("resume_translation");
+      if (activeTask.output !== "proposal") throw codedError("AGENT_TASK_OUTPUT_CONFLICT");
       if (!resolvedTarget || !resumeContextLoaded) throw new Error("TARGET_RESOLUTION_REQUIRED");
-      const result = await client.translationProposal({
-        call_key: toolCallId,
+      const result = await retryIdempotentProposal(client.translationProposal, {
+        call_key: translationCallKey(resolvedTarget, params),
         target: resolvedTarget,
         target_language: params.target_language,
         proposed_title: params.proposed_title,
         data: params.data,
         style: params.style,
         summary: params.summary,
-      });
+      }, signal);
       return {
         value: result,
         proposal: result.proposal,
@@ -1062,6 +1318,9 @@ export async function executeAgentRun({
     executionMode: "sequential",
     execute: () => executeSerially(async () => {
       if (!routerLoaded) throw new Error("ROUTER_SKILL_REQUIRED");
+      if (!taskPlan || taskPlan.some((task) => ["planned", "running"].includes(task.status))) {
+        throw codedError("AGENT_TASKS_INCOMPLETE");
+      }
       if (!session) throw new Error("AGENT_SESSION_UNAVAILABLE");
       outputMode = "final";
       emit("assistant.activity.clear", { runId });
@@ -1075,7 +1334,7 @@ export async function executeAgentRun({
       return {
         content: [{
           type: "text",
-          text: "最终回复通道已开启。现在直接回答用户，不要说明工具、过程或该通道。",
+          text: `最终回复通道已开启。逐项按真实任务结果回答，不要把 run 成功当作任务完成：${JSON.stringify(taskPlan)}`,
         }],
         details: {},
       };
@@ -1100,6 +1359,9 @@ export async function executeAgentRun({
     noTools: "builtin",
     tools: [
       "read",
+      "plan_agent_request",
+      "start_agent_task",
+      "finish_agent_task",
       ...(!resumeContextId ? ["list_user_resources"] : []),
       "resolve_resume_reference",
       "resolve_resume_target",
@@ -1114,6 +1376,9 @@ export async function executeAgentRun({
     ],
     customTools: [
       skillReadTool,
+      planAgentRequestTool,
+      startAgentTaskTool,
+      finishAgentTaskTool,
       listUserResourcesTool,
       resolveResumeReferenceTool,
       resolveTargetTool,
@@ -1197,7 +1462,7 @@ export async function executeAgentRun({
         referencedContextCount: 0,
       });
     }
-    const authorizedContext = formatContextMaterials(contextMaterials);
+    const authorizedContext = formatContextCatalog(contextMaterials);
     const conversation = buildAgentConversation({
       authorizedContext,
       history,

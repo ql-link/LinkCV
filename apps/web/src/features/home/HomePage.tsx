@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { ExternalLink, FileText, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
 import {
+  api,
   type ResumeImportSummary,
   type ResumeSummary,
 } from "../../api/client";
@@ -118,7 +119,7 @@ function ResumeThumbnailCard({
   onRename,
   deleteDisabled = false,
 }: {
-  resume: Pick<ResumeSummary, "id" | "title" | "updated_at" | "preview">;
+  resume: Pick<ResumeSummary, "id" | "title" | "updated_at" | "preview" | "lock_version">;
   onOpen: () => void;
   onDelete?: () => void;
   onShare?: () => void;
@@ -126,6 +127,30 @@ function ResumeThumbnailCard({
   deleteDisabled?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [copyRequestId, setCopyRequestId] = useState<string | null>(null);
+  const [copying, setCopying] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const copy = async (title: string) => {
+    if (!copyRequestId || copying) return;
+    const ownerId = useResumeStore.getState().user?.id;
+    setCopying(true);
+    setCopyError(null);
+    try {
+      const { resume: copied } = await api.copyResume(resume.id, { title, base_lock_version: resume.lock_version, client_request_id: copyRequestId });
+      if (useResumeStore.getState().user?.id !== ownerId) return;
+      useResumeStore.setState((state) => ({ resumes: [copied, ...state.resumes.filter((item) => item.id !== copied.id)] }));
+      setCopyRequestId(null);
+      try {
+        await useResumeStore.getState().listResumes();
+      } catch {
+        setCopyError("副本已创建，列表预览刷新失败，请刷新页面；无需再次复制。");
+      }
+    } catch {
+      setCopyError("复制失败，请检查名称、简历数量或刷新后重试。");
+    } finally {
+      setCopying(false);
+    }
+  };
   const menuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
@@ -175,6 +200,9 @@ function ResumeThumbnailCard({
 
   return (
     <article className="home-resume-card">
+      {copyRequestId && <RenameResumeDialog copying initialTitle={`${resume.title} 副本`} busy={copying}
+        onCancel={() => setCopyRequestId(null)} onSubmit={copy} />}
+      {copyError && <FeedbackNotice kind="error" placement="floating" onDismiss={() => setCopyError(null)}>{copyError}</FeedbackNotice>}
       <button className="home-card-open" type="button" onClick={onOpen}>
         <span className="home-card-preview" aria-hidden="true">
           {resume.preview?.layout_plan ? (
@@ -213,6 +241,9 @@ function ResumeThumbnailCard({
                 <Share2 size={15} aria-hidden="true" />分享链接
               </button>
             )}
+            <button type="button" role="menuitem" onClick={() => runMenuAction(() => setCopyRequestId(crypto.randomUUID()))}>
+              <Plus size={15} aria-hidden="true" />复制为新简历
+            </button>
             {onDelete && (
               <button
                 className="is-danger"
@@ -422,7 +453,7 @@ export function HomeScreen({
         <ConfirmDialog
           kind="delete"
           title={`删除“${pendingDelete.title}”？`}
-          description="删除后无法恢复，相关历史版本也会一并移除。"
+          description="删除后无法恢复。求职记录会保留，关联简历将被清空。"
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deletingResumeId === pendingDelete.id}

@@ -9,11 +9,18 @@ import {
   createResumeContextPolicy,
   createSerialExecutor,
   createSkillReadTool,
+  enableToolOnce,
+  explicitNumberedGoalCount,
+  isExplicitResumeReference,
   clarificationFallbackText,
   executeLocalResumeEditPlan,
+  formatContextCatalog,
   formatContextMaterials,
   materializeProposalOperations,
   prepareLocalResumeEditPlanArguments,
+  proposalCallKey,
+  retryIdempotentProposal,
+  translationCallKey,
   SYSTEM_PROMPT,
   USER_FACING_RESPONSE_PROMPT,
 } from "../src/runtime/agent.js";
@@ -190,6 +197,35 @@ test("skill reads opt into Pi sequential execution", () => {
   assert.equal(createSkillReadTool().executionMode, "sequential");
 });
 
+test("resource catalog activation does not duplicate an already enabled tool", () => {
+  const updates = [];
+  const session = {
+    getActiveToolNames: () => ["read", "list_user_resources"],
+    setActiveToolsByName: (names) => updates.push(names),
+  };
+  enableToolOnce(session, "list_user_resources");
+  assert.deepEqual(updates, []);
+  enableToolOnce({ ...session, getActiveToolNames: () => ["read"] }, "list_user_resources");
+  assert.deepEqual(updates, [["read", "list_user_resources"]]);
+});
+
+test("resource listing cannot turn an unmentioned resume into an explicit target", () => {
+  assert.equal(isExplicitResumeReference({ title: "张三的简历" }, "帮我优化简历"), false);
+  assert.equal(isExplicitResumeReference({ resume_id: "92" }, "帮我优化简历"), false);
+  assert.equal(isExplicitResumeReference({ title: "张三的简历" }, "请优化张三的简历"), true);
+  assert.equal(isExplicitResumeReference({ resume_id: "92" }, "请优化 ID 92 的简历"), true);
+  assert.equal(isExplicitResumeReference(
+    { title: "张三的简历" }, "按我选的简历继续", [{ value: "张三的简历" }],
+  ), true);
+});
+
+test("explicitly numbered goals over the task limit cannot be silently truncated", () => {
+  const nineGoals = "请分别完成 9 项：1分析简历，2准备面试，3复盘面试，4职业规划，5标题建议，6翻译简历，7修改教育经历，8修改项目经历，9列出资料";
+  assert.equal(explicitNumberedGoalCount(nineGoals), 9);
+  assert.equal(explicitNumberedGoalCount("1分析简历，2准备面试，3职业规划"), 3);
+  assert.equal(explicitNumberedGoalCount("我有 9 年经验，请给 3 个建议"), 0);
+});
+
 test("compound local edit plan freezes selectors and creates proposals serially", async () => {
   const target = (blockId, content, extra = {}) => ({
     resume_id: "88",
@@ -315,6 +351,73 @@ test("compound local edit plan records a failed task once and continues", async 
     item.status === "failed" &&
     item.errorCode === "PATCH_OUT_OF_SCOPE"
   )));
+});
+
+test("compound edit retains proposals created before a later target fails", async () => {
+  const target = (blockId) => ({
+    resume_id: "88", base_lock_version: 1, surface: "editor", section: "projects",
+    entry_id: "node_entry0000000001", field: "markdown", block_id: blockId,
+    selected_text: "占位", expected_text_hash: `sha256:${"a".repeat(64)}`,
+  });
+  const first = target("node_bullet000000001");
+  const second = target("node_bullet000000002");
+  const proposals = [];
+  const results = await executeLocalResumeEditPlan({
+    client: {
+      resolveTarget: async () => ({ status: "resolved", target: target("node_entry0000000001") }),
+      scopedContext: async ({ target: current }) => current.block_id === "node_entry0000000001"
+        ? { blocks: [first, second].map((item) => ({ target: item, content: "占位" })) }
+        : { target: current, blocks: [{ target: current, content: "占位" }] },
+      diagnose: async () => ({ diagnosis: {}, diagnosis_fingerprint: "fingerprint" }),
+      scopedProposal: async ({ target: current }) => {
+        if (current.block_id === second.block_id) throw codedTestError("TARGET_STALE");
+        return { proposal: { id: "proposal-first" } };
+      },
+    },
+    resumeId: "88", toolCallId: "plan-partial",
+    tasks: [{ quoted_text: "占位", parent_quoted_text: "项目", match: "all", op: "delete_target", summary: "删除占位" }],
+    onProposal: (proposal) => proposals.push(proposal.id),
+  });
+  assert.deepEqual(results, [{
+    task: 1, status: "partial", error_code: "TARGET_STALE", proposal_ids: ["proposal-first"],
+  }]);
+  assert.deepEqual(proposals, ["proposal-first"]);
+});
+
+test("proposal retries use the same server idempotency key", () => {
+  const target = { resume_id: "88", block_id: "node_bullet000000001", expected_text_hash: `sha256:${"a".repeat(64)}` };
+  const operations = [{ op: "delete_target", new_text: "", target }];
+  assert.equal(proposalCallKey("polish_local", target, operations), proposalCallKey("polish_local", target, operations));
+  assert.notEqual(proposalCallKey("polish_local", target, operations), proposalCallKey("polish_local", target, [
+    { op: "replace_target_text", new_text: "", target },
+  ]));
+  assert.notEqual(proposalCallKey("generate_from_materials", target, operations, ["source-1"]),
+    proposalCallKey("generate_from_materials", target, operations, ["source-2"]));
+});
+
+test("an uncertain proposal response retries once with the same payload", async () => {
+  const calls = [];
+  const request = async (payload) => {
+    calls.push(payload.call_key);
+    if (calls.length === 1) throw Object.assign(new Error("gateway"), { status: 502 });
+    return { proposal: { id: "proposal-existing" } };
+  };
+  const result = await retryIdempotentProposal(request, { call_key: "proposal:stable" });
+  assert.equal(result.proposal.id, "proposal-existing");
+  assert.deepEqual(calls, ["proposal:stable", "proposal:stable"]);
+  let rejectedCalls = 0;
+  await assert.rejects(retryIdempotentProposal(async () => {
+    rejectedCalls += 1;
+    throw Object.assign(codedTestError("TARGET_STALE"), { status: 409 });
+  }, { call_key: "proposal:invalid" }), /TARGET_STALE/);
+  assert.equal(rejectedCalls, 1);
+});
+
+test("translation retries preserve their proposal identity", () => {
+  const target = { resume_id: "88", expected_text_hash: "sha256:original" };
+  const params = { target_language: "en", proposed_title: "Resume", data: { identity: { name: "Zhang San" } }, style: {} };
+  assert.equal(translationCallKey(target, params), translationCallKey(target, params));
+  assert.notEqual(translationCallKey(target, params), translationCallKey(target, { ...params, target_language: "fr" }));
 });
 
 test("compound local edit plan rejects replacement tasks without replacement text", async () => {
@@ -598,6 +701,28 @@ test("context materials accept only bounded, unique authorized categories", () =
   );
 });
 
+test("parsed dataset materials are accepted with only their authorized content", () => {
+  const material = {
+    type: "dataset",
+    id: "37",
+    version: "1",
+    label: "面试资料.md",
+    updated_at: "2026-09-24T00:00:00Z",
+    content: { dataset_markdown: "Go API 与 MySQL 项目经历" },
+  };
+
+  assert.deepEqual(validateContextMaterials([material]), [material]);
+  assert.match(formatContextMaterials([material]), /Go API 与 MySQL 项目经历/);
+  assert.throws(
+    () => validateContextMaterials([{ ...material, content: { ...material.content, secret: "不可读取" } }]),
+    /INVALID_CONTEXT_MATERIALS/,
+  );
+  assert.throws(
+    () => validateContextMaterials([material, material]),
+    /INVALID_CONTEXT_MATERIALS/,
+  );
+});
+
 test("authorized materials are marked read-only and are the only prompt data", () => {
   const prompt = formatContextMaterials([{
     type: "resume",
@@ -611,4 +736,15 @@ test("authorized materials are marked read-only and are the only prompt data", (
   assert.match(prompt, /authorized-context-materials/);
   assert.match(prompt, /已选择的经历/);
   assert.doesNotMatch(prompt, /未选择的经历/);
+});
+
+test("planning catalog reveals authorized identities without another task's body", () => {
+  const catalog = formatContextCatalog([
+    { type: "resume", id: "1", version: "2", label: "张三的简历", updated_at: "2026-09-24T00:00:00Z", content: { resume_markdown: "PRIVATE_FIRST_TASK" } },
+    { type: "job", id: "2", version: "3", label: "示例岗位", updated_at: "2026-09-24T00:00:00Z", content: { description: "PRIVATE_SECOND_TASK" } },
+  ]);
+  assert.match(catalog, /authorized-context-catalog/);
+  assert.match(catalog, /张三的简历/);
+  assert.match(catalog, /示例岗位/);
+  assert.doesNotMatch(catalog, /PRIVATE_FIRST_TASK|PRIVATE_SECOND_TASK/);
 });

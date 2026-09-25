@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -23,24 +24,31 @@ import {
   Download,
   ExternalLink,
   FileAudio,
+  FilePlus2,
   FilePenLine,
   FileText,
+  FolderOpen,
   Import,
   Info,
   ListFilter,
   MapPin,
   Mail,
   MoreHorizontal,
+  Pause,
   Pencil,
+  Play,
   Send,
   Sparkles,
   Trash2,
   Users,
   Video,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import {
   ApiRequestError,
   api,
+  type DatasetRecord,
   type InterviewAssetRecord,
   type InterviewSessionDetail,
   type InterviewSessionRecord,
@@ -561,10 +569,12 @@ function formatDurationMinutes(durationMinutes: number): string {
   return `${hours} 小时 ${minutes} 分钟`;
 }
 
-const SCHEDULE_PICKER_MAX_WIDTH = 776;
-const SCHEDULE_PICKER_MAX_HEIGHT = 520;
+const SCHEDULE_PICKER_MAX_WIDTH = 640;
+const SCHEDULE_PICKER_MAX_HEIGHT = 420;
 const SCHEDULE_PICKER_VIEWPORT_GUTTER = 32;
 const SCHEDULE_PICKER_GAP = 8;
+const SCHEDULE_PICKER_DEFAULT_TIME = "09:00";
+const SCHEDULE_PICKER_TIME_OPTION_HEIGHT = 32;
 
 function schedulePickerPosition(
   trigger: DOMRect,
@@ -650,6 +660,8 @@ export function ScheduleDateTimePicker({
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const timeControlRef = useRef<HTMLDivElement>(null);
+  const timeMenuRef = useRef<HTMLDivElement>(null);
   const selectedValue = parseScheduleDateTimeValue(value);
   const durationMode = durationMinutes !== undefined && onDurationMinutesChange !== undefined;
   const calendarDays = useMemo(() => buildDatePickerDays(displayMonth), [displayMonth]);
@@ -747,6 +759,26 @@ export function ScheduleDateTimePicker({
     };
   }, [open, popoverHost]);
 
+  useEffect(() => {
+    if (!openTimeMenu) return;
+    const handleTimeMenuPointerDown = (event: PointerEvent) => {
+      if (!timeControlRef.current?.contains(event.target as Node)) setOpenTimeMenu(null);
+    };
+    document.addEventListener("pointerdown", handleTimeMenuPointerDown, true);
+    return () => document.removeEventListener("pointerdown", handleTimeMenuPointerDown, true);
+  }, [openTimeMenu]);
+
+  useEffect(() => {
+    if (openTimeMenu !== "start") return;
+    const menu = timeMenuRef.current;
+    const defaultOption = menu?.querySelector<HTMLElement>(`[data-time-option="${SCHEDULE_PICKER_DEFAULT_TIME}"]`);
+    if (!menu || !defaultOption) return;
+    const fallbackOffset = (9 * 60 / 15) * SCHEDULE_PICKER_TIME_OPTION_HEIGHT;
+    menu.scrollTop = defaultOption.offsetTop > 0
+      ? Math.max(0, defaultOption.offsetTop - menu.clientTop)
+      : fallbackOffset;
+  }, [openTimeMenu]);
+
   const openPicker = () => {
     const current = parseScheduleDateTimeValue(value);
     const currentTime = current ? parseScheduleTime(current.time) : null;
@@ -839,14 +871,12 @@ export function ScheduleDateTimePicker({
               }
             }}
           >
-          {durationMode && (
-            <header className="career-schedule-picker-heading">
-              <strong>{durationPickerTitle}</strong>
-              {availableWindowLabel && (
-                <span><Info aria-hidden="true" />{availableWindowLabel}</span>
-              )}
-            </header>
-          )}
+          <header className="career-schedule-picker-heading">
+            <strong>{durationMode ? durationPickerTitle : `选择${label}`}</strong>
+            {availableWindowLabel && (
+              <span><Info aria-hidden="true" />{availableWindowLabel}</span>
+            )}
+          </header>
           <div className="career-schedule-picker-layout">
             <div className="career-schedule-picker-calendar-pane">
               <header className="career-date-picker-header">
@@ -918,7 +948,7 @@ export function ScheduleDateTimePicker({
             <section className="career-schedule-picker-time" aria-label="选择时间">
               <span className="career-schedule-picker-time-label">{durationMode ? "开始时间" : "时间"}</span>
               {durationMode ? (
-                <div className="career-schedule-picker-start-time">
+                <div ref={timeControlRef} className="career-schedule-picker-start-time">
                   <input
                     type="text"
                     inputMode="numeric"
@@ -947,7 +977,7 @@ export function ScheduleDateTimePicker({
                     onClick={() => setOpenTimeMenu(openTimeMenu === "start" ? null : "start")}
                   ><ChevronDown aria-hidden="true" /></button>
                   {openTimeMenu === "start" && (
-                    <div id={`${id}-start-options`} className="career-schedule-picker-time-menu" role="listbox" aria-label="开始时间选项">
+                    <div ref={timeMenuRef} id={`${id}-start-options`} className="career-schedule-picker-time-menu" role="listbox" aria-label="开始时间选项">
                       {Array.from({ length: 96 }, (_, index) => {
                         const option = `${String(Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`;
                         return (
@@ -955,6 +985,7 @@ export function ScheduleDateTimePicker({
                             key={option}
                             type="button"
                             role="option"
+                            data-time-option={option}
                             aria-selected={draftTime === option}
                             className={draftTime === option ? "is-selected" : undefined}
                             onClick={() => selectQuickTime(option)}
@@ -964,7 +995,7 @@ export function ScheduleDateTimePicker({
                     </div>
                   )}
                 </div>
-              ) : <div className="career-schedule-picker-time-fields">
+              ) : <div ref={timeControlRef} className="career-schedule-picker-time-fields">
                 {(["hour", "minute"] as const).map((kind) => {
                   const isHour = kind === "hour";
                   const currentValue = isHour ? draftHour : draftMinute;
@@ -993,6 +1024,7 @@ export function ScheduleDateTimePicker({
                       {menuOpen && (
                         <div
                           id={`${id}-${kind}-options`}
+                          ref={timeMenuRef}
                           className="career-schedule-picker-time-menu"
                           role="listbox"
                           aria-label={isHour ? "小时" : "分钟"}
@@ -1049,7 +1081,7 @@ export function ScheduleDateTimePicker({
                         className={draftDurationMinutes === minutes ? "is-selected" : undefined}
                         aria-pressed={draftDurationMinutes === minutes}
                         onClick={() => { setDraftDurationMinutes(minutes); setCustomDurationOpen(false); }}
-                      >{formatDurationMinutes(minutes)}</button>
+                      >{minutes === 30 ? "30分钟" : minutes === 60 ? "1小时" : "2小时"}</button>
                     ))}
                     {customDurationOpen ? (
                       <label className="is-selected">
@@ -1071,25 +1103,9 @@ export function ScheduleDateTimePicker({
                   </div>
                 </>
               )}
-              <div className="career-schedule-picker-summary" aria-live="polite">
-                {durationMode ? (
-                  draftEnd ? (
-                    <>
-                      <div><span>结束时间</span><strong>{draftDate && sameLocalDate(draftDate, draftEnd)
-                        ? formatLocalTime(draftEnd)
-                        : formatScheduleDateTimeDisplay(draftEnd, formatLocalTime(draftEnd))}</strong></div>
-                      <b>共 {formatDurationMinutes(draftDurationMinutes)}</b>
-                    </>
-                  ) : (
-                    <strong>请选择开始时间和时长</strong>
-                  )
-                ) : (
-                  <><span>已选择</span><strong>{draftDate && draftTime
-                    ? `${formatDatePickerValue(draftDate)} ${draftTime}`
-                    : "请选择日期和时间"}</strong></>
-                )}
-                {durationMode && !rangeWithinBounds && draftEnd && <small>所选时间段超出可安排范围</small>}
-              </div>
+              {durationMode && !rangeWithinBounds && draftEnd && (
+                <p className="career-schedule-picker-error" role="alert">所选时间段超出可安排范围</p>
+              )}
             </section>
           </div>
           <footer className="career-date-picker-footer">
@@ -1707,8 +1723,8 @@ export function AddNextStageDialog({
               </div>
           </div>
         )}
-        {!lockStageSelection && (
-          <>
+        <div className="career-next-stage-workspace">
+          {!lockStageSelection && (
             <div className="career-next-stage-track" aria-label={`当前阶段：${projectApplicationProgress(selectedApplication).stageLabel}`}>
               <div className="career-next-stage-current"><span>当前状态</span><strong>{projectApplicationProgress(selectedApplication).stageLabel}</strong></div>
               <div className="career-next-stage-line" aria-hidden="true" />
@@ -1737,15 +1753,13 @@ export function AddNextStageDialog({
                 })}
               </div>
             </div>
-            <div className="career-next-stage-divider" aria-hidden="true" />
-          </>
-        )}
-        <div className="career-next-stage-panel">
-          <header className="career-next-stage-form-header">
-            <div><h3>{formCopy.title}</h3><span>{formCopy.badge}</span></div>
-            <p>{formCopy.description}</p>
-          </header>
-          <div className={`career-next-stage-form${activeStage === "offer" ? " is-offer" : ""}`}>
+          )}
+          <div className="career-next-stage-panel">
+            <header className="career-next-stage-form-header">
+              <div><h3>{formCopy.title}</h3><span>{formCopy.badge}</span></div>
+              <p>{formCopy.description}</p>
+            </header>
+            <div className={`career-next-stage-form${activeStage === "offer" ? " is-offer" : ""}`}>
             {startsPending && (
               <div className="career-next-stage-field career-next-stage-field--full career-next-stage-applied-at-field">
                 <Label htmlFor="career-next-stage-applied-at">投递日期（选填）</Label>
@@ -1825,57 +1839,67 @@ export function AddNextStageDialog({
               </>
             ) : activeStage === "written_test" ? (
               <>
-                <div className="career-next-stage-field career-next-stage-field--full">
-                  <Label htmlFor="career-next-stage-written-schedule-kind">时间类型</Label>
-                  <Select value={writtenScheduleKind} disabled={busy} onValueChange={(value) => setWrittenScheduleKind(value as "fixed_slot" | "open_window")}>
-                    <SelectTrigger id="career-next-stage-written-schedule-kind" aria-label="笔试时间类型" className="career-next-stage-select-trigger"><SelectValue /></SelectTrigger>
-                    <SelectContent className="career-next-stage-select-content">
-                      <SelectItem value="fixed_slot">固定场次（按时参加）</SelectItem>
-                      <SelectItem value="open_window">作答时段（期间内自行完成）</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="career-next-stage-field-hint">作答时段会显示在看板顶部；保存后可另设“我的作答计划”。</p>
-                </div>
-                {writtenScheduleKind === "open_window" ? (
-                  <>
+                <section className="career-next-stage-form-section career-next-stage-time-section">
+                  <h4>时间安排</h4>
+                  <div className="career-next-stage-section-grid">
                     <div className="career-next-stage-field">
-                      <Label htmlFor="career-next-stage-written-start">开放时间</Label>
-                      <ScheduleDateTimePicker id="career-next-stage-written-start" label="开放时间" value={writtenStartAt} disabled={busy} onChange={setWrittenStartAt} />
+                      <Label htmlFor="career-next-stage-written-schedule-kind">时间类型</Label>
+                      <Select value={writtenScheduleKind} disabled={busy} onValueChange={(value) => setWrittenScheduleKind(value as "fixed_slot" | "open_window")}>
+                        <SelectTrigger id="career-next-stage-written-schedule-kind" aria-label="笔试时间类型" className="career-next-stage-select-trigger"><SelectValue /></SelectTrigger>
+                        <SelectContent className="career-next-stage-select-content">
+                          <SelectItem value="fixed_slot">固定场次（按时参加）</SelectItem>
+                          <SelectItem value="open_window">作答时段（期间内自行完成）</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <div className="career-next-stage-field">
-                      <Label htmlFor="career-next-stage-written-end">截止时间</Label>
-                      <ScheduleDateTimePicker id="career-next-stage-written-end" label="截止时间" value={writtenEndAt} disabled={busy} onChange={setWrittenEndAt} />
-                    </div>
-                  </>
-                ) : (
-                  <div className="career-next-stage-field career-next-stage-field--full">
-                    <Label htmlFor="career-next-stage-written-start">笔试时间</Label>
-                    <ScheduleDateTimePicker
-                      id="career-next-stage-written-start"
-                      label="笔试时间"
-                      value={writtenStartAt}
-                      durationMinutes={writtenDuration}
-                      disabled={busy}
-                      onChange={setWrittenStartAt}
-                      onDurationMinutesChange={setWrittenDuration}
-                    />
+                    {writtenScheduleKind === "open_window" ? (
+                      <>
+                        <div className="career-next-stage-field">
+                          <Label htmlFor="career-next-stage-written-start">开放时间</Label>
+                          <ScheduleDateTimePicker id="career-next-stage-written-start" label="开放时间" value={writtenStartAt} disabled={busy} onChange={setWrittenStartAt} />
+                        </div>
+                        <div className="career-next-stage-field career-next-stage-field--full">
+                          <Label htmlFor="career-next-stage-written-end">截止时间</Label>
+                          <ScheduleDateTimePicker id="career-next-stage-written-end" label="截止时间" value={writtenEndAt} disabled={busy} onChange={setWrittenEndAt} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="career-next-stage-field">
+                        <Label htmlFor="career-next-stage-written-start">笔试时间</Label>
+                        <ScheduleDateTimePicker
+                          id="career-next-stage-written-start"
+                          label="笔试时间"
+                          value={writtenStartAt}
+                          durationMinutes={writtenDuration}
+                          disabled={busy}
+                          onChange={setWrittenStartAt}
+                          onDurationMinutesChange={setWrittenDuration}
+                        />
+                      </div>
+                    )}
+                    <p className="career-next-stage-field-hint career-next-stage-field--full"><Clock3 aria-hidden="true" />作答时段会显示在看板顶部；保存后可另设“我的作答计划”。</p>
                   </div>
-                )}
-                <div className="career-next-stage-field career-next-stage-field--full">
-                  <Label htmlFor="career-next-stage-written-meeting">笔试链接或地点（选填）</Label>
-                  <input id="career-next-stage-written-meeting" value={writtenMeetingOrLocation} maxLength={2048} disabled={busy} placeholder="粘贴线上笔试链接，或填写线下地点" onChange={(event) => setWrittenMeetingOrLocation(event.target.value)} />
-                </div>
-                <div className="career-next-stage-field">
-                  <Label htmlFor="career-next-stage-written-mode">笔试形式（选填）</Label>
-                  <Select value={writtenMode} disabled={busy} onValueChange={(value) => setWrittenMode(value as InterviewSessionRecord["mode"])}>
-                    <SelectTrigger id="career-next-stage-written-mode" aria-label="笔试形式（选填）" className="career-next-stage-select-trigger"><SelectValue /></SelectTrigger>
-                    <SelectContent className="career-next-stage-select-content">
-                      <SelectItem value="video">在线笔试</SelectItem>
-                      <SelectItem value="onsite">线下笔试</SelectItem>
-                      <SelectItem value="other">其他</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                </section>
+                <section className="career-next-stage-form-section">
+                  <h4>形式与补充</h4>
+                  <div className="career-next-stage-section-grid">
+                    <div className="career-next-stage-field">
+                      <Label htmlFor="career-next-stage-written-mode">笔试形式（选填）</Label>
+                      <Select value={writtenMode} disabled={busy} onValueChange={(value) => setWrittenMode(value as InterviewSessionRecord["mode"])}>
+                        <SelectTrigger id="career-next-stage-written-mode" aria-label="笔试形式（选填）" className="career-next-stage-select-trigger"><SelectValue /></SelectTrigger>
+                        <SelectContent className="career-next-stage-select-content">
+                          <SelectItem value="video">在线笔试</SelectItem>
+                          <SelectItem value="onsite">线下笔试</SelectItem>
+                          <SelectItem value="other">其他</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="career-next-stage-field">
+                      <Label htmlFor="career-next-stage-written-meeting">笔试链接或地点（选填）</Label>
+                      <input id="career-next-stage-written-meeting" value={writtenMeetingOrLocation} maxLength={2048} disabled={busy} placeholder="粘贴线上笔试链接，或填写线下地点" onChange={(event) => setWrittenMeetingOrLocation(event.target.value)} />
+                    </div>
+                  </div>
+                </section>
               </>
             ) : activeStage === "interview" ? (
               <>
@@ -1957,13 +1981,14 @@ export function AddNextStageDialog({
                 <textarea id="career-next-stage-note" value={preparationNote} maxLength={100000} disabled={busy} placeholder="补充要求或注意事项；填写时间后将随日程保存" onChange={(event) => setPreparationNote(event.target.value)} />
               </div>
             )}
+            </div>
+            {errorMessage && <p className="career-next-stage-error" role="alert">{errorMessage}</p>}
           </div>
-          {errorMessage && <p className="career-next-stage-error" role="alert">{errorMessage}</p>}
         </div>
         <DialogFooter className="career-next-stage-dialog-footer">
           <div className="career-next-stage-dialog-footer-actions">
             <Button variant="ghost" onClick={onClose}>取消</Button>
-            <Button variant={lockStageSelection ? "default" : "ghost"} disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : startsPending ? "保存求职进度" : "添加并保存"}</Button>
+            <Button disabled={!canSubmit} onClick={() => void save()}>{busy ? "保存中…" : startsPending ? "保存求职进度" : "添加并保存"}</Button>
           </div>
         </DialogFooter>
       </DialogContent>
@@ -2458,7 +2483,6 @@ export function ApplicationDetailView({
   const [terminateDialogOpen, setTerminateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [editScheduleDialogOpen, setEditScheduleDialogOpen] = useState(false);
   if (!application) {
     return (
       <section className="career-detail-not-found">
@@ -2528,12 +2552,6 @@ export function ApplicationDetailView({
     ? sessionRecordKind(currentSession)
     : progress.isAssessment ? "笔试" : "面试";
   const sessionRecordActionLabel = `管理${currentRecordKind}进度`;
-  const canEditCurrentSchedule = Boolean(
-    currentSession
-    && active
-    && currentSession.status === "scheduled"
-    && currentSession.stage_type !== "offer"
-  );
   const sessionRecordKinds = new Set(applicationSessions.map(sessionRecordKind));
   const sessionSectionTitle = sessionRecordKinds.size > 1
     ? "笔试与面试记录"
@@ -2577,7 +2595,6 @@ export function ApplicationDetailView({
             </div>
           </div>
           <div className="career-record-actions">
-            {canEditCurrentSchedule && currentSession && <Button variant="outline" icon={<Pencil />} onClick={() => setEditScheduleDialogOpen(true)}>修改{currentRecordKind}安排</Button>}
             {primaryAction === "set-stage" && <Button variant="ghost" onClick={() => setStageDialogOpen(true)}>投递岗位</Button>}
             {primaryAction === "schedule" && <Button variant="ghost" onClick={() => onCreateInterview(application.id)}>{scheduleActionLabel}</Button>}
             {primaryAction === "record-result" && <Button variant="ghost" onClick={() => setStageDialogOpen(true)}>{resultActionLabel}</Button>}
@@ -2636,8 +2653,8 @@ export function ApplicationDetailView({
           kind="delete"
           title={`永久删除「${application.company_name_snapshot} · ${application.job_title_snapshot}」？`}
           description={application.job_description_id
-            ? "删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。"
-            : "该岗位资料已不存在；删除后，这次求职进程及其阶段、排期、复盘和素材都将无法恢复。"}
+            ? "删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。"
+            : "该岗位资料已不存在；删除后，这次求职进程及其阶段、排期和复盘都将无法恢复，关联素材的原文件仍保留在资料库。"}
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deleting}
@@ -2645,7 +2662,6 @@ export function ApplicationDetailView({
           onConfirm={deleteEndedJob}
         />
       )}
-      {editScheduleDialogOpen && currentSession && <EditInterviewScheduleDialog session={currentSession} recordKind={currentRecordKind} onClose={() => setEditScheduleDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}
     </div>
   );
 }
@@ -2662,23 +2678,115 @@ function formatDuration(durationMs: number | null): string | null {
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, "0")}`;
 }
 
+function formatPlaybackTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
+  const wholeSeconds = Math.floor(seconds);
+  return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, "0")}`;
+}
+
+function DatasetPicker({
+  sessionId,
+  onAttached,
+  onNotice,
+}: {
+  sessionId: string;
+  onAttached: () => void;
+  onNotice: (notice: string) => void;
+}) {
+  const [datasets, setDatasets] = useState<DatasetRecord[] | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void api.listDatasets().then((response) => {
+      if (cancelled) return;
+      setDatasets(
+        response.datasets.filter(
+          (item) =>
+            !item.interview_session_id && item.upload_status === "succeeded",
+        ),
+      );
+    }).catch((error) => {
+      if (!cancelled) onNotice(requestErrorMessage(error));
+    });
+    return () => { cancelled = true; };
+  }, [onNotice]);
+  const attach = async (dataset: DatasetRecord) => {
+    setBusyId(dataset.id);
+    try {
+      await api.attachInterviewAsset(sessionId, dataset.id);
+      onAttached();
+    } catch (error) {
+      onNotice(requestErrorMessage(error));
+      setBusyId(null);
+    }
+  };
+  return (
+    <section className="career-content-library-method" aria-label="可选择的资料库文件">
+      <div className="career-session-assets">
+        {datasets === null && <p>正在加载资料库…</p>}
+        {datasets !== null && datasets.length === 0 && (
+          <p>资料库中没有可关联的文件。可以先在资料库页面上传。</p>
+        )}
+        {datasets?.map((dataset) => (
+          <article key={dataset.id}>
+            <span className="career-session-asset-icon"><FileText aria-hidden="true" /></span>
+            <div>
+              <strong title={dataset.file_name}>{dataset.file_name}</strong>
+              <small>{formatBytes(dataset.file_size)}</small>
+            </div>
+            <div className="career-session-asset-actions">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busyId !== null}
+                onClick={() => void attach(dataset)}
+              >
+                {busyId === dataset.id ? "关联中…" : "关联"}
+              </Button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SessionAssetList({
   assets,
   recordKind,
   hasTextRecord,
+  sessionId,
   onChanged,
   onNotice,
 }: {
   assets: InterviewAssetRecord[];
   recordKind: "笔试" | "面试";
   hasTextRecord: boolean;
+  sessionId: string;
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioVolumeRef = useRef<HTMLDivElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [activeAssetId, setActiveAssetId] = useState<string | null>(null);
   const [busyAssetId, setBusyAssetId] = useState<string | null>(null);
+  const [assetToRemove, setAssetToRemove] = useState<InterviewAssetRecord | null>(null);
+  const [audioDurationSeconds, setAudioDurationSeconds] = useState(0);
+  const [audioCurrentSeconds, setAudioCurrentSeconds] = useState(0);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioMuted, setAudioMuted] = useState(false);
+  const [audioVolume, setAudioVolume] = useState(1);
+  const [audioVolumeOpen, setAudioVolumeOpen] = useState(false);
   useEffect(() => () => { if (audioUrl) URL.revokeObjectURL(audioUrl); }, [audioUrl]);
+  useEffect(() => {
+    if (!audioVolumeOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!audioVolumeRef.current?.contains(event.target as Node)) setAudioVolumeOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [audioVolumeOpen]);
   const play = async (asset: InterviewAssetRecord) => {
     setBusyAssetId(asset.id);
     try {
@@ -2686,6 +2794,10 @@ function SessionAssetList({
       const url = URL.createObjectURL(blob);
       setAudioUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return url; });
       setActiveAssetId(asset.id);
+      setAudioDurationSeconds((asset.duration_ms ?? 0) / 1000);
+      setAudioCurrentSeconds(0);
+      setAudioPlaying(false);
+      setAudioVolumeOpen(false);
     } catch (error) {
       onNotice(requestErrorMessage(error));
     } finally {
@@ -2711,7 +2823,8 @@ function SessionAssetList({
   const remove = async (asset: InterviewAssetRecord) => {
     setBusyAssetId(asset.id);
     try {
-      await api.deleteInterviewAsset(asset.id);
+      await api.unlinkSessionAsset(sessionId, asset.id);
+      setAssetToRemove(null);
       onChanged();
     } catch (error) {
       onNotice(requestErrorMessage(error));
@@ -2719,23 +2832,107 @@ function SessionAssetList({
       setBusyAssetId(null);
     }
   };
+  const toggleAudioPlayback = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      if (audio.duration && audio.currentTime >= audio.duration) audio.currentTime = 0;
+      void audio.play().catch(() => onNotice("暂时无法播放这段录音。"));
+      return;
+    }
+    audio.pause();
+  };
+  const seekAudio = (nextTime: number) => {
+    const audio = audioRef.current;
+    if (!audio || audioDurationSeconds <= 0) return;
+    audio.currentTime = Math.min(Math.max(nextTime, 0), audioDurationSeconds);
+    setAudioCurrentSeconds(audio.currentTime);
+  };
+  const changeAudioVolume = (nextVolume: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const normalizedVolume = Math.min(1, Math.max(0, nextVolume));
+    if (normalizedVolume === 0) {
+      audio.muted = true;
+      setAudioMuted(true);
+      return;
+    }
+    audio.volume = normalizedVolume;
+    audio.muted = false;
+    setAudioVolume(normalizedVolume);
+    setAudioMuted(false);
+  };
+  const audioProgress = audioDurationSeconds > 0
+    ? Math.min(100, Math.max(0, (audioCurrentSeconds / audioDurationSeconds) * 100))
+    : 0;
   return (
     <>
       {assets.length ? <div className="career-session-assets">{assets.map((asset) => <article key={asset.id}>
         <span className="career-session-asset-icon"><FileAudio aria-hidden="true" /></span>
         <div><strong title={asset.original_file_name}>{asset.original_file_name}</strong><small>{formatDuration(asset.duration_ms) ?? formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? "现场录制" : "文件上传"}</small></div>
         <div className="career-session-asset-actions">
-          {asset.asset_type === "audio" && <Button size="sm" variant="outline" disabled={busyAssetId === asset.id} onClick={() => void play(asset)}>{busyAssetId === asset.id ? "加载中…" : activeAssetId === asset.id ? "重新播放" : "播放录音"}</Button>}
+          {asset.asset_type === "audio" && <button type="button" aria-label={`${activeAssetId === asset.id ? "重新播放" : "播放录音"} ${asset.original_file_name}`} title={activeAssetId === asset.id ? "重新播放" : "播放录音"} disabled={busyAssetId === asset.id} onClick={() => void play(asset)}><Play aria-hidden="true" /></button>}
           <button type="button" aria-label={`下载 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void download(asset)}><Download aria-hidden="true" /></button>
-          <button type="button" aria-label={`删除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => void remove(asset)}><Trash2 aria-hidden="true" /></button>
+          <button type="button" aria-label={`移除 ${asset.original_file_name}`} disabled={busyAssetId === asset.id} onClick={() => setAssetToRemove(asset)}><Trash2 aria-hidden="true" /></button>
         </div>
-        {audioUrl && activeAssetId === asset.id && <audio className="career-session-audio-player" controls autoPlay src={audioUrl} aria-label={`${recordKind}录音播放器`} />}
-      </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，或粘贴文字记录。</p></div>}
+        {audioUrl && activeAssetId === asset.id && <div className="career-session-audio-player" role="group" aria-label={`${recordKind}录音播放器`}>
+          <audio
+            ref={audioRef}
+            autoPlay
+            src={audioUrl}
+            onLoadedMetadata={(event) => setAudioDurationSeconds(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : (asset.duration_ms ?? 0) / 1000)}
+            onDurationChange={(event) => { if (Number.isFinite(event.currentTarget.duration)) setAudioDurationSeconds(event.currentTarget.duration); }}
+            onTimeUpdate={(event) => setAudioCurrentSeconds(event.currentTarget.currentTime)}
+            onPlay={() => setAudioPlaying(true)}
+            onPause={() => setAudioPlaying(false)}
+            onEnded={() => setAudioPlaying(false)}
+          />
+          <button type="button" aria-label={audioPlaying ? "暂停录音" : "播放录音"} onClick={toggleAudioPlayback}>{audioPlaying ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}</button>
+          <span>{formatPlaybackTime(audioCurrentSeconds)} / {formatPlaybackTime(audioDurationSeconds)}</span>
+          <input
+            type="range"
+            aria-label="录音播放进度"
+            min="0"
+            max={audioDurationSeconds || 0}
+            step="0.1"
+            value={Math.min(audioCurrentSeconds, audioDurationSeconds || 0)}
+            disabled={audioDurationSeconds <= 0}
+            style={{ "--audio-progress": `${audioProgress}%` } as CSSProperties}
+            onChange={(event) => seekAudio(Number(event.target.value))}
+          />
+          <div ref={audioVolumeRef} className="career-session-audio-volume">
+            {audioVolumeOpen && <div className="career-session-audio-volume-popover" id="career-session-audio-volume-control">
+              <input
+                type="range"
+                aria-label="录音音量"
+                aria-orientation="vertical"
+                aria-valuetext={`${Math.round((audioMuted ? 0 : audioVolume) * 100)}%`}
+                min="0"
+                max="1"
+                step="0.05"
+                value={audioMuted ? 0 : audioVolume}
+                onChange={(event) => changeAudioVolume(Number(event.target.value))}
+              />
+            </div>}
+            <button type="button" aria-label="调整音量" title="调整音量" aria-expanded={audioVolumeOpen} aria-controls="career-session-audio-volume-control" onClick={() => setAudioVolumeOpen((open) => !open)}>{audioMuted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>
+          </div>
+        </div>}
+      </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，从资料库选择，或粘贴文字记录。</p></div>}
+      {assetToRemove && <ConfirmDialog
+        kind="delete"
+        title={`从${recordKind}记录中移除文件？`}
+        description={`确定移除「${assetToRemove.original_file_name}」吗？资料库中的原文件不会被删除。`}
+        confirmLabel="移除文件"
+        busyLabel="移除中…"
+        busy={busyAssetId === assetToRemove.id}
+        onCancel={() => setAssetToRemove(null)}
+        onConfirm={() => void remove(assetToRemove)}
+      />}
     </>
   );
 }
 
-const AUDIO_FILE_ACCEPT = "audio/*,.aac,.aiff,.amr,.flac,.m4a,.mp3,.oga,.ogg,.opus,.wav,.webm,.wma";
+const AUDIO_FILE_ACCEPT = ".webm,.m4a,.mp3,.wav,.ogg,.mp4,.mov,.pdf,.docx,.md,.txt";
 const AUDIO_FILE_EXTENSIONS = new Set(
   AUDIO_FILE_ACCEPT
     .split(",")
@@ -2768,7 +2965,7 @@ function AddInterviewContentDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(initialText);
   const [file, setFile] = useState<File | null>(null);
-  const [contentMode, setContentMode] = useState<"audio" | "text">("audio");
+  const [contentMode, setContentMode] = useState<"audio" | "library" | "text">("audio");
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const isEditing = mode === "edit";
@@ -2776,14 +2973,14 @@ function AddInterviewContentDialog({
     if (!candidate) return;
     if (!isAudioFile(candidate)) {
       if (inputRef.current) inputRef.current.value = "";
-      onNotice("仅支持音频文件，请选择音频格式。");
+      onNotice("仅支持音视频与文档格式文件。");
       return;
     }
     setContentMode("audio");
     setFile(candidate);
     setText("");
   };
-  const switchContentMode = (nextMode: "audio" | "text") => {
+  const switchContentMode = (nextMode: "audio" | "library" | "text") => {
     setContentMode(nextMode);
     if (nextMode === "audio") {
       setText("");
@@ -2816,7 +3013,8 @@ function AddInterviewContentDialog({
       <DialogContent className="career-content-dialog">
         <DialogHeader className="career-content-dialog-header"><DialogTitle>{isEditing ? `编辑${recordKind}文字记录` : `添加${recordKind}内容`}</DialogTitle><DialogDescription>{isEditing ? `修改已保存的${recordKind}文字记录。` : `选择一种方式保存本场${recordKind}记录。`}</DialogDescription></DialogHeader>
         {!isEditing && <div className="career-content-method-switch" role="tablist" aria-label={`${recordKind}记录添加方式`}>
-          <button type="button" role="tab" aria-selected={contentMode === "audio"} className={contentMode === "audio" ? "is-active" : undefined} onClick={() => switchContentMode("audio")}><Import aria-hidden="true" />上传音频</button>
+          <button type="button" role="tab" aria-selected={contentMode === "audio"} className={contentMode === "audio" ? "is-active" : undefined} onClick={() => switchContentMode("audio")}><Import aria-hidden="true" />上传文件</button>
+          <button type="button" role="tab" aria-selected={contentMode === "library"} className={contentMode === "library" ? "is-active" : undefined} onClick={() => switchContentMode("library")}><FolderOpen aria-hidden="true" />从资料库选择</button>
           <button type="button" role="tab" aria-selected={contentMode === "text"} className={contentMode === "text" ? "is-active" : undefined} onClick={() => switchContentMode("text")}><FileText aria-hidden="true" />粘贴文字</button>
         </div>}
         {!isEditing && contentMode === "audio" &&
@@ -2832,17 +3030,21 @@ function AddInterviewContentDialog({
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }}
             >
               <Import aria-hidden="true" />
-              <strong>{file ? file.name : "点击选择或拖放音频文件"}</strong>
-              <span>{file ? `${formatBytes(file.size)} · 已选择` : "支持 MP3、M4A、WAV 等常见音频格式"}</span>
+              <strong>{file ? file.name : "点击选择或拖放文件"}</strong>
+              <span>{file ? `${formatBytes(file.size)} · 已选择` : "支持音视频与 PDF、DOCX、Markdown、TXT"}</span>
             </div>
-            <input ref={inputRef} className="visually-hidden" type="file" accept={AUDIO_FILE_ACCEPT} aria-label="音频文件" onChange={(event) => selectAudioFile(event.target.files?.[0])} />
+            <input ref={inputRef} className="visually-hidden" type="file" accept={AUDIO_FILE_ACCEPT} aria-label="面试素材文件" onChange={(event) => selectAudioFile(event.target.files?.[0])} />
           </section>
         }
+        {!isEditing && contentMode === "library" && <DatasetPicker sessionId={session.id} onAttached={() => { onClose(); onChanged(); }} onNotice={onNotice} />}
         {(isEditing || contentMode === "text") && <section className="career-content-text-method">
           {isEditing && <h3>{recordKind}文字记录</h3>}
           <textarea aria-label={`${recordKind}文字记录`} value={text} onChange={(event) => setText(event.target.value)} placeholder={`粘贴${recordKind}过程、逐字稿或整理后的文字记录…`} />
         </section>}
-        <DialogFooter className="career-content-dialog-footer"><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={busy || (isEditing || contentMode === "text" ? !text.trim() : !file)} onClick={() => void save()}>{busy ? "保存中…" : isEditing ? "保存修改" : "保存内容"}</Button></DialogFooter>
+        <DialogFooter className="career-content-dialog-footer">
+          <Button variant="outline" onClick={onClose}>取消</Button>
+          {(isEditing || contentMode !== "library") && <Button disabled={busy || (isEditing || contentMode === "text" ? !text.trim() : !file)} onClick={() => void save()}>{busy ? "保存中…" : isEditing ? "保存修改" : "保存内容"}</Button>}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -3277,7 +3479,7 @@ export function InterviewSessionDetailView({
     if (!isDialog) return emptyContent;
     return (
       <Dialog open onOpenChange={(open) => { if (!open) onBack(); }}>
-        <DialogContent className="career-session-record-dialog">
+        <DialogContent className={`career-session-record-dialog${detailLoading ? " is-loading" : " is-empty"}`}>
           <DialogHeader className="sr-only">
             <DialogTitle>记录详情</DialogTitle>
             <DialogDescription>查看、编辑和补充这场记录的内容。</DialogDescription>
@@ -3309,17 +3511,17 @@ export function InterviewSessionDetailView({
   const detailBody = (
     <div className="career-session-detail-body">
       <section className="career-session-record-content">
-        <header className="career-session-content-header"><h2>{overviewTitle}</h2><span>最后更新：{formatUpdatedDateTime(session.updated_at)}</span></header>
-        <div className="career-session-overview">
+        {!isDialog && <header className="career-session-content-header"><h2>{overviewTitle}</h2><span>最后更新：{formatUpdatedDateTime(session.updated_at)}</span></header>}
+        <section className="career-session-overview" aria-label={overviewTitle}>
           <div><FileText aria-hidden="true" /><span><small>{overviewNameLabel}</small><strong>{session.stage_label}</strong></span></div>
           <div><CalendarDays aria-hidden="true" /><span><small>{session.schedule_kind === "open_window" ? "官方作答时段" : `${recordKind}时间`}</small><strong className="career-session-time-range" title={formatFullDateTimeRange(session.start_at, session.end_at)}>{formatFullDateTimeRange(session.start_at, session.end_at)}</strong></span></div>
           <div><Video aria-hidden="true" /><span><small>{recordKind}方式</small><strong>{sessionModeLabel(session.mode)}{session.location ? ` · ${session.location}` : ""}</strong></span></div>
-        </div>
+        </section>
         {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} onChanged={() => onChanged(session.id)} />}
         {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开{isAssessment ? "笔试" : "会议"}链接 <ExternalLink aria-hidden="true" /></a>}
         <section className="career-session-content-section">
-          <header><h2>{recordTitle}</h2><span>支持上传音频或粘贴文字</span></header>
-          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
+          <header><h2>{recordTitle}</h2></header>
+          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
           {questions.trim() && <article className={`career-session-transcript${textExpanded ? " is-expanded" : ""}`}>
             <header>
               <div className="career-session-transcript-title">
@@ -3353,11 +3555,24 @@ export function InterviewSessionDetailView({
       <Dialog open onOpenChange={(open) => { if (!open) onBack(); }}>
         <DialogContent className="career-session-record-dialog">
           <DialogHeader className="career-session-record-dialog-header">
-            <DialogTitle>{`${application.company_name_snapshot}｜${recordTitle}`}</DialogTitle>
-            <DialogDescription>{session.stage_label} · {sessionStatusLabel(session)}</DialogDescription>
+            <div className="career-session-record-title-row">
+              <DialogTitle>{`${application.company_name_snapshot}｜${recordTitle}`}</DialogTitle>
+              <span className={`career-session-status ${sessionStatusTone(session)}`}>{session.stage_label} · {sessionStatusLabel(session)}</span>
+            </div>
+            <DialogDescription>最近更新：{formatUpdatedDateTime(session.updated_at)}</DialogDescription>
           </DialogHeader>
           {detailBody}
-          <DialogFooter className="career-session-record-footer">{recordActions}</DialogFooter>
+          <DialogFooter className="career-session-record-footer">
+            <div className="career-session-record-footer-start" role="group" aria-label="记录编辑操作">
+              {editScheduleAction}
+              <Button variant="ghost" icon={<FilePlus2 />} onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
+            </div>
+            {!isArchived && session.status === "scheduled" && (
+              <div className="career-session-record-footer-end" role="group" aria-label="记录完成操作">
+                <Button onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>
+              </div>
+            )}
+          </DialogFooter>
           {detailDialogs}
         </DialogContent>
       </Dialog>

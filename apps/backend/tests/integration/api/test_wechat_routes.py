@@ -365,7 +365,7 @@ def test_miniprogram_session_rotates_and_rejects_web_carrier() -> None:
         )
         assert me.json() == {"user": None}
         assert client.get(
-            "/api/miniprogram/resumes",
+            "/api/miniprogram/v2/resumes",
             headers={"Authorization": f"Bearer {body['access_token']}"},
         ).status_code == 200
 
@@ -506,12 +506,12 @@ def test_admin_account_uses_both_wechat_channels() -> None:
             headers={"Authorization": f"Bearer {mini_body['access_token']}"},
         ).json() == {"user": None}
         assert client.get(
-            "/api/miniprogram/resumes",
+            "/api/miniprogram/v2/resumes",
             headers={"Authorization": f"Bearer {mini_body['access_token']}"},
         ).json() == {"resumes": []}
 
         historical_business = client.get(
-            "/api/miniprogram/resumes",
+            "/api/miniprogram/v2/resumes",
             headers={"Authorization": f"Bearer {historical_mini.access_token}"},
         )
         assert historical_business.status_code == 200, historical_business.text
@@ -578,7 +578,7 @@ def test_disabled_existing_wechat_account_cannot_use_login_channels(is_admin: in
         assert mini.status_code == 401
         assert mini.json() == {"error": "ACCOUNT_DISABLED"}
         assert client.get(
-            "/api/miniprogram/resumes",
+            "/api/miniprogram/v2/resumes",
             headers={"Authorization": f"Bearer {historical_mini.access_token}"},
         ).status_code == 401
         assert client.post(

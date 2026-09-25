@@ -344,22 +344,6 @@ def build_dataset_object_name(user_id: int, file_name: str) -> str:
     return f"users/{user_id}/datasets/{unique}-{safe_name}"
 
 
-def build_interview_asset_object_name(
-    user_id: int,
-    application_id: int,
-    session_id: int,
-    file_name: str,
-) -> str:
-    normalized = unicodedata.normalize("NFKD", file_name)
-    safe_name = re.sub(r"[^\w.-]+", "-", normalized).strip("-.")[:120]
-    if not safe_name:
-        safe_name = "interview-asset.bin"
-    unique = f"{int(time.time() * 1000)}-{secrets_token(8)}"
-    return (
-        f"users/{user_id}/interviews/{application_id}/{session_id}/{unique}-{safe_name}"
-    )
-
-
 def build_resume_asset_object_name(
     user_id: int,
     resume_id: int,

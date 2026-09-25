@@ -431,7 +431,19 @@ describe("canonical LayoutPlan consumer", () => {
     expect(editorDocumentToMarkdown(source)).not.toContain(":::");
   });
 
-  it("shows user avatar at the template size and preserves it when the template hides avatars", () => {
+  it("uses one-inch portrait width even when a template has an older smaller default", () => {
+    const source = canonicalResumeDocumentToEditorDocument(canonicalLayoutDocument);
+    const projected = composeEditorDocumentForLayoutPlan(
+      source,
+      canonicalLayoutDocument,
+      canonicalLayoutPlan,
+      { ...canonicalTemplate, avatar: { ...canonicalTemplate.avatar, size_px: 72 } },
+    );
+    expect(JSON.stringify(projected)).toContain('"size":94');
+    expect(JSON.stringify(projected)).not.toContain('"size":72');
+  });
+
+  it("preserves a resized user avatar and hides it when the template hides avatars", () => {
     const userAvatarDocument: CanonicalResumeDocument = {
       ...canonicalLayoutDocument,
       identity: {
@@ -469,7 +481,7 @@ describe("canonical LayoutPlan consumer", () => {
     );
 
     expect(JSON.stringify(shown)).toContain("/api/resumes/1/assets/avatar.png");
-    expect(JSON.stringify(shown)).toContain('"size":96');
+    expect(JSON.stringify(shown)).toContain('"size":80');
     expect(JSON.stringify(shown)).toContain('"systemFallback":false');
     expect(JSON.stringify(hidden)).not.toContain("/api/resumes/1/assets/avatar.png");
     expect(userAvatarDocument.identity.avatar?.src).toBe("/api/resumes/1/assets/avatar.png");

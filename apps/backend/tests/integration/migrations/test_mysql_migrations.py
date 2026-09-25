@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import Barrier, Event
 from time import sleep
 from typing import Any
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -108,7 +109,54 @@ def migration_test_url() -> str:
     return raw
 
 
-TEMPLATE_CATALOG_HEAD = "0081"
+TEMPLATE_CATALOG_HEAD = "0082"
+
+
+def seed_pre_0082_resume(*, db, user_id, title, template_id):
+    """Seed historical schemas without using the newer runtime Resume mapper."""
+    from linkresume.application.resumes.service import parse_persisted_template_snapshot, presentation_from_template
+
+    row = db.execute(text("SELECT data_json, style_json FROM resume_templates WHERE id=:id"), {"id": template_id}).one()
+    decode = lambda value: json.loads(value) if isinstance(value, str) else value
+    template = parse_persisted_template_snapshot(decode(row.data_json), decode(row.style_json))
+    data = template.data_json
+    style = presentation_from_template(template.style).model_dump(mode="json")
+    values = {"user": user_id, "title": title, "template": template_id,
+              "data": json.dumps(data), "style": json.dumps(style)}
+    result = db.execute(text(
+        "INSERT INTO resumes (user_id,title,template_id,data_json,style_json,source_type) "
+        "VALUES (:user,:title,:template,:data,:style,'template')"
+    ), values)
+    resume_id = result.lastrowid
+    db.execute(text(
+        "INSERT INTO resume_versions (resume_id,template_id,version_no,data_json,style_json,reason,name) "
+        "VALUES (:resume,:template,1,:data,:style,'initial','历史测试数据')"
+    ), {**values, "resume": resume_id})
+    db.commit()
+    return SimpleNamespace(id=resume_id, data_json=data, style_json=style)
+
+
+def test_mysql_0084_adds_current_resume_link_without_attachment_storage() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0083")
+    engine = create_engine(database_url)
+    try:
+        assert "resume_id" not in {c["name"] for c in inspect(engine).get_columns("job_applications")}
+        run_alembic(database_url, "upgrade", "0084")
+        run_alembic(database_url, "upgrade", "head")
+        inspector = inspect(engine)
+        assert "application_resume_snapshots" not in inspector.get_table_names()
+        columns = {c["name"]: c for c in inspector.get_columns("job_applications")}
+        assert columns["resume_id"]["nullable"] is True
+        assert "resume_version_id" in columns
+        foreign_key = next(f for f in inspector.get_foreign_keys("job_applications") if f["name"] == "fk_job_applications_resume")
+        assert foreign_key["referred_table"] == "resumes"
+        assert foreign_key["options"]["ondelete"] == "SET NULL"
+        assert "resume_versions" in inspector.get_table_names()
+    finally:
+        engine.dispose()
+
 FEATURED_0079_KEYS = {f"featured-{name}-cn" for name in ("campus", "professional", "intern", "sales", "product", "finance", "people")}
 FEATURED_0080_KEYS = FEATURED_0079_KEYS | {"featured-card-dashed-cn", "featured-card-rail-cn"}
 FEATURED_KEYS = FEATURED_0080_KEYS | {"featured-classic-business-cn", "featured-vitality-cn"}
@@ -196,7 +244,7 @@ def test_mysql_0075_retires_only_legacy_templates_and_preserves_resumes() -> Non
         assert len(targets) == 3
         for row in targets:
             with factory() as db:
-                create_resume_from_template(
+                seed_pre_0082_resume(
                     db=db, user_id=user_id, title=row.key, template_id=row.id
                 )
         with engine.connect() as connection:
@@ -284,7 +332,7 @@ def test_mysql_catalog_creation_and_conflict_guard(revision, previous, count, pr
             user_id = connection.exec_driver_sql("INSERT INTO users (email, password_hash, nickname) VALUES ('atlas-existing@example.invalid', '$2b$12$fictional', '张三')").lastrowid
             template_id = connection.scalar(text("SELECT id FROM resume_templates WHERE `key` = 'right-rail-cn'"))
         with factory() as db:
-            existing = create_resume_from_template(db=db, user_id=user_id, title="已有虚构简历", template_id=template_id)
+            existing = seed_pre_0082_resume(db=db, user_id=user_id, title="已有虚构简历", template_id=template_id)
             existing_id = existing.id
             snapshot = (existing.data_json, existing.style_json)
         run_alembic(database_url, "upgrade", revision)
@@ -296,13 +344,14 @@ def test_mysql_catalog_creation_and_conflict_guard(revision, previous, count, pr
             assert all(after[key] == data for key, data in old.items())
             execute_sql_file(connection, BACKEND_ROOT / f"migrations/sql/{revision}.up.sql")
         with factory() as db:
-            existing = db.get(Resume, existing_id)
-            assert (existing.data_json, existing.style_json) == snapshot
+            existing = db.execute(text("SELECT data_json,style_json FROM resumes WHERE id=:id"), {"id": existing_id}).one()
+            decode = lambda value: json.loads(value) if isinstance(value, str) else value
+            assert (decode(existing.data_json), decode(existing.style_json)) == snapshot
         for index, (template_id, key) in enumerate(rows):
             with engine.begin() as connection:
                 user_id = connection.execute(text("INSERT INTO users (email, password_hash, nickname) VALUES (:email, '$2b$12$fictional', '张三')"), {"email": f"atlas-{index}@example.invalid"}).lastrowid
             with factory() as db:
-                resume = create_resume_from_template(db=db, user_id=user_id, title="目录创建验证", template_id=template_id)
+                resume = seed_pre_0082_resume(db=db, user_id=user_id, title="目录创建验证", template_id=template_id)
                 assert resume.style_json["template_snapshot"]["template_key"] == key
                 expected_data = json.loads(after[key]) if isinstance(after[key], str) else after[key]
                 assert CanonicalResumeDocument.model_validate(resume.data_json) == CanonicalResumeDocument.model_validate(expected_data)
@@ -553,6 +602,10 @@ def test_mysql_upgrade_and_idempotent_rerun() -> None:
     assert {column["name"] for column in inspector.get_columns("resumes")} == {
         "id",
         "user_id",
+        "creation_request_id",
+        "creation_request_hash",
+        "creation_request_id",
+        "creation_request_hash",
         "template_id",
         "parse_task_id",
         "title",
@@ -4244,6 +4297,45 @@ def test_mysql_migrates_legacy_resume_snapshots_forward() -> None:
         connection.execute(text("DELETE FROM users"))
     reset_test_database_to_base(database_url)
     run_alembic(database_url, "upgrade", "head")
+    engine.dispose()
+
+
+def test_mysql_0082_accepts_nullable_interview_session_foreign_key() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0081")
+    run_alembic(database_url, "upgrade", "0082")
+
+    engine = create_engine(database_url)
+    inspector = inspect(engine)
+    column_names = {
+        column["name"] for column in inspector.get_columns("user_dataset")
+    }
+    check_names = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("user_dataset")
+    }
+    foreign_keys = {
+        foreign_key["name"]: foreign_key
+        for foreign_key in inspector.get_foreign_keys("user_dataset")
+    }
+
+    assert {
+        "asset_kind",
+        "interview_session_id",
+        "interview_source_type",
+        "duration_ms",
+        "legacy_interview_asset_id",
+    } <= column_names
+    assert "ck_user_dataset_interview_source" not in check_names
+    assert foreign_keys["fk_user_dataset_interview_session"]["options"] == {
+        "ondelete": "SET NULL"
+    }
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == "0082"
+        )
     engine.dispose()
 
 

@@ -71,7 +71,6 @@ import {
   SlashCommandMenu,
   type CommandMenuState,
 } from "./slashCommand";
-import { VersionDiffDialog } from "./VersionDiffDialog";
 import { evaluateResumeCompleteness } from "./resumeCompleteness";
 import { ResumeCompletenessPanel } from "./ResumeCompletenessPanel";
 import { WorkbenchTemplatePanel } from "./WorkbenchTemplatePanel";
@@ -97,7 +96,7 @@ import {
 } from "../../api/resumeContract";
 import { liveResumePageMargins } from "../preview/resumePageMargins";
 
-type DrawerMode = "settings" | "history" | "quality" | "template" | "agent" | null;
+type DrawerMode = "settings" | "quality" | "template" | "agent" | null;
 
 type AgentFloatingPosition = { left: number; top: number };
 type AgentFloatingBounds = { width: number; height: number; entryWidth: number; entryHeight: number };
@@ -225,13 +224,11 @@ export function WorkbenchTemplateAction({
 }
 
 export function WorkbenchMoreMenu({
-  onHistory,
   onExport,
   exportPending,
   onCompleteness,
   onDelete,
 }: {
-  onHistory: () => void;
   onExport: () => void;
   exportPending: boolean;
   onCompleteness: () => void;
@@ -260,10 +257,6 @@ export function WorkbenchMoreMenu({
         onClick={() => setOpen((value) => !value)}
       />
       <AnchoredPopover open={open} className="workbench-more-menu" role="menu" ariaLabel="更多操作">
-        <button type="button" role="menuitem" onClick={() => run(onHistory)}>
-          <History aria-hidden="true" size={16} />
-          <span>历史版本</span>
-        </button>
         <button type="button" role="menuitem" disabled={exportPending} onClick={() => run(onExport)}>
           {exportPending
             ? <LoaderCircle aria-hidden="true" size={16} className="workbench-save-spinner" />
@@ -997,6 +990,7 @@ export function FontPreviewSelect({
 
 type ResumeWorkbenchProps = {
   embedded?: boolean;
+  externalRefreshVersion?: number;
   onClose?: () => void;
   onAgentSelectionChange?: (context: AgentSelectionContext | null) => void;
 };
@@ -1043,7 +1037,12 @@ async function selectionContextFromEditor(editor: Editor): Promise<AgentSelectio
   };
 }
 
-export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionChange }: ResumeWorkbenchProps = {}) {
+export function ResumeWorkbench({
+  embedded = false,
+  externalRefreshVersion = 0,
+  onClose,
+  onAgentSelectionChange,
+}: ResumeWorkbenchProps = {}) {
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const importWarningsByResumeId = useResumeStore((state) => state.importWarningsByResumeId);
   const dismissImportWarnings = useResumeStore((state) => state.dismissImportWarnings);
@@ -1064,15 +1063,10 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
   const saveError = useResumeStore((state) => state.error);
   const dirty = useResumeStore((state) => state.dirty);
   const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
-  const versions = useResumeStore((state) => state.versions);
-  const versionsLoading = useResumeStore((state) => state.versionsLoading);
-  const versionOperationPending = useResumeStore((state) => state.versionOperationPending);
-  const loadVersions = useResumeStore((state) => state.loadVersions);
+  const versionOperationPending = useResumeStore((state) => state.versionOperationPending
+    || Boolean(state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId));
+  const proposalContentRevision = useResumeStore((state) => state.proposalContentRevision);
   const loadResume = useResumeStore((state) => state.loadResume);
-  const createVersion = useResumeStore((state) => state.createVersion);
-  const renameStoredVersion = useResumeStore((state) => state.renameVersion);
-  const deleteStoredVersion = useResumeStore((state) => state.deleteVersion);
-  const restoreStoredVersion = useResumeStore((state) => state.restoreVersion);
   const goHome = useResumeStore((state) => state.goHome);
   const deleteStoredResume = useResumeStore((state) => state.deleteResume);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
@@ -1088,18 +1082,7 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
-  const [pendingVersionDelete, setPendingVersionDelete] = useState<{
-    versionNo: number;
-    createdAt: string;
-  } | null>(null);
-  const [versionNameDialogOpen, setVersionNameDialogOpen] = useState(false);
   const [pdfExportPending, setPdfExportPending] = useState(false);
-  const [versionName, setVersionName] = useState("");
-  const [versionNameError, setVersionNameError] = useState<string | null>(null);
-  const [versionNameSubmitting, setVersionNameSubmitting] = useState(false);
-  const [versionRenameSubmitting, setVersionRenameSubmitting] = useState<number | null>(null);
-  const [versionRenameError, setVersionRenameError] = useState<{ versionNo: number; message: string } | null>(null);
-  const [pendingVersionRestore, setPendingVersionRestore] = useState<{ version_no: number; name: string; created_at: string } | null>(null);
   const [commandMenu, setCommandMenu] = useState<CommandMenuState | null>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
@@ -1299,6 +1282,11 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
     onSelectionUpdate: ({ editor: current }) => publishAgentSelection(current),
   }, [activeResumeId]);
 
+  useEffect(() => {
+    if (!editor || externalRefreshVersion <= 0) return;
+    setRestoredEditorContent(editor, useResumeStore.getState().editorContent);
+  }, [editor, externalRefreshVersion]);
+
   useEffect(() => () => {
     agentSelectionRevisionRef.current += 1;
     agentSelectionCallbackRef.current?.(null);
@@ -1309,18 +1297,14 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
   }, [editor, versionOperationPending]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!activeResumeId) return;
+    if (!editor || !proposalContentRevision) return;
+    const state = useResumeStore.getState();
+    if (state.activeResumeId === activeResumeId && !state.dirty) {
+      editor.commands.setContent(state.editorContent, false);
+    }
+  }, [editor, activeResumeId, proposalContentRevision]);
 
-    void loadVersions()
-      .catch(() => {
-        if (!cancelled) setToast({ kind: "error", label: "版本记录暂时无法读取" });
-      });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeResumeId, loadVersions]);
 
   useEffect(() => {
     if (!zoomFeedback) return;
@@ -1398,37 +1382,6 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
     [data, settings, style],
   );
 
-  const openVersionNameDialog = () => {
-    setVersionName("");
-    setVersionNameError(null);
-    setVersionNameDialogOpen(true);
-  };
-
-  const closeVersionNameDialog = () => {
-    if (versionNameSubmitting) return;
-    setVersionNameDialogOpen(false);
-    setVersionNameError(null);
-  };
-
-  const startVersionRename = () => {
-    setVersionRenameError(null);
-  };
-
-  const submitVersionRename = async (versionNo: number, nextName: string) => {
-    if (!activeResumeId || versionRenameSubmitting !== null) return;
-    setVersionRenameSubmitting(versionNo);
-    setVersionRenameError(null);
-    try {
-      await renameStoredVersion(versionNo, nextName);
-      setToast({ kind: "success", label: `已将版本 ${versionNo} 重命名为“${nextName}”` });
-    } catch (error) {
-      setVersionRenameError({ versionNo, message: versionRenameErrorMessage(error) });
-      throw error;
-    } finally {
-      setVersionRenameSubmitting(null);
-    }
-  };
-
   const applyWorkbenchTemplate = async (template: ResumeTemplate) => {
     if (!editor) return;
     try {
@@ -1477,70 +1430,6 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
           setPdfExportPending(false);
         }
       });
-  };
-
-  const saveNamedVersion = async () => {
-    if (!editor || versionNameSubmitting) return;
-    const validationMessage = versionNameValidationMessage(versionName);
-    if (validationMessage) {
-      setVersionNameError(validationMessage);
-      return;
-    }
-    const normalizedName = normalizeVersionName(versionName);
-    setVersionNameError(null);
-    setVersionNameSubmitting(true);
-    await saveCurrentResume();
-    const savedState = useResumeStore.getState();
-    if (savedState.saveStatus === "error") {
-      setToast({
-        kind: "error",
-        label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，请稍后重试",
-      });
-      setVersionNameSubmitting(false);
-      return;
-    }
-    try {
-      await createVersion(normalizedName);
-      setVersionNameDialogOpen(false);
-      setToast({ kind: "success", label: "已保存新版本" });
-    } catch (error) {
-      const limitMessage = versionOperationErrorMessage(error, "create");
-      if (limitMessage) setDrawerMode("history");
-      setToast({ kind: "warning", label: limitMessage ?? "当前内容已保存，但版本创建失败" });
-    } finally {
-      setVersionNameSubmitting(false);
-    }
-  };
-
-  const restoreVersion = async (versionNo: number, createdAt: string) => {
-    if (!editor) return false;
-    setWorkbenchEditorEditable(editor, false);
-    try {
-      await restoreStoredVersion(versionNo);
-      const restored = useResumeStore.getState().editorContent;
-      setRestoredEditorContent(editor, restored);
-      setToast({ kind: "success", label: `已恢复 ${versionTime(createdAt)} 的版本` });
-      return true;
-    } catch (error) {
-      setToast({
-        kind: "error",
-        label: versionOperationErrorMessage(error, "restore") ?? "版本恢复失败，请稍后重试",
-      });
-      return false;
-    } finally {
-      setWorkbenchEditorEditable(editor, true);
-    }
-  };
-
-  const confirmDeleteVersion = async () => {
-    if (!pendingVersionDelete) return;
-    try {
-      await deleteStoredVersion(pendingVersionDelete.versionNo);
-      setPendingVersionDelete(null);
-      setToast({ kind: "success", label: "旧版本已删除，现在可以保存新版本" });
-    } catch {
-      setToast({ kind: "error", label: "版本删除失败，请稍后重试" });
-    }
   };
 
   const leaveSafely = async () => {
@@ -1611,10 +1500,7 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
   };
 
   const refreshAppliedAgentProposal = async () => {
-    if (!activeResumeId || !editor) return;
-    await loadResume(activeResumeId);
-    editor.commands.setContent(useResumeStore.getState().editorContent);
-    setToast({ kind: "success", label: "智能修改已应用，并保存为可恢复版本" });
+    setToast({ kind: "success", label: "智能修改已应用并保存" });
   };
 
   const importWarnings = activeResumeId
@@ -1651,7 +1537,6 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
               onToggle={() => setDrawerMode((mode) => mode === "template" ? null : "template")}
             />
             <WorkbenchMoreMenu
-              onHistory={() => setDrawerMode("history")}
               onExport={exportPdf}
               exportPending={pdfExportPending}
               onCompleteness={() => setDrawerMode("quality")}
@@ -1714,9 +1599,7 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
                 role="region"
                 aria-labelledby={drawerMode === "settings"
                   ? "workbench-settings-title"
-                  : drawerMode === "history"
-                    ? "workbench-history-title"
-                    : drawerMode === "agent"
+                  : drawerMode === "agent"
                       ? "workbench-agent-title"
                       : drawerMode === "quality"
                         ? "workbench-quality-title"
@@ -1733,15 +1616,6 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
                     titleId="workbench-settings-title"
                     title="设置"
                     closeLabel="关闭设置面板"
-                    onClose={() => setDrawerMode(null)}
-                  />
-                )}
-                {drawerMode === "history" && (
-                  <WorkbenchDrawerHeader
-                    titleId="workbench-history-title"
-                    title="版本记录"
-                    subtitle="正式保存的历史版本"
-                    closeLabel="关闭版本记录面板"
                     onClose={() => setDrawerMode(null)}
                   />
                 )}
@@ -1791,52 +1665,6 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
                       </div>
                     </WorkbenchSettingsSection>
 
-                  </div>
-                ) : drawerMode === "history" ? (
-                  <div className="workbench-versions">
-                    <div className="workbench-version-create">
-                      <SaveVersionAction
-                        pending={saveStatus === "saving" || versionOperationPending || versionNameSubmitting}
-                        onSave={openVersionNameDialog}
-                      />
-                    </div>
-                    <p className="workbench-version-summary">
-                      <strong>{versions.length} 个版本</strong>
-                      <span>正式保存 · 自动保存不计入</span>
-                    </p>
-                    {versionsLoading && <PageLoading label="正在读取版本记录…" scope="panel" />}
-                    {!versionsLoading && versions.length === 0 && <p className="workbench-empty">暂无可用版本。</p>}
-                    {versions.map((version) => (
-                      <div className="version-row" key={version.id}>
-                        <div className="version-row-copy">
-                          <VersionRenameAction
-                            name={version.name}
-                            versionNo={version.version_no}
-                            disabled={versionOperationPending || (versionRenameSubmitting !== null && versionRenameSubmitting !== version.version_no)}
-                            busy={versionRenameSubmitting === version.version_no}
-                            error={versionRenameError?.versionNo === version.version_no ? versionRenameError.message : null}
-                            onStartRename={startVersionRename}
-                            onRename={(nextName) => submitVersionRename(version.version_no, nextName)}
-                          />
-                          <span>版本 {version.version_no} · {versionTime(version.created_at)} · {versionReasonLabels[version.reason]}</span>
-                        </div>
-                        <span className="version-row-actions">
-                          <button type="button" disabled={versionOperationPending} onClick={() => setPendingVersionRestore(version)}>恢复</button>
-                          {version.version_no !== versions[0]?.version_no && (
-                            <button
-                              type="button"
-                              className="version-delete-action"
-                              aria-label={`删除版本 v${version.version_no}`}
-                              disabled={versionOperationPending}
-                              onClick={() => setPendingVersionDelete({ versionNo: version.version_no, createdAt: version.created_at })}
-                            >
-                              删除
-                            </button>
-                          )}
-                        </span>
-                      </div>
-                    ))}
-                    <p className="workbench-version-footnote">自动保存不会创建正式版本；恢复会直接替换当前编辑内容。</p>
                   </div>
                 ) : drawerMode === "quality" ? (
                   <ResumeCompletenessPanel
@@ -1941,43 +1769,11 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
           )}
         </AnimatePresence>
 
-        {activeResumeId ? (
-          <VersionDiffDialog
-            open={Boolean(pendingVersionRestore)}
-            resumeId={activeResumeId}
-            version={pendingVersionRestore}
-            currentMarkdown={markdown}
-            currentSettings={settings}
-            restoring={versionOperationPending}
-            onOpenChange={(open) => {
-              if (!open) setPendingVersionRestore(null);
-            }}
-            onConfirm={async () => {
-              if (!pendingVersionRestore) return;
-              const restored = await restoreVersion(pendingVersionRestore.version_no, pendingVersionRestore.created_at);
-              if (restored) setPendingVersionRestore(null);
-            }}
-          />
-        ) : null}
-
-        {pendingVersionDelete && (
-          <ConfirmDialog
-            kind="delete"
-            title={`删除版本 v${pendingVersionDelete.versionNo}？`}
-            description={`将永久删除 ${versionTime(pendingVersionDelete.createdAt)} 保存的历史版本，不会影响当前简历内容。`}
-            confirmLabel="永久删除"
-            busyLabel="正在删除…"
-            busy={versionOperationPending}
-            onCancel={() => setPendingVersionDelete(null)}
-            onConfirm={confirmDeleteVersion}
-          />
-        )}
-
         {deleteDialogOpen && (
           <ConfirmDialog
             kind="delete"
             title={`删除“${title}”？`}
-            description="删除后无法恢复，相关历史版本也会一并移除。"
+            description="删除后无法恢复。求职记录会保留，关联简历将被清空。"
             confirmLabel="永久删除"
             busyLabel="正在删除…"
             busy={deletePending}
@@ -1986,44 +1782,6 @@ export function ResumeWorkbench({ embedded = false, onClose, onAgentSelectionCha
           />
         )}
 
-        <Dialog
-          open={versionNameDialogOpen}
-          onOpenChange={(open) => (open ? setVersionNameDialogOpen(true) : closeVersionNameDialog())}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>保存正式版本</DialogTitle>
-              <DialogDescription>为这个重要节点命名，之后可以从版本记录中恢复。</DialogDescription>
-            </DialogHeader>
-            <form className="version-name-form" onSubmit={(event) => { event.preventDefault(); void saveNamedVersion(); }}>
-              <div className="version-name-field">
-                <Label htmlFor="resume-version-name">版本名称</Label>
-                <Input
-                  id="resume-version-name"
-                  autoFocus
-                  maxLength={MAX_VERSION_NAME_LENGTH}
-                  placeholder="例如：投递产品经理岗位"
-                  value={versionName}
-                  aria-invalid={versionNameError ? "true" : undefined}
-                  aria-describedby={versionNameError ? "resume-version-name-error" : "resume-version-name-help"}
-                  onChange={(event) => {
-                    setVersionName(event.target.value);
-                    if (versionNameError) setVersionNameError(null);
-                  }}
-                />
-                {versionNameError ? (
-                  <p className="version-name-error" id="resume-version-name-error" role="alert">{versionNameError}</p>
-                ) : (
-                  <p className="version-name-help" id="resume-version-name-help">名称只用于区分正式保存的简历节点。</p>
-                )}
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="secondary" onClick={closeVersionNameDialog} disabled={versionNameSubmitting}>取消</Button>
-                <Button type="submit" variant="accent" disabled={versionNameSubmitting}>{versionNameSubmitting ? "保存中…" : "保存版本"}</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
 
       </div>
     </MotionConfig>

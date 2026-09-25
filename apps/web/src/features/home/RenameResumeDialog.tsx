@@ -17,11 +17,13 @@ export function RenameResumeDialog({
   busy,
   onCancel,
   onSubmit,
+  copying = false,
 }: {
   initialTitle: string;
   busy: boolean;
   onCancel: () => void;
   onSubmit: (title: string) => void | Promise<void>;
+  copying?: boolean;
 }) {
   const [title, setTitle] = useState(initialTitle);
   const normalizedTitle = title.trim();
@@ -44,8 +46,8 @@ export function RenameResumeDialog({
           <Pencil size={20} />
         </span>
         <AlertDialogHeader className="home-confirm-copy">
-          <AlertDialogTitle>重命名简历</AlertDialogTitle>
-          <AlertDialogDescription>名称用于在简历列表中识别版本，不会写入简历正文。</AlertDialogDescription>
+          <AlertDialogTitle>{copying ? "复制为新简历" : "重命名简历"}</AlertDialogTitle>
+          <AlertDialogDescription>{copying ? "复制后得到独立简历，两份内容互不影响。" : "名称用于在简历列表中识别简历，不会写入简历正文。"}</AlertDialogDescription>
         </AlertDialogHeader>
         <form className="home-rename-form" onSubmit={submit}>
           <label htmlFor="resume-rename-title">简历名称</label>
@@ -63,7 +65,7 @@ export function RenameResumeDialog({
               <Button variant="secondary" disabled={busy}>取消</Button>
             </AlertDialogCancel>
             <Button type="submit" disabled={!normalizedTitle || normalizedTitle.length > 255 || busy}>
-              {busy ? "正在保存…" : "保存名称"}
+              {busy ? "正在保存…" : copying ? "创建副本" : "保存名称"}
             </Button>
           </div>
         </form>

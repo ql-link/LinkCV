@@ -1,10 +1,13 @@
 # 当前架构
 
+简历日常读写以 resumes 当前内容为唯一事实源；lock_version 仅用于并发和缓存，不是用户可管理的历史。Web 支持复制为独立简历，小程序 v2 读取当前内容。求职记录通过 job_applications.resume_id 关联当前简历；修改源简历影响后续查看，删除源简历解除关联但保留求职记录。旧 resume_versions 仅用于存量保全和关联迁移。
+
 ## Monorepo 组成
 
 | 模块 | 位置 | 当前职责 |
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 单页应用，承载用户工作区、公共分享和管理端界面 |
+| Desktop shell | `apps/desktop` | Electron macOS 桌面壳：加载线上 LinkResume Web 端（开发窗口连本地 Vite，打包产物按目标环境连 Dev 或生产），与业务代码和后端零耦合；窗口采用无标题栏沉浸形态，业务迭代不需要修改壳。打包、环境区分（本地/开发版/正式版）与产物管理由 `desktop-release` Skill 引导 |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护、简历只读浏览及求职跟进；时间表与岗位详情复用面试弹窗、记录编辑器和统一公司标识；详见 [小程序架构](miniprogram.md) |
 | Backend | `apps/backend` | FastAPI 业务 API、内部 Agent 工具、Worker、SQLAlchemy 模型与 SQL-first Alembic 迁移 |

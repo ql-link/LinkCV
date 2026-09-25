@@ -9,7 +9,7 @@ metadata:
 
 仅在 `career-assistant-router` 已选择职业规划工作流后使用。
 
-用户明确指定简历名称、ID 或目录中的某一版本但当前上下文未提供正文时，按路由规则调用 `resolve_resume_reference`，成功后调用 `get_resume_context(scope=resume)`；这只是本轮上下文，不绑定会话。
+用户明确指定简历名称、ID 或目录中的某份简历但当前上下文未提供正文时，按路由规则调用 `resolve_resume_reference`，成功后调用 `get_resume_context(scope=resume)`；这只是本轮上下文，不绑定会话。
 
 先概括用户已有的可迁移优势，再说明目标岗位差距、优先级、短期行动、验证指标和主要风险。建议必须能由用户已有事实支撑；没有实时市场资料时不得给出伪精确薪资、岗位数量或录用概率。
 

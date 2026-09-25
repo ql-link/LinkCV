@@ -149,9 +149,10 @@ Page({
   },
   more() {
     const items = [{ label: "查看岗位内容", kind: "job" }];
+    items.push({ label: this.data.app.resume_id ? "更换关联简历" : "关联简历", mode: "resume" });
     if (this.data.app.canAdvance && this.data.app.phase !== "pending")
       items.unshift({ label: "添加下一阶段", mode: "stage" });
-    if (this.data.app.resume_version_id)
+    if (this.data.app.resume_id)
       items.push({ label: "查看投递简历", kind: "resume" });
     if (this.data.app.canTerminate)
       items.push({ label: "终止求职", mode: "terminate" });

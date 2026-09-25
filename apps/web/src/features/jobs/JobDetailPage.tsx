@@ -54,7 +54,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
   const saveFields = async (changes: Partial<JobFormState>) => {
     if (!job || busy) return;
     const nextForm = { ...jobFormFromRecord(job), ...changes } as JobFormState;
-    if (!nextForm.job_title.trim() || !nextForm.company_name.trim() || !nextForm.description.trim()) {
+    if (!nextForm.job_title.trim() || !nextForm.company_name.trim()) {
       setError("该字段为必填项，不能保存空内容。");
       return;
     }
@@ -119,7 +119,7 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
         )}
         <JobDocument job={job} editingField={editingField} busy={busy} onEdit={setEditingField} onSave={saveField} onSaveFields={saveFields} />
       </article>
-      {deleteOpen && <ConfirmDialog kind="delete" title={`永久删除「${job.job_title}」？`} description="删除后，该岗位及其求职进程、阶段、排期、复盘和素材都将无法恢复。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busy} onCancel={() => setDeleteOpen(false)} onConfirm={deleteJob} />}
+      {deleteOpen && <ConfirmDialog kind="delete" title={`永久删除「${job.job_title}」？`} description="删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。" confirmLabel="永久删除" busyLabel="正在删除…" busy={busy} onCancel={() => setDeleteOpen(false)} onConfirm={deleteJob} />}
     </main>
   );
 }

@@ -170,7 +170,6 @@ class Settings(BaseSettings):
         alias="MINIO_SECRET_KEY",
     )
     minio_bucket: str = Field(default="linkresume", alias="MINIO_BUCKET")
-    resume_version_limit: int = Field(default=10, alias="RESUME_VERSION_LIMIT", ge=2)
     pdf_renderer_script: str | None = Field(default=None, alias="PDF_RENDERER_SCRIPT")
     pdf_renderer_timeout_seconds: float = Field(
         default=20,
@@ -247,6 +246,16 @@ class Settings(BaseSettings):
     dataset_upload_reservation_ttl_seconds: int = Field(
         default=86400,
         alias="DATASET_UPLOAD_RESERVATION_TTL_SECONDS",
+        ge=1,
+    )
+    media_max_count_per_user: int = Field(
+        default=50,
+        alias="MEDIA_MAX_COUNT_PER_USER",
+        ge=1,
+    )
+    media_max_total_bytes_per_user: int = Field(
+        default=5 * 1024 * 1024 * 1024,
+        alias="MEDIA_MAX_TOTAL_BYTES_PER_USER",
         ge=1,
     )
     interview_asset_upload_max_bytes: int = Field(
@@ -508,6 +517,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATASET_UPLOAD_USER_CONCURRENCY cannot exceed "
                 "DATASET_UPLOAD_GLOBAL_CONCURRENCY"
+            )
+        if (
+            self.media_max_total_bytes_per_user
+            < self.interview_asset_upload_max_bytes
+        ):
+            raise ValueError(
+                "MEDIA_MAX_TOTAL_BYTES_PER_USER must be >= "
+                "INTERVIEW_ASSET_UPLOAD_MAX_BYTES"
             )
         if self.dataset_max_total_bytes_per_user < self.dataset_upload_max_bytes:
             raise ValueError(

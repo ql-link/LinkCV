@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Literal, TypeAlias
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -20,6 +21,19 @@ class ResumeCreateRequest(BaseModel):
 
     title: str | None = Field(default=None, strict=True, max_length=20_000)
     template_id: str | None = Field(default=None, strict=True)
+
+
+class ResumeCopyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=255)
+    base_lock_version: int = Field(ge=1)
+    client_request_id: UUID
+
+
+class LegacyResumeCopyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(min_length=1, max_length=255)
+    client_request_id: UUID
 
 
 class ResumeUpdateRequest(BaseModel):
@@ -173,6 +187,8 @@ class ResumeTemplateRecord(BaseModel):
     key: str
     name: str
     description: str | None
+    style_categories: list[str]
+    use_cases: list[str]
     data: TemplateData
     style: TemplateStyle
     layout_plan: LayoutPlan

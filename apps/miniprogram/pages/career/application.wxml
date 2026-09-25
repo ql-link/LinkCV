@@ -99,7 +99,7 @@
         ><button data-kind="job" bindtap="openMaterial">
           <career-icon name="briefcase" size="30" />查看完整岗位</button
         ><button
-          wx:if="{{app.resume_version_id}}"
+          wx:if="{{app.resume_id}}"
           data-kind="resume"
           bindtap="openMaterial"
         >

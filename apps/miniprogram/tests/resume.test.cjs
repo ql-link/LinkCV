@@ -9,7 +9,7 @@ test("resume service uses metadata and PNG preview download APIs", async () => {
     exports: {
       request: async (path) => {
         requests.push(path);
-        return path === "/api/miniprogram/resumes" ? { resumes: [] } : { resume: { id: "42" } };
+        return path === "/api/miniprogram/v2/resumes" ? { resumes: [] } : { resume: { id: "42" } };
       },
       download: async (...args) => { downloads.push(args); return args[1]; },
     },
@@ -22,11 +22,11 @@ test("resume service uses metadata and PNG preview download APIs", async () => {
   await resumes.downloadResumePreview("42", "9", "/data/resume.png");
 
   assert.deepEqual(requests, [
-    "/api/miniprogram/resumes",
-    "/api/miniprogram/resumes/42",
+    "/api/miniprogram/v2/resumes",
+    "/api/miniprogram/v2/resumes/42",
   ]);
   assert.deepEqual(downloads[0].slice(0, 2), [
-    "/api/miniprogram/resumes/42/preview.png?version_id=9",
+    "/api/miniprogram/v2/resumes/42/preview.png?lock_version=9",
     "/data/resume.png",
   ]);
 });
@@ -56,7 +56,7 @@ test("preview cache hits only the same owner, resume and version", async () => {
   delete require.cache[require.resolve("../services/resumePreviewCache")];
   const cache = require("../services/resumePreviewCache");
   const path = cache.resumePreviewPath("7", "42", "9");
-  assert.match(path, /linkresume-preview-v1-/);
+  assert.match(path, /linkresume-preview-v2-/);
   files.add(path);
   await cache.commitResumePreview("7", "42", "9", path);
 

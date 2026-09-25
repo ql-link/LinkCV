@@ -117,6 +117,14 @@
             >{{session ? app.company_name_snapshot + ' · ' + sessionLabel : '当前：' + (app.current_stage ? app.current_stage.stage_label : '待投递')}}</text
           ></view
         >
+        <view class="section" wx:if="{{mode === 'resume'}}">
+          <text class="heading">关联简历</text>
+          <text class="hint">查看时使用简历当前内容。选择“暂不关联简历”可解除关联。</text>
+          <picker range="{{resumes}}" range-key="title" value="{{form.resumeIndex}}" data-field="resumeIndex" bindchange="input" disabled="{{saving || !!resumeError}}">
+            <view class="picker-value">{{resumes[form.resumeIndex].title}} ›</view>
+          </picker>
+          <button class="link" wx:if="{{resumeError}}" bindtap="retryResumes">{{resumeError}}</button>
+        </view>
         <view class="stage-choice" wx:if="{{mode === 'stage'}}"
           ><view class="stage-types"
             ><button
@@ -158,9 +166,9 @@
             value="{{form.resumeIndex}}"
             data-field="resumeIndex"
             bindchange="input"
-            disabled="{{saving || stageLocked}}"
+            disabled="{{saving || stageLocked || !!resumeError}}"
             ><view class="picker-value"
-              >{{resumes[form.resumeIndex].title}} ›</view
+              >{{resumeError ? '保持原关联不变' : resumes[form.resumeIndex].title}} ›</view
             ></picker
           ><button class="link" wx:if="{{resumeError}}" bindtap="retryResumes">
             {{resumeError}}

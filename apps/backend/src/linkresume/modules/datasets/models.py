@@ -80,9 +80,41 @@ class UserDataset(Base):
             "idempotency_key",
             name="uk_user_dataset_user_idempotency",
         ),
+        UniqueConstraint(
+            "legacy_interview_asset_id",
+            name="uk_user_dataset_legacy_asset",
+        ),
         CheckConstraint(
-            "file_format IN ('docx', 'pdf', 'md', 'txt')",
+            "file_format IN ('docx', 'pdf', 'md', 'txt', 'webm', 'm4a', 'mp3', "
+            "'wav', 'ogg', 'mp4', 'mov')",
             name="ck_user_dataset_file_format",
+        ),
+        CheckConstraint(
+            "asset_kind IN ('document', 'audio', 'video')",
+            name="ck_user_dataset_asset_kind",
+        ),
+        CheckConstraint(
+            "(asset_kind = 'document' "
+            "AND file_format IN ('docx', 'pdf', 'md', 'txt')) OR "
+            "(asset_kind IN ('audio', 'video') "
+            "AND file_format IN ('webm', 'm4a', 'mp3', 'wav', 'ogg', 'mp4', 'mov'))",
+            name="ck_user_dataset_kind_format",
+        ),
+        CheckConstraint(
+            "interview_source_type IS NULL OR "
+            "interview_source_type IN ('recorded', 'uploaded')",
+            name="ck_user_dataset_interview_context",
+        ),
+        CheckConstraint(
+            "duration_ms IS NULL OR "
+            "(asset_kind IN ('audio', 'video') AND duration_ms > 0)",
+            name="ck_user_dataset_duration",
+        ),
+        Index(
+            "idx_user_dataset_session_created",
+            "interview_session_id",
+            "created_at",
+            "id",
         ),
         {"comment": "用户知识库数据集"},
     )
@@ -140,6 +172,38 @@ class UserDataset(Base):
         String(64).with_variant(mysql.CHAR(64), "mysql"),
         nullable=False,
         comment="文件内容 SHA-256 十六进制摘要",
+    )
+    asset_kind: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="document",
+        server_default="document",
+        comment="资料种类：document/audio/video",
+    )
+    interview_session_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "interview_sessions.id",
+            name="fk_user_dataset_interview_session",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        comment="关联面试场次 ID；NULL 为普通资料",
+    )
+    interview_source_type: Mapped[str | None] = mapped_column(
+        String(24),
+        nullable=True,
+        comment="面试素材来源：recorded/uploaded；NULL 为普通资料",
+    )
+    duration_ms: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        nullable=True,
+        comment="音视频时长毫秒",
+    )
+    legacy_interview_asset_id: Mapped[int | None] = mapped_column(
+        unsigned_bigint_type(),
+        nullable=True,
+        comment="迁移来源 interview_assets.id",
     )
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(),

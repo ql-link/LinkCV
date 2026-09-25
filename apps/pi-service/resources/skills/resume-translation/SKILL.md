@@ -11,7 +11,7 @@ metadata:
 
 ## 固定流程
 
-1. 若用户在独立助手中明确指定简历名称、ID 或目录中的某一版本，先调用 `resolve_resume_reference`；否则调用 `resolve_resume_target`。该选择只作用于当前运行，不绑定会话。范围必须是整份简历；再调用 `get_resume_context(scope=resume)`。
+1. 若用户在独立助手中明确指定简历名称、ID 或目录中的某份简历，先调用 `resolve_resume_reference`；否则调用 `resolve_resume_target`。该选择只作用于当前运行，不绑定会话。范围必须是整份简历；再调用 `get_resume_context(scope=resume)`。
 2. 目标语言不明确时只问一个问题并结束本轮。
 3. 翻译所有面向读者的自然语言文本；保持 JSON 结构、键、数组顺序、节点 ID、来源引用、日期、数字、联系方式、URL、枚举和样式不变。
 4. 公司、学校、产品和证书没有可靠正式译名时，保留原名或使用“原名 + 常见译名”，不能猜测。

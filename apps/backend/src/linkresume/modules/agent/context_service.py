@@ -270,6 +270,9 @@ def list_contexts(
         f"{normalized_query}%" if prefix_match else f"%{normalized_query}%"
     ) if normalized_query else None
     types = (context_type,) if context_type is not None else CONTEXT_TYPES
+    if context_type == "resume_version":
+        raise ApiError(409, "AGENT_CONTEXT_RETIRED")
+    types = tuple(item for item in types if item != "resume_version")
     result: list[AgentContextListItem] = []
     for item_type in types:
         if item_type == "resume":
@@ -348,10 +351,7 @@ def list_contexts(
             result.extend(_job_item(record) for record in records)
         elif item_type == "application":
             statement = (
-                select(JobApplication, ResumeVersion.resume_id, JobApplicationStage)
-                .outerjoin(
-                    ResumeVersion, ResumeVersion.id == JobApplication.resume_version_id
-                )
+                select(JobApplication, JobApplication.resume_id, JobApplicationStage)
                 .outerjoin(
                     JobApplicationStage,
                     (JobApplicationStage.application_id == JobApplication.id)
@@ -379,12 +379,9 @@ def list_contexts(
             )
         else:
             statement = (
-                select(InterviewSession, JobApplication, ResumeVersion.resume_id)
+                select(InterviewSession, JobApplication, JobApplication.resume_id)
                 .join(
                     JobApplication, JobApplication.id == InterviewSession.application_id
-                )
-                .outerjoin(
-                    ResumeVersion, ResumeVersion.id == JobApplication.resume_version_id
                 )
                 .where(JobApplication.user_id == user_id)
             )
@@ -682,13 +679,7 @@ def _resolve_application(
     if row is None:
         raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
     application, stage = row
-    linked_resume_id = None
-    if application.resume_version_id is not None:
-        linked_resume_id = db.scalar(
-            select(ResumeVersion.resume_id).where(
-                ResumeVersion.id == application.resume_version_id
-            )
-        )
+    linked_resume_id = application.resume_id
     _ensure_fresh(
         ref,
         _version_markers(
@@ -738,13 +729,7 @@ def _resolve_interview(
     if row is None:
         raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
     interview, application = row
-    linked_resume_id = None
-    if application.resume_version_id is not None:
-        linked_resume_id = db.scalar(
-            select(ResumeVersion.resume_id).where(
-                ResumeVersion.id == application.resume_version_id
-            )
-        )
+    linked_resume_id = application.resume_id
     _ensure_fresh(
         ref,
         _version_markers(
@@ -797,9 +782,7 @@ def resolve_contexts(
         if ref.type == "resume":
             _, snapshot, material = _resolve_resume(db, user_id=user_id, ref=ref)
         elif ref.type == "resume_version":
-            _, _, snapshot, material = _resolve_resume_version(
-                db, user_id=user_id, ref=ref
-            )
+            raise ApiError(409, "AGENT_CONTEXT_RETIRED")
         elif ref.type == "dataset":
             snapshot, material = _resolve_dataset(
                 db,

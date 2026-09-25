@@ -23,9 +23,9 @@ vi.mock("../preview/ResumePreview", () => ({
 }));
 
 const templates = [
-  { id: "8", key: "classic-technical-cn", name: "经典单页技术简历", description: "技术岗位单页版式", data: {}, style: {} },
-  { id: "9", key: "modern-cn", name: "现代双栏", description: null, data: {}, style: {} },
-  { id: "10", key: "campus-cn", name: "校园简历", description: "适合校招求职", data: {}, style: {} },
+  { id: "8", key: "classic-technical-cn", name: "经典单页技术简历", description: "技术岗位单页版式", style_categories: ["经典"], use_cases: ["校招"], data: {}, style: {} },
+  { id: "9", key: "modern-cn", name: "现代双栏", description: null, style_categories: ["现代"], use_cases: ["社招"], data: {}, style: {} },
+  { id: "10", key: "campus-cn", name: "校园简历", description: "适合校招求职", style_categories: ["简约", "现代"], use_cases: ["校招"], data: {}, style: {} },
 ];
 
 beforeEach(() => {
@@ -38,6 +38,46 @@ afterEach(() => {
 });
 
 describe("ResumeTemplatesPage", () => {
+  it("点击风格和场景后立即筛选，并支持重置与空结果", async () => {
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+    await screen.findByRole("heading", { name: "现代双栏" });
+
+    fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "现代" }));
+    expect(screen.getByText("找到 2 套模板")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "校招" }));
+    expect(screen.getByText("找到 1 套模板")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "校园简历" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "现代双栏" })).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "实习" }));
+    fireEvent.click(screen.getByRole("button", { name: "校招" }));
+    expect(await screen.findByRole("heading", { name: "没有符合条件的模板" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重置筛选" }));
+    expect(screen.getByText("找到 3 套模板")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "现代双栏" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "现代" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "重置筛选" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "经典" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "清除筛选" })[0]);
+    expect(screen.getByRole("button", { name: "经典" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("关闭筛选下拉层后保留已生效的选择", async () => {
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+    await screen.findByRole("heading", { name: "现代双栏" });
+
+    fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "现代" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByText("找到 2 套模板")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
+    expect(screen.getByRole("button", { name: "现代" })).toHaveAttribute("aria-pressed", "true");
+  });
   it("首次读取时在页头下方展示统一加载状态", () => {
     vi.mocked(api.listResumeTemplates).mockReturnValue(new Promise(() => undefined));
 

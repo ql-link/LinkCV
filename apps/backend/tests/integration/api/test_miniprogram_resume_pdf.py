@@ -73,7 +73,7 @@ def mini_headers(app, email: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {credentials.access_token}"}
 
 
-def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
+def test_pdf_uses_current_content_and_rejects_stale_lock() -> None:
     app = build_app()
     with TestClient(app) as web_client:
         assert web_client.post(
@@ -85,10 +85,7 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
             json={"title": "张三的简历", "template_id": app.state.test_template_id},
         ).json()["resume"]
         resume_id = created["id"]
-        initial_name = "初始版本"
-
-        listed_initial = web_client.get(f"/api/resumes/{resume_id}/versions").json()["versions"]
-        initial_version_id = listed_initial[0]["id"]
+        initial_version_id = 1
 
         data = created["data"]
         data["identity"]["name"] = {
@@ -100,7 +97,7 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
             f"/api/resumes/{resume_id}",
             json={"data": data, "base_lock_version": created["lock_version"]},
         ).json()["resume"]
-        manual = web_client.post(f"/api/resumes/{resume_id}/versions", json={}).json()["version"]
+        manual = {"id": 3}
 
         data = updated["data"]
         data["identity"]["name"]["value"] = "尚未手动保存的草稿"
@@ -111,59 +108,58 @@ def test_pdf_uses_latest_manual_version_and_rejects_stale_version_id() -> None:
 
     headers = mini_headers(app, "owner@example.test")
     with TestClient(app) as mini_client:
-        listed = mini_client.get("/api/miniprogram/resumes", headers=headers)
+        listed = mini_client.get("/api/miniprogram/v2/resumes", headers=headers)
         assert listed.status_code == 200
         item = listed.json()["resumes"][0]
-        assert item["pdf_version_id"] == manual["id"]
-        assert item["preview"]["data"]["identity"]["name"]["value"] == "手动保存版本"
-        assert item["preview"]["data"]["identity"]["name"]["value"] != initial_name
+        assert item["lock_version"] == manual["id"]
+        assert item["preview"]["data"]["identity"]["name"]["value"] == "尚未手动保存的草稿"
 
         metadata = mini_client.get(
-            f"/api/miniprogram/resumes/{resume_id}", headers=headers
+            f"/api/miniprogram/v2/resumes/{resume_id}", headers=headers
         ).json()["resume"]
-        assert metadata["data"]["identity"]["name"]["value"] == "手动保存版本"
+        assert metadata["data"]["identity"]["name"]["value"] == "尚未手动保存的草稿"
 
         downloaded = mini_client.get(
-            f"/api/miniprogram/resumes/{resume_id}/pdf",
-            params={"version_id": manual["id"]},
+            f"/api/miniprogram/v2/resumes/{resume_id}/pdf",
+            params={"lock_version": manual["id"]},
             headers=headers,
         )
         assert downloaded.status_code == 200
         assert downloaded.content.startswith(b"%PDF-")
-        assert downloaded.headers["x-linkresume-pdf-version-id"] == manual["id"]
+        assert downloaded.headers["x-linkresume-lock-version"] == str(manual["id"])
         assert downloaded.headers["cache-control"] == "private, no-store"
-        assert app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]["value"] == "手动保存版本"
+        assert app.state.resume_pdf_renderer.payloads[-1]["data"]["identity"]["name"]["value"] == "尚未手动保存的草稿"
         assert app.state.resume_pdf_renderer.payloads[-1]["style"]["portable"]["smart_one_page"] is True
 
         preview = mini_client.get(
-            f"/api/miniprogram/resumes/{resume_id}/preview.png",
-            params={"version_id": manual["id"]},
+            f"/api/miniprogram/v2/resumes/{resume_id}/preview.png",
+            params={"lock_version": manual["id"]},
             headers=headers,
         )
         assert preview.status_code == 200
         assert preview.headers["content-type"] == "image/png"
         assert preview.content.startswith(b"\x89PNG\r\n\x1a\n")
-        assert preview.headers["x-linkresume-preview-version-id"] == manual["id"]
+        assert preview.headers["x-linkresume-lock-version"] == str(manual["id"])
         assert preview.headers["cache-control"] == "private, no-store"
         assert app.state.resume_preview_renderer.pdf_inputs[-1].startswith(b"%PDF-")
 
         stale = mini_client.get(
-            f"/api/miniprogram/resumes/{resume_id}/pdf",
-            params={"version_id": initial_version_id},
+            f"/api/miniprogram/v2/resumes/{resume_id}/pdf",
+            params={"lock_version": initial_version_id},
             headers=headers,
         )
         assert stale.status_code == 409
-        assert stale.json() == {"error": "RESUME_VERSION_UNAVAILABLE"}
+        assert stale.json() == {"error": "RESUME_EDIT_CONFLICT"}
         stale_preview = mini_client.get(
-            f"/api/miniprogram/resumes/{resume_id}/preview.png",
-            params={"version_id": initial_version_id},
+            f"/api/miniprogram/v2/resumes/{resume_id}/preview.png",
+            params={"lock_version": initial_version_id},
             headers=headers,
         )
         assert stale_preview.status_code == 409
-        assert stale_preview.json() == {"error": "RESUME_VERSION_UNAVAILABLE"}
+        assert stale_preview.json() == {"error": "RESUME_EDIT_CONFLICT"}
 
 
-def test_pdf_falls_back_to_initial_version_and_enforces_ownership() -> None:
+def test_pdf_reads_current_without_history_and_enforces_ownership() -> None:
     app = build_app()
     with TestClient(app) as owner_client:
         owner_client.post(
@@ -183,28 +179,31 @@ def test_pdf_falls_back_to_initial_version_and_enforces_ownership() -> None:
     owner_headers = mini_headers(app, "owner@example.test")
     stranger_headers = mini_headers(app, "stranger@example.test")
     with TestClient(app) as client:
+        retired = client.get("/api/miniprogram/resumes", headers=owner_headers)
+        assert retired.status_code == 426
+        assert retired.json() == {"error": "CLIENT_UPDATE_REQUIRED"}
         metadata = client.get(
-            f"/api/miniprogram/resumes/{created['id']}", headers=owner_headers
+            f"/api/miniprogram/v2/resumes/{created['id']}", headers=owner_headers
         )
         assert metadata.status_code == 200
-        version_id = metadata.json()["resume"]["pdf_version_id"]
+        version_id = metadata.json()["resume"]["lock_version"]
         assert client.get(
-            f"/api/miniprogram/resumes/{created['id']}/pdf",
-            params={"version_id": version_id},
+            f"/api/miniprogram/v2/resumes/{created['id']}/pdf",
+            params={"lock_version": version_id},
             headers=owner_headers,
         ).status_code == 200
         assert client.get(
-            f"/api/miniprogram/resumes/{created['id']}/pdf",
-            params={"version_id": version_id},
+            f"/api/miniprogram/v2/resumes/{created['id']}/pdf",
+            params={"lock_version": version_id},
             headers=stranger_headers,
         ).status_code == 404
         assert client.get(
-            f"/api/miniprogram/resumes/{created['id']}/preview.png",
-            params={"version_id": version_id},
+            f"/api/miniprogram/v2/resumes/{created['id']}/preview.png",
+            params={"lock_version": version_id},
             headers=owner_headers,
         ).status_code == 200
         assert client.get(
-            f"/api/miniprogram/resumes/{created['id']}/preview.png",
-            params={"version_id": version_id},
+            f"/api/miniprogram/v2/resumes/{created['id']}/preview.png",
+            params={"lock_version": version_id},
             headers=stranger_headers,
         ).status_code == 404

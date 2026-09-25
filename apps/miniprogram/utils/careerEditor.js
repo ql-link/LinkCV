@@ -6,6 +6,7 @@ module.exports = function createCareerEditor() {
   const c = require("./career");
   const f = require("./careerForm");
   const titles = {
+    resume: "关联简历",
     stage: "添加下一阶段",
     schedule: "添加安排",
     record: "填写面试记录",
@@ -124,18 +125,21 @@ module.exports = function createCareerEditor() {
             label: value === "offer" ? "Offer" : c.stageNames[value],
           }));
         this.setData({ app, session: session || null, form, types });
-        if (app.phase === "pending" && this.data.mode === "stage") {
-          this.setData({ navigationTitle: "记录投递信息" });
-          if (!this.triggerEvent)
-            wx.setNavigationBarTitle({ title: "记录投递信息" });
+        if (this.data.mode === "resume" || (app.phase === "pending" && this.data.mode === "stage")) {
+          if (this.data.mode === "stage") {
+            this.setData({ navigationTitle: "记录投递信息" });
+            if (!this.triggerEvent) wx.setNavigationBarTitle({ title: "记录投递信息" });
+          }
           try {
             const resumes = await resumeApi.listResumes();
             this.setData({
               resumes: [{ id: "", title: "暂不关联简历" }, ...resumes],
+              form: { ...this.data.form, resumeIndex: Math.max(0, resumes.findIndex(r => r.id === app.resume_id) + 1) },
+              resumeError: "",
             });
           } catch (_) {
             this.setData({
-              resumeError: "简历列表加载失败，可暂不关联简历或重试。",
+              resumeError: "简历列表加载失败，保存投递信息将保留原关联，可重试加载。",
             });
           }
         }
@@ -148,11 +152,13 @@ module.exports = function createCareerEditor() {
     },
     async retryResumes() {
       try {
+        const resumes = await resumeApi.listResumes();
         this.setData({
           resumes: [
             { id: "", title: "暂不关联简历" },
-            ...(await resumeApi.listResumes()),
+            ...resumes,
           ],
+          form: { ...this.data.form, resumeIndex: Math.max(0, resumes.findIndex(r => r.id === this.data.app.resume_id) + 1) },
           resumeError: "",
         });
       } catch (_) {
@@ -232,6 +238,7 @@ module.exports = function createCareerEditor() {
             ? "重试保存 Offer 信息"
             : "重试添加安排"
         : {
+            resume: "保存简历关联",
             record: "保存面试记录",
             prepare: "保存准备内容",
             terminate: "确认终止本次求职",
@@ -250,8 +257,10 @@ module.exports = function createCareerEditor() {
       let { app, form, session, mode } = this.data;
       try {
         if (this.data.requireSchedule) f.timeRange(form, true);
-        if (mode === "stage") {
-          f.stagePayload(app, form, this._stageRequest, this.data.resumes);
+        if (mode === "resume") {
+          if (this.data.resumeError) throw new Error("请先重新加载简历列表。");
+        } else if (mode === "stage") {
+          f.stagePayload(app, form, this._stageRequest, this.data.resumeError ? [] : this.data.resumes);
           if (!["offer", "screening"].includes(form.stageType))
             f.timeRange(form);
           if (form.stageType === "offer") f.offerPayload(app, form);
@@ -273,11 +282,16 @@ module.exports = function createCareerEditor() {
         return;
       this.setData({ saving: true, error: "" });
       try {
-        if (mode === "stage") {
+        if (mode === "resume") {
+          await api.bindResume(app.id, {
+            resume_id: this.data.resumes[Number(form.resumeIndex)]?.id || null,
+            base_lock_version: app.lock_version,
+          });
+        } else if (mode === "stage") {
           if (!this._stageSaved) {
             this._stagePayload =
               this._stagePayload ||
-              f.stagePayload(app, form, this._stageRequest, this.data.resumes);
+              f.stagePayload(app, form, this._stageRequest, this.data.resumeError ? [] : this.data.resumes);
             this.setData({ stageLocked: true });
             const result = await api.addStage(app.id, this._stagePayload);
             app = result.application;
