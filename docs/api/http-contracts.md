@@ -85,6 +85,8 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 | `GET`    | `/api/resumes/:id/pdf?lock_version=...` | 是 | 当前 Web 快照的 PDF；版本不一致返回 `409 RESUME_PDF_SNAPSHOT_STALE` |
 | `DELETE` | `/api/resumes/:id`          | 是   | `{deleted}`                                                      |
 
+两个模板读取接口返回的 `layout_plan` 由后端从模板的 `data_json`、`style_json` 编译；内容相同的模板复用同一份进程内缓存，管理员改写模板后缓存随内容变化自动失效。缓存只影响请求耗时，不改变响应结构、字段含义、排序和错误语义。
+
 所有新简历都从当前启用的非空白模板创建；历史 `blank-cn` 已由 `0042` 从产品目录退役，`0047` 仅在仍有历史引用时恢复为 `is_active=0` 的不可选身份。普通创建先把名称去首尾空白、折叠连续空白，再按 Unicode `casefold` 比较同一用户已有名称；重复返回 `409 RESUME_TITLE_CONFLICT`，名称为空或超过 255 字符返回 `400 INVALID_RESUME_TITLE`，缺模板返回 `400 TEMPLATE_REQUIRED`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`。历史简历和版本在 `0047` 后模板外键非空，可继续读取、编辑或切换到启用模板，但不能用 tombstone 新建或切换；历史重名不回填也不阻止保持原名。
 
 模板切换使用独立原子接口，不通过普通 `PUT` 猜测模板身份。旧调用方可只发送模板 ID 和锁版本；Web 同时发送当前 `title/data`，服务端验证简历归属、目标模板启用状态、完整快照和内容 ID 到目标插槽的唯一组合计划后，在同一条件更新中保存最新标题与正文、替换目标模板 `style`、写入 `template_id` 并递增 `lock_version`。目标模板只提供呈现，不能用自己的示例正文覆盖用户数据。过期基准返回 `409 RESUME_EDIT_CONFLICT`，标题冲突返回 `409 RESUME_TITLE_CONFLICT`，模板不存在、停用或结构无效返回 `422 TEMPLATE_INACTIVE`，内容无法完整且唯一地映射到目标模板时返回 `422 TEMPLATE_COMPOSITION_INVALID`；任一失败都不产生“内容已保存但模板未切换”或相反的半状态。

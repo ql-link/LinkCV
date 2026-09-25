@@ -6,16 +6,16 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from linkresume.application.resumes.service import (
-    parse_decimal_id,
-    parse_persisted_template_snapshot,
-)
+from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.identity.dependencies import get_current_admin
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import ResumeTemplate
+from linkresume.modules.resumes.template_compilation import (
+    compiled_template_layout_plan,
+    validated_template_snapshot,
+)
 from linkresume.modules.resumes.template_packages import (
     TEMPLATE_PACKAGE_MAX_BYTES,
     parse_template_package,
@@ -85,10 +85,7 @@ class AdminTemplateClassificationRequest(BaseModel):
 
 def admin_template_record(template: ResumeTemplate) -> AdminTemplateRecord:
     try:
-        snapshot = parse_persisted_template_snapshot(
-            template.data_json,
-            template.style_json,
-        )
+        snapshot = validated_template_snapshot(template.data_json, template.style_json)
     except (TypeError, ValueError):
         return AdminTemplateRecord(
             id=str(template.id),
@@ -119,9 +116,10 @@ def admin_template_record(template: ResumeTemplate) -> AdminTemplateRecord:
         sort_order=template.sort_order,
         data=snapshot.data.model_dump(mode="json"),
         style=snapshot.style.model_dump(mode="json"),
-        layout_plan=compile_layout_plan(snapshot.data, snapshot.style).model_dump(
-            mode="json"
-        ),
+        layout_plan=compiled_template_layout_plan(
+            template.data_json,
+            template.style_json,
+        ).model_dump(mode="json"),
         active=bool(template.is_active),
         valid=True,
         validation_error=None,
@@ -200,7 +198,7 @@ def update_admin_template_status(
         raise ApiError(404, "TEMPLATE_NOT_FOUND")
     if payload.active:
         try:
-            parse_persisted_template_snapshot(
+            validated_template_snapshot(
                 template.data_json,
                 template.style_json,
             )
