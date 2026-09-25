@@ -503,6 +503,40 @@ def test_agent_task_completion_requires_a_proposal_from_the_same_run() -> None:
         assert completed.json()["tasks"][0]["proposal_ids"] == [proposal.json()["proposal"]["id"]]
 
 
+def test_agent_proposal_cannot_be_attributed_to_two_tasks() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-proposal-double-attribution@example.test")
+        resume = create_resume(client, app)
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id, message_content="修改简历两处")
+        authorize_run_resume(app, run_id, resume)
+        base = f"/internal/agent/runs/{run_id}/tasks"
+        refs = [{"type": "resume", "id": resume["id"]}]
+        assert client.post(f"{base}:plan", headers=internal_headers(), json={"tasks": [
+            {"id": "first", "workflow": "resume_edit", "output": "proposal",
+             "label": "第一处", "context_refs": refs},
+            {"id": "second", "workflow": "resume_edit", "output": "proposal",
+             "label": "第二处", "context_refs": refs},
+        ]}).status_code == 200
+        assert client.post(f"{base}/first:status", headers=internal_headers(), json={"status": "running"}).status_code == 200
+        proposal = client.post(f"/internal/agent/runs/{run_id}/proposals", headers=internal_headers(), json={
+            "call_key": "double-attribution", "resume_id": resume["id"],
+            "data": resume["data"], "style": resume["style"], "summary": "待确认修改",
+        })
+        assert proposal.status_code == 201
+        proposal_id = proposal.json()["proposal"]["id"]
+        assert client.post(f"{base}/first:status", headers=internal_headers(), json={
+            "status": "completed", "proposal_ids": [proposal_id],
+        }).status_code == 200
+        assert client.post(f"{base}/second:status", headers=internal_headers(), json={"status": "running"}).status_code == 200
+        duplicate = client.post(f"{base}/second:status", headers=internal_headers(), json={
+            "status": "completed", "proposal_ids": [proposal_id],
+        })
+        assert duplicate.status_code == 409
+        assert duplicate.json() == {"error": "AGENT_TASK_RESULT_INVALID"}
+
+
 def test_next_agent_run_receives_bounded_previous_task_results() -> None:
     app = build_app()
     with TestClient(app) as client:
@@ -2088,6 +2122,122 @@ def test_empty_replacement_deletes_standalone_paragraph_without_http_500() -> No
         blocks = confirmed.json()["resume"]["data"]["sections"][0]["entries"][0]["blocks"]
         assert all(block["node_id"] != paragraph["node_id"] for block in blocks)
         assert blocks[0] == entry["blocks"][0]
+
+
+def test_canonical_proposals_preserve_marks_and_support_clear_and_insert() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-canonical-edit@example.test")
+        resume = create_resume(client, app)
+        markdown = "\n\n".join([
+            "## [[linkresume-block:node_section000000001]]项目经历",
+            "### [[linkresume-block:node_entry00000000001]]示例项目",
+            "- [[linkresume-block:node_bullet0000000001]]负责平台优化，查看说明",
+        ])
+        data = editor_data(resume["data"], markdown)
+        entry = data["sections"][0]["entries"][0]
+        entry["fields"]["location"] = {
+            "node_id": "node_location000000001", "source_refs": [], "value": "临时占位",
+        }
+        item = entry["blocks"][0]["items"][0]
+        item["runs"] = [
+            {**item["runs"][0], "text": "负责平台优化", "marks": ["bold"]},
+            {**item["runs"][0], "text": "，查看说明", "href": "https://example.invalid/help"},
+        ]
+        saved = client.put(f"/api/resumes/{resume['id']}", json={
+            "data": data, "base_lock_version": resume["lock_version"],
+        })
+        assert saved.status_code == 200
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        base = f"/internal/agent/runs/{run_id}"
+
+        def locate(text: str) -> dict:
+            result = client.post(f"{base}/targets:resolve", headers=internal_headers(),
+                                 json={"resume_id": resume["id"], "quoted_text": text})
+            assert result.status_code == 200
+            assert result.json()["status"] == "resolved"
+            return result.json()["target"]
+
+        def propose(target: dict, op: str, *, new_text: str = "", key: str) -> dict:
+            body = {"call_key": key, "target": target, "summary": "按用户要求修改",
+                    "operations": [{"operation_version": 3, "op": op, "target": target,
+                                    "expected_text_hash": target["expected_text_hash"],
+                                    "new_text": new_text}]}
+            response = client.post(f"{base}/proposals:v3", headers=internal_headers(), json=body)
+            assert response.status_code == 201, response.text
+            replay = client.post(f"{base}/proposals:v3", headers=internal_headers(), json=body)
+            assert replay.status_code == 201
+            assert replay.json()["proposal"]["id"] == response.json()["proposal"]["id"]
+            return response.json()["proposal"]
+
+        target = locate("平台优化")
+        context = client.post(f"{base}/context:read", headers=internal_headers(),
+                              json={"target": target, "scope": "target"})
+        assert "replace_text_range" in context.json()["allowed_operations"]
+        crossing = locate("优化，查看")
+        rejected = client.post(f"{base}/proposals:v3", headers=internal_headers(), json={
+            "call_key": "canonical-cross-style", "target": crossing, "summary": "跨样式替换",
+            "operations": [{"operation_version": 3, "op": "replace_text_range", "target": crossing,
+                            "expected_text_hash": crossing["expected_text_hash"], "new_text": "改写"}],
+        })
+        assert rejected.status_code == 422
+        assert rejected.json() == {"error": "PATCH_OUT_OF_SCOPE"}
+        marker = client.post(f"{base}/proposals:v3", headers=internal_headers(), json={
+            "call_key": "canonical-marker", "target": target, "summary": "非法节点标记",
+            "operations": [{"operation_version": 3, "op": "replace_text_range", "target": target,
+                            "expected_text_hash": target["expected_text_hash"],
+                            "new_text": "[[linkresume-block:node_abcdefghijklmnop]]"}],
+        })
+        assert marker.status_code == 422
+        other_target = locate("临时占位")
+        mismatched = client.post(f"{base}/proposals:v3", headers=internal_headers(), json={
+            "call_key": "canonical-mismatched-target", "target": target, "summary": "越过声明的目标",
+            "operations": [{"operation_version": 3, "op": "clear_field", "target": other_target,
+                            "expected_text_hash": other_target["expected_text_hash"]}],
+        })
+        assert mismatched.status_code == 422
+        assert mismatched.json() == {"error": "PATCH_OUT_OF_SCOPE"}
+        changed = propose(target, "replace_text_range", new_text="系统优化", key="canonical-replace")
+        duplicate_key = client.post(f"{base}/proposals:v3", headers=internal_headers(), json={
+            "call_key": "canonical-replace", "target": target, "summary": "不同内容",
+            "operations": [{"operation_version": 3, "op": "replace_text_range", "target": target,
+                            "expected_text_hash": target["expected_text_hash"], "new_text": "其他写法"}],
+        })
+        assert duplicate_key.status_code == 409
+        assert duplicate_key.json() == {"error": "AGENT_PROPOSAL_KEY_CONFLICT"}
+        stale = propose(target, "replace_text_range", new_text="其他写法", key="canonical-stale")
+        assert changed["preview"]["changes"][0]["before"] == "平台优化"
+        confirmed = client.post(f"/api/agent/proposals/{changed['id']}/confirm")
+        assert confirmed.status_code == 200, confirmed.text
+        runs = confirmed.json()["resume"]["data"]["sections"][0]["entries"][0]["blocks"][0]["items"][0]["runs"]
+        assert "".join(run["text"] for run in runs) == "负责系统优化，查看说明"
+        assert runs[-1]["href"] == "https://example.invalid/help"
+        assert runs[-1]["text"] == "，查看说明"
+        assert all(run["marks"] == ["bold"] for run in runs[:-1])
+        conflict = client.post(f"/api/agent/proposals/{stale['id']}/confirm")
+        assert conflict.status_code == 409
+        assert conflict.json() == {"error": "TARGET_STALE"}
+
+        field = locate("临时占位")
+        cleared = propose(field, "clear_field", key="canonical-clear")
+        cleared_response = client.post(f"/api/agent/proposals/{cleared['id']}/confirm")
+        assert cleared_response.status_code == 200, cleared_response.text
+        assert cleared_response.json()["resume"]["data"]["sections"][0]["entries"][0]["fields"]["location"] is None
+
+        entry_target = locate("示例项目")
+        inserted = propose(entry_target, "insert_bullet", new_text="交付虚构的性能报告", key="canonical-insert")
+        applied = client.post(f"/api/agent/proposals/{inserted['id']}/confirm")
+        assert applied.status_code == 200, applied.text
+        items = applied.json()["resume"]["data"]["sections"][0]["entries"][0]["blocks"][0]["items"]
+        assert items[-1]["runs"][0]["text"] == "交付虚构的性能报告"
+        assert items[0]["runs"] == runs
+        delete_target = locate("交付虚构的性能报告")
+        deleted = propose(delete_target, "delete_node", key="canonical-delete")
+        removed = client.post(f"/api/agent/proposals/{deleted['id']}/confirm")
+        assert removed.status_code == 200, removed.text
+        remaining = removed.json()["resume"]["data"]["sections"][0]["entries"][0]["blocks"][0]["items"]
+        assert remaining == [items[0]]
 
 
 def test_compound_cleanup_proposals_delete_nodes_and_rebase_disjoint_targets() -> None:

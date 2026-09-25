@@ -31,6 +31,7 @@ TOOL_STAGES = {
     "create_resume_change_proposal": "proposal_creation",
     "create_resume_proposal": "proposal_creation",
     "execute_local_resume_edit_plan": "proposal_creation",
+    "execute_resume_edit_plan": "proposal_creation",
     "create_resume_translation_proposal": "proposal_creation",
     "request_user_input": "model_execution",
     "plan_agent_request": "model_execution",

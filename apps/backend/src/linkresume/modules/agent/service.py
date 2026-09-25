@@ -45,6 +45,8 @@ from linkresume.modules.agent.schemas import (
     AgentTaskStatusRequest,
     ProposalRecord,
     ProposalOperation,
+    CanonicalProposalOperation,
+    ProposalV3CreateRequest,
     ResumeTargetLocator,
     TranslationProposalCreateRequest,
 )
@@ -57,6 +59,7 @@ from linkresume.modules.agent.resume_tools import (
     validate_source_ids,
     verify_diagnosis_fingerprint,
 )
+from linkresume.modules.agent.canonical_edit import apply_canonical_operations
 from linkresume.modules.agent.trace import (
     SAFE_CODE, TOOL_STAGES, event_key, operation_for_run, record_event,
 )
@@ -934,6 +937,60 @@ def create_scoped_proposal(
     return proposal
 
 
+def create_canonical_proposal(
+    db: Session, *, run: AgentRun, session: AgentSession,
+    payload: ProposalV3CreateRequest, ttl_days: int,
+) -> ResumeChangeProposal:
+    resume = _owned_resume_for_target(
+        db, user_id=session.user_id, resume_id=payload.target.resume_id, lock=True,
+    )
+    existing = db.scalar(select(ResumeChangeProposal).where(
+        ResumeChangeProposal.run_id == run.id,
+        ResumeChangeProposal.call_key == payload.call_key,
+    ))
+    operation_data = [item.model_dump(mode="json") for item in payload.operations]
+    if existing is not None:
+        if (
+            existing.resume_id != resume.id
+            or existing.target_locator_json != payload.target.model_dump(mode="json")
+            or existing.operations_json != operation_data
+            or [ref["source_id"] for ref in existing.source_refs_json or []] != payload.source_ids
+        ):
+            raise ApiError(409, "AGENT_PROPOSAL_KEY_CONFLICT")
+        return existing
+    if payload.target.base_lock_version != resume.lock_version:
+        raise ApiError(409, "TARGET_STALE")
+    if any(item.target != payload.target for item in payload.operations):
+        raise ApiError(422, "PATCH_OUT_OF_SCOPE")
+    snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
+    target_content(resume, snapshot.data, payload.target, "target")
+    for operation in payload.operations:
+        target_content(resume, snapshot.data, operation.target, "target")
+    proposed_data, changes = apply_canonical_operations(snapshot.data, payload.operations)
+    parse_persisted_resume_snapshot(proposed_data, snapshot.style)
+    sources = validate_source_ids(
+        db, user_id=session.user_id, source_ids=payload.source_ids,
+    )
+    proposal = ResumeChangeProposal(
+        public_id=str(uuid4()), run_id=run.id, call_key=payload.call_key,
+        resume_id=resume.id, user_id=session.user_id,
+        base_lock_version=resume.lock_version,
+        proposed_data_json=None, proposed_style_json=None,
+        preview_json={"changes": changes}, summary=payload.summary.strip(),
+        proposal_mode="polish_local",
+        target_locator_json=payload.target.model_dump(mode="json"),
+        target_content_hash=payload.target.expected_text_hash,
+        diagnosis_json=None, operations_json=operation_data,
+        rationale_json=[], source_refs_json=sources,
+        status="pending", expires_at=utc_now() + timedelta(days=ttl_days),
+    )
+    supersede_revision_source(db, run, proposal)
+    db.add(proposal)
+    db.commit()
+    db.refresh(proposal)
+    return proposal
+
+
 def create_translation_proposal(
     db: Session,
     *,
@@ -1162,29 +1219,38 @@ def confirm_proposal(
             rebased_target = ResumeTargetLocator.model_validate(
                 rebased_target_payload
             )
-            rebased_operations: list[ProposalOperation] = []
+            canonical = all(item.get("operation_version") == 3 for item in proposal.operations_json or [])
+            rebased_operations: list[ProposalOperation | CanonicalProposalOperation] = []
             for stored_operation in proposal.operations_json or []:
                 operation_payload = deepcopy(stored_operation)
                 target_payload = deepcopy(operation_payload["target"])
                 target_payload["base_lock_version"] = resume.lock_version
                 operation_payload["target"] = target_payload
                 rebased_operations.append(
-                    ProposalOperation.model_validate(operation_payload)
+                    (CanonicalProposalOperation if canonical else ProposalOperation).model_validate(
+                        operation_payload
+                    )
                 )
             target_content(resume, current.data, rebased_target, "target")
-            markdown = editor_markdown(current.data)
-            if markdown is None:
-                raise ApiError(422, "TARGET_INVALID")
-            updated_markdown = apply_operations(
-                markdown,
-                mode=proposal.proposal_mode,
-                main_target=rebased_target,
-                operations=rebased_operations,
-            )
-            snapshot = parse_persisted_resume_snapshot(
-                replace_editor_markdown(current.data, updated_markdown),
-                current.style,
-            )
+            if canonical:
+                for operation in rebased_operations:
+                    target_content(resume, current.data, operation.target, "target")
+                updated_data, _ = apply_canonical_operations(current.data, rebased_operations)
+                snapshot = parse_persisted_resume_snapshot(updated_data, current.style)
+            else:
+                markdown = editor_markdown(current.data)
+                if markdown is None:
+                    raise ApiError(422, "TARGET_INVALID")
+                updated_markdown = apply_operations(
+                    markdown,
+                    mode=proposal.proposal_mode,
+                    main_target=rebased_target,
+                    operations=rebased_operations,
+                )
+                snapshot = parse_persisted_resume_snapshot(
+                    replace_editor_markdown(current.data, updated_markdown),
+                    current.style,
+                )
         except (ApiError, KeyError, TypeError, ValueError):
             proposal.status = "conflicted"
             trace_confirmation("failed", "TARGET_STALE")
@@ -1475,6 +1541,13 @@ def update_task_status(
         raise ApiError(409, "AGENT_TASK_STATUS_CONFLICT")
     if len(payload.proposal_ids) != len(set(payload.proposal_ids)):
         raise ApiError(422, "AGENT_TASK_RESULT_INVALID")
+    other_proposal_ids = {
+        proposal_id
+        for item in tasks if item["id"] != task_id
+        for proposal_id in item.get("proposal_ids", [])
+    }
+    if other_proposal_ids.intersection(payload.proposal_ids):
+        raise ApiError(409, "AGENT_TASK_RESULT_INVALID")
     if task["output"] != "proposal" and payload.proposal_ids:
         raise ApiError(422, "AGENT_TASK_RESULT_INVALID")
     if payload.status == "partial" and task["output"] == "proposal" and not payload.proposal_ids:

@@ -71,6 +71,10 @@ export function createLinkResumeClient(config, runId, signal) {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+    canonicalProposal: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/proposals:v3`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
     translationProposal: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/proposals:translation`, {
       method: "POST",
       body: JSON.stringify(payload),

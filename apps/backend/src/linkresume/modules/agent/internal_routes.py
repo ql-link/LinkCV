@@ -6,6 +6,7 @@ from linkresume.application.resumes.service import parse_persisted_resume_snapsh
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.modules.agent.context_service import list_contexts
+from linkresume.modules.agent.canonical_edit import allowed_canonical_operations
 from linkresume.modules.agent.schemas import (
     AgentReadinessResponse,
     AgentTaskPlanRequest,
@@ -20,6 +21,7 @@ from linkresume.modules.agent.schemas import (
     ProposalCreateRequest,
     ProposalResponse,
     ProposalV2CreateRequest,
+    ProposalV3CreateRequest,
     ResumeContextResponse,
     ResumeReferenceResolveRequest,
     ResumeReferenceResolveResponse,
@@ -44,6 +46,7 @@ from linkresume.modules.agent.security import require_pi_service
 from linkresume.modules.agent.service import (
     create_proposal,
     create_scoped_proposal,
+    create_canonical_proposal,
     create_translation_proposal,
     authorize_resolved_task_resume,
     get_task_materials,
@@ -246,6 +249,7 @@ def read_scoped_run_context(
         target=payload.target,
         scope=payload.scope,
         content=content,
+        allowed_operations=allowed_canonical_operations(snapshot.data, payload.target),
         blocks=scoped_blocks(resume, snapshot.data, payload.target, payload.scope),
         data=snapshot.data if payload.scope == "resume" else None,
         style=snapshot.style,
@@ -365,6 +369,27 @@ def create_scoped_run_proposal(
         payload=payload,
         ttl_days=request.app.state.settings.agent_proposal_ttl_days,
         fingerprint_secret=_fingerprint_secret(request),
+    )
+    return ProposalResponse(proposal=proposal_record(proposal, run.public_id))
+
+
+@router.post(
+    "/runs/{run_id}/proposals:v3", response_model=ProposalResponse, status_code=201
+)
+def create_canonical_run_proposal(
+    run_id: str,
+    payload: ProposalV3CreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> ProposalResponse:
+    run, session = get_active_run(db, run_id)
+    require_task_resource(
+        db, run=run, resource_type="resume", resource_id=payload.target.resume_id,
+    )
+    require_task_sources(db, run=run, source_ids=payload.source_ids)
+    proposal = create_canonical_proposal(
+        db, run=run, session=session, payload=payload,
+        ttl_days=request.app.state.settings.agent_proposal_ttl_days,
     )
     return ProposalResponse(proposal=proposal_record(proposal, run.public_id))
 

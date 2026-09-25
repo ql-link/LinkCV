@@ -51,19 +51,25 @@ function proposalChanges(
   currentStyle?: CanonicalResumePresentation,
 ) {
   if (proposal.preview?.changes.length) {
-    return proposal.preview.changes.map((change, index) => ({ label: `修改内容 ${index + 1}`, before: change.before, after: change.after }));
+    return proposal.preview.changes.map((change, index) => ({
+      label: change.op === "clear_field" ? `清空字段 ${index + 1}` : `修改内容 ${index + 1}`,
+      before: change.before,
+      after: change.after || (change.op === "clear_field" ? "已清空" : change.op === "delete_node" ? "已删除" : ""),
+    }));
   }
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
-      label: operation.op === "insert_after_target"
+      label: ["insert_after_target", "insert_bullet"].includes(operation.op)
         ? `新增内容 ${index + 1}`
-        : operation.op === "delete_target"
+        : operation.op === "clear_field"
+          ? `清空字段 ${index + 1}`
+          : ["delete_target", "delete_node"].includes(operation.op)
           ? `删除内容 ${index + 1}`
           : `修改内容 ${index + 1}`,
       before: typeof operation.target.selected_text === "string"
         ? operation.target.selected_text
         : "当前定位内容",
-      after: operation.op === "delete_target" ? "删除该条目" : operation.new_text,
+      after: operation.op === "clear_field" ? "已清空" : operation.op === "delete_node" ? "已删除" : operation.op === "delete_target" ? "删除该条目" : operation.new_text,
     }));
   }
   if (!currentData || !currentStyle || !proposal.data || !proposal.style) return [];

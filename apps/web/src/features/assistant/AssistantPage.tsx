@@ -636,13 +636,16 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
         </div>
         <div className="assistant-proposal-detail">
           {(selected ? [selected] : []).map((proposal) => {
-            const changes = proposal.preview?.changes ?? (proposal.operations?.length
+            const changes = proposal.preview?.changes.map((change) => ({
+              ...change,
+              after: change.after || (change.op === "clear_field" ? "已清空" : change.op === "delete_node" ? "已删除" : ""),
+            })) ?? (proposal.operations?.length
               ? proposal.operations.map((operation) => ({
                 before: typeof operation.target.selected_text === "string"
                   ? operation.target.selected_text
                   : "当前定位内容",
-                after: operation.op === "delete_target"
-                  ? "删除该条目"
+                after: operation.op === "clear_field" ? "已清空" : operation.op === "delete_node"
+                  ? "已删除" : operation.op === "delete_target" ? "删除该条目"
                   : operation.new_text,
               }))
               : [{ before: "当前简历内容", after: "候选简历内容" }]);

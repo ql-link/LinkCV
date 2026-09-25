@@ -3,30 +3,211 @@ import test from "node:test";
 
 import {
   agentUsage,
+  assertEditPlanFitsTask,
   assertAgentCompleted,
   buildAgentConversation,
+  canRecoverCompletedResumeEdit,
   createAssistantOutputFilter,
   createResumeContextPolicy,
+  createCanonicalEditPlanExecutor,
   createSerialExecutor,
   createSkillReadTool,
   enableToolOnce,
   explicitNumberedGoalCount,
+  explicitEditGoalCount,
+  editOperationFromTaskLabel,
   isExplicitResumeReference,
   clarificationFallbackText,
   executeLocalResumeEditPlan,
+  executeCanonicalResumeEditPlan,
   formatContextCatalog,
   formatContextMaterials,
+  fillExplicitInsertAnchor,
   materializeProposalOperations,
   prepareLocalResumeEditPlanArguments,
   proposalCallKey,
   retryIdempotentProposal,
   translationCallKey,
+  verifiedResumeEditSummary,
+  verifiedResumeTaskResult,
   SYSTEM_PROMPT,
   USER_FACING_RESPONSE_PROMPT,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
 
 const codedTestError = (code) => Object.assign(new Error(code), { code });
+
+test("canonical edit plan shares single and batch execution and retains partial proposals", async () => {
+  const calls = [];
+  const proposals = [];
+  const target = (id) => ({ resume_id: "7", block_id: id, expected_text_hash: `sha256:${"a".repeat(64)}` });
+  const client = {
+    resolveTarget: async ({ quoted_text }) => ({ status: "resolved", target: target(quoted_text) }),
+    scopedContext: async ({ target: current }) => ({
+      allowed_operations: current.block_id === "missing" ? [] : ["delete_node", "insert_bullet"],
+    }),
+    canonicalProposal: async (payload) => {
+      calls.push(payload);
+      return { proposal: { id: `proposal-${payload.target.block_id}` } };
+    },
+  };
+  const result = await executeCanonicalResumeEditPlan({
+    client, resumeId: "7",
+    tasks: [
+      { quoted_text: "first", op: "delete_node", summary: "删除第一处" },
+      { quoted_text: "missing", op: "delete_node", summary: "删除第二处" },
+      { quoted_text: "entry", op: "insert_bullet", new_text: "新增内容", summary: "新增 bullet" },
+    ],
+    onProposal: (item) => proposals.push(item.id),
+  });
+  assert.deepEqual(result.map((item) => item.status), ["succeeded", "failed", "succeeded"]);
+  assert.deepEqual(proposals, ["proposal-first", "proposal-entry"]);
+  assert.deepEqual(result[0].proposal_ids, ["proposal-first"]);
+  assert.deepEqual(result[1].proposal_ids, []);
+  assert.equal(result[1].error_code, "PATCH_OUT_OF_SCOPE");
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].operations[0].operation_version, 3);
+  assert.equal(calls[2], undefined);
+});
+
+test("canonical plan retries only failed edits and retains earlier proposal IDs", async () => {
+  const proposals = [];
+  const calls = [];
+  const target = (id) => ({ resume_id: "7", block_id: id, expected_text_hash: `sha256:${"b".repeat(64)}` });
+  const client = {
+    resolveTarget: async ({ quoted_text }) => ({ status: "resolved", target: target(quoted_text) }),
+    scopedContext: async ({ target: current }) => ({
+      allowed_operations: current.block_id === "full bullet" ? []
+        : ["clear_field", "replace_text_range", "insert_bullet"],
+    }),
+    canonicalProposal: async (payload) => {
+      calls.push(payload.operations[0].op);
+      return { proposal: { id: `proposal-${payload.operations[0].op}` } };
+    },
+  };
+  const execute = createCanonicalEditPlanExecutor({
+    client, resumeId: "7", onProposal: (proposal) => proposals.push(proposal.id),
+  });
+  const clear = { quoted_text: "asd", op: "clear_field", summary: "清空字段" };
+  const replace = { quoted_text: "full bullet", op: "replace_text_range", new_text: "系统优化", summary: "替换短语" };
+  const insert = { quoted_text: "项目", op: "insert_bullet", new_text: "新增测试内容", summary: "新增 bullet" };
+  const first = await execute([clear, replace, insert]);
+  assert.deepEqual(first.tasks.map((item) => item.status), ["succeeded", "failed", "succeeded"]);
+  assert.match(first.tasks[1].hint, /quoted_text/);
+  assert.equal(first.created_proposal_count, 2);
+  const second = await execute([{ ...replace, quoted_text: "平台优化" }]);
+  assert.deepEqual(second.tasks.map((item) => item.status), ["succeeded", "succeeded", "succeeded"]);
+  assert.deepEqual(second.tasks.map((item) => item.proposal_ids[0]), [
+    "proposal-clear_field", "proposal-replace_text_range", "proposal-insert_bullet",
+  ]);
+  assert.deepEqual(calls, ["clear_field", "insert_bullet", "replace_text_range"]);
+  assert.equal(second.created_proposal_count, 3);
+  assert.equal(proposals.length, 3);
+  assert.deepEqual((await execute([clear, { ...replace, quoted_text: "平台优化" }, insert])).tasks,
+    second.tasks);
+  assert.equal(proposals.length, 3);
+});
+
+test("retrying a partially completed edit retains its earlier proposal", async () => {
+  const target = (id) => ({ resume_id: "7", block_id: id, expected_text_hash: `sha256:${"c".repeat(64)}` });
+  let secondFailed = false;
+  const client = {
+    resolveTarget: async () => ({ status: "resolved", target: target("parent") }),
+    scopedContext: async ({ target: current }) => current.block_id === "parent"
+      ? { blocks: [
+        { content: "重复占位", target: target("first") },
+        { content: "重复占位", target: target("second") },
+      ] }
+      : { allowed_operations: ["delete_node"] },
+    canonicalProposal: async ({ target: current }) => {
+      if (current.block_id === "second" && !secondFailed) {
+        secondFailed = true;
+        throw Object.assign(codedTestError("TARGET_STALE"), { status: 409 });
+      }
+      return { proposal: { id: `proposal-${current.block_id}` } };
+    },
+  };
+  const execute = createCanonicalEditPlanExecutor({ client, resumeId: "7" });
+  const task = {
+    quoted_text: "重复占位", parent_quoted_text: "项目", match: "all",
+    op: "delete_node", summary: "删除重复占位",
+  };
+  const first = await execute([task]);
+  assert.deepEqual(first.tasks[0].proposal_ids, ["proposal-first"]);
+  assert.equal(first.tasks[0].status, "partial");
+  const second = await execute([task]);
+  assert.deepEqual(second.tasks[0].proposal_ids, ["proposal-first", "proposal-second"]);
+  assert.equal(second.tasks[0].status, "succeeded");
+  assert.equal(second.created_proposal_count, 2);
+});
+
+test("verified fallback states partial edits truthfully and refuses unfinished tasks", () => {
+  const task = (status, proposal_ids = []) => ({ workflow: "resume_edit", status, proposal_ids });
+  assert.match(verifiedResumeEditSummary([task("partial", ["one"]), task("failed")]), /1 份待确认提案/);
+  assert.match(verifiedResumeEditSummary([task("failed")]), /没有生成待确认提案/);
+  assert.equal(verifiedResumeEditSummary([task("running")]), null);
+  assert.equal(verifiedResumeEditSummary([{ workflow: "interview_guide", status: "completed" }]), null);
+  assert.equal(verifiedResumeTaskResult({ tasks: [{ status: "succeeded" }] }, ["p1"]),
+    "已生成 1 份待确认提案，简历尚未修改。");
+  assert.equal(verifiedResumeTaskResult({ tasks: [{ status: "failed" }] }, []),
+    "已生成 0 份待确认提案，简历尚未修改。1 项修改未完成。");
+});
+
+test("numbered edit requests and split task labels preserve each edit boundary", () => {
+  assert.equal(explicitEditGoalCount("一、清空字段；二、替换短语；三、新增 bullet"), 3);
+  assert.equal(editOperationFromTaskLabel("清空教育经历学位字段"), "clear_field");
+  assert.equal(editOperationFromTaskLabel("将平台优化改为系统优化"), "replace_text_range");
+  assert.equal(editOperationFromTaskLabel("在项目下新增 bullet"), "insert_bullet");
+  assert.equal(editOperationFromTaskLabel("删除旧 bullet"), "delete_node");
+  assert.equal(editOperationFromTaskLabel("清空并新增内容"), null);
+  const planned = [
+    { workflow: "resume_edit", label: "清空教育经历学位字段" },
+    { workflow: "resume_edit", label: "新增项目 bullet" },
+  ];
+  assert.throws(() => assertEditPlanFitsTask(planned, planned[0], [
+    { op: "clear_field" }, { op: "insert_bullet" },
+  ]), /AGENT_EDIT_TASK_SCOPE/);
+  assert.throws(() => assertEditPlanFitsTask(planned, planned[0], [
+    { op: "insert_bullet" },
+  ]), /AGENT_EDIT_TASK_SCOPE/);
+  assert.doesNotThrow(() => assertEditPlanFitsTask(planned, planned[0], [{ op: "clear_field" }]));
+});
+
+test("missing insert anchor is filled only from one explicit user-named entry", () => {
+  const task = { op: "insert_bullet", summary: "在示例项目经历下新增 bullet" };
+  assert.equal(fillExplicitInsertAnchor(task,
+    "一、清空 asd；二、替换短语；三、在示例项目经历下新增 bullet").quoted_text,
+  "示例项目");
+  assert.equal(fillExplicitInsertAnchor({ ...task, parent_quoted_text: "示例项目" },
+    "在示例项目经历下新增 bullet").quoted_text, "示例项目");
+  assert.deepEqual(fillExplicitInsertAnchor(task, "在另一段经历下新增 bullet"), task);
+  assert.deepEqual(fillExplicitInsertAnchor({ op: "insert_bullet", summary: "新增两处" },
+    "在示例项目经历下新增；在测试项目经历下新增"),
+  { op: "insert_bullet", summary: "新增两处" });
+  assert.deepEqual(fillExplicitInsertAnchor({ ...task, quoted_text: "保留内容" },
+    "在示例项目经历下新增 bullet"), { ...task, quoted_text: "保留内容" });
+});
+
+test("provider failure recovers only a fully verified final resume edit task", () => {
+  const activeTask = { id: "last", workflow: "resume_edit", status: "running" };
+  const first = { id: "first", workflow: "resume_edit", status: "completed" };
+  const basis = {
+    error: new Error("AGENT_MODEL_REQUEST_FAILED"), signal: { aborted: false },
+    taskPlan: [first, activeTask], activeTask, activeWorkflowRead: true,
+    planResult: { tasks: [{ status: "succeeded", proposal_ids: ["p2"] }], created_proposal_count: 1 },
+    proposalIds: ["p2"], content: "请完成两项简历编辑",
+  };
+  assert.equal(canRecoverCompletedResumeEdit(basis), true);
+  assert.equal(canRecoverCompletedResumeEdit({ ...basis, signal: { aborted: true } }), false);
+  assert.equal(canRecoverCompletedResumeEdit({ ...basis, proposalIds: [] }), false);
+  assert.equal(canRecoverCompletedResumeEdit({ ...basis, taskPlan: [{ ...first, status: "planned" }, activeTask] }), false);
+  assert.equal(canRecoverCompletedResumeEdit({ ...basis, planResult: {
+    tasks: [{ status: "failed", proposal_ids: [] }], created_proposal_count: 0,
+  } }), false);
+  assert.equal(canRecoverCompletedResumeEdit({ ...basis, error: new Error("AGENT_ABORTED") }), false);
+  assert.equal(canRecoverCompletedResumeEdit({ ...basis, taskPlan: [activeTask],
+    content: "一、清空；二、替换；三、新增" }), false);
+});
 
 test("selected resume identity wins over duplicate title search and model supplied IDs", async () => {
   const calls = [];

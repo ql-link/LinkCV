@@ -21,5 +21,5 @@ metadata:
 
 - 不润色、压缩、扩写、STAR 重写或新增事实。
 - 不改变职责级别，不把参与升级为主导。
-- 不调用普通 `create_resume_change_proposal`。
+- 不调用局部编辑工具 `execute_resume_edit_plan`。
 - 不声称已经创建新简历；只有用户确认提案后 FastAPI 才会创建。

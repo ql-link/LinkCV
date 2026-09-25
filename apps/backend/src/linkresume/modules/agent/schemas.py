@@ -427,6 +427,7 @@ class ToolEventRequest(BaseModel):
         "analyze_resume_content",
         "create_resume_change_proposal",
         "execute_local_resume_edit_plan",
+        "execute_resume_edit_plan",
         "create_resume_translation_proposal",
         "request_user_input",
         "plan_agent_request",
@@ -598,6 +599,7 @@ class ScopedResumeContextResponse(BaseModel):
     target: ResumeTargetLocator
     scope: Literal["target", "entry", "section", "resume"]
     content: str
+    allowed_operations: list[str] = Field(default_factory=list)
     blocks: list[dict[str, Any]] = Field(default_factory=list)
     data: ResumeDocument | None = None
     style: ResumePresentation
@@ -670,6 +672,34 @@ class ProposalV2CreateRequest(BaseModel):
     rationale: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     source_ids: list[str] = Field(default_factory=list, max_length=20)
     summary: str = Field(min_length=1, max_length=4_000)
+
+
+class CanonicalProposalOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_version: Literal[3] = 3
+    op: Literal["clear_field", "replace_text_range", "delete_node", "insert_bullet"]
+    target: ResumeTargetLocator
+    expected_text_hash: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    new_text: str = Field(default="", max_length=20_000)
+
+    @model_validator(mode="after")
+    def validate_content(self) -> "CanonicalProposalOperation":
+        if self.op in {"clear_field", "delete_node"} and self.new_text:
+            raise ValueError("deletion operations cannot contain replacement text")
+        if self.op == "insert_bullet" and not self.new_text.strip():
+            raise ValueError("insert_bullet requires nonempty text")
+        return self
+
+
+class ProposalV3CreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    call_key: str = Field(min_length=1, max_length=128)
+    target: ResumeTargetLocator
+    operations: list[CanonicalProposalOperation] = Field(min_length=1, max_length=1)
+    summary: str = Field(min_length=1, max_length=4_000)
+    source_ids: list[str] = Field(default_factory=list, max_length=20)
 
 
 class TranslationProposalCreateRequest(BaseModel):

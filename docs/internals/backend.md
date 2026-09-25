@@ -4,6 +4,8 @@
 
 迁移 `0081` 在 `0080` 之后新增经典商务与活力，默认启用模板达到 85 套；无 schema 变化，不覆盖旧模板、简历或版本。`0080` 的卡片虚线、卡片分栏与 `0081` 两套模板均复用 `0079` 已验证的虚构产品经理样本，只新增独立呈现快照。重复执行保留启停状态，同 key 数据或定义冲突拒绝覆盖。发布先提供 Featured 主题的 Web/PDF 渲染器，再升级目录；需撤回时停用新增目录，历史简历快照保留。
 
+新简历编辑提案使用版本化 canonical 操作并沿用现有 `resume_change_proposals` 表，不增加迁移。`modules/agent/canonical_edit.py` 在服务端定位字段、段落和列表项并保留未修改的富文本 run；`service.py` 创建待确认提案，在确认事务内按最新目标内容重放。旧操作按原路径确认，Pi 新工具逐项执行并把部分成功的提案 ID 保存在任务结果中。
+
 ## 功能与架构导航
 
 本页维护 FastAPI/Worker 运行结构、事务、迁移、外部集成和后端通用约定。用户能力与业务规则分别见[账号](../features/identity-account.md)、[简历](../features/resume-workbench.md)、[求职中心](../features/career-center.md)、[AI 助手](../features/ai-assistant.md)和[资料集](../features/datasets.md)；独立运行子系统见[小程序适配](miniprogram.md)、[Agent/LLM](agent-runtime.md)、[可观测性](observability.md)和[插件制品](plugin-delivery.md)。具体 URL、schema 和稳定错误仍以 [HTTP 接口契约](../api/http-contracts.md) 为准。

@@ -370,7 +370,8 @@ export type AgentProposal = {
   target?: Record<string, unknown> | null;
   diagnosis?: Record<string, unknown> | null;
   operations?: Array<{
-    op: "replace_target_text" | "insert_after_target" | "delete_target";
+    op: "replace_target_text" | "insert_after_target" | "delete_target" | "clear_field" | "replace_text_range" | "delete_node" | "insert_bullet";
+    operation_version?: 3;
     target: Record<string, unknown>;
     new_text: string;
     expected_text_hash: string;
