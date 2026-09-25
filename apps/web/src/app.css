@@ -2768,6 +2768,9 @@ select:not([data-slot]):focus-visible,
   position: absolute;
   inset: 0;
   background: var(--ui-surface);
+  /* 卡片缩略图是整份 A4 简历按真实尺寸排好版再缩小的，一屏几十张时排版成本很高。
+     跳过视口外卡片的渲染与排版；盒子尺寸由外层 aspect-ratio 决定，滚动高度不受影响。 */
+  content-visibility: auto;
 }
 
 .resume-readonly-preview-card .resume-preview-paper {
