@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -52,11 +53,11 @@ class WebAssetDeliveryTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("must be an HTTPS URL", result.stderr)
 
-    def test_publish_uploads_immutable_assets_then_verifies_oss(self) -> None:
+    def test_publish_uploads_missing_assets_then_verifies_oss(self) -> None:
         result, ossutil_log = self._run_publish(cors=True)
         self.assertEqual(0, result.returncode, result.stderr)
         invocation = ossutil_log.read_text(encoding="utf-8")
-        self.assertIn("cp -r", invocation)
+        self.assertEqual(3, invocation.count("cp "))
         self.assertIn("oss://linkresume-static-test/LinkResume/assets/", invocation)
         self.assertIn("oss://linkresume-static-test/LinkResume/favicon.png", invocation)
         self.assertIn("--acl default", invocation)
@@ -68,7 +69,7 @@ class WebAssetDeliveryTest(unittest.TestCase):
         self.assertNotIn(" rm ", f" {invocation} ")
         self.assertNotIn("--delete", invocation)
         self.assertIn(
-            '--header "Origin: https://linkresume.cn"',
+            'curl_args+=(--header "Origin: ${origin}")',
             PUBLISH_SCRIPT.read_text(encoding="utf-8"),
         )
         self.assertNotIn(
@@ -76,6 +77,47 @@ class WebAssetDeliveryTest(unittest.TestCase):
             PUBLISH_SCRIPT.read_text(encoding="utf-8"),
         )
         self.assertIn("production favicon", result.stdout)
+
+    def test_publish_skips_existing_assets_and_unchanged_favicon(self) -> None:
+        result, ossutil_log = self._run_publish(cors=True, existing_assets=True)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse(ossutil_log.exists())
+        self.assertIn("skipped 2 existing assets", result.stdout)
+        self.assertIn("favicon is unchanged", result.stdout)
+
+    def test_publish_updates_only_changed_favicon(self) -> None:
+        result, ossutil_log = self._run_publish(
+            cors=True, existing_assets=True, existing_favicon=b"old-png"
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        invocation = ossutil_log.read_text(encoding="utf-8")
+        self.assertEqual(1, invocation.count("cp "))
+        self.assertIn("/favicon.png", invocation)
+        self.assertNotIn("/assets/", invocation)
+
+    def test_publish_uploads_only_missing_asset(self) -> None:
+        result, ossutil_log = self._run_publish(
+            cors=True, existing_assets=True, missing_asset="index-abc123.css"
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        invocation = ossutil_log.read_text(encoding="utf-8")
+        self.assertEqual(1, invocation.count("cp "))
+        self.assertIn("index-abc123.css", invocation)
+        self.assertNotIn("favicon.png", invocation)
+
+    def test_publish_fails_closed_on_asset_lookup_error(self) -> None:
+        result, ossutil_log = self._run_publish(cors=True, asset_status=403)
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("did not return HTTP 200", result.stderr)
+        self.assertFalse(ossutil_log.exists())
+
+    def test_publish_fails_closed_on_favicon_lookup_error(self) -> None:
+        result, ossutil_log = self._run_publish(
+            cors=True, existing_assets=True, favicon_status=403
+        )
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("favicon lookup failed", result.stderr)
+        self.assertFalse(ossutil_log.exists())
 
     def test_publish_rejects_javascript_without_cors_header(self) -> None:
         result, _ = self._run_publish(cors=False)
@@ -107,6 +149,11 @@ class WebAssetDeliveryTest(unittest.TestCase):
         *,
         cors: bool,
         public_url: str = "https://linkresume-static-test.oss-cn-test.aliyuncs.com/LinkResume/",
+        existing_assets: bool = False,
+        existing_favicon: bytes | None = None,
+        missing_asset: str | None = None,
+        asset_status: int | None = None,
+        favicon_status: int | None = None,
     ) -> tuple[subprocess.CompletedProcess[str], Path]:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
@@ -121,18 +168,61 @@ class WebAssetDeliveryTest(unittest.TestCase):
         favicon_path.write_bytes(b"fake-png")
 
         ossutil_log = root / "ossutil.log"
+        remote = root / "remote"
+        remote_assets = remote / "LinkResume/assets"
+        remote_assets.mkdir(parents=True)
+        if existing_assets:
+            for asset in asset_dir.iterdir():
+                if asset.name != missing_asset:
+                    shutil.copyfile(asset, remote_assets / asset.name)
+            (remote / "LinkResume/favicon.png").write_bytes(
+                existing_favicon if existing_favicon is not None else b"fake-png"
+            )
         self._write_executable(
             fake_bin / "ossutil",
-            '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >>"${FAKE_OSSUTIL_LOG}"\n',
+            """#!/usr/bin/env python3
+import os, pathlib, shutil, sys
+args = sys.argv[1:]
+assert args[0] == 'cp', args
+source, destination = args[1:3]
+assert destination.startswith('oss://linkresume-static-test/'), destination
+target = pathlib.Path(os.environ['FAKE_REMOTE']) / destination.split('/', 3)[3]
+target.parent.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(source, target)
+with open(os.environ['FAKE_OSSUTIL_LOG'], 'a', encoding='utf-8') as log:
+    log.write(' '.join(args) + '\\n')
+""",
         )
-        cors_header = "Access-Control-Allow-Origin: https://linkresume.cn\\r\\n" if cors else ""
         self._write_executable(
             fake_bin / "curl",
-            "#!/usr/bin/env bash\n"
-            "printf 'HTTP/2 200\\r\\n'\n"
-            "printf 'Content-Type: image/png\\r\\n'\n"
-            "printf 'Cache-Control: public,max-age=31536000,immutable\\r\\n'\n"
-            f"printf '{cors_header}'\n",
+            """#!/usr/bin/env python3
+import os, pathlib, sys, urllib.parse
+args = sys.argv[1:]
+url = args[-1]
+path = pathlib.Path(os.environ['FAKE_REMOTE']) / urllib.parse.unquote(
+    urllib.parse.urlsplit(url).path.lstrip('/'))
+is_asset = '/assets/' in url
+status_key = 'FAKE_ASSET_STATUS' if is_asset else 'FAKE_FAVICON_STATUS'
+status = int(os.environ.get(status_key, '0'))
+if not status:
+    status = 200 if path.is_file() else 404
+if '--head' in args:
+    headers = f'HTTP/2 {status}\\r\\n'
+    if status == 200:
+        if is_asset:
+            headers += 'Cache-Control: public,max-age=31536000,immutable\\r\\n'
+            if os.environ['FAKE_CORS'] == '1':
+                headers += 'Access-Control-Allow-Origin: https://linkresume.cn\\r\\n'
+        else:
+            headers += 'Content-Type: image/png\\r\\n'
+            headers += 'Cache-Control: public,max-age=3600\\r\\n'
+    sys.stdout.write(headers)
+    sys.stdout.write('\\n' + str(status))
+else:
+    output = args[args.index('--output') + 1]
+    pathlib.Path(output).write_bytes(path.read_bytes() if status == 200 else b'')
+    sys.stdout.write(str(status))
+""",
         )
 
         environment = os.environ.copy()
@@ -140,6 +230,8 @@ class WebAssetDeliveryTest(unittest.TestCase):
             {
                 "PATH": f"{fake_bin}:{environment['PATH']}",
                 "FAKE_OSSUTIL_LOG": str(ossutil_log),
+                "FAKE_REMOTE": str(remote),
+                "FAKE_CORS": "1" if cors else "0",
                 "WEB_ASSET_OSS_URL": public_url,
                 "WEB_ASSET_OSS_BUCKET": "linkresume-static-test",
                 "WEB_ASSET_OSS_PREFIX": "LinkResume",
@@ -148,6 +240,10 @@ class WebAssetDeliveryTest(unittest.TestCase):
                 "OSS_REGION": "cn-test",
             }
         )
+        if asset_status is not None:
+            environment["FAKE_ASSET_STATUS"] = str(asset_status)
+        if favicon_status is not None:
+            environment["FAKE_FAVICON_STATUS"] = str(favicon_status)
         result = subprocess.run(
             ["bash", str(PUBLISH_SCRIPT), str(asset_dir), str(favicon_path)],
             cwd=REPO_ROOT,

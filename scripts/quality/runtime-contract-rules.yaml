@@ -14,8 +14,8 @@ contracts:
         pattern: 'oss_secret_env="\$\{deploy_dir\}/\.env\.oss-cdn\.local"[\s\S]*WEB_ASSET_OSS_PREFIX[\s\S]*--build-arg "VITE_ASSET_BASE_URL=\$\{web_asset_oss_url\}"[\s\S]*publish-web-assets-to-oss\.sh[\s\S]*python /app/scripts/db/init_mysql\.py'
         message: Production 必须使用独立凭据文件并在数据库与应用切换前发布静态资源
       - path: deploy/scripts/publish-web-assets-to-oss.sh
-        pattern: 'ossutil cp -r[\s\S]*--acl default[\s\S]*max-age=31536000,immutable[\s\S]*access-control-allow-origin'
-        message: 静态资源必须只上传指定前缀、长期缓存并验证跨域模块加载头
+        pattern: 'fetch_headers "\$\{asset_url\}" "https://linkresume\.cn"[\s\S]*response_status.*404[\s\S]*ossutil cp "\$\{asset_path\}"[\s\S]*--acl default[\s\S]*max-age=31536000,immutable[\s\S]*access-control-allow-origin'
+        message: 哈希资源必须仅在 OSS 缺失时上传，并验证长期缓存与跨域模块加载头
       - path: .env.production
         pattern: '(?m)^WEB_ASSET_OSS_URL=https://qingluo-public\.oss-cn-shanghai\.aliyuncs\.com/LinkResume/$[\s\S]*^WEB_ASSET_OSS_PREFIX=LinkResume$'
         message: Production 必须固定与 Bucket、Region 和前缀一致的 OSS HTTPS 地址

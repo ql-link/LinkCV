@@ -8,7 +8,7 @@ fi
 
 asset_dir="$1"
 favicon_path="$2"
-required_commands=(curl find ossutil python3)
+required_commands=(cmp curl find mktemp ossutil python3)
 for required_command in "${required_commands[@]}"; do
   if ! command -v "${required_command}" >/dev/null 2>&1; then
     echo "Missing required command: ${required_command}" >&2
@@ -65,73 +65,99 @@ if [[ ! "${asset_count}" =~ ^[1-9][0-9]*$ ]]; then
   exit 8
 fi
 
+fetch_headers() {
+  local url="$1" origin="${2:-}"
+  local curl_args=(--silent --show-error --location --head --retry 2 --connect-timeout 5 --max-time 20)
+  if [[ -n "${origin}" ]]; then
+    curl_args+=(--header "Origin: ${origin}")
+  fi
+  local response
+  response="$(curl "${curl_args[@]}" --write-out $'\n%{http_code}' "${url}")" || return 1
+  response_status="${response##*$'\n'}"
+  response_headers="${response%$'\n'*}"
+}
+
 destination="oss://${WEB_ASSET_OSS_BUCKET}/${WEB_ASSET_OSS_PREFIX}/assets/"
-echo "Uploading ${asset_count} immutable Web assets to ${destination}"
-ossutil cp -r "${asset_dir}/" "${destination}" \
-  --force \
-  --acl default \
-  --cache-control "public,max-age=31536000,immutable"
-
-favicon_destination="oss://${WEB_ASSET_OSS_BUCKET}/${WEB_ASSET_OSS_PREFIX}/favicon.png"
-echo "Uploading production favicon to ${favicon_destination}"
-ossutil cp "${favicon_path}" "${favicon_destination}" \
-  --force \
-  --acl default \
-  --cache-control "public,max-age=3600"
-
-verify_asset() {
-  local local_path="$1"
-  local relative_path encoded_path asset_url headers
-  relative_path="${local_path#${asset_dir}/}"
+uploaded_count=0
+skipped_count=0
+while IFS= read -r -d '' asset_path; do
+  relative_path="${asset_path#${asset_dir}/}"
+  if [[ ! "${relative_path}" =~ (^|/)[^/]+-[A-Za-z0-9_-]{6,}\.[^/]+$ ]]; then
+    echo "Web asset does not have an immutable hashed filename: ${relative_path}" >&2
+    exit 9
+  fi
   encoded_path="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe="/._~-"))' "${relative_path}")"
   asset_url="${WEB_ASSET_OSS_URL}assets/${encoded_path}"
-  headers="$(curl \
-    --fail \
-    --silent \
-    --show-error \
-    --location \
-    --head \
-    --header "Origin: https://linkresume.cn" \
-    --retry 2 \
-    --connect-timeout 5 \
-    --max-time 20 \
-    "${asset_url}")"
-  if ! grep -Eiq '^cache-control:.*max-age=31536000.*immutable' <<<"${headers}"; then
+  fetch_headers "${asset_url}" "https://linkresume.cn"
+  if [[ "${response_status}" == 404 ]]; then
+    ossutil cp "${asset_path}" "${destination}${relative_path}" \
+      --force \
+      --acl default \
+      --cache-control "public,max-age=31536000,immutable"
+    uploaded_count=$((uploaded_count + 1))
+    fetch_headers "${asset_url}" "https://linkresume.cn"
+  else
+    skipped_count=$((skipped_count + 1))
+  fi
+  if [[ "${response_status}" != 200 ]]; then
+    echo "OSS asset did not return HTTP 200: ${asset_url} (${response_status})" >&2
+    exit 9
+  fi
+  if ! grep -Eiq '^cache-control:.*max-age=31536000.*immutable' <<<"${response_headers}"; then
     echo "OSS asset is missing immutable cache headers: ${asset_url}" >&2
-    return 1
+    exit 9
   fi
   if [[ "${relative_path}" == *.js \
     || "${relative_path}" == *.woff \
     || "${relative_path}" == *.woff2 \
     || "${relative_path}" == *.ttf \
     || "${relative_path}" == *.otf ]] && \
-    ! grep -Eiq '^access-control-allow-origin:[[:space:]]*(\*|https://linkresume\.cn)[[:space:]]*$' <<<"${headers}"; then
+    ! grep -Eiq '^access-control-allow-origin:[[:space:]]*(\*|https://linkresume\.cn)[[:space:]]*$' <<<"${response_headers}"; then
     echo "OSS module or font asset does not allow the https://linkresume.cn origin: ${asset_url}" >&2
-    return 1
+    exit 9
   fi
-}
-
-while IFS= read -r -d '' asset_path; do
-  verify_asset "${asset_path}"
 done < <(find "${asset_dir}" -type f -print0)
+echo "Published ${uploaded_count} new Web assets; skipped ${skipped_count} existing assets"
 
+favicon_destination="oss://${WEB_ASSET_OSS_BUCKET}/${WEB_ASSET_OSS_PREFIX}/favicon.png"
 favicon_url="${WEB_ASSET_OSS_URL}favicon.png"
-favicon_headers="$(curl \
-  --fail \
+remote_favicon="$(mktemp)"
+trap 'rm -f "${remote_favicon}"' EXIT
+favicon_status="$(curl \
   --silent \
   --show-error \
   --location \
-  --head \
+  --output "${remote_favicon}" \
+  --write-out '%{http_code}' \
   --retry 2 \
   --connect-timeout 5 \
   --max-time 20 \
   "${favicon_url}")"
-if ! grep -Eiq '^HTTP/[0-9.]+[[:space:]]+2[0-9][0-9]([[:space:]]|$)' <<<"${favicon_headers}"; then
-  echo "Production favicon is not publicly available: ${favicon_url}" >&2
+if [[ "${favicon_status}" == 404 ]] || \
+  { [[ "${favicon_status}" == 200 ]] && ! cmp -s "${favicon_path}" "${remote_favicon}"; }; then
+  echo "Uploading new or changed production favicon to ${favicon_destination}"
+  ossutil cp "${favicon_path}" "${favicon_destination}" \
+    --force \
+    --acl default \
+    --cache-control "public,max-age=3600"
+else
+  if [[ "${favicon_status}" != 200 ]]; then
+    echo "Production favicon lookup failed: ${favicon_url} (${favicon_status})" >&2
+    exit 9
+  fi
+  echo "Production favicon is unchanged; skipping upload"
+fi
+fetch_headers "${favicon_url}"
+if [[ "${response_status}" != 200 ]]; then
+  echo "Production favicon is not publicly available: ${favicon_url} (${response_status})" >&2
   exit 9
 fi
-if ! grep -Eiq '^content-type:[[:space:]]*image/png([;[:space:]]|$)' <<<"${favicon_headers}"; then
+if ! grep -Eiq '^content-type:[[:space:]]*image/png([;[:space:]]|$)' <<<"${response_headers}"; then
   echo "Production favicon does not return image/png: ${favicon_url}" >&2
+  exit 9
+fi
+if ! grep -Eiq '^cache-control:.*max-age=3600' <<<"${response_headers}"; then
+  echo "Production favicon is missing short cache headers: ${favicon_url}" >&2
   exit 9
 fi
 
