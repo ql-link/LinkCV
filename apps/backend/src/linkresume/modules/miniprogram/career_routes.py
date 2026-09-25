@@ -1,4 +1,5 @@
 from __future__ import annotations
+from linkresume.application.interviews.resume_binding_service import current_resume_title, get_linked_resume
 
 from datetime import UTC, date, datetime, timedelta
 from typing import Literal
@@ -28,12 +29,14 @@ from linkresume.application.interviews.service import (
     require_owned_session,
     add_application_stage,
     list_application_stages,
+    application_logo_url,
     create_session,
     update_session,
     reschedule_session,
     cancel_interview,
     terminate_application,
     record_offer,
+    update_application,
     InvalidInterviewRequest,
     InterviewResumeVersionRequired,
 )
@@ -44,7 +47,6 @@ from linkresume.modules.identity.dependencies import get_current_miniprogram_use
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import InterviewSession, JobApplication
 from linkresume.core.storage import AssetStorage, get_storage
-from linkresume.modules.resumes.models import Resume, ResumeVersion
 from linkresume.modules.miniprogram.pdf_service import (
     ResumePdfRenderer,
     ResumePreviewRenderer,
@@ -67,6 +69,8 @@ from linkresume.modules.interviews.schemas import (
     InterviewSessionSummary,
     JobApplicationListResponse,
     JobApplicationRecord,
+    JobApplicationUpdateRequest,
+    ResumeAssociationUpdateRequest,
     JobApplicationResponse,
     JobApplicationSummary,
     OverviewMetrics,
@@ -100,6 +104,8 @@ def _application_record(
     current = next((stage for stage in stages if stage.current_marker == 1), None)
     return JobApplicationRecord.model_validate(application).model_copy(
         update={
+            "resume_title_snapshot": current_resume_title(db, application),
+            "company_logo_url": application_logo_url(application),
             "current_stage": ApplicationStageRecord.model_validate(current)
             if current
             else None,
@@ -151,6 +157,7 @@ def _session_summary(item: SessionWithApplication) -> InterviewSessionSummary:
         **InterviewSessionRecord.model_validate(item.session).model_dump(),
         company_name=item.application.company_name_snapshot,
         job_title=item.application.job_title_snapshot,
+        company_logo_url=application_logo_url(item.application),
         calendar_color=item.application.calendar_color,
         application_stage_state=item.application.stage_state,
     )
@@ -361,6 +368,24 @@ def get_career_application(
     return JobApplicationResponse(application=_application_record(db, application))
 
 
+@router.put("/applications/{application_id}/resume", response_model=JobApplicationResponse)
+def update_career_resume(
+    application_id: str,
+    payload: ResumeAssociationUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_miniprogram_user),
+) -> JobApplicationResponse:
+    try:
+        application = update_application(
+            db, user.id, _database_id(application_id),
+            JobApplicationUpdateRequest.model_validate(payload.model_dump()),
+        )
+    except Exception as error:
+        _raise_service_error(error)
+        raise
+    return JobApplicationResponse(application=_application_record(db, application))
+
+
 @router.post(
     "/applications/{application_id}/stages", response_model=JobApplicationResponse
 )
@@ -521,39 +546,16 @@ def preview_application_resume(
     except Exception as error:
         _raise_service_error(error)
         raise
-    # Only the immutable version actually attached to this owned application is readable.
-    # Never accept a caller-provided version or substitute today's latest resume.
-    row = (
-        db.execute(
-            select(Resume, ResumeVersion)
-            .join(ResumeVersion, ResumeVersion.resume_id == Resume.id)
-            .where(
-                Resume.user_id == user.id,
-                ResumeVersion.id == application.resume_version_id,
-            )
-        ).first()
-        if application.resume_version_id
-        else None
-    )
-    if row is None:
-        raise ApiError(409, "RESUME_VERSION_UNAVAILABLE")
-    resume, version = row
-    preview = preview_renderer.render(
-        _render_pdf(
-            resume,
-            version.data_json,
-            version.style_json,
-            user,
-            storage,
-            pdf_renderer,
-        )
-    )
+    resume = get_linked_resume(db, application)
+    if resume is None:
+        raise ApiError(409, "APPLICATION_RESUME_UNAVAILABLE")
+    preview = preview_renderer.render(_render_pdf(resume, resume, user, storage, pdf_renderer))
     return Response(
         content=preview,
         media_type="image/png",
         headers={
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
-            "X-LinkResume-Preview-Version-Id": str(version.id),
+            "X-LinkResume-Lock-Version": str(resume.lock_version),
         },
     )
