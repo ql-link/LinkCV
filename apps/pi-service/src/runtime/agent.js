@@ -386,34 +386,90 @@ export function buildAgentConversation({
 
 const SKILLS_ROOT = fileURLToPath(new URL("../../resources/skills/", import.meta.url));
 
-const PI_PROVIDER_BY_ADAPTER = {
-  openai: "openai",
-  anthropic: "anthropic",
-  deepseek: "deepseek",
-  openrouter: "openrouter",
-  gemini: "google",
-  xai: "xai",
-  groq: "groq",
-  mistral: "mistral",
-};
+// Pi builds one provider per gateway provider id, so a run never depends on
+// the vendored static catalog for models the gateway introduced.
+const PI_PROVIDER_PREFIX = "linkresume-p";
+const DEFINITION_PRICE_FIELDS = [
+  "input_price_per_million",
+  "output_price_per_million",
+  "cache_read_price_per_million",
+  "cache_write_price_per_million",
+];
+const SUPPORTED_MODALITIES = new Set(["text", "image"]);
 
-async function configuredModel(modelConfig) {
-  const provider = PI_PROVIDER_BY_ADAPTER[modelConfig.adapter];
-  if (!provider) throw new Error("AGENT_MODEL_UNSUPPORTED");
+export function providerIdFor(providerId) {
+  return `${PI_PROVIDER_PREFIX}${providerId}`;
+}
+
+export function isModelDefinition(value) {
+  if (!value || typeof value !== "object") return false;
+  if (typeof value.model_id !== "string" || value.model_id.length === 0) return false;
+  if (typeof value.display_name !== "string") return false;
+  if (typeof value.reasoning !== "boolean") return false;
+  if (!Array.isArray(value.input_modalities)) return false;
+  for (const field of ["context_window", "max_output"]) {
+    const size = value[field];
+    if (typeof size !== "number" || !Number.isFinite(size) || size <= 0) return false;
+  }
+  return DEFINITION_PRICE_FIELDS.every(
+    (field) =>
+      value[field] === null ||
+      (typeof value[field] === "number" && Number.isFinite(value[field])),
+  );
+}
+
+function buildModel(definition, providerId, api, baseUrl) {
+  return {
+    id: definition.model_id,
+    name: definition.display_name || definition.model_id,
+    api,
+    provider: providerId,
+    baseUrl,
+    reasoning: definition.reasoning,
+    input: definition.input_modalities.filter((modality) =>
+      SUPPORTED_MODALITIES.has(modality),
+    ),
+    cost: {
+      input: definition.input_price_per_million ?? 0,
+      output: definition.output_price_per_million ?? 0,
+      cacheRead: definition.cache_read_price_per_million ?? 0,
+      cacheWrite: definition.cache_write_price_per_million ?? 0,
+    },
+    contextWindow: definition.context_window,
+    maxTokens: definition.max_output,
+  };
+}
+
+export async function configuredModel(modelConfig) {
+  const definition = modelConfig?.definition;
+  if (
+    !modelConfig ||
+    typeof modelConfig.api !== "string" ||
+    typeof modelConfig.baseUrl !== "string" ||
+    !modelConfig.baseUrl ||
+    !isModelDefinition(definition)
+  ) {
+    throw new Error("AGENT_MODEL_UNSUPPORTED");
+  }
+  const providerId = providerIdFor(modelConfig.providerId);
   const modelRuntime = await ModelRuntime.create({
     modelsPath: null,
     allowModelNetwork: false,
     refreshOnCreate: false,
   });
   if (modelConfig.apiKey) {
-    await modelRuntime.setRuntimeApiKey(provider, modelConfig.apiKey);
+    await modelRuntime.setRuntimeApiKey(providerId, modelConfig.apiKey);
   }
-  const baseModel = modelRuntime.getModel(provider, modelConfig.name);
-  if (!baseModel) throw new Error("AGENT_MODEL_UNSUPPORTED");
-  return {
-    modelRuntime,
-    model: modelConfig.baseUrl ? { ...baseModel, baseUrl: modelConfig.baseUrl } : baseModel,
-  };
+  modelRuntime.registerProvider(providerId, {
+    api: modelConfig.api,
+    baseUrl: modelConfig.baseUrl,
+    models: [
+      buildModel(definition, providerId, modelConfig.api, modelConfig.baseUrl),
+    ],
+  });
+  const model = modelRuntime.getModel(providerId, definition.model_id);
+  if (!model) throw new Error("AGENT_MODEL_UNSUPPORTED");
+  return { modelRuntime, model };
 }
 
 export function createSkillReadTool(
@@ -624,10 +680,11 @@ export async function executeAgentRun({
   const client = createLinkResumeClient(config, runId, signal);
   const runtimeConfig = await client.runtimeConfig();
   const { modelRuntime, model } = await configuredModel({
-    adapter: runtimeConfig.provider === "google" ? "gemini" : runtimeConfig.provider,
-    name: runtimeConfig.model,
+    providerId: runtimeConfig.provider_id,
+    api: runtimeConfig.api,
     apiKey: runtimeConfig.api_key,
     baseUrl: runtimeConfig.api_base,
+    definition: runtimeConfig.definition,
   });
 
   let routerLoaded = false;

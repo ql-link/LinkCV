@@ -8,7 +8,7 @@ from linkresume.integrations.document_converter import DocumentConverter
 from linkresume.integrations.linkparse_client import LinkParseClient
 from linkresume.integrations.resume_structuring import LLMResumeStructuringClient
 from linkresume.modules.llm.crypto import CredentialCipher
-from linkresume.modules.llm.gateway import LiteLLMGateway
+from linkresume.modules.llm.gateway import OpenAIChatGateway
 from linkresume.modules.llm.service import LLMService
 from linkresume.modules.observability.logging import configure_logging
 from linkresume.services.resume_import_service import ResumeImportService
@@ -25,7 +25,7 @@ async def main() -> None:
     redis = build_redis_client(settings)
     llm_service = LLMService(
         session_factory,
-        LiteLLMGateway(settings.llm_timeout_seconds),
+        OpenAIChatGateway(settings.llm_timeout_seconds),
         CredentialCipher(settings.llm_credential_encryption_keys),
     )
     linkparse_key = (

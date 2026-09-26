@@ -339,7 +339,7 @@ describe("Agent readiness API", () => {
 
 describe("Agent model API", () => {
   it("读取当前 Pi Agent 的安全模型摘要", async () => {
-    const body = { model: { adapter: "deepseek", name: "fictional-agent-model" } };
+    const body = { model: { provider: "虚构聚合网关", name: "z-ai/glm-4.6" } };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
     vi.stubGlobal("fetch", fetchMock);
 
