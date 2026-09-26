@@ -11,6 +11,8 @@ import {
   Database,
   FileText,
   FolderOpen,
+  LayoutTemplate,
+  ListChecks,
   Menu,
   MessageCircleQuestion,
   MoreHorizontal,
@@ -61,10 +63,10 @@ import {
   ApiRequestError,
   api,
 } from "../../api/client";
-import { Button, ConfirmDialog, FeedbackNotice } from "@/components/ui";
-import { assistantPath, navigateTo, rememberAssistantSession } from "../../routing";
+import { Brand, Button, ConfirmDialog, FeedbackNotice } from "@/components/ui";
+import { assistantPath, assistantWorkspacePath, navigateTo, rememberAssistantSession, type AssistantWorkspaceSection } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
-import { DatasetsPage } from "../datasets/DatasetsPage";
+import { AssistantWorkspaceModules } from "./AssistantWorkspaceModules";
 import { ResumeWorkbench } from "../workbench/ResumeWorkbench";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import "./assistant.css";
@@ -85,9 +87,27 @@ const PHASE_LABELS: Record<string, string> = {
 };
 
 const MESSAGE_FOLLOW_THRESHOLD = 96;
-const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 240;
+const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 260;
 const ASSISTANT_SIDEBAR_MIN_WIDTH = 220;
 const ASSISTANT_SIDEBAR_MAX_WIDTH = 420;
+
+function AssistantWorkspaceHomeLink() {
+  return (
+    <a
+      className="assistant-workspace-brand"
+      href="/resumes"
+      aria-label="返回工作区"
+      title="返回工作区"
+      onClick={(event) => {
+        if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        event.preventDefault();
+        navigateTo("/resumes");
+      }}
+    >
+      <Brand />
+    </a>
+  );
+}
 
 function clampAssistantSidebarWidth(width: number) {
   return Math.min(ASSISTANT_SIDEBAR_MAX_WIDTH, Math.max(ASSISTANT_SIDEBAR_MIN_WIDTH, width));
@@ -513,9 +533,11 @@ function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]
 
 type AssistantPageProps = {
   sessionId?: string;
+  workspaceSection?: AssistantWorkspaceSection;
+  careerView?: "applications" | "schedule";
 };
 
-export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
+export function AssistantPage({ sessionId, workspaceSection, careerView }: AssistantPageProps = {}) {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [conversationStates, setConversationStates] = useState<Record<string, ConversationState>>(() => ({
     [NEW_CONVERSATION_KEY]: blankConversation(),
@@ -551,7 +573,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   const [embeddedSelectionContext, setEmbeddedSelectionContext] = useState<AgentSelectionContext | null>(null);
   const [resumeOpeningId, setResumeOpeningId] = useState<string | null>(null);
   const [resumeOpenError, setResumeOpenError] = useState<string | null>(null);
-  const [datasetsOpen, setDatasetsOpen] = useState(false);
   const [pinnedSessionsExpanded, setPinnedSessionsExpanded] = useState(true);
   const [recentSessionsExpanded, setRecentSessionsExpanded] = useState(true);
   const [recallDrawerOpen, setRecallDrawerOpen] = useState(false);
@@ -1027,8 +1048,8 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   }, [conversationStates, refreshComposerView, updateConversation]);
 
   const selectSession = async (sessionIdToSelect: string) => {
-    setDatasetsOpen(false);
     if (sessionIdToSelect === activeKeyRef.current) {
+      navigateTo(assistantPath(sessionIdToSelect));
       setMobileMenuOpen(false);
       return;
     }
@@ -1073,7 +1094,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const createNewConversation = async () => {
     rememberAssistantSession(null);
-    setDatasetsOpen(false);
     if (activeKeyRef.current === NEW_CONVERSATION_KEY) {
       setMobileMenuOpen(false);
       navigateTo(assistantPath());
@@ -1095,6 +1115,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
   };
 
   useEffect(() => {
+    if (workspaceSection) return;
     const routeSessionId = sessionId ?? NEW_CONVERSATION_KEY;
     if (routeSessionId === activeKeyRef.current) return;
     if (routeSessionId === NEW_CONVERSATION_KEY) {
@@ -1102,7 +1123,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       return;
     }
     void selectSession(routeSessionId);
-  }, [sessionId]);
+  }, [sessionId, workspaceSection]);
 
   const loadContexts = async (type: AgentContextType, search = contextSearch) => {
     setContextType(type);
@@ -1914,7 +1935,17 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
 
   const sidebar = (
     <aside className="assistant-sidebar" aria-label="对话列表">
-      <div className="assistant-sidebar-title-row">
+      <div className="assistant-sidebar-brand-row">
+        <AssistantWorkspaceHomeLink />
+        <button
+          type="button"
+          className="assistant-sidebar-visibility-toggle"
+          aria-label="收起会话侧栏"
+          aria-expanded="true"
+          onClick={() => setSidebarCollapsed(true)}
+        >
+          <PanelLeftClose size={18} aria-hidden="true" />
+        </button>
         <button type="button" className="assistant-mobile-close" aria-label="关闭会话菜单" onClick={() => setMobileMenuOpen(false)}>
           <X size={18} />
         </button>
@@ -1922,20 +1953,47 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       <button type="button" className="assistant-new-button" onClick={() => void createNewConversation()}>
         <Plus size={16} aria-hidden="true" />新建对话
       </button>
-      <nav className="assistant-sidebar-shortcuts" aria-label="助手快捷入口">
-        <button
-          type="button"
-          className={`assistant-sidebar-shortcut${datasetsOpen ? " is-active" : ""}`}
-          aria-pressed={datasetsOpen}
-          onClick={() => {
-            setDatasetsOpen((open) => !open);
-            setResumePickerOpen(false);
-            setMobileMenuOpen(false);
-          }}
-        >
-          <FolderOpen size={16} aria-hidden="true" />
-          <span>资料库</span>
-        </button>
+      <nav className="assistant-sidebar-shortcuts" aria-label="AI 工作台导航">
+        {([
+          { section: "resumes", view: undefined, label: "我的简历", icon: FileText },
+          { section: "templates", view: undefined, label: "简历模板", icon: LayoutTemplate },
+          { section: "career", view: "applications", label: "求职记录", icon: ListChecks },
+          { section: "career", view: "schedule", label: "面试排期", icon: CalendarDays },
+          { section: "datasets", view: undefined, label: "资料库", icon: FolderOpen },
+        ] as const).map(({ section, view, label, icon: Icon }) => {
+          const href = assistantWorkspacePath(section, view);
+          const active = workspaceSection === section && (section !== "career" || (careerView ?? "applications") === view);
+          return (
+            <a
+              key={href}
+              className={`assistant-sidebar-shortcut${active ? " is-active" : ""}`}
+              aria-current={active ? "page" : undefined}
+              href={href}
+              onClick={(event) => {
+                if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+                event.preventDefault();
+                void (async () => {
+                  if (embeddedResumeId) {
+                    await saveCurrentResume();
+                    if (useResumeStore.getState().saveStatus === "error") {
+                      updateConversation(activeKey, { error: "当前简历尚未保存，暂时不能切换工作台模块。请稍后重试。" });
+                      return;
+                    }
+                    setEmbeddedResumeId(null);
+                    setEmbeddedSelectionContext(null);
+                    setSidebarCollapsed(false);
+                  }
+                  setResumePickerOpen(false);
+                  setMobileMenuOpen(false);
+                  navigateTo(href);
+                })();
+              }}
+            >
+              <Icon size={16} aria-hidden="true" />
+              <span>{label}</span>
+            </a>
+          );
+        })}
       </nav>
       {(sessionsLoading || sessionsError || sessions.length === 0) && (
         <div className="assistant-sidebar-section-title">最近对话</div>
@@ -2035,7 +2093,6 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
       }
       await loadResume(resumeId);
       setEmbeddedResumeId(resumeId);
-      setDatasetsOpen(false);
       setSidebarCollapsed(true);
       setResumePickerOpen(false);
     } catch {
@@ -2051,8 +2108,24 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
     setSidebarCollapsed(false);
   };
 
+  const mobileToolbar = (
+    <header className="assistant-mobile-toolbar">
+      <button
+        type="button"
+        className="assistant-icon-button assistant-mobile-menu-button"
+        aria-label="打开会话菜单"
+        aria-expanded={mobileMenuOpen}
+        ref={mobileMenuButtonRef}
+        onClick={() => setMobileMenuOpen(true)}
+      >
+        <Menu size={20} />
+      </button>
+      <AssistantWorkspaceHomeLink />
+    </header>
+  );
+
   return (
-    <main className={`assistant-page${embeddedResumeId ? " is-resume-open" : ""}`}>
+    <main className={`assistant-page${embeddedResumeId ? " is-resume-open" : ""}${workspaceSection ? " is-module-open" : ""}`}>
       <div
         ref={assistantShellRef}
         className={`assistant-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${embeddedResumeId ? " is-resume-open" : ""}`}
@@ -2081,19 +2154,26 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
           onPointerCancel={finishSidebarResize}
           onLostPointerCapture={() => setSidebarResizing(false)}
         />}
-        <button
-          type="button"
-          className="assistant-sidebar-visibility-toggle"
-          aria-label={sidebarCollapsed ? "展开会话侧栏" : "收起会话侧栏"}
-          aria-expanded={!sidebarCollapsed}
-          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
-        </button>
+        {sidebarCollapsed && (
+          <div className="assistant-collapsed-header">
+            <button
+              type="button"
+              className="assistant-sidebar-visibility-toggle"
+              aria-label="展开会话侧栏"
+              aria-expanded="false"
+              onClick={() => setSidebarCollapsed(false)}
+            >
+              <PanelLeftOpen size={18} aria-hidden="true" />
+            </button>
+          </div>
+        )}
 
         <div className="assistant-main-area">
-        {datasetsOpen && !embeddedResumeId ? (
-          <DatasetsPage embedded />
+        {workspaceSection && !embeddedResumeId ? (
+          <div className="assistant-module-view">
+            {mobileToolbar}
+            <AssistantWorkspaceModules section={workspaceSection} careerView={careerView} />
+          </div>
         ) : (
         <section className={`assistant-conversation${isEmptyConversation ? " is-empty" : ""}`} aria-label="AI 求职助手工作区">
           <div className="assistant-workspace-actions">
@@ -2132,18 +2212,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
               )}
             </div>
           </div>
-          <header className="assistant-mobile-toolbar">
-            <button
-              type="button"
-              className="assistant-icon-button assistant-mobile-menu-button"
-              aria-label="打开会话菜单"
-              aria-expanded={mobileMenuOpen}
-              ref={mobileMenuButtonRef}
-              onClick={() => setMobileMenuOpen(true)}
-            >
-              <Menu size={20} />
-            </button>
-          </header>
+          {mobileToolbar}
 
           <button
             type="button"

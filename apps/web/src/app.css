@@ -3452,8 +3452,8 @@ select:not([data-slot]):focus-visible,
   position: relative;
   z-index: 20;
   display: grid;
-  height: 64px;
-  min-height: 64px;
+  height: 80px;
+  min-height: 80px;
   flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
@@ -3471,9 +3471,11 @@ select:not([data-slot]):focus-visible,
 }
 
 .dashboard-brand .ui-brand-wordmark {
-  width: 132px;
-  height: 28px;
+  width: 160px;
+  height: 32px;
 }
+
+.dashboard-brand .ui-brand-mark { width: 30px; height: 30px; }
 
 .dashboard-brand-link {
   display: inline-flex;
@@ -3482,7 +3484,7 @@ select:not([data-slot]):focus-visible,
   align-items: center;
   border: 0;
   background: transparent;
-  padding: 4px;
+  padding: 0;
   color: var(--ui-foreground);
   cursor: pointer;
   text-decoration: none;
@@ -3618,6 +3620,66 @@ select:not([data-slot]):focus-visible,
 .dashboard-tabs > a:hover { color: var(--ui-foreground); }
 
 .dashboard-tabs > a:active { transform: scale(0.98); }
+
+.dashboard-topbar-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+}
+
+.dashboard-ai-workspace-link {
+  position: relative;
+  display: inline-flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px;
+  color: var(--ui-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.dashboard-ai-workspace-link::after {
+  position: absolute;
+  right: 2px;
+  bottom: 3px;
+  left: 25px;
+  height: 3px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, transparent, #3b7df5 12%, #2563eb 58%, transparent);
+  content: "";
+  opacity: 0.9;
+  transform: rotate(-1deg);
+  transition: opacity var(--ui-duration-fast) var(--ui-ease-press), transform var(--ui-duration-fast) var(--ui-ease-press);
+}
+
+.dashboard-ai-workspace-link:hover,
+.dashboard-ai-workspace-link:visited {
+  color: var(--ui-foreground);
+  text-decoration: none;
+}
+
+.dashboard-ai-workspace-link:hover::after {
+  opacity: 1;
+  transform: rotate(-1deg) scaleX(1.08);
+}
+
+.dashboard-ai-workspace-link:focus-visible {
+  border-radius: var(--ui-radius-sm);
+  outline: 2px solid var(--ui-ring);
+  outline-offset: 3px;
+}
+
+.dashboard-ai-workspace-link img {
+  width: 18px;
+  height: 22px;
+  object-fit: contain;
+}
 
 .dashboard-account-badge {
   display: grid;
@@ -3833,38 +3895,7 @@ select:not([data-slot]):focus-visible,
 .dashboard-main { padding: 32px; }
 
 .template-library-body {
-  padding: 28px 32px 48px;
-}
-
-.template-library-filters {
-  display: flex;
-  min-height: 58px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 24px;
-  border-radius: var(--ui-radius-xl);
-  padding: 0;
-}
-
-.template-library-filter-summary button:focus-visible {
-  outline: 2px solid var(--ui-ring);
-  outline-offset: 2px;
-}
-
-.template-library-filter-summary {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-text-sm);
-}
-
-.template-library-filter-summary button {
-  border: 0;
-  background: transparent;
-  color: var(--ui-accent);
-  cursor: pointer;
+  padding: 8px 32px 48px;
 }
 
 .template-library-filter-empty { max-width: none; min-height: 260px; }
@@ -4845,13 +4876,14 @@ select:not([data-slot]):focus-visible,
 
   .dashboard-topbar {
     height: auto;
+    min-height: 64px;
     grid-template-columns: 1fr auto;
     gap: 4px 12px;
     padding: 10px 12px 6px;
   }
 
   .dashboard-brand-link { grid-column: 1; grid-row: 1; }
-  .dashboard-account-badge { grid-column: 2; grid-row: 1; }
+  .dashboard-topbar-actions { grid-column: 2; grid-row: 1; gap: 12px; }
   .dashboard-nav-scroll {
     width: calc(100% + 24px);
     grid-column: 1 / -1;
@@ -4909,7 +4941,7 @@ select:not([data-slot]):focus-visible,
     overflow: visible;
     white-space: normal;
   }
-  .template-library-body { padding: 22px 16px 32px; }
+  .template-library-body { padding: 12px 16px 32px; }
   .template-library-grid,
   .home-card-grid { grid-template-columns: 1fr; gap: 16px; }
   .template-preview-dialog { height: min(94vh, 900px); border-radius: 20px; }

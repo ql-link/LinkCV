@@ -6,7 +6,7 @@ export type AppRoute =
   | { kind: "admin" }
   | { kind: "adminLogin"; next: string | null }
   | { kind: "resumes" }
-  | { kind: "assistant"; sessionId?: string }
+  | { kind: "assistant"; sessionId?: string; workspaceSection?: AssistantWorkspaceSection; careerView?: "applications" | "schedule" }
   | { kind: "templates" }
   | { kind: "resumeCreate" }
   | { kind: "editor"; resumeId: string }
@@ -18,6 +18,7 @@ export type AppRoute =
   | { kind: "notFound" };
 
 export type InterviewView = "applications" | "schedule" | "records";
+export type AssistantWorkspaceSection = "resumes" | "templates" | "career" | "datasets";
 
 type NavigateOptions = {
   replace?: boolean;
@@ -71,6 +72,18 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   }
   if (normalizedPath === "/resumes") return { kind: "resumes" };
   if (normalizedPath === "/assistant") return { kind: "assistant" };
+  const assistantWorkspaceMatch = normalizedPath.match(/^\/assistant\/workspace\/(resumes|templates|career|datasets)$/);
+  if (assistantWorkspaceMatch) {
+    const workspaceSection = assistantWorkspaceMatch[1] as AssistantWorkspaceSection;
+    if (workspaceSection === "career") {
+      return {
+        kind: "assistant",
+        workspaceSection,
+        careerView: new URLSearchParams(search).get("view") === "schedule" ? "schedule" : "applications",
+      };
+    }
+    return { kind: "assistant", workspaceSection };
+  }
   if (normalizedPath === "/templates") return { kind: "templates" };
   if (normalizedPath === "/resumes/new") return { kind: "resumeCreate" };
   if (normalizedPath === "/career/jobs" || normalizedPath === "/jobs") return { kind: "interviews", view: "applications" };
@@ -180,6 +193,11 @@ export function editorPath(resumeId: string) {
 
 export function assistantPath(sessionId?: string | null) {
   return sessionId ? `/assistant/${encodeURIComponent(sessionId)}` : "/assistant";
+}
+
+export function assistantWorkspacePath(section: AssistantWorkspaceSection, careerView?: "applications" | "schedule") {
+  const path = `/assistant/workspace/${section}`;
+  return section === "career" && careerView === "schedule" ? `${path}?view=schedule` : path;
 }
 
 export function rememberAssistantSession(sessionId?: string | null) {

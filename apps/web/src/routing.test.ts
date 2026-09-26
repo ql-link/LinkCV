@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   adminLoginPath,
   assistantPath,
+  assistantWorkspacePath,
   authPath,
   datasetsPath,
   editorPath,
@@ -28,6 +29,11 @@ describe("LinkResume routes", () => {
     expect(parseAppRoute("/assistant/")).toEqual({ kind: "assistant" });
     expect(parseAppRoute("/assistant/session_123")).toEqual({ kind: "assistant", sessionId: "session_123" });
     expect(parseAppRoute("/assistant/a%20b")).toEqual({ kind: "assistant", sessionId: "a b" });
+    expect(parseAppRoute("/assistant/workspace/resumes")).toEqual({ kind: "assistant", workspaceSection: "resumes" });
+    expect(parseAppRoute("/assistant/workspace/templates")).toEqual({ kind: "assistant", workspaceSection: "templates" });
+    expect(parseAppRoute("/assistant/workspace/career")).toEqual({ kind: "assistant", workspaceSection: "career", careerView: "applications" });
+    expect(parseAppRoute("/assistant/workspace/career", "?view=schedule")).toEqual({ kind: "assistant", workspaceSection: "career", careerView: "schedule" });
+    expect(parseAppRoute("/assistant/workspace/datasets")).toEqual({ kind: "assistant", workspaceSection: "datasets" });
     expect(parseAppRoute("/templates/")).toEqual({ kind: "templates" });
     expect(parseAppRoute("/resumes/resume_123/edit")).toEqual({ kind: "editor", resumeId: "resume_123" });
     expect(parseAppRoute("/jobs")).toEqual({ kind: "interviews", view: "applications" });
@@ -78,6 +84,8 @@ describe("LinkResume routes", () => {
   it("builds assistant conversation paths with encoded session identifiers", () => {
     expect(assistantPath()).toBe("/assistant");
     expect(assistantPath("session/a b")).toBe("/assistant/session%2Fa%20b");
+    expect(assistantWorkspacePath("resumes")).toBe("/assistant/workspace/resumes");
+    expect(assistantWorkspacePath("career", "schedule")).toBe("/assistant/workspace/career?view=schedule");
   });
 
   it("remembers the last assistant conversation for workspace navigation", () => {
