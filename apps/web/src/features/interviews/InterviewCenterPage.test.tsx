@@ -601,9 +601,19 @@ describe("InterviewCenterPage API projections", () => {
     const header = heading.closest("header");
     expect(container.querySelector(".career-workspace-frame")).toContainElement(header);
     expect(header).toHaveClass("page-hero", "is-module", "career-module-header");
+    expect(heading.parentElement).toContainElement(screen.getByText("跟踪岗位投递与求职进展，统一管理每一步状态。"));
     expect(document.querySelector(".interview-module-header")).not.toBeInTheDocument();
     expect(header).toContainElement(navigation);
     expect(navigation.parentElement).toHaveClass("page-hero-module-navigation");
+  });
+
+  it("在 AI 工作台内使用独立的面试排期标题且不重复显示页头导航", () => {
+    render(<InterviewCenterPage view="schedule" moduleTitle="面试排期" />);
+
+    expect(screen.getByRole("heading", { name: "面试排期" })).toBeInTheDocument();
+    expect(screen.getByText("集中查看笔试、测评与面试安排，合理规划求职日程。"))
+      .toHaveClass("page-hero-description");
+    expect(screen.queryByRole("navigation", { name: "求职中心导航" })).not.toBeInTheDocument();
   });
 
   it("uses the shared loading component while career data is pending", () => {

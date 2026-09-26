@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useResumeStore } from "../store/resumeStore";
-import { CareerNavigation, WorkspaceLayout, WorkspaceNavigation, WorkspacePageHero } from "./WorkspaceLayout";
+import { AssistantWorkspaceLayout, CareerNavigation, WorkspaceLayout, WorkspaceNavigation, WorkspacePageHero } from "./WorkspaceLayout";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -9,10 +9,27 @@ afterEach(() => {
   window.history.replaceState(null, "", "/");
 });
 
+describe("AssistantWorkspaceLayout", () => {
+  it("使用不含普通顶部导航的独立布局显示助手内容", () => {
+    const { container } = render(
+      <AssistantWorkspaceLayout>
+        <div>当前工作台内容</div>
+      </AssistantWorkspaceLayout>,
+    );
+
+    expect(container.querySelector(".assistant-workspace-shell")).toBeInTheDocument();
+    expect(screen.getByText("当前工作台内容")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "工作区导航" })).not.toBeInTheDocument();
+    expect(container.querySelector(".dashboard-topbar")).not.toBeInTheDocument();
+
+    expect(screen.queryByRole("link", { name: "返回工作区" })).not.toBeInTheDocument();
+  });
+});
+
 describe("WorkspaceNavigation", () => {
-  it("按简历、模板、AI 助手、求职中心和资料库的顺序渲染顶部导航，并标记当前模块", () => {
+  it("按简历、模板、求职记录、面试排期和资料库的顺序渲染顶部导航，AI 工作台作为独立入口", () => {
     const onItemIntent = vi.fn();
-    render(<WorkspaceNavigation active="career" email="user@example.test" onItemIntent={onItemIntent} />);
+    const { rerender } = render(<WorkspaceNavigation active="applications" email="user@example.test" onItemIntent={onItemIntent} />);
 
     expect(screen.getByRole("navigation", { name: "工作区导航" })).toBeInTheDocument();
     const brandLink = screen.getByRole("link", { name: "LinkResume 首页" });
@@ -20,28 +37,33 @@ describe("WorkspaceNavigation", () => {
     expect(brandLink.querySelector(".ui-brand-wordmark")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "岗位库" })).not.toBeInTheDocument();
     const resumesLink = screen.getByRole("link", { name: "我的简历" });
-    const assistantLink = screen.getByRole("link", { name: "AI 助手" });
+    const aiWorkspaceLink = screen.getByRole("link", { name: "AI 工作台" });
     const templatesLink = screen.getByRole("link", { name: "简历模板" });
-    const interviewsLink = screen.getByRole("link", { name: "求职中心" });
+    const interviewsLink = screen.getByRole("link", { name: "求职记录" });
+    const scheduleLink = screen.getByRole("link", { name: "面试排期" });
     expect(interviewsLink).toHaveAttribute("aria-current", "page");
+    expect(scheduleLink).not.toHaveAttribute("aria-current");
     expect(Array.from(screen.getByRole("navigation", { name: "工作区导航" }).querySelectorAll("a")).map((link) => link.getAttribute("href"))).toEqual([
       "/resumes",
       "/templates",
-      "/assistant",
       "/career/applications",
+      "/career/schedule",
       "/datasets",
     ]);
-    expect(assistantLink.querySelector('img[src*="assistant-feather-outline"]')).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "AI 助手" })).not.toBeInTheDocument();
     expect(templatesLink).toHaveAttribute("href", "/templates");
-    expect(assistantLink).toHaveAttribute("href", "/assistant");
+    expect(aiWorkspaceLink).toHaveAttribute("href", "/assistant");
+    expect(aiWorkspaceLink.querySelector('img[src*="assistant-feather"]')).toBeInTheDocument();
+    expect(aiWorkspaceLink.querySelector("svg")).not.toBeInTheDocument();
+    expect(aiWorkspaceLink.nextElementSibling).toBe(screen.getByRole("link", { name: /打开个人资料/ }));
     expect(interviewsLink).toHaveAttribute("href", "/career/applications");
+    expect(scheduleLink).toHaveAttribute("href", "/career/schedule");
     expect(resumesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-accent)");
     expect(templatesLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-template-accent)");
-    expect(assistantLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-assistant-accent)");
-    expect(assistantLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-assistant-accent)");
     expect(interviewsLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-warning)");
     expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("radial-gradient");
     expect(interviewsLink.style.getPropertyValue("--nav-item-glow")).toContain("var(--ui-warning)");
+    expect(scheduleLink.style.getPropertyValue("--nav-item-color")).toBe("var(--ui-warning)");
     expect(screen.queryByRole("link", { name: "个人资料" })).not.toBeInTheDocument();
 
     fireEvent.mouseEnter(templatesLink);
@@ -55,14 +77,21 @@ describe("WorkspaceNavigation", () => {
     fireEvent.click(screen.getByRole("link", { name: "简历模板" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/templates");
 
-    fireEvent.click(assistantLink);
+    fireEvent.click(aiWorkspaceLink);
     expect(`${window.location.pathname}${window.location.search}`).toBe("/assistant");
 
     fireEvent.click(screen.getByRole("link", { name: "资料库" }));
     expect(`${window.location.pathname}${window.location.search}`).toBe("/datasets");
 
-    fireEvent.click(screen.getByRole("link", { name: "求职中心" }));
+    fireEvent.click(interviewsLink);
     expect(`${window.location.pathname}${window.location.search}`).toBe("/career/applications");
+
+    fireEvent.click(scheduleLink);
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/career/schedule");
+
+    rerender(<WorkspaceNavigation active="schedule" email="user@example.test" onItemIntent={onItemIntent} />);
+    expect(screen.getByRole("link", { name: "面试排期" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "求职记录" })).not.toHaveAttribute("aria-current");
 
     window.history.replaceState(null, "", "/jobs");
     const preventNativeNavigation = (event: MouseEvent) => event.preventDefault();
@@ -98,14 +127,14 @@ describe("WorkspaceNavigation", () => {
     expect(`${window.location.pathname}${window.location.search}`).toBe("/account");
   });
 
-  it("离开助手后通过顶部导航返回最近一次对话", () => {
+  it("离开助手后通过 AI 工作台入口返回最近一次对话", () => {
     window.sessionStorage.setItem("linkresume.assistant.last-session", "session/a b");
     render(<WorkspaceNavigation active="resumes" email="user@example.test" />);
 
-    const assistantLink = screen.getByRole("link", { name: "AI 助手" });
-    expect(assistantLink).toHaveAttribute("href", "/assistant/session%2Fa%20b");
+    const aiWorkspaceLink = screen.getByRole("link", { name: "AI 工作台" });
+    expect(aiWorkspaceLink).toHaveAttribute("href", "/assistant/session%2Fa%20b");
 
-    fireEvent.click(assistantLink);
+    fireEvent.click(aiWorkspaceLink);
     expect(window.location.pathname).toBe("/assistant/session%2Fa%20b");
   });
 
