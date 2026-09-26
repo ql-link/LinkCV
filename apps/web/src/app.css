@@ -5850,6 +5850,15 @@ select:not([data-slot]):focus-visible,
 
 .share-panel-empty { padding-top: 24px; }
 
+.share-panel-has-link {
+  animation: share-panel-content-in 240ms var(--ease-standard) both;
+}
+
+@keyframes share-panel-content-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .share-panel-link-section {
   display: flex;
   flex-direction: column;
@@ -6125,8 +6134,7 @@ select:not([data-slot]):focus-visible,
   gap: var(--ui-space-3, 12px);
   margin-top: auto;
   border-top: 1px solid var(--ui-border, #ded7cc);
-  padding-top: 0;
-  min-height: 37px;
+  padding-top: 16px;
 }
 
 .share-panel-primary {
@@ -6168,6 +6176,7 @@ select:not([data-slot]):focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .share-panel-select-content { animation-duration: 0.01ms; }
   .share-panel-select-trigger > svg { transition-duration: 0.01ms; }
+  .share-panel-has-link { animation: none; }
 }
 
 /* ---- 公开分享页 ---- */

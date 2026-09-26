@@ -1868,7 +1868,7 @@ select:not([data-slot]):focus-visible {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  background: color-mix(in srgb, var(--ui-surface-muted) 74%, var(--ui-background));
+  background: color-mix(in srgb, var(--ui-background) 88%, var(--ui-text-muted));
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ui-border) 70%, transparent);
   transition: padding-right var(--ui-duration-slow) var(--ui-ease-standard);
 }
