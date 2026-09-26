@@ -71,6 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.sessionStorage.clear();
 });
 
@@ -786,6 +787,34 @@ describe("AssistantPage", () => {
     expect(api.getAgentSession).toHaveBeenCalledWith("session-1");
     expect(window.location.pathname).toBe("/assistant/session-1");
     expect(screen.getAllByRole("button", { name: "添加资料" })).toHaveLength(1);
+  });
+
+  it("每条用户消息和助手回复都显示时间并复制各自正文", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const routedSession: AgentSession = {
+      ...session,
+      messages: [
+        { sequence_no: 1, role: "user", content: "请分析岗位", created_at: session.created_at },
+        { sequence_no: 2, role: "assistant", content: "**这是回答**", created_at: session.created_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [routedSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: routedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    const { container } = render(<AssistantPage sessionId="session-1" />);
+    await screen.findByText("这是回答");
+    const messages = container.querySelectorAll(".assistant-message");
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.querySelector(".message-actions time")).toHaveAttribute("datetime", session.created_at);
+    expect(messages[1]?.querySelector(".message-actions time")).toHaveAttribute("datetime", session.created_at);
+
+    await user.click(within(messages[0] as HTMLElement).getByRole("button", { name: "复制消息" }));
+    await user.click(within(messages[1] as HTMLElement).getByRole("button", { name: "复制消息" }));
+    expect(writeText).toHaveBeenNthCalledWith(1, "请分析岗位");
+    expect(writeText).toHaveBeenNthCalledWith(2, "**这是回答**");
   });
 
   it("刷新后重新连接仍在运行的对话并恢复输出", async () => {

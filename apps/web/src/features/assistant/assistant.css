@@ -182,9 +182,12 @@
   94%, 100% { stroke-dashoffset: 0; opacity: 0; }
 }
 .assistant-message-body { min-width: 0; }
-.assistant-message.is-user .assistant-message-body { max-width: min(760px, 82%); border-radius: 12px; background: #f1f2f3; padding: 10px 14px; }
+.assistant-message.is-user .assistant-message-body { max-width: min(760px, 82%); }
+.assistant-message.is-user .assistant-message-content { border-radius: 12px; background: #f1f2f3; padding: 10px 14px; }
 .assistant-message.is-user .assistant-message-content { font-size: 16px; }
 .assistant-message.is-assistant .assistant-message-body { flex: 1; padding-top: 3px; }
+.assistant-message .message-actions { margin-top: 3px; }
+.assistant-message.is-user .message-actions { margin-left: auto; }
 .assistant-message-content { color: #17191c; font-family: var(--ui-font-sans); font-size: 15px; line-height: 1.55; }
 .assistant-message-content .agent-message-content { font-size: 15px; line-height: 1.55; }
 .assistant-user-message-content { white-space: pre-wrap; overflow-wrap: anywhere; }

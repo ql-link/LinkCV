@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -293,6 +293,36 @@ const answer = 42;
     expect(await screen.findByText("突出项目中的量化成果")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "应用到简历" }));
     await waitFor(() => expect(confirm).not.toHaveBeenCalled());
+  });
+
+  it("侧栏对话的用户消息和助手回复可分别复制", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const conversation: AgentSession = {
+      ...session,
+      messages: [
+        { sequence_no: 1, role: "user", content: "检查简历", created_at: session.created_at },
+        { sequence_no: 2, role: "assistant", content: "**修改建议**", created_at: session.created_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [conversation] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: conversation });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    const { container } = render(
+      <AgentPanel resumeId="resume-1" onBeforeConfirm={vi.fn().mockResolvedValue(true)} onApplied={vi.fn()} />,
+    );
+    await user.click(screen.getByRole("button", { name: "历史对话" }));
+    await user.click(await screen.findByRole("button", { name: /简历助手/ }));
+    await screen.findByText("修改建议");
+    const messages = container.querySelectorAll(".agent-message");
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.querySelector(".message-actions time")).toHaveAttribute("datetime", session.created_at);
+    await user.click(within(messages[0] as HTMLElement).getByRole("button", { name: "复制消息" }));
+    await user.click(within(messages[1] as HTMLElement).getByRole("button", { name: "复制消息" }));
+    expect(writeText).toHaveBeenNthCalledWith(1, "检查简历");
+    expect(writeText).toHaveBeenNthCalledWith(2, "**修改建议**");
   });
 
   it("默认打开空白新对话，并且只在用户进入历史记录后加载旧会话", async () => {

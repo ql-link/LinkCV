@@ -69,6 +69,7 @@ import { useResumeStore } from "../../store/resumeStore";
 import { AssistantWorkspaceModules } from "./AssistantWorkspaceModules";
 import { ResumeWorkbench } from "../workbench/ResumeWorkbench";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
+import { MessageActions } from "../agent/MessageActions";
 import "./assistant.css";
 
 const NEW_CONVERSATION_KEY = "__assistant_new__";
@@ -2261,7 +2262,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
                   </div>
                   {message.status === "stopped" && <small className="assistant-stopped-label">已停止生成</small>}
                   {message.status === "failed" && <small className="assistant-stopped-label">生成未完成</small>}
-                  <time className="visually-hidden" dateTime={message.created_at}>{formatTime(message.created_at)}</time>
+                  <MessageActions content={messageText(message)} createdAt={message.created_at} timeLabel={formatTime(message.created_at)} />
                 </div>
               </article>
               {proposalGroupAfterMessage && proposalPanel(proposalGroupAfterMessage)}

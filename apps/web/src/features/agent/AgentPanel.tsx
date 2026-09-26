@@ -19,6 +19,7 @@ import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoading } from "@/components/ui";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 import { useResumeStore } from "../../store/resumeStore";
+import { MessageActions } from "./MessageActions";
 
 type AgentPanelProps = {
   resumeId: string;
@@ -722,7 +723,7 @@ export function AgentPanel({
               </div>
               {message.role === "user" && <AgentUserAvatar avatarUrl={userAvatarUrl} displayName={userDisplayName} />}
             </div>
-            <time dateTime={message.created_at}>{messageTime(message.created_at)}</time>
+            <MessageActions content={message.content} createdAt={message.created_at} timeLabel={messageTime(message.created_at)} />
           </article>
         ))}
         {toolStatus && <p className="agent-tool-status"><LoaderCircle aria-hidden="true" className="agent-spinner" />{toolStatus}</p>}
