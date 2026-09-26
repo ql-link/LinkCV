@@ -1,5 +1,5 @@
 <page-meta
-  page-style="overflow:hidden"
+  page-style="{{scheduleSheetOpen || sessionId ? 'overflow:hidden' : ''}}"
 />
 <view class="career-home" bindtap="closeDatePicker">
   <brand-navigation />

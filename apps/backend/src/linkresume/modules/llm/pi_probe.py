@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from linkresume.core.config import Settings
+from linkresume.modules.llm.catalog import PI_CHAT_API
 from linkresume.modules.llm.gateway import GatewayUsage
 from linkresume.modules.llm.service import RuntimeModelConfig
 
@@ -41,11 +42,12 @@ class PiProbeCoordinator:
             "runId": run_id,
             "nonce": nonce,
             "model": {
-                "adapter": config.adapter,
-                "id": str(config.id),
+                "providerId": str(config.provider_id),
                 "name": config.model_call_name,
+                "api": PI_CHAT_API,
                 "apiKey": api_key,
-                **({"baseUrl": config.api_base} if config.api_base else {}),
+                "baseUrl": config.api_base,
+                "definition": config.definition.as_payload(),
             },
         }
         try:

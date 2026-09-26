@@ -119,7 +119,7 @@ async def get_agent_model(
         model = await llm_service.agent_model_summary()
     except LLMError as error:
         raise ApiError(503, error.code) from error
-    return AgentModelResponse(model={"adapter": model.adapter, "name": model.name})
+    return AgentModelResponse(model={"provider": model.provider, "name": model.name})
 
 
 @router.get("/contexts", response_model=AgentContextListResponse)
