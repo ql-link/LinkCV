@@ -532,9 +532,6 @@ select:not([data-slot]):focus-visible,
 }
 
 .resume-preview-paper .ProseMirror { outline: none; }
-.resume-preview-paper h1,
-.resume-preview-paper h2,
-.resume-preview-paper h3 { color: var(--preview-accent); }
 
 .theme-classic-technical .resume-content {
   color: #171b24;
@@ -2316,7 +2313,7 @@ select:not([data-slot]):focus-visible,
   color: #4a4a4a;
 }
 
-.resume-preview-paper.theme-administrative-sidebar,
+.resume-paper.theme-administrative-sidebar,
 .theme-administrative-sidebar .resume-content {
   padding: 0 !important;
 }
@@ -6377,7 +6374,7 @@ select:not([data-slot]):focus-visible,
 
 @media screen {
   .share-page .share-page-paper {
-    border: 1px solid #cfd4dc;
+    outline: 1px solid #cfd4dc;
     box-shadow:
       0 2px 8px rgba(15, 18, 22, 0.08),
       0 20px 52px rgba(15, 18, 22, 0.14);

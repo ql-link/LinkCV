@@ -163,6 +163,84 @@ describe("SharePanel", () => {
     expect(await screen.findByText(/\/share\/token_new$/)).toBeInTheDocument();
   });
 
+  it("过期链接重新生成时按原有效时长计算新的到期时间", async () => {
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const expiredShare: ResumeShareState = {
+      ...shareState,
+      share_visibility: "private",
+      share_allow_download: false,
+      share_created_at: new Date(now - 8 * day).toISOString(),
+      share_expires_at: new Date(now - day).toISOString(),
+    };
+    mockedGetState.mockResolvedValue({ share: expiredShare });
+    mockedCreate.mockImplementation(async (_id, payload) => ({
+      share: {
+        ...expiredShare,
+        share_token: "token_new",
+        share_expires_at: payload?.expires_at ?? null,
+      },
+    }));
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "重新生成链接" }));
+    expect(screen.getByRole("dialog", { name: "重新生成分享链接？" }))
+      .toHaveTextContent("新链接按原有效时长重新计算到期时间");
+    fireEvent.click(screen.getByRole("button", { name: "确认重新生成" }));
+
+    await waitFor(() => expect(mockedCreate).toHaveBeenCalledOnce());
+    const [, payload] = mockedCreate.mock.calls[0];
+    expect(payload).toMatchObject({ visibility: "private", allow_download: false });
+    expect(Date.parse(payload?.expires_at ?? "")).toBeGreaterThanOrEqual(now + 7 * day);
+    expect(Date.parse(payload?.expires_at ?? "")).toBeLessThan(now + 7 * day + 1000);
+    expect(await screen.findByText(/\/share\/token_new$/)).toBeInTheDocument();
+  });
+
+  it("未过期链接重新生成时仍保留原到期时间", async () => {
+    const futureExpiry = "2099-01-02T03:04:00Z";
+    mockedGetState.mockResolvedValue({
+      share: { ...shareState, share_expires_at: futureExpiry },
+    });
+    mockedCreate.mockResolvedValue({
+      share: { ...shareState, share_token: "token_new", share_expires_at: futureExpiry },
+    });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "重新生成链接" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认重新生成" }));
+
+    await waitFor(() => expect(mockedCreate).toHaveBeenCalledWith("1", {
+      visibility: "public",
+      expires_at: futureExpiry,
+      allow_download: true,
+    }));
+  });
+
+  it("无法推算原有效时长时明确提示并默认生成 7 天的新链接", async () => {
+    const now = Date.now();
+    mockedGetState.mockResolvedValue({
+      share: {
+        ...shareState,
+        share_created_at: "2026-08-05T08:00:00Z",
+        share_expires_at: "2020-01-01T00:00:00Z",
+      },
+    });
+    mockedCreate.mockResolvedValue({
+      share: { ...shareState, share_token: "token_new", share_expires_at: new Date(Date.now() + 7 * 86400000).toISOString() },
+    });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "重新生成链接" }));
+    expect(screen.getByRole("dialog", { name: "重新生成分享链接？" }))
+      .toHaveTextContent("原有效时长无法确定，新链接默认有效 7 天");
+    fireEvent.click(screen.getByRole("button", { name: "确认重新生成" }));
+
+    await waitFor(() => expect(mockedCreate).toHaveBeenCalledOnce());
+    const [, payload] = mockedCreate.mock.calls[0];
+    expect(Date.parse(payload?.expires_at ?? "")).toBeGreaterThanOrEqual(now + 7 * 86400000);
+    expect(Date.parse(payload?.expires_at ?? "")).toBeLessThan(now + 7 * 86400000 + 1000);
+  });
+
   it("删除链接仍需二次确认", async () => {
     mockedGetState.mockResolvedValue({ share: shareState });
     mockedDelete.mockResolvedValue({ deleted: true });

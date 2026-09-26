@@ -12,6 +12,7 @@ const options = {
     ".css": "text",
     ".otf": "file",
     ".ttf": "file",
+    ".woff2": "file",
     ".jpg": "dataurl",
     ".png": "dataurl",
   },
