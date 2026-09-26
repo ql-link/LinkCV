@@ -143,15 +143,26 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     setShare(result.share);
   }, "生成分享链接失败，请稍后重试。");
 
-  const regenerate = () => runAction(async () => {
+  const regenerate = () => {
     if (!share) return;
-    const result = await api.createShare(resumeId, {
-      visibility: share.share_visibility,
-      expires_at: share.share_expires_at ?? null,
-      allow_download: share.share_allow_download,
-    });
-    setShare(result.share);
-  }, "重新生成分享链接失败，请稍后重试。");
+    const now = Date.now();
+    const expiresAt = parseShareExpiry(share.share_expires_at);
+    let nextExpiry = share.share_expires_at;
+    if (expiresAt !== null && expiresAt <= now) {
+      const createdAt = parseShareExpiry(share.share_created_at);
+      nextExpiry = createdAt !== null && createdAt < expiresAt
+        ? new Date(now + expiresAt - createdAt).toISOString()
+        : EXPIRY_OPTIONS[0].expiresAt();
+    }
+    void runAction(async () => {
+      const result = await api.createShare(resumeId, {
+        visibility: share.share_visibility,
+        expires_at: nextExpiry,
+        allow_download: share.share_allow_download,
+      });
+      setShare(result.share);
+    }, "重新生成分享链接失败，请稍后重试。");
+  };
 
   const updateConfig = (payload: ResumeShareUpdatePayload) =>
     runAction(async () => {
@@ -196,6 +207,15 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
 
   const currentExpiry = matchExpiry(share?.share_expires_at ?? null);
   const expired = !!share && isShareExpired(share.share_expires_at);
+  const originalExpiresAt = parseShareExpiry(share?.share_expires_at ?? null);
+  const originalCreatedAt = parseShareExpiry(share?.share_created_at ?? null);
+  const canRenewOriginalDuration = originalExpiresAt !== null && originalCreatedAt !== null
+    && originalCreatedAt < originalExpiresAt;
+  const regenerationExpiryDescription = !expired
+    ? "现有到期时间会保留。"
+    : canRenewOriginalDuration
+      ? "新链接按原有效时长重新计算到期时间。"
+      : "原有效时长无法确定，新链接默认有效 7 天。";
   const visibilitySummary = share?.share_visibility === "public" ? "公开" : "仅自己";
 
   return (
@@ -447,7 +467,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         <ConfirmDialog
           kind="warning"
           title="重新生成分享链接？"
-          description={`重新生成后旧链接将立即失效，已转发的旧地址无法再访问。「${resumeTitle}」的分享配置（可见性、有效期与下载权限）会保留。`}
+          description={`重新生成后旧链接将立即失效，已转发的旧地址无法再访问。「${resumeTitle}」的可见性与下载权限会保留。${regenerationExpiryDescription}`}
           confirmLabel="确认重新生成"
           busyLabel="正在重新生成…"
           busy={busy}

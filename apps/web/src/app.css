@@ -532,9 +532,6 @@ select:not([data-slot]):focus-visible,
 }
 
 .resume-preview-paper .ProseMirror { outline: none; }
-.resume-preview-paper h1,
-.resume-preview-paper h2,
-.resume-preview-paper h3 { color: var(--preview-accent); }
 
 .theme-classic-technical .resume-content {
   color: #171b24;
@@ -2316,7 +2313,7 @@ select:not([data-slot]):focus-visible,
   color: #4a4a4a;
 }
 
-.resume-preview-paper.theme-administrative-sidebar,
+.resume-paper.theme-administrative-sidebar,
 .theme-administrative-sidebar .resume-content {
   padding: 0 !important;
 }
@@ -5888,6 +5885,15 @@ select:not([data-slot]):focus-visible,
 
 .share-panel-empty { padding-top: 24px; }
 
+.share-panel-has-link {
+  animation: share-panel-content-in 240ms var(--ease-standard) both;
+}
+
+@keyframes share-panel-content-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .share-panel-link-section {
   display: flex;
   flex-direction: column;
@@ -6163,8 +6169,7 @@ select:not([data-slot]):focus-visible,
   gap: var(--ui-space-3, 12px);
   margin-top: auto;
   border-top: 1px solid var(--ui-border, #ded7cc);
-  padding-top: 0;
-  min-height: 37px;
+  padding-top: 16px;
 }
 
 .share-panel-primary {
@@ -6206,6 +6211,7 @@ select:not([data-slot]):focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .share-panel-select-content { animation-duration: 0.01ms; }
   .share-panel-select-trigger > svg { transition-duration: 0.01ms; }
+  .share-panel-has-link { animation: none; }
 }
 
 /* ---- 公开分享页 ---- */
@@ -6412,7 +6418,7 @@ select:not([data-slot]):focus-visible,
 
 @media screen {
   .share-page .share-page-paper {
-    border: 1px solid #cfd4dc;
+    outline: 1px solid #cfd4dc;
     box-shadow:
       0 2px 8px rgba(15, 18, 22, 0.08),
       0 20px 52px rgba(15, 18, 22, 0.14);
