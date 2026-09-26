@@ -3,6 +3,7 @@ from copy import deepcopy
 import hashlib
 import re
 from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -34,8 +35,13 @@ from linkresume.modules.agent.service import create_run
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
 from linkresume.modules.job_descriptions.models import JobDescription
-from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
-from linkresume.modules.llm.service import LLMError
+from linkresume.modules.llm.models import (
+    LLMCapabilityBinding,
+    LLMModelConfig,
+    LLMProvider,
+    LLMProviderModel,
+)
+from linkresume.modules.llm.service import LLMError, ModelDefinition
 from linkresume.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
     DocumentParseTask,
@@ -134,14 +140,33 @@ def create_resume(client: TestClient, app, title: str = "张三的测试简历")
 
 def bind_pi_agent_model(app) -> None:
     with app.state.session_factory() as db:
-        config = LLMModelConfig(
-            adapter="deepseek",
-            model_call_name="fictional-agent-model",
-            model_name="deepseek/fictional-agent-model",
-            api_base="https://sensitive.example.invalid/v1",
+        provider = LLMProvider(
+            name="虚构 Agent 网关",
+            base_url="https://sensitive.example.invalid/v1",
             encrypted_api_key="v1:fake:not-a-real-secret",
-            enabled=True,
-            priority=100,
+            model_catalog_url="https://sensitive.example.invalid/api/v1/models",
+            price_sync_status="succeeded",
+            version=1,
+        )
+        db.add(provider)
+        db.flush()
+        db.add(
+            LLMProviderModel(
+                provider_id=provider.id,
+                model_id="fictional-agent-model",
+                display_name="fictional-agent-model",
+                context_length=200_000,
+                max_output=32_768,
+                input_modalities="text",
+                supports_reasoning=False,
+                input_price_per_million=Decimal("1"),
+                output_price_per_million=Decimal("2"),
+                synced_at=utc_now(),
+            )
+        )
+        config = LLMModelConfig(
+            provider_id=provider.id,
+            model_call_name="fictional-agent-model",
             config_version=2,
         )
         db.add(config)
@@ -3415,7 +3440,7 @@ def test_agent_model_requires_login_and_returns_only_safe_bound_summary() -> Non
 
     assert response.status_code == 200
     assert response.json() == {
-        "model": {"adapter": "deepseek", "name": "fictional-agent-model"}
+        "model": {"provider": "虚构 Agent 网关", "name": "fictional-agent-model"}
     }
     assert "sensitive.example.invalid" not in response.text
     assert "not-a-real-secret" not in response.text
@@ -3433,10 +3458,29 @@ def test_agent_model_returns_stable_error_when_pi_binding_is_missing() -> None:
 
 def test_runtime_config_snapshots_requested_model_on_run() -> None:
     app = build_app()
-    app.state.llm_service.agent_runtime_model = AsyncMock(return_value=SimpleNamespace(
-        id=42, config_version=3, adapter="openrouter",
-        model_call_name="example/model-1", api_base=None, api_key="test-key",
-    ))
+    app.state.llm_service.agent_runtime_model = AsyncMock(
+        return_value=SimpleNamespace(
+            id=42,
+            provider_id=7,
+            provider_name="虚构 Agent 网关",
+            config_version=3,
+            model_call_name="example/model-1",
+            api_base="https://gateway.example.invalid/v1",
+            api_key="test-key",
+            definition=ModelDefinition(
+                model_id="example/model-1",
+                display_name="示例模型",
+                reasoning=True,
+                input_modalities=("text",),
+                context_window=200_000,
+                max_output=32_768,
+                input_price_per_million=Decimal("0.6"),
+                output_price_per_million=Decimal("2.2"),
+                cache_read_price_per_million=None,
+                cache_write_price_per_million=None,
+            ),
+        )
+    )
     with TestClient(app) as client:
         register(client, "model-snapshot@example.test")
         session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
@@ -3446,11 +3490,30 @@ def test_runtime_config_snapshots_requested_model_on_run() -> None:
             params={"run_id": run_id}, headers=internal_headers(),
         )
         assert response.status_code == 200
-        assert response.json()["model"] == "example/model-1"
+        payload = response.json()
+        assert payload["model"] == "example/model-1"
+        assert payload["provider_id"] == "7"
+        assert payload["provider_name"] == "虚构 Agent 网关"
+        assert payload["api"] == "openai-completions"
+        assert payload["api_base"] == "https://gateway.example.invalid/v1"
+        assert payload["api_key"] == "test-key"
+        # Pi builds its own model, so the capability snapshot travels with it.
+        assert payload["definition"] == {
+            "model_id": "example/model-1",
+            "display_name": "示例模型",
+            "reasoning": True,
+            "input_modalities": ["text"],
+            "context_window": 200_000,
+            "max_output": 32_768,
+            "input_price_per_million": 0.6,
+            "output_price_per_million": 2.2,
+            "cache_read_price_per_million": None,
+            "cache_write_price_per_million": None,
+        }
         with app.state.session_factory() as db:
             run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
             assert run is not None
-            assert run.model_name == "openrouter/example/model-1"
+            assert run.model_name == "example/model-1"
             assert run.model_config_id == 42
             assert run.model_config_version == 3
 

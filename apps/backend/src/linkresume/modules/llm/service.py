@@ -22,8 +22,6 @@ from linkresume.modules.llm.catalog import (
     JOB_IMAGE_STRUCTURING_CAPABILITY,
     PI_AGENT_CAPABILITY,
     RESUME_STRUCTURING_CAPABILITY,
-    adapter_requires_api_key,
-    assemble_model_identifier,
 )
 from linkresume.modules.llm.crypto import CredentialCipher, CredentialUnavailableError
 from linkresume.modules.llm.gateway import (
@@ -37,6 +35,8 @@ from linkresume.modules.llm.models import (
     LLMCallLog,
     LLMCapabilityBinding,
     LLMModelConfig,
+    LLMProvider,
+    LLMProviderModel,
 )
 from linkresume.modules.llm.schemas import (
     ChatImageContentPart,
@@ -70,6 +70,10 @@ def normalize_call_source(source: str) -> str:
     if not SOURCE_PATTERN.fullmatch(normalized):
         raise ValueError("invalid LLM call source")
     return normalized
+
+
+def _as_float(value: Decimal | None) -> float | None:
+    return None if value is None else float(value)
 
 
 def _structured_messages(
@@ -154,56 +158,150 @@ class LLMError(Exception):
         self.call_id = call_id
 
 
+DEFAULT_CONTEXT_WINDOW = 128_000
+DEFAULT_MAX_OUTPUT = 8_192
+DEFAULT_INPUT_MODALITIES = ("text",)
+
+
+@dataclass(frozen=True)
+class ModelDefinition:
+    """Model capabilities Pi Service needs to instantiate one model."""
+
+    model_id: str
+    display_name: str
+    reasoning: bool
+    input_modalities: tuple[str, ...]
+    context_window: int
+    max_output: int
+    input_price_per_million: Decimal | None
+    output_price_per_million: Decimal | None
+    cache_read_price_per_million: Decimal | None
+    cache_write_price_per_million: Decimal | None
+
+    @classmethod
+    def from_catalog(
+        cls,
+        model_call_name: str,
+        entry: LLMProviderModel | None,
+    ) -> ModelDefinition:
+        modalities = tuple(
+            name
+            for name in (entry.input_modalities or "").split(",")
+            if name
+        ) if entry is not None else ()
+        return cls(
+            model_id=model_call_name,
+            display_name=(entry.display_name if entry is not None else None)
+            or model_call_name,
+            reasoning=bool(entry.supports_reasoning) if entry is not None else False,
+            input_modalities=modalities or DEFAULT_INPUT_MODALITIES,
+            context_window=(
+                entry.context_length
+                if entry is not None and entry.context_length
+                else DEFAULT_CONTEXT_WINDOW
+            ),
+            max_output=(
+                entry.max_output
+                if entry is not None and entry.max_output
+                else DEFAULT_MAX_OUTPUT
+            ),
+            input_price_per_million=(
+                entry.input_price_per_million if entry is not None else None
+            ),
+            output_price_per_million=(
+                entry.output_price_per_million if entry is not None else None
+            ),
+            cache_read_price_per_million=(
+                entry.cache_read_price_per_million if entry is not None else None
+            ),
+            cache_write_price_per_million=(
+                entry.cache_write_price_per_million if entry is not None else None
+            ),
+        )
+
+    def as_payload(self) -> dict[str, object]:
+        """Snapshot Pi Service receives; prices become plain numbers."""
+        return {
+            "model_id": self.model_id,
+            "display_name": self.display_name,
+            "reasoning": self.reasoning,
+            "input_modalities": list(self.input_modalities),
+            "context_window": self.context_window,
+            "max_output": self.max_output,
+            "input_price_per_million": _as_float(self.input_price_per_million),
+            "output_price_per_million": _as_float(self.output_price_per_million),
+            "cache_read_price_per_million": _as_float(
+                self.cache_read_price_per_million
+            ),
+            "cache_write_price_per_million": _as_float(
+                self.cache_write_price_per_million
+            ),
+        }
+
+
 @dataclass(frozen=True)
 class RuntimeModelConfig:
+    """One callable model plus the provider connection it inherits."""
+
     id: int
     capability: str
-    adapter: str
+    provider_id: int
+    provider_name: str
     model_call_name: str
-    model_name: str
-    api_base: str | None
-    encrypted_api_key: str | None
+    api_base: str
+    encrypted_api_key: str
     config_version: int
+    definition: ModelDefinition
+
+    @property
+    def input_price_per_million(self) -> Decimal | None:
+        return self.definition.input_price_per_million
+
+    @property
+    def output_price_per_million(self) -> Decimal | None:
+        return self.definition.output_price_per_million
 
     @classmethod
     def from_record(
         cls,
         config: LLMModelConfig,
+        provider: LLMProvider,
+        entry: LLMProviderModel | None,
         *,
         capability: str = CHAT_CAPABILITY,
-    ) -> RuntimeModelConfig | None:
-        if config.adapter is None or config.model_call_name is None:
-            return None
+    ) -> RuntimeModelConfig:
         return cls(
             id=config.id,
             capability=capability,
-            adapter=config.adapter,
+            provider_id=provider.id,
+            provider_name=provider.name,
             model_call_name=config.model_call_name,
-            model_name=assemble_model_identifier(
-                config.adapter,
-                config.model_call_name,
-            ),
-            api_base=config.api_base,
-            encrypted_api_key=config.encrypted_api_key,
+            api_base=provider.base_url,
+            encrypted_api_key=provider.encrypted_api_key,
             config_version=config.config_version,
+            definition=ModelDefinition.from_catalog(config.model_call_name, entry),
         )
 
 
 @dataclass(frozen=True)
 class AgentRuntimeModel:
+    """The decrypted Pi Agent model plus the definition Pi must build."""
+
     id: int
-    adapter: str
+    provider_id: int
+    provider_name: str
     model_call_name: str
-    api_base: str | None
-    api_key: str | None
+    api_base: str
+    api_key: str
     config_version: int
+    definition: ModelDefinition
 
 
 @dataclass(frozen=True)
 class AgentModelSummary:
     """The non-sensitive model identity exposed to an authenticated user."""
 
-    adapter: str
+    provider: str
     name: str
 
 
@@ -327,37 +425,62 @@ class LLMService:
         config = await self._db(self._current_config_sync, PI_AGENT_CAPABILITY)
         if config is None:
             raise LLMError("LLM_MODEL_NOT_CONFIGURED", "agent-model-summary")
-        return AgentModelSummary(adapter=config.adapter, name=config.model_call_name)
+        return AgentModelSummary(
+            provider=config.provider_name,
+            name=config.model_call_name,
+        )
 
     async def agent_runtime_model(self) -> AgentRuntimeModel:
         """Resolve and decrypt the model bound to the Pi Agent capability."""
         config = await self._db(self._current_config_sync, PI_AGENT_CAPABILITY)
         if config is None:
             raise LLMError("LLM_MODEL_NOT_CONFIGURED", "agent-runtime-config")
-        if config.encrypted_api_key is None:
-            if adapter_requires_api_key(config.adapter):
-                raise LLMError(
-                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
-                )
-            api_key = None
-        else:
-            try:
-                credential = self._cipher.decrypt(config.encrypted_api_key)
-            except CredentialUnavailableError as error:
-                raise LLMError(
-                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
-                ) from error
-            api_key = credential.plaintext
-            if credential.needs_rewrap:
-                await self._db(self._rewrap_sync, config, credential.plaintext)
+        api_key = await self._decrypt_credential(config, "agent-runtime-config")
         return AgentRuntimeModel(
             id=config.id,
-            adapter=config.adapter,
+            provider_id=config.provider_id,
+            provider_name=config.provider_name,
             model_call_name=config.model_call_name,
             api_base=config.api_base,
             api_key=api_key,
             config_version=config.config_version,
+            definition=config.definition,
         )
+
+    async def provider_api_key(
+        self, provider_id: int, encrypted_api_key: str
+    ) -> str:
+        """Decrypt one provider credential for an outbound admin action."""
+        try:
+            credential = self._cipher.decrypt(encrypted_api_key)
+        except CredentialUnavailableError as error:
+            raise LLMError(
+                "LLM_CREDENTIALS_UNAVAILABLE", "provider-credential"
+            ) from error
+        if credential.needs_rewrap:
+            await self._db(
+                self._rewrap_provider_sync,
+                provider_id,
+                encrypted_api_key,
+                credential.plaintext,
+            )
+        return credential.plaintext
+
+    async def _decrypt_credential(
+        self, config: RuntimeModelConfig, call_id: str
+    ) -> str:
+        try:
+            credential = self._cipher.decrypt(config.encrypted_api_key)
+        except CredentialUnavailableError as error:
+            raise LLMError("LLM_CREDENTIALS_UNAVAILABLE", call_id) from error
+        if credential.needs_rewrap:
+            await self._db(
+                self._rewrap_provider_sync,
+                config.provider_id,
+                config.encrypted_api_key,
+                credential.plaintext,
+            )
+        return credential.plaintext
 
     async def _db(self, function, *args, **kwargs):
         return await to_thread.run_sync(lambda: function(*args, **kwargs))
@@ -381,6 +504,17 @@ class LLMService:
             )
             db.commit()
 
+    @staticmethod
+    def _catalog_entry_sync(
+        db: Session, config: LLMModelConfig
+    ) -> LLMProviderModel | None:
+        return db.scalar(
+            select(LLMProviderModel).where(
+                LLMProviderModel.provider_id == config.provider_id,
+                LLMProviderModel.model_id == config.model_call_name,
+            )
+        )
+
     def _current_config_sync(
         self, capability: str = CHAT_CAPABILITY
     ) -> RuntimeModelConfig | None:
@@ -388,23 +522,30 @@ class LLMService:
             binding = db.get(LLMCapabilityBinding, capability)
             if binding is None or binding.model_config_id is None:
                 return None
-            config = db.get(LLMModelConfig, binding.model_config_id)
-            return (
-                RuntimeModelConfig.from_record(config, capability=capability)
-                if config is not None
-                else None
-            )
+            return self._config_sync(binding.model_config_id, capability, db=db)
 
     def _config_sync(
-        self, config_id: int, capability: str = CHAT_CAPABILITY
+        self,
+        config_id: int,
+        capability: str = CHAT_CAPABILITY,
+        *,
+        db: Session | None = None,
     ) -> RuntimeModelConfig | None:
-        with self._session_factory() as db:
-            config = db.get(LLMModelConfig, config_id)
-            return (
-                RuntimeModelConfig.from_record(config, capability=capability)
-                if config is not None
-                else None
-            )
+        if db is None:
+            with self._session_factory() as session:
+                return self._config_sync(config_id, capability, db=session)
+        config = db.get(LLMModelConfig, config_id)
+        if config is None:
+            return None
+        provider = db.get(LLMProvider, config.provider_id)
+        if provider is None:
+            return None
+        return RuntimeModelConfig.from_record(
+            config,
+            provider,
+            self._catalog_entry_sync(db, config),
+            capability=capability,
+        )
 
     def _select_model_sync(self, call_id: str, config: RuntimeModelConfig) -> None:
         with self._session_factory() as db:
@@ -414,22 +555,21 @@ class LLMService:
                 .values(
                     model_config_id=config.id,
                     model_config_version=config.config_version,
-                    model_name=config.model_name,
-                    adapter=config.adapter,
-                    model_call_name=config.model_call_name,
+                    model_name=config.model_call_name,
                 )
             )
             db.commit()
 
-    def _rewrap_sync(self, config: RuntimeModelConfig, plaintext: str) -> None:
-        assert config.encrypted_api_key is not None
+    def _rewrap_provider_sync(
+        self, provider_id: int, previous_ciphertext: str, plaintext: str
+    ) -> None:
         replacement = self._cipher.encrypt(plaintext)
         with self._session_factory() as db:
             db.execute(
-                update(LLMModelConfig)
+                update(LLMProvider)
                 .where(
-                    LLMModelConfig.id == config.id,
-                    LLMModelConfig.encrypted_api_key == config.encrypted_api_key,
+                    LLMProvider.id == provider_id,
+                    LLMProvider.encrypted_api_key == previous_ciphertext,
                 )
                 .values(encrypted_api_key=replacement, updated_at=utc_now())
             )
@@ -502,21 +642,10 @@ class LLMService:
         config: RuntimeModelConfig,
         call_id: str,
         started_at: float,
-    ) -> str | None:
-        if config.encrypted_api_key is None:
-            if adapter_requires_api_key(config.adapter):
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code="LLM_CREDENTIALS_UNAVAILABLE",
-                )
-                raise LLMError("LLM_CREDENTIALS_UNAVAILABLE", call_id)
-            return None
+    ) -> str:
         try:
-            credential = self._cipher.decrypt(config.encrypted_api_key)
-        except CredentialUnavailableError as error:
+            return await self._decrypt_credential(config, call_id)
+        except LLMError:
             await self._db(
                 self._finalize_sync,
                 call_id,
@@ -524,10 +653,7 @@ class LLMService:
                 latency_ms=self._latency(started_at),
                 error_code="LLM_CREDENTIALS_UNAVAILABLE",
             )
-            raise LLMError("LLM_CREDENTIALS_UNAVAILABLE", call_id) from error
-        if credential.needs_rewrap:
-            await self._db(self._rewrap_sync, config, credential.plaintext)
-        return credential.plaintext
+            raise
 
     @staticmethod
     def _latency(started_at: float) -> int:
@@ -587,13 +713,13 @@ class LLMService:
             api_key = await self._credential(config, call_id, started_at)
             try:
                 result = await self._gateway.complete(
-                    model=config.model_name,
+                    model=config.model_call_name,
                     messages=validated_messages,
                     api_base=config.api_base,
                     api_key=api_key,
                 )
             except GatewayError as error:
-                metering = self._error_metering(error)
+                metering = self._error_metering(error, config)
                 await self._db(
                     self._finalize_sync,
                     call_id,
@@ -606,8 +732,8 @@ class LLMService:
 
             metering = calculate_metering(
                 usage=result.usage,
-                input_price_per_million=result.input_price_per_million,
-                output_price_per_million=result.output_price_per_million,
+                input_price_per_million=config.input_price_per_million,
+                output_price_per_million=config.output_price_per_million,
             )
             await self._db(
                 self._finalize_sync,
@@ -653,14 +779,13 @@ class LLMService:
             api_key = await self._credential(config, call_id, started_at)
             try:
                 result = await self._gateway.complete(
-                    model=config.model_name,
+                    model=config.model_call_name,
                     messages=_structured_messages(
                         validated_messages,
                         response_model,
                     ),
                     api_base=config.api_base,
                     api_key=api_key,
-                    disable_thinking=True,
                 )
             except GatewayError as error:
                 await self._db(
@@ -669,14 +794,14 @@ class LLMService:
                     status="failed",
                     latency_ms=self._latency(started_at),
                     error_code=error.code,
-                    metering=self._error_metering(error),
+                    metering=self._error_metering(error, config),
                 )
                 raise LLMError(error.code, call_id) from error
 
             metering = calculate_metering(
                 usage=result.usage,
-                input_price_per_million=result.input_price_per_million,
-                output_price_per_million=result.output_price_per_million,
+                input_price_per_million=config.input_price_per_million,
+                output_price_per_million=config.output_price_per_million,
             )
             try:
                 value = _validate_structured_content(
@@ -737,7 +862,7 @@ class LLMService:
             api_key = await self._credential(config, call_id, started_at)
             try:
                 events = await self._gateway.start_stream(
-                    model=config.model_name,
+                    model=config.model_call_name,
                     messages=validated_messages,
                     api_base=config.api_base,
                     api_key=api_key,
@@ -749,7 +874,7 @@ class LLMService:
                     status="failed",
                     latency_ms=self._latency(started_at),
                     error_code=error.code,
-                    metering=self._error_metering(error),
+                    metering=self._error_metering(error, config),
                 )
                 raise LLMError(error.code, call_id) from error
         except asyncio.CancelledError:
@@ -803,7 +928,7 @@ class LLMService:
                     status="failed",
                     latency_ms=self._latency(started_at),
                     error_code=error.code,
-                    metering=self._error_metering(error),
+                    metering=self._error_metering(error, opened.config),
                 )
                 finalized = True
                 yield ChatStreamEvent(
@@ -832,8 +957,8 @@ class LLMService:
             final_usage = final_event.usage or GatewayUsage(None, None)
             metering = calculate_metering(
                 usage=final_usage,
-                input_price_per_million=final_event.input_price_per_million,
-                output_price_per_million=final_event.output_price_per_million,
+                input_price_per_million=opened.config.input_price_per_million,
+                output_price_per_million=opened.config.output_price_per_million,
             )
             await self._db(
                 self._finalize_sync,
@@ -859,17 +984,15 @@ class LLMService:
                 await close()
 
     @staticmethod
-    def _error_metering(error: GatewayError) -> Metering | None:
-        if (
-            error.usage is None
-            and error.input_price_per_million is None
-            and error.output_price_per_million is None
-        ):
+    def _error_metering(
+        error: GatewayError, config: RuntimeModelConfig
+    ) -> Metering | None:
+        if error.usage is None:
             return None
         return calculate_metering(
-            usage=error.usage or GatewayUsage(None, None),
-            input_price_per_million=error.input_price_per_million,
-            output_price_per_million=error.output_price_per_million,
+            usage=error.usage,
+            input_price_per_million=config.input_price_per_million,
+            output_price_per_million=config.output_price_per_million,
             force_partial=True,
         )
 
@@ -946,7 +1069,7 @@ class LLMService:
                     ),
                 )
                 result: GatewayResult = await self._gateway.complete(
-                    model=config.model_name,
+                    model=config.model_call_name,
                     messages=(probe_message,),
                     api_base=config.api_base,
                     api_key=api_key,
@@ -957,14 +1080,18 @@ class LLMService:
                     call_id,
                     status="failed",
                     latency_ms=self._latency(started_at),
-                    error_code="LLM_CONNECTION_FAILED",
-                    metering=self._error_metering(error),
+                    # Keep the gateway classification: collapsing a rejected
+                    # request (bad model name, revoked key, exhausted quota)
+                    # into "connection failed" sends operators after the wrong
+                    # cause.
+                    error_code=error.code,
+                    metering=self._error_metering(error, config),
                 )
-                raise LLMError("LLM_CONNECTION_FAILED", call_id) from error
+                raise LLMError(error.code, call_id) from error
             metering = calculate_metering(
                 usage=result.usage,
-                input_price_per_million=result.input_price_per_million,
-                output_price_per_million=result.output_price_per_million,
+                input_price_per_million=config.input_price_per_million,
+                output_price_per_million=config.output_price_per_million,
             )
             if config.capability in {
                 RESUME_STRUCTURING_CAPABILITY,

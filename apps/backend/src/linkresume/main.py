@@ -26,7 +26,7 @@ from linkresume.integrations.linkparse_client import LinkParseClient
 from linkresume.integrations.resume_structuring import LLMResumeStructuringClient
 from linkresume.integrations.wechat_client import WechatClient
 from linkresume.modules.llm.crypto import CredentialCipher
-from linkresume.modules.llm.gateway import LLMGateway, LiteLLMGateway
+from linkresume.modules.llm.gateway import LLMGateway, OpenAIChatGateway
 from linkresume.modules.llm.catalog import MODEL_CAPABILITIES
 from linkresume.modules.llm.models import LLMCapabilityBinding
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
@@ -142,7 +142,7 @@ def create_app(
     runtime_plugin_release_service = plugin_release_service or PluginReleaseService(
         runtime_storage,
     )
-    runtime_llm_gateway = llm_gateway or LiteLLMGateway(
+    runtime_llm_gateway = llm_gateway or OpenAIChatGateway(
         runtime_settings.llm_timeout_seconds
     )
     llm_service = LLMService(
@@ -223,6 +223,12 @@ def create_app(
                     await runtime_publisher.close()
                 except Exception:
                     logger.warning("MQ publisher close failed", exc_info=True)
+            close_gateway = getattr(runtime_llm_gateway, "aclose", None)
+            if close_gateway is not None:
+                try:
+                    await close_gateway()
+                except Exception:
+                    logger.warning("LLM gateway close failed", exc_info=True)
             try:
                 await asyncio.to_thread(redis.close)
             except Exception:

@@ -1,68 +1,35 @@
-import litellm
 import pytest
 
 from linkresume.modules.llm.catalog import (
-    CHAT_ADAPTERS,
-    assemble_model_identifier,
-    chat_model_suggestions,
+    MODEL_CAPABILITIES,
+    PI_CHAT_API,
+    normalize_capability,
+    normalize_model_call_name,
 )
 
 
-def test_deepseek_identifier_keeps_adapter_and_call_name_separate() -> None:
-    assert (
-        assemble_model_identifier("deepseek", "deepseek-v4-flash")
-        == "deepseek/deepseek-v4-flash"
+def test_capability_catalog_is_closed() -> None:
+    assert MODEL_CAPABILITIES == (
+        "chat",
+        "resume_structuring",
+        "pi_agent",
+        "job_image_structuring",
     )
-
-
-def test_qwen_identifier_uses_dashscope_provider_route() -> None:
-    assert (
-        assemble_model_identifier("dashscope", "qwen-plus")
-        == "dashscope/qwen-plus"
-    )
-
-
-@pytest.mark.parametrize(
-    "adapter,model",
-    [
-        ("unknown", "model"),
-        ("deepseek", "deepseek/deepseek-chat"),
-        ("deepseek", "x" * 121),
-    ],
-)
-def test_invalid_adapter_or_ambiguous_call_name_is_rejected(
-    adapter: str,
-    model: str,
-) -> None:
+    assert normalize_capability(" chat ") == "chat"
     with pytest.raises(ValueError):
-        assemble_model_identifier(adapter, model)
+        normalize_capability("fictional_capability")
 
 
-def test_catalog_only_returns_chat_models_for_supported_adapter(monkeypatch) -> None:
-    monkeypatch.setattr(
-        litellm,
-        "model_cost",
-        {
-            "deepseek/deepseek-chat": {
-                "litellm_provider": "deepseek",
-                "mode": "chat",
-            },
-            "deepseek/deepseek-embedding": {
-                "litellm_provider": "deepseek",
-                "mode": "embedding",
-            },
-            "openai/gpt-fictional": {
-                "litellm_provider": "openai",
-                "mode": "chat",
-            },
-            "dashscope/qwen-plus": {
-                "litellm_provider": "dashscope",
-                "mode": "chat",
-            },
-        },
-    )
+def test_pi_reaches_one_wire_protocol() -> None:
+    # Pi Service registers a provider for this api identifier.
+    assert PI_CHAT_API == "openai-completions"
 
-    assert chat_model_suggestions("deepseek") == ["deepseek-chat"]
-    assert chat_model_suggestions("dashscope") == ["qwen-plus"]
-    assert "deepseek" in {adapter.code for adapter in CHAT_ADAPTERS}
-    assert "dashscope" in {adapter.code for adapter in CHAT_ADAPTERS}
+
+def test_model_call_name_accepts_vendor_slashes_and_rejects_padding() -> None:
+    assert normalize_model_call_name("z-ai/glm-4.6") == "z-ai/glm-4.6"
+    assert normalize_model_call_name(" moonshotai/kimi-k2 ") == "moonshotai/kimi-k2"
+
+    with pytest.raises(ValueError):
+        normalize_model_call_name("   ")
+    with pytest.raises(ValueError):
+        normalize_model_call_name("x" * 129)

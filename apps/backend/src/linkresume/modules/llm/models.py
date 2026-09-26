@@ -24,7 +24,7 @@ from linkresume.core.database import Base
 UNSIGNED_BIGINT = BigInteger().with_variant(Integer(), "sqlite").with_variant(
     mysql.BIGINT(unsigned=True), "mysql"
 )
-UNSIGNED_SMALLINT = Integer().with_variant(mysql.SMALLINT(unsigned=True), "mysql")
+UNSIGNED_INT = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
 ASCII_CAPABILITY = String(32).with_variant(
     mysql.VARCHAR(32, charset="ascii", collation="ascii_bin"), "mysql"
 )
@@ -36,36 +36,232 @@ ASCII_SOURCE = String(32).with_variant(
 )
 
 
+class LLMProvider(Base):
+    __tablename__ = "llm_providers"
+    __table_args__ = (
+        UniqueConstraint("name", name="uk_llm_providers_name"),
+        CheckConstraint(
+            "price_sync_status IN ('unknown', 'succeeded', 'failed')",
+            name="ck_llm_providers_price_sync_status",
+        ),
+        CheckConstraint(
+            "version >= 1",
+            name="ck_llm_providers_version",
+        ),
+        CheckConstraint(
+            "length(trim(name)) > 0",
+            name="ck_llm_providers_name_not_blank",
+        ),
+        CheckConstraint(
+            "length(trim(base_url)) > 0",
+            name="ck_llm_providers_base_url_not_blank",
+        ),
+        CheckConstraint(
+            "length(trim(model_catalog_url)) > 0",
+            name="ck_llm_providers_catalog_url_not_blank",
+        ),
+        {"comment": "模型供应商连接配置"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        primary_key=True,
+        autoincrement=True,
+        comment="供应商主键",
+    )
+    name: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        comment="供应商显示名",
+    )
+    base_url: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        comment="模型调用的 OpenAI 兼容基础地址",
+    )
+    encrypted_api_key: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="版本化加密凭据，禁止保存明文",
+    )
+    model_catalog_url: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        comment="模型目录与价目同步地址",
+    )
+    price_sync_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="unknown",
+        server_default="unknown",
+        comment="目录同步状态：unknown（从未同步）、succeeded（同步成功）、failed（同步失败）",
+    )
+    price_sync_error: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="最近一次同步失败的稳定错误码",
+    )
+    price_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=True,
+        comment="最近一次成功同步时间（UTC）",
+    )
+    version: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        nullable=False,
+        default=1,
+        server_default="1",
+        comment="供应商乐观锁版本",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=False,
+        server_default=func.now(),
+        comment="创建时间（UTC）",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="最后更新时间（UTC）",
+    )
+
+
+class LLMProviderModel(Base):
+    __tablename__ = "llm_provider_models"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_id",
+            "model_id",
+            name="uk_llm_provider_models_provider_model",
+        ),
+        CheckConstraint(
+            "input_price_per_million IS NULL OR input_price_per_million >= 0",
+            name="ck_llm_provider_models_input_price_nonnegative",
+        ),
+        CheckConstraint(
+            "output_price_per_million IS NULL OR output_price_per_million >= 0",
+            name="ck_llm_provider_models_output_price_nonnegative",
+        ),
+        CheckConstraint(
+            "cache_read_price_per_million IS NULL "
+            "OR cache_read_price_per_million >= 0",
+            name="ck_llm_provider_models_cache_read_price_nonnegative",
+        ),
+        CheckConstraint(
+            "cache_write_price_per_million IS NULL "
+            "OR cache_write_price_per_million >= 0",
+            name="ck_llm_provider_models_cache_write_price_nonnegative",
+        ),
+        {"comment": "供应商模型目录与价目的本地快照"},
+    )
+
+    id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        primary_key=True,
+        autoincrement=True,
+        comment="目录条目主键",
+    )
+    provider_id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey(
+            "llm_providers.id",
+            name="fk_llm_provider_models_provider",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        comment="所属供应商主键",
+    )
+    model_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        comment="供应商侧的模型标识，等于模型调用名",
+    )
+    display_name: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="供应商给出的展示名",
+    )
+    context_length: Mapped[int | None] = mapped_column(
+        UNSIGNED_INT,
+        nullable=True,
+        comment="上下文窗口 token 数",
+    )
+    max_output: Mapped[int | None] = mapped_column(
+        UNSIGNED_INT,
+        nullable=True,
+        comment="最大输出 token 数",
+    )
+    input_modalities: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        comment="输入模态，逗号分隔，例如 text,image",
+    )
+    supports_reasoning: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+        comment="该模型是否支持推理输出",
+    )
+    input_price_per_million: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 8),
+        nullable=True,
+        comment="每百万输入 token 的美元价格",
+    )
+    output_price_per_million: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 8),
+        nullable=True,
+        comment="每百万输出 token 的美元价格",
+    )
+    cache_read_price_per_million: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 8),
+        nullable=True,
+        comment="每百万缓存读取 token 的美元价格",
+    )
+    cache_write_price_per_million: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 8),
+        nullable=True,
+        comment="每百万缓存写入 token 的美元价格",
+    )
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=False,
+        comment="本次同步时间（UTC）",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=False,
+        server_default=func.now(),
+        comment="创建时间（UTC）",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        comment="最后更新时间（UTC）",
+    )
+
+
 class LLMModelConfig(Base):
     __tablename__ = "llm_model_configs"
     __table_args__ = (
         Index(
-            "idx_llm_model_configs_enabled_priority",
-            "enabled",
-            "priority",
+            "idx_llm_model_configs_provider",
+            "provider_id",
             "id",
         ),
         CheckConstraint(
-            "input_price_per_million IS NULL OR input_price_per_million >= 0",
-            name="ck_llm_model_configs_input_price_nonnegative",
-        ),
-        CheckConstraint(
-            "output_price_per_million IS NULL OR output_price_per_million >= 0",
-            name="ck_llm_model_configs_output_price_nonnegative",
-        ),
-        CheckConstraint(
-            "(adapter IS NULL AND model_call_name IS NULL) OR "
-            "(adapter IS NOT NULL AND model_call_name IS NOT NULL "
-            "AND length(trim(adapter)) > 0 "
-            "AND length(trim(model_call_name)) > 0 "
-            "AND length(adapter) + 1 + length(model_call_name) <= 128)",
-            name="ck_llm_model_configs_adapter_pair",
+            "length(trim(model_call_name)) > 0 AND length(model_call_name) <= 128",
+            name="ck_llm_model_configs_model_call_name",
         ),
         CheckConstraint(
             "config_version >= 1",
             name="ck_llm_model_configs_config_version",
         ),
-        {"comment": "能力中立的模型连接配置"},
+        {"comment": "供应商目录中的可调用模型"},
     )
 
     id: Mapped[int] = mapped_column(
@@ -74,54 +270,20 @@ class LLMModelConfig(Base):
         autoincrement=True,
         comment="模型配置主键",
     )
-    model_name: Mapped[str] = mapped_column(
+    provider_id: Mapped[int] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey(
+            "llm_providers.id",
+            name="fk_llm_model_configs_provider",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        comment="所属供应商主键",
+    )
+    model_call_name: Mapped[str] = mapped_column(
         String(128),
         nullable=False,
-        comment="LiteLLM 模型标识",
-    )
-    adapter: Mapped[str | None] = mapped_column(
-        ASCII_ADAPTER,
-        nullable=True,
-        comment="LiteLLM adapter 标识",
-    )
-    model_call_name: Mapped[str | None] = mapped_column(
-        String(128),
-        nullable=True,
-        comment="不含 adapter 前缀的模型调用名",
-    )
-    api_base: Mapped[str | None] = mapped_column(
-        String(512),
-        nullable=True,
-        comment="模型服务基础地址",
-    )
-    encrypted_api_key: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-        comment="版本化加密凭据，禁止保存明文",
-    )
-    enabled: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=false(),
-        comment="是否启用模型配置",
-    )
-    priority: Mapped[int] = mapped_column(
-        UNSIGNED_SMALLINT,
-        nullable=False,
-        default=100,
-        server_default="100",
-        comment="调用优先级，数值越小越优先",
-    )
-    input_price_per_million: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 8),
-        nullable=True,
-        comment="每百万输入令牌的美元价格",
-    )
-    output_price_per_million: Mapped[Decimal | None] = mapped_column(
-        Numeric(18, 8),
-        nullable=True,
-        comment="每百万输出令牌的美元价格",
+        comment="供应商目录中的模型标识",
     )
     config_version: Mapped[int] = mapped_column(
         UNSIGNED_BIGINT,
@@ -145,9 +307,10 @@ class LLMModelConfig(Base):
     )
 
     def __init__(self, **kwargs: object) -> None:
-        # Older tests/integrations may still pass the pre-contract capability
-        # keyword. It is intentionally ignored after the 0025 contract.
-        kwargs.pop("capability", None)
+        # Older tests/integrations may still pass pre-contract keywords.
+        # They are intentionally ignored after the 0088 contract.
+        for legacy in ("capability", "adapter", "model_name", "api_base"):
+            kwargs.pop(legacy, None)
         super().__init__(**kwargs)
 
 
@@ -340,7 +503,7 @@ class LLMCallLog(Base):
     adapter: Mapped[str | None] = mapped_column(
         ASCII_ADAPTER,
         nullable=True,
-        comment="实际 LiteLLM adapter 快照",
+        comment="历史调用的接入类型快照，0088 起的新调用不再写入",
     )
     model_call_name: Mapped[str | None] = mapped_column(
         String(128),

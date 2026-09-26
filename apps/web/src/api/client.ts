@@ -841,21 +841,8 @@ export type JobDescriptionCreatePayload = JobDescriptionFields & {
   duplicate_resolution?: DuplicateResolution;
 };
 
-export type ChatAdapter =
-  | "openai"
-  | "anthropic"
-  | "deepseek"
-  | "dashscope"
-  | "openrouter"
-  | "gemini"
-  | "xai"
-  | "groq"
-  | "mistral"
-  | "cohere_chat"
-  | "perplexity";
-
 export type AgentModelSummary = {
-  adapter: ChatAdapter;
+  provider: string;
   name: string;
 };
 
@@ -865,12 +852,71 @@ export type LlmModelLastTest = {
   testedAt: string;
 };
 
+export type LlmProviderRef = {
+  id: string;
+  name: string;
+};
+
+export type LlmProviderPriceSyncStatus = "unknown" | "succeeded" | "failed";
+
+export type LlmProvider = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  keyConfigured: boolean;
+  modelCatalogUrl: string;
+  modelCount: number;
+  priceSyncStatus: LlmProviderPriceSyncStatus;
+  priceSyncError: string | null;
+  priceSyncedAt: string | null;
+  version: number;
+};
+
+export type LlmProviderList = {
+  providers: LlmProvider[];
+};
+
+export type LlmProviderCreatePayload = {
+  name: string;
+  baseUrl: string;
+  modelCatalogUrl: string;
+  apiKey: string;
+};
+
+export type LlmProviderPatchPayload = {
+  baseVersion: number;
+  name?: string;
+  baseUrl?: string;
+  modelCatalogUrl?: string;
+  apiKey?: string;
+};
+
+export type LlmProviderCatalogSyncResult = {
+  syncedAt: string;
+  modelCount: number;
+};
+
+export type LlmProviderModel = {
+  modelId: string;
+  displayName: string | null;
+  contextLength: number | null;
+  maxOutput: number | null;
+  inputModalities: string | null;
+  supportsReasoning: boolean;
+  inputPricePerMillion: string | null;
+  outputPricePerMillion: string | null;
+};
+
+export type LlmProviderModelList = {
+  models: LlmProviderModel[];
+  nextCursor: string | null;
+};
+
 export type LlmModelConfig = {
   id: string;
   capability: "chat";
-  adapter: ChatAdapter;
+  provider: LlmProviderRef;
   model: string;
-  apiBase: string | null;
   keyConfigured: boolean;
   active: boolean;
   lastTest: LlmModelLastTest | null;
@@ -882,9 +928,8 @@ export type ModelCapability = "chat" | "resume_structuring" | "pi_agent" | "job_
 
 export type CapabilityModelConfig = {
   id: string;
-  adapter: ChatAdapter;
+  provider: LlmProviderRef;
   model: string;
-  apiBase: string | null;
   keyConfigured: boolean;
   configVersion: number;
   activeCapabilities: ModelCapability[];
@@ -905,9 +950,15 @@ export type ModelCapabilityList = {
   capabilities: ModelCapabilityRecord[];
 };
 
-export type ModelCatalog = {
-  capabilities: ModelCapability[];
-  adapters: ChatCatalogAdapter[];
+export type LlmProviderCapabilityRef = {
+  capability: ModelCapability;
+  modelConfigId: string;
+  model: string;
+};
+
+export type LlmProviderPatchResult = {
+  provider: LlmProvider;
+  affectedCapabilities: LlmProviderCapabilityRef[];
 };
 
 export type ChatCapability = {
@@ -917,30 +968,14 @@ export type ChatCapability = {
   models: LlmModelConfig[];
 };
 
-export type ChatCatalogAdapter = {
-  code: ChatAdapter;
-  label: string;
-  requiresApiKey: boolean;
-  models: string[];
-};
-
-export type ChatCatalog = {
-  capability: "chat";
-  adapters: ChatCatalogAdapter[];
-};
-
 export type LlmModelCreatePayload = {
-  adapter: ChatAdapter;
+  providerId: string;
   model: string;
-  apiBase?: string | null;
-  apiKey?: string | null;
 };
 
-export type LlmModelPatchPayload = Partial<
-  Omit<LlmModelCreatePayload, "apiKey">
-> & {
+export type LlmModelPatchPayload = {
   baseConfigVersion?: number;
-  apiKey?: string | null;
+  model?: string;
 };
 
 export type LlmCallStatus = "pending" | "succeeded" | "failed" | "cancelled";
@@ -952,7 +987,7 @@ export type LlmCallRecord = {
   source: string;
   userId: string;
   modelConfigId: string | null;
-  adapter: ChatAdapter | null;
+  adapter: string | null;
   model: string | null;
   status: LlmCallStatus;
   meteringStatus: LlmMeteringStatus;
@@ -2221,8 +2256,38 @@ export const api = {
     request<ChatCapability>("/api/admin/llm/capabilities/chat"),
   getModelCapabilities: () =>
     request<ModelCapabilityList>("/api/admin/llm/capabilities"),
-  getModelCatalog: () => request<ModelCatalog>("/api/admin/llm/catalog"),
-  getChatCatalog: () => request<ChatCatalog>("/api/admin/llm/catalog/chat"),
+  getLlmProviders: () =>
+    request<LlmProviderList>("/api/admin/llm/providers"),
+  createLlmProvider: (payload: LlmProviderCreatePayload) =>
+    request<{ provider: LlmProvider }>("/api/admin/llm/providers", {
+      method: "POST",
+      body: payload,
+    }),
+  updateLlmProvider: (id: string, payload: LlmProviderPatchPayload) =>
+    request<LlmProviderPatchResult>(`/api/admin/llm/providers/${id}`, {
+      method: "PATCH",
+      body: payload,
+    }),
+  deleteLlmProvider: (id: string) =>
+    request<void>(`/api/admin/llm/providers/${id}`, { method: "DELETE" }),
+  syncLlmProviderCatalog: (id: string) =>
+    request<LlmProviderCatalogSyncResult>(
+      `/api/admin/llm/providers/${id}/catalog:sync`,
+      { method: "POST" },
+    ),
+  listLlmProviderModels: (
+    id: string,
+    params: { query?: string; cursor?: string; limit?: number } = {},
+  ) => {
+    const search = new URLSearchParams();
+    if (params.query) search.set("query", params.query);
+    if (params.cursor) search.set("cursor", params.cursor);
+    if (params.limit) search.set("limit", String(params.limit));
+    const suffix = search.toString();
+    return request<LlmProviderModelList>(
+      `/api/admin/llm/providers/${id}/models${suffix ? `?${suffix}` : ""}`,
+    );
+  },
   createLlmModel: (payload: LlmModelCreatePayload) =>
     request<{ model: LlmModelConfig }>("/api/admin/llm/models", {
       method: "POST",

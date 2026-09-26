@@ -18,8 +18,9 @@ Web 运行时的浅色页面背景由共享暖白 Token 提供；该视觉 Token
 - `modules/agent/run_stream.py`：在 FastAPI 进程内独立消费并缓冲每个 run 的可见事件，使浏览器订阅断开时后台生成继续。
 - `modules/agent/internal_routes.py`：只供 Pi 调用的受控上下文与简历工具。
 - `apps/pi-service`：独立无头 Node 服务，执行 loop、转发模型调用并调用内部工具。
-- `modules/llm/service.py`：能力绑定解析、调用记录和稳定失败映射。
-- `modules/llm/gateway.py`、`crypto.py`：LiteLLM 调用与版本化凭据解密。
+- `modules/llm/service.py`：供应商与模型解析、能力绑定解析、调用记录和稳定失败映射。
+- `modules/llm/gateway.py`、`crypto.py`：OpenAI 兼容调用客户端与版本化凭据解密。
+- `modules/llm/provider_catalog.py`：供应商模型目录与单价的同步与归一化。
 - `modules/llm/pi_probe.py`：Pi Agent 能力的固定工具探针。
 
 Pi Service 通过单一 `systemPromptOverride` 组合 Agent 业务策略和用户可见回复风格。身份、授权资料、工具顺序、结构化澄清与提案确认属于高优先级运行约束；表达规则只作用于最终自然语言，不改变工具参数、结构化事件或提案字段。回复风格按请求复杂度控制整条回复和单个列表项的句数，把用户指定的事项数量作为硬上限，并要求并列内容使用真实 Markdown 列表而不是序数词段落。工具阶段的可见自然语言被标记为临时活动；全部业务工具完成后，Agent 必须调用内部 `begin_final_response` 切换工具，该控制工具不写入业务工具审计，执行时清空临时活动并通过 Pi 的 active-tools API 关闭后续工具。之后的新 assistant turn 才是最终回复；若未切换就结束或切换后没有正文，运行失败收口，临时活动不会被误存成答案。
@@ -33,9 +34,9 @@ FastAPI 使用进程内后台任务独立消费 Pi 流，浏览器的初始 POST
 Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时结束流读取，不把随后关闭连接的异常重新映射为运行失败。终态后的会话和提案回读是补充同步：独立助手（含恢复订阅）及编辑器侧栏在回读失败时保留流中已收到的内容和真实终态；终态前断流仍报告 `AGENT_STREAM_INCOMPLETE`。
 
 1. FastAPI 创建独立的 Agent session/run/message；session 不保存默认简历。发送前通过唯一的 `contexts` 协议重新解析浏览器选择的简历、资料库文件等轻量引用；简历界面同样提交 `{type:"resume",id}`，并在这一边界转换为当前消息的快照与有界材料，再以服务 token 调用 Pi。独立助手自动附带当前打开的简历时在引用快照中保存 `presentation:"implicit"`，该字段只决定 Web 不在输入框或历史用户消息中渲染 `@简历` 单元，所有权、版本校验、canonical 正文读取和 Pi 材料与显式引用完全一致；缺省或 `mention` 保持旧客户端的显式展示。Web 持久化并回读消息时仍以结构化 `contexts` 识别显式引用，在用户气泡正文的原位置渲染内联文件单元，不依赖或重复展示文件名标签；运行阶段只在当前消息附近呈现，不在消息区顶部复制状态标题。已有对话的 Web 输入框最多随草稿增长到 6 行，超出后仅在编辑区内滚动；新建对话继续使用独立的大输入框布局。这些输入框尺寸和位置只属于客户端呈现，不进入消息协议或持久化数据。成功或主动取消终态清空下一轮输入草稿与引用，失败终态保留；已经发送并进入消息历史的 query 不会在取消后自动复制回输入框。独立助手把请求、运行和提案失败投影到页面根层的统一顶部反馈浮层，不改变服务端错误码或终态。助手 Markdown 在共享渲染边界处理标题、软换行、分隔线、表格、列表、引用、链接和代码等常见语法，围栏代码提供复制操作，禁用原始 HTML，并把远程图片降级为文字占位。独立助手和简历编辑器侧栏的用户消息、AI 回复正文与周边 UI 统一使用随应用发布的思源黑体；用户消息气泡与无气泡 AI 正文的呈现差异不进入消息协议或持久化数据。
-2. 登录后的 Web 可通过 `/api/agent/model` 读取当前 `pi_agent` 绑定的非敏感 `adapter/name` 摘要；此查询只解析绑定配置，不解密凭据。
+2. 登录后的 Web 可通过 `/api/agent/model` 读取当前 `pi_agent` 绑定的非敏感「供应商 + 模型」摘要；此查询只解析绑定配置，不解密凭据。
 3. Pi 通过另一枚 token 调用 `/internal/agent`，读取当前消息已授权的简历、岗位、进程、面试或资料集上下文。`resolve_resume_target` 优先沿用本轮已经解析的 locator，其次使用本轮唯一的 `resume` context；`agent_sessions` 不再包含简历字段。Pi 的有状态业务工具在 Pi 调度层声明串行执行，并继续共用运行级 FIFO，避免参数预检和目标 locator、范围上下文、诊断结果发生并行竞态。工具阶段的可见 `text_delta` 继续转换为 `assistant.activity.delta`；每次工具和批量任务另发送 `assistant.activity.status`，浏览器以 `callKey` 原位更新 `running/succeeded/failed`，失败事件只含稳定错误码。工具参数在进入执行函数前校验失败时，也以同一个 `callKey` 写入 `AGENT_TOOL_ARGUMENT_INVALID` 失败审计，不记录原始参数或供应商错误。隐藏思考、工具参数和工具结果不进入用户正文。`begin_final_response` 执行时发送 `assistant.activity.clear` 并关闭工具，下一轮可见 `text_delta` 才逐个转换为 `assistant.delta`。`list_user_resources` 可从当前 run 反查用户，并列出其简历、已解析资料和面试记录的轻量目录；目录不包含正文。用户明确指定简历名称、ID 或目录中的某份简历后，`resolve_resume_reference` 按当前用户归属解析本轮目标；局部编辑时 `resolve_resume_target` 显式携带已解析的 resume ID，在同一份简历内继续定位字段。范围读取结果中的 locator 由 Pi 运行时保留；模型创建修改操作时只引用已读取的 `block_id`，运行时再注入服务端 locator 与 expected-text hash，不能让模型复制或改写这些授权字段。求职进程的阶段摘要以追加式当前阶段和生命周期为真值，旧扁平字段只作迁移兼容；公开选择的 `dataset` 仅限解析成功且转换对象键属于当前用户前缀的资料。
-4. 模型调用按 `llm_capability_bindings` 选择候选，解密运行凭据并写入 `llm_call_logs`。
+4. 模型调用按 `llm_capability_bindings` 选择候选，从供应商解密地址与凭据、按目录取单价，并写入 `llm_call_logs`。
 5. Pi 每轮先加载 `career-assistant-router`，保存有界任务清单，再按任务选择工作流并记录完成、部分完成、受阻或失败。简历上下文通过统一的 persisted canonical 解析边界读取；结构化 `InlineIcon/title_icon` 只在 Agent Markdown 边界序列化为白名单 `:icon[Name]:`。普通简历改动保存为范围化 canonical 提案；整篇翻译保存为独立 `translate_resume` 提案，服务端复验结构、节点、日期、数字、链接、联系方式和样式不变。确认普通提案时更新当前快照；确认翻译提案时创建新 Resume 与初始版本，并复制源 Resume 私有图片。图片缺失、不支持、复制失败或超过限额时不应用提案，已复制对象在事务失败时补偿删除。
 
 任务计划通过内部 `tasks:plan` 接口在当前用户消息元数据中保存，限制为 1–8 项，并校验工作流、产物类型、已授权资料引用、唯一 ID 和先后依赖。Pi 逐项调用 `tasks/{taskId}:status` 更新 `running/completed/partial/blocked/failed`；服务端只接受属于同一 run 的真实提案 ID。工作流切换以当前任务为边界，读取 Skill 只提供方法，不决定用户资料授权。运行意外结束时，FastAPI 把未收口任务标记为失败或受阻，并把该 run 已创建但未计入其他任务的提案归到当时正在执行的任务。`agent_runs.status=succeeded` 仍只表示运行和回复正常结束；每项业务结果以任务状态为准。单项提案使用基于目标与操作的稳定请求键，服务端按 run 与请求键幂等返回，批量目标部分失败时保留已创建提案 ID。
@@ -47,18 +48,21 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 | Web | FastAPI `/api/agent/*` | 用户 Cookie | 当前用户会话、模型摘要、上下文、运行和提案 |
 | FastAPI | Pi Service | `PI_SERVICE_TOKEN` | 创建/继续/取消 Agent 运行 |
 | Pi Service | FastAPI `/internal/agent/*` | `LINKRESUME_INTERNAL_AGENT_TOKEN` | 受控上下文、模型和简历提案工具 |
-| FastAPI LLM service | 模型供应商 | 运行时解密凭据 | 当前绑定能力的一次模型调用 |
+| FastAPI LLM service | 聚合网关 | 供应商凭据（运行时解密） | 当前绑定能力的一次模型调用 |
+| FastAPI LLM service | 供应商模型目录 | 供应商凭据（运行时解密） | 目录与单价同步 |
 
 两枚服务 token 方向不同且不能复用。Pi Service 默认只监听内部地址；浏览器、插件和小程序都不应感知 Pi URL。
 
 ## 治理数据
 
-- `llm_model_configs`：能力中立的模型连接配置和版本化密文。
+- `llm_providers`：供应商接入地址、版本化凭据、模型目录地址与最近一次同步状态。
+- `llm_provider_models`：供应商模型目录的本地快照，同时提供单价与 Pi 需要的模型能力参数。
+- `llm_model_configs`：供应商目录中的可调用模型，只保存供应商归属与模型标识。
 - `llm_capability_bindings`：Chat、简历结构化、Pi Agent、JD 图片解析四项能力到当前候选的绑定。
 - `llm_model_validations`：按候选版本、能力和探针版本保存验证证据。
 - `llm_call_logs`：调用状态、模型快照、Token、计量完整性和估算成本，不保存消息正文。
 
-绑定 Pi Agent 或 JD 图片解析前必须通过对应真实探针，不能用普通连接测试替代。FastAPI→Pi 与 Pi→FastAPI 使用相反方向的 URL 和两枚独立 token；浏览器不能直连 Pi 或读取模型密钥。
+绑定 Pi Agent 或 JD 图片解析前必须通过对应真实探针，不能用普通连接测试替代。模型必须来自供应商已同步的目录，因此每个可调用模型都带有真实单价与模型能力参数。FastAPI→Pi 与 Pi→FastAPI 使用相反方向的 URL 和两枚独立 token；浏览器不能直连 Pi 或读取模型密钥。
 
 ## 扩展边界
 
@@ -73,7 +77,7 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 - Pi readiness 失败时 FastAPI 仍可提供非 Agent 业务，但助手入口显示不可用且不能创建假成功运行。
 - 会话标题和置顶状态由 FastAPI 在用户归属校验后直接持久化；这些 PATCH 操作不进入消息/模型调用链。Web 根据返回的 `pinned` 状态把置顶会话投影到独立 `Pinned` 分组；选择会话时只原位刷新详情，发起新用户消息时才把会话提升到所在分组首位。资料库工作区切换、简历选择与工作台嵌入、整块侧栏显隐，以及桌面端会话栏宽度拖动和 `Pinned` 与“最近对话”的独立展开或收起都只属于客户端呈现。它们复用既有资料、简历和求职接口，不改变 Agent API、PATCH 或 DELETE 契约。删除会话会锁住目标会话及其运行，运行中时返回 `AGENT_RUN_IN_PROGRESS`，否则按 proposal、tool call、message、run、session 顺序事务清理。
 - 独立助手确认当前嵌入简历的提案前先完成现有草稿保存；确认成功后 Web 重新读取返回的目标简历，并用非编辑事务替换 Tiptap 文档。刷新读取失败不回滚已经完成的服务端提案，而是保留应用状态并提示用户重新打开简历；非当前简历的提案不触发右侧工作台替换。
-- `/api/agent/model` 未绑定模型时返回 `503 LLM_MODEL_NOT_CONFIGURED`；成功时只返回当前绑定的 `adapter` 和 `name`，不触发凭据解密。
+- `/api/agent/model` 未绑定模型时返回 `503 LLM_MODEL_NOT_CONFIGURED`；成功时只返回当前绑定的 `provider` 和 `name`，不触发凭据解密。
 - 模型未绑定、凭据不可解密、探针失败、供应商超时和计量缺失分别保留稳定状态；调用日志只记录非敏感错误码。
 - 单个浏览器 SSE 订阅断开不改变 run；后端进程重启导致运行中缓冲不存在时以 `AGENT_STREAM_INCOMPLETE` 收口。取消和失败不会生成可确认提案。
 - 内部工具失败只影响当前调用；数据库事务由 FastAPI 控制，Pi 不能直接连接 MySQL、Redis 或对象存储。

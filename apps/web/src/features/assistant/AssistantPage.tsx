@@ -2433,7 +2433,7 @@ export function AssistantPage({ sessionId }: AssistantPageProps = {}) {
                 </button>
                 {modelMenuOpen && (
                   <div role="menu" className="assistant-model-menu">
-                    <button type="button" role="menuitemradio" aria-checked="true" disabled={!runtimeModel} onClick={() => setModelMenuOpen(false)}><span><strong>{runtimeModelLabel}</strong><small>{runtimeModel ? `${runtimeModel.adapter} · 当前模型` : "当前模型暂时不可用"}</small></span>{runtimeModel && <Check size={16} />}</button>
+                    <button type="button" role="menuitemradio" aria-checked="true" disabled={!runtimeModel} onClick={() => setModelMenuOpen(false)}><span><strong>{runtimeModelLabel}</strong><small>{runtimeModel ? `${runtimeModel.provider} · 当前模型` : "当前模型暂时不可用"}</small></span>{runtimeModel && <Check size={16} />}</button>
                   </div>
                 )}
               </div>
