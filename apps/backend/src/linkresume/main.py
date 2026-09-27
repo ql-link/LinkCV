@@ -27,8 +27,6 @@ from linkresume.integrations.resume_structuring import LLMResumeStructuringClien
 from linkresume.integrations.wechat_client import WechatClient
 from linkresume.modules.llm.crypto import CredentialCipher
 from linkresume.modules.llm.gateway import LLMGateway, LiteLLMGateway
-from linkresume.modules.llm.catalog import MODEL_CAPABILITIES
-from linkresume.modules.llm.models import LLMCapabilityBinding
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
 from linkresume.modules.llm.service import LLMService
 from linkresume.modules.observability.logging import StructuredLogEmitter, configure_logging
@@ -132,11 +130,6 @@ def create_app(
         import linkresume.models  # noqa: F401
 
         Base.metadata.create_all(engine)
-        with session_factory() as schema_db:
-            for capability in MODEL_CAPABILITIES:
-                if schema_db.get(LLMCapabilityBinding, capability) is None:
-                    schema_db.add(LLMCapabilityBinding(capability=capability))
-            schema_db.commit()
 
     runtime_storage = storage or AssetStorage(runtime_settings)
     runtime_plugin_release_service = plugin_release_service or PluginReleaseService(

@@ -70,11 +70,12 @@ const server = createServer(async (request, response) => {
       typeof payload?.nonce !== "string" ||
       payload.nonce.length < 16 ||
       !model ||
-      typeof model.adapter !== "string" ||
+      typeof model.provider !== "string" ||
+      typeof model.api !== "string" ||
       typeof model.id !== "string" ||
       typeof model.name !== "string" ||
       typeof model.apiKey !== "string" ||
-      (model.baseUrl !== undefined && typeof model.baseUrl !== "string")
+      typeof model.baseUrl !== "string"
     ) {
       return json(response, 400, { error: "INVALID_AGENT_PROBE" });
     }

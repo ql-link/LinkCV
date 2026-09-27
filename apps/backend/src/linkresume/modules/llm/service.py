@@ -1,311 +1,169 @@
+"""LLM use-case execution; provider SDKs do not choose routes or prices."""
+
 from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from time import perf_counter
 from typing import TypeVar
 from uuid import uuid4
 
-from anyio import to_thread
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkresume.core.database import utc_now
-from linkresume.modules.llm.catalog import (
-    CHAT_CAPABILITY,
-    JOB_IMAGE_STRUCTURING_CAPABILITY,
-    PI_AGENT_CAPABILITY,
-    RESUME_STRUCTURING_CAPABILITY,
-    adapter_requires_api_key,
-    assemble_model_identifier,
-)
 from linkresume.modules.llm.crypto import CredentialCipher, CredentialUnavailableError
 from linkresume.modules.llm.gateway import (
-    GatewayError,
-    GatewayResult,
-    GatewayStreamEvent,
-    GatewayUsage,
-    LLMGateway,
+    GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage, LLMGateway,
 )
 from linkresume.modules.llm.models import (
-    LLMCallLog,
-    LLMCapabilityBinding,
-    LLMModelConfig,
+    LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
+)
+from linkresume.modules.llm.providers import OPENAI_CHAT, inference_base_url, validate_route
+from linkresume.modules.llm.resolver import (
+    ASSISTANT_CONVERSATION, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
+    RESUME_STRUCTURING, RoutePlan, resolve, validation_fingerprint,
+    resolve_candidates,
 )
 from linkresume.modules.llm.schemas import (
-    ChatImageContentPart,
-    ChatImageUrl,
-    ChatMessage,
-    ChatResult,
-    ChatStream,
-    ChatStreamEvent,
-    ChatUsage,
-    ChatTextContentPart,
+    ChatMessage, ChatResult, ChatStream, ChatStreamEvent, ChatUsage,
     StructuredChatResult,
 )
 
-logger = logging.getLogger(__name__)
+SOURCE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 VISION_PROBE_IMAGE_DATA_URL = (
     "data:image/png;base64,"
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP8zwACTGCSAQANHQEDgslx/wAAAABJRU5ErkJggg=="
 )
-ONE_MILLION = Decimal(1_000_000)
-COST_QUANTUM = Decimal("0.0000000001")
-SOURCE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 StructuredValue = TypeVar("StructuredValue", bound=BaseModel)
 
 
 def create_call_id() -> str:
-    return f"llmcall_{uuid4().hex}"
+    return "llmcall_" + uuid4().hex
 
 
-def normalize_call_source(source: str) -> str:
-    normalized = source.strip()
-    if not SOURCE_PATTERN.fullmatch(normalized):
-        raise ValueError("invalid LLM call source")
-    return normalized
+class LLMError(Exception):
+    def __init__(self, code: str, call_id: str | None = None) -> None:
+        super().__init__(code)
+        self.code = code
+        self.call_id = call_id or create_call_id()
+
+
+@dataclass(frozen=True)
+class AgentModelSummary:
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class AgentRuntimeModel:
+    plan: RoutePlan
+    api_key: str
+    base_url: str
 
 
 def _structured_messages(
-    messages: Sequence[ChatMessage],
-    response_model: type[StructuredValue],
+    messages: Sequence[ChatMessage], response_model: type[StructuredValue]
 ) -> tuple[ChatMessage, ...]:
-    schema = json.dumps(
-        response_model.model_json_schema(),
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    instruction = ChatMessage(
-        role="system",
-        content=(
-            "只返回一个符合下列 JSON Schema 的 JSON 对象。"
-            "不要输出 Markdown、代码围栏、解释或其他文字。"
-            "必须保留 Schema 要求的字段与类型；未知值按 Schema 使用 null、空数组或空字符串。"
-            f"\nJSON Schema:\n{schema}"
+    schema = json.dumps(response_model.model_json_schema(), ensure_ascii=False, separators=(",", ":"))
+    return (
+        ChatMessage(
+            role="system",
+            content="只返回一个符合下列 JSON Schema 的 JSON 对象，不要输出 Markdown 或解释。\nJSON Schema:\n" + schema,
         ),
+        *messages,
     )
-    return (instruction, *messages)
 
 
 def _json_object_candidates(content: str) -> tuple[str, ...]:
     candidates: list[str] = []
     start: int | None = None
     depth = 0
-    in_string = False
+    quoted = False
     escaped = False
-
-    for index, character in enumerate(content):
+    for index, char in enumerate(content):
         if start is None:
-            if character == "{":
-                start = index
-                depth = 1
-                in_string = False
-                escaped = False
+            if char == "{":
+                start, depth = index, 1
             continue
-
-        if in_string:
+        if quoted:
             if escaped:
                 escaped = False
-            elif character == "\\":
+            elif char == "\\":
                 escaped = True
-            elif character == '"':
-                in_string = False
-            continue
-
-        if character == '"':
-            in_string = True
-        elif character == "{":
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char == "{":
             depth += 1
-        elif character == "}":
+        elif char == "}":
             depth -= 1
             if depth == 0:
-                candidates.append(content[start : index + 1])
+                candidates.append(content[start:index + 1])
                 start = None
-
     return tuple(candidates)
 
 
 def _validate_structured_content(
-    content: str,
-    response_model: type[StructuredValue],
+    content: str, response_model: type[StructuredValue]
 ) -> StructuredValue:
-    validated: list[StructuredValue] = []
+    matches: list[StructuredValue] = []
     for candidate in _json_object_candidates(content):
         try:
-            payload = json.loads(candidate)
-            validated.append(response_model.model_validate(payload))
+            matches.append(response_model.model_validate(json.loads(candidate)))
         except (TypeError, ValueError, ValidationError):
-            continue
-    if len(validated) == 1:
-        return validated[0]
-    raise ValueError("model output must contain exactly one valid structured object")
+            pass
+    if len(matches) != 1:
+        raise ValueError("model output must contain exactly one valid structured object")
+    return matches[0]
 
 
-class LLMError(Exception):
-    def __init__(self, code: str, call_id: str) -> None:
-        super().__init__(code)
-        self.code = code
-        self.call_id = call_id
+def _credential_key(cipher: CredentialCipher, plan: RoutePlan) -> str:
+    if not plan.credential_ciphertext:
+        raise LLMError("LLM_CREDENTIALS_UNAVAILABLE")
+    try:
+        bundle = json.loads(cipher.decrypt(plan.credential_ciphertext).plaintext)
+    except (CredentialUnavailableError, ValueError, TypeError) as error:
+        raise LLMError("LLM_CREDENTIALS_UNAVAILABLE") from error
+    key = bundle.get("api_key") if isinstance(bundle, dict) else None
+    if not isinstance(key, str) or not key.strip():
+        raise LLMError("LLM_CREDENTIALS_UNAVAILABLE")
+    return key
 
 
-@dataclass(frozen=True)
-class RuntimeModelConfig:
-    id: int
-    capability: str
-    adapter: str
-    model_call_name: str
-    model_name: str
-    api_base: str | None
-    encrypted_api_key: str | None
-    config_version: int
-
-    @classmethod
-    def from_record(
-        cls,
-        config: LLMModelConfig,
-        *,
-        capability: str = CHAT_CAPABILITY,
-    ) -> RuntimeModelConfig | None:
-        if config.adapter is None or config.model_call_name is None:
-            return None
-        return cls(
-            id=config.id,
-            capability=capability,
-            adapter=config.adapter,
-            model_call_name=config.model_call_name,
-            model_name=assemble_model_identifier(
-                config.adapter,
-                config.model_call_name,
-            ),
-            api_base=config.api_base,
-            encrypted_api_key=config.encrypted_api_key,
-            config_version=config.config_version,
-        )
-
-
-@dataclass(frozen=True)
-class AgentRuntimeModel:
-    id: int
-    adapter: str
-    model_call_name: str
-    api_base: str | None
-    api_key: str | None
-    config_version: int
-
-
-@dataclass(frozen=True)
-class AgentModelSummary:
-    """The non-sensitive model identity exposed to an authenticated user."""
-
-    adapter: str
-    name: str
-
-
-@dataclass(frozen=True)
-class Metering:
-    status: str
-    input_tokens: int | None
-    output_tokens: int | None
-    input_price_per_million: Decimal | None
-    output_price_per_million: Decimal | None
-    estimated_cost: Decimal | None
-
-
-@dataclass(frozen=True)
-class OpenStream:
-    config: RuntimeModelConfig
-    events: AsyncIterator[GatewayStreamEvent]
-
-
-class ManagedStreamEvents(AsyncIterator[ChatStreamEvent]):
-    def __init__(
-        self,
-        source: AsyncIterator[ChatStreamEvent],
-        close_before_start: Callable[[], Awaitable[None]],
-    ) -> None:
-        self._source = source
-        self._close_before_start = close_before_start
-        self._started = False
-        self._closed = False
-
-    def __aiter__(self) -> ManagedStreamEvents:
-        return self
-
-    async def __anext__(self) -> ChatStreamEvent:
-        if self._closed:
-            raise StopAsyncIteration
-        self._started = True
-        try:
-            return await anext(self._source)
-        except StopAsyncIteration:
-            self._closed = True
-            raise
-        except BaseException:
-            self._closed = True
-            raise
-
-    async def aclose(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        if not self._started:
-            await self._close_before_start()
-        close = getattr(self._source, "aclose", None)
-        if close is not None:
-            await close()
-
-
-def calculate_metering(
-    *,
-    usage: GatewayUsage,
-    input_price_per_million: Decimal | None,
-    output_price_per_million: Decimal | None,
-    force_partial: bool = False,
-) -> Metering:
-    values = (
-        usage.input_tokens,
-        usage.output_tokens,
-        input_price_per_million,
-        output_price_per_million,
-    )
-    complete = all(value is not None for value in values) and not force_partial
-    known = any(value is not None for value in values)
-    status = "complete" if complete else "partial" if known else "unknown"
-
-    estimated_cost = None
-    if complete:
-        assert usage.input_tokens is not None
-        assert usage.output_tokens is not None
-        assert input_price_per_million is not None
-        assert output_price_per_million is not None
-        estimated_cost = (
-            Decimal(usage.input_tokens) / ONE_MILLION * input_price_per_million
-            + Decimal(usage.output_tokens) / ONE_MILLION * output_price_per_million
-        ).quantize(COST_QUANTUM)
-
-    return Metering(
-        status=status,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        input_price_per_million=input_price_per_million,
-        output_price_per_million=output_price_per_million,
-        estimated_cost=estimated_cost,
-    )
-
-
-def usage_response(usage: GatewayUsage) -> ChatUsage | None:
-    if usage.input_tokens is None and usage.output_tokens is None:
-        return None
-    return ChatUsage(
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-    )
+def _metering(usage: GatewayUsage | None, pricing: dict | None) -> tuple[str, Decimal | None, str | None]:
+    if usage is None:
+        return "unknown", None, None
+    if usage.input_tokens is None or usage.output_tokens is None:
+        return "partial" if usage.input_tokens is not None or usage.output_tokens is not None else "unknown", None, None
+    if not pricing:
+        return "partial", None, None
+    details = usage.details or {}
+    if details.get("cacheRead") not in (None, 0) or details.get("cacheWrite") not in (None, 0):
+        return "partial", None, None
+    try:
+        currency = pricing["currency"]
+        input_price = Decimal(str(pricing["input_per_million"]))
+        output_price = Decimal(str(pricing["output_per_million"]))
+        if (
+            not isinstance(currency, str) or len(currency) != 3
+            or not input_price.is_finite() or input_price < 0
+            or not output_price.is_finite() or output_price < 0
+        ):
+            raise ValueError
+        cost = (
+            Decimal(usage.input_tokens) * input_price
+            + Decimal(usage.output_tokens) * output_price
+        ) / Decimal(1_000_000)
+        return "complete", cost, currency.upper()
+    except (KeyError, ValueError, TypeError, InvalidOperation):
+        return "partial", None, None
 
 
 class LLMService:
@@ -322,244 +180,98 @@ class LLMService:
     def encrypt_credential(self, plaintext: str) -> str:
         return self._cipher.encrypt(plaintext)
 
-    async def agent_model_summary(self) -> AgentModelSummary:
-        """Resolve the bound Pi Agent model without reading its credentials."""
-        config = await self._db(self._current_config_sync, PI_AGENT_CAPABILITY)
-        if config is None:
-            raise LLMError("LLM_MODEL_NOT_CONFIGURED", "agent-model-summary")
-        return AgentModelSummary(adapter=config.adapter, name=config.model_call_name)
+    async def _db(self, function, *args, **kwargs):
+        return await asyncio.to_thread(function, *args, **kwargs)
 
-    async def agent_runtime_model(self) -> AgentRuntimeModel:
-        """Resolve and decrypt the model bound to the Pi Agent capability."""
-        config = await self._db(self._current_config_sync, PI_AGENT_CAPABILITY)
-        if config is None:
-            raise LLMError("LLM_MODEL_NOT_CONFIGURED", "agent-runtime-config")
-        if config.encrypted_api_key is None:
-            if adapter_requires_api_key(config.adapter):
-                raise LLMError(
-                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
-                )
-            api_key = None
-        else:
-            try:
-                credential = self._cipher.decrypt(config.encrypted_api_key)
-            except CredentialUnavailableError as error:
-                raise LLMError(
-                    "LLM_CREDENTIALS_UNAVAILABLE", "agent-runtime-config"
-                ) from error
-            api_key = credential.plaintext
-            if credential.needs_rewrap:
-                await self._db(self._rewrap_sync, config, credential.plaintext)
+    def _resolve_sync(self, use_case: str, model_id: int | None = None) -> RoutePlan | None:
+        with self._session_factory() as db:
+            return resolve(db, use_case, model_id=model_id)
+
+    def _resolve_candidates_sync(self, use_case: str, model_id: int | None = None) -> list[RoutePlan]:
+        with self._session_factory() as db:
+            return resolve_candidates(db, use_case, model_id=model_id)
+
+    async def agent_model_summary(self, model_id: int | None = None) -> AgentModelSummary:
+        plan = await self._db(self._resolve_sync, ASSISTANT_CONVERSATION, model_id)
+        if plan is None:
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED" if model_id is None else "LLM_MODEL_UNAVAILABLE")
+        return AgentModelSummary(id=plan.model_id, name=plan.display_name)
+
+    async def agent_runtime_model(self, model_id: int | None = None) -> AgentRuntimeModel:
+        plan = await self._db(self._resolve_sync, ASSISTANT_CONVERSATION, model_id)
+        if plan is None:
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED" if model_id is None else "LLM_MODEL_UNAVAILABLE")
+        return self.runtime_model_for_plan(plan)
+
+    def runtime_model_for_plan(self, plan: RoutePlan) -> AgentRuntimeModel:
+        try:
+            validate_route(plan.provider_code, plan.target_kind, plan.protocol_code)
+            base_url = inference_base_url(plan.provider_code, plan.settings)
+        except ValueError as error:
+            raise LLMError("LLM_MODEL_UNAVAILABLE") from error
         return AgentRuntimeModel(
-            id=config.id,
-            adapter=config.adapter,
-            model_call_name=config.model_call_name,
-            api_base=config.api_base,
-            api_key=api_key,
-            config_version=config.config_version,
+            plan=plan,
+            api_key=_credential_key(self._cipher, plan),
+            base_url=base_url,
         )
 
-    async def _db(self, function, *args, **kwargs):
-        return await to_thread.run_sync(lambda: function(*args, **kwargs))
-
-    def _create_log_sync(
+    def _start_log_sync(
         self,
+        plan: RoutePlan,
+        *,
         call_id: str,
-        user_id: int,
         source: str,
-        capability: str = CHAT_CAPABILITY,
+        user_id: int | None,
+        agent_run_id: int | None = None,
     ) -> None:
         with self._session_factory() as db:
-            db.add(
-                LLMCallLog(
-                    call_id=call_id,
-                    capability=capability,
-                    source=normalize_call_source(source),
-                    user_id=user_id,
-                    created_at=utc_now(),
-                )
-            )
+            db.add(LLMCallLog(
+                call_id=call_id,
+                use_case=plan.use_case,
+                source=source,
+                user_id=user_id,
+                agent_run_id=agent_run_id,
+                route_id=plan.route_id,
+                runtime_config_version=plan.runtime_config_version,
+                protocol_code=plan.protocol_code,
+                selection_source=plan.selection_source,
+                price_snapshot_json=plan.pricing,
+                status="pending",
+                metering_status="unknown",
+            ))
             db.commit()
 
-    def _current_config_sync(
-        self, capability: str = CHAT_CAPABILITY
-    ) -> RuntimeModelConfig | None:
-        with self._session_factory() as db:
-            binding = db.get(LLMCapabilityBinding, capability)
-            if binding is None or binding.model_config_id is None:
-                return None
-            config = db.get(LLMModelConfig, binding.model_config_id)
-            return (
-                RuntimeModelConfig.from_record(config, capability=capability)
-                if config is not None
-                else None
-            )
-
-    def _config_sync(
-        self, config_id: int, capability: str = CHAT_CAPABILITY
-    ) -> RuntimeModelConfig | None:
-        with self._session_factory() as db:
-            config = db.get(LLMModelConfig, config_id)
-            return (
-                RuntimeModelConfig.from_record(config, capability=capability)
-                if config is not None
-                else None
-            )
-
-    def _select_model_sync(self, call_id: str, config: RuntimeModelConfig) -> None:
-        with self._session_factory() as db:
-            db.execute(
-                update(LLMCallLog)
-                .where(LLMCallLog.call_id == call_id)
-                .values(
-                    model_config_id=config.id,
-                    model_config_version=config.config_version,
-                    model_name=config.model_name,
-                    adapter=config.adapter,
-                    model_call_name=config.model_call_name,
-                )
-            )
-            db.commit()
-
-    def _rewrap_sync(self, config: RuntimeModelConfig, plaintext: str) -> None:
-        assert config.encrypted_api_key is not None
-        replacement = self._cipher.encrypt(plaintext)
-        with self._session_factory() as db:
-            db.execute(
-                update(LLMModelConfig)
-                .where(
-                    LLMModelConfig.id == config.id,
-                    LLMModelConfig.encrypted_api_key == config.encrypted_api_key,
-                )
-                .values(encrypted_api_key=replacement, updated_at=utc_now())
-            )
-            db.commit()
-
-    def _finalize_sync(
+    def _finish_log_sync(
         self,
         call_id: str,
         *,
         status: str,
-        latency_ms: int,
-        error_code: str | None,
-        metering: Metering | None = None,
+        usage: GatewayUsage | None = None,
+        response_model_id: str | None = None,
+        upstream_request_id: str | None = None,
+        error_code: str | None = None,
+        latency_ms: int | None = None,
     ) -> None:
-        values: dict[str, object] = {
-            "status": status,
-            "latency_ms": latency_ms,
-            "error_code": error_code,
-        }
-        if metering is not None:
-            values.update(
-                {
-                    "metering_status": metering.status,
-                    "input_tokens": metering.input_tokens,
-                    "output_tokens": metering.output_tokens,
-                    "input_price_per_million": metering.input_price_per_million,
-                    "output_price_per_million": metering.output_price_per_million,
-                    "estimated_cost": metering.estimated_cost,
-                }
-            )
         with self._session_factory() as db:
-            db.execute(
-                update(LLMCallLog)
-                .where(LLMCallLog.call_id == call_id)
-                .values(**values)
-            )
+            row = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == call_id))
+            if row is None:
+                return
+            row.status = status
+            if usage is not None:
+                metering_status, cost, currency = _metering(usage, row.price_snapshot_json)
+                row.metering_status = metering_status
+                row.input_tokens = usage.input_tokens
+                row.output_tokens = usage.output_tokens
+                row.usage_json = usage.details
+                row.estimated_cost = cost
+                row.cost_currency = currency
+            if response_model_id is not None:
+                row.response_model_id = response_model_id
+            if upstream_request_id is not None:
+                row.upstream_request_id = upstream_request_id
+            row.error_code = error_code
+            row.latency_ms = latency_ms
             db.commit()
-        log = logger.warning if status == "failed" else logger.info
-        log(
-            "LLM call finalized call_id=%s status=%s error_code=%s metering_status=%s",
-            call_id,
-            status,
-            error_code or "-",
-            metering.status if metering else "unknown",
-            extra={
-                "dependency": "llm",
-                "duration_ms": latency_ms,
-                "operation_id": call_id,
-                "error_code": error_code,
-                "summary": (
-                    f"status={status};metering="
-                    f"{metering.status if metering else 'unknown'}"
-                ),
-            },
-        )
-
-    async def _finalize_cancelled(self, call_id: str, started_at: float) -> None:
-        await asyncio.shield(
-            self._db(
-                self._finalize_sync,
-                call_id,
-                status="cancelled",
-                latency_ms=self._latency(started_at),
-                error_code=None,
-            )
-        )
-
-    async def _credential(
-        self,
-        config: RuntimeModelConfig,
-        call_id: str,
-        started_at: float,
-    ) -> str | None:
-        if config.encrypted_api_key is None:
-            if adapter_requires_api_key(config.adapter):
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code="LLM_CREDENTIALS_UNAVAILABLE",
-                )
-                raise LLMError("LLM_CREDENTIALS_UNAVAILABLE", call_id)
-            return None
-        try:
-            credential = self._cipher.decrypt(config.encrypted_api_key)
-        except CredentialUnavailableError as error:
-            await self._db(
-                self._finalize_sync,
-                call_id,
-                status="failed",
-                latency_ms=self._latency(started_at),
-                error_code="LLM_CREDENTIALS_UNAVAILABLE",
-            )
-            raise LLMError("LLM_CREDENTIALS_UNAVAILABLE", call_id) from error
-        if credential.needs_rewrap:
-            await self._db(self._rewrap_sync, config, credential.plaintext)
-        return credential.plaintext
-
-    @staticmethod
-    def _latency(started_at: float) -> int:
-        return max(0, round((perf_counter() - started_at) * 1000))
-
-    async def _resolve_current(
-        self,
-        call_id: str,
-        started_at: float,
-        capability: str = CHAT_CAPABILITY,
-    ) -> RuntimeModelConfig:
-        config = await self._db(self._current_config_sync, capability)
-        if config is None:
-            await self._db(
-                self._finalize_sync,
-                call_id,
-                status="failed",
-                latency_ms=self._latency(started_at),
-                error_code=(
-                    "LLM_CHAT_NOT_CONFIGURED"
-                    if capability == CHAT_CAPABILITY
-                    else "LLM_MODEL_NOT_CONFIGURED"
-                ),
-            )
-            raise LLMError(
-                "LLM_CHAT_NOT_CONFIGURED"
-                if capability == CHAT_CAPABILITY
-                else "LLM_MODEL_NOT_CONFIGURED",
-                call_id,
-            )
-        await self._db(self._select_model_sync, call_id, config)
-        return config
 
     async def chat(
         self,
@@ -567,64 +279,62 @@ class LLMService:
         messages: Sequence[ChatMessage],
         *,
         source: str,
-        capability: str = CHAT_CAPABILITY,
+        use_case: str = JOB_TEXT_EXTRACTION,
     ) -> ChatResult:
-        validated_messages = tuple(messages)
-        if not validated_messages:
-            raise ValueError("messages must not be empty")
-        normalized_source = normalize_call_source(source)
-        call_id = create_call_id()
-        started_at = perf_counter()
-        try:
-            await self._db(
-                self._create_log_sync,
-                call_id,
-                user_id,
-                normalized_source,
-                capability,
-            )
-            config = await self._resolve_current(call_id, started_at, capability)
-            api_key = await self._credential(config, call_id, started_at)
+        if not messages or not SOURCE_PATTERN.fullmatch(source):
+            raise ValueError("invalid LLM request")
+        plans = await self._db(self._resolve_candidates_sync, use_case)
+        if not plans:
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED")
+        last_error: LLMError | None = None
+        for plan in plans:
+            if plan.protocol_code != OPENAI_CHAT:
+                continue
+            try:
+                runtime = self.runtime_model_for_plan(plan)
+            except LLMError:
+                continue
+            call_id = create_call_id()
+            started = perf_counter()
+            await self._db(self._start_log_sync, plan, call_id=call_id, source=source, user_id=user_id)
             try:
                 result = await self._gateway.complete(
-                    model=config.model_name,
-                    messages=validated_messages,
-                    api_base=config.api_base,
-                    api_key=api_key,
+                    model=plan.invoke_target, messages=tuple(messages),
+                    api_base=runtime.base_url, api_key=runtime.api_key,
                 )
             except GatewayError as error:
-                metering = self._error_metering(error)
                 await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code=error.code,
-                    metering=metering,
+                    self._finish_log_sync, call_id, status="failed", usage=error.usage,
+                    error_code=error.code, latency_ms=round((perf_counter() - started) * 1000),
                 )
-                raise LLMError(error.code, call_id) from error
-
-            metering = calculate_metering(
-                usage=result.usage,
-                input_price_per_million=result.input_price_per_million,
-                output_price_per_million=result.output_price_per_million,
-            )
+                last_error = LLMError(error.code, call_id)
+                if error.code == "LLM_REQUEST_REJECTED":
+                    raise last_error from error
+                continue
+            except asyncio.CancelledError:
+                await asyncio.shield(self._db(
+                    self._finish_log_sync, call_id, status="cancelled",
+                    latency_ms=round((perf_counter() - started) * 1000),
+                ))
+                raise
+            except Exception as error:
+                await self._db(
+                    self._finish_log_sync, call_id, status="failed",
+                    error_code="LLM_CONNECTION_FAILED",
+                    latency_ms=round((perf_counter() - started) * 1000),
+                )
+                raise LLMError("LLM_CONNECTION_FAILED", call_id) from error
             await self._db(
-                self._finalize_sync,
-                call_id,
-                status="succeeded",
-                latency_ms=self._latency(started_at),
-                error_code=None,
-                metering=metering,
+                self._finish_log_sync, call_id, status="succeeded", usage=result.usage,
+                response_model_id=result.response_model_id,
+                upstream_request_id=result.upstream_request_id,
+                latency_ms=round((perf_counter() - started) * 1000),
             )
             return ChatResult(
-                content=result.content,
-                call_id=call_id,
-                usage=usage_response(result.usage),
+                content=result.content, callId=call_id,
+                usage=ChatUsage(inputTokens=result.usage.input_tokens, outputTokens=result.usage.output_tokens),
             )
-        except asyncio.CancelledError:
-            await self._finalize_cancelled(call_id, started_at)
-            raise
+        raise last_error or LLMError("LLM_MODEL_UNAVAILABLE")
 
     async def structured_chat(
         self,
@@ -633,83 +343,21 @@ class LLMService:
         *,
         source: str,
         response_model: type[StructuredValue],
-        capability: str = CHAT_CAPABILITY,
+        use_case: str = JOB_TEXT_EXTRACTION,
     ) -> StructuredChatResult[StructuredValue]:
-        validated_messages = tuple(messages)
-        if not validated_messages:
-            raise ValueError("messages must not be empty")
-        normalized_source = normalize_call_source(source)
-        call_id = create_call_id()
-        started_at = perf_counter()
+        result = await self.chat(
+            user_id, _structured_messages(messages, response_model),
+            source=source, use_case=use_case,
+        )
         try:
+            value = _validate_structured_content(result.content, response_model)
+        except ValueError as error:
             await self._db(
-                self._create_log_sync,
-                call_id,
-                user_id,
-                normalized_source,
-                capability,
+                self._finish_log_sync, result.call_id, status="failed",
+                error_code="LLM_RESPONSE_INVALID",
             )
-            config = await self._resolve_current(call_id, started_at, capability)
-            api_key = await self._credential(config, call_id, started_at)
-            try:
-                result = await self._gateway.complete(
-                    model=config.model_name,
-                    messages=_structured_messages(
-                        validated_messages,
-                        response_model,
-                    ),
-                    api_base=config.api_base,
-                    api_key=api_key,
-                    disable_thinking=True,
-                )
-            except GatewayError as error:
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code=error.code,
-                    metering=self._error_metering(error),
-                )
-                raise LLMError(error.code, call_id) from error
-
-            metering = calculate_metering(
-                usage=result.usage,
-                input_price_per_million=result.input_price_per_million,
-                output_price_per_million=result.output_price_per_million,
-            )
-            try:
-                value = _validate_structured_content(
-                    result.content,
-                    response_model,
-                )
-            except (TypeError, ValueError, ValidationError):
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code="LLM_RESPONSE_INVALID",
-                    metering=metering,
-                )
-                raise LLMError("LLM_RESPONSE_INVALID", call_id) from None
-
-            await self._db(
-                self._finalize_sync,
-                call_id,
-                status="succeeded",
-                latency_ms=self._latency(started_at),
-                error_code=None,
-                metering=metering,
-            )
-            return StructuredChatResult(
-                value=value,
-                call_id=call_id,
-                usage=usage_response(result.usage),
-            )
-        except asyncio.CancelledError:
-            await self._finalize_cancelled(call_id, started_at)
-            raise
+            raise LLMError("LLM_RESPONSE_INVALID", result.call_id) from error
+        return StructuredChatResult(value=value, call_id=result.call_id, usage=result.usage)
 
     async def stream_chat(
         self,
@@ -717,342 +365,159 @@ class LLMService:
         messages: Sequence[ChatMessage],
         *,
         source: str,
-        capability: str = CHAT_CAPABILITY,
+        use_case: str = JOB_TEXT_EXTRACTION,
     ) -> ChatStream:
-        validated_messages = tuple(messages)
-        if not validated_messages:
-            raise ValueError("messages must not be empty")
-        normalized_source = normalize_call_source(source)
-        call_id = create_call_id()
-        started_at = perf_counter()
-        try:
-            await self._db(
-                self._create_log_sync,
-                call_id,
-                user_id,
-                normalized_source,
-                capability,
-            )
-            config = await self._resolve_current(call_id, started_at, capability)
-            api_key = await self._credential(config, call_id, started_at)
-            try:
-                events = await self._gateway.start_stream(
-                    model=config.model_name,
-                    messages=validated_messages,
-                    api_base=config.api_base,
-                    api_key=api_key,
-                )
-            except GatewayError as error:
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code=error.code,
-                    metering=self._error_metering(error),
-                )
-                raise LLMError(error.code, call_id) from error
-        except asyncio.CancelledError:
-            await self._finalize_cancelled(call_id, started_at)
-            raise
-
-        opened = OpenStream(config=config, events=events)
-        source_events = self._stream_events(opened, call_id, started_at)
-        return ChatStream(
-            call_id=call_id,
-            events=ManagedStreamEvents(
-                source_events,
-                lambda: self._close_unstarted_stream(opened, call_id, started_at),
-            ),
-        )
-
-    async def _close_unstarted_stream(
-        self,
-        opened: OpenStream,
-        call_id: str,
-        started_at: float,
-    ) -> None:
-        await self._finalize_cancelled(call_id, started_at)
-        close = getattr(opened.events, "aclose", None)
-        if close is not None:
-            await close()
-
-    async def _stream_events(
-        self,
-        opened: OpenStream,
-        call_id: str,
-        started_at: float,
-    ) -> AsyncIterator[ChatStreamEvent]:
-        finalized = False
-        try:
-            final_event: GatewayStreamEvent | None = None
-            try:
-                async for event in opened.events:
-                    if event.type == "delta":
-                        yield ChatStreamEvent(
-                            type="delta",
-                            call_id=call_id,
-                            content=event.content,
-                        )
-                    else:
-                        final_event = event
-            except GatewayError as error:
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code=error.code,
-                    metering=self._error_metering(error),
-                )
-                finalized = True
-                yield ChatStreamEvent(
-                    type="error",
-                    call_id=call_id,
-                    error_code=error.code,
-                )
-                return
-
-            if final_event is None:
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code="LLM_REQUEST_REJECTED",
-                )
-                finalized = True
-                yield ChatStreamEvent(
-                    type="error",
-                    call_id=call_id,
-                    error_code="LLM_REQUEST_REJECTED",
-                )
-                return
-
-            final_usage = final_event.usage or GatewayUsage(None, None)
-            metering = calculate_metering(
-                usage=final_usage,
-                input_price_per_million=final_event.input_price_per_million,
-                output_price_per_million=final_event.output_price_per_million,
-            )
-            await self._db(
-                self._finalize_sync,
-                call_id,
-                status="succeeded",
-                latency_ms=self._latency(started_at),
-                error_code=None,
-                metering=metering,
-            )
-            finalized = True
-            yield ChatStreamEvent(
-                type="done",
-                call_id=call_id,
-                usage=usage_response(final_usage),
-            )
-        except (asyncio.CancelledError, GeneratorExit):
-            if not finalized:
-                await self._finalize_cancelled(call_id, started_at)
-            raise
-        finally:
-            close = getattr(opened.events, "aclose", None)
-            if close is not None:
-                await close()
-
-    @staticmethod
-    def _error_metering(error: GatewayError) -> Metering | None:
-        if (
-            error.usage is None
-            and error.input_price_per_million is None
-            and error.output_price_per_million is None
-        ):
-            return None
-        return calculate_metering(
-            usage=error.usage or GatewayUsage(None, None),
-            input_price_per_million=error.input_price_per_million,
-            output_price_per_million=error.output_price_per_million,
-            force_partial=True,
-        )
-
-    async def test_config(
-        self,
-        user_id: int,
-        config_id: int,
-        *,
-        capability: str = CHAT_CAPABILITY,
-    ) -> str:
-        config = await self._db(self._config_sync, config_id, capability)
-        if config is None:
-            call_id = create_call_id()
-            started_at = perf_counter()
-            await self._db(
-                self._create_log_sync,
-                call_id,
-                user_id,
-                "connection_test",
-                capability,
-            )
-            await self._db(
-                self._finalize_sync,
-                call_id,
-                status="failed",
-                latency_ms=self._latency(started_at),
-                error_code="LLM_MODEL_NOT_FOUND",
-            )
-            raise LLMError("LLM_MODEL_NOT_FOUND", call_id)
-        return await self.test_runtime_config(user_id, config)
-
-    async def test_runtime_config(
-        self,
-        user_id: int,
-        config: RuntimeModelConfig,
-    ) -> str:
-        call_id = create_call_id()
-        started_at = perf_counter()
-        try:
-            await self._db(
-                self._create_log_sync,
-                call_id,
-                user_id,
-                "connection_test",
-                config.capability,
-            )
-            await self._db(self._select_model_sync, call_id, config)
-            api_key = await self._credential(config, call_id, started_at)
-            try:
-                is_image_probe = config.capability == JOB_IMAGE_STRUCTURING_CAPABILITY
-                probe_message = ChatMessage(
-                    role="user",
-                    content=(
-                        [
-                            ChatTextContentPart(
-                                text=(
-                                    "识别图片的纯色，只返回一个 JSON 对象，"
-                                    '格式为 {"color":"颜色英文小写"}。'
-                                )
-                            ),
-                            ChatImageContentPart(
-                                image_url=ChatImageUrl(
-                                    url=VISION_PROBE_IMAGE_DATA_URL,
-                                    detail="low",
-                                )
-                            ),
-                        ]
-                        if is_image_probe
-                        else (
-                            "Reply only with this valid JSON object: {\"ok\": true}"
-                            if config.capability == RESUME_STRUCTURING_CAPABILITY
-                            else "Reply with OK."
-                        )
-                    ),
-                )
-                result: GatewayResult = await self._gateway.complete(
-                    model=config.model_name,
-                    messages=(probe_message,),
-                    api_base=config.api_base,
-                    api_key=api_key,
-                )
-            except GatewayError as error:
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code="LLM_CONNECTION_FAILED",
-                    metering=self._error_metering(error),
-                )
-                raise LLMError("LLM_CONNECTION_FAILED", call_id) from error
-            metering = calculate_metering(
-                usage=result.usage,
-                input_price_per_million=result.input_price_per_million,
-                output_price_per_million=result.output_price_per_million,
-            )
-            if config.capability in {
-                RESUME_STRUCTURING_CAPABILITY,
-                JOB_IMAGE_STRUCTURING_CAPABILITY,
-            }:
+        if not messages or not SOURCE_PATTERN.fullmatch(source):
+            raise ValueError("invalid LLM request")
+        plans = await self._db(self._resolve_candidates_sync, use_case)
+        if not plans:
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED")
+        request_call_id = create_call_id()
+        async def events() -> AsyncIterator[ChatStreamEvent]:
+            last_error = "LLM_MODEL_UNAVAILABLE"
+            for index, plan in enumerate(plans):
+                if plan.protocol_code != OPENAI_CHAT:
+                    continue
                 try:
-                    probe_payload = json.loads(result.content)
-                except (TypeError, ValueError):
-                    probe_payload = None
-                if (
-                    not isinstance(probe_payload, dict)
-                    or (
-                        probe_payload.get("color") != "red"
-                        if config.capability == JOB_IMAGE_STRUCTURING_CAPABILITY
-                        else probe_payload.get("ok") is not True
+                    runtime = self.runtime_model_for_plan(plan)
+                except LLMError:
+                    continue
+                call_id = request_call_id if index == 0 else create_call_id()
+                started = perf_counter()
+                await self._db(self._start_log_sync, plan, call_id=call_id, source=source, user_id=user_id)
+                upstream = None
+                finished = False
+                emitted_delta = False
+                try:
+                    upstream = await self._gateway.start_stream(
+                        model=plan.invoke_target, messages=tuple(messages),
+                        api_base=runtime.base_url, api_key=runtime.api_key,
                     )
-                ):
-                    await self._db(
-                        self._finalize_sync,
-                        call_id,
-                        status="failed",
-                        latency_ms=self._latency(started_at),
-                        error_code="LLM_RESPONSE_INVALID",
-                        metering=metering,
-                    )
-                    raise LLMError("LLM_RESPONSE_INVALID", call_id)
-            await self._db(
-                self._finalize_sync,
-                call_id,
-                status="succeeded",
-                latency_ms=self._latency(started_at),
-                error_code=None,
-                metering=metering,
-            )
-            return call_id
-        except asyncio.CancelledError:
-            await self._finalize_cancelled(call_id, started_at)
-            raise
+                    async for event in upstream:
+                        if event.type == "delta":
+                            emitted_delta = True
+                            yield ChatStreamEvent(type="delta", callId=call_id, content=event.content)
+                        else:
+                            await self._db(
+                                self._finish_log_sync, call_id, status="succeeded", usage=event.usage,
+                                response_model_id=event.response_model_id,
+                                upstream_request_id=event.upstream_request_id,
+                                latency_ms=round((perf_counter() - started) * 1000),
+                            )
+                            finished = True
+                            yield ChatStreamEvent(
+                                type="done", callId=call_id,
+                                usage=ChatUsage(
+                                    inputTokens=event.usage.input_tokens if event.usage else None,
+                                    outputTokens=event.usage.output_tokens if event.usage else None,
+                                ),
+                            )
+                            return
+                    # An upstream stream without a terminal event is a failed request.
+                    raise GatewayError(code="LLM_UNAVAILABLE", may_have_reached_provider=True)
+                except GatewayError as error:
+                    last_error = error.code
+                    await self._db(self._finish_log_sync, call_id, status="failed", usage=error.usage,
+                                   error_code=error.code, latency_ms=round((perf_counter() - started) * 1000))
+                    finished = True
+                    if emitted_delta or error.code == "LLM_REQUEST_REJECTED":
+                        yield ChatStreamEvent(type="error", callId=call_id, errorCode=error.code)
+                        return
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    last_error = "LLM_CONNECTION_FAILED"
+                    await self._db(self._finish_log_sync, call_id, status="failed",
+                                   error_code=last_error, latency_ms=round((perf_counter() - started) * 1000))
+                    finished = True
+                    yield ChatStreamEvent(type="error", callId=call_id, errorCode=last_error)
+                    return
+                finally:
+                    if not finished:
+                        await asyncio.shield(self._db(self._finish_log_sync, call_id, status="cancelled"))
+                    close = getattr(upstream, "aclose", None)
+                    if close:
+                        await close()
+            yield ChatStreamEvent(type="error", callId=request_call_id, errorCode=last_error)
+        return ChatStream(call_id=request_call_id, events=events())
 
-    async def test_external_runtime_config(
+    async def probe_route(
         self,
         user_id: int,
-        config: RuntimeModelConfig,
+        use_case: str,
+        route_id: int,
         *,
-        invoke: Callable[[str], Awaitable[GatewayUsage]],
+        pi_probe=None,
     ) -> str:
+        with self._session_factory() as db:
+            binding = db.get(LLMUseCaseRoute, (use_case, route_id))
+            route = db.get(LLMModelRoute, route_id)
+            connection = db.get(LLMProviderConnection, route.connection_id) if route else None
+            model = db.get(LLMModel, route.model_id) if route else None
+            if binding is None or route is None or connection is None or model is None:
+                raise LLMError("LLM_MODEL_NOT_FOUND")
+            plan = RoutePlan(
+                use_case=use_case, route_id=route.id, model_id=model.id,
+                display_name=model.display_name, provider_code=connection.provider_code,
+                connection_id=connection.id, runtime_config_version=connection.runtime_config_version,
+                target_kind=route.target_kind, invoke_target=route.invoke_target,
+                protocol_code=binding.protocol_code, settings=dict(connection.settings_json or {}),
+                credential_ciphertext=connection.credential_ciphertext,
+                pricing=dict(route.pricing_json) if route.pricing_json else None,
+                selection_source="probe",
+            )
+            fingerprint = validation_fingerprint(binding, route, connection)
+        runtime = self.runtime_model_for_plan(plan)
         call_id = create_call_id()
-        started_at = perf_counter()
+        await self._db(self._start_log_sync, plan, call_id=call_id, source="capability_probe", user_id=user_id)
         try:
-            await self._db(
-                self._create_log_sync,
-                call_id,
-                user_id,
-                "connection_test",
-                config.capability,
-            )
-            await self._db(self._select_model_sync, call_id, config)
-            api_key = await self._credential(config, call_id, started_at)
-            try:
-                usage = await invoke(api_key)
-            except asyncio.CancelledError:
-                raise
-            except Exception as error:
-                error_code = getattr(error, "code", "LLM_CONNECTION_FAILED")
-                await self._db(
-                    self._finalize_sync,
-                    call_id,
-                    status="failed",
-                    latency_ms=self._latency(started_at),
-                    error_code=str(error_code),
+            if use_case == ASSISTANT_CONVERSATION:
+                if pi_probe is None:
+                    raise LLMError("LLM_PI_AGENT_UNAVAILABLE", call_id)
+                usage = await pi_probe.run_probe(runtime, runtime.api_key)
+                result = GatewayResult(content="OK", usage=usage)
+            else:
+                if plan.protocol_code != OPENAI_CHAT:
+                    raise LLMError("LLM_MODEL_UNAVAILABLE", call_id)
+                prompt = ('Reply only with this JSON: {"ok":true}'
+                          if use_case == RESUME_STRUCTURING else "Reply with OK.")
+                message = ChatMessage(role="user", content=prompt)
+                if use_case == JOB_IMAGE_EXTRACTION:
+                    message = ChatMessage(role="user", content=[
+                        {"type": "text", "text": "Read this image and reply OK."},
+                        {"type": "image_url", "image_url": {"url": VISION_PROBE_IMAGE_DATA_URL}},
+                    ])
+                result = await self._gateway.complete(
+                    model=plan.invoke_target,
+                    messages=(message,),
+                    api_base=runtime.base_url, api_key=runtime.api_key,
                 )
-                if hasattr(error, "call_id"):
-                    error.call_id = call_id
+                if use_case == RESUME_STRUCTURING:
+                    try:
+                        valid = json.loads(result.content).get("ok") is True
+                    except (ValueError, AttributeError):
+                        valid = False
+                    if not valid:
+                        raise LLMError("LLM_RESPONSE_INVALID", call_id)
+            await self._db(self._finish_log_sync, call_id, status="succeeded", usage=result.usage)
+        except BaseException as error:
+            code = getattr(error, "code", "LLM_CONNECTION_FAILED")
+            await asyncio.shield(self._db(self._finish_log_sync, call_id,
+                                          status="cancelled" if isinstance(error, asyncio.CancelledError) else "failed",
+                                          error_code=code))
+            if isinstance(error, asyncio.CancelledError):
                 raise
-            metering = calculate_metering(
-                usage=usage,
-                input_price_per_million=None,
-                output_price_per_million=None,
-            )
-            await self._db(
-                self._finalize_sync,
-                call_id,
-                status="succeeded",
-                latency_ms=self._latency(started_at),
-                error_code=None,
-                metering=metering,
-            )
-            return call_id
-        except asyncio.CancelledError:
-            await self._finalize_cancelled(call_id, started_at)
-            raise
+            raise LLMError(code, call_id) from error
+        with self._session_factory() as db:
+            current = db.get(LLMUseCaseRoute, (use_case, route_id))
+            current_route = db.get(LLMModelRoute, route_id)
+            current_connection = db.get(LLMProviderConnection, current_route.connection_id) if current_route else None
+            if (
+                current is None or current_route is None or current_connection is None
+                or validation_fingerprint(current, current_route, current_connection) != fingerprint
+            ):
+                raise LLMError("LLM_CONFIG_CHANGED", call_id)
+            current.validated_fingerprint = fingerprint
+            current.validated_at = utc_now()
+            db.commit()
+        return call_id

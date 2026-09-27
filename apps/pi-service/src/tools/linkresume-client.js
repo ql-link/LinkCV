@@ -36,6 +36,10 @@ export function createLinkResumeClient(config, runId, signal) {
   return {
     readiness: () => request("/internal/agent/readiness"),
     runtimeConfig: () => request(`/internal/agent/runtime-config?run_id=${encodeURIComponent(runId)}`),
+    recordLlmCall: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/llm-calls`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
     context: (resumeId) => request(
       `/internal/agent/runs/${encodeURIComponent(runId)}/context?resume_id=${encodeURIComponent(resumeId)}`,
     ),

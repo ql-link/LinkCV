@@ -16,9 +16,10 @@ from linkresume.modules.interviews.models import (
 from linkresume.modules.job_descriptions.models import GlobalCompany, JobDescription
 from linkresume.modules.llm.models import (
     LLMCallLog,
-    LLMCapabilityBinding,
-    LLMModelConfig,
-    LLMModelValidation,
+    LLMModel,
+    LLMModelRoute,
+    LLMProviderConnection,
+    LLMUseCaseRoute,
 )
 from linkresume.modules.resumes.models import (
     DocumentParseTask,
@@ -34,9 +35,10 @@ __all__ = [
     "AgentToolCall",
     "ResumeChangeProposal",
     "LLMCallLog",
-    "LLMCapabilityBinding",
-    "LLMModelConfig",
-    "LLMModelValidation",
+    "LLMModel",
+    "LLMModelRoute",
+    "LLMProviderConnection",
+    "LLMUseCaseRoute",
     "InterviewAsset",
     "InterviewSession",
     "JobApplication",

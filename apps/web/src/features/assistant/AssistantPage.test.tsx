@@ -63,9 +63,7 @@ beforeEach(() => {
     resumes: [],
     activeResumeId: null,
   }, true);
-  vi.spyOn(api, "getAgentModel").mockResolvedValue({
-    model: { adapter: "openai", name: "deepseek/deepseek-v4-flash" },
-  });
+  vi.spyOn(api, "getAgentModels").mockResolvedValue({ models: [{ id: "1", name: "deepseek/deepseek-v4-flash" }], defaultModelId: "1" });
   vi.spyOn(api, "getActiveAgentRun").mockResolvedValue({ run: null });
 });
 
@@ -998,7 +996,7 @@ describe("AssistantPage", () => {
     await user.click(await screen.findByRole("button", { name: "deepseek/deepseek-v4-flash" }));
     const menu = screen.getByRole("menu");
     expect(within(menu).getByRole("menuitemradio", { name: /deepseek\/deepseek-v4-flash/ })).toHaveAttribute("aria-checked", "true");
-    expect(within(menu).getByText("openai · 当前模型")).toBeInTheDocument();
+    expect(within(menu).getByText("当前模型")).toBeInTheDocument();
     expect(within(menu).getAllByRole("menuitemradio")).toHaveLength(1);
   });
 
@@ -1031,7 +1029,7 @@ describe("AssistantPage", () => {
   });
 
   it("当前模型查询失败时明确显示不可用，不回退为虚构模型", async () => {
-    vi.mocked(api.getAgentModel).mockRejectedValueOnce(new Error("unavailable"));
+    vi.mocked(api.getAgentModels).mockRejectedValueOnce(new Error("unavailable"));
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
 
     render(<AssistantPage />);
