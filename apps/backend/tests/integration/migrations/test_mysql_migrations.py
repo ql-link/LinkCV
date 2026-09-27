@@ -4304,7 +4304,7 @@ def test_mysql_dataset_edit_upgrade_from_0060_preserves_existing_files() -> None
 def test_mysql_0089_requires_drained_legacy_tables_before_drop() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0088")
+    run_alembic(database_url, "upgrade", "0087")
     engine = create_engine(database_url)
     try:
         with engine.begin() as conn:

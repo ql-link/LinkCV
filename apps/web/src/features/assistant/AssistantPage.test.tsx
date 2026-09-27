@@ -64,7 +64,7 @@ beforeEach(() => {
     activeResumeId: null,
   }, true);
   vi.spyOn(api, "getAgentModel").mockResolvedValue({
-    model: { provider: "aihubmix", name: "z-ai/glm-4.6" },
+    model: { adapter: "openai", name: "deepseek/deepseek-v4-flash" },
   });
   vi.spyOn(api, "getActiveAgentRun").mockResolvedValue({ run: null });
 });
@@ -1101,10 +1101,10 @@ describe("AssistantPage", () => {
 
     render(<AssistantPage />);
 
-    await user.click(await screen.findByRole("button", { name: "z-ai/glm-4.6" }));
+    await user.click(await screen.findByRole("button", { name: "deepseek/deepseek-v4-flash" }));
     const menu = screen.getByRole("menu");
-    expect(within(menu).getByRole("menuitemradio", { name: /z-ai\/glm-4\.6/ })).toHaveAttribute("aria-checked", "true");
-    expect(within(menu).getByText("aihubmix · 当前模型")).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitemradio", { name: /deepseek\/deepseek-v4-flash/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(menu).getByText("openai · 当前模型")).toBeInTheDocument();
     expect(within(menu).getAllByRole("menuitemradio")).toHaveLength(1);
   });
 
@@ -1114,7 +1114,7 @@ describe("AssistantPage", () => {
 
     render(<AssistantPage />);
 
-    await user.click(await screen.findByRole("button", { name: "z-ai/glm-4.6" }));
+    await user.click(await screen.findByRole("button", { name: "deepseek/deepseek-v4-flash" }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
 
     await user.click(screen.getByText("你好，今天想完成什么？"));

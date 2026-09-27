@@ -2,12 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminApp } from "./AdminApp";
 import { AdminLoginPage } from "./AdminLoginPage";
-import {
-  api,
-  ApiRequestError,
-  type AdminStatsResponse,
-  type LlmProvider,
-} from "../../api/client";
+import { api, ApiRequestError, type AdminStatsResponse } from "../../api/client";
 
 const mockAdminUser = {
   id: "admin-1",
@@ -30,20 +25,17 @@ const emptyChatCapability = {
   models: [],
 };
 
-const llmProviders: LlmProvider[] = [
-  {
-    id: "3",
-    name: "虚构聚合网关",
-    baseUrl: "https://gateway.example.invalid/v1",
-    keyConfigured: true,
-    modelCatalogUrl: "https://catalog.example.invalid/api/v1/models",
-    modelCount: 0,
-    priceSyncStatus: "unknown",
-    priceSyncError: null,
-    priceSyncedAt: null,
-    version: 1,
-  },
-];
+const chatCatalog = {
+  capability: "chat" as const,
+  adapters: [
+    {
+      code: "deepseek" as const,
+      label: "DeepSeek",
+      requiresApiKey: true,
+      models: ["deepseek-chat"],
+    },
+  ],
+};
 
 const emptyStats: AdminStatsResponse = {
   total_users: 0,
@@ -56,7 +48,7 @@ const emptyStats: AdminStatsResponse = {
 function mockCommonApis() {
   vi.spyOn(api, "adminLogin").mockResolvedValue({ user: mockAdminUser });
   vi.spyOn(api, "getChatCapability").mockResolvedValue(emptyChatCapability);
-  vi.spyOn(api, "getLlmProviders").mockResolvedValue({ providers: llmProviders });
+  vi.spyOn(api, "getChatCatalog").mockResolvedValue(chatCatalog);
   vi.spyOn(api, "adminStats").mockResolvedValue(emptyStats);
   vi.spyOn(api, "adminLogSummary").mockResolvedValue({
     system: { total: 2, warnings: 1, errors: 0 },

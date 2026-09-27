@@ -1,7 +1,7 @@
 """remove dataset replacement and cleanup tables.
 
 Revision ID: 0089
-Revises: 0088
+Revises: 0087
 Create Date: 2026-09-27 20:32:52.697840
 """
 from collections.abc import Sequence
@@ -12,7 +12,7 @@ from sqlalchemy import inspect, text
 from linkresume.core.migration_sql import execute_sql_file
 
 revision: str = '0089'
-down_revision: str | None = '0088'
+down_revision: str | None = '0087'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
