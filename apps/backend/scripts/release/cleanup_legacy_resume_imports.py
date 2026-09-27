@@ -12,9 +12,7 @@ LIST_SQL = text(
     SELECT
         r.id,
         r.user_id,
-        r.source_object_key,
-        (SELECT COUNT(*) FROM resume_versions rv WHERE rv.resume_id = r.id)
-            AS version_count
+        r.source_object_key
     FROM resumes r
     LEFT JOIN resume_imports ri ON ri.result_resume_id = r.id
     WHERE r.source_type = 'import' AND ri.id IS NULL
@@ -30,7 +28,7 @@ def main() -> int:
     parser.add_argument(
         "--execute",
         action="store_true",
-        help="delete listed objects, versions, and resumes",
+        help="delete listed objects and resumes",
     )
     args = parser.parse_args()
     settings = load_settings()
@@ -45,7 +43,7 @@ def main() -> int:
         print(
             "legacy resume import: "
             f"resume_id={row['id']} user_id={row['user_id']} "
-            f"versions={row['version_count']} object={row['source_object_key']}"
+            f"object={row['source_object_key']}"
         )
     if not args.execute:
         return 0
@@ -62,10 +60,6 @@ def main() -> int:
             )
             continue
         with engine.begin() as connection:
-            connection.execute(
-                text("DELETE FROM resume_versions WHERE resume_id = :resume_id"),
-                {"resume_id": row["id"]},
-            )
             connection.execute(
                 text(
                     "DELETE FROM resumes WHERE id = :resume_id "

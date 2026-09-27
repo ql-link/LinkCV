@@ -42,12 +42,14 @@ describe("ResumeTemplatesPage", () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     render(<ResumeTemplatesPage />);
     await screen.findByRole("heading", { name: "现代双栏" });
+    const filterButton = screen.getByRole("button", { name: "筛选简历模板" });
+    expect(filterButton.closest(".page-hero")).toBeInTheDocument();
+    expect(screen.queryByText(/找到 \d+ 套模板/)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
+    fireEvent.click(filterButton);
     fireEvent.click(screen.getByRole("button", { name: "现代" }));
-    expect(screen.getByText("找到 2 套模板")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "经典单页技术简历" })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "校招" }));
-    expect(screen.getByText("找到 1 套模板")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "校园简历" })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("heading", { name: "现代双栏" })).not.toBeInTheDocument());
 
@@ -55,13 +57,12 @@ describe("ResumeTemplatesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "校招" }));
     expect(await screen.findByRole("heading", { name: "没有符合条件的模板" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重置筛选" }));
-    expect(screen.getByText("找到 3 套模板")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "现代双栏" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "现代" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "重置筛选" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "经典" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "清除筛选" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "重置筛选" }));
     expect(screen.getByRole("button", { name: "经典" })).toHaveAttribute("aria-pressed", "false");
   });
 
@@ -73,7 +74,7 @@ describe("ResumeTemplatesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
     fireEvent.click(screen.getByRole("button", { name: "现代" }));
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.getByText("找到 2 套模板")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "经典单页技术简历" })).not.toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
     expect(screen.getByRole("button", { name: "现代" })).toHaveAttribute("aria-pressed", "true");

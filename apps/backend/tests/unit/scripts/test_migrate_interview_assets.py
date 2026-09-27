@@ -11,11 +11,11 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 import linkresume.models  # noqa: F401
+from tests.legacy_models import InterviewAsset
 from linkresume.core.database import Base
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import (
-    InterviewAsset,
     InterviewSession,
     JobApplication,
 )
@@ -57,6 +57,7 @@ class FakeStorage:
 def build_database():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    InterviewAsset.__table__.create(engine)
     return engine
 
 
@@ -264,3 +265,27 @@ def test_unsupported_extension_is_reported() -> None:
         assert (
             db.execute(text("SELECT COUNT(*) FROM interview_assets")).scalar_one() == 1
         )
+
+
+def test_rerun_drains_already_migrated_legacy_row_without_duplicate_dataset():
+    module = load_migrator()
+    engine = build_database()
+    storage = FakeStorage()
+    original = "users/1/interviews/1/1/partial.webm"
+    storage.objects[original] = b"recording"
+    asset_id = seed_legacy_row(engine, file_name="partial.webm", asset_type="audio",
+                               object_name=original, duration_ms=1000)
+    with Session(engine) as db:
+        asset = db.get(InterviewAsset, asset_id)
+        old_row = {column.name: getattr(asset, column.name) for column in InterviewAsset.__table__.columns}
+    assert module.migrate(engine, storage, execute=True) == 0
+    # Simulate a previous transfer leaving the source row and file behind.
+    with engine.begin() as connection:
+        connection.execute(InterviewAsset.__table__.insert().values(**old_row))
+    storage.objects[original] = b"recording"
+    assert module.migrate(engine, storage, execute=True) == 0
+    with Session(engine) as db:
+        assert db.scalars(select(InterviewAsset)).all() == []
+        assert len(db.scalars(select(UserDataset)).all()) == 1
+    assert original not in storage.objects
+    engine.dispose()

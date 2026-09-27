@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from minio.error import S3Error
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.core.database import get_db
@@ -24,7 +23,6 @@ from linkresume.modules.resumes.image_limits import (
     MAX_RESUME_IMAGE_BYTES,
     RESUME_PDF_IMAGE_CONTENT_TYPES,
 )
-from linkresume.modules.resumes.models import ResumeVersion
 from linkresume.modules.resumes.routes import require_owned_resume
 
 router = APIRouter(prefix="/resumes/{resume_id}/assets", tags=["resume-assets"])
@@ -159,15 +157,6 @@ def delete_resume_asset(
     asset_url = _object_url(resume.id, object_key)
     if _contains_reference(resume.data_json, object_key) or _contains_reference(
         resume.data_json, asset_url
-    ):
-        raise ApiError(409, "ASSET_IN_USE")
-    versions = db.scalars(
-        select(ResumeVersion).where(ResumeVersion.resume_id == resume.id)
-    ).all()
-    if any(
-        _contains_reference(version.data_json, object_key)
-        or _contains_reference(version.data_json, asset_url)
-        for version in versions
     ):
         raise ApiError(409, "ASSET_IN_USE")
     try:

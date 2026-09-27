@@ -11,31 +11,24 @@ from linkresume.application.resumes.service import (
 )
 from linkresume.core.errors import ApiError
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkresume.modules.resumes.models import Resume, ResumeTemplate
 from linkresume.modules.resumes.pdf_service import clone_resume_private_assets, validate_resume_pdf_asset_contract
 
 
 def copy_resume(db: Session, storage, *, user_id: int, resume_id: str, title: str,
-                client_request_id: str, base_lock_version: int | None = None,
-                version_no: int | None = None) -> tuple[Resume, bool]:
+                client_request_id: str, base_lock_version: int | None = None) -> tuple[Resume, bool]:
     db.scalar(select(User.id).where(User.id == user_id).with_for_update())
     source = db.scalar(select(Resume).where(
         Resume.id == parse_decimal_id(resume_id), Resume.user_id == user_id,
     ).with_for_update())
     if source is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
-    legacy = None
-    if version_no is not None:
-        legacy = db.scalar(select(ResumeVersion).where(
-            ResumeVersion.resume_id == source.id, ResumeVersion.version_no == version_no))
-        if legacy is None:
-            raise ApiError(404, "RESUME_VERSION_NOT_FOUND")
     try:
         title = normalize_resume_title(title)
     except InvalidResumeTitle as error:
         raise ApiError(422, "INVALID_RESUME_TITLE") from error
-    parameters = {"source": "legacy" if legacy else "current", "id": legacy.id if legacy else source.id,
-                  "base_lock_version": None if legacy else base_lock_version, "title": title}
+    parameters = {"source": "current", "id": source.id,
+                  "base_lock_version": base_lock_version, "title": title}
     request_hash = hashlib.sha256(json.dumps(parameters, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     existing = db.scalar(select(Resume).where(Resume.user_id == user_id,
                                               Resume.creation_request_id == client_request_id))
@@ -43,7 +36,7 @@ def copy_resume(db: Session, storage, *, user_id: int, resume_id: str, title: st
         if existing.creation_request_hash != request_hash:
             raise ApiError(409, "RESUME_COPY_REQUEST_CONFLICT")
         return existing, False
-    if legacy is None and source.lock_version != base_lock_version:
+    if source.lock_version != base_lock_version:
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
     if not has_resume_capacity(db, user_id):
         raise ApiError(409, "RESUME_LIMIT_REACHED")
@@ -51,7 +44,7 @@ def copy_resume(db: Session, storage, *, user_id: int, resume_id: str, title: st
         ensure_unique_resume_title(db, user_id=user_id, title=title)
     except ResumeTitleConflict as error:
         raise ApiError(409, "RESUME_TITLE_CONFLICT") from error
-    content = legacy or source
+    content = source
     try:
         snapshot = parse_persisted_resume_snapshot(content.data_json, content.style_json)
         template = db.get(ResumeTemplate, content.template_id)

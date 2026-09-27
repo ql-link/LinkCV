@@ -10,7 +10,7 @@ from sqlalchemy import select
 from linkresume.application.resumes.copy_service import copy_resume
 from linkresume.core.errors import ApiError
 from linkresume.modules.interviews.models import JobApplication
-from linkresume.modules.resumes.models import Resume, ResumeVersion
+from linkresume.modules.resumes.models import Resume
 from tests.integration.api.test_interviews import build_app, register, create_job, create_resume
 
 
@@ -214,10 +214,11 @@ def test_copy_is_independent_and_retry_does_not_duplicate_after_source_change():
         assert client.post(url + "/copy", json=copy_payload(source, "过期复制")).status_code == 409
         with app.state.session_factory() as db:
             assert len(db.scalars(select(Resume)).all()) == 2
-            assert not db.scalars(select(ResumeVersion)).all()
 
 
 @pytest.mark.parametrize("method,suffix,body", [
+    ("GET", "/versions", None), ("GET", "/versions/1", None),
+    ("POST", "/versions/1/copy", {"title": "取回", "client_request_id": str(uuid4())}),
     ("POST", "/versions", {}), ("PATCH", "/versions/1", {"name": "归档"}),
     ("DELETE", "/versions/1", None), ("POST", "/versions/1/restore", None),
 ])
@@ -230,27 +231,5 @@ def test_retired_history_writes_are_owned_and_never_mutate(method, suffix, body)
         url = f"/api/resumes/{resume['id']}"
         assert other.request(method, url + suffix, json=body).status_code == 404
         rejected = client.request(method, url + suffix, json=body)
-        assert rejected.status_code == 410
-        assert rejected.json() == {"error": "RESUME_VERSION_RETIRED"}
+        assert rejected.status_code == 404
         assert client.get(url).json()["resume"] == resume
-
-
-def test_legacy_archive_is_readable_and_only_copied_to_a_new_resume():
-    app = build_app()
-    with TestClient(app) as client:
-        register(client, "current-owner@example.test")
-        source = create_resume(client, app)
-        with app.state.session_factory() as db:
-            row = db.get(Resume, int(source["id"]))
-            db.add(ResumeVersion(resume_id=row.id, template_id=row.template_id,
-                                 version_no=8, name="存量内容", reason="manual",
-                                 data_json=deepcopy(row.data_json), style_json=deepcopy(row.style_json)))
-            db.commit()
-        url = f"/api/resumes/{source['id']}"
-        assert client.get(url + "/versions/8").status_code == 200
-        payload = {"title": "取回的简历", "client_request_id": str(uuid4())}
-        result = client.post(url + "/versions/8/copy", json=payload)
-        assert result.status_code == 201, result.text
-        assert result.json()["resume"]["data"] == source["data"]
-        assert client.post(url + "/versions/8/copy", json=payload).status_code == 200
-        assert client.get(url).json()["resume"] == source

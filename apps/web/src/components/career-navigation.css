@@ -7,18 +7,6 @@
   --page-hero-tone: var(--career-nav-accent);
 }
 
-.career-module-header .page-hero-module-summary {
-  flex: 0 0 auto;
-}
-
-.career-module-header .page-hero-module-copy {
-  align-items: flex-start;
-  flex-direction: column;
-  justify-content: center;
-  min-height: 38px;
-  gap: 2px;
-}
-
 .career-module-header .page-hero-module-navigation {
   display: flex;
   min-width: 0;
@@ -70,7 +58,6 @@
 }
 
 @media (max-width: 1250px) {
-  .career-module-header .page-hero-description { display: none; }
   .career-module-header { gap: 14px; }
   .career-subnav { gap: 8px; }
   .career-subnav a { padding-inline: 8px; }

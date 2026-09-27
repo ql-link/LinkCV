@@ -8,7 +8,6 @@ from linkresume.modules.agent.models import (
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import (
-    InterviewAsset,
     InterviewSession,
     JobApplication,
     JobApplicationStage,
@@ -25,7 +24,6 @@ from linkresume.modules.resumes.models import (
     DocumentParseTask,
     Resume,
     ResumeTemplate,
-    ResumeVersion,
 )
 
 __all__ = [
@@ -39,7 +37,6 @@ __all__ = [
     "LLMModelRoute",
     "LLMProviderConnection",
     "LLMUseCaseRoute",
-    "InterviewAsset",
     "InterviewSession",
     "JobApplication",
     "JobApplicationStage",
@@ -48,7 +45,6 @@ __all__ = [
     "DocumentParseTask",
     "Resume",
     "ResumeTemplate",
-    "ResumeVersion",
     "User",
     "UserDataset",
 ]

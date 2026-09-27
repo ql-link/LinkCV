@@ -58,7 +58,7 @@ vi.mock("@/api/client", async (importOriginal) => {
 const application = {
   id: "21",
   job_description_id: "8",
-  resume_version_id: null,
+
   company_name_snapshot: "腾讯",
   job_title_snapshot: "后端开发工程师",
   company_logo_url: null,
@@ -601,9 +601,19 @@ describe("InterviewCenterPage API projections", () => {
     const header = heading.closest("header");
     expect(container.querySelector(".career-workspace-frame")).toContainElement(header);
     expect(header).toHaveClass("page-hero", "is-module", "career-module-header");
+    expect(heading.parentElement).toContainElement(screen.getByText("跟踪岗位投递与求职进展，统一管理每一步状态。"));
     expect(document.querySelector(".interview-module-header")).not.toBeInTheDocument();
     expect(header).toContainElement(navigation);
     expect(navigation.parentElement).toHaveClass("page-hero-module-navigation");
+  });
+
+  it("在 AI 工作台内使用独立的面试排期标题且不重复显示页头导航", () => {
+    render(<InterviewCenterPage view="schedule" moduleTitle="面试排期" />);
+
+    expect(screen.getByRole("heading", { name: "面试排期" })).toBeInTheDocument();
+    expect(screen.getByText("集中查看笔试、测评与面试安排，合理规划求职日程。"))
+      .toHaveClass("page-hero-description");
+    expect(screen.queryByRole("navigation", { name: "求职中心导航" })).not.toBeInTheDocument();
   });
 
   it("uses the shared loading component while career data is pending", () => {
@@ -1778,6 +1788,31 @@ describe("InterviewCenterPage API projections", () => {
 
     const contentDialog = await screen.findByRole("dialog", { name: "添加面试内容" });
     expect(within(contentDialog).getByRole("tab", { selected: true })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("shows assessment actions in the empty state with transparent buttons", async () => {
+    const assessmentSession = {
+      ...session,
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "笔试",
+      schedule_kind: "open_window" as const,
+      questions_markdown: null,
+    };
+    mocks.getInterviewSession.mockResolvedValue({ session: assessmentSession, application, assets: [] });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="21" initialSessionId="31" />);
+
+    const recordDialog = await screen.findByRole("dialog", { name: "腾讯｜笔试记录" });
+    expect(recordDialog).toHaveClass("is-assessment");
+    expect(within(recordDialog).getByRole("button", { name: "保存作答计划" })).toHaveClass("ui-button-transparent");
+    expect(within(recordDialog).getByRole("button", { name: "完成笔试" })).toHaveClass("ui-button-transparent");
+    const addContent = within(recordDialog).getByRole("button", { name: "添加笔试内容" });
+    expect(addContent.closest(".career-session-empty-content")).toBeInTheDocument();
+    expect(within(within(recordDialog).getByRole("group", { name: "记录编辑操作" })).queryByRole("button", { name: "添加笔试内容" })).not.toBeInTheDocument();
+
+    fireEvent.click(addContent);
+    expect(await screen.findByRole("dialog", { name: "添加笔试内容" })).toBeInTheDocument();
   });
 
   it("edits a scheduled assessment from its record dialog", async () => {
@@ -3835,7 +3870,7 @@ describe("InterviewCenterPage API projections", () => {
       current_stage_label: "待投递",
       stage_state: "awaiting_schedule",
       applied_at: null,
-      resume_version_id: null,
+
     })));
   });
 
