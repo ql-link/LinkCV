@@ -494,19 +494,6 @@ describe("resume import polling API", () => {
   });
 });
 
-describe("resume version detail API", () => {
-  it("按简历和版本号读取完整版本快照", async () => {
-    const body = { version: { id: "9", version_no: 3, name: "投递版", data: {}, style: {} } };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, body)));
-
-    await expect(api.getResumeVersion("42", 3)).resolves.toEqual(body);
-    expect(fetch).toHaveBeenCalledWith(
-      "/api/resumes/42/versions/3",
-      expect.objectContaining({ method: "GET", credentials: "include" }),
-    );
-  });
-});
-
 describe("resume PDF download API", () => {
   it("按当前锁版本请求 PDF，传递取消信号并读取 UTF-8 文件名", async () => {
     const signal = new AbortController().signal;
@@ -980,9 +967,9 @@ describe("微信扫码登录 API", () => {
 
 describe("资料正文与替换契约",()=>{
   it("替换携带确认、源文件、相同幂等键和当前凭据",async()=>{
-    const fetchMock=vi.fn().mockResolvedValue(jsonResponse(202,{id:"8",status:"pending"}));vi.stubGlobal("fetch",fetchMock);
+    const fetchMock=vi.fn().mockResolvedValue(jsonResponse(202,{id:"42",upload_status:"succeeded",parse_status:"queued"}));vi.stubGlobal("fetch",fetchMock);
     const file=new File(["# New"],"notes.md",{type:"text/markdown"});await api.replaceDataset("42",file,"3","replace-key");
-    const [path,options]=fetchMock.mock.calls[0];expect(path).toBe("/api/datasets/42/replacements");
+    const [path,options]=fetchMock.mock.calls[0];expect(path).toBe("/api/datasets/42/file");expect(options.method).toBe("PUT");
     expect(new Headers(options.headers).get("If-Match")).toBe('"dataset-42-3"');
     expect(new Headers(options.headers).get("Idempotency-Key")).toBe("replace-key");
     expect(options.body.get("confirm_replace")).toBe("true");expect(options.body.get("file")).toBe(file);

@@ -39,7 +39,6 @@ from linkresume.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
-    ResumeVersion,
 )
 
 
@@ -145,27 +144,6 @@ def _resume_item(resume: Resume) -> AgentContextListItem:
             updated_at=resume.updated_at,
             label=resume.title,
             description="当前简历",
-            resume_id=str(resume.id),
-        )
-    )
-
-
-def _resume_version_item(
-    version: ResumeVersion, resume: Resume
-) -> AgentContextListItem:
-    return _list_item(
-        _snapshot(
-            type="resume_version",
-            # A version reference keeps the parent resume ID in ``id`` and the
-            # immutable snapshot ID in ``version_id``.  The resolver also
-            # accepts a bare version ID for clients using the shorter shape.
-            id=str(resume.id),
-            version=str(version.version_no),
-            lock_version=version.version_no,
-            version_id=str(version.id),
-            updated_at=version.created_at,
-            label=f"{resume.title} · 版本 {version.version_no}",
-            description=version.name,
             resume_id=str(resume.id),
         )
     )
@@ -285,27 +263,6 @@ def list_contexts(
                 )
             ).all()
             result.extend(_resume_item(record) for record in records)
-        elif item_type == "resume_version":
-            statement = (
-                select(ResumeVersion, Resume)
-                .join(Resume, Resume.id == ResumeVersion.resume_id)
-                .where(Resume.user_id == user_id)
-            )
-            if search_pattern is not None:
-                statement = statement.where(
-                    or_(
-                        Resume.title.ilike(search_pattern),
-                        ResumeVersion.name.ilike(search_pattern),
-                    )
-                )
-            rows = db.execute(
-                statement.order_by(
-                    ResumeVersion.created_at.desc(), ResumeVersion.id.desc()
-                ).limit(limit)
-            ).all()
-            result.extend(
-                _resume_version_item(version, resume) for version, resume in rows
-            )
         elif item_type == "dataset":
             statement = (
                 select(UserDataset, DocumentParseTask)
@@ -410,15 +367,14 @@ def _material_content(
     *,
     type: AgentContextType,
     resume: Resume | None = None,
-    version: ResumeVersion | None = None,
     dataset_markdown: str | None = None,
     job: JobDescription | None = None,
     application: JobApplication | None = None,
     application_stage: JobApplicationStage | None = None,
     interview: InterviewSession | None = None,
 ) -> dict[str, object]:
-    if type in {"resume", "resume_version"}:
-        source = resume if type == "resume" else version
+    if type == "resume":
+        source = resume
         if source is None:
             return {}
         snapshot = parse_persisted_resume_snapshot(source.data_json, source.style_json)
@@ -506,76 +462,6 @@ def _resolve_resume(
         resume,
         snapshot,
         _make_material(snapshot, _material_content(type="resume", resume=resume)),
-    )
-
-
-def _resolve_resume_version(
-    db: Session, *, user_id: int, ref: AgentContextRef
-) -> tuple[Resume, ResumeVersion, AgentContextSnapshot, AgentContextMaterial]:
-    if ref.version_id is not None:
-        version = db.scalar(
-            select(ResumeVersion)
-            .join(Resume, Resume.id == ResumeVersion.resume_id)
-            .where(
-                ResumeVersion.id == int(ref.version_id),
-                Resume.user_id == user_id,
-            )
-            .with_for_update()
-        )
-    else:
-        # The canonical selector shape uses id=resume_id and version_id, but a
-        # bare version ID is accepted for small clients and tests.
-        version = db.scalar(
-            select(ResumeVersion)
-            .join(Resume, Resume.id == ResumeVersion.resume_id)
-            .where(ResumeVersion.id == int(ref.id), Resume.user_id == user_id)
-            .with_for_update()
-        )
-        if version is None:
-            version = db.scalar(
-                select(ResumeVersion)
-                .join(Resume, Resume.id == ResumeVersion.resume_id)
-                .where(
-                    ResumeVersion.resume_id == int(ref.id),
-                    Resume.user_id == user_id,
-                )
-                .order_by(ResumeVersion.version_no.desc(), ResumeVersion.id.desc())
-                .limit(1)
-                .with_for_update()
-            )
-    if version is None:
-        raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
-    resume = db.scalar(
-        select(Resume)
-        .where(Resume.id == version.resume_id, Resume.user_id == user_id)
-        .with_for_update()
-    )
-    if resume is None or (ref.version_id is not None and ref.id != str(resume.id)):
-        raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
-    markers = _version_markers(
-        version=version.version_no,
-        updated_at=version.created_at,
-        extra=(version.id,),
-    )
-    _ensure_fresh(ref, markers)
-    snapshot = _snapshot(
-        type="resume_version",
-        id=str(resume.id),
-        version=str(version.version_no),
-        lock_version=version.version_no,
-        version_id=str(version.id),
-        resume_id=str(resume.id),
-        label=f"{resume.title} · 版本 {version.version_no}",
-        description=version.name,
-        updated_at=version.created_at,
-    )
-    return (
-        resume,
-        version,
-        snapshot,
-        _make_material(
-            snapshot, _material_content(type="resume_version", resume=version)
-        ),
     )
 
 

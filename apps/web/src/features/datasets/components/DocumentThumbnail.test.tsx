@@ -61,7 +61,7 @@ it("hides old content while replacing and fetches the new revision afterwards", 
   const fetch=vi.spyOn(api,"getDatasetContent").mockResolvedValueOnce({id:dataset.id,file_name:dataset.file_name,file_format:"pdf",markdown:"# Old"}).mockResolvedValueOnce({id:dataset.id,file_name:dataset.file_name,file_format:"pdf",markdown:"# New"});
   const current:DatasetRecord={...dataset,parse_status:"succeeded",content_revision:"1"};
   const {rerender}=render(<DocumentThumbnail dataset={current} fallback="Placeholder"/>);act(()=>visible());await screen.findByRole("heading",{name:"Old"});
-  rerender(<DocumentThumbnail dataset={{...current,replacement:{id:"1",status:"pending",upload_status:"succeeded",parse_status:"queued",failure_code:null,retryable:false,current_revision:"1"}}} fallback="Placeholder"/>);
+  rerender(<DocumentThumbnail dataset={{...current,upload_status:"succeeded",parse_status:"queued"}} fallback="Placeholder"/>);
   expect(screen.queryByRole("heading",{name:"Old"})).not.toBeInTheDocument();expect(screen.getByText("Placeholder")).toBeInTheDocument();
   rerender(<DocumentThumbnail dataset={{...current,content_revision:"2"}} fallback="Placeholder"/>);act(()=>visible());await screen.findByRole("heading",{name:"New"});expect(fetch).toHaveBeenCalledTimes(2);
 });

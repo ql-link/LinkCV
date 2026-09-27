@@ -82,7 +82,6 @@ class UserDatasetRecord(BaseModel):
     created_at: datetime
     content_revision: str = "0"
     content_updated_at: datetime | None = None
-    replacement: dict | None = None
     folder_name: str | None = None
     asset_kind: str = "document"
     interview_session_id: str | None = None
@@ -144,11 +143,3 @@ class UserDatasetContentResponse(BaseModel):
     @classmethod
     def stringify_id(cls, value: object) -> str:
         return str(value)
-
-
-
-
-class DatasetReplacementRetryRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    request_id: str = Field(min_length=1, max_length=64, strict=True)
-    confirm_replace: bool

@@ -7,7 +7,6 @@ import {
   ResumeRecord,
   ResumeImportSummary,
   ResumeSummary,
-  ResumeVersion,
   User,
   UserProfile,
 } from "../api/client";
@@ -91,8 +90,6 @@ type ResumeState = {
   resumes: ResumeSummary[];
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
-  versions: ResumeVersion[];
-  versionsLoading: boolean;
   versionOperationPending: boolean;
   proposalApplyingResumeId: string | null;
   proposalContentRevision: number;
@@ -127,11 +124,6 @@ type ResumeState = {
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
   confirmResumeProposal: (proposalId: string, resumeId: string) => Promise<ResumeRecord>;
-  loadVersions: () => Promise<void>;
-  createVersion: (name?: string) => Promise<void>;
-  renameVersion: (versionNo: number, name: string) => Promise<void>;
-  deleteVersion: (versionNo: number) => Promise<void>;
-  restoreVersion: (versionNo: number) => Promise<void>;
   goHome: () => void;
   dismissImportWarnings: (resumeId: string) => void;
   setTitle: (title: string) => void;
@@ -457,8 +449,6 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   resumes: [],
   activeImports: [],
   failedImports: [],
-  versions: [],
-  versionsLoading: false,
   versionOperationPending: false,
   proposalApplyingResumeId: null,
   proposalContentRevision: 0,
@@ -494,7 +484,6 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         resumes: [],
         activeImports: [],
         failedImports: [],
-        versions: [],
         importWarningsByResumeId: {},
         activeResumeId: null,
         lockVersion: 0,
@@ -541,7 +530,6 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       resumes: [],
       activeImports: [],
       failedImports: [],
-      versions: [],
       versionOperationPending: false,
       importWarningsByResumeId: {},
       activeResumeId: null,
@@ -572,7 +560,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       template_id: templateId,
     });
     const { resumes } = await api.listResumes();
-    set({ resumes, versions: [], ...applyResume(resume) });
+    set({ resumes, ...applyResume(resume) });
     return resume.id;
   },
 
@@ -650,7 +638,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   loadResume: async (id) => {
     const { resume } = await api.getResume(id);
-    set({ versions: [], ...applyResumeWithLocalDraft(resume, get().user?.id, get()) });
+    set(applyResumeWithLocalDraft(resume, get().user?.id, get()));
   },
 
   renameResume: async (id, title) => {
@@ -684,7 +672,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     });
 
     if (get().activeResumeId === id) {
-      set({ activeResumeId: null, versions: [], lockVersion: 0, dirty: false, saveStatus: "idle" });
+      set({ activeResumeId: null, lockVersion: 0, dirty: false, saveStatus: "idle" });
     }
   },
 
@@ -813,116 +801,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
   },
 
-  loadVersions: async () => {
-    const resumeId = get().activeResumeId;
-    if (!resumeId) {
-      set({ versions: [], versionsLoading: false });
-      return;
-    }
-    set({ versionsLoading: true });
-    try {
-      const { versions } = await api.listVersions(resumeId);
-      if (get().activeResumeId === resumeId) {
-        set({ versions, versionsLoading: false, error: null });
-      }
-    } catch (error) {
-      if (get().activeResumeId === resumeId) {
-        set({ versionsLoading: false, error: (error as Error).message });
-      }
-      throw error;
-    }
-  },
-
-  createVersion: async (name) => {
-    const resumeId = get().activeResumeId;
-    if (!resumeId) return;
-    try {
-      const { version } = await api.createVersion(resumeId, name);
-      if (get().activeResumeId === resumeId) {
-        set((state) => ({
-          versions: [version, ...state.versions.filter((item) => item.id !== version.id)],
-          error: null,
-        }));
-      }
-      try {
-        const { versions } = await api.listVersions(resumeId);
-        if (get().activeResumeId === resumeId) set({ versions });
-      } catch {
-        // The version already exists; a failed refresh must not invite a duplicate retry.
-      }
-    } catch (error) {
-      set({ error: (error as Error).message });
-      throw error;
-    }
-  },
-
-  renameVersion: async (versionNo, name) => {
-    const resumeId = get().activeResumeId;
-    if (!resumeId) return;
-    try {
-      const { version } = await api.renameVersion(resumeId, versionNo, name);
-      if (get().activeResumeId === resumeId) {
-        set((state) => ({
-          versions: state.versions.map((item) => (
-            item.version_no === version.version_no ? version : item
-          )),
-          error: null,
-        }));
-      }
-    } catch (error) {
-      set({ error: (error as Error).message });
-      throw error;
-    }
-  },
-
-  deleteVersion: async (versionNo) => {
-    const resumeId = get().activeResumeId;
-    if (!resumeId) return;
-    set({ versionOperationPending: true, error: null });
-    try {
-      const { deleted } = await api.deleteVersion(resumeId, versionNo);
-      if (!deleted) throw new Error("RESUME_VERSION_DELETE_FAILED");
-      if (get().activeResumeId === resumeId) {
-        set((state) => ({
-          versions: state.versions.filter((version) => version.version_no !== versionNo),
-          error: null,
-        }));
-      }
-    } catch (error) {
-      set({ error: (error as Error).message });
-      throw error;
-    } finally {
-      set({ versionOperationPending: false });
-    }
-  },
-
-  restoreVersion: async (versionNo) => {
-    const initialState = get();
-    const resumeId = initialState.activeResumeId;
-    if (!resumeId) return;
-    set({ versionOperationPending: true, error: null });
-    try {
-      await saveQueue;
-      const localState = get();
-      const { resume } = await api.restoreVersion(resumeId, versionNo);
-      if (get().activeResumeId === resumeId) {
-        set(applyResume(resume, localState));
-      }
-      try {
-        const { versions } = await api.listVersions(resumeId);
-        if (get().activeResumeId === resumeId) set({ versions });
-      } catch {
-        // Restore succeeded; retain the prior list until the next explicit refresh.
-      }
-    } catch (error) {
-      set({ error: (error as Error).message });
-      throw error;
-    } finally {
-      set({ versionOperationPending: false });
-    }
-  },
-
-  goHome: () => set({ activeResumeId: null, versions: [], lockVersion: 0 }),
+  goHome: () => set({ activeResumeId: null, lockVersion: 0 }),
 
   dismissImportWarnings: (resumeId) =>
     set((state) => {

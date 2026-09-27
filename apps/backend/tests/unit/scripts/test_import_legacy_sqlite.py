@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 import linkresume.models  # noqa: F401
 from linkresume.core.database import Base
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkresume.modules.resumes.models import Resume, ResumeTemplate
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 
@@ -124,7 +124,7 @@ def test_dry_run_then_execute_imports_users_resumes_and_initial_versions(
         user = session.scalar(select(User))
         resume = session.scalar(select(Resume))
         template = session.scalar(select(ResumeTemplate))
-        version = session.scalar(select(ResumeVersion))
+        assert "resume_versions" not in Resume.metadata.tables
         assert user is not None
         assert user.email == "example@example.com"
         assert user.nickname == "example"
@@ -135,10 +135,6 @@ def test_dry_run_then_execute_imports_users_resumes_and_initial_versions(
         assert resume.data_json["schema_version"] == "canonical-resume.v1"
         assert template is not None
         assert resume.template_id == template.id
-        assert version is not None
-        assert version.resume_id == resume.id
-        assert version.template_id == template.id
-        assert version.name == "初始版本"
         assert plan.skipped_sessions == 1
 
     with pytest.raises(RuntimeError, match="empty target business tables"):

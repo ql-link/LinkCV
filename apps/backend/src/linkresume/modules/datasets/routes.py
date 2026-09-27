@@ -2,9 +2,7 @@ import asyncio
 import logging
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from io import BytesIO
 from pathlib import PurePath
-from time import monotonic
 from urllib.parse import quote
 import unicodedata
 from uuid import UUID
@@ -33,7 +31,6 @@ from linkresume.core.mq import DatasetParseMessage, MQPublishError
 from linkresume.core.mq.factory import build_mq_publisher
 from linkresume.core.storage import (
     AssetStorage,
-    build_dataset_object_name,
     get_storage,
 )
 from linkresume.modules.datasets.models import UserDataset, UserDatasetFolder
@@ -57,14 +54,14 @@ from linkresume.modules.identity.dependencies import get_current_user, get_setti
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import InterviewSession, JobApplication
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
-from linkresume.services.dataset_upload_service import validate_dataset_file
 from linkresume.services import dataset_ingest_service as ingest
 from linkresume.services import dataset_content_service as content_service
-from linkresume.services import dataset_replacement_service as replacement_service
-from linkresume.modules.datasets.models import DatasetReplacement
-from linkresume.modules.datasets.schemas import (
-    DatasetReplacementRetryRequest,
+from linkresume.services.dataset_content_service import (
+    dataset_source_prefix,
+    dataset_converted_prefix,
+    validate_dataset_object_keys,
 )
+from linkresume.services import dataset_name_service as name_service
 from linkresume.services.import_admission import (
     ImportAdmissionController,
     ImportAdmissionRejected,
@@ -130,54 +127,6 @@ def safe_dataset_display_filename(name: str, dataset: UserDataset) -> str:
     ):
         raise ApiError(400, "INVALID_DATASET_NAME")
     return f"{display_name}{extension}"
-
-
-def dataset_source_prefix(user_id: int) -> str:
-    return f"users/{user_id}/datasets/"
-
-
-def dataset_converted_prefix(user_id: int) -> str:
-    return f"users/{user_id}/datasets/converted/"
-
-
-def dataset_converted_object_name(user_id: int, task_id: int) -> str:
-    return f"{dataset_converted_prefix(user_id)}{task_id}.md"
-
-
-def dataset_converted_attempt_object_name(
-    user_id: int,
-    task_id: int,
-    attempt: int,
-) -> str:
-    return f"{dataset_converted_prefix(user_id)}{task_id}-{attempt}.md"
-
-
-def validate_dataset_object_keys(
-    dataset: UserDataset,
-    task: DocumentParseTask,
-    user_id: int,
-) -> None:
-    if (
-        dataset.object_name != task.object_name
-        or not dataset.object_name.startswith(dataset_source_prefix(user_id))
-        or task.object_name.startswith(dataset_converted_prefix(user_id))
-    ):
-        raise ApiError(502, "ASSET_DELETE_FAILED")
-    if dataset.content_object_name and not dataset.content_object_name.startswith(
-        dataset_converted_prefix(user_id)
-    ):
-        raise ApiError(502, "ASSET_DELETE_FAILED")
-    if task.converted_object_name:
-        allowed_converted_names = {
-            dataset_converted_object_name(user_id, task.id),
-            dataset_converted_attempt_object_name(
-                user_id,
-                task.id,
-                task.parse_attempt_count,
-            ),
-        }
-        if task.converted_object_name not in allowed_converted_names:
-            raise ApiError(502, "ASSET_DELETE_FAILED")
 
 
 def get_dataset_publisher(request: Request, settings: Settings):
@@ -247,50 +196,6 @@ def replay_dataset_upload(
     return dataset_record(dataset, task)
 
 
-def ensure_dataset_capacity(
-    db: Session,
-    *,
-    user_id: int,
-    incoming_bytes: int,
-    max_count: int,
-    max_total_bytes: int,
-) -> None:
-    db.scalar(select(User.id).where(User.id == user_id).with_for_update())
-    count, total_bytes = db.execute(
-        select(
-            func.count(UserDataset.id),
-            func.coalesce(func.sum(UserDataset.file_size), 0),
-        )
-        .join(
-            DocumentParseTask,
-            DocumentParseTask.id == UserDataset.parse_task_id,
-        )
-        .where(
-            UserDataset.user_id == user_id,
-            UserDataset.asset_kind == "document",
-            DocumentParseTask.user_id == user_id,
-            DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
-            DocumentParseTask.upload_status != "failed",
-        )
-        .with_for_update()
-    ).one()
-    if int(count) >= max_count:
-        raise ApiError(409, "DATASET_COUNT_LIMIT_REACHED")
-    pending_bytes = (
-        db.scalar(
-            select(func.coalesce(func.sum(DatasetReplacement.source_file_size), 0))
-            .where(
-                DatasetReplacement.user_id == user_id,
-                DatasetReplacement.active_dataset_id.is_not(None),
-            )
-            .with_for_update()
-        )
-        or 0
-    )
-    if int(total_bytes) + int(pending_bytes) + incoming_bytes > max_total_bytes:
-        raise ApiError(409, "DATASET_STORAGE_LIMIT_REACHED")
-
-
 def load_owned_dataset(
     db: Session,
     dataset_id: int,
@@ -335,7 +240,6 @@ def dataset_record(
     task: DocumentParseTask,
 ) -> UserDatasetRecord:
     db = object_session(dataset)
-    operation = content_service.active_replacement(db, dataset) if db else None
     label = None
     if db is not None and dataset.interview_session_id is not None:
         label = interview_label_for(db, dataset.interview_session_id)
@@ -351,7 +255,6 @@ def dataset_record(
         created_at=dataset.created_at,
         content_revision=str(dataset.content_revision or 0),
         content_updated_at=dataset.content_updated_at,
-        replacement=replacement_service.summary(db, operation, dataset) if db else None,
         asset_kind=dataset.asset_kind,
         interview_session_id=dataset.interview_session_id,
         interview_source_type=dataset.interview_source_type,
@@ -707,17 +610,11 @@ def delete_folder(
         rows.append((dataset, task))
     try:
         for dataset, task in rows:
-            storage.delete(dataset.object_name)
-            legacy_name = dataset_converted_object_name(user.id, task.id)
-            if task.converted_object_name:
-                storage.delete(task.converted_object_name)
-            if task.converted_object_name != legacy_name:
-                storage.delete(legacy_name)
+            content_service.delete_files(storage, dataset, task)
     except Exception as error:
         db.rollback()
         raise ApiError(502, "ASSET_DELETE_FAILED") from error
     for dataset, task in rows:
-        cleanup_dataset_extras(db, dataset)
         db.delete(dataset)
         db.delete(task)
     db.delete(folder)
@@ -756,8 +653,7 @@ def move_dataset(
         raise ApiError(404, "FOLDER_NOT_FOUND")
     target_folder_id = target_folder.id
 
-    content_service.ensure_not_replacing(db, dataset)
-    replacement_service.check_name(
+    name_service.check_name(
         db, user.id, target_folder_id, dataset.file_name, dataset.id
     )
     dataset.content_revision += 1
@@ -815,8 +711,7 @@ def move_datasets_batch(
     )
     for dataset in datasets:
         _, task = content_service.owned(db, user.id, dataset.id)
-        content_service.ensure_not_replacing(db, dataset)
-        replacement_service.check_name(
+        name_service.check_name(
             db, user.id, target_folder_id, dataset.file_name, dataset.id
         )
         for other in datasets:
@@ -842,9 +737,8 @@ def rename_dataset(
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
     dataset, task = row
-    content_service.ensure_not_replacing(db, dataset)
     name = safe_dataset_display_filename(payload.name, dataset)
-    replacement_service.check_name(db, user.id, dataset.folder_id, name, dataset.id)
+    name_service.check_name(db, user.id, dataset.folder_id, name, dataset.id)
     dataset.file_name = name
     dataset.content_revision += 1
     db.commit()
@@ -935,15 +829,7 @@ def delete_dataset(
     }:
         raise ApiError(409, "DATASET_BUSY")
     try:
-        validate_dataset_object_keys(dataset, task, user.id)
-        storage.delete(dataset.object_name)
-        legacy_converted_name = dataset_converted_object_name(user.id, task.id)
-        if task.converted_object_name:
-            storage.delete(task.converted_object_name)
-        # Clean the legacy deterministic key as well. It may exist after an
-        # older worker or a partial pre-0043 write.
-        if task.converted_object_name != legacy_converted_name:
-            storage.delete(legacy_converted_name)
+        content_service.delete_files(storage, dataset, task)
     except ApiError:
         db.rollback()
         raise
@@ -959,7 +845,6 @@ def delete_dataset(
         raise ApiError(502, "ASSET_DELETE_FAILED") from error
 
     try:
-        cleanup_dataset_extras(db, dataset)
         db.flush()
         dataset_result = db.execute(
             delete(UserDataset).where(
@@ -1073,9 +958,11 @@ def get_dataset(
 
 
 
-@router.post("/{dataset_id}/replacements", status_code=202)
-async def create_replacement(
+@router.put("/{dataset_id}/file", response_model=UserDatasetRecord, status_code=202)
+async def replace_dataset_file(
     dataset_id: int,
+    request: Request,
+    response: Response,
     file: UploadFile,
     confirm_replace: bool = Form(...),
     if_match: str | None = Header(default=None),
@@ -1086,247 +973,42 @@ async def create_replacement(
     storage: AssetStorage = Depends(get_storage),
     dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),
 ):
+    key = canonical_dataset_idempotency_key(idempotency_key)
+    if not confirm_replace:
+        raise ApiError(422, "REPLACEMENT_CONFIRMATION_REQUIRED")
     try:
-        admission_context = dataset_admission.acquire(user.id)
-        await admission_context.__aenter__()
+        async with dataset_admission.acquire(user.id):
+            result = await ingest.ingest_document_upload(
+                db,
+                user=user,
+                settings=settings,
+                storage=storage,
+                upload=file,
+                file_name_override=None,
+                folder_id=None,
+                interview_session_id=None,
+                interview_source_type=None,
+                duration_ms=None,
+                idempotency_key=key,
+                replace_id=dataset_id,
+                if_match=if_match,
+            )
+            dataset, task = result.dataset, result.task
+            if not result.replayed and task.parse_status == "queued":
+                try:
+                    await get_dataset_publisher(request, settings).publish(
+                        DatasetParseMessage.create(parse_task_id=task.id)
+                    )
+                except MQPublishError:
+                    logger.warning(
+                        "dataset parse publish deferred",
+                        extra={"parse_task_id": task.id},
+                    )
+            response.status_code = 200 if task.parse_status == "succeeded" else 202
+            return dataset_record(dataset, task)
     except ImportAdmissionRejected as error:
-        await file.close()
         raise ApiError(
             429, "DATASET_UPLOAD_RATE_LIMITED", headers={"Retry-After": "60"}
         ) from error
-    try:
-        from hashlib import sha256
-        from unicodedata import normalize
-
-        key = canonical_dataset_idempotency_key(idempotency_key)
-        if not confirm_replace:
-            raise ApiError(422, "REPLACEMENT_CONFIRMATION_REQUIRED")
-        try:
-            data = await file.read(settings.dataset_upload_max_bytes + 1)
-            validated = await asyncio.to_thread(
-                validate_dataset_file,
-                filename=file.filename or "",
-                content=data,
-                max_bytes=settings.dataset_upload_max_bytes,
-            )
-        finally:
-            await file.close()
-        dataset, task = content_service.owned(db, user.id, dataset_id, lock=True)
-        fingerprint = sha256(
-            f"{dataset_id}|{if_match}|{validated.request_fingerprint}".encode()
-        ).hexdigest()
-        operation = db.scalar(
-            select(DatasetReplacement)
-            .where(
-                DatasetReplacement.user_id == user.id,
-                DatasetReplacement.idempotency_key == key,
-            )
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-        if operation:
-            if (
-                operation.dataset_id != dataset_id
-                or operation.request_fingerprint != fingerprint
-            ):
-                raise ApiError(409, "IDEMPOTENCY_KEY_REUSED")
-            return replacement_service.summary(db, operation, dataset)
-        content_service.check_match(dataset, if_match)
-        content_service.ensure_not_busy(db, dataset, task)
-        if content_service.active_replacement(db, dataset, lock=True):
-            raise ApiError(409, "DATASET_REPLACEMENT_EXISTS")
-        if normalize("NFC", dataset.file_name) != normalize("NFC", validated.file_name):
-            raise ApiError(409, "DATASET_REPLACEMENT_NAME_MISMATCH")
-        if not dataset.folder_id:
-            raise ApiError(400, "DATASET_FOLDER_REQUIRED")
-        ensure_dataset_capacity(
-            db,
-            user_id=user.id,
-            incoming_bytes=validated.file_size,
-            max_count=settings.dataset_max_count_per_user + 1,
-            max_total_bytes=settings.dataset_max_total_bytes_per_user,
-        )
-        candidate = DocumentParseTask(
-            source_type=DATASET_SOURCE_TYPE,
-            user_id=user.id,
-            file_name=validated.file_name,
-            file_format=validated.file_format,
-            object_name=build_dataset_object_name(user.id, validated.file_name),
-            upload_status="uploading",
-            parse_status=None,
-        )
-        db.add(candidate)
-        db.flush()
-        operation = DatasetReplacement(
-            user_id=user.id,
-            dataset_id=dataset.id,
-            parse_task_id=candidate.id,
-            source_content_type=validated.content_type,
-            source_file_size=validated.file_size,
-            source_sha256=validated.sha256,
-            idempotency_key=key,
-            request_fingerprint=fingerprint,
-            base_revision=dataset.content_revision,
-            status="pending",
-            active_dataset_id=dataset.id,
-        )
-        db.add(operation)
-        db.commit()
-        upload_started = monotonic()
-        try:
-            await asyncio.to_thread(
-                storage.upload,
-                candidate.object_name,
-                validated.content,
-                validated.content_type,
-            )
-        except Exception:
-            candidate.upload_status = "failed"
-            candidate.upload_duration_ms = min(
-                2**32 - 1, max(0, round((monotonic() - upload_started) * 1000))
-            )
-            operation.status = "failed"
-            operation.failure_code = "DATASET_UPLOAD_FAILED"
-            db.commit()
-            return replacement_service.summary(db, operation, dataset)
-        candidate.upload_status = "succeeded"
-        candidate.upload_duration_ms = min(
-            2**32 - 1, max(0, round((monotonic() - upload_started) * 1000))
-        )
-        candidate.parse_status = "queued"
-        db.commit()
-        # Existing worker recovery scan reliably dispatches queued tasks.
-        return replacement_service.summary(db, operation, dataset)
     finally:
-        await admission_context.__aexit__(None, None, None)
-
-
-def owned_replacement(db, user_id, dataset_id, replacement_id):
-    dataset, task = content_service.owned(db, user_id, dataset_id, lock=True)
-    op = db.scalar(
-        select(DatasetReplacement)
-        .where(
-            DatasetReplacement.id == replacement_id,
-            DatasetReplacement.dataset_id == dataset_id,
-            DatasetReplacement.user_id == user_id,
-        )
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    )
-    if op is None:
-        raise ApiError(404, "DATASET_REPLACEMENT_NOT_FOUND")
-    return dataset, task, op
-
-
-@router.get("/{dataset_id}/replacements/{replacement_id}")
-def get_replacement(
-    dataset_id: int,
-    replacement_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    dataset, _, op = owned_replacement(db, user.id, dataset_id, replacement_id)
-    return replacement_service.summary(db, op, dataset)
-
-
-@router.post("/{dataset_id}/replacements/{replacement_id}/retry", status_code=202)
-def retry_replacement(
-    dataset_id: int,
-    replacement_id: int,
-    payload: DatasetReplacementRetryRequest,
-    response: Response,
-    if_match: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-    storage: AssetStorage = Depends(get_storage),
-    settings: Settings = Depends(get_settings),
-):
-    dataset, _, op = owned_replacement(db, user.id, dataset_id, replacement_id)
-    if not payload.confirm_replace:
-        raise ApiError(422, "REPLACEMENT_CONFIRMATION_REQUIRED")
-    if op.last_retry_request_id == payload.request_id:
-        return replacement_service.summary(db, op, dataset)
-    content_service.check_match(dataset, if_match)
-    if op.status not in ("failed", "conflict"):
-        raise ApiError(409, "DATASET_NOT_RETRYABLE")
-    candidate = db.get(DocumentParseTask, op.parse_task_id)
-    if (
-        not candidate
-        or candidate.user_id != user.id
-        or candidate.source_type != DATASET_SOURCE_TYPE
-        or candidate.upload_status != "succeeded"
-    ):
-        raise ApiError(409, "DATASET_NOT_RETRYABLE")
-    if not candidate.object_name.startswith(f"users/{user.id}/datasets/"):
-        raise ApiError(502, "DATASET_SOURCE_UNAVAILABLE")
-    try:
-        storage.stat(candidate.object_name)
-    except Exception as error:
-        raise ApiError(502, "DATASET_SOURCE_UNAVAILABLE") from error
-    op.base_revision = dataset.content_revision
-    op.last_retry_request_id = payload.request_id
-    op.status = "pending"
-    op.failure_code = None
-    if candidate.parse_status == "succeeded":
-        if (
-            not candidate.converted_object_name
-            or not candidate.converted_object_name.startswith(
-                f"users/{user.id}/datasets/converted/"
-            )
-        ):
-            raise ApiError(502, "DATASET_CONTENT_READ_FAILED")
-        markdown = content_service.read_markdown(
-            storage, candidate.converted_object_name, settings.resume_markdown_max_bytes
-        )
-        replacement_service.apply_replacement(db, op, dataset, candidate, markdown)
-        response.status_code = 200
-    else:
-        candidate.parse_status = "queued"
-        candidate.parse_duration_ms = None
-        candidate.failure_reason = None
-        candidate.last_dispatched_at = None
-        candidate.updated_at = datetime.now(UTC)
-    db.commit()
-    return replacement_service.summary(db, op, dataset)
-
-
-@router.delete("/{dataset_id}/replacements/{replacement_id}")
-def discard_replacement(
-    dataset_id: int,
-    replacement_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    dataset, _, op = owned_replacement(db, user.id, dataset_id, replacement_id)
-    if op.status == "pending":
-        raise ApiError(409, "DATASET_BUSY")
-    if op.status == "applied":
-        raise ApiError(409, "DATASET_NOT_RETRYABLE")
-    candidate = (
-        db.get(DocumentParseTask, op.parse_task_id) if op.parse_task_id else None
-    )
-    if candidate:
-        replacement_service.retire_task(db, candidate)
-    op.status = "discarded"
-    op.active_dataset_id = None
-    db.commit()
-    return {"discarded": True}
-
-
-def cleanup_dataset_extras(db, dataset):
-    content_service.enqueue_cleanup(db, dataset.user_id, dataset.content_object_name)
-    for op in list(
-        db.scalars(
-            select(DatasetReplacement).where(
-                DatasetReplacement.dataset_id == dataset.id
-            )
-        )
-    ):
-        if op.status == "pending":
-            raise ApiError(409, "DATASET_BUSY")
-        if op.parse_task_id and op.parse_task_id != dataset.parse_task_id:
-            task = db.get(DocumentParseTask, op.parse_task_id)
-            if task:
-                replacement_service.retire_task(db, task)
-        db.delete(op)
-    db.flush()
+        await file.close()

@@ -58,7 +58,7 @@ vi.mock("@/api/client", async (importOriginal) => {
 const application = {
   id: "21",
   job_description_id: "8",
-  resume_version_id: null,
+
   company_name_snapshot: "腾讯",
   job_title_snapshot: "后端开发工程师",
   company_logo_url: null,
@@ -3870,7 +3870,7 @@ describe("InterviewCenterPage API projections", () => {
       current_stage_label: "待投递",
       stage_state: "awaiting_schedule",
       applied_at: null,
-      resume_version_id: null,
+
     })));
   });
 
