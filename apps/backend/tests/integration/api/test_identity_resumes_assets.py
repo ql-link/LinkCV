@@ -15,7 +15,6 @@ from linkresume.modules.resumes.models import (
     DocumentParseTask,
     Resume,
     ResumeTemplate,
-    ResumeVersion,
 )
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import canonical_template_payload
@@ -133,11 +132,7 @@ def test_authentication_and_resume_crud() -> None:
         assert "created_at" in resume
 
         resume_id = resume["id"]
-        with app.state.session_factory() as session:
-            initial_version = session.scalar(
-                select(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
-            )
-            assert initial_version is None
+        assert "resume_versions" not in Resume.metadata.tables
         listed = client.get("/api/resumes").json()["resumes"]
         assert [item["id"] for item in listed] == [resume_id]
 
@@ -197,7 +192,7 @@ def test_assets_are_private_to_the_current_user() -> None:
             assert stranger.get(asset["url"]).status_code == 403
 
 
-def test_resume_assets_are_owned_and_preserved_while_history_references_them() -> None:
+def test_resume_assets_are_owned_and_protected_only_while_current_content_references_them() -> None:
     app = build_test_app()
     payload = base64.b64encode(b"png-bytes").decode("ascii")
 
@@ -237,13 +232,8 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
             json={"data": data, "base_lock_version": 1},
         )
         assert saved.status_code == 200
-        # Imported pre-cutover archives must continue protecting their images.
-        with app.state.session_factory() as session:
-            row = session.get(Resume, int(resume_id))
-            session.add(ResumeVersion(resume_id=row.id, template_id=row.template_id,
-                version_no=1, name="存量归档", reason="manual",
-                data_json=row.data_json, style_json=row.style_json))
-            session.commit()
+        # Only the current resume protects its referenced images.
+        assert owner.delete(asset["url"]).status_code == 409
 
         data["identity"]["avatar"] = None
         saved_without_photo = owner.put(
@@ -251,7 +241,7 @@ def test_resume_assets_are_owned_and_preserved_while_history_references_them() -
             json={"data": data, "base_lock_version": 2},
         )
         assert saved_without_photo.status_code == 200
-        assert owner.delete(asset["url"]).status_code == 409
+        assert owner.delete(asset["url"]).status_code == 200
 
         with TestClient(app) as stranger:
             stranger.post(
@@ -351,12 +341,6 @@ def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> Non
         object_key = f"users/1/resumes/{resume_id}/image.png"
         storage.objects[object_key] = b"private-resume-image"
         storage.fail_cleanup = True
-        with app.state.session_factory() as session:
-            row = session.get(Resume, int(resume_id))
-            session.add(ResumeVersion(resume_id=row.id, template_id=row.template_id,
-                version_no=1, name="存量归档", reason="manual",
-                data_json=row.data_json, style_json=row.style_json))
-            session.commit()
 
         deleted = client.delete(f"/api/resumes/{resume_id}")
 
@@ -365,9 +349,6 @@ def test_resume_delete_keeps_database_record_when_storage_cleanup_fails() -> Non
         with app.state.session_factory() as session:
             assert session.scalar(
                 select(Resume).where(Resume.id == int(resume_id))
-            ) is not None
-            assert session.scalar(
-                select(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
             ) is not None
         assert storage.objects == {object_key: b"private-resume-image"}
 

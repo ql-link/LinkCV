@@ -58,6 +58,7 @@ REVISION_COLUMN_MARKERS = {
     },
 }
 REVISION_REMOVED_COLUMN_MARKERS = {
+    "0089": {"job_applications": frozenset({"resume_version_id"})},
     "0034": {
         "job_descriptions": frozenset({"archived_at"}),
     },
@@ -210,7 +211,14 @@ def validate_schema_revision_alignment(
                     "0051 user_profiles schema is partial or mixed before revision"
                 )
 
+    if "0089" in applied:
+        remaining = existing_tables & {"interview_assets", "resume_versions"}
+        if remaining:
+            drift.append("0089 retired tables still exist: " + ", ".join(sorted(remaining)))
+
     for revision, marker_tables in REVISION_TABLE_MARKERS.items():
+        if "0089" in applied:
+            marker_tables = marker_tables - {"interview_assets"}
         present = marker_tables & existing_tables
         missing = marker_tables - existing_tables
         if revision in applied and missing:

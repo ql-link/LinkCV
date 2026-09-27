@@ -1,5 +1,4 @@
-import {api} from "../../../api/client";
-import { useRef, useState, type KeyboardEvent } from "react";
+import { type KeyboardEvent } from "react";
 import { Download, FolderInput, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 
 import type { DatasetRecord } from "../../../api/client";
@@ -51,26 +50,6 @@ export function FileCard({
   onDelete,
   onDownload,
 }: FileCardProps) {
-  const [replacementError,setReplacementError]=useState("");
-  const [replacementBusy,setReplacementBusy]=useState(false);
-  const retryRequest=useRef<string|null>(null);
-  async function handleReplacement(retry:boolean){
-    const op=dataset.replacement;
-    if(!op||replacementBusy)return;
-    if(retry&&!window.confirm("重试替换将覆盖当前源文件和解析内容，是否继续？"))return;
-    setReplacementBusy(true);setReplacementError("");
-    try {
-      if(retry){
-        retryRequest.current??=crypto.randomUUID();
-        await api.retryDatasetReplacement(dataset.id,op.id,dataset.content_revision??"0",retryRequest.current);
-      }else await api.discardDatasetReplacement(dataset.id,op.id);
-      retryRequest.current=null;
-      window.dispatchEvent(new Event("dataset-replacement-refresh"));
-    }catch{setReplacementError("操作未完成，请刷新列表确认当前状态后重试。");window.dispatchEvent(new Event("dataset-replacement-refresh"));}
-    finally{setReplacementBusy(false);}
-  }
-  const replacing=dataset.replacement?.status==="pending";
-  if(replacing) { isInteractive=false; busy=true; selectionDisabled=true; }
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (!isInteractive || (event.key !== "Enter" && event.key !== " ")) return;
     event.preventDefault();
@@ -110,13 +89,6 @@ export function FileCard({
         </span>
       </div>
 
-      {replacing&&<p role="status">{dataset.replacement?.upload_status==="uploading"?"正在上传…":"正在解析…"}</p>}
-      {dataset.replacement && ["failed","conflict"].includes(dataset.replacement.status)&&<div className="dataset-replacement-feedback" role="status" onClick={e=>e.stopPropagation()} onKeyDown={e=>e.stopPropagation()}>
-        <span>替换失败，已恢复原文件。</span>
-        {dataset.replacement.retryable&&<button type="button" disabled={replacementBusy} onClick={()=>void handleReplacement(true)}>重试替换</button>}
-        <button type="button" disabled={replacementBusy} onClick={()=>void handleReplacement(false)}>放弃替换</button>
-        {replacementError&&<span>{replacementError}</span>}
-      </div>}
       {/* 底部信息与操作框 */}
       <div className="macos-file-caption">
         <div className="macos-file-subrow">

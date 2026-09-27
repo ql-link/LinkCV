@@ -833,3 +833,22 @@ def test_release_runner_rejects_partial_profile_before_0051() -> None:
             connection, migration_script_directory(module)
         )
     engine.dispose()
+
+
+def test_release_runner_accepts_retired_tables_only_after_0089(monkeypatch):
+    module = load_module("retirement_runner", REPO_ROOT / "scripts/release/run_alembic.py")
+    # Isolate the removal markers from unrelated historical schema markers.
+    monkeypatch.setattr(module, "REVISION_TABLE_MARKERS", {"0033": frozenset({"job_applications", "interview_sessions", "interview_assets"})})
+    monkeypatch.setattr(module, "REVISION_COLUMN_MARKERS", {})
+    monkeypatch.setattr(module, "REVISION_REMOVED_COLUMN_MARKERS", {"0089": {"job_applications": frozenset({"resume_version_id"})}})
+    monkeypatch.setattr(module, "REVISION_REMOVED_INDEX_MARKERS", {})
+    monkeypatch.setattr(module, "_applied_revisions", lambda script, heads: {"0033", "0089"})
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE job_applications (id INTEGER PRIMARY KEY, resume_id INTEGER)"))
+        connection.execute(text("CREATE TABLE interview_sessions (id INTEGER PRIMARY KEY)"))
+        assert module.validate_schema_revision_alignment(connection, None) == ()
+        connection.execute(text("CREATE TABLE interview_assets (id INTEGER PRIMARY KEY)"))
+        with pytest.raises(RuntimeError, match="0089 retired tables still exist"):
+            module.validate_schema_revision_alignment(connection, None)
+    engine.dispose()

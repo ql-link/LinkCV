@@ -2819,7 +2819,6 @@ function CreateApplicationDialog({
     try {
       const result = await api.createJobApplication({
         job_description_id: jobId,
-        resume_version_id: null,
         current_stage_type: "screening",
         current_round_no: null,
         current_stage_label: "待投递",

@@ -85,3 +85,5 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 ## 资料正文引用一致性
 
 `modules/agent/resume_tools.py` 的资料检索优先读取 `user_dataset.content_object_name`，没有当前覆盖指针的历史资料回退到成功解析任务对象。来源 ID 使用 `dataset:<id>:content-<content_revision>`；序号为 0 的历史资料继续兼容原源文件摘要。引用校验使用同一规则，因此手动保存后旧来源 ID 失效，不能以未改变的源文件 SHA-256 冒充正文仍未变化。该读取与资料页面使用同一正文真值，详细写入和替换规则见[资料集功能](../features/datasets.md)。
+
+`0089` 后，`context_service` 已移除旧简历版本的列表、解析与素材构造分支，不再导入历史 ORM。旧 `resume_version` 类型仅在入口保留拒绝逻辑，返回 `409 AGENT_CONTEXT_RETIRED`；当前简历上下文和提案继续使用 `resumes`。

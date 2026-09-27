@@ -64,7 +64,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 ### 首次 Production SQLite 切换
 
-旧 Express Production 使用 `/opt/tolink/LinkResume/data/resume_app.sqlite`。首次切换到 FastAPI/MySQL 时，维护者手动运行 Production Job 并显式开启 `IMPORT_LEGACY_SQLITE`；该参数默认关闭，Pipeline 也明确拒绝 webhook 构建开启它，因此自动构建不会重复导入。远端脚本在旧应用继续服务时完成镜像构建、空 `linkresume` database 初始化和 Alembic 升级；进入导入窗口后才短暂停止旧容器，通过 SQLite `.backup` 合并 WAL 并生成一致只读快照。随后先对全部旧记录执行 dry-run，最后仅在目标 `users`、`resumes`、`resume_versions` 都为空时用单事务导入。快照或导入失败会立即恢复旧容器。
+旧 Express Production 使用 `/opt/tolink/LinkResume/data/resume_app.sqlite`。首次切换到 FastAPI/MySQL 时，维护者手动运行 Production Job 并显式开启 `IMPORT_LEGACY_SQLITE`；该参数默认关闭，Pipeline 也明确拒绝 webhook 构建开启它，因此自动构建不会重复导入。远端脚本在旧应用继续服务时完成镜像构建、空 `linkresume` database 初始化和 Alembic 升级；进入导入窗口后才短暂停止旧容器，通过 SQLite `.backup` 合并 WAL 并生成一致只读快照。随后先对全部旧记录执行 dry-run，最后仅在目标 `users`、`resumes`、`resume_templates` 都为空时用单事务导入。快照或导入失败会立即恢复旧容器。
 
 导入保留账号邮箱、bcrypt 密码摘要、账号时间、简历标题、Markdown 和可映射样式；每份简历创建一个“初始版本”。旧字符串主键会映射到新的自增主键。登录同时兼容 bcrypt 与 Argon2，旧账号首次成功登录后立即把摘要升级为 Argon2。旧 SQLite 会话不迁移，切换后用户必须重新登录。任何记录无法安全转换、目标表非空或事务失败都会停止发布，不允许部分导入。
 
@@ -119,3 +119,33 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 插件发布失败不覆盖 `current.json` 时继续使用上一版本；应用镜像回滚不删除 `system/plugin-releases/` 对象。当前版本内容有误时发布更高补丁版本，不覆盖同版本 ZIP。
 
 Promtail 配置可以复用到后续系统级日志采集：在 `deploy/observability/promtail-config.yml` 增加新的 scrape job，并在 Compose 增加最小只读 mount 即可继续推送到相同 Loki。新增宿主机 journal 或 `/var/log` 采集前必须单独评审读取权限、日志量、敏感字段和 label 基数；不能直接把整台宿主机目录授权给当前容器。
+
+
+## 资料操作表退役（0088）
+
+`0088` 删除旧的 `dataset_replacements` 和 `dataset_object_cleanup`，需要 API、Web 和 Worker 同批切换。先备份数据库及对象存储，停止旧 API 写入与全部解析 Worker，并等待在途上传/解析退出。不要在旧进程仍写入时清空或删除表。
+
+使用目标环境的同一配置先只读检查，再执行一次性收尾。例如共享 Dev 显式设置 `LINKRESUME_ENV_FILE=.env.development`：
+
+```bash
+LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py
+LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py --execute
+LINKRESUME_ENV_FILE=.env.development npm run db:migrate
+```
+
+收尾命令保留当前资料及正在引用的源文件/正文，放弃尚未采用的旧候选，同步删除无引用对象及候选任务，最后清空两张旧操作表。默认只打印数量，不修改数据；删除失败会中止数据库事务，可在 MinIO 恢复后重跑。它只用于这次升级，不作为定时任务运行。`0088` 在任何 DROP 前检查两张表必须为空；空库升级无需收尾。MySQL 若只提交了首条 DROP，可重跑该迁移完成第二张表删除。
+
+升级后启动新 API 与 Worker，再切换 Web。资料替换失败不再恢复旧文件；旧客户端的替换操作接口已移除。不能直接回滚到依赖旧表的应用；恢复依赖备份，后续修正使用新的向前迁移。同步操作仍可能在网络或进程中断时部分完成，此类异常记录日志，不引入持久化清理队列。
+
+## 面试素材与简历历史表退役（0089）
+
+`0089` 删除 `interview_assets`、`resume_versions` 以及 `job_applications.resume_version_id` 的外键、索引和列。当前简历和 `resume_id` 关联保留；历史快照永久删除，旧版本读取、复制及恢复接口全部移除。恢复历史内容只能使用升级前备份。
+
+维护窗口先备份数据库与对象存储，停止旧 API 和 Worker 并等待在途操作结束；按上一节完成 `0088` 收尾。使用新代码中的一次性脚本将旧面试素材迁到现有 `user_dataset`（默认 dry-run）：
+
+```bash
+uv run --directory apps/backend python scripts/release/migrate_interview_assets.py
+uv run --directory apps/backend python scripts/release/migrate_interview_assets.py --execute
+```
+
+确认脚本成功、旧素材表为空后，通过部署迁移入口升级至 `0089`，再启动配套新 API、Web 和 Worker。迁移会在任何 DDL 前阻止非空旧素材表被删除；空库不需要运行脚本。旧应用不能在删表后重新启动。MySQL DDL 不支持事务回滚，部分失败必须先核对实际 schema 与 revision，再修复或从备份恢复，不能盲目重跑。

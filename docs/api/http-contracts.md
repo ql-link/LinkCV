@@ -89,18 +89,17 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 语义分类请求携带当前规范 `data` 的 `sha256:` 内容哈希和可选章节 ID 列表。分类器只接收自定义章节的标题、正文和相邻标题，必须综合上下文，不在模板切换时调用，也不改写正文或持久化建议；相同用户、简历、内容哈希和章节集合的成功结果在 Redis 缓存 1 小时，重复请求不重复调用模型；响应包含稳定章节 ID、建议类型、置信度和依据。内容已变化返回 `409 RESUME_SEMANTIC_CLASSIFICATION_STALE`，章节选择非法返回 `400 INVALID_RESUME_SEMANTIC_CLASSIFICATION`，模型不可用或返回越界 ID 返回 `503 RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE`。未登录返回 `401 UNAUTHORIZED`，不存在或越权统一返回 `404 RESUME_NOT_FOUND`。
 
-Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和恢复历史版本均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
+Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和复制当前简历均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
 
 每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建只写当前简历，不创建历史记录。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
 ## 当前内容复制与存量取回
 
-日常简历不提供历史管理。旧 GET /versions 和 GET /versions/:version_no 仅用于存量保全；旧 POST、PATCH、DELETE 与 restore 在归属校验后返回 410 RESUME_VERSION_RETIRED。不存在或越权先返回 404，历史表及其图片引用仍保留。
+简历不提供历史管理。`0089` 删除历史表及全部 `/api/resumes/:id/versions` 路由（包括读取、复制、恢复等子路由），请求返回 404。图片删除只检查当前正文引用。
 
 - POST /api/resumes/:id/copy 接受 {title,base_lock_version,client_request_id}，请求 ID 必须为 UUID；成功 201 {resume}，相同请求重试 200 返回同一副本。
-- POST /api/resumes/:id/versions/:version_no/copy 接受 {title,client_request_id}，只复制指定存量内容为新简历，不覆盖当前内容。
 - 同请求 ID 不同参数返回 409 RESUME_COPY_REQUEST_CONFLICT；过期锁返回 409 RESUME_EDIT_CONFLICT；标题冲突与简历数量上限分别为 RESUME_TITLE_CONFLICT、RESUME_LIMIT_REACHED；图片复制失败返回 502 RESUME_COPY_ASSET_FAILED，不保留半成品。
-- 副本保留正文和模板快照（包括已下架模板），源简历专属图片复制到新命名空间，不继承分享链接和导入任务。不创建新的 resume_versions 行。
+- 副本保留正文和模板快照（包括已下架模板），源简历专属图片复制到新命名空间，不继承分享链接和导入任务。仅写入当前简历表。
 
 ## 简历智能助手
 
@@ -229,18 +228,17 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 
 ### 资料正文读取与替换
 
-资料列表及 `GET /api/datasets/:id` 增加字符串 `content_revision`、可空 `content_updated_at` 和可空 `replacement`；详情另外返回 `folder_name`。ETag 为 `"dataset-<id>-<revision>"`。这些接口继续只对本人可见，不暴露存储对象键。`replacement` 包含 `id/status/upload_status/parse_status/failure_code/retryable/current_revision`；pending 时 Web 展示处理占位，failed/conflict 时恢复当前文件。
+资料列表及 `GET /api/datasets/:id` 返回字符串 `content_revision`、可空 `content_updated_at`；详情另外返回 `folder_name`。ETag 为 `"dataset-<id>-<revision>"`。这些接口继续只对本人可见，不暴露存储对象键；不再返回独立的 `replacement` 状态。
 
 资料正文只提供 GET 读取，不提供 PUT 保存接口。既有正文对象继续可读。
 
 普通上传新增可选 `file_name` 表单字段，重命名必须保留扩展名。同一文件夹出现同名时返回 `409 DATASET_NAME_CONFLICT`，响应携带 `candidates:[{id,file_name,created_at,content_revision,replaceable}]` 与 `suggested_name`；不自动替换。同名规则也用于改名、移动和批量移动；批量任一冲突整批拒绝。
 
-- `POST /api/datasets/:id/replacements`：multipart `file`、`confirm_replace=true`，必传 UUID `Idempotency-Key` 和 `If-Match`；返回 202 操作状态。目标完整文件名必须相同；同键同指纹重放，同键异指纹返回 409。候选经过与普通上传相同的格式、大小、并发、速率和容量检查。旧源和候选源同时占用容量，候选不增加资料数量。
-- `GET /api/datasets/:id/replacements/:rid`：查询本人的操作状态。
-- `POST /api/datasets/:id/replacements/:rid/retry`：JSON `{confirm_replace:true,request_id}` 与当前 `If-Match`，复用已保存的候选源；返回 202，已有成功转换结果时可直接切换并返回 200。来源不可用返回 502，状态不可重试返回 409。
-- `DELETE /api/datasets/:id/replacements/:rid`：放弃失败或冲突候选，返回 `{discarded:true}`；进行中拒绝，重复放弃幂等。
+`PUT /api/datasets/:id/file` 接受 multipart `file`、`confirm_replace=true`，必传 UUID `Idempotency-Key` 和当前 `If-Match`。当前支持文档替换，与普通文档上传共用格式、大小、频率和容量校验；目标完整文件名必须相同。校验通过后同步删除旧源、旧正文和旧解析结果，将同一资料 ID 关联到新的普通解析任务；保留文件夹和面试关联，容量按替换后的文件计算，不同时计入旧文件。返回 202 的 `UserDatasetRecord`，成功重放已完成的解析结果时返回 200；同键同指纹重放，同键异指纹返回 409。幂等信息使用资料主表的当前请求字段，不保存历史替换操作。
 
-pending 替换期间，改名、移动和删除返回 `409 DATASET_BUSY`。失败后当前正文仍有效并可预览，再次替换需要确认当前序号。替换成功原子切换源与正文指针并递增序号；旧对象延迟回收，操作回执保留 24 小时，不提供用户版本历史。普通 `/retry` 始终只重试当前资料任务，不隐式重试候选。
+新任务受理时递增正文序号并清空旧正文，解析成功后写入新正文。上传或解析失败不恢复旧文件，解析失败复用 `POST /api/datasets/:id/retry`，上传失败重新上传；不存在或越权返回 404，旧版本请求返回 412，上传或解析中的再次替换和删除返回 `409 DATASET_BUSY`。已删除旧的替换操作查询、重试替换和放弃替换接口。
+
+删除资料、删除文件夹和替换文档都同步删除相关 MinIO 文件；明确的文件删除失败返回 `502 ASSET_DELETE_FAILED`，不会继续上传新文件。网络或进程异常可能造成部分完成，不提供跨 MySQL/MinIO 原子回滚或持久化清理补偿。
 
 ## JD 数据模型与管理
 

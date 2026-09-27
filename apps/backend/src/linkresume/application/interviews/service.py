@@ -56,7 +56,6 @@ from linkresume.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
-    ResumeVersion,
 )
 from linkresume.services import dataset_content_service as dataset_content
 

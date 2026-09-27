@@ -39,7 +39,6 @@ from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
     Resume,
-    ResumeVersion,
 )
 from linkresume.modules.resumes.pdf_service import validate_resume_pdf_asset_contract
 from linkresume.modules.resumes.schemas import (
@@ -395,7 +394,6 @@ def delete_resume(
             JobApplication.resume_id == resume.id,
             JobApplication.user_id == user.id,
         ).values(resume_id=None, resume_title_snapshot=None))
-        db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
     except Exception:

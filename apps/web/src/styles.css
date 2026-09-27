@@ -2140,10 +2140,6 @@ select:not([data-slot]):focus-visible {
 .resume-column-menu > button[aria-checked="true"] { color: var(--ui-accent); }
 
 
-.version-diff-dialog { width: min(880px, calc(100vw - 32px)); max-width: 880px; }
-.version-diff-body { display: grid; max-height: min(62vh, 660px); gap: 16px; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
-.version-diff-status { margin: 12px 0; border-radius: var(--ui-radius-md); background: var(--ui-surface-muted); padding: 16px; color: var(--ui-text-secondary); font-size: var(--ui-text-sm); }
-.version-diff-status.is-error { background: var(--ui-destructive-subtle); color: var(--ui-destructive); }
 .version-style-diff { display: grid; gap: 6px; border-bottom: 1px solid var(--ui-border); padding-bottom: 14px; }
 .version-style-diff h3 { margin: 0 0 4px; font-size: var(--ui-text-sm); }
 .version-style-diff p { display: grid; grid-template-columns: minmax(90px, 0.7fr) 1fr 1fr; gap: 10px; margin: 0; font-size: var(--ui-text-xs); }

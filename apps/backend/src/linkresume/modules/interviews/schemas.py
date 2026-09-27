@@ -476,7 +476,6 @@ class JobApplicationRecord(BaseModel):
 
     id: DatabaseId
     job_description_id: DatabaseId | None
-    resume_version_id: DatabaseId | None
     resume_id: DatabaseId | None = None
     company_name_snapshot: str
     job_title_snapshot: str
@@ -513,7 +512,6 @@ class JobApplicationRecord(BaseModel):
         "id",
         "job_description_id",
         "resume_id",
-        "resume_version_id",
         mode="before",
     )
     @classmethod

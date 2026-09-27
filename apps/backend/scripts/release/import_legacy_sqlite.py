@@ -30,7 +30,7 @@ from linkresume.domain.resume.legacy_cutover import (
     presentation_for_legacy,
 )
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkresume.modules.resumes.models import Resume, ResumeTemplate
 
 LEGACY_SETTING_KEYS = {
     "fontFamily",
@@ -357,10 +357,6 @@ def _require_empty_target(session: Session) -> None:
     counts = {
         "users": session.scalar(select(func.count()).select_from(User)) or 0,
         "resumes": session.scalar(select(func.count()).select_from(Resume)) or 0,
-        "resume_versions": session.scalar(
-            select(func.count()).select_from(ResumeVersion)
-        )
-        or 0,
         "resume_templates": session.scalar(
             select(func.count()).select_from(ResumeTemplate)
         )
@@ -438,30 +434,14 @@ def import_plan(engine: Engine, plan: ImportPlan, *, execute: bool) -> None:
                 )
                 session.add(resume)
                 session.flush()
-                session.add(
-                    ResumeVersion(
-                        resume_id=resume.id,
-                        template_id=template_id,
-                        version_no=1,
-                        data_json=legacy_resume.data,
-                        style_json=legacy_resume.style,
-                        reason="initial",
-                        name="初始版本",
-                        created_at=legacy_resume.created_at,
-                    )
-                )
             session.flush()
             imported_users = session.scalar(select(func.count()).select_from(User)) or 0
             imported_resumes = (
                 session.scalar(select(func.count()).select_from(Resume)) or 0
             )
-            imported_versions = (
-                session.scalar(select(func.count()).select_from(ResumeVersion)) or 0
-            )
             if (
                 imported_users != len(plan.users)
                 or imported_resumes != len(plan.resumes)
-                or imported_versions != len(plan.resumes)
             ):
                 raise RuntimeError("legacy import verification count mismatch")
             orphan_resumes = session.scalar(
@@ -470,13 +450,7 @@ def import_plan(engine: Engine, plan: ImportPlan, *, execute: bool) -> None:
                 .outerjoin(User, User.id == Resume.user_id)
                 .where(User.id.is_(None))
             )
-            orphan_versions = session.scalar(
-                select(func.count())
-                .select_from(ResumeVersion)
-                .outerjoin(Resume, Resume.id == ResumeVersion.resume_id)
-                .where(Resume.id.is_(None))
-            )
-            if orphan_resumes or orphan_versions:
+            if orphan_resumes:
                 raise RuntimeError("legacy import verification found orphan records")
 
 
