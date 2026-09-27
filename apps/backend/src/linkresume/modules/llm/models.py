@@ -129,7 +129,9 @@ class LLMUseCaseRoute(Base):
         primary_key=True,
     )
     protocol_code: Mapped[str] = mapped_column(String(32), nullable=False)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False)
+    priority: Mapped[int] = mapped_column(
+        Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"), nullable=False
+    )
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )

@@ -68,7 +68,7 @@ CREATE TABLE llm_use_case_routes (
 	use_case VARCHAR(48) NOT NULL,
 	route_id BIGINT UNSIGNED NOT NULL,
 	protocol_code VARCHAR(32) NOT NULL,
-	priority INTEGER NOT NULL,
+	priority INTEGER UNSIGNED NOT NULL,
 	enabled BOOL NOT NULL DEFAULT false,
 	validated_fingerprint VARCHAR(64),
 	validated_at DATETIME(6),

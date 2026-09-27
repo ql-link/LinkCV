@@ -141,12 +141,12 @@ class UseCaseBindingWrite(ApiModel):
     use_case: str = Field(alias="useCase", min_length=1, max_length=48)
     route_id: int = Field(alias="routeId", gt=0)
     protocol_code: str = Field(alias="protocolCode", min_length=1, max_length=32)
-    priority: int = Field(ge=0)
+    priority: int = Field(ge=0, le=4_294_967_295)
     enabled: bool = False
 
 
 class UseCaseBindingPatch(ApiModel):
-    priority: int | None = Field(default=None, ge=0)
+    priority: int | None = Field(default=None, ge=0, le=4_294_967_295)
     enabled: bool | None = None
 
 
