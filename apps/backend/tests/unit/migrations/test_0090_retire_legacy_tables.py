@@ -9,7 +9,7 @@ from linkresume.core.database import Base
 import linkresume.models  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[5]
-spec = importlib.util.spec_from_file_location("retire_0089", next((ROOT / "apps/backend/migrations/versions").glob("0089_*.py")))
+spec = importlib.util.spec_from_file_location("retire_0090", next((ROOT / "apps/backend/migrations/versions").glob("0090_*.py")))
 revision = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(revision)
 
@@ -30,7 +30,7 @@ def test_upgrade_requires_migrated_assets_before_any_ddl(monkeypatch, has_rows):
             assert connection.scalar(text("SELECT COUNT(*) FROM interview_assets")) == 1
         else:
             revision.upgrade()
-            assert executed == ["0089.up.sql"]
+            assert executed == ["0090.up.sql"]
     engine.dispose()
 
 

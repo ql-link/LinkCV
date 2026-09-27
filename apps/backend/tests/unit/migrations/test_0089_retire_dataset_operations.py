@@ -16,7 +16,7 @@ def load(path, name):
 
 
 release = load(ROOT / "scripts/release/retire_dataset_operations.py", "retire_dataset_operations")
-revision = load(ROOT / "apps/backend/migrations/versions/0088_remove_dataset_replacement_and_cleanup_.py", "revision_0088")
+revision = load(ROOT / "apps/backend/migrations/versions/0089_remove_dataset_replacement_and_cleanup_.py", "revision_0089")
 
 
 @pytest.fixture

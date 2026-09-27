@@ -10,6 +10,7 @@ function jsonResponse(status: number, body: unknown): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(),
     json: vi.fn().mockResolvedValue(body),
   } as unknown as Response;
 }
@@ -36,6 +37,91 @@ afterEach(() => {
 });
 
 describe("API session refresh", () => {
+  it("收到运行终态后不再等待连接关闭，也不把关闭异常当作对话失败", async () => {
+    const read = vi.fn().mockResolvedValueOnce({
+      done: false,
+      value: new TextEncoder().encode('event: run.completed\ndata: {"runId":"run-1"}\n\n'),
+    }).mockRejectedValue(new TypeError("connection closed"));
+    const cancel = vi.fn().mockRejectedValue(new TypeError("connection closed"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, status: 200, headers: new Headers(), body: { getReader: () => ({ read, cancel }) },
+    }));
+    const onEvent = vi.fn();
+    await expect(api.streamAgentRun("run-1", new AbortController().signal, onEvent)).resolves.toBeUndefined();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(onEvent).toHaveBeenCalledWith({ type: "run.completed", runId: "run-1" });
+  });
+
+  it("不同标签页同时过期时串行刷新并复用已经更新的 Cookie", async () => {
+    let lockQueue = Promise.resolve<unknown>(undefined);
+    const request = vi.fn((_name: string, callback: () => unknown) => {
+      const result = lockQueue.then(callback);
+      lockQueue = result.catch(() => undefined);
+      return result;
+    });
+    vi.stubGlobal("navigator", { locks: { request } });
+    vi.resetModules();
+    const firstTab = (await import("./client")).api;
+    vi.resetModules();
+    const secondTab = (await import("./client")).api;
+    let accessValid = false;
+    const fetchMock = vi.fn(async (path: string) => {
+      if (path === "/api/auth/me") return jsonResponse(200, { user: accessValid ? { id: "1" } : null });
+      if (path === "/api/auth/refresh") {
+        accessValid = true;
+        return jsonResponse(200, { user: { id: "1" } });
+      }
+      return accessValid ? jsonResponse(200, { resumes: [] }) : jsonResponse(401, { error: "UNAUTHORIZED" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(Promise.all([firstTab.listResumes(), secondTab.listResumes()])).resolves.toEqual([
+      { resumes: [] }, { resumes: [] },
+    ]);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.filter(([path]) => path === "/api/auth/refresh")).toHaveLength(1);
+  });
+
+  it.each(["send", "reconnect"] as const)("对话 %s 遇到过期凭证时刷新重试且只交付一次回复", async (mode) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
+      .mockResolvedValueOnce(jsonResponse(200, { user: { id: "1" } }))
+      .mockResolvedValueOnce(streamResponse([
+        'event: assistant.delta\ndata: {"runId":"run-1","delta":"已完成分析"}\n\n',
+        'event: run.completed\ndata: {"runId":"run-1"}\n\n',
+      ]));
+    vi.stubGlobal("fetch", fetchMock);
+    const onEvent = vi.fn();
+    const signal = new AbortController().signal;
+    if (mode === "send") {
+      await api.streamAgentMessage("session-1", { content: "分析简历", idempotency_key: "same-request" }, signal, onEvent);
+      expect(fetchMock.mock.calls[0][1].body).toBe(fetchMock.mock.calls[2][1].body);
+    } else {
+      await api.streamAgentRun("run-1", signal, onEvent);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(onEvent.mock.calls.map(([event]) => event.type)).toEqual(["assistant.delta", "run.completed"]);
+  });
+
+  it.each(["send", "reconnect"] as const)("对话 %s 在续期期间停止后不再重发请求", async (mode) => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(401, { error: "UNAUTHORIZED" }))
+      .mockImplementationOnce(async () => {
+        controller.abort();
+        return jsonResponse(200, { user: { id: "1" } });
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    const onEvent = vi.fn();
+    const promise = mode === "send"
+      ? api.streamAgentMessage("session-1", { content: "分析简历", idempotency_key: "cancel-request" }, controller.signal, onEvent)
+      : api.streamAgentRun("run-1", controller.signal, onEvent);
+    await expect(promise).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it("应用启动时 access 失效会刷新会话并重新读取当前用户", async () => {
     const user = { id: "1", email: "zhangsan@example.test" };
     const fetchMock = vi
@@ -339,7 +425,7 @@ describe("Agent readiness API", () => {
 
 describe("Agent model API", () => {
   it("读取当前 Pi Agent 的安全模型摘要", async () => {
-    const body = { model: { adapter: "deepseek", name: "fictional-agent-model" } };
+    const body = { model: { provider: "虚构聚合网关", name: "z-ai/glm-4.6" } };
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
     vi.stubGlobal("fetch", fetchMock);
 

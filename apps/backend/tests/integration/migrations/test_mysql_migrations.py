@@ -4301,10 +4301,10 @@ def test_mysql_dataset_edit_upgrade_from_0060_preserves_existing_files() -> None
     engine.dispose()
 
 
-def test_mysql_0088_requires_drained_legacy_tables_before_drop() -> None:
+def test_mysql_0089_requires_drained_legacy_tables_before_drop() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0087")
+    run_alembic(database_url, "upgrade", "0088")
     engine = create_engine(database_url)
     try:
         with engine.begin() as conn:
@@ -4312,25 +4312,24 @@ def test_mysql_0088_requires_drained_legacy_tables_before_drop() -> None:
                 "INSERT INTO dataset_object_cleanup (user_id,object_name,not_before) "
                 "VALUES (1,'users/1/datasets/fictional.md',CURRENT_TIMESTAMP(6))"
             ))
-        failed = invoke_alembic(database_url, "upgrade", "0088")
+        failed = invoke_alembic(database_url, "upgrade", "0089")
         assert failed.returncode != 0
         assert "retire_dataset_operations.py" in failed.stderr
         assert {"dataset_replacements", "dataset_object_cleanup"} <= set(inspect(engine).get_table_names())
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM dataset_object_cleanup"))
-        run_alembic(database_url, "upgrade", "0088")
-        run_alembic(database_url, "upgrade", "head")
+        run_alembic(database_url, "upgrade", "0089")
         assert not {"dataset_replacements", "dataset_object_cleanup"} & set(inspect(engine).get_table_names())
         with engine.connect() as conn:
-            assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0088"
+            assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "0089"
     finally:
         engine.dispose()
 
 
-def test_mysql_0089_retires_legacy_tables_and_preserves_current_resume() -> None:
+def test_mysql_0090_retires_legacy_tables_and_preserves_current_resume() -> None:
     database_url = migration_test_url()
     reset_test_database_to_base(database_url)
-    run_alembic(database_url, "upgrade", "0088")
+    run_alembic(database_url, "upgrade", "0089")
     engine = create_engine(database_url)
     try:
         with engine.begin() as connection:
@@ -4348,7 +4347,7 @@ def test_mysql_0089_retires_legacy_tables_and_preserves_current_resume() -> None
                 "SELECT id,template_id,1,data_json,style_json,'manual','旧快照' FROM resumes WHERE id=:id"
             ), {"id": resume_id})
             before = connection.execute(text("SELECT * FROM resumes WHERE id=:id"), {"id": resume_id}).mappings().one()
-        run_alembic(database_url, "upgrade", "0089")
+        run_alembic(database_url, "upgrade", "0090")
         run_alembic(database_url, "upgrade", "head")
         inspector = inspect(engine)
         assert {"interview_assets", "resume_versions"}.isdisjoint(inspector.get_table_names())

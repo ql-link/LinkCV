@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time 0088 preparation. Stop API/Workers and back up before --execute."""
+"""One-time 0089 preparation. Stop API/Workers and back up before --execute."""
 from __future__ import annotations
 
 import argparse

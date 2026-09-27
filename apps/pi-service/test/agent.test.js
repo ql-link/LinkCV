@@ -12,7 +12,9 @@ import {
   enableToolOnce,
   explicitNumberedGoalCount,
   isExplicitResumeReference,
+  isModelDefinition,
   clarificationFallbackText,
+  configuredModel,
   executeLocalResumeEditPlan,
   formatContextCatalog,
   formatContextMaterials,
@@ -747,4 +749,96 @@ test("planning catalog reveals authorized identities without another task's body
   assert.match(catalog, /张三的简历/);
   assert.match(catalog, /示例岗位/);
   assert.doesNotMatch(catalog, /PRIVATE_FIRST_TASK|PRIVATE_SECOND_TASK/);
+});
+
+test("gateway model definition is validated before Pi builds a provider", () => {
+  const definition = {
+    model_id: "z-ai/glm-4.6",
+    display_name: "GLM 4.6",
+    reasoning: true,
+    input_modalities: ["text"],
+    context_window: 200000,
+    max_output: 32768,
+    input_price_per_million: 0.6,
+    output_price_per_million: 2.2,
+    cache_read_price_per_million: null,
+    cache_write_price_per_million: null,
+  };
+
+  assert.equal(isModelDefinition(definition), true);
+  assert.equal(isModelDefinition({ ...definition, model_id: "" }), false);
+  assert.equal(isModelDefinition({ ...definition, input_modalities: "text" }), false);
+  assert.equal(isModelDefinition({ ...definition, context_window: 0 }), false);
+  assert.equal(isModelDefinition({ ...definition, input_price_per_million: "0.6" }), false);
+  assert.equal(isModelDefinition(null), false);
+});
+
+test("configuredModel registers the gateway provider and resolves the catalog model", async () => {
+  const { model } = await configuredModel({
+    providerId: "7",
+    api: "openai-completions",
+    apiKey: "fictional-gateway-key",
+    baseUrl: "https://gateway.example.invalid/v1",
+    definition: {
+      model_id: "z-ai/glm-4.6",
+      display_name: "GLM 4.6",
+      reasoning: true,
+      input_modalities: ["text", "image", "audio"],
+      context_window: 200000,
+      max_output: 32768,
+      input_price_per_million: 0.6,
+      output_price_per_million: 2.2,
+      cache_read_price_per_million: 0.11,
+      cache_write_price_per_million: null,
+    },
+  });
+
+  assert.equal(model.id, "z-ai/glm-4.6");
+  assert.equal(model.name, "GLM 4.6");
+  assert.equal(model.api, "openai-completions");
+  assert.equal(model.provider, "linkresume-p7");
+  assert.equal(model.baseUrl, "https://gateway.example.invalid/v1");
+  assert.equal(model.reasoning, true);
+  assert.equal(model.contextWindow, 200000);
+  assert.equal(model.maxTokens, 32768);
+  // Only modalities Pi understands survive; prices default to zero when absent.
+  assert.deepEqual(model.input, ["text", "image"]);
+  assert.equal(model.cost.input, 0.6);
+  assert.equal(model.cost.output, 2.2);
+  assert.equal(model.cost.cacheRead, 0.11);
+  assert.equal(model.cost.cacheWrite, 0);
+});
+
+test("configuredModel refuses models it cannot build", async () => {
+  await assert.rejects(
+    configuredModel({
+      providerId: "7",
+      api: "openai-completions",
+      apiKey: "fictional-gateway-key",
+      baseUrl: "https://gateway.example.invalid/v1",
+      definition: null,
+    }),
+    /AGENT_MODEL_UNSUPPORTED/,
+  );
+  await assert.rejects(
+    configuredModel({
+      providerId: "7",
+      api: "openai-completions",
+      apiKey: "fictional-gateway-key",
+      baseUrl: "",
+      definition: {
+        model_id: "z-ai/glm-4.6",
+        display_name: "GLM 4.6",
+        reasoning: false,
+        input_modalities: ["text"],
+        context_window: 1000,
+        max_output: 100,
+        input_price_per_million: null,
+        output_price_per_million: null,
+        cache_read_price_per_million: null,
+        cache_write_price_per_million: null,
+      },
+    }),
+    /AGENT_MODEL_UNSUPPORTED/,
+  );
 });

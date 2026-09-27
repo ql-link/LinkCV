@@ -355,7 +355,7 @@ class AgentReadinessResponse(BaseModel):
 class AgentModelSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    adapter: str
+    provider: str
     name: str
 
 
@@ -695,10 +695,28 @@ class ResumeContextResponse(BaseModel):
     style: ResumePresentation
 
 
+class AgentModelDefinition(BaseModel):
+    """Model capabilities Pi Service needs to build one model instance."""
+
+    model_id: str
+    display_name: str
+    reasoning: bool
+    input_modalities: list[str]
+    context_window: int
+    max_output: int
+    input_price_per_million: float | None
+    output_price_per_million: float | None
+    cache_read_price_per_million: float | None
+    cache_write_price_per_million: float | None
+
+
 class RuntimeConfigResponse(BaseModel):
-    provider: str
+    provider_id: str
+    provider_name: str
+    api: str
     model: str
-    api_base: str | None
-    api_key: str | None
+    api_base: str
+    api_key: str
     config_id: str
     config_version: int
+    definition: AgentModelDefinition

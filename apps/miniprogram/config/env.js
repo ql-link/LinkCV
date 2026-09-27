@@ -58,6 +58,11 @@ function isDevToolsRuntime() {
   }
 }
 
+function isDevelopEnv() {
+  const account = readAccountInfoSafely();
+  return Boolean(account && account.miniProgram && account.miniProgram.envVersion === "develop");
+}
+
 function resolveApiBaseUrl(options = {}) {
   const localConfigReader = typeof options.readLocalConfig === "function"
     ? options.readLocalConfig
@@ -123,4 +128,4 @@ function resolveBaseUrl({
   throw new Error(`未配置当前环境的小程序 ${label} 地址`);
 }
 
-module.exports = { resolveApiBaseUrl };
+module.exports = { isDevelopEnv, resolveApiBaseUrl };

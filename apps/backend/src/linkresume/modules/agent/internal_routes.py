@@ -7,6 +7,7 @@ from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.modules.agent.context_service import list_contexts
 from linkresume.modules.agent.schemas import (
+    AgentModelDefinition,
     AgentReadinessResponse,
     AgentTaskPlanRequest,
     AgentTaskStatusRequest,
@@ -57,8 +58,8 @@ from linkresume.modules.agent.service import (
     update_task_status,
     upsert_tool_event,
 )
-from linkresume.modules.llm.catalog import assemble_model_identifier
-from linkresume.modules.llm.service import LLMError, LLMService
+from linkresume.modules.llm.catalog import PI_CHAT_API
+from linkresume.modules.llm.service import LLMError, LLMService, ModelDefinition
 from linkresume.modules.resumes.models import Resume
 
 router = APIRouter(
@@ -68,16 +69,10 @@ router = APIRouter(
     include_in_schema=False,
 )
 
-PI_PROVIDER_BY_ADAPTER = {
-    "openai": "openai",
-    "anthropic": "anthropic",
-    "deepseek": "deepseek",
-    "openrouter": "openrouter",
-    "gemini": "google",
-    "xai": "xai",
-    "groq": "groq",
-    "mistral": "mistral",
-}
+
+def definition_payload(definition: ModelDefinition) -> AgentModelDefinition:
+    """Serialize a model definition for Pi Service."""
+    return AgentModelDefinition.model_validate(definition.as_payload())
 
 
 def _run_resume(
@@ -113,11 +108,9 @@ def _fingerprint_secret(request: Request) -> str:
 async def get_internal_agent_readiness(request: Request) -> AgentReadinessResponse:
     llm_service: LLMService = request.app.state.llm_service
     try:
-        config = await llm_service.agent_runtime_model()
+        await llm_service.agent_runtime_model()
     except LLMError as error:
         raise ApiError(503, "AGENT_NOT_READY") from error
-    if PI_PROVIDER_BY_ADAPTER.get(config.adapter) is None:
-        raise ApiError(503, "AGENT_NOT_READY")
     return AgentReadinessResponse(ready=True)
 
 
@@ -133,20 +126,20 @@ async def get_runtime_config(
         config = await llm_service.agent_runtime_model()
     except LLMError as error:
         raise ApiError(503, error.code) from error
-    provider = PI_PROVIDER_BY_ADAPTER.get(config.adapter)
-    if provider is None:
-        raise ApiError(503, "AGENT_MODEL_UNSUPPORTED")
     run.model_config_id = config.id
     run.model_config_version = config.config_version
-    run.model_name = assemble_model_identifier(config.adapter, config.model_call_name)
+    run.model_name = config.model_call_name
     db.commit()
     return RuntimeConfigResponse(
-        provider=provider,
+        provider_id=str(config.provider_id),
+        provider_name=config.provider_name,
+        api=PI_CHAT_API,
         model=config.model_call_name,
         api_base=config.api_base,
         api_key=config.api_key,
         config_id=str(config.id),
         config_version=config.config_version,
+        definition=definition_payload(config.definition),
     )
 
 

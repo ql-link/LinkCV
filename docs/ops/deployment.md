@@ -121,9 +121,9 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 Promtail 配置可以复用到后续系统级日志采集：在 `deploy/observability/promtail-config.yml` 增加新的 scrape job，并在 Compose 增加最小只读 mount 即可继续推送到相同 Loki。新增宿主机 journal 或 `/var/log` 采集前必须单独评审读取权限、日志量、敏感字段和 label 基数；不能直接把整台宿主机目录授权给当前容器。
 
 
-## 资料操作表退役（0088）
+## 资料操作表退役（0089）
 
-`0088` 删除旧的 `dataset_replacements` 和 `dataset_object_cleanup`，需要 API、Web 和 Worker 同批切换。先备份数据库及对象存储，停止旧 API 写入与全部解析 Worker，并等待在途上传/解析退出。不要在旧进程仍写入时清空或删除表。
+`0089` 删除旧的 `dataset_replacements` 和 `dataset_object_cleanup`，需要 API、Web 和 Worker 同批切换。先备份数据库及对象存储，停止旧 API 写入与全部解析 Worker，并等待在途上传/解析退出。不要在旧进程仍写入时清空或删除表。
 
 使用目标环境的同一配置先只读检查，再执行一次性收尾。例如共享 Dev 显式设置 `LINKRESUME_ENV_FILE=.env.development`：
 
@@ -133,19 +133,19 @@ LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../.
 LINKRESUME_ENV_FILE=.env.development npm run db:migrate
 ```
 
-收尾命令保留当前资料及正在引用的源文件/正文，放弃尚未采用的旧候选，同步删除无引用对象及候选任务，最后清空两张旧操作表。默认只打印数量，不修改数据；删除失败会中止数据库事务，可在 MinIO 恢复后重跑。它只用于这次升级，不作为定时任务运行。`0088` 在任何 DROP 前检查两张表必须为空；空库升级无需收尾。MySQL 若只提交了首条 DROP，可重跑该迁移完成第二张表删除。
+收尾命令保留当前资料及正在引用的源文件/正文，放弃尚未采用的旧候选，同步删除无引用对象及候选任务，最后清空两张旧操作表。默认只打印数量，不修改数据；删除失败会中止数据库事务，可在 MinIO 恢复后重跑。它只用于这次升级，不作为定时任务运行。`0089` 在任何 DROP 前检查两张表必须为空；空库升级无需收尾。MySQL 若只提交了首条 DROP，可重跑该迁移完成第二张表删除。
 
 升级后启动新 API 与 Worker，再切换 Web。资料替换失败不再恢复旧文件；旧客户端的替换操作接口已移除。不能直接回滚到依赖旧表的应用；恢复依赖备份，后续修正使用新的向前迁移。同步操作仍可能在网络或进程中断时部分完成，此类异常记录日志，不引入持久化清理队列。
 
-## 面试素材与简历历史表退役（0089）
+## 面试素材与简历历史表退役（0090）
 
-`0089` 删除 `interview_assets`、`resume_versions` 以及 `job_applications.resume_version_id` 的外键、索引和列。当前简历和 `resume_id` 关联保留；历史快照永久删除，旧版本读取、复制及恢复接口全部移除。恢复历史内容只能使用升级前备份。
+`0090` 删除 `interview_assets`、`resume_versions` 以及 `job_applications.resume_version_id` 的外键、索引和列。当前简历和 `resume_id` 关联保留；历史快照永久删除，旧版本读取、复制及恢复接口全部移除。恢复历史内容只能使用升级前备份。
 
-维护窗口先备份数据库与对象存储，停止旧 API 和 Worker 并等待在途操作结束；按上一节完成 `0088` 收尾。使用新代码中的一次性脚本将旧面试素材迁到现有 `user_dataset`（默认 dry-run）：
+维护窗口先备份数据库与对象存储，停止旧 API 和 Worker 并等待在途操作结束；按上一节完成 `0089` 收尾。使用新代码中的一次性脚本将旧面试素材迁到现有 `user_dataset`（默认 dry-run）：
 
 ```bash
 uv run --directory apps/backend python scripts/release/migrate_interview_assets.py
 uv run --directory apps/backend python scripts/release/migrate_interview_assets.py --execute
 ```
 
-确认脚本成功、旧素材表为空后，通过部署迁移入口升级至 `0089`，再启动配套新 API、Web 和 Worker。迁移会在任何 DDL 前阻止非空旧素材表被删除；空库不需要运行脚本。旧应用不能在删表后重新启动。MySQL DDL 不支持事务回滚，部分失败必须先核对实际 schema 与 revision，再修复或从备份恢复，不能盲目重跑。
+确认脚本成功、旧素材表为空后，通过部署迁移入口升级至 `0090`，再启动配套新 API、Web 和 Worker。迁移会在任何 DDL 前阻止非空旧素材表被删除；空库不需要运行脚本。旧应用不能在删表后重新启动。MySQL DDL 不支持事务回滚，部分失败必须先核对实际 schema 与 revision，再修复或从备份恢复，不能盲目重跑。

@@ -512,6 +512,7 @@ export function InterviewCenterPage({
   initialCreateApplication,
   initialJobImport,
   navigation,
+  moduleTitle,
 }: {
   view: InterviewView;
   initialApplicationId?: string;
@@ -520,6 +521,7 @@ export function InterviewCenterPage({
   initialCreateApplication?: boolean;
   initialJobImport?: boolean;
   navigation?: ReactNode;
+  moduleTitle?: string;
 }) {
   const weekStart = useMemo(() => startOfWeek(), []);
   const [scheduleGranularity, setScheduleGranularity] = useState<ScheduleGranularity>("week");
@@ -849,7 +851,12 @@ export function InterviewCenterPage({
           className={`career-module-header${view === "applications" ? " career-applications-header" : ""}`}
           icon={<BriefcaseBusiness />}
           tone="warning"
-          title="求职中心"
+          title={moduleTitle ?? "求职中心"}
+          description={view === "schedule"
+            ? "集中查看笔试、测评与面试安排，合理规划求职日程。"
+            : view === "records"
+              ? "整理面试记录与复盘资料，回顾每一场表现。"
+              : "跟踪岗位投递与求职进展，统一管理每一步状态。"}
           navigation={navigation}
           actions={(
             <>

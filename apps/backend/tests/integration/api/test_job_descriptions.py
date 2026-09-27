@@ -14,13 +14,19 @@ from sqlalchemy import func, select
 
 from linkresume.application.job_descriptions.ai_import_service import draft_warnings
 from linkresume.core.config import Settings
+from linkresume.core.database import utc_now
 from linkresume.main import create_app
 from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.job_descriptions import routes as job_description_routes
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.job_descriptions.schemas import JobDescriptionDraft
 from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkresume.modules.llm.models import (
+    LLMCapabilityBinding,
+    LLMModelConfig,
+    LLMProvider,
+    LLMProviderModel,
+)
 from tests.fakes import FakeRedis
 
 
@@ -33,9 +39,7 @@ class DraftGateway:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    async def complete(
-        self, *, model, messages, api_base, api_key, disable_thinking=False
-    ):
+    async def complete(self, *, model, messages, api_base, api_key):
         self.calls.append({"model": model, "messages": messages, "api_key": api_key})
         content = (
             '{"job_title":"视觉工程师","company_name":"示例科技",'
@@ -48,8 +52,6 @@ class DraftGateway:
         return GatewayResult(
             content=content,
             usage=GatewayUsage(20, 8),
-            input_price_per_million=Decimal("1"),
-            output_price_per_million=Decimal("2"),
         )
 
     async def start_stream(self, **_kwargs):
@@ -76,26 +78,41 @@ def build_app(*, llm_gateway=None, with_llm_key: bool = False):
 
 def configure_draft_models(app) -> None:
     with app.state.session_factory() as db:
-        chat = LLMModelConfig(
-            adapter="deepseek",
-            model_call_name="chat-model",
-            model_name="deepseek/chat-model",
+        provider = LLMProvider(
+            name="虚构聚合网关",
+            base_url="https://gateway.example.invalid/v1",
             encrypted_api_key=app.state.llm_service.encrypt_credential(
-                "fictional-chat-key"
+                "fictional-provider-key"
             ),
-            enabled=True,
-            priority=100,
+            model_catalog_url="https://catalog.example.invalid/api/v1/models",
+            price_sync_status="succeeded",
+            version=1,
+        )
+        db.add(provider)
+        db.flush()
+        for model_id in ("chat-model", "vision-model"):
+            db.add(
+                LLMProviderModel(
+                    provider_id=provider.id,
+                    model_id=model_id,
+                    display_name=model_id,
+                    context_length=200_000,
+                    max_output=32_768,
+                    input_modalities="image,text",
+                    supports_reasoning=False,
+                    input_price_per_million=Decimal("1"),
+                    output_price_per_million=Decimal("2"),
+                    synced_at=utc_now(),
+                )
+            )
+        chat = LLMModelConfig(
+            provider_id=provider.id,
+            model_call_name="chat-model",
             config_version=1,
         )
         vision = LLMModelConfig(
-            adapter="deepseek",
+            provider_id=provider.id,
             model_call_name="vision-model",
-            model_name="deepseek/vision-model",
-            encrypted_api_key=app.state.llm_service.encrypt_credential(
-                "fictional-vision-key"
-            ),
-            enabled=True,
-            priority=100,
             config_version=1,
         )
         db.add_all([chat, vision])
@@ -204,8 +221,8 @@ def test_parse_text_and_image_drafts_use_separate_models_without_creating_jobs()
         assert image_response.json()["inputType"] == "image"
 
         assert [call["model"] for call in gateway.calls] == [
-            "deepseek/chat-model",
-            "deepseek/vision-model",
+            "chat-model",
+            "vision-model",
         ]
         image_messages = gateway.calls[1]["messages"]
         assert isinstance(image_messages[-1].content, list)

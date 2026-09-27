@@ -11,6 +11,7 @@ import {
   Bot,
   CheckCircle2,
   CircleAlert,
+  Cloud,
   KeyRound,
   Plus,
   RefreshCw,
@@ -24,17 +25,15 @@ import { PageLoading } from "@/components/ui";
 import {
   api,
   ApiRequestError,
-  ChatAdapter,
   ChatCapability,
-  ChatCatalog,
   ModelCapabilityRecord,
   ModelCapability,
   LlmCallQuery,
   LlmCallRecord,
   LlmCallSummary,
   LlmModelConfig,
-  LlmModelCreatePayload,
-  LlmModelPatchPayload,
+  LlmProvider,
+  LlmProviderModel,
 } from "../../api/client";
 
 type PanelProps = {
@@ -43,6 +42,8 @@ type PanelProps = {
 };
 
 type LoadState = "loading" | "ready" | "error";
+
+const CATALOG_PAGE_SIZE = 200;
 
 function errorMessage(
   error: unknown,
@@ -56,12 +57,18 @@ function errorMessage(
   }
   const messages: Record<string, string> = {
     FORBIDDEN: "当前账号没有管理权限。",
-    INVALID_LLM_MODEL_CONFIG: "Chat 模型配置不合法，请检查模型供应商、模型名称和地址。",
+    INVALID_LLM_MODEL_CONFIG: "模型或供应商配置不合法，请检查填写内容。",
+    INVALID_LLM_PROVIDER_QUERY: "目录查询条件不合法，请刷新后重试。",
     LLM_MODEL_NOT_FOUND: "模型配置已不存在，请刷新后重试。",
-    LLM_MODEL_CONFIG_CHANGED: "测试期间配置已被其他操作修改，请刷新后重试。",
+    LLM_MODEL_CONFIG_CHANGED: "配置已被其他操作修改，请刷新后重试。",
     LLM_MODEL_IN_USE: "已绑定到系统能力的模型不可编辑或删除，请先切换对应能力的绑定。",
+    LLM_MODEL_ALREADY_EXISTS: "该供应商下已经挂载了这个模型。",
     LLM_CREDENTIALS_UNAVAILABLE: "API Key 缺失或服务端暂时无法安全读取凭据。",
-    LLM_CONNECTION_FAILED: "连接测试失败，请检查模型供应商、模型名称、地址或 API Key。",
+    LLM_UNAVAILABLE: "无法连通供应商，或被供应商限流，请检查 Base URL、网络与账号额度。",
+    LLM_REQUEST_REJECTED:
+      "供应商拒绝了这次请求，请检查模型名称、API Key 或账号额度。",
+    LLM_TIMEOUT: "供应商响应超时，请稍后重试或改用更快的模型。",
+    LLM_CONNECTION_FAILED: "连接测试失败，请检查供应商地址、模型名称或 API Key。",
     LLM_CHAT_NOT_CONFIGURED: "Chat 当前尚未选择模型。",
     LLM_MODEL_NOT_CONFIGURED: "该能力当前尚未选择模型。",
     LLM_PI_AGENT_UNAVAILABLE: "Pi Agent 服务尚未接入，暂不能绑定。",
@@ -69,6 +76,15 @@ function errorMessage(
     LLM_PI_AGENT_PROBE_FAILED: "模型没有完成 Pi Agent 工具探针，原绑定未改变。",
     LLM_BINDING_CHANGED: "能力绑定已被其他操作修改，请刷新后重试。",
     LLM_CAPABILITY_NOT_FOUND: "模型能力不存在，请刷新后重试。",
+    LLM_PROVIDER_NOT_FOUND: "供应商已不存在，请刷新后重试。",
+    LLM_PROVIDER_NAME_TAKEN: "已经存在同名供应商，请换一个名称。",
+    LLM_PROVIDER_CHANGED: "供应商配置已被其他操作修改，请刷新后重试。",
+    LLM_PROVIDER_IN_USE: "仍有模型挂在该供应商下，请先删除这些模型。",
+    LLM_PROVIDER_MODEL_UNKNOWN: "所选模型不在该供应商已同步的目录中，请先同步目录。",
+    LLM_PROVIDER_CATALOG_REQUEST_FAILED:
+      "无法访问供应商的模型目录，请检查目录地址、凭据和网络。",
+    LLM_PROVIDER_CATALOG_INVALID:
+      "供应商目录响应无法解析或不含可用模型，原有目录保持不变。",
     INVALID_LLM_CALL_QUERY: "调用日志筛选条件不合法，请检查后重试。",
   };
   const message = messages[error.message] ?? fallback;
@@ -99,16 +115,34 @@ function PanelHeading({
   );
 }
 
+function providerLabel(model: { provider: { name: string }; model: string }): string {
+  return `${model.provider.name} / ${model.model}`;
+}
+
+function syncStatusLabel(provider: LlmProvider): string {
+  if (provider.priceSyncStatus === "succeeded" && provider.priceSyncedAt) {
+    const syncedAt = new Date(provider.priceSyncedAt);
+    return `目录已同步 ${provider.modelCount} 个模型 · ${syncedAt.toLocaleString("zh-CN")}`;
+  }
+  if (provider.priceSyncStatus === "failed") {
+    return `目录同步失败（${provider.priceSyncError ?? "未知原因"}），仍在使用上次同步结果`;
+  }
+  return "尚未同步目录，暂时无法挂载模型";
+}
+
 export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
   const [capability, setCapability] = useState<ChatCapability | null>(null);
   const [capabilityMatrix, setCapabilityMatrix] = useState<ModelCapabilityRecord[]>([]);
-  const [catalog, setCatalog] = useState<ChatCatalog | null>(null);
+  const [providers, setProviders] = useState<LlmProvider[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [loadError, setLoadError] = useState("");
   const [query, setQuery] = useState("");
   const [keyFilter, setKeyFilter] = useState("all");
   const [editor, setEditor] = useState<LlmModelConfig | "new" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LlmModelConfig | null>(null);
+  const [providerEditor, setProviderEditor] = useState<LlmProvider | "new" | null>(null);
+  const [providerDeleteTarget, setProviderDeleteTarget] = useState<LlmProvider | null>(null);
+  const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
   const [bindingEditorOpen, setBindingEditorOpen] = useState(false);
   const [genericBinding, setGenericBinding] = useState<ModelCapabilityRecord | null>(null);
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set());
@@ -121,23 +155,22 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       if (showLoading) setLoadState("loading");
       setLoadError("");
       try {
-        const [nextCapability, nextCatalog] = await Promise.all([
+        const [nextCapability, nextProviders] = await Promise.all([
           api.getChatCapability(),
-          api.getChatCatalog(),
+          api.getLlmProviders(),
         ]);
         setCapability(nextCapability);
-        setCatalog(nextCatalog);
+        setProviders(nextProviders.providers);
         try {
           const matrix = await api.getModelCapabilities();
           setCapabilityMatrix(matrix.capabilities);
         } catch {
-          // Keep the legacy Chat view usable while an older backend rolls out.
           setCapabilityMatrix([]);
         }
         setLoadState("ready");
       } catch (error) {
         setLoadError(
-          errorMessage(error, "Chat 模型配置加载失败，请稍后重试。", onSessionExpired),
+          errorMessage(error, "模型配置加载失败，请稍后重试。", onSessionExpired),
         );
         setLoadState("error");
       }
@@ -149,26 +182,39 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
     void load();
   }, [load]);
 
-  const adapterLabels = useMemo(
-    () => new Map((catalog?.adapters ?? []).map((adapter) => [adapter.code, adapter.label])),
-    [catalog?.adapters],
-  );
-
   const visibleModels = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return (capability?.models ?? []).filter((model) => {
       const matchesQuery =
         !normalized ||
         model.model.toLowerCase().includes(normalized) ||
-        model.adapter.toLowerCase().includes(normalized) ||
-        adapterLabels.get(model.adapter)?.toLowerCase().includes(normalized);
+        model.provider.name.toLowerCase().includes(normalized);
       const matchesKey =
         keyFilter === "all" ||
         (keyFilter === "configured" && model.keyConfigured) ||
         (keyFilter === "missing" && !model.keyConfigured);
       return matchesQuery && matchesKey;
     });
-  }, [adapterLabels, capability?.models, keyFilter, query]);
+  }, [capability?.models, keyFilter, query]);
+
+  const syncCatalog = async (provider: LlmProvider) => {
+    if (syncingIds.has(provider.id)) return;
+    setSyncingIds((current) => new Set(current).add(provider.id));
+    try {
+      const result = await api.syncLlmProviderCatalog(provider.id);
+      await load(false);
+      notify(`${provider.name} 目录已同步 ${result.modelCount} 个模型。`);
+    } catch (error) {
+      await load(false);
+      notify(errorMessage(error, "同步供应商目录失败，请稍后重试。", onSessionExpired));
+    } finally {
+      setSyncingIds((current) => {
+        const next = new Set(current);
+        next.delete(provider.id);
+        return next;
+      });
+    }
+  };
 
   const testModel = async (model: LlmModelConfig) => {
     if (testingIds.has(model.id)) return;
@@ -214,30 +260,118 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       <PanelHeading
         eyebrow="AI 基础设施"
         title="模型配置"
-        description="先接入并验证模型，再为每项系统能力选择唯一绑定。"
+        description="先接入供应商并同步模型目录，再挂载模型并验证，最后为每项系统能力选择唯一绑定。"
         action={
-          <button className="admin-primary-button" type="button" onClick={() => setEditor("new")}>
+          <button className="admin-primary-button" type="button" onClick={() => setProviderEditor("new")}>
             <Plus size={16} />
-            新增模型
+            新增供应商
           </button>
         }
       />
 
       {loadState === "loading" && (
         <section className="admin-surface">
-          <PageLoading label="正在加载 Chat 模型配置…" scope="panel" />
+          <PageLoading label="正在加载模型配置…" scope="panel" />
         </section>
       )}
       {loadState === "error" && (
         <section className="admin-surface llm-state llm-error" role="alert">
           <CircleAlert size={22} />
-          <strong>无法加载 Chat 模型配置</strong>
+          <strong>无法加载模型配置</strong>
           <p>{loadError}</p>
           <button type="button" onClick={() => void load()}>重试</button>
         </section>
       )}
       {loadState === "ready" && capability && (
         <>
+          <section className="llm-config-section" aria-labelledby="llm-providers-heading">
+            <div className="llm-section-heading">
+              <div>
+                <span className="page-eyebrow">接入来源</span>
+                <h2 id="llm-providers-heading">模型供应商</h2>
+                <p>同一供应商下的所有模型共用它的接入地址与凭据；换厂商或换密钥只需要改这里。</p>
+              </div>
+            </div>
+
+            {providers.length === 0 ? (
+              <section className="admin-surface llm-state">
+                <Cloud size={24} />
+                <strong>还没有接入供应商</strong>
+                <p>先新增一个供应商并同步它的模型目录，然后从目录中挂载模型。</p>
+                <button type="button" onClick={() => setProviderEditor("new")}>新增供应商</button>
+              </section>
+            ) : (
+              <section className="models-list" aria-label="模型供应商">
+                {providers.map((provider) => {
+                  const syncing = syncingIds.has(provider.id);
+                  return (
+                    <article className="model-card" key={provider.id}>
+                      <div className="model-priority model-adapter-badge">
+                        <Cloud size={19} />
+                        <small>{provider.modelCount} 个模型</small>
+                      </div>
+                      <div className="model-main">
+                        <div className="model-title-row">
+                          <h3>{provider.name}</h3>
+                          <span
+                            className={
+                              provider.priceSyncStatus === "failed"
+                                ? "disabled-pill"
+                                : "enabled-pill"
+                            }
+                          >
+                            {provider.priceSyncStatus === "succeeded"
+                              ? "目录可用"
+                              : provider.priceSyncStatus === "failed"
+                                ? "同步失败"
+                                : "尚未同步"}
+                          </span>
+                        </div>
+                        <p>{provider.baseUrl}</p>
+                        <div className="model-meta">
+                          <span className={provider.keyConfigured ? "" : "missing-key"}>
+                            <KeyRound size={14} />
+                            {provider.keyConfigured ? "API Key 已配置" : "API Key 未配置"}
+                          </span>
+                          <span>
+                            <RefreshCw size={14} />
+                            {syncStatusLabel(provider)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="model-actions">
+                        <button
+                          type="button"
+                          onClick={() => void syncCatalog(provider)}
+                          disabled={syncing}
+                        >
+                          <RefreshCw size={14} />{syncing ? "同步中…" : "同步目录"}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`编辑 ${provider.name}`}
+                          onClick={() => setProviderEditor(provider)}
+                          disabled={syncing}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          className="model-delete-button"
+                          type="button"
+                          aria-label={`删除 ${provider.name}`}
+                          onClick={() => setProviderDeleteTarget(provider)}
+                          disabled={syncing}
+                        >
+                          <Trash2 size={14} aria-hidden="true" />删除
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </section>
+            )}
+          </section>
+
           <section className="llm-config-section" aria-labelledby="llm-capabilities-heading">
             <div className="llm-section-heading">
               <div>
@@ -258,7 +392,7 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
                   <strong>Chat</strong>
                   <p>
                     {capability.activeModel
-                      ? `已绑定 ${adapterLabels.get(capability.activeModel.adapter) ?? capability.activeModel.adapter} / ${capability.activeModel.model}`
+                      ? `已绑定 ${providerLabel(capability.activeModel)}`
                       : "尚未绑定模型，点击这里选择。"}
                   </p>
                 </div>
@@ -283,7 +417,7 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
                       <strong>{capabilityLabel(item.capability)}</strong>
                       <p>
                         {item.activeModel
-                          ? `已绑定 ${adapterLabels.get(item.activeModel.adapter) ?? item.activeModel.adapter} / ${item.activeModel.model}`
+                          ? `已绑定 ${providerLabel(item.activeModel)}`
                           : "尚未绑定模型，点击这里选择。"}
                       </p>
                     </div>
@@ -299,8 +433,8 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
             <div className="llm-section-heading">
               <div>
                 <span className="page-eyebrow">模型接入</span>
-                <h2 id="llm-models-heading">已接入模型</h2>
-                <p>模型配置只负责连接和凭据；能力绑定在上方单独设置。</p>
+                <h2 id="llm-models-heading">已挂载模型</h2>
+                <p>模型只保存供应商归属与模型标识；地址与凭据一律来自供应商。</p>
               </div>
             </div>
 
@@ -308,10 +442,10 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
               <label className="table-search">
                 <Search size={16} />
                 <input
-                  aria-label="按模型供应商或模型名称筛选"
+                  aria-label="按供应商或模型名称筛选"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="搜索模型供应商或模型名称"
+                  placeholder="搜索供应商或模型名称"
                 />
               </label>
               <select aria-label="按密钥状态筛选" value={keyFilter} onChange={(event) => setKeyFilter(event.target.value)}>
@@ -325,26 +459,32 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
             {capability.models.length === 0 ? (
               <section className="admin-surface llm-state">
                 <Bot size={24} />
-                <strong>还没有可用于 Chat 的模型</strong>
-                <p>先接入模型并配置凭据，再从上方 Chat 能力中选择绑定。</p>
-                <button type="button" onClick={() => setEditor("new")}>新增模型</button>
+                <strong>还没有挂载任何模型</strong>
+                <p>先在供应商目录里选定模型，再从上方能力卡片完成绑定。</p>
+                <button
+                  type="button"
+                  onClick={() => setEditor("new")}
+                  disabled={providers.length === 0}
+                >
+                  挂载模型
+                </button>
               </section>
             ) : visibleModels.length === 0 ? (
               <section className="admin-surface llm-state">
                 <Search size={24} />
                 <strong>没有符合筛选条件的模型</strong>
-                <p>清除筛选可恢复全部已接入模型。</p>
+                <p>清除筛选可恢复全部已挂载模型。</p>
               </section>
             ) : (
-              <section className="models-list" aria-label="已接入模型">
+              <section className="models-list" aria-label="已挂载模型">
                 {visibleModels.map((model) => {
                   const testing = testingIds.has(model.id);
                   const transientResult = testResults[model.id];
                   return (
                     <article className={`model-card ${model.active ? "current-model-card" : ""}`} key={model.id}>
                       <div className="model-priority model-adapter-badge">
-                        <Bot size={19} />
-                        <small>{adapterLabels.get(model.adapter) ?? model.adapter}</small>
+                        <Cloud size={19} />
+                        <small>{model.provider.name}</small>
                       </div>
                       <div className="model-main">
                         <div className="model-title-row">
@@ -353,7 +493,7 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
                             {model.active ? "已绑定 Chat" : "未绑定"}
                           </span>
                         </div>
-                        <p>{model.apiBase || "使用供应商默认地址"}</p>
+                        <p>{`继承 ${model.provider.name} 的地址与凭据`}</p>
                         <div className="model-meta">
                           <span className={model.keyConfigured ? "" : "missing-key"}>
                             <KeyRound size={14} />
@@ -380,7 +520,14 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
                         <button type="button" onClick={() => void testModel(model)} disabled={testing}>
                           <TestTube2 size={14} />{testing ? "测试中…" : "测试连接"}
                         </button>
-                        <button type="button" onClick={() => setEditor(model)} disabled={testing}>编辑</button>
+                        <button
+                          type="button"
+                          aria-label={`编辑 ${model.model}`}
+                          onClick={() => setEditor(model)}
+                          disabled={testing}
+                        >
+                          编辑
+                        </button>
                         <button
                           className="model-delete-button"
                           type="button"
@@ -403,7 +550,6 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       {bindingEditorOpen && capability && (
         <ChatBindingEditor
           capability={capability}
-          adapterLabels={adapterLabels}
           onClose={() => setBindingEditorOpen(false)}
           onAddModel={() => {
             setBindingEditorOpen(false);
@@ -421,7 +567,6 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       {genericBinding && (
         <GenericBindingEditor
           capability={genericBinding}
-          adapterLabels={adapterLabels}
           onClose={() => setGenericBinding(null)}
           onBound={async (message) => {
             setGenericBinding(null);
@@ -432,10 +577,37 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
         />
       )}
 
-      {editor && catalog && (
+      {providerEditor && (
+        <ProviderEditor
+          provider={providerEditor === "new" ? null : providerEditor}
+          onClose={() => setProviderEditor(null)}
+          onSaved={async (message) => {
+            setProviderEditor(null);
+            await load(false);
+            notify(message);
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+
+      {providerDeleteTarget && (
+        <ProviderDeleteDialog
+          provider={providerDeleteTarget}
+          onClose={() => setProviderDeleteTarget(null)}
+          onDeleted={async () => {
+            const deleted = providerDeleteTarget;
+            setProviderDeleteTarget(null);
+            await load(false);
+            notify(`已删除供应商 ${deleted.name}。`);
+          }}
+          onSessionExpired={onSessionExpired}
+        />
+      )}
+
+      {editor && providers.length > 0 && (
         <ModelEditor
           model={editor === "new" ? null : editor}
-          catalog={catalog}
+          providers={providers}
           onClose={() => setEditor(null)}
           onSaved={async (message) => {
             setEditor(null);
@@ -449,13 +621,12 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
       {deleteTarget && (
         <ModelDeleteDialog
           model={deleteTarget}
-          adapterLabel={adapterLabels.get(deleteTarget.adapter) ?? deleteTarget.adapter}
           onClose={() => setDeleteTarget(null)}
           onDeleted={async () => {
             const deleted = deleteTarget;
             setDeleteTarget(null);
             await load(false);
-            notify(`已删除 ${adapterLabels.get(deleted.adapter) ?? deleted.adapter} / ${deleted.model}`);
+            notify(`已删除 ${providerLabel(deleted)}。`);
           }}
           onSessionExpired={onSessionExpired}
         />
@@ -464,15 +635,207 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
   );
 }
 
+function ProviderEditor({
+  provider,
+  onClose,
+  onSaved,
+  onSessionExpired,
+}: {
+  provider: LlmProvider | null;
+  onClose: () => void;
+  onSaved: (message: string) => Promise<void>;
+  onSessionExpired: () => void;
+}) {
+  const [name, setName] = useState(provider?.name ?? "");
+  const [baseUrl, setBaseUrl] = useState(provider?.baseUrl ?? "");
+  const [catalogUrl, setCatalogUrl] = useState(provider?.modelCatalogUrl ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const savingRef = useRef(false);
+  const isEdit = provider !== null;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (savingRef.current) return;
+    if (!isEdit && !apiKey.trim()) {
+      setError("请填写该供应商的 API Key。");
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      if (isEdit && provider) {
+        const payload: Parameters<typeof api.updateLlmProvider>[1] = {
+          baseVersion: provider.version,
+          name: name.trim(),
+          baseUrl: baseUrl.trim(),
+          modelCatalogUrl: catalogUrl.trim(),
+        };
+        if (apiKey.trim()) payload.apiKey = apiKey.trim();
+        const result = await api.updateLlmProvider(provider.id, payload);
+        const affected = result.affectedCapabilities;
+        await onSaved(
+          affected.length === 0
+            ? `已更新供应商 ${result.provider.name}。`
+            : `已更新供应商 ${result.provider.name}；受影响的绑定：${affected
+                .map((item) => `${capabilityLabel(item.capability)} / ${item.model}`)
+                .join("、")}，请确认是否需要重新测试。`,
+        );
+      } else {
+        const created = await api.createLlmProvider({
+          name: name.trim(),
+          baseUrl: baseUrl.trim(),
+          modelCatalogUrl: catalogUrl.trim(),
+          apiKey: apiKey.trim(),
+        });
+        await onSaved(`已新增供应商 ${created.provider.name}，请同步目录后再挂载模型。`);
+      }
+    } catch (caught) {
+      setError(errorMessage(caught, "保存供应商失败，请稍后重试。", onSessionExpired));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="llm-modal-layer"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="llm-modal" role="dialog" aria-modal="true" aria-labelledby="provider-editor-title">
+        <header>
+          <div>
+            <span className="page-eyebrow">接入来源</span>
+            <h2 id="provider-editor-title">{isEdit ? `编辑 ${provider.name}` : "新增供应商"}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="关闭供应商编辑"><X size={18} /></button>
+        </header>
+        <form className="drawer-form" onSubmit={submit}>
+          <label>
+            <span>供应商名称</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="例如 aihubmix"
+              maxLength={64}
+              required
+            />
+            <small>仅用于管理端识别，不参与模型调用。</small>
+          </label>
+          <label>
+            <span>模型调用地址</span>
+            <input
+              type="url"
+              value={baseUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+              placeholder="https://aihubmix.com/v1"
+              required
+            />
+            <small>所有模型共用的 OpenAI 兼容基础地址。</small>
+          </label>
+          <label>
+            <span>模型目录地址</span>
+            <input
+              type="url"
+              value={catalogUrl}
+              onChange={(event) => setCatalogUrl(event.target.value)}
+              placeholder="https://aihubmix.com/api/v1/models"
+              required
+            />
+            <small>用于同步模型清单、单价和上下文长度；只有目录里的模型才可挂载。</small>
+          </label>
+          <label>
+            <span>API Key</span>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              placeholder={isEdit ? "留空表示保持原 Key 不变" : "填写该供应商的 API Key"}
+              required={!isEdit}
+            />
+            <small>密钥加密保存，只写入不读回。</small>
+          </label>
+          {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
+          <footer>
+            <button type="button" onClick={onClose}>取消</button>
+            <button type="submit" disabled={saving}>{saving ? "保存中…" : "保存"}</button>
+          </footer>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function ProviderDeleteDialog({
+  provider,
+  onClose,
+  onDeleted,
+  onSessionExpired,
+}: {
+  provider: LlmProvider;
+  onClose: () => void;
+  onDeleted: () => Promise<void>;
+  onSessionExpired: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+
+  const remove = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await api.deleteLlmProvider(provider.id);
+      await onDeleted();
+    } catch (caught) {
+      setError(errorMessage(caught, "删除供应商失败，请稍后重试。", onSessionExpired));
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <div
+      className="plugin-admin-dialog-backdrop"
+      onMouseDown={(event) => {
+        if (!deleting && event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="plugin-admin-dialog model-delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-provider-title"
+      >
+        <h2 id="delete-provider-title">删除供应商？</h2>
+        <p>
+          将删除 <strong>{provider.name}</strong>、它的加密凭据和已同步的 {provider.modelCount} 条模型目录。
+          此操作不可恢复；仍有模型挂在该供应商下时无法删除，需要先删除这些模型。
+        </p>
+        {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
+        <div>
+          <button className="admin-secondary-button" type="button" disabled={deleting} onClick={onClose}>取消</button>
+          <button className="admin-danger-button" type="button" disabled={deleting} onClick={() => void remove()}>
+            <Trash2 size={15} aria-hidden="true" />{deleting ? "正在删除…" : "确认删除"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ModelDeleteDialog({
   model,
-  adapterLabel,
   onClose,
   onDeleted,
   onSessionExpired,
 }: {
   model: LlmModelConfig;
-  adapterLabel: string;
   onClose: () => void;
   onDeleted: () => Promise<void>;
   onSessionExpired: () => void;
@@ -541,9 +904,10 @@ function ModelDeleteDialog({
         aria-labelledby={titleId}
         onKeyDown={handleDialogKeyDown}
       >
-        <h2 id={titleId}>删除模型配置？</h2>
+        <h2 id={titleId}>删除模型？</h2>
         <p>
-          将删除 <strong>{adapterLabel} / {model.model}</strong>、加密凭据和验证证据。此操作不可恢复；历史调用日志会保留模型快照，已被系统能力绑定的配置不会被删除。
+          将删除 <strong>{providerLabel(model)}</strong> 的挂载关系和验证证据。供应商本身、它的凭据与其他模型不受影响；
+          历史调用日志会保留模型快照，已被系统能力绑定的配置不会被删除。
         </p>
         {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
         <div>
@@ -559,14 +923,12 @@ function ModelDeleteDialog({
 
 function ChatBindingEditor({
   capability,
-  adapterLabels,
   onClose,
   onAddModel,
   onBound,
   onSessionExpired,
 }: {
   capability: ChatCapability;
-  adapterLabels: Map<string, string>;
   onClose: () => void;
   onAddModel: () => void;
   onBound: (message: string) => Promise<void>;
@@ -587,7 +949,7 @@ function ChatBindingEditor({
     setError("");
     try {
       const response = await api.bindChatModel(selectedModel.id);
-      await onBound(`Chat 已绑定 ${adapterLabels.get(selectedModel.adapter) ?? selectedModel.adapter} / ${selectedModel.model} · ${response.callId}`);
+      await onBound(`Chat 已绑定 ${providerLabel(selectedModel)} · ${response.callId}`);
     } catch (caught) {
       setError(
         errorMessage(
@@ -623,7 +985,7 @@ function ChatBindingEditor({
             <small>当前绑定</small>
             <strong>
               {capability.activeModel
-                ? `${adapterLabels.get(capability.activeModel.adapter) ?? capability.activeModel.adapter} / ${capability.activeModel.model}`
+                ? providerLabel(capability.activeModel)
                 : "尚未绑定模型"}
             </strong>
           </div>
@@ -632,8 +994,8 @@ function ChatBindingEditor({
             <div className="llm-binding-empty">
               <Bot size={22} />
               <strong>没有可绑定的模型</strong>
-              <p>先接入一个 Chat 模型，再回到这里完成绑定。</p>
-              <button type="button" onClick={onAddModel}>新增模型</button>
+              <p>先从供应商目录挂载一个模型，再回到这里完成绑定。</p>
+              <button type="button" onClick={onAddModel}>挂载模型</button>
             </div>
           ) : (
             <fieldset className="llm-binding-list">
@@ -651,7 +1013,7 @@ function ChatBindingEditor({
                     onChange={() => setSelectedId(model.id)}
                   />
                   <span>
-                    <strong>{adapterLabels.get(model.adapter) ?? model.adapter} / {model.model}</strong>
+                    <strong>{providerLabel(model)}</strong>
                     <small>
                       {model.keyConfigured ? "API Key 已配置" : "API Key 未配置"}
                       {model.lastTest
@@ -688,13 +1050,11 @@ function ChatBindingEditor({
 
 function GenericBindingEditor({
   capability,
-  adapterLabels,
   onClose,
   onBound,
   onSessionExpired,
 }: {
   capability: ModelCapabilityRecord;
-  adapterLabels: Map<string, string>;
   onClose: () => void;
   onBound: (message: string) => Promise<void>;
   onSessionExpired: () => void;
@@ -704,12 +1064,7 @@ function GenericBindingEditor({
   const [error, setError] = useState("");
   const selectedModel = capability.models.find((model) => model.id === selectedId);
   const unchanged = selectedId === capability.activeModelId;
-  const label: Record<Exclude<ModelCapability, "chat">, string> = {
-    resume_structuring: "简历结构化",
-    pi_agent: "Pi Agent",
-    job_image_structuring: "JD 图片解析",
-  };
-  const capabilityLabel = label[capability.capability as Exclude<ModelCapability, "chat">];
+  const label = capabilityLabel(capability.capability);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -724,7 +1079,7 @@ function GenericBindingEditor({
         capability.bindingVersion,
       );
       await onBound(
-        `${capabilityLabel} 已绑定 ${adapterLabels.get(selectedModel.adapter) ?? selectedModel.adapter} / ${selectedModel.model} · ${response.callId}`,
+        `${label} 已绑定 ${providerLabel(selectedModel)} · ${response.callId}`,
       );
     } catch (caught) {
       setError(errorMessage(caught, "测试并绑定失败，原绑定保持不变。", onSessionExpired));
@@ -743,23 +1098,23 @@ function GenericBindingEditor({
     >
       <section className="llm-modal" role="dialog" aria-modal="true" aria-labelledby="generic-binding-title">
         <header>
-          <div><span className="page-eyebrow">能力配置</span><h2 id="generic-binding-title">设置 {capabilityLabel}</h2></div>
-          <button type="button" onClick={onClose} aria-label={`关闭${capabilityLabel}设置`}><X size={18} /></button>
+          <div><span className="page-eyebrow">能力配置</span><h2 id="generic-binding-title">设置 {label}</h2></div>
+          <button type="button" onClick={onClose} aria-label={`关闭${label}设置`}><X size={18} /></button>
         </header>
         <form className="drawer-form" onSubmit={submit}>
           <div className="llm-current-binding">
             <small>当前绑定</small>
-            <strong>{capability.activeModel ? `${adapterLabels.get(capability.activeModel.adapter) ?? capability.activeModel.adapter} / ${capability.activeModel.model}` : "尚未绑定模型"}</strong>
+            <strong>{capability.activeModel ? providerLabel(capability.activeModel) : "尚未绑定模型"}</strong>
           </div>
           {capability.models.length === 0 ? (
-            <div className="llm-binding-empty"><Bot size={22} /><strong>没有可绑定的模型</strong><p>先接入一个模型，再回到这里完成绑定。</p></div>
+            <div className="llm-binding-empty"><Bot size={22} /><strong>没有可绑定的模型</strong><p>先从供应商目录挂载一个模型，再回到这里完成绑定。</p></div>
           ) : (
             <fieldset className="llm-binding-list">
-              <legend>选择 {capabilityLabel} 使用的模型</legend>
+              <legend>选择 {label} 使用的模型</legend>
               {capability.models.map((model) => (
                 <label className={`llm-binding-option ${selectedId === model.id ? "selected" : ""}`} key={model.id}>
                   <input type="radio" name={`${capability.capability}-model-binding`} value={model.id} checked={selectedId === model.id} onChange={() => setSelectedId(model.id)} />
-                  <span><strong>{adapterLabels.get(model.adapter) ?? model.adapter} / {model.model}</strong><small>{model.keyConfigured ? "API Key 已配置" : "API Key 未配置"}{model.lastTest ? ` · 最近测试${model.lastTest.status === "succeeded" ? "成功" : "失败"}` : " · 尚未测试"}</small></span>
+                  <span><strong>{providerLabel(model)}</strong><small>{model.keyConfigured ? "API Key 已配置" : "API Key 未配置"}{model.lastTest ? ` · 最近测试${model.lastTest.status === "succeeded" ? "成功" : "失败"}` : " · 尚未测试"}</small></span>
                   {capability.activeModelId === model.id && <em>当前绑定</em>}
                 </label>
               ))}
@@ -783,60 +1138,87 @@ function capabilityLabel(capability: ModelCapability): string {
 
 function ModelEditor({
   model,
-  catalog,
+  providers,
   onClose,
   onSaved,
   onSessionExpired,
 }: {
   model: LlmModelConfig | null;
-  catalog: ChatCatalog;
+  providers: LlmProvider[];
   onClose: () => void;
   onSaved: (message: string) => Promise<void>;
   onSessionExpired: () => void;
 }) {
-  const [adapter, setAdapter] = useState<ChatAdapter>(model?.adapter ?? catalog.adapters[0]?.code ?? "deepseek");
+  const [providerId, setProviderId] = useState(
+    model?.provider.id ?? providers[0]?.id ?? "",
+  );
   const [modelName, setModelName] = useState(model?.model ?? "");
-  const [apiBase, setApiBase] = useState(model?.apiBase ?? "");
-  const [apiKey, setApiKey] = useState("");
-  const [clearKey, setClearKey] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogModels, setCatalogModels] = useState<LlmProviderModel[]>([]);
+  const [catalogCursor, setCatalogCursor] = useState<string | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const savingRef = useRef(false);
-  const selectedAdapter = catalog.adapters.find((item) => item.code === adapter);
+  const selectedProvider = providers.find((item) => item.id === providerId);
+
+  const loadCatalog = useCallback(
+    async (nextProviderId: string, query: string, cursor?: string) => {
+      if (!nextProviderId) return;
+      setCatalogLoading(true);
+      setCatalogError("");
+      try {
+        const page = await api.listLlmProviderModels(nextProviderId, {
+          query: query.trim() || undefined,
+          cursor,
+          limit: CATALOG_PAGE_SIZE,
+        });
+        setCatalogModels((current) =>
+          cursor ? [...current, ...page.models] : page.models,
+        );
+        setCatalogCursor(page.nextCursor);
+      } catch (caught) {
+        setCatalogError(
+          errorMessage(caught, "无法读取该供应商的模型目录。", onSessionExpired),
+        );
+        if (!cursor) setCatalogModels([]);
+        setCatalogCursor(null);
+      } finally {
+        setCatalogLoading(false);
+      }
+    },
+    [onSessionExpired],
+  );
+
+  useEffect(() => {
+    void loadCatalog(providerId, "");
+  }, [loadCatalog, providerId]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (savingRef.current) return;
+    const trimmed = modelName.trim();
+    if (!trimmed) {
+      setError("请选择要挂载的模型。");
+      return;
+    }
     savingRef.current = true;
     setSaving(true);
     setError("");
     try {
       if (model) {
-        const payload: LlmModelPatchPayload = {
-          adapter,
-          model: modelName.trim(),
-          apiBase: apiBase.trim() || null,
-        };
-        if (clearKey) payload.apiKey = null;
-        else if (apiKey.trim()) payload.apiKey = apiKey;
-        const response = await api.updateLlmModel(model.id, payload);
-        await onSaved(
-          response.validationCallId
-            ? `已绑定模型完成验证并保存 · ${response.validationCallId}`
-            : "模型配置已保存",
-        );
+        const updated = await api.updateLlmModel(model.id, { model: trimmed });
+        await onSaved(`已更新模型 ${providerLabel(updated.model)}。`);
       } else {
-        const payload: LlmModelCreatePayload = {
-          adapter,
-          model: modelName.trim(),
-          apiBase: apiBase.trim() || null,
-        };
-        if (apiKey.trim()) payload.apiKey = apiKey;
-        await api.createLlmModel(payload);
-        await onSaved("模型已接入；能力绑定没有改变");
+        const created = await api.createLlmModel({
+          providerId,
+          model: trimmed,
+        });
+        await onSaved(`已挂载 ${providerLabel(created.model)}。`);
       }
     } catch (caught) {
-      setError(errorMessage(caught, "保存失败，请稍后重试。", onSessionExpired));
+      setError(errorMessage(caught, "保存模型失败，请稍后重试。", onSessionExpired));
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -853,39 +1235,87 @@ function ModelEditor({
     >
       <section className="llm-modal" role="dialog" aria-modal="true" aria-labelledby="model-editor-title">
         <header>
-          <div><span className="page-eyebrow">模型接入</span><h2 id="model-editor-title">{model ? "编辑模型" : "新增模型"}</h2></div>
+          <div>
+            <span className="page-eyebrow">模型接入</span>
+            <h2 id="model-editor-title">{model ? `编辑 ${model.model}` : "挂载模型"}</h2>
+          </div>
           <button type="button" onClick={onClose} aria-label="关闭模型编辑"><X size={18} /></button>
         </header>
         <form className="drawer-form" onSubmit={submit}>
           <label>
-            <span>模型供应商</span>
-            <select value={adapter} onChange={(event) => { setAdapter(event.target.value as ChatAdapter); setModelName(""); }} required>
-              {catalog.adapters.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+            <span>供应商</span>
+            <select
+              value={providerId}
+              onChange={(event) => {
+                setProviderId(event.target.value);
+                setModelName("");
+                setCatalogQuery("");
+              }}
+              required
+            >
+              {providers.map((provider) => (
+                <option value={provider.id} key={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
             </select>
+            <small>模型继承该供应商的接入地址与凭据。</small>
           </label>
+
           <label>
-            <span>模型名称</span>
-            <input value={modelName} onChange={(event) => setModelName(event.target.value)} list={`models-${adapter}`} placeholder={adapter === "deepseek" ? "例如 deepseek-chat" : adapter === "dashscope" ? "例如 qwen-plus" : "输入供应商模型名称"} required />
-            <datalist id={`models-${adapter}`}>{selectedAdapter?.models.map((name) => <option key={name} value={name} />)}</datalist>
-            <small>可从建议中选择，也可填写供应商支持的其他模型名称。</small>
+            <span>搜索目录</span>
+            <input
+              value={catalogQuery}
+              onChange={(event) => setCatalogQuery(event.target.value)}
+              placeholder="输入模型名或厂商关键字"
+            />
           </label>
+          <div className="llm-filter-bar">
+            <button
+              type="button"
+              onClick={() => void loadCatalog(providerId, catalogQuery)}
+              disabled={catalogLoading}
+            >
+              <Search size={14} />{catalogLoading ? "查询中…" : "查询目录"}
+            </button>
+            {selectedProvider && (
+              <small>{`该供应商目录中有 ${selectedProvider.modelCount} 个模型`}</small>
+            )}
+          </div>
+
           <label>
-            <span>API Base <small>可选</small></span>
-            <input type="url" value={apiBase} onChange={(event) => setApiBase(event.target.value)} placeholder="使用供应商默认地址" />
+            <span>模型</span>
+            <select
+              value={modelName}
+              onChange={(event) => setModelName(event.target.value)}
+              required
+            >
+              <option value="">请选择目录中的模型</option>
+              {catalogModels.map((entry) => (
+                <option value={entry.modelId} key={entry.modelId}>
+                  {entry.displayName && entry.displayName !== entry.modelId
+                    ? `${entry.displayName}（${entry.modelId}）`
+                    : entry.modelId}
+                </option>
+              ))}
+            </select>
+            <small>只能选择该供应商已同步目录中的模型；目录里的模型才带真实单价。</small>
           </label>
-          <label>
-            <span>API Key <small>{model?.keyConfigured ? "留空表示保留" : "启用前必须配置"}</small></span>
-            <input type="password" autoComplete="new-password" value={apiKey} onChange={(event) => { setApiKey(event.target.value); setClearKey(false); }} disabled={clearKey} placeholder="仅写入，不会再次显示" />
-          </label>
-          {model?.keyConfigured && (
-            <label className="drawer-check-row">
-              <input type="checkbox" checked={clearKey} onChange={(event) => { setClearKey(event.target.checked); if (event.target.checked) setApiKey(""); }} />
-              <span>明确清除已保存的 API Key</span>
-            </label>
+          {catalogCursor && (
+            <button
+              type="button"
+              onClick={() => void loadCatalog(providerId, catalogQuery, catalogCursor)}
+              disabled={catalogLoading}
+            >
+              {catalogLoading ? "加载中…" : "加载更多目录条目"}
+            </button>
           )}
-          <div className="drawer-callout"><ShieldCheck size={18} /><p>API Key 只会加密写入。{model?.active ? "该模型已绑定到 Chat，保存前会先验证拟议配置；失败不会覆盖当前版本。" : "保存模型不会改变任何能力绑定。"}</p></div>
+          {catalogError && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{catalogError}</p>}
           {error && <p className="llm-inline-error" role="alert"><CircleAlert size={15} />{error}</p>}
-          <footer><button type="button" onClick={onClose}>取消</button><button type="submit" disabled={saving}>{saving ? (model?.active ? "验证并保存中…" : "保存中…") : model?.active ? "验证并保存" : "保存模型"}</button></footer>
+          <footer>
+            <button type="button" onClick={onClose}>取消</button>
+            <button type="submit" disabled={saving || !modelName}>{saving ? "保存中…" : "保存"}</button>
+          </footer>
         </form>
       </section>
     </div>
@@ -1025,7 +1455,7 @@ export function LogsPanel({
                     <div className="log-filter-grid">
                       <input aria-label="调用来源" placeholder="调用来源" value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })} />
                       <select aria-label="调用状态" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value as LogFilters["status"] })}><option value="">调用状态</option><option value="pending">处理中</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="cancelled">已取消</option></select>
-                      <select aria-label="实际模型" value={filters.modelConfigId} onChange={(event) => setFilters({ ...filters, modelConfigId: event.target.value })}><option value="">实际模型</option>{models.map((model) => <option key={model.id} value={model.id}>{model.adapter}/{model.model}</option>)}</select>
+                      <select aria-label="实际模型" value={filters.modelConfigId} onChange={(event) => setFilters({ ...filters, modelConfigId: event.target.value })}><option value="">实际模型</option>{models.map((model) => <option key={model.id} value={model.id}>{model.provider.name}/{model.model}</option>)}</select>
                       <input aria-label="用户 ID" placeholder="用户 ID" value={filters.userId} onChange={(event) => setFilters({ ...filters, userId: event.target.value })} />
                       <input aria-label="callId" placeholder="callId" value={filters.callId} onChange={(event) => setFilters({ ...filters, callId: event.target.value })} />
                     </div>
@@ -1048,7 +1478,7 @@ export function LogsPanel({
           {loadError && <div className="llm-inline-error" role="alert"><CircleAlert size={15} />{loadError}</div>}
           <section className="admin-surface logs-surface">
             {calls.length === 0 ? <div className="llm-state"><Bot size={24} /><strong>当前筛选下没有 LLM 调用记录</strong><p>连接测试或内部 Chat 调用产生记录后，可通过刷新获取。</p></div> : (
-              <div className="admin-table-wrap"><table className="admin-table llm-calls-table"><thead><tr><th>时间</th><th>来源 / 状态</th><th>能力 / 模型</th><th>Token / 预估费用</th><th>耗时 / 计量</th><th>错误码</th></tr></thead><tbody>{calls.map((call) => <tr key={call.callId}><td>{new Date(call.createdAt).toLocaleString("zh-CN")}</td><td><strong className="table-strong">{call.source === "connection_test" ? "连接测试" : call.source}</strong><small className={`table-sub call-status ${call.status}`}>{statusLabel(call.status)}</small></td><td><strong className="table-strong">{call.adapter && call.model ? `${call.adapter}/${call.model}` : "未选择模型"}</strong><small className="table-sub">Chat · 用户 {call.userId}</small></td><td><strong className="table-strong">{call.inputTokens ?? "—"} / {call.outputTokens ?? "—"}</strong><small className="table-sub">${call.estimatedCostUsd ?? "—"}</small></td><td><strong className="table-strong">{call.latencyMs == null ? "—" : `${call.latencyMs} ms`}</strong><small className="table-sub">{meteringLabel(call.meteringStatus)}</small></td><td>{call.errorCode ?? "—"}</td></tr>)}</tbody></table></div>
+              <div className="admin-table-wrap"><table className="admin-table llm-calls-table"><thead><tr><th>时间</th><th>来源 / 状态</th><th>能力 / 模型</th><th>Token / 预估费用</th><th>耗时 / 计量</th><th>错误码</th></tr></thead><tbody>{calls.map((call) => <tr key={call.callId}><td>{new Date(call.createdAt).toLocaleString("zh-CN")}</td><td><strong className="table-strong">{call.source === "connection_test" ? "连接测试" : call.source}</strong><small className={`table-sub call-status ${call.status}`}>{statusLabel(call.status)}</small></td><td><strong className="table-strong">{call.model ?? "未选择模型"}</strong><small className="table-sub">Chat · 用户 {call.userId}</small></td><td><strong className="table-strong">{call.inputTokens ?? "—"} / {call.outputTokens ?? "—"}</strong><small className="table-sub">${call.estimatedCostUsd ?? "—"}</small></td><td><strong className="table-strong">{call.latencyMs == null ? "—" : `${call.latencyMs} ms`}</strong><small className="table-sub">{meteringLabel(call.meteringStatus)}</small></td><td>{call.errorCode ?? "—"}</td></tr>)}</tbody></table></div>
             )}
             <footer className="table-footer"><span>当前页 {calls.length} 条 · 汇总 {summary.callCount} 条</span><div><button type="button" onClick={() => void previous()} disabled={!cursorStack.length || pagePending}>上一页</button><button type="button" onClick={() => void next()} disabled={!nextCursor || pagePending}>下一页</button></div></footer>
           </section>

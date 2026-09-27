@@ -19,6 +19,7 @@ import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoading } from "@/components/ui";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 import { useResumeStore } from "../../store/resumeStore";
+import { MessageActions } from "./MessageActions";
 
 type AgentPanelProps = {
   resumeId: string;
@@ -475,17 +476,20 @@ export function AgentPanel({
         streamRequestRef.current !== streamRequestId ||
         activeResumeIdRef.current !== requestedResumeId
       ) return;
-      const detail = await api.getAgentSession(currentSessionId);
+      // Keep the delivered reply/proposals if post-run synchronization fails.
+      const detail = await api.getAgentSession(currentSessionId).catch(() => null);
       if (
         streamRequestRef.current === streamRequestId &&
         activeResumeIdRef.current === requestedResumeId
       ) {
-        setMessages(detail.session.messages);
-        const proposalResult = await api.listAgentProposals(requestedResumeId, currentSessionId);
+        if (detail) setMessages(detail.session.messages);
+        const proposalResult = await api.listAgentProposals(requestedResumeId, currentSessionId).catch(() => null);
         if (
           streamRequestRef.current === streamRequestId &&
           activeResumeIdRef.current === requestedResumeId
-        ) setProposals(proposalResult.proposals);
+        ) {
+          if (proposalResult) setProposals(proposalResult.proposals);
+        }
       }
     } catch (reason) {
       if (
@@ -719,7 +723,7 @@ export function AgentPanel({
               </div>
               {message.role === "user" && <AgentUserAvatar avatarUrl={userAvatarUrl} displayName={userDisplayName} />}
             </div>
-            <time dateTime={message.created_at}>{messageTime(message.created_at)}</time>
+            <MessageActions content={message.content} createdAt={message.created_at} timeLabel={messageTime(message.created_at)} />
           </article>
         ))}
         {toolStatus && <p className="agent-tool-status"><LoaderCircle aria-hidden="true" className="agent-spinner" />{toolStatus}</p>}

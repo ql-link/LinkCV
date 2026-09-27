@@ -18,7 +18,6 @@ from pydantic import (
 
 from linkresume.modules.llm.catalog import (
     CHAT_CAPABILITY,
-    normalize_adapter,
     normalize_model_call_name,
 )
 
@@ -93,7 +92,9 @@ class ChatResult(CamelModel):
 
 LLMCallStatus = Literal["pending", "succeeded", "failed", "cancelled"]
 LLMMeteringStatus = Literal["complete", "partial", "unknown"]
+PriceSyncStatus = Literal["unknown", "succeeded", "failed"]
 StructuredValue = TypeVar("StructuredValue", bound=BaseModel)
+Price = Decimal | None
 
 
 @dataclass(frozen=True)
@@ -118,74 +119,28 @@ class ChatStream:
 
 
 class ModelConfigCreate(AdminWriteModel):
-    adapter: str = Field(min_length=1, max_length=64)
+    provider_id: str = Field(alias="providerId", min_length=1)
     model: str = Field(min_length=1, max_length=128)
-    api_base: HttpUrl | None = Field(default=None, alias="apiBase", max_length=512)
-    api_key: SecretStr | None = Field(default=None, alias="apiKey")
-
-    @field_validator("adapter")
-    @classmethod
-    def validate_adapter(cls, value: str) -> str:
-        return normalize_adapter(value)
 
     @field_validator("model")
     @classmethod
-    def normalize_model(cls, value: str, info) -> str:
-        adapter = info.data.get("adapter")
-        if not isinstance(adapter, str):
-            normalized = value.strip()
-            if not normalized:
-                raise ValueError("model must not be empty")
-            return normalized
-        return normalize_model_call_name(adapter, value)
-
-    @field_validator("api_key")
-    @classmethod
-    def validate_api_key(cls, value: SecretStr | None) -> SecretStr | None:
-        if value is not None and not value.get_secret_value().strip():
-            raise ValueError("apiKey must not be empty")
-        return value
-
-    @model_validator(mode="after")
-    def validate_identifier(self) -> "ModelConfigCreate":
-        self.model = normalize_model_call_name(self.adapter, self.model)
-        return self
+    def normalize_model(cls, value: str) -> str:
+        return normalize_model_call_name(value)
 
 
 class ModelConfigPatch(AdminWriteModel):
     base_config_version: int | None = Field(default=None, alias="baseConfigVersion", ge=1)
-    adapter: str | None = Field(default=None, min_length=1, max_length=64)
     model: str | None = Field(default=None, min_length=1, max_length=128)
-    api_base: HttpUrl | None = Field(default=None, alias="apiBase", max_length=512)
-    api_key: SecretStr | None = Field(default=None, alias="apiKey")
-
-    @field_validator("adapter")
-    @classmethod
-    def validate_adapter(cls, value: str | None) -> str | None:
-        return None if value is None else normalize_adapter(value)
 
     @field_validator("model")
     @classmethod
     def normalize_model(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("model must not be empty")
-        return normalized
-
-    @field_validator("api_key")
-    @classmethod
-    def validate_api_key(cls, value: SecretStr | None) -> SecretStr | None:
-        if value is not None and not value.get_secret_value().strip():
-            raise ValueError("apiKey must not be empty")
-        return value
+        return None if value is None else normalize_model_call_name(value)
 
     @model_validator(mode="after")
     def reject_explicit_nulls(self) -> "ModelConfigPatch":
-        for field in ("adapter", "model"):
-            if field in self.model_fields_set and getattr(self, field) is None:
-                raise ValueError(f"{field} must not be null")
+        if "model" in self.model_fields_set and self.model is None:
+            raise ValueError("model must not be null")
         return self
 
 
@@ -195,12 +150,21 @@ class ModelLastTest(CamelModel):
     tested_at: datetime = Field(alias="testedAt")
 
 
+class ProviderRef(CamelModel):
+    id: str
+    name: str
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
 class ModelConfigRecord(CamelModel):
     id: str
     capability: Literal["chat"] = CHAT_CAPABILITY
-    adapter: str
+    provider: ProviderRef
     model: str
-    api_base: str | None = Field(alias="apiBase")
     key_configured: bool = Field(alias="keyConfigured")
     active: bool
     last_test: ModelLastTest | None = Field(alias="lastTest")
@@ -220,9 +184,8 @@ ModelCapability = Literal[
 
 class CapabilityModelConfigRecord(CamelModel):
     id: str
-    adapter: str
+    provider: ProviderRef
     model: str
-    api_base: str | None = Field(alias="apiBase")
     key_configured: bool = Field(alias="keyConfigured")
     config_version: int = Field(alias="configVersion", ge=1)
     active_capabilities: list[ModelCapability] = Field(alias="activeCapabilities")
@@ -316,24 +279,124 @@ class ModelActivationResponse(CamelModel):
     call_id: str = Field(alias="callId")
 
 
-class ChatCatalogAdapter(CamelModel):
-    code: str
-    label: str
-    requires_api_key: bool = Field(alias="requiresApiKey")
-    models: list[str]
+class ProviderRecord(CamelModel):
+    id: str
+    name: str
+    base_url: str = Field(alias="baseUrl")
+    key_configured: bool = Field(alias="keyConfigured")
+    model_catalog_url: str = Field(alias="modelCatalogUrl")
+    model_count: int = Field(alias="modelCount", ge=0)
+    price_sync_status: PriceSyncStatus = Field(alias="priceSyncStatus")
+    price_sync_error: str | None = Field(alias="priceSyncError")
+    price_synced_at: datetime | None = Field(alias="priceSyncedAt")
+    version: int = Field(ge=1)
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
 
 
-class ChatCatalogResponse(CamelModel):
-    capability: Literal["chat"] = CHAT_CAPABILITY
-    adapters: list[ChatCatalogAdapter]
+class ProviderListResponse(CamelModel):
+    providers: list[ProviderRecord]
 
 
-class ModelCatalogResponse(CamelModel):
-    capabilities: list[ModelCapability]
-    adapters: list[ChatCatalogAdapter]
+class ProviderCreate(AdminWriteModel):
+    name: str = Field(min_length=1, max_length=64)
+    base_url: HttpUrl = Field(alias="baseUrl", max_length=512)
+    model_catalog_url: HttpUrl = Field(alias="modelCatalogUrl", max_length=512)
+    api_key: SecretStr = Field(alias="apiKey")
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must not be empty")
+        return normalized
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, value: SecretStr) -> SecretStr:
+        if not value.get_secret_value().strip():
+            raise ValueError("apiKey must not be empty")
+        return value
 
 
-Price = Decimal | None
+class ProviderPatch(AdminWriteModel):
+    base_version: int = Field(alias="baseVersion", ge=1)
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    base_url: HttpUrl | None = Field(default=None, alias="baseUrl", max_length=512)
+    model_catalog_url: HttpUrl | None = Field(
+        default=None, alias="modelCatalogUrl", max_length=512
+    )
+    api_key: SecretStr | None = Field(default=None, alias="apiKey")
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("name must not be empty")
+        return normalized
+
+    @field_validator("api_key")
+    @classmethod
+    def validate_api_key(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and not value.get_secret_value().strip():
+            raise ValueError("apiKey must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def reject_explicit_nulls(self) -> "ProviderPatch":
+        for field in ("name", "base_url", "model_catalog_url"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} must not be null")
+        return self
+
+
+class ProviderCapabilityRef(CamelModel):
+    capability: ModelCapability
+    model_config_id: str = Field(alias="modelConfigId")
+    model: str
+
+    @field_validator("model_config_id", mode="before")
+    @classmethod
+    def stringify_id(cls, value: object) -> str:
+        return str(value)
+
+
+class ProviderResponse(CamelModel):
+    provider: ProviderRecord
+
+
+class ProviderPatchResponse(ProviderResponse):
+    affected_capabilities: list[ProviderCapabilityRef] = Field(
+        alias="affectedCapabilities"
+    )
+
+
+class ProviderModelRecord(CamelModel):
+    model_id: str = Field(alias="modelId")
+    display_name: str | None = Field(alias="displayName")
+    context_length: int | None = Field(alias="contextLength")
+    max_output: int | None = Field(alias="maxOutput")
+    input_modalities: str | None = Field(alias="inputModalities")
+    supports_reasoning: bool = Field(alias="supportsReasoning")
+    input_price_per_million: Price = Field(alias="inputPricePerMillion")
+    output_price_per_million: Price = Field(alias="outputPricePerMillion")
+
+
+class ProviderModelListResponse(CamelModel):
+    models: list[ProviderModelRecord]
+    next_cursor: str | None = Field(alias="nextCursor")
+
+
+class ProviderCatalogSyncResponse(CamelModel):
+    synced_at: datetime = Field(alias="syncedAt")
+    model_count: int = Field(alias="modelCount", ge=0)
 
 
 class CallLogRecord(CamelModel):

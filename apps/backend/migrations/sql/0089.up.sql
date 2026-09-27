@@ -1,8 +1,5 @@
--- Current resume links were backfilled by 0084. Remove the obsolete audit link.
-ALTER TABLE job_applications
-  DROP FOREIGN KEY fk_job_applications_resume_version,
-  DROP INDEX idx_job_applications_resume_version,
-  DROP COLUMN resume_version_id;
-
-DROP TABLE IF EXISTS resume_versions;
-DROP TABLE IF EXISTS interview_assets;
+-- Upgrade migration for 0089: remove dataset replacement and cleanup tables
+-- The revision preflight requires empty legacy operation tables.
+-- IF EXISTS permits retry after MySQL commits only the first DROP.
+DROP TABLE IF EXISTS dataset_replacements;
+DROP TABLE IF EXISTS dataset_object_cleanup;

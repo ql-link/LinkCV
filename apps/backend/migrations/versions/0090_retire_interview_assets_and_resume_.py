@@ -1,7 +1,7 @@
 """retire interview assets and resume versions.
 
-Revision ID: 0089
-Revises: 0088
+Revision ID: 0090
+Revises: 0089
 Create Date: 2026-09-27 20:50:04.949752
 """
 from collections.abc import Sequence
@@ -11,8 +11,8 @@ from alembic import op
 from sqlalchemy import inspect, text
 from linkresume.core.migration_sql import execute_sql_file
 
-revision: str = '0089'
-down_revision: str | None = '0088'
+revision: str = '0090'
+down_revision: str | None = '0089'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -26,10 +26,10 @@ def upgrade() -> None:
     if "interview_assets" in inspect(connection).get_table_names():
         if connection.scalar(text("SELECT COUNT(*) FROM interview_assets")):
             raise RuntimeError(
-                "Migrate interview assets before 0089: run apps/backend/scripts/release/"
+                "Migrate interview assets before 0090: run apps/backend/scripts/release/"
                 "migrate_interview_assets.py --execute with API/Workers stopped"
             )
-    execute_sql_file(connection, SQL_DIR / "0089.up.sql")
+    execute_sql_file(connection, SQL_DIR / "0090.up.sql")
 
 
 def downgrade() -> None:
