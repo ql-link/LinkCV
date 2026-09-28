@@ -22,7 +22,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
-from linkresume.application.mock_interviews import prompts, rubric
+from linkresume.application.mock_interviews import prompts, rubric, voice_metrics
 from linkresume.application.mock_interviews.outputs import (
     BackgroundAnalysis,
     ClaimExtraction,
@@ -67,6 +67,8 @@ TASK_LEASE = timedelta(minutes=10)
 IDLE_TIMEOUT = timedelta(hours=24)
 ANSWER_CHARS = 8_000
 DEFAULT_QUESTION_COUNT = 5
+HOTWORD_LIMIT = 200
+RECORDING_PREFIX = "mock-interviews"
 
 STAGE_TYPE_DEFAULTS = {"hr": "hr"}
 
@@ -114,6 +116,7 @@ class StartRequest:
     follow_up_enabled: bool
     language: str
     material_ids: list[int]
+    answer_mode: str = "text"
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +288,7 @@ def build_interview(db: Session, user_id: int, request: StartRequest) -> MockInt
         question_count=request.question_count,
         follow_up_enabled=request.follow_up_enabled,
         language=request.language,
+        answer_mode=request.answer_mode,
         material_refs_json=_material_refs(db, user_id, request.material_ids),
         status="preparing",
         task_lease_until=utc_now() + TASK_LEASE,
@@ -434,6 +438,37 @@ def list_questions(db: Session, interview_id: int) -> list[MockInterviewQuestion
             .order_by(MockInterviewQuestion.sequence_no)
         )
     )
+
+
+def hotwords(interview: MockInterview, analysis: dict[str, Any], plan: dict[str, Any]) -> list[str]:
+    """Terms the candidate is likely to say, reused as STT hot words and correction glossary."""
+    terms: list[str] = []
+    for claim in analysis.get("claims") or []:
+        terms.extend(str(item) for item in claim.get("technologies") or [])
+    for item in plan.get("selected") or []:
+        terms.append(str(item.get("topic") or ""))
+    job = interview.job_snapshot_json or {}
+    terms.extend(str(job.get(key) or "") for key in ("company_name", "job_title"))
+    for ref in interview.material_refs_json or []:
+        terms.append(str(ref.get("file_name") or "").rsplit(".", 1)[0])
+    seen: set[str] = set()
+    result: list[str] = []
+    for term in terms:
+        term = term.strip()
+        if not term or len(term) > 30 or term.lower() in seen:
+            continue
+        seen.add(term.lower())
+        result.append(term)
+    return result[:HOTWORD_LIMIT]
+
+
+def voice_report(questions: list[MockInterviewQuestion]) -> dict[str, object] | None:
+    per_answer = [
+        voice_metrics.answer_metrics(list(item.words_json or []), item.audio_duration_ms)
+        for item in questions
+        if item.answer_status == "answered" and item.answer_source == "voice"
+    ]
+    return voice_metrics.summarize(per_answer)
 
 
 def _transcript(questions: list[MockInterviewQuestion]) -> list[dict[str, object]]:
@@ -755,6 +790,8 @@ class MockInterviewRunner:
         interview = db.get(MockInterview, interview_id)
         interview.analysis_json = analysis
         interview.plan_json = plan
+        if interview.answer_mode == "voice":
+            interview.hotwords_json = hotwords(interview, analysis, plan)
         interview.input_tokens += usage.input_tokens
         interview.output_tokens += usage.output_tokens
         interview.task_lease_until = utc_now() + TASK_LEASE
@@ -1084,44 +1121,7 @@ class MockInterviewRunner:
         evaluations: dict[int, dict[str, object]] = {}
         for root in roots:
             item = plan[root.plan_index]
-            value: QuestionEvaluation | None = results.get(root.id)
-            signals = list(item.get("expected_signals") or [])
-            if value is None:
-                verdicts: list[dict[str, object]] = [
-                    {"signal": signal, "verdict": "miss", "evidence": ""} for signal in signals
-                ]
-                evaluation = {
-                    "skipped": True,
-                    "score": 0.0,
-                    "achieved_depth": 0,
-                    "signals": verdicts,
-                    "factual_errors": [],
-                    "highlights": [],
-                    "weaknesses": [],
-                    "reference_answer": "",
-                }
-            else:
-                answers = " ".join(
-                    q.answer_text or "" for q in questions if _root_id(q) == root.id
-                )
-                verdicts = _align_signals(signals, value, answers)
-                score = rubric.question_score(
-                    signal_verdicts=[str(v["verdict"]) for v in verdicts],
-                    achieved_depth=value.achieved_depth,
-                    difficulty=interview.difficulty,
-                    factual_errors=len(value.factual_errors),
-                    skipped=False,
-                )
-                evaluation = {
-                    "skipped": False,
-                    "score": score,
-                    "achieved_depth": value.achieved_depth,
-                    "signals": verdicts,
-                    "factual_errors": value.factual_errors,
-                    "highlights": value.highlights,
-                    "weaknesses": value.weaknesses,
-                    "reference_answer": value.reference_answer,
-                }
+            evaluation = score_root(interview, item, root, questions, results.get(root.id))
             evaluations[root.id] = evaluation
             scores.append(float(evaluation["score"]))
             question_results.append({"topic": item.get("topic"), "sequence_no": root.sequence_no, **evaluation})
@@ -1133,6 +1133,7 @@ class MockInterviewRunner:
             interview.user_id,
             prompts.overall_evaluation_messages(
                 interview,
+                voice_metrics=voice_report(questions) if interview.answer_mode == "voice" else None,
                 transcript=_transcript(questions),
                 question_results=question_results,
                 fact_checks=fact_check["items"],
@@ -1168,6 +1169,8 @@ class MockInterviewRunner:
         answered_roots = sum(1 for root in roots if not evaluations[root.id]["skipped"])
         report = {
             "rubric_version": rubric.RUBRIC_VERSION,
+            "answer_mode": interview.answer_mode,
+            "voice_metrics": voice_report(questions) if interview.answer_mode == "voice" else None,
             "headline": overall.headline,
             "summary": overall.summary,
             "total_score": total,
@@ -1283,6 +1286,54 @@ class MockInterviewRunner:
         db.commit()
 
 
+def score_root(
+    interview: MockInterview,
+    item: dict[str, Any],
+    root: MockInterviewQuestion,
+    questions: list[MockInterviewQuestion],
+    value: QuestionEvaluation | None,
+) -> dict[str, object]:
+    """Deterministic score for one main question from the model's judgements."""
+    signals = list(item.get("expected_signals") or [])
+    if value is None:
+        verdicts: list[dict[str, object]] = [
+            {"signal": signal, "verdict": "miss", "evidence": ""} for signal in signals
+        ]
+        evaluation = {
+            "skipped": True,
+            "score": 0.0,
+            "achieved_depth": 0,
+            "signals": verdicts,
+            "factual_errors": [],
+            "highlights": [],
+            "weaknesses": [],
+            "reference_answer": "",
+        }
+    else:
+        answers = " ".join(
+            q.answer_text or "" for q in questions if _root_id(q) == root.id
+        )
+        verdicts = _align_signals(signals, value, answers)
+        score = rubric.question_score(
+            signal_verdicts=[str(v["verdict"]) for v in verdicts],
+            achieved_depth=value.achieved_depth,
+            difficulty=interview.difficulty,
+            factual_errors=len(value.factual_errors),
+            skipped=False,
+        )
+        evaluation = {
+            "skipped": False,
+            "score": score,
+            "achieved_depth": value.achieved_depth,
+            "signals": verdicts,
+            "factual_errors": value.factual_errors,
+            "highlights": value.highlights,
+            "weaknesses": value.weaknesses,
+            "reference_answer": value.reference_answer,
+        }
+    return evaluation
+
+
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", "", text).casefold()
 
@@ -1347,10 +1398,18 @@ def _parse_header(line: str) -> InterviewerTurn | None:
 # ---------------------------------------------------------------------------
 
 
-def start(db: Session, user_id: int, request: StartRequest, *, repeat_of_id: int | None = None) -> MockInterview:
+def start(
+    db: Session,
+    user_id: int,
+    request: StartRequest,
+    *,
+    repeat_of_id: int | None = None,
+    speech_snapshot: dict[str, object] | None = None,
+) -> MockInterview:
     ensure_slot_free(db, user_id)
     interview = build_interview(db, user_id, request)
     interview.repeat_of_id = repeat_of_id
+    interview.speech_snapshot_json = speech_snapshot
     db.add(interview)
     occupy_slot(db, interview)
     db.commit()
@@ -1377,6 +1436,7 @@ def repeat_request(interview: MockInterview) -> StartRequest:
         follow_up_enabled=interview.follow_up_enabled,
         language=interview.language,
         material_ids=[int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []],
+        answer_mode=interview.answer_mode,
     )
 
 
@@ -1393,6 +1453,25 @@ def _current_question(db: Session, interview: MockInterview) -> MockInterviewQue
     )
 
 
+@dataclass(frozen=True)
+class VoiceAnswer:
+    """A server-side recognition result backing one answer."""
+
+    source: str  # voice_input | voice
+    transcript: str
+    words: list[dict[str, object]]
+    duration_ms: int
+    recording_object_name: str | None
+
+
+def recording_object_name(interview: MockInterview, question_id: int) -> str:
+    return f"{RECORDING_PREFIX}/{interview.user_id}/{interview.public_id}/{question_id}.wav"
+
+
+def recording_prefix(interview: MockInterview) -> str:
+    return f"{RECORDING_PREFIX}/{interview.user_id}/{interview.public_id}/"
+
+
 def submit_answer(
     db: Session,
     user_id: int,
@@ -1401,8 +1480,13 @@ def submit_answer(
     question_id: int,
     text: str | None,
     idempotency_key: str,
+    voice: VoiceAnswer | None = None,
 ) -> tuple[MockInterview, bool]:
-    """Record an answer or skip. Returns (interview, needs_turn)."""
+    """Record an answer or skip. Returns (interview, needs_turn).
+
+    A voice interview accepts only server recognition (``voice``) or a skip;
+    typed text for it is rejected so the transcript cannot be forged.
+    """
     interview = require_owned(db, user_id, public_id, lock=True)
     if _expire_if_stale(interview, utc_now()):
         db.commit()
@@ -1423,12 +1507,24 @@ def submit_answer(
         raise MockInterviewError(409, "MOCK_INTERVIEW_QUESTION_MISMATCH")
     if current.answer_status != "pending":
         raise MockInterviewError(409, "MOCK_INTERVIEW_QUESTION_MISMATCH")
+    if interview.answer_mode == "voice" and text is not None and (voice is None or voice.source != "voice"):
+        raise MockInterviewError(422, "MOCK_INTERVIEW_SPEECH_SESSION_INVALID")
+    if interview.answer_mode == "text" and voice is not None and voice.source != "voice_input":
+        raise MockInterviewError(422, "MOCK_INTERVIEW_SPEECH_SESSION_INVALID")
     now = utc_now()
     if text is None:
         current.answer_status = "skipped"
     else:
         current.answer_status = "answered"
         current.answer_text = text
+        current.answer_source = voice.source if voice is not None else "text"
+        if voice is not None:
+            current.audio_duration_ms = voice.duration_ms
+        if voice is not None and voice.source == "voice":
+            current.raw_transcript = voice.transcript
+            current.words_json = voice.words
+            current.recording_object_name = voice.recording_object_name
+            current.transcript_state = "original"
     current.answered_at = now
     current.answer_idempotency_key = idempotency_key
     interview.last_activity_at = now
@@ -1512,7 +1608,8 @@ def retry(db: Session, user_id: int, public_id: str) -> MockInterview:
     return interview
 
 
-def delete_interview(db: Session, user_id: int, public_id: str) -> None:
+def delete_interview(db: Session, user_id: int, public_id: str) -> str:
+    """Delete the interview; returns the recording prefix the caller must purge."""
     interview = require_owned(db, user_id, public_id, lock=True)
     _expire_if_stale(interview, utc_now())
     if interview.status in MOCK_INTERVIEW_ACTIVE_STATUSES:
@@ -1523,9 +1620,11 @@ def delete_interview(db: Session, user_id: int, public_id: str) -> None:
         .where(MockInterview.repeat_of_id == interview.id)
         .values(repeat_of_id=None)
     )
+    prefix = recording_prefix(interview)
     db.execute(delete(MockInterviewQuestion).where(MockInterviewQuestion.interview_id == interview.id))
     db.delete(interview)
     db.commit()
+    return prefix
 
 
 def serialize_question(question: MockInterviewQuestion) -> dict[str, object]:
@@ -1541,4 +1640,12 @@ def serialize_question(question: MockInterviewQuestion) -> dict[str, object]:
         "answer_text": question.answer_text,
         "answered_at": question.answered_at,
         "evaluation": question.evaluation_json,
+        "answer_source": question.answer_source,
+        "audio_duration_ms": question.audio_duration_ms,
+        "has_recording": bool(question.recording_object_name),
+        "raw_transcript": question.raw_transcript,
+        "transcript_state": question.transcript_state,
+        "correction": question.correction_json,
+        "re_evaluate_count": question.re_evaluate_count,
+        "evaluation_history": question.evaluation_history_json,
     }

@@ -35,7 +35,7 @@
 | 求职中心 | [features/career-center.md](features/career-center.md) | 岗位、求职进程、排期、复盘 |
 | AI 求职助手 | [features/ai-assistant.md](features/ai-assistant.md) | 独立助手、编辑器侧栏、提案确认 |
 | 用户资料集 | [features/datasets.md](features/datasets.md) | 资料上传、解析状态、预览、助手引用 |
-| AI 模拟面试 | [features/mock-interview.md](features/mock-interview.md) | 发起、文字作答、追问、评估报告、资料核验 |
+| AI 模拟面试 | [features/mock-interview.md](features/mock-interview.md) | 发起、文字与语音作答、追问、评估报告、资料核验、识别稿修正 |
 
 ## 架构文档
 

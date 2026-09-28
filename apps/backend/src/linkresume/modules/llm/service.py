@@ -24,11 +24,16 @@ from linkresume.modules.llm.gateway import (
 from linkresume.modules.llm.models import (
     LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
 )
-from linkresume.modules.llm.providers import OPENAI_CHAT, inference_base_url, validate_route
+from linkresume.modules.llm.providers import (
+    OPENAI_CHAT, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route,
+)
 from linkresume.modules.llm.resolver import (
     ASSISTANT_CONVERSATION, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
-    RESUME_STRUCTURING, RoutePlan, resolve, validation_fingerprint,
-    resolve_candidates,
+    RESUME_STRUCTURING, SPEECH_TO_TEXT, SPEECH_USE_CASES, TEXT_TO_SPEECH,
+    RoutePlan, resolve, validation_fingerprint, resolve_candidates,
+)
+from linkresume.modules.speech.gateway import (
+    SAMPLE_RATE, SpeechGateway, SpeechProviderError, SpeechTarget,
 )
 from linkresume.modules.llm.schemas import (
     ChatMessage, ChatResult, ChatStream, ChatStreamEvent, ChatUsage,
@@ -172,10 +177,16 @@ class LLMService:
         session_factory: sessionmaker[Session],
         gateway: LLMGateway,
         cipher: CredentialCipher,
+        speech_gateway: SpeechGateway | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._gateway = gateway
         self._cipher = cipher
+        if speech_gateway is None:
+            from linkresume.modules.speech.aliyun import AliyunSpeechGateway
+
+            speech_gateway = AliyunSpeechGateway()
+        self._speech_gateway = speech_gateway
 
     def encrypt_credential(self, plaintext: str) -> str:
         return self._cipher.encrypt(plaintext)
@@ -472,11 +483,14 @@ class LLMService:
                 selection_source="probe",
             )
             fingerprint = validation_fingerprint(binding, route, connection)
-        runtime = self.runtime_model_for_plan(plan)
+        runtime = None if use_case in SPEECH_USE_CASES else self.runtime_model_for_plan(plan)
         call_id = create_call_id()
         await self._db(self._start_log_sync, plan, call_id=call_id, source="capability_probe", user_id=user_id)
         try:
-            if use_case == ASSISTANT_CONVERSATION:
+            if use_case in SPEECH_USE_CASES:
+                await self._probe_speech(plan, call_id)
+                result = GatewayResult(content="OK", usage=None)
+            elif use_case == ASSISTANT_CONVERSATION:
                 if pi_probe is None:
                     raise LLMError("LLM_PI_AGENT_UNAVAILABLE", call_id)
                 usage = await pi_probe.run_probe(runtime, runtime.api_key)
@@ -526,3 +540,101 @@ class LLMService:
             current.validated_at = utc_now()
             db.commit()
         return call_id
+
+
+    # -- speech -------------------------------------------------------------
+
+    def speech_target_for_plan(self, plan: RoutePlan) -> SpeechTarget:
+        if plan.protocol_code not in SPEECH_PROTOCOLS.get(plan.use_case, ()):
+            raise LLMError("LLM_MODEL_UNAVAILABLE")
+        try:
+            validate_route(plan.provider_code, plan.target_kind, plan.protocol_code)
+            url = speech_ws_url(plan.provider_code, plan.settings)
+        except ValueError as error:
+            raise LLMError("LLM_MODEL_UNAVAILABLE") from error
+        return SpeechTarget(
+            ws_url=url,
+            api_key=_credential_key(self._cipher, plan),
+            model=plan.invoke_target,
+            workspace_id=plan.settings.get("workspace_id"),
+        )
+
+    async def speech_plan(self, use_case: str) -> RoutePlan:
+        if use_case not in SPEECH_USE_CASES:
+            raise ValueError("not a speech use case")
+        for plan in await self._db(self._resolve_candidates_sync, use_case):
+            if plan.protocol_code in SPEECH_PROTOCOLS[use_case]:
+                return plan
+        raise LLMError("LLM_MODEL_NOT_CONFIGURED")
+
+    async def speech_available(self) -> dict[str, bool]:
+        result = {}
+        for use_case in SPEECH_USE_CASES:
+            try:
+                await self.speech_plan(use_case)
+                result[use_case] = True
+            except LLMError:
+                result[use_case] = False
+        return result
+
+    async def start_speech_call(self, plan: RoutePlan, *, source: str, user_id: int | None) -> str:
+        if not SOURCE_PATTERN.fullmatch(source):
+            raise ValueError("invalid speech source")
+        call_id = create_call_id()
+        await self._db(self._start_log_sync, plan, call_id=call_id, source=source, user_id=user_id)
+        return call_id
+
+    async def finish_speech_call(
+        self,
+        call_id: str,
+        *,
+        started: float,
+        error_code: str | None = None,
+        cancelled: bool = False,
+        details: dict | None = None,
+    ) -> None:
+        """Speech calls record audio seconds or characters, never content."""
+        status = "cancelled" if cancelled else ("failed" if error_code else "succeeded")
+        await asyncio.shield(self._db(
+            self._finish_log_sync, call_id, status=status,
+            usage=GatewayUsage(input_tokens=None, output_tokens=None, details=details),
+            error_code=error_code, latency_ms=int((perf_counter() - started) * 1000),
+        ))
+
+    @property
+    def speech_gateway(self) -> SpeechGateway:
+        return self._speech_gateway
+
+    async def synthesize(self, user_id: int, text: str, *, source: str, voice: str | None = None) -> bytes:
+        plan = await self.speech_plan(TEXT_TO_SPEECH)
+        target = self.speech_target_for_plan(plan)
+        call_id = await self.start_speech_call(plan, source=source, user_id=user_id)
+        started = perf_counter()
+        try:
+            audio = await self._speech_gateway.synthesize(target, text, voice=voice)
+        except asyncio.CancelledError:
+            await self.finish_speech_call(call_id, started=started, cancelled=True)
+            raise
+        except SpeechProviderError as error:
+            await self.finish_speech_call(
+                call_id, started=started, error_code=error.code, details={"characters": len(text)}
+            )
+            raise
+        await self.finish_speech_call(call_id, started=started, details={"characters": len(text)})
+        return audio
+
+    async def _probe_speech(self, plan: RoutePlan, call_id: str) -> None:
+        target = self.speech_target_for_plan(plan)
+        try:
+            if plan.use_case == TEXT_TO_SPEECH:
+                await self._speech_gateway.synthesize(target, "你好。", voice=None)
+                return
+
+            async def silence():
+                # One second of 16 kHz PCM16 silence proves the full task cycle.
+                yield bytes(SAMPLE_RATE * 2)
+
+            async for _ in self._speech_gateway.recognize(target, silence(), hotwords=[], language="zh"):
+                pass
+        except SpeechProviderError as error:
+            raise LLMError("LLM_CONNECTION_FAILED", call_id) from error

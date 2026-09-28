@@ -106,3 +106,14 @@ class OverallEvaluation(_Output):
     resume_risks: list[str] = Field(default_factory=list, max_length=8)
     improvements: list[str] = Field(min_length=1, max_length=5)
     off_topic_detected: bool = False
+
+
+class TranscriptChange(_Output):
+    original: str = Field(min_length=1, max_length=200)
+    corrected: str = Field(max_length=200)
+    reason: str = Field(default="", max_length=200)
+
+
+class TranscriptCorrection(_Output):
+    corrected: str = Field(min_length=1, max_length=8000)
+    changes: list[TranscriptChange] = Field(default_factory=list, max_length=50)

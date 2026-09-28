@@ -4357,3 +4357,40 @@ def test_mysql_0090_retires_legacy_tables_and_preserves_current_resume() -> None
             assert dict(after) == dict(before)
     finally:
         engine.dispose()
+
+
+def test_mysql_0095_adds_voice_columns_with_text_defaults() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0094")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            user_id = connection.exec_driver_sql(
+                "INSERT INTO users (email,password_hash,nickname) VALUES "
+                "('voice-migration@example.test','fictional-hash','张三')"
+            ).lastrowid
+            interview_id = connection.execute(text(
+                "INSERT INTO mock_interviews (public_id,user_id,source_type,resume_title_snapshot,"
+                "resume_markdown_snapshot,interview_type,difficulty,question_count,language,status) "
+                "VALUES (:pid,:uid,'resume','简历','# 简历','technical','intermediate',3,'zh','completed')"
+            ), {"pid": "00000000-0000-4000-8000-000000000095", "uid": user_id}).lastrowid
+        run_alembic(database_url, "upgrade", "head")
+        inspector = inspect(engine)
+        interview_columns = {c["name"] for c in inspector.get_columns("mock_interviews")}
+        assert {"answer_mode", "speech_snapshot_json", "hotwords_json", "transcript_corrected_at",
+                "recordings_deleted_at"} <= interview_columns
+        question_columns = {c["name"] for c in inspector.get_columns("mock_interview_questions")}
+        assert {"answer_source", "recording_object_name", "audio_duration_ms", "raw_transcript",
+                "words_json", "corrected_transcript", "correction_json", "transcript_state",
+                "manual_edit_count", "re_evaluate_count", "evaluation_history_json"} <= question_columns
+        with engine.begin() as connection:
+            assert connection.scalar(
+                text("SELECT answer_mode FROM mock_interviews WHERE id=:id"), {"id": interview_id}
+            ) == "text"
+            with pytest.raises(Exception):
+                connection.execute(
+                    text("UPDATE mock_interviews SET answer_mode='video' WHERE id=:id"), {"id": interview_id}
+                )
+    finally:
+        engine.dispose()

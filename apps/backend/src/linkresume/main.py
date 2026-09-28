@@ -101,6 +101,7 @@ def create_app(
     mq_publisher: MQPublisher | None = None,
     plugin_release_service: Any | None = None,
     pi_probe_coordinator: PiProbeCoordinator | None = None,
+    speech_gateway: Any | None = None,
     create_schema: bool = False,
 ) -> FastAPI:
     runtime_settings = settings or load_settings()
@@ -142,6 +143,7 @@ def create_app(
         session_factory,
         runtime_llm_gateway,
         CredentialCipher(runtime_settings.llm_credential_encryption_keys),
+        speech_gateway,
     )
     runtime_pi_probe_coordinator = pi_probe_coordinator or PiProbeCoordinator(
         runtime_settings

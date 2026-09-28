@@ -2,28 +2,41 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
+import logging
+import re
+import wave
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import TypeVar
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, Header, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, Header, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
-from linkresume.application.mock_interviews import service
+from linkresume.application.mock_interviews import service, transcripts
 from linkresume.application.mock_interviews.service import (
     MockInterviewError,
     MockInterviewRunner,
     StartRequest,
+    VoiceAnswer,
+)
+from linkresume.application.mock_interviews.speech_session import (
+    SpeechResult,
+    SpeechSessionStore,
+    run_recognition,
 )
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import _load_user, get_current_user
+from linkresume.modules.identity.session_service import WEB_CHANNEL
 from linkresume.modules.identity.models import User
-from linkresume.modules.llm.resolver import MOCK_INTERVIEW
+from linkresume.modules.llm.resolver import MOCK_INTERVIEW, SPEECH_TO_TEXT, TEXT_TO_SPEECH, TRANSCRIPT_CORRECTION
 from linkresume.modules.llm.service import LLMError
+from linkresume.modules.speech.gateway import SAMPLE_RATE, SpeechProviderError
 from linkresume.modules.mock_interviews.models import MockInterview
 from linkresume.modules.mock_interviews.schemas import (
     DeleteResponse,
@@ -35,10 +48,15 @@ from linkresume.modules.mock_interviews.schemas import (
     MockInterviewSkipRequest,
     MockInterviewStatus,
     MockInterviewSummary,
+    ReEvaluationResponse,
+    SpeechCapabilityResponse,
+    TranscriptCorrectionResponse,
+    TranscriptEditRequest,
 )
 from linkresume.modules.observability.audit import bind_audit_target
 
 router = APIRouter(prefix="/mock-interviews", tags=["mock-interviews"])
+logger = logging.getLogger(__name__)
 
 _IDEMPOTENCY_PATTERN = r"^[A-Za-z0-9_.:-]{8,64}$"
 T = TypeVar("T")
@@ -56,9 +74,19 @@ def get_mock_interview_runner(request: Request) -> MockInterviewRunner:
     return runner
 
 
+def get_speech_sessions(request: Request) -> SpeechSessionStore:
+    store = getattr(request.app.state, "mock_interview_speech_sessions", None)
+    if store is None:
+        store = SpeechSessionStore(request.app.state.redis)
+        request.app.state.mock_interview_speech_sessions = store
+    return store
+
+
 def _raise(error: Exception) -> None:
     if isinstance(error, MockInterviewError):
         raise ApiError(error.status_code, error.code) from error
+    if isinstance(error, SpeechProviderError):
+        raise ApiError(502, error.code) from error
     if isinstance(error, LLMError):
         status = 503 if error.code == "LLM_MODEL_NOT_CONFIGURED" else 502
         raise ApiError(status, error.code) from error
@@ -106,6 +134,7 @@ def _summary(interview: MockInterview) -> MockInterviewSummary:
         question_count=interview.question_count,
         follow_up_enabled=interview.follow_up_enabled,
         language=interview.language,  # type: ignore[arg-type]
+        answer_mode=interview.answer_mode,  # type: ignore[arg-type]
         total_score=float(interview.total_score) if interview.total_score is not None else None,
         low_confidence=interview.low_confidence,
         error_code=interview.error_code,
@@ -141,6 +170,8 @@ def _detail(db: Session, interview: MockInterview) -> MockInterviewDetail:
         needs_reply=bool(questions) and interview.status == "in_progress" and questions[-1].answer_status != "pending",
         questions=[service.serialize_question(item) for item in questions],
         report=report,
+        transcript_corrected_at=interview.transcript_corrected_at,
+        recordings_deleted=interview.recordings_deleted_at is not None,
     )
 
 
@@ -157,7 +188,24 @@ def _start_request(payload: MockInterviewCreateRequest) -> StartRequest:
         follow_up_enabled=payload.follow_up_enabled,
         language=payload.language,
         material_ids=[int(item) for item in payload.material_ids],
+        answer_mode=payload.answer_mode,
     )
+
+
+async def _ensure_voice_available(request: Request) -> dict[str, object]:
+    """Fail fast when speech is unroutable; returns the route snapshot to persist."""
+    llm = request.app.state.llm_service
+    snapshot: dict[str, object] = {}
+    for use_case in (SPEECH_TO_TEXT, TEXT_TO_SPEECH):
+        try:
+            plan = await llm.speech_plan(use_case)
+        except LLMError as error:
+            raise ApiError(503, "MOCK_INTERVIEW_SPEECH_UNAVAILABLE") from error
+        snapshot[use_case] = {
+            "route_id": plan.route_id, "provider_code": plan.provider_code,
+            "model": plan.invoke_target, "protocol_code": plan.protocol_code,
+        }
+    return snapshot
 
 
 def _encode_cursor(interview: MockInterview) -> str:
@@ -232,15 +280,25 @@ async def create_mock_interview(
     except LLMError as error:
         _raise(error)
     start_request = _start_request(payload)
+    snapshot = await _ensure_voice_available(request) if start_request.answer_mode == "voice" else None
 
     def create(db: Session) -> tuple[int, str, MockInterviewDetail]:
-        interview = service.start(db, user.id, start_request)
+        interview = service.start(db, user.id, start_request, speech_snapshot=snapshot)
         return interview.id, str(interview.task_token), _detail(db, interview)
 
     interview_id, token, detail = await _in_session(request, create)
     runner.spawn(runner.prepare(interview_id, token))
     bind_audit_target(request, detail.id)
     return MockInterviewResponse(mock_interview=detail)
+
+
+@router.get("/speech-capability", response_model=SpeechCapabilityResponse)
+async def speech_capability(
+    request: Request, user: User = Depends(get_current_user)
+) -> SpeechCapabilityResponse:
+    del user
+    available = await request.app.state.llm_service.speech_available()
+    return SpeechCapabilityResponse(stt=available[SPEECH_TO_TEXT], tts=available[TEXT_TO_SPEECH])
 
 
 @router.get("/{interview_id}", response_model=MockInterviewResponse)
@@ -258,19 +316,96 @@ def get_mock_interview(
     return MockInterviewResponse(mock_interview=_detail(db, interview))
 
 
+_SENTENCE_END = re.compile(r"[。！？!?；;\n]")
+MAX_SENTENCE_CHARS = 120
+
+
+def split_sentences(buffer: str) -> tuple[list[str], str]:
+    """Cut complete sentences off the front of ``buffer`` for synthesis."""
+    sentences: list[str] = []
+    while True:
+        match = _SENTENCE_END.search(buffer)
+        if match is None:
+            if len(buffer) >= MAX_SENTENCE_CHARS:
+                sentences.append(buffer[:MAX_SENTENCE_CHARS])
+                buffer = buffer[MAX_SENTENCE_CHARS:]
+                continue
+            return [item for item in sentences if item.strip()], buffer
+        sentences.append(buffer[: match.end()])
+        buffer = buffer[match.end():]
+
+
+class _Speaker:
+    """Synthesises sentences concurrently and yields them in order."""
+
+    def __init__(self, llm, user_id: int) -> None:
+        self._llm = llm
+        self._user_id = user_id
+        self._tasks: list[tuple[int, str, asyncio.Task[bytes]]] = []
+
+    def say(self, text: str) -> None:
+        seq = len(self._tasks)
+        task = asyncio.create_task(self._llm.synthesize(self._user_id, text.strip(), source="mock_interview"))
+        self._tasks.append((seq, text.strip(), task))
+
+    async def ready(self, *, wait: bool) -> AsyncIterator[bytes]:
+        while self._tasks and (wait or self._tasks[0][2].done()):
+            seq, text, task = self._tasks.pop(0)
+            try:
+                audio = await task
+            except (LLMError, SpeechProviderError):
+                # Speech is best effort: the subtitle still carries the turn.
+                yield _sse("interviewer.audio_failed", {"seq": seq, "text": text})
+                continue
+            yield _sse("interviewer.audio", {
+                "seq": seq, "text": text, "format": "mp3",
+                "data": base64.b64encode(audio).decode("ascii"),
+            })
+
+    def cancel(self) -> None:
+        for _, _, task in self._tasks:
+            task.cancel()
+
+
 async def _turn_stream(
-    runner: MockInterviewRunner, interview_id: int, prefix: list[bytes]
+    runner: MockInterviewRunner,
+    interview_id: int,
+    prefix: list[bytes],
+    *,
+    speaker: _Speaker | None = None,
 ) -> AsyncIterator[bytes]:
     for item in prefix:
         yield item
-    async for event in runner.stream_turn(interview_id):
-        kind = event.pop("event")
-        if kind == "delta":
-            yield _sse("interviewer.delta", event)
-        elif kind == "turn":
-            yield _sse("interviewer.turn", event)
-        else:
-            yield _sse("interviewer.failed", event)
+    pending = ""
+    try:
+        async for event in runner.stream_turn(interview_id):
+            kind = event.pop("event")
+            if kind == "delta":
+                yield _sse("interviewer.delta", event)
+                if speaker is not None:
+                    sentences, pending = split_sentences(pending + str(event.get("content") or ""))
+                    for sentence in sentences:
+                        speaker.say(sentence)
+                    async for audio in speaker.ready(wait=False):
+                        yield audio
+            elif kind == "turn":
+                if speaker is not None:
+                    if pending.strip():
+                        speaker.say(pending)
+                    pending = ""
+                    async for audio in speaker.ready(wait=True):
+                        yield audio
+                yield _sse("interviewer.turn", event)
+            else:
+                yield _sse("interviewer.failed", event)
+    finally:
+        if speaker is not None:
+            speaker.cancel()
+
+
+async def _speaker_for(request: Request, interview_id: int, user_id: int) -> _Speaker | None:
+    mode = await _in_session(request, lambda db: db.get(MockInterview, interview_id).answer_mode)
+    return _Speaker(request.app.state.llm_service, user_id) if mode == "voice" else None
 
 
 def _streaming(body: AsyncIterator[bytes]) -> StreamingResponse:
@@ -289,7 +424,49 @@ async def _record_answer(
     question_id: str,
     answer: str | None,
     idempotency_key: str,
+    speech_session_id: str | None = None,
 ) -> StreamingResponse:
+    sessions = get_speech_sessions(request)
+    consumed: tuple[SpeechResult, bytes | None] | None = None
+    voice: VoiceAnswer | None = None
+    if speech_session_id is not None:
+        consumed = sessions.consume(speech_session_id)
+        if consumed is None:
+            raise ApiError(409, "MOCK_INTERVIEW_SPEECH_SESSION_INVALID")
+        result, audio = consumed
+
+        def check(db: Session) -> MockInterview:
+            interview = service.require_owned(db, user.id, interview_id)
+            if (
+                result.user_id != user.id or result.interview_id != interview.id
+                or result.question_id != int(question_id)
+            ):
+                raise MockInterviewError(409, "MOCK_INTERVIEW_SPEECH_SESSION_INVALID")
+            db.expunge(interview)
+            return interview
+
+        try:
+            owned = await _in_session(request, check)
+        except ApiError:
+            sessions.restore(result, audio)
+            raise
+        if not result.text:
+            sessions.restore(result, audio)
+            raise ApiError(422, "MOCK_INTERVIEW_SPEECH_EMPTY")
+        object_name = None
+        if result.purpose == "voice_answer" and audio:
+            object_name = service.recording_object_name(owned, result.question_id)
+            await asyncio.to_thread(_store_recording, request.app.state.storage, object_name, audio)
+        voice = VoiceAnswer(
+            source="voice" if result.purpose == "voice_answer" else "voice_input",
+            transcript=result.text,
+            words=result.words,
+            duration_ms=result.duration_ms,
+            recording_object_name=object_name,
+        )
+        if voice.source == "voice":
+            answer = result.text
+
     def record(db: Session) -> tuple[int, bool, int]:
         interview, needs_turn = service.submit_answer(
             db,
@@ -298,10 +475,18 @@ async def _record_answer(
             question_id=int(question_id),
             text=answer,
             idempotency_key=idempotency_key,
+            voice=voice,
         )
         return interview.id, needs_turn, interview.lock_version
 
-    internal_id, needs_turn, lock_version = await _in_session(request, record)
+    try:
+        internal_id, needs_turn, lock_version = await _in_session(request, record)
+    except ApiError:
+        if consumed is not None:
+            if voice is not None and voice.recording_object_name:
+                await asyncio.to_thread(request.app.state.storage.delete, voice.recording_object_name)
+            sessions.restore(*consumed)
+        raise
     accepted = _sse(
         "answer.accepted",
         {"question_id": question_id, "skipped": answer is None, "lock_version": lock_version},
@@ -311,7 +496,24 @@ async def _record_answer(
             yield accepted
 
         return _streaming(replay())
-    return _streaming(_turn_stream(runner, internal_id, [accepted]))
+    speaker = await _speaker_for(request, internal_id, user.id)
+    return _streaming(_turn_stream(runner, internal_id, [accepted], speaker=speaker))
+
+
+def _wav(pcm: bytes) -> bytes:
+    output = io.BytesIO()
+    with wave.open(output, "wb") as file:
+        file.setnchannels(1)
+        file.setsampwidth(2)
+        file.setframerate(SAMPLE_RATE)
+        file.writeframes(pcm)
+    return output.getvalue()
+
+
+def _store_recording(storage, object_name: str, pcm: bytes) -> None:
+    storage.upload_stream(
+        object_name, io.BytesIO(_wav(pcm)), "audio/wav", max_bytes=len(pcm) + 1024
+    )
 
 
 @router.post("/{interview_id}/answers")
@@ -324,7 +526,8 @@ async def answer_mock_interview(
     runner: MockInterviewRunner = Depends(get_mock_interview_runner),
 ) -> StreamingResponse:
     return await _record_answer(
-        request, user, runner, interview_id, payload.question_id, payload.answer, idempotency_key
+        request, user, runner, interview_id, payload.question_id, payload.answer, idempotency_key,
+        payload.speech_session_id,
     )
 
 
@@ -356,7 +559,8 @@ async def retry_mock_interview_reply(
         return interview.id
 
     internal_id = await _in_session(request, check)
-    return _streaming(_turn_stream(runner, internal_id, []))
+    speaker = await _speaker_for(request, internal_id, user.id)
+    return _streaming(_turn_stream(runner, internal_id, [], speaker=speaker))
 
 
 @router.post("/{interview_id}/finish", response_model=MockInterviewResponse)
@@ -429,12 +633,18 @@ async def repeat_mock_interview(
     except LLMError as error:
         _raise(error)
 
+    source_mode = await _in_session(
+        request, lambda db: service.require_owned(db, user.id, interview_id).answer_mode
+    )
+    snapshot = await _ensure_voice_available(request) if source_mode == "voice" else None
+
     def run(db: Session) -> tuple[int, str, MockInterviewDetail]:
         source = service.require_owned(db, user.id, interview_id)
         if source.resume_id is None:
             raise MockInterviewError(422, "MOCK_INTERVIEW_RESUME_REQUIRED")
         interview = service.start(
-            db, user.id, service.repeat_request(source), repeat_of_id=source.id
+            db, user.id, service.repeat_request(source), repeat_of_id=source.id,
+            speech_snapshot=snapshot,
         )
         return interview.id, str(interview.task_token), _detail(db, interview)
 
@@ -452,9 +662,262 @@ def delete_mock_interview(
     user: User = Depends(get_current_user),
 ) -> DeleteResponse:
     try:
-        service.delete_interview(db, user.id, interview_id)
+        prefix = service.delete_interview(db, user.id, interview_id)
     except MockInterviewError as error:
         _raise(error)
+        raise AssertionError("unreachable")
+    _purge(request.app.state.storage, request.app.state.storage.list_names(prefix))
     bind_audit_target(request, interview_id)
     return DeleteResponse(deleted=True)
+
+
+def _purge(storage, names: list[str]) -> None:
+    for name in names:
+        try:
+            storage.delete(name)
+        except Exception:
+            # The row is already gone; an orphaned object is logged, not fatal.
+            logger.exception("mock interview recording delete failed")
+
+
+def _same_origin(websocket: WebSocket) -> bool:
+    """Cookies ride along on cross-site WebSocket handshakes; require our origin."""
+    origin = websocket.headers.get("origin")
+    host = websocket.headers.get("host")
+    if not origin or not host:
+        return False
+    parsed = urlsplit(origin)
+    return parsed.scheme in ("http", "https") and parsed.netloc == host
+
+
+@router.websocket("/{interview_id}/speech")
+async def speech_socket(
+    websocket: WebSocket,
+    interview_id: str,
+    question_id: str = Query(pattern=r"^[1-9][0-9]{0,19}$"),
+    purpose: str = Query(pattern=r"^(voice_input|voice_answer)$"),
+) -> None:
+    app = websocket.app
+    if not _same_origin(websocket):
+        await websocket.close(code=4403)
+        return
+
+    def authorize() -> tuple[int, int, list[str], str] | str:
+        with app.state.session_factory() as db:
+            user = _load_user(
+                websocket.cookies.get(app.state.settings.access_cookie_name), WEB_CHANNEL,
+                websocket, db, app.state.settings, app.state.redis,
+            )
+            if user is None:
+                return "UNAUTHORIZED"
+            try:
+                interview = service.require_owned(db, user.id, interview_id)
+            except MockInterviewError as error:
+                return error.code
+            expected = "voice" if purpose == "voice_answer" else "text"
+            if (
+                interview.status != "in_progress" or interview.answer_mode != expected
+                or interview.current_question_id != int(question_id)
+            ):
+                return "MOCK_INTERVIEW_STATE_INVALID"
+            return user.id, interview.id, list(interview.hotwords_json or []), interview.language
+
+    auth = await asyncio.to_thread(authorize)
+    if isinstance(auth, str):
+        await websocket.close(code=4401 if auth == "UNAUTHORIZED" else 4409, reason=auth)
+        return
+    user_id, internal_id, hotwords, language = auth
+    await websocket.accept()
+
+    async def frames() -> AsyncIterator[bytes | None]:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                raise ConnectionError
+            if message.get("bytes"):
+                yield message["bytes"]
+            elif message.get("text"):
+                try:
+                    command = json.loads(message["text"])
+                except ValueError:
+                    continue
+                if isinstance(command, dict) and command.get("type") == "stop":
+                    yield None
+                    return
+
+    async def emit(event: dict[str, object]) -> None:
+        try:
+            await websocket.send_json(event)
+        except (WebSocketDisconnect, RuntimeError):
+            pass
+
+    try:
+        result, audio = await run_recognition(
+            app.state.llm_service, user_id=user_id, interview_id=internal_id,
+            question_id=int(question_id), purpose=purpose, hotwords=hotwords,
+            language=language, frames=frames(), emit=emit,
+        )
+    except LLMError as error:
+        code = "MOCK_INTERVIEW_SPEECH_UNAVAILABLE" if error.code == "LLM_MODEL_NOT_CONFIGURED" else error.code
+        await emit({"type": "error", "code": code})
+        await _close(websocket)
+        return
+    except SpeechProviderError as error:
+        await emit({"type": "error", "code": error.code})
+        await _close(websocket)
+        return
+    # Voice input never keeps the recording; only the duration is recorded.
+    get_speech_sessions(websocket).save(result, audio if purpose == "voice_answer" else None)
+    await emit({
+        "type": "final", "session_id": result.session_id, "text": result.text,
+        "duration_ms": result.duration_ms, "words": result.words, "partial": result.partial,
+    })
+    await _close(websocket)
+
+
+async def _close(websocket: WebSocket) -> None:
+    try:
+        await websocket.close()
+    except RuntimeError:
+        pass
+
+
+@router.post("/{interview_id}/transcripts:correct", response_model=TranscriptCorrectionResponse)
+async def correct_transcripts(
+    interview_id: str, request: Request, user: User = Depends(get_current_user)
+) -> TranscriptCorrectionResponse:
+    llm = request.app.state.llm_service
+    try:
+        await llm.ensure_configured(TRANSCRIPT_CORRECTION)
+    except LLMError as error:
+        _raise(error)
+    internal_id = await _in_session(request, lambda db: transcripts.claim_correction(db, user.id, interview_id).id)
+    owner, glossary, context, items = await _in_session(
+        request, lambda db: transcripts.correction_inputs(db, internal_id)
+    )
+    try:
+        results = await transcripts.correct_answers(llm, owner, glossary, context, items)
+    except LLMError as error:
+        await _in_session(request, lambda db: transcripts.release_correction(db, internal_id))
+        _raise(error)
+    except BaseException:
+        await asyncio.shield(_in_session(request, lambda db: transcripts.release_correction(db, internal_id)))
+        raise
+
+    def store(db: Session):
+        public = transcripts.store_corrections(db, internal_id, results)
+        return public, _detail(db, db.get(MockInterview, internal_id))
+
+    public, detail = await _in_session(request, store)
+    bind_audit_target(request, detail.id)
+    return TranscriptCorrectionResponse(items=public, mock_interview=detail)
+
+
+@router.put("/{interview_id}/questions/{question_id}/transcript", response_model=MockInterviewResponse)
+def edit_transcript(
+    interview_id: str,
+    question_id: str,
+    payload: TranscriptEditRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MockInterviewResponse:
+    try:
+        transcripts.edit_transcript(db, user.id, interview_id, _question_id(question_id), payload.text)
+        interview = service.require_owned(db, user.id, interview_id)
+    except MockInterviewError as error:
+        _raise(error)
+        raise AssertionError("unreachable")
+    bind_audit_target(request, interview_id)
+    return MockInterviewResponse(mock_interview=_detail(db, interview))
+
+
+@router.post("/{interview_id}/questions/{question_id}/re-evaluate", response_model=ReEvaluationResponse)
+async def re_evaluate_question(
+    interview_id: str, question_id: str, request: Request, user: User = Depends(get_current_user)
+) -> ReEvaluationResponse:
+    llm = request.app.state.llm_service
+    interview, root, questions = await _in_session(
+        request, lambda db: transcripts.reevaluation_context(db, user.id, interview_id, _question_id(question_id))
+    )
+    try:
+        value = await transcripts.judge_question(llm, interview, root, questions)
+    except LLMError as error:
+        _raise(error)
+
+    def store(db: Session):
+        result = transcripts.store_reevaluation(db, interview.id, root.id, questions, value)
+        return result, _detail(db, db.get(MockInterview, interview.id))
+
+    result, detail = await _in_session(request, store)
+    bind_audit_target(request, detail.id)
+    return ReEvaluationResponse(**result, mock_interview=detail)
+
+
+@router.get("/{interview_id}/questions/{question_id}/recording")
+def get_recording(
+    interview_id: str,
+    question_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        name = transcripts.recording_for(db, user.id, interview_id, _question_id(question_id))
+    except MockInterviewError as error:
+        _raise(error)
+        raise AssertionError("unreachable")
+    try:
+        data = _read_object(request.app.state.storage, name, MAX_RECORDING_BYTES)
+    except Exception as error:
+        raise ApiError(404, "MOCK_INTERVIEW_RECORDING_NOT_FOUND") from error
+    return Response(
+        data, media_type="audio/wav",
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+MAX_RECORDING_BYTES = 11 * 1024 * 1024
+
+
+def _read_object(storage, name: str, max_bytes: int) -> bytes:
+    response = storage.get(name)
+    if isinstance(response, bytes):
+        return response
+    chunks: list[bytes] = []
+    size = 0
+    try:
+        for chunk in response.stream(64 * 1024):
+            size += len(chunk)
+            if size > max_bytes:
+                raise ValueError("recording exceeds limit")
+            chunks.append(chunk)
+    finally:
+        response.close()
+        response.release_conn()
+    return b"".join(chunks)
+
+
+@router.delete("/{interview_id}/recordings", response_model=MockInterviewResponse)
+def delete_recordings(
+    interview_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MockInterviewResponse:
+    try:
+        names = transcripts.delete_recordings(db, user.id, interview_id)
+        interview = service.require_owned(db, user.id, interview_id)
+    except MockInterviewError as error:
+        _raise(error)
+        raise AssertionError("unreachable")
+    _purge(request.app.state.storage, names)
+    bind_audit_target(request, interview_id)
+    return MockInterviewResponse(mock_interview=_detail(db, interview))
+
+
+def _question_id(value: str) -> int:
+    if not re.fullmatch(r"[1-9][0-9]{0,19}", value):
+        raise ApiError(404, "MOCK_INTERVIEW_QUESTION_NOT_FOUND")
+    return int(value)
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-RUBRIC_VERSION = "v1"
+RUBRIC_VERSION = "v2"
 
 DIMENSIONS = (
     "professional_depth",

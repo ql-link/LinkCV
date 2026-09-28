@@ -318,7 +318,8 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert report["total_score"] == pytest.approx(question_avg * 0.7 + dimension * 0.3, abs=0.05)
         assert report_detail["total_score"] == pytest.approx(report["total_score"])
         assert report["fact_check"]["status"] == "not_requested"
-        assert report["rubric_version"] == "v1"
+        assert report["rubric_version"] == "v2"
+        assert report["answer_mode"] == "text" and report["voice_metrics"] is None
     with app.state.session_factory() as db:
         logs = db.scalars(select(LLMCallLog)).all()
         assert logs and {log.use_case for log in logs} == {MOCK_INTERVIEW}

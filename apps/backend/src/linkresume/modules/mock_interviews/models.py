@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from linkresume.core.database import Base
 from linkresume.modules.interviews.models import (
     unsigned_bigint_type,
+    unsigned_int_type,
     unsigned_smallint_type,
     unsigned_tinyint_type,
 )
@@ -60,6 +61,9 @@ class MockInterview(Base):
             "question_count BETWEEN 3 AND 10", name="ck_mock_interviews_question_count"
         ),
         CheckConstraint("language IN ('zh', 'en')", name="ck_mock_interviews_language"),
+        CheckConstraint(
+            "answer_mode IN ('text', 'voice')", name="ck_mock_interviews_answer_mode"
+        ),
         CheckConstraint(
             "status IN ('preparing', 'preparation_failed', 'in_progress', 'evaluating', "
             "'evaluation_failed', 'completed', 'abandoned')",
@@ -140,6 +144,22 @@ class MockInterview(Base):
         Boolean(), nullable=False, default=True, server_default="1"
     )
     language: Mapped[str] = mapped_column(String(8), nullable=False)
+    answer_mode: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="text", server_default="text",
+        comment="作答方式：text/voice",
+    )
+    speech_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="语音识别与合成线路快照"
+    )
+    hotwords_json: Mapped[list[str] | None] = mapped_column(
+        JSON(), nullable=True, comment="本场语音识别热词表"
+    )
+    transcript_corrected_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True, comment="整场 AI 修正识别稿的执行时间"
+    )
+    recordings_deleted_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True, comment="本场录音被删除的时间"
+    )
     material_refs_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON(), nullable=True, comment="参考资料 ID 与发起时正文版本"
     )
@@ -208,6 +228,15 @@ class MockInterviewQuestion(Base):
             "(answer_status = 'skipped' AND answer_text IS NULL AND answered_at IS NOT NULL)",
             name="ck_mock_interview_questions_answer",
         ),
+        CheckConstraint(
+            "answer_source IS NULL OR answer_source IN ('text', 'voice_input', 'voice')",
+            name="ck_mock_interview_questions_answer_source",
+        ),
+        CheckConstraint(
+            "transcript_state IS NULL OR transcript_state IN "
+            "('original', 'corrected', 'correction_rejected', 'edited')",
+            name="ck_mock_interview_questions_transcript_state",
+        ),
         Index("idx_mock_interview_questions_parent", "parent_id"),
         {"comment": "模拟面试的提问与作答", "sqlite_autoincrement": True},
     )
@@ -250,6 +279,39 @@ class MockInterviewQuestion(Base):
         ascii_varchar(64), nullable=True
     )
     answered_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
+    answer_source: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, comment="作答来源：text/voice_input/voice"
+    )
+    recording_object_name: Mapped[str | None] = mapped_column(
+        String(512), nullable=True, comment="录音对象 key"
+    )
+    audio_duration_ms: Mapped[int | None] = mapped_column(
+        unsigned_int_type(), nullable=True, comment="录音时长（毫秒）"
+    )
+    raw_transcript: Mapped[str | None] = mapped_column(Text(), nullable=True, comment="原始识别稿")
+    words_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(), nullable=True, comment="带时间戳的分词结果"
+    )
+    corrected_transcript: Mapped[str | None] = mapped_column(
+        Text(), nullable=True, comment="AI 修正稿"
+    )
+    correction_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(), nullable=True, comment="AI 修正记录"
+    )
+    transcript_state: Mapped[str | None] = mapped_column(
+        String(24), nullable=True, comment="识别稿状态"
+    )
+    manual_edit_count: Mapped[int] = mapped_column(
+        unsigned_tinyint_type(), nullable=False, default=0, server_default="0",
+        comment="手动修改次数",
+    )
+    re_evaluate_count: Mapped[int] = mapped_column(
+        unsigned_tinyint_type(), nullable=False, default=0, server_default="0",
+        comment="单题重新评估次数",
+    )
+    evaluation_history_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(), nullable=True, comment="历史评估结果与所用文本版本"
+    )
     evaluation_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSON(), nullable=True, comment="主问题的逐题评价"
     )

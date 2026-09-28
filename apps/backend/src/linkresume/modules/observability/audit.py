@@ -134,6 +134,18 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("DELETE", "/api/mock-interviews/{interview_id}"): AuditAction(
         "mock_interview.delete", "mock_interview", "interview_id"
     ),
+    ("POST", "/api/mock-interviews/{interview_id}/transcripts:correct"): AuditAction(
+        "mock_interview.transcript_correct", "mock_interview", "interview_id"
+    ),
+    ("PUT", "/api/mock-interviews/{interview_id}/questions/{question_id}/transcript"): AuditAction(
+        "mock_interview.transcript_edit", "mock_interview", "interview_id"
+    ),
+    ("POST", "/api/mock-interviews/{interview_id}/questions/{question_id}/re-evaluate"): AuditAction(
+        "mock_interview.re_evaluate", "mock_interview", "interview_id"
+    ),
+    ("DELETE", "/api/mock-interviews/{interview_id}/recordings"): AuditAction(
+        "mock_interview.recordings_delete", "mock_interview", "interview_id"
+    ),
     ("PATCH", "/api/auth/admin/users/{user_id}/status"): AuditAction(
         "admin.user_status_change", "user", "user_id"
     ),

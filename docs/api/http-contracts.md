@@ -348,13 +348,26 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 | `POST` | `/api/mock-interviews/:id/abandon` | 放弃 `preparing`、`preparation_failed` 或 `in_progress` 的场次 |
 | `POST` | `/api/mock-interviews/:id/retry` | 准备失败或评估失败后重试 |
 | `POST` | `/api/mock-interviews/:id/repeat` | 按原来源与配置重新读取来源并发起新场次，返回 `201` |
-| `DELETE` | `/api/mock-interviews/:id` | 删除非进行中场次及其提问，返回 `{deleted: true}` |
+| `DELETE` | `/api/mock-interviews/:id` | 删除非进行中场次及其提问和录音，返回 `{deleted: true}` |
+| `GET` | `/api/mock-interviews/speech-capability` | 返回 `{stt, tts}`，表示语音识别与语音合成场景是否有有效线路 |
+| `WS` | `/api/mock-interviews/:id/speech?question_id=&purpose=voice_input\|voice_answer` | 实时语音识别，见下文 |
+| `POST` | `/api/mock-interviews/:id/transcripts:correct` | 已完成的语音面试整场 AI 修正识别稿，每场一次 |
+| `PUT` | `/api/mock-interviews/:id/questions/:qid/transcript` | 对照录音手动修改一条语音回答的最终稿 `{text}` |
+| `POST` | `/api/mock-interviews/:id/questions/:qid/re-evaluate` | 识别稿变化后重新评估一道主问题，最多 3 次 |
+| `GET` | `/api/mock-interviews/:id/questions/:qid/recording` | 本人读取一条回答的录音（`audio/wav`，16 kHz 单声道） |
+| `DELETE` | `/api/mock-interviews/:id/recordings` | 删除本场全部录音，保留文字 |
 
-发起请求必须提供 `job_application_id` 或 `resume_id`；求职记录来源不能再带 `job_description_id` 或 `job_description_text`，后两者也不能同时提交，违反时返回 `422`。可选字段为 `target_role`（≤200）、`interview_type=technical|project_deep_dive|hr|comprehensive`、`difficulty=junior|intermediate|senior`（默认 `intermediate`）、`question_count` 3–10（默认 5）、`follow_up_enabled`（默认 `true`）、`language=zh|en`（默认 `zh`）和最多 10 个 `material_ids`。
+发起请求必须提供 `job_application_id` 或 `resume_id`；求职记录来源不能再带 `job_description_id` 或 `job_description_text`，后两者也不能同时提交，违反时返回 `422`。可选字段为 `target_role`（≤200）、`interview_type=technical|project_deep_dive|hr|comprehensive`、`difficulty=junior|intermediate|senior`（默认 `intermediate`）、`question_count` 3–10（默认 5）、`follow_up_enabled`（默认 `true`）、`language=zh|en`（默认 `zh`）、`answer_mode=text|voice`（默认 `text`）和最多 10 个 `material_ids`。`answer_mode=voice` 要求 `speech_to_text` 与 `text_to_speech` 都有有效线路，否则返回 `503 MOCK_INTERVIEW_SPEECH_UNAVAILABLE` 且不创建记录；再练一次沿用原场作答方式。
 
 作答和跳过请求体为 `{question_id, answer}` 与 `{question_id}`，必须携带 8–64 位 `[A-Za-z0-9_.:-]` 的 `Idempotency-Key`；回答去除首尾空白后为 1–8000 字符。同一题目以相同幂等键重放只返回 `answer.accepted`，不产生新回答或新回合。SSE 事件依次为 `answer.accepted {question_id, skipped, lock_version}`、零到多个 `interviewer.delta {content}`，最后是 `interviewer.turn {status, action, question, closing_message, lock_version}` 或 `interviewer.failed {error}`。`action=finish` 时 `question` 为空、`closing_message` 为结束语，场次进入 `evaluating`。每个回合流都以 `interviewer.turn` 或 `interviewer.failed` 之一结束；非模型错误的失败码为 `MOCK_INTERVIEW_TURN_FAILED`。回合失败时回答已保存，详情的 `needs_reply=true`，调用方用 `reply:retry` 重新生成；无需重新生成时该接口返回 `409 MOCK_INTERVIEW_STATE_INVALID`。
 
-详情返回来源与配置摘要、`materials`、`current_question_id`、`answered_main_questions`、`needs_reply`、有序 `questions` 和 `report`；`report` 只在 `completed` 时返回，包含 `rubric_version`、`total_score`、`question_average`、`dimension_score`、`dimensions`、逐题 `questions`、`fact_check`、`resume_risks`、`improvements`、`low_confidence` 与 `closing_message`。`fact_check.status` 为 `not_requested|completed|failed`。
+**语音识别通道**：WebSocket 使用登录 Cookie 鉴权，并要求 `Origin` 与 `Host` 同源，否则以关闭码 `4403` 拒绝；场次不属于本人、不在 `in_progress`、`question_id` 不是当前题或 `purpose` 与作答方式不符（文字面试只能 `voice_input`，语音面试只能 `voice_answer`）时以 `4409` 关闭。客户端发送 16 kHz 单声道 PCM16 二进制帧，发送 `{"type":"stop"}` 结束；单次最长 5 分钟、10 MB，达到上限自动结束。服务端推送 `{"type":"partial","text"}`，结束时推送 `{"type":"final","session_id","text","duration_ms","words":[{text,start_ms,end_ms}],"partial"}` 后关闭；服务商失败且没有识别出文字时推送 `{"type":"error","code":"MOCK_INTERVIEW_SPEECH_FAILED"}`，已识别出文字时仍返回 `final` 且 `partial=true`。`session_id` 10 分钟内有效、只能用于本人本场当前题的一次提交。
+
+**语音作答**：作答请求可带 `speech_session_id`（32 位小写十六进制），此时 `answer` 可省略。语音面试只接受 `speech_session_id`（或跳过），回答以服务端识别稿为准并保存录音，提交纯文字返回 `422 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`；文字面试带 `speech_session_id` 时仍以 `answer` 为准，只记录来源 `voice_input` 与时长，不保存录音。识别会话过期、已使用或不属于该题返回 `409 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`，识别稿为空返回 `422 MOCK_INTERVIEW_SPEECH_EMPTY`。语音面试的回合 SSE 在 `interviewer.delta` 之间按句追加 `interviewer.audio {seq, text, format:"mp3", data}`（base64），合成失败时改发 `interviewer.audio_failed {seq, text}`，面试不中断；所有音频事件都在 `interviewer.turn` 之前发出。
+
+**识别稿修正与重新评估**：`transcripts:correct` 只对 `completed` 的语音面试可用，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；已执行过返回 `409 MOCK_INTERVIEW_TRANSCRIPT_ALREADY_CORRECTED`；`transcript_correction` 未配置返回 `503 LLM_MODEL_NOT_CONFIGURED` 且不消耗本场次数。响应为 `{items:[{question_id, state, changes}], mock_interview}`，`state` 为 `corrected|correction_rejected|original`。手动修改相对原始识别稿的字符变化超过 15% 返回 `422 MOCK_INTERVIEW_TRANSCRIPT_CORRECTION_REJECTED`，录音已删除返回 `404 MOCK_INTERVIEW_RECORDING_NOT_FOUND`。重新评估要求该题（含追问）识别稿已被修正或修改，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；超过 3 次返回 `409 MOCK_INTERVIEW_RE_EVALUATE_LIMIT`；响应为 `{question_id, evaluation, re_evaluate_count, remaining, total_score, previous_total_score, mock_interview}`。
+
+详情返回来源与配置摘要、`materials`、`current_question_id`、`answered_main_questions`、`needs_reply`、有序 `questions` 和 `report`；`report` 只在 `completed` 时返回，包含 `rubric_version`、`answer_mode`、`voice_metrics`（语音面试的 `chars_per_minute`、`long_pauses`、`filler_ratio`、`answer_duration_ms`、`reference` 与 `tip`，文字面试为 `null`）、`re_evaluations`（如有）、`total_score`、`question_average`、`dimension_score`、`dimensions`、逐题 `questions`、`fact_check`、`resume_risks`、`improvements`、`low_confidence` 与 `closing_message`。`fact_check.status` 为 `not_requested|completed|failed`。详情另含 `answer_mode`、`transcript_corrected_at`、`recordings_deleted`；每条提问另含 `answer_source`、`audio_duration_ms`、`has_recording`、`raw_transcript`、`transcript_state`、`correction`、`re_evaluate_count` 与 `evaluation_history`。
 
 | 错误码 | 场景 |
 | --- | --- |
@@ -368,7 +381,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 | `400 MOCK_INTERVIEW_CURSOR_INVALID` | 列表游标无法解析 |
 | `503 LLM_MODEL_NOT_CONFIGURED` | `mock_interview` 场景没有有效线路；此时不创建记录 |
 
-后台失败写入场次的 `error_code`，包括上游 LLM 错误码、`LLM_RESPONSE_INVALID`、`MOCK_INTERVIEW_PLAN_INCOMPLETE` 和 `MOCK_INTERVIEW_TASK_INTERRUPTED`。发起、再练、提前结束和删除分别审计为 `mock_interview.create`、`mock_interview.create`、`mock_interview.finish` 与 `mock_interview.delete`，目标类型为 `mock_interview`。
+后台失败写入场次的 `error_code`，包括上游 LLM 错误码、`LLM_RESPONSE_INVALID`、`MOCK_INTERVIEW_PLAN_INCOMPLETE` 和 `MOCK_INTERVIEW_TASK_INTERRUPTED`。发起、再练、提前结束和删除分别审计为 `mock_interview.create`、`mock_interview.create`、`mock_interview.finish` 与 `mock_interview.delete`；AI 修正、手动修改、重新评估和删除录音分别审计为 `mock_interview.transcript_correct`、`mock_interview.transcript_edit`、`mock_interview.re_evaluate` 与 `mock_interview.recordings_delete`，目标类型均为 `mock_interview`。
 
 ## 对象资源
 

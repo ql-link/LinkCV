@@ -2,7 +2,7 @@
 
 ## 功能范围
 
-模拟面试让用户基于本人简历与目标岗位进行一场文字面试。系统先分析背景并制定考察计划，由 AI 面试官逐题提问并按回答追问，结束后生成可复算的结构化评估报告。一期只支持文字作答；不提供语音、每日次数额度、小程序入口，也不自动生成简历修改提案。
+模拟面试让用户基于本人简历与目标岗位进行一场面试。系统先分析背景并制定考察计划，由 AI 面试官逐题提问并按回答追问，结束后生成可复算的结构化评估报告。作答方式分文字面试（输入框可用语音输入）和全程语音面试；不提供每日次数额度、小程序入口、端到端实时语音模型，也不自动生成简历修改提案。
 
 接口字段与错误码见 [HTTP 接口契约](../api/http-contracts.md#ai-模拟面试)，数据与迁移见 [FastAPI 后端](../internals/backend.md)。
 
@@ -16,6 +16,10 @@
 | 资料检索 | `application/mock_interviews/retrieval.py` | 所选资料的内存切片与关键词加中文二元组检索 |
 | 提示词与结构化输出 | `application/mock_interviews/prompts.py`、`outputs.py` | 各阶段提示词与模型输出 Schema |
 | 来源解除 | `application/mock_interviews/links.py` | 删除简历、岗位或求职记录时清空模拟面试的来源关联 |
+| 语音识别会话 | `application/mock_interviews/speech_session.py` | 实时识别转发、录音上限、一次性识别会话 |
+| 语音表现 | `application/mock_interviews/voice_metrics.py` | 由分词时间戳计算语速、长停顿、口头禅比例与作答时长 |
+| 识别稿修正与重评 | `application/mock_interviews/transcripts.py` | 整场 AI 修正、手动修改、单题重新评估、录音读取与删除 |
+| 语音服务商 | `modules/speech/` | STT/TTS 适配层；首期实现阿里云百炼 |
 
 ## 发起与来源
 
@@ -74,13 +78,32 @@ preparation_failed  abandoned   evaluation_failed
 
 检索当前不建持久索引：评估时读取所选资料当前正文（合计约 1 MB 上限，超出截断并标记 `truncated`），按 Markdown 标题切成约 800 字片段，以关键词加中文字符二元组计算相关度；查询无命中时使用各资料的开头片段。检索由 `MaterialRetriever` 封装，替换为向量索引时调用方不变。
 
+## 语音作答
+
+作答方式 `answer_mode` 在发起时确定，面试中不能切换，再练一次沿用原场。语音面试要求语音识别与语音合成两个场景都已绑定有效线路；两者由管理端在「模型配置」中与其他场景一样绑定和探测，当前只支持阿里云百炼（实时识别 `aliyun_asr_realtime`、CosyVoice 合成 `aliyun_tts_realtime`），北京与新加坡地域可用。
+
+- **识别通道**：浏览器以 WebSocket 推送 16 kHz PCM16 音频，后端转发给服务商并推送中间与最终结果；单次最长 5 分钟、10 MB。结束时生成 10 分钟有效的一次性识别会话，提交回答时后端按会话取出识别稿，不信任前端文本。识别中断时已识别的文字保留并标记 `partial`，也可重录；重录只是新的识别会话，不计入追问次数。
+- **语音输入**（文字面试）：识别文字交给用户编辑后按普通文字提交，只记录来源与时长，不保存录音，也没有 AI 修正。
+- **语音面试**：回答即服务端识别稿，面试中不能修改；每条回答的录音以 WAV 保存到对象存储，并另存原始识别稿与分词时间戳。面试官回复在同一 SSE 流中按句（句号、问号、分号、换行或 120 字）并发合成、按序推送；合成失败只推送 `audio_failed`，面试照常进行，合成语音不保存。
+- **热词表**：准备阶段从背景分析的技术名词、考察点、公司职位和资料文件名整理最多 200 条，作为 AI 修正的术语表。DashScope 的热词需要预先创建词表 ID，当前未传给识别服务。
+- **评估**：语音面试的评估提示注明回答为转写文本，同音字与写法差异不计为事实错误；报告的 `voice_metrics` 由服务端计算（长停顿为词间隔超过 3 秒），作为沟通表现的参考交给维度评估，本身不计分。评分规则版本为 `v2`。
+
+## 识别稿修正与重新评估
+
+以下操作只对 `completed` 的语音面试可用，都由用户手动触发：
+
+- **AI 修正识别稿**：整场只能执行一次，以行上的 `transcript_corrected_at` 占位防止并发重复；`transcript_correction` 场景未配置或调用无法开始时释放占位。每条回答独立调用模型，只允许修复错字、同音字、术语、数字与标点；修正稿与原稿的字符变化超过 15% 或模型失败时该条保持原稿并标记 `correction_rejected`，其余照常写入。通过的修正直接成为最终稿，不需要逐处确认；修改列表保存在 `correction_json`。修正期间用户已手动修改的回答不会被覆盖。
+- **手动修改**：录音存在时可用；以原始识别稿为基准计算变化比例，超过 15% 拒绝。
+- **单题重新评估**：该主问题（含追问）识别稿被修正或修改后可用，每道主问题最多 3 次。只重新执行该题的逐题评分并按公式复算总分，维度评分与整体总结不重新生成；旧评估保存在 `evaluation_history_json`，报告 `re_evaluations` 记录每次前后分数。
+- **录音**：本人通过后端读取回放；删除本场录音后保留全部文字，不再提供回放与手动修改。
+
 ## 删除与数据边界
 
-- 删除模拟面试同时删除其全部提问与作答；进行中的场次不能删除。
+- 删除模拟面试同时删除其全部提问、作答与对象存储中的录音；进行中的场次不能删除。
 - 删除简历、岗位或求职记录只清空模拟面试的对应关联字段，保留快照与报告；被「再练一次」引用的来源场次删除后，新场次的 `repeat_of_id` 置空。来源求职记录或岗位已删除时，再练一次改为携带原场次保存的 JD 快照，不丢失岗位背景。
 - 报告只对 `completed` 场次返回。
 - 简历、JD、资料正文与回答只作为引用数据传给模型，提示词明确要求忽略其中改变规则或评分的内容；LLM 调用日志只记录 `mock_interview` 场景与 `source=mock_interview` 的安全计量，不记录正文。
 
 ## 修改联动与验证
 
-新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py` 与 `tests/integration/api/test_mock_interviews.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。
+新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py`、`test_mock_interview_voice_rules.py`、`tests/unit/modules/speech/test_aliyun.py`、`tests/integration/api/test_mock_interviews.py` 与 `test_mock_interview_voice.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。

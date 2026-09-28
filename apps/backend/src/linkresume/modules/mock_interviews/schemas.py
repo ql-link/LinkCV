@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 InterviewType = Literal["technical", "project_deep_dive", "hr", "comprehensive"]
 Difficulty = Literal["junior", "intermediate", "senior"]
 Language = Literal["zh", "en"]
+AnswerMode = Literal["text", "voice"]
 MockInterviewStatus = Literal[
     "preparing",
     "preparation_failed",
@@ -36,6 +37,7 @@ class MockInterviewCreateRequest(StrictModel):
     question_count: int = Field(default=5, ge=3, le=10)
     follow_up_enabled: bool = True
     language: Language = "zh"
+    answer_mode: AnswerMode = "text"
     material_ids: list[str] = Field(default_factory=list, max_length=10)
 
     @field_validator("material_ids")
@@ -62,13 +64,32 @@ class MockInterviewCreateRequest(StrictModel):
 
 class MockInterviewAnswerRequest(StrictModel):
     question_id: str = Field(pattern=_DECIMAL_ID)
-    answer: str = Field(min_length=1, max_length=8000)
+    # Ignored for voice interviews, whose answer is the server recognition.
+    answer: str | None = Field(default=None, max_length=8000)
+    speech_session_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
 
     @field_validator("answer")
     @classmethod
-    def validate_answer(cls, value: str) -> str:
-        if not value.strip():
+    def validate_answer(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
             raise ValueError("answer must not be blank")
+        return value.strip() if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "MockInterviewAnswerRequest":
+        if self.answer is None and self.speech_session_id is None:
+            raise ValueError("answer or speech_session_id is required")
+        return self
+
+
+class TranscriptEditRequest(StrictModel):
+    text: str = Field(min_length=1, max_length=8000)
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text must not be blank")
         return value.strip()
 
 
@@ -88,6 +109,14 @@ class MockInterviewQuestionRecord(BaseModel):
     answer_text: str | None
     answered_at: datetime | None
     evaluation: dict[str, Any] | None = None
+    answer_source: Literal["text", "voice_input", "voice"] | None = None
+    audio_duration_ms: int | None = None
+    has_recording: bool = False
+    raw_transcript: str | None = None
+    transcript_state: Literal["original", "corrected", "correction_rejected", "edited"] | None = None
+    correction: dict[str, Any] | None = None
+    re_evaluate_count: int = 0
+    evaluation_history: list[dict[str, Any]] | None = None
 
 
 class MockInterviewSummary(BaseModel):
@@ -108,6 +137,7 @@ class MockInterviewSummary(BaseModel):
     question_count: int
     follow_up_enabled: bool
     language: Language
+    answer_mode: AnswerMode = "text"
     total_score: float | None
     low_confidence: bool
     error_code: str | None
@@ -130,6 +160,8 @@ class MockInterviewDetail(MockInterviewSummary):
     needs_reply: bool
     questions: list[MockInterviewQuestionRecord]
     report: dict[str, Any] | None
+    transcript_corrected_at: datetime | None = None
+    recordings_deleted: bool = False
 
 
 class MockInterviewResponse(BaseModel):
@@ -143,3 +175,29 @@ class MockInterviewListResponse(BaseModel):
 
 class DeleteResponse(BaseModel):
     deleted: bool
+
+
+class SpeechCapabilityResponse(BaseModel):
+    stt: bool
+    tts: bool
+
+
+class TranscriptCorrectionItem(BaseModel):
+    question_id: str
+    state: str | None
+    changes: list[dict[str, Any]]
+
+
+class TranscriptCorrectionResponse(BaseModel):
+    items: list[TranscriptCorrectionItem]
+    mock_interview: MockInterviewDetail
+
+
+class ReEvaluationResponse(BaseModel):
+    question_id: str
+    evaluation: dict[str, Any]
+    re_evaluate_count: int
+    remaining: int
+    total_score: float
+    previous_total_score: float | None
+    mock_interview: MockInterviewDetail
