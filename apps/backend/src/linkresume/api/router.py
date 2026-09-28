@@ -1,6 +1,9 @@
 from fastapi import APIRouter
 
 from linkresume.api.routes.health import router as health_router
+from linkresume.modules.admin_insights.routes import router as admin_insights_router
+from linkresume.modules.announcements.admin_routes import router as announcement_admin_router
+from linkresume.modules.announcements.routes import router as announcement_router
 from linkresume.modules.datasets.routes import router as dataset_router
 from linkresume.modules.agent.routes import router as agent_router
 from linkresume.modules.agent.admin_routes import router as agent_admin_router
@@ -38,6 +41,9 @@ api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(agent_router)
 api_router.include_router(agent_admin_router)
+api_router.include_router(admin_insights_router)
+api_router.include_router(announcement_router)
+api_router.include_router(announcement_admin_router)
 api_router.include_router(admin_identity_router)
 api_router.include_router(dataset_router)
 api_router.include_router(identity_router)
