@@ -1,96 +1,98 @@
+"""Provider-owned model catalogs. A missing optional catalog never disables routes."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
-import litellm
+import httpx
 
-CHAT_CAPABILITY = "chat"
-RESUME_STRUCTURING_CAPABILITY = "resume_structuring"
-PI_AGENT_CAPABILITY = "pi_agent"
-JOB_IMAGE_STRUCTURING_CAPABILITY = "job_image_structuring"
-MODEL_CAPABILITIES = (
-    CHAT_CAPABILITY,
-    RESUME_STRUCTURING_CAPABILITY,
-    PI_AGENT_CAPABILITY,
-    JOB_IMAGE_STRUCTURING_CAPABILITY,
-)
+CATALOG_URLS = {
+    "aihubmix": "https://aihubmix.com/api/v1/models",
+    "siliconflow": "https://api.siliconflow.cn/v1/models",
+}
 
 
 @dataclass(frozen=True)
-class ChatAdapterDefinition:
-    code: str
-    label: str
-    requires_api_key: bool = True
+class CatalogModel:
+    model_id: str
+    name: str
+    developer: str | None
+    metadata: dict[str, Any]
+    pricing: dict[str, Any] | None
 
 
-CHAT_ADAPTERS: tuple[ChatAdapterDefinition, ...] = (
-    ChatAdapterDefinition("openai", "OpenAI"),
-    ChatAdapterDefinition("anthropic", "Anthropic（Claude）"),
-    ChatAdapterDefinition("deepseek", "DeepSeek"),
-    ChatAdapterDefinition("dashscope", "阿里云百炼（千问）"),
-    ChatAdapterDefinition("openrouter", "OpenRouter"),
-    ChatAdapterDefinition("gemini", "Google Gemini"),
-    ChatAdapterDefinition("xai", "xAI"),
-    ChatAdapterDefinition("groq", "Groq"),
-    ChatAdapterDefinition("mistral", "Mistral AI"),
-    ChatAdapterDefinition("cohere_chat", "Cohere"),
-    ChatAdapterDefinition("perplexity", "Perplexity"),
-)
-CHAT_ADAPTER_BY_CODE = {adapter.code: adapter for adapter in CHAT_ADAPTERS}
+@dataclass(frozen=True)
+class CatalogResult:
+    models: tuple[CatalogModel, ...] | None  # None means HTTP 304
+    etag: str | None
 
 
-def normalize_adapter(value: str) -> str:
-    normalized = value.strip()
-    if normalized not in CHAT_ADAPTER_BY_CODE:
-        raise ValueError("unsupported Chat adapter")
-    return normalized
+def _pricing(provider_code: str, item: dict[str, Any]) -> dict[str, Any] | None:
+    raw = item.get("pricing")
+    if provider_code != "aihubmix" or not isinstance(raw, dict):
+        return None
+    result: dict[str, Any] = {
+        "source": "aihubmix_catalog",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "currency": "USD",
+        "raw": raw,
+    }
+    # Tier, cache and promotion billing require more than plain token counts.
+    if (
+        isinstance(raw.get("input"), (int, float))
+        and isinstance(raw.get("output"), (int, float))
+        and not raw.get("tiers")
+        and not item.get("promotion")
+        and raw.get("cache_read") is None
+        and raw.get("cache_write") is None
+    ):
+        result["input_per_million"] = str(raw["input"])
+        result["output_per_million"] = str(raw["output"])
+    return result
 
 
-def normalize_capability(value: str) -> str:
-    normalized = value.strip()
-    if normalized not in MODEL_CAPABILITIES:
-        raise ValueError("unsupported model capability")
-    return normalized
-
-
-def normalize_model_call_name(adapter: str, value: str) -> str:
-    normalized_adapter = normalize_adapter(adapter)
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError("model must not be empty")
-    if normalized.startswith(f"{normalized_adapter}/"):
-        raise ValueError("model must not repeat the adapter prefix")
-    if len(f"{normalized_adapter}/{normalized}") > 128:
-        raise ValueError("assembled model identifier is too long")
-    return normalized
-
-
-def assemble_model_identifier(adapter: str, model_call_name: str) -> str:
-    normalized_adapter = normalize_adapter(adapter)
-    normalized_model = normalize_model_call_name(normalized_adapter, model_call_name)
-    return f"{normalized_adapter}/{normalized_model}"
-
-
-def adapter_requires_api_key(adapter: str) -> bool:
-    return CHAT_ADAPTER_BY_CODE[normalize_adapter(adapter)].requires_api_key
-
-
-def chat_model_suggestions(adapter: str) -> list[str]:
-    normalized_adapter = normalize_adapter(adapter)
-    prefix = f"{normalized_adapter}/"
-    suggestions: set[str] = set()
-    for model_key, details in litellm.model_cost.items():
-        if not isinstance(model_key, str) or not isinstance(details, dict):
-            continue
-        if details.get("litellm_provider") != normalized_adapter:
-            continue
-        if details.get("mode") != "chat":
-            continue
-        model_call_name = (
-            model_key[len(prefix) :] if model_key.startswith(prefix) else model_key
-        ).strip()
-        if not model_call_name or model_call_name.startswith(prefix):
-            continue
-        if len(f"{prefix}{model_call_name}") <= 128:
-            suggestions.add(model_call_name)
-    return sorted(suggestions)
+async def fetch_catalog(
+    provider_code: str,
+    api_key: str,
+    *,
+    etag: str | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> CatalogResult:
+    url = CATALOG_URLS.get(provider_code)
+    if url is None:
+        raise ValueError("provider catalog not supported")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if etag and provider_code == "aihubmix":
+        headers["If-None-Match"] = etag
+    async with httpx.AsyncClient(timeout=30, transport=transport) as client:
+        response = await client.get(url, headers=headers)
+    if response.status_code == 304:
+        return CatalogResult(models=None, etag=etag)
+    response.raise_for_status()
+    body = response.json()
+    items = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(items, list):
+        raise ValueError("invalid provider catalog")
+    models: list[CatalogModel] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError("invalid provider model")
+        model_id = item.get("model_id" if provider_code == "aihubmix" else "id")
+        if not isinstance(model_id, str) or not model_id or len(model_id) > 256:
+            raise ValueError("invalid provider model ID")
+        if model_id in seen:
+            raise ValueError("duplicate provider model ID")
+        seen.add(model_id)
+        name = item.get("model_name") if provider_code == "aihubmix" else None
+        developer = item.get("vendor") if provider_code == "aihubmix" else None
+        models.append(CatalogModel(
+            model_id=model_id,
+            name=name if isinstance(name, str) and name.strip() else model_id,
+            developer=developer if isinstance(developer, str) and developer.strip() else None,
+            metadata=item,
+            pricing=_pricing(provider_code, item),
+        ))
+    return CatalogResult(models=tuple(models), etag=response.headers.get("etag"))

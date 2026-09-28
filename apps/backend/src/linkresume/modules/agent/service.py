@@ -61,6 +61,7 @@ from linkresume.modules.agent.trace import (
     SAFE_CODE, TOOL_STAGES, event_key, operation_for_run, record_event,
 )
 from linkresume.modules.identity.models import User
+from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, eligible_routes, resolve
 from linkresume.modules.resumes.models import Resume
 
 
@@ -169,6 +170,7 @@ def session_record(
         title=session.title,
         pinned=bool(getattr(session, "pinned", False)),
         status=session.status,
+        selected_model_id=str(session.selected_llm_model_id) if session.selected_llm_model_id else None,
         last_message_at=session.last_message_at,
         created_at=session.created_at,
         updated_at=session.updated_at,
@@ -305,8 +307,9 @@ def update_session(
     fields: set[str],
     title: str | None = None,
     pinned: bool | None = None,
+    model_id: str | None = None,
 ) -> AgentSession:
-    """Update only presentation state on an owner-scoped Agent session."""
+    """Update owner-scoped session display state or explicit logical model choice."""
     if not fields:
         raise ApiError(400, "INVALID_AGENT_SESSION")
 
@@ -330,6 +333,13 @@ def update_session(
         if pinned is None:
             raise ApiError(400, "INVALID_AGENT_SESSION")
         record.pinned = pinned
+    if "model_id" in fields:
+        selected = int(model_id) if model_id is not None else None
+        if selected is not None and not eligible_routes(
+            db, ASSISTANT_CONVERSATION, model_id=selected,
+        ):
+            raise ApiError(409, "AGENT_MODEL_UNAVAILABLE")
+        record.selected_llm_model_id = selected
     record.updated_at = utc_now()
     try:
         db.commit()
@@ -390,16 +400,24 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
         raise
 
 
-def create_session(db: Session, *, user_id: int, title: str | None) -> AgentSession:
+def create_session(
+    db: Session, *, user_id: int, title: str | None, model_id: str | None = None,
+) -> AgentSession:
     default_title = "新对话"
     normalized_title = " ".join((title or default_title).split())
     if not normalized_title or len(normalized_title) > 128:
         raise ApiError(400, "INVALID_AGENT_SESSION")
+    selected = int(model_id) if model_id is not None else None
+    if selected is not None and not eligible_routes(
+        db, ASSISTANT_CONVERSATION, model_id=selected,
+    ):
+        raise ApiError(409, "AGENT_MODEL_UNAVAILABLE")
     record = AgentSession(
         public_id=str(uuid4()),
         user_id=user_id,
         title=normalized_title,
         status="active",
+        selected_llm_model_id=selected,
     )
     db.add(record)
     db.commit()
@@ -615,11 +633,26 @@ def create_run(
         item.completed_at = now
     if fresh_running:
         raise ApiError(409, "AGENT_RUN_IN_PROGRESS")
+    route_plan = resolve(
+        db, ASSISTANT_CONVERSATION, model_id=session.selected_llm_model_id,
+    )
+    if route_plan is None:
+        raise ApiError(
+            409 if session.selected_llm_model_id else 503,
+            "AGENT_MODEL_UNAVAILABLE" if session.selected_llm_model_id else "LLM_MODEL_NOT_CONFIGURED",
+        )
     run = AgentRun(
         public_id=public_id or str(uuid4()),
         session_id=session.id,
         idempotency_key=idempotency_key,
         status="running",
+        resolved_llm_model_id=route_plan.model_id,
+        resolved_llm_route_id=route_plan.route_id,
+        runtime_config_version=route_plan.runtime_config_version,
+        protocol_code=route_plan.protocol_code,
+        selection_source=route_plan.selection_source,
+        resolved_price_snapshot_json=route_plan.pricing,
+        model_name=route_plan.display_name,
         started_at=now,
     )
     db.add(run)

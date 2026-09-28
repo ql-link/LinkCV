@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from linkresume.domain.resume_document import ResumeDocument, rich_text_to_markdown
-from linkresume.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
+from linkresume.modules.llm.resolver import RESUME_STRUCTURING
 from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMService
 from linkresume.modules.resumes.schemas import SemanticClassificationModelResult
@@ -80,7 +80,7 @@ async def classify_resume_sections(
         ),
         source="resume_semantic_classification",
         response_model=SemanticClassificationModelResult,
-        capability=RESUME_STRUCTURING_CAPABILITY,
+        use_case=RESUME_STRUCTURING,
     )
     suggestions = result.value.suggestions
     section_ids = [suggestion.section_id for suggestion in suggestions]

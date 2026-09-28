@@ -38,7 +38,7 @@ def test_admin_trace_exposes_user_and_stage_without_message_content() -> None:
         assert "示例" not in str(body)
 
 
-def test_admin_trace_keeps_model_name_after_config_is_unavailable() -> None:
+def test_admin_trace_keeps_model_name_snapshot_without_route() -> None:
     app, _ = build_app()
     with TestClient(app) as client:
         register(client, "model-trace-admin@example.invalid")
@@ -52,7 +52,6 @@ def test_admin_trace_keeps_model_name_after_config_is_unavailable() -> None:
             run = AgentRun(
                 public_id=str(uuid4()), session_id=session.id,
                 idempotency_key=uuid4().hex, status="succeeded",
-                model_config_id=999, model_config_version=2,
                 model_name="openrouter/example/model-1",
                 started_at=datetime.now(UTC),
             )

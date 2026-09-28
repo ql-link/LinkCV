@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 from linkresume.modules.job_descriptions.schemas import JobDescriptionDraft
-from linkresume.modules.llm.catalog import (
-    CHAT_CAPABILITY,
-    JOB_IMAGE_STRUCTURING_CAPABILITY,
-)
+from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, JOB_IMAGE_EXTRACTION
 from linkresume.modules.llm.schemas import (
     ChatImageContentPart,
     ChatImageUrl,
@@ -37,7 +34,7 @@ async def parse_text_draft(
         ),
         source="job_text_import",
         response_model=JobDescriptionDraft,
-        capability=CHAT_CAPABILITY,
+        use_case=JOB_TEXT_EXTRACTION,
     )
 
 
@@ -63,7 +60,7 @@ async def parse_image_draft(
         ),
         source="job_image_import",
         response_model=JobDescriptionDraft,
-        capability=JOB_IMAGE_STRUCTURING_CAPABILITY,
+        use_case=JOB_IMAGE_EXTRACTION,
     )
 
 

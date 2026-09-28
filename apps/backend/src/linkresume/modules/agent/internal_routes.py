@@ -24,6 +24,7 @@ from linkresume.modules.agent.schemas import (
     ResumeReferenceResolveRequest,
     ResumeReferenceResolveResponse,
     RuntimeConfigResponse,
+    RuntimeRouteConfig,
     ScopedResumeContextResponse,
     TargetResolveRequest,
     TargetResolveResponse,
@@ -41,6 +42,7 @@ from linkresume.modules.agent.resume_tools import (
     validate_source_ids,
 )
 from linkresume.modules.agent.security import require_pi_service
+from linkresume.modules.agent.models import AgentRun, AgentSession
 from linkresume.modules.agent.service import (
     create_proposal,
     create_scoped_proposal,
@@ -57,7 +59,11 @@ from linkresume.modules.agent.service import (
     update_task_status,
     upsert_tool_event,
 )
-from linkresume.modules.llm.catalog import assemble_model_identifier
+from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from linkresume.modules.llm.providers import pi_api
+from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, RoutePlan, resolve_candidates
+from linkresume.modules.llm.schemas import PiCallRecord
+from linkresume.modules.llm.gateway import GatewayUsage
 from linkresume.modules.llm.service import LLMError, LLMService
 from linkresume.modules.resumes.models import Resume
 
@@ -67,18 +73,6 @@ router = APIRouter(
     dependencies=[Depends(require_pi_service)],
     include_in_schema=False,
 )
-
-PI_PROVIDER_BY_ADAPTER = {
-    "openai": "openai",
-    "anthropic": "anthropic",
-    "deepseek": "deepseek",
-    "openrouter": "openrouter",
-    "gemini": "google",
-    "xai": "xai",
-    "groq": "groq",
-    "mistral": "mistral",
-}
-
 
 def _run_resume(
     db: Session, run_id: str, resume_id: str | None = None
@@ -109,15 +103,18 @@ def _fingerprint_secret(request: Request) -> str:
     return configured.get_secret_value()
 
 
+def _model_limit(metadata: dict, key: str) -> int | None:
+    value = metadata.get(key)
+    return value if type(value) is int and 0 < value <= 10_000_000 else None
+
+
 @router.get("/readiness", response_model=AgentReadinessResponse)
 async def get_internal_agent_readiness(request: Request) -> AgentReadinessResponse:
     llm_service: LLMService = request.app.state.llm_service
     try:
-        config = await llm_service.agent_runtime_model()
+        await llm_service.agent_model_summary()
     except LLMError as error:
         raise ApiError(503, "AGENT_NOT_READY") from error
-    if PI_PROVIDER_BY_ADAPTER.get(config.adapter) is None:
-        raise ApiError(503, "AGENT_NOT_READY")
     return AgentReadinessResponse(ready=True)
 
 
@@ -127,27 +124,149 @@ async def get_runtime_config(
     request: Request,
     db: Session = Depends(get_db),
 ) -> RuntimeConfigResponse:
-    run, _ = get_active_run(db, run_id)
+    run, session = get_active_run(db, run_id)
     llm_service: LLMService = request.app.state.llm_service
+    if (
+        run.resolved_llm_route_id is None or run.resolved_llm_model_id is None
+        or run.runtime_config_version is None or run.protocol_code is None
+    ):
+        raise ApiError(503, "LLM_MODEL_NOT_CONFIGURED")
+    route = db.get(LLMModelRoute, run.resolved_llm_route_id)
+    connection = db.get(LLMProviderConnection, route.connection_id) if route else None
+    model = db.get(LLMModel, run.resolved_llm_model_id)
+    if (
+        route is None or connection is None or model is None
+        or route.model_id != model.id
+        or connection.runtime_config_version != run.runtime_config_version
+    ):
+        raise ApiError(409, "LLM_CONFIG_CHANGED")
+    plan = RoutePlan(
+        use_case=ASSISTANT_CONVERSATION,
+        route_id=route.id,
+        model_id=model.id,
+        display_name=run.model_name or model.display_name,
+        provider_code=connection.provider_code,
+        connection_id=connection.id,
+        runtime_config_version=run.runtime_config_version,
+        target_kind=route.target_kind,
+        invoke_target=route.invoke_target,
+        protocol_code=run.protocol_code,
+        settings=dict(connection.settings_json or {}),
+        credential_ciphertext=connection.credential_ciphertext,
+        pricing=dict(run.resolved_price_snapshot_json) if run.resolved_price_snapshot_json else None,
+        selection_source=run.selection_source or "default",
+    )
     try:
-        config = await llm_service.agent_runtime_model()
+        config = llm_service.runtime_model_for_plan(plan)
+        api = pi_api(plan.protocol_code)
     except LLMError as error:
         raise ApiError(503, error.code) from error
-    provider = PI_PROVIDER_BY_ADAPTER.get(config.adapter)
-    if provider is None:
-        raise ApiError(503, "AGENT_MODEL_UNSUPPORTED")
-    run.model_config_id = config.id
-    run.model_config_version = config.config_version
-    run.model_name = assemble_model_identifier(config.adapter, config.model_call_name)
-    db.commit()
-    return RuntimeConfigResponse(
-        provider=provider,
-        model=config.model_call_name,
-        api_base=config.api_base,
+    primary = RuntimeRouteConfig(
+        provider=plan.provider_code,
+        api=api,
+        model=plan.invoke_target,
+        api_base=config.base_url,
         api_key=config.api_key,
-        config_id=str(config.id),
-        config_version=config.config_version,
+        route_id=str(plan.route_id),
+        config_version=plan.runtime_config_version,
+        pricing=plan.pricing,
+        context_window=_model_limit(route.metadata_json or {}, "context_length"),
+        max_output_tokens=_model_limit(route.metadata_json or {}, "max_output"),
     )
+    routes = [primary]
+    for candidate in resolve_candidates(db, ASSISTANT_CONVERSATION, model_id=model.id):
+        if candidate.route_id == plan.route_id:
+            continue
+        try:
+            candidate_runtime = llm_service.runtime_model_for_plan(candidate)
+            candidate_api = pi_api(candidate.protocol_code)
+        except (LLMError, ValueError):
+            continue
+        candidate_route = db.get(LLMModelRoute, candidate.route_id)
+        metadata = candidate_route.metadata_json or {} if candidate_route else {}
+        routes.append(RuntimeRouteConfig(
+            provider=candidate.provider_code,
+            api=candidate_api,
+            model=candidate.invoke_target,
+            api_base=candidate_runtime.base_url,
+            api_key=candidate_runtime.api_key,
+            route_id=str(candidate.route_id),
+            config_version=candidate.runtime_config_version,
+            pricing=candidate.pricing,
+            context_window=_model_limit(metadata, "context_length"),
+            max_output_tokens=_model_limit(metadata, "max_output"),
+        ))
+    return RuntimeConfigResponse(**primary.model_dump(), model_id=str(plan.model_id), routes=routes)
+
+
+@router.post("/runs/{run_id}/llm-calls")
+def record_run_llm_call(
+    run_id: str,
+    payload: PiCallRecord,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> dict:
+    row = db.execute(
+        select(AgentRun, AgentSession)
+        .join(AgentSession, AgentSession.id == AgentRun.session_id)
+        .where(AgentRun.public_id == run_id)
+    ).one_or_none()
+    if row is None:
+        raise ApiError(404, "AGENT_RUN_NOT_FOUND")
+    run, session = row
+    if run.resolved_llm_route_id is None or run.runtime_config_version is None or run.protocol_code is None:
+        raise ApiError(409, "LLM_MODEL_NOT_CONFIGURED")
+    route_id = int(payload.route_id) if payload.route_id is not None else run.resolved_llm_route_id
+    route = db.get(LLMModelRoute, route_id)
+    connection = db.get(LLMProviderConnection, route.connection_id) if route else None
+    binding = db.get(LLMUseCaseRoute, (ASSISTANT_CONVERSATION, route_id))
+    if (route is None or connection is None or binding is None
+            or route.model_id != run.resolved_llm_model_id):
+        raise ApiError(409, "LLM_CALL_CONFLICT")
+    is_primary = route_id == run.resolved_llm_route_id
+    price_snapshot = run.resolved_price_snapshot_json if is_primary else (
+        payload.price_snapshot if payload.price_snapshot is not None else route.pricing_json
+    )
+    config_version = run.runtime_config_version if is_primary else (
+        payload.config_version or connection.runtime_config_version
+    )
+    existing = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == payload.call_id))
+    if existing is not None:
+        if existing.agent_run_id != run.id or existing.route_id != route_id:
+            raise ApiError(409, "LLM_CALL_CONFLICT")
+        return {"recorded": True}
+    usage = GatewayUsage(
+        input_tokens=payload.input_tokens,
+        output_tokens=payload.output_tokens,
+        details=payload.usage,
+    )
+    from linkresume.modules.llm.service import _metering
+    metering_status, estimated_cost, currency = _metering(usage, price_snapshot)
+    db.add(LLMCallLog(
+        call_id=payload.call_id,
+        use_case=ASSISTANT_CONVERSATION,
+        source="pi_agent",
+        user_id=session.user_id,
+        agent_run_id=run.id,
+        route_id=route_id,
+        runtime_config_version=config_version,
+        protocol_code=binding.protocol_code,
+        response_model_id=payload.response_model_id,
+        upstream_request_id=payload.upstream_request_id,
+        selection_source=(run.selection_source or "default") if is_primary else "fallback",
+        status=payload.status,
+        usage_json=payload.usage,
+        input_tokens=payload.input_tokens,
+        output_tokens=payload.output_tokens,
+        metering_status=metering_status,
+        price_snapshot_json=price_snapshot,
+        estimated_cost=estimated_cost,
+        cost_currency=currency,
+        latency_ms=payload.latency_ms,
+        error_code=payload.error_code,
+    ))
+    db.commit()
+    return {"recorded": True}
 
 
 @router.get("/runs/{run_id}/context", response_model=ResumeContextResponse)

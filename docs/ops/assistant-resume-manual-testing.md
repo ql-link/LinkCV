@@ -38,7 +38,7 @@ npm run dev:development
 2. `GET /api/health` 返回 HTTP 200；
 3. Pi 的 `/health` 返回 HTTP 200；
 4. Development 数据库已升级到 Alembic `0065`；
-5. 管理端已为 `pi_agent` 绑定可用模型；
+5. 管理端已为 `assistant_conversation` 绑定可用且经过探测的 Pi 对话模型线路；
 6. 浏览器已登录专用测试账号。
 
 数据库版本可在加载相同 Development 配置的终端中查询：

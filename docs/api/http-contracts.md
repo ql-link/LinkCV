@@ -116,12 +116,13 @@ Pi 在执行前通过服务间 `POST /internal/agent/runs/:runId/tasks:plan` 保
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
-| `GET` | `/api/agent/model` | `200 {model: {adapter, name}}`；登录后读取当前 `pi_agent` 绑定的非敏感模型摘要，不返回配置 ID、地址、凭据、价格或验证记录 |
+| `GET` | `/api/agent/model` | `200 {model: {id, name}}`；返回默认有效对话逻辑模型的非敏感摘要 |
+| `GET` | `/api/agent/models` | `{models:[{id,name}],defaultModelId}`；只返回有效对话模型，按逻辑模型去重 |
 | `GET` | `/api/agent/contexts[?type=:type&q=:query&prefix=:bool&limit=:limit]` | `{contexts}`；返回当前用户可选的轻量资料引用，类型为 `resume`、`dataset`、`job`、`application` 或 `interview`；`prefix=true` 时按名称前缀匹配；`dataset` 只包含解析成功且转换对象有效的本人资料，不返回正文 |
 | `GET` | `/api/agent/sessions` | `{sessions}`；返回当前用户最近更新的至多 50 个独立会话，不按简历绑定或过滤 |
-| `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{title?,resume_id?}`，其中 `resume_id` 只为旧 Web 缓存兼容而接收并忽略，不校验、不持久化也不返回绑定语义；会话不保存默认简历 |
+| `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{title?,modelId?,resume_id?}`，其中 `resume_id` 只为旧 Web 缓存兼容而接收并忽略，不校验、不持久化也不返回绑定语义；会话不保存默认简历 |
 | `GET` | `/api/agent/sessions/:sessionId` | `{session}`，包含最近 100 条消息 |
-| `PATCH` | `/api/agent/sessions/:sessionId` | `200 {session}`；请求至少包含一个字段，可更新 `title`（trim 后 1–128 字符）或 `pinned`（布尔值） |
+| `PATCH` | `/api/agent/sessions/:sessionId` | `200 {session}`；请求至少包含一个字段，可更新 `title`（trim 后 1–128 字符）、`pinned`（布尔值）或 `modelId`（有效逻辑模型 ID；null 表示跟随默认） |
 | `DELETE` | `/api/agent/sessions/:sessionId` | `204`；无运行中任务时永久删除该会话及其 Agent 依赖数据 |
 | `POST` | `/api/agent/sessions/:sessionId/messages` | SSE；请求为 `{content, idempotency_key, selection_context?, contexts?, reply_to_sequence_no?, clarification_answers?, replace_inherited_resume?}`；`contexts` 是唯一的本轮资料协议，最多 10 项且同类型只能选择一项，每项携带服务端返回的 `type`、`id` 和版本标记；当前简历使用 `{type:"resume",id}`，独立助手中自动附带的已打开简历额外使用 `presentation:"implicit"`，该兼容新增字段只控制用户消息是否展示引用单元，不改变授权或模型材料。服务端按当前用户解析为消息级快照和材料，不写入会话。选区包含稳定块 ID、编辑器范围、原文和 SHA-256，并随来源消息持久化；回答结构化澄清问题时携带对应助手消息序号，服务端同时继承并复验原上下文、展示来源与选区，当前 Web 发送 `{question_id,option_id,value?}` 数组 |
 | `GET` | `/api/agent/sessions/:sessionId/active-run` | `{run: {run_id,status,started_at} \| null}`；只返回本人会话当前仍在运行的 run，用于刷新或返回助手页后恢复状态 |
@@ -134,9 +135,9 @@ Pi 在执行前通过服务间 `POST /internal/agent/runs/:runId/tasks:plan` 保
 SSE 事件包括 `run.started`、`run.phase`、`assistant.activity.delta`、`assistant.activity.status`、`assistant.activity.clear`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。Pi 在工具阶段把模型主动生成的可见 `text_delta` 和兼容的工具执行标签逐个发送为临时 `assistant.activity.delta`；结构化 `assistant.activity.status` 携带 `{runId,callKey,label,status,errorCode?}`，其中 `status` 为 `running|succeeded|failed`，浏览器必须按 `callKey` 原位更新而不是追加重复步骤，失败时只暴露稳定错误码。隐藏思考 delta、工具调用参数和工具结果不进入这些事件；原有 `tool.started/tool.completed` 继续只服务运行兼容与业务工具审计。全部业务工具完成后，模型必须调用不进入工具审计的内部切换工具；Pi 先发送一次 `assistant.activity.clear` 并关闭本轮工具，再把下一轮每个正式回复 `text_delta` 实时发送为 `assistant.delta`，不等待整条 assistant message 结束。临时活动只保存在运行事件缓冲中，不进入助手消息正文；结构化澄清也会先清空活动区，并只持久化服务端生成的澄清文本。`run.phase` 只允许服务端定义的稳定阶段和安全化文案，并可携带实际引用资料数量，不暴露工具参数或推理内容。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。服务端从该澄清所属 run 的用户消息继承原始 `contexts` 和 `selection_context`，重新校验资源存在性、归属和版本，再与客户端本轮引用合并；未经显式替换的同类资源目标或选区不同返回 `409 AGENT_CLARIFICATION_CONTEXT_CONFLICT`；仅当澄清续答显式携带新的简历引用与 `replace_inherited_resume:true` 时允许更换简历，服务端重新验证归属与当前内容并丢弃原简历选区，其他资料仍沿用冲突保护；历史快照损坏返回 `409 AGENT_CLARIFICATION_CONTEXT_INVALID`。服务端按原问题复验 `clarification_answers` 的问题与选项并保存规范化答案；历史客户端可以只发送展示文本，但当前 Web 不依赖该兼容路径。澄清续答要改用另一份简历时，必须同时提交新简历引用与 `replace_inherited_resume=true`；服务端重新校验归属和当前内容，丢弃旧简历选区。该标记不允许在普通新消息中使用，也不能替换其他类型的资料。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。
 FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器订阅断开不会取消模型运行；Web 返回助手页时先查询当前 run，再从头重放该 run 的缓冲事件，因此刷新、SPA 路由切换或切换其他会话不会丢失思考/输出状态。只有显式调用 cancel 才取消运行。事件缓冲是 FastAPI 进程内状态；若后端进程重启而数据库仍残留 running run，重连会以 `AGENT_STREAM_INCOMPLETE` 失败收口，不会重复调用模型。
 
-`/api/agent/model` 成功响应严格只有 `{model: {adapter, name}}`，其中 `adapter` 和 `name` 来自当前 `pi_agent` binding 与配置的 `model_call_name`；查询只解析绑定配置，不为展示目的解密凭据。未绑定或绑定配置不存在时返回 `503 LLM_MODEL_NOT_CONFIGURED`；其他受控 `LLMError` 也只映射为 `503` 错误码，不向浏览器暴露 `call_id`。
+`/api/agent/model` 返回默认有效对话模型的 `{model:{id,name}}`；`/api/agent/models` 返回去重后的可选列表和 `defaultModelId`，均不返回密钥、地址或价格。没有有效线路时前者返回 `503 LLM_MODEL_NOT_CONFIGURED`，后者返回空列表。`AgentSessionRecord.selected_model_id` 为可空字符串；null 表示跟随当前默认。POST/PATCH 的 `modelId` 由服务端按当前有效对话模型列表校验，其他用户的会话仍按 `404 AGENT_SESSION_NOT_FOUND` 处理。用户已选模型失效时新运行返回 `409 AGENT_MODEL_UNAVAILABLE`，不切换到其他逻辑模型。
 
-`AgentSessionRecord` 始终包含布尔 `pinned`，不包含默认 `resume_id`；会话列表先按 `pinned DESC`，再按 `updated_at DESC, id DESC`。PATCH 只更新会话标题或置顶状态，不创建消息、不启动模型调用；标题会先去除并归一化空白，空标题、超长标题、空请求或显式 `null` 返回请求校验错误。PATCH/DELETE 都按当前用户校验归属，其他用户统一返回 `404 AGENT_SESSION_NOT_FOUND`。DELETE 会锁定会话和运行；存在 `status=running` 的运行返回 `409 AGENT_RUN_IN_PROGRESS` 且不修改数据，否则在一个事务内按 proposal、tool call、message、run、session 顺序清理，不影响其他会话或用户。
+`AgentSessionRecord` 仍包含布尔 `pinned`，不包含默认 `resume_id`；会话列表先按 `pinned DESC`，再按 `updated_at DESC, id DESC`。PATCH 不创建消息或启动模型调用。DELETE 会锁定会话和运行；存在 `status=running` 的运行返回 `409 AGENT_RUN_IN_PROGRESS`，否则清理该会话及其 Agent 依赖数据。
 
 独立助手页选择的资料不是可信正文：FastAPI 按当前用户重新查询每项资源、核对版本标记、拒绝不存在、越权或已过期的引用，初始传给 Pi 的 `contextMaterials` 只含受控目录字段，不含正文。任务清单的 `context_refs` 必须是本轮引用的子集；启动任务后，内部材料接口再次校验当前归属和版本，只返回该任务引用的有界正文，并在任务结果中保存不含正文、包含内容指纹的来源收据。材料已变化时该任务受阻，不让旧正文继续进入模型。用户消息只持久化轻量引用快照，后续读取不会把历史正文重新注入。独立助手每轮选择的简历不会绑定会话；用户明确指定名称、ID 或轻量目录中的某份简历时，Pi 调用受限解析工具，FastAPI 按当前用户归属解析本轮目标。名称同名时返回候选；用户已给出更新时间等版本条件后，Pi 可用对应候选 ID 精确解析，不要求重新通过 `@` 选择。目标 locator 随范围读取、诊断和提案请求传递，跨用户结果继续不可见。Agent 不能直接写简历：普通修改先解析稳定 locator、读取最小范围、生成结构化诊断并创建类型化 operation 提案；复合局部请求必须一次提交完整任务清单，由 Pi 冻结后串行执行每个目标的定位、读取、诊断和独立提案，不能用共享可变目标状态并行创建提案。同一批处理调用在当前 run 内幂等，单项失败不会自动重试或阻止后续任务；整篇翻译创建 `translate_resume` 提案。
 
@@ -144,7 +145,7 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 
 确认翻译提案时源简历保持不变，创建新的 Resume，不创建历史记录，并以 `result_resume_id` 保证重复确认幂等。源 Resume 私有图片复制到新命名空间，账户级图片保持共享引用。翻译还可能返回 `RESUME_TITLE_CONFLICT`、`RESUME_LIMIT_REACHED`、`RESUME_TRANSLATION_INVALID` 或 `RESUME_TRANSLATION_ASSET_COPY_FAILED`。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`。服务或模型错误继续使用安全化公开 code，供应商原始错误和 API Key 不进入浏览器响应。
 
-`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`POST /runs/:runId/resources:list` 接受可选的 `{types,query,limit}`，其中类型只允许 `resume/dataset/interview`；它从 run 反查当前用户，按类型分别限制数量，并只返回 ID、名称、状态、版本和更新时间等轻量目录，不返回简历、资料或面试正文。`POST /runs/:runId/resumes:resolve-reference` 接受至少一个 `{title?,resume_id?}`，只解析属于当前用户的简历并返回整份简历 locator，不修改会话；名称不存在或同名不唯一返回 `not_found/ambiguous`，候选 ID 可用于用户已明确版本后的精确解析。除兼容的完整上下文和快照提案接口外，范围化编辑工具继续使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`；`targets:resolve` 可携带当前运行已由 `resolve-reference` 得到的 `resume_id`，仍由 FastAPI 复验当前用户归属。Pi 的模型工具只提交 `context:read` 已返回的 `block_id`、操作类型和新文本，Pi 运行时用同一读取结果补入完整 locator 与 expected-text hash 后再请求 `proposals:v2`，未知块在进入 FastAPI 前即拒绝。经历字段 locator 的 `field` 使用具体字段键；空字符串 `replace_target_text` 清空块内选区或可选字段，`delete_target` 删除 section/entry 正文中的完整 paragraph/list item canonical 节点且禁止携带新文本，`insert_after_target` 仍禁止空内容。整篇翻译使用 `POST /runs/:runId/proposals:translation`。目标出现零处或多处时不允许创建提案；用户已经明确父 section/entry 时，Pi 可先读取该范围，再按返回的不同 `block_id` 为重复短文本分别创建提案。诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证当前 `pi_agent` binding、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件的 `tool_name` 白名单包含批量局部修改工具 `execute_local_resume_edit_plan`，并以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。工具参数在 Pi 执行函数前校验失败时以 `AGENT_TOOL_ARGUMENT_INVALID` 记为 failed，不上传原始参数。内部运行配置复用统一模型管理中的 `pi_agent` binding；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
+`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`POST /runs/:runId/resources:list` 接受可选的 `{types,query,limit}`，其中类型只允许 `resume/dataset/interview`；它从 run 反查当前用户，按类型分别限制数量，并只返回 ID、名称、状态、版本和更新时间等轻量目录，不返回简历、资料或面试正文。`POST /runs/:runId/resumes:resolve-reference` 接受至少一个 `{title?,resume_id?}`，只解析属于当前用户的简历并返回整份简历 locator，不修改会话；名称不存在或同名不唯一返回 `not_found/ambiguous`，候选 ID 可用于用户已明确版本后的精确解析。除兼容的完整上下文和快照提案接口外，范围化编辑工具继续使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`；`targets:resolve` 可携带当前运行已由 `resolve-reference` 得到的 `resume_id`，仍由 FastAPI 复验当前用户归属。Pi 的模型工具只提交 `context:read` 已返回的 `block_id`、操作类型和新文本，Pi 运行时用同一读取结果补入完整 locator 与 expected-text hash 后再请求 `proposals:v2`，未知块在进入 FastAPI 前即拒绝。经历字段 locator 的 `field` 使用具体字段键；空字符串 `replace_target_text` 清空块内选区或可选字段，`delete_target` 删除 section/entry 正文中的完整 paragraph/list item canonical 节点且禁止携带新文本，`insert_after_target` 仍禁止空内容。整篇翻译使用 `POST /runs/:runId/proposals:translation`。目标出现零处或多处时不允许创建提案；用户已经明确父 section/entry 时，Pi 可先读取该范围，再按返回的不同 `block_id` 为重复短文本分别创建提案。诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证默认有效对话线路、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件的 `tool_name` 白名单包含批量局部修改工具 `execute_local_resume_edit_plan`，并以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。工具参数在 Pi 执行函数前校验失败时以 `AGENT_TOOL_ARGUMENT_INVALID` 记为 failed，不上传原始参数。内部运行配置读取 `agent_runs` 冻结的首选线路，并下发同模型的有序备用线路及其价格快照；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 
 ## 简历分享链接
 
@@ -377,34 +378,23 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 
 管理员通过 `POST /api/auth/admin-login` 登录，后端额外校验 `is_admin=true` 后签发会话；普通用户调用返回 `403 FORBIDDEN`。管理端前端使用独立登录页 `/admin/login`（任何访问者可打开），通过 `api.me()` 恢复登录态后检查 `is_admin`；已登录管理员访问受保护页面（`/admin` 及其子页面）直接进入后台，未登录或无管理员身份的访问被重定向到登录页，登录成功后回到原目标，无法发起管理 API 调用。
 
-| Method  | Path                                            | 成功结果                                                                       |
-| ------- | ----------------------------------------------- | ------------------------------------------------------------------------------ |
-| `GET`   | `/api/admin/llm/capabilities/chat`              | `{capability, activeModelId, activeModel, models}`，返回 Chat 当前项与候选列表 |
-| `GET`   | `/api/admin/llm/capabilities`                   | `{capabilities}`，返回 Chat、`resume_structuring`、`pi_agent`、`job_image_structuring` 能力矩阵与共享候选列表 |
-| `GET`   | `/api/admin/llm/catalog`                        | `{capabilities, adapters}`，返回能力与模型目录                                 |
-| `GET`   | `/api/admin/llm/catalog/chat`                   | `{capability, adapters}`，返回受支持 adapter 和 LiteLLM Chat 模型建议          |
-| `POST`  | `/api/admin/llm/models`                         | `201 {model}`                                                                  |
-| `PATCH` | `/api/admin/llm/models/:modelConfigId`          | `{model, validationCallId}`；编辑当前项时先测试拟议配置                        |
-| `POST`  | `/api/admin/llm/models/:modelConfigId/test`     | `{ok: true, callId}`，测试指定配置                                             |
-| `POST`  | `/api/admin/llm/models/:modelConfigId/tests`    | `{capability, baseConfigVersion?}`；按能力执行验证并返回验证证据                |
-| `POST`  | `/api/admin/llm/models/:modelConfigId/activate` | `{activeModel, callId}`，测试成功后设为 Chat 当前模型                          |
-| `PUT`   | `/api/admin/llm/capabilities/:capability/binding` | `{modelConfigId, baseConfigVersion?, baseBindingVersion?}`；验证成功后更新能力绑定并返回验证调用 ID |
-| `DELETE` | `/api/admin/llm/models/:modelConfigId`         | 删除未绑定候选；被任一能力绑定时返回 `409 LLM_MODEL_IN_USE`                    |
-| `GET`   | `/api/admin/llm/calls`                          | `{calls, summary, nextCursor}`                                                 |
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/admin/llm/catalog` | `{useCases,providers}`；代码注册的场景和接入商能力 |
+| `GET/POST/PATCH` | `/api/admin/llm/connections[/:id]` | 连接列表、创建或按 `baseVersion` 编辑连接；密钥只写，响应仅含 `keyConfigured` |
+| `POST` | `/api/admin/llm/connections/:id/sync` | 从支持目录的接入商同步模型和线路；新线路默认停用 |
+| `GET/POST/PATCH` | `/api/admin/llm/models[/:id]` | 逻辑模型列表、创建或编辑显示名称 |
+| `GET/POST/PATCH` | `/api/admin/llm/routes[/:id]` | 线路列表、创建或修改线路启停、标识类型与价格规则 |
+| `GET` | `/api/admin/llm/use-cases` | `{bindings}`；包含探测时间和当前是否生效 |
+| `PUT/PATCH/DELETE` | `/api/admin/llm/use-cases/:useCase/routes/:routeId` | 创建或调整场景绑定、停用或删除绑定 |
+| `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
+| `GET` | `/api/admin/llm/calls[?cursor&limit]` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页 |
 
-模型候选是能力中立的共享连接配置，管理员不填写能力标识。候选写入只接受 `adapter`、不含 adapter 前缀的 `model`、可选 `apiBase` 和只写 `apiKey`；Chat、简历结构化与 JD 图片解析会把 adapter 和模型名组装成 LiteLLM 标识。目录响应使用稳定 adapter 代码，管理页面只展示供应商名称；目录建议来自锁定版本 LiteLLM 的 Chat 元数据，目录外调用名仍可提交并由真实连接测试兜底。旧 `enabled`、`priority` 和手工价格字段不再接受或返回。`job_image_structuring` 绑定前使用内置红色测试图片执行真实视觉探针，必须返回约定的结构化颜色结果；`pi_agent` 绑定会把选定配置快照交给 Pi Service，由 Pi 的模型 profile 决定协议和兼容参数并直接执行固定 Tool 探针。探针失败时原 binding 保持不变。
+连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的地域或工作空间字段，不能提交任意推理 URL。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
 
-候选读取只用 `keyConfigured` 表示是否已有凭据，绝不返回明文或数据库密文。PATCH 省略 `apiKey` 时保留原凭据，传 `null` 时清除，传非空字符串时替换。新增和编辑未绑定候选不会改变任何能力当前项；被任一能力绑定的候选不可原地编辑或删除，管理员需创建替代候选后再验证并切换。启用操作先测试目标快照，成功后才切换，失败时原当前项不变。未绑定候选可以硬删除；删除会移除配置、加密凭据和验证证据，并把历史调用日志的 `modelConfigId` 置空，日志中的 adapter、模型、配置版本、状态和计量快照保持不变。不提供独立启停接口。
+`llm_call_logs` 每条记录对应一次实际请求，切换前失败的线路和切换后成功的线路分别记录，保存场景、来源、用户、运行、真实线路、调用协议、用量、价格规则快照、估算费用与币种及安全错误分类；不保存提示词、图片、完整响应或明文凭据。目录价格带分档、缓存或优惠规则时，缺少充分用量明细的估算费用留空，`meteringStatus=partial`。Pi 的费用由后端根据线路价格规则计算，不信任 Pi 回传的金额。`0091` 删除并重建旧 LLM 四张表，保留 Agent 会话与运行；迁移前需检查目标 revision、旧数据与备份。
 
-模型配置 `id`、调用记录 `userId` 和 `modelConfigId` 与其他 MySQL 业务 ID 一致，对外使用十进制字符串，内部数据库列仍为 `BIGINT UNSIGNED`。
-
-`0006` 在数据库中使用中文表注释和字段注释，这些注释只用于说明持久化语义，不改变本节约定的 JSON 字段名、错误码或状态字面值。`0008` 增加候选的 LiteLLM adapter/model 调用名、Chat 唯一当前绑定，以及调用日志的能力、来源和模型快照。`0028` 扩展绑定版本、验证证据、简历结构化/Pi Agent 预置绑定和调用配置版本；`0029` 删除候选上的遗留 `capability` 列，候选正式成为能力中立配置；`0035` 扩展能力约束并预置空的 `job_image_structuring` binding，不改变 JD 表。升级仍不转换旧优先级、价格或调用数据；存量绑定验证证据可为空，需要管理员用对应探针测试成功后才会产生验证证据。
-
-调用记录可用 `source`、`status`、精确 `callId`、`userId`、`modelConfigId`、`from`、`to`、`cursor` 和 `limit` 查询，默认每页 50、最大 200，按创建时间和内部 ID 倒序稳定分页。`source` 是由内部调用方提供的稳定小写代码，格式为 `^[a-z][a-z0-9_]{0,31}$`；当前接入来源包括管理动作的 `connection_test`、简历导入的 `resume_import`，以及 JD 智能导入的 `job_text_import` 和 `job_image_import`。时间范围使用带时区的 ISO 8601，区间为左闭右开；非法值、反向区间或无效游标返回 `400 INVALID_LLM_CALL_QUERY`。每条记录只包含调用标识、能力、来源、用户、实际 adapter/模型与配置版本快照、状态、耗时、Token、LiteLLM 价格快照、估算成本和非敏感错误分类，不保存或返回消息、图片、模型完整响应和凭据。汇总针对当前筛选条件聚合全部命中记录，只累加已知值，并用 `incompleteMeteringCount` 表明不完整计量。
-
-管理错误包括 `INVALID_LLM_MODEL_CONFIG`、`INVALID_LLM_CALL_QUERY`、`LLM_MODEL_NOT_FOUND`、`LLM_MODEL_IN_USE`、`LLM_MODEL_CONFIG_CHANGED`、`LLM_BINDING_CHANGED`、`LLM_CHAT_NOT_CONFIGURED`、`LLM_MODEL_NOT_CONFIGURED`、`LLM_PI_AGENT_UNAVAILABLE`、`LLM_PI_AGENT_TIMEOUT`、`LLM_PI_AGENT_PROBE_FAILED`、`LLM_CREDENTIALS_UNAVAILABLE`、`LLM_UNAVAILABLE` 和 `LLM_REQUEST_REJECTED`。连接测试、绑定和当前项验证失败在已经创建调用记录时带可查询的 `callId`；供应商原始错误不会透传。
-
-结构化模型调用仍是后端内部能力，不新增 HTTP 路由或管理接口字段。服务端不会向供应商发送 `response_format` JSON Schema 参数，而是在单次调用的系统指令中提供目标 Schema；返回文本由 LinkResume 本地提取 JSON 并执行 Pydantic 严格校验。非法结构以内部 `LLM_RESPONSE_INVALID` 收口，不触发第二次供应商调用，也不把模型正文写入调用记录或管理接口响应。
+结构化调用是后端内部能力，服务端在系统指令中提供 JSON Schema，并本地验证输出；非法结构以 `LLM_RESPONSE_INVALID` 收口。
 
 ## 管理台用户管理
 

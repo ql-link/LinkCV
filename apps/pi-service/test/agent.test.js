@@ -6,6 +6,9 @@ import {
   assertAgentCompleted,
   buildAgentConversation,
   createAssistantOutputFilter,
+  configuredModel,
+  configuredModels,
+  streamWithRouteFallback,
   createResumeContextPolicy,
   createSerialExecutor,
   createSkillReadTool,
@@ -27,6 +30,86 @@ import {
 import { validateContextMaterials } from "../src/context.js";
 
 const codedTestError = (code) => Object.assign(new Error(code), { code });
+
+test("runtime registers an arbitrary OpenAI-compatible provider route", async () => {
+  const { modelRuntime, model } = await configuredModel({
+    provider: "aihubmix", api: "openai-completions", name: "vendor/model",
+    apiKey: "fictional-key", baseUrl: "https://aihubmix.com/v1",
+    contextWindow: 16384, maxOutputTokens: 4096,
+  });
+  assert.equal(model.provider, "linkresume-aihubmix");
+  assert.equal(model.id, "vendor/model");
+  assert.equal(model.baseUrl, "https://aihubmix.com/v1");
+  assert.equal(model.contextWindow, 16384);
+  assert.equal(model.maxTokens, 4096);
+  assert.ok(modelRuntime);
+});
+
+test("runtime keeps separate provider configuration for each route of one model", async () => {
+  const { routes } = await configuredModels([
+    { provider: "aihubmix", api: "openai-completions", name: "same-model", routeId: "11", apiKey: "fictional-one", baseUrl: "https://aihubmix.com/v1" },
+    { provider: "deepseek", api: "openai-completions", name: "same-model", routeId: "12", apiKey: "fictional-two", baseUrl: "https://api.deepseek.com/v1" },
+  ]);
+  assert.deepEqual(routes.map((route) => route.model.provider), ["linkresume-aihubmix-11", "linkresume-deepseek-12"]);
+});
+
+test("model request switches to the next route only before content is emitted", async () => {
+  const routes = [{ routeId: "11" }, { routeId: "12" }];
+  const used = [];
+  const failed = [];
+  const signal = new AbortController().signal;
+  const stream = streamWithRouteFallback(
+    routes,
+    async function* (route) {
+      used.push(route.routeId);
+      if (route.routeId === "11") {
+        yield { type: "start", partial: { content: [] } };
+        yield { type: "error", reason: "error", error: { stopReason: "error", errorMessage: "503 unavailable" } };
+      } else {
+        yield { type: "start", partial: { content: [] } };
+        yield { type: "text_delta", delta: "ok", partial: { content: [{ type: "text", text: "ok" }] } };
+        yield { type: "done", reason: "stop", message: { stopReason: "stop", content: [{ type: "text", text: "ok" }] } };
+      }
+    },
+    () => {},
+    async (route) => { failed.push(route.routeId); },
+    signal,
+  );
+  assert.deepEqual((await Array.fromAsync(stream)).map((event) => event.type), ["start", "text_delta", "done"]);
+  assert.deepEqual(used, ["11", "12"]);
+  assert.deepEqual(failed, ["11"]);
+
+  used.length = 0;
+  failed.length = 0;
+  const partial = streamWithRouteFallback(
+    routes,
+    async function* (route) {
+      used.push(route.routeId);
+      yield { type: "text_delta", delta: "partial", partial: { content: [{ type: "text", text: "partial" }] } };
+      yield { type: "error", reason: "error", error: { stopReason: "error", errorMessage: "503 unavailable" } };
+    },
+    () => {},
+    async (route) => { failed.push(route.routeId); },
+    signal,
+  );
+  assert.deepEqual((await Array.fromAsync(partial)).map((event) => event.type), ["text_delta", "error"]);
+  assert.deepEqual(used, ["11"]);
+  assert.deepEqual(failed, []);
+
+  used.length = 0;
+  const rejected = streamWithRouteFallback(
+    routes,
+    async function* (route) {
+      used.push(route.routeId);
+      yield { type: "error", reason: "error", error: { stopReason: "error", errorMessage: "400 invalid request" } };
+    },
+    () => {},
+    async () => { throw new Error("must not switch"); },
+    signal,
+  );
+  assert.deepEqual((await Array.fromAsync(rejected)).map((event) => event.type), ["error"]);
+  assert.deepEqual(used, ["11"]);
+});
 
 test("selected resume identity wins over duplicate title search and model supplied IDs", async () => {
   const calls = [];
@@ -510,14 +593,14 @@ test("agent completion preserves a tool failure code exposed by the SDK", () => 
   );
 });
 
-test("agent usage exposes safe token and cost totals", () => {
+test("agent usage exposes safe tokens and leaves cost to backend call logs", () => {
   assert.deepEqual(agentUsage({
     tokens: { input: 120, output: 30 },
     cost: 0.00123456789,
   }), {
     inputTokens: 120,
     outputTokens: 30,
-    estimatedCost: "0.00123457",
+    estimatedCost: null,
   });
   assert.equal(agentUsage({ tokens: { input: -1, output: 2 }, cost: 0 }), null);
 });

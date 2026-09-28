@@ -1,5 +1,6 @@
 import asyncio
-from collections.abc import AsyncIterator
+import json
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from cryptography.fernet import Fernet
@@ -11,532 +12,185 @@ import linkresume.models  # noqa: F401
 from linkresume.core.database import Base, build_engine, build_session_factory
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.crypto import CredentialCipher
-from linkresume.modules.llm.gateway import (
-    GatewayError,
-    GatewayResult,
-    GatewayStreamEvent,
-    GatewayUsage,
-)
-from linkresume.modules.llm.models import (
-    LLMCallLog,
-    LLMCapabilityBinding,
-    LLMModelConfig,
-)
+from linkresume.modules.llm.gateway import GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage
+from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, validation_fingerprint
 from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError, LLMService
 
-TEST_USER_ID = 1
-
 
 class FakeGateway:
-    def __init__(self) -> None:
-        self.complete_results: dict[str, GatewayResult | GatewayError] = {}
-        self.stream_results: dict[
-            str,
-            list[GatewayStreamEvent] | GatewayError | AsyncIterator[GatewayStreamEvent],
-        ] = {}
-        self.calls: list[tuple[str, str | None]] = []
-        self.message_batches: list[tuple[ChatMessage, ...]] = []
-        self.disable_thinking_calls: list[bool] = []
+    def __init__(self):
+        self.result = GatewayResult(content="OK", usage=GatewayUsage(100, 20))
+        self.calls = []
 
-    async def complete(
-        self,
-        *,
-        model,
-        messages,
-        api_base,
-        api_key,
-        disable_thinking=False,
-    ):
-        del api_base
-        self.calls.append((model, api_key))
-        self.message_batches.append(tuple(messages))
-        self.disable_thinking_calls.append(disable_thinking)
-        result = self.complete_results[model]
-        if isinstance(result, GatewayError):
-            raise result
-        return result
-
-    async def start_stream(self, *, model, messages, api_base, api_key):
-        del messages, api_base
-        self.calls.append((model, api_key))
-        result = self.stream_results[model]
-        if isinstance(result, GatewayError):
-            raise result
-        if hasattr(result, "__anext__"):
+    async def complete(self, **kwargs):
+        self.calls.append(kwargs)
+        if isinstance(self.result, list):
+            result = self.result.pop(0)
+            if isinstance(result, Exception):
+                raise result
             return result
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
 
+    async def start_stream(self, **kwargs):
+        self.calls.append(kwargs)
+        result = self.result.pop(0)
         async def events():
-            for event in result:
-                yield event
-
+            for item in result:
+                if isinstance(item, Exception):
+                    raise item
+                yield item
         return events()
 
 
 @pytest.fixture
-def service_context():
+def context():
     engine = build_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     sessions = build_session_factory(engine)
-    with sessions() as db:
-        db.add(
-            User(
-                email="zhangsan@example.invalid",
-                password_hash="fictional",
-                nickname="张三",
-            )
-        )
-        db.add(LLMCapabilityBinding(capability="chat"))
-        db.commit()
     gateway = FakeGateway()
-    key = Fernet.generate_key().decode("ascii")
-    service = LLMService(sessions, gateway, CredentialCipher(f"test:{key}"))
-    return service, gateway, sessions
-
-
-def add_candidate(
-    sessions,
-    service: LLMService,
-    model: str,
-    *,
-    current: bool = False,
-    with_key: bool = True,
-) -> int:
+    cipher = CredentialCipher(f"test:{Fernet.generate_key().decode('ascii')}")
+    service = LLMService(sessions, gateway, cipher)
     with sessions() as db:
-        config = LLMModelConfig(
-            capability="chat",
-            adapter="deepseek",
-            model_call_name=model,
-            model_name=f"deepseek/{model}",
-            encrypted_api_key=(
-                service.encrypt_credential(f"{model}-key") if with_key else None
-            ),
-            enabled=current,
-            priority=100,
-            config_version=1,
-        )
-        db.add(config)
-        db.flush()
-        if current:
-            binding = db.get(LLMCapabilityBinding, "chat")
-            assert binding is not None
-            binding.model_config_id = config.id
+        db.add(User(email="person@example.invalid", password_hash="fictional", nickname="用户"))
+        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        model = LLMModel(display_name="测试模型")
+        db.add_all([connection, model]); db.flush()
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="vendor/model", origin="manual", enabled=True, target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"})
+        db.add(route); db.flush()
+        binding = LLMUseCaseRoute(use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat", priority=100, enabled=True, validated_at=datetime.now(timezone.utc))
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
-        return config.id
+    yield service, gateway, sessions
+    engine.dispose()
 
 
-def success(content: str = "ok") -> GatewayResult:
-    return GatewayResult(
-        content=content,
-        usage=GatewayUsage(1_000_000, 500_000),
-        input_price_per_million=Decimal("1.5"),
-        output_price_per_million=Decimal("2"),
-    )
-
-
-class StructuredPayload(BaseModel):
+class Answer(BaseModel):
     answer: str
 
 
-def test_chat_uses_only_bound_model_and_records_cost(service_context) -> None:
-    service, gateway, sessions = service_context
-    current_id = add_candidate(sessions, service, "current", current=True)
-    add_candidate(sessions, service, "backup")
-    gateway.complete_results["deepseek/current"] = success("统一结果")
-    gateway.complete_results["deepseek/backup"] = success("不应使用")
-
-    result = asyncio.run(
-        service.chat(
-            TEST_USER_ID,
-            [ChatMessage(role="user", content="虚构请求")],
-            source="manual_acceptance",
+def add_route(sessions, service, *, same_model=True, priority=200):
+    with sessions() as db:
+        connection = LLMProviderConnection(
+            provider_code="deepseek", name=f"备用-{priority}",
+            credential_ciphertext=service.encrypt_credential(json.dumps({"api_key": "fictional-fallback"})),
+            settings_json={}, enabled=True, runtime_config_version=1,
         )
-    )
+        model = db.get(LLMModel, 1) if same_model else LLMModel(display_name="另一个模型")
+        db.add_all([connection, model]); db.flush()
+        route = LLMModelRoute(
+            model_id=model.id, connection_id=connection.id, target_kind="model",
+            invoke_target=f"fallback/model-{priority}", origin="manual", enabled=True,
+            target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"},
+        )
+        db.add(route); db.flush()
+        binding = LLMUseCaseRoute(
+            use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat",
+            priority=priority, enabled=True, validated_at=datetime.now(timezone.utc),
+        )
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
+        route_id = route.id
+        db.commit()
+    return route_id
 
-    assert result.content == "统一结果"
-    assert [model for model, _key in gateway.calls] == ["deepseek/current"]
-    assert gateway.disable_thinking_calls == [False]
+
+def test_resolves_route_and_records_price_snapshot(context):
+    service, gateway, sessions = context
+    result = asyncio.run(service.chat(1, [ChatMessage(role="user", content="hello")], source="test_call"))
+    assert result.content == "OK"
+    assert gateway.calls[0]["model"] == "vendor/model"
+    assert gateway.calls[0]["api_key"] == "fictional-key"
     with sessions() as db:
         log = db.scalar(select(LLMCallLog))
-        assert log is not None
-        assert log.source == "manual_acceptance"
-        assert log.model_config_id == current_id
-        assert log.adapter == "deepseek"
-        assert log.model_call_name == "current"
         assert log.status == "succeeded"
-        assert log.metering_status == "complete"
-        assert log.estimated_cost == Decimal("2.5000000000")
+        assert log.route_id == 1
+        assert log.estimated_cost == Decimal("0.00014")
+        assert log.cost_currency == "USD"
 
 
-def test_agent_runtime_model_uses_pi_binding_not_chat_binding(service_context) -> None:
-    service, _gateway, sessions = service_context
-    chat_id = add_candidate(sessions, service, "chat-current", current=True)
-    with sessions() as db:
-        pi_config = LLMModelConfig(
-            adapter="deepseek",
-            model_call_name="pi-current",
-            model_name="deepseek/pi-current",
-            api_base="https://api.example.invalid/v1",
-            encrypted_api_key=service.encrypt_credential("fictional-pi-key"),
-            enabled=True,
-            priority=100,
-            config_version=3,
-        )
-        db.add(pi_config)
-        db.flush()
-        db.add(
-            LLMCapabilityBinding(
-                capability="pi_agent",
-                model_config_id=pi_config.id,
-            )
-        )
-        db.commit()
-        pi_id = pi_config.id
-
-    runtime = asyncio.run(service.agent_runtime_model())
-
-    assert runtime.id == pi_id
-    assert runtime.id != chat_id
-    assert runtime.model_call_name == "pi-current"
-    assert runtime.api_base == "https://api.example.invalid/v1"
-    assert runtime.api_key == "fictional-pi-key"
-    assert runtime.config_version == 3
-
-
-def test_agent_model_summary_reads_pi_binding_without_decrypting_credentials(
-    service_context,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    service, _gateway, sessions = service_context
-    with sessions() as db:
-        config = LLMModelConfig(
-            adapter="deepseek",
-            model_call_name="fictional-agent-model",
-            model_name="deepseek/fictional-agent-model",
-            api_base="https://sensitive.example.invalid/v1",
-            encrypted_api_key="v1:fake:not-a-real-secret",
-            enabled=True,
-            priority=100,
-            config_version=4,
-        )
-        db.add(config)
-        db.flush()
-        db.add(
-            LLMCapabilityBinding(
-                capability="pi_agent",
-                model_config_id=config.id,
-            )
-        )
-        db.commit()
-
-    def fail_if_decrypted(_envelope: str):
-        raise AssertionError("model summary must not decrypt credentials")
-
-    monkeypatch.setattr(service._cipher, "decrypt", fail_if_decrypted)
-
-    summary = asyncio.run(service.agent_model_summary())
-
-    assert summary.adapter == "deepseek"
-    assert summary.name == "fictional-agent-model"
-
-
-def test_agent_model_summary_reports_missing_pi_binding(service_context) -> None:
-    service, _gateway, _sessions = service_context
-
-    with pytest.raises(LLMError) as captured:
-        asyncio.run(service.agent_model_summary())
-
-    assert captured.value.code == "LLM_MODEL_NOT_CONFIGURED"
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        '{"answer":"有效"}',
-        '```json\n{"answer":"有效"}\n```',
-        '结果如下：\n{"answer":"有效"}',
-    ],
-)
-def test_structured_chat_uses_current_and_validates_local_json(
-    service_context,
-    content: str,
-) -> None:
-    service, gateway, sessions = service_context
-    add_candidate(sessions, service, "current", current=True)
-    add_candidate(sessions, service, "backup")
-    gateway.complete_results["deepseek/current"] = success(content)
-
-    result = asyncio.run(
-        service.structured_chat(
-            TEST_USER_ID,
-            [ChatMessage(role="user", content="结构化请求")],
-            source="fictional_module",
-            response_model=StructuredPayload,
-        )
-    )
-
-    assert result.value.answer == "有效"
-    assert [model for model, _key in gateway.calls] == ["deepseek/current"]
-    assert gateway.disable_thinking_calls == [True]
-    assert len(gateway.message_batches) == 1
-    instruction, original = gateway.message_batches[0]
-    assert instruction.role == "system"
-    assert "只返回一个" in instruction.content
-    assert '"answer"' in instruction.content
-    assert original == ChatMessage(role="user", content="结构化请求")
-
-
-@pytest.mark.parametrize(
-    "content",
-    [
-        "not-json",
-        '{"wrong":"shape"}',
-        '{"answer":"第一个"}\n{"answer":"第二个"}',
-        '{"answer":"重复"}\n{"answer":"重复"}',
-    ],
-)
-def test_invalid_structured_response_fails_without_backup(
-    service_context,
-    content: str,
-) -> None:
-    service, gateway, sessions = service_context
-    current_id = add_candidate(sessions, service, "current", current=True)
-    add_candidate(sessions, service, "backup")
-    gateway.complete_results["deepseek/current"] = success(content)
-
-    with pytest.raises(LLMError) as captured:
-        asyncio.run(
-            service.structured_chat(
-                TEST_USER_ID,
-                [ChatMessage(role="user", content="非法响应")],
-                source="fictional_module",
-                response_model=StructuredPayload,
-            )
-        )
-
-    assert captured.value.code == "LLM_RESPONSE_INVALID"
-    assert [model for model, _key in gateway.calls] == ["deepseek/current"]
+def test_structured_error_keeps_tokens_and_cost(context):
+    service, gateway, sessions = context
+    gateway.result = GatewayResult(content="not JSON", usage=GatewayUsage(100, 20))
+    with pytest.raises(LLMError, match="LLM_RESPONSE_INVALID"):
+        asyncio.run(service.structured_chat(1, [ChatMessage(role="user", content="hello")], source="test_call", response_model=Answer))
     with sessions() as db:
         log = db.scalar(select(LLMCallLog))
-        assert log is not None
-        assert log.model_config_id == current_id
         assert log.status == "failed"
-        assert log.error_code == "LLM_RESPONSE_INVALID"
+        assert log.input_tokens == 100
+        assert log.estimated_cost == Decimal("0.00014")
 
 
-def test_current_failure_never_calls_saved_backup(service_context) -> None:
-    service, gateway, sessions = service_context
-    current_id = add_candidate(sessions, service, "current", current=True)
-    add_candidate(sessions, service, "backup")
-    gateway.complete_results["deepseek/current"] = GatewayError(
-        code="LLM_UNAVAILABLE",
-        may_have_reached_provider=True,
-    )
-
-    with pytest.raises(LLMError) as captured:
-        asyncio.run(
-            service.chat(
-                TEST_USER_ID,
-                [ChatMessage(role="user", content="失败不切换")],
-                source="fictional_module",
-            )
-        )
-
-    assert captured.value.code == "LLM_UNAVAILABLE"
-    assert [model for model, _key in gateway.calls] == ["deepseek/current"]
+def test_inactive_binding_never_calls_gateway(context):
+    service, gateway, sessions = context
     with sessions() as db:
-        logs = db.scalars(select(LLMCallLog)).all()
-        assert len(logs) == 1
-        assert logs[0].model_config_id == current_id
-        assert logs[0].status == "failed"
+        db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1)).enabled = False
+        db.commit()
+    with pytest.raises(LLMError, match="LLM_MODEL_NOT_CONFIGURED"):
+        asyncio.run(service.chat(1, [ChatMessage(role="user", content="hello")], source="test_call"))
+    assert not gateway.calls
 
 
-def test_unconfigured_chat_does_not_select_saved_candidates(service_context) -> None:
-    service, gateway, sessions = service_context
-    add_candidate(sessions, service, "candidate-a")
-    add_candidate(sessions, service, "candidate-b")
-
-    with pytest.raises(LLMError) as captured:
-        asyncio.run(
-            service.chat(
-                TEST_USER_ID,
-                [ChatMessage(role="user", content="尚未启用")],
-                source="fictional_module",
-            )
-        )
-
-    assert captured.value.code == "LLM_CHAT_NOT_CONFIGURED"
-    assert gateway.calls == []
+def test_gateway_failure_creates_failed_call_log(context):
+    service, gateway, sessions = context
+    gateway.result = GatewayError(code="LLM_UNAVAILABLE", may_have_reached_provider=True)
+    with pytest.raises(LLMError):
+        asyncio.run(service.chat(1, [ChatMessage(role="user", content="hello")], source="test_call"))
     with sessions() as db:
         log = db.scalar(select(LLMCallLog))
-        assert log is not None
-        assert log.status == "failed"
-        assert log.model_config_id is None
-
-
-def test_missing_or_unreadable_key_stops_before_gateway(service_context) -> None:
-    service, gateway, sessions = service_context
-    config_id = add_candidate(
-        sessions,
-        service,
-        "current",
-        current=True,
-        with_key=False,
-    )
-
-    with pytest.raises(LLMError) as missing:
-        asyncio.run(
-            service.chat(
-                TEST_USER_ID,
-                [ChatMessage(role="user", content="缺少密钥")],
-                source="fictional_module",
-            )
-        )
-    assert missing.value.code == "LLM_CREDENTIALS_UNAVAILABLE"
-    assert gateway.calls == []
-
-    with sessions() as db:
-        config = db.get(LLMModelConfig, config_id)
-        assert config is not None
-        config.encrypted_api_key = "v1:missing:invalid"
-        db.commit()
-    with pytest.raises(LLMError) as unreadable:
-        asyncio.run(
-            service.chat(
-                TEST_USER_ID,
-                [ChatMessage(role="user", content="不可解密")],
-                source="fictional_module",
-            )
-        )
-    assert unreadable.value.code == "LLM_CREDENTIALS_UNAVAILABLE"
-    assert gateway.calls == []
-
-
-@pytest.mark.parametrize(
-    "usage,input_price,output_price,expected_status,has_cost",
-    [
-        (GatewayUsage(10, 2), Decimal("1"), Decimal("2"), "complete", True),
-        (GatewayUsage(10, 2), Decimal("1"), None, "partial", False),
-        (GatewayUsage(None, None), None, None, "unknown", False),
-    ],
-)
-def test_metering_uses_only_gateway_catalog_prices(
-    service_context,
-    usage: GatewayUsage,
-    input_price: Decimal | None,
-    output_price: Decimal | None,
-    expected_status: str,
-    has_cost: bool,
-) -> None:
-    service, gateway, sessions = service_context
-    add_candidate(sessions, service, "current", current=True)
-    gateway.complete_results["deepseek/current"] = GatewayResult(
-        content="ok",
-        usage=usage,
-        input_price_per_million=input_price,
-        output_price_per_million=output_price,
-    )
-
-    result = asyncio.run(
-        service.chat(
-            TEST_USER_ID,
-            [ChatMessage(role="user", content="计量")],
-            source="fictional_module",
-        )
-    )
-    with sessions() as db:
-        log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == result.call_id))
-        assert log is not None
-        assert log.metering_status == expected_status
-        assert (log.estimated_cost is not None) is has_cost
-
-
-def test_connection_test_uses_target_without_changing_binding(service_context) -> None:
-    service, gateway, sessions = service_context
-    current_id = add_candidate(sessions, service, "current", current=True)
-    target_id = add_candidate(sessions, service, "target")
-    gateway.complete_results["deepseek/target"] = success()
-
-    call_id = asyncio.run(service.test_config(TEST_USER_ID, target_id))
-
-    assert [model for model, _key in gateway.calls] == ["deepseek/target"]
-    with sessions() as db:
-        binding = db.get(LLMCapabilityBinding, "chat")
-        assert binding is not None
-        assert binding.model_config_id == current_id
-        log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == call_id))
-        assert log is not None
-        assert log.source == "connection_test"
-        assert log.model_config_id == target_id
-
-
-def test_stream_failure_after_delta_does_not_switch(service_context) -> None:
-    service, gateway, sessions = service_context
-    add_candidate(sessions, service, "current", current=True)
-    add_candidate(sessions, service, "backup")
-
-    async def failed_stream():
-        yield GatewayStreamEvent(type="delta", content="部分")
-        raise GatewayError(
-            code="LLM_UNAVAILABLE",
-            may_have_reached_provider=True,
-            usage=GatewayUsage(7, 3),
-            input_price_per_million=Decimal("1.5"),
-            output_price_per_million=Decimal("2"),
-        )
-
-    gateway.stream_results["deepseek/current"] = failed_stream()
-
-    async def consume():
-        stream = await service.stream_chat(
-            TEST_USER_ID,
-            [ChatMessage(role="user", content="流中失败")],
-            source="fictional_module",
-        )
-        return stream.call_id, [event async for event in stream.events]
-
-    call_id, events = asyncio.run(consume())
-
-    assert [event.type for event in events] == ["delta", "error"]
-    assert [model for model, _key in gateway.calls] == ["deepseek/current"]
-    with sessions() as db:
-        log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == call_id))
-        assert log is not None
         assert log.status == "failed"
         assert log.error_code == "LLM_UNAVAILABLE"
-        assert log.metering_status == "partial"
 
 
-def test_stream_success_and_close_before_iteration_finalize_correctly(
-    service_context,
-) -> None:
-    service, gateway, sessions = service_context
-    add_candidate(sessions, service, "current", current=True)
-    gateway.stream_results["deepseek/current"] = [
-        GatewayStreamEvent(type="delta", content="前"),
-        GatewayStreamEvent(type="done", usage=GatewayUsage(1, 1)),
+def test_failure_switches_only_within_selected_logical_model(context):
+    service, gateway, sessions = context
+    other_model_route_id = add_route(sessions, service, same_model=False, priority=150)
+    fallback_route_id = add_route(sessions, service, priority=200)
+    gateway.result = [
+        GatewayError(code="LLM_UNAVAILABLE", may_have_reached_provider=True),
+        GatewayResult(content="from backup", usage=GatewayUsage(2, 3)),
     ]
-
-    async def run_both():
-        first = await service.stream_chat(
-            TEST_USER_ID,
-            [ChatMessage(role="user", content="完成")],
-            source="fictional_module",
-        )
-        events = [event async for event in first.events]
-        second = await service.stream_chat(
-            TEST_USER_ID,
-            [ChatMessage(role="user", content="关闭")],
-            source="fictional_module",
-        )
-        await second.events.aclose()
-        return first.call_id, events, second.call_id
-
-    success_id, events, cancelled_id = asyncio.run(run_both())
-    assert [event.type for event in events] == ["delta", "done"]
+    result = asyncio.run(service.chat(1, [ChatMessage(role="user", content="hello")], source="test_call"))
+    assert result.content == "from backup"
+    assert [call["model"] for call in gateway.calls] == ["vendor/model", "fallback/model-200"]
     with sessions() as db:
-        statuses = {
-            log.call_id: log.status for log in db.scalars(select(LLMCallLog)).all()
-        }
-        assert statuses[success_id] == "succeeded"
-        assert statuses[cancelled_id] == "cancelled"
+        logs = db.scalars(select(LLMCallLog).order_by(LLMCallLog.id)).all()
+        assert [(log.route_id, log.status, log.selection_source) for log in logs] == [
+            (1, "failed", "default"), (fallback_route_id, "succeeded", "fallback"),
+        ]
+        assert all(log.route_id != other_model_route_id for log in logs)
+
+
+def test_request_rejection_does_not_switch_route(context):
+    service, gateway, sessions = context
+    add_route(sessions, service)
+    gateway.result = GatewayError(code="LLM_REQUEST_REJECTED", may_have_reached_provider=True)
+    with pytest.raises(LLMError, match="LLM_REQUEST_REJECTED"):
+        asyncio.run(service.chat(1, [ChatMessage(role="user", content="hello")], source="test_call"))
+    assert len(gateway.calls) == 1
+
+
+def test_stream_switches_before_output_but_not_after_output(context):
+    service, gateway, sessions = context
+    add_route(sessions, service)
+    gateway.result = [
+        [GatewayError(code="LLM_UNAVAILABLE", may_have_reached_provider=True)],
+        [GatewayStreamEvent(type="delta", content="ok"), GatewayStreamEvent(type="done", usage=GatewayUsage(1, 1))],
+    ]
+    async def run():
+        stream = await service.stream_chat(1, [ChatMessage(role="user", content="hello")], source="test_call")
+        return [event async for event in stream.events]
+    events = asyncio.run(run())
+    assert [(event.type, event.content) for event in events] == [("delta", "ok"), ("done", None)]
+    assert len(gateway.calls) == 2
+
+    gateway.calls.clear()
+    gateway.result = [[GatewayStreamEvent(type="delta", content="partial"),
+                       GatewayError(code="LLM_UNAVAILABLE", may_have_reached_provider=True)]]
+    events = asyncio.run(run())
+    assert [event.type for event in events] == ["delta", "error"]
+    assert len(gateway.calls) == 1

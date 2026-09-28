@@ -15,6 +15,7 @@ from linkresume.modules.agent.models import (
 )
 from linkresume.modules.agent.schemas import AgentClarification, AgentContextMaterial
 from linkresume.modules.agent.trace import event_key, operation_for_run, record_event
+from linkresume.modules.llm.models import LLMCallLog
 
 
 RUN_PHASE_LABELS = {
@@ -601,9 +602,28 @@ def _finalize(
             return
         run.status = status
         run.error_code = error_code
-        run.input_tokens = input_tokens if status == "succeeded" else None
-        run.output_tokens = output_tokens if status == "succeeded" else None
-        run.estimated_cost = estimated_cost if status == "succeeded" else None
+        calls = db.scalars(
+            select(LLMCallLog).where(LLMCallLog.agent_run_id == run.id)
+        ).all()
+        if status == "succeeded" and calls and all(
+            item.input_tokens is not None and item.output_tokens is not None for item in calls
+        ):
+            run.input_tokens = sum(item.input_tokens for item in calls)
+            run.output_tokens = sum(item.output_tokens for item in calls)
+        else:
+            run.input_tokens = input_tokens if status == "succeeded" else None
+            run.output_tokens = output_tokens if status == "succeeded" else None
+        currencies = {item.cost_currency for item in calls}
+        if (
+            status == "succeeded" and calls
+            and all(item.estimated_cost is not None for item in calls)
+            and len(currencies) == 1 and None not in currencies
+        ):
+            run.estimated_cost = sum(item.estimated_cost for item in calls)
+            run.cost_currency = next(iter(currencies))
+        else:
+            run.estimated_cost = None
+            run.cost_currency = None
         run.completed_at = utc_now()
         _finalize_unclosed_tasks(db, run, status, error_code, clarification is not None)
         operation = db.scalar(select(AgentOperation).where(

@@ -7,9 +7,11 @@ import {
   SettingsManager,
 } from "../../../../third_party/pi/packages/coding-agent/dist/index.js";
 import { readFile, realpath } from "node:fs/promises";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { createAssistantMessageEventStream } from "../../../../third_party/pi/packages/ai/dist/utils/event-stream.js";
+import { isRetryableAssistantError } from "../../../../third_party/pi/packages/ai/dist/utils/retry.js";
 
 import { createLinkResumeClient } from "../tools/linkresume-client.js";
 
@@ -386,34 +388,117 @@ export function buildAgentConversation({
 
 const SKILLS_ROOT = fileURLToPath(new URL("../../resources/skills/", import.meta.url));
 
-const PI_PROVIDER_BY_ADAPTER = {
-  openai: "openai",
-  anthropic: "anthropic",
-  deepseek: "deepseek",
-  openrouter: "openrouter",
-  gemini: "google",
-  xai: "xai",
-  groq: "groq",
-  mistral: "mistral",
-};
+const ALLOWED_MODEL_APIS = new Set([
+  "openai-completions",
+  "openai-responses",
+  "anthropic-messages",
+  "google-generative-ai",
+]);
 
-async function configuredModel(modelConfig) {
-  const provider = PI_PROVIDER_BY_ADAPTER[modelConfig.adapter];
-  if (!provider) throw new Error("AGENT_MODEL_UNSUPPORTED");
+export async function configuredModels(modelConfigs) {
+  if (!Array.isArray(modelConfigs) || modelConfigs.length === 0) throw new Error("AGENT_MODEL_UNSUPPORTED");
   const modelRuntime = await ModelRuntime.create({
     modelsPath: null,
     allowModelNetwork: false,
     refreshOnCreate: false,
   });
-  if (modelConfig.apiKey) {
+  const routes = [];
+  for (const modelConfig of modelConfigs) {
+    if (!ALLOWED_MODEL_APIS.has(modelConfig.api) || !modelConfig.baseUrl?.startsWith("https://")) {
+      throw new Error("AGENT_MODEL_UNSUPPORTED");
+    }
+    const provider = `linkresume-${modelConfig.provider}${modelConfig.routeId ? `-${modelConfig.routeId}` : ""}`;
+    const contextWindow = Number.isSafeInteger(modelConfig.contextWindow) && modelConfig.contextWindow > 0
+      ? modelConfig.contextWindow : 128000;
+    const maxTokens = Number.isSafeInteger(modelConfig.maxOutputTokens) && modelConfig.maxOutputTokens > 0
+      ? Math.min(modelConfig.maxOutputTokens, contextWindow) : Math.min(8192, contextWindow);
+    modelRuntime.registerProvider(provider, {
+      baseUrl: modelConfig.baseUrl,
+      api: modelConfig.api,
+      authHeader: true,
+      models: [{
+        id: modelConfig.name,
+        name: modelConfig.name,
+        api: modelConfig.api,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow,
+        maxTokens,
+      }],
+    });
     await modelRuntime.setRuntimeApiKey(provider, modelConfig.apiKey);
+    const routeModel = modelRuntime.getModel(provider, modelConfig.name);
+    if (!routeModel) throw new Error("AGENT_MODEL_UNSUPPORTED");
+    routes.push({ ...modelConfig, model: routeModel });
   }
-  const baseModel = modelRuntime.getModel(provider, modelConfig.name);
-  if (!baseModel) throw new Error("AGENT_MODEL_UNSUPPORTED");
   return {
     modelRuntime,
-    model: modelConfig.baseUrl ? { ...baseModel, baseUrl: modelConfig.baseUrl } : baseModel,
+    model: routes[0].model,
+    routes,
   };
+}
+
+export async function configuredModel(modelConfig) {
+  return configuredModels([modelConfig]);
+}
+
+function retryableRouteFailure(message) {
+  if (message?.stopReason !== "error") return false;
+  if (isRetryableAssistantError(message)) return true;
+  const detail = message.errorMessage ?? "";
+  return /(?:\b401\b|\b403\b|\b429\b|\b50[0-49]\b|no_available_channel|connection|timeout|timed out)/i.test(detail);
+}
+
+export function streamWithRouteFallback(routes, streamFor, onRoute, onFailedAttempt, signal) {
+  const output = createAssistantMessageEventStream();
+  void (async () => {
+    let lastPartial = null;
+    for (let index = 0; index < routes.length; index += 1) {
+      const route = routes[index];
+      const buffered = [];
+      let emittedContent = false;
+      let switched = false;
+      try {
+        onRoute(route);
+        for await (const event of streamFor(route)) {
+          if (event.partial) lastPartial = event.partial;
+          if (event.type === "text_delta" || event.type === "thinking_delta" || event.type === "toolcall_delta") {
+            emittedContent = true;
+          }
+          if (event.type === "error" && !emittedContent && !signal.aborted
+              && index + 1 < routes.length && retryableRouteFailure(event.error)) {
+            await onFailedAttempt(route, event.error);
+            switched = true;
+            break;
+          }
+          if (!emittedContent && event.type !== "done" && event.type !== "error") {
+            buffered.push(event);
+            continue;
+          }
+          for (const previous of buffered.splice(0)) output.push(previous);
+          output.push(event);
+          if (event.type === "done" || event.type === "error") return;
+        }
+        if (switched) continue;
+        throw new Error("connection closed before response");
+      } catch (error) {
+        if (!emittedContent && !signal.aborted && index + 1 < routes.length
+            && retryableRouteFailure({ stopReason: "error", errorMessage: String(error?.message ?? error) })) {
+          await onFailedAttempt(route, { stopReason: "error", errorMessage: String(error?.message ?? error) });
+          continue;
+        }
+        const failed = { ...(lastPartial ?? {}), role: "assistant", content: lastPartial?.content ?? [],
+          stopReason: signal.aborted ? "aborted" : "error", errorMessage: String(error?.message ?? error) };
+        output.push({ type: "error", reason: signal.aborted ? "aborted" : "error", error: failed });
+        return;
+      }
+    }
+    const failed = { ...(lastPartial ?? {}), role: "assistant", content: lastPartial?.content ?? [],
+      stopReason: "error", errorMessage: "AGENT_MODEL_REQUEST_FAILED" };
+    output.push({ type: "error", reason: "error", error: failed });
+  })();
+  return output;
 }
 
 export function createSkillReadTool(
@@ -491,7 +576,6 @@ export function agentUsage(stats) {
   if (!stats?.tokens) return null;
   const inputTokens = Number(stats.tokens.input);
   const outputTokens = Number(stats.tokens.output);
-  const estimatedCost = Number(stats.cost);
   if (
     !Number.isSafeInteger(inputTokens) || inputTokens < 0 ||
     !Number.isSafeInteger(outputTokens) || outputTokens < 0
@@ -501,9 +585,7 @@ export function agentUsage(stats) {
   return {
     inputTokens,
     outputTokens,
-    estimatedCost: Number.isFinite(estimatedCost) && estimatedCost >= 0
-      ? estimatedCost.toFixed(8)
-      : null,
+    estimatedCost: null,
   };
 }
 
@@ -622,13 +704,43 @@ export async function executeAgentRun({
   signal,
 }) {
   const client = createLinkResumeClient(config, runId, signal);
+  const meteringClient = createLinkResumeClient(config, runId, new AbortController().signal);
   const runtimeConfig = await client.runtimeConfig();
-  const { modelRuntime, model } = await configuredModel({
-    adapter: runtimeConfig.provider === "google" ? "gemini" : runtimeConfig.provider,
-    name: runtimeConfig.model,
-    apiKey: runtimeConfig.api_key,
-    baseUrl: runtimeConfig.api_base,
-  });
+  const routeConfigs = runtimeConfig.routes?.length ? runtimeConfig.routes : [runtimeConfig];
+  const { modelRuntime, model, routes } = await configuredModels(routeConfigs.map((route) => ({
+    provider: route.provider,
+    api: route.api,
+    name: route.model,
+    apiKey: route.api_key,
+    baseUrl: route.api_base,
+    routeId: route.route_id,
+    configVersion: route.config_version,
+    pricing: route.pricing,
+    contextWindow: route.context_window,
+    maxOutputTokens: route.max_output_tokens,
+  })));
+  const callRecords = [];
+  const meteringFailures = [];
+  let activeRoute = routes[0];
+  const originalStreamSimple = modelRuntime.streamSimple.bind(modelRuntime);
+  modelRuntime.streamSimple = (_model, context, options) => streamWithRouteFallback(
+    routes,
+    (route) => originalStreamSimple(route.model, context, { ...options, maxRetries: 0 }),
+    (route) => { activeRoute = route; },
+    async (route, message) => {
+      const usage = message?.usage;
+      const record = meteringClient.recordLlmCall({
+        callId: randomUUID(), routeId: route.routeId, status: "failed",
+        configVersion: route.configVersion, priceSnapshot: route.pricing,
+        inputTokens: Number.isSafeInteger(usage?.input) ? usage.input : null,
+        outputTokens: Number.isSafeInteger(usage?.output) ? usage.output : null,
+        errorCode: "AGENT_MODEL_REQUEST_FAILED",
+      }).catch((error) => { meteringFailures.push(error); });
+      callRecords.push(record);
+      await record;
+    },
+    signal,
+  );
 
   let routerLoaded = false;
   let taskPlan = null;
@@ -1343,7 +1455,7 @@ export async function executeAgentRun({
 
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: true },
-    retry: { enabled: true, maxRetries: 1 },
+    retry: { enabled: false },
   });
   const resourceLoader = new DefaultResourceLoader({
     cwd: process.cwd(),
@@ -1436,6 +1548,26 @@ export async function executeAgentRun({
     filterAssistantOutput(event);
     if (event.type === "message_end" && event.message.role === "assistant") {
       finalAssistantMessage = event.message;
+      const message = event.message;
+      const usage = message.usage;
+      callRecords.push(meteringClient.recordLlmCall({
+        callId: randomUUID(),
+        routeId: activeRoute.routeId,
+        configVersion: activeRoute.configVersion,
+        priceSnapshot: activeRoute.pricing,
+        status: message.stopReason === "error" ? "failed"
+          : message.stopReason === "aborted" ? "cancelled" : "succeeded",
+        inputTokens: Number.isSafeInteger(usage?.input) ? usage.input : null,
+        outputTokens: Number.isSafeInteger(usage?.output) ? usage.output : null,
+        usage: usage ? {
+          cacheRead: usage.cacheRead,
+          cacheWrite: usage.cacheWrite,
+          reasoning: usage.reasoning,
+        } : null,
+        responseModelId: message.responseModel ?? null,
+        upstreamRequestId: message.responseId ?? null,
+        errorCode: message.stopReason === "error" ? "AGENT_MODEL_REQUEST_FAILED" : null,
+      }).catch((error) => { meteringFailures.push(error); }));
     }
   });
   const abort = () => void session.abort();
@@ -1470,6 +1602,8 @@ export async function executeAgentRun({
       content,
     });
     await session.prompt(conversation);
+    await Promise.all(callRecords);
+    if (meteringFailures.length) throw new Error("AGENT_METERING_UNAVAILABLE");
     assertAgentCompleted(finalAssistantMessage);
     if (!pendingClarification && outputMode !== "final") {
       throw new Error("AGENT_FINAL_RESPONSE_REQUIRED");
@@ -1479,6 +1613,7 @@ export async function executeAgentRun({
     }
     return agentUsage(session.getSessionStats());
   } finally {
+    await Promise.allSettled(callRecords);
     signal.removeEventListener("abort", abort);
     unsubscribeToolPreflightAudit();
     unsubscribe();

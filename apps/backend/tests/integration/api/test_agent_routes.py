@@ -1,6 +1,7 @@
 import asyncio
 from copy import deepcopy
 import hashlib
+from decimal import Decimal
 import re
 from datetime import timedelta
 from types import SimpleNamespace
@@ -34,7 +35,10 @@ from linkresume.modules.agent.service import create_run
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
 from linkresume.modules.job_descriptions.models import JobDescription
-from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, validation_fingerprint
+from cryptography.fernet import Fernet
+import json
 from linkresume.modules.llm.service import LLMError
 from linkresume.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
@@ -87,12 +91,13 @@ class CapturingEmitter:
         return True, uuid4().hex
 
 
-def build_app(*, event_emitter=None):
+def build_app(*, event_emitter=None, with_model=True):
     app = create_app(
         Settings(
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="agent-routes-test-secret-at-least-32-bytes",
             linkresume_internal_agent_token=INTERNAL_TOKEN,
+            llm_credential_encryption_keys=f"test:{Fernet.generate_key().decode('ascii')}",
         ),
         storage=FakeStorage(),
         redis=FakeRedis(),
@@ -111,6 +116,8 @@ def build_app(*, event_emitter=None):
         db.add(template)
         db.commit()
         app.state.test_template_id = str(template.id)
+    if with_model:
+        bind_pi_agent_model(app)
     return app
 
 
@@ -133,21 +140,16 @@ def create_resume(client: TestClient, app, title: str = "张三的测试简历")
 
 def bind_pi_agent_model(app) -> None:
     with app.state.session_factory() as db:
-        config = LLMModelConfig(
-            adapter="deepseek",
-            model_call_name="fictional-agent-model",
-            model_name="deepseek/fictional-agent-model",
-            api_base="https://sensitive.example.invalid/v1",
-            encrypted_api_key="v1:fake:not-a-real-secret",
-            enabled=True,
-            priority=100,
-            config_version=2,
-        )
-        db.add(config)
-        db.flush()
-        binding = db.get(LLMCapabilityBinding, "pi_agent")
-        assert binding is not None
-        binding.model_config_id = config.id
+        if db.scalar(select(LLMModel).limit(1)) is not None:
+            return
+        model = LLMModel(display_name="fictional-agent-model")
+        connection = LLMProviderConnection(provider_code="aihubmix", name="测试连接", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-provider-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        db.add_all([model, connection]); db.flush()
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="fictional-agent-model", origin="manual", enabled=True, target_available=True, metadata_json={"context_length": 16384, "max_output": 4096})
+        db.add(route); db.flush()
+        binding = LLMUseCaseRoute(use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat", priority=100, enabled=True, validated_at=utc_now())
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
 
 
@@ -2927,7 +2929,7 @@ def test_pi_stream_persists_successful_usage_and_assistant_message(
             assert run.status == "succeeded"
             assert run.input_tokens == 120
             assert run.output_tokens == 30
-            assert str(run.estimated_cost) == "0.00123457"
+            assert run.estimated_cost is None  # Cost is sourced from persisted model-call logs.
             assistant = db.scalar(
                 select(AgentMessage).where(
                     AgentMessage.run_id == run.id,
@@ -3389,14 +3391,14 @@ def test_agent_model_requires_login_and_returns_only_safe_bound_summary() -> Non
 
     assert response.status_code == 200
     assert response.json() == {
-        "model": {"adapter": "deepseek", "name": "fictional-agent-model"}
+        "model": {"id": "1", "name": "fictional-agent-model"}
     }
     assert "sensitive.example.invalid" not in response.text
     assert "not-a-real-secret" not in response.text
 
 
 def test_agent_model_returns_stable_error_when_pi_binding_is_missing() -> None:
-    app = build_app()
+    app = build_app(with_model=False)
     with TestClient(app) as client:
         register(client, "agent-model-unconfigured@example.test")
         response = client.get("/api/agent/model")
@@ -3407,26 +3409,84 @@ def test_agent_model_returns_stable_error_when_pi_binding_is_missing() -> None:
 
 def test_runtime_config_snapshots_requested_model_on_run() -> None:
     app = build_app()
-    app.state.llm_service.agent_runtime_model = AsyncMock(return_value=SimpleNamespace(
-        id=42, config_version=3, adapter="openrouter",
-        model_call_name="example/model-1", api_base=None, api_key="test-key",
-    ))
     with TestClient(app) as client:
         register(client, "model-snapshot@example.test")
         session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
-        run_id = create_active_run(app, session_id)
+        with app.state.session_factory() as db:
+            session = db.scalar(select(AgentSession).where(AgentSession.public_id == session_id))
+            run, _ = create_run(db, session=session, content="测试模型", idempotency_key="model-snapshot", timeout_seconds=60)
+            run_id = run.public_id
+            db.commit()
         response = client.get(
             "/internal/agent/runtime-config",
             params={"run_id": run_id}, headers=internal_headers(),
         )
         assert response.status_code == 200
-        assert response.json()["model"] == "example/model-1"
+        assert response.json()["model"] == "fictional-agent-model"
+        assert response.json()["provider"] == "aihubmix"
+        assert response.json()["route_id"] == "1"
+        assert response.json()["context_window"] == 16384
+        assert response.json()["max_output_tokens"] == 4096
         with app.state.session_factory() as db:
             run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
             assert run is not None
-            assert run.model_name == "openrouter/example/model-1"
-            assert run.model_config_id == 42
-            assert run.model_config_version == 3
+            assert run.model_name == "fictional-agent-model"
+            assert run.resolved_llm_model_id == 1
+            assert run.resolved_llm_route_id == 1
+            assert run.runtime_config_version == 1
+
+
+def test_pi_receives_same_model_backup_and_records_its_actual_route() -> None:
+    app = build_app()
+    with app.state.session_factory() as db:
+        backup = LLMProviderConnection(
+            provider_code="deepseek", name="备用连接",
+            credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-backup-key"})),
+            settings_json={}, enabled=True, runtime_config_version=1,
+        )
+        db.add(backup); db.flush()
+        route = LLMModelRoute(
+            model_id=1, connection_id=backup.id, target_kind="model",
+            invoke_target="fictional-backup-model", origin="manual", enabled=True,
+            target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"},
+        )
+        db.add(route); db.flush()
+        binding = LLMUseCaseRoute(
+            use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat",
+            priority=200, enabled=True, validated_at=utc_now(),
+        )
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, backup)
+        backup_id = route.id
+        db.commit()
+    with TestClient(app) as client:
+        register(client, "model-backup@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        with app.state.session_factory() as db:
+            session = db.scalar(select(AgentSession).where(AgentSession.public_id == session_id))
+            run, _ = create_run(db, session=session, content="测试备用线路", idempotency_key="backup-route", timeout_seconds=60)
+            run_id = run.public_id
+            db.commit()
+        response = client.get("/internal/agent/runtime-config", params={"run_id": run_id}, headers=internal_headers())
+        assert response.status_code == 200
+        assert [item["route_id"] for item in response.json()["routes"]] == ["1", str(backup_id)]
+        backup_runtime = response.json()["routes"][1]
+        with app.state.session_factory() as db:
+            db.get(LLMModelRoute, backup_id).pricing_json = {"currency": "USD", "input_per_million": "10", "output_per_million": "20"}
+            db.commit()
+        recorded = client.post(
+            f"/internal/agent/runs/{run_id}/llm-calls", headers=internal_headers(),
+            json={"callId": "llmcall_" + "b" * 32, "routeId": str(backup_id),
+                  "configVersion": backup_runtime["config_version"],
+                  "priceSnapshot": backup_runtime["pricing"],
+                  "status": "succeeded", "inputTokens": 100, "outputTokens": 20},
+        )
+        assert recorded.status_code == 200, recorded.text
+        with app.state.session_factory() as db:
+            log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == "llmcall_" + "b" * 32))
+            assert log.route_id == backup_id
+            assert log.selection_source == "fallback"
+            assert log.estimated_cost == Decimal("0.00014")
 
 
 def test_agent_model_does_not_expose_llm_call_id_on_service_error() -> None:
@@ -3668,3 +3728,44 @@ def test_agent_session_delete_cleans_only_target_dependencies_in_order() -> None
             )
             is not None
         )
+
+
+def test_selected_conversation_model_and_pi_call_use_frozen_route_price() -> None:
+    app = build_app()
+    with app.state.session_factory() as db:
+        route = db.get(LLMModelRoute, 1)
+        route.pricing_json = {"currency": "USD", "input_per_million": "1", "output_per_million": "2"}
+        db.commit()
+    with TestClient(app) as client:
+        register(client, "selected-model@example.test")
+        listing = client.get("/api/agent/models")
+        assert listing.status_code == 200
+        assert listing.json() == {"models": [{"id": "1", "name": "fictional-agent-model"}], "defaultModelId": "1"}
+        created = client.post("/api/agent/sessions", json={"modelId": "1"})
+        assert created.status_code == 201
+        session_id = created.json()["session"]["id"]
+        assert created.json()["session"]["selected_model_id"] == "1"
+        with app.state.session_factory() as db:
+            session = db.scalar(select(AgentSession).where(AgentSession.public_id == session_id))
+            run, _ = create_run(db, session=session, content="测试计量", idempotency_key="frozen-price", timeout_seconds=60)
+            run_id = run.public_id
+            db.commit()
+        with app.state.session_factory() as db:
+            route = db.get(LLMModelRoute, 1)
+            route.pricing_json = {"currency": "USD", "input_per_million": "10", "output_per_million": "20"}
+            db.commit()
+        changed = client.patch(f"/api/agent/sessions/{session_id}", json={"modelId": None})
+        assert changed.status_code == 200
+        assert changed.json()["session"]["selected_model_id"] is None
+        recorded = client.post(
+            f"/internal/agent/runs/{run_id}/llm-calls",
+            headers=internal_headers(),
+            json={"callId": "llmcall_" + "a" * 32, "status": "succeeded", "inputTokens": 100, "outputTokens": 20},
+        )
+        assert recorded.status_code == 200, recorded.text
+        with app.state.session_factory() as db:
+            log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == "llmcall_" + "a" * 32))
+            assert log.price_snapshot_json["input_per_million"] == "1"
+            assert log.estimated_cost == Decimal("0.00014")
+            assert log.cost_currency == "USD"
+            assert log.selection_source == "user"
