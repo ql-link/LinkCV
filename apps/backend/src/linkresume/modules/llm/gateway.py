@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Literal, Protocol
 
 import litellm
@@ -14,14 +13,15 @@ from linkresume.modules.llm.schemas import ChatMessage
 class GatewayUsage:
     input_tokens: int | None
     output_tokens: int | None
+    details: dict | None = None
 
 
 @dataclass(frozen=True)
 class GatewayResult:
     content: str
     usage: GatewayUsage
-    input_price_per_million: Decimal | None
-    output_price_per_million: Decimal | None
+    response_model_id: str | None = None
+    upstream_request_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -29,8 +29,8 @@ class GatewayStreamEvent:
     type: Literal["delta", "done"]
     content: str | None = None
     usage: GatewayUsage | None = None
-    input_price_per_million: Decimal | None = None
-    output_price_per_million: Decimal | None = None
+    response_model_id: str | None = None
+    upstream_request_id: str | None = None
 
 
 class GatewayError(Exception):
@@ -40,15 +40,11 @@ class GatewayError(Exception):
         code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED", "LLM_TIMEOUT"],
         may_have_reached_provider: bool,
         usage: GatewayUsage | None = None,
-        input_price_per_million: Decimal | None = None,
-        output_price_per_million: Decimal | None = None,
     ) -> None:
         super().__init__("LLM provider request failed")
         self.code = code
         self.may_have_reached_provider = may_have_reached_provider
         self.usage = usage
-        self.input_price_per_million = input_price_per_million
-        self.output_price_per_million = output_price_per_million
 
 
 class LLMGateway(Protocol):
@@ -59,7 +55,6 @@ class LLMGateway(Protocol):
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
-        disable_thinking: bool = False,
     ) -> GatewayResult: ...
 
     async def start_stream(
@@ -77,24 +72,7 @@ def _usage(value: object) -> GatewayUsage:
     return GatewayUsage(
         input_tokens=getattr(usage, "prompt_tokens", None),
         output_tokens=getattr(usage, "completion_tokens", None),
-    )
-
-
-def _prices(model: str) -> tuple[Decimal | None, Decimal | None]:
-    details = litellm.model_cost.get(model)
-    if details is None and "/" in model:
-        details = litellm.model_cost.get(model.split("/", 1)[1])
-    if not details:
-        return None, None
-
-    def per_million(name: str) -> Decimal | None:
-        value = details.get(name)
-        if value is None:
-            return None
-        return Decimal(str(value)) * Decimal(1_000_000)
-
-    return per_million("input_cost_per_token"), per_million(
-        "output_cost_per_token"
+        details=None,
     )
 
 
@@ -102,28 +80,20 @@ def _gateway_error(
     error: Exception,
     *,
     usage: GatewayUsage | None = None,
-    input_price_per_million: Decimal | None = None,
-    output_price_per_million: Decimal | None = None,
 ) -> GatewayError:
     details = {
         "usage": usage,
-        "input_price_per_million": input_price_per_million,
-        "output_price_per_million": output_price_per_million,
     }
     if isinstance(error, (litellm.APIConnectionError, litellm.AuthenticationError)):
         return GatewayError(
-            code=(
-                "LLM_REQUEST_REJECTED"
-                if isinstance(error, litellm.AuthenticationError)
-                else "LLM_UNAVAILABLE"
-            ),
-            may_have_reached_provider=False,
+            code="LLM_UNAVAILABLE",
+            may_have_reached_provider=True,
             **details,
         )
     if isinstance(error, litellm.RateLimitError):
         return GatewayError(
             code="LLM_UNAVAILABLE",
-            may_have_reached_provider=False,
+            may_have_reached_provider=True,
             **details,
         )
     if isinstance(error, litellm.Timeout):
@@ -146,9 +116,11 @@ def _gateway_error(
             litellm.ContentPolicyViolationError,
         ),
     ):
+        # Some compatible gateways report an unavailable channel as HTTP 400.
+        unavailable_channel = "no_available_channel" in str(error).lower()
         return GatewayError(
-            code="LLM_REQUEST_REJECTED",
-            may_have_reached_provider=False,
+            code="LLM_UNAVAILABLE" if unavailable_channel else "LLM_REQUEST_REJECTED",
+            may_have_reached_provider=True,
             **details,
         )
     return GatewayError(
@@ -169,18 +141,16 @@ class LiteLLMGateway:
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
-        disable_thinking: bool = False,
     ) -> dict[str, object]:
         request: dict[str, object] = {
             "model": model,
+            "custom_llm_provider": "openai",
             "messages": [message.model_dump() for message in messages],
             "base_url": api_base,
             "api_key": api_key,
             "timeout": self.timeout_seconds,
             "num_retries": 0,
         }
-        if disable_thinking and model.startswith("deepseek/"):
-            request["extra_body"] = {"thinking": {"type": "disabled"}}
         return request
 
     async def complete(
@@ -190,7 +160,6 @@ class LiteLLMGateway:
         messages: Sequence[ChatMessage],
         api_base: str | None,
         api_key: str | None,
-        disable_thinking: bool = False,
     ) -> GatewayResult:
         try:
             response = await litellm.acompletion(
@@ -199,16 +168,14 @@ class LiteLLMGateway:
                     messages=messages,
                     api_base=api_base,
                     api_key=api_key,
-                    disable_thinking=disable_thinking,
                 )
             )
             content = response.choices[0].message.content or ""
-            input_price, output_price = _prices(model)
             return GatewayResult(
                 content=content,
                 usage=_usage(response),
-                input_price_per_million=input_price,
-                output_price_per_million=output_price,
+                response_model_id=getattr(response, "model", None),
+                upstream_request_id=getattr(response, "id", None),
             )
         except Exception as error:
             raise _gateway_error(error) from None
@@ -237,9 +204,12 @@ class LiteLLMGateway:
 
         async def events() -> AsyncIterator[GatewayStreamEvent]:
             usage = GatewayUsage(None, None)
-            input_price, output_price = _prices(model)
+            response_model_id: str | None = None
+            upstream_request_id: str | None = None
             try:
                 async for chunk in response:
+                    response_model_id = getattr(chunk, "model", None) or response_model_id
+                    upstream_request_id = getattr(chunk, "id", None) or upstream_request_id
                     chunk_usage = _usage(chunk)
                     if (
                         chunk_usage.input_tokens is not None
@@ -254,15 +224,13 @@ class LiteLLMGateway:
                 yield GatewayStreamEvent(
                     type="done",
                     usage=usage,
-                    input_price_per_million=input_price,
-                    output_price_per_million=output_price,
+                    response_model_id=response_model_id,
+                    upstream_request_id=upstream_request_id,
                 )
             except Exception as error:
                 raise _gateway_error(
                     error,
                     usage=usage,
-                    input_price_per_million=input_price,
-                    output_price_per_million=output_price,
                 ) from None
 
         return events()

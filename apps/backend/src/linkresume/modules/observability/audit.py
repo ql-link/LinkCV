@@ -45,18 +45,6 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("GET", "/api/resumes/{resume_id}/pdf"): AuditAction(
         "resume.pdf_export", "resume", "resume_id"
     ),
-    ("POST", "/api/resumes/{resume_id}/versions"): AuditAction(
-        "resume.version_create", "resume_version", "resume_id"
-    ),
-    ("PATCH", "/api/resumes/{resume_id}/versions/{version_no}"): AuditAction(
-        "resume.version_rename", "resume_version", "resume_id"
-    ),
-    ("DELETE", "/api/resumes/{resume_id}/versions/{version_no}"): AuditAction(
-        "resume.version_delete", "resume_version", "resume_id"
-    ),
-    ("POST", "/api/resumes/{resume_id}/versions/{version_no}/restore"): AuditAction(
-        "resume.version_restore", "resume_version", "resume_id"
-    ),
     ("POST", "/api/resumes/{resume_id}/assets"): AuditAction(
         "resume.asset_upload", "resume", "resume_id"
     ),
@@ -125,17 +113,67 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("PATCH", "/api/auth/admin/users/{user_id}/status"): AuditAction(
         "admin.user_status_change", "user", "user_id"
     ),
+    ("POST", "/api/admin/llm/connections"): AuditAction(
+        "admin.llm_connection_create", "llm_connection"
+    ),
+    ("PATCH", "/api/admin/llm/connections/{connection_id}"): AuditAction(
+        "admin.llm_connection_update", "llm_connection", "connection_id"
+    ),
+    ("POST", "/api/admin/llm/connections/{connection_id}/sync"): AuditAction(
+        "admin.llm_connection_sync", "llm_connection", "connection_id"
+    ),
     ("POST", "/api/admin/llm/models"): AuditAction(
         "admin.llm_model_create", "llm_model"
     ),
-    ("PATCH", "/api/admin/llm/models/{config_id}"): AuditAction(
-        "admin.llm_model_update", "llm_model", "config_id"
+    ("PATCH", "/api/admin/llm/models/{model_id}"): AuditAction(
+        "admin.llm_model_update", "llm_model", "model_id"
     ),
-    ("POST", "/api/admin/llm/models/{config_id}/test"): AuditAction(
-        "admin.llm_model_test", "llm_model", "config_id"
+    ("POST", "/api/admin/llm/routes"): AuditAction(
+        "admin.llm_route_create", "llm_route"
     ),
-    ("POST", "/api/admin/llm/models/{config_id}/activate"): AuditAction(
-        "admin.llm_model_activate", "llm_model", "config_id"
+    ("PATCH", "/api/admin/llm/routes/{route_id}"): AuditAction(
+        "admin.llm_route_update", "llm_route", "route_id"
+    ),
+    # A route can serve several use cases, so binding targets are "<use_case>:<route_id>".
+    ("PUT", "/api/admin/llm/use-cases/{use_case}/routes/{route_id}"): AuditAction(
+        "admin.llm_binding_upsert", "llm_binding", "route_id"
+    ),
+    ("PATCH", "/api/admin/llm/use-cases/{use_case}/routes/{route_id}"): AuditAction(
+        "admin.llm_binding_update", "llm_binding", "route_id"
+    ),
+    ("DELETE", "/api/admin/llm/use-cases/{use_case}/routes/{route_id}"): AuditAction(
+        "admin.llm_binding_delete", "llm_binding", "route_id"
+    ),
+    ("POST", "/api/admin/llm/use-cases/{use_case}/routes/{route_id}/probe"): AuditAction(
+        "admin.llm_binding_probe", "llm_binding", "route_id"
+    ),
+    # Plugin release targets are the affected package version.
+    ("POST", "/api/admin/plugin-releases"): AuditAction(
+        "admin.plugin_release_publish", "plugin_release"
+    ),
+    ("DELETE", "/api/admin/plugin-releases/current"): AuditAction(
+        "admin.plugin_release_unpublish", "plugin_release"
+    ),
+    ("POST", "/api/admin/plugin-releases/current/publish"): AuditAction(
+        "admin.plugin_release_reactivate", "plugin_release"
+    ),
+    ("DELETE", "/api/admin/plugin-releases/current/package"): AuditAction(
+        "admin.plugin_release_delete", "plugin_release"
+    ),
+    ("POST", "/api/admin/announcements"): AuditAction(
+        "admin.announcement_create", "announcement"
+    ),
+    ("PATCH", "/api/admin/announcements/{announcement_id}"): AuditAction(
+        "admin.announcement_update", "announcement", "announcement_id"
+    ),
+    ("DELETE", "/api/admin/announcements/{announcement_id}"): AuditAction(
+        "admin.announcement_delete", "announcement", "announcement_id"
+    ),
+    ("POST", "/api/admin/announcements/{announcement_id}/publish"): AuditAction(
+        "admin.announcement_publish", "announcement", "announcement_id"
+    ),
+    ("POST", "/api/admin/announcements/{announcement_id}/unpublish"): AuditAction(
+        "admin.announcement_unpublish", "announcement", "announcement_id"
     ),
 }
 
@@ -175,9 +213,9 @@ def audit_target_id(request: Request, action: AuditAction) -> str | None:
         return str(actor) if actor is not None else None
     if action.target_param:
         value = request.path_params.get(action.target_param)
-        if action.target_type == "resume_version":
-            version_no = request.path_params.get("version_no")
-            if value is not None and version_no is not None:
-                return f"{value}:{version_no}"
+        if action.target_type == "llm_binding":
+            use_case = request.path_params.get("use_case")
+            if value is not None and use_case is not None:
+                return f"{use_case}:{value}"
         return str(value) if value is not None else None
     return None

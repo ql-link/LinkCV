@@ -13,7 +13,7 @@ from linkresume.integrations.resume_structuring import (
     LLMResumeStructuringClient,
     structuring_payload,
 )
-from linkresume.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
+from linkresume.modules.llm.resolver import RESUME_STRUCTURING
 from linkresume.modules.llm.schemas import StructuredChatResult
 from linkresume.modules.llm.service import LLMError
 
@@ -24,8 +24,8 @@ class FakeLLMService:
         self.error_code = error_code
         self.calls = []
 
-    async def structured_chat(self, user_id, messages, *, source, response_model, capability):
-        self.calls.append((user_id, messages, source, response_model, capability))
+    async def structured_chat(self, user_id, messages, *, source, response_model, use_case):
+        self.calls.append((user_id, messages, source, response_model, use_case))
         if self.error_code is not None:
             raise LLMError(self.error_code, "llmcall_fixture")
         content = self.contents[min(len(self.calls) - 1, len(self.contents) - 1)]
@@ -95,8 +95,8 @@ class TimeoutLLMService:
     def __init__(self) -> None:
         self.calls = []
 
-    async def structured_chat(self, user_id, messages, *, source, response_model, capability):
-        self.calls.append((user_id, messages, source, response_model, capability))
+    async def structured_chat(self, user_id, messages, *, source, response_model, use_case):
+        self.calls.append((user_id, messages, source, response_model, use_case))
         raise TimeoutError("provider timeout")
 
 
@@ -105,8 +105,8 @@ class SequenceLLMService:
         self.outcomes = outcomes
         self.calls = []
 
-    async def structured_chat(self, user_id, messages, *, source, response_model, capability):
-        self.calls.append((user_id, messages, source, response_model, capability))
+    async def structured_chat(self, user_id, messages, *, source, response_model, use_case):
+        self.calls.append((user_id, messages, source, response_model, use_case))
         outcome = self.outcomes[min(len(self.calls) - 1, len(self.outcomes) - 1)]
         if isinstance(outcome, BaseException):
             raise outcome
@@ -134,7 +134,7 @@ def test_sparse_structuring_uses_source_graph_as_the_only_llm_contract() -> None
     assert user_id == 42
     assert source == "resume_import"
     assert response_model.__name__ == "SparseResumeAnnotations"
-    assert capability == RESUME_STRUCTURING_CAPABILITY
+    assert capability == RESUME_STRUCTURING
 
 
 def test_sparse_structuring_keeps_valid_annotations() -> None:

@@ -235,6 +235,15 @@ printf '%s\n' "${old_image}" >"${backup_dir}/previous-image.txt"
 printf '%s\n' "${old_pi_image}" >"${backup_dir}/previous-pi-image.txt"
 printf '%s\n' "${old_container}" >"${backup_dir}/previous-container.txt"
 
+report_agent_readiness() {
+  local readiness_status
+  readiness_status="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+    "http://127.0.0.1:${http_port}/api/agent/readiness" || true)"
+  if [[ "${readiness_status}" != "200" ]]; then
+    echo "Agent readiness warning: HTTP ${readiness_status:-unavailable}; check model configuration and Pi connectivity" >&2
+  fi
+}
+
 backup_compose_file="${backup_dir}/docker-compose.production.yml"
 if [[ "${old_image}" == linkresume:prod-* ]]; then
   if [[ ! -f "${backup_compose_file}" || ! -f "${backup_dir}/.env.production" ]]; then
@@ -270,8 +279,8 @@ rollback_old_application() {
     LINKCV_HTTP_PORT="${http_port}" \
       docker compose -f "${legacy_compose_file}" up -d --remove-orphans
     for _ in $(seq 1 30); do
-      if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
-        curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
+      if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
+        report_agent_readiness
         echo "Legacy Production application restored: ${old_image}"
         return 0
       fi
@@ -318,9 +327,11 @@ rollback_old_application() {
     return 1
   fi
   for _ in $(seq 1 30); do
+    rollback_pi_health="$(docker inspect --format='{{.State.Health.Status}}' linkresume-pi 2>/dev/null || true)"
     if curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
       { [[ "${rollback_has_pi}" != "true" ]] || \
-        curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; }; then
+        [[ "${rollback_pi_health}" == "healthy" ]]; }; then
+      report_agent_readiness
       echo "Previous Production application restored: ${old_image}"
       return 0
     fi
@@ -430,12 +441,12 @@ for _ in $(seq 1 30); do
     [[ "${pi_health_status}" == "healthy" ]] && \
     [[ "${worker_status}" == "running" ]] && \
     [[ "${promtail_status}" == "running" ]] && \
-    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
-    curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
+    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
     echo "Container health: ${health_status}"
     echo "Pi container health: ${pi_health_status}"
     echo "Worker status: ${worker_status}"
     echo "Promtail status: ${promtail_status}"
+    report_agent_readiness
     docker image prune -f >/dev/null
     echo "Production deployed: ${image}:${tag} + ${pi_image}:${tag}"
     cutover_started="false"
@@ -444,7 +455,12 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-TAG="${tag}" PI_TAG="${tag}" \
+TAG="${tag}" \
+PI_TAG="${tag}" \
+LINKRESUME_ENV_FILE="${base_env}" \
+LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
+LINKRESUME_DOCKER_NETWORK="${docker_network}" \
+LINKRESUME_HTTP_PORT="${http_port}" \
   docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi linkresume-worker promtail || true
 if [[ "${schema_migration_started}" == "true" ]]; then
   echo "Production health check timed out; previous application was not restored because a forward-only schema migration started. Restore the database backup before using an older image." >&2

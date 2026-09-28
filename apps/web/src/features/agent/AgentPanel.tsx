@@ -5,6 +5,7 @@ import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import {
   AgentMessage,
+  AgentModelSummary,
   AgentClarification,
   AgentProposal,
   AgentSession,
@@ -301,6 +302,8 @@ export function AgentPanel({
   draft,
 }: AgentPanelProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [availableModels, setAvailableModels] = useState<AgentModelSummary[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState<string>("");
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [conversationView, setConversationView] = useState<"conversation" | "history">("conversation");
   const [sessions, setSessions] = useState<AgentSession[]>([]);
@@ -325,6 +328,16 @@ export function AgentPanel({
   const handledDraftIdRef = useRef<number | null>(null);
   activeResumeIdRef.current = resumeId;
   const pendingClarification = pendingClarificationMessage(messages);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.getAgentModels().then(({ models, defaultModelId }) => {
+      if (cancelled) return;
+      setAvailableModels(models);
+      setSelectedModelId((current) => current || defaultModelId || "");
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     streamRequestRef.current += 1;
@@ -375,7 +388,7 @@ export function AgentPanel({
   const ensureSession = async () => {
     if (sessionId) return sessionId;
     const requestedResumeId = resumeId;
-    const result = await api.createAgentSession();
+    const result = await api.createAgentSession(undefined, selectedModelId || undefined);
     if (activeResumeIdRef.current !== requestedResumeId) {
       throw new DOMException("Agent resume changed", "AbortError");
     }
@@ -589,6 +602,7 @@ export function AgentPanel({
       ]);
       if (sessionRequestRef.current !== requestId) return;
       setSessionId(selectedSession.id);
+      setSelectedModelId(detail.session.selected_model_id ?? availableModels[0]?.id ?? "");
       setMessages(detail.session.messages);
       setProposals(proposalResult.proposals);
       setConversationView("conversation");
@@ -663,6 +677,17 @@ export function AgentPanel({
     } finally {
       setProposalBusyId(null);
     }
+  };
+
+  const changeModel = async (modelId: string) => {
+    if (running) return;
+    if (!sessionId) { setSelectedModelId(modelId); return; }
+    try {
+      const { session } = await api.updateAgentSession(sessionId, { modelId });
+      setSelectedModelId(session.selected_model_id ?? modelId);
+      setSessions((items) => items.map((item) => item.id === session.id ? session : item));
+      setError(null);
+    } catch (reason) { setError(agentErrorMessage(reason)); }
   };
 
   return (
@@ -791,6 +816,7 @@ export function AgentPanel({
       )}
 
       <form className="agent-composer" onSubmit={sendMessage}>
+        <label>对话模型 <select aria-label="对话模型" value={selectedModelId} disabled={running || loading || availableModels.length === 0} onChange={(event) => void changeModel(event.target.value)}>{availableModels.length === 0 && <option value="">当前没有可用模型</option>}{availableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select></label>
         {selectedContext && (
           <div className="agent-selection-context">
             <span><Sparkles aria-hidden="true" size={13} />已选内容</span>

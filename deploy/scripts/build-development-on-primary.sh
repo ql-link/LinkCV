@@ -100,6 +100,21 @@ if not Settings().wechat_enabled:
 '
 docker network inspect "${docker_network}" >/dev/null
 
+# Reject known retirement blockers while the old service is still running.
+# The migration runner repeats the check after the service is stopped.
+docker run --rm \
+  --network "${docker_network}" \
+  --env-file "${base_env}" \
+  --env-file "${secret_env}" \
+  -e APP_ENV=development \
+  "${image}:${tag}" \
+  python /app/scripts/release/run_alembic.py \
+    --expected-app-env development \
+    --expected-host 100.86.10.52 \
+    --expected-port 13306 \
+    --expected-database linkresume \
+    --preflight-only
+
 # Stop every process that can read or write the old AgentSession schema before
 # applying forward-only migrations.  A failed migration intentionally leaves
 # the old application stopped until an operator verifies schema compatibility.
@@ -134,11 +149,15 @@ for _ in $(seq 1 30); do
   pi_health_status="$(docker inspect --format='{{.State.Health.Status}}' linkresume-pi-dev 2>/dev/null || true)"
   promtail_status="$(docker inspect --format='{{.State.Status}}' linkresume-dev-promtail 2>/dev/null || true)"
   if [[ "${health_status}" == "healthy" ]] && [[ "${pi_health_status}" == "healthy" ]] && [[ "${promtail_status}" == "running" ]] && \
-    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null && \
-    curl -fsS "http://127.0.0.1:${http_port}/api/agent/readiness" >/dev/null; then
+    curl -fsS "http://127.0.0.1:${http_port}/api/health" >/dev/null; then
     echo "Container health: ${health_status}"
     echo "Pi container health: ${pi_health_status}"
     echo "Promtail status: ${promtail_status}"
+    agent_readiness_status="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+      "http://127.0.0.1:${http_port}/api/agent/readiness" || true)"
+    if [[ "${agent_readiness_status}" != "200" ]]; then
+      echo "Agent readiness warning: HTTP ${agent_readiness_status:-unavailable}; check model configuration and Pi connectivity" >&2
+    fi
     docker image prune -f >/dev/null
     echo "Development deployed: ${image}:${tag} + ${pi_image}:${tag}"
     exit 0
@@ -146,6 +165,12 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi promtail
+TAG="${tag}" \
+PI_TAG="${tag}" \
+LINKRESUME_ENV_FILE="${base_env}" \
+LINKRESUME_SECRET_ENV_FILE="${secret_env}" \
+LINKRESUME_DOCKER_NETWORK="${docker_network}" \
+LINKRESUME_DEV_HTTP_PORT="${http_port}" \
+  docker compose -f "${compose_file}" logs --tail=100 linkresume linkresume-pi promtail || true
 echo "Development health check timed out." >&2
 exit 12

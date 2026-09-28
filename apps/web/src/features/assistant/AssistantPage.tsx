@@ -298,6 +298,7 @@ function blankSession(): AgentSession {
   const timestamp = new Date().toISOString();
   return {
     id: NEW_CONVERSATION_KEY,
+    selected_model_id: null,
     title: "新对话",
     pinned: false,
     status: "active",
@@ -547,6 +548,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const [sessionsLoading, setSessionsLoading] = useState(true);
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [runtimeModel, setRuntimeModel] = useState<AgentModelSummary | null>(null);
+  const [runtimeModels, setRuntimeModels] = useState<AgentModelSummary[]>([]);
+  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
   const [runtimeModelLoading, setRuntimeModelLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
@@ -855,9 +858,12 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
 
   useEffect(() => {
     let cancelled = false;
-    void api.getAgentModel()
-      .then(({ model }) => {
-        if (!cancelled) setRuntimeModel(model);
+    void api.getAgentModels()
+      .then(({ models, defaultModelId }) => {
+        if (!cancelled) {
+          setRuntimeModels(models);
+          setRuntimeModel(models.find((model) => model.id === defaultModelId) ?? models[0] ?? null);
+        }
       })
       .catch(() => {
         if (!cancelled) setRuntimeModel(null);
@@ -1018,7 +1024,27 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     ? activityStatusText(latestStructuredActivity)
     : activityLines[activityLines.length - 1] ?? "";
   const processDetailsReady = detailsReady || activityLines.length > 0 || current.activities.length > 0;
-  const runtimeModelLabel = runtimeModel?.name ?? (runtimeModelLoading ? "正在读取模型" : "模型不可用");
+  const selectedModelId = activeKey === NEW_CONVERSATION_KEY
+    ? (pendingModelId ?? runtimeModel?.id)
+    : (current.session.selected_model_id ?? runtimeModel?.id);
+  const selectedModel = runtimeModels.find((model) => model.id === selectedModelId) ?? null;
+  const runtimeModelLabel = selectedModel?.name ?? (runtimeModelLoading ? "正在读取模型" : "模型不可用");
+
+  const selectModel = async (modelId: string) => {
+    setModelMenuOpen(false);
+    if (activeKey === NEW_CONVERSATION_KEY) {
+      setPendingModelId(modelId);
+      return;
+    }
+    if (current.running || current.cancelling) return;
+    try {
+      const result = await api.updateAgentSession(current.session.id, { modelId });
+      updateConversation(current.session.id, { session: result.session });
+      setSessions((items) => items.map((item) => item.id === result.session.id ? result.session : item));
+    } catch (error) {
+      updateConversation(current.session.id, { error: safeAgentError(error) });
+    }
+  };
 
   const cancelCurrentRun = useCallback(async (key = activeKeyRef.current) => {
     const state = conversationStates[key];
@@ -1401,7 +1427,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
 
   const ensureSession = async (state: ConversationState) => {
     if (state.session.id !== NEW_CONVERSATION_KEY) return state.session;
-    const result = await api.createAgentSession();
+    const result = await api.createAgentSession(undefined, pendingModelId);
     const newState = { ...state, session: result.session };
     setConversationStates((states) => {
       const next = { ...states, [result.session.id]: newState };
@@ -2499,11 +2525,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
               </button>
               <div ref={modelSelectorRef} className="assistant-model-selector">
                 <button type="button" aria-haspopup="menu" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)}>
-                  <span title={runtimeModel?.name}>{runtimeModelLabel}</span><ChevronDown size={14} />
+                  <span title={selectedModel?.name}>{runtimeModelLabel}</span><ChevronDown size={14} />
                 </button>
                 {modelMenuOpen && (
                   <div role="menu" className="assistant-model-menu">
-                    <button type="button" role="menuitemradio" aria-checked="true" disabled={!runtimeModel} onClick={() => setModelMenuOpen(false)}><span><strong>{runtimeModelLabel}</strong><small>{runtimeModel ? `${runtimeModel.adapter} · 当前模型` : "当前模型暂时不可用"}</small></span>{runtimeModel && <Check size={16} />}</button>
+                    {runtimeModels.length ? runtimeModels.map((model) => <button key={model.id} type="button" role="menuitemradio" aria-checked={model.id === selectedModelId} disabled={current.running || current.cancelling} onClick={() => void selectModel(model.id)}><span><strong>{model.name}</strong><small>{model.id === selectedModelId ? "当前模型" : "选择此模型"}</small></span>{model.id === selectedModelId && <Check size={16} />}</button>) : <span>{runtimeModelLoading ? "正在读取模型" : "当前没有可用模型"}</span>}
                   </div>
                 )}
               </div>

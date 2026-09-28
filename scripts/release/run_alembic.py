@@ -11,7 +11,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Connection, make_url
 
 from linkresume.core.config import load_settings
@@ -99,6 +99,13 @@ USER_PROFILE_LEGACY_COLUMNS = frozenset(
     }
 )
 USER_PROFILE_INTERMEDIATE_COLUMNS = frozenset({"professional_directions"})
+RETIREMENT_TABLES = {
+    "dataset_replacements": "0089",
+    "dataset_object_cleanup": "0089",
+    "interview_assets": "0090",
+    "llm_provider_models": "0093",
+    "llm_providers": "0093",
+}
 
 
 @dataclass(frozen=True)
@@ -303,12 +310,34 @@ def validate_schema_revision_alignment(
     return current_heads
 
 
+def validate_pending_retirements(
+    connection: Connection, script: ScriptDirectory, current_heads: tuple[str, ...]
+) -> None:
+    """Catch known data-retirement blockers before stopping the old services."""
+    applied = _applied_revisions(script, current_heads)
+    tables = set(inspect(connection).get_table_names())
+    blocked = []
+    for table, revision in RETIREMENT_TABLES.items():
+        if revision in applied or table not in tables:
+            continue
+        count = connection.scalar(text(f"SELECT COUNT(*) FROM {table}"))
+        if count:
+            blocked.append(f"{table}={count} (before {revision})")
+    if blocked:
+        raise RuntimeError(
+            "Legacy retirement data remains: " + ", ".join(blocked) + ". "
+            "Run the documented maintenance procedure and back up the database "
+            "before stopping the current services."
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected-app-env", required=True)
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--expected-port", required=True, type=int)
     parser.add_argument("--expected-database", required=True)
+    parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
 
     settings = load_settings()
@@ -330,10 +359,14 @@ def main() -> int:
     try:
         with engine.connect() as connection:
             current_heads = validate_schema_revision_alignment(connection, script)
+            validate_pending_retirements(connection, script, current_heads)
     finally:
         engine.dispose()
     current = ",".join(current_heads) if current_heads else "base"
     print(f"Alembic schema alignment verified: current={current}", flush=True)
+    if args.preflight_only:
+        print("Alembic preflight complete; no DDL applied", flush=True)
+        return 0
     command.upgrade(config, "head")
     command.current(config)
     return 0

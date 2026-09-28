@@ -34,6 +34,9 @@ def test_remote_deployments_stop_old_runtime_before_forward_migration() -> None:
     development = (
         REPO_ROOT / "deploy/scripts/build-development-on-primary.sh"
     ).read_text(encoding="utf-8")
+    pre_stop_window = development[: development.index("# Stop every process")]
+    assert "--preflight-only" in pre_stop_window
+    assert "run_alembic.py" in pre_stop_window
     development_window = development[
         development.index("# Stop every process") : development.index(
             'TAG="${tag}"', development.index("# Stop every process")
@@ -63,6 +66,32 @@ def test_remote_deployments_stop_old_runtime_before_forward_migration() -> None:
     compatible_path = timeout_path[timeout_path.index("else") :]
     assert "rollback_old_application" not in protected_path
     assert "rollback_old_application" in compatible_path
+
+
+@pytest.mark.parametrize(
+    ("script_path", "success_message"),
+    [
+        ("deploy/scripts/build-development-on-primary.sh", "Development deployed:"),
+        ("deploy/scripts/build-production-on-cloud.sh", "Production deployed:"),
+    ],
+)
+def test_deployment_gate_reports_agent_readiness_without_requiring_a_model(
+    script_path: str, success_message: str
+) -> None:
+    script = (REPO_ROOT / script_path).read_text(encoding="utf-8")
+    success_position = script.index(success_message)
+    gate_start = script.rfind("for _ in $(seq 1 30); do", 0, success_position)
+    gate = script[gate_start:success_position]
+    health_condition = gate.split("  if ", 1)[1].split("; then", 1)[0]
+    assert "/api/health" in health_condition
+    assert "/api/agent/readiness" not in health_condition
+    assert "Agent readiness warning:" in script
+    logs_position = script.index('docker compose -f "${compose_file}" logs --tail=100')
+    logs_environment = script[logs_position - 260 : logs_position]
+    assert 'TAG="${tag}"' in logs_environment
+    assert 'PI_TAG="${tag}"' in logs_environment
+    assert 'LINKRESUME_ENV_FILE="${base_env}"' in logs_environment
+    assert 'LINKRESUME_SECRET_ENV_FILE="${secret_env}"' in logs_environment
 
 
 def test_sql_migration_executor_rejects_database_scope_changes(tmp_path: Path) -> None:
@@ -379,6 +408,38 @@ def migration_script_directory(module: ModuleType) -> ScriptDirectory:
     config = Config(str(module.BACKEND_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(module.BACKEND_ROOT / "migrations"))
     return ScriptDirectory.from_config(config)
+
+
+@pytest.mark.parametrize(
+    ("current", "table", "row_count"),
+    [
+        ("0088", "dataset_object_cleanup", 2),
+        ("0092", "llm_providers", 1),
+    ],
+)
+def test_release_preflight_keeps_old_service_running_when_retirement_is_blocked(
+    current: str, table: str, row_count: int
+) -> None:
+    module = load_module(
+        "linkresume_run_alembic_retirement_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)"))
+        for identifier in range(1, row_count + 1):
+            connection.execute(
+                text(f"INSERT INTO {table} (id) VALUES (:id)"), {"id": identifier}
+            )
+        with pytest.raises(RuntimeError, match=f"{table}={row_count}"):
+            module.validate_pending_retirements(
+                connection, migration_script_directory(module), (current,)
+            )
+        connection.execute(text(f"DELETE FROM {table}"))
+        module.validate_pending_retirements(
+            connection, migration_script_directory(module), (current,)
+        )
+    engine.dispose()
 
 
 def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None:
