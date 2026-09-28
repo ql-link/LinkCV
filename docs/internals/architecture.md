@@ -20,7 +20,7 @@
 
 ## 本地请求路径
 
-Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全部 `/api` 流量代理到 FastAPI，默认目标为 `http://127.0.0.1:8000`。开发服务器额外允许 `*.trycloudflare.com` Host，用于把本地页面通过临时 Cloudflare Tunnel 交付验收；该白名单不改变生产请求路径或鉴权边界。
+Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全部 `/api` 流量代理到 FastAPI，默认目标为 `http://127.0.0.1:8000`；语音面试的 `/api/mock-interviews/{id}/speech` 使用优先匹配的 WebSocket 代理，并保留浏览器 `Host` 供后端与 `Origin` 比较。开发服务器额外允许 `*.trycloudflare.com` Host，用于把本地页面通过临时 Cloudflare Tunnel 交付验收；该白名单不改变生产请求路径或鉴权边界。
 
 同一 Vite 配置把 `@` 解析到 `apps/web/src`，与 TypeScript、Vitest 和 `components.json` 的路径约定一致；集中 UI 组件和 shadcn 生成源码使用该别名，不影响浏览器请求路径。
 

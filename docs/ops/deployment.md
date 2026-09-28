@@ -28,6 +28,8 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 - 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者必须提供非空的 `WECHAT_APPID` 和 `WECHAT_SECRET`
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkresume`
 
+共享 Dev 的 `18002` 直接映射到 FastAPI `8000`，没有 LinkResume 专用 Nginx；`/api/mock-interviews/{id}/speech` 的 WebSocket 握手由 FastAPI 直接处理。用本地 Vite 页面联调时，通过其同源 WebSocket 代理转发，见 [Web 模块](../internals/web.md#api-调用)。
+
 Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。发布脚本在迁移与容器替换前检查私密文件权限，并通过 FastAPI `Settings` 拒绝缺失、空值或占位的微信凭据，避免 Jenkins 成功但扫码登录不可用。LinkResume Dev 使用独立 `linkresume` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
 
 `linkresume-dev` 的 Generic Webhook Trigger 只接受 `refs/heads/dev`。token 通过 Jenkins Secret Text 凭据 `linkresume-dev-webhook-token` 注入，仓库不保存 token；GitHub 仓库 webhook 只订阅 push 事件。
@@ -44,6 +46,8 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，
 - 宿主机端口：`4174`（容器内 FastAPI 仍监听 `8000`，保持现有生产反向代理上游）
 - 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkresume`
+
+生产公网入口由 Cloud 上的 `linkrag-web` Nginx 容器承载，LinkResume 虚拟主机配置从宿主机 `/opt/tolink/LinkRag-Web/nginx/linkresume.conf` 单文件挂载。`/api/mock-interviews/{id}/speech` 的独立代理规则转发到 `172.20.0.1:4174`，使用 HTTP/1.1，传递 `Host`、`X-Forwarded-Proto`、`Upgrade` 和 `Connection`，读写超时均为 600 秒；普通 `/api` 请求仍走既有根路径代理。变更该外部配置后，在 `linkrag-web` 容器内执行 `nginx -t` 并核对已加载配置；如果宿主机文件被原子替换，须重启容器以重新挂载，单纯热重载仍会读取旧 inode。语音 WebSocket 必须由页面同源发起，后端还会校验 `Origin` 与 `Host`；代理配置生效不代表未部署语音后端的环境已经通过语音联调。
 
 Production Web 只把 Vite 生成的哈希 `/assets/*` 发布到阿里云 OSS Bucket 的 `LinkResume/assets/` 前缀，并把入口 favicon 发布到 `LinkResume/favicon.png`，由浏览器直接通过 `https://qingluo-public.oss-cn-shanghai.aliyuncs.com/LinkResume/` 读取；不使用 CDN、自定义静态域名或独立证书。`index.html`、SPA 路由和 `/api/*` 仍由 `https://linkresume.cn` 的公网 Nginx 与 FastAPI 提供。根 `Dockerfile` 通过 `VITE_ASSET_BASE_URL` 把 OSS 地址写进生产 HTML，同时继续在镜像 `/app/web/assets` 保留哈希资源和在 `/app/web/favicon.png` 保留入口图标。发布脚本从即将部署的不可变镜像提取这些文件，使用生产已验证兼容的 `ossutil 2.4.0` 上传哈希资源到 `LinkResume/assets/` 并设置一年 `immutable`，上传 favicon 到 `LinkResume/favicon.png` 并设置短缓存，随后逐项以兼容生产 `curl 7.29.0` 的 `--retry 2`、连接超时和总超时设置，通过 OSS HTTPS HEAD 检查状态；哈希 JavaScript/字体还检查缓存头和跨域响应，favicon 检查 `image/png`；全部成功后才允许初始化数据库、迁移和切换应用。上传或 OSS 验证失败发生在切换前，旧生产版本继续服务。
 
