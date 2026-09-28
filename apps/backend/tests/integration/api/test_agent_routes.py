@@ -41,7 +41,6 @@ from linkresume.modules.resumes.models import (
     DocumentParseTask,
     Resume,
     ResumeTemplate,
-    ResumeVersion,
 )
 from tests.fakes import FakeRedis
 from tests.canonical_resume_fixtures import (
@@ -1452,14 +1451,7 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
             confirmed.json()["resume"]["data"]["identity"]["headline"]["value"]
             == "由智能助手生成的虚构标题"
         )
-        with app.state.session_factory() as db:
-            version = db.scalar(
-                select(ResumeVersion).where(
-                    ResumeVersion.resume_id == int(resume["id"]),
-                    ResumeVersion.reason == "agent",
-                )
-            )
-            assert version is None
+        assert "resume_versions" not in Resume.metadata.tables
 
         # Retrying an applied proposal must not undo edits saved afterwards.
         later_data = deepcopy(confirmed.json()["resume"]["data"])
@@ -2403,10 +2395,7 @@ def test_translation_proposal_creates_one_independent_editable_resume() -> None:
         assert repeated.json()["resume"]["id"] == result["id"]
         with app.state.session_factory() as db:
             assert len(db.scalars(select(Resume)).all()) == 2
-            versions = db.scalars(
-                select(ResumeVersion).where(ResumeVersion.resume_id == int(result["id"]))
-            ).all()
-            assert len(versions) == 0
+        assert "resume_versions" not in Resume.metadata.tables
 
 
 def test_translation_proposal_rejects_changed_factual_tokens() -> None:
@@ -2449,21 +2438,11 @@ def test_translation_proposal_rejects_changed_factual_tokens() -> None:
         assert response.status_code in {422, 400}
 
 
-@pytest.mark.parametrize("legacy_count", [0, 3, 10])
-def test_proposal_confirmation_does_not_access_history(legacy_count: int) -> None:
+def test_proposal_confirmation_does_not_access_history() -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "agent-current-content@example.test")
         resume = create_resume(client, app)
-        with app.state.session_factory() as db:
-            db.execute(delete(ResumeVersion).where(ResumeVersion.resume_id == int(resume["id"])))
-            for number in range(1, legacy_count + 1):
-                db.add(ResumeVersion(
-                    resume_id=int(resume["id"]), template_id=int(app.state.test_template_id),
-                    version_no=number, data_json=resume["data"], style_json=resume["style"],
-                    reason="manual", name=f"旧内容 {number}",
-                ))
-            db.commit()
         session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposed_data = resume["data"]
@@ -2503,7 +2482,6 @@ def test_proposal_confirmation_does_not_access_history(legacy_count: int) -> Non
         assert current["lock_version"] == 2
         assert current["data"]["identity"]["headline"]["value"] == "直接应用到当前正文"
         with app.state.session_factory() as db:
-            assert len(db.scalars(select(ResumeVersion)).all()) == legacy_count
             stored = db.scalar(select(ResumeChangeProposal))
             assert stored.status == "applied"
 
@@ -2521,9 +2499,6 @@ def test_nine_scoped_proposals_replay_current_content_and_preserve_style() -> No
         resume = client.put(f"/api/resumes/{resume['id']}", json={
             "data": editor_data(resume["data"], markdown), "base_lock_version": 1,
         }).json()["resume"]
-        with app.state.session_factory() as db:
-            db.execute(delete(ResumeVersion))
-            db.commit()
         session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
         run_id = create_active_run(app, session_id)
         proposal_ids = []
@@ -2577,7 +2552,6 @@ def test_nine_scoped_proposals_replay_current_content_and_preserve_style() -> No
         for index in range(9):
             assert f"技术架构{index}：Java" in content
         with app.state.session_factory() as db:
-            assert db.scalars(select(ResumeVersion)).all() == []
             assert all(p.status == "applied" for p in db.scalars(select(ResumeChangeProposal)))
 
 

@@ -68,6 +68,14 @@ jobs:
           -q
         env:
           LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
+      - name: Verify MySQL 0089 and 0090 table retirement
+        run: >-
+          uv run --directory apps/backend pytest
+          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0089_requires_drained_legacy_tables_before_drop
+          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0090_retires_legacy_tables_and_preserves_current_resume
+          -q
+        env:
+          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
       - run: npm run check
         env:
           DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

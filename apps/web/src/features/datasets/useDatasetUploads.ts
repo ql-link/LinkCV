@@ -414,7 +414,7 @@ export function useDatasetUploads({
         ambiguousRetryKeysRef.current.delete(datasetUploadFileIdentity(item.file));
         // The response is authoritative. Upsert before the batch-wide list
         // refresh so an accepted row remains visible even if that refresh fails.
-        if(!dataset.replacement) await rememberTextThumbnail(dataset, item.file);
+        await rememberTextThumbnail(dataset, item.file);
         onAcceptedRef.current?.(dataset);
         commitItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
       } catch (error) {

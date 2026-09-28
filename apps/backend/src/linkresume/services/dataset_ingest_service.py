@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import unicodedata
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import PurePath
@@ -33,14 +34,13 @@ from linkresume.core.storage import (
     build_dataset_object_name,
 )
 from linkresume.modules.datasets.models import (
-    DatasetReplacement,
     UserDataset,
     UserDatasetFolder,
 )
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from linkresume.services import dataset_content_service as content_service
-from linkresume.services.dataset_replacement_service import check_name
+from linkresume.services.dataset_name_service import check_name
 from linkresume.services.dataset_upload_service import (
     safe_dataset_filename,
     validate_dataset_file,
@@ -208,6 +208,7 @@ def check_document_capacity(
     incoming_bytes: int,
     max_count: int,
     max_total_bytes: int,
+    exclude_id: int | None = None,
 ) -> None:
     content_service.lock_user(db, user_id)
     count, total_bytes = db.execute(
@@ -221,6 +222,7 @@ def check_document_capacity(
         )
         .where(
             UserDataset.user_id == user_id,
+            UserDataset.id != exclude_id if exclude_id is not None else True,
             UserDataset.asset_kind == "document",
             DocumentParseTask.user_id == user_id,
             DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
@@ -230,18 +232,7 @@ def check_document_capacity(
     ).one()
     if int(count) >= max_count:
         raise ApiError(409, "DATASET_COUNT_LIMIT_REACHED")
-    pending_bytes = (
-        db.scalar(
-            select(func.coalesce(func.sum(DatasetReplacement.source_file_size), 0))
-            .where(
-                DatasetReplacement.user_id == user_id,
-                DatasetReplacement.active_dataset_id.is_not(None),
-            )
-            .with_for_update()
-        )
-        or 0
-    )
-    if int(total_bytes) + int(pending_bytes) + incoming_bytes > max_total_bytes:
+    if int(total_bytes) + incoming_bytes > max_total_bytes:
         raise ApiError(409, "DATASET_STORAGE_LIMIT_REACHED")
 
 
@@ -315,6 +306,8 @@ async def ingest_document_upload(
     interview_source_type: str | None,
     duration_ms: int | None,
     idempotency_key: str,
+    replace_id: int | None = None,
+    if_match: str | None = None,
 ) -> IngestResult:
     try:
         content = await upload.read(settings.dataset_upload_max_bytes + 1)
@@ -334,26 +327,51 @@ async def ingest_document_upload(
     )
 
     content_service.lock_user(db, user.id)
+    target = None
+    old_task = None
+    if replace_id is not None:
+        target, old_task = content_service.owned(db, user.id, replace_id, lock=True)
+        folder_id = target.folder_id
+        if folder_id is None:
+            raise ApiError(400, "DATASET_FOLDER_REQUIRED")
     _require_folder(db, user.id, folder_id)
+    fingerprint = validated.request_fingerprint
+    if target is not None:
+        fingerprint = hashlib.sha256(
+            f"replace|{target.id}|{if_match}|{fingerprint}".encode()
+        ).hexdigest()
     existing = find_idempotent_dataset(
         db, user_id=user.id, idempotency_key=idempotency_key
     )
+    if existing is not None and target is not None and existing[0].id != target.id:
+        raise ApiError(409, "IDEMPOTENCY_KEY_REUSED")
     replay = _replay_guard(
         existing,
-        request_fingerprint=validated.request_fingerprint,
+        request_fingerprint=fingerprint,
         folder_id=folder_id,
     )
     if replay is not None:
         return replay
 
-    check_name(db, user.id, folder_id, validated.file_name)
+    if target is not None:
+        content_service.check_match(target, if_match)
+        content_service.ensure_not_busy(db, target, old_task)
+        if unicodedata.normalize("NFC", target.file_name) != unicodedata.normalize(
+            "NFC", validated.file_name
+        ):
+            raise ApiError(409, "DATASET_REPLACEMENT_NAME_MISMATCH")
+    check_name(db, user.id, folder_id, validated.file_name, exclude_id=replace_id)
     check_document_capacity(
         db,
         user_id=user.id,
         incoming_bytes=validated.file_size,
         max_count=settings.dataset_max_count_per_user,
         max_total_bytes=settings.dataset_max_total_bytes_per_user,
+        exclude_id=replace_id,
     )
+
+    if target is not None:
+        content_service.delete_files(storage, target, old_task)
 
     object_name = build_dataset_object_name(user.id, validated.file_name)
     task = DocumentParseTask(
@@ -366,27 +384,35 @@ async def ingest_document_upload(
         upload_duration_ms=None,
         parse_status=None,
     )
-    dataset = UserDataset(
+    dataset = target or UserDataset(
         user_id=user.id,
         folder_id=folder_id,
-        file_name=validated.file_name,
-        file_format=validated.file_format,
-        content_type=validated.content_type,
-        file_size=validated.file_size,
-        object_name=object_name,
-        sha256=validated.sha256,
-        idempotency_key=idempotency_key,
-        request_fingerprint=validated.request_fingerprint,
         asset_kind="document",
         interview_session_id=interview_session_id,
         interview_source_type=interview_source_type,
         duration_ms=duration_ms,
     )
+    dataset.file_name = validated.file_name
+    dataset.file_format = validated.file_format
+    dataset.content_type = validated.content_type
+    dataset.file_size = validated.file_size
+    dataset.object_name = object_name
+    dataset.sha256 = validated.sha256
+    dataset.idempotency_key = idempotency_key
+    dataset.request_fingerprint = fingerprint
+    if target is not None:
+        dataset.content_object_name = None
+        dataset.content_sha256 = None
+        dataset.content_updated_at = None
+        dataset.last_content_request_id = None
+        dataset.content_revision += 1
     db.add(task)
     try:
         db.flush()
         dataset.parse_task_id = task.id
         db.add(dataset)
+        if old_task is not None:
+            db.delete(old_task)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -395,7 +421,7 @@ async def ingest_document_upload(
         )
         replay = _replay_guard(
             existing,
-            request_fingerprint=validated.request_fingerprint,
+            request_fingerprint=fingerprint,
             folder_id=folder_id,
         )
         if replay is not None:

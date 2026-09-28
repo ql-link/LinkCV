@@ -30,12 +30,6 @@ class ResumeCopyRequest(BaseModel):
     client_request_id: UUID
 
 
-class LegacyResumeCopyRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    title: str = Field(min_length=1, max_length=255)
-    client_request_id: UUID
-
-
 class ResumeUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -202,45 +196,6 @@ class ResumeTemplateListResponse(BaseModel):
 
 class ResumeTemplateResponse(BaseModel):
     template: ResumeTemplateRecord
-
-
-class ResumeVersionSummary(BaseModel):
-    id: str
-    version_no: int
-    name: str
-    reason: Literal["initial", "manual", "before_restore", "restore", "agent"]
-    template_id: str
-    created_at: datetime
-
-
-class ResumeVersionRecord(ResumeVersionSummary):
-    data: ResumeData
-    style: ResumePresentationData
-    layout_plan: LayoutPlan
-
-
-class ResumeVersionListResponse(BaseModel):
-    versions: list[ResumeVersionSummary]
-
-
-class ResumeVersionResponse(BaseModel):
-    version: ResumeVersionRecord
-
-
-class ResumeVersionCreateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str | None = Field(default=None, strict=True)
-
-
-class ResumeVersionRenameRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(strict=True)
-
-
-class DeleteResumeVersionResponse(BaseModel):
-    deleted: bool
 
 
 class ResumeShareState(BaseModel):

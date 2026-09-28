@@ -20,7 +20,7 @@ import unicodedata
 import uuid
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 from linkresume.core.config import load_settings
@@ -74,6 +74,9 @@ def migrated_idempotency_key(asset_id: int) -> str:
 
 
 def migrate(engine: Engine, storage: AssetStorage, *, execute: bool) -> int:
+    if "interview_assets" not in inspect(engine).get_table_names():
+        print("interview asset migration: table already retired")
+        return 0
     with engine.connect() as connection:
         rows = connection.execute(LIST_SQL).mappings().all()
         migrated_ids = {
@@ -106,9 +109,24 @@ def migrate(engine: Engine, storage: AssetStorage, *, execute: bool) -> int:
         return 0
 
     failed = 0
-    for row in pending:
+    for row in rows:
         asset_id = row["id"]
         user_id = row["user_id"]
+        if asset_id in migrated_ids:
+            try:
+                with engine.begin() as connection:
+                    target = connection.execute(text(
+                        "SELECT object_name FROM user_dataset "
+                        "WHERE legacy_interview_asset_id = :id AND user_id = :uid"
+                    ), {"id": asset_id, "uid": user_id}).scalar_one()
+                    storage.stat(target)
+                    if row["object_name"] != target:
+                        storage.delete(row["object_name"])
+                    connection.execute(text("DELETE FROM interview_assets WHERE id = :id"), {"id": asset_id})
+            except Exception as error:
+                failed += 1
+                print(f"interview asset migrated row cleanup failed: id={asset_id} error={type(error).__name__}")
+            continue
         target_name = migrated_object_name(
             user_id, asset_id, row["original_file_name"]
         )

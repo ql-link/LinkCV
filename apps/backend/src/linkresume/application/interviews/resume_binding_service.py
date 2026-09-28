@@ -35,5 +35,4 @@ def bind_resume(db: Session, application: JobApplication, payload) -> None:
         if source is None:
             raise ApiError(404, "RESUME_NOT_FOUND")
     application.resume_id = source.id if source else None
-    application.resume_version_id = None
     application.resume_title_snapshot = None

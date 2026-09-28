@@ -33,7 +33,6 @@ from linkresume.modules.resumes.template_routes import router as template_router
 from linkresume.modules.resumes.template_admin_routes import (
     router as template_admin_router,
 )
-from linkresume.modules.resumes.version_routes import router as version_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -61,7 +60,6 @@ api_router.include_router(overview_router)
 api_router.include_router(resume_import_router)
 api_router.include_router(resume_router)
 api_router.include_router(resume_pdf_router)
-api_router.include_router(version_router)
 api_router.include_router(resume_share_router)
 api_router.include_router(public_share_router)
 api_router.include_router(resume_asset_router)

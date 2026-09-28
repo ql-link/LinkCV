@@ -10,7 +10,7 @@ from linkresume.domain.resume_style import default_resume_style
 from linkresume.main import create_app
 from linkresume.modules.llm.dependencies import get_llm_service
 from linkresume.modules.llm.service import LLMError
-from linkresume.modules.resumes.models import Resume, ResumeTemplate, ResumeVersion
+from linkresume.modules.resumes.models import Resume, ResumeTemplate
 from linkresume.modules.resumes.routes import resume_content_hash
 from linkresume.modules.resumes.schemas import (
     SemanticClassificationModelResult,
@@ -203,11 +203,7 @@ def test_blank_create_updates_current_content_without_history() -> None:
         assert resume["lock_version"] == 1
         resume_id = resume["id"]
 
-        with app.state.session_factory() as session:
-            initial = session.scalar(
-                select(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
-            )
-            assert initial is None
+        assert "resume_versions" not in Resume.metadata.tables
 
         first_data = resume["data"]
         set_headline(first_data, "第一次保存")
@@ -225,10 +221,10 @@ def test_blank_create_updates_current_content_without_history() -> None:
         assert conflict.status_code == 409
         assert conflict.json() == {"error": "RESUME_EDIT_CONFLICT"}
 
-        versions_before_manual = client.get(
+        versions_response = client.get(
             f"/api/resumes/{resume_id}/versions"
-        ).json()["versions"]
-        assert versions_before_manual == []
+        ).status_code
+        assert versions_response == 404
 
         invalid = client.put(
             f"/api/resumes/{resume_id}",
@@ -240,7 +236,7 @@ def test_blank_create_updates_current_content_without_history() -> None:
         assert invalid.status_code == 400
         assert invalid.json() == {"error": "INVALID_RESUME_DOCUMENT"}
 
-        assert client.get(f"/api/resumes/{resume_id}/versions").json()["versions"] == []
+        assert client.get(f"/api/resumes/{resume_id}/versions").status_code == 404
 
 
 def test_update_persists_canonical_ordered_list_start() -> None:

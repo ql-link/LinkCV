@@ -1,18 +1,12 @@
-"""Current dataset content, source revisions and deferred object reclamation."""
+"""Current dataset content, source revisions and synchronous file removal."""
 
-from datetime import timedelta
 import re
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
-from linkresume.modules.datasets.models import (
-    UserDataset,
-    DatasetReplacement,
-    DatasetObjectCleanup,
-)
+from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import DocumentParseTask, DATASET_SOURCE_TYPE
 
@@ -58,32 +52,75 @@ def check_match(dataset, value):
         raise ApiError(412, "DATASET_CONTENT_CONFLICT")
 
 
-def active_replacement(db, dataset, *, lock=False):
-    query = select(DatasetReplacement).where(
-        DatasetReplacement.active_dataset_id == dataset.id,
-        DatasetReplacement.user_id == dataset.user_id,
-    )
-    return db.scalar(
-        query.with_for_update().execution_options(populate_existing=True)
-        if lock
-        else query
-    )
-
-
-def ensure_not_replacing(db, dataset):
-    operation = active_replacement(db, dataset, lock=True)
-    if operation and operation.status == "pending":
-        raise ApiError(409, "DATASET_BUSY")
-
-
 def ensure_not_busy(db, dataset, task):
-    operation = active_replacement(db, dataset, lock=True)
-    if (
-        task.upload_status == "uploading"
-        or task.parse_status in ("queued", "processing")
-        or (operation and operation.status == "pending")
-    ):
+    if task.upload_status == "uploading" or task.parse_status in ("queued", "processing"):
         raise ApiError(409, "DATASET_BUSY")
+
+
+def dataset_source_prefix(user_id: int) -> str:
+    return f"users/{user_id}/datasets/"
+
+
+def dataset_converted_prefix(user_id: int) -> str:
+    return f"users/{user_id}/datasets/converted/"
+
+
+def dataset_converted_object_name(user_id: int, task_id: int) -> str:
+    return f"{dataset_converted_prefix(user_id)}{task_id}.md"
+
+
+def dataset_converted_attempt_object_name(
+    user_id: int,
+    task_id: int,
+    attempt: int,
+) -> str:
+    return f"{dataset_converted_prefix(user_id)}{task_id}-{attempt}.md"
+
+
+def validate_dataset_object_keys(
+    dataset: UserDataset,
+    task: DocumentParseTask,
+    user_id: int,
+) -> None:
+    if (
+        dataset.object_name != task.object_name
+        or not dataset.object_name.startswith(dataset_source_prefix(user_id))
+        or task.object_name.startswith(dataset_converted_prefix(user_id))
+    ):
+        raise ApiError(502, "ASSET_DELETE_FAILED")
+    if dataset.content_object_name and not dataset.content_object_name.startswith(
+        dataset_converted_prefix(user_id)
+    ):
+        raise ApiError(502, "ASSET_DELETE_FAILED")
+    if task.converted_object_name:
+        allowed_converted_names = {
+            dataset_converted_object_name(user_id, task.id),
+            dataset_converted_attempt_object_name(
+                user_id,
+                task.id,
+                task.parse_attempt_count,
+            ),
+        }
+        if task.converted_object_name not in allowed_converted_names:
+            raise ApiError(502, "ASSET_DELETE_FAILED")
+
+
+def delete_files(storage, dataset, task):
+    """Delete the source and every known content key before changing the row."""
+    validate_dataset_object_keys(dataset, task, dataset.user_id)
+    keys = dict.fromkeys(
+        key for key in (
+            dataset.object_name,
+            dataset.content_object_name,
+            task.converted_object_name,
+            f"users/{dataset.user_id}/datasets/converted/{task.id}.md",
+        ) if key
+    )
+    try:
+        for key in keys:
+            storage.delete(key)
+    except Exception as error:
+        raise ApiError(502, "ASSET_DELETE_FAILED") from error
 
 
 def content_key(dataset, task):
@@ -143,98 +180,3 @@ def read_markdown(storage, key, max_bytes):
     if len(data) > max_bytes:
         raise ValueError("content too large")
     return strip_word_page_markers(data.decode("utf-8"))
-
-
-def enqueue_cleanup(db, user_id, key, task_id=None, delay=300):
-    if not key:
-        return
-    if any(
-        isinstance(item, DatasetObjectCleanup) and item.object_name == key
-        for item in db.new
-    ):
-        return
-    existing = db.scalar(
-        select(DatasetObjectCleanup).where(DatasetObjectCleanup.object_name == key)
-    )
-    if existing is None:
-        db.add(
-            DatasetObjectCleanup(
-                user_id=user_id,
-                object_name=key,
-                parse_task_id=task_id,
-                not_before=utc_now() + timedelta(seconds=delay),
-            )
-        )
-
-
-
-
-def cleanup_objects(session_factory, storage):
-    with session_factory() as db:
-        ids = list(
-            db.scalars(
-                select(DatasetObjectCleanup.id)
-                .where(DatasetObjectCleanup.not_before <= utc_now())
-                .order_by(DatasetObjectCleanup.id)
-                .limit(100)
-            )
-        )
-    for identifier in ids:
-        with session_factory() as db:
-            entry = db.get(DatasetObjectCleanup, identifier)
-            if not entry:
-                continue
-            uid, key = entry.user_id, entry.object_name
-            if not key.startswith(f"users/{uid}/datasets/"):
-                continue
-            lock_user(db, uid)
-            # All writers lock the same user before making an object current.
-            current = db.scalar(
-                select(UserDataset.id)
-                .where(
-                    UserDataset.user_id == uid,
-                    or_(
-                        UserDataset.object_name == key,
-                        UserDataset.content_object_name == key,
-                    ),
-                )
-                .with_for_update()
-            )
-            task_ref = db.scalar(
-                select(DocumentParseTask.id)
-                .where(
-                    DocumentParseTask.user_id == uid,
-                    DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
-                    or_(
-                        DocumentParseTask.object_name == key,
-                        DocumentParseTask.converted_object_name == key,
-                    ),
-                )
-                .with_for_update()
-            )
-            if current or task_ref:
-                entry.not_before = utc_now() + timedelta(minutes=5)
-                db.commit()
-                continue
-            # Claim this exact immutable key before releasing the user lock.
-            # Writers reject a claimed ticket, so object I/O needs no open transaction.
-            entry.attempt_count += 1
-            attempt = entry.attempt_count
-            entry.not_before = utc_now() + timedelta(minutes=5)
-            db.commit()
-        try:
-            storage.delete(key)
-        except Exception:
-            with session_factory() as db:
-                entry = db.get(DatasetObjectCleanup, identifier)
-                if entry and entry.attempt_count == attempt:
-                    entry.not_before = utc_now() + timedelta(
-                        seconds=min(3600, 30 * 2 ** min(attempt, 7))
-                    )
-                    db.commit()
-            continue
-        with session_factory() as db:
-            entry = db.get(DatasetObjectCleanup, identifier)
-            if entry and entry.attempt_count == attempt:
-                db.delete(entry)
-                db.commit()

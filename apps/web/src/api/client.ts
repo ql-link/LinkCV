@@ -250,16 +250,6 @@ export type SemanticClassificationSuggestion = {
   reason: string;
 };
 
-export type ResumeVersion = {
-  id: string;
-  version_no: number;
-  name: string;
-  reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
-  created_at: string;
-  data?: CanonicalResumeDocument;
-  style?: CanonicalResumePresentation;
-};
-
 export type AgentMessage = {
   run_id?: string | null;
   sequence_no: number;
@@ -488,7 +478,6 @@ export type DatasetRecord = {
   content_revision?: string;
   content_updated_at?: string | null;
   folder_name?: string | null;
-  replacement?: DatasetReplacement | null;
 };
 
 export type DatasetFolder = {
@@ -521,7 +510,6 @@ export type DatasetListResponse = {
   limits?: DatasetLimits;
 };
 
-export type DatasetReplacement = { id: string; status: "pending" | "failed" | "conflict" | "applied" | "discarded"; upload_status: string | null; parse_status: string | null; failure_code: string | null; retryable: boolean; current_revision: string };
 
 export type DatasetContent = {
   id: string;
@@ -688,7 +676,6 @@ export type JobApplicationRecord = {
   id: string;
   resume_id?: string | null;
   job_description_id: string | null;
-  resume_version_id: string | null;
   company_name_snapshot: string;
   job_title_snapshot: string;
   company_logo_url?: string | null;
@@ -1154,7 +1141,7 @@ function reportApi5xx(error: ApiRequestError): void {
 
 async function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = request<{ user: User }>(
+    const refresh = () => request<{ user: User }>(
       "/api/auth/refresh",
       { method: "POST" },
       false,
@@ -1165,8 +1152,17 @@ async function refreshSession(): Promise<boolean> {
           return false;
         }
         throw error;
+      });
+    // Cookies are shared across tabs, but module-level promises are not. A
+    // second tab must recheck access after the first has rotated the refresh
+    // token, otherwise replay protection can revoke the shared session.
+    const locks = globalThis.navigator?.locks;
+    refreshInFlight = (locks
+      ? locks.request("linkresume-session-refresh", async () => {
+        const current = await request<{ user: User | null }>("/api/auth/me", {}, false);
+        return current.user ? true : refresh();
       })
-      .finally(() => {
+      : refresh()).finally(() => {
         refreshInFlight = null;
       });
   }
@@ -1319,7 +1315,8 @@ async function streamAgentMessage(
     credentials: "include",
     signal,
   });
-  if (response.status === 401 && retryAuth && await refreshSession()) {
+  if (response.status === 401 && retryAuth && !signal.aborted && await refreshSession()) {
+    signal.throwIfAborted();
     return streamAgentMessage(sessionId, payload, signal, onEvent, false);
   }
   if (!response.ok || !response.body) {
@@ -1350,7 +1347,8 @@ async function streamAgentRun(
     credentials: "include",
     signal,
   });
-  if (response.status === 401 && retryAuth && await refreshSession()) {
+  if (response.status === 401 && retryAuth && !signal.aborted && await refreshSession()) {
+    signal.throwIfAborted();
     return streamAgentRun(runId, signal, onEvent, false);
   }
   if (!response.ok || !response.body) {
@@ -1399,6 +1397,12 @@ async function consumeAgentStream(
         }
       } catch {
         // Ignore an isolated malformed or future event without losing the stream.
+      }
+      if (terminalReceived) {
+        // A terminal event already confirms the outcome. Transport teardown
+        // after it must not turn a completed response into a network failure.
+        void reader.cancel?.().catch(() => undefined);
+        return;
       }
     }
     if (done) break;
@@ -1576,29 +1580,6 @@ export const api = {
   }),
   deleteResume: (id: string) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
-  listVersions: (id: string) =>
-    request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
-  createVersion: (id: string, name?: string) =>
-    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, {
-      method: "POST",
-      body: name === undefined ? undefined : { name },
-    }),
-  renameVersion: (id: string, versionNo: number, name: string) =>
-    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`, {
-      method: "PATCH",
-      body: { name },
-    }),
-  deleteVersion: (id: string, versionNo: number) =>
-    request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, {
-      method: "DELETE",
-    }),
-  getResumeVersion: (id: string, versionNo: number) =>
-    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`),
-  restoreVersion: (id: string, versionNo: number) =>
-    request<{ resume: ResumeRecord }>(
-      `/api/resumes/${id}/versions/${versionNo}/restore`,
-      { method: "POST" },
-    ),
   getShareState: (id: string) =>
     request<{ share: ResumeShareState | null }>(`/api/resumes/${id}/share`),
   createShare: (
@@ -1741,10 +1722,8 @@ export const api = {
   getDataset: (id: string) => request<DatasetRecord>(`/api/datasets/${id}`),
   replaceDataset: (id: string, file: File, revision: string, key: string) => {
     const formData = new FormData(); formData.append("file",file); formData.append("confirm_replace","true");
-    return request<DatasetReplacement>(`/api/datasets/${id}/replacements`, {method:"POST",formData,headers:{"If-Match":`"dataset-${id}-${revision}"`,"Idempotency-Key":key}});
+    return request<DatasetRecord>(`/api/datasets/${id}/file`, {method:"PUT",formData,headers:{"If-Match":`"dataset-${id}-${revision}"`,"Idempotency-Key":key}});
   },
-  retryDatasetReplacement: (id:string, rid:string, revision:string, requestId:string) => request<DatasetReplacement>(`/api/datasets/${id}/replacements/${rid}/retry`,{method:"POST",body:{request_id:requestId,confirm_replace:true},headers:{"If-Match":`"dataset-${id}-${revision}"`}}),
-  discardDatasetReplacement: (id:string,rid:string) => request(`/api/datasets/${id}/replacements/${rid}`,{method:"DELETE"}),
   getDatasetContent: (id: string) =>
     request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
@@ -1840,7 +1819,6 @@ export const api = {
   createJobApplication: (payload: {
     job_description_id: string;
     resume_id?: string | null;
-    resume_version_id?: string | null;
     current_stage_type?: LegacyApplicationStageType;
     current_round_no?: number | null;
     current_stage_label?: string;
@@ -1863,7 +1841,6 @@ export const api = {
       notes: string | null;
       applied_at: string | null;
       resume_id: string | null;
-      resume_version_id: string | null;
     }> & { base_lock_version: number },
   ) =>
     request<{ application: JobApplicationRecord }>(`/api/job-applications/${id}`, {
@@ -1892,7 +1869,6 @@ export const api = {
       interview_round_no?: number | null;
       applied_at?: string | null;
       resume_id?: string | null;
-      resume_version_id?: string | null;
       base_lock_version: number;
     },
   ) =>

@@ -13,7 +13,7 @@ from linkresume.core.config import Settings
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import StreamUploadResult
 from linkresume.main import create_app
-from linkresume.modules.resumes.models import ResumeTemplate, ResumeVersion
+from linkresume.modules.resumes.models import ResumeTemplate
 from linkresume.services import dataset_ingest_service
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
@@ -1298,7 +1298,7 @@ def test_marking_an_application_applied_normalizes_to_screening() -> None:
         assert marked.status_code == 200, marked.text
         marked_application = marked.json()["application"]
         assert marked_application["applied_at"].endswith("Z")
-        assert marked_application["resume_version_id"] is None
+        assert "resume_version_id" not in marked_application
         assert marked_application["resume_title_snapshot"] is None
         assert marked_application["current_stage_type"] == "screening"
         assert marked_application["current_round_no"] is None
@@ -1370,7 +1370,7 @@ def test_marking_an_application_with_resume_id_links_current_resume() -> (
         )
         assert marked.status_code == 200, marked.text
         bound = marked.json()["application"]
-        assert bound["resume_version_id"] is None
+        assert "resume_version_id" not in bound
         assert bound["resume_id"] == resume_id
         assert bound["resume_title_snapshot"] == "后端岗位简历"
 
@@ -1401,7 +1401,7 @@ def test_marking_an_application_without_a_resume_succeeds() -> None:
         assert marked.status_code == 200, marked.text
         updated = marked.json()["application"]
         assert updated["applied_at"] == "2026-08-22T04:00:00Z"
-        assert updated["resume_version_id"] is None
+        assert "resume_version_id" not in updated
         assert updated["resume_title_snapshot"] is None
         assert updated["lock_version"] == application["lock_version"] + 1
 
@@ -1412,11 +1412,6 @@ def test_marking_an_application_accepts_current_resume_without_history() -> None
         register(client, "application-no-resume-version@example.test")
         resume = create_resume(client, app, "没有版本的简历")
         resume_id = str(resume["id"])
-        with app.state.session_factory() as db:
-            db.execute(
-                delete(ResumeVersion).where(ResumeVersion.resume_id == int(resume_id))
-            )
-            db.commit()
 
         created = client.post(
             "/api/job-applications",

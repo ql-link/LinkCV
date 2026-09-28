@@ -3,7 +3,8 @@ import { resolve } from "node:path";
 import { chromium } from "playwright-core";
 import sansRegularAsset from "../node_modules/@embedpdf/fonts-sc/fonts/NotoSansHans-Regular.otf";
 import serifRegularAsset from "../node_modules/@fontpkg/source-han-serif-sc/SourceHanSerifSC-Regular.otf";
-import wenkaiRegularAsset from "../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Regular.ttf";
+import sansVariableAsset from "../node_modules/@fontpkg/source-han-sans-sc-vf/SourceHanSansSC-VF.ttf.woff2";
+import wenkaiMediumAsset from "../node_modules/@fontpkg/lxgw-wen-kai/LXGWWenKai-Medium.ttf";
 import {
   resumePresentationPageMargins,
   type LayoutPlan,
@@ -48,12 +49,14 @@ const TEMPLATE_PDF_ASSETS: Record<string, string> = {
 const FONT_ORIGIN = "https://linkresume-render.local";
 const FONT_ASSETS = new Map([
   [fontUrl(serifRegularAsset), serifRegularAsset],
-  [fontUrl(wenkaiRegularAsset), wenkaiRegularAsset],
+  [fontUrl(sansVariableAsset), sansVariableAsset],
+  [fontUrl(wenkaiMediumAsset), wenkaiMediumAsset],
   [fontUrl(sansRegularAsset), sansRegularAsset],
 ]);
 const EMBEDDED_FONT_STYLES = `
 @font-face{font-family:"Source Han Serif SC";src:url(${fontUrl(serifRegularAsset)}) format("opentype");font-weight:400;font-style:normal}
-@font-face{font-family:"LXGW WenKai";src:url(${fontUrl(wenkaiRegularAsset)}) format("truetype");font-weight:400;font-style:normal}
+@font-face{font-family:"Source Han Sans SC";src:url(${fontUrl(sansVariableAsset)}) format("woff2-variations");font-weight:250 900;font-style:normal}
+@font-face{font-family:"LXGW WenKai";src:url(${fontUrl(wenkaiMediumAsset)}) format("truetype");font-weight:400;font-style:normal}
 @font-face{font-family:"LinkResume Noto Sans SC";src:url(${fontUrl(sansRegularAsset)}) format("opentype");font-weight:400;font-style:normal}
 `;
 
@@ -210,7 +213,7 @@ async function main() {
       if (fontAsset) {
         await route.fulfill({
           status: 200,
-          contentType: fontAsset.endsWith(".ttf") ? "font/ttf" : "font/otf",
+          contentType: fontAsset.endsWith(".woff2") ? "font/woff2" : fontAsset.endsWith(".ttf") ? "font/ttf" : "font/otf",
           body: readFileSync(resolve(__dirname, fontAsset)),
         });
       } else if (url.startsWith("data:") || url.startsWith("about:") || url.startsWith("blob:")) {

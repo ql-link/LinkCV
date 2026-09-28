@@ -58,7 +58,6 @@ export function ResumeTemplatesPage() {
     && (selectedUseCases.length === 0 || selectedUseCases.some((useCase) => template.use_cases?.includes(useCase))),
   ), [templates, selectedStyles, selectedUseCases]);
   const filterKey = `${selectedStyles.slice().sort().join(",")}|${selectedUseCases.slice().sort().join(",")}`;
-  const hasFilters = selectedStyles.length > 0 || selectedUseCases.length > 0;
 
   const applyFilters = (styles: string[], useCases: string[]) => {
     setSelectedStyles(styles);
@@ -129,6 +128,13 @@ export function ResumeTemplatesPage() {
         tone="template"
         title="简历模板"
         description="浏览当前可用版式，选择后填写简历名称并进入编辑器。"
+        actions={!loading && !failed && templates.length > 0 ? (
+          <TemplateFilterPopover
+            styles={selectedStyles}
+            useCases={selectedUseCases}
+            onChange={applyFilters}
+          />
+        ) : undefined}
       />
 
       {loading ? (
@@ -163,17 +169,6 @@ export function ResumeTemplatesPage() {
 
         {!failed && templates.length > 0 && (
           <>
-          <div className="template-library-filters" aria-label="筛选简历模板">
-            <div className="template-library-filter-summary" aria-live="polite">
-              <span>找到 {filteredTemplates.length} 套模板</span>
-              {hasFilters && <button type="button" onClick={() => applyFilters([], [])}>清除筛选</button>}
-            </div>
-            <TemplateFilterPopover
-              styles={selectedStyles}
-              useCases={selectedUseCases}
-              onChange={applyFilters}
-            />
-          </div>
           <AnimatePresence initial={false} mode="wait">
           {filteredTemplates.length > 0 ? (
           <motion.div
