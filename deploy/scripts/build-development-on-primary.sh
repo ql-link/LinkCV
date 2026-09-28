@@ -100,6 +100,21 @@ if not Settings().wechat_enabled:
 '
 docker network inspect "${docker_network}" >/dev/null
 
+# Reject known retirement blockers while the old service is still running.
+# The migration runner repeats the check after the service is stopped.
+docker run --rm \
+  --network "${docker_network}" \
+  --env-file "${base_env}" \
+  --env-file "${secret_env}" \
+  -e APP_ENV=development \
+  "${image}:${tag}" \
+  python /app/scripts/release/run_alembic.py \
+    --expected-app-env development \
+    --expected-host 100.86.10.52 \
+    --expected-port 13306 \
+    --expected-database linkresume \
+    --preflight-only
+
 # Stop every process that can read or write the old AgentSession schema before
 # applying forward-only migrations.  A failed migration intentionally leaves
 # the old application stopped until an operator verifies schema compatibility.

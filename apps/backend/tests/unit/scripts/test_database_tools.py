@@ -34,6 +34,9 @@ def test_remote_deployments_stop_old_runtime_before_forward_migration() -> None:
     development = (
         REPO_ROOT / "deploy/scripts/build-development-on-primary.sh"
     ).read_text(encoding="utf-8")
+    pre_stop_window = development[: development.index("# Stop every process")]
+    assert "--preflight-only" in pre_stop_window
+    assert "run_alembic.py" in pre_stop_window
     development_window = development[
         development.index("# Stop every process") : development.index(
             'TAG="${tag}"', development.index("# Stop every process")
@@ -379,6 +382,38 @@ def migration_script_directory(module: ModuleType) -> ScriptDirectory:
     config = Config(str(module.BACKEND_ROOT / "alembic.ini"))
     config.set_main_option("script_location", str(module.BACKEND_ROOT / "migrations"))
     return ScriptDirectory.from_config(config)
+
+
+@pytest.mark.parametrize(
+    ("current", "table", "row_count"),
+    [
+        ("0088", "dataset_object_cleanup", 2),
+        ("0092", "llm_providers", 1),
+    ],
+)
+def test_release_preflight_keeps_old_service_running_when_retirement_is_blocked(
+    current: str, table: str, row_count: int
+) -> None:
+    module = load_module(
+        "linkresume_run_alembic_retirement_test",
+        REPO_ROOT / "scripts/release/run_alembic.py",
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    with engine.begin() as connection:
+        connection.execute(text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)"))
+        for identifier in range(1, row_count + 1):
+            connection.execute(
+                text(f"INSERT INTO {table} (id) VALUES (:id)"), {"id": identifier}
+            )
+        with pytest.raises(RuntimeError, match=f"{table}={row_count}"):
+            module.validate_pending_retirements(
+                connection, migration_script_directory(module), (current,)
+            )
+        connection.execute(text(f"DELETE FROM {table}"))
+        module.validate_pending_retirements(
+            connection, migration_script_directory(module), (current,)
+        )
+    engine.dispose()
 
 
 def test_release_runner_rejects_agent_tables_ahead_of_alembic_revision() -> None:
