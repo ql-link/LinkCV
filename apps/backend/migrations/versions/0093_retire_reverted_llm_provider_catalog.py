@@ -1,36 +1,35 @@
-"""remove dataset replacement and cleanup tables.
+"""Retire the provider catalog created by historical revision 0088.
 
-Revision ID: 0089
-Revises: 0088
-Create Date: 2026-09-27 20:32:52.697840
+Revision ID: 0093
+Revises: 0092
 """
 from collections.abc import Sequence
 from pathlib import Path
 
 from alembic import op
 from sqlalchemy import inspect, text
+
 from linkresume.core.migration_sql import execute_sql_file
 
-revision: str = '0089'
-down_revision: str | None = '0088'
+revision: str = "0093"
+down_revision: str | None = "0092"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 SQL_DIR = Path(__file__).parent.parent / "sql"
+LEGACY_TABLES = ("llm_provider_models", "llm_providers")
 
 
 def upgrade() -> None:
     connection = op.get_bind()
-    # Object storage cannot be cleaned by SQL. Refuse to discard its last
-    # references until the maintenance command has drained both legacy tables.
     tables = set(inspect(connection).get_table_names())
-    for table in ("dataset_replacements", "dataset_object_cleanup"):
+    for table in LEGACY_TABLES:
         if table in tables and connection.scalar(text(f"SELECT COUNT(*) FROM {table}")):
             raise RuntimeError(
-                "Stop API/Workers and run scripts/release/retire_dataset_operations.py "
-                "before upgrading to 0089"
+                f"Historical provider table {table} contains rows; review and export them "
+                "before upgrading to 0093"
             )
-    execute_sql_file(connection, SQL_DIR / "0089.up.sql")
+    execute_sql_file(connection, SQL_DIR / "0093.up.sql")
 
 
 def downgrade() -> None:
