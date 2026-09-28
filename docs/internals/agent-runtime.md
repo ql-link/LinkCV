@@ -55,7 +55,7 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 
 ## 治理数据
 
-- `llm_provider_connections`：接入商代码、独立凭据、受控设置、配置版本与目录同步状态。推理地址由接入商适配器确定，后台不能提交任意 URL。
+- `llm_provider_connections`：接入商代码、独立凭据、受控设置、配置版本与目录同步状态。推理地址由接入商适配器确定，后台不能提交任意 URL；AIHubMix 可选择官方默认或备用地址，切换会让旧探测失效。
 - `llm_models`：供用户选择的稳定逻辑模型名称。
 - `llm_model_routes`：逻辑模型在某连接上的实际 `invoke_target`、目标类型、目录元数据、价格规则和启停状态。同一逻辑模型可配置多条线路。
 - `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别和用户对话；场景代码由后端注册，不建字典表。

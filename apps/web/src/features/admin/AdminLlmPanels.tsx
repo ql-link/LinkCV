@@ -28,6 +28,7 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [providerCode, setProviderCode] = useState("aihubmix");
+  const [aihubmixEndpoint, setAihubmixEndpoint] = useState("primary");
   const [connectionName, setConnectionName] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [region, setRegion] = useState("");
@@ -70,6 +71,7 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
   const submitConnection = (event: FormEvent) => {
     event.preventDefault();
     const settings: Record<string, unknown> = {};
+    if (providerCode === "aihubmix" && aihubmixEndpoint === "alternate") settings.endpoint = "alternate";
     if (region.trim()) settings.region = region.trim();
     if (workspace.trim()) settings.workspace_id = workspace.trim();
     void act(async () => {
@@ -107,13 +109,14 @@ export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {
     {error && <p role="alert" className="llm-error">{error}</p>}
     <section className="admin-surface"><h2>1. 接入商连接</h2>
       <form onSubmit={submitConnection} className="log-filter-form">
-        <label>厂商 <select value={providerCode} onChange={(event) => { setProviderCode(event.target.value); setRegion(""); setWorkspace(""); }}>{catalog?.providers.map((provider) => <option key={provider.code} value={provider.code}>{provider.label}</option>)}</select></label>
+        <label>厂商 <select value={providerCode} onChange={(event) => { setProviderCode(event.target.value); setAihubmixEndpoint("primary"); setRegion(""); setWorkspace(""); }}>{catalog?.providers.map((provider) => <option key={provider.code} value={provider.code}>{provider.label}</option>)}</select></label>
         <label>连接名称 <input required value={connectionName} onChange={(event) => setConnectionName(event.target.value)} placeholder="例如：生产环境主账号" /></label>
         <label>API Key <input required type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></label>
+        {providerCode === "aihubmix" && <label>API 地址 <select value={aihubmixEndpoint} onChange={(event) => setAihubmixEndpoint(event.target.value)}><option value="primary">默认地址</option><option value="alternate">备用地址</option></select></label>}
         {providerCode === "aliyun" && <><label>地域 <input required value={region} onChange={(event) => setRegion(event.target.value)} placeholder="cn-beijing" /></label><label>Workspace（可选） <input value={workspace} onChange={(event) => setWorkspace(event.target.value)} /></label></>}
         <button type="submit" disabled={busy}>添加连接</button>
       </form>
-      <table><thead><tr><th>连接</th><th>厂商</th><th>Key</th><th>状态</th><th>目录</th><th>操作</th></tr></thead><tbody>{connections.map((connection) => <tr key={connection.id}><td>{connection.name}</td><td>{connection.providerCode}</td><td>{connection.keyConfigured ? "已配置" : "缺失"}</td><td>{connection.enabled ? "启用" : "停用"}</td><td>{connection.catalogSyncedAt ? new Date(connection.catalogSyncedAt).toLocaleString() : "未同步"}</td><td><button type="button" disabled={busy} onClick={() => void act(() => api.updateLlmConnection(connection.id, { baseVersion: connection.runtimeConfigVersion, enabled: !connection.enabled }), connection.enabled ? "连接已停用" : "连接已启用")}>{connection.enabled ? "停用" : "启用"}</button>{catalog?.providers.find((item) => item.code === connection.providerCode)?.catalogSync && <button type="button" disabled={busy} onClick={() => void act(() => api.syncLlmCatalog(connection.id), "模型目录已同步")}>同步目录</button>}</td></tr>)}</tbody></table>
+      <table><thead><tr><th>连接</th><th>厂商</th><th>Key</th><th>状态</th><th>目录</th><th>操作</th></tr></thead><tbody>{connections.map((connection) => <tr key={connection.id}><td>{connection.name}{connection.providerCode === "aihubmix" && <small> · {connection.settings.endpoint === "alternate" ? "备用地址" : "默认地址"}</small>}</td><td>{connection.providerCode}</td><td>{connection.keyConfigured ? "已配置" : "缺失"}</td><td>{connection.enabled ? "启用" : "停用"}</td><td>{connection.catalogSyncedAt ? new Date(connection.catalogSyncedAt).toLocaleString() : "未同步"}</td><td><button type="button" disabled={busy} onClick={() => void act(() => api.updateLlmConnection(connection.id, { baseVersion: connection.runtimeConfigVersion, enabled: !connection.enabled }), connection.enabled ? "连接已停用" : "连接已启用")}>{connection.enabled ? "停用" : "启用"}</button>{connection.providerCode === "aihubmix" && <button type="button" disabled={busy} onClick={() => void act(() => api.updateLlmConnection(connection.id, { baseVersion: connection.runtimeConfigVersion, settings: connection.settings.endpoint === "alternate" ? {} : { endpoint: "alternate" } }), "API 地址已切换，关联线路需重新探测")}>{connection.settings.endpoint === "alternate" ? "使用默认地址" : "使用备用地址"}</button>}{catalog?.providers.find((item) => item.code === connection.providerCode)?.catalogSync && <button type="button" disabled={busy} onClick={() => void act(() => api.syncLlmCatalog(connection.id), "模型目录已同步")}>同步目录</button>}</td></tr>)}</tbody></table>
       <form onSubmit={rotateKey} className="log-filter-form"><label>更换连接 Key <select required value={keyConnectionId} onChange={(event) => setKeyConnectionId(event.target.value)}><option value="">选择连接</option>{connections.map((connection) => <option key={connection.id} value={connection.id}>{connection.name}</option>)}</select></label><label>新 API Key <input required type="password" autoComplete="new-password" value={replacementKey} onChange={(event) => setReplacementKey(event.target.value)} /></label><button disabled={busy}>保存新 Key</button></form>
     </section>
     <section className="admin-surface"><h2>2. 逻辑模型</h2><p>用户看到逻辑模型名称；同一个模型可以有多条线路。</p>

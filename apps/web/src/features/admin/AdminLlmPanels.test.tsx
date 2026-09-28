@@ -34,6 +34,16 @@ describe("ModelsPanel", () => {
     await waitFor(() => expect(probe).toHaveBeenCalledWith("assistant_conversation", "3"));
   });
 
+  it("switches an AIHubMix connection to the allowlisted alternate endpoint", async () => {
+    const update = vi.spyOn(api, "updateLlmConnection").mockResolvedValue({ connection });
+    render(<ModelsPanel onSessionExpired={vi.fn()} notify={vi.fn()} />);
+    await screen.findAllByText("主连接");
+    fireEvent.click(screen.getByRole("button", { name: "使用备用地址" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("1", {
+      baseVersion: 1, settings: { endpoint: "alternate" },
+    }));
+  });
+
   it("updates the route priority used for failover", async () => {
     const update = vi.spyOn(api, "updateLlmBinding").mockResolvedValue({ binding });
     render(<ModelsPanel onSessionExpired={vi.fn()} notify={vi.fn()} />);

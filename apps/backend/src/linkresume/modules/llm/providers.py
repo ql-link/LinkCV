@@ -36,6 +36,10 @@ PROVIDERS = {
 }
 
 _WORKSPACE = re.compile(r"^[a-zA-Z0-9-]{1,80}$")
+_AIHUBMIX_BASE_URLS = {
+    "primary": "https://aihubmix.com",
+    "alternate": "https://api.inferera.com",
+}
 _ALIYUN_REGIONS = {
     "cn-beijing": "cn-beijing",
     "ap-southeast-1": "ap-southeast-1",
@@ -50,7 +54,10 @@ def validate_settings(provider_code: str, settings: dict | None) -> dict:
     if provider_code not in PROVIDERS:
         raise ValueError("unsupported provider")
     value = dict(settings or {})
-    if provider_code == "aliyun":
+    if provider_code == "aihubmix":
+        if set(value) - {"endpoint"} or value.get("endpoint", "primary") not in _AIHUBMIX_BASE_URLS:
+            raise ValueError("unsupported AIHubMix endpoint")
+    elif provider_code == "aliyun":
         if set(value) - {"region", "workspace_id"}:
             raise ValueError("unsupported Aliyun setting")
         region = value.get("region")
@@ -68,10 +75,15 @@ def validate_settings(provider_code: str, settings: dict | None) -> dict:
     return value
 
 
+def aihubmix_base_url(settings: dict | None = None) -> str:
+    value = validate_settings("aihubmix", settings)
+    return _AIHUBMIX_BASE_URLS[value.get("endpoint", "primary")]
+
+
 def inference_base_url(provider_code: str, settings: dict | None = None) -> str:
-    value = validate_settings(provider_code, settings)
     if provider_code == "aihubmix":
-        return "https://aihubmix.com/v1"
+        return f"{aihubmix_base_url(settings)}/v1"
+    value = validate_settings(provider_code, settings)
     if provider_code == "siliconflow":
         return "https://api.siliconflow.cn/v1"
     if provider_code == "deepseek":

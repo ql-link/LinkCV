@@ -6,7 +6,7 @@ from linkresume.core.config import Settings
 from linkresume.main import create_app
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import LLMCallLog
+from linkresume.modules.llm.models import LLMCallLog, LLMProviderConnection
 from tests.fakes import FakeRedis
 
 
@@ -82,3 +82,30 @@ def test_connection_does_not_accept_arbitrary_url():
         register_admin(app, client)
         response = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "bad", "apiKey": "fictional", "settings": {"base_url": "http://127.0.0.1"}})
         assert response.status_code == 422
+
+
+def test_switching_aihubmix_endpoint_invalidates_catalog_and_probe_version():
+    app, _ = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        response = client.post("/api/admin/llm/connections", json={
+            "providerCode": "aihubmix", "name": "测试连接", "apiKey": "fictional-key",
+            "settings": {}, "enabled": True,
+        })
+        assert response.status_code == 201
+        connection_id = response.json()["connection"]["id"]
+        with app.state.session_factory() as db:
+            row = db.get(LLMProviderConnection, int(connection_id))
+            row.catalog_state_json = {"etag": "old-endpoint"}
+            row.catalog_synced_at = row.created_at
+            db.commit()
+        changed = client.patch(f"/api/admin/llm/connections/{connection_id}", json={
+            "baseVersion": 1, "settings": {"endpoint": "alternate"},
+        })
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["connection"]["runtimeConfigVersion"] == 2
+        assert changed.json()["connection"]["catalogSyncedAt"] is None
+        with app.state.session_factory() as db:
+            row = db.get(LLMProviderConnection, int(connection_id))
+            assert row.settings_json == {"endpoint": "alternate"}
+            assert row.catalog_state_json is None

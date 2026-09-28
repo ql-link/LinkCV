@@ -1,6 +1,6 @@
 # Jenkins Docker deployment
 
-LinkResume uses separate Jenkins jobs for Development and Production. Both jobs build the application and Pi images, run the guarded Alembic runner before deployment, update the matching Compose services, and wait for `/api/health` plus `/api/agent/readiness`. The Agent readiness probe verifies the FastAPI-to-Pi-to-FastAPI authentication and current Chat model configuration without calling the model provider.
+LinkResume uses separate Jenkins jobs for Development and Production. Both jobs build the application and Pi images, run the guarded Alembic runner before deployment, update the matching Compose services, and wait for `/api/health` and container health. After the base deployment succeeds, they report `/api/agent/readiness` separately; a non-200 response warns that chat is unavailable but does not fail deployment. The Agent readiness probe verifies the FastAPI-to-Pi-to-FastAPI authentication and current Chat model configuration without calling the model provider.
 
 ## Development
 
@@ -66,4 +66,4 @@ export LINKRESUME_HTTP_PORT=4174
 docker compose -f /opt/tolink/LinkResume/deploy/docker-compose.production.yml up -d --remove-orphans
 ```
 
-受保护的 Production 迁移目标是 `production / tolink-mysql:3306 / linkresume`。镜像构建不连接 MySQL；旧 LinkResume Web、Worker 和 Pi 停止后才运行 forward-only 迁移，迁移成功后才更新 Compose。发布必须同时满足 `linkresume`、`linkresume-pi` 健康，Worker/Promtail 运行，以及 `/api/health`、`/api/agent/readiness` 可用。迁移开始后失败会保持旧容器停止；只能前向修复，或先恢复数据库备份再使用备份的上一版 Compose 和成对镜像。Redis 和 MinIO 继续通过同一外部网络访问 `tolink-redis:6379` 与 `http://tolink-minio:9000`。
+受保护的 Production 迁移目标是 `production / tolink-mysql:3306 / linkresume`。镜像构建不连接 MySQL；旧 LinkResume Web、Worker 和 Pi 停止后才运行 forward-only 迁移，迁移成功后才更新 Compose。发布必须同时满足 `linkresume`、`linkresume-pi` 健康，Worker/Promtail 运行，以及 `/api/health` 可用；`/api/agent/readiness` 单独报告，非 200 不阻止基础部署成功。迁移开始后失败会保持旧容器停止；只能前向修复，或先恢复数据库备份再使用备份的上一版 Compose 和成对镜像。Redis 和 MinIO 继续通过同一外部网络访问 `tolink-redis:6379` 与 `http://tolink-minio:9000`。

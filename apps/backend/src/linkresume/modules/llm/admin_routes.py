@@ -229,6 +229,8 @@ def patch_connection(
             raise ApiError(422, "LLM_CONNECTION_INVALID") from error
         if settings != (row.settings_json or {}):
             row.settings_json = settings
+            row.catalog_state_json = None
+            row.catalog_synced_at = None
             runtime_changed = True
     if payload.api_key is not None:
         bundle = _bundle(service, row)
@@ -239,6 +241,7 @@ def patch_connection(
             bundle["api_key"] = key
             runtime_changed = True
             row.catalog_state_json = None
+            row.catalog_synced_at = None
         try:
             row.credential_ciphertext = service.encrypt_credential(json.dumps(bundle))
         except CredentialUnavailableError as error:
@@ -266,10 +269,11 @@ async def sync_connection_catalog(
     version = row.runtime_config_version
     state = row.catalog_state_json or {}
     provider_code = row.provider_code
+    settings = row.settings_json
     db.rollback()  # Release the read transaction before the network request.
     try:
         result = await fetch_catalog(
-            provider_code, bundle["api_key"], etag=state.get("etag"),
+            provider_code, bundle["api_key"], settings=settings, etag=state.get("etag"),
         )
     except (httpx.HTTPError, ValueError) as error:
         raise ApiError(502, "LLM_CATALOG_UNAVAILABLE") from error
