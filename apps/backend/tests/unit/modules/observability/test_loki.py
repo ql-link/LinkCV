@@ -120,3 +120,54 @@ def test_summary_groups_system_and_audit_counts() -> None:
         "system": {"total": 10, "warnings": 0, "errors": 3},
         "audit": {"total": 6, "succeeded": 4, "failed": 2},
     }
+
+
+def _bucket_client(handler) -> LokiClient:
+    client = LokiClient("http://loki.test", 1)
+    client._client.close()
+    client._client = httpx.Client(
+        base_url="http://loki.test", transport=httpx.MockTransport(handler)
+    )
+    return client
+
+
+def test_level_buckets_query_only_error_and_warning_streams() -> None:
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.update(request.url.params)
+        return httpx.Response(200, json={"status": "success", "data": {"result": [
+            {"metric": {"level": "ERROR"}, "values": [[1790000000, "2"], [1790010800, "1"]]},
+            {"metric": {"level": "warning"}, "values": [[1790000000, "5"]]},
+        ]}})
+
+    client = _bucket_client(handler)
+    start = datetime(2026, 9, 21, tzinfo=UTC)
+    buckets = client.query_level_buckets(
+        environment="test", start=start, end=start + timedelta(days=7), step_seconds=10800
+    )
+    assert request_path_is_range(seen)
+    assert 'level=~"ERROR|CRITICAL|WARNING"' in seen["query"]
+    assert '[10800s]' in seen["query"]
+    assert seen["step"] == "10800s"
+    assert buckets == {1790000000: {"ERROR": 2, "WARNING": 5}, 1790010800: {"ERROR": 1}}
+
+
+def request_path_is_range(params: dict[str, str]) -> bool:
+    return "start" in params and "end" in params and "step" in params
+
+
+def test_level_buckets_reject_malformed_items() -> None:
+    from linkresume.modules.observability.loki import LokiUnavailableError
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "success", "data": {"result": [
+            {"metric": {}, "values": [[1, "1"]]},
+        ]}})
+
+    client = _bucket_client(handler)
+    start = datetime(2026, 9, 21, tzinfo=UTC)
+    with pytest.raises(LokiUnavailableError):
+        client.query_level_buckets(
+            environment="test", start=start, end=start + timedelta(hours=3), step_seconds=10800
+        )

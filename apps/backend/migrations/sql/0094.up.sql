@@ -1,95 +1,50 @@
--- 0094: AI mock interview sessions and their question/answer turns.
--- active_user_id mirrors user_id only while an interview occupies the single
--- per-user in-progress slot; the unique key enforces that invariant.
+-- Upgrade migration for 0094: add announcements
+CREATE TABLE announcements (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '公告主键',
+  level VARCHAR(16) NOT NULL DEFAULT 'normal' COMMENT '级别：normal、important',
+  title VARCHAR(120) NOT NULL COMMENT '标题，纯文本',
+  body TEXT NOT NULL COMMENT '正文，纯文本与换行，应用层限制 5000 字',
+  status VARCHAR(16) NOT NULL DEFAULT 'draft' COMMENT '状态：draft、published、unpublished',
+  starts_at DATETIME(6) NULL COMMENT '生效开始 UTC；为空时以发布时间为准',
+  ends_at DATETIME(6) NULL COMMENT '生效结束 UTC；为空表示不过期',
+  published_at DATETIME(6) NULL COMMENT '发布时间 UTC',
+  unpublished_at DATETIME(6) NULL COMMENT '下线时间 UTC',
+  created_by BIGINT UNSIGNED NOT NULL COMMENT '创建管理员',
+  updated_by BIGINT UNSIGNED NOT NULL COMMENT '最后编辑管理员',
+  published_by BIGINT UNSIGNED NULL COMMENT '发布管理员',
+  unpublished_by BIGINT UNSIGNED NULL COMMENT '下线管理员',
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间 UTC',
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '最后更新时间 UTC',
+  CONSTRAINT pk_announcements PRIMARY KEY (id),
+  CONSTRAINT fk_announcements_created_by FOREIGN KEY (created_by)
+    REFERENCES users (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_announcements_updated_by FOREIGN KEY (updated_by)
+    REFERENCES users (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_announcements_published_by FOREIGN KEY (published_by)
+    REFERENCES users (id) ON DELETE RESTRICT,
+  CONSTRAINT fk_announcements_unpublished_by FOREIGN KEY (unpublished_by)
+    REFERENCES users (id) ON DELETE RESTRICT,
+  CONSTRAINT ck_announcements_level CHECK (level IN ('normal', 'important')),
+  CONSTRAINT ck_announcements_status CHECK (status IN ('draft', 'published', 'unpublished')),
+  CONSTRAINT ck_announcements_window CHECK (
+    ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at
+  ),
+  CONSTRAINT ck_announcements_state_fields CHECK (
+    (status = 'draft' AND published_at IS NULL AND published_by IS NULL
+      AND unpublished_at IS NULL AND unpublished_by IS NULL)
+    OR (status = 'published' AND published_at IS NOT NULL AND published_by IS NOT NULL
+      AND unpublished_at IS NULL AND unpublished_by IS NULL)
+    OR (status = 'unpublished' AND published_at IS NOT NULL AND published_by IS NOT NULL
+      AND unpublished_at IS NOT NULL AND unpublished_by IS NOT NULL)
+  ),
+  INDEX idx_announcements_status_published (status, published_at, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='全站应用内公告';
 
-CREATE TABLE mock_interviews (
-	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-	public_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-	user_id BIGINT UNSIGNED NOT NULL,
-	active_user_id BIGINT UNSIGNED NULL COMMENT '进行中时等于 user_id，用于单用户并发唯一约束',
-	source_type VARCHAR(24) NOT NULL COMMENT '发起来源：job_application/resume',
-	job_application_id BIGINT UNSIGNED NULL,
-	resume_id BIGINT UNSIGNED NULL,
-	job_description_id BIGINT UNSIGNED NULL,
-	repeat_of_id BIGINT UNSIGNED NULL COMMENT '再练一次的来源面试',
-	resume_title_snapshot VARCHAR(200) NOT NULL,
-	resume_markdown_snapshot MEDIUMTEXT NOT NULL,
-	job_snapshot_json JSON NULL COMMENT '公司、职位、JD 正文与求职分类快照',
-	stage_snapshot_json JSON NULL COMMENT '发起时的求职阶段快照',
-	target_role VARCHAR(200) NULL,
-	interview_type VARCHAR(24) NOT NULL,
-	difficulty VARCHAR(16) NOT NULL,
-	question_count TINYINT UNSIGNED NOT NULL,
-	follow_up_enabled BOOL NOT NULL DEFAULT true,
-	language VARCHAR(8) NOT NULL,
-	material_refs_json JSON NULL COMMENT '参考资料 ID 与发起时正文版本',
-	analysis_json JSON NULL COMMENT '背景分析结果',
-	plan_json JSON NULL COMMENT '定稿考察点计划',
-	status VARCHAR(24) NOT NULL,
-	current_question_id BIGINT UNSIGNED NULL,
-	task_lease_until DATETIME(6) NULL COMMENT '后台准备或评估任务租约到期时间',
-	task_token CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL COMMENT '当前持有租约的后台任务标识',
-	started_at DATETIME(6) NULL,
-	finished_at DATETIME(6) NULL,
-	last_activity_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	total_score DECIMAL(5, 2) NULL,
-	low_confidence BOOL NOT NULL DEFAULT false,
-	report_json JSON NULL,
-	rubric_version VARCHAR(16) NULL,
-	error_code VARCHAR(64) NULL,
-	input_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-	output_tokens BIGINT UNSIGNED NOT NULL DEFAULT 0,
-	lock_version BIGINT UNSIGNED NOT NULL DEFAULT 1,
-	created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	PRIMARY KEY (id),
-	CONSTRAINT uk_mock_interviews_public_id UNIQUE (public_id),
-	CONSTRAINT uk_mock_interviews_active_user UNIQUE (active_user_id),
-	CONSTRAINT fk_mock_interviews_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE RESTRICT,
-	CONSTRAINT fk_mock_interviews_application FOREIGN KEY (job_application_id) REFERENCES job_applications (id) ON DELETE SET NULL,
-	CONSTRAINT fk_mock_interviews_resume FOREIGN KEY (resume_id) REFERENCES resumes (id) ON DELETE SET NULL,
-	CONSTRAINT fk_mock_interviews_job FOREIGN KEY (job_description_id) REFERENCES job_descriptions (id) ON DELETE SET NULL,
-	CONSTRAINT fk_mock_interviews_repeat_of FOREIGN KEY (repeat_of_id) REFERENCES mock_interviews (id) ON DELETE SET NULL,
-	CONSTRAINT ck_mock_interviews_source_type CHECK (source_type IN ('job_application', 'resume')),
-	CONSTRAINT ck_mock_interviews_type CHECK (interview_type IN ('technical', 'project_deep_dive', 'hr', 'comprehensive')),
-	CONSTRAINT ck_mock_interviews_difficulty CHECK (difficulty IN ('junior', 'intermediate', 'senior')),
-	CONSTRAINT ck_mock_interviews_question_count CHECK (question_count BETWEEN 3 AND 10),
-	CONSTRAINT ck_mock_interviews_language CHECK (language IN ('zh', 'en')),
-	CONSTRAINT ck_mock_interviews_status CHECK (status IN ('preparing', 'preparation_failed', 'in_progress', 'evaluating', 'evaluation_failed', 'completed', 'abandoned')),
-	CONSTRAINT ck_mock_interviews_score CHECK (total_score IS NULL OR (total_score >= 0 AND total_score <= 100)),
-	CONSTRAINT ck_mock_interviews_lock_version CHECK (lock_version >= 1),
-	INDEX idx_mock_interviews_user_created (user_id, created_at, id),
-	INDEX idx_mock_interviews_application (job_application_id),
-	INDEX idx_mock_interviews_resume (resume_id),
-	INDEX idx_mock_interviews_job (job_description_id),
-	INDEX idx_mock_interviews_repeat_of (repeat_of_id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='AI 模拟面试';
-
-CREATE TABLE mock_interview_questions (
-	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-	interview_id BIGINT UNSIGNED NOT NULL,
-	parent_id BIGINT UNSIGNED NULL COMMENT '追问指向的主问题',
-	sequence_no SMALLINT UNSIGNED NOT NULL COMMENT '整场对话内的提问顺序',
-	plan_index TINYINT UNSIGNED NOT NULL COMMENT '对应面试计划中的考察点序号',
-	depth_level TINYINT UNSIGNED NOT NULL,
-	content TEXT NOT NULL,
-	answer_status VARCHAR(16) NOT NULL DEFAULT 'pending',
-	answer_text TEXT NULL,
-	answer_idempotency_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
-	answered_at DATETIME(6) NULL,
-	evaluation_json JSON NULL COMMENT '主问题的逐题评价',
-	created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-	PRIMARY KEY (id),
-	CONSTRAINT uk_mock_interview_questions_sequence UNIQUE (interview_id, sequence_no),
-	CONSTRAINT fk_mock_interview_questions_interview FOREIGN KEY (interview_id) REFERENCES mock_interviews (id) ON DELETE CASCADE,
-	CONSTRAINT fk_mock_interview_questions_parent FOREIGN KEY (parent_id) REFERENCES mock_interview_questions (id) ON DELETE CASCADE,
-	CONSTRAINT ck_mock_interview_questions_depth CHECK (depth_level BETWEEN 1 AND 5),
-	CONSTRAINT ck_mock_interview_questions_answer_status CHECK (answer_status IN ('pending', 'answered', 'skipped')),
-	CONSTRAINT ck_mock_interview_questions_answer CHECK (
-		(answer_status = 'pending' AND answer_text IS NULL AND answered_at IS NULL) OR
-		(answer_status = 'answered' AND answer_text IS NOT NULL AND answered_at IS NOT NULL) OR
-		(answer_status = 'skipped' AND answer_text IS NULL AND answered_at IS NOT NULL)
-	),
-	INDEX idx_mock_interview_questions_parent (parent_id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='模拟面试的提问与作答';
+CREATE TABLE announcement_read_cursors (
+  user_id BIGINT UNSIGNED NOT NULL COMMENT '用户',
+  read_through_at DATETIME(6) NOT NULL COMMENT '已读到的时间点 UTC；此刻及之前开始展示的公告视为已读',
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '最后更新时间 UTC',
+  CONSTRAINT pk_announcement_read_cursors PRIMARY KEY (user_id),
+  CONSTRAINT fk_announcement_read_cursors_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户公告已读时间点，每个用户至多一行';

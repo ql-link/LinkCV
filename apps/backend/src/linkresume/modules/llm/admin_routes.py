@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from linkresume.core.database import get_db, utc_now
 from linkresume.core.errors import ApiError
+from linkresume.modules.admin_insights.llm import cost_totals
+from linkresume.modules.admin_insights.window import resolve_window
 from linkresume.modules.identity.dependencies import get_current_admin
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.catalog import CATALOG_URLS, fetch_catalog
@@ -481,7 +483,6 @@ def bind_route(
     row.enabled = payload.enabled
     row.updated_at = utc_now()
     _commit(db)
-    bind_audit_target(request, route.id)
     return {"binding": _binding_record(row, route, connection)}
 
 
@@ -507,7 +508,6 @@ def patch_binding(
         row.enabled = payload.enabled
     row.updated_at = utc_now()
     _commit(db)
-    bind_audit_target(request, route.id)
     return {"binding": _binding_record(row, route, connection)}
 
 
@@ -521,7 +521,6 @@ def unbind_route(
         raise ApiError(404, "LLM_BINDING_NOT_FOUND")
     db.delete(row)
     _commit(db)
-    bind_audit_target(request, route_id)
 
 
 @router.post("/use-cases/{use_case}/routes/{route_id}/probe")
@@ -538,7 +537,6 @@ async def probe_binding(
         )
     except LLMError as error:
         raise ApiError(422, error.code) from error
-    bind_audit_target(request, route_id)
     return {"callId": call_id, "validated": True}
 
 
@@ -546,14 +544,44 @@ async def probe_binding(
 def list_calls(
     cursor: int | None = Query(default=None, ge=1),
     limit: int = Query(default=50, ge=1, le=100),
+    use_case: str | None = Query(default=None, alias="useCase", max_length=48),
+    status: Literal["pending", "succeeded", "failed", "cancelled"] | None = None,
+    error_code: str | None = Query(default=None, alias="errorCode", max_length=64),
+    from_at: datetime | None = Query(default=None, alias="from"),
+    to_at: datetime | None = Query(default=None, alias="to"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_admin),
 ) -> dict:
-    statement = select(LLMCallLog).order_by(LLMCallLog.id.desc()).limit(limit + 1)
+    if use_case is not None and use_case not in USE_CASES:
+        raise ApiError(422, "LLM_USE_CASE_INVALID")
+    filters = []
+    if use_case is not None:
+        filters.append(LLMCallLog.use_case == use_case)
+    if status is not None:
+        filters.append(LLMCallLog.status == status)
+    if error_code is not None:
+        filters.append(LLMCallLog.error_code == error_code)
+    if from_at is not None or to_at is not None:
+        window = resolve_window(from_at, to_at, default=timedelta(hours=24))
+        filters.extend(
+            [LLMCallLog.created_at >= window.start, LLMCallLog.created_at < window.end]
+        )
+    statement = (
+        select(LLMCallLog).where(*filters).order_by(LLMCallLog.id.desc()).limit(limit + 1)
+    )
     if cursor is not None:
         statement = statement.where(LLMCallLog.id < cursor)
     rows = db.scalars(statement).all()
     page = rows[:limit]
+    totals = db.execute(
+        select(
+            func.count(LLMCallLog.id),
+            func.sum(case((LLMCallLog.status == "succeeded", 1), else_=0)),
+            func.sum(case((LLMCallLog.status == "failed", 1), else_=0)),
+            func.sum(LLMCallLog.input_tokens),
+            func.sum(LLMCallLog.output_tokens),
+        ).where(*filters)
+    ).one()
     return {
         "calls": [
             {
@@ -570,5 +598,12 @@ def list_calls(
             for row in page
         ],
         "nextCursor": page[-1].id if len(rows) > limit else None,
-        "summary": {"callCount": len(page)},
+        "summary": {
+            "callCount": totals[0] or 0,
+            "succeeded": int(totals[1] or 0),
+            "failed": int(totals[2] or 0),
+            "inputTokens": int(totals[3] or 0),
+            "outputTokens": int(totals[4] or 0),
+            **cost_totals(db, *filters),
+        },
     }

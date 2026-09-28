@@ -49,6 +49,49 @@ def _decode_cursor(cursor: str) -> tuple[datetime, int, int]:
         raise ApiError(400, "INVALID_AGENT_TRACE_QUERY") from error
 
 
+def operation_rows():
+    """Operations merged with legacy runs; shared by the trace list and admin insights."""
+    op_status = case(
+        (AgentRun.id.is_not(None), AgentRun.status),
+        (AgentOperation.state == "failed", literal("failed")),
+        else_=literal("preflighting"),
+    )
+    new_rows = (
+        select(
+            literal(1).label("source"), AgentOperation.id.label("row_id"),
+            AgentOperation.public_id.label("public_id"),
+            AgentSession.user_id.label("user_id"),
+            AgentOperation.created_at.label("created_at"),
+            op_status.label("status"),
+            func.coalesce(AgentRun.error_code, AgentOperation.error_code).label("error_code"),
+            AgentOperation.failure_stage.label("failure_stage"),
+            AgentRun.model_name.label("model_name"),
+            AgentRun.started_at.label("run_started_at"),
+            AgentRun.completed_at.label("run_completed_at"),
+        )
+        .join(AgentSession, AgentSession.id == AgentOperation.session_id)
+        .outerjoin(AgentRun, AgentRun.public_id == AgentOperation.public_id)
+    )
+    old_rows = (
+        select(
+            literal(0).label("source"), AgentRun.id.label("row_id"),
+            AgentRun.public_id.label("public_id"),
+            AgentSession.user_id.label("user_id"),
+            AgentRun.created_at.label("created_at"),
+            AgentRun.status.label("status"),
+            AgentRun.error_code.label("error_code"),
+            literal(None).label("failure_stage"),
+            AgentRun.model_name.label("model_name"),
+            AgentRun.started_at.label("run_started_at"),
+            AgentRun.completed_at.label("run_completed_at"),
+        )
+        .join(AgentSession, AgentSession.id == AgentRun.session_id)
+        .outerjoin(AgentOperation, AgentOperation.public_id == AgentRun.public_id)
+        .where(AgentOperation.id.is_(None))
+    )
+    return union_all(new_rows, old_rows).subquery()
+
+
 @router.get("")
 def list_agent_operations(
     from_at: datetime | None = Query(default=None, alias="from"),
@@ -66,41 +109,7 @@ def list_agent_operations(
             or end - start > MAX_WINDOW):
         raise ApiError(400, "INVALID_AGENT_TRACE_QUERY")
 
-    op_status = case(
-        (AgentRun.id.is_not(None), AgentRun.status),
-        (AgentOperation.state == "failed", literal("failed")),
-        else_=literal("preflighting"),
-    )
-    new_rows = (
-        select(
-            literal(1).label("source"), AgentOperation.id.label("row_id"),
-            AgentOperation.public_id.label("public_id"),
-            AgentSession.user_id.label("user_id"),
-            AgentOperation.created_at.label("created_at"),
-            op_status.label("status"),
-            func.coalesce(AgentRun.error_code, AgentOperation.error_code).label("error_code"),
-            AgentOperation.failure_stage.label("failure_stage"),
-            AgentRun.model_name.label("model_name"),
-        )
-        .join(AgentSession, AgentSession.id == AgentOperation.session_id)
-        .outerjoin(AgentRun, AgentRun.public_id == AgentOperation.public_id)
-    )
-    old_rows = (
-        select(
-            literal(0).label("source"), AgentRun.id.label("row_id"),
-            AgentRun.public_id.label("public_id"),
-            AgentSession.user_id.label("user_id"),
-            AgentRun.created_at.label("created_at"),
-            AgentRun.status.label("status"),
-            AgentRun.error_code.label("error_code"),
-            literal(None).label("failure_stage"),
-            AgentRun.model_name.label("model_name"),
-        )
-        .join(AgentSession, AgentSession.id == AgentRun.session_id)
-        .outerjoin(AgentOperation, AgentOperation.public_id == AgentRun.public_id)
-        .where(AgentOperation.id.is_(None))
-    )
-    rows = union_all(new_rows, old_rows).subquery()
+    rows = operation_rows()
     query = select(rows).where(rows.c.created_at >= start, rows.c.created_at <= end)
     if status is not None:
         query = query.where(rows.c.status == status)

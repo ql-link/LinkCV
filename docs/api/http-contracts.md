@@ -406,7 +406,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 `event_type` 只允许 `unhandled_error`、`unhandled_rejection`、`render_error` 和 `api_5xx`。服务端从当前会话绑定 actor，忽略客户端提供身份；消息和栈经统一长度限制与脱敏后写入系统日志。请求非法返回 `400 INVALID_CLIENT_LOG_EVENT`，本地 sink 拒绝写入返回 `503 LOG_EVENT_UNAVAILABLE`。
 
-PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该接口为既有调用方保留；新的 `GET /api/resumes/:id/pdf` 由服务端路由自动记录同一个 `resume.pdf_export` 动作。其他审计动作不能通过该接口伪造。自动审计还覆盖鉴权/会话、账号资料和密码、简历/版本/资源、JD、模拟面试、管理员用户状态和模型配置等动作；成功和受控失败都记录可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
+PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该接口为既有调用方保留；新的 `GET /api/resumes/:id/pdf` 由服务端路由自动记录同一个 `resume.pdf_export` 动作。其他审计动作不能通过该接口伪造。自动审计还覆盖鉴权/会话、账号资料和密码、简历/资源、JD、管理员用户状态、模型连接/逻辑模型/线路/能力绑定、插件发布包、应用内公告和模拟面试等动作；成功和受控失败都记录可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
 简历导入的后端内部日志使用 `operation_id`/`task_id` 串联阶段和重试，失败时只记录稳定错误码、失败阶段和不含字段值的验证元数据；这些内部字段不扩展本节的 HTTP 请求或响应结构。
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
@@ -439,7 +439,7 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `GET` | `/api/admin/llm/use-cases` | `{bindings}`；包含探测时间和当前是否生效 |
 | `PUT/PATCH/DELETE` | `/api/admin/llm/use-cases/:useCase/routes/:routeId` | 创建或调整场景绑定、停用或删除绑定 |
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
-| `GET` | `/api/admin/llm/calls[?cursor&limit]` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页 |
+| `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
 
 连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的字段，不能提交任意推理 URL。AIHubMix 的 `settings.endpoint` 可选 `primary` 或 `alternate`，缺省为 `primary`；后者使用官方备用 `api.inferera.com`，目录与推理地址同步切换。修改连接设置会递增推理配置版本、清除旧目录同步状态并要求关联绑定重新探测。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`、`mock_interview`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
 
@@ -454,11 +454,57 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | Method  | Path                                    | 成功结果                                                                                                                       |
 | ------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `GET`   | `/api/auth/admin/users`                 | `{items, total, page, size}`，支持 `q`（ID/邮箱/昵称模糊）、`status`（启用/禁用）、`role`（admin/user）筛选和 `page/size` 分页 |
-| `GET`   | `/api/auth/admin/users/{userId}`        | 用户详情对象，含 `resume_count`（简历数）和 `llm_call_count`（LLM 调用量，当前为占位值 0）                                     |
+| `GET`   | `/api/auth/admin/users/{userId}`        | 用户详情对象，含 `resume_count`（简历数）、`llm_call_count`（累计 LLM 调用数）和 `llm_costs`（按币种的累计估算费用与无费用调用数） |
 | `PATCH` | `/api/auth/admin/users/{userId}/status` | `{ok: true, user, revoked_sessions}`；body 为 `{action: "disable" 或 "enable"}`                                                       |
-| `GET`   | `/api/auth/admin/stats`                 | `{total_users, active_users_7d, total_resumes, llm_calls_today, estimated_cost_month}` 全系统概览统计；后两项当前为占位值      |
+| `GET`   | `/api/auth/admin/stats`                 | `{total_users, active_users_7d, total_resumes, llm_calls_today, estimated_cost_month}` 全系统概览统计；今日调用数与本月 USD 估算费用来自 `llm_call_logs` |
 
 管理员禁用自己的账号返回 `422 CANNOT_SELF_DISABLE`；尝试禁用系统中最后一个管理员返回 `422 CANNOT_DISABLE_LAST_ADMIN`。禁用成功后服务端立即调用 `revoke_user_sessions` 删除该用户全部 Redis 会话，该用户的所有现有 Cookie 立即失效，重新登录时因用户 `status=0` 被拒绝。
+
+## 管理台统计
+
+以下只读接口只允许 `is_admin=true` 访问，未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`。统计直接读取已有记录，不写入任何数据，不保存告警状态。时间窗参数 `from`、`to` 必须带时区，最大跨度 31 天；非法时返回 `400 INVALID_ADMIN_INSIGHTS_QUERY`。费用统一为 `{costs: [{currency, amount}], unmeteredCallCount}`，按币种分别汇总、不折算汇率。成功率只以已结束（成功、失败、取消）的调用为分母，分母为 0 时为 `null`；环比在上一等长窗口为 0 时为 `null`。
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/admin/insights/overview` | `{metrics: {activeUsers7d, newUsers7d, callsToday, cost7d}, deltas, trend (14 天), alerts}` |
+| `GET` | `/api/admin/insights/users` | `{total, newUsers7d, activeUsers7d, disabled, admins, registeredToday, daily (14 天)}` |
+| `GET` | `/api/admin/insights/templates?limit` | `{total, active, inactive, pendingReview, usedToday, usage, top}`；`limit` 1–20，默认 5 |
+| `GET` | `/api/admin/insights/job-imports` | `{imported7d, imported30d, users7d, sources, daily (30 天)}`；只统计 `external_import` 岗位 |
+| `GET` | `/api/admin/insights/llm-usage?groupBy&from&to` | `{from, to, summary, previous, groups}`；`groupBy` 为 `model`、`useCase` 或 `connection`，默认最近 24 小时 |
+| `GET` | `/api/admin/insights/llm-health` | `{connections, models}`；24 小时请求数、成功率与验证有效的绑定数 |
+| `GET` | `/api/admin/insights/agent?from&to` | `{operations, failed, failureRate, running, p95Ms, topFailureStage, topErrorCode, daily (7 天)}`；状态口径与 Agent 排障列表一致 |
+| `GET` | `/api/admin/insights/log-heatmap` | `{buckets}`；最近 7 天按 3 小时分桶的 ERROR（含 CRITICAL）与 WARNING 数，共 56 桶；Loki 不可用返回 `503 LOG_QUERY_UNAVAILABLE` |
+
+`alerts` 每项为 `{type, severity, title, description, target}`，按请求时的数据现场判定：对话能力存在已启用但验证失效的绑定（`critical`）；最近 1 小时 Agent 失败不少于 3 次且失败率不低于 10%（`warning`）；最近 1 小时已结束的 LLM 调用不少于 20 次且成功率低于 98%（`warning`）；存在分类状态为待讨论的启用模板（`info`）。
+
+## 应用内公告
+
+公告面向全体登录用户，只支持纯文本与换行；客户端必须按纯文本展示正文，不渲染 HTML。公告状态为 `draft → published → unpublished`，已下线为终态；只有草稿可以编辑、删除和发布。已发布公告在“生效开始（为空时取发布时间）≤ 当前时间 < 生效结束（为空不过期）”时对用户可见，与用户注册时间无关。已读状态按用户只保存一个“已读到的时间点”：公告的展示时间（生效开始与发布时间中较晚者）晚于该时间点即为未读；从未打开过公告的用户，所有生效公告都算未读。系统不记录单条已读，也不统计已读人数。
+
+管理端接口要求 `is_admin=true`：
+
+| Method | Path | 请求 | 成功结果 |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/announcements` | `status?`、`cursor?`、`limit?`（1–100，默认 20） | `{items, nextCursor}`，按创建顺序倒序 |
+| `POST` | `/api/admin/announcements` | `{level?, title, body, startsAt?, endsAt?}` | `201 {announcement}`，状态为草稿 |
+| `GET` | `/api/admin/announcements/stats` | 无 | `{draft, published, unpublished, active}` |
+| `GET` | `/api/admin/announcements/{id}` | 无 | `{announcement}` |
+| `PATCH` | `/api/admin/announcements/{id}` | 上述字段任意子集 | `{announcement}` |
+| `DELETE` | `/api/admin/announcements/{id}` | 无 | `204` |
+| `POST` | `/api/admin/announcements/{id}/publish` | 无 | `{announcement}` |
+| `POST` | `/api/admin/announcements/{id}/unpublish` | 无 | `{announcement}`；已下线时幂等返回 |
+
+管理端公告对象含 `id, level, title, body, status, visibility, startsAt, endsAt, publishedAt, unpublishedAt, createdBy, publishedBy, unpublishedBy, createdAt, updatedAt`。`level` 为 `normal` 或 `important`；`visibility` 为 `draft`、`scheduled`、`active`、`expired` 或 `unpublished`。标题 1–120 字、正文 1–5000 字，空白或超长返回 `422`；结束不晚于开始，或发布时结束时间已过，返回 `422 ANNOUNCEMENT_WINDOW_INVALID`；对非草稿编辑、删除、发布，或对草稿下线，返回 `409 ANNOUNCEMENT_STATE_CONFLICT`；不存在返回 `404 ANNOUNCEMENT_NOT_FOUND`。创建、编辑、删除、发布、下线分别登记 `admin.announcement_create|update|delete|publish|unpublish` 审计动作。
+
+用户侧接口要求登录：
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `GET` | `/api/announcements` | `{items: [{id, level, title, body, startsAt, endsAt, publishedAt, read}], unreadCount}`；重要在前，同级按展示时间倒序 |
+| `GET` | `/api/announcements/unread-count` | `{unreadCount}` |
+| `POST` | `/api/announcements/read-all` | `{unreadCount: 0}`；把已读时间点更新为当前时间，只会前移，重复调用无副作用 |
+
+用户侧只返回当前生效的公告，响应不包含管理员 ID。
 
 ## 浏览器插件发布与下载
 

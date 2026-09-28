@@ -5,6 +5,7 @@ from linkresume.modules.agent.models import (
     AgentToolCall,
     ResumeChangeProposal,
 )
+from linkresume.modules.announcements.models import Announcement, AnnouncementReadCursor
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import (
@@ -28,6 +29,8 @@ from linkresume.modules.resumes.models import (
 )
 
 __all__ = [
+    "Announcement",
+    "AnnouncementReadCursor",
     "AgentMessage",
     "AgentRun",
     "AgentSession",

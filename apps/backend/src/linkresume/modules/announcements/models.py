@@ -1,0 +1,111 @@
+"""Site-wide in-app announcements and each user's read-through time."""
+
+from datetime import datetime
+
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    PrimaryKeyConstraint,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects import mysql
+from sqlalchemy.orm import Mapped, mapped_column
+
+from linkresume.core.database import Base
+
+ID = BigInteger().with_variant(Integer(), "sqlite").with_variant(
+    mysql.BIGINT(unsigned=True), "mysql"
+)
+TIME = DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql")
+
+LEVELS = ("normal", "important")
+STATUSES = ("draft", "published", "unpublished")
+
+
+class Announcement(Base):
+    __tablename__ = "announcements"
+    __table_args__ = (
+        CheckConstraint("level IN ('normal', 'important')", name="ck_announcements_level"),
+        CheckConstraint(
+            "status IN ('draft', 'published', 'unpublished')", name="ck_announcements_status"
+        ),
+        CheckConstraint(
+            "ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at",
+            name="ck_announcements_window",
+        ),
+        CheckConstraint(
+            "(status = 'draft' AND published_at IS NULL AND published_by IS NULL"
+            " AND unpublished_at IS NULL AND unpublished_by IS NULL)"
+            " OR (status = 'published' AND published_at IS NOT NULL AND published_by IS NOT NULL"
+            " AND unpublished_at IS NULL AND unpublished_by IS NULL)"
+            " OR (status = 'unpublished' AND published_at IS NOT NULL AND published_by IS NOT NULL"
+            " AND unpublished_at IS NOT NULL AND unpublished_by IS NOT NULL)",
+            name="ck_announcements_state_fields",
+        ),
+        Index("idx_announcements_status_published", "status", "published_at", "id"),
+        {"comment": "全站应用内公告"},
+    )
+
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    level: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="normal", server_default="normal"
+    )
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="draft", server_default="draft"
+    )
+    starts_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
+    unpublished_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
+    created_by: Mapped[int] = mapped_column(
+        ID,
+        ForeignKey("users.id", name="fk_announcements_created_by", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    updated_by: Mapped[int] = mapped_column(
+        ID,
+        ForeignKey("users.id", name="fk_announcements_updated_by", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    published_by: Mapped[int | None] = mapped_column(
+        ID,
+        ForeignKey("users.id", name="fk_announcements_published_by", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    unpublished_by: Mapped[int | None] = mapped_column(
+        ID,
+        ForeignKey("users.id", name="fk_announcements_unpublished_by", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIME, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AnnouncementReadCursor(Base):
+    """One row per user: announcements shown at or before ``read_through_at`` count as read."""
+
+    __tablename__ = "announcement_read_cursors"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", name="pk_announcement_read_cursors"),
+        {"comment": "用户公告已读时间点，每个用户至多一行"},
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ID,
+        ForeignKey("users.id", name="fk_announcement_read_cursors_user", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    read_through_at: Mapped[datetime] = mapped_column(TIME, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIME, nullable=False, server_default=func.now(), onupdate=func.now()
+    )

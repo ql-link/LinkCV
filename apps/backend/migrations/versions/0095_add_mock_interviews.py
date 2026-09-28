@@ -1,4 +1,4 @@
-"""Add voice answering fields to AI mock interviews.
+"""Add AI mock interview sessions and question turns.
 
 Revision ID: 0095
 Revises: 0094
