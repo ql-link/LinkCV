@@ -13,6 +13,12 @@ OPENAI_CHAT = "openai_chat"
 OPENAI_RESPONSES = "openai_responses"
 ANTHROPIC_MESSAGES = "anthropic_messages"
 GOOGLE_GENERATE = "google_generate"
+ALIYUN_ASR_REALTIME = "aliyun_asr_realtime"
+ALIYUN_TTS_REALTIME = "aliyun_tts_realtime"
+SPEECH_PROTOCOLS = {
+    "speech_to_text": frozenset({ALIYUN_ASR_REALTIME}),
+    "text_to_speech": frozenset({ALIYUN_TTS_REALTIME}),
+}
 
 @dataclass(frozen=True)
 class ProviderSpec:
@@ -28,7 +34,9 @@ PROVIDERS = {
         ProviderSpec("siliconflow", "硅基流动", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("deepseek", "DeepSeek 直连", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("volcengine", "火山方舟", frozenset({OPENAI_CHAT, OPENAI_RESPONSES}), frozenset({"model", "endpoint"})),
-        ProviderSpec("aliyun", "阿里云百炼", frozenset({OPENAI_CHAT}), frozenset({"model", "deployment"})),
+        ProviderSpec("aliyun", "阿里云百炼", frozenset({
+            OPENAI_CHAT, ALIYUN_ASR_REALTIME, ALIYUN_TTS_REALTIME,
+        }), frozenset({"model", "deployment"})),
         ProviderSpec("opencode_zen", "OpenCode Zen", frozenset({
             OPENAI_CHAT, OPENAI_RESPONSES, ANTHROPIC_MESSAGES, GOOGLE_GENERATE,
         }), frozenset({"model"})),
@@ -100,6 +108,33 @@ def inference_base_url(provider_code: str, settings: dict | None = None) -> str:
         "ap-southeast-1": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
         "cn-hongkong": "https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1",
     }[region]
+
+
+_DASHSCOPE_SPEECH_HOSTS = {
+    "cn-beijing": "dashscope.aliyuncs.com",
+    "ap-southeast-1": "dashscope-intl.aliyuncs.com",
+}
+
+
+def speech_ws_url(provider_code: str, settings: dict | None = None) -> str:
+    """DashScope realtime speech endpoint for the connection's region."""
+    if provider_code != "aliyun":
+        raise ValueError("provider does not support speech")
+    region = validate_settings(provider_code, settings)["region"]
+    host = _DASHSCOPE_SPEECH_HOSTS.get(region)
+    if host is None:
+        raise ValueError("speech is unavailable in this region")
+    return f"wss://{host}/api-ws/v1/inference/"
+
+
+def validate_use_case_protocol(use_case: str, protocol_code: str) -> None:
+    """Speech use cases take only their speech protocol; chat use cases never do."""
+    speech = SPEECH_PROTOCOLS.get(use_case)
+    if speech is not None:
+        if protocol_code not in speech:
+            raise ValueError("protocol unsupported for speech use case")
+    elif use_case != "assistant_conversation" and protocol_code != OPENAI_CHAT:
+        raise ValueError("protocol unsupported for use case")
 
 
 def validate_route(provider_code: str, target_kind: str, protocol_code: str) -> None:

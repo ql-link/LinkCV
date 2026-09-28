@@ -109,3 +109,60 @@ def test_switching_aihubmix_endpoint_invalidates_catalog_and_probe_version():
             row = db.get(LLMProviderConnection, int(connection_id))
             assert row.settings_json == {"endpoint": "alternate"}
             assert row.catalog_state_json is None
+
+
+class FakeSpeechGateway:
+    def __init__(self):
+        self.calls = []
+
+    async def recognize(self, target, audio, *, hotwords, language):
+        self.calls.append(("recognize", target.ws_url, target.model, target.workspace_id))
+        async for _ in audio:
+            pass
+        if False:  # pragma: no cover - makes this an async generator
+            yield None
+
+    async def synthesize(self, target, text, *, voice):
+        self.calls.append(("synthesize", target.ws_url, target.model, text))
+        return b"ID3"
+
+
+def test_speech_use_cases_bind_only_speech_protocols_and_probe_through_speech_gateway():
+    settings = Settings(database_url="sqlite+pysqlite:///:memory:", jwt_secret="integration-test-secret-with-32-bytes", llm_credential_encryption_keys=f"test:{Fernet.generate_key().decode('ascii')}")
+    speech = FakeSpeechGateway()
+    app = create_app(settings, storage=FakeStorage(), redis=FakeRedis(), llm_gateway=FakeGateway(), speech_gateway=speech, create_schema=True)
+    with TestClient(app) as client:
+        register_admin(app, client)
+        catalog = client.get("/api/admin/llm/catalog").json()
+        assert {"speech_to_text", "text_to_speech", "transcript_correction"} <= set(catalog["useCases"])
+        aliyun = next(item for item in catalog["providers"] if item["code"] == "aliyun")
+        assert {"aliyun_asr_realtime", "aliyun_tts_realtime"} <= set(aliyun["protocols"])
+        connection = client.post("/api/admin/llm/connections", json={"providerCode": "aliyun", "name": "百炼", "apiKey": "fictional-key", "settings": {"region": "cn-beijing", "workspace_id": "ws-demo"}, "enabled": True})
+        assert connection.status_code == 201, connection.text
+        connection_id = int(connection.json()["connection"]["id"])
+        routes = {}
+        for target in ("fun-asr-realtime", "cosyvoice-v3-flash"):
+            model = client.post("/api/admin/llm/models", json={"displayName": target}).json()["model"]["id"]
+            route = client.post("/api/admin/llm/routes", json={"modelId": int(model), "connectionId": connection_id, "targetKind": "model", "invokeTarget": target})
+            assert route.status_code == 201, route.text
+            routes[target] = int(route.json()["route"]["id"])
+        stt = routes["fun-asr-realtime"]
+        tts = routes["cosyvoice-v3-flash"]
+
+        wrong = client.put(f"/api/admin/llm/use-cases/speech_to_text/routes/{stt}", json={"useCase": "speech_to_text", "routeId": stt, "protocolCode": "openai_chat", "priority": 100})
+        assert wrong.status_code == 422 and wrong.json()["error"] == "LLM_ROUTE_INVALID"
+        misuse = client.put(f"/api/admin/llm/use-cases/mock_interview/routes/{stt}", json={"useCase": "mock_interview", "routeId": stt, "protocolCode": "aliyun_asr_realtime", "priority": 100})
+        assert misuse.status_code == 422
+
+        for use_case, route_id, protocol in (("speech_to_text", stt, "aliyun_asr_realtime"), ("text_to_speech", tts, "aliyun_tts_realtime")):
+            path = f"/api/admin/llm/use-cases/{use_case}/routes/{route_id}"
+            assert client.put(path, json={"useCase": use_case, "routeId": route_id, "protocolCode": protocol, "priority": 100}).status_code == 200
+            probe = client.post(f"{path}/probe")
+            assert probe.status_code == 200, probe.text
+            assert client.patch(path, json={"enabled": True}).status_code == 200
+        assert speech.calls[0] == ("recognize", "wss://dashscope.aliyuncs.com/api-ws/v1/inference/", "fun-asr-realtime", "ws-demo")
+        assert speech.calls[1][0:3] == ("synthesize", "wss://dashscope.aliyuncs.com/api-ws/v1/inference/", "cosyvoice-v3-flash")
+    with app.state.session_factory() as db:
+        logs = db.scalars(select(LLMCallLog).where(LLMCallLog.source == "capability_probe")).all()
+        assert {log.use_case for log in logs} == {"speech_to_text", "text_to_speech"}
+        assert all(log.status == "succeeded" for log in logs)

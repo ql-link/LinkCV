@@ -998,6 +998,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.dev-dependencies]
@@ -1032,6 +1033,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0,<3.0" },
     { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2025.2" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1.0" },
+    { name = "websockets", specifier = ">=16.1,<17" },
 ]
 
 [package.metadata.requires-dev]

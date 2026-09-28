@@ -17,6 +17,10 @@ const useCaseLabels: Record<string, string> = {
   resume_structuring: "简历结构化",
   job_image_extraction: "职位图片识别",
   assistant_conversation: "用户对话",
+  mock_interview: "模拟面试",
+  transcript_correction: "识别稿修正",
+  speech_to_text: "语音识别",
+  text_to_speech: "语音合成",
 };
 
 export function ModelsPanel({ onSessionExpired, notify }: PanelProps) {

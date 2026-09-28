@@ -332,6 +332,57 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 素材上传是 `multipart/form-data`，必须携带 canonical UUID `Idempotency-Key`；`source_type=recorded|uploaded` 仅记录来源路径。上传复用资料库入库链路：文件落入 `users/{user_id}/datasets/` 前缀，`user_dataset.interview_session_id` 记录场次关联，场次侧不再持有独立素材记录。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256；单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制，媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`/`MEDIA_MAX_TOTAL_BYTES_PER_USER` 控制。格式、大小、配额和对象存储失败复用资料库的 `DATASET_*` 错误码。文档类素材上传后进入解析队列，音视频落地为终态、不参与解析。`POST /interview-sessions/:id/assets/attach` 要求资料属本人、`upload_status=succeeded` 且未关联其他场次；重复关联本场次幂等返回，已关联其他场次返回 `409 DATASET_ALREADY_LINKED`，资料不存在或越权返回 `404 DATASET_NOT_FOUND`。统一入库和关联服务保证 `interview_session_id` 与 `interview_source_type` 同时设置或同时为空；该内部一致性校验不增加新的请求或响应字段。解除关联只清空这两列，物理删除只能在资料库进行；删除场次或求职进程同样只解除关联。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
 
+## AI 模拟面试
+
+模拟面试以 `mock_interviews` 保存一场面试的来源快照、配置、计划与报告，以 `mock_interview_questions` 保存每次提问和作答。所有接口要求登录，只从会话取得所有者；不存在和越权资源统一返回 `404 MOCK_INTERVIEW_NOT_FOUND`。面试 ID 为 UUID 字符串，题目、简历、岗位、求职记录和资料 ID 为无前导零的十进制字符串。业务规则见 [AI 模拟面试](../features/mock-interview.md)。
+
+| Method | Path | 行为 |
+| --- | --- | --- |
+| `GET` | `/api/mock-interviews` | 按 `created_at DESC, id DESC` 分页；支持 `job_application_id`、`resume_id`、`status`、`cursor` 和 `limit`（默认 20、最大 100），返回 `{items, next_cursor}` |
+| `POST` | `/api/mock-interviews` | 发起并在后台准备，返回 `201 {mock_interview}`，状态为 `preparing` |
+| `GET` | `/api/mock-interviews/:id` | 详情；读取时应用任务租约与空闲超时 |
+| `POST` | `/api/mock-interviews/:id/answers` | 提交当前题回答并以 SSE 返回面试官下一回合 |
+| `POST` | `/api/mock-interviews/:id/skip` | 跳过当前题并以 SSE 返回面试官下一回合 |
+| `POST` | `/api/mock-interviews/:id/reply:retry` | 面试官回复丢失时重新生成，以 SSE 返回 |
+| `POST` | `/api/mock-interviews/:id/finish` | 提前结束；有作答时进入 `evaluating`，否则为 `abandoned` |
+| `POST` | `/api/mock-interviews/:id/abandon` | 放弃 `preparing`、`preparation_failed` 或 `in_progress` 的场次 |
+| `POST` | `/api/mock-interviews/:id/retry` | 准备失败或评估失败后重试 |
+| `POST` | `/api/mock-interviews/:id/repeat` | 按原来源与配置重新读取来源并发起新场次，返回 `201` |
+| `DELETE` | `/api/mock-interviews/:id` | 删除非进行中场次及其提问和录音，返回 `{deleted: true}` |
+| `GET` | `/api/mock-interviews/speech-capability` | 返回 `{stt, tts}`，表示语音识别与语音合成场景是否有有效线路 |
+| `WS` | `/api/mock-interviews/:id/speech?question_id=&purpose=voice_input\|voice_answer` | 实时语音识别，见下文 |
+| `POST` | `/api/mock-interviews/:id/transcripts:correct` | 已完成的语音面试整场 AI 修正识别稿，每场一次 |
+| `PUT` | `/api/mock-interviews/:id/questions/:qid/transcript` | 对照录音手动修改一条语音回答的最终稿 `{text}` |
+| `POST` | `/api/mock-interviews/:id/questions/:qid/re-evaluate` | 识别稿变化后重新评估一道主问题，最多 3 次 |
+| `GET` | `/api/mock-interviews/:id/questions/:qid/recording` | 本人读取一条回答的录音（`audio/wav`，16 kHz 单声道） |
+| `DELETE` | `/api/mock-interviews/:id/recordings` | 删除本场全部录音，保留文字 |
+
+发起请求必须提供 `job_application_id` 或 `resume_id`；求职记录来源不能再带 `job_description_id` 或 `job_description_text`，后两者也不能同时提交，违反时返回 `422`。可选字段为 `target_role`（≤200）、`interview_type=technical|project_deep_dive|hr|comprehensive`、`difficulty=junior|intermediate|senior`（默认 `intermediate`）、`question_count` 3–10（默认 5）、`follow_up_enabled`（默认 `true`）、`language=zh|en`（默认 `zh`）、`answer_mode=text|voice`（默认 `text`）和最多 10 个 `material_ids`。`answer_mode=voice` 要求 `speech_to_text` 与 `text_to_speech` 都有有效线路，否则返回 `503 MOCK_INTERVIEW_SPEECH_UNAVAILABLE` 且不创建记录；再练一次沿用原场作答方式。
+
+作答和跳过请求体为 `{question_id, answer}` 与 `{question_id}`，必须携带 8–64 位 `[A-Za-z0-9_.:-]` 的 `Idempotency-Key`；回答去除首尾空白后为 1–8000 字符。同一题目以相同幂等键重放只返回 `answer.accepted`，不产生新回答或新回合。SSE 事件依次为 `answer.accepted {question_id, skipped, lock_version}`、零到多个 `interviewer.delta {content}`，最后是 `interviewer.turn {status, action, question, closing_message, lock_version}` 或 `interviewer.failed {error}`。`action=finish` 时 `question` 为空、`closing_message` 为结束语，场次进入 `evaluating`。每个回合流都以 `interviewer.turn` 或 `interviewer.failed` 之一结束；非模型错误的失败码为 `MOCK_INTERVIEW_TURN_FAILED`。回合失败时回答已保存，详情的 `needs_reply=true`，调用方用 `reply:retry` 重新生成；无需重新生成时该接口返回 `409 MOCK_INTERVIEW_STATE_INVALID`。
+
+**语音识别通道**：WebSocket 使用登录 Cookie 鉴权，并要求 `Origin` 与 `Host` 同源，否则以关闭码 `4403` 拒绝；场次不属于本人、不在 `in_progress`、`question_id` 不是当前题或 `purpose` 与作答方式不符（文字面试只能 `voice_input`，语音面试只能 `voice_answer`）时以 `4409` 关闭。客户端发送 16 kHz 单声道 PCM16 二进制帧，发送 `{"type":"stop"}` 结束；单次最长 5 分钟、10 MB，达到上限自动结束。服务端推送 `{"type":"partial","text"}`，结束时推送 `{"type":"final","session_id","text","duration_ms","words":[{text,start_ms,end_ms}],"partial"}` 后关闭；服务商失败且没有识别出文字时推送 `{"type":"error","code":"MOCK_INTERVIEW_SPEECH_FAILED"}`，已识别出文字时仍返回 `final` 且 `partial=true`。`session_id` 10 分钟内有效、只能用于本人本场当前题的一次提交。
+
+**语音作答**：作答请求可带 `speech_session_id`（32 位小写十六进制），此时 `answer` 可省略。语音面试只接受 `speech_session_id`（或跳过），回答以服务端识别稿为准并保存录音，提交纯文字返回 `422 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`；文字面试带 `speech_session_id` 时仍以 `answer` 为准，只记录来源 `voice_input` 与时长，不保存录音。识别会话过期、已使用或不属于该题返回 `409 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`，识别稿为空返回 `422 MOCK_INTERVIEW_SPEECH_EMPTY`。语音面试的回合 SSE 在 `interviewer.delta` 之间按句追加 `interviewer.audio {seq, text, format:"mp3", data}`（base64），合成失败时改发 `interviewer.audio_failed {seq, text}`，面试不中断；所有音频事件都在 `interviewer.turn` 之前发出。
+
+**识别稿修正与重新评估**：`transcripts:correct` 只对 `completed` 的语音面试可用，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；已执行过返回 `409 MOCK_INTERVIEW_TRANSCRIPT_ALREADY_CORRECTED`；`transcript_correction` 未配置返回 `503 LLM_MODEL_NOT_CONFIGURED` 且不消耗本场次数。响应为 `{items:[{question_id, state, changes}], mock_interview}`，`state` 为 `corrected|correction_rejected|original`。手动修改相对原始识别稿的字符变化超过 15% 返回 `422 MOCK_INTERVIEW_TRANSCRIPT_CORRECTION_REJECTED`，录音已删除返回 `404 MOCK_INTERVIEW_RECORDING_NOT_FOUND`。重新评估要求该题（含追问）识别稿已被修正或修改，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；超过 3 次返回 `409 MOCK_INTERVIEW_RE_EVALUATE_LIMIT`；响应为 `{question_id, evaluation, re_evaluate_count, remaining, total_score, previous_total_score, mock_interview}`。
+
+详情返回来源与配置摘要、`materials`、`current_question_id`、`answered_main_questions`、`needs_reply`、有序 `questions` 和 `report`；`report` 只在 `completed` 时返回，包含 `rubric_version`、`answer_mode`、`voice_metrics`（语音面试的 `chars_per_minute`、`long_pauses`、`filler_ratio`、`answer_duration_ms`、`reference` 与 `tip`，文字面试为 `null`）、`re_evaluations`（如有）、`total_score`、`question_average`、`dimension_score`、`dimensions`、逐题 `questions`、`fact_check`、`resume_risks`、`improvements`、`low_confidence` 与 `closing_message`。`fact_check.status` 为 `not_requested|completed|failed`。详情另含 `answer_mode`、`transcript_corrected_at`、`recordings_deleted`；每条提问另含 `answer_source`、`audio_duration_ms`、`has_recording`、`raw_transcript`、`transcript_state`、`correction`、`re_evaluate_count` 与 `evaluation_history`。
+
+| 错误码 | 场景 |
+| --- | --- |
+| `409 MOCK_INTERVIEW_IN_PROGRESS` | 已有进行中的场次时发起、再练或重试，包括并发发起造成的死锁或锁等待超时 |
+| `409 MOCK_INTERVIEW_QUESTION_MISMATCH` | 提交的题目不是当前待答题 |
+| `409 MOCK_INTERVIEW_STATE_INVALID` | 当前状态不允许该操作，包括删除进行中场次 |
+| `422 MOCK_INTERVIEW_RESUME_REQUIRED` | 求职记录未关联简历且未另选，或来源简历已被删除后再练 |
+| `422 MOCK_INTERVIEW_RESUME_INVALID` | 简历快照无法解析 |
+| `422 MOCK_INTERVIEW_MATERIAL_INVALID` | 资料不属于本人、未解析成功、为音视频或超过 10 份 |
+| `404 MOCK_INTERVIEW_SOURCE_NOT_FOUND` | 简历、岗位或求职记录不存在或不属于本人 |
+| `400 MOCK_INTERVIEW_CURSOR_INVALID` | 列表游标无法解析 |
+| `503 LLM_MODEL_NOT_CONFIGURED` | `mock_interview` 场景没有有效线路；此时不创建记录 |
+
+后台失败写入场次的 `error_code`，包括上游 LLM 错误码、`LLM_RESPONSE_INVALID`、`MOCK_INTERVIEW_PLAN_INCOMPLETE` 和 `MOCK_INTERVIEW_TASK_INTERRUPTED`。发起、再练、提前结束和删除分别审计为 `mock_interview.create`、`mock_interview.create`、`mock_interview.finish` 与 `mock_interview.delete`；AI 修正、手动修改、重新评估和删除录音分别审计为 `mock_interview.transcript_correct`、`mock_interview.transcript_edit`、`mock_interview.re_evaluate` 与 `mock_interview.recordings_delete`，目标类型均为 `mock_interview`。
+
 ## 对象资源
 
 原用户级 `/api/assets` 图片接口继续保留。新增简历级资源接口：
@@ -355,7 +406,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 `event_type` 只允许 `unhandled_error`、`unhandled_rejection`、`render_error` 和 `api_5xx`。服务端从当前会话绑定 actor，忽略客户端提供身份；消息和栈经统一长度限制与脱敏后写入系统日志。请求非法返回 `400 INVALID_CLIENT_LOG_EVENT`，本地 sink 拒绝写入返回 `503 LOG_EVENT_UNAVAILABLE`。
 
-PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该接口为既有调用方保留；新的 `GET /api/resumes/:id/pdf` 由服务端路由自动记录同一个 `resume.pdf_export` 动作。其他审计动作不能通过该接口伪造。自动审计还覆盖鉴权/会话、账号资料和密码、简历/资源、JD、管理员用户状态、模型连接/逻辑模型/线路/能力绑定、插件发布包和应用内公告等动作；成功和受控失败都记录可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
+PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在或不属于当前用户都返回 `404 RESUME_NOT_FOUND`，非法动作或字段返回 `400 INVALID_AUDIT_EVENT`，sink 拒绝写入返回 `503 AUDIT_EVENT_UNAVAILABLE`。该接口为既有调用方保留；新的 `GET /api/resumes/:id/pdf` 由服务端路由自动记录同一个 `resume.pdf_export` 动作。其他审计动作不能通过该接口伪造。自动审计还覆盖鉴权/会话、账号资料和密码、简历/资源、JD、管理员用户状态、模型连接/逻辑模型/线路/能力绑定、插件发布包、应用内公告和模拟面试等动作；成功和受控失败都记录可信 actor、target、result、错误码和 request ID，不记录请求 body。审计进入共享 Loki，不新增 MySQL 审计表；现有 `/api/admin/llm/calls` 继续是 LLM 计量和调用状态的事实源。
 简历导入的后端内部日志使用 `operation_id`/`task_id` 串联阶段和重试，失败时只记录稳定错误码、失败阶段和不含字段值的验证元数据；这些内部字段不扩展本节的 HTTP 请求或响应结构。
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
@@ -390,7 +441,7 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
 | `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
 
-连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的字段，不能提交任意推理 URL。AIHubMix 的 `settings.endpoint` 可选 `primary` 或 `alternate`，缺省为 `primary`；后者使用官方备用 `api.inferera.com`，目录与推理地址同步切换。修改连接设置会递增推理配置版本、清除旧目录同步状态并要求关联绑定重新探测。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
+连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的字段，不能提交任意推理 URL。AIHubMix 的 `settings.endpoint` 可选 `primary` 或 `alternate`，缺省为 `primary`；后者使用官方备用 `api.inferera.com`，目录与推理地址同步切换。修改连接设置会递增推理配置版本、清除旧目录同步状态并要求关联绑定重新探测。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`、`mock_interview`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
 
 `llm_call_logs` 每条记录对应一次实际请求，切换前失败的线路和切换后成功的线路分别记录，保存场景、来源、用户、运行、真实线路、调用协议、用量、价格规则快照、估算费用与币种及安全错误分类；不保存提示词、图片、完整响应或明文凭据。目录价格带分档、缓存或优惠规则时，缺少充分用量明细的估算费用留空，`meteringStatus=partial`。Pi 的费用由后端根据线路价格规则计算，不信任 Pi 回传的金额。`0091` 删除并重建旧 LLM 四张表，保留 Agent 会话与运行；迁移前需检查目标 revision、旧数据与备份。
 

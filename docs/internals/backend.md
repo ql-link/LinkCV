@@ -23,6 +23,7 @@
 | `src/linkresume/application/resumes/` | 统一创建、乐观锁保存、当前内容复制和存量取回、分享链接创建/覆盖/更新与事务规则 |
 | `src/linkresume/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新，以及连同求职进程聚合的永久删除 |
 | `src/linkresume/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
+| `src/linkresume/application/mock_interviews/` | 模拟面试状态机、后台准备与评估任务、面试官回合、评分规则、资料内存检索、语音识别会话、语音表现与识别稿修正 |
 | `src/linkresume/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
 | `src/linkresume/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
 | `src/linkresume/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
@@ -34,18 +35,20 @@
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
 | `src/linkresume/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
+| `src/linkresume/modules/mock_interviews/` | 模拟面试与提问 ORM、HTTP DTO、`/api/mock-interviews` 路由与语音 WebSocket |
+| `src/linkresume/modules/speech/` | 语音识别与合成的服务商适配层；首期实现阿里云百炼 DashScope 实时 WebSocket |
 | `src/linkresume/modules/llm/` | 接入商连接、逻辑模型、场景线路解析、凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/announcements/` | 全站应用内公告与每个用户的已读时间点：管理员草稿、发布、下线与状态统计，用户侧生效公告、未读数和全部已读；可见性按状态与生效时段现场计算，没有定时任务 |
 | `src/linkresume/modules/admin_insights/` | 管理台只读统计：用户、模板、插件导入、LLM 用量与健康、Agent 健康、系统日志热力图，以及从现有数据现场推导的总览告警；不写数据、不保存告警状态 |
 | `src/linkresume/modules/observability/` | 请求追踪、结构化 JSONL、状态变更审计、受限 Web 事件上报和固定 Loki 查询适配 |
-| `migrations/` | SQL-first Alembic revision；当前 head 为 `0094` |
+| `migrations/` | SQL-first Alembic revision；仓库 head 见下文迁移链说明 |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
 
 ## 数据与事务
 
-本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列；`0084` 扩展当前简历与求职进程的关联；`0085` 为模板增加多选风格、场景及风格审核状态，并按稳定 key 给当时的 85 套启用模板写入初版分类；`0086` 增加模板展示排序值；`0087` 在没有人工排序值时按原有 ID 顺序填入 10、20、30……，已有人工排序值的环境整体跳过回填。当前迁移链由 `0087` 进入已在 Dev 执行的历史 `0088`，再进入 `0089` 和 `0090`，删除资料替换、对象清理、面试素材、简历历史表及旧外键；`0091` 重建 LLM 治理与调用日志，保留 Agent 会话和运行并增加模型线路快照字段；`0092` 将上游调用目标改为区分大小写；`0093` 在确认历史 `llm_providers` 与 `llm_provider_models` 均为空后移除它们。`0094` 新增应用内公告 `announcements` 与用户已读时间点 `announcement_read_cursors` 两张空表。仓库 head 为 `0094`；目标环境的实际 revision 必须单独查询。
+本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列；`0084` 扩展当前简历与求职进程的关联；`0085` 为模板增加多选风格、场景及风格审核状态，并按稳定 key 给当时的 85 套启用模板写入初版分类；`0086` 增加模板展示排序值；`0087` 在没有人工排序值时按原有 ID 顺序填入 10、20、30……，已有人工排序值的环境整体跳过回填。当前迁移链由 `0087` 进入已在 Dev 执行的历史 `0088`，再进入 `0089` 和 `0090`，删除资料替换、对象清理、面试素材、简历历史表及旧外键；`0091` 重建 LLM 治理与调用日志，保留 Agent 会话和运行并增加模型线路快照字段；`0092` 将上游调用目标改为区分大小写；`0093` 在确认历史 `llm_providers` 与 `llm_provider_models` 均为空后移除它们。`0094` 新增应用内公告 `announcements` 与用户已读时间点 `announcement_read_cursors` 两张空表。`0095` 新增 `mock_interviews` 与 `mock_interview_questions`，以可空 `active_user_id` 唯一键保证每个用户最多一场进行中的模拟面试，来源简历、岗位和求职记录外键删除时置空。`0096` 为模拟面试增加作答方式、语音快照、热词表、整场修正与录音删除时间，以及每条回答的作答来源、录音 key、原始识别稿、分词时间戳、修正稿与修正记录、识别稿状态、手动修改与重新评估次数和历史评估。仓库 head 为 `0096`；目标环境的实际 revision 必须单独查询。
 
 迁移 `0077` 停用废弃的「经典单栏」(`classic-cn`)、「现代双栏」(`modern-two-column-cn`) 和「紧凑技术型」(`compact-tech-cn`)，默认启用目录为 69 套。只修改这三个稳定 key 的启用状态，保留模板记录、已有简历及历史版本；普通目录、创建和切换入口沿用启用校验。重复执行不影响其他模板；如需恢复，通过管理端重新启用或新增向前迁移，不改写历史迁移。
 
@@ -194,6 +197,8 @@ Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发�
 `llm_provider_connections` 保存接入商代码、独立凭据密文、受控设置和配置版本。`llm_models` 保存稳定逻辑模型；`llm_model_routes` 保存连接上的实际调用目标、目录元数据和价格规则；`llm_use_case_routes` 同时承载系统能力绑定与对话开放列表；`llm_call_logs` 保存每次上游请求的安全用量、价格和错误快照。`0091` 删除旧治理表并按这五张表重建；`0092` 使调用目标 ID 的唯一键区分大小写，以容纳上游大小写不同的模型 ID；迁移前须核对目标 revision、旧行数、运行中 Agent 任务和备份。原有 Agent 会话与运行保留。Pi 每次模型请求通过内部接口回传 Token，后端使用 run 冻结的价格规则计费；缺少可核定价格或缓存明细时费用为 NULL。运行级费用从持久化调用日志汇总。
 
 FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 不决定模型目录、价格、业务路由或 fallback；Pi 按线路声明的协议直接调用供应商。接入商推理地址由后端固定映射并按允许的地域/工作空间构建，管理 API 不接受任意 URL。AIHubMix 连接可在默认 `aihubmix.com` 与官方备用 `api.inferera.com` 之间切换；目录同步和推理使用同一选择，切换会递增配置版本、清除旧目录同步状态并使既有场景探测失效。Fernet 密钥环由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 配置，列表只返回 `keyConfigured`。日志和 HTTP 响应不保存或透出凭据、提示词、图片或完整模型响应。外部请求期间不持有 SQLAlchemy 事务；进程被强制终止留下的 `pending` 日志保留以供排查。
+
+模拟面试以 `source=mock_interview` 调用 `mock_interview` 场景：准备与评估作为进程内后台任务运行，外部请求期间不持有事务；每个任务以 `task_token` 标识并在每次模型调用前续租 `task_lease_until`，所有写回都要求状态与令牌同时匹配，重试换发令牌后旧任务的写回自动失效。进程重启遗留的过期租约在下次读取时以条件 UPDATE 收口为可重试失败。面试官回合在作答请求的 SSE 响应内流式生成，完成后才持久化。发起前以 `LLMService.ensure_configured()` 确认场景可路由；语音面试另要求 `speech_to_text` 与 `text_to_speech` 可路由。语音能力复用同一套连接、线路、场景绑定、凭据加密、探针与调用日志：`LLMService.speech_plan()` 解析语音线路，`modules/speech` 只负责上游协议。识别中的音频在进程内存中保存到回答提交，识别结果以一次性会话 ID 存入 Redis（10 分钟）；语音面试录音写入对象存储 `mock-interviews/{user_id}/{public_id}/{question_id}.wav`，删除场次或本场录音时一并删除。详见 [AI 模拟面试](../features/mock-interview.md)。
 
 简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `resume_structuring` 场景。模型只接收稳定源块及必要布局元数据，返回稀疏语义标注；来源文本由确定性组合器保留。带 layout hints 的领域校验失败时最多再尝试一次不带 hints；未配置、超时、上游失败或非法输出均记录脱敏 warning 并返回匹配当前来源图的空标注。
 

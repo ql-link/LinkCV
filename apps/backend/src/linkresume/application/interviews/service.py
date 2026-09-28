@@ -28,6 +28,9 @@ from linkresume.application.interviews.state import (
     record_offer as transition_offer,
     schedule_current_stage,
 )
+from linkresume.application.mock_interviews.links import (
+    detach_applications as detach_mock_interview_applications,
+)
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import utc_now
 from linkresume.modules.interviews.models import (
@@ -1119,6 +1122,7 @@ def delete_application_records(
             JobApplicationStage.application_id.in_(application_ids)
         )
     )
+    detach_mock_interview_applications(db, application_ids)
     db.execute(delete(JobApplication).where(JobApplication.id.in_(application_ids)))
 
 
