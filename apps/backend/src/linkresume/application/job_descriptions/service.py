@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session
 
 from linkresume.application.interviews.service import delete_application_records
 from linkresume.application.job_descriptions.logo_service import sync_application_logos
+from linkresume.application.mock_interviews.links import (
+    detach_job as detach_mock_interview_job,
+)
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import utc_now
 from linkresume.domain.job_source import (
@@ -225,6 +228,7 @@ def hard_delete_owned_job(
             application_ids,
             delete_asset_object=delete_asset_object,
         )
+        detach_mock_interview_job(db, job.id)
         db.delete(job)
         db.commit()
         return True

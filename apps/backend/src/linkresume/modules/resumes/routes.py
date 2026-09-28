@@ -6,6 +6,9 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, load_only
 
 from fastapi import APIRouter, Depends, Request, Response
+from linkresume.application.mock_interviews.links import (
+    detach_resume as detach_mock_interview_resume,
+)
 from linkresume.application.resumes.copy_service import copy_resume
 
 from linkresume.application.resumes.service import (
@@ -394,6 +397,7 @@ def delete_resume(
             JobApplication.resume_id == resume.id,
             JobApplication.user_id == user.id,
         ).values(resume_id=None, resume_title_snapshot=None))
+        detach_mock_interview_resume(db, user_id=user.id, resume_id=resume.id)
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
     except Exception:

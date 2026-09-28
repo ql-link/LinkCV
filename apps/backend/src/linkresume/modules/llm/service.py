@@ -191,6 +191,11 @@ class LLMService:
         with self._session_factory() as db:
             return resolve_candidates(db, use_case, model_id=model_id)
 
+    async def ensure_configured(self, use_case: str) -> None:
+        """Fail fast before creating work that depends on a routable use case."""
+        if not await self._db(self._resolve_candidates_sync, use_case):
+            raise LLMError("LLM_MODEL_NOT_CONFIGURED")
+
     async def agent_model_summary(self, model_id: int | None = None) -> AgentModelSummary:
         plan = await self._db(self._resolve_sync, ASSISTANT_CONVERSATION, model_id)
         if plan is None:

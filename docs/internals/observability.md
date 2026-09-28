@@ -35,6 +35,8 @@ LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) �
 
 Agent 轨迹由 FastAPI 在预检、运行创建、Pi 代理、工具事件、运行收尾和提案确认处直接写入 MySQL。管理端的「Agent 调用排障」是独立页面；列表包含旧 `agent_runs`，旧运行详情标记为 `legacy`。轨迹只保存受控阶段、结果、稳定错误码、耗时与关联键；用户原话、简历正文和工具参数仍留在各自业务数据中，不复制进轨迹。
 
+模拟面试的发起（含再练一次）、提前结束和删除分别登记为 `mock_interview.create`、`mock_interview.finish` 与 `mock_interview.delete`，目标为面试的 UUID 公共 ID；管理端动作筛选直接取自服务端动作目录，无需单独维护选项。后台准备与评估失败只写入场次 `error_code` 和不含正文的系统日志，不产生审计事件。
+
 request ID 是跨日志关联键，不是用户身份；actor 只能来自已验证会话或成功登录结果，target 只能来自路由参数与通过归属校验的业务实体。
 
 异步简历导入在同一白名单事件模型中使用 `message_id`、`pipeline_version`、`vendor` 和 `route` 关联 MQ 消息、确定性管线版本与外部转换/模型路由。字段只保存稳定标识和受控枚举，不记录文件名、简历正文、Prompt、模型响应、对象内容或凭据；`operation_id` 与 `task_id` 继续承担跨 FastAPI、Worker、LinkParse 和 LLM 阶段关联。
