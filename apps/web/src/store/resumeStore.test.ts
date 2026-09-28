@@ -140,8 +140,8 @@ beforeEach(() => {
     resumes: [],
     activeImports: [],
     failedImports: [],
-    versions: [],
-    versionsLoading: false,
+
+
     versionOperationPending: false,
     proposalApplyingResumeId: null,
     proposalContentRevision: 0,
@@ -681,29 +681,7 @@ describe("resume save serialization", () => {
     });
   });
 
-  it("恢复历史版本时不创建或保存新的版本", async () => {
-    const calls: string[] = [];
-    const update = vi.spyOn(api, "updateResume");
-    const create = vi.spyOn(api, "createVersion");
-    vi.spyOn(api, "restoreVersion").mockImplementation(async () => {
-      calls.push("restore");
-      return { resume: record(3, "# 历史版本", true) };
-    });
-    vi.spyOn(api, "listVersions").mockResolvedValue({ versions: [] });
 
-    await useResumeStore.getState().restoreVersion(1);
-
-    expect(calls).toEqual(["restore"]);
-    expect(update).not.toHaveBeenCalled();
-    expect(create).not.toHaveBeenCalled();
-    expect(useResumeStore.getState()).toMatchObject({
-      lockVersion: 3,
-      markdown: "## 历史版本",
-      dirty: false,
-      versionOperationPending: false,
-      settings: { smartOnePage: true },
-    });
-  });
 });
 
 describe("resume deletion", () => {
@@ -1039,63 +1017,4 @@ describe("account profile sync and password change", () => {
     expect(useResumeStore.getState().user).toBeNull();
   });
 
-});
-
-describe("resume version deletion", () => {
-  beforeEach(() => {
-    useResumeStore.setState({
-      versions: [
-        { id: "3", version_no: 3, name: "第三版", reason: "manual", created_at: "2026-07-27T00:03:00Z" },
-        { id: "2", version_no: 2, name: "第二版", reason: "manual", created_at: "2026-07-27T00:02:00Z" },
-        { id: "1", version_no: 1, name: "初始版本", reason: "initial", created_at: "2026-07-27T00:01:00Z" },
-      ],
-    });
-  });
-
-  it("只在后端确认后移除指定历史版本", async () => {
-    vi.spyOn(api, "deleteVersion").mockResolvedValue({ deleted: true });
-
-    await useResumeStore.getState().deleteVersion(1);
-
-    expect(api.deleteVersion).toHaveBeenCalledWith("1", 1);
-    expect(useResumeStore.getState().versions.map((version) => version.version_no)).toEqual([3, 2]);
-    expect(useResumeStore.getState().versionOperationPending).toBe(false);
-  });
-
-  it("删除失败时保留版本列表", async () => {
-    vi.spyOn(api, "deleteVersion").mockRejectedValue(new Error("HTTP_500"));
-
-    await expect(useResumeStore.getState().deleteVersion(1)).rejects.toThrow("HTTP_500");
-
-    expect(useResumeStore.getState().versions.map((version) => version.version_no)).toEqual([3, 2, 1]);
-    expect(useResumeStore.getState().versionOperationPending).toBe(false);
-  });
-});
-
-describe("resume version rename", () => {
-  it("更新指定版本名称并保留其他版本", async () => {
-    useResumeStore.setState({
-      activeResumeId: "1",
-      versions: [
-        { id: "2", version_no: 2, name: "旧名称", reason: "manual", created_at: "2026-07-27T00:02:00Z" },
-        { id: "1", version_no: 1, name: "初始版本", reason: "initial", created_at: "2026-07-27T00:01:00Z" },
-      ],
-    });
-    const renamed = {
-      id: "2",
-      version_no: 2,
-      name: "投递终版",
-      reason: "manual" as const,
-      created_at: "2026-07-27T00:02:00Z",
-    };
-    vi.spyOn(api, "renameVersion").mockResolvedValue({ version: renamed });
-
-    await useResumeStore.getState().renameVersion(2, "投递终版");
-
-    expect(api.renameVersion).toHaveBeenCalledWith("1", 2, "投递终版");
-    expect(useResumeStore.getState().versions).toEqual([
-      renamed,
-      { id: "1", version_no: 1, name: "初始版本", reason: "initial", created_at: "2026-07-27T00:01:00Z" },
-    ]);
-  });
 });

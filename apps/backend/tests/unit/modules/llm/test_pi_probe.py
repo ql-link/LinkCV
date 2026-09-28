@@ -5,53 +5,24 @@ import httpx
 
 from linkresume.core.config import Settings
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
-from linkresume.modules.llm.service import RuntimeModelConfig
+from linkresume.modules.llm.resolver import RoutePlan
+from linkresume.modules.llm.service import AgentRuntimeModel
 
 
-def test_coordinator_requires_matching_backend_and_pi_tool_evidence() -> None:
-    settings = Settings(
-        pi_service_token="unit-pi-service-token",
-    )
-
+def test_coordinator_requires_matching_backend_and_pi_tool_evidence():
+    settings = Settings(pi_service_token="unit-pi-service-token")
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == "Bearer unit-pi-service-token"
         payload = json.loads(request.content)
         assert payload["model"] == {
-            "adapter": "deepseek",
-            "id": "1",
-            "name": "fictional-model",
-            "apiKey": "fictional-provider-key",
-            "baseUrl": "https://api.example.invalid/v1",
+            "provider": "aihubmix", "api": "openai-completions", "id": "3",
+            "name": "fictional-model", "apiKey": "fictional-provider-key",
+            "baseUrl": "https://aihubmix.com/v1",
         }
-        assert "proxyUrl" not in payload
-        assert "proxyToken" not in payload
-        return httpx.Response(
-            200,
-            json={
-                "ok": True,
-                "runId": payload["runId"],
-                "toolCallId": "tool-probe",
-                "usage": {"inputTokens": 8, "outputTokens": 3},
-            },
-        )
-
-    coordinator = PiProbeCoordinator(
-        settings,
-        transport=httpx.MockTransport(handler),
-    )
-    config = RuntimeModelConfig(
-        id=1,
-        capability="pi_agent",
-        adapter="deepseek",
-        model_call_name="fictional-model",
-        model_name="deepseek/fictional-model",
-        api_base="https://api.example.invalid/v1",
-        encrypted_api_key="encrypted-fixture",
-        config_version=1,
-    )
-
-    usage = asyncio.run(
-        coordinator.run_probe(config, "fictional-provider-key")
-    )
+        return httpx.Response(200, json={"ok": True, "runId": payload["runId"], "toolCallId": "tool-probe", "usage": {"inputTokens": 8, "outputTokens": 3}})
+    coordinator = PiProbeCoordinator(settings, transport=httpx.MockTransport(handler))
+    plan = RoutePlan(use_case="assistant_conversation", route_id=3, model_id=1, display_name="fictional-model", provider_code="aihubmix", connection_id=2, runtime_config_version=1, target_kind="model", invoke_target="fictional-model", protocol_code="openai_chat", settings={}, credential_ciphertext="encrypted-fixture", pricing=None, selection_source="probe")
+    config = AgentRuntimeModel(plan=plan, api_key="fictional-provider-key", base_url="https://aihubmix.com/v1")
+    usage = asyncio.run(coordinator.run_probe(config, "fictional-provider-key"))
     assert usage.input_tokens == 8
     assert usage.output_tokens == 3

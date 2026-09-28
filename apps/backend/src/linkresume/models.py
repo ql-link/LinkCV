@@ -5,48 +5,52 @@ from linkresume.modules.agent.models import (
     AgentToolCall,
     ResumeChangeProposal,
 )
+from linkresume.modules.announcements.models import Announcement, AnnouncementReadCursor
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import (
-    InterviewAsset,
     InterviewSession,
     JobApplication,
     JobApplicationStage,
 )
 from linkresume.modules.job_descriptions.models import GlobalCompany, JobDescription
+from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
 from linkresume.modules.llm.models import (
     LLMCallLog,
-    LLMCapabilityBinding,
-    LLMModelConfig,
-    LLMModelValidation,
+    LLMModel,
+    LLMModelRoute,
+    LLMProviderConnection,
+    LLMUseCaseRoute,
 )
 from linkresume.modules.resumes.models import (
     DocumentParseTask,
     Resume,
     ResumeTemplate,
-    ResumeVersion,
 )
 
 __all__ = [
+    "Announcement",
+    "AnnouncementReadCursor",
     "AgentMessage",
     "AgentRun",
     "AgentSession",
     "AgentToolCall",
     "ResumeChangeProposal",
     "LLMCallLog",
-    "LLMCapabilityBinding",
-    "LLMModelConfig",
-    "LLMModelValidation",
-    "InterviewAsset",
+    "LLMModel",
+    "LLMModelRoute",
+    "LLMProviderConnection",
+    "LLMUseCaseRoute",
     "InterviewSession",
     "JobApplication",
     "JobApplicationStage",
     "JobDescription",
+    "MockInterview",
+    "MockInterviewQuestion",
     "GlobalCompany",
     "DocumentParseTask",
     "Resume",
     "ResumeTemplate",
-    "ResumeVersion",
     "User",
     "UserDataset",
 ]

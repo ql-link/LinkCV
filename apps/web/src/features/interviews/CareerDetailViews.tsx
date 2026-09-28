@@ -623,6 +623,7 @@ function SchedulePickerPortal({
 export function ScheduleDateTimePicker({
   id,
   label,
+  placeholder = "选择日期和时间",
   value,
   defaultDate,
   durationMinutes,
@@ -635,6 +636,7 @@ export function ScheduleDateTimePicker({
 }: {
   id: string;
   label: string;
+  placeholder?: string;
   value: string;
   defaultDate?: string;
   durationMinutes?: number;
@@ -680,7 +682,7 @@ export function ScheduleDateTimePicker({
         : formatScheduleDateTimeDisplay(selectedValue.date, selectedValue.time)
       : fallbackDate
         ? formatScheduleDateTimeDisplay(fallbackDate, "")
-        : "选择日期和时间";
+        : placeholder;
   const parsedDraftTime = parseScheduleTime(draftTime);
   const draftEnd = durationMode ? scheduleEndDate(draftDate, draftTime, draftDurationMinutes) : null;
   const minimumStart = minimumStartAt ? new Date(minimumStartAt) : null;
@@ -2755,6 +2757,7 @@ function SessionAssetList({
   assets,
   recordKind,
   hasTextRecord,
+  onEmptyAction,
   sessionId,
   onChanged,
   onNotice,
@@ -2762,6 +2765,7 @@ function SessionAssetList({
   assets: InterviewAssetRecord[];
   recordKind: "笔试" | "面试";
   hasTextRecord: boolean;
+  onEmptyAction?: () => void;
   sessionId: string;
   onChanged: () => void;
   onNotice: (notice: string) => void;
@@ -2917,7 +2921,7 @@ function SessionAssetList({
             <button type="button" aria-label="调整音量" title="调整音量" aria-expanded={audioVolumeOpen} aria-controls="career-session-audio-volume-control" onClick={() => setAudioVolumeOpen((open) => !open)}>{audioMuted ? <VolumeX aria-hidden="true" /> : <Volume2 aria-hidden="true" />}</button>
           </div>
         </div>}
-      </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，从资料库选择，或粘贴文字记录。</p></div>}
+      </article>)}</div> : !hasTextRecord && <div className="career-session-empty-content"><FileText aria-hidden="true" /><strong>尚未添加{recordKind}内容</strong><p>上传音频文件，从资料库选择，或粘贴文字记录。</p>{onEmptyAction && <Button variant="outline" icon={<FilePlus2 />} onClick={onEmptyAction}>添加{recordKind}内容</Button>}</div>}
       {assetToRemove && <ConfirmDialog
         kind="delete"
         title={`从${recordKind}记录中移除文件？`}
@@ -3338,10 +3342,12 @@ function EditInterviewScheduleDialog({
 function InterviewAnswerPlanSection({
   session,
   canEdit,
+  inRecordDialog = false,
   onChanged,
 }: {
   session: InterviewSessionRecord;
   canEdit: boolean;
+  inRecordDialog?: boolean;
   onChanged: () => void | Promise<void>;
 }) {
   const [planStartAt, setPlanStartAt] = useState(() => session.answer_plan_start_at ? schedulePickerValue(session.answer_plan_start_at) : "");
@@ -3408,7 +3414,7 @@ function InterviewAnswerPlanSection({
       <header>
         <div>
           <h3 id={`career-session-answer-plan-${session.id}`}>我的作答计划</h3>
-          <p>在官方作答时段内记录准备完成笔试的具体时间。</p>
+          <p>仅用于个人安排，不改变官方截止时间。</p>
         </div>
         {!canEdit && <strong>{hasPlan ? formatFullDateTimeRange(session.answer_plan_start_at!, session.answer_plan_end_at!) : "尚未设置"}</strong>}
       </header>
@@ -3420,6 +3426,7 @@ function InterviewAnswerPlanSection({
               <ScheduleDateTimePicker
                 id={`career-session-answer-plan-start-${session.id}`}
                 label="计划作答时间"
+                placeholder={inRecordDialog ? "选择计划作答时间" : undefined}
                 value={planStartAt}
                 durationMinutes={durationMinutes}
                 minimumStartAt={session.start_at}
@@ -3433,7 +3440,7 @@ function InterviewAnswerPlanSection({
           {errorMessage && <FeedbackNotice kind="error">{errorMessage}</FeedbackNotice>}
           <div className="career-session-answer-plan-actions">
             {hasPlan && <Button variant="ghost" disabled={busy} onClick={() => void updatePlan(null, null)}>清除计划</Button>}
-            <Button disabled={busy} onClick={save}>{busy ? "正在保存…" : "保存作答计划"}</Button>
+            <Button variant={inRecordDialog ? "outline" : "default"} disabled={busy} onClick={save}>{busy ? "正在保存…" : "保存作答计划"}</Button>
           </div>
         </>
       )}
@@ -3517,11 +3524,11 @@ export function InterviewSessionDetailView({
           <div><CalendarDays aria-hidden="true" /><span><small>{session.schedule_kind === "open_window" ? "官方作答时段" : `${recordKind}时间`}</small><strong className="career-session-time-range" title={formatFullDateTimeRange(session.start_at, session.end_at)}>{formatFullDateTimeRange(session.start_at, session.end_at)}</strong></span></div>
           <div><Video aria-hidden="true" /><span><small>{recordKind}方式</small><strong>{sessionModeLabel(session.mode)}{session.location ? ` · ${session.location}` : ""}</strong></span></div>
         </section>
-        {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} onChanged={() => onChanged(session.id)} />}
+        {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} inRecordDialog={isDialog} onChanged={() => onChanged(session.id)} />}
         {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开{isAssessment ? "笔试" : "会议"}链接 <ExternalLink aria-hidden="true" /></a>}
         <section className="career-session-content-section">
           <header><h2>{recordTitle}</h2></header>
-          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
+          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} onEmptyAction={isDialog && isAssessment && assets.length === 0 && !questions.trim() ? () => setShowContentDialog(true) : undefined} sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
           {questions.trim() && <article className={`career-session-transcript${textExpanded ? " is-expanded" : ""}`}>
             <header>
               <div className="career-session-transcript-title">
@@ -3553,7 +3560,7 @@ export function InterviewSessionDetailView({
   if (isDialog) {
     return (
       <Dialog open onOpenChange={(open) => { if (!open) onBack(); }}>
-        <DialogContent className="career-session-record-dialog">
+        <DialogContent className={`career-session-record-dialog${isAssessment ? " is-assessment" : ""}`}>
           <DialogHeader className="career-session-record-dialog-header">
             <div className="career-session-record-title-row">
               <DialogTitle>{`${application.company_name_snapshot}｜${recordTitle}`}</DialogTitle>
@@ -3565,11 +3572,11 @@ export function InterviewSessionDetailView({
           <DialogFooter className="career-session-record-footer">
             <div className="career-session-record-footer-start" role="group" aria-label="记录编辑操作">
               {editScheduleAction}
-              <Button variant="ghost" icon={<FilePlus2 />} onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
+              {(!isAssessment || assets.length > 0 || questions.trim()) && <Button variant="ghost" icon={<FilePlus2 />} onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>}
             </div>
             {!isArchived && session.status === "scheduled" && (
               <div className="career-session-record-footer-end" role="group" aria-label="记录完成操作">
-                <Button onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>
+                <Button variant={isAssessment ? "outline" : "default"} onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>
               </div>
             )}
           </DialogFooter>

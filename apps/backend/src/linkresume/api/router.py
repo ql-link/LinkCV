@@ -1,6 +1,9 @@
 from fastapi import APIRouter
 
 from linkresume.api.routes.health import router as health_router
+from linkresume.modules.admin_insights.routes import router as admin_insights_router
+from linkresume.modules.announcements.admin_routes import router as announcement_admin_router
+from linkresume.modules.announcements.routes import router as announcement_router
 from linkresume.modules.datasets.routes import router as dataset_router
 from linkresume.modules.agent.routes import router as agent_router
 from linkresume.modules.agent.admin_routes import router as agent_admin_router
@@ -11,6 +14,7 @@ from linkresume.modules.identity.wechat_routes import router as wechat_router
 from linkresume.modules.interviews.routes import router as interview_router
 from linkresume.modules.job_descriptions.routes import router as job_description_router
 from linkresume.modules.llm.admin_routes import router as llm_admin_router
+from linkresume.modules.mock_interviews.routes import router as mock_interview_router
 from linkresume.modules.miniprogram.account_routes import router as miniprogram_account_router
 from linkresume.modules.miniprogram.career_routes import router as miniprogram_career_router
 from linkresume.modules.miniprogram.routes import router as miniprogram_router
@@ -33,12 +37,14 @@ from linkresume.modules.resumes.template_routes import router as template_router
 from linkresume.modules.resumes.template_admin_routes import (
     router as template_admin_router,
 )
-from linkresume.modules.resumes.version_routes import router as version_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(agent_router)
 api_router.include_router(agent_admin_router)
+api_router.include_router(admin_insights_router)
+api_router.include_router(announcement_router)
+api_router.include_router(announcement_admin_router)
 api_router.include_router(admin_identity_router)
 api_router.include_router(dataset_router)
 api_router.include_router(identity_router)
@@ -47,6 +53,7 @@ api_router.include_router(wechat_router)
 api_router.include_router(account_router)
 api_router.include_router(job_description_router)
 api_router.include_router(llm_admin_router)
+api_router.include_router(mock_interview_router)
 api_router.include_router(miniprogram_router)
 api_router.include_router(miniprogram_v2_router)
 api_router.include_router(miniprogram_account_router)
@@ -61,7 +68,6 @@ api_router.include_router(overview_router)
 api_router.include_router(resume_import_router)
 api_router.include_router(resume_router)
 api_router.include_router(resume_pdf_router)
-api_router.include_router(version_router)
 api_router.include_router(resume_share_router)
 api_router.include_router(public_share_router)
 api_router.include_router(resume_asset_router)

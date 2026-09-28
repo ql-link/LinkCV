@@ -63,41 +63,95 @@ beforeEach(() => {
     resumes: [],
     activeResumeId: null,
   }, true);
-  vi.spyOn(api, "getAgentModel").mockResolvedValue({
-    model: { adapter: "openai", name: "deepseek/deepseek-v4-flash" },
-  });
+  vi.spyOn(api, "getAgentModels").mockResolvedValue({ models: [{ id: "1", name: "deepseek/deepseek-v4-flash" }], defaultModelId: "1" });
   vi.spyOn(api, "getActiveAgentRun").mockResolvedValue({ run: null });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.sessionStorage.clear();
 });
 
 describe("AssistantPage", () => {
+  it("使用侧栏品牌返回工作区，收起侧栏后只保留展开按钮", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+
+    const { container } = render(<AssistantPage />);
+    const sidebar = await screen.findByRole("complementary", { name: "对话列表" });
+    const brandLink = within(sidebar).getByRole("link", { name: "返回工作区" });
+    expect(brandLink).toHaveAttribute("href", "/resumes");
+    expect(brandLink.querySelector(".ui-brand-wordmark")).toBeInTheDocument();
+    expect(within(sidebar).getByRole("button", { name: "收起会话侧栏" })).toBeInTheDocument();
+
+    await user.click(within(sidebar).getByRole("button", { name: "收起会话侧栏" }));
+    expect(screen.queryByRole("complementary", { name: "对话列表" })).not.toBeInTheDocument();
+    const collapsedHeader = container.querySelector(".assistant-collapsed-header");
+    expect(collapsedHeader).toBeInTheDocument();
+    expect(within(collapsedHeader as HTMLElement).queryByRole("link", { name: "返回工作区" })).not.toBeInTheDocument();
+    await user.click(within(collapsedHeader as HTMLElement).getByRole("button", { name: "展开会话侧栏" }));
+
+    await user.click(within(screen.getByRole("complementary", { name: "对话列表" })).getByRole("link", { name: "返回工作区" }));
+    expect(window.location.pathname).toBe("/resumes");
+  });
+
   it("把服务端无时区的 UTC 时间按 UTC 解析，避免刷新后进度多出八小时", () => {
     expect(parseAgentTimestamp("2026-09-24T12:35:00")).toBe(Date.parse("2026-09-24T12:35:00Z"));
     expect(parseAgentTimestamp("2026-09-24T20:35:00+08:00")).toBe(Date.parse("2026-09-24T12:35:00Z"));
   });
 
-  it("在新建对话下方只保留资料库，并在助手页内切换资料视图", async () => {
+  it("按简历、模板、求职记录、面试排期、资料库顺序提供工作台内导航", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
 
-    render(<AssistantPage />);
+    const { rerender } = render(<AssistantPage />);
 
-    const shortcuts = await screen.findByRole("navigation", { name: "助手快捷入口" });
-    expect(within(shortcuts).queryByRole("link", { name: "简历" })).not.toBeInTheDocument();
-    const datasetsButton = within(shortcuts).getByRole("button", { name: "资料库" });
-    expect(datasetsButton.querySelector(".lucide-folder-open")).toBeInTheDocument();
+    const shortcuts = await screen.findByRole("navigation", { name: "AI 工作台导航" });
+    expect(within(shortcuts).getAllByRole("link").map((link) => [link.textContent, link.getAttribute("href")])).toEqual([
+      ["我的简历", "/assistant/workspace/resumes"],
+      ["简历模板", "/assistant/workspace/templates"],
+      ["求职记录", "/assistant/workspace/career"],
+      ["面试排期", "/assistant/workspace/career?view=schedule"],
+      ["资料库", "/assistant/workspace/datasets"],
+    ]);
+    const datasetsLink = within(shortcuts).getByRole("link", { name: "资料库" });
+    expect(datasetsLink.querySelector(".lucide-folder-open")).toBeInTheDocument();
 
-    await user.click(datasetsButton);
-    expect(screen.getByRole("region", { name: "嵌入式资料库" })).toHaveAttribute("data-embedded", "true");
+    await user.click(within(shortcuts).getByRole("link", { name: "求职记录" }));
+    expect(window.location.pathname).toBe("/assistant/workspace/career");
+
+    await user.click(within(shortcuts).getByRole("link", { name: "面试排期" }));
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/assistant/workspace/career?view=schedule");
+
+    await user.click(datasetsLink);
+    expect(window.location.pathname).toBe("/assistant/workspace/datasets");
+    rerender(<AssistantPage workspaceSection="datasets" />);
+    expect(await screen.findByRole("region", { name: "嵌入式资料库" })).toHaveAttribute("data-embedded", "true");
+    expect(within(screen.getByRole("navigation", { name: "AI 工作台导航" })).getByRole("link", { name: "资料库" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("complementary", { name: "对话列表" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "新建对话" }));
     expect(window.location.pathname).toBe("/assistant");
-
-    await user.click(datasetsButton);
+    rerender(<AssistantPage />);
     expect(screen.queryByRole("region", { name: "嵌入式资料库" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "AI 求职助手工作区" })).toBeInTheDocument();
+  });
+
+  it("从已有对话切换到工作台模块时保留模块地址", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [session] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    const { rerender } = render(<AssistantPage sessionId={session.id} />);
+    await waitFor(() => expect(api.getAgentSession).toHaveBeenCalledWith(session.id));
+
+    await user.click(within(screen.getByRole("navigation", { name: "AI 工作台导航" })).getByRole("link", { name: "简历模板" }));
+    rerender(<AssistantPage workspaceSection="templates" />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/assistant/workspace/templates"));
+    expect(within(screen.getByRole("navigation", { name: "AI 工作台导航" })).getByRole("link", { name: "简历模板" })).toHaveAttribute("aria-current", "page");
   });
 
   it("从右上角选择简历后嵌入编辑器并自动完全收起左栏", async () => {
@@ -697,8 +751,8 @@ describe("AssistantPage", () => {
     });
 
     const separator = screen.getByRole("separator", { name: "调整最近对话栏宽度" });
-    expect(separator).toHaveAttribute("aria-valuenow", "240");
-    expect(shell).toHaveStyle({ "--assistant-sidebar-width": "240px" });
+    expect(separator).toHaveAttribute("aria-valuenow", "260");
+    expect(shell).toHaveStyle({ "--assistant-sidebar-width": "260px" });
 
     fireEvent.pointerDown(separator, { pointerId: 1, pointerType: "mouse", button: 0, clientX: 280 });
     fireEvent.pointerMove(separator, { pointerId: 1, pointerType: "mouse", clientX: 360 });
@@ -731,6 +785,34 @@ describe("AssistantPage", () => {
     expect(api.getAgentSession).toHaveBeenCalledWith("session-1");
     expect(window.location.pathname).toBe("/assistant/session-1");
     expect(screen.getAllByRole("button", { name: "添加资料" })).toHaveLength(1);
+  });
+
+  it("每条用户消息和助手回复都显示时间并复制各自正文", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const routedSession: AgentSession = {
+      ...session,
+      messages: [
+        { sequence_no: 1, role: "user", content: "请分析岗位", created_at: session.created_at },
+        { sequence_no: 2, role: "assistant", content: "**这是回答**", created_at: session.created_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [routedSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: routedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+
+    const { container } = render(<AssistantPage sessionId="session-1" />);
+    await screen.findByText("这是回答");
+    const messages = container.querySelectorAll(".assistant-message");
+    expect(messages).toHaveLength(2);
+    expect(messages[0]?.querySelector(".message-actions time")).toHaveAttribute("datetime", session.created_at);
+    expect(messages[1]?.querySelector(".message-actions time")).toHaveAttribute("datetime", session.created_at);
+
+    await user.click(within(messages[0] as HTMLElement).getByRole("button", { name: "复制消息" }));
+    await user.click(within(messages[1] as HTMLElement).getByRole("button", { name: "复制消息" }));
+    expect(writeText).toHaveBeenNthCalledWith(1, "请分析岗位");
+    expect(writeText).toHaveBeenNthCalledWith(2, "**这是回答**");
   });
 
   it("刷新后重新连接仍在运行的对话并恢复输出", async () => {
@@ -771,6 +853,28 @@ describe("AssistantPage", () => {
       expect.any(Function),
     );
     expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument();
+  });
+
+  it.each(["run.completed", "run.failed"] as const)("恢复的对话收到 %s 后，同步失败不改变真实终态", async (terminal) => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [session] });
+    vi.mocked(api.getActiveAgentRun).mockResolvedValue({
+      run: { run_id: "run-active", status: "running", started_at: session.created_at },
+    });
+    vi.spyOn(api, "getAgentSession").mockResolvedValueOnce({ session })
+      .mockRejectedValue(new ApiRequestError(401, "UNAUTHORIZED"));
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "streamAgentRun").mockImplementation(async (_runId, _signal, onEvent) => {
+      onEvent({ type: "assistant.delta", runId: "run-active", delta: "恢复的分析结果" });
+      onEvent(terminal === "run.completed"
+        ? { type: terminal, runId: "run-active" }
+        : { type: terminal, runId: "run-active", error: "AGENT_UNAVAILABLE" });
+    });
+    render(<AssistantPage sessionId="session-1" />);
+    expect(await screen.findByText("恢复的分析结果")).toBeVisible();
+    await waitFor(() => expect(api.getAgentSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    if (terminal === "run.completed") expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    else expect(screen.getByText("生成未完成")).toBeVisible();
   });
 
   it("离开助手页面只断开浏览器订阅，不取消后台运行", async () => {
@@ -998,7 +1102,7 @@ describe("AssistantPage", () => {
     await user.click(await screen.findByRole("button", { name: "deepseek/deepseek-v4-flash" }));
     const menu = screen.getByRole("menu");
     expect(within(menu).getByRole("menuitemradio", { name: /deepseek\/deepseek-v4-flash/ })).toHaveAttribute("aria-checked", "true");
-    expect(within(menu).getByText("openai · 当前模型")).toBeInTheDocument();
+    expect(within(menu).getByText("当前模型")).toBeInTheDocument();
     expect(within(menu).getAllByRole("menuitemradio")).toHaveLength(1);
   });
 
@@ -1031,7 +1135,7 @@ describe("AssistantPage", () => {
   });
 
   it("当前模型查询失败时明确显示不可用，不回退为虚构模型", async () => {
-    vi.mocked(api.getAgentModel).mockRejectedValueOnce(new Error("unavailable"));
+    vi.mocked(api.getAgentModels).mockRejectedValueOnce(new Error("unavailable"));
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
 
     render(<AssistantPage />);
@@ -1400,6 +1504,27 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "发送" }));
     await waitFor(() => expect(stream).toHaveBeenCalledTimes(2));
     expect(stream.mock.calls[1][1].revision_proposal_id).toBe("proposal-1");
+  });
+
+  it.each([401, 503])("已完成对话的历史同步返回 %s 时保留回复，不误报对话失败", async (status) => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    const getSession = vi.spyOn(api, "getAgentSession").mockRejectedValue(new ApiRequestError(status, "UNAUTHORIZED"));
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-sync" });
+      onEvent({ type: "assistant.delta", runId: "run-sync", delta: "已经完成的分析结果" });
+      onEvent({ type: "run.completed", runId: "run-sync" });
+    });
+    render(<AssistantPage />);
+    await user.type(await screen.findByRole("textbox", { name: "告诉助手你想完成什么" }), "分析简历");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(getSession).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    expect(screen.getByText("已经完成的分析结果")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
   it("生成中只保留输入区的停止入口，并保留已显示内容", async () => {

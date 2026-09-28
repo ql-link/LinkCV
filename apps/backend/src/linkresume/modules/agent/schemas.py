@@ -25,6 +25,7 @@ class SessionCreateRequest(BaseModel):
     # messages, never to a session.
     resume_id: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,19}$")
     title: str | None = Field(default=None, min_length=1, max_length=128)
+    model_id: str | None = Field(default=None, alias="modelId", pattern=r"^[1-9][0-9]{0,19}$")
 
 
 class SessionUpdateRequest(BaseModel):
@@ -32,6 +33,7 @@ class SessionUpdateRequest(BaseModel):
 
     title: str | None = Field(default=None, max_length=128)
     pinned: StrictBool | None = None
+    model_id: str | None = Field(default=None, alias="modelId", pattern=r"^[1-9][0-9]{0,19}$")
 
     @field_validator("title", mode="before")
     @classmethod
@@ -321,6 +323,7 @@ class AgentSessionRecord(BaseModel):
     title: str
     pinned: bool
     status: Literal["active", "archived"]
+    selected_model_id: str | None = None
     last_message_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -355,7 +358,7 @@ class AgentReadinessResponse(BaseModel):
 class AgentModelSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    adapter: str
+    id: str
     name: str
 
 
@@ -695,10 +698,19 @@ class ResumeContextResponse(BaseModel):
     style: ResumePresentation
 
 
-class RuntimeConfigResponse(BaseModel):
+class RuntimeRouteConfig(BaseModel):
     provider: str
+    api: str
     model: str
-    api_base: str | None
-    api_key: str | None
-    config_id: str
+    api_base: str
+    api_key: str
+    route_id: str
     config_version: int
+    pricing: dict[str, Any] | None = None
+    context_window: int | None = None
+    max_output_tokens: int | None = None
+
+
+class RuntimeConfigResponse(RuntimeRouteConfig):
+    model_id: str
+    routes: list[RuntimeRouteConfig] = Field(default_factory=list)

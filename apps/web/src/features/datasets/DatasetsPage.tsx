@@ -394,7 +394,6 @@ export function DatasetsPage({
   const [query, setQuery] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
   const [syncFailure, setSyncFailure] = useState<string | null>(null);
-  const [pendingReplacementIds,setPendingReplacementIds] = useState<Set<string>>(new Set());
   const [menuDatasetId, setMenuDatasetId] = useState<string | null>(null);
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<DatasetRecord | null>(null);
@@ -582,14 +581,6 @@ export function DatasetsPage({
     }
   }, []);
 
-  useEffect(()=>{
-    const start=(event:Event)=>setPendingReplacementIds(ids=>new Set([...ids,(event as CustomEvent<string>).detail]));
-    const refresh=()=>{void refreshDatasets().then(ok=>{if(ok)setPendingReplacementIds(new Set());});};
-    window.addEventListener("dataset-replacement-start",start);window.addEventListener("dataset-replacement-refresh",refresh);
-    return()=>{window.removeEventListener("dataset-replacement-start",start);window.removeEventListener("dataset-replacement-refresh",refresh);};
-  },[refreshDatasets]);
-  useEffect(()=>{if(!datasets.some(d=>d.replacement?.status==="pending"))return;const timer=setInterval(()=>void refreshDatasets(),2000);return()=>clearInterval(timer);},[datasets,refreshDatasets]);
-
   const canUploadHere = selectedFolderId !== "all" && selectedFolderId !== "uncategorized";
   const effectiveUploadFolderId = canUploadHere
     ? selectedFolderId
@@ -760,11 +751,6 @@ export function DatasetsPage({
 
   const handleUploadAccepted = (dataset: DatasetRecord) => {
     if (!pageMounted.current) return;
-    setPendingReplacementIds((ids) => {
-      const next = new Set(ids);
-      next.delete(dataset.id);
-      return next;
-    });
     locallyAccepted.current.set(dataset.id, dataset);
     setDatasets((current) => upsertDataset(current, dataset));
     setLoadFailed(false);
@@ -906,7 +892,7 @@ export function DatasetsPage({
 
   const keyword = query.trim().toLocaleLowerCase();
   const filteredDatasets = useMemo(() => {
-    return datasets.map(dataset=>pendingReplacementIds.has(dataset.id)?{...dataset,replacement:{id:"",status:"pending" as const,upload_status:"uploading",parse_status:null,failure_code:null,retryable:false,current_revision:dataset.content_revision??"0"}}:dataset).filter((dataset) => {
+    return datasets.filter((dataset) => {
       if (selectedFolderId === "all" || selectedFolderId === "uncategorized") {
         return false;
       } else if (dataset.folder_id !== selectedFolderId) {
@@ -915,7 +901,7 @@ export function DatasetsPage({
       if (!keyword) return true;
       return datasetDisplayName(dataset).toLocaleLowerCase().includes(keyword);
     });
-  }, [datasets, keyword, selectedFolderId, pendingReplacementIds]);
+  }, [datasets, keyword, selectedFolderId]);
 
   const activeDataset = useMemo(
     () => filteredDatasets.find((dataset) => dataset.id === activeDatasetId) ?? null,

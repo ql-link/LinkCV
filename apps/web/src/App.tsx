@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { CircleAlert } from "lucide-react";
 import { Brand, Button, PageLoading } from "@/components/ui";
-import { CareerNavigation, WorkspaceLayout, type CareerSection, type WorkspaceSection } from "./components/WorkspaceLayout";
+import { AssistantWorkspaceLayout, WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
 import { ApiRequestError } from "./api/client";
 import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
 import { applyRouteSeo } from "./seo";
@@ -212,11 +212,11 @@ function AppContent() {
 
   if (isInterviewMockPreview && route.kind === "interviews") {
     return (
-      <WorkspaceLayout active="career">
+      <WorkspaceLayout active={route.view === "schedule" ? "schedule" : "applications"}>
         <WorkspacePageBoundary>
           <InterviewCenterPage
             view={route.view}
-            navigation={<CareerNavigation active={route.view === "records" ? "reviews" : route.view} />}
+            moduleTitle={route.view === "schedule" ? "面试排期" : route.view === "records" ? "面试记录" : "求职记录"}
           />
         </WorkspacePageBoundary>
       </WorkspaceLayout>
@@ -258,11 +258,11 @@ function AppContent() {
 
   if (route.kind === "assistant") {
     return (
-      <WorkspaceLayout active="assistant" className="assistant-workspace-shell">
+      <AssistantWorkspaceLayout>
         <WorkspacePageBoundary>
-          <AssistantPage sessionId={route.sessionId} />
+          <AssistantPage sessionId={route.sessionId} workspaceSection={route.workspaceSection} careerView={route.careerView} />
         </WorkspacePageBoundary>
-      </WorkspaceLayout>
+      </AssistantWorkspaceLayout>
     );
   }
 
@@ -282,13 +282,9 @@ function AppContent() {
         ? "account"
         : route.kind === "datasets"
           ? "datasets"
-          : "career";
-
-    const careerSection: CareerSection | null = route.kind === "jobDetail"
-      ? "applications"
-      : route.kind === "interviews"
-        ? route.view === "records" ? "reviews" : route.view
-        : null;
+          : route.kind === "interviews" && route.view === "schedule"
+            ? "schedule"
+            : "applications";
 
     return (
       <WorkspaceLayout active={activeSection}>
@@ -304,7 +300,7 @@ function AppContent() {
               initialJobId={route.jobId}
               initialCreateApplication={route.createApplication}
               initialJobImport={route.importJob}
-              navigation={<CareerNavigation active={careerSection ?? "applications"} />}
+              moduleTitle={route.view === "schedule" ? "面试排期" : route.view === "records" ? "面试记录" : "求职记录"}
             />
           )}
           {route.kind === "datasets" && <DatasetsPage initialFolderId={route.folderId} />}

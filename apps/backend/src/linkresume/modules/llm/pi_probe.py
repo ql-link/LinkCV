@@ -7,7 +7,8 @@ import httpx
 
 from linkresume.core.config import Settings
 from linkresume.modules.llm.gateway import GatewayUsage
-from linkresume.modules.llm.service import RuntimeModelConfig
+from linkresume.modules.llm.service import AgentRuntimeModel
+from linkresume.modules.llm.providers import pi_api
 
 
 class PiProbeError(Exception):
@@ -29,7 +30,7 @@ class PiProbeCoordinator:
 
     async def run_probe(
         self,
-        config: RuntimeModelConfig,
+        config: AgentRuntimeModel,
         api_key: str,
     ) -> GatewayUsage:
         token = self._settings.pi_service_token
@@ -41,11 +42,12 @@ class PiProbeCoordinator:
             "runId": run_id,
             "nonce": nonce,
             "model": {
-                "adapter": config.adapter,
-                "id": str(config.id),
-                "name": config.model_call_name,
+                "provider": config.plan.provider_code,
+                "api": pi_api(config.plan.protocol_code),
+                "id": str(config.plan.route_id),
+                "name": config.plan.invoke_target,
                 "apiKey": api_key,
-                **({"baseUrl": config.api_base} if config.api_base else {}),
+                "baseUrl": config.base_url,
             },
         }
         try:

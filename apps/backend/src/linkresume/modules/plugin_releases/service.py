@@ -286,7 +286,8 @@ class PluginReleaseService:
             )
             return reactivated
 
-    def delete_current(self) -> None:
+    def delete_current(self) -> str:
+        """Delete the current package and pointer; returns the deleted version."""
         with self._publish_lock:
             pointer = self._read_pointer()
             if pointer is None:
@@ -304,6 +305,7 @@ class PluginReleaseService:
                 self.storage.delete(self.pointer_key)
             except Exception as error:
                 raise ApiError(503, "PLUGIN_RELEASE_DELETE_FAILED") from error
+            return pointer.version
 
     def open_download(self, version: str) -> tuple[PluginReleasePointer, Any]:
         try:

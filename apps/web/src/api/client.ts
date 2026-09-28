@@ -250,16 +250,6 @@ export type SemanticClassificationSuggestion = {
   reason: string;
 };
 
-export type ResumeVersion = {
-  id: string;
-  version_no: number;
-  name: string;
-  reason: "initial" | "manual" | "before_restore" | "restore" | "agent";
-  created_at: string;
-  data?: CanonicalResumeDocument;
-  style?: CanonicalResumePresentation;
-};
-
 export type AgentMessage = {
   run_id?: string | null;
   sequence_no: number;
@@ -340,6 +330,7 @@ export type AgentContextListResponse = {
 
 export type AgentSession = {
   id: string;
+  selected_model_id?: string | null;
   title: string;
   pinned: boolean;
   status: "active" | "archived";
@@ -488,7 +479,6 @@ export type DatasetRecord = {
   content_revision?: string;
   content_updated_at?: string | null;
   folder_name?: string | null;
-  replacement?: DatasetReplacement | null;
 };
 
 export type DatasetFolder = {
@@ -521,7 +511,6 @@ export type DatasetListResponse = {
   limits?: DatasetLimits;
 };
 
-export type DatasetReplacement = { id: string; status: "pending" | "failed" | "conflict" | "applied" | "discarded"; upload_status: string | null; parse_status: string | null; failure_code: string | null; retryable: boolean; current_revision: string };
 
 export type DatasetContent = {
   id: string;
@@ -688,7 +677,6 @@ export type JobApplicationRecord = {
   id: string;
   resume_id?: string | null;
   job_description_id: string | null;
-  resume_version_id: string | null;
   company_name_snapshot: string;
   job_title_snapshot: string;
   company_logo_url?: string | null;
@@ -841,151 +829,18 @@ export type JobDescriptionCreatePayload = JobDescriptionFields & {
   duplicate_resolution?: DuplicateResolution;
 };
 
-export type ChatAdapter =
-  | "openai"
-  | "anthropic"
-  | "deepseek"
-  | "dashscope"
-  | "openrouter"
-  | "gemini"
-  | "xai"
-  | "groq"
-  | "mistral"
-  | "cohere_chat"
-  | "perplexity";
-
 export type AgentModelSummary = {
-  adapter: ChatAdapter;
+  id: string;
   name: string;
 };
 
-export type LlmModelLastTest = {
-  status: "succeeded" | "failed" | "cancelled";
-  callId: string;
-  testedAt: string;
-};
-
-export type LlmModelConfig = {
-  id: string;
-  capability: "chat";
-  adapter: ChatAdapter;
-  model: string;
-  apiBase: string | null;
-  keyConfigured: boolean;
-  active: boolean;
-  lastTest: LlmModelLastTest | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ModelCapability = "chat" | "resume_structuring" | "pi_agent" | "job_image_structuring";
-
-export type CapabilityModelConfig = {
-  id: string;
-  adapter: ChatAdapter;
-  model: string;
-  apiBase: string | null;
-  keyConfigured: boolean;
-  configVersion: number;
-  activeCapabilities: ModelCapability[];
-  lastTest: LlmModelLastTest | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ModelCapabilityRecord = {
-  capability: ModelCapability;
-  activeModelId: string | null;
-  bindingVersion: number;
-  activeModel: CapabilityModelConfig | null;
-  models: CapabilityModelConfig[];
-};
-
-export type ModelCapabilityList = {
-  capabilities: ModelCapabilityRecord[];
-};
-
-export type ModelCatalog = {
-  capabilities: ModelCapability[];
-  adapters: ChatCatalogAdapter[];
-};
-
-export type ChatCapability = {
-  capability: "chat";
-  activeModelId: string | null;
-  activeModel: LlmModelConfig | null;
-  models: LlmModelConfig[];
-};
-
-export type ChatCatalogAdapter = {
-  code: ChatAdapter;
-  label: string;
-  requiresApiKey: boolean;
-  models: string[];
-};
-
-export type ChatCatalog = {
-  capability: "chat";
-  adapters: ChatCatalogAdapter[];
-};
-
-export type LlmModelCreatePayload = {
-  adapter: ChatAdapter;
-  model: string;
-  apiBase?: string | null;
-  apiKey?: string | null;
-};
-
-export type LlmModelPatchPayload = Partial<
-  Omit<LlmModelCreatePayload, "apiKey">
-> & {
-  baseConfigVersion?: number;
-  apiKey?: string | null;
-};
-
-export type LlmCallStatus = "pending" | "succeeded" | "failed" | "cancelled";
-export type LlmMeteringStatus = "complete" | "partial" | "unknown";
-
-export type LlmCallRecord = {
-  callId: string;
-  capability: ModelCapability;
-  source: string;
-  userId: string;
-  modelConfigId: string | null;
-  adapter: ChatAdapter | null;
-  model: string | null;
-  status: LlmCallStatus;
-  meteringStatus: LlmMeteringStatus;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  inputPricePerMillion: string | null;
-  outputPricePerMillion: string | null;
-  estimatedCostUsd: string | null;
-  latencyMs: number | null;
-  errorCode: string | null;
-  modelConfigVersion?: number | null;
-  createdAt: string;
-};
-
-export type LlmCallSummary = {
-  callCount: number;
-  incompleteMeteringCount: number;
-  inputTokens: number | null;
-  outputTokens: number | null;
-  estimatedCostUsd: string | null;
-};
-
-export type LlmCallQuery = {
-  source?: string;
-  status?: LlmCallStatus;
-  modelConfigId?: string;
-  userId?: string;
-  callId?: string;
-  from?: string;
-  to?: string;
-  cursor?: string;
-  limit?: number;
-};
+export type LlmProviderSpec = { code: string; label: string; protocols: string[]; targetKinds: string[]; catalogSync: boolean };
+export type LlmCatalog = { useCases: string[]; providers: LlmProviderSpec[] };
+export type LlmConnection = { id: string; providerCode: string; name: string; settings: Record<string, unknown>; keyConfigured: boolean; enabled: boolean; runtimeConfigVersion: number; catalogSyncedAt: string | null; createdAt: string; updatedAt: string };
+export type LlmModel = { id: string; displayName: string; developerName: string | null; createdAt: string; updatedAt: string };
+export type LlmRoute = { id: string; modelId: string; connectionId: string; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId: string | null; identifierKind: "pinned" | "alias" | "unknown"; origin: string; metadata: Record<string, unknown> | null; pricing: Record<string, unknown> | null; targetAvailable: boolean; enabled: boolean; createdAt: string; updatedAt: string };
+export type LlmBinding = { useCase: string; routeId: string; protocolCode: string; priority: number; enabled: boolean; validatedAt: string | null; effective: boolean };
+export type LlmCallRecord = { id: string; callId: string; useCase: string; source: string; userId: string | null; agentRunId: string | null; routeId: string; protocolCode: string; status: string; meteringStatus: string; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | null; costCurrency: string | null; errorCode: string | null; createdAt: string };
 
 export type JobDuplicateDetails = {
   duplicate: {
@@ -1154,7 +1009,7 @@ function reportApi5xx(error: ApiRequestError): void {
 
 async function refreshSession(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = request<{ user: User }>(
+    const refresh = () => request<{ user: User }>(
       "/api/auth/refresh",
       { method: "POST" },
       false,
@@ -1165,8 +1020,17 @@ async function refreshSession(): Promise<boolean> {
           return false;
         }
         throw error;
+      });
+    // Cookies are shared across tabs, but module-level promises are not. A
+    // second tab must recheck access after the first has rotated the refresh
+    // token, otherwise replay protection can revoke the shared session.
+    const locks = globalThis.navigator?.locks;
+    refreshInFlight = (locks
+      ? locks.request("linkresume-session-refresh", async () => {
+        const current = await request<{ user: User | null }>("/api/auth/me", {}, false);
+        return current.user ? true : refresh();
       })
-      .finally(() => {
+      : refresh()).finally(() => {
         refreshInFlight = null;
       });
   }
@@ -1319,7 +1183,8 @@ async function streamAgentMessage(
     credentials: "include",
     signal,
   });
-  if (response.status === 401 && retryAuth && await refreshSession()) {
+  if (response.status === 401 && retryAuth && !signal.aborted && await refreshSession()) {
+    signal.throwIfAborted();
     return streamAgentMessage(sessionId, payload, signal, onEvent, false);
   }
   if (!response.ok || !response.body) {
@@ -1350,7 +1215,8 @@ async function streamAgentRun(
     credentials: "include",
     signal,
   });
-  if (response.status === 401 && retryAuth && await refreshSession()) {
+  if (response.status === 401 && retryAuth && !signal.aborted && await refreshSession()) {
+    signal.throwIfAborted();
     return streamAgentRun(runId, signal, onEvent, false);
   }
   if (!response.ok || !response.body) {
@@ -1399,6 +1265,12 @@ async function consumeAgentStream(
         }
       } catch {
         // Ignore an isolated malformed or future event without losing the stream.
+      }
+      if (terminalReceived) {
+        // A terminal event already confirms the outcome. Transport teardown
+        // after it must not turn a completed response into a network failure.
+        void reader.cancel?.().catch(() => undefined);
+        return;
       }
     }
     if (done) break;
@@ -1497,6 +1369,7 @@ export const api = {
     request<{ sessions: AgentSession[] }>("/api/agent/sessions"),
   getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
   getAgentModel: () => request<{ model: AgentModelSummary }>("/api/agent/model"),
+  getAgentModels: () => request<{ models: AgentModelSummary[]; defaultModelId: string | null }>("/api/agent/models"),
   listAgentContexts: (options: {
     type?: AgentContextType;
     search?: string;
@@ -1528,14 +1401,15 @@ export const api = {
     request<{ run: AgentActiveRun | null }>(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}/active-run`,
     ),
-  createAgentSession: (title?: string) =>
+  createAgentSession: (title?: string, modelId?: string | null) =>
     request<{ session: AgentSession }>("/api/agent/sessions", {
       method: "POST",
       body: {
         ...(title ? { title } : {}),
+        ...(modelId ? { modelId } : {}),
       },
     }),
-  updateAgentSession: (sessionId: string, payload: { title?: string; pinned?: boolean }) =>
+  updateAgentSession: (sessionId: string, payload: { title?: string; pinned?: boolean; modelId?: string | null }) =>
     request<{ session: AgentSession }>(
       `/api/agent/sessions/${encodeURIComponent(sessionId)}`,
       { method: "PATCH", body: payload },
@@ -1576,29 +1450,6 @@ export const api = {
   }),
   deleteResume: (id: string) =>
     request<{ deleted: boolean }>(`/api/resumes/${id}`, { method: "DELETE" }),
-  listVersions: (id: string) =>
-    request<{ versions: ResumeVersion[] }>(`/api/resumes/${id}/versions`),
-  createVersion: (id: string, name?: string) =>
-    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions`, {
-      method: "POST",
-      body: name === undefined ? undefined : { name },
-    }),
-  renameVersion: (id: string, versionNo: number, name: string) =>
-    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`, {
-      method: "PATCH",
-      body: { name },
-    }),
-  deleteVersion: (id: string, versionNo: number) =>
-    request<{ deleted: boolean }>(`/api/resumes/${id}/versions/${versionNo}`, {
-      method: "DELETE",
-    }),
-  getResumeVersion: (id: string, versionNo: number) =>
-    request<{ version: ResumeVersion }>(`/api/resumes/${id}/versions/${versionNo}`),
-  restoreVersion: (id: string, versionNo: number) =>
-    request<{ resume: ResumeRecord }>(
-      `/api/resumes/${id}/versions/${versionNo}/restore`,
-      { method: "POST" },
-    ),
   getShareState: (id: string) =>
     request<{ share: ResumeShareState | null }>(`/api/resumes/${id}/share`),
   createShare: (
@@ -1741,10 +1592,8 @@ export const api = {
   getDataset: (id: string) => request<DatasetRecord>(`/api/datasets/${id}`),
   replaceDataset: (id: string, file: File, revision: string, key: string) => {
     const formData = new FormData(); formData.append("file",file); formData.append("confirm_replace","true");
-    return request<DatasetReplacement>(`/api/datasets/${id}/replacements`, {method:"POST",formData,headers:{"If-Match":`"dataset-${id}-${revision}"`,"Idempotency-Key":key}});
+    return request<DatasetRecord>(`/api/datasets/${id}/file`, {method:"PUT",formData,headers:{"If-Match":`"dataset-${id}-${revision}"`,"Idempotency-Key":key}});
   },
-  retryDatasetReplacement: (id:string, rid:string, revision:string, requestId:string) => request<DatasetReplacement>(`/api/datasets/${id}/replacements/${rid}/retry`,{method:"POST",body:{request_id:requestId,confirm_replace:true},headers:{"If-Match":`"dataset-${id}-${revision}"`}}),
-  discardDatasetReplacement: (id:string,rid:string) => request(`/api/datasets/${id}/replacements/${rid}`,{method:"DELETE"}),
   getDatasetContent: (id: string) =>
     request<DatasetContent>(`/api/datasets/${id}/content`),
   listJobDescriptions: (
@@ -1840,7 +1689,6 @@ export const api = {
   createJobApplication: (payload: {
     job_description_id: string;
     resume_id?: string | null;
-    resume_version_id?: string | null;
     current_stage_type?: LegacyApplicationStageType;
     current_round_no?: number | null;
     current_stage_label?: string;
@@ -1863,7 +1711,6 @@ export const api = {
       notes: string | null;
       applied_at: string | null;
       resume_id: string | null;
-      resume_version_id: string | null;
     }> & { base_lock_version: number },
   ) =>
     request<{ application: JobApplicationRecord }>(`/api/job-applications/${id}`, {
@@ -1892,7 +1739,6 @@ export const api = {
       interview_round_no?: number | null;
       applied_at?: string | null;
       resume_id?: string | null;
-      resume_version_id?: string | null;
       base_lock_version: number;
     },
   ) =>
@@ -2200,95 +2046,23 @@ export const api = {
       { method: "PATCH", body: { action } },
     ),
   adminStats: () => request<AdminStatsResponse>("/api/auth/admin/stats"),
-  getChatCapability: () =>
-    request<ChatCapability>("/api/admin/llm/capabilities/chat"),
-  getModelCapabilities: () =>
-    request<ModelCapabilityList>("/api/admin/llm/capabilities"),
-  getModelCatalog: () => request<ModelCatalog>("/api/admin/llm/catalog"),
-  getChatCatalog: () => request<ChatCatalog>("/api/admin/llm/catalog/chat"),
-  createLlmModel: (payload: LlmModelCreatePayload) =>
-    request<{ model: LlmModelConfig }>("/api/admin/llm/models", {
-      method: "POST",
-      body: payload,
-    }),
-  updateLlmModel: (id: string, payload: LlmModelPatchPayload) =>
-    request<{ model: LlmModelConfig; validationCallId: string | null }>(
-      `/api/admin/llm/models/${id}`,
-      {
-        method: "PATCH",
-        body: payload,
-      },
-    ),
-  testLlmModel: (id: string) =>
-    request<{ ok: true; callId: string }>(`/api/admin/llm/models/${id}/test`, {
-      method: "POST",
-    }),
-  bindChatModel: (id: string) =>
-    request<{ activeModel: LlmModelConfig; callId: string }>(
-      `/api/admin/llm/models/${id}/activate`,
-      {
-        method: "POST",
-      },
-    ),
-  bindModelCapability: (
-    capability: Exclude<ModelCapability, "chat">,
-    id: string,
-    baseConfigVersion?: number,
-    baseBindingVersion?: number,
-  ) =>
-    request<{
-      capability: ModelCapability;
-      activeModelId: string;
-      bindingVersion: number;
-      validationId: string;
-      callId: string;
-      activeModel: CapabilityModelConfig;
-    }>(`/api/admin/llm/capabilities/${capability}/binding`, {
-      method: "PUT",
-      body: {
-        modelConfigId: id,
-        ...(baseConfigVersion ? { baseConfigVersion } : {}),
-        ...(baseBindingVersion ? { baseBindingVersion } : {}),
-      },
-    }),
-  testModelCapability: (
-    id: string,
-    capability: ModelCapability,
-    baseConfigVersion?: number,
-  ) =>
-    request<{
-      ok: true;
-      capability: ModelCapability;
-      validationId: string;
-      callId: string;
-      configVersion: number;
-    }>(`/api/admin/llm/models/${id}/tests`, {
-      method: "POST",
-      body: {
-        capability,
-        ...(baseConfigVersion ? { baseConfigVersion } : {}),
-      },
-    }),
-  deleteLlmModel: (id: string) =>
-    request<void>(`/api/admin/llm/models/${id}`, { method: "DELETE" }),
-  listLlmCalls: (params: LlmCallQuery = {}) => {
-    const search = new URLSearchParams();
-    if (params.source) search.set("source", params.source);
-    if (params.status) search.set("status", params.status);
-    if (params.modelConfigId) search.set("modelConfigId", params.modelConfigId);
-    if (params.userId) search.set("userId", params.userId);
-    if (params.callId) search.set("callId", params.callId);
-    if (params.from) search.set("from", params.from);
-    if (params.to) search.set("to", params.to);
-    if (params.cursor) search.set("cursor", params.cursor);
-    if (params.limit) search.set("limit", String(params.limit));
-    const suffix = search.toString();
-    return request<{
-      calls: LlmCallRecord[];
-      summary: LlmCallSummary;
-      nextCursor: string | null;
-    }>(`/api/admin/llm/calls${suffix ? `?${suffix}` : ""}`);
-  },
+  getLlmCatalog: () => request<LlmCatalog>("/api/admin/llm/catalog"),
+  listLlmConnections: () => request<{ connections: LlmConnection[] }>("/api/admin/llm/connections"),
+  createLlmConnection: (body: { providerCode: string; name: string; apiKey: string; settings?: Record<string, unknown>; enabled?: boolean }) => request<{ connection: LlmConnection }>("/api/admin/llm/connections", { method: "POST", body }),
+  updateLlmConnection: (id: string, body: { baseVersion: number; name?: string; apiKey?: string; settings?: Record<string, unknown>; enabled?: boolean }) => request<{ connection: LlmConnection }>(`/api/admin/llm/connections/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  syncLlmCatalog: (id: string) => request<{ synced: number; unchanged: boolean }>(`/api/admin/llm/connections/${encodeURIComponent(id)}/sync`, { method: "POST" }),
+  listLlmModels: () => request<{ models: LlmModel[] }>("/api/admin/llm/models"),
+  createLlmModel: (body: { displayName: string; developerName?: string | null }) => request<{ model: LlmModel }>("/api/admin/llm/models", { method: "POST", body }),
+  updateLlmModel: (id: string, body: { displayName?: string; developerName?: string | null }) => request<{ model: LlmModel }>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  listLlmRoutes: () => request<{ routes: LlmRoute[] }>("/api/admin/llm/routes"),
+  createLlmRoute: (body: { modelId: number; connectionId: number; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId?: string | null; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>("/api/admin/llm/routes", { method: "POST", body }),
+  updateLlmRoute: (id: string, body: { enabled?: boolean; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  listLlmBindings: () => request<{ bindings: LlmBinding[] }>("/api/admin/llm/use-cases"),
+  putLlmBinding: (useCase: string, routeId: string, body: { protocolCode: string; priority: number; enabled: boolean }) => request<{ binding: LlmBinding }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "PUT", body: { useCase, routeId: Number(routeId), ...body } }),
+  updateLlmBinding: (useCase: string, routeId: string, body: { priority?: number; enabled?: boolean }) => request<{ binding: LlmBinding }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "PATCH", body }),
+  deleteLlmBinding: (useCase: string, routeId: string) => request<void>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "DELETE" }),
+  probeLlmBinding: (useCase: string, routeId: string) => request<{ callId: string; validated: boolean }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}/probe`, { method: "POST" }),
+  listLlmCalls: (cursor?: string) => request<{ calls: LlmCallRecord[]; nextCursor: string | null; summary: { callCount: number } }>(`/api/admin/llm/calls${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
   reportClientEvent: (payload: {
     eventType: "unhandled_error" | "unhandled_rejection" | "render_error" | "api_5xx";
     errorName: string;

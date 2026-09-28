@@ -20,7 +20,9 @@ from linkresume.modules.job_descriptions import routes as job_description_routes
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.job_descriptions.schemas import JobDescriptionDraft
 from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import LLMCapabilityBinding, LLMModelConfig
+from linkresume.modules.llm.models import LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, JOB_IMAGE_EXTRACTION, validation_fingerprint
+from linkresume.core.database import utc_now
 from tests.fakes import FakeRedis
 
 
@@ -48,8 +50,6 @@ class DraftGateway:
         return GatewayResult(
             content=content,
             usage=GatewayUsage(20, 8),
-            input_price_per_million=Decimal("1"),
-            output_price_per_million=Decimal("2"),
         )
 
     async def start_stream(self, **_kwargs):
@@ -76,35 +76,16 @@ def build_app(*, llm_gateway=None, with_llm_key: bool = False):
 
 def configure_draft_models(app) -> None:
     with app.state.session_factory() as db:
-        chat = LLMModelConfig(
-            adapter="deepseek",
-            model_call_name="chat-model",
-            model_name="deepseek/chat-model",
-            encrypted_api_key=app.state.llm_service.encrypt_credential(
-                "fictional-chat-key"
-            ),
-            enabled=True,
-            priority=100,
-            config_version=1,
-        )
-        vision = LLMModelConfig(
-            adapter="deepseek",
-            model_call_name="vision-model",
-            model_name="deepseek/vision-model",
-            encrypted_api_key=app.state.llm_service.encrypt_credential(
-                "fictional-vision-key"
-            ),
-            enabled=True,
-            priority=100,
-            config_version=1,
-        )
-        db.add_all([chat, vision])
-        db.flush()
-        chat_binding = db.get(LLMCapabilityBinding, "chat")
-        image_binding = db.get(LLMCapabilityBinding, "job_image_structuring")
-        assert chat_binding is not None and image_binding is not None
-        chat_binding.model_config_id = chat.id
-        image_binding.model_config_id = vision.id
+        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        db.add(connection); db.flush()
+        for use_case, target in [(JOB_TEXT_EXTRACTION, "chat-model"), (JOB_IMAGE_EXTRACTION, "vision-model")]:
+            model = LLMModel(display_name=target)
+            db.add(model); db.flush()
+            route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=target, origin="manual", enabled=True, target_available=True)
+            db.add(route); db.flush()
+            binding = LLMUseCaseRoute(use_case=use_case, route_id=route.id, protocol_code="openai_chat", priority=100, enabled=True, validated_at=utc_now())
+            db.add(binding); db.flush()
+            binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
 
 
@@ -204,8 +185,8 @@ def test_parse_text_and_image_drafts_use_separate_models_without_creating_jobs()
         assert image_response.json()["inputType"] == "image"
 
         assert [call["model"] for call in gateway.calls] == [
-            "deepseek/chat-model",
-            "deepseek/vision-model",
+            "chat-model",
+            "vision-model",
         ]
         image_messages = gateway.calls[1]["messages"]
         assert isinstance(image_messages[-1].content, list)

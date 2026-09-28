@@ -988,3 +988,24 @@
 .agent-trace-list td button { border: 0; background: transparent; color: #245caa; text-decoration: underline; }
 .agent-trace-detail header { display: flex; align-items: center; justify-content: space-between; }
 .agent-trace-detail li { margin: 8px 0; overflow-wrap: anywhere; }
+
+/* Model governance: connections, logical models, routes and use cases. */
+.admin-llm-panel { display: grid; gap: 1rem; min-width: 0; }
+.admin-llm-panel .admin-page-heading { margin-bottom: .5rem; }
+.admin-llm-panel .admin-surface { min-width: 0; overflow-x: auto; }
+.admin-llm-panel .admin-surface > h2 { margin: 0; font-size: 1rem; }
+.admin-llm-panel .admin-surface > p { color: var(--admin-muted); font-size: .78rem; line-height: 1.6; }
+.admin-llm-panel .log-filter-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); align-items: end; gap: .75rem; margin: 1rem 0; padding: 0; }
+.admin-llm-panel .log-filter-form label { display: grid; gap: .4rem; min-width: 0; color: var(--admin-muted); font-size: .73rem; }
+.admin-llm-panel .log-filter-form input,
+.admin-llm-panel .log-filter-form select { width: 100%; min-width: 0; height: 2.4rem; border: 1px solid var(--admin-line); border-radius: .55rem; background: var(--surface-card); padding: 0 .65rem; color: var(--admin-ink); }
+.admin-llm-panel button { min-height: 2.25rem; border: 1px solid var(--admin-line); border-radius: .55rem; background: var(--surface-card); padding: .35rem .65rem; color: var(--admin-ink); cursor: pointer; }
+.admin-llm-panel button + button { margin-left: .35rem; }
+.admin-llm-panel button:disabled { opacity: .55; cursor: wait; }
+.admin-llm-panel table { width: 100%; min-width: 42rem; border-collapse: collapse; font-size: .72rem; }
+.admin-llm-panel th,
+.admin-llm-panel td { border-bottom: 1px solid var(--admin-line); padding: .65rem .55rem; text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
+.admin-llm-panel th { color: var(--admin-muted); font-weight: 650; white-space: nowrap; }
+.admin-llm-panel td:last-child { white-space: nowrap; }
+.admin-llm-panel td input[type="number"] { width: 5rem; min-height: 2.25rem; margin-right: .35rem; border: 1px solid var(--admin-line); border-radius: .55rem; background: var(--surface-card); padding: .35rem; color: var(--admin-ink); }
+.admin-llm-panel .llm-error { color: #a5423a; }

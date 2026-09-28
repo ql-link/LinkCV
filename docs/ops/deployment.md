@@ -8,7 +8,7 @@ Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件
 
 其中 `0051` 的发布门禁还核对 `user_profiles` 的画像目标列和已删除旧列。未应用但已经是完整目标结构时允许 migration 自身做 no-op；已应用后若目标列缺失或旧列残留，runner 会在任何后续 DDL 前停止。`0065` 门禁同样会拦截提前删除或在 revision 已应用后仍残留的 `agent_sessions.resume_id`。
 
-仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先停止会读写旧 schema 的当前 LinkResume Web、Worker 和 Pi，再用新 `linkresume` 镜像以显式目标参数运行迁移 runner、更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `pi_agent` 模型配置与 provider 映射，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。首次从 SQLite `linkcv` 切换是例外：旧栈在独立导入窗口前保持服务。
+仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先停止会读写旧 schema 的当前 LinkResume Web、Worker 和 Pi，再用新 `linkresume` 镜像以显式目标参数运行迁移 runner、更新 Compose，最后等待 FastAPI `/api/health`、Pi 容器健康状态和本环境 Promtail 正常；构建镜像阶段不连接数据库。发布成功时单独检查 FastAPI `/api/agent/readiness` 并报告非 200 状态，不以模型尚未配置或探测过期阻止部署。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `assistant_conversation` 用例存在可用的 Pi 对话线路，但不发起供应商模型调用；非 200 表示对话能力不可用，仍需配置或排障，不代表基础服务部署失败。首次从 SQLite `linkcv` 切换是例外：旧栈在独立导入窗口前保持服务。
 
 Dev 与 Production Compose 各自部署一个 `grafana/promtail:2.9.8`，读取 LinkResume 应用挂载的环境独立日志命名卷，并把 positions 保存到另一个独立命名卷。Promtail 只提升 `service`、`environment`、`log_type`、`level` 四个低基数字段为 Loki labels；request/user/target/operation 等高基数字段保留在 JSON body。Dev 推送并查询 `http://tolink-dev-loki:3100`，Production 使用 `http://tolink-loki:3100`；两者都是 LinkRag 已有、保留七天的共享实例，本仓库不创建或修改 Loki。应用写本地 JSONL，Promtail 异步采集，因此 Loki 暂时不可用不会阻断业务请求。
 
@@ -64,11 +64,11 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 ### 首次 Production SQLite 切换
 
-旧 Express Production 使用 `/opt/tolink/LinkResume/data/resume_app.sqlite`。首次切换到 FastAPI/MySQL 时，维护者手动运行 Production Job 并显式开启 `IMPORT_LEGACY_SQLITE`；该参数默认关闭，Pipeline 也明确拒绝 webhook 构建开启它，因此自动构建不会重复导入。远端脚本在旧应用继续服务时完成镜像构建、空 `linkresume` database 初始化和 Alembic 升级；进入导入窗口后才短暂停止旧容器，通过 SQLite `.backup` 合并 WAL 并生成一致只读快照。随后先对全部旧记录执行 dry-run，最后仅在目标 `users`、`resumes`、`resume_versions` 都为空时用单事务导入。快照或导入失败会立即恢复旧容器。
+旧 Express Production 使用 `/opt/tolink/LinkResume/data/resume_app.sqlite`。首次切换到 FastAPI/MySQL 时，维护者手动运行 Production Job 并显式开启 `IMPORT_LEGACY_SQLITE`；该参数默认关闭，Pipeline 也明确拒绝 webhook 构建开启它，因此自动构建不会重复导入。远端脚本在旧应用继续服务时完成镜像构建、空 `linkresume` database 初始化和 Alembic 升级；进入导入窗口后才短暂停止旧容器，通过 SQLite `.backup` 合并 WAL 并生成一致只读快照。随后先对全部旧记录执行 dry-run，最后仅在目标 `users`、`resumes`、`resume_templates` 都为空时用单事务导入。快照或导入失败会立即恢复旧容器。
 
 导入保留账号邮箱、bcrypt 密码摘要、账号时间、简历标题、Markdown 和可映射样式；每份简历创建一个“初始版本”。旧字符串主键会映射到新的自增主键。登录同时兼容 bcrypt 与 Argon2，旧账号首次成功登录后立即把摘要升级为 Argon2。旧 SQLite 会话不迁移，切换后用户必须重新登录。任何记录无法安全转换、目标表非空或事务失败都会停止发布，不允许部分导入。
 
-首次切换完成后，确认 MySQL revision、用户/简历/版本数量、登录、简历读取、Worker、Pi、Promtail、`http://127.0.0.1:4174/api/health` 和 `/api/agent/readiness` 全部正确，才允许恢复正常自动发布。旧 SQLite 与切换备份不得立即删除。
+首次切换完成后，确认 MySQL revision、用户/简历/版本数量、登录、简历读取、Worker、Pi、Promtail 和 `http://127.0.0.1:4174/api/health` 正常，才允许恢复正常自动发布。另行核对 `/api/agent/readiness`；如果模型尚未配置或探测过期，记录并处理对话能力不可用状态，不把它误判为基础部署失败。旧 SQLite 与切换备份不得立即删除。
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
@@ -105,7 +105,7 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前仓库 head `0084`；`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹，并只对已登记的 Development 旧 `0059` 完整结构执行缺失基础 DDL 的增量补齐；已有 `user_preferences` 不删除。`0063` 为独立简历翻译提案增加新标题与结果简历字段，`0064` 增加分享页 PDF 下载权限，`0065` 先把旧绑定回填为消息上下文，再删除 Agent 会话上已废弃的持久化简历绑定字段及其复合索引，会话、运行和消息记录保留。`0066`–`0081` 分批扩充、调整和退役简历模板目录；`0082` 将面试录制或上传的音视频素材统一迁入 `user_dataset`，并增加素材类型、面试关联、时长和旧素材 ID 的完整性约束。 `0083` 新增 Agent 操作轨迹；`0084` 建立当前简历复制幂等和求职可选关联。
+- 当前仓库 head `0094`；`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹，并只对已登记的 Development 旧 `0059` 完整结构执行缺失基础 DDL 的增量补齐；已有 `user_preferences` 不删除。`0063` 为独立简历翻译提案增加新标题与结果简历字段，`0064` 增加分享页 PDF 下载权限，`0065` 先把旧绑定回填为消息上下文，再删除 Agent 会话上已废弃的持久化简历绑定字段及其复合索引，会话、运行和消息记录保留。`0066`–`0081` 分批扩充、调整和退役简历模板目录；`0082` 将面试录制或上传的音视频素材统一迁入 `user_dataset`，并增加素材类型、面试关联、时长和旧素材 ID 的完整性约束。 `0083` 新增 Agent 操作轨迹；`0084` 建立当前简历复制幂等和求职可选关联；`0094` 新增应用内公告与用户已读时间点两张空表，属于纯加法变更。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。
@@ -119,3 +119,37 @@ CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并�
 - 插件发布失败不覆盖 `current.json` 时继续使用上一版本；应用镜像回滚不删除 `system/plugin-releases/` 对象。当前版本内容有误时发布更高补丁版本，不覆盖同版本 ZIP。
 
 Promtail 配置可以复用到后续系统级日志采集：在 `deploy/observability/promtail-config.yml` 增加新的 scrape job，并在 Compose 增加最小只读 mount 即可继续推送到相同 Loki。新增宿主机 journal 或 `/var/log` 采集前必须单独评审读取权限、日志量、敏感字段和 label 基数；不能直接把整台宿主机目录授权给当前容器。
+
+
+## 资料操作表退役（0089）
+
+历史 Dev 数据库已应用过 `0088` 的供应商目录迁移，因此迁移链保留了该 revision 的原始 SQL：`0087 → 0088 → 0089 → 0090 → 0091 → 0092 → 0093 → 0094`。从 `0087` 升级的其他环境也会执行 `0088`；它会清空旧模型配置和验证记录，而 `0091` 会重建旧调用日志表。`0093` 只在历史 `llm_provider_models` 与 `llm_providers` 均为空时删除它们；非空时停止迁移并先核对、导出。升级前须备份数据库，核对旧模型表、调用日志、`resume_versions`、运行中 Agent 任务及对象存储；不能仅改写 `alembic_version` 跳过 `0088`。
+
+Dev 发布脚本在停止旧容器前使用新镜像运行只读 Alembic 预检，检查目标版本链、已知 schema 标记以及待退役表是否仍有记录。预检失败时旧服务保持运行；停机后正式迁移会重复这些检查。Jenkins 的 `RUN_TESTS` 默认为关闭；打开它需要 Jenkins 执行节点具备 Node/npm、uv 和相应测试依赖，PR/push 的完整质量检查由 GitHub Actions 执行。
+
+`0089` 删除旧的 `dataset_replacements` 和 `dataset_object_cleanup`，需要 API、Web 和 Worker 同批切换。先备份数据库及对象存储，停止旧 API 写入与全部解析 Worker，并等待在途上传/解析退出。不要在旧进程仍写入时清空或删除表。
+
+使用目标环境的同一配置先只读检查，再执行一次性收尾。例如共享 Dev 显式设置 `LINKRESUME_ENV_FILE=.env.development`：
+
+```bash
+LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py
+LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/release/retire_dataset_operations.py --execute
+LINKRESUME_ENV_FILE=.env.development npm run db:migrate
+```
+
+收尾命令保留当前资料及正在引用的源文件/正文，放弃尚未采用的旧候选，同步删除无引用对象及候选任务，最后清空两张旧操作表。默认只打印数量，不修改数据；删除失败会中止数据库事务，可在 MinIO 恢复后重跑。它只用于这次升级，不作为定时任务运行。`0089` 在任何 DROP 前检查两张表必须为空；空库升级无需收尾。MySQL 若只提交了首条 DROP，可重跑该迁移完成第二张表删除。
+
+升级后启动新 API 与 Worker，再切换 Web。资料替换失败不再恢复旧文件；旧客户端的替换操作接口已移除。不能直接回滚到依赖旧表的应用；恢复依赖备份，后续修正使用新的向前迁移。同步操作仍可能在网络或进程中断时部分完成，此类异常记录日志，不引入持久化清理队列。
+
+## 面试素材与简历历史表退役（0090）
+
+`0090` 删除 `interview_assets`、`resume_versions` 以及 `job_applications.resume_version_id` 的外键、索引和列。当前简历和 `resume_id` 关联保留；历史快照永久删除，旧版本读取、复制及恢复接口全部移除。恢复历史内容只能使用升级前备份。
+
+维护窗口先备份数据库与对象存储，停止旧 API 和 Worker 并等待在途操作结束；按上一节完成 `0089` 收尾。使用新代码中的一次性脚本将旧面试素材迁到现有 `user_dataset`（默认 dry-run）：
+
+```bash
+uv run --directory apps/backend python scripts/release/migrate_interview_assets.py
+uv run --directory apps/backend python scripts/release/migrate_interview_assets.py --execute
+```
+
+确认脚本成功、旧素材表为空后，通过部署迁移入口升级至 `0090`，再启动配套新 API、Web 和 Worker。迁移会在任何 DDL 前阻止非空旧素材表被删除；空库不需要运行脚本。旧应用不能在删表后重新启动。MySQL DDL 不支持事务回滚，部分失败必须先核对实际 schema 与 revision，再修复或从备份恢复，不能盲目重跑。

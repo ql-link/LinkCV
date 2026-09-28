@@ -1,68 +1,56 @@
-import litellm
+import asyncio
+
+import httpx
 import pytest
 
-from linkresume.modules.llm.catalog import (
-    CHAT_ADAPTERS,
-    assemble_model_identifier,
-    chat_model_suggestions,
-)
+from linkresume.modules.llm.catalog import fetch_catalog
+from linkresume.modules.llm.providers import inference_base_url, validate_settings
 
 
-def test_deepseek_identifier_keeps_adapter_and_call_name_separate() -> None:
-    assert (
-        assemble_model_identifier("deepseek", "deepseek-v4-flash")
-        == "deepseek/deepseek-v4-flash"
-    )
+def test_aihubmix_catalog_uses_provider_ids_and_simple_price():
+    async def handler(request):
+        assert request.url.host == "aihubmix.com"
+        assert request.url.path == "/api/v1/models"
+        assert request.headers["authorization"] == "Bearer fictional-key"
+        return httpx.Response(200, json={"data": [{"model_id": "vendor/model", "model_name": "示例模型", "vendor": "示例厂商", "pricing": {"input": 1, "output": 2}}]})
+    result = asyncio.run(fetch_catalog("aihubmix", "fictional-key", transport=httpx.MockTransport(handler)))
+    assert result.models[0].model_id == "vendor/model"
+    assert result.models[0].pricing["input_per_million"] == "1"
 
 
-def test_qwen_identifier_uses_dashscope_provider_route() -> None:
-    assert (
-        assemble_model_identifier("dashscope", "qwen-plus")
-        == "dashscope/qwen-plus"
-    )
+def test_tiered_price_is_not_reduced_to_flat_cost():
+    async def handler(_request):
+        return httpx.Response(200, json={"data": [{"model_id": "vendor/model", "pricing": {"input": 1, "output": 2, "tiers": [{"above": 100000}]}}]})
+    result = asyncio.run(fetch_catalog("aihubmix", "fictional-key", transport=httpx.MockTransport(handler)))
+    assert "input_per_million" not in result.models[0].pricing
 
 
-@pytest.mark.parametrize(
-    "adapter,model",
-    [
-        ("unknown", "model"),
-        ("deepseek", "deepseek/deepseek-chat"),
-        ("deepseek", "x" * 121),
-    ],
-)
-def test_invalid_adapter_or_ambiguous_call_name_is_rejected(
-    adapter: str,
-    model: str,
-) -> None:
+def test_catalog_rejects_duplicate_ids():
+    async def handler(_request):
+        return httpx.Response(200, json={"data": [{"id": "same"}, {"id": "same"}]})
+    with pytest.raises(ValueError, match="duplicate"):
+        asyncio.run(fetch_catalog("siliconflow", "fictional-key", transport=httpx.MockTransport(handler)))
+
+
+def test_aihubmix_alternate_endpoint_applies_to_catalog_and_inference():
+    async def handler(request):
+        assert request.url.host == "api.inferera.com"
+        return httpx.Response(200, json={"data": []})
+
+    settings = {"endpoint": "alternate"}
+    result = asyncio.run(fetch_catalog(
+        "aihubmix", "fictional-key", settings=settings,
+        transport=httpx.MockTransport(handler),
+    ))
+    assert result.models == ()
+    assert inference_base_url("aihubmix", settings) == "https://api.inferera.com/v1"
+
+
+@pytest.mark.parametrize("settings", [
+    {"endpoint": "https://example.invalid"},
+    {"base_url": "https://example.invalid"},
+    {"endpoint": "alternate", "other": True},
+])
+def test_aihubmix_endpoint_rejects_arbitrary_destinations(settings):
     with pytest.raises(ValueError):
-        assemble_model_identifier(adapter, model)
-
-
-def test_catalog_only_returns_chat_models_for_supported_adapter(monkeypatch) -> None:
-    monkeypatch.setattr(
-        litellm,
-        "model_cost",
-        {
-            "deepseek/deepseek-chat": {
-                "litellm_provider": "deepseek",
-                "mode": "chat",
-            },
-            "deepseek/deepseek-embedding": {
-                "litellm_provider": "deepseek",
-                "mode": "embedding",
-            },
-            "openai/gpt-fictional": {
-                "litellm_provider": "openai",
-                "mode": "chat",
-            },
-            "dashscope/qwen-plus": {
-                "litellm_provider": "dashscope",
-                "mode": "chat",
-            },
-        },
-    )
-
-    assert chat_model_suggestions("deepseek") == ["deepseek-chat"]
-    assert chat_model_suggestions("dashscope") == ["qwen-plus"]
-    assert "deepseek" in {adapter.code for adapter in CHAT_ADAPTERS}
-    assert "dashscope" in {adapter.code for adapter in CHAT_ADAPTERS}
+        validate_settings("aihubmix", settings)

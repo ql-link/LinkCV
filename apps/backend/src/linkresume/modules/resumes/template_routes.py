@@ -2,16 +2,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from linkresume.application.resumes.service import (
-    parse_decimal_id,
-    parse_persisted_template_snapshot,
-)
+from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.identity.dependencies import get_current_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import ResumeTemplate
+from linkresume.modules.resumes.template_compilation import (
+    compiled_template_layout_plan,
+    validated_template_snapshot,
+)
 from linkresume.modules.resumes.schemas import (
     ResumeTemplateListResponse,
     ResumeTemplateRecord,
@@ -23,10 +23,7 @@ router = APIRouter(prefix="/resume-templates", tags=["resume-templates"])
 
 def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
     try:
-        snapshot = parse_persisted_template_snapshot(
-            template.data_json,
-            template.style_json,
-        )
+        snapshot = validated_template_snapshot(template.data_json, template.style_json)
     except (TypeError, ValueError) as error:
         raise ApiError(500, "TEMPLATE_SCHEMA_INVALID") from error
     return ResumeTemplateRecord(
@@ -38,7 +35,7 @@ def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
         use_cases=template.use_cases_json or [],
         data=snapshot.data,
         style=snapshot.style,
-        layout_plan=compile_layout_plan(snapshot.data, snapshot.style),
+        layout_plan=compiled_template_layout_plan(template.data_json, template.style_json),
     )
 
 

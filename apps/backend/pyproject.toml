@@ -26,6 +26,7 @@ dependencies = [
   "aiokafka>=0.12,<1.0",
   "pypdfium2>=4.30,<5.0",
   "pillow>=11,<13",
+  "websockets>=16.1,<17",
 ]
 
 [dependency-groups]

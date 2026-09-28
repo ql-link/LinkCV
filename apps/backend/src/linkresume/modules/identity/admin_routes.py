@@ -1,6 +1,7 @@
 """Admin-only routes for user management and system overview."""
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import String, cast, func, select
@@ -11,6 +12,13 @@ from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.core.redis import get_redis
 from linkresume.core.security import revoke_user_sessions
+from linkresume.modules.admin_insights.llm import (
+    call_rows as llm_call_rows,
+    calls_since as llm_calls_since,
+    summarize as llm_summary,
+    user_totals as user_llm_totals,
+)
+from linkresume.modules.admin_insights.window import Window
 from linkresume.modules.identity.admin_schemas import (
     AdminStatsResponse,
     AdminStatusUpdateRequest,
@@ -126,6 +134,7 @@ def get_user_detail(
     resume_count = db.scalar(
         select(func.count(Resume.id)).where(Resume.user_id == user_id)
     ) or 0
+    llm_call_count, llm_costs = user_llm_totals(db, user.id)
 
     return AdminUserDetail(
         id=user.id,
@@ -134,7 +143,8 @@ def get_user_detail(
         is_admin=bool(user.is_admin),
         status=user.status,
         resume_count=resume_count,
-        llm_call_count=0,  # Placeholder - no LLM call log table yet
+        llm_call_count=llm_call_count,
+        llm_costs=llm_costs,
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
@@ -216,11 +226,16 @@ def admin_stats(
     ) or 0
 
     total_resumes = db.scalar(select(func.count(Resume.id))) or 0
+    now = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_costs = llm_summary(llm_call_rows(db, Window(month, now)))["costs"]
+    usd = next((item["amount"] for item in month_costs if item["currency"] == "USD"), "0")
 
     return AdminStatsResponse(
         total_users=total_users,
         active_users_7d=active_users_7d,
         total_resumes=total_resumes,
-        llm_calls_today=0,
-        estimated_cost_month="$0.00",
+        llm_calls_today=llm_calls_since(db, today),
+        estimated_cost_month=f"${Decimal(usd):.2f}",
     )

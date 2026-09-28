@@ -18,25 +18,6 @@ const mockRegularUser = {
   is_admin: false,
 };
 
-const emptyChatCapability = {
-  capability: "chat" as const,
-  activeModelId: null,
-  activeModel: null,
-  models: [],
-};
-
-const chatCatalog = {
-  capability: "chat" as const,
-  adapters: [
-    {
-      code: "deepseek" as const,
-      label: "DeepSeek",
-      requiresApiKey: true,
-      models: ["deepseek-chat"],
-    },
-  ],
-};
-
 const emptyStats: AdminStatsResponse = {
   total_users: 0,
   active_users_7d: 0,
@@ -47,8 +28,11 @@ const emptyStats: AdminStatsResponse = {
 
 function mockCommonApis() {
   vi.spyOn(api, "adminLogin").mockResolvedValue({ user: mockAdminUser });
-  vi.spyOn(api, "getChatCapability").mockResolvedValue(emptyChatCapability);
-  vi.spyOn(api, "getChatCatalog").mockResolvedValue(chatCatalog);
+  vi.spyOn(api, "getLlmCatalog").mockResolvedValue({ useCases: [], providers: [] });
+  vi.spyOn(api, "listLlmConnections").mockResolvedValue({ connections: [] });
+  vi.spyOn(api, "listLlmModels").mockResolvedValue({ models: [] });
+  vi.spyOn(api, "listLlmRoutes").mockResolvedValue({ routes: [] });
+  vi.spyOn(api, "listLlmBindings").mockResolvedValue({ bindings: [] });
   vi.spyOn(api, "adminStats").mockResolvedValue(emptyStats);
   vi.spyOn(api, "adminLogSummary").mockResolvedValue({
     system: { total: 2, warnings: 1, errors: 0 },
@@ -172,13 +156,7 @@ describe("AdminApp access control", () => {
     vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
     vi.spyOn(api, "listLlmCalls").mockResolvedValue({
       calls: [],
-      summary: {
-        callCount: 0,
-        incompleteMeteringCount: 0,
-        inputTokens: null,
-        outputTokens: null,
-        estimatedCostUsd: null,
-      },
+      summary: { callCount: 0 },
       nextCursor: null,
     });
     window.history.replaceState(null, "", "/admin/logs");

@@ -1,8 +1,8 @@
 # 本地开发与配置
 
-简历当前内容切换需要 schema 0084；RESUME_VERSION_LIMIT 已删除，不再配置历史名额。小程序使用 /api/miniprogram/v2/resumes 与 lock_version，旧端点在切换构建中返回 426；发布前须先升级数据库，再同步切换 API 与客户端。
+简历当前内容切换由 schema `0084` 完成；`RESUME_VERSION_LIMIT` 已删除，不再配置历史名额。随后 `0089` 与 `0090` 退役资料替换/清理表、旧面试素材表和简历历史表，旧版本接口已移除。小程序使用 `/api/miniprogram/v2/resumes` 与 `lock_version`，旧端点在切换构建中返回 426；发布前须先升级数据库，再同步切换 API 与客户端。
 
-当前简历关联迁移随 0084 执行：停止旧写入并备份，核实目标 current 后升级，将旧求职引用映射为同一所有者的 resume_id；无法映射者保持未关联且保留原引用供核对。随后切换 API、Web 和小程序再开放写入。无需附件捕获或图片复制工具；历史表暂留，不执行物理清理。迁移 forward-only，不能直接回滚到依赖旧关联语义的应用。
+当前简历关联迁移随 `0084` 执行：停止旧写入并备份，核实目标 current 后升级，将旧求职引用映射为同一所有者的 `resume_id`；无法映射者保持未关联且保留原引用供核对。既有环境升级到 `0089`/`0090` 前，还必须停止旧 API 和 Worker，完成资料操作收尾与面试素材迁移；具体顺序和不可回退边界见[部署说明](deployment.md#资料操作表退役0089)和[面试素材与简历历史表退役](deployment.md#面试素材与简历历史表退役0090)。
 
 ## 分支与发布流程
 
@@ -16,7 +16,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0084`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹并兼容已登记的 Development 旧 `0059` 结构，`0063` 增加整篇翻译提案的候选标题和结果简历关联，`0064` 增加分享页 PDF 下载权限，`0065` 删除 Agent 会话级简历字段及其索引，`0066`–`0081` 扩展并更新简历模板目录，`0082` 将面试素材统一迁入用户资料库，`0083` 增加 Agent 操作轨迹，`0084` 切换简历当前内容与求职关联。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0094`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹并兼容已登记的 Development 旧 `0059` 结构，`0063` 增加整篇翻译提案的候选标题和结果简历关联，`0064` 增加分享页 PDF 下载权限，`0065` 删除 Agent 会话级简历字段及其索引，`0066`–`0081` 扩展并更新简历模板目录，`0082` 将面试素材统一迁入用户资料库，`0083` 增加 Agent 操作轨迹，`0084` 切换简历当前内容与求职关联，`0088` 保留已在 Dev 执行的供应商目录迁移，`0089` 删除资料替换与对象清理表，`0090` 删除旧面试素材表、简历历史表及求职进程旧版本关联，`0091`–`0093` 重建模型路由并退役空的旧供应商目录，`0094` 新增应用内公告与用户已读时间点表。当前迁移链为 `0087 → 0088 → 0089 → 0090 → 0091 → 0092 → 0093 → 0094`；目标环境的实际 revision 必须单独查询。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。Local profile 同时设置回环地址的 `RABBITMQ_URL` 与 `RABBITMQ_PORT` 时，启动器在进程环境中让 URL 端口跟随 `RABBITMQ_PORT`，不修改文件，也不重写远程 RabbitMQ 地址。启动器复用当前 npm 的 JavaScript 入口，在 Windows 和 Unix 上都通过同一 profile 启动服务。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKRESUME_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
@@ -42,7 +42,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKRESUME_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkresume`，再升级到当前 Alembic head `0084`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试与资料库媒体文件默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`（默认 50）和 `MEDIA_MAX_TOTAL_BYTES_PER_USER`（默认 5 GiB）控制。上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。存量面试素材由 `scripts/release/migrate_interview_assets.py` 在升级后一次性迁入 `user_dataset` 与 `users/{uid}/datasets/` 前缀；脚本以 `--execute` 执行，默认 dry-run，幂等可重跑。
+命令先校验并创建 `linkresume`，再升级到当前 Alembic head `0094`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试与资料库媒体文件默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`（默认 50）和 `MEDIA_MAX_TOTAL_BYTES_PER_USER`（默认 5 GiB）控制。上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。既有库升级时，必须在运行 `db:migrate` 前停止 API/Worker，先按部署说明完成 `0089` 资料操作收尾，再以 `uv run --directory apps/backend python scripts/release/migrate_interview_assets.py` 默认 dry-run、确认后使用 `--execute` 将旧面试素材迁入 `user_dataset` 并清空旧 `interview_assets`；`0090` 会拒绝删除非空旧表。完整顺序见[面试素材与简历历史表退役](deployment.md#面试素材与简历历史表退役0090)。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
@@ -202,7 +202,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 
 - 前端测试使用 Vitest、React Testing Library 和 jsdom，通过 Mock 隔离 API。
 - 后端单元测试不访问外部服务；集成测试使用内存 SQLite 和假 MinIO。
-- Pi 服务测试不访问真实模型或 FastAPI；真实 Agent 联调需要管理员配置并验证当前 `pi_agent` 模型，并启动 FastAPI 与 Pi 两个进程。
+- Pi 服务测试不访问真实模型或 FastAPI；真实 Agent 联调需要管理员为 `assistant_conversation` 配置已探测可用的 Pi 对话线路，并启动 FastAPI 与 Pi 两个进程。
 - 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。
 
 ### 小程序求职联调

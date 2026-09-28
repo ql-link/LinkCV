@@ -63,6 +63,11 @@ class AgentSession(Base):
         comment="是否置顶",
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    selected_llm_model_id: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey("llm_models.id", name="fk_agent_sessions_llm_model", ondelete="RESTRICT"),
+        nullable=True,
+    )
     last_message_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
@@ -108,10 +113,21 @@ class AgentRun(Base):
     session_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
-    model_config_id: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
-    model_config_version: Mapped[int | None] = mapped_column(
-        UNSIGNED_BIGINT, nullable=True
+    resolved_llm_model_id: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey("llm_models.id", name="fk_agent_runs_llm_model", ondelete="RESTRICT"),
+        nullable=True,
     )
+    resolved_llm_route_id: Mapped[int | None] = mapped_column(
+        UNSIGNED_BIGINT,
+        ForeignKey("llm_model_routes.id", name="fk_agent_runs_llm_route", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    runtime_config_version: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
+    protocol_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    selection_source: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    resolved_price_snapshot_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    cost_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     model_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)

@@ -12,7 +12,7 @@ from linkresume.domain.resume import (
     SparseResumeAnnotations,
     validate_sparse_annotations,
 )
-from linkresume.modules.llm.catalog import RESUME_STRUCTURING_CAPABILITY
+from linkresume.modules.llm.resolver import RESUME_STRUCTURING
 from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError, LLMService
 
@@ -194,7 +194,7 @@ class LLMResumeStructuringClient:
                     build_messages(layout_hints),
                     source="resume_import",
                     response_model=SparseResumeAnnotations,
-                    capability=RESUME_STRUCTURING_CAPABILITY,
+                    use_case=RESUME_STRUCTURING,
                 )
                 value = result.value
                 try:
@@ -207,7 +207,7 @@ class LLMResumeStructuringClient:
                         build_messages(None),
                         source="resume_import",
                         response_model=SparseResumeAnnotations,
-                        capability=RESUME_STRUCTURING_CAPABILITY,
+                        use_case=RESUME_STRUCTURING,
                     )
                     value = result.value
                     _validate_sparse_annotations_or_raise(source_graph, value)

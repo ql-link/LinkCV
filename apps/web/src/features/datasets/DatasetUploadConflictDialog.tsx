@@ -76,18 +76,13 @@ export function DatasetUploadConflictDialog({
     setError("");
     try {
       if (request.replace) {
-        window.dispatchEvent(
-          new CustomEvent("dataset-replacement-start", {
-            detail: request.target,
-          }),
-        );
-        await api.replaceDataset(
+        const dataset = await api.replaceDataset(
           request.target,
           conflict.file,
           request.revision,
           request.key,
         );
-        done(await api.getDataset(request.target));
+        done(dataset);
       } else {
         const renamed = new File([conflict.file], request.name, {
           type: conflict.file.type,
@@ -107,7 +102,6 @@ export function DatasetUploadConflictDialog({
             ? "原文件已更新，请取消并重新上传，确认最新文件后再替换。"
             : "操作未完成，文件可能正在处理中，或名称仍有冲突。",
         );
-        window.dispatchEvent(new Event("dataset-replacement-refresh"));
       }
     } finally {
       setBusy(false);
@@ -125,7 +119,7 @@ export function DatasetUploadConflictDialog({
         <DialogHeader>
           <DialogTitle>文件夹内已有同名文件</DialogTitle>
           <DialogDescription>
-            替换会覆盖原文件和解析内容。也可以重命名新文件，保留两份。
+            替换将先删除原文件和解析内容，再上传新文件，失败后不会恢复原文件。也可以重命名新文件，保留两份。
           </DialogDescription>
         </DialogHeader>
         {conflict.candidates.length > 1 && (

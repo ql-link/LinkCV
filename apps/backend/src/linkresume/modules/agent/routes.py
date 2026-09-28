@@ -57,6 +57,7 @@ from linkresume.modules.agent.service import (
 from linkresume.modules.identity.dependencies import get_current_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.service import LLMError
+from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, eligible_routes
 from linkresume.modules.resumes.routes import resume_record
 from linkresume.modules.resumes.pdf_service import (
     clone_resume_private_assets,
@@ -119,7 +120,25 @@ async def get_agent_model(
         model = await llm_service.agent_model_summary()
     except LLMError as error:
         raise ApiError(503, error.code) from error
-    return AgentModelResponse(model={"adapter": model.adapter, "name": model.name})
+    return AgentModelResponse(model={"id": str(model.id), "name": model.name})
+
+
+@router.get("/models")
+def list_agent_models(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    models: list[dict[str, str]] = []
+    seen: set[int] = set()
+    for _, _, _, model in eligible_routes(db, ASSISTANT_CONVERSATION):
+        if model.id in seen:
+            continue
+        seen.add(model.id)
+        models.append({"id": str(model.id), "name": model.display_name})
+    return {
+        "models": models,
+        "defaultModelId": models[0]["id"] if models else None,
+    }
 
 
 @router.get("/contexts", response_model=AgentContextListResponse)
@@ -192,6 +211,7 @@ def create_agent_session(
                 db,
                 user_id=user.id,
                 title=payload.title,
+                model_id=payload.model_id,
             )
         )
     )
@@ -229,6 +249,7 @@ def update_agent_session(
                 fields=payload.model_fields_set,
                 title=payload.title,
                 pinned=payload.pinned,
+                model_id=payload.model_id,
             )
         )
     )

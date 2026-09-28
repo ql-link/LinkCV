@@ -150,7 +150,6 @@ class JobApplication(Base):
             desc("id"),
         ),
         Index("idx_job_applications_job_description", "job_description_id"),
-        Index("idx_job_applications_resume_version", "resume_version_id"),
         Index("idx_job_applications_resume", "resume_id"),
         {"comment": "用户一次完整求职尝试", "sqlite_autoincrement": True},
     )
@@ -173,15 +172,6 @@ class JobApplication(Base):
     resume_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
         ForeignKey("resumes.id", name="fk_job_applications_resume", ondelete="SET NULL"),
-        nullable=True,
-    )
-    resume_version_id: Mapped[int | None] = mapped_column(
-        unsigned_bigint_type(),
-        ForeignKey(
-            "resume_versions.id",
-            name="fk_job_applications_resume_version",
-            ondelete="SET NULL",
-        ),
         nullable=True,
     )
     company_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -501,60 +491,4 @@ class InterviewSession(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-
-class InterviewAsset(Base):
-    __tablename__ = "interview_assets"
-    __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_interview_assets"),
-        UniqueConstraint("object_name", name="uk_interview_assets_object_name"),
-        CheckConstraint(
-            "source_type IN ('recorded', 'uploaded')",
-            name="ck_interview_assets_source_type",
-        ),
-        CheckConstraint(
-            "asset_type IN ('audio', 'video', 'document')",
-            name="ck_interview_assets_asset_type",
-        ),
-        CheckConstraint("file_size > 0", name="ck_interview_assets_file_size"),
-        CheckConstraint(
-            "duration_ms IS NULL OR duration_ms > 0",
-            name="ck_interview_assets_duration_ms",
-        ),
-        CheckConstraint(
-            "sha256 IS NULL OR LENGTH(sha256) = 64",
-            name="ck_interview_assets_sha256",
-        ),
-        Index(
-            "idx_interview_assets_session_created",
-            "interview_session_id",
-            desc("created_at"),
-            desc("id"),
-        ),
-        {"comment": "面试录音、视频与文档素材", "sqlite_autoincrement": True},
-    )
-
-    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
-    interview_session_id: Mapped[int] = mapped_column(
-        unsigned_bigint_type(),
-        ForeignKey(
-            "interview_sessions.id",
-            name="fk_interview_assets_session",
-            ondelete="RESTRICT",
-        ),
-        nullable=False,
-    )
-    source_type: Mapped[str] = mapped_column(String(24), nullable=False)
-    asset_type: Mapped[str] = mapped_column(String(24), nullable=False)
-    original_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    content_type: Mapped[str] = mapped_column(String(128), nullable=False)
-    file_size: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False)
-    duration_ms: Mapped[int | None] = mapped_column(
-        unsigned_bigint_type(), nullable=True
-    )
-    object_name: Mapped[str] = mapped_column(String(512), nullable=False)
-    sha256: Mapped[str | None] = mapped_column(ascii_char(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        timestamp_type(), nullable=False, server_default=func.now()
     )
