@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Connection, make_url
 
 from linkresume.core.config import load_settings
+from linkresume.core.llm_schema_repair import model_config_schema_state
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2] / "apps" / "backend"
 
@@ -157,6 +158,13 @@ def validate_schema_revision_alignment(
     inspector = inspect(connection)
     existing_tables = set(inspector.get_table_names())
     drift: list[str] = []
+
+    # The original 0088 ran on Dev before its source was removed. Validate
+    # that known layout before 0089/0090 can perform any irreversible DDL.
+    if "0088" in applied:
+        model_layout = model_config_schema_state(connection)
+        if "0091" in applied and model_layout != "legacy":
+            drift.append("0091 LiteLLM model config schema was not restored")
 
     if (
         USER_PROFILE_REVISION in applied

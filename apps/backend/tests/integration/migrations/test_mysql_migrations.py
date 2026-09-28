@@ -23,6 +23,8 @@ from linkresume.application.resumes.service import (
 )
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
+from linkresume.core.llm_schema_repair import model_config_schema_state
+from linkresume.core.migration_sql import execute_sql_file
 from linkresume.domain.resume import CanonicalResumeDocument, TemplateDefinition
 from linkresume.domain.resume_snapshot import parse_resume_snapshot
 from linkresume.modules.agent.models import AgentRun, ResumeChangeProposal
@@ -4355,5 +4357,50 @@ def test_mysql_0090_retires_legacy_tables_and_preserves_current_resume() -> None
         with engine.connect() as connection:
             after = connection.execute(text("SELECT * FROM resumes WHERE id=:id"), {"id": resume_id}).mappings().one()
             assert dict(after) == dict(before)
+    finally:
+        engine.dispose()
+
+
+def test_mysql_0088_compatibility_keeps_existing_litellm_configs() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0087")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(
+                "INSERT INTO llm_model_configs (model_name, enabled, priority) "
+                "VALUES ('fictional/retained-model', TRUE, 10)"
+            ))
+        run_alembic(database_url, "upgrade", "head")
+        with engine.connect() as connection:
+            assert model_config_schema_state(connection) == "legacy"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0091"
+            assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 1
+            assert "llm_providers" not in inspect(connection).get_table_names()
+    finally:
+        engine.dispose()
+
+
+def test_mysql_original_0088_schema_upgrades_to_current_litellm_schema() -> None:
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0087")
+    engine = create_engine(database_url)
+    try:
+        with engine.begin() as connection:
+            execute_sql_file(
+                connection,
+                BACKEND_ROOT / "migrations/sql/0088.up.sql",
+            )
+        run_alembic(database_url, "stamp", "0088")
+        with engine.connect() as connection:
+            assert model_config_schema_state(connection) == "provider"
+        run_alembic(database_url, "upgrade", "head")
+        with engine.connect() as connection:
+            assert model_config_schema_state(connection) == "legacy"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0091"
+            assert connection.scalar(text("SELECT COUNT(*) FROM llm_model_configs")) == 0
+            assert "llm_providers" in inspect(connection).get_table_names()
     finally:
         engine.dispose()
