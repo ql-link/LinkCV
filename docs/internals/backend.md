@@ -191,7 +191,7 @@ Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发�
 
 `llm_provider_connections` 保存接入商代码、独立凭据密文、受控设置和配置版本。`llm_models` 保存稳定逻辑模型；`llm_model_routes` 保存连接上的实际调用目标、目录元数据和价格规则；`llm_use_case_routes` 同时承载系统能力绑定与对话开放列表；`llm_call_logs` 保存每次上游请求的安全用量、价格和错误快照。`0091` 删除旧治理表并按这五张表重建；`0092` 使调用目标 ID 的唯一键区分大小写，以容纳上游大小写不同的模型 ID；迁移前须核对目标 revision、旧行数、运行中 Agent 任务和备份。原有 Agent 会话与运行保留。Pi 每次模型请求通过内部接口回传 Token，后端使用 run 冻结的价格规则计费；缺少可核定价格或缓存明细时费用为 NULL。运行级费用从持久化调用日志汇总。
 
-FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 不决定模型目录、价格、业务路由或 fallback；Pi 按线路声明的协议直接调用供应商。接入商推理地址由后端固定映射并按允许的地域/工作空间构建，管理 API 不接受任意 URL。Fernet 密钥环由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 配置，列表只返回 `keyConfigured`。日志和 HTTP 响应不保存或透出凭据、提示词、图片或完整模型响应。外部请求期间不持有 SQLAlchemy 事务；进程被强制终止留下的 `pending` 日志保留以供排查。
+FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 不决定模型目录、价格、业务路由或 fallback；Pi 按线路声明的协议直接调用供应商。接入商推理地址由后端固定映射并按允许的地域/工作空间构建，管理 API 不接受任意 URL。AIHubMix 连接可在默认 `aihubmix.com` 与官方备用 `api.inferera.com` 之间切换；目录同步和推理使用同一选择，切换会递增配置版本、清除旧目录同步状态并使既有场景探测失效。Fernet 密钥环由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 配置，列表只返回 `keyConfigured`。日志和 HTTP 响应不保存或透出凭据、提示词、图片或完整模型响应。外部请求期间不持有 SQLAlchemy 事务；进程被强制终止留下的 `pending` 日志保留以供排查。
 
 简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `resume_structuring` 场景。模型只接收稳定源块及必要布局元数据，返回稀疏语义标注；来源文本由确定性组合器保留。带 layout hints 的领域校验失败时最多再尝试一次不带 hints；未配置、超时、上游失败或非法输出均记录脱敏 warning 并返回匹配当前来源图的空标注。
 

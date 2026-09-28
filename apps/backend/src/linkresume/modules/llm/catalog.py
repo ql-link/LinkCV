@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from linkresume.modules.llm.providers import aihubmix_base_url, validate_settings
+
 CATALOG_URLS = {
     "aihubmix": "https://aihubmix.com/api/v1/models",
     "siliconflow": "https://api.siliconflow.cn/v1/models",
@@ -57,12 +59,16 @@ async def fetch_catalog(
     provider_code: str,
     api_key: str,
     *,
+    settings: dict[str, Any] | None = None,
     etag: str | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> CatalogResult:
     url = CATALOG_URLS.get(provider_code)
     if url is None:
         raise ValueError("provider catalog not supported")
+    validated_settings = validate_settings(provider_code, settings)
+    if provider_code == "aihubmix":
+        url = f"{aihubmix_base_url(validated_settings)}/api/v1/models"
     headers = {"Authorization": f"Bearer {api_key}"}
     if etag and provider_code == "aihubmix":
         headers["If-None-Match"] = etag
