@@ -147,6 +147,13 @@ export default defineConfig({
     // 允许隧道域名（如 *.trycloudflare.com）访问本地 dev server，便于分享预览链接验收
     allowedHosts: [".trycloudflare.com"],
     proxy: {
+      "^/api/mock-interviews/[^/]+/speech(?:\\?|$)": {
+        target: backendTarget,
+        changeOrigin: false,
+        ws: true,
+        timeout: 600000,
+        proxyTimeout: 600000,
+      },
       "/api": {
         target: backendTarget,
         changeOrigin: true,
