@@ -11,7 +11,7 @@ LinkResume 可观测性子系统负责请求上下文、结构化系统日志、
 - `modules/observability/middleware.py`：request ID、actor、target、结果和响应审计状态。
 - `logging.py`：结构化 JSONL 事件输出。
 - `audit.py`：固定审计动作目录和请求上下文绑定。
-- `loki.py`：面向固定筛选条件的共享 Loki 查询适配。
+- `loki.py`：面向固定筛选条件的共享 Loki 查询适配；`query_level_buckets` 以 `query_range` 按固定步长统计 ERROR、CRITICAL 与 WARNING 系统日志，供管理台热力图使用。
 - `routes.py`：受限客户端事件写入与管理员日志读取。
 - Web `ObservabilityBoundary.tsx`：捕获客户端异常；`AdminObservabilityPanels.tsx`：系统和审计日志界面。
 
@@ -35,6 +35,8 @@ LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) �
 
 Agent 轨迹由 FastAPI 在预检、运行创建、Pi 代理、工具事件、运行收尾和提案确认处直接写入 MySQL。管理端的「Agent 调用排障」是独立页面；列表包含旧 `agent_runs`，旧运行详情标记为 `legacy`。轨迹只保存受控阶段、结果、稳定错误码、耗时与关联键；用户原话、简历正文和工具参数仍留在各自业务数据中，不复制进轨迹。
 
+管理员写操作的固定审计目录覆盖：用户启停；模型接入连接的创建、编辑与目录同步（`admin.llm_connection_*`）、逻辑模型与线路的创建和编辑（`admin.llm_model_*`、`admin.llm_route_*`）、能力绑定的写入、编辑、解绑与探针（`admin.llm_binding_*`，目标为 `<use_case>:<route_id>`）；插件发布包的发布、下线、重新上架与删除（`admin.plugin_release_*`，目标为包版本号）；应用内公告的创建、编辑、删除、发布与下线（`admin.announcement_*`，目标类型 `announcement`）。审计目录登记的每个路由都由测试核对仍然存在，路由改名或删除后必须同步目录，否则对应操作会静默脱离审计。
+
 request ID 是跨日志关联键，不是用户身份；actor 只能来自已验证会话或成功登录结果，target 只能来自路由参数与通过归属校验的业务实体。
 
 异步简历导入在同一白名单事件模型中使用 `message_id`、`pipeline_version`、`vendor` 和 `route` 关联 MQ 消息、确定性管线版本与外部转换/模型路由。字段只保存稳定标识和受控枚举，不记录文件名、简历正文、Prompt、模型响应、对象内容或凭据；`operation_id` 与 `task_id` 继续承担跨 FastAPI、Worker、LinkParse 和 LLM 阶段关联。
@@ -42,7 +44,7 @@ request ID 是跨日志关联键，不是用户身份；actor 只能来自已验
 ## 故障与降级
 
 - 本地日志 sink 失败会通过响应审计状态暴露，但不能改变已成功业务事务的 HTTP 结果。
-- Loki 未配置或查询失败不影响普通业务 API；管理端日志接口返回受控失败，不绕过 FastAPI 直连 Loki。
+- Loki 未配置或查询失败不影响普通业务 API；管理端日志接口与 `/api/admin/insights/log-heatmap` 返回受控失败，其余管理台统计不受影响，不绕过 FastAPI 直连 Loki。
 - 查询遇到部分脏行时返回可用记录和脏行提示，游标仍基于受控排序推进。
 - 客户端事件上报受大小、字段和动作限制，不能成为任意日志注入通道。
 

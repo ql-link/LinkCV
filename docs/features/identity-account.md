@@ -22,7 +22,8 @@ LinkResume 的账号功能覆盖普通用户注册和登录、微信扫码登录
 | HTTP | `modules/identity/routes.py` | Web 注册、登录、能力查询、刷新、退出和当前用户 |
 | 微信 | `modules/identity/wechat_routes.py` | 二维码、轮询、确认/取消、小程序登录与刷新 |
 | 账号 | `modules/identity/account_routes.py` | 本人资料、头像，以及个人画像的读取和整体替换 |
-| 管理 | `modules/identity/admin_routes.py` | 管理员用户列表、详情、状态和统计 |
+| 管理 | `modules/identity/admin_routes.py` | 管理员用户列表、详情、状态和统计；详情中的累计 LLM 调用数与估算费用读取 `llm_call_logs` |
+| 管理台统计 | `modules/admin_insights/` | 用户总数、新增、活跃、禁用、管理员数和 14 天注册趋势等只读统计 |
 | 会话 | `modules/identity/session_service.py` | Web/小程序 channel、session 创建、轮换与撤销 |
 | 鉴权依赖 | `modules/identity/dependencies.py` | 当前用户、可选用户、管理员和小程序用户边界 |
 | Web | `features/auth/`、`features/account/` | 登录与用户中心界面 |
@@ -52,7 +53,7 @@ LinkResume 的账号功能覆盖普通用户注册和登录、微信扫码登录
 3. 网页扫码由 Web 创建二维码状态，小程序主动确认后建立网页端会话；取消、过期和已消费状态不能重复签发。
 4. 账号资料修改先校验当前用户；头像写入受控对象键，替换或删除时同步处理旧对象。
 5. 个人画像保存先比较 `base_lock_version`，再整体替换可编辑字段；版本冲突不覆盖数据库，客户端保留编辑窗口并使用响应中的最新画像刷新。
-6. 管理员启停用户只改变账号状态，其他模块在鉴权依赖处统一阻止禁用账号继续访问。
+6. 管理员启停用户只改变账号状态，其他模块在鉴权依赖处统一阻止禁用账号继续访问。管理台统计中的“活跃”只计算最近登录在窗口内且仍为启用状态的账号。
 
 ## 权限与失败边界
 

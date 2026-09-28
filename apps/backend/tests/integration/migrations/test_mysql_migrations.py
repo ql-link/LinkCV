@@ -4357,3 +4357,39 @@ def test_mysql_0090_retires_legacy_tables_and_preserves_current_resume() -> None
             assert dict(after) == dict(before)
     finally:
         engine.dispose()
+
+
+def test_mysql_0094_creates_announcement_tables_and_enforces_state_fields() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "head")
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    assert {"announcements", "announcement_read_cursors"} <= tables
+    assert "announcement_reads" not in tables
+    assert {c["name"] for c in inspector.get_check_constraints("announcements")} >= {
+        "ck_announcements_level",
+        "ck_announcements_status",
+        "ck_announcements_window",
+        "ck_announcements_state_fields",
+    }
+    assert {i["name"] for i in inspector.get_indexes("announcements")} >= {
+        "idx_announcements_status_published"
+    }
+    assert inspector.get_pk_constraint("announcement_read_cursors")["constrained_columns"] == [
+        "user_id"
+    ]
+    with engine.begin() as connection:
+        user_id = connection.execute(text(
+            "INSERT INTO users (email, password_hash, nickname) "
+            "VALUES ('announce@example.test', 'x', '张三')"
+        )).lastrowid
+        with pytest.raises(DBAPIError):
+            with connection.begin_nested():
+                connection.execute(text(
+                    "INSERT INTO announcements (title, body, status, created_by, updated_by) "
+                    "VALUES ('t', 'b', 'published', :u, :u)"
+                ), {"u": user_id})
+    engine.dispose()

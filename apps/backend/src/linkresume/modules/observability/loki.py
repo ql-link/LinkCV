@@ -177,6 +177,47 @@ class LokiClient:
             "dropped_malformed": dropped,
         }
 
+    def query_level_buckets(
+        self,
+        *,
+        environment: str,
+        start: datetime,
+        end: datetime,
+        step_seconds: int,
+    ) -> dict[int, dict[str, int]]:
+        """Count ERROR and WARN system logs per bucket; keys are bucket end seconds."""
+        selector = _selector(
+            {
+                "environment": environment,
+                "log_type": "system",
+                "service": "linkresume",
+            }
+        )[:-1] + ', level=~"ERROR|CRITICAL|WARNING"}'
+        query = f"sum by (level) (count_over_time({selector}[{step_seconds}s]))"
+        data = self._get(
+            "/loki/api/v1/query_range",
+            {
+                "query": query,
+                "start": str(int(start.timestamp() * 1_000_000_000)),
+                "end": str(int(end.timestamp() * 1_000_000_000)),
+                "step": f"{step_seconds}s",
+            },
+        )
+        result = data.get("result")
+        if not isinstance(result, list):
+            raise LokiUnavailableError("Loki range result is invalid")
+        buckets: dict[int, dict[str, int]] = {}
+        for item in result:
+            try:
+                level = str(item["metric"]["level"]).upper()
+                values = item["values"]
+                for at, value in values:
+                    bucket = buckets.setdefault(int(float(at)), {})
+                    bucket[level] = bucket.get(level, 0) + int(float(value))
+            except (KeyError, IndexError, TypeError, ValueError):
+                raise LokiUnavailableError("Loki range item is invalid")
+        return buckets
+
     def _metric(
         self,
         *,

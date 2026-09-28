@@ -32,6 +32,7 @@ class AdminUserListResponse(BaseModel):
 
 class AdminUserDetail(AdminUserSummary):
     llm_call_count: int = 0
+    llm_costs: dict[str, object] | None = None
     updated_at: datetime
 
 
