@@ -68,6 +68,32 @@ def test_remote_deployments_stop_old_runtime_before_forward_migration() -> None:
     assert "rollback_old_application" in compatible_path
 
 
+@pytest.mark.parametrize(
+    ("script_path", "success_message"),
+    [
+        ("deploy/scripts/build-development-on-primary.sh", "Development deployed:"),
+        ("deploy/scripts/build-production-on-cloud.sh", "Production deployed:"),
+    ],
+)
+def test_deployment_gate_reports_agent_readiness_without_requiring_a_model(
+    script_path: str, success_message: str
+) -> None:
+    script = (REPO_ROOT / script_path).read_text(encoding="utf-8")
+    success_position = script.index(success_message)
+    gate_start = script.rfind("for _ in $(seq 1 30); do", 0, success_position)
+    gate = script[gate_start:success_position]
+    health_condition = gate.split("  if ", 1)[1].split("; then", 1)[0]
+    assert "/api/health" in health_condition
+    assert "/api/agent/readiness" not in health_condition
+    assert "Agent readiness warning:" in script
+    logs_position = script.index('docker compose -f "${compose_file}" logs --tail=100')
+    logs_environment = script[logs_position - 260 : logs_position]
+    assert 'TAG="${tag}"' in logs_environment
+    assert 'PI_TAG="${tag}"' in logs_environment
+    assert 'LINKRESUME_ENV_FILE="${base_env}"' in logs_environment
+    assert 'LINKRESUME_SECRET_ENV_FILE="${secret_env}"' in logs_environment
+
+
 def test_sql_migration_executor_rejects_database_scope_changes(tmp_path: Path) -> None:
     module = load_module(
         "linkresume_migration_sql_test",

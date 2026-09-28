@@ -8,7 +8,7 @@ Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件
 
 其中 `0051` 的发布门禁还核对 `user_profiles` 的画像目标列和已删除旧列。未应用但已经是完整目标结构时允许 migration 自身做 no-op；已应用后若目标列缺失或旧列残留，runner 会在任何后续 DDL 前停止。`0065` 门禁同样会拦截提前删除或在 revision 已应用后仍残留的 `agent_sessions.resume_id`。
 
-仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先停止会读写旧 schema 的当前 LinkResume Web、Worker 和 Pi，再用新 `linkresume` 镜像以显式目标参数运行迁移 runner、更新 Compose，最后等待 FastAPI `/api/health`、Pi `/health`、本环境 Promtail 和 FastAPI `/api/agent/readiness` 进入正常状态；构建镜像阶段不连接数据库。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `assistant_conversation` 用例存在可用的 Pi 对话线路，但不发起供应商模型调用；任一服务令牌、回调网络或模型配置无效都会阻止发布被标记为成功。首次从 SQLite `linkcv` 切换是例外：旧栈在独立导入窗口前保持服务。
+仓库提供相互独立的 Dev 与 Production Jenkins Pipeline。两者都关闭 Declarative Pipeline 的隐式 Checkout，只对显式 `checkout scm` 最多尝试三次，避免同一构建重复拉取仓库并缓解短暂 GitHub 连接中断。随后以同一 commit/build 标识生成不可变 `linkresume` 与 `linkresume-pi` 镜像，先停止会读写旧 schema 的当前 LinkResume Web、Worker 和 Pi，再用新 `linkresume` 镜像以显式目标参数运行迁移 runner、更新 Compose，最后等待 FastAPI `/api/health`、Pi 容器健康状态和本环境 Promtail 正常；构建镜像阶段不连接数据库。发布成功时单独检查 FastAPI `/api/agent/readiness` 并报告非 200 状态，不以模型尚未配置或探测过期阻止部署。Agent readiness 会穿透 FastAPI→Pi→FastAPI 内部回调并验证当前 `assistant_conversation` 用例存在可用的 Pi 对话线路，但不发起供应商模型调用；非 200 表示对话能力不可用，仍需配置或排障，不代表基础服务部署失败。首次从 SQLite `linkcv` 切换是例外：旧栈在独立导入窗口前保持服务。
 
 Dev 与 Production Compose 各自部署一个 `grafana/promtail:2.9.8`，读取 LinkResume 应用挂载的环境独立日志命名卷，并把 positions 保存到另一个独立命名卷。Promtail 只提升 `service`、`environment`、`log_type`、`level` 四个低基数字段为 Loki labels；request/user/target/operation 等高基数字段保留在 JSON body。Dev 推送并查询 `http://tolink-dev-loki:3100`，Production 使用 `http://tolink-loki:3100`；两者都是 LinkRag 已有、保留七天的共享实例，本仓库不创建或修改 Loki。应用写本地 JSONL，Promtail 异步采集，因此 Loki 暂时不可用不会阻断业务请求。
 
@@ -68,7 +68,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 导入保留账号邮箱、bcrypt 密码摘要、账号时间、简历标题、Markdown 和可映射样式；每份简历创建一个“初始版本”。旧字符串主键会映射到新的自增主键。登录同时兼容 bcrypt 与 Argon2，旧账号首次成功登录后立即把摘要升级为 Argon2。旧 SQLite 会话不迁移，切换后用户必须重新登录。任何记录无法安全转换、目标表非空或事务失败都会停止发布，不允许部分导入。
 
-首次切换完成后，确认 MySQL revision、用户/简历/版本数量、登录、简历读取、Worker、Pi、Promtail、`http://127.0.0.1:4174/api/health` 和 `/api/agent/readiness` 全部正确，才允许恢复正常自动发布。旧 SQLite 与切换备份不得立即删除。
+首次切换完成后，确认 MySQL revision、用户/简历/版本数量、登录、简历读取、Worker、Pi、Promtail 和 `http://127.0.0.1:4174/api/health` 正常，才允许恢复正常自动发布。另行核对 `/api/agent/readiness`；如果模型尚未配置或探测过期，记录并处理对话能力不可用状态，不把它误判为基础部署失败。旧 SQLite 与切换备份不得立即删除。
 
 本期没有管理员开通接口。发布方还需在受控流程中确保至少一个既有用户被标记为 `users.is_admin=true`；公开注册始终是普通用户。没有管理员只会使 `/api/admin/llm/**` 无法使用，不会放宽权限。
 
