@@ -107,7 +107,109 @@ export type AdminUserSummary = User & {
 
 export type AdminUserDetail = AdminUserSummary & {
   llm_call_count: number;
+  llm_costs?: CostSummary | null;
   updated_at: string;
+};
+
+export type CostSummary = { costs: Array<{ currency: string; amount: string }>; unmeteredCallCount: number };
+
+export type AdminInsightAlert = {
+  type: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+  target: string;
+};
+
+export type AdminInsightOverview = {
+  metrics: { activeUsers7d: number; newUsers7d: number; callsToday: number; cost7d: CostSummary };
+  deltas: { activeUsers7d: string | null; newUsers7d: string | null; callsToday: string | null; cost7d: string | null };
+  trend: Array<{ date: string; calls: number; successRate: number | null; p95Ms: number | null }>;
+  alerts: AdminInsightAlert[];
+};
+
+export type AdminInsightUsers = {
+  total: number;
+  newUsers7d: number;
+  activeUsers7d: number;
+  disabled: number;
+  admins: number;
+  registeredToday: number;
+  daily: Array<{ date: string; count: number }>;
+};
+
+export type AdminInsightJobImports = {
+  imported7d: number;
+  imported30d: number;
+  users7d: number;
+  sources: Array<{ site: string; count: number }>;
+  daily: Array<{ date: string; count: number }>;
+};
+
+export type LlmUsageSummary = CostSummary & { calls: number; successRate: number | null; p95Ms: number | null };
+
+export type AdminInsightLlmUsage = {
+  from: string;
+  to: string;
+  summary: LlmUsageSummary;
+  previous: LlmUsageSummary;
+  groups: Array<LlmUsageSummary & { key: string; label: string }>;
+};
+
+export type AdminInsightAgent = {
+  from: string;
+  to: string;
+  operations: number;
+  failed: number;
+  failureRate: number | null;
+  running: number;
+  p95Ms: number | null;
+  topFailureStage: string | null;
+  topErrorCode: string | null;
+  daily: Array<{ date: string; succeeded: number; failed: number; running: number }>;
+};
+
+export type AdminLogHeatmap = { buckets: Array<{ start: string; error: number; warn: number }> };
+
+export type AnnouncementLevel = "normal" | "important";
+export type AdminAnnouncement = {
+  id: string;
+  level: AnnouncementLevel;
+  title: string;
+  body: string;
+  status: "draft" | "published" | "unpublished";
+  visibility: "draft" | "scheduled" | "active" | "expired" | "unpublished";
+  startsAt: string | null;
+  endsAt: string | null;
+  publishedAt: string | null;
+  unpublishedAt: string | null;
+  createdBy: string;
+  publishedBy: string | null;
+  unpublishedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type AdminAnnouncementStats = { draft: number; published: number; unpublished: number; active: number; scheduled: number };
+export type AnnouncementFields = { level: AnnouncementLevel; title: string; body: string; startsAt: string | null; endsAt: string | null };
+
+export type LlmCallQuery = {
+  cursor?: string;
+  limit?: number;
+  useCase?: string;
+  status?: "pending" | "succeeded" | "failed" | "cancelled";
+  errorCode?: string;
+  /** Exact match on the public call ID. */
+  callId?: string;
+  userId?: string;
+  from?: string;
+  to?: string;
+};
+export type LlmCallSummary = CostSummary & {
+  callCount: number;
+  succeeded: number;
+  failed: number;
+  inputTokens: number;
+  outputTokens: number;
 };
 
 export type AdminUserListResponse = {
@@ -837,7 +939,7 @@ export type AgentModelSummary = {
 export type LlmProviderSpec = { code: string; label: string; protocols: string[]; targetKinds: string[]; catalogSync: boolean };
 export type LlmCatalog = { useCases: string[]; providers: LlmProviderSpec[] };
 export type LlmConnection = { id: string; providerCode: string; name: string; settings: Record<string, unknown>; keyConfigured: boolean; enabled: boolean; runtimeConfigVersion: number; catalogSyncedAt: string | null; createdAt: string; updatedAt: string };
-export type LlmModel = { id: string; displayName: string; developerName: string | null; createdAt: string; updatedAt: string };
+export type LlmModel = { id: string; displayName: string; developerName: string | null; userSelectable: boolean; createdAt: string; updatedAt: string };
 export type LlmRoute = { id: string; modelId: string; connectionId: string; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId: string | null; identifierKind: "pinned" | "alias" | "unknown"; origin: string; metadata: Record<string, unknown> | null; pricing: Record<string, unknown> | null; targetAvailable: boolean; enabled: boolean; createdAt: string; updatedAt: string };
 export type LlmBinding = { useCase: string; routeId: string; protocolCode: string; priority: number; enabled: boolean; validatedAt: string | null; effective: boolean };
 export type LlmCallRecord = { id: string; callId: string; useCase: string; source: string; userId: string | null; agentRunId: string | null; routeId: string; protocolCode: string; status: string; meteringStatus: string; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | null; costCurrency: string | null; errorCode: string | null; createdAt: string };
@@ -1517,6 +1619,11 @@ export const api = {
       `/api/admin/resume-templates/${id}/status`,
       { method: "PUT", body: { active } },
     ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
+  reorderAdminResumeTemplates: (templateIds: string[]) =>
+    request<{ templates: AdminResumeTemplateWire[] }>(
+      "/api/admin/resume-templates/order",
+      { method: "PUT", body: { template_ids: templateIds } },
+    ).then(({ templates }) => ({ templates: templates.map(adminResumeTemplateFromWire) })),
   updateAdminResumeTemplateSortOrder: (id: string, sortOrder: number) =>
     request<{ template: AdminResumeTemplateWire }>(
       `/api/admin/resume-templates/${id}/sort-order`,
@@ -2050,19 +2157,46 @@ export const api = {
   listLlmConnections: () => request<{ connections: LlmConnection[] }>("/api/admin/llm/connections"),
   createLlmConnection: (body: { providerCode: string; name: string; apiKey: string; settings?: Record<string, unknown>; enabled?: boolean }) => request<{ connection: LlmConnection }>("/api/admin/llm/connections", { method: "POST", body }),
   updateLlmConnection: (id: string, body: { baseVersion: number; name?: string; apiKey?: string; settings?: Record<string, unknown>; enabled?: boolean }) => request<{ connection: LlmConnection }>(`/api/admin/llm/connections/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteLlmConnection: (id: string) => request<void>(`/api/admin/llm/connections/${encodeURIComponent(id)}`, { method: "DELETE" }),
   syncLlmCatalog: (id: string) => request<{ synced: number; unchanged: boolean }>(`/api/admin/llm/connections/${encodeURIComponent(id)}/sync`, { method: "POST" }),
   listLlmModels: () => request<{ models: LlmModel[] }>("/api/admin/llm/models"),
-  createLlmModel: (body: { displayName: string; developerName?: string | null }) => request<{ model: LlmModel }>("/api/admin/llm/models", { method: "POST", body }),
-  updateLlmModel: (id: string, body: { displayName?: string; developerName?: string | null }) => request<{ model: LlmModel }>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  createLlmModel: (body: { displayName: string; developerName?: string | null; userSelectable?: boolean }) => request<{ model: LlmModel }>("/api/admin/llm/models", { method: "POST", body }),
+  updateLlmModel: (id: string, body: { displayName?: string; developerName?: string | null; userSelectable?: boolean }) => request<{ model: LlmModel }>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteLlmModel: (id: string) => request<void>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listLlmRoutes: () => request<{ routes: LlmRoute[] }>("/api/admin/llm/routes"),
   createLlmRoute: (body: { modelId: number; connectionId: number; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId?: string | null; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>("/api/admin/llm/routes", { method: "POST", body }),
   updateLlmRoute: (id: string, body: { enabled?: boolean; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteLlmRoute: (id: string) => request<void>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listLlmBindings: () => request<{ bindings: LlmBinding[] }>("/api/admin/llm/use-cases"),
   putLlmBinding: (useCase: string, routeId: string, body: { protocolCode: string; priority: number; enabled: boolean }) => request<{ binding: LlmBinding }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "PUT", body: { useCase, routeId: Number(routeId), ...body } }),
   updateLlmBinding: (useCase: string, routeId: string, body: { priority?: number; enabled?: boolean }) => request<{ binding: LlmBinding }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "PATCH", body }),
   deleteLlmBinding: (useCase: string, routeId: string) => request<void>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "DELETE" }),
   probeLlmBinding: (useCase: string, routeId: string) => request<{ callId: string; validated: boolean }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}/probe`, { method: "POST" }),
-  listLlmCalls: (cursor?: string) => request<{ calls: LlmCallRecord[]; nextCursor: string | null; summary: { callCount: number } }>(`/api/admin/llm/calls${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
+  listLlmCalls: (query: LlmCallQuery | string = {}) => {
+    const params = typeof query === "string" ? { cursor: query } : query;
+    return request<{ calls: LlmCallRecord[]; nextCursor: string | null; summary: LlmCallSummary }>(withLogQuery("/api/admin/llm/calls", params));
+  },
+  adminInsightOverview: () => request<AdminInsightOverview>("/api/admin/insights/overview"),
+  adminInsightUsers: () => request<AdminInsightUsers>("/api/admin/insights/users"),
+  adminInsightJobImports: () => request<AdminInsightJobImports>("/api/admin/insights/job-imports"),
+  adminInsightLlmUsage: (params: { groupBy?: "model" | "useCase" | "connection"; from?: string; to?: string } = {}) =>
+    request<AdminInsightLlmUsage>(withLogQuery("/api/admin/insights/llm-usage", params)),
+  adminInsightAgent: (params: { from?: string; to?: string } = {}) =>
+    request<AdminInsightAgent>(withLogQuery("/api/admin/insights/agent", params)),
+  adminLogHeatmap: () => request<AdminLogHeatmap>("/api/admin/insights/log-heatmap"),
+  adminListAnnouncements: (params: { status?: AdminAnnouncement["status"]; cursor?: string; limit?: number } = {}) =>
+    request<{ items: AdminAnnouncement[]; nextCursor: string | null }>(withLogQuery("/api/admin/announcements", params)),
+  adminAnnouncementStats: () => request<AdminAnnouncementStats>("/api/admin/announcements/stats"),
+  adminCreateAnnouncement: (body: AnnouncementFields) =>
+    request<{ announcement: AdminAnnouncement }>("/api/admin/announcements", { method: "POST", body }),
+  adminUpdateAnnouncement: (id: string, body: Partial<AnnouncementFields>) =>
+    request<{ announcement: AdminAnnouncement }>(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  adminDeleteAnnouncement: (id: string) =>
+    request<void>(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  adminPublishAnnouncement: (id: string) =>
+    request<{ announcement: AdminAnnouncement }>(`/api/admin/announcements/${encodeURIComponent(id)}/publish`, { method: "POST" }),
+  adminUnpublishAnnouncement: (id: string) =>
+    request<{ announcement: AdminAnnouncement }>(`/api/admin/announcements/${encodeURIComponent(id)}/unpublish`, { method: "POST" }),
   reportClientEvent: (payload: {
     eventType: "unhandled_error" | "unhandled_rejection" | "render_error" | "api_5xx";
     errorName: string;
@@ -2105,7 +2239,7 @@ export const api = {
     request<LogListResponse>(withLogQuery("/api/admin/logs/audit", params)),
   adminLogSummary: (params: { from?: string; to?: string } = {}) =>
     request<LogSummary>(withLogQuery("/api/admin/logs/summary", params)),
-  adminListAgentOperations: (params: { from?: string; to?: string; status?: string; errorCode?: string; cursor?: string; limit?: number } = {}) =>
+  adminListAgentOperations: (params: { from?: string; to?: string; status?: string; errorCode?: string; operationId?: string; userId?: string; cursor?: string; limit?: number } = {}) =>
     request<{ items: AgentOperationItem[]; next_cursor: string | null }>(withLogQuery("/api/admin/agent-operations", params)),
   adminGetAgentOperation: (id: string, params: { cursor?: string; limit?: number } = {}) =>
     request<AgentOperationDetail>(withLogQuery(`/api/admin/agent-operations/${encodeURIComponent(id)}`, params)),
