@@ -24,6 +24,7 @@ import {
   useConsole,
   useLoad,
 } from "./kit";
+import { visualScale } from "./viewportScale";
 
 export const STYLE_OPTIONS = ["简约", "经典", "现代", "创意"] as const;
 export const USE_CASE_OPTIONS = ["实习", "校招", "社招"] as const;
@@ -167,7 +168,9 @@ export function TemplatesPage() {
     if (!dragId) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    const scrolled = (gridRef.current?.closest(".adm-list-body")?.scrollTop ?? 0) - scrollAtStart.current;
+    const body = gridRef.current?.closest<HTMLElement>(".adm-list-body");
+    // scrollTop is layout px while slots and the pointer are on-screen px (viewport zoom).
+    const scrolled = ((body?.scrollTop ?? 0) - scrollAtStart.current) * visualScale(body);
     const slot = nearestSlot(slotsRef.current, event.clientX, event.clientY + scrolled);
     if (slot != null && slot !== dropIndex) {
       flip.capture();

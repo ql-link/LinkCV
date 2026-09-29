@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiRequestError, type CostSummary } from "../../api/client";
+import { visualScale } from "./viewportScale";
 
 /* ---------- formatting ---------- */
 
@@ -554,8 +555,10 @@ export function useFlip(container: React.RefObject<HTMLElement | null>, attr = "
       const from = previous.get(node.dataset[attr]!);
       if (!from) return;
       const to = node.getBoundingClientRect();
-      const dx = from.left - to.left;
-      const dy = from.top - to.top;
+      // Rects are on-screen px; the transform is in the node's own (possibly zoomed) px.
+      const scale = visualScale(node);
+      const dx = (from.left - to.left) / scale;
+      const dy = (from.top - to.top) / scale;
       if (!dx && !dy) return;
       node.animate?.([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: 260, easing: "cubic-bezier(.2, .8, .2, 1)" });
     });
@@ -581,10 +584,12 @@ export function insertionIndex(mids: number[], y: number): number {
  */
 export function layoutMids(container: HTMLElement, items: HTMLElement[], skip: (node: HTMLElement) => boolean): number[] {
   const top = container.getBoundingClientRect().top;
+  // offsetTop is layout px; the pointer's clientY is on-screen px, so convert under viewport zoom.
+  const scale = visualScale(container);
   return items.filter((node) => !skip(node)).map((node) => {
     let offset = 0;
     for (let current: HTMLElement | null = node; current && current !== container; current = current.offsetParent as HTMLElement | null) offset += current.offsetTop;
-    return top + offset + node.offsetHeight / 2;
+    return top + (offset + node.offsetHeight / 2) * scale;
   });
 }
 
@@ -800,7 +805,7 @@ export function Modal({
       <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="adm-scrim" />
-          <DialogPrimitive.Content className="adm-modal" role={role} style={{ width: `min(${width}px, calc(100vw - 32px))` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
+          <DialogPrimitive.Content className="adm-modal" role={role} style={{ width: `min(${width}px, calc(var(--adm-vw, 1vw) * 100 - 32px))` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
             <header className={`adm-modal-head${eyebrow ? " has-eyebrow" : ""}`}>
               <div>
                 {eyebrow && <span className="adm-modal-eyebrow">{eyebrow}</span>}
@@ -865,7 +870,7 @@ export function Drawer({ title, eyebrow, subtitle, onClose, children, footer, wi
       <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="adm-scrim" />
-          <DialogPrimitive.Content className="adm-drawer" style={{ width: `min(${width}px, 100vw)` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
+          <DialogPrimitive.Content className="adm-drawer" style={{ width: `min(${width}px, calc(var(--adm-vw, 1vw) * 100))` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
             <header className={`adm-modal-head${eyebrow ? " has-eyebrow" : ""}`}>
               <div>
                 {eyebrow && <span className="adm-modal-eyebrow">{eyebrow}</span>}
