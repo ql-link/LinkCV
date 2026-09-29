@@ -1,12 +1,18 @@
+import json
+
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkresume.core.config import Settings
+from linkresume.core.database import utc_now
 from linkresume.main import create_app
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import LLMCallLog, LLMProviderConnection
+from linkresume.modules.llm.models import (
+    LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
+)
+from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, resolve, validation_fingerprint
 from tests.fakes import FakeRedis
 
 
@@ -166,3 +172,33 @@ def test_speech_use_cases_bind_only_speech_protocols_and_probe_through_speech_ga
         logs = db.scalars(select(LLMCallLog).where(LLMCallLog.source == "capability_probe")).all()
         assert {log.use_case for log in logs} == {"speech_to_text", "text_to_speech"}
         assert all(log.status == "succeeded" for log in logs)
+
+
+def test_model_user_selectable_is_admin_editable_and_ignored_by_system_use_cases():
+    app, gateway = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        created = client.post("/api/admin/llm/models", json={"displayName": "示例模型"})
+        assert created.json()["model"]["userSelectable"] is True
+        hidden = client.post("/api/admin/llm/models", json={"displayName": "隐藏模型", "userSelectable": False})
+        assert hidden.json()["model"]["userSelectable"] is False
+        model_id = created.json()["model"]["id"]
+        toggled = client.patch(f"/api/admin/llm/models/{model_id}", json={"userSelectable": False})
+        assert toggled.status_code == 200 and toggled.json()["model"]["userSelectable"] is False
+        # Editing another field leaves the flag untouched.
+        renamed = client.patch(f"/api/admin/llm/models/{model_id}", json={"displayName": "示例模型 2"})
+        assert renamed.json()["model"]["userSelectable"] is False
+        assert client.patch(f"/api/admin/llm/models/{model_id}", json={"userSelectable": None}).json()["model"]["userSelectable"] is False
+
+    # System capabilities keep resolving hidden models; only conversation is filtered.
+    with app.state.session_factory() as db:
+        connection = LLMProviderConnection(provider_code="aihubmix", name="系统连接", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        model = db.get(LLMModel, int(model_id))
+        db.add(connection); db.flush()
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="vendor/model", origin="manual", enabled=True, target_available=True)
+        db.add(route); db.flush()
+        binding = LLMUseCaseRoute(use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat", priority=1, enabled=True, validated_at=utc_now())
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
+        db.commit()
+        assert resolve(db, JOB_TEXT_EXTRACTION).model_id == model.id

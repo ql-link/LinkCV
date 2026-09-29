@@ -3769,3 +3769,82 @@ def test_selected_conversation_model_and_pi_call_use_frozen_route_price() -> Non
             assert log.estimated_cost == Decimal("0.00014")
             assert log.cost_currency == "USD"
             assert log.selection_source == "user"
+
+
+def add_conversation_model(app, name: str, *, priority: int) -> int:
+    """Add a second effective conversation model on the existing fictional connection."""
+    with app.state.session_factory() as db:
+        connection = db.scalar(select(LLMProviderConnection).limit(1))
+        model = LLMModel(display_name=name)
+        db.add(model); db.flush()
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=name, origin="manual", enabled=True, target_available=True, metadata_json={})
+        db.add(route); db.flush()
+        binding = LLMUseCaseRoute(use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat", priority=priority, enabled=True, validated_at=utc_now())
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
+        db.commit()
+        return model.id
+
+
+def set_user_selectable(app, model_id: int, value: bool) -> None:
+    with app.state.session_factory() as db:
+        db.execute(update(LLMModel).where(LLMModel.id == model_id).values(user_selectable=value))
+        db.commit()
+
+
+def test_hidden_conversation_model_is_excluded_from_list_default_and_runs() -> None:
+    app = build_app()
+    preferred = add_conversation_model(app, "fictional-preferred-model", priority=10)
+    with TestClient(app) as client:
+        register(client, "hidden-model@example.test")
+        listing = client.get("/api/agent/models").json()
+        assert listing["defaultModelId"] == str(preferred)
+
+        chosen = client.post("/api/agent/sessions", json={"modelId": str(preferred)})
+        assert chosen.status_code == 201
+        session_id = chosen.json()["session"]["id"]
+        default_session = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+
+        set_user_selectable(app, preferred, False)
+
+        # The hidden model leaves the list and the default falls to the next selectable model.
+        assert client.get("/api/agent/models").json() == {
+            "models": [{"id": "1", "name": "fictional-agent-model"}],
+            "defaultModelId": "1",
+        }
+        for request in (
+            lambda: client.post("/api/agent/sessions", json={"modelId": str(preferred)}),
+            lambda: client.patch(f"/api/agent/sessions/{session_id}", json={"modelId": str(preferred)}),
+        ):
+            rejected = request()
+            assert rejected.status_code == 409
+            assert rejected.json() == {"error": "AGENT_MODEL_UNAVAILABLE"}
+
+        with app.state.session_factory() as db:
+            session = db.scalar(select(AgentSession).where(AgentSession.public_id == session_id))
+            # An existing session pinned to the hidden model fails instead of switching models.
+            with pytest.raises(ApiError) as error:
+                create_run(db, session=session, content="隐藏模型", idempotency_key="hidden", timeout_seconds=60)
+            assert (error.value.status_code, error.value.code) == (409, "AGENT_MODEL_UNAVAILABLE")
+            db.rollback()
+            follows_default = db.scalar(select(AgentSession).where(AgentSession.public_id == default_session))
+            run, _ = create_run(db, session=follows_default, content="默认模型", idempotency_key="default", timeout_seconds=60)
+            assert run.resolved_llm_model_id == 1
+            db.commit()
+
+        set_user_selectable(app, preferred, True)
+        assert client.get("/api/agent/models").json()["defaultModelId"] == str(preferred)
+
+
+def test_hiding_every_conversation_model_reports_not_configured() -> None:
+    app = build_app()
+    set_user_selectable(app, 1, False)
+    with TestClient(app) as client:
+        register(client, "no-model@example.test")
+        assert client.get("/api/agent/models").json() == {"models": [], "defaultModelId": None}
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        with app.state.session_factory() as db:
+            session = db.scalar(select(AgentSession).where(AgentSession.public_id == session_id))
+            with pytest.raises(ApiError) as error:
+                create_run(db, session=session, content="无模型", idempotency_key="none", timeout_seconds=60)
+            assert (error.value.status_code, error.value.code) == (503, "LLM_MODEL_NOT_CONFIGURED")
