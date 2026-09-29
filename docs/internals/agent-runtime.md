@@ -57,7 +57,7 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 
 - `llm_provider_connections`：接入商代码、独立凭据、受控设置、配置版本与目录同步状态。推理地址由接入商适配器确定，后台不能提交任意 URL；AIHubMix 可选择官方默认或备用地址，切换会让旧探测失效。
 - `llm_models`：供用户选择的稳定逻辑模型名称；`user_selectable` 决定它能否出现在对话页，隐藏不影响系统能力绑定。
-- `llm_model_routes`：逻辑模型在某连接上的实际 `invoke_target`、目标类型、目录元数据、价格规则和启停状态。同一逻辑模型可配置多条线路。
+- `llm_model_routes`：逻辑模型在某连接上的实际 `invoke_target`、目标类型、目录元数据、价格规则和启停状态。同一逻辑模型可配置多条线路。线路、逻辑模型一旦被 `agent_runs` 冻结或被 `agent_sessions` 选中，管理端就无法删除，只能停用；因此 Agent 历史里记录的模型和线路始终能查到。
 - `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别、模拟面试、识别稿修正、语音识别（`speech_to_text`）、语音合成（`text_to_speech`）和用户对话；场景代码由后端注册，不建字典表。语音场景只能绑定阿里云百炼连接上的 `aliyun_asr_realtime`、`aliyun_tts_realtime` 协议，其余非对话场景只能用 `openai_chat`；语音线路的探针经 `modules/speech` 适配层发送一秒静音或合成一句固定文本，调用日志在 `usage_json` 记录音频秒数或字符数，不记录音频与正文。
 - `llm_call_logs`：每次实际模型请求的线路、配置版本、用量、价格快照、费用和安全错误分类；失败后切换线路会产生多条记录，不保存提示词或正文。Pi 的模型请求由内部服务令牌回传；运行费用由这些记录汇总。
 - `agent_sessions` 保存用户对话显式选中的逻辑模型 ID；`agent_runs` 冻结本轮解析出的逻辑模型、线路、连接配置版本、协议和价格规则。正在运行的请求若遇配置版本变化会失败，避免静默切换凭据。
