@@ -1,4 +1,5 @@
 import json
+from uuid import uuid4
 
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
@@ -7,6 +8,7 @@ from sqlalchemy import select
 from linkresume.core.config import Settings
 from linkresume.core.database import utc_now
 from linkresume.main import create_app
+from linkresume.modules.agent.models import AgentRun, AgentSession
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
 from linkresume.modules.llm.models import (
@@ -202,3 +204,78 @@ def test_model_user_selectable_is_admin_editable_and_ignored_by_system_use_cases
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
         assert resolve(db, JOB_TEXT_EXTRACTION).model_id == model.id
+
+
+def _create_route(client, model_id, connection_id, target="vendor/model"):
+    response = client.post("/api/admin/llm/routes", json={"modelId": int(model_id), "connectionId": int(connection_id), "targetKind": "model", "invokeTarget": target})
+    assert response.status_code == 201, response.text
+    return response.json()["route"]["id"]
+
+
+def test_unused_route_model_and_connection_can_be_deleted():
+    app, _ = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        connection_id = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "临时连接", "apiKey": "fictional-key", "settings": {}}).json()["connection"]["id"]
+        model_id = client.post("/api/admin/llm/models", json={"displayName": "临时模型"}).json()["model"]["id"]
+        other_model = client.post("/api/admin/llm/models", json={"displayName": "另一个模型"}).json()["model"]["id"]
+        route_id = _create_route(client, model_id, connection_id)
+        _create_route(client, model_id, connection_id, "vendor/model-2")
+        kept_route = _create_route(client, other_model, connection_id, "vendor/other")
+
+        assert client.delete(f"/api/admin/llm/routes/{route_id}").status_code == 204
+        assert client.delete(f"/api/admin/llm/routes/{route_id}").status_code == 404
+        # Deleting a model takes its remaining unused routes with it.
+        assert client.delete(f"/api/admin/llm/models/{model_id}").status_code == 204
+        assert client.delete(f"/api/admin/llm/models/{model_id}").status_code == 404
+        routes = client.get("/api/admin/llm/routes").json()["routes"]
+        assert [route["id"] for route in routes] == [kept_route]
+        # Deleting a connection takes its routes but keeps logical models.
+        assert client.delete(f"/api/admin/llm/connections/{connection_id}").status_code == 204
+        assert client.get("/api/admin/llm/routes").json()["routes"] == []
+        assert [model["id"] for model in client.get("/api/admin/llm/models").json()["models"]] == [other_model]
+        assert client.delete("/api/admin/llm/connections/abc").status_code == 404
+
+
+def test_referenced_llm_configuration_cannot_be_deleted():
+    app, _ = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        connection_id = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "主连接", "apiKey": "fictional-key", "settings": {}}).json()["connection"]["id"]
+        model_id = client.post("/api/admin/llm/models", json={"displayName": "示例模型"}).json()["model"]["id"]
+        route_id = _create_route(client, model_id, connection_id)
+        path = f"/api/admin/llm/use-cases/job_text_extraction/routes/{route_id}"
+        assert client.put(path, json={"useCase": "job_text_extraction", "routeId": int(route_id), "protocolCode": "openai_chat", "priority": 100}).status_code == 200
+
+        # A binding blocks deletion of the route, its model and its connection.
+        for target, code in (("routes/" + route_id, "LLM_ROUTE_IN_USE"), ("models/" + model_id, "LLM_MODEL_IN_USE"), ("connections/" + connection_id, "LLM_CONNECTION_IN_USE")):
+            response = client.delete(f"/api/admin/llm/{target}")
+            assert response.status_code == 409 and response.json()["error"] == code, response.text
+
+        # A probe writes a call log; once unbound, that history still blocks deletion.
+        assert client.post(f"{path}/probe").status_code == 200
+        assert client.delete(path).status_code == 204
+        response = client.delete(f"/api/admin/llm/routes/{route_id}")
+        assert response.status_code == 409 and response.json()["error"] == "LLM_ROUTE_IN_USE"
+        assert len(client.get("/api/admin/llm/routes").json()["routes"]) == 1
+        assert len(client.get("/api/admin/llm/connections").json()["connections"]) == 1
+
+
+def test_agent_history_blocks_deleting_its_model_and_route():
+    app, _ = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        connection_id = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "主连接", "apiKey": "fictional-key", "settings": {}}).json()["connection"]["id"]
+        selected = client.post("/api/admin/llm/models", json={"displayName": "会话所选模型"}).json()["model"]["id"]
+        resolved = client.post("/api/admin/llm/models", json={"displayName": "运行所用模型"}).json()["model"]["id"]
+        route_id = _create_route(client, resolved, connection_id)
+        with app.state.session_factory() as db:
+            user = db.scalar(select(User).where(User.email == "admin@example.invalid"))
+            session = AgentSession(public_id=str(uuid4()), user_id=user.id, title="示例", status="active", selected_llm_model_id=int(selected))
+            db.add(session); db.flush()
+            db.add(AgentRun(public_id=str(uuid4()), session_id=session.id, idempotency_key=uuid4().hex, status="succeeded", resolved_llm_model_id=int(resolved), resolved_llm_route_id=int(route_id), started_at=utc_now()))
+            db.commit()
+        assert client.delete(f"/api/admin/llm/models/{selected}").json()["error"] == "LLM_MODEL_IN_USE"
+        assert client.delete(f"/api/admin/llm/models/{resolved}").json()["error"] == "LLM_MODEL_IN_USE"
+        assert client.delete(f"/api/admin/llm/routes/{route_id}").json()["error"] == "LLM_ROUTE_IN_USE"
+        assert client.delete(f"/api/admin/llm/connections/{connection_id}").json()["error"] == "LLM_CONNECTION_IN_USE"

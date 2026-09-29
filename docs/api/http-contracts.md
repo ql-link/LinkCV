@@ -432,10 +432,10 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/admin/llm/catalog` | `{useCases,providers}`；代码注册的场景和接入商能力 |
-| `GET/POST/PATCH` | `/api/admin/llm/connections[/:id]` | 连接列表、创建或按 `baseVersion` 编辑连接；密钥只写，响应仅含 `keyConfigured` |
+| `GET/POST/PATCH/DELETE` | `/api/admin/llm/connections[/:id]` | 连接列表、创建或按 `baseVersion` 编辑连接；密钥只写，响应仅含 `keyConfigured`；删除成功 `204` |
 | `POST` | `/api/admin/llm/connections/:id/sync` | 从支持目录的接入商同步模型和线路；新线路默认停用 |
-| `GET/POST/PATCH` | `/api/admin/llm/models[/:id]` | 逻辑模型列表、创建或编辑显示名称与 `userSelectable`（对话页是否可选，创建时默认 `true`） |
-| `GET/POST/PATCH` | `/api/admin/llm/routes[/:id]` | 线路列表、创建或修改线路启停、标识类型与价格规则 |
+| `GET/POST/PATCH/DELETE` | `/api/admin/llm/models[/:id]` | 逻辑模型列表、创建或编辑显示名称与 `userSelectable`（对话页是否可选，创建时默认 `true`）；删除成功 `204` |
+| `GET/POST/PATCH/DELETE` | `/api/admin/llm/routes[/:id]` | 线路列表、创建或修改线路启停、标识类型与价格规则；删除成功 `204` |
 | `GET` | `/api/admin/llm/use-cases` | `{bindings}`；包含探测时间和当前是否生效 |
 | `PUT/PATCH/DELETE` | `/api/admin/llm/use-cases/:useCase/routes/:routeId` | 创建或调整场景绑定、停用或删除绑定 |
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
@@ -446,6 +446,8 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 `llm_call_logs` 每条记录对应一次实际请求，切换前失败的线路和切换后成功的线路分别记录，保存场景、来源、用户、运行、真实线路、调用协议、用量、价格规则快照、估算费用与币种及安全错误分类；不保存提示词、图片、完整响应或明文凭据。目录价格带分档、缓存或优惠规则时，缺少充分用量明细的估算费用留空，`meteringStatus=partial`。Pi 的费用由后端根据线路价格规则计算，不信任 Pi 回传的金额。`0091` 删除并重建旧 LLM 四张表，保留 Agent 会话与运行；迁移前需检查目标 revision、旧数据与备份。
 
 结构化调用是后端内部能力，服务端在系统指令中提供 JSON Schema，并本地验证输出；非法结构以 `LLM_RESPONSE_INVALID` 收口。
+
+删除是物理删除，只用于清理从未使用过的配置，历史数据一律不删。线路只要仍被场景绑定、`llm_call_logs` 或 `agent_runs` 引用，删除返回 `409 LLM_ROUTE_IN_USE`，此时应改为停用。删除逻辑模型会同时删除它的全部线路：模型被 `agent_sessions`/`agent_runs` 引用，或其中任一线路被引用时，返回 `409 LLM_MODEL_IN_USE`。删除连接会同时删除它的全部线路，但保留逻辑模型，因为同一模型可能还有其他连接的线路；任一线路被引用时返回 `409 LLM_CONNECTION_IN_USE`。以上删除都整体成功或整体失败，不会只删掉一部分线路。
 
 ## 管理台用户管理
 

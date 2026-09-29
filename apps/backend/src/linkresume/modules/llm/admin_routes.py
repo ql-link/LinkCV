@@ -16,6 +16,7 @@ from linkresume.core.database import get_db, utc_now
 from linkresume.core.errors import ApiError
 from linkresume.modules.admin_insights.llm import cost_totals
 from linkresume.modules.admin_insights.window import resolve_window
+from linkresume.modules.agent.models import AgentRun, AgentSession
 from linkresume.modules.identity.dependencies import get_current_admin
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.catalog import CATALOG_URLS, fetch_catalog
@@ -80,6 +81,37 @@ def _commit(db: Session) -> None:
     except IntegrityError as error:
         db.rollback()
         raise ApiError(409, "LLM_CONFLICT") from error
+
+
+def _referenced_route_ids(db: Session, route_ids: list[int]) -> set[int]:
+    """Routes that bindings or call/run history still point at; those are never deleted."""
+    if not route_ids:
+        return set()
+    referenced: set[int] = set()
+    for column in (LLMUseCaseRoute.route_id, LLMCallLog.route_id, AgentRun.resolved_llm_route_id):
+        referenced.update(db.scalars(select(column).where(column.in_(route_ids)).distinct()))
+    return referenced
+
+
+def _model_referenced(db: Session, model_id: int) -> bool:
+    for column in (AgentSession.selected_llm_model_id, AgentRun.resolved_llm_model_id):
+        if db.scalar(select(column).where(column == model_id).limit(1)) is not None:
+            return True
+    return False
+
+
+def _delete_routes(db: Session, routes: list[LLMModelRoute], error_code: str) -> None:
+    if _referenced_route_ids(db, [route.id for route in routes]):
+        raise ApiError(409, error_code)
+    for route in routes:
+        db.delete(route)
+    # Flush child rows first so the parent delete never trips the RESTRICT foreign keys;
+    # a reference written concurrently after the check is still caught by those keys.
+    try:
+        db.flush()
+    except IntegrityError as error:
+        db.rollback()
+        raise ApiError(409, error_code) from error
 
 
 def _bundle(service: LLMService, row: LLMProviderConnection) -> dict[str, str]:
@@ -257,6 +289,24 @@ def patch_connection(
     return {"connection": _connection_record(row)}
 
 
+@router.delete("/connections/{connection_id}", status_code=204)
+def delete_connection(
+    connection_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> None:
+    row = _connection(db, connection_id, lock=True)
+    # Its unused routes go with it; logical models stay, they may be served by other connections.
+    routes = db.scalars(
+        select(LLMModelRoute).where(LLMModelRoute.connection_id == row.id).with_for_update()
+    ).all()
+    _delete_routes(db, list(routes), "LLM_CONNECTION_IN_USE")
+    db.delete(row)
+    _commit(db)
+    bind_audit_target(request, row.id)
+
+
 @router.post("/connections/{connection_id}/sync")
 async def sync_connection_catalog(
     connection_id: str,
@@ -368,6 +418,25 @@ def patch_model(
     return {"model": _model_record(row)}
 
 
+@router.delete("/models/{model_id}", status_code=204)
+def delete_model(
+    model_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> None:
+    row = _model(db, model_id)
+    if _model_referenced(db, row.id):
+        raise ApiError(409, "LLM_MODEL_IN_USE")
+    routes = db.scalars(
+        select(LLMModelRoute).where(LLMModelRoute.model_id == row.id).with_for_update()
+    ).all()
+    _delete_routes(db, list(routes), "LLM_MODEL_IN_USE")
+    db.delete(row)
+    _commit(db)
+    bind_audit_target(request, row.id)
+
+
 @router.get("/routes")
 def routes(
     db: Session = Depends(get_db), _: User = Depends(get_current_admin),
@@ -435,6 +504,19 @@ def patch_route(
     _commit(db)
     bind_audit_target(request, row.id)
     return {"route": _route_record(row)}
+
+
+@router.delete("/routes/{route_id}", status_code=204)
+def delete_route(
+    route_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> None:
+    row = _route(db, route_id, lock=True)
+    _delete_routes(db, [row], "LLM_ROUTE_IN_USE")
+    _commit(db)
+    bind_audit_target(request, row.id)
 
 
 @router.get("/use-cases")

@@ -35,7 +35,7 @@ LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) �
 
 Agent 轨迹由 FastAPI 在预检、运行创建、Pi 代理、工具事件、运行收尾和提案确认处直接写入 MySQL。管理端的「Agent 调用排障」是独立页面；列表包含旧 `agent_runs`，旧运行详情标记为 `legacy`。轨迹只保存受控阶段、结果、稳定错误码、耗时与关联键；用户原话、简历正文和工具参数仍留在各自业务数据中，不复制进轨迹。
 
-管理员写操作的固定审计目录覆盖：用户启停；模型接入连接的创建、编辑与目录同步（`admin.llm_connection_*`）、逻辑模型与线路的创建和编辑（`admin.llm_model_*`、`admin.llm_route_*`）、能力绑定的写入、编辑、解绑与探针（`admin.llm_binding_*`，目标为 `<use_case>:<route_id>`）；插件发布包的发布、下线、重新上架与删除（`admin.plugin_release_*`，目标为包版本号）；应用内公告的创建、编辑、删除、发布与下线（`admin.announcement_*`，目标类型 `announcement`）。审计目录登记的每个路由都由测试核对仍然存在，路由改名或删除后必须同步目录，否则对应操作会静默脱离审计。
+管理员写操作的固定审计目录覆盖：用户启停；模型接入连接的创建、编辑、删除与目录同步（`admin.llm_connection_*`）、逻辑模型与线路的创建、编辑和删除（`admin.llm_model_*`、`admin.llm_route_*`）、能力绑定的写入、编辑、解绑与探针（`admin.llm_binding_*`，目标为 `<use_case>:<route_id>`）；插件发布包的发布、下线、重新上架与删除（`admin.plugin_release_*`，目标为包版本号）；应用内公告的创建、编辑、删除、发布与下线（`admin.announcement_*`，目标类型 `announcement`）。审计目录登记的每个路由都由测试核对仍然存在，路由改名或删除后必须同步目录，否则对应操作会静默脱离审计。
 
 模拟面试的发起（含再练一次）、提前结束和删除分别登记为 `mock_interview.create`、`mock_interview.finish` 与 `mock_interview.delete`，语音面试的 AI 修正识别稿、手动修改、单题重新评估和删除录音登记为 `mock_interview.transcript_correct`、`mock_interview.transcript_edit`、`mock_interview.re_evaluate` 与 `mock_interview.recordings_delete`，均不含识别稿正文；目标为面试的 UUID 公共 ID；管理端动作筛选直接取自服务端动作目录，无需单独维护选项。后台准备与评估失败只写入场次 `error_code` 和不含正文的系统日志，不产生审计事件。
 
