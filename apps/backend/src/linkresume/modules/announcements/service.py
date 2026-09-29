@@ -81,6 +81,12 @@ def active_filter(now: datetime):
     )
 
 
+def scheduled_filter(now: datetime):
+    """SQL predicate equivalent to ``visibility(row, now) == 'scheduled'``."""
+    start = func.coalesce(Announcement.starts_at, Announcement.published_at)
+    return and_(Announcement.status == "published", start > now)
+
+
 def validate_window(starts_at: datetime | None, ends_at: datetime | None) -> None:
     starts_at, ends_at = _aware(starts_at), _aware(ends_at)
     if starts_at is not None and ends_at is not None and ends_at <= starts_at:
@@ -225,6 +231,7 @@ class Stats:
     published: int
     unpublished: int
     active: int
+    scheduled: int
 
 
 def stats(db: Session, now: datetime | None = None) -> Stats:
@@ -233,11 +240,13 @@ def stats(db: Session, now: datetime | None = None) -> Stats:
         select(Announcement.status, func.count()).group_by(Announcement.status)
     ).all())
     active = db.scalar(select(func.count(Announcement.id)).where(active_filter(now))) or 0
+    scheduled = db.scalar(select(func.count(Announcement.id)).where(scheduled_filter(now))) or 0
     return Stats(
         draft=by_status.get("draft", 0),
         published=by_status.get("published", 0),
         unpublished=by_status.get("unpublished", 0),
         active=active,
+        scheduled=scheduled,
     )
 
 

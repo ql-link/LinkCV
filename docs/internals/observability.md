@@ -13,7 +13,7 @@ LinkResume 可观测性子系统负责请求上下文、结构化系统日志、
 - `audit.py`：固定审计动作目录和请求上下文绑定。
 - `loki.py`：面向固定筛选条件的共享 Loki 查询适配；`query_level_buckets` 以 `query_range` 按固定步长统计 ERROR、CRITICAL 与 WARNING 系统日志，供管理台热力图使用。
 - `routes.py`：受限客户端事件写入与管理员日志读取。
-- Web `ObservabilityBoundary.tsx`：捕获客户端异常；`AdminObservabilityPanels.tsx`：系统和审计日志界面。
+- Web `ObservabilityBoundary.tsx`：捕获客户端异常；管理端 `SecurityPages.tsx`：系统日志、业务审计、LLM 调用与 Agent 页面。
 
 ## 数据流
 

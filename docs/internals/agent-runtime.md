@@ -1,6 +1,6 @@
 # Agent 与统一 LLM 运行时架构
 
-Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operations` 在上下文预检前落库，保存运行创建前失败摘要；`agent_stage_events` 按同一操作记录阶段转换。运行创建后状态仍以 `agent_runs` 为真值，工具终态仍以 `agent_tool_calls` 为真值，提案状态仍以 `resume_change_proposals` 为真值。`agent_runs.model_name` 保存本轮逻辑模型展示名快照，后续改名不改变它；无法可靠还原的旧运行保持空值。新表只提供安全排障时间线，不复制提示词、简历正文、上下文或工具参数；管理员通过 `/api/admin/agent-operations` 查询，删除会话时同步清理。列表与 `modules/admin_insights` 的 Agent 健康统计共用 `agent/admin_routes.py` 的 `operation_rows()`，保证两处状态口径一致；统计的 P95 耗时取已完成运行的 `completed_at - started_at`。LLM 用量、厂商与模型健康统计只读 `llm_call_logs` 并经线路关联到模型与连接，验证是否有效复用 `resolver.probe_valid`，不另立规则。
+Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operations` 在上下文预检前落库，保存运行创建前失败摘要；`agent_stage_events` 按同一操作记录阶段转换。运行创建后状态仍以 `agent_runs` 为真值，工具终态仍以 `agent_tool_calls` 为真值，提案状态仍以 `resume_change_proposals` 为真值。`agent_runs.model_name` 保存本轮逻辑模型展示名快照，后续改名不改变它；无法可靠还原的旧运行保持空值。新表只提供安全排障时间线，不复制提示词、简历正文、上下文或工具参数；管理员通过 `/api/admin/agent-operations` 查询（`operationId`、`userId` 在 31 天时间窗内精确匹配），删除会话时同步清理。列表与 `modules/admin_insights` 的 Agent 健康统计共用 `agent/admin_routes.py` 的 `operation_rows()`，保证两处状态口径一致；统计的 P95 耗时取已完成运行的 `completed_at - started_at`。`/api/admin/llm/calls` 的 `callId`、`userId` 筛选分别落在 `uk_llm_call_logs_call_id` 与 `idx_llm_calls_user_created` 上。LLM 用量、厂商与模型健康统计只读 `llm_call_logs` 并经线路关联到模型与连接，验证是否有效复用 `resolver.probe_valid`，不另立规则。
 
 普通提案确认的事务边界为当前 Resume 与提案状态，不调用历史版本追加服务。scoped 模式始终在最新 canonical 内容重放 operation 并保留当前 presentation；旧完整快照模式继续严格检查内部锁。翻译需要检查新简历额度，锁顺序为 User、Proposal、源 Resume，与创建简历的 User-before-Resume 顺序一致。普通提案提交失败显式 rollback，幂等确认直接返回当前结果而不重放。
 

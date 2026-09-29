@@ -80,6 +80,14 @@ def test_admin_only_route_configuration_and_probe():
         calls = client.get("/api/admin/llm/calls")
         assert calls.status_code == 200
         assert calls.json()["calls"][0]["source"] == "capability_probe"
+        call_id = calls.json()["calls"][0]["callId"]
+        by_call = client.get("/api/admin/llm/calls", params={"callId": call_id}).json()
+        assert [item["callId"] for item in by_call["calls"]] == [call_id]
+        assert by_call["summary"]["callCount"] == 1
+        assert client.get("/api/admin/llm/calls", params={"callId": "call_missing"}).json()["calls"] == []
+        # Probes run without a user, so a user filter excludes them.
+        assert client.get("/api/admin/llm/calls", params={"userId": 999999}).json()["calls"] == []
+        assert client.get("/api/admin/llm/calls", params={"userId": 0}).status_code == 400
         with app.state.session_factory() as db:
             assert db.scalar(select(LLMCallLog)).route_id == int(route_id)
 

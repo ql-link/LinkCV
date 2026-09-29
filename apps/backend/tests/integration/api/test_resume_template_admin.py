@@ -265,3 +265,61 @@ def test_invalid_oversized_and_duplicate_packages_never_overwrite() -> None:
     assert unsafe.status_code == html_unsafe.status_code == css_unsafe.status_code == oversized.status_code == missing_fallback.status_code == 400
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count(ResumeTemplate.id))) == 1
+
+
+def test_admin_reorders_all_templates_in_one_request() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, app, admin=True)
+        ids = []
+        for key in ("first-cn", "second-cn", "third-cn"):
+            imported = client.post(
+                "/api/admin/resume-templates/import",
+                files={"file": ("template.json", package(key), "application/json")},
+            ).json()["template"]
+            ids.append(imported["id"])
+            assert client.put(
+                f"/api/admin/resume-templates/{imported['id']}/status",
+                json={"active": True},
+            ).status_code == 200
+
+        def ordered_ids(path: str) -> list[str]:
+            return [item["id"] for item in client.get(path).json()["templates"]]
+
+        reordered = [ids[2], ids[0], ids[1]]
+        response = client.put("/api/admin/resume-templates/order", json={"template_ids": reordered})
+        assert response.status_code == 200
+        body = response.json()["templates"]
+        assert [item["id"] for item in body] == reordered
+        assert [item["sort_order"] for item in body] == [10, 20, 30]
+        assert ordered_ids("/api/admin/resume-templates") == reordered
+        assert ordered_ids("/api/resume-templates") == reordered
+
+        # A list that misses a template, names an unknown one, repeats one or carries a
+        # malformed ID leaves the saved order untouched.
+        for template_ids, status, code in (
+            ([ids[0], ids[1]], 409, "TEMPLATE_ORDER_STALE"),
+            ([*reordered, "999999"], 409, "TEMPLATE_ORDER_STALE"),
+            ([ids[0], ids[0], ids[1]], 422, "TEMPLATE_ORDER_INVALID"),
+            ([ids[0], ids[1], "abc"], 422, "TEMPLATE_ORDER_INVALID"),
+        ):
+            rejected = client.put(
+                "/api/admin/resume-templates/order", json={"template_ids": template_ids}
+            )
+            assert rejected.status_code == status
+            assert rejected.json()["error"] == code
+        for payload in ({"template_ids": []}, {"template_ids": reordered, "extra": 1}, {}):
+            assert client.put("/api/admin/resume-templates/order", json=payload).status_code == 422
+        assert ordered_ids("/api/admin/resume-templates") == reordered
+
+
+def test_template_order_requires_admin() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        assert client.put(
+            "/api/admin/resume-templates/order", json={"template_ids": ["1"]}
+        ).status_code == 401
+        register(client, app, admin=False)
+        assert client.put(
+            "/api/admin/resume-templates/order", json={"template_ids": ["1"]}
+        ).status_code == 403
