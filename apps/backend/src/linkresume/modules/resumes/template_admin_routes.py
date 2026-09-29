@@ -65,6 +65,16 @@ class AdminTemplateSortOrderRequest(BaseModel):
     sort_order: int = Field(strict=True, ge=0, le=1000000)
 
 
+TEMPLATE_ORDER_MAX_ITEMS = 1000
+TEMPLATE_ORDER_STEP = 10
+
+
+class AdminTemplateOrderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_ids: list[str] = Field(min_length=1, max_length=TEMPLATE_ORDER_MAX_ITEMS)
+
+
 class AdminTemplateClassificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -175,6 +185,32 @@ async def import_admin_template(
         db.rollback()
         raise ApiError(409, "TEMPLATE_KEY_CONFLICT") from error
     return AdminTemplateResponse(template=admin_template_record(template))
+
+
+@router.put("/order", response_model=AdminTemplateListResponse)
+def update_admin_template_order(
+    payload: AdminTemplateOrderRequest,
+    _admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminTemplateListResponse:
+    parsed_ids = [parse_decimal_id(value) for value in payload.template_ids]
+    if None in parsed_ids or len(set(parsed_ids)) != len(parsed_ids):
+        raise ApiError(422, "TEMPLATE_ORDER_INVALID")
+    templates = db.scalars(
+        select(ResumeTemplate).order_by(ResumeTemplate.id).with_for_update()
+    ).all()
+    # The list must name every template exactly once: a list built from a stale page
+    # (another admin imported a template meanwhile) is rejected instead of half-applied.
+    by_id = {template.id: template for template in templates}
+    if set(parsed_ids) != set(by_id):
+        db.rollback()
+        raise ApiError(409, "TEMPLATE_ORDER_STALE")
+    for position, template_id in enumerate(parsed_ids, start=1):
+        by_id[template_id].sort_order = position * TEMPLATE_ORDER_STEP
+    db.commit()
+    return AdminTemplateListResponse(
+        templates=[admin_template_record(by_id[template_id]) for template_id in parsed_ids]
+    )
 
 
 @router.put("/{template_id}/status", response_model=AdminTemplateResponse)

@@ -633,6 +633,8 @@ def list_calls(
     use_case: str | None = Query(default=None, alias="useCase", max_length=48),
     status: Literal["pending", "succeeded", "failed", "cancelled"] | None = None,
     error_code: str | None = Query(default=None, alias="errorCode", max_length=64),
+    call_id: str | None = Query(default=None, alias="callId", min_length=1, max_length=40),
+    user_id: int | None = Query(default=None, alias="userId", ge=1),
     from_at: datetime | None = Query(default=None, alias="from"),
     to_at: datetime | None = Query(default=None, alias="to"),
     db: Session = Depends(get_db),
@@ -641,6 +643,11 @@ def list_calls(
     if use_case is not None and use_case not in USE_CASES:
         raise ApiError(422, "LLM_USE_CASE_INVALID")
     filters = []
+    # Exact matches only: both columns are indexed (uk_llm_call_logs_call_id, idx_llm_calls_user_created).
+    if call_id is not None:
+        filters.append(LLMCallLog.call_id == call_id)
+    if user_id is not None:
+        filters.append(LLMCallLog.user_id == user_id)
     if use_case is not None:
         filters.append(LLMCallLog.use_case == use_case)
     if status is not None:
