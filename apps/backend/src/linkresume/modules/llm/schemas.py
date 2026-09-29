@@ -109,11 +109,13 @@ class ConnectionPatch(ApiModel):
 class LogicalModelCreate(ApiModel):
     display_name: str = Field(alias="displayName", min_length=1, max_length=128)
     developer_name: str | None = Field(default=None, alias="developerName", max_length=128)
+    user_selectable: bool = Field(default=True, alias="userSelectable")
 
 
 class LogicalModelPatch(ApiModel):
     display_name: str | None = Field(default=None, alias="displayName", min_length=1, max_length=128)
     developer_name: str | None = Field(default=None, alias="developerName", max_length=128)
+    user_selectable: bool | None = Field(default=None, alias="userSelectable")
 
 
 class RouteCreate(ApiModel):

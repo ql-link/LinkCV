@@ -114,6 +114,7 @@ def _model_record(row: LLMModel) -> dict:
         "id": str(row.id),
         "displayName": row.display_name,
         "developerName": row.developer_name,
+        "userSelectable": bool(row.user_selectable),
         "createdAt": row.created_at,
         "updatedAt": row.updated_at,
     }
@@ -338,6 +339,7 @@ def create_model(
     row = LLMModel(
         display_name=payload.display_name.strip(),
         developer_name=payload.developer_name.strip() if payload.developer_name else None,
+        user_selectable=payload.user_selectable,
     )
     db.add(row)
     _commit(db)
@@ -358,6 +360,8 @@ def patch_model(
         row.display_name = payload.display_name.strip()
     if "developer_name" in payload.model_fields_set:
         row.developer_name = payload.developer_name.strip() if payload.developer_name else None
+    if payload.user_selectable is not None:
+        row.user_selectable = payload.user_selectable
     row.updated_at = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)

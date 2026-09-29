@@ -117,7 +117,7 @@ Pi 在执行前通过服务间 `POST /internal/agent/runs/:runId/tasks:plan` 保
 | --- | --- | --- |
 | `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
 | `GET` | `/api/agent/model` | `200 {model: {id, name}}`；返回默认有效对话逻辑模型的非敏感摘要 |
-| `GET` | `/api/agent/models` | `{models:[{id,name}],defaultModelId}`；只返回有效对话模型，按逻辑模型去重 |
+| `GET` | `/api/agent/models` | `{models:[{id,name}],defaultModelId}`；只返回管理员标记为用户可选的有效对话模型，按逻辑模型去重 |
 | `GET` | `/api/agent/contexts[?type=:type&q=:query&prefix=:bool&limit=:limit]` | `{contexts}`；返回当前用户可选的轻量资料引用，类型为 `resume`、`dataset`、`job`、`application` 或 `interview`；`prefix=true` 时按名称前缀匹配；`dataset` 只包含解析成功且转换对象有效的本人资料，不返回正文 |
 | `GET` | `/api/agent/sessions` | `{sessions}`；返回当前用户最近更新的至多 50 个独立会话，不按简历绑定或过滤 |
 | `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{title?,modelId?,resume_id?}`，其中 `resume_id` 只为旧 Web 缓存兼容而接收并忽略，不校验、不持久化也不返回绑定语义；会话不保存默认简历 |
@@ -135,7 +135,7 @@ Pi 在执行前通过服务间 `POST /internal/agent/runs/:runId/tasks:plan` 保
 SSE 事件包括 `run.started`、`run.phase`、`assistant.activity.delta`、`assistant.activity.status`、`assistant.activity.clear`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。Pi 在工具阶段把模型主动生成的可见 `text_delta` 和兼容的工具执行标签逐个发送为临时 `assistant.activity.delta`；结构化 `assistant.activity.status` 携带 `{runId,callKey,label,status,errorCode?}`，其中 `status` 为 `running|succeeded|failed`，浏览器必须按 `callKey` 原位更新而不是追加重复步骤，失败时只暴露稳定错误码。隐藏思考 delta、工具调用参数和工具结果不进入这些事件；原有 `tool.started/tool.completed` 继续只服务运行兼容与业务工具审计。全部业务工具完成后，模型必须调用不进入工具审计的内部切换工具；Pi 先发送一次 `assistant.activity.clear` 并关闭本轮工具，再把下一轮每个正式回复 `text_delta` 实时发送为 `assistant.delta`，不等待整条 assistant message 结束。临时活动只保存在运行事件缓冲中，不进入助手消息正文；结构化澄清也会先清空活动区，并只持久化服务端生成的澄清文本。`run.phase` 只允许服务端定义的稳定阶段和安全化文案，并可携带实际引用资料数量，不暴露工具参数或推理内容。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。服务端从该澄清所属 run 的用户消息继承原始 `contexts` 和 `selection_context`，重新校验资源存在性、归属和版本，再与客户端本轮引用合并；未经显式替换的同类资源目标或选区不同返回 `409 AGENT_CLARIFICATION_CONTEXT_CONFLICT`；仅当澄清续答显式携带新的简历引用与 `replace_inherited_resume:true` 时允许更换简历，服务端重新验证归属与当前内容并丢弃原简历选区，其他资料仍沿用冲突保护；历史快照损坏返回 `409 AGENT_CLARIFICATION_CONTEXT_INVALID`。服务端按原问题复验 `clarification_answers` 的问题与选项并保存规范化答案；历史客户端可以只发送展示文本，但当前 Web 不依赖该兼容路径。澄清续答要改用另一份简历时，必须同时提交新简历引用与 `replace_inherited_resume=true`；服务端重新校验归属和当前内容，丢弃旧简历选区。该标记不允许在普通新消息中使用，也不能替换其他类型的资料。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。
 FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器订阅断开不会取消模型运行；Web 返回助手页时先查询当前 run，再从头重放该 run 的缓冲事件，因此刷新、SPA 路由切换或切换其他会话不会丢失思考/输出状态。只有显式调用 cancel 才取消运行。事件缓冲是 FastAPI 进程内状态；若后端进程重启而数据库仍残留 running run，重连会以 `AGENT_STREAM_INCOMPLETE` 失败收口，不会重复调用模型。
 
-`/api/agent/model` 返回默认有效对话模型的 `{model:{id,name}}`；`/api/agent/models` 返回去重后的可选列表和 `defaultModelId`，均不返回密钥、地址或价格。没有有效线路时前者返回 `503 LLM_MODEL_NOT_CONFIGURED`，后者返回空列表。`AgentSessionRecord.selected_model_id` 为可空字符串；null 表示跟随当前默认。POST/PATCH 的 `modelId` 由服务端按当前有效对话模型列表校验，其他用户的会话仍按 `404 AGENT_SESSION_NOT_FOUND` 处理。用户已选模型失效时新运行返回 `409 AGENT_MODEL_UNAVAILABLE`，不切换到其他逻辑模型。
+`/api/agent/model` 返回默认有效对话模型的 `{model:{id,name}}`；`/api/agent/models` 返回去重后的可选列表和 `defaultModelId`，均不返回密钥、地址或价格。没有有效线路时前者返回 `503 LLM_MODEL_NOT_CONFIGURED`，后者返回空列表。`AgentSessionRecord.selected_model_id` 为可空字符串；null 表示跟随当前默认。POST/PATCH 的 `modelId` 由服务端按当前有效对话模型列表校验，其他用户的会话仍按 `404 AGENT_SESSION_NOT_FOUND` 处理。用户已选模型失效时新运行返回 `409 AGENT_MODEL_UNAVAILABLE`，不切换到其他逻辑模型。逻辑模型的 `user_selectable=false` 时，该模型在对话能力中视同无效：不进入列表、不作为默认模型、不能被新建或修改的会话选择，已选中它的会话新运行同样返回 `409 AGENT_MODEL_UNAVAILABLE`；已开始的运行继续使用冻结线路。所有对话模型都被隐藏时按未配置处理。该开关只作用于 `assistant_conversation`，系统能力仍可使用隐藏模型。
 
 `AgentSessionRecord` 仍包含布尔 `pinned`，不包含默认 `resume_id`；会话列表先按 `pinned DESC`，再按 `updated_at DESC, id DESC`。PATCH 不创建消息或启动模型调用。DELETE 会锁定会话和运行；存在 `status=running` 的运行返回 `409 AGENT_RUN_IN_PROGRESS`，否则清理该会话及其 Agent 依赖数据。
 
@@ -434,7 +434,7 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `GET` | `/api/admin/llm/catalog` | `{useCases,providers}`；代码注册的场景和接入商能力 |
 | `GET/POST/PATCH` | `/api/admin/llm/connections[/:id]` | 连接列表、创建或按 `baseVersion` 编辑连接；密钥只写，响应仅含 `keyConfigured` |
 | `POST` | `/api/admin/llm/connections/:id/sync` | 从支持目录的接入商同步模型和线路；新线路默认停用 |
-| `GET/POST/PATCH` | `/api/admin/llm/models[/:id]` | 逻辑模型列表、创建或编辑显示名称 |
+| `GET/POST/PATCH` | `/api/admin/llm/models[/:id]` | 逻辑模型列表、创建或编辑显示名称与 `userSelectable`（对话页是否可选，创建时默认 `true`） |
 | `GET/POST/PATCH` | `/api/admin/llm/routes[/:id]` | 线路列表、创建或修改线路启停、标识类型与价格规则 |
 | `GET` | `/api/admin/llm/use-cases` | `{bindings}`；包含探测时间和当前是否生效 |
 | `PUT/PATCH/DELETE` | `/api/admin/llm/use-cases/:useCase/routes/:routeId` | 创建或调整场景绑定、停用或删除绑定 |
