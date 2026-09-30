@@ -989,8 +989,13 @@
 .adm-field > label { font-weight: 500; }
 .adm-field > small { color: var(--adm-muted); font-size: 12px; }
 .adm-field > .adm-field-error { color: var(--adm-bad); }
-.adm-filter-row { display: grid; grid-template-columns: repeat(2, minmax(0, 180px)) minmax(0, 150px) minmax(0, 1fr) auto; gap: 8px; }
-.adm-filter-row .adm-select { max-width: none; height: 36px; }
+/* Agent 排障 toolbar (Figma V4 14): 220px search, status and range pickers, refresh pushed right. */
+.adm-filterbar.is-trace { gap: 10px; }
+.adm-filterbar.is-trace .adm-search { height: 32px; }
+.adm-filterbar.is-trace .adm-date-trigger { height: 34px; }
+.adm-filter-spacer { flex: 1; }
+/* Rows are 17px + text + 17px in the design; a stage/error-code pair makes the row a little taller. */
+.adm-table.is-trace .adm-tr:not(.adm-thead) { min-height: 52px; padding-block: 8px; }
 
 /* ---------- logs & audit ---------- */
 .adm-medium { font-weight: 500; }
@@ -1075,7 +1080,6 @@
   .adm-template-detail { grid-template-columns: 1fr; grid-template-rows: none; }
   .adm-template-side { overflow: visible; }
   .adm-template-side { border-top: 1px solid var(--adm-line-soft); border-left: 0; }
-  .adm-filter-row { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 900px) {
   .adm-shell { grid-template-columns: 1fr; padding: 0; column-gap: 0; }
@@ -1119,7 +1123,7 @@
 @media (max-width: 560px) {
   .adm-page-title { flex-wrap: wrap; }
   .adm-page-actions { width: 100%; margin-left: 0; }
-  .adm-form-row, .adm-form-row.is-three, .adm-detail-list, .adm-filter-row { grid-template-columns: 1fr; }
+  .adm-form-row, .adm-form-row.is-three, .adm-detail-list { grid-template-columns: 1fr; }
   .adm-template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .adm-drawer { top: 0; right: 0; bottom: 0; max-width: calc(var(--adm-vw, 1vw) * 100); border-radius: 0; }
 }

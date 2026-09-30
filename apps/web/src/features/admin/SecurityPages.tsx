@@ -11,7 +11,7 @@ import {
   type LogListResponse,
   type SystemLogQuery,
 } from "../../api/client";
-import { Activity, BadgeCheck, CalendarClock, CircleAlert, CircleCheck, Coins, FileText, GitBranch, History, Layers, Megaphone, Puzzle, Route as RouteIcon, Server, Shield, Timer, TriangleAlert, UserRound, Workflow, Zap, ChevronRight, type LucideIcon } from "lucide-react";
+import { Activity, BadgeCheck, CalendarClock, CircleAlert, CircleCheck, Coins, FileText, GitBranch, History, Layers, Megaphone, Puzzle, Route as RouteIcon, Server, Shield, Timer, TriangleAlert, UserRound, Workflow, Zap, ChevronRight, RefreshCw, type LucideIcon } from "lucide-react";
 import { DotLegend, Donut, DonutLegend, HeatLegend, Heatmap, STATUS_COLORS, ThinStackedBars, type DonutSlice, type ThinStackSeries } from "./charts";
 import { DateTimeInput } from "./DateTimeInput";
 import {
@@ -187,8 +187,9 @@ export function AgentOperationsPage() {
     const to = new Date();
     return api.adminInsightAgent({ from: new Date(to.getTime() - 31 * 86400_000).toISOString(), to: to.toISOString() });
   });
-  const [draft, setDraft] = useState<{ range: AgentRange; from: string; to: string; status: string; errorCode: string }>({ range: "", from: "", to: "", status: "", errorCode: "" });
-  const [applied, setApplied] = useState(draft);
+  // Filters apply as they change (Figma V4 14); the search box applies on Enter, like the other log pages.
+  const [filters, setFilters] = useState<{ range: AgentRange; from: string; to: string; status: string; search: string }>({ range: "7d", from: "", to: "", status: "", search: "" });
+  const [searchText, setSearchText] = useState("");
   const [items, setItems] = useState<AgentOperationItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -204,16 +205,16 @@ export function AgentOperationsPage() {
     setError(null);
     try {
       const result = await api.adminListAgentOperations({
-        status: applied.status || undefined,
+        status: filters.status || undefined,
         ...(() => {
-          const search = parseRecordSearch(applied.errorCode);
+          const search = parseRecordSearch(filters.search);
           return {
             errorCode: search?.kind === "error" ? search.value : undefined,
             operationId: search?.kind === "id" ? search.value : undefined,
             userId: search?.kind === "user" ? search.value : undefined,
           };
         })(),
-        ...agentRangeQuery(applied),
+        ...agentRangeQuery(filters),
         cursor,
       });
       if (current !== requestId.current) return;
@@ -225,14 +226,15 @@ export function AgentOperationsPage() {
     } finally {
       if (current === requestId.current) setLoading(false);
     }
-  }, [applied, onSessionExpired]);
+  }, [filters, onSessionExpired]);
 
   useEffect(() => { void load(); }, [load]);
   const data = insight.data;
+  const refresh = () => { void load(); void insight.reload(); };
 
   return (
     <>
-      <PageHeader title="Agent 调用排障" actions={<Button onClick={() => { void load(); void insight.reload(); }}>刷新</Button>} />
+      <PageHeader title="Agent 调用排障" actions={<Button onClick={refresh}>刷新</Button>} />
       {insight.loading && !data ? <SkeletonMetrics /> : data && (
         <Metrics items={[
           { label: "31 日操作", value: formatNumber(data.operations), icon: Workflow, tint: "blue" },
@@ -243,20 +245,21 @@ export function AgentOperationsPage() {
       )}
       <ListPanel
         label="操作记录"
-        resetKey={JSON.stringify(applied)}
+        resetKey={JSON.stringify(filters)}
         toolbar={(
-        <form className="adm-filter-row" onSubmit={(event) => { event.preventDefault(); setApplied(draft); }}>
-          <SelectBox label="时间范围" icon={CalendarClock} className="adm-filter-select" value={draft.range} onChange={(range) => setDraft({ ...draft, range })} options={Object.entries(agentRanges).map(([value, label]) => ({ value: value as AgentRange, label }))} />
-          {draft.range === "custom" && (
+        <div className="adm-filterbar is-trace">
+          <SearchInput value={searchText} onChange={(next) => { setSearchText(next); if (!next.trim() && filters.search) setFilters({ ...filters, search: "" }); }} onSubmit={() => setFilters({ ...filters, search: searchText.trim() })} placeholder="操作 ID / 用户 ID" width={220} />
+          <SelectBox label="状态" icon={Layers} className="adm-filter-select" value={filters.status} onChange={(status) => setFilters({ ...filters, status })} options={[{ value: "", label: "全部状态" }, ...Object.entries(agentStatus).map(([value, item]) => ({ value, label: item.label }))]} />
+          <SelectBox label="时间范围" icon={CalendarClock} className="adm-filter-select" value={filters.range} onChange={(range) => setFilters({ ...filters, range })} options={Object.entries(agentRanges).map(([value, label]) => ({ value: value as AgentRange, label }))} />
+          {filters.range === "custom" && (
             <>
-              <DateTimeInput label="开始时间" placeholder="开始时间" value={draft.from} onChange={(from) => setDraft({ ...draft, from })} />
-              <DateTimeInput label="结束时间" placeholder="结束时间" defaultTime="23:59" value={draft.to} onChange={(to) => setDraft({ ...draft, to })} />
+              <DateTimeInput label="开始时间" placeholder="开始时间" width={180} value={filters.from} onChange={(from) => setFilters({ ...filters, from })} />
+              <DateTimeInput label="结束时间" placeholder="结束时间" width={180} defaultTime="23:59" value={filters.to} onChange={(to) => setFilters({ ...filters, to })} />
             </>
           )}
-          <SelectBox label="状态" value={draft.status} onChange={(value) => setDraft({ ...draft, status: value })} options={[{ value: "", label: "全部状态" }, ...Object.entries(agentStatus).map(([value, item]) => ({ value, label: item.label }))]} />
-          <input className="adm-input" aria-label="操作 ID / 用户 ID / 错误码" placeholder="操作 ID / 用户 ID / 错误码" value={draft.errorCode} onChange={(event) => setDraft({ ...draft, errorCode: event.target.value })} />
-          <Button variant="primary" type="submit" disabled={loading}>查询</Button>
-        </form>
+          <span className="adm-filter-spacer" aria-hidden="true" />
+          <Button className="adm-filter-btn" disabled={loading} onClick={refresh}><RefreshCw size={14} strokeWidth={2} aria-hidden="true" />刷新</Button>
+        </div>
         )}
         footer={items.length > 0 && (
           <TableFooter>
@@ -268,7 +271,8 @@ export function AgentOperationsPage() {
         {loading && items.length === 0 ? <LoadingRegion label="正在加载操作记录…"><SkeletonRows rows={6} columns={7} /></LoadingRegion> : error && items.length === 0 ? <ErrorState title="读取 Agent 排障记录失败" code={error} onRetry={() => void load()} /> : (
           <>
             <DataTable<AgentOperationItem>
-              setKey={JSON.stringify(applied)}
+              className="is-trace"
+              setKey={JSON.stringify(filters)}
               rows={items}
               rowKey={(row) => row.id}
               onRowClick={(row) => setSelected(row.id)}
@@ -276,12 +280,14 @@ export function AgentOperationsPage() {
               empty="当前条件下没有记录"
               columns={[
                 { key: "time", label: "时间", width: "60px", render: (row) => <span className="adm-ink2">{formatWhen(row.created_at, "—", { compact: true })}</span> },
-                { key: "id", label: "操作", width: "150px", render: (row) => <span className="adm-cell-inline"><span className="adm-ellipsis adm-ink2 adm-medium">{row.id}</span>{row.legacy && <Badge tone="neutral">历史</Badge>}</span> },
+                { key: "id", label: "操作", width: "170px", render: (row) => <span className="adm-cell-inline"><span className="adm-ellipsis adm-ink2 adm-medium adm-small">{row.id}</span>{row.legacy && <Badge tone="neutral">历史</Badge>}</span> },
                 { key: "user", label: "用户", width: "80px", render: (row) => <span className="adm-ink2">{row.user_id}</span> },
-                { key: "model", label: "模型", width: "minmax(0, 1fr)", render: (row) => <span className="adm-ink2">{row.model_name ?? "—"}</span> },
+                { key: "model", label: "模型", width: "minmax(0, 1fr)", render: (row) => <span className="adm-ellipsis adm-ink2">{row.model_name ?? "—"}</span> },
                 { key: "status", label: "状态", width: "90px", render: (row) => <StatusDot tone={statusOf(row.status).tone}>{statusOf(row.status).label}</StatusDot> },
-                { key: "stage", label: "阶段 / 错误码", width: "220px", render: (row) => row.failure_stage || row.error_code ? <span className="adm-cell-stack"><span className="adm-ink2 adm-medium adm-small">{row.failure_stage ?? "—"}</span>{row.error_code && <code className="adm-code adm-tone-bad">{row.error_code}</code>}</span> : <span className="adm-muted">—</span> },
-                { key: "open", label: "", width: "20px", render: () => <ChevronRight size={18} className="adm-chevron" aria-hidden="true" /> },
+                { key: "stage", label: "阶段 / 错误码", width: "220px", render: (row) => row.error_code
+                  ? <span className="adm-cell-stack is-tight adm-medium adm-small"><span className="adm-ellipsis adm-ink2">{row.failure_stage ?? "—"}</span><span className="adm-ellipsis adm-tone-bad">{row.error_code}</span></span>
+                  : row.failure_stage ? <span className="adm-ellipsis adm-ink2 adm-small">{row.failure_stage}</span> : <span className="adm-faint">—</span> },
+                { key: "open", label: "", width: "20px", render: () => <ChevronRight size={16} className="adm-chevron" aria-hidden="true" /> },
               ]}
             />
           </>
