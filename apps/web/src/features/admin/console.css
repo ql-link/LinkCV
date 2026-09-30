@@ -684,7 +684,7 @@
 .adm-template-card.is-placeholder { height: 322px; border: 1.5px dashed #b9bab5; border-radius: 8px; background: #f5f5f2; animation: adm-enter-fade .16s ease-out both; }
 .adm-template-grid.is-dragging .adm-template-card:not(.is-placeholder) { cursor: grabbing; }
 .adm-template-grid.is-dragging .adm-template-card:hover { transform: none; }
-.adm-template-open { display: block; width: 100%; border: 0; border-radius: 8px; background: transparent; padding: 0; cursor: pointer; }
+.adm-template-open { display: block; width: 100%; border: 0; border-radius: 8px; background: transparent; padding: 0; cursor: pointer; text-align: start; }
 .adm-template-open:focus-visible { outline: 2px solid var(--adm-info); outline-offset: 2px; }
 .adm-template-card[draggable="true"] .adm-template-open { cursor: inherit; }
 .adm-template-preview { position: relative; display: block; height: 322px; overflow: hidden; border: 1px solid var(--adm-line); border-radius: 8px; background: #fff; box-shadow: 0 6px 16px rgba(0, 0, 0, .05); transition: box-shadow .2s; }
@@ -707,14 +707,18 @@
 .adm-template-card.is-skeleton .adm-template-preview { animation: adm-pulse 1.4s ease-in-out infinite; }
 .adm-template-card.is-skeleton .adm-template-info { flex-direction: column; align-items: stretch; gap: 4px; }
 
-.adm-template-detail { display: grid; grid-template-columns: minmax(0, 620px) minmax(0, 1fr); min-height: 560px; margin: -4px -24px -20px; }
+/* The detail fills the modal and scrolls each column on its own, so the side panel (and its delete action) stays in view. */
+.adm-modal:has(.adm-template-detail) { height: calc(var(--adm-vh, 1vh) * 100 - 48px); }
+.adm-modal-body:has(> .adm-template-detail) { display: flex; overflow: hidden; padding: 0; }
+.adm-template-detail { display: grid; min-height: 0; flex: 1; grid-template-columns: minmax(0, 620px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .adm-template-canvas { position: relative; overflow: auto; background: #f5f5f2; padding: 24px 24px 60px; }
 .adm-template-full .resume-readonly-preview-full { max-height: none; overflow: visible; padding: 0; }
 .adm-template-canvas > .adm-state { margin-top: 80px; background: #fff; }
 .adm-zoom { position: sticky; bottom: 0; left: 50%; display: inline-flex; float: left; align-items: center; gap: 10px; transform: translateX(-50%); margin-left: 50%; border: 1px solid var(--adm-line); border-radius: 99px; background: #fff; padding: 4px 10px; font-size: 12px; font-weight: 500; }
 .adm-zoom button { display: grid; width: 20px; height: 20px; place-items: center; border: 0; background: transparent; color: var(--adm-muted); cursor: pointer; }
-.adm-template-side { display: flex; min-width: 0; flex-direction: column; gap: 22px; border-left: 1px solid var(--adm-line-soft); padding: 24px 28px; }
+.adm-template-side { display: flex; min-width: 0; min-height: 0; flex-direction: column; gap: 22px; overflow: auto; border-left: 1px solid var(--adm-line-soft); padding: 24px 28px; }
 .adm-template-desc { margin: 0; border-top: 1px solid var(--adm-line-soft); padding-top: 16px; color: var(--adm-muted); font-size: 12px; line-height: 1.6; }
+.adm-template-danger { margin-top: auto; border-top: 1px solid var(--adm-line-soft); padding-top: 16px; }
 .adm-setting-row { display: flex; align-items: center; gap: 16px; }
 .adm-setting-row > div { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .adm-setting-row strong { font-weight: 500; }
@@ -1067,7 +1071,9 @@
 
 /* ---------- responsive ---------- */
 @media (max-width: 1100px) {
-  .adm-template-detail { grid-template-columns: 1fr; }
+  .adm-modal-body:has(> .adm-template-detail) { display: block; overflow: auto; }
+  .adm-template-detail { grid-template-columns: 1fr; grid-template-rows: none; }
+  .adm-template-side { overflow: visible; }
   .adm-template-side { border-top: 1px solid var(--adm-line-soft); border-left: 0; }
   .adm-filter-row { grid-template-columns: 1fr 1fr; }
 }

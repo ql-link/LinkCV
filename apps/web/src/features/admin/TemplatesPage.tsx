@@ -6,6 +6,7 @@ import { ResumePreview } from "../preview/ResumePreview";
 import {
   Badge,
   Button,
+  ConfirmModal,
   ErrorState,
   InlineError,
   ListPanel,
@@ -216,6 +217,13 @@ export function TemplatesPage() {
     }
   };
 
+  const remove = async (template: AdminResumeTemplate) => {
+    await api.deleteAdminResumeTemplate(template.id);
+    list.setData(templates.filter((item) => item.id !== template.id));
+    setDetailId(null);
+    notify("模板已删除");
+  };
+
   const replace = (updated: AdminResumeTemplate) => list.setData(templates.map((item) => item.id === updated.id ? updated : item));
 
   return (
@@ -335,6 +343,7 @@ export function TemplatesPage() {
           onClose={() => setDetailId(null)}
           onChange={replace}
           onToggle={toggle}
+          onDelete={remove}
         />
       )}
       {importing && <ImportTemplateModal onClose={() => setImporting(false)} onImported={() => { setImporting(false); void list.reload(); }} />}
@@ -349,6 +358,7 @@ function TemplateDetailModal({
   onClose,
   onChange,
   onToggle,
+  onDelete,
 }: {
   templates: AdminResumeTemplate[];
   templateId: string;
@@ -356,6 +366,7 @@ function TemplateDetailModal({
   onClose: () => void;
   onChange: (template: AdminResumeTemplate) => void;
   onToggle: (template: AdminResumeTemplate, next: boolean) => Promise<void>;
+  onDelete: (template: AdminResumeTemplate) => Promise<void>;
 }) {
   const index = templates.findIndex((item) => item.id === templateId);
   const template = templates[index];
@@ -363,10 +374,13 @@ function TemplateDetailModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const classified = templates.filter((item) => item.valid && item.style_review_status === "classified").length;
   const validCount = templates.filter((item) => item.valid).length;
 
-  useEffect(() => { setSaved(false); setSaveError(null); }, [templateId]);
+  useEffect(() => { setSaved(false); setSaveError(null); setDeleteError(null); }, [templateId]);
   if (!template) return null;
 
   const save = async (styleCategories: string[], useCases: string[], status: AdminResumeTemplate["style_review_status"]) => {
@@ -396,6 +410,19 @@ function TemplateDetailModal({
   const toggleCase = (value: string) => {
     const next = template.use_cases.includes(value) ? template.use_cases.filter((item) => item !== value) : [...template.use_cases, value];
     void save(template.style_categories, next, template.style_review_status);
+  };
+  const confirmDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDelete(template);
+    } catch (error) {
+      const code = errorCode(error);
+      setDeleteError(code === "TEMPLATE_IN_USE" ? "该模板已被用户简历或导入任务使用，不能删除；如需下线请关闭“对用户展示”。" : `删除失败：${code}`);
+      setConfirmingDelete(false);
+    } finally {
+      setDeleting(false);
+    }
   };
   const toggleUnsure = () => void save([], template.use_cases, template.style_review_status === "unsure" ? "pending" : "unsure");
 
@@ -453,8 +480,26 @@ function TemplateDetailModal({
             {saving ? <span className="adm-muted">正在保存…</span> : saveError ? <InlineError>{saveError}</InlineError> : saved ? <StatusDot tone="ok">已自动保存</StatusDot> : null}
           </div>
           {template.description && <p className="adm-template-desc">{template.description}</p>}
+          <div className="adm-setting-row adm-template-danger">
+            <div><strong>删除模板</strong><span>仅未被任何简历使用的模板可以删除，删除后不可恢复</span></div>
+            <Button variant="danger" disabled={deleting} onClick={() => setConfirmingDelete(true)}>删除</Button>
+          </div>
+          {deleteError && <InlineError>{deleteError}</InlineError>}
         </div>
       </div>
+      {confirmingDelete && (
+        <ConfirmModal
+          title="删除模板？"
+          confirmLabel="删除"
+          busyLabel="删除中…"
+          danger
+          busy={deleting}
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={() => void confirmDelete()}
+        >
+          确定要删除“{template.name}”（{template.key}）吗？此操作不可恢复。
+        </ConfirmModal>
+      )}
     </Modal>
   );
 }
