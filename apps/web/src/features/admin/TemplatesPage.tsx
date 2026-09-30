@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { GripVertical, Minus, Plus } from "lucide-react";
+import { Download, GripVertical, Minus, Plus } from "lucide-react";
 import { api, ApiRequestError, type AdminResumeTemplate } from "../../api/client";
 import { FileUpload } from "@/components/ui";
 import { ResumePreview } from "../preview/ResumePreview";
@@ -11,6 +11,7 @@ import {
   ListPanel,
   LoadingRegion,
   Modal,
+  MoreMenu,
   PageHeader,
   SearchInput,
   SelectBox,
@@ -32,11 +33,11 @@ export const USE_CASE_OPTIONS = ["实习", "校招", "社招"] as const;
 type StatusTab = "all" | "active" | "inactive" | "invalid";
 
 function categoryText(template: AdminResumeTemplate) {
-  if (!template.valid) return { text: "—", tone: "muted" as const };
+  if (!template.valid) return { text: "结构无效", tone: "bad" as const };
   if (template.style_review_status === "unsure") return { text: "待讨论", tone: "warn" as const };
   const styles = template.style_categories.join(" / ");
   const cases = template.use_cases.join(" / ");
-  if (!styles && !cases) return { text: "未分类", tone: "muted" as const };
+  if (!styles && !cases) return { text: "未分类", tone: "warn" as const };
   return { text: [styles, cases].filter(Boolean).join(" · "), tone: "neutral" as const };
 }
 
@@ -222,7 +223,7 @@ export function TemplatesPage() {
       <PageHeader
         title="简历模板"
         hint="拖动卡片调整展示顺序，松手即保存"
-        actions={<><Button disabled={!templates.length} onClick={() => downloadClassification(templates)}>导出分类</Button><Button variant="primary" onClick={() => setImporting(true)}>导入模板</Button></>}
+        actions={<><MoreMenu label="更多模板操作" items={[{ label: "导出分类", icon: Download, disabled: !templates.length, onSelect: () => downloadClassification(templates) }]} /><Button variant="primary" onClick={() => setImporting(true)}>导入模板</Button></>}
       />
       <ListPanel label="模板" resetKey={filterKey} toolbar={(
         <>
@@ -291,7 +292,6 @@ export function TemplatesPage() {
                     ) : <span className="adm-template-unavailable">无法预览</span>}
                   </span>
                 </button>
-                <span className="adm-template-order" aria-hidden="true">{String((dragId ? displayIds.indexOf(template.id) : index) + 1).padStart(2, "0")}</span>
                 {canReorder && (
                   <span
                     className="adm-template-grip"
@@ -306,18 +306,19 @@ export function TemplatesPage() {
                     <GripVertical size={14} />
                   </span>
                 )}
+                {/* V4 03: order · name / category · switch under the paper; the switch carries the state. */}
                 <div className="adm-template-info">
-                  <strong title={template.name}>{template.name}</strong>
-                  <span className={`adm-tone-${category.tone}`}>{category.text}</span>
-                  <div className="adm-template-foot">
-                    <StatusDot tone={!template.valid ? "bad" : template.active ? "ok" : "muted"}>{!template.valid ? "结构无效" : template.active ? "已启用" : "已停用"}</StatusDot>
+                  <span className="adm-template-order" aria-hidden="true">{String((dragId ? displayIds.indexOf(template.id) : index) + 1).padStart(2, "0")}</span>
+                  <span className="adm-template-name">
+                    <strong title={template.name}>{template.name}</strong>
+                    <span className={`adm-tone-${category.tone}`}>{category.text}</span>
+                  </span>
                     <Toggle
                       label={`${template.active ? "停用" : "启用"}${template.name}`}
                       checked={template.active}
                       disabled={busyToggle === template.id || (!template.valid && !template.active)}
                       onChange={(next) => void toggle(template, next)}
                     />
-                  </div>
                 </div>
               </li>
             );

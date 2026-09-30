@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BadgeCheck, ChevronRight, CircleAlert, Coins, Eye, EyeOff, KeyRound, Layers, Pencil, Plus, RefreshCw, Route as RouteIcon, Timer, Trash2, Workflow, Zap } from "lucide-react";
+import { BadgeCheck, ChevronRight, Download, CircleAlert, Coins, Eye, EyeOff, KeyRound, Layers, Pencil, Plus, RefreshCw, Route as RouteIcon, Timer, Trash2, Workflow, Zap } from "lucide-react";
 import {
   api,
   type LlmBinding,
@@ -18,6 +18,7 @@ import {
   Field,
   Footnote,
   IconButton,
+  MoreMenu,
   InlineError,
   LinkButton,
   LoadingRegion,
@@ -37,6 +38,7 @@ import {
   errorCode,
   formatCosts,
   formatDate,
+  parseTime,
   formatDelta,
   formatMoney,
   formatMs,
@@ -212,7 +214,8 @@ export function ConnectionsPage() {
   const missingKey = connections.filter((item) => !item.keyConfigured);
   const routesInUse = (id: string) => {
     const routeIds = new Set((data?.routes ?? []).filter((route) => route.connectionId === id).map((route) => route.id));
-    return (data?.bindings ?? []).filter((binding) => routeIds.has(binding.routeId)).length;
+    // A route bound to several use cases is still one route in use.
+    return new Set((data?.bindings ?? []).filter((binding) => routeIds.has(binding.routeId)).map((binding) => binding.routeId)).size;
   };
   return (
     <>
@@ -245,7 +248,7 @@ export function ConnectionsPage() {
                     ? <><RefreshCw size={14} aria-hidden="true" />{row.catalogSyncedAt ? `${catalogCount} 个模型 · ${formatWhen(row.catalogSyncedAt)} 同步` : "未同步目录"}</>
                     : <><Layers size={14} aria-hidden="true" />手动维护线路</>}
                 </span>
-                <span className="adm-rack-fact"><RouteIcon size={14} aria-hidden="true" />{inUse ? `${inUse} 条线路在用` : "未被使用"}</span>
+                <span className="adm-rack-fact is-usage"><RouteIcon size={14} aria-hidden="true" />{inUse ? `${inUse} 条线路在用` : "未被使用"}</span>
                 <Toggle label={`${row.enabled ? "停用" : "启用"}连接 ${row.name}`} checked={row.enabled} disabled={busy !== null} onChange={(next) => void run(row.id, () => api.updateLlmConnection(row.id, { baseVersion: row.runtimeConfigVersion, enabled: next }), next ? "连接已启用" : "连接已停用")} />
                 <span className="adm-rack-actions">
                   {provider?.catalogSync && <IconButton icon={RefreshCw} label={busy === row.id ? "同步中…" : "同步目录"} disabled={busy !== null} className={busy === row.id ? "is-spinning" : undefined} onClick={() => void sync(row)} />}
@@ -388,6 +391,12 @@ function RotateKeyModal({ connection, providerLabel, onClose, onSaved }: { conne
 
 const VENDOR_PREVIEW = 4;
 
+/** "9 月 3 日" (Figma V4 07 detail subtitle). */
+function monthDayLabel(value: string | null | undefined) {
+  const date = parseTime(value);
+  return date ? `${date.getMonth() + 1} 月 ${date.getDate()} 日` : "—";
+}
+
 export function ModelsPage() {
   const { notify } = useConsole();
   const llm = useLlmData();
@@ -489,10 +498,9 @@ export function ModelsPage() {
                         return (
                           <li key={model.id}>
                             <button type="button" className={`adm-vendor-model${model.id === selected?.id ? " is-active" : ""}`} aria-current={model.id === selected?.id || undefined} title={model.displayName} onClick={() => setSelectedId(model.id)}>
-                              <ModelMark icon={modelIcon(model.displayName, model.developerName)} />
                               <span className="adm-ellipsis">{model.displayName}</span>
                               <small className={enabled ? "is-on" : undefined} aria-label={enabled ? `${enabled}/${own.length} 条线路启用` : own.length ? "线路未启用" : "没有线路"}>
-                                <i className={`adm-dot adm-dot-${enabled ? "ok" : "muted"}`} aria-hidden="true" />{own.length ? `${enabled}/${own.length}` : "—"}
+                                <i className={`adm-dot adm-dot-${enabled ? "ok" : "muted"}`} aria-hidden="true" />{enabled ? `${enabled} 条线路` : own.length ? "未启用" : "无线路"}
                               </small>
                             </button>
                           </li>
@@ -513,33 +521,27 @@ export function ModelsPage() {
                 <Logo letter={vendor.label} color={vendor.color} size={44} icon={modelIcon(selected.displayName, selected.developerName)} />
                 <div>
                   <h2>{selected.displayName}</h2>
-                  <p>{vendor.label}{selectedVendor !== UNLABELED_VENDOR ? ` › ${vendorSize} 个模型中的一个` : ""} · 创建于 {formatDate(selected.createdAt)}</p>
+                  <p>{vendor.label}{selectedVendor !== UNLABELED_VENDOR ? ` › ${vendorSize} 个模型中的一个` : ""} · 创建于 {monthDayLabel(selected.createdAt)}</p>
                 </div>
                 <label className="adm-inline-toggle">
                   {selected.userSelectable ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}
                   <span>{selected.userSelectable ? "用户可选" : "对用户隐藏"}</span>
                   <Toggle label={`${selected.displayName} 用户可选`} checked={selected.userSelectable} onChange={(next) => void setSelectable(selected, next)} />
                 </label>
-                <Button onClick={() => setModelEditor(selected)}><Pencil size={14} aria-hidden="true" />编辑模型</Button>
-                <IconButton icon={Trash2} label="删除模型" tone="bad" onClick={() => setPending({ kind: "model", item: selected })} />
+                <Button aria-label={`编辑模型 ${selected.displayName}`} onClick={() => setModelEditor(selected)}><Pencil size={14} aria-hidden="true" />编辑</Button>
+                <MoreMenu label="更多模型操作" items={[{ label: "删除模型", icon: Trash2, tone: "bad", onSelect: () => setPending({ kind: "model", item: selected }) }]} />
               </header>
               <div className="adm-facts">
                 <div><span><RouteIcon size={13} aria-hidden="true" />线路</span><strong>{routes.length} · {routes.filter((route) => route.enabled).length} 启用</strong></div>
                 <div><span><Zap size={13} aria-hidden="true" />24h 调用</span><strong>{calls24h == null ? "—" : formatNumber(calls24h)}</strong></div>
                 <div><span><Coins size={13} aria-hidden="true" />单价 / 百万 Token</span><strong>{firstPriced ? priceText(firstPriced.pricing).replace(" / ", " · ") : "未定价"}</strong></div>
+                <div><span><Workflow size={13} aria-hidden="true" />用于</span><strong>{new Set(usedBy.map((item) => item.useCase)).size} 个场景</strong></div>
               </div>
-              <p className="adm-used-by">
-                <span>用于</span>
-                {usedBy.length === 0 ? <span className="adm-muted">还没有加入任何使用场景</span> : [...new Set(usedBy.map((item) => item.useCase))].map((useCase) => (
-                  <span key={useCase} className="adm-pill"><Workflow size={13} aria-hidden="true" />{useCaseLabel(useCase)} · 第 {useCaseRank(useCase)} 位</span>
-                ))}
-              </p>
               <div className="adm-block-head">
-                <div className="adm-block-title"><h2>线路</h2><span>{routes.length} 条 · 按连接调用上游目标</span></div>
+                <div className="adm-block-title"><h2>线路</h2></div>
                 <LinkButton onClick={() => setRouteEditor({ modelId: selected.id })}><Plus size={14} aria-hidden="true" />添加线路</LinkButton>
               </div>
               <DataTable<LlmRoute>
-                headless
                 className="adm-route-table"
                 rows={routes}
                 rowKey={(row) => row.id}
@@ -556,22 +558,27 @@ export function ModelsPage() {
                           <small className="adm-route-meta">
                             <span>{connection?.name ?? `#${row.connectionId}`}</span>
                             <span>{priceText(row.pricing) === "未定价" ? "未设置单价" : priceText(row.pricing)}</span>
-                            <span>{row.identifierKind}</span>
                           </small>
                         </span>
                       </span>
                     );
                   } },
-                  { key: "available", label: "上游", width: "84px", render: (row) => <StatusDot tone={row.targetAvailable ? "ok" : "warn"}>{row.targetAvailable ? "上游可用" : "上游缺失"}</StatusDot> },
-                  { key: "actions", label: "", width: "110px", align: "right", render: (row) => (
+                  { key: "available", label: "上游", width: "90px", render: (row) => <StatusDot tone={row.targetAvailable ? "ok" : "warn"}>{row.targetAvailable ? "可用" : "缺失"}</StatusDot> },
+                  { key: "enabled", label: "启用", width: "40px", render: (row) => <Toggle label={`${row.enabled ? "停用" : "启用"}线路 #${row.id}`} checked={row.enabled} onChange={(next) => void toggleRoute(row, next)} /> },
+                  { key: "actions", label: "", width: "60px", align: "right", render: (row) => (
                     <span className="adm-row-actions is-tight">
-                      <Toggle label={`${row.enabled ? "停用" : "启用"}线路 #${row.id}`} checked={row.enabled} onChange={(next) => void toggleRoute(row, next)} />
                       <IconButton icon={Pencil} label="编辑" onClick={() => setRouteEditor({ route: row })} />
                       <IconButton icon={Trash2} label="删除" tone="bad" onClick={() => setPending({ kind: "route", item: row })} />
                     </span>
                   ) },
                 ]}
               />
+              <p className="adm-used-by">
+                <span>用于</span>
+                {usedBy.length === 0 ? <span className="adm-muted">还没有加入任何使用场景</span> : [...new Set(usedBy.map((item) => item.useCase))].map((useCase) => (
+                  <span key={useCase} className="adm-pill"><Workflow size={13} aria-hidden="true" />{useCaseLabel(useCase)} · 第 {useCaseRank(useCase)} 位</span>
+                ))}
+              </p>
             </section>
           )}
         </div>
@@ -737,6 +744,36 @@ export function compositionSlices<T extends { key: string }>(items: T[], value: 
   return slices;
 }
 
+type UsageGroup = { key: string; label: string; calls: number; successRate: number | null; p95Ms: number | null; costs: Array<{ currency: string; amount: string }> };
+
+/** V4 09: models show their vendor logo; use cases and channels keep the colour dot shared with the donuts. */
+function usageMark(row: UsageGroup, groupBy: string, colorOf: Map<string, string>) {
+  if (groupBy === "model") {
+    const vendor = vendorInfo(row.label);
+    return <Logo letter={vendor.label} color={vendor.color} size={18} icon={modelIcon(row.label, null)} />;
+  }
+  return <i className="adm-dot" style={{ background: colorOf.get(row.key) ?? OTHER_COLOR }} aria-hidden="true" />;
+}
+
+/** Client-side CSV of the rows currently loaded (no export endpoint); BOM so Excel reads UTF-8. */
+function downloadUsageCsv(rows: UsageGroup[], label: (row: UsageGroup) => string, noun: string, range: string) {
+  const cell = (value: string | number | null) => {
+    const text = value == null ? "" : String(value);
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+  const lines = [[noun, "调用", "费用", "成功率", "P95 (ms)"].join(",")];
+  for (const row of rows) {
+    const cost = row.costs.map((item) => `${item.amount} ${item.currency}`).join(" + ");
+    lines.push([label(row), row.calls, cost, row.successRate == null ? null : (row.successRate * 100).toFixed(1) + "%", row.p95Ms].map(cell).join(","));
+  }
+  const url = URL.createObjectURL(new Blob([`\ufeff${lines.join("\n")}`], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `llm-usage-${noun}-${range}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function UsagePage() {
   const [range, setRange] = useState<keyof typeof windows>("24h");
   const [groupBy, setGroupBy] = useState<"model" | "useCase" | "connection">("model");
@@ -767,7 +804,7 @@ export function UsagePage() {
 
   return (
     <>
-      <PageHeader title="模型使用情况" actions={<Segmented label="时间范围" value={range} onChange={setRange} options={[{ value: "24h", label: "24 小时" }, { value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} />} />
+      <PageHeader title="模型使用情况" actions={<><Segmented label="时间范围" value={range} onChange={setRange} options={[{ value: "24h", label: "24 小时" }, { value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} /><Button disabled={!data?.groups.length} onClick={() => data && downloadUsageCsv(data.groups, label, groupNoun, range)}><Download size={14} aria-hidden="true" />导出数据</Button></>} />
       {usage.loading && !data ? <LoadingRegion label="正在加载使用情况…"><SkeletonMetrics /></LoadingRegion> : !data ? <ErrorState code={usage.error} onRetry={() => void usage.reload()} /> : (
         <Metrics items={[
           { label: "调用", value: formatNumber(data.summary.calls), note: calls?.text, tone: calls?.tone, icon: Zap, tint: "blue" },
@@ -811,16 +848,17 @@ export function UsagePage() {
         </div>
         {usage.loading && !data ? <SkeletonRows rows={5} columns={5} height={44} /> : (
           <DataTable
+            className="adm-usage-table"
             busy={usage.loading}
             rows={groups}
             rowKey={(row) => row.key}
             empty="没有匹配的记录"
             columns={[
-              { key: "label", label: groupNoun, width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-inline"><i className="adm-dot" style={{ background: colorOf.get(row.key) ?? OTHER_COLOR }} aria-hidden="true" /><strong>{label(row)}</strong></span> },
-              { key: "calls", label: "调用", width: "90px", render: (row) => formatNumber(row.calls) },
-              { key: "cost", label: "费用", width: "110px", render: (row) => formatCosts(row) },
-              { key: "rate", label: "成功率", width: "90px", render: (row) => <StatusDot tone={row.successRate == null ? "muted" : row.successRate >= 0.98 ? "ok" : row.successRate >= 0.9 ? "warn" : "bad"}>{formatPercent(row.successRate)}</StatusDot> },
-              { key: "p95", label: "P95", width: "70px", render: (row) => formatMs(row.p95Ms) },
+              { key: "label", label: groupNoun, width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-inline">{usageMark(row, groupBy, colorOf)}<span className="adm-usage-name">{label(row)}</span></span> },
+              { key: "calls", label: "调用", width: "90px", align: "right", render: (row) => formatNumber(row.calls) },
+              { key: "cost", label: "费用", width: "90px", align: "right", render: (row) => formatCosts(row) },
+              { key: "rate", label: "成功率", width: "90px", align: "right", render: (row) => <StatusDot tone={row.successRate == null ? "muted" : row.successRate >= 0.98 ? "ok" : row.successRate >= 0.9 ? "warn" : "bad"}>{formatPercent(row.successRate)}</StatusDot> },
+              { key: "p95", label: "P95", width: "70px", align: "right", render: (row) => formatMs(row.p95Ms) },
             ]}
           />
         )}

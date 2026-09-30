@@ -245,7 +245,7 @@ export type Tint = "blue" | "violet" | "amber" | "green" | "red" | "gray";
 export function Chip({ icon: Icon, tint = "gray", size = 36 }: { icon: LucideIcon; tint?: Tint; size?: number }) {
   return (
     <span className={`adm-chip-icon adm-tint-${tint}`} style={{ width: size, height: size, borderRadius: Math.round(size * 0.3) }} aria-hidden="true">
-      <Icon size={Math.round(size / 2)} strokeWidth={1.8} />
+      <Icon size={Math.round(size / 2)} strokeWidth={2} />
     </span>
   );
 }
@@ -270,14 +270,14 @@ export function IconButton({ icon: Icon, label, tone = "muted", className, ...pr
       {...props}
       onClick={(event) => { event.stopPropagation(); props.onClick?.(event); }}
     >
-      <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+      <Icon size={15} strokeWidth={2} aria-hidden="true" />
     </button>
   );
 }
 
 /** Faint one-line note at the foot of a page (Figma V4 shield / alert footnotes). */
 export function Footnote({ icon: Icon = Info, children }: { icon?: LucideIcon; children: ReactNode }) {
-  return <p className="adm-footnote"><Icon size={13} strokeWidth={1.8} aria-hidden="true" />{children}</p>;
+  return <p className="adm-footnote"><Icon size={13} strokeWidth={2} aria-hidden="true" />{children}</p>;
 }
 
 export type MoreMenuItem = { label: string; icon?: LucideIcon; onSelect: () => void; tone?: "bad"; disabled?: boolean };
@@ -287,13 +287,13 @@ export function MoreMenu({ label, items, disabled }: { label: string; items: Mor
   return (
     <DropdownPrimitive.Root modal={false}>
       <DropdownPrimitive.Trigger className="adm-icon-btn" aria-label={label} title={label} disabled={disabled} onClick={(event) => event.stopPropagation()}>
-        <MoreHorizontal size={16} strokeWidth={1.8} aria-hidden="true" />
+        <MoreHorizontal size={16} strokeWidth={2} aria-hidden="true" />
       </DropdownPrimitive.Trigger>
       <DropdownPrimitive.Portal>
         <DropdownPrimitive.Content className="adm-select-content adm-menu" align="end" sideOffset={6} collisionPadding={12}>
           {items.map((item) => (
             <DropdownPrimitive.Item key={item.label} className={`adm-select-item${item.tone === "bad" ? " is-bad" : ""}`} disabled={item.disabled} onSelect={item.onSelect}>
-              <span className="adm-menu-label">{item.icon && <item.icon size={14} strokeWidth={1.8} aria-hidden="true" />}{item.label}</span>
+              <span className="adm-menu-label">{item.icon && <item.icon size={14} strokeWidth={2} aria-hidden="true" />}{item.label}</span>
             </DropdownPrimitive.Item>
           ))}
         </DropdownPrimitive.Content>
@@ -485,11 +485,12 @@ export function SearchInput({ value, onChange, placeholder, onSubmit, width }: {
 const EMPTY_OPTION = "__adm_empty__";
 
 /** Custom-rendered dropdown (Radix Select) styled to the V3 console; replaces the native <select>. */
-export function SelectBox<T extends string>({ value, options, onChange, label, className, disabled }: { value: T; options: Array<{ value: T; label: string }>; onChange: (value: T) => void; label: string; className?: string; disabled?: boolean }) {
+export function SelectBox<T extends string>({ value, options, onChange, label, className, disabled, icon: Icon }: { value: T; options: Array<{ value: T; label: string }>; onChange: (value: T) => void; label: string; className?: string; disabled?: boolean; icon?: LucideIcon }) {
   const encode = (item: string) => (item === "" ? EMPTY_OPTION : item);
   return (
     <SelectPrimitive.Root value={encode(value)} onValueChange={(next) => onChange((next === EMPTY_OPTION ? "" : next) as T)} disabled={disabled}>
-      <SelectPrimitive.Trigger className={`adm-select${className ? ` ${className}` : ""}`} aria-label={label}>
+      <SelectPrimitive.Trigger className={`adm-select${Icon ? " has-icon" : ""}${className ? ` ${className}` : ""}`} aria-label={label}>
+        {Icon && <Icon size={14} strokeWidth={2} className="adm-select-lead" aria-hidden="true" />}
         <SelectPrimitive.Value />
         <SelectPrimitive.Icon className="adm-select-icon"><ChevronDown size={14} strokeWidth={2} aria-hidden="true" /></SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>

@@ -168,7 +168,7 @@ describe("AdminLoginPage", () => {
     render(<AdminLoginPage />);
 
     expect(
-      await screen.findByRole("button", { name: "进入管理台" }, { timeout: 4_000 }),
+      await screen.findByRole("button", { name: "登录" }, { timeout: 4_000 }),
     ).toBeInTheDocument();
   });
 
@@ -187,9 +187,9 @@ describe("AdminLoginPage", () => {
     window.history.replaceState(null, "", "/admin/login?next=/admin/users");
     render(<AdminLoginPage next="/admin/users" />);
 
-    const demoButton = await screen.findByRole("button", { name: "填入演示账号" }, { timeout: 4_000 });
-    fireEvent.click(demoButton);
-    fireEvent.click(screen.getByRole("button", { name: "进入管理台" }));
+    fireEvent.change(await screen.findByLabelText("邮箱", {}, { timeout: 4_000 }), { target: { value: "admin@example.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "example-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/admin/users");
@@ -201,9 +201,9 @@ describe("AdminLoginPage", () => {
     window.history.replaceState(null, "", "/admin/login?next=https://example.com");
     render(<AdminLoginPage next="https://example.com" />);
 
-    const demoButton = await screen.findByRole("button", { name: "填入演示账号" }, { timeout: 4_000 });
-    fireEvent.click(demoButton);
-    fireEvent.click(screen.getByRole("button", { name: "进入管理台" }));
+    fireEvent.change(await screen.findByLabelText("邮箱", {}, { timeout: 4_000 }), { target: { value: "admin@example.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "example-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     await waitFor(() => {
       expect(window.location.pathname).toBe("/admin");

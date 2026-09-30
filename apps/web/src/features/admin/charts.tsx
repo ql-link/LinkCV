@@ -20,7 +20,7 @@ function arcPath(cx: number, cy: number, r: number, ir: number, start: number, e
 }
 
 /** Slice angles with a small surface gap between neighbours; tiny slices keep a visible minimum. */
-export function donutArcs(values: number[], gap = 0.025): Array<[number, number] | null> {
+export function donutArcs(values: number[], gap = 0.022): Array<[number, number] | null> {
   const total = values.reduce((sum, value) => sum + Math.max(0, value), 0);
   const nonZero = values.filter((value) => value > 0).length;
   let angle = -Math.PI / 2;
@@ -44,14 +44,14 @@ export function Donut({ slices, size = 148, center, sub, ariaLabel }: { slices: 
   return (
     <figure className="adm-donut" style={{ width: size, height: size }} aria-label={ariaLabel} role="img">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-        <circle cx={r} cy={r} r={r * 0.88} fill="none" stroke="#f1f1ee" strokeWidth={r * 0.24} />
+        {total === 0 && <circle cx={r} cy={r} r={r * 0.88} fill="none" stroke="#f1f1ee" strokeWidth={r * 0.24} />}
         {slices.map((slice, index) => {
           const arc = arcs[index];
           if (!arc) return null;
           return (
             <path
               key={slice.key}
-              d={arcPath(r, r, r, r * 0.76, arc[0], arc[1])}
+              d={arcPath(r, r, r, r * 0.7, arc[0], arc[1])}
               fill={slice.color}
               className={hover && hover !== slice.key ? "is-dim" : undefined}
               style={{ "--adm-i": index } as CSSProperties}
@@ -93,15 +93,20 @@ export function DonutLegend({ slices, stacked = false }: { slices: DonutSlice[];
 }
 
 /** Thin bars on a baseline with sparse axis labels (Figma V4 02 新增用户, 01 趋势, 04 导入). */
-export function ThinBars({ data, height = 132, barWidth = 12, ariaLabel, highlightLast = true }: { data: BarDatum[]; height?: number; barWidth?: number; ariaLabel: string; highlightLast?: boolean }) {
+/**
+ * `ramp` (Figma V4 01 LLM 调用): full-width columns 10px apart, dark bars fading in from 25% to 89% opacity
+ * towards today, today in the accent colour, and labels centred under their own column.
+ */
+export function ThinBars({ data, height = 132, barWidth = 12, ariaLabel, highlightLast = true, ramp = false, fadeTo = 0.89, hideAxis = false }: { data: BarDatum[]; height?: number; barWidth?: number; ariaLabel: string; highlightLast?: boolean; ramp?: boolean; fadeTo?: number; hideAxis?: boolean }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(1, ...data.map((item) => item.value));
-  const ticks = data.length <= 7 ? data.map((_, index) => index) : [0, Math.floor((data.length - 1) / 2), data.length - 1];
+  const ticks = data.length <= 7 ? data.map((_, index) => index) : [0, Math.floor(data.length / 2), data.length - 1];
   return (
-    <figure className="adm-thin" aria-label={ariaLabel}>
+    <figure className={`adm-thin${ramp ? " is-ramp" : ""}`} aria-label={ariaLabel}>
       <div className="adm-thin-plot" style={{ height }} onMouseLeave={() => setHover(null)}>
         {data.map((item, index) => {
           const share = item.value / max;
+          const fade = ramp ? 0.25 + (fadeTo - 0.25) * (data.length > 2 ? index / (data.length - 2) : 1) : undefined;
           return (
             <div
               key={item.key}
@@ -113,7 +118,7 @@ export function ThinBars({ data, height = 132, barWidth = 12, ariaLabel, highlig
               onFocus={() => setHover(index)}
               onBlur={() => setHover(null)}
             >
-              <i className={`adm-thin-bar${highlightLast && index === data.length - 1 ? " is-current" : ""}`} style={{ width: barWidth, height: `${Math.max(item.value > 0 ? 2 : 0, share * 100)}%` }} />
+              <i className={`adm-thin-bar${highlightLast && index === data.length - 1 ? " is-current" : ""}`} style={{ width: ramp ? undefined : barWidth, height: `${Math.max(item.value > 0 ? 2 : 0, share * 100)}%`, "--adm-fade": fade } as CSSProperties} />
               {hover === index && (
                 <div className="adm-tooltip is-thin" role="tooltip">{item.tooltip ?? <><small>{item.label}</small><strong>{item.value.toLocaleString("en-US")}</strong></>}</div>
               )}
@@ -121,9 +126,11 @@ export function ThinBars({ data, height = 132, barWidth = 12, ariaLabel, highlig
           );
         })}
       </div>
-      <div className={`adm-thin-axis${data.length <= 7 ? " is-every" : ""}`} aria-hidden="true">
-        {data.length <= 7 ? data.map((item) => <span key={item.key}>{item.label}</span>) : ticks.map((index) => <span key={index}>{data[index]?.label}</span>)}
-      </div>
+      {!hideAxis && <div className={`adm-thin-axis${data.length <= 7 || ramp ? " is-every" : ""}`} aria-hidden="true">
+        {data.length <= 7 ? data.map((item) => <span key={item.key}>{item.label}</span>)
+          : ramp ? data.map((item, index) => <span key={item.key}>{ticks.includes(index) ? item.label : ""}</span>)
+          : ticks.map((index) => <span key={index}>{data[index]?.label}</span>)}
+      </div>}
     </figure>
   );
 }

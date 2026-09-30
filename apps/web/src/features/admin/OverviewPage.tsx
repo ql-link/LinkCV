@@ -95,8 +95,8 @@ export function OverviewPage({ user }: { user: User }) {
             </div>
             <p className="adm-hero-number"><strong>{formatNumber(total)}</strong><span>次调用 · 最近 {trend.length} 天合计</span></p>
             <ThinBars
+              ramp
               height={228}
-              barWidth={24}
               ariaLabel="最近 14 天 LLM 调用次数"
               data={trend.map((day, index) => ({
                 key: day.date,
@@ -106,8 +106,11 @@ export function OverviewPage({ user }: { user: User }) {
               }))}
             />
           </section>
-          <section className="adm-section">
-            <div className="adm-block-head"><div className="adm-block-title"><h2>今日关注</h2><span>{data.alerts.length ? `${data.alerts.length} 项` : "由运行数据自动推导"}</span></div></div>
+          <section className="adm-section adm-overview-attention">
+            <div className="adm-block-head">
+              <div className="adm-block-title"><h2>今日关注</h2></div>
+              <span className="adm-block-count">{data.alerts.length ? `${data.alerts.length} 项` : "由运行数据自动推导"}</span>
+            </div>
             {data.alerts.length === 0 ? (
               <p className="adm-empty-line"><StatusDot tone="ok">当前没有需要处理的事项</StatusDot></p>
             ) : (
@@ -125,15 +128,22 @@ export function OverviewPage({ user }: { user: User }) {
                 ))}
               </ul>
             )}
+            <SystemStatus apiError={Boolean(overview.error)} logs={logs} announcements={announcements} />
           </section>
         </>
       )}
-      <section className="adm-system" aria-label="系统状态">
-        <span className="adm-system-title">系统状态</span>
-        <span className="adm-system-item"><Server size={15} aria-hidden="true" />API<StatusDot tone={overview.error ? "bad" : "ok"}>{overview.error ? "异常" : "正常"}</StatusDot></span>
-        <span className="adm-system-item"><Database size={15} aria-hidden="true" />日志服务 Loki<StatusDot tone={logs.loading ? "muted" : logs.error ? "warn" : "ok"}>{logs.loading ? "检查中" : logs.error ? "不可用" : "正常"}</StatusDot></span>
-        <span className="adm-system-item"><Megaphone size={15} aria-hidden="true" />有效公告<StatusDot tone="info">{announcements.data ? `${announcements.data.active} 条` : announcements.loading ? <SkBar width={24} /> : "—"}</StatusDot></span>
-      </section>
+      {overview.error && !data && <SystemStatus apiError logs={logs} announcements={announcements} />}
     </>
+  );
+}
+
+function SystemStatus({ apiError, logs, announcements }: { apiError: boolean; logs: { loading: boolean; error: string | null }; announcements: { loading: boolean; data: { active: number } | null } }) {
+  return (
+    <section className="adm-system" aria-label="系统状态">
+      <span className="adm-system-title">系统状态</span>
+      <span className="adm-system-item"><Server size={15} aria-hidden="true" />API<StatusDot tone={apiError ? "bad" : "ok"}>{apiError ? "异常" : "正常"}</StatusDot></span>
+      <span className="adm-system-item"><Database size={15} aria-hidden="true" />日志服务 Loki<StatusDot tone={logs.loading ? "muted" : logs.error ? "warn" : "ok"}>{logs.loading ? "检查中" : logs.error ? "不可用" : "正常"}</StatusDot></span>
+      <span className="adm-system-item"><Megaphone size={15} aria-hidden="true" />有效公告<StatusDot tone="info">{announcements.data ? `${announcements.data.active} 条` : announcements.loading ? <SkBar width={24} /> : "—"}</StatusDot></span>
+    </section>
   );
 }

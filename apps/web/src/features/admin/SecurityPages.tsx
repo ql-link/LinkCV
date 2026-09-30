@@ -11,7 +11,7 @@ import {
   type LogListResponse,
   type SystemLogQuery,
 } from "../../api/client";
-import { Activity, BadgeCheck, CircleAlert, CircleCheck, Coins, FileText, GitBranch, History, Layers, Megaphone, Puzzle, Route as RouteIcon, Server, Shield, Timer, TriangleAlert, UserRound, Workflow, Zap, ChevronRight, type LucideIcon } from "lucide-react";
+import { Activity, BadgeCheck, CalendarClock, CircleAlert, CircleCheck, Coins, FileText, GitBranch, History, Layers, Megaphone, Puzzle, Route as RouteIcon, Server, Shield, Timer, TriangleAlert, UserRound, Workflow, Zap, ChevronRight, type LucideIcon } from "lucide-react";
 import { DotLegend, Donut, DonutLegend, HeatLegend, Heatmap, STATUS_COLORS, ThinStackedBars, type DonutSlice, type ThinStackSeries } from "./charts";
 import { DateTimeInput } from "./DateTimeInput";
 import {
@@ -120,7 +120,7 @@ export function AgentLogsPage() {
             { label: "7 日操作", value: formatNumber(data.operations), icon: Workflow, tint: "blue" },
             { label: "成功率", value: formatPercent(data.failureRate == null ? null : 1 - data.failureRate), icon: BadgeCheck, tint: "green" },
             { label: "失败", value: formatNumber(data.failed), note: data.running ? `${data.running} 个运行中` : undefined, tone: "muted", icon: CircleAlert, tint: "red" },
-            { label: "最常失败阶段", value: <span className="adm-metric-code">{data.topFailureStage ?? "—"}</span>, note: data.topErrorCode ?? undefined, tone: "muted", icon: GitBranch, tint: "amber" },
+            { label: "最常失败阶段", value: <span className="adm-metric-code">{data.topFailureStage ?? "—"}</span>, icon: GitBranch, tint: "amber" },
           ]} />
           <div className="adm-duo">
             <div>
@@ -153,7 +153,7 @@ export function AgentLogsPage() {
             { value: "running", label: "运行中", count: data ? totals.running : null },
             { value: "failed", label: "失败", count: data ? totals.failed : null },
           ]} />
-          <SearchInput value={query} onChange={(next) => { setQuery(next); if (!next.trim()) setAppliedQuery(null); }} onSubmit={() => setAppliedQuery(parseRecordSearch(query))} placeholder="操作 ID / 用户 ID，回车" width={210} />
+          <SearchInput value={query} onChange={(next) => { setQuery(next); if (!next.trim()) setAppliedQuery(null); }} onSubmit={() => setAppliedQuery(parseRecordSearch(query))} placeholder="操作 ID / 用户 ID，回车" width={200} />
         </div>
       )}>
         {recent.loading && !recent.data ? <SkeletonRows rows={5} columns={5} /> : recent.error ? <ErrorState code={recent.error} onRetry={() => void recent.reload()} /> : (
@@ -166,11 +166,11 @@ export function AgentLogsPage() {
             rowLabel={(row) => `查看操作 ${row.id}`}
             empty="当前条件下没有运行记录"
             columns={[
-              { key: "id", label: "操作 ID", width: "170px", render: (row) => <span className="adm-ellipsis adm-ink2 adm-medium">{row.id}</span> },
+              { key: "id", label: "操作 ID", width: "170px", render: (row) => <span className="adm-ellipsis adm-ink2 adm-medium adm-small">{row.id}</span> },
               { key: "model", label: "模型", width: "minmax(0, 1fr)", render: (row) => <span className="adm-ink2">{row.model_name ?? "—"}</span> },
-              { key: "stage", label: "失败阶段", width: "170px", render: (row) => row.failure_stage ? <span className="adm-tone-bad adm-medium">{row.failure_stage}</span> : <span className="adm-ink2">—</span> },
+              { key: "stage", label: "失败阶段", width: "170px", render: (row) => row.failure_stage ? <span className="adm-tone-bad adm-medium adm-small">{row.failure_stage}</span> : <span className="adm-ink2">—</span> },
               { key: "status", label: "状态", width: "90px", render: (row) => <StatusDot tone={statusOf(row.status).tone}>{statusOf(row.status).label}</StatusDot> },
-              { key: "time", label: "时间", width: "70px", render: (row) => <span className="adm-ink2">{formatWhen(row.created_at, "—", { compact: true })}</span> },
+              { key: "time", label: "时间", width: "70px", align: "right", render: (row) => <span className="adm-ink2">{formatWhen(row.created_at, "—", { compact: true })}</span> },
             ]}
           />
         )}
@@ -187,7 +187,7 @@ export function AgentOperationsPage() {
     const to = new Date();
     return api.adminInsightAgent({ from: new Date(to.getTime() - 31 * 86400_000).toISOString(), to: to.toISOString() });
   });
-  const [draft, setDraft] = useState({ from: "", to: "", status: "", errorCode: "" });
+  const [draft, setDraft] = useState<{ range: AgentRange; from: string; to: string; status: string; errorCode: string }>({ range: "", from: "", to: "", status: "", errorCode: "" });
   const [applied, setApplied] = useState(draft);
   const [items, setItems] = useState<AgentOperationItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -213,8 +213,7 @@ export function AgentOperationsPage() {
             userId: search?.kind === "user" ? search.value : undefined,
           };
         })(),
-        from: fromLocalInput(applied.from) ?? undefined,
-        to: fromLocalInput(applied.to) ?? undefined,
+        ...agentRangeQuery(applied),
         cursor,
       });
       if (current !== requestId.current) return;
@@ -247,8 +246,13 @@ export function AgentOperationsPage() {
         resetKey={JSON.stringify(applied)}
         toolbar={(
         <form className="adm-filter-row" onSubmit={(event) => { event.preventDefault(); setApplied(draft); }}>
-          <DateTimeInput label="开始时间" placeholder="开始时间" value={draft.from} onChange={(from) => setDraft({ ...draft, from })} />
-          <DateTimeInput label="结束时间" placeholder="结束时间" defaultTime="23:59" value={draft.to} onChange={(to) => setDraft({ ...draft, to })} />
+          <SelectBox label="时间范围" icon={CalendarClock} className="adm-filter-select" value={draft.range} onChange={(range) => setDraft({ ...draft, range })} options={Object.entries(agentRanges).map(([value, label]) => ({ value: value as AgentRange, label }))} />
+          {draft.range === "custom" && (
+            <>
+              <DateTimeInput label="开始时间" placeholder="开始时间" value={draft.from} onChange={(from) => setDraft({ ...draft, from })} />
+              <DateTimeInput label="结束时间" placeholder="结束时间" defaultTime="23:59" value={draft.to} onChange={(to) => setDraft({ ...draft, to })} />
+            </>
+          )}
           <SelectBox label="状态" value={draft.status} onChange={(value) => setDraft({ ...draft, status: value })} options={[{ value: "", label: "全部状态" }, ...Object.entries(agentStatus).map(([value, item]) => ({ value, label: item.label }))]} />
           <input className="adm-input" aria-label="操作 ID / 用户 ID / 错误码" placeholder="操作 ID / 用户 ID / 错误码" value={draft.errorCode} onChange={(event) => setDraft({ ...draft, errorCode: event.target.value })} />
           <Button variant="primary" type="submit" disabled={loading}>查询</Button>
@@ -287,6 +291,17 @@ export function AgentOperationsPage() {
       {selected && <AgentOperationDrawer id={selected} onClose={() => setSelected(null)} />}
     </>
   );
+}
+
+const agentRanges = { "": "全部时间", "24h": "最近 24 小时", "7d": "最近 7 天", "31d": "最近 31 天", custom: "自定义" } as const;
+type AgentRange = keyof typeof agentRanges;
+const agentRangeHours: Partial<Record<AgentRange, number>> = { "24h": 24, "7d": 7 * 24, "31d": 31 * 24 };
+
+/** Presets are resolved when the query runs so "最近 24 小时" always ends now; only 自定义 uses the date inputs. */
+function agentRangeQuery(filters: { range: AgentRange; from: string; to: string }): { from?: string; to?: string } {
+  if (filters.range === "custom") return { from: fromLocalInput(filters.from) ?? undefined, to: fromLocalInput(filters.to) ?? undefined };
+  const hours = agentRangeHours[filters.range];
+  return hours ? { from: new Date(Date.now() - hours * 3600_000).toISOString() } : {};
 }
 
 function AgentOperationDrawer({ id, onClose }: { id: string; onClose: () => void }) {
@@ -380,12 +395,14 @@ function useLogSummaries() {
 }
 
 /** "+4" / "-2" against the previous window; more errors reads as bad, fewer as good. */
-export function countDelta(current: number, previous: number | undefined, worseWhenHigher = true): { note?: string; tone?: Tone } {
+const dependencyLabels: Record<string, string> = { mysql: "MySQL", redis: "Redis", minio: "MinIO", linkparse: "LinkParse", llm: "LLM" };
+
+export function countDelta(current: number, previous: number | undefined, worseWhenHigher = true, worseTone: Tone = "bad"): { note?: string; tone?: Tone } {
   if (previous == null) return {};
   const diff = current - previous;
   if (diff === 0) return { note: "持平", tone: "muted" };
   const up = diff > 0;
-  return { note: `${up ? "+" : ""}${diff}`, tone: up === worseWhenHigher ? "bad" : "ok" };
+  return { note: `${up ? "+" : ""}${diff}`, tone: up === worseWhenHigher ? worseTone : "ok" };
 }
 
 export function SystemLogsPage() {
@@ -415,9 +432,9 @@ export function SystemLogsPage() {
       {summary.loading && !data ? <SkeletonMetrics /> : summary.error ? <ErrorState title="日志汇总暂不可用" code={summary.error} onRetry={() => void summary.reload()} /> : data && (
         <Metrics items={[
           { label: "错误 · 24h", value: formatNumber(data.system.errors), ...countDelta(data.system.errors, previous?.system.errors), icon: CircleAlert, tint: "red", onClick: () => { setLevel("ERROR"); pages.reset(); } },
-          { label: "警告 · 24h", value: formatNumber(data.system.warnings), ...countDelta(data.system.warnings, previous?.system.warnings), icon: TriangleAlert, tint: "amber", onClick: () => { setLevel("WARNING"); pages.reset(); } },
+          { label: "警告 · 24h", value: formatNumber(data.system.warnings), ...countDelta(data.system.warnings, previous?.system.warnings, true, "warn"), icon: TriangleAlert, tint: "amber", onClick: () => { setLevel("WARNING"); pages.reset(); } },
           { label: "全部 · 24h", value: formatNumber(data.system.total), icon: FileText, tint: "gray" },
-          { label: "审计失败 · 24h", value: formatNumber(data.audit.failed), ...countDelta(data.audit.failed, previous?.audit.failed), icon: Shield, tint: "violet" },
+          { label: "审计失败 · 24h", value: formatNumber(data.audit.failed), icon: Shield, tint: "violet" },
         ]} />
       )}
       <div className="adm-duo is-trend-first">
@@ -442,7 +459,7 @@ export function SystemLogsPage() {
       <ListPanel label="最近事件" resetKey={JSON.stringify(query)} footer={<LogPager list={list} pages={pages} />} toolbar={(
         <div className="adm-filterbar">
           <TextTabs label="日志级别" value={level} onChange={(value) => { setLevel(value); pages.reset(); }} options={[{ value: "", label: "全部" }, { value: "ERROR", label: "ERROR" }, { value: "WARNING", label: "WARN" }]} />
-          <SearchInput value={keyword} onChange={setKeyword} placeholder="搜索日志关键词" width={200} onSubmit={() => { setAppliedKeyword(keyword.trim()); pages.reset(); }} />
+          <SearchInput value={keyword} onChange={setKeyword} placeholder="搜索事件或来源" width={200} onSubmit={() => { setAppliedKeyword(keyword.trim()); pages.reset(); }} />
         </div>
       )}>
         <LogTable list={list} onSelect={setSelected} />
@@ -506,21 +523,24 @@ export function AuditLogsPage({ initialFailedOnly = false }: { initialFailedOnly
 
   return (
     <>
-      <PageHeader title="业务审计" actions={<Button onClick={() => setFilterOpen(true)}>筛选{activeFilters ? ` · ${activeFilters}` : ""}</Button>} />
+      <PageHeader title="业务审计" />
       {summary.loading && !data ? <SkeletonMetrics /> : summary.error ? <ErrorState title="日志汇总暂不可用" code={summary.error} onRetry={() => void summary.reload()} /> : data && (
         <Metrics items={[
-          { label: "24h 操作", value: formatNumber(data.audit.total), ...(previous ? { note: `前 24h ${formatNumber(previous.audit.total)}`, tone: "muted" as Tone } : {}), icon: History, tint: "blue" },
+          { label: "24h 操作", value: formatNumber(data.audit.total), icon: History, tint: "blue" },
           { label: "成功", value: formatNumber(data.audit.succeeded), note: data.audit.total ? formatPercent(data.audit.succeeded / data.audit.total) : undefined, tone: "muted", icon: CircleCheck, tint: "green", onClick: () => changeResult("succeeded") },
           { label: "失败", value: formatNumber(data.audit.failed), note: data.audit.total ? formatPercent(data.audit.failed / data.audit.total) : undefined, tone: "muted", icon: CircleAlert, tint: "red", onClick: () => changeResult("failed") },
-          { label: "系统错误 · 24h", value: formatNumber(data.system.errors), ...countDelta(data.system.errors, previous?.system.errors), icon: Server, tint: "amber" },
+          { label: "系统错误 · 24h", value: formatNumber(data.system.errors), icon: Server, tint: "amber" },
         ]} />
       )}
       <ListPanel label="审计记录" resetKey={`${result}|${pages.cursor ?? ""}|${JSON.stringify(advanced)}`} footer={<LogPager list={list} pages={pages} />} toolbar={(
-        <TextTabs label="审计结果" value={result} onChange={changeResult} options={[
-          { value: "", label: "全部", count: data?.audit.total },
-          { value: "succeeded", label: "成功", count: data?.audit.succeeded },
-          { value: "failed", label: "失败", count: data?.audit.failed },
-        ]} />
+        <div className="adm-filterbar is-audit">
+          <TextTabs label="审计结果" value={result} onChange={changeResult} options={[
+            { value: "", label: "全部", count: data?.audit.total },
+            { value: "succeeded", label: "成功", count: data?.audit.succeeded },
+            { value: "failed", label: "失败", count: data?.audit.failed },
+          ]} />
+          <Button className="adm-filter-btn" onClick={() => setFilterOpen(true)}><Layers size={14} strokeWidth={2} aria-hidden="true" />筛选{activeFilters ? ` · ${activeFilters}` : ""}</Button>
+        </div>
       )}>
         <AuditFeed list={list} onSelect={setSelected} />
       </ListPanel>
@@ -553,7 +573,7 @@ function AuditFeed({ list, onSelect }: { list: ReturnType<typeof useLogList>; on
               >
                 <time>{formatWhen(row.timestamp, "—", { compact: true })}</time>
                 <Chip icon={action.icon} tint={row.result === "failed" ? "red" : action.tint} size={30} />
-                <div className="adm-feed-copy"><strong>{action.label}{row.result === "failed" && "失败"}</strong><span>{row.actorType ?? "—"}:{row.actorUserId ?? "—"} → {row.targetType ?? "—"}:{row.targetId ?? "—"}</span></div>
+                <div className="adm-feed-copy"><strong>{action.label}{row.result === "failed" && "失败"}</strong><span>{row.actorType ?? "—"}:{row.actorUserId ?? "—"} → {row.targetType ?? "—"}{row.targetId ? `:${row.targetId}` : ""}</span></div>
                 <code className="adm-audit-code">{row.action ?? "—"}</code>
                 <StatusDot tone={row.result === "failed" ? "bad" : "ok"}>{row.result === "failed" ? "失败" : "成功"}</StatusDot>
                 <ChevronRight size={16} className="adm-chevron" aria-hidden="true" />
@@ -571,7 +591,6 @@ function LogPager({ list, pages }: { list: ReturnType<typeof useLogList>; pages:
   if (!list.data) return null;
   return (
     <TableFooter>
-      <span>当前页 {list.data.items.length} 条 · 点击查看详情</span>
       <div>
         <Button disabled={!pages.hasPrevious || list.loading} onClick={pages.previous}>上一页</Button>
         <Button disabled={!list.data.nextCursor || list.loading} onClick={() => pages.next(list.data?.nextCursor)}>下一页</Button>
@@ -595,11 +614,11 @@ function LogTable({ list, onSelect }: { list: ReturnType<typeof useLogList>; onS
         rowLabel={(row) => `查看日志 ${row.eventId}`}
         empty="当前筛选下没有日志"
         columns={[
-          { key: "event", label: "事件", width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-stack"><strong className="adm-ellipsis adm-small">{row.errorCode ?? row.message}</strong><small className="adm-ellipsis">{row.httpRoute ? `${row.httpMethod ?? ""} ${row.httpRoute}` : row.summary ?? row.logger}</small></span> },
+          { key: "event", label: "事件", width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-stack is-tight"><strong className="adm-ellipsis adm-small">{row.errorCode ?? row.message}</strong><small className="adm-ellipsis">{row.httpRoute ? `${row.httpMethod ?? ""} ${row.httpRoute}` : row.summary ?? row.logger}</small></span> },
           { key: "source", label: "来源", width: "130px", render: (row) => <span className="adm-ink2">{row.source}</span> },
           { key: "level", label: "级别", width: "70px", render: (row) => <span className={`adm-level is-${levelTone(row.level)}`}>{row.level === "WARNING" ? "WARN" : row.level}</span> },
-          { key: "dependency", label: "依赖", width: "80px", render: (row) => <span className="adm-ink2 adm-medium adm-small">{row.dependency ?? "—"}</span> },
-          { key: "time", label: "时间", width: "60px", render: (row) => <span className="adm-ink2">{formatWhen(row.timestamp, "—", { compact: true })}</span> },
+          { key: "dependency", label: "依赖", width: "80px", render: (row) => <span className="adm-ink2 adm-medium adm-small">{row.dependency ? dependencyLabels[row.dependency] ?? row.dependency : "—"}</span> },
+          { key: "time", label: "时间", width: "60px", align: "right", render: (row) => <span className="adm-ink2">{formatWhen(row.timestamp, "—", { compact: true })}</span> },
                 ]}
       />
     </>
@@ -701,7 +720,7 @@ const callStatus: Record<string, { tone: Tone; label: string }> = {
   failed: { tone: "bad", label: "失败" },
   cancelled: { tone: "muted", label: "取消" },
 };
-const callWindows = { "": "全部时间", "24h": "最近 24 小时", "7d": "最近 7 天", "31d": "最近 31 天" } as const;
+const callWindows = { "": "全部时间", "24h": "24 小时", "7d": "7 天", "31d": "31 天" } as const;
 const callErrorHints: Record<string, string> = {
   AUTH_FAILED: "上游认证失败。检查该连接的 API Key 后，到能力配置中重新探测。",
   RATE_LIMITED: "上游限流，稍后会自动恢复；持续出现时考虑增加线路。",
@@ -759,7 +778,7 @@ export function LlmCallsPage() {
   const routeLabel = (routeId: string) => {
     const route = llm.data?.routes.find((item) => item.id === routeId);
     const model = llm.data?.models.find((item) => item.id === route?.modelId);
-    return model ? `${model.displayName} · #${routeId}` : `#${routeId}`;
+    return model ? `#${routeId} · ${model.displayName}` : `#${routeId}`;
   };
   const connectionName = (routeId: string) => {
     const route = llm.data?.routes.find((item) => item.id === routeId);
@@ -774,7 +793,7 @@ export function LlmCallsPage() {
         <Metrics items={[
           { label: "调用次数", value: formatNumber(summary.callCount), note: "当前筛选", icon: Zap, tint: "blue" },
           { label: "成功", value: formatNumber(summary.succeeded), note: summary.callCount ? formatPercent(summary.succeeded / summary.callCount) : undefined, tone: "muted", icon: BadgeCheck, tint: "green" },
-          { label: "失败", value: formatNumber(summary.failed), note: summary.callCount ? formatPercent(summary.failed / summary.callCount) : undefined, tone: "muted", icon: CircleAlert, tint: "red", onClick: () => setStatus("failed") },
+          { label: "失败", value: formatNumber(summary.failed), icon: CircleAlert, tint: "red", onClick: () => setStatus("failed") },
           { label: "估算费用", value: formatCosts(summary), note: summary.unmeteredCallCount ? `${summary.unmeteredCallCount} 次未计价` : `${formatCompact(summary.inputTokens)} / ${formatCompact(summary.outputTokens)} Token`, tone: "muted", icon: Coins, tint: "amber" },
         ]} />
       )}
@@ -782,14 +801,13 @@ export function LlmCallsPage() {
         toolbar={(
         <div className="adm-filterbar">
           <TextTabs label="调用状态" value={status} onChange={setStatus} options={[{ value: "", label: "全部" }, { value: "succeeded", label: "成功" }, { value: "failed", label: "失败" }, { value: "pending", label: "进行中" }]} />
-          <SearchInput value={searchText} onChange={(next) => { setSearchText(next); if (!next.trim()) setAppliedSearch(null); }} placeholder="调用 ID / 用户 ID / 错误码" width={210} onSubmit={() => setAppliedSearch(parseRecordSearch(searchText))} />
-          <SelectBox label="场景" value={useCase} onChange={setUseCase} options={[{ value: "", label: "全部能力" }, ...Object.keys(useCaseLabels).map((value) => ({ value, label: useCaseLabel(value) }))]} />
-          <SelectBox label="时间范围" value={range} onChange={setRange} options={Object.entries(callWindows).map(([value, label]) => ({ value: value as keyof typeof callWindows, label }))} />
+          <SearchInput value={searchText} onChange={(next) => { setSearchText(next); if (!next.trim()) setAppliedSearch(null); }} placeholder="调用 ID / 用户 ID / 错误码" width={200} onSubmit={() => setAppliedSearch(parseRecordSearch(searchText))} />
+          <SelectBox label="场景" icon={Workflow} className="adm-filter-select" value={useCase} onChange={setUseCase} options={[{ value: "", label: "全部能力" }, ...Object.keys(useCaseLabels).map((value) => ({ value, label: useCaseLabel(value) }))]} />
+          <SelectBox label="时间范围" icon={CalendarClock} className="adm-filter-select" value={range} onChange={setRange} options={Object.entries(callWindows).map(([value, label]) => ({ value: value as keyof typeof callWindows, label }))} />
         </div>
         )}
         footer={items.length > 0 && (
           <TableFooter>
-              <span>已加载 {items.length} 条 · 点击行查看调用详情</span>
               {nextCursor && <Button disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "加载中…" : "加载更多"}</Button>}
             </TableFooter>
         )}
@@ -805,12 +823,12 @@ export function LlmCallsPage() {
               rowLabel={(row) => `查看调用 ${row.callId}`}
               empty="当前筛选下没有调用"
               columns={[
-                { key: "time", label: "时间", width: "56px", render: (row) => <span className="adm-ink2">{formatWhen(row.createdAt, "—", { compact: true })}</span> },
+                { key: "time", label: "时间", width: "60px", render: (row) => <span className="adm-ink2">{formatWhen(row.createdAt, "—", { compact: true })}</span> },
                 { key: "useCase", label: "能力", width: "110px", render: (row) => <strong className="adm-medium">{useCaseLabel(row.useCase)}</strong> },
-                { key: "source", label: "来源", width: "70px", render: (row) => <span className="adm-ink2">{row.source}</span> },
-                { key: "route", label: "线路 / 协议", width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-stack"><span className="adm-ellipsis adm-ink2">{routeLabel(row.routeId)}</span><small className="adm-medium">{row.errorCode ? <span className="adm-tone-bad">{row.errorCode}</span> : row.protocolCode}</small></span> },
-                { key: "tokens", label: "Token", width: "110px", render: (row) => <span className="adm-ink2">{formatNumber(row.inputTokens)} / {formatNumber(row.outputTokens)}</span> },
-                { key: "cost", label: "费用", width: "70px", render: (row) => <span className="adm-ink2">{row.estimatedCost ? formatMoney(row.estimatedCost, row.costCurrency) : row.status === "succeeded" ? "未计价" : "—"}</span> },
+                { key: "source", label: "来源", width: "80px", render: (row) => <span className="adm-ink2">{row.source}</span> },
+                { key: "route", label: "线路 / 协议", width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-stack"><span className="adm-ellipsis adm-ink2">{routeLabel(row.routeId)}</span><small className="adm-medium adm-faint">{row.errorCode ? <span className="adm-tone-bad">{row.errorCode}</span> : row.protocolCode}</small></span> },
+                { key: "tokens", label: "Token", width: "110px", align: "right", render: (row) => <span className="adm-ink2">{formatNumber(row.inputTokens)} / {formatNumber(row.outputTokens)}</span> },
+                { key: "cost", label: "费用", width: "70px", align: "right", render: (row) => <span className="adm-ink2">{row.estimatedCost ? formatMoney(row.estimatedCost, row.costCurrency) : row.status === "succeeded" ? "未计价" : "—"}</span> },
                 { key: "status", label: "状态", width: "80px", render: (row) => <StatusDot tone={(callStatus[row.status] ?? callStatus.cancelled).tone}>{(callStatus[row.status] ?? { label: row.status }).label}</StatusDot> },
               ]}
             />

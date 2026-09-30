@@ -1,19 +1,29 @@
 import { useLayoutEffect } from "react";
 
 /*
- * The console is drawn at Figma's 1440px desktop frame. Wider or taller screens (16" MacBook, 1080p/1200p
- * displays) would otherwise show the same pixel sizes with empty margins, so the whole console is scaled
- * with CSS `zoom` instead: the layout stays at ~1440 CSS px while everything grows proportionally.
+ * The console is drawn at Figma's "Desktop Window" (1392 × 976 inside the 1440 artboard, whose outer 24px is
+ * only presentation margin). Wider screens (14"/16" MacBook, 1080p/1200p displays) would otherwise show the
+ * same pixel sizes with empty margins, so the whole console is scaled with CSS `zoom`: the layout width stays
+ * at the design's 1392 CSS px and every size grows by the same factor, matching the design's proportions.
+ *
+ * Proportions follow the user's reference console (LinkRag admin, 1920 × 1078): nav text ≈ 0.75% and the page
+ * title ≈ 1.7% of the viewport width; the user then asked for a touch smaller, so width is fitted to 1500px
+ * (≈ 7% under width / 1392). Height only tempers it: fitting the
+ * design's full 976px height shrank 13" laptops too far (≈ 0.85), so the fit height is 820px — about the
+ * design minus one list screen — and longer pages scroll inside the card. Never exceeding width / 1392 keeps
+ * the layout at least the design's 1392 CSS px wide; below ADMIN_MIN_SCALE the responsive layout takes over.
  */
-export const ADMIN_BASE_WIDTH = 1440;
-export const ADMIN_BASE_HEIGHT = 800;
-export const ADMIN_MAX_SCALE = 1.6;
+export const ADMIN_DESIGN_WIDTH = 1392;
+export const ADMIN_FIT_WIDTH = 1500;
+export const ADMIN_FIT_HEIGHT = 820;
+export const ADMIN_MIN_SCALE = 0.85;
+export const ADMIN_MAX_SCALE = 2;
 
-/** Never shrinks below the design size; the height bound keeps short, wide windows from overflowing. */
 export function adminScale(width: number, height: number): number {
   if (!(width > 0) || !(height > 0)) return 1;
-  const fit = Math.min(width / ADMIN_BASE_WIDTH, height / ADMIN_BASE_HEIGHT);
-  return Math.round(Math.min(ADMIN_MAX_SCALE, Math.max(1, fit)) * 1000) / 1000;
+  const fit = Math.min(width / ADMIN_FIT_WIDTH, height / ADMIN_FIT_HEIGHT);
+  // Rounded down so width / scale never drops below the design width.
+  return Math.floor(Math.min(ADMIN_MAX_SCALE, Math.max(ADMIN_MIN_SCALE, fit)) * 1000) / 1000;
 }
 
 /**

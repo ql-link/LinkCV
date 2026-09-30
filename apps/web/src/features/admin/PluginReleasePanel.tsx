@@ -14,7 +14,7 @@ import {
   SkBar,
   SkeletonChart,
   StatusDot,
-  formatDateTime,
+  parseTime,
   formatDayLabel,
   formatNumber,
   useLoad,
@@ -106,13 +106,13 @@ export function PluginReleasePanel() {
         <section className="adm-release" aria-label="当前发布">
           <div className="adm-release-name">
             <Chip icon={Puzzle} tint="blue" size={44} />
-            <div><strong>{release ? "LinkResume 岗位采集插件" : "当前没有插件"}</strong><span>{release ? "Chrome / Edge · 在岗位页一键导入" : "上传首个安装包后，用户即可在 JD 页面下载。"}</span></div>
+            <div><strong>{release ? "LinkResume 岗位采集插件" : "当前没有插件"}</strong><span>{release ? "Chrome / Edge · 在 BOSS 直聘岗位页一键导入" : "上传首个安装包后，用户即可在 JD 页面下载。"}</span></div>
           </div>
           {release && (
             <>
               <p className="adm-release-version"><strong>v{release.version}</strong><StatusDot tone={statusDot.tone}>{statusDot.label}</StatusDot></p>
               <p className="adm-release-facts">
-                <span><CalendarClock size={14} aria-hidden="true" />{formatDateTime(release.released_at).slice(0, 16)} 发布</span>
+                <span><CalendarClock size={14} aria-hidden="true" />{formatMonthDayTime(release.released_at)} 发布</span>
                 <span><Package size={14} aria-hidden="true" />{formatSize(release.size)}</span>
                 <span><Shield size={14} aria-hidden="true" />SHA-256 {release.sha256.slice(0, 8)}…</span>
               </p>
@@ -134,7 +134,7 @@ export function PluginReleasePanel() {
           icon={<CloudUpload />}
           accept=".zip,application/zip"
           inputLabel="选择插件 ZIP"
-          supportingText="拖入 ZIP 或点击选择 · 最大 20 MB · 上传成功后立即上架并清理旧安装包"
+          supportingText="拖入 ZIP 或点击选择 · 最大 20 MB"
           disabled={busy !== null}
           file={file}
           browseLabel={hasPlugin ? "选择更新包" : "选择文件"}
@@ -164,8 +164,10 @@ export function PluginReleasePanel() {
         )}
         {imports.loading && !imports.data ? <SkeletonChart height={220} /> : imports.error ? <ErrorState code={imports.error} onRetry={() => void imports.reload()} /> : (
           <ThinBars
-            height={220}
-            barWidth={18}
+            ramp
+            fadeTo={0.95}
+            hideAxis
+            height={262}
             ariaLabel="最近 30 天插件岗位导入"
             data={daily.map((day, index) => ({
               key: day.date,
@@ -221,5 +223,13 @@ function operationErrorMessage(error: unknown, action: string): string {
 const sourceLabels: Record<string, string> = { zhipin: "BOSS 直聘" };
 
 function formatSize(bytes: number): string {
-  return `${(bytes / 1024).toFixed(1)} KB`;
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+/** "9 月 26 日 14:20" (Figma V4 04). */
+function formatMonthDayTime(value: string | null | undefined): string {
+  const date = parseTime(value);
+  if (!date) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getMonth() + 1} 月 ${date.getDate()} 日 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

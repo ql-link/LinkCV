@@ -154,7 +154,7 @@ describe("ModelsPage", () => {
     mockLlm();
     const update = vi.spyOn(api, "updateLlmModel").mockResolvedValue({ model: { ...model, userSelectable: false } });
     render(wrap(<ModelsPage />));
-    fireEvent.click(await screen.findByRole("button", { name: "编辑模型" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^编辑模型/ }));
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("switch", { name: "用户可选" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
@@ -417,7 +417,7 @@ describe("AnnouncementsPage", () => {
     vi.spyOn(api, "adminListAnnouncements").mockResolvedValue({ items: [], nextCursor: null });
     render(wrap(<AnnouncementsPage />));
     const ribbon = await screen.findByRole("region", { name: "公告状态" });
-    expect(ribbon).toHaveTextContent("生效中2定时1已过期3草稿3已下线8共 17 条");
+    expect(ribbon).toHaveTextContent("生效中2定时1草稿3已下线11共 17 条");
   });
 
   it("offers only unpublish for a published announcement", async () => {
@@ -479,5 +479,42 @@ describe("brand icons", () => {
     expect(providerIcon("siliconflow")).toBe(siliconIcon);
     expect(providerIcon("unknown")).toBeNull();
     expect(vendorIcon("Alibaba")).toBe(alibabaIcon);
+  });
+});
+
+describe("FunnelPage", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("shows each step against the registered cohort and the step-over-step rate", async () => {
+    const { FunnelPage } = await import("./FunnelPage");
+    vi.spyOn(api, "adminInsightFunnel").mockResolvedValue({
+      window: { from: "2026-08-30T00:00:00Z", to: "2026-09-30T00:00:00Z" },
+      steps: [
+        { key: "registered", users: 200 },
+        { key: "resume", users: 120 },
+        { key: "ai_customization", users: 60 },
+        { key: "mock_interview", users: 10 },
+        { key: "pdf_export", users: 30 },
+      ],
+      registrationsByMethod: { wechat_qr: 150, email: 50 },
+      aiCustomizationByEntry: { assistant: 40, editor: 20 },
+      resumeBySource: { template: 90, import: 30 },
+      daily: [{ date: "2026-09-29", registered: 7 }, { date: "2026-09-30", registered: 9 }],
+    });
+    render(wrap(<FunnelPage />));
+    const steps = await screen.findByRole("region", { name: "逐步转化" });
+    const resume = within(steps).getByText("有简历").closest("li") as HTMLElement;
+    expect(within(resume).getByText("60.0%")).toBeInTheDocument();
+    const ai = within(steps).getByText("首次 AI 定制").closest("li") as HTMLElement;
+    expect(within(ai).getByText("上一步 50.0%")).toBeInTheDocument();
+    expect(screen.getByText("微信扫码")).toBeInTheDocument();
+    expect(api.adminInsightFunnel).toHaveBeenCalledWith(expect.objectContaining({ from: expect.any(String), to: expect.any(String) }));
+  });
+
+  it("offers a retry when the funnel cannot be loaded", async () => {
+    const { FunnelPage } = await import("./FunnelPage");
+    vi.spyOn(api, "adminInsightFunnel").mockRejectedValue(new ApiRequestError(503, "SERVICE_UNAVAILABLE"));
+    render(wrap(<FunnelPage />));
+    expect(await screen.findByText("无法读取转化漏斗")).toBeInTheDocument();
   });
 });
