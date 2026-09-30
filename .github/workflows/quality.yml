@@ -98,6 +98,27 @@ jobs:
             exit "$status"
           fi
 
+  # 规则与文档同步检查只依赖 git 和 Python，不等待 Node 依赖安装，失败时约半分钟内给出结果。
+  # check:contracts 需要 Web 依赖加载 vite.config.mjs，仍由 check job 的 npm run check 覆盖。
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+      - run: uv sync --directory apps/backend --dev
+      - name: Check AI links and project skills
+        run: |
+          uv run --directory apps/backend python ../../scripts/quality/check_ai_links.py
+          uv run --directory apps/backend python ../../scripts/quality/check_skills.py
+      - name: Check docs sync
+        run: uv run --directory apps/backend python ../../scripts/quality/check_docs_sync.py
+        env:
+          DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
   check:
     runs-on: ubuntu-latest
     steps:
