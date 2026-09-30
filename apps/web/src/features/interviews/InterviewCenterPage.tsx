@@ -1,3 +1,4 @@
+import { MotionPresence, MotionSurface, useContentMotion } from "@/components/ui/motion";
 import {
   useCallback,
   useEffect,
@@ -12,7 +13,6 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import {
   Archive,
   ArrowDownWideNarrow,
@@ -48,8 +48,34 @@ import {
   Video,
   X,
 } from "lucide-react";
-import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, ExpandableSearch, FeedbackNotice, PageLoading } from "@/components/ui";
+import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, PageLoading } from "@/components/ui";
 import { SelectField } from "@/components/ui/select-field";
+import { LoadingText } from "@/components/ui/page-loading";
+import { Icon, type V3IconName } from "@/v3/Icon";
+import { Reveal, Sk, SkeletonBoard, SkeletonCalendar, SkeletonCards, SkeletonHead } from "@/v3/skeletons";
+import { readPageCache, useRevalidateOnFocus, writePageCache } from "@/v3/pageCache";
+import {
+  BeTag,
+  ConfirmDialog as V3ConfirmDialog,
+  DateTimeField,
+  Dialog as V3Dialog,
+  DialogFooter as DialogFooterV3,
+  Menu,
+  MonthCalendar,
+  WeekCalendar,
+  PageEyebrow,
+  Popover,
+  SearchBox,
+  Select,
+  Toggle,
+  formatDateTimeLabel,
+} from "@/v3/primitives";
+import { Badge, Bar, Centered, DeleteSessionArt, Paper } from "@/v3/art";
+import { MOCK_BOARD_STATS, MOCK_PREP_CHECKLIST, MOCK_SESSION_CONFIRMED } from "@/v3/mocks";
+import { CareerNotice, CareerPageHead, ScheduleArt, type ScheduleArtKind } from "./careerV3";
+import { describeScheduleConflict, findScheduleConflicts } from "./scheduleConflicts";
+import { NewProcessDialog } from "./NewProcessDialog";
+import { ReviewListV3 } from "./ReviewListV3";
 import {
   EventCalendar,
   type EventCalendarApi,
@@ -73,13 +99,13 @@ import type {
   EventCalendarProposedUpdate,
 } from "@/components/reui/event-calendar/event-calendar-types";
 import { zhCN } from "date-fns/locale";
-import { WorkspacePageHero } from "../../components/WorkspaceLayout";
 import {
   ApiRequestError,
   api,
   type ApplicationStageType,
   type InterviewAssetRecord,
   type InterviewCalendarColor,
+  type InterviewOverview,
   type InterviewSessionDetail,
   type InterviewSessionSummary,
   type JobApplicationRecord,
@@ -118,6 +144,7 @@ import {
   TerminateApplicationConfirmDialog,
 } from "./CareerDetailViews";
 import "./interviews.css";
+
 
 
 type InterviewStatus = "upcoming" | "active" | "completed" | "cancelled";
@@ -170,6 +197,7 @@ type Interview = {
   canReschedule: boolean;
   mode: string;
   modeCode: "video" | "onsite" | "phone" | "other";
+  meetingLabel: string;
   interviewer: string;
   note: string;
   calendarDay: number;
@@ -187,13 +215,13 @@ type Interview = {
   improvement: string;
 };
 const INTERVIEW_CALENDAR_COLORS: Record<InterviewCalendarColor, string> = {
-  red: "#ff3b30",
-  orange: "#ff9500",
-  yellow: "#ffcc00",
-  green: "#34c759",
-  blue: "#007aff",
-  purple: "#af52de",
-  gray: "#8e8e93",
+  red: "#d64545",
+  orange: "#d9822b",
+  yellow: "#c4a236",
+  green: "#3d8b67",
+  blue: "#3f6fd8",
+  purple: "#8b6bc8",
+  gray: "#96968f",
 };
 
 const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
@@ -202,7 +230,7 @@ const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
     previous: "上一周期",
     next: "下一周期",
     addEvent: "添加面试",
-    allDay: "作答时段",
+    allDay: "全天",
     more: (count) => `另有 ${count} 项`,
     noEvents: "暂无面试安排",
     loading: "正在加载面试排期",
@@ -268,6 +296,26 @@ function startOfWeek(source = new Date()): Date {
   const day = result.getDay() || 7;
   result.setDate(result.getDate() - day + 1);
   return result;
+}
+
+// 月 / 周互切时以哪一天为准：当前这一段包含今天就用今天；否则周取周四（这一周大部分日子所在的月），月取 1 号。
+// 直接用周一或 1 号换算会来回漂移：9 月 28 日这一周 → 9 月 → 9 月 1 日所在的 8 月 31 日那一周 → 8 月。
+function scheduleFocusDay(from: "week" | "month", anchor: Date): Date {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (from === "week") {
+    const start = startOfWeek(anchor);
+    return today >= start && today < addDays(start, 7) ? today : addDays(start, 3);
+  }
+  const start = startOfMonth(anchor);
+  return today.getFullYear() === start.getFullYear() && today.getMonth() === start.getMonth() ? today : start;
+}
+
+/** 这个月在周一开头的月历里占几行（4–6），与日历组件 fixedWeeks={false} 时的行数一致 */
+function monthWeekRows(monthStart: Date): number {
+  const offset = (monthStart.getDay() + 6) % 7;
+  const days = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate();
+  return Math.ceil((offset + days) / 7);
 }
 
 function startOfMonth(source = new Date()): Date {
@@ -341,6 +389,15 @@ function modeLabel(mode: InterviewSessionSummary["mode"]): string {
         : "其他方式";
 }
 
+function meetingLabel(session: InterviewSessionSummary): string {
+  if (session.mode === "onsite") return [session.location, "现场"].filter(Boolean).join(" · ");
+  const platform = session.meeting_url?.includes("feishu.cn") || session.meeting_url?.includes("larksuite.com") ? "飞书会议"
+    : session.meeting_url?.includes("meeting.tencent.com") ? "腾讯会议"
+    : session.meeting_url?.includes("nowcoder.com") ? "牛客网" : null;
+  const mode = session.mode === "video" ? "视频" : session.mode === "phone" ? "电话" : "其他方式";
+  return [mode, platform].filter(Boolean).join(" · ");
+}
+
 function displayStatus(session: InterviewSessionSummary): InterviewStatus {
   if (session.status === "completed") return "completed";
   if (session.status === "cancelled") return "cancelled";
@@ -380,6 +437,7 @@ function toInterview(
       && application?.archived_at == null,
     mode: modeLabel(session.mode),
     modeCode: session.mode,
+    meetingLabel: meetingLabel(session),
     interviewer:
       [session.interviewer_name, session.interviewer_title]
         .filter(Boolean)
@@ -529,32 +587,34 @@ export function InterviewCenterPage({
   const scheduleWeekStart = useMemo(() => startOfWeek(scheduleAnchor), [scheduleAnchor]);
   const scheduleMonthStart = useMemo(() => startOfMonth(scheduleAnchor), [scheduleAnchor]);
   const scheduleGridStart = useMemo(() => startOfWeek(scheduleMonthStart), [scheduleMonthStart]);
-  const scheduleRange = useMemo(() => {
-    if (scheduleGranularity === "month") {
-      return {
-        startAt: scheduleGridStart.toISOString(),
-        endAt: addDays(scheduleGridStart, 42).toISOString(),
-      };
-    }
-    if (scheduleGranularity === "week") {
-      return {
-        startAt: scheduleWeekStart.toISOString(),
-        endAt: addDays(scheduleWeekStart, 7).toISOString(),
-      };
-    }
-    const rangeDays = scheduleGranularity === "days"
+  // 月 / 周都按「所在月份的 6 周月历」取数：同一段时间在月、周之间切换时请求范围不变，
+  // 不会重新请求、数据晚到一拍（日程块和「接下来」后出现），切换时页面不会跳动。
+  const scheduleRangeStart = useMemo(() => {
+    if (scheduleGranularity === "month") return scheduleGridStart;
+    if (scheduleGranularity === "week") return startOfWeek(startOfMonth(scheduleFocusDay("week", scheduleAnchor)));
+    return scheduleAnchor;
+  }, [scheduleAnchor, scheduleGranularity, scheduleGridStart]);
+  const scheduleRangeDays = scheduleGranularity === "month" || scheduleGranularity === "week"
+    ? 42
+    : scheduleGranularity === "days"
       ? 5
       : scheduleGranularity === "agenda"
         ? 30
         : 1;
-    return {
-      startAt: scheduleAnchor.toISOString(),
-      endAt: addDays(scheduleAnchor, rangeDays).toISOString(),
-    };
-  }, [scheduleAnchor, scheduleGranularity, scheduleGridStart, scheduleWeekStart]);
+  const scheduleRangeStartAt = scheduleRangeStart.toISOString();
+  const scheduleRangeEndAt = addDays(scheduleRangeStart, scheduleRangeDays).toISOString();
+  // 只按起止时间字符串缓存：范围没变就是同一个对象，loadData 不会重建、不会触发重新请求
+  const scheduleRange = useMemo(
+    () => ({ startAt: scheduleRangeStartAt, endAt: scheduleRangeEndAt }),
+    [scheduleRangeStartAt, scheduleRangeEndAt],
+  );
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
-  const [sessions, setSessions] = useState<InterviewSessionSummary[]>([]);
-  const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
+  // 回到岗位看板 / 面试日程时，先用上一次的数据直接显示（不画骨架），同时在后台静默刷新
+  const careerCacheKey = `career:${view}:${initialApplicationId ?? ""}:${initialSessionId ?? ""}`;
+  const dedupedMountRef = useRef(false);
+  const [cachedCareer] = useState(() => readPageCache<{ sessions: InterviewSessionSummary[]; applications: JobApplicationSummary[] }>(careerCacheKey));
+  const [sessions, setSessions] = useState<InterviewSessionSummary[]>(() => cachedCareer?.value.sessions ?? []);
+  const [applications, setApplications] = useState<JobApplicationSummary[]>(() => cachedCareer?.value.applications ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
   const [detail, setDetail] = useState<InterviewSessionDetail | null>(null);
   const [query, setQuery] = useState("");
@@ -566,7 +626,7 @@ export function InterviewCenterPage({
   const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [hasLoadedData, setHasLoadedData] = useState(false);
+  const [hasLoadedData, setHasLoadedData] = useState(() => Boolean(cachedCareer));
   const [resolvedApplicationDetailId, setResolvedApplicationDetailId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -578,6 +638,18 @@ export function InterviewCenterPage({
   const [createInterviewEndAt, setCreateInterviewEndAt] = useState<string | null>(null);
   const [createInterviewColor, setCreateInterviewColor] = useState<InterviewCalendarColor>("blue");
   const [scheduleToast, setScheduleToast] = useState<string | null>(null);
+  const [createProcessOpen, setCreateProcessOpen] = useState(false);
+  const dismissNotice = useCallback(() => setNotice(null), []);
+  const dismissScheduleToast = useCallback(() => setScheduleToast(null), []);
+  // 时间冲突：每组冲突在本次打开页面时只提示一次
+  const [seenConflictKeys, setSeenConflictKeys] = useState<string[]>([]);
+  const scheduleConflict = useMemo(
+    () => (view === "schedule" ? findScheduleConflicts(sessions).find((item) => !seenConflictKeys.includes(item.key)) ?? null : null),
+    [seenConflictKeys, sessions, view],
+  );
+  const dismissScheduleConflict = useCallback(() => {
+    if (scheduleConflict) setSeenConflictKeys((keys) => [...keys, scheduleConflict.key]);
+  }, [scheduleConflict]);
   const selectedIdRef = useRef<string | null>(initialSessionId ?? null);
   const loadRequestRef = useRef(0);
   const detailRequestRef = useRef(0);
@@ -592,7 +664,7 @@ export function InterviewCenterPage({
     }
     navigateTo(careerApplicationPath(initialApplicationId as string), { replace: true });
   };
-  const isInterviewDetailRoute = view === "records" && Boolean(initialApplicationId && initialSessionId);
+  const isInterviewDetailRoute = view === "records" && Boolean(initialSessionId);
   const isStandaloneDetailRoute = isApplicationDetailRoute || isInterviewDetailRoute;
 
   const showNotice = useCallback((message: string) => {
@@ -657,7 +729,7 @@ export function InterviewCenterPage({
     setDetailLoading(true);
     try {
       const applicationDetail = view === "applications" && Boolean(initialApplicationId);
-      const interviewDetail = view === "records" && Boolean(initialApplicationId && initialSessionId);
+      const interviewDetail = view === "records" && Boolean(initialSessionId);
       const includeArchivedSessions = view === "records" || view === "applications";
       const applicationScope = view === "records" || view === "applications" ? "all" : "active";
       const sessionRange = applicationDetail || interviewDetail || includeArchivedSessions
@@ -679,6 +751,8 @@ export function InterviewCenterPage({
       if (requestId !== loadRequestRef.current) return;
       setSessions(nextSessions);
       setApplications(nextApplications);
+      writePageCache(`career:${view}:${initialApplicationId ?? ""}:${initialSessionId ?? ""}`, { sessions: nextSessions, applications: nextApplications });
+      window.dispatchEvent(new CustomEvent("career-applications-changed", { detail: nextApplications.filter((item) => item.status === "active" && !item.archived_at).length }));
       setHasLoadedData(true);
       if (applicationDetail) {
         setResolvedApplicationDetailId(initialApplicationId as string);
@@ -721,12 +795,21 @@ export function InterviewCenterPage({
     selectedIdRef.current = initialSessionId ?? null;
     setSelectedId(initialSessionId ?? null);
     setDetail(null);
+    // 去重：刚读过（10 秒内）的看板 / 日程数据直接用，不再请求；带具体记录 id 的详情页照常读取
+    if (!dedupedMountRef.current && cachedCareer?.fresh && !initialSessionId && !initialApplicationId) {
+      dedupedMountRef.current = true;
+      setLoading(false);
+      return undefined;
+    }
+    dedupedMountRef.current = true;
     void loadData(initialSessionId);
     return () => {
       ++loadRequestRef.current;
       ++detailRequestRef.current;
     };
   }, [initialSessionId, loadData]);
+  // 窗口回到前台：看板 / 日程在后台静默刷新（已有数据时不画骨架）
+  useRevalidateOnFocus(() => { if (!isStandaloneDetailRoute && !loading) void loadData(selectedIdRef.current); });
 
   const interviews = useMemo(() => {
     const applicationById = new Map(applications.map((item) => [item.id, item]));
@@ -844,91 +927,97 @@ export function InterviewCenterPage({
     }
   };
 
+  const openCreateProcess = () => {
+    setCreateInterviewApplicationId(null);
+    setCreateInterviewStartAt(null);
+    setCreateInterviewEndAt(null);
+    setCreateProcessOpen(true);
+  };
+  const closeCreateProcess = () => {
+    setCreateProcessOpen(false);
+    setCreateInterviewStartAt(null);
+    setCreateInterviewEndAt(null);
+  };
+
+  const showSkeleton = (loading && !hasLoadedData) || applicationDetailPending;
   return (
-    <div className={`career-workspace-frame${isStandaloneDetailRoute ? " is-standalone-detail" : ""}`}>
-      {!isStandaloneDetailRoute && (
-        <WorkspacePageHero
-          className={`career-module-header${view === "applications" ? " career-applications-header" : ""}`}
-          icon={<BriefcaseBusiness />}
-          tone="warning"
-          title={moduleTitle ?? "求职中心"}
-          description={view === "schedule"
-            ? "集中查看笔试、测评与面试安排，合理规划求职日程。"
-            : view === "records"
-              ? "整理面试记录与复盘资料，回顾每一场表现。"
-              : "跟踪岗位投递与求职进展，统一管理每一步状态。"}
-          navigation={navigation}
-          actions={(
-            <>
-              {view === "applications" ? (
-                <ApplicationHeaderControls
-                  query={query}
-                  onQueryChange={setQuery}
-                  onInstallPlugin={() => setShowPluginInstall(true)}
-                  onImport={openJobImport}
-                />
-              ) : view === "schedule" ? (
-                <ScheduleHeaderControls
-                  query={query}
-                  onQueryChange={setQuery}
-                />
-              ) : (
-                <>
-                  <ExpandableSearch
-                    label="搜索面试"
-                    name="interview-search"
-                    value={query}
-                    onValueChange={setQuery}
-                    placeholder="搜索公司、职位或阶段…"
-                  />
-                  <Button icon={<Plus />} onClick={() => setShowCreate(true)}>新建面试</Button>
-                </>
-              )}
-              {view === "applications" && (
-                <ApplicationViewControls
-                  applications={applications}
-                  displayMode={applicationDisplayMode}
-                  hiddenColumnIds={hiddenApplicationBoardColumnIds}
-                  sortMode={applicationSortMode}
-                  groupByCategory={groupByCategory}
-                  onGroupingChange={setGroupByCategory}
-                  onDisplayModeChange={setApplicationDisplayMode}
-                  onSortChange={setApplicationSortMode}
-                  onColumnVisibilityChange={(columnId, visible) => {
-                    setHiddenApplicationBoardColumnIds((current) => {
-                      const next = new Set(current);
-                      if (visible) next.delete(columnId);
-                      else next.add(columnId);
-                      storeHiddenApplicationBoardColumnIds(next);
-                      return next;
-                    });
-                  }}
-                />
-              )}
-            </>
+    <div className={`career-workspace-frame v3-career${isStandaloneDetailRoute ? " is-standalone-detail" : ""}`}>
+      {/* 看板 / 列表共用同一套撑满高度的布局：切换时页头、统计、工具栏都不动，只有下方区域切换 */}
+      <main className={`dashboard-content interview-center-content career-v3-page${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" ? " career-applications-board-content" : ""}${!isStandaloneDetailRoute && view === "schedule" ? " career-schedule-content" : ""}`}>
+      {notice && (
+        <CareerNotice
+          key={notice.id}
+          className="interview-error-notice"
+          message={notice.message}
+          onDismiss={dismissNotice}
+        />
+      )}
+      {scheduleToast && (
+        <CareerNotice kind="success" message={scheduleToast} onDismiss={dismissScheduleToast} />
+      )}
+      {!scheduleToast && !notice && scheduleConflict && (
+        <CareerNotice
+          key={scheduleConflict.key}
+          className="schedule-conflict-notice"
+          title="时间存在冲突"
+          message={describeScheduleConflict(scheduleConflict, timezone)}
+          onDismiss={dismissScheduleConflict}
+          action={(
+            <button
+              type="button"
+              className="career-notice-action"
+              onClick={() => {
+                const target = scheduleConflict.second.id;
+                dismissScheduleConflict();
+                void selectInterview(target);
+              }}
+            >
+              查看
+            </button>
           )}
         />
       )}
-      <main className={`dashboard-content interview-center-content${isStandaloneDetailRoute ? " career-standalone-detail-content" : ""}${!isStandaloneDetailRoute && view === "applications" && applicationDisplayMode === "board" ? " career-applications-board-content" : ""}${!isStandaloneDetailRoute && view === "schedule" ? " career-schedule-content" : ""}`}>
-      {notice && (
-        <FeedbackNotice
-          key={notice.id}
-          className="interview-error-notice"
-          kind="error"
-          placement="floating"
-          onDismiss={() => setNotice(null)}
-        >
-          {notice.message}
-        </FeedbackNotice>
+      {!isStandaloneDetailRoute && view === "applications" && (
+        <ApplicationsHeader
+          applications={applications}
+          sessions={sessions}
+          loading={showSkeleton}
+          weekStart={weekStart}
+          timezone={timezone}
+          onCreateProcess={openCreateProcess}
+          onImport={openJobImport}
+        />
       )}
-      {scheduleToast && (
-        <FeedbackNotice kind="success" placement="floating" onDismiss={() => setScheduleToast(null)}>
-          {scheduleToast}
-        </FeedbackNotice>
+      {!isStandaloneDetailRoute && view === "applications" && (showSkeleton || applications.length > 0) && (
+        <ApplicationViewControls
+          applications={applications}
+          displayMode={applicationDisplayMode}
+          hiddenColumnIds={hiddenApplicationBoardColumnIds}
+          sortMode={applicationSortMode}
+          groupByCategory={groupByCategory}
+          query={query}
+          onQueryChange={setQuery}
+          onGroupingChange={setGroupByCategory}
+          onDisplayModeChange={setApplicationDisplayMode}
+          onSortChange={setApplicationSortMode}
+          onColumnVisibilityChange={(columnId, visible) => {
+            setHiddenApplicationBoardColumnIds((current) => {
+              const next = new Set(current);
+              if (visible) next.delete(columnId);
+              else next.add(columnId);
+              storeHiddenApplicationBoardColumnIds(next);
+              return next;
+            });
+          }}
+        />
       )}
-      {(loading && !hasLoadedData) || applicationDetailPending ? (
-        <PageLoading label="正在加载求职数据…" />
-      ) : isApplicationDetailRoute ? (
+      <Reveal
+        loading={showSkeleton}
+        className="career-body-slot"
+        placeholder={view === "schedule" ? <ScheduleLoading /> : view === "applications" && !isApplicationDetailRoute ? <BoardSkeleton /> : (
+          <div className="cd3-page"><SkeletonHead actions={2} /><SkeletonCards cards={[120, 220, 160]} label="正在加载求职数据…" /></div>
+        )}
+      >{isApplicationDetailRoute ? (
         <>
           <ApplicationDetailView
             application={selectedApplication}
@@ -963,7 +1052,7 @@ export function InterviewCenterPage({
         <InterviewSessionDetailView
           detail={detail?.session.id === initialSessionId ? detail : null}
           detailLoading={detailLoading}
-          onBack={() => navigateTo(careerApplicationPath(initialApplicationId as string))}
+          onBack={() => navigateTo(careerViewPath("records"))}
           onChanged={(preferredId) => loadData(preferredId)}
           onNotice={showNotice}
         />
@@ -978,6 +1067,8 @@ export function InterviewCenterPage({
           groupByCategory={groupByCategory}
           timezone={timezone}
           onCreate={() => setShowCreateApplication(true)}
+          onInstallPlugin={() => setShowPluginInstall(true)}
+          onImport={openJobImport}
           onChanged={() => loadData(initialSessionId)}
           onNotice={showNotice}
         />
@@ -992,17 +1083,17 @@ export function InterviewCenterPage({
           weekStart={scheduleWeekStart}
           monthStart={scheduleMonthStart}
           timezone={timezone}
-          draftStartAt={showCreate ? createInterviewStartAt : null}
-          draftEndAt={showCreate ? createInterviewEndAt : null}
+          draftStartAt={showCreate || createProcessOpen ? createInterviewStartAt : null}
+          draftEndAt={showCreate || createProcessOpen ? createInterviewEndAt : null}
           draftColor={createInterviewColor}
           onCreate={openCreateInterview}
           onDateChange={setScheduleAnchor}
           onGranularityChange={(value) => {
             setScheduleGranularity(value);
             setScheduleAnchor((current) => value === "month"
-              ? startOfMonth(current)
+              ? startOfMonth(scheduleFocusDay("week", current))
               : value === "week"
-                ? startOfWeek(current)
+                ? startOfWeek(scheduleFocusDay("month", current))
                 : current);
           }}
           onSelect={(id) => void selectInterview(id)}
@@ -1011,20 +1102,9 @@ export function InterviewCenterPage({
           onAnswerPlanChange={(id, start, durationMinutes) => void updateAnswerPlan(id, start, durationMinutes)}
         />
       ) : (
-        <RecordsView
-          applications={applications}
-          applicationIdsWithSessions={sessions.map((item) => item.application_id)}
-          interviews={queryMatchedInterviews}
-          selected={selected}
-          detail={detail}
-          detailLoading={detailLoading}
-          onSelect={(id) => void selectInterview(id)}
-          onColorChange={(color) => void updateColor(color)}
-          onChanged={(preferredId) => void loadData(preferredId)}
-          onNotice={showNotice}
-        />
-      )}
-      {showCreate && (isApplicationDetailRoute || Boolean(createInterviewApplicationId) ? (
+        <ReviewListV3 interviews={queryMatchedInterviews.filter((item) => item.status === "completed" && sessions.find((session) => session.id === item.id)?.stage_type !== "other")} />
+      )}</Reveal>
+      <MotionPresence>{showCreate && (isApplicationDetailRoute || Boolean(createInterviewApplicationId) ? (
         <CreateInterviewDialog
           applications={applications.filter(
             (item) =>
@@ -1060,10 +1140,16 @@ export function InterviewCenterPage({
       ) : (
         <ScheduleStageDialog
           applications={applications.filter(canAddScheduledStage)}
+          excludedApplications={applications.filter((item) => item.status === "active" && item.archived_at === null && !canAddScheduledStage(item))}
           timezone={timezone}
           initialStartAt={createInterviewStartAt ?? ""}
           initialEndAt={createInterviewEndAt ?? ""}
           onApplicationChange={inheritDraftApplicationColor}
+          onCreateProcess={() => {
+            // 带着双击选中的时间打开「新建求职流程」
+            setShowCreate(false);
+            setCreateProcessOpen(true);
+          }}
           onClose={() => {
             setShowCreate(false);
             setCreateInterviewStartAt(null);
@@ -1072,8 +1158,25 @@ export function InterviewCenterPage({
           onChanged={() => loadData()}
           onNotice={showNotice}
         />
-      ))}
-      {showCreateApplication && (
+      ))}</MotionPresence>
+      <MotionPresence>{createProcessOpen && (
+        <NewProcessDialog
+          applications={applications}
+          timezone={timezone}
+          initialStartAt={createInterviewStartAt}
+          initialEndAt={createInterviewEndAt}
+          onClose={closeCreateProcess}
+          onCreated={(id, info) => {
+            closeCreateProcess();
+            if (info) {
+              const start = new Date(info.startAt);
+              pushScheduleToast(`已创建：${info.company} · ${info.stage} · ${weekday(start)} ${formatTime(start)}`);
+            }
+            void loadData(id);
+          }}
+        />
+      )}</MotionPresence>
+      <MotionPresence>{showCreateApplication && (
         <CreateApplicationDialog
           applications={applications}
           initialJobId={initialJobId}
@@ -1085,16 +1188,20 @@ export function InterviewCenterPage({
           }}
           onNotice={showNotice}
         />
-      )}
-      {view === "applications" && jobImportOpen && (
+      )}</MotionPresence>
+      <MotionPresence>{view === "applications" && jobImportOpen && (
         <JobSmartImportDialog
           unified
           onClose={closeJobImport}
+          onInstallPlugin={() => {
+            closeJobImport();
+            setShowPluginInstall(true);
+          }}
         />
-      )}
-      {view === "applications" && showPluginInstall && (
+      )}</MotionPresence>
+      <MotionPresence>{view === "applications" && showPluginInstall && (
         <PluginInstallDialog onClose={() => setShowPluginInstall(false)} />
-      )}
+      )}</MotionPresence>
       </main>
     </div>
   );
@@ -1108,38 +1215,96 @@ function OverviewLink({ href, className, children }: { href: string; className?:
   }}>{children}</a>;
 }
 
-function ApplicationHeaderControls({
-  query,
-  onQueryChange,
-  onInstallPlugin,
+function formatMonthDay(source: Date): string {
+  return `${String(source.getMonth() + 1).padStart(2, "0")}-${String(source.getDate()).padStart(2, "0")}`;
+}
+
+// 04.1 页头 + 统计 4 格：本周面试、Offer 取 getInterviewOverview 的 metrics；投递总数、面试转化率后端没有 → 示例数据 + 需后端
+function ApplicationsHeader({
+  applications,
+  sessions,
+  loading,
+  weekStart,
+  timezone,
+  onCreateProcess,
   onImport,
 }: {
-  query: string;
-  onQueryChange: (value: string) => void;
-  onInstallPlugin: () => void;
+  applications: JobApplicationSummary[];
+  sessions: InterviewSessionSummary[];
+  loading: boolean;
+  weekStart: Date;
+  timezone: string;
+  onCreateProcess: () => void;
   onImport: () => void;
 }) {
+  // 本周统计也走短时缓存：回到看板时先显示上一次的数字，后台刷新到了再原地更新
+  const metricsCacheKey = `career-metrics:${isoDate(weekStart)}:${timezone}`;
+  const [metrics, setMetrics] = useState<InterviewOverview["metrics"] | null>(() => readPageCache<InterviewOverview["metrics"]>(metricsCacheKey)?.value ?? null);
+  const [metricsPending, setMetricsPending] = useState(() => !readPageCache(metricsCacheKey));
+  useEffect(() => {
+    let cancelled = false;
+    const cached = readPageCache<InterviewOverview["metrics"]>(metricsCacheKey);
+    if (cached) setMetrics(cached.value);
+    setMetricsPending(!cached);
+    if (cached?.fresh) return undefined;
+    if (typeof api.getInterviewOverview !== "function") { setMetricsPending(false); return undefined; }
+    const request = api.getInterviewOverview(isoDate(weekStart), timezone);
+    if (!request || typeof (request as Promise<unknown>).then !== "function") { setMetricsPending(false); return undefined; }
+    void request.then((overview) => {
+      if (!cancelled && overview?.metrics) { setMetrics(overview.metrics); writePageCache(metricsCacheKey, overview.metrics); }
+    }).catch(() => undefined).finally(() => { if (!cancelled) setMetricsPending(false); });
+    return () => { cancelled = true; };
+  }, [metricsCacheKey, timezone, weekStart]);
+  const weekEnd = addDays(weekStart, 7);
+  const activeCount = applications.filter((item) => item.status === "active" && item.archived_at === null && item.lifecycle_status !== "terminated").length;
+  // Only use local totals after the overview request settles, never as interim values.
+  const weeklyInterviews = metrics?.weekly_interviews ?? sessions.filter((item) => item.status !== "cancelled" && new Date(item.start_at) >= weekStart && new Date(item.start_at) < weekEnd).length;
+  const offers = metrics?.offers_received ?? applications.filter((item) => item.current_stage_type === "offer" && item.offer_status !== "declined").length;
+  const pendingOffers = applications.filter((item) => item.current_stage_type === "offer" && item.offer_status === "received" && item.status === "active").length;
+  const empty = !loading && applications.length === 0;
+  const statsPending = loading || metricsPending;
   return (
-    <div className="career-applications-controls">
-      <ExpandableSearch
-        label="搜索求职进程"
-        name="career-application-search"
-        value={query}
-        onValueChange={onQueryChange}
-        placeholder="搜索公司、岗位…"
+    <>
+      <CareerPageHead
+        className="career-board-head"
+        eyebrow={["JOBS", `本周 ${formatMonthDay(weekStart)} 至 ${formatMonthDay(addDays(weekStart, 6))}`]}
+        title="岗位看板"
+        subtitle={<Reveal inline loading={statsPending} placeholder={<LoadingText width={260} />}>{`${activeCount} 个进行中 · ${weeklyInterviews} 场面试${pendingOffers ? ` · ${pendingOffers} 个 Offer 待回复` : ""}`}</Reveal>}
+        actions={(
+          <>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={onCreateProcess}><Icon name="cal" size={13} />已有面试安排</button>
+            <button type="button" className="v3-btn v3-btn-dark" onClick={onImport}>导入岗位</button>
+          </>
+        )}
       />
-      <Button variant="ghost" icon={<Download size={15} />} onClick={onInstallPlugin}>安装采集插件</Button>
-      <Button variant="ghost" icon={<Plus />} onClick={onImport}>导入岗位</Button>
-    </div>
+      <dl className="career-board-stats" aria-label="岗位看板统计">
+        {[
+          { label: "投递总数", value: empty ? "0" : String(MOCK_BOARD_STATS.totalApplied), mock: true },
+          { label: "本周面试", value: String(weeklyInterviews) },
+          { label: "面试转化率", value: empty ? "—" : MOCK_BOARD_STATS.conversionRate, mock: true },
+          { label: "Offer", value: String(offers), extra: pendingOffers ? "待回复" : undefined },
+        ].map((item) => (
+          <div key={item.label} className="career-board-stat">
+            <Reveal loading={statsPending} placeholder={<div><Sk w={40} h={22} r={5} /><Sk w={64} h={11} style={{ marginTop: 8 }} /></div>}>
+              <dd><strong className="v3-num">{item.value}</strong>{item.extra && <small>{item.extra}</small>}</dd>
+              <dt>{item.label}{item.mock && <BeTag />}</dt>
+            </Reveal>
+          </div>
+        ))}
+      </dl>
+    </>
   );
 }
 
+// 04.1 看板 / 列表切换 + 排序、筛选（筛选里是「展示阶段」和「分组」，沿用原来的视图设置能力）
 function ApplicationViewControls({
   applications,
   displayMode,
   hiddenColumnIds,
   sortMode,
   groupByCategory,
+  query,
+  onQueryChange,
   onDisplayModeChange,
   onSortChange,
   onGroupingChange,
@@ -1150,148 +1315,186 @@ function ApplicationViewControls({
   hiddenColumnIds: ReadonlySet<string>;
   sortMode: ApplicationSortMode;
   groupByCategory: boolean;
+  query: string;
+  onQueryChange: (value: string) => void;
   onDisplayModeChange: (value: "board" | "list") => void;
   onSortChange: (value: ApplicationSortMode) => void;
   onGroupingChange: (value: boolean) => void;
   onColumnVisibilityChange: (columnId: string, visible: boolean) => void;
 }) {
-  const ref = useRef<HTMLDetailsElement>(null);
+  const sortRef = useRef<HTMLButtonElement>(null);
+  const filterRef = useRef<HTMLButtonElement>(null);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [stageVisibilityOpen, setStageVisibilityOpen] = useState(false);
+  const closeSort = useCallback(() => setSortOpen(false), []);
+  const closeFilter = useCallback(() => {
+    setFilterOpen(false);
+    setStageVisibilityOpen(false);
+  }, []);
   const boardColumnOptions = useMemo(
     () => applicationBoardColumnOptions(applications),
     [applications],
   );
-  useEffect(() => {
-    const close = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      // Select options render in a portal outside the settings panel.
-      if (!target.closest("[data-slot=select-content]") && !ref.current?.contains(target)) {
-        ref.current?.removeAttribute("open");
-      }
-    };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, []);
-  return <div className="career-applications-view-controls" role="group" aria-label="求职记录显示设置">
-    <details className="career-view-settings" ref={ref} onToggle={(event) => {
-      if (!event.currentTarget.open) setStageVisibilityOpen(false);
-    }} onKeyDown={(event) => {
-      if (event.key === "Escape") {
-        ref.current?.removeAttribute("open");
-        ref.current?.querySelector("summary")?.focus();
-      }
-    }}>
-      <summary aria-label="视图设置" title="视图设置"><SlidersHorizontal size={16} aria-hidden="true" /></summary>
-      <div className="career-view-settings-panel">
-        <div className="career-view-mode-options" data-view={displayMode} role="group" aria-label="显示方式">
-          <button type="button" aria-pressed={displayMode === "board"} onClick={() => onDisplayModeChange("board")}>
-            <Kanban size={16} aria-hidden="true" />阶段看板
-          </button>
-          <button type="button" aria-pressed={displayMode === "list"} onClick={() => onDisplayModeChange("list")}>
-            <List size={16} aria-hidden="true" />列表
-          </button>
-        </div>
-        <div className="career-view-settings-fields">
-          {displayMode === "board" && (
-            <div className={`career-view-stage-visibility${stageVisibilityOpen ? " is-open" : ""}`}>
-              <button
-                type="button"
-                aria-expanded={stageVisibilityOpen}
-                aria-controls="career-view-stage-options"
-                onClick={() => setStageVisibilityOpen((open) => !open)}
-              >
-                <span>展示阶段</span>
-                <ChevronDown size={16} aria-hidden="true" />
-              </button>
-              {stageVisibilityOpen && <div id="career-view-stage-options" className="career-view-stage-options" role="group" aria-label="展示阶段">
-                {boardColumnOptions.map((column) => (
-                  <label key={column.id}>
-                    <span className="career-view-stage-icon" aria-hidden="true">
-                      {column.key === "pending"
-                        ? <Import size={16} />
-                        : column.key === "screening"
-                          ? <Search size={16} />
-                          : column.key === "assessment"
-                            ? <FileText size={16} />
-                            : column.key === "interview"
-                              ? <UserRound size={16} />
-                              : column.key === "offer"
-                                ? <BriefcaseBusiness size={16} />
-                                : <CircleCheck size={16} />}
-                    </span>
-                    <span className="career-view-stage-label">{column.label}</span>
-                    <input
-                      type="checkbox"
-                      checked={!hiddenColumnIds.has(column.id)}
-                      onChange={(event) => onColumnVisibilityChange(column.id, event.target.checked)}
-                    />
-                    <span className="career-view-stage-switch" aria-hidden="true" />
-                  </label>
-                ))}
-              </div>}
-            </div>
-          )}
-          <div className="career-view-settings-row"><span>分组</span>
-            <SelectField label="分类分组" value={groupByCategory ? "category" : "none"}
-              options={[{ value: "none", label: "不分组" }, { value: "category", label: "求职分类" }]}
-              onChange={(event) => onGroupingChange(event.target.value === "category")} />
-          </div>
-          <div className="career-view-settings-row"><span>排序</span>
-            <SelectField label="排序方式" value={sortMode}
-              options={[{ value: "recent_schedule", label: "最近排期" }, { value: "earliest_added", label: "最先添加" }]}
-              onChange={(event) => onSortChange(event.target.value as ApplicationSortMode)} />
-          </div>
-        </div>
-      </div>
-    </details>
-  </div>;
-}
-
-function ScheduleHeaderControls({ query, onQueryChange }: { query: string; onQueryChange: (value: string) => void }) {
   return (
-    <div className="schedule-page-actions">
-      <ExpandableSearch label="搜索面试排期" name="schedule-search" value={query} onValueChange={onQueryChange} placeholder="搜索公司、职位或轮次…" />
+    <div className="career-board-toolbar" role="group" aria-label="求职记录显示设置">
+      <div className="v3-seg" role="group" aria-label="显示方式">
+        <button type="button" aria-pressed={displayMode === "board"} onClick={() => onDisplayModeChange("board")}>看板</button>
+        <button type="button" aria-pressed={displayMode === "list"} onClick={() => onDisplayModeChange("list")}>列表</button>
+      </div>
+      <div className="career-board-toolbar-right">
+        <SearchBox value={query} onChange={onQueryChange} placeholder="搜索公司、岗位…" label="搜索求职进程" width={180} />
+        <button ref={sortRef} type="button" className="career-toolbar-link" aria-haspopup="menu" aria-expanded={sortOpen} onClick={() => setSortOpen((open) => !open)}>
+          <Icon name="list" size={13} />排序
+        </button>
+        <Menu
+          anchorRef={sortRef}
+          open={sortOpen}
+          onClose={closeSort}
+          placement="bottom-end"
+          label="排序"
+          width={148}
+          items={[
+            { label: "最近排期", checked: sortMode === "recent_schedule", onSelect: () => onSortChange("recent_schedule") },
+            { label: "最先添加", checked: sortMode === "earliest_added", onSelect: () => onSortChange("earliest_added") },
+          ]}
+        />
+        <button ref={filterRef} type="button" className="career-toolbar-link" aria-label="视图设置" aria-haspopup="dialog" aria-expanded={filterOpen} onClick={() => (filterOpen ? closeFilter() : setFilterOpen(true))}>
+          <Icon name="filter" size={13} />筛选
+        </button>
+        <Popover anchorRef={filterRef} open={filterOpen} onClose={closeFilter} placement="bottom-end" label="视图设置" className="career-filter-panel">
+          <div className="career-filter-field">
+            <span>分组</span>
+            <Select
+              size="sm"
+              label="分类分组"
+              value={groupByCategory ? "category" : "none"}
+              options={[{ value: "none", label: "不分组" }, { value: "category", label: "求职分类" }]}
+              onChange={(value) => onGroupingChange(value === "category")}
+            />
+          </div>
+          <div className="career-filter-field">
+            <span>排序</span>
+            <Select
+              size="sm"
+              label="排序方式"
+              value={sortMode}
+              options={[{ value: "recent_schedule", label: "最近排期" }, { value: "earliest_added", label: "最先添加" }]}
+              onChange={(value) => onSortChange(value as ApplicationSortMode)}
+            />
+          </div>
+          {displayMode === "board" && (
+            <>
+              <div className="v3-menu-sep" />
+              <button type="button" className="career-filter-toggle" aria-expanded={stageVisibilityOpen} aria-controls="career-view-stage-options" onClick={() => setStageVisibilityOpen((open) => !open)}>
+                <span>展示阶段</span>
+                <Icon name={stageVisibilityOpen ? "chevu" : "chevd"} size={12} />
+              </button>
+              {stageVisibilityOpen && (
+                <div id="career-view-stage-options" className="career-filter-stages" role="group" aria-label="展示阶段">
+                  {boardColumnOptions.map((column) => (
+                    <label key={column.id} className="career-filter-row">
+                      <span>{column.label}</span>
+                      <input
+                        type="checkbox"
+                        className="career-filter-check"
+                        checked={!hiddenColumnIds.has(column.id)}
+                        onChange={(event) => onColumnVisibilityChange(column.id, event.target.checked)}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </Popover>
+      </div>
     </div>
   );
 }
 
+// 10.3 岗位看板加载中：页头 + 统计骨架 + 5 列骨架卡片
+function BoardSkeleton() {
+  return <SkeletonBoard label="正在加载求职数据…" />;
+}
+
+// 面试日程加载中：页头下方画日历格子骨架（替代原来居中的转圈）
+function ScheduleLoading() {
+  return <><SkeletonHead actions={2} /><SkeletonCalendar label="正在加载求职数据…" /></>;
+}
+
+function stageBlockReason(application: JobApplicationSummary): { reason: string; action: string } {
+  const progress = projectApplicationProgress(application);
+  if (progress.isPending) return { reason: `${progress.stageLabel} · 先在看板里标记投递`, action: "去投递" };
+  if (application.current_stage_type === "offer") return { reason: "已进入 Offer · 不再安排面试", action: "查看" };
+  if (application.stage_state === "scheduled") return { reason: `${progress.stageLabel}已安排 · 先完成这一轮`, action: "查看" };
+  return { reason: `${progress.stageLabel} · ${progress.statusLabel}`, action: "查看" };
+}
+
+// 05.2a 新建面试：没有可推进的流程时，说明原因并列出被排除的流程；唯一主按钮打开「新建求职流程」并带上时间
 function ScheduleStageDialog({
   applications,
+  excludedApplications,
   timezone,
   initialStartAt,
   initialEndAt,
   onApplicationChange,
+  onCreateProcess,
   onClose,
   onChanged,
   onNotice,
 }: {
   applications: JobApplicationSummary[];
+  excludedApplications: JobApplicationSummary[];
   timezone: string;
   initialStartAt: string;
   initialEndAt: string;
   onApplicationChange: (application: JobApplicationSummary) => void;
+  onCreateProcess: () => void;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const firstApplication = applications[0];
   if (!firstApplication) {
+    const start = initialStartAt ? new Date(initialStartAt) : null;
+    const end = initialEndAt ? new Date(initialEndAt) : null;
+    const rangeLabel = start && Number.isFinite(start.getTime())
+      ? `${weekday(start)} ${formatMonthDay(start)} · ${formatTime(start)}${end && Number.isFinite(end.getTime()) ? ` – ${formatTime(end)}` : ""}`
+      : "选择时间后再安排";
     return (
-      <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-        <DialogContent className="career-stage-dialog career-next-stage-dialog career-schedule-empty-dialog">
-          <DialogHeader>
-            <DialogTitle>新建面试</DialogTitle>
-            <DialogDescription>只能为已经完成上一阶段的求职流程添加笔试、测评或面试排期。</DialogDescription>
-          </DialogHeader>
-          <div className="career-dialog-empty">
-            <BriefcaseBusiness aria-hidden="true" />
-            <strong>暂无可以推进的求职流程</strong>
-            <span>待投递、上一阶段尚未完成或已经进入 Offer 的流程不会出现在这里。</span>
-          </div>
-          <DialogFooter><Button onClick={onClose}>我知道了</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <V3Dialog width={560} label="新建面试" onClose={onClose} className="career-empty-stage-dialog">
+        <div className="v3-dialog-body">
+          <h2 className="v3-dialog-title">新建面试</h2>
+          <p className="v3-dialog-sub v3-num">{rangeLabel}</p>
+          <div className="v3-stage has-dots career-dialog-stage"><NoStageArt /></div>
+          <h3 className="career-empty-stage-title">暂无可以推进的求职流程</h3>
+          <p className="career-empty-stage-body">只有已经投递、上一阶段已经结束的流程能在这里直接加一场。收到新岗位的面试通知？新建一个求职流程，这个时间会一起带过去。</p>
+          {excludedApplications.length > 0 && (
+            <>
+              <p className="career-section-label">这些流程现在还不能加</p>
+              <div className="v3-gcard">
+                {excludedApplications.slice(0, 4).map((item) => {
+                  const block = stageBlockReason(item);
+                  return (
+                    <div key={item.id} className="v3-grow career-excluded-row">
+                      <span className="career-dot" data-tone={columnToneForApplication(item)} aria-hidden="true" />
+                      <div className="v3-grow-copy">
+                        <strong>{item.company_name_snapshot} · {item.job_title_snapshot}</strong>
+                        <small>{block.reason}</small>
+                      </div>
+                      <button type="button" className="v3-link" onClick={() => { onClose(); navigateTo(careerApplicationPath(item.id)); }}>{block.action}<Icon name="chev" size={12} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+        <DialogFooterV3 left={<button type="button" className="v3-link career-muted-link" onClick={onClose}>我知道了</button>}>
+          <button type="button" className="v3-btn v3-btn-dark" onClick={onCreateProcess}>新建求职流程</button>
+        </DialogFooterV3>
+      </V3Dialog>
     );
   }
   return (
@@ -1312,6 +1515,69 @@ function ScheduleStageDialog({
   );
 }
 
+// 删除岗位确认：岗位卡 + 红色垃圾桶角标（沿用 01.1j 删除确认的插图写法）
+function DeleteRecordArt() {
+  return <DeleteSessionArt />;
+}
+
+// 04.1 状态变体②：四列空看板 + 飞入的岗位卡 + 插件角标
+function EmptyBoardArt() {
+  return (
+    <Centered width={544} height={216}>
+      {[["待投递", "var(--v3-fnt)"], ["笔试", "var(--v3-or)"], ["面试中", "var(--v3-bl)"], ["Offer", "var(--v3-gn)"]].map(([label, color], index) => (
+        <span key={label} style={{ position: "absolute", left: 85 + index * 96, top: 24, width: 86, height: 168, border: "1px solid var(--v3-line)", borderRadius: 8, background: "#fbfbfa" }}>
+          <span style={{ position: "absolute", left: 9, top: 12, width: 6, height: 6, borderRadius: 3, background: color }} />
+          <span style={{ position: "absolute", left: 20, top: 8, color: "var(--v3-sub)", fontSize: 9.5, fontWeight: 500 }}>{label}</span>
+          <span style={{ position: "absolute", left: 6, top: 32, width: 74, height: 44, border: "1px dashed var(--v3-fl)", borderRadius: 6 }} />
+        </span>
+      ))}
+      <svg aria-hidden="true" style={{ position: "absolute", left: 175, top: 92 }} width={272} height={56} viewBox="0 0 272 56" fill="none">
+        <path d="M0 0C80 10 200 30 272 56" stroke="var(--v3-fnt2)" strokeWidth="1.4" strokeDasharray="3 3" />
+      </svg>
+      <Paper x={95} y={54} w={120} h={54} r={8}>
+        <span style={{ position: "absolute", left: 10, top: 9, color: "var(--v3-txt)", fontSize: 10, fontWeight: 500 }}>美团 · Java 开发</span>
+        <span style={{ position: "absolute", left: 10, top: 31, height: 14, borderRadius: 3, background: "var(--v3-field)", padding: "0 5px", color: "var(--v3-sub)", fontSize: 8, fontWeight: 500, lineHeight: "14px" }}>校招</span>
+        <span style={{ position: "absolute", left: 46, top: 36, width: 4, height: 4, borderRadius: 2, background: "var(--v3-rd)" }} />
+        <span style={{ position: "absolute", left: 54, top: 32, color: "var(--v3-rd)", fontFamily: "var(--v3-num)", fontSize: 8 }}>09-30 截止</span>
+      </Paper>
+      <span style={{ position: "absolute", left: 369, top: 146, display: "grid", width: 40, height: 40, placeItems: "center", borderRadius: 12, background: "var(--v3-dark)", color: "#fff" }}><Icon name="puzzle" size={18} /></span>
+    </Centered>
+  );
+}
+
+function columnToneForApplication(application: JobApplicationSummary): string {
+  const key = projectApplicationProgress(application).columnKey;
+  if (key === "assessment" || key === "written_test") return "orange";
+  if (key === "interview") return "blue";
+  if (key === "offer") return "green";
+  return "muted";
+}
+
+// 05.2a 插图：一张虚线的空白日程卡 + 问号 + 三列看板里没有能往后推的卡片
+function NoStageArt() {
+  return (
+    <Centered width={496} height={120}>
+      <span style={{ position: "absolute", left: 98, top: 26, width: 112, height: 64, border: "1px dashed var(--v3-fl)", borderRadius: 8, background: "#fff" }}>
+        <Bar x={10} y={12} w={40} h={5} color="var(--v3-sk2)" r={2} />
+        <Bar x={10} y={24} w={64} h={4} r={2} />
+        <span style={{ position: "absolute", left: 10, top: 40, width: 70, height: 14, borderRadius: 3, background: "#f3f3f0", color: "var(--v3-fnt)", fontFamily: "var(--v3-num)", fontSize: 7.5, fontWeight: 500, lineHeight: "14px", paddingLeft: 5 }}>14:00 – 15:00</span>
+      </span>
+      <span style={{ position: "absolute", left: 198, top: 46, display: "grid", width: 24, height: 24, placeItems: "center", border: "1px solid var(--v3-cl)", borderRadius: 12, background: "#fff", color: "var(--v3-sub)", fontFamily: "var(--v3-num)", fontSize: 12, fontWeight: 600, boxShadow: "0 2px 6px rgb(0 0 0 / 6%)" }}>?</span>
+      {[["待投递", true], ["等待结果", true], ["Offer", false]].map(([label, filled], index) => (
+        <span key={String(label)} style={{ position: "absolute", left: 242 + index * 58, top: 18, width: 52, height: 84, border: "1px solid var(--v3-line)", borderRadius: 6, background: "#fbfbfa" }}>
+          <span style={{ position: "absolute", top: 6, left: 0, right: 0, color: "var(--v3-fnt)", fontSize: 8, fontWeight: 500, textAlign: "center" }}>{label}</span>
+          {filled ? (
+            <>
+              <span style={{ position: "absolute", left: 4, top: 24, width: 44, height: 24, border: "1px solid var(--v3-cl)", borderRadius: 4, background: "#fff", opacity: 0.6 }} />
+              <span style={{ position: "absolute", left: 4, top: 54, width: 44, height: 24, border: "1px solid var(--v3-cl)", borderRadius: 4, background: "#fff", opacity: 0.35 }} />
+            </>
+          ) : <span style={{ position: "absolute", left: 4, top: 24, width: 44, height: 24, border: "1px dashed var(--v3-fl)", borderRadius: 4 }} />}
+        </span>
+      ))}
+    </Centered>
+  );
+}
+
 function ApplicationsView({
   applications,
   hiddenColumnIds,
@@ -1322,6 +1588,8 @@ function ApplicationsView({
   sortMode,
   timezone,
   onCreate,
+  onInstallPlugin,
+  onImport,
   onChanged,
   onNotice,
 }: {
@@ -1334,6 +1602,8 @@ function ApplicationsView({
   sortMode: ApplicationSortMode;
   timezone: string;
   onCreate: () => void;
+  onInstallPlugin: () => void;
+  onImport: () => void;
   onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
@@ -1357,6 +1627,7 @@ function ApplicationsView({
     const clock = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(clock);
   }, []);
+  const dismissDragRejection = useCallback(() => setDragRejectionNotice(null), []);
   const showDragRejectionNotice = useCallback((message: string) => {
     dragRejectionNoticeIdRef.current += 1;
     setDragRejectionNotice({ id: dragRejectionNoticeIdRef.current, message });
@@ -1403,23 +1674,20 @@ function ApplicationsView({
       setDeletingApplicationId(null);
     }
   };
+  // 看板 ⇄ 列表：只有这块区域横向滑入（看板在左、列表在右，方向与分段控件一致），页面其他部分不动
+  const layoutMotionRef = useContentMotion<HTMLDivElement>(displayMode, { initial: false, from: displayMode === "list" ? "32px 0" : "-32px 0" });
   return (
-    <div className="career-applications-layout">
-      <AnimatePresence>
-        {dragRejectionNotice && (
-          <FeedbackNotice
-            key={dragRejectionNotice.id}
-            className="application-drag-rejection-notice"
-            kind="error"
-            placement="floating"
-            title="无法更新求职阶段"
-            onDismiss={() => setDragRejectionNotice(null)}
-          >
-            {dragRejectionNotice.message}
-          </FeedbackNotice>
-        )}
-      </AnimatePresence>
-      {categoryApplication && <ApplicationCategoryDialog application={categoryApplication} onClose={() => setCategoryApplication(null)} onChanged={onChanged} />}
+    <div ref={layoutMotionRef} className={`career-applications-layout is-${displayMode}`}>
+      {dragRejectionNotice && (
+        <CareerNotice
+          key={dragRejectionNotice.id}
+          className="application-drag-rejection-notice"
+          title="无法更新求职阶段"
+          message={dragRejectionNotice.message}
+          onDismiss={dismissDragRejection}
+        />
+      )}
+      <MotionPresence>{categoryApplication && <ApplicationCategoryDialog application={categoryApplication} onClose={() => setCategoryApplication(null)} onChanged={onChanged} />}</MotionPresence>
       <ApplicationsBoard
         groupByCategory={groupByCategory}
         hiddenColumnIds={hiddenColumnIds}
@@ -1451,7 +1719,7 @@ function ApplicationsView({
         onRequestTerminate={setPendingTermination}
         onRequestDelete={setPendingDelete}
       />
-      {draggedPendingApplication && (
+      <MotionPresence>{draggedPendingApplication && (
         <MarkApplicationAppliedDialog
           application={draggedPendingApplication.application}
           initialTargetColumnId={draggedPendingApplication.targetColumnId}
@@ -1460,8 +1728,8 @@ function ApplicationsView({
           onChanged={onChanged}
           onNotice={onNotice}
         />
-      )}
-      {draggedNextStage && (
+      )}</MotionPresence>
+      <MotionPresence>{draggedNextStage && (
         <AddNextStageDialog
           application={draggedNextStage.application}
           timezone={timezone}
@@ -1473,27 +1741,27 @@ function ApplicationsView({
           onChanged={onChanged}
           onNotice={onNotice}
         />
-      )}
-      {pendingTermination && (
+      )}</MotionPresence>
+      <MotionPresence>{pendingTermination && (
         <TerminateApplicationConfirmDialog
           application={pendingTermination}
           onClose={() => setPendingTermination(null)}
           onChanged={onChanged}
           onNotice={onNotice}
         />
-      )}
-      {pendingDelete && (
-        <ConfirmDialog
-          kind="delete"
+      )}</MotionPresence>
+      <MotionPresence>{pendingDelete && (
+        <V3ConfirmDialog
           title={`永久删除「${pendingDelete.company_name_snapshot} · ${pendingDelete.job_title_snapshot}」？`}
           description="删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。"
+          art={<DeleteRecordArt />}
           confirmLabel="永久删除"
           busyLabel="正在删除…"
           busy={deletingApplicationId === pendingDelete.id}
           onCancel={() => setPendingDelete(null)}
           onConfirm={deleteEndedApplication}
         />
-      )}
+      )}</MotionPresence>
       {displayMode === "list" && visibleApplications.length ? (
         <div className={groupByCategory ? "career-application-list-groups is-grouped" : "career-application-list-groups"}>
         {listGroups.map((group) => <section key={group.key} className="career-application-list-group">
@@ -1556,14 +1824,23 @@ function ApplicationsView({
         </section>)}
         </div>
       ) : !visibleApplications.length ? (
-        <section className="interview-surface career-applications-board">
-          <div className="career-applications-empty">
-            <BriefcaseBusiness />
-            <h2>{normalizedQuery ? "没有匹配的求职进程" : "还没有求职进程"}</h2>
-            <p>{normalizedQuery ? "换个公司、职位或阶段关键词试试。" : "先从岗位库选择目标岗位，再开始记录投递进度。"}</p>
-            {!normalizedQuery && <Button onClick={onCreate}>创建第一条求职进程</Button>}
-          </div>
-        </section>
+        normalizedQuery ? (
+          <section className="v3-empty career-board-empty is-search" aria-label="没有匹配的求职进程">
+            <h3>没有匹配的求职进程</h3>
+            <p>换个公司、职位或阶段关键词试试。</p>
+          </section>
+        ) : (
+          <section className="v3-empty career-board-empty" aria-labelledby="career-board-empty-title">
+            <div className="v3-stage has-dots"><EmptyBoardArt /></div>
+            <h3 id="career-board-empty-title" role="heading" aria-level={2}>还没有求职进程</h3>
+            <p>装上浏览器插件，在招聘网站上一键把岗位存进来；也可以粘贴岗位文字导入。</p>
+            <div className="v3-empty-actions">
+              <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={onInstallPlugin}><Icon name="puzzle" size={13} />安装浏览器插件</button>
+              <button type="button" className="v3-link" onClick={onImport}>粘贴岗位文字导入</button>
+              <button type="button" className="v3-link" onClick={onCreate}>创建第一条求职进程</button>
+            </div>
+          </section>
+        )
       ) : null}
     </div>
   );
@@ -1608,6 +1885,7 @@ function scheduleToolbarTitle(view: ScheduleGranularity, anchor: Date, weekStart
 function renderInterviewCalendarEvent({
   occurrence,
   view,
+  isSelected,
 }: EventCalendarRenderEventProps<Interview | null>) {
   const interview = occurrence.event.data;
   const visibleStart = formatTime(occurrence.start);
@@ -1617,39 +1895,50 @@ function renderInterviewCalendarEvent({
   }
   if (!interview) {
     return (
-      <span className="interview-calendar-event-content">
+      <span className="interview-calendar-event-content is-draft">
         <strong className="interview-calendar-event-title">新面试</strong>
-        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+        <span className="interview-calendar-event-time v3-num"><Icon name="clock" size={10} />{visibleStart}–{visibleEnd}</span>
       </span>
     );
   }
   if (interview.calendarRole === "open_window") {
+    // 周视图顶部「全天」行：左侧色条 + 「公司 阶段」（设计稿 05.2 All-day）
     return (
       <span className="interview-calendar-event-content interview-calendar-open-window-content">
-        <strong className="interview-calendar-event-title">{interview.company} · {interview.role} · {interview.stage}</strong>
+        <strong className="interview-calendar-event-title">{interview.company} {interview.stage}开放</strong>
         <span className="interview-calendar-window-range">{interview.date} {interview.time} – {formatDate(new Date(interview.endAt))} {interview.endTime}</span>
         <em className="interview-calendar-window-status">{interview.status === "completed" ? "已完成" : interview.status === "cancelled" ? "已取消" : "待完成"}</em>
       </span>
     );
   }
   if (view === "month") {
+    // 月视图：灰底胶囊 + 彩色圆点 + 「公司 阶段」；今天的安排用蓝底并带时间（设计稿 05.1）
     return (
-      <span className="interview-calendar-event-content">
-        <strong className="interview-calendar-event-title">{interview.company} · {interview.role}</strong>
-        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
+      <span className={`interview-calendar-event-content is-month${isSelected ? " is-selected" : ""}`}>
+        <strong className="interview-calendar-event-title">{interview.company}</strong>
+        <span className="interview-calendar-event-stage-inline">{interview.stage}</span>
+        <span className="interview-calendar-event-time v3-num"><Icon name="clock" size={10} />{visibleStart}–{visibleEnd}</span>
       </span>
     );
   }
   return (
     <span className="interview-calendar-event-content interview-calendar-event-stack">
-      <strong className="interview-calendar-event-title">{interview.company}</strong>
-      <span className="interview-calendar-event-role">{interview.role}</span>
-      <span className="interview-calendar-event-meta">
-        <em className="interview-calendar-event-stage">{interview.stage}</em>
-        <span className="interview-calendar-event-time"><Clock3 aria-hidden="true" />{visibleStart}–{visibleEnd}</span>
-      </span>
+      <span className="interview-calendar-event-time v3-num"><Icon name="clock" size={10} />{visibleStart}–{visibleEnd}</span>
+      <strong className="interview-calendar-event-title">{interview.company} · {interview.stage}</strong>
+      <span className="interview-calendar-event-meta">{interview.meetingLabel}</span>
     </span>
   );
+}
+
+// 05.1 / 05.2 页头文案：月视图「2026 年 9 月」，周视图「9 月 21 日 – 27 日」
+function scheduleHeadTitle(view: ScheduleGranularity, anchor: Date, weekStart: Date, monthStart: Date): string {
+  if (view === "month") return `${monthStart.getFullYear()} 年 ${monthStart.getMonth() + 1} 月`;
+  const start = view === "week" ? weekStart : anchor;
+  const end = view === "week" ? addDays(weekStart, 6) : view === "days" ? addDays(anchor, 4) : view === "agenda" ? addDays(anchor, 29) : anchor;
+  if (start.getTime() === end.getTime()) return `${start.getMonth() + 1} 月 ${start.getDate()} 日`;
+  return start.getMonth() === end.getMonth()
+    ? `${start.getMonth() + 1} 月 ${start.getDate()} 日 – ${end.getDate()} 日`
+    : `${start.getMonth() + 1} 月 ${start.getDate()} 日 – ${end.getMonth() + 1} 月 ${end.getDate()} 日`;
 }
 
 function ScheduleView({
@@ -1694,11 +1983,35 @@ function ScheduleView({
   onAnswerPlanChange: (id: string, startAt: Date | null, durationMinutes: number | null) => void;
 }) {
   const [openInterviewId, setOpenInterviewId] = useState<string | null>(null);
+  // 上一段 / 下一段：日历沿时间方向横向滑入（像系统日历那样）；月 / 周切换按分段控件的左右位置滑入（月在左、周在右）
+  const previousAnchorRef = useRef(anchor.getTime());
+  const previousGranularityRef = useRef(granularity);
+  const calendarMotionFrom = previousGranularityRef.current !== granularity
+    ? (granularity === "week" ? "24px 0" : "-24px 0")
+    : anchor.getTime() > previousAnchorRef.current ? "24px 0" : anchor.getTime() < previousAnchorRef.current ? "-24px 0" : "0 0";
+  useEffect(() => {
+    previousAnchorRef.current = anchor.getTime();
+    previousGranularityRef.current = granularity;
+  }, [anchor, granularity]);
+  const calendarMotionRef = useContentMotion<HTMLElement>(`${granularity}:${anchor.getTime()}`, { from: calendarMotionFrom, initial: false, selector: '[data-slot="event-calendar-content"]' });
   const [showAllOpenWindows, setShowAllOpenWindows] = useState(false);
+  const [localQuery, setLocalQuery] = useState(query);
   const calendarApiRef = useRef<EventCalendarApi<Interview | null> | null>(null);
   const calendarRootRef = useRef<HTMLDivElement | null>(null);
   const hasCalendarSelectionRef = useRef(false);
-  const normalizedQuery = query.trim().toLowerCase();
+  // 跳转到任意日期：标题做成按钮，打开月历；月视图里点日期数字切到那一周
+  const titleButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const closeDatePicker = useCallback(() => setDatePickerOpen(false), []);
+  const jumpTo = (day: Date) => {
+    setDatePickerOpen(false);
+    onDateChange(granularity === "month" ? startOfMonth(day) : startOfWeek(day));
+  };
+  const openWeekOf = (day: Date) => {
+    onGranularityChange("week");
+    onDateChange(startOfWeek(day));
+  };
+  const normalizedQuery = (localQuery || query).trim().toLowerCase();
   const sourceInterviews = interviews;
   const visibleInterviews = useMemo(
     () => sourceInterviews.filter((item) => !normalizedQuery || `${item.company}${item.role}${item.stage}`.toLowerCase().includes(normalizedQuery)),
@@ -1880,16 +2193,52 @@ function ScheduleView({
     offDays: false,
   }), []);
   const calendarViews = useMemo<CalendarView[]>(
-    () => ["month", "week", "day", "days", "agenda"],
+    () => ["month", "week"],
     [],
   );
+  // 周视图打开时从 8:00 开始显示；这一周有更早的安排时，从最早那场所在的整点开始。
+  // 只改初始滚动位置、不裁掉 0–8 点：往上滚仍能看到并拖动更早的时段，拖拽换算也保持以 0 点为基准
+  const weekDayStartHour = useMemo(() => {
+    const weekEnd = addDays(weekStart, 7);
+    const earliest = visibleInterviews
+      .filter((item) => item.scheduleKind === "fixed_slot" && new Date(item.startAt) >= weekStart && new Date(item.startAt) < weekEnd)
+      .reduce((hour, item) => Math.min(hour, new Date(item.startAt).getHours()), 8);
+    return Math.max(0, earliest);
+  }, [visibleInterviews, weekStart]);
   const toolbarTitle = scheduleToolbarTitle(granularity, anchor, weekStart, monthStart);
+  // 页头副标题：本月 / 本周日程数 + 今天的面试数
+  const rangeStart = granularity === "month" ? monthStart : weekStart;
+  const rangeEnd = granularity === "month" ? new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1) : addDays(weekStart, 7);
+  const now = new Date();
+  const inRange = visibleInterviews.filter((item) => item.status !== "cancelled" && new Date(item.startAt) < rangeEnd && new Date(item.endAt) > rangeStart);
+  const todayCount = visibleInterviews.filter((item) => item.status !== "cancelled" && item.scheduleKind === "fixed_slot" && new Date(item.startAt).toDateString() === now.toDateString()).length;
+  const subtitle = `${granularity === "month" ? "本月" : "本周"} ${inRange.length} 个日程${todayCount ? ` · 今天 ${todayCount} 场面试` : ""}`;
+  // 「接下来」：未来（或正在进行）的 3 条安排
+  const upcoming = visibleInterviews
+    .filter((item) => item.status === "upcoming" || item.status === "active")
+    .sort((left, right) => new Date(left.scheduleKind === "open_window" ? left.endAt : left.startAt).getTime() - new Date(right.scheduleKind === "open_window" ? right.endAt : right.startAt).getTime())
+    .slice(0, 3);
   return (
-    <div className="interview-schedule-layout">
-      <section className="interview-surface schedule-calendar-panel">
-        <p id="schedule-drag-instructions" className="visually-hidden">
-          双击空白时间新建排期；按住空白时间拖动可选择范围。按住卡片可在当天移动排期，拖动上边缘调整开始时间，下边缘调整结束时间，以 15 分钟为步长调整。
-        </p>
+    <div className="interview-schedule-layout career-schedule-v3">
+      <p id="schedule-drag-instructions" className="visually-hidden">
+        双击空白时间新建排期；按住空白时间拖动可选择范围。按住卡片可在当天移动排期，拖动上边缘调整开始时间，下边缘调整结束时间，以 15 分钟为步长调整。
+      </p>
+      <section
+        ref={calendarMotionRef}
+        className="schedule-calendar-panel"
+        // 月历行数随月份变化（2026 年 8 月 1 日是周六、31 日是周一，要排 6 行）；CSS 按这个变量均分行高
+        style={{ ["--career-month-rows" as string]: String(monthWeekRows(monthStart)) }}
+        onClick={(event) => {
+          if (granularity !== "month") return;
+          const target = event.target instanceof Element ? event.target.closest('[data-slot="event-calendar-month-day-number"]') : null;
+          if (!target) return;
+          const numbers = Array.from(event.currentTarget.querySelectorAll('[data-slot="event-calendar-month-day-number"]'));
+          const index = numbers.indexOf(target);
+          if (index < 0) return;
+          event.stopPropagation();
+          openWeekOf(addDays(startOfWeek(monthStart), index));
+        }}
+      >
         <EventCalendar<Interview | null>
           ref={calendarRootRef}
           apiRef={calendarApiRef}
@@ -1911,13 +2260,22 @@ function ScheduleView({
           slotDuration={30}
           snapDuration={15}
           interval={60}
-          scrollToHour={9}
+          // 组件会在目标刻度上方多留 12px；补回这 12px，让起始刻度线正好贴着表头，不再露出一截空白
+          scrollToHour={weekDayStartHour + 12 / 56}
           fixedWeeks={false}
           showOutsideDays
           interactions={calendarInteractions}
           viewSettings={calendarViewSettings}
           components={calendarComponents}
           renderEvent={renderInterviewCalendarEvent}
+          renderDayHeader={({ day, view: headerView, isToday }) => headerView === "month"
+            ? <span className="interview-calendar-day-header">{`周${"日一二三四五六"[day.getDay()]}`}</span>
+            : (
+              <span className={`interview-calendar-day-header is-week${isToday ? " is-today" : ""}`}>
+                <small>{`周${"日一二三四五六"[day.getDay()]}`}</small>
+                <strong className="v3-num">{day.getDate()}</strong>
+              </span>
+            )}
           canDropEvent={(update) => !update.allDay && update.event.data?.canReschedule === true}
           onEventUpdate={updateCalendarEvent}
           onEventClick={(occurrence) => {
@@ -1955,19 +2313,80 @@ function ScheduleView({
             viewShortcut: "interview-calendar-view-shortcut",
           }}
         >
-          <EventCalendarNav className="interview-calendar-nav">
-            <EventCalendarNavToday tooltip={null}>今天</EventCalendarNavToday>
-            <EventCalendarViewSwitcher tooltip={null} />
-            <div className="interview-calendar-nav-arrows">
-              <EventCalendarNavPrev tooltip={null} />
-              <EventCalendarNavNext tooltip={null} />
+          {/* 05.1 / 05.2 页头：左侧 SCHEDULE 小字 + 衬线月份 / 周范围 + 副标题；右侧 月/周 切换、上一段 / 今天 / 下一段 */}
+          <header className="career-v3-head career-schedule-head">
+            <div className="career-v3-head-copy">
+              <PageEyebrow segments={["SCHEDULE", `${(granularity === "month" ? monthStart : weekStart).getFullYear()} 年`, granularity === "month" ? "月视图" : "周视图"]} />
+              <h1 className="v3-page-title">
+                <button
+                  ref={titleButtonRef}
+                  type="button"
+                  className="career-schedule-title-btn"
+                  aria-haspopup="dialog"
+                  aria-expanded={datePickerOpen}
+                  aria-label={`${scheduleHeadTitle(granularity, anchor, weekStart, monthStart)}，选择其他日期`}
+                  onClick={() => setDatePickerOpen((open) => !open)}
+                >
+                  {scheduleHeadTitle(granularity, anchor, weekStart, monthStart)}
+                  <Icon name="chevd" size={14} />
+                </button>
+              </h1>
+              <Popover anchorRef={titleButtonRef} open={datePickerOpen} onClose={closeDatePicker} className="v3-picker" label={granularity === "month" ? "选择月份" : "选择周"} placement="bottom-start">
+                {/* 选择器跟随当前时间维度：月视图选月份，周视图整行选一周 */}
+                {granularity === "month"
+                  ? <MonthCalendar value={monthStart} onPick={jumpTo} />
+                  : <WeekCalendar value={weekStart} onPick={jumpTo} />}
+              </Popover>
+              <p className="v3-page-sub">{subtitle}</p>
             </div>
-            <EventCalendarTitle className="interview-calendar-title" format={() => toolbarTitle} />
-          </EventCalendarNav>
+            <EventCalendarNav className="interview-calendar-nav">
+              <div className="v3-seg interview-calendar-seg" role="group" aria-label="日程视图">
+                <button type="button" aria-pressed={granularity === "month"} onClick={() => onGranularityChange("month")}>月</button>
+                <button type="button" aria-pressed={granularity === "week"} onClick={() => onGranularityChange("week")}>周</button>
+              </div>
+              <div className="interview-calendar-nav-arrows">
+                <EventCalendarNavPrev tooltip={null} />
+                <EventCalendarNavToday tooltip={null}>今天</EventCalendarNavToday>
+                <EventCalendarNavNext tooltip={null} />
+              </div>
+              <EventCalendarTitle className="interview-calendar-title visually-hidden" format={() => toolbarTitle} />
+            </EventCalendarNav>
+          </header>
           <EventCalendarContent />
         </EventCalendar>
       </section>
-      {dialogInterview && (
+      {/* 「接下来」始终占位：没有安排时显示一句提示，日历高度不因此变化 */}
+      <section className="career-upcoming" aria-label="接下来">
+        <p className="career-section-label">接下来</p>
+        {upcoming.length === 0 ? (
+          <div className="career-upcoming-empty">
+            <p>接下来没有安排的面试或笔试</p>
+            <small>收到面试通知后，可以点右上角「新建面试」，或在日历空白处双击添加</small>
+          </div>
+        ) : (
+          <ul>
+            {upcoming.map((item) => {
+              const start = new Date(item.scheduleKind === "open_window" ? item.endAt : item.startAt);
+              const isToday = start.toDateString() === now.toDateString();
+              const timeLabel = `${isToday ? "今天" : formatMonthDay(start)} ${formatTime(start)}`;
+              return (
+                <li key={item.id}>
+                  <button type="button" onClick={() => handleOpen(item.id)} aria-label={`${item.stage}｜${item.company}，${timeLabel}`}>
+                    <span className="career-dot" data-tone={item.scheduleKind === "open_window" ? "red" : "blue"} aria-hidden="true" />
+                    <span className="career-upcoming-time v3-num">{timeLabel}</span>
+                    <strong>{item.company} · {item.role} {item.stage}</strong>
+                    <span className="career-upcoming-meta">{item.meetingLabel}</span>
+                    <span className="career-upcoming-state">
+                      {item.scheduleKind === "open_window" ? (item.status === "active" ? "待完成" : "未开始") : isToday ? <>准备清单 {MOCK_PREP_CHECKLIST.filter((entry) => entry.done).length}/{MOCK_PREP_CHECKLIST.length}<BeTag /></> : MOCK_SESSION_CONFIRMED ? <>已确认<BeTag /></> : "待确认"}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+      <MotionPresence>{dialogInterview && (
         <InterviewScheduleDialog
           interview={dialogInterview}
           detail={detail}
@@ -1975,92 +2394,184 @@ function ScheduleView({
           onClose={() => setOpenInterviewId(null)}
           onAnswerPlanChange={onAnswerPlanChange}
         />
-      )}
+      )}</MotionPresence>
     </div>
   );
 }
 
+// 05.2b–05.2i 日程详情弹窗：衬线标题「公司 · 阶段」+ 状态胶囊、插图舞台、收纳卡片、截止前完成多一张「我的作答计划」
 function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, onAnswerPlanChange }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; onClose: () => void; onAnswerPlanChange: (id: string, startAt: Date | null, durationMinutes: number | null) => void }) {
   const matchingDetail = detail?.session.id === interview.id ? detail : null;
   const meetingUrl = matchingDetail?.session.meeting_url ?? null;
-  const [planStartAt, setPlanStartAt] = useState(() => interview.answerPlanStartAt ? localDateTimeValue(new Date(interview.answerPlanStartAt)) : "");
+  const location = matchingDetail?.session.location ?? null;
+  const cancellationReason = matchingDetail?.session.cancellation_reason ?? null;
+  const [planStart, setPlanStart] = useState<Date | null>(() => interview.answerPlanStartAt ? new Date(interview.answerPlanStartAt) : null);
   const [planDurationMinutes, setPlanDurationMinutes] = useState(() => interview.answerPlanStartAt && interview.answerPlanEndAt
     ? Math.max(1, Math.round((new Date(interview.answerPlanEndAt).getTime() - new Date(interview.answerPlanStartAt).getTime()) / 60_000))
     : 120);
   const [planError, setPlanError] = useState<string | null>(null);
+  const isWindow = interview.scheduleKind === "open_window";
   const savePlan = () => {
     if (!interview.canReschedule) return;
-    if (!planStartAt) {
+    if (!planStart) {
       setPlanError(null);
       onAnswerPlanChange(interview.id, null, null);
       return;
     }
-    const start = new Date(planStartAt);
-    const end = new Date(start.getTime() + planDurationMinutes * 60_000);
+    const end = new Date(planStart.getTime() + planDurationMinutes * 60_000);
     const windowStart = new Date(interview.startAt);
     const windowEnd = new Date(interview.endAt);
-    if (!Number.isFinite(start.getTime()) || !Number.isInteger(planDurationMinutes) || planDurationMinutes <= 0) {
+    if (!Number.isFinite(planStart.getTime()) || !Number.isInteger(planDurationMinutes) || planDurationMinutes <= 0) {
       setPlanError("请选择完整且有效的作答时间段。");
       return;
     }
-    if (start < windowStart || end > windowEnd) {
+    if (planStart < windowStart || end > windowEnd) {
       setPlanError("作答计划必须完整落在官方开放时间内。");
       return;
     }
     setPlanError(null);
-    onAnswerPlanChange(interview.id, start, planDurationMinutes);
+    onAnswerPlanChange(interview.id, planStart, planDurationMinutes);
+  };
+  const start = new Date(interview.startAt);
+  const end = new Date(interview.endAt);
+  const stageText = `${interview.stage}`;
+  const isExam = /笔试/.test(stageText);
+  const isTest = /测评/.test(stageText);
+  const isAi = /AI/i.test(stageText);
+  const status = interview.status === "completed"
+    ? { label: "已完成", tone: "green" }
+    : interview.status === "cancelled"
+      ? { label: "已取消", tone: "gray" }
+      : isWindow
+        ? { label: "待完成", tone: "orange" }
+        : interview.status === "active"
+          ? { label: "进行中", tone: "blue" }
+          : { label: isExam || isAi ? "待参加" : "待面试", tone: "blue" };
+  const artKind: ScheduleArtKind = interview.status === "cancelled"
+    ? "cancel"
+    : interview.status === "completed"
+      ? "done"
+      : isWindow
+        ? isTest ? "test" : "window"
+        : isAi ? "ai" : isExam ? "exam" : interview.modeCode === "onsite" ? "onsite" : "video";
+  const artDate = {
+    month: `${start.getMonth() + 1} 月`,
+    day: String(start.getDate()).padStart(2, "0"),
+    sub: isWindow ? `${formatTime(end)} 截止` : `${interview.weekday} ${interview.time}`,
+  };
+  const nowTime = Date.now();
+  const totalWindow = end.getTime() - start.getTime();
+  const windowInfo = isWindow ? {
+    open: `${formatMonthDay(start)} 开放`,
+    close: `${formatMonthDay(end)} 截止`,
+    remain: end.getTime() > nowTime ? `还剩 ${Math.max(1, Math.ceil((end.getTime() - nowTime) / 86_400_000))} 天` : "已截止",
+    todayRatio: Math.min(1, Math.max(0, (nowTime - start.getTime()) / Math.max(1, totalWindow))),
+    planRatio: planStart ? Math.min(1, Math.max(0, (planStart.getTime() - start.getTime()) / Math.max(1, totalWindow))) : null,
+  } : undefined;
+  const untilStart = start.getTime() - nowTime;
+  const relative = interview.status === "upcoming" && !isWindow && untilStart > 0
+    ? untilStart < 86_400_000
+      ? ` · 还有 ${Math.floor(untilStart / 3_600_000)} 小时 ${Math.floor((untilStart % 3_600_000) / 60_000)} 分`
+      : ` · ${Math.ceil(untilStart / 86_400_000)} 天后`
+    : isWindow && (interview.status === "upcoming" || interview.status === "active") ? " · 截止前任选时间完成" : "";
+  const kindWord = isExam ? "笔试" : isTest ? "测评" : "面试";
+  const rows: Array<{ icon: V3IconName; label: string; value: ReactNode; strong?: boolean; muted?: boolean }> = [
+    isWindow
+      ? { icon: "cal", label: "官方时段", value: `${formatMonthDay(start)} ${interview.time} – ${formatMonthDay(end)} ${interview.endTime}`, strong: true }
+      : { icon: "clock", label: interview.status === "cancelled" ? "原定时间" : "时间", value: `${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`, strong: interview.status !== "cancelled" },
+    { icon: "user", label: isExam || isTest ? "联系人" : "面试官", value: interview.interviewer, muted: interview.interviewer === "暂未填写" },
+    { icon: "play", label: "形式", value: matchingDetail ? modeLabel(matchingDetail.session.mode) : interview.mode },
+  ];
+  if (location) rows.push({ icon: "pin", label: "地点", value: location });
+  if (meetingUrl) rows.push({ icon: "link", label: `${kindWord === "面试" ? "会议" : kindWord}链接`, value: <a className="career-link v3-num" href={meetingUrl} target="_blank" rel="noreferrer">{meetingUrl}<Icon name="link" size={12} /></a> });
+  if (interview.status === "cancelled" && cancellationReason) rows.push({ icon: "text", label: "取消原因", value: cancellationReason });
+  const primary = interview.status === "upcoming" || interview.status === "active"
+    ? isWindow && interview.canReschedule
+      ? { label: "保存作答计划", onClick: savePlan }
+      : meetingUrl
+        ? { label: isExam ? "进入笔试" : isAi ? "进入 AI 面试" : "进入会议", href: meetingUrl }
+        : null
+    : null;
+  const openRecord = () => {
+    onClose();
+    navigateTo(careerApplicationPath(interview.applicationId));
   };
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="interview-schedule-dialog">
-        <DialogHeader><DialogTitle>面试详情</DialogTitle><DialogDescription className="sr-only">查看当前这场面试的详细信息。</DialogDescription></DialogHeader>
-        <section className="schedule-dialog-card">
-          <header><h3>{interview.company}</h3><div><span className={`schedule-stage-badge calendar-${interview.color}`}>{interview.stage}</span><StatusBadge status={interview.status} /></div></header>
-          {detailLoading && <p className="schedule-dialog-loading" role="status">正在加载完整面试详情…</p>}
-          <dl className="schedule-dialog-details">
-            <DetailRow icon={<BriefcaseBusiness />} label="职位" value={interview.role} />
-            <DetailRow icon={<Clock3 />} label="日期与时间" value={`${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`} />
-            <DetailRow icon={<UserRound />} label="面试官" value={interview.interviewer} />
-            <DetailRow icon={<Video />} label="面试形式" value={matchingDetail ? `${modeLabel(matchingDetail.session.mode)}${matchingDetail.session.location ? ` · ${matchingDetail.session.location}` : ""}` : interview.mode} />
-            {meetingUrl && <div><dt><Link2 />会议链接</dt><dd><a href={meetingUrl} target="_blank" rel="noreferrer">{meetingUrl}</a></dd></div>}
-          </dl>
-          {interview.scheduleKind === "open_window" && (
-            <div className="schedule-dialog-answer-plan">
-              <div><strong>我的作答计划</strong><span>仅作为个人时间安排，不会改变官方截止时间。</span></div>
-              <div className="schedule-dialog-answer-plan-fields">
-                <div className="schedule-dialog-answer-plan-field">
-                  <label htmlFor={`schedule-answer-plan-${interview.id}`}>计划作答时间</label>
-                  <ScheduleDateTimePicker
-                    id={`schedule-answer-plan-${interview.id}`}
-                    label="计划作答时间"
-                    value={planStartAt}
-                    durationMinutes={planDurationMinutes}
-                    minimumStartAt={interview.startAt}
-                    maximumEndAt={interview.endAt}
+    <V3Dialog width={520} label="面试详情" onClose={onClose} className="career-schedule-detail">
+      <div className="v3-dialog-body">
+        <div className="career-schedule-detail-title">
+          <h2 className="v3-dialog-title">{interview.company} · {interview.stage}</h2>
+          <span className={`v3-pill career-pill is-${status.tone}`}>{status.label}</span>
+        </div>
+        <p className="v3-dialog-sub"><span>{interview.role}</span>{relative}</p>
+        {detailLoading && <p className="career-dialog-loading" role="status">正在加载完整面试详情…</p>}
+        <div className="v3-stage has-dots career-dialog-stage is-schedule"><ScheduleArt kind={artKind} date={artDate} windowInfo={windowInfo} /></div>
+        <dl className="v3-gcard career-detail-rows">
+          {rows.map((row) => (
+            <div key={row.label} className="v3-grow career-detail-row">
+              <dt><Icon name={row.icon} size={14} />{row.label}</dt>
+              <dd className={`${row.strong ? "is-strong" : ""}${row.muted ? " is-muted" : ""}`}>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+        {isWindow && (
+          <section className="v3-gcard career-answer-plan" aria-label="我的作答计划">
+            <div className="v3-grow career-answer-plan-row">
+              <div className="v3-grow-copy">
+                <strong>我的作答计划</strong>
+                <small>仅作为个人时间安排，不会改变官方截止时间。</small>
+              </div>
+              <div className="v3-grow-right career-answer-plan-fields">
+                <div className="career-answer-plan-field is-start">
+                  {interview.canReschedule ? (
+                    <DateTimeField
+                      value={planStart}
+                      label="计划作答时间"
+                      placeholder="选择开始时间"
+                      size="sm"
+                      filled
+                      icon={null}
+                      min={new Date(interview.startAt)}
+                      onChange={(value) => { setPlanStart(value); setPlanError(null); }}
+                    />
+                  ) : (
+                    // 已完成 / 已归档：只读展示，不能再改计划（DateTimeField 没有 disabled，这里用同款样式的禁用按钮）
+                    <button type="button" className="v3-select is-sm is-filled" aria-label="计划作答时间" disabled>
+                      <span className={`v3-select-value v3-num${planStart ? "" : " is-placeholder"}`}>{planStart ? formatDateTimeLabel(planStart) : "未安排"}</span>
+                    </button>
+                  )}
+                </div>
+                <div className="career-answer-plan-field is-duration">
+                  <Select
+                    size="sm"
+                    filled
+                    label="作答时长"
+                    value={String(planDurationMinutes)}
+                    options={[30, 45, 60, 90, 120, 180].map((minutes) => ({ value: String(minutes), label: `${minutes} 分钟` }))}
+                    onChange={(value) => { setPlanDurationMinutes(Number(value)); setPlanError(null); }}
                     disabled={!interview.canReschedule}
-                    onChange={(value) => { setPlanStartAt(value); setPlanError(null); }}
-                    onDurationMinutesChange={(value) => { setPlanDurationMinutes(value); setPlanError(null); }}
                   />
                 </div>
               </div>
-              {planError && <p role="alert">{planError}</p>}
-              {interview.canReschedule && (
-                <div className="schedule-dialog-answer-plan-actions">
-                  {(interview.answerPlanStartAt || interview.answerPlanEndAt) && <Button type="button" variant="ghost" onClick={() => { setPlanStartAt(""); onAnswerPlanChange(interview.id, null, null); }}>清除计划</Button>}
-                  <Button type="button" onClick={savePlan}>保存作答计划</Button>
-                </div>
-              )}
             </div>
-          )}
-        </section>
-        <DialogFooter className="schedule-dialog-footer">
-          <Button variant="outline" onClick={onClose}>关闭</Button>
-          {meetingUrl && (
-            <a className="schedule-dialog-join" href={meetingUrl} target="_blank" rel="noreferrer">进入会议</a>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            {planError && <p className="career-field-error" role="alert">{planError}</p>}
+          </section>
+        )}
+        {!isWindow && interview.status === "completed" && <p className="career-dialog-note"><span className="career-dot" data-tone="green" aria-hidden="true" />复盘写在求职记录里，这一场不能再拖动改期。</p>}
+        {!isWindow && interview.modeCode === "onsite" && interview.status === "upcoming" && <p className="career-dialog-note"><span className="career-dot" data-tone="muted" aria-hidden="true" />现场面试没有会议链接，地点和时间都在求职记录里改。</p>}
+      </div>
+      <DialogFooterV3 left={primary || (isWindow && interview.canReschedule) ? <button type="button" className="v3-link" onClick={openRecord}>查看求职记录<Icon name="arrow" size={12} /></button> : undefined}>
+        {isWindow && interview.canReschedule && (interview.answerPlanStartAt || interview.answerPlanEndAt) && (
+          <button type="button" className="v3-btn v3-btn-ghost" onClick={() => { setPlanStart(null); onAnswerPlanChange(interview.id, null, null); }}>清除计划</button>
+        )}
+        <button type="button" className="v3-btn v3-btn-ghost" onClick={onClose}>关闭</button>
+        {primary
+          ? primary.href
+            ? <a className="v3-btn v3-btn-dark schedule-dialog-join" href={primary.href} target="_blank" rel="noreferrer">{primary.label}</a>
+            : <button type="button" className="v3-btn v3-btn-dark" onClick={primary.onClick}>{primary.label}</button>
+          : <button type="button" className="v3-btn v3-btn-dark" onClick={openRecord}>查看求职记录</button>}
+      </DialogFooterV3>
+    </V3Dialog>
   );
 }
 
@@ -2303,7 +2814,7 @@ function ApplicationHistoryList({
           </article>
         ))}
       </div>
-      {pendingDelete && (
+      <MotionPresence>{pendingDelete && (
         <ConfirmDialog
           kind="delete"
           title={`永久删除「${pendingDelete.company_name_snapshot}」求职进程？`}
@@ -2314,8 +2825,8 @@ function ApplicationHistoryList({
           onCancel={() => setPendingDelete(null)}
           onConfirm={remove}
         />
-      )}
-      {pendingReject && (
+      )}</MotionPresence>
+      <MotionPresence>{pendingReject && (
         <ConfirmDialog
           kind="warning"
           title={`确认「${pendingReject.company_name_snapshot}」筛选未通过？`}
@@ -2326,7 +2837,7 @@ function ApplicationHistoryList({
           onCancel={() => setPendingReject(null)}
           onConfirm={rejectScreening}
         />
-      )}
+      )}</MotionPresence>
     </section>
   );
 }
@@ -2589,16 +3100,7 @@ function RecordDetail({
               <strong>本轮面试已完成</strong>
               <span>确认结果后再进入下一阶段，流程卡片会随之移动。</span>
             </div>
-            <select
-              aria-label="选择下一阶段"
-              value={nextStage}
-              onChange={(event) => setNextStage(event.target.value)}
-            >
-              <option value="">选择下一阶段</option>
-              {stageOptions.map((item) => (
-                <option key={item.value} value={item.value}>{item.label}</option>
-              ))}
-            </select>
+            <Select label="选择下一阶段" value={nextStage} onChange={setNextStage} options={stageOptions} placeholder="选择下一阶段" />
             <Button size="sm" disabled={!nextStage} onClick={() => void advance()}>
               确认通过
             </Button>
@@ -2646,7 +3148,7 @@ function RecordDetail({
         onChange={setQuestions}
       />
       {editing && <div className="record-save-row"><Button onClick={() => void save(false)}>保存文字记录</Button></div>}
-      {lifecycleDialog && (
+      <MotionPresence>{lifecycleDialog && (
         <ConfirmDialog
           kind={lifecycleDialog.kind}
           title={lifecycleDialog.title}
@@ -2657,7 +3159,7 @@ function RecordDetail({
           onCancel={() => setPendingLifecycle(null)}
           onConfirm={runLifecycle}
         />
-      )}
+      )}</MotionPresence>
     </section>
   );
 }
@@ -2842,8 +3344,8 @@ function CreateApplicationDialog({
   };
 
   return (
-    <div className="interview-dialog-backdrop" role="presentation">
-      <section className="interview-dialog career-application-dialog" role="dialog" aria-modal="true" aria-labelledby="create-application-title">
+    <MotionSurface as="div" variant="overlay" className="interview-dialog-backdrop" role="presentation">
+      <MotionSurface as="section" variant="dialog" className="interview-dialog career-application-dialog" role="dialog" aria-modal="true" aria-labelledby="create-application-title">
         <header>
           <div>
             <h2 id="create-application-title">新建求职进程</h2>
@@ -2858,11 +3360,7 @@ function CreateApplicationDialog({
             <>
               <label>
                 目标岗位
-                <select required value={jobId} onChange={(event) => setJobId(event.target.value)}>
-                  {availableJobs.map((job) => (
-                    <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>
-                  ))}
-                </select>
+                <Select label="目标岗位" value={jobId} onChange={setJobId} options={availableJobs.map((job) => ({ value: job.id, label: `${job.company_name} · ${job.job_title}` }))} />
               </label>
               <div className="interview-dialog-grid">
                 <label>
@@ -2894,8 +3392,8 @@ function CreateApplicationDialog({
             >{submitting ? "正在创建…" : "创建求职进程"}</Button>
           </footer>
         </form>
-      </section>
-    </div>
+      </MotionSurface>
+    </MotionSurface>
   );
 }
 
@@ -3057,8 +3555,8 @@ function CreateInterviewDialog({
     ? "粘贴会议链接（可选）"
     : "填写会议室、地址或其他地点（可选）";
   return (
-    <div className="interview-dialog-backdrop" role="presentation">
-      <section className={`interview-dialog${detailMode ? " interview-dialog--detail-schedule" : ""}`} role="dialog" aria-modal="true" aria-labelledby="create-interview-title">
+    <MotionSurface as="div" variant="overlay" className="interview-dialog-backdrop" role="presentation">
+      <MotionSurface as="section" variant="dialog" className={`interview-dialog${detailMode ? " interview-dialog--detail-schedule" : ""}`} role="dialog" aria-modal="true" aria-labelledby="create-interview-title">
         <header><div><h2 id="create-interview-title">{detailMode ? "添加求职阶段" : "新建面试"}</h2><p>{detailMode ? "选择阶段分类并补充本阶段信息，保存后会进入对应的求职流程。" : "岗位信息、求职进程和本场排期在这里一次完成。"}</p></div><button type="button" aria-label="关闭" onClick={onClose}><X /></button></header>
         <form onSubmit={(event) => void submit(event)}>
           {detailMode ? (
@@ -3094,16 +3592,16 @@ function CreateInterviewDialog({
                   />
                 </div>
                 {detailStageCategory !== "screening" && <>
-                  <label>方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label>
+                  <label>方式<Select label="面试方式" value={mode} onChange={setMode} options={[{ value: "video", label: "视频面试" }, { value: "onsite", label: "现场面试" }, { value: "phone", label: "电话面试" }, { value: "other", label: "其他" }]} /></label>
                   <label className="is-wide">链接或地点<input value={meetingOrLocation} onChange={(event) => setMeetingOrLocation(event.target.value)} placeholder={meetingOrLocationPlaceholder} /></label>
                 </>}
               </div>
             </>
           ) : (
             <>
-              {applications.length > 0 && <label>求职进程<select disabled={creationLocked || submitting} value={applicationId} onChange={(event) => setApplicationId(event.target.value)}><option value="new">新建求职进程</option>{applications.map((item) => <option key={item.id} value={item.id}>{item.company_name_snapshot} · {item.job_title_snapshot} · {projectApplicationProgress(item).stageLabel}</option>)}</select></label>}
+              {applications.length > 0 && <label>求职进程<Select label="求职进程" disabled={creationLocked || submitting} value={applicationId} onChange={setApplicationId} options={[{ value: "new", label: "新建求职进程" }, ...applications.map((item) => ({ value: item.id, label: `${item.company_name_snapshot} · ${item.job_title_snapshot} · ${projectApplicationProgress(item).stageLabel}` }))]} /></label>}
               {applicationId === "new" && <>
-                <label>已有岗位档案<select disabled={creationLocked || submitting} value={jobId} onChange={(event) => setJobId(event.target.value)}><option value="">在求职中心直接填写岗位</option>{jobs.map((job) => <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>)}</select></label>
+                <label>已有岗位档案<Select label="已有岗位档案" disabled={creationLocked || submitting} value={jobId} onChange={setJobId} options={[{ value: "", label: "在求职中心直接填写岗位" }, ...jobs.map((job) => ({ value: job.id, label: `${job.company_name} · ${job.job_title}` }))]} /></label>
                 {!jobId && <div className="interview-dialog-grid"><label>公司<input disabled={creationLocked} required value={company} onChange={(event) => setCompany(event.target.value)} /></label><label>岗位<input disabled={creationLocked} required value={role} onChange={(event) => setRole(event.target.value)} /></label><label className="is-wide">岗位信息<textarea disabled={creationLocked} value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="可粘贴 JD，后续会作为本次求职的岗位快照" /></label></div>}
                 <div className="interview-dialog-grid"><label>阶段<input disabled={creationLocked} required value={stage} onChange={(event) => setStage(event.target.value)} /></label><label>轮次<input disabled={creationLocked} type="number" min={1} value={roundNo} onChange={(event) => setRoundNo(Number(event.target.value))} /></label></div>
               </>}
@@ -3124,7 +3622,7 @@ function CreateInterviewDialog({
                 onDurationMinutesChange={setDuration}
               />
             </div>
-            <label>面试方式<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="video">视频面试</option><option value="onsite">现场面试</option><option value="phone">电话面试</option><option value="other">其他</option></select></label>
+            <label>面试方式<Select label="面试方式" value={mode} onChange={setMode} options={[{ value: "video", label: "视频面试" }, { value: "onsite", label: "现场面试" }, { value: "phone", label: "电话面试" }, { value: "other", label: "其他" }]} /></label>
           </div>}
           {detailMode ? (
             <footer className="interview-detail-footer">
@@ -3138,8 +3636,8 @@ function CreateInterviewDialog({
             <footer><Button type="button" variant="outline" onClick={onClose}>取消</Button><Button type="submit" disabled={submitting}>{submitting ? "正在创建…" : "创建面试"}</Button></footer>
           )}
         </form>
-      </section>
-    </div>
+      </MotionSurface>
+    </MotionSurface>
   );
 }
 

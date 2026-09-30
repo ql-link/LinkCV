@@ -1,6 +1,6 @@
 import { ChevronLeft, CircleCheck, History, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import MarkdownIt from "markdown-it";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent } from "react";
 
 import {
@@ -280,10 +280,13 @@ async function copyAgentCode(event: ReactMouseEvent<HTMLDivElement>) {
 }
 
 export function AgentMarkdown({ content }: { content: string }) {
+  // 内容不变时复用同一个 __html 对象：每次重渲染都换新对象会让 React 重设 innerHTML，
+  // 丢掉用户正在选中的文字，也会让测试里拿到的节点失效
+  const html = useMemo(() => ({ __html: agentMarkdown.render(content) }), [content]);
   return (
     <div
       className="agent-message-content agent-standard-markdown"
-      dangerouslySetInnerHTML={{ __html: agentMarkdown.render(content) }}
+      dangerouslySetInnerHTML={html}
       onClick={(event) => void copyAgentCode(event)}
     />
   );

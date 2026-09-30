@@ -1,6 +1,8 @@
 import type { Editor } from "@tiptap/core";
-import { GripVertical, Lock, RotateCcw } from "lucide-react";
+import { TextSelection } from "@tiptap/pm/state";
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { Icon } from "../../v3/Icon";
 
 import {
   applySectionOrder,
@@ -8,6 +10,7 @@ import {
   resetSectionOrder,
   resumeSectionOrderGroups,
   type ResumeColumnSide,
+  type ResumeSectionKind,
   type ResumeSectionOrderGroup,
 } from "./resumeSectionOrder";
 
@@ -44,24 +47,81 @@ export function WorkbenchSectionOrderReset({
       disabled={disabled}
       onClick={() => { resetSectionOrder(editor); }}
     >
-      <RotateCcw aria-hidden="true" size={13} />
       恢复默认
     </button>
   );
 }
 
+// 大纲里「空」的判断：某个标题 2 后面直到下一个标题 2 之间没有任何文字
+function emptySectionIds(editor: Editor) {
+  const empty = new Set<string>();
+  let current: string | null = null;
+  let hasText = false;
+  const flush = () => {
+    if (current && !hasText) empty.add(current);
+  };
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === "heading" && node.attrs.level === 2) {
+      flush();
+      const anchor = node.firstChild?.type.name === "resumeBlockAnchor" ? node.firstChild : null;
+      current = typeof anchor?.attrs.blockId === "string" ? anchor.attrs.blockId : null;
+      hasText = false;
+      return false;
+    }
+    if (current && node.isTextblock && node.textContent.trim()) {
+      hasText = true;
+      return false;
+    }
+    return true;
+  });
+  flush();
+  return empty;
+}
+
+// 点击大纲行：把光标放到对应标题 2 并滚动到可见位置；个人信息跳到文档开头
+export function jumpToSection(editor: Editor, nodeId: string | null) {
+  let target = nodeId === null ? 1 : -1;
+  if (nodeId !== null) {
+    editor.state.doc.descendants((node, pos) => {
+      if (target >= 0) return false;
+      if (node.type.name !== "heading") return true;
+      const anchor = node.firstChild;
+      if (anchor?.type.name === "resumeBlockAnchor" && anchor.attrs.blockId === nodeId) target = pos + 1 + anchor.nodeSize;
+      return false;
+    });
+  }
+  if (target < 0) return false;
+  const selection = TextSelection.near(editor.state.doc.resolve(Math.min(target, editor.state.doc.content.size)));
+  editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView());
+  editor.view.focus();
+  const dom = editor.view.domAtPos(selection.from).node;
+  const element = dom instanceof HTMLElement ? dom : dom.parentElement;
+  element?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  return true;
+}
+
 export function WorkbenchSectionOrderControl({
   editor,
   disabled = false,
+  flaggedKinds,
+  onGroupsChange,
 }: {
   editor: Editor;
   disabled?: boolean;
+  /** 简历检查里有待完善项的模块类型，行尾显示橙点 */
+  flaggedKinds?: ReadonlySet<ResumeSectionKind>;
+  onGroupsChange?: (groups: ResumeSectionOrderGroup[]) => void;
 }) {
   const [groups, setGroups] = useState<ResumeSectionOrderGroup[]>(() =>
     resumeSectionOrderGroups(editor.getJSON()));
   const originRef = useRef<DragOrigin | null>(null);
   const [dragging, setDragging] = useState<DragOrigin | null>(null);
   const [target, setTarget] = useState<DropRegion | null>(null);
+  const [emptyIds, setEmptyIds] = useState<Set<string>>(() => emptySectionIds(editor));
+
+  useEffect(() => {
+    onGroupsChange?.(groups);
+  }, [groups, onGroupsChange]);
 
   useEffect(() => {
     let lastDoc = editor.state.doc;
@@ -71,6 +131,7 @@ export function WorkbenchSectionOrderControl({
       if (editor.state.doc === lastDoc) return;
       lastDoc = editor.state.doc;
       setGroups(resumeSectionOrderGroups(editor.getJSON()));
+      setEmptyIds(emptySectionIds(editor));
     };
     refresh();
     editor.on("transaction", refresh);
@@ -145,7 +206,7 @@ export function WorkbenchSectionOrderControl({
                     onDragEnd={endDrag}
                   >
                     {fixed ? (
-                      <span className="workbench-section-order-fixed" aria-hidden="true"><Lock size={13} /></span>
+                      <span className="workbench-section-order-fixed" aria-hidden="true"><Icon name="lock" size={14} /></span>
                     ) : (
                       <button
                         type="button"
@@ -160,10 +221,20 @@ export function WorkbenchSectionOrderControl({
                           moveSection(group.side, index, sectionSlots[next]);
                         }}
                       >
-                        <GripVertical aria-hidden="true" size={14} />
+                        <Icon name="grip" size={14} />
                       </button>
                     )}
-                    <span className="workbench-section-order-title">{item.title}</span>
+                    <button
+                      type="button"
+                      className="workbench-section-order-title"
+                      title={`跳到「${item.title}」`}
+                      onClick={() => { jumpToSection(editor, item.nodeId); }}
+                    >
+                      {item.title}
+                    </button>
+                    {flaggedKinds?.has(item.kind) ? <i className="workbench-section-order-flag" aria-label="有待完善的内容" /> : null}
+                    {fixed ? <small className="workbench-section-order-hint">固定在最前</small> : null}
+                    {!fixed && item.nodeId && emptyIds.has(item.nodeId) ? <small className="workbench-section-order-hint">空</small> : null}
                   </li>
                 );
               })}

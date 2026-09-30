@@ -105,6 +105,12 @@ preparation_failed  abandoned   evaluation_failed
 - 报告只对 `completed` 场次返回。
 - 简历、JD、资料正文与回答只作为引用数据传给模型，提示词明确要求忽略其中改变规则或评分的内容；LLM 调用日志只记录 `mock_interview` 场景与 `source=mock_interview` 的安全计量，不记录正文。
 
+## Web 前端（当前使用本地示例数据）
+
+- 入口为侧栏「模拟面试」，路由 `/mock-interviews`（首页，`?view=records` 为练习记录）、`/mock-interviews/new?application=&resume=`（新建）、`/mock-interviews/:id`（准备中、进行中、评估中）和 `/mock-interviews/:id/report`（评估报告）；页面位于 `apps/web/src/features/mock-interview/`，语音作答相关组件在其 `voice/` 目录。语音面试进行中为无侧栏整窗。
+- 页面尚未连接上述 FastAPI 接口：全部读写走 `mockInterviewApi.ts`，其类型与 `modules/mock_interviews/schemas.py` 对齐、函数与接口一一对应，数据保存在浏览器 localStorage，准备与评估用定时器模拟状态推进，SSE 回合用异步生成器模拟。依赖该示例数据的区块显示「需后端」标签。接入后端时只替换该文件的实现。
+- 录音与设备检测使用浏览器真实麦克风；识别结果、面试官语音合成、录音回放为示例或占位。
+
 ## 修改联动与验证
 
 新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py`、`test_mock_interview_voice_rules.py`、`tests/unit/modules/speech/test_aliyun.py`、`tests/integration/api/test_mock_interviews.py` 与 `test_mock_interview_voice.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。

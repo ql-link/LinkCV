@@ -43,7 +43,7 @@ function setup() {
 }
 
 function rowTitles() {
-  return screen.getAllByRole("listitem").map((row) => within(row).getByText(/.+/).textContent);
+  return screen.getAllByRole("listitem").map((row) => row.querySelector(".workbench-section-order-title")?.textContent);
 }
 
 function sectionTitles(instance: Editor) {

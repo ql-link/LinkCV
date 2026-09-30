@@ -378,3 +378,44 @@ export function isApplicationDraggable(application: ApplicationProgressSource): 
     && application.current_stage_type === "screening"
     && application.stage_state === "awaiting_result";
 }
+
+/**
+ * 求职流程的阶段先后顺序（看板列、拖拽校验、「添加下一阶段」默认项共用）。
+ * 规则：只能往后走，不能退回更早的阶段；面试可以连续多轮，由轮次再比较先后。
+ * 后端接受任意阶段，这里只约束前端给出的入口，避免出现「测评完成后进不了笔试」这类死路。
+ */
+export const APPLICATION_STAGE_ORDER = ["screening", "assessment", "written_test", "ai_interview", "interview", "offer"] as const;
+export type OrderedStageType = (typeof APPLICATION_STAGE_ORDER)[number];
+
+export function applicationStageRank(stage: string): number {
+  const index = APPLICATION_STAGE_ORDER.indexOf(stage as OrderedStageType);
+  return index < 0 ? 0 : index;
+}
+
+/** 当前所处阶段（看板列 → 阶段类型）；待投递视为筛选之前 */
+export function currentOrderedStage(application: ApplicationProgressSource): OrderedStageType | "pending" {
+  const projection = projectApplicationProgress(application);
+  if (projection.isPending) return "pending";
+  const stable: string = application.current_stage?.stage_type ?? legacyStableStageType(application);
+  if (stable === "hr") return "interview";
+  return APPLICATION_STAGE_ORDER.includes(stable as OrderedStageType) ? stable as OrderedStageType : "screening";
+}
+
+/** 当前阶段之后可以进入的阶段（面试可以再来一轮） */
+export function nextStageOptions(application: ApplicationProgressSource): OrderedStageType[] {
+  const current = currentOrderedStage(application);
+  if (current === "pending") return [...APPLICATION_STAGE_ORDER];
+  const rank = applicationStageRank(current);
+  return APPLICATION_STAGE_ORDER.filter((stage) => (
+    stage === "interview" ? rank <= applicationStageRank("interview") : applicationStageRank(stage) > rank
+  ));
+}
+
+/** 「添加下一阶段」默认选中的下一步：筛选 → 测评 → 笔试 → 面试（一面 / 下一轮）→ Offer */
+export function defaultNextStage(application: ApplicationProgressSource): OrderedStageType {
+  const current = currentOrderedStage(application);
+  if (current === "pending") return "screening";
+  if (current === "screening") return "assessment";
+  if (current === "assessment") return "written_test";
+  return current === "offer" ? "offer" : "interview";
+}

@@ -3,6 +3,7 @@ export const loadAssistantPage = () => import("./features/assistant/AssistantPag
 export const loadDatasetsPage = () => import("./features/datasets/DatasetsPage");
 export const loadHomePage = () => import("./features/home/HomePage");
 export const loadInterviewCenterPage = () => import("./features/interviews/InterviewCenterPage");
+export const loadMockInterviewPage = () => import("./features/mock-interview/MockInterviewPage");
 export const loadResumeTemplatesPage = () => import("./features/templates/ResumeTemplatesPage");
 
 export const AUTHENTICATED_IDLE_PRELOAD_PATHS = ["/templates", "/datasets"] as const;
@@ -19,6 +20,7 @@ const workspacePageLoaders: Record<string, () => Promise<unknown>> = {
   "/datasets": loadDatasetsPage,
   "/interviews": loadInterviewCenterPage,
   "/jobs": loadInterviewCenterPage,
+  "/mock-interviews": loadMockInterviewPage,
   "/resumes": loadHomePage,
   "/templates": loadResumeTemplatesPage,
 };

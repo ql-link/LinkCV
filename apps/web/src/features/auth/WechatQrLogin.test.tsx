@@ -110,8 +110,9 @@ describe("WechatQrLogin", () => {
       vi.advanceTimersByTime(2000);
     });
 
-    expect(screen.getByText("刷新二维码")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("刷新二维码"));
+    expect(screen.getByText("二维码已过期")).toBeInTheDocument();
+    expect(screen.getByText("二维码已过期，请刷新后重新扫码。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /点击刷新/ }));
     await act(async () => {});
 
     expect(qrcode).toHaveBeenCalledTimes(2);
@@ -132,7 +133,7 @@ describe("WechatQrLogin", () => {
     });
 
     expect(screen.getByText("登录已取消")).toBeInTheDocument();
-    expect(screen.getByText("刷新二维码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /点击刷新/ })).toBeInTheDocument();
   });
 
   it("二维码生成失败时展示错误与重试入口", async () => {
@@ -144,7 +145,7 @@ describe("WechatQrLogin", () => {
     await act(async () => {});
 
     expect(screen.getByText("请求太频繁，请稍后再试。")).toBeInTheDocument();
-    expect(screen.getByText("刷新二维码")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /点击刷新/ })).toBeInTheDocument();
   });
 });
 

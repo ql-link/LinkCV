@@ -117,6 +117,7 @@ describe("PluginReleasePanel", () => {
     expect(await screen.findByRole("status")).toHaveTextContent(
       "ZIP 根目录必须包含 manifest.json",
     );
+    await waitFor(() => expect(uploadDialog).not.toBeInTheDocument());
     expect(screen.getByText("wrapped-plugin.zip")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "清除" }));
     expect(screen.queryByText("wrapped-plugin.zip")).not.toBeInTheDocument();
