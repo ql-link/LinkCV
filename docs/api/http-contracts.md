@@ -475,6 +475,7 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `GET` | `/api/admin/insights/llm-usage?groupBy&from&to` | `{from, to, summary, previous, groups}`；`groupBy` 为 `model`、`useCase` 或 `connection`，默认最近 24 小时 |
 | `GET` | `/api/admin/insights/llm-health` | `{connections, models}`；24 小时请求数、成功率与验证有效的绑定数 |
 | `GET` | `/api/admin/insights/agent?from&to` | `{operations, failed, failureRate, running, p95Ms, topFailureStage, topErrorCode, daily (7 天)}`；状态口径与 Agent 排障列表一致 |
+| `GET` | `/api/admin/insights/funnel?from&to` | `{window, steps, registrationsByMethod, aiCustomizationByEntry, resumeBySource, daily}`；以窗口内注册的用户为一组（默认最近 30 天，最长 31 天），`steps` 依次为 `registered`、`resume`（仅模板创建或文件导入）、`ai_customization`、`mock_interview`、`pdf_export` 的去重人数；分布统计每人首个对应事件，缺失维度计为 `unknown` |
 | `GET` | `/api/admin/insights/log-heatmap` | `{buckets}`；最近 7 天按 3 小时分桶的 ERROR（含 CRITICAL）与 WARNING 数，共 56 桶；Loki 不可用返回 `503 LOG_QUERY_UNAVAILABLE` |
 
 `alerts` 每项为 `{type, severity, title, description, target}`，按请求时的数据现场判定：对话能力存在已启用但验证失效的绑定（`critical`）；最近 1 小时 Agent 失败不少于 3 次且失败率不低于 10%（`warning`）；最近 1 小时已结束的 LLM 调用不少于 20 次且成功率低于 98%（`warning`）；存在分类状态为待讨论的启用模板（`info`）。
