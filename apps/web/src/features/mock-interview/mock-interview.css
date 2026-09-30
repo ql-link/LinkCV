@@ -32,7 +32,7 @@
 .mi-home-title { margin-top: 6px !important; font-size: 30px; font-weight: 700; line-height: 36px; }
 .mi-home-sub { margin-top: 6px !important; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
 .mi-home-actions { display: flex; gap: 10px; margin-top: 23px; }
-.mi-home-actions .v3-btn { height: 31px; border-radius: 8px; font-size: 12.5px; }
+.mi-home-actions .v3-btn { height: 31px; font-size: 12.5px; }
 .mi-records-btn { gap: 6px; padding: 0 13px; }
 .mi-records-btn svg { color: var(--v3-sub); }
 .mi-records-btn:disabled { opacity: .45; cursor: default; }
@@ -92,13 +92,13 @@
 .mi-start-text ol { display: flex; gap: 16px; margin-top: 6px !important; }
 .mi-start-text li { display: flex; align-items: center; gap: 6px; color: var(--v3-sub); font-size: 12px; }
 .mi-start-text li b { display: inline-grid; width: 16px; height: 13px; place-items: center; border-radius: 999px; background: var(--v3-bl); color: #fff; font: 500 10.5px var(--v3-num); }
-.mi-start-btn { height: 33px; border-radius: 8px; font-size: 12.5px; }
+.mi-start-btn { height: 33px; font-size: 12.5px; }
 
 .mi-stats { display: flex; height: 239px; margin-top: 20px; padding: 21px 24px; }
 .mi-stat-col { min-width: 0; }
-.mi-overall { width: 180px; }
-.mi-trend { width: 292px; }
-.mi-radar-col { width: 240px; }
+.mi-overall { width: 180px; flex: 0 0 auto; }
+.mi-trend { flex: 1 1 auto; }
+.mi-radar-col { width: 240px; flex: 0 0 auto; }
 .mi-vdiv { width: 1px; height: 197px; flex: 0 0 auto; margin: 0 24px; background: var(--v3-line); }
 .mi-stat-head { display: flex; height: 17px; align-items: center; justify-content: space-between; gap: 8px; }
 .mi-stat-head h3 { font-size: 13.5px; font-weight: 500; }
@@ -113,15 +113,15 @@
 .mi-trend-last em { margin-left: 4px; font-size: 11.5px; font-style: normal; }
 .mi-trend-last em.is-up { color: #2e8c57; }
 .mi-trend-last em.is-down { color: var(--v3-rd); }
-.mi-trend-chart { position: relative; width: 290px; height: 168px; margin-top: 11px; }
+.mi-trend-chart { position: relative; width: 100%; height: 168px; margin-top: 11px; }
 .mi-trend-chart svg { position: absolute; top: 24px; left: 0; }
 .mi-trend-score { position: absolute; width: 16px; color: var(--v3-sub); font: 500 11px var(--v3-num); text-align: center; }
 .mi-trend-score.is-last { color: var(--v3-bl); font-size: 12px; font-weight: 700; }
-.mi-trend-date { position: absolute; top: 146px; width: 27px; color: var(--v3-fnt); font: 10.5px var(--v3-num); text-align: center; }
+.mi-trend-date { position: absolute; top: 146px; width: 40px; white-space: nowrap; color: var(--v3-fnt); font: 10.5px var(--v3-num); text-align: center; }
 .mi-trend-avg { position: absolute; right: 0; color: var(--v3-fnt); font-size: 10px; }
 .mi-weak { display: inline-flex; height: 17px; align-items: center; border-radius: 999px; background: rgb(217 130 43 / 10%); padding: 0 8px; color: var(--v3-or); font-size: 11px; font-weight: 500; white-space: nowrap; }
 .mi-home-radar { position: relative; width: 240px; height: 168px; margin-top: 12px; }
-.mi-radar-label { position: absolute; display: grid; width: 42px; justify-items: center; color: var(--v3-sub); font-size: 10.5px; line-height: 13px; }
+.mi-radar-label { position: absolute; display: grid; width: 72px; white-space: nowrap; justify-items: center; color: var(--v3-sub); font-size: 10.5px; line-height: 13px; }
 .mi-radar-label b { color: var(--v3-txt); font: 700 11px var(--v3-num); }
 .mi-radar-label.is-weak, .mi-radar-label.is-weak b { color: var(--v3-or); }
 
@@ -148,18 +148,18 @@
 .mi-job-stage i { width: 6px; height: 6px; border-radius: 50%; background: var(--v3-fnt); }
 .mi-job-stage i.is-soon { background: var(--v3-or); }
 .mi-job-practice { margin-top: 10px !important; color: var(--v3-fnt); font-size: 11.5px; }
-.mi-job .v3-btn { height: 33px; margin-top: 10px; border-radius: 8px; padding: 0 15px; font-size: 12.5px; }
+.mi-job .v3-btn { height: 33px; margin-top: 10px; padding: 0 15px; font-size: 12.5px; }
 .mi-general { display: flex; height: 61px; align-items: center; justify-content: space-between; margin-top: 12px; border-radius: 14px; background: var(--v3-field); padding: 0 20px; }
 .mi-general strong { display: block; font-size: 13.5px; font-weight: 500; }
 .mi-general small { display: block; margin-top: 3px; color: var(--v3-fnt); font-size: 11.5px; }
-.mi-general .v3-btn { height: 33px; border-radius: 8px; font-size: 12.5px; }
+.mi-general .v3-btn { height: 33px; font-size: 12.5px; }
 
 /* ───────────── 07.1 练习记录 ───────────── */
 
 .mi-records-head { height: 75px; }
 .mi-records-title { display: flex; height: 34px; align-items: center; justify-content: space-between; margin-top: 6px; }
 .mi-records-title h1 { display: flex; align-items: center; gap: 8px; font-size: 28px; font-weight: 500; line-height: 34px; }
-.mi-records-title .v3-btn { height: 31px; border-radius: 8px; font-size: 12.5px; }
+.mi-records-title .v3-btn { height: 31px; font-size: 12.5px; }
 .mi-records-head > p:not(.v3-page-eyebrow) { margin-top: 6px !important; color: var(--v3-fnt); font-size: 12.5px; }
 .mi-toolbar { display: flex; align-items: center; gap: 8px; margin-top: 20px; }
 .mi-toolbar .v3-seg { height: 28px; }
@@ -224,7 +224,7 @@
 .mi-more span { flex: 1; font-size: 12.5px; font-weight: 500; }
 .mi-more small { color: var(--v3-fnt); font-size: 11.5px; }
 .mi-more svg { color: var(--v3-fnt); }
-.mi-new-submit.v3-btn { width: 100%; height: 44px; margin-top: 40px; border-radius: 9px; font-size: 13.5px; }
+.mi-new-submit.v3-btn { width: 100%; height: 44px; margin-top: 40px; font-size: 13.5px; }
 .mi-new-submit:disabled { opacity: .45; cursor: default; }
 .mi-new-foot { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 14px !important; color: var(--v3-fnt); font-size: 11px; text-align: center; }
 .mi-more-body .v3-dialog-sub { margin-bottom: 12px; }
@@ -327,7 +327,7 @@
 
 .mi-report { padding-top: 40px; }
 .mi-report-actions { position: absolute; top: 44px; right: 0; display: flex; gap: 8px; }
-.mi-report-actions .v3-btn { height: 32px; border-radius: 8px; }
+.mi-report-actions .v3-btn { height: 32px; }
 .mi-report-head .mi-eyebrow { display: flex; gap: 6px; }
 .mi-crumb-inline { border: 0; background: none; padding: 0; color: inherit; cursor: pointer; font-size: inherit; }
 .mi-crumb-inline:hover { color: var(--v3-txt); }
@@ -396,7 +396,7 @@
 .mi-sources small { color: var(--v3-fnt); font-size: 11px; }
 .mi-sources > i { width: 8px; height: 1px; margin: 0 4px; background: var(--v3-cl); }
 .mi-qref { display: inline-flex; height: 17px; align-items: center; border: 0; border-radius: 5px; background: #e9effd; padding: 0 7px; color: #0d52eb; cursor: pointer; font: 500 11px var(--v3-num); }
-.mi-open-resume.v3-btn { height: 28px; border-radius: 8px; font-weight: 400; }
+.mi-open-resume.v3-btn { height: 28px; font-weight: 400; }
 .mi-risk { position: relative; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 12px; padding: 16px 20px 16px 23px; }
 .mi-risk::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: var(--v3-or); }
 .mi-risk-head { display: flex; align-items: center; gap: 8px; }

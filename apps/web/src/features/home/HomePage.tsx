@@ -432,7 +432,7 @@ export function HomeScreen({
               <Icon name="upload" size={13} />导入简历
             </button>
             <button type="button" className="v3-btn v3-btn-dark hv3-btn-new" disabled={atLimit} title={atLimit ? limitHint : undefined} onClick={() => setCreateDialogOpen(true)}>
-              新建简历
+              <Icon name="plus" size={13} />新建简历
             </button>
           </div>
         )}
