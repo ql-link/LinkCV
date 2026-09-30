@@ -154,6 +154,31 @@ describe("TemplatesPage", () => {
     expect(within(dialog).getByText(/tpl-2/)).toBeInTheDocument();
   });
 
+  it("deletes a template from the detail modal after confirmation", async () => {
+    vi.spyOn(api, "listAdminResumeTemplates").mockResolvedValue({ templates: [template("1"), template("2")] });
+    const remove = vi.spyOn(api, "deleteAdminResumeTemplate").mockResolvedValue(undefined);
+    render(wrap(<TemplatesPage />));
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板 1详情" }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "删除" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("1"));
+    expect(notify).toHaveBeenCalledWith("模板已删除");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "查看模板 1详情" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "查看模板 2详情" })).toBeInTheDocument();
+  });
+
+  it("explains why a template in use cannot be deleted", async () => {
+    vi.spyOn(api, "listAdminResumeTemplates").mockResolvedValue({ templates: [template("1")] });
+    vi.spyOn(api, "deleteAdminResumeTemplate").mockRejectedValue(new ApiRequestError(409, "TEMPLATE_IN_USE"));
+    render(wrap(<TemplatesPage />));
+    fireEvent.click(await screen.findByRole("button", { name: "查看模板 1详情" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "删除" }));
+    expect(await within(dialog).findByText(/已被用户简历或导入任务使用/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看模板 1详情", hidden: true })).toBeInTheDocument();
+  });
+
   it("marks a template as unsure, clearing styles", async () => {
     const templates = [template("1", { style_categories: ["简约"], style_review_status: "classified" })];
     vi.spyOn(api, "listAdminResumeTemplates").mockResolvedValue({ templates });

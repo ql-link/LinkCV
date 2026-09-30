@@ -1638,6 +1638,8 @@ export const api = {
       "/api/admin/resume-templates/order",
       { method: "PUT", body: { template_ids: templateIds } },
     ).then(({ templates }) => ({ templates: templates.map(adminResumeTemplateFromWire) })),
+  deleteAdminResumeTemplate: (id: string) =>
+    request<void>(`/api/admin/resume-templates/${id}`, { method: "DELETE" }),
   updateAdminResumeTemplateSortOrder: (id: string, sortOrder: number) =>
     request<{ template: AdminResumeTemplateWire }>(
       `/api/admin/resume-templates/${id}/sort-order`,

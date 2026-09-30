@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +11,7 @@ from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.modules.identity.dependencies import get_current_admin
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import ResumeTemplate
+from linkresume.modules.resumes.models import DocumentParseTask, Resume, ResumeTemplate
 from linkresume.modules.resumes.template_compilation import (
     compiled_template_layout_plan,
     validated_template_snapshot,
@@ -289,3 +289,44 @@ def update_admin_template_sort_order(
     db.commit()
     db.refresh(template)
     return AdminTemplateResponse(template=admin_template_record(template))
+
+
+@router.delete("/{template_id}", status_code=204)
+def delete_admin_template(
+    template_id: str,
+    _admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> Response:
+    parsed_id = parse_decimal_id(template_id)
+    template = (
+        db.scalar(select(ResumeTemplate).where(ResumeTemplate.id == parsed_id).with_for_update())
+        if parsed_id is not None
+        else None
+    )
+    if template is None:
+        raise ApiError(404, "TEMPLATE_NOT_FOUND")
+    # Resumes and import tasks keep a RESTRICT reference to their template, so a
+    # template in use is never removed; admins disable it instead.
+    resume_count = db.scalar(
+        select(func.count()).select_from(Resume).where(Resume.template_id == template.id)
+    ) or 0
+    task_count = db.scalar(
+        select(func.count())
+        .select_from(DocumentParseTask)
+        .where(DocumentParseTask.selected_template_id == template.id)
+    ) or 0
+    if resume_count or task_count:
+        db.rollback()
+        raise ApiError(
+            409,
+            "TEMPLATE_IN_USE",
+            details={"resume_count": resume_count, "parse_task_count": task_count},
+        )
+    db.delete(template)
+    try:
+        db.commit()
+    except IntegrityError as error:
+        # A resume created between the count and the delete still wins.
+        db.rollback()
+        raise ApiError(409, "TEMPLATE_IN_USE") from error
+    return Response(status_code=204)

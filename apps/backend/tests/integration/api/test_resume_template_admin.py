@@ -323,3 +323,42 @@ def test_template_order_requires_admin() -> None:
         assert client.put(
             "/api/admin/resume-templates/order", json={"template_ids": ["1"]}
         ).status_code == 403
+
+
+def test_admin_deletes_only_unreferenced_templates() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        assert client.delete("/api/admin/resume-templates/1").status_code == 401
+        register(client, app, admin=True)
+        ids = []
+        for key in ("unused-cn", "used-cn"):
+            imported = client.post(
+                "/api/admin/resume-templates/import",
+                files={"file": ("template.json", package(key), "application/json")},
+            ).json()["template"]
+            ids.append(imported["id"])
+        unused_id, used_id = ids
+        assert client.put(
+            f"/api/admin/resume-templates/{used_id}/status", json={"active": True}
+        ).status_code == 200
+        assert client.post(
+            "/api/resumes", json={"title": "测试简历", "template_id": used_id}
+        ).status_code == 201
+
+        rejected = client.delete(f"/api/admin/resume-templates/{used_id}")
+        assert rejected.status_code == 409
+        assert rejected.json()["error"] == "TEMPLATE_IN_USE"
+        assert rejected.json()["resume_count"] == 1
+
+        assert client.delete(f"/api/admin/resume-templates/{unused_id}").status_code == 204
+        assert client.delete(f"/api/admin/resume-templates/{unused_id}").status_code == 404
+        assert client.delete("/api/admin/resume-templates/abc").status_code == 404
+        remaining = [item["id"] for item in client.get("/api/admin/resume-templates").json()["templates"]]
+        assert unused_id not in remaining and used_id in remaining
+
+
+def test_template_delete_requires_admin() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, app, admin=False)
+        assert client.delete("/api/admin/resume-templates/1").status_code == 403
