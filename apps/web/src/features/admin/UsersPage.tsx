@@ -37,7 +37,7 @@ const PAGE_SIZE = 20;
 
 type RoleTab = "" | "admin" | "disabled";
 
-const avatarColors = ["#5972d9", "#2f9461", "#7c64c5", "#b7792e", "#c25b56", "#454842"];
+const avatarColors = ["#5972d9", "#2f9461", "#b7792e", "#c25b56", "#3a8fb7"];
 /** Stable colour per user so the list does not reshuffle colours between pages. */
 export function avatarColor(id: string) {
   let hash = 0;
@@ -137,6 +137,7 @@ export function UsersPage({ currentUser, initialUserId }: { currentUser: User; i
           <ErrorState code={list.error} onRetry={() => void list.reload()} />
         ) : (
           <DataTable<AdminUserSummary>
+            className="is-user"
             busy={list.loading}
             rows={list.data?.items ?? []}
             rowKey={(row) => row.id}
@@ -144,12 +145,12 @@ export function UsersPage({ currentUser, initialUserId }: { currentUser: User; i
             rowLabel={(row) => `查看用户 ${row.nickname}`}
             empty={appliedQuery || tab ? "没有匹配的用户" : "暂无用户"}
             columns={[
-              { key: "user", label: "用户", width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-with-avatar"><span className="adm-avatar is-round" style={{ background: avatarColor(row.id) }} aria-hidden="true">{row.nickname.slice(0, 1).toUpperCase()}</span><span className="adm-cell-stack"><strong>{row.nickname}</strong><small>{row.email ?? "未绑定邮箱"}</small></span></span> },
+              { key: "user", label: "用户", width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-with-avatar"><span className="adm-avatar is-round" style={{ background: row.status === 1 ? avatarColor(row.id) : "#c9c9c4" }} aria-hidden="true">{row.nickname.slice(0, 1).toUpperCase()}</span><span className={`adm-cell-stack${row.status === 1 ? "" : " is-muted"}`}><strong>{row.nickname}</strong><small>{row.email ?? "未绑定邮箱"}</small></span></span> },
               { key: "role", label: "角色", width: "110px", render: (row) => row.is_admin ? <span className="adm-role-admin"><Shield size={14} aria-hidden="true" />管理员</span> : <span className="adm-ink2">普通用户</span> },
-              { key: "resumes", label: "简历", width: "60px", render: (row) => <span className="adm-ink2">{row.resume_count}</span> },
+              { key: "resumes", label: "简历", width: "60px", align: "right", render: (row) => <span className="adm-ink2">{row.resume_count}</span> },
               { key: "status", label: "状态", width: "80px", render: (row) => <StatusDot tone={row.status === 1 ? "ok" : "muted"}>{row.status === 1 ? "启用" : "禁用"}</StatusDot> },
-              { key: "login", label: "最近登录", width: "100px", render: (row) => <span className="adm-ink2">{formatWhen(row.last_login_at, "从未登录")}</span> },
-              { key: "open", label: "", width: "20px", render: () => <ChevronRight size={18} className="adm-chevron" aria-hidden="true" /> },
+              { key: "login", label: "最近登录", width: "100px", align: "right", render: (row) => <span className="adm-ink2">{formatWhen(row.last_login_at, "从未登录")}</span> },
+              { key: "open", label: "", width: "20px", render: () => <ChevronRight size={16} className="adm-chevron" aria-hidden="true" /> },
             ]}
           />
         )}

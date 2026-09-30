@@ -4,7 +4,8 @@
  * model of the first effective binding as the default, and only fails over between routes of that same
  * model — so the page groups bindings by model and edits the order at that level.
  */
-import { AudioLines, CircleAlert, Eye, EyeOff, FileText, GripVertical, Image, Languages, MessageSquare, Mic, Plus, ScanText, Search, Trash2, UserRound, Workflow, type LucideIcon } from "lucide-react";
+import * as PopoverPrimitive from "@radix-ui/react-popover";
+import { ArrowRight, AudioLines, CircleAlert, Eye, EyeOff, FileText, GripVertical, Image, Languages, MessageSquare, Mic, Plus, ScanText, Search, Trash2, UserRound, Workflow, type LucideIcon } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { api, type LlmBinding, type LlmModel, type LlmRoute } from "../../api/client";
 import {
@@ -276,27 +277,39 @@ export function CapabilitiesPage() {
                           }}
                         ><GripVertical size={14} /></span>
                         <span className={`adm-cap-rank${group.modelId === defaultModelId ? " is-default" : ""}`}>{String(groupIndex + 1).padStart(2, "0")}</span>
-                        <Logo letter={vendorInfo(group.model?.developerName).label} color={vendorInfo(group.model?.developerName).color} size={32} icon={modelIcon(group.model?.displayName, group.model?.developerName)} />
-                        <div className="adm-cap-title">
-                          <strong>
-                            <span className="adm-ellipsis">{group.model?.displayName ?? "未知模型"}</span>
-                            {group.modelId === defaultModelId && <Badge tone="info">默认</Badge>}
-                            {hidden && <Badge tone="neutral">对用户隐藏</Badge>}
-                            {!effective && <Badge tone="warn">无生效线路</Badge>}
-                          </strong>
-                          <small>{vendorInfo(group.model?.developerName).label} · {group.bindings.length} 条线路</small>
+                        <div className="adm-cap-model-name">
+                          <Logo letter={vendorInfo(group.model?.developerName).label} color={vendorInfo(group.model?.developerName).color} size={30} icon={modelIcon(group.model?.displayName, group.model?.developerName)} />
+                          <div className="adm-cap-title">
+                            <strong>
+                              <span className="adm-ellipsis">{group.model?.displayName ?? "未知模型"}</span>
+                              {group.modelId === defaultModelId && <em className="adm-cap-default">默认</em>}
+                            </strong>
+                            <small>{vendorInfo(group.model?.developerName).label}{hidden && <> · <span>对用户隐藏</span></>}{!effective && <> · <span className="adm-tone-warn">无生效线路</span></>}</small>
+                          </div>
                         </div>
-                        {assistant && group.model && (
-                          <label className="adm-inline-toggle">
-                            {group.model.userSelectable ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}<span>用户可选</span>
-                            <Toggle label={`${group.model.displayName} 用户可选`} checked={group.model.userSelectable} disabled={busy !== null} onChange={(next) => void setSelectable(group.model!, next)} />
-                          </label>
-                        )}
-                        <MoreMenu label={`${group.model?.displayName ?? "模型"} 更多操作`} disabled={busy !== null} items={[
-                          { label: "添加线路", icon: Plus, onSelect: () => setAdding({ modelId: group.modelId }) },
-                          { label: "移出场景", icon: Trash2, tone: "bad", onSelect: () => setPendingDelete({ kind: "model", group }) },
-                        ]} />
-                      </header>
+                        {/* V4 lane: the failover chain reads inline; route controls open in a popover. */}
+                        <PopoverPrimitive.Root modal={false}>
+                          <PopoverPrimitive.Trigger className="adm-cap-chain" aria-label={`${group.model?.displayName ?? "模型"} 线路：${group.bindings.length} 条，点击管理`} disabled={busy === "order"}>
+                            {group.bindings.map((item, index) => {
+                              const connection = connectionById.get(routeById.get(item.routeId)?.connectionId ?? "");
+                              return (
+                                <span key={item.routeId} className="adm-cap-chain-item">
+                                  {index > 0 && <ArrowRight size={14} className="adm-faint" aria-hidden="true" />}
+                                  <span className="adm-cap-pill">
+                                    <b>{index === 0 ? "主" : `备 ${index}`}</b>
+                                    <span>{connection?.name ?? `#${item.routeId}`}</span>
+                                    <i className={`adm-dot adm-dot-${item.effective ? "ok" : item.enabled ? "warn" : "muted"}`} aria-hidden="true" />
+                                  </span>
+                                </span>
+                              );
+                            })}
+                          </PopoverPrimitive.Trigger>
+                          <PopoverPrimitive.Portal>
+                            <PopoverPrimitive.Content className="adm-select-content adm-cap-pop" align="start" sideOffset={8} collisionPadding={12} aria-label={`${group.model?.displayName ?? "模型"} 的线路`}>
+                              <header className="adm-cap-pop-head">
+                                <strong>线路切换顺序</strong>
+                                <span>主线路失败时依次切到备用线路{group.bindings.length > 1 ? " · 拖动“主 / 备”调整" : ""}</span>
+                              </header>
                       <div
                         className="adm-cap-routes"
                         onDragOver={(event) => {
@@ -365,6 +378,23 @@ export function CapabilitiesPage() {
                         ]}
                       />
                       </div>
+                              <footer className="adm-cap-pop-foot">
+                                <LinkButton disabled={busy !== null} onClick={() => setAdding({ modelId: group.modelId })}><Plus size={14} aria-hidden="true" />添加线路</LinkButton>
+                              </footer>
+                            </PopoverPrimitive.Content>
+                          </PopoverPrimitive.Portal>
+                        </PopoverPrimitive.Root>
+                        {assistant && group.model && (
+                          <label className="adm-inline-toggle">
+                            {group.model.userSelectable ? <Eye size={14} aria-hidden="true" /> : <EyeOff size={14} aria-hidden="true" />}<span>用户可选</span>
+                            <Toggle label={`${group.model.displayName} 用户可选`} checked={group.model.userSelectable} disabled={busy !== null} onChange={(next) => void setSelectable(group.model!, next)} />
+                          </label>
+                        )}
+                        <MoreMenu label={`${group.model?.displayName ?? "模型"} 更多操作`} disabled={busy !== null} items={[
+                          { label: "添加线路", icon: Plus, onSelect: () => setAdding({ modelId: group.modelId }) },
+                          { label: "移出场景", icon: Trash2, tone: "bad", onSelect: () => setPendingDelete({ kind: "model", group }) },
+                        ]} />
+                      </header>
                     </li>
                   );
                 })}

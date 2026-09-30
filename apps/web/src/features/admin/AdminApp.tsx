@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   Bell,
   Bot,
+  Filter,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -15,9 +16,11 @@ import { Brand, FeedbackNotice, PageLoading } from "@/components/ui";
 import { api, type User } from "../../api/client";
 import { adminLoginPath, navigateTo } from "../../routing";
 import { AdminConsoleProvider } from "./kit";
+import { useAdminViewportScale } from "./viewportScale";
 import { AnnouncementsPage } from "./AnnouncementsPage";
 import { CapabilitiesPage } from "./CapabilitiesPage";
 import { ConnectionsPage, ModelsPage, UsagePage } from "./LlmPages";
+import { FunnelPage } from "./FunnelPage";
 import { OverviewPage } from "./OverviewPage";
 import { PluginReleasePanel } from "./PluginReleasePanel";
 import {
@@ -35,6 +38,7 @@ import "./console.css";
 export type AdminPage =
   | "overview"
   | "users"
+  | "funnel"
   | "templates"
   | "plugins"
   | "announcements"
@@ -51,6 +55,7 @@ export type AdminPage =
 export const adminPagePaths: Record<AdminPage, string> = {
   overview: "/admin",
   users: "/admin/users",
+  funnel: "/admin/funnel",
   templates: "/admin/templates",
   plugins: "/admin/plugins",
   announcements: "/admin/announcements",
@@ -83,6 +88,7 @@ type NavGroup = { id: string; label: string; icon: typeof LayoutDashboard; pages
 const navGroups: NavGroup[] = [
   { id: "overview", label: "总览", icon: LayoutDashboard, pages: [{ page: "overview", label: "总览" }] },
   { id: "users", label: "用户管理", icon: Users, pages: [{ page: "users", label: "用户管理" }] },
+  { id: "funnel", label: "转化漏斗", icon: Filter, pages: [{ page: "funnel", label: "转化漏斗" }] },
   { id: "content", label: "内容管理", icon: FileText, pages: [{ page: "templates", label: "简历模板" }, { page: "plugins", label: "浏览器插件" }] },
   { id: "announcements", label: "通知管理", icon: Bell, pages: [{ page: "announcements", label: "应用内公告" }] },
   { id: "models", label: "模型管理", icon: Bot, pages: [{ page: "connections", label: "接入连接" }, { page: "models", label: "模型与线路" }, { page: "capabilities", label: "能力配置" }, { page: "usage", label: "使用情况" }] },
@@ -140,6 +146,7 @@ function AdminWorkspace({ user, onLogout, onSessionExpired }: { user: User; onLo
   // Direction of the last page change, used by the enter animation (see console.css).
   const [motion, setMotion] = useState<"initial" | "forward" | "back" | "lateral-forward" | "lateral-back">("initial");
   const [mobileNav, setMobileNav] = useState(false);
+  useAdminViewportScale();
   const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
   const [auditFailedOnly] = useState(() => new URLSearchParams(window.location.search).get("result") === "failed");
 
@@ -189,6 +196,7 @@ function AdminWorkspace({ user, onLogout, onSessionExpired }: { user: User; onLo
           <div className="adm-content" key={page} data-motion={motion}>
             {page === "overview" && <OverviewPage user={user} />}
             {page === "users" && <UsersPage currentUser={user} />}
+            {page === "funnel" && <FunnelPage />}
             {page === "templates" && <TemplatesPage />}
             {page === "plugins" && <PluginReleasePanel />}
             {page === "announcements" && <AnnouncementsPage />}
@@ -240,8 +248,7 @@ function Sidebar({ page, onNavigate, user, onLogout }: { page: AdminPage; onNavi
   return (
     <>
       <a className="adm-brand" href="/admin" onClick={(event) => { event.preventDefault(); onNavigate("overview"); }}>
-        <Brand compact />
-        <span><strong>LinkResume</strong><small>管理后台</small></span>
+        <Brand />
       </a>
       <label className="adm-nav-search">
         <Search size={13} aria-hidden="true" />

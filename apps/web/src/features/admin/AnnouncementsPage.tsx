@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClock, CircleAlert, Clock, FileText, Megaphone } from "lucide-react";
+import { CalendarClock, CircleAlert, Clock, FileText, Megaphone, Sparkles } from "lucide-react";
 import { api, type AdminAnnouncement, type AnnouncementFields, type AnnouncementLevel } from "../../api/client";
 import { STATUS_COLORS } from "./charts";
 import { DateTimeInput } from "./DateTimeInput";
@@ -25,6 +25,7 @@ import {
   errorCode,
   formatWhen,
   fromLocalInput,
+  parseTime,
   toLocalInput,
   useConsole,
   useLoad,
@@ -42,10 +43,19 @@ const visibilityBadge: Record<AdminAnnouncement["visibility"], { tone: Tone; lab
   unpublished: { tone: "muted", label: "已下线" },
 };
 
+/** Figma V4 05: "9 月 25 日 10:00 → 10 月 8 日", "10 月 1 日 00:00 起 · 长期", "9 月 18 日 → 长期", "未设置时段". */
 function windowText(item: AdminAnnouncement) {
-  if (!item.startsAt && !item.endsAt) return item.status === "draft" ? "未设置" : `${formatWhen(item.publishedAt)} – 长期`;
-  const start = item.startsAt ? formatWhen(item.startsAt) : item.status === "draft" ? "发布后" : formatWhen(item.publishedAt);
-  return `${start} – ${item.endsAt ? formatWhen(item.endsAt) : "长期"}`;
+  if (!item.startsAt && !item.endsAt && item.status === "draft") return "未设置时段";
+  const start = item.startsAt ? monthDay(item.startsAt, true) : item.status === "draft" ? "发布后" : monthDay(item.publishedAt, false);
+  if (item.endsAt) return `${start} → ${monthDay(item.endsAt, false)}`;
+  return item.visibility === "scheduled" ? `${start} 起 · 长期` : `${start} → 长期`;
+}
+
+function monthDay(value: string | null | undefined, withTime: boolean) {
+  const date = parseTime(value);
+  if (!date) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getMonth() + 1} 月 ${date.getDate()} 日${withTime ? ` ${pad(date.getHours())}:${pad(date.getMinutes())}` : ""}`;
 }
 
 const announcementErrors: Record<string, string> = {
@@ -92,13 +102,12 @@ export function AnnouncementsPage() {
 
   const changeFilter = (next: Filter) => { setFilter(next); setCursor(undefined); setHistory([]); };
   const counts = stats.data;
-  // "已发布" splits into live, scheduled and expired, so the ribbon segments add up to the total.
+  // V4 ribbon has four states: expired announcements are no longer shown, so they count with 已下线.
   const ribbon = counts ? [
     { key: "active", label: "生效中", value: counts.active, color: STATUS_COLORS.ok },
     { key: "scheduled", label: "定时", value: counts.scheduled, color: STATUS_COLORS.info },
-    { key: "expired", label: "已过期", value: Math.max(0, counts.published - counts.active - counts.scheduled), color: "#b9bab5" },
     { key: "draft", label: "草稿", value: counts.draft, color: STATUS_COLORS.warn },
-    { key: "unpublished", label: "已下线", value: counts.unpublished, color: "#d8d8d4" },
+    { key: "unpublished", label: "已下线", value: counts.unpublished + Math.max(0, counts.published - counts.active - counts.scheduled), color: "#d8d8d4" },
   ] : [];
   const total = ribbon.reduce((sum, item) => sum + item.value, 0);
   const items = list.data?.items ?? [];
@@ -148,7 +157,7 @@ export function AnnouncementsPage() {
           <>
             <ul className={`adm-feed adm-announcements${list.loading ? " is-busy" : ""}`} key={`${filter}|${cursor ?? ""}`} aria-label="公告列表">
               {items.map((row, index) => {
-                const Icon = row.status === "draft" ? FileText : row.visibility === "scheduled" ? CalendarClock : Megaphone;
+                const Icon = row.status === "draft" ? FileText : row.visibility === "scheduled" ? CalendarClock : row.level === "important" ? Megaphone : Sparkles;
                 const tint = row.status === "draft" ? "gray" : row.visibility === "scheduled" ? "blue" : row.level === "important" ? "amber" : "violet";
                 const state = visibilityBadge[row.visibility];
                 return (

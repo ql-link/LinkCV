@@ -140,6 +140,17 @@ export type AdminInsightUsers = {
   daily: Array<{ date: string; count: number }>;
 };
 
+/** GET /api/admin/insights/funnel (LOCAL-20260929-GTM-PLAN solution.md §8): users registered in the window and how far they got. */
+export type AdminFunnelStepKey = "registered" | "resume" | "ai_customization" | "mock_interview" | "pdf_export";
+export type AdminInsightFunnel = {
+  window: { from: string; to: string };
+  steps: Array<{ key: AdminFunnelStepKey; users: number }>;
+  registrationsByMethod: Record<string, number>;
+  aiCustomizationByEntry: Record<string, number>;
+  resumeBySource: Record<string, number>;
+  daily: Array<{ date: string; registered: number }>;
+};
+
 export type AdminInsightJobImports = {
   imported7d: number;
   imported30d: number;
@@ -2182,6 +2193,8 @@ export const api = {
   adminInsightOverview: () => request<AdminInsightOverview>("/api/admin/insights/overview"),
   adminInsightUsers: () => request<AdminInsightUsers>("/api/admin/insights/users"),
   adminInsightJobImports: () => request<AdminInsightJobImports>("/api/admin/insights/job-imports"),
+  adminInsightFunnel: (params: { from?: string; to?: string } = {}) =>
+    request<AdminInsightFunnel>(withLogQuery("/api/admin/insights/funnel", params)),
   adminInsightLlmUsage: (params: { groupBy?: "model" | "useCase" | "connection"; from?: string; to?: string } = {}) =>
     request<AdminInsightLlmUsage>(withLogQuery("/api/admin/insights/llm-usage", params)),
   adminInsightAgent: (params: { from?: string; to?: string } = {}) =>
