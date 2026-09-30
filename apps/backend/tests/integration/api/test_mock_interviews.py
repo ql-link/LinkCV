@@ -24,6 +24,7 @@ from linkresume.modules.llm.models import (
 )
 from linkresume.modules.llm.resolver import MOCK_INTERVIEW, validation_fingerprint
 from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from tests.fakes import FakeRedis
 from tests.integration.api.test_interviews import (
@@ -306,6 +307,11 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         report_detail = wait_for(client, created["id"], {"completed"})
         report = report_detail["report"]
         assert report["closing_message"].startswith("今天的面试")
+        with app.state.session_factory() as db:
+            completed = db.scalars(
+                select(ProductEvent).where(ProductEvent.event_name == "mock_interview_completed")
+            ).all()
+        assert [e.properties_json["answer_mode"] for e in completed] == ["text"]
         assert len(report["questions"]) == 3
         first_signals = report["questions"][0]["signals"]
         # The third judgement quoted text that is not in the answers.

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session, object_session
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
+from linkresume.modules.product_events import service as product_events
+from linkresume.modules.product_events.service import ProposalEntry
 from linkresume.application.resumes.service import (
     InvalidResumeTitle,
     ResumeTitleConflict,
@@ -1044,6 +1046,7 @@ def confirm_proposal(
     | None = None,
     delete_asset: Callable[[str], None] | None = None,
     trace_request_id: str | None = None,
+    entry: ProposalEntry = "unknown",
 ) -> tuple[ResumeChangeProposal, Resume]:
     # Read only the mode before acquiring locks. Translation allocates a new
     # resume, so its lock order must agree with other quota-checked creations.
@@ -1170,6 +1173,7 @@ def confirm_proposal(
             proposal.result_resume_id = result.id
             proposal.applied_lock_version = proposal.base_lock_version
             proposal.applied_at = utc_now()
+            product_events.resume_created(db, user_id, result.id, "translate")
             trace_confirmation("succeeded")
             db.commit()
             db.refresh(result)
@@ -1250,6 +1254,9 @@ def confirm_proposal(
     proposal.status = "applied"
     proposal.applied_lock_version = resume.lock_version
     proposal.applied_at = utc_now()
+    product_events.ai_customization_applied(
+        db, user_id, proposal_id=proposal.id, resume_id=resume.id, mode=proposal.proposal_mode, entry=entry
+    )
     trace_confirmation("succeeded")
     try:
         db.commit()

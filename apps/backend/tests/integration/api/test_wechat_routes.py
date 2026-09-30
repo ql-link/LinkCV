@@ -10,6 +10,7 @@ from linkresume.core.security import hash_password
 from linkresume.integrations.wechat_client import WechatClient
 from linkresume.main import create_app
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.identity.session_service import (
     MINIPROGRAM_CHANNEL,
     WEB_CHANNEL,
@@ -203,6 +204,11 @@ def test_wechat_login_reuses_existing_openid_account() -> None:
         with app.state.session_factory() as db:
             users = db.scalars(select(User)).all()
             assert len(users) == 1
+            events = db.scalars(select(ProductEvent)).all()
+        # Only the first login registers; the second reuses the account.
+        assert [(e.event_name, e.properties_json) for e in events] == [
+            ("user_registered", {"method": "wechat_qr"})
+        ]
 
 
 def test_wechat_confirm_requires_privacy_acceptance_before_registration() -> None:
@@ -357,6 +363,8 @@ def test_miniprogram_session_rotates_and_rejects_web_carrier() -> None:
         body = login.json()
         assert body["user"]["email"] is None
         assert body["expires_in"] == 900
+        with app.state.session_factory() as db:
+            assert db.scalar(select(ProductEvent.properties_json)) == {"method": "wechat_miniprogram"}
         first_refresh = body["refresh_token"]
 
         me = client.get(

@@ -656,7 +656,7 @@ export function AgentPanel({
     setError(null);
     try {
       if (!await onBeforeConfirm()) return;
-      await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
+      await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id, "editor");
       setProposals((current) => current.filter((item) => item.id !== proposal.id));
       await onApplied();
     } catch (reason) {

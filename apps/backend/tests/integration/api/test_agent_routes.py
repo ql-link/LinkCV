@@ -40,6 +40,7 @@ from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, validation_f
 from cryptography.fernet import Fernet
 import json
 from linkresume.modules.llm.service import LLMError
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.resumes.models import (
     DATASET_SOURCE_TYPE,
     DocumentParseTask,
@@ -1444,9 +1445,19 @@ def test_proposal_is_idempotent_and_confirmed_once() -> None:
         proposal_id = first.json()["proposal"]["id"]
         assert repeated.json()["proposal"]["id"] == proposal_id
 
-        confirmed = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
+        confirmed = client.post(
+            f"/api/agent/proposals/{proposal_id}/confirm", json={"entry": "editor"}
+        )
         confirmed_again = client.post(f"/api/agent/proposals/{proposal_id}/confirm")
         assert confirmed.status_code == confirmed_again.status_code == 200
+        with app.state.session_factory() as db:
+            applied = db.scalars(
+                select(ProductEvent).where(ProductEvent.event_name == "ai_customization_applied")
+            ).all()
+        # One event per proposal, carrying the entry sent with the first confirmation.
+        assert len(applied) == 1
+        assert applied[0].properties_json["entry"] == "editor"
+        assert applied[0].dedupe_key.startswith("ai:")
         assert confirmed.json()["resume"]["lock_version"] == 2
         assert confirmed_again.json()["resume"]["lock_version"] == 2
         assert (
@@ -2397,6 +2408,14 @@ def test_translation_proposal_creates_one_independent_editable_resume() -> None:
         assert repeated.json()["resume"]["id"] == result["id"]
         with app.state.session_factory() as db:
             assert len(db.scalars(select(Resume)).all()) == 2
+            events = db.scalars(select(ProductEvent).order_by(ProductEvent.id)).all()
+        # Translation creates a resume but is not an AI customization.
+        assert [e.event_name for e in events if e.event_name != "user_registered"] == [
+            "resume_created", "resume_created"
+        ]
+        assert [e.properties_json["source"] for e in events if e.event_name == "resume_created"] == [
+            "template", "translate"
+        ]
         assert "resume_versions" not in Resume.metadata.tables
 
 

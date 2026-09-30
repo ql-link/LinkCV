@@ -1690,7 +1690,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     try {
       const refreshEmbeddedResume = embeddedResumeId === proposal.resume_id
         && useResumeStore.getState().activeResumeId === proposal.resume_id;
-      const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
+      const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id, "assistant");
       updateConversation(activeKey, (state) => ({
         proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
         busyProposalId: null,
@@ -1725,7 +1725,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       for (const proposal of pendingProposals) {
         updateConversation(conversationKey, { busyProposalId: proposal.id });
         try {
-          const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
+          const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id, "assistant");
           appliedToEmbeddedResume = appliedToEmbeddedResume
             || (refreshEmbeddedResume && result.id === embeddedResumeId);
           completed += 1;

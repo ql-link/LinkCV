@@ -26,6 +26,7 @@ from linkresume.domain.document_conversion import (
 from linkresume.domain.resume_style import default_resume_style, default_template_manifest
 from linkresume.main import create_app
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -284,6 +285,11 @@ def test_worker_creates_one_resume_and_repeated_delivery_is_idempotent() -> None
             resumes[0].style_json["template_snapshot"]["tokens"]["accent_color"]
             == "#315C6B"
         )
+        # Repeated delivery reuses the result: exactly one import event.
+        created = db.scalars(select(ProductEvent).where(ProductEvent.event_name == "resume_created")).all()
+        assert [(e.properties_json["source"], e.properties_json["resume_id"]) for e in created] == [
+            ("import", resumes[0].id)
+        ]
 
 
 def test_worker_appends_next_number_when_import_title_already_exists() -> None:

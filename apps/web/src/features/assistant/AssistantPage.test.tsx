@@ -275,7 +275,7 @@ describe("AssistantPage", () => {
 
     await user.click(screen.getByRole("button", { name: "应用修改" }));
 
-    await waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-refresh"));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-refresh", "assistant"));
     expect(saveCurrentResume).toHaveBeenCalledOnce();
     expect(loadResume).toHaveBeenCalledTimes(1);
     expect(loadResume).toHaveBeenLastCalledWith("1");

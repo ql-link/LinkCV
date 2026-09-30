@@ -27,6 +27,8 @@ from linkresume.core.security import (
 from linkresume.integrations.wechat_client import WechatApiError, WechatClient
 from linkresume.modules.identity.dependencies import get_settings
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events import service as product_events
+from linkresume.modules.product_events.service import RegistrationMethod
 from linkresume.modules.identity.schemas import OkResponse, UserResponse
 from linkresume.modules.identity.session_service import (
     MINIPROGRAM_CHANNEL,
@@ -190,6 +192,7 @@ def resolve_wechat_user(
     wechat_openid: str,
     *,
     allow_registration: bool,
+    method: RegistrationMethod,
 ) -> User:
     user = db.scalar(select(User).where(User.wechat_openid == wechat_openid))
     if user is not None:
@@ -204,6 +207,8 @@ def resolve_wechat_user(
     )
     db.add(user)
     try:
+        db.flush()
+        product_events.registered(db, user.id, method)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -377,6 +382,7 @@ def confirm_login(
             db,
             openid,
             allow_registration=privacy_accepted,
+            method="wechat_qr",
         )
     except Exception:
         redis_client.eval(
@@ -467,6 +473,7 @@ def miniprogram_login(
         db,
         exchange_openid(wechat, payload.code),
         allow_registration=payload.privacy_accepted,
+        method="wechat_miniprogram",
     )
     if user.status != 1:
         raise ApiError(401, "ACCOUNT_DISABLED")

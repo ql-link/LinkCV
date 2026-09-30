@@ -42,6 +42,8 @@ LinkResume 的账号功能覆盖普通用户注册和登录、微信扫码登录
 - 被禁用账号不能继续使用既有会话；退出和刷新由统一 session 生命周期处理。
 - 管理员身份与普通用户身份使用同一 `users` 表，但管理员登录入口、依赖和授权检查独立。
 
+- 新账号在建号的同一事务内写入一条 `user_registered` 产品漏斗事件（方式为 `wechat_qr`、`wechat_miniprogram` 或 `email`）；复用已有账号或并发建号回查时不写，建号失败则事件一并回滚。口径见 `docs/internals/observability.md`。
+
 ## 数据归属
 
 `users` 是账号、状态、管理员标记、昵称、头像对象键和微信绑定信息的权威表。`user_profiles` 与用户一对一，保存城市、工作性质、薪资、工作经验、教育背景和技能成果，不复制到简历内容。Redis 保存可撤销 session；对象存储保存头像二进制。业务模块不能自行解析 Cookie/Bearer token 或复制用户状态。

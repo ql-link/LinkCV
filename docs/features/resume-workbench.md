@@ -47,6 +47,8 @@ AI 提案确认与自动保存共用写入队列，保存失败不继续确认�
 - `document_parse_tasks` 保存简历导入和资料集共用的上传/解析状态，`file_format` 约束覆盖文档四类和音视频七类（媒体任务不使用解析队列，直接落终态）。简历导入在受理时同时冻结 `selected_template_id` 与规范化的 `selected_template_style_json`（完整 `TemplateDefinition`），并把确定性的 `SourceGraph` 保存到私有对象；Worker 只使用任务快照，因此模板之后更新或停用不会改变已受理任务的版式。资料集任务额外使用 `queued`、派发时间和尝试版本完成 MQ 恢复。PDF/DOCX 由 LinkParse 转换文字并可附带有界布局提示，Markdown 在 Worker 本地转换。PDF 始终使用 `include_images=false`：文字与图片混排的 PDF 继续解析文字，但证件照、Logo 和其他源图片不会进入导入结果，模板头像保持为空。
 - 分享实时读取当前已保存草稿，不另存内容快照；PDF 同样使用当前已保存快照生成且不持久化成品。
 
+- 模板创建、导入解析成功、复制新建（幂等重放不算）和翻译提案确认会在同一事务内写入 `resume_created` 产品漏斗事件；本人网页与小程序 PDF 导出成功后以独立短事务写入 `resume_pdf_exported`，写入失败不影响 PDF 响应，分享页访客下载与小程序预览图不记录。口径见 `docs/internals/observability.md`。
+
 ## 依赖边界
 
 该功能依赖身份、MySQL、MinIO、Redis、消息队列、LinkParse 和统一 LLM。求职进程保存独立的投递附件；AI 助手只能先创建提案，用户确认后才写入简历。删除简历时清理目标为该简历的待确认提案，但保留独立对话历史，且不能越过其他领域的引用约束；关联的模拟面试只清空简历引用，保留简历快照与报告。
