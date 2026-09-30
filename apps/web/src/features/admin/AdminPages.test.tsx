@@ -485,30 +485,50 @@ describe("brand icons", () => {
 describe("FunnelPage", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("shows each step against the registered cohort and the step-over-step rate", async () => {
+  const funnelData = {
+    window: { from: "2026-08-30T00:00:00Z", to: "2026-09-30T00:00:00Z" },
+    steps: [
+      { key: "registered" as const, users: 200 },
+      { key: "resume" as const, users: 120 },
+      { key: "ai_customization" as const, users: 48 },
+      { key: "mock_interview" as const, users: 10 },
+      { key: "pdf_export" as const, users: 30 },
+    ],
+    registrationsByMethod: { wechat_qr: 150, email: 50 },
+    aiCustomizationByEntry: { assistant: 30, editor: 18 },
+    resumeBySource: { template: 90, import: 30 },
+    daily: [{ date: "2026-09-29", registered: 7 }, { date: "2026-09-30", registered: 9 }],
+  };
+
+  it("chains the main steps with step-over-step loss and highlights the largest drop", async () => {
     const { FunnelPage } = await import("./FunnelPage");
-    vi.spyOn(api, "adminInsightFunnel").mockResolvedValue({
-      window: { from: "2026-08-30T00:00:00Z", to: "2026-09-30T00:00:00Z" },
-      steps: [
-        { key: "registered", users: 200 },
-        { key: "resume", users: 120 },
-        { key: "ai_customization", users: 60 },
-        { key: "mock_interview", users: 10 },
-        { key: "pdf_export", users: 30 },
-      ],
-      registrationsByMethod: { wechat_qr: 150, email: 50 },
-      aiCustomizationByEntry: { assistant: 40, editor: 20 },
-      resumeBySource: { template: 90, import: 30 },
-      daily: [{ date: "2026-09-29", registered: 7 }, { date: "2026-09-30", registered: 9 }],
-    });
-    render(wrap(<FunnelPage />));
+    vi.spyOn(api, "adminInsightFunnel").mockResolvedValue(funnelData);
+    const { container } = render(wrap(<FunnelPage />));
     const steps = await screen.findByRole("region", { name: "逐步转化" });
-    const resume = within(steps).getByText("有简历").closest("li") as HTMLElement;
-    expect(within(resume).getByText("60.0%")).toBeInTheDocument();
-    const ai = within(steps).getByText("首次 AI 定制").closest("li") as HTMLElement;
-    expect(within(ai).getByText("上一步 50.0%")).toBeInTheDocument();
-    expect(screen.getByText("微信扫码")).toBeInTheDocument();
+    const items = within(steps).getAllByRole("listitem").filter((item) => item.classList.contains("adm-funnel-step"));
+    expect(items.map((item) => item.querySelector("strong")?.textContent)).toEqual(["注册", "有简历", "首次 AI 定制", "首次 PDF 导出", "模拟面试完成"]);
+    const resume = items[1];
+    expect(within(resume).getByText("60.0% 的注册用户")).toBeInTheDocument();
+    expect(within(resume).getByText("↓ 60.0%")).toBeInTheDocument();
+    expect(within(resume).getByText("流失 80 人")).toBeInTheDocument();
+    // AI keeps 40% of resume users, the lowest rate in the chain; PDF export is compared with AI, not the interview.
+    expect(items[2].querySelector(".adm-funnel-drop")).toHaveClass("is-worst");
+    expect(within(items[3]).getByText("↓ 62.5%")).toBeInTheDocument();
+    // The mock interview is optional: no step-over-step comparison.
+    expect(items[4].querySelector(".adm-funnel-drop")).toBeNull();
+    expect(within(items[4]).getByText("5.0% 的注册用户")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "注册方式：微信扫码 75.0%，邮箱 25.0%" })).toBeInTheDocument();
+    expect(container.querySelectorAll(".adm-funnel-drop.is-worst")).toHaveLength(1);
     expect(api.adminInsightFunnel).toHaveBeenCalledWith(expect.objectContaining({ from: expect.any(String), to: expect.any(String) }));
+  });
+
+  it("explains the definitions from the header", async () => {
+    const { FunnelPage } = await import("./FunnelPage");
+    vi.spyOn(api, "adminInsightFunnel").mockResolvedValue(funnelData);
+    render(wrap(<FunnelPage />));
+    await screen.findByRole("region", { name: "逐步转化" });
+    fireEvent.click(screen.getByRole("button", { name: "统计口径" }));
+    expect(await screen.findByText(/复制与翻译来自已有简历，不计入/)).toBeInTheDocument();
   });
 
   it("offers a retry when the funnel cannot be loaded", async () => {
@@ -516,5 +536,14 @@ describe("FunnelPage", () => {
     vi.spyOn(api, "adminInsightFunnel").mockRejectedValue(new ApiRequestError(503, "SERVICE_UNAVAILABLE"));
     render(wrap(<FunnelPage />));
     expect(await screen.findByText("无法读取转化漏斗")).toBeInTheDocument();
+  });
+});
+
+describe("worstDrop", () => {
+  it("picks the lowest step-over-step rate and ignores empty predecessors", async () => {
+    const { worstDrop } = await import("./FunnelPage");
+    expect(worstDrop([200, 120, 48, 30])).toBe(2);
+    expect(worstDrop([0, 0, 0])).toBeNull();
+    expect(worstDrop([10, 10])).toBeNull();
   });
 });
