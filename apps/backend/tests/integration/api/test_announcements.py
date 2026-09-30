@@ -325,7 +325,7 @@ def test_admin_list_filters_paginates_and_reports_stats() -> None:
     admin = admin_client(app)
 
     assert admin.get("/api/admin/announcements/stats").json() == {
-        "draft": 0, "published": 0, "unpublished": 0, "active": 0,
+        "draft": 0, "published": 0, "unpublished": 0, "active": 0, "scheduled": 0,
     }
 
     published = create(admin, title="已发布")
@@ -335,7 +335,6 @@ def test_admin_list_filters_paginates_and_reports_stats() -> None:
     admin.post(f"/api/admin/announcements/{offline['id']}/unpublish")
     create(admin, title="草稿 1")
     create(admin, title="草稿 2")
-
     drafts = admin.get("/api/admin/announcements", params={"status": "draft"}).json()
     assert {item["title"] for item in drafts["items"]} == {"草稿 1", "草稿 2"}
 
@@ -352,8 +351,10 @@ def test_admin_list_filters_paginates_and_reports_stats() -> None:
     assert len(set(seen)) == 4
     assert admin.get("/api/admin/announcements", params={"cursor": "bad"}).status_code == 400
 
+    later = create(admin, title="定时", startsAt="2099-01-01T00:00:00Z")
+    admin.post(f"/api/admin/announcements/{later['id']}/publish")
     assert admin.get("/api/admin/announcements/stats").json() == {
-        "draft": 2, "published": 1, "unpublished": 1, "active": 1,
+        "draft": 2, "published": 2, "unpublished": 1, "active": 1, "scheduled": 1,
     }
 
 

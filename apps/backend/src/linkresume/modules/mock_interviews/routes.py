@@ -69,6 +69,7 @@ def get_mock_interview_runner(request: Request) -> MockInterviewRunner:
             request.app.state.session_factory,
             request.app.state.llm_service,
             request.app.state.storage,
+            rag=getattr(request.app.state, "linkrag_recall", None),
         )
         request.app.state.mock_interview_runner = runner
     return runner
@@ -135,6 +136,7 @@ def _summary(interview: MockInterview) -> MockInterviewSummary:
         follow_up_enabled=interview.follow_up_enabled,
         language=interview.language,  # type: ignore[arg-type]
         answer_mode=interview.answer_mode,  # type: ignore[arg-type]
+        materials_in_questions=interview.materials_in_questions,
         total_score=float(interview.total_score) if interview.total_score is not None else None,
         low_confidence=interview.low_confidence,
         error_code=interview.error_code,
@@ -188,6 +190,7 @@ def _start_request(payload: MockInterviewCreateRequest) -> StartRequest:
         follow_up_enabled=payload.follow_up_enabled,
         language=payload.language,
         material_ids=[int(item) for item in payload.material_ids],
+        materials_in_questions=payload.materials_in_questions,
         answer_mode=payload.answer_mode,
     )
 

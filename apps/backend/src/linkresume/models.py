@@ -15,6 +15,7 @@ from linkresume.modules.interviews.models import (
 )
 from linkresume.modules.job_descriptions.models import GlobalCompany, JobDescription
 from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.llm.models import (
     LLMCallLog,
     LLMModel,
@@ -49,6 +50,7 @@ __all__ = [
     "MockInterviewQuestion",
     "GlobalCompany",
     "DocumentParseTask",
+    "ProductEvent",
     "Resume",
     "ResumeTemplate",
     "User",

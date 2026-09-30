@@ -156,10 +156,11 @@ function AppContent() {
       return;
     }
 
-    if (route.kind === "auth") {
+    // Signed-in users treat the bare domain as the app entry; /home keeps the landing page reachable.
+    if (route.kind === "auth" || isBareDomain(window.location.pathname)) {
       navigateTo("/resumes", { replace: true });
     }
-  }, [authStatus, route.kind]);
+  }, [authStatus, currentLocation, route.kind]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !routeResumeId) return;
@@ -242,6 +243,9 @@ function AppContent() {
   }
 
   if (route.kind === "landing") {
+    if (authStatus === "authenticated" && isBareDomain(window.location.pathname)) {
+      return <PageLoading label="正在进入简历主页…" scope="page" />;
+    }
     const landingDestination = authStatus === "authenticated"
       ? "/resumes"
       : null;
@@ -352,6 +356,9 @@ function AppContent() {
   return <PageLoading label="正在进入简历主页…" scope="page" />;
 }
 
+function isBareDomain(pathname: string) {
+  return pathname === "/" || pathname === "";
+}
 
 export function resumeLoadErrorMessage(error: unknown) {
   if (error instanceof ApiRequestError) {

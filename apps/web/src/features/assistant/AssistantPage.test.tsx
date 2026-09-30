@@ -316,7 +316,7 @@ describe("AssistantPage", () => {
     expect(within(card).queryByRole("button", { name: /全部采用/ })).not.toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "采用" }));
 
-    await waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-refresh"));
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-refresh", "assistant"));
     expect(useResumeStore.getState().resumes[0].lock_version).toBe(2);
     const summary = await screen.findByLabelText("待确认简历修改提案");
     expect(summary).toHaveTextContent("已处理 1 处修改建议");

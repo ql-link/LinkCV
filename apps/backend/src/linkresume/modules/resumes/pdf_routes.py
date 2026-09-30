@@ -22,6 +22,7 @@ from linkresume.modules.resumes.pdf_service import (
     ResumePdfRenderer,
     build_render_assets,
 )
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.resumes.models import Resume
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
@@ -112,4 +113,6 @@ def download_resume_pdf(
     if resume.lock_version != lock_version:
         raise ApiError(409, "RESUME_PDF_SNAPSHOT_STALE")
     pdf = render_resume_pdf(resume, user.id, storage, renderer)
-    return resume_pdf_response(resume, pdf)
+    response = resume_pdf_response(resume, pdf)
+    product_events.pdf_exported(db, user.id, resume.id, "web")
+    return response

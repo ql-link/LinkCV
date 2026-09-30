@@ -4430,3 +4430,26 @@ def test_mysql_0096_adds_voice_columns_with_text_defaults() -> None:
                 )
     finally:
         engine.dispose()
+
+
+def test_mysql_0097_adds_user_selectable_and_keeps_existing_models_selectable() -> None:
+    database_url = migration_test_url()
+    engine = create_engine(database_url)
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0096")
+    with engine.begin() as connection:
+        connection.execute(text("INSERT INTO llm_models (display_name) VALUES ('示例模型')"))
+    run_alembic(database_url, "upgrade", "0097")
+
+    column = next(
+        item for item in inspect(engine).get_columns("llm_models")
+        if item["name"] == "user_selectable"
+    )
+    assert column["nullable"] is False
+    with engine.begin() as connection:
+        assert connection.scalar(text("SELECT user_selectable FROM llm_models")) == 1
+        connection.execute(text("INSERT INTO llm_models (display_name) VALUES ('新模型')"))
+        assert connection.scalar(
+            text("SELECT user_selectable FROM llm_models WHERE display_name = '新模型'")
+        ) == 1
+    engine.dispose()

@@ -1633,7 +1633,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const applyProposal = async (proposal: AgentProposal) => {
     updateConversation(activeKey, { busyProposalId: proposal.id, error: null });
     try {
-      await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
+      await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id, "assistant");
       updateConversation(activeKey, (state) => ({
         proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
         busyProposalId: null,
@@ -1662,7 +1662,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       for (const proposal of pendingProposals) {
         updateConversation(conversationKey, { busyProposalId: proposal.id });
         try {
-          await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
+          await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id, "assistant");
           completed += 1;
           updateConversation(conversationKey, (state) => ({
             proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),

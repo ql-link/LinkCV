@@ -179,7 +179,7 @@ describe("proposal confirmation write coordination", () => {
     expect(useResumeStore.getState().title).toBe(originalTitle);
     expect(useResumeStore.getState().editorContent).toEqual(originalContent);
     saving.resolve({ resume: record(2, "已保存草稿") });
-    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-1"));
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-1", undefined));
     const autosave = useResumeStore.getState().saveCurrentResume();
     confirming.resolve({ resume: record(3, "AI 修改后的正文") });
     await operation;
