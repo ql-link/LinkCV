@@ -31,8 +31,14 @@ describe("App landing routes", () => {
     });
   });
 
-  it.each(["/", "/home"])("已登录访问 %s 时仍展示落地页", async (path) => {
-    window.history.replaceState(null, "", path);
+  it("已登录访问纯域名时进入简历工作台", async () => {
+    render(createElement(App));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/resumes"));
+  });
+
+  it("已登录访问 /home 时仍展示落地页", async () => {
+    window.history.replaceState(null, "", "/home");
     render(createElement(App));
 
     expect(
@@ -42,7 +48,21 @@ describe("App landing routes", () => {
         { timeout: 5_000 },
       ),
     ).toBeInTheDocument();
-    await waitFor(() => expect(window.location.pathname).toBe(path));
+    await waitFor(() => expect(window.location.pathname).toBe("/home"));
+  });
+
+  it("访客访问纯域名时展示落地页", async () => {
+    useResumeStore.setState({ authStatus: "guest", user: null });
+    render(createElement(App));
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "把每一份经历，都写成下一份机会" },
+        { timeout: 5_000 },
+      ),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
   });
 });
 
