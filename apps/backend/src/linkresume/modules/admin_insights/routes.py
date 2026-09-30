@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.modules.admin_insights import agent, content, llm, overview
+from linkresume.modules.admin_insights import agent, content, funnel, llm, overview
 from linkresume.modules.admin_insights.window import resolve_window, utcnow
 from linkresume.modules.identity.dependencies import get_current_admin, get_settings
 from linkresume.modules.identity.models import User
@@ -78,6 +78,16 @@ def get_agent(
     _admin: User = Depends(get_current_admin),
 ) -> dict:
     return agent.agent_stats(db, resolve_window(from_at, to_at, default=timedelta(days=7)))
+
+
+@router.get("/funnel")
+def get_funnel(
+    from_at: datetime | None = Query(default=None, alias="from"),
+    to_at: datetime | None = Query(default=None, alias="to"),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_current_admin),
+) -> dict:
+    return funnel.funnel(db, resolve_window(from_at, to_at, default=timedelta(days=30)))
 
 
 @router.get("/log-heatmap")

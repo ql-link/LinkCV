@@ -66,6 +66,8 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 
 旧 `llm_model_configs`、`llm_capability_bindings`、`llm_model_validations` 和旧版 `llm_call_logs` 在 `0088` 中删除并重建。该迁移丢弃旧 LLM 治理和日志数据；Agent 会话及运行记录保留。目标环境迁移前必须核对 revision、旧表行数、运行中任务并备份。
 
+提案确认接口接受可选请求体 `{entry}`，只用于产品漏斗统计，不参与提案校验、重放或权限判断；非法取值在进入确认逻辑前由请求校验返回 422。
+
 ## 扩展边界
 
 `resume_tools.replace_editor_markdown` 在修改结构化字段的 `value` 时同步清除该字段的旧 `runs`，随后仍走 canonical 校验；字段样式模型见 [语义简历契约](../api/http-contracts.md#语义简历契约)。

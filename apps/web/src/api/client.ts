@@ -5,6 +5,8 @@ import type {
   TemplateDefinition,
 } from "./resumeContract";
 
+export type AgentProposalEntry = "assistant" | "editor";
+
 export type User = {
   id: string;
   email: string | null;
@@ -1525,10 +1527,11 @@ export const api = {
       `/api/agent/runs/${encodeURIComponent(runId)}/cancel`,
       { method: "POST" },
     ),
-  confirmAgentProposal: (proposalId: string) =>
+  /** `entry` only feeds the product funnel; omitting it is recorded as unknown. */
+  confirmAgentProposal: (proposalId: string, entry?: AgentProposalEntry) =>
     request<{ resume: ResumeRecord }>(
       `/api/agent/proposals/${encodeURIComponent(proposalId)}/confirm`,
-      { method: "POST" },
+      entry ? { method: "POST", body: { entry } } : { method: "POST" },
     ),
   rejectAgentProposal: (proposalId: string) =>
     request<{ proposal: AgentProposal }>(

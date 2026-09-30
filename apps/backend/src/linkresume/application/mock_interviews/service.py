@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkresume.application.mock_interviews import prompts, rubric, voice_metrics
+from linkresume.modules.product_events import service as product_events
 from linkresume.application.mock_interviews.outputs import (
     BackgroundAnalysis,
     ClaimExtraction,
@@ -1283,6 +1284,7 @@ class MockInterviewRunner:
         interview.output_tokens += usage.output_tokens
         _set_slot(interview)
         interview.lock_version += 1
+        product_events.mock_interview_completed(db, interview.user_id, interview.id, interview.answer_mode)
         db.commit()
 
 

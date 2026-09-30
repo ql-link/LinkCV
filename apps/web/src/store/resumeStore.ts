@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
+  AgentProposalEntry,
   ApiRequestError,
   ImportWarning,
   ResumeRecord,
@@ -123,7 +124,7 @@ type ResumeState = {
   deleteResume: (id: string) => Promise<void>;
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
-  confirmResumeProposal: (proposalId: string, resumeId: string) => Promise<ResumeRecord>;
+  confirmResumeProposal: (proposalId: string, resumeId: string, entry?: AgentProposalEntry) => Promise<ResumeRecord>;
   goHome: () => void;
   dismissImportWarnings: (resumeId: string) => void;
   setTitle: (title: string) => void;
@@ -752,7 +753,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     await queuedSave;
   },
 
-  confirmResumeProposal: async (proposalId, resumeId) => {
+  confirmResumeProposal: async (proposalId, resumeId, entry) => {
     if (get().proposalApplyingResumeId || get().versionOperationPending) {
       throw new ApiRequestError(409, "RESUME_WRITE_PENDING");
     }
@@ -769,7 +770,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       const confirmation = saveQueue.then(async () => {
         let resume: ResumeRecord;
         try {
-          ({ resume } = await api.confirmAgentProposal(proposalId));
+          ({ resume } = await api.confirmAgentProposal(proposalId, entry));
         } catch (error) {
           if (error instanceof ApiRequestError && error.status < 500) throw error;
           // A lost response is not proof of rollback. Reconcile the persisted
