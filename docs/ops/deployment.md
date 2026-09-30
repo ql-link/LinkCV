@@ -98,7 +98,7 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 `.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。业务需求从最新 `origin/master` 创建独立业务分支，完成后向 `dev` 提 PR。本地和 CI 复用同一质量入口，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
 
-CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。Quality 使用一次性 MySQL 8.4 服务，在完整 `npm run check` 前分别验证 `0081 → 0082` 的面试素材迁移与 `0083 → 0084` 的当前简历关联迁移；该数据库只包含虚构测试数据，不连接 Development 或 Production。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
+CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。MySQL 迁移校验拆为独立的 `migrations` job，使用一次性 MySQL 8.4 服务：PR 只有改动迁移目录、迁移测试、ORM `models.py`、`migration_sql.py`、`alembic.ini`、`uv.lock` 或该 workflow 时才运行，推送到 `dev`、`master` 时总是运行。它从空库执行两次 `alembic upgrade head` 验证完整链路与幂等，并按本次新增 revision 编号运行 `test_mysql_migrations.py` 中同名测试；该数据库只包含虚构测试数据，不连接 Development 或 Production。主 `check` job 不再启动 MySQL。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
 
 ## 恢复与应用回退
 

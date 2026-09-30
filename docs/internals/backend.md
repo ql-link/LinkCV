@@ -251,7 +251,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 另以一次性 MySQL 8.4 服务固定验证 `0081 → 0082`。
+- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 的 `migrations` job 在迁移相关改动的 PR 和共享分支 push 上以一次性 MySQL 8.4 服务从空库升级到 head，并运行新增 revision 的同名测试。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 
