@@ -24,7 +24,7 @@
 | `src/linkresume/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新，以及连同求职进程聚合的永久删除 |
 | `src/linkresume/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkresume/application/mock_interviews/` | 模拟面试状态机、后台准备与评估任务、面试官回合、评分规则、资料内存检索、语音识别会话、语音表现与识别稿修正 |
-| `src/linkresume/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
+| `src/linkresume/integrations/` | LinkParse PDF/DOCX Adapter、LinkRag 应用 API 客户端、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
 | `src/linkresume/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
 | `src/linkresume/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
@@ -50,7 +50,9 @@
 
 本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列；`0084` 扩展当前简历与求职进程的关联；`0085` 为模板增加多选风格、场景及风格审核状态，并按稳定 key 给当时的 85 套启用模板写入初版分类；`0086` 增加模板展示排序值；`0087` 在没有人工排序值时按原有 ID 顺序填入 10、20、30……，已有人工排序值的环境整体跳过回填。当前迁移链由 `0087` 进入已在 Dev 执行的历史 `0088`，再进入 `0089` 和 `0090`，删除资料替换、对象清理、面试素材、简历历史表及旧外键；`0091` 重建 LLM 治理与调用日志，保留 Agent 会话和运行并增加模型线路快照字段；`0092` 将上游调用目标改为区分大小写；`0093` 在确认历史 `llm_providers` 与 `llm_provider_models` 均为空后移除它们。`0094` 新增应用内公告 `announcements` 与用户已读时间点 `announcement_read_cursors` 两张空表。`0095` 新增 `mock_interviews` 与 `mock_interview_questions`，以可空 `active_user_id` 唯一键保证每个用户最多一场进行中的模拟面试，来源简历、岗位和求职记录外键删除时置空。`0096` 为模拟面试增加作答方式、语音快照、热词表、整场修正与录音删除时间，以及每条回答的作答来源、录音 key、原始识别稿、分词时间戳、修正稿与修正记录、识别稿状态、手动修改与重新评估次数和历史评估。`0097` 为 `llm_models` 增加 `user_selectable`，存量模型默认可选。仓库 head 为 `0097`；目标环境的实际 revision 必须单独查询。
 
-`0098` 接在 `0097` 之后新增 `product_events` 产品漏斗事件表，用户删除时级联删除；合入后它是仓库 head。
+`0098` 接在 `0097` 之后新增 `product_events` 产品漏斗事件表，用户删除时级联删除。
+
+`0099` 新增 `user_dataset_rag_sync` 空表，记录每份资料在 LinkRag 中的文件 ID、已同步正文修订和同步状态（`pending/parsing/ready/failed`），`dataset_id` 唯一且刻意不建外键，资料删除后记录仍保留以驱动 LinkRag 侧删除；同时为 `mock_interviews` 增加默认 `false` 的 `materials_in_questions`。两者都不回填数据，存量资料由 Worker 对账逐批补传。revision 为 forward-only，合入后它是仓库 head。
 
 迁移 `0077` 停用废弃的「经典单栏」(`classic-cn`)、「现代双栏」(`modern-two-column-cn`) 和「紧凑技术型」(`compact-tech-cn`)，默认启用目录为 69 套。只修改这三个稳定 key 的启用状态，保留模板记录、已有简历及历史版本；普通目录、创建和切换入口沿用启用校验。重复执行不影响其他模板；如需恢复，通过管理端重新启用或新增向前迁移，不改写历史迁移。
 
@@ -215,6 +217,14 @@ Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定�
 HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkResume 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
+
+## LinkRag 资料索引
+
+LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/apps/*` 服务端 API，以 `Authorization: Bearer <client_id>.<secret>` 和 `X-App-User-Id: <users.id>` 代表用户操作；LinkRag 把每个 LinkResume 用户映射为独立影子用户，数据按该用户隔离。`LINKRAG_ENABLED` 默认开启；凭证缺失时 FastAPI 与 Worker 照常启动，记录 `LINKRAG_NOT_CONFIGURED` 告警并不构建客户端，召回全部回退本地匹配，配置凭证后重启即切换到 LinkRag。显式设为 `false` 时同样不产生任何出站请求。
+
+- **同步**：Worker 进程与消息消费并列运行 `workers/rag_sync_worker.py`，每 `LINKRAG_SYNC_INTERVAL_SECONDS` 在 Redis 锁 `linkresume:linkrag-sync:lock` 下执行一轮 `services/rag_sync_service.py` 对账：为已解析成功的文档资料建立记录，上传 LinkResume 保存的当前 Markdown 正文（去除本地图片引用，文件名 `<dataset_id>.md`），轮询解析，并在资料删除或正文修订变化时先删 LinkRag 旧文件再上传新正文。上传、替换、删除接口本身不调用 LinkRag，行为和失败语义不变。数据库写入均为短事务并以原状态、修订和文件 ID 做条件更新，HTTP 调用不持有事务。失败按指数退避（最长 60 分钟）重试，达到 `LINKRAG_SYNC_MAX_ATTEMPTS` 后标记 `failed`；`scripts/release/sync_datasets_to_linkrag.py [--rounds N] [--reset-failed]` 可手动加速补传或重排失败记录。
+- **召回**：FastAPI 在 `app.state.linkrag_recall` 持有同步客户端（超时 `LINKRAG_RECALL_TIMEOUT_SECONDS`）。`recall_dataset_snippets` 只对"调用方范围 ∩ `ready` 且已同步修订等于当前修订"的资料请求 LinkRag，并按 LinkResume 自己的记录复验每条命中的归属与修订；未就绪资料继续用本地匹配，任何 LinkRag 错误都整体回退本地匹配。
+- **安全**：凭证只在 FastAPI 与 Worker 环境中，不下发 Pi 或前端；日志只记录方法、状态码和稳定错误码，不记录凭证、正文或查询原文。外发内容仅为资料正文副本、`dataset:<id>:<revision>` 引用和查询文本。
 
 ## 可观测性与业务审计
 

@@ -35,11 +35,14 @@ from linkresume.application.mock_interviews.outputs import (
     SignalJudgement,
 )
 from linkresume.application.mock_interviews.retrieval import (
+    SNIPPET_CHARS,
+    EvidenceSnippet,
     MaterialDocument,
     MaterialRetriever,
 )
 from linkresume.application.resumes.service import parse_persisted_resume_snapshot
 from linkresume.core.database import utc_now
+from linkresume.integrations.linkrag_client import LinkRagError
 from linkresume.modules.agent.resume_tools import BLOCK_MARKER_PATTERN, editor_markdown
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.interviews.models import JobApplication, JobApplicationStage
@@ -54,6 +57,7 @@ from linkresume.modules.mock_interviews.models import (
 )
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 from linkresume.services.dataset_content_service import content_key, read_markdown, source_version
+from linkresume.services.rag_sync_service import recall_dataset_snippets
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +122,7 @@ class StartRequest:
     language: str
     material_ids: list[int]
     answer_mode: str = "text"
+    materials_in_questions: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +296,7 @@ def build_interview(db: Session, user_id: int, request: StartRequest) -> MockInt
         language=request.language,
         answer_mode=request.answer_mode,
         material_refs_json=_material_refs(db, user_id, request.material_ids),
+        materials_in_questions=bool(request.materials_in_questions and request.material_ids),
         status="preparing",
         task_lease_until=utc_now() + TASK_LEASE,
         task_token=new_task_token(),
@@ -631,10 +637,12 @@ class MockInterviewRunner:
         session_factory: sessionmaker[Session],
         llm: LLMService,
         storage: Any,
+        rag: Any | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._llm = llm
         self._storage = storage
+        self._rag = rag
         self._tasks: set[asyncio.Task[None]] = set()
 
     def spawn(self, coroutine) -> None:
@@ -718,10 +726,12 @@ class MockInterviewRunner:
         if reused_analysis is not None:
             analysis = reused_analysis
         else:
-            materials = await self._db(
-                self._with_db, lambda db: load_materials(db, self._storage, interview)
-            )
-            snippets = _analysis_snippets(materials.retriever, interview)
+            snippets: list[dict[str, object]] = []
+            if interview.materials_in_questions:
+                materials = await self._db(
+                    self._with_db, lambda db: load_materials(db, self._storage, interview)
+                )
+                snippets = _analysis_snippets(materials.retriever, interview)
             await self._heartbeat(interview_id, "preparing", token)
             analysis_value = await _structured(
                 self._llm,
@@ -777,6 +787,7 @@ class MockInterviewRunner:
                     and previous.resume_markdown_snapshot == interview.resume_markdown_snapshot
                     and previous.job_snapshot_json == interview.job_snapshot_json
                     and previous.material_refs_json == interview.material_refs_json
+                    and previous.materials_in_questions == interview.materials_in_questions
                 ):
                     reused = dict(previous.analysis_json)
         db.expunge(interview)
@@ -1217,8 +1228,9 @@ class MockInterviewRunner:
             usage,
         )
         items: list[dict[str, object]] = []
+        rag_state = {"available": self._rag is not None}
         for claim in extraction.claims[:MAX_FACT_CLAIMS]:
-            snippets = materials.retriever.search(claim.text, limit=3)
+            snippets = await self._evidence(interview, materials.retriever, claim.text, rag_state)
             if not snippets:
                 items.append({"claim": claim.text, "kind": claim.kind, "question_sequence_no": claim.question_sequence_no, "verdict": "not_found", "quote": "", "source": None, "note": ""})
                 continue
@@ -1254,6 +1266,58 @@ class MockInterviewRunner:
                 }
             )
         return {"status": "completed", "items": items, **base}
+
+    async def _evidence(
+        self,
+        interview: MockInterview,
+        retriever: MaterialRetriever,
+        claim: str,
+        rag_state: dict[str, bool],
+    ) -> list[EvidenceSnippet]:
+        """Top 3 snippets from the selected materials for one claim.
+
+        Materials indexed in LinkRag are recalled semantically; the rest keep
+        the in-memory retriever. The first RAG failure switches the whole
+        fact check to the in-memory retriever so results stay consistent.
+        """
+        selected = [int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []]
+        rag_snippets: list[EvidenceSnippet] = []
+        covered: set[int] = set()
+        if rag_state["available"] and selected:
+            try:
+                found, covered = await self._db(
+                    self._with_db,
+                    lambda db: recall_dataset_snippets(
+                        db,
+                        self._rag,
+                        user_id=interview.user_id,
+                        query=claim,
+                        dataset_ids=selected,
+                        limit=3,
+                    ),
+                )
+            except LinkRagError:
+                rag_state["available"] = False
+                found, covered = [], set()
+            rag_snippets = [
+                EvidenceSnippet(
+                    dataset_id=str(item.dataset_id),
+                    title=item.title,
+                    version=item.version,
+                    # RAG chunks have no stable local position.
+                    position=-1,
+                    # Keep the verified quote inside what the model is shown.
+                    text=item.text[:SNIPPET_CHARS],
+                    score=round(item.score, 4),
+                )
+                for item in found
+            ]
+        local = [
+            snippet
+            for snippet in retriever.search(claim, limit=3 + len(covered) * 3)
+            if int(snippet.dataset_id) not in covered
+        ]
+        return (rag_snippets + local)[:3]
 
     def _store_report(
         self, db: Session, interview_id: int, token: str, report, evaluations, usage: _Usage
@@ -1438,6 +1502,7 @@ def repeat_request(interview: MockInterview) -> StartRequest:
         follow_up_enabled=interview.follow_up_enabled,
         language=interview.language,
         material_ids=[int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []],
+        materials_in_questions=interview.materials_in_questions,
         answer_mode=interview.answer_mode,
     )
 
