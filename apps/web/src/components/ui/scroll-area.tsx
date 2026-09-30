@@ -20,7 +20,7 @@ const ScrollArea = React.forwardRef<
     >
       {children}
     </ScrollAreaPrimitive.Viewport>
-    <ScrollBar />
+    {/* 全站不显示滚动条（与原生滚动条一致，见 styles.css），区域照常可以滚动 */}
     <ScrollAreaPrimitive.Corner />
   </ScrollAreaPrimitive.Root>
 ))

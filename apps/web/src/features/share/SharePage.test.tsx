@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, type PublicSharePayload } from "../../api/client";
+import { api, ApiRequestError, type PublicSharePayload } from "../../api/client";
 import {
   defaultCanonicalDocument,
   defaultCanonicalPresentation,
@@ -105,16 +105,24 @@ describe("SharePage", () => {
 
     await waitFor(() => expect(screen.getByLabelText("linkresume")).toBeInTheDocument());
     expect(screen.getByRole("main")).toHaveAttribute("data-ui-theme", "light");
-    expect(screen.getByLabelText("linkresume").querySelector(".ui-brand-wordmark")).toBeInTheDocument();
-    const shareNote = screen.getByText("由 于晏 分享");
-    expect(shareNote).toBeInTheDocument();
-    expect(shareNote.querySelector("svg")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "访问 LinkResume" })).toHaveAttribute("href", "/");
+    // 品牌栏：品牌链接回到公开首页；说明里是分享者昵称 + 有效期（有效期为示例数据，旁边贴「需后端」）
+    expect(screen.getByRole("link", { name: "linkresume" })).toHaveAttribute("href", "/");
+    expect(screen.getByText(/^公开分享 · 有效期至/)).toBeInTheDocument();
+    // 简历没填 headline：资料卡副标题显示分享者昵称
+    expect(screen.getByText("由 于晏 分享")).toBeInTheDocument();
+    expect(screen.getAllByText("需后端").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByRole("button", { name: "打印" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载 PDF" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();
+    // 已删除的入口不再出现
+    expect(screen.queryByText("举报")).not.toBeInTheDocument();
+    expect(screen.queryByText("在看机会")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /免费试试/ })).toHaveAttribute("href", "/");
     expect(screen.queryByText("由 linkresume 生成")).not.toBeInTheDocument();
     // 默认简历内容含姓名「张三」；仅渲染正文，不包含私密字段入口
-    expect(screen.getByText("张三")).toBeInTheDocument();
+    // 右栏资料卡的标题也是简历姓名
+    expect(screen.getByRole("heading", { level: 2, name: "张三" })).toBeInTheDocument();
+    expect(screen.getByLabelText("分享简历内容")).toHaveTextContent("张三");
     expect(screen.getByRole("img", { name: "虚构头像" })).toHaveAttribute(
       "src",
       "data:image/png;base64,ZmFrZQ==",
@@ -167,17 +175,50 @@ describe("SharePage", () => {
     mockedFetch.mockResolvedValue({ ...publicPayload, allow_download: false });
     render(<SharePage token="token_123" />);
 
-    await waitFor(() => expect(screen.getByText("张三")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText("分享简历内容")).toHaveTextContent("张三"));
     expect(screen.queryByRole("button", { name: "下载 PDF" })).not.toBeInTheDocument();
+    // ② 不允许下载：只保留复制链接
+    expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();
     expect(mockedDownload).not.toHaveBeenCalled();
   });
 
-  it("公开读取失败时统一显示失效页", async () => {
-    mockedFetch.mockRejectedValue(new Error("SHARE_LINK_UNAVAILABLE"));
+  it("统一 404 显示失效页，不能推测私密或删除原因", async () => {
+    mockedFetch.mockRejectedValue(new ApiRequestError(404, "SHARE_LINK_UNAVAILABLE"));
     render(<SharePage token="token_123" />);
 
     await waitFor(() => expect(screen.getByText("这条分享链接已失效")).toBeInTheDocument());
     expect(screen.getByRole("main")).toHaveAttribute("data-ui-theme", "light");
+    expect(screen.getByText("公开分享 · 链接不可用")).toBeInTheDocument();
     expect(screen.queryByText("张三")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "下载 PDF" })).not.toBeInTheDocument();
+  });
+
+  it("明确拒绝访问的独立 fixture 显示私密态和返回当前分享的登录入口", async () => {
+    mockedFetch.mockRejectedValue(new ApiRequestError(403, "FORBIDDEN"));
+    render(<SharePage token="private-fixture" />);
+    expect(await screen.findByText("这份简历没有公开")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "登录" })).toHaveAttribute("href", "/login?next=%2Fshare%2Fprivate-fixture");
+    expect(screen.queryByText("张三")).not.toBeInTheDocument();
+  });
+
+  it("服务或网络失败不宣称链接失效，重新加载可以恢复", async () => {
+    mockedFetch.mockRejectedValueOnce(new ApiRequestError(503, "SERVICE_UNAVAILABLE")).mockResolvedValueOnce(publicPayload);
+    render(<SharePage token="retry-fixture" />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("分享内容暂时无法加载");
+    expect(screen.queryByText("这条分享链接已失效")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(await screen.findByLabelText("分享简历内容")).toHaveTextContent("张三");
+  });
+
+  it("复制链接后给出提示", async () => {
+    mockedFetch.mockResolvedValue(publicPayload);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<SharePage token="token_123" />);
+
+    (await screen.findByRole("button", { name: "复制链接" })).click();
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href));
+    expect(await screen.findByText("链接已复制")).toBeInTheDocument();
   });
 });

@@ -57,8 +57,8 @@ describe("JobDetailPage", () => {
 
     render(<JobDetailPage jobId={activeJob.id} />);
 
-    expect(await screen.findByRole("heading", { name: "岗位详情", level: 1 })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: activeJob.job_title, level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: activeJob.job_title, level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: activeJob.job_title, level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "返回求职记录" })).toHaveAttribute("href", "/career/applications");
     expect(await screen.findByRole("button", { name: "开始求职" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "编辑" })).not.toBeInTheDocument();
@@ -132,8 +132,8 @@ describe("JobDetailPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
     expect(window.location.pathname).toBe(`/career/jobs/${activeJob.id}`);
     const titleInput = screen.getByLabelText("职位名称") as HTMLInputElement;
-    expect(screen.queryByText(/Enter 保存/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Esc 取消/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Enter 保存/)).toBeInTheDocument();
+    expect(screen.getByText(/Esc 取消/)).toBeInTheDocument();
     expect(titleInput).toHaveFocus();
     expect(titleInput.selectionStart).toBe(activeJob.job_title.length);
     fireEvent.change(titleInput, { target: { value: updatedJob.job_title } });
@@ -145,7 +145,7 @@ describe("JobDetailPage", () => {
       base_lock_version: activeJob.lock_version,
     }));
     expect(update.mock.calls[0]?.[1]).not.toHaveProperty("source_url");
-    expect(await screen.findByRole("heading", { name: updatedJob.job_title, level: 2 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: updatedJob.job_title, level: 1 })).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/career/jobs/${activeJob.id}`);
   });
 
@@ -180,7 +180,7 @@ describe("JobDetailPage", () => {
     fireEvent.change(titleInput, { target: { value: "尚未保存的标题" } });
     fireEvent.keyDown(titleInput, { key: "Escape" });
 
-    expect(screen.getByRole("heading", { name: activeJob.job_title, level: 2 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: activeJob.job_title, level: 1 })).toBeInTheDocument();
     expect(screen.queryByDisplayValue("尚未保存的标题")).not.toBeInTheDocument();
     expect(update).not.toHaveBeenCalled();
   });
@@ -301,7 +301,7 @@ describe("JobDetailPage", () => {
       salary_months_per_year: 13,
       base_lock_version: activeJob.lock_version,
     })));
-    expect(await screen.findByRole("button", { name: "编辑结构化薪资" })).toHaveTextContent("150.00");
+    expect(await screen.findByRole("button", { name: "编辑结构化薪资" })).toHaveTextContent(activeJob.salary_text!);
   });
 
   it("结构化薪资组内切换字段不退出，点击组外才取消编辑", async () => {
@@ -328,13 +328,84 @@ describe("JobDetailPage", () => {
     render(<JobDetailPage jobId={activeJob.id} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除" }));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("求职进程、阶段、排期和复盘都将无法恢复");
-    expect(screen.getByRole("alertdialog")).toHaveTextContent("关联素材的原文件仍保留在资料库");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("求职进程、阶段和复盘会一起删除");
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("关联资料的原文件仍保留在资料库");
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
 
     await waitFor(() => expect(remove).toHaveBeenCalledWith(activeJob.id));
     expect(screen.getByRole("alert")).toHaveTextContent("岗位服务暂时不可用");
     expect(screen.getByRole("alert")).toHaveClass("ui-feedback-notice", "is-floating");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("岗位详情 V3 状态", () => {
+  const linkedApplication = {
+    id: "application-1", job_description_id: activeJob.id, resume_id: "resume-1", resume_title_snapshot: "后端工程师 · 通用版",
+    status: "active", lifecycle_status: "active", archived_at: null, current_stage_label: "三面", lock_version: 4,
+  } as JobApplicationSummary;
+
+  it("有关联简历与 JD 时展示有标记的匹配示例、阶段和优化入口", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [linkedApplication], next_cursor: null });
+    render(<JobDetailPage jobId={activeJob.id} />);
+    expect(await screen.findByText("86")).toBeInTheDocument();
+    expect(screen.getAllByText("需后端")).toHaveLength(2);
+    expect(screen.getByText("三面")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "按 JD 优化关联简历" }));
+    expect(window.location.pathname).toBe("/resumes/resume-1/edit");
+  });
+
+  it("无 JD 时提供粘贴入口，匹配示例变淡且不可优化", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: { ...activeJob, description: "" } });
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [linkedApplication], next_cursor: null });
+    render(<JobDetailPage jobId={activeJob.id} />);
+    expect(await screen.findByText("岗位描述暂未记录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "按 JD 优化关联简历" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "粘贴岗位文字" }));
+    expect(screen.getByLabelText("职位描述")).toHaveFocus();
+  });
+
+  it("无关联简历时通过已有求职进程接口保存本人简历", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [{ ...linkedApplication, resume_id: null }], next_cursor: null });
+    vi.spyOn(api, "listResumes").mockResolvedValue({ resumes: [{ id: "resume-2", title: "软件工程师" } as Awaited<ReturnType<typeof api.listResumes>>["resumes"][number]] });
+    const update = vi.spyOn(api, "updateJobApplication").mockResolvedValue({ application: { ...linkedApplication, resume_id: "resume-2", lock_version: 5 } });
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "选择关联简历" }));
+    fireEvent.click(await screen.findByRole("button", { name: "软件工程师" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("application-1", { resume_id: "resume-2", base_lock_version: 4 }));
+    expect(await screen.findByText("基于「软件工程师」")).toBeInTheDocument();
+  });
+
+  it("薪资原文与结构化薪资一起保存且不自动互相改写", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    const update = vi.spyOn(api, "updateJobDescription").mockResolvedValue({ job_description: { ...activeJob, salary_text: "面议", salary_min: "150" } });
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑结构化薪资" }));
+    fireEvent.change(screen.getByLabelText("薪资"), { target: { value: "面议" } });
+    fireEvent.change(screen.getByLabelText("最低薪资"), { target: { value: "150" } });
+    fireEvent.keyDown(screen.getByLabelText("薪资"), { key: "Enter" });
+    await waitFor(() => expect(update).toHaveBeenCalledWith(activeJob.id, expect.objectContaining({ salary_text: "面议", salary_min: "150" })));
+    expect(await screen.findByRole("button", { name: "编辑结构化薪资" })).toHaveTextContent("面议");
+  });
+
+  it("保存冲突保留编辑内容并展示原有中文错误", async () => {
+    const { ApiRequestError } = await import("../../api/client");
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    vi.spyOn(api, "updateJobDescription").mockRejectedValue(new ApiRequestError(409, "JD_EDIT_CONFLICT"));
+    render(<JobDetailPage jobId={activeJob.id} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑职位名称" }));
+    fireEvent.change(screen.getByLabelText("职位名称"), { target: { value: "新岗位名称" } });
+    fireEvent.keyDown(screen.getByLabelText("职位名称"), { key: "Enter" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("岗位内容已经变化，请重新打开后再保存。");
+    expect(screen.getByLabelText("职位名称")).toHaveValue("新岗位名称");
+  });
+
+  it("不存在的岗位使用应用内 404", async () => {
+    const { ApiRequestError } = await import("../../api/client");
+    vi.spyOn(api, "getJobDescription").mockRejectedValue(new ApiRequestError(404, "JD_NOT_FOUND"));
+    render(<JobDetailPage jobId={activeJob.id} />);
+    expect(await screen.findByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
   });
 });

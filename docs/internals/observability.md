@@ -15,6 +15,8 @@ LinkResume 可观测性子系统负责请求上下文、结构化系统日志、
 - `routes.py`：受限客户端事件写入与管理员日志读取。
 - Web `ObservabilityBoundary.tsx`：捕获客户端异常；`AdminObservabilityPanels.tsx`：系统和审计日志界面。
 
+管理端日志详情弹窗复用 Web 公共淡入、缩放和退出动效，退出时立即停止键盘监听并禁用交互，动画结束后移除；系统减少动态效果时仅保留短淡入淡出。具体动效规则见 [Web 视觉与交互基线](web.md#视觉与交互基线)。
+
 ## 数据流
 
 中间件建立请求上下文，身份依赖绑定 actor，业务路由在通过归属检查后绑定 target，响应完成时输出成功或受控失败事件。Promtail 采集容器 JSONL 并写入共享 Loki；管理端只经 FastAPI 使用固定字段、时间窗口和游标查询。

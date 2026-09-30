@@ -1,5 +1,6 @@
+import { MotionPresence, useExitPresence } from "@/components/ui/motion";
 import { CheckCircle2, PackageOpen, RefreshCw, RotateCcw, Trash2, Upload } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { FileUpload, PageLoading, type FileUploadHandle } from "@/components/ui";
 import {
@@ -181,16 +182,19 @@ export function PluginReleasePanel() {
         {message && <p className="plugin-admin-message" role="status">{message}</p>}
       </section>
 
-      {confirmingUpload && file && <ConfirmDialog title={isUpdating ? "确认更新插件？" : "确认上传插件？"} onCancel={() => setConfirmingUpload(false)} confirmLabel={busy === "publish" ? "正在处理…" : isUpdating ? "确认更新" : "确认上传"} disabled={busy !== null} onConfirm={() => void publish()}><p>后端会校验 <strong>{file.name}</strong>。成功后立即上架该版本，并删除旧版本安装包。</p></ConfirmDialog>}
-      {confirmingUnpublish && release && <ConfirmDialog title="确认下架插件？" onCancel={() => setConfirmingUnpublish(false)} confirmLabel={busy === "unpublish" ? "正在下架…" : "确认下架"} disabled={busy !== null} onConfirm={() => void unpublish()} danger><p>用户将无法继续下载，但安装包仍会保留，之后可以直接重新上架。</p></ConfirmDialog>}
-      {confirmingDelete && release && <ConfirmDialog title="永久删除插件？" onCancel={() => setConfirmingDelete(false)} confirmLabel={busy === "delete" ? "正在删除…" : "永久删除"} disabled={busy !== null} onConfirm={() => void deleteRelease()} danger><p>将物理删除 v{release.version} 安装包和发布记录。此操作不可恢复，删除后需要重新上传。</p></ConfirmDialog>}
+      <MotionPresence>{confirmingUpload && file && <ConfirmDialog title={isUpdating ? "确认更新插件？" : "确认上传插件？"} onCancel={() => setConfirmingUpload(false)} confirmLabel={busy === "publish" ? "正在处理…" : isUpdating ? "确认更新" : "确认上传"} disabled={busy !== null} onConfirm={() => void publish()}><p>后端会校验 <strong>{file.name}</strong>。成功后立即上架该版本，并删除旧版本安装包。</p></ConfirmDialog>}</MotionPresence>
+      <MotionPresence>{confirmingUnpublish && release && <ConfirmDialog title="确认下架插件？" onCancel={() => setConfirmingUnpublish(false)} confirmLabel={busy === "unpublish" ? "正在下架…" : "确认下架"} disabled={busy !== null} onConfirm={() => void unpublish()} danger><p>用户将无法继续下载，但安装包仍会保留，之后可以直接重新上架。</p></ConfirmDialog>}</MotionPresence>
+      <MotionPresence>{confirmingDelete && release && <ConfirmDialog title="永久删除插件？" onCancel={() => setConfirmingDelete(false)} confirmLabel={busy === "delete" ? "正在删除…" : "永久删除"} disabled={busy !== null} onConfirm={() => void deleteRelease()} danger><p>将物理删除 v{release.version} 安装包和发布记录。此操作不可恢复，删除后需要重新上传。</p></ConfirmDialog>}</MotionPresence>
     </>
   );
 }
 
 function ConfirmDialog({ title, children, confirmLabel, disabled, danger = false, onCancel, onConfirm }: { title: string; children: ReactNode; confirmLabel: string; disabled: boolean; danger?: boolean; onCancel: () => void; onConfirm: () => void }) {
-  const titleId = "plugin-confirm-dialog-title";
-  return <div className="plugin-admin-dialog-backdrop"><section className="plugin-admin-dialog" role="alertdialog" aria-modal="true" aria-labelledby={titleId}><h2 id={titleId}>{title}</h2>{children}<div><button className="admin-secondary-button" disabled={disabled} onClick={onCancel}>取消</button><button className={danger ? "admin-danger-button" : "admin-primary-button"} disabled={disabled} onClick={onConfirm}>{confirmLabel}</button></div></section></div>;
+  const titleId = useId();
+  const ref = useRef<HTMLElement>(null);
+  const present = useExitPresence(ref);
+  const state = present ? "open" : "closed";
+  return <div className="plugin-admin-dialog-backdrop ui-motion-overlay" data-state={state} inert={!present || undefined} aria-hidden={!present || undefined}><section ref={ref} className="plugin-admin-dialog ui-motion-dialog" data-state={state} role="alertdialog" aria-modal="true" aria-labelledby={titleId}><h2 id={titleId}>{title}</h2>{children}<div><button className="admin-secondary-button" disabled={disabled} onClick={onCancel}>取消</button><button className={danger ? "admin-danger-button" : "admin-primary-button"} disabled={disabled} onClick={onConfirm}>{confirmLabel}</button></div></section></div>;
 }
 
 function publishErrorMessage(error: unknown): string {

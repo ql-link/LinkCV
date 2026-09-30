@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { MotionPresence, MotionSurface, useExitPresence } from "@/components/ui/motion";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Activity,
@@ -56,13 +57,16 @@ function LogDetailDialog({
   kind: "system" | "audit";
   onClose: () => void;
 }) {
+  const panelRef = useRef<HTMLElement>(null);
+  const present = useExitPresence(panelRef);
   useEffect(() => {
+    if (!present) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
+  }, [onClose, present]);
 
   const fields: Array<[string, string | number | null]> = kind === "system"
     ? [
@@ -94,14 +98,19 @@ function LogDetailDialog({
 
   return createPortal(
     <div
-      className="admin-shell llm-modal-layer"
+      className="admin-shell llm-modal-layer ui-motion-overlay"
+      data-state={present ? "open" : "closed"}
+      inert={!present || undefined}
+      aria-hidden={!present || undefined}
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
     >
       <section
-        className="llm-modal observability-log-dialog"
+        ref={panelRef}
+        className="llm-modal observability-log-dialog ui-motion-dialog"
+        data-state={present ? "open" : "closed"}
         role="dialog"
         aria-modal="true"
         aria-labelledby="observability-log-detail-title"
@@ -215,7 +224,7 @@ function LogTable({ items, kind }: { items: LogItem[]; kind: "system" | "audit" 
           ))}
         </tbody>
       </table>
-      {selected && <LogDetailDialog item={selected} kind={kind} onClose={() => setSelected(null)} />}
+      <MotionPresence>{selected && <LogDetailDialog item={selected} kind={kind} onClose={() => setSelected(null)} />}</MotionPresence>
     </div>
   );
 }
@@ -379,9 +388,9 @@ function QueryState({
           筛选
         </button>
       </div>
-      {filterOpen && (
-        <div className="drawer-layer" onClick={() => setFilterOpen(false)}>
-          <aside
+      <MotionPresence>{filterOpen && (
+        <MotionSurface as="div" variant="overlay" className="drawer-layer" onClick={() => setFilterOpen(false)}>
+          <MotionSurface as="aside" variant="drawer"
             className="admin-drawer log-filter-drawer"
             role="dialog"
             aria-modal="true"
@@ -455,9 +464,9 @@ function QueryState({
                 <button type="submit" disabled={loading}>{loading ? "查询中…" : "应用"}</button>
               </footer>
             </form>
-          </aside>
-        </div>
-      )}
+          </MotionSurface>
+        </MotionSurface>
+      )}</MotionPresence>
       {response?.partial && <div className="llm-inline-error" role="status">部分异常日志行已忽略（{response.droppedMalformed} 条）。</div>}
       <section className="admin-surface logs-surface">
         {loading && !response ? (

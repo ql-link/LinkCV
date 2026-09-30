@@ -1,3 +1,4 @@
+import { MotionPresence, MotionSurface } from "@/components/ui/motion";
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
@@ -212,14 +213,14 @@ export function AdminTemplatePanel({ notify }: { notify: (message: string) => vo
         ))}
       </div>
 
-      {preview?.data && preview.style && (
-        <div className="template-preview-backdrop" role="dialog" aria-modal="true" aria-label={`预览 ${preview.name}`}>
-          <div className="template-preview-dialog">
+      <MotionPresence>{preview?.data && preview.style && (
+        <MotionSurface as="div" variant="overlay" className="template-preview-backdrop" role="dialog" aria-modal="true" aria-label={`预览 ${preview.name}`}>
+          <MotionSurface as="div" variant="dialog" className="template-preview-dialog">
             <button type="button" aria-label="关闭预览" onClick={() => setPreview(null)}><X size={18} /></button>
             <ResumePreview data={preview.data} style={preview.style} layoutPlan={preview.layout_plan} mode="full" />
-          </div>
-        </div>
-      )}
+          </MotionSurface>
+        </MotionSurface>
+      )}</MotionPresence>
       </>
       )}
     </section>

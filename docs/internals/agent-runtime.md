@@ -12,7 +12,7 @@ Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operat
 
 Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `llm` 模块组成：`agent` 管理持久化会话、会话展示状态与提案，Pi 执行 agent loop，`llm` 管理模型选择、凭据、验证与计量。普通用户功能见 [AI 求职助手](../features/ai-assistant.md)，第三方 Pi 包边界见 [third_party/pi](third-party-pi.md)。
 
-Web 运行时的浅色页面背景由共享暖白 Token 提供；该视觉 Token 不进入 Agent、消息或模型调用契约。独立助手路由使用不含普通工作区顶部导航的全屏页面容器，并通过会话侧栏或窄屏工具栏中的品牌 Logo 回到简历列表；会话侧栏还能在右侧切换简历、模板、求职记录、面试排期和资料库内容。这些路由布局与嵌入式简历编辑器都只属于 Web 呈现，不改变 Agent 服务边界。
+Web 的共享侧栏、首页任务卡与右侧预览属于客户端呈现；预览中的简历继续复用保存和提案确认队列，模型选择与消息发送仍调用既有 Agent API。生成文档、截图预览和“保存到资料库（本地模拟）”不增加 Agent 或资料库协议，不能把页面内的模拟成功当成服务端持久化。具体尺寸和交互见 [AI 求职助手](../features/ai-assistant.md)。
 
 ## 组件入口
 

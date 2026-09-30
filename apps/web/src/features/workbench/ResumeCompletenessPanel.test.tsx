@@ -15,7 +15,7 @@ describe("ResumeCompletenessPanel", () => {
     expect(screen.getByText("姓名仍是系统示例内容。")).toBeInTheDocument();
     expect(screen.getByText("实时规则检查")).toBeInTheDocument();
     expect(screen.queryByText(/不使用 AI/u)).not.toBeInTheDocument();
-    expect(screen.getByLabelText("当前完整度 20 分").closest(".resume-completeness-score")).toHaveClass("is-low");
+    expect(screen.getByLabelText("当前完整度 20 分").closest(".wb3-check-score")).toHaveClass("is-low");
     expect(screen.getByText("完整度检查基础信息、结构及技能表达的具体程度，不代表岗位匹配度。")).toBeInTheDocument();
   });
 

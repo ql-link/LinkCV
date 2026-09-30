@@ -1,0 +1,33 @@
+.review-list-v3 .career-v3-head { margin-bottom: 28px; }
+.review-list-v3 h1 .v3-be-tag { vertical-align: middle; margin-left: 5px; }
+.rv-view { width: 150px; height: 32px; margin-top: 30px; }
+.rv-view button { width: 72px; }
+.rv-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.rv-toolbar > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.rv-toolbar button { border: 1px solid transparent; background: var(--v3-field); border-radius: 8px; padding: 6px 11px; color: var(--v3-sub); font-size: 12px; }
+.rv-toolbar button[aria-pressed=true] { background: white; border-color: var(--v3-dark); color: var(--v3-txt); }
+.rv-toolbar .rv-sort { background: transparent; padding-right: 0; }
+.rv-table { border-top: 1px solid var(--v3-line); }
+.rv-table-head, .rv-row { display: grid; grid-template-columns: minmax(0,420fr) minmax(0,100fr) minmax(0,280fr) 60px; text-align: left; align-items: center; gap: 0; }
+.rv-table-head { height: 41px; font-size: 11px; color: var(--v3-fnt); }
+.rv-table-head > :last-child { text-align: right; }
+.rv-row { width: 100%; min-height: 72px; border: 0; border-top: 1px solid var(--v3-line); background: transparent; color: var(--v3-txt); cursor: pointer; }
+.rv-row:last-child { border-bottom: 1px solid var(--v3-line); }
+.rv-row:hover { background: var(--v3-field); }
+.rv-info { display: flex; flex-direction: column; gap: 7px; padding: 13px 12px 13px 0; min-width: 0; }
+.rv-info strong { font-size: 13px; font-weight: 500; }
+.rv-info small { color: var(--v3-fnt); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-score { display: flex; align-items: center; gap: 11px; font-family: var(--v3-num); }
+.rv-score b { font-size: 16px; font-weight: 600; }
+.rv-score i { width: 44px; height: 4px; border-radius: 2px; background: var(--v3-line); overflow: hidden; }
+.rv-score i span { display: block; height: 100%; border-radius: inherit; }
+.rv-improvement { color: var(--v3-sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 15px; }
+.rv-time { display: flex; align-items: center; justify-content: flex-end; gap: 10px; font-family: var(--v3-num); font-size: 11px; color: var(--v3-fnt); }
+.rv-tip { display: flex; align-items: center; justify-content: space-between; margin-top: 28px; border-radius: 10px; background: var(--v3-field); padding: 17px; color: var(--v3-sub); font-size: 12px; }
+.rv-tip span, .rv-tip button { display: flex; align-items: center; gap: 10px; }
+.rv-tip button { background: transparent; border: 0; color: inherit; font-size: inherit; }
+.rv-empty { padding: 100px 0; text-align: center; color: var(--v3-fnt); }
+.rv-empty h2 { font-family: var(--v3-serif); color: var(--v3-txt); }
+.rv-empty p { margin: 12px 0 24px; }
+.rv-view { margin-top: 0; }
+.rv-row { padding: 0; }

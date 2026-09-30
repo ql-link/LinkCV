@@ -1,19 +1,6 @@
-import { useEffect, useState } from "react";
-import { FileText, FileUp, X } from "lucide-react";
+import { MotionPresence } from "@/components/ui/motion";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { api, type ResumeTemplate } from "../../api/client";
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  Button,
-  FeedbackNotice,
-  FileUpload,
-  TextField,
-} from "@/components/ui";
 import {
   formatImportFileSize,
   importErrorMessage,
@@ -21,22 +8,34 @@ import {
   validateImportTitle,
 } from "@/lib/resumeImport";
 import { useResumeStore } from "../../store/resumeStore";
+import { Dialog, Toast } from "../../v3/primitives";
+import { formatTag, ImportArt } from "./homeArt";
 import { selectImportTemplate } from "./importTemplate";
+import { useStableCallback } from "./useStableCallback";
+import "./home-v3.css";
 
 type ResumeImportDialogProps = {
   onClose: () => void;
   onAccepted: (filename: string) => void;
 };
 
+const ACCEPT = ".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+// 02.1b 导入简历（560 宽）：未选文件时是虚线拖入区；选好文件后换成单文件插图 + 文件卡；提交中文件卡下方出现进度
 export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogProps) {
   const importResume = useResumeStore((state) => state.importResume);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [importTemplate, setImportTemplate] = useState<ResumeTemplate | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [titleTouched, setTitleTouched] = useState(false);
   const [loadingTemplate, setLoadingTemplate] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState<{ message: string; key: number } | null>(null);
+
+  const close = useStableCallback(onClose);
+  const fail = (message: string) => setError({ message, key: Date.now() });
 
   useEffect(() => {
     let cancelled = false;
@@ -48,7 +47,7 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
       },
       () => {
         if (cancelled) return;
-        setError("导入所需的默认版式暂时无法加载，请稍后重试。");
+        fail("导入所需的默认版式暂时无法加载，请稍后重试。");
         setLoadingTemplate(false);
       },
     );
@@ -67,19 +66,27 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
     if (!titleTouched) setTitle(resumeTitleFromFilename(nextFile.name));
   };
 
+  const onDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    if (submitting) return;
+    const dropped = event.dataTransfer?.files?.[0];
+    if (dropped) pickFile(dropped);
+  };
+
   const submit = async () => {
     if (submitting) return;
     if (!file) {
-      setError("请先选择需要导入的文件。");
+      fail("请先选择需要导入的文件。");
       return;
     }
     const titleError = validateImportTitle(title, file.name);
     if (titleError) {
-      setError(titleError);
+      fail(titleError);
       return;
     }
     if (!importTemplate) {
-      setError("导入所需的默认版式暂时不可用，请稍后重试。");
+      fail("导入所需的默认版式暂时不可用，请稍后重试。");
       return;
     }
     setSubmitting(true);
@@ -89,62 +96,85 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
       onAccepted(title.trim());
       onClose();
     } catch (reason) {
-      setError(importErrorMessage(reason));
+      fail(importErrorMessage(reason));
       setSubmitting(false);
     }
   };
 
-  return (
-    <AlertDialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !submitting) onClose();
-      }}
-    >
-      <AlertDialogContent
-        className="home-import-dialog"
-        overlayClassName="bg-[var(--scrim)]"
-        aria-label="导入简历"
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>导入简历</AlertDialogTitle>
-          <AlertDialogDescription className="home-import-description">选择已有文件并确认名称，系统会在当前简历列表中开始解析。</AlertDialogDescription>
-        </AlertDialogHeader>
+  const format = file ? formatTag(file.name) : null;
 
-        <div className="home-import-fields">
-          <div className="home-import-file-field">
-            <span className="home-import-field-label">简历文件</span>
-            <FileUpload
+  return (
+    <Dialog width={560} label="导入简历" onClose={close} closable={!submitting} className="hv3-import">
+      <div className="v3-dialog-body">
+        <h2 className="v3-dialog-title">导入简历</h2>
+        <p className="v3-dialog-sub">AI 会把文件拆成可编辑的模块，之后可以随时修改。</p>
+
+        {!file ? (
+          <div
+            className={`hv3-dropzone${dragging ? " is-dragging" : ""}`}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              if (!submitting) setDragging(true);
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+            }}
+            onDrop={onDrop}
+          >
+            <span className="hv3-dropzone-art" aria-hidden="true"><ImportArt /></span>
+            <strong>拖入简历文件，或点击选择</strong>
+            <small>支持 Markdown、DOCX、PDF，最大 10 MB</small>
+            <input
+              ref={inputRef}
+              className="hv3-dropzone-input"
+              type="file"
               name="resume-file"
-              accept=".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              inputLabel="选择 Markdown、DOCX 或 PDF 文件"
-              supportingText="支持 Markdown、DOCX、PDF，最大 10 MB"
+              accept={ACCEPT}
+              aria-label="选择 Markdown、DOCX 或 PDF 文件"
               disabled={submitting}
-              file={file}
-              onFileSelect={(selected) => pickFile(selected ?? null)}
+              onClick={(event) => {
+                event.currentTarget.value = "";
+              }}
+              onChange={(event) => pickFile(event.currentTarget.files?.[0] ?? null)}
             />
-            {file && (
-              <div className="home-import-file-summary">
-                <span className="home-import-file-type" aria-hidden="true"><FileText /></span>
-                <span>
-                  <strong>{file.name}</strong>
-                  <small>{formatImportFileSize(file.size)} · 已准备</small>
+          </div>
+        ) : (
+          <>
+            <div className="v3-stage has-dots hv3-import-stage"><ImportArt single filename={file.name} /></div>
+            <div className={`hv3-file${submitting ? " is-busy" : ""}`}>
+              <div className="hv3-file-row">
+                <span className="hv3-file-type v3-num" style={{ color: format?.color, background: format?.color === "var(--v3-or)" ? "var(--v3-or-soft)" : format?.color === "var(--v3-bl)" ? "var(--v3-bl-soft)" : "var(--v3-field)" }}>
+                  {format?.tag}
                 </span>
-                <button type="button" aria-label="移除文件" disabled={submitting} onClick={() => pickFile(null)}>
-                  <X />
+                <span className="hv3-file-copy">
+                  <strong title={file.name}>{file.name}</strong>
+                  <small className="v3-num">{formatImportFileSize(file.size)}</small>
+                </span>
+                <button type="button" className="v3-link" aria-label="移除文件" disabled={submitting} onClick={() => pickFile(null)}>
+                  移除文件
                 </button>
               </div>
-            )}
-          </div>
+              {submitting && (
+                <div className="hv3-file-progress">
+                  <span className="hv3-file-progress-copy">正在导入… 上传完成后自动开始解析</span>
+                  <span className="hv3-file-bar" role="progressbar" aria-label={`${file.name} 正在导入`} aria-valuetext="正在上传，暂时无法估算完成时间"><span /></span>
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
-          <TextField
-            label="简历名称"
-            hint="默认使用所选文件名（不含扩展名），可修改。"
+        <label className="v3-field hv3-import-field">
+          <span className="v3-field-label">简历名称</span>
+          <input
+            className="v3-input is-filled"
             name="resume-title"
             autoComplete="off"
+            aria-label="简历名称"
             value={title}
             maxLength={255}
-            placeholder="例如：张三｜产品经理…"
+            placeholder="例如：张三｜产品经理"
             disabled={submitting}
             onChange={(event) => {
               setTitleTouched(true);
@@ -152,26 +182,24 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
               setError(null);
             }}
           />
+        </label>
+      </div>
+
+      <div className="v3-dialog-foot hv3-foot">
+        <div className="v3-dialog-foot-left">
+          <span className="hv3-foot-note">{file ? "默认使用文件名（不含扩展名），可修改" : "未选择文件"}</span>
         </div>
-
-        {error && (
-          <FeedbackNotice kind="error" placement="floating" onDismiss={() => setError(null)}>
-            {error}
-          </FeedbackNotice>
-        )}
-
-        <AlertDialogFooter className="home-import-actions">
-          <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>
-          <Button
-            variant="accent"
-            icon={<FileUp />}
-            disabled={submitting || loadingTemplate}
-            onClick={() => void submit()}
-          >
-            {submitting ? "正在导入…" : loadingTemplate ? "正在准备…" : "导入并开始解析"}
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" disabled={submitting} onClick={onClose}>取消</button>
+        <button
+          type="button"
+          className="v3-btn v3-btn-dark hv3-import-submit"
+          disabled={submitting || loadingTemplate || !file}
+          onClick={() => void submit()}
+        >
+          {submitting ? "正在导入…" : loadingTemplate ? "正在准备…" : "导入并开始解析"}
+        </button>
+      </div>
+      <MotionPresence>{error && <Toast key={error.key} kind="error" title={error.message} onDismiss={() => setError(null)} />}</MotionPresence>
+    </Dialog>
   );
 }

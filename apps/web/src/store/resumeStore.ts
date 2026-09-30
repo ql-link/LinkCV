@@ -42,6 +42,7 @@ import type { OpenTheme } from "../api/openThemes";
 import type { OriginalTheme } from "../api/originalThemes";
 import type { CareerTheme } from "../api/careerThemes";
 import type { FeaturedTheme } from "../api/featuredThemes";
+import { setPageCacheUser } from "../v3/pageCache";
 
 export type ResumeTheme =
   | AtlasTheme
@@ -115,6 +116,8 @@ type ResumeState = {
   logout: () => Promise<void>;
   syncProfile: (user: UserProfile) => void;
   listResumes: () => Promise<void>;
+  /** 最近一次成功读取简历列表的时间；null 表示本次登录还没读过（我的简历页据此决定是否画骨架） */
+  resumesLoadedAt: number | null;
   createResume: (title: string, templateId: string) => Promise<string>;
   importResume: (file: File, templateId: string, title?: string) => Promise<string>;
   pollResumeImport: (id: string) => Promise<void>;
@@ -446,6 +449,7 @@ function mergeResumeSummary(resumes: ResumeSummary[], resume: ResumeRecord) {
 export const useResumeStore = create<ResumeState>((set, get) => ({
   authStatus: "checking",
   user: null,
+  resumesLoadedAt: null,
   resumes: [],
   activeImports: [],
   failedImports: [],
@@ -527,6 +531,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     set({
       authStatus: "guest",
       user: null,
+      resumesLoadedAt: null,
       resumes: [],
       activeImports: [],
       failedImports: [],
@@ -551,6 +556,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       resumes: overview.resumes,
       activeImports: overview.active_imports,
       failedImports: overview.failed_imports,
+      resumesLoadedAt: Date.now(),
     });
   },
 
@@ -971,3 +977,7 @@ useResumeStore.subscribe((state, previous) => {
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", flushPendingLocalResumeDraft);
 }
+
+// 页面短时缓存按登录用户隔离：登录、退出、换账号时清空，避免看到上一个账号的数据
+setPageCacheUser(useResumeStore.getState().user?.id ?? null);
+useResumeStore.subscribe((state) => setPageCacheUser(state.user?.id ?? null));
