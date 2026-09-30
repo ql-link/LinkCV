@@ -142,6 +142,14 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF/DOCX 解析路径 |
 | `LINKPARSE_TIMEOUT_SECONDS` | `90` | 单次 LinkParse 阶段时限，不自动重试 |
 | `LINKPARSE_RESPONSE_MAX_BYTES` | `3145728` | LinkParse 响应读取上限 |
+| `LINKRAG_ENABLED` | `true` | 资料同步 LinkRag 与向量召回的总开关；显式设为 `false` 时助手与事实核验只用本地匹配 |
+| `LINKRAG_BASE_URL` | `http://tolink-rag:8000` | LinkRag 内网地址（`tolink-app-net`），公网对 `/api/v1/apps` 返回 404 |
+| `LINKRAG_CLIENT_ID` / `LINKRAG_CLIENT_SECRET` | 空 | LinkRag 接入应用凭证；缺失时任何环境都照常启动，记录 `LINKRAG_NOT_CONFIGURED` 告警并回退本地匹配；只放 `.local` 或进程环境 |
+| `LINKRAG_RECALL_TIMEOUT_SECONDS` | `5` | 助手与事实核验单次召回时限，超时即回退本地匹配 |
+| `LINKRAG_SYNC_TIMEOUT_SECONDS` | `60` | Worker 同步单次请求时限 |
+| `LINKRAG_SYNC_INTERVAL_SECONDS` | `60` | Worker 对账周期 |
+| `LINKRAG_SYNC_BATCH_SIZE` | `20` | 每轮每类最多处理的记录数 |
+| `LINKRAG_SYNC_MAX_ATTEMPTS` | `5` | 同一正文修订的最大失败次数 |
 | `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信登录 |
 | `WECHAT_SECRET` | 空 | 微信小程序密钥，只放 `.local` 或进程环境 |
 | `WECHAT_LOGIN_PAGE` | `pages/login/index` | 网页扫码进入的小程序确认页 |

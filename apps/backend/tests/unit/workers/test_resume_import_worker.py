@@ -431,6 +431,7 @@ def test_worker_serializes_concurrent_finalization_at_capacity() -> None:
 
 def test_worker_logs_safe_stage_chain(caplog) -> None:
     app, _storage, processor, import_id, template_id = build_processor()
+    caplog.clear()  # only the chain emitted by process() is under test
 
     with caplog.at_level("INFO"):
         asyncio.run(processor.process(import_id=import_id, template_id=template_id))

@@ -39,6 +39,9 @@ class MockInterviewCreateRequest(StrictModel):
     language: Language = "zh"
     answer_mode: AnswerMode = "text"
     material_ids: list[str] = Field(default_factory=list, max_length=10)
+    # Off by default: questions come from the resume, job and answers only;
+    # selected materials are still used to fact-check the report.
+    materials_in_questions: bool = False
 
     @field_validator("material_ids")
     @classmethod
@@ -138,6 +141,7 @@ class MockInterviewSummary(BaseModel):
     follow_up_enabled: bool
     language: Language
     answer_mode: AnswerMode = "text"
+    materials_in_questions: bool = False
     total_score: float | None
     low_confidence: bool
     error_code: str | None

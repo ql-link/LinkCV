@@ -166,7 +166,9 @@ class _Database:
 _database = _Database()
 
 
-def build_app(gateway: ScriptedGateway, *, configure: bool = True, storage: FakeStorage | None = None):
+def build_app(
+    gateway: ScriptedGateway, *, configure: bool = True, storage: FakeStorage | None = None, linkrag=None
+):
     app = create_app(
         Settings(
             database_url=_database.url(),
@@ -176,6 +178,7 @@ def build_app(gateway: ScriptedGateway, *, configure: bool = True, storage: Fake
         storage=storage or FakeStorage(),
         redis=FakeRedis(),
         llm_gateway=gateway,
+        linkrag_client=linkrag,
         create_schema=True,
     )
     with app.state.session_factory() as db:
@@ -576,9 +579,11 @@ def test_reference_materials_drive_fact_check_with_verified_quotes() -> None:
             json={"resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False, "material_ids": [dataset_id]},
         ).json()["mock_interview"]
         assert created["materials"][0]["dataset_id"] == dataset_id
+        assert created["materials_in_questions"] is False
         detail = wait_for(client, created["id"], {"in_progress"})
         analysis_user = next(user for system, user in zip(gateway.systems, gateway.users) if "正在为一场模拟面试做背景分析" in system)
-        assert "5000" in analysis_user  # material facts reach the analysis step
+        # By default questions come from the resume only; materials stay for the report.
+        assert "5000" not in analysis_user
         answer(client, created["id"], detail["questions"][0]["id"], "QPS 从 2000 提升到 10000，用火焰图定位热点")
         client.post(f"/api/mock-interviews/{created['id']}/finish")
         report = wait_for(client, created["id"], {"completed"})["report"]
@@ -587,6 +592,94 @@ def test_reference_materials_drive_fact_check_with_verified_quotes() -> None:
         assert fact["items"][0]["verdict"] == "conflict"
         assert fact["items"][0]["source"]["dataset_id"] == dataset_id
         assert fact["items"][0]["source"]["title"] == "项目复盘.md"
+
+
+def test_materials_in_questions_switch_feeds_analysis_and_carries_to_repeat() -> None:
+    storage = FakeStorage()
+    gateway = ScriptedGateway()
+    app = build_app(gateway, storage=storage)
+    with TestClient(app) as client:
+        register(client, "mock-material-switch@example.test")
+        dataset_id = seed_dataset(
+            app, "mock-material-switch@example.test", storage, "# 性能\n订单系统重构后 QPS 从 2000 提升到 5000。"
+        )
+        resume = create_resume(client, app)
+        created = client.post(
+            "/api/mock-interviews",
+            json={
+                "resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False,
+                "material_ids": [dataset_id], "materials_in_questions": True,
+            },
+        ).json()["mock_interview"]
+        assert created["materials_in_questions"] is True
+        detail = wait_for(client, created["id"], {"in_progress"})
+        analysis_user = next(user for system, user in zip(gateway.systems, gateway.users) if "正在为一场模拟面试做背景分析" in system)
+        assert "5000" in analysis_user
+        client.post(f"/api/mock-interviews/{created['id']}/abandon")
+        repeat = client.post(f"/api/mock-interviews/{created['id']}/repeat")
+        assert repeat.status_code == 201, repeat.text
+        assert repeat.json()["mock_interview"]["materials_in_questions"] is True
+        wait_for(client, repeat.json()["mock_interview"]["id"], {"in_progress"})
+        client.post(f"/api/mock-interviews/{repeat.json()['mock_interview']['id']}/abandon")
+        # Without materials the switch has nothing to act on and is stored off.
+        plain = client.post(
+            "/api/mock-interviews",
+            json={"resume_id": resume["id"], "question_count": 3, "materials_in_questions": True},
+        )
+        assert plain.status_code == 201, plain.text
+        assert plain.json()["mock_interview"]["materials_in_questions"] is False
+        assert detail["status"] == "in_progress"
+
+
+def mark_indexed(app, dataset_id: str, rag_file_id: int) -> None:
+    from linkresume.modules.datasets.models import UserDatasetRagSync
+
+    with app.state.session_factory() as db:
+        dataset = db.get(UserDataset, int(dataset_id))
+        db.add(UserDatasetRagSync(
+            dataset_id=dataset.id, user_id=dataset.user_id, status="ready",
+            content_revision=dataset.content_revision, synced_revision=dataset.content_revision,
+            rag_file_id=rag_file_id, attempt_count=0,
+        ))
+        db.commit()
+
+
+@pytest.mark.parametrize("rag_fails", [False, True])
+def test_fact_check_uses_rag_for_indexed_materials(rag_fails: bool) -> None:
+    from tests.fakes import FakeLinkRag
+
+    storage = FakeStorage()
+    gateway = ScriptedGateway()
+    rag = FakeLinkRag()
+    app = build_app(gateway, storage=storage, linkrag=rag)
+    with TestClient(app) as client:
+        register(client, "mock-rag@example.test")
+        # The local text never mentions 5000, so only RAG can supply the quote.
+        dataset_id = seed_dataset(app, "mock-rag@example.test", storage, "# 性能\n订单系统做过重构。")
+        mark_indexed(app, dataset_id, 7001)
+        rag.recall_hits = {7001: "订单系统重构后 QPS 从 2000 提升到 5000。"}
+        if rag_fails:
+            rag.fail = {"recall"}
+        resume = create_resume(client, app)
+        created = client.post(
+            "/api/mock-interviews",
+            json={"resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False, "material_ids": [dataset_id]},
+        ).json()["mock_interview"]
+        detail = wait_for(client, created["id"], {"in_progress"})
+        assert rag.recall_calls == []  # question generation never touches materials by default
+        answer(client, created["id"], detail["questions"][0]["id"], "QPS 从 2000 提升到 10000")
+        client.post(f"/api/mock-interviews/{created['id']}/finish")
+        fact = wait_for(client, created["id"], {"completed"})["report"]["fact_check"]
+    assert fact["status"] == "completed"
+    (item,) = fact["items"]
+    if rag_fails:
+        # Fallback: the in-memory text lacks the quote, so the verdict is downgraded.
+        assert item["verdict"] == "not_found"
+    else:
+        assert rag.recall_calls[0]["file_ids"] == [7001]
+        assert item["verdict"] == "conflict"
+        assert item["source"]["dataset_id"] == dataset_id
+        assert item["source"]["title"] == "项目复盘.md"
 
 
 def test_material_read_failure_skips_fact_check_only() -> None:

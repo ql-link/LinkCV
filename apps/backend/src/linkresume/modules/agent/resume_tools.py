@@ -13,7 +13,9 @@ from linkresume.core.errors import ApiError
 from linkresume.domain.resume import CanonicalResumeDocument
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.datasets.routes import read_dataset_markdown
+from linkresume.integrations.linkrag_client import LinkRagError
 from linkresume.services.dataset_content_service import content_key, source_version
+from linkresume.services.rag_sync_service import recall_dataset_snippets
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 
@@ -614,6 +616,7 @@ def search_materials(
     storage: Any,
     max_bytes: int,
     allowed_refs: set[tuple[str, str]] | None = None,
+    rag: Any | None = None,
 ) -> list[dict[str, str]]:
     needle = query.casefold()
     sources: list[dict[str, str]] = []
@@ -696,6 +699,34 @@ def search_materials(
         )
         if dataset_ids is not None:
             statement = statement.where(UserDataset.id.in_(dataset_ids))
+        covered: set[int] = set()
+        if rag is not None and (dataset_ids is None or dataset_ids):
+            try:
+                snippets, covered = recall_dataset_snippets(
+                    db,
+                    rag,
+                    user_id=user_id,
+                    query=query,
+                    dataset_ids=dataset_ids,
+                    limit=limit - len(sources),
+                )
+            except LinkRagError:
+                # RAG is an enhancement: any failure falls back to matching.
+                snippets, covered = [], set()
+            for snippet in snippets:
+                if len(sources) >= limit:
+                    break
+                sources.append(
+                    {
+                        "source_id": f"dataset:{snippet.dataset_id}:{snippet.version}",
+                        "source_type": "dataset",
+                        "title": snippet.title,
+                        "excerpt": snippet.text[:500],
+                        "version": snippet.version,
+                    }
+                )
+        if covered:
+            statement = statement.where(UserDataset.id.not_in(covered))
         rows = db.execute(statement.order_by(UserDataset.created_at.desc()).limit(20)).all()
         for dataset, task in rows:
             if len(sources) >= limit or not (dataset.content_object_name or task.converted_object_name):

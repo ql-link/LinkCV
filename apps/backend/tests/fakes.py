@@ -312,3 +312,73 @@ class FakeRedis:
 
     def close(self, **_kwargs) -> None:
         pass
+
+
+class FakeLinkRag:
+    """In-memory LinkRag app API: per-user files, parse state and recall.
+
+    ``fail`` names methods that raise ``LinkRagError``; ``recall_hits`` maps a
+    RAG file id to the chunk text recall returns for it.
+    """
+
+    def __init__(self) -> None:
+        from linkresume.integrations.linkrag_client import LinkRagError
+
+        self._error = LinkRagError
+        self.files: dict[int, dict[str, object]] = {}
+        self.fail: set[str] = set()
+        self.parse_result = "parse_success"
+        self.recall_hits: dict[int, str] = {}
+        self.recall_calls: list[dict[str, object]] = []
+        self.deleted: list[int] = []
+        self.foreign_hits: list[tuple[int, str]] = []
+        self._next = 5000
+
+    def _check(self, name: str) -> None:
+        if name in self.fail:
+            raise self._error(503, "LINKRAG_TEST_FAILURE")
+
+    def ensure_default_dataset(self, user_id: int) -> int:
+        self._check("ensure_default_dataset")
+        return 900 + user_id
+
+    def upload_markdown(self, user_id, *, filename, markdown, external_ref) -> int:
+        self._check("upload_markdown")
+        self._next += 1
+        self.files[self._next] = {
+            "user_id": user_id, "filename": filename, "markdown": markdown, "external_ref": external_ref,
+        }
+        return self._next
+
+    def file_status(self, user_id, file_id):
+        from linkresume.integrations.linkrag_client import RagFileStatus
+
+        self._check("file_status")
+        entry = self.files.get(file_id)
+        if entry is None or entry["user_id"] != user_id:
+            raise self._error(404, "NOT_FOUND")
+        return RagFileStatus(file_id=file_id, frontend_status=self.parse_result)
+
+    def delete_file(self, user_id, file_id) -> None:
+        self._check("delete_file")
+        entry = self.files.get(file_id)
+        if entry is not None and entry["user_id"] == user_id:
+            del self.files[file_id]
+            self.deleted.append(file_id)
+
+    def recall(self, user_id, *, query, file_ids, top_k):
+        from linkresume.integrations.linkrag_client import RagHit
+
+        self._check("recall")
+        self.recall_calls.append({"user_id": user_id, "query": query, "file_ids": list(file_ids), "top_k": top_k})
+        hits = [
+            RagHit(file_id=file_id, chunk_id=f"c{file_id}", score=0.9, content=self.recall_hits[file_id])
+            for file_id in file_ids
+            if file_id in self.recall_hits
+        ]
+        # Simulates a misbehaving service returning hits outside the request.
+        hits += [RagHit(file_id=f, chunk_id="x", score=1.0, content=c) for f, c in self.foreign_hits]
+        return hits[:top_k] if not self.foreign_hits else hits
+
+    def close(self) -> None:
+        pass
