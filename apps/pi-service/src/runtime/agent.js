@@ -1091,7 +1091,7 @@ export async function executeAgentRun({
   const resolveTargetTool = auditedTool({
     name: "resolve_resume_target",
     label: "定位简历内容",
-    description: "仅在本轮已确定具体是哪份简历后，在该简历内部定位字段、bullet 或选区。若本轮尚无 resume 上下文，禁止调用本工具，应先调用 resolve_resume_reference 确定简历身份。若返回 ambiguous，必须让用户选择，不能继续修改。",
+    description: "仅在本轮已确定具体是哪份简历后，在该简历内部定位字段、bullet 或选区。本轮已有 resume 授权上下文，或 resolve_resume_reference 已唯一解析出简历时，均可调用；两者都没有时，应先按用户明确点名调用 resolve_resume_reference。若返回 ambiguous，必须让用户选择，不能继续修改。",
     parameters: objectSchema({
       quoted_text: { type: "string", minLength: 1, maxLength: 20000 },
       scope_hint: { type: "string", enum: ["target", "resume"] },
