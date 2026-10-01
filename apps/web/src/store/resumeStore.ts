@@ -36,6 +36,7 @@ import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 import { buildNamedImportFile } from "../lib/resumeImport";
 
+import type { MuseTheme } from "../api/museThemes";
 import type { AtlasTheme } from "../api/atlasThemes";
 import type { StudioTheme } from "../api/studioThemes";
 import type { OpenTheme } from "../api/openThemes";
@@ -50,6 +51,7 @@ export type ResumeTheme =
   | OriginalTheme
   | CareerTheme
   | FeaturedTheme
+  | MuseTheme
   | "classic"
   | "modern"
   | "compact"

@@ -103,3 +103,7 @@ AI 提案确认与自动保存共用写入队列，保存失败不继续确认�
 ## 修改联动与验证
 
 修改快照结构时需同步 Python/TypeScript 契约、迁移、模板包、编辑器、预览、分享、PDF 和小程序预览；修改导入需同步 Worker、MQ、LinkParse、LLM 和开发/部署说明。主要测试入口包括后端 `test_resume_lifecycle.py`、`test_resume_imports.py`、`test_resume_share.py`、`test_resume_pdf.py`、模板管理与迁移测试，前端 `ResumeWorkbench`、`resumeStore`、`resumeContract`、打印、模板和分享测试，以及 Worker/导入服务单元测试。视觉模板目录测试直接读取 `0070–0076`、`0078–0081` 的 SQL 模板快照，并按 Atlas、Studio、Open、Original、Career、Featured 的主题清单核对模板身份与打印渲染；迁移重编号时必须同步这些测试输入。
+
+## Muse 模板目录
+
+迁移 `0100` 追加 79 套 `muse-*` 模板，默认启用目录由 85 套增至 164 套；已有模板不变。新增模板按选择清单顺序放在现有最大排序值之后，风格与适用场景默认未分类，由管理员按现有分类入口维护。通用模板复用现有虚构产品经理样本，行业模板使用各自虚构样本；内容进入现有 canonical 编辑、自动保存、切换、分享和 PDF 链路。头像为空时使用剪影占位，真实上传照片仍显示；默认自然分页，不自动缩字或启用智能一页。适配边界与逐套来源见[模板来源](../internals/resume-template-sources.md#muse-选择集0100)。

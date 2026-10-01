@@ -19,6 +19,7 @@ import creativeAvatar from "../public/templates/avatar-creative.png";
 import applicationStyles from "../src/app.css?raw";
 import baseStyles from "../src/styles.css?raw";
 import printStyles from "../src/features/preview/print/resume-print.css?raw";
+import museStyles from "../src/muse-templates.css?raw";
 import {
   renderResumePrintDocument,
   RESUME_RENDER_PROTOCOL_VERSION,
@@ -152,6 +153,11 @@ function maxSmartHeightMm() {
 
 function printMargins(style: CanonicalResumePresentation) {
   const resolved = resumePresentationPageMargins(style);
+  // Keep horizontal decoration in the shared canvas. Chromium repeats the
+  // vertical gutters on every physical page, including long column content.
+  if (style.template_snapshot.template_key.startsWith("muse-")) {
+    return { top: resolved.top, right: 0, bottom: resolved.bottom, left: 0 };
+  }
   // Keep the established PDF pagination contract: a zero template inset means
   // that the theme owns its inner full-bleed decoration, while Chromium still
   // receives the reviewed default page gutter.  The independent edge values
@@ -182,7 +188,7 @@ function pageMarginStyles(style: CanonicalResumePresentation) {
 function withPrintStyles(html: string, style: CanonicalResumePresentation) {
   return html.replace(
     '<style data-resume-print-styles>/* injected by the renderer */</style>',
-    `<style data-resume-print-styles>${baseStyles}\n${applicationStyles}\n${printStyles}\n${EMBEDDED_FONT_STYLES}\n${pageMarginStyles(style)}</style>`,
+    `<style data-resume-print-styles>${baseStyles}\n${applicationStyles}\n${printStyles}\n${museStyles}\n${EMBEDDED_FONT_STYLES}\n${pageMarginStyles(style)}</style>`,
   );
 }
 
