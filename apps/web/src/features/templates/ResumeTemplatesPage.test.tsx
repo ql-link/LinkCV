@@ -38,6 +38,23 @@ afterEach(() => {
 });
 
 describe("ResumeTemplatesPage", () => {
+  it("保留接口展示顺序，新增目录整理不会重排原有模板", async () => {
+    const additions = [
+      { ...templates[1], id: "100", key: "muse-mist-cn", name: "雾青圆章" },
+      { ...templates[1], id: "101", key: "muse-badge-cn", name: "蓝笺工牌" },
+    ];
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates: [...templates, ...additions] } as never);
+    render(<ResumeTemplatesPage />);
+    await screen.findByRole("button", { name: "查看模板：蓝笺工牌" });
+    const names = () => screen.getAllByRole("button", { name: /^查看模板：/ }).map((button) => button.getAttribute("aria-label"));
+    expect(names()).toEqual([...templates, ...additions].map((template) => `查看模板：${template.name}`));
+    fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "现代" }));
+    await waitFor(() => expect(names()).toEqual([
+      "查看模板：现代双栏", "查看模板：校园简历", "查看模板：雾青圆章", "查看模板：蓝笺工牌",
+    ]));
+  });
+
   it("点击风格和场景后立即筛选，并支持重置与空结果", async () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     render(<ResumeTemplatesPage />);

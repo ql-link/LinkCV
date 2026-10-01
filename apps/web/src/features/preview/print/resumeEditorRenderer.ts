@@ -154,7 +154,7 @@ export function renderResumeEditorNode(node: JSONContent): string {
     if (!src) return "";
     const size = Math.min(220, Math.max(56, Number(node.attrs?.size) || 94));
     const alt = escapeHtml(String(node.attrs?.alt ?? "简历头像"));
-    return `<figure data-type="avatar-image" data-src="${escapeHtml(src)}" data-size="${size}" data-alt="${alt}"${node.attrs?.systemFallback === true ? ' data-system-fallback="true"' : ""} class="resume-media-node resume-avatar" style="width:${size}px;height:calc(${size}px * var(--resume-avatar-height-ratio, 1.4))"><img src="${escapeHtml(src)}" alt="${alt}"></figure>`;
+    return `<figure data-type="avatar-image" data-src="${escapeHtml(src)}" data-size="${size}" data-alt="${alt}"${node.attrs?.systemFallback === true ? ' data-system-fallback="true"' : ""} class="resume-media-node resume-avatar" style="width:${size}px;height:calc(${size}px * var(--resume-avatar-height-ratio, 1.4));--resume-avatar-size:${size}px"><img src="${escapeHtml(src)}" alt="${alt}"></figure>`;
   }
   if (node.type === "resumeImage") {
     const src = safeAsset(node.attrs?.src);

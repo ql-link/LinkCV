@@ -306,7 +306,11 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
       const file = input.files?.[0];
       if (!file) return;
       try {
-        updateAttributes({ src: await uploadImage(file), alt: node.attrs.alt || file.name });
+        updateAttributes({
+          src: await uploadImage(file),
+          alt: node.attrs.alt || file.name,
+          ...(isAvatar ? { systemFallback: false } : {}),
+        });
         setError("");
       } catch (replaceError) {
         setError((replaceError as Error).message);
@@ -346,11 +350,16 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
       ref={mediaRef}
       as={isAvatar ? "figure" : "div"}
       className={`resume-media-node ${isAvatar ? "resume-avatar" : `resume-image align-${align}`}${selected ? " is-selected" : ""}`}
-      style={isAvatar ? { width: size, height: `calc(${size}px * var(--resume-avatar-height-ratio, 1.4))` } : { width: `${size}${widthUnit}` }}
+      style={isAvatar ? {
+        width: size,
+        height: `calc(${size}px * var(--resume-avatar-height-ratio, 1.4))`,
+        "--resume-avatar-size": `${size}px`,
+      } as React.CSSProperties : { width: `${size}${widthUnit}` }}
       role={isAvatar ? "group" : undefined}
       aria-label={isAvatar ? "简历头像；按住 Command 或 Control 并滚动鼠标滚轮缩放，也可按住修饰键使用上下方向键调整" : undefined}
       tabIndex={isAvatar && selected ? 0 : undefined}
       data-drag-handle
+      data-system-fallback={isAvatar && node.attrs.systemFallback === true ? "true" : undefined}
       onKeyDown={(event: React.KeyboardEvent<HTMLElement>) => {
         if (!isAvatar || !selected || (!event.ctrlKey && !event.metaKey)) return;
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;

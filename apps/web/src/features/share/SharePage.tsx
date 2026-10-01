@@ -11,6 +11,7 @@ import {
 import "../preview/print/resume-print.css";
 import { renderResumePrintDocument } from "../preview/print/resumePrintDocument";
 import { paginateShareDocument } from "./sharePagination";
+import { syncResumeSheetColumns } from "../preview/print/resumeSheetDecoration";
 
 declare global {
   interface Window {
@@ -217,7 +218,10 @@ export function SharePage({ token }: { token: string }) {
     if (!paper) return;
     let active = true;
     const paginate = () => {
-      if (active && paper.isConnected) paginateShareDocument(paper);
+      if (active && paper.isConnected) {
+        paginateShareDocument(paper);
+        syncResumeSheetColumns({ paper });
+      }
     };
     paginate();
     void document.fonts?.ready.then(paginate);
