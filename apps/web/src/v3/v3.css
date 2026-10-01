@@ -109,11 +109,12 @@
 .v3-menu-head { padding: 8px 10px 6px; color: var(--v3-fnt); font-size: 11px; }
 
 /* ── 按钮 */
-.v3-btn { display: inline-flex; height: 32px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 7px; padding: 0 14px; cursor: pointer; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; }
+.v3-btn { display: inline-flex; height: 32px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 999px; padding: 0 14px; cursor: pointer; font-size: 12px; font-weight: 500; line-height: 1; white-space: nowrap; text-decoration: none; }
 .v3-btn.is-lg { height: 36px; padding: 0 18px; }
-.v3-btn.is-sm { height: 28px; padding: 0 10px; }
+.v3-btn.is-sm { height: 28px; padding: 0 12px; }
 .v3-btn-dark { background: var(--v3-dark); color: #fff; }
-.v3-btn-dark:hover { background: #33332f; }
+.v3-btn-dark:hover { background: #2f2f2c; }
+.v3-btn-dark:active:not(:disabled) { background: #0e0e0d; }
 .v3-btn-ghost { border-color: var(--v3-cl); background: #fff; color: var(--v3-txt); }
 .v3-btn-ghost:hover { background: var(--v3-field); }
 .v3-btn-danger { background: var(--v3-rd); color: #fff; }

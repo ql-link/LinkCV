@@ -3,7 +3,7 @@
 import { useContentMotion } from "@/components/ui/motion";
 import { Reveal, SkeletonCards, SkeletonHead, SkeletonRows } from "@/v3/skeletons";
 import { readPageCache, writePageCache } from "@/v3/pageCache";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api, type InterviewSessionSummary, type JobApplicationSummary } from "@/api/client";
 import { mockInterviewPath, navigateTo, newMockInterviewPath } from "@/routing";
 import { Icon } from "@/v3/Icon";
@@ -414,7 +414,7 @@ function StatsCard({ completed, details, abandoned }: { completed: MockInterview
               const x = 120 + Math.cos(angle) * 80;
               const y = 86 + Math.sin(angle) * 70;
               return (
-                <span key={item.key} className={`mi-radar-label${index === weakIndex ? " is-weak" : ""}`} style={{ left: x - 21, top: y - 13 }}>
+                <span key={item.key} className={`mi-radar-label${index === weakIndex ? " is-weak" : ""}`} style={{ left: x - 36, top: y - 13 }}>
                   {item.label}<b>{item.value.toFixed(1)}</b>
                 </span>
               );
@@ -426,20 +426,38 @@ function StatsCard({ completed, details, abandoned }: { completed: MockInterview
   );
 }
 
+// 趋势列在统计卡里撑满剩余宽度（Figma 241:234 为 290 宽），图表按实际宽度重新布点
+function useElementWidth<T extends HTMLElement>(fallback: number) {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(fallback);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const update = () => { if (node.clientWidth > 0) setWidth(node.clientWidth); };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, width] as const;
+}
+
 function TrendChart({ items, average }: { items: MockInterviewSummary[]; average: number }) {
+  const [chartRef, width] = useElementWidth<HTMLDivElement>(290);
   const scores = items.map((item) => item.total_score ?? 0);
   const lo = Math.min(...scores, average) - 8;
   const hi = Math.max(...scores, average) + 8;
   const y = (score: number) => 112 - ((score - lo) / (hi - lo)) * 96;
-  const x = (index: number) => 18 + (index * 256) / Math.max(1, items.length - 1);
+  const x = (index: number) => 18 + (index * (width - 34)) / Math.max(1, items.length - 1);
   const line = scores.map((score, index) => `${x(index)},${y(score)}`).join(" ");
   const area = `18,112 ${line} ${x(scores.length - 1)},112`;
   return (
-    <div className="mi-trend-chart">
-      <svg width="290" height="120" viewBox="0 0 290 120" aria-hidden="true">
-        {[16, 48, 80, 112].map((gy) => <line key={gy} x1="0" x2="290" y1={gy} y2={gy} stroke="var(--v3-line)" />)}
+    <div className="mi-trend-chart" ref={chartRef}>
+      <svg width={width} height="120" viewBox={`0 0 ${width} 120`} aria-hidden="true">
+        {[16, 48, 80, 112].map((gy) => <line key={gy} x1="0" x2={width} y1={gy} y2={gy} stroke="var(--v3-line)" />)}
         <polygon points={area} fill="rgb(63 111 216 / 8%)" />
-        <line x1="0" x2="290" y1={y(average)} y2={y(average)} stroke="var(--v3-fnt)" strokeDasharray="3 3" />
+        <line x1="0" x2={width} y1={y(average)} y2={y(average)} stroke="var(--v3-fnt)" strokeDasharray="3 3" />
         <polyline points={line} fill="none" stroke="var(--v3-bl)" strokeWidth="1.6" />
         {scores.map((score, index) => {
           const last = index === scores.length - 1;
@@ -451,7 +469,7 @@ function TrendChart({ items, average }: { items: MockInterviewSummary[]; average
         return (
           <span key={item.id}>
             <b className={`mi-trend-score${last ? " is-last" : ""}`} style={{ left: x(index) - 8, top: 24 + y(scores[index]) - 20 }}>{Math.round(scores[index])}</b>
-            <small className="mi-trend-date" style={{ left: x(index) - 13 }}>{mmdd(item.finished_at ?? item.created_at)}</small>
+            <small className="mi-trend-date" style={{ left: x(index) - 20 }}>{mmdd(item.finished_at ?? item.created_at)}</small>
           </span>
         );
       })}
