@@ -368,6 +368,12 @@ class AgentModelResponse(BaseModel):
     model: AgentModelSummary
 
 
+class ProposalConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry: Literal["assistant", "editor"] | None = None
+
+
 class ProposalCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

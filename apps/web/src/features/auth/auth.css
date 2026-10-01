@@ -1,42 +1,49 @@
-.auth-entry {
-  isolation: isolate;
-}
+/* 08.1 / 08.2 / 08.3 登录页：V3 整窗白卡（bare），坐标取自 Figma 内容卡（1368×952）。
+   正文列 360 宽、水平居中；顶部留 232 与设计稿一致。 */
+.auth-page .v3-content-scroll { display: flex; flex-direction: column; }
 
-.auth-entry-visual {
-  contain: paint;
-}
+.auth-brand { position: absolute; top: 32px; left: 40px; display: flex; align-items: baseline; gap: 6px; }
+.auth-brand strong { color: var(--v3-txt); font-family: var(--v3-num); font-size: 15px; font-weight: 700; line-height: 18px; }
+.auth-brand span { color: var(--v3-fnt); font-size: 9px; font-weight: 500; }
 
-.auth-entry .wechat-qr-panel--auth {
-  padding: 0;
-}
+.auth-col { display: flex; width: 360px; flex: 1 0 auto; flex-direction: column; margin: 0 auto; padding: 231px 0 60px; }
+.auth-loading { margin-top: 80px; }
 
-.auth-entry .wechat-qr-panel--auth .wechat-qr-box {
-  border: 0;
-  border-radius: var(--ui-radius-full);
-  background: var(--ui-surface);
-  box-shadow: var(--ui-shadow-md);
-}
+/* 标题区：微信页小字眉标 / 开发环境橙色标签 */
+.auth-eyebrow { margin: 4px 0 0; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.auth-dev-tag { display: inline-flex; width: max-content; height: 22px; align-items: center; border-radius: 11px; background: var(--v3-or-soft); padding: 0 8px; color: var(--v3-or); font-size: 10.5px; font-weight: 500; }
+.auth-title { margin: 9px 0 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: 28px; font-weight: 600; line-height: 40px; white-space: nowrap; }
+.auth-dev-tag + .auth-title { margin-top: 10px; }
+.auth-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 16px; white-space: nowrap; }
 
-.auth-entry .wechat-qr-panel--auth .wechat-qr-img {
-  display: block;
-  border-radius: inherit;
-}
+/* 表单：标签 11 号、灰底输入框 40 高，左侧 14 图标 */
+.auth-form { display: grid; margin-top: 38px; }
+.auth-field { display: grid; gap: 7px; }
+.auth-field + .auth-field { margin-top: 16px; }
+.auth-field .v3-field-label { line-height: 13px; }
+.auth-input { position: relative; display: block; color: var(--v3-fnt); }
+.auth-input > svg { position: absolute; top: 13px; left: 14px; pointer-events: none; }
+.auth-input .v3-input { height: 40px; min-height: 0; padding-top: 0; padding-bottom: 0; padding-left: 38px; }
+.auth-input .v3-input.is-filled:focus { border-color: var(--v3-dark); background: #fff; }
+.auth-hint { margin-top: 8px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.auth-error { margin: 16px 0 0; border-radius: 8px; background: var(--v3-rd-soft); padding: 10px 14px; color: var(--v3-rd); font-size: 12px; }
+.auth-submit { width: 100%; height: 42px; margin-top: 32px; }
+.auth-form:has(.auth-hint) .auth-submit { margin-top: 19px; }
+.auth-links { display: flex; margin-top: 24px; justify-content: space-between; }
+.auth-links .v3-link { color: var(--v3-sub); }
 
-.auth-entry .wechat-qr-panel--auth .wechat-qr-hint {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--ui-text-subtle);
-  font-size: 14px;
-}
+/* 微信二维码：200×200，正中叠一个 40×40 的品牌角标（设计稿里的 Mark） */
+.auth-qr { display: flex; flex-direction: column; align-items: center; margin-top: 60px; }
+.auth-qr-box { position: relative; display: grid; width: 200px; height: 200px; place-items: center; overflow: hidden; background: #fff; }
+.auth-qr-img { display: block; width: 200px; height: 200px; object-fit: contain; }
+.auth-qr-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; border: 0; background: rgb(255 255 255 / 94%); padding: 0; color: var(--v3-txt); cursor: pointer; }
+.auth-qr-overlay strong { font-size: 14px; font-weight: 500; }
+.auth-qr-overlay span { display: inline-flex; align-items: center; gap: 5px; color: var(--v3-sub); font-size: 12px; font-weight: 500; }
+.auth-qr-overlay:hover span { color: var(--v3-txt); }
+.auth-qr-hint { margin: 24px 0 0; color: var(--v3-sub); font-size: 12px; line-height: 14px; text-align: center; }
+.auth-qr-hint.is-warn { color: var(--v3-or); }
+.auth-qr-sub { margin: 8px 0 0; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-align: center; }
+.auth-agree { margin: 107px 0 0; color: var(--v3-fnt); font-size: 10.5px; line-height: 13px; text-align: center; }
+.auth-back { margin: 40px auto 0; }
 
-.auth-entry .wechat-qr-panel--auth .wechat-qr-hint svg {
-  flex: 0 0 auto;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .auth-entry-shader {
-    display: none;
-  }
-}
+.auth-foot { flex: 0 0 auto; margin: 0 0 35px; color: var(--v3-fnt2); font-size: 10.5px; line-height: 13px; text-align: center; }

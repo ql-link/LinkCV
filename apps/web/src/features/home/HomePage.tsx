@@ -1,28 +1,42 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { ExternalLink, FileText, FileUp, MoreHorizontal, Pencil, Plus, Share2, Trash2 } from "lucide-react";
-import {
-  api,
-  type ResumeImportSummary,
-  type ResumeSummary,
-} from "../../api/client";
-import {
-  Button,
-  ConfirmDialog,
-  ExpandableSearch,
-  FeedbackNotice,
-  PageLoading,
-} from "@/components/ui";
+import { MotionPresence, useContentMotion } from "@/components/ui/motion";
+import { Reveal } from "@/v3/skeletons";
+import { PAGE_CACHE_DEDUPE_MS, useRevalidateOnFocus } from "@/v3/pageCache";
+import { LoadingText } from "@/components/ui/page-loading";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, type ResumeImportSummary, type ResumeSummary } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { editorPath, navigateTo } from "../../routing";
 import { ResumePreview } from "../preview/ResumePreview";
-import { WorkspacePageHero } from "../../components/WorkspaceLayout";
+import { downloadPdfBlob, resumePdfExportErrorMessage, resumePdfFilename } from "../preview/pdfExport";
+import { Icon } from "../../v3/Icon";
+import { Dialog, Menu, SearchBox, Toast, type MenuItem, PageEyebrow } from "../../v3/primitives";
+import { DeleteResumeArt, EmptyListArt, ImportTaskDoc, ResumeLoadErrorArt, SearchEmptyArt } from "./homeArt";
 import { RenameResumeDialog } from "./RenameResumeDialog";
 import { SharePanel } from "./SharePanel";
 import { ResumeImportDialog } from "./ResumeImportDialog";
 import { ResumeCreateDialog } from "./ResumeCreateDialog";
+import { useStableCallback } from "./useStableCallback";
+import "./home-v3.css";
+
+// 每个账号最多 10 份正式简历（后端 RESUME_LIMIT_REACHED 同一口径），到上限后新建、导入、复制置灰
+export const MAX_RESUMES_PER_USER = 10;
+
+type Notice = { kind: "success" | "error"; title: string; message?: string; key: number };
+
+function useNotice() {
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const show = useCallback((kind: Notice["kind"], title: string, message?: string) => {
+    setNotice({ kind, title, message, key: Date.now() + Math.random() });
+  }, []);
+  const dismiss = useCallback(() => setNotice(null), []);
+  const node = notice ? <Toast key={notice.key} kind={notice.kind} title={notice.title} message={notice.message} onDismiss={dismiss} /> : null;
+  return { show, node };
+}
 
 type HomeScreenProps = {
   loading?: boolean;
+  loadError?: boolean;
+  onRetry?: () => void;
   resumes: ResumeSummary[];
   activeImports: ResumeImportSummary[];
   failedImports: ResumeImportSummary[];
@@ -30,6 +44,11 @@ type HomeScreenProps = {
   onRename: (id: string, title: string) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   onDeleteImport: (id: string) => void | Promise<void>;
+  initialCreateOpen?: boolean;
+  initialImportOpen?: boolean;
+  initialTemplateId?: string | null;
+  onCreateClose?: () => void;
+  onImportClose?: () => void;
 };
 
 function importFailureStatus(task: ResumeImportSummary) {
@@ -41,6 +60,22 @@ function importFailureStatus(task: ResumeImportSummary) {
   return `${stage} · ${(durationMs / 1000).toFixed(1)} 秒`;
 }
 
+// 列表卡片的更新时间：今天显示时刻，昨天显示「昨天」，更早显示月-日
+export function formatUpdatedAt(value: string, now = new Date()) {
+  // 后端返回不带时区的 UTC 时间（与 SharePanel 的 parseShareExpiry 同一口径），补 Z 再换算成本地时间
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value);
+  const date = new Date(hasTimezone ? value : `${value}Z`);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const time = date.getTime();
+  if (time >= startOfToday) return `今天 ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  if (time >= startOfToday - 86400000) return "昨天";
+  if (date.getFullYear() !== now.getFullYear()) return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/* 02.1c 导入任务卡：解析中（不可确定进度条）/ 解析失败（红底 + 删除记录） */
 function ImportTaskCard({
   task,
   failed = false,
@@ -60,81 +95,80 @@ function ImportTaskCard({
     : task.upload_status === "uploading" ? "上传中" : "解析中";
 
   return (
-    <article
-      className={`home-import-card${failed ? " home-import-card-failed" : ""}`}
-      aria-label={`导入任务 ${task.source_filename}`}
-    >
-      <div className="home-import-preview">
-        <div className="home-import-document" aria-hidden="true">
-          <span className="home-import-document-title" />
-          <span />
-          <span />
-          <span className="is-short" />
-          <span className="home-import-document-heading" />
-          <span />
-          <span />
-          <span className="is-short" />
-          <span className="home-import-document-heading" />
-          <span />
-          <span className="is-short" />
-        </div>
-        <div className="home-import-state">
-          <span className="home-import-state-label">{stateLabel}</span>
+    <article className={`hv3-card hv3-import-card${failed ? " is-failed" : ""}`} aria-label={`导入任务 ${task.source_filename}`}>
+      <div className="hv3-thumb">
+        <ImportTaskDoc />
+        <div className="hv3-task-state">
+          <span className="hv3-task-state-label">{stateLabel}</span>
           {!failed && (
-            <div
-              className="home-import-progress"
+            <span
+              className="hv3-task-progress"
               role="progressbar"
               aria-label={`${task.source_filename} ${stage}`}
               aria-valuetext={`${stage}，暂时无法估算完成时间`}
             >
               <span />
-            </div>
+            </span>
           )}
         </div>
       </div>
-      <div className="home-import-meta">
+      <div className="hv3-card-meta">
         <strong title={task.source_filename}>{task.source_filename}</strong>
-        <small>{failed ? importFailureStatus(task) : `${stage} · 请稍候`}</small>
-        {failed && onDelete && (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={deleteDisabled}
-            aria-label={`删除失败记录 ${task.source_filename}`}
-            onClick={onDelete}
-          >
-            {deleting ? "正在删除…" : "删除记录"}
-          </Button>
-        )}
+        <div className="hv3-card-sub">
+          <small className={failed ? "is-danger" : undefined}>{failed ? importFailureStatus(task) : `${stage} · 请稍候`}</small>
+          {failed && onDelete && (
+            <button
+              type="button"
+              className="v3-btn v3-btn-ghost hv3-task-delete"
+              disabled={deleteDisabled}
+              aria-label={`删除失败记录 ${task.source_filename}`}
+              onClick={onDelete}
+            >
+              {deleting ? "正在删除…" : "删除记录"}
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );
 }
 
-function ResumeThumbnailCard({
+/* 02.1 简历卡：灰底预览框 + 纸张缩略图 + 标题 / 更新时间，右上角 ⋯ 菜单 */
+function ResumeCard({
   resume,
+  atLimit,
+  deleteDisabled,
   onOpen,
-  onDelete,
-  onShare,
   onRename,
-  deleteDisabled = false,
+  onShare,
+  onDelete,
+  onNotice,
 }: {
-  resume: Pick<ResumeSummary, "id" | "title" | "updated_at" | "preview" | "lock_version">;
+  resume: ResumeSummary;
+  atLimit: boolean;
+  deleteDisabled: boolean;
   onOpen: () => void;
-  onDelete?: () => void;
-  onShare?: () => void;
-  onRename?: () => void;
-  deleteDisabled?: boolean;
+  onRename: () => void;
+  onShare: () => void;
+  onDelete: () => void;
+  onNotice: (kind: "success" | "error", title: string, message?: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [copyRequestId, setCopyRequestId] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
-  const [copyError, setCopyError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    triggerRef.current?.focus();
+  }, []);
+
+  // 复制为新简历：沿用原有的锁版本 + 稳定请求 ID，失败可以原样重试
   const copy = async (title: string) => {
     if (!copyRequestId || copying) return;
     const ownerId = useResumeStore.getState().user?.id;
     setCopying(true);
-    setCopyError(null);
     try {
       const { resume: copied } = await api.copyResume(resume.id, { title, base_lock_version: resume.lock_version, client_request_id: copyRequestId });
       if (useResumeStore.getState().user?.id !== ownerId) return;
@@ -142,137 +176,120 @@ function ResumeThumbnailCard({
       setCopyRequestId(null);
       try {
         await useResumeStore.getState().listResumes();
+        onNotice("success", `已复制为「${title}」`);
       } catch {
-        setCopyError("副本已创建，列表预览刷新失败，请刷新页面；无需再次复制。");
+        onNotice("error", "副本已创建，列表预览刷新失败，请刷新页面；无需再次复制。");
       }
     } catch {
-      setCopyError("复制失败，请检查名称、简历数量或刷新后重试。");
+      onNotice("error", "复制失败，请检查名称、简历数量或刷新后重试。");
     } finally {
       setCopying(false);
     }
   };
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeOnOutsidePress = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setMenuOpen(false);
-        menuTriggerRef.current?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePress);
-    window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePress);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    menuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']:not(:disabled)")?.focus();
-  }, [menuOpen]);
-
-  const handleMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)") ?? []);
-    if (!items.length) return;
-    if (event.key === "Home") return items[0].focus();
-    if (event.key === "End") return items[items.length - 1].focus();
-    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
-    const direction = event.key === "ArrowDown" ? 1 : -1;
-    const nextIndex = currentIndex < 0
-      ? direction > 0 ? 0 : items.length - 1
-      : (currentIndex + direction + items.length) % items.length;
-    items[nextIndex].focus();
+  const exportPdf = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const result = await api.downloadResumePdf(resume.id, resume.lock_version);
+      downloadPdfBlob(result.blob, resumePdfFilename(result.filename, resume.title));
+    } catch (reason) {
+      const message = resumePdfExportErrorMessage(reason);
+      if (message) onNotice("error", message);
+    } finally {
+      setExporting(false);
+    }
   };
 
-  const runMenuAction = (action?: () => void) => {
-    setMenuOpen(false);
-    action?.();
-  };
+  const items: MenuItem[] = [
+    { label: "打开编辑", icon: "edit", onSelect: onOpen },
+    { label: "重命名", icon: "text", onSelect: onRename },
+    {
+      label: "复制为新简历",
+      icon: "copy",
+      disabled: atLimit,
+      title: atLimit ? `已达 ${MAX_RESUMES_PER_USER} 份上限` : undefined,
+      onSelect: () => setCopyRequestId(crypto.randomUUID()),
+    },
+    { label: "分享链接", icon: "link", onSelect: onShare },
+    { label: exporting ? "正在导出…" : "导出 PDF", icon: "dl", disabled: exporting, onSelect: () => void exportPdf() },
+    { kind: "separator" },
+    { label: "删除", icon: "trash", danger: true, disabled: deleteDisabled, onSelect: onDelete },
+  ];
 
   return (
-    <article className="home-resume-card">
-      {copyRequestId && <RenameResumeDialog copying initialTitle={`${resume.title} 副本`} busy={copying}
-        onCancel={() => setCopyRequestId(null)} onSubmit={copy} />}
-      {copyError && <FeedbackNotice kind="error" placement="floating" onDismiss={() => setCopyError(null)}>{copyError}</FeedbackNotice>}
-      <button className="home-card-open" type="button" onClick={onOpen}>
-        <span className="home-card-preview" aria-hidden="true">
-          {resume.preview?.layout_plan ? (
-            <ResumePreview data={resume.preview.data} style={resume.preview.style} layoutPlan={resume.preview.layout_plan} />
-          ) : (
-            <span className="home-preview-unavailable">预览不可用</span>
-          )}
-        </span>
-      </button>
-      <div className="home-card-menu" ref={menuRef}>
+    <article className="hv3-card">
+      <div className="hv3-thumb">
+        <button className="hv3-thumb-open" type="button" aria-label={`打开 ${resume.title}`} onClick={onOpen}>
+          <span className="hv3-paper" aria-hidden="true">
+            {resume.preview?.layout_plan ? (
+              <ResumePreview data={resume.preview.data} style={resume.preview.style} layoutPlan={resume.preview.layout_plan} />
+            ) : (
+              <span className="hv3-paper-unavailable">预览不可用</span>
+            )}
+          </span>
+        </button>
         <button
-          ref={menuTriggerRef}
-          className="home-card-menu-trigger"
+          ref={triggerRef}
           type="button"
+          className="v3-icon-btn hv3-card-more"
           aria-label={`更多简历操作 ${resume.title}`}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
         >
-          <MoreHorizontal size={16} aria-hidden="true" />
+          <Icon name="more" size={16} />
         </button>
-        {menuOpen && (
-          <div
-            className="home-card-menu-panel"
-            role="menu"
-            aria-label={`${resume.title} 操作菜单`}
-            onKeyDown={handleMenuKeyDown}
-          >
-            {onRename && (
-              <button type="button" role="menuitem" onClick={() => runMenuAction(onRename)}>
-                <Pencil size={15} aria-hidden="true" />重命名
-              </button>
-            )}
-            {onShare && (
-              <button type="button" role="menuitem" onClick={() => runMenuAction(onShare)}>
-                <Share2 size={15} aria-hidden="true" />分享链接
-              </button>
-            )}
-            <button type="button" role="menuitem" onClick={() => runMenuAction(() => setCopyRequestId(crypto.randomUUID()))}>
-              <Plus size={15} aria-hidden="true" />复制为新简历
-            </button>
-            {onDelete && (
-              <button
-                className="is-danger"
-                type="button"
-                role="menuitem"
-                disabled={deleteDisabled}
-                onClick={() => runMenuAction(onDelete)}
-              >
-                <Trash2 size={15} aria-hidden="true" />删除
-              </button>
-            )}
-          </div>
-        )}
+        <Menu anchorRef={triggerRef} open={menuOpen} onClose={closeMenu} items={items} placement="bottom-end" label={`${resume.title} 操作菜单`} width={168} />
       </div>
-      <div className="home-card-meta">
-        <strong>{resume.title}</strong>
-        <small>更新于 {formatTime(resume.updated_at)}</small>
-        <div className="home-card-actions">
-          <button className="home-card-action is-primary" type="button" onClick={onOpen}>
-            <ExternalLink size={14} />打开
-          </button>
+      <div className="hv3-card-meta">
+        <strong title={resume.title}>{resume.title}</strong>
+        <div className="hv3-card-sub">
+          <small className="v3-num">{formatUpdatedAt(resume.updated_at)} · 已保存</small>
         </div>
       </div>
+      <MotionPresence>{copyRequestId && (
+        <RenameResumeDialog
+          copying
+          initialTitle={`${resume.title} 副本`}
+          busy={copying}
+          onCancel={() => setCopyRequestId(null)}
+          onSubmit={copy}
+        />
+      )}</MotionPresence>
     </article>
+  );
+}
+
+/* 02.1f 删除确认：插图 + 标题 + 影响说明 + 两个等宽按钮（红色删除） */
+function DeleteResumeDialog({ resume, busy, onCancel, onConfirm }: { resume: ResumeSummary; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const close = useStableCallback(onCancel);
+  return (
+    <Dialog width={420} label="删除这份简历？" onClose={close} className="v3-confirm hv3-delete" closable={!busy}>
+      <div className="v3-dialog-body">
+        <div className="v3-stage has-dots"><DeleteResumeArt /></div>
+        <h2 className="v3-dialog-title">删除这份简历？</h2>
+        <p className="v3-dialog-sub hv3-delete-sub" title={resume.title}>{resume.title} · 删除后无法恢复</p>
+        <ul className="hv3-delete-impact">
+          <li><Icon name="link" size={14} />公开分享链接会立即失效</li>
+          <li><Icon name="brief" size={14} />关联的求职记录会解除关联</li>
+          <li><Icon name="doc" size={14} />其他简历不受影响</li>
+        </ul>
+      </div>
+      <div className="v3-confirm-foot">
+        <button type="button" className="v3-btn v3-btn-ghost" disabled={busy} onClick={onCancel}>取消</button>
+        <button type="button" className="v3-btn v3-btn-danger" disabled={busy} onClick={onConfirm} data-autofocus>
+          {busy ? "正在删除…" : "删除"}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
 export function HomeScreen({
   loading = false,
+  loadError = false,
+  onRetry,
   resumes,
   activeImports,
   failedImports,
@@ -280,30 +297,48 @@ export function HomeScreen({
   onRename,
   onDelete,
   onDeleteImport,
+  initialCreateOpen = false,
+  initialImportOpen = false,
+  initialTemplateId = null,
+  onCreateClose,
+  onImportClose,
 }: HomeScreenProps) {
   const [query, setQuery] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ResumeSummary | null>(null);
   const [pendingRename, setPendingRename] = useState<ResumeSummary | null>(null);
+  const [copyFromRename, setCopyFromRename] = useState<{ resume: ResumeSummary; requestId: string } | null>(null);
+  const [copyingFromRename, setCopyingFromRename] = useState(false);
   const [sharingResume, setSharingResume] = useState<ResumeSummary | null>(null);
   const [deletingResumeId, setDeletingResumeId] = useState<string | null>(null);
   const [renamingResumeId, setRenamingResumeId] = useState<string | null>(null);
   const [deletingImportId, setDeletingImportId] = useState<string | null>(null);
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [notice, setNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(initialImportOpen);
+  const [createDialogOpen, setCreateDialogOpen] = useState(initialCreateOpen);
+  const notice = useNotice();
 
-  const visibleResumes = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    return resumes.filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery));
-  }, [query, resumes]);
-  const visibleImports = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    return [
-      ...activeImports.map((task) => ({ task, failed: false })),
-      ...failedImports.map((task) => ({ task, failed: true })),
-    ].filter(({ task }) => task.source_filename.toLocaleLowerCase().includes(normalizedQuery));
-  }, [activeImports, failedImports, query]);
+  const atLimit = resumes.length >= MAX_RESUMES_PER_USER;
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visibleResumes = useMemo(
+    () => resumes.filter((resume) => resume.title.toLocaleLowerCase().includes(normalizedQuery)),
+    [normalizedQuery, resumes],
+  );
+  const visibleImports = useMemo(() => [
+    ...activeImports.map((task) => ({ task, failed: false })),
+    ...failedImports.map((task) => ({ task, failed: true })),
+  ].filter(({ task }) => task.source_filename.toLocaleLowerCase().includes(normalizedQuery)), [activeImports, failedImports, normalizedQuery]);
+  const hasAnything = resumes.length + activeImports.length + failedImports.length > 0;
   const visibleCardCount = visibleImports.length + visibleResumes.length;
+  // 搜索结果集合变化时（而不是每敲一个字），网格浮上淡入
+  const gridMotionRef = useContentMotion<HTMLElement>(visibleResumes.map((resume) => resume.id).join(","), { initial: false });
+
+  const closeCreate = () => {
+    setCreateDialogOpen(false);
+    onCreateClose?.();
+  };
+  const closeImport = () => {
+    setImportDialogOpen(false);
+    onImportClose?.();
+  };
 
   const confirmDelete = async () => {
     if (!pendingDelete || deletingResumeId) return;
@@ -311,9 +346,9 @@ export function HomeScreen({
     setDeletingResumeId(resume.id);
     try {
       await onDelete(resume.id);
-      setNotice({ kind: "success", message: `已删除“${resume.title}”。` });
+      notice.show("success", `已删除「${resume.title}」`);
     } catch {
-      setNotice({ kind: "error", message: `删除“${resume.title}”失败，请稍后重试。` });
+      notice.show("error", `删除「${resume.title}」失败，请稍后重试。`);
     } finally {
       setDeletingResumeId(null);
       setPendingDelete(null);
@@ -330,12 +365,36 @@ export function HomeScreen({
     setRenamingResumeId(resume.id);
     try {
       await onRename(resume.id, title);
-      setNotice({ kind: "success", message: `已将简历重命名为“${title}”。` });
+      notice.show("success", `已将简历重命名为「${title}」`);
       setPendingRename(null);
     } catch {
-      setNotice({ kind: "error", message: "保存名称失败，请刷新列表后重试。" });
+      notice.show("error", "保存名称失败，请刷新列表后重试。");
     } finally {
       setRenamingResumeId(null);
+    }
+  };
+
+  // 重命名弹窗里的「复制为新简历」入口：关闭重命名，打开复制
+  const copyFromRenameSubmit = async (title: string) => {
+    if (!copyFromRename || copyingFromRename) return;
+    const { resume, requestId } = copyFromRename;
+    const ownerId = useResumeStore.getState().user?.id;
+    setCopyingFromRename(true);
+    try {
+      const { resume: copied } = await api.copyResume(resume.id, { title, base_lock_version: resume.lock_version, client_request_id: requestId });
+      if (useResumeStore.getState().user?.id !== ownerId) return;
+      useResumeStore.setState((state) => ({ resumes: [copied, ...state.resumes.filter((item) => item.id !== copied.id)] }));
+      setCopyFromRename(null);
+      try {
+        await useResumeStore.getState().listResumes();
+        notice.show("success", `已复制为「${title}」`);
+      } catch {
+        notice.show("error", "副本已创建，列表预览刷新失败，请刷新页面；无需再次复制。");
+      }
+    } catch {
+      notice.show("error", "复制失败，请检查名称、简历数量或刷新后重试。");
+    } finally {
+      setCopyingFromRename(false);
     }
   };
 
@@ -344,59 +403,90 @@ export function HomeScreen({
     setDeletingImportId(task.id);
     try {
       await onDeleteImport(task.id);
-      setNotice({ kind: "success", message: `已删除“${task.source_filename}”的失败记录。` });
+      notice.show("success", `已删除「${task.source_filename}」的失败记录`);
     } catch {
-      setNotice({ kind: "error", message: `删除“${task.source_filename}”的失败记录失败，请稍后重试。` });
+      notice.show("error", `删除“${task.source_filename}”的失败记录失败，请稍后重试。`);
     } finally {
       setDeletingImportId(null);
     }
   };
 
-  return (
-    <main className="dashboard-content home-dashboard-content">
-      <WorkspacePageHero
-        icon={<FileText />}
-        title="我的简历"
-        description="集中管理简历、版本与分享，随时继续编辑或导入新内容。"
-        actions={
-          <>
-            <ExpandableSearch
-              label="搜索简历"
-              name="resume-search"
-              value={query}
-              onValueChange={setQuery}
-              placeholder="搜索简历…"
-            />
-            <Button
-              variant="ghost"
-              icon={<FileUp size={15} />}
-              onClick={() => setImportDialogOpen(true)}
-            >
-              导入简历
-            </Button>
-            <Button
-              className="dashboard-create"
-              variant="outline"
-              icon={<Plus size={15} />}
-              onClick={() => setCreateDialogOpen(true)}
-            >
-              新建简历
-            </Button>
-          </>
-        }
-      />
+  const limitHint = `已达 ${MAX_RESUMES_PER_USER} 份上限`;
+  const showEmptyList = !loading && !loadError && !hasAnything;
 
-      {loading ? (
-        <PageLoading label="正在加载我的简历…" />
+  return (
+    <div className="hv3-page">
+      <header className="hv3-head">
+        <div className="hv3-head-copy">
+          <PageEyebrow className="hv3-eyebrow" segments={["RESUMES", !loadError && <Reveal inline loading={loading} placeholder={<LoadingText width={36} />}>{`${resumes.length} 份`}</Reveal>]} />
+          <h1 className="hv3-title">我的简历</h1>
+          <Reveal loading={loading} placeholder={<p className="hv3-sub"><LoadingText width={320} /></p>}>{atLimit ? (
+            <p className="hv3-sub is-warn">已达到 {MAX_RESUMES_PER_USER} 份上限。删除不用的简历后，才能新建、导入或复制。</p>
+          ) : (
+            <p className="hv3-sub">每份简历独立编辑，需要时复制一份按岗位修改。</p>
+          )}</Reveal>
+        </div>
+        {!showEmptyList && (
+          <div className="hv3-head-actions">
+            <button type="button" className="v3-btn v3-btn-ghost hv3-btn-import" disabled={atLimit} title={atLimit ? limitHint : undefined} onClick={() => setImportDialogOpen(true)}>
+              <Icon name="upload" size={13} />导入简历
+            </button>
+            <button type="button" className="v3-btn v3-btn-dark hv3-btn-new" disabled={atLimit} title={atLimit ? limitHint : undefined} onClick={() => setCreateDialogOpen(true)}>
+              <Icon name="plus" size={13} />新建简历
+            </button>
+          </div>
+        )}
+      </header>
+
+      {loadError ? (
+        <>
+          <div className="hv3-divider is-error" />
+          <section className="hv3-load-error" role="alert">
+            <div className="v3-stage"><ResumeLoadErrorArt /></div>
+            <h3>简历列表没能加载出来</h3>
+            <p>网络不稳定或服务暂时不可用，你的简历都还在，刷新一下试试。</p>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={onRetry}><Icon name="refresh" size={13} />重新加载</button>
+          </section>
+        </>
+      ) : showEmptyList ? (
+        <>
+          <div className="hv3-divider is-empty" />
+          <section className="v3-empty hv3-empty is-list" aria-label="还没有简历">
+            <div className="v3-stage has-dots"><EmptyListArt /></div>
+            <h3>从第一份简历开始</h3>
+            <p>新建时选一套模板、起个名字；已有简历文件可以用「导入简历」。</p>
+            <div className="v3-empty-actions">
+              <button type="button" className="v3-btn v3-btn-dark is-lg hv3-empty-new" onClick={() => setCreateDialogOpen(true)}>
+                新建简历<Icon name="arrow" size={12} />
+              </button>
+              <button type="button" className="v3-link" onClick={() => setImportDialogOpen(true)}>
+                <Icon name="upload" size={13} />导入简历
+              </button>
+            </div>
+          </section>
+        </>
       ) : (
-        <div className="dashboard-main">
-          {visibleCardCount > 0 ? (
-            <>
-              <section className="home-card-grid" aria-label="全部简历">
+        <>
+          <div className="hv3-toolbar">
+            <h2 className="hv3-toolbar-title">全部简历 <span className="v3-num"><Reveal inline loading={loading} placeholder={<LoadingText width={20} />}>{resumes.length}</Reveal></span></h2>
+            <SearchBox value={query} onChange={setQuery} placeholder="搜索简历…" label="搜索简历" width={220} />
+          </div>
+          <div className="hv3-divider" />
+          <Reveal loading={loading} className="hv3-grid-slot" placeholder={(
+            <div className="hv3-grid" role="status" aria-label="正在加载我的简历…">
+              {[0, 1, 2, 3].map((index) => (
+                <div className="hv3-card is-skeleton" key={index} aria-hidden="true">
+                  <div className="hv3-thumb" />
+                  <div className="hv3-card-meta"><span className="hv3-sk is-title" /><span className="hv3-sk" /></div>
+                </div>
+              ))}
+            </div>
+          )}>{visibleCardCount > 0 ? (
+            <section ref={gridMotionRef} className="hv3-grid" aria-label="全部简历">
               {visibleImports.map(({ task, failed }) => (
                 <ImportTaskCard
-                  task={task}
                   key={task.id}
+                  task={task}
                   failed={failed}
                   deleting={deletingImportId === task.id}
                   deleteDisabled={deletingImportId !== null}
@@ -404,95 +494,108 @@ export function HomeScreen({
                 />
               ))}
               {visibleResumes.map((resume) => (
-                <ResumeThumbnailCard
+                <ResumeCard
                   key={resume.id}
                   resume={resume}
-                  onOpen={() => void onOpen(resume.id)}
-                  onShare={() => setSharingResume(resume)}
-                  onRename={() => {
-                    setPendingRename(resume);
-                  }}
-                  onDelete={() => setPendingDelete(resume)}
+                  atLimit={atLimit}
                   deleteDisabled={deletingResumeId !== null}
+                  onOpen={() => void onOpen(resume.id)}
+                  onRename={() => setPendingRename(resume)}
+                  onShare={() => setSharingResume(resume)}
+                  onDelete={() => setPendingDelete(resume)}
+                  onNotice={notice.show}
                 />
               ))}
-              </section>
-            </>
-          ) : (
-            <section className="home-resume-empty-state">
-              <FileText aria-hidden="true" />
-              <h2>{query ? "没有匹配的简历" : "还没有正式简历"}</h2>
-              <p>
-                {query
-                  ? "换个关键词试试。"
-                  : "创建一份新简历，或导入已有文件，开始整理你的求职资料。"}
-              </p>
-              {!query && (
-                <div className="empty-state-actions">
-                  <Button icon={<Plus size={15} />} onClick={() => setCreateDialogOpen(true)}>创建第一份简历</Button>
-                  <Button
-                    variant="outline"
-                    icon={<FileUp size={15} />}
-                    onClick={() => setImportDialogOpen(true)}
-                  >
-                    导入简历
-                  </Button>
-                </div>
+              {!normalizedQuery && (
+                <button
+                  type="button"
+                  className="hv3-new-card"
+                  disabled={atLimit}
+                  onClick={() => setCreateDialogOpen(true)}
+                >
+                  <Icon name="plus" size={20} />
+                  <span>{atLimit ? limitHint : "新建空白简历"}</span>
+                </button>
               )}
             </section>
-          )}
-        </div>
+          ) : (
+            <section className="v3-empty hv3-empty is-search" aria-label="搜索结果">
+              <div className="v3-stage has-dots"><SearchEmptyArt /></div>
+              <h3>没有找到「{query.trim()}」</h3>
+              <p>试试更短的关键词，比如公司名或岗位名；也可以回到「全部」查看所有简历。</p>
+              <div className="v3-empty-actions">
+                <button type="button" className="v3-btn v3-btn-ghost is-lg hv3-clear-search" onClick={() => setQuery("")}>
+                  <Icon name="search" size={13} />清除搜索
+                </button>
+              </div>
+            </section>
+          )}</Reveal>
+        </>
       )}
 
-      {notice && (
-        <FeedbackNotice kind={notice.kind} placement="floating" onDismiss={() => setNotice(null)}>
-          {notice.message}
-        </FeedbackNotice>
-      )}
-      {pendingDelete && (
-        <ConfirmDialog
-          kind="delete"
-          title={`删除“${pendingDelete.title}”？`}
-          description="删除后无法恢复。求职记录会保留，关联简历将被清空。"
-          confirmLabel="永久删除"
-          busyLabel="正在删除…"
+      {notice.node}
+      <MotionPresence>{pendingDelete && (
+        <DeleteResumeDialog
+          resume={pendingDelete}
           busy={deletingResumeId === pendingDelete.id}
           onCancel={() => setPendingDelete(null)}
-          onConfirm={confirmDelete}
+          onConfirm={() => void confirmDelete()}
         />
-      )}
-      {pendingRename && (
+      )}</MotionPresence>
+      <MotionPresence>{pendingRename && (
         <RenameResumeDialog
           initialTitle={pendingRename.title}
           busy={renamingResumeId === pendingRename.id}
-          onCancel={() => {
-            setPendingRename(null);
-          }}
+          copyDisabled={atLimit}
+          onCancel={() => setPendingRename(null)}
           onSubmit={confirmRename}
+          onCopy={() => {
+            const resume = pendingRename;
+            setPendingRename(null);
+            setCopyFromRename({ resume, requestId: crypto.randomUUID() });
+          }}
         />
-      )}
-      {sharingResume && (
-        <SharePanel
-          resumeId={sharingResume.id}
-          resumeTitle={sharingResume.title}
-          onClose={() => setSharingResume(null)}
+      )}</MotionPresence>
+      <MotionPresence>{copyFromRename && (
+        <RenameResumeDialog
+          copying
+          initialTitle={`${copyFromRename.resume.title} 副本`}
+          busy={copyingFromRename}
+          onCancel={() => setCopyFromRename(null)}
+          onSubmit={copyFromRenameSubmit}
         />
-      )}
-      {importDialogOpen && (
+      )}</MotionPresence>
+      <MotionPresence>{sharingResume && (
+        <SharePanel resumeId={sharingResume.id} resumeTitle={sharingResume.title} onClose={() => setSharingResume(null)} />
+      )}</MotionPresence>
+      <MotionPresence>{importDialogOpen && (
         <ResumeImportDialog
-          onClose={() => setImportDialogOpen(false)}
-          onAccepted={(title) => setNotice({ kind: "success", message: `已开始导入“${title}”。` })}
+          onClose={closeImport}
+          onAccepted={(title) => notice.show("success", `已开始导入「${title}」`, "解析完成后会出现在列表里")}
         />
-      )}
-      {createDialogOpen && (
-        <ResumeCreateDialog onClose={() => setCreateDialogOpen(false)} />
-      )}
-    </main>
+      )}</MotionPresence>
+      <MotionPresence>{createDialogOpen && <ResumeCreateDialog onClose={closeCreate} initialTemplateId={initialTemplateId} />}</MotionPresence>
+    </div>
   );
 }
 
-export function HomePage() {
-  const [loading, setLoading] = useState(true);
+export function HomePage({
+  initialCreateOpen = false,
+  initialImportOpen = false,
+  initialTemplateId = null,
+  onCreateClose,
+  onImportClose,
+}: {
+  initialCreateOpen?: boolean;
+  initialImportOpen?: boolean;
+  initialTemplateId?: string | null;
+  onCreateClose?: () => void;
+  onImportClose?: () => void;
+} = {}) {
+  // 本次登录已经读过简历列表时直接显示（不画骨架）；距上次读取不到 5 分钟不再请求，否则后台静默刷新
+  const [loading, setLoading] = useState(() => useResumeStore.getState().resumesLoadedAt === null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const resumes = useResumeStore((state) => state.resumes);
   const activeImports = useResumeStore((state) => state.activeImports);
   const failedImports = useResumeStore((state) => state.failedImports);
@@ -504,31 +607,37 @@ export function HomePage() {
 
   useEffect(() => {
     let cancelled = false;
+    const loadedAt = useResumeStore.getState().resumesLoadedAt;
+    if (loadAttempt === 0 && loadedAt !== null && Date.now() - loadedAt < PAGE_CACHE_DEDUPE_MS) {
+      setLoading(false);
+      return undefined;
+    }
+    if (loadedAt === null || loadAttempt > 0) setLoading(true);
+    setLoadError(false);
     void listResumes()
-      .catch(() => undefined)
+      // 后台刷新失败时保留已有列表，只有从来没读到过才显示失败状态
+      .catch(() => { if (!cancelled && (loadedAt === null || loadAttempt > 0)) setLoadError(true); })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [listResumes]);
+  }, [listResumes, loadAttempt]);
+  // 窗口回到前台：后台静默刷新列表（失败时保留已有列表）
+  useRevalidateOnFocus(() => { void listResumes().catch(() => undefined); });
 
   return (
     <>
       {activeImports
-        .filter((task) => (
-          task.upload_status === "succeeded" && task.parse_status === "processing"
-        ))
+        .filter((task) => task.upload_status === "succeeded" && task.parse_status === "processing")
         .map((task) => (
-          <ResumeImportPoller
-            key={task.id}
-            importId={task.id}
-            pollResumeImport={pollResumeImport}
-          />
+          <ResumeImportPoller key={task.id} importId={task.id} pollResumeImport={pollResumeImport} />
         ))}
       <HomeScreen
         loading={loading}
+        loadError={loadError}
+        onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
         resumes={resumes}
         activeImports={activeImports}
         failedImports={failedImports}
@@ -536,6 +645,11 @@ export function HomePage() {
         onRename={renameResume}
         onDelete={deleteResume}
         onDeleteImport={deleteResumeImport}
+        initialCreateOpen={initialCreateOpen}
+        initialImportOpen={initialImportOpen}
+        initialTemplateId={initialTemplateId}
+        onCreateClose={onCreateClose}
+        onImportClose={onImportClose}
       />
     </>
   );
@@ -543,13 +657,7 @@ export function HomePage() {
 
 const RESUME_IMPORT_POLL_INTERVAL_MS = 1000;
 
-function ResumeImportPoller({
-  importId,
-  pollResumeImport,
-}: {
-  importId: string;
-  pollResumeImport: (id: string) => Promise<void>;
-}) {
+function ResumeImportPoller({ importId, pollResumeImport }: { importId: string; pollResumeImport: (id: string) => Promise<void> }) {
   useEffect(() => {
     let requestInFlight = false;
     const timer = window.setInterval(() => {
@@ -557,7 +665,7 @@ function ResumeImportPoller({
       requestInFlight = true;
       void pollResumeImport(importId)
         .catch(() => {
-          // Transient polling failures are retried on the next tick.
+          // 轮询偶发失败时下一次 tick 自动重试
         })
         .finally(() => {
           requestInFlight = false;
@@ -567,13 +675,4 @@ function ResumeImportPoller({
   }, [importId, pollResumeImport]);
 
   return null;
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }

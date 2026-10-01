@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
+  AgentProposalEntry,
   ApiRequestError,
   ImportWarning,
   ResumeRecord,
@@ -43,6 +44,7 @@ import type { OpenTheme } from "../api/openThemes";
 import type { OriginalTheme } from "../api/originalThemes";
 import type { CareerTheme } from "../api/careerThemes";
 import type { FeaturedTheme } from "../api/featuredThemes";
+import { setPageCacheUser } from "../v3/pageCache";
 
 export type ResumeTheme =
   | AtlasTheme
@@ -117,6 +119,8 @@ type ResumeState = {
   logout: () => Promise<void>;
   syncProfile: (user: UserProfile) => void;
   listResumes: () => Promise<void>;
+  /** 最近一次成功读取简历列表的时间；null 表示本次登录还没读过（我的简历页据此决定是否画骨架） */
+  resumesLoadedAt: number | null;
   createResume: (title: string, templateId: string) => Promise<string>;
   importResume: (file: File, templateId: string, title?: string) => Promise<string>;
   pollResumeImport: (id: string) => Promise<void>;
@@ -125,7 +129,7 @@ type ResumeState = {
   deleteResume: (id: string) => Promise<void>;
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
-  confirmResumeProposal: (proposalId: string, resumeId: string) => Promise<ResumeRecord>;
+  confirmResumeProposal: (proposalId: string, resumeId: string, entry?: AgentProposalEntry) => Promise<ResumeRecord>;
   goHome: () => void;
   dismissImportWarnings: (resumeId: string) => void;
   setTitle: (title: string) => void;
@@ -448,6 +452,7 @@ function mergeResumeSummary(resumes: ResumeSummary[], resume: ResumeRecord) {
 export const useResumeStore = create<ResumeState>((set, get) => ({
   authStatus: "checking",
   user: null,
+  resumesLoadedAt: null,
   resumes: [],
   activeImports: [],
   failedImports: [],
@@ -529,6 +534,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     set({
       authStatus: "guest",
       user: null,
+      resumesLoadedAt: null,
       resumes: [],
       activeImports: [],
       failedImports: [],
@@ -553,6 +559,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       resumes: overview.resumes,
       activeImports: overview.active_imports,
       failedImports: overview.failed_imports,
+      resumesLoadedAt: Date.now(),
     });
   },
 
@@ -754,7 +761,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     await queuedSave;
   },
 
-  confirmResumeProposal: async (proposalId, resumeId) => {
+  confirmResumeProposal: async (proposalId, resumeId, entry) => {
     if (get().proposalApplyingResumeId || get().versionOperationPending) {
       throw new ApiRequestError(409, "RESUME_WRITE_PENDING");
     }
@@ -771,7 +778,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       const confirmation = saveQueue.then(async () => {
         let resume: ResumeRecord;
         try {
-          ({ resume } = await api.confirmAgentProposal(proposalId));
+          ({ resume } = await api.confirmAgentProposal(proposalId, entry));
         } catch (error) {
           if (error instanceof ApiRequestError && error.status < 500) throw error;
           // A lost response is not proof of rollback. Reconcile the persisted
@@ -973,3 +980,7 @@ useResumeStore.subscribe((state, previous) => {
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", flushPendingLocalResumeDraft);
 }
+
+// 页面短时缓存按登录用户隔离：登录、退出、换账号时清空，避免看到上一个账号的数据
+setPageCacheUser(useResumeStore.getState().user?.id ?? null);
+useResumeStore.subscribe((state) => setPageCacheUser(state.user?.id ?? null));

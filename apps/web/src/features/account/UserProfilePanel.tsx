@@ -1,38 +1,6 @@
+import { MotionPresence, useContentMotion } from "@/components/ui/motion";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import {
-  Award,
-  Briefcase,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  GraduationCap,
-  Pencil,
-  UserPlus,
-  X,
-} from "lucide-react";
 
-import {
-  Badge,
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  FeedbackNotice,
-  Label,
-  PageLoading,
-  TextField,
-  TogglePill,
-} from "@/components/ui";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   api,
   ApiRequestError,
@@ -44,24 +12,29 @@ import {
   type UserProfileData,
   type UserProfileUpdate,
 } from "../../api/client";
-import { accountErrorMessage } from "./AccountPage";
+import { Icon } from "../../v3/Icon";
+import { Dialog, Select, Toast } from "../../v3/primitives";
+import { accountErrorMessage } from "./accountErrors";
+import { ProfileBannerArt } from "./accountArt";
+import { readPageCache, updatePageCache, writePageCache } from "@/v3/pageCache";
+
+const USER_PROFILE_CACHE_KEY = "account-user-profile";
+
+// 08.4「求职资料」区块里的「个人画像」一行 + 08.4g 编辑个人画像弹窗。
+// 账号页不展示画像内容，只显示填写进度；读写仍走唯一的 GET/PUT /api/account/user-profile，保存带乐观锁。
 
 type Notice = { kind: "success" | "error"; message: string } | null;
 
-type ProfileForm = Omit<
-  UserProfileData,
-  "lock_version" | "created_at" | "updated_at"
->;
+type ProfileForm = Omit<UserProfileData, "lock_version" | "created_at" | "updated_at">;
+
+const MAX_CITIES = 20; // 后端 candidate_cities max_length=20
 
 const EMPLOYMENT_TYPE_OPTIONS: Array<{ label: string; value: EmploymentType }> = [
   { label: "实习", value: "internship" },
   { label: "全职", value: "full_time" },
 ];
 
-const CANDIDATE_STATUS_OPTIONS: Array<{
-  label: string;
-  value: CandidateStatus;
-}> = [
+const CANDIDATE_STATUS_OPTIONS: Array<{ label: string; value: CandidateStatus }> = [
   { label: "应届生", value: "fresh_graduate" },
   { label: "非应届生", value: "experienced" },
 ];
@@ -108,20 +81,42 @@ const EMPTY_FORM: ProfileForm = {
   campus_experiences: [],
 };
 
-function formatProfileTime(isoString?: string | null): string {
-  if (!isoString) return "";
-  try {
-    const date = new Date(isoString);
-    if (Number.isNaN(date.getTime())) return "";
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  } catch {
-    return "";
-  }
+// 四个分类及其计入进度的字段（与设计稿左栏导航一致）
+type CategoryId = "preferences" | "education" | "skills" | "honors";
+
+const CATEGORIES: Array<{ id: CategoryId; label: string; hint: string }> = [
+  { id: "preferences", label: "求职条件", hint: "找工作时最看重的几项" },
+  { id: "education", label: "学历与院校", hint: "最高学历与就读院校" },
+  { id: "skills", label: "技能与证书", hint: "技术栈、语言与资格证书" },
+  { id: "honors", label: "荣誉与经历", hint: "奖项和校园实践" },
+];
+
+function filledItems(form: ProfileForm): Record<CategoryId, boolean[]> {
+  const has = (values: string[]) => values.some((value) => value.trim() && value.trim() !== "无");
+  return {
+    preferences: [
+      form.employment_types.length > 0,
+      form.candidate_status != null,
+      form.candidate_cities.length > 0,
+      form.salary_min != null || form.salary_max != null,
+      form.candidate_status === "fresh_graduate" ? form.graduation_year != null : form.years_experience != null,
+    ],
+    education: [form.education_level != null, Boolean(form.school), Boolean(form.major), form.school_tier.length > 0],
+    skills: [has(form.skills), has(form.languages), has(form.certifications)],
+    honors: [has(form.honors), has(form.campus_experiences)],
+  };
+}
+
+export function profileProgress(form: ProfileForm) {
+  const items = filledItems(form);
+  const all = Object.values(items).flat();
+  return {
+    filled: all.filter(Boolean).length,
+    total: all.length,
+    byCategory: Object.fromEntries(
+      Object.entries(items).map(([key, values]) => [key, values.length - values.filter(Boolean).length]),
+    ) as Record<CategoryId, number>,
+  };
 }
 
 function toFormState(data: UserProfileData | null | undefined): ProfileForm {
@@ -130,6 +125,9 @@ function toFormState(data: UserProfileData | null | undefined): ProfileForm {
   return {
     ...EMPTY_FORM,
     ...rest,
+    // 后端 Decimal 可能以字符串返回，这里统一成数字
+    salary_min: rest.salary_min == null ? null : Number(rest.salary_min),
+    salary_max: rest.salary_max == null ? null : Number(rest.salary_max),
     candidate_cities: [...rest.candidate_cities],
     employment_types: [...rest.employment_types],
     school_tier: [...rest.school_tier],
@@ -160,137 +158,53 @@ function normalizeStringArray(values: string[]): string[] {
   return result;
 }
 
-function formatSalary(profile: UserProfileData): string | null {
-  if (profile.salary_min == null && profile.salary_max == null) return null;
-  const periodMap: Record<SalaryPeriod, string> = {
-    month: "月",
-    year: "年",
-    day: "日",
-    hour: "时",
-  };
-  const period = profile.salary_period
-    ? ` / ${periodMap[profile.salary_period] ?? profile.salary_period}`
-    : "";
-  const currency =
-    profile.salary_currency && profile.salary_currency !== "CNY"
-      ? ` (${profile.salary_currency})`
-      : "";
-  const formatAmount = (value: number) =>
-    value >= 1000 && value % 1000 === 0 ? `${value / 1000}k` : `${value}元`;
-
-  if (profile.salary_min != null && profile.salary_max != null) {
-    return `${formatAmount(profile.salary_min)} - ${formatAmount(profile.salary_max)}${period}${currency}`;
-  }
-  if (profile.salary_min != null) {
-    return `${formatAmount(profile.salary_min)}+${period}${currency}`;
-  }
-  return `≤ ${formatAmount(profile.salary_max!)}${period}${currency}`;
-}
-
-function getEmploymentTypeLabel(value: EmploymentType): string {
-  return EMPLOYMENT_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value;
-}
-
-function getEducationLevelLabel(value: EducationLevel | null | undefined): string | null {
-  if (!value) return null;
-  return EDUCATION_LEVEL_OPTIONS.find((option) => option.value === value)?.label ?? value;
-}
-
-function formatExperience(profile: UserProfileData): string | null {
-  if (profile.candidate_status === "fresh_graduate") {
-    return profile.graduation_year != null
-      ? `应届生 · ${profile.graduation_year} 届`
-      : "应届生";
-  }
-  if (profile.candidate_status === "experienced") {
-    return profile.years_experience != null
-      ? `${profile.years_experience} 年经验`
-      : null;
-  }
-  if (profile.years_experience != null) {
-    return `${profile.years_experience} 年经验`;
-  }
-  return null;
-}
-
 function hasAnyProfileData(profile: UserProfileData | null): boolean {
   if (!profile) return false;
-  return Boolean(
-    profile.candidate_cities.length > 0 ||
-      profile.salary_min != null ||
-      profile.salary_max != null ||
-      profile.employment_types.length > 0 ||
-      profile.school ||
-      profile.school_tier.length > 0 ||
-      profile.major ||
-      profile.education_level ||
-      profile.candidate_status ||
-      profile.graduation_year != null ||
-      profile.years_experience != null ||
-      profile.languages.length > 0 ||
-      profile.skills.length > 0 ||
-      profile.certifications.length > 0 ||
-      profile.honors.length > 0 ||
-      profile.campus_experiences.length > 0,
-  );
+  return profileProgress(toFormState(profile)).filled > 0;
+}
+
+function formatUpdatedAt(iso: string | null | undefined) {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 // ---------------------------------------------------------------------------
-// 标签输入子组件
+// 标签输入：白底描边框，内部是 24 高的小标签，末尾接输入框
 // ---------------------------------------------------------------------------
-interface TagInputProps {
-  label?: string;
-  hint?: string;
-  tags: string[];
-  placeholder?: string;
-  ariaLabel?: string;
-  presets?: string[];
-  onChange: (tags: string[]) => void;
-}
-
 function TagInput({
-  label,
-  hint,
   tags,
   placeholder = "输入后回车添加…",
   ariaLabel,
-  presets,
+  max,
   onChange,
-}: TagInputProps) {
+}: {
+  tags: string[];
+  placeholder?: string;
+  ariaLabel: string;
+  max?: number;
+  onChange: (tags: string[]) => void;
+}) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
+  const full = max != null && tags.length >= max;
 
   const addTag = (text: string) => {
-    const parts = text
-      .trim()
-      .split(/[,，]/)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    if (parts.length > 0) onChange(normalizeStringArray([...tags, ...parts]));
+    const parts = text.trim().split(/[,，]/).map((value) => value.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      const next = normalizeStringArray([...tags, ...parts]);
+      onChange(max != null ? next.slice(0, max) : next);
+    }
     setDraft("");
   };
 
-  const removeTag = (index: number) => {
-    onChange(tags.filter((_, currentIndex) => currentIndex !== index));
-  };
-
-  const togglePreset = (preset: string) => {
-    if (tags.includes(preset)) {
-      onChange(tags.filter((tag) => tag !== preset));
-    } else {
-      onChange([...tags, preset]);
-    }
-  };
+  const removeTag = (index: number) => onChange(tags.filter((_, current) => current !== index));
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (
-      event.nativeEvent.isComposing ||
-      isComposingRef.current ||
-      event.keyCode === 229
-    ) {
-      return;
-    }
+    // 中文输入法选词期间的回车不算提交
+    if (event.nativeEvent.isComposing || isComposingRef.current || event.keyCode === 229) return;
     if (event.key === "Enter" || event.key === ",") {
       event.preventDefault();
       addTag(draft);
@@ -300,528 +214,249 @@ function TagInput({
   };
 
   return (
-    <div className="account-profile-tag-row">
-      {(label || hint) && (
-        <div className="account-profile-tag-header">
-          {label && <Label className="account-profile-field-label">{label}</Label>}
-          {hint && <span className="account-profile-field-hint">{hint}</span>}
-        </div>
-      )}
-      <div
-        className="account-profile-tag-input"
-        onClick={() => inputRef.current?.focus()}
-      >
-        <ul className="account-profile-tag-list" aria-label={label}>
-          {tags.map((tag, index) => (
-            <li key={`${tag}-${index}`} className="account-profile-tag-item">
-              <Badge variant="secondary" className="account-profile-tag-badge">
-                <span className="account-profile-tag-text">{tag}</span>
-                <button
-                  type="button"
-                  className="account-profile-tag-remove"
-                  aria-label={`移除 ${tag}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    removeTag(index);
-                  }}
-                >
-                  <X size={12} aria-hidden />
-                </button>
-              </Badge>
-            </li>
-          ))}
-        </ul>
-        <input
-          ref={inputRef}
-          type="text"
-          className="account-profile-tag-input-field"
-          value={draft}
-          aria-label={ariaLabel || label || placeholder}
-          placeholder={tags.length === 0 ? placeholder : "继续添加…"}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleKeyDown}
-          onCompositionStart={() => {
-            isComposingRef.current = true;
-          }}
-          onCompositionEnd={() => {
-            isComposingRef.current = false;
-          }}
-          onBlur={() => addTag(draft)}
-        />
-      </div>
-      {presets && presets.length > 0 && (
-        <div className="account-profile-preset-group" aria-label={`${label}常用预设`}>
-          <span className="account-profile-preset-label">常用</span>
-          <div className="account-profile-pill-group">
-            {presets.map((preset) => (
-              <TogglePill
-                key={preset}
-                active={tags.includes(preset)}
-                onClick={() => togglePreset(preset)}
-              >
-                {preset}
-              </TogglePill>
-            ))}
-          </div>
-        </div>
-      )}
+    <div className="prof-tags" onClick={() => inputRef.current?.focus()}>
+      {tags.map((tag, index) => (
+        <span key={`${tag}-${index}`} className="prof-tag">
+          {tag}
+          <button
+            type="button"
+            aria-label={`移除 ${tag}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              removeTag(index);
+            }}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        type="text"
+        value={draft}
+        aria-label={ariaLabel}
+        disabled={full}
+        placeholder={full ? `最多 ${max} 个` : tags.length === 0 ? placeholder : "继续添加…"}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={handleKeyDown}
+        onCompositionStart={() => {
+          isComposingRef.current = true;
+        }}
+        onCompositionEnd={() => {
+          isComposingRef.current = false;
+        }}
+        onBlur={() => addTag(draft)}
+      />
     </div>
   );
 }
 
+function FieldLabel({ label, hint }: { label: string; hint?: string }) {
+  return (
+    <div className="prof-label">
+      <span>{label}</span>
+      {hint && <small>{hint}</small>}
+    </div>
+  );
+}
+
+// 数字输入框，右侧带单位 / 说明（「最低」「年」）
+function NumberField({ value, ariaLabel, suffix, placeholder, min, max, step = 1, onChange }: {
+  value: number | null;
+  ariaLabel: string;
+  suffix?: string;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (value: number | null) => void;
+}) {
+  return (
+    <label className="prof-num">
+      <input
+        className="v3-input"
+        type="number"
+        inputMode="numeric"
+        aria-label={ariaLabel}
+        min={min}
+        max={max}
+        step={step}
+        placeholder={placeholder}
+        value={value == null ? "" : Number(value)}
+        onChange={(event) => onChange(nullableNumber(event.target.value))}
+      />
+      {suffix && <span>{suffix}</span>}
+    </label>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// 主组件
+// 账号页里的一行入口
 // ---------------------------------------------------------------------------
 export function UserProfilePanel() {
-  const [serverData, setServerData] = useState<UserProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 个人画像进度也走短时缓存：回到账号页时直接显示上次的进度，超过 5 分钟再后台刷新
+  const [serverData, setServerData] = useState<UserProfileData | null>(() => readPageCache<UserProfileData>(USER_PROFILE_CACHE_KEY)?.value ?? null);
+  const [loading, setLoading] = useState(() => !readPageCache(USER_PROFILE_CACHE_KEY));
   const [failed, setFailed] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [notice, setNotice] = useState<Notice>(null);
 
   useEffect(() => {
     let active = true;
+    const cached = readPageCache<UserProfileData>(USER_PROFILE_CACHE_KEY);
+    if (cached?.fresh) return undefined;
     void api
       .getUserProfile()
       .then((data) => {
         if (!active) return;
         setServerData(data);
+        writePageCache(USER_PROFILE_CACHE_KEY, data);
         setFailed(false);
       })
       .catch(() => {
-        if (!active) return;
-        setFailed(true);
+        if (active && !cached) setFailed(true);
       })
       .finally(() => {
         if (active) setLoading(false);
       });
-
     return () => {
       active = false;
     };
   }, []);
 
-  const handleSaved = (newProfile: UserProfileData) => {
-    setServerData(newProfile);
-    setEditDialogOpen(false);
-  };
-
-  const handleConflict = (latestProfile: UserProfileData) => {
-    setServerData(latestProfile);
-  };
-
-  if (loading) {
-    return (
-      <section className="account-profile-panel" aria-label="个人画像">
-        <PageLoading label="正在加载个人画像…" />
-      </section>
-    );
-  }
-
-  if (failed && !serverData) {
-    return (
-      <section className="account-profile-panel" aria-label="个人画像">
-        <header className="account-profile-panel-header">
-          <div className="account-profile-panel-header-text">
-            <h2 id="account-profile-heading">个人画像</h2>
-          </div>
-        </header>
-        <p className="account-profile-panel-empty">
-          个人画像暂不可用，请稍后重试。
-        </p>
-      </section>
-    );
-  }
-
-  const hasData = hasAnyProfileData(serverData);
-  const salaryText = serverData ? formatSalary(serverData) : null;
-  const experienceText = serverData ? formatExperience(serverData) : null;
-  const educationLevelText = serverData
-    ? getEducationLevelLabel(serverData.education_level)
-    : null;
-  const skillDisplayFields = serverData
-    ? [
-        { label: "专业技能", values: serverData.skills },
-        { label: "语言能力", values: serverData.languages },
-        { label: "专业证书", values: serverData.certifications },
-        { label: "荣誉奖项", values: serverData.honors },
-        { label: "校园经历", values: serverData.campus_experiences },
-      ]
-        .map((field) => ({
-          ...field,
-          values: field.values
-            .map((value) => value.trim())
-            .filter((value) => value && value !== "无"),
-        }))
-        .filter((field) => field.values.length > 0)
-    : [];
+  const progress = serverData ? profileProgress(toFormState(serverData)) : null;
+  const unavailable = failed && !serverData;
+  const status = loading
+    ? "正在读取…"
+    : unavailable
+      ? "个人画像暂不可用，请稍后重试。"
+      : hasAnyProfileData(serverData)
+        ? `已填 ${progress!.filled} / ${progress!.total} 项`
+        : null;
 
   return (
-    <section className="account-profile-panel" aria-label="个人画像">
-      <header className="account-profile-panel-header">
-        <div className="account-profile-panel-header-text">
-          <h2 id="account-profile-heading">个人画像</h2>
-          <p>跨简历共享的求职条件与个人基础信息</p>
-        </div>
-        <Button
-          variant="outline"
-          className="account-profile-edit-btn"
-          onClick={() => setEditDialogOpen(true)}
-        >
-          <Pencil size={15} aria-hidden />
-          编辑
-        </Button>
-      </header>
+    <>
+      <button
+        type="button"
+        className="acc-row is-button"
+        aria-label="个人画像"
+        disabled={loading || unavailable}
+        onClick={() => setEditDialogOpen(true)}
+      >
+        <span className="acc-row-label">个人画像</span>
+        <span className="acc-row-value">城市、薪资、学历等 · 所有简历共用</span>
+        <span className="acc-row-right">
+          {status ? <span className="acc-row-meta">{status}</span> : <span className="acc-row-meta is-strong">去填写</span>}
+          {!loading && !unavailable && <Icon name="chev" size={12} />}
+        </span>
+      </button>
 
-      <div className="account-profile-panel-body">
-        {!hasData ? (
-          <div className="account-profile-display-empty">
-            <div className="account-profile-empty-icon">
-              <UserPlus size={32} aria-hidden />
-            </div>
-            <h3>暂未完善个人画像</h3>
-            <p>完善求职条件、教育背景和技能成果，为后续岗位比较提供更完整的依据。</p>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setEditDialogOpen(true)}
-            >
-              <Pencil size={14} aria-hidden />
-              立即完善个人画像
-            </Button>
-          </div>
-        ) : (
-          <div className="account-profile-display-content">
-            <div className="account-profile-display-group">
-              <div className="account-profile-display-group-header">
-                <span className="account-profile-display-group-title">
-                  <Briefcase size={18} aria-hidden />
-                  求职与经验
-                </span>
-              </div>
-              <div className="account-profile-display-group-body">
-                <div className="account-profile-display-meta-grid account-profile-display-meta-grid-2x2">
-                  <div className="account-profile-display-meta-item">
-                    <span className="account-profile-display-meta-label">可接受城市</span>
-                    <span className="account-profile-display-meta-value">
-                      {serverData?.candidate_cities.slice(0, 3).join("、") || "未指定"}
-                    </span>
-                  </div>
-                  <div className="account-profile-display-meta-item">
-                    <span className="account-profile-display-meta-label">期望薪资</span>
-                    <span className="account-profile-display-meta-value">
-                      {salaryText || "面议 / 未指定"}
-                    </span>
-                  </div>
-                  <div className="account-profile-display-meta-item">
-                    <span className="account-profile-display-meta-label">工作性质</span>
-                    <span className="account-profile-display-meta-value">
-                      {serverData?.employment_types.map(getEmploymentTypeLabel).join(" · ") || "未指定"}
-                    </span>
-                  </div>
-                  <div className="account-profile-display-meta-item">
-                    <span className="account-profile-display-meta-label">工作经验</span>
-                    <span className="account-profile-display-meta-value">
-                      {experienceText || "未填写"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
+      <MotionPresence>{editDialogOpen && (
+        <UserProfileEditDialog
+          serverData={serverData}
+          onClose={() => setEditDialogOpen(false)}
+          onSaved={(profile) => {
+            setServerData(profile);
+            updatePageCache(USER_PROFILE_CACHE_KEY, profile);
+            setEditDialogOpen(false);
+            setNotice({ kind: "success", message: "个人画像已保存。" });
+          }}
+          onConflict={(latest) => { setServerData(latest); updatePageCache(USER_PROFILE_CACHE_KEY, latest); }}
+          onNotice={setNotice}
+        />
+      )}</MotionPresence>
 
-            <div className="account-profile-display-group">
-              <div className="account-profile-display-group-header">
-                <span className="account-profile-display-group-title">
-                  <GraduationCap size={18} aria-hidden />
-                  教育背景
-                </span>
-              </div>
-              <div className="account-profile-display-group-body">
-                <div className="account-profile-display-meta-grid account-profile-display-meta-grid-education">
-                  <div className="account-profile-display-meta-item">
-                    <span className="account-profile-display-meta-label">学历与院校</span>
-                    <span className="account-profile-display-meta-value">
-                      {[educationLevelText, serverData?.school]
-                        .filter(Boolean)
-                        .join(" · ") || "未填写"}
-                    </span>
-                  </div>
-                  <div className="account-profile-display-meta-item">
-                    <span className="account-profile-display-meta-label">专业方向</span>
-                    <span className="account-profile-display-meta-value">
-                      {serverData?.major || "未填写"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="account-profile-display-group">
-              <div className="account-profile-display-group-header">
-                <span className="account-profile-display-group-title">
-                  <Award size={18} aria-hidden />
-                  技能与成果
-                </span>
-              </div>
-              <div className="account-profile-display-group-body">
-                {skillDisplayFields.length > 0 ? (
-                  <div className="account-profile-display-meta-grid account-profile-display-meta-grid-skills">
-                    {skillDisplayFields.map((field) => (
-                      <div
-                        key={field.label}
-                        className="account-profile-display-meta-item"
-                      >
-                        <span className="account-profile-display-meta-label">{field.label}</span>
-                        <span className="account-profile-display-meta-value">
-                          {field.values.join("、")}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span className="account-profile-display-empty-text">无</span>
-                )}
-              </div>
-            </div>
-
-            <div className="account-profile-display-footer">
-              <span>画像数据已跨简历共享，用于岗位条件比较</span>
-              <span>
-                {serverData?.updated_at
-                  ? `最近更新于 ${formatProfileTime(serverData.updated_at)}`
-                  : "已同步最新版本"}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <UserProfileEditDialog
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        serverData={serverData}
-        onSaved={handleSaved}
-        onConflict={handleConflict}
-      />
-    </section>
+      <MotionPresence>{notice && (
+        <Toast
+          kind={notice.kind}
+          title={notice.kind === "success" ? "已保存" : "保存失败"}
+          message={notice.message}
+          onDismiss={() => setNotice(null)}
+        />
+      )}</MotionPresence>
+    </>
   );
 }
 
 // ---------------------------------------------------------------------------
-// 表单下拉选择组件
+// 08.4g 编辑个人画像（720×670）
 // ---------------------------------------------------------------------------
-function ProfileSelectField({
-  label,
-  value,
-  placeholder = "未填写",
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string | null | undefined;
-  placeholder?: string;
-  options: Array<{ label: string; value: string }>;
-  onChange: (value: string) => void;
-}) {
-  const id = `profile-select-${label.replace(/[\s（）]/g, "-")}`;
-  return (
-    <div className="account-profile-field">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value || ""} onValueChange={onChange}>
-        <SelectTrigger id={id} aria-label={label} className="account-profile-select-trigger">
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
-}
-
-function ProfileNumberField({
-  label,
-  value,
-  placeholder,
-  min,
-  max,
-  step = 1,
-  ariaLabel,
-  onChange,
-}: {
-  label: string;
-  value: number | null;
-  placeholder?: string;
-  min?: number;
-  max?: number;
-  step?: number;
-  ariaLabel?: string;
-  onChange: (value: number | null) => void;
-}) {
-  const adjust = (direction: -1 | 1) => {
-    const numericValue = value == null ? null : Number(value);
-    const base = numericValue ?? min ?? 0;
-    const candidate = base + (numericValue == null && min != null ? 0 : step * direction);
-    onChange(Math.min(max ?? candidate, Math.max(min ?? candidate, candidate)));
-  };
-
-  return (
-    <div className="account-profile-number-field">
-      <TextField
-        className="account-profile-number-text-field"
-        inputClassName="account-profile-number-input"
-        type="number"
-        min={min}
-        max={max}
-        step={step}
-        label={label}
-        value={value == null ? "" : Number(value)}
-        placeholder={placeholder}
-        aria-label={ariaLabel ?? label}
-        onChange={(event) => onChange(nullableNumber(event.target.value))}
-      />
-      <div className="account-profile-number-controls">
-        <button
-          type="button"
-          className="account-profile-number-control"
-          aria-label={`${ariaLabel ?? label}增加`}
-          disabled={value != null && max != null && value >= max}
-          onClick={() => adjust(1)}
-        >
-          <ChevronUp size={12} strokeWidth={1.75} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="account-profile-number-control"
-          aria-label={`${ariaLabel ?? label}减少`}
-          disabled={value != null && min != null && value <= min}
-          onClick={() => adjust(-1)}
-        >
-          <ChevronDown size={12} strokeWidth={1.75} aria-hidden />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-interface UserProfileEditDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  serverData: UserProfileData | null;
-  onSaved: (newProfile: UserProfileData) => void;
-  onConflict: (latestProfile: UserProfileData) => void;
-}
-
-type EditTabId = "preferences" | "education" | "skills";
-
 function UserProfileEditDialog({
-  open,
-  onOpenChange,
   serverData,
+  onClose,
   onSaved,
   onConflict,
-}: UserProfileEditDialogProps) {
-  const [activeTab, setActiveTab] = useState<EditTabId>("preferences");
+  onNotice,
+}: {
+  serverData: UserProfileData | null;
+  onClose: () => void;
+  onSaved: (profile: UserProfileData) => void;
+  onConflict: (latest: UserProfileData) => void;
+  onNotice: (notice: Notice) => void;
+}) {
+  const [active, setActive] = useState<CategoryId>("preferences");
+  // 左侧分类是竖排的：往下切换时内容从下方滑入，往上切换时从上方滑入
+  const previousCategory = useRef<CategoryId>(active);
+  const categoryOrder = (id: CategoryId) => CATEGORIES.findIndex((item) => item.id === id);
+  const paneFrom = categoryOrder(active) > categoryOrder(previousCategory.current) ? "0 16px" : categoryOrder(active) < categoryOrder(previousCategory.current) ? "0 -16px" : "0 0";
+  useEffect(() => { previousCategory.current = active; }, [active]);
+  const paneRef = useContentMotion<HTMLDivElement>(active, { from: paneFrom });
   const [form, setForm] = useState<ProfileForm>(() => toFormState(serverData));
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<Notice>(null);
+  const progress = profileProgress(form);
+  const empty = progress.filled === 0;
+  const updatedAt = formatUpdatedAt(serverData?.updated_at);
 
-  useEffect(() => {
-    if (!open) return;
-    setForm(toFormState(serverData));
-    setNotice(null);
-  }, [open]);
-
-  const updateField = <Key extends keyof ProfileForm>(
-    key: Key,
-    value: ProfileForm[Key],
-  ) => {
+  const updateField = <Key extends keyof ProfileForm>(key: Key, value: ProfileForm[Key]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
   };
 
-  const toggleEmploymentType = (value: EmploymentType) => {
-    setForm((previous) => ({
-      ...previous,
-      employment_types: previous.employment_types.includes(value)
-        ? previous.employment_types.filter((item) => item !== value)
-        : [...previous.employment_types, value],
-    }));
+  const toggleIn = <Key extends "employment_types" | "school_tier">(key: Key, value: ProfileForm[Key][number]) => {
+    setForm((previous) => {
+      const list = previous[key] as string[];
+      return { ...previous, [key]: list.includes(value) ? list.filter((item) => item !== value) : [...list, value] };
+    });
   };
 
-  const toggleSchoolTier = (value: SchoolTier) => {
-    setForm((previous) => ({
-      ...previous,
-      school_tier: previous.school_tier.includes(value)
-        ? previous.school_tier.filter((item) => item !== value)
-        : [...previous.school_tier, value],
-    }));
-  };
-
+  // 应届生：工作年限固定 0、只填毕业年份；非应届生：清空毕业年份、只填工作年限
   const selectCandidateStatus = (value: CandidateStatus) => {
     setForm((previous) => {
-      // The status is optional for an untouched profile. Once selected from
-      // the dropdown, it stays explicit until the user chooses another type.
       if (previous.candidate_status === value) return previous;
-      if (value === "fresh_graduate") {
-        return {
-          ...previous,
-          candidate_status: value,
-          years_experience: 0,
-        };
-      }
+      if (value === "fresh_graduate") return { ...previous, candidate_status: value, years_experience: 0 };
       return {
         ...previous,
         candidate_status: value,
         graduation_year: null,
-        years_experience:
-          previous.candidate_status === "fresh_graduate"
-            ? null
-            : previous.years_experience,
+        years_experience: previous.candidate_status === "fresh_graduate" ? null : previous.years_experience,
       };
     });
   };
 
   const handleSave = async () => {
     if (saving) return;
-    setNotice(null);
+    onNotice(null);
 
-    if (
-      form.salary_min != null &&
-      form.salary_max != null &&
-      form.salary_max < form.salary_min
-    ) {
-      setNotice({ kind: "error", message: "最高薪资不能低于最低薪资。" });
+    if (form.salary_min != null && form.salary_max != null && form.salary_max < form.salary_min) {
+      onNotice({ kind: "error", message: "最高薪资不能低于最低薪资。" });
       return;
     }
-
     const hasNumericSalary = form.salary_min != null || form.salary_max != null;
-    const currencyCandidate =
-      form.salary_currency?.trim().toUpperCase() || (hasNumericSalary ? "CNY" : null);
+    const currencyCandidate = form.salary_currency?.trim().toUpperCase() || (hasNumericSalary ? "CNY" : null);
     if (hasNumericSalary && currencyCandidate && !/^[A-Z]{3}$/.test(currencyCandidate)) {
-      setNotice({
-        kind: "error",
-        message: "薪资币种必须为 3 位英文字母代码（例如：CNY、USD）。",
-      });
+      onNotice({ kind: "error", message: "薪资币种必须为 3 位英文字母代码（例如：CNY、USD）。" });
       return;
     }
-
     if (
       form.candidate_status === "fresh_graduate" &&
-      (form.graduation_year == null ||
-        !Number.isInteger(form.graduation_year) ||
-        form.graduation_year < 1900 ||
-        form.graduation_year > 9999)
+      (form.graduation_year == null || !Number.isInteger(form.graduation_year) || form.graduation_year < 1900 || form.graduation_year > 9999)
     ) {
-      setNotice({ kind: "error", message: "应届生请填写 1900–9999 之间的四位毕业年份。" });
+      onNotice({ kind: "error", message: "应届生请填写 1900–9999 之间的四位毕业年份。" });
       return;
     }
 
     setSaving(true);
     const payload: UserProfileUpdate = {
-      candidate_cities: normalizeStringArray(form.candidate_cities),
+      candidate_cities: normalizeStringArray(form.candidate_cities).slice(0, MAX_CITIES),
       salary_min: form.salary_min != null && form.salary_min >= 0 ? form.salary_min : null,
       salary_max: form.salary_max != null && form.salary_max >= 0 ? form.salary_max : null,
       salary_currency: hasNumericSalary ? currencyCandidate || "CNY" : null,
@@ -832,14 +467,11 @@ function UserProfileEditDialog({
       major: form.major?.trim() || null,
       education_level: form.education_level || null,
       candidate_status: form.candidate_status || null,
-      graduation_year:
-        form.candidate_status === "fresh_graduate" ? form.graduation_year : null,
+      graduation_year: form.candidate_status === "fresh_graduate" ? form.graduation_year : null,
       years_experience:
         form.candidate_status === "fresh_graduate"
           ? 0
-          : form.years_experience != null &&
-              form.years_experience >= 0 &&
-              Number.isInteger(form.years_experience)
+          : form.years_experience != null && form.years_experience >= 0 && Number.isInteger(form.years_experience)
             ? form.years_experience
             : null,
       languages: normalizeStringArray(form.languages),
@@ -852,358 +484,240 @@ function UserProfileEditDialog({
 
     try {
       const updated = await api.putUserProfile(payload);
-      setNotice({ kind: "success", message: "个人画像已保存。" });
       onSaved(updated);
     } catch (error: unknown) {
       if (
         error instanceof ApiRequestError &&
-        (error.message === "USER_PROFILE_VERSION_CONFLICT" ||
-          (error as { code?: string }).code === "USER_PROFILE_VERSION_CONFLICT")
+        (error.message === "USER_PROFILE_VERSION_CONFLICT" || (error as { code?: string }).code === "USER_PROFILE_VERSION_CONFLICT")
       ) {
-        const conflictPayload = error.payload as { profile?: UserProfileData } | null;
-        const latestProfile = conflictPayload?.profile;
+        // 乐观锁冲突：刷新成最新版本，让用户确认后再保存，不自动重放
+        const latestProfile = (error.payload as { profile?: UserProfileData } | null)?.profile;
         if (latestProfile) {
           onConflict(latestProfile);
           setForm(toFormState(latestProfile));
-          setNotice({
-            kind: "error",
-            message: "数据已被其他写入方修改，已刷新为最新版本，请确认后重试。",
-          });
+          onNotice({ kind: "error", message: "数据已被其他写入方修改，已刷新为最新版本，请确认后重试。" });
         } else {
-          setNotice({
-            kind: "error",
-            message: "数据版本冲突，请重新打开编辑窗口后保存。",
-          });
+          onNotice({ kind: "error", message: "数据版本冲突，请重新打开编辑窗口后保存。" });
         }
       } else {
-        setNotice({
-          kind: "error",
-          message: accountErrorMessage(error, "保存个人画像失败，请重试。"),
-        });
+        onNotice({ kind: "error", message: accountErrorMessage(error, "保存个人画像失败，请重试。") });
       }
     } finally {
       setSaving(false);
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="account-profile-edit-dialog">
-        <DialogHeader className="account-profile-edit-header">
-          <DialogTitle>编辑个人画像</DialogTitle>
-          <DialogDescription>
-            完善求职条件与个人信息，信息将跨简历同步共享。
-          </DialogDescription>
-        </DialogHeader>
+  const category = CATEGORIES.find((item) => item.id === active)!;
+  const currencyLabel = !form.salary_currency || form.salary_currency === "CNY" ? "人民币" : form.salary_currency;
+  const periodLabel = SALARY_PERIOD_OPTIONS.find((option) => option.value === (form.salary_period ?? "month"))?.label;
 
-        <div className="account-profile-edit-tabs" role="tablist" aria-label="画像分类">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "preferences"}
-            className={`account-profile-edit-tab ${activeTab === "preferences" ? "account-profile-edit-tab-active" : ""}`}
-            onClick={() => setActiveTab("preferences")}
-          >
-            <Briefcase size={15} aria-hidden />
-            求职意向
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "education"}
-            className={`account-profile-edit-tab ${activeTab === "education" ? "account-profile-edit-tab-active" : ""}`}
-            onClick={() => setActiveTab("education")}
-          >
-            <GraduationCap size={15} aria-hidden />
-            教育与背景
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "skills"}
-            className={`account-profile-edit-tab ${activeTab === "skills" ? "account-profile-edit-tab-active" : ""}`}
-            onClick={() => setActiveTab("skills")}
-          >
-            <Award size={15} aria-hidden />
-            技能与亮点
-          </button>
+  return (
+    <Dialog width={720} label="编辑个人画像" onClose={() => { if (!saving) onClose(); }} className="prof-dialog" closable={!saving}>
+      <div className="v3-dialog-body prof-body">
+        <h2 className="v3-dialog-title">编辑个人画像</h2>
+        <p className="v3-dialog-sub">求职城市、期望薪资和学历只填一次，所有简历共用。</p>
+        <div className="v3-stage prof-art">
+          <ProfileBannerArt empty={empty} />
         </div>
 
-        <div className="account-profile-edit-body">
-          {activeTab === "preferences" && (
-            <div className="account-profile-edit-tab-pane">
-              <div className="account-profile-edit-form-grid">
-                <div className="account-profile-edit-form-field-span account-profile-preference-columns">
-                  <TagInput
-                    label="可接受工作城市"
-                    hint="输入后按 Enter 或逗号添加"
-                    tags={form.candidate_cities}
-                    placeholder="如：北京、上海、杭州"
-                    ariaLabel="如：北京、上海、杭州"
-                    onChange={(tags) => updateField("candidate_cities", tags)}
-                  />
+        <div className="prof-grid">
+          <nav className="prof-nav" aria-label="画像分类">
+            <strong className="prof-total">已填 {progress.filled} / {progress.total} 项</strong>
+            <span className="prof-bar" aria-hidden="true">
+              <span style={{ width: `${(progress.filled / progress.total) * 100}%` }} />
+            </span>
+            <div role="tablist" aria-label="画像分类" className="prof-tabs">
+              {CATEGORIES.map((item) => {
+                const missing = progress.byCategory[item.id];
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active === item.id}
+                    className="prof-tab"
+                    onClick={() => setActive(item.id)}
+                  >
+                    <span>{item.label}</span>
+                    <small className={missing ? "is-missing" : "is-done"}>{missing ? `差 ${missing} 项` : "已填完"}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
 
-                  <div className="account-profile-edit-choice-field account-profile-employment-field">
-                    <Label className="account-profile-field-label account-profile-employment-label">
-                      <span>工作性质</span>
-                      <span className="account-profile-employment-hint">可多选</span>
-                    </Label>
-                    <div className="account-profile-pill-group account-profile-employment-options">
+          <div ref={paneRef} className="prof-pane" role="tabpanel" aria-label={category.label}>
+            <div className="prof-pane-head">
+              <h3>{category.label}</h3>
+              <small>{category.hint}</small>
+            </div>
+
+            {active === "preferences" && (
+              <div className="prof-fields">
+                <div className="prof-row">
+                  <div className="prof-field">
+                    <FieldLabel label="工作性质" hint="可多选" />
+                    <div className="v3-seg" role="group" aria-label="工作性质">
                       {EMPLOYMENT_TYPE_OPTIONS.map((option) => (
-                        <TogglePill
+                        <button
                           key={option.value}
-                          active={form.employment_types.includes(option.value)}
-                          className="account-profile-employment-option"
-                          icon={
-                            <Check
-                              size={14}
-                              aria-hidden
-                              className={
-                                form.employment_types.includes(option.value)
-                                  ? ""
-                                  : "account-profile-multi-check-hidden"
-                              }
-                            />
-                          }
-                          onClick={() => toggleEmploymentType(option.value)}
-                          aria-label={option.label}
+                          type="button"
+                          aria-pressed={form.employment_types.includes(option.value)}
+                          onClick={() => toggleIn("employment_types", option.value)}
                         >
                           {option.label}
-                        </TogglePill>
+                        </button>
                       ))}
                     </div>
                   </div>
-
-                  <ProfileSelectField
-                    label="工作经验"
-                    value={form.candidate_status}
-                    placeholder="请选择工作经验"
-                    options={CANDIDATE_STATUS_OPTIONS}
-                    onChange={(value) =>
-                      selectCandidateStatus(value as CandidateStatus)
-                    }
-                  />
-
-                  <div className="account-profile-experience-detail">
-                    {form.candidate_status === "fresh_graduate" ? (
-                      <ProfileNumberField
-                        min={1900}
-                        max={9999}
-                        label="毕业年份"
-                        value={form.graduation_year}
-                        placeholder="例如：2026"
-                        ariaLabel="毕业年份"
-                        onChange={(value) =>
-                          updateField("graduation_year", value == null ? null : Math.trunc(value))
-                        }
-                      />
-                    ) : form.candidate_status === "experienced" ? (
-                      <ProfileNumberField
-                        min={0}
-                        max={60}
-                        label="工作年限（年）"
-                        value={form.years_experience}
-                        placeholder="例如：3"
-                        ariaLabel="工作年限"
-                        onChange={(value) =>
-                          updateField("years_experience", value == null ? null : Math.trunc(value))
-                        }
-                      />
-                    ) : null}
+                  <div className="prof-field">
+                    <FieldLabel label="工作经验" />
+                    <div className="v3-seg" role="group" aria-label="工作经验">
+                      {CANDIDATE_STATUS_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          aria-pressed={form.candidate_status === option.value}
+                          onClick={() => selectCandidateStatus(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div className="account-profile-edit-form-field-span account-profile-salary-section">
-                  <div className="account-profile-salary-heading">
-                    <Label className="account-profile-field-label">期望薪资</Label>
+                <div className="prof-field">
+                  <FieldLabel label="可接受工作城市" hint={`最多 ${MAX_CITIES} 个`} />
+                  <TagInput
+                    tags={form.candidate_cities}
+                    max={MAX_CITIES}
+                    placeholder="如：北京、上海、杭州"
+                    ariaLabel="可接受工作城市"
+                    onChange={(tags) => updateField("candidate_cities", tags)}
+                  />
+                </div>
+
+                <div className="prof-field">
+                  <FieldLabel label="期望薪资" hint={`${currencyLabel} · ${periodLabel}`} />
+                  <div className="prof-row">
+                    <NumberField value={form.salary_min} ariaLabel="最低薪资" suffix="最低" min={0} step={1000} onChange={(value) => updateField("salary_min", value)} />
+                    <NumberField value={form.salary_max} ariaLabel="最高薪资" suffix="最高" min={0} step={1000} onChange={(value) => updateField("salary_max", value)} />
                   </div>
-                  <div className="account-profile-salary-grid">
-                    <ProfileNumberField
-                      min={0}
-                      step={1000}
-                      label="最低薪资"
-                      value={form.salary_min}
-                      placeholder="例如：15000"
-                      ariaLabel="最低薪资"
-                      onChange={(value) => updateField("salary_min", value)}
-                    />
-                    <ProfileNumberField
-                      min={0}
-                      step={1000}
-                      label="最高薪资"
-                      value={form.salary_max}
-                      placeholder="例如：25000"
-                      ariaLabel="最高薪资"
-                      onChange={(value) => updateField("salary_max", value)}
-                    />
-                    <TextField
-                      label="币种"
-                      value={form.salary_currency ?? "CNY"}
-                      placeholder="例如：CNY"
-                      maxLength={3}
+                  <div className="prof-row">
+                    <input
+                      className="v3-input"
                       aria-label="薪资币种"
-                      onChange={(event) =>
-                        updateField(
-                          "salary_currency",
-                          event.target.value.toUpperCase().trim() || null,
-                        )
-                      }
+                      maxLength={3}
+                      placeholder="币种，如 CNY"
+                      value={form.salary_currency ?? "CNY"}
+                      onChange={(event) => updateField("salary_currency", event.target.value.toUpperCase().trim() || null)}
                     />
-                    <ProfileSelectField
+                    <Select
                       label="计薪周期"
                       value={form.salary_period ?? "month"}
-                      placeholder="计薪周期"
                       options={SALARY_PERIOD_OPTIONS}
-                      onChange={(value) =>
-                        updateField("salary_period", (value as SalaryPeriod) || "month")
-                      }
+                      onChange={(value) => updateField("salary_period", value)}
                     />
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
 
-          {activeTab === "education" && (
-            <div className="account-profile-edit-tab-pane">
-              <div className="account-profile-edit-form-grid">
-                <TextField
-                  label="毕业院校"
-                  value={form.school ?? ""}
-                  placeholder="例如：北京大学"
-                  maxLength={255}
-                  aria-label="毕业院校"
-                  onChange={(event) =>
-                    updateField("school", event.target.value.trim() || null)
-                  }
-                />
-                <TextField
-                  label="专业方向"
-                  value={form.major ?? ""}
-                  placeholder="例如：计算机科学与技术"
-                  maxLength={100}
-                  aria-label="专业方向"
-                  onChange={(event) =>
-                    updateField("major", event.target.value.trim() || null)
-                  }
-                />
-                <ProfileSelectField
-                  label="学历层次"
-                  value={form.education_level}
-                  placeholder="请选择学历层次"
-                  options={[
-                    { label: "未指定", value: "" },
-                    ...EDUCATION_LEVEL_OPTIONS,
-                  ]}
-                  onChange={(value) =>
-                    updateField("education_level", (value as EducationLevel) || null)
-                  }
-                />
-                <div className="account-profile-edit-choice-field account-profile-school-tier-field">
-                  <Label className="account-profile-field-label account-profile-school-tier-label">
-                    <span>学校标签</span>
-                    <span className="account-profile-school-tier-hint">可多选</span>
-                  </Label>
-                  <div className="account-profile-pill-group account-profile-school-tier-options">
+                {form.candidate_status === "experienced" && (
+                  <div className="prof-row">
+                    <div className="prof-field">
+                      <FieldLabel label="工作年限" />
+                      <NumberField value={form.years_experience} ariaLabel="工作年限" suffix="年" min={0} max={60} placeholder="例如：3" onChange={(value) => updateField("years_experience", value == null ? null : Math.trunc(value))} />
+                    </div>
+                  </div>
+                )}
+                {form.candidate_status === "fresh_graduate" && (
+                  <div className="prof-row">
+                    <div className="prof-field">
+                      <FieldLabel label="毕业年份" />
+                      <NumberField value={form.graduation_year} ariaLabel="毕业年份" min={1900} max={9999} placeholder="例如：2026" onChange={(value) => updateField("graduation_year", value == null ? null : Math.trunc(value))} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {active === "education" && (
+              <div className="prof-fields">
+                <div className="prof-row">
+                  <div className="prof-field">
+                    <FieldLabel label="学历层次" />
+                    <Select
+                      label="学历层次"
+                      value={form.education_level ?? ""}
+                      placeholder="请选择学历层次"
+                      options={EDUCATION_LEVEL_OPTIONS}
+                      onChange={(value) => updateField("education_level", value)}
+                    />
+                  </div>
+                  <div className="prof-field">
+                    <FieldLabel label="毕业院校" />
+                    <input className="v3-input" aria-label="毕业院校" maxLength={255} placeholder="例如：北京大学" value={form.school ?? ""} onChange={(event) => updateField("school", event.target.value.trim() || null)} />
+                  </div>
+                </div>
+                <div className="prof-field">
+                  <FieldLabel label="专业方向" />
+                  <input className="v3-input" aria-label="专业方向" maxLength={100} placeholder="例如：计算机科学与技术" value={form.major ?? ""} onChange={(event) => updateField("major", event.target.value.trim() || null)} />
+                </div>
+                <div className="prof-field">
+                  <FieldLabel label="学校标签" hint="可多选" />
+                  <div className="v3-seg" role="group" aria-label="学校标签">
                     {SCHOOL_TIER_OPTIONS.map((option) => (
-                      <TogglePill
-                        key={option.value}
-                        active={form.school_tier.includes(option.value)}
-                        className="account-profile-school-tier-option"
-                        icon={
-                          <Check
-                            size={14}
-                            aria-hidden
-                            className={
-                              form.school_tier.includes(option.value)
-                                ? ""
-                                : "account-profile-multi-check-hidden"
-                            }
-                          />
-                        }
-                        onClick={() => toggleSchoolTier(option.value)}
-                        aria-label={option.label}
-                      >
+                      <button key={option.value} type="button" aria-pressed={form.school_tier.includes(option.value)} onClick={() => toggleIn("school_tier", option.value)}>
                         {option.label}
-                      </TogglePill>
+                      </button>
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {activeTab === "skills" && (
-            <div className="account-profile-edit-tab-pane">
-              <div className="account-profile-edit-form-grid">
-                <TagInput
-                  label="专业技能"
-                  hint="个人技术栈或业务专长"
-                  tags={form.skills}
-                  placeholder="如：React、TypeScript、FastAPI、MySQL"
-                  ariaLabel="如：React、TypeScript、FastAPI、MySQL、Docker"
-                  onChange={(tags) => updateField("skills", tags)}
-                />
-                <TagInput
-                  label="语言能力"
-                  hint="外语水平与证书等级"
-                  tags={form.languages}
-                  placeholder="如：英语 CET-6、日语 N1"
-                  ariaLabel="如：英语 CET-6（熟练）、日语 N1"
-                  onChange={(tags) => updateField("languages", tags)}
-                />
-                <TagInput
-                  label="专业证书"
-                  hint="行业资格认证"
-                  tags={form.certifications}
-                  placeholder="如：PMP、AWS 认证架构师"
-                  ariaLabel="如：PMP 项目管理专业人士、AWS 解决方案架构师"
-                  onChange={(tags) => updateField("certifications", tags)}
-                />
-                <TagInput
-                  label="荣誉奖项"
-                  hint="比赛获奖、优秀表彰"
-                  tags={form.honors}
-                  placeholder="如：国家奖学金、年度优秀员工"
-                  ariaLabel="如：国家奖学金、ACM-ICPC 区域赛银奖、年度优秀员工"
-                  onChange={(tags) => updateField("honors", tags)}
-                />
-                <div className="account-profile-edit-form-field-span">
-                  <TagInput
-                    label="校园经历"
-                    hint="社团、学生会、竞赛实践等"
-                    tags={form.campus_experiences}
-                    placeholder="如：学生会主席、开源社团核心成员"
-                    ariaLabel="如：学生会主席、开源社团核心成员"
-                    onChange={(tags) => updateField("campus_experiences", tags)}
-                  />
+            {active === "skills" && (
+              <div className="prof-fields">
+                <div className="prof-field">
+                  <FieldLabel label="专业技能" hint="个人技术栈或业务专长" />
+                  <TagInput tags={form.skills} placeholder="如：React、TypeScript、FastAPI、MySQL" ariaLabel="专业技能" onChange={(tags) => updateField("skills", tags)} />
+                </div>
+                <div className="prof-field">
+                  <FieldLabel label="语言能力" hint="外语水平与证书等级" />
+                  <TagInput tags={form.languages} placeholder="如：英语 CET-6、日语 N1" ariaLabel="语言能力" onChange={(tags) => updateField("languages", tags)} />
+                </div>
+                <div className="prof-field">
+                  <FieldLabel label="专业证书" hint="行业资格认证" />
+                  <TagInput tags={form.certifications} placeholder="如：PMP、AWS 认证架构师" ariaLabel="专业证书" onChange={(tags) => updateField("certifications", tags)} />
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
 
-        <DialogFooter className="account-profile-edit-footer">
-          {notice && (
-            <FeedbackNotice kind={notice.kind} placement="floating" onDismiss={() => setNotice(null)}>
-              {notice.message}
-            </FeedbackNotice>
-          )}
-          <div className="account-profile-edit-footer-actions">
-            <Button
-              variant="outline"
-              disabled={saving}
-              className="account-profile-dialog-cancel-btn"
-              onClick={() => onOpenChange(false)}
-            >
-              取消
-            </Button>
-            <Button variant="default" disabled={saving} onClick={() => void handleSave()}>
-              {saving ? "保存中…" : "保存画像"}
-            </Button>
+            {active === "honors" && (
+              <div className="prof-fields">
+                <div className="prof-field">
+                  <FieldLabel label="荣誉奖项" hint="比赛获奖、优秀表彰" />
+                  <TagInput tags={form.honors} placeholder="如：国家奖学金、年度优秀员工" ariaLabel="荣誉奖项" onChange={(tags) => updateField("honors", tags)} />
+                </div>
+                <div className="prof-field">
+                  <FieldLabel label="校园经历" hint="社团、学生会、竞赛实践等" />
+                  <TagInput tags={form.campus_experiences} placeholder="如：学生会主席、开源社团核心成员" ariaLabel="校园经历" onChange={(tags) => updateField("campus_experiences", tags)} />
+                </div>
+              </div>
+            )}
           </div>
-        </DialogFooter>
-      </DialogContent>
+        </div>
+      </div>
+
+      <div className="v3-dialog-foot">
+        <div className="v3-dialog-foot-left">
+          <span className="prof-updated">{updatedAt ? `最近更新于 ${updatedAt}` : "还没有保存过"}</span>
+        </div>
+        <button type="button" className="v3-btn v3-btn-ghost acc-btn-80" disabled={saving} onClick={onClose}>取消</button>
+        <button type="button" className="v3-btn v3-btn-dark" style={{ width: 96 }} disabled={saving} onClick={() => void handleSave()}>
+          {saving ? "保存中…" : "保存画像"}
+        </button>
+      </div>
     </Dialog>
   );
 }

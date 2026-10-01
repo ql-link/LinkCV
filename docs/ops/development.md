@@ -16,7 +16,7 @@
 - Python 3.11–3.13，由 uv 管理
 - Docker 和 Docker Compose
 
-新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0094`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹并兼容已登记的 Development 旧 `0059` 结构，`0063` 增加整篇翻译提案的候选标题和结果简历关联，`0064` 增加分享页 PDF 下载权限，`0065` 删除 Agent 会话级简历字段及其索引，`0066`–`0081` 扩展并更新简历模板目录，`0082` 将面试素材统一迁入用户资料库，`0083` 增加 Agent 操作轨迹，`0084` 切换简历当前内容与求职关联，`0088` 保留已在 Dev 执行的供应商目录迁移，`0089` 删除资料替换与对象清理表，`0090` 删除旧面试素材表、简历历史表及求职进程旧版本关联，`0091`–`0093` 重建模型路由并退役空的旧供应商目录，`0094` 新增应用内公告与用户已读时间点表。当前迁移链为 `0087 → 0088 → 0089 → 0090 → 0091 → 0092 → 0093 → 0094`；目标环境的实际 revision 必须单独查询。
+新环境执行 `npm run setup` 安装 Web、浏览器插件、Pi workspace/服务和后端依赖。复制 `.env.example` 为被 Git 忽略的 `.env` 后，使用 `npm run infra:up` 启动 MySQL、Redis、MinIO 与 RabbitMQ，`npm run db:init` 创建独立 `linkresume` 数据库并应用 Alembic，`npm run dev` 同时启动 Web、FastAPI、文档解析 Worker 和独立 Pi 服务。当前 Alembic head `0097`；`0002`–`0029` 建立并演进既有业务结构，`0030`–`0034` 建立 Agent、面试与 JD 契约，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0036`–`0046` 收敛简历、资料与用户画像结构，`0047` 完成简历 canonical 一次性切流并为仍被历史快照引用的 `blank-cn` 建立 inactive tombstone，`0048` 修复 canonical 行结构与头像策略，`0049` 冻结导入受理时的模板定义，`0050` 将白名单内的历史 `:icon[Name]:` 标记规范化为结构化图标，`0051` 修复已登记的用户画像结构漂移并增加发布门禁，`0052` 增加 Agent 会话置顶状态及列表索引，`0053` 简化 Offer 状态并增加可选详情，`0054` 将 Offer 薪资收敛为单值字段，`0055` 允许手工创建岗位时留空职位描述，`0056` 收敛岗位用工类型约束，`0057` 建立求职生命周期、阶段历史及排期关联，`0058` 增加开放作答窗口及其个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹并兼容已登记的 Development 旧 `0059` 结构，`0063` 增加整篇翻译提案的候选标题和结果简历关联，`0064` 增加分享页 PDF 下载权限，`0065` 删除 Agent 会话级简历字段及其索引，`0066`–`0081` 扩展并更新简历模板目录，`0082` 将面试素材统一迁入用户资料库，`0083` 增加 Agent 操作轨迹，`0084` 切换简历当前内容与求职关联，`0088` 保留已在 Dev 执行的供应商目录迁移，`0089` 删除资料替换与对象清理表，`0090` 删除旧面试素材表、简历历史表及求职进程旧版本关联，`0091`–`0093` 重建模型路由并退役空的旧供应商目录，`0094` 新增应用内公告与用户已读时间点表，`0095`、`0096` 新增模拟面试及其语音作答，`0097` 为逻辑模型增加对话页可选开关。当前迁移链为 `0087 → 0088 → 0089 → 0090 → 0091 → 0092 → 0093 → 0094 → 0095 → 0096 → 0097`；目标环境的实际 revision 必须单独查询。
 
 本地开发把 Git 主工作目录中的 `.env.local` 与 `.env.development.local` 作为所有 worktree 的共享私密覆盖层。Codex 管理的新建 worktree 会按 `.worktreeinclude` 自动带入主目录的 `.env`、`.env.local` 与 `.env.development.local`；这些文件仍被 Git 忽略，不能提交。`npm run dev`/`npm run dev:local` 优先使用当前 worktree 的 `.env`，否则回退主工作目录 `.env`；两处基础文件都不存在时，完整的主目录 `.env.local` 仍可单独作为 Local 配置。Local profile 同时设置回环地址的 `RABBITMQ_URL` 与 `RABBITMQ_PORT` 时，启动器在进程环境中让 URL 端口跟随 `RABBITMQ_PORT`，不修改文件，也不重写远程 RabbitMQ 地址。启动器复用当前 npm 的 JavaScript 入口，在 Windows 和 Unix 上都通过同一 profile 启动服务。`npm run dev:development` 使用当前 worktree 已跟踪的 `.env.development`，再加载主工作目录 `.env.development.local`，并把同一结果注入 Web、FastAPI、Worker 与 Pi Service。新建 worktree 后不需要手动复制这些本地运行配置。需要临时隔离时可显式设置 `LINKRESUME_SECRET_ENV_FILE=/absolute/path/to/override.local`。
 
@@ -42,7 +42,7 @@ local/test 未配置密钥环时，原有非 LLM 接口仍可启动，但保存�
 LINKRESUME_ENV_FILE=.env.development npm run db:init
 ```
 
-命令先校验并创建 `linkresume`，再升级到当前 Alembic head `0094`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试与资料库媒体文件默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`（默认 50）和 `MEDIA_MAX_TOTAL_BYTES_PER_USER`（默认 5 GiB）控制。上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。既有库升级时，必须在运行 `db:migrate` 前停止 API/Worker，先按部署说明完成 `0089` 资料操作收尾，再以 `uv run --directory apps/backend python scripts/release/migrate_interview_assets.py` 默认 dry-run、确认后使用 `--execute` 将旧面试素材迁入 `user_dataset` 并清空旧 `interview_assets`；`0090` 会拒绝删除非空旧表。完整顺序见[面试素材与简历历史表退役](deployment.md#面试素材与简历历史表退役0090)。
+命令先校验并创建 `linkresume`，再升级到当前 Alembic head `0097`。图片、导入源文件、面试素材和插件制品读写使用 `MINIO_*` 配置；Bucket 保持私有。面试与资料库媒体文件默认最多 500 MiB，由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES` 在 Local、Development 和 Production 分别配置；媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`（默认 50）和 `MEDIA_MAX_TOTAL_BYTES_PER_USER`（默认 5 GiB）控制。上传直接进入 FastAPI 和 MinIO，不经过 RabbitMQ，RabbitMQ 仍只服务异步文档解析等既有 Worker 流程。既有库升级时，必须在运行 `db:migrate` 前停止 API/Worker，先按部署说明完成 `0089` 资料操作收尾，再以 `uv run --directory apps/backend python scripts/release/migrate_interview_assets.py` 默认 dry-run、确认后使用 `--execute` 将旧面试素材迁入 `user_dataset` 并清空旧 `interview_assets`；`0090` 会拒绝删除非空旧表。完整顺序见[面试素材与简历历史表退役](deployment.md#面试素材与简历历史表退役0090)。
 
 微信自动建号、小程序登录和网页扫码确认要求同时配置 `WECHAT_APPID` 与 `WECHAT_SECRET`；密钥只放 `.env.local`、环境对应 `.local` 或进程环境。`WECHAT_LOGIN_PAGE` 默认 `pages/login/index`，`WECHAT_SCENE_TTL_SECONDS` 默认 300 秒，`WECHAT_QRCODE_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 10 次，`WECHAT_LOGIN_REQUESTS_PER_MINUTE` 默认每 IP 每分钟 30 次，`WECHAT_API_TIMEOUT_SECONDS` 控制微信上游超时。未配置时应用仍可启动，但微信登录接口返回 `503 WECHAT_SERVICE_UNAVAILABLE`。
 
@@ -72,6 +72,8 @@ LINKRESUME_ENV_FILE=.env.development npm run db:init
 | RabbitMQ UI   |    15672 | `RABBITMQ_MANAGEMENT_PORT`                          |
 
 `BACKEND_PROXY_TARGET` 可以覆盖 Vite 使用的完整 FastAPI 地址。数据库可以用完整 `DATABASE_URL` 覆盖分项 MySQL 配置，Redis 可以用 `REDIS_URL` 覆盖分项配置。`AGENT_ENABLED` 控制用户 Agent 入口；`PI_SERVICE_BASE_URL` 是 FastAPI 调 Pi 的内网地址，`LINKRESUME_BASE_URL` 是 Pi 回调 FastAPI 的内网地址。`PI_SERVICE_TOKEN` 与 `LINKRESUME_INTERNAL_AGENT_TOKEN` 必须使用两枚不同的高熵值，只写入被忽略的本地或环境私密覆盖。`AGENT_RUN_TIMEOUT_SECONDS`、`AGENT_TOOL_TIMEOUT_SECONDS` 和 `AGENT_PROPOSAL_TTL_DAYS` 分别限制运行、工具调用和待确认提案寿命。共享 Dev 的多任务 Agent 运行预算设为 300 秒；其他环境以各自配置为准。Production 开启 Agent 时缺 token 会拒绝启动。鉴权会话和简历导入幂等共用 `REDIS_*` 指向的隔离数据库。
+
+从本地 Vite 页面测试语音面试时，使用页面同源的 `/api/mock-interviews/{id}/speech` WebSocket 地址。Vite 只为该路径启用 WebSocket 代理并保留浏览器 `Host`，使后端能按 `Origin` 校验同源；普通 `/api` 请求继续使用既有 HTTP 代理。共享 Dev 的 `18002` 是 FastAPI 直连端口，见 [部署说明](deployment.md#dev-pipeline)。
 
 需要临时分享本地 Web 供验收时，可以把 Vite 端口接入 Cloudflare Tunnel；开发服务器只额外接受 `.trycloudflare.com` 后缀的 Host。隧道只转发现有页面与 `/api` 代理，不改变 FastAPI、Cookie、私有资源和本地文件读取权限；不要把本地密钥、测试账号或真实用户数据写入公开预览说明。
 
@@ -140,6 +142,14 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `LINKPARSE_PARSE_PATH` | `/v1/parse` | 同步 PDF/DOCX 解析路径 |
 | `LINKPARSE_TIMEOUT_SECONDS` | `90` | 单次 LinkParse 阶段时限，不自动重试 |
 | `LINKPARSE_RESPONSE_MAX_BYTES` | `3145728` | LinkParse 响应读取上限 |
+| `LINKRAG_ENABLED` | `true` | 资料同步 LinkRag 与向量召回的总开关；显式设为 `false` 时助手与事实核验只用本地匹配 |
+| `LINKRAG_BASE_URL` | `http://tolink-rag:8000` | LinkRag 内网地址（`tolink-app-net`），公网对 `/api/v1/apps` 返回 404 |
+| `LINKRAG_CLIENT_ID` / `LINKRAG_CLIENT_SECRET` | 空 | LinkRag 接入应用凭证；缺失时任何环境都照常启动，记录 `LINKRAG_NOT_CONFIGURED` 告警并回退本地匹配；只放 `.local` 或进程环境 |
+| `LINKRAG_RECALL_TIMEOUT_SECONDS` | `5` | 助手与事实核验单次召回时限，超时即回退本地匹配 |
+| `LINKRAG_SYNC_TIMEOUT_SECONDS` | `60` | Worker 同步单次请求时限 |
+| `LINKRAG_SYNC_INTERVAL_SECONDS` | `60` | Worker 对账周期 |
+| `LINKRAG_SYNC_BATCH_SIZE` | `20` | 每轮每类最多处理的记录数 |
+| `LINKRAG_SYNC_MAX_ATTEMPTS` | `5` | 同一正文修订的最大失败次数 |
 | `WECHAT_APPID` | 空 | 微信小程序 appid；与 `WECHAT_SECRET` 同时配置才启用微信登录 |
 | `WECHAT_SECRET` | 空 | 微信小程序密钥，只放 `.local` 或进程环境 |
 | `WECHAT_LOGIN_PAGE` | `pages/login/index` | 网页扫码进入的小程序确认页 |
@@ -188,11 +198,16 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
+| `npm run build:native-renderer`      | 生成原生客户端离线纸面 `paper.html`，并复制进 Mac 与 Windows 资源目录 |
+| `npm run dev:mac`                     | 构建并启动 SwiftUI Mac 原生客户端（mock 数据），见 `apps/native/README.md` |
+| `npm run test:mac`                    | Mac 原生客户端 Core 单测，兼容只装 Command Line Tools 的环境         |
+| `npm run test:windows-core`           | Windows 原生客户端 Core 单测（需 .NET 10 SDK，macOS 也可运行）       |
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |
 | `npm run test:backend:integration`    | 后端隔离 HTTP 集成测试                                               |
 | `npm run test:backend`                | 全部后端和仓库工具测试                                               |
 | `npm run check:design`                | 校验 DESIGN.md、Settings Pattern、运行时 Token 与关键页面映射        |
 | `npm run check:ai`                    | 校验 AI 入口、项目 Skill、文档同步和运行时契约                       |
+| `npm run check:docs:branch`           | 按当前分支相对 `origin/dev` 的已提交差异校验文档同步，推送前运行；`check:docs` 默认只看未提交改动 |
 | `npm run check:app`                   | 执行设计门禁、类型检查、构建、应用测试和 Pi 质量检查                 |
 | `npm run check`                       | 完整本地质量入口                                                     |
 

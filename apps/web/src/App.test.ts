@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { createElement } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { createElement, lazy } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "./api/client";
 import {
@@ -31,8 +31,14 @@ describe("App landing routes", () => {
     });
   });
 
-  it.each(["/", "/home"])("已登录访问 %s 时仍展示落地页", async (path) => {
-    window.history.replaceState(null, "", path);
+  it("已登录访问纯域名时进入简历工作台", async () => {
+    render(createElement(App));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/resumes"));
+  });
+
+  it("已登录访问 /home 时仍展示落地页", async () => {
+    window.history.replaceState(null, "", "/home");
     render(createElement(App));
 
     expect(
@@ -42,7 +48,21 @@ describe("App landing routes", () => {
         { timeout: 5_000 },
       ),
     ).toBeInTheDocument();
-    await waitFor(() => expect(window.location.pathname).toBe(path));
+    await waitFor(() => expect(window.location.pathname).toBe("/home"));
+  });
+
+  it("访客访问纯域名时展示落地页", async () => {
+    useResumeStore.setState({ authStatus: "guest", user: null });
+    render(createElement(App));
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "把每一份经历，都写成下一份机会" },
+        { timeout: 5_000 },
+      ),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
   });
 });
 
@@ -68,7 +88,7 @@ describe("App not-found route", () => {
 
     expect(await screen.findByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
     expect(screen.getByText("404")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "返回首页" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "回到首页" })).toHaveAttribute("href", "/assistant");
   });
 
   it("访客访问未知地址时也展示 404 页面", async () => {
@@ -76,6 +96,7 @@ describe("App not-found route", () => {
     render(createElement(App));
 
     expect(await screen.findByRole("heading", { name: "页面不存在" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "回到首页" })).toHaveAttribute("href", "/");
     expect(window.location.pathname).toBe("/missing-page");
   });
 });
@@ -116,6 +137,29 @@ describe("resume autosave cadence", () => {
 });
 
 describe("workspace route loading", () => {
+  it("切换时保留当前页面直到新模块就绪，不插入模块加载图", async () => {
+    let finish!: (value: { default: () => ReturnType<typeof createElement> }) => void;
+    const NextPage = lazy(() => new Promise<{ default: () => ReturnType<typeof createElement> }>((resolve) => { finish = resolve; }));
+    const view = render(createElement(WorkspacePageBoundary, null, createElement("p", null, "当前页面")));
+    view.rerender(createElement(WorkspacePageBoundary, null, createElement(NextPage)));
+    expect(screen.getByText("当前页面")).toBeVisible();
+    expect(screen.queryByRole("status", { name: "正在加载模块…" })).not.toBeInTheDocument();
+    await act(async () => { finish({ default: () => createElement("p", null, "目标页面") }); });
+    expect(screen.getByText("目标页面")).toBeVisible();
+    expect(screen.queryByText("当前页面")).not.toBeInTheDocument();
+  });
+
+  it("连续导航时只显示最后选择的页面，迟到的模块不能覆盖它", async () => {
+    let finish!: (value: { default: () => ReturnType<typeof createElement> }) => void;
+    const SlowPage = lazy(() => new Promise<{ default: () => ReturnType<typeof createElement> }>((resolve) => { finish = resolve; }));
+    const view = render(createElement(WorkspacePageBoundary, null, createElement("p", null, "起点")));
+    view.rerender(createElement(WorkspacePageBoundary, null, createElement(SlowPage)));
+    view.rerender(createElement(WorkspacePageBoundary, null, createElement("p", null, "最终页面")));
+    await act(async () => { finish({ default: () => createElement("p", null, "迟到页面") }); });
+    expect(screen.getByText("最终页面")).toBeVisible();
+    expect(screen.queryByText("迟到页面")).not.toBeInTheDocument();
+  });
+
   it("模块首次挂起时保留浅色工作区导航，只替换正文区域", () => {
     const PendingPage = () => {
       throw new Promise(() => undefined);

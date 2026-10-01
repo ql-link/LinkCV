@@ -225,3 +225,51 @@ class UserDataset(Base):
     last_content_request_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+
+
+RAG_SYNC_STATUSES = ("pending", "parsing", "ready", "failed")
+
+
+class UserDatasetRagSync(Base):
+    """Mapping of one dataset to its LinkRag file, written only by the sync loop.
+
+    There is deliberately no foreign key to ``user_dataset``: the row must
+    outlive a deleted dataset so the sync loop can delete the RAG copy.
+    """
+
+    __tablename__ = "user_dataset_rag_sync"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_user_dataset_rag_sync"),
+        UniqueConstraint("dataset_id", name="uk_user_dataset_rag_sync_dataset"),
+        CheckConstraint(
+            "status IN ('pending', 'parsing', 'ready', 'failed')",
+            name="ck_user_dataset_rag_sync_status",
+        ),
+        Index("idx_user_dataset_rag_sync_status", "status", "next_attempt_at", "id"),
+        Index("idx_user_dataset_rag_sync_user", "user_id", "status"),
+        {"comment": "资料到 LinkRag 向量索引的同步记录"},
+    )
+
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
+    dataset_id: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False)
+    user_id: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    content_revision: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False)
+    synced_revision: Mapped[int | None] = mapped_column(unsigned_bigint_type(), nullable=True)
+    rag_file_id: Mapped[int | None] = mapped_column(unsigned_bigint_type(), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(
+        Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"),
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    last_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

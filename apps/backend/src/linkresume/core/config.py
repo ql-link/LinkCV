@@ -444,6 +444,46 @@ class Settings(BaseSettings):
         alias="LINKPARSE_RESPONSE_MAX_BYTES",
         ge=1,
     )
+    # LinkRag vector recall for dataset materials, on by default. Credentials
+    # identify this product to LinkRag's /api/v1/apps API; only FastAPI and the
+    # Worker hold them. Missing credentials degrade to local matching.
+    linkrag_enabled: bool = Field(default=True, alias="LINKRAG_ENABLED")
+    linkrag_base_url: str = Field(
+        default="http://tolink-rag:8000", alias="LINKRAG_BASE_URL"
+    )
+    linkrag_client_id: str | None = Field(default=None, alias="LINKRAG_CLIENT_ID")
+    linkrag_client_secret: SecretStr | None = Field(
+        default=None, alias="LINKRAG_CLIENT_SECRET"
+    )
+    linkrag_recall_timeout_seconds: float = Field(
+        default=5, alias="LINKRAG_RECALL_TIMEOUT_SECONDS", gt=0, le=60
+    )
+    linkrag_sync_timeout_seconds: float = Field(
+        default=60, alias="LINKRAG_SYNC_TIMEOUT_SECONDS", gt=0, le=600
+    )
+    linkrag_sync_interval_seconds: int = Field(
+        default=60, alias="LINKRAG_SYNC_INTERVAL_SECONDS", ge=5, le=3600
+    )
+    linkrag_sync_batch_size: int = Field(
+        default=20, alias="LINKRAG_SYNC_BATCH_SIZE", ge=1, le=200
+    )
+    linkrag_sync_max_attempts: int = Field(
+        default=5, alias="LINKRAG_SYNC_MAX_ATTEMPTS", ge=1, le=20
+    )
+    @property
+    def linkrag_configured(self) -> bool:
+        """Enabled and holding real credentials; otherwise recall stays local."""
+        secret = (
+            self.linkrag_client_secret.get_secret_value()
+            if self.linkrag_client_secret is not None
+            else None
+        )
+        return (
+            self.linkrag_enabled
+            and not _is_placeholder(self.linkrag_client_id)
+            and not _is_placeholder(secret)
+        )
+
     redis_url_override: str | None = Field(default=None, alias="REDIS_URL")
     redis_host: str = Field(default="127.0.0.1", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")
@@ -569,6 +609,11 @@ class Settings(BaseSettings):
         ):
             raise ValueError("PI_SERVICE_BASE_URL must be an HTTP(S) URL")
         self.pi_service_base_url = self.pi_service_base_url.rstrip("/")
+        if self.linkrag_enabled:
+            rag_origin = urlsplit(self.linkrag_base_url.strip())
+            if rag_origin.scheme not in {"http", "https"} or not rag_origin.hostname:
+                raise ValueError("LINKRAG_BASE_URL must be an HTTP(S) URL")
+            self.linkrag_base_url = self.linkrag_base_url.strip().rstrip("/")
 
         if self.app_environment.lower() != "production":
             return self

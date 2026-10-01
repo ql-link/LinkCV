@@ -1,0 +1,254 @@
+/* 06 资料库（Figma「V3 · 单栏」06.1 / 06.2 / 06.1a–06.1d / 状态变体 / 10.3 加载失败）。
+   坐标以内容卡为原点：正文列 CX=146、CW=860；这里把 860 列居中，宽度不够时随窗口收缩。 */
+
+.ds-root { position: relative; min-height: 100%; }
+.ds-page { position: relative; width: min(var(--v3-page-max), calc(100% - 2 * var(--v3-gutter))); min-width: 640px; margin: 0 auto; padding: 0 0 72px; }
+.ds-root.is-embedded .ds-page { width: auto; min-width: 0; max-width: none; padding: 0 24px 48px; }
+
+/* ── 页头：眉标 / 面包屑 → 衬线标题 → 摘要 → 分隔线（y=160） */
+.ds-head { position: relative; padding-top: 52px; }
+/* 文件夹内与资料库首页的标题小字在同一位置（统一样式，见 PageEyebrow） */
+.ds-eyebrow { height: 13px; margin: 0 0 9px; }
+.ds-crumb { display: flex; height: 14px; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 11.5px; line-height: 14px; }
+.ds-crumb-back { display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; font-size: 11.5px; font-weight: 500; }
+.ds-crumb-back:hover { color: var(--v3-txt); }
+.ds-crumb-sep { color: var(--v3-fnt2); }
+.ds-crumb-current { overflow: hidden; color: var(--v3-fnt); text-overflow: ellipsis; white-space: nowrap; }
+.ds-title { overflow: hidden; max-width: calc(100% - 440px); margin: 0; font-family: var(--v3-serif); font-size: 28px; font-weight: 600; line-height: 40px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
+.ds-actions { position: absolute; top: 84px; right: 0; display: flex; align-items: center; gap: 10px; }
+.ds-actions .v3-search { width: 200px; }
+.ds-actions.is-folder .v3-search { width: 180px; }
+.ds-actions .v3-btn { height: 32px; }
+.ds-divider { height: 1px; margin-top: 24px; background: var(--v3-line); }
+
+/* ── 06.1 文件夹网格（3 列 273×172，间距 20）。正文列随窗口变宽时卡片按 273:172 等比放大，文字行贴底保持设计稿间距 */
+.ds-section-head { display: flex; height: 16px; align-items: center; justify-content: space-between; margin: 23px 0 12px; }
+.ds-section-head strong { font-size: 13px; font-weight: 500; }
+.ds-section-head span { color: var(--v3-fnt); font-size: 11.5px; }
+.ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(273px, 1fr)); gap: 20px; }
+.ds-folder { position: relative; aspect-ratio: 273 / 172; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease; }
+.ds-folder:hover { border-color: var(--v3-sk2); box-shadow: 0 6px 20px rgb(0 0 0 / 6%); }
+.ds-folder:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.ds-folder-stage { position: absolute; top: 7px; right: 7px; bottom: 67px; left: 7px; container-type: size; overflow: hidden; border-radius: 11px; background: var(--v3-stage); }
+.ds-folder-stage-inner { position: absolute; top: 50%; left: 50%; width: 257px; height: 96px; translate: -50% -50%; transform-origin: center; scale: min(calc(100cqw / 257px), calc(100cqh / 96px)); }
+.ds-folder-empty-sheet { position: absolute; top: 16px; left: 98px; width: 60px; height: 78px; border: 1px dashed var(--v3-fnt2); border-radius: 4px; }
+.ds-folder-name { position: absolute; bottom: 36px; right: 52px; left: 17px; overflow: hidden; font-size: 14px; font-weight: 500; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-folder-meta { position: absolute; bottom: 16px; right: 17px; left: 17px; overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-folder-more { position: absolute; bottom: 30px; right: 12px; }
+.ds-folder-more[aria-expanded="true"] { background: var(--v3-field); color: var(--v3-txt); }
+.ds-sheet { position: absolute; width: 60px; height: 78px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 4px; background: #fff; box-shadow: 0 3px 8px rgb(0 0 0 / 7%); }
+.ds-sheet > i { position: absolute; left: 8px; display: block; height: 3px; border-radius: 1px; background: var(--v3-sk); }
+.ds-sheet > i.is-title { top: 11px; width: 25px; height: 4px; background: var(--v3-txt); }
+.ds-sheet-fmt { position: absolute; top: 55px; left: 8px; display: grid; height: 12px; place-items: center; border-radius: 3px; padding: 0 4px; color: #fff; font-family: var(--v3-num); font-size: 7px; font-weight: 700; line-height: 1; }
+
+.ds-new-folder { display: flex; aspect-ratio: 273 / 172; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed var(--v3-fnt2); border-radius: 16px; background: transparent; padding: 0 12px 11px; color: var(--v3-txt); cursor: pointer; }
+.ds-new-folder:hover { border-color: var(--v3-fnt); background: #fbfbfa; }
+.ds-new-folder:disabled { cursor: not-allowed; opacity: .5; }
+.ds-new-folder-plus { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 18px; background: var(--v3-field); color: var(--v3-sub); }
+.ds-new-folder strong { margin-top: 12px; font-size: 13px; font-weight: 500; line-height: 16px; }
+.ds-new-folder small { margin-top: 6px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+
+/* 最近上传：卡片内 56 高的行 */
+.ds-recent-head { margin: 32px 0 12px; font-size: 13px; font-weight: 500; line-height: 16px; }
+.ds-recent { overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); }
+.ds-recent-row { position: relative; display: grid; width: 100%; height: 56px; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 0; background: transparent; padding: 0 17px; color: inherit; cursor: pointer; text-align: left; }
+.ds-recent-row + .ds-recent-row::before { position: absolute; top: 0; right: 17px; left: 17px; height: 1px; background: var(--v3-line); content: ""; }
+.ds-recent-row:hover { background: #fafaf8; }
+.ds-recent-name { display: grid; min-width: 0; grid-template-columns: minmax(0, 346px) auto; align-items: center; gap: 12px; }
+.ds-recent-name strong { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.ds-recent-time { color: var(--v3-fnt); font-family: var(--v3-num); font-size: 11.5px; white-space: nowrap; }
+.ds-folder-chip { display: inline-flex; overflow: hidden; max-width: 200px; height: 22px; align-items: center; gap: 5px; justify-self: start; border-radius: 11px; background: var(--v3-field); padding: 0 10px 0 8px; color: var(--v3-sub); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.ds-folder-chip span { overflow: hidden; text-overflow: ellipsis; }
+.ds-foot-note { margin: 20px 0 0; color: var(--v3-fnt); font-size: 11.5px; line-height: 19px; }
+
+/* 格式方块（32×32，浅色底 + 同色文字） */
+.ds-fmt { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 8px; font-family: var(--v3-num); font-size: 8px; font-weight: 700; line-height: 1; }
+.ds-fmt.is-long { font-size: 7px; }
+
+/* ── 06.2 全宽列表：名称 / 关联 / 大小 / 上传日期 + 行尾 ⋯ */
+.ds-table { margin-top: 0; }
+.ds-cols { display: grid; grid-template-columns: 32px minmax(0, 1fr) 190px 66px 144px 42px; align-items: center; padding: 0 10px 0 12px; }
+.ds-cols > :nth-child(2) { padding-right: 12px; padding-left: 12px; }
+.ds-cols > :nth-child(6) { justify-self: end; }
+.ds-table-head { height: 46px; align-items: start; border-bottom: 1px solid var(--v3-line); padding-top: 22px; color: var(--v3-fnt); font-size: 11px; }
+.ds-table-head > span { line-height: 13px; }
+.ds-table-head > span { padding: 0 !important; }
+.ds-table-head > .is-name { grid-column: 1 / 3; }
+.ds-table-head > .is-right, .ds-row .is-right { text-align: right; }
+.ds-table-head > .is-check { display: grid; width: 28px; place-items: center; }
+.ds-rows { padding-top: 5px; }
+.ds-row { position: relative; height: 54px; border-radius: 8px; color: var(--v3-sub); font-size: 12px; }
+.ds-row + .ds-row { margin-top: 6px; }
+.ds-row + .ds-row::before { position: absolute; top: -3px; right: 0; left: 68px; height: 1px; background: var(--v3-line); content: ""; }
+.ds-row.is-clickable { cursor: pointer; }
+.ds-row:hover, .ds-row.is-active { background: #f6f6f3; }
+.ds-row:hover::before, .ds-row.is-active::before, .ds-row:hover + .ds-row::before, .ds-row.is-active + .ds-row::before { opacity: 0; }
+.ds-row:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: -2px; }
+.ds-row-name { display: grid; min-width: 0; align-self: start; gap: 4px; padding-top: 9px; }
+.ds-row-name strong { overflow: hidden; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-row-name small { overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-row-name small.is-processing { color: var(--v3-bl); }
+.ds-row-name small.is-failed { color: var(--v3-rd); }
+.ds-row-link { display: flex; min-width: 0; align-items: center; gap: 5px; line-height: 14px; }
+.ds-row-link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-row-link svg { flex: 0 0 auto; }
+.ds-row .v3-num { font-size: 12px; }
+.ds-row-retry { border: 0; background: transparent; padding: 0; color: var(--v3-txt); cursor: pointer; font-size: 12px; }
+.ds-row-retry:hover { text-decoration: underline; }
+.ds-row-retry:disabled { color: var(--v3-fnt); cursor: default; text-decoration: none; }
+.ds-row-more { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid transparent; border-radius: 7px; background: transparent; padding: 0; color: var(--v3-fnt); cursor: pointer; }
+.ds-row-more:hover, .ds-row-more[aria-expanded="true"], .ds-row.is-active .ds-row-more { border-color: var(--v3-cl); background: #fff; color: var(--v3-txt); }
+.ds-row-more:disabled { cursor: not-allowed; opacity: .4; }
+.ds-check { width: 15px; height: 15px; margin: 0; accent-color: var(--v3-dark); cursor: pointer; }
+.ds-check:disabled { cursor: not-allowed; }
+.ds-row-check { display: grid; width: 28px; place-items: center; }
+
+.ds-dropzone { display: flex; width: 100%; height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 4px; margin-top: 16px; border: 1px dashed var(--v3-fnt2); border-radius: 10px; background: transparent; padding: 0 16px; color: var(--v3-sub); cursor: pointer; }
+.ds-dropzone:hover { border-color: var(--v3-fnt); background: #fbfbfa; }
+.ds-dropzone:disabled { cursor: not-allowed; opacity: .5; }
+.ds-dropzone strong { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; line-height: 15px; }
+.ds-dropzone small { color: var(--v3-fnt); font-size: 10.5px; line-height: 13px; }
+.ds-no-match { margin: 40px 0; color: var(--v3-fnt); font-size: 13px; text-align: center; }
+
+/* ── 空状态 / 加载失败 / 加载中 */
+.ds-empty { margin-top: 59px; }
+.ds-empty.v3-empty { padding-bottom: 32px; }
+.ds-empty.v3-empty p, .ds-error.v3-empty p { margin-top: 8px; }
+.ds-error.v3-empty { padding-bottom: 24px; }
+.ds-error { margin-top: 115px; }
+.ds-error.v3-empty > .v3-stage { height: 112px; }
+.ds-error.v3-empty h3 { margin-top: 24px; }
+.ds-error .v3-empty-actions { margin-top: 22px; }
+.ds-error .v3-btn { height: 34px; }
+.ds-loading { min-height: 0; flex: 1 1 auto; overflow: hidden; padding-top: 28px; }
+.ds-loading .v3-sk-folders { margin-top: 0; }
+.ds-spinner { width: 16px; height: 16px; border: 2px solid var(--v3-sk2); border-top-color: var(--v3-dark); border-radius: 50%; animation: ds-spin 800ms linear infinite; }
+@keyframes ds-spin { to { transform: rotate(360deg); } }
+
+/* 拖拽蒙层与上传中提示 */
+.ds-drag-overlay { position: absolute; z-index: 30; inset: 8px; display: grid; place-items: center; border: 2px dashed var(--v3-sk2); border-radius: 16px; background: rgb(255 255 255 / 88%); pointer-events: none; }
+.ds-drag-overlay div { display: grid; justify-items: center; gap: 10px; color: var(--v3-sub); font-size: 13px; }
+.ds-drag-overlay strong { color: var(--v3-txt); font-family: var(--v3-serif); font-size: 18px; font-weight: 600; }
+.ds-uploading { position: fixed; z-index: 1250; bottom: 28px; left: 50%; display: flex; align-items: center; gap: 10px; transform: translateX(-50%); border: 1px solid var(--v3-cl); border-radius: 20px; background: #fff; padding: 9px 16px; color: var(--v3-sub); font-size: 12px; box-shadow: var(--v3-shadow-pop); }
+
+/* 批量操作栏 */
+.ds-batch-bar { position: fixed; z-index: 1100; bottom: 28px; left: calc(50% + 108px); display: flex; height: 48px; align-items: center; gap: 14px; transform: translateX(-50%); border: 1px solid var(--v3-cl); border-radius: 12px; background: #fff; padding: 0 10px 0 16px; box-shadow: var(--v3-shadow-pop); font-size: 12px; }
+.ds-batch-bar label { display: inline-flex; align-items: center; gap: 8px; color: var(--v3-txt); cursor: pointer; }
+.ds-batch-bar-count { color: var(--v3-sub); }
+.ds-batch-bar-count strong { color: var(--v3-txt); font-family: var(--v3-num); font-weight: 600; }
+.ds-batch-bar-sep { width: 1px; height: 20px; background: var(--v3-line); }
+.ds-batch-bar .v3-btn { height: 30px; }
+.ds-batch-bar .v3-btn-text.is-danger { color: var(--v3-rd); }
+
+/* ── 弹窗共用 */
+.ds-dialog .v3-dialog-sub { margin-top: 5px; line-height: 15px; }
+.ds-dialog .v3-dialog-body { padding-bottom: 32px; }
+.ds-dialog.is-tight .v3-dialog-body { padding-bottom: 24px; }
+.ds-dialog .v3-dialog-title { line-height: 29px; padding-right: 36px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-dialog-art { position: relative; margin-top: 23px; }
+.ds-dialog .v3-dialog-foot { min-height: 88px; }
+.ds-dialog .v3-dialog-foot-left { color: var(--v3-fnt); font-size: 11.5px; }
+.ds-field { margin-top: 20px; }
+.ds-field .v3-field-error { margin-top: -2px; }
+
+/* 06.1a 上传资料 */
+.ds-upload-drop { position: relative; display: block; width: 100%; height: 168px; margin-top: 23px; border: 1px dashed var(--v3-fl); border-radius: 11px; background: var(--v3-stage); padding: 0; color: inherit; cursor: pointer; }
+.ds-upload-drop:hover, .ds-upload-drop.is-over { border-color: var(--v3-fnt2); background: #efefec; }
+.ds-upload-drop:disabled { cursor: progress; }
+.ds-upload-drop:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.ds-upload-drop-title { position: absolute; top: 106px; right: 0; left: 0; font-size: 13px; font-weight: 500; line-height: 16px; text-align: center; }
+.ds-upload-drop-hint { position: absolute; top: 130px; right: 0; left: 0; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-align: center; }
+.ds-target { display: flex; min-height: 60px; align-items: center; gap: 12px; margin-top: 20px; border: 1px solid var(--v3-cl); border-radius: 12px; padding: 0 18px; }
+.ds-target-copy { display: grid; min-width: 0; flex: 1; gap: 4px; }
+.ds-target-copy strong { font-size: 13px; font-weight: 500; }
+.ds-target-copy small { color: var(--v3-fnt); font-size: 11px; }
+.ds-target-folder { display: inline-flex; overflow: hidden; max-width: 180px; align-items: center; gap: 6px; color: var(--v3-txt); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.ds-target-folder span { overflow: hidden; text-overflow: ellipsis; }
+.ds-target-folder svg { flex: 0 0 auto; color: var(--v3-sub); }
+
+/* 06.1a 同名文件 */
+.ds-options { margin-top: 20px; border: 1px solid var(--v3-cl); border-radius: 12px; }
+.ds-option { position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 0 12px; padding: 16px 18px 16px; cursor: pointer; }
+.ds-option + .ds-option::before { position: absolute; top: 0; right: 18px; left: 18px; height: 1px; background: var(--v3-line); content: ""; }
+.ds-option .v3-radio { margin-top: 4px; }
+.ds-option.is-disabled { cursor: not-allowed; opacity: .5; }
+.ds-option-copy { display: grid; min-width: 0; gap: 6px; }
+.ds-option-copy strong { font-size: 13px; font-weight: 500; line-height: 16px; }
+.ds-option-copy > small { color: var(--v3-fnt); font-size: 11.5px; line-height: 19px; }
+.ds-option-copy .v3-input { height: 38px; margin-top: 0; font-size: 12.5px; }
+.ds-option-copy .v3-select { margin-top: 6px; }
+.ds-option-hint { color: var(--v3-fnt); font-size: 10.5px; }
+.ds-inline-error { margin: 12px 0 0; color: var(--v3-rd); font-size: 11.5px; line-height: 18px; }
+
+/* 06.1b 移动到文件夹 / 06.1d 管理关联：选项列表 */
+.ds-list-label { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 9px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.ds-pick { display: grid; align-content: start; gap: 6px; overflow-y: auto; border: 1px solid var(--v3-cl); border-radius: 12px; padding: 7px 6px; }
+.ds-pick.is-sessions { gap: 8px; padding: 8px 6px; }
+.ds-pick-item { position: relative; display: flex; width: 100%; height: 38px; align-items: center; gap: 8px; border: 0; border-radius: 8px; background: transparent; padding: 0 10px; color: var(--v3-sub); cursor: pointer; font-size: 13px; text-align: left; }
+.ds-pick-item:hover { background: var(--v3-field); }
+.ds-pick-item[aria-checked="true"] { background: var(--v3-hl); color: var(--v3-txt); font-weight: 500; }
+.ds-pick-item > span:first-of-type { overflow: hidden; min-width: 0; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
+.ds-pick-item small { color: var(--v3-fnt); font-size: 11.5px; font-weight: 400; }
+.ds-pick-item .v3-menu-check { flex: 0 0 auto; }
+.ds-pick-empty { padding: 28px 12px; color: var(--v3-fnt); font-size: 12px; text-align: center; }
+
+.ds-session { position: relative; display: flex; width: 100%; min-height: 50px; align-items: center; gap: 12px; border: 0; border-radius: 8px; background: transparent; padding: 0 12px; color: inherit; cursor: pointer; text-align: left; }
+.ds-session + .ds-session::before { position: absolute; top: -4px; right: 12px; left: 12px; height: 1px; background: var(--v3-line); content: ""; }
+.ds-session:hover { background: var(--v3-field); }
+.ds-session[aria-checked="true"] { background: var(--v3-hl); }
+.ds-session[aria-checked="true"]::before, .ds-session[aria-checked="true"] + .ds-session::before { opacity: 0; }
+.ds-session-copy { display: grid; min-width: 0; flex: 1; gap: 5px; }
+.ds-session-copy strong { overflow: hidden; font-size: 13px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-session-copy small { overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-current-tag { display: inline-flex; height: 22px; flex: 0 0 auto; align-items: center; border: 1px solid var(--v3-cl); border-radius: 11px; background: #fff; padding: 0 8px; color: var(--v3-sub); font-size: 10.5px; font-weight: 500; }
+.ds-assoc-search-wrap .v3-search { height: 38px; margin-top: 20px; padding: 0 14px; }
+.ds-assoc-search-wrap .v3-search input { font-size: 13px; }
+.ds-assoc-search-wrap .v3-search input::placeholder { color: var(--v3-fnt2); }
+.ds-unlink { border: 0; background: transparent; padding: 0; color: var(--v3-rd); cursor: pointer; font-size: 12px; font-weight: 500; }
+.ds-unlink:hover { text-decoration: underline; }
+.ds-unlink:disabled { cursor: not-allowed; opacity: .5; text-decoration: none; }
+
+/* 06.1c 资料预览：标题下元信息 + 浅底舞台里的白色文档 */
+.ds-preview-meta { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 5px; color: var(--v3-fnt); font-size: 12px; line-height: 14px; }
+.ds-preview-meta .is-dot { color: var(--v3-fnt2); }
+.ds-preview-meta .is-link { display: inline-flex; align-items: center; gap: 5px; color: var(--v3-sub); }
+.ds-preview-meta .v3-link { color: var(--v3-txt); font-size: 12px; }
+.ds-preview-stage { height: 612px; max-height: calc(100dvh - 200px); margin-top: 23px; border-radius: 11px; background: var(--v3-stage); padding: 24px; }
+.ds-preview-doc { height: 100%; overflow-y: auto; border: 1px solid var(--v3-cl); border-radius: 6px; background: #fff; padding: 28px 32px; }
+.ds-preview-doc .ds-markdown { color: var(--v3-sub); font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.ds-preview-doc .ds-markdown > :first-child { margin-top: 0; }
+.ds-preview-doc .ds-markdown h1 + p { color: var(--v3-fnt); font-size: 11.5px; }
+.ds-preview-doc .ds-markdown li { margin: 0 0 6px; }
+.ds-preview-doc .ds-markdown a { color: var(--v3-link); }
+.ds-preview-doc .ds-markdown code { border-radius: 4px; background: var(--v3-field); padding: 1px 4px; font-size: 11.5px; }
+.ds-preview-doc .ds-markdown pre code { background: transparent; padding: 0; }
+.ds-preview-doc .ds-markdown blockquote { margin: 0 0 8px; border-left: 3px solid var(--v3-line); padding-left: 12px; color: var(--v3-fnt); }
+.ds-preview-doc .ds-markdown h1,
+.ds-preview-doc .ds-markdown h2 { margin: 0 0 10px; color: var(--v3-txt); font-family: var(--v3-serif); font-size: 17px; font-weight: 600; line-height: 24px; }
+.ds-preview-doc .ds-markdown h3,
+.ds-preview-doc .ds-markdown h4 { margin: 18px 0 8px; color: var(--v3-txt); font-size: 13px; font-weight: 500; }
+.ds-preview-doc .ds-markdown p { margin: 0 0 8px; }
+.ds-preview-doc .ds-markdown ul, .ds-preview-doc .ds-markdown ol { margin: 0 0 8px; padding-left: 16px; }
+.ds-preview-doc .ds-markdown hr { height: 1px; margin: 16px 0; border: 0; background: var(--v3-line); }
+.ds-preview-doc .ds-markdown img { max-width: 100%; }
+.ds-preview-doc .ds-markdown pre { overflow-x: auto; border-radius: 6px; background: var(--v3-field); padding: 10px 12px; }
+.ds-preview-doc .ds-markdown table { border-collapse: collapse; }
+.ds-preview-doc .ds-markdown th, .ds-preview-doc .ds-markdown td { border: 1px solid var(--v3-line); padding: 4px 8px; }
+.ds-preview-state { display: grid; height: 100%; place-content: center; justify-items: center; gap: 12px; color: var(--v3-fnt); font-size: 12.5px; }
+
+/* 浮动提示（沿用 v3-toast 外观，失败提示可带操作按钮） */
+.ds-toast .dataset-notice-message { display: block; max-width: 560px; font-size: 13px; font-weight: 500; line-height: 19px; }
+.ds-toast-action { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+.ds-toast-action .v3-link { color: var(--v3-txt); white-space: nowrap; }
+.ds-one-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 列表只在自己的区域里滚动：页头（标题、搜索、上传）固定，文件夹与文件区单独滚动 */
+.ds-root:not(.is-embedded) { height: 100%; min-height: 0; }
+.ds-root:not(.is-embedded) .ds-page { display: flex; height: 100%; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.ds-root:not(.is-embedded) .ds-head { flex: 0 0 auto; }
+.ds-root:not(.is-embedded) .ds-body { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; margin-inline: -8px; padding-inline: 8px; padding-bottom: 48px; }
+/* 加载骨架与内容交叉淡化时的外层格子：占满页头以下的高度 */
+.ds-root:not(.is-embedded) .ds-page > .ds-body-slot { display: grid; min-height: 0; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
+.ds-body-slot > .v3-reveal-out, .ds-body-slot > .v3-reveal-in { display: grid; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.ds-body-slot .ds-body { overflow-y: auto; overscroll-behavior: contain; margin-inline: -8px; padding-inline: 8px; padding-bottom: 48px; }

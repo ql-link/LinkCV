@@ -10,7 +10,41 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      migrations: ${{ steps.detect.outputs.migrations }}
+      revisions: ${{ steps.detect.outputs.revisions }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+            echo "revisions=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          # 共享分支 push 总是兜底跑一次完整迁移
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s\n' "$changed" | grep -Eq '^(apps/backend/migrations/|apps/backend/tests/integration/migrations/|apps/backend/src/linkresume/core/migration_sql\.py$|apps/backend/src/linkresume/.*/models\.py$|apps/backend/alembic\.ini$|apps/backend/uv\.lock$|\.github/workflows/quality\.yml$)'; then
+            echo "migrations=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "migrations=false" >> "$GITHUB_OUTPUT"
+          fi
+          # 本次新增 revision 的编号，用于挑选同名 MySQL 迁移测试
+          revisions="$(git diff --name-only --diff-filter=A "$BASE_SHA"...HEAD -- 'apps/backend/migrations/versions/*.py' \
+            | sed -nE 's#.*/([0-9]{4})_[^/]*\.py$#\1#p' | sort -u | tr '\n' ' ')"
+          echo "revisions=$revisions" >> "$GITHUB_OUTPUT"
+
+  migrations:
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -27,6 +61,66 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+      - run: uv sync --directory apps/backend --dev
+      - name: Verify MySQL upgrade from empty database to head
+        working-directory: apps/backend
+        env:
+          APP_ENV: development
+          DATABASE_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
+          LINKRESUME_ENV_FILE: ${{ github.workspace }}/.env.nonexistent-migration-test
+        run: |
+          uv run alembic upgrade head
+          # 重跑验证幂等
+          uv run alembic upgrade head
+          uv run alembic current
+      - name: Verify MySQL tests for new revisions
+        if: needs.changes.outputs.revisions != ''
+        env:
+          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
+          REVISIONS: ${{ needs.changes.outputs.revisions }}
+        run: |
+          selector=""
+          for revision in $REVISIONS; do
+            selector="${selector:+$selector or }$revision"
+          done
+          echo "pytest -k: $selector"
+          status=0
+          uv run --directory apps/backend pytest tests/integration/migrations/test_mysql_migrations.py -k "$selector" -q || status=$?
+          # 5 表示新增 revision 没有同名 MySQL 测试，此时只依赖上一步的升级校验
+          if [ "$status" -eq 5 ]; then
+            echo "::notice::No MySQL migration tests matched revisions: $REVISIONS"
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+
+  # 规则与文档同步检查只依赖 git 和 Python，不等待 Node 依赖安装，失败时约半分钟内给出结果。
+  # check:contracts 需要 Web 依赖加载 vite.config.mjs，仍由 check job 的 npm run check 覆盖。
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+      - run: uv sync --directory apps/backend --dev
+      - name: Check AI links and project skills
+        run: |
+          uv run --directory apps/backend python ../../scripts/quality/check_ai_links.py
+          uv run --directory apps/backend python ../../scripts/quality/check_skills.py
+      - name: Check docs sync
+        run: uv run --directory apps/backend python ../../scripts/quality/check_docs_sync.py
+        env:
+          DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+  check:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
@@ -54,28 +148,6 @@ jobs:
       - run: npm ci --prefix third_party/pi
       - run: npm run prepare:pi
       - run: uv sync --directory apps/backend --dev
-      - name: Verify MySQL 0081 to 0082 migration
-        run: >-
-          uv run --directory apps/backend pytest
-          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0082_accepts_nullable_interview_session_foreign_key
-          -q
-        env:
-          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
-      - name: Verify MySQL 0083 to 0084 migration
-        run: >-
-          uv run --directory apps/backend pytest
-          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0084_adds_current_resume_link_without_attachment_storage
-          -q
-        env:
-          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
-      - name: Verify MySQL 0089 and 0090 table retirement
-        run: >-
-          uv run --directory apps/backend pytest
-          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0089_requires_drained_legacy_tables_before_drop
-          tests/integration/migrations/test_mysql_migrations.py::test_mysql_0090_retires_legacy_tables_and_preserves_current_resume
-          -q
-        env:
-          LINKRESUME_TEST_MYSQL_URL: mysql+pymysql://linkresume:linkresume-test@127.0.0.1:3306/linkresume
       - run: npm run check
         env:
           DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

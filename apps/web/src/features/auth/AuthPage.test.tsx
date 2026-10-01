@@ -50,10 +50,11 @@ describe("AuthPage environment-aware login", () => {
 
     const { rerender } = render(<AuthPage initialMode="login" />);
     await act(async () => {});
-    expect(screen.getByRole("heading", { name: "微信扫码登录 LinkResume" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "微信扫码登录 LinkResume。" })).toBeInTheDocument();
     expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
     expect(screen.getByText("扫码后在微信中确认登录，保障账号安全")).toBeInTheDocument();
-    expect(document.querySelector(".wechat-qr-panel--auth")).toBeInTheDocument();
+    expect(screen.getByText("登录即表示同意《用户协议》与《隐私政策》")).toBeInTheDocument();
+    expect(screen.queryByText("仅开发环境")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(document.querySelector("form")).toBeNull();
 
@@ -76,7 +77,8 @@ describe("AuthPage environment-aware login", () => {
     render(<AuthPage initialMode="login" />);
     await act(async () => {});
 
-    expect(screen.getByRole("heading", { name: "登录 LinkResume" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "登录 LinkResume。" })).toBeInTheDocument();
+    expect(screen.getByText("仅开发环境")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "邮箱" })).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toBeInTheDocument();
     expect(screen.queryByAltText("微信扫码登录二维码")).not.toBeInTheDocument();
@@ -111,7 +113,7 @@ describe("AuthPage environment-aware login", () => {
     render(<AuthPage initialMode="register" />);
     await act(async () => {});
 
-    expect(screen.getByRole("heading", { name: "注册 LinkResume" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "注册 LinkResume。" })).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toHaveAttribute("autocomplete", "new-password");
     fireEvent.change(screen.getByRole("textbox", { name: "邮箱" }), {
       target: { value: "new@example.test" },

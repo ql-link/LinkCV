@@ -18,6 +18,7 @@ from linkresume.domain.resume import (
 from linkresume.domain.resume.layout import LayoutCompilationError, compile_layout_plan
 from linkresume.domain.resume.models import PresentationSettings
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -521,6 +522,7 @@ def create_resume_from_template(
             ),
             db,
         )
+        product_events.resume_created(db, user_id, resume.id, "template")
         db.commit()
         return resume
     except Exception:

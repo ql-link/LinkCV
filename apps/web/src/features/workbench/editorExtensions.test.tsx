@@ -513,6 +513,24 @@ describe("分栏分隔线拖拽", () => {
   });
 });
 
+describe("正文图片单位下拉", () => {
+  it("用自绘选项切换百分比与像素并保持图片渲染宽度", async () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: { type: "doc", content: [{ type: "resumeImage", attrs: { src: "data:image/png;base64,dGVzdA==", width: 25, widthUnit: "%", alt: "示例图片" } }] } });
+    const { container } = render(<EditorContent editor={editor} />);
+    const image = screen.getByRole("img", { name: "示例图片" });
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ width: 200, height: 100 } as DOMRect);
+    vi.spyOn(container.querySelector(".ProseMirror")!, "getBoundingClientRect").mockReturnValue({ width: 800, height: 1000 } as DOMRect);
+    act(() => editor!.commands.setNodeSelection(0));
+    expect(container.querySelector("select")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "图片宽度单位" }));
+    fireEvent.click(await screen.findByRole("option", { name: "px" }));
+    expect(editor.state.doc.firstChild?.attrs).toMatchObject({ width: 200, widthUnit: "px" });
+    fireEvent.click(screen.getByRole("button", { name: "图片宽度单位" }));
+    fireEvent.click(await screen.findByRole("option", { name: "%" }));
+    expect(editor.state.doc.firstChild?.attrs).toMatchObject({ width: 25, widthUnit: "%" });
+  });
+});
+
 describe("行内图片尺寸调整", () => {
   function renderInlineImage(attrs: Record<string, unknown> = {}) {
     editor = new Editor({

@@ -12,7 +12,7 @@ LinkResume 插件制品子系统管理单一当前浏览器扩展 ZIP 的校验�
 - `service.py`：私有对象、当前发布指针和生命周期操作。
 - `routes.py`：登录用户读取当前版本和受保护下载。
 - `admin_routes.py`：管理员上传、下架、上架和永久删除。
-- Web `PluginReleasePanel.tsx`：管理入口；求职记录页通过 `PluginInstallDialog.tsx` 提供用户安装说明与当前版本下载，导入成功后从求职记录下钻到完整岗位。
+- Web `PluginReleasePanel.tsx`：管理入口；岗位看板通过 `PluginInstallDialog.tsx` 的双栏安装弹窗提供图示、安装步骤与当前版本下载；下载仍读取真实发布元数据，不猜测制品地址，导入后从求职进程进入完整岗位。
 
 ## 存储与生命周期
 
@@ -22,7 +22,7 @@ LinkResume 插件制品子系统管理单一当前浏览器扩展 ZIP 的校验�
 
 ## 发布流程
 
-1. 管理端先检查 `.zip` 与客户端大小上限，再以 multipart 上传。
+1. 管理端先检查 `.zip` 与客户端大小上限，经二次确认后以 multipart 上传；上传区只提示格式与 20 MB 上限，立即上架与清理旧包的行为由确认对话框说明。
 2. 后端完整读取受限大小内容，校验 ZIP 路径安全、Manifest V3、版本格式和摘要。
 3. Service 写入版本对象，随后写入当前指针；同版本不同摘要或版本倒退被拒绝。
 4. 当前指针切换成功后尽力清理旧 ZIP；清理失败只标记 `cleanup_pending`。

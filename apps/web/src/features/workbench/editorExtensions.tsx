@@ -41,6 +41,7 @@ import { api } from "../../api/client";
 import { resumeInlineIconOptions, type InlineIconName } from "../../lib/resumeInlineIcon";
 import { isResumeEmailLink, shouldAutoLinkResumeValue } from "../../lib/resumeLink";
 import { useResumeStore } from "../../store/resumeStore";
+import { Select } from "../../v3/primitives";
 import {
   exitResumeRowToBlankParagraph,
   exitVisuallyBlankResumeListItem,
@@ -415,10 +416,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
                 }
               }}
             />
-            <select aria-label="图片宽度单位" value={widthUnit} onChange={(event) => changeUnit(event.target.value as "%" | "px")}>
-              <option value="%">%</option>
-              <option value="px">px</option>
-            </select>
+            <Select label="图片宽度单位" value={widthUnit} onChange={changeUnit} size="sm" className="wb3-image-unit" options={[{ value: "%", label: "%" }, { value: "px", label: "px" }]} />
           </label>
           <span />
           <input
