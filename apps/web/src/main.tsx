@@ -7,6 +7,7 @@ import "./styles.css";
 import "./design-system/tokens.css";
 import "./design-system/utilities.css";
 import "./app.css";
+import "./muse-templates.css";
 import "./components/ui/layout-patterns.css";
 import "./features/preview/print/resume-fonts.css";
 // V3 的数字字体（Inter）和衬线标题字体在入口就注册，并在空闲时预先加载：
