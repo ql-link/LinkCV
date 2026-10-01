@@ -211,6 +211,12 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run check:app`                   | 执行设计门禁、类型检查、构建、应用测试和 Pi 质量检查                 |
 | `npm run check`                       | 完整本地质量入口                                                     |
 
+### 桌面鉴权配置与验证
+
+`AUTH_DESKTOP_RETRY_ENCRYPTION_KEY` 是独立 Fernet 密钥，仅用于 desktop 领取/续期结果的 120 秒密文恢复；缺失或非法时桌面登录能力关闭，Web/小程序保持可用。密钥写入当前 profile 对应的私密覆盖文件，不写入示例或版本控制；多实例必须共享同一密钥。Development/Production Compose 的后端通过既有 `env_file` 加载基础配置与私密覆盖，无需新增端口或服务。换 key 会使旧结果无法恢复，不能视为无影响热切换。
+
+桌面后端测试入口为 `tests/integration/api/test_desktop_auth.py`；默认包含 Fake Redis，`RUN_DESKTOP_REDIS_TESTS=1` 才运行隔离 `redis-server` 的 Unix socket 用例。跳过真实 Redis 不代表 Lua 原子性已验证；当前脚本只支持单节点/非 Cluster Redis，键类型预检也不等于 Redis 命令错误全面回滚。两端 Core 测试分别位于 `DesktopSessionTests.swift` 和 `DesktopSessionTests.cs`，依赖相应 Swift/.NET SDK，不替代手机扫码或原生 GUI 验收。正式 App 仍为 Mock，Keychain/Credential Locker 与真实注入需独立接入。
+
 ## 测试分层
 
 本地 Web 端口冲突时，Vite 会尝试下一个可用端口；以终端打印的实际地址为准。后端另选端口时同时设置 `BACKEND_PORT` 与 `BACKEND_PROXY_TARGET`；Pi 同步 `PI_SERVICE_PORT`、`PI_SERVICE_BASE_URL` 与回调 `LINKRESUME_BASE_URL`。插件的 `dev:extension:local` 使用 `--origin` 明确绑定该 Web 地址，`--port` 单独控制 WXT 热更新端口。默认加载 `apps/extension/.output/development/chrome-mv3`，或用 `--output-dir` 指定固定父目录；监视进程需要持续运行。正式版继续连接线上并使用原有独立目录。具体步骤见 [插件说明](../../apps/extension/README.md)。

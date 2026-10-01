@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from fastapi import Depends, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,14 +20,21 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def _load_user(
+@dataclass(frozen=True)
+class AuthenticationContext:
+    user: User
+    sid: str
+    channel: str
+
+
+def _load_context(
     token: str | None,
     expected_channel: str,
     request: Request,
     db: Session,
     settings: Settings,
     redis_client: "redis.Redis",
-) -> User | None:
+) -> AuthenticationContext | None:
     decoded = decode_access_token(token, settings)
     if decoded is None:
         return None
@@ -40,6 +49,49 @@ def _load_user(
     if user is None or user.status != 1:
         return None
     bind_audit_actor(request, user.id, is_admin=bool(user.is_admin))
+    request.state.auth_channel = channel
+    return AuthenticationContext(user, sid, channel)
+
+
+def _load_user(token, expected_channel, request, db, settings, redis_client) -> User | None:
+    context = _load_context(token, expected_channel, request, db, settings, redis_client)
+    return context.user if context else None
+
+
+def get_current_desktop_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+) -> User:
+    if _has_auth_cookie(request, settings):
+        raise ApiError(401, "SESSION_INVALID")
+    try:
+        user = _load_user(_bearer_token(request), "desktop", request, db, settings, redis_client)
+    except redis.RedisError as error:
+        raise ApiError(503, "AUTH_SERVICE_UNAVAILABLE") from error
+    if user is None:
+        raise ApiError(401, "SESSION_INVALID")
+    return user
+
+
+def _has_auth_cookie(request: Request, settings: Settings) -> bool:
+    return any(name in request.cookies for name in (
+        settings.access_cookie_name, settings.refresh_cookie_name, settings.session_cookie_name,
+    ))
+
+
+def get_current_workspace_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+) -> User:
+    if request.headers.get("authorization") is not None:
+        return get_current_desktop_user(request, db, settings, redis_client)
+    user = _load_user(request.cookies.get(settings.access_cookie_name), WEB_CHANNEL, request, db, settings, redis_client)
+    if user is None:
+        raise ApiError(401, "UNAUTHORIZED")
     return user
 
 

@@ -2,7 +2,7 @@
 
 ## 功能范围
 
-LinkResume 的账号功能覆盖普通用户注册和登录、微信扫码登录、小程序登录、双端会话刷新与退出、微信绑定、本人资料维护，以及管理员查询和启停用户。它为简历、求职中心、AI 助手和资料集提供统一身份，不包含这些领域自己的业务操作。
+LinkResume 的账号功能覆盖普通用户注册和登录、微信扫码登录、小程序登录、Web、小程序与 desktop 会话刷新与退出、微信绑定、本人资料维护，以及管理员查询和启停用户。它为简历、求职中心、AI 助手和资料集提供统一身份，不包含这些领域自己的业务操作。
 
 浅色 Web 工作区的页面背景统一使用暖白背景 Token，账号页的卡片和交互层仍保持独立表面层级。
 
@@ -24,13 +24,15 @@ LinkResume 的账号功能覆盖普通用户注册和登录、微信扫码登录
 | 账号 | `modules/identity/account_routes.py` | 本人资料、头像，以及个人画像的读取和整体替换 |
 | 管理 | `modules/identity/admin_routes.py` | 管理员用户列表、详情、状态和统计；详情中的累计 LLM 调用数与估算费用读取 `llm_call_logs` |
 | 管理台统计 | `modules/admin_insights/` | 用户总数、新增、活跃、禁用、管理员数和 14 天注册趋势等只读统计 |
-| 会话 | `modules/identity/session_service.py` | Web/小程序 channel、session 创建、轮换与撤销 |
-| 鉴权依赖 | `modules/identity/dependencies.py` | 当前用户、可选用户、管理员和小程序用户边界 |
+| 会话 | `modules/identity/session_service.py` | 统一凭据准备、Web/小程序创建与轮换、三渠道撤销基础原语 |
+| 桌面 | `modules/identity/desktop_routes.py`、`desktop_login_service.py` | 桌面扫码证明、原子领取与轮换、短期密文恢复、验证 secret 的退出 |
+| 鉴权依赖 | `modules/identity/dependencies.py` | 统一认证上下文及 Web、mini、desktop、只读 workspace 和管理员的显式渠道边界 |
 | Web | `features/auth/`、`features/account/` | 登录与用户中心界面 |
 
 ## 核心规则
 
-- Web 使用 Cookie 会话，小程序使用 Bearer 会话，两种凭据不能跨渠道混用。
+- Web 使用 Cookie，mini 与 desktop 使用各自 Bearer，三渠道不能互换或混合认证 Cookie。桌面仅拥有明确只读白名单，管理员角色不能扩大渠道权限，详见 [桌面会话契约](../api/http-contracts.md#桌面-bearer-会话)。
+- 桌面 Core 的 access 仅驻留内存，refresh 与固定请求 ID 的恢复日志通过原子安全存储接口保存；网络失败保留日志，明确失效清理。共享续期负责统一保存，退出以会话代次拒绝迟到写回，远端撤销失败不冒充成功。Keychain/Credential Locker 适配与正式 App 注入仍未实现。
 - Web 受保护请求遇到 `401` 时共用一次续期并最多重试一次；支持 Web Locks 的浏览器还会跨同源标签页串行续期，取得锁后先检查当前登录态，复用其他标签页已经更新的 Cookie，避免并发轮换触发会话撤销。不支持 Web Locks 时保留单标签页内的并发合并。对话发送与恢复订阅同样遵守该规则，续期期间取消的对话不会重发。
 - Web 冷启动先独立确认当前用户，再加载简历概览；概览或其他业务数据返回普通 `5xx` 时保留已经确认的登录态并显示加载错误，只有当前用户为空或后续请求明确返回 `401` 才进入访客状态。
 - 用户中心的保存、上传和个人画像提交反馈统一通过页面根层在视口上方居中展示，不使用占据业务卡片或编辑弹窗位置的局部错误块，并在 3 秒后自动消失；首次页面加载失败保留完整错误状态和重试入口。

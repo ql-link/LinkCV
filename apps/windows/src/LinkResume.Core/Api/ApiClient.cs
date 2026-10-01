@@ -7,10 +7,7 @@ using LinkResume.Core.Models;
 
 namespace LinkResume.Core.Api;
 
-/// <summary>
-/// 业务数据入口。界面只依赖这个接口：现在用 <see cref="MockApiClient"/>，
-/// 后端补上 desktop 渠道（Bearer 会话）后换成 <see cref="HttpApiClient"/>，界面不用改。
-/// </summary>
+/// <summary>正式 App 仍注入 Mock；HTTP 实现须在系统安全凭据库接入后启用。</summary>
 public interface IApiClient
 {
     Task<User?> CurrentUserAsync(CancellationToken ct = default);
@@ -63,44 +60,55 @@ public sealed class MockApiClient(bool signedIn = false) : IApiClient
         [property: System.Text.Json.Serialization.JsonPropertyName("templates")] List<ResumeTemplate> Templates);
 }
 
-/// <summary>令牌存储。正式实现走 Windows Credential Locker（PasswordVault），desktop 渠道落地时补。</summary>
-public interface ITokenStore
+public interface IDesktopTransport
 {
-    string? AccessToken { get; }
-    void Clear();
+    Uri Origin { get; }
+    Task<JsonNode> SendAsync(string path, Dictionary<string, string>? body = null, string? access = null, CancellationToken ct = default);
 }
 
-/// <summary>
-/// 真实后端客户端（骨架）。凭据载体与其他端的区别：
-/// Web 用 HttpOnly Cookie，小程序用 Bearer，桌面用 Bearer + 系统凭据库保存 refresh（channel=desktop，需后端新增）。
-/// </summary>
-public sealed class HttpApiClient(HttpClient http, ITokenStore tokens) : IApiClient
+public sealed class DesktopTransport : IDesktopTransport, IDisposable
 {
-    public async Task<User?> CurrentUserAsync(CancellationToken ct = default)
-        => (await SendAsync("/api/auth/me", ct))["user"]?.Deserialize<User>();
+    public Uri Origin { get; }
+    private readonly HttpClient _http;
 
-    public Task<User> SignInAsync(string email, string password, CancellationToken ct = default)
-        => throw new ApiException(HttpStatusCode.NotImplemented, "DESKTOP_CHANNEL_NOT_AVAILABLE");
-
-    public Task SignOutAsync(CancellationToken ct = default)
+    public DesktopTransport(Uri origin, bool allowLocalHttp = false)
     {
-        tokens.Clear();
-        return Task.CompletedTask;
+        if (!origin.IsAbsoluteUri || origin.UserInfo.Length != 0 || origin.Query.Length != 0 || origin.Fragment.Length != 0 || origin.AbsolutePath != "/" ||
+            (origin.Scheme != "https" && !(allowLocalHttp && origin.Scheme == "http" && new[] { "localhost", "127.0.0.1", "[::1]" }.Contains(origin.Host))))
+            throw new ArgumentException("A trusted API origin is required", nameof(origin));
+        Origin = origin;
+        _http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = origin };
     }
 
-    public async Task<IReadOnlyList<ResumeTemplate>> ListResumeTemplatesAsync(CancellationToken ct = default)
-        => (await SendAsync("/api/resume-templates", ct))["templates"]?.Deserialize<List<ResumeTemplate>>() ?? [];
-
-    /// <summary>统一请求管线：注入 Bearer 与 X-Request-ID，按后端 {error: CODE} 约定转换错误。401 后的 refresh 轮换待 desktop 渠道补。</summary>
-    private async Task<JsonNode> SendAsync(string path, CancellationToken ct)
+    public async Task<JsonNode> SendAsync(string path, Dictionary<string, string>? body = null, string? access = null, CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (!path.StartsWith("/api/", StringComparison.Ordinal) || path.Contains("..") || path.Contains('?') || path.Contains('#'))
+            throw new ArgumentException("Invalid API path", nameof(path));
+        using var request = new HttpRequestMessage(body is null ? HttpMethod.Get : HttpMethod.Post, path);
         request.Headers.Add("X-Request-ID", Guid.NewGuid().ToString());
-        if (tokens.AccessToken is { } token) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await http.SendAsync(request, ct);
-        var body = await response.Content.ReadFromJsonAsync<JsonNode>(ct) ?? new JsonObject();
+        if (access is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", access);
+        if (body is not null) request.Content = JsonContent.Create(body);
+        using var response = await _http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
-            throw new ApiException(response.StatusCode, body["error"]?.GetValue<string>() ?? $"HTTP_{(int)response.StatusCode}");
-        return body;
+        {
+            string? code = null;
+            try { code = (await response.Content.ReadFromJsonAsync<JsonNode>(ct))?["error"]?.GetValue<string>(); }
+            catch (JsonException) { }
+            throw new ApiException(response.StatusCode, code ?? $"HTTP_{(int)response.StatusCode}");
+        }
+        return await response.Content.ReadFromJsonAsync<JsonNode>(ct) ?? throw new JsonException("Missing response");
     }
+
+    public void Dispose() => _http.Dispose();
+}
+
+public sealed class HttpApiClient(LinkResume.Core.Session.SessionCoordinator coordinator) : IApiClient
+{
+    public LinkResume.Core.Session.SessionCoordinator Coordinator { get; } = coordinator;
+    public Task<User?> CurrentUserAsync(CancellationToken ct = default) => Coordinator.RestoreAsync(ct);
+    public Task<User> SignInAsync(string email, string password, CancellationToken ct = default)
+        => throw new ApiException(HttpStatusCode.MethodNotAllowed, "DESKTOP_WECHAT_LOGIN_REQUIRED");
+    public Task SignOutAsync(CancellationToken ct = default) => Coordinator.SignOutAsync();
+    public async Task<IReadOnlyList<ResumeTemplate>> ListResumeTemplatesAsync(CancellationToken ct = default)
+        => (await Coordinator.RequestAsync("/api/resume-templates", ct))["templates"]?.Deserialize<List<ResumeTemplate>>() ?? [];
 }

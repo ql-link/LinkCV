@@ -24,7 +24,7 @@
 
 ## 后端适配
 
-`apps/backend/src/linkresume/modules/miniprogram/` 提供本人简历列表/详情、PDF、PNG 预览和本人资料适配；登录协议仍由 `modules/identity/wechat_routes.py` 和统一 session 服务负责。小程序 Bearer 依赖只允许访问明确白名单接口，不能复用 Web Cookie 权限面。启用管理员与普通账号都可使用这些本人业务接口和扫码确认能力，停用账号仍会被拒绝；扫码确认会建立独立的 Web Cookie 与小程序 Bearer 会话。
+`apps/backend/src/linkresume/modules/miniprogram/` 提供本人简历列表/详情、PDF、PNG 预览和本人资料适配；登录协议仍由 `modules/identity/wechat_routes.py` 和统一 session 服务负责。小程序 Bearer 依赖只允许访问明确白名单接口，不能复用 Web Cookie 权限面。启用管理员与普通账号都可使用这些本人业务接口和扫码确认能力，停用账号仍会被拒绝；Web 目标扫码确认后，页面继续建立独立的小程序 Bearer 会话；desktop 目标仅确认账号，不领取桌面凭据、不自动建立小程序会话。确认页按服务端 `login_target/platform` 区分网页、Mac 和 Windows，已确认不等于桌面已领取。
 
 | 入口 | 职责 |
 | --- | --- |

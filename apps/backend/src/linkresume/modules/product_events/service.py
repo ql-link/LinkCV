@@ -28,7 +28,7 @@ RegistrationMethod = Literal["wechat_qr", "wechat_miniprogram", "email"]
 ResumeSource = Literal["template", "import", "copy", "translate"]
 ProposalEntry = Literal["assistant", "editor", "unknown"]
 AnswerMode = Literal["text", "voice"]
-ExportChannel = Literal["web", "miniprogram"]
+ExportChannel = Literal["web", "miniprogram", "desktop"]
 
 # Property whitelist per event; values are enums or business ids, never user content.
 ALLOWED_PROPERTIES: dict[str, frozenset[str]] = {

@@ -9,6 +9,7 @@ import secrets
 
 import redis
 from fastapi import APIRouter, Depends, Form, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -93,6 +94,25 @@ redis.call('HSET', KEYS[1], 'web_sid', ARGV[2])
 redis.call('EXPIRE', KEYS[1], ARGV[3])
 return previous
 """
+
+
+def _bounded_desktop_scene_script(script: str, expired_result: str) -> str:
+    guard = """
+local desktop = redis.call('HGET', KEYS[1], 'target_channel') == 'desktop'
+local deadline = tonumber(redis.call('HGET', KEYS[1], 'expires_at') or '0')
+if desktop and deadline <= tonumber(redis.call('TIME')[1]) then return EXPIRED_RESULT end
+""".replace("EXPIRED_RESULT", expired_result)
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[3])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[3]) end")
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[4])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[4]) end")
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[2])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[2]) end")
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[1])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[1]) end")
+    return guard + script
+
+
+CLAIM_SCENE_SCRIPT = _bounded_desktop_scene_script(CLAIM_SCENE_SCRIPT, "'missing'")
+FINALIZE_SCENE_SCRIPT = _bounded_desktop_scene_script(FINALIZE_SCENE_SCRIPT, "0")
+RESTORE_SCENE_SCRIPT = _bounded_desktop_scene_script(RESTORE_SCENE_SCRIPT, "0")
+CANCEL_SCENE_SCRIPT = _bounded_desktop_scene_script(CANCEL_SCENE_SCRIPT, "'missing'")
 
 
 class WeChatQrcodeResponse(BaseModel):
@@ -284,7 +304,19 @@ def login_status(
     db: Session = Depends(get_db),
 ) -> WeChatStatusResponse:
     key = scene_key(scene)
-    state = redis_client.hget(key, "state")
+    record = redis_client.hgetall(key)
+    if record.get("target_channel") == "desktop":
+        import time
+
+        state = record.get("state", "expired")
+        if float(record.get("expires_at", 0)) <= time.time():
+            state = "expired"
+        mapped = {"processing": "pending", "confirmed": "success", "consumed": "success"}.get(state, state)
+        return JSONResponse(
+            {"status": mapped, "user": None, "login_target": "desktop", "platform": record.get("platform")},
+            headers={"Cache-Control": "no-store"},
+        )
+    state = record.get("state")
     if state is None:
         return WeChatStatusResponse(status="expired")
     if state in {"pending", "processing"}:

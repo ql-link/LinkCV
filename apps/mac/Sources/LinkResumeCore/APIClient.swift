@@ -1,7 +1,6 @@
 import Foundation
 
-/// 业务数据入口。界面只依赖这个协议：现在用 MockAPIClient 跑通，
-/// 后端补上 desktop 渠道（Bearer 会话）后换成 HTTPAPIClient，界面不用改。
+/// 正式 App 仍注入 Mock；HTTP 实现须在系统安全凭据库接入后启用。
 public protocol APIClient: Sendable {
     func currentUser() async throws -> User?
     func signIn(email: String, password: String) async throws -> User

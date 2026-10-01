@@ -1,50 +1,53 @@
 import Foundation
 
-/// 真实后端客户端（骨架）。与 Web 的区别只在凭据载体：
-///   Web     HttpOnly Cookie（channel=web）
-///   小程序  Bearer + JSON refresh（channel=miniprogram）
-///   桌面    Bearer + Keychain 保存 refresh（channel=desktop，需后端新增，见 apps/native/README.md）
-/// 目前后端没有 desktop 渠道，所以这里只实现请求管线，登录相关方法直接报未实现。
-public struct HTTPAPIClient: APIClient {
-    public let baseURL: URL
-    private let tokens: TokenStore
+private final class RedirectBlocker: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}
+
+protocol DesktopRequesting: Sendable {
+    var origin: URL { get }
+    func send<T: Decodable & Sendable>(_ type: T.Type, path: String, body: [String: String]?, access: String?) async throws -> T
+}
+
+extension DesktopRequesting {
+    func send<T: Decodable & Sendable>(_ type: T.Type, path: String, body: [String: String]? = nil) async throws -> T {
+        try await send(type, path: path, body: body, access: nil)
+    }
+}
+
+final class DesktopTransport: DesktopRequesting {
+    let origin: URL
     private let session: URLSession
 
-    public init(baseURL: URL, tokens: TokenStore, session: URLSession = .shared) {
-        self.baseURL = baseURL
-        self.tokens = tokens
-        self.session = session
-    }
-
-    public func currentUser() async throws -> User? {
-        struct Envelope: Decodable { let user: User? }
-        return try await request(Envelope.self, path: "/api/auth/me").user
-    }
-
-    public func signIn(email: String, password: String) async throws -> User {
-        throw APIError.server(status: 501, code: "DESKTOP_CHANNEL_NOT_AVAILABLE")
-    }
-
-    public func signOut() async throws {
-        try tokens.clear()
-    }
-
-    public func listResumeTemplates() async throws -> [ResumeTemplate] {
-        struct Envelope: Decodable { let templates: [ResumeTemplate] }
-        return try await request(Envelope.self, path: "/api/resume-templates").templates
-    }
-
-    /// 统一请求管线：注入 Bearer 与 X-Request-ID，按后端 `{error: CODE}` 约定转换错误。
-    /// 401 后的 refresh 轮换等 desktop 渠道落地后在这里补。
-    func request<T: Decodable>(_ type: T.Type, path: String, method: String = "GET", body: Data? = nil) async throws -> T {
-        var request = URLRequest(url: baseURL.appending(path: path))
-        request.httpMethod = method
-        request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-ID")
-        if let token = try tokens.accessToken() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    init(origin: URL, allowLocalHTTP: Bool = false, protocolClasses: [AnyClass]? = nil) throws {
+        guard let host = origin.host, !host.isEmpty,
+              origin.user == nil, origin.password == nil, origin.query == nil, origin.fragment == nil,
+              origin.path.isEmpty || origin.path == "/",
+              origin.scheme == "https" || (allowLocalHTTP && origin.scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(origin.host ?? "")) else {
+            throw APIError.invalidResponse
         }
+        self.origin = origin.appendingPathComponent("")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        configuration.protocolClasses = protocolClasses
+        session = URLSession(configuration: configuration, delegate: RedirectBlocker(), delegateQueue: nil)
+    }
+
+    deinit { session.invalidateAndCancel() }
+
+    func send<T: Decodable & Sendable>(_ type: T.Type, path: String, body: [String: String]? = nil, access: String? = nil) async throws -> T {
+        guard path.hasPrefix("/api/"), !path.contains(".."), !path.contains("?"), !path.contains("#") else { throw APIError.invalidResponse }
+        var request = URLRequest(url: origin.appending(path: path))
+        request.httpMethod = body == nil ? "GET" : "POST"
+        request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Request-ID")
+        if let access { request.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization") }
         if let body {
-            request.httpBody = body
+            request.httpBody = try JSONEncoder().encode(body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await session.data(for: request)
@@ -58,8 +61,47 @@ public struct HTTPAPIClient: APIClient {
     }
 }
 
-/// 令牌存储抽象。正式实现走 Keychain（KeychainTokenStore，desktop 渠道落地时补），测试用内存实现。
-public protocol TokenStore: Sendable {
-    func accessToken() throws -> String?
-    func clear() throws
+public struct DesktopCapabilities: Decodable, Sendable {
+    public let wechat_login_enabled: Bool
+    public let session_protocol: Int
+}
+
+public struct DesktopQRCode: Decodable, Sendable {
+    public let scene: String
+    public let poll_token: String
+    public let qr_base64: String
+    public let expires_in: Int
+    public let poll_interval_seconds: Int
+}
+
+struct DesktopTokens: Decodable, Sendable {
+    let user: User
+    let access_token: String
+    let refresh_token: String
+    let expires_in: Int
+    let session_protocol: Int
+}
+
+public struct HTTPAPIClient: APIClient {
+    public let coordinator: SessionCoordinator
+
+    public init(baseURL: URL, tokens: any TokenStore, allowLocalHTTP: Bool = false) throws {
+        coordinator = SessionCoordinator(transport: try DesktopTransport(origin: baseURL, allowLocalHTTP: allowLocalHTTP), tokens: tokens)
+    }
+
+    init(coordinator: SessionCoordinator) { self.coordinator = coordinator }
+
+    public func capabilities() async throws -> DesktopCapabilities { try await coordinator.capabilities() }
+    public func beginLogin(clientVersion: String) async throws -> DesktopLoginChallenge { try await coordinator.beginLogin(clientVersion: clientVersion) }
+    public func loginStatus(_ challenge: DesktopLoginChallenge) async throws -> String { try await coordinator.loginStatus(challenge) }
+    public func completeLogin(_ challenge: DesktopLoginChallenge) async throws -> User { try await coordinator.completeLogin(challenge) }
+    public func currentUser() async throws -> User? { try await coordinator.restore() }
+    public func signIn(email: String, password: String) async throws -> User {
+        throw APIError.server(status: 405, code: "DESKTOP_WECHAT_LOGIN_REQUIRED")
+    }
+    public func signOut() async throws { try await coordinator.signOut() }
+    public func listResumeTemplates() async throws -> [ResumeTemplate] {
+        struct Envelope: Decodable, Sendable { let templates: [ResumeTemplate] }
+        return try await coordinator.request(Envelope.self, path: "/api/resume-templates").templates
+    }
 }
