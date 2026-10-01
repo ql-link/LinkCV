@@ -198,6 +198,10 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run test:extension`              | 插件 DOM 提取与 API 客户端测试                                       |
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
+| `npm run build:native-renderer`      | 生成原生客户端离线纸面 `paper.html`，并复制进 Mac 与 Windows 资源目录 |
+| `npm run dev:mac`                     | 构建并启动 SwiftUI Mac 原生客户端（mock 数据），见 `apps/native/README.md` |
+| `npm run test:mac`                    | Mac 原生客户端 Core 单测，兼容只装 Command Line Tools 的环境         |
+| `npm run test:windows-core`           | Windows 原生客户端 Core 单测（需 .NET 10 SDK，macOS 也可运行）       |
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |
 | `npm run test:backend:integration`    | 后端隔离 HTTP 集成测试                                               |
 | `npm run test:backend`                | 全部后端和仓库工具测试                                               |

@@ -1,0 +1,14 @@
+<Page
+    x:Class="LinkResume.App.Views.SignInPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 需后端：desktop 渠道就绪后换成微信扫码 + Dev 环境密码登录；目前任意邮箱密码进入 mock -->
+    <StackPanel Width="360" Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <TextBlock Text="登录 LinkResume" Style="{StaticResource TitleTextBlockStyle}" />
+        <TextBox x:Name="EmailBox" Header="邮箱" Text="v3-preview@example.com" />
+        <PasswordBox x:Name="PasswordBox" Header="密码" />
+        <TextBlock Text="{x:Bind Session.ErrorMessage, Mode=OneWay}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+        <Button Content="登录" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Click="OnSignIn" />
+        <TextBlock Text="当前为本地演示数据，登录不会连接服务器" Foreground="{StaticResource LinkResumeMutedBrush}" Style="{StaticResource CaptionTextBlockStyle}" />
+    </StackPanel>
+</Page>

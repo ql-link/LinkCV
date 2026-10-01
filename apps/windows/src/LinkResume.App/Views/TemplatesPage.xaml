@@ -1,0 +1,26 @@
+<Page
+    x:Class="LinkResume.App.Views.TemplatesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:models="using:LinkResume.Core.Models"
+    xmlns:paper="using:LinkResume.App.Paper">
+    <!-- 原生版示范页，与 Mac 的 TemplatesView 同构：左侧列表，右侧舞台上的 A4 纸面 -->
+    <Grid ColumnDefinitions="280,*">
+        <ListView x:Name="TemplateList" SelectionChanged="OnTemplateChanged" Padding="0,8">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="models:ResumeTemplate">
+                    <StackPanel Padding="0,6">
+                        <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock Text="{x:Bind Description}" Foreground="{StaticResource LinkResumeMutedBrush}" TextWrapping="Wrap" MaxLines="2" Style="{StaticResource CaptionTextBlockStyle}" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+        <Grid Grid.Column="1" Background="{StaticResource LinkResumeStageBrush}" Padding="32">
+            <!-- Viewbox 负责把 794×1123 的 A4 纸面等比缩放进舞台 -->
+            <Viewbox Stretch="Uniform">
+                <paper:ResumePaperView x:Name="Paper" Width="794" Height="1123" />
+            </Viewbox>
+        </Grid>
+    </Grid>
+</Page>
