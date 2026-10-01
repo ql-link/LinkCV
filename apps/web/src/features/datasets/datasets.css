@@ -26,7 +26,7 @@
 .ds-section-head { display: flex; height: 16px; align-items: center; justify-content: space-between; margin: 23px 0 12px; }
 .ds-section-head strong { font-size: 13px; font-weight: 500; }
 .ds-section-head span { color: var(--v3-fnt); font-size: 11.5px; }
-.ds-folder-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(273px, 1fr)); gap: 20px; }
 .ds-folder { position: relative; height: 172px; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .ds-folder:hover { border-color: var(--v3-sk2); box-shadow: 0 6px 20px rgb(0 0 0 / 6%); }
 .ds-folder:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }

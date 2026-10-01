@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Brand, PageLoading } from "@/components/ui";
 import "./admin.css";
-import { useAdminViewportScale } from "./viewportScale";
 
 import {
   api,
@@ -17,7 +16,6 @@ export function AdminLoginPage({ next = null }: { next?: string | null }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   // Same 1392-width zoom as the console so the card keeps the design's proportions on large screens.
-  useAdminViewportScale();
 
   useEffect(() => {
     api

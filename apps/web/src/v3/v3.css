@@ -34,8 +34,10 @@
   --v3-purple-soft: #f3eefa;
   --v3-sk: #ececea;
   --v3-sk2: #dcdcd8;
-  /* 工作区正文列：最宽约为窗口的 68%（不小于 1200、不超过 1440）；两侧边距随窗口在 24–56 之间变化（对话页另用 720 列） */
-  --v3-page-max: clamp(1200px, 68vw, 1440px);
+  /* 组件固定、布局伸缩：1440 画板的正文列是 860（占内容卡 1151 的 ≈74.7%）。1440 屏上正文列等于设计稿 860，更宽的屏幕每多
+     1px 分给正文列 .747px（同设计稿比例），不超过 1200；更窄时保持 860。字号、按钮、卡片高度等组件保持设计稿 1:1，不做整页缩放
+     （对话页另用 720 列） */
+  --v3-page-max: clamp(860px, calc(860px + (100vw - 1440px) * .747), 1200px);
   --v3-gutter: clamp(24px, 4vw, 56px);
   --v3-sans: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   --v3-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
