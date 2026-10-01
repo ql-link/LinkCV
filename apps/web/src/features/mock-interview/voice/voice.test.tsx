@@ -1,291 +1,226 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mockInterviewApi, resetMockInterviewStore, type MockInterviewDetail } from "../mockInterviewApi";
 import { AnswerModePicker } from "./AnswerModePicker";
 import { VoiceInputButton } from "./VoiceInputButton";
 import { VoiceReportPage, voiceMetricSpecs } from "./VoiceReportPage";
 import { VoiceSessionPage } from "./VoiceSessionPage";
-
-vi.mock("@/v3/Shell", () => ({
-  V3Shell: ({ children }: { children: React.ReactNode }) => <div className="v3">{children}</div>,
-}));
-
-const navigate = vi.fn();
-vi.mock("@/routing", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/routing")>();
-  return { ...actual, navigateTo: (path: string) => navigate(path) };
-});
-
-// 虚构麦克风：getUserMedia 返回带 stop() 的假音轨；jsdom 没有 AudioContext，所以音量计量关闭
-function installMicrophone(mode: "grant" | "deny" | "none") {
-  const stop = vi.fn();
-  const getUserMedia = vi.fn(async () => {
-    if (mode === "deny") throw Object.assign(new Error("denied"), { name: "NotAllowedError" });
-    return { getTracks: () => [{ stop }] } as unknown as MediaStream;
-  });
-  const enumerateDevices = vi.fn(async () => [{ kind: "audioinput", deviceId: "default", label: "Default - 测试麦克风", groupId: "g" }] as MediaDeviceInfo[]);
-  Object.defineProperty(navigator, "mediaDevices", {
-    configurable: true,
-    value: mode === "none" ? undefined : { getUserMedia, enumerateDevices },
-  });
-  return { getUserMedia, stop };
-}
-
-async function voiceInterview(): Promise<MockInterviewDetail> {
-  const { items } = await mockInterviewApi.list();
-  const voice = items.find((item) => item.answer_mode === "voice" && item.status === "completed")!;
-  return (await mockInterviewApi.get(voice.id)).mock_interview;
-}
-
-async function startedVoiceInterview(): Promise<MockInterviewDetail> {
-  const { mock_interview } = await mockInterviewApi.create({ resume_id: "1", answer_mode: "voice", display: { company_name: "示例科技", job_title: "后端开发", stage_label: "二面" } });
-  await act(async () => { await vi.advanceTimersByTimeAsync(2600); });
-  return (await mockInterviewApi.get(mock_interview.id)).mock_interview;
-}
+import { completedVoice, interview, question } from "../__tests__/fixtures";
+import type { MockTurnEvent } from "../mockInterviewApi";
+const mocks = vi.hoisted(() => ({ get: vi.fn(), speechCapability: vi.fn(), speechPlayback: vi.fn(), answer: vi.fn(), skip: vi.fn(), retryReply: vi.fn(), finish: vi.fn(), abandon: vi.fn(), repeat: vi.fn(), correctTranscripts: vi.fn(), reEvaluate: vi.fn(), editTranscript: vi.fn(), deleteRecordings: vi.fn(), recording: vi.fn(), openSpeech: vi.fn(), navigate: vi.fn() }));
+vi.mock("../mockInterviewApi", async (original) => ({ ...await original<typeof import("../mockInterviewApi")>(), mockInterviewApi: mocks }));
+vi.mock("@/v3/Shell", () => ({ V3Shell: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
+vi.mock("@/routing", async (original) => ({ ...await original<typeof import("@/routing")>(), navigateTo: mocks.navigate }));
+const mic = { permission: "granted", devices: [{ id: "default", label: "测试麦克风" }], deviceId: "default", deviceLabel: "测试麦克风", level: .2, history: [0, .2], metering: true, start: vi.fn(), release: vi.fn(), selectDevice: vi.fn(), markVoice: vi.fn(), silentForMs: () => 0, currentLevel: () => .2, startCapture: vi.fn(), stopCapture: vi.fn() };
+vi.mock("./useMicrophone", async (original) => ({ ...await original<typeof import("./useMicrophone")>(), useMicrophone: () => mic }));
+vi.mock("./speechTransport", async (original) => ({ ...await original<typeof import("./speechTransport")>(), openSpeech: mocks.openSpeech, SpeechPlayback: class { enqueue = vi.fn(async () => undefined); drain = vi.fn(async () => undefined); stop = vi.fn(); } }));
+const session = { push: vi.fn(), stop: vi.fn(), cancel: vi.fn() };
+const final = { text: "我用缓存减少数据库读取压力。", session_id: "a".repeat(32), duration_ms: 1000, partial: false };
+let partial: ((text: string) => void) | undefined;
+async function* events(...items: MockTurnEvent[]) { yield* items; }
 
 beforeEach(() => {
-  resetMockInterviewStore();
-  navigate.mockReset();
+  vi.resetAllMocks(); mic.permission = "granted";
+  mic.start.mockResolvedValue("granted"); mic.stopCapture.mockResolvedValue(undefined); mic.startCapture.mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: vi.fn() } });
+  mocks.speechCapability.mockResolvedValue({ stt: true, tts: true });
+  mocks.get.mockResolvedValue({ mock_interview: interview({ answer_mode: "voice" }) });
+  mocks.speechPlayback.mockResolvedValue(new Blob(["audio"], { type: "audio/mpeg" }));
+  mocks.openSpeech.mockImplementation(async (_id, _qid, _purpose, callback) => { partial = callback; return session; });
+  session.stop.mockResolvedValue(final);
+  mocks.finish.mockResolvedValue({ mock_interview: interview({ status: "evaluating" }) });
+  mocks.abandon.mockResolvedValue({ mock_interview: interview({ status: "abandoned" }) });
 });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-afterEach(() => {
-  vi.useRealTimers();
-});
-
-describe("AnswerModePicker", () => {
-  it("切换作答方式并显示对应说明", () => {
-    installMicrophone("grant");
-    const onChange = vi.fn();
-    const { rerender } = render(<AnswerModePicker value="voice" onChange={onChange} speechAvailable />);
-    expect(screen.getByText(/识别稿提交后不能修改/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("radio", { name: "文字" }));
-    expect(onChange).toHaveBeenCalledWith("text");
-    rerender(<AnswerModePicker value="text" onChange={onChange} speechAvailable />);
-    expect(screen.getByRole("radio", { name: "文字" })).toHaveAttribute("aria-checked", "true");
-  });
-
-  it("语音服务未开启时禁用语音面试并说明原因", () => {
-    installMicrophone("grant");
+describe("语音界面的 API 消费", () => {
+  it("服务未开启时禁用语音模式", () => {
     render(<AnswerModePicker value="text" onChange={vi.fn()} speechAvailable={false} />);
     expect(screen.getByRole("radio", { name: /语音面试/ })).toBeDisabled();
-    expect(screen.getByText(/语音服务暂未开启/)).toBeInTheDocument();
   });
-
-  it("浏览器不支持录音时也禁用语音面试", () => {
-    installMicrophone("none");
-    render(<AnswerModePicker value="text" onChange={vi.fn()} speechAvailable />);
-    expect(screen.getByRole("radio", { name: /语音面试/ })).toBeDisabled();
-    expect(screen.getByText(/当前浏览器不支持录音/)).toBeInTheDocument();
-  });
-});
-
-describe("VoiceInputButton", () => {
-  it("录音 → 停止 → 识别后把文字和一次性会话交给输入框", async () => {
-    installMicrophone("grant");
-    const onText = vi.fn();
-    const interview = await voiceInterview();
-    render(<VoiceInputButton interviewId={interview.id} questionId="q1" onText={onText} />);
-    const mic = await screen.findByRole("button", { name: "语音输入" });
-    await waitFor(() => expect(mic).toBeEnabled());
-    fireEvent.click(mic);
+  it("语音输入实际开启识别连接与 PCM 采集，停止后传回一次性会话", async () => {
+    const onText = vi.fn(); render(<VoiceInputButton interviewId="10" questionId="101" onText={onText} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "语音输入" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
     fireEvent.click(await screen.findByRole("button", { name: "停止录音" }));
-    expect(screen.getByText("正在识别最后一段…")).toBeInTheDocument();
-    await waitFor(() => expect(onText).toHaveBeenCalledTimes(1), { timeout: 3000 });
-    const [text, sessionId] = onText.mock.calls[0];
-    expect(text.length).toBeGreaterThan(10);
-    expect(sessionId).toMatch(/^[0-9a-z]{32}$/);
-    expect(screen.getByText(/^语音输入 · /)).toBeInTheDocument();
+    await waitFor(() => expect(onText).toHaveBeenCalledWith(final.text, final.session_id));
+    expect(mocks.openSpeech).toHaveBeenCalledWith("10", "101", "voice_input", expect.any(Function), expect.any(AbortSignal));
+    expect(mic.startCapture).toHaveBeenCalledWith(session.push);
+    expect(mic.stopCapture).toHaveBeenCalled();
   });
-
-  it("Esc 取消录音，不产生文字", async () => {
-    const { stop } = installMicrophone("grant");
-    const onText = vi.fn();
-    render(<VoiceInputButton interviewId="1" questionId="q1" onText={onText} />);
-    const mic = await screen.findByRole("button", { name: "语音输入" });
-    await waitFor(() => expect(mic).toBeEnabled());
-    fireEvent.click(mic);
+  it("识别中断保留部分文字，取消录音不提交", async () => {
+    const onText = vi.fn(); session.stop.mockRejectedValue(new Error("MOCK_INTERVIEW_SPEECH_FAILED"));
+    render(<VoiceInputButton interviewId="10" questionId="101" onText={onText} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "语音输入" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    await screen.findByRole("button", { name: "停止录音" });
+    partial?.("已识别部分"); fireEvent.click(screen.getByRole("button", { name: "停止录音" }));
+    await waitFor(() => expect(onText).toHaveBeenCalledWith("已识别部分"));
+    fireEvent.click(screen.getByRole("button", { name: "重新录音" }));
     await screen.findByRole("button", { name: "停止录音" });
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(await screen.findByText("打字或说话都可以，随时切换")).toBeInTheDocument();
-    expect(stop).toHaveBeenCalled();
-    expect(onText).not.toHaveBeenCalled();
+    expect(session.cancel).toHaveBeenCalled(); expect(onText).toHaveBeenCalledTimes(1);
   });
-
-  it("权限被拒时提示授权", async () => {
-    installMicrophone("deny");
-    render(<VoiceInputButton interviewId="1" questionId="q1" onText={vi.fn()} />);
-    const mic = await screen.findByRole("button", { name: "语音输入" });
-    await waitFor(() => expect(mic).toBeEnabled());
-    fireEvent.click(mic);
-    expect(await screen.findByText("麦克风权限被拒绝，请在浏览器地址栏允许后重试")).toBeInTheDocument();
+  it("换题或离开时关闭旧识别通道，晚到的结果不写入新题", async () => {
+    let resolve!: (value: typeof final) => void;
+    session.stop.mockImplementation(() => new Promise((done) => { resolve = done; }));
+    const onText = vi.fn(); const view = render(<VoiceInputButton interviewId="10" questionId="101" onText={onText} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "语音输入" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
+    fireEvent.click(await screen.findByRole("button", { name: "停止录音" }));
+    await waitFor(() => expect(session.stop).toHaveBeenCalled());
+    view.rerender(<VoiceInputButton interviewId="10" questionId="102" onText={onText} />);
+    await act(async () => { resolve(final); });
+    expect(onText).not.toHaveBeenCalled(); expect(session.cancel).toHaveBeenCalled();
   });
-
-  it("浏览器不支持录音时按钮不可用", () => {
-    installMicrophone("none");
-    render(<VoiceInputButton interviewId="1" questionId="q1" onText={vi.fn()} />);
-    expect(screen.getByText(/当前浏览器不支持录音/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "语音输入" })).toBeDisabled();
-  });
-});
-
-describe("VoiceSessionPage", () => {
-  it("设备检测授权后开始，打断播报、作答并提交识别稿，进入下一轮", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { getUserMedia } = installMicrophone("grant");
-    const interview = await startedVoiceInterview();
-    render(<VoiceSessionPage interview={interview} onChanged={vi.fn()} />);
-    expect(screen.getByText("开始前检查一下设备")).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("已授权")).toBeInTheDocument());
-    expect(getUserMedia).toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "开始语音面试" }));
-    expect(screen.getByText("正在提问")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "打断并作答" }));
-    expect(screen.getByText(/^作答中 /)).toBeInTheDocument();
-    expect(screen.getByText("不会因静音自动提交")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "我说完了" }));
-    expect(screen.getByText("正在识别并提交")).toBeInTheDocument();
-    expect(screen.getByText("识别稿提交后不能修改，可以在评估报告中修正并重新评估")).toBeInTheDocument();
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    await waitFor(() => expect(screen.getByText(/第 1 \/ 5 题 · 追问 1/)).toBeInTheDocument());
-
-    const stored = (await mockInterviewApi.get(interview.id)).mock_interview;
-    const first = stored.questions.find((question) => question.kind === "main")!;
-    expect(first.answer_status).toBe("answered");
-    expect(first.answer_source).toBe("voice");
-
-    // 结束并评估需要确认；取消后仍在面试中，确认后进入报告
-    fireEvent.click(screen.getByRole("button", { name: "结束并评估" }));
-    const dialog = screen.getByRole("dialog", { name: "结束并生成评估？" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
-    expect((await mockInterviewApi.get(interview.id)).mock_interview.status).toBe("in_progress");
-    fireEvent.click(screen.getByRole("button", { name: "结束并评估" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "结束并生成评估？" })).getByRole("button", { name: "结束并评估" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/mock-interviews/${interview.id}/report`));
-  });
-
-  it("麦克风权限被拒绝时不能开始，并给出授权指引", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    installMicrophone("deny");
-    const interview = await startedVoiceInterview();
-    render(<VoiceSessionPage interview={interview} onChanged={vi.fn()} />);
+  it("权限拒绝给出授权指引", async () => {
+    mic.start.mockResolvedValue("denied"); render(<VoiceInputButton interviewId="10" questionId="101" onText={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "语音输入" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "语音输入" }));
     expect(await screen.findByText(/麦克风权限被拒绝/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "开始语音面试" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "重新检测" })).toBeInTheDocument();
   });
-
-  it("不方便说话时放弃本场并以文字方式重新发起", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    installMicrophone("grant");
-    const interview = await startedVoiceInterview();
-    render(<VoiceSessionPage interview={interview} onChanged={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "不方便说话？改为文字面试" }));
-    expect(navigate).not.toHaveBeenCalled();
-    fireEvent.click(within(screen.getByRole("dialog", { name: "改为文字面试？" })).getByRole("button", { name: "改为文字面试" }));
-    await waitFor(() => expect(navigate).toHaveBeenCalled());
-    const { items } = await mockInterviewApi.list();
-    expect(items.find((item) => item.id === interview.id)?.status).toBe("abandoned");
-    const created = items.find((item) => item.status === "preparing")!;
-    expect(created.answer_mode).toBe("text");
-    expect(navigate).toHaveBeenCalledWith(`/mock-interviews/${created.id}`);
-  });
-});
-
-// 虚构 AudioContext：分析器始终返回 128（无声），用于验证静音提示和整段无声判为识别失败
-function installSilentAudio() {
-  class FakeContext {
-    createAnalyser() { return { fftSize: 1024, connect() {}, getByteTimeDomainData(buffer: Uint8Array) { buffer.fill(128); } }; }
-    createMediaStreamSource() { return { connect() {} }; }
-    close() { return Promise.resolve(); }
-  }
-  vi.stubGlobal("AudioContext", FakeContext);
-}
-
-describe("VoiceSessionPage · 静音与识别失败", () => {
-  afterEach(() => { vi.unstubAllGlobals(); });
-
-  it("静音 8 秒提示「还在思考吗」，不自动提交；整段无声判为识别失败并可重新作答", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    installMicrophone("grant");
-    installSilentAudio();
-    const interview = await startedVoiceInterview();
-    render(<VoiceSessionPage interview={interview} onChanged={vi.fn()} />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "开始语音面试" })).toBeEnabled());
+  it("设备试音请求后端，作答发送 voice_answer 会话并进入下一轮", async () => {
+    const next = question({ id: "102", kind: "follow_up", parent_id: "101", sequence_no: 2, content: "如何避免缓存穿透？" });
+    mocks.answer.mockImplementation(() => events({ type: "answer.accepted", question_id: "101", skipped: false, lock_version: 2 }, { type: "interviewer.turn", action: "follow_up", status: "in_progress", question: next, closing_message: null, lock_version: 3 }));
+    render(<VoiceSessionPage interview={interview({ answer_mode: "voice" })} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "试听" }));
+    await waitFor(() => expect(screen.getByText("可以听到")).toBeInTheDocument());
+    expect(mocks.speechPlayback).toHaveBeenCalledWith("10", undefined, expect.any(AbortSignal));
     fireEvent.click(screen.getByRole("button", { name: "开始语音面试" }));
-    fireEvent.click(screen.getByRole("button", { name: "打断并作答" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
-    expect(screen.getByText("还在思考吗？说完请点击「我说完了」")).toBeInTheDocument();
-    expect(screen.getByText(/已静音 \d+ 秒/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "我说完了" })).toBeInTheDocument();
-
+    await waitFor(() => expect(screen.getByRole("button", { name: "我说完了" })).toBeEnabled());
+    act(() => partial?.("缓存设计的实时字幕"));
+    expect(screen.getByText("缓存设计的实时字幕")).toBeInTheDocument();
+    mocks.get.mockResolvedValue({ mock_interview: interview({ answer_mode: "voice", current_question_id: "102", lock_version: 3, questions: [question({ answer_status: "answered", answer_text: final.text }), next] }) });
     fireEvent.click(screen.getByRole("button", { name: "我说完了" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
-    expect(screen.getByText("这段语音没有识别成功。本题可以重新作答，重录不计入追问次数")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "重新作答" }));
-    expect(screen.getByRole("button", { name: "我说完了" })).toBeInTheDocument();
-    const stored = (await mockInterviewApi.get(interview.id)).mock_interview;
-    expect(stored.questions.filter((question) => question.answer_status !== "pending")).toHaveLength(0);
+    await waitFor(() => expect(mocks.answer).toHaveBeenCalledWith("10", { question_id: "101", speech_session_id: final.session_id }, expect.any(String), expect.any(AbortSignal)));
+    expect(await screen.findByText(/第 1 \/ 3 题 · 追问 1/)).toBeInTheDocument();
+    expect(mocks.openSpeech.mock.calls[0][2]).toBe("voice_answer");
+  });
+  it("麦克风尚在打开时计时从零开始，不会把未初始化的时间当作录音超时", async () => {
+    let ready!: (permission: string) => void;
+    mic.start.mockImplementation(() => new Promise((resolve) => { ready = resolve; }));
+    render(<VoiceSessionPage interview={interview({ answer_mode: "voice" })} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "开始语音面试" }));
+    expect(await screen.findByText("作答中 0:00")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "我说完了" })).toBeDisabled();
+    await act(async () => { ready("granted"); });
+    await waitFor(() => expect(screen.getByRole("button", { name: "我说完了" })).toBeEnabled());
+    expect(session.stop).not.toHaveBeenCalled();
+    expect(mocks.answer).not.toHaveBeenCalled();
+  });
+  it("一次性识别会话失效后允许重新录音，不反复提交失效会话", async () => {
+    mocks.answer.mockImplementation(async function* () { throw new Error("MOCK_INTERVIEW_SPEECH_SESSION_INVALID"); });
+    render(<VoiceSessionPage interview={interview({ answer_mode: "voice" })} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "开始语音面试" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "我说完了" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "我说完了" }));
+    fireEvent.click(await screen.findByRole("button", { name: "重新作答" }));
+    await waitFor(() => expect(mocks.openSpeech).toHaveBeenCalledTimes(2));
+    expect(mocks.answer).toHaveBeenCalledTimes(1);
+  });
+  it("跳过正在录音的题目时关闭识别通道并锁定再次作答", async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    mocks.skip.mockImplementation(async function* () {
+      await pending;
+      yield { type: "answer.accepted", question_id: "101", skipped: true, lock_version: 2 };
+      yield { type: "interviewer.turn", action: "finish", status: "evaluating", question: null, closing_message: "面试结束", lock_version: 3 };
+    });
+    render(<VoiceSessionPage interview={interview({ answer_mode: "voice" })} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "开始语音面试" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "我说完了" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "跳过此题" }));
+    await waitFor(() => expect(mocks.skip).toHaveBeenCalledWith("10", { question_id: "101" }, expect.any(String), expect.any(AbortSignal)));
+    expect(session.cancel).toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "我说完了" })).not.toBeInTheDocument();
+    await act(async () => { finish(); });
+  });
+  it("面试官生成下一题时显示 SSE 字幕，并锁定重复提交操作", async () => {
+    let resume!: () => void;
+    const continuation = new Promise<void>((resolve) => { resume = resolve; });
+    const next = question({ id: "102", sequence_no: 2, content: "如何避免缓存穿透？" });
+    mocks.answer.mockImplementation(async function* () {
+      yield { type: "answer.accepted", question_id: "101", skipped: false, lock_version: 2 };
+      yield { type: "interviewer.delta", content: next.content };
+      await continuation;
+      yield { type: "interviewer.turn", action: "next_question", status: "in_progress", question: next, closing_message: null, lock_version: 3 };
+    });
+    render(<VoiceSessionPage interview={interview({ answer_mode: "voice" })} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "开始语音面试" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "我说完了" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "我说完了" }));
+    expect(await screen.findByText(next.content)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "面试官正在回复" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "跳过此题" })).toBeDisabled();
+    await act(async () => { resume(); });
+  });
+  it("改为文字面试使用 repeat，保留后端保存的 JD 和资料设置", async () => {
+    mocks.repeat.mockResolvedValue({ mock_interview: interview({ id: "11", status: "preparing" }) });
+    render(<VoiceSessionPage interview={interview({ answer_mode: "voice" })} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "不方便说话？改为文字面试" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "改为文字面试？" })).getByRole("button", { name: "改为文字面试" }));
+    await waitFor(() => expect(mocks.repeat).toHaveBeenCalledWith("10", "text"));
+    expect(mocks.abandon).toHaveBeenCalledWith("10");
+    expect(mocks.navigate).toHaveBeenCalledWith("/mock-interviews/11");
+  });
+  it("刷新恢复已保存的回答时只重试面试官回复", async () => {
+    const saved = interview({ answer_mode: "voice", needs_reply: true, questions: [question({ answer_status: "answered", answer_text: final.text })] });
+    mocks.get.mockResolvedValue({ mock_interview: saved });
+    mocks.retryReply.mockReturnValue(events({ type: "interviewer.failed", error: "LLM_PROVIDER_ERROR" }));
+    render(<VoiceSessionPage interview={saved} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "开始语音面试" }));
+    expect(await screen.findByRole("button", { name: "重试面试官回复" })).toBeInTheDocument();
+    expect(mocks.retryReply).toHaveBeenCalled(); expect(mocks.openSpeech).not.toHaveBeenCalled();
   });
 });
 
-describe("VoiceReportPage", () => {
-  it("显示语音表现四项指标", async () => {
-    installMicrophone("grant");
-    const interview = await voiceInterview();
-    render(<VoiceReportPage interview={interview} onChanged={vi.fn()} />);
+describe("语音报告", () => {
+  it("展示语音指标，录音通过鉴权读取接口加载", async () => {
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: vi.fn(() => "blob:test-recording"), revokeObjectURL: vi.fn() }));
+    mocks.recording.mockResolvedValue(new Blob(["RIFF"], { type: "audio/wav" }));
+    render(<VoiceReportPage interview={completedVoice()} onChanged={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "语音表现" })).toBeInTheDocument();
-    expect(screen.getByLabelText(/语速 268字\/分钟，偏快/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/长停顿 4次 · 超过 3 秒，略多/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/口头禅 3.1%/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/作答时长/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Q1\s*缓存设计/ }));
+    fireEvent.click(screen.getByRole("button", { name: "播放录音" }));
+    expect(await screen.findByLabelText("回答录音")).toHaveAttribute("src", "blob:test-recording");
+    expect(mocks.recording).toHaveBeenCalledWith("10", "101");
+    fireEvent.error(screen.getByLabelText("回答录音"));
+    fireEvent.click(screen.getByRole("button", { name: "重新加载录音" }));
+    await waitFor(() => expect(mocks.recording).toHaveBeenCalledTimes(2));
   });
-
-  it("AI 修正识别稿后可在单题详情重新评估，剩余次数递减", async () => {
-    installMicrophone("grant");
-    const interview = await voiceInterview();
-    render(<VoiceReportPage interview={interview} onChanged={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "AI 修正识别稿" }));
-    expect(await screen.findByText("已修正 2 处识别错误", {}, { timeout: 3000 })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "已修正识别稿" })).toBeDisabled();
-
-    fireEvent.click(screen.getByRole("button", { name: /Q2\s*分片迁移与一致性/ }));
-    const dialog = screen.getByRole("dialog", { name: "第 2 题详情" });
-    expect(within(dialog).getByText("AI 已修正 2 处")).toBeInTheDocument();
-    expect(within(dialog).getByText("版本好")).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: "重新评估" }));
-    expect(await within(dialog).findByText("已按修正稿重新评估", {}, { timeout: 3000 })).toBeInTheDocument();
-    expect(within(dialog).getByText(/本题剩余 2 次重新评估机会/)).toBeInTheDocument();
+  it("重评用真实响应重新读取报告，并显示修正前得分", async () => {
+    const detail = completedVoice(); detail.questions[0].transcript_state = "edited";
+    const updated = completedVoice(); updated.questions[0].re_evaluate_count = 1; updated.questions[0].evaluation_history = [{ previous_score: 75, score: 80, evaluated_at: "2026-09-30T10:12:00Z" }]; updated.questions[0].evaluation!.score = 80;
+    mocks.reEvaluate.mockResolvedValue({ question_id: "101", remaining: 2, total_score: 80, previous_total_score: 75 });
+    mocks.get.mockResolvedValue({ mock_interview: updated });
+    render(<VoiceReportPage interview={detail} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Q1\s*缓存设计/ }));
+    fireEvent.click(screen.getByRole("button", { name: "重新评估" }));
+    expect(await screen.findByText("修正前 75 → 80")).toBeInTheDocument();
+    expect(mocks.get).toHaveBeenCalledWith("10");
+    fireEvent.click(screen.getByRole("button", { name: "查看修正前评估" }));
+    expect(screen.getByText(/第 1 次重新评估.*修正前 75 → 80 分/)).toBeInTheDocument();
   });
-
-  it("手动修改超过 15% 时不能保存", async () => {
-    installMicrophone("grant");
-    const interview = await voiceInterview();
-    render(<VoiceReportPage interview={interview} onChanged={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /Q1\s*调度平台的分片设计/ }));
-    const dialog = screen.getByRole("dialog", { name: "第 1 题详情" });
-    fireEvent.click(within(dialog).getAllByRole("button", { name: "手动修改" })[0]);
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "修改识别稿" }), { target: { value: "完全改写成另一段话" } });
-    expect(within(dialog).getByRole("button", { name: "保存修改" })).toBeDisabled();
-    expect(within(dialog).getByText(/最多 15%/)).toBeInTheDocument();
-  });
-
-  it("删除录音后保留文字，不再提供回放和手动修改", async () => {
-    installMicrophone("grant");
-    const interview = await voiceInterview();
-    render(<VoiceReportPage interview={interview} onChanged={vi.fn()} />);
+  it("删除录音失败保留回放，成功后仍保留回答文字", async () => {
+    mocks.deleteRecordings.mockRejectedValueOnce(new Error("MOCK_INTERVIEW_RECORDING_DELETE_FAILED"));
+    const detail = completedVoice(); const deleted = completedVoice(); deleted.recordings_deleted = true; deleted.questions[0].has_recording = false;
+    mocks.deleteRecordings.mockResolvedValueOnce({ mock_interview: deleted });
+    render(<VoiceReportPage interview={detail} onChanged={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "删除本场录音" }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "删除本场录音？" })).getByRole("button", { name: "删除录音" }));
+    expect(await screen.findByText(/录音删除失败，请重试/)).toBeInTheDocument();
+    expect(screen.queryByText("本场录音已删除，识别文字与评估结果仍保留。")).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("dialog", { name: "删除本场录音？" })).getByRole("button", { name: "删除录音" }));
     expect(await screen.findByText("本场录音已删除，识别文字与评估结果仍保留。")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Q1\s*调度平台的分片设计/ }));
-    const dialog = screen.getByRole("dialog", { name: "第 1 题详情" });
-    expect(within(dialog).getAllByText("录音已删除").length).toBeGreaterThan(0);
-    expect(within(dialog).queryByRole("button", { name: "手动修改" })).toBeNull();
   });
-
-  it("语音指标按参考区间判断标签", () => {
-    const specs = voiceMetricSpecs({ chars_per_minute: 200, long_pauses: 5, filler_ratio: 0.01, answer_duration_ms: 600_000, reference: { chars_per_minute: [180, 240], long_pauses: [0, 3], filler_ratio: [0, 0.05] }, tip: "" }, 5);
-    expect(specs.map((spec) => spec.tag)).toEqual(["正常", "略多", "正常", "正常"]);
-    expect(specs[3].value).toBe("2:00");
+  it("手动修改限制依据原识别稿，超过 15% 不可保存", () => {
+    render(<VoiceReportPage interview={completedVoice()} onChanged={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /Q1\s*缓存设计/ }));
+    fireEvent.click(screen.getByRole("button", { name: "手动修改" }));
+    fireEvent.change(screen.getByLabelText("修改识别稿"), { target: { value: "完全改写内容" } });
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeDisabled();
+  });
+  it("指标使用后端的参考区间", () => {
+    const metrics = completedVoice().report!.voice_metrics!;
+    expect(voiceMetricSpecs(metrics, 1).map((item) => item.tag)).toEqual(["正常", "正常", "正常", "偏短"]);
   });
 });

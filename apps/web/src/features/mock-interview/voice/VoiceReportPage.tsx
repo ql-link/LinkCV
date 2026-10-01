@@ -1,11 +1,11 @@
 // 07.6 语音面试 · 评估报告（含语音表现）与 07.6a 单题详情 · 修正与重新评估。
-// 修正、手动修改、重新评估、删除录音都走 mockInterviewApi（假数据）；录音回放需后端读取接口，先做占位。
+// 修正、手动修改、重新评估、删除和读取录音都使用后端接口。
 import { useContentMotion } from "@/components/ui/motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { editorPath, mockInterviewPath, navigateTo } from "@/routing";
 import { V3Shell } from "@/v3/Shell";
 import { Icon } from "@/v3/Icon";
-import { BeTag, ConfirmDialog, Dialog, Toast, PageEyebrow } from "@/v3/primitives";
+import { ConfirmDialog, Dialog, Toast, PageEyebrow } from "@/v3/primitives";
 import { SlideSwap } from "@/v3/SlideSwap";
 import {
   DIFFICULTY_LABELS,
@@ -442,18 +442,32 @@ function VoicePerformance({ metrics, questionCount }: { metrics: MockVoiceMetric
 
 /* ───────────── 07.6a 单题详情 ───────────── */
 
-function RecordingPlayer({ durationMs, deleted }: { durationMs: number | null; deleted: boolean }) {
+function RecordingPlayer({ interviewId, questionId, durationMs, deleted }: { interviewId: string; questionId: string; durationMs: number | null; deleted: boolean }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const generation = useRef(0);
+  useEffect(() => {
+    generation.current += 1;
+    setUrl(null); setError(null); setLoading(false);
+    return () => { generation.current += 1; };
+  }, [interviewId, questionId, deleted]);
+  useEffect(() => () => { if (url) URL.revokeObjectURL(url); }, [url]);
+  const load = async () => {
+    const current = generation.current; setLoading(true); setError(null);
+    try {
+      const blob = await mockInterviewApi.recording(interviewId, questionId);
+      if (current === generation.current) setUrl(URL.createObjectURL(blob));
+    } catch (reason) { if (current === generation.current) setError(mockInterviewErrorMessage(reason)); }
+    finally { if (current === generation.current) setLoading(false); }
+  };
   if (deleted) return <span className="vr-player is-deleted">录音已删除</span>;
-  const bars = [4, 7, 11, 8, 14, 10, 5, 12, 15, 7, 4, 9, 13, 6, 3, 8, 12, 6, 10, 14, 5, 7, 11, 4, 6, 9, 12, 5, 8, 10, 4, 7, 11, 6, 9, 13, 5, 8, 4, 6];
-  return (
-    <span className="vr-player">
-      <button type="button" className="vr-player-play" disabled aria-label="播放录音（需后端）"><Icon name="play" size={9} /></button>
-      <span className="vr-player-wave" aria-hidden="true">{bars.map((height, index) => <i key={index} style={{ height }} />)}</span>
-      <span className="vr-player-time">{formatClock(durationMs ?? 0)}</span>
-      <span className="vr-player-rate">1×</span>
-      <BeTag title="录音回放需要后端读取接口（GET /api/mock-interviews/:id/questions/:qid/recording）" />
-    </span>
-  );
+  return <span className="vr-player">
+    {url ? <audio controls src={url} aria-label="回答录音" onError={() => setError("录音播放失败，请重新加载。")} /> : <button type="button" className="vr-btn-sm" disabled={loading} onClick={() => void load()}>{loading ? "正在读取录音…" : "播放录音"}</button>}
+    {url && error && <button type="button" className="vr-btn-sm" disabled={loading} onClick={() => void load()}>{loading ? "正在读取录音…" : "重新加载录音"}</button>}
+    <span className="vr-player-time">{formatClock(durationMs ?? 0)}</span>
+    {error && <span role="alert">{error}</span>}
+  </span>;
 }
 
 function AnswerBlock({ interview, question, onUpdated, onError }: { interview: MockInterviewDetail; question: MockInterviewQuestion; onUpdated: (next: MockInterviewDetail) => void; onError: (title: string, error: unknown) => void }) {
@@ -531,7 +545,7 @@ function AnswerBlock({ interview, question, onUpdated, onError }: { interview: M
         {showRaw && raw && !editing && <p className="vr-raw"><span>原始识别稿</span>{raw}</p>}
         {question.answer_source === "voice" && (
           <div className="vr-answer-tools">
-            <RecordingPlayer durationMs={question.audio_duration_ms} deleted={interview.recordings_deleted || !question.has_recording} />
+            <RecordingPlayer interviewId={interview.id} questionId={question.id} durationMs={question.audio_duration_ms} deleted={interview.recordings_deleted || !question.has_recording} />
             {canEdit && !editing && <button type="button" className="vr-btn-sm is-plain" onClick={() => { setDraft(text); setEditing(true); }}>手动修改</button>}
             {raw && raw !== text && !editing && <button type="button" className="vr-link is-faint" onClick={() => setShowRaw((value) => !value)}>{showRaw ? "收起原始识别稿" : "查看原始识别稿"}</button>}
           </div>
@@ -574,20 +588,19 @@ function QuestionDetail({
   const evaluation = row.evaluation;
   const score = evaluation?.score ?? 0;
   const history = root.evaluation_history ?? [];
-  const firstScore = history[0]?.score;
+  const firstScore = history[0]?.previous_score;
   const edited = familyEdited(group);
   const remaining = 3 - root.re_evaluate_count;
   const duration = familyDuration(group);
-  const mine = interview.report?.re_evaluations?.filter((entry) => entry.question_id === root.id) ?? [];
-  const lastAt = mine.length ? mine[mine.length - 1].at : undefined;
-  const conflicts = interview.report?.fact_check.items.filter((item) => item.verdict === "conflict") ?? [];
+  const lastAt = history[history.length - 1]?.evaluated_at;
+  const conflicts = interview.report?.fact_check.items.filter((item) => item.verdict === "conflict" && family(group).some((question) => question.sequence_no === item.question_sequence_no)) ?? [];
 
   const reEvaluate = async () => {
     setBusy(true);
     try {
       const result = await mockInterviewApi.reEvaluate(interview.id, root.id);
-      onReEvaluated(root.id, result.previous_total_score, result.total_score);
-      onUpdated(result.mock_interview);
+      onReEvaluated(root.id, result.previous_total_score ?? interview.report?.total_score ?? 0, result.total_score);
+      onUpdated((await mockInterviewApi.get(interview.id)).mock_interview);
     } catch (error) {
       onError("没有重新评估", error);
     } finally {
@@ -648,7 +661,7 @@ function QuestionDetail({
                 </div>
                 {historyOpen && (
                   <ul className="vr-history">
-                    {history.map((entry, index) => <li key={index}>第 {index + 1} 次评估 · {dateTimeLabel(entry.evaluated_at)} · {entry.score} 分</li>)}
+                    {history.map((entry, index) => <li key={index}>第 {index + 1} 次重新评估 · {dateTimeLabel(entry.evaluated_at)} · 修正前 {entry.previous_score} → {entry.score} 分</li>)}
                   </ul>
                 )}
               </>
@@ -716,7 +729,7 @@ function QuestionDetail({
             </div>
             {conflicts.map((item) => (
               <div key={item.claim} className="vr-material">
-                <div><strong>资料核验 · 冲突</strong><span>{item.file_name}</span></div>
+                <div><strong>资料核验 · 冲突</strong><span>{(item.source?.title ?? "无资料出处")}</span></div>
                 <p>你提到「{item.claim}」，资料原文：「{item.quote}」。</p>
               </div>
             ))}

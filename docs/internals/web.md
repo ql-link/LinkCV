@@ -69,6 +69,8 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 
 共享侧栏通过首页和最近对话进入 `/assistant` 或 `/assistant/:sessionId`。首页、会话、右侧多标签预览、截图和本地生成文档交互见 [AI 求职助手](../features/ai-assistant.md)。模型选择、上下文归属、SSE、后台运行恢复和提案确认继续使用原有契约；本地模拟产物不进入服务端消息或资料库持久化。
 
+AI 模拟面试的列表、状态、流式作答与语音录音使用真实 FastAPI、SSE 和同源 WebSocket；共享客户端的 `requestApi` 与 `requestStream` 提供 Cookie 刷新、请求追踪和统一错误。麦克风采集与音频播放边界见 [AI 模拟面试](../features/mock-interview.md#web-前端)。
+
 工作区使用 `V3Shell` 左侧导航：首页、我的简历、简历模板、岗位看板、面试日程和资料库，底部为设置与账号。简历、进行中的求职记录等数量读取真实接口；无 API 的示例指标使用“需后端”标记。主要路由分别为 `/assistant`、`/resumes`、`/templates`、`/career/applications`、`/career/schedule`、`/datasets`、`/account`。旧链接继续由 `routing.ts` 兼容，登录回跳允许站内分享地址。
 
 岗位看板保留视图、排序、分类和列显隐能力；页面设置不改写业务数据。岗位、进程、阶段、排期与复盘的呈现和模拟边界见 [求职中心](../features/career-center.md)。

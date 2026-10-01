@@ -139,33 +139,42 @@ export function groupQuestions(questions: MockInterviewQuestion[]): QuestionGrou
   return groups;
 }
 
-// 场次详情：首次加载 + 订阅假数据变化（后台准备 / 评估推进时自动刷新）。
-// pause() 用于 SSE 回合进行中：此时数据层已经写入下一题，不能提前显示。
+// 后台任务没有 SSE 通道：轮询活跃场次，导航和回到窗口时刷新。
 export function useMockInterview(id: string | undefined) {
   const [interview, setInterview] = useState<MockInterviewDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const paused = useRef(false);
-  const alive = useRef(true);
-
+  const generation = useRef(0);
+  const state = useRef<MockInterviewDetail | null>(null);
+  const inFlight = useRef(false);
   const refresh = useCallback(async () => {
     if (!id) return;
+    const current = generation.current;
     try {
       const { mock_interview } = await mockInterviewApi.get(id);
-      if (alive.current) { setInterview(mock_interview); setError(null); }
-    } catch (reason) {
-      if (alive.current) setError(mockInterviewErrorMessage(reason));
-    }
+      if (current === generation.current) {
+        if (!state.current || mock_interview.lock_version >= state.current.lock_version) {
+          state.current = mock_interview;
+          setInterview(mock_interview);
+        }
+        setError(null);
+      }
+    } catch (reason) { if (current === generation.current) setError(mockInterviewErrorMessage(reason)); }
   }, [id]);
-
   useEffect(() => {
-    alive.current = true;
-    setInterview(null);
-    setError(null);
-    void refresh();
-    const unsubscribe = subscribeMockInterviews(() => { if (!paused.current) void refresh(); });
-    return () => { alive.current = false; unsubscribe(); };
+    generation.current += 1; paused.current = false; state.current = null;
+    setInterview(null); setError(null); void refresh();
+    const poll = async () => {
+      if (paused.current || inFlight.current || (state.current && !["preparing", "in_progress", "evaluating"].includes(state.current.status))) return;
+      inFlight.current = true;
+      try { await refresh(); } finally { inFlight.current = false; }
+    };
+    const timer = window.setInterval(() => { void poll(); }, 2000);
+    const onFocus = () => { if (!paused.current) void refresh(); };
+    const unsubscribe = subscribeMockInterviews(onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => { generation.current += 1; unsubscribe(); window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
   }, [refresh]);
-
   const pause = useCallback((value: boolean) => { paused.current = value; }, []);
   return { interview, error, refresh, pause, setInterview };
 }

@@ -1,5 +1,5 @@
 // 麦克风采集与音量计量：getUserMedia 取流，AnalyserNode 算 RMS 音量，供设备检测音量条和作答波形使用。
-// 浏览器不支持 AudioContext（如测试环境）时仍可授权与录音计时，只是音量恒为 0。
+// PCM 采集依赖 AudioContext 与 AudioWorklet；不支持时可检测权限，但会提示无法采集。
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type MicPermission = "idle" | "requesting" | "granted" | "denied" | "unavailable" | "error";
@@ -40,8 +40,41 @@ export function useMicrophone() {
   const [history, setHistory] = useState<number[]>(emptyHistory);
   const [metering, setMetering] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const requestGeneration = useRef(0);
   const contextRef = useRef<AudioContext | null>(null);
   const frameRef = useRef(0);
+  const captureRef = useRef<{ source: MediaStreamAudioSourceNode; node: AudioWorkletNode; gain: GainNode; flush: (() => void) | null } | null>(null);
+  const captureGeneration = useRef(0);
+  const stopCapture = useCallback(async () => {
+    captureGeneration.current += 1;
+    const capture = captureRef.current;
+    if (!capture) return;
+    await new Promise<void>((resolve) => {
+      const timer = window.setTimeout(resolve, 200);
+      capture.flush = () => { window.clearTimeout(timer); resolve(); };
+      capture.node.port.postMessage("flush");
+    });
+    capture.source.disconnect(); capture.node.disconnect(); capture.gain.disconnect();
+    capture.node.port.onmessage = null;
+    if (captureRef.current === capture) captureRef.current = null;
+  }, []);
+  const startCapture = useCallback(async (onAudio: (frame: ArrayBuffer) => void) => {
+    await stopCapture();
+    const generation = captureGeneration.current;
+    const stream = streamRef.current;
+    const context = contextRef.current;
+    if (!stream || !context?.audioWorklet) throw new Error("当前浏览器不支持语音采集，请改用文字面试。");
+    await context.audioWorklet.addModule(new URL("./pcmCapture.worklet.js", import.meta.url).href);
+    if (generation !== captureGeneration.current || streamRef.current !== stream) throw new DOMException("Cancelled", "AbortError");
+    await context.resume();
+    const node = new AudioWorkletNode(context, "mock-interview-pcm");
+    const source = context.createMediaStreamSource(stream);
+    const gain = context.createGain(); gain.gain.value = 0;
+    const capture = { source, node, gain, flush: null as (() => void) | null };
+    node.port.onmessage = ({ data }) => { if (data === "flushed") capture.flush?.(); else onAudio(data as ArrayBuffer); };
+    source.connect(node).connect(gain).connect(context.destination);
+    captureRef.current = capture;
+  }, [stopCapture]);
   const lastVoiceRef = useRef(Date.now());
   const levelRef = useRef(0);
 
@@ -55,6 +88,8 @@ export function useMicrophone() {
 
   // 释放麦克风：停止所有音轨，关闭音频上下文
   const release = useCallback(() => {
+    requestGeneration.current += 1;
+    void stopCapture();
     stopMeter();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
@@ -62,7 +97,7 @@ export function useMicrophone() {
     setLevel(0);
     setHistory(emptyHistory());
     setMetering(false);
-  }, [stopMeter]);
+  }, [stopCapture, stopMeter]);
 
   const startMeter = useCallback((stream: MediaStream) => {
     const Ctor = audioContextCtor();
@@ -119,12 +154,17 @@ export function useMicrophone() {
       return "unavailable";
     }
     release();
+    const generation = requestGeneration.current;
     setPermission("requesting");
     try {
       const id = nextDeviceId ?? deviceId;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: id && !id.startsWith("device-") ? { deviceId: { exact: id }, echoCancellation: true, noiseSuppression: true } : { echoCancellation: true, noiseSuppression: true },
       });
+      if (generation !== requestGeneration.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return "idle";
+      }
       streamRef.current = stream;
       lastVoiceRef.current = Date.now();
       setPermission("granted");
@@ -132,6 +172,7 @@ export function useMicrophone() {
       void refreshDevices();
       return "granted";
     } catch (error) {
+      if (generation !== requestGeneration.current) return "idle";
       const next = permissionFromError(error);
       setPermission(next);
       return next;
@@ -152,7 +193,7 @@ export function useMicrophone() {
 
   const deviceLabel = devices.find((device) => device.id === deviceId)?.label ?? devices[0]?.label ?? "默认麦克风";
 
-  return { permission, devices, deviceId: deviceId || devices[0]?.id || "", deviceLabel, level, history, metering, start, release, selectDevice, markVoice, silentForMs, currentLevel };
+  return { permission, devices, deviceId: deviceId || devices[0]?.id || "", deviceLabel, level, history, metering, start, release, selectDevice, markVoice, silentForMs, currentLevel, startCapture, stopCapture };
 }
 
 export type Microphone = ReturnType<typeof useMicrophone>;

@@ -4,7 +4,7 @@
 // 组件渲染一整行工具栏左侧的状态区 + 右侧麦克风/停止按钮，宿主把它放进输入框底部工具栏，发送按钮跟在后面。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/v3/Icon";
-import { BeTag } from "@/v3/primitives";
+import { openSpeech, type SpeechConnection } from "./speechTransport";
 import { mockInterviewApi } from "../mockInterviewApi";
 import { MAX_RECORDING_MS, microphoneSupported, useMicrophone } from "./useMicrophone";
 import { Waveform, formatClock, lastSamples } from "./voiceParts";
@@ -23,7 +23,7 @@ export function VoiceInputButton({
 }: {
   interviewId: string;
   questionId: string;
-  onText: (text: string, speechSessionId: string) => void;
+  onText: (text: string, speechSessionId?: string) => void;
   disabled?: boolean;
   /** 可选：录音中宿主输入框要加深描边、换底部提示 */
   onStateChange?: (state: VoiceInputState) => void;
@@ -36,8 +36,12 @@ export function VoiceInputButton({
   const mic = useMicrophone();
   const alive = useRef(true);
   const busyRef = useRef(false);
+  const connection = useRef<SpeechConnection | null>(null);
+  const controller = useRef<AbortController | null>(null);
+  const generation = useRef(0);
+  const partial = useRef("");
 
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current += 1; controller.current?.abort(); connection.current?.cancel(); }; }, []);
 
   // 语音服务是否开启（管理端未配置识别线路时按钮不可用）
   useEffect(() => {
@@ -49,6 +53,7 @@ export function VoiceInputButton({
   // 换题时回到空闲，丢弃上一题的识别状态
   useEffect(() => {
     setState((old) => (old === "unavailable" || old === "denied" ? old : "idle"));
+    generation.current += 1; controller.current?.abort(); connection.current?.cancel(); connection.current = null; busyRef.current = false;
     mic.release();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionId]);
@@ -61,22 +66,27 @@ export function VoiceInputButton({
 
   const startRecording = useCallback(async () => {
     if (disabled || busyRef.current) return;
-    const permission = await mic.start();
-    if (!alive.current) return;
-    if (permission === "granted") {
-      setStartedAt(Date.now());
-      setNow(Date.now());
-      setState("recording");
-    } else if (permission === "denied") {
-      setState("denied");
-    } else if (permission === "unavailable") {
-      setState("unavailable");
-    } else {
-      setState("failed");
-    }
-  }, [disabled, mic]);
+    busyRef.current = true;
+    const current = ++generation.current;
+    controller.current?.abort();
+    controller.current = new AbortController();
+    partial.current = "";
+    try {
+      const permission = await mic.start();
+      if (!alive.current || current !== generation.current) return;
+      if (permission !== "granted") { setState(permission === "denied" ? "denied" : permission === "unavailable" ? "unavailable" : "failed"); return; }
+      const session = await openSpeech(interviewId, questionId, "voice_input", (text) => { partial.current = text; }, controller.current.signal);
+      if (!alive.current || current !== generation.current) { session.cancel(); return; }
+      connection.current = session;
+      await mic.startCapture(session.push);
+      setStartedAt(Date.now()); setNow(Date.now()); setState("recording");
+    } catch { connection.current?.cancel(); mic.release(); if (alive.current && current === generation.current) setState("failed"); }
+    finally { if (current === generation.current) busyRef.current = false; }
+
+  }, [disabled, interviewId, questionId, mic]);
 
   const cancel = useCallback(() => {
+    generation.current += 1; controller.current?.abort(); connection.current?.cancel(); connection.current = null; busyRef.current = false;
     mic.release();
     setState("idle");
   }, [mic]);
@@ -85,18 +95,21 @@ export function VoiceInputButton({
     if (busyRef.current) return;
     busyRef.current = true;
     const durationMs = Date.now() - startedAt;
+    const current = generation.current;
+    await mic.stopCapture();
     mic.release();
     setLastDuration(durationMs);
     setState("recognizing");
     try {
-      const result = await mockInterviewApi.recognize(interviewId, { durationMs });
-      if (!alive.current) return;
+      const result = await connection.current?.stop();
+      if (!result || !alive.current || current !== generation.current) return;
+      if (!result.text.trim()) throw new Error("empty");
       onText(result.text, result.session_id);
       setState("done");
     } catch {
-      if (alive.current) setState("failed");
+      if (alive.current && current === generation.current) { if (partial.current) onText(partial.current); setState("failed"); }
     } finally {
-      busyRef.current = false;
+      if (current === generation.current) busyRef.current = false;
     }
   }, [interviewId, mic, onText, startedAt]);
 
@@ -139,7 +152,6 @@ export function VoiceInputButton({
         )}
         {effective === "denied" && <span className="vx-vib-hint is-warn">麦克风权限被拒绝，请在浏览器地址栏允许后重试</span>}
         {effective === "unavailable" && <span className="vx-vib-hint">当前浏览器不支持录音，或语音服务未开启；可继续打字作答</span>}
-        {(effective === "recording" || effective === "recognizing") && <BeTag title="实时识别需要后端 WebSocket 识别通道；目前停止后一次性返回示例识别稿" />}
       </div>
       {effective === "recording" ? (
         <div className="vx-vib-actions">

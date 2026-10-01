@@ -65,3 +65,41 @@ def test_speech_protocols_are_scoped_to_speech_use_cases_and_regions():
         speech_ws_url("aliyun", {"region": "cn-hongkong"})
     with pytest.raises(ValueError):
         speech_ws_url("aihubmix", {})
+
+
+def test_speech_session_audio_is_shared_between_workers_with_matching_ttl():
+    from linkresume.application.mock_interviews.speech_session import SpeechResult, SpeechSessionStore, SESSION_TTL_SECONDS
+    from tests.fakes import FakeRedis
+
+    redis = FakeRedis()
+    first, second = SpeechSessionStore(redis), SpeechSessionStore(redis)
+    result = SpeechResult("a" * 32, 1, 2, 3, "voice_answer", "张三的回答", [], 1000, False)
+    audio = b"\x00\xff\x01\x80" * 16
+    first.save(result, audio)
+    assert set(redis.ttls.values()) == {SESSION_TTL_SECONDS}
+    consumed = second.consume(result.session_id)
+    assert consumed == (result, audio)
+    assert first.consume(result.session_id) is None
+    second.restore(*consumed)
+    assert first.consume(result.session_id) == (result, audio)
+    assert not redis.strings
+
+
+def test_speaker_sequences_remain_monotonic_after_draining():
+    import asyncio
+    import json
+    from linkresume.modules.mock_interviews.routes import _Speaker
+
+    class Speech:
+        async def synthesize(self, user_id, text, *, source):
+            return text.encode()
+
+    async def run():
+        speaker = _Speaker(Speech(), 1)
+        speaker.say("第一句。")
+        first = [chunk async for chunk in speaker.ready(wait=True)]
+        speaker.say("第二句。")
+        second = [chunk async for chunk in speaker.ready(wait=True)]
+        return [json.loads(chunk.decode().split("data: ")[1])["seq"] for chunk in first + second]
+
+    assert asyncio.run(run()) == [0, 1]

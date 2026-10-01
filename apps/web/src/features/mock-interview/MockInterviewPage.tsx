@@ -1,10 +1,11 @@
-// 07 模拟面试入口：按路由分发到各页面。数据来自 ./mockInterviewApi（本地假数据，接口签名与后端一致）。
+// 模拟面试入口：按真实服务端状态分发页面。
 // 语音面试（answer_mode === "voice"）的进行中与报告页交给 voice/ 目录，外壳由它们自己决定。
 import { useEffect } from "react";
 import { mockInterviewPath, navigateTo } from "@/routing";
 import { V3Shell } from "@/v3/Shell";
 import { RouteSkeleton } from "@/v3/skeletons";
 import { Icon } from "@/v3/Icon";
+import { Toast } from "@/v3/primitives";
 import { MockInterviewHome } from "./MockInterviewHome";
 import { MockInterviewNew } from "./MockInterviewNew";
 import { MockInterviewReportView } from "./MockInterviewReport";
@@ -42,13 +43,14 @@ function InterviewRoute({ id, report }: { id: string; report: boolean }) {
     if (!report && interview.status === "completed") navigateTo(mockInterviewPath(interview.id, true), { replace: true });
   }, [interview, report]);
 
-  if (error) {
+  if (error && (!interview || error.includes("不存在") || error.includes("已过期"))) {
     return (
       <V3Shell active="mock">
         <div className="mi-page">
           <div className="mi-load-error" role="alert">
             <strong>{error.includes("不存在") ? "找不到这场模拟面试" : "模拟面试没有加载出来"}</strong>
             <span>{error}</span>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void refresh()}>重新加载</button>
             <button type="button" className="v3-btn v3-btn-ghost" onClick={() => navigateTo("/mock-interviews")}><Icon name="chevl" size={13} />返回模拟面试</button>
           </div>
         </div>
@@ -58,9 +60,10 @@ function InterviewRoute({ id, report }: { id: string; report: boolean }) {
   if (!interview) return <V3Shell active="mock" scroll={false}><RouteSkeleton section="mock" /></V3Shell>;
 
   const onChanged = () => refresh();
+  const warning = error ? <Toast kind="error" title="场次刷新失败，正在重试" message={error} onDismiss={() => void refresh()} /> : null;
   if (interview.answer_mode === "voice") {
-    if (interview.status === "completed") return <VoiceReportPage interview={interview} onChanged={onChanged} />;
-    if (["preparing", "preparation_failed", "in_progress"].includes(interview.status)) return <VoiceSessionPage interview={interview} onChanged={onChanged} />;
+    if (interview.status === "completed") return <><VoiceReportPage interview={interview} onChanged={onChanged} />{warning}</>;
+    if (["preparing", "in_progress"].includes(interview.status)) return <><VoiceSessionPage interview={interview} onChanged={onChanged} />{warning}</>;
   }
 
   let body;
@@ -69,5 +72,5 @@ function InterviewRoute({ id, report }: { id: string; report: boolean }) {
   else if (interview.status === "in_progress") body = <InProgressView interview={interview} onChanged={onChanged} pause={pause} />;
   else if (interview.status === "abandoned") body = <AbandonedView interview={interview} />;
   else body = <EvaluatingView interview={interview} onChanged={onChanged} />;
-  return <V3Shell active="mock">{body}</V3Shell>;
+  return <V3Shell active="mock">{body}{warning}</V3Shell>;
 }

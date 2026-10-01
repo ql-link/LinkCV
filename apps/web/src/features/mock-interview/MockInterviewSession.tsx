@@ -1,9 +1,10 @@
 // 07.2 模拟面试 · 准备中（Figma 161:2）/ 进行中（159:1043）。文字作答；语音输入按钮由 voice/VoiceInputButton 提供。
 // 面试官问题通过 mockInterviewApi.answer / skip 返回的 SSE 事件逐字输出。
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { createRequestId } from "@/api/client";
 import { mockInterviewPath, navigateTo, newMockInterviewPath } from "@/routing";
 import { Icon } from "@/v3/Icon";
-import { BeTag, ConfirmDialog, Toast, PageEyebrow } from "@/v3/primitives";
+import { ConfirmDialog, Toast, PageEyebrow } from "@/v3/primitives";
 import { VoiceInputButton, voiceInputFooterHint, type VoiceInputState } from "./voice/VoiceInputButton";
 import {
   mockInterviewApi,
@@ -133,7 +134,10 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
   const followNo = current?.kind === "follow_up" ? currentGroup.follows.findIndex((item) => item.id === current.id) + 1 : 0;
   const answeredMains = groups.filter((group) => group.root.answer_status !== "pending" && group.root.id !== currentRoot).length;
   const elapsed = interview.started_at ? now - new Date(interview.started_at).getTime() : 0;
-  const locked = busy || streaming !== null || !current;
+  const locked = busy || streaming !== null || !current || interview.needs_reply || current.answer_status !== "pending" || voiceState === "recording" || voiceState === "recognizing";
+  const lastAttempt = useRef<{ body: string; key: string } | null>(null);
+  const streamController = useRef<AbortController | null>(null);
+  useEffect(() => () => { streamController.current?.abort(); pause(false); }, [pause]);
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -143,14 +147,17 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
   useEffect(() => { if (!locked) inputRef.current?.focus(); }, [locked]);
 
   const consume = async (stream: AsyncGenerator<MockTurnEvent>, text: string | null) => {
+    const originalSpeechSession = speechSessionId;
     setBusy(true);
     pause(true);
     setPending({ text, at: new Date().toISOString() });
     setDraft("");
     setSpeechSessionId(null);
+    let accepted = interview.needs_reply;
     try {
       for await (const event of stream) {
-        if (event.type === "interviewer.delta") {
+        if (event.type === "answer.accepted") { accepted = true; }
+        else if (event.type === "interviewer.delta") {
           setStreaming((value) => ({ kind: value?.kind ?? "main", depth: value?.depth, text: (value?.text ?? "") + event.content }));
         } else if (event.type === "interviewer.turn") {
           if (event.action === "finish") setClosing(event.closing_message);
@@ -161,8 +168,13 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
       }
     } catch (reason) {
       setStreaming(null);
-      if (text) setDraft(text);
-      setToast({ title: "回答没有提交成功", message: mockInterviewErrorMessage(reason) });
+      if (!accepted) {
+        const latest = await mockInterviewApi.get(interview.id).catch(() => null);
+        const saved = latest?.mock_interview.questions.find((entry) => entry.id === current?.id);
+        accepted = saved?.answer_status === "answered" || saved?.answer_status === "skipped";
+      }
+      if (text && !accepted) { setDraft(text); setSpeechSessionId(originalSpeechSession); }
+      setToast({ title: accepted ? "回答已保存，面试官回复没有完成" : "回答没有提交成功", message: mockInterviewErrorMessage(reason) });
     } finally {
       // 先拿到最新场次再撤掉「待确认」的回答，避免中间闪回作答前的样子
       pause(false);
@@ -182,7 +194,11 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
     const text = draft.trim();
     if (!current || !text || locked) return;
     try {
-      const stream = mockInterviewApi.answer(interview.id, { question_id: current.id, answer: text, speech_session_id: speechSessionId ?? undefined });
+      const body = { question_id: current.id, answer: text, speech_session_id: speechSessionId ?? undefined };
+      const encoded = JSON.stringify(body);
+      if (lastAttempt.current?.body !== encoded) lastAttempt.current = { body: encoded, key: createRequestId() };
+      streamController.current = new AbortController();
+      const stream = mockInterviewApi.answer(interview.id, body, lastAttempt.current.key, streamController.current.signal);
       startStreaming();
       void consume(stream, text);
     } catch (reason) {
@@ -193,7 +209,11 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
   const skip = () => {
     if (!current || locked) return;
     try {
-      const stream = mockInterviewApi.skip(interview.id, { question_id: current.id });
+      const body = { question_id: current.id };
+      const encoded = `skip:${JSON.stringify(body)}`;
+      if (lastAttempt.current?.body !== encoded) lastAttempt.current = { body: encoded, key: createRequestId() };
+      streamController.current = new AbortController();
+      const stream = mockInterviewApi.skip(interview.id, body, lastAttempt.current.key, streamController.current.signal);
       setStreaming({ text: "", kind: "main" });
       void consume(stream, null);
     } catch (reason) {
@@ -232,6 +252,10 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
         <button type="button" className="mi-text-btn" disabled={busy} onClick={() => setConfirm("abandon")}>放弃</button>
         <button type="button" className="v3-btn v3-btn-ghost mi-finish-btn" disabled={busy || streaming !== null} onClick={() => setConfirm("finish")}>结束并评估</button>
       </SessionHeader>
+      {interview.needs_reply && !busy && <div className="mi-status-note" role="status">
+        回答已保存，面试官的回复尚未完成。
+        <button type="button" className="v3-btn v3-btn-ghost" onClick={() => { streamController.current = new AbortController(); startStreaming(); void consume(mockInterviewApi.retryReply(interview.id, streamController.current.signal), null); }}>重试面试官回复</button>
+      </div>}
       <div className="mi-progress" role="progressbar" aria-label="作答进度" aria-valuemin={0} aria-valuemax={interview.question_count} aria-valuenow={answeredMains}>
         <span className="mi-progress-bars" aria-hidden="true">
           {Array.from({ length: interview.question_count }, (_, index) => (
@@ -275,7 +299,7 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
                 questionId={current.id}
                 disabled={locked}
                 onStateChange={setVoiceState}
-                onText={(text, sessionId) => { setDraft((value) => (value ? `${value}${text}` : text)); setSpeechSessionId(sessionId); }}
+                onText={(text, sessionId) => { setDraft((value) => (value ? `${value}${text}` : text)); setSpeechSessionId(sessionId ?? null); }}
               />
             )}
             <button type="button" className="mi-send" aria-label="发送" disabled={locked || !draft.trim()} onClick={send}><Icon name="send" size={15} /></button>
@@ -406,7 +430,7 @@ export function AbandonedView({ interview }: { interview: MockInterviewDetail })
       <SessionHeader interview={interview} />
       <section className="mi-preparing is-ended">
         <h2>这场模拟面试已放弃</h2>
-        <p>放弃的场次不生成评估报告，可以用相同配置再练一次。 <BeTag /></p>
+        <p>放弃的场次不生成评估报告，可以用相同配置再练一次。</p>
         <div className="mi-prep-fail-actions">
           <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={() => navigateTo("/mock-interviews")}>返回</button>
           <button type="button" className="v3-btn v3-btn-dark is-lg" onClick={() => navigateTo(newMockInterviewPath({ applicationId: interview.job_application_id ?? undefined }))}>重新开始</button>

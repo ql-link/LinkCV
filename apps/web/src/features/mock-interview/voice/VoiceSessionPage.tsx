@@ -1,32 +1,31 @@
 // 07.5 语音面试进行中（无侧栏整窗）：设备检测 → 面试官提问 → 作答 → 识别并提交 → 下一题。
-// 录音用真实 getUserMedia + AnalyserNode 波形；识别走 mockInterviewApi.recognize（假数据，不连 WebSocket）。
-// 面试官语音合成没有后端，用字幕逐字出现 + 波形动画表示「正在提问」。
+// PCM16 经同源 WebSocket 识别，回答经 SSE 推进；语音按顺序播放。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createRequestId } from "@/api/client";
 import { mockInterviewPath, navigateTo, newMockInterviewPath } from "@/routing";
 import { V3Shell } from "@/v3/Shell";
 import { Icon } from "@/v3/Icon";
-import { BeTag, ConfirmDialog, Dialog, Toast } from "@/v3/primitives";
+import { ConfirmDialog, Dialog, Toast } from "@/v3/primitives";
 import {
   mockInterviewApi,
   mockInterviewErrorMessage,
-  subscribeMockInterviews,
   type MockInterviewDetail,
   type MockInterviewQuestion,
+  type MockTurnEvent,
 } from "../mockInterviewApi";
+import { openSpeech, SpeechPlayback, speechBlob, type SpeechConnection, type SpeechResult } from "./speechTransport";
 import { DeviceCheck, interviewEyebrow, interviewTitle } from "./DeviceCheck";
 import { MAX_RECORDING_MS, useMicrophone } from "./useMicrophone";
 import { FeatherMark, FeatherOrb, UserAvatar, Waveform, formatClock, formatElapsed, lastSamples } from "./voiceParts";
 import "./voice.css";
 
-type Phase = "check" | "asking" | "answering" | "recognizing" | "failed" | "closing";
+type Phase = "check" | "asking" | "answering" | "recognizing" | "replying" | "failed" | "closing";
 
 // 静音超过该时长显示「还在思考吗」提示（不会自动提交）
 export const SILENCE_HINT_MS = 8000;
 // 开口打断播报的音量阈值与持续时长
 const INTERRUPT_LEVEL = 0.25;
 const INTERRUPT_SUSTAIN_MS = 400;
-// 面试官「播报」字幕的逐字速度
-const CHAR_MS = 90;
 
 const ASK_WAVE = [0.5, 0.9, 0.5, 0.25, 0.75, 1, 0.4, 0.25, 0.6, 0.9];
 
@@ -46,6 +45,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
   const [question, setQuestion] = useState<MockInterviewQuestion | null>(() => currentQuestion(interview));
   const [shown, setShown] = useState(0);
   const [transcript, setTranscript] = useState("");
+  const [replyText, setReplyText] = useState("");
   const [closing, setClosing] = useState("");
   const [recordStart, setRecordStart] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -59,132 +59,155 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
   const mic = useMicrophone();
   const stoppingRef = useRef(false);
   const mountedRef = useRef(true);
-
-  useEffect(() => () => { mountedRef.current = false; }, []);
-  useEffect(() => { setDetail(interview); }, [interview]);
-
-  // 假数据后台推进（准备完成、评估完成）时同步本页副本
-  useEffect(() => subscribeMockInterviews(() => {
-    void mockInterviewApi.get(interview.id).then(({ mock_interview }) => {
-      if (!mountedRef.current) return;
-      setDetail(mock_interview);
-    }).catch(() => undefined);
-  }), [interview.id]);
+  const playback = useRef(new SpeechPlayback());
+  const controller = useRef<AbortController | null>(null);
+  const captureController = useRef<AbortController | null>(null);
+  const connection = useRef<SpeechConnection | null>(null);
+  const attempt = useRef<{ result: SpeechResult; questionId: string; key: string } | null>(null);
+  const operation = useRef(0);
 
   useEffect(() => {
-    if (phase === "check") setQuestion(currentQuestion(detail));
-  }, [detail, phase]);
-
-  // 1 秒一跳的时钟：面试用时、作答时长、静音时长
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; operation.current += 1; controller.current?.abort(); captureController.current?.abort(); connection.current?.cancel(); playback.current.stop(); };
+  }, []);
+  useEffect(() => { setDetail((old) => interview.lock_version >= old.lock_version ? interview : old); }, [interview]);
+  useEffect(() => { if (phase === "check") setQuestion(currentQuestion(detail)); }, [detail, phase]);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), phase === "answering" ? 250 : 1000);
     return () => window.clearInterval(timer);
   }, [phase]);
 
-  // 面试官逐字「播报」，播完自动开始作答
   const text = phase === "closing" ? closing : question?.content ?? "";
-  useEffect(() => {
-    if (phase !== "asking" && phase !== "closing") return;
-    if (shown >= text.length) {
-      if (phase === "asking") {
-        const timer = window.setTimeout(() => beginAnswer(), 500);
-        return () => window.clearTimeout(timer);
-      }
-      return;
+  const beginAnswer = useCallback(async () => {
+    if (!question || detail.needs_reply) return;
+    const token = ++operation.current;
+    controller.current?.abort(); playback.current.stop();
+    captureController.current?.abort(); connection.current?.cancel();
+    const capture = new AbortController(); captureController.current = capture;
+    stoppingRef.current = true; attempt.current = null;
+    setTranscript(""); setHeard(false);
+    // Set the clock before entering answering; a zero start looked like a 5 min timeout.
+    setRecordStart(Date.now()); setNow(Date.now()); setPhase("answering");
+    try {
+      if (await mic.start() !== "granted") throw new Error("麦克风暂时无法打开，请检查权限后重试。");
+      const session = await openSpeech(detail.id, question.id, "voice_answer", (partial) => { if (mountedRef.current && token === operation.current) setTranscript(partial); }, capture.signal);
+      if (!mountedRef.current || token !== operation.current) { session.cancel(); return; }
+      connection.current = session;
+      await mic.startCapture(session.push);
+      if (!mountedRef.current || token !== operation.current) return;
+      mic.markVoice(); stoppingRef.current = false;
+      setRecordStart(Date.now()); setNow(Date.now());
+    } catch (error) {
+      if (mountedRef.current && token === operation.current) { sessionCleanup(); setPhase("failed"); setToast({ title: "没有开始录音", message: mockInterviewErrorMessage(error) }); }
     }
-    const timer = window.setTimeout(() => setShown((value) => value + 1), CHAR_MS);
-    return () => window.clearTimeout(timer);
-    // beginAnswer 只依赖 ref 与 setter
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, shown, text]);
+    function sessionCleanup() { connection.current?.cancel(); mic.release(); stoppingRef.current = false; }
+  }, [detail.id, detail.needs_reply, question, mic]);
 
-  const beginAnswer = useCallback(() => {
-    mic.markVoice();
-    stoppingRef.current = false;
-    setTranscript("");
-    setHeard(false);
-    setRecordStart(Date.now());
-    setNow(Date.now());
-    setPhase("answering");
-  }, [mic]);
-
-  // 提问中开口即打断：持续说话约 400ms 才算，避免扬声器回声或一声咳嗽误触发
   const loudSinceRef = useRef(0);
   useEffect(() => {
-    if (phase === "asking") {
+    if (phase === "asking" && busy === null) {
       if (mic.level > INTERRUPT_LEVEL) {
         if (!loudSinceRef.current) loudSinceRef.current = Date.now();
-        else if (Date.now() - loudSinceRef.current >= INTERRUPT_SUSTAIN_MS) { loudSinceRef.current = 0; beginAnswer(); }
-      } else {
-        loudSinceRef.current = 0;
-      }
+        else if (Date.now() - loudSinceRef.current >= INTERRUPT_SUSTAIN_MS) { loudSinceRef.current = 0; void beginAnswer(); }
+      } else loudSinceRef.current = 0;
     }
     if (phase === "answering" && mic.level > 0.08) setHeard(true);
-  }, [mic.level, phase, beginAnswer]);
+  }, [mic.level, phase, busy, beginAnswer]);
 
-  const ask = useCallback((next: MockInterviewQuestion) => {
-    setQuestion(next);
-    setShown(0);
-    setPhase("asking");
-  }, []);
+  const ask = useCallback(async (next: MockInterviewQuestion, alreadySpoken = false) => {
+    const token = ++operation.current;
+    setQuestion(next); setShown(next.content.length); setPhase("asking");
+    if (!alreadySpoken) {
+      controller.current?.abort(); controller.current = new AbortController();
+      try {
+        const audio = await mockInterviewApi.speechPlayback(detail.id, next.id, controller.current.signal);
+        if (!mountedRef.current || token !== operation.current) return;
+        await playback.current.enqueue(audio);
+      } catch (error) {
+        if (mountedRef.current && token === operation.current) setToast({ title: "语音播放没有完成", message: mockInterviewErrorMessage(error) });
+      }
+    } else await playback.current.drain();
+    // Capture is started by an effect after the new question has rendered.
+    if (mountedRef.current && token === operation.current) setAutoAnswer(next.id);
+  }, [detail.id]);
+  const [autoAnswer, setAutoAnswer] = useState<string | null>(null);
+  useEffect(() => {
+    if (autoAnswer && question?.id === autoAnswer && phase === "asking") { setAutoAnswer(null); void beginAnswer(); }
+  }, [autoAnswer, question?.id, phase, beginAnswer]);
 
-  const finishTurn = useCallback((result: { action: string; question: MockInterviewQuestion | null; closing: string | null }) => {
-    if (result.action === "finish" || !result.question) {
-      setClosing(result.closing ?? "今天的面试就到这里，感谢你的时间。");
-      setShown(0);
-      setPhase("closing");
-      mic.release();
-      onChanged();
-      return;
-    }
-    ask(result.question);
-  }, [ask, mic, onChanged]);
-
-  const consume = useCallback(async (stream: AsyncGenerator<import("../mockInterviewApi").MockTurnEvent>) => {
+  const consume = useCallback(async (stream: AsyncGenerator<MockTurnEvent>) => {
+    let result: { action: string; question: MockInterviewQuestion | null; closing: string | null } | null = null;
+    playback.current.stop(); setReplyText("");
     for await (const event of stream) {
       if (event.type === "interviewer.failed") throw new Error(event.error);
-      if (event.type === "interviewer.turn") return { action: event.action, question: event.question, closing: event.closing_message };
+      if (event.type === "interviewer.delta") { setPhase("replying"); setReplyText((value) => value + event.content); }
+      if (event.type === "interviewer.audio") void playback.current.enqueue(speechBlob(event.data)).catch(() => { if (mountedRef.current) setToast({ title: "语音播放失败，可阅读字幕继续" }); });
+      if (event.type === "interviewer.audio_failed") setToast({ title: "语音合成失败，可阅读字幕继续" });
+      if (event.type === "interviewer.turn") result = { action: event.action, question: event.question, closing: event.closing_message };
     }
-    return { action: "finish", question: null, closing: null };
-  }, []);
+    const latest = (await mockInterviewApi.get(detail.id)).mock_interview;
+    if (mountedRef.current) setDetail(latest);
+    if (!result) {
+      if (latest.needs_reply) throw new Error("MOCK_INTERVIEW_STREAM_INTERRUPTED");
+      result = { action: latest.status === "in_progress" ? "next_question" : "finish", question: currentQuestion(latest), closing: latest.report?.closing_message ?? null };
+    }
+    await playback.current.drain();
+    return result;
+  }, [detail.id]);
 
-  // 我说完了：停止录音 → 识别 → 用一次性识别会话提交
+  const finishTurn = useCallback((result: { action: string; question: MockInterviewQuestion | null; closing: string | null }) => {
+    attempt.current = null;
+    if (result.action === "finish" || !result.question) {
+      setClosing(result.closing ?? "今天的面试就到这里，感谢你的时间。");
+      setShown((result.closing ?? "今天的面试就到这里，感谢你的时间。").length);
+      setPhase("closing"); mic.release(); onChanged(); return;
+    }
+    void ask(result.question, true);
+  }, [ask, mic, onChanged]);
+
+  const recover = useCallback(async (error: unknown) => {
+    if (error instanceof Error && ["MOCK_INTERVIEW_SPEECH_SESSION_INVALID", "MOCK_INTERVIEW_SPEECH_EMPTY"].includes(error.message)) attempt.current = null;
+    const latest = await mockInterviewApi.get(detail.id).catch(() => null);
+    if (!mountedRef.current) return;
+    if (latest) setDetail(latest.mock_interview);
+    stoppingRef.current = false; setPhase("failed");
+    setToast({ title: latest?.mock_interview.needs_reply ? "回答已保存，面试官回复没有完成" : "识别或提交没有完成", message: mockInterviewErrorMessage(error) });
+  }, [detail.id]);
+
+  const submitRecognized = useCallback(async () => {
+    const pending = attempt.current;
+    if (!pending) return;
+    setPhase("recognizing"); stoppingRef.current = true;
+    controller.current = new AbortController();
+    try {
+      const result = await consume(mockInterviewApi.answer(detail.id, { question_id: pending.questionId, speech_session_id: pending.result.session_id }, pending.key, controller.current.signal));
+      if (mountedRef.current) finishTurn(result);
+    } catch (error) { await recover(error); }
+  }, [consume, detail.id, finishTurn, recover]);
+
   const stopAndSubmit = useCallback(async () => {
     if (!question || stoppingRef.current) return;
-    stoppingRef.current = true;
-    const durationMs = Date.now() - recordStart;
-    setPhase("recognizing");
-    let recognized: Awaited<ReturnType<typeof mockInterviewApi.recognize>>;
+    stoppingRef.current = true; setPhase("recognizing");
     try {
-      // 整段都没有声音时视为识别失败（真实识别服务同样会返回空结果）
-      recognized = await mockInterviewApi.recognize(detail.id, { durationMs, fail: mic.metering && !heard });
-    } catch (error) {
+      await mic.stopCapture();
+      const recognized = await connection.current?.stop();
       if (!mountedRef.current) return;
-      setTranscript("");
-      setPhase("failed");
-      setToast(null);
-      void error;
-      return;
-    }
-    if (!mountedRef.current) return;
-    // 先把识别稿显示出来，再提交（设计稿 07.5 · 识别并提交）
-    setTranscript(recognized.text);
-    await new Promise((resolve) => window.setTimeout(resolve, 900));
-    if (!mountedRef.current) return;
-    try {
-      const result = await consume(mockInterviewApi.answer(detail.id, { question_id: question.id, speech_session_id: recognized.session_id }));
-      if (!mountedRef.current) return;
-      finishTurn(result);
-    } catch (error) {
-      if (!mountedRef.current) return;
-      setPhase("answering");
-      stoppingRef.current = false;
-      setToast({ title: "回答没有提交成功", message: mockInterviewErrorMessage(error) });
-    }
-  }, [consume, detail.id, finishTurn, heard, mic.metering, question, recordStart]);
+      if (!recognized?.text.trim()) throw new Error("MOCK_INTERVIEW_SPEECH_EMPTY");
+      setTranscript(recognized.text);
+      attempt.current = { result: recognized, questionId: question.id, key: createRequestId() };
+      await submitRecognized();
+    } catch (error) { await recover(error); }
+  }, [mic, question, submitRecognized, recover]);
+
+  const retryReply = async () => {
+    setBusy("skip"); setPhase("recognizing"); controller.current = new AbortController();
+    try { const result = await consume(mockInterviewApi.retryReply(detail.id, controller.current.signal)); if (mountedRef.current) finishTurn(result); }
+    catch (error) { await recover(error); }
+    finally { if (mountedRef.current) setBusy(null); }
+  };
 
   // 录音满 5 分钟自动结束
-  const recordingMs = phase === "answering" ? Math.max(0, now - recordStart) : 0;
+  const recordingMs = phase === "answering" && recordStart > 0 ? Math.max(0, now - recordStart) : 0;
   useEffect(() => {
     if (phase === "answering" && recordingMs >= MAX_RECORDING_MS) void stopAndSubmit();
   }, [phase, recordingMs, stopAndSubmit]);
@@ -194,12 +217,14 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
 
   const skip = async () => {
     if (!question || busy) return;
-    setBusy("skip");
+    setBusy("skip"); stoppingRef.current = true; setPhase("recognizing");
+    controller.current?.abort(); controller.current = new AbortController();
+    operation.current += 1; captureController.current?.abort(); connection.current?.cancel(); await mic.stopCapture(); playback.current.stop();
     try {
-      const result = await consume(mockInterviewApi.skip(detail.id, { question_id: question.id }));
+      const result = await consume(mockInterviewApi.skip(detail.id, { question_id: question.id }, createRequestId(), controller.current.signal));
       if (mountedRef.current) finishTurn(result);
     } catch (error) {
-      setToast({ title: "没有跳过这道题", message: mockInterviewErrorMessage(error) });
+      await recover(error);
     } finally {
       if (mountedRef.current) setBusy(null);
     }
@@ -209,7 +234,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
     setBusy("finish");
     try {
       await mockInterviewApi.finish(detail.id);
-      mic.release();
+      captureController.current?.abort(); connection.current?.cancel(); controller.current?.abort(); playback.current.stop(); mic.release();
       onChanged();
       navigateTo(mockInterviewPath(detail.id, true));
     } catch (error) {
@@ -223,7 +248,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
     setBusy("abandon");
     try {
       await mockInterviewApi.abandon(detail.id);
-      mic.release();
+      captureController.current?.abort(); connection.current?.cancel(); controller.current?.abort(); playback.current.stop(); mic.release();
       setConfirmAbandon(false);
       onChanged();
       navigateTo(mockInterviewPath());
@@ -239,26 +264,13 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
     setBusy(target);
     try {
       if (["preparing", "preparation_failed", "in_progress"].includes(detail.status)) await mockInterviewApi.abandon(detail.id);
-      mic.release();
+      captureController.current?.abort(); connection.current?.cancel(); controller.current?.abort(); playback.current.stop(); mic.release();
       if (target === "back") {
         onChanged();
         navigateTo(newMockInterviewPath({ applicationId: detail.job_application_id ?? undefined, resumeId: detail.resume_id ?? undefined }));
         return;
       }
-      const { mock_interview } = await mockInterviewApi.create({
-        job_application_id: detail.job_application_id ?? undefined,
-        resume_id: detail.resume_id ?? (detail.job_application_id ? undefined : "1"),
-        job_description_id: detail.job_description_id ?? undefined,
-        target_role: detail.target_role ?? undefined,
-        interview_type: detail.interview_type,
-        difficulty: detail.difficulty,
-        question_count: detail.question_count,
-        follow_up_enabled: detail.follow_up_enabled,
-        language: detail.language,
-        answer_mode: "text",
-        material_ids: detail.materials.map((material) => material.dataset_id),
-        display: { resume_title: detail.resume_title, company_name: detail.company_name ?? undefined, job_title: detail.job_title ?? undefined, stage_label: detail.stage_label ?? undefined, materials: detail.materials },
-      });
+      const { mock_interview } = await mockInterviewApi.repeat(detail.id, "text");
       onChanged();
       navigateTo(mockInterviewPath(mock_interview.id));
     } catch (error) {
@@ -271,7 +283,8 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
   const start = () => {
     const first = currentQuestion(detail);
     if (!first) return;
-    ask(first);
+    if (detail.needs_reply) { void retryReply(); return; }
+    void ask(first);
   };
 
   const elapsed = detail.started_at ? now - new Date(detail.started_at).getTime() : 0;
@@ -305,7 +318,8 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
   }
 
   const userState = phase === "answering" ? (silent ? "silent" : "answering") : phase;
-  const interviewerSpeaking = phase === "asking" || phase === "closing";
+  const interviewerSpeaking = phase === "asking" || phase === "replying" || phase === "closing";
+  const turnPending = phase === "recognizing" || phase === "replying";
 
   return (
     <V3Shell active="mock" bare contentClassName="vx-stage-card" scroll={false}>
@@ -325,7 +339,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
         <div className="vx-stage-tools">
           <span className="vx-timer">{formatElapsed(elapsed)}</span>
           <button type="button" className="vx-plain" disabled={busy !== null || phase === "closing"} onClick={() => setConfirmAbandon(true)}>放弃</button>
-          <button type="button" className="vx-outline" disabled={busy !== null || phase === "closing" || phase === "recognizing"} onClick={() => setConfirmLeave("finish")}>{busy === "finish" ? "正在结束…" : "结束并评估"}</button>
+          <button type="button" className="vx-outline" disabled={busy !== null || phase === "closing" || turnPending} onClick={() => setConfirmLeave("finish")}>{busy === "finish" ? "正在结束…" : "结束并评估"}</button>
         </div>
 
         {question && phase !== "closing" && (
@@ -342,7 +356,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
           <div className="vx-side-label">
             <strong>面试官</strong>
             {interviewerSpeaking ? (
-              <span className="vx-speaking"><Waveform className="is-animated" values={ASK_WAVE} barWidth={2} gap={2} height={12} minHeight={3} />正在提问</span>
+              <span className="vx-speaking"><Waveform className="is-animated" values={ASK_WAVE} barWidth={2} gap={2} height={12} minHeight={3} />{phase === "asking" ? "正在提问" : "正在回复"}</span>
             ) : (
               <span>{phase === "recognizing" ? "正在听你说完…" : "等待你的回答"}</span>
             )}
@@ -368,14 +382,14 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
         <div className="vx-subtitle" aria-live="polite">
           {interviewerSpeaking && (
             <>
-              <span className="vx-subtitle-label">面试官 <BeTag title="面试官语音合成需要后端；目前只显示字幕" /></span>
-              <p>{text.slice(0, shown)}<span className="vx-caret-space">{text.slice(shown)}</span></p>
+              <span className="vx-subtitle-label">面试官</span>
+              {phase === "replying" ? <p>{replyText}</p> : <p>{text.slice(0, shown)}<span className="vx-caret-space">{text.slice(shown)}</span></p>}
             </>
           )}
           {(userState === "answering" || userState === "silent") && (
             <>
-              <span className="vx-subtitle-label">你 · 实时识别 <BeTag title="实时识别需要后端识别通道；目前在说完后一次性返回识别稿" /></span>
-              <p className="is-placeholder">{heard ? "正在聆听，说完后点击「我说完了」生成识别稿…" : "请开始作答，识别文字会显示在这里"}</p>
+              <span className="vx-subtitle-label">你 · 实时识别</span>
+              <p className="is-placeholder">{transcript || (heard ? "正在聆听，说完后点击「我说完了」…" : "请开始作答，识别文字会显示在这里")}</p>
             </>
           )}
           {userState === "recognizing" && (
@@ -394,36 +408,37 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
 
         {userState === "silent" && <div className="vx-notice is-warn" role="status">还在思考吗？说完请点击「我说完了」</div>}
         {userState === "recognizing" && <div className="vx-notice">识别稿提交后不能修改，可以在评估报告中修正并重新评估</div>}
-        {userState === "failed" && <div className="vx-notice is-bad" role="alert">这段语音没有识别成功。本题可以重新作答，重录不计入追问次数</div>}
+        {userState === "failed" && <div className="vx-notice is-bad" role="alert">{detail.needs_reply ? "回答已保存，请重试面试官回复。" : "识别或提交未完成，可以重试提交或重新作答。"}</div>}
 
         <div className="vx-controls">
           <div className="vx-controls-left">
-            <button type="button" className="vx-outline is-sub" disabled={busy !== null || phase === "recognizing" || phase === "closing"} onClick={() => void skip()}>{busy === "skip" ? "正在跳过…" : "跳过此题"}</button>
+            <button type="button" className="vx-outline is-sub" disabled={busy !== null || turnPending || phase === "closing" || detail.needs_reply} onClick={() => void skip()}>{busy === "skip" ? "正在跳过…" : "跳过此题"}</button>
             <button type="button" className="vx-plain is-faint" onClick={() => setLogOpen(true)}>对话记录</button>
           </div>
           <div className="vx-controls-center">
             {phase === "asking" && (
               <>
-                <button type="button" className="vx-pill is-light" onClick={beginAnswer}><Icon name="mic" size={18} />打断并作答</button>
+                <button type="button" className="vx-pill is-light" onClick={() => void beginAnswer()}><Icon name="mic" size={18} />打断并作答</button>
                 <small>开口或点击即可打断播报</small>
               </>
             )}
             {(userState === "answering" || userState === "silent") && (
               <>
                 <Waveform className="vx-live-wave" values={lastSamples(mic.history, 24).map((value) => (silent ? 0 : value * 1.6))} barWidth={3} gap={3} height={userState === "silent" ? 6 : 22} minHeight={userState === "silent" ? 3 : 4} color={silent ? "#b8b8b2" : "var(--v3-dark)"} />
-                <button type="button" className="vx-pill is-dark" onClick={() => void stopAndSubmit()}><span className="vx-stop" />我说完了</button>
+                <button type="button" className="vx-pill is-dark" disabled={stoppingRef.current} onClick={() => void stopAndSubmit()}><span className="vx-stop" />我说完了</button>
                 <small>不会因静音自动提交</small>
               </>
             )}
             {userState === "recognizing" && (
               <>
                 <button type="button" className="vx-pill is-busy" disabled><span className="vx-spinner" />正在识别并提交</button>
-                <small>约 2 秒</small>
+                <small>识别完成后将生成面试官回复</small>
               </>
             )}
+            {phase === "replying" && <button type="button" className="vx-pill is-busy" disabled><span className="vx-spinner" />面试官正在回复</button>}
             {userState === "failed" && (
               <>
-                <button type="button" className="vx-pill is-dark" onClick={beginAnswer}><Icon name="mic" size={18} />重新作答</button>
+                <button type="button" className="vx-pill is-dark" onClick={() => { if (detail.needs_reply) void retryReply(); else if (attempt.current) void submitRecognized(); else void beginAnswer(); }}><Icon name="mic" size={18} />{detail.needs_reply ? "重试面试官回复" : attempt.current ? "重试提交" : "重新作答"}</button>
                 <small>已识别的部分会被丢弃</small>
               </>
             )}

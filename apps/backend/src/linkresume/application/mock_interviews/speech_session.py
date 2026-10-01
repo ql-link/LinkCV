@@ -2,16 +2,14 @@
 
 The finished transcript is parked under a single-use session ID so the answer
 endpoint trusts the server's recognition, never text supplied by the client.
-Audio for voice interviews is held in this process until the answer is
-submitted (WebSocket and submit hit the same user within minutes).
+Voice recordings share the result's Redis TTL so another worker can accept the answer.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
-import threading
-import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -42,12 +40,6 @@ class SpeechResult:
 
 
 @dataclass
-class _Held:
-    audio: bytes
-    expires_at: float
-
-
-@dataclass
 class AudioBuffer:
     """Accumulates PCM16 frames within the per-recording limits."""
 
@@ -72,46 +64,35 @@ class AudioBuffer:
 
 
 class SpeechSessionStore:
-    """Redis holds the result; this process holds the recording bytes."""
+    """Redis holds both the single-use result and its expiring recording."""
 
     def __init__(self, redis) -> None:
         self._redis = redis
-        self._audio: dict[str, _Held] = {}
-        self._lock = threading.Lock()
 
     def save(self, result: SpeechResult, audio: bytes | None) -> None:
-        payload = json.dumps(result.__dict__, ensure_ascii=False)
-        self._redis.set(_KEY.format(result.session_id), payload, ex=SESSION_TTL_SECONDS)
+        key = _KEY.format(result.session_id)
         if audio is not None:
-            with self._lock:
-                self._evict()
-                self._audio[result.session_id] = _Held(audio, time.monotonic() + SESSION_TTL_SECONDS)
+            # The shared Redis client decodes UTF-8 responses, so encode PCM.
+            self._redis.set(key + ":audio", base64.b64encode(audio).decode("ascii"), ex=SESSION_TTL_SECONDS)
+        self._redis.set(key, json.dumps(result.__dict__, ensure_ascii=False), ex=SESSION_TTL_SECONDS)
 
-    def consume(self, session_id: str) -> tuple[SpeechResult, bytes | None] | None:
-        """Atomically take a result so a session can back exactly one answer."""
-        key = _KEY.format(session_id)
+    def _take(self, key: str):
         getdel = getattr(self._redis, "getdel", None)
         if getdel is not None:
-            raw = getdel(key)
-        else:  # pragma: no cover - test doubles without GETDEL
-            raw = self._redis.get(key)
-            if raw is not None and not self._redis.delete(key):
-                raw = None
+            return getdel(key)
+        raw = self._redis.get(key)
+        return raw if raw is not None and self._redis.delete(key) else None
+
+    def consume(self, session_id: str) -> tuple[SpeechResult, bytes | None] | None:
+        key = _KEY.format(session_id)
+        raw = self._take(key)
         if raw is None:
             return None
-        result = SpeechResult(**json.loads(raw))
-        with self._lock:
-            held = self._audio.pop(session_id, None)
-        return result, held.audio if held else None
+        audio = self._take(key + ":audio")
+        return SpeechResult(**json.loads(raw)), base64.b64decode(audio) if audio is not None else None
 
     def restore(self, result: SpeechResult, audio: bytes | None) -> None:
-        """Put a consumed session back when the answer could not be stored."""
         self.save(result, audio)
-
-    def _evict(self) -> None:
-        now = time.monotonic()
-        for key in [key for key, held in self._audio.items() if held.expires_at < now]:
-            self._audio.pop(key, None)
 
 
 async def run_recognition(

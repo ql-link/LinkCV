@@ -1071,7 +1071,7 @@ export type LogSummary = {
   audit: { total: number; succeeded: number; failed: number };
 };
 
-type ApiOptions = {
+export type ApiOptions = {
   method?: string;
   body?: unknown;
   formData?: FormData;
@@ -1098,7 +1098,7 @@ export class ApiRequestError extends Error {
 
 let refreshInFlight: Promise<boolean> | null = null;
 
-function createRequestId(): string {
+export function createRequestId(): string {
   return globalThis.crypto?.randomUUID?.().replace(/-/g, "") ??
     `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
 }
@@ -1219,6 +1219,25 @@ async function requestBlob(path: string, retryAuth = true): Promise<Blob> {
     );
   }
   return response.blob();
+}
+
+// JSON、SSE 和音频共用 Cookie 刷新、错误与请求追踪契约。
+export { request as requestApi };
+export async function requestStream(path: string, options: ApiOptions = {}, retryAuth = true): Promise<Response> {
+  const requestId = options.headers?.["X-Request-ID"] ?? createRequestId();
+  const response = await fetch(path, {
+    method: options.method ?? "GET",
+    credentials: "include",
+    headers: { ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}), "X-Request-ID": requestId, ...options.headers },
+    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
+  });
+  if (response.ok) return response;
+  if (response.status === 401 && retryAuth && await refreshSession()) return requestStream(path, options, false);
+  const payload = await response.json().catch(() => ({}));
+  const error = new ApiRequestError(response.status, typeof payload.error === "string" ? payload.error : `HTTP_${response.status}`, payload, response.headers.get("X-Request-ID") ?? requestId);
+  if (response.status >= 500) reportApi5xx(error);
+  throw error;
 }
 
 function filenameFromContentDisposition(value: string | null): string | null {

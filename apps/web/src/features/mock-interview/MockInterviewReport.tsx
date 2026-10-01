@@ -1,8 +1,8 @@
-// 07.3 模拟面试 · 评估报告（Figma 182:2）与 07.3a 单题详情弹窗（184:7）。数据来自 mockInterviewApi（假数据）。
+// 07.3 模拟面试 · 评估报告（Figma 182:2）与 07.3a 单题详情弹窗（184:7）。数据来自后端评估报告。
 import { useContentMotion } from "@/components/ui/motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { navigateTo, mockInterviewPath, editorPath } from "@/routing";
-import { BeTag, Dialog, Toast, PageEyebrow } from "@/v3/primitives";
+import { Dialog, Toast, PageEyebrow } from "@/v3/primitives";
 import { SlideSwap } from "@/v3/SlideSwap";
 import { useResumeStore } from "@/store/resumeStore";
 import {
@@ -24,7 +24,7 @@ const GOOD_SCORE = 75;
 type ReportQuestion = MockInterviewReport["questions"][number];
 type Row = { group: QuestionGroup; evaluation: ReportQuestion; conflicts: MockFactCheckItem[] };
 
-const FACT_LABELS: Record<MockFactCheckItem["verdict"], string> = { consistent: "一致", conflict: "冲突", material_stronger: "资料更强", unsupported: "无据可查" };
+const FACT_LABELS: Record<MockFactCheckItem["verdict"], string> = { consistent: "一致", conflict: "冲突", material_stronger: "资料更强", not_found: "无据可查" };
 
 export function MockInterviewReportView({ interview }: { interview: MockInterviewDetail }) {
   const report = interview.report;
@@ -39,7 +39,7 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
     const groups = groupQuestions(interview.questions);
     return groups.map((group, index) => {
       const evaluation = report.questions.find((item) => item.sequence_no === group.root.sequence_no) ?? report.questions[index];
-      const conflicts = report.fact_check.items.filter((item) => item.verdict === "conflict" && [group.root, ...group.follows].some((question) => question.answer_text?.includes(item.claim.slice(0, 6))));
+      const conflicts = report.fact_check.items.filter((item) => item.verdict === "conflict" && [group.root, ...group.follows].some((question) => question.sequence_no === item.question_sequence_no));
       return { group, evaluation, conflicts };
     }).filter((row) => row.evaluation);
   }, [interview.questions, report]);
@@ -87,7 +87,7 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
       </div>
       <header className="mi-report-head">
         <PageEyebrow segments={[{ label: "MOCK INTERVIEW", href: "/mock-interviews", onClick: () => navigateTo("/mock-interviews"), ariaLabel: "返回模拟面试" }, interviewTitle(interview)]} />
-        <h1 className="mi-serif-title">评估报告 <BeTag /></h1>
+        <h1 className="mi-serif-title">评估报告</h1>
         <div className="mi-report-meta">
           <span className="mi-tag-sq">{INTERVIEW_TYPE_LABELS[interview.interview_type]}</span>
           <span className="mi-tag-sq">{DIFFICULTY_LABELS[interview.difficulty]}</span>
@@ -225,7 +225,7 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
               {report.fact_check.items.map((item, index) => (
                 <li key={index}>
                   <span className={`mi-verdict is-${item.verdict}`}>{FACT_LABELS[item.verdict]}</span>
-                  <div><b>{item.claim}</b><small>{item.quote ? `「${item.quote}」 · ` : ""}{item.file_name}</small></div>
+                  <div><b>{item.claim}</b><small>{item.quote ? `「${item.quote}」 · ` : ""}{(item.source?.title ?? "无资料出处")}</small></div>
                 </li>
               ))}
             </ul>
@@ -278,7 +278,7 @@ type RiskCard = { quote: string | null; text: string; suggestion: string | null;
 function riskCards(report: MockInterviewReport, rows: Row[]): RiskCard[] {
   const conflictRisks: RiskCard[] = report.fact_check.items.filter((item) => item.verdict === "conflict").map((item) => ({
     quote: item.claim,
-    text: `与所选资料不一致：《${item.file_name}》记载为「${item.quote}」。面试中被追问数据来源时容易失分。`,
+    text: `与所选资料不一致：《${(item.source?.title ?? "无资料出处")}》记载为「${item.quote}」。面试中被追问数据来源时容易失分。`,
     suggestion: `改为与资料一致的表述，或补充「${item.claim}」的统计口径。`,
     question: rows.findIndex((row) => row.conflicts.includes(item)) + 1 || null,
   }));
@@ -316,7 +316,7 @@ function QuestionDetailDialog({
   const allExpanded = turns.every((question) => expanded[question.id] || charCount(question.answer_text) <= LONG_ANSWER);
   const user = useResumeStore((state) => state.user);
   const initial = [...(user?.nickname || user?.email || "我")][0] ?? "我";
-  const factItems = conflicts.length ? conflicts : report.fact_check.items.filter((item) => turns.some((question) => question.answer_text?.includes(item.claim.slice(0, 4))));
+  const factItems = report.fact_check.items.filter((item) => turns.some((question) => question.sequence_no === item.question_sequence_no));
   // 上一题 / 下一题：题目内容左右翻页滑动（下一题从右侧进来）
   const previousIndex = useRef(index);
   const direction: 1 | -1 = index >= previousIndex.current ? 1 : -1;
@@ -403,7 +403,7 @@ function QuestionDetailDialog({
               )}
               {factItems.map((item, factIndex) => (
                 <div key={factIndex} className={`mi-material is-${item.verdict}`}>
-                  <div><b>资料核验 · {FACT_LABELS[item.verdict]}</b><small>{item.file_name}</small></div>
+                  <div><b>资料核验 · {FACT_LABELS[item.verdict]}</b><small>{(item.source?.title ?? "无资料出处")}</small></div>
                   <p>你提到「{item.claim}」，资料原文：「{item.quote}」。</p>
                 </div>
               ))}
@@ -417,4 +417,3 @@ function QuestionDetailDialog({
     </Dialog>
   );
 }
-

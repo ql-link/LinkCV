@@ -1,168 +1,118 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockInterviewPage } from "./MockInterviewPage";
-import { mockInterviewApi, resetMockInterviewStore } from "./mockInterviewApi";
+import { MockInterviewError, type MockTurnEvent } from "./mockInterviewApi";
+import { interview, question, report } from "./__tests__/fixtures";
+import { clearPageCache } from "@/v3/pageCache";
 
-// 真实接口（简历 / 求职记录 / 面试安排 / 资料）全部替身；模拟面试本身走本地假数据层
-const mocks = vi.hoisted(() => ({
-  listResumes: vi.fn(),
-  listJobApplications: vi.fn(),
-  listInterviewSessions: vi.fn(),
-  listDatasets: vi.fn(),
-}));
+const mocks = vi.hoisted(() => ({ listResumes: vi.fn(), listJobApplications: vi.fn(), listInterviewSessions: vi.fn(), listDatasets: vi.fn(), listAll: vi.fn(), get: vi.fn(), create: vi.fn(), answer: vi.fn(), skip: vi.fn(), retryReply: vi.fn(), retry: vi.fn(), speechCapability: vi.fn(), finish: vi.fn() }));
 vi.mock("@/api/client", async (original) => ({ ...await original<typeof import("@/api/client")>(), api: mocks }));
-// 侧栏依赖会话 / 用户接口，这里只测内容卡
+vi.mock("./mockInterviewApi", async (original) => ({ ...await original<typeof import("./mockInterviewApi")>(), mockInterviewApi: mocks }));
 vi.mock("@/v3/Shell", () => ({ V3Shell: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
-// 语音输入按钮由另一模块负责，测试里换成最简替身
-vi.mock("./voice/VoiceInputButton", () => ({
-  VoiceInputButton: () => <button type="button">语音输入</button>,
-  voiceInputFooterHint: () => "Enter 发送 · Shift + Enter 换行",
-}));
-
-const resume = { id: "resume-1", title: "示例简历 · 后端", source_type: "blank", lock_version: 1, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-25T00:00:00Z" };
-const application = {
-  id: "app-1", resume_id: "resume-1", job_description_id: "jd-1", company_name_snapshot: "示例科技", job_title_snapshot: "后端工程师",
-  job_snapshot: {}, resume_title_snapshot: null, calendar_color: "blue", current_stage_type: "interview", current_round_no: 3, current_stage_label: "三面",
-  stage_state: "scheduled", status: "active", lifecycle_status: "active", offer_status: "none", is_favorite: false, applied_at: null, notes: null, archived_at: null,
-  lock_version: 1, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z", next_session_id: "s-1", next_session_start_at: null, next_session_end_at: null, next_session_mode: null,
-};
-
-function go(path: string) {
-  window.history.pushState(null, "", path);
-}
+vi.mock("./voice/VoiceInputButton", () => ({ VoiceInputButton: () => <button>语音输入</button>, voiceInputFooterHint: () => "Enter 发送" }));
+function go(path: string) { window.history.pushState(null, "", path); }
+async function* events(...items: MockTurnEvent[]) { for (const item of items) yield item; }
 
 beforeEach(() => {
-  localStorage.clear();
-  resetMockInterviewStore(true);
-  mocks.listResumes.mockResolvedValue({ resumes: [resume] });
-  mocks.listJobApplications.mockResolvedValue({ items: [application], next_cursor: null });
+  clearPageCache(); vi.resetAllMocks();
+  mocks.listResumes.mockResolvedValue({ resumes: [{ id: "1", title: "张三的简历", updated_at: "2026-09-30T00:00:00Z" }] });
+  mocks.listJobApplications.mockResolvedValue({ items: [], next_cursor: null });
   mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
   mocks.listDatasets.mockResolvedValue({ datasets: [] });
+  mocks.listAll.mockResolvedValue({ items: [], next_cursor: null });
+  mocks.get.mockResolvedValue({ mock_interview: interview() });
+  mocks.create.mockResolvedValue({ mock_interview: interview({ status: "preparing" }) });
+  mocks.speechCapability.mockResolvedValue({ stt: false, tts: false });
 });
 afterEach(() => { vi.useRealTimers(); go("/"); });
 
-describe("07 模拟面试 · 文字面试", () => {
-  it("新建 → 准备中 → 作答（逐字输出、追问）→ 跳过 → 结束 → 评估报告与单题详情", async () => {
-    go("/mock-interviews/new?application=app-1");
-    const view = render(<MockInterviewPage view="new" applicationId="app-1" />);
-    // 求职记录带入：简历用记录关联的简历，三面默认综合面
-    await waitFor(() => expect(screen.getByLabelText("简历")).toHaveTextContent("示例简历 · 后端"));
-    expect(screen.getByLabelText("目标岗位")).toHaveTextContent("示例科技 · 后端工程师");
-    expect(screen.getByRole("button", { name: "综合面" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "技术面" }));
-    // 作答方式组件已接入
-    expect(screen.getByRole("radiogroup", { name: "作答方式" })).toBeInTheDocument();
-    // 更多设置：题数改成 3
+describe("模拟面试真实契约的页面消费", () => {
+  it("新建发送严格 API 字段，保留资料出题开关", async () => {
+    go("/mock-interviews/new"); render(<MockInterviewPage view="new" />);
+    await waitFor(() => expect(screen.getByLabelText("简历")).toHaveTextContent("张三的简历"));
     fireEvent.click(screen.getByRole("button", { name: /更多设置/ }));
-    const dialog = await screen.findByRole("dialog", { name: "更多设置" });
-    fireEvent.click(within(dialog).getByLabelText("主问题数"));
-    fireEvent.click(await screen.findByRole("option", { name: /3 道题/ }));
+    const dialog = screen.getByRole("dialog", { name: "更多设置" });
+    fireEvent.click(within(dialog).getByRole("switch", { name: "参考资料参与出题" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
-    expect(screen.getByRole("button", { name: /更多设置/ })).toHaveTextContent("3 道题");
-
-    const create = vi.spyOn(mockInterviewApi, "create");
     fireEvent.click(screen.getByRole("button", { name: "开始面试" }));
-    await waitFor(() => expect(window.location.pathname).toMatch(/^\/mock-interviews\/(?!new$)[^/]+$/));
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ job_application_id: "app-1", resume_id: "resume-1", interview_type: "technical", question_count: 3, answer_mode: "text" }));
-    const id = decodeURIComponent(window.location.pathname.split("/")[2]);
-
-    view.unmount();
-    render(<MockInterviewPage view="session" interviewId={id} />);
+    await waitFor(() => expect(mocks.create).toHaveBeenCalled());
+    expect(mocks.create.mock.calls[0][0]).toMatchObject({ resume_id: "1", answer_mode: "text", materials_in_questions: true });
+    expect(mocks.create.mock.calls[0][0]).not.toHaveProperty("display");
+    await waitFor(() => expect(window.location.pathname).toBe("/mock-interviews/10"));
+  });
+  it("后台准备通过轮询恢复，回答推进至下一题", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let detail = interview({ status: "preparing", questions: [], current_question_id: null });
+    mocks.get.mockImplementation(async () => ({ mock_interview: detail }));
+    render(<MockInterviewPage view="session" interviewId="10" />);
     expect(await screen.findByRole("heading", { name: "面试官正在准备题目" })).toBeInTheDocument();
-    // 后台准备约 2.4 秒后推进到 in_progress
-    expect(await screen.findByText(/你在简历里写了/, undefined, { timeout: 5000 })).toBeInTheDocument();
-    expect(screen.getByText("第 1 / 3 题")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "语音输入" })).toBeInTheDocument();
-
-    // 作答：Enter 发送，面试官追问逐字输出
-    const input = screen.getByLabelText("你的回答");
-    fireEvent.change(input, { target: { value: "按租户加任务 ID 取模分片，热点靠积压监控发现。" } });
+    detail = interview();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+    expect(await screen.findByLabelText("你的回答")).toBeEnabled();
+    const next = question({ id: "102", sequence_no: 2, parent_id: "101", kind: "follow_up", content: "如何处理缓存失效？" });
+    mocks.answer.mockImplementation(() => events(
+      { type: "answer.accepted", question_id: "101", skipped: false, lock_version: 2 },
+      { type: "interviewer.delta", content: next.content },
+      { type: "interviewer.turn", status: "in_progress", action: "follow_up", question: next, closing_message: null, lock_version: 3 },
+    ));
+    detail = interview({ questions: [question({ answer_status: "answered", answer_text: "缓存读压力" }), next], current_question_id: "102", lock_version: 3 });
+    fireEvent.change(screen.getByLabelText("你的回答"), { target: { value: "缓存读压力" } });
+    fireEvent.keyDown(screen.getByLabelText("你的回答"), { key: "Enter" });
+    expect(await screen.findByText(next.content)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("你的回答")).toBeEnabled());
+    expect(mocks.answer.mock.calls[0][2]).toMatch(/^[\w.-]{8,64}$/);
+  });
+  it("回答已保存但回复失败时不允许重复回答，提供单独重试", async () => {
+    const stored = interview({ needs_reply: true, questions: [question({ answer_status: "answered", answer_text: "已存回答" })] });
+    mocks.get.mockResolvedValue({ mock_interview: stored });
+    mocks.retryReply.mockReturnValue(events({ type: "interviewer.failed", error: "LLM_PROVIDER_ERROR" }));
+    render(<MockInterviewPage view="session" interviewId="10" />);
+    const retry = await screen.findByRole("button", { name: "重试面试官回复" });
+    expect(screen.getByLabelText("你的回答")).toBeDisabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(mocks.retryReply).toHaveBeenCalledWith("10", expect.any(AbortSignal)));
+    expect(mocks.answer).not.toHaveBeenCalled();
+    expect(await screen.findByText("回答已保存，面试官回复没有完成")).toBeInTheDocument();
+  });
+  it("网络未确认的相同回答重试使用相同幂等键", async () => {
+    mocks.answer.mockImplementation(async function* () { throw new TypeError("network"); });
+    render(<MockInterviewPage view="session" interviewId="10" />);
+    const input = await screen.findByLabelText("你的回答");
+    fireEvent.change(input, { target: { value: "相同的回答" } }); fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(input).toHaveValue("相同的回答"));
+    await waitFor(() => expect(input).toBeEnabled());
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(await screen.findByText("正在输入…")).toBeInTheDocument();
-    expect(await screen.findByText(/某个分片突然成为热点/, undefined, { timeout: 5000 })).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText("正在输入…")).not.toBeInTheDocument());
-    expect(await screen.findByText("第 1 / 3 题 · 追问 1")).toBeInTheDocument();
-    expect(screen.getByText("按租户加任务 ID 取模分片，热点靠积压监控发现。")).toBeInTheDocument();
-
-    // 跳过追问 → 第 2 题
-    fireEvent.click(screen.getByRole("button", { name: "跳过此题" }));
-    expect(await screen.findByText("第 2 / 3 题", undefined, { timeout: 5000 })).toBeInTheDocument();
-
-    // 提前结束并评估
-    fireEvent.click(screen.getByRole("button", { name: "结束并评估" }));
-    const confirm = await screen.findByRole("dialog", { name: "结束并生成评估？" });
-    fireEvent.click(within(confirm).getByRole("button", { name: "结束并评估" }));
-    expect(await screen.findByRole("heading", { name: "正在生成评估报告" })).toBeInTheDocument();
-    await waitFor(() => expect(window.location.pathname).toBe(`/mock-interviews/${id}/report`), { timeout: 5000 });
-  }, 20_000);
-
-  it("评估报告：总分、维度、逐题筛选与单题详情翻页", async () => {
-    const { items } = await mockInterviewApi.list();
-    const seeded = items.find((item) => item.answer_mode === "text")!;
-    go(`/mock-interviews/${seeded.id}/report`);
-    render(<MockInterviewPage view="report" interviewId={seeded.id} />);
-    expect(await screen.findByRole("heading", { name: /评估报告/ })).toBeInTheDocument();
-    expect(screen.getByText("项目细节扎实，但故障边界与一致性权衡讲得不够深")).toBeInTheDocument();
-    expect(screen.getByText("5 题全部作答", { exact: false })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "能力维度" })).toHaveTextContent("简历一致性");
-    expect(screen.getByRole("region", { name: "事实核验" })).toHaveTextContent("一致");
-    expect(screen.getAllByTitle("需要后端支持，目前为示例数据").length).toBeGreaterThan(0);
-
-    const questions = screen.getByRole("region", { name: "逐题表现" });
-    fireEvent.click(within(questions).getByRole("button", { name: /待提升/ }));
-    const weakCount = within(questions).getAllByRole("button", { name: /^Q\d/ }).length;
-    fireEvent.click(within(questions).getByRole("button", { name: /^全部/ }));
-    expect(within(questions).getAllByRole("button", { name: /^Q\d/ })).toHaveLength(5);
-    expect(weakCount).toBeLessThan(5);
-
-    fireEvent.click(within(questions).getByRole("button", { name: /^Q1/ }));
-    const detail = await screen.findByRole("dialog", { name: "第 1 题详情" });
-    expect(within(detail).getByText("第 1 题 / 共 5 题")).toBeInTheDocument();
-    expect(within(detail).getByText("参考思路")).toBeInTheDocument();
-    expect(within(detail).getByRole("button", { name: "‹ 上一题" })).toBeDisabled();
-    fireEvent.click(within(detail).getByRole("button", { name: "下一题 ›" }));
-    expect(await screen.findByRole("dialog", { name: "第 2 题详情" })).toBeInTheDocument();
+    await waitFor(() => expect(mocks.answer).toHaveBeenCalledTimes(2));
+    expect(mocks.answer.mock.calls[0][2]).toBe(mocks.answer.mock.calls[1][2]);
   });
-
-  it("首页：有面试安排时展示主卡、统计与其他在投岗位；练习记录可筛选", async () => {
-    const start = new Date(Date.now() + 3 * 3_600_000).toISOString();
-    mocks.listInterviewSessions.mockResolvedValue({ items: [{ id: "s-1", application_id: "app-1", stage_label: "三面", status: "scheduled", start_at: start, end_at: start, company_name: "示例科技", job_title: "后端工程师" }], next_cursor: null });
-    go("/mock-interviews");
-    const view = render(<MockInterviewPage view="home" />);
-    const upcoming = await screen.findByRole("region", { name: "最近的面试安排" });
-    expect(within(upcoming).getByRole("heading", { name: "示例科技 · 后端工程师" })).toBeInTheDocument();
-    expect(within(upcoming).getByText("3 小时后")).toBeInTheDocument();
-    // 每页只有一个黑色主按钮：主卡按钮是黑色，页头「开始新面试」降为描边
-    expect(document.querySelectorAll(".v3-btn-dark")).toHaveLength(1);
-    expect(screen.getByRole("region", { name: "练习数据" })).toHaveTextContent("平均分");
-
-    fireEvent.click(screen.getByRole("button", { name: /练习记录/ }));
-    view.unmount();
-    render(<MockInterviewPage view="home" />);
-    const table = await screen.findByRole("table", { name: "练习记录" });
-    expect(within(table).getAllByRole("row")).toHaveLength(3); // 表头 + 2 场示例
-    fireEvent.click(screen.getByRole("button", { name: /已放弃/ }));
-    expect(within(table).getAllByRole("row")).toHaveLength(1);
-    expect(table).toHaveTextContent("没有符合条件的练习记录");
-  });
-
-  it("新用户：没有安排也没有记录时显示引导卡与占位统计", async () => {
-    resetMockInterviewStore(false);
-    go("/mock-interviews");
+  it("新用户读取真实空列表，不生成示例练习记录", async () => {
     render(<MockInterviewPage view="home" />);
     expect(await screen.findByRole("heading", { name: "还没有面试安排，也还没练过" })).toBeInTheDocument();
-    expect(screen.getByText("完成第 1 场面试后生成")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "从在投岗位开始" })).toHaveTextContent("示例科技 · 后端工程师");
+    expect(mocks.listAll).toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /练习记录/ })).toBeDisabled();
   });
-
-  it("已有进行中的场次时，新建会提示并保留在表单页", async () => {
-    await act(async () => { await mockInterviewApi.create({ resume_id: "resume-1" }); });
-    go("/mock-interviews/new");
+  it("报告展示后端的 not_found 判定与真实资料出处", async () => {
+    const result = report(); result.fact_check = { status: "completed", items: [{ claim: "缓存数据", verdict: "not_found", quote: "", question_sequence_no: 1, note: "未找到", source: null }] };
+    mocks.get.mockResolvedValue({ mock_interview: interview({ status: "completed", report: result, current_question_id: null, questions: [question({ answer_status: "answered", answer_text: "缓存数据", evaluation: result.questions[0] })] }) });
+    render(<MockInterviewPage view="report" interviewId="10" />);
+    expect(await screen.findByText("无据可查")).toBeInTheDocument();
+    expect(screen.getByText("无资料出处")).toBeInTheDocument();
+  });
+  it("后端拒绝已有活跃场次时保留表单并给出提示", async () => {
+    mocks.create.mockRejectedValue(new MockInterviewError("MOCK_INTERVIEW_IN_PROGRESS"));
     render(<MockInterviewPage view="new" />);
-    await waitFor(() => expect(screen.getByLabelText("简历")).toHaveTextContent("示例简历 · 后端"));
+    await waitFor(() => expect(screen.getByLabelText("简历")).toHaveTextContent("张三的简历"));
     fireEvent.click(screen.getByRole("button", { name: "开始面试" }));
     expect(await screen.findByText("已有一场进行中的模拟面试")).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/mock-interviews/new");
+  });
+  it("资料核验按后端题号关联主问题及追问，不依赖声称文字匹配回答", async () => {
+    const result = report();
+    result.fact_check = { status: "completed", items: [{ claim: "归纳后的性能数字", verdict: "conflict", quote: "资料中的性能数字", question_sequence_no: 2, note: "数据不一致", source: { dataset_id: "7", title: "虚构项目资料", version: "v1", position: "第 1 段", text: "资料中的性能数字" } }] };
+    mocks.get.mockResolvedValue({ mock_interview: interview({ status: "completed", report: result, current_question_id: null, questions: [question({ answer_status: "answered", answer_text: "缓存设计", evaluation: result.questions[0] }), question({ id: "102", sequence_no: 2, parent_id: "101", kind: "follow_up", answer_status: "answered", answer_text: "压测数据来自两轮测试" })] }) });
+    render(<MockInterviewPage view="report" interviewId="10" />);
+    const row = await screen.findByRole("button", { name: "Q1 缓存设计，75 分" });
+    expect(within(row).getByText("1 处资料冲突")).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(within(screen.getByRole("dialog")).getByText("虚构项目资料")).toBeInTheDocument();
   });
 });

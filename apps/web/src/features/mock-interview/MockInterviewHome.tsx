@@ -1,5 +1,5 @@
 // 07.1 模拟面试首页（Figma 241:2 有安排 / 251:2 未练习 / 252:2 新用户）与练习记录（253:2）。
-// 求职记录与面试安排来自真实接口 api.*；模拟面试场次全部来自 mockInterviewApi（本地假数据，贴 BeTag）。
+// 求职记录与面试安排来自 api.*；模拟面试场次与报告来自 mockInterviewApi 的后端接口。
 import { useContentMotion } from "@/components/ui/motion";
 import { Reveal, SkeletonCards, SkeletonHead, SkeletonRows } from "@/v3/skeletons";
 import { readPageCache, writePageCache } from "@/v3/pageCache";
@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { api, type InterviewSessionSummary, type JobApplicationSummary } from "@/api/client";
 import { mockInterviewPath, navigateTo, newMockInterviewPath } from "@/routing";
 import { Icon } from "@/v3/Icon";
-import { BeTag, ConfirmDialog, Segmented, Select, Toast, PageEyebrow } from "@/v3/primitives";
+import { ConfirmDialog, Segmented, Select, Toast, PageEyebrow } from "@/v3/primitives";
 import {
   ACTIVE_STATUSES,
   DIMENSION_LABELS,
@@ -37,23 +37,34 @@ type HomeData = {
 
 function useMockList() {
   const [version, setVersion] = useState(0);
-  useEffect(() => subscribeMockInterviews(() => setVersion((value) => value + 1)), []);
+  useEffect(() => {
+    const update = () => setVersion((value) => value + 1);
+    const unsubscribe = subscribeMockInterviews(update);
+    window.addEventListener("focus", update);
+    return () => { unsubscribe(); window.removeEventListener("focus", update); };
+  }, []);
   return version;
 }
 
 function useHomeData() {
   const version = useMockList();
-  // 回到模拟面试首页时先用上一次的数据直接显示，同时在后台刷新（假数据层很快，这里主要省掉骨架）
+  // 回到模拟面试首页时先显示缓存，同时在后台刷新。
   const [data, setData] = useState<HomeData | null>(() => readPageCache<HomeData>(MOCK_HOME_CACHE_KEY)?.value ?? null);
   const [error, setError] = useState(false);
   const [careerFailed, setCareerFailed] = useState(false);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
+    if (!data?.active) return;
+    const timer = window.setInterval(() => setReload((value) => value + 1), 5000);
+    return () => window.clearInterval(timer);
+  }, [data?.active?.id, data?.active?.status]);
+
+  useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const { items } = await mockInterviewApi.list();
+        const { items } = await mockInterviewApi.listAll();
         const completed = items.filter((item) => item.status === "completed");
         const activeSummary = items.find((item) => ACTIVE_STATUSES.includes(item.status)) ?? null;
         const [details, active] = await Promise.all([
@@ -116,11 +127,11 @@ function estimateMinutes(count = 5) {
   return count * MINUTES_PER_QUESTION + 5;
 }
 
-// 累计练习时长：优先用开始到结束的真实时长；时间戳缺失或相同（假数据）时按题数估算
+// 累计练习时长使用后端保存的开始、结束时间。
 function practiceHours(items: MockInterviewSummary[]) {
   const ms = items.reduce((sum, item) => {
     const real = item.started_at && item.finished_at ? new Date(item.finished_at).getTime() - new Date(item.started_at).getTime() : 0;
-    return sum + (real > 0 ? real : estimateMinutes(item.question_count) * 60_000);
+    return sum + Math.max(0, real);
   }, 0);
   return ms / 3_600_000;
 }
@@ -295,7 +306,6 @@ function UpcomingCard({
             <span className="mi-prep-bar" aria-hidden="true">
               {coverage.map((item, index) => <i key={item.type} className={item.count ? "is-done" : practiced > 0 && index === coverage.indexOf(next!) ? "is-next" : ""} />)}
             </span>
-            <BeTag />
           </div>
           <div className="mi-coverage">
             {coverage.map((item) => (
@@ -373,7 +383,7 @@ function StatsCard({ completed, details, abandoned }: { completed: MockInterview
   return (
     <section className="mi-card mi-stats" aria-label="练习数据">
       <div className="mi-stat-col mi-overall">
-        <div className="mi-stat-head"><h3>综合表现</h3><BeTag /></div>
+        <div className="mi-stat-head"><h3>综合表现</h3></div>
         <div className="mi-ring">
           <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
             <circle cx="62" cy="62" r="50" fill="none" stroke="var(--v3-field)" strokeWidth="9" />
@@ -595,7 +605,7 @@ function RecordsView({ interviews }: { interviews: MockInterviewSummary[] }) {
       <header className="mi-records-head">
         <PageEyebrow segments={[{ label: "MOCK INTERVIEW", href: "/mock-interviews", onClick: () => navigateTo("/mock-interviews"), ariaLabel: "返回模拟面试" }, "练习记录"]} />
         <div className="mi-records-title">
-          <h1>练习记录 <BeTag /></h1>
+          <h1>练习记录</h1>
           <button type="button" className="v3-btn v3-btn-dark" onClick={() => navigateTo(newMockInterviewPath())}>开始新面试</button>
         </div>
         <p>共 {interviews.length} 场 · 已完成 {done.length} · 已放弃 {abandoned.length} · 累计 {hours.toFixed(1)} 小时</p>

@@ -1,17 +1,16 @@
 // 07.1a 新建模拟面试（Figma 159:767；作答方式区块见 198:2，由 voice/AnswerModePicker 提供）。
-// 简历 / 求职记录 / 参考资料来自真实接口；发起走 mockInterviewApi.create（本地假数据）。
+// 简历 / 求职记录 / 参考资料来自真实接口；通过 mockInterviewApi.create 发起后端准备任务。
 import { useEffect, useMemo, useState } from "react";
 import { api, type DatasetRecord, type JobApplicationSummary, type ResumeSummary } from "@/api/client";
 import { mockInterviewPath, navigateTo } from "@/routing";
 import { Icon } from "@/v3/Icon";
-import { BeTag, Dialog, DialogFooter, Segmented, Select, Toast, Toggle, PageEyebrow } from "@/v3/primitives";
+import { Dialog, DialogFooter, Segmented, Select, Toast, Toggle, PageEyebrow } from "@/v3/primitives";
 import { AnswerModePicker } from "./voice/AnswerModePicker";
 import {
   DIFFICULTY_LABELS,
   INTERVIEW_TYPE_LABELS,
   mockInterviewApi,
   mockInterviewErrorMessage,
-  MockInterviewError,
   type MockAnswerMode,
   type MockDifficulty,
   type MockInterviewType,
@@ -75,6 +74,7 @@ export function MockInterviewNew({ applicationId, resumeId }: { applicationId?: 
   const [language, setLanguage] = useState<MockLanguage>("zh");
   const [answerMode, setAnswerMode] = useState<MockAnswerMode>("text");
   const [materials, setMaterials] = useState<string[]>([]);
+  const [materialsInQuestions, setMaterialsInQuestions] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
@@ -128,7 +128,6 @@ export function MockInterviewNew({ applicationId, resumeId }: { applicationId?: 
     setSubmitting(true);
     setError(null);
     try {
-      const picked = datasets.filter((item) => materials.includes(item.id));
       const { mock_interview } = await mockInterviewApi.create({
         job_application_id: selectedApp?.id,
         resume_id: resume || undefined,
@@ -140,17 +139,11 @@ export function MockInterviewNew({ applicationId, resumeId }: { applicationId?: 
         language,
         answer_mode: answerMode,
         material_ids: materials,
-        display: {
-          resume_title: selectedResume?.title,
-          company_name: selectedApp?.company_name_snapshot,
-          job_title: selectedApp?.job_title_snapshot,
-          stage_label: selectedApp?.current_stage_label,
-          materials: picked.map((item) => ({ dataset_id: item.id, file_name: item.file_name })),
-        },
+        materials_in_questions: materialsInQuestions,
       });
       navigateTo(mockInterviewPath(mock_interview.id), { replace: true });
     } catch (reason) {
-      const inProgress = reason instanceof MockInterviewError && reason.code === "MOCK_INTERVIEW_IN_PROGRESS";
+      const inProgress = reason instanceof Error && reason.message === "MOCK_INTERVIEW_IN_PROGRESS";
       setError({ title: inProgress ? "已有一场进行中的模拟面试" : "没能开始面试", message: mockInterviewErrorMessage(reason) });
       setSubmitting(false);
     }
@@ -210,7 +203,7 @@ export function MockInterviewNew({ applicationId, resumeId }: { applicationId?: 
         </button>
 
         <button type="button" className="v3-btn v3-btn-dark mi-new-submit" disabled={!canSubmit} onClick={submit}>{submitting ? "正在创建…" : "开始面试"}</button>
-        <p className="mi-new-foot">{answerMode === "voice" ? "下一步检测麦克风与面试官声音 · " : ""}准备约 30 秒 · 同一时间只能进行一场模拟面试 <BeTag /></p>
+        <p className="mi-new-foot">{answerMode === "voice" ? "下一步检测麦克风与面试官声音 · " : ""}准备约 30 秒 · 同一时间只能进行一场模拟面试</p>
       </div>
 
       {moreOpen && (
@@ -219,9 +212,10 @@ export function MockInterviewNew({ applicationId, resumeId }: { applicationId?: 
           followUp={followUp}
           language={language}
           materials={materials}
+          materialsInQuestions={materialsInQuestions}
           datasets={selectable}
           onClose={() => setMoreOpen(false)}
-          onSave={(next) => { setCount(next.count); setFollowUp(next.followUp); setLanguage(next.language); setMaterials(next.materials); setMoreOpen(false); }}
+          onSave={(next) => { setCount(next.count); setFollowUp(next.followUp); setLanguage(next.language); setMaterials(next.materials); setMaterialsInQuestions(next.materialsInQuestions); setMoreOpen(false); }}
         />
       )}
       {error && (
@@ -243,6 +237,7 @@ function MoreSettingsDialog({
   followUp: initialFollowUp,
   language: initialLanguage,
   materials: initialMaterials,
+  materialsInQuestions: initialMaterialsInQuestions,
   datasets,
   onClose,
   onSave,
@@ -251,14 +246,16 @@ function MoreSettingsDialog({
   followUp: boolean;
   language: MockLanguage;
   materials: string[];
+  materialsInQuestions: boolean;
   datasets: DatasetRecord[];
   onClose: () => void;
-  onSave: (value: { count: number; followUp: boolean; language: MockLanguage; materials: string[] }) => void;
+  onSave: (value: { count: number; followUp: boolean; language: MockLanguage; materials: string[]; materialsInQuestions: boolean }) => void;
 }) {
   const [count, setCount] = useState(initialCount);
   const [followUp, setFollowUp] = useState(initialFollowUp);
   const [language, setLanguage] = useState<MockLanguage>(initialLanguage);
   const [materials, setMaterials] = useState(initialMaterials);
+  const [materialsInQuestions, setMaterialsInQuestions] = useState(initialMaterialsInQuestions);
   const toggle = (id: string) => setMaterials((list) => list.includes(id) ? list.filter((item) => item !== id) : list.length >= MAX_MATERIALS ? list : [...list, id]);
   const countOptions = Array.from({ length: 8 }, (_, index) => String(index + 3)).map((value) => ({ value, label: `${value} 道题`, hint: `约 ${Number(value) * 4 + 5} 分钟` }));
 
@@ -266,7 +263,7 @@ function MoreSettingsDialog({
     <Dialog width={520} label="更多设置" onClose={onClose}>
       <div className="v3-dialog-body mi-more-body">
         <h2 className="v3-dialog-title">更多设置</h2>
-        <p className="v3-dialog-sub">主问题数量、追问与语言；参考资料用于出题和事实核验。</p>
+        <p className="v3-dialog-sub">主问题数量、追问与语言；参考资料默认只用于报告事实核验。</p>
         <div className="mi-more-row">
           <span><b>主问题数</b><small>3–10 道，不含追问</small></span>
           <div className="mi-more-select"><Select label="主问题数" value={String(count)} options={countOptions} onChange={(value) => setCount(Number(value))} /></div>
@@ -278,6 +275,10 @@ function MoreSettingsDialog({
         <div className="mi-more-row">
           <span><b>面试语言</b><small>面试官提问与报告使用的语言</small></span>
           <Segmented<MockLanguage> label="面试语言" value={language} onChange={setLanguage} options={[{ value: "zh", label: "中文" }, { value: "en", label: "英文" }]} />
+        </div>
+        <div className="mi-more-row">
+          <span><b>参考资料参与出题</b><small>关闭时只用于报告的事实核验</small></span>
+          <Toggle label="参考资料参与出题" checked={materialsInQuestions} onChange={setMaterialsInQuestions} />
         </div>
         <div className="mi-more-materials">
           <div className="mi-more-materials-head">
@@ -306,7 +307,7 @@ function MoreSettingsDialog({
       </div>
       <DialogFooter>
         <button type="button" className="v3-btn v3-btn-ghost" onClick={onClose}>取消</button>
-        <button type="button" className="v3-btn v3-btn-dark" onClick={() => onSave({ count, followUp, language, materials })}>保存</button>
+        <button type="button" className="v3-btn v3-btn-dark" onClick={() => onSave({ count, followUp, language, materials, materialsInQuestions })}>保存</button>
       </DialogFooter>
     </Dialog>
   );

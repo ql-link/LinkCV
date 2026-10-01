@@ -81,11 +81,11 @@ preparation_failed  abandoned   evaluation_failed
 
 ## 语音作答
 
-作答方式 `answer_mode` 在发起时确定，面试中不能切换，再练一次沿用原场。语音面试要求语音识别与语音合成两个场景都已绑定有效线路；两者由管理端在「模型配置」中与其他场景一样绑定和探测，当前只支持阿里云百炼（实时识别 `aliyun_asr_realtime`、CosyVoice 合成 `aliyun_tts_realtime`），北京与新加坡地域可用。
+作答方式 `answer_mode` 在发起时确定，面试中不能切换，再练一次默认沿用原场；设备检测页改用文字时先放弃原场，再用 `repeat` 的 `answer_mode=text` 保留来源与配置重新发起。语音面试要求语音识别与语音合成两个场景都已绑定有效线路；两者由管理端在「模型配置」中与其他场景一样绑定和探测，当前只支持阿里云百炼（实时识别 `aliyun_asr_realtime`、CosyVoice 合成 `aliyun_tts_realtime`），北京与新加坡地域可用。
 
-- **识别通道**：浏览器以 WebSocket 推送 16 kHz PCM16 音频，后端转发给服务商并推送中间与最终结果；单次最长 5 分钟、10 MB。结束时生成 10 分钟有效的一次性识别会话，提交回答时后端按会话取出识别稿，不信任前端文本。识别中断时已识别的文字保留并标记 `partial`，也可重录；重录只是新的识别会话，不计入追问次数。
+- **识别通道**：浏览器以 WebSocket 推送 16 kHz PCM16 音频，后端转发给服务商并推送中间与最终结果；单次最长 5 分钟、10 MB。结束时识别结果与语音面试音频以相同的 10 分钟 TTL 保存到 Redis（音频为 Base64），可跨后端进程提交；生成一次性识别会话，提交回答时后端按会话取出识别稿，不信任前端文本。识别中断时已识别的文字保留并标记 `partial`，也可重录；重录只是新的识别会话，不计入追问次数。
 - **语音输入**（文字面试）：识别文字交给用户编辑后按普通文字提交，只记录来源与时长，不保存录音，也没有 AI 修正。
-- **语音面试**：回答即服务端识别稿，面试中不能修改；每条回答的录音以 WAV 保存到对象存储，并另存原始识别稿与分词时间戳。面试官回复在同一 SSE 流中按句（句号、问号、分号、换行或 120 字）并发合成、按序推送；合成失败只推送 `audio_failed`，面试照常进行，合成语音不保存。
+- **语音面试**：回答即服务端识别稿，面试中不能修改；每条回答的录音以 WAV 保存到对象存储，并另存原始识别稿与分词时间戳。面试官回复在同一 SSE 流中按句（句号、问号、分号、换行或 120 字）并发合成、按序推送；合成失败只推送 `audio_failed`，面试照常进行，合成语音不保存。设备试音与当前题目重播通过 `POST /api/mock-interviews/:id/speech/playback` 获取音频；只允许本人语音场次与服务端固定问候或当前未答题目的文本，不能传任意文本。
 - **热词表**：准备阶段从背景分析的技术名词、考察点、公司职位和资料文件名整理最多 200 条，作为 AI 修正的术语表。DashScope 的热词需要预先创建词表 ID，当前未传给识别服务。
 - **评估**：语音面试的评估提示注明回答为转写文本，同音字与写法差异不计为事实错误；报告的 `voice_metrics` 由服务端计算（长停顿为词间隔超过 3 秒），作为沟通表现的参考交给维度评估，本身不计分。评分规则版本为 `v2`。
 
@@ -100,17 +100,19 @@ preparation_failed  abandoned   evaluation_failed
 
 ## 删除与数据边界
 
-- 删除模拟面试同时删除其全部提问、作答与对象存储中的录音；进行中的场次不能删除。
+- 删除模拟面试同时删除其全部提问、作答与对象存储中的录音；进行中的场次不能删除。删除场次或本场录音时先清理本人该场次目录中的对象（包含未入库的失败尝试），再提交数据库变更；对象枚举或清理失败返回 `502 MOCK_INTERVIEW_RECORDING_DELETE_FAILED` 并保留数据库引用供重试。部分对象已删除时不恢复它们，重试会继续清理剩余对象；对象删除后的数据库提交失败也无法恢复音频。
 - 删除简历、岗位或求职记录只清空模拟面试的对应关联字段，保留快照与报告；被「再练一次」引用的来源场次删除后，新场次的 `repeat_of_id` 置空。来源求职记录或岗位已删除时，再练一次改为携带原场次保存的 JD 快照，不丢失岗位背景。
 - 报告只对 `completed` 场次返回。
 - 简历、JD、资料正文与回答只作为引用数据传给模型，提示词明确要求忽略其中改变规则或评分的内容；LLM 调用日志只记录 `mock_interview` 场景与 `source=mock_interview` 的安全计量，不记录正文。
 
-## Web 前端（当前使用本地示例数据）
+## Web 前端
 
-- 入口为侧栏「模拟面试」，路由 `/mock-interviews`（首页，`?view=records` 为练习记录）、`/mock-interviews/new?application=&resume=`（新建）、`/mock-interviews/:id`（准备中、进行中、评估中）和 `/mock-interviews/:id/report`（评估报告）；页面位于 `apps/web/src/features/mock-interview/`，语音作答相关组件在其 `voice/` 目录。语音面试进行中为无侧栏整窗。
-- 页面尚未连接上述 FastAPI 接口：全部读写走 `mockInterviewApi.ts`，其类型与 `modules/mock_interviews/schemas.py` 对齐、函数与接口一一对应，数据保存在浏览器 localStorage，准备与评估用定时器模拟状态推进，SSE 回合用异步生成器模拟。依赖该示例数据的区块显示「需后端」标签。接入后端时只替换该文件的实现。
-- 录音与设备检测使用浏览器真实麦克风；识别结果、面试官语音合成、录音回放为示例或占位。
+- 入口为侧栏「模拟面试」，路由 `/mock-interviews`（首页，`?view=records` 为练习记录）、`/mock-interviews/new?application=&resume=`（新建）、`/mock-interviews/:id`（准备中、进行中、评估中）和 `/mock-interviews/:id/report`（报告）。页面位于 `apps/web/src/features/mock-interview/`，语音组件位于 `voice/`；语音面试进行中为无侧栏整窗。
+- `mockInterviewApi.ts` 读取与写入真实 FastAPI 接口，使用共享客户端的 Cookie 刷新和错误契约；不生成示例场次或在 localStorage 保存面试数据。列表跟随服务端游标；详情每 2 秒轮询活跃场次，SSE 回合期间暂停文字页轮询，回合结束后读取服务端状态，回到窗口也会重新读取。
+- 文字回答和跳过携带幂等键，相同的未确认提交重试沿用原键。`needs_reply` 时锁住作答并提供单独的面试官回复重试；刷新后仍可恢复。报告读取后端的资料出处、判定、评估历史与总分，重新评估后再次读取详情。
+- 麦克风经 AudioWorklet 把输入混为单声道、按输入采样率重采样到 16 kHz PCM16，通过同源 WebSocket 发送；停止时发送剩余帧与 `stop`，取消、换题和导航释放音轨、识别连接与播放对象。实时部分文字显示在语音面试字幕中，文字页识别失败时可保留部分文字编辑。
+- 设备试音、第一题和刷新后的当前题用播放接口；后续 SSE 的音频按句排队播放。打断停止播放，语音合成或播放失败时显示反馈并保留字幕作答。报告按需读取本人录音，以浏览器音频控件播放；删除录音后释放播放 URL。
 
 ## 修改联动与验证
 
-新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py`、`test_mock_interview_voice_rules.py`、`tests/unit/modules/speech/test_aliyun.py`、`tests/integration/api/test_mock_interviews.py` 与 `test_mock_interview_voice.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。
+新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py`、`test_mock_interview_voice_rules.py`、`tests/unit/modules/speech/test_aliyun.py`、`tests/integration/api/test_mock_interviews.py` 、`test_mock_interview_voice.py` 与 `test_mock_interview_frontend_contract.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。
