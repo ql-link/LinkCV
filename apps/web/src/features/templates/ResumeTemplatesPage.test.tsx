@@ -45,15 +45,31 @@ afterEach(() => {
 });
 
 describe("ResumeTemplatesPage", () => {
+  it("保留接口展示顺序，新增目录整理不会重排原有模板", async () => {
+    const additions = [
+      { ...templates[1], id: "100", key: "muse-mist-cn", name: "雾青圆章" },
+      { ...templates[1], id: "101", key: "muse-badge-cn", name: "蓝笺工牌" },
+    ];
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates: [...templates, ...additions] } as never);
+    render(<ResumeTemplatesPage />);
+    await screen.findByRole("button", { name: "查看模板：蓝笺工牌" });
+    const names = () => screen.getAllByRole("button", { name: /^查看模板：/ }).map((button) => button.getAttribute("aria-label"));
+    expect(names()).toEqual([...templates, ...additions].map((template) => `查看模板：${template.name}`));
+    fireEvent.click(screen.getByRole("button", { name: "筛选简历模板" }));
+    fireEvent.click(screen.getByRole("button", { name: "现代" }));
+    await waitFor(() => expect(names()).toEqual([
+      "查看模板：现代双栏", "查看模板：校园简历", "查看模板：雾青圆章", "查看模板：蓝笺工牌",
+    ]));
+  });
+
   it("点击风格和场景后立即筛选，并支持重置与空结果", async () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     render(<ResumeTemplatesPage />);
     await screen.findByRole("heading", { name: "现代双栏" });
     const filterButton = screen.getByRole("button", { name: "筛选简历模板" });
-    // V3：摘要「找到 N 套模板」，热度排序贴「需后端」
+    // The server owns catalog ordering; usage mocks are display-only.
     expect(screen.getByText("找到 3 套模板")).toBeInTheDocument();
-    expect(screen.getByText("按热度排序")).toBeInTheDocument();
-    expect(screen.getAllByText("需后端").length).toBeGreaterThan(0);
+    expect(screen.getByText("按展示顺序")).toBeInTheDocument();
 
     fireEvent.click(filterButton);
     fireEvent.click(screen.getByRole("button", { name: "现代" }));
@@ -101,7 +117,7 @@ describe("ResumeTemplatesPage", () => {
     expect(container.querySelector(".tpl-grid:not(.v3-skeleton)")).not.toBeInTheDocument();
   });
 
-  it("模板卡片展示风格和场景标签、使用次数，并按示例热度降序排列", async () => {
+  it("模板卡片展示风格和场景标签、使用次数，并保留接口展示顺序", async () => {
     vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
     const { container } = render(<ResumeTemplatesPage />);
     await screen.findByRole("heading", { name: "现代双栏" });
@@ -112,12 +128,8 @@ describe("ResumeTemplatesPage", () => {
     const campus = cards.find((card) => card.textContent?.includes("校园简历"))!;
     expect(within(campus as HTMLElement).getByText("简约")).toHaveClass("v3-chip");
     expect(within(campus as HTMLElement).getByText("校招")).toHaveClass("v3-chip");
-    // 热度来自 MOCK_TEMPLATE_USES(key)，数值降序
-    const counts = cards.map((card) => {
-      const text = card.querySelector(".tpl-card-uses")!.textContent!.replace(" 使用", "");
-      return text.endsWith("k") ? Number(text.slice(0, -1)) * 1000 : Number(text);
-    });
-    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+    expect(cards.map((card) => card.querySelector('button[aria-label^="查看模板："]')?.getAttribute("aria-label")))
+      .toEqual(templates.map((template) => `查看模板：${template.name}`));
   });
 
   it("从模板预览打开命名弹窗并创建简历", async () => {

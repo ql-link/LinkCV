@@ -2,11 +2,13 @@ import { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { EditorContent } from "@tiptap/react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resumeEditorExtensions, fullyCoveredResumeLayoutNode } from "./editorExtensions";
 import { setResumeRowColumns } from "./editorCommands";
+import { api } from "../../api/client";
+import { useResumeStore } from "../../store/resumeStore";
 
 let editor: Editor | null = null;
 
@@ -90,6 +92,44 @@ afterEach(() => {
 });
 
 describe("简历头像上下文操作", () => {
+  it("更换系统占位头像后展示用户照片并清除占位标记", async () => {
+    const initialResumeId = useResumeStore.getState().activeResumeId;
+    useResumeStore.setState({ activeResumeId: "fixture-badge-resume" });
+    class LoadedImage extends EventTarget {
+      set src(_value: string) { this.dispatchEvent(new Event("load")); }
+    }
+    vi.stubGlobal("Image", LoadedImage);
+    const upload = vi.spyOn(api, "uploadResumeAsset").mockResolvedValue({
+      asset: { object_key: "fixture-avatar", url: "/api/assets/fixture-avatar.png" },
+    });
+    let picker: HTMLInputElement | null = null;
+    vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (this: HTMLInputElement) {
+      picker = this;
+    });
+    try {
+      editor = new Editor({
+        extensions: resumeEditorExtensions,
+        content: { type: "doc", content: [{
+          type: "avatarImage",
+          attrs: { src: "/templates/avatar-cat.jpg", size: 94, alt: "张三头像", systemFallback: true },
+        }] },
+      });
+      const { container } = render(<EditorContent editor={editor} />);
+      expect(container.querySelector(".resume-avatar")).toHaveAttribute("data-system-fallback", "true");
+      act(() => { editor!.commands.setNodeSelection(0); });
+      fireEvent.click(screen.getByRole("button", { name: "更换头像" }));
+      expect(picker).not.toBeNull();
+      fireEvent.change(picker!, { target: { files: [new File(["png"], "虚构头像.png", { type: "image/png" })] } });
+      await waitFor(() => expect(screen.getByRole("img", { name: "张三头像" })).toHaveAttribute("src", "/api/assets/fixture-avatar.png"));
+      expect(upload).toHaveBeenCalledOnce();
+      expect(container.querySelector(".resume-avatar")).not.toHaveAttribute("data-system-fallback");
+      expect(editor.getJSON().content?.[0].attrs?.systemFallback).toBe(false);
+    } finally {
+      useResumeStore.setState({ activeResumeId: initialResumeId });
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("头像 NodeView 外层不会成为模板绝对定位的包含块", () => {
     editor = new Editor({
       extensions: resumeEditorExtensions,
@@ -158,6 +198,7 @@ describe("简历头像上下文操作", () => {
     const avatar = container.querySelector<HTMLElement>(".resume-avatar");
     const avatarImage = screen.getByRole("img", { name: "张三头像" });
     expect(avatar).not.toBeNull();
+    expect(avatar?.style.getPropertyValue("--resume-avatar-size")).toBe("96px");
 
     fireEvent.wheel(avatarImage, { deltaY: -100 });
     expect(editor.getJSON().content?.[0].attrs?.size).toBe(96);
@@ -171,6 +212,7 @@ describe("简历头像上下文操作", () => {
     act(() => { avatarImage.dispatchEvent(zoomIn); });
     expect(zoomIn.defaultPrevented).toBe(true);
     expect(editor.getJSON().content?.[0].attrs?.size).toBe(100);
+    expect(avatar?.style.getPropertyValue("--resume-avatar-size")).toBe("100px");
 
     fireEvent.wheel(avatarImage, { metaKey: true, deltaY: 100 });
     expect(editor.getJSON().content?.[0].attrs?.size).toBe(96);

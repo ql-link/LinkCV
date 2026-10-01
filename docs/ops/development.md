@@ -161,7 +161,7 @@ Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都�
 | `REDIS_SOCKET_TIMEOUT_SECONDS` | `2` | Redis 操作超时 |
 | `LLM_TIMEOUT_SECONDS` | `75` | 统一托管 LLM Gateway 的单次请求超时 |
 
-PDF 模板视觉门禁位于 `apps/backend/tests/integration/pdf/test_template_visual_baselines.py`。测试会先重新构建当前 PDF CLI，再让全部内置启用模板经真实 Chromium 生成 PDF、由 PDFium 栅格化，并与仓库中的低分辨率 PNG 基线比较。日常运行不得更新基线；只有维护者人工检查全部差异后，才可显式执行 `UPDATE_TEMPLATE_BASELINES=1 uv run --directory apps/backend pytest tests/integration/pdf/test_template_visual_baselines.py -q` 更新并重新审查基线。
+PDF 模板视觉门禁位于 `apps/backend/tests/integration/pdf/test_template_visual_baselines.py`。测试会先重新构建当前 PDF CLI，再用 8 套基础模板（含历史兼容款）的虚构样例经真实 Chromium 生成 PDF、由 PDFium 栅格化，并与仓库中的低分辨率 PNG 基线比较；这组基准不代表全部启用目录的视觉覆盖。日常运行不得更新基线；只有维护者人工检查全部差异后，才可显式执行 `UPDATE_TEMPLATE_BASELINES=1 uv run --directory apps/backend pytest tests/integration/pdf/test_template_visual_baselines.py -q` 更新并重新审查基线。
 
 Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置当前 `resume_structuring` binding。PDF 和 DOCX 会把原始二进制和安全文件名发送到 LinkParse；浏览器不读取地址或 Key。PDF 请求固定使用 `include_images=false` 并额外发送 `include_layout=true`；LinkResume 先以 LinkParse Markdown 作为可编辑文字基线，再独立尝试消费有界的 V1 layout。可安全解析的页码、bbox、源顺序和物理块会作为精简结构化模型提示；严格关系、计数、warning allowlist 和 Markdown 一致性检查只决定是否采用确定性重建 Markdown。显式 layout 请求遇到 `413 LAYOUT_RESOURCE_LIMIT` 时，只在同一 deadline 内补发一次不含 `include_layout` 的 Markdown 请求，之后按原映射结束，不会无限重试。layout 缺失、降级、字段不合法或不一致时保留原始 Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；仍安全的提示可以继续传入模型，旧版 LinkParse 只返回 Markdown 时保持兼容。文字与图片混排的 PDF 继续解析文字，源图片不会被单独提取为资产或进入导入后的简历；完整原始 PDF 仍保存在私有对象存储并发送给 LinkParse。含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。API 的频率与受理并发限制保存在 FastAPI 进程内，请求幂等和 Worker 防重保存在 Redis，任务终态保存在 MySQL。默认自动化测试注入 Fake，不访问真实地址或读取 Key。
 
