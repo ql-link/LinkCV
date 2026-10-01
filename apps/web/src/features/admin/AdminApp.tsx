@@ -16,7 +16,6 @@ import { Brand, FeedbackNotice, PageLoading } from "@/components/ui";
 import { api, type User } from "../../api/client";
 import { adminLoginPath, navigateTo } from "../../routing";
 import { AdminConsoleProvider } from "./kit";
-import { useAdminViewportScale } from "./viewportScale";
 import { AnnouncementsPage } from "./AnnouncementsPage";
 import { CapabilitiesPage } from "./CapabilitiesPage";
 import { ConnectionsPage, ModelsPage, UsagePage } from "./LlmPages";
@@ -146,7 +145,6 @@ function AdminWorkspace({ user, onLogout, onSessionExpired }: { user: User; onLo
   // Direction of the last page change, used by the enter animation (see console.css).
   const [motion, setMotion] = useState<"initial" | "forward" | "back" | "lateral-forward" | "lateral-back">("initial");
   const [mobileNav, setMobileNav] = useState(false);
-  useAdminViewportScale();
   const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
   const [auditFailedOnly] = useState(() => new URLSearchParams(window.location.search).get("result") === "failed");
 

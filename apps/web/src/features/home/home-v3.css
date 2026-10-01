@@ -10,9 +10,7 @@
 .hv3-title { margin: 9px 0 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: 28px; font-weight: 600; line-height: 40px; }
 .hv3-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
 .hv3-sub.is-warn { color: var(--v3-or); }
-.hv3-head-actions { display: flex; flex: 0 0 auto; gap: 10px; margin-top: 32px; }
-.hv3-btn-import { width: 100px; }
-.hv3-btn-new { width: 112px; }
+.hv3-head-actions { display: flex; flex: 0 0 auto; gap: 8px; margin-top: 32px; }
 .hv3-head-actions .v3-btn:disabled { opacity: 0.35; }
 
 /* 工具行：全部简历 N + 搜索框（y=162，高 30），下方细线（y=194） */

@@ -23,7 +23,7 @@
 
 /* 路由级整页：和各页面用同一套正文列宽与边距 */
 .v3-sk-page {
-  --v3-page-max: clamp(1200px, 68vw, 1440px);
+  --v3-page-max: clamp(860px, calc(860px + (100vw - 1440px) * .747), 1200px);
   --v3-gutter: clamp(24px, 4vw, 56px);
   display: flex;
   height: 100%;

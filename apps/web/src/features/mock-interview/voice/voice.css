@@ -277,7 +277,7 @@
 .vr-filters button { height: 24px; border: 1px solid var(--v3-cl); border-radius: 999px; background: #fff; padding: 0 11px; color: var(--v3-sub); cursor: pointer; font-size: 12px; }
 .vr-filters button[aria-pressed="true"] { height: 22px; border-color: var(--v3-dark); background: var(--v3-dark); padding: 0 10px; color: #fff; font-weight: 500; }
 .vr-q-note { margin-top: 8px; color: var(--v3-fnt); font-size: 11px; white-space: nowrap; }
-.vr-btn-sm { height: 28px; flex: 0 0 auto; border: 1px solid var(--v3-cl); border-radius: 7px; background: #fff; padding: 0 12px; color: var(--v3-txt); cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.vr-btn-sm { height: 28px; flex: 0 0 auto; border: 1px solid var(--v3-cl); border-radius: 999px; background: #fff; padding: 0 12px; color: var(--v3-txt); cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .vr-btn-sm.is-plain { color: var(--v3-sub); font-weight: 400; }
 .vr-btn-sm:hover:not(:disabled) { background: var(--v3-field); }
 .vr-btn-sm:disabled { cursor: not-allowed; opacity: .45; }

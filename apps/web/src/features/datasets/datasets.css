@@ -22,27 +22,27 @@
 .ds-actions .v3-btn { height: 32px; }
 .ds-divider { height: 1px; margin-top: 24px; background: var(--v3-line); }
 
-/* ── 06.1 文件夹网格（3 列 273×172，间距 20） */
+/* ── 06.1 文件夹网格（3 列 273×172，间距 20）。正文列随窗口变宽时卡片按 273:172 等比放大，文字行贴底保持设计稿间距 */
 .ds-section-head { display: flex; height: 16px; align-items: center; justify-content: space-between; margin: 23px 0 12px; }
 .ds-section-head strong { font-size: 13px; font-weight: 500; }
 .ds-section-head span { color: var(--v3-fnt); font-size: 11.5px; }
-.ds-folder-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-.ds-folder { position: relative; height: 172px; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease; }
+.ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(273px, 1fr)); gap: 20px; }
+.ds-folder { position: relative; aspect-ratio: 273 / 172; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .ds-folder:hover { border-color: var(--v3-sk2); box-shadow: 0 6px 20px rgb(0 0 0 / 6%); }
 .ds-folder:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
-.ds-folder-stage { position: absolute; top: 7px; right: 7px; left: 7px; height: 96px; overflow: hidden; border-radius: 11px; background: var(--v3-stage); }
-.ds-folder-stage-inner { position: absolute; top: 0; left: 50%; width: 257px; height: 96px; transform: translateX(-50%); }
+.ds-folder-stage { position: absolute; top: 7px; right: 7px; bottom: 67px; left: 7px; container-type: size; overflow: hidden; border-radius: 11px; background: var(--v3-stage); }
+.ds-folder-stage-inner { position: absolute; top: 50%; left: 50%; width: 257px; height: 96px; translate: -50% -50%; transform-origin: center; scale: min(calc(100cqw / 257px), calc(100cqh / 96px)); }
 .ds-folder-empty-sheet { position: absolute; top: 16px; left: 98px; width: 60px; height: 78px; border: 1px dashed var(--v3-fnt2); border-radius: 4px; }
-.ds-folder-name { position: absolute; top: 117px; right: 52px; left: 17px; overflow: hidden; font-size: 14px; font-weight: 500; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
-.ds-folder-meta { position: absolute; top: 141px; right: 17px; left: 17px; overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.ds-folder-more { position: absolute; top: 112px; right: 12px; }
+.ds-folder-name { position: absolute; bottom: 36px; right: 52px; left: 17px; overflow: hidden; font-size: 14px; font-weight: 500; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-folder-meta { position: absolute; bottom: 16px; right: 17px; left: 17px; overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-folder-more { position: absolute; bottom: 30px; right: 12px; }
 .ds-folder-more[aria-expanded="true"] { background: var(--v3-field); color: var(--v3-txt); }
 .ds-sheet { position: absolute; width: 60px; height: 78px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 4px; background: #fff; box-shadow: 0 3px 8px rgb(0 0 0 / 7%); }
 .ds-sheet > i { position: absolute; left: 8px; display: block; height: 3px; border-radius: 1px; background: var(--v3-sk); }
 .ds-sheet > i.is-title { top: 11px; width: 25px; height: 4px; background: var(--v3-txt); }
 .ds-sheet-fmt { position: absolute; top: 55px; left: 8px; display: grid; height: 12px; place-items: center; border-radius: 3px; padding: 0 4px; color: #fff; font-family: var(--v3-num); font-size: 7px; font-weight: 700; line-height: 1; }
 
-.ds-new-folder { display: flex; height: 172px; flex-direction: column; align-items: center; border: 1px dashed var(--v3-fnt2); border-radius: 16px; background: transparent; padding: 47px 12px 0; color: var(--v3-txt); cursor: pointer; }
+.ds-new-folder { display: flex; aspect-ratio: 273 / 172; flex-direction: column; align-items: center; justify-content: center; border: 1px dashed var(--v3-fnt2); border-radius: 16px; background: transparent; padding: 0 12px 11px; color: var(--v3-txt); cursor: pointer; }
 .ds-new-folder:hover { border-color: var(--v3-fnt); background: #fbfbfa; }
 .ds-new-folder:disabled { cursor: not-allowed; opacity: .5; }
 .ds-new-folder-plus { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 18px; background: var(--v3-field); color: var(--v3-sub); }

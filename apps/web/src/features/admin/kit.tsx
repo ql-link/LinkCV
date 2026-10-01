@@ -806,7 +806,7 @@ export function Modal({
       <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="adm-scrim" />
-          <DialogPrimitive.Content className="adm-modal" role={role} style={{ width: `min(${width}px, calc(var(--adm-vw, 1vw) * 100 - 32px))` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
+          <DialogPrimitive.Content className="adm-modal" role={role} style={{ width: `min(${width}px, calc(100vw - 32px))` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
             <header className={`adm-modal-head${eyebrow ? " has-eyebrow" : ""}`}>
               <div>
                 {eyebrow && <span className="adm-modal-eyebrow">{eyebrow}</span>}
@@ -871,7 +871,7 @@ export function Drawer({ title, eyebrow, subtitle, onClose, children, footer, wi
       <DialogPrimitive.Root open={open} onOpenChange={(next) => { if (!next) dismiss(); }}>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="adm-scrim" />
-          <DialogPrimitive.Content className="adm-drawer" style={{ width: `min(${width}px, calc(var(--adm-vw, 1vw) * 100))` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
+          <DialogPrimitive.Content className="adm-drawer" style={{ width: `min(${width}px, calc(100vw))` }} aria-describedby={undefined} onAnimationEnd={onAnimationEnd}>
             <header className={`adm-modal-head${eyebrow ? " has-eyebrow" : ""}`}>
               <div>
                 {eyebrow && <span className="adm-modal-eyebrow">{eyebrow}</span>}
