@@ -1,10 +1,7 @@
 /* V3 · 单栏设计（Figma a5BQtKwoGEDvCg5Iv13nPr「V3 · 单栏」）的公共 Token 与基础件。
    颜色、字号、间距全部取自设计稿；页面样式放在各自模块的 css 里，只引用这里的变量。 */
 @import "@fontsource/noto-serif-sc/600.css";
-@import "@fontsource/inter/400.css";
-@import "@fontsource/inter/500.css";
-@import "@fontsource/inter/600.css";
-@import "@fontsource/inter/700.css";
+@import "../design-system/fonts.css";
 @import "./motion.css";
 
 .v3 {
@@ -39,9 +36,9 @@
      （对话页另用 720 列） */
   --v3-page-max: clamp(860px, calc(860px + (100vw - 1440px) * .747), 1200px);
   --v3-gutter: clamp(24px, 4vw, 56px);
-  --v3-sans: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --v3-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
-  --v3-num: "Inter", "Source Han Sans SC", sans-serif;
+  --v3-sans: var(--ui-font-sans);
+  --v3-serif: "Poppins", "Noto Serif SC", "Source Han Serif SC", "Songti SC", sans-serif;
+  --v3-num: "Poppins", "Source Han Sans SC", sans-serif;
   --v3-shadow-card: 0 4px 16px rgb(0 0 0 / 4%);
   --v3-shadow-pop: 0 6px 18px rgb(0 0 0 / 12%);
   --v3-shadow-dialog: 0 16px 48px rgb(0 0 0 / 16%);

@@ -293,10 +293,10 @@ LinkResume 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率
 
 排版强调快速扫描。页面通常只使用页面标题、区域标题、正文和辅助信息四级，不通过连续增加字号或字重制造层级。
 
-- 产品界面的标题、正文、输入和按钮统一使用随应用发布的思源黑体可变字体，通过字号、字重和紧凑字距建立层级；简历画布继续尊重用户选择的版式字体。
+- 产品界面的西文标题使用 Poppins，西文正文、输入和按钮使用 Lora，数字使用 Poppins；中文正文沿用随应用发布的思源黑体可变字体，V3 中文页面标题使用 Noto Serif SC。两套西文字体随应用本地发布并保留 SIL OFL 1.1 授权；简历画布继续尊重用户选择的版式字体。
 - 正文默认 16px，密集控件和说明使用 14px。
 - 技术标识、时间、版本和短元数据的拉丁字符可以使用等宽字体，其中的中文回退到思源黑体；正文不使用等宽字体。
-- 独立 AI 助手和简历编辑器侧栏的用户消息与 AI 回复正文使用思源宋体，空状态、输入编辑器、会话导航和操作控件仍使用全局思源黑体。
+- 独立 AI 助手和简历编辑器侧栏的用户消息、AI 回复及操作控件复用全局正文栈：西文使用 Lora，中文回退到思源黑体。
 - 删除“欢迎使用”“轻松完成”“一站式管理”等不能帮助用户决策的文案；说明文字只解释限制、后果或下一步动作。
 
 设置页使用 `subsection-title`（16px/600）作为区域标题；核心正文、字段标签和控件使用 14–16px，只有时间、短状态和其他元信息使用 12px `metadata`。不把账户页个案字号直接推广为全局规则。
@@ -325,7 +325,7 @@ Settings Pattern 只约束显式选择它的共享组件或页面，不是所有
 
 ### Page Eyebrow
 
-工作区页面标题上方的小字统一使用 `PageEyebrow`（`apps/web/src/v3/primitives.tsx`，样式 `.v3-page-eyebrow`：思源黑体 11px、行高 13px、`--v3-fnt` 灰色），距内容卡顶部 52–53px。格式为「英文模块名 · 当前位置或摘要」，以 ` · ` 分隔：一级页面写摘要（`TEMPLATES · 85 套`、`SCHEDULE · 2026 年 · 周视图`），子页面把模块名做成可点击的返回链接（`DATASETS · 证书`、`MOCK INTERVIEW · 练习记录`、`JOBS · 公司 · 岗位详情`）。模块名固定为 RESUMES、TEMPLATES、JOBS、SCHEDULE、REVIEWS、DATASETS、MOCK INTERVIEW、ACCOUNT；小字不重复大标题的内容。
+工作区页面标题上方的小字统一使用 `PageEyebrow`（`apps/web/src/v3/primitives.tsx`，样式 `.v3-page-eyebrow`：西文 Lora／中文思源黑体 11px、行高 13px、`--v3-fnt` 灰色），距内容卡顶部 52–53px。格式为「英文模块名 · 当前位置或摘要」，以 ` · ` 分隔：一级页面写摘要（`TEMPLATES · 85 套`、`SCHEDULE · 2026 年 · 周视图`），子页面把模块名做成可点击的返回链接（`DATASETS · 证书`、`MOCK INTERVIEW · 练习记录`、`JOBS · 公司 · 岗位详情`）。模块名固定为 RESUMES、TEMPLATES、JOBS、SCHEDULE、REVIEWS、DATASETS、MOCK INTERVIEW、ACCOUNT；小字不重复大标题的内容。
 
 ### Motion & Interaction
 

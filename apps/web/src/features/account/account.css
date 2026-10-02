@@ -20,7 +20,7 @@
 .acc-hero-avatar .v3-avatar { font-size: 22.4px !important; }
 .acc-hero-copy { display: grid; min-width: 0; flex: 1; gap: 8px; }
 .acc-hero-name { display: flex; min-width: 0; align-items: center; gap: 8px; }
-.acc-hero-name h2 { overflow: hidden; margin: 0 2px 0 0; color: var(--v3-txt); font-size: 17px; font-weight: 700; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.acc-hero-name h2 { font-family: var(--ui-font-display); overflow: hidden; margin: 0 2px 0 0; color: var(--v3-txt); font-size: 17px; font-weight: 700; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .acc-verified { display: inline-flex; height: 20px; flex: 0 0 auto; align-items: center; border-radius: 5px; background: var(--v3-gn-soft); padding: 0 7px; color: var(--v3-gn); font-size: 10px; font-weight: 500; }
 .acc-hero-meta { display: flex; min-width: 0; align-items: center; gap: 6px; margin: 0; color: var(--v3-fnt); font-size: 12px; line-height: 14px; }
 .acc-hero-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -31,7 +31,7 @@
 .acc-hero + .acc-section { margin-top: 32px; }
 .acc-section-head { width: 228px; flex: 0 0 auto; padding: 4px 28px 0 0; }
 .acc-section:last-of-type { padding-bottom: 20px; }
-.acc-section-head h2 { margin: 0; color: var(--v3-txt); font-size: 14px; font-weight: 500; line-height: 17px; }
+.acc-section-head h2 { font-family: var(--ui-font-display); margin: 0; color: var(--v3-txt); font-size: 14px; font-weight: 500; line-height: 17px; }
 .acc-section-head p { margin: 9px 0 0; color: var(--v3-fnt); font-size: 11.5px; line-height: 19px; }
 .acc-card { min-width: 0; flex: 1; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 12px; background: #fff; }
 
@@ -64,7 +64,7 @@
 /* 画像摘要由内容撑开高度，避免继承单行设置项的固定高度。 */
 .acc-page .acc-card > .acc-profile-summary { height: auto; }
 .acc-profile-header { display: flex; min-height: 52px; align-items: center; gap: 16px; padding: 12px 19px; }
-.acc-profile-header h3 { margin: 0; color: var(--v3-txt); font-size: 13.5px; font-weight: 500; line-height: 20px; }
+.acc-profile-header h3 { font-family: var(--ui-font-display); margin: 0; color: var(--v3-txt); font-size: 13.5px; font-weight: 500; line-height: 20px; }
 .acc-profile-actions { display: flex; min-width: 0; margin-left: auto; align-items: center; gap: 14px; color: var(--v3-fnt); font-size: 11.5px; }
 .acc-profile-actions .acc-row-meta { overflow-wrap: anywhere; }
 .acc-profile-actions .acc-row-link { white-space: nowrap; }

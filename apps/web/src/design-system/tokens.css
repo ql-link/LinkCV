@@ -42,9 +42,9 @@
   --ui-overlay: rgba(15, 18, 22, 0.46);
 
   /* Typography. */
-  --ui-font-display: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --ui-font-sans: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --ui-font-content: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-display: "Poppins", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-sans: "Lora", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-content: "Lora", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   --ui-font-mono: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", "Source Han Sans SC", monospace;
   --ui-text-xs: 0.75rem;
   --ui-text-sm: 0.875rem;

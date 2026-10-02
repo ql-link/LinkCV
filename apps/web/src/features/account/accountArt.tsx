@@ -201,7 +201,7 @@ export function DemoQr({ size, seed }: { size: number; seed: string }) {
       {finder(0, n - 7)}
       {finder(n - 7, 0)}
       <rect x={size / 2 - 20} y={size / 2 - 20} width={40} height={40} rx={8} fill="#fff" stroke="#e4e4e0" />
-      <text x={size / 2} y={size / 2 + 5.5} textAnchor="middle" fontFamily="Inter, sans-serif" fontSize={15} fontWeight={700} fill="#1d1d1b">L</text>
+      <text x={size / 2} y={size / 2 + 5.5} textAnchor="middle" fontFamily="var(--v3-num)" fontSize={15} fontWeight={700} fill="#1d1d1b">L</text>
     </svg>
   );
 }
