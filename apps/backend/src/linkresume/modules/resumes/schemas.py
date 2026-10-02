@@ -252,3 +252,5 @@ class PublicSharePayload(BaseModel):
     assets: dict[str, str]
     sharer: PublicShareSharer
     allow_download: bool
+    expires_at: datetime | None = None
+    updated_at: datetime

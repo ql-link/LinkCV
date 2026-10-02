@@ -543,6 +543,8 @@ export type PublicSharePayload = {
   assets: Record<string, string>;
   sharer: PublicShareSharer;
   allow_download: boolean;
+  expires_at: string | null;
+  updated_at: string;
 };
 
 export type UploadedAsset = {

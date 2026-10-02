@@ -179,7 +179,7 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 | `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，可续期、修改可见性或下载权限 |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
-| `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download}`；`sharer` 为 `{nickname, avatar_url}` |
+| `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download, expires_at, updated_at}`；`sharer` 为 `{nickname, avatar_url}`；`expires_at` 为分享有效期（`null` 表示长期有效），`updated_at` 为简历主记录最近更新时间（分享设置变更也会刷新） |
 | `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的 A4 分页 PDF；沿用分享 token 的访问规则并要求允许下载 |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_allow_download, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`share_allow_download` 为布尔值，旧记录和创建缺省值均为 `true`。`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。

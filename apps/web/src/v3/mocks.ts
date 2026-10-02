@@ -30,7 +30,6 @@ export const MOCK_TEMPLATE_USES = (key: string) => 1200 + ((key.length * 7919) %
 export const MOCK_ACCOUNT_META = { registeredAt: "2025-03-12", passwordChangedAt: "3 个月前", device: "Mac · Chrome", language: "简体中文" };
 
 // 分享页 · 有效期与最后更新（公开分享接口不返回这两个字段）
-export const MOCK_SHARE_META = { expiresAt: "2026-10-30", updatedAt: "09-26" };
 
 // 账号 · 偏好「面试提醒」（后端没有提醒设置，也没有向微信推送面试提醒的能力）
 export const MOCK_ACCOUNT_PREFS = { interviewReminderOn: true, interviewReminderLabel: "提前 1 小时推送至微信" };
