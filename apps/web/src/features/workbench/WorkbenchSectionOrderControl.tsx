@@ -100,6 +100,19 @@ export function jumpToSection(editor: Editor, nodeId: string | null) {
   return true;
 }
 
+// sidebar/main 是语义区域；左右标签必须跟随模板的实际列位置。
+export function sidebarIsOnRight(root: HTMLElement): boolean {
+  const sidebar = root.querySelector<HTMLElement>('[data-type="resume-column"][data-column="sidebar"]');
+  const main = root.querySelector<HTMLElement>('[data-type="resume-column"][data-column="main"]');
+  if (!sidebar || !main) return false;
+  const sidebarLeft = sidebar.getBoundingClientRect().left;
+  const mainLeft = main.getBoundingClientRect().left;
+  if (sidebarLeft !== mainLeft) return sidebarLeft > mainLeft;
+  const sidebarColumn = Number.parseInt(getComputedStyle(sidebar).gridColumnStart, 10);
+  const mainColumn = Number.parseInt(getComputedStyle(main).gridColumnStart, 10);
+  return Number.isFinite(sidebarColumn) && Number.isFinite(mainColumn) && sidebarColumn > mainColumn;
+}
+
 export function WorkbenchSectionOrderControl({
   editor,
   disabled = false,
@@ -113,7 +126,7 @@ export function WorkbenchSectionOrderControl({
   onGroupsChange?: (groups: ResumeSectionOrderGroup[]) => void;
 }) {
   const [groups, setGroups] = useState<ResumeSectionOrderGroup[]>(() =>
-    resumeSectionOrderGroups(editor.getJSON()));
+    resumeSectionOrderGroups(editor.getJSON(), sidebarIsOnRight(editor.view.dom)));
   const originRef = useRef<DragOrigin | null>(null);
   const [dragging, setDragging] = useState<DragOrigin | null>(null);
   const [target, setTarget] = useState<DropRegion | null>(null);
@@ -124,19 +137,27 @@ export function WorkbenchSectionOrderControl({
   }, [groups, onGroupsChange]);
 
   useEffect(() => {
-    let lastDoc = editor.state.doc;
+    let lastDoc: typeof editor.state.doc | null = null;
+    let lastSidebarOnRight: boolean | null = null;
     const refresh = () => {
-      // Programmatic replaces (模板切换、版本恢复) also land here, so watch every
-      // transaction but only serialize when the document itself changed.
-      if (editor.state.doc === lastDoc) return;
+      const sidebarOnRight = sidebarIsOnRight(editor.view.dom);
+      if (editor.state.doc === lastDoc && sidebarOnRight === lastSidebarOnRight) return;
       lastDoc = editor.state.doc;
-      setGroups(resumeSectionOrderGroups(editor.getJSON()));
+      lastSidebarOnRight = sidebarOnRight;
+      setGroups(resumeSectionOrderGroups(editor.getJSON(), sidebarOnRight));
       setEmptyIds(emptySectionIds(editor));
     };
     refresh();
     editor.on("transaction", refresh);
+    const paper = editor.view.dom.closest(".resume-paper");
+    const observer = paper && typeof MutationObserver !== "undefined" ? new MutationObserver(refresh) : null;
+    if (paper) observer?.observe(paper, { attributes: true, attributeFilter: ["class", "style"] });
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(refresh) : null;
+    resizeObserver?.observe(editor.view.dom);
     return () => {
       editor.off("transaction", refresh);
+      observer?.disconnect();
+      resizeObserver?.disconnect();
     };
   }, [editor]);
 

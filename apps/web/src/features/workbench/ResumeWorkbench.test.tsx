@@ -41,7 +41,7 @@ describe("ResumeWorkbench 顶部工具栏显示范围", () => {
     expect(screen.queryByRole("banner")).not.toBeInTheDocument();
   });
 
-  it("独立简历编辑页显示顶栏、唯一主按钮导出 PDF 和右侧工具卡片，不再有 AI 助手入口", () => {
+  it("独立简历编辑页将页面设置收进右侧排版面板", async () => {
     render(<ResumeWorkbench />);
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "返回全部简历" })).toBeInTheDocument();
@@ -50,7 +50,13 @@ describe("ResumeWorkbench 顶部工具栏显示范围", () => {
     const rail = screen.getByRole("navigation", { name: "编辑工具" });
     expect(within(rail).getAllByRole("button").map((button) => button.querySelector("span")?.textContent)).toEqual(["大纲", "模板", "排版", "检查"]);
     expect(screen.queryByRole("button", { name: /智能助手/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("toolbar", { name: "页面设置" })).toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: "页面设置" })).not.toBeInTheDocument();
+    await userEvent.click(within(rail).getByRole("button", { name: "排版" }));
+    const panel = await screen.findByRole("region", { name: "设置" });
+    expect(within(panel).getByRole("toolbar", { name: "页面设置" })).toBeInTheDocument();
+    expect(within(panel).queryByText("模块顺序")).not.toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "增大正文字号" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "减小上下边距" })).toBeInTheDocument();
   });
 });
 
@@ -263,10 +269,9 @@ describe("ResumeWorkbench 页面栏", () => {
     const handlers = {
       onArrangementChange: vi.fn(),
       onSmartOnePageChange: vi.fn(),
-      onZoom: vi.fn(),
     };
     const view = render(
-      <WorkbenchPageBar pageCount={2} currentPage={1} arrangement="vertical" smartOnePage={false} scale={1} {...handlers} {...overrides} />,
+      <WorkbenchPageBar arrangement="vertical" smartOnePage={false} {...handlers} {...overrides} />,
     );
     return { ...handlers, ...view };
   };
@@ -275,7 +280,7 @@ describe("ResumeWorkbench 页面栏", () => {
     const user = userEvent.setup();
     const { onArrangementChange, onSmartOnePageChange, rerender } = renderBar();
 
-    expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
+    expect(screen.queryByText(/第 \d+ \/ \d+ 页/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上下排列" })).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("button", { name: "左右排列" }));
     expect(onArrangementChange).toHaveBeenCalledWith("horizontal");
@@ -285,9 +290,9 @@ describe("ResumeWorkbench 页面栏", () => {
     onArrangementChange.mockClear();
     onSmartOnePageChange.mockClear();
     rerender(
-      <WorkbenchPageBar pageCount={2} currentPage={1} arrangement="horizontal" smartOnePage scale={1} onArrangementChange={onArrangementChange} onSmartOnePageChange={onSmartOnePageChange} onZoom={vi.fn()} />,
+      <WorkbenchPageBar arrangement="horizontal" smartOnePage onArrangementChange={onArrangementChange} onSmartOnePageChange={onSmartOnePageChange} />,
     );
-    expect(screen.getByText("共 1 页")).toBeInTheDocument();
+    expect(screen.queryByText("共 1 页")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "左右排列" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("switch", { name: "智能一页" })).toHaveAttribute("aria-checked", "true");
 
@@ -296,13 +301,12 @@ describe("ResumeWorkbench 页面栏", () => {
     expect(onArrangementChange).toHaveBeenCalledWith("vertical");
   });
 
-  it("缩放按钮按方向回调并显示当前比例", async () => {
-    const user = userEvent.setup();
-    const { onZoom } = renderBar({ scale: 0.9 });
-    expect(screen.getByLabelText("当前缩放")).toHaveTextContent("90%");
-    await user.click(screen.getByRole("button", { name: "缩小" }));
-    await user.click(screen.getByRole("button", { name: "放大" }));
-    expect(onZoom.mock.calls).toEqual([[-1], [1]]);
+  it("不显示页数或缩放控件", () => {
+    renderBar();
+    expect(screen.queryByText(/第 \d+ \/ \d+ 页/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "缩小" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "放大" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("当前缩放")).not.toBeInTheDocument();
   });
 
   it("版本操作期间禁用全部页面布局选择", () => {

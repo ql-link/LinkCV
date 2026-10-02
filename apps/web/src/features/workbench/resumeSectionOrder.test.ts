@@ -114,6 +114,17 @@ describe("resumeSectionOrderGroups", () => {
     expect(groups[1].items.map((item) => item.title)).toEqual(["个人信息", "教育经历", "实习经历"]);
   });
 
+  it("右侧侧栏模板按左栏、右栏展示，保留栏内模块顺序", () => {
+    const groups = resumeSectionOrderGroups(twoColumn, true);
+    expect(groups.map((group) => [group.side, group.label])).toEqual([
+      ["main", "左栏"], ["sidebar", "右栏"],
+    ]);
+    const original = resumeSectionOrderGroups(twoColumn);
+    for (const group of groups) {
+      expect(group.items).toEqual(original.find((item) => item.side === group.side)?.items);
+    }
+  });
+
   it("没有分栏时忽略没有锚点的标题", () => {
     const groups = resumeSectionOrderGroups({
       type: "doc",
