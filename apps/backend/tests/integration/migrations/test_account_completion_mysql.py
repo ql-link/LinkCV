@@ -1,4 +1,5 @@
 """Account schema, cleanup and owner serialization on disposable MySQL 8.4."""
+import asyncio
 import os
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -9,7 +10,7 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, select, text
+from sqlalchemy import create_engine, event, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
@@ -309,3 +310,62 @@ def test_inflight_rag_upload_is_recorded_before_deletion_and_then_removed(mysql)
         assert db.get(User, uid) is None
     assert file_id in rag.deleted
     assert rag.files == {}
+
+
+def test_imports_keep_event_loop_live_and_respect_owner_capacity(mysql):
+    from tests.unit.workers.test_resume_import_worker import (
+        assert_concurrent_finalization_at_capacity,
+        build_processor,
+    )
+    from linkresume.modules.resumes.models import DocumentParseTask
+
+    factory = sessionmaker(mysql, autoflush=False, expire_on_commit=False)
+    built = build_processor(session_factory=factory, template_key="worker-concurrency-ci")
+    _, storage, processor, import_id, _ = built
+    with factory() as db:
+        uid = db.get(DocumentParseTask, import_id).user_id
+
+    held, release, starved, attempting = Event(), Event(), Event(), Event()
+    upload = storage.upload
+
+    def owner_lock_attempted(_connection, _cursor, statement, *_args):
+        if held.is_set() and "FROM users" in statement and "FOR UPDATE" in statement:
+            attempting.set()
+
+    event.listen(mysql, "before_cursor_execute", owner_lock_attempted)
+
+    def held_upload(object_name, data, content_type):
+        if object_name.endswith("/converted.md") and not held.is_set():
+            held.set()
+            if not release.wait(5):
+                starved.set()
+        upload(object_name, data, content_type)
+
+    storage.upload = held_upload
+
+    async def concurrent_artifacts():
+        first = asyncio.create_task(processor._persist_converted_markdown(
+            import_id=import_id, user_id=uid, operation_id="task", markdown="# Fictional",
+        ))
+        second = None
+        try:
+            assert await asyncio.to_thread(held.wait, 5)
+            second = asyncio.create_task(processor._persist_converted_markdown(
+                import_id=import_id, user_id=uid, operation_id="task", markdown="# Fictional",
+            ))
+            # Both tasks take the same real MySQL owner lock. The loop must
+            # remain able to release the first upload while the second waits.
+            assert await asyncio.to_thread(attempting.wait, 5)
+            assert not starved.is_set(), "owner lock blocked the event loop"
+            assert not first.done()
+            assert not second.done()
+        finally:
+            release.set()
+            await asyncio.gather(first, *([second] if second is not None else []))
+
+    try:
+        asyncio.run(concurrent_artifacts())
+    finally:
+        storage.upload = upload
+        event.remove(mysql, "before_cursor_execute", owner_lock_attempted)
+    assert_concurrent_finalization_at_capacity(built)
