@@ -14,9 +14,6 @@ export const MOCK_RECOMMENDED_JOBS = { count: 3, bestMatch: 91 };
 // 首页 · Offer 回复截止与对比（applications 没有 offer_reply_deadline 字段）
 export const MOCK_OFFER = { company: "美团", deadlineLabel: "09-29 18:00 前回复", daysLeft: 2, compareCount: 2 };
 
-// 岗位看板统计：overview 接口缺「投递总数」「面试转化率」
-export const MOCK_BOARD_STATS = { totalApplied: 9, conversionRate: "33%" };
-
 // 面试日程 ·「已确认」状态（interview session 没有确认字段）
 export const MOCK_SESSION_CONFIRMED = true;
 
