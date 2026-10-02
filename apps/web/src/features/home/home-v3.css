@@ -30,7 +30,7 @@
 .hv3-load-error > .v3-btn { width: 112px; height: 36px; margin: 13px 24px 0; }
 
 /* 卡片网格：200 宽，列间 20，行间 37（与画板第二行 y=572 对齐） */
-.hv3-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(199px, 1fr)); gap: 37px 20px; margin-top: 27px; }
+.hv3-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 199px), 1fr)); gap: 37px 20px; margin-top: 27px; }
 /* 卡片不再套灰底：纸面直接铺满卡片宽度（A4 比例），用加深的描边和白色背景区分 */
 .hv3-card { position: relative; display: flex; min-width: 0; flex-direction: column; }
 .hv3-thumb { position: relative; width: 100%; aspect-ratio: 210 / 297; border-radius: 6px; }
@@ -246,3 +246,25 @@ output.hv3-step-aside { font-weight: 500; }
 .hv3-create-name-field .hv3-step-head { margin-top: 0; }
 .hv3-create-name-field .hv3-create-input.v3-input { margin-top: 10px; }
 .hv3-create-count { color: var(--v3-sub); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+
+@container workspace (max-width: 680px) {
+  .hv3-page { padding-top: 28px; }
+  .hv3-head { flex-direction: column; gap: 20px; }
+  .hv3-head-actions { flex-wrap: wrap; margin-top: 0; }
+  .hv3-toolbar { height: auto; min-height: 30px; flex-wrap: wrap; gap: 12px; }
+  .hv3-toolbar .v3-search { max-width: 100%; }
+  .hv3-sub { line-height: 20px; }
+}
+
+@container dialog (max-width: 500px) {
+  .hv3-create.is-preview .hv3-create-stage { margin-inline: 12px; }
+  .hv3-create.is-preview .hv3-create-carousel { inset-inline: 24px; }
+  .hv3-create.is-preview .hv3-create-nav.is-prev { left: 6px; }
+  .hv3-create.is-preview .hv3-create-nav.is-next { right: 6px; }
+  .hv3-create-name-field { padding-inline: 20px; }
+  .hv3-step-head { height: auto; flex-wrap: wrap; }
+}
+@media (max-height: 600px) {
+  .hv3-page { height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }
+  .hv3-page > .hv3-grid-slot { flex: 1 0 auto; }
+}

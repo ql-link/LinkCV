@@ -210,3 +210,40 @@
 .prof-tags input { min-width: 90px; height: 24px; flex: 1; border: 0; outline: none; background: transparent; padding: 0 0 0 4px; color: var(--v3-txt); font: 12.5px var(--v3-sans); box-shadow: none; }
 .prof-tags input::placeholder { color: var(--v3-fnt2); }
 .prof-updated { color: var(--v3-fnt); font-size: 11.5px; }
+
+@container workspace (max-width: 850px) {
+  .acc-section { flex-direction: column; gap: 12px; }
+  .acc-section-head { width: 100%; height: auto; padding: 0; }
+  .acc-section-head p { margin-top: 6px; }
+  .acc-card { width: 100%; flex: auto; }
+  .acc-section[aria-label="求职资料"] > .acc-card { border-color: var(--v3-cl); background: var(--v3-card); overflow: hidden; }
+  .acc-section[aria-label="求职资料"] > .acc-card::before { display: none; }
+}
+@container workspace (max-width: 560px) {
+  .acc-page { padding-top: 28px; }
+  .acc-hero { height: auto; min-height: 92px; flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .acc-hero-copy { flex-basis: calc(100% - 72px); }
+  .acc-hero-name, .acc-hero-meta { flex-wrap: wrap; }
+  .acc-hero-name h2 { white-space: normal; overflow-wrap: anywhere; }
+  .acc-hero-meta > span:first-child { overflow-wrap: anywhere; white-space: normal; }
+  .acc-hero-edit { margin-left: auto; }
+  .acc-card > .acc-row { height: auto; min-height: 56px; flex-wrap: wrap; gap: 8px 12px; padding: 14px 16px; }
+  .acc-row-label { width: auto; flex: 1; }
+  .acc-row-value { flex: 1 0 100%; order: 1; overflow-wrap: anywhere; white-space: normal; }
+  .acc-row-right { flex-wrap: wrap; }
+  .acc-inline-error { height: auto; min-height: 48px; flex-wrap: wrap; padding-block: 12px; }
+}
+@container dialog (max-width: 600px) {
+  .acc-edit-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .acc-edit-grid > :first-child { width: 232px; max-width: 100%; justify-self: center; }
+  .acc-dialog .v3-dialog-close, .prof-dialog .v3-dialog-close { top: 20px; right: 16px; }
+  .prof-body { overflow-y: auto; }
+  .prof-grid { height: auto; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .prof-nav { margin: 0; border-right: 0; padding: 0; }
+  .prof-tabs { display: flex; overflow-x: auto; margin: 12px 0 0; padding-bottom: 4px; }
+  .prof-tab { width: 132px; flex: 0 0 auto; }
+  .prof-pane { overflow: visible; padding: 0; }
+  .prof-row { grid-template-columns: minmax(0, 1fr); }
+  .acc-rules, .acc-steps { flex-wrap: wrap; gap: 12px; }
+  .acc-code-row { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+}

@@ -5208,7 +5208,7 @@
 .career-filter-stages { max-height: 260px; overflow-y: auto; }
 .career-filter-check { width: 14px; height: 14px; accent-color: var(--v3-dark); cursor: pointer; }
 
-/* 看板：一屏最多 5 列，列宽 = (正文宽 − 4×10) / 5，不小于 164；列间距 10；列底 #f7f7f5、圆角 10，高 592，横向滚动 */
+/* 看板：常规宽度按约 5 列分配，单列保持 220–280px；宽屏容纳更多列，窄屏局部横向滚动。 */
 .v3-career .career-applications-layout { display: block; padding: 0; }
 .v3-career.career-workspace-frame .career-applications-board-content,
 .v3-career .career-applications-board-content { display: block; overflow: visible; }
@@ -5220,10 +5220,10 @@
   overflow-y: hidden;
   scrollbar-width: none;
 }
-.v3-career .progress-board-grid { --career-column-width: calc((100cqw - 40px) / 5); display: flex; width: max-content; min-width: 100%; height: 100%; gap: 10px; }
+.v3-career .progress-board-grid { --career-column-width: clamp(220px, calc((100cqw - 40px) / 5), 280px); display: flex; width: max-content; min-width: 100%; height: 100%; gap: 10px; }
 .v3-career .progress-column {
-  width: max(164px, var(--career-column-width));
-  min-width: 164px;
+  width: var(--career-column-width);
+  min-width: 220px;
   flex: 0 0 auto;
   height: 100%;
   border: 0;
@@ -5716,3 +5716,24 @@
    而不是把格子压到只剩一行——那一行会被跨天横条占掉，结果只看得到「另有 N 项」、看不到卡片 */
 /* 周视图：起始刻度线贴着表头，时间标签放在刻度线下方（否则第一条标签会被表头遮住半截） */
 .v3-career .career-reui-calendar [data-slot="event-calendar-time-gutter"] span { top: 3px; line-height: 12px; }
+
+@container workspace (max-width: 850px) {
+  .career-v3-head { flex-wrap: wrap; gap: 20px; }
+  .career-v3-head-actions { flex-wrap: wrap; margin-top: 0; }
+  .career-board-toolbar { height: auto; flex-wrap: wrap; }
+  .career-board-toolbar-right { min-width: 0; flex-wrap: wrap; gap: 12px; }
+  .v3-career .career-applications-board { scrollbar-width: auto; }
+}
+@container workspace (max-width: 560px) {
+  .v3-career .career-v3-page { padding-top: 28px; }
+  .career-board-stats { height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-bottom: 16px; }
+  .career-board-stat:nth-child(3) { border-left: 0; padding-left: 0; }
+  .career-board-toolbar-right .v3-search { width: 100%; }
+}
+/* 低高度窗口允许整页滚动，避免固定头部挤掉列表或日历。 */
+@media (max-height: 600px) {
+  .v3-career.career-workspace-frame:not(.is-standalone-detail) { height: auto; min-height: 100%; }
+  .v3-career .career-v3-page.career-applications-board-content, .v3-career .career-v3-page.career-schedule-content { height: auto; overflow: visible; padding-bottom: 24px; }
+  .v3-career .career-schedule-v3 > .schedule-calendar-panel { min-height: 480px; flex: 0 0 480px; }
+  .v3-career .career-applications-layout.is-list > .career-application-list-groups { overflow: visible; }
+}

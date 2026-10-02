@@ -15,6 +15,16 @@ function NestedDate({ onChange = vi.fn() }: { onChange?: (value: Date) => void }
   </Dialog>;
 }
 
+describe("弹窗关闭入口", () => {
+  it("默认显示叉号并触发关闭回调", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(<Dialog label="测试弹窗" width={600} onClose={onClose}>弹窗内容</Dialog>);
+    await user.click(within(screen.getByRole("dialog", { name: "测试弹窗" })).getByRole("button", { name: "关闭" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
 describe("嵌套日期浮层", () => {
   it("选择 portal 中的小时和分钟后保留日期与计划，确认才提交", async () => {
     const user = userEvent.setup(); const onChange = vi.fn();

@@ -2,7 +2,7 @@
    坐标以内容卡为原点：正文列 CX=146、CW=860；这里把 860 列居中，宽度不够时随窗口收缩。 */
 
 .ds-root { position: relative; min-height: 100%; }
-.ds-page { position: relative; width: min(var(--v3-page-max), calc(100% - 2 * var(--v3-gutter))); min-width: 640px; margin: 0 auto; padding: 0 0 72px; }
+.ds-page { position: relative; width: min(var(--v3-page-max), calc(100% - 2 * var(--v3-gutter))); min-width: 0; margin: 0 auto; padding: 0 0 72px; }
 .ds-root.is-embedded .ds-page { width: auto; min-width: 0; max-width: none; padding: 0 24px 48px; }
 
 /* ── 页头：眉标 / 面包屑 → 衬线标题 → 摘要 → 分隔线（y=160） */
@@ -26,7 +26,7 @@
 .ds-section-head { display: flex; height: 16px; align-items: center; justify-content: space-between; margin: 23px 0 12px; }
 .ds-section-head strong { font-size: 13px; font-weight: 500; }
 .ds-section-head span { color: var(--v3-fnt); font-size: 11.5px; }
-.ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(273px, 1fr)); gap: 20px; }
+.ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 273px), 1fr)); gap: 20px; }
 .ds-folder { position: relative; aspect-ratio: 273 / 172; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .ds-folder:hover { border-color: var(--v3-sk2); box-shadow: 0 6px 20px rgb(0 0 0 / 6%); }
 .ds-folder:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
@@ -252,3 +252,26 @@
 .ds-root:not(.is-embedded) .ds-page > .ds-body-slot { display: grid; min-height: 0; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
 .ds-body-slot > .v3-reveal-out, .ds-body-slot > .v3-reveal-in { display: grid; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .ds-body-slot .ds-body { overflow-y: auto; overscroll-behavior: contain; margin-inline: -8px; padding-inline: 8px; padding-bottom: 48px; }
+
+@container workspace (max-width: 900px) {
+  .ds-title { max-width: 100%; }
+  .ds-actions { position: static; flex-wrap: wrap; margin-top: 20px; }
+  .ds-actions .v3-search, .ds-actions.is-folder .v3-search { width: auto; min-width: 160px; flex: 1; }
+  .ds-table { overflow-x: auto; overscroll-behavior-x: contain; }
+  .ds-cols { min-width: 720px; }
+}
+@container workspace (max-width: 560px) {
+  .ds-head { padding-top: 28px; }
+  .ds-root.is-embedded .ds-page { padding-inline: 16px; }
+  .ds-recent-row { height: auto; min-height: 64px; gap: 8px; padding: 12px; grid-template-columns: 32px minmax(0, 1fr); }
+  .ds-recent-name { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .ds-recent-time { grid-column: 2; }
+}
+@media (max-width: 1023px) {
+  .ds-batch-bar { left: 50%; width: max-content; max-width: calc(100vw - 24px); height: auto; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
+}
+
+@media (max-height: 600px) {
+  .ds-root:not(.is-embedded) { height: auto; min-height: 100%; }
+  .ds-root:not(.is-embedded) .ds-page { height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }
+}

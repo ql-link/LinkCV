@@ -629,6 +629,7 @@ function DialogSurface({
   className = "",
   children,
   closable = true,
+  showCloseButton = true,
 }: {
   open?: boolean;
   onClose: () => void;
@@ -637,6 +638,7 @@ function DialogSurface({
   className?: string;
   children: ReactNode;
   closable?: boolean;
+  showCloseButton?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const present = useExitPresence(dialogRef);
@@ -675,7 +677,7 @@ function DialogSurface({
     // 弹窗挂在 body 下，拿不到外壳上的浅色主题；这里补上，否则系统深色模式下里面的日期选择等控件会变黑
     <div className="v3 v3-overlay ui-motion-overlay" data-ui-theme="light" data-state={present ? "open" : "closed"} inert={!present || undefined} aria-hidden={!present || undefined} onMouseDown={(event) => { if (present && event.target === event.currentTarget && closable) onClose(); }}>
       <div ref={dialogRef} className={`v3-dialog ui-motion-dialog ${className}`} data-state={present ? "open" : "closed"} role="dialog" aria-modal="true" aria-label={label} style={{ width }}>
-        {closable && (
+        {closable && showCloseButton && (
           <button type="button" className="v3-dialog-close" aria-label="关闭" onClick={onClose}>
             <Icon name="x" size={16} />
           </button>

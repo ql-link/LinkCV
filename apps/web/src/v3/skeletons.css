@@ -23,14 +23,13 @@
 
 /* 路由级整页：和各页面用同一套正文列宽与边距 */
 .v3-sk-page {
-  --v3-page-max: clamp(860px, calc(860px + (100vw - 1440px) * .747), 1200px);
-  --v3-gutter: clamp(24px, 4vw, 56px);
   display: flex;
   height: 100%;
   flex-direction: column;
   overflow: hidden;
-  padding: 52px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 24px;
+  padding: 52px var(--v3-gutter, max(24px, 3cqw)) 24px;
 }
+@media (max-width: 1023px) { .v3-sk-page { padding-inline: 16px; } }
 .v3-sk-head { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .v3-sk-head-actions { display: flex; gap: 8px; margin-top: 32px; }
 .v3-sk-toolbar { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; margin-top: 30px; border-bottom: 1px solid #ececea; padding-bottom: 20px; }
@@ -53,9 +52,9 @@
 .v3-sk-cards { display: grid; gap: 16px; margin-top: 28px; }
 .v3-sk-box { border: 1px solid #e4e4e0; border-radius: 14px; padding: 20px 22px; }
 
-/* 看板：一屏 5 列 */
-.v3-sk-board { display: grid; min-height: 0; flex: 1 1 auto; grid-template-columns: repeat(5, minmax(164px, 1fr)); gap: 10px; overflow: hidden; margin-top: 18px; }
-.v3-sk-column { border-radius: 10px; background: #f7f7f5; padding: 0 6px 6px; }
+/* 看板占位与真实阶段列使用相同列宽，超宽屏显示更多列。 */
+.v3-sk-board { display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; gap: 10px; overflow: hidden; margin-top: 18px; container-type: inline-size; }
+.v3-sk-column { width: clamp(220px, calc((100cqw - 40px) / 5), 280px); min-width: 220px; flex: 0 0 auto; border-radius: 10px; background: #f7f7f5; padding: 0 6px 6px; }
 .v3-sk-board-card { width: 100%; height: 88px; margin-bottom: 8px; background: #fff; box-shadow: inset 0 0 0 1px #ebebe7; }
 
 /* 日历 */

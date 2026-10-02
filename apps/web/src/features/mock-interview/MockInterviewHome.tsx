@@ -230,7 +230,7 @@ function HomeHeader({ count, hasUpcoming, newUser }: { count: number; hasUpcomin
     <header className="mi-home-head">
       <div>
         <PageEyebrow segments={["MOCK INTERVIEW", count ? `${count} 场练习` : "AI 练习"]} />
-        <h1 className="mi-home-title">模拟面试</h1>
+        <h1 className="v3-page-title mi-home-title">模拟面试</h1>
         <p className="mi-home-sub">{newUser ? "从一个在投岗位开始，AI 会按岗位 JD 和你的简历出题。" : "按你在投的岗位组织练习，离面试越近越靠前。"}</p>
       </div>
       <div className="mi-home-actions">
@@ -595,7 +595,7 @@ function RecordsView({ interviews }: { interviews: MockInterviewSummary[] }) {
       <header className="mi-records-head">
         <PageEyebrow segments={[{ label: "MOCK INTERVIEW", href: "/mock-interviews", onClick: () => navigateTo("/mock-interviews"), ariaLabel: "返回模拟面试" }, "练习记录"]} />
         <div className="mi-records-title">
-          <h1>练习记录 <BeTag /></h1>
+          <h1 className="v3-page-title">练习记录 <BeTag /></h1>
           <button type="button" className="v3-btn v3-btn-dark" onClick={() => navigateTo(newMockInterviewPath())}>开始新面试</button>
         </div>
         <p>共 {interviews.length} 场 · 已完成 {done.length} · 已放弃 {abandoned.length} · 累计 {hours.toFixed(1)} 小时</p>

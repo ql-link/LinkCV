@@ -20,7 +20,7 @@ import {
   selectionEndAnchorRect,
   shouldShowSelectionAgentBubble,
 } from "./selectionBubbleAnchor";
-import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
+import { getSinglePageFitScale, getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 import { navigateTo } from "../../routing";
 import {
   LineInsertMenuExtension,
@@ -726,10 +726,10 @@ export function ResumeWorkbench({
   const [toast, setToast] = useState<ToastState>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [pdfExportPending, setPdfExportPending] = useState(false);
   const [commandMenu, setCommandMenu] = useState<CommandMenuState | null>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
+  const [workspacePadding, setWorkspacePadding] = useState(80);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
   const [zoomFeedback, setZoomFeedback] = useState<{ scale: number; sequence: number } | null>(null);
   const [saveErrorNoticeOpen, setSaveErrorNoticeOpen] = useState(false);
@@ -845,11 +845,8 @@ export function ResumeWorkbench({
   };
 
   const displayBaseScale = embedded ? 1 : EDITOR_PAGE_BASE_SCALE;
-  const responsiveFitScale = viewportWidth <= 720
-    ? Math.min(displayBaseScale, Math.max(0.36, (viewportWidth - 32) / A4_WIDTH_IN_CSS_PIXELS))
-    : displayBaseScale;
-  const horizontalPadding = viewportWidth <= 720 ? 32 : viewportWidth <= 980 ? 48 : 96;
-  const horizontalAutoFitScale = getTwoPageFitScale(workspaceWidth, horizontalPadding);
+  const responsiveFitScale = getSinglePageFitScale(workspaceWidth, workspacePadding, displayBaseScale);
+  const horizontalAutoFitScale = getTwoPageFitScale(workspaceWidth, workspacePadding);
   const horizontalMode = pageArrangement === "horizontal" && !settings.smartOnePage;
   const renderedPreviewScale = horizontalMode
     ? horizontalScaleOverride ?? horizontalAutoFitScale
@@ -973,22 +970,36 @@ export function ResumeWorkbench({
 
   useEffect(() => {
     const scrollArea = paperScrollRef.current;
-    if (!scrollArea || typeof ResizeObserver === "undefined") return;
+    if (!scrollArea) return;
+    let frame: number | null = null;
+    let measuredWidth = 0;
+    let measuredPadding = -1;
     const updateWorkspaceWidth = () => {
-      setWorkspaceWidth(scrollArea.clientWidth);
+      frame = null;
+      const width = scrollArea.clientWidth;
+      if (!width) return;
+      const style = getComputedStyle(scrollArea);
+      const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      if (width === measuredWidth && padding === measuredPadding) return;
+      measuredWidth = width;
+      measuredPadding = padding;
+      setWorkspaceWidth(width);
+      setWorkspacePadding(padding);
       if (pageArrangement === "horizontal") setHorizontalScaleOverride(null);
     };
-    const observer = new ResizeObserver(updateWorkspaceWidth);
-    observer.observe(scrollArea);
+    const schedule = () => {
+      if (frame === null) frame = requestAnimationFrame(updateWorkspaceWidth);
+    };
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
+    observer?.observe(scrollArea);
+    if (!observer) window.addEventListener("resize", schedule, { passive: true });
     updateWorkspaceWidth();
-    return () => observer.disconnect();
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", schedule);
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
   }, [pageArrangement]);
-
-  useEffect(() => {
-    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
-    window.addEventListener("resize", updateViewportWidth);
-    return () => window.removeEventListener("resize", updateViewportWidth);
-  }, []);
 
   useEffect(() => () => {
     arrangementLayoutRunRef.current += 1;
