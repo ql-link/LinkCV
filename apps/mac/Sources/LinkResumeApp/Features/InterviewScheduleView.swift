@@ -80,7 +80,7 @@ struct InterviewScheduleView: View {
             .sheet(item: $action) { value in
                 if value.kind == "create" {
                     CareerForm(action: JobAction(kind: "schedule", application: nil, start: value.start, end: value.end), applications: applications, api: session.api,
-                               completed: { action = nil; refresh = UUID() }, close: { action = nil }).frame(width: 720, height: 700)
+                               completed: { action = nil; refresh = UUID() }, close: { action = nil }).frame(width: 880, height: 780)
                 } else {
                     ScheduleSessionForm(action: value, interviews: interviews, api: session.api, completed: { action = nil; refresh = UUID() }, close: { action = nil }).frame(width: 650, height: 660)
                 }

@@ -18,9 +18,10 @@ struct CareerButtonStyle: ButtonStyle {
 struct CareerIcon: View {
     let name: String
     var size: CGFloat = 20
+    var template = false
     var body: some View {
         if let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Career"), let image = NSImage(contentsOf: url) {
-            Image(nsImage: image).resizable().scaledToFit().frame(width: size, height: size).accessibilityHidden(true)
+            Image(nsImage: image).renderingMode(template ? .template : .original).resizable().scaledToFit().frame(width: size, height: size).accessibilityHidden(true)
         }
     }
 }

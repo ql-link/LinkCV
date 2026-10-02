@@ -87,7 +87,7 @@ struct JobsBoardView: View {
         .task(id: account + refreshing.uuidString) { await load() }
         .sheet(item: $action) { item in
             CareerForm(action: item, applications: applications, api: session.api, completed: { action = nil; refreshing = UUID() }, close: { action = nil })
-                .frame(width: 880, height: 740)
+                .frame(width: 880, height: 780)
         }
         .onChange(of: account) { old, new in
             applications = []; overview = .null; logos = [:]; pendingLogos = []; query = ""; hidden = []; order = []; action = nil; selected = nil
@@ -316,6 +316,13 @@ struct CareerForm: View {
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(3600)
     @State private var window = false
+    @State private var openingSet = false
+    @State private var planSet = false
+    @State private var planStart = Date()
+    @State private var planEnd = Date().addingTimeInterval(3600)
+    @State private var createdSession: JSONValue?
+    @State private var savedPlan = false
+    @State private var frozenPlan: JSONValue?
     @State private var meeting = ""
     @State private var location = ""
     @State private var reason = "user_withdrew"
@@ -349,7 +356,7 @@ struct CareerForm: View {
     @State private var sessionCommand = ""
     @State private var commandPayload: JSONValue?
 
-    private var heading: String { ["import": "导入岗位", "arranged": "已有面试安排", "stage": "添加下一阶段", "category": "修改求职分类", "terminate": "终止求职", "delete": "删除岗位", "detail": "求职详情", "plugin": "安装浏览器插件", "offer": "记录正式 Offer", "apply": "记录投递", "schedule-current": "安排时间", "accept": "接受 Offer", "decline": "婉拒 Offer", "archive": "归档岗位", "restore": "恢复岗位", "notes": "编辑备注", "schedule": "新建面试"][kind] ?? "岗位" }
+    private var heading: String { ["import": "导入岗位", "arranged": "已有面试安排", "stage": "添加求职阶段", "category": "修改求职分类", "terminate": "终止求职", "delete": "删除岗位", "detail": "求职详情", "plugin": "安装浏览器插件", "offer": "记录正式 Offer", "apply": "记录投递", "schedule-current": "安排时间", "accept": "接受 Offer", "decline": "婉拒 Offer", "archive": "归档岗位", "restore": "恢复岗位", "notes": "编辑备注", "schedule": "新建面试"][kind] ?? "岗位" }
     private var needsStage: Bool { ["stage", "apply", "schedule-current", "arranged", "schedule"].contains(kind) }
     private var creation: Bool { kind == "import" || (["arranged", "schedule"].contains(kind) && selectedExisting.isEmpty) }
     private var stageOptions: [String] {
@@ -362,11 +369,11 @@ struct CareerForm: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) { HStack { Text(heading).font(LibraryTypography.serif(22)); Spacer(); Button(action: close) { Text("×").font(.system(size: 24)).frame(width: 22, height: 22) }.buttonStyle(.plain).accessibilityLabel("关闭").disabled(busy) }; if let current { Text(current.company + " · " + current.title + " · 现在：" + current.statusLabel).font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F)) } }.padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 20)
+            VStack(alignment: .leading, spacing: 5) { HStack { Text(heading).font(LibraryTypography.serif(20)).frame(height: 29); Spacer(); Button(action: close) { Text("×").font(.system(size: 18)).foregroundStyle(Color(hex: 0x96968F)).frame(width: 22, height: 22) }.buttonStyle(.plain).accessibilityLabel("关闭").disabled(busy) }; if let current { Text(current.company + " · " + current.title + " · 现在：" + current.statusLabel).font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x666660)).frame(height: 16) } }.padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 18)
             HStack(alignment: .top, spacing: 22) {
-                formSummary.frame(width: 272)
+                formSummary.frame(width: 272, height: 572)
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
                     if kind == "plugin" {
                         Text("浏览器插件在 Chrome / Edge 中采集岗位，保存后刷新客户端即可查看。")
                         Text("在 Web 的岗位看板选择安装浏览器插件，下载并解压 ZIP；打开浏览器扩展管理，启用开发者模式后加载已解压的扩展。")
@@ -407,16 +414,7 @@ struct CareerForm: View {
                             Stepper("面试轮次：\(round)", value: $round, in: 1...100).disabled(frozenStage != nil || reuseCurrentStage)
                         }
                         if showSchedule {
-                            Toggle("同时添加排期", isOn: $scheduled).disabled(staged || frozenStage != nil || kind == "schedule")
-                            if scheduled {
-                                if stage == "interview" { Picker("面试方式", selection: $interviewMode) { Text("视频").tag("video"); Text("现场").tag("onsite"); Text("电话").tag("phone"); Text("其他").tag("other") } }
-                                Toggle("确认仍保存有时间冲突的安排", isOn: $allowConflict)
-                                if ["assessment", "written_test"].contains(stage) { Toggle("开放作答窗口", isOn: $window) }
-                                DatePicker(window ? "开放时间" : "开始时间", selection: $start)
-                                DatePicker(window ? "完成期限" : "结束时间", selection: $end)
-                                field("会议或作答链接（可选）", text: $meeting)
-                                field("地点（可选）", text: $location)
-                            }
+                            CareerStageScheduleFields(stage: stage, scheduled: $scheduled, canSkipSchedule: !["schedule", "schedule-current", "arranged"].contains(kind), window: $window, start: $start, end: $end, openingSet: $openingSet, planSet: $planSet, planStart: $planStart, planEnd: $planEnd, meeting: $meeting, location: $location, interviewMode: $interviewMode, allowConflict: $allowConflict, hasError: error != nil)
                         }
                         if stage == "offer" {
                             if offerIntent == "none" { field("口头薪酬（可选）", text: $oralSalary) } else { formalOfferFields }
@@ -478,18 +476,19 @@ struct CareerForm: View {
                         }
                     }
                     if let error { Text(error).font(.system(size: 13)).foregroundStyle(.red).textSelection(.enabled) }
-                }.padding(.trailing, 1).disabled(busy || frozenStage != nil && !staged || frozenSession != nil || frozenOffer != nil)
-            } } .padding(.horizontal, 32)
+                }.disabled(busy || frozenStage != nil && !staged || frozenSession != nil || frozenOffer != nil)
+            }.frame(width: 516) } .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 32)
             Spacer(minLength: 16)
+            Rectangle().fill(Color(hex: 0xE4E4E0)).frame(height: 1).padding(.bottom, 20)
             HStack {
                 if current != nil && creation { Text("岗位已保存；后续步骤可继续重试。").font(.system(size: 12)).foregroundStyle(.secondary) }
                 Spacer()
                 Button("取消", action: close).buttonStyle(CareerButtonStyle(radius: 18, height: 36)).disabled(busy)
                 if !["detail", "plugin"].contains(kind) {
-                    Button(busy ? "正在保存…" : kind == "delete" ? "确认删除" : staged ? "重试剩余步骤" : ["offer": "记录 Offer", "apply": "记录投递", "stage": "添加阶段", "accept": "确认接受", "decline": "确认婉拒", "schedule-current": "保存安排"][kind] ?? "保存") { Task { await save() } }
+                    Button(busy ? "正在保存…" : kind == "delete" ? "确认删除" : staged ? "重试剩余步骤" : ["offer": "记录 Offer", "apply": "记录投递", "stage": "添加" + (stage == "interview" ? label : stage == "offer" ? offerIntent == "none" ? " OC" : " Offer" : CareerStage.label(stage)), "accept": "确认接受", "decline": "确认婉拒", "schedule-current": "保存安排"][kind] ?? "保存") { Task { await save() } }
                         .buttonStyle(CareerButtonStyle(primary: true, radius: 18, height: 36)).disabled(busy || creationUnknown)
                 }
-            }.padding(.horizontal, 32).padding(.bottom, 28)
+            }.padding(.horizontal, 32).padding(.bottom, 32)
         }.font(LibraryTypography.sans(13)).interactiveDismissDisabled(busy).onChange(of: selectedExisting) { _, id in
             if kind == "schedule", let chosen = applications.first(where: { $0.id == id }) {
                 reuseCurrentStage = !(chosen.raw["current_stage"]?.text("id") ?? "").isEmpty && chosen.raw.text("stage_state") == "awaiting_schedule" && ["assessment", "written_test", "ai_interview", "interview"].contains(chosen.stage)
@@ -513,7 +512,7 @@ struct CareerForm: View {
             let noteSource = current?.raw.text("notes") ?? ""
             channel = CareerNotes.value("投递渠道", in: noteSource); oralSalary = CareerNotes.value("口头薪酬", in: noteSource); replyDeadline = CareerNotes.value("回复截止", in: noteSource); startWork = CareerNotes.value("预计入职", in: noteSource); probation = CareerNotes.value("试用期", in: noteSource); offerMaterials = CareerNotes.value("Offer 材料", in: noteSource); salaryDescription = CareerNotes.value("薪酬说明", in: noteSource)
             let day = ISO8601DateFormatter(); if let parsed = day.date(from: CareerNotes.value("收到日期", in: noteSource)) { offerReceived = parsed }
-            category = action.application?.category ?? ""; scheduled = ["arranged", "schedule"].contains(action.kind)
+            category = action.application?.category ?? ""; scheduled = ["arranged", "schedule", "stage", "apply"].contains(action.kind)
             if let seed = action.start { start = seed }; if let seed = action.end { end = seed }
             if kind == "schedule-current", let current { reuseCurrentStage = true; stage = current.stage; label = current.stageLabel; scheduled = true }
             if kind == "notes" { notes = current?.raw.text("notes") ?? "" }
@@ -538,21 +537,22 @@ struct CareerForm: View {
     }
     private var stageTiles: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("阶段").font(LibraryTypography.sans(12, weight: .medium))
+            Text("阶段").font(LibraryTypography.sans(12, weight: .medium)).frame(height: 16)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
                 ForEach(["screening", "assessment", "written_test", "ai_interview", "interview", "hr", "oc", "formal"], id: \.self) { choice in
                     let key = ["hr": "interview", "oc": "offer", "formal": "offer"][choice] ?? choice
                     let chosen = stage == key && (key != "offer" || offerIntent == (choice == "formal" ? "received" : "none")) && (key != "interview" || (choice == "hr") == (label == "HR 面"))
                     let allowed = stageOptions.contains(key)
                     Button {
-                        stage = key
+                        stage = key; scheduled = ["assessment", "written_test", "ai_interview", "interview"].contains(key)
                         if choice == "hr" { label = "HR 面" } else if choice == "interview" && label == "HR 面" { label = "面试" }
                         if key == "offer" { offerIntent = choice == "formal" ? "received" : "none" }
                     } label: {
-                        VStack(spacing: 4) { CareerIcon(name: ["screening":"filter", "assessment":"text", "written_test":"edit", "ai_interview":"spark", "interview":"user", "hr":"brief", "oc":"phone", "formal":"mail"][choice]!); Text(["hr":"HR 面", "oc":"OC", "formal":"Offer", "interview":"面试"][choice] ?? CareerStage.label(key)).font(LibraryTypography.sans(12)) }
+                        VStack(spacing: 4) { CareerIcon(name: ["screening":"filter", "assessment":"text", "written_test":"edit", "ai_interview":"spark", "interview":"user", "hr":"brief", "oc":"phone", "formal":"mail"][choice]!, template: true).foregroundStyle(chosen ? Color(hex: 0x1D1D1B) : Color(hex: 0x96968F)); Text(["hr":"HR 面", "oc":"OC", "formal":"Offer", "interview":"面试"][choice] ?? CareerStage.label(key)).font(LibraryTypography.sans(12)) }
                             .frame(maxWidth: .infinity).frame(height: 58)
                             .background(chosen ? Color(hex: 0xFAFAF9) : .white, in: RoundedRectangle(cornerRadius: 10))
                             .overlay(RoundedRectangle(cornerRadius: 10).stroke(chosen ? Color(hex: 0x1D1D1B) : Color(hex: 0xE4E4E0), lineWidth: chosen ? 1.5 : 1))
+                            .overlay(alignment: .topTrailing) { if chosen { Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).padding(6) } }
                     }.buttonStyle(.plain).foregroundStyle(Color(hex: 0x1D1D1B)).opacity(allowed ? 1 : 0.38).disabled(!allowed || staged || frozenStage != nil || reuseCurrentStage || kind == "offer")
                 }
             }
@@ -561,17 +561,24 @@ struct CareerForm: View {
     private var formSummary: some View {
         let previous = current?.raw["stages"]?.items.suffix(3) ?? []
         let next = !needsStage && kind != "offer" ? heading : kind == "offer" ? "Offer · 正式录用" : stage == "offer" ? offerIntent == "none" ? "OC · 口头录用意向" : "Offer · 正式录用" : stage == "interview" ? label : CareerStage.label(stage)
-        return VStack(alignment: .leading, spacing: 20) {
-            Text("这一场怎么安排").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F))
-            VStack(alignment: .leading, spacing: 22) {
-                ForEach(Array(previous.enumerated()), id: \.offset) { _, entry in
-                    HStack(spacing: 9) { Circle().fill(Color(hex: 0x96968F)).frame(width: 6, height: 6); Text(entry.text("stage_label")).lineLimit(1); Spacer(minLength: 0); Text(entry.text("stage_status") == "completed" ? "已通过" : current?.stage == "offer" ? "已沟通" : current?.statusLabel ?? "").font(LibraryTypography.sans(10.5)).foregroundStyle(Color(hex: 0x96968F)) }.font(LibraryTypography.sans(12))
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("这一场怎么安排").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F)).frame(height: 16)
+            Spacer().frame(height: 14)
+            VStack(alignment: .leading, spacing: 0) {
+                if let applied = current?.raw.text("applied_at"), !applied.isEmpty {
+                    timelineRow("提交投递", date: applied, status: "已投递", isCurrent: false)
                 }
-                HStack(spacing: 9) { Circle().fill(Color(hex: 0x1D1D1B)).frame(width: 8, height: 8); Text(next).font(LibraryTypography.sans(12, weight: .medium)).lineLimit(1); Spacer(minLength: 0); Text("本次").font(LibraryTypography.sans(11)).padding(.horizontal, 7).padding(.vertical, 3).background(.white, in: Capsule()) }
+                ForEach(Array(previous.enumerated()), id: \.offset) { _, entry in
+                    timelineRow(entry.text("stage_label"), date: entry.text("entered_at"), status: entry.text("stage_status") == "completed" ? "已通过" : "等待结果", isCurrent: false)
+                }
+                timelineRow(stage == "written_test" ? "技术笔试" : next, date: ISO8601DateFormatter().string(from: start), status: "本次", isCurrent: true)
             }
+            Spacer().frame(height: 6)
             Rectangle().fill(Color(hex: 0xE4E4E0)).frame(height: 1)
-            Text("确认后会保存").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F))
-            summaryRow("阶段", ["accept", "decline"].contains(kind) ? "本次求职将结束，历史会保留" : kind == "offer" ? "进入「Offer · 待确认」" : "进入「" + next + "」")
+            Spacer().frame(height: 18)
+            Text("点「添加」后会保存").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F)).frame(height: 16)
+            Spacer().frame(height: 15)
+            summaryRow("阶段", ["accept", "decline"].contains(kind) ? "本次求职将结束，历史会保留" : kind == "offer" ? "进入「Offer · 待确认」" : "进入「" + (stage == "written_test" ? "笔试 · 在线测评" : next) + "」")
             if ["accept", "decline", "archive", "restore", "terminate"].contains(kind) {
                 summaryRow("记录", "保留已有阶段与面试记录")
                 summaryRow("确认", "此操作会更新该岗位的求职状态")
@@ -579,15 +586,32 @@ struct CareerForm: View {
                 summaryRow("投递日期", summaryDate(appliedAt))
                 summaryRow("投递渠道", channel)
             } else {
+            if ["assessment", "written_test"].contains(stage) && scheduled && window {
+                summaryRow("开放与截止", compactDate(start) + " 至 " + compactDate(end))
+                summaryRow("我的计划", planSet ? compactDate(planStart) + " – " + compactDate(planEnd, format: "HH:mm") : "可选，只提醒自己")
+            } else {
             summaryRow(kind == "offer" ? "回复截止" : "时间", kind == "offer" ? replyDeadline.isEmpty ? "可选，稍后完善" : replyDeadline : scheduled ? summaryDate(start) : "稍后安排")
             summaryRow(kind == "offer" ? "薪酬与地点" : "方式", kind == "offer" ? [salaryDescription, offerBase].filter { !$0.isEmpty }.joined(separator: " · ") : ["video":"视频", "onsite":"现场", "phone":"电话", "other":"其他"][interviewMode] ?? "其他")
             }
+            }
             Spacer(minLength: 0)
-        }.padding(20).frame(maxHeight: .infinity, alignment: .topLeading).background { CareerIcon(name: "dot-grid", size: 572).frame(maxWidth: .infinity, maxHeight: .infinity).clipped() }.background(Color(hex: 0xF7F7F5), in: RoundedRectangle(cornerRadius: 14)).clipShape(RoundedRectangle(cornerRadius: 14))
+        }.padding(.horizontal, 20).padding(.top, 18).frame(maxHeight: .infinity, alignment: .topLeading).background { CareerIcon(name: "dot-grid", size: 572).frame(maxWidth: .infinity, maxHeight: .infinity).clipped() }.background(Color(hex: 0xF7F7F5), in: RoundedRectangle(cornerRadius: 14)).clipShape(RoundedRectangle(cornerRadius: 14))
     }
+    private func timelineRow(_ title: String, date: String, status: String, isCurrent: Bool) -> some View {
+        let f = DateFormatter(); f.dateFormat = "MM.dd"
+        let day = CareerApplication.date(date).map { f.string(from: $0) } ?? ""
+        return HStack(spacing: 9) {
+            Circle().fill(isCurrent ? Color(hex: 0x1D1D1B) : Color(hex: 0x3B9D6C)).frame(width: isCurrent ? 8 : 6, height: isCurrent ? 8 : 6).frame(width: 10)
+                .overlay { if !isCurrent { Rectangle().fill(Color(hex: 0xDADAD5)).frame(width: 1, height: 40).offset(y: 20) } }
+            Text(title + (day.isEmpty ? "" : " · " + day)).font(LibraryTypography.sans(11)).lineLimit(1)
+            Spacer(minLength: 0)
+            Text(status).font(LibraryTypography.sans(11)).foregroundStyle(isCurrent ? .white : Color(hex: 0x1D1D1B)).padding(.horizontal, isCurrent ? 7 : 0).padding(.vertical, 3).background { if isCurrent { Capsule().fill(Color(hex: 0x1D1D1B)) } }
+        }.frame(height: 40)
+    }
+    private func compactDate(_ date: Date, format: String = "MM-dd HH:mm") -> String { let f = DateFormatter(); f.dateFormat = format; return f.string(from: date) }
     private func summaryDate(_ date: Date) -> String { let formatter = DateFormatter(); formatter.locale = Locale(identifier: "zh_CN"); formatter.dateFormat = "MM-dd EEE HH:mm"; return formatter.string(from: date) }
     private func summaryRow(_ title: String, _ value: String) -> some View {
-        HStack(alignment: .top, spacing: 12) { CareerIcon(name: "brief", size: 14).frame(width: 28, height: 28).background(.white, in: RoundedRectangle(cornerRadius: 7)); VStack(alignment: .leading, spacing: 6) { Text(title).font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F)); Text(value.isEmpty ? "可选，稍后完善" : value).font(LibraryTypography.sans(12)) } }.padding(.top, 4)
+        HStack(alignment: .top, spacing: 12) { CareerIcon(name: "brief", size: 14).frame(width: 28, height: 28).background(.white, in: RoundedRectangle(cornerRadius: 7)); VStack(alignment: .leading, spacing: 6) { Text(title).font(LibraryTypography.sans(11)); Text(value.isEmpty ? "可选，稍后完善" : value).font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x666660)) } }.frame(height: 48, alignment: .top).padding(.bottom, 20)
     }
     private var categoryPicker: some View {
         Picker("求职分类", selection: $category) { Text("未分类").tag(""); Text("实习").tag("internship"); Text("校招").tag("campus"); Text("正式").tag("full_time") }
@@ -672,6 +696,7 @@ struct CareerForm: View {
         if needsStage && scheduled && showSchedule && end <= start { error = "结束时间须晚于开始时间。"; return }
         if needsStage && stage == "interview" && label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { error = "请填写面试名称。"; return }
         if stage == "offer" && !offerSalary.isEmpty && (Double(offerSalary) == nil || Double(offerSalary)! < 0) { error = "请填写有效薪资。"; return }
+        if needsStage && scheduled && ["assessment", "written_test"].contains(stage) && window && planSet && (planEnd <= planStart || planStart < start || planEnd > end) { error = "我的作答计划必须在开放与截止时间内，结束须晚于开始。"; return }
         busy = true
         var creating = false
         do {
@@ -716,8 +741,32 @@ struct CareerForm: View {
                         let formatter = ISO8601DateFormatter()
                         frozenSession = .object(["client_request_id": .string(UUID().uuidString), "application_stage_id": savedStage?["current_stage"]?["id"] ?? .null, "stage_type": .string(stage == "interview" ? "interview" : "other"), "stage_label": .string(reuseCurrentStage ? (current.raw["current_stage"]?.text("stage_label") ?? label) : stage == "interview" ? label : CareerStage.label(stage)), "round_no": stage == "interview" ? .number(Double(round)) : .null, "start_at": .string(formatter.string(from: start)), "end_at": .string(formatter.string(from: end)), "schedule_kind": .string(window && ["assessment", "written_test"].contains(stage) ? "open_window" : "fixed_slot"), "timezone": .string(TimeZone.current.identifier), "mode": .string(stage == "interview" ? interviewMode : "other"), "allow_conflict": .bool(allowConflict), "meeting_url": meeting.isEmpty ? .null : .string(meeting), "location": location.isEmpty ? .null : .string(location)])
                     }
-                    _ = try await api.careerRequest(path: "/api/job-applications/\(current.id)/interview-sessions", method: "POST", query: [:], body: frozenSession)
+                    let result = try await api.careerRequest(path: "/api/job-applications/\(current.id)/interview-sessions", method: "POST", query: [:], body: frozenSession)
+                    createdSession = result["session"]
                     savedSession = true
+                }
+                if savedSession && ["assessment", "written_test"].contains(stage) && window && planSet && !savedPlan {
+                    guard let createdSession, !createdSession.text("id").isEmpty else { throw APIError.invalidResponse }
+                    if frozenPlan == nil {
+                        let f = ISO8601DateFormatter()
+                        frozenPlan = .object(["base_lock_version": createdSession["lock_version"] ?? .number(1), "answer_plan_start_at": .string(f.string(from: planStart)), "answer_plan_end_at": .string(f.string(from: planEnd))])
+                    }
+                    do {
+                        let result = try await api.careerRequest(path: "/api/interview-sessions/\(createdSession.text("id"))/answer-plan", method: "PUT", query: [:], body: frozenPlan)
+                        self.createdSession = result["session"] ?? createdSession; savedPlan = true
+                    } catch {
+                        // A lost response must not make a successful plan look unsaved or overwrite a newer plan.
+                        let originalError = error
+                        let result = try? await request("/api/interview-sessions/\(createdSession.text("id"))")
+                        let remote = result?["session"]
+                        let desiredStart = CareerApplication.date(frozenPlan?.text("answer_plan_start_at") ?? "")
+                        let desiredEnd = CareerApplication.date(frozenPlan?.text("answer_plan_end_at") ?? "")
+                        if let remote, let desiredStart, let desiredEnd,
+                           CareerApplication.date(remote.text("answer_plan_start_at")) == desiredStart,
+                           CareerApplication.date(remote.text("answer_plan_end_at")) == desiredEnd {
+                            self.createdSession = remote; savedPlan = true
+                        } else { throw originalError }
+                    }
                 }
                 if stage == "offer" && offerIntent == "received" {
                     let app = self.current!
