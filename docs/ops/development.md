@@ -199,7 +199,7 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run build:extension`             | 构建可侧载的 Chrome MV3 目录                                         |
 | `uv run --directory apps/backend python ../../scripts/release/build_extension_release.py ...` | 生成并校验 Development/Production 插件发布 ZIP 与 SHA256SUMS |
 | `npm run build:native-renderer`      | 生成原生客户端离线纸面 `paper.html`，并复制进 Mac 与 Windows 资源目录 |
-| `npm run dev:mac`                     | 构建并启动 SwiftUI Mac 原生客户端（mock 数据），见 `apps/native/README.md` |
+| `npm run dev:mac`                     | 构建并启动 SwiftUI Mac 原生客户端（需配置 API origin），见 `apps/native/README.md` |
 | `npm run test:mac`                    | Mac 原生客户端 Core 单测，兼容只装 Command Line Tools 的环境         |
 | `npm run test:windows-core`           | Windows 原生客户端 Core 单测（需 .NET 10 SDK，macOS 也可运行）       |
 | `npm run test:backend:unit`           | 后端快速单元测试                                                     |
@@ -210,6 +210,12 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 | `npm run check:docs:branch`           | 按当前分支相对 `origin/dev` 的已提交差异校验文档同步，推送前运行；`check:docs` 默认只看未提交改动 |
 | `npm run check:app`                   | 执行设计门禁、类型检查、构建、应用测试和 Pi 质量检查                 |
 | `npm run check`                       | 完整本地质量入口                                                     |
+
+### 桌面鉴权配置与验证
+
+`AUTH_DESKTOP_RETRY_ENCRYPTION_KEY` 是独立 Fernet 密钥，仅用于 desktop 领取/续期结果的 120 秒密文恢复；缺失或非法时桌面登录能力关闭，Web/小程序保持可用。密钥写入当前 profile 对应的私密覆盖文件，不写入示例或版本控制；多实例必须共享同一密钥。Development/Production Compose 的后端通过既有 `env_file` 加载基础配置与私密覆盖，无需新增端口或服务。换 key 会使旧结果无法恢复，不能视为无影响热切换。
+
+桌面后端测试入口为 `tests/integration/api/test_desktop_auth.py`；默认包含 Fake Redis，`RUN_DESKTOP_REDIS_TESTS=1` 才运行隔离 `redis-server` 的 Unix socket 用例。跳过真实 Redis 不代表 Lua 原子性已验证；当前脚本只支持单节点/非 Cluster Redis，键类型预检也不等于 Redis 命令错误全面回滚。两端 Core 测试分别位于 `DesktopSessionTests.swift` 和 `DesktopSessionTests.cs`，依赖相应 Swift/.NET SDK，不替代手机扫码或原生 GUI 验收。正式 App 已注入 HTTP 与系统凭据库；原生 API origin、平台测试和进程所有权约定见 [`apps/native/README.md`](../../apps/native/README.md)。`npm run test:windows-platform` 运行 Windows Credential Locker 测试，需在 Windows 显式设置 `RUN_DESKTOP_CREDENTIAL_TESTS=1`。
 
 ## 测试分层
 

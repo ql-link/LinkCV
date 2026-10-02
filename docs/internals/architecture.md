@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Web | `apps/web` | React 19、TypeScript、Vite 单页应用，承载用户工作区、公共分享和管理端界面 |
 | Desktop shell | `apps/desktop` | Electron macOS 桌面壳：加载线上 LinkResume Web 端（开发窗口连本地 Vite，打包产物按目标环境连 Dev 或生产），与业务代码和后端零耦合；窗口采用无标题栏沉浸形态，业务迭代不需要修改壳。打包、环境区分（本地/开发版/正式版）与产物管理由 `desktop-release` Skill 引导 |
-| Native desktop clients | `apps/mac`、`apps/windows`、`apps/native` | SwiftUI（macOS）与 WinUI 3（Windows）原生客户端骨架：界面为系统控件，仅简历纸面嵌入离线网页视图，复用 Web 端 `renderResumePrintDocument`；目前使用虚构 mock 数据，登录依赖尚未提供的 desktop 会话渠道，详见 [`apps/native/README.md`](../../apps/native/README.md) |
+| Native desktop clients | `apps/mac`、`apps/windows`、`apps/native` | SwiftUI（macOS）与 WinUI 3（Windows）原生客户端骨架：界面为系统控件，仅简历纸面嵌入离线网页视图，复用 Web 端 `renderResumePrintDocument`；正式 App 已注入 desktop Bearer HTTP、系统安全存储与扫码会话协调器，支持登录与模板只读列表，其余页面仍为占位，协议边界见 [桌面会话](../api/http-contracts.md#桌面-bearer-会话)，详见 [`apps/native/README.md`](../../apps/native/README.md) |
 | Browser extension | `apps/extension` | WXT、React、TypeScript Chrome MV3 插件；读取当前 BOSS 详情页并提交确认后的采集字段 |
 | WeChat miniprogram | `apps/miniprogram` | 原生小程序渠道，提供游客示例、主动登录、扫码确认、本人头像与昵称维护、简历只读浏览及求职跟进；时间表与岗位详情复用面试弹窗、记录编辑器和统一公司标识；详见 [小程序架构](miniprogram.md) |
 | Backend | `apps/backend` | FastAPI 业务 API、内部 Agent 工具、Worker、SQLAlchemy 模型与 SQL-first Alembic 迁移 |
@@ -34,7 +34,7 @@ FastAPI 在 `apps/backend/src/linkresume/main.py` 以 `/api` 前缀挂载浏览�
 ## 数据与鉴权
 
 - MySQL 是用户、简历、Agent 会话/提案、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。各业务对象归属见对应[功能文档](../README.md#功能文档)。
-- Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序使用 Bearer access 与 JSON refresh，Redis session channel 阻止两端凭据混用并支持统一撤销。启用管理员可使用小程序本人资料、只读简历和扫码确认能力，停用账号仍会被拒绝。小程序游客示例、隐私确认、主动登录、预览缓存、交互视口和本地调试安全回退见 [小程序架构](miniprogram.md)。
+- Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序与 desktop 分别使用独立渠道的 Bearer access 与 JSON refresh，Redis session channel 阻止三渠道凭据混用并支持统一撤销，桌面协议见 [HTTP 契约](../api/http-contracts.md#桌面-bearer-会话)。启用管理员可使用小程序本人资料、只读简历和扫码确认能力，停用账号仍会被拒绝。小程序游客示例、隐私确认、主动登录、预览缓存、交互视口和本地调试安全回退见 [小程序架构](miniprogram.md)。
 - 普通 Web 登录页由 `/api/auth/capabilities` 控制：Local/Development 只使用邮箱密码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`，管理员也可通过微信双端登录。
 - 图片存储在私有 MinIO bucket 中；现有兼容资源位于 `users/<user-id>/assets/`，简历编辑器新增资源位于 `users/<user-id>/resumes/<resume-id>/assets/`，两者都由服务端生成对象键并在读取时校验所有权。
 - 原型 Express/SQLite 数据不迁移到 MySQL。

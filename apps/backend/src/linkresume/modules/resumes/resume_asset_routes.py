@@ -17,7 +17,7 @@ from linkresume.core.storage import (
     get_storage,
     infer_image_content_type,
 )
-from linkresume.modules.identity.dependencies import get_current_user, lock_active_user
+from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user, lock_active_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.image_limits import (
     MAX_RESUME_IMAGE_BYTES,
@@ -117,7 +117,7 @@ def read_resume_asset(
     resume_id: str,
     asset_name: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> StreamingResponse:
     resume = require_owned_resume(db, resume_id, user.id)

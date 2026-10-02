@@ -36,7 +36,7 @@ from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import AssetStorage, get_storage
 from linkresume.domain.job_source import InvalidJobSource
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_career_user as get_current_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.job_descriptions.models import JobDescription

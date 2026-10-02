@@ -17,7 +17,7 @@ from linkresume.core.storage import (
     get_storage,
     infer_image_content_type,
 )
-from linkresume.modules.identity.dependencies import get_current_user, lock_active_user
+from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user, lock_active_user
 from linkresume.modules.identity.models import User
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -76,7 +76,7 @@ def upload_asset(
 @router.get("/{object_name:path}", response_model=None)
 def read_asset(
     object_name: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> StreamingResponse:
     if not object_name.startswith(f"users/{user.id}/assets/"):

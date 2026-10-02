@@ -36,7 +36,7 @@ from linkresume.core.storage import (
 )
 from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.agent.service import delete_resume_agent_data
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.resumes.models import (
@@ -146,7 +146,7 @@ def resume_record(resume: Resume) -> ResumeRecord:
 @router.get("", response_model=ResumeListResponse)
 def list_resumes(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeListResponse:
     resumes = db.scalars(
         select(Resume)
@@ -205,7 +205,7 @@ def create_resume(
 def get_resume(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeResponse:
     return ResumeResponse(resume=resume_record(require_owned_resume(db, resume_id, user.id)))
 

@@ -31,7 +31,7 @@ from linkresume.application.mock_interviews.speech_session import (
 )
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.modules.identity.dependencies import _load_user, get_current_user
+from linkresume.modules.identity.dependencies import _load_user, get_current_mock_interview_user as get_current_user
 from linkresume.modules.identity.session_service import WEB_CHANNEL
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.resolver import MOCK_INTERVIEW, SPEECH_TO_TEXT, TEXT_TO_SPEECH, TRANSCRIPT_CORRECTION
@@ -278,6 +278,8 @@ async def create_mock_interview(
     user: User = Depends(get_current_user),
     runner: MockInterviewRunner = Depends(get_mock_interview_runner),
 ) -> MockInterviewResponse:
+    if request.headers.get("authorization") is not None and payload.answer_mode != "text":
+        raise ApiError(403, "DESKTOP_SCOPE_FORBIDDEN")
     try:
         await request.app.state.llm_service.ensure_configured(MOCK_INTERVIEW)
     except LLMError as error:
@@ -649,6 +651,8 @@ async def repeat_mock_interview(
     source_mode = await _in_session(
         request, lambda db: service.require_owned(db, user.id, interview_id).answer_mode
     )
+    if request.headers.get("authorization") is not None and source_mode != "text":
+        raise ApiError(403, "DESKTOP_SCOPE_FORBIDDEN")
     snapshot = await _ensure_voice_available(request) if source_mode == "voice" else None
 
     def run(db: Session) -> tuple[int, str, MockInterviewDetail]:

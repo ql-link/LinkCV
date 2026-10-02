@@ -1,7 +1,7 @@
 import Foundation
 
 /// 无损承载任意 JSON。用于原生层不需要理解、只需透传的契约字段（简历正文、模板定义、布局方案）。
-public enum JSONValue: Codable, Equatable, Sendable {
+public enum JSONValue: Codable, Equatable, Hashable, Sendable {
     case null
     case bool(Bool)
     case number(Double)
@@ -35,6 +35,8 @@ public enum JSONValue: Codable, Equatable, Sendable {
         if case .object(let object) = self { return object[key] }
         return nil
     }
+
+    public var numberValue: Double? { if case .number(let value) = self { return value }; return nil }
 
     public var stringValue: String? {
         if case .string(let value) = self { return value }

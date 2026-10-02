@@ -51,7 +51,7 @@ from linkresume.modules.datasets.schemas import (
     UserDatasetRenameRequest,
     UserDatasetRecord,
 )
-from linkresume.modules.identity.dependencies import get_current_user, get_settings
+from linkresume.modules.identity.dependencies import get_current_dataset_user, get_settings
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import InterviewSession, JobApplication
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
@@ -276,7 +276,7 @@ async def upload_dataset(
         alias="Idempotency-Key",
     ),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
     dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),
@@ -351,7 +351,7 @@ async def upload_dataset(
 def list_datasets(
     folder_id: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
 ) -> UserDatasetListResponse:
     query = (
@@ -413,7 +413,7 @@ def validate_folder_name(name: str) -> str:
 @router.get("/folders", response_model=DatasetFolderListResponse)
 def list_folders(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetFolderListResponse:
     folders = (
         db.execute(
@@ -465,7 +465,7 @@ def list_folders(
 def create_folder(
     payload: DatasetFolderCreateRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetFolderRecord:
     user = lock_active_user(db, user.id)
     cleaned_name = validate_folder_name(payload.name)
@@ -515,7 +515,7 @@ def rename_folder(
     folder_id: int,
     payload: DatasetFolderRenameRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetFolderRecord:
     user = lock_active_user(db, user.id)
     cleaned_name = validate_folder_name(payload.name)
@@ -574,7 +574,7 @@ def delete_folder(
     folder_id: int,
     confirm_contents: bool = Query(default=False),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DatasetFolderDeleteResponse:
     user = lock_active_user(db, user.id)
@@ -632,7 +632,7 @@ def move_dataset(
     dataset_id: int,
     payload: DatasetMoveRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> UserDatasetRecord:
     user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
@@ -674,7 +674,7 @@ def move_dataset(
 def move_datasets_batch(
     payload: DatasetBatchMoveRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> DatasetBatchMoveResponse:
     user = lock_active_user(db, user.id)
     if not payload.dataset_ids:
@@ -738,7 +738,7 @@ def rename_dataset(
     dataset_id: int,
     payload: UserDatasetRenameRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> UserDatasetRecord:
     user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
@@ -772,7 +772,7 @@ async def retry_dataset(
     dataset_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
 ) -> UserDatasetRecord:
@@ -824,7 +824,7 @@ async def retry_dataset(
 def delete_dataset(
     dataset_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> UserDatasetDeleteResponse:
     user = lock_active_user(db, user.id)
@@ -891,7 +891,7 @@ def _stream_object(response) -> Iterator[bytes]:
 def get_dataset_source(
     dataset_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> StreamingResponse:
     dataset, task = content_service.owned(db, user.id, dataset_id)
@@ -928,7 +928,7 @@ def get_dataset_content(
     dataset_id: int,
     response: Response,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
 ):
@@ -956,7 +956,7 @@ def get_dataset(
     dataset_id: int,
     response: Response,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ):
     dataset, task = content_service.owned(db, user.id, dataset_id)
     record = dataset_record(dataset, task)
@@ -978,7 +978,7 @@ async def replace_dataset_file(
     if_match: str | None = Header(default=None),
     idempotency_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
     dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),

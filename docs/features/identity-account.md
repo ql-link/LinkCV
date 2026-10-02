@@ -2,7 +2,7 @@
 
 ## 功能范围与入口
 
-账号功能提供普通用户身份、本人资料、联系邮箱、求职画像、偏好、会话管理和账号注销。普通用户的认证方式按环境互斥：Local/Development 只开放邮箱密码注册、登录和改密，Production 只开放微信扫码与小程序登录；管理员的 `/admin/login` 密码入口独立保留。开发环境的所有微信认证和身份确认接口返回 404，正式环境的普通邮箱注册、密码登录和改密接口返回 404。前端从后端能力响应选择入口，能力读取失败时显示重试。
+账号功能提供普通用户身份、本人资料、联系邮箱、求职画像、偏好、Web、小程序与 desktop 会话管理和账号注销。普通用户的认证方式按环境互斥：Local/Development 只开放邮箱密码注册、登录和改密，Production 只开放微信扫码与小程序登录；管理员的 `/admin/login` 密码入口独立保留。开发环境的所有微信认证和身份确认接口返回 404（包括桌面二维码、状态、领取与续期），正式环境的普通邮箱注册、密码登录和改密接口返回 404。前端从后端能力响应选择入口，能力读取失败时显示重试。
 
 `/account` 展示真实注册时间、当前 Web 会话的设备摘要和简历数量，支持昵称、头像、联系邮箱、求职资料和偏好保存。普通用户不再提供微信绑定、解绑或换绑操作。`/account-deletion` 是匿名注销进度页，受理后通过当前标签页持有的回执查询状态。
 
@@ -23,6 +23,9 @@
 普通用户 Web 工作区支持中英文，覆盖登录、导航、账号、简历、模板、求职中心、资料库、AI 助手、模拟面试界面及公共分享和错误状态。访客语言保存在浏览器，登录后以账号偏好为准。切换不翻译简历正文、模板样例、岗位原文或 AI 回答，不改变模拟面试的作答语言；管理台和小程序不包含在此本地化范围。实现入口见 [Web 架构](../internals/web.md)。
 
 ## 会话与密码
+
+- Web 使用 Cookie，mini 与 desktop 使用各自 Bearer，三渠道不能互换或混合认证 Cookie。桌面拥有简历只读、岗位看板、面试排期、文字模拟面试和资料库的明确方法/路径白名单，管理员角色不能扩大渠道权限，详见 [桌面会话契约](../api/http-contracts.md#桌面-bearer-会话)。
+- 桌面 Core 的 access 仅驻留内存，refresh 与固定请求 ID 的恢复日志通过原子安全存储接口保存；网络失败保留日志，明确失效清理。共享续期负责统一保存，退出以会话代次拒绝迟到写回，远端撤销失败不冒充成功。两端正式 App 已注入 HTTP 与 Keychain/Credential Locker，支持扫码及状态消费；进程唯一所有者、凭据保存和验收边界见 [`apps/native/README.md`](../../apps/native/README.md)。
 
 Web 使用 HttpOnly Cookie，小程序使用 Bearer，两种 channel 不能混用。Web 的 401 请求合并续期，最多重试一次；支持 Web Locks 时跨标签页串行续期。冷启动先确认当前用户，普通业务 5xx 不清空已确认的登录态。
 
@@ -45,6 +48,7 @@ Web 使用 HttpOnly Cookie，小程序使用 Bearer，两种 channel 不能混�
 | `identity/routes.py`、`capabilities.py` | 环境认证能力与 Web 登录 |
 | `identity/account_routes.py` | 本人资料、联系邮箱、偏好、密码、微信操作确认与注销回执 |
 | `identity/session_service.py`、`dependencies.py` | 渠道会话、撤销、账号状态和有界写事务的用户行锁 |
+| `identity/desktop_routes.py`、`desktop_login_service.py` | 桌面扫码证明、原子领取与轮换、短期密文恢复和退出 |
 | `identity/wechat_action_service.py` | 单次微信操作确认状态与凭证 |
 | `identity/account_deletion_service.py` | 受理条件、停用事务和个人记录清理 |
 | `workers/account_deletion_worker.py` | 持久清理任务租约、重试和保留期 |

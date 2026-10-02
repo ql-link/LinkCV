@@ -1,4 +1,4 @@
-/// 工作区一级导航，与 Web V3 侧栏（apps/web/src/v3/Shell.tsx 的 NAV）同一顺序和文案。
+/// 导航标识保持兼容；客户端入口以 origin/dev 的 V3Shell 工作区侧栏为准。
 public enum WorkspaceSection: String, CaseIterable, Identifiable, Sendable {
     case home, resumes, templates, jobs, schedule, mock, datasets
 

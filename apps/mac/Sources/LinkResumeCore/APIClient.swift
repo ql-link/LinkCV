@@ -1,11 +1,14 @@
 import Foundation
 
-/// 业务数据入口。界面只依赖这个协议：现在用 MockAPIClient 跑通，
-/// 后端补上 desktop 渠道（Bearer 会话）后换成 HTTPAPIClient，界面不用改。
+/// App 注入真实 HTTP 客户端；Mock 仅用于离线测试。
 public protocol APIClient: Sendable {
+    func uploadDataset(_ upload: DatasetUpload) async throws -> JSONValue
+    func downloadDataset(id: String, limit: Int64) async throws -> DatasetFile
+    func careerRequest(path: String, method: String, query: [String: String], body: JSONValue?) async throws -> JSONValue
     func currentUser() async throws -> User?
     func signIn(email: String, password: String) async throws -> User
     func signOut() async throws
+    func preparePaper(_ request: ResumeRenderRequest) async throws -> PaperPreparation
     func listResumeTemplates() async throws -> [ResumeTemplate]
 }
 
@@ -44,5 +47,15 @@ public actor MockAPIClient: APIClient {
         }
         struct Envelope: Decodable { let templates: [ResumeTemplate] }
         return try JSONDecoder().decode(Envelope.self, from: Data(contentsOf: url)).templates
+    }
+}
+
+
+extension APIClient {
+    public func uploadDataset(_ upload: DatasetUpload) async throws -> JSONValue { throw APIError.unauthorized }
+    public func downloadDataset(id: String, limit: Int64) async throws -> DatasetFile { throw APIError.unauthorized }
+    public func careerRequest(path: String, method: String = "GET", query: [String: String] = [:], body: JSONValue? = nil) async throws -> JSONValue { throw APIError.unauthorized }
+    public func preparePaper(_ request: ResumeRenderRequest) async throws -> PaperPreparation {
+        try await PaperAssets.prepare(request, account: "") { _, _ in throw APIError.invalidResponse }
     }
 }
