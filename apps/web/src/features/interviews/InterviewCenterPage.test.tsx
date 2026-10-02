@@ -1328,13 +1328,13 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByRole("button", { name: "导入岗位" })).toHaveClass("v3-btn-dark");
     expect(document.querySelectorAll(".career-v3-page .v3-btn-dark")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "新建求职进程" })).not.toBeInTheDocument();
-    // 统计 4 格：投递总数、面试转化率后端没有 → 贴「需后端」
+    // 统计 4 格：投递总数、面试转化率由全量申请列表统计，不再贴「需后端」
     const stats = screen.getByLabelText("岗位看板统计");
     expect(stats).toHaveTextContent("投递总数");
     expect(stats).toHaveTextContent("本周面试");
     expect(stats).toHaveTextContent("面试转化率");
     expect(stats).toHaveTextContent("Offer");
-    expect(document.querySelectorAll(".career-board-stats .v3-be-tag")).toHaveLength(2);
+    expect(document.querySelectorAll(".career-board-stats .v3-be-tag")).toHaveLength(0);
     expect(screen.getByRole("group", { name: "求职记录显示设置" })).toBeInTheDocument();
     expect(screen.queryByText("全部记录")).not.toBeInTheDocument();
     openViewSettings();

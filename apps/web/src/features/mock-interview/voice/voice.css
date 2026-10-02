@@ -380,7 +380,7 @@
 .vr-answer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .vr-player { display: inline-flex; height: 36px; align-items: center; gap: 10px; border: 1px solid var(--v3-cl); border-radius: 18px; background: #fff; padding: 0 12px 0 7px; }
 .vr-player.is-deleted { padding: 0 14px; color: var(--v3-fnt); font-size: 11.5px; }
-.vr-player-play { display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 11px; background: var(--v3-dark); padding: 0 0 0 1px; color: #fff; cursor: not-allowed; }
+.vr-player-play { display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 11px; background: var(--v3-dark); padding: 0 0 0 1px; color: #fff; cursor: pointer; }
 .vr-player-wave { display: inline-flex; height: 15px; align-items: center; gap: 2px; }
 .vr-player-wave i { display: block; width: 2px; border-radius: 1px; background: #d6d6d0; }
 .vr-player-time, .vr-player-rate { color: var(--v3-fnt); font-family: var(--v3-num); font-size: 11px; }

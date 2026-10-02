@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DIFFICULTY_LABELS,
   INTERVIEW_TYPE_LABELS,
+  isLiveMockInterviewApi,
   mockInterviewApi,
   mockInterviewErrorMessage,
   subscribeMockInterviews,
@@ -139,7 +140,9 @@ export function groupQuestions(questions: MockInterviewQuestion[]): QuestionGrou
   return groups;
 }
 
-// 场次详情：首次加载 + 订阅假数据变化（后台准备 / 评估推进时自动刷新）。
+const POLL_MS = 2500;
+
+// 场次详情：首次加载 + 订阅数据层变更；真实接口下对准备中、评估中的场次轮询。
 // pause() 用于 SSE 回合进行中：此时数据层已经写入下一题，不能提前显示。
 export function useMockInterview(id: string | undefined) {
   const [interview, setInterview] = useState<MockInterviewDetail | null>(null);
@@ -165,6 +168,14 @@ export function useMockInterview(id: string | undefined) {
     const unsubscribe = subscribeMockInterviews(() => { if (!paused.current) void refresh(); });
     return () => { alive.current = false; unsubscribe(); };
   }, [refresh]);
+
+  // 真实接口下，准备题目与生成评估由后台任务完成，页面没有推送，需要轮询到状态变化
+  const waiting = interview?.status === "preparing" || interview?.status === "evaluating";
+  useEffect(() => {
+    if (!waiting || !isLiveMockInterviewApi()) return undefined;
+    const timer = window.setInterval(() => { if (!paused.current) void refresh(); }, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [waiting, refresh]);
 
   const pause = useCallback((value: boolean) => { paused.current = value; }, []);
   return { interview, error, refresh, pause, setInterview };
