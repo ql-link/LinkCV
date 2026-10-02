@@ -10,6 +10,7 @@
     <PackageReference Include="xunit.v3" Version="4.0.1" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../../web/public/templates/avatar-cat.jpg" LogicalName="Fixture.avatar.jpg" />
     <ProjectReference Include="..\..\src\LinkResume.Core\LinkResume.Core.csproj" />
   </ItemGroup>
 </Project>

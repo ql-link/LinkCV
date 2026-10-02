@@ -43,7 +43,9 @@ Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话
 
 Token envelope 为 `{user, access_token, refresh_token, expires_in, session_protocol: 1}`。每个逻辑 exchange/refresh 使用固定 UUID `request_id`；响应丢失时必须复用原证明和标识。结果以独立 Fernet 密钥 `AUTH_DESKTOP_RETRY_ENCRYPTION_KEY` 加密保留 120 秒，恢复必须同时匹配操作、渠道、请求、证明、当前 session 的 uid/refresh hash 和启用账号，不延长原 access 到期时间或 session TTL。过期领取返回 `410 LOGIN_RESULT_EXPIRED`；证明错误返回 `401 LOGIN_CHALLENGE_INVALID`；领取冲突返回 `409 LOGIN_EXCHANGE_CONFLICT`；刷新同标识不同证明返回 `409 AUTH_IDEMPOTENCY_CONFLICT`，旧 secret 在允许恢复条件外重放返回 `401 REFRESH_REPLAYED` 并撤销 session。非法请求返回脱敏的 `422 INVALID_DESKTOP_REQUEST`；鉴权服务不可用返回 `503 AUTH_SERVICE_UNAVAILABLE`，限流返回 `429 AUTH_RATE_LIMITED`。
 
-桌面业务权限仅开放以下 GET：`/api/resume-templates`、`/api/resume-templates/{id}`、`/api/resumes`、`/api/resumes/{id}`、`/api/resumes/{id}/pdf`、`/api/resumes/{id}/assets/{asset_name}`、`/api/assets/{object_name:path}`。保留原资源归属、版本和 PDF 校验；不开放简历写入、账号、岗位、资料、AI、管理端、SSE 或语音 WebSocket。管理员桌面凭据也不能扩大渠道权限。`GET /api/auth/me` 仍只识别 Web Cookie，desktop Bearer 得到 `user: null`。
+桌面简历业务权限开放以下 GET：`/api/resume-templates`、`/api/resume-templates/{id}`、`/api/resumes`、`/api/resumes/{id}`、`/api/resumes/{id}/pdf`、`/api/resumes/{id}/assets/{asset_name}`、`/api/assets/{object_name:path}`。保留原资源归属、版本和 PDF 校验；不开放简历写入、账号、管理端或语音 WebSocket；文字模拟面试 SSE 与只读资料列表按本文的独立白名单开放。管理员桌面凭据也不能扩大渠道权限。`GET /api/auth/me` 仍只识别 Web Cookie，desktop Bearer 得到 `user: null`。
+
+桌面岗位看板复用既有求职接口，通过独立的 `get_current_career_user` 白名单识别 desktop Bearer：允许读取岗位、本人岗位的带版本 Logo、求职进程、排期与周概览；创建岗位和求职进程；编辑或删除本人岗位/进程；添加阶段、终止、记录 Offer、接受/婉拒正式 Offer、归档/恢复、添加排期；编辑排期信息、改期、设置个人作答计划、标记完成和取消排期。其中 `PUT /api/interview-sessions/{id}` 只更新既有可编辑信息，携带 `base_lock_version`；时间变化仍使用 reschedule，个人计划仍使用 answer-plan，不开放场次 DELETE。岗位文字/PNG/JPEG 的智能提取通过既有 multipart `POST /api/job-descriptions/parse-draft`，继续使用原模型就绪与错误语义。排期 DELETE、独立求职复盘与匹配等其他岗位路径仍拒绝 desktop；场次 PUT 中既有的 questions_markdown、review_summary 和 improvement_markdown 可编辑，资料关联另由资料库白名单控制。数字 ID 路径、HTTP method、资源归属、乐观锁与幂等请求规则沿用原服务，管理员不能绕过渠道边界。Web Cookie 的原调用行为保留；游客和小程序 Bearer 不能使用这些桌面权限。
 
 手机通过既有 confirm/cancel 处理固定为 desktop 的 scene，只确认账号、不签发桌面或 Web 凭据；小程序确认页按服务端 `login_target/platform` 显示目标，不在桌面确认后自动创建小程序会话。
 
@@ -319,6 +321,10 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 `POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。删除只解除资料库文件与场次的关联，不再清理素材对象；数据库删除失败返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
 
+原生 V4 使用 Offer 阶段且 `offer_status=none` 表示 OC 口头意向，`POST /offer` 才将其标记为 `received`，即使未填写数值薪资也可确认正式 Offer。`POST /close` 携带 `status=closed` 和 `offer_status=accepted|declined` 完成最终决策；OC 不能直接接受或婉拒，已归档记录不能作决策。`terminate` 的 `offer_declined` 原因同样要求已收到正式 Offer。双方均沿用归属检查和 `base_lock_version`。原生将 `status=closed` 的接受记录归入已结束，不因恢复归档而重新开启流程。
+
+`POST /stages` 与 `POST /offer` 可选携带 `notes`（最多 16,000 字符），在同一版本校验与事务中保存补充说明；省略保持原备注，显式 `null` 清空。原生 V4 的投递渠道、口头薪酬、收到日期、回复截止、薪酬说明、预计入职、试用期与 Offer 材料名称按可读标签保存于备注，保留其他行；材料名称不是附件上传或关联。旧 Web 请求无需新增字段。阶段请求继续复用 UUID，重放不会重复追加阶段或覆盖后续备注。
+
 | Method | Path | 行为 |
 | --- | --- | --- |
 | `GET` | `/api/interview-overview` | 返回本周指标、当前阶段流程和周排期；支持 `week_start` 与 IANA `timezone` |
@@ -575,3 +581,14 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 | GET | `/applications/:id/resume-preview.png` | 按本人求职记录关联的当前简历渲染；返回 PNG、private/no-store 和 X-LinkResume-Lock-Version；无关联或源已删除返回 409 APPLICATION_RESUME_UNAVAILABLE |
 
 修改复用 base_lock_version；过期锁返回 `409 INTERVIEW_EDIT_CONFLICT`，非法阶段动作返回 `409 INTERVIEW_INVALID_TRANSITION`，排期允许时间重叠；兼容字段 `allow_conflict` 不再影响是否可保存。非法 ID、不存在或越权统一 `404 INTERVIEW_NOT_FOUND`。日期查询缺时区或范围倒置返回 `400 INVALID_INTERVIEW_QUERY`。阶段与安排分别提交，阶段成功后排期失败不会回滚阶段。原 overview、advance、close 兼容端点保留，新页面使用 stages/terminate。Web API、数据库 schema 和代理配置未改变。
+
+### 桌面文字模拟面试权限
+
+模拟面试 REST 和资料列表在有 Authorization 时只接受 desktop Bearer，会话校验拒绝认证 Cookie 与 Bearer 混用及 Web/小程序 token。允许 `GET/POST /api/mock-interviews`、`GET/DELETE /api/mock-interviews/{UUID}`、`POST /api/mock-interviews/{UUID}/{answers|skip|reply:retry|finish|abandon|retry|repeat}` 和 `GET /api/datasets`。所有个人资源仍执行原有归属校验；模拟面试配置只消费已完成的本人资料列表；独立资料库权限见下文。桌面创建与再练仅限文字模式，语音能力、WebSocket、识别稿修正、重评和录音仍不在桌面权限内。Web Cookie 调用保持原行为。
+
+桌面 answers/skip transport 将本地 `__idempotency_key` 字段转为 HTTP `Idempotency-Key`，从 JSON 正文移除；重试沿用原值。SSE 的 `interviewer.failed` 转为失败提示，但不能据此推断回答未保存，客户端随后读取详情确认。原生缓冲 SSE，响应最多 4 MiB，拒绝重定向且不接收或发送 Cookie。
+
+
+### 桌面资料库权限
+
+`get_current_dataset_user` 在 Authorization 存在时只接受 desktop Bearer，拒绝认证 Cookie 混用及 Web/小程序 token；无 Authorization 的 Web Cookie 行为保持不变。白名单为 `GET/POST /api/datasets`、`GET/POST /api/datasets/folders`、`PATCH/DELETE /api/datasets/folders/:id`、`GET/PATCH/DELETE /api/datasets/:id`、`GET /api/datasets/:id/{content|source}`、`POST /api/datasets/:id/retry`、`PATCH /api/datasets/:id/folder`、`POST /api/datasets/move-batch`、`PUT /api/datasets/:id/file`、`POST /api/interview-sessions/:id/assets/attach` 和 `DELETE /api/interview-sessions/:id/assets/:dataset_id`。ID 为无前导零的正十进制数，其他路径/方法拒绝该渠道。路由复用原有资源归属、文件真实性、容量、幂等、正文版本与永久删除规则，不开放任意对象存储 URL 或 legacy 素材上传入口。原文件流继续 private/no-store，客户端不得把 Bearer 注入网页或媒体外链。

@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using LinkResume.Core.Api;
 using LinkResume.Core.Models;
+using LinkResume.Core.Paper;
 
 namespace LinkResume.Core.Session;
 
@@ -40,6 +41,8 @@ public sealed class SessionCoordinator(IDesktopTransport transport, ITokenStore 
     private DateTimeOffset _accessDeadline;
     private (Guid Id, Task<TokenEnvelope> Task)? _flight;
     private (string RequestId, Task<TokenEnvelope> Task)? _exchange;
+    private (Guid Id, DesktopCredentialRecord? Saved, Task<TokenEnvelope>? Refresh, Task<TokenEnvelope>? Exchange)? _logoutRecovery;
+    private Task? _logoutFlight;
 
     private sealed record TokenEnvelope(
         [property: JsonPropertyName("user")] User User,
@@ -107,6 +110,7 @@ public sealed class SessionCoordinator(IDesktopTransport transport, ITokenStore 
         }
         lock (_gate)
         {
+            ct.ThrowIfCancellationRequested();
             CheckGeneration(challenge.Generation);
             if (_exchange?.Task == shared)
             {
@@ -142,6 +146,40 @@ public sealed class SessionCoordinator(IDesktopTransport transport, ITokenStore 
 
     public async Task<JsonNode> RequestAsync(string path, CancellationToken ct = default)
     {
+        return await AuthorizedAsync((access, token) => transport.SendAsync(path, access: access, ct: token), ct);
+    }
+
+    public Task<JsonNode> CareerRequestAsync(string path, string method = "GET", Dictionary<string,string>? query = null, JsonNode? body = null, CancellationToken ct = default)
+    {
+        if (!CareerRequest.Allowed(path, method)) throw new InvalidDataException();
+        return AuthorizedAsync((access, token) => transport.CareerAsync(path, method, query, body, access, token), ct);
+    }
+
+    public Task<JsonNode> UploadDatasetAsync(DatasetUpload upload,CancellationToken ct=default) => AuthorizedAsync((access,token)=>transport.UploadDatasetAsync(upload,access,token),ct);
+    public async Task<DatasetFile> DownloadDatasetAsync(string id,long limit,CancellationToken ct=default) {
+        var directory=DatasetUpload.PrivateDirectory();var target=Path.Combine(directory,"source");
+        try{await AuthorizedAsync(async(access,token)=>{await transport.DownloadDatasetAsync(id,target,limit,access,token);return true;},ct);return new(target,directory);}
+        catch{Directory.Delete(directory,true);throw;}
+    }
+
+    public async Task<PaperPreparation> PreparePaperAsync(ResumeRenderRequest request, CancellationToken ct = default)
+    {
+        Guid generation;
+        string account;
+        lock (_gate)
+        {
+            if (_disabled) throw InvalidSession();
+            generation = _generation;
+            account = tokens.Load(_scope)?.AccountId ?? throw InvalidSession();
+        }
+        var result = await PaperAssets.PrepareAsync(request, account, (path, limit, token) =>
+            AuthorizedAsync((access, inner) => transport.DownloadImageAsync(path, limit, access, inner), token), ct);
+        lock (_gate) { ct.ThrowIfCancellationRequested(); CheckGeneration(generation); }
+        return result;
+    }
+
+    private async Task<T> AuthorizedAsync<T>(Func<string?, CancellationToken, Task<T>> send, CancellationToken ct)
+    {
         bool refresh;
         Guid generation;
         lock (_gate)
@@ -155,7 +193,7 @@ public sealed class SessionCoordinator(IDesktopTransport transport, ITokenStore 
         lock (_gate) { CheckGeneration(generation); access = _access; }
         try
         {
-            var result = await transport.SendAsync(path, access: access, ct: ct);
+            var result = await send(access, ct);
             lock (_gate) { CheckGeneration(generation); }
             return result;
         }
@@ -166,7 +204,7 @@ public sealed class SessionCoordinator(IDesktopTransport transport, ITokenStore 
             lock (_gate) { CheckGeneration(generation); access = _access; }
             try
             {
-                var result = await transport.SendAsync(path, access: access, ct: ct);
+                var result = await send(access, ct);
                 lock (_gate) { CheckGeneration(generation); }
                 return result;
             }
@@ -264,6 +302,8 @@ public sealed class SessionCoordinator(IDesktopTransport transport, ITokenStore 
         DesktopCredentialRecord? saved;
         (Guid Id, Task<TokenEnvelope> Task)? shared;
         Task<TokenEnvelope>? exchange;
+        (Guid Id, DesktopCredentialRecord? Saved, Task<TokenEnvelope>? Refresh, Task<TokenEnvelope>? Exchange)? recovery;
+        Exception? clearError = null;
         lock (_gate)
         {
             _disabled = true;
@@ -274,16 +314,40 @@ public sealed class SessionCoordinator(IDesktopTransport transport, ITokenStore 
             exchange = _exchange?.Task;
             _exchange = null;
             saved = tokens.Load(_scope);
-            tokens.Clear(_scope);
+            if (_logoutRecovery is null && (saved is not null || exchange is not null))
+                _logoutRecovery = (Guid.NewGuid(), saved, shared?.Task, exchange);
+            recovery = _logoutRecovery;
+            try { tokens.Clear(_scope); } catch (Exception error) { clearError = error; }
         }
-        if (saved is null && exchange is null) return;
+        if (recovery is null)
+        {
+            if (clearError is not null) throw clearError;
+            return;
+        }
+        Task remote;
+        lock (_gate) { remote = _logoutFlight ??= Task.Run(() => RevokeAsync(recovery.Value)); }
+        try { await remote; }
+        catch (Exception)
+        {
+            lock (_gate) { if (_logoutFlight == remote) _logoutFlight = null; }
+            throw new ApiException(HttpStatusCode.ServiceUnavailable, "REMOTE_LOGOUT_UNCONFIRMED");
+        }
+        lock (_gate) { if (_logoutFlight == remote) _logoutFlight = null; }
+        if (clearError is not null) throw clearError;
+        lock (_gate) { if (_logoutRecovery?.Id == recovery.Value.Id) _logoutRecovery = null; }
+    }
+
+    private async Task RevokeAsync((Guid Id, DesktopCredentialRecord? Saved, Task<TokenEnvelope>? Refresh, Task<TokenEnvelope>? Exchange) recovery)
+    {
+        var saved = recovery.Saved;
+        var exchange = recovery.Exchange;
         try
         {
-            var refresh = saved?.RefreshToken;
+            var refresh = saved?.RefreshToken ?? "";
             if (exchange is not null) refresh = (await exchange).RefreshToken;
-            else if (shared is not null)
+            else if (recovery.Refresh is { } pendingRefresh)
             {
-                try { refresh = (await shared.Value.Task).RefreshToken; }
+                try { refresh = (await pendingRefresh).RefreshToken; }
                 catch when (saved?.Pending is not null) { refresh = (await RefreshRemoteAsync(saved.Pending)).RefreshToken; }
             }
             else if (saved?.Pending is not null) refresh = (await RefreshRemoteAsync(saved.Pending)).RefreshToken;

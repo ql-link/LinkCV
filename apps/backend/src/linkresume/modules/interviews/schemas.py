@@ -192,6 +192,7 @@ class AdvanceApplicationRequest(LifecycleRequest):
 
 
 class OfferApplicationRequest(LifecycleRequest):
+    notes: str | None = Field(default=None, max_length=16_000)
     base_location: str | None = Field(default=None, max_length=100)
     salary: Decimal | None = Field(
         default=None, ge=0, max_digits=12, decimal_places=2
@@ -230,6 +231,7 @@ class CloseApplicationRequest(LifecycleRequest):
 
 
 class AddApplicationStageRequest(LifecycleRequest, ResumeBindingRequest):
+    notes: str | None = Field(default=None, max_length=16_000)
     client_request_id: UUID
     stage_type: ApplicationStageType
     stage_label: str | None = Field(default=None, max_length=100)

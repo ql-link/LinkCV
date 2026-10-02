@@ -1,26 +1,29 @@
-<Page
-    x:Class="LinkResume.App.Views.TemplatesPage"
+<Page x:Class="LinkResume.App.Views.TemplatesPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:LinkResume.Core.Models"
     xmlns:paper="using:LinkResume.App.Paper">
-    <!-- 原生版示范页，与 Mac 的 TemplatesView 同构：左侧列表，右侧舞台上的 A4 纸面 -->
-    <Grid ColumnDefinitions="280,*">
-        <ListView x:Name="TemplateList" SelectionChanged="OnTemplateChanged" Padding="0,8">
-            <ListView.ItemTemplate>
+    <Grid Padding="52" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" RowSpacing="12" MaxWidth="964" HorizontalAlignment="Center">
+        <TextBlock Text="TEMPLATES / 精选示例" FontSize="11" Foreground="{StaticResource LinkResumeMutedBrush}" />
+        <TextBlock Grid.Row="1" Text="简历模板" FontSize="28" FontFamily="Noto Serif SC, SimSun" />
+        <TextBlock Grid.Row="2" Text="浏览当前可用版式，选择后填写简历名称并进入编辑器。" FontSize="13" />
+        <TextBlock Grid.Row="3" Text="当前展示内置虚构示例，可离线预览；原生创建与编辑尚未接入。" FontSize="12" Foreground="{StaticResource LinkResumeMutedBrush}" />
+        <TextBlock x:Name="PaperError" Grid.Row="4" TextWrapping="Wrap" FontSize="13" />
+        <GridView x:Name="TemplateList" Grid.Row="5" IsItemClickEnabled="True" ItemClick="OnPreviewTemplate" SelectionMode="None">
+            <GridView.ItemsPanel><ItemsPanelTemplate><VariableSizedWrapGrid Orientation="Horizontal" /></ItemsPanelTemplate></GridView.ItemsPanel>
+            <GridView.ItemTemplate>
                 <DataTemplate x:DataType="models:ResumeTemplate">
-                    <StackPanel Padding="0,6">
-                        <TextBlock Text="{x:Bind Name}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                        <TextBlock Text="{x:Bind Description}" Foreground="{StaticResource LinkResumeMutedBrush}" TextWrapping="Wrap" MaxLines="2" Style="{StaticResource CaptionTextBlockStyle}" />
+                    <StackPanel Width="200" Margin="0,0,20,32" Spacing="10">
+                        <Border Width="200" Height="283" CornerRadius="6" BorderBrush="#D3D3CE" BorderThickness="1" Background="White">
+                            <Viewbox Stretch="Uniform" Width="198" Height="281">
+                                <paper:ResumePaperView Width="794" Height="1123" Loaded="OnThumbnailLoaded" IsHitTestVisible="False" />
+                            </Viewbox>
+                        </Border>
+                        <TextBlock Text="{x:Bind Name}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2" />
+                        <TextBlock Text="{x:Bind Description}" FontSize="11" Foreground="{StaticResource LinkResumeMutedBrush}" TextWrapping="Wrap" MaxLines="2" />
                     </StackPanel>
                 </DataTemplate>
-            </ListView.ItemTemplate>
-        </ListView>
-        <Grid Grid.Column="1" Background="{StaticResource LinkResumeStageBrush}" Padding="32">
-            <!-- Viewbox 负责把 794×1123 的 A4 纸面等比缩放进舞台 -->
-            <Viewbox Stretch="Uniform">
-                <paper:ResumePaperView x:Name="Paper" Width="794" Height="1123" />
-            </Viewbox>
-        </Grid>
+            </GridView.ItemTemplate>
+        </GridView>
     </Grid>
 </Page>

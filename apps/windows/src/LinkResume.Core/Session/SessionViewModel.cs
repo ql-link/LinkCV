@@ -5,7 +5,7 @@ using LinkResume.Core.Models;
 
 namespace LinkResume.Core.Session;
 
-/// <summary>登录态，对应 Mac 端的 SessionStore。界面按 Phase 决定显示登录页还是工作区。</summary>
+/// <summary>登录态，对应 Mac 端的 SessionStore。工作区始终开放，Phase 控制账号操作与登录弹窗。</summary>
 public sealed partial class SessionViewModel(IApiClient api) : ObservableObject
 {
     public enum SessionPhase { Restoring, SignedOut, SignedIn }
@@ -78,5 +78,22 @@ public sealed partial class SessionViewModel(IApiClient api) : ObservableObject
     {
         User = user;
         Phase = user is null ? SessionPhase.SignedOut : SessionPhase.SignedIn;
+    }
+
+    public async Task CompleteDesktopLoginAsync(DesktopLoginChallenge challenge, CancellationToken ct = default)
+    {
+        if (Api is not HttpApiClient client) throw new InvalidOperationException("Desktop HTTP client required");
+        var current = _operation;
+        var user = await client.Coordinator.CompleteLoginAsync(challenge, ct);
+        if (current != _operation) throw new OperationCanceledException();
+        ErrorMessage = null;
+        Apply(user);
+    }
+
+    public void ReportAuthenticationFailure()
+    {
+        ++_operation;
+        Apply(null);
+        ErrorMessage = "登录已失效，请重新登录。";
     }
 }

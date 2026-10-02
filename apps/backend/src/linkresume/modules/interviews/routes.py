@@ -94,7 +94,7 @@ from linkresume.services.import_admission import (
     ImportAdmissionController,
     ImportAdmissionRejected,
 )
-from linkresume.modules.identity.dependencies import get_current_user, get_settings
+from linkresume.modules.identity.dependencies import get_current_dataset_user, get_current_career_user as get_current_user, get_settings
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import (
     InterviewSession,
@@ -858,7 +858,7 @@ def attach_interview_asset(
     session_id: str,
     payload: DatasetAttachRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ) -> InterviewAssetResponse:
     try:
         parsed_dataset_id = _database_id(payload.dataset_id, "DATASET_NOT_FOUND")
@@ -886,7 +886,7 @@ def unlink_interview_asset(
     session_id: str,
     dataset_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_dataset_user),
 ):
     try:
         unlink_session_dataset(

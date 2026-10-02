@@ -61,3 +61,18 @@ for (const target of targets) {
   copyFileSync(outFile, target);
 }
 console.log(`paper.html ${(html.length / 1024).toFixed(0)} KiB -> ${targets.length} clients`);
+
+// The native shell uses the exact Web brand asset; regenerate with every paper build.
+for (const directory of [
+  resolve(appsRoot, 'mac/Sources/LinkResumeApp/Resources/Branding'),
+  resolve(appsRoot, 'windows/src/LinkResume.App/Assets/Branding'),
+]) {
+  mkdirSync(directory, { recursive: true });
+  copyFileSync(resolve(appsRoot, 'web/src/assets/linkresume-wordmark.png'), resolve(directory, 'wordmark.png'));
+}
+
+for (const directory of [resolve(appsRoot, 'mac/Sources/LinkResumeApp/Resources/Home'), resolve(appsRoot, 'windows/src/LinkResume.App/Assets/Home')]) {
+  mkdirSync(directory, { recursive: true });
+  for (const filename of ['content.json', 'firstResume.png', 'target.png', 'plugin.png'])
+    copyFileSync(resolve(nativeRoot, 'shared/home', filename), resolve(directory, filename));
+}

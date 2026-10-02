@@ -114,3 +114,11 @@ preparation_failed  abandoned   evaluation_failed
 ## 修改联动与验证
 
 新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py`、`test_mock_interview_voice_rules.py`、`tests/unit/modules/speech/test_aliyun.py`、`tests/integration/api/test_mock_interviews.py` 与 `test_mock_interview_voice.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。
+
+## 原生文字面试
+
+Mac `MockInterviewView` 与 Windows `MockInterviewPage` 使用原生控件对齐 Dev 模拟面试首页、配置、练习记录、作答与报告的层级。游客可以浏览完整首页和空记录；开始面试时弹出登录，登录后选本人简历、在投岗位或粘贴 JD、练习设置和最多 10 份已解析文档。页面读取真实求职排期与练习记录，不使用 Web 演示接口的假得分。
+
+文字作答、跳过与回复重试使用现有 SSE 接口，当前原生 transport 有界接收最多 4 MiB 后读取权威详情，不逐 token 显示。每次回答或跳过生成提交标识，结果不确定时保留原标识与输入；显式校验拒绝允许修改输入。准备和评估中轮询详情；失败可重试，放弃或提前结束需确认；报告显示实际评分、能力维度、主问题及其追问、信号证据、参考回答、资料原文、简历风险和练习建议。再练一次与删除记录复用后端接口，删除需确认。创建没有幂等协议，连接异常后要求返回首页确认记录，不能直接重复创建。退出或切换账号清空私有记录和输入，并拒绝迟到响应。
+
+首页综合表现与趋势来自已完成记录，雷达取最近四场可读取报告的维度均分；没有报告的维度不补零。排期和参考资料加载失败单独提示，仍可从简历发起不关联资料的练习。原生当前仅支持文字作答；已有语音场次可查看记录和报告，语音继续作答须回 Web，不能由文字请求冒充语音。两端真实模型联调和 Windows 完整 XAML/实机验收独立于 Core 测试。

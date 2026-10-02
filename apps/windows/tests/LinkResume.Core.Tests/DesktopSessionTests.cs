@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json.Nodes;
 using LinkResume.Core.Api;
+using LinkResume.Core.Models;
+using LinkResume.Core.Paper;
 using LinkResume.Core.Session;
 using Xunit;
 
@@ -14,6 +16,7 @@ public class DesktopSessionTests
         private readonly object _gate = new();
         public DesktopCredentialRecord? Record = new("1", "fixture-session.old-secret", Guid.NewGuid());
         public bool FailCommit;
+        public bool FailClear;
         public string? Scope;
         public DesktopCredentialRecord? Load(string scope) { lock (_gate) { Scope = scope; return Record; } }
         public void Save(string scope, DesktopCredentialRecord record)
@@ -25,13 +28,19 @@ public class DesktopSessionTests
                 Record = record;
             }
         }
-        public void Clear(string scope) { lock (_gate) { Record = null; } }
+        public void Clear(string scope) { lock (_gate) { if (FailClear) throw new IOException("Fixture clear denied"); Record = null; } }
     }
 
     private sealed class Transport : IDesktopTransport
     {
         public Uri Origin => new("https://api.example.test");
         public ConcurrentQueue<(string Path, Dictionary<string, string>? Body, string? Access)> Calls { get; } = new();
+        public Func<string,Task> DatasetHandler = _=>Task.CompletedTask;
+        public string? DatasetTarget;
+        public async Task DownloadDatasetAsync(string id,string target,long limit,string? access,CancellationToken ct=default){DatasetTarget=target;Calls.Enqueue(("/api/datasets/"+id+"/source",null,access));await DatasetHandler(target);await File.WriteAllTextAsync(target,"fictional private file",ct);}
+        public Func<string, Task<DesktopImage>> ImageHandler = _ => Task.FromResult(new DesktopImage(Convert.FromBase64String(PaperAssets.Placeholder.Split(',')[1]), "image/png"));
+        public Task<DesktopImage> DownloadImageAsync(string path, int limit, string? access, CancellationToken ct = default)
+        { Calls.Enqueue((path, null, access)); return ImageHandler(path); }
         public Func<string, Task<JsonNode>> Handler = path => Task.FromResult(path == "/api/auth/desktop/refresh" ? Tokens() : JsonNode.Parse("{\"templates\":[]}")!);
         public Task<JsonNode> SendAsync(string path, Dictionary<string, string>? body = null, string? access = null, CancellationToken ct = default)
         {
@@ -182,10 +191,12 @@ public class DesktopSessionTests
         var coordinator = new SessionCoordinator(transport, store);
         var login = coordinator.BeginLoginAsync("1.0.0");
         Assert.Null(store.Record);
-        await coordinator.SignOutAsync();
+        var logout = coordinator.SignOutAsync();
         release.SetResult(JsonNode.Parse("{\"ok\":true}")!);
+        await logout;
         await Assert.ThrowsAsync<ApiException>(() => login);
         Assert.DoesNotContain(transport.Calls, call => call.Path == "/api/auth/desktop/wechat/qrcode");
+        Assert.Single(transport.Calls, call => call.Path == "/api/auth/desktop/logout");
         Assert.Null(await coordinator.RestoreAsync());
     }
 
@@ -241,4 +252,146 @@ public class DesktopSessionTests
     [InlineData("https://api.example.test/untrusted", false)]
     public void RejectsUntrustedOrigin(string origin, bool local)
         => Assert.Throws<ArgumentException>(() => new DesktopTransport(new Uri(origin), local));
+
+    private static Transport LoginTransport() => new()
+    {
+        Handler = path => Task.FromResult(path == "/api/auth/desktop/wechat/qrcode"
+            ? JsonNode.Parse("{\"scene\":\"desktop:0123456789abcdef\",\"poll_token\":\"fixture-poll\"}")!
+            : path == "/api/auth/desktop/wechat/exchange" ? Tokens() : JsonNode.Parse("{\"ok\":true}")!),
+    };
+
+    [Fact]
+    public async Task RemoteLogoutCanRetryAfterLocalCredentialsWereCleared()
+    {
+        var store = new Store();
+        var transport = new Transport { Handler = _ => Task.FromException<JsonNode>(new HttpRequestException("Fixture offline")) };
+        var coordinator = new SessionCoordinator(transport, store);
+        await Assert.ThrowsAsync<ApiException>(() => coordinator.SignOutAsync());
+        Assert.Null(store.Record);
+        transport.Handler = _ => Task.FromResult(JsonNode.Parse("{\"ok\":true}")!);
+        await coordinator.SignOutAsync();
+        Assert.Equal(2, transport.Calls.Count(call => call.Path == "/api/auth/desktop/logout"));
+        Assert.All(transport.Calls, call => Assert.Equal("fixture-session.old-secret", call.Body!["refresh_token"]));
+        Assert.Null(await coordinator.RestoreAsync());
+    }
+
+    [Fact]
+    public async Task LoginSaveFailureRetriesSharedExchangeWithoutExposingAccess()
+    {
+        var store = new Store { Record = null };
+        var transport = LoginTransport();
+        var coordinator = new SessionCoordinator(transport, store);
+        var challenge = await coordinator.BeginLoginAsync("1.0.0");
+        store.FailCommit = true;
+        await Assert.ThrowsAsync<IOException>(() => coordinator.CompleteLoginAsync(challenge));
+        Assert.Null(store.Record);
+        await Assert.ThrowsAsync<ApiException>(() => coordinator.RequestAsync("/api/resume-templates"));
+        store.FailCommit = false;
+        Assert.Equal("1", (await coordinator.CompleteLoginAsync(challenge)).Id);
+        Assert.Single(transport.Calls, call => call.Path == "/api/auth/desktop/wechat/exchange");
+        Assert.Equal("fixture-session.new-secret", store.Record!.RefreshToken);
+    }
+
+    [Fact]
+    public async Task CancelledLoginWaiterCanRetrySharedExchange()
+    {
+        var store = new Store { Record = null };
+        var transport = LoginTransport();
+        var coordinator = new SessionCoordinator(transport, store);
+        var challenge = await coordinator.BeginLoginAsync("1.0.0");
+        var release = new TaskCompletionSource<JsonNode>(TaskCreationOptions.RunContinuationsAsynchronously);
+        transport.Handler = _ => release.Task;
+        using var cancellation = new CancellationTokenSource();
+        var waiter = coordinator.CompleteLoginAsync(challenge, cancellation.Token);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => waiter);
+        Assert.Null(store.Record);
+        var retry = coordinator.CompleteLoginAsync(challenge);
+        release.SetResult(Tokens());
+        Assert.Equal("1", (await retry).Id);
+        Assert.Single(transport.Calls, call => call.Path == "/api/auth/desktop/wechat/exchange");
+    }
+
+    [Fact]
+    public async Task SecondBusinessUnauthorizedInvalidatesAndRetriesOnlyOnce()
+    {
+        var store = new Store();
+        var transport = new Transport
+        {
+            Handler = path => path == "/api/auth/desktop/refresh" ? Task.FromResult(Tokens())
+                : Task.FromException<JsonNode>(new ApiException(HttpStatusCode.Unauthorized, "SESSION_INVALID")),
+        };
+        var coordinator = new SessionCoordinator(transport, store);
+        await Assert.ThrowsAsync<ApiException>(() => coordinator.RequestAsync("/api/resume-templates"));
+        Assert.Equal(2, transport.Calls.Count(call => call.Path == "/api/resume-templates"));
+        Assert.Equal(2, transport.Calls.Count(call => call.Path == "/api/auth/desktop/refresh"));
+        Assert.Null(store.Record);
+        Assert.Null(await coordinator.RestoreAsync());
+    }
+
+    [Fact]
+    public async Task ExpiredJournalNeverReplaysAndClearsCredentials()
+    {
+        var store = new Store { Record = new("1", "fixture-token", Guid.NewGuid(),
+            new RefreshJournal(Guid.NewGuid().ToString(), "fixture-token", DateTimeOffset.UtcNow.AddSeconds(-121))) };
+        var transport = new Transport();
+        var coordinator = new SessionCoordinator(transport, store);
+        await Assert.ThrowsAsync<ApiException>(() => coordinator.RestoreAsync());
+        Assert.Empty(transport.Calls);
+        Assert.Null(store.Record);
+    }
+
+    [Fact]
+    public async Task ClearFailureDisablesSessionAndCanRetryCleanup()
+    {
+        var store = new Store { FailClear = true };
+        var transport = LoginTransport();
+        var coordinator = new SessionCoordinator(transport, store);
+        await Assert.ThrowsAsync<IOException>(() => coordinator.SignOutAsync());
+        Assert.Single(transport.Calls, call => call.Path == "/api/auth/desktop/logout");
+        Assert.NotNull(store.Record);
+        Assert.Null(await coordinator.RestoreAsync());
+        await Assert.ThrowsAsync<ApiException>(() => coordinator.RequestAsync("/api/resume-templates"));
+        store.FailClear = false;
+        await coordinator.SignOutAsync();
+        Assert.Null(store.Record);
+    }
+    private static ResumeRenderRequest ImagePaper() => new("虚构头像", JsonNode.Parse("{\"media_kind\":\"avatar\",\"src\":\"/api/resumes/42/assets/a.png\"}")!, new JsonObject(), null);
+
+    [Fact]
+    public async Task PrivateImageUsesAccessAndCannotReturnAfterLogout()
+    {
+        var store = new Store();
+        var transport = new Transport { Handler = path => Task.FromResult(path == "/api/auth/desktop/logout" ? JsonNode.Parse("{\"ok\":true}")! : Tokens()) };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource<DesktopImage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        transport.ImageHandler = _ => { entered.SetResult(); return release.Task; };
+        var coordinator = new SessionCoordinator(transport, store);
+        var pending = coordinator.PreparePaperAsync(ImagePaper(), TestContext.Current.CancellationToken);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await coordinator.SignOutAsync();
+        release.SetResult(new(Convert.FromBase64String(PaperAssets.Placeholder.Split(',')[1]), "image/png"));
+        await Assert.ThrowsAsync<ApiException>(() => pending);
+        Assert.Equal("fixture-access", transport.Calls.First(call => call.Path.EndsWith("a.png")).Access);
+        Assert.Null(store.Record);
+    }
+
+    [Fact]
+    public async Task PrivateImageUnauthorizedRefreshesOnceThenInvalidates()
+    {
+        var store = new Store();
+        var transport = new Transport();
+        int failures = 1;
+        transport.ImageHandler = _ => failures-- > 0 ? Task.FromException<DesktopImage>(new ApiException(HttpStatusCode.Unauthorized, "UNAUTHORIZED")) : Task.FromResult(new DesktopImage(Convert.FromBase64String(PaperAssets.Placeholder.Split(',')[1]), "image/png"));
+        var coordinator = new SessionCoordinator(transport, store);
+        var prepared = await coordinator.PreparePaperAsync(ImagePaper(), TestContext.Current.CancellationToken);
+        Assert.Equal(0, prepared.MissingImageCount);
+        Assert.Equal(2, transport.Calls.Count(call => call.Path.EndsWith("a.png")));
+        failures = 2;
+        await Assert.ThrowsAsync<ApiException>(() => coordinator.PreparePaperAsync(ImagePaper(), TestContext.Current.CancellationToken));
+        Assert.Null(store.Record);
+    }
+
+
+    [Fact] public async Task LibraryLateDownloadAfterLogoutRejectsAndCleansTemporaryFile(){var store=new Store();var transport=new Transport{Handler=path=>Task.FromResult(path=="/api/auth/desktop/logout"?JsonNode.Parse("{\"ok\":true}")!:path=="/api/auth/desktop/refresh"?Tokens():JsonNode.Parse("{\"templates\":[]}")!)};var coordinator=new SessionCoordinator(transport,store);await coordinator.RequestAsync("/api/resume-templates");var entered=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);var release=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);transport.DatasetHandler=async _=>{entered.SetResult();await release.Task;};var pending=coordinator.DownloadDatasetAsync("1",1024);await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));var target=transport.DatasetTarget!;await coordinator.SignOutAsync();release.SetResult();await Assert.ThrowsAsync<ApiException>(()=>pending);Assert.False(Directory.Exists(Path.GetDirectoryName(target)));}
 }

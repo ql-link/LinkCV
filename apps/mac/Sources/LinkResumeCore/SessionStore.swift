@@ -1,6 +1,6 @@
 import Observation
 
-/// 登录态。整个 App 共享一个实例，界面按 `phase` 决定显示登录页还是工作区。
+/// 登录态。整个 App 共享一个实例；工作区始终开放，`phase` 控制账号操作与登录弹窗。
 @MainActor
 @Observable
 public final class SessionStore {
@@ -63,5 +63,20 @@ public final class SessionStore {
             guard current == operation else { return }
             errorMessage = "本地已退出；远端撤销或安全存储清理未确认，请重试。"
         }
+    }
+
+    public func completeDesktopLogin(_ challenge: DesktopLoginChallenge) async throws {
+        guard let client = api as? HTTPAPIClient else { throw APIError.invalidResponse }
+        let current = operation
+        let user = try await client.completeLogin(challenge)
+        guard current == operation else { throw APIError.unauthorized }
+        errorMessage = nil
+        phase = .signedIn(user)
+    }
+
+    public func reportAuthenticationFailure() {
+        operation += 1
+        phase = .signedOut
+        errorMessage = "登录已失效，请重新登录。"
     }
 }

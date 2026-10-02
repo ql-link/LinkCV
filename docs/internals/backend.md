@@ -298,3 +298,8 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 `0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
 
 发布先部署识别 Muse 的 Web 和 Node/PDF 渲染器，再执行目录迁移。撤回时停用新增目录；用户已创建简历的模板快照继续保留。迁移仍为 forward-only，不能 downgrade。来源、行业数据及装饰适配边界见[模板来源](resume-template-sources.md#muse-选择集0100)。
+
+
+桌面岗位与面试排期请求由 identity 的 `get_current_career_user` 显式方法/路径白名单接入既有 job_descriptions/interviews 路由；仍复用 Web 的业务服务、本人资源归属和乐观锁，不建立第二套求职数据。排期信息更新通过既有 PUT 场次路由，仍要求本人归属及 base_lock_version；排期删除仍不开放桌面渠道。简历仍为桌面只读，岗位权限不扩展到账号、资料、复盘与管理端，具体开放面见 [桌面 Bearer 契约](../api/http-contracts.md#桌面-bearer-会话)。
+
+原生文字模拟面试复用 `modules/mock_interviews/routes.py` 的现有持久化状态机和后台 runner，经 `get_current_mock_interview_user` 接受限定 desktop Bearer；资料库独立使用 `get_current_dataset_user`，复用原有资料、文件夹和场次关联服务，允许本人管理及私有文件流。无需新表或迁移。语音 REST/WS 不开放该渠道，具体权限见 [桌面文字模拟面试权限](../api/http-contracts.md#桌面文字模拟面试权限)。

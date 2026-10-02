@@ -159,3 +159,8 @@ Career 跨行业模板由 `api/careerThemes.ts` 登记主题，`app.css` 提供�
 ## Muse 共享渲染
 
 `api/museThemes.ts` 注册 79 套主题与原型来源，`resumeContract.ts` 和 `resumeStore.ts` 识别这些稳定主题。独立 `muse-templates.css` 由正式入口、复现入口和 PDF CLI 共用，覆盖现有 `resume-content`、左右栏和头像 DOM，保持流式正文；不另建只读 HTML 模板或编辑器。模板库、编辑器、分享页使用同一主题，PDF CLI 同时注入此样式。Muse 的水平内边距由共享正文规则承担，CLI 使用 `@page` 在每张 A4 上重复上下留白，并取消正文的上下内边距以避免重复叠加；自然分页保留正文原字号。主题装饰不写入 canonical 内容，也不覆盖用户的行内颜色、局部字号和图片；正文沿用字体设置，装饰标题可使用主题专属字体。
+
+
+### 原生纸面资源与一致性边界
+
+Mac WKWebView 和 Windows WebView2 的离线纸面由 `apps/native/scripts/build_renderer.mjs` 从共享 Web 渲染函数及基础、应用、打印、Muse 四组样式生成，并将同一份 HTML 复制至两端资源目录。原生显示连续可滚动纸面，等待图片和字体就绪后按实际高度扩展舞台；无效布局或图片失败显式提示。模板预览提示最终排版以 PDF 为准；内容、模块顺序、模板结构、配色、图片与关键布局需保留，字形、换行、分页及像素一致尚未作为跨引擎承诺。内置头像随包内联；私有 PNG／JPEG 图片由原生 HTTP 会话下载、校验并通过 assets 注入，使用现有桌面 Bearer 资源接口及后端所有权校验。图片仅保留在当前纸面内存，不写共享缓存；单张失败显示占位和提示，正文仍可预览。原生入口拒绝任意网页导航，退出与切换拒绝迟到图片写回。代表样例与 Chromium／WebKit／PDF 的检查命令见 `apps/native/README.md`。

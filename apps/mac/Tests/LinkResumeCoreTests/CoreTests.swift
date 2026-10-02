@@ -9,7 +9,7 @@ import Testing
 
 @Test func mockTemplatesCarryLayoutPlans() async throws {
     let templates = try await MockAPIClient(signedIn: true).listResumeTemplates()
-    #expect(templates.count == 3)
+    #expect(templates.count == 9)
     #expect(templates.allSatisfy { $0.layoutPlan != nil })
 }
 
@@ -72,4 +72,17 @@ private actor DelayedIdentityAPI: APIClient {
 
 @Test func navigationMatchesWebOrder() {
     #expect(WorkspaceSection.allCases.map(\.title) == ["首页", "我的简历", "简历模板", "岗位看板", "面试日程", "模拟面试", "资料库"])
+}
+
+@Test func guestExamplesWorkWithoutGrantingAccountAccess() async throws {
+    let api = MockAPIClient()
+    let templates = try GuestTemplates.load()
+    #expect(templates.count == 9)
+    for template in templates {
+        let paper = try await GuestTemplates.prepare(template)
+        #expect(paper.missingImageCount == 0)
+        #expect(paper.request.layoutPlan != nil)
+    }
+    await #expect(throws: APIError.unauthorized) { try await api.listResumeTemplates() }
+    #expect(try await api.currentUser() == nil)
 }

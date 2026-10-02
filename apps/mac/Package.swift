@@ -24,11 +24,13 @@ let package = Package(
         ),
         .executableTarget(
             name: "LinkResumeApp",
-            dependencies: ["LinkResumeCore", "LinkResumeRender"]
+            dependencies: ["LinkResumeCore", "LinkResumeRender"],
+            resources: [.copy("Resources/Branding"), .copy("Resources/Home"), .copy("Resources/Library"), .copy("Resources/Career"), .copy("Resources/AppIcon.png")]
         ),
         .testTarget(
             name: "LinkResumeCoreTests",
             dependencies: ["LinkResumeCore"]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

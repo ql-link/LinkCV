@@ -54,9 +54,14 @@ public struct ResumeRenderRequest: Encodable, Sendable {
     public let data: JSONValue
     public let style: JSONValue
     public let layoutPlan: JSONValue?
+    public let assets: [String: String]
+
+    public init(title: String, data: JSONValue, style: JSONValue, layoutPlan: JSONValue?, assets: [String: String] = [:]) {
+        self.title = title; self.data = data; self.style = style; self.layoutPlan = layoutPlan; self.assets = assets
+    }
 
     enum CodingKeys: String, CodingKey {
-        case title, data, style
+        case title, data, style, assets
         case protocolVersion = "protocol_version"
         case layoutPlan = "layout_plan"
     }

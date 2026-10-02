@@ -20,7 +20,7 @@ public class CoreTests
     public async Task MockTemplatesCarryLayoutPlans()
     {
         var templates = await new MockApiClient(signedIn: true).ListResumeTemplatesAsync();
-        Assert.Equal(3, templates.Count);
+        Assert.Equal(9, templates.Count);
         Assert.All(templates, template => Assert.NotNull(template.LayoutPlan));
     }
 

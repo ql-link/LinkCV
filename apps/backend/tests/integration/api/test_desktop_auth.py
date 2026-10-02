@@ -407,3 +407,220 @@ def test_wrong_type_session_index_fails_before_session_mutation(desktop_app):
         response = client.post('/api/auth/desktop/logout', json={'refresh_token': tokens['refresh_token']})
         assert response.status_code == 503
         assert cache.hgetall(key) == before
+
+
+def test_desktop_career_owned_commands_and_channel_boundaries(desktop_app):
+    settings = desktop_app.state.settings
+    with desktop_app.state.session_factory() as db:
+        stranger = User(wechat_openid='openid-career-stranger', nickname='李四')
+        db.add(stranger)
+        db.commit()
+        from linkresume.modules.identity.session_service import prepare_session
+        stranger_credentials = prepare_session(stranger, settings, channel='desktop')
+        desktop_app.state.redis.hset(session_key(stranger_credentials.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
+
+    with TestClient(desktop_app) as client:
+        assert client.get('/api/job-applications').status_code == 401
+        _, tokens = login(client)
+        headers = {'Authorization': 'Bearer ' + tokens['access_token']}
+        other_headers = {'Authorization': 'Bearer ' + stranger_credentials.access_token}
+        created = client.post('/api/job-descriptions', headers=headers, json={
+            'company_name': '虚构公司', 'job_title': '虚构工程师',
+            'description': '虚构岗位描述', 'source_type': 'manual',
+        })
+        assert created.status_code == 201, created.text
+        job = created.json()['job_description']
+        aid = created.json()['application']['id']
+        listing = client.get('/api/job-applications', headers=headers, params={'scope': 'all', 'limit': 200})
+        assert listing.status_code == 200, listing.text
+        assert [item['id'] for item in listing.json()['items']] == [aid]
+        assert client.get('/api/job-applications', headers=other_headers).json()['items'] == []
+        assert client.get('/api/interview-overview', headers=headers).status_code == 200
+        for path in (f'/api/job-applications/{aid}', f"/api/job-descriptions/{job['id']}"):
+            assert client.get(path, headers=other_headers).status_code == 404
+        assert client.get(f"/api/job-descriptions/{job['id']}/logo", headers=other_headers, params={'v': 'a' * 64}).status_code == 404
+        assert client.get(f"/api/job-descriptions/{job['id']}/logo", headers=headers, params={'v': 'a' * 64}).status_code == 404
+        application = client.get(f'/api/job-applications/{aid}', headers=headers).json()['application']
+        category = client.put(f'/api/job-applications/{aid}', headers=headers, json={
+            'base_lock_version': application['lock_version'], 'employment_type': 'campus',
+        })
+        assert category.status_code == 200, category.text
+        application = category.json()['application']
+        command = {'client_request_id': str(uuid4()), 'stage_type': 'interview',
+                   'stage_label': '技术一面', 'interview_round_no': 1,
+                   'base_lock_version': application['lock_version']}
+        stage = client.post(f'/api/job-applications/{aid}/stages', headers=headers, json=command)
+        assert stage.status_code == 200, stage.text
+        assert client.post(f'/api/job-applications/{aid}/stages', headers=headers, json=command).status_code == 200
+        application = stage.json()['application']
+        schedule = client.post(f'/api/job-applications/{aid}/interview-sessions', headers=headers, json={
+            'client_request_id': str(uuid4()), 'application_stage_id': application['current_stage']['id'],
+            'stage_type': 'interview', 'stage_label': '技术一面', 'round_no': 1,
+            'start_at': '2035-01-02T10:00:00+08:00', 'end_at': '2035-01-02T11:00:00+08:00',
+            'timezone': 'Asia/Shanghai', 'mode': 'video', 'schedule_kind': 'fixed_slot',
+        })
+        assert schedule.status_code == 201, schedule.text
+        interview = schedule.json()['session']
+        sid = interview['id']
+        assert client.get(f'/api/interview-sessions/{sid}', headers=other_headers).status_code == 404
+        edit = {'base_lock_version': interview['lock_version'], 'mode': 'phone',
+                'interviewer_name': '虚构面试官', 'preparation_note': '准备虚构案例'}
+        assert client.put(f'/api/interview-sessions/{sid}', headers=other_headers, json=edit).status_code == 404
+        assert client.put(f'/api/interview-sessions/{sid}', json=edit).status_code == 401
+        from linkresume.core.security import create_access_token
+        auth_sid = tokens['refresh_token'].split('.')[0]
+        wrong_token = create_access_token(int(tokens['user']['id']), auth_sid, settings, 'miniprogram')
+        assert client.put(f'/api/interview-sessions/{sid}', headers={'Authorization': 'Bearer ' + wrong_token}, json=edit).status_code == 401
+        client.cookies.set(settings.access_cookie_name, 'fixture-cookie')
+        assert client.put(f'/api/interview-sessions/{sid}', headers=headers, json=edit).status_code == 401
+        client.cookies.clear()
+        edited = client.put(f'/api/interview-sessions/{sid}', headers=headers, json=edit)
+        assert edited.status_code == 200, edited.text
+        assert edited.json()['session']['mode'] == 'phone'
+        assert client.put(f'/api/interview-sessions/{sid}', headers=headers, json=edit).status_code == 409
+        interview = edited.json()['session']
+        moved = client.post(f'/api/interview-sessions/{sid}/reschedule', headers=headers, json={
+            'base_lock_version': interview['lock_version'], 'start_at': '2035-01-03T10:00:00+08:00',
+            'end_at': '2035-01-03T11:00:00+08:00', 'timezone': 'Asia/Shanghai',
+        })
+        assert moved.status_code == 200, moved.text
+        interview = moved.json()['session']
+        finished = client.post(f'/api/interview-sessions/{sid}/complete', headers=headers, json={
+            'base_lock_version': interview['lock_version'],
+        })
+        assert finished.status_code == 200, finished.text
+        application = client.get(f'/api/job-applications/{aid}', headers=headers).json()['application']
+        assert client.put(f'/api/job-applications/{aid}', headers=headers, json={
+            'base_lock_version': application['lock_version'] - 1, 'notes': '虚构备注',
+        }).status_code == 409
+        assert client.post(f'/api/job-applications/{aid}/terminate', headers=other_headers, json={
+            'client_request_id': str(uuid4()), 'reason': 'user_withdrew', 'base_lock_version': application['lock_version'],
+        }).status_code == 404
+        terminated = client.post(f'/api/job-applications/{aid}/terminate', headers=headers, json={
+            'client_request_id': str(uuid4()), 'reason': 'user_withdrew', 'base_lock_version': application['lock_version'],
+        })
+        assert terminated.status_code == 200, terminated.text
+        for path in ('/api/account/profile', '/api/auth/admin/users'):
+            assert client.get(path, headers=headers).status_code == 401
+        assert client.get('/api/interview-assets/1/content', headers=headers).status_code == 403
+        assert client.delete(f'/api/job-applications/{aid}', headers=other_headers).status_code == 404
+        deleted = client.delete(f'/api/job-applications/{aid}', headers=headers)
+        assert deleted.status_code == 200, deleted.text
+        assert client.get(f'/api/job-applications/{aid}', headers=headers).status_code == 404
+
+
+def test_desktop_schedule_open_window_plan_clear_cancel_and_stage_boundary(desktop_app):
+    with TestClient(desktop_app) as client:
+        _, tokens = login(client)
+        headers = {'Authorization': 'Bearer ' + tokens['access_token']}
+        created = client.post('/api/job-descriptions', headers=headers, json={
+            'company_name': '虚构测评公司', 'job_title': '虚构测试岗位',
+            'description': '', 'source_type': 'manual',
+        })
+        assert created.status_code == 201, created.text
+        aid = created.json()['application']['id']
+        app = client.get(f'/api/job-applications/{aid}', headers=headers).json()['application']
+        stage = client.post(f"/api/job-applications/{app['id']}/stages", headers=headers, json={
+            'client_request_id': str(uuid4()), 'base_lock_version': app['lock_version'],
+            'stage_type': 'assessment', 'stage_label': '测评',
+        })
+        assert stage.status_code == 200, stage.text
+        app = stage.json()['application']
+        request = {
+            'client_request_id': str(uuid4()), 'application_stage_id': app['current_stage']['id'],
+            'stage_type': 'other', 'stage_label': '测评', 'schedule_kind': 'open_window',
+            'start_at': '2035-01-01T09:00:00+08:00', 'end_at': '2035-01-05T18:00:00+08:00',
+            'timezone': 'Asia/Shanghai', 'mode': 'other',
+        }
+        result = client.post(f"/api/job-applications/{app['id']}/interview-sessions", headers=headers, json=request)
+        assert result.status_code == 201, result.text
+        session = result.json()['session']
+        overlapping = client.post(f"/api/job-applications/{app['id']}/interview-sessions", headers=headers,
+                                  json={**request, 'client_request_id': str(uuid4())})
+        assert overlapping.status_code == 409, overlapping.text
+        assert overlapping.json()["error"] == "INTERVIEW_INVALID_TRANSITION"
+        path = f"/api/interview-sessions/{session['id']}/answer-plan"
+        invalid = client.put(path, headers=headers, json={
+            'base_lock_version': session['lock_version'], 'answer_plan_start_at': '2035-01-06T10:00:00+08:00',
+            'answer_plan_end_at': '2035-01-06T11:00:00+08:00',
+        })
+        assert invalid.status_code == 400, invalid.text
+        plan = client.put(path, headers=headers, json={
+            'base_lock_version': session['lock_version'], 'answer_plan_start_at': '2035-01-02T10:00:00+08:00',
+            'answer_plan_end_at': '2035-01-02T11:00:00+08:00',
+        })
+        assert plan.status_code == 200, plan.text
+        session = plan.json()['session']
+        cleared = client.put(path, headers=headers, json={
+            'base_lock_version': session['lock_version'], 'answer_plan_start_at': None, 'answer_plan_end_at': None,
+        })
+        assert cleared.status_code == 200, cleared.text
+        session = cleared.json()['session']
+        assert session['answer_plan_start_at'] is None
+        cancelled = client.post(f"/api/interview-sessions/{session['id']}/cancel", headers=headers, json={
+            'base_lock_version': session['lock_version'], 'reason': '虚构测试取消',
+        })
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()['session']['status'] == 'cancelled'
+        assert client.delete(f"/api/interview-sessions/{session['id']}", headers=headers).status_code == 403
+
+@pytest.mark.parametrize('decision', ['accepted', 'declined'])
+def test_desktop_v4_offer_requires_formal_offer_and_preserves_ownership(desktop_app, decision):
+    from linkresume.modules.identity.session_service import prepare_session
+    with desktop_app.state.session_factory() as db:
+        stranger = User(wechat_openid='v4-stranger', nickname='虚构用户')
+        db.add(stranger)
+        db.commit()
+        credentials = prepare_session(stranger, desktop_app.state.settings, channel='desktop')
+        desktop_app.state.redis.hset(session_key(credentials.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
+    with TestClient(desktop_app) as client:
+        _, tokens = login(client)
+        headers = {'Authorization': 'Bearer ' + tokens['access_token']}
+        other = {'Authorization': 'Bearer ' + credentials.access_token}
+        created = client.post('/api/job-descriptions', headers=headers, json={
+            'company_name': '虚构 V4 公司', 'job_title': '虚构岗位', 'description': '', 'source_type': 'manual',
+        })
+        assert created.status_code == 201, created.text
+        application = created.json()['application']
+        aid = application['id']
+        prefix = f'/api/job-applications/{aid}'
+        application = client.get(prefix, headers=headers).json()['application']
+        stage_body = {'client_request_id': str(uuid4()), 'base_lock_version': application['lock_version'], 'stage_type': 'offer', 'stage_label': 'OC', 'notes': '原有备注\n口头薪酬：35K × 16 薪'}
+        oc = client.post(prefix + '/stages', headers=headers, json=stage_body)
+        assert oc.status_code == 200, oc.text
+        application = oc.json()['application']
+        assert application['offer_status'] == 'none'
+        assert application['notes'] == stage_body['notes']
+        assert client.post(prefix + '/terminate', headers=headers, json={'client_request_id': str(uuid4()), 'base_lock_version': application['lock_version'], 'reason': 'offer_declined'}).status_code == 409
+        replay = client.post(prefix + '/stages', headers=headers, json=stage_body)
+        assert replay.status_code == 200
+        assert replay.json()['application']['lock_version'] == application['lock_version']
+        decision_body = {'base_lock_version': application['lock_version'], 'status': 'closed', 'offer_status': decision}
+        assert client.post(prefix + '/close', headers=headers, json=decision_body).status_code == 409
+        assert client.post(prefix + '/close', headers=other, json=decision_body).status_code == 404
+        formal_notes = application['notes'] + '\n回复截止：2030-10-28'
+        invalid = client.post(prefix + '/offer', headers=headers, json={'base_lock_version': application['lock_version'], 'salary': -1, 'notes': '不得保存'})
+        assert invalid.status_code == 400
+        assert client.get(prefix, headers=headers).json()['application']['notes'] == application['notes']
+        formal = client.post(prefix + '/offer', headers=headers, json={'base_lock_version': application['lock_version'], 'notes': formal_notes})
+        assert formal.status_code == 200, formal.text
+        application = formal.json()['application']
+        assert application['offer_status'] == 'received'
+        assert application['notes'] == formal_notes
+        assert client.post(prefix + '/close', headers=headers, json=decision_body).status_code == 409
+        ended = client.post(prefix + '/close', headers=headers, json={**decision_body, 'base_lock_version': application['lock_version']})
+        assert ended.status_code == 200, ended.text
+        application = ended.json()['application']
+        assert application['status'] == 'closed'
+        assert application['offer_status'] == decision
+        assert client.post(prefix + '/offer', headers=headers, json={'base_lock_version': application['lock_version']}).status_code == 409
+        archive_body = {'base_lock_version': application['lock_version']}
+        assert client.post(prefix + '/archive', headers=other, json=archive_body).status_code == 404
+        archived = client.post(prefix + '/archive', headers=headers, json=archive_body)
+        assert archived.status_code == 200, archived.text
+        application = archived.json()['application']
+        assert client.post(prefix + '/close', headers=headers, json={**decision_body, 'base_lock_version': application['lock_version']}).status_code == 409
+        restored = client.post(prefix + '/restore', headers=headers, json={'base_lock_version': application['lock_version']})
+        assert restored.status_code == 200, restored.text
+        assert restored.json()['application']['offer_status'] == decision
+        assert restored.json()['application']['status'] == 'closed'

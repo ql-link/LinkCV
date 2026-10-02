@@ -46,6 +46,9 @@ public actor SessionCoordinator {
     private var accessDeadline = Date.distantPast
     private var flight: (id: UUID, task: Task<DesktopTokens, Error>)?
     private var exchange: (requestID: String, task: Task<DesktopTokens, Error>)?
+    private typealias LogoutRecovery = (id: UUID, saved: DesktopCredentialRecord?, refresh: Task<DesktopTokens, Error>?, exchange: Task<DesktopTokens, Error>?)
+    private var logoutRecovery: LogoutRecovery?
+    private var logoutFlight: (id: UUID, task: Task<Void, Error>)?
 
     init(transport: any DesktopRequesting, tokens: any TokenStore) {
         self.transport = transport
@@ -99,7 +102,8 @@ public actor SessionCoordinator {
         }
         let shared = exchange!
         let result: DesktopTokens
-        do { result = try await shared.task.value }
+        do { result = try await sharedTaskValue(shared.task) }
+        catch is CancellationError { throw CancellationError() }
         catch {
             if exchange?.requestID == shared.requestID { exchange = nil }
             throw error
@@ -125,13 +129,50 @@ public actor SessionCoordinator {
     }
 
     func request<T: Decodable & Sendable>(_ type: T.Type, path: String) async throws -> T {
+        let transport = self.transport
+        return try await authorized { access in try await transport.send(type, path: path, body: nil, access: access) }
+    }
+
+    public func careerRequest(path: String, method: String, query: [String: String], body: JSONValue?) async throws -> JSONValue {
+        guard CareerRequest.allowed(path: path, method: method) else { throw APIError.invalidResponse }
+        let transport = self.transport
+        return try await authorized { access in try await transport.career(path: path, method: method, query: query, body: body, access: access) }
+    }
+
+    public func uploadDataset(_ upload: DatasetUpload) async throws -> JSONValue {
+        let transport = self.transport
+        return try await authorized { access in try await transport.uploadDataset(upload, access: access) }
+    }
+    public func downloadDataset(id: String, limit: Int64) async throws -> DatasetFile {
+        let directory = try DatasetUpload.privateDirectory(), target = directory.appendingPathComponent("source")
+        let transport = self.transport
+        do { try await authorized { access in try await transport.downloadDataset(id:id, to:target, limit:limit, access:access) }; return DatasetFile(url:target,directory:directory) }
+        catch { try? FileManager.default.removeItem(at:directory); throw error }
+    }
+
+    public func preparePaper(_ request: ResumeRenderRequest) async throws -> PaperPreparation {
+        guard !disabled, let account = try tokens.load(scope: scope)?.accountID else { throw APIError.unauthorized }
+        let current = generation
+        let result = try await PaperAssets.prepare(request, account: account) { path, limit in
+            try await self.image(path: path, limit: limit)
+        }
+        guard current == generation, !disabled else { throw APIError.unauthorized }
+        return result
+    }
+
+    private func image(path: String, limit: Int) async throws -> DesktopImage {
+        let transport = self.transport
+        return try await authorized { access in try await transport.downloadImage(path: path, limit: limit, access: access) }
+    }
+
+    private func authorized<T: Sendable>(_ send: @Sendable (String?) async throws -> T) async throws -> T {
         guard !disabled else { throw APIError.unauthorized }
         let current = generation
         if access == nil || accessDeadline <= Date() { _ = try await refresh() }
         guard generation == current, !disabled else { throw APIError.unauthorized }
         let sentAccess = access
         do {
-            let result = try await transport.send(type, path: path, body: nil, access: sentAccess)
+            let result = try await send(sentAccess)
             guard generation == current, !disabled else { throw APIError.unauthorized }
             return result
         } catch APIError.unauthorized {
@@ -139,7 +180,7 @@ public actor SessionCoordinator {
             if access == sentAccess { _ = try await refresh() }
             guard generation == current, !disabled else { throw APIError.unauthorized }
             do {
-                let result = try await transport.send(type, path: path, body: nil, access: access)
+                let result = try await send(access)
                 guard generation == current, !disabled else { throw APIError.unauthorized }
                 return result
             } catch APIError.unauthorized {
@@ -180,7 +221,7 @@ public actor SessionCoordinator {
             })
         }
         let shared = flight!
-        let result = try await shared.task.value
+        let result = try await sharedTaskValue(shared.task)
         try Task.checkCancellation()
         guard generation == current, !disabled else { throw APIError.unauthorized }
         return result
@@ -216,14 +257,37 @@ public actor SessionCoordinator {
         flight = nil
         let pendingExchange = exchange
         exchange = nil
-        let saved = try tokens.load(scope: scope)
-        try tokens.clear(scope: scope)
-        guard saved != nil || pendingExchange != nil else { return }
+        let currentSaved = try tokens.load(scope: scope)
+        if logoutRecovery == nil, currentSaved != nil || pendingExchange != nil {
+            logoutRecovery = (UUID(), currentSaved, shared?.task, pendingExchange?.task)
+        }
+        var clearError: (any Error)?
+        do { try tokens.clear(scope: scope) } catch { clearError = error }
+        guard let recovery = logoutRecovery else {
+            if let clearError { throw clearError }
+            return
+        }
+        if logoutFlight == nil {
+            logoutFlight = (UUID(), Task { try await revoke(recovery) })
+        }
+        let remote = logoutFlight!
+        do { try await remote.task.value }
+        catch {
+            if logoutFlight?.id == remote.id { logoutFlight = nil }
+            throw APIError.server(status: 503, code: "REMOTE_LOGOUT_UNCONFIRMED")
+        }
+        if logoutFlight?.id == remote.id { logoutFlight = nil }
+        if let clearError { throw clearError }
+        if logoutRecovery?.id == recovery.id { logoutRecovery = nil }
+    }
+
+    private func revoke(_ recovery: LogoutRecovery) async throws {
+        let saved = recovery.saved
         var refresh = saved?.refreshToken ?? ""
         do {
-            if let pendingExchange { refresh = try await pendingExchange.task.value.refresh_token }
-            else if let shared {
-                do { refresh = try await shared.task.value.refresh_token }
+            if let pendingExchange = recovery.exchange { refresh = try await pendingExchange.value.refresh_token }
+            else if let shared = recovery.refresh {
+                do { refresh = try await shared.value.refresh_token }
                 catch {
                     guard let journal = saved?.pending else { throw error }
                     let recovered = try await transport.send(DesktopTokens.self, path: "/api/auth/desktop/refresh", body: [
