@@ -4,8 +4,8 @@ import { Icon } from "../../v3/Icon";
 import { BeTag } from "../../v3/primitives";
 import type { GeneratedDocument, ScreenshotAttachment } from "./PreviewPanel";
 
-// Figma 01.1g: no document-generation or save API exists. These artifacts only live
-// in the current conversation's React state; no real document is claimed as saved.
+// Figma 01.1g: 后端没有文档生成接口，内容由本地模板给出，只存在于当前对话的 React 状态；
+// 「保存」会把当前内容作为 .md 文件上传到资料库（POST /api/datasets），保存成功后才标记已保存。
 export function isLocalDocumentRequest(prompt: string) {
   return !/(?:不要|不必|不用|不需要|无需|别).{0,8}(?:生成|整理|写|输出|制作|准备)/u.test(prompt)
     && /(?:生成|整理成|写|输出|制作|准备).{0,30}(?:文档|\.md|markdown)/iu.test(prompt);
@@ -21,7 +21,7 @@ export function createLocalDocument(id: string, contexts: AgentContextSnapshot[]
 export function GeneratedDocumentCard({ document, active, onOpen }: { document: GeneratedDocument; active: boolean; onOpen: () => void }) {
   return <section className={`assistant-artifact${active ? " is-active" : ""}`} aria-label={`AI 生成文档 ${document.label}`}>
     <span className="assistant-artifact-icon"><Icon name="spark" size={18} /></span>
-    <div className="assistant-artifact-copy"><strong>{document.label}</strong><small>AI 生成文档 · {document.content.replace(/\s/g, "").length.toLocaleString()} 字 · {document.saved ? "已保存到资料库（本地模拟）" : "未保存到资料库"}</small><BeTag /></div>
+    <div className="assistant-artifact-copy"><strong>{document.label}</strong><small>AI 生成文档 · {document.content.replace(/\s/g, "").length.toLocaleString()} 字 · {document.saved ? "已保存到资料库" : "未保存到资料库"}</small><BeTag title="文档内容目前由本地模板给出，AI 文档生成需要后端" /></div>
     {active ? <span className="assistant-artifact-opened">已在右侧打开</span> : <button type="button" className="v3-btn v3-btn-ghost" onClick={onOpen}><Icon name="panel" size={13} />打开</button>}
   </section>;
 }

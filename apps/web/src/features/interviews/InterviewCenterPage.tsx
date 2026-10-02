@@ -71,7 +71,7 @@ import {
   formatDateTimeLabel,
 } from "@/v3/primitives";
 import { Badge, Bar, Centered, DeleteSessionArt, Paper } from "@/v3/art";
-import { MOCK_BOARD_STATS, MOCK_PREP_CHECKLIST, MOCK_SESSION_CONFIRMED } from "@/v3/mocks";
+import { MOCK_PREP_CHECKLIST, MOCK_SESSION_CONFIRMED } from "@/v3/mocks";
 import { CareerNotice, CareerPageHead, ScheduleArt, type ScheduleArtKind } from "./careerV3";
 import { describeScheduleConflict, findScheduleConflicts } from "./scheduleConflicts";
 import { NewProcessDialog } from "./NewProcessDialog";
@@ -505,6 +505,17 @@ async function listAllJobApplications(
     cursor = page.next_cursor;
   } while (cursor);
   return items;
+}
+
+type ApplicationFunnel = { applied: number; reachedInterview: number };
+const FUNNEL_CACHE_KEY = "career-funnel";
+
+function summarizeApplicationFunnel(items: JobApplicationSummary[]): ApplicationFunnel {
+  const applied = items.filter((item) => item.phase !== "pending");
+  return {
+    applied: applied.length,
+    reachedInterview: applied.filter((item) => item.current_stage_type !== "screening").length,
+  };
 }
 
 async function listAllInterviewSessions(
@@ -1219,7 +1230,7 @@ function formatMonthDay(source: Date): string {
   return `${String(source.getMonth() + 1).padStart(2, "0")}-${String(source.getDate()).padStart(2, "0")}`;
 }
 
-// 04.1 页头 + 统计 4 格：本周面试、Offer 取 getInterviewOverview 的 metrics；投递总数、面试转化率后端没有 → 示例数据 + 需后端
+// 04.1 页头 + 统计 4 格：本周面试、Offer 取 getInterviewOverview 的 metrics；投递总数、面试转化率由全量（含归档）申请列表在前端统计
 function ApplicationsHeader({
   applications,
   sessions,
@@ -1255,6 +1266,23 @@ function ApplicationsHeader({
     }).catch(() => undefined).finally(() => { if (!cancelled) setMetricsPending(false); });
     return () => { cancelled = true; };
   }, [metricsCacheKey, timezone, weekStart]);
+  // 投递总数与面试转化率按全部申请（含归档）统计：已投递的申请为分母，当前阶段进入面试、HR 或 Offer 的为分子。
+  const [funnel, setFunnel] = useState<ApplicationFunnel | null>(() => readPageCache<ApplicationFunnel>(FUNNEL_CACHE_KEY)?.value ?? null);
+  const [funnelPending, setFunnelPending] = useState(() => !readPageCache(FUNNEL_CACHE_KEY));
+  useEffect(() => {
+    let cancelled = false;
+    const cached = readPageCache<ApplicationFunnel>(FUNNEL_CACHE_KEY);
+    if (cached) setFunnel(cached.value);
+    setFunnelPending(!cached);
+    if (cached?.fresh) return undefined;
+    void listAllJobApplications("all").then((items) => {
+      if (cancelled) return;
+      const next = summarizeApplicationFunnel(items);
+      setFunnel(next);
+      writePageCache(FUNNEL_CACHE_KEY, next);
+    }).catch(() => undefined).finally(() => { if (!cancelled) setFunnelPending(false); });
+    return () => { cancelled = true; };
+  }, [applications]);
   const weekEnd = addDays(weekStart, 7);
   const activeCount = applications.filter((item) => item.status === "active" && item.archived_at === null && item.lifecycle_status !== "terminated").length;
   // Only use local totals after the overview request settles, never as interim values.
@@ -1262,7 +1290,7 @@ function ApplicationsHeader({
   const offers = metrics?.offers_received ?? applications.filter((item) => item.current_stage_type === "offer" && item.offer_status !== "declined").length;
   const pendingOffers = applications.filter((item) => item.current_stage_type === "offer" && item.offer_status === "received" && item.status === "active").length;
   const empty = !loading && applications.length === 0;
-  const statsPending = loading || metricsPending;
+  const statsPending = loading || metricsPending || funnelPending;
   return (
     <>
       <CareerPageHead
@@ -1279,15 +1307,15 @@ function ApplicationsHeader({
       />
       <dl className="career-board-stats" aria-label="岗位看板统计">
         {[
-          { label: "投递总数", value: empty ? "0" : String(MOCK_BOARD_STATS.totalApplied), mock: true },
+          { label: "投递总数", value: empty ? "0" : funnel ? String(funnel.applied) : "—" },
           { label: "本周面试", value: String(weeklyInterviews) },
-          { label: "面试转化率", value: empty ? "—" : MOCK_BOARD_STATS.conversionRate, mock: true },
+          { label: "面试转化率", value: empty || !funnel || funnel.applied === 0 ? "—" : `${Math.round((funnel.reachedInterview / funnel.applied) * 100)}%` },
           { label: "Offer", value: String(offers), extra: pendingOffers ? "待回复" : undefined },
         ].map((item) => (
           <div key={item.label} className="career-board-stat">
             <Reveal loading={statsPending} placeholder={<div><Sk w={40} h={22} r={5} /><Sk w={64} h={11} style={{ marginTop: 8 }} /></div>}>
               <dd><strong className="v3-num">{item.value}</strong>{item.extra && <small>{item.extra}</small>}</dd>
-              <dt>{item.label}{item.mock && <BeTag />}</dt>
+              <dt>{item.label}</dt>
             </Reveal>
           </div>
         ))}

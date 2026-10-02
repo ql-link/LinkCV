@@ -4,8 +4,7 @@
 // 组件渲染一整行工具栏左侧的状态区 + 右侧麦克风/停止按钮，宿主把它放进输入框底部工具栏，发送按钮跟在后面。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/v3/Icon";
-import { BeTag } from "@/v3/primitives";
-import { mockInterviewApi } from "../mockInterviewApi";
+import { mockInterviewApi, type MockRecognition } from "../mockInterviewApi";
 import { MAX_RECORDING_MS, microphoneSupported, useMicrophone } from "./useMicrophone";
 import { Waveform, formatClock, lastSamples } from "./voiceParts";
 import "./voice.css";
@@ -18,12 +17,15 @@ export function VoiceInputButton({
   interviewId,
   questionId,
   onText,
+  onPartial,
   disabled = false,
   onStateChange,
 }: {
   interviewId: string;
   questionId: string;
   onText: (text: string, speechSessionId: string) => void;
+  /** 可选：录音中实时识别出的文字（会随识别更新） */
+  onPartial?: (text: string) => void;
   disabled?: boolean;
   /** 可选：录音中宿主输入框要加深描边、换底部提示 */
   onStateChange?: (state: VoiceInputState) => void;
@@ -36,8 +38,12 @@ export function VoiceInputButton({
   const mic = useMicrophone();
   const alive = useRef(true);
   const busyRef = useRef(false);
+  const recognitionRef = useRef<MockRecognition | null>(null);
 
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => () => {
+    alive.current = false;
+    recognitionRef.current?.cancel();
+  }, []);
 
   // 语音服务是否开启（管理端未配置识别线路时按钮不可用）
   useEffect(() => {
@@ -64,6 +70,12 @@ export function VoiceInputButton({
     const permission = await mic.start();
     if (!alive.current) return;
     if (permission === "granted") {
+      recognitionRef.current = mockInterviewApi.startRecognition(interviewId, {
+        questionId,
+        purpose: "voice_input",
+        stream: mic.currentStream(),
+        onPartial,
+      });
       setStartedAt(Date.now());
       setNow(Date.now());
       setState("recording");
@@ -74,9 +86,11 @@ export function VoiceInputButton({
     } else {
       setState("failed");
     }
-  }, [disabled, mic]);
+  }, [disabled, interviewId, mic, onPartial, questionId]);
 
   const cancel = useCallback(() => {
+    recognitionRef.current?.cancel();
+    recognitionRef.current = null;
     mic.release();
     setState("idle");
   }, [mic]);
@@ -85,11 +99,14 @@ export function VoiceInputButton({
     if (busyRef.current) return;
     busyRef.current = true;
     const durationMs = Date.now() - startedAt;
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
     mic.release();
     setLastDuration(durationMs);
     setState("recognizing");
     try {
-      const result = await mockInterviewApi.recognize(interviewId, { durationMs });
+      if (!recognition) throw new Error("recognition not started");
+      const result = await recognition.stop();
       if (!alive.current) return;
       onText(result.text, result.session_id);
       setState("done");
@@ -98,7 +115,7 @@ export function VoiceInputButton({
     } finally {
       busyRef.current = false;
     }
-  }, [interviewId, mic, onText, startedAt]);
+  }, [mic, onText, startedAt]);
 
   const recordingMs = state === "recording" ? Math.max(0, now - startedAt) : 0;
   useEffect(() => {
@@ -139,7 +156,6 @@ export function VoiceInputButton({
         )}
         {effective === "denied" && <span className="vx-vib-hint is-warn">麦克风权限被拒绝，请在浏览器地址栏允许后重试</span>}
         {effective === "unavailable" && <span className="vx-vib-hint">当前浏览器不支持录音，或语音服务未开启；可继续打字作答</span>}
-        {(effective === "recording" || effective === "recognizing") && <BeTag title="实时识别需要后端 WebSocket 识别通道；目前停止后一次性返回示例识别稿" />}
       </div>
       {effective === "recording" ? (
         <div className="vx-vib-actions">

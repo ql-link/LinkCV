@@ -83,6 +83,8 @@ const publicPayload: PublicSharePayload = {
   },
   sharer: { nickname: "于晏", avatar_url: null },
   allow_download: true,
+  expires_at: null,
+  updated_at: "2026-09-26T08:00:00Z",
 };
 
 afterEach(() => {
@@ -105,12 +107,13 @@ describe("SharePage", () => {
 
     await waitFor(() => expect(screen.getByLabelText("linkresume")).toBeInTheDocument());
     expect(screen.getByRole("main")).toHaveAttribute("data-ui-theme", "light");
-    // 品牌栏：品牌链接回到公开首页；说明里是分享者昵称 + 有效期（有效期为示例数据，旁边贴「需后端」）
+    // 品牌栏：品牌链接回到公开首页；说明里是分享者昵称 + 有效期
     expect(screen.getByRole("link", { name: "linkresume" })).toHaveAttribute("href", "/");
-    expect(screen.getByText(/^公开分享 · 有效期至/)).toBeInTheDocument();
+    expect(screen.getByText("公开分享 · 长期有效")).toBeInTheDocument();
     // 简历没填 headline：资料卡副标题显示分享者昵称
     expect(screen.getByText("由 于晏 分享")).toBeInTheDocument();
-    expect(screen.getAllByText("需后端").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("需后端")).not.toBeInTheDocument();
+    expect(screen.getByText(/最后更新 09-2[67]/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打印" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "下载 PDF" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "复制链接" })).toBeInTheDocument();

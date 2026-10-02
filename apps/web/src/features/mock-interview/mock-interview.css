@@ -310,6 +310,7 @@
 .mi-bubble.is-skipped { color: var(--v3-fnt); font-size: 12px; }
 .mi-msg-me small { margin-top: 6px; color: var(--v3-fnt); font: 10.5px var(--v3-num); }
 .mi-composer { flex: 0 0 auto; padding-top: 8px; }
+.mi-reply-lost { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; border: 1px solid #e8d9b8; border-radius: 14px; background: #fbf6ea; padding: 10px 14px; font-size: 13px; color: #6b5a2f; }
 .mi-input { display: flex; min-height: 58px; align-items: flex-end; gap: 8px; border: 1px solid #d6d6d0; border-radius: 18px; background: #fafaf8; padding: 13px 13px 12px 18px; }
 .mi-input:focus-within { border-color: #b4b4ae; background: #fff; }
 .mi-input.is-recording { border-color: var(--v3-dark); }

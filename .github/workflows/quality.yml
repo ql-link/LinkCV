@@ -9,12 +9,25 @@ on:
 permissions:
   contents: read
 
+# 同一 PR 连续推送时只保留最新一次运行；共享分支 push 不取消，保证每次合并都有完整结果
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
       migrations: ${{ steps.detect.outputs.migrations }}
       revisions: ${{ steps.detect.outputs.revisions }}
+      web: ${{ steps.scope.outputs.web }}
+      backend: ${{ steps.scope.outputs.backend }}
+      extension: ${{ steps.scope.outputs.extension }}
+      desktop: ${{ steps.scope.outputs.desktop }}
+      miniprogram: ${{ steps.scope.outputs.miniprogram }}
+      pi: ${{ steps.scope.outputs.pi }}
+      devenv: ${{ steps.scope.outputs.devenv }}
+      contracts: ${{ steps.scope.outputs.contracts }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -41,6 +54,35 @@ jobs:
           revisions="$(git diff --name-only --diff-filter=A "$BASE_SHA"...HEAD -- 'apps/backend/migrations/versions/*.py' \
             | sed -nE 's#.*/([0-9]{4})_[^/]*\.py$#\1#p' | sort -u | tr '\n' ' ')"
           echo "revisions=$revisions" >> "$GITHUB_OUTPUT"
+
+      # 按改动路径决定需要运行的应用检查；共享分支 push、无法确定基线或改动了根配置/质量脚本/本工作流时全部运行
+      - id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          all=false
+          if [ "$GITHUB_EVENT_NAME" = "push" ] || [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            all=true
+            changed=""
+          else
+            changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+            if printf '%s\n' "$changed" | grep -Eq '^(package\.json|package-lock\.json|\.github/workflows/quality\.yml|scripts/quality/)'; then
+              all=true
+            fi
+          fi
+          # has <扩展正则>：本次改动是否命中，或已要求全部运行
+          has() { [ "$all" = "true" ] || printf '%s\n' "$changed" | grep -Eq "$1"; }
+          emit() { if has "$2"; then echo "$1=true" >> "$GITHUB_OUTPUT"; else echo "$1=false" >> "$GITHUB_OUTPUT"; fi; }
+          emit web '^apps/web/'
+          # 后端测试会读取模板资源和 PDF 渲染器，也依赖部署与脚本契约
+          emit backend '^(apps/backend/|apps/web/public/templates/|apps/web/pdf-cli/|scripts/|deploy/)'
+          emit extension '^apps/extension/'
+          emit desktop '^apps/desktop/'
+          emit miniprogram '^apps/miniprogram/'
+          emit pi '^(apps/pi-service/|third_party/pi/)'
+          emit devenv '^scripts/dev/'
+          # 契约检查横跨 Web、后端、部署与环境变量
+          emit contracts '^(apps/web/|apps/backend/|deploy/|scripts/|\.env)'
 
   migrations:
     needs: changes
@@ -119,7 +161,10 @@ jobs:
         env:
           DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
 
-  check:
+  # 以下应用检查彼此独立，按改动路径并行运行；未命中的 job 会被跳过。
+  contracts:
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -129,25 +174,133 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            apps/web/package-lock.json
-            apps/extension/package-lock.json
-            apps/pi-service/package-lock.json
-            apps/desktop/package-lock.json
-            third_party/pi/package-lock.json
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+      # check:contracts 需要 Web 依赖加载 vite.config.mjs
+      - run: npm ci --prefix apps/web
+      - run: uv sync --directory apps/backend --dev
+      - run: npm run check:contracts
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
       - uses: astral-sh/setup-uv@v8.3.2
         with:
           enable-cache: true
       - run: npm ci --prefix apps/web
+      - run: uv sync --directory apps/backend --dev
+      - run: npm run check:design
+      - run: npm run typecheck:web
+      - run: npm run test:web
+      - run: npm run build:web
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.3.2
+        with:
+          enable-cache: true
+      - run: uv sync --directory apps/backend --dev
+      - run: npm run test:backend
+      - run: npm run build:backend
+
+  extension:
+    needs: changes
+    if: needs.changes.outputs.extension == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/extension/package-lock.json
       - run: npm ci --prefix apps/extension
-      - run: npm ci --prefix apps/pi-service
+      - run: npm run typecheck:extension
+      - run: npm run test:extension
+      - run: npm run build:extension
+
+  desktop:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
       - run: npm ci --prefix apps/desktop
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - run: npm run typecheck:desktop
+      - run: npm run test:desktop
+
+  miniprogram:
+    needs: changes
+    if: needs.changes.outputs.miniprogram == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm run test:miniprogram
+
+  pi:
+    needs: changes
+    if: needs.changes.outputs.pi == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/pi-service/package-lock.json
+            third_party/pi/package-lock.json
+      - run: npm ci --prefix apps/pi-service
       - run: npm ci --prefix third_party/pi
-      - run: npm run prepare:pi
-      - run: uv sync --directory apps/backend --dev
-      - run: npm run check
+      - run: npm run check:pi
+
+  devenv:
+    needs: changes
+    if: needs.changes.outputs.devenv == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm run test:dev-env
+
+  # 汇总 job：保持原有的 "Quality / check" 状态名，分支保护无需修改。
+  # 被跳过的 job 视为通过；任一 job 失败或被取消则整体失败。
+  check:
+    needs: [changes, migrations, rules, contracts, web, backend, extension, desktop, miniprogram, pi, devenv]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize results
         env:
-          DOCS_SYNC_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "*|*" cancelled "*) echo "有检查失败或被取消"; exit 1 ;;
+          esac

@@ -31,7 +31,7 @@
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
-| `src/linkresume/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
+| `src/linkresume/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
 | `src/linkresume/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
@@ -145,7 +145,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0009` 曾新增 `admin_operation_logs` 管理操作审计表，记录管理员对用户的 enable/disable 操作。字段包括 `id`（BIGINT UNSIGNED PK）、`actor_user_id`（操作人，FK → users.id）、`target_user_id`（目标用户，FK → users.id）、`action`（受 CHECK 约束的 VARCHAR，只允许 "disable"/"enable"）和 `created_at`。该表仅写入不读取，管理端无查询入口，`0011` 将其删除；enable/disable 操作不再持久化审计记录。
 
-`0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照；当前公开读取实时使用 `resumes` 主记录中最近一次保存成功的草稿。
+`0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照；当前公开读取实时使用 `resumes` 主记录中最近一次保存成功的草稿。公开读取响应额外返回 `share_expires_at`（`expires_at`）与 `resumes.updated_at`（`updated_at`），无新增列或迁移。
 
 `0018` 新增 `user_dataset` 用户知识库数据集表，`0022` 让资料通过唯一 `parse_task_id` 关联通用解析任务，`0043` 增加数据库幂等键、请求指纹和可靠调度字段。`0060` 新增 `user_dataset_folders` 文件夹分类表并在 `user_dataset` 增加 `folder_id` 字段（`ON DELETE SET NULL` 外键），支持文件夹 CRUD、按分类查询、单项/批量移动与带文件夹上传。删除非空文件夹需显式确认，预检无活动任务后清理内部资料记录、解析任务及 MinIO 对象，不再退回未分类。`POST /api/datasets` 要求提供当前用户拥有的现存文件夹，缺少目标返回 `400 DATASET_FOLDER_REQUIRED`，非法或不可访问目标返回 `404 FOLDER_NOT_FOUND`，不再自动存入未分类；创建资料前锁定文件夹以防删除竞争，并执行有界格式与内容校验，在用户行锁内检查数量和总容量，再创建 `uploading` 预留；MinIO 成功后提交为 `upload_status=succeeded/parse_status=queued`，RabbitMQ confirm 失败仍返回已受理记录。Worker 扫描器周期补发未分发或超时的 `queued` 任务，消费方用数据库条件更新把任务原子抢占为 `processing`；陈旧处理任务在尝试上限内回到 `queued`，超过上限收口失败。每次尝试把转换 Markdown 保存为 `users/{uid}/datasets/converted/{task_id}-{attempt}.md`，条件提交失败会删除本次对象，避免陈旧消费者覆盖较新结果；读取仍兼容历史 `{task_id}.md`。上传失败预留由 Worker 清理，只有对象删除成功才删除数据库记录。列表只暴露上传成功资料；重试把失败任务重新置为 `queued`，活动任务禁止删除。本模块不使用 Outbox，不提供分片、RAG 或源文件下载。
 

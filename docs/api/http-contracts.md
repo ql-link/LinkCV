@@ -96,8 +96,8 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
-| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组；按 `sort_order`、ID 升序 |
-| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组 |
+| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组和 `use_count`（当前引用该模板的简历数，全站聚合）；按 `sort_order`、ID 升序 |
+| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组和 `use_count` |
 | `GET`    | `/api/resumes`              | 是   | `{resumes}`，摘要含可选 `preview`，按更新时间倒序                |
 | `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
@@ -179,7 +179,7 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 | `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，可续期、修改可见性或下载权限 |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
-| `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download}`；`sharer` 为 `{nickname, avatar_url}` |
+| `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download, expires_at, updated_at}`；`sharer` 为 `{nickname, avatar_url}`；`expires_at` 为分享有效期（`null` 表示长期有效），`updated_at` 为简历主记录最近更新时间（分享设置变更也会刷新） |
 | `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的 A4 分页 PDF；沿用分享 token 的访问规则并要求允许下载 |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_allow_download, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`share_allow_download` 为布尔值，旧记录和创建缺省值均为 `true`。`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
@@ -394,6 +394,8 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 **识别稿修正与重新评估**：`transcripts:correct` 只对 `completed` 的语音面试可用，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；已执行过返回 `409 MOCK_INTERVIEW_TRANSCRIPT_ALREADY_CORRECTED`；`transcript_correction` 未配置返回 `503 LLM_MODEL_NOT_CONFIGURED` 且不消耗本场次数。响应为 `{items:[{question_id, state, changes}], mock_interview}`，`state` 为 `corrected|correction_rejected|original`。手动修改相对原始识别稿的字符变化超过 15% 返回 `422 MOCK_INTERVIEW_TRANSCRIPT_CORRECTION_REJECTED`，录音已删除返回 `404 MOCK_INTERVIEW_RECORDING_NOT_FOUND`。重新评估要求该题（含追问）识别稿已被修正或修改，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；超过 3 次返回 `409 MOCK_INTERVIEW_RE_EVALUATE_LIMIT`；响应为 `{question_id, evaluation, re_evaluate_count, remaining, total_score, previous_total_score, mock_interview}`。
 
 详情返回来源与配置摘要、`materials`、`current_question_id`、`answered_main_questions`、`needs_reply`、有序 `questions` 和 `report`；`report` 只在 `completed` 时返回，包含 `rubric_version`、`answer_mode`、`voice_metrics`（语音面试的 `chars_per_minute`、`long_pauses`、`filler_ratio`、`answer_duration_ms`、`reference` 与 `tip`，文字面试为 `null`）、`re_evaluations`（如有）、`total_score`、`question_average`、`dimension_score`、`dimensions`、逐题 `questions`、`fact_check`、`resume_risks`、`improvements`、`low_confidence` 与 `closing_message`。`fact_check.status` 为 `not_requested|completed|failed`。详情另含 `answer_mode`、`transcript_corrected_at`、`recordings_deleted`；每条提问另含 `answer_source`、`audio_duration_ms`、`has_recording`、`raw_transcript`、`transcript_state`、`correction`、`re_evaluate_count` 与 `evaluation_history`。
+
+Web 消费方：作答与跳过每次发送新的 `Idempotency-Key`；回合 SSE 没有 `interviewer.turn` 或 `interviewer.failed` 就结束视为连接中断，页面据详情的 `needs_reply` 提供 `reply:retry`；真实接口下 `preparing`、`evaluating` 靠轮询详情感知完成；录音读取 404 显示为不可用。详见 [AI 模拟面试](../features/mock-interview.md#web-前端)。
 
 | 错误码 | 场景 |
 | --- | --- |
