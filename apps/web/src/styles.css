@@ -160,7 +160,7 @@ select {
 input,
 textarea,
 [contenteditable="true"] {
-  font-family: var(--ui-font-content);
+  font-family: var(--ui-font-sans);
 }
 
 button:not([data-slot]):focus-visible,
@@ -2600,7 +2600,8 @@ select:not([data-slot]):focus-visible {
 .agent-message.is-assistant .agent-message-row { align-items: flex-start; }
 .agent-message.is-assistant .agent-message-bubble { width: 100%; grid-template-columns: 28px minmax(0, 1fr); align-items: start; background: transparent; padding: 0; }
 .agent-message.is-assistant .agent-message-content { grid-column: 2; }
-.agent-message-content { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 0; color: var(--ui-foreground); font-family: var(--ui-font-sans); font-size: 0.875rem; font-weight: 400; line-height: 1.55; overflow-wrap: break-word; }
+.agent-message-content { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 0; color: var(--ui-foreground); font-family: var(--ui-font-content); font-size: var(--ui-text-md); font-weight: 400; line-height: var(--ui-line-content); overflow-wrap: break-word; }
+.agent-message.is-user .agent-message-content { font-family: var(--ui-font-sans); font-size: var(--ui-text-sm); line-height: var(--ui-line-body); }
 .agent-message-content *, .agent-message-content *::before, .agent-message-content *::after { box-sizing: border-box; }
 .agent-message-content > * { min-width: 0; margin-block: 0; }
 .agent-message-content > :last-child { margin-bottom: 0; }
@@ -2609,11 +2610,11 @@ select:not([data-slot]):focus-visible {
 .agent-message-content h3,
 .agent-message-content h4,
 .agent-message-content h5,
-.agent-message-content h6 { color: var(--ui-foreground); line-height: 1.25; overflow-wrap: break-word; }
-.agent-message-content .agent-markdown-heading.is-level-1 { margin: 12px 0 -4px; font-size: 1.375rem; font-weight: 700; }
-.agent-message-content .agent-markdown-heading.is-level-2 { margin: 12px 0 -4px; font-size: 1.125rem; font-weight: 700; }
+.agent-message-content h6 { color: var(--ui-foreground); line-height: var(--ui-line-subsection-title); overflow-wrap: break-word; font-family: var(--ui-font-display); }
+.agent-message-content .agent-markdown-heading.is-level-1 { margin: 12px 0 -4px; font-size: var(--ui-text-content-title); font-weight: var(--ui-weight-semibold); font-family: var(--ui-font-display); line-height: var(--ui-line-content-title); }
+.agent-message-content .agent-markdown-heading.is-level-2 { margin: 12px 0 -4px; font-size: var(--ui-text-xl); font-weight: var(--ui-weight-semibold); font-family: var(--ui-font-display); line-height: var(--ui-line-section-title); }
 .agent-message-content .agent-markdown-heading.is-level-3,
-.agent-message-content .agent-markdown-heading.is-level-4 { margin: 8px 0 -4px; font-size: 1rem; font-weight: 700; }
+.agent-message-content .agent-markdown-heading.is-level-4 { margin: 8px 0 -4px; font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); font-family: var(--ui-font-display); line-height: var(--ui-line-subsection-title); }
 .agent-message-content .agent-markdown-heading.is-level-5 { margin: 8px 0 -4px; font-size: 0.875rem; font-weight: 700; }
 .agent-message-content .agent-markdown-heading.is-level-6 { margin: 8px 0 -4px; font-size: 0.875rem; font-weight: 600; }
 .agent-message-content .agent-markdown-heading:first-child { margin-top: 0; }
@@ -2702,13 +2703,13 @@ select:not([data-slot]):focus-visible {
 .agent-clarification label > span { display: grid; gap: 2px; }
 .agent-clarification label strong { font-size: 0.75rem; }
 .agent-clarification label small { color: var(--ui-text-muted); font-size: 0.65625rem; line-height: 1.4; }
-.agent-clarification-other { height: 38px; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-sm); outline: 0; background: var(--ui-surface); padding: 0 10px; color: var(--ui-foreground); font: 0.75rem/1 var(--ui-font-content); }
+.agent-clarification-other { height: 38px; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-sm); outline: 0; background: var(--ui-surface); padding: 0 10px; color: var(--ui-foreground); font: 400 var(--ui-text-sm)/var(--ui-line-control) var(--ui-font-sans); }
 .agent-clarification-other:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 15%, transparent); }
 .agent-clarification-error { color: var(--ui-destructive); font-size: 0.65625rem; }
 .agent-clarification > .ui-button { justify-self: stretch; }
 .agent-composer > label { color: var(--ui-text-secondary); font-size: 0.75rem; font-weight: 600; }
 .agent-input-shell { position: relative; display: grid; }
-.agent-composer textarea { min-height: 78px; resize: none; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-xl); outline: 0; background: var(--ui-surface); padding: 15px 58px 15px 16px; color: var(--ui-foreground); font: 400 0.8125rem/1.55 var(--ui-font-content); box-shadow: 0 4px 16px rgba(15, 18, 22, 0.035); }
+.agent-composer textarea { min-height: 78px; resize: none; border: 1px solid var(--ui-input); border-radius: var(--ui-radius-xl); outline: 0; background: var(--ui-surface); padding: 15px 58px 15px 16px; color: var(--ui-foreground); font: 400 var(--ui-text-sm)/var(--ui-line-body) var(--ui-font-sans); box-shadow: 0 4px 16px rgba(15, 18, 22, 0.035); }
 .agent-composer textarea:focus { border-color: var(--ui-ring); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ui-ring) 15%, transparent); }
 .agent-composer textarea::placeholder { color: var(--ui-text-subtle); }
 .agent-send-button { position: absolute; right: 12px; bottom: 12px; display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 50%; background: var(--ui-accent); padding: 0; color: var(--ui-primary-foreground); cursor: pointer; box-shadow: 0 5px 14px color-mix(in srgb, var(--ui-accent) 24%, transparent); }

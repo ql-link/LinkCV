@@ -3545,7 +3545,7 @@ select:not([data-slot]):focus-visible,
   overflow: hidden;
   background: var(--canvas);
   color: var(--ink);
-  font-family: var(--ui-font-content);
+  font-family: var(--ui-font-sans);
 }
 
 .workspace-route-loading {

@@ -6,7 +6,7 @@
 
 `/account` 展示真实注册时间、当前 Web 会话的设备摘要和简历数量，支持昵称、头像、联系邮箱、求职资料和偏好保存。普通用户不再提供微信绑定、解绑或换绑操作。`/account-deletion` 是匿名注销进度页，受理后通过当前标签页持有的回执查询状态。
 
-Web 账号页的英文页面与区域标题使用 Poppins，正文和操作控件使用 Lora；中文沿用现有思源黑体及 V3 页面标题字体。两套西文字体随应用本地发布，加载与授权见 [Web 架构](../internals/web.md)。
+Web 账号页的英文标题、字段值、说明和操作控件使用 Poppins；中文沿用思源黑体及 V3 页面标题字体。两套产品西文字体随应用本地发布，界面与阅读字体的分工、加载及授权见 [Web 架构](../internals/web.md)。
 
 完整路径和错误见 [HTTP 接口契约](../api/http-contracts.md)，数据与清理实现见 [Backend 架构](../internals/backend.md)，微信身份确认客户端见 [小程序架构](../internals/miniprogram.md)。
 

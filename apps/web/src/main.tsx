@@ -22,7 +22,7 @@ import "@fontsource/noto-serif-sc/600.css";
 installCryptoRandomUuid();
 
 if (typeof document !== "undefined" && "fonts" in document) {
-  for (const font of ["400 13px Lora", "500 13px Lora", "600 28px Poppins", "500 12px Poppins", "600 28px \"Noto Serif SC\""]) {
+  for (const font of ["400 14px Poppins", "500 14px Poppins", "600 28px Poppins", "400 16px Lora", "600 28px \"Noto Serif SC\""]) {
     void document.fonts.load(font, "Account Aa 0123456789 年月日模板简历").catch(() => undefined);
   }
 }

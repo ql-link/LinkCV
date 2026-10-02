@@ -12,7 +12,7 @@
 /* 标题区：微信页小字眉标 / 开发环境橙色标签 */
 .auth-eyebrow { margin: 4px 0 0; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
 .auth-dev-tag { display: inline-flex; width: max-content; height: 22px; align-items: center; border-radius: 11px; background: var(--v3-or-soft); padding: 0 8px; color: var(--v3-or); font-size: 10.5px; font-weight: 500; }
-.auth-title { margin: 9px 0 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: 28px; font-weight: 600; line-height: 40px; white-space: nowrap; }
+.auth-title { margin: 9px 0 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: var(--ui-text-2xl); font-weight: 600; line-height: var(--ui-line-page-title); white-space: nowrap; }
 .auth-dev-tag + .auth-title { margin-top: 10px; }
 .auth-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 16px; white-space: nowrap; }
 

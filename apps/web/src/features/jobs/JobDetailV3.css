@@ -8,7 +8,7 @@
 .jd-source { position: absolute; top: 0; right: 0; gap: 6px; }
 .jd-source a { margin-left: 10px; color: var(--v3-sub); font-size: 11.5px; text-decoration: none; }
 .jd-title-row { display: flex; align-items: center; gap: 12px; width: fit-content; max-width: calc(100% - 215px); margin-top: 6px; min-height: 40px; }
-.jd-title-row > .job-quick-edit { width: auto; font: 600 28px/40px var(--v3-serif); }
+.jd-title-row > .job-quick-edit { width: auto; font: 600 var(--ui-text-2xl)/var(--ui-line-page-title) var(--v3-serif); }
 .jd-v3 .job-quick-edit-heading { font: inherit; margin: 0; }
 .jd-stage-label { flex: none; border-radius: 5px; background: var(--v3-bl-soft); color: var(--v3-bl); font-size: 10px; font-weight: 500; line-height: 20px; padding: 0 7px; }
 .jd-actions { position: absolute; top: 32px; right: 0; display: flex; gap: 10px; }
@@ -47,7 +47,7 @@
 .jd-notes { padding: 16px 19px 18px; min-height: 130px; flex: 1; }
 .jd-notes .job-quick-edit.is-multiline > .job-quick-edit-display { line-height: 21px; }
 .jd-card-heading { display: flex; align-items: center; gap: 10px; height: 64px; border-bottom: 1px solid var(--v3-line); padding-top: 6px; }
-.jd-card-heading h2 { font: 600 15px/22px var(--v3-serif); }
+.jd-card-heading h2 { font: 600 var(--ui-text-md)/var(--ui-line-subsection-title) var(--ui-font-display); }
 .jd-card-icon { display: grid; place-items: center; width: 28px; height: 28px; background: var(--v3-stage); border-radius: 8px; color: var(--v3-sub); }
 .jd-legend { margin-left: auto; display: flex; align-items: center; gap: 12px; color: var(--v3-fnt); font-size: 11px; }
 .jd-legend > span { display: flex; align-items: center; gap: 6px; }
@@ -59,9 +59,9 @@
 .jd-v3 .jd-description-body .job-quick-edit.is-editing { margin-top: 2px; }
 .jd-description-body .jd-edit-hint { position: static; text-align: right; margin-top: 8px; }
 .jd-markdown-help { position: absolute; bottom: 0; left: 0; color: var(--v3-fnt); font-size: 10px; }
-.jd-markdown { display: block; color: var(--v3-sub); }
-.jd-markdown h1, .jd-markdown h2, .jd-markdown h3, .jd-markdown h4 { font: 400 11px/16px var(--v3-sans); color: var(--v3-fnt); margin: 0 0 9px; }
-.jd-markdown p { font: 400 12.5px/25px var(--v3-sans); }
+.jd-markdown { display: block; color: var(--v3-sub); font-family: var(--ui-font-content); font-size: var(--ui-text-md); line-height: var(--ui-line-content); }
+.jd-markdown h1, .jd-markdown h2, .jd-markdown h3, .jd-markdown h4 { font: 600 var(--ui-text-md)/var(--ui-line-subsection-title) var(--ui-font-display); color: var(--v3-txt); margin: 0 0 9px; }
+.jd-markdown p { font: inherit; }
 .jd-markdown p + h1, .jd-markdown p + h2, .jd-markdown p + h3, .jd-markdown p + h4 { margin-top: 14px; }
 .jd-markdown strong { color: var(--v3-txt); font-weight: 500; }
 .jd-markdown ul, .jd-markdown ol { margin: 8px 0; padding-left: 18px; }
@@ -88,7 +88,7 @@
 .jd-recruiter { display: flex; align-items: center; gap: 6px; }
 .jd-recruiter .job-quick-edit { width: auto; }
 .jd-company-description { margin-top: 14px; }
-.jd-company-description .job-quick-edit.is-multiline > .job-quick-edit-display { font-size: 12px; line-height: 20px; color: var(--v3-sub); }
+.jd-company-description .job-quick-edit.is-multiline > .job-quick-edit-display { font-size: var(--ui-text-md); line-height: var(--ui-line-content); color: var(--v3-sub); font-family: var(--ui-font-content); }
 .jd-v3 .job-quick-edit-display { position: relative; min-height: 0; padding: 3px 7px; margin: -3px -8px; width: calc(100% + 16px); border-color: transparent; border-radius: 5px; color: inherit; font: inherit; line-height: inherit; }
 .jd-v3 .job-quick-edit-display:hover { border-color: transparent; background: var(--v3-field); }
 .jd-v3 .job-quick-edit-display:focus-visible { outline: 1px solid var(--v3-txt); }
@@ -141,8 +141,8 @@
 .jd-description-paper i:first-child { width: 52px; height: 7px; background: var(--v3-sk2); border: 0; }
 .jd-description-paper i:nth-child(3) { width: 60px; }
 .jd-paste-badge { position: absolute; top: 54px; left: calc(50% + 40px); width: 44px; height: 44px; display: grid; place-items: center; background: white; border: 1px solid var(--v3-cl); border-radius: 12px; box-shadow: 0 6px 14px rgb(0 0 0 / 10%); color: var(--v3-sub); }
-.jd-description.is-empty h3 { font: 600 15px/22px var(--v3-serif); margin-top: 16px; }
-.jd-empty-description { font-size: 12.5px; line-height: 20px; color: var(--v3-sub); margin-top: 6px !important; }
+.jd-description.is-empty h3 { font: 600 var(--ui-text-md)/var(--ui-line-subsection-title) var(--ui-font-display); margin-top: 16px; }
+.jd-empty-description { font-size: var(--ui-text-sm); line-height: var(--ui-line-body); color: var(--v3-sub); margin-top: 6px !important; font-family: var(--ui-font-sans); }
 .jd-description.is-empty > .v3-btn { margin-top: 22px; height: 32px; font-size: 12px; }
 .jd-resume-picker { width: 256px; padding: 6px; }
 .jd-resume-picker p { padding: 8px; font-size: 12px; }
