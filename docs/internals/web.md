@@ -173,4 +173,3 @@ Career 跨行业模板由 `api/careerThemes.ts` 登记主题，`app.css` 提供�
 ### 原生纸面资源与一致性边界
 
 Mac WKWebView 和 Windows WebView2 的离线纸面由 `apps/native/scripts/build_renderer.mjs` 从共享 Web 渲染函数及基础、应用、打印、Muse 四组样式生成，并将同一份 HTML 复制至两端资源目录。原生显示连续可滚动纸面，等待图片和字体就绪后按实际高度扩展舞台；无效布局或图片失败显式提示。模板预览提示最终排版以 PDF 为准；内容、模块顺序、模板结构、配色、图片与关键布局需保留，字形、换行、分页及像素一致尚未作为跨引擎承诺。内置头像随包内联；私有 PNG／JPEG 图片由原生 HTTP 会话下载、校验并通过 assets 注入，使用现有桌面 Bearer 资源接口及后端所有权校验。图片仅保留在当前纸面内存，不写共享缓存；单张失败显示占位和提示，正文仍可预览。原生入口拒绝任意网页导航，退出与切换拒绝迟到图片写回。代表样例与 Chromium／WebKit／PDF 的检查命令见 `apps/native/README.md`。
-
