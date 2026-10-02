@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { syncResumeSheetColumns } from "./print/resumeSheetDecoration";
 import type { JSONContent } from "@tiptap/core";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useResumeStore, type ResumeSettings } from "../../store/resumeStore";
@@ -153,6 +154,10 @@ export function PreviewPanel() {
     settings.smartOnePage,
     settings.verticalPageMargin,
   ]);
+
+  useLayoutEffect(() => {
+    pagesRootRef.current?.querySelectorAll<HTMLElement>(".resume-paper").forEach((paper) => syncResumeSheetColumns({ paper }));
+  });
 
   useEffect(() => {
     const images = pagesRootRef.current?.querySelectorAll<HTMLImageElement>("img[data-local-asset]");

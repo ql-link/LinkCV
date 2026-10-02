@@ -1,7 +1,9 @@
 """Exercise 0100 on an explicitly configured disposable MySQL, without DDL."""
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -20,11 +22,20 @@ def db():
     if not raw:
         pytest.skip("Set LINKRESUME_TEST_MYSQL_URL to a disposable MySQL at head")
     url = make_url(raw)
-    assert url.database == "linkresume" and url.host in {"localhost", "127.0.0.1"}
+    assert url.database in {"linkresume", "linkresume_sample_fit_0103", "linkresume_curation_0104"} and url.host in {"localhost", "127.0.0.1"}
     engine = create_engine(raw)
     with engine.connect() as connection:
         transaction = connection.begin()
         try:
+            # Later revisions change names and samples; exercise the frozen 0100 input.
+            source = SQL.read_text(encoding="utf-8")
+            samples = {key: json.loads(value.replace("''", "'")) for key, value in re.findall(
+                r"SET @muse_sample_(\w+) = CAST\('((?:[^']|'')*)' AS JSON\)", source
+            )}
+            rows = re.findall(r"VALUES \('(muse-[a-z]+-cn)', '([^']+)', '(?:[^']|'')*', @muse_sample_(\w+),", source)
+            connection.execute(text("UPDATE resume_templates SET name=:name,data_json=CAST(:data AS JSON) WHERE `key`=:key"),
+                               [{"key": key, "name": name, "data": json.dumps(samples[sample], ensure_ascii=False)}
+                                for key, name, sample in rows])
             yield connection
         finally:
             transaction.rollback()

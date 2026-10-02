@@ -3,7 +3,7 @@ import { type Editor, type JSONContent } from "@tiptap/core";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { Pencil } from "lucide-react";
+import { Pencil, Rows2, Columns2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import type { Instance as TippyInstance } from "tippy.js";
@@ -221,69 +221,45 @@ export function WorkbenchToolRail({
   );
 }
 
-// 纸面底部页面栏（Figma lib12 · ewBar）：页数 · 上下 / 左右 · 智能一页 · 缩放
+// 右侧页面设置：保留页面排列与智能一页的既有行为
 export function WorkbenchPageBar({
-  pageCount,
-  currentPage,
   arrangement,
   smartOnePage,
-  scale,
   disabled,
   onArrangementChange,
   onSmartOnePageChange,
-  onZoom,
 }: {
-  pageCount: number;
-  currentPage: number;
   arrangement: PageArrangement;
   smartOnePage: boolean;
-  scale: number;
   disabled?: boolean;
   onArrangementChange: (value: PageArrangement) => void;
   onSmartOnePageChange: (enabled: boolean) => void;
-  onZoom: (direction: -1 | 1) => void;
 }) {
   return (
     <div className="wb3-pagebar" role="toolbar" aria-label="页面设置">
-      <span className="wb3-pagebar-count">{smartOnePage ? "共 1 页" : `第 ${currentPage} / ${pageCount} 页`}</span>
-      <i className="wb3-pagebar-sep" aria-hidden="true" />
-      <div className={`wb3-pagebar-seg${smartOnePage ? " is-muted" : ""}`} role="group" aria-label="页面排列">
-        {(["vertical", "horizontal"] as const).map((value) => {
-          const pressed = !smartOnePage && arrangement === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              aria-label={value === "vertical" ? "上下排列" : "左右排列"}
-              aria-pressed={pressed}
-              disabled={disabled}
-              title={disabled ? "版本操作完成后可调整页面布局" : undefined}
-              onClick={() => {
-                if (smartOnePage) onSmartOnePageChange(false);
-                onArrangementChange(value);
-              }}
-            >
-              {value === "vertical" ? "上下" : "左右"}
-            </button>
-          );
-        })}
+      <div className="wb3-type-section">
+        <strong>页面排列</strong>
+        <small>选择多页简历在编辑区中的浏览方式。</small>
       </div>
-      <label className="wb3-pagebar-smart">
-        <button
-          type="button"
-          role="switch"
-          className="v3-toggle"
-          aria-checked={smartOnePage}
-          aria-label="智能一页"
-          disabled={disabled}
-          onClick={() => onSmartOnePageChange(!smartOnePage)}
-        />
-        <span>智能一页</span>
-      </label>
-      <i className="wb3-pagebar-sep" aria-hidden="true" />
-      <button type="button" className="wb3-pagebar-zoom" aria-label="缩小" onClick={() => onZoom(-1)}><Icon name="minus" size={14} /></button>
-      <output className="wb3-pagebar-scale" aria-label="当前缩放">{Math.round(scale * 100)}%</output>
-      <button type="button" className="wb3-pagebar-zoom" aria-label="放大" onClick={() => onZoom(1)}><Icon name="plus" size={14} /></button>
+      <div className="wb3-arrangement-options" role="group" aria-label="页面排列">
+        {(["vertical", "horizontal"] as const).map((value) => (
+          <button key={value} type="button" aria-label={value === "vertical" ? "上下排列" : "左右排列"}
+            aria-pressed={!smartOnePage && arrangement === value} disabled={disabled}
+            onClick={() => {
+              if (smartOnePage) onSmartOnePageChange(false);
+              onArrangementChange(value);
+            }}>
+            <span className="wb3-arrangement-icon">{value === "vertical" ? <Rows2 size={24} /> : <Columns2 size={24} />}</span>
+            <span>{value === "vertical" ? "上下排列" : "左右排列"}</span>
+          </button>
+        ))}
+        <button type="button" role="switch" aria-checked={smartOnePage} aria-label="智能一页"
+          disabled={disabled} onClick={() => onSmartOnePageChange(!smartOnePage)}>
+          <span className="wb3-arrangement-icon"><Sparkles size={24} /></span>
+          <span>智能一页</span>
+        </button>
+      </div>
+      <p className="wb3-arrangement-note">排列只影响编辑时的浏览方向。</p>
     </div>
   );
 }
@@ -353,9 +329,6 @@ const A4_WIDTH_IN_CSS_PIXELS = (210 / 25.4) * 96;
 const EDITOR_PAGE_BASE_SCALE = 560 / A4_WIDTH_IN_CSS_PIXELS;
 const A4_HEIGHT_IN_CSS_PIXELS = (297 / 25.4) * 96;
 const PAGE_ARRANGEMENT_STORAGE_KEY = "linkresume.workbench.page-arrangement";
-const ZOOM_STEP = 0.1;
-const ZOOM_MIN = 0.5;
-const ZOOM_MAX = 1.6;
 
 function currentSelectionRect(editor: Editor) {
   const { ranges } = editor.state.selection;
@@ -759,8 +732,6 @@ export function ResumeWorkbench({
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
   const [horizontalScaleOverride, setHorizontalScaleOverride] = useState<number | null>(null);
   const [zoomFeedback, setZoomFeedback] = useState<{ scale: number; sequence: number } | null>(null);
-  const [pageCount, setPageCount] = useState(1);
-  const [currentPage, setCurrentPage] = useState(1);
   const [saveErrorNoticeOpen, setSaveErrorNoticeOpen] = useState(false);
   const [pageArrangement, setPageArrangement] = useState<PageArrangement>(() => {
     try {
@@ -887,16 +858,6 @@ export function ResumeWorkbench({
     setZoomFeedback({ scale, sequence: Date.now() });
   }, []);
 
-  // 页面栏的 − / + 缩放：竖排改写 previewScale（随简历保存），横排只改本次视图
-  const zoomBy = (direction: -1 | 1) => {
-    const base = horizontalMode ? renderedPreviewScale / displayBaseScale : previewScale;
-    const next = Math.min(ZOOM_MAX, Math.max(horizontalMode ? 0.1 : ZOOM_MIN, Number((base + direction * ZOOM_STEP).toFixed(2))));
-    if (next === base) return;
-    if (horizontalMode) setHorizontalScaleOverride(next * displayBaseScale);
-    else setPreviewScale(next);
-    showZoomFeedback(next);
-  };
-
   const publishAgentSelection = (current: Editor) => {
     const revision = ++agentSelectionRevisionRef.current;
     if (current.state.selection.empty) {
@@ -1022,36 +983,6 @@ export function ResumeWorkbench({
     updateWorkspaceWidth();
     return () => observer.disconnect();
   }, [pageArrangement]);
-
-  // 页面栏的页数：分页插件把总页数写在纸面的 --resume-page-count 上；当前页按视口中心所在页计算
-  useEffect(() => {
-    const paper = paperRef.current;
-    const scrollArea = paperScrollRef.current;
-    if (!paper || !scrollArea) return;
-    const readCount = () => {
-      const configured = Number.parseInt(paper.style.getPropertyValue("--resume-page-count"), 10);
-      setPageCount(Number.isFinite(configured) ? Math.max(1, configured) : 1);
-    };
-    const readCurrent = () => {
-      const scale = Math.max(0.01, renderedPreviewScale);
-      const scrollRect = scrollArea.getBoundingClientRect();
-      const paperRect = paper.getBoundingClientRect();
-      const stride = horizontalMode ? (A4_WIDTH_IN_CSS_PIXELS + 24) * scale : (A4_HEIGHT_IN_CSS_PIXELS + 24) * scale;
-      const center = horizontalMode
-        ? scrollRect.left + scrollRect.width / 2 - paperRect.left
-        : scrollRect.top + scrollRect.height / 2 - paperRect.top;
-      setCurrentPage(Math.max(1, Math.floor(center / stride) + 1));
-    };
-    readCount();
-    readCurrent();
-    const observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(readCount);
-    observer?.observe(paper, { attributes: true, attributeFilter: ["style"] });
-    scrollArea.addEventListener("scroll", readCurrent, { passive: true });
-    return () => {
-      observer?.disconnect();
-      scrollArea.removeEventListener("scroll", readCurrent);
-    };
-  }, [horizontalMode, renderedPreviewScale]);
 
   useEffect(() => {
     const updateViewportWidth = () => setViewportWidth(window.innerWidth);
@@ -1217,18 +1148,6 @@ export function ResumeWorkbench({
 
       {!embedded && (
         <>
-          <WorkbenchPageBar
-            pageCount={pageCount}
-            currentPage={Math.min(currentPage, pageCount)}
-            arrangement={pageArrangement}
-            smartOnePage={settings.smartOnePage}
-            scale={horizontalMode ? renderedPreviewScale / displayBaseScale : previewScale}
-            disabled={versionOperationPending}
-            onArrangementChange={changePageArrangement}
-            onSmartOnePageChange={(smartOnePage) => updateSettings({ smartOnePage })}
-            onZoom={zoomBy}
-          />
-
           <WorkbenchToolRail
             mode={drawerMode}
             pendingChecks={pendingChecks}
@@ -1270,6 +1189,15 @@ export function ResumeWorkbench({
                   />
                 ) : drawerMode === "type" ? (
                   <WorkbenchTypePanel
+                    pageControls={
+                      <WorkbenchPageBar
+                        arrangement={pageArrangement}
+                        smartOnePage={settings.smartOnePage}
+                        disabled={versionOperationPending}
+                        onArrangementChange={changePageArrangement}
+                        onSmartOnePageChange={(smartOnePage) => updateSettings({ smartOnePage })}
+                      />
+                    }
                     settings={settings}
                     disabled={versionOperationPending}
                     onChange={updateSettings}

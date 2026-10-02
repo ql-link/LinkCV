@@ -8,6 +8,7 @@ import {
   WorkbenchSectionOrderControl,
   WorkbenchSectionOrderReset,
   dropIndex,
+  sidebarIsOnRight,
 } from "./WorkbenchSectionOrderControl";
 
 let editor: Editor | null = null;
@@ -148,5 +149,18 @@ describe("WorkbenchSectionOrderControl 拖放", () => {
 
     expect(rows.slice(1).every((row) => row.getAttribute("draggable") === "true")).toBe(true);
     expect(rows[0]).toHaveAttribute("draggable", "false");
+  });
+});
+
+describe("大纲左右栏的实际位置", () => {
+  it("侧栏放在第二列时识别为右栏，主栏放在第一列时识别为左栏", () => {
+    const root = document.createElement("div");
+    document.body.append(root);
+    root.innerHTML = '<section data-type="resume-column" data-column="sidebar" style="grid-column-start: 2"></section><section data-type="resume-column" data-column="main" style="grid-column-start: 1"></section>';
+    expect(sidebarIsOnRight(root)).toBe(true);
+    root.querySelector<HTMLElement>('[data-column="sidebar"]')!.style.gridColumnStart = "1";
+    root.querySelector<HTMLElement>('[data-column="main"]')!.style.gridColumnStart = "2";
+    expect(sidebarIsOnRight(root)).toBe(false);
+    root.remove();
   });
 });

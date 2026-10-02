@@ -9,7 +9,7 @@ import { editorPath, navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { Icon } from "../../v3/Icon";
 import { Badge, MiniResume } from "../../v3/art";
-import { BeTag, Dialog, DialogFooter, PageEyebrow } from "../../v3/primitives";
+import { Dialog, DialogFooter, PageEyebrow } from "../../v3/primitives";
 import { MOCK_TEMPLATE_USES } from "../../v3/mocks";
 import { ResumePreview } from "../preview/ResumePreview";
 import { TemplatePreviewDialog } from "./TemplatePreviewDialog";
@@ -58,14 +58,12 @@ export function ResumeTemplatesPage() {
   const [selectedUseCases, setSelectedUseCases] = useState<string[]>([]);
 
   // 筛选规则沿用原实现：组内任选其一（OR），两组之间同时满足（AND）
-  // 「按热度排序」需要后端的使用统计，暂按 mocks 里的示例次数降序（同数保持接口原顺序）
+  // Keep the catalog's curated order; mock usage statistics do not rank designs.
   const filteredTemplates = useMemo(() => templates
     .filter((template) =>
       (selectedStyles.length === 0 || selectedStyles.some((style) => template.style_categories?.includes(style)))
-      && (selectedUseCases.length === 0 || selectedUseCases.some((useCase) => template.use_cases?.includes(useCase))))
-    .map((template, order) => ({ template, order, uses: MOCK_TEMPLATE_USES(template.key) }))
-    .sort((a, b) => b.uses - a.uses || a.order - b.order)
-    .map((item) => item.template), [templates, selectedStyles, selectedUseCases]);
+      && (selectedUseCases.length === 0 || selectedUseCases.some((useCase) => template.use_cases?.includes(useCase)))),
+  [templates, selectedStyles, selectedUseCases]);
   const hasFilters = selectedStyles.length + selectedUseCases.length > 0;
   // 筛选条件变化时，模板网格浮上淡入
   const gridMotionRef = useContentMotion<HTMLElement>(`${selectedStyles.join(",")}|${selectedUseCases.join(",")}`, { initial: false });
@@ -201,8 +199,7 @@ export function ResumeTemplatesPage() {
               <button type="button" className="tpl-clear" onClick={() => applyFilters([], [])}>清除筛选</button>
             )}
             <span className="tpl-sort">
-              <BeTag title="按热度排序需要后端的模板使用统计，目前按示例数据排序" />
-              <span>按热度排序</span>
+              <span>按展示顺序</span>
             </span>
             <V3TemplateFilter styles={selectedStyles} useCases={selectedUseCases} onChange={applyFilters} />
           </div>

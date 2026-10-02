@@ -267,43 +267,32 @@
 .wb3-check-passed[open] summary { margin-bottom: 10px; }
 .wb3-check-note { margin: 18px 0 0; color: var(--v3-fnt); font-size: 11px; line-height: 18px; }
 
-/* ── 页面栏：纸面下方居中，40 高胶囊，圆角 20 */
-.wb3-pagebar {
-  position: absolute;
-  z-index: 32;
-  bottom: 24px;
-  left: calc((100% - var(--wb3-pagebar-right, 72px)) / 2);
-  display: flex;
-  height: 40px;
-  align-items: center;
-  border: 1px solid var(--v3-cl);
-  border-radius: 20px;
-  background: #fff;
-  padding: 0 16px;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 8%);
-  color: var(--v3-sub);
-  font-size: 12px;
-  font-weight: 500;
-  transform: translateX(-50%);
-  transition: left 220ms cubic-bezier(0.2, 0, 0, 1);
-  white-space: nowrap;
-}
+/* 页面设置迁入排版面板，画布不再放置底部浮栏。 */
 .wb3 .workbench-canvas { --wb3-pagebar-right: 72px; }
 .wb3 .workbench-canvas.has-drawer { --wb3-pagebar-right: 464px; }
-.wb3-pagebar-count { color: var(--v3-txt); }
-.wb3-pagebar-sep { width: 1px; height: 16px; margin: 0 12px; background: var(--v3-line); }
-.wb3-pagebar-seg { display: flex; height: 28px; align-items: center; border-radius: 8px; background: var(--v3-field); padding: 3px; }
-.wb3-pagebar-seg.is-muted { opacity: .45; }
-.wb3-pagebar-seg button { height: 22px; border: 1px solid transparent; border-radius: 6px; background: transparent; padding: 0 8px; color: var(--v3-sub); cursor: pointer; font: 11.5px var(--v3-sans); }
-.wb3-pagebar-seg button[aria-pressed="true"] { border-color: var(--v3-cl); background: #fff; color: var(--v3-txt); font-weight: 500; }
-.wb3-pagebar-seg button:disabled { cursor: not-allowed; }
-.wb3-pagebar-smart { display: inline-flex; align-items: center; gap: 8px; margin-left: 12px; cursor: pointer; }
-.wb3-pagebar-smart .v3-toggle { background: var(--v3-sk2); }
-.wb3-pagebar-smart .v3-toggle[aria-checked="true"] { background: var(--v3-dark); }
-.wb3-pagebar-zoom { display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 6px; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; }
-.wb3-pagebar-zoom:hover { background: var(--v3-field); color: var(--v3-txt); }
-.wb3-pagebar-scale { min-width: 32px; margin: 0 6px; color: var(--v3-txt); font: 500 12px var(--v3-num); text-align: center; }
-.wb3-pagebar button:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 1px; }
+.wb3-pagebar { color: var(--v3-sub); font-size: 12px; }
+.wb3-arrangement-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.wb3-arrangement-options button { display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 10px; border: 1px solid var(--v3-line); border-radius: 8px; background: #fff; padding: 12px 4px; color: var(--v3-sub); font: 500 12px var(--v3-sans); cursor: pointer; }
+.wb3-arrangement-icon { display: grid; width: 46px; height: 44px; place-items: center; border: 1px solid var(--v3-line); border-radius: 6px; }
+.wb3-arrangement-options button[aria-pressed="true"], .wb3-arrangement-options button[aria-checked="true"] { border-color: var(--v3-bl); background: var(--v3-bl-soft); color: var(--v3-bl); }
+.wb3-arrangement-options button:disabled { opacity: .5; cursor: not-allowed; }
+.wb3-arrangement-note { margin: 10px 0 16px; color: var(--v3-fnt); font-size: 11px; }
+.wb3-setting-stepper button { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border: 1px solid var(--v3-line); border-radius: 7px; background: #fff; padding: 0; color: var(--v3-sub); cursor: pointer; }
+.wb3-setting-stepper output { min-width: 48px; color: var(--v3-txt); font: 500 12px var(--v3-num); text-align: center; white-space: nowrap; }
+.wb3-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 16px 0; color: var(--v3-sub); font-size: 12px; }
+.wb3-type-panel { --wb3-setting-control-width: 116px; }
+.wb3-setting-stepper { display: flex; width: var(--wb3-setting-control-width); flex: 0 0 var(--wb3-setting-control-width); align-items: center; gap: 6px; }
+.wb3-setting-stepper button:disabled { opacity: .4; cursor: not-allowed; }
+.wb3-setting-stepper button:hover:not(:disabled) { background: var(--v3-field); }
+.wb3-pagebar button:focus-visible, .wb3-setting-stepper button:focus-visible { outline: 2px solid var(--v3-bl); outline-offset: 2px; }
+.wb3-margin-settings { display: grid; grid-template-columns: minmax(0, 1fr) 88px; gap: 16px; align-items: center; }
+.wb3-margin-preview { display: grid; min-height: 108px; place-content: center; justify-items: center; gap: 10px; border: 1px solid var(--v3-line); border-radius: 8px; color: var(--v3-bl); }
+.wb3-margin-preview small { color: var(--v3-fnt); font-size: 10px; }
+.wb3-type-heading { display: flex; align-items: center; gap: 8px; }
+.wb3-type-heading svg { color: var(--v3-bl); }
+.wb3-type-panel .wb3-type-field { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0; }
+.wb3-type-panel .wb3-font-select { width: var(--wb3-setting-control-width); flex: 0 0 var(--wb3-setting-control-width); padding: 0 24px; text-align: center; }
+.wb3-type-panel .wb3-font-select .v3-select-chev { right: 8px; }
 
 /* ── 保存失败浮动提示（Figma 509:1187 ④ Notice：420×64，画布顶部居中） */
 .wb3-save-notice { position: absolute; z-index: 45; top: 15px; left: calc((100% - var(--wb3-pagebar-right, 72px)) / 2); display: flex; width: 420px; height: 64px; align-items: flex-start; gap: 10px; border: 1px solid var(--v3-cl); border-radius: 12px; background: #fff; padding: 13px 16px; box-shadow: 0 8px 24px rgb(0 0 0 / 10%); transform: translateX(-50%); }
