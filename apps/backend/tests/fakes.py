@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from threading import RLock
 
 
@@ -226,6 +227,92 @@ class FakeRedis:
 
     def eval(self, script: str, _numkeys: int, name: str, *args: object):
         with self._lock:
+            keys = (name, *args[:_numkeys - 1])
+            values = tuple(str(value) for value in args[_numkeys - 1:])
+            now = int(time.time())
+            if "desktop_create_challenge" in script:
+                platform, version, challenge, poll_hash, ttl = values
+                self.hset(name, mapping={
+                    'state': 'pending', 'target_channel': 'desktop', 'platform': platform,
+                    'client_version': version, 'code_challenge': challenge,
+                    'code_challenge_method': 'S256', 'poll_hash': poll_hash,
+                    'expires_at': str(now + int(ttl)),
+                })
+                self.expire(name, int(ttl))
+                return 1
+            if "desktop_rate_limit" in script:
+                count = self.incr(name)
+                if count == 1:
+                    self.expire(name, 60)
+                return count
+            if "desktop_logout" in script:
+                old_hash, uid, sid = values
+                record = self.hgetall(name)
+                if not record:
+                    return 'ok'
+                if record.get('channel') != 'desktop' or record.get('uid') != uid or record.get('rhash') != old_hash:
+                    return 'invalid'
+                if keys[1] in self.strings or keys[1] in self.hashes:
+                    return 'unavailable'
+                self.delete(name)
+                self.srem(keys[1], sid)
+                return 'ok'
+            if "desktop_refresh" in script:
+                uid, old_hash, request_id, sid, new_hash, ciphertext, deadline, ttl = values
+                record = self.hgetall(name)
+                if record.get('channel') != 'desktop' or record.get('uid') != uid:
+                    return ['invalid']
+                if record.get('retry_request_id') == request_id:
+                    if record.get('retry_old_rhash') != old_hash:
+                        return ['conflict']
+                    if int(record.get('retry_expires_at', 0)) > now and record.get('retry_new_rhash') == record.get('rhash'):
+                        return ['result', record['retry_ciphertext']]
+                if keys[1] in self.strings or keys[1] in self.hashes:
+                    return ['unavailable']
+                if record.get('rhash') != old_hash:
+                    self.delete(name)
+                    self.srem(keys[1], sid)
+                    return ['replayed']
+                self.hset(name, mapping={'rhash': new_hash, 'retry_request_id': request_id,
+                                        'retry_old_rhash': old_hash, 'retry_new_rhash': new_hash,
+                                        'retry_ciphertext': ciphertext, 'retry_expires_at': deadline})
+                self.expire(name, int(ttl))
+                return ['result', ciphertext]
+            if "desktop_exchange" in script:
+                poll_hash, challenge, request_id, fingerprint, uid, sid, rhash, created_at, ttl, ciphertext, deadline = values
+                record = self.hgetall(name)
+                if record.get('target_channel') != 'desktop' or record.get('poll_hash') != poll_hash or record.get('code_challenge') != challenge:
+                    return ['invalid']
+                if record.get('state') == 'consumed':
+                    if record.get('exchange_request_id') != request_id or record.get('exchange_fingerprint') != fingerprint:
+                        return ['conflict']
+                    if int(record.get('result_expires_at', 0)) <= now:
+                        return ['result_expired']
+                    return ['result', record['result_ciphertext']]
+                if int(record.get('expires_at', 0)) <= now:
+                    return ['expired']
+                if record.get('state') != 'confirmed':
+                    return ['not_confirmed']
+                if record.get('uid') != uid:
+                    return ['invalid']
+                if self.exists(keys[1]):
+                    return ['conflict']
+                if keys[2] in self.strings or keys[2] in self.hashes:
+                    return ['unavailable']
+                self.hset(keys[1], mapping={'uid': uid, 'rhash': rhash, 'channel': 'desktop', 'created_at': created_at})
+                self.expire(keys[1], int(ttl))
+                self.sadd(keys[2], sid)
+                self.hset(name, mapping={'state': 'consumed', 'exchange_request_id': request_id,
+                                        'exchange_fingerprint': fingerprint, 'result_sid': sid,
+                                        'result_rhash': rhash, 'result_ciphertext': ciphertext,
+                                        'result_expires_at': deadline})
+                self.expire(name, int(deadline) - now)
+                return ['result', ciphertext]
+            if self.hget(name, 'target_channel') == 'desktop' and 'local desktop' in script:
+                deadline = int(self.hget(name, 'expires_at') or 0)
+                if deadline <= now:
+                    return 0 if 'wechat_finalize' in script or 'wechat_restore' in script else 'missing'
+                args = tuple(args[:-1]) + (min(float(args[-1]), deadline - now),) if 'wechat_finalize' in script or 'wechat_restore' in script or 'wechat_cancel' in script else (args[0], args[1], deadline - now, args[3])
             if "auth_rotate_refresh" in script:
                 old_hash, new_hash, channel, ttl = args
                 stored_channel = self.hget(name, "channel") or "web"

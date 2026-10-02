@@ -16,14 +16,29 @@ public sealed partial class ResumePaperView : UserControl
     private const string Host = "paper.linkresume.local";
     private readonly WebView2 _webView = new();
     private bool _ready;
+    private bool _unloaded;
     private string? _pending;
 
     public event EventHandler<double>? Rendered;
+    public event EventHandler<string>? RenderFailed;
 
     public ResumePaperView()
     {
         Content = _webView;
         _ = InitializeAsync();
+        Unloaded += (_, _) => {
+            _unloaded = true;
+            _pending = null;
+            _ready = false;
+            if (_webView.CoreWebView2 is { } core) core.WebMessageReceived -= OnMessage;
+            _webView.Close();
+        };
+    }
+
+    public void Clear()
+    {
+        _pending = null;
+        if (_ready) _ = _webView.CoreWebView2.ExecuteScriptAsync("window.linkresume.clear()");
     }
 
     public void Render(ResumeRenderRequest request)
@@ -34,14 +49,25 @@ public sealed partial class ResumePaperView : UserControl
 
     private async Task InitializeAsync()
     {
-        await _webView.EnsureCoreWebView2Async();
-        var core = _webView.CoreWebView2;
-        core.Settings.AreDevToolsEnabled = false;
-        core.Settings.AreDefaultContextMenusEnabled = false;
-        core.SetVirtualHostNameToFolderMapping(Host, Path.Combine(AppContext.BaseDirectory, "Assets", "Renderer"), CoreWebView2HostResourceAccessKind.DenyCors);
-        core.WebMessageReceived += OnMessage;
-        _webView.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
-        core.Navigate($"https://{Host}/paper.html");
+        try
+        {
+            await _webView.EnsureCoreWebView2Async();
+            if (_unloaded) return;
+            var core = _webView.CoreWebView2;
+            core.Settings.AreDevToolsEnabled = false;
+            core.Settings.AreDefaultContextMenusEnabled = false;
+            core.SetVirtualHostNameToFolderMapping(Host, Path.Combine(AppContext.BaseDirectory, "Assets", "Renderer"), CoreWebView2HostResourceAccessKind.DenyCors);
+            core.WebMessageReceived += OnMessage;
+            core.NavigationStarting += (_, args) => {
+                if (args.Uri != $"https://{Host}/paper.html" && args.Uri != "about:blank") args.Cancel = true;
+            };
+            _webView.DefaultBackgroundColor = Microsoft.UI.Colors.Transparent;
+            core.Navigate($"https://{Host}/paper.html");
+        }
+        catch (Exception)
+        {
+            if (!_unloaded) RenderFailed?.Invoke(this, "纸面加载失败，请确认 WebView2 可用。");
+        }
     }
 
     private void OnMessage(CoreWebView2 sender, CoreWebView2WebMessageReceivedEventArgs args)
@@ -50,8 +76,13 @@ public sealed partial class ResumePaperView : UserControl
         switch (message.RootElement.GetProperty("type").GetString())
         {
             case "ready":
+                if (message.RootElement.GetProperty("protocol").GetInt32() != 1)
+                { RenderFailed?.Invoke(this, "纸面资源版本不匹配，请更新客户端。"); break; }
                 _ready = true;
                 Flush();
+                break;
+            case "error":
+                RenderFailed?.Invoke(this, message.RootElement.GetProperty("message").GetString() ?? "纸面预览失败，请重试。");
                 break;
             case "rendered":
                 Rendered?.Invoke(this, message.RootElement.GetProperty("heightPx").GetDouble());

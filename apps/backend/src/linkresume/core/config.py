@@ -134,6 +134,18 @@ class Settings(BaseSettings):
     )
     session_ttl_days: int = Field(default=7, alias="SESSION_TTL_DAYS")
     cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
+    auth_desktop_retry_encryption_key: SecretStr | None = Field(
+        default=None, alias="AUTH_DESKTOP_RETRY_ENCRYPTION_KEY"
+    )
+
+    @property
+    def desktop_retry_cipher(self) -> Fernet | None:
+        if self.auth_desktop_retry_encryption_key is None:
+            return None
+        try:
+            return Fernet(self.auth_desktop_retry_encryption_key.get_secret_value().encode("ascii"))
+        except (ValueError, UnicodeEncodeError):
+            return None
 
     llm_credential_encryption_keys: SecretStr | None = Field(
         default=None,

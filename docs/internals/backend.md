@@ -12,7 +12,7 @@
 
 结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `TextRun` 和字号边界，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
 
-`apps/backend` 承接健康检查、Web/小程序双通道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
+`apps/backend` 承接健康检查、Web/小程序/desktop 三渠道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -29,7 +29,7 @@
 | `src/linkresume/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
+| `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
 | `src/linkresume/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
@@ -299,6 +299,10 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 发布先部署识别 Muse 的 Web 和 Node/PDF 渲染器，再执行目录迁移。撤回时停用新增目录；用户已创建简历的模板快照继续保留。迁移仍为 forward-only，不能 downgrade。来源、行业数据及装饰适配边界见[模板来源](resume-template-sources.md#muse-选择集0100)。
 
+
+桌面岗位与面试排期请求由 identity 的 `get_current_career_user` 显式方法/路径白名单接入既有 job_descriptions/interviews 路由；仍复用 Web 的业务服务、本人资源归属和乐观锁，不建立第二套求职数据。排期信息更新通过既有 PUT 场次路由，仍要求本人归属及 base_lock_version；排期删除仍不开放桌面渠道。简历仍为桌面只读，岗位权限不扩展到账号、资料、复盘与管理端，具体开放面见 [桌面 Bearer 契约](../api/http-contracts.md#桌面-bearer-会话)。
+
+原生文字模拟面试复用 `modules/mock_interviews/routes.py` 的现有持久化状态机和后台 runner，经 `get_current_mock_interview_user` 接受限定 desktop Bearer；资料库独立使用 `get_current_dataset_user`，复用原有资料、文件夹和场次关联服务，允许本人管理及私有文件流。无需新表或迁移。语音 REST/WS 不开放该渠道，具体权限见 [桌面文字模拟面试权限](../api/http-contracts.md#桌面文字模拟面试权限)。
 ## 内置模板名称（0101）
 
 `0101` 只为新增的 79 套 Muse 目录指定唯一的中文意象名称，按稳定 key 和已知旧名称更新 `resume_templates.name`。原有模板的全部字段保持不变；新增项的说明、正文、定义、分类、启停、排序与用户简历均不修改。已改名的 Muse 项和自行上传的模板保留。重跑时已经更名的条目不再写入，无 schema 或 HTTP 结构变化，旧客户端仍按同一 ID/key 创建和切换模板。完整名称及旧名见[模板名称对照](../features/resume-template-names.md)。修正或恢复名称使用新的向前 revision，历史种子迁移不重写。

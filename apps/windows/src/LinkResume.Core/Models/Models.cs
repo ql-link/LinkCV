@@ -46,7 +46,8 @@ public sealed record ResumeRenderRequest(
     [property: JsonPropertyName("title")] string Title,
     [property: JsonPropertyName("data")] JsonNode Data,
     [property: JsonPropertyName("style")] JsonNode Style,
-    [property: JsonPropertyName("layout_plan")] JsonNode? LayoutPlan)
+    [property: JsonPropertyName("layout_plan")] JsonNode? LayoutPlan,
+    [property: JsonPropertyName("assets"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, string>? Assets = null)
 {
     [JsonPropertyName("protocol_version")]
     public int ProtocolVersion => 1;

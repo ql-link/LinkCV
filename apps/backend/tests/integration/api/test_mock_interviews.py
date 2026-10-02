@@ -869,3 +869,64 @@ def test_repeat_keeps_job_context_after_application_is_deleted() -> None:
         repeated = client.post(f"/api/mock-interviews/{created['id']}/repeat").json()["mock_interview"]
         repeated_row = _row(app, repeated["id"])
         assert repeated_row.job_snapshot_json["description"] == "负责虚构业务的后端系统设计与开发。"
+
+
+def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -> None:
+    from linkresume.modules.identity.models import User
+    from linkresume.modules.identity.session_service import prepare_session
+    from linkresume.core.security import session_key
+    from linkresume.core.security import create_access_token
+
+    gateway = ScriptedGateway()
+    gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3}]
+    app = build_app(gateway)
+    with TestClient(app) as client:
+        assert client.get('/api/mock-interviews').status_code == 401
+        register(client, 'desktop-practice@example.test')
+        resume = create_resume(client, app)
+        uid = int(client.get('/api/auth/me').json()['user']['id'])
+        with app.state.session_factory() as db:
+            user = db.get(User, uid)
+            credentials = prepare_session(user, app.state.settings, channel='desktop')
+            app.state.redis.hset(session_key(credentials.sid), mapping={'uid': str(uid), 'channel': 'desktop'})
+            stranger = User(wechat_openid='mock-desktop-stranger', nickname='虚构用户')
+            db.add(stranger)
+            db.commit()
+            other = prepare_session(stranger, app.state.settings, channel='desktop')
+            app.state.redis.hset(session_key(other.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
+        headers = {'Authorization': 'Bearer ' + credentials.access_token}
+        assert client.get('/api/mock-interviews', headers=headers).status_code == 401  # mixed Cookie/Bearer
+        client.cookies.clear()
+        client.headers.update(headers)
+        wrong = create_access_token(uid, credentials.sid, app.state.settings, 'miniprogram')
+        assert client.get('/api/mock-interviews', headers={'Authorization': 'Bearer ' + wrong}).status_code == 401
+        assert client.get('/api/datasets').status_code == 200
+        assert client.get('/api/mock-interviews/speech-capability').status_code == 403
+        assert client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'answer_mode':'voice'}).status_code == 403
+        created = client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'question_count':3})
+        assert created.status_code == 201, created.text
+        identity = created.json()['mock_interview']['id']
+        path = '/api/mock-interviews/' + identity
+        other_headers = {'Authorization':'Bearer ' + other.access_token}
+        assert client.get(path, headers=other_headers).status_code == 404
+        assert client.post(path + '/finish', headers=other_headers).status_code == 404
+        ready = wait_for(client, identity, {'in_progress'})
+        question = ready['current_question_id']
+        key = str(uuid4())
+        result = answer(client, identity, question, '我用火焰图定位热点，也对比过本地缓存。', key)
+        assert result.status_code == 200
+        assert any(name == 'interviewer.turn' for name, _ in sse_events(result.text))
+        assert answer(client, identity, question, '我用火焰图定位热点，也对比过本地缓存。', key).status_code == 200
+        detail = client.get(path).json()['mock_interview']
+        assert len(detail['questions']) == 2
+        assert client.post(path + '/finish').status_code == 200
+        complete = wait_for(client, identity, {'completed'})
+        assert complete['report']['total_score'] == complete['total_score']
+        assert client.post(path + '/transcripts:correct').status_code == 403
+        repeat = client.post(path + '/repeat')
+        assert repeat.status_code == 201, repeat.text
+        repeat_id = repeat.json()['mock_interview']['id']
+        wait_for(client, repeat_id, {'in_progress'})
+        assert client.post('/api/mock-interviews/' + repeat_id + '/abandon').status_code == 200
+        assert client.delete(path).status_code == 200
+        assert client.get(path).status_code == 404
