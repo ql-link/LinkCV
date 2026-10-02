@@ -1403,6 +1403,13 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
   return request<{ user: User | null }>("/api/auth/me", {}, false);
 }
 
+// 供不属于 api 对象的流式或二进制调用（如模拟面试的 SSE、录音）复用同一套会话刷新与请求标识。
+export {
+  createRequestId as createApiRequestId,
+  refreshSession as refreshApiSession,
+  request as apiRequest,
+};
+
 export const api = {
   me: getCurrentUser,
   authCapabilities: () =>

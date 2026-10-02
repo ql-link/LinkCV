@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { mockInterviewPath, navigateTo, newMockInterviewPath } from "@/routing";
 import { Icon } from "@/v3/Icon";
-import { BeTag, ConfirmDialog, Toast, PageEyebrow } from "@/v3/primitives";
+import { ConfirmDialog, Toast, PageEyebrow } from "@/v3/primitives";
 import { VoiceInputButton, voiceInputFooterHint, type VoiceInputState } from "./voice/VoiceInputButton";
 import {
   mockInterviewApi,
@@ -133,7 +133,9 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
   const followNo = current?.kind === "follow_up" ? currentGroup.follows.findIndex((item) => item.id === current.id) + 1 : 0;
   const answeredMains = groups.filter((group) => group.root.answer_status !== "pending" && group.root.id !== currentRoot).length;
   const elapsed = interview.started_at ? now - new Date(interview.started_at).getTime() : 0;
-  const locked = busy || streaming !== null || !current;
+  // 回答已保存但面试官回复丢失（回合失败或页面中断）：需要先重新生成，不能继续作答
+  const needsReply = interview.needs_reply && streaming === null;
+  const locked = busy || streaming !== null || !current || needsReply;
 
   useEffect(() => {
     const node = scrollRef.current;
@@ -176,6 +178,13 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
   const startStreaming = () => {
     const willFollow = interview.follow_up_enabled && current?.kind === "main";
     setStreaming({ text: "", kind: willFollow ? "follow_up" : "main", depth: willFollow ? (current?.depth_level ?? 2) + 1 : undefined });
+  };
+
+  const regenerateReply = () => {
+    if (busy) return;
+    const stream = mockInterviewApi.retryReply(interview.id);
+    setStreaming({ text: "", kind: "main" });
+    void consume(stream, null);
   };
 
   const send = () => {
@@ -223,7 +232,7 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
   };
 
   const hint = voiceState === "recording" ? voiceInputFooterHint(voiceState) : "Enter 发送 · Shift + Enter 换行";
-  const placeholder = streaming ? "面试官提问中，稍后可以作答…" : current ? "输入你的回答…" : "面试已结束";
+  const placeholder = streaming ? "面试官提问中，稍后可以作答…" : needsReply ? "面试官的回复没有生成，请先重新生成" : current ? "输入你的回答…" : "面试已结束";
 
   return (
     <div className="mi-page mi-session mi-live">
@@ -256,6 +265,12 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
         {closing && !streaming && <div className="mi-msg-ai is-closing"><p>{closing}</p></div>}
       </div>
       <div className="mi-composer">
+        {needsReply && (
+          <div className="mi-reply-lost" role="alert">
+            <span>面试官的回复没有生成出来，你的回答已经保存。</span>
+            <button type="button" className="v3-btn v3-btn-dark" disabled={busy} onClick={regenerateReply}>重新生成回复</button>
+          </div>
+        )}
         <div className={`mi-input${voiceState === "recording" ? " is-recording" : ""}${locked ? " is-locked" : ""}`}>
           <textarea
             ref={inputRef}
@@ -406,7 +421,7 @@ export function AbandonedView({ interview }: { interview: MockInterviewDetail })
       <SessionHeader interview={interview} />
       <section className="mi-preparing is-ended">
         <h2>这场模拟面试已放弃</h2>
-        <p>放弃的场次不生成评估报告，可以用相同配置再练一次。 <BeTag /></p>
+        <p>放弃的场次不生成评估报告，可以用相同配置再练一次。</p>
         <div className="mi-prep-fail-actions">
           <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={() => navigateTo("/mock-interviews")}>返回</button>
           <button type="button" className="v3-btn v3-btn-dark is-lg" onClick={() => navigateTo(newMockInterviewPath({ applicationId: interview.job_application_id ?? undefined }))}>重新开始</button>

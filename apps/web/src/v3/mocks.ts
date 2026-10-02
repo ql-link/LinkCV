@@ -44,9 +44,3 @@ export const MOCK_HOME_RECOMMENDED_JOB_ROWS = [
   { title: "小红书 · 基础架构", match: 86 },
   { title: "京东 · Java 开发", match: 82 },
 ];
-
-// 首页 · Offer 对比卡插图里的薪资（applications 的 offer_salary 是自由文本，没有可对比的结构化薪资）
-export const MOCK_HOME_OFFER_COMPARE = [
-  { company: "美团", salary: "32K × 15" },
-  { company: "快手", salary: "30K × 16" },
-];

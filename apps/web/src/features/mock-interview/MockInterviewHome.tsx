@@ -1,5 +1,5 @@
 // 07.1 模拟面试首页（Figma 241:2 有安排 / 251:2 未练习 / 252:2 新用户）与练习记录（253:2）。
-// 求职记录与面试安排来自真实接口 api.*；模拟面试场次全部来自 mockInterviewApi（本地假数据，贴 BeTag）。
+// 求职记录与面试安排来自真实接口 api.*；模拟面试场次来自 mockInterviewApi（真实 /api/mock-interviews，测试用假数据）。
 import { useContentMotion } from "@/components/ui/motion";
 import { Reveal, SkeletonCards, SkeletonHead, SkeletonRows } from "@/v3/skeletons";
 import { readPageCache, writePageCache } from "@/v3/pageCache";
@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 import { api, type InterviewSessionSummary, type JobApplicationSummary } from "@/api/client";
 import { mockInterviewPath, navigateTo, newMockInterviewPath } from "@/routing";
 import { Icon } from "@/v3/Icon";
-import { BeTag, ConfirmDialog, Segmented, Select, Toast, PageEyebrow } from "@/v3/primitives";
+import { ConfirmDialog, Segmented, Select, Toast, PageEyebrow } from "@/v3/primitives";
 import {
   ACTIVE_STATUSES,
   DIMENSION_LABELS,
@@ -35,6 +35,9 @@ type HomeData = {
   upcoming: InterviewSessionSummary | null;
 };
 
+// 能力雷达按最近这些已完成场次的维度分数求平均
+const DIMENSION_SAMPLE = 10;
+
 function useMockList() {
   const [version, setVersion] = useState(0);
   useEffect(() => subscribeMockInterviews(() => setVersion((value) => value + 1)), []);
@@ -57,7 +60,8 @@ function useHomeData() {
         const completed = items.filter((item) => item.status === "completed");
         const activeSummary = items.find((item) => ACTIVE_STATUSES.includes(item.status)) ?? null;
         const [details, active] = await Promise.all([
-          Promise.all(completed.map((item) => mockInterviewApi.get(item.id).then((result) => result.mock_interview))),
+          // 能力维度只需要报告详情：取最近 DIMENSION_SAMPLE 场，避免场次多时逐场请求
+          Promise.all(completed.slice(0, DIMENSION_SAMPLE).map((item) => mockInterviewApi.get(item.id).then((result) => result.mock_interview))),
           activeSummary ? mockInterviewApi.get(activeSummary.id).then((result) => result.mock_interview) : Promise.resolve(null),
         ]);
         // 求职记录 / 面试安排失败不影响模拟面试本身，只隐藏对应区块
@@ -295,7 +299,6 @@ function UpcomingCard({
             <span className="mi-prep-bar" aria-hidden="true">
               {coverage.map((item, index) => <i key={item.type} className={item.count ? "is-done" : practiced > 0 && index === coverage.indexOf(next!) ? "is-next" : ""} />)}
             </span>
-            <BeTag />
           </div>
           <div className="mi-coverage">
             {coverage.map((item) => (
@@ -373,7 +376,7 @@ function StatsCard({ completed, details, abandoned }: { completed: MockInterview
   return (
     <section className="mi-card mi-stats" aria-label="练习数据">
       <div className="mi-stat-col mi-overall">
-        <div className="mi-stat-head"><h3>综合表现</h3><BeTag /></div>
+        <div className="mi-stat-head"><h3>综合表现</h3></div>
         <div className="mi-ring">
           <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
             <circle cx="62" cy="62" r="50" fill="none" stroke="var(--v3-field)" strokeWidth="9" />
@@ -595,7 +598,7 @@ function RecordsView({ interviews }: { interviews: MockInterviewSummary[] }) {
       <header className="mi-records-head">
         <PageEyebrow segments={[{ label: "MOCK INTERVIEW", href: "/mock-interviews", onClick: () => navigateTo("/mock-interviews"), ariaLabel: "返回模拟面试" }, "练习记录"]} />
         <div className="mi-records-title">
-          <h1>练习记录 <BeTag /></h1>
+          <h1>练习记录</h1>
           <button type="button" className="v3-btn v3-btn-dark" onClick={() => navigateTo(newMockInterviewPath())}>开始新面试</button>
         </div>
         <p>共 {interviews.length} 场 · 已完成 {done.length} · 已放弃 {abandoned.length} · 累计 {hours.toFixed(1)} 小时</p>

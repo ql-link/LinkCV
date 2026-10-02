@@ -105,11 +105,13 @@ preparation_failed  abandoned   evaluation_failed
 - 报告只对 `completed` 场次返回。
 - 简历、JD、资料正文与回答只作为引用数据传给模型，提示词明确要求忽略其中改变规则或评分的内容；LLM 调用日志只记录 `mock_interview` 场景与 `source=mock_interview` 的安全计量，不记录正文。
 
-## Web 前端（当前使用本地示例数据）
+## Web 前端
 
 - 入口为侧栏「模拟面试」，路由 `/mock-interviews`（首页，`?view=records` 为练习记录）、`/mock-interviews/new?application=&resume=`（新建）、`/mock-interviews/:id`（准备中、进行中、评估中）和 `/mock-interviews/:id/report`（评估报告）；页面位于 `apps/web/src/features/mock-interview/`，语音作答相关组件在其 `voice/` 目录。语音面试进行中为无侧栏整窗。
-- 页面尚未连接上述 FastAPI 接口：全部读写走 `mockInterviewApi.ts`，其类型与 `modules/mock_interviews/schemas.py` 对齐、函数与接口一一对应，数据保存在浏览器 localStorage，准备与评估用定时器模拟状态推进，SSE 回合用异步生成器模拟。依赖该示例数据的区块显示「需后端」标签。接入后端时只替换该文件的实现。
-- 录音与设备检测使用浏览器真实麦克风；识别结果、面试官语音合成、录音回放为示例或占位。
+- 页面通过 `mockInterviewApi.ts` 门面调用，生产默认走 `mockInterviewLive.ts` 的真实 `/api/mock-interviews`：REST 复用 `apiRequest`（含会话刷新），后端错误码映射为中文提示；作答、跳过带 `Idempotency-Key`，回合 SSE 解析 `answer.accepted`、`interviewer.delta`、`interviewer.audio`、`interviewer.audio_failed` 与终止事件，没有终止事件视为中断；列表按游标最多翻 5 页。类型与 `modules/mock_interviews/schemas.py` 对齐，放在 `mockInterviewTypes.ts`。
+- 后台任务不推送状态：真实接口下场次处于 `preparing`、`evaluating` 时详情每 2.5 秒轮询一次。回答已保存但面试官回复丢失（详情 `needs_reply`）时输入框锁定，提供「重新生成回复」，调用 `reply:retry`。首页能力维度只读取最近 10 场已完成场次的报告详情。
+- 语音：`useMicrophone` 取麦克风流，`SpeechRecognition` 以 16 kHz 单声道 PCM16 经 `WS /api/mock-interviews/:id/speech` 实时识别（文字面试 `voice_input`，语音面试 `voice_answer`），停止时发送 `{"type":"stop"}` 取得最终稿与一次性 `session_id`；面试官语音由回合 SSE 的 mp3 片段按序播放，合成失败只显示字幕；报告页录音回放点击时读取 `GET .../recording`（`audio/wav`），已删除或不存在时显示不可用。设备检测里的扬声器试听仍用浏览器朗读，后端没有独立试听接口，因此保留「需后端」标签。
+- 自动化测试（vitest `MODE=test`）默认使用 `mockInterviewDemo.ts` 的本地假数据；`mockInterviewLive.test.ts` 用替身 fetch 覆盖真实层的请求形状、错误映射和 SSE 解析。WebSocket 与 AudioContext 采集没有自动化覆盖，需在真实浏览器与语音线路上验收。
 
 ## 修改联动与验证
 

@@ -395,6 +395,8 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 
 详情返回来源与配置摘要、`materials`、`current_question_id`、`answered_main_questions`、`needs_reply`、有序 `questions` 和 `report`；`report` 只在 `completed` 时返回，包含 `rubric_version`、`answer_mode`、`voice_metrics`（语音面试的 `chars_per_minute`、`long_pauses`、`filler_ratio`、`answer_duration_ms`、`reference` 与 `tip`，文字面试为 `null`）、`re_evaluations`（如有）、`total_score`、`question_average`、`dimension_score`、`dimensions`、逐题 `questions`、`fact_check`、`resume_risks`、`improvements`、`low_confidence` 与 `closing_message`。`fact_check.status` 为 `not_requested|completed|failed`。详情另含 `answer_mode`、`transcript_corrected_at`、`recordings_deleted`；每条提问另含 `answer_source`、`audio_duration_ms`、`has_recording`、`raw_transcript`、`transcript_state`、`correction`、`re_evaluate_count` 与 `evaluation_history`。
 
+Web 消费方：作答与跳过每次发送新的 `Idempotency-Key`；回合 SSE 没有 `interviewer.turn` 或 `interviewer.failed` 就结束视为连接中断，页面据详情的 `needs_reply` 提供 `reply:retry`；真实接口下 `preparing`、`evaluating` 靠轮询详情感知完成；录音读取 404 显示为不可用。详见 [AI 模拟面试](../features/mock-interview.md#web-前端)。
+
 | 错误码 | 场景 |
 | --- | --- |
 | `409 MOCK_INTERVIEW_IN_PROGRESS` | 已有进行中的场次时发起、再练或重试，包括并发发起造成的死锁或锁等待超时 |
