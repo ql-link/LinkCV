@@ -4,7 +4,9 @@ import { careerApplicationPath, careerViewPath, editorPath, navigateTo } from ".
 import { Icon } from "../../v3/Icon";
 import { Bar, Dot, Paper, StageText } from "../../v3/art";
 import { BeTag } from "../../v3/primitives";
-import { MOCK_HOME_OFFER_COMPARE, MOCK_HOME_RECOMMENDED_JOB_ROWS, MOCK_OFFER, MOCK_RECOMMENDED_JOBS } from "../../v3/mocks";
+import type { JobApplicationSummary } from "../../api/client";
+import { MOCK_HOME_RECOMMENDED_JOB_ROWS, MOCK_OFFER, MOCK_RECOMMENDED_JOBS } from "../../v3/mocks";
+import { describeOfferGap, formatOfferSalary } from "./offerCompare";
 import { pipelineColumns, startOfWeek, type HomeCard } from "./homeDashboard";
 
 // 首页三张 227×236 卡片：上方 211×112 插图舞台（点阵底），下方衬线标题 + 说明 + 文字按钮。
@@ -235,15 +237,15 @@ function OfferArt({ deadline }: { deadline: Date }) {
   );
 }
 
-function CompareArt() {
+function CompareArt({ offers }: { offers: JobApplicationSummary[] }) {
   useLocale();
   return (
     <>
-      {MOCK_HOME_OFFER_COMPARE.map((offer, index) => (
-        <Paper key={offer.company} x={12 + index * 99} y={14} w={87} h={84} r={8} shadow={false}>
+      {offers.slice(0, 2).map((offer, index) => (
+        <Paper key={offer.id} x={12 + index * 99} y={14} w={87} h={84} r={8} shadow={false}>
           <Bar x={0} y={0} w={3} h={84} color={index === 0 ? "var(--v3-gn)" : "var(--v3-bl)"} r={0} />
-          <StageText x={12} y={10} size={10}>{offer.company}</StageText>
-          <StageText x={12} y={28} size={13} color="var(--v3-txt)" weight={600} num>{offer.salary}</StageText>
+          <StageText x={12} y={10} size={10}>{offer.company_name_snapshot}</StageText>
+          <StageText x={12} y={28} size={13} color="var(--v3-txt)" weight={600} num>{formatOfferSalary(offer)}</StageText>
           <Bar x={12} y={56} w={63} h={3} />
           <Bar x={12} y={64} w={38} h={3} />
         </Paper>
@@ -334,10 +336,9 @@ export function HomeCardView({ card, now }: { card: HomeCard; now: Date }) {
       return (
         <CardFrame
           label={t("开始对比 Offer")}
-          stage={<CompareArt />}
+          stage={<CompareArt offers={card.offers} />}
           title={t("{value0} 个 Offer 可对比", { value0: card.offers.length })}
-          beTitle
-          sub={t("{value0}，薪资接近", { value0: card.offers.map((offer) => offer.company_name_snapshot).join(t("和")) })}
+          sub={[card.offers.map((offer) => offer.company_name_snapshot).join(t("和")), describeOfferGap(card.offers)].filter(Boolean).join(t("，"))}
           action={t("开始对比")}
           href="/career/applications"
         />

@@ -290,6 +290,7 @@ export type ResumeTemplate = {
   layout_plan?: LayoutPlan | null;
   switchable: true;
   incompatibility_reason: null;
+  use_count?: number | null;
 };
 
 type ResumeTemplateWire = Omit<ResumeTemplate, "style"> & {
@@ -566,6 +567,8 @@ export type PublicSharePayload = {
   assets: Record<string, string>;
   sharer: PublicShareSharer;
   allow_download: boolean;
+  expires_at: string | null;
+  updated_at: string;
 };
 
 export type UploadedAsset = {
@@ -1425,6 +1428,13 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
   }
   return request<{ user: User | null }>("/api/auth/me", {}, false);
 }
+
+// 供不属于 api 对象的流式或二进制调用（如模拟面试的 SSE、录音）复用同一套会话刷新与请求标识。
+export {
+  createRequestId as createApiRequestId,
+  refreshSession as refreshApiSession,
+  request as apiRequest,
+};
 
 export const api = {
   me: getCurrentUser,

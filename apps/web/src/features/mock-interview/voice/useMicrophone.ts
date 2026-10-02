@@ -147,12 +147,14 @@ export function useMicrophone() {
   const markVoice = useCallback(() => { lastVoiceRef.current = Date.now(); }, []);
   const silentForMs = useCallback(() => Date.now() - lastVoiceRef.current, []);
   const currentLevel = useCallback(() => levelRef.current, []);
+  // 当前麦克风流：实时识别需要把同一路音频送给后端
+  const currentStream = useCallback(() => streamRef.current, []);
 
   useEffect(() => release, [release]);
 
   const deviceLabel = devices.find((device) => device.id === deviceId)?.label ?? devices[0]?.label ?? "默认麦克风";
 
-  return { permission, devices, deviceId: deviceId || devices[0]?.id || "", deviceLabel, level, history, metering, start, release, selectDevice, markVoice, silentForMs, currentLevel };
+  return { permission, devices, deviceId: deviceId || devices[0]?.id || "", deviceLabel, level, history, metering, start, release, selectDevice, markVoice, silentForMs, currentLevel, currentStream };
 }
 
 export type Microphone = ReturnType<typeof useMicrophone>;

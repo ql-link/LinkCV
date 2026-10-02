@@ -11,7 +11,6 @@ import { useResumeStore } from "../../store/resumeStore";
 import { Icon } from "../../v3/Icon";
 import { Badge, MiniResume } from "../../v3/art";
 import { Dialog, DialogFooter, PageEyebrow } from "../../v3/primitives";
-import { MOCK_TEMPLATE_USES } from "../../v3/mocks";
 import { ResumePreview } from "../preview/ResumePreview";
 import { TemplatePreviewDialog } from "./TemplatePreviewDialog";
 import { V3TemplateFilter } from "./TemplateFilterPopover";
@@ -223,7 +222,7 @@ export function ResumeTemplatesPage() {
                   <div className="tpl-card-meta">
                     {template.style_categories?.map((style) => <span key={`style-${style}`} className="v3-chip">{t(style)}</span>)}
                     {template.use_cases?.map((useCase) => <span key={`case-${useCase}`} className="v3-chip">{t(useCase)}</span>)}
-                    <span className="tpl-card-uses">{formatTemplateUses(MOCK_TEMPLATE_USES(template.key))}{t(" 使用")}</span>
+                    {typeof template.use_count === "number" && <span className="tpl-card-uses">{formatTemplateUses(template.use_count)}{t(" 使用")}</span>}
                   </div>
                 </article>
               ))}

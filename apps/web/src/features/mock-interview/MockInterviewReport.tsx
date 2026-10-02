@@ -1,9 +1,9 @@
 import { t, useLocale, getLocale } from "@/i18n";
-// 07.3 模拟面试 · 评估报告（Figma 182:2）与 07.3a 单题详情弹窗（184:7）。数据来自 mockInterviewApi（假数据）。
+// 07.3 模拟面试 · 评估报告（Figma 182:2）与 07.3a 单题详情弹窗（184:7）。数据来自 mockInterviewApi（/api/mock-interviews）。
 import { useContentMotion } from "@/components/ui/motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { navigateTo, mockInterviewPath, editorPath } from "@/routing";
-import { BeTag, Dialog, Toast, PageEyebrow } from "@/v3/primitives";
+import { Dialog, Toast, PageEyebrow } from "@/v3/primitives";
 import { SlideSwap } from "@/v3/SlideSwap";
 import { useResumeStore } from "@/store/resumeStore";
 import {
@@ -89,7 +89,7 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
       </div>
       <header className="mi-report-head">
         <PageEyebrow segments={[{ label: "MOCK INTERVIEW", href: "/mock-interviews", onClick: () => navigateTo("/mock-interviews"), ariaLabel: t("返回模拟面试") }, interviewTitle(interview)]} />
-        <h1 className="mi-serif-title">{t("评估报告 ")}<BeTag /></h1>
+        <h1 className="mi-serif-title">{t("评估报告")}</h1>
         <div className="mi-report-meta">
           <span className="mi-tag-sq">{INTERVIEW_TYPE_LABELS[interview.interview_type]}</span>
           <span className="mi-tag-sq">{DIFFICULTY_LABELS[interview.difficulty]}</span>
@@ -421,4 +421,3 @@ function QuestionDetailDialog({
     </Dialog>
   );
 }
-

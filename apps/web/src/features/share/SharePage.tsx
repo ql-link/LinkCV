@@ -9,9 +9,8 @@ import errorCloud from "../../assets/figma/resume-error-cloud.svg";
 import { authPath } from "../../routing";
 import { resumeDocumentTitle, type CanonicalContact } from "../../api/resumeContract";
 import { Icon, type V3IconName } from "../../v3/Icon";
-import { BeTag, Toast } from "../../v3/primitives";
+import { Toast } from "../../v3/primitives";
 import { MiniResume } from "../../v3/art";
-import { MOCK_SHARE_META } from "../../v3/mocks";
 import "../../v3/v3.css";
 import "./share-v3.css";
 import {
@@ -33,7 +32,18 @@ declare global {
 }
 
 // 整窗外壳（无侧栏）：窗口底色 + 白色内容卡 + 64 高品牌栏 + 灰色画布
-function ShareFrame({ note, beTag = false, children }: { note: string; beTag?: boolean; children: ReactNode }) {
+function shortDate(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function expiryNote(expiresAt: string | null | undefined) {
+  const date = expiresAt ? shortDate(expiresAt) : "";
+  return date ? t("公开分享 · 有效期至 {value0}", { value0: date }) : t("公开分享 · 长期有效");
+}
+
+function ShareFrame({ note, children }: { note: string; children: ReactNode }) {
   useLocale();
   return (
     <main className="v3 share-page" data-ui-theme="light">
@@ -44,7 +54,6 @@ function ShareFrame({ note, beTag = false, children }: { note: string; beTag?: b
           </a>
           <span className="share-v3-divider" aria-hidden="true" />
           <span className="share-v3-note">{note}</span>
-          {beTag ? <BeTag title={t("公开分享接口不返回有效期，目前为示例数据")} /> : null}
         </header>
         <div className="share-v3-canvas">{children}</div>
       </div>
@@ -338,11 +347,11 @@ export function SharePage({ token }: { token: string }) {
 
   if (status === "private" || status === "failed") {
     const failed = status === "failed";
-    return <ShareFrame note={failed ? t("公开分享 · 暂时无法加载") : t("公开分享 · 有效期至 {value0}", { value0: MOCK_SHARE_META.expiresAt.slice(5) })} beTag={!failed}>
+    return <ShareFrame note={failed ? t("公开分享 · 暂时无法加载") : t("公开分享")}>
       <div className="share-v3-empty">
         <section className="v3-empty share-v3-access" aria-labelledby="share-access-title" role={failed ? "alert" : undefined}>
           <div className="v3-stage"><ShareAccessArt failed={failed} /></div>
-          <h3 id="share-access-title">{failed ? t("分享内容暂时无法加载") : <>{t("这份简历没有公开")}<BeTag title={t("后端目前统一返回 404；此状态等待独立权限错误支持")} /></>}</h3>
+          <h3 id="share-access-title">{failed ? t("分享内容暂时无法加载") : t("这份简历没有公开")}</h3>
           <p>{failed ? t("网络不稳定或服务暂时不可用，请稍后重新加载。") : t("分享者把它设成了仅自己可见。如果你是分享者本人，登录后就能查看。")}</p>
           <div className="v3-empty-actions">{failed
             ? <button className="v3-btn v3-btn-ghost" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><Icon name="refresh" size={13} />{t("重新加载")}</button>
@@ -378,7 +387,7 @@ export function SharePage({ token }: { token: string }) {
   const displayName = identity.name?.value?.trim() || payload.sharer.nickname;
   const contacts = identity.contacts.filter((contact) => contact.value?.trim()).slice(0, 4);
   return (
-    <ShareFrame note={t("公开分享 · 有效期至 {value0}", { value0: MOCK_SHARE_META.expiresAt.slice(5) })} beTag>
+    <ShareFrame note={expiryNote(payload.expires_at)}>
       <div className="share-v3-layout">
         <div className="share-v3-paper-col">
           <section className="share-page-paper-scroll share-v3-paper-fit">
@@ -396,8 +405,7 @@ export function SharePage({ token }: { token: string }) {
             </div>
           </section>
           <p className="share-v3-foot">
-            <span>{pageCount} / {pageCount}{t(" 页 · 最后更新 ")}{MOCK_SHARE_META.updatedAt}</span>
-            <BeTag title={t("公开分享接口不返回有效期与最后更新时间，目前为示例数据")} />
+            <span>{pageCount} / {pageCount}{t(" 页 · 最后更新 ")}{shortDate(payload.updated_at)}</span>
           </p>
         </div>
 

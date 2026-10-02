@@ -26,7 +26,7 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 
 ## API 调用
 
-API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。模拟面试语音通道 `/api/mock-interviews/{id}/speech` 在 Vite 中单独启用 WebSocket 代理并保留浏览器的 `Host`，使后端的 `Origin` 同源校验成立；代理读写等待上限为 600 秒。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
+API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。模拟面试语音通道 `/api/mock-interviews/{id}/speech` 在 Vite 中单独启用 WebSocket 代理并保留浏览器的 `Host`，使后端的 `Origin` 同源校验成立；代理读写等待上限为 600 秒。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；模拟面试的 SSE 回合流与录音下载不走 JSON 请求封装，通过 `client.ts` 导出的 `apiRequest`、`refreshApiSession`、`createApiRequestId` 复用同一套会话刷新与请求标识，401 时在流开始前刷新并重试一次；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
 
 React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 

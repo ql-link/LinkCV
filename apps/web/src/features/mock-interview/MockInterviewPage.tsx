@@ -1,5 +1,5 @@
 import { t, useLocale } from "@/i18n";
-// 07 模拟面试入口：按路由分发到各页面。数据来自 ./mockInterviewApi（本地假数据，接口签名与后端一致）。
+// 07 模拟面试入口：按路由分发到各页面。数据来自 ./mockInterviewApi（真实 /api/mock-interviews）。
 // 语音面试（answer_mode === "voice"）的进行中与报告页交给 voice/ 目录，外壳由它们自己决定。
 import { useEffect } from "react";
 import { mockInterviewPath, navigateTo } from "@/routing";

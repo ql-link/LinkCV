@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from linkresume.application.resumes.service import parse_decimal_id
@@ -7,7 +7,7 @@ from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.modules.identity.dependencies import get_current_workspace_user
 from linkresume.modules.identity.models import User
-from linkresume.modules.resumes.models import ResumeTemplate
+from linkresume.modules.resumes.models import Resume, ResumeTemplate
 from linkresume.modules.resumes.template_compilation import (
     compiled_template_layout_plan,
     validated_template_snapshot,
@@ -21,7 +21,7 @@ from linkresume.modules.resumes.schemas import (
 router = APIRouter(prefix="/resume-templates", tags=["resume-templates"])
 
 
-def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
+def template_record(template: ResumeTemplate, use_count: int | None = None) -> ResumeTemplateRecord:
     try:
         snapshot = validated_template_snapshot(template.data_json, template.style_json)
     except (TypeError, ValueError) as error:
@@ -36,6 +36,7 @@ def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
         data=snapshot.data,
         style=snapshot.style,
         layout_plan=compiled_template_layout_plan(template.data_json, template.style_json),
+        use_count=use_count,
     )
 
 
@@ -49,10 +50,14 @@ def list_templates(
         .where(ResumeTemplate.is_active == 1)
         .order_by(ResumeTemplate.sort_order, ResumeTemplate.id)
     ).all()
+    # 使用次数：当前仍引用该模板的简历数（全站聚合，不含任何个人信息）
+    usage = dict(
+        db.execute(select(Resume.template_id, func.count(Resume.id)).group_by(Resume.template_id)).all()
+    )
     records: list[ResumeTemplateRecord] = []
     for template in templates:
         try:
-            records.append(template_record(template))
+            records.append(template_record(template, usage.get(template.id, 0)))
         except ApiError:
             continue
     return ResumeTemplateListResponse(templates=records)
@@ -77,4 +82,5 @@ def get_template(
     )
     if template is None:
         raise ApiError(404, "TEMPLATE_NOT_FOUND")
-    return ResumeTemplateResponse(template=template_record(template))
+    use_count = db.scalar(select(func.count(Resume.id)).where(Resume.template_id == template.id)) or 0
+    return ResumeTemplateResponse(template=template_record(template, use_count))

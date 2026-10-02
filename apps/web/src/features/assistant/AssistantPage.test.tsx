@@ -1663,10 +1663,11 @@ describe("AssistantPage", () => {
 });
 
 describe("Figma 文件与截图交互", () => {
-  it("明确的文档生成请求使用本地示例，保存不向后端写入，关闭面板保留标签", async () => {
+  it("明确的文档生成请求使用本地示例，保存时作为 .md 上传到资料库，关闭面板保留标签", async () => {
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     const stream = vi.spyOn(api, "streamAgentMessage");
     const create = vi.spyOn(api, "createAgentSession");
+    const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue({ id: "88", file_name: "面试准备.md" } as Awaited<ReturnType<typeof api.uploadDataset>>);
     const user = userEvent.setup();
     render(<AssistantPage />);
     await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "生成一份面试准备文档");
@@ -1675,13 +1676,49 @@ describe("Figma 文件与截图交互", () => {
     const panel = screen.getByRole("complementary", { name: "文件预览" });
     expect(within(panel).getByRole("heading", { name: "面试准备" })).toBeInTheDocument();
     await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
-    expect(screen.getByText("已保存到 资料库 / AI 文档（本地模拟）")).toBeInTheDocument();
+    expect(await screen.findByText("已保存到资料库：面试准备.md。")).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledTimes(1);
+    const [file, , folderId] = upload.mock.calls[0];
+    expect(file).toBeInstanceOf(File);
+    expect((file as File).name).toBe("面试准备.md");
+    expect(folderId).toBe("");
     expect(stream).not.toHaveBeenCalled();
     expect(create).not.toHaveBeenCalled();
     await user.click(within(panel).getByRole("button", { name: "关闭预览" }));
     await user.click(screen.getByRole("button", { name: "查看本会话的 1 个文件" }));
     expect(screen.getByRole("tab", { name: "面试准备.md" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("button", { name: "已保存" })).toBeDisabled();
+  });
+
+  it("资料库已有同名文件时带时间后缀保留两份", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    const upload = vi.spyOn(api, "uploadDataset")
+      .mockRejectedValueOnce(new ApiRequestError(409, "DATASET_NAME_CONFLICT"))
+      .mockResolvedValueOnce({ id: "89", file_name: "面试准备-1002.md" } as Awaited<ReturnType<typeof api.uploadDataset>>);
+    const user = userEvent.setup();
+    render(<AssistantPage />);
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "生成一份面试准备文档");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await user.click(await screen.findByRole("button", { name: "打开" }));
+    const panel = screen.getByRole("complementary", { name: "文件预览" });
+    await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
+    expect(await screen.findByText("已保存到资料库：面试准备-1002.md。")).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledTimes(2);
+    expect(((upload.mock.calls[1][0]) as File).name).toMatch(/^面试准备-\d+\.md$/);
+  });
+
+  it("保存到资料库失败时提示，文档仍然未保存且可以重试", async () => {
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "uploadDataset").mockRejectedValue(new ApiRequestError(500, "HTTP_500"));
+    const user = userEvent.setup();
+    render(<AssistantPage />);
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "生成一份面试准备文档");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await user.click(await screen.findByRole("button", { name: "打开" }));
+    const panel = screen.getByRole("complementary", { name: "文件预览" });
+    await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
+    expect(await screen.findByText("保存到资料库失败，请稍后重试。")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "保存到资料库" })).toBeEnabled();
   });
 
   it("粘贴截图可移除或发送，发送后以缩略图打开图片预览", async () => {

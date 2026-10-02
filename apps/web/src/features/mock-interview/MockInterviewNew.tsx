@@ -1,11 +1,11 @@
 import { t, useLocale, getLocale } from "@/i18n";
 // 07.1a 新建模拟面试（Figma 159:767；作答方式区块见 198:2，由 voice/AnswerModePicker 提供）。
-// 简历 / 求职记录 / 参考资料来自真实接口；发起走 mockInterviewApi.create（本地假数据）。
+// 简历 / 求职记录 / 参考资料来自真实接口；发起走 mockInterviewApi.create（POST /api/mock-interviews）。
 import { useEffect, useMemo, useState } from "react";
 import { api, type DatasetRecord, type JobApplicationSummary, type ResumeSummary } from "@/api/client";
 import { mockInterviewPath, navigateTo } from "@/routing";
 import { Icon } from "@/v3/Icon";
-import { BeTag, Dialog, DialogFooter, Segmented, Select, Toast, Toggle, PageEyebrow } from "@/v3/primitives";
+import { Dialog, DialogFooter, Segmented, Select, Toast, Toggle, PageEyebrow } from "@/v3/primitives";
 import { AnswerModePicker } from "./voice/AnswerModePicker";
 import {
   DIFFICULTY_LABELS,
@@ -212,7 +212,7 @@ export function MockInterviewNew({ applicationId, resumeId }: { applicationId?: 
         </button>
 
         <button type="button" className="v3-btn v3-btn-dark mi-new-submit" disabled={!canSubmit} onClick={submit}>{submitting ? t("正在创建…") : t("开始面试")}</button>
-        <p className="mi-new-foot">{answerMode === "voice" ? t("下一步检测麦克风与面试官声音 · ") : ""}{t("准备约 30 秒 · 同一时间只能进行一场模拟面试 ")}<BeTag /></p>
+        <p className="mi-new-foot">{answerMode === "voice" ? t("下一步检测麦克风与面试官声音 · ") : ""}{t("准备约 30 秒 · 同一时间只能进行一场模拟面试")}</p>
       </div>
 
       {moreOpen && (

@@ -122,7 +122,8 @@ describe("07 模拟面试 · 文字面试", () => {
     expect(screen.getByText("5 题全部作答", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "能力维度" })).toHaveTextContent("简历一致性");
     expect(screen.getByRole("region", { name: "事实核验" })).toHaveTextContent("一致");
-    expect(screen.getAllByTitle("需要后端支持，目前为示例数据").length).toBeGreaterThan(0);
+    // 报告已接真实接口，不再贴「需后端」
+    expect(screen.queryAllByTitle("需要后端支持，目前为示例数据")).toHaveLength(0);
 
     const questions = screen.getByRole("region", { name: "逐题表现" });
     fireEvent.click(within(questions).getByRole("button", { name: /待提升/ }));
