@@ -8,7 +8,7 @@ public class CredentialLockerTests
 {
     public static bool Enabled => OperatingSystem.IsWindows() && Environment.GetEnvironmentVariable("RUN_DESKTOP_CREDENTIAL_TESTS") == "1";
 
-    [Fact(SkipUnless = nameof(Enabled))]
+    [Fact(Skip = "Requires Windows and RUN_DESKTOP_CREDENTIAL_TESTS=1", SkipUnless = nameof(Enabled))]
     public void RealCredentialLockerRoundTripRotationAndScopeIsolation()
     {
         var store = new CredentialLockerTokenStore();
