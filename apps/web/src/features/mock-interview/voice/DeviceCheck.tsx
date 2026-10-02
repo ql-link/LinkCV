@@ -1,13 +1,15 @@
 // 07.4 语音面试 · 设备检测：进入语音面试前的第一步。
-// 麦克风用真实 getUserMedia 取流并用 AnalyserNode 显示音量；面试官声音用浏览器自带朗读试听（真实音色需后端合成）。
+// 麦克风用真实 getUserMedia 取流并用 AnalyserNode 显示音量；面试官声音试听播放后端合成的音频。
 import { navigateTo } from "@/routing";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/v3/Icon";
-import { BeTag, Select, PageEyebrow } from "@/v3/primitives";
-import { DIFFICULTY_LABELS, INTERVIEW_TYPE_LABELS, type MockInterviewDetail } from "../mockInterviewApi";
+import { Select, PageEyebrow } from "@/v3/primitives";
+import { DIFFICULTY_LABELS, INTERVIEW_TYPE_LABELS, mockInterviewApi, type MockInterviewDetail } from "../mockInterviewApi";
+import { playAudioBlob } from "./interviewerAudio";
 import { VOICE_THRESHOLD, type Microphone } from "./useMicrophone";
 
-const GREETING = "你好，我是今天的面试官，我们先从自我介绍开始。";
+// 与后端设备试音合成的固定内容一致
+const GREETINGS = { zh: "你好，我是今天的面试官，我们先从自我介绍开始。", en: "Hello, I am your interviewer today. Let's start with a brief introduction." };
 // 电平表 32 格的点亮高度轮廓（取自设计稿）
 const METER_ENVELOPE = [4, 6, 9, 12, 15, 18, 16, 13, 17, 14, 11, 9, 12, 8, 6, 5, 4, 5, 7, 9, 11, 13, 12, 10, 8, 7, 9, 11, 8, 6, 5, 4];
 
@@ -66,6 +68,7 @@ export function DeviceCheck({
   const [heardVoice, setHeardVoice] = useState(false);
   const [quietLong, setQuietLong] = useState(false);
   const grantedAt = useRef(0);
+  const playback = useRef<AbortController | null>(null);
   const { permission, level, metering, start } = mic;
 
   // 进入即申请麦克风
@@ -87,21 +90,21 @@ export function DeviceCheck({
     return () => window.clearTimeout(timer);
   }, [permission, metering, heardVoice]);
 
-  useEffect(() => () => { if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel(); }, []);
+  useEffect(() => () => playback.current?.abort(), []);
 
-  const preview = () => {
-    const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
-    if (!synth || typeof SpeechSynthesisUtterance === "undefined") {
-      setSpeaker("unsupported");
-      return;
-    }
-    synth.cancel();
-    const utterance = new SpeechSynthesisUtterance(GREETING);
-    utterance.lang = interview.language === "en" ? "en-US" : "zh-CN";
-    utterance.onend = () => setSpeaker("played");
-    utterance.onerror = () => setSpeaker("played");
+  const preview = async () => {
+    playback.current?.abort();
+    const controller = new AbortController();
+    playback.current = controller;
     setSpeaker("playing");
-    synth.speak(utterance);
+    try {
+      const audio = await mockInterviewApi.speechPlayback(interview.id, undefined, controller.signal);
+      await playAudioBlob(audio, controller.signal);
+      if (!controller.signal.aborted) setSpeaker("played");
+    } catch {
+      // 合成或播放失败（含浏览器拦截自动播放）：不阻塞开始面试，只提示无法试听
+      if (!controller.signal.aborted) setSpeaker("unsupported");
+    }
   };
 
   const micStatus = permission === "granted"
@@ -191,14 +194,13 @@ export function DeviceCheck({
               <span className="vx-iconbox"><SpeakerIcon /></span>
               <strong>面试官声音</strong>
               {speaker === "played" ? <StatusPill tone="ok">可以听到</StatusPill> : speaker === "unsupported" ? <StatusPill tone="warn">无法试听</StatusPill> : <StatusPill tone="muted">{speaker === "playing" ? "播放中…" : "未试听"}</StatusPill>}
-              <BeTag title="面试官音色由后端语音合成提供；这里先用浏览器朗读试听扬声器" />
               <span className="vx-spacer" />
-              <button type="button" className="vx-listen" disabled={speaker === "playing"} onClick={preview}>
+              <button type="button" className="vx-listen" disabled={speaker === "playing"} onClick={() => void preview()}>
                 <Icon name="play" size={12} />
                 试听
               </button>
             </div>
-            <div className="vx-quote">「{GREETING}」</div>
+            <div className="vx-quote">「{GREETINGS[interview.language === "en" ? "en" : "zh"]}」</div>
           </div>
         </div>
 
@@ -206,7 +208,7 @@ export function DeviceCheck({
           <Icon name="alert" size={14} />
           <div>
             <p>每条回答会保存录音与识别文字，报告中可回放和修正后重新评估。</p>
-            <p>{speaker === "unsupported" ? "当前浏览器不支持朗读试听，请直接检查系统输出设备；语音合成失败时只显示字幕。" : "听不到声音时检查系统输出设备；语音合成失败时只显示字幕。"}</p>
+            <p>{speaker === "unsupported" ? "语音合成或播放失败，请检查系统输出设备后重试；也可以阅读字幕继续。" : "听不到声音时检查系统输出设备；语音合成失败时只显示字幕。"}</p>
           </div>
         </div>
 

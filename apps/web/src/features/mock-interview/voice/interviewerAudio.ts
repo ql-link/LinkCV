@@ -71,3 +71,26 @@ export class InterviewerAudioQueue {
     waiters.forEach((resolve) => resolve());
   }
 }
+
+// 播放一段完整音频（如设备试音）；播放结束、出错或被 signal 取消时 resolve，浏览器拦截自动播放时 reject。
+export function playAudioBlob(blob: Blob, signal?: AbortSignal): Promise<void> {
+  if (typeof Audio === "undefined" || typeof URL.createObjectURL !== "function" || blob.size === 0) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    const finish = (error?: unknown) => {
+      signal?.removeEventListener("abort", onAbort);
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+      URL.revokeObjectURL(url);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => finish();
+    signal?.addEventListener("abort", onAbort, { once: true });
+    audio.onended = () => finish();
+    audio.onerror = () => finish(new Error("audio playback failed"));
+    audio.play().catch(finish);
+  });
+}

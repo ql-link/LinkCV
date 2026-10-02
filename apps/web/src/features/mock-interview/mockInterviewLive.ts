@@ -128,15 +128,22 @@ async function mutate<T>(path: string, options: Parameters<typeof apiRequest>[1]
   return result;
 }
 
-const PCM_RATE = 16000;
+const SOCKET_OPEN_TIMEOUT_MS = 15_000;
+const FINAL_TIMEOUT_MS = 30_000;
+const FLUSH_TIMEOUT_MS = 1_000;
+// 发送缓冲积压超过 1 MB 说明网络跟不上实时音频，主动放弃而不是无限堆积
+const MAX_BUFFERED_BYTES = 1024 * 1024;
 
-// 把麦克风流转成 16 kHz 单声道 PCM16 二进制帧，通过 WebSocket 发给后端识别。
+// 麦克风流经 AudioWorklet 转成 16 kHz 单声道 PCM16 二进制帧（降采样在 worklet 内完成），通过 WebSocket 发给后端识别。
 class SpeechRecognition implements MockRecognition {
   private socket: WebSocket | null = null;
   private context: AudioContext | null = null;
-  private node: ScriptProcessorNode | null = null;
+  private node: AudioWorkletNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private settled = false;
+  private cancelled = false;
+  private finalTimer: ReturnType<typeof setTimeout> | undefined;
+  private flushed: (() => void) | null = null;
   private readonly ready: Promise<void>;
   private readonly result: Promise<MockRecognitionResult>;
   private resolveResult!: (value: MockRecognitionResult) => void;
@@ -156,30 +163,43 @@ class SpeechRecognition implements MockRecognition {
   private fail(code: string) {
     if (this.settled) return;
     this.settled = true;
+    clearTimeout(this.finalTimer);
     this.teardownAudio();
     this.rejectResult(new MockInterviewError(code, MOCK_INTERVIEW_ERROR_MESSAGES[code]));
   }
 
-  private open(interviewId: string): Promise<void> {
+  private async open(interviewId: string): Promise<void> {
     const { questionId, purpose, stream } = this.options;
     if (!stream) {
       this.fail("MOCK_INTERVIEW_SPEECH_FAILED");
-      return Promise.reject(new Error("no stream"));
+      throw new Error("no stream");
     }
+    // 浏览器的 WebSocket 握手无法在 401 后自动刷新会话：先走一次 HTTP 请求，让过期的访问 Cookie 在握手前刷新
+    try {
+      await call(`${BASE}/${enc(interviewId)}`);
+    } catch (error) {
+      this.fail(error instanceof MockInterviewError && error.code === "UNAUTHORIZED" ? "UNAUTHORIZED" : "MOCK_INTERVIEW_SPEECH_FAILED");
+      throw error;
+    }
+    if (this.cancelled) throw new Error("cancelled");
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const url = `${scheme}://${window.location.host}${BASE}/${enc(interviewId)}/speech?question_id=${enc(questionId)}&purpose=${purpose}`;
-    return new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const socket = new WebSocket(url);
       socket.binaryType = "arraybuffer";
       this.socket = socket;
+      const openTimer = setTimeout(() => {
+        this.fail("MOCK_INTERVIEW_SPEECH_FAILED");
+        socket.close();
+        reject(new Error("socket open timeout"));
+      }, SOCKET_OPEN_TIMEOUT_MS);
       socket.onopen = () => {
-        try {
-          this.startCapture(stream, socket);
-          resolve();
-        } catch (error) {
+        clearTimeout(openTimer);
+        this.startCapture(stream, socket).then(resolve, (error) => {
           this.fail("MOCK_INTERVIEW_SPEECH_FAILED");
+          socket.close();
           reject(error);
-        }
+        });
       };
       socket.onmessage = (message) => {
         if (typeof message.data !== "string") return;
@@ -188,6 +208,7 @@ class SpeechRecognition implements MockRecognition {
           if (data.type === "partial" && typeof data.text === "string") this.options.onPartial?.(data.text);
           else if (data.type === "final" && !this.settled) {
             this.settled = true;
+            clearTimeout(this.finalTimer);
             this.teardownAudio();
             this.resolveResult({
               session_id: String(data.session_id ?? ""),
@@ -200,47 +221,77 @@ class SpeechRecognition implements MockRecognition {
           // 忽略无法解析的帧
         }
       };
-      socket.onerror = () => { this.fail("MOCK_INTERVIEW_SPEECH_FAILED"); reject(new Error("socket error")); };
+      socket.onerror = () => {
+        clearTimeout(openTimer);
+        this.fail("MOCK_INTERVIEW_SPEECH_FAILED");
+        reject(new Error("socket error"));
+      };
       socket.onclose = (event) => {
-        // 4403 同源校验失败，4409 场次或题目状态不符；其余在未收到 final 时按识别失败处理
-        if (!this.settled) this.fail(event.code === 4409 ? "MOCK_INTERVIEW_STATE_INVALID" : "MOCK_INTERVIEW_SPEECH_FAILED");
+        clearTimeout(openTimer);
+        // 4401 会话失效，4403 同源校验失败，4409 场次或题目状态不符；其余在未收到 final 时按识别失败处理
+        if (!this.settled) {
+          this.fail(event.code === 4401 ? "UNAUTHORIZED" : event.code === 4409 ? "MOCK_INTERVIEW_STATE_INVALID" : "MOCK_INTERVIEW_SPEECH_FAILED");
+        }
         reject(new Error("socket closed"));
       };
     });
   }
 
-  private startCapture(stream: MediaStream, socket: WebSocket) {
+  private async startCapture(stream: MediaStream, socket: WebSocket) {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) throw new Error("AudioContext unavailable");
-    // 浏览器会按 sampleRate 重采样；不支持指定采样率时抛错，由调用方按识别失败处理
-    const context = new Ctor({ sampleRate: PCM_RATE });
+    if (!Ctor || typeof AudioWorkletNode === "undefined") throw new Error("AudioWorklet unavailable");
+    // 使用设备原生采样率，降采样到 16 kHz 由 worklet 完成
+    const context = new Ctor();
+    this.context = context;
+    await context.audioWorklet.addModule(new URL("./voice/pcmCapture.worklet.js", import.meta.url).href);
+    if (this.cancelled || this.settled) {
+      this.teardownAudio();
+      throw new Error("cancelled");
+    }
     const source = context.createMediaStreamSource(stream);
-    const node = context.createScriptProcessor(4096, 1, 1);
-    node.onaudioprocess = (event) => {
-      if (socket.readyState !== WebSocket.OPEN) return;
-      const input = event.inputBuffer.getChannelData(0);
-      const pcm = new Int16Array(input.length);
-      for (let i = 0; i < input.length; i += 1) {
-        const value = Math.max(-1, Math.min(1, input[i]));
-        pcm[i] = value < 0 ? value * 0x8000 : value * 0x7fff;
+    const node = new AudioWorkletNode(context, "mock-interview-pcm", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
+    node.port.onmessage = (event: MessageEvent) => {
+      if (event.data === "flushed") {
+        this.flushed?.();
+        return;
       }
-      socket.send(pcm.buffer);
+      if (!(event.data instanceof ArrayBuffer) || socket.readyState !== WebSocket.OPEN) return;
+      if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+        this.fail("MOCK_INTERVIEW_SPEECH_FAILED");
+        socket.close();
+        return;
+      }
+      socket.send(event.data);
     };
     source.connect(node);
+    // 部分浏览器要求节点接到输出才会处理；worklet 不写输出，所以不会有声音
     node.connect(context.destination);
-    this.context = context;
     this.source = source;
     this.node = node;
   }
 
   private teardownAudio() {
+    if (this.node) this.node.port.onmessage = null;
     this.node?.disconnect();
     this.source?.disconnect();
-    if (this.node) this.node.onaudioprocess = null;
     void this.context?.close().catch(() => undefined);
     this.node = null;
     this.source = null;
     this.context = null;
+  }
+
+  // 让 worklet 把不足一帧的尾部发出再停止采集，避免截掉最后半句话
+  private flushCapture(): Promise<void> {
+    const node = this.node;
+    if (!node) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, FLUSH_TIMEOUT_MS);
+      this.flushed = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      node.port.postMessage("flush");
+    });
   }
 
   async stop(): Promise<MockRecognitionResult> {
@@ -249,13 +300,23 @@ class SpeechRecognition implements MockRecognition {
     } catch {
       return this.result;
     }
+    await this.flushCapture();
     this.teardownAudio();
-    if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: "stop" }));
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: "stop" }));
+      // 发出结束信号后服务端应尽快返回 final；超时按识别失败处理，避免页面一直等待
+      this.finalTimer = setTimeout(() => {
+        this.fail("MOCK_INTERVIEW_SPEECH_FAILED");
+        this.socket?.close();
+      }, FINAL_TIMEOUT_MS);
+    }
     return this.result;
   }
 
   cancel() {
+    this.cancelled = true;
     this.settled = true;
+    clearTimeout(this.finalTimer);
     this.teardownAudio();
     if (this.socket && this.socket.readyState <= WebSocket.OPEN) this.socket.close();
   }
@@ -295,12 +356,23 @@ export const liveMockInterviewApi: MockInterviewApi = {
   finish: (id) => mutate(`${BASE}/${enc(id)}/finish`),
   abandon: (id) => mutate(`${BASE}/${enc(id)}/abandon`),
   retry: (id) => mutate(`${BASE}/${enc(id)}/retry`),
-  repeat: (id) => mutate(`${BASE}/${enc(id)}/repeat`),
+  repeat: (id, options) => mutate(`${BASE}/${enc(id)}/repeat`, { method: "POST", body: options?.answer_mode ? { answer_mode: options.answer_mode } : undefined }),
   remove: (id) => mutate(`${BASE}/${enc(id)}`, { method: "DELETE" }),
 
   speechCapability: () => call<{ stt: boolean; tts: boolean }>(`${BASE}/speech-capability`),
 
   startRecognition: (id, options) => new SpeechRecognition(id, options),
+
+  async speechPlayback(id, questionId, signal) {
+    const response = await authedFetch(`${BASE}/${enc(id)}/speech/playback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(questionId ? { question_id: questionId } : {}),
+      signal,
+    });
+    if (!response.ok) throw await errorFrom(response);
+    return response.blob();
+  },
 
   correctTranscripts: (id) => mutate(`${BASE}/${enc(id)}/transcripts:correct`),
   editTranscript: (id, questionId, text) =>

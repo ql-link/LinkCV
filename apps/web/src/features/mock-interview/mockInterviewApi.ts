@@ -39,6 +39,7 @@ export const mockInterviewApi: MockInterviewApi = {
   remove: (...args) => current.remove(...args),
   speechCapability: (...args) => current.speechCapability(...args),
   startRecognition: (...args) => current.startRecognition(...args),
+  speechPlayback: (...args) => current.speechPlayback(...args),
   correctTranscripts: (...args) => current.correctTranscripts(...args),
   editTranscript: (...args) => current.editTranscript(...args),
   reEvaluate: (...args) => current.reEvaluate(...args),

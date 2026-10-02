@@ -215,10 +215,13 @@ export type MockInterviewApi = {
   finish(id: string): Promise<{ mock_interview: MockInterviewDetail }>;
   abandon(id: string): Promise<{ mock_interview: MockInterviewDetail }>;
   retry(id: string): Promise<{ mock_interview: MockInterviewDetail }>;
-  repeat(id: string): Promise<{ mock_interview: MockInterviewDetail }>;
+  // answer_mode 可覆盖新场次的作答方式，省略时沿用原场
+  repeat(id: string, options?: { answer_mode?: MockInterviewDetail["answer_mode"] }): Promise<{ mock_interview: MockInterviewDetail }>;
   remove(id: string): Promise<{ deleted: boolean }>;
   speechCapability(): Promise<{ stt: boolean; tts: boolean }>;
   startRecognition(id: string, options: MockRecognitionOptions): MockRecognition;
+  // 本人语音场次的面试官语音（audio/mpeg）：省略 questionId 为设备试音，否则为当前未答题目
+  speechPlayback(id: string, questionId?: string, signal?: AbortSignal): Promise<Blob>;
   correctTranscripts(id: string): Promise<{ items: Array<{ question_id: string; state: MockInterviewQuestion["transcript_state"]; changes: MockTranscriptChange[] }>; mock_interview: MockInterviewDetail }>;
   editTranscript(id: string, questionId: string, text: string): Promise<{ mock_interview: MockInterviewDetail }>;
   reEvaluate(id: string, questionId: string): Promise<{ question_id: string; evaluation: MockQuestionEvaluation | null; re_evaluate_count: number; remaining: number; total_score: number; previous_total_score: number | null; mock_interview: MockInterviewDetail }>;
