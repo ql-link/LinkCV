@@ -219,9 +219,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
       - uses: astral-sh/setup-uv@v8.3.2
         with:
           enable-cache: true
+      # 后端 PDF 回归会构建 Web 的 PDF CLI，并使用锁定版本的 Chromium 渲染。
+      - run: npm ci --prefix apps/web
+      - run: node apps/web/node_modules/playwright-core/cli.js install --with-deps chromium
       - run: uv sync --directory apps/backend --dev
       - run: npm run test:backend
       - run: npm run build:backend
