@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Minus, Plus, Rows2, Type } from "lucide-react";
 import { Select } from "../../v3/primitives";
 import { resumeSerifFontStack, type ResumeSettings } from "../../store/resumeStore";
 import { WorkbenchPanelHeader } from "./WorkbenchPanelHeader";
@@ -92,39 +93,49 @@ export function SettingsSlider({
   );
 }
 
-// 02.2c 排版（Figma 509:1040）：字体、字号、行距、页边距。页面排列和智能一页在页面栏，模块顺序在大纲
-export function WorkbenchTypePanel({
-  settings,
-  disabled,
-  onChange,
-  onClose,
-}: {
+function SettingStepper({ label, unit, value, min, max, step, onChange, disabled }: {
+  label: string; unit: string; value: number; min: number; max: number; step: number;
+  onChange: (value: number) => void; disabled: boolean;
+}) {
+  return <div className="wb3-setting-row">
+    <span>{label}</span>
+    <div className="wb3-setting-stepper">
+      <button type="button" aria-label={`减小${label}`} disabled={disabled || value <= min}
+        onClick={() => onChange(steppedSettingValue(value, -1, min, max, step))}><Minus size={14} /></button>
+      <output aria-label={`${label}当前值`}>{Number(value.toFixed(2))}{unit ? ` ${unit}` : ""}</output>
+      <button type="button" aria-label={`增大${label}`} disabled={disabled || value >= max}
+        onClick={() => onChange(steppedSettingValue(value, 1, min, max, step))}><Plus size={14} /></button>
+    </div>
+  </div>;
+}
+
+export function WorkbenchTypePanel({ settings, disabled, onChange, onClose, pageControls }: {
   settings: Pick<ResumeSettings, "fontFamily" | "fontSize" | "lineHeight" | "pageMargin" | "verticalPageMargin">;
   disabled: boolean;
   onChange: (patch: Partial<ResumeSettings>) => void;
   onClose: () => void;
+  pageControls: ReactNode;
 }) {
   return (
     <div className="wb3-type-panel">
-      <WorkbenchPanelHeader
-        titleId="workbench-type-title"
-        title="排版"
-        subtitle="统一调整简历正文的字体、字号、行距和留白"
-        closeLabel="关闭排版面板"
-        onClose={onClose}
-      />
+      <WorkbenchPanelHeader titleId="workbench-type-title" title="设置"
+        closeLabel="关闭排版面板" onClose={onClose} />
       <div className="wb3-panel-body wb3-type-body">
-        <FontPreviewSelect value={settings.fontFamily} onChange={(fontFamily) => onChange({ fontFamily })} disabled={disabled} />
-        <SettingsSlider label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} digits={1} onChange={(fontSize) => onChange({ fontSize })} disabled={disabled} />
-        <SettingsSlider label="正文行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} digits={2} onChange={(lineHeight) => onChange({ lineHeight })} disabled={disabled} />
+        {pageControls}
         <hr className="wb3-type-divider" />
-        <div className="wb3-type-section">
-          <strong>页边距</strong>
-          <small>单位为毫米</small>
+        <div className="wb3-type-section"><strong>页边距</strong><small>分别调整上下和左右留白，单位为毫米。</small></div>
+        <div className="wb3-margin-settings">
+          <div>
+            <SettingStepper label="上下边距" unit="mm" value={settings.verticalPageMargin} min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM} max={30} step={2} onChange={(verticalPageMargin) => onChange({ verticalPageMargin })} disabled={disabled} />
+            <SettingStepper label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => onChange({ pageMargin })} disabled={disabled} />
+          </div>
+          <div className="wb3-margin-preview" aria-hidden="true"><Rows2 size={28} /><small>页面预览</small></div>
         </div>
-        <SettingsSlider label="上下边距" unit="mm" value={settings.verticalPageMargin} min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM} max={30} step={2} onChange={(verticalPageMargin) => onChange({ verticalPageMargin })} disabled={disabled} />
-        <SettingsSlider label="左右边距" unit="mm" value={settings.pageMargin} min={10} max={30} step={2} onChange={(pageMargin) => onChange({ pageMargin })} disabled={disabled} />
-        <p className="wb3-type-note">页面排列和智能一页在纸面下方的页面栏；模块顺序在「大纲」里拖动。</p>
+        <hr className="wb3-type-divider" />
+        <div className="wb3-type-section"><strong className="wb3-type-heading"><Type size={16} />排版</strong><small>统一调整简历正文的字体、字号和行距。</small></div>
+        <FontPreviewSelect value={settings.fontFamily} onChange={(fontFamily) => onChange({ fontFamily })} disabled={disabled} />
+        <SettingStepper label="正文字号" unit="pt" value={settings.fontSize} min={8} max={16} step={0.5} onChange={(fontSize) => onChange({ fontSize })} disabled={disabled} />
+        <SettingStepper label="正文行距" unit="" value={settings.lineHeight} min={1.1} max={1.8} step={0.05} onChange={(lineHeight) => onChange({ lineHeight })} disabled={disabled} />
       </div>
     </div>
   );
