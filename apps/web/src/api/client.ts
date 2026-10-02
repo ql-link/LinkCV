@@ -268,6 +268,7 @@ export type ResumeTemplate = {
   layout_plan?: LayoutPlan | null;
   switchable: true;
   incompatibility_reason: null;
+  use_count?: number | null;
 };
 
 type ResumeTemplateWire = Omit<ResumeTemplate, "style"> & {

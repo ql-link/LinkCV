@@ -96,8 +96,8 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
-| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组；按 `sort_order`、ID 升序 |
-| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组 |
+| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组和 `use_count`（当前引用该模板的简历数，全站聚合）；按 `sort_order`、ID 升序 |
+| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组和 `use_count` |
 | `GET`    | `/api/resumes`              | 是   | `{resumes}`，摘要含可选 `preview`，按更新时间倒序                |
 | `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |

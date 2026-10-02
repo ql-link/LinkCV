@@ -188,6 +188,8 @@ class ResumeTemplateRecord(BaseModel):
     layout_plan: LayoutPlan
     switchable: Literal[True] = True
     incompatibility_reason: None = None
+    # 仅模板列表与详情接口填充；嵌入简历响应时为 None
+    use_count: int | None = None
 
 
 class ResumeTemplateListResponse(BaseModel):

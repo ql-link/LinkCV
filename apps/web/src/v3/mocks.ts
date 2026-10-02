@@ -24,7 +24,6 @@ export const MOCK_JOB_MATCH = { score: 78, hits: ["Go / Java", "分布式系统"
 export const MOCK_REVIEW_SCORE = { score: 8.2, previous: 7.6 };
 
 // 简历模板 · 使用次数与热度排序（模板没有使用统计）
-export const MOCK_TEMPLATE_USES = (key: string) => 1200 + ((key.length * 7919) % 3800);
 
 // 账号 · 注册时间、上次修改密码、当前设备、界面语言（账号接口只有 id、email、nickname、avatar_url、wechat）
 export const MOCK_ACCOUNT_META = { registeredAt: "2025-03-12", passwordChangedAt: "3 个月前", device: "Mac · Chrome", language: "简体中文" };

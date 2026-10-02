@@ -2,8 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 
 import type { ResumeTemplate } from "../../api/client";
 import { Icon } from "../../v3/Icon";
-import { BeTag, Dialog } from "../../v3/primitives";
-import { MOCK_TEMPLATE_USES } from "../../v3/mocks";
+import { Dialog } from "../../v3/primitives";
 import { ResumePreview } from "../preview/ResumePreview";
 import { getWheelZoomScale } from "../workbench/workbenchZoom";
 import { formatTemplateUses } from "./templateUses";
@@ -98,9 +97,7 @@ export function TemplatePreviewDialog({
           <h2 className="v3-dialog-title">{template.name}</h2>
         <div className="tpl-preview-meta">
           {tags.map((tag) => <span key={tag} className="v3-chip">{tag}</span>)}
-          {/* 使用次数需要后端统计，暂用 mocks 里的示例数 */}
-          <span className="tpl-preview-uses">{formatTemplateUses(MOCK_TEMPLATE_USES(template.key))} 使用</span>
-          <BeTag title="模板使用次数需要后端统计，目前为示例数据" />
+          {typeof template.use_count === "number" && <span className="tpl-preview-uses">{formatTemplateUses(template.use_count)} 使用</span>}
         </div>
         </SlideSwap>
       </div>
