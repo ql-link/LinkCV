@@ -1482,7 +1482,7 @@ def start(
     return interview
 
 
-def repeat_request(interview: MockInterview) -> StartRequest:
+def repeat_request(interview: MockInterview, *, answer_mode: str | None = None) -> StartRequest:
     application_id = (
         interview.job_application_id if interview.source_type == "job_application" else None
     )
@@ -1503,7 +1503,7 @@ def repeat_request(interview: MockInterview) -> StartRequest:
         language=interview.language,
         material_ids=[int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []],
         materials_in_questions=interview.materials_in_questions,
-        answer_mode=interview.answer_mode,
+        answer_mode=answer_mode or interview.answer_mode,
     )
 
 
@@ -1675,23 +1675,22 @@ def retry(db: Session, user_id: int, public_id: str) -> MockInterview:
     return interview
 
 
-def delete_interview(db: Session, user_id: int, public_id: str) -> str:
-    """Delete the interview; returns the recording prefix the caller must purge."""
+def delete_interview(db: Session, user_id: int, public_id: str, *, purge: Callable[[str], None]) -> None:
+    """Keep the row and object references available until storage deletion succeeds."""
     interview = require_owned(db, user_id, public_id, lock=True)
     _expire_if_stale(interview, utc_now())
     if interview.status in MOCK_INTERVIEW_ACTIVE_STATUSES:
         db.commit()
         raise _state_invalid()
+    purge(recording_prefix(interview))
     db.execute(
         update(MockInterview)
         .where(MockInterview.repeat_of_id == interview.id)
         .values(repeat_of_id=None)
     )
-    prefix = recording_prefix(interview)
     db.execute(delete(MockInterviewQuestion).where(MockInterviewQuestion.interview_id == interview.id))
     db.delete(interview)
     db.commit()
-    return prefix
 
 
 def serialize_question(question: MockInterviewQuestion) -> dict[str, object]:
