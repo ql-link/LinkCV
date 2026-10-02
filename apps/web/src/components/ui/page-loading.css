@@ -8,7 +8,7 @@
   justify-items: center;
   gap: 12px;
   color: #96968f;
-  font-family: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--ui-font-sans);
   text-align: center;
 }
 

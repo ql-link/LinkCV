@@ -5640,7 +5640,7 @@
   background: #fff !important;
   padding: 6px !important;
   color: #1d1d1b !important;
-  font-family: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--ui-font-sans);
   box-shadow: 0 12px 32px rgb(0 0 0 / 10%), 0 2px 6px rgb(0 0 0 / 5%);
   --ec-more-max-height: 320px;
 }
@@ -5699,7 +5699,7 @@
   flex: 0 0 auto;
   margin-left: auto;
   color: #96968f;
-  font-family: var(--v3-num);
+  font-family: var(--ui-font-display);
   font-size: 11px;
   line-height: 16px;
 }
