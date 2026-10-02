@@ -27,6 +27,7 @@ export function sortSessions(items: AgentSession[]) {
 }
 
 let inflight: Promise<void> | null = null;
+let scopeRevision = 0;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   sessions: [],
@@ -37,10 +38,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (inflight) return inflight;
     if (!force && get().status === "ready") return;
     set({ status: get().status === "ready" || get().sessions.length ? "ready" : "loading", error: null });
+    const scope = scopeRevision;
     inflight = api.listAgentSessions()
-      .then(({ sessions }) => set({ sessions: sortSessions(sessions), status: "ready" }))
-      .catch(() => set({ status: "error", error: "对话列表暂时无法读取" }))
-      .finally(() => { inflight = null; });
+      .then(({ sessions }) => { if (scope === scopeRevision) set({ sessions: sortSessions(sessions), status: "ready" }); })
+      .catch(() => { if (scope === scopeRevision) set({ status: "error", error: "对话列表暂时无法读取" }); })
+      .finally(() => { if (scope === scopeRevision) inflight = null; });
     return inflight;
   },
   upsert: (session) => set((state) => ({
@@ -51,8 +53,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   })),
   remove: (sessionId) => set((state) => ({ sessions: state.sessions.filter((item) => item.id !== sessionId) })),
   rename: async (sessionId, title) => {
+    const scope = scopeRevision;
     const { session } = await api.updateAgentSession(sessionId, { title });
-    get().upsert(session);
+    if (scope === scopeRevision) get().upsert(session);
     return session;
   },
   destroy: async (sessionId) => {
@@ -71,3 +74,12 @@ export const useActiveSessionStore = create<{ activeId: string | null; setActive
   activeId: null,
   setActive: (activeId) => set({ activeId }),
 }));
+
+
+/** Invalidate pending reads together with personal state on account changes. */
+export function resetSessionStores() {
+  scopeRevision += 1;
+  inflight = null;
+  useSessionStore.setState({ sessions: [], status: "idle", error: null, runningIds: [] });
+  useActiveSessionStore.setState({ activeId: null });
+}

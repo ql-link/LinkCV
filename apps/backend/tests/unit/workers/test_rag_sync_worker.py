@@ -16,7 +16,11 @@ class LockRedis:
         self.values[key] = value
         return True
 
-    def eval(self, _script, _numkeys, key, token):
+    def get(self, key):
+        return self.values.get(key)
+
+    def eval(self, _script, _numkeys, key, token, *args):
+        if args: return int(self.values.get(key) == token)
         if self.values.get(key) == token:
             del self.values[key]
             return 1

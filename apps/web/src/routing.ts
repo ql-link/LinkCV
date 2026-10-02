@@ -14,6 +14,7 @@ export type AppRoute =
   | { kind: "jobDetail"; jobId: string }
   | { kind: "datasets"; folderId?: string }
   | { kind: "account" }
+  | { kind: "accountDeletion" }
   | { kind: "mockInterview"; view: "home" | "new" | "session" | "report"; interviewId?: string; applicationId?: string; resumeId?: string }
   | { kind: "share"; token: string }
   | { kind: "notFound" };
@@ -120,6 +121,7 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     const folderId = new URLSearchParams(search).get("folder") ?? undefined;
     return { kind: "datasets", folderId };
   }
+  if (normalizedPath === "/account-deletion") return { kind: "accountDeletion" };
   if (normalizedPath === "/account") return { kind: "account" };
   if (normalizedPath === "/mock-interviews") return { kind: "mockInterview", view: "home" };
   if (normalizedPath === "/mock-interviews/new") {

@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import brandWordmark from "@/assets/linkresume-wordmark.png";
@@ -33,16 +34,17 @@ declare global {
 
 // 整窗外壳（无侧栏）：窗口底色 + 白色内容卡 + 64 高品牌栏 + 灰色画布
 function ShareFrame({ note, beTag = false, children }: { note: string; beTag?: boolean; children: ReactNode }) {
+  useLocale();
   return (
     <main className="v3 share-page" data-ui-theme="light">
       <div className="share-v3-card">
         <header className="share-v3-head">
-          <a className="share-v3-brand" href="/" aria-label="linkresume" title="访问 LinkResume">
+          <a className="share-v3-brand" href="/" aria-label="linkresume" title={t("访问 LinkResume")}>
             <img src={brandWordmark} alt="" aria-hidden="true" />
           </a>
           <span className="share-v3-divider" aria-hidden="true" />
           <span className="share-v3-note">{note}</span>
-          {beTag ? <BeTag title="公开分享接口不返回有效期，目前为示例数据" /> : null}
+          {beTag ? <BeTag title={t("公开分享接口不返回有效期，目前为示例数据")} /> : null}
         </header>
         <div className="share-v3-canvas">{children}</div>
       </div>
@@ -61,6 +63,7 @@ const CONTACT_ICON: Partial<Record<CanonicalContact["contact_kind"], V3IconName>
 
 // Promo 舞台（324×120）：三张迷你简历，绿 -8° / 蓝 6° / 黑居中
 function PromoArt() {
+  useLocale();
   return (
     <>
       {/* Figma 旋转逆时针、绕左上角：CSS 取反 + transform-origin 0 0 */}
@@ -73,6 +76,7 @@ function PromoArt() {
 
 // 链接不可用插图（舞台 464×180）：淡掉的简历 + 断开的链条
 function BrokenLinkArt() {
+  useLocale();
   return (
     <span aria-hidden="true" style={{ position: "absolute", top: 0, left: "50%", width: 464, height: 180, transform: "translateX(-50%)" }}>
       <MiniResume x={182} y={24} w={100} h={132} accent="var(--v3-fnt2)" rotate={4} style={{ opacity: 0.55, boxShadow: "none", transformOrigin: "0 0" }} />
@@ -88,6 +92,7 @@ function BrokenLinkArt() {
 type ShareStatus = "loading" | "ready" | "unavailable" | "private" | "failed";
 
 function ShareAccessArt({ failed }: { failed: boolean }) {
+  useLocale();
   return <span aria-hidden="true" className="share-v3-access-art">
     <MiniResume x={182} y={24} w={100} h={132} accent="var(--v3-fnt2)" style={{ opacity: 0.55, boxShadow: "none" }} />
     <span className="share-v3-access-badge"><img src={failed ? errorCloud : privateLock} width={failed ? 40 : 22} height={failed ? 40 : 22} alt="" /></span>
@@ -199,6 +204,7 @@ function useRestoreStandardFontSize() {
 }
 
 export function SharePage({ token }: { token: string }) {
+  useLocale();
   const [payload, setPayload] = useState<PublicSharePayload | null>(null);
   const [status, setStatus] = useState<ShareStatus>("loading");
   const [pdfPending, setPdfPending] = useState(false);
@@ -270,8 +276,8 @@ export function SharePage({ token }: { token: string }) {
   const copyLink = () => {
     const url = window.location.href;
     void (navigator.clipboard?.writeText(url) ?? Promise.reject(new Error("clipboard unavailable")))
-      .then(() => setToast("链接已复制"))
-      .catch(() => setToast("复制失败，请手动复制地址栏链接"));
+      .then(() => setToast(t("链接已复制")))
+      .catch(() => setToast(t("复制失败，请手动复制地址栏链接")));
   };
 
   const documentHtml = useMemo(
@@ -288,9 +294,9 @@ export function SharePage({ token }: { token: string }) {
         },
         layout_plan: payload.layout_plan,
         assets: payload.assets,
-      }, { className: "share-page-paper", ariaLabel: "分享简历内容" })
+      }, { className: "share-page-paper", ariaLabel: t("分享简历内容") })
       : "",
-    [payload],
+    [payload, getLocale()],
   );
 
   useLayoutEffect(() => {
@@ -322,9 +328,9 @@ export function SharePage({ token }: { token: string }) {
 
   if (status === "loading") {
     return (
-      <ShareFrame note="公开分享">
+      <ShareFrame note={t("公开分享")}>
         <div className="share-page-loading share-v3-loading">
-          <PageLoading label="正在加载分享内容…" scope="panel" />
+          <PageLoading label={t("正在加载分享内容…")} scope="panel" />
         </div>
       </ShareFrame>
     );
@@ -332,15 +338,15 @@ export function SharePage({ token }: { token: string }) {
 
   if (status === "private" || status === "failed") {
     const failed = status === "failed";
-    return <ShareFrame note={failed ? "公开分享 · 暂时无法加载" : `公开分享 · 有效期至 ${MOCK_SHARE_META.expiresAt.slice(5)}`} beTag={!failed}>
+    return <ShareFrame note={failed ? t("公开分享 · 暂时无法加载") : t("公开分享 · 有效期至 {value0}", { value0: MOCK_SHARE_META.expiresAt.slice(5) })} beTag={!failed}>
       <div className="share-v3-empty">
         <section className="v3-empty share-v3-access" aria-labelledby="share-access-title" role={failed ? "alert" : undefined}>
           <div className="v3-stage"><ShareAccessArt failed={failed} /></div>
-          <h3 id="share-access-title">{failed ? "分享内容暂时无法加载" : <>这份简历没有公开<BeTag title="后端目前统一返回 404；此状态等待独立权限错误支持" /></>}</h3>
-          <p>{failed ? "网络不稳定或服务暂时不可用，请稍后重新加载。" : "分享者把它设成了仅自己可见。如果你是分享者本人，登录后就能查看。"}</p>
+          <h3 id="share-access-title">{failed ? t("分享内容暂时无法加载") : <>{t("这份简历没有公开")}<BeTag title={t("后端目前统一返回 404；此状态等待独立权限错误支持")} /></>}</h3>
+          <p>{failed ? t("网络不稳定或服务暂时不可用，请稍后重新加载。") : t("分享者把它设成了仅自己可见。如果你是分享者本人，登录后就能查看。")}</p>
           <div className="v3-empty-actions">{failed
-            ? <button className="v3-btn v3-btn-ghost" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><Icon name="refresh" size={13} />重新加载</button>
-            : <a className="v3-btn v3-btn-ghost" href={authPath("login", `/share/${encodeURIComponent(token)}`)}>登录</a>}</div>
+            ? <button className="v3-btn v3-btn-ghost" onClick={() => setLoadAttempt((attempt) => attempt + 1)}><Icon name="refresh" size={13} />{t("重新加载")}</button>
+            : <a className="v3-btn v3-btn-ghost" href={authPath("login", `/share/${encodeURIComponent(token)}`)}>{t("登录")}</a>}</div>
         </section>
       </div>
     </ShareFrame>;
@@ -349,12 +355,12 @@ export function SharePage({ token }: { token: string }) {
   if (status === "unavailable" || !payload) {
     // 后端对私密、过期、已删除统一返回 404，无法确定原因时沿用不可用文案。
     return (
-      <ShareFrame note="公开分享 · 链接不可用">
+      <ShareFrame note={t("公开分享 · 链接不可用")}>
         <div className="share-v3-empty">
           <section className="v3-empty" aria-labelledby="share-unavailable-title">
             <div className="v3-stage has-dots"><BrokenLinkArt /></div>
-            <h3 id="share-unavailable-title">这条分享链接已失效</h3>
-            <p>链接可能已过期、被删除，或者分享者把它设成了仅自己可见。可以联系分享者重新发一个链接。</p>
+            <h3 id="share-unavailable-title">{t("这条分享链接已失效")}</h3>
+            <p>{t("链接可能已过期、被删除，或者分享者把它设成了仅自己可见。可以联系分享者重新发一个链接。")}</p>
           </section>
         </div>
       </ShareFrame>
@@ -372,7 +378,7 @@ export function SharePage({ token }: { token: string }) {
   const displayName = identity.name?.value?.trim() || payload.sharer.nickname;
   const contacts = identity.contacts.filter((contact) => contact.value?.trim()).slice(0, 4);
   return (
-    <ShareFrame note={`公开分享 · 有效期至 ${MOCK_SHARE_META.expiresAt.slice(5)}`} beTag>
+    <ShareFrame note={t("公开分享 · 有效期至 {value0}", { value0: MOCK_SHARE_META.expiresAt.slice(5) })} beTag>
       <div className="share-v3-layout">
         <div className="share-v3-paper-col">
           <section className="share-page-paper-scroll share-v3-paper-fit">
@@ -390,12 +396,12 @@ export function SharePage({ token }: { token: string }) {
             </div>
           </section>
           <p className="share-v3-foot">
-            <span>{pageCount} / {pageCount} 页 · 最后更新 {MOCK_SHARE_META.updatedAt}</span>
-            <BeTag title="公开分享接口不返回有效期与最后更新时间，目前为示例数据" />
+            <span>{pageCount} / {pageCount}{t(" 页 · 最后更新 ")}{MOCK_SHARE_META.updatedAt}</span>
+            <BeTag title={t("公开分享接口不返回有效期与最后更新时间，目前为示例数据")} />
           </p>
         </div>
 
-        <aside className="share-v3-side" aria-label="分享者信息">
+        <aside className="share-v3-side" aria-label={t("分享者信息")}>
           <section className="share-v3-pcard share-v3-profile">
             <div className="v3-stage" />
             <span className="share-v3-avatar" aria-hidden="true">
@@ -406,7 +412,7 @@ export function SharePage({ token }: { token: string }) {
             <h2 className="share-v3-name">{displayName}</h2>
             {/* 设计稿这一行是职位 · 年限 · 城市；简历没填 headline 时显示分享者昵称 */}
             <p className="share-v3-headline">
-              {identity.headline?.value || `由 ${payload.sharer.nickname} 分享`}
+              {identity.headline?.value || t("由 {value0} 分享", { value0: payload.sharer.nickname })}
             </p>
             {contacts.length ? (
               <ul className="share-v3-contacts">
@@ -422,17 +428,15 @@ export function SharePage({ token }: { token: string }) {
               {payload.allow_download ? (
                 <>
                   <button type="button" className="v3-btn v3-btn-dark" disabled={pdfPending} onClick={downloadPdf}>
-                    {pdfPending ? "正在生成…" : "下载 PDF"}
+                    {pdfPending ? t("正在生成…") : t("下载 PDF")}
                   </button>
-                  <button type="button" className="share-v3-copy" aria-label="复制链接" title="复制链接" onClick={copyLink}>
+                  <button type="button" className="share-v3-copy" aria-label={t("复制链接")} title={t("复制链接")} onClick={copyLink}>
                     <Icon name="link" size={14} />
                   </button>
                 </>
               ) : (
                 <button type="button" className="share-v3-copy-wide" onClick={copyLink}>
-                  <span className="share-v3-copy" aria-hidden="true"><Icon name="link" size={14} /></span>
-                  复制链接
-                </button>
+                  <span className="share-v3-copy" aria-hidden="true"><Icon name="link" size={14} /></span>{t("复制链接")}</button>
               )}
             </div>
             {pdfError ? <p className="share-v3-error" role="alert">{pdfError}</p> : null}
@@ -440,13 +444,13 @@ export function SharePage({ token }: { token: string }) {
 
           <section className="share-v3-pcard share-v3-promo">
             <div className="v3-stage"><PromoArt /></div>
-            <h2>这份简历由 LinkResume 制作</h2>
-            <p>AI 帮你写、帮你改，还能追踪每一次投递。</p>
-            <a className="v3-link" href="/">免费试试<Icon name="arrow" size={12} /></a>
+            <h2>{t("这份简历由 LinkResume 制作")}</h2>
+            <p>{t("AI 帮你写、帮你改，还能追踪每一次投递。")}</p>
+            <a className="v3-link" href="/">{t("免费试试")}<Icon name="arrow" size={12} /></a>
           </section>
         </aside>
       </div>
-      <MotionPresence>{toast ? <Toast title={toast} kind={toast === "链接已复制" ? "success" : "error"} onDismiss={() => setToast(null)} /> : null}</MotionPresence>
+      <MotionPresence>{toast ? <Toast title={toast} kind={toast === t("链接已复制") ? "success" : "error"} onDismiss={() => setToast(null)} /> : null}</MotionPresence>
     </ShareFrame>
   );
 }

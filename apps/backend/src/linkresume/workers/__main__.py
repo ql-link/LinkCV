@@ -18,6 +18,7 @@ from linkresume.workers.dataset_parse_worker import DatasetParseProcessor
 from linkresume.workers.document_parse_consumer import run_consumer
 from linkresume.workers.rag_sync_worker import run_rag_sync_loop
 from linkresume.workers.resume_import_worker import ResumeImportProcessor
+from linkresume.workers.account_deletion_worker import AccountDeletionProcessor, run_account_deletion_loop
 
 
 async def main() -> None:
@@ -71,6 +72,10 @@ async def main() -> None:
         settings, timeout_seconds=settings.linkrag_sync_timeout_seconds
     )
     rag_task = None
+    deletion_task = asyncio.create_task(run_account_deletion_loop(AccountDeletionProcessor(
+        session_factory=session_factory, storage=storage, redis=redis,
+        rag_client=rag_client, settings=settings,
+    )))
     if rag_client is not None:
         rag_task = asyncio.create_task(
             run_rag_sync_loop(
@@ -93,6 +98,11 @@ async def main() -> None:
             settings=settings,
         )
     finally:
+        deletion_task.cancel()
+        try:
+            await deletion_task
+        except asyncio.CancelledError:
+            pass
         if rag_task is not None:
             rag_task.cancel()
             try:

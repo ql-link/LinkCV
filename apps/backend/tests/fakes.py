@@ -226,6 +226,43 @@ class FakeRedis:
 
     def eval(self, script: str, _numkeys: int, name: str, *args: object):
         with self._lock:
+            if "account_action_create" in script:
+                action_key, uid, sid, poll_hash, action_hash, ttl = args
+                previous = self.get(name)
+                if previous and self.hget(previous, "state") in {"pending", "verified"}:
+                    self.hset(previous, "state", "cancelled")
+                self.hset(str(action_key), mapping={
+                    "uid": str(uid), "sid": str(sid), "poll_hash": str(poll_hash),
+                    "action_hash": str(action_hash), "action": "delete_account", "state": "pending",
+                })
+                self.expire(str(action_key), float(ttl))
+                self.set(name, str(action_key), ex=float(ttl))
+                return 1
+            if "account_action_transition" in script:
+                (operation,) = args
+                state = self.hget(name, "state")
+                if state is None:
+                    return "expired"
+                if operation == "verify" and state == "pending":
+                    self.hset(name, "state", "verified")
+                    return "verified"
+                if operation == "cancel" and state in {"pending", "verified"}:
+                    self.hset(name, "state", "cancelled")
+                    return "cancelled"
+                return state
+            if "account_action_consume" in script:
+                uid, sid, action_hash = args
+                row = self.hgetall(name)
+                if row.get("state") != "verified" or row.get("uid") != str(uid) or row.get("sid") != str(sid) or row.get("action_hash") != str(action_hash):
+                    return 0
+                self.hset(name, "state", "consumed")
+                self.hdel(name, "action_hash")
+                return 1
+            if "worker_lease_renew" in script:
+                token, ttl = args
+                if self.get(name) != str(token):
+                    return 0
+                return self.expire(name, float(ttl))
             if "auth_rotate_refresh" in script:
                 old_hash, new_hash, channel, ttl = args
                 stored_channel = self.hget(name, "channel") or "web"

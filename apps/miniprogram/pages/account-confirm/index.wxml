@@ -1,0 +1,15 @@
+<brand-navigation />
+<view class="page" style="min-height:calc(100vh - {{statusBarHeight + 50}}px)">
+  <view class="content">
+    <view class="identity"><text class="title">确认注销身份</text><text class="subtitle">{{message}}</text></view>
+    <view class="actions" wx:if="{{phase === 'pending'}}">
+      <button wx:if="{{privacyAuthorizationRequired}}" class="ui-primary-button confirm-primary-button" open-type="agreePrivacyAuthorization" bindagreeprivacyauthorization="handleConfirm" disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted}}">{{submitting ? '正在确认…' : '确认当前微信身份'}}</button>
+      <button wx:else class="ui-primary-button confirm-primary-button" bindtap="handleConfirm" disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted}}">{{submitting ? '正在确认…' : '确认当前微信身份'}}</button>
+      <button class="secondary-button" bindtap="handleClose" disabled="{{submitting}}">关闭确认</button>
+    </view>
+    <view class="consent" wx:if="{{phase === 'pending'}}">
+      <checkbox-group bindchange="handleAgreementChange"><label class="agreement-row"><checkbox value="accepted" checked="{{agreementAccepted}}" color="#17191c" /><text class="agreement-copy">阅读并同意<text class="agreement-link" catchtap="openPrivacyContract">{{privacyContractName}}</text></text></label></checkbox-group>
+      <text wx:if="{{!privacyReady}}" class="agreement-hint">正在读取隐私保护指引…</text><text wx:elif="{{!privacySupported}}" class="agreement-hint">请升级微信后重试</text>
+    </view>
+  </view>
+</view>

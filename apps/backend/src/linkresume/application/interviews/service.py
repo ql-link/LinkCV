@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from linkresume.modules.identity.dependencies import lock_active_user
+
 from linkresume.application.interviews.resume_binding_service import bind_resume
 from linkresume.core.errors import ApiError
 
@@ -312,6 +314,7 @@ def ensure_pending_application_for_job(
     *,
     notes: str | None = None,
 ) -> tuple[JobApplication, bool]:
+    lock_active_user(db, user_id)
     locked_job = db.scalar(
         select(JobDescription)
         .where(
@@ -358,6 +361,7 @@ def ensure_pending_application_for_job(
 def create_application(
     db: Session, user_id: int, payload: JobApplicationCreateRequest
 ) -> JobApplication:
+    lock_active_user(db, user_id)
     job_description_id = parse_decimal_id(payload.job_description_id)
     if job_description_id is None:
         raise InterviewNotFound
@@ -626,6 +630,7 @@ def add_application_stage(
     application_id: int,
     payload: AddApplicationStageRequest,
 ) -> StageChangeResult:
+    lock_active_user(db, user_id)
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -736,6 +741,7 @@ def terminate_application(
     application_id: int,
     payload: TerminateApplicationRequest,
 ) -> StageChangeResult:
+    lock_active_user(db, user_id)
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -821,6 +827,7 @@ def update_application(
     application_id: int,
     payload: JobApplicationUpdateRequest,
 ) -> JobApplication:
+    lock_active_user(db, user_id)
     application = db.scalar(select(JobApplication).where(JobApplication.id == application_id, JobApplication.user_id == user_id).with_for_update())
     if application is None:
         raise InterviewNotFound
@@ -1035,6 +1042,7 @@ def delete_application(
 ) -> None:
     # delete_asset_object is retained for signature compatibility; linked
     # datasets are only unlinked (FK ON DELETE SET NULL), never removed here.
+    lock_active_user(db, user_id)
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -1201,6 +1209,7 @@ def create_session(
     application_id: int,
     payload: InterviewSessionCreateRequest,
 ) -> InterviewSession:
+    lock_active_user(db, user_id)
     application = require_owned_application(db, user_id, application_id)
     if (
         application.status != "active"
@@ -1546,6 +1555,7 @@ def update_answer_plan(
 def complete_interview(
     db: Session, user_id: int, session_id: int, payload: CompleteInterviewRequest
 ) -> InterviewSession:
+    lock_active_user(db, user_id)
     result = require_owned_session(db, user_id, session_id, for_update=True)
     session = result.session
     if result.application.archived_at is not None:
@@ -1582,6 +1592,7 @@ def complete_interview(
 def cancel_interview(
     db: Session, user_id: int, session_id: int, payload: CancelInterviewRequest
 ) -> InterviewSession:
+    lock_active_user(db, user_id)
     result = require_owned_session(db, user_id, session_id, for_update=True)
     session = result.session
     if result.application.archived_at is not None:
@@ -1613,6 +1624,7 @@ def cancel_interview(
 
 
 def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication:
+    lock_active_user(db, user_id)
     result = require_owned_session(db, user_id, session_id, for_update=True)
     db.execute(
         update(UserDataset)
@@ -1685,6 +1697,7 @@ def attach_dataset_to_session(
     db: Session, user_id: int, session_id: int, dataset_id: int
 ) -> UserDataset:
     """Link an owned, unlinked dataset to an owned session (idempotent)."""
+    lock_active_user(db, user_id)
     require_owned_session(db, user_id, session_id, for_update=True)
     dataset, task = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if task.upload_status != "succeeded":
@@ -1704,6 +1717,7 @@ def unlink_session_dataset(
     db: Session, user_id: int, session_id: int, dataset_id: int
 ) -> None:
     """Remove the session link; the dataset file stays in the library."""
+    lock_active_user(db, user_id)
     require_owned_session(db, user_id, session_id, for_update=True)
     dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if dataset.interview_session_id != session_id:
@@ -1715,6 +1729,7 @@ def unlink_session_dataset(
 
 def unlink_owned_dataset(db: Session, user_id: int, dataset_id: int) -> None:
     """Legacy `interview-assets/{id}` removal: unlink from whatever session."""
+    lock_active_user(db, user_id)
     dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if dataset.interview_session_id is None:
         raise InterviewAssetNotLinked

@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import logging
 
 from fastapi import APIRouter, Depends, Response
@@ -60,6 +61,7 @@ def update_profile(
     user: User = Depends(get_current_miniprogram_user),
     db: Session = Depends(get_db),
 ) -> MiniProgramProfileResponse:
+    user = lock_active_user(db, user.id)
     nickname = payload.nickname.strip()
     if not nickname or len(nickname) > NICKNAME_MAX_LENGTH:
         raise ApiError(400, "INVALID_NICKNAME")
@@ -81,6 +83,7 @@ def upload_avatar(
     db: Session = Depends(get_db),
     storage: AssetStorage = Depends(get_storage),
 ) -> AvatarResponse:
+    user = lock_active_user(db, user.id)
     image = decode_image_data_url(payload.dataUrl)
     if image is None:
         raise ApiError(400, "INVALID_IMAGE")

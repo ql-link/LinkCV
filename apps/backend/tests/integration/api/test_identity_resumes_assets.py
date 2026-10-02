@@ -1,3 +1,4 @@
+from pydantic import SecretStr
 import base64
 from collections.abc import Iterator
 from types import SimpleNamespace
@@ -550,6 +551,7 @@ def test_miniprogram_bearer_can_only_read_its_own_resumes() -> None:
             app.state.redis,
             channel=MINIPROGRAM_CHANNEL,
         )
+    app.state.settings = app.state.settings.model_copy(update={"app_environment": "production", "wechat_appid": "wx-fictional", "wechat_secret": SecretStr("fictional-secret")})
     headers = {"Authorization": f"Bearer {credentials.access_token}"}
     with TestClient(app) as mini_client:
         listed = mini_client.get("/api/miniprogram/v2/resumes", headers=headers)

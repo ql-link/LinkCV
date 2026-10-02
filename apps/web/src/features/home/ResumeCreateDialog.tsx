@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 
@@ -18,16 +19,17 @@ type ResumeCreateDialogProps = {
 };
 
 function createErrorMessage(error: unknown) {
-  if (!(error instanceof ApiRequestError)) return "创建简历失败，请稍后重试。";
-  if (error.message === "INVALID_RESUME_TITLE") return "请输入 1–255 个字符的简历名称。";
-  if (error.message === "RESUME_TITLE_CONFLICT") return "该名称已经存在，请换一个名称。";
-  if (error.message === "RESUME_LIMIT_REACHED") return "简历数量已达上限，请先清理已有简历。";
-  if (error.message === "TEMPLATE_INACTIVE") return "所选模板已不可用，请重新选择。";
-  return "创建简历失败，请稍后重试。";
+  if (!(error instanceof ApiRequestError)) return t("创建简历失败，请稍后重试。");
+  if (error.message === "INVALID_RESUME_TITLE") return t("请输入 1–255 个字符的简历名称。");
+  if (error.message === "RESUME_TITLE_CONFLICT") return t("该名称已经存在，请换一个名称。");
+  if (error.message === "RESUME_LIMIT_REACHED") return t("简历数量已达上限，请先清理已有简历。");
+  if (error.message === "TEMPLATE_INACTIVE") return t("所选模板已不可用，请重新选择。");
+  return t("创建简历失败，请稍后重试。");
 }
 
 // 02.1a 新建简历（760 宽，布局同「简历模板」预览弹窗）：大预览 + 左右箭头滑动切换 → 简历名称 → 创建并进入编辑器
 export function ResumeCreateDialog({ onClose, initialTemplateId = null }: ResumeCreateDialogProps) {
+  useLocale();
   const createResume = useResumeStore((state) => state.createResume);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -87,12 +89,12 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
     if (submitting) return;
     const normalizedTitle = title.trim();
     if (!normalizedTitle) {
-      fail("请输入简历名称。");
+      fail(t("请输入简历名称。"));
       titleInputRef.current?.focus();
       return;
     }
     if (!selectedTemplate) {
-      fail("请先选择一套简历模板。");
+      fail(t("请先选择一套简历模板。"));
       return;
     }
     setSubmitting(true);
@@ -111,7 +113,7 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
 
   return (
     // 布局参照「简历模板」预览弹窗：顶部标题 + 当前模板名，中间整块点阵舞台放大预览，左右箭头切换（带滑动过渡），下面填名称
-    <Dialog width={760} label="新建简历" onClose={close} closable={!submitting} className="hv3-create is-preview">
+    <Dialog width={760} label={t("新建简历")} onClose={close} closable={!submitting} className="hv3-create is-preview">
       <form
         className="hv3-create-form"
         onSubmit={(event) => {
@@ -120,7 +122,7 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
         }}
       >
         <div className="hv3-create-head">
-          <h2 className="v3-dialog-title">新建简历</h2>
+          <h2 className="v3-dialog-title">{t("新建简历")}</h2>
           <div className="hv3-create-head-meta">
             {selectedTemplate ? (
               <SlideSwap itemKey={selectedTemplate.id} direction={slideDirection} distance={16} className="hv3-create-head-swap">
@@ -129,23 +131,22 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
                   {[...(selectedTemplate.style_categories ?? []), ...(selectedTemplate.use_cases ?? [])].slice(0, 3).map((tag) => <span key={tag} className="v3-chip">{tag}</span>)}
                 </p>
               </SlideSwap>
-            ) : <p className="v3-dialog-sub">选一套模板，再起个名字，创建后直接进入编辑器。</p>}
+            ) : <p className="v3-dialog-sub">{t("选一套模板，再起个名字，创建后直接进入编辑器。")}</p>}
           </div>
         </div>
 
         <div className="v3-stage has-dots hv3-create-stage" aria-labelledby="hv3-create-template-title">
-          <span id="hv3-create-template-title" className="visually-hidden">选择模板</span>
-          {loading && <div className="hv3-create-state" role="status">正在加载简历模板…</div>}
+          <span id="hv3-create-template-title" className="visually-hidden">{t("选择模板")}</span>
+          {loading && <div className="hv3-create-state" role="status">{t("正在加载简历模板…")}</div>}
           {!loading && loadFailed && (
             <div className="hv3-create-state" role="alert">
-              <p>模板暂时无法加载，请检查网络后重试。</p>
+              <p>{t("模板暂时无法加载，请检查网络后重试。")}</p>
               <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void loadTemplates()}>
-                <Icon name="refresh" size={13} />重新加载
-              </button>
+                <Icon name="refresh" size={13} />{t("重新加载")}</button>
             </div>
           )}
           {!loading && !loadFailed && templates.length === 0 && (
-            <div className="hv3-create-state" role="status">当前没有可用模板，暂时无法新建简历。</div>
+            <div className="hv3-create-state" role="status">{t("当前没有可用模板，暂时无法新建简历。")}</div>
           )}
           {!loading && !loadFailed && selectedTemplate && (
             <>
@@ -153,7 +154,7 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
                 ref={carouselRef}
                 className="hv3-create-carousel"
                 role="listbox"
-                aria-label="选择简历模板"
+                aria-label={t("选择简历模板")}
                 aria-activedescendant={`hv3-create-template-${selectedTemplate.id}`}
                 tabIndex={submitting ? -1 : 0}
                 onKeyDown={handleTemplateKeyDown}
@@ -164,7 +165,7 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
                     className="hv3-create-card"
                     role="option"
                     aria-selected="true"
-                    aria-label={`${selectedTemplate.name}，已选择`}
+                    aria-label={t("{value0}，已选择", { value0: selectedTemplate.name })}
                   >
                     <span className="hv3-create-paper" aria-hidden="true">
                       <ResumePreview data={selectedTemplate.data} style={selectedTemplate.style} layoutPlan={selectedTemplate.layout_plan} />
@@ -172,10 +173,10 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
                   </div>
                 </SlideSwap>
               </div>
-              <button type="button" className="hv3-create-nav is-prev" aria-label="上一个模板" disabled={navDisabled} onClick={() => { moveSelection(-1); carouselRef.current?.focus({ preventScroll: true }); }}>
+              <button type="button" className="hv3-create-nav is-prev" aria-label={t("上一个模板")} disabled={navDisabled} onClick={() => { moveSelection(-1); carouselRef.current?.focus({ preventScroll: true }); }}>
                 <Icon name="chevl" size={14} />
               </button>
-              <button type="button" className="hv3-create-nav is-next" aria-label="下一个模板" disabled={navDisabled} onClick={() => { moveSelection(1); carouselRef.current?.focus({ preventScroll: true }); }}>
+              <button type="button" className="hv3-create-nav is-next" aria-label={t("下一个模板")} disabled={navDisabled} onClick={() => { moveSelection(1); carouselRef.current?.focus({ preventScroll: true }); }}>
                 <Icon name="chev" size={14} />
               </button>
             </>
@@ -184,8 +185,8 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
 
         <div className="hv3-create-name-field">
           <div className="hv3-step-head">
-            <h3><label htmlFor="new-resume-title">简历名称</label></h3>
-            <span className="hv3-step-aside">只给自己看，方便在列表里区分</span>
+            <h3><label htmlFor="new-resume-title">{t("简历名称")}</label></h3>
+            <span className="hv3-step-aside">{t("只给自己看，方便在列表里区分")}</span>
           </div>
           <input
             ref={titleInputRef}
@@ -194,7 +195,7 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
             name="resume-title"
             autoComplete="off"
             maxLength={255}
-            placeholder="例如：后端工程师 · 字节跳动"
+            placeholder={t("例如：后端工程师 · 字节跳动")}
             value={title}
             disabled={submitting}
             data-autofocus
@@ -209,13 +210,13 @@ export function ResumeCreateDialog({ onClose, initialTemplateId = null }: Resume
         <div className="v3-dialog-foot hv3-foot">
           <div className="v3-dialog-foot-left">
             {templates.length > 0 && (
-              <output className="hv3-create-count" aria-live="polite" aria-label="当前模板位置">第 {selectedIndex + 1} / {templates.length} 套</output>
+              <output className="hv3-create-count" aria-live="polite" aria-label={t("当前模板位置")}>{t("第 ")}{selectedIndex + 1} / {templates.length}{t(" 套")}</output>
             )}
-            <span className="hv3-foot-note">模板之后可以在编辑器里随时切换</span>
+            <span className="hv3-foot-note">{t("模板之后可以在编辑器里随时切换")}</span>
           </div>
-          <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" disabled={submitting} onClick={onClose}>取消</button>
+          <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" disabled={submitting} onClick={onClose}>{t("取消")}</button>
           <button type="submit" className="v3-btn v3-btn-dark hv3-create-submit" disabled={submitting || loading || loadFailed || !selectedTemplate}>
-            {submitting ? "正在创建…" : "创建并进入编辑器"}
+            {submitting ? t("正在创建…") : t("创建并进入编辑器")}
           </button>
         </div>
       </form>

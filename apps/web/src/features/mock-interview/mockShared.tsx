@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale, weekdayName, weekdays } from "@/i18n";
 // 07 模拟面试（文字一期）各页面共用的小件：时间格式化、场次订阅 hook、雷达图、题目分组。
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -32,7 +33,7 @@ export function dateTimeLabel(iso: string | null | undefined) {
 }
 
 export function weekday(iso: string) {
-  return `周${WEEK[new Date(iso).getDay()]}`;
+  return weekdayName(new Date(iso).getDay());
 }
 
 function startOfDay(date: Date) {
@@ -42,27 +43,27 @@ function startOfDay(date: Date) {
 // 日期卡顶部色带：今天 / 明天 / MM-DD
 export function dayBand(iso: string, now = new Date()) {
   const days = Math.round((startOfDay(new Date(iso)) - startOfDay(now)) / 86_400_000);
-  if (days === 0) return "今天";
-  if (days === 1) return "明天";
+  if (days === 0) return t("今天");
+  if (days === 1) return t("明天");
   return mmdd(iso);
 }
 
 // 距离开始还有多久：「5 小时后」「32 分钟后」「3 天后」
 export function countdown(iso: string, now = Date.now()) {
   const minutes = Math.max(0, Math.round((new Date(iso).getTime() - now) / 60_000));
-  if (minutes < 60) return `${Math.max(1, minutes)} 分钟后`;
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} 小时后`;
-  return `${Math.round(minutes / 60 / 24)} 天后`;
+  if (minutes < 60) return t("{value0} 分钟后", { value0: Math.max(1, minutes) });
+  if (minutes < 60 * 24) return t("{value0} 小时后", { value0: Math.round(minutes / 60) });
+  return t("{value0} 天后", { value0: Math.round(minutes / 60 / 24) });
 }
 
 // 「18 分钟前」
 export function timeAgo(iso: string | null | undefined, now = Date.now()) {
   if (!iso) return "";
   const minutes = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000));
-  if (minutes < 1) return "刚刚";
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (minutes < 60 * 24) return `${Math.round(minutes / 60)} 小时前`;
-  return `${Math.round(minutes / 60 / 24)} 天前`;
+  if (minutes < 1) return t("刚刚");
+  if (minutes < 60) return t("{value0} 分钟前", { value0: minutes });
+  if (minutes < 60 * 24) return t("{value0} 小时前", { value0: Math.round(minutes / 60) });
+  return t("{value0} 天前", { value0: Math.round(minutes / 60 / 24) });
 }
 
 // 计时器 mm:ss（超过一小时显示 h:mm:ss）
@@ -81,7 +82,7 @@ export function charCount(text: string | null | undefined) {
 export function interviewTitle(item: Pick<MockInterviewSummary, "company_name" | "job_title" | "target_role" | "interview_type">) {
   if (item.company_name) return `${item.company_name}${item.job_title ? ` · ${item.job_title}` : ""}`;
   if (item.target_role) return item.target_role;
-  return `通用练习 · ${INTERVIEW_TYPE_LABELS[item.interview_type]}`;
+  return t("通用练习 · {value0}", { value0: INTERVIEW_TYPE_LABELS[item.interview_type] });
 }
 
 export function typeDifficulty(item: Pick<MockInterviewSummary, "interview_type" | "difficulty">) {
@@ -90,7 +91,7 @@ export function typeDifficulty(item: Pick<MockInterviewSummary, "interview_type"
 
 // 07.2 页头标题：「模拟面试 · 三面准备」/ 无阶段时「模拟面试 · 通用练习」
 export function sessionHeading(item: Pick<MockInterviewSummary, "stage_label">) {
-  return item.stage_label ? `模拟面试 · ${item.stage_label}准备` : "模拟面试 · 通用练习";
+  return item.stage_label ? t("模拟面试 · {value0}准备", { value0: item.stage_label }) : t("模拟面试 · 通用练习");
 }
 
 export function sessionEyebrow(item: MockInterviewSummary) {
@@ -98,13 +99,13 @@ export function sessionEyebrow(item: MockInterviewSummary) {
 }
 
 export const STATUS_LABELS: Record<MockInterviewStatus, string> = {
-  preparing: "准备中",
-  preparation_failed: "准备失败",
-  in_progress: "进行中",
-  evaluating: "评估中",
-  evaluation_failed: "评估失败",
-  completed: "已完成",
-  abandoned: "已放弃",
+  get preparing() { return t("准备中"); },
+  get preparation_failed() { return t("准备失败"); },
+  get in_progress() { return t("进行中"); },
+  get evaluating() { return t("评估中"); },
+  get evaluation_failed() { return t("评估失败"); },
+  get completed() { return t("已完成"); },
+  get abandoned() { return t("已放弃"); },
 };
 
 // 分数配色：≥75 绿，≥60 橙，其余红（报告逐题、练习记录共用）
@@ -115,10 +116,10 @@ export function scoreTone(score: number) {
 }
 
 export function scoreGrade(score: number) {
-  if (score >= 85) return "优秀";
-  if (score >= 70) return "良好";
-  if (score >= 60) return "合格";
-  return "待提升";
+  if (score >= 85) return t("优秀");
+  if (score >= 70) return t("良好");
+  if (score >= 60) return t("合格");
+  return t("待提升");
 }
 
 // 主问题与其追问组成一组，按出现顺序
@@ -199,6 +200,7 @@ export function RadarChart({
   weakIndex?: number;
   showRings?: boolean;
 }) {
+  useLocale();
   const cx = width / 2;
   const count = Math.max(3, items.length);
   const point = (index: number, ratio: number) => {
@@ -232,6 +234,7 @@ export function radarLabelPosition(index: number, count: number, cx: number, cy:
 
 // 面试官头像（设计稿 icon/feather：圆底羽毛笔）
 export function InterviewerMark({ size = 24 }: { size?: number }) {
+  useLocale();
   return (
     <span className="mi-feather" style={{ width: size, height: size }} aria-hidden="true">
       <svg width={size * 0.58} height={size * 0.58} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

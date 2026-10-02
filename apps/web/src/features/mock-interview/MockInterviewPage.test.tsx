@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockInterviewPage } from "./MockInterviewPage";
 import { mockInterviewApi, resetMockInterviewStore } from "./mockInterviewApi";
+import { setLocale } from "../../i18n";
 
 // 真实接口（简历 / 求职记录 / 面试安排 / 资料）全部替身；模拟面试本身走本地假数据层
 const mocks = vi.hoisted(() => ({
@@ -39,9 +40,24 @@ beforeEach(() => {
   mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
   mocks.listDatasets.mockResolvedValue({ datasets: [] });
 });
-afterEach(() => { vi.useRealTimers(); go("/"); });
+afterEach(() => { setLocale("zh-CN", false); vi.useRealTimers(); go("/"); });
 
 describe("07 模拟面试 · 文字面试", () => {
+  it("英文设置摘要不残留中文提示，也不会改变默认的面试作答语言", async () => {
+    setLocale("en-US", false);
+    go("/mock-interviews/new?application=app-1");
+    render(<MockInterviewPage view="new" applicationId="app-1" />);
+    await waitFor(() => expect(screen.getByLabelText("Resume")).toHaveTextContent(resume.title));
+    const summary = screen.getByRole("button", { name: /More settings/ });
+    expect(summary).toHaveTextContent("Chinese");
+    expect(summary).toHaveTextContent("Allow follow-ups");
+    expect(summary).not.toHaveTextContent("允许追问");
+    const create = vi.spyOn(mockInterviewApi, "create").mockRejectedValueOnce(new Error("Fictional test failure"));
+    fireEvent.click(screen.getByRole("button", { name: "Start interview" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ language: "zh" })));
+    create.mockRestore();
+  });
+
   it("新建 → 准备中 → 作答（逐字输出、追问）→ 跳过 → 结束 → 评估报告与单题详情", async () => {
     go("/mock-interviews/new?application=app-1");
     const view = render(<MockInterviewPage view="new" applicationId="app-1" />);

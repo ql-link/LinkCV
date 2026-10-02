@@ -43,3 +43,8 @@ LinkResume 插件制品子系统管理单一当前浏览器扩展 ZIP 的校验�
 ## 修改联动与验证
 
 修改包结构、版本、对象键或生命周期时，需同步 `validator.py`、`service.py`、普通/管理员路由、两个 Web 面板、[浏览器插件架构](extension.md)、HTTP 契约和对象存储说明。主要验证入口为 `test_plugin_releases.py`、`modules/plugin_releases/test_service.py`、`test_validator.py`、Web `PluginReleasePanel` 与 `PluginInstallDialog` 测试。
+
+
+## 账号能力与客户端边界
+
+普通 Web 的插件安装对话框和下载错误提示支持账号界面语言；制品 URL、发布指针、版本和下载协议不随语言改变。见[Web 语言边界](web.md#普通工作区界面语言)。

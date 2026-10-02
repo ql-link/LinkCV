@@ -26,6 +26,7 @@ from linkresume.core.security import (
 )
 from linkresume.integrations.wechat_client import WechatApiError, WechatClient
 from linkresume.modules.identity.dependencies import get_settings
+from linkresume.modules.identity.capabilities import require_wechat_enabled
 from linkresume.modules.identity.models import User
 from linkresume.modules.product_events import service as product_events
 from linkresume.modules.product_events.service import RegistrationMethod
@@ -39,7 +40,13 @@ from linkresume.modules.identity.session_service import (
     rotate_session,
 )
 
-router = APIRouter(prefix="/auth/wechat", tags=["identity"])
+def require_wechat_environment(settings: Settings = Depends(get_settings)) -> None:
+    require_wechat_enabled(settings)
+
+
+router = APIRouter(
+    prefix="/auth/wechat", tags=["identity"], dependencies=[Depends(require_wechat_environment)]
+)
 logger = logging.getLogger(__name__)
 SCENE_CLAIM_TIMEOUT_SECONDS = 30
 
@@ -276,6 +283,7 @@ def create_login_qrcode(
 
 @router.get("/status", response_model=WeChatStatusResponse)
 def login_status(
+    request: Request,
     response: Response,
     scene: str = Query(min_length=8, max_length=128),
     poll_token: str | None = Query(default=None, min_length=1, max_length=128),
@@ -307,11 +315,14 @@ def login_status(
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
     user = db.scalar(select(User).where(User.id == int(uid)))
-    if user is None or user.status != 1:
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
 
-    credentials = issue_session(user, settings, redis_client, channel=WEB_CHANNEL)
+    credentials = issue_session(
+        user, settings, redis_client, channel=WEB_CHANNEL,
+        user_agent=request.headers.get("user-agent", ""),
+    )
     previous_sid = redis_client.eval(
         SWAP_WEB_SESSION_SCRIPT,
         1,
@@ -393,7 +404,7 @@ def confirm_login(
             settings.wechat_scene_ttl_seconds,
         )
         raise
-    if user.status != 1:
+    if user.status != 1 or user.deletion_requested_at is not None:
         redis_client.eval(
             FINALIZE_SCENE_SCRIPT,
             1,
@@ -475,7 +486,7 @@ def miniprogram_login(
         allow_registration=payload.privacy_accepted,
         method="wechat_miniprogram",
     )
-    if user.status != 1:
+    if user.status != 1 or user.deletion_requested_at is not None:
         raise ApiError(401, "ACCOUNT_DISABLED")
     user.last_login_at = utc_now()
     db.commit()

@@ -99,3 +99,8 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 `modules/agent/resume_tools.py` 的资料检索优先读取 `user_dataset.content_object_name`，没有当前覆盖指针的历史资料回退到成功解析任务对象。来源 ID 使用 `dataset:<id>:content-<content_revision>`；序号为 0 的历史资料继续兼容原源文件摘要。引用校验使用同一规则，因此手动保存后旧来源 ID 失效，不能以未改变的源文件 SHA-256 冒充正文仍未变化。该读取与资料页面使用同一正文真值，详细写入和替换规则见[资料集功能](../features/datasets.md)。
 
 `0089` 后，`context_service` 已移除旧简历版本的列表、解析与素材构造分支，不再导入历史 ORM。旧 `resume_version` 类型仅在入口保留拒绝逻辑，返回 `409 AGENT_CONTEXT_RETIRED`；当前简历上下文和提案继续使用 `resumes`。
+
+
+## 账号能力与客户端边界
+
+结构化上下文增加 user_profile，后端按当前用户和版本读取求职画像，只传 profile_markdown，不传登录身份和联系邮箱。Pi 上下文白名单接受这一只读字段，不能据此写画像或自动改简历。Agent 新运行、提案操作、模型日志及终态消息写回与账号注销协调；前端界面语言不改变模型正文或模拟面试作答语言。见[账号功能](../features/identity-account.md)。

@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import asyncio
 import logging
 from collections.abc import Iterator
@@ -280,6 +281,7 @@ async def upload_dataset(
     storage: AssetStorage = Depends(get_storage),
     dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     idempotency_key = canonical_dataset_idempotency_key(idempotency_key_header)
     if folder_id is None or not folder_id.strip():
         raise ApiError(400, "DATASET_FOLDER_REQUIRED")
@@ -465,6 +467,7 @@ def create_folder(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DatasetFolderRecord:
+    user = lock_active_user(db, user.id)
     cleaned_name = validate_folder_name(payload.name)
     current_count = (
         db.execute(
@@ -514,6 +517,7 @@ def rename_folder(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DatasetFolderRecord:
+    user = lock_active_user(db, user.id)
     cleaned_name = validate_folder_name(payload.name)
     content_service.lock_user(db, user.id)
     folder = db.execute(
@@ -573,6 +577,7 @@ def delete_folder(
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DatasetFolderDeleteResponse:
+    user = lock_active_user(db, user.id)
     content_service.lock_user(db, user.id)
     folder = db.execute(
         select(UserDatasetFolder)
@@ -629,6 +634,7 @@ def move_dataset(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -670,6 +676,7 @@ def move_datasets_batch(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DatasetBatchMoveResponse:
+    user = lock_active_user(db, user.id)
     if not payload.dataset_ids:
         raise ApiError(400, "DATASET_IDS_EMPTY")
 
@@ -733,6 +740,7 @@ def rename_dataset(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -768,6 +776,7 @@ async def retry_dataset(
     settings: Settings = Depends(get_settings),
     storage: AssetStorage = Depends(get_storage),
 ) -> UserDatasetRecord:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -818,6 +827,7 @@ def delete_dataset(
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> UserDatasetDeleteResponse:
+    user = lock_active_user(db, user.id)
     row = load_owned_dataset(db, dataset_id, user.id)
     if row is None:
         raise ApiError(404, "DATASET_NOT_FOUND")
@@ -973,6 +983,7 @@ async def replace_dataset_file(
     storage: AssetStorage = Depends(get_storage),
     dataset_admission: ImportAdmissionController = Depends(get_dataset_admission),
 ):
+    user = lock_active_user(db, user.id)
     key = canonical_dataset_idempotency_key(idempotency_key)
     if not confirm_replace:
         raise ApiError(422, "REPLACEMENT_CONFIRMATION_REQUIRED")

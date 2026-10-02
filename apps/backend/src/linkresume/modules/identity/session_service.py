@@ -45,6 +45,7 @@ def issue_session(
     redis_client: "redis.Redis",
     *,
     channel: str,
+    user_agent: str = "",
 ) -> SessionCredentials:
     if channel not in {WEB_CHANNEL, MINIPROGRAM_CHANNEL}:
         raise ValueError("unsupported session channel")
@@ -58,6 +59,7 @@ def issue_session(
             "rhash": hash_secret(secret),
             "channel": channel,
             "created_at": utc_now().isoformat(),
+            "user_agent": user_agent[:512],
         },
     )
     redis_client.expire(key, refresh_max_age_seconds(settings))
@@ -89,8 +91,8 @@ def rotate_session(
     if not uid.isdecimal():
         revoke_session(redis_client, sid)
         return None
-    user = db.scalar(select(User).where(User.id == int(uid)))
-    if user is None or user.status != 1:
+    user = db.scalar(select(User).where(User.id == int(uid)).with_for_update().execution_options(populate_existing=True))
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         revoke_session(redis_client, sid, int(uid))
         return None
 

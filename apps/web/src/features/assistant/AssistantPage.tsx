@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { PageLoading } from "@/components/ui/page-loading";
 import {
@@ -60,17 +61,18 @@ import "./assistant.css";
 
 const NEW_CONVERSATION_KEY = "__assistant_new__";
 const CONTEXT_TYPES: Array<{ type: AgentContextType; label: string; icon: V3IconName }> = [
-  { type: "resume", label: "当前简历", icon: "resume" },
-  { type: "dataset", label: "资料", icon: "folder" },
-  { type: "job", label: "岗位", icon: "brief" },
-  { type: "application", label: "求职进程", icon: "flag" },
-  { type: "interview", label: "面试记录", icon: "cal" },
+  { type: "user_profile", get label() { return t("个人画像"); }, icon: "user" },
+  { type: "resume", get label() { return t("当前简历"); }, icon: "resume" },
+  { type: "dataset", get label() { return t("资料"); }, icon: "folder" },
+  { type: "job", get label() { return t("岗位"); }, icon: "brief" },
+  { type: "application", get label() { return t("求职进程"); }, icon: "flag" },
+  { type: "interview", get label() { return t("面试记录"); }, icon: "cal" },
 ];
 
 const PHASE_LABELS: Record<string, string> = {
-  loading_context: "正在读取所选资料…",
-  comparing_context: "正在对比岗位 JD 与项目经历…",
-  drafting: "正在整理建议…",
+  get loading_context() { return t("正在读取所选资料…"); },
+  get comparing_context() { return t("正在对比岗位 JD 与项目经历…"); },
+  get drafting() { return t("正在整理建议…"); },
 };
 
 const MESSAGE_FOLLOW_THRESHOLD = 96;
@@ -274,7 +276,7 @@ function blankSession(): AgentSession {
   return {
     id: NEW_CONVERSATION_KEY,
     selected_model_id: null,
-    title: "新对话",
+    title: t("新对话"),
     pinned: false,
     status: "active",
     last_message_at: null,
@@ -296,7 +298,7 @@ function blankConversation(): ConversationState {
     cancelling: false,
     stage: "idle",
     runId: null,
-    phase: "正在准备…",
+    phase: t("正在准备…"),
     activityText: "",
     activities: [],
     referencedContextCount: 0,
@@ -347,7 +349,7 @@ function withoutContextToken(draft: string, context: AgentContextSnapshot) {
 }
 
 function contextLabel(type: AgentContextType) {
-  return CONTEXT_TYPES.find((item) => item.type === type)?.label ?? "资料";
+  return CONTEXT_TYPES.find((item) => item.type === type)?.label ?? t("资料");
 }
 
 function contextIcon(type: AgentContextType): V3IconName {
@@ -377,6 +379,7 @@ function UserMessageContent({
   unavailableKeys: string[];
   onOpen: (context: AgentContextSnapshot) => void;
 }) {
+  useLocale();
   const visibleContexts = contexts.filter((context) => context.presentation !== "implicit");
   const attachedResumes = visibleContexts.filter((context) => (context.type === "resume" || context.type === "resume_version") && !content.includes(`@${context.label}`));
   const inlineContexts = visibleContexts.filter((context) => !attachedResumes.includes(context));
@@ -394,13 +397,13 @@ function UserMessageContent({
               type="button"
               key={contextKey(context)}
               className={`assistant-resume-chip${isActive(context) ? " is-active" : ""}`}
-              aria-label={`引用文件 ${context.label}`}
+              aria-label={t("引用文件 {value0}", { value0: context.label })}
               disabled={isUnavailable(context)}
               onClick={() => onOpen(context)}
             >
               <Icon name="resume" size={12} />
-              <span>{context.label}</span>
-              <small>简历</small>
+              <span>{context.type === "user_profile" ? t("个人画像") : context.label}</span>
+              <small>{t("简历")}</small>
             </button>
           ))}
         </div>
@@ -413,11 +416,11 @@ function UserMessageContent({
               className={`assistant-message-context-token${isActive(segment.context) ? " is-active" : ""}`}
               key={segment.key}
               data-context-type={segment.context.type}
-              aria-label={`引用文件 ${segment.context.label}`}
+              aria-label={t("引用文件 {value0}", { value0: segment.context.label })}
               disabled={!previewTabForContext(segment.context) || isUnavailable(segment.context)}
               onClick={() => onOpen(segment.context)}
             >
-              {segment.context.label}
+              {segment.context.type === "user_profile" ? t("个人画像") : segment.context.label}
             </button>
           ))}
         </div>
@@ -433,7 +436,7 @@ function proposalResumeLabel(state: ConversationState, resumeId: string) {
   ].find((context) => (
     context.type === "resume" || context.type === "resume_version"
   ) && (context.resume_id ?? context.id) === resumeId);
-  return referenced?.label ?? `简历 #${resumeId}`;
+  return referenced?.label ?? t("简历 #{value0}", { value0: resumeId });
 }
 
 export function parseAgentTimestamp(value: string | null | undefined): number | null {
@@ -504,7 +507,7 @@ function normalizeContext(value: unknown, fallbackType: AgentContextType): Agent
   if (!CONTEXT_TYPES.some((entry) => entry.type === type)) return null;
   const id = item.id ?? item.object_id ?? item.resume_id;
   if (typeof id !== "string" && typeof id !== "number") return null;
-  const label = item.label ?? item.title ?? item.name ?? item.job_title ?? "未命名资料";
+  const label = item.label ?? item.title ?? item.name ?? item.job_title ?? t("未命名资料");
   return {
     type: type as AgentContextType,
     id: String(id),
@@ -527,22 +530,22 @@ function safeAgentError(error: unknown) {
   const code = error instanceof ApiRequestError ? error.message : "";
   if (code === "AGENT_RUN_IN_PROGRESS") return null;
   const messages: Record<string, string> = {
-    AGENT_CONTEXT_NOT_FOUND: "所选资料已不可用，请重新选择。",
-    AGENT_CONTEXT_STALE: "所选资料已发生变化，请刷新选择后重试。",
-    AGENT_CONTEXT_READ_FAILED: "所选资料暂时无法读取，请稍后重试。",
-    AGENT_CLARIFICATION_CONTEXT_CONFLICT: "这次回答选择了另一份资料，请继续使用原问题对应的资料。",
-    AGENT_CLARIFICATION_CONTEXT_INVALID: "原问题的资料记录已损坏，请重新发起请求。",
-    AGENT_SESSION_NOT_FOUND: "对话不存在或已无法访问。",
-    AGENT_UNAVAILABLE: "智能助手暂时不可用，草稿和已选资料不会丢失。",
-    AGENT_MODEL_UNAVAILABLE: "当前模型暂时不可用，请稍后重试。",
-    AGENT_STREAM_INCOMPLETE: "智能助手连接意外中断，请稍后重试。",
-    RESUME_EDIT_CONFLICT: "简历已发生新的修改，这份提案没有应用。",
-    TARGET_STALE: "提案定位内容已发生变化，请重新定位后再试。",
-    AGENT_PROPOSAL_EXPIRED: "这份提案已过期，请重新生成建议。",
-    AGENT_PROPOSAL_NOT_PENDING: "这份提案已经处理过，不能重复应用。",
-    RESUME_DRAFT_SAVE_FAILED: "当前草稿保存失败，提案没有应用。请先保存后重试。",
-    RESUME_WRITE_PENDING: "正在保存或应用修改，请稍后重试。",
-    AGENT_PROPOSAL_RESULT_UNKNOWN: "暂时无法确认修改结果，请刷新提案状态后再操作。",
+    AGENT_CONTEXT_NOT_FOUND: t("所选资料已不可用，请重新选择。"),
+    AGENT_CONTEXT_STALE: t("所选资料已发生变化，请刷新选择后重试。"),
+    AGENT_CONTEXT_READ_FAILED: t("所选资料暂时无法读取，请稍后重试。"),
+    AGENT_CLARIFICATION_CONTEXT_CONFLICT: t("这次回答选择了另一份资料，请继续使用原问题对应的资料。"),
+    AGENT_CLARIFICATION_CONTEXT_INVALID: t("原问题的资料记录已损坏，请重新发起请求。"),
+    AGENT_SESSION_NOT_FOUND: t("对话不存在或已无法访问。"),
+    AGENT_UNAVAILABLE: t("智能助手暂时不可用，草稿和已选资料不会丢失。"),
+    AGENT_MODEL_UNAVAILABLE: t("当前模型暂时不可用，请稍后重试。"),
+    AGENT_STREAM_INCOMPLETE: t("智能助手连接意外中断，请稍后重试。"),
+    RESUME_EDIT_CONFLICT: t("简历已发生新的修改，这份提案没有应用。"),
+    TARGET_STALE: t("提案定位内容已发生变化，请重新定位后再试。"),
+    AGENT_PROPOSAL_EXPIRED: t("这份提案已过期，请重新生成建议。"),
+    AGENT_PROPOSAL_NOT_PENDING: t("这份提案已经处理过，不能重复应用。"),
+    RESUME_DRAFT_SAVE_FAILED: t("当前草稿保存失败，提案没有应用。请先保存后重试。"),
+    RESUME_WRITE_PENDING: t("正在保存或应用修改，请稍后重试。"),
+    AGENT_PROPOSAL_RESULT_UNKNOWN: t("暂时无法确认修改结果，请刷新提案状态后再操作。"),
   };
   return messages[code] ?? agentErrorMessage(error);
 }
@@ -562,7 +565,7 @@ function idempotencyKey() {
 }
 
 function messageText(message: LocalMessage) {
-  return message.content || (message.message_type === "clarification" ? "需要你补充一些信息。" : "");
+  return message.content || (message.message_type === "clarification" ? t("需要你补充一些信息。") : "");
 }
 
 function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]) {
@@ -579,6 +582,7 @@ type AssistantPageProps = {
 };
 
 export function AssistantPage({ sessionId, workspaceSection, careerView }: AssistantPageProps = {}) {
+  useLocale();
   const [conversationStates, setConversationStates] = useState<Record<string, ConversationState>>(() => ({
     [NEW_CONVERSATION_KEY]: blankConversation(),
   }));
@@ -925,7 +929,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     .filter((line) => line && !structuredActivityLabels.has(line.replace(/[…：].*$/, "")));
   const activityStatusText = (activity: ConversationState["activities"][number]) => {
     if (activity.status === "succeeded") return `${activity.label} ✓`;
-    if (activity.status === "failed") return `${activity.label}（失败：${activity.errorCode ?? "AGENT_TOOL_FAILED"}）`;
+    if (activity.status === "failed") return t("{value0}（失败：{value1}）", { value0: activity.label, value1: activity.errorCode ?? "AGENT_TOOL_FAILED" });
     return `${activity.label}…`;
   };
   const latestStructuredActivity = current.activities[current.activities.length - 1];
@@ -937,7 +941,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     ? (pendingModelId ?? runtimeModel?.id)
     : (current.session.selected_model_id ?? runtimeModel?.id);
   const selectedModel = runtimeModels.find((model) => model.id === selectedModelId) ?? null;
-  const runtimeModelLabel = selectedModel?.name ?? (runtimeModelLoading ? "正在读取模型" : "模型不可用");
+  const runtimeModelLabel = selectedModel?.name ?? (runtimeModelLoading ? t("正在读取模型") : t("模型不可用"));
 
   const selectModel = async (modelId: string) => {
     if (activeKey === NEW_CONVERSATION_KEY) {
@@ -1019,7 +1023,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         stage: activeRun.run ? "thinking" : "idle",
         runId: activeRun.run?.run_id ?? null,
         startedAt: activeRun.run ? parseAgentTimestamp(activeRun.run.started_at) : null,
-        phase: activeRun.run ? "AI 正在处理…" : "正在准备…",
+        phase: activeRun.run ? t("AI 正在处理…") : t("正在准备…"),
         activityText: "",
       });
       replaceStoreSession(detail.session);
@@ -1031,7 +1035,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         if (activeKeyRef.current === sessionIdToSelect) {
           resetToNewConversation();
           navigateTo(assistantPath(), { replace: true });
-          setNotice("这条对话不存在或已被删除，已为你打开新对话。");
+          setNotice(t("这条对话不存在或已被删除，已为你打开新对话。"));
         }
         return;
       }
@@ -1174,7 +1178,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     if (event.type === "run.phase") {
       const phase = typeof event.phase === "string" ? event.phase : "";
       updateConversation(key, {
-        phase: PHASE_LABELS[phase] ?? "AI 正在处理…",
+        phase: PHASE_LABELS[phase] ?? t("AI 正在处理…"),
         referencedContextCount: typeof event.referencedContextCount === "number"
           ? event.referencedContextCount
           : undefined,
@@ -1398,7 +1402,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         draft: "", screenshots: [], contexts: [], error: null,
         messages: [...state.messages,
           { role: "user", sequence_no: -(Date.now()), created_at: timestamp, content: trimmed, contexts: state.contexts, screenshots: state.screenshots, localOnly: true },
-          { role: "assistant", sequence_no: -(Date.now() + 1), created_at: timestamp, content: generatedDocument ? "准备文档已整理在下方，可以打开预览、复制或保存。文档生成目前使用本地示例，尚未连接 AI 生成接口。" : "截图已加入本次对话，可点击缩略图查看。截图理解尚未连接后端，当前仅保留本地预览。", generatedDocument, artifactFollowup: generatedDocument ? "需要的话，我可以按这份文档陪你做一轮模拟面试。" : undefined, localOnly: true },
+          { role: "assistant", sequence_no: -(Date.now() + 1), created_at: timestamp, content: generatedDocument ? "准备文档已整理在下方，可以打开预览、复制或保存。文档生成目前使用本地示例，尚未连接 AI 生成接口。" : "截图已加入本次对话，可点击缩略图查看。截图理解尚未连接后端，当前仅保留本地预览。", generatedDocument, artifactFollowup: generatedDocument ? t("需要的话，我可以按这份文档陪你做一轮模拟面试。") : undefined, localOnly: true },
         ],
       });
       refreshComposerView("", [], []);
@@ -1463,7 +1467,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       cancelling: false,
       stage: "submitting",
       runId: null,
-      phase: sentContexts.length > 0 ? "正在读取所选资料…" : "正在准备…",
+      phase: sentContexts.length > 0 ? t("正在读取所选资料…") : t("正在准备…"),
       activityText: "",
       activities: [],
       referencedContextCount: sentContexts.length,
@@ -1619,12 +1623,12 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   };
 
   const continueProposal = (proposal: AgentProposal) => {
-    pendingComposerCaretRef.current = "继续调整：".length;
-    refreshComposerView("继续调整：", current.contexts, current.invalidContextIds);
-    updateConversation(activeKey, { draft: "继续调整：", revisionProposalId: proposal.id, error: null });
+    pendingComposerCaretRef.current = t("继续调整：").length;
+    refreshComposerView(t("继续调整："), current.contexts, current.invalidContextIds);
+    updateConversation(activeKey, { draft: t("继续调整："), revisionProposalId: proposal.id, error: null });
     window.setTimeout(() => {
       if (!inputRef.current) return;
-      placeComposerCaret(inputRef.current, "继续调整：".length);
+      placeComposerCaret(inputRef.current, t("继续调整：").length);
       inputRef.current.focus();
     }, 0);
   };
@@ -1676,7 +1680,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
               : state.proposals,
             busyProposalId: null,
             error: completed > 0
-              ? `已应用 ${completed} 项，批量处理已停止：${safeAgentError(error)}`
+              ? t("已应用 {value0} 项，批量处理已停止：{value1}", { value0: completed, value1: safeAgentError(error) })
               : safeAgentError(error),
           }));
           break;
@@ -1762,7 +1766,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const saveGeneratedDocument = (id: string) => {
     updateConversation(activeKey, (state) => ({ messages: state.messages.map((message) => message.generatedDocument?.id === id ? { ...message, generatedDocument: { ...message.generatedDocument, saved: true } } : message) }));
     setPreviewTabs((all) => ({ ...all, [activeKey]: (all[activeKey] ?? []).map((tab) => tab.kind === "generated" && tab.id === id ? { ...tab, saved: true } : tab) }));
-    setNotice("已在本次对话中模拟保存；尚未写入资料库，刷新页面后不会保留。");
+    setNotice(t("已在本次对话中模拟保存；尚未写入资料库，刷新页面后不会保留。"));
   };
   // AI 回答里的文件引用（蓝色文字）：拦截特殊链接，在右侧打开
   const handleAssistantClick = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -1822,18 +1826,18 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const isHome = isEmptyConversation;
 
   const mentionMenu = contextMention && (
-    <div ref={mentionMenuRef} id="assistant-context-mention-list" className="assistant-mention" role="listbox" aria-label="可引用的资料和简历">
-      {mentionLoading && <p className="assistant-mention-status">正在搜索…</p>}
+    <div ref={mentionMenuRef} id="assistant-context-mention-list" className="assistant-mention" role="listbox" aria-label={t("可引用的资料和简历")}>
+      {mentionLoading && <p className="assistant-mention-status">{t("正在搜索…")}</p>}
       {mentionError && <p className="assistant-mention-status" role="alert">{mentionError}</p>}
-      {!mentionLoading && !mentionError && mentionOptions.length === 0 && <p className="assistant-mention-status">没有匹配的文件</p>}
+      {!mentionLoading && !mentionError && mentionOptions.length === 0 && <p className="assistant-mention-status">{t("没有匹配的文件")}</p>}
       {!mentionLoading && !mentionError && (["dataset", "resume"] as const).map((type) => {
         const groupedOptions = mentionOptions
           .map((context, index) => ({ context, index }))
           .filter(({ context }) => context.type === type);
         if (groupedOptions.length === 0) return null;
         return (
-          <div key={type} className="assistant-mention-group" role="group" aria-label={type === "resume" ? "简历" : "资料"}>
-            <div className="assistant-mention-group-label">{type === "resume" ? "简历" : "资料库"}</div>
+          <div key={type} className="assistant-mention-group" role="group" aria-label={type === "resume" ? t("简历") : t("资料")}>
+            <div className="assistant-mention-group-label">{type === "resume" ? t("简历") : t("资料库")}</div>
             {groupedOptions.map(({ context, index }) => (
               <button
                 type="button"
@@ -1847,8 +1851,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
                 onClick={() => selectMentionContext(context)}
               >
                 <Icon name={contextIcon(context.type)} size={14} />
-                <strong>{context.label}</strong>
-                <small>{context.type === "resume" ? "简历" : context.description || "资料"}</small>
+                <strong>{context.type === "user_profile" ? t("个人画像") : context.label}</strong>
+                <small>{context.type === "resume" ? t("简历") : context.description || t("资料")}</small>
               </button>
             ))}
           </div>
@@ -1864,8 +1868,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       className="assistant-composer-editor"
       role="textbox"
       aria-multiline="true"
-      aria-label="告诉助手你想完成什么"
-      data-placeholder={isHome ? "问问 LinkResume：改简历、分析 JD、准备面试…" : "继续提问或说明调整要求…"}
+      aria-label={t("告诉助手你想完成什么")}
+      data-placeholder={isHome ? t("问问 LinkResume：改简历、分析 JD、准备面试…") : t("继续提问或说明调整要求…")}
       aria-autocomplete="list"
       aria-controls={contextMention ? "assistant-context-mention-list" : undefined}
       aria-expanded={Boolean(contextMention)}
@@ -1884,8 +1888,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           const pasteKey = activeKey;
           files.forEach((file) => {
             const reader = new FileReader();
-            reader.onload = () => updateConversation(pasteKey, (state) => ({ screenshots: [...(state.screenshots ?? []), { kind: "image", id: idempotencyKey(), label: file.name || "粘贴的截图.png", url: String(reader.result) }] }));
-            reader.onerror = () => setNotice("截图读取失败，请重新粘贴。");
+            reader.onload = () => updateConversation(pasteKey, (state) => ({ screenshots: [...(state.screenshots ?? []), { kind: "image", id: idempotencyKey(), label: file.name || t("粘贴的截图.png"), url: String(reader.result) }] }));
+            reader.onerror = () => setNotice(t("截图读取失败，请重新粘贴。"));
             reader.readAsDataURL(file);
           });
         }
@@ -1909,13 +1913,13 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           contentEditable={false}
           data-context-key={contextKey(segment.context)}
           data-context-value={`@${segment.context.label}`}
-          aria-label={`引用文件 ${segment.context.label}`}
+          aria-label={t("引用文件 {value0}", { value0: segment.context.label })}
         >
-          {segment.context.label}
+          {segment.context.type === "user_profile" ? t("个人画像") : segment.context.label}
           <button
             type="button"
             tabIndex={-1}
-            aria-label={`移除上下文 ${segment.context.label}`}
+            aria-label={t("移除上下文 {value0}", { value0: segment.context.label })}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => removeContext(segment.context)}
           >
@@ -1927,11 +1931,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   );
 
   const sendButton = current.running ? (
-    <button type="button" className="assistant-send is-stop" aria-label="停止生成" onClick={stopGeneration}>
+    <button type="button" className="assistant-send is-stop" aria-label={t("停止生成")} onClick={stopGeneration}>
       <span aria-hidden="true" />
     </button>
   ) : (
-    <button type="submit" className="assistant-send" aria-label="发送" disabled={current.cancelling || !current.draft.trim() || Boolean(pendingClarification)}>
+    <button type="submit" className="assistant-send" aria-label={t("发送")} disabled={current.cancelling || !current.draft.trim() || Boolean(pendingClarification)}>
       <Icon name="up" size={16} strokeWidth={2.2} />
     </button>
   );
@@ -1943,12 +1947,12 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           key={contextKey(context)}
           className={`assistant-resume-chip${composerView.invalidContextIds.includes(contextKey(context)) ? " is-invalid" : ""}`}
         >
-          <button type="button" className="assistant-resume-chip-open" aria-label={`预览简历 ${context.label}`} onClick={() => openContextPreview(context)}>
+          <button type="button" className="assistant-resume-chip-open" aria-label={t("预览简历 {value0}", { value0: context.label })} onClick={() => openContextPreview(context)}>
             <Icon name="resume" size={12} />
-            <span>{context.label}</span>
-            <small>简历</small>
+            <span>{context.type === "user_profile" ? t("个人画像") : context.label}</span>
+            <small>{t("简历")}</small>
           </button>
-          <button type="button" className="assistant-resume-chip-remove" aria-label={`移除上下文 ${context.label}`} onClick={() => removeContext(context)}>
+          <button type="button" className="assistant-resume-chip-remove" aria-label={t("移除上下文 {value0}", { value0: context.label })} onClick={() => removeContext(context)}>
             <Icon name="x" size={11} />
           </button>
         </span>
@@ -1969,37 +1973,37 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   );
 
   const clarificationPanel = pendingClarification?.clarification && (
-    <section className={`assistant-clarification${current.clarificationCollapsed ? " is-collapsed" : ""}`} aria-label="需要你确认">
+    <section className={`assistant-clarification${current.clarificationCollapsed ? " is-collapsed" : ""}`} aria-label={t("需要你确认")}>
       {current.clarificationCollapsed ? (
         <button
           type="button"
           className="assistant-clarification-summary"
           aria-expanded="false"
-          aria-label="展开主动询问"
+          aria-label={t("展开主动询问")}
           onClick={() => updateConversation(activeKey, { clarificationCollapsed: false })}
         >
           <span>
-            <strong>需要你确认</strong>
-            <small>{clarificationQuestion?.header ?? "补充关键信息"} · {clarificationPage + 1} / {clarificationQuestions.length}</small>
+            <strong>{t("需要你确认")}</strong>
+            <small>{clarificationQuestion?.header ?? t("补充关键信息")} · {clarificationPage + 1} / {clarificationQuestions.length}</small>
           </span>
           <Icon name="chevu" size={16} />
         </button>
       ) : (
         <>
           <header>
-            <span><strong>需要你确认</strong><small className="v3-num">{clarificationPage + 1} / {clarificationQuestions.length}</small></span>
+            <span><strong>{t("需要你确认")}</strong><small className="v3-num">{clarificationPage + 1} / {clarificationQuestions.length}</small></span>
             <button
               type="button"
               className="v3-icon-btn"
               aria-expanded="true"
-              aria-label="收起主动询问"
+              aria-label={t("收起主动询问")}
               onClick={() => updateConversation(activeKey, { clarificationCollapsed: true })}
             >
               <Icon name="chevd" size={16} />
             </button>
           </header>
           {latestTurnContexts.some((item) => item.type === "resume") && (
-            <p className="assistant-clarification-context-hint">需要改用另一份简历时，先点下方“添加资料”选择目标简历，再提交回答。</p>
+            <p className="assistant-clarification-context-hint">{t("需要改用另一份简历时，先点下方“添加资料”选择目标简历，再提交回答。")}</p>
           )}
           <div className="assistant-clarification-questions">
             {clarificationQuestion && [clarificationQuestion].map((question) => {
@@ -2035,33 +2039,31 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
                         onChange={() => choose("__other__", current.clarificationAnswers[question.id]?.other ?? "")}
                       />
                       <span className={`v3-radio${answer.optionId === "__other__" ? " is-on" : ""}`} aria-hidden="true" />
-                      <span className="assistant-clarification-option"><strong>其他</strong></span>
+                      <span className="assistant-clarification-option"><strong>{t("其他")}</strong></span>
                       <input
                         className="v3-input assistant-clarification-other"
-                        aria-label={`${question.header}的其他回答`}
+                        aria-label={t("{value0}的其他回答", { value0: question.header })}
                         maxLength={500}
-                        placeholder="请输入补充内容"
+                        placeholder={t("请输入补充内容")}
                         value={answer.other}
                         onFocus={() => choose("__other__", current.clarificationAnswers[question.id]?.other ?? "")}
                         onChange={(event) => choose("__other__", event.target.value)}
                       />
                     </label>
                   )}
-                  {missing && <small className="assistant-clarification-error" id={`${question.id}-error`}>请选择一个选项或填写其他答案。</small>}
+                  {missing && <small className="assistant-clarification-error" id={`${question.id}-error`}>{t("请选择一个选项或填写其他答案。")}</small>}
                 </fieldset>
               );
             })}
           </div>
           <footer>
             <button type="button" className="v3-btn v3-btn-text" disabled={clarificationPage === 0} onClick={() => setClarificationPage((page) => Math.max(0, page - 1))}>
-              <Icon name="chevl" size={13} />上一题
-            </button>
+              <Icon name="chevl" size={13} />{t("上一题")}</button>
             {clarificationPage < clarificationQuestions.length - 1 ? (
-              <button type="button" className="v3-btn v3-btn-dark" onClick={() => setClarificationPage((page) => Math.min(clarificationQuestions.length - 1, page + 1))}>
-                下一题<Icon name="chev" size={13} />
+              <button type="button" className="v3-btn v3-btn-dark" onClick={() => setClarificationPage((page) => Math.min(clarificationQuestions.length - 1, page + 1))}>{t("下一题")}<Icon name="chev" size={13} />
               </button>
             ) : (
-              <button type="button" className="v3-btn v3-btn-dark" disabled={current.running} onClick={submitClarification}>提交回答</button>
+              <button type="button" className="v3-btn v3-btn-dark" disabled={current.running} onClick={submitClarification}>{t("提交回答")}</button>
             )}
           </footer>
         </>
@@ -2076,19 +2078,19 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const prepItems = MOCK_PREP_CHECKLIST.map((item, index) => ({ ...item, done: prepStates[prepChecklistKey]?.[index] ?? item.done }));
   const prepDone = prepItems.filter((item) => item.done).length;
   const prepChecklist = (
-    <section className="assistant-prep" aria-label="面试准备清单">
+    <section className="assistant-prep" aria-label={t("面试准备清单")}>
       <header>
-        <strong>面试准备清单</strong>
+        <strong>{t("面试准备清单")}</strong>
         <BeTag />
-        <span className="v3-num">{prepDone} / {MOCK_PREP_CHECKLIST.length} 已完成</span>
+        <span className="v3-num">{prepDone} / {MOCK_PREP_CHECKLIST.length}{t(" 已完成")}</span>
       </header>
       <ul>
         {prepItems.map((item, index) => (
           <li key={item.title} className={item.done ? "is-done" : undefined}>
-            <button type="button" role="checkbox" aria-label={item.title} aria-checked={item.done} className="assistant-prep-check" title="需后端：勾选状态仅在本次对话中保留" onClick={() => setPrepStates((states) => ({ ...states, [prepChecklistKey]: prepItems.map((entry, entryIndex) => entryIndex === index ? !entry.done : entry.done) }))}>{item.done && <Icon name="check" size={9} strokeWidth={2.4} />}</button>
+            <button type="button" role="checkbox" aria-label={item.title} aria-checked={item.done} className="assistant-prep-check" title={t("需后端：勾选状态仅在本次对话中保留")} onClick={() => setPrepStates((states) => ({ ...states, [prepChecklistKey]: prepItems.map((entry, entryIndex) => entryIndex === index ? !entry.done : entry.done) }))}>{item.done && <Icon name="check" size={9} strokeWidth={2.4} />}</button>
             <span className="assistant-prep-title">{item.title}</span>
-            {item.done ? <small>已完成</small> : (
-              <span className="assistant-prep-start"><BeTag /><button type="button" className="v3-link" onClick={() => { applyQuickPrompt(`按准备清单的「${item.title}」陪我做一轮模拟面试`); inputRef.current?.focus(); }}>开始模拟<Icon name="arrow" size={12} /></button></span>
+            {item.done ? <small>{t("已完成")}</small> : (
+              <span className="assistant-prep-start"><BeTag /><button type="button" className="v3-link" onClick={() => { applyQuickPrompt(t("按准备清单的「{value0}」陪我做一轮模拟面试", { value0: item.title })); inputRef.current?.focus(); }}>{t("开始模拟")}<Icon name="arrow" size={12} /></button></span>
             )}
           </li>
         ))}
@@ -2097,7 +2099,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   );
 
   const thinking = current.running && current.stage !== "streaming" && (
-    <section className="assistant-thinking" aria-label="AI 正在思考" aria-live="polite">
+    <section className="assistant-thinking" aria-label={t("AI 正在思考")} aria-live="polite">
       <span className="assistant-feather-motion is-writing" aria-hidden="true">
         <svg className="assistant-writing-ink" viewBox="0 0 56 44" focusable="false">
           <path pathLength="1" d="M 3 34 C 10 33 16 31 22 27 C 27 24 30 19 28 15 C 27 11 22 12 20 17 C 17 23 20 29 26 30 C 32 31 35 26 40 28 C 44 31 48 28 53 25" />
@@ -2106,22 +2108,22 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       </span>
       <div className="assistant-thinking-copy">
         <div className="assistant-thinking-line">
-          <strong>{current.phase || "AI 正在处理…"}</strong>
-          <span className="v3-num">{elapsedSeconds} 秒</span>
+          <strong>{current.phase || t("AI 正在处理…")}</strong>
+          <span className="v3-num">{elapsedSeconds}{t(" 秒")}</span>
         </div>
         {latestActivity && <p className="assistant-thinking-latest">{latestActivity}</p>}
         {processDetailsReady && (
           <>
             <button type="button" className="assistant-thinking-details-toggle" aria-expanded={current.detailsOpen} onClick={() => updateConversation(activeKey, { detailsOpen: !current.detailsOpen })}>
-              {current.detailsOpen ? "收起过程" : "查看过程"}
+              {current.detailsOpen ? t("收起过程") : t("查看过程")}
               <Icon name={current.detailsOpen ? "chevd" : "chev"} size={12} />
             </button>
             {current.detailsOpen && (
               <div className="assistant-thinking-details">
-                <div><Icon name="check" size={13} /><strong>已读取 {current.referencedContextCount} 项资料</strong></div>
+                <div><Icon name="check" size={13} /><strong>{t("已读取 ")}{current.referencedContextCount}{t(" 项资料")}</strong></div>
                 {current.contexts.length > 0 && (
                   <div className="assistant-thinking-sources">
-                    {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.label}</span>)}
+                    {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.type === "user_profile" ? t("个人画像") : context.label}</span>)}
                   </div>
                 )}
                 {activityLines.length > 0 && <p className="assistant-thinking-activity">{activityLines.join("\n")}</p>}
@@ -2141,8 +2143,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     <form className={`assistant-composer${isHome ? " is-home" : ""}`} onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
       {current.revisionProposalId && (
         <div className="assistant-proposal-revision-context">
-          <span>继续调整所选修改建议</span>
-          <button type="button" className="v3-link" onClick={() => updateConversation(activeKey, { revisionProposalId: undefined })}>取消关联</button>
+          <span>{t("继续调整所选修改建议")}</span>
+          <button type="button" className="v3-link" onClick={() => updateConversation(activeKey, { revisionProposalId: undefined })}>{t("取消关联")}</button>
         </div>
       )}
       {clarificationPanel}
@@ -2153,11 +2155,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           {screenshots}
           {editor}
           <div className="assistant-home-input-foot">
-            <button type="button" className="assistant-attach" aria-label="添加资料" onClick={openContextPicker}><Icon name="plus" size={14} strokeWidth={2} /></button>
+            <button type="button" className="assistant-attach" aria-label={t("添加资料")} onClick={openContextPicker}><Icon name="plus" size={14} strokeWidth={2} /></button>
             {chipResumes.map((context) => (
               <span key={contextKey(context)} className="v3-chip assistant-home-resume-chip">
-                <span>简历 · {context.label}</span>
-                <button type="button" aria-label={`移除上下文 ${context.label}`} onClick={() => removeContext(context)}><Icon name="x" size={10} /></button>
+                <span>{t("简历 · ")}{context.type === "user_profile" ? t("个人画像") : context.label}</span>
+                <button type="button" aria-label={t("移除上下文 {value0}", { value0: context.label })} onClick={() => removeContext(context)}><Icon name="x" size={10} /></button>
               </span>
             ))}
             <span className="assistant-home-input-spacer" />
@@ -2175,8 +2177,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           </div>
           <div className="assistant-composer-foot">
             <button type="button" className="assistant-add-context" onClick={openContextPicker}>
-              <Icon name="plus" size={11} strokeWidth={2} />添加资料
-            </button>
+              <Icon name="plus" size={11} strokeWidth={2} />{t("添加资料")}</button>
             {modelPicker(false)}
           </div>
         </>
@@ -2210,8 +2211,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
             {message.generatedDocument && <GeneratedDocumentCard document={message.generatedDocument} active={activePreviewKey === previewTabKey(message.generatedDocument)} onOpen={() => openPreview(message.generatedDocument!)} />}
             {message.artifactFollowup && <p className="assistant-artifact-followup">{message.artifactFollowup}</p>}
             {message.localOnly && message.role === "assistant" && !message.generatedDocument && <BeTag />}
-            {message.status === "stopped" && <small className="assistant-stopped-label">已停止生成</small>}
-            {message.status === "failed" && <small className="assistant-stopped-label">生成未完成</small>}
+            {message.status === "stopped" && <small className="assistant-stopped-label">{t("已停止生成")}</small>}
+            {message.status === "failed" && <small className="assistant-stopped-label">{t("生成未完成")}</small>}
             <MessageActions content={messageText(message)} createdAt={message.created_at} timeLabel={formatTime(message.created_at)} />
           </div>
         </article>
@@ -2232,38 +2233,38 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       onSelectSession={(id) => void selectSession(id)}
     >
       <style>{`.v3-content.assistant-v3-content.has-preview { --assistant-preview-width: ${previewWidth}px; }`}</style>
-      <section style={{ "--assistant-preview-width": `${previewWidth}px` } as CSSProperties} className={`assistant-conversation${isHome ? " is-empty" : ""}`} aria-label="AI 求职助手工作区">
+      <section style={{ "--assistant-preview-width": `${previewWidth}px` } as CSSProperties} className={`assistant-conversation${isHome ? " is-empty" : ""}`} aria-label={t("AI 求职助手工作区")}>
         {!isHome && allFileCount > 0 && !(previewOpen && sessionPreviewTabs.length) && (
-          <button type="button" className="assistant-files-toggle" onClick={openAllFiles} aria-label={`查看本会话的 ${allFileCount} 个文件`}>
+          <button type="button" className="assistant-files-toggle" onClick={openAllFiles} aria-label={t("查看本会话的 {value0} 个文件", { value0: allFileCount })}>
             <Icon name="panel" size={15} />
-            <span>{allFileCount} 个文件</span>
+            <span>{allFileCount}{t(" 个文件")}</span>
           </button>
         )}
 
         {conversationPending ? (
-          <PageLoading label="正在读取对话…" scope="workspace" />
+          <PageLoading label={t("正在读取对话…")} scope="workspace" />
         ) : current.loadState === "error" ? (
           <div className="assistant-session-error" role="alert">
-            <p>对话暂时无法读取</p>
-            <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void selectSession(activeKey, true)}>重试</button>
+            <p>{t("对话暂时无法读取")}</p>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void selectSession(activeKey, true)}>{t("重试")}</button>
           </div>
         ) : isHome ? (
-          <div className="assistant-home" aria-label="开始使用 AI 求职助手">
+          <div className="assistant-home" aria-label={t("开始使用 AI 求职助手")}>
             {/* 首页文字不用骨架：加载时先占住同样的高度，数据到了整行从下方慢慢浮现 */}
             <h1 className="assistant-home-title">
               {home.status === "loading" && !copy
                 ? <span className="assistant-home-rise-slot" aria-hidden="true" />
-                : <span className="assistant-home-rise">{copy ? <>{greetingPrefix(now)}{displayName ? `，${displayName}` : ""}。{copy.title}</> : "首页信息暂时无法读取"}</span>}
+                : <span className="assistant-home-rise">{copy ? <>{greetingPrefix(now)}{displayName ? `，${displayName}` : ""}。{copy.title}</> : t("首页信息暂时无法读取")}</span>}
             </h1>
             <p className="assistant-home-sub">
               {home.status === "loading" && !copy
                 ? <span className="assistant-home-rise-slot" aria-hidden="true" />
                 : <span className="assistant-home-rise is-delay-1">{copy ? copy.subtitle
-                  : <>请稍后重试。<button type="button" className="v3-link" onClick={home.retry}>重新加载</button></>}</span>}
+                  : <>{t("请稍后重试。")}<button type="button" className="v3-link" onClick={home.retry}>{t("重新加载")}</button></>}</span>}
             </p>
             {composer}
             {copy && (
-              <div className="assistant-home-chips assistant-home-rise is-delay-2" aria-label="快捷指令">
+              <div className="assistant-home-chips assistant-home-rise is-delay-2" aria-label={t("快捷指令")}>
                 {copy.chips.map((chip) => (
                   <button type="button" key={chip} className="v3-chip assistant-home-chip" onClick={() => applyQuickPrompt(chip)}>{chip}</button>
                 ))}
@@ -2276,7 +2277,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
               </div>
             )}
             {/* 加载中只占位不画骨架，卡片到了再逐张浮现 */}
-            {home.status === "loading" && <div className="assistant-home-cards is-placeholder" role="status" aria-label="正在加载首页信息…" />}
+            {home.status === "loading" && <div className="assistant-home-cards is-placeholder" role="status" aria-label={t("正在加载首页信息…")} />}
           </div>
         ) : (
           <>
@@ -2315,16 +2316,16 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       )}</MotionPresence>
 
       <MotionPresence>{current.error && (
-        <Toast title="本次请求未完成" message={current.error} kind="error" onDismiss={() => updateConversation(activeKey, { error: null })} />
+        <Toast title={t("本次请求未完成")} message={current.error} kind="error" onDismiss={() => updateConversation(activeKey, { error: null })} />
       )}</MotionPresence>
-      <MotionPresence>{notice && <Toast title="提示" message={notice} onDismiss={() => setNotice(null)} />}</MotionPresence>
+      <MotionPresence>{notice && <Toast title={t("提示")} message={notice} onDismiss={() => setNotice(null)} />}</MotionPresence>
 
       <MotionPresence>{contextPickerOpen && (
-        <Dialog width={560} label="选择资料" onClose={closeContextPicker} className="assistant-context-dialog">
+        <Dialog width={560} label={t("选择资料")} onClose={closeContextPicker} className="assistant-context-dialog">
           <div className="v3-dialog-body">
-            <h2 className="v3-dialog-title">添加资料</h2>
-            <p className="v3-dialog-sub">选择本轮对话需要参考的内容，每类最多一项</p>
-            <div className="assistant-context-types" role="tablist" aria-label="上下文类型">
+            <h2 className="v3-dialog-title">{t("添加资料")}</h2>
+            <p className="v3-dialog-sub">{t("选择本轮对话需要参考的内容，每类最多一项")}</p>
+            <div className="assistant-context-types" role="tablist" aria-label={t("上下文类型")}>
               {CONTEXT_TYPES.map(({ type, label, icon }) => (
                 <button type="button" role="tab" aria-selected={contextType === type} className={contextType === type ? "is-active" : undefined} key={type} onClick={() => void loadContexts(type)}>
                   <Icon name={icon} size={13} />{label}
@@ -2335,11 +2336,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
               className="assistant-context-search"
               onKeyDown={(event) => { if (event.key === "Enter") void loadContexts(contextType, contextSearch); }}
             >
-              <SearchBox value={contextSearch} onChange={setContextSearch} placeholder="搜索资料" label="搜索资料" />
+              <SearchBox value={contextSearch} onChange={setContextSearch} placeholder={t("搜索资料")} label={t("搜索资料")} />
             </div>
-            {contextLoading && <p className="assistant-context-status">正在读取可选资料…</p>}
+            {contextLoading && <p className="assistant-context-status">{t("正在读取可选资料…")}</p>}
             {contextError && <p className="assistant-context-error" role="alert">{contextError}</p>}
-            {!contextLoading && !contextError && contextOptions.length === 0 && <p className="assistant-context-status">暂无可选择的{contextLabel(contextType)}。</p>}
+            {!contextLoading && !contextError && contextOptions.length === 0 && <p className="assistant-context-status">{t("暂无可选择的")}{contextLabel(contextType)}。</p>}
             {!contextLoading && !contextError && contextOptions.length > 0 && (
               <div className="v3-gcard assistant-context-options">
                 {contextOptions.map((context) => {
@@ -2347,9 +2348,9 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
                   return (
                     <button type="button" className={`v3-grow${selected ? " is-selected" : ""}`} aria-pressed={selected} key={contextKey(context)} onClick={() => toggleContextDraft(context)}>
                       <Icon name={contextIcon(context.type)} size={15} />
-                      <span className="v3-grow-copy"><strong>{context.label}</strong>{context.description && <small>{context.description}</small>}</span>
+                      <span className="v3-grow-copy"><strong>{context.type === "user_profile" ? t("个人画像") : context.label}</strong>{context.description && <small>{context.description}</small>}</span>
                       <span className="v3-grow-right">
-                        {selected ? <Icon name="ccheck" size={16} aria-label="已选择" /> : <time className="v3-num" dateTime={context.updated_at ?? undefined}>{formatConversationDate(context.updated_at)}</time>}
+                        {selected ? <Icon name="ccheck" size={16} aria-label={t("已选择")} /> : <time className="v3-num" dateTime={context.updated_at ?? undefined}>{formatConversationDate(context.updated_at)}</time>}
                       </span>
                     </button>
                   );
@@ -2357,9 +2358,9 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
               </div>
             )}
           </div>
-          <DialogFooter left={<span className="assistant-context-count">已选 {contextDrafts.length} 项</span>}>
-            <button type="button" className="v3-btn v3-btn-ghost" onClick={closeContextPicker}>取消</button>
-            <button type="button" className="v3-btn v3-btn-dark" onClick={confirmContextDrafts}>添加 {contextDrafts.length} 项</button>
+          <DialogFooter left={<span className="assistant-context-count">{t("已选 ")}{contextDrafts.length}{t(" 项")}</span>}>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={closeContextPicker}>{t("取消")}</button>
+            <button type="button" className="v3-btn v3-btn-dark" onClick={confirmContextDrafts}>{t("添加 ")}{contextDrafts.length}{t(" 项")}</button>
           </DialogFooter>
         </Dialog>
       )}</MotionPresence>

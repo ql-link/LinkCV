@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from linkresume.core.errors import ApiError
 from linkresume.modules.announcements.models import Announcement, AnnouncementReadCursor
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.dependencies import lock_active_user
 
 NOT_FOUND = "ANNOUNCEMENT_NOT_FOUND"
 STATE_CONFLICT = "ANNOUNCEMENT_STATE_CONFLICT"
@@ -293,6 +294,7 @@ def unread_count(db: Session, user: User, now: datetime | None = None) -> int:
 
 def mark_all_read(db: Session, user: User, now: datetime | None = None) -> int:
     """Move the user's read-through time to ``now``; it never moves backwards."""
+    user = lock_active_user(db, user.id)
     now = now or utcnow()
     moved = db.execute(
         update(AnnouncementReadCursor)

@@ -14,6 +14,7 @@ from typing import Literal
 from sqlalchemy.orm import Session
 
 from linkresume.modules.product_events.models import ProductEvent
+from linkresume.modules.identity.dependencies import lock_active_user
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ def add_event(db: Session, **kwargs) -> ProductEvent:
 def record_event_best_effort(db: Session, **kwargs) -> None:
     """Commit an event on its own; failures are logged and swallowed."""
     try:
+        lock_active_user(db, kwargs["user_id"])
         db.add(build_event(**kwargs))
         db.commit()
     except Exception:

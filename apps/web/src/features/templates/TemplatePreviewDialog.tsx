@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { ResumeTemplate } from "../../api/client";
@@ -32,6 +33,7 @@ export function TemplatePreviewDialog({
   onPrimaryAction: (template: ResumeTemplate) => void;
   onClose: () => void;
 }) {
+  useLocale();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const wasOpenRef = useRef(false);
   const [zoom, setZoom] = useState(1);
@@ -97,10 +99,10 @@ export function TemplatePreviewDialog({
         <SlideSwap itemKey={template.id} direction={slideDirection} distance={16} className="tpl-preview-head-swap">
           <h2 className="v3-dialog-title">{template.name}</h2>
         <div className="tpl-preview-meta">
-          {tags.map((tag) => <span key={tag} className="v3-chip">{tag}</span>)}
+          {tags.map((tag) => <span key={tag} className="v3-chip">{t(tag)}</span>)}
           {/* 使用次数需要后端统计，暂用 mocks 里的示例数 */}
-          <span className="tpl-preview-uses">{formatTemplateUses(MOCK_TEMPLATE_USES(template.key))} 使用</span>
-          <BeTag title="模板使用次数需要后端统计，目前为示例数据" />
+          <span className="tpl-preview-uses">{formatTemplateUses(MOCK_TEMPLATE_USES(template.key))}{t(" 使用")}</span>
+          <BeTag title={t("模板使用次数需要后端统计，目前为示例数据")} />
         </div>
         </SlideSwap>
       </div>
@@ -117,7 +119,7 @@ export function TemplatePreviewDialog({
         <button
           type="button"
           className="tpl-preview-nav is-prev"
-          aria-label={previousTemplate ? `上一个模板：${previousTemplate.name}` : "没有上一个模板"}
+          aria-label={previousTemplate ? t("上一个模板：{value0}", { value0: previousTemplate.name }) : t("没有上一个模板")}
           disabled={!previousTemplate}
           onClick={() => changeTemplate(-1)}
         >
@@ -126,25 +128,25 @@ export function TemplatePreviewDialog({
         <button
           type="button"
           className="tpl-preview-nav is-next"
-          aria-label={nextTemplate ? `下一个模板：${nextTemplate.name}` : "没有下一个模板"}
+          aria-label={nextTemplate ? t("下一个模板：{value0}", { value0: nextTemplate.name }) : t("没有下一个模板")}
           disabled={!nextTemplate}
           onClick={() => changeTemplate(1)}
         >
           <Icon name="chev" size={14} />
         </button>
 
-        <div className="tpl-preview-zoom" role="group" aria-label="模板预览缩放">
-          <button type="button" aria-label="缩小模板" disabled={zoom <= MIN_ZOOM} onClick={() => changeZoom(-1)}>−</button>
-          <output aria-live="polite" aria-label="模板预览缩放比例">{Math.round(zoom * 100)}%</output>
-          <button type="button" aria-label="放大模板" disabled={zoom >= MAX_ZOOM} onClick={() => changeZoom(1)}>+</button>
+        <div className="tpl-preview-zoom" role="group" aria-label={t("模板预览缩放")}>
+          <button type="button" aria-label={t("缩小模板")} disabled={zoom <= MIN_ZOOM} onClick={() => changeZoom(-1)}>−</button>
+          <output aria-live="polite" aria-label={t("模板预览缩放比例")}>{Math.round(zoom * 100)}%</output>
+          <button type="button" aria-label={t("放大模板")} disabled={zoom >= MAX_ZOOM} onClick={() => changeZoom(1)}>+</button>
         </div>
       </div>
 
       <div className="v3-dialog-foot tpl-preview-foot">
         <div className="v3-dialog-foot-left">
-          {index >= 0 && <span className="tpl-preview-count">第 {index + 1} / {templates.length} 套</span>}
+          {index >= 0 && <span className="tpl-preview-count">{t("第 ")}{index + 1} / {templates.length}{t(" 套")}</span>}
         </div>
-        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} onClick={onClose}>取消</button>
+        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} onClick={onClose}>{t("取消")}</button>
         <button
           type="button"
           className="v3-btn v3-btn-dark"

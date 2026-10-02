@@ -20,6 +20,9 @@ from linkresume.core.config import Settings
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import AssetStorage
 from linkresume.modules.datasets.models import UserDataset
+from linkresume.modules.identity.models import UserProfile
+from linkresume.modules.identity.schemas import UserProfileData
+from linkresume.modules.identity.dependencies import lock_active_user
 from linkresume.modules.datasets.routes import read_dataset_markdown
 from linkresume.modules.agent.schemas import (
     AgentContextListItem,
@@ -43,6 +46,7 @@ from linkresume.modules.resumes.models import (
 
 
 CONTEXT_TYPES: tuple[AgentContextType, ...] = (
+    "user_profile",
     "resume",
     "resume_version",
     "dataset",
@@ -131,6 +135,25 @@ def _snapshot(
 def _list_item(snapshot: AgentContextSnapshot) -> AgentContextListItem:
     return AgentContextListItem.model_validate(
         snapshot.model_dump(exclude={"presentation"})
+    )
+
+
+def _profile_content(profile: UserProfile) -> str:
+    values = UserProfileData.model_validate(profile).model_dump(mode="json")
+    for key in ("lock_version", "created_at", "updated_at"):
+        values.pop(key, None)
+    lines = [
+        f"- {key}: {json.dumps(value, ensure_ascii=False)}"
+        for key, value in values.items() if value is not None and value != [] and value != ""
+    ]
+    return "## Personal career profile\n" + "\n".join(lines) if lines else ""
+
+
+def _profile_snapshot(profile: UserProfile) -> AgentContextSnapshot:
+    return _snapshot(
+        type="user_profile", id=str(profile.user_id), version=str(profile.lock_version),
+        lock_version=profile.lock_version, updated_at=profile.updated_at,
+        label="个人画像", description="本人填写的求职资料",
     )
 
 
@@ -253,7 +276,13 @@ def list_contexts(
     types = tuple(item for item in types if item != "resume_version")
     result: list[AgentContextListItem] = []
     for item_type in types:
-        if item_type == "resume":
+        if item_type == "user_profile":
+            profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user_id))
+            if profile is not None and _profile_content(profile) and (
+                normalized_query is None or normalized_query.lower() in "个人画像 本人填写的求职资料 career profile"
+            ):
+                result.append(_list_item(_profile_snapshot(profile)))
+        elif item_type == "resume":
             statement = select(Resume).where(Resume.user_id == user_id)
             if search_pattern is not None:
                 statement = statement.where(Resume.title.ilike(search_pattern))
@@ -656,6 +685,8 @@ def resolve_contexts(
     """Resolve and validate all references before a run/message is created."""
 
     refs = refs or []
+    if refs:
+        lock_active_user(db, user_id)
     if len(refs) > MAX_CONTEXTS:
         raise ApiError(400, "INVALID_AGENT_CONTEXTS")
     seen_types: set[str] = set()
@@ -665,7 +696,17 @@ def resolve_contexts(
         if ref.type in seen_types:
             raise ApiError(400, "INVALID_AGENT_CONTEXTS")
         seen_types.add(ref.type)
-        if ref.type == "resume":
+        if ref.type == "user_profile":
+            if ref.id != str(user_id):
+                raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
+            profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user_id).with_for_update())
+            if profile is None or not _profile_content(profile):
+                raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
+            if ref.version is None or ref.version != str(profile.lock_version):
+                raise ApiError(409, "AGENT_CONTEXT_STALE")
+            snapshot = _profile_snapshot(profile)
+            material = _make_material(snapshot, {"profile_markdown": _profile_content(profile)})
+        elif ref.type == "resume":
             _, snapshot, material = _resolve_resume(db, user_id=user_id, ref=ref)
         elif ref.type == "resume_version":
             raise ApiError(409, "AGENT_CONTEXT_RETIRED")

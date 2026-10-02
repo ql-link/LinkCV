@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import type { AgentContextSnapshot } from "../../api/client";
 import { Icon } from "../../v3/Icon";
@@ -19,13 +20,15 @@ export function createLocalDocument(id: string, contexts: AgentContextSnapshot[]
   };
 }
 export function GeneratedDocumentCard({ document, active, onOpen }: { document: GeneratedDocument; active: boolean; onOpen: () => void }) {
+  useLocale();
   return <section className={`assistant-artifact${active ? " is-active" : ""}`} aria-label={`AI 生成文档 ${document.label}`}>
     <span className="assistant-artifact-icon"><Icon name="spark" size={18} /></span>
-    <div className="assistant-artifact-copy"><strong>{document.label}</strong><small>AI 生成文档 · {document.content.replace(/\s/g, "").length.toLocaleString()} 字 · {document.saved ? "已保存到资料库（本地模拟）" : "未保存到资料库"}</small><BeTag /></div>
-    {active ? <span className="assistant-artifact-opened">已在右侧打开</span> : <button type="button" className="v3-btn v3-btn-ghost" onClick={onOpen}><Icon name="panel" size={13} />打开</button>}
+    <div className="assistant-artifact-copy"><strong>{document.label}</strong><small>{t("AI 生成文档 · ")}{document.content.replace(/\s/g, "").length.toLocaleString()}{t(" 字 · ")}{document.saved ? t("已保存到资料库（本地模拟）") : t("未保存到资料库")}</small><BeTag /></div>
+    {active ? <span className="assistant-artifact-opened">{t("已在右侧打开")}</span> : <button type="button" className="v3-btn v3-btn-ghost" onClick={onOpen}><Icon name="panel" size={13} />{t("打开")}</button>}
   </section>;
 }
 export function ScreenshotStrip({ images, sent = false, activeKey, onOpen, onRemove }: { images: ScreenshotAttachment[]; sent?: boolean; activeKey: string | null; onOpen: (image: ScreenshotAttachment) => void; onRemove?: (id: string) => void }) {
+  useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const [slots, setSlots] = useState(5);
   useEffect(() => {
@@ -36,7 +39,7 @@ export function ScreenshotStrip({ images, sent = false, activeKey, onOpen, onRem
   }, [sent]);
   if (!images.length) return null;
   const visibleCount = images.length > slots ? Math.max(0, slots - 1) : images.length;
-  return <div ref={ref} className={`assistant-screenshots${sent ? " is-sent" : ""}`} aria-label={sent ? "已发送的截图" : "待发送的截图"}>
+  return <div ref={ref} className={`assistant-screenshots${sent ? " is-sent" : ""}`} aria-label={sent ? t("已发送的截图") : t("待发送的截图")}>
     {images.slice(0, visibleCount).map((item) => <span key={item.id} className={`assistant-screenshot${activeKey === `image:${item.id}` ? " is-active" : ""}`}><button type="button" aria-label={`预览截图 ${item.label}`} onClick={() => onOpen(item)}><img src={item.url} alt={item.label} /></button>{onRemove && <button type="button" className="assistant-screenshot-remove" aria-label={`移除截图 ${item.label}`} onClick={() => onRemove(item.id)}><Icon name="x" size={10} /></button>}</span>)}
     {images.length > visibleCount && <button type="button" className="assistant-screenshot-more" aria-label={`查看其余 ${images.length - visibleCount} 张截图`} onClick={() => onOpen(images[visibleCount])}>+{images.length - visibleCount}</button>}
   </div>;

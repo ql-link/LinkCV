@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import hashlib
 import json
 import logging
@@ -340,6 +341,7 @@ def delete_resume(
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResumeResponse:
+    user = lock_active_user(db, user.id)
     parsed_id = parse_decimal_id(resume_id)
     if parsed_id is None:
         raise ApiError(404, "RESUME_NOT_FOUND")

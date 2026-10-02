@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import type { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -40,15 +41,14 @@ export function WorkbenchSectionOrderReset({
   editor: Editor;
   disabled?: boolean;
 }) {
+  useLocale();
   return (
     <button
       type="button"
       className="workbench-section-order-reset"
       disabled={disabled}
       onClick={() => { resetSectionOrder(editor); }}
-    >
-      恢复默认
-    </button>
+    >{t("恢复默认")}</button>
   );
 }
 
@@ -125,6 +125,7 @@ export function WorkbenchSectionOrderControl({
   flaggedKinds?: ReadonlySet<ResumeSectionKind>;
   onGroupsChange?: (groups: ResumeSectionOrderGroup[]) => void;
 }) {
+  useLocale();
   const [groups, setGroups] = useState<ResumeSectionOrderGroup[]>(() =>
     resumeSectionOrderGroups(editor.getJSON(), sidebarIsOnRight(editor.view.dom)));
   const originRef = useRef<DragOrigin | null>(null);
@@ -233,7 +234,7 @@ export function WorkbenchSectionOrderControl({
                         type="button"
                         className="workbench-section-order-handle"
                         disabled={disabled}
-                        aria-label={`调整「${item.title}」顺序，可用上下方向键移动`}
+                        aria-label={t("调整「{value0}」顺序，可用上下方向键移动", { value0: item.title })}
                         onKeyDown={(event) => {
                           if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
                           const next = position + (event.key === "ArrowUp" ? -1 : 1);
@@ -248,14 +249,14 @@ export function WorkbenchSectionOrderControl({
                     <button
                       type="button"
                       className="workbench-section-order-title"
-                      title={`跳到「${item.title}」`}
+                      title={t("跳到「{value0}」", { value0: item.title })}
                       onClick={() => { jumpToSection(editor, item.nodeId); }}
                     >
                       {item.title}
                     </button>
-                    {flaggedKinds?.has(item.kind) ? <i className="workbench-section-order-flag" aria-label="有待完善的内容" /> : null}
-                    {fixed ? <small className="workbench-section-order-hint">固定在最前</small> : null}
-                    {!fixed && item.nodeId && emptyIds.has(item.nodeId) ? <small className="workbench-section-order-hint">空</small> : null}
+                    {flaggedKinds?.has(item.kind) ? <i className="workbench-section-order-flag" aria-label={t("有待完善的内容")} /> : null}
+                    {fixed ? <small className="workbench-section-order-hint">{t("固定在最前")}</small> : null}
+                    {!fixed && item.nodeId && emptyIds.has(item.nodeId) ? <small className="workbench-section-order-hint">{t("空")}</small> : null}
                   </li>
                 );
               })}

@@ -12,6 +12,7 @@ from linkresume.application.resumes.service import (
     resume_slot_count,
 )
 from linkresume.core.config import Settings
+from linkresume.core.database import utc_now
 from linkresume.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation,
@@ -260,6 +261,29 @@ def build_processor(
         db.commit()
         storage.objects[record.object_name] = b"# Zhang San"
         return app, storage, processor, record.id, template.id
+
+
+def test_late_import_artifacts_cannot_upload_after_account_deletion_marker() -> None:
+    app, storage, processor, import_id, _ = build_processor()
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, import_id)
+        uid = task.user_id
+        user = db.get(User, uid)
+        user.status = 0
+        user.deletion_requested_at = utc_now()
+        db.commit()
+    existing_objects = dict(storage.objects)
+    asyncio.run(processor._persist_converted_markdown(
+        import_id=import_id, user_id=uid, operation_id="fictional-late-import",
+        markdown="# Fictional late content",
+    ))
+    with pytest.raises(WorkerTaskRetryable):
+        asyncio.run(processor._persist_source_graph(
+            import_id=import_id, user_id=uid, operation_id="fictional-late-import",
+            source_graph=empty_source_graph(),
+        ))
+    assert storage.objects == existing_objects
+    assert storage.uploaded == []
 
 
 def test_worker_creates_one_resume_and_repeated_delivery_is_idempotent() -> None:

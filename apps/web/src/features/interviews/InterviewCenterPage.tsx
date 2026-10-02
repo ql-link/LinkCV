@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale, weekdayName } from "@/i18n";
 import { MotionPresence, MotionSurface, useContentMotion } from "@/components/ui/motion";
 import {
   useCallback,
@@ -98,7 +99,7 @@ import type {
   CalendarView,
   EventCalendarProposedUpdate,
 } from "@/components/reui/event-calendar/event-calendar-types";
-import { zhCN } from "date-fns/locale";
+import { enUS, zhCN } from "date-fns/locale";
 import {
   ApiRequestError,
   api,
@@ -226,39 +227,39 @@ const INTERVIEW_CALENDAR_COLORS: Record<InterviewCalendarColor, string> = {
 
 const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
   labels: {
-    today: "今天",
-    previous: "上一周期",
-    next: "下一周期",
-    addEvent: "添加面试",
-    allDay: "全天",
-    more: (count) => `另有 ${count} 项`,
-    noEvents: "暂无面试安排",
-    loading: "正在加载面试排期",
-    event: "项安排",
-    events: (count) => `${count} 项安排`,
-    selectView: "选择视图",
-    week: (weekNumber) => `第 ${weekNumber} 周`,
-    resources: "资源",
-    goToDate: "跳转日期",
-    dropNotAllowed: "不能调整到这里",
-    continues: "跨日继续",
-    timeFrom: (time) => `开始于 ${time}`,
-    timeUntil: (time) => `结束于 ${time}`,
-    toggleDayEvents: (count) => `${count} 项安排`,
+    get today() { return t("今天"); },
+    get previous() { return t("上一周期"); },
+    get next() { return t("下一周期"); },
+    get addEvent() { return t("添加面试"); },
+    get allDay() { return t("全天"); },
+    more: (count) => t("另有 {value0} 项", { value0: count }),
+    get noEvents() { return t("暂无面试安排"); },
+    get loading() { return t("正在加载面试排期"); },
+    get event() { return t("项安排"); },
+    events: (count) => t("{value0} 项安排", { value0: count }),
+    get selectView() { return t("选择视图"); },
+    week: (weekNumber) => t("第 {value0} 周", { value0: weekNumber }),
+    get resources() { return t("资源"); },
+    get goToDate() { return t("跳转日期"); },
+    get dropNotAllowed() { return t("不能调整到这里"); },
+    get continues() { return t("跨日继续"); },
+    timeFrom: (time) => t("开始于 {value0}", { value0: time }),
+    timeUntil: (time) => t("结束于 {value0}", { value0: time }),
+    toggleDayEvents: (count) => t("{value0} 项安排", { value0: count }),
     eventDetails: (title) => title,
     moreCompact: (count) => `+${count}`,
     timeRange: (from, to) => `${from}–${to}`,
   },
   viewNames: {
-    month: "月",
-    week: "周",
-    day: "日",
-    days: (count) => `${count} 天`,
-    agenda: "议程",
-    resource: "时间网格",
+    get month() { return t("月"); },
+    get week() { return t("周"); },
+    get day() { return t("日"); },
+    days: (count) => t("{value0} 天", { value0: count }),
+    get agenda() { return t("议程"); },
+    get resource() { return t("时间网格"); },
   },
   formats: {
-    monthTitle: "yyyy年M月",
+    get monthTitle() { return getLocale() === "en-US" ? "MMMM yyyy" : "yyyy年M月"; },
     timeGridDayHeader: "M/d EEE",
     timeGutter: "HH:mm",
     timeGutterMinute: "HH:mm",
@@ -266,7 +267,7 @@ const INTERVIEW_CALENDAR_I18N: EventCalendarI18nOverrides = {
     monthDayHeader: "EEE",
     monthDayHeaderNarrow: "EEEEE",
     monthCellDay: "d",
-    moreDayHeader: "M月d日 · EEE",
+    get moreDayHeader() { return getLocale() === "en-US" ? "MMM d · EEE" : "M月d日 · EEE"; },
   },
 };
 type InterviewSessionCreatePayload = Parameters<
@@ -277,13 +278,13 @@ const CALENDAR_COLORS: Array<{
   id: InterviewCalendarColor;
   label: string;
 }> = [
-  { id: "red", label: "红色" },
-  { id: "orange", label: "橙色" },
-  { id: "yellow", label: "黄色" },
-  { id: "green", label: "绿色" },
-  { id: "blue", label: "蓝色" },
-  { id: "purple", label: "紫色" },
-  { id: "gray", label: "灰色" },
+  { id: "red", get label() { return t("红色"); } },
+  { id: "orange", get label() { return t("橙色"); } },
+  { id: "yellow", get label() { return t("黄色"); } },
+  { id: "green", get label() { return t("绿色"); } },
+  { id: "blue", get label() { return t("蓝色"); } },
+  { id: "purple", get label() { return t("紫色"); } },
+  { id: "gray", get label() { return t("灰色"); } },
 ];
 const DRAFT_CALENDAR_COLORS = CALENDAR_COLORS.filter((color) => color.id !== "gray");
 
@@ -340,7 +341,7 @@ function formatTime(source: Date): string {
 }
 
 function formatDate(source: Date): string {
-  return `${source.getMonth() + 1}月${source.getDate()}日`;
+  return t("{value0}月{value1}日", { value0: source.getMonth() + 1, value1: source.getDate() });
 }
 
 function formatApplicationSessionRange(startAt: string, endAt: string): string {
@@ -356,12 +357,12 @@ function formatApplicationSessionRange(startAt: string, endAt: string): string {
 }
 
 function formatMonth(source: Date): string {
-  return `${source.getFullYear()}年${source.getMonth() + 1}月`;
+  return t("{value0}年{value1}月", { value0: source.getFullYear(), value1: source.getMonth() + 1 });
 }
 
 function formatScheduleWeekRange(source: Date): string {
   const end = addDays(source, 6);
-  return `${source.getFullYear()}年${formatDate(source)} – ${formatDate(end)}`;
+  return t("{value0}年{value1} – {value2}", { value0: source.getFullYear(), value1: formatDate(source), value2: formatDate(end) });
 }
 
 function localDateTimeValue(source: Date): string {
@@ -376,25 +377,25 @@ function defaultInterviewStartAt(): string {
 }
 
 function weekday(source: Date): string {
-  return `周${"日一二三四五六"[source.getDay()]}`;
+  return weekdayName(source);
 }
 
 function modeLabel(mode: InterviewSessionSummary["mode"]): string {
   return mode === "video"
-    ? "视频面试"
+    ? t("视频面试")
     : mode === "onsite"
-      ? "现场面试"
+      ? t("现场面试")
       : mode === "phone"
-        ? "电话面试"
-        : "其他方式";
+        ? t("电话面试")
+        : t("其他方式");
 }
 
 function meetingLabel(session: InterviewSessionSummary): string {
-  if (session.mode === "onsite") return [session.location, "现场"].filter(Boolean).join(" · ");
-  const platform = session.meeting_url?.includes("feishu.cn") || session.meeting_url?.includes("larksuite.com") ? "飞书会议"
-    : session.meeting_url?.includes("meeting.tencent.com") ? "腾讯会议"
-    : session.meeting_url?.includes("nowcoder.com") ? "牛客网" : null;
-  const mode = session.mode === "video" ? "视频" : session.mode === "phone" ? "电话" : "其他方式";
+  if (session.mode === "onsite") return [session.location, t("现场")].filter(Boolean).join(" · ");
+  const platform = session.meeting_url?.includes("feishu.cn") || session.meeting_url?.includes("larksuite.com") ? t("飞书会议")
+    : session.meeting_url?.includes("meeting.tencent.com") ? t("腾讯会议")
+    : session.meeting_url?.includes("nowcoder.com") ? t("牛客网") : null;
+  const mode = session.mode === "video" ? t("视频") : session.mode === "phone" ? t("电话") : t("其他方式");
   return [mode, platform].filter(Boolean).join(" · ");
 }
 
@@ -442,8 +443,8 @@ function toInterview(
       [session.interviewer_name, session.interviewer_title]
         .filter(Boolean)
         .join("（") + (session.interviewer_name && session.interviewer_title ? "）" : "") ||
-      "暂未填写",
-    note: session.preparation_note ?? "暂未填写面试准备备注。",
+      t("暂未填写"),
+    note: session.preparation_note ?? t("暂未填写面试准备备注。"),
     calendarDay,
     calendarStart: start.getHours() * 2 + start.getMinutes() / 30,
     calendarSpan: Math.max(
@@ -469,24 +470,24 @@ function toInterview(
 
 function errorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
-    if (error.status === 401) return "登录状态已失效，请重新登录后再试。";
+    if (error.status === 401) return t("登录状态已失效，请重新登录后再试。");
     const messages: Record<string, string> = {
-      INTERVIEW_EDIT_CONFLICT: "这条面试已在其他页面更新，请刷新后再试。",
-      INTERVIEW_INVALID_TRANSITION: "当前求职进度不允许执行这个操作。",
-      INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED: "当前阶段不支持开放作答窗口。",
-      INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED: "这条安排不支持设置作答计划。",
-      INTERVIEW_ANSWER_PLAN_INVALID_TIME: "作答计划时间无效，请重新选择。",
-      INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW: "作答计划必须完整落在官方开放时间内。",
-      INVALID_INTERVIEW_TIME: "面试开始时间需要是有效的 24 小时制 HH:mm（分钟 00–59）。",
-      INTERVIEW_ASSET_TOO_LARGE: "素材超过 500 MiB，请压缩后重试。",
-      UNSUPPORTED_INTERVIEW_ASSET: "暂不支持这种素材格式。",
-      INTERVIEW_APPLICATION_DELETE_FAILED: "删除失败，请稍后重试。",
-      INTERVIEW_APPLICATION_NOT_EMPTY: "请先清理该求职进程下的面试记录。",
-      INTERVIEW_SESSION_NOT_EMPTY: "请先删除这场面试关联的素材。",
+      INTERVIEW_EDIT_CONFLICT: t("这条面试已在其他页面更新，请刷新后再试。"),
+      INTERVIEW_INVALID_TRANSITION: t("当前求职进度不允许执行这个操作。"),
+      INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED: t("当前阶段不支持开放作答窗口。"),
+      INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED: t("这条安排不支持设置作答计划。"),
+      INTERVIEW_ANSWER_PLAN_INVALID_TIME: t("作答计划时间无效，请重新选择。"),
+      INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW: t("作答计划必须完整落在官方开放时间内。"),
+      INVALID_INTERVIEW_TIME: t("面试开始时间需要是有效的 24 小时制 HH:mm（分钟 00–59）。"),
+      INTERVIEW_ASSET_TOO_LARGE: t("素材超过 500 MiB，请压缩后重试。"),
+      UNSUPPORTED_INTERVIEW_ASSET: t("暂不支持这种素材格式。"),
+      INTERVIEW_APPLICATION_DELETE_FAILED: t("删除失败，请稍后重试。"),
+      INTERVIEW_APPLICATION_NOT_EMPTY: t("请先清理该求职进程下的面试记录。"),
+      INTERVIEW_SESSION_NOT_EMPTY: t("请先删除这场面试关联的素材。"),
     };
-    return messages[error.message] ?? `操作失败：${error.message}`;
+    return messages[error.message] ?? t("操作失败：{value0}", { value0: error.message });
   }
-  return "操作失败，请稍后重试。";
+  return t("操作失败，请稍后重试。");
 }
 
 async function listAllJobApplications(
@@ -581,6 +582,7 @@ export function InterviewCenterPage({
   navigation?: ReactNode;
   moduleTitle?: string;
 }) {
+  useLocale();
   const weekStart = useMemo(() => startOfWeek(), []);
   const [scheduleGranularity, setScheduleGranularity] = useState<ScheduleGranularity>("week");
   const [scheduleAnchor, setScheduleAnchor] = useState(() => startOfWeek());
@@ -873,7 +875,7 @@ export function InterviewCenterPage({
       await loadData(response.session.id);
       const updatedStart = new Date(response.session.start_at);
       const updatedEnd = new Date(response.session.end_at);
-      pushScheduleToast(`已自动更新：${current.company} · ${weekday(updatedStart)} ${formatTime(updatedStart)}–${formatTime(updatedEnd)}`);
+      pushScheduleToast(t("已自动更新：{value0} · {value1} {value2}–{value3}", { value0: current.company, value1: weekday(updatedStart), value2: formatTime(updatedStart), value3: formatTime(updatedEnd) }));
     } catch (error) {
       showNotice(errorMessage(error));
       await loadData(id);
@@ -906,8 +908,8 @@ export function InterviewCenterPage({
       setNotice(null);
       await loadData(response.session.id);
       pushScheduleToast(start && end
-        ? `已更新作答计划：${current.company} · ${weekday(start)} ${formatTime(start)}–${formatTime(end)}`
-        : `已清除作答计划：${current.company}`);
+        ? t("已更新作答计划：{value0} · {value1} {value2}–{value3}", { value0: current.company, value1: weekday(start), value2: formatTime(start), value3: formatTime(end) })
+        : t("已清除作答计划：{value0}", { value0: current.company }));
     } catch (error) {
       showNotice(errorMessage(error));
       await loadData(id);
@@ -959,7 +961,7 @@ export function InterviewCenterPage({
         <CareerNotice
           key={scheduleConflict.key}
           className="schedule-conflict-notice"
-          title="时间存在冲突"
+          title={t("时间存在冲突")}
           message={describeScheduleConflict(scheduleConflict, timezone)}
           onDismiss={dismissScheduleConflict}
           action={(
@@ -971,9 +973,7 @@ export function InterviewCenterPage({
                 dismissScheduleConflict();
                 void selectInterview(target);
               }}
-            >
-              查看
-            </button>
+            >{t("查看")}</button>
           )}
         />
       )}
@@ -1015,7 +1015,7 @@ export function InterviewCenterPage({
         loading={showSkeleton}
         className="career-body-slot"
         placeholder={view === "schedule" ? <ScheduleLoading /> : view === "applications" && !isApplicationDetailRoute ? <BoardSkeleton /> : (
-          <div className="cd3-page"><SkeletonHead actions={2} /><SkeletonCards cards={[120, 220, 160]} label="正在加载求职数据…" /></div>
+          <div className="cd3-page"><SkeletonHead actions={2} /><SkeletonCards cards={[120, 220, 160]} label={t("正在加载求职数据…")} /></div>
         )}
       >{isApplicationDetailRoute ? (
         <>
@@ -1131,7 +1131,7 @@ export function InterviewCenterPage({
             setCreateInterviewEndAt(null);
             if (info) {
               const start = new Date(info.startAt);
-              pushScheduleToast(`已创建：${info.company} · ${info.stage} · ${weekday(start)} ${formatTime(start)}`);
+              pushScheduleToast(t("已创建：{value0} · {value1} · {value2} {value3}", { value0: info.company, value1: info.stage, value2: weekday(start), value3: formatTime(start) }));
             }
             void loadData(id);
           }}
@@ -1170,7 +1170,7 @@ export function InterviewCenterPage({
             closeCreateProcess();
             if (info) {
               const start = new Date(info.startAt);
-              pushScheduleToast(`已创建：${info.company} · ${info.stage} · ${weekday(start)} ${formatTime(start)}`);
+              pushScheduleToast(t("已创建：{value0} · {value1} · {value2} {value3}", { value0: info.company, value1: info.stage, value2: weekday(start), value3: formatTime(start) }));
             }
             void loadData(id);
           }}
@@ -1208,6 +1208,7 @@ export function InterviewCenterPage({
 }
 
 function OverviewLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+  useLocale();
   return <a className={className} href={href} onClick={(event) => {
     if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     event.preventDefault();
@@ -1237,6 +1238,7 @@ function ApplicationsHeader({
   onCreateProcess: () => void;
   onImport: () => void;
 }) {
+  useLocale();
   // 本周统计也走短时缓存：回到看板时先显示上一次的数字，后台刷新到了再原地更新
   const metricsCacheKey = `career-metrics:${isoDate(weekStart)}:${timezone}`;
   const [metrics, setMetrics] = useState<InterviewOverview["metrics"] | null>(() => readPageCache<InterviewOverview["metrics"]>(metricsCacheKey)?.value ?? null);
@@ -1267,22 +1269,22 @@ function ApplicationsHeader({
     <>
       <CareerPageHead
         className="career-board-head"
-        eyebrow={["JOBS", `本周 ${formatMonthDay(weekStart)} 至 ${formatMonthDay(addDays(weekStart, 6))}`]}
-        title="岗位看板"
-        subtitle={<Reveal inline loading={statsPending} placeholder={<LoadingText width={260} />}>{`${activeCount} 个进行中 · ${weeklyInterviews} 场面试${pendingOffers ? ` · ${pendingOffers} 个 Offer 待回复` : ""}`}</Reveal>}
+        eyebrow={["JOBS", t("本周 {value0} 至 {value1}", { value0: formatMonthDay(weekStart), value1: formatMonthDay(addDays(weekStart, 6)) })]}
+        title={t("岗位看板")}
+        subtitle={<Reveal inline loading={statsPending} placeholder={<LoadingText width={260} />}>{t("{value0} 个进行中 · {value1} 场面试{value2}", { value0: activeCount, value1: weeklyInterviews, value2: pendingOffers ? t(" · {value0} 个 Offer 待回复", { value0: pendingOffers }) : "" })}</Reveal>}
         actions={(
           <>
-            <button type="button" className="v3-btn v3-btn-ghost" onClick={onCreateProcess}><Icon name="cal" size={13} />已有面试安排</button>
-            <button type="button" className="v3-btn v3-btn-dark" onClick={onImport}>导入岗位</button>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={onCreateProcess}><Icon name="cal" size={13} />{t("已有面试安排")}</button>
+            <button type="button" className="v3-btn v3-btn-dark" onClick={onImport}>{t("导入岗位")}</button>
           </>
         )}
       />
-      <dl className="career-board-stats" aria-label="岗位看板统计">
+      <dl className="career-board-stats" aria-label={t("岗位看板统计")}>
         {[
-          { label: "投递总数", value: empty ? "0" : String(MOCK_BOARD_STATS.totalApplied), mock: true },
-          { label: "本周面试", value: String(weeklyInterviews) },
-          { label: "面试转化率", value: empty ? "—" : MOCK_BOARD_STATS.conversionRate, mock: true },
-          { label: "Offer", value: String(offers), extra: pendingOffers ? "待回复" : undefined },
+          { label: t("投递总数"), value: empty ? "0" : String(MOCK_BOARD_STATS.totalApplied), mock: true },
+          { label: t("本周面试"), value: String(weeklyInterviews) },
+          { label: t("面试转化率"), value: empty ? "—" : MOCK_BOARD_STATS.conversionRate, mock: true },
+          { label: "Offer", value: String(offers), extra: pendingOffers ? t("待回复") : undefined },
         ].map((item) => (
           <div key={item.label} className="career-board-stat">
             <Reveal loading={statsPending} placeholder={<div><Sk w={40} h={22} r={5} /><Sk w={64} h={11} style={{ marginTop: 8 }} /></div>}>
@@ -1322,6 +1324,7 @@ function ApplicationViewControls({
   onGroupingChange: (value: boolean) => void;
   onColumnVisibilityChange: (columnId: string, visible: boolean) => void;
 }) {
+  useLocale();
   const sortRef = useRef<HTMLButtonElement>(null);
   const filterRef = useRef<HTMLButtonElement>(null);
   const [sortOpen, setSortOpen] = useState(false);
@@ -1337,49 +1340,47 @@ function ApplicationViewControls({
     [applications],
   );
   return (
-    <div className="career-board-toolbar" role="group" aria-label="求职记录显示设置">
-      <div className="v3-seg" role="group" aria-label="显示方式">
-        <button type="button" aria-pressed={displayMode === "board"} onClick={() => onDisplayModeChange("board")}>看板</button>
-        <button type="button" aria-pressed={displayMode === "list"} onClick={() => onDisplayModeChange("list")}>列表</button>
+    <div className="career-board-toolbar" role="group" aria-label={t("求职记录显示设置")}>
+      <div className="v3-seg" role="group" aria-label={t("显示方式")}>
+        <button type="button" aria-pressed={displayMode === "board"} onClick={() => onDisplayModeChange("board")}>{t("看板")}</button>
+        <button type="button" aria-pressed={displayMode === "list"} onClick={() => onDisplayModeChange("list")}>{t("列表")}</button>
       </div>
       <div className="career-board-toolbar-right">
-        <SearchBox value={query} onChange={onQueryChange} placeholder="搜索公司、岗位…" label="搜索求职进程" width={180} />
+        <SearchBox value={query} onChange={onQueryChange} placeholder={t("搜索公司、岗位…")} label={t("搜索求职进程")} width={180} />
         <button ref={sortRef} type="button" className="career-toolbar-link" aria-haspopup="menu" aria-expanded={sortOpen} onClick={() => setSortOpen((open) => !open)}>
-          <Icon name="list" size={13} />排序
-        </button>
+          <Icon name="list" size={13} />{t("排序")}</button>
         <Menu
           anchorRef={sortRef}
           open={sortOpen}
           onClose={closeSort}
           placement="bottom-end"
-          label="排序"
+          label={t("排序")}
           width={148}
           items={[
-            { label: "最近排期", checked: sortMode === "recent_schedule", onSelect: () => onSortChange("recent_schedule") },
-            { label: "最先添加", checked: sortMode === "earliest_added", onSelect: () => onSortChange("earliest_added") },
+            { label: t("最近排期"), checked: sortMode === "recent_schedule", onSelect: () => onSortChange("recent_schedule") },
+            { label: t("最先添加"), checked: sortMode === "earliest_added", onSelect: () => onSortChange("earliest_added") },
           ]}
         />
-        <button ref={filterRef} type="button" className="career-toolbar-link" aria-label="视图设置" aria-haspopup="dialog" aria-expanded={filterOpen} onClick={() => (filterOpen ? closeFilter() : setFilterOpen(true))}>
-          <Icon name="filter" size={13} />筛选
-        </button>
-        <Popover anchorRef={filterRef} open={filterOpen} onClose={closeFilter} placement="bottom-end" label="视图设置" className="career-filter-panel">
+        <button ref={filterRef} type="button" className="career-toolbar-link" aria-label={t("视图设置")} aria-haspopup="dialog" aria-expanded={filterOpen} onClick={() => (filterOpen ? closeFilter() : setFilterOpen(true))}>
+          <Icon name="filter" size={13} />{t("筛选")}</button>
+        <Popover anchorRef={filterRef} open={filterOpen} onClose={closeFilter} placement="bottom-end" label={t("视图设置")} className="career-filter-panel">
           <div className="career-filter-field">
-            <span>分组</span>
+            <span>{t("分组")}</span>
             <Select
               size="sm"
-              label="分类分组"
+              label={t("分类分组")}
               value={groupByCategory ? "category" : "none"}
-              options={[{ value: "none", label: "不分组" }, { value: "category", label: "求职分类" }]}
+              options={[{ value: "none", label: t("不分组") }, { value: "category", label: t("求职分类") }]}
               onChange={(value) => onGroupingChange(value === "category")}
             />
           </div>
           <div className="career-filter-field">
-            <span>排序</span>
+            <span>{t("排序")}</span>
             <Select
               size="sm"
-              label="排序方式"
+              label={t("排序方式")}
               value={sortMode}
-              options={[{ value: "recent_schedule", label: "最近排期" }, { value: "earliest_added", label: "最先添加" }]}
+              options={[{ value: "recent_schedule", label: t("最近排期") }, { value: "earliest_added", label: t("最先添加") }]}
               onChange={(value) => onSortChange(value as ApplicationSortMode)}
             />
           </div>
@@ -1387,11 +1388,11 @@ function ApplicationViewControls({
             <>
               <div className="v3-menu-sep" />
               <button type="button" className="career-filter-toggle" aria-expanded={stageVisibilityOpen} aria-controls="career-view-stage-options" onClick={() => setStageVisibilityOpen((open) => !open)}>
-                <span>展示阶段</span>
+                <span>{t("展示阶段")}</span>
                 <Icon name={stageVisibilityOpen ? "chevu" : "chevd"} size={12} />
               </button>
               {stageVisibilityOpen && (
-                <div id="career-view-stage-options" className="career-filter-stages" role="group" aria-label="展示阶段">
+                <div id="career-view-stage-options" className="career-filter-stages" role="group" aria-label={t("展示阶段")}>
                   {boardColumnOptions.map((column) => (
                     <label key={column.id} className="career-filter-row">
                       <span>{column.label}</span>
@@ -1415,20 +1416,22 @@ function ApplicationViewControls({
 
 // 10.3 岗位看板加载中：页头 + 统计骨架 + 5 列骨架卡片
 function BoardSkeleton() {
-  return <SkeletonBoard label="正在加载求职数据…" />;
+  useLocale();
+  return <SkeletonBoard label={t("正在加载求职数据…")} />;
 }
 
 // 面试日程加载中：页头下方画日历格子骨架（替代原来居中的转圈）
 function ScheduleLoading() {
-  return <><SkeletonHead actions={2} /><SkeletonCalendar label="正在加载求职数据…" /></>;
+  useLocale();
+  return <><SkeletonHead actions={2} /><SkeletonCalendar label={t("正在加载求职数据…")} /></>;
 }
 
 function stageBlockReason(application: JobApplicationSummary): { reason: string; action: string } {
   const progress = projectApplicationProgress(application);
-  if (progress.isPending) return { reason: `${progress.stageLabel} · 先在看板里标记投递`, action: "去投递" };
-  if (application.current_stage_type === "offer") return { reason: "已进入 Offer · 不再安排面试", action: "查看" };
-  if (application.stage_state === "scheduled") return { reason: `${progress.stageLabel}已安排 · 先完成这一轮`, action: "查看" };
-  return { reason: `${progress.stageLabel} · ${progress.statusLabel}`, action: "查看" };
+  if (progress.isPending) return { reason: t("{value0} · 先在看板里标记投递", { value0: progress.stageLabel }), action: t("去投递") };
+  if (application.current_stage_type === "offer") return { reason: t("已进入 Offer · 不再安排面试"), action: t("查看") };
+  if (application.stage_state === "scheduled") return { reason: t("{value0}已安排 · 先完成这一轮", { value0: progress.stageLabel }), action: t("查看") };
+  return { reason: `${progress.stageLabel} · ${progress.statusLabel}`, action: t("查看") };
 }
 
 // 05.2a 新建面试：没有可推进的流程时，说明原因并列出被排除的流程；唯一主按钮打开「新建求职流程」并带上时间
@@ -1455,24 +1458,25 @@ function ScheduleStageDialog({
   onChanged: () => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const firstApplication = applications[0];
   if (!firstApplication) {
     const start = initialStartAt ? new Date(initialStartAt) : null;
     const end = initialEndAt ? new Date(initialEndAt) : null;
     const rangeLabel = start && Number.isFinite(start.getTime())
       ? `${weekday(start)} ${formatMonthDay(start)} · ${formatTime(start)}${end && Number.isFinite(end.getTime()) ? ` – ${formatTime(end)}` : ""}`
-      : "选择时间后再安排";
+      : t("选择时间后再安排");
     return (
-      <V3Dialog width={560} label="新建面试" onClose={onClose} className="career-empty-stage-dialog">
+      <V3Dialog width={560} label={t("新建面试")} onClose={onClose} className="career-empty-stage-dialog">
         <div className="v3-dialog-body">
-          <h2 className="v3-dialog-title">新建面试</h2>
+          <h2 className="v3-dialog-title">{t("新建面试")}</h2>
           <p className="v3-dialog-sub v3-num">{rangeLabel}</p>
           <div className="v3-stage has-dots career-dialog-stage"><NoStageArt /></div>
-          <h3 className="career-empty-stage-title">暂无可以推进的求职流程</h3>
-          <p className="career-empty-stage-body">只有已经投递、上一阶段已经结束的流程能在这里直接加一场。收到新岗位的面试通知？新建一个求职流程，这个时间会一起带过去。</p>
+          <h3 className="career-empty-stage-title">{t("暂无可以推进的求职流程")}</h3>
+          <p className="career-empty-stage-body">{t("只有已经投递、上一阶段已经结束的流程能在这里直接加一场。收到新岗位的面试通知？新建一个求职流程，这个时间会一起带过去。")}</p>
           {excludedApplications.length > 0 && (
             <>
-              <p className="career-section-label">这些流程现在还不能加</p>
+              <p className="career-section-label">{t("这些流程现在还不能加")}</p>
               <div className="v3-gcard">
                 {excludedApplications.slice(0, 4).map((item) => {
                   const block = stageBlockReason(item);
@@ -1491,8 +1495,8 @@ function ScheduleStageDialog({
             </>
           )}
         </div>
-        <DialogFooterV3 left={<button type="button" className="v3-link career-muted-link" onClick={onClose}>我知道了</button>}>
-          <button type="button" className="v3-btn v3-btn-dark" onClick={onCreateProcess}>新建求职流程</button>
+        <DialogFooterV3 left={<button type="button" className="v3-link career-muted-link" onClick={onClose}>{t("我知道了")}</button>}>
+          <button type="button" className="v3-btn v3-btn-dark" onClick={onCreateProcess}>{t("新建求职流程")}</button>
         </DialogFooterV3>
       </V3Dialog>
     );
@@ -1505,8 +1509,8 @@ function ScheduleStageDialog({
       initialStartAt={initialStartAt}
       initialEndAt={initialEndAt}
       includeOffer={false}
-      title="新建面试"
-      description="选择已经完成上一阶段的求职流程，再填写下一阶段及排期信息。"
+      title={t("新建面试")}
+      description={t("选择已经完成上一阶段的求职流程，再填写下一阶段及排期信息。")}
       onApplicationChange={onApplicationChange}
       onClose={onClose}
       onChanged={onChanged}
@@ -1517,14 +1521,16 @@ function ScheduleStageDialog({
 
 // 删除岗位确认：岗位卡 + 红色垃圾桶角标（沿用 01.1j 删除确认的插图写法）
 function DeleteRecordArt() {
+  useLocale();
   return <DeleteSessionArt />;
 }
 
 // 04.1 状态变体②：四列空看板 + 飞入的岗位卡 + 插件角标
 function EmptyBoardArt() {
+  useLocale();
   return (
     <Centered width={544} height={216}>
-      {[["待投递", "var(--v3-fnt)"], ["笔试", "var(--v3-or)"], ["面试中", "var(--v3-bl)"], ["Offer", "var(--v3-gn)"]].map(([label, color], index) => (
+      {[[t("待投递"), "var(--v3-fnt)"], [t("笔试"), "var(--v3-or)"], [t("面试中"), "var(--v3-bl)"], ["Offer", "var(--v3-gn)"]].map(([label, color], index) => (
         <span key={label} style={{ position: "absolute", left: 85 + index * 96, top: 24, width: 86, height: 168, border: "1px solid var(--v3-line)", borderRadius: 8, background: "#fbfbfa" }}>
           <span style={{ position: "absolute", left: 9, top: 12, width: 6, height: 6, borderRadius: 3, background: color }} />
           <span style={{ position: "absolute", left: 20, top: 8, color: "var(--v3-sub)", fontSize: 9.5, fontWeight: 500 }}>{label}</span>
@@ -1535,10 +1541,10 @@ function EmptyBoardArt() {
         <path d="M0 0C80 10 200 30 272 56" stroke="var(--v3-fnt2)" strokeWidth="1.4" strokeDasharray="3 3" />
       </svg>
       <Paper x={95} y={54} w={120} h={54} r={8}>
-        <span style={{ position: "absolute", left: 10, top: 9, color: "var(--v3-txt)", fontSize: 10, fontWeight: 500 }}>美团 · Java 开发</span>
-        <span style={{ position: "absolute", left: 10, top: 31, height: 14, borderRadius: 3, background: "var(--v3-field)", padding: "0 5px", color: "var(--v3-sub)", fontSize: 8, fontWeight: 500, lineHeight: "14px" }}>校招</span>
+        <span style={{ position: "absolute", left: 10, top: 9, color: "var(--v3-txt)", fontSize: 10, fontWeight: 500 }}>{t("美团 · Java 开发")}</span>
+        <span style={{ position: "absolute", left: 10, top: 31, height: 14, borderRadius: 3, background: "var(--v3-field)", padding: "0 5px", color: "var(--v3-sub)", fontSize: 8, fontWeight: 500, lineHeight: "14px" }}>{t("校招")}</span>
         <span style={{ position: "absolute", left: 46, top: 36, width: 4, height: 4, borderRadius: 2, background: "var(--v3-rd)" }} />
-        <span style={{ position: "absolute", left: 54, top: 32, color: "var(--v3-rd)", fontFamily: "var(--v3-num)", fontSize: 8 }}>09-30 截止</span>
+        <span style={{ position: "absolute", left: 54, top: 32, color: "var(--v3-rd)", fontFamily: "var(--v3-num)", fontSize: 8 }}>{t("09-30 截止")}</span>
       </Paper>
       <span style={{ position: "absolute", left: 369, top: 146, display: "grid", width: 40, height: 40, placeItems: "center", borderRadius: 12, background: "var(--v3-dark)", color: "#fff" }}><Icon name="puzzle" size={18} /></span>
     </Centered>
@@ -1555,6 +1561,7 @@ function columnToneForApplication(application: JobApplicationSummary): string {
 
 // 05.2a 插图：一张虚线的空白日程卡 + 问号 + 三列看板里没有能往后推的卡片
 function NoStageArt() {
+  useLocale();
   return (
     <Centered width={496} height={120}>
       <span style={{ position: "absolute", left: 98, top: 26, width: 112, height: 64, border: "1px dashed var(--v3-fl)", borderRadius: 8, background: "#fff" }}>
@@ -1563,7 +1570,7 @@ function NoStageArt() {
         <span style={{ position: "absolute", left: 10, top: 40, width: 70, height: 14, borderRadius: 3, background: "#f3f3f0", color: "var(--v3-fnt)", fontFamily: "var(--v3-num)", fontSize: 7.5, fontWeight: 500, lineHeight: "14px", paddingLeft: 5 }}>14:00 – 15:00</span>
       </span>
       <span style={{ position: "absolute", left: 198, top: 46, display: "grid", width: 24, height: 24, placeItems: "center", border: "1px solid var(--v3-cl)", borderRadius: 12, background: "#fff", color: "var(--v3-sub)", fontFamily: "var(--v3-num)", fontSize: 12, fontWeight: 600, boxShadow: "0 2px 6px rgb(0 0 0 / 6%)" }}>?</span>
-      {[["待投递", true], ["等待结果", true], ["Offer", false]].map(([label, filled], index) => (
+      {[[t("待投递"), true], [t("等待结果"), true], ["Offer", false]].map(([label, filled], index) => (
         <span key={String(label)} style={{ position: "absolute", left: 242 + index * 58, top: 18, width: 52, height: 84, border: "1px solid var(--v3-line)", borderRadius: 6, background: "#fbfbfa" }}>
           <span style={{ position: "absolute", top: 6, left: 0, right: 0, color: "var(--v3-fnt)", fontSize: 8, fontWeight: 500, textAlign: "center" }}>{label}</span>
           {filled ? (
@@ -1607,6 +1614,7 @@ function ApplicationsView({
   onChanged: () => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const [categoryApplication, setCategoryApplication] = useState<JobApplicationSummary | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [draggedNextStage, setDraggedNextStage] = useState<{
@@ -1653,7 +1661,7 @@ function ApplicationsView({
     sortMode,
     completedScheduleStartAtByApplicationId,
   );
-  const categories = [["internship", "实习"], ["campus", "校招"], ["full_time", "正式"], ["", "未分类"]] as const;
+  const categories = [["internship", t("实习")], ["campus", t("校招")], ["full_time", t("正式")], ["", t("未分类")]] as const;
   const categoryKey = (item: JobApplicationSummary) => categories.some(([key]) => key === item.job_snapshot?.employment_type) ? String(item.job_snapshot?.employment_type ?? "") : "";
   const listGroups = groupByCategory
     ? categories.map(([key, label]) => ({ key, label, items: visibleApplications.filter((item) => categoryKey(item) === key) })).filter((group) => group.items.length)
@@ -1682,7 +1690,7 @@ function ApplicationsView({
         <CareerNotice
           key={dragRejectionNotice.id}
           className="application-drag-rejection-notice"
-          title="无法更新求职阶段"
+          title={t("无法更新求职阶段")}
           message={dragRejectionNotice.message}
           onDismiss={dismissDragRejection}
         />
@@ -1752,11 +1760,11 @@ function ApplicationsView({
       )}</MotionPresence>
       <MotionPresence>{pendingDelete && (
         <V3ConfirmDialog
-          title={`永久删除「${pendingDelete.company_name_snapshot} · ${pendingDelete.job_title_snapshot}」？`}
-          description="删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。"
+          title={t("永久删除「{value0} · {value1}」？", { value0: pendingDelete.company_name_snapshot, value1: pendingDelete.job_title_snapshot })}
+          description={t("删除后，该岗位及其求职进程、阶段、排期和复盘都将无法恢复；关联素材的原文件仍保留在资料库。")}
           art={<DeleteRecordArt />}
-          confirmLabel="永久删除"
-          busyLabel="正在删除…"
+          confirmLabel={t("永久删除")}
+          busyLabel={t("正在删除…")}
           busy={deletingApplicationId === pendingDelete.id}
           onCancel={() => setPendingDelete(null)}
           onConfirm={deleteEndedApplication}
@@ -1767,15 +1775,15 @@ function ApplicationsView({
         {listGroups.map((group) => <section key={group.key} className="career-application-list-group">
           {groupByCategory && <h2 className="career-application-list-group-title">{group.label}{" "}<span>{group.items.length}</span></h2>}
           <div className="interview-surface career-application-table-surface">
-          <table className="career-application-table" aria-label={groupByCategory ? `${group.label}求职记录列表` : "求职记录列表"}>
+          <table className="career-application-table" aria-label={groupByCategory ? t("{value0}求职记录列表", { value0: group.label }) : t("求职记录列表")}>
             <thead>
               <tr>
-                <th scope="col">公司 / 岗位</th>
-                {!groupByCategory && <th scope="col">求职分类</th>}
-                <th scope="col">当前进度</th>
-                <th scope="col">最近安排</th>
-                <th scope="col">投递日期</th>
-                <th scope="col">更新时间</th>
+                <th scope="col">{t("公司 / 岗位")}</th>
+                {!groupByCategory && <th scope="col">{t("求职分类")}</th>}
+                <th scope="col">{t("当前进度")}</th>
+                <th scope="col">{t("最近安排")}</th>
+                <th scope="col">{t("投递日期")}</th>
+                <th scope="col">{t("更新时间")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1791,7 +1799,7 @@ function ApplicationsView({
                     key={item.id}
                     className="career-application-table-row"
                     tabIndex={0}
-                    aria-label={`查看 ${item.company_name_snapshot} · ${item.job_title_snapshot} 的求职记录详情`}
+                    aria-label={t("查看 {value0} · {value1} 的求职记录详情", { value0: item.company_name_snapshot, value1: item.job_title_snapshot })}
                     onClick={(event) => {
                       const target = event.target;
                       if (target instanceof Element && target.closest("a, button, input, select, textarea")) return;
@@ -1812,8 +1820,8 @@ function ApplicationsView({
                         {progressLabel}
                       </span>
                     </div></td>
-                    <td><span className="career-application-cell-text">{nextInterview ? `${formatApplicationSessionRange(nextInterview.start_at, nextInterview.end_at)} · ${nextInterview.stage_label}` : "暂无安排"}</span></td>
-                    <td>{item.applied_at ? <time dateTime={item.applied_at}>{formatApplicationUpdatedAt(item.applied_at)}</time> : "未投递"}</td>
+                    <td><span className="career-application-cell-text">{nextInterview ? `${formatApplicationSessionRange(nextInterview.start_at, nextInterview.end_at)} · ${nextInterview.stage_label}` : t("暂无安排")}</span></td>
+                    <td>{item.applied_at ? <time dateTime={item.applied_at}>{formatApplicationUpdatedAt(item.applied_at)}</time> : t("未投递")}</td>
                     <td><time className="career-application-updated-at" dateTime={item.updated_at}>{formatApplicationUpdatedAt(item.updated_at)}</time></td>
                   </tr>
                 );
@@ -1825,19 +1833,19 @@ function ApplicationsView({
         </div>
       ) : !visibleApplications.length ? (
         normalizedQuery ? (
-          <section className="v3-empty career-board-empty is-search" aria-label="没有匹配的求职进程">
-            <h3>没有匹配的求职进程</h3>
-            <p>换个公司、职位或阶段关键词试试。</p>
+          <section className="v3-empty career-board-empty is-search" aria-label={t("没有匹配的求职进程")}>
+            <h3>{t("没有匹配的求职进程")}</h3>
+            <p>{t("换个公司、职位或阶段关键词试试。")}</p>
           </section>
         ) : (
           <section className="v3-empty career-board-empty" aria-labelledby="career-board-empty-title">
             <div className="v3-stage has-dots"><EmptyBoardArt /></div>
-            <h3 id="career-board-empty-title" role="heading" aria-level={2}>还没有求职进程</h3>
-            <p>装上浏览器插件，在招聘网站上一键把岗位存进来；也可以粘贴岗位文字导入。</p>
+            <h3 id="career-board-empty-title" role="heading" aria-level={2}>{t("还没有求职进程")}</h3>
+            <p>{t("装上浏览器插件，在招聘网站上一键把岗位存进来；也可以粘贴岗位文字导入。")}</p>
             <div className="v3-empty-actions">
-              <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={onInstallPlugin}><Icon name="puzzle" size={13} />安装浏览器插件</button>
-              <button type="button" className="v3-link" onClick={onImport}>粘贴岗位文字导入</button>
-              <button type="button" className="v3-link" onClick={onCreate}>创建第一条求职进程</button>
+              <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={onInstallPlugin}><Icon name="puzzle" size={13} />{t("安装浏览器插件")}</button>
+              <button type="button" className="v3-link" onClick={onImport}>{t("粘贴岗位文字导入")}</button>
+              <button type="button" className="v3-link" onClick={onCreate}>{t("创建第一条求职进程")}</button>
             </div>
           </section>
         )
@@ -1847,16 +1855,18 @@ function ApplicationsView({
 }
 
 function InterviewScheduleWeekView({ showAnswerPeriods }: { showAnswerPeriods: boolean }) {
+  useLocale();
   return (
-    <div className="interview-event-calendar-week" role="grid" aria-label="面试周排期，可拖动并按 15 分钟调整">
+    <div className="interview-event-calendar-week" role="grid" aria-label={t("面试周排期，可拖动并按 15 分钟调整")}>
       <EventCalendarWeekView showAllDay={showAnswerPeriods} />
     </div>
   );
 }
 
 function InterviewScheduleMonthView() {
+  useLocale();
   return (
-    <div className="interview-event-calendar-month" role="grid" aria-label="月面试排期">
+    <div className="interview-event-calendar-month" role="grid" aria-label={t("月面试排期")}>
       <EventCalendarMonthView />
     </div>
   );
@@ -1866,12 +1876,12 @@ function formatChineseDateRange(start: Date, end: Date): string {
   const sameYear = start.getFullYear() === end.getFullYear();
   const sameMonth = sameYear && start.getMonth() === end.getMonth();
   if (sameMonth) {
-    return `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日 – ${end.getDate()}日`;
+    return t("{value0}年{value1}月{value2}日 – {value3}日", { value0: start.getFullYear(), value1: start.getMonth() + 1, value2: start.getDate(), value3: end.getDate() });
   }
   if (sameYear) {
-    return `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日 – ${end.getMonth() + 1}月${end.getDate()}日`;
+    return t("{value0}年{value1}月{value2}日 – {value3}月{value4}日", { value0: start.getFullYear(), value1: start.getMonth() + 1, value2: start.getDate(), value3: end.getMonth() + 1, value4: end.getDate() });
   }
-  return `${start.getFullYear()}年${start.getMonth() + 1}月${start.getDate()}日 – ${end.getFullYear()}年${end.getMonth() + 1}月${end.getDate()}日`;
+  return t("{value0}年{value1}月{value2}日 – {value3}年{value4}月{value5}日", { value0: start.getFullYear(), value1: start.getMonth() + 1, value2: start.getDate(), value3: end.getFullYear(), value4: end.getMonth() + 1, value5: end.getDate() });
 }
 
 function scheduleToolbarTitle(view: ScheduleGranularity, anchor: Date, weekStart: Date, monthStart: Date): string {
@@ -1879,7 +1889,7 @@ function scheduleToolbarTitle(view: ScheduleGranularity, anchor: Date, weekStart
   if (view === "week") return formatChineseDateRange(weekStart, addDays(weekStart, 6));
   if (view === "days") return formatChineseDateRange(anchor, addDays(anchor, 4));
   if (view === "agenda") return formatChineseDateRange(anchor, addDays(anchor, 29));
-  return `${anchor.getFullYear()}年${formatDate(anchor)}`;
+  return t("{value0}年{value1}", { value0: anchor.getFullYear(), value1: formatDate(anchor) });
 }
 
 function renderInterviewCalendarEvent({
@@ -1896,7 +1906,7 @@ function renderInterviewCalendarEvent({
   if (!interview) {
     return (
       <span className="interview-calendar-event-content is-draft">
-        <strong className="interview-calendar-event-title">新面试</strong>
+        <strong className="interview-calendar-event-title">{t("新面试")}</strong>
         <span className="interview-calendar-event-time v3-num"><Icon name="clock" size={10} />{visibleStart}–{visibleEnd}</span>
       </span>
     );
@@ -1905,9 +1915,9 @@ function renderInterviewCalendarEvent({
     // 周视图顶部「全天」行：左侧色条 + 「公司 阶段」（设计稿 05.2 All-day）
     return (
       <span className="interview-calendar-event-content interview-calendar-open-window-content">
-        <strong className="interview-calendar-event-title">{interview.company} {interview.stage}开放</strong>
+        <strong className="interview-calendar-event-title">{interview.company} {interview.stage}{t("开放")}</strong>
         <span className="interview-calendar-window-range">{interview.date} {interview.time} – {formatDate(new Date(interview.endAt))} {interview.endTime}</span>
-        <em className="interview-calendar-window-status">{interview.status === "completed" ? "已完成" : interview.status === "cancelled" ? "已取消" : "待完成"}</em>
+        <em className="interview-calendar-window-status">{interview.status === "completed" ? t("已完成") : interview.status === "cancelled" ? t("已取消") : t("待完成")}</em>
       </span>
     );
   }
@@ -1932,13 +1942,13 @@ function renderInterviewCalendarEvent({
 
 // 05.1 / 05.2 页头文案：月视图「2026 年 9 月」，周视图「9 月 21 日 – 27 日」
 function scheduleHeadTitle(view: ScheduleGranularity, anchor: Date, weekStart: Date, monthStart: Date): string {
-  if (view === "month") return `${monthStart.getFullYear()} 年 ${monthStart.getMonth() + 1} 月`;
+  if (view === "month") return t("{value0} 年 {value1} 月", { value0: monthStart.getFullYear(), value1: monthStart.getMonth() + 1 });
   const start = view === "week" ? weekStart : anchor;
   const end = view === "week" ? addDays(weekStart, 6) : view === "days" ? addDays(anchor, 4) : view === "agenda" ? addDays(anchor, 29) : anchor;
-  if (start.getTime() === end.getTime()) return `${start.getMonth() + 1} 月 ${start.getDate()} 日`;
+  if (start.getTime() === end.getTime()) return t("{value0} 月 {value1} 日", { value0: start.getMonth() + 1, value1: start.getDate() });
   return start.getMonth() === end.getMonth()
-    ? `${start.getMonth() + 1} 月 ${start.getDate()} 日 – ${end.getDate()} 日`
-    : `${start.getMonth() + 1} 月 ${start.getDate()} 日 – ${end.getMonth() + 1} 月 ${end.getDate()} 日`;
+    ? t("{value0} 月 {value1} 日 – {value2} 日", { value0: start.getMonth() + 1, value1: start.getDate(), value2: end.getDate() })
+    : t("{value0} 月 {value1} 日 – {value2} 月 {value3} 日", { value0: start.getMonth() + 1, value1: start.getDate(), value2: end.getMonth() + 1, value3: end.getDate() });
 }
 
 function ScheduleView({
@@ -1982,6 +1992,7 @@ function ScheduleView({
   onAnswerPlanMove: (id: string, startAt: Date, endAt: Date) => void;
   onAnswerPlanChange: (id: string, startAt: Date | null, durationMinutes: number | null) => void;
 }) {
+  useLocale();
   const [openInterviewId, setOpenInterviewId] = useState<string | null>(null);
   // 上一段 / 下一段：日历沿时间方向横向滑入（像系统日历那样）；月 / 周切换按分段控件的左右位置滑入（月在左、周在右）
   const previousAnchorRef = useRef(anchor.getTime());
@@ -2126,7 +2137,7 @@ function ScheduleView({
     const disclosureEvents: CalendarEvent<Interview | null>[] = granularity === "week" && (hiddenOpenWindowCount > 0 || showAllOpenWindows && openWindows.length > 3)
       ? [{
           id: "interview-open-window-more",
-          title: hiddenOpenWindowCount > 0 ? `还有 ${hiddenOpenWindowCount} 项待完成 · 展开查看` : "收起更多项目",
+          title: hiddenOpenWindowCount > 0 ? t("还有 {value0} 项待完成 · 展开查看", { value0: hiddenOpenWindowCount }) : t("收起更多项目"),
           start: new Date(weekStart),
           end: addDays(weekStart, 7),
           allDay: true,
@@ -2150,7 +2161,7 @@ function ScheduleView({
       ...events,
       {
         id: "interview-calendar-draft",
-        title: "新面试",
+        title: t("新面试"),
         start,
         end,
         color: INTERVIEW_CALENDAR_COLORS[draftColor],
@@ -2160,7 +2171,7 @@ function ScheduleView({
         data: null,
       },
     ];
-  }, [draftColor, draftEndAt, draftStartAt, granularity, showAllOpenWindows, visibleInterviews, weekStart]);
+  }, [draftColor, draftEndAt, draftStartAt, granularity, showAllOpenWindows, visibleInterviews, weekStart, getLocale()]);
   const updateCalendarEvent = (update: EventCalendarProposedUpdate<Interview | null>) => {
     const interview = update.event.data;
     if (!interview?.canReschedule || update.allDay) return false;
@@ -2212,7 +2223,7 @@ function ScheduleView({
   const now = new Date();
   const inRange = visibleInterviews.filter((item) => item.status !== "cancelled" && new Date(item.startAt) < rangeEnd && new Date(item.endAt) > rangeStart);
   const todayCount = visibleInterviews.filter((item) => item.status !== "cancelled" && item.scheduleKind === "fixed_slot" && new Date(item.startAt).toDateString() === now.toDateString()).length;
-  const subtitle = `${granularity === "month" ? "本月" : "本周"} ${inRange.length} 个日程${todayCount ? ` · 今天 ${todayCount} 场面试` : ""}`;
+  const subtitle = t("{value0} {value1} 个日程{value2}", { value0: granularity === "month" ? t("本月") : t("本周"), value1: inRange.length, value2: todayCount ? t(" · 今天 {value0} 场面试", { value0: todayCount }) : "" });
   // 「接下来」：未来（或正在进行）的 3 条安排
   const upcoming = visibleInterviews
     .filter((item) => item.status === "upcoming" || item.status === "active")
@@ -2220,9 +2231,7 @@ function ScheduleView({
     .slice(0, 3);
   return (
     <div className="interview-schedule-layout career-schedule-v3">
-      <p id="schedule-drag-instructions" className="visually-hidden">
-        双击空白时间新建排期；按住空白时间拖动可选择范围。按住卡片可在当天移动排期，拖动上边缘调整开始时间，下边缘调整结束时间，以 15 分钟为步长调整。
-      </p>
+      <p id="schedule-drag-instructions" className="visually-hidden">{t("双击空白时间新建排期；按住空白时间拖动可选择范围。按住卡片可在当天移动排期，拖动上边缘调整开始时间，下边缘调整结束时间，以 15 分钟为步长调整。")}</p>
       <section
         ref={calendarMotionRef}
         className="schedule-calendar-panel"
@@ -2251,7 +2260,7 @@ function ScheduleView({
             onGranularityChange(nextView);
           }}
           views={calendarViews}
-          locale={zhCN}
+          locale={getLocale() === "en-US" ? enUS : zhCN}
           i18n={INTERVIEW_CALENDAR_I18N}
           timeZone={timezone}
           weekStartsOn={1}
@@ -2269,10 +2278,10 @@ function ScheduleView({
           components={calendarComponents}
           renderEvent={renderInterviewCalendarEvent}
           renderDayHeader={({ day, view: headerView, isToday }) => headerView === "month"
-            ? <span className="interview-calendar-day-header">{`周${"日一二三四五六"[day.getDay()]}`}</span>
+            ? <span className="interview-calendar-day-header">{weekdayName(day)}</span>
             : (
               <span className={`interview-calendar-day-header is-week${isToday ? " is-today" : ""}`}>
-                <small>{`周${"日一二三四五六"[day.getDay()]}`}</small>
+                <small>{weekdayName(day)}</small>
                 <strong className="v3-num">{day.getDate()}</strong>
               </span>
             )}
@@ -2316,7 +2325,7 @@ function ScheduleView({
           {/* 05.1 / 05.2 页头：左侧 SCHEDULE 小字 + 衬线月份 / 周范围 + 副标题；右侧 月/周 切换、上一段 / 今天 / 下一段 */}
           <header className="career-v3-head career-schedule-head">
             <div className="career-v3-head-copy">
-              <PageEyebrow segments={["SCHEDULE", `${(granularity === "month" ? monthStart : weekStart).getFullYear()} 年`, granularity === "month" ? "月视图" : "周视图"]} />
+              <PageEyebrow segments={["SCHEDULE", t("{value0} 年", { value0: (granularity === "month" ? monthStart : weekStart).getFullYear() }), granularity === "month" ? t("月视图") : t("周视图")]} />
               <h1 className="v3-page-title">
                 <button
                   ref={titleButtonRef}
@@ -2324,14 +2333,14 @@ function ScheduleView({
                   className="career-schedule-title-btn"
                   aria-haspopup="dialog"
                   aria-expanded={datePickerOpen}
-                  aria-label={`${scheduleHeadTitle(granularity, anchor, weekStart, monthStart)}，选择其他日期`}
+                  aria-label={t("{value0}，选择其他日期", { value0: scheduleHeadTitle(granularity, anchor, weekStart, monthStart) })}
                   onClick={() => setDatePickerOpen((open) => !open)}
                 >
                   {scheduleHeadTitle(granularity, anchor, weekStart, monthStart)}
                   <Icon name="chevd" size={14} />
                 </button>
               </h1>
-              <Popover anchorRef={titleButtonRef} open={datePickerOpen} onClose={closeDatePicker} className="v3-picker" label={granularity === "month" ? "选择月份" : "选择周"} placement="bottom-start">
+              <Popover anchorRef={titleButtonRef} open={datePickerOpen} onClose={closeDatePicker} className="v3-picker" label={granularity === "month" ? t("选择月份") : t("选择周")} placement="bottom-start">
                 {/* 选择器跟随当前时间维度：月视图选月份，周视图整行选一周 */}
                 {granularity === "month"
                   ? <MonthCalendar value={monthStart} onPick={jumpTo} />
@@ -2340,13 +2349,13 @@ function ScheduleView({
               <p className="v3-page-sub">{subtitle}</p>
             </div>
             <EventCalendarNav className="interview-calendar-nav">
-              <div className="v3-seg interview-calendar-seg" role="group" aria-label="日程视图">
-                <button type="button" aria-pressed={granularity === "month"} onClick={() => onGranularityChange("month")}>月</button>
-                <button type="button" aria-pressed={granularity === "week"} onClick={() => onGranularityChange("week")}>周</button>
+              <div className="v3-seg interview-calendar-seg" role="group" aria-label={t("日程视图")}>
+                <button type="button" aria-pressed={granularity === "month"} onClick={() => onGranularityChange("month")}>{t("月")}</button>
+                <button type="button" aria-pressed={granularity === "week"} onClick={() => onGranularityChange("week")}>{t("周")}</button>
               </div>
               <div className="interview-calendar-nav-arrows">
                 <EventCalendarNavPrev tooltip={null} />
-                <EventCalendarNavToday tooltip={null}>今天</EventCalendarNavToday>
+                <EventCalendarNavToday tooltip={null}>{t("今天")}</EventCalendarNavToday>
                 <EventCalendarNavNext tooltip={null} />
               </div>
               <EventCalendarTitle className="interview-calendar-title visually-hidden" format={() => toolbarTitle} />
@@ -2356,19 +2365,19 @@ function ScheduleView({
         </EventCalendar>
       </section>
       {/* 「接下来」始终占位：没有安排时显示一句提示，日历高度不因此变化 */}
-      <section className="career-upcoming" aria-label="接下来">
-        <p className="career-section-label">接下来</p>
+      <section className="career-upcoming" aria-label={t("接下来")}>
+        <p className="career-section-label">{t("接下来")}</p>
         {upcoming.length === 0 ? (
           <div className="career-upcoming-empty">
-            <p>接下来没有安排的面试或笔试</p>
-            <small>收到面试通知后，可以点右上角「新建面试」，或在日历空白处双击添加</small>
+            <p>{t("接下来没有安排的面试或笔试")}</p>
+            <small>{t("收到面试通知后，可以点右上角「新建面试」，或在日历空白处双击添加")}</small>
           </div>
         ) : (
           <ul>
             {upcoming.map((item) => {
               const start = new Date(item.scheduleKind === "open_window" ? item.endAt : item.startAt);
               const isToday = start.toDateString() === now.toDateString();
-              const timeLabel = `${isToday ? "今天" : formatMonthDay(start)} ${formatTime(start)}`;
+              const timeLabel = `${isToday ? t("今天") : formatMonthDay(start)} ${formatTime(start)}`;
               return (
                 <li key={item.id}>
                   <button type="button" onClick={() => handleOpen(item.id)} aria-label={`${item.stage}｜${item.company}，${timeLabel}`}>
@@ -2377,7 +2386,7 @@ function ScheduleView({
                     <strong>{item.company} · {item.role} {item.stage}</strong>
                     <span className="career-upcoming-meta">{item.meetingLabel}</span>
                     <span className="career-upcoming-state">
-                      {item.scheduleKind === "open_window" ? (item.status === "active" ? "待完成" : "未开始") : isToday ? <>准备清单 {MOCK_PREP_CHECKLIST.filter((entry) => entry.done).length}/{MOCK_PREP_CHECKLIST.length}<BeTag /></> : MOCK_SESSION_CONFIRMED ? <>已确认<BeTag /></> : "待确认"}
+                      {item.scheduleKind === "open_window" ? (item.status === "active" ? t("待完成") : t("未开始")) : isToday ? <>{t("准备清单")}{MOCK_PREP_CHECKLIST.filter((entry) => entry.done).length}/{MOCK_PREP_CHECKLIST.length}<BeTag /></> : MOCK_SESSION_CONFIRMED ? <>{t("已确认")}<BeTag /></> : t("待确认")}
                     </span>
                   </button>
                 </li>
@@ -2401,6 +2410,7 @@ function ScheduleView({
 
 // 05.2b–05.2i 日程详情弹窗：衬线标题「公司 · 阶段」+ 状态胶囊、插图舞台、收纳卡片、截止前完成多一张「我的作答计划」
 function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, onAnswerPlanChange }: { interview: Interview; detail: InterviewSessionDetail | null; detailLoading: boolean; onClose: () => void; onAnswerPlanChange: (id: string, startAt: Date | null, durationMinutes: number | null) => void }) {
+  useLocale();
   const matchingDetail = detail?.session.id === interview.id ? detail : null;
   const meetingUrl = matchingDetail?.session.meeting_url ?? null;
   const location = matchingDetail?.session.location ?? null;
@@ -2422,11 +2432,11 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
     const windowStart = new Date(interview.startAt);
     const windowEnd = new Date(interview.endAt);
     if (!Number.isFinite(planStart.getTime()) || !Number.isInteger(planDurationMinutes) || planDurationMinutes <= 0) {
-      setPlanError("请选择完整且有效的作答时间段。");
+      setPlanError(t("请选择完整且有效的作答时间段。"));
       return;
     }
     if (planStart < windowStart || end > windowEnd) {
-      setPlanError("作答计划必须完整落在官方开放时间内。");
+      setPlanError(t("作答计划必须完整落在官方开放时间内。"));
       return;
     }
     setPlanError(null);
@@ -2439,14 +2449,14 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
   const isTest = /测评/.test(stageText);
   const isAi = /AI/i.test(stageText);
   const status = interview.status === "completed"
-    ? { label: "已完成", tone: "green" }
+    ? { label: t("已完成"), tone: "green" }
     : interview.status === "cancelled"
-      ? { label: "已取消", tone: "gray" }
+      ? { label: t("已取消"), tone: "gray" }
       : isWindow
-        ? { label: "待完成", tone: "orange" }
+        ? { label: t("待完成"), tone: "orange" }
         : interview.status === "active"
-          ? { label: "进行中", tone: "blue" }
-          : { label: isExam || isAi ? "待参加" : "待面试", tone: "blue" };
+          ? { label: t("进行中"), tone: "blue" }
+          : { label: isExam || isAi ? t("待参加") : t("待面试"), tone: "blue" };
   const artKind: ScheduleArtKind = interview.status === "cancelled"
     ? "cancel"
     : interview.status === "completed"
@@ -2455,41 +2465,41 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
         ? isTest ? "test" : "window"
         : isAi ? "ai" : isExam ? "exam" : interview.modeCode === "onsite" ? "onsite" : "video";
   const artDate = {
-    month: `${start.getMonth() + 1} 月`,
+    month: t("{value0} 月", { value0: start.getMonth() + 1 }),
     day: String(start.getDate()).padStart(2, "0"),
-    sub: isWindow ? `${formatTime(end)} 截止` : `${interview.weekday} ${interview.time}`,
+    sub: isWindow ? t("{value0} 截止", { value0: formatTime(end) }) : `${interview.weekday} ${interview.time}`,
   };
   const nowTime = Date.now();
   const totalWindow = end.getTime() - start.getTime();
   const windowInfo = isWindow ? {
-    open: `${formatMonthDay(start)} 开放`,
-    close: `${formatMonthDay(end)} 截止`,
-    remain: end.getTime() > nowTime ? `还剩 ${Math.max(1, Math.ceil((end.getTime() - nowTime) / 86_400_000))} 天` : "已截止",
+    open: t("{value0} 开放", { value0: formatMonthDay(start) }),
+    close: t("{value0} 截止", { value0: formatMonthDay(end) }),
+    remain: end.getTime() > nowTime ? t("还剩 {value0} 天", { value0: Math.max(1, Math.ceil((end.getTime() - nowTime) / 86_400_000)) }) : t("已截止"),
     todayRatio: Math.min(1, Math.max(0, (nowTime - start.getTime()) / Math.max(1, totalWindow))),
     planRatio: planStart ? Math.min(1, Math.max(0, (planStart.getTime() - start.getTime()) / Math.max(1, totalWindow))) : null,
   } : undefined;
   const untilStart = start.getTime() - nowTime;
   const relative = interview.status === "upcoming" && !isWindow && untilStart > 0
     ? untilStart < 86_400_000
-      ? ` · 还有 ${Math.floor(untilStart / 3_600_000)} 小时 ${Math.floor((untilStart % 3_600_000) / 60_000)} 分`
-      : ` · ${Math.ceil(untilStart / 86_400_000)} 天后`
-    : isWindow && (interview.status === "upcoming" || interview.status === "active") ? " · 截止前任选时间完成" : "";
-  const kindWord = isExam ? "笔试" : isTest ? "测评" : "面试";
+      ? t(" · 还有 {value0} 小时 {value1} 分", { value0: Math.floor(untilStart / 3_600_000), value1: Math.floor((untilStart % 3_600_000) / 60_000) })
+      : t(" · {value0} 天后", { value0: Math.ceil(untilStart / 86_400_000) })
+    : isWindow && (interview.status === "upcoming" || interview.status === "active") ? t(" · 截止前任选时间完成") : "";
+  const kindWord = isExam ? t("笔试") : isTest ? t("测评") : t("面试");
   const rows: Array<{ icon: V3IconName; label: string; value: ReactNode; strong?: boolean; muted?: boolean }> = [
     isWindow
-      ? { icon: "cal", label: "官方时段", value: `${formatMonthDay(start)} ${interview.time} – ${formatMonthDay(end)} ${interview.endTime}`, strong: true }
-      : { icon: "clock", label: interview.status === "cancelled" ? "原定时间" : "时间", value: `${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`, strong: interview.status !== "cancelled" },
-    { icon: "user", label: isExam || isTest ? "联系人" : "面试官", value: interview.interviewer, muted: interview.interviewer === "暂未填写" },
-    { icon: "play", label: "形式", value: matchingDetail ? modeLabel(matchingDetail.session.mode) : interview.mode },
+      ? { icon: "cal", label: t("官方时段"), value: `${formatMonthDay(start)} ${interview.time} – ${formatMonthDay(end)} ${interview.endTime}`, strong: true }
+      : { icon: "clock", label: interview.status === "cancelled" ? t("原定时间") : t("时间"), value: `${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`, strong: interview.status !== "cancelled" },
+    { icon: "user", label: isExam || isTest ? t("联系人") : t("面试官"), value: interview.interviewer, muted: interview.interviewer === "暂未填写" },
+    { icon: "play", label: t("形式"), value: matchingDetail ? modeLabel(matchingDetail.session.mode) : interview.mode },
   ];
-  if (location) rows.push({ icon: "pin", label: "地点", value: location });
-  if (meetingUrl) rows.push({ icon: "link", label: `${kindWord === "面试" ? "会议" : kindWord}链接`, value: <a className="career-link v3-num" href={meetingUrl} target="_blank" rel="noreferrer">{meetingUrl}<Icon name="link" size={12} /></a> });
-  if (interview.status === "cancelled" && cancellationReason) rows.push({ icon: "text", label: "取消原因", value: cancellationReason });
+  if (location) rows.push({ icon: "pin", label: t("地点"), value: location });
+  if (meetingUrl) rows.push({ icon: "link", label: t("{value0}链接", { value0: kindWord === t("面试") ? t("会议") : kindWord }), value: <a className="career-link v3-num" href={meetingUrl} target="_blank" rel="noreferrer">{meetingUrl}<Icon name="link" size={12} /></a> });
+  if (interview.status === "cancelled" && cancellationReason) rows.push({ icon: "text", label: t("取消原因"), value: cancellationReason });
   const primary = interview.status === "upcoming" || interview.status === "active"
     ? isWindow && interview.canReschedule
-      ? { label: "保存作答计划", onClick: savePlan }
+      ? { label: t("保存作答计划"), onClick: savePlan }
       : meetingUrl
-        ? { label: isExam ? "进入笔试" : isAi ? "进入 AI 面试" : "进入会议", href: meetingUrl }
+        ? { label: isExam ? t("进入笔试") : isAi ? t("进入 AI 面试") : t("进入会议"), href: meetingUrl }
         : null
     : null;
   const openRecord = () => {
@@ -2497,14 +2507,14 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
     navigateTo(careerApplicationPath(interview.applicationId));
   };
   return (
-    <V3Dialog width={520} label="面试详情" onClose={onClose} className="career-schedule-detail">
+    <V3Dialog width={520} label={t("面试详情")} onClose={onClose} className="career-schedule-detail">
       <div className="v3-dialog-body">
         <div className="career-schedule-detail-title">
           <h2 className="v3-dialog-title">{interview.company} · {interview.stage}</h2>
           <span className={`v3-pill career-pill is-${status.tone}`}>{status.label}</span>
         </div>
         <p className="v3-dialog-sub"><span>{interview.role}</span>{relative}</p>
-        {detailLoading && <p className="career-dialog-loading" role="status">正在加载完整面试详情…</p>}
+        {detailLoading && <p className="career-dialog-loading" role="status">{t("正在加载完整面试详情…")}</p>}
         <div className="v3-stage has-dots career-dialog-stage is-schedule"><ScheduleArt kind={artKind} date={artDate} windowInfo={windowInfo} /></div>
         <dl className="v3-gcard career-detail-rows">
           {rows.map((row) => (
@@ -2515,19 +2525,19 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
           ))}
         </dl>
         {isWindow && (
-          <section className="v3-gcard career-answer-plan" aria-label="我的作答计划">
+          <section className="v3-gcard career-answer-plan" aria-label={t("我的作答计划")}>
             <div className="v3-grow career-answer-plan-row">
               <div className="v3-grow-copy">
-                <strong>我的作答计划</strong>
-                <small>仅作为个人时间安排，不会改变官方截止时间。</small>
+                <strong>{t("我的作答计划")}</strong>
+                <small>{t("仅作为个人时间安排，不会改变官方截止时间。")}</small>
               </div>
               <div className="v3-grow-right career-answer-plan-fields">
                 <div className="career-answer-plan-field is-start">
                   {interview.canReschedule ? (
                     <DateTimeField
                       value={planStart}
-                      label="计划作答时间"
-                      placeholder="选择开始时间"
+                      label={t("计划作答时间")}
+                      placeholder={t("选择开始时间")}
                       size="sm"
                       filled
                       icon={null}
@@ -2536,8 +2546,8 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
                     />
                   ) : (
                     // 已完成 / 已归档：只读展示，不能再改计划（DateTimeField 没有 disabled，这里用同款样式的禁用按钮）
-                    <button type="button" className="v3-select is-sm is-filled" aria-label="计划作答时间" disabled>
-                      <span className={`v3-select-value v3-num${planStart ? "" : " is-placeholder"}`}>{planStart ? formatDateTimeLabel(planStart) : "未安排"}</span>
+                    <button type="button" className="v3-select is-sm is-filled" aria-label={t("计划作答时间")} disabled>
+                      <span className={`v3-select-value v3-num${planStart ? "" : " is-placeholder"}`}>{planStart ? formatDateTimeLabel(planStart) : t("未安排")}</span>
                     </button>
                   )}
                 </div>
@@ -2545,9 +2555,9 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
                   <Select
                     size="sm"
                     filled
-                    label="作答时长"
+                    label={t("作答时长")}
                     value={String(planDurationMinutes)}
-                    options={[30, 45, 60, 90, 120, 180].map((minutes) => ({ value: String(minutes), label: `${minutes} 分钟` }))}
+                    options={[30, 45, 60, 90, 120, 180].map((minutes) => ({ value: String(minutes), label: t("{value0} 分钟", { value0: minutes }) }))}
                     onChange={(value) => { setPlanDurationMinutes(Number(value)); setPlanError(null); }}
                     disabled={!interview.canReschedule}
                   />
@@ -2557,19 +2567,19 @@ function InterviewScheduleDialog({ interview, detail, detailLoading, onClose, on
             {planError && <p className="career-field-error" role="alert">{planError}</p>}
           </section>
         )}
-        {!isWindow && interview.status === "completed" && <p className="career-dialog-note"><span className="career-dot" data-tone="green" aria-hidden="true" />复盘写在求职记录里，这一场不能再拖动改期。</p>}
-        {!isWindow && interview.modeCode === "onsite" && interview.status === "upcoming" && <p className="career-dialog-note"><span className="career-dot" data-tone="muted" aria-hidden="true" />现场面试没有会议链接，地点和时间都在求职记录里改。</p>}
+        {!isWindow && interview.status === "completed" && <p className="career-dialog-note"><span className="career-dot" data-tone="green" aria-hidden="true" />{t("复盘写在求职记录里，这一场不能再拖动改期。")}</p>}
+        {!isWindow && interview.modeCode === "onsite" && interview.status === "upcoming" && <p className="career-dialog-note"><span className="career-dot" data-tone="muted" aria-hidden="true" />{t("现场面试没有会议链接，地点和时间都在求职记录里改。")}</p>}
       </div>
-      <DialogFooterV3 left={primary || (isWindow && interview.canReschedule) ? <button type="button" className="v3-link" onClick={openRecord}>查看求职记录<Icon name="arrow" size={12} /></button> : undefined}>
+      <DialogFooterV3 left={primary || (isWindow && interview.canReschedule) ? <button type="button" className="v3-link" onClick={openRecord}>{t("查看求职记录")}<Icon name="arrow" size={12} /></button> : undefined}>
         {isWindow && interview.canReschedule && (interview.answerPlanStartAt || interview.answerPlanEndAt) && (
-          <button type="button" className="v3-btn v3-btn-ghost" onClick={() => { setPlanStart(null); onAnswerPlanChange(interview.id, null, null); }}>清除计划</button>
+          <button type="button" className="v3-btn v3-btn-ghost" onClick={() => { setPlanStart(null); onAnswerPlanChange(interview.id, null, null); }}>{t("清除计划")}</button>
         )}
-        <button type="button" className="v3-btn v3-btn-ghost" onClick={onClose}>关闭</button>
+        <button type="button" className="v3-btn v3-btn-ghost" onClick={onClose}>{t("关闭")}</button>
         {primary
           ? primary.href
             ? <a className="v3-btn v3-btn-dark schedule-dialog-join" href={primary.href} target="_blank" rel="noreferrer">{primary.label}</a>
             : <button type="button" className="v3-btn v3-btn-dark" onClick={primary.onClick}>{primary.label}</button>
-          : <button type="button" className="v3-btn v3-btn-dark" onClick={openRecord}>查看求职记录</button>}
+          : <button type="button" className="v3-btn v3-btn-dark" onClick={openRecord}>{t("查看求职记录")}</button>}
       </DialogFooterV3>
     </V3Dialog>
   );
@@ -2598,6 +2608,7 @@ function RecordsView({
   onChanged: (preferredId?: string | null) => void;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const applicationIdsWithSessionRecords = new Set(applicationIdsWithSessions);
   const applicationsWithoutSessions = applications.filter(
     (item) => !applicationIdsWithSessionRecords.has(item.id),
@@ -2607,8 +2618,8 @@ function RecordsView({
       <div className="records-empty-layout">
         <div className="records-empty-state">
           <NotebookTabs aria-hidden="true" />
-          <h2>还没有面试记录</h2>
-          <p>安排面试后，可以在这里上传音频或填写文字记录。</p>
+          <h2>{t("还没有面试记录")}</h2>
+          <p>{t("安排面试后，可以在这里上传音频或填写文字记录。")}</p>
         </div>
         <ApplicationHistoryList
           applications={applicationsWithoutSessions}
@@ -2623,18 +2634,18 @@ function RecordsView({
       <aside className="records-index-column">
         <section className="interview-surface records-list-card">
           <div className="records-list-heading">
-            <h2>面试列表</h2>
+            <h2>{t("面试列表")}</h2>
             <div>
               <Search />
               <ListChecks />
             </div>
           </div>
           <div className="records-table-head">
-            <span>公司</span>
-            <span>职位</span>
-            <span>阶段</span>
-            <span>面试时间</span>
-            <span>状态</span>
+            <span>{t("公司")}</span>
+            <span>{t("职位")}</span>
+            <span>{t("阶段")}</span>
+            <span>{t("面试时间")}</span>
+            <span>{t("状态")}</span>
           </div>
           <div className="records-list">
             {interviews.map((item) => (
@@ -2659,9 +2670,9 @@ function RecordsView({
         <section className="interview-surface records-calendar-card">
           <MiniCalendar selected={new Date(selected.startAt)} />
           <div className="records-calendar-legend">
-            <span><i className="orange" />待面试</span>
-            <span><i className="blue" />进行中</span>
-            <span><i className="green" />已完成</span>
+            <span><i className="orange" />{t("待面试")}</span>
+            <span><i className="blue" />{t("进行中")}</span>
+            <span><i className="green" />{t("已完成")}</span>
           </div>
         </section>
         <ApplicationHistoryList
@@ -2681,8 +2692,8 @@ function RecordsView({
       ) : (
         <section className="interview-surface record-detail-panel record-detail-loading">
           {detailLoading
-            ? <PageLoading label="正在加载所选面试…" scope="panel" />
-            : "暂时无法读取所选面试详情。"}
+            ? <PageLoading label={t("正在加载所选面试…")} scope="panel" />
+            : t("暂时无法读取所选面试详情。")}
         </section>
       )}
       {matchingDetail ? (
@@ -2696,8 +2707,8 @@ function RecordsView({
       ) : (
         <aside className="interview-surface record-assets-column record-detail-loading">
           {detailLoading
-            ? <PageLoading label="正在加载面试素材…" scope="panel" />
-            : "面试素材暂不可用。"}
+            ? <PageLoading label={t("正在加载面试素材…")} scope="panel" />
+            : t("面试素材暂不可用。")}
         </aside>
       )}
     </div>
@@ -2713,6 +2724,7 @@ function ApplicationHistoryList({
   onChanged: (preferredId?: string | null) => void;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<JobApplicationSummary | null>(null);
   const [pendingReject, setPendingReject] = useState<JobApplicationSummary | null>(null);
@@ -2779,8 +2791,8 @@ function ApplicationHistoryList({
   };
   return (
     <section className="interview-surface application-history-card">
-      <header><h2>未关联面试的求职进程</h2><span>{applications.length}</span></header>
-      <p>可先归档不再跟进的进程；已归档且没有面试记录时可永久删除。</p>
+      <header><h2>{t("未关联面试的求职进程")}</h2><span>{applications.length}</span></header>
+      <p>{t("可先归档不再跟进的进程；已归档且没有面试记录时可永久删除。")}</p>
       <div>
         {applications.map((application) => (
           <article key={application.id}>
@@ -2788,7 +2800,7 @@ function ApplicationHistoryList({
             <button
               type="button"
               disabled={busyId !== null}
-              aria-label={`${application.archived_at ? "恢复" : "归档"} ${application.company_name_snapshot}`}
+              aria-label={`${application.archived_at ? t("恢复") : t("归档")} ${application.company_name_snapshot}`}
               onClick={() => void changeArchived(application)}
             >
               {application.archived_at ? <RotateCcw /> : <Archive />}
@@ -2797,7 +2809,7 @@ function ApplicationHistoryList({
               <button
                 type="button"
                 disabled={busyId !== null}
-                aria-label={`删除 ${application.company_name_snapshot} 求职进程`}
+                aria-label={t("删除 {value0} 求职进程", { value0: application.company_name_snapshot })}
                 onClick={() => setPendingDelete(application)}
               ><Trash2 /></button>
             )}
@@ -2806,9 +2818,9 @@ function ApplicationHistoryList({
               application.current_stage_type === "screening" &&
               application.stage_state === "awaiting_result" && (
                 <div className="application-screening-actions">
-                  <span>筛选结果</span>
-                  <button type="button" disabled={busyId !== null} onClick={() => void advanceScreening(application)}>通过并进入一面</button>
-                  <button type="button" disabled={busyId !== null} onClick={() => setPendingReject(application)}>未通过</button>
+                  <span>{t("筛选结果")}</span>
+                  <button type="button" disabled={busyId !== null} onClick={() => void advanceScreening(application)}>{t("通过并进入一面")}</button>
+                  <button type="button" disabled={busyId !== null} onClick={() => setPendingReject(application)}>{t("未通过")}</button>
                 </div>
               )}
           </article>
@@ -2817,10 +2829,10 @@ function ApplicationHistoryList({
       <MotionPresence>{pendingDelete && (
         <ConfirmDialog
           kind="delete"
-          title={`永久删除「${pendingDelete.company_name_snapshot}」求职进程？`}
-          description="该进程没有面试记录，删除后岗位快照和进度信息也无法恢复。"
-          confirmLabel="永久删除"
-          busyLabel="正在删除…"
+          title={t("永久删除「{value0}」求职进程？", { value0: pendingDelete.company_name_snapshot })}
+          description={t("该进程没有面试记录，删除后岗位快照和进度信息也无法恢复。")}
+          confirmLabel={t("永久删除")}
+          busyLabel={t("正在删除…")}
           busy={busyId === pendingDelete.id}
           onCancel={() => setPendingDelete(null)}
           onConfirm={remove}
@@ -2829,10 +2841,10 @@ function ApplicationHistoryList({
       <MotionPresence>{pendingReject && (
         <ConfirmDialog
           kind="warning"
-          title={`确认「${pendingReject.company_name_snapshot}」筛选未通过？`}
-          description="该求职进程会退出活动流程，但历史岗位快照仍会保留，之后可以继续归档。"
-          confirmLabel="确认未通过"
-          busyLabel="正在处理…"
+          title={t("确认「{value0}」筛选未通过？", { value0: pendingReject.company_name_snapshot })}
+          description={t("该求职进程会退出活动流程，但历史岗位快照仍会保留，之后可以继续归档。")}
+          confirmLabel={t("确认未通过")}
+          busyLabel={t("正在处理…")}
           busy={busyId === pendingReject.id}
           onCancel={() => setPendingReject(null)}
           onConfirm={rejectScreening}
@@ -2855,6 +2867,7 @@ function RecordDetail({
   onChanged: (preferredId?: string | null) => void;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const [editing, setEditing] = useState(false);
   const [questions, setQuestions] = useState(detail.session.questions_markdown ?? "");
   const [review, setReview] = useState(detail.session.review_summary ?? "");
@@ -2867,7 +2880,7 @@ function RecordDetail({
   >(null);
   const [lifecycleBusy, setLifecycleBusy] = useState(false);
   const isArchived = detail.application.archived_at !== null;
-  const recordKind = detail.session.stage_type === "other" ? "笔试" : "面试";
+  const recordKind = detail.session.stage_type === "other" ? t("笔试") : t("面试");
   const stageOptions = useMemo(() => {
     const application = detail.application;
     const options: Array<{
@@ -2880,40 +2893,40 @@ function RecordDetail({
     if (application.current_stage_type === "screening") {
       options.push({
         value: "interview:1",
-        label: "进入一面",
+        label: t("进入一面"),
         stageType: "interview",
         roundNo: 1,
-        stageLabel: "一面",
+        stageLabel: t("一面"),
       });
     }
     if (application.current_stage_type === "interview") {
       const roundNo = (application.current_round_no ?? 0) + 1;
       options.push({
         value: `interview:${roundNo}`,
-        label: `进入第 ${roundNo} 轮面试`,
+        label: t("进入第 {value0} 轮面试", { value0: roundNo }),
         stageType: "interview",
         roundNo,
-        stageLabel: `${roundNo} 面`,
+        stageLabel: t("{value0} 面", { value0: roundNo }),
       });
     }
     if (application.current_stage_type !== "hr") {
       options.push({
         value: "hr",
-        label: "进入 HR 面",
+        label: t("进入 HR 面"),
         stageType: "interview",
         roundNo: null,
-        stageLabel: "HR 面",
+        stageLabel: t("HR 面"),
       });
     }
     options.push({
       value: "offer",
-      label: "进入 Offer 阶段",
+      label: t("进入 Offer 阶段"),
       stageType: "offer",
       roundNo: null,
       stageLabel: "Offer",
     });
     return options;
-  }, [detail.application]);
+  }, [detail.application, getLocale()]);
   useEffect(() => {
     setQuestions(detail.session.questions_markdown ?? "");
     setReview(detail.session.review_summary ?? "");
@@ -3023,28 +3036,28 @@ function RecordDetail({
         kind: pendingLifecycle === "delete-session" ? "delete" as const : "warning" as const,
         title:
           pendingLifecycle === "cancel"
-            ? `取消这场${recordKind}安排？`
+            ? t("取消这场{value0}安排？", { value0: recordKind })
             : pendingLifecycle === "archive"
-              ? "归档这条求职进程？"
+              ? t("归档这条求职进程？")
               : pendingLifecycle === "restore"
-                ? "恢复这条求职进程？"
-                : "永久删除这场面试记录？",
+                ? t("恢复这条求职进程？")
+                : t("永久删除这场面试记录？"),
         description:
           pendingLifecycle === "cancel"
-            ? "该场次会保留在面试记录中，并从当前排期退出；求职进程回到待安排状态。"
+            ? t("该场次会保留在面试记录中，并从当前排期退出；求职进程回到待安排状态。")
             : pendingLifecycle === "archive"
-              ? "归档后会从默认求职进程和排期中隐藏，历史面试记录仍会保留。"
+              ? t("归档后会从默认求职进程和排期中隐藏，历史面试记录仍会保留。")
               : pendingLifecycle === "restore"
-                ? "恢复后，这条仍在进行的求职进程会重新进入默认求职进程列表。"
-                : "删除后不可恢复。若存在关联素材，系统会拒绝删除并保留原记录。",
+                ? t("恢复后，这条仍在进行的求职进程会重新进入默认求职进程列表。")
+                : t("删除后不可恢复。若存在关联素材，系统会拒绝删除并保留原记录。"),
         confirmLabel:
           pendingLifecycle === "cancel"
-            ? "确认取消"
+            ? t("确认取消")
             : pendingLifecycle === "archive"
-              ? "确认归档"
+              ? t("确认归档")
               : pendingLifecycle === "restore"
-                ? "确认恢复"
-                : "永久删除",
+                ? t("确认恢复")
+                : t("永久删除"),
       }
     : null;
   return (
@@ -3054,9 +3067,9 @@ function RecordDetail({
         <div>
           <h2>{selected.company} · {selected.role}</h2>
           <p>
-            <CalendarDays />面试时间：{selected.date} {selected.time}　
-            <Video />面试形式：{selected.mode}　
-            <UserRound />面试官：{selected.interviewer}
+            <CalendarDays />{t("面试时间：")}{selected.date} {selected.time}　
+            <Video />{t("面试形式：")}{selected.mode}　
+            <UserRound />{t("面试官：")}{selected.interviewer}
           </p>
         </div>
         <div className="record-detail-actions">
@@ -3066,14 +3079,14 @@ function RecordDetail({
             icon={<Pencil />}
             onClick={() => setEditing((value) => !value)}
           >
-            {editing ? "取消" : "填写文字记录"}
+            {editing ? t("取消") : t("填写文字记录")}
           </Button>
           {detail.session.status === "scheduled" && (
             <>
               {!isArchived && (
-                <Button size="sm" variant="outline" icon={<Ban />} onClick={() => setPendingLifecycle("cancel")}>取消{recordKind}安排</Button>
+                <Button size="sm" variant="outline" icon={<Ban />} onClick={() => setPendingLifecycle("cancel")}>{t("取消")}{recordKind}{t("安排")}</Button>
               )}
-              {!isArchived && <Button size="sm" onClick={() => void save(true)}>完成面试</Button>}
+              {!isArchived && <Button size="sm" onClick={() => void save(true)}>{t("完成面试")}</Button>}
             </>
           )}
           <Button
@@ -3082,54 +3095,50 @@ function RecordDetail({
             icon={isArchived ? <RotateCcw /> : <Archive />}
             onClick={() => setPendingLifecycle(isArchived ? "restore" : "archive")}
           >
-            {isArchived ? "恢复进程" : "归档进程"}
+            {isArchived ? t("恢复进程") : t("归档进程")}
           </Button>
           <Button
             size="sm"
             variant="ghost"
             icon={<Trash2 />}
             onClick={() => setPendingLifecycle("delete-session")}
-          >删除记录</Button>
+          >{t("删除记录")}</Button>
         </div>
       </header>
       <StageProgress application={detail.application} />
       {!isArchived && detail.application.status === "active" &&
         detail.application.stage_state === "awaiting_result" && (
-          <section className="record-stage-actions" aria-label="面试结果处理">
+          <section className="record-stage-actions" aria-label={t("面试结果处理")}>
             <div>
-              <strong>本轮面试已完成</strong>
-              <span>确认结果后再进入下一阶段，流程卡片会随之移动。</span>
+              <strong>{t("本轮面试已完成")}</strong>
+              <span>{t("确认结果后再进入下一阶段，流程卡片会随之移动。")}</span>
             </div>
-            <Select label="选择下一阶段" value={nextStage} onChange={setNextStage} options={stageOptions} placeholder="选择下一阶段" />
-            <Button size="sm" disabled={!nextStage} onClick={() => void advance()}>
-              确认通过
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => void closeAsRejected()}>
-              未通过
-            </Button>
+            <Select label={t("选择下一阶段")} value={nextStage} onChange={setNextStage} options={stageOptions} placeholder={t("选择下一阶段")} />
+            <Button size="sm" disabled={!nextStage} onClick={() => void advance()}>{t("确认通过")}</Button>
+            <Button size="sm" variant="outline" onClick={() => void closeAsRejected()}>{t("未通过")}</Button>
           </section>
         )}
       {!isArchived && detail.application.status === "active" &&
         detail.application.current_stage_type === "offer" && (
-          <section className="record-stage-actions" aria-label="Offer 结果处理">
+          <section className="record-stage-actions" aria-label={t("Offer 结果处理")}>
             <div>
-              <strong>Offer 进度</strong>
-              <span>当前：{offerStatusLabel(detail.application.offer_status)}</span>
+              <strong>{t("Offer 进度")}</strong>
+              <span>{t("当前：")}{offerStatusLabel(detail.application.offer_status)}</span>
             </div>
             {detail.application.offer_status === "none" && (
-              <Button size="sm" onClick={() => void recordOfferReceived()}>确认收到 Offer</Button>
+              <Button size="sm" onClick={() => void recordOfferReceived()}>{t("确认收到 Offer")}</Button>
             )}
           </section>
         )}
       <section className="record-section">
-        <h3><FileText />面试信息</h3>
+        <h3><FileText />{t("面试信息")}</h3>
         <dl>
-          <div><dt>职位</dt><dd>{selected.role}</dd></div>
-          <div><dt>当前状态</dt><dd><StatusBadge status={selected.status} /></dd></div>
-          <div><dt>面试官</dt><dd>{selected.interviewer}</dd></div>
-          <div><dt>面试地点</dt><dd>{detail.session.location ?? selected.mode}{detail.session.meeting_url && <ExternalLink />}</dd></div>
+          <div><dt>{t("职位")}</dt><dd>{selected.role}</dd></div>
+          <div><dt>{t("当前状态")}</dt><dd><StatusBadge status={selected.status} /></dd></div>
+          <div><dt>{t("面试官")}</dt><dd>{selected.interviewer}</dd></div>
+          <div><dt>{t("面试地点")}</dt><dd>{detail.session.location ?? selected.mode}{detail.session.meeting_url && <ExternalLink />}</dd></div>
           <div className="record-color-setting">
-            <dt>日历颜色</dt>
+            <dt>{t("日历颜色")}</dt>
             <dd>
               <CalendarColorPicker
                 company={selected.company}
@@ -3141,20 +3150,20 @@ function RecordDetail({
         </dl>
       </section>
       <EditableRecordSection
-        title="文字记录"
+        title={t("文字记录")}
         value={questions}
         editing={editing}
-        placeholder="粘贴面试过程、逐字稿或整理后的文字记录…"
+        placeholder={t("粘贴面试过程、逐字稿或整理后的文字记录…")}
         onChange={setQuestions}
       />
-      {editing && <div className="record-save-row"><Button onClick={() => void save(false)}>保存文字记录</Button></div>}
+      {editing && <div className="record-save-row"><Button onClick={() => void save(false)}>{t("保存文字记录")}</Button></div>}
       <MotionPresence>{lifecycleDialog && (
         <ConfirmDialog
           kind={lifecycleDialog.kind}
           title={lifecycleDialog.title}
           description={lifecycleDialog.description}
           confirmLabel={lifecycleDialog.confirmLabel}
-          busyLabel="正在处理…"
+          busyLabel={t("正在处理…")}
           busy={lifecycleBusy}
           onCancel={() => setPendingLifecycle(null)}
           onConfirm={runLifecycle}
@@ -3177,13 +3186,14 @@ function EditableRecordSection({
   placeholder: string;
   onChange: (value: string) => void;
 }) {
+  useLocale();
   return (
     <section className="record-section compact-record-section">
       <header><h3><CircleCheck />{title}</h3></header>
       {editing ? (
         <textarea value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
       ) : (
-        <p>{value || "暂未填写"}</p>
+        <p>{value || t("暂未填写")}</p>
       )}
     </section>
   );
@@ -3200,6 +3210,7 @@ function AssetSidebar({
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const fileInput = useRef<HTMLInputElement>(null);
   const upload = async (file: File) => {
     try {
@@ -3231,35 +3242,35 @@ function AssetSidebar({
     }
   };
   return (
-    <aside className="record-assets-column" aria-label={`${selected.company}面试素材`}>
+    <aside className="record-assets-column" aria-label={t("{value0}面试素材", { value0: selected.company })}>
       <section className="interview-surface asset-card">
-        <header><h3>面试素材</h3><span>{detail.assets.length} 个文件</span></header>
+        <header><h3>{t("面试素材")}</h3><span>{detail.assets.length}{t(" 个文件")}</span></header>
         <div>
           {detail.assets.length ? detail.assets.map((asset) => (
             <article className="asset-file-row" key={asset.id}>
               <span><FileText /></span>
-              <div><strong>{asset.original_file_name}</strong><small>{formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? "现场录制" : "文件上传"}</small></div>
-              <button type="button" aria-label={`下载 ${asset.original_file_name}`} onClick={() => void download(asset)}><Download /></button>
-              <button type="button" aria-label={`移除 ${asset.original_file_name}`} onClick={() => void remove(asset)}><Trash2 /></button>
+              <div><strong>{asset.original_file_name}</strong><small>{formatBytes(asset.file_size)} · {asset.source_type === "recorded" ? t("现场录制") : t("文件上传")}</small></div>
+              <button type="button" aria-label={t("下载 {value0}", { value0: asset.original_file_name })} onClick={() => void download(asset)}><Download /></button>
+              <button type="button" aria-label={t("移除 {value0}", { value0: asset.original_file_name })} onClick={() => void remove(asset)}><Trash2 /></button>
             </article>
-          )) : <p className="asset-empty">还没有素材</p>}
+          )) : <p className="asset-empty">{t("还没有素材")}</p>}
         </div>
         <input
           ref={fileInput}
           className="visually-hidden"
           type="file"
-          aria-label="面试素材文件"
+          aria-label={t("面试素材文件")}
           accept=".webm,.m4a,.mp3,.wav,.ogg,.mp4,.mov,.pdf,.docx,.md,.txt"
           onChange={(event) => {
             const file = event.target.files?.[0];
             const extension = file?.name.slice(file.name.lastIndexOf(".")).toLowerCase();
             const supportedExtensions = new Set([".webm", ".m4a", ".mp3", ".wav", ".ogg", ".mp4", ".mov", ".pdf", ".docx", ".md", ".txt"]);
             if (file && supportedExtensions.has(extension ?? "")) void upload(file);
-            else if (file) onNotice("仅支持音视频与文档格式文件。");
+            else if (file) onNotice(t("仅支持音视频与文档格式文件。"));
             event.target.value = "";
           }}
         />
-        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>上传文件</Button>
+        <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>{t("上传文件")}</Button>
       </section>
       <InterviewContextSidebar className="record-context-card" interview={selected} />
     </aside>
@@ -3279,6 +3290,7 @@ function CreateApplicationDialog({
   onCreated: (applicationId: string) => void;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const [jobs, setJobs] = useState<JobDescriptionSummary[]>([]);
   const [jobId, setJobId] = useState("");
   const [notes, setNotes] = useState("");
@@ -3330,7 +3342,7 @@ function CreateApplicationDialog({
         job_description_id: jobId,
         current_stage_type: "screening",
         current_round_no: null,
-        current_stage_label: "待投递",
+        current_stage_label: t("待投递"),
         stage_state: "awaiting_schedule",
         applied_at: null,
         notes: notes.trim() || null,
@@ -3348,48 +3360,42 @@ function CreateApplicationDialog({
       <MotionSurface as="section" variant="dialog" className="interview-dialog career-application-dialog" role="dialog" aria-modal="true" aria-labelledby="create-application-title">
         <header>
           <div>
-            <h2 id="create-application-title">新建求职进程</h2>
-            <p>从岗位库选择目标岗位，后续面试和记录都会关联到这条进程。</p>
+            <h2 id="create-application-title">{t("新建求职进程")}</h2>
+            <p>{t("从岗位库选择目标岗位，后续面试和记录都会关联到这条进程。")}</p>
           </div>
-          <button type="button" aria-label="关闭" onClick={onClose}><X /></button>
+          <button type="button" aria-label={t("关闭")} onClick={onClose}><X /></button>
         </header>
         <form onSubmit={(event) => void submit(event)}>
           {loadingJobs ? (
-            <PageLoading label="正在加载岗位库…" scope="panel" />
+            <PageLoading label={t("正在加载岗位库…")} scope="panel" />
           ) : availableJobs.length ? (
             <>
-              <label>
-                目标岗位
-                <Select label="目标岗位" value={jobId} onChange={setJobId} options={availableJobs.map((job) => ({ value: job.id, label: `${job.company_name} · ${job.job_title}` }))} />
+              <label>{t("目标岗位")}<Select label={t("目标岗位")} value={jobId} onChange={setJobId} options={availableJobs.map((job) => ({ value: job.id, label: `${job.company_name} · ${job.job_title}` }))} />
               </label>
               <div className="interview-dialog-grid">
-                <label>
-                  初始阶段
-                  <input value="待投递" disabled />
+                <label>{t("初始阶段")}<input value={t("待投递")} disabled />
                 </label>
-                <label className="is-wide">
-                  备注
-                  <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="记录内推人、投递渠道或下一步提醒（可选）" />
+                <label className="is-wide">{t("备注")}<textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder={t("记录内推人、投递渠道或下一步提醒（可选）")} />
                 </label>
               </div>
             </>
           ) : (
             <div className="career-dialog-empty">
               <BriefcaseBusiness />
-              <strong>岗位库中还没有可用岗位</strong>
-              <span>已有求职记录的岗位不能再次投递；请导入新岗位。</span>
+              <strong>{t("岗位库中还没有可用岗位")}</strong>
+              <span>{t("已有求职记录的岗位不能再次投递；请导入新岗位。")}</span>
               <Button type="button" variant="outline" onClick={() => {
                 onClose();
                 navigateTo("/career/applications?import=1");
-              }}>导入岗位</Button>
+              }}>{t("导入岗位")}</Button>
             </div>
           )}
           <footer>
-            <Button type="button" variant="outline" onClick={onClose}>取消</Button>
+            <Button type="button" variant="outline" onClick={onClose}>{t("取消")}</Button>
             <Button
               type="submit"
               disabled={loadingJobs || !availableJobs.some((job) => job.id === jobId) || submitting}
-            >{submitting ? "正在创建…" : "创建求职进程"}</Button>
+            >{submitting ? t("正在创建…") : t("创建求职进程")}</Button>
           </footer>
         </form>
       </MotionSurface>
@@ -3418,19 +3424,20 @@ function CreateInterviewDialog({
   onCreated: (sessionId: string, info?: ScheduleCreatedInfo) => void;
   onNotice: (notice: string) => void;
 }) {
+  useLocale();
   const detailApplication = detailMode
     ? applications.find((item) => item.id === initialApplicationId) ?? null
     : null;
-  const detailStageLabel = detailApplication?.current_stage_label ?? "一面";
+  const detailStageLabel = detailApplication?.current_stage_label ?? t("一面");
   const detailProgress = detailApplication ? projectApplicationProgress(detailApplication) : null;
   const detailStageCategory = detailApplication?.current_stage_type === "screening"
     ? detailProgress?.isAssessment ? "assessment" : "screening"
     : "interview";
   const detailTimeLabel = detailStageCategory === "assessment"
-    ? "测评时间"
+    ? t("测评时间")
     : detailStageCategory === "interview"
-      ? "面试时间"
-      : "记录时间";
+      ? t("面试时间")
+      : t("记录时间");
   const [jobs, setJobs] = useState<JobDescriptionSummary[]>([]);
   const [applicationId, setApplicationId] = useState<string | "new">(
     initialApplicationId && applications.some((item) => item.id === initialApplicationId)
@@ -3477,7 +3484,7 @@ function CreateInterviewDialog({
       let targetApplication =
         createdApplication ?? applications.find((item) => item.id === applicationId);
       if (detailMode && !targetApplication) {
-        onNotice("当前求职进程已不可用，请刷新后重试。");
+        onNotice(t("当前求职进程已不可用，请刷新后重试。"));
         return;
       }
       if (!targetApplication) {
@@ -3552,22 +3559,22 @@ function CreateInterviewDialog({
   };
   const creationLocked = createdJobId !== null || createdApplication !== null;
   const meetingOrLocationPlaceholder = mode === "video" || mode === "phone"
-    ? "粘贴会议链接（可选）"
-    : "填写会议室、地址或其他地点（可选）";
+    ? t("粘贴会议链接（可选）")
+    : t("填写会议室、地址或其他地点（可选）");
   return (
     <MotionSurface as="div" variant="overlay" className="interview-dialog-backdrop" role="presentation">
       <MotionSurface as="section" variant="dialog" className={`interview-dialog${detailMode ? " interview-dialog--detail-schedule" : ""}`} role="dialog" aria-modal="true" aria-labelledby="create-interview-title">
-        <header><div><h2 id="create-interview-title">{detailMode ? "添加求职阶段" : "新建面试"}</h2><p>{detailMode ? "选择阶段分类并补充本阶段信息，保存后会进入对应的求职流程。" : "岗位信息、求职进程和本场排期在这里一次完成。"}</p></div><button type="button" aria-label="关闭" onClick={onClose}><X /></button></header>
+        <header><div><h2 id="create-interview-title">{detailMode ? t("添加求职阶段") : t("新建面试")}</h2><p>{detailMode ? t("选择阶段分类并补充本阶段信息，保存后会进入对应的求职流程。") : t("岗位信息、求职进程和本场排期在这里一次完成。")}</p></div><button type="button" aria-label={t("关闭")} onClick={onClose}><X /></button></header>
         <form onSubmit={(event) => void submit(event)}>
           {detailMode ? (
             <>
               <div className="interview-detail-stage-section">
-                <strong>阶段分类</strong>
-                <div className="interview-detail-stage-categories" aria-label="阶段分类">
+                <strong>{t("阶段分类")}</strong>
+                <div className="interview-detail-stage-categories" aria-label={t("阶段分类")}>
                   {[
-                    ["screening", "筛选"],
-                    ["assessment", "笔试 / 测评"],
-                    ["interview", "面试"],
+                    ["screening", t("筛选")],
+                    ["assessment", t("笔试 / 测评")],
+                    ["interview", t("面试")],
                   ].map(([key, label]) => (
                     <span key={key} className={key === detailStageCategory ? "is-active" : ""} aria-current={key === detailStageCategory ? "step" : undefined}>{label}</span>
                   ))}
@@ -3575,9 +3582,9 @@ function CreateInterviewDialog({
               </div>
               <div className="interview-detail-divider" aria-hidden="true" />
               <div className="interview-dialog-grid interview-detail-form-grid">
-                <label>展示名称<input required value={stage} readOnly aria-readonly="true" /></label>
-                {detailStageCategory === "interview" && <label>面试轮次<input type="number" value={detailApplication?.current_round_no ?? ""} readOnly aria-readonly="true" /></label>}
-                <label>当前状态<input value="已安排" readOnly aria-readonly="true" /></label>
+                <label>{t("展示名称")}<input required value={stage} readOnly aria-readonly="true" /></label>
+                {detailStageCategory === "interview" && <label>{t("面试轮次")}<input type="number" value={detailApplication?.current_round_no ?? ""} readOnly aria-readonly="true" /></label>}
+                <label>{t("当前状态")}<input value={t("已安排")} readOnly aria-readonly="true" /></label>
                 <div className="interview-dialog-schedule-field is-wide">
                   <label htmlFor="interview-detail-schedule">{detailTimeLabel}</label>
                   <ScheduleDateTimePicker
@@ -3592,28 +3599,28 @@ function CreateInterviewDialog({
                   />
                 </div>
                 {detailStageCategory !== "screening" && <>
-                  <label>方式<Select label="面试方式" value={mode} onChange={setMode} options={[{ value: "video", label: "视频面试" }, { value: "onsite", label: "现场面试" }, { value: "phone", label: "电话面试" }, { value: "other", label: "其他" }]} /></label>
-                  <label className="is-wide">链接或地点<input value={meetingOrLocation} onChange={(event) => setMeetingOrLocation(event.target.value)} placeholder={meetingOrLocationPlaceholder} /></label>
+                  <label>{t("方式")}<Select label={t("面试方式")} value={mode} onChange={setMode} options={[{ value: "video", label: t("视频面试") }, { value: "onsite", label: t("现场面试") }, { value: "phone", label: t("电话面试") }, { value: "other", label: t("其他") }]} /></label>
+                  <label className="is-wide">{t("链接或地点")}<input value={meetingOrLocation} onChange={(event) => setMeetingOrLocation(event.target.value)} placeholder={meetingOrLocationPlaceholder} /></label>
                 </>}
               </div>
             </>
           ) : (
             <>
-              {applications.length > 0 && <label>求职进程<Select label="求职进程" disabled={creationLocked || submitting} value={applicationId} onChange={setApplicationId} options={[{ value: "new", label: "新建求职进程" }, ...applications.map((item) => ({ value: item.id, label: `${item.company_name_snapshot} · ${item.job_title_snapshot} · ${projectApplicationProgress(item).stageLabel}` }))]} /></label>}
+              {applications.length > 0 && <label>{t("求职进程")}<Select label={t("求职进程")} disabled={creationLocked || submitting} value={applicationId} onChange={setApplicationId} options={[{ value: "new", label: t("新建求职进程") }, ...applications.map((item) => ({ value: item.id, label: `${item.company_name_snapshot} · ${item.job_title_snapshot} · ${projectApplicationProgress(item).stageLabel}` }))]} /></label>}
               {applicationId === "new" && <>
-                <label>已有岗位档案<Select label="已有岗位档案" disabled={creationLocked || submitting} value={jobId} onChange={setJobId} options={[{ value: "", label: "在求职中心直接填写岗位" }, ...jobs.map((job) => ({ value: job.id, label: `${job.company_name} · ${job.job_title}` }))]} /></label>
-                {!jobId && <div className="interview-dialog-grid"><label>公司<input disabled={creationLocked} required value={company} onChange={(event) => setCompany(event.target.value)} /></label><label>岗位<input disabled={creationLocked} required value={role} onChange={(event) => setRole(event.target.value)} /></label><label className="is-wide">岗位信息<textarea disabled={creationLocked} value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder="可粘贴 JD，后续会作为本次求职的岗位快照" /></label></div>}
-                <div className="interview-dialog-grid"><label>阶段<input disabled={creationLocked} required value={stage} onChange={(event) => setStage(event.target.value)} /></label><label>轮次<input disabled={creationLocked} type="number" min={1} value={roundNo} onChange={(event) => setRoundNo(Number(event.target.value))} /></label></div>
+                <label>{t("已有岗位档案")}<Select label={t("已有岗位档案")} disabled={creationLocked || submitting} value={jobId} onChange={setJobId} options={[{ value: "", label: t("在求职中心直接填写岗位") }, ...jobs.map((job) => ({ value: job.id, label: `${job.company_name} · ${job.job_title}` }))]} /></label>
+                {!jobId && <div className="interview-dialog-grid"><label>{t("公司")}<input disabled={creationLocked} required value={company} onChange={(event) => setCompany(event.target.value)} /></label><label>{t("岗位")}<input disabled={creationLocked} required value={role} onChange={(event) => setRole(event.target.value)} /></label><label className="is-wide">{t("岗位信息")}<textarea disabled={creationLocked} value={jobDescription} onChange={(event) => setJobDescription(event.target.value)} placeholder={t("可粘贴 JD，后续会作为本次求职的岗位快照")} /></label></div>}
+                <div className="interview-dialog-grid"><label>{t("阶段")}<input disabled={creationLocked} required value={stage} onChange={(event) => setStage(event.target.value)} /></label><label>{t("轮次")}<input disabled={creationLocked} type="number" min={1} value={roundNo} onChange={(event) => setRoundNo(Number(event.target.value))} /></label></div>
               </>}
             </>
           )}
-          {creationLocked && <p className="interview-create-progress" role="status">岗位或求职进程已创建；再次提交只会重试当前面试排期，不会重复创建前置数据。</p>}
+          {creationLocked && <p className="interview-create-progress" role="status">{t("岗位或求职进程已创建；再次提交只会重试当前面试排期，不会重复创建前置数据。")}</p>}
           {!detailMode && <div className="interview-dialog-grid">
             <div className="interview-dialog-schedule-field is-wide">
-              <label htmlFor="interview-create-schedule">面试时间</label>
+              <label htmlFor="interview-create-schedule">{t("面试时间")}</label>
               <ScheduleDateTimePicker
                 id="interview-create-schedule"
-                label="面试时间"
+                label={t("面试时间")}
                 value={startAt}
                 durationMinutes={duration}
                 required
@@ -3622,18 +3629,18 @@ function CreateInterviewDialog({
                 onDurationMinutesChange={setDuration}
               />
             </div>
-            <label>面试方式<Select label="面试方式" value={mode} onChange={setMode} options={[{ value: "video", label: "视频面试" }, { value: "onsite", label: "现场面试" }, { value: "phone", label: "电话面试" }, { value: "other", label: "其他" }]} /></label>
+            <label>{t("面试方式")}<Select label={t("面试方式")} value={mode} onChange={setMode} options={[{ value: "video", label: t("视频面试") }, { value: "onsite", label: t("现场面试") }, { value: "phone", label: t("电话面试") }, { value: "other", label: t("其他") }]} /></label>
           </div>}
           {detailMode ? (
             <footer className="interview-detail-footer">
-              <p>保存后可继续补充安排或更新结果。</p>
+              <p>{t("保存后可继续补充安排或更新结果。")}</p>
               <div className="interview-detail-footer-actions">
-                <Button type="button" variant="outline" onClick={onClose}>取消</Button>
-                <Button type="submit" disabled={submitting}>{submitting ? "正在保存…" : "添加并保存"}</Button>
+                <Button type="button" variant="outline" onClick={onClose}>{t("取消")}</Button>
+                <Button type="submit" disabled={submitting}>{submitting ? t("正在保存…") : t("添加并保存")}</Button>
               </div>
             </footer>
           ) : (
-            <footer><Button type="button" variant="outline" onClick={onClose}>取消</Button><Button type="submit" disabled={submitting}>{submitting ? "正在创建…" : "创建面试"}</Button></footer>
+            <footer><Button type="button" variant="outline" onClick={onClose}>{t("取消")}</Button><Button type="submit" disabled={submitting}>{submitting ? t("正在创建…") : t("创建面试")}</Button></footer>
           )}
         </form>
       </MotionSurface>
@@ -3642,19 +3649,22 @@ function CreateInterviewDialog({
 }
 
 function SectionHeading({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
+  useLocale();
   return <header className="interview-section-heading"><h2>{title}</h2>{action && <button type="button" onClick={onAction}>{action}<ChevronRight /></button>}</header>;
 }
 
 function CompanyLogo({ item }: { item: { company: string; logo: string; color: InterviewCalendarColor } }) {
+  useLocale();
   return <span className={`company-logo calendar-${item.color}`} aria-hidden="true">{item.logo}</span>;
 }
 
 function MiniCalendar({ selected }: { selected: Date }) {
+  useLocale();
   const first = new Date(selected.getFullYear(), selected.getMonth(), 1);
   const offset = (first.getDay() + 6) % 7;
   const start = addDays(first, -offset);
   const days = Array.from({ length: 42 }, (_, index) => addDays(start, index));
-  return <div className="mini-calendar"><header><strong>{selected.getFullYear()}年{selected.getMonth() + 1}月</strong><span><ChevronLeft /><ChevronRight /></span></header><div className="mini-calendar-week"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div><div className="mini-calendar-days">{days.map((day) => <button type="button" key={isoDate(day)} className={`${day.getMonth() !== selected.getMonth() ? "is-muted " : ""}${isoDate(day) === isoDate(selected) ? "is-selected" : ""}`}>{day.getDate()}</button>)}</div></div>;
+  return <div className="mini-calendar"><header><strong>{selected.getFullYear()}{t("年")}{selected.getMonth() + 1}{t("月")}</strong><span><ChevronLeft /><ChevronRight /></span></header><div className="mini-calendar-week"><span>{t("一")}</span><span>{t("二")}</span><span>{t("三")}</span><span>{t("四")}</span><span>{t("五")}</span><span>{t("六")}</span><span>{t("日")}</span></div><div className="mini-calendar-days">{days.map((day) => <button type="button" key={isoDate(day)} className={`${day.getMonth() !== selected.getMonth() ? "is-muted " : ""}${isoDate(day) === isoDate(selected) ? "is-selected" : ""}`}>{day.getDate()}</button>)}</div></div>;
 }
 
 function formatScheduleTime(slot: number): string {
@@ -3665,24 +3675,29 @@ function formatScheduleTime(slot: number): string {
 }
 
 function CalendarColorPicker({ company, value, onChange }: { company: string; value: InterviewCalendarColor; onChange: (color: InterviewCalendarColor) => void }) {
-  const currentLabel = CALENDAR_COLORS.find((color) => color.id === value)?.label ?? "灰色";
-  return <div className="calendar-color-picker" role="group" aria-label={`${company}日历颜色，当前${currentLabel}`}><span>{currentLabel}</span>{CALENDAR_COLORS.map((color) => <button key={color.id} type="button" className={`calendar-color-swatch calendar-${color.id}`} aria-label={`将${company}的日历颜色设为${color.label}`} aria-pressed={color.id === value} title={color.label} onClick={() => onChange(color.id)} />)}</div>;
+  useLocale();
+  const currentLabel = CALENDAR_COLORS.find((color) => color.id === value)?.label ?? t("灰色");
+  return <div className="calendar-color-picker" role="group" aria-label={t("{value0}日历颜色，当前{value1}", { value0: company, value1: currentLabel })}><span>{currentLabel}</span>{CALENDAR_COLORS.map((color) => <button key={color.id} type="button" className={`calendar-color-swatch calendar-${color.id}`} aria-label={t("将{value0}的日历颜色设为{value1}", { value0: company, value1: color.label })} aria-pressed={color.id === value} title={color.label} onClick={() => onChange(color.id)} />)}</div>;
 }
 
 function InterviewContextSidebar({ className, interview }: { className: string; interview: Interview }) {
-  return <aside className={`${className} interview-context-sidebar`} aria-label={`${interview.company}面试上下文`}><section className="interview-surface context-primary-card"><header className="context-company-header"><span className={`context-company-mark calendar-${interview.color}`}>{interview.logo}</span><strong>{interview.company}</strong><StatusBadge status={interview.status} /></header><h2>{interview.stage}（面试）</h2><p className="context-role">{interview.role}</p><dl className="context-detail-list"><DetailRow icon={<Clock3 />} label="时间" value={`${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`} /><DetailRow icon={<Link2 />} label="面试方式" value={interview.mode} /><DetailRow icon={<UserRound />} label="面试官" value={interview.interviewer} /><DetailRow icon={<CircleCheck />} label="状态" value={interview.status === "completed" ? "已完成面试" : interview.status === "cancelled" ? "已取消" : "待面试"} /><DetailRow icon={<Bell />} label="备注" value={interview.note} /></dl></section><button type="button" className="interview-surface context-job-archive-card" onClick={() => navigateTo(careerApplicationPath(interview.applicationId))}><span>查看对应求职记录</span><div><FolderOpen /><p><strong>{interview.company} · {interview.role}</strong><small>岗位信息与本次求职进程</small></p><ChevronRight /></div></button></aside>;
+  useLocale();
+  return <aside className={`${className} interview-context-sidebar`} aria-label={t("{value0}面试上下文", { value0: interview.company })}><section className="interview-surface context-primary-card"><header className="context-company-header"><span className={`context-company-mark calendar-${interview.color}`}>{interview.logo}</span><strong>{interview.company}</strong><StatusBadge status={interview.status} /></header><h2>{interview.stage}{t("（面试）")}</h2><p className="context-role">{interview.role}</p><dl className="context-detail-list"><DetailRow icon={<Clock3 />} label={t("时间")} value={`${interview.date}（${interview.weekday}） ${interview.time} – ${interview.endTime}`} /><DetailRow icon={<Link2 />} label={t("面试方式")} value={interview.mode} /><DetailRow icon={<UserRound />} label={t("面试官")} value={interview.interviewer} /><DetailRow icon={<CircleCheck />} label={t("状态")} value={interview.status === "completed" ? t("已完成面试") : interview.status === "cancelled" ? t("已取消") : t("待面试")} /><DetailRow icon={<Bell />} label={t("备注")} value={interview.note} /></dl></section><button type="button" className="interview-surface context-job-archive-card" onClick={() => navigateTo(careerApplicationPath(interview.applicationId))}><span>{t("查看对应求职记录")}</span><div><FolderOpen /><p><strong>{interview.company} · {interview.role}</strong><small>{t("岗位信息与本次求职进程")}</small></p><ChevronRight /></div></button></aside>;
 }
 
 function DetailRow({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  useLocale();
   return <div><dt>{icon}{label}</dt><dd>{value}</dd></div>;
 }
 
 function StatusBadge({ status }: { status: InterviewStatus }) {
-  const label = status === "completed" ? "已完成面试" : status === "active" ? "进行中" : status === "cancelled" ? "已取消" : "待面试";
+  useLocale();
+  const label = status === "completed" ? t("已完成面试") : status === "active" ? t("进行中") : status === "cancelled" ? t("已取消") : t("待面试");
   return <span className={`interview-status-badge status-${status}`}>{label}</span>;
 }
 
 function StageProgress({ application }: { application: InterviewSessionDetail["application"] }) {
+  useLocale();
   const projection = projectApplicationProgress(application);
   const journeyLabel = projection.isPending || projection.isWaiting
     ? projection.primaryLabel
@@ -3691,7 +3706,7 @@ function StageProgress({ application }: { application: InterviewSessionDetail["a
       : projection.stageLabel;
   if (projection.isPending) {
     const pendingOrWaiting = [{ key: "pending", label: projection.stageLabel }];
-    return <div className="stage-progress" style={{ "--stage-count": pendingOrWaiting.length } as CSSProperties} aria-label={`当前阶段：${journeyLabel}`}><div className="stage-progress-line" />{pendingOrWaiting.map((stage) => <div key={stage.key} className="is-current"><span /><strong>{stage.label}</strong></div>)}</div>;
+    return <div className="stage-progress" style={{ "--stage-count": pendingOrWaiting.length } as CSSProperties} aria-label={t("当前阶段：{value0}", { value0: journeyLabel })}><div className="stage-progress-line" />{pendingOrWaiting.map((stage) => <div key={stage.key} className="is-current"><span /><strong>{stage.label}</strong></div>)}</div>;
   }
   const highestRound = Math.max(
     2,
@@ -3700,12 +3715,12 @@ function StageProgress({ application }: { application: InterviewSessionDetail["a
       : 2,
   );
   const stages = [
-    { key: "screening", label: application.current_stage_type === "screening" ? projection.stageLabel : "筛选中" },
+    { key: "screening", label: application.current_stage_type === "screening" ? projection.stageLabel : t("筛选中") },
     ...Array.from({ length: highestRound }, (_, index) => ({
       key: `interview:${index + 1}`,
       label: interviewRoundLabel(index + 1),
     })),
-    { key: "hr", label: "HR 面" },
+    { key: "hr", label: t("HR 面") },
     {
       key: "offer",
       label: application.current_stage_type === "offer"
@@ -3718,7 +3733,7 @@ function StageProgress({ application }: { application: InterviewSessionDetail["a
       ? `interview:${application.current_round_no ?? 1}`
       : application.current_stage_type;
   const currentIndex = Math.max(0, stages.findIndex((stage) => stage.key === currentKey));
-  return <div className="stage-progress" style={{ "--stage-count": stages.length } as CSSProperties} aria-label={`当前阶段：${journeyLabel}`}><div className="stage-progress-line" />{stages.map((stage, index) => <div key={stage.key} className={index < currentIndex ? "is-done" : index === currentIndex ? "is-current" : ""}><span>{index < currentIndex ? <Check /> : null}</span><strong>{stage.label}</strong></div>)}</div>;
+  return <div className="stage-progress" style={{ "--stage-count": stages.length } as CSSProperties} aria-label={t("当前阶段：{value0}", { value0: journeyLabel })}><div className="stage-progress-line" />{stages.map((stage, index) => <div key={stage.key} className={index < currentIndex ? "is-done" : index === currentIndex ? "is-current" : ""}><span>{index < currentIndex ? <Check /> : null}</span><strong>{stage.label}</strong></div>)}</div>;
 }
 
 function formatBytes(bytes: number): string {
@@ -3736,6 +3751,7 @@ function ApplicationCategoryDialog({ application, onClose, onChanged }: {
   onClose: () => void;
   onChanged: () => Promise<void>;
 }) {
+  useLocale();
   const [category, setCategory] = useState(String(application.job_snapshot.employment_type ?? "unclassified"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3752,7 +3768,7 @@ function ApplicationCategoryDialog({ application, onClose, onChanged }: {
       onClose();
     } catch (error) {
       if (error instanceof ApiRequestError && error.message === "INTERVIEW_EDIT_CONFLICT") {
-        setError("求职记录已在其他页面更新，请关闭后重新修改分类。");
+        setError(t("求职记录已在其他页面更新，请关闭后重新修改分类。"));
         await onChanged();
       } else {
         setError(errorMessage(error));
@@ -3763,10 +3779,10 @@ function ApplicationCategoryDialog({ application, onClose, onChanged }: {
   };
   return <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
     <DialogContent>
-      <DialogHeader><DialogTitle>修改求职分类</DialogTitle><DialogDescription>{application.company_name_snapshot} · {application.job_title_snapshot}</DialogDescription></DialogHeader>
-      <SelectField label="求职分类" value={category} disabled={saving} options={[{value: "internship", label: "实习"}, {value: "campus", label: "校招"}, {value: "full_time", label: "正式"}, {value: "unclassified", label: "未分类"}]} onChange={(event) => setCategory(event.target.value)} />
+      <DialogHeader><DialogTitle>{t("修改求职分类")}</DialogTitle><DialogDescription>{application.company_name_snapshot} · {application.job_title_snapshot}</DialogDescription></DialogHeader>
+      <SelectField label={t("求职分类")} value={category} disabled={saving} options={[{value: "internship", label: t("实习")}, {value: "campus", label: t("校招")}, {value: "full_time", label: t("正式")}, {value: "unclassified", label: t("未分类")}]} onChange={(event) => setCategory(event.target.value)} />
       {error && <p role="alert">{error}</p>}
-      <DialogFooter><Button variant="outline" disabled={saving} onClick={onClose}>取消</Button><Button disabled={saving} onClick={() => void save()}>{saving ? "保存中…" : "保存"}</Button></DialogFooter>
+      <DialogFooter><Button variant="outline" disabled={saving} onClick={onClose}>{t("取消")}</Button><Button disabled={saving} onClick={() => void save()}>{saving ? t("保存中…") : t("保存")}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

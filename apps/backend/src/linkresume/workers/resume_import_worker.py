@@ -32,6 +32,7 @@ from linkresume.domain.resume import (
     TemplateDefinition,
 )
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.dependencies import lock_active_user
 from linkresume.modules.product_events import service as product_events
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
@@ -274,6 +275,7 @@ class ResumeImportProcessor:
         object_name: str | None = None
         try:
             with self._session_factory() as db:
+                lock_active_user(db, user_id)
                 record = db.scalar(
                     select(DocumentParseTask)
                     .where(
@@ -400,32 +402,26 @@ class ResumeImportProcessor:
 
         object_name = build_source_graph_object_name(user_id, operation_id)
         payload = source_graph.model_dump_json().encode("utf-8")
-        try:
-            await asyncio.to_thread(
-                self._storage.upload,
-                object_name,
-                payload,
-                "application/json",
-            )
+        def write_graph() -> str:
             with self._session_factory() as db:
+                lock_active_user(db, user_id)
                 record = db.scalar(
-                    select(DocumentParseTask)
-                    .where(
+                    select(DocumentParseTask).where(
                         DocumentParseTask.id == import_id,
                         DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
                         DocumentParseTask.user_id == user_id,
                         DocumentParseTask.parse_status == "processing",
-                    )
-                    .with_for_update()
+                    ).with_for_update()
                 )
                 if record is None:
-                    raise WorkerTaskRetryable(
-                        "source graph task is no longer processable",
-                        stage="source_graph_persistence",
-                    )
+                    raise WorkerTaskRetryable("source graph task is no longer processable", stage="source_graph_persistence")
+                self._storage.upload(object_name, payload, "application/json")
                 record.source_graph_object_name = object_name
                 db.commit()
             return object_name
+
+        try:
+            return await asyncio.to_thread(write_graph)
         except WorkerTaskRetryable:
             raise
         except Exception as error:

@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 // 07.5 语音面试进行中（无侧栏整窗）：设备检测 → 面试官提问 → 作答 → 识别并提交 → 下一题。
 // 录音用真实 getUserMedia + AnalyserNode 波形；识别走 mockInterviewApi.recognize（假数据，不连 WebSocket）。
 // 面试官语音合成没有后端，用字幕逐字出现 + 波形动画表示「正在提问」。
@@ -41,6 +42,7 @@ function followIndex(detail: MockInterviewDetail, question: MockInterviewQuestio
 }
 
 export function VoiceSessionPage({ interview, onChanged }: { interview: MockInterviewDetail; onChanged: () => void }) {
+  useLocale();
   const [detail, setDetail] = useState(interview);
   const [phase, setPhase] = useState<Phase>("check");
   const [question, setQuestion] = useState<MockInterviewQuestion | null>(() => currentQuestion(interview));
@@ -130,7 +132,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
 
   const finishTurn = useCallback((result: { action: string; question: MockInterviewQuestion | null; closing: string | null }) => {
     if (result.action === "finish" || !result.question) {
-      setClosing(result.closing ?? "今天的面试就到这里，感谢你的时间。");
+      setClosing(result.closing ?? t("今天的面试就到这里，感谢你的时间。"));
       setShown(0);
       setPhase("closing");
       mic.release();
@@ -179,7 +181,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
       if (!mountedRef.current) return;
       setPhase("answering");
       stoppingRef.current = false;
-      setToast({ title: "回答没有提交成功", message: mockInterviewErrorMessage(error) });
+      setToast({ title: t("回答没有提交成功"), message: mockInterviewErrorMessage(error) });
     }
   }, [consume, detail.id, finishTurn, heard, mic.metering, question, recordStart]);
 
@@ -199,7 +201,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
       const result = await consume(mockInterviewApi.skip(detail.id, { question_id: question.id }));
       if (mountedRef.current) finishTurn(result);
     } catch (error) {
-      setToast({ title: "没有跳过这道题", message: mockInterviewErrorMessage(error) });
+      setToast({ title: t("没有跳过这道题"), message: mockInterviewErrorMessage(error) });
     } finally {
       if (mountedRef.current) setBusy(null);
     }
@@ -213,7 +215,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
       onChanged();
       navigateTo(mockInterviewPath(detail.id, true));
     } catch (error) {
-      setToast({ title: "没有结束面试", message: mockInterviewErrorMessage(error) });
+      setToast({ title: t("没有结束面试"), message: mockInterviewErrorMessage(error) });
     } finally {
       if (mountedRef.current) setBusy(null);
     }
@@ -228,7 +230,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
       onChanged();
       navigateTo(mockInterviewPath());
     } catch (error) {
-      setToast({ title: "没有放弃面试", message: mockInterviewErrorMessage(error) });
+      setToast({ title: t("没有放弃面试"), message: mockInterviewErrorMessage(error) });
     } finally {
       if (mountedRef.current) setBusy(null);
     }
@@ -262,7 +264,7 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
       onChanged();
       navigateTo(mockInterviewPath(mock_interview.id));
     } catch (error) {
-      setToast({ title: "操作没有完成", message: mockInterviewErrorMessage(error) });
+      setToast({ title: t("操作没有完成"), message: mockInterviewErrorMessage(error) });
     } finally {
       if (mountedRef.current) setBusy(null);
     }
@@ -281,12 +283,12 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
 
   const leaveDialog = (confirmLeave === "back" || confirmLeave === "text") && (
     <ConfirmDialog
-      title={confirmLeave === "text" ? "改为文字面试？" : "返回修改设置？"}
+      title={confirmLeave === "text" ? t("改为文字面试？") : t("返回修改设置？")}
       description={confirmLeave === "text"
-        ? "面试中不能切换作答方式。将放弃这场语音面试，并按相同设置重新开始一场文字面试。"
-        : "将放弃这场语音面试，回到新建页修改设置后重新开始。"}
-      confirmLabel={confirmLeave === "text" ? "改为文字面试" : "返回修改"}
-      busyLabel={confirmLeave === "text" ? "正在切换…" : "正在返回…"}
+        ? t("面试中不能切换作答方式。将放弃这场语音面试，并按相同设置重新开始一场文字面试。")
+        : t("将放弃这场语音面试，回到新建页修改设置后重新开始。")}
+      confirmLabel={confirmLeave === "text" ? t("改为文字面试") : t("返回修改")}
+      busyLabel={confirmLeave === "text" ? t("正在切换…") : t("正在返回…")}
       danger={false}
       busy={busy === confirmLeave}
       onConfirm={() => { const target = confirmLeave; void leaveCheck(target).then(() => setConfirmLeave(null)); }}
@@ -312,26 +314,26 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
       <div className={`vx-stage is-${userState}`}>
         <div className="vx-stage-head">
           <p>{interviewEyebrow(detail)}</p>
-          <h1>{interviewTitle(detail, "语音面试")}</h1>
+          <h1>{interviewTitle(detail, t("语音面试"))}</h1>
         </div>
-        <div className="vx-progress" aria-label={`第 ${plan + 1} / ${detail.question_count} 题`}>
+        <div className="vx-progress" aria-label={t("第 {value0} / {value1} 题", { value0: plan + 1, value1: detail.question_count })}>
           <div className="vx-progress-bars">
             {Array.from({ length: detail.question_count }, (_, index) => (
               <i key={index} className={index < plan ? "is-done" : index === plan && phase !== "closing" ? "is-current" : phase === "closing" ? "is-done" : ""} />
             ))}
           </div>
-          <span>{phase === "closing" ? `已完成 ${detail.question_count} 题` : `第 ${plan + 1} / ${detail.question_count} 题${follow ? ` · 追问 ${follow}` : ""}`}</span>
+          <span>{phase === "closing" ? t("已完成 {value0} 题", { value0: detail.question_count }) : t("第 {value0} / {value1} 题{value2}", { value0: plan + 1, value1: detail.question_count, value2: follow ? ` · 追问 ${follow}` : "" })}</span>
         </div>
         <div className="vx-stage-tools">
           <span className="vx-timer">{formatElapsed(elapsed)}</span>
-          <button type="button" className="vx-plain" disabled={busy !== null || phase === "closing"} onClick={() => setConfirmAbandon(true)}>放弃</button>
-          <button type="button" className="vx-outline" disabled={busy !== null || phase === "closing" || phase === "recognizing"} onClick={() => setConfirmLeave("finish")}>{busy === "finish" ? "正在结束…" : "结束并评估"}</button>
+          <button type="button" className="vx-plain" disabled={busy !== null || phase === "closing"} onClick={() => setConfirmAbandon(true)}>{t("放弃")}</button>
+          <button type="button" className="vx-outline" disabled={busy !== null || phase === "closing" || phase === "recognizing"} onClick={() => setConfirmLeave("finish")}>{busy === "finish" ? t("正在结束…") : t("结束并评估")}</button>
         </div>
 
         {question && phase !== "closing" && (
           <div className="vx-qchip">
             <strong>Q{question.plan_index + 1}</strong>
-            <span>{question.kind === "main" ? "主问题" : `追问 ${follow}`} · L{question.depth_level}</span>
+            <span>{question.kind === "main" ? t("主问题") : t("追问 {value0}", { value0: follow })} · L{question.depth_level}</span>
           </div>
         )}
 
@@ -340,11 +342,11 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
           {interviewerSpeaking && <><span className="vx-ring is-r1" /><span className="vx-ring is-r2" /></>}
           <FeatherOrb className="vx-side-orb" size={interviewerSpeaking ? 156 : 112} icon={interviewerSpeaking ? 58 : 42} ring={interviewerSpeaking ? "var(--v3-dark)" : "var(--v3-cl)"} />
           <div className="vx-side-label">
-            <strong>面试官</strong>
+            <strong>{t("面试官")}</strong>
             {interviewerSpeaking ? (
-              <span className="vx-speaking"><Waveform className="is-animated" values={ASK_WAVE} barWidth={2} gap={2} height={12} minHeight={3} />正在提问</span>
+              <span className="vx-speaking"><Waveform className="is-animated" values={ASK_WAVE} barWidth={2} gap={2} height={12} minHeight={3} />{t("正在提问")}</span>
             ) : (
-              <span>{phase === "recognizing" ? "正在听你说完…" : "等待你的回答"}</span>
+              <span>{phase === "recognizing" ? t("正在听你说完…") : t("等待你的回答")}</span>
             )}
           </div>
         </div>
@@ -355,12 +357,12 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
           {(userState === "silent" || userState === "recognizing" || userState === "failed") && <span className="vx-user-ring" />}
           <UserAvatar className="vx-side-avatar" size={interviewerSpeaking ? 112 : 156} fontSize={interviewerSpeaking ? 38 : 52} />
           <div className="vx-side-label">
-            <strong>你</strong>
-            {userState === "answering" && <span className="vx-rec"><i />作答中 {formatClock(recordingMs)}</span>}
-            {userState === "silent" && <span className="vx-rec is-silent"><i />作答中 {formatClock(recordingMs)} · 已静音 {Math.floor(silentMs / 1000)} 秒</span>}
-            {userState === "recognizing" && <span className="is-strong">正在识别…</span>}
-            {userState === "failed" && <span className="is-bad">识别失败</span>}
-            {interviewerSpeaking && <span>{phase === "closing" ? "本场作答已完成" : "播报结束后开始作答"}</span>}
+            <strong>{t("你")}</strong>
+            {userState === "answering" && <span className="vx-rec"><i />{t("作答中 ")}{formatClock(recordingMs)}</span>}
+            {userState === "silent" && <span className="vx-rec is-silent"><i />{t("作答中 ")}{formatClock(recordingMs)}{t(" · 已静音 ")}{Math.floor(silentMs / 1000)}{t(" 秒")}</span>}
+            {userState === "recognizing" && <span className="is-strong">{t("正在识别…")}</span>}
+            {userState === "failed" && <span className="is-bad">{t("识别失败")}</span>}
+            {interviewerSpeaking && <span>{phase === "closing" ? t("本场作答已完成") : t("播报结束后开始作答")}</span>}
           </div>
         </div>
 
@@ -368,69 +370,69 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
         <div className="vx-subtitle" aria-live="polite">
           {interviewerSpeaking && (
             <>
-              <span className="vx-subtitle-label">面试官 <BeTag title="面试官语音合成需要后端；目前只显示字幕" /></span>
+              <span className="vx-subtitle-label">{t("面试官 ")}<BeTag title={t("面试官语音合成需要后端；目前只显示字幕")} /></span>
               <p>{text.slice(0, shown)}<span className="vx-caret-space">{text.slice(shown)}</span></p>
             </>
           )}
           {(userState === "answering" || userState === "silent") && (
             <>
-              <span className="vx-subtitle-label">你 · 实时识别 <BeTag title="实时识别需要后端识别通道；目前在说完后一次性返回识别稿" /></span>
-              <p className="is-placeholder">{heard ? "正在聆听，说完后点击「我说完了」生成识别稿…" : "请开始作答，识别文字会显示在这里"}</p>
+              <span className="vx-subtitle-label">{t("你 · 实时识别 ")}<BeTag title={t("实时识别需要后端识别通道；目前在说完后一次性返回识别稿")} /></span>
+              <p className="is-placeholder">{heard ? t("正在聆听，说完后点击「我说完了」生成识别稿…") : t("请开始作答，识别文字会显示在这里")}</p>
             </>
           )}
           {userState === "recognizing" && (
             <>
-              <span className="vx-subtitle-label">你 · 识别稿</span>
-              <p className="is-muted">{transcript || "正在识别…"}</p>
+              <span className="vx-subtitle-label">{t("你 · 识别稿")}</span>
+              <p className="is-muted">{transcript || t("正在识别…")}</p>
             </>
           )}
           {userState === "failed" && (
             <>
-              <span className="vx-subtitle-label">你 · 已识别部分</span>
-              <p className="is-faint">{transcript || "没有识别到内容"}</p>
+              <span className="vx-subtitle-label">{t("你 · 已识别部分")}</span>
+              <p className="is-faint">{transcript || t("没有识别到内容")}</p>
             </>
           )}
         </div>
 
-        {userState === "silent" && <div className="vx-notice is-warn" role="status">还在思考吗？说完请点击「我说完了」</div>}
-        {userState === "recognizing" && <div className="vx-notice">识别稿提交后不能修改，可以在评估报告中修正并重新评估</div>}
-        {userState === "failed" && <div className="vx-notice is-bad" role="alert">这段语音没有识别成功。本题可以重新作答，重录不计入追问次数</div>}
+        {userState === "silent" && <div className="vx-notice is-warn" role="status">{t("还在思考吗？说完请点击「我说完了」")}</div>}
+        {userState === "recognizing" && <div className="vx-notice">{t("识别稿提交后不能修改，可以在评估报告中修正并重新评估")}</div>}
+        {userState === "failed" && <div className="vx-notice is-bad" role="alert">{t("这段语音没有识别成功。本题可以重新作答，重录不计入追问次数")}</div>}
 
         <div className="vx-controls">
           <div className="vx-controls-left">
-            <button type="button" className="vx-outline is-sub" disabled={busy !== null || phase === "recognizing" || phase === "closing"} onClick={() => void skip()}>{busy === "skip" ? "正在跳过…" : "跳过此题"}</button>
-            <button type="button" className="vx-plain is-faint" onClick={() => setLogOpen(true)}>对话记录</button>
+            <button type="button" className="vx-outline is-sub" disabled={busy !== null || phase === "recognizing" || phase === "closing"} onClick={() => void skip()}>{busy === "skip" ? t("正在跳过…") : t("跳过此题")}</button>
+            <button type="button" className="vx-plain is-faint" onClick={() => setLogOpen(true)}>{t("对话记录")}</button>
           </div>
           <div className="vx-controls-center">
             {phase === "asking" && (
               <>
-                <button type="button" className="vx-pill is-light" onClick={beginAnswer}><Icon name="mic" size={18} />打断并作答</button>
-                <small>开口或点击即可打断播报</small>
+                <button type="button" className="vx-pill is-light" onClick={beginAnswer}><Icon name="mic" size={18} />{t("打断并作答")}</button>
+                <small>{t("开口或点击即可打断播报")}</small>
               </>
             )}
             {(userState === "answering" || userState === "silent") && (
               <>
                 <Waveform className="vx-live-wave" values={lastSamples(mic.history, 24).map((value) => (silent ? 0 : value * 1.6))} barWidth={3} gap={3} height={userState === "silent" ? 6 : 22} minHeight={userState === "silent" ? 3 : 4} color={silent ? "#b8b8b2" : "var(--v3-dark)"} />
-                <button type="button" className="vx-pill is-dark" onClick={() => void stopAndSubmit()}><span className="vx-stop" />我说完了</button>
-                <small>不会因静音自动提交</small>
+                <button type="button" className="vx-pill is-dark" onClick={() => void stopAndSubmit()}><span className="vx-stop" />{t("我说完了")}</button>
+                <small>{t("不会因静音自动提交")}</small>
               </>
             )}
             {userState === "recognizing" && (
               <>
-                <button type="button" className="vx-pill is-busy" disabled><span className="vx-spinner" />正在识别并提交</button>
-                <small>约 2 秒</small>
+                <button type="button" className="vx-pill is-busy" disabled><span className="vx-spinner" />{t("正在识别并提交")}</button>
+                <small>{t("约 2 秒")}</small>
               </>
             )}
             {userState === "failed" && (
               <>
-                <button type="button" className="vx-pill is-dark" onClick={beginAnswer}><Icon name="mic" size={18} />重新作答</button>
-                <small>已识别的部分会被丢弃</small>
+                <button type="button" className="vx-pill is-dark" onClick={beginAnswer}><Icon name="mic" size={18} />{t("重新作答")}</button>
+                <small>{t("已识别的部分会被丢弃")}</small>
               </>
             )}
             {phase === "closing" && (
               <>
-                <button type="button" className="vx-pill is-dark" onClick={() => navigateTo(mockInterviewPath(detail.id, true))}>查看评估报告</button>
-                <small>报告生成约需 1 分钟</small>
+                <button type="button" className="vx-pill is-dark" onClick={() => navigateTo(mockInterviewPath(detail.id, true))}>{t("查看评估报告")}</button>
+                <small>{t("报告生成约需 1 分钟")}</small>
               </>
             )}
           </div>
@@ -441,21 +443,21 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
         </div>
       </div>
 
-      <Dialog open={logOpen} width={600} label="对话记录" onClose={() => setLogOpen(false)}>
+      <Dialog open={logOpen} width={600} label={t("对话记录")} onClose={() => setLogOpen(false)}>
         <div className="v3-dialog-body vx-log">
-          <h2 className="v3-dialog-title">对话记录</h2>
-          <p className="v3-dialog-sub">语音回答以识别稿显示；提交后不能修改，可在评估报告中修正。</p>
+          <h2 className="v3-dialog-title">{t("对话记录")}</h2>
+          <p className="v3-dialog-sub">{t("语音回答以识别稿显示；提交后不能修改，可在评估报告中修正。")}</p>
           <ol>
             {answeredLog.map((entry) => (
               <li key={entry.id}>
-                <span className="vx-log-tag">Q{entry.plan_index + 1} · {entry.kind === "main" ? "主问题" : "追问"}</span>
+                <span className="vx-log-tag">Q{entry.plan_index + 1} · {entry.kind === "main" ? t("主问题") : t("追问")}</span>
                 <p className="vx-log-q"><FeatherMark size={18} />{entry.content}</p>
-                <p className="vx-log-a">{entry.answer_status === "skipped" ? "（已跳过）" : entry.answer_text}</p>
+                <p className="vx-log-a">{entry.answer_status === "skipped" ? t("（已跳过）") : entry.answer_text}</p>
               </li>
             ))}
             {question && phase !== "closing" && (
               <li>
-                <span className="vx-log-tag">Q{question.plan_index + 1} · 当前</span>
+                <span className="vx-log-tag">Q{question.plan_index + 1}{t(" · 当前")}</span>
                 <p className="vx-log-q"><FeatherMark size={18} />{question.content}</p>
               </li>
             )}
@@ -465,10 +467,10 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
 
       {confirmLeave === "finish" && (
         <ConfirmDialog
-          title="结束并生成评估？"
-          description={detail.answered_main_questions === 0 ? "你还没有回答任何主问题，结束后本场记为已放弃，不生成报告。" : "已作答的题目会进入评估，未作答的题目不计分。评估约需 1 分钟。"}
-          confirmLabel="结束并评估"
-          busyLabel="正在结束…"
+          title={t("结束并生成评估？")}
+          description={detail.answered_main_questions === 0 ? t("你还没有回答任何主问题，结束后本场记为已放弃，不生成报告。") : t("已作答的题目会进入评估，未作答的题目不计分。评估约需 1 分钟。")}
+          confirmLabel={t("结束并评估")}
+          busyLabel={t("正在结束…")}
           danger={false}
           busy={busy === "finish"}
           onConfirm={() => void finish().then(() => setConfirmLeave(null))}
@@ -478,10 +480,10 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
       {leaveDialog}
       {confirmAbandon && (
         <ConfirmDialog
-          title="放弃这场语音面试？"
-          description="已作答的内容不会生成评估报告，录音也不会保留。"
-          confirmLabel="放弃面试"
-          busyLabel="正在放弃…"
+          title={t("放弃这场语音面试？")}
+          description={t("已作答的内容不会生成评估报告，录音也不会保留。")}
+          confirmLabel={t("放弃面试")}
+          busyLabel={t("正在放弃…")}
           busy={busy === "abandon"}
           onConfirm={() => void abandon()}
           onCancel={() => setConfirmAbandon(false)}

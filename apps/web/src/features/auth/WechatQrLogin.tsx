@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiRequestError, User } from "../../api/client";
 import { PageLoading } from "@/components/ui";
@@ -24,6 +25,7 @@ type WechatQrLoginProps = {
 
 // 08.3 微信扫码登录：200×200 二维码 + 两行说明；过期 / 取消 / 失败时在二维码上盖一层白色浮层，点击刷新
 export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
+  useLocale();
   const [phase, setPhase] = useState<QrPhase>("loading");
   const [qrBase64, setQrBase64] = useState("");
   const [message, setMessage] = useState("");
@@ -64,7 +66,7 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
     } catch (error) {
       if (loadVersion !== loadVersionRef.current) return;
       setPhase("error");
-      setMessage(wechatErrorMessage(error, "二维码生成失败，请稍后重试。"));
+      setMessage(wechatErrorMessage(error, t("二维码生成失败，请稍后重试。")));
     }
   };
 
@@ -83,12 +85,12 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
       if (result.status === "expired") {
         stopPolling();
         setPhase("expired");
-        setMessage("二维码已过期，请刷新后重新扫码。");
+        setMessage(t("二维码已过期，请刷新后重新扫码。"));
       }
       if (result.status === "cancelled") {
         stopPolling();
         setPhase("cancelled");
-        setMessage("已在小程序中取消本次登录，请刷新二维码后重试。");
+        setMessage(t("已在小程序中取消本次登录，请刷新二维码后重试。"));
       }
     } catch {
       // 轮询期间网络抖动不打断等待，只对确定过期/成功切换状态。
@@ -106,44 +108,44 @@ export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
   }, []);
 
   const blocked = phase === "expired" || phase === "cancelled" || phase === "error";
-  const blockedTitle = phase === "cancelled" ? "登录已取消" : phase === "error" ? "二维码暂时无法生成" : "二维码已过期";
+  const blockedTitle = phase === "cancelled" ? t("登录已取消") : phase === "error" ? t("二维码暂时无法生成") : t("二维码已过期");
 
   return (
     <div className="auth-qr">
       <div className={`auth-qr-box is-${phase}`} aria-live="polite">
-        {phase === "loading" && <PageLoading label="正在生成二维码…" scope="panel" />}
+        {phase === "loading" && <PageLoading label={t("正在生成二维码…")} scope="panel" />}
         {(phase === "waiting" || ((phase === "expired" || phase === "cancelled") && qrBase64)) && (
           <img
             className="auth-qr-img"
             fetchPriority="high"
             src={`data:image/png;base64,${qrBase64}`}
-            alt={phase === "waiting" ? "微信扫码登录二维码" : ""}
+            alt={phase === "waiting" ? t("微信扫码登录二维码") : ""}
           />
         )}
         {blocked && (
           // 08.3 · 已过期：白色浮层（94% 不透明）+ 标题 + 「点击刷新」
           <button type="button" className="auth-qr-overlay" onClick={() => void loadQr()}>
             <strong>{blockedTitle}</strong>
-            <span><Icon name="refresh" size={12} />点击刷新</span>
+            <span><Icon name="refresh" size={12} />{t("点击刷新")}</span>
           </button>
         )}
       </div>
 
       <p className={`auth-qr-hint${blocked ? " is-warn" : ""}`}>
-        {phase === "waiting" || phase === "loading" ? "使用微信扫一扫，扫码确认后自动登录。" : message}
+        {phase === "waiting" || phase === "loading" ? t("使用微信扫一扫，扫码确认后自动登录。") : message}
       </p>
-      <p className="auth-qr-sub">扫码后在微信中确认登录，保障账号安全</p>
+      <p className="auth-qr-sub">{t("扫码后在微信中确认登录，保障账号安全")}</p>
     </div>
   );
 }
 
 export function wechatErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiRequestError) {
-    if (error.message === "WECHAT_RATE_LIMITED") return "请求太频繁，请稍后再试。";
-    if (error.message === "WECHAT_QRCODE_FAILED") return "微信二维码生成失败，请稍后重试。";
-    if (error.message === "WECHAT_SERVICE_UNAVAILABLE") return "微信登录服务暂不可用，请稍后重试。";
-    if (error.status === 401) return "登录状态已失效，请刷新页面后重试。";
-    if (error.status >= 500) return "服务暂时不可用，请稍后重试。";
+    if (error.message === "WECHAT_RATE_LIMITED") return t("请求太频繁，请稍后再试。");
+    if (error.message === "WECHAT_QRCODE_FAILED") return t("微信二维码生成失败，请稍后重试。");
+    if (error.message === "WECHAT_SERVICE_UNAVAILABLE") return t("微信登录服务暂不可用，请稍后重试。");
+    if (error.status === 401) return t("登录状态已失效，请刷新页面后重试。");
+    if (error.status >= 500) return t("服务暂时不可用，请稍后重试。");
   }
   return fallback;
 }

@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { Extension, mergeAttributes, Node, type Extensions } from "@tiptap/core";
 import Color from "@tiptap/extension-color";
 import Highlight from "@tiptap/extension-highlight";
@@ -211,21 +212,21 @@ function uploadImage(file: File) {
     const reader = new FileReader();
     reader.addEventListener("load", () => {
       if (typeof reader.result !== "string") {
-        reject(new Error("图片读取失败"));
+        reject(new Error(t("图片读取失败")));
         return;
       }
       const preview = new Image();
       preview.addEventListener("load", () => {
         const resumeId = useResumeStore.getState().activeResumeId;
         if (!resumeId) {
-          reject(new Error("请先选择简历"));
+          reject(new Error(t("请先选择简历")));
           return;
         }
         void api.uploadResumeAsset(resumeId, { file_name: file.name, data_url: reader.result as string })
           .then(({ asset }) => resolve(asset.url))
           .catch(reject);
       }, { once: true });
-      preview.addEventListener("error", () => reject(new Error("图片已损坏或格式不受支持")), { once: true });
+      preview.addEventListener("error", () => reject(new Error(t("图片已损坏或格式不受支持"))), { once: true });
       preview.src = reader.result;
     });
     reader.addEventListener("error", () => reject(reader.error));
@@ -234,6 +235,7 @@ function uploadImage(file: File) {
 }
 
 function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeViewProps) {
+  useLocale();
   const mediaRef = useRef<HTMLElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const isAvatar = node.type.name === "avatarImage";
@@ -357,7 +359,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
         "--resume-avatar-size": `${size}px`,
       } as React.CSSProperties : { width: `${size}${widthUnit}` }}
       role={isAvatar ? "group" : undefined}
-      aria-label={isAvatar ? "简历头像；按住 Command 或 Control 并滚动鼠标滚轮缩放，也可按住修饰键使用上下方向键调整" : undefined}
+      aria-label={isAvatar ? t("简历头像；按住 Command 或 Control 并滚动鼠标滚轮缩放，也可按住修饰键使用上下方向键调整") : undefined}
       tabIndex={isAvatar && selected ? 0 : undefined}
       data-drag-handle
       data-system-fallback={isAvatar && node.attrs.systemFallback === true ? "true" : undefined}
@@ -371,30 +373,28 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
     >
       {selected && isAvatar && (
         <>
-          <div className="avatar-scale-hint" contentEditable={false} role="note">
-            按住 <kbd>⌘</kbd> / Ctrl + 滚轮缩放
-          </div>
+          <div className="avatar-scale-hint" contentEditable={false} role="note">{t("按住 ")}<kbd>⌘</kbd>{t(" / Ctrl + 滚轮缩放")}</div>
           <button
             type="button"
             className="avatar-replace-action"
             contentEditable={false}
-            aria-label="更换头像"
+            aria-label={t("更换头像")}
             onClick={() => void replace()}
           >
             <ImageUp aria-hidden="true" size={16} />
-            <span>更换头像</span>
+            <span>{t("更换头像")}</span>
           </button>
           {error && <em className="avatar-media-error" contentEditable={false} role="alert">{error}</em>}
         </>
       )}
       {selected && !isAvatar && (
         <div className="media-context-toolbar" contentEditable={false}>
-          <button aria-label="图片左对齐" onClick={() => updateAttributes({ align: "left" })}><AlignLeft size={14} /></button>
-          <button aria-label="图片居中" onClick={() => updateAttributes({ align: "center" })}><AlignCenter size={14} /></button>
-          <button aria-label="图片右对齐" onClick={() => updateAttributes({ align: "right" })}><AlignRight size={14} /></button>
-          <button aria-label="图片通栏" onClick={() => updateAttributes({ align: "full", width: 100, widthUnit: "%" })}><Maximize2 size={14} /></button>
+          <button aria-label={t("图片左对齐")} onClick={() => updateAttributes({ align: "left" })}><AlignLeft size={14} /></button>
+          <button aria-label={t("图片居中")} onClick={() => updateAttributes({ align: "center" })}><AlignCenter size={14} /></button>
+          <button aria-label={t("图片右对齐")} onClick={() => updateAttributes({ align: "right" })}><AlignRight size={14} /></button>
+          <button aria-label={t("图片通栏")} onClick={() => updateAttributes({ align: "full", width: 100, widthUnit: "%" })}><Maximize2 size={14} /></button>
           <span />
-          <label className="media-size-field" aria-label="图片宽度">
+          <label className="media-size-field" aria-label={t("图片宽度")}>
             <input
               type="number"
               inputMode="decimal"
@@ -416,19 +416,19 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
                 }
               }}
             />
-            <Select label="图片宽度单位" value={widthUnit} onChange={changeUnit} size="sm" className="wb3-image-unit" options={[{ value: "%", label: "%" }, { value: "px", label: "px" }]} />
+            <Select label={t("图片宽度单位")} value={widthUnit} onChange={changeUnit} size="sm" className="wb3-image-unit" options={[{ value: "%", label: "%" }, { value: "px", label: "px" }]} />
           </label>
           <span />
           <input
             className="media-alt-field"
-            aria-label="图片替代文字"
+            aria-label={t("图片替代文字")}
             value={node.attrs.alt ?? ""}
-            placeholder="替代文字"
+            placeholder={t("替代文字")}
             onChange={(event) => updateAttributes({ alt: event.target.value })}
           />
           {error && <em className="media-error" role="alert">{error}</em>}
-          <button aria-label="更换图片" onClick={() => void replace()}><Upload size={14} /></button>
-          <button aria-label="删除图片" onClick={deleteNode}><Trash2 size={14} /></button>
+          <button aria-label={t("更换图片")} onClick={() => void replace()}><Upload size={14} /></button>
+          <button aria-label={t("删除图片")} onClick={deleteNode}><Trash2 size={14} /></button>
         </div>
       )}
       {isAvatar ? (
@@ -436,7 +436,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
           <img
             ref={imageRef}
             src={node.attrs.src}
-            alt={node.attrs.alt || "简历头像"}
+            alt={node.attrs.alt || t("简历头像")}
             width={size}
             height={Math.round(size * 1.4)}
             draggable={false}
@@ -446,11 +446,11 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
         <img
           ref={imageRef}
           src={node.attrs.src}
-          alt={node.attrs.alt || "简历图片"}
+          alt={node.attrs.alt || t("简历图片")}
           draggable={false}
         />
       )}
-      {selected && !isAvatar && <button className="media-resize-handle" contentEditable={false} aria-label="拖拽调整图片尺寸" onPointerDown={startResize} />}
+      {selected && !isAvatar && <button className="media-resize-handle" contentEditable={false} aria-label={t("拖拽调整图片尺寸")} onPointerDown={startResize} />}
     </NodeViewWrapper>
   );
 }
@@ -463,7 +463,7 @@ export const AvatarImage = Node.create({
   addAttributes: () => ({
     src: { default: "" },
     size: { default: 94 },
-    alt: { default: "简历头像" },
+    alt: { default: t("简历头像") },
     systemFallback: { default: false },
     nodeId: { default: null },
     sourceRefs: { default: [] },
@@ -473,7 +473,7 @@ export const AvatarImage = Node.create({
     getAttrs: (element) => element instanceof HTMLElement ? {
       src: element.dataset.src ?? "",
       size: Number(element.dataset.size) || 94,
-      alt: element.dataset.alt ?? "简历头像",
+      alt: element.dataset.alt ?? t("简历头像"),
       systemFallback: element.dataset.systemFallback === "true",
       nodeId: normalizeResumeBlockId(element.dataset.nodeId),
     } : false,
@@ -494,7 +494,7 @@ export const ResumeImage = Node.create({
     width: { default: 55 },
     widthUnit: { default: "%" },
     align: { default: "center" },
-    alt: { default: "简历图片" },
+    alt: { default: t("简历图片") },
     nodeId: { default: null },
     sourceRefs: { default: [] },
   }),
@@ -506,7 +506,7 @@ export const ResumeImage = Node.create({
         width: Number(element.dataset.width) || 55,
         widthUnit: element.dataset.widthUnit === "px" ? "px" : "%",
         align: element.dataset.align ?? "center",
-        alt: element.dataset.alt ?? "简历图片",
+        alt: element.dataset.alt ?? t("简历图片"),
         nodeId: normalizeResumeBlockId(element.dataset.nodeId),
       } : false,
     },
@@ -514,7 +514,7 @@ export const ResumeImage = Node.create({
       tag: "img:not([data-inline-image])",
       getAttrs: (element) => element instanceof HTMLImageElement ? {
         src: element.getAttribute("src") || "",
-        alt: element.alt || "简历图片",
+        alt: element.alt || t("简历图片"),
       } : false,
     },
   ],
@@ -533,6 +533,7 @@ function ResumeColumnMenu({
   onSelect: (columns: 2 | 3 | 4) => void;
   onClose: () => void;
 }) {
+  useLocale();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const options: Array<2 | 3 | 4> = [2, 3, 4];
   const currentIndex = Math.max(0, options.indexOf(columns as 2 | 3 | 4));
@@ -579,13 +580,13 @@ function ResumeColumnMenu({
       ref={rootRef}
       className="resume-column-menu"
       role="menu"
-      aria-label="分栏栏数"
+      aria-label={t("分栏栏数")}
       style={{
         left: Math.max(12, Math.min(position.x, window.innerWidth - 212)),
         top: Math.max(12, Math.min(position.y, window.innerHeight - 168)),
       }}
     >
-      <div className="resume-column-menu-heading">分栏栏数</div>
+      <div className="resume-column-menu-heading">{t("分栏栏数")}</div>
       {options.map((option) => (
         <button
           type="button"
@@ -597,7 +598,7 @@ function ResumeColumnMenu({
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => onSelect(option)}
         >
-          <span>{option} 栏</span>
+          <span>{option}{t(" 栏")}</span>
           {option === columns && <Check aria-hidden="true" size={14} />}
         </button>
       ))}
@@ -607,6 +608,7 @@ function ResumeColumnMenu({
 }
 
 function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
+  useLocale();
   const [active, setActive] = useState(false);
   const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
   const leftWidth = normalizeResumeRowWidth(node.attrs.leftWidth);
@@ -728,8 +730,8 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
               className="resume-column-handle"
               key={`divider-${index}`}
               style={{ left: `${offset}%` }}
-              aria-label={`调整第 ${index + 1} 栏与第 ${index + 2} 栏的宽度`}
-              title="拖动调整两栏宽度，双击恢复等分"
+              aria-label={t("调整第 {value0} 栏与第 {value1} 栏的宽度", { value0: index + 1, value1: index + 2 })}
+              title={t("拖动调整两栏宽度，双击恢复等分")}
               onMouseDown={(event) => event.preventDefault()}
               onPointerDown={(event) => startDividerDrag(event, index)}
               onDoubleClick={() => equalColumns ? applyWidths(null) : applyPairWidth(50)}
@@ -861,11 +863,13 @@ export const ResumeMetaRow = fixedRow("resumeMetaRow", 4, "resume-meta-row");
 export const ResumeTrioRow = fixedRow("resumeTrioRow", 3, "resume-trio-row");
 
 function InlineIconView({ node }: NodeViewProps) {
+  useLocale();
   const Icon = inlineIconComponents[node.attrs.name as InlineIconName] ?? Star;
   return <NodeViewWrapper as="span" className="resume-inline-icon"><Icon size="1em" /></NodeViewWrapper>;
 }
 
 function InlineImageView({ node, editor, selected, getPos, deleteNode }: NodeViewProps) {
+  useLocale();
   const width = Math.min(240, Math.max(16, Number(node.attrs.width) || 72));
   const legacyAspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs.aspectRatio) || 3));
   const height = Math.min(240, Math.max(16, Number(node.attrs.height) || width / legacyAspectRatio));
@@ -893,23 +897,23 @@ function InlineImageView({ node, editor, selected, getPos, deleteNode }: NodeVie
       {selected && (
         <span className="media-context-toolbar inline-image-toolbar" contentEditable={false}>
           <span className="inline-image-dimension-group">
-            <output aria-live="polite">宽 {width}px</output>
+            <output aria-live="polite">{t("宽 ")}{width}px</output>
             <span className="inline-image-stepper">
-              <button type="button" aria-label="增大行内图片宽度" title="增大宽度" onClick={() => resizeDimension("width", width + 1)}><ChevronUp aria-hidden="true" size={12} /></button>
-              <button type="button" aria-label="减小行内图片宽度" title="减小宽度" onClick={() => resizeDimension("width", width - 1)}><ChevronDown aria-hidden="true" size={12} /></button>
+              <button type="button" aria-label={t("增大行内图片宽度")} title={t("增大宽度")} onClick={() => resizeDimension("width", width + 1)}><ChevronUp aria-hidden="true" size={12} /></button>
+              <button type="button" aria-label={t("减小行内图片宽度")} title={t("减小宽度")} onClick={() => resizeDimension("width", width - 1)}><ChevronDown aria-hidden="true" size={12} /></button>
             </span>
           </span>
           <span className="inline-image-dimension-group">
-            <output aria-live="polite">高 {Math.round(height)}px</output>
+            <output aria-live="polite">{t("高 ")}{Math.round(height)}px</output>
             <span className="inline-image-stepper">
-              <button type="button" aria-label="增大行内图片高度" title="增大高度" onClick={() => resizeDimension("height", height + 1)}><ChevronUp aria-hidden="true" size={12} /></button>
-              <button type="button" aria-label="减小行内图片高度" title="减小高度" onClick={() => resizeDimension("height", height - 1)}><ChevronDown aria-hidden="true" size={12} /></button>
+              <button type="button" aria-label={t("增大行内图片高度")} title={t("增大高度")} onClick={() => resizeDimension("height", height + 1)}><ChevronUp aria-hidden="true" size={12} /></button>
+              <button type="button" aria-label={t("减小行内图片高度")} title={t("减小高度")} onClick={() => resizeDimension("height", height - 1)}><ChevronDown aria-hidden="true" size={12} /></button>
             </span>
           </span>
-          <button type="button" aria-label="删除行内图片" onClick={deleteNode}><Trash2 size={14} /></button>
+          <button type="button" aria-label={t("删除行内图片")} onClick={deleteNode}><Trash2 size={14} /></button>
         </span>
       )}
-      <img src={node.attrs.src} width={Math.round(width)} height={Math.round(height)} alt={node.attrs.alt || "行内图片"} draggable={false} />
+      <img src={node.attrs.src} width={Math.round(width)} height={Math.round(height)} alt={node.attrs.alt || t("行内图片")} draggable={false} />
     </NodeViewWrapper>
   );
 }
@@ -925,7 +929,7 @@ export const InlineImage = Node.create({
     width: { default: 72 },
     height: { default: null },
     aspectRatio: { default: 3 },
-    alt: { default: "行内图片" },
+    alt: { default: t("行内图片") },
     nodeId: { default: null },
     sourceRefs: { default: [] },
   }),
@@ -936,7 +940,7 @@ export const InlineImage = Node.create({
       width: Number(element.dataset.width) || 72,
       height: Number(element.dataset.height) || null,
       aspectRatio: Number(element.dataset.aspectRatio) || 3,
-      alt: element.dataset.alt ?? element.getAttribute("alt") ?? "行内图片",
+      alt: element.dataset.alt ?? element.getAttribute("alt") ?? t("行内图片"),
       nodeId: normalizeResumeBlockId(element.dataset.nodeId),
     } : false,
   }],
@@ -1306,7 +1310,7 @@ export const resumeEditorExtensions: Extensions = [
     ),
     HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
   }),
-  Placeholder.configure({ placeholder: "直接输入你的简历内容…" }),
+  Placeholder.configure({ get placeholder() { return t("直接输入你的简历内容…"); } }),
   AvatarImage,
   ResumeImage,
   ResumeRow,

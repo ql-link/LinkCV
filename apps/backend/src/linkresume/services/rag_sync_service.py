@@ -6,7 +6,8 @@ missing records, upload pending revisions, poll parsing, and delete RAG files
 whose dataset was removed or replaced. Existing upload, replace and delete
 paths are untouched; the RAG copy follows them within one sync interval.
 
-Database work runs in short transactions; HTTP calls happen outside them.
+Owner row locks serialize remote mutations with account deletion. Mapping
+writes use independent, conditional transactions under that owner lock.
 Each state write is conditional on the record's previous status and revision
 so a stale step can never overwrite newer progress.
 """
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from linkresume.core.database import utc_now
 from linkresume.integrations.linkrag_client import LinkRagClient, LinkRagError
 from linkresume.modules.datasets.models import UserDataset, UserDatasetRagSync
+from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from linkresume.services.dataset_content_service import content_key, read_markdown
 
@@ -129,7 +131,9 @@ class RagSyncService:
         return (
             select(UserDataset.id, UserDataset.user_id, UserDataset.content_revision)
             .join(DocumentParseTask, DocumentParseTask.id == UserDataset.parse_task_id)
+            .join(User, User.id == UserDataset.user_id)
             .where(
+                User.deletion_requested_at.is_(None),
                 UserDataset.asset_kind == "document",
                 DocumentParseTask.user_id == UserDataset.user_id,
                 DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
@@ -149,6 +153,14 @@ class RagSyncService:
         created = 0
         for dataset_id, user_id, revision in rows:
             with self._session_factory() as db:
+                user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+                if user is None or user.deletion_requested_at is not None:
+                    continue
+                # Recheck after the owner lock: the batch snapshot may predate cleanup.
+                document = db.execute(self._completed_documents().where(UserDataset.id == dataset_id)).first()
+                if document is None:
+                    continue
+                revision = document.content_revision
                 db.add(
                     UserDatasetRagSync(
                         dataset_id=dataset_id,
@@ -167,36 +179,35 @@ class RagSyncService:
         return created
 
     def _mark_revision_changes(self) -> int:
-        """Point records at the dataset's current revision.
-
-        The stale RAG file (if any) is removed later by ``_upload`` before the
-        new revision goes out, so old and new never coexist in the index.
-        """
+        """Coordinate revision changes with uploads and account cleanup."""
         with self._session_factory() as db:
             rows = db.execute(
-                select(UserDatasetRagSync.id, UserDataset.content_revision)
+                select(UserDatasetRagSync.id, UserDatasetRagSync.user_id)
                 .join(UserDataset, UserDataset.id == UserDatasetRagSync.dataset_id)
                 .where(UserDataset.content_revision != UserDatasetRagSync.content_revision)
                 .limit(self._batch_size)
             ).all()
-            for record_id, revision in rows:
-                db.execute(
-                    update(UserDatasetRagSync)
-                    .where(
-                        UserDatasetRagSync.id == record_id,
-                        UserDatasetRagSync.content_revision != revision,
-                    )
-                    .values(
-                        status="pending",
-                        content_revision=revision,
-                        attempt_count=0,
-                        next_attempt_at=None,
-                        last_error=None,
-                    )
-                    .execution_options(synchronize_session=False)
-                )
-            db.commit()
-        return len(rows)
+        changed = 0
+        for record_id, user_id in rows:
+            with self._session_factory() as db:
+                user = db.scalar(select(User).where(User.id == user_id).with_for_update())
+                if user is None or user.deletion_requested_at is not None:
+                    continue
+                row = db.execute(select(UserDatasetRagSync, UserDataset.content_revision)
+                    .join(UserDataset, UserDataset.id == UserDatasetRagSync.dataset_id)
+                    .where(UserDatasetRagSync.id == record_id)).first()
+                if row is None:
+                    continue
+                record, revision = row
+                if record.content_revision == revision:
+                    continue
+                record.status = "pending"
+                record.content_revision = revision
+                record.attempt_count = 0
+                record.next_attempt_at = record.last_error = None
+                db.commit()
+                changed += 1
+        return changed
 
     def _orphans(self) -> list[_Work]:
         """Records whose dataset is gone or is no longer a completed document."""
@@ -222,7 +233,9 @@ class RagSyncService:
         with self._session_factory() as db:
             rows = db.scalars(
                 select(UserDatasetRagSync)
+                .join(User, User.id == UserDatasetRagSync.user_id)
                 .where(
+                    User.deletion_requested_at.is_(None),
                     UserDatasetRagSync.status == status,
                     (UserDatasetRagSync.next_attempt_at.is_(None))
                     | (UserDatasetRagSync.next_attempt_at <= now),
@@ -235,6 +248,13 @@ class RagSyncService:
     # -- steps ---------------------------------------------------------------
 
     def _delete_orphan(self, work: _Work) -> int:
+        with self._session_factory() as db:
+            user = db.scalar(select(User).where(User.id == work.user_id).with_for_update())
+            if user is not None and user.deletion_requested_at is not None:
+                return 0  # The durable deletion job owns this file now.
+            return self._delete_orphan_active(work)
+
+    def _delete_orphan_active(self, work: _Work) -> int:
         """Delete the RAG copy of a dataset that no longer qualifies.
 
         A dataset that is merely re-parsing (replace in flight) also lands
@@ -257,6 +277,20 @@ class RagSyncService:
         return 1
 
     def _upload(self, work: _Work) -> int:
+        # Keep the owner locked through upload and recording its returned file
+        # ID. Even if a Redis lease expires, account cleanup cannot pass this
+        # upload and miss a late index file. The mapping has no user FK and its
+        # bounded transition uses a separate session without taking this lock.
+        with self._session_factory() as owner_db:
+            user = owner_db.scalar(select(User).where(User.id == work.user_id).with_for_update())
+            if user is None or user.deletion_requested_at is not None or user.status != 1:
+                return 0
+            current = owner_db.scalar(select(UserDatasetRagSync).where(UserDatasetRagSync.id == work.record_id))
+            if current is None or _work(current) != work:
+                return 0  # Another cycle already changed this batch snapshot.
+            return self._upload_active(work)
+
+    def _upload_active(self, work: _Work) -> int:
         if work.rag_file_id is not None:
             # A replaced revision: remove the stale copy before uploading.
             try:
@@ -302,6 +336,13 @@ class RagSyncService:
         return 1
 
     def _poll(self, work: _Work) -> int:
+        with self._session_factory() as db:
+            user = db.scalar(select(User).where(User.id == work.user_id).with_for_update())
+            if user is None or user.deletion_requested_at is not None:
+                return 0
+            return self._poll_active(work)
+
+    def _poll_active(self, work: _Work) -> int:
         if work.rag_file_id is None:
             return int(self._transition(work, status="pending"))
         try:

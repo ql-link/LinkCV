@@ -114,3 +114,8 @@ preparation_failed  abandoned   evaluation_failed
 ## 修改联动与验证
 
 新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py`、`test_mock_interview_voice_rules.py`、`tests/unit/modules/speech/test_aliyun.py`、`tests/integration/api/test_mock_interviews.py` 与 `test_mock_interview_voice.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。
+
+
+## 账号与界面边界
+
+模拟面试的界面选项、工具提示和日期支持普通 Web 界面语言，题目、用户回答、评估正文及独立作答语言保持不变。活跃场次阻止账号注销；录音上传在账号行锁内执行，防止已完成清理后出现迟到对象。注销清理覆盖既有 `mock-interviews/{uid}/` 录音前缀，见[账号功能](identity-account.md)。
