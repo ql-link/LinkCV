@@ -3329,6 +3329,8 @@ export const messages: Record<string, string> = {
   "{value0} / {value1} 已完成": "{value0} / {value1} completed",
   "AI 正在根据岗位、简历和历史复盘生成清单…": "AI is building the checklist from the job, resume and past reviews…",
   "还没有准备清单。让 AI 按这场面试的岗位和简历生成一份，每场面试只能生成一次。": "No checklist yet. Let AI build one from this interview's job and resume. Each interview can be generated once.",
+  "准备备注": "Preparation notes",
+  "暂无准备事项。": "No preparation items yet.",
   "清单已清空。": "The checklist is empty.",
   "这场面试已经结束，不再生成准备清单。": "This interview has ended, so a checklist can no longer be generated.",
   "删除 {value0}": "Delete {value0}",

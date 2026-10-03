@@ -147,6 +147,10 @@ const session = {
   interviewer_title: "后端技术专家",
   reminder_minutes: 15,
   preparation_note: "准备缓存一致性与系统设计。",
+  prep_items: [],
+  prep_generated_at: null,
+  prep_total: 0,
+  prep_done: 0,
   questions_markdown: "如何保证接口幂等？",
   review_summary: "等待面试后填写。",
   improvement_markdown: "补充分布式事务边界。",
@@ -1951,6 +1955,36 @@ describe("InterviewCenterPage API projections", () => {
       base_lock_version: 2,
     })));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "修改面试安排" })).not.toBeInTheDocument());
+  });
+
+  it("shows the next-round checklist and full advice in the current record dialog and refreshes after checking", async () => {
+    const prepItem = { id: "prep-1", title: "准备缓存一致性", category: "technical" as const, reason: "补充真实压测数据", done: false };
+    const preparationNote = "按背景、职责、方案、验证说明项目。\n没有原始数据时明确说明待补充，不使用虚构指标。";
+    const preparedSession = { ...session, prep_items: [prepItem], prep_total: 1, preparation_note: preparationNote };
+    const updatedSession = { ...preparedSession, prep_items: [{ ...prepItem, done: true }], prep_done: 1, lock_version: 3 };
+    mocks.getInterviewSession.mockResolvedValue({ session: preparedSession, application, assets: [] });
+    mocks.listInterviewSessions.mockResolvedValue({ items: [preparedSession], next_cursor: null });
+    mocks.updateInterviewSession.mockImplementation(async () => {
+      mocks.getInterviewSession.mockResolvedValue({ session: updatedSession, application, assets: [] });
+      mocks.listInterviewSessions.mockResolvedValue({ items: [updatedSession], next_cursor: null });
+      return { session: updatedSession, application, assets: [] };
+    });
+    window.history.replaceState(null, "", "/career/applications/21?session=31");
+
+    render(<InterviewCenterPage view="applications" initialApplicationId="21" initialSessionId="31" />);
+
+    const dialog = await screen.findByRole("dialog", { name: "腾讯｜面试记录" });
+    const checklist = within(dialog).getByRole("region", { name: "面试准备清单" });
+    expect(within(dialog).getByText(preparationNote, { normalizer: (value) => value })).toBeInTheDocument();
+    expect(checklist).toHaveTextContent("0 / 1 已完成");
+    fireEvent.click(within(checklist).getByRole("checkbox", { name: prepItem.title }));
+
+    await waitFor(() => expect(mocks.updateInterviewSession).toHaveBeenCalledWith("31", {
+      prep_items: [{ ...prepItem, done: true }], base_lock_version: 2,
+    }));
+    await waitFor(() => expect(within(dialog).getByRole("checkbox", { name: prepItem.title })).toHaveAttribute("aria-checked", "true"));
+    await waitFor(() => expect(within(dialog).getByRole("region", { name: "面试准备清单" })).toHaveTextContent("1 / 1 已完成"));
+    expect(mocks.getInterviewSession.mock.calls.length).toBeGreaterThan(1);
   });
 
   it("pops an in-app record dialog entry so the next browser back returns to the list", async () => {

@@ -39,11 +39,13 @@ export function PrepChecklistCard({
   onChanged,
   onNotice,
   fallbackError,
+  readOnly = false,
 }: {
   detail: InterviewSessionDetail;
   onChanged: () => void;
   onNotice: (notice: string) => void;
   fallbackError: (error: unknown) => string;
+  readOnly?: boolean;
 }) {
   useLocale();
   const { session } = detail;
@@ -58,7 +60,7 @@ export function PrepChecklistCard({
   }, [session.id, session.lock_version, session.prep_items]);
 
   const generated = session.prep_generated_at !== null;
-  const canGenerate = session.status === "scheduled" && !generated;
+  const canGenerate = !readOnly && session.status === "scheduled" && !generated;
   const done = items.filter((item) => item.done).length;
 
   const save = async (next: InterviewPrepItem[]) => {
@@ -114,7 +116,7 @@ export function PrepChecklistCard({
         <p className="prep-status" role="status">{t("AI 正在根据岗位、简历和历史复盘生成清单…")}</p>
       ) : items.length === 0 ? (
         <p className="prep-status">
-          {canGenerate
+          {readOnly ? t("暂无准备事项。") : canGenerate
             ? t("还没有准备清单。让 AI 按这场面试的岗位和简历生成一份，每场面试只能生成一次。")
             : generated
               ? t("清单已清空。")
@@ -129,7 +131,7 @@ export function PrepChecklistCard({
                 role="checkbox"
                 aria-checked={item.done}
                 aria-label={item.title}
-                disabled={busy !== null}
+                disabled={readOnly || busy !== null}
                 onClick={() => void save(items.map((entry, entryIndex) => (entryIndex === index ? { ...entry, done: !entry.done } : entry)))}
               >
                 {item.done && <Check />}
@@ -141,7 +143,7 @@ export function PrepChecklistCard({
                   {item.reason ? ` · ${item.reason}` : ""}
                 </small>
               </div>
-              <button
+              {!readOnly && <button
                 type="button"
                 className="prep-remove"
                 aria-label={t("删除 {value0}", { value0: item.title })}
@@ -149,7 +151,7 @@ export function PrepChecklistCard({
                 onClick={() => void save(items.filter((_, entryIndex) => entryIndex !== index))}
               >
                 <Trash2 />
-              </button>
+              </button>}
             </li>
           ))}
         </ul>
@@ -159,7 +161,7 @@ export function PrepChecklistCard({
           {busy === "generate" ? t("生成中…") : t("AI 生成准备清单")}
         </Button>
       )}
-      <form
+      {!readOnly && <form
         className="prep-add"
         onSubmit={(event) => {
           event.preventDefault();
@@ -177,7 +179,7 @@ export function PrepChecklistCard({
         <button type="submit" aria-label={t("添加准备事项")} disabled={busy !== null || !draft.trim() || items.length >= MAX_ITEMS}>
           <Plus />
         </button>
-      </form>
+      </form>}
     </section>
   );
 }

@@ -5737,6 +5737,18 @@
 }
 
 .prep-card { padding: 11px; }
+.career-session-preparation { display: grid; gap: 16px; margin-top: 24px; }
+.career-session-record-dialog:has(.career-session-preparation) .career-session-detail-body { min-height: 0; overflow-y: auto; }
+.career-session-preparation .prep-card { padding: 16px; }
+.career-session-preparation .prep-card h3,
+.career-session-preparation-note h3 { margin: 0; font-size: 16px; line-height: 1.5; }
+.career-session-preparation .prep-card > header span,
+.career-session-preparation .prep-card li small,
+.career-session-preparation .prep-card .prep-status { font-size: 12px; }
+.career-session-preparation .prep-card li strong { font-size: 14px; }
+.career-session-preparation .prep-add input { min-height: 36px; font-size: 14px; }
+.career-session-preparation .prep-add button { width: 36px; }
+.career-session-preparation-note p { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; }
 .prep-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .prep-card h3 { margin: 0; font-size: 11px; }
 .prep-card > header span { color: var(--ui-text-muted); font-size: 8px; }
@@ -5744,8 +5756,8 @@
 .prep-card li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 9px; }
 .prep-card li + li { border-top: 1px solid var(--ui-border); }
 .prep-card li > button { display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ui-text-muted); cursor: pointer; }
-.prep-card li > button[role="checkbox"] { width: 14px; height: 14px; margin-top: 1px; border: 1px solid var(--ui-border-strong, var(--ui-border)); border-radius: 4px; color: #fff; }
-.prep-card li.is-done > button[role="checkbox"] { border-color: var(--ui-text); background: var(--ui-text); }
+.prep-card li > button[role="checkbox"] { width: 18px; height: 18px; margin-top: 1px; border: 1px solid var(--ui-border-strong); border-radius: 4px; color: var(--ui-primary-foreground); }
+.prep-card li.is-done > button[role="checkbox"] { border-color: var(--ui-primary); background: var(--ui-primary); }
 .prep-card li > button svg { width: 10px; height: 10px; }
 .prep-card li > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
 .prep-card li strong { overflow-wrap: anywhere; font-size: 9px; font-weight: 500; line-height: 1.5; }

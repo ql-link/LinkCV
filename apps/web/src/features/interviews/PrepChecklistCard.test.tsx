@@ -74,4 +74,14 @@ describe("PrepChecklistCard", () => {
     expect(screen.queryByRole("button", { name: "AI 生成准备清单" })).not.toBeInTheDocument();
     expect(screen.getByText("这场面试已经结束，不再生成准备清单。")).toBeInTheDocument();
   });
+
+  it("keeps historical preparation visible without mutation controls in read-only mode", () => {
+    render(<PrepChecklistCard readOnly detail={detailWith({ prep_items: items })} onChanged={vi.fn()} onNotice={vi.fn()} fallbackError={() => "x"} />);
+    expect(screen.getByText("1 / 2 已完成")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "讲清分片方案" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "准备自我介绍" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("button", { name: /删除|生成/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("手动添加准备事项")).not.toBeInTheDocument();
+    expect(mocks.updateInterviewSession).not.toHaveBeenCalled();
+  });
 });

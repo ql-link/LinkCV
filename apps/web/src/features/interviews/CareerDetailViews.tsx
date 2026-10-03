@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { ApplicationV3Content, ReviewV3Content } from "./CareerDetailV3";
+import { PrepChecklistCard } from "./PrepChecklistCard";
 import { Dialog as V3Dialog, Select as V3Select } from "@/v3/primitives";
 import { Badge, Centered, DashArrow, MiniResume, TagCard } from "@/v3/art";
 import { Icon as V3Icon, type V3IconName } from "@/v3/Icon";
@@ -3293,6 +3294,12 @@ export function InterviewSessionDetailView({
         </section>
         {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} inRecordDialog={isDialog} onChanged={() => onChanged(session.id)} />}
         {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />{t("打开")}{isAssessment ? t("笔试") : t("会议")}{t("链接 ")}<ExternalLink aria-hidden="true" /></a>}
+        {!isAssessment && (session.status === "scheduled" || session.prep_items.length > 0 || session.preparation_note) && (
+          <section className="career-session-preparation" aria-label={t("面试准备")}>
+            <PrepChecklistCard detail={detail} readOnly={isArchived || session.status !== "scheduled"} onChanged={() => void onChanged(session.id)} onNotice={onNotice} fallbackError={requestErrorMessage} />
+            {session.preparation_note && <section className="career-session-preparation-note"><h3>{t("准备备注")}</h3><p>{session.preparation_note}</p></section>}
+          </section>
+        )}
         <section className="career-session-content-section">
           <header><h2>{recordTitle}</h2></header>
           <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} onEmptyAction={isDialog && isAssessment && assets.length === 0 && !questions.trim() ? () => setShowContentDialog(true) : undefined} sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
