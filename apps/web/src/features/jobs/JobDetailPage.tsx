@@ -4,9 +4,9 @@ import { SkeletonCards, SkeletonHead } from "@/v3/skeletons";
 import { useEffect, useRef, useState } from "react";
 import MarkdownIt from "markdown-it";
 import { Icon } from "@/v3/Icon";
-import { BeTag, Dialog, Popover, Select, PageEyebrow } from "@/v3/primitives";
+import { Dialog, Popover, Select, PageEyebrow } from "@/v3/primitives";
 import { InAppNotFound } from "../not-found/NotFoundPage";
-import matchGauge from "./assets/match-gauge.svg";
+import { JobMatchBody, useJobMatch } from "./JobMatchCard";
 import matchDots from "./assets/match-dots.svg";
 import matchArrow from "./assets/match-arrow.svg";
 import descriptionDots from "./assets/description-dots.svg";
@@ -131,14 +131,21 @@ export function JobDetailPage({ jobId }: { jobId: string }) {
 type EditableTarget = keyof JobFormState | "structured_salary";
 type StructuredSalaryDraft = Pick<JobFormState, "salary_text" | "salary_min" | "salary_max" | "salary_currency" | "salary_period" | "salary_months_per_year">;
 
-// 匹配分析接口尚未提供：与 04.3 画板一致的示例结果，仅在简历和 JD 都存在时呈现，明确标记需后端。
-const matchExample = { score: 86, matched: ["调度系统", "分布式", "Go", "Java", "高可用", "消息系统", "性能优化"], missing: ["Kubernetes", "Operator"] };
 const descriptionMarkdown = new MarkdownIt({ html: false, linkify: false, breaks: true });
 const defaultText = descriptionMarkdown.renderer.rules.text;
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// 高亮词来自匹配分析结果：只标记岗位描述原文里确实出现的词，缺失词优先于已覆盖词。
 descriptionMarkdown.renderer.rules.text = (tokens, index, options, env, self) => {
-  const escaped = defaultText ? defaultText(tokens, index, options, env, self) : descriptionMarkdown.utils.escapeHtml(tokens[index].content);
-  if (!env?.showMatch) return escaped;
-  return escaped.replace(/Kubernetes|Operator|调度系统|分布式|Go|Java|高可用|消息系统|性能优化/g, (word) => matchExample.missing.includes(word) ? '<span class="jd-keyword-missing">' + word + '</span>' : '<strong>' + word + '</strong>');
+  const highlights = env?.highlights as { covered: string[]; missing: string[] } | undefined;
+  const words = highlights ? [...new Set([...highlights.missing, ...highlights.covered].filter(Boolean))] : [];
+  if (!words.length) return defaultText ? defaultText(tokens, index, options, env, self) : descriptionMarkdown.utils.escapeHtml(tokens[index].content);
+  const missing = new Set(highlights!.missing.map((word) => word.toLowerCase()));
+  const pattern = new RegExp(`(${words.sort((left, right) => right.length - left.length).map(escapeRegExp).join("|")})`, "gi");
+  return tokens[index].content.split(pattern).map((part, position) => {
+    const escaped = descriptionMarkdown.utils.escapeHtml(part);
+    if (position % 2 === 0) return escaped;
+    return missing.has(part.toLowerCase()) ? `<span class="jd-keyword-missing">${escaped}</span>` : `<strong>${escaped}</strong>`;
+  }).join("");
 };
 
 function JobDocument({ job, application, backPath, actions, editingField, busy, onEdit, onSave, onSaveFields, onApplicationChange, onError }: {
@@ -150,6 +157,8 @@ function JobDocument({ job, application, backPath, actions, editingField, busy, 
   const hasResume = Boolean(application?.resume_id);
   const hasDescription = Boolean(job.description.trim());
   const showMatch = hasResume && hasDescription;
+  const matchState = useJobMatch(job.id, application?.resume_id, showMatch);
+  const highlights = showMatch && matchState.match?.status === "ready" && !matchState.analyzing ? matchState.match.highlights : undefined;
   const [resumes, setResumes] = useState<ResumeSummary[]>([]);
   const [resumeOpen, setResumeOpen] = useState(false);
   const [resumeLoading, setResumeLoading] = useState(false);
@@ -183,11 +192,8 @@ function JobDocument({ job, application, backPath, actions, editingField, busy, 
     <div className="jd-columns">
       <div className="jd-left">
         <section className={'jd-card jd-match' + (hasResume && !hasDescription ? ' is-unavailable' : '')} aria-label={t("简历匹配度")}>
-          {hasResume ? <>
-            <div className="jd-match-stage"><img src={matchGauge} alt="" /><strong>{matchExample.score}</strong><span className="jd-gauge-label">{t("匹配度")}</span><span className="jd-gauge-zero">0</span><span className="jd-gauge-max">100</span></div><BeTag />
-            <div className="jd-match-copy"><p className="jd-muted">{t("基于「")}{application?.resume_title_snapshot || t("关联简历")}」</p><h2>{t("还缺 Kubernetes 经历")}</h2><div className="jd-match-group"><p className="jd-muted">{t("已命中 · ")}{matchExample.matched.length}</p><div className="jd-tags">{matchExample.matched.map((word) => <span className="jd-tag is-matched" key={word}>{word}</span>)}</div></div><div className="jd-match-group is-missing"><p className="jd-muted">{t("待补充 · ")}{matchExample.missing.length}</p><div className="jd-tags">{matchExample.missing.map((word) => <span className="jd-tag is-missing" key={word}>{word}</span>)}</div></div></div>
-            <button className="v3-btn v3-btn-ghost jd-match-action" type="button" disabled={!showMatch} onClick={() => { if (application?.resume_id) navigateTo(editorPath(application.resume_id)); }}><Icon name="spark" size={13} />{t("按 JD 优化关联简历")}</button>
-          </> : <>
+          {hasResume ? <JobMatchBody state={matchState} resumeTitle={application?.resume_title_snapshot || t("关联简历")} hasDescription={hasDescription} onOptimize={() => { if (application?.resume_id) navigateTo(editorPath(application.resume_id)); }} />
+          : <>
             <MatchEmptyArt /><div className="jd-match-copy is-empty"><h2>{t("还没有关联简历")}</h2><p>{t("选一份简历后，会对照 JD 算出匹配度，并告诉你还缺哪些经历。")}</p></div>
             <button ref={resumeTrigger} className="v3-btn v3-btn-ghost jd-match-action" type="button" onClick={() => void selectResume()}><Icon name="doc" size={13} />{t("选择关联简历")}</button>
             <Popover anchorRef={resumeTrigger} open={resumeOpen} onClose={() => { if (!resumeSaving) setResumeOpen(false); }} label={t("选择关联简历")} className="jd-resume-picker" matchWidth>{resumeLoading ? <p>{t("正在加载简历…")}</p> : resumes.length ? resumes.map((resume) => <button type="button" key={resume.id} disabled={resumeSaving} onClick={() => void linkResume(resume)}><Icon name="doc" size={14} />{resume.title}</button>) : <p>{t("还没有简历，")}<a href="/resumes">{t("去创建简历")}</a></p>}</Popover>
@@ -197,9 +203,9 @@ function JobDocument({ job, application, backPath, actions, editingField, busy, 
       </div>
       <div className="jd-right">
         <section className={'jd-card jd-description' + (!hasDescription && editingField !== "description" ? ' is-empty' : '')}>
-          <div className="jd-card-heading"><span className="jd-card-icon"><Icon name="doc" size={14} /></span><h2>{t("岗位描述")}</h2>{showMatch && <div className="jd-legend"><span><i />{t("已覆盖")}</span><span><i />{t("待补充")}</span><BeTag /></div>}</div>
+          <div className="jd-card-heading"><span className="jd-card-icon"><Icon name="doc" size={14} /></span><h2>{t("岗位描述")}</h2>{highlights && <div className="jd-legend"><span><i />{t("已覆盖")}</span><span><i />{t("待补充")}</span></div>}</div>
           {hasDescription || editingField === "description" ? <>
-            <div className="jd-description-body">{editable("description", t("职位描述"), job.description, undefined, true, <span className="jd-markdown" dangerouslySetInnerHTML={{ __html: descriptionMarkdown.render(job.description, { showMatch }) }} />)}{editingField === "description" && <span className="jd-markdown-help">{t("支持 Markdown，## 开头是小标题")}</span>}</div>
+            <div className="jd-description-body">{editable("description", t("职位描述"), job.description, undefined, true, <span className="jd-markdown" dangerouslySetInnerHTML={{ __html: descriptionMarkdown.render(job.description, { highlights }) }} />)}{editingField === "description" && <span className="jd-markdown-help">{t("支持 Markdown，## 开头是小标题")}</span>}</div>
             <div className="jd-skills"><p className="jd-muted">{t("核心技能")}</p>{editable("skills", t("核心技能"), job.skills.join(", "), undefined, false, <span className="jd-tags">{job.skills.length ? job.skills.map((skill) => <span className="jd-tag" key={skill}>{skill}</span>) : t("未填写")}</span>)}</div>
             <div className="jd-work"><div><p className="jd-muted">{t("工作安排")}</p>{editable("work_schedule", t("工作安排"), job.work_schedule)}</div><div><p className="jd-muted">{t("详细地址")}</p>{editable("work_address", t("详细地址"), job.work_address)}</div></div>
           </> : <><DescriptionEmptyArt /><h3>{t("岗位描述暂未记录")}</h3><p className="jd-empty-description">{t("点这里粘贴招聘网站上的岗位文字。有了岗位描述才能计算简历匹配度。")}</p><button className="v3-btn v3-btn-ghost" type="button" onClick={() => onEdit("description")}><Icon name="text" size={13} />{t("粘贴岗位文字")}</button></>}

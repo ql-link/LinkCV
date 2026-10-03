@@ -1,13 +1,14 @@
 import { getLocale, t, useLocale, weekdayName, weekdays } from "@/i18n";
 import type { ReactNode } from "react";
-import { careerApplicationPath, careerViewPath, editorPath, navigateTo } from "../../routing";
+import { careerApplicationPath, careerViewPath, editorPath, jobDetailPath, navigateTo } from "../../routing";
 import { Icon } from "../../v3/Icon";
 import { Bar, Dot, Paper, StageText } from "../../v3/art";
 import { BeTag } from "../../v3/primitives";
-import type { JobApplicationSummary } from "../../api/client";
-import { MOCK_HOME_RECOMMENDED_JOB_ROWS, MOCK_OFFER, MOCK_RECOMMENDED_JOBS } from "../../v3/mocks";
+import type { JobApplicationSummary, JobMatchRecommendationItem } from "../../api/client";
+import { MOCK_OFFER } from "../../v3/mocks";
 import { describeOfferGap, formatOfferSalary } from "./offerCompare";
 import { pipelineColumns, startOfWeek, type HomeCard } from "./homeDashboard";
+import { useJobMatchRecommendations } from "./useJobMatchRecommendations";
 
 // 首页三张 227×236 卡片：上方 211×112 插图舞台（点阵底），下方衬线标题 + 说明 + 文字按钮。
 // 插图坐标全部取自 Figma「01.1 首页」「01.1 首页 · 状态变体」。
@@ -206,18 +207,66 @@ function WeekArt({ now, sessionDays }: { now: Date; sessionDays: Set<number> }) 
   );
 }
 
-function JobsArt() {
+const JOB_ROW_STYLE = { position: "absolute", left: 12, display: "flex", width: 187, height: 24, alignItems: "center", gap: 6, border: "1px solid var(--v3-cl)", borderRadius: 5, background: "#fff", padding: "0 10px", fontSize: 10, fontWeight: 500 } as const;
+
+function JobsArt({ items, loading }: { items: JobMatchRecommendationItem[]; loading: boolean }) {
   useLocale();
+  if (!items.length) {
+    // 还没有结果：灰色占位行，不显示任何数字
+    return <>{[0, 1, 2].map((index) => (
+      <span key={index} style={{ ...JOB_ROW_STYLE, top: 14 + index * 30, opacity: loading ? 0.6 : 0.35 }}>
+        <span style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--v3-field)" }} />
+        <span style={{ width: 22, height: 6, borderRadius: 3, background: "var(--v3-field)" }} />
+      </span>
+    ))}</>;
+  }
   return (
     <>
-      {MOCK_HOME_RECOMMENDED_JOB_ROWS.map((row, index) => (
-        <span key={row.title} style={{ position: "absolute", left: 12, top: 14 + index * 30, display: "flex", width: 187, height: 24, alignItems: "center", justifyContent: "space-between", border: "1px solid var(--v3-cl)", borderRadius: 5, background: "#fff", padding: "0 10px", fontSize: 10, fontWeight: 500 }}>
-          <span style={{ color: "var(--v3-sub)" }}>{row.title}</span>
-          <span style={{ color: "var(--v3-gn)", fontFamily: "var(--v3-num)", fontWeight: 600 }}>{row.match}%</span>
+      {items.map((item, index) => (
+        <span key={item.job_id} style={{ ...JOB_ROW_STYLE, top: 14 + index * 30 }} title={`${item.company_name} · ${item.job_title}`}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--v3-sub)" }}>{item.company_name} · {item.job_title}</span>
+          <span style={{ flex: "none", color: "var(--v3-fnt)", fontSize: 9 }}>{item.application_status ?? t("未投递")}</span>
+          <span style={{ flex: "none", color: "var(--v3-gn)", fontFamily: "var(--v3-num)", fontWeight: 600 }}>{item.score}</span>
         </span>
       ))}
     </>
   );
+}
+
+function JobsCard() {
+  useLocale();
+  const { status, data, stalled } = useJobMatchRecommendations(true);
+  const items = data?.items ?? [];
+  const resumeTitle = data?.resume?.title ?? "";
+  const label = t("查看匹配的岗位");
+  const board = "/career/applications";
+
+  if (status === "loading") {
+    return <CardFrame label={label} stage={<JobsArt items={[]} loading />} title={t("与简历最匹配的岗位")} sub={t("正在读取…")} action={t("岗位看板")} href={board} />;
+  }
+  if (items.length) {
+    const waiting = (data?.pending_count ?? 0) > 0 && !stalled;
+    return (
+      <CardFrame
+        label={label}
+        stage={<JobsArt items={items} loading={false} />}
+        title={t("与简历最匹配的岗位")}
+        sub={waiting ? t("基于《{value0}》· 还在分析 {value1} 个", { value0: resumeTitle, value1: data?.pending_count ?? 0 }) : t("基于《{value0}》", { value0: resumeTitle })}
+        action={t("查看岗位")}
+        href={jobDetailPath(items[0].job_id)}
+      />
+    );
+  }
+  if (status === "ready" && data?.state === "no_jobs") {
+    return <CardFrame label={t("保存岗位")} stage={<JobsArt items={[]} loading={false} />} title={t("保存岗位，查看匹配度")} sub={t("用插件导入或粘贴岗位描述即可")} action={t("添加岗位")} href={board} />;
+  }
+  if (status === "ready" && data?.state === "no_resume") {
+    return <CardFrame label={t("新建简历")} stage={<JobsArt items={[]} loading={false} />} title={t("先创建一份简历")} sub={t("有了简历才能计算岗位匹配度")} action={t("去创建")} href="/resumes" />;
+  }
+  if (status === "ready" && !stalled && (data?.state === "computing" || data?.state === "idle")) {
+    return <CardFrame label={label} stage={<JobsArt items={[]} loading />} title={t("正在对照你的简历…")} sub={t("基于《{value0}》", { value0: resumeTitle })} action={t("岗位看板")} href={board} />;
+  }
+  return <CardFrame label={t("打开岗位看板")} stage={<JobsArt items={[]} loading={false} />} title={t("暂时无法计算匹配度")} sub={stalled ? t("还在分析，稍后刷新查看") : t("稍后再试")} action={t("岗位看板")} href={board} />;
 }
 
 function OfferArt({ deadline }: { deadline: Date }) {
@@ -318,7 +367,7 @@ export function HomeCardView({ card, now }: { card: HomeCard; now: Date }) {
       return <CardFrame label={t("打开岗位看板")} stage={<PipelineArt columns={columns} />} title={t("{value0} 个岗位进行中", { value0: card.applications.length })} sub={card.hint} action={t("岗位看板")} href="/career/applications" />;
     }
     case "jobs":
-      return <CardFrame label={t("查看推荐岗位")} stage={<JobsArt />} title={t("{value0} 个新岗位匹配", { value0: MOCK_RECOMMENDED_JOBS.count })} beTitle sub={t("最高匹配度 {value0}%", { value0: MOCK_RECOMMENDED_JOBS.bestMatch })} action={t("查看岗位")} href="/career/applications" />;
+      return <JobsCard />;
     case "offer":
       // Offer 回复截止没有后端字段，日期与剩余天数用示例数据
       return (
