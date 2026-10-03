@@ -1,13 +1,6 @@
 // 需后端的示例数据：界面按 Figma 实现，但后端还没有对应字段或接口的部分，先用这里的固定数据。
 // 每一项都写明缺的是什么，后端补齐后把调用处换成真实接口即可。清单与 Figma「11 说明 · 需后端清单」一致。
 
-// 首页 · 面试准备清单（后端没有准备清单模型）
-export const MOCK_PREP_CHECKLIST = [
-  { title: "自我介绍 · 90 秒版本", done: true },
-  { title: "项目深挖 · 调度平台的分片设计", done: true },
-  { title: "系统设计 · 短链服务", done: false },
-];
-
 // 首页 · 推荐岗位卡（后端没有岗位推荐与匹配度）
 export const MOCK_RECOMMENDED_JOBS = { count: 3, bestMatch: 91 };
 

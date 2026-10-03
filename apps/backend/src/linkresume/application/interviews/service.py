@@ -1479,12 +1479,27 @@ def _commit_session_update(
     return db.get(InterviewSession, session.id)  # type: ignore[return-value]
 
 
+def normalize_prep_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give every item a unique id; client-supplied ids are kept when unique."""
+    seen: set[str] = set()
+    normalized: list[dict[str, Any]] = []
+    for item in items:
+        item_id = item.get("id")
+        if not item_id or item_id in seen:
+            item_id = str(uuid4())
+        seen.add(item_id)
+        normalized.append({**item, "id": item_id})
+    return normalized
+
+
 def update_session(
     db: Session, user_id: int, session_id: int, payload: InterviewSessionUpdateRequest
 ) -> InterviewSession:
     result = require_owned_session(db, user_id, session_id)
     values = payload.model_dump(exclude_unset=True)
     values.pop("base_lock_version", None)
+    if "prep_items" in values:
+        values["prep_items"] = normalize_prep_items(values["prep_items"] or [])
     return _commit_session_update(db, result.session, payload.base_lock_version, values)
 
 

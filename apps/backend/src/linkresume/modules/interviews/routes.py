@@ -25,6 +25,10 @@ from minio.error import S3Error
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from linkresume.application.interviews.prep_service import (
+    InterviewPrepAlreadyGenerated,
+    generate_prep_items,
+)
 from linkresume.application.interviews.service import (
     DatasetAlreadyLinked,
     InterviewApplicationNotEmpty,
@@ -77,6 +81,7 @@ from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.config import Settings
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
+from linkresume.modules.llm.service import LLMError
 from linkresume.core.mq import DatasetParseMessage, MQPublishError
 from linkresume.core.storage import (
     AssetStorage,
@@ -241,6 +246,8 @@ def _raise_service_error(error: Exception) -> None:
         ) from error
     if isinstance(error, InterviewEditConflict):
         raise ApiError(409, "INTERVIEW_EDIT_CONFLICT") from error
+    if isinstance(error, InterviewPrepAlreadyGenerated):
+        raise ApiError(409, "INTERVIEW_PREP_ALREADY_GENERATED") from error
     if isinstance(error, InterviewInvalidTransition):
         raise ApiError(409, "INTERVIEW_INVALID_TRANSITION") from error
     if isinstance(error, InterviewScheduleKindNotSupported):
@@ -684,6 +691,45 @@ def put_interview_session(
     user: User = Depends(get_current_user),
 ) -> InterviewSessionResponse:
     return _session_command(update_session, db, user.id, session_id, payload)
+
+
+def _load_session_response(
+    session_factory: Any, user_id: int, session_id: int
+) -> InterviewSessionResponse:
+    with session_factory() as db:
+        item = require_owned_session(db, user_id, session_id)
+        assets = list_assets(db, user_id, session_id)
+        return InterviewSessionResponse(
+            session=InterviewSessionRecord.model_validate(item.session),
+            application=_application_record(db, item.application),
+            assets=[_asset_record(asset) for asset in assets],
+        )
+
+
+@router.post(
+    "/interview-sessions/{session_id}/prep-items:generate",
+    response_model=InterviewSessionResponse,
+)
+async def post_generate_prep_items(
+    request: Request,
+    session_id: str,
+    user: User = Depends(get_current_user),
+) -> InterviewSessionResponse:
+    state = request.app.state
+    try:
+        parsed_session_id = _database_id(session_id)
+        await generate_prep_items(
+            state.session_factory, state.llm_service, user.id, parsed_session_id
+        )
+        return await asyncio.to_thread(
+            _load_session_response, state.session_factory, user.id, parsed_session_id
+        )
+    except LLMError as error:
+        status = 503 if error.code == "LLM_MODEL_NOT_CONFIGURED" else 502
+        raise ApiError(status, error.code) from error
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
 
 
 @router.post(

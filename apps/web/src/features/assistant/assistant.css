@@ -127,21 +127,6 @@
 .assistant-suggest-summary-copy strong { font-size: 13px; font-weight: 500; }
 .assistant-suggest-summary-copy small { color: var(--v3-fnt); font-size: 11px; }
 
-/* ── 面试准备清单卡（01.1a，需后端） */
-.assistant-prep { border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); padding: 18px 20px 14px; }
-.assistant-prep header { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--v3-line); padding-bottom: 13px; }
-.assistant-prep header strong { font-size: 13px; font-weight: 500; }
-.assistant-prep header > span:last-child { margin-left: auto; color: var(--v3-fnt); font-size: 11px; font-weight: 500; }
-.assistant-prep ul { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
-.assistant-prep li { display: flex; height: 28px; align-items: center; gap: 10px; margin-top: 4px; color: var(--v3-txt); font-size: 12.5px; font-weight: 500; }
-.assistant-prep li.is-done { color: var(--v3-fnt); font-weight: 400; }
-.assistant-prep li small { margin-left: auto; color: var(--v3-fnt); font-size: 11px; }
-.assistant-prep-check { display: grid; width: 14px; height: 14px; flex: 0 0 auto; place-items: center; border: 1px solid var(--v3-sk2); border-radius: 7px; color: #fff; }
-.assistant-prep li.is-done .assistant-prep-check { border-color: var(--v3-dark); background: var(--v3-dark); }
-.assistant-prep-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-prep-start { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.assistant-prep-start .v3-link { color: var(--v3-txt); }
-.assistant-prep-start .v3-link:disabled { cursor: not-allowed; }
 
 /* ── AI 思考中（01.1c）：羽毛 + 写字墨迹动画，文字 15 号，秒数、最新活动、查看过程 */
 .assistant-thinking { display: flex; align-items: flex-start; gap: 18px; margin-left: -60px; }
@@ -409,7 +394,6 @@
   .has-preview .assistant-thread { gap: 24px; }
 }
 .assistant-preview-foot > .v3-be-tag { flex: 0 0 auto; }
-.assistant-prep-check { padding: 0; background: transparent; cursor: pointer; }
 .assistant-artifact-followup { margin: 12px 0 0; color: var(--v3-txt); font-size: 14px; line-height: 24px; }
 
 /* Keep the conversation's size change in step with the file drawer. */
