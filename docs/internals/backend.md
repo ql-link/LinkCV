@@ -293,7 +293,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0104`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
+当前迁移链 head 为 `0106`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
 
 `0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
 
@@ -327,7 +327,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ### 账号偏好、联系邮箱与持久注销
 
-`0105` 在 users 新增 contact_email 和 deletion_requested_at，将历史 email 回填为联系邮箱（不表示已验证），建立一对一 account_preferences 和持久 account_deletion_jobs。清理任务使用独立 user_id 无外键，删除 users 后仍可继续对象/RAG 清理。迁移为 SQL-first、forward-only，不修改历史 revision。
+`0106` 在 users 新增 contact_email 和 deletion_requested_at，将历史 email 回填为联系邮箱（不表示已验证），建立一对一 account_preferences 和持久 account_deletion_jobs。清理任务使用独立 user_id 无外键，删除 users 后仍可继续对象/RAG 清理。`0105` 按创建顺序保留正式 Offer 与面试复盘结构。历史数据库的 `0105` 曾代表两套不同迁移，因此 `0106` 先检查两套结构，整套缺失才执行对应 up SQL；完整存在则保留原数据，部分结构存在时在任何 DDL 前拒绝迁移。已有联系邮箱不重新回填。发布 runner 在 `0106` 后核对两套结构，避免仅凭版本号误判。迁移为 SQL-first、forward-only；共享数据库只能按核实后的结构向前对齐。
 
 `lock_active_user` 以用户行锁和最新状态协调个人写事务与注销受理；长模型调用不持有调用方事务，模型日志和写回分别在有界事务重新验证账号。受理同一事务禁用账号、写注销时间和清理任务，管理员不能重启该账号。公开分享检查所有者状态，刷新与登录均拒绝注销账号。
 

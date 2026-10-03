@@ -19,6 +19,12 @@ from linkresume.core.config import load_settings
 BACKEND_ROOT = Path(__file__).resolve().parents[2] / "apps" / "backend"
 
 REVISION_TABLE_MARKERS = {
+    # 0106 reconciles two published meanings of 0105. Before 0106, either
+    # complete schema is accepted by its own guarded upgrade. After 0106,
+    # both sets of markers must exist; never trust the version alone.
+    "0106": frozenset({
+        "account_preferences", "account_deletion_jobs", "job_application_offer_materials",
+    }),
     "0030": frozenset(
         {
             "agent_sessions",
@@ -37,6 +43,16 @@ REVISION_TABLE_MARKERS = {
     ),
 }
 REVISION_COLUMN_MARKERS = {
+    "0106": {
+        "users": frozenset({"contact_email", "deletion_requested_at"}),
+        "job_applications": frozenset({
+            "offer_received_on", "offer_reply_due_on", "offer_start_on", "offer_probation",
+        }),
+        "interview_sessions": frozenset({
+            "review_report", "review_request_id", "review_started_at", "review_status",
+            "review_error",
+        }),
+    },
     "0031": {
         "resume_change_proposals": frozenset(
             {
@@ -230,7 +246,7 @@ def validate_schema_revision_alignment(
         missing = marker_tables - existing_tables
         if revision in applied and missing:
             drift.append(f"{revision} missing tables: {', '.join(sorted(missing))}")
-        elif revision not in applied and present:
+        elif revision not in applied and present and revision != "0106":
             drift.append(
                 f"{revision} tables exist before revision: {', '.join(sorted(present))}"
             )
@@ -251,7 +267,7 @@ def validate_schema_revision_alignment(
                     f"{revision} missing columns on {table_name}: "
                     f"{', '.join(sorted(missing))}"
                 )
-            elif revision not in applied and present:
+            elif revision not in applied and present and revision != "0106":
                 drift.append(
                     f"{revision} columns exist before revision on {table_name}: "
                     f"{', '.join(sorted(present))}"
