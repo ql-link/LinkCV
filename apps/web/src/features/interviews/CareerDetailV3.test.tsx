@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { InterviewSessionDetail, JobApplicationSummary } from "@/api/client";
+import type { InterviewSessionDetail, InterviewSessionSummary, JobApplicationSummary } from "@/api/client";
 import { AddNextStageDialog } from "./CareerDetailViews";
 import { ApplicationV3Content, ReviewV3Content } from "./CareerDetailV3";
 
@@ -11,6 +11,29 @@ const detail = { application, session: { id: "sample-session", stage_label: "二
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("Figma career detail interactions", () => {
+  it("shows the current interview's real preparation progress and follows refreshed counts", () => {
+    const currentSession = { ...detail.session, status: "scheduled", prep_total: 5, prep_done: 1 } as unknown as InterviewSessionSummary;
+    const props = { application, sessions: [], primaryLabel: "准备面试", onPrimary: vi.fn(), onBack: vi.fn(), onNotice: vi.fn(), onChanged: vi.fn() };
+    const { rerender } = render(<ApplicationV3Content {...props} currentSession={currentSession} />);
+    expect(screen.getByRole("region", { name: "当前阶段" })).toHaveTextContent("准备清单 1/5");
+    expect(screen.queryByText(/准备清单 2\/3/)).not.toBeInTheDocument();
+    rerender(<ApplicationV3Content {...props} currentSession={{ ...currentSession, prep_done: 4 }} />);
+    expect(screen.getByRole("region", { name: "当前阶段" })).toHaveTextContent("准备清单 4/5");
+    expect(screen.queryByText("需后端")).not.toBeInTheDocument();
+  });
+
+  it("shows the empty checklist state without substituting demo counts", () => {
+    const currentSession = { ...detail.session, status: "scheduled", prep_total: 0, prep_done: 0 } as unknown as InterviewSessionSummary;
+    render(<ApplicationV3Content application={application} sessions={[]} currentSession={currentSession} primaryLabel="准备面试" onPrimary={vi.fn()} onBack={vi.fn()} onNotice={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByRole("region", { name: "当前阶段" })).toHaveTextContent("未生成准备清单");
+    expect(screen.queryByText(/准备清单 2\/3/)).not.toBeInTheDocument();
+  });
+
+  it.each([undefined, { ...detail.session, status: "completed", prep_total: 3, prep_done: 2 } as unknown as InterviewSessionSummary])("does not show preparation progress when waiting for a schedule or result", (currentSession) => {
+    render(<ApplicationV3Content application={application} sessions={[]} currentSession={currentSession} primaryLabel="添加下一阶段" onPrimary={vi.fn()} onBack={vi.fn()} onNotice={vi.fn()} onChanged={vi.fn()} />);
+    expect(screen.getByRole("region", { name: "当前阶段" })).not.toHaveTextContent("准备清单");
+  });
+
   it("retries scheduling the existing stage without adding a duplicate stage", async () => {
     const onClose = vi.fn(); const onChanged = vi.fn();
     mocks.createInterviewSession.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ session: { id: "new-session", lock_version: 1 } });

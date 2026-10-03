@@ -55,6 +55,7 @@ import { greetingPrefix, homeCopy, useHomeDashboard } from "./homeDashboard";
 import { ModelPicker } from "./ModelPicker";
 import { openPreviewTab, PreviewPanel, previewTabKey, type PreviewTab, type GeneratedDocument, type ScreenshotAttachment } from "./PreviewPanel";
 import { createLocalDocument, GeneratedDocumentCard, isLocalDocumentRequest, ScreenshotStrip } from "./localArtifacts";
+import { GeneratedDocumentSaveDialog } from "./GeneratedDocumentSaveDialog";
 import { SuggestionCard } from "./SuggestionCard";
 import "./assistant.css";
 
@@ -609,6 +610,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const [previewActive, setPreviewActive] = useState<Record<string, string | null>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(520);
+  const [documentToSave, setDocumentToSave] = useState<{ conversationKey: string; userId: string | null; document: GeneratedDocument } | null>(null);
   const [unavailableKeys, setUnavailableKeys] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [composerView, setComposerView] = useState(() => ({
@@ -618,6 +620,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     invalidContextIds: [] as string[],
   }));
   const user = useResumeStore((state) => state.user);
+  useEffect(() => { setDocumentToSave(null); }, [user?.id]);
   const storeSessions = useSessionStore((state) => state.sessions);
   const loadSessions = useSessionStore((state) => state.load);
   const upsertSession = useSessionStore((state) => state.upsert);
@@ -1761,33 +1764,10 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     }
     if (tabs.length === 0) setPreviewOpen(false);
   };
-  const savingDocumentsRef = useRef(new Set<string>());
-  const saveGeneratedDocument = async (id: string) => {
-    if (savingDocumentsRef.current.has(id)) return;
+  const saveGeneratedDocument = (id: string) => {
     const document = sessionPreviewTabs.find((tab): tab is GeneratedDocument => tab.kind === "generated" && tab.id === id);
     if (!document || document.saved) return;
-    savingDocumentsRef.current.add(id);
-    // 同一份文档重试用同一个幂等键，网络重放不会产生两份资料
-    const key = idempotencyKey();
-    const upload = (fileName: string) => api.uploadDataset(new File([document.content], fileName, { type: "text/markdown" }), key, "");
-    try {
-      let saved;
-      try {
-        saved = await upload(document.label);
-      } catch (error) {
-        if (!(error instanceof ApiRequestError && error.message === "DATASET_NAME_CONFLICT")) throw error;
-        // 资料库里已有同名文件：保留两份，新文件名带上保存时间
-        const stamp = new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()).replace(/[/:\s]/g, "");
-        saved = await api.uploadDataset(new File([document.content], document.label.replace(/(\.md)?$/, `-${stamp}.md`), { type: "text/markdown" }), idempotencyKey(), "");
-      }
-      updateConversation(activeKey, (state) => ({ messages: state.messages.map((message) => message.generatedDocument?.id === id ? { ...message, generatedDocument: { ...message.generatedDocument, saved: true } } : message) }));
-      setPreviewTabs((all) => ({ ...all, [activeKey]: (all[activeKey] ?? []).map((tab) => tab.kind === "generated" && tab.id === id ? { ...tab, saved: true } : tab) }));
-      setNotice(t("已保存到资料库：{value0}。", { value0: saved.file_name }));
-    } catch (error) {
-      setNotice(error instanceof ApiRequestError && error.status === 401 ? t("登录已过期，请重新登录后保存。") : t("保存到资料库失败，请稍后重试。"));
-    } finally {
-      savingDocumentsRef.current.delete(id);
-    }
+    setDocumentToSave({ conversationKey: activeKey, userId: user?.id ?? null, document });
   };
   // AI 回答里的文件引用（蓝色文字）：拦截特殊链接，在右侧打开
   const handleAssistantClick = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -2307,6 +2287,15 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           onClose={() => setPreviewOpen(false)}
         />
       )}</MotionPresence>
+
+      <GeneratedDocumentSaveDialog key={user?.id ?? "guest"} document={documentToSave?.document ?? null} onClose={() => setDocumentToSave(null)} onSaved={(saved) => {
+        if (!documentToSave || !pageMountedRef.current || (useResumeStore.getState().user?.id ?? null) !== documentToSave.userId) return;
+        const { conversationKey, document } = documentToSave;
+        updateConversation(conversationKey, (state) => ({ messages: state.messages.map((message) => message.generatedDocument?.id === document.id ? { ...message, generatedDocument: { ...message.generatedDocument, saved: true } } : message) }));
+        setPreviewTabs((all) => ({ ...all, [conversationKey]: (all[conversationKey] ?? []).map((tab) => tab.kind === "generated" && tab.id === document.id ? { ...tab, saved: true } : tab) }));
+        setDocumentToSave(null);
+        setNotice(t("已保存到资料库：{value0}。", { value0: saved.file_name }));
+      }} />
 
       <MotionPresence>{current.error && (
         <Toast title={t("本次请求未完成")} message={current.error} kind="error" onDismiss={() => updateConversation(activeKey, { error: null })} />
