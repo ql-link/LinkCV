@@ -906,6 +906,23 @@ export type JobApplicationSummary = JobApplicationRecord & {
   next_session_mode: InterviewMode | null;
 };
 
+export type InterviewPrepCategory =
+  | "intro"
+  | "project"
+  | "technical"
+  | "system_design"
+  | "behavior"
+  | "company"
+  | "other";
+
+export type InterviewPrepItem = {
+  id?: string | null;
+  title: string;
+  category: InterviewPrepCategory;
+  reason?: string | null;
+  done: boolean;
+};
+
 export type InterviewSessionRecord = {
   id: string;
   application_id: string;
@@ -932,6 +949,10 @@ export type InterviewSessionRecord = {
   questions_markdown: string | null;
   review_summary: string | null;
   improvement_markdown: string | null;
+  prep_items: InterviewPrepItem[];
+  prep_generated_at: string | null;
+  prep_total: number;
+  prep_done: number;
   completed_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
@@ -2103,12 +2124,18 @@ export const api = {
       questions_markdown: string | null;
       review_summary: string | null;
       improvement_markdown: string | null;
+      prep_items: InterviewPrepItem[];
     }> & { base_lock_version: number },
   ) =>
     request<InterviewSessionDetail>(`/api/interview-sessions/${id}`, {
       method: "PUT",
       body: payload,
     }),
+  generateInterviewPrepItems: (id: string) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/prep-items:generate`,
+      { method: "POST" },
+    ),
   rescheduleInterviewSession: (
     id: string,
     payload: ({

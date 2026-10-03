@@ -5735,3 +5735,27 @@
   .v3-career .career-schedule-v3 > .schedule-calendar-panel { min-height: 480px; flex: 0 0 480px; }
   .v3-career .career-applications-layout.is-list > .career-application-list-groups { overflow: visible; }
 }
+
+.prep-card { padding: 11px; }
+.prep-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.prep-card h3 { margin: 0; font-size: 11px; }
+.prep-card > header span { color: var(--ui-text-muted); font-size: 8px; }
+.prep-card ul { display: grid; gap: 0; margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); list-style: none; }
+.prep-card li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 9px; }
+.prep-card li + li { border-top: 1px solid var(--ui-border); }
+.prep-card li > button { display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ui-text-muted); cursor: pointer; }
+.prep-card li > button[role="checkbox"] { width: 14px; height: 14px; margin-top: 1px; border: 1px solid var(--ui-border-strong, var(--ui-border)); border-radius: 4px; color: #fff; }
+.prep-card li.is-done > button[role="checkbox"] { border-color: var(--ui-text); background: var(--ui-text); }
+.prep-card li > button svg { width: 10px; height: 10px; }
+.prep-card li > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.prep-card li strong { overflow-wrap: anywhere; font-size: 9px; font-weight: 500; line-height: 1.5; }
+.prep-card li.is-done strong { color: var(--ui-text-muted); text-decoration: line-through; }
+.prep-card li small { color: var(--ui-text-muted); font-size: 8px; line-height: 1.5; }
+.prep-card li > button:disabled { cursor: not-allowed; opacity: .5; }
+.prep-card .prep-status { margin: 0; color: var(--ui-text-secondary); font-size: 8px; line-height: 1.7; }
+.prep-card > .ui-button { width: 100%; margin-top: 8px; }
+.prep-add { display: flex; gap: 6px; margin-top: 8px; }
+.prep-add input { min-width: 0; flex: 1; box-sizing: border-box; padding: 5px 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: transparent; color: inherit; font: inherit; font-size: 9px; }
+.prep-add button { display: grid; width: 26px; place-items: center; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: transparent; color: var(--ui-text-secondary); cursor: pointer; }
+.prep-add button:disabled { cursor: not-allowed; opacity: .5; }
+.prep-add button svg { width: 12px; height: 12px; }

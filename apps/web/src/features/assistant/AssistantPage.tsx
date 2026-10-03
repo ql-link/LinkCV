@@ -48,7 +48,6 @@ import { V3Shell } from "../../v3/Shell";
 import { Icon, type V3IconName } from "../../v3/Icon";
 import { BeTag, Dialog, DialogFooter, SearchBox, Toast } from "../../v3/primitives";
 import { useActiveSessionStore, useSessionStore } from "../../v3/sessionStore";
-import { MOCK_PREP_CHECKLIST } from "../../v3/mocks";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import { MessageActions } from "../agent/MessageActions";
 import { HomeCardView } from "./HomeCards";
@@ -611,7 +610,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(520);
   const [unavailableKeys, setUnavailableKeys] = useState<string[]>([]);
-  const [prepStates, setPrepStates] = useState<Record<string, boolean[]>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [composerView, setComposerView] = useState(() => ({
     revision: 0,
@@ -2094,33 +2092,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     </section>
   );
 
-  // 面试准备清单卡：后端没有准备清单模型，只在最新一轮回答提到面试准备时展示示例（01.1a）
-  const latestAssistant = [...current.messages].reverse().find((message) => message.role === "assistant" && !message.temporary);
-  const showPrepChecklist = Boolean(latestAssistant && !latestAssistant.localOnly && /面试/.test(latestAssistant.content) && /准备/.test(latestAssistant.content) && !current.running);
-  const prepChecklistKey = `${activeKey}:${latestAssistant?.sequence_no ?? 0}`;
-  const prepItems = MOCK_PREP_CHECKLIST.map((item, index) => ({ ...item, done: prepStates[prepChecklistKey]?.[index] ?? item.done }));
-  const prepDone = prepItems.filter((item) => item.done).length;
-  const prepChecklist = (
-    <section className="assistant-prep" aria-label={t("面试准备清单")}>
-      <header>
-        <strong>{t("面试准备清单")}</strong>
-        <BeTag />
-        <span className="v3-num">{prepDone} / {MOCK_PREP_CHECKLIST.length}{t(" 已完成")}</span>
-      </header>
-      <ul>
-        {prepItems.map((item, index) => (
-          <li key={item.title} className={item.done ? "is-done" : undefined}>
-            <button type="button" role="checkbox" aria-label={item.title} aria-checked={item.done} className="assistant-prep-check" title={t("需后端：勾选状态仅在本次对话中保留")} onClick={() => setPrepStates((states) => ({ ...states, [prepChecklistKey]: prepItems.map((entry, entryIndex) => entryIndex === index ? !entry.done : entry.done) }))}>{item.done && <Icon name="check" size={9} strokeWidth={2.4} />}</button>
-            <span className="assistant-prep-title">{item.title}</span>
-            {item.done ? <small>{t("已完成")}</small> : (
-              <span className="assistant-prep-start"><BeTag /><button type="button" className="v3-link" onClick={() => { applyQuickPrompt(t("按准备清单的「{value0}」陪我做一轮模拟面试", { value0: item.title })); inputRef.current?.focus(); }}>{t("开始模拟")}<Icon name="arrow" size={12} /></button></span>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-
   const thinking = current.running && current.stage !== "streaming" && (
     <section className="assistant-thinking" aria-label={t("AI 正在思考")} aria-live="polite">
       <span className="assistant-feather-motion is-writing" aria-hidden="true">
@@ -2240,7 +2211,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           </div>
         </article>
         {proposalGroupAfterMessage && proposalPanel(proposalGroupAfterMessage)}
-        {showPrepChecklist && message === latestAssistant && prepChecklist}
       </Fragment>
     );
   });

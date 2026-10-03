@@ -26,6 +26,7 @@ export const useCaseLabels: Record<string, string> = {
   mock_interview: "模拟面试",
   transcript_correction: "识别稿修正",
   job_match: "简历匹配度",
+  interview_prep: "面试准备清单",
   speech_to_text: "语音识别",
   text_to_speech: "语音合成",
 };

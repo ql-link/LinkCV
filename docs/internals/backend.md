@@ -293,7 +293,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0104`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
+当前迁移链 head 为 `0108`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107 → 0108`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
 
 `0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
 
@@ -325,12 +325,25 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 仍保留全部 Muse 主题的 Web/PDF 渲染支持，不删除模板或外键关联。迁移只含 DML，沿用 SQL-first 事务和 forward-only 链；目标环境的 current 需要单独查询。撤回通过管理端重新启用或新的向前 revision，数据恢复依赖备份。具体下架、代表款和展示顺序见[模板目录整理](../features/resume-template-curation.md)。
 
 
+### 简历匹配度（0107）
+
+`0107` 新增 `job_resume_matches`：每个（岗位，简历）一行，唯一键 `uk_job_resume_matches_job_resume`，保存状态（`pending`、`ready`、`failed`）、分数、`result_json`（逐条要求、原句核对结果与高亮词）、岗位与简历内容哈希、来源（`auto`、`manual`）、尝试次数、租约令牌与到期时间。外键均为 `RESTRICT`，所以删除岗位、删除简历和账号注销都在各自事务中显式先删匹配行。分数由 `application/job_matches/scoring.py` 按权重计算，不接受模型直接给分。
+
+分析分三段：短事务占位并取得租约，无事务调用模型（`job_match` 用途，结构无效时重试一次），再锁行并核对租约令牌后写回。首页卡经 `JobMatchRunner` 在后台任务中运行，复用同一流程。迁移是 forward-only；目标环境 current 需要单独查询。
+
 ### 账号偏好、联系邮箱与持久注销
 
-`0105` 在 users 新增 contact_email 和 deletion_requested_at，将历史 email 回填为联系邮箱（不表示已验证），建立一对一 account_preferences 和持久 account_deletion_jobs。清理任务使用独立 user_id 无外键，删除 users 后仍可继续对象/RAG 清理。迁移为 SQL-first、forward-only，不修改历史 revision。
+`0106` 在 users 新增 contact_email 和 deletion_requested_at，将历史 email 回填为联系邮箱（不表示已验证），建立一对一 account_preferences 和持久 account_deletion_jobs。清理任务使用独立 user_id 无外键，删除 users 后仍可继续对象/RAG 清理。`0105` 按创建顺序保留正式 Offer 与面试复盘结构。历史数据库的 `0105` 曾代表两套不同迁移，因此 `0106` 先检查两套结构，整套缺失才执行对应 up SQL；完整存在则保留原数据，部分结构存在时在任何 DDL 前拒绝迁移。已有联系邮箱不重新回填。发布 runner 在 `0106` 后核对两套结构，避免仅凭版本号误判。迁移为 SQL-first、forward-only；共享数据库只能按核实后的结构向前对齐。
 
 `lock_active_user` 以用户行锁和最新状态协调个人写事务与注销受理；长模型调用不持有调用方事务，模型日志和写回分别在有界事务重新验证账号。受理同一事务禁用账号、写注销时间和清理任务，管理员不能重启该账号。公开分享检查所有者状态，刷新与登录均拒绝注销账号。
 
 清理 worker 以可续租的数据库租约领取任务，数据库清理阶段同时持有 RAG 同步的可续租 Redis 锁，按实际 0090 后 schema 的外键顺序清除本人数据，并先将已登记 RAG file ID 存入任务 manifest。对象阶段限定 `users/{uid}/` 和既有录音目录 `mock-interviews/{uid}/`，RAG 阶段只清 manifest 中的文件。Redis 会话撤销、MinIO 或 LinkRag 失败保留任务重试，最多十次转 needs_attention；缺少必须的 RAG 配置直接需人工处理。失去租约后不覆盖新持有者结果，已完成任务清除 manifest 并在七天后删除。`python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 仅重排 needs_attention 任务，不恢复账号。
 
 RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记；远程文件变更在用户行锁内与注销协调，上传结果登记前不能受理注销，避免丢失外部清理清单。所有异步个人写回仍须遵守已有任务令牌和版本条件。业务边界见[账号功能](../features/identity-account.md#注销与失败边界)。
+
+
+## 面试准备清单（0108）
+
+`0108` 在 `interview_sessions` 新增 `prep_items`（JSON，可空）和 `prep_generated_at`（可空时间）。清单只随场次整体读写、不跨场次查询，所以不单独建表；每场至多 12 条，条目 id 由服务端保证唯一。`prep_generated_at` 是“本场已成功生成过一次”的唯一标记，用户清空或编辑清单都不会清除它。
+
+`POST /api/interview-sessions/:id/prep-items:generate` 以 `source=interview_prep`、`interview_prep` 场景调用结构化输出，管理员需像其他场景一样为它绑定并探测可用线路。流程分三段：先在短事务内校验归属、状态并组装提示词（岗位快照、阶段、本人关联简历、备注、最近两场已完成面试复盘、最近一次已完成模拟面试报告的 `improvements` 与 `resume_risks`，用户文本都以 `<data>` 引用且声明不是指令）；再无事务调用模型，结构无效时重试一次；最后在 `SELECT … FOR UPDATE` 行锁内重新校验并合并写入。合并保留生成期间用户新增的条目，按标题去重，总数封顶 12。模型失败、结构无效或去重后为空时不写 `prep_generated_at`，用户可以重试。迁移只含 DDL，沿用 forward-only 链。

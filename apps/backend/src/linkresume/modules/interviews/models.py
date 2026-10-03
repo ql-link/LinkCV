@@ -476,6 +476,12 @@ class InterviewSession(Base):
     improvement_markdown: Mapped[str | None] = mapped_column(
         long_text_type, nullable=True
     )
+    prep_items: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(), nullable=True
+    )
+    prep_generated_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
     completed_at: Mapped[datetime | None] = mapped_column(
         timestamp_type(), nullable=True
     )

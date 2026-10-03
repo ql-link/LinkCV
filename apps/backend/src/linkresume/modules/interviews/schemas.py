@@ -6,7 +6,14 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from linkresume.application.interviews.state import validate_stage_context
 from linkresume.modules.job_descriptions.schemas import EmploymentType, SalaryPeriod
@@ -65,6 +72,33 @@ def _as_utc(value: datetime | None) -> datetime | None:
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+PrepCategory = Literal[
+    "intro", "project", "technical", "system_design", "behavior", "company", "other"
+]
+MAX_PREP_ITEMS = 12
+
+
+class PrepItem(StrictModel):
+    id: str | None = Field(default=None, max_length=36)
+    title: str = Field(max_length=80)
+    category: PrepCategory = "other"
+    reason: str | None = Field(default=None, max_length=200)
+    done: bool = False
+
+    @field_validator("title")
+    @classmethod
+    def trim_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("prep item title cannot be blank")
+        return value
+
+    @field_validator("id", "reason")
+    @classmethod
+    def trim_optional_text(cls, value: str | None) -> str | None:
+        return _trim_optional(value)
 
 
 class ResumeBindingRequest(StrictModel):
@@ -346,6 +380,7 @@ class InterviewSessionUpdateRequest(StrictModel):
     questions_markdown: str | None = Field(default=None, max_length=500_000)
     review_summary: str | None = Field(default=None, max_length=500_000)
     improvement_markdown: str | None = Field(default=None, max_length=500_000)
+    prep_items: list[PrepItem] | None = Field(default=None, max_length=MAX_PREP_ITEMS)
     base_lock_version: int = Field(ge=1)
 
     @field_validator(
@@ -578,12 +613,29 @@ class InterviewSessionRecord(BaseModel):
     questions_markdown: str | None
     review_summary: str | None
     improvement_markdown: str | None
+    prep_items: list[PrepItem] = Field(default_factory=list)
+    prep_generated_at: datetime | None = None
     completed_at: datetime | None
     cancelled_at: datetime | None
     cancellation_reason: str | None
     lock_version: int
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def prep_total(self) -> int:
+        return len(self.prep_items)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def prep_done(self) -> int:
+        return sum(1 for item in self.prep_items if item.done)
+
+    @field_validator("prep_items", mode="before")
+    @classmethod
+    def default_prep_items(cls, value: object) -> object:
+        return [] if value is None else value
 
     @field_validator(
         "id", "application_id", "application_stage_id", mode="before"
@@ -599,6 +651,7 @@ class InterviewSessionRecord(BaseModel):
         "answer_plan_end_at",
         "completed_at",
         "cancelled_at",
+        "prep_generated_at",
         "created_at",
         "updated_at",
         mode="before",
