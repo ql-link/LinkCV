@@ -1,4 +1,5 @@
 import { t, useLocale, getLocale, weekdayName } from "@/i18n";
+import { isReportV2, reviewScore10 } from "./reviewReport";
 import { MotionPresence, MotionSurface, useContentMotion } from "@/components/ui/motion";
 import {
   useCallback,
@@ -50,6 +51,7 @@ import {
   X,
 } from "lucide-react";
 import { Button, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, PageLoading } from "@/components/ui";
+import { StageDetailPage } from "./StageDetailPage";
 import { SelectField } from "@/components/ui/select-field";
 import { LoadingText } from "@/components/ui/page-loading";
 import { Icon, type V3IconName } from "@/v3/Icon";
@@ -471,8 +473,8 @@ function toInterview(
     answerPlanEndAt: session.answer_plan_end_at ?? null,
     questions: session.questions_markdown ?? "",
     review: session.review_report?.summary ?? session.review_summary ?? "",
-    improvement: session.review_report?.questions.find(item => item.improvement)?.improvement ?? session.improvement_markdown ?? "",
-    reviewScore: session.review_stale ? null : session.review_report?.overall_score,
+    improvement: (isReportV2(session.review_report) ? session.review_report.improvements[0]?.title : undefined) ?? session.review_report?.questions.find(item => item.improvement)?.improvement ?? session.improvement_markdown ?? "",
+    reviewScore: session.review_stale ? null : reviewScore10(session.review_report),
     reviewState: session.review_stale ? t("记录已修改，待重新生成") : session.review_status === "generating" ? t("正在生成…") : session.review_status === "failed" ? t("生成失败，已有报告保留") : undefined,
   };
 }
@@ -1037,7 +1039,19 @@ export function InterviewCenterPage({
         placeholder={view === "schedule" ? <ScheduleLoading /> : view === "applications" && !isApplicationDetailRoute ? <BoardSkeleton /> : (
           <div className="cd3-page"><SkeletonHead actions={2} /><SkeletonCards cards={[120, 220, 160]} label={t("正在加载求职数据…")} /></div>
         )}
-      >{isApplicationDetailRoute ? (
+      >{isApplicationSessionDialogRoute ? (
+        // 04.C01 · C03: a stage's details open as their own page over the application.
+        detail?.session.id === initialSessionId && detail
+          ? <StageDetailPage
+            detail={detail}
+            onBack={closeApplicationSessionDialog}
+            onChanged={() => loadData(initialSessionId)}
+            onNotice={showNotice}
+          />
+          : detailLoading
+            ? <PageLoading label={t("正在加载记录…")} scope="panel" />
+            : <section className="career-session-detail-loading"><p>{t("暂时无法读取这条记录。")}</p></section>
+      ) : isApplicationDetailRoute ? (
         <>
           <ApplicationDetailView
             application={selectedApplication}
@@ -1051,22 +1065,6 @@ export function InterviewCenterPage({
             onChanged={() => loadData(initialSessionId)}
             onNotice={showNotice}
           />
-          {isApplicationSessionDialogRoute && (
-            <InterviewSessionDetailView
-              displayMode="dialog"
-              detail={detail?.session.id === initialSessionId ? detail : null}
-              detailLoading={detailLoading}
-              onBack={closeApplicationSessionDialog}
-              onChanged={(preferredId) => {
-                if (preferredId === null) {
-                  closeApplicationSessionDialog();
-                  return;
-                }
-                void loadData(initialSessionId ?? preferredId);
-              }}
-              onNotice={showNotice}
-            />
-          )}
         </>
       ) : isInterviewDetailRoute ? (
         <InterviewSessionDetailView
@@ -2971,23 +2969,14 @@ function RecordDetail({
     setNextStage("");
     setEditing(false);
   }, [detail.session.id, detail.session.lock_version]);
-  const save = async (complete: boolean) => {
+  const save = async () => {
     try {
-      if (complete && detail.session.status === "scheduled") {
-        await api.completeInterviewSession(detail.session.id, {
-          questions_markdown: questions || null,
-          review_summary: review || null,
-          improvement_markdown: improvement || null,
-          base_lock_version: detail.session.lock_version,
-        });
-      } else {
-        await api.updateInterviewSession(detail.session.id, {
-          questions_markdown: questions || null,
-          review_summary: review || null,
-          improvement_markdown: improvement || null,
-          base_lock_version: detail.session.lock_version,
-        });
-      }
+      await api.updateInterviewSession(detail.session.id, {
+        questions_markdown: questions || null,
+        review_summary: review || null,
+        improvement_markdown: improvement || null,
+        base_lock_version: detail.session.lock_version,
+      });
       setEditing(false);
       onChanged();
     } catch (error) {
@@ -3123,7 +3112,6 @@ function RecordDetail({
               {!isArchived && (
                 <Button size="sm" variant="outline" icon={<Ban />} onClick={() => setPendingLifecycle("cancel")}>{t("取消")}{recordKind}{t("安排")}</Button>
               )}
-              {!isArchived && <Button size="sm" onClick={() => void save(true)}>{t("完成面试")}</Button>}
             </>
           )}
           <Button
@@ -3193,7 +3181,7 @@ function RecordDetail({
         placeholder={t("粘贴面试过程、逐字稿或整理后的文字记录…")}
         onChange={setQuestions}
       />
-      {editing && <div className="record-save-row"><Button onClick={() => void save(false)}>{t("保存文字记录")}</Button></div>}
+      {editing && <div className="record-save-row"><Button onClick={() => void save()}>{t("保存文字记录")}</Button></div>}
       <MotionPresence>{lifecycleDialog && (
         <ConfirmDialog
           kind={lifecycleDialog.kind}

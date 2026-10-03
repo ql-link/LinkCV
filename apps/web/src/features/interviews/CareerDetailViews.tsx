@@ -9,7 +9,9 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ApplicationV3Content, ReviewV3Content } from "./CareerDetailV3";
+import { ReviewV3Content } from "./CareerDetailV3";
+import { ApplicationProgressPage } from "./ApplicationProgressPage";
+import { buildApplicationDetail, effectiveSessionStatus, type DetailAction } from "./applicationDetailModel";
 import { PrepChecklistCard } from "./PrepChecklistCard";
 import { Dialog as V3Dialog, Select as V3Select } from "@/v3/primitives";
 import { Badge, Centered, DashArrow, MiniResume, TagCard } from "@/v3/art";
@@ -119,7 +121,7 @@ type JourneyStage = {
   state: "done" | "current" | "pending" | "waiting" | "cancelled" | "ended" | "offer";
 };
 
-function requestErrorMessage(error: unknown): string {
+export function requestErrorMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
     const messages: Record<string, string> = {
       INTERVIEW_EDIT_CONFLICT: t("这条面试已在其他页面更新，请刷新后再试。"),
@@ -1170,6 +1172,9 @@ type OfferFormValues = {
   salaryCurrency: string;
   salaryPeriod: SalaryPeriod;
   benefitsDescription: string;
+  probation: string;
+  /** Offer files picked from the library; `undefined` leaves saved files untouched. */
+  materialIds?: string[];
 };
 
 const SALARY_PERIOD_OPTIONS: Array<{ label: string; value: SalaryPeriod }> = [
@@ -1209,6 +1214,8 @@ function offerRequestPayload(values: OfferFormValues, baseLockVersion: number) {
     salary_currency: salary !== null ? values.salaryCurrency.trim().toUpperCase() : null,
     salary_period: salary !== null ? values.salaryPeriod : null,
     benefits_description: values.benefitsDescription.trim() || null,
+    probation: values.probation.trim() || null,
+    ...(values.materialIds ? { material_dataset_ids: values.materialIds } : {}),
   };
 }
 
@@ -1227,6 +1234,14 @@ function OfferDetailsFields({
     value: OfferFormValues[Key],
   ) => onChange({ ...values, [key]: value });
   const numericSalary = optionalSalaryNumber(values.salary);
+  const [documents, setDocuments] = useState<DatasetRecord[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.listDatasets()
+      .then((response) => { if (live) setDocuments(response.datasets.filter((item) => (item.asset_kind ?? "document") === "document" && item.upload_status === "succeeded")); })
+      .catch(() => { if (live) setDocuments([]); });
+    return () => { live = false; };
+  }, []);
   const adjustSalary = (direction: -1 | 1) => {
     const current = numericSalary !== null && Number.isFinite(numericSalary) ? numericSalary : null;
     const next = current === null ? 0 : Math.max(0, current + (1_000 * direction));
@@ -1238,14 +1253,14 @@ function OfferDetailsFields({
       <div className="career-next-stage-offer-form">
         {([
           ["receivedOn", "收到日期"],
-          ["replyDueOn", "回复截止日期"],
-          ["startOn", "预计入职日期"],
+          ["replyDueOn", "回复截止"],
+          ["startOn", "预计入职"],
         ] as const).map(([key, label]) => <div className="career-next-stage-field" key={key}>
           <Label htmlFor={`career-offer-${key}`}>{t(label)}</Label>
           <input id={`career-offer-${key}`} type="date" min="1000-01-01" max="9999-12-31" value={values[key]} disabled={disabled} onInput={(event) => update(key, event.currentTarget.value)} onChange={(event) => update(key, event.target.value)} />
         </div>)}
         <div className="career-next-stage-field">
-          <Label htmlFor="career-offer-base-location">Base</Label>
+          <Label htmlFor="career-offer-base-location">{t("工作地点")}</Label>
           <input
             id="career-offer-base-location"
             value={values.baseLocation}
@@ -1319,6 +1334,28 @@ function OfferDetailsFields({
             </SelectContent>
           </Select>
         </div>
+        <div className="career-next-stage-field">
+          <Label htmlFor="career-offer-probation">{t("试用期")}</Label>
+          <input
+            id="career-offer-probation"
+            value={values.probation}
+            maxLength={100}
+            disabled={disabled}
+            placeholder={t("例如：3 个月")}
+            onChange={(event) => update("probation", event.target.value)}
+          />
+        </div>
+        <div className="career-next-stage-field">
+          <Label htmlFor="career-offer-material">{t("Offer 材料")}</Label>
+          <V3Select
+            label={t("Offer 材料")}
+            value={values.materialIds?.[0] ?? ""}
+            disabled={disabled || documents === null}
+            placeholder={documents === null ? t("正在加载资料库…") : documents.length ? t("从资料库选择文件") : t("资料库还没有文件")}
+            options={[{ value: "", label: t("不关联文件") }, ...(documents ?? []).map((item) => ({ value: item.id, label: item.file_name }))]}
+            onChange={(value) => update("materialIds", value ? [value] : [])}
+          />
+        </div>
         <div className="career-next-stage-field career-next-stage-field--full career-next-stage-offer-benefits">
           <Label htmlFor="career-offer-benefits">{t("福利待遇")}</Label>
           <textarea
@@ -1347,6 +1384,8 @@ const NEXT_STAGE_CHOICES: Array<{
   { key: "written_test", get label() { return t("笔试"); }, icon: FilePenLine },
   { key: "ai_interview", get label() { return t("AI 面试"); }, icon: Sparkles },
   { key: "interview", get label() { return t("面试"); }, icon: Users },
+  { key: "hr", get label() { return t("HR 面"); }, icon: BriefcaseBusiness },
+  { key: "oc", label: "OC", icon: Mail },
   { key: "offer", label: "Offer", icon: Mail },
 ];
 
@@ -1376,6 +1415,16 @@ const NEXT_STAGE_FORM_COPY: Record<NextStageChoice, { title: string; badge: stri
     badge: "面试安排",
     get description() { return t("记录本轮面试的轮次、时间和参与方式。"); },
   },
+  hr: {
+    get title() { return t("填写 HR 面信息"); },
+    badge: "HR 面",
+    get description() { return t("记录与 HR 沟通的时间、方式和联系人。"); },
+  },
+  oc: {
+    get title() { return t("记录口头意向"); },
+    badge: "OC",
+    get description() { return t("记录口头意向的沟通时间、薪酬和到岗时间。"); },
+  },
   offer: {
     get title() { return t("填写 Offer 信息"); },
     badge: "录用结果",
@@ -1389,6 +1438,8 @@ const NEXT_STAGE_BADGE_ICONS: Record<NextStageChoice, typeof ClipboardCheck> = {
   written_test: FilePenLine,
   ai_interview: Sparkles,
   interview: CalendarDays,
+  hr: CalendarDays,
+  oc: Mail,
   offer: BriefcaseBusiness,
 };
 
@@ -1501,12 +1552,22 @@ export function AddNextStageDialog({
     salaryCurrency: "CNY",
     salaryPeriod: "month",
     benefitsDescription: "",
+    probation: "",
   });
   const [assessmentEndAt, setAssessmentEndAt] = useState(initialEndAt);
   const [answerPlanStart, setAnswerPlanStart] = useState("");
   const [answerPlanDuration, setAnswerPlanDuration] = useState(60);
   const [noteOpen, setNoteOpen] = useState(false);
   const [preparationNote, setPreparationNote] = useState("");
+  const [interviewerName, setInterviewerName] = useState("");
+  const [appliedChannel, setAppliedChannel] = useState(() => (application as Partial<JobApplicationSummary>).applied_channel ?? "");
+  const [resumeId, setResumeId] = useState("");
+  const [resumes, setResumes] = useState<Array<{ id: string; title: string }> | null>(null);
+  const [ocAt, setOcAt] = useState("");
+  const [ocContact, setOcContact] = useState("");
+  const [ocSalary, setOcSalary] = useState("");
+  const [ocStart, setOcStart] = useState("");
+  const [ocNote, setOcNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [clientRequestId] = useState(() => crypto.randomUUID());
@@ -1518,6 +1579,16 @@ export function AddNextStageDialog({
   useEffect(() => {
     if (selectedApplicationOption) onApplicationChange?.(selectedApplicationOption);
   }, [onApplicationChange, selectedApplicationOption]);
+
+  // Recording an application can link the resume it was sent with.
+  useEffect(() => {
+    if (!startsPending || scheduleOnly) return;
+    let live = true;
+    void api.listResumes()
+      .then((response) => { if (live) setResumes(response.resumes.map((item) => ({ id: item.id, title: item.title }))); })
+      .catch(() => { if (live) setResumes([]); });
+    return () => { live = false; };
+  }, [startsPending, scheduleOnly]);
 
   const activeAsyncStartAt = activeStage === "ai_interview" ? aiInterviewStartAt : assessmentStartAt;
   const activeAsyncLink = activeStage === "ai_interview" ? aiInterviewLink : assessmentLink;
@@ -1548,6 +1619,15 @@ export function AddNextStageDialog({
       ...(appliedAtIso
         ? { applied_at: appliedAtIso }
         : {}),
+      ...(startsPending && appliedChannel.trim() ? { applied_channel: appliedChannel.trim() } : {}),
+      ...(startsPending && resumeId ? { resume_id: resumeId } : {}),
+      ...(activeStage === "oc" ? {
+        oc_communicated_at: parseScheduleStart(ocAt)?.toISOString() ?? null,
+        oc_contact: ocContact.trim() || null,
+        oc_salary_text: ocSalary.trim() || null,
+        oc_start_text: ocStart.trim() || null,
+        oc_note: ocNote.trim() || null,
+      } : {}),
       base_lock_version: selectedApplication.lock_version,
     });
     return response.application;
@@ -1599,9 +1679,29 @@ export function AddNextStageDialog({
       return;
     }
 
+    if (activeStage === "oc") {
+      if (!parseScheduleStart(ocAt)) {
+        setErrorMessage(t("请填写沟通时间。"));
+        return;
+      }
+      setErrorMessage(null);
+      setBusy(true);
+      try {
+        const result = await saveStage();
+        if (!result) return;
+        onClose();
+        await onChanged();
+      } catch (error) {
+        setErrorMessage(requestErrorMessage(error));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     const fixedLabel = NEXT_STAGE_CHOICES.find((choice) => choice.key === activeStage)?.label ?? "";
     const isWrittenTest = activeStage === "written_test";
-    const isInterview = activeStage === "interview";
+    // HR 面 is booked like an interview: a fixed time, a way to meet and a contact.
+    const isInterview = activeStage === "interview" || activeStage === "hr";
     const isOpenWindow = activeStage === "assessment" || (isWrittenTest && writtenScheduleKind === "open_window");
     const startAt = (isWrittenTest ? writtenStartAt : isInterview ? interviewStartAt : activeAsyncStartAt) || (isOpenWindow ? schedulePickerValue(new Date().toISOString()) : "");
     const start = parseScheduleStart(startAt);
@@ -1682,9 +1782,9 @@ export function AddNextStageDialog({
         const created = await api.createInterviewSession(selectedApplication.id, {
           client_request_id: clientRequestId,
           application_stage_id: savedApplication.current_stage?.id,
-          stage_type: isInterview ? "interview" : "other",
-          round_no: isInterview ? targetRoundNo ?? suggestedInterviewRoundNo : null,
-          stage_label: activeStage === "interview" ? interviewLabel.trim() : fixedLabel,
+          stage_type: activeStage === "hr" ? "hr" : isInterview ? "interview" : "other",
+          round_no: activeStage === "interview" ? targetRoundNo ?? suggestedInterviewRoundNo : null,
+          stage_label: activeStage === "interview" ? interviewLabel.trim() : savedApplication.current_stage?.stage_label ?? fixedLabel,
           start_at: start.toISOString(),
           ...scheduleTiming,
           schedule_kind: activeStage === "assessment" || (isWrittenTest && writtenScheduleKind === "open_window")
@@ -1695,6 +1795,7 @@ export function AddNextStageDialog({
           meeting_url: mode === "video" || mode === "phone" ? meetingOrLocation || null : null,
           location: mode === "onsite" || mode === "other" ? meetingOrLocation || null : null,
           preparation_note: preparationNote.trim() || null,
+          ...(isInterview && interviewerName.trim() ? { interviewer_name: interviewerName.trim() } : {}),
         });
         if (planStart) {
           try {
@@ -1731,6 +1832,8 @@ export function AddNextStageDialog({
 
   const canSubmit = activeStage === "offer"
     ? !offerFormError(offerValues) && !busy
+    : activeStage === "oc"
+      ? Boolean(ocAt) && !busy
     : activeStage === "screening"
       ? !busy
       : activeStage === "interview"
@@ -1751,19 +1854,102 @@ export function AddNextStageDialog({
 
   const stageName = NEXT_STAGE_CHOICES.find(item => item.key === activeStage)?.label ?? "";
   const isWindow = activeStage === "assessment" || (activeStage === "written_test" && writtenScheduleKind === "open_window");
+  const usesInterviewForm = activeStage === "interview" || activeStage === "hr";
   const scheduledStart = activeStage === "assessment" ? assessmentStartAt : activeStage === "written_test" ? writtenStartAt : activeStage === "ai_interview" ? aiInterviewStartAt : interviewStartAt;
   const scheduledEnd = activeStage === "assessment" ? assessmentEndAt : writtenEndAt;
   const scheduleDuration = activeStage === "written_test" ? writtenDuration : activeStage === "ai_interview" ? aiInterviewDuration : interviewDuration;
   const setStart = activeStage === "assessment" ? setAssessmentStartAt : activeStage === "written_test" ? setWrittenStartAt : activeStage === "ai_interview" ? setAiInterviewStartAt : setInterviewStartAt;
   const setEnd = activeStage === "assessment" ? setAssessmentEndAt : setWrittenEndAt;
   const setDuration = activeStage === "written_test" ? setWrittenDuration : activeStage === "ai_interview" ? setAiInterviewDuration : setInterviewDuration;
-  const summaryDate = parseScheduleStart(isWindow ? scheduledEnd : scheduledStart);
-  const iconNames: Record<NextStageChoice, V3IconName> = { screening: "send", assessment: "text", written_test: "edit", ai_interview: "spark", interview: "user", offer: "mail" };
+  const iconNames: Record<NextStageChoice, V3IconName> = { screening: "filter", assessment: "list", written_test: "edit", ai_interview: "spark", interview: "user", hr: "brief", oc: "phone", offer: "mail" };
   const titleApplication = selectedApplication as Partial<JobApplicationSummary>;
   const chooseDeadline = (days: number) => {
     setEnd(schedulePickerValue(new Date(Date.now() + days * 86400000).toISOString()));
     setCompletionWindow(String(days * 1440));
   };
+  const submitLabel = scheduleOnly
+    ? t("保存安排")
+    : startsPending
+      ? t("确认投递")
+      : activeStage === "oc"
+        ? t("记录 OC")
+        : activeStage === "offer"
+          ? t("记录 Offer")
+          : t("添加{value0}", { value0: stageName });
+  const shortDay = (value: string | null | undefined) => {
+    const date = value ? parseScheduleStart(value) ?? new Date(value) : null;
+    return date && !Number.isNaN(date.getTime()) ? `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` : null;
+  };
+  const currentName = activeStage === "interview" ? interviewLabel || stageName : stageName;
+  const thisDay = shortDay(activeStage === "oc" ? ocAt : activeStage === "offer" ? offerValues.receivedOn : isWindow ? scheduledEnd : scheduledStart);
+  const recordedStages = [...(titleApplication.stages ?? [])]
+    .sort((left, right) => left.sequence_no - right.sequence_no)
+    .filter((stage) => !scheduleOnly || stage.id !== titleApplication.current_stage?.id)
+    .slice(-3);
+  const trackRows = startsPending
+    ? [
+      { key: "applied", label: [t("提交投递"), shortDay(appliedAt) ?? t("今天")].join(" · "), status: t("本次"), current: true },
+      { key: "next", label: t("{value0} · 投递后", { value0: stageName }), status: t("待开始"), current: false },
+    ]
+    : [
+      ...recordedStages.map((stage) => ({
+        key: stage.id,
+        label: [stage.stage_type === "screening" ? t("简历筛选") : stage.stage_type === "oc" ? t("OC · 口头意向") : stage.stage_label, shortDay(stage.completed_at ?? stage.entered_at)].filter(Boolean).join(" · "),
+        status: stage.stage_result === "rejected" ? t("未通过") : stage.stage_type === "oc" ? t("已沟通") : stage.stage_status === "completed" || !scheduleOnly ? t("已通过") : t("进行中"),
+        current: false,
+      })),
+      { key: "this", label: [currentName, thisDay].filter(Boolean).join(" · "), status: t("本次"), current: true },
+    ];
+  const summaryTitle = startsPending
+    ? t("这次投递怎么记")
+    : activeStage === "oc"
+      ? t("这次意向怎么记")
+      : activeStage === "offer"
+        ? t("这份 Offer 怎么记")
+        : t("这一场怎么安排");
+  const timeText = scheduledStart
+    ? t("{value0} · {value1} 分钟", { value0: formatApplicationListDateTime(scheduledStart), value1: scheduleDuration })
+    : t("选择开始时间和时长");
+  const summaryRows: Array<{ icon: V3IconName; title: string; text: string; muted?: boolean }> = [
+    { icon: "flag", title: t("阶段"), text: t("{value0}「{value1}」", { value0: scheduleOnly ? t("当前") : t("进入"), value1: currentName }) },
+    ...(startsPending
+      ? [
+        { icon: "link" as const, title: t("投递渠道"), text: appliedChannel.trim() ? t("{value0} · 可选", { value0: appliedChannel.trim() }) : t("还没填 · 可选"), muted: !appliedChannel.trim() },
+        { icon: "doc" as const, title: t("关联简历"), text: resumes?.find((item) => item.id === resumeId)?.title ? t("{value0} · 可选", { value0: resumes.find((item) => item.id === resumeId)!.title }) : t("还没选 · 可选"), muted: !resumeId },
+      ]
+      : activeStage === "oc"
+        ? [
+          { icon: "clock" as const, title: t("沟通时间"), text: ocAt ? formatApplicationListDateTime(ocAt) : t("选择沟通时间"), muted: !ocAt },
+          { icon: "text" as const, title: t("口头薪酬"), text: ocSalary.trim() || t("可以之后补充"), muted: !ocSalary.trim() },
+        ]
+        : activeStage === "offer"
+          ? [
+            { icon: "cal" as const, title: t("回复截止"), text: shortDay(offerValues.replyDueOn) ?? t("还没填"), muted: !offerValues.replyDueOn },
+            { icon: "text" as const, title: t("薪酬与地点"), text: [offerValues.salary.trim(), offerValues.baseLocation.trim()].filter(Boolean).join(" · ") || t("可以之后补充"), muted: !offerValues.salary.trim() && !offerValues.baseLocation.trim() },
+          ]
+          : activeStage === "screening"
+            ? []
+            : isWindow
+              ? [
+                { icon: "cal" as const, title: t("开放与截止"), text: t("{value0} 至 {value1}", { value0: scheduledStart ? formatApplicationListDateTime(scheduledStart) : t("现在"), value1: scheduledEnd ? formatApplicationListDateTime(scheduledEnd) : t("待选择截止时间") }) },
+                { icon: "ccheck" as const, title: t("我的计划"), text: answerPlanStart ? formatApplicationListDateTime(answerPlanStart) : t("还没定，之后随时可以补"), muted: !answerPlanStart },
+              ]
+              : [
+                { icon: "clock" as const, title: activeStage === "hr" ? t("沟通时间") : t("官方时间"), text: timeText, muted: !scheduledStart },
+                { icon: "ccheck" as const, title: activeStage === "hr" ? t("沟通准备") : t("我的准备"), text: preparationNote.trim() || t("面试准备与复盘"), muted: !preparationNote.trim() },
+              ]),
+  ];
+  const summaryNote = startsPending || activeStage === "screening"
+    ? null
+    : activeStage === "oc"
+      ? t("OC 只是口头意向\n收到书面 Offer 后再记录正式 Offer")
+      : activeStage === "offer"
+        ? t("接受或婉拒后流程结束\n阶段记录和复盘都会保留")
+        : isWindow
+          ? t("截止时间过后自动进入「等待结果」\n无需手动标记完成")
+          : activeStage === "hr"
+            ? t("沟通结束后自动进入「等待结果」\n无需手动标记完成")
+            : t("{value0}结束后自动进入「等待结果」\n无需手动标记完成", { value0: activeStage === "interview" ? t("面试") : stageName });
   // 待投递 → 筛选中（从看板拖进「筛选中」）：只需要一个投递日期，用上下布局的小弹窗——上面插画、下面内容
   if (startsPending && lockStageSelection && activeStage === "screening") {
     return <V3Dialog width={480} label={title} onClose={() => { if (!busy) onClose(); }} className="cd3-stage-dialog cd3-apply-dialog">
@@ -1780,34 +1966,57 @@ export function AddNextStageDialog({
         <h2>{title}</h2>
         <p>{[titleApplication.company_name_snapshot, titleApplication.job_title_snapshot].filter(Boolean).join(" · ") || t("记录投递信息")}</p>
         <label className="cd3-stage-field">{t("投递日期（选填）")}<AppliedAtDatePicker id="career-next-stage-applied-at" value={appliedAt} onChange={setAppliedAt}/></label>
+        <label className="cd3-stage-field cd3-link-field">{t("投递渠道")}<small>{t("选填")}</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={t("投递渠道（选填）")} placeholder={t("例如：同事内推、官网、招聘平台")} value={appliedChannel} maxLength={100} onChange={e=>setAppliedChannel(e.target.value)}/></div></label>
         <small className="cd3-apply-hint">{t("保存后岗位从「待投递」进入「筛选中」，等待公司筛选结果。")}</small>
         {errorMessage && <p className="cd3-stage-error" role="alert">{errorMessage}</p>}
       </div>
       <footer className="cd3-apply-footer"><button className="v3-btn" onClick={onClose} disabled={busy}>{t("取消")}</button><button className="v3-btn v3-btn-dark" disabled={!canSubmit} onClick={()=>void save()}>{busy ? t("保存中…") : t("保存求职进度")}</button></footer>
     </V3Dialog>;
   }
-  return <V3Dialog width={720} label={title} onClose={() => { if (!busy) onClose(); }} className={`cd3-stage-dialog is-stacked${activeStage === "interview" ? " is-interview" : ""}${lockStageSelection ? " is-stage-locked" : ""}`}>
+  return <V3Dialog width={880} label={title} onClose={() => { if (!busy) onClose(); }} className={`cd3-stage-dialog is-v4${usesInterviewForm ? " is-interview" : ""}${lockStageSelection ? " is-stage-locked" : ""}`}>
     <header className="cd3-stage-head"><h2>{title}</h2><p>{description ?? [titleApplication.company_name_snapshot, titleApplication.job_title_snapshot, t("现在：{value0}", { value0: projectApplicationProgress(selectedApplication).stageLabel })].filter(Boolean).join(" · ")}</p></header>
     <div className="cd3-stage-workspace">
-      <aside className="cd3-stage-summary"><small>{t("这一场怎么安排")}</small><div className={`cd3-schedule-art ${isWindow ? "is-window" : "is-fixed"}`}>
-        {isWindow ? <><div className="cd3-window-band">{scheduledStart ? t("开放") : t("现在开放")}</div><div className="cd3-deadline-flag">{t("截止 ")}{summaryDate ? `${String(summaryDate.getMonth()+1).padStart(2,"0")}-${String(summaryDate.getDate()).padStart(2,"0")}` : t("待定")}</div><div className="cd3-window-dates">{Array.from({ length: 5 }, (_, i) => { const d = new Date(); d.setDate(d.getDate()+i); return <span key={i}>{String(d.getMonth()+1).padStart(2,"0")}-{String(d.getDate()).padStart(2,"0")}</span>; })}</div>{answerPlanStart && <span className="cd3-plan-mark">{t("我的作答计划")}</span>}</> : <><div className="cd3-summary-date"><small>{summaryDate ? t("{value0} 月", { value0: summaryDate.getMonth()+1 }) : t("待安排")}</small><strong>{summaryDate?.getDate() ?? "—"}</strong><span>{summaryDate ? formatLocalTime(summaryDate) : t("开始时间")}</span></div><div className="cd3-summary-slot"><V3Icon name={activeStage === "ai_interview" ? "spark" : "clock"} size={20}/><strong>{stageName}</strong><span>{scheduleDuration}{t(" 分钟")}</span></div></>}
-      </div><div className="cd3-summary-steps"><small>{t("点「")}{scheduleOnly ? t("保存") : t("添加")}{t("」后会保存")}</small><div><span><V3Icon name="brief" size={14}/></span><p><strong>{t("阶段")}</strong><small>{scheduleOnly ? t("当前") : t("进入")}「{activeStage === "interview" ? interviewLabel || stageName : stageName}」</small></p></div>{activeStage !== "offer" && activeStage !== "screening" && <div><span><V3Icon name="cal" size={14}/></span><p><strong>{isWindow ? t("官方作答时段") : t("面试排期")}</strong><small>{isWindow ? t("{value0} 至 {value1}", { value0: scheduledStart ? formatApplicationListDateTime(scheduledStart) : t("现在"), value1: scheduledEnd ? formatApplicationListDateTime(scheduledEnd) : t("待选择截止时间") }) : scheduledStart ? t("{value0} · {value1} 分钟", { value0: formatApplicationListDateTime(scheduledStart), value1: scheduleDuration }) : t("选择开始时间和时长")}</small></p></div>}{isWindow && <div className={!answerPlanStart ? "is-muted" : ""}><span><V3Icon name="clock" size={14}/></span><p><strong>{t("我的作答计划")}</strong><small>{answerPlanStart ? formatApplicationListDateTime(answerPlanStart) : t("还没定，之后随时可以补")}</small></p></div>}</div><p className="cd3-summary-note">{activeStage === "offer" ? t("记录收到的 Offer，待遇信息之后也可以补充。") : activeStage === "screening" ? t("记录投递信息，等待公司筛选结果。") : isWindow ? t("截止前完成的安排显示在周视图顶部「作答时段」，按截止时间排序。") : t("按时参加的安排显示在周视图小时格，可以拖动调整时间。")}</p></aside>
+      <aside className="cd3-stage-summary">
+        <small>{summaryTitle}</small>
+        <ol className="cd3-summary-track">{trackRows.map(row => <li key={row.key} className={row.current ? "is-current" : ""}><i aria-hidden="true"/><span>{row.label}</span>{row.current ? <b>{row.status}</b> : <em className={row.status === t("已通过") || row.status === t("已沟通") ? "" : "is-todo"}>{row.status}</em>}</li>)}</ol>
+        {summaryRows.length > 0 && <div className="cd3-summary-steps"><small>{t("点「{value0}」后保存", { value0: submitLabel })}</small>{summaryRows.map(row => <div key={row.title} className={row.muted ? "is-muted" : ""}><span><V3Icon name={row.icon} size={14}/></span><p><strong>{row.title}</strong><small>{row.text}</small></p></div>)}</div>}
+        {summaryNote && <p className="cd3-summary-note"><V3Icon name="clock" size={14}/><span>{summaryNote}</span></p>}
+      </aside>
       <div className="cd3-stage-form">
         {applicationOptions && <label className="cd3-stage-field">{t("选择流程")}<V3Select label={t("选择流程")} value={selectedApplication.id} options={applicationOptions.map(item=>({value:item.id,label:`${item.company_name_snapshot} · ${item.job_title_snapshot}`}))} onChange={setSelectedApplicationId}/></label>}
-        {!lockStageSelection && <><h3>{t("下一阶段")}</h3><div className="cd3-stage-choices" role="radiogroup" aria-label={t("选择下一阶段")}>{availableStages.map(choice=><button type="button" key={choice.key} role="radio" aria-checked={activeStage === choice.key} disabled={busy} className={activeStage === choice.key ? "is-active" : ""} onClick={()=>{setActiveStage(choice.key);setErrorMessage(null);}}><V3Icon name={iconNames[choice.key]} size={16}/><span>{choice.label}</span>{activeStage === choice.key && <i><V3Icon name="check" size={10}/></i>}</button>)}</div></>}
-        {startsPending && <label className="cd3-stage-field">{t("投递日期（选填）")}<AppliedAtDatePicker id="career-next-stage-applied-at" value={appliedAt} onChange={setAppliedAt}/></label>}
-        {activeStage === "offer" ? <OfferDetailsFields values={offerValues} disabled={busy} onChange={setOfferValues}/> : activeStage === "screening" ? <p className="cd3-stage-hint">{t("保存后岗位将从待投递进入筛选中。")}</p> : <>
+        {!lockStageSelection && <><h3>{startsPending ? t("当前进度") : t("阶段")}</h3><div className="cd3-stage-choices" role="radiogroup" aria-label={t("选择下一阶段")}>{NEXT_STAGE_CHOICES.filter(choice => includeOffer || (choice.key !== "offer" && choice.key !== "oc")).map(choice=>{ const available = availableStages.some(item => item.key === choice.key); return <button type="button" key={choice.key} role="radio" aria-checked={activeStage === choice.key} disabled={busy || !available} className={activeStage === choice.key ? "is-active" : ""} onClick={()=>{setActiveStage(choice.key);setErrorMessage(null);}}><V3Icon name={iconNames[choice.key]} size={16}/><span>{choice.label}</span>{activeStage === choice.key && <i><V3Icon name="check" size={10}/></i>}</button>; })}</div></>}
+        {startsPending && <div className="cd3-pending-fields">
+          <label className="cd3-stage-field">{t("投递日期")}<small>{t("选填")}</small><AppliedAtDatePicker id="career-next-stage-applied-at" value={appliedAt} onChange={setAppliedAt}/></label>
+          <label className="cd3-stage-field">{t("投递渠道")}<small>{t("选填")}</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={t("投递渠道（选填）")} placeholder={t("例如：同事内推、官网、招聘平台")} value={appliedChannel} maxLength={100} onChange={e=>setAppliedChannel(e.target.value)}/></div></label>
+          <label className="cd3-stage-field">{t("关联简历")}<small>{t("选填")}</small><V3Select label={t("关联简历")} value={resumeId} disabled={busy || resumes === null} placeholder={resumes === null ? t("正在加载…") : resumes.length ? t("选择投递用的简历") : t("还没有简历")} options={[{ value: "", label: t("不关联简历") }, ...(resumes ?? []).map(item => ({ value: item.id, label: item.title }))]} onChange={setResumeId}/></label>
+        </div>}
+        {activeStage === "offer" ? <OfferDetailsFields values={offerValues} disabled={busy} onChange={setOfferValues}/> : activeStage === "screening" ? (!startsPending && <p className="cd3-stage-hint">{t("保存后进入筛选中，等待公司筛选结果。")}</p>) : activeStage === "oc" ? <div className="cd3-oc-fields">
+          <label className="cd3-stage-field">{t("沟通时间 ")}<em>*</em><ScheduleDateTimePicker id="career-oc-at" label={t("沟通时间")} value={ocAt} required disabled={busy} onChange={setOcAt}/></label>
+          <label className="cd3-stage-field">{t("沟通方式")}<input aria-label={t("沟通方式")} placeholder={t("例如：电话 · HR")} value={ocContact} maxLength={100} disabled={busy} onChange={e=>setOcContact(e.target.value)}/></label>
+          <label className="cd3-stage-field">{t("口头薪酬")}<input aria-label={t("口头薪酬")} placeholder={t("例如：35K × 16 薪")} value={ocSalary} maxLength={100} disabled={busy} onChange={e=>setOcSalary(e.target.value)}/></label>
+          <label className="cd3-stage-field">{t("预计到岗")}<input aria-label={t("预计到岗")} placeholder={t("例如：11 月上旬")} value={ocStart} maxLength={100} disabled={busy} onChange={e=>setOcStart(e.target.value)}/></label>
+          <label className="cd3-stage-field cd3-field-wide">{t("补充说明")}<small>{t("可选 · 只提醒自己")}</small><input aria-label={t("补充说明")} placeholder={t("口头意向不等于正式 Offer，等书面确认后再更新结果")} value={ocNote} maxLength={500} disabled={busy} onChange={e=>setOcNote(e.target.value)}/></label>
+        </div> : <>
           {activeStage === "interview" && <div className="cd3-interview-round"><label className="cd3-stage-field">{t("面试轮次")}<V3Select label={t("面试轮次")} disabled={scheduleOnly} value={["一面","二面","三面"].includes(interviewLabel) ? interviewLabel : interviewLabel ? "custom" : ""} placeholder={t("选择轮次")} options={[{value:"一面",label:t("一面")},{value:"二面",label:t("二面")},{value:"三面",label:t("三面")},{value:"custom",label:t("自定义")}]} onChange={value=>{setInterviewLabel(value === "custom" ? t("自定义面试") : value);if(value !== "custom")setInterviewRoundNo(String(["一面","二面","三面"].indexOf(value)+1));}}/></label>{interviewLabel && !["一面","二面","三面"].includes(interviewLabel) && <label className="cd3-stage-field">{t("面试名称")}<input aria-label={t("面试名称")} value={interviewLabel} maxLength={100} onChange={e=>setInterviewLabel(e.target.value)}/></label>}</div>}
-          {/* 面试只有「按时参加」一种安排，不再显示单选项和说明 */}
-          {activeStage !== "interview" && <><h3 className="cd3-time-heading">{t("时间安排")}</h3><div className="cd3-time-choices" role="radiogroup" aria-label={t("时间安排")}>{[{value:"fixed_slot",title:t("按时参加"),sub:t("准点开始，有时长"),icon:"clock"},{value:"open_window",title:t("截止前完成"),sub:t("期间自己选时间"),icon:"flag"}].map(item=><button type="button" key={item.value} role="radio" aria-checked={isWindow === (item.value === "open_window")} disabled={busy || (activeStage === "assessment" && item.value === "fixed_slot") || (activeStage === "ai_interview" && item.value === "open_window")} className={isWindow === (item.value === "open_window") ? "is-active" : ""} onClick={()=>setWrittenScheduleKind(item.value as "fixed_slot" | "open_window")}><span><V3Icon name={item.icon as V3IconName} size={14}/></span><div><strong>{item.title}</strong><small>{activeStage === "ai_interview" && item.value === "open_window" ? t("AI 面试仅支持按时参加") : item.sub}</small></div>{isWindow === (item.value === "open_window") && <i><V3Icon name="check" size={10}/></i>}</button>)}</div></>}
-          <div className="cd3-time-fields">{isWindow ? <><label className="cd3-stage-field">{t("截止时间 ")}<em>*</em><ScheduleDateTimePicker id="career-next-stage-end" label={t("截止时间")} value={scheduledEnd} required disabled={busy} onChange={setEnd}/></label><label className="cd3-stage-field">{t("开放时间 ")}<small>{t("不填从现在开始")}</small><ScheduleDateTimePicker id="career-next-stage-start" label={t("开放时间")} value={scheduledStart} placeholder={t("收到通知就开放")} disabled={busy} onChange={setStart}/></label></> : <><label className="cd3-stage-field">{t("开始时间 ")}<em>*</em><ScheduleDateTimePicker id="career-next-stage-start" label={activeStage === "written_test" ? t("笔试时间") : activeStage === "interview" ? t("面试时间") : t("开始时间")} value={scheduledStart} disabled={busy} onChange={setStart}/></label><label className="cd3-stage-field">{t("时长")}<V3Select label={t("时长")} value={String(scheduleDuration)} options={Array.from(new Set([30,60,90,120,180,scheduleDuration])).sort((a,b)=>a-b).map(value=>({value:String(value),label:t("{value0} 分钟", { value0: value })}))} onChange={value=>setDuration(Number(value))}/></label></>}</div>
+          {/* 面试与 HR 面只有「按时参加」一种安排，不再显示单选项和说明 */}
+          {!usesInterviewForm && <><h3 className="cd3-time-heading">{t("时间安排")}</h3><div className="cd3-time-choices" role="radiogroup" aria-label={t("时间安排")}>{[{value:"fixed_slot",title:t("按时参加"),sub:t("准点开始，有时长"),icon:"clock"},{value:"open_window",title:t("截止前完成"),sub:t("期间自己选时间"),icon:"flag"}].map(item=><button type="button" key={item.value} role="radio" aria-checked={isWindow === (item.value === "open_window")} disabled={busy || (activeStage === "assessment" && item.value === "fixed_slot") || (activeStage === "ai_interview" && item.value === "open_window")} className={isWindow === (item.value === "open_window") ? "is-active" : ""} onClick={()=>setWrittenScheduleKind(item.value as "fixed_slot" | "open_window")}><span><V3Icon name={item.icon as V3IconName} size={14}/></span><div><strong>{item.title}</strong><small>{activeStage === "ai_interview" && item.value === "open_window" ? t("AI 面试仅支持按时参加") : item.sub}</small></div>{isWindow === (item.value === "open_window") && <i><V3Icon name="check" size={10}/></i>}</button>)}</div></>}
+          <div className="cd3-time-fields">{isWindow ? <><label className="cd3-stage-field">{t("截止时间 ")}<em>*</em><ScheduleDateTimePicker id="career-next-stage-end" label={t("截止时间")} value={scheduledEnd} required disabled={busy} onChange={setEnd}/></label><label className="cd3-stage-field">{t("开放时间 ")}<small>{t("不填从现在开始")}</small><ScheduleDateTimePicker id="career-next-stage-start" label={t("开放时间")} value={scheduledStart} placeholder={t("收到通知就开放")} disabled={busy} onChange={setStart}/></label></> : <><label className="cd3-stage-field">{activeStage === "hr" ? t("沟通时间 ") : t("开始时间 ")}<em>*</em><ScheduleDateTimePicker id="career-next-stage-start" label={activeStage === "written_test" ? t("笔试时间") : activeStage === "interview" ? t("面试时间") : activeStage === "hr" ? t("沟通时间") : t("开始时间")} value={scheduledStart} disabled={busy} onChange={setStart}/></label><label className="cd3-stage-field">{t("时长")}<V3Select label={t("时长")} value={String(scheduleDuration)} options={Array.from(new Set([30,60,90,120,180,scheduleDuration])).sort((a,b)=>a-b).map(value=>({value:String(value),label:t("{value0} 分钟", { value0: value })}))} onChange={value=>setDuration(Number(value))}/></label></>}</div>
           {isWindow && <>{activeStage === "assessment" && <div className="cd3-quick-deadlines">{[1,3,7].map(days=><button type="button" key={days} onClick={()=>chooseDeadline(days)} className={completionWindow === String(days*1440) && scheduledEnd ? "is-active" : ""}>{days===1?t("24 小时"):t("{value0} 天后", { value0: days })}</button>)}</div>}<label className="cd3-stage-field cd3-plan-field">{t("我的作答计划 ")}<small>{t("可选 · 只提醒自己，不改官方时间")}</small><ScheduleDateTimePicker id="career-next-stage-plan" label={t("我的作答计划")} value={answerPlanStart} placeholder={t("选一段打算作答的时间")} durationMinutes={answerPlanDuration} minimumStartAt={scheduledStart || schedulePickerValue(new Date().toISOString())} maximumEndAt={scheduledEnd || undefined} onChange={setAnswerPlanStart} onDurationMinutesChange={setAnswerPlanDuration}/></label></>}
-          {(activeStage === "written_test" && !isWindow) || activeStage === "interview" ? <><div className="cd3-stage-field cd3-mode-field">{t("方式")}{activeStage === "written_test" ? <div className="cd3-mode-segmented" role="radiogroup" aria-label={t("笔试方式")}>{[{value:"video",label:t("在线")},{value:"onsite",label:t("线下")}].map(item=><button type="button" role="radio" aria-checked={writtenMode===item.value} className={writtenMode===item.value?"is-active":""} key={item.value} onClick={()=>setWrittenMode(item.value as "video"|"onsite")}>{item.label}</button>)}</div> : <V3Select label={t("方式")} value={interviewMode} options={[{value:"video",label:t("视频面试")},{value:"onsite",label:t("现场面试")},{value:"phone",label:t("电话")},{value:"other",label:t("其他")}]} onChange={setInterviewMode}/>}</div><label className="cd3-stage-field cd3-link-field">{activeStage === "written_test" ? writtenMode === "onsite" ? t("笔试地点") : t("笔试链接") : t("面试链接或地点")}<small>{t("可选")}</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={activeStage === "written_test" ? t("笔试链接或地点（选填）") : t("面试链接或地点（选填）")} placeholder={t("粘贴链接或填写地点")} value={activeStage === "written_test" ? writtenMeetingOrLocation : interviewMeetingOrLocation} maxLength={2048} onChange={e=>(activeStage === "written_test" ? setWrittenMeetingOrLocation : setInterviewMeetingOrLocation)(e.target.value)}/></div></label></> : <label className="cd3-stage-field cd3-link-field">{activeStage === "assessment" ? t("测评链接") : activeStage === "written_test" ? t("笔试链接") : t("面试链接")}<small>{t("可选")}</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={activeStage === "assessment" ? t("测评链接（选填）") : t("面试链接（选填）")} placeholder={t("粘贴链接")} maxLength={2048} value={activeStage === "written_test" ? writtenMeetingOrLocation : activeAsyncLink} onChange={e=>(activeStage === "written_test" ? setWrittenMeetingOrLocation : activeStage === "assessment" ? setAssessmentLink : setAiInterviewLink)(e.target.value)}/></div></label>}
-          <button type="button" className="cd3-note-toggle" onClick={()=>setNoteOpen(!noteOpen)}><V3Icon name={noteOpen ? "chevu" : "plus"} size={12}/>{t("添加准备备注 ")}<small>{t("要带的材料、注意事项")}</small></button>{noteOpen && <textarea className="cd3-note-input" aria-label={t("备注（选填）")} value={preparationNote} maxLength={100000} onChange={e=>setPreparationNote(e.target.value)}/>}
+          {usesInterviewForm ? <>
+            <div className="cd3-mode-fields">
+              <div className="cd3-stage-field cd3-mode-field">{activeStage === "hr" ? t("沟通方式") : t("面试方式")}<div className="cd3-mode-segmented" role="radiogroup" aria-label={activeStage === "hr" ? t("沟通方式") : t("面试方式")}>{[{value:"video",label:t("视频")},{value:"onsite",label:t("现场")},{value:"phone",label:t("电话")}].map(item=><button type="button" role="radio" aria-checked={interviewMode===item.value} className={interviewMode===item.value?"is-active":""} key={item.value} disabled={busy} onClick={()=>setInterviewMode(item.value as InterviewSessionRecord["mode"])}>{item.label}</button>)}</div></div>
+              <label className="cd3-stage-field">{activeStage === "hr" ? t("联系人") : t("面试官")}<input aria-label={activeStage === "hr" ? t("联系人") : t("面试官")} placeholder={activeStage === "hr" ? t("例如：陈老师 · 招聘 HR") : t("例如：李老师 · 技术负责人")} value={interviewerName} maxLength={100} disabled={busy} onChange={e=>setInterviewerName(e.target.value)}/></label>
+            </div>
+            <label className="cd3-stage-field cd3-link-field">{interviewMode === "onsite" ? t("面试地点") : t("会议链接")}<small>{t("可选")}</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={t("面试链接或地点（选填）")} placeholder={interviewMode === "onsite" ? t("填写地点") : t("粘贴会议链接")} value={interviewMeetingOrLocation} maxLength={2048} onChange={e=>setInterviewMeetingOrLocation(e.target.value)}/></div></label>
+            <label className="cd3-stage-field cd3-link-field">{activeStage === "hr" ? t("沟通准备") : t("准备提醒")}<small>{t("可选 · 只提醒自己")}</small><div className="cd3-input-icon"><V3Icon name="clock" size={14}/><input aria-label={t("备注（选填）")} placeholder={activeStage === "hr" ? t("例如：确认薪酬期望、到岗时间与工作地点") : t("例如：整理两个项目案例")} value={preparationNote} maxLength={100000} onChange={e=>setPreparationNote(e.target.value)}/></div></label>
+          </> : <>
+            {activeStage === "written_test" && !isWindow ? <><div className="cd3-stage-field cd3-mode-field">{t("方式")}<div className="cd3-mode-segmented" role="radiogroup" aria-label={t("笔试方式")}>{[{value:"video",label:t("在线")},{value:"onsite",label:t("线下")}].map(item=><button type="button" role="radio" aria-checked={writtenMode===item.value} className={writtenMode===item.value?"is-active":""} key={item.value} onClick={()=>setWrittenMode(item.value as "video"|"onsite")}>{item.label}</button>)}</div></div><label className="cd3-stage-field cd3-link-field">{writtenMode === "onsite" ? t("笔试地点") : t("笔试链接")}<small>{t("可选")}</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={t("笔试链接或地点（选填）")} placeholder={t("粘贴链接或填写地点")} value={writtenMeetingOrLocation} maxLength={2048} onChange={e=>setWrittenMeetingOrLocation(e.target.value)}/></div></label></> : <label className="cd3-stage-field cd3-link-field">{activeStage === "assessment" ? t("测评链接") : activeStage === "written_test" ? t("笔试链接") : t("面试链接")}<small>{t("可选")}</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={activeStage === "assessment" ? t("测评链接（选填）") : t("面试链接（选填）")} placeholder={t("粘贴链接")} maxLength={2048} value={activeStage === "written_test" ? writtenMeetingOrLocation : activeAsyncLink} onChange={e=>(activeStage === "written_test" ? setWrittenMeetingOrLocation : activeStage === "assessment" ? setAssessmentLink : setAiInterviewLink)(e.target.value)}/></div></label>}
+            <button type="button" className="cd3-note-toggle" onClick={()=>setNoteOpen(!noteOpen)}><V3Icon name={noteOpen ? "chevu" : "plus"} size={12}/>{t("添加准备备注 ")}<small>{t("要带的材料、注意事项")}</small></button>{noteOpen && <textarea className="cd3-note-input" aria-label={t("备注（选填）")} value={preparationNote} maxLength={100000} onChange={e=>setPreparationNote(e.target.value)}/>}
+          </>}
         </>}
         {errorMessage && <p className="cd3-stage-error" role="alert">{errorMessage}</p>}
       </div>
-    </div><footer className="cd3-stage-footer"><small>{activeStage === "offer" || activeStage === "screening" ? "" : isWindow ? t("快速选择从现在开始算") : t("保存后可在面试日程中调整")}</small><button className="v3-btn" onClick={onClose} disabled={busy}>{t("取消")}</button><button className="v3-btn v3-btn-dark" disabled={!canSubmit} onClick={()=>void save()}>{busy ? t("保存中…") : scheduleOnly ? t("保存安排") : startsPending ? t("保存求职进度") : t("添加{value0}", { value0: stageName })}</button></footer>
+    </div><footer className="cd3-stage-footer"><small>{activeStage === "offer" || activeStage === "screening" || activeStage === "oc" ? "" : isWindow ? t("快速选择从现在开始算") : t("保存后可在面试日程中调整")}</small><button className="v3-btn" onClick={onClose} disabled={busy}>{t("取消")}</button><button className="v3-btn v3-btn-dark" disabled={!canSubmit} onClick={()=>void save()}>{busy ? t("保存中…") : submitLabel}</button></footer>
   </V3Dialog>;
 }
 
@@ -2236,6 +2445,8 @@ function OfferApplicationDialog({
     salaryCurrency: application.offer_salary_currency ?? "CNY",
     salaryPeriod: application.offer_salary_period ?? "month",
     benefitsDescription: application.offer_benefits_description ?? "",
+    probation: application.offer_probation ?? "",
+    materialIds: application.offer_materials?.map((item) => item.dataset_id),
   });
 
   const submit = async () => {
@@ -2286,7 +2497,6 @@ export function ApplicationDetailView({
   sessions,
   timezone,
   onBack,
-  onCreateInterview,
   onChanged,
   onNotice,
 }: {
@@ -2301,9 +2511,13 @@ export function ApplicationDetailView({
   useLocale();
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
+  const [formalOfferOpen, setFormalOfferOpen] = useState(false);
   const [terminateDialogOpen, setTerminateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [cancelSessionOpen, setCancelSessionOpen] = useState(false);
+  const [offerDecision, setOfferDecision] = useState<"accepted" | "declined" | null>(null);
+  const [busy, setBusy] = useState(false);
   if (!application) {
     return (
       <section className="career-detail-not-found">
@@ -2314,25 +2528,16 @@ export function ApplicationDetailView({
       </section>
     );
   }
+  const now = new Date();
+  const model = buildApplicationDetail(application, sessions, now);
   const applicationSessions = sessions
     .filter((session) => session.application_id === application.id)
     .sort((left, right) => new Date(right.start_at).getTime() - new Date(left.start_at).getTime());
   const currentSession = applicationSessions.find((session) => (
     session.status !== "cancelled" && applicationStageMatchesSession(application, session)
   ));
+  const latestRecorded = applicationSessions.find((session) => effectiveSessionStatus(session, now) === "completed");
   const progress = projectApplicationProgress(application);
-  const currentStageCompleted = currentSession?.status === "completed"
-    && (progress.columnKey === "assessment"
-      || progress.columnKey === "written_test"
-      || progress.columnKey === "interview");
-  const isSubmittedScreening = progress.columnKey === "screening"
-    && application.current_stage_type === "screening"
-    && Boolean(application.applied_at);
-  const heroStatusLabel = currentStageCompleted
-    ? t("已完成")
-    : progress.isPending || progress.isWaiting || progress.columnKey === "ended" || progress.columnKey === "offer"
-      ? progress.statusLabel
-      : progress.stageLabel;
   const active = application.lifecycle_status !== "terminated" && application.status === "active" && application.archived_at === null;
   const currentStableType = application.current_stage?.stage_type;
   const canSchedule = active && application.stage_state === "awaiting_schedule"
@@ -2341,60 +2546,86 @@ export function ApplicationDetailView({
       : progress.columnKey === "assessment"
         || progress.columnKey === "written_test"
         || progress.columnKey === "interview");
-  const canAdvance = active && currentStableType !== "offer";
-  const canUpdateOffer = active
-    && application.current_stage_type === "offer"
-    && (application.offer_status === "none" || application.offer_status === "received");
   const canTerminate = active && application.offer_status === "none";
   const canDelete = progress.columnKey === "ended";
-  const deleteEndedJob = async () => {
-    setDeleting(true);
+  const scheduleActionLabel = t("安排{value0}时间", { value0: application.current_stage_label ?? progress.stageLabel });
+  const reviewPath = latestRecorded
+    ? `/career/reviews?session=${encodeURIComponent(latestRecorded.id)}&application=${encodeURIComponent(application.id)}`
+    : "/career/reviews";
+  const openSession = (sessionId: string) => navigateTo(careerApplicationPath(application.id, sessionId), { state: { careerSessionDialog: true } });
+  const openJob = () => application.job_description_id
+    ? navigateTo(jobDetailPath(application.job_description_id, application.id))
+    : onNotice(t("原岗位资料已不可用。"));
+  const run = async (operation: () => Promise<unknown>, after?: () => void) => {
+    if (busy) return;
+    setBusy(true);
     try {
-      await api.deleteJobApplication(application.id);
+      await operation();
+      after?.();
       await onChanged();
-      onBack();
     } catch (error) {
       onNotice(requestErrorMessage(error));
     } finally {
-      setDeleting(false);
+      setBusy(false);
     }
   };
-  const scheduleActionLabel = t("安排{value0}时间", { value0: progress.stageLabel });
-  const resultActionLabel = currentSession?.status === "completed"
-    || isSubmittedScreening
-    || progress.isWaiting
-    ? t("添加下一阶段")
-    : progress.isAssessment
-      ? t("记录{value0}结果", { value0: progress.columnKey === "assessment" ? t("测评") : t("笔试") })
-      : application.current_stage_type === "screening"
-        ? t("更新筛选结果")
-        : t("记录{value0}结果", { value0: progress.stageLabel });
-  const currentRecordKind = currentSession
-    ? sessionRecordKind(currentSession)
-    : progress.isAssessment ? t("笔试") : t("面试");
-  const sessionRecordActionLabel = t("管理{value0}进度", { value0: currentRecordKind });
-  const sessionRecordKinds = new Set(applicationSessions.map(sessionRecordKind));
-  const sessionSectionTitle = sessionRecordKinds.size > 1
-    ? t("笔试与面试记录")
-    : t("{value0}记录", { value0: applicationSessions.length ? sessionRecordKind(applicationSessions[0]) : currentRecordKind });
-  const primaryAction = progress.isPending
-    ? "set-stage"
-    : canSchedule
-      ? "schedule"
-      : canUpdateOffer
-        ? "offer"
-        : currentSession && currentSession.status !== "completed" && application.current_stage_type !== "offer"
-            ? "session-record"
-            : canAdvance
-              ? "record-result"
-              : currentSession && application.current_stage_type !== "offer"
-                ? "session-record"
-                : null;
+  const handleAction = (action: DetailAction) => {
+    switch (action) {
+      case "record-applied":
+      case "advance":
+      case "schedule":
+        setStageDialogOpen(true);
+        return;
+      case "record-review":
+      case "answer-plan":
+        if (currentSession) openSession(currentSession.id);
+        return;
+      case "reschedule":
+        if (currentSession) setRescheduleOpen(true);
+        return;
+      case "cancel-session":
+        if (currentSession) setCancelSessionOpen(true);
+        return;
+      case "record-offer":
+        // A verbal offer (OC) becomes formal through a new Offer stage.
+        if (currentStableType === "oc") setFormalOfferOpen(true);
+        else setOfferDialogOpen(true);
+        return;
+      case "edit-offer":
+        setOfferDialogOpen(true);
+        return;
+      case "accept-offer":
+        setOfferDecision("accepted");
+        return;
+      case "decline-offer":
+        setOfferDecision("declined");
+        return;
+      case "view-review":
+        navigateTo(reviewPath);
+    }
+  };
   return (
     <div className="career-application-detail-page">
-      <ApplicationV3Content onChanged={onChanged} application={application} sessions={applicationSessions} currentSession={currentSession} onBack={onBack} onNotice={onNotice} onTerminate={canTerminate ? () => setTerminateDialogOpen(true) : undefined} onDelete={canDelete ? () => setDeleteDialogOpen(true) : undefined}
-        primaryLabel={progress.columnKey === "ended" ? t("查看复盘") : progress.isPending ? t("投递岗位") : canSchedule ? scheduleActionLabel : canUpdateOffer ? t("填写 Offer 信息") : currentStageCompleted || progress.isWaiting ? t("添加下一阶段") : currentSession ? t("准备面试") : t("添加下一阶段")}
-        onPrimary={() => { if (progress.columnKey === "ended") navigateTo(currentSession ? `/career/reviews?session=${encodeURIComponent(currentSession.id)}&application=${encodeURIComponent(application.id)}` : "/career/reviews"); else if (canUpdateOffer) setOfferDialogOpen(true); else if (canSchedule) setStageDialogOpen(true); else if (currentSession && !currentStageCompleted && !progress.isWaiting) navigateTo(careerApplicationPath(application.id, currentSession.id), { state: { careerSessionDialog: true } }); else setStageDialogOpen(true); }}
+      <ApplicationProgressPage
+        application={application}
+        model={model}
+        latestRecordedSessionId={latestRecorded?.id ?? null}
+        busy={busy}
+        onBack={onBack}
+        onOpenJob={openJob}
+        onToggleFavorite={() => void run(() => api.updateJobApplication(application.id, { is_favorite: !application.is_favorite, base_lock_version: application.lock_version }))}
+        onAction={handleAction}
+        onOpenSession={openSession}
+        onOfferCardAction={() => handleAction(model.verbalOffer ? "record-offer" : "edit-offer")}
+        menu={{
+          onEditDelivery: progress.isPending || !active ? undefined : openJob,
+          onManageResources: () => navigateTo("/datasets"),
+          onArchive: application.archived_at === null && !active
+            ? () => void run(() => api.archiveJobApplication(application.id, application.lock_version), onBack)
+            : undefined,
+          onTerminate: canTerminate ? () => setTerminateDialogOpen(true) : undefined,
+          onDelete: canDelete ? () => setDeleteDialogOpen(true) : undefined,
+        }}
       />
       <MotionPresence>{stageDialogOpen && (progress.isPending
         ? <MarkApplicationAppliedDialog application={application} timezone={timezone} onClose={() => setStageDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />
@@ -2411,7 +2642,54 @@ export function ApplicationDetailView({
           onNotice={onNotice}
         />)}</MotionPresence>
       <MotionPresence>{offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{formalOfferOpen && (
+        <AddNextStageDialog
+          application={application}
+          timezone={timezone}
+          initialStage="offer"
+          lockStageSelection
+          title={t("记录正式 Offer")}
+          onClose={() => setFormalOfferOpen(false)}
+          onChanged={onChanged}
+          onNotice={onNotice}
+        />
+      )}</MotionPresence>
       <MotionPresence>{terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{rescheduleOpen && currentSession && <EditInterviewScheduleDialog session={currentSession} recordKind={sessionRecordKind(currentSession) === "笔试" ? "笔试" : "面试"} onClose={() => setRescheduleOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{cancelSessionOpen && currentSession && (
+        <ConfirmDialog
+          kind="warning"
+          title={t("取消「{value0}」这场安排？", { value0: currentSession.stage_label })}
+          description={t("取消后阶段回到“等待安排”，可以重新安排时间；已上传的资料会保留。")}
+          confirmLabel={t("取消本场")}
+          busyLabel={t("正在取消…")}
+          busy={busy}
+          onCancel={() => setCancelSessionOpen(false)}
+          onConfirm={() => void run(
+            () => api.cancelInterviewSession(currentSession.id, { base_lock_version: currentSession.lock_version }),
+            () => setCancelSessionOpen(false),
+          )}
+        />
+      )}</MotionPresence>
+      <MotionPresence>{offerDecision && (
+        <ConfirmDialog
+          kind={offerDecision === "accepted" ? "warning" : "delete"}
+          title={offerDecision === "accepted"
+            ? t("接受「{value0}」的 Offer？", { value0: application.company_name_snapshot })
+            : t("婉拒「{value0}」的 Offer？", { value0: application.company_name_snapshot })}
+          description={offerDecision === "accepted"
+            ? t("接受后这次求职会标记为已结束，阶段记录和复盘仍然保留。")
+            : t("婉拒后这次求职会结束，阶段记录和复盘仍然保留。")}
+          confirmLabel={offerDecision === "accepted" ? t("接受 Offer") : t("婉拒")}
+          busyLabel={t("正在保存…")}
+          busy={busy}
+          onCancel={() => setOfferDecision(null)}
+          onConfirm={() => void run(
+            () => api.closeJobApplication(application.id, { status: "closed", offer_status: offerDecision, base_lock_version: application.lock_version }),
+            () => setOfferDecision(null),
+          )}
+        />
+      )}</MotionPresence>
       <MotionPresence>{deleteDialogOpen && (
         <ConfirmDialog
           kind="delete"
@@ -2421,9 +2699,9 @@ export function ApplicationDetailView({
             : t("该岗位资料已不存在；删除后，这次求职进程及其阶段、排期和复盘都将无法恢复，关联素材的原文件仍保留在资料库。")}
           confirmLabel={t("永久删除")}
           busyLabel={t("正在删除…")}
-          busy={deleting}
+          busy={busy}
           onCancel={() => setDeleteDialogOpen(false)}
-          onConfirm={deleteEndedJob}
+          onConfirm={() => void run(() => api.deleteJobApplication(application.id), onBack)}
         />
       )}</MotionPresence>
     </div>
@@ -2713,11 +2991,12 @@ function isAudioFile(file: File): boolean {
   return AUDIO_FILE_EXTENSIONS.has(extension);
 }
 
-function AddInterviewContentDialog({
+export function AddInterviewContentDialog({
   session,
   recordKind,
   mode = "add",
   initialText = "",
+  initialMode = "audio",
   onClose,
   onChanged,
   onNotice,
@@ -2726,6 +3005,7 @@ function AddInterviewContentDialog({
   recordKind: "笔试" | "面试";
   mode?: "add" | "edit";
   initialText?: string;
+  initialMode?: "audio" | "library" | "text";
   onClose: () => void;
   onChanged: () => void;
   onNotice: (notice: string) => void;
@@ -2734,7 +3014,7 @@ function AddInterviewContentDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(initialText);
   const [file, setFile] = useState<File | null>(null);
-  const [contentMode, setContentMode] = useState<"audio" | "library" | "text">("audio");
+  const [contentMode, setContentMode] = useState<"audio" | "library" | "text">(initialMode);
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
   const isEditing = mode === "edit";
@@ -2819,7 +3099,7 @@ function AddInterviewContentDialog({
   );
 }
 
-function DeleteInterviewTextConfirmDialog({
+export function DeleteInterviewTextConfirmDialog({
   session,
   recordKind,
   onClose,
@@ -2864,54 +3144,6 @@ function DeleteInterviewTextConfirmDialog({
   );
 }
 
-function CompleteInterviewDialog({
-  session,
-  questions,
-  review,
-  improvement,
-  onClose,
-  onCompleted,
-  onNotice,
-}: {
-  session: InterviewSessionRecord;
-  questions: string;
-  review: string;
-  improvement: string;
-  onClose: () => void;
-  onCompleted: () => void;
-  onNotice: (notice: string) => void;
-}) {
-  useLocale();
-  const [busy, setBusy] = useState(false);
-  const completeLabel = session.stage_type === "other" ? t("完成笔试") : t("完成本轮面试");
-  const complete = async () => {
-    setBusy(true);
-    try {
-      await api.completeInterviewSession(session.id, {
-        questions_markdown: questions.trim() || null,
-        review_summary: review.trim() || null,
-        improvement_markdown: improvement.trim() || null,
-        base_lock_version: session.lock_version,
-      });
-      onClose();
-      onCompleted();
-    } catch (error) {
-      onNotice(requestErrorMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="career-complete-dialog">
-        <DialogHeader><DialogTitle>{t("完成")}{session.stage_label}</DialogTitle><DialogDescription>{t("完成后可以继续补充音频或文字记录。")}</DialogDescription></DialogHeader>
-        <div className="career-complete-summary"><strong>{session.stage_label}</strong><span>{formatFullDateTimeRange(session.start_at, session.end_at)} · {sessionModeLabel(session.mode)}</span></div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>{t("取消")}</Button><Button disabled={busy} onClick={() => void complete()}>{busy ? t("处理中…") : completeLabel}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function schedulePickerValue(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -2921,7 +3153,7 @@ function schedulePickerValue(value: string): string {
   );
 }
 
-function EditInterviewScheduleDialog({
+export function EditInterviewScheduleDialog({
   session,
   recordKind,
   onClose,
@@ -3105,7 +3337,7 @@ function EditInterviewScheduleDialog({
   );
 }
 
-function InterviewAnswerPlanSection({
+export function InterviewAnswerPlanSection({
   session,
   canEdit,
   inRecordDialog = false,
@@ -3239,7 +3471,6 @@ export function InterviewSessionDetailView({
   const [showContentDialog, setShowContentDialog] = useState(false);
   const [showEditTextDialog, setShowEditTextDialog] = useState(false);
   const [showDeleteTextDialog, setShowDeleteTextDialog] = useState(false);
-  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [showEditScheduleDialog, setShowEditScheduleDialog] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   useEffect(() => {
@@ -3272,7 +3503,6 @@ export function InterviewSessionDetailView({
   const overviewTitle = t("{value0}概况", { value0: t(recordKind) });
   const overviewNameLabel = isAssessment ? t("笔试名称") : t("面试轮次");
   const addContentLabel = isAssessment ? t("添加笔试内容") : t("添加面试内容");
-  const completeLabel = isAssessment ? t("完成笔试") : t("完成本轮面试");
   const canEditAnswerPlan = !isArchived && session.status === "scheduled";
   const editScheduleAction = !isArchived && application.status === "active" && session.status === "scheduled"
     ? <Button variant="outline" icon={<Pencil />} onClick={() => setShowEditScheduleDialog(true)}>{t("修改")}{t(recordKind)}{t("安排")}</Button>
@@ -3280,7 +3510,6 @@ export function InterviewSessionDetailView({
   const recordActions = (
     <>
       <Button variant="ghost" onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>
-      {!isArchived && session.status === "scheduled" && <Button variant="outline" onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>}
     </>
   );
   const detailBody = (
@@ -3326,7 +3555,6 @@ export function InterviewSessionDetailView({
       <MotionPresence>{showContentDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} onClose={() => setShowContentDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{showEditTextDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} mode="edit" initialText={questions} onClose={() => setShowEditTextDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{showDeleteTextDialog && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setShowDeleteTextDialog(false)} onDeleted={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
-      <MotionPresence>{showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={() => isDialog ? onChanged(null) : navigateTo(careerApplicationPath(application.id))} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{showEditScheduleDialog && <EditInterviewScheduleDialog session={session} recordKind={recordKind} onClose={() => setShowEditScheduleDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
     </>
   );
@@ -3348,11 +3576,6 @@ export function InterviewSessionDetailView({
               {editScheduleAction}
               {(!isAssessment || assets.length > 0 || questions.trim()) && <Button variant="ghost" icon={<FilePlus2 />} onClick={() => setShowContentDialog(true)}>{addContentLabel}</Button>}
             </div>
-            {!isArchived && session.status === "scheduled" && (
-              <div className="career-session-record-footer-end" role="group" aria-label={t("记录完成操作")}>
-                <Button variant={isAssessment ? "outline" : "default"} onClick={() => setShowCompleteDialog(true)}>{completeLabel}</Button>
-              </div>
-            )}
           </DialogFooter>
           {detailDialogs}
         </DialogContent>

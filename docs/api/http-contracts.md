@@ -323,7 +323,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 
 求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `job_application_stages` 保存追加式阶段历史，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。JD 创建或导入会原子创建或复用待投递记录；求职记录保存公司、岗位和完整 JD 快照（包括创建时的可选 `logo_url`），响应以可选 `company_logo_url` 暴露该快照值，后续修改原 JD 不会改写历史快照的正文和其他业务信息；补充托管图片或明确修改原 Logo 外链时，仅同步图标键并递增求职记录锁版本。Web 与小程序两侧共用同一个快照投影：只输出 `https://` 开头的绝对 URL，或该求职记录自己岗位的托管 Logo 地址（`/api/job-descriptions/{id}/logo?v=...`），其余取值一律投影为 `null`。
 
-待投递由 `applied_at=null` 且 `lifecycle_status=active` 表示，不生成虚构业务阶段。`POST /api/job-applications/:id/stages` 接受 `client_request_id`、稳定 `stage_type`、可选 `stage_label/interview_round_no/applied_at/resume_id` 和 `base_lock_version`，可直接进入 `screening/assessment/written_test/ai_interview/interview/offer`。普通面试必须提供非空显示名称，轮次可空；其他类型不能携带轮次。首次阶段写入同时保存投递时间，未提供时使用服务端操作时间；旧当前阶段改为已完成，新阶段成为唯一当前阶段。相同请求 UUID 和相同阶段内容幂等返回，内容不同或版本过期返回 `409 INTERVIEW_EDIT_CONFLICT`。
+待投递由 `applied_at=null` 且 `lifecycle_status=active` 表示，不生成虚构业务阶段。`POST /api/job-applications/:id/stages` 接受 `client_request_id`、稳定 `stage_type`、可选 `stage_label/interview_round_no/applied_at/resume_id` 和 `base_lock_version`，可直接进入 `screening/assessment/written_test/ai_interview/interview/hr/oc/offer`。普通面试必须提供非空显示名称，轮次可空；其他类型不能携带轮次，`hr`、`oc` 默认名称为“HR 面”“OC”。首次阶段写入同时保存投递时间，未提供时使用服务端操作时间；旧当前阶段改为已完成，新阶段成为唯一当前阶段。相同请求 UUID 和相同阶段内容幂等返回，内容不同或版本过期返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
 `PUT /api/job-applications/:id` 可提交 `employment_type`（上述三类或 `null`）及 `base_lock_version`，在同一次版本校验中更新当前记录的 `job_snapshot.employment_type`，保留其他快照属性和阶段。它不改原岗位或其他求职进程。非法分类返回 `400 INVALID_INTERVIEW_REQUEST`，非本人记录返回 `404 INTERVIEW_NOT_FOUND`，过期版本返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
@@ -334,6 +334,8 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 原生 V4 使用 Offer 阶段且 `offer_status=none` 表示 OC 口头意向，`POST /offer` 才将其标记为 `received`，即使未填写数值薪资也可确认正式 Offer。`POST /close` 携带 `status=closed` 和 `offer_status=accepted|declined` 完成最终决策；OC 不能直接接受或婉拒，已归档记录不能作决策。`terminate` 的 `offer_declined` 原因同样要求已收到正式 Offer。双方均沿用归属检查和 `base_lock_version`。原生将 `status=closed` 的接受记录归入已结束，不因恢复归档而重新开启流程。
 
 `POST /offer` 另可携带 `received_on/reply_due_on/start_on` 三个独立日期字段；仅接受 MySQL DATE 支持的 `YYYY-MM-DD`（年份 1000–9999）或 `null`，不接受时间戳或时分。省略字段保留原值，显式 `null` 清空，与 Offer 状态在同一乐观锁事务中更新。求职详情与列表返回可空 `offer_received_on/offer_reply_due_on/offer_start_on`。旧原生备注内的日期标签仍保留，不解析回填；旧客户端省略新字段不会清除 Web 保存的结构化日期。复用 `400 INVALID_INTERVIEW_REQUEST`、`404 INTERVIEW_NOT_FOUND` 和 `409 INTERVIEW_EDIT_CONFLICT`。
+
+**投递渠道、HR 面与 OC（0109）**：`POST /stages` 与 `PUT /job-applications/:id` 可选携带 `applied_channel`（最多 100 字符，首尾空白去除）；记录投递时随首次阶段一并保存。`hr` 阶段可排期，排期时场次 `stage_type` 必须为 `hr`。`oc` 阶段可选携带 `oc_communicated_at`（须带时区）、`oc_contact`、`oc_salary_text`、`oc_start_text`（各最多 100 字符）与 `oc_note`（最多 500 字符），非 `oc` 阶段携带这些字段返回 `400`。`oc` 阶段投影为 `current_stage_type=offer`；当前阶段为 `oc` 时 `POST /offer` 返回 `409 INTERVIEW_INVALID_TRANSITION`，正式 Offer 需先追加 `offer` 阶段。`POST /offer` 另可携带 `probation`（最多 100 字符）和 `material_dataset_ids`（最多 10 个、不可重复的本人资料库文件 ID，提供时整体替换，空数组清空，省略保留）；任一文件不属于当前用户时返回 `404 INTERVIEW_NOT_FOUND` 且不改写。求职响应新增可空 `applied_channel`、`oc_*`、`offer_probation` 与 `offer_materials`（`dataset_id`、`file_name` 列表），小程序求职响应同样返回这些字段。
 
 `POST /stages` 与 `POST /offer` 可选携带 `notes`（最多 16,000 字符），在同一版本校验与事务中保存补充说明；省略保持原备注，显式 `null` 清空。原生 V4 的投递渠道、口头薪酬、收到日期、回复截止、薪酬说明、预计入职、试用期与 Offer 材料名称按可读标签保存于备注，保留其他行；材料名称不是附件上传或关联。旧 Web 请求无需新增字段。阶段请求继续复用 UUID，重放不会重复追加阶段或覆盖后续备注。
 
@@ -354,7 +356,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 | `POST` | `/api/interview-sessions/:id/prep-items:generate` | 让 AI 为本场生成准备清单，成功返回更新后的场次；每场只能成功一次 |
 | `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间接受有效 24 小时制 `HH:mm`（小时 `00–23`、分钟 `00–59`） |
 | `PUT` | `/api/interview-sessions/:id/answer-plan` | 设置或清除开放笔试/测评的一组个人作答计划时间 |
-| `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
+| `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试；完成接口保留兼容，正常流程按结束时间自动完成 |
 | `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传素材；上传与资料库共用同一入库链路，成功后自动关联该场次 |
 | `POST` | `/api/interview-sessions/:id/assets/attach` | 把本人资料库中未关联的资料（`{dataset_id}`）关联到本场次 |
 | `DELETE` | `/api/interview-sessions/:id/assets/:dataset_id` | 解除资料与场次的关联，文件保留在资料库 |
@@ -362,6 +364,8 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 | `DELETE` | `/api/interview-assets/:id` | 解除素材与场次的关联，不删除文件 |
 
 排期请求可携带 `application_stage_id` 和 `schedule_kind=fixed_slot|open_window`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期，且只有测评、笔试支持开放窗口。创建与改期请求在 `start_at` 之外必须且只能提交 `end_at` 或正整数 `duration_minutes` 之一；提交持续分钟时由服务端计算并保存 `end_at`，旧的显式结束时间写法继续兼容。开放窗口的个人作答计划同样可用 `answer_plan_start_at + duration_minutes` 让服务端推算结束时间，也兼容 `answer_plan_start_at/answer_plan_end_at` 成对设置；清除时两端同时为空。计划必须完整落在官方窗口内，否则返回 `INTERVIEW_ANSWER_PLAN_INVALID_TIME`、`INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW` 或 `INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED`。不支持开放窗口的阶段返回 `INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED`。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。同一用户的多个排期允许时间重叠。调整排期只要求场次仍为 `scheduled` 且所属求职进程未归档，不受求职进程是否已经结束影响。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
+
+**按时间完成**：`end_at` 已过的 `scheduled` 场次在所有场次响应中投影为 `status=completed`、`completed_at=end_at`；当前阶段的全部已排期场次都已结束时，求职进程的 `stage_state` 与场次摘要的 `application_stage_state` 投影为 `awaiting_result`。`GET /api/interview-sessions?status=scheduled|completed` 与总览的已完成数量按同一投影筛选。读取不写库；添加阶段或终止流程时在同一事务内把已结束场次落库为 `completed`，该结算不递增 `lock_version`。改期和取消仍按库内 `scheduled` 判断，因此已过时间的场次可以改到未来时间，从而恢复为已安排。
 
 Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `received`；迁移 `0053` 将历史 `oc_received` 与 `written_offer_received` 合并为 `received`。`POST /api/job-applications/:id/offer` 只要求 `base_lock_version`，并接受全部可空的 `base_location`、`salary`、`salary_currency`、`salary_period`、`benefits_description`；空请求仍会记录为已收到 Offer。填写数值薪资时必须同时提供大写三字母币种与 `hour/day/month/year` 计薪周期。求职进程响应以 `offer_` 前缀返回这五个详情字段。迁移 `0054` 将原薪资下限重命名为单值 `offer_salary` 并删除薪资上限；旧记录缺少下限但存在上限时保留原上限值。总览指标使用 `offers_received`，统计 `received/accepted/declined`，不再返回 `written_offers`。
 
@@ -638,8 +642,16 @@ Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账�
 
 ## 文字 AI 面试复盘
 
-`POST /api/interview-sessions/:id/review:generate` 接受 canonical UUID `request_id` 和 `base_lock_version`，返回既有场次详情结构。仅本人未归档的已完成场次可生成；必须有不超过 50,000 字符的 `questions_markdown`。401 为失效账号，越权或不存在返回 404；状态不适用、乐观锁过期、源记录变化的重复请求和账号已有活动生成返回 409。无文字或超长返回 400。模型未配置返回 503，模型或证据验证失败返回 502，原文字和已有报告不被清除。
+`POST /api/interview-sessions/:id/review:generate` 接受 canonical UUID `request_id` 和 `base_lock_version`，校验通过后返回 `202` 与既有场次详情结构（`review_status=generating`），报告在后台生成，客户端轮询场次详情读取终态。仅本人未归档的已完成场次可生成；必须有不超过 50,000 字符的 `questions_markdown`。401 为失效账号，越权或不存在返回 404；状态不适用、乐观锁过期、源记录变化的重复请求和账号已有活动生成返回 409。无文字或超长返回 400。模型未配置返回 503，模型或证据验证失败返回 502，原文字和已有报告不被清除。
 
 场次详情和列表增加可空的 `review_report`、`review_status`、`review_request_id`、`review_error`、`review_started_at`，以及 `review_stale`。报告包含 `schema_version: 1`、`source_hash`、`generated_at`、`summary`、可空 `overall_score`、三项 `{score, reason, evidence}` 和问题数组 `{question, answer, evidence, strength, improvement, suggested_answer}`。`score` 范围 0–10，证据不足留空；综合分要求三项分数齐全。问题、原回答和非空评分证据须摘录源记录；建议回答与原回答分开保存。旧手写 `review_summary` 等字段仍可编辑，生成不覆盖它们。
 
-响应中的 `review_request_id` 标识当前生成。网络结果不明确时，只有读到同 UUID 的终态才结束该次重试，读到旧报告或读取失败仍复用原 UUID。相同 UUID 和源文字重复请求复用原生成状态，不再次调用模型；失败后的显式重新生成使用新 UUID。源记录在生成期间改变，返回详情中的 `review_status=failed`、`review_error=INTERVIEW_REVIEW_SOURCE_CHANGED`，原记录和旧报告保留。旧报告源哈希与当前文字不同即 `review_stale=true`。活动生成超过 3 分钟允许重新发起；这里没有录音转写契约。
+响应中的 `review_request_id` 标识当前生成。网络结果不明确时，只有读到同 UUID 的终态才结束该次重试，读到旧报告或读取失败仍复用原 UUID。相同 UUID 和源文字重复请求复用原生成状态，不再次调用模型；失败后的显式重新生成使用新 UUID。源记录在生成期间改变，返回详情中的 `review_status=failed`、`review_error=INTERVIEW_REVIEW_SOURCE_CHANGED`，原记录和旧报告保留。旧报告源哈希与当前文字不同即 `review_stale=true`。活动生成超过 5 分钟没有心跳即视为中断，同 UUID 重试返回 `502 INTERVIEW_REVIEW_INTERRUPTED`。
+
+**复盘报告 v2（0110）**：新生成的报告为 `schema_version: 2`，包含 `rubric_version`、`headline`、`summary`、`verdict{level: likely_pass|promising|at_risk|likely_fail, confidence: high|medium|low, confidence_reason, signals[{polarity, quote, meaning}], adjusted_by_signals, fatal_questions}`、可空 `total_score`（0–100）与 `grade`（excellent/good/pass/improve）、`question_average`、`dimension_score`、`first_axis`（professional_depth 或 motivation_fit）、`category_counts`、`dimensions[{key, assessed, score(1–5), weight, evidence, comment}]`、`questions[{index, key, question, answer, category, answer_status, follow_ups, expected_depth, achieved_depth, score, signals[{signal, verdict, quote}], factual_errors, resume_conflict, strength, improvement, suggested_answer, evidence_snippets[{dataset_id, title, text}]}]`、`improvements[{title, detail, priority, dimension, question_indexes}]` 与 `basis{transcript_source, transcript_chars, resume_title, has_job, material_snippets, material_mode, downgraded_quotes, dropped_questions}`。识别不出可评估题目时失败为 `INTERVIEW_REVIEW_NO_QUESTIONS`。v1 报告保持原结构。
+
+**逐题复盘笔记（0110）**：场次详情增加 `review_question_notes[{id, question_key, question_text, verdict: good|improve|null, note, lock_version, updated_at}]`。`PUT /api/interview-sessions/:id/review-notes` 接受 `question_text`（1–1000）、`verdict`、`note`（≤2000）和 `lock_version`（新建时省略，更新时必须等于当前值，否则 409）；返回 `{note}`，标记与笔记都为空时删除并返回 204。`DELETE /api/interview-sessions/:id/review-notes/:noteId` 返回 204。笔记按题目原文指纹挂接，客户端用报告题目的 `key` 匹配，未匹配的笔记照常返回。
+
+**录音转写（0110）**：场次详情增加 `transcript_source`（manual/transcription/null）与 `transcriptions[{dataset_id, status, error_code, pending_replace, result_duration_ms, updated_at}]`。上传或关联音视频到非笔试场次时自动建任务；`PUT /api/interview-sessions/:id` 修改 `questions_markdown` 时来源置为 manual。`POST /api/interview-sessions/:id/transcriptions/:datasetId:retry` 对失败或已取消的任务重新排队（录音未关联本场返回 400，其他状态 409 `INTERVIEW_TRANSCRIPTION_INVALID_STATE`，功能关闭 503）；`POST …/transcriptions/:datasetId:apply` 接受 `base_lock_version`，用待替换结果覆盖文字稿（无待替换结果 409，版本过期 409）。失败码包括 `INTERVIEW_TRANSCRIPTION_NOT_CONFIGURED`、`…_STORAGE_UNAVAILABLE`、`…_FORMAT_UNSUPPORTED`、`…_DOWNLOAD_FAILED`、`…_AUDIO_TOO_LONG`、`…_EMPTY`、`…_TIMEOUT`、`…_FAILED`。
+
+**笔试题导入（只预览，不保存）**：`POST /api/interview-sessions/:id/written-questions:extract` 为 multipart：`source=text` + `text`（≤20,000 字）、`source=dataset` + `dataset_id`（本人已解析完成的文档）、或 `source=images` + 1–5 个 `files`（png/jpg/webp，每张 ≤5MB，识别后不保存）。仅笔试或测评场次可用（否则 400 `INTERVIEW_NOT_WRITTEN_TEST`）。返回 `{questions[{no, text}], markdown}`；识别不到题目 422，模型未配置 503。确认后由客户端通过 `PUT /api/interview-sessions/:id` 保存 `questions_markdown`。
