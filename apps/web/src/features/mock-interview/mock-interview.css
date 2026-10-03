@@ -28,8 +28,8 @@
 
 /* ───────────── 07.1 首页 ───────────── */
 
-.mi-home-head { display: flex; height: 77px; align-items: flex-start; justify-content: space-between; }
-.mi-home-title { margin-top: 6px !important; font-size: 30px; font-weight: 700; line-height: 36px; }
+.mi-home-head { display: flex; min-height: 84px; align-items: flex-start; justify-content: space-between; }
+.mi-home-title { margin-top: 9px !important; line-height: var(--ui-line-page-title); }
 .mi-home-sub { margin-top: 6px !important; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
 .mi-home-actions { display: flex; gap: 10px; margin-top: 23px; }
 .mi-home-actions .v3-btn { height: 31px; font-size: 12.5px; }
@@ -156,9 +156,9 @@
 
 /* ───────────── 07.1 练习记录 ───────────── */
 
-.mi-records-head { height: 75px; }
-.mi-records-title { display: flex; height: 34px; align-items: center; justify-content: space-between; margin-top: 6px; }
-.mi-records-title h1 { display: flex; align-items: center; gap: 8px; font-size: var(--ui-text-2xl); font-weight: var(--ui-weight-semibold); line-height: var(--ui-line-page-title); }
+.mi-records-head { min-height: 84px; }
+.mi-records-title { display: flex; min-height: 40px; align-items: center; justify-content: space-between; margin-top: 9px; }
+.mi-records-title h1 { display: flex; align-items: center; gap: 8px; line-height: var(--ui-line-page-title); }
 .mi-records-title .v3-btn { height: 31px; font-size: 12.5px; }
 .mi-records-head > p:not(.v3-page-eyebrow) { margin-top: 6px !important; color: var(--v3-fnt); font-size: 12.5px; }
 .mi-toolbar { display: flex; align-items: center; gap: 8px; margin-top: 20px; }
@@ -200,7 +200,7 @@
 
 /* ───────────── 07.1a 新建 ───────────── */
 
-.mi-new { width: 560px; padding-top: 52px; }
+.mi-new { width: min(560px, calc(100% - 2 * var(--v3-gutter))); padding-top: 52px; }
 .mi-new .mi-serif-title { margin-top: 9px; }
 .mi-new-sub { margin-top: 6px !important; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
 .mi-new-field { margin-top: 39px; }
@@ -506,3 +506,61 @@
 .mi-records > .mi-list { display: flex; min-height: 0; flex: 0 1 auto; flex-direction: column; }
 .mi-records > .mi-list > .mi-list-head { flex: 0 0 auto; }
 .mi-records .mi-list-scroll { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+
+@container workspace (max-width: 850px) {
+  .mi-stats { height: auto; flex-wrap: wrap; gap: 24px; }
+  .mi-vdiv { display: none; }
+  .mi-toolbar { flex-wrap: wrap; }
+  .mi-list { overflow-x: auto; }
+  .mi-list-head, .mi-list-row { min-width: 760px; }
+  .mi-records .mi-list-scroll { overflow: visible; }
+  .mi-records > .mi-list { display: block; overflow: auto; }
+  .mi-dims { flex-direction: column; gap: 16px; }
+  .mi-dim-radar { align-self: center; margin-top: 20px; }
+}
+@container workspace (max-width: 560px) {
+  .mi-page { padding-top: 28px; }
+  .mi-home-head, .mi-records-head, .mi-records-title { height: auto; flex-wrap: wrap; gap: 16px; }
+  .mi-home-actions { margin-top: 0; }
+  .mi-start { height: auto; flex-wrap: wrap; gap: 16px; padding: 20px; }
+  .mi-start-illus { width: 48px; height: 48px; }
+  .mi-start-text { flex-basis: calc(100% - 64px); }
+  .mi-start-text ol { flex-wrap: wrap; gap: 8px; }
+  .mi-start-btn { margin-left: auto; }
+  .mi-jobs { grid-template-columns: minmax(0, 1fr); }
+  .mi-general { height: auto; flex-wrap: wrap; gap: 12px; padding: 16px; }
+  .mi-stats-empty { height: auto; min-height: 251px; padding: 20px 16px; }
+}
+
+@media (max-height: 600px) {
+  .mi-page.mi-records { height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }
+}
+
+@container workspace (max-width: 560px) {
+  .mi-ghosts { grid-template-columns: minmax(0, 1fr); }
+  .mi-ghost-art { max-width: 100%; }
+  .mi-stats-empty-head { flex-wrap: wrap; }
+  .mi-stat-col { max-width: 100%; }
+  .mi-trend { flex-basis: 100%; }
+  .mi-session-head, .mi-live .mi-session-head { height: auto; flex-wrap: wrap; gap: 16px; padding-bottom: 16px; }
+  .mi-session-actions, .mi-live .mi-session-actions { margin-top: 0; }
+  .mi-progress { gap: 12px; }
+  .mi-progress-bars { min-width: 0; flex: 1; }
+  .mi-progress b { flex: 0 0 auto; }
+  .mi-input textarea { min-width: 0; }
+  .mi-report-actions { position: static; flex-wrap: wrap; margin: 16px 0; }
+  .mi-report-head .mi-serif-title, .mi-report-meta, .mi-summary-stats { flex-wrap: wrap; }
+  .mi-summary { flex-direction: column; gap: 20px; padding: 20px; }
+  .mi-summary-div { display: none; }
+  .mi-hw { grid-template-columns: minmax(0, 1fr); }
+  .mi-dim-row { grid-template-columns: 86px minmax(0, 1fr) 36px 48px; gap: 0 8px; }
+  .mi-dim-list p { padding-left: 0; }
+  .mi-section-head.is-report { height: auto; flex-wrap: wrap; }
+  .mi-filter { flex-wrap: wrap; }
+}
+
+@container workspace (max-width: 560px) {
+  .mi-preparing { width: 100%; margin-top: 40px; padding-inline: 16px; }
+  .mi-prep-steps { width: 100%; }
+  .mi-prep-fail-actions, .mi-composer-foot { height: auto; flex-wrap: wrap; gap: 12px; }
+}

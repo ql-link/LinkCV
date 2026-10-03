@@ -31,11 +31,10 @@
   --v3-purple-soft: #f3eefa;
   --v3-sk: #ececea;
   --v3-sk2: #dcdcd8;
-  /* 组件固定、布局伸缩：1440 画板的正文列是 860（占内容卡 1151 的 ≈74.7%）。1440 屏上正文列等于设计稿 860，更宽的屏幕每多
-     1px 分给正文列 .747px（同设计稿比例），不超过 1200；更窄时保持 860。字号、按钮、卡片高度等组件保持设计稿 1:1，不做整页缩放
-     （对话页另用 720 列） */
-  --v3-page-max: clamp(860px, calc(860px + (100vw - 1440px) * .747), 1200px);
-  --v3-gutter: clamp(24px, 4vw, 56px);
+  /* 正文填满可用内容区，左右各留内容卡宽度的 3%（桌面至少 24px）。
+     窄屏在下方改用 16px；对话和新建表单保留各自的阅读宽度。 */
+  --v3-page-max: 100%;
+  --v3-gutter: max(24px, 3cqw);
   --v3-sans: var(--ui-font-sans);
   --v3-serif: var(--ui-font-heading);
   --v3-num: var(--ui-font-number);
@@ -53,13 +52,14 @@
 .v3 .v3-serif { font-family: var(--v3-serif); font-weight: 600; }
 
 /* ── 窗口外壳：侧栏 216 + 右侧白色内容卡（上下右各留 12） */
-.v3-window { position: fixed; inset: 0; display: flex; min-width: 1024px; background: var(--v3-win); overflow: hidden; }
+.v3-window { position: fixed; inset: 0; display: flex; min-width: 0; background: var(--v3-win); overflow: hidden; }
 .v3-window.is-bare .v3-content { left: 12px; }
-.v3-content { position: absolute; top: 12px; right: 12px; bottom: 12px; left: 229px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: var(--v3-card); }
+.v3-content { position: absolute; top: 12px; right: 12px; bottom: 12px; left: 229px; min-width: 0; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: var(--v3-card); container: workspace / inline-size; }
 .v3-content-scroll { position: absolute; inset: 0; overflow-y: auto; }
 
 .v3-sidebar { position: absolute; top: 0; bottom: 0; left: 0; display: flex; width: 216px; flex-direction: column; padding: 0 14px; }
-.v3-sidebar-brand { display: flex; height: 30px; margin: 24px 0 10px 8px; align-items: center; }
+.v3-sidebar-brand { display: flex; height: 30px; flex: 0 0 auto; margin: 24px 0 10px 8px; align-items: center; }
+.v3-side-body { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
 .v3-sidebar-brand img { display: block; width: 146px; height: 30px; object-fit: contain; object-position: left; }
 .v3-side-row { position: relative; display: flex; width: 188px; height: 34px; flex: 0 0 auto; align-items: center; gap: 8px; border: 0; border-radius: 8px; background: transparent; padding: 0 12px 0 10px; color: var(--v3-sub); cursor: pointer; font-size: var(--ui-text-sm); text-align: left; text-decoration: none; line-height: var(--ui-line-control); font-weight: var(--ui-weight-medium); white-space: nowrap; }
 .v3-side-row:hover { background: var(--v3-field); color: var(--v3-txt); text-decoration: none; }
@@ -70,7 +70,8 @@
 .v3-side-section { display: flex; height: auto; margin: 22px 12px 8px; align-items: center; justify-content: space-between; color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); min-height: var(--ui-line-metadata); }
 .v3-side-section button { display: grid; width: 18px; height: 18px; place-items: center; border: 0; border-radius: 5px; background: transparent; padding: 0; color: var(--v3-fnt); cursor: pointer; }
 .v3-side-section button:hover { background: var(--v3-field); color: var(--v3-txt); }
-.v3-side-sessions { min-height: 0; flex: 1; overflow-y: auto; }
+.v3-side-sessions { min-height: 40px; flex: 1; overflow-y: auto; }
+.v3-side-nav, .v3-side-section { flex: 0 0 auto; }
 .v3-side-session { position: relative; display: flex; width: 188px; height: 32px; margin-bottom: 0; align-items: center; border-radius: 8px; color: var(--v3-sub); }
 .v3-side-session > button.v3-side-session-open { min-width: 0; height: 32px; flex: 1; overflow: hidden; border: 0; background: transparent; padding: 0 36px 0 12px; color: inherit; cursor: pointer; font-size: var(--ui-text-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; line-height: var(--ui-line-control); }
 .v3-side-session:hover { background: var(--v3-field); color: var(--v3-txt); }
@@ -89,7 +90,7 @@
 .v3-side-user:hover { background: var(--v3-field); text-decoration: none; }
 /* 在账号页时头像这一行保持高亮（原来由「设置」行负责） */
 .v3-side-user.is-active { background: var(--v3-hl); }
-.v3-side-user strong { display: block; color: var(--v3-txt); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); line-height: var(--ui-line-control); }
+.v3-side-user strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--v3-txt); font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); line-height: var(--ui-line-control); }
 .v3-side-user small { display: block; overflow: hidden; max-width: 130px; color: var(--v3-fnt); font-size: var(--ui-text-xs); text-overflow: ellipsis; white-space: nowrap; line-height: var(--ui-line-metadata); }
 
 .v3-avatar { display: grid; flex: 0 0 auto; place-items: center; overflow: hidden; border-radius: 50%; background: var(--v3-dark); color: #fff; font-weight: 500; }
@@ -148,8 +149,8 @@
 .v3-grow-right { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; margin-left: auto; }
 
 /* ── 弹窗：遮罩 + 卡片 + 衬线标题 + 右上角关闭 + 底部分隔线 */
-.v3-overlay { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; background: rgb(29 29 27 / 32%); padding: 24px; }
-.v3-dialog { position: relative; display: flex; max-height: calc(100dvh - 48px); flex-direction: column; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-dialog); color: var(--v3-txt); font-family: var(--v3-sans); }
+.v3-overlay { --v3-overlay-gutter: clamp(12px, 3vw, 24px); position: fixed; z-index: 1000; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; background: rgb(29 29 27 / 32%); padding: var(--v3-overlay-gutter); }
+.v3-dialog { position: relative; display: flex; min-width: 0; max-width: 100%; max-height: calc(100dvh - 2 * var(--v3-overlay-gutter)); flex-direction: column; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-dialog); color: var(--v3-txt); font-family: var(--v3-sans); container: dialog / inline-size; }
 .v3-dialog-close { position: absolute; z-index: 2; top: 26px; right: 26px; display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 7px; background: transparent; padding: 0; color: var(--v3-fnt); cursor: pointer; }
 .v3-dialog-close:hover { background: var(--v3-field); color: var(--v3-txt); }
 .v3-dialog-body { min-height: 0; flex: 1; overflow-y: auto; padding: 28px 32px 24px; }
@@ -295,7 +296,7 @@
 .v3-page-sub { margin: 8px 0 0; color: var(--v3-sub); font-size: var(--ui-text-sm); line-height: var(--ui-line-body); }
 
 /* 浮动提示 */
-.v3-toast { position: fixed; z-index: 1300; top: 28px; left: 50%; display: flex; min-width: 320px; align-items: flex-start; gap: 10px; transform: translateX(-50%); border: 1px solid var(--v3-cl); border-radius: 12px; background: #fff; padding: 14px 16px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
+.v3-toast { position: fixed; z-index: 1300; top: 28px; left: 50%; display: flex; min-width: min(320px, calc(100vw - 32px)); max-width: calc(100vw - 32px); align-items: flex-start; gap: 10px; transform: translateX(-50%); border: 1px solid var(--v3-cl); border-radius: 12px; background: #fff; padding: 14px 16px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
 .v3-toast strong { display: block; font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); line-height: var(--ui-line-control); }
 .v3-toast small { display: block; margin-top: 4px; color: var(--v3-sub); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); }
 
@@ -328,3 +329,35 @@
 }
 /* 简历编辑器铺满整个窗口：不留外边距、不画外框圆角 */
 .v3-window.is-bare .v3-content.wb3-content { inset: 0; border: 0; border-radius: 0; }
+
+/* 工作区按视口切换导航；页面组件按内容卡宽度重排。 */
+.v3-mobile-head { position: absolute; inset: 0 0 auto; display: flex; height: 52px; align-items: center; gap: 10px; border-bottom: 1px solid var(--v3-line); background: var(--v3-card); padding: 0 16px; font-size: var(--ui-text-sm); font-weight: var(--ui-weight-medium); line-height: var(--ui-line-control); }
+.v3-mobile-head button { display: grid; width: 36px; height: 36px; place-items: center; border: 0; border-radius: 8px; background: transparent; padding: 0; color: var(--v3-txt); cursor: pointer; }
+.v3-mobile-head button:hover { background: var(--v3-field); }
+.v3-mobile-head button:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.v3-overlay:has(> .v3-mobile-nav) { place-items: stretch start; padding: 0; }
+.v3-dialog.v3-mobile-nav { height: 100dvh; max-height: 100dvh; border-radius: 0 16px 16px 0; background: var(--v3-win); }
+.v3-mobile-nav .v3-sidebar { position: relative; width: 100%; height: 100%; }
+.v3-mobile-nav .v3-side-row, .v3-mobile-nav .v3-side-session, .v3-mobile-nav .v3-side-rename, .v3-mobile-nav .v3-side-rename input { width: 100%; }
+.v3-menu { max-width: calc(100vw - 24px); }
+@media (max-width: 1023px) {
+  .v3 { --v3-gutter: 16px; }
+  .v3-window .v3-content { top: 52px; right: 0; bottom: 0; left: 0; border: 0; border-radius: 0; }
+  .v3-window.is-bare .v3-content { top: 0; left: 0; }
+}
+@container dialog (max-width: 500px) {
+  .v3-dialog-body { padding: 24px 20px; }
+  .v3-dialog-title { padding-right: 28px; }
+  .v3-dialog-close { top: 20px; right: 16px; }
+  .v3-dialog-foot { min-height: 72px; flex-wrap: wrap; padding: 16px 20px; }
+  .v3-dialog-foot-left:empty { display: none; }
+  .v3-dialog-foot-left:not(:empty) { flex: 1 0 100%; }
+}
+
+/* 数据表的横向滚动保留可发现的滚动条。 */
+.v3 :is(.ds-table, .mi-list, .career-applications-board) { scrollbar-width: thin; }
+.v3 :is(.ds-table, .mi-list, .career-applications-board)::-webkit-scrollbar { display: block; width: 8px; height: 8px; }
+.v3 :is(.ds-table, .mi-list, .career-applications-board)::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--v3-sk2); }
+.v3-mobile-nav .v3-side-row, .v3-mobile-nav .v3-side-user { height: 44px; }
+
+.v3-mobile-nav .v3-side-indicator { width: 100%; height: 44px; }

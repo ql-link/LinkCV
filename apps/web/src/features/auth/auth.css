@@ -6,7 +6,7 @@
 .auth-brand strong { color: var(--v3-txt); font-family: var(--v3-num); font-size: 15px; font-weight: 700; line-height: 18px; }
 .auth-brand span { color: var(--v3-fnt); font-size: 9px; font-weight: 500; }
 
-.auth-col { display: flex; width: 360px; flex: 1 0 auto; flex-direction: column; margin: 0 auto; padding: 231px 0 60px; }
+.auth-col { display: flex; width: min(360px, calc(100% - 32px)); flex: 1 0 auto; flex-direction: column; margin: 0 auto; padding: clamp(80px, calc(40dvh - 150px), 231px) 0 48px; }
 .auth-loading { margin-top: 80px; }
 
 /* 标题区：微信页小字眉标 / 开发环境橙色标签 */
@@ -43,9 +43,15 @@
 .auth-qr-hint { margin: 24px 0 0; color: var(--v3-sub); font-size: 12px; line-height: 14px; text-align: center; }
 .auth-qr-hint.is-warn { color: var(--v3-or); }
 .auth-qr-sub { margin: 8px 0 0; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-align: center; }
-.auth-agree { margin: 107px 0 0; color: var(--v3-fnt); font-size: 10.5px; line-height: 13px; text-align: center; }
+.auth-agree { margin: clamp(32px, 10dvh, 107px) 0 0; color: var(--v3-fnt); font-size: 10.5px; line-height: 13px; text-align: center; }
 .auth-back { margin: 40px auto 0; }
 
 .auth-foot { flex: 0 0 auto; margin: 0 0 35px; color: var(--v3-fnt2); font-size: 10.5px; line-height: 13px; text-align: center; }
+
+@container workspace (max-width: 560px) {
+  .auth-brand { top: 24px; left: 16px; }
+  .auth-title, .auth-sub { white-space: normal; }
+  .auth-foot { margin-bottom: 24px; padding-inline: 16px; }
+}
 
 .auth-language { position: absolute; top: 24px; right: 24px; width: auto; }

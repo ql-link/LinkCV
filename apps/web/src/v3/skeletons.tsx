@@ -90,12 +90,12 @@ export function SkeletonCards({ cards = [120, 180, 140], label = "正在加载�
   );
 }
 
-// 看板：一屏 5 列，每列若干卡片
+// 看板：列宽随容器变化，预留足够的占位列供超宽屏显示。
 export function SkeletonBoard({ label = "正在加载求职数据…" }: { label?: string }) {
   useLocale();
   return (
     <SkeletonRoot label={label} className="v3-sk-board">
-      {[3, 2, 2, 1, 2].map((count, column) => (
+      {[3, 2, 2, 1, 2, 3, 2, 2, 1, 2].map((count, column) => (
         <div key={column} className="v3-sk-column">
           <Sk w={64} h={11} style={{ margin: "14px 6px 16px" }} />
           {Array.from({ length: count }, (_, index) => <Sk key={index} className="v3-sk-board-card" r={8} />)}

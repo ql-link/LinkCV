@@ -105,6 +105,8 @@ preparation_failed  abandoned   evaluation_failed
 - 报告只对 `completed` 场次返回。
 - 简历、JD、资料正文与回答只作为引用数据传给模型，提示词明确要求忽略其中改变规则或评分的内容；LLM 调用日志只记录 `mock_interview` 场景与 `source=mock_interview` 的安全计量，不记录正文。
 
+Web 模拟面试首页与练习记录页复用工作区的 `.v3-page-title`，统一页面标题的字体、字号与字重。模拟面试页在窄内容卡中重排统计与操作，练习记录保留局部横向滚动，发起表单受容器宽度约束；文字与语音报告的摘要、维度图表和建议允许堆叠，单题详情适配窄弹窗。语音设备检测中的设备选择与状态允许换行；语音舞台在窄窗或低高度窗口中使用可滚动的自然布局，保持字幕和控制区可访问。共享约束见 [Web 响应式布局](../internals/web.md#响应式布局)。
+
 ## Web 前端
 
 - 入口为侧栏「模拟面试」，路由 `/mock-interviews`（首页，`?view=records` 为练习记录）、`/mock-interviews/new?application=&resume=`（新建）、`/mock-interviews/:id`（准备中、进行中、评估中）和 `/mock-interviews/:id/report`（评估报告）；页面位于 `apps/web/src/features/mock-interview/`，语音作答相关组件在其 `voice/` 目录。语音面试进行中为无侧栏整窗。

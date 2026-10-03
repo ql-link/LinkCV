@@ -38,11 +38,15 @@ async function openCreateFromPreview(name: string) {
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/templates");
+  // Catalog interactions run in jsdom without viewport geometry; thumbnail
+  // visibility is covered separately with controlled browser observer entries.
+  vi.stubGlobal("IntersectionObserver", undefined);
 });
 
 afterEach(() => {
   setLocale("zh-CN", false);
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/templates");
 });
 

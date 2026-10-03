@@ -11,7 +11,7 @@ import { useResumeStore } from "../../store/resumeStore";
 import { Icon } from "../../v3/Icon";
 import { Badge, MiniResume } from "../../v3/art";
 import { Dialog, DialogFooter, PageEyebrow } from "../../v3/primitives";
-import { ResumePreview } from "../preview/ResumePreview";
+import { TemplateThumbnail } from "./TemplateThumbnail";
 import { TemplatePreviewDialog } from "./TemplatePreviewDialog";
 import { V3TemplateFilter } from "./TemplateFilterPopover";
 import { formatTemplateUses } from "./templateUses";
@@ -45,6 +45,7 @@ function filterConflictText(styles: string[], useCases: string[]) {
 export function ResumeTemplatesPage() {
   useLocale();
   const createResume = useResumeStore((state) => state.createResume);
+  const pageRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   // 模板列表很少变化：回到本页时先用缓存直接显示，5 分钟内不再请求，超过后在后台静默刷新
   const [templates, setTemplates] = useState<ResumeTemplate[]>(() => readPageCache<ResumeTemplate[]>(TEMPLATES_CACHE_KEY)?.value ?? []);
@@ -68,6 +69,28 @@ export function ResumeTemplatesPage() {
   const hasFilters = selectedStyles.length + selectedUseCases.length > 0;
   // 筛选条件变化时，模板网格浮上淡入
   const gridMotionRef = useContentMotion<HTMLElement>(`${selectedStyles.join(",")}|${selectedUseCases.join(",")}`, { initial: false });
+
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page) return;
+    let width = window.innerWidth;
+    let settleTimer: number | undefined;
+    const onResize = () => {
+      if (width === window.innerWidth) return;
+      width = window.innerWidth;
+      // Reuse thumbnail layers during a width drag, then raster at the final
+      // scale once it settles. This avoids both per-frame raster work and blur.
+      if (!page.hasAttribute("data-resizing")) page.setAttribute("data-resizing", "");
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => page.removeAttribute("data-resizing"), 200);
+    };
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.clearTimeout(settleTimer);
+      page.removeAttribute("data-resizing");
+    };
+  }, []);
 
   const applyFilters = (styles: string[], useCases: string[]) => {
     setSelectedStyles(styles);
@@ -138,7 +161,7 @@ export function ResumeTemplatesPage() {
   const ready = !loading && !failed;
 
   return (
-    <div className="v3-page tpl-page">
+    <div ref={pageRef} className="v3-page tpl-page">
       <PageEyebrow segments={["TEMPLATES", <><Reveal inline loading={loading} placeholder={<LoadingText width={16} />}>{ready ? templates.length : "–"}</Reveal>{t(" 套")}</>]} />
       <h1 className="v3-page-title">{t("简历模板")}</h1>
       <p className="v3-page-sub">{t("浏览当前可用版式，选择后填写简历名称并进入编辑器。")}</p>
@@ -214,9 +237,7 @@ export function ResumeTemplatesPage() {
                     onClick={() => setPreviewTemplate(template)}
                   />
                   <div className="tpl-card-cover" aria-hidden="true">
-                    <div className="tpl-card-thumb">
-                      <ResumePreview data={template.data} style={template.style} layoutPlan={template.layout_plan} />
-                    </div>
+                    <TemplateThumbnail template={template} />
                   </div>
                   <h3 className="tpl-card-name">{template.name}</h3>
                   <div className="tpl-card-meta">

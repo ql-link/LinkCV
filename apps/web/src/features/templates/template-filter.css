@@ -144,7 +144,7 @@
 .tpl-filter-group button:focus-visible, .tpl-filter-reset:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
 
 /* 模板卡网格：4 列、列间 20、行间 32；封面 264 高灰底，缩略图四周留 22 / 18 */
-.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 32px 20px; margin-top: 24px; }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 32px 20px; margin-top: 24px; }
 .tpl-card { position: relative; min-width: 0; }
 .tpl-card-trigger { position: absolute; z-index: 1; inset: 0; border: 0; border-radius: 6px; background: transparent; padding: 0; cursor: pointer; }
 .tpl-card-trigger:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 4px; }
@@ -155,6 +155,7 @@
 .tpl-card-thumb .resume-readonly-preview-card { background: #fff; }
 /* 把整份 A4 缩到缩略图宽度 */
 .tpl-card-thumb .resume-readonly-preview-card .resume-preview-paper { top: 0; scale: calc(100cqw / 210mm); }
+.tpl-page[data-resizing] .tpl-card-thumb .resume-preview-paper { will-change: transform; }
 .tpl-card-name { overflow: hidden; margin: 14px 0 0; color: var(--v3-txt); font-size: var(--ui-text-sm); font-weight: 500; line-height: var(--ui-line-control); text-overflow: ellipsis; white-space: nowrap; }
 .tpl-card-meta { display: flex; height: 20px; align-items: center; gap: 6px; margin-top: 4px; }
 .tpl-card-uses { margin-left: auto; color: var(--v3-fnt); font-family: var(--v3-num); font-size: 10.5px; white-space: nowrap; }
@@ -219,3 +220,21 @@
 .tpl-preview-slide { min-width: 100%; width: max-content; overflow: clip visible; }
 .tpl-preview-head-swap { overflow: clip visible; }
 .tpl-body .tpl-toolbar { flex: 0 0 auto; }
+
+@container workspace (max-width: 680px) {
+  .v3-page.tpl-page { padding-top: 28px; }
+  .tpl-toolbar { height: auto; min-height: 30px; flex-wrap: wrap; gap: 12px; }
+  .tpl-sort { margin-left: 0; }
+}
+@container dialog (max-width: 600px) {
+  .tpl-preview-head { padding: 24px 20px 0; }
+  .tpl-preview-stage { margin: 0 12px 16px; container: template-preview / inline-size; }
+  .tpl-preview-paper .resume-readonly-preview-full { padding: 24px 12px 72px; }
+  .tpl-preview-paper .resume-preview-paper { zoom: calc(var(--tpl-zoom, 1) * (100cqw - 24px) / 210mm); }
+  .tpl-preview-nav.is-prev { left: 6px; }
+  .tpl-preview-nav.is-next { right: 6px; }
+}
+
+@media (max-height: 600px) {
+  .v3-page.tpl-page { height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }
+}

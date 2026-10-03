@@ -238,7 +238,7 @@ function HomeHeader({ count, hasUpcoming, newUser }: { count: number; hasUpcomin
     <header className="mi-home-head">
       <div>
         <PageEyebrow segments={["MOCK INTERVIEW", count ? t("{value0} 场练习", { value0: count }) : t("AI 练习")]} />
-        <h1 className="mi-home-title">{t("模拟面试")}</h1>
+        <h1 className="v3-page-title mi-home-title">{t("模拟面试")}</h1>
         <p className="mi-home-sub">{newUser ? t("从一个在投岗位开始，AI 会按岗位 JD 和你的简历出题。") : t("按你在投的岗位组织练习，离面试越近越靠前。")}</p>
       </div>
       <div className="mi-home-actions">
@@ -608,7 +608,7 @@ function RecordsView({ interviews }: { interviews: MockInterviewSummary[] }) {
       <header className="mi-records-head">
         <PageEyebrow segments={[{ label: "MOCK INTERVIEW", href: "/mock-interviews", onClick: () => navigateTo("/mock-interviews"), ariaLabel: t("返回模拟面试") }, t("练习记录")]} />
         <div className="mi-records-title">
-          <h1>{t("练习记录")}</h1>
+          <h1 className="v3-page-title">{t("练习记录")}</h1>
           <button type="button" className="v3-btn v3-btn-dark" onClick={() => navigateTo(newMockInterviewPath())}>{t("开始新面试")}</button>
         </div>
         <p>{t("共 ")}{interviews.length}{t(" 场 · 已完成 ")}{done.length}{t(" · 已放弃 ")}{abandoned.length}{t(" · 累计 ")}{hours.toFixed(1)}{t(" 小时")}</p>

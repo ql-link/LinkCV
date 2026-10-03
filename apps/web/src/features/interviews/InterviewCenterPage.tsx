@@ -1442,7 +1442,7 @@ function ApplicationViewControls({
   );
 }
 
-// 10.3 岗位看板加载中：页头 + 统计骨架 + 5 列骨架卡片
+// 10.3 岗位看板加载中：页头与统计保留，骨架列宽跟随真实看板。
 function BoardSkeleton() {
   useLocale();
   return <SkeletonBoard label={t("正在加载求职数据…")} />;

@@ -33,7 +33,7 @@ export function ResumePreview({
     observer?.observe(paper);
     document.fonts?.ready.then(update);
     return () => { active = false; observer?.disconnect(); };
-  });
+  }, [documentHtml, mode]);
 
   return (
     <div

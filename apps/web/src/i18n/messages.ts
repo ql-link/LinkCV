@@ -52,6 +52,8 @@ export const messages: Record<string, string> = {
   "调整编辑区和预览区宽度": "Adjust editor and preview widths",
   "LinkResume 首页": "LinkResume home",
   "工作区导航": "Workspace navigation",
+  "打开工作区导航": "Open workspace navigation",
+  "工作区": "Workspace",
   "AI 工作台": "AI workspace",
   "求职中心导航": "Career navigation",
   "取消": "Cancel",

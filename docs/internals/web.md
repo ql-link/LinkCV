@@ -24,6 +24,18 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 
 搜索引擎只收录生产主域名 `https://linkresume.cn/` 的公共落地页，兼容入口 `/home` 使用同一个 canonical。`index.html` 提供标题、简介、Open Graph、Twitter Card 和 `Organization`/`WebSite` JSON-LD，组织 Logo 复用公开的 256×256 `favicon.png`；根目录 `robots.txt` 声明 `sitemap.xml`，站点地图只列 canonical 首页。React 路由切换会同步页面标题和 robots meta，FastAPI 的 SPA 静态回退还会为除 `/`、`/home` 和 `/index.html` 外的 HTML 深链返回 `X-Robots-Tag: noindex, nofollow, noarchive`。因此登录、管理、用户工作区、未知地址和带 token 的简历分享页都不会作为公开搜索结果入口；`/api/` 另由 `robots.txt` 禁止抓取。
 
+## 响应式布局
+
+V3 工作区在视口宽度小于 1024px 时使用顶部导航按钮和模态抽屉；抽屉不显示关闭叉号，顶部品牌留白与桌面侧栏一致。选择页面或对话、点击抽屉外区域或按 Escape 后收起并返回触发按钮，背景在打开期间不可交互。桌面侧栏的中间内容独立滚动，账号入口保留在底部，低高度窗口也可访问。
+
+侧栏选中底板按菜单行相对导航容器的 `offsetTop` 定位，不用包含抽屉入场缩放的视觉坐标，因此动画结束后仍与当前菜单项对齐。
+
+共享内容卡是命名容器 `workspace`，页面通过 CSS Container Queries 按实际内容宽度重排标题、操作、卡片和表单。正文填满可用区域，桌面两侧各留内容卡宽度的 3%、至少 24px；移动端页面边距为 16px，不再以固定正文上限制造超宽屏的大块留白。对话区与新建表单仍保留独立阅读宽度，路由骨架沿用正文边距。弹窗使用命名容器 `dialog`，受视口宽高约束，正文独立滚动、底部操作保持可见。列表和看板保留局部横向滚动；模板和简历缩略图等固定纸面媒体继续等比显示，产品文字与按钮不随整页缩小。
+
+模板库的 IntersectionObserver 按浏览器视口和祖先滚动容器裁剪后的可见范围挂载完整 A4 缩略图，视口上下预留 320px，远处保留外层宽高比占位并卸载预览；低高度窗口改为整页滚动时也沿用该规则。连续改变窗口宽度时，当前缩略图使用 `will-change: transform` 复用合成层；最后一次宽度变化 200ms 后撤掉提示，让纸面按最终比例清晰绘制。只读预览仅在 HTML 或展示模式变化时重新安装纸面测量观察器；编辑器通过 ResizeObserver 合并到每帧一次测量，不再同时监听窗口 resize，只有不支持 ResizeObserver 时使用窗口事件回退。
+
+编辑器的 ResizeObserver 测量纸张滚动区宽度和左右内边距，独立编辑器单页以 560px 显示宽度为上限，内嵌编辑器以一张 A4 的原始宽度为上限，双页按两张 A4 与页间空隙适配；窗口或面板改变可用空间时重新计算。手动预览缩放在适配基准上生效，纸面数据、打印尺寸与持久化格式不由屏幕尺寸决定。
+
 ## API 调用
 
 API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。模拟面试语音通道 `/api/mock-interviews/{id}/speech` 在 Vite 中单独启用 WebSocket 代理并保留浏览器的 `Host`，使后端的 `Origin` 同源校验成立；代理读写等待上限为 600 秒。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；模拟面试的 SSE 回合流与录音下载不走 JSON 请求封装，通过 `client.ts` 导出的 `apiRequest`、`refreshApiSession`、`createApiRequestId` 复用同一套会话刷新与请求标识，401 时在流开始前刷新并重试一次；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。

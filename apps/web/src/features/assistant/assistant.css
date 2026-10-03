@@ -7,13 +7,13 @@
 .assistant-conversation { position: relative; display: flex; width: 100%; min-width: 0; height: 100%; flex-direction: column; }
 
 /* ── 空闲首页（01.1）：问候语 top 252，输入框 356，快捷指令 492，卡片 544 */
-.assistant-home { display: flex; min-height: 100%; flex-direction: column; align-items: center; overflow-y: auto; padding: 251px 24px 48px; }
+.assistant-home { display: flex; min-height: 100%; flex-direction: column; align-items: center; overflow-y: auto; padding: clamp(40px, calc(40dvh - 130px), 251px) 24px 48px; }
 .assistant-home-title { margin: 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: var(--ui-text-2xl); font-weight: 600; line-height: var(--ui-line-page-title); text-align: center; }
 .assistant-home-sub { margin: 11px 0 0; color: var(--v3-fnt); font-size: var(--ui-text-sm); line-height: var(--ui-line-body); text-align: center; font-family: var(--ui-font-sans); }
-.assistant-home-chips { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }
+.assistant-home-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 16px; }
 .assistant-home-chip { border: 0; cursor: pointer; }
 .assistant-home-chip:hover { background: var(--v3-fl); color: var(--v3-txt); }
-.assistant-home-cards { display: grid; width: 720px; max-width: 100%; grid-template-columns: repeat(3, 227px); justify-content: space-between; margin-top: 32px; }
+.assistant-home-cards { display: grid; width: 720px; max-width: 100%; grid-template-columns: repeat(auto-fit, minmax(min(100%, 216px), 1fr)); gap: 19px; margin-top: 32px; }
 .assistant-home-card-loading .assistant-home-stage { border-radius: 10px; background: var(--v3-field); }
 .assistant-home-sub > .v3-link { margin-left: 8px; }
 .assistant-session-error { display: grid; min-height: 360px; place-content: center; justify-items: center; gap: 12px; color: var(--v3-sub); }
@@ -21,7 +21,7 @@
 .assistant-home-card { position: relative; display: block; height: 236px; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); padding: 8px; color: inherit; text-decoration: none; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .assistant-home-card:hover { border-color: var(--v3-sk2); box-shadow: 0 6px 20px rgb(0 0 0 / 7%); text-decoration: none; }
 .assistant-home-card:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
-.assistant-home-stage { display: block; width: 211px; height: 112px; }
+.assistant-home-stage { display: block; width: 211px; max-width: 100%; height: 112px; margin-inline: auto; overflow: hidden; }
 .assistant-home-card-title { display: flex; align-items: center; gap: 8px; margin: 18px 12px 0; color: var(--v3-txt); font-family: var(--ui-font-display); font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); line-height: var(--ui-line-subsection-title); white-space: nowrap; }
 .assistant-home-card-title .v3-be-tag { font-family: var(--v3-sans); }
 .assistant-home-card-sub { display: flex; align-items: center; gap: 8px; margin: 6px 12px 0; overflow: hidden; color: var(--v3-sub); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); text-overflow: ellipsis; white-space: nowrap; }
@@ -395,12 +395,6 @@
   .assistant-preview.is-expanded { left: 12px; }
   .assistant-preview-resize { display: none; }
 }
-@media (max-width: 900px) {
-  .assistant-home { padding-top: 120px; }
-  .assistant-home-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .assistant-home-stage { max-width: 100%; overflow: hidden; }
-  .assistant-home-card-title, .assistant-home-card-sub { margin-left: 4px; margin-right: 4px; }
-}
 .assistant-home-card-title > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-home-card-title > .v3-be-tag { flex: 0 0 auto; }
 .assistant-message-body { position: relative; }
@@ -452,3 +446,20 @@
 .assistant-home-input .assistant-model-trigger.is-compact .assistant-model-icon { width: 17px; height: 17px; }
 /* 输入框高度固定 120，编辑区最高 52：原来底栏紧跟在编辑区后面，下方空出一截；让底栏贴到底部 */
 .assistant-home-input-foot { margin-top: auto; }
+
+@container workspace (max-width: 680px) {
+  .assistant-home { padding: 40px 16px 32px; }
+  .assistant-home-title { overflow-wrap: anywhere; }
+  .assistant-composer.is-home { margin-top: 28px; }
+  .assistant-message-viewport, .has-preview .assistant-message-viewport { padding: 24px 16px; }
+  .assistant-composer-dock { padding: 8px 16px 16px; }
+  .assistant-composer-foot { height: auto; min-height: 22px; flex-wrap: wrap; gap: 8px; }
+  .assistant-home-input-foot { flex-wrap: wrap; height: auto; min-height: 36px; gap: 6px; }
+  .assistant-home-input:has(.assistant-home-resume-chip) { height: auto; min-height: 150px; }
+  .assistant-home-resume-chip { max-width: calc(100% - 40px); }
+  .assistant-artifact { flex-wrap: wrap; }
+}
+@media (max-width: 1023px) {
+  .v3-content.assistant-v3-content.has-preview { right: 0; }
+  .assistant-preview, .assistant-preview.is-expanded { top: 52px; right: 0; bottom: 0; left: auto; max-width: 100vw; border-radius: 0; }
+}

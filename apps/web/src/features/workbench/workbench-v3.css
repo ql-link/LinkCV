@@ -382,3 +382,24 @@
 @media print {
   .resume-workbench.wb3 .resume-paper { zoom: 1 !important; }
 }
+
+/* 窄屏工具移到底部，面板覆盖画布，预览仍按实际滚动区宽度适配。 */
+@media (max-width: 720px) {
+  .wb3-head { height: auto; min-height: 88px; flex-basis: auto; grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 10px 12px; }
+  .wb3-head-center { grid-row: 2; grid-column: 1 / -1; justify-content: flex-start; gap: 8px; }
+  .wb3-title-wrap { min-width: 0; max-width: 100%; flex: 1; }
+  .wb3-head-actions { grid-row: 1; grid-column: 2; gap: 6px; }
+  .wb3-score { padding-inline: 8px; }
+  .wb3-score svg { margin-right: 4px; }
+  .wb3-export.v3-btn { width: auto; padding-inline: 12px; }
+  .wb3 .workbench-canvas, .wb3 .workbench-canvas.has-drawer { padding-right: 0; --wb3-pagebar-right: 0px; }
+  .wb3 .workbench-paper-scroll, .wb3 .workbench-canvas.has-drawer .workbench-paper-scroll { padding: 20px 16px 96px; align-items: flex-start; }
+  .wb3-rail { top: auto; right: auto; bottom: 12px; left: 50%; width: auto; grid-template-columns: repeat(4, 48px); transform: translateX(-50%); }
+  .wb3 .workbench-drawer.wb3-drawer { top: 8px; right: 8px; bottom: 80px; width: calc(100% - 16px); }
+  .wb3-save-notice { max-width: calc(100% - 24px); }
+  .wb3-open-error-wrap { padding: 16px; }
+}
+
+@media (min-width: 721px) and (max-width: 980px) {
+  .wb3 .workbench-canvas.has-drawer { padding-right: 72px; --wb3-pagebar-right: 72px; }
+}
