@@ -1,6 +1,6 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type JobMatchRecommendations } from "../../api/client";
+import { api, type JobApplicationSummary, type JobMatchRecommendations } from "../../api/client";
 import { HomeCardView } from "./HomeCards";
 
 const item = (index: number, score: number, status: string | null = "待投递") => ({
@@ -27,6 +27,27 @@ afterEach(() => {
 });
 
 describe("首页匹配岗位卡", () => {
+  it.each([
+    ["2026-10-05", "还有 2 天回复"],
+    ["2026-10-03", "今天截止"],
+    ["2026-10-01", "回复截止已过 2 天"],
+    [null, "回复截止待填写"],
+  ])("shows the real Offer deadline state for %s", (replyDueOn, label) => {
+    const { container } = render(<HomeCardView card={{ kind: "offer", company: "日期示例公司", applicationId: "42", replyDueOn }} now={new Date(2026, 9, 3, 23, 59)} />);
+    expect(screen.getByText(`日期示例公司 · ${label}`)).toBeInTheDocument();
+    expect(screen.queryByText("需后端")).not.toBeInTheDocument();
+    expect(container.querySelector("a")).toHaveAttribute("href", "/career/applications/42");
+    expect(container).not.toHaveTextContent("18:00");
+  });
+  it("opens a real Offer comparison with dates and does not compare mismatched salaries", () => {
+    const offer = { id: "1", company_name_snapshot: "示例公司A", job_title_snapshot: "工程师", offer_salary: "30000", offer_salary_currency: "CNY", offer_salary_period: "month", offer_reply_due_on: "2026-10-05" } as JobApplicationSummary;
+    render(<HomeCardView card={{ kind: "compare", offers: [offer, { ...offer, id: "2", company_name_snapshot: "示例公司B", offer_salary_currency: "USD", offer_reply_due_on: null }] }} now={new Date()} />);
+    fireEvent.click(screen.getByRole("link", { name: "开始对比 Offer" }));
+    expect(screen.getByRole("dialog", { name: "Offer 对比" })).toHaveTextContent("2026年10月5日");
+    expect(screen.getByRole("table")).toHaveTextContent("30K/月");
+    expect(screen.getByText(/暂不比较薪资差距/)).toBeInTheDocument();
+    expect(screen.queryByText(/薪资相差/)).not.toBeInTheDocument();
+  });
   it("展示最近简历下得分最高的岗位、投递状态和简历名，并进入第一个岗位", async () => {
     vi.spyOn(api, "getJobMatchRecommendations").mockResolvedValue({ ...base, items: [item(1, 91, "一面"), item(2, 82), item(3, 70, null)] });
     const ensure = vi.spyOn(api, "ensureJobMatchRecommendations");

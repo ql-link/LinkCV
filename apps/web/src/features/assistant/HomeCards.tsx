@@ -1,11 +1,11 @@
 import { getLocale, t, useLocale, weekdayName, weekdays } from "@/i18n";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { careerApplicationPath, careerViewPath, editorPath, jobDetailPath, navigateTo } from "../../routing";
 import { Icon } from "../../v3/Icon";
 import { Bar, Dot, Paper, StageText } from "../../v3/art";
-import { BeTag } from "../../v3/primitives";
+import { BeTag, Dialog } from "../../v3/primitives";
 import type { JobApplicationSummary, JobMatchRecommendationItem } from "../../api/client";
-import { MOCK_OFFER } from "../../v3/mocks";
+import { formatOfferDate, offerDeadline } from "../interviews/offerDates";
 import { describeOfferGap, formatOfferSalary } from "./offerCompare";
 import { pipelineColumns, startOfWeek, type HomeCard } from "./homeDashboard";
 import { useJobMatchRecommendations } from "./useJobMatchRecommendations";
@@ -26,6 +26,7 @@ function CardFrame({
   beTitle,
   beSub,
   label,
+  onActivate,
 }: {
   stage: ReactNode;
   title: ReactNode;
@@ -35,6 +36,7 @@ function CardFrame({
   beTitle?: boolean;
   beSub?: boolean;
   label: string;
+  onActivate?: () => void;
 }) {
   useLocale();
   return (
@@ -45,7 +47,7 @@ function CardFrame({
       onClick={(event) => {
         if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         event.preventDefault();
-        navigateTo(href);
+        if (onActivate) onActivate(); else navigateTo(href);
       }}
     >
       <span className="v3-stage has-dots assistant-home-stage" aria-hidden="true">{stage}</span>
@@ -269,8 +271,9 @@ function JobsCard() {
   return <CardFrame label={t("打开岗位看板")} stage={<JobsArt items={[]} loading={false} />} title={t("暂时无法计算匹配度")} sub={stalled ? t("还在分析，稍后刷新查看") : t("稍后再试")} action={t("岗位看板")} href={board} />;
 }
 
-function OfferArt({ deadline }: { deadline: Date }) {
+function OfferArt({ deadline, label }: { deadline: Date | null; label: string }) {
   useLocale();
+  if (!deadline) return <Paper x={47} y={14} w={64} h={84} r={8} shadow={false}><StageText x={0} y={28} size={24} style={{ width: 62, textAlign: "center" }}>—</StageText></Paper>;
   const weekday = weekdays()[deadline.getDay()];
   return (
     <>
@@ -279,9 +282,9 @@ function OfferArt({ deadline }: { deadline: Date }) {
           {new Intl.DateTimeFormat("zh-CN", { month: "long" }).format(deadline)}
         </span>
         <StageText x={0} y={26} size={28} color="var(--v3-txt)" weight={600} num style={{ width: 62, textAlign: "center" }}>{deadline.getDate()}</StageText>
-        <StageText x={0} y={64} size={8.5} color="var(--v3-fnt)" style={{ width: 62, textAlign: "center" }}>{`${weekday} ${formatClock(deadline.toISOString())}`}</StageText>
+        <StageText x={0} y={64} size={8.5} color="var(--v3-fnt)" style={{ width: 62, textAlign: "center" }}>{weekday}</StageText>
       </Paper>
-      <span className="assistant-home-flag" style={{ left: 123, top: 46 }}>{t("还剩 ")}{MOCK_OFFER.daysLeft}{t(" 天")}</span>
+      <span className="assistant-home-flag" style={{ left: 123, top: 46 }}>{label}</span>
     </>
   );
 }
@@ -368,40 +371,47 @@ export function HomeCardView({ card, now }: { card: HomeCard; now: Date }) {
     }
     case "jobs":
       return <JobsCard />;
-    case "offer":
-      // Offer 回复截止没有后端字段，日期与剩余天数用示例数据
+    case "offer": {
+      const deadline = offerDeadline(card.replyDueOn, now);
       return (
         <CardFrame
           label={t("查看 Offer")}
-          stage={<OfferArt deadline={mockOfferDeadline(now)} />}
-          title={t("{value0} · {value1} 天后截止", { value0: card.company, value1: MOCK_OFFER.daysLeft })}
-          sub={MOCK_OFFER.deadlineLabel}
-          beSub
+          stage={<OfferArt deadline={deadline?.date ?? null} label={deadline?.label ?? ""} />}
+          title={`${card.company} · ${deadline?.label ?? t("回复截止待填写")}`}
+          sub={formatOfferDate(card.replyDueOn) ?? t("填写 Offer 信息后显示截止提醒")}
           action={t("查看 Offer")}
           href={careerApplicationPath(card.applicationId)}
         />
       );
+    }
     case "compare":
-      return (
-        <CardFrame
-          label={t("开始对比 Offer")}
-          stage={<CompareArt offers={card.offers} />}
-          title={t("{value0} 个 Offer 可对比", { value0: card.offers.length })}
-          sub={[card.offers.map((offer) => offer.company_name_snapshot).join(t("和")), describeOfferGap(card.offers)].filter(Boolean).join(t("，"))}
-          action={t("开始对比")}
-          href="/career/applications"
-        />
-      );
+      return <OfferComparisonCard offers={card.offers} />;
     default:
       return null;
   }
 }
 
-function mockOfferDeadline(now: Date) {
-  const date = new Date(now);
-  date.setDate(date.getDate() + MOCK_OFFER.daysLeft);
-  date.setHours(18, 0, 0, 0);
-  return date;
+function OfferComparisonCard({ offers }: { offers: JobApplicationSummary[] }) {
+  const [open, setOpen] = useState(false);
+  const rows: Array<[string, (offer: JobApplicationSummary) => string | null | undefined]> = [
+    [t("岗位"), offer => offer.job_title_snapshot], [t("薪资"), formatOfferSalary],
+    [t("工作地点"), offer => offer.offer_base_location],
+    [t("收到日期"), offer => formatOfferDate(offer.offer_received_on)],
+    [t("回复截止日期"), offer => formatOfferDate(offer.offer_reply_due_on)],
+    [t("预计入职日期"), offer => formatOfferDate(offer.offer_start_on)],
+    [t("福利说明"), offer => offer.offer_benefits_description],
+  ];
+  return <><CardFrame label={t("开始对比 Offer")} stage={<CompareArt offers={offers} />}
+    title={t("{value0} 个 Offer 可对比", { value0: offers.length })}
+    sub={[offers.map(offer => offer.company_name_snapshot).join(t("和")), describeOfferGap(offers)].filter(Boolean).join(t("，"))}
+    action={t("开始对比")} href="/career/applications" onActivate={() => setOpen(true)} />
+    {open && <Dialog label={t("Offer 对比")} width={900} onClose={() => setOpen(false)}><div className="offer-comparison"><h2>{t("Offer 对比")}</h2>
+      <p>{describeOfferGap(offers) ?? t("币种或计薪周期不同，或薪资未填，暂不比较薪资差距。")}</p>
+      <table><thead><tr><th>{t("信息")}</th>{offers.map(offer => <th key={offer.id}>{offer.company_name_snapshot}</th>)}</tr></thead>
+        <tbody>{rows.map(([label, value]) => <tr key={label}><th scope="row">{label}</th>{offers.map(offer => <td key={offer.id}>{value(offer) || "—"}</td>)}</tr>)}</tbody></table>
+      <footer>{offers.map(offer => <a key={offer.id} href={careerApplicationPath(offer.id)} onClick={event => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateTo(careerApplicationPath(offer.id)); }}>{t("查看 Offer")} · {offer.company_name_snapshot}</a>)}</footer>
+    </div></Dialog>}
+  </>;
 }
 
 function OfferArtForDate({ date, daysLeft }: { date: Date; daysLeft: number }) {

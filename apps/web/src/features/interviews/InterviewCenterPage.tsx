@@ -217,6 +217,8 @@ type Interview = {
   questions: string;
   review: string;
   improvement: string;
+  reviewScore?: number | null;
+  reviewState?: string;
 };
 const INTERVIEW_CALENDAR_COLORS: Record<InterviewCalendarColor, string> = {
   red: "#d64545",
@@ -468,8 +470,10 @@ function toInterview(
     answerPlanStartAt: session.answer_plan_start_at ?? null,
     answerPlanEndAt: session.answer_plan_end_at ?? null,
     questions: session.questions_markdown ?? "",
-    review: session.review_summary ?? "",
-    improvement: session.improvement_markdown ?? "",
+    review: session.review_report?.summary ?? session.review_summary ?? "",
+    improvement: session.review_report?.questions.find(item => item.improvement)?.improvement ?? session.improvement_markdown ?? "",
+    reviewScore: session.review_stale ? null : session.review_report?.overall_score,
+    reviewState: session.review_stale ? t("记录已修改，待重新生成") : session.review_status === "generating" ? t("正在生成…") : session.review_status === "failed" ? t("生成失败，已有报告保留") : undefined,
   };
 }
 

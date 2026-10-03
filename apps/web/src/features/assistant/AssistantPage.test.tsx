@@ -1663,10 +1663,30 @@ describe("AssistantPage", () => {
 });
 
 describe("Figma 文件与截图交互", () => {
-  it("明确的文档生成请求使用本地示例，保存时作为 .md 上传到资料库，关闭面板保留标签", async () => {
+  beforeEach(() => {
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: { ...session, messages: [
+      { sequence_no: 1, role: "user", content: "生成一份面试准备文档", created_at: session.created_at, run_id: "doc-run" },
+      { sequence_no: 2, role: "assistant", content: "# 面试准备\n\n这是模型生成的虚构测试正文。", created_at: session.created_at, run_id: "doc-run" },
+    ] } });
+    vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "doc-run" });
+      onEvent({ type: "assistant.delta", runId: "doc-run", delta: "# 面试准备\n\n这是模型生成的虚构测试正文。" });
+      onEvent({ type: "run.completed", runId: "doc-run" });
+    });
+
+    vi.spyOn(api, "listDatasetFolders").mockResolvedValue({ folders: [{ id: "folder-1", name: "示例资料", dataset_count: 0, created_at: "2026-10-03T00:00:00Z", updated_at: "2026-10-03T00:00:00Z" }], total_count: 0, uncategorized_count: 0 });
+  });
+  const confirmDocumentSave = async (user: ReturnType<typeof userEvent.setup>) => {
+    const dialog = await screen.findByRole("dialog", { name: "保存文档到资料库" });
+    await user.click(await within(dialog).findByRole("radio", { name: "示例资料" }));
+    await user.click(within(dialog).getByRole("button", { name: "确认保存" }));
+  };
+  it("文档生成走真实 Agent 流，保存实际 AI 正文到资料库，关闭面板保留标签", async () => {
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
-    const stream = vi.spyOn(api, "streamAgentMessage");
-    const create = vi.spyOn(api, "createAgentSession");
+    const stream = vi.mocked(api.streamAgentMessage);
+    const create = vi.mocked(api.createAgentSession);
     const upload = vi.spyOn(api, "uploadDataset").mockResolvedValue({ id: "88", file_name: "面试准备.md" } as Awaited<ReturnType<typeof api.uploadDataset>>);
     const user = userEvent.setup();
     render(<AssistantPage />);
@@ -1676,14 +1696,17 @@ describe("Figma 文件与截图交互", () => {
     const panel = screen.getByRole("complementary", { name: "文件预览" });
     expect(within(panel).getByRole("heading", { name: "面试准备" })).toBeInTheDocument();
     await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
+    await confirmDocumentSave(user);
     expect(await screen.findByText("已保存到资料库：面试准备.md。")).toBeInTheDocument();
     expect(upload).toHaveBeenCalledTimes(1);
     const [file, , folderId] = upload.mock.calls[0];
     expect(file).toBeInstanceOf(File);
     expect((file as File).name).toBe("面试准备.md");
-    expect(folderId).toBe("");
-    expect(stream).not.toHaveBeenCalled();
-    expect(create).not.toHaveBeenCalled();
+    expect(folderId).toBe("folder-1");
+    expect(stream).toHaveBeenCalledOnce();
+    expect(stream.mock.calls[0][1].content).toContain("生成一份面试准备文档");
+    expect(create).toHaveBeenCalledOnce();
+    expect(within(panel).getByText("这是模型生成的虚构测试正文。")).toBeInTheDocument();
     await user.click(within(panel).getByRole("button", { name: "关闭预览" }));
     await user.click(screen.getByRole("button", { name: "查看本会话的 1 个文件" }));
     expect(screen.getByRole("tab", { name: "面试准备.md" })).toHaveAttribute("aria-selected", "true");
@@ -1702,9 +1725,11 @@ describe("Figma 文件与截图交互", () => {
     await user.click(await screen.findByRole("button", { name: "打开" }));
     const panel = screen.getByRole("complementary", { name: "文件预览" });
     await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
+    await confirmDocumentSave(user);
     expect(await screen.findByText("已保存到资料库：面试准备-1002.md。")).toBeInTheDocument();
     expect(upload).toHaveBeenCalledTimes(2);
-    expect(((upload.mock.calls[1][0]) as File).name).toMatch(/^面试准备-\d+\.md$/);
+    expect(((upload.mock.calls[1][0]) as File).name).toMatch(/^面试准备-\d+-[0-9a-f]+\.md$/);
+    expect(upload.mock.calls[1][2]).toBe("folder-1");
   });
 
   it("保存到资料库失败时提示，文档仍然未保存且可以重试", async () => {
@@ -1717,7 +1742,9 @@ describe("Figma 文件与截图交互", () => {
     await user.click(await screen.findByRole("button", { name: "打开" }));
     const panel = screen.getByRole("complementary", { name: "文件预览" });
     await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
+    await confirmDocumentSave(user);
     expect(await screen.findByText("保存到资料库失败，请稍后重试。")).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog", { name: "保存文档到资料库" })).getByRole("button", { name: "取消" }));
     expect(within(panel).getByRole("button", { name: "保存到资料库" })).toBeEnabled();
   });
 

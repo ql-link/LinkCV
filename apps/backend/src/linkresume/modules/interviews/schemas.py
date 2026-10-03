@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+import hashlib
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
@@ -226,6 +227,9 @@ class AdvanceApplicationRequest(LifecycleRequest):
 
 
 class OfferApplicationRequest(LifecycleRequest):
+    received_on: date | None = None
+    reply_due_on: date | None = None
+    start_on: date | None = None
     notes: str | None = Field(default=None, max_length=16_000)
     base_location: str | None = Field(default=None, max_length=100)
     salary: Decimal | None = Field(
@@ -234,6 +238,21 @@ class OfferApplicationRequest(LifecycleRequest):
     salary_currency: str | None = Field(default=None, max_length=3)
     salary_period: SalaryPeriod | None = None
     benefits_description: str | None = Field(default=None, max_length=500)
+
+    @field_validator("received_on", "reply_due_on", "start_on", mode="before")
+    @classmethod
+    def validate_calendar_date(cls, value: object) -> object:
+        if value is None:
+            return value
+        if isinstance(value, date) and not isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str) and re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+            parsed = date.fromisoformat(value)
+        else:
+            raise ValueError("offer dates must use YYYY-MM-DD")
+        if parsed.year < 1000:
+            raise ValueError("offer dates must be supported by MySQL DATE")
+        return parsed
 
     @field_validator("base_location", "benefits_description")
     @classmethod
@@ -530,6 +549,9 @@ class JobApplicationRecord(BaseModel):
     terminated_at: datetime | None
     termination_reason: TerminationReason | None
     offer_status: OfferStatus
+    offer_received_on: date | None = None
+    offer_reply_due_on: date | None = None
+    offer_start_on: date | None = None
     offer_base_location: str | None
     offer_salary: Decimal | None
     offer_salary_currency: str | None
@@ -585,6 +607,40 @@ class JobApplicationSummary(JobApplicationRecord):
         return None if value is None else str(value)
 
 
+class ReviewScore(BaseModel):
+    score: float | None = Field(default=None, ge=0, le=10)
+    reason: str = Field(min_length=1, max_length=2000)
+    evidence: str | None = Field(default=None, max_length=1000)
+
+
+class ReviewQuestion(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    answer: str | None = Field(default=None, max_length=6000)
+    evidence: str = Field(min_length=1, max_length=1000)
+    strength: str | None = Field(default=None, max_length=2000)
+    improvement: str | None = Field(default=None, max_length=2000)
+    suggested_answer: str | None = Field(default=None, max_length=4000)
+
+
+class ReviewAnalysis(BaseModel):
+    summary: str = Field(min_length=1, max_length=4000)
+    project_expression: ReviewScore
+    system_design: ReviewScore
+    communication: ReviewScore
+    questions: list[ReviewQuestion] = Field(max_length=30)
+
+
+class InterviewReviewReport(ReviewAnalysis):
+    schema_version: Literal[1] = 1
+    source_hash: str
+    overall_score: float | None = Field(default=None, ge=0, le=10)
+    generated_at: datetime
+
+
+class GenerateReviewRequest(LifecycleRequest):
+    request_id: UUID
+
+
 class InterviewSessionRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -612,6 +668,29 @@ class InterviewSessionRecord(BaseModel):
     preparation_note: str | None
     questions_markdown: str | None
     review_summary: str | None
+    review_report: InterviewReviewReport | None = None
+    review_status: Literal["generating", "ready", "failed"] | None = None
+    review_request_id: str | None = None
+    review_error: str | None = None
+    review_started_at: datetime | None = None
+
+    @field_validator("review_report", mode="before")
+    @classmethod
+    def read_compatible_review(cls, value: object) -> InterviewReviewReport | None:
+        if not value:
+            return None
+        try:
+            return InterviewReviewReport.model_validate(value)
+        except ValueError:
+            return None
+
+    @computed_field
+    @property
+    def review_stale(self) -> bool:
+        if self.review_report is None:
+            return False
+        source = (self.questions_markdown or "").strip()
+        return self.review_report.source_hash != hashlib.sha256(source.encode()).hexdigest()
     improvement_markdown: str | None
     prep_items: list[PrepItem] = Field(default_factory=list)
     prep_generated_at: datetime | None = None
@@ -652,6 +731,7 @@ class InterviewSessionRecord(BaseModel):
         "completed_at",
         "cancelled_at",
         "prep_generated_at",
+        "review_started_at",
         "created_at",
         "updated_at",
         mode="before",

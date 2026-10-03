@@ -305,6 +305,12 @@
 
 /* ── 添加资料弹窗（v3 Dialog） */
 .assistant-context-dialog .v3-dialog-body { display: flex; min-height: 0; flex-direction: column; }
+.assistant-save-folders { max-height: 228px; overflow-y: auto; }
+.assistant-save-folders:empty { display: none; }
+.assistant-save-create { display: flex; gap: 8px; margin-top: 16px; }
+.assistant-save-create input { flex: 1; min-width: 0; border: 1px solid var(--v3-cl); border-radius: 8px; padding: 0 12px; font: inherit; color: var(--v3-txt); background: var(--v3-bg); }
+.assistant-save-create .v3-btn { flex-shrink: 0; }
+.assistant-save-hint { color: var(--v3-sub); font-size: 12px; }
 .assistant-context-types { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 20px; }
 .assistant-context-types button { display: inline-flex; height: 30px; align-items: center; gap: 6px; border: 1px solid var(--v3-cl); border-radius: 999px; background: #fff; padding: 0 12px; color: var(--v3-sub); cursor: pointer; font-size: 12px; }
 .assistant-context-types button.is-active { border-color: var(--v3-dark); color: var(--v3-txt); font-weight: 500; }
@@ -447,3 +453,9 @@
   .v3-content.assistant-v3-content.has-preview { right: 0; }
   .assistant-preview, .assistant-preview.is-expanded { top: 52px; right: 0; bottom: 0; left: auto; max-width: 100vw; border-radius: 0; }
 }
+
+.offer-comparison { padding: 28px; overflow-x: auto; }
+.offer-comparison table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+.offer-comparison th, .offer-comparison td { padding: 12px; border-bottom: 1px solid var(--v3-fl); text-align: left; vertical-align: top; white-space: pre-wrap; }
+.offer-comparison th { font-weight: 600; }
+.offer-comparison footer { display: flex; flex-wrap: wrap; gap: 20px; }

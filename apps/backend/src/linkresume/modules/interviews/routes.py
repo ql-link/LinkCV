@@ -29,6 +29,8 @@ from linkresume.application.interviews.prep_service import (
     InterviewPrepAlreadyGenerated,
     generate_prep_items,
 )
+from linkresume.application.interviews.review_service import generate_review
+from linkresume.modules.interviews.schemas import GenerateReviewRequest
 from linkresume.application.interviews.service import (
     DatasetAlreadyLinked,
     InterviewApplicationNotEmpty,
@@ -704,6 +706,23 @@ def _load_session_response(
             application=_application_record(db, item.application),
             assets=[_asset_record(asset) for asset in assets],
         )
+
+
+@router.post(
+    "/interview-sessions/{session_id}/review:generate",
+    response_model=InterviewSessionResponse,
+)
+async def post_generate_review(request: Request, session_id: str, payload: GenerateReviewRequest, user: User = Depends(get_current_user)) -> InterviewSessionResponse:
+    state = request.app.state
+    try:
+        parsed = _database_id(session_id)
+        await generate_review(state.session_factory, state.llm_service, user.id, parsed, payload)
+        return await asyncio.to_thread(_load_session_response, state.session_factory, user.id, parsed)
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
 
 
 @router.post(
