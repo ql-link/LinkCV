@@ -26,6 +26,7 @@ from linkresume.modules.mock_interviews.models import MockInterview, MockIntervi
 from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.resumes.models import DocumentParseTask, Resume
 from linkresume.modules.job_descriptions.models import JobDescription
+from linkresume.modules.job_matches.models import JobResumeMatch
 from linkresume.modules.identity import wechat_action_service as actions
 
 
@@ -150,6 +151,7 @@ def clear_personal_rows(db: Session, job: AccountDeletionJob) -> None:
         (MockInterview, MockInterview.user_id == uid),
         (UserDatasetRagSync, UserDatasetRagSync.user_id == uid),
         (UserDataset, UserDataset.user_id == uid),
+        (JobResumeMatch, JobResumeMatch.user_id == uid),
         (InterviewSession, InterviewSession.application_id.in_(applications)),
         (JobApplicationStage, JobApplicationStage.application_id.in_(applications)),
         (JobApplication, JobApplication.user_id == uid),

@@ -282,6 +282,12 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `GET`    | `/api/job-descriptions/:id`         | `{job_description}`                                                      |
 | `PUT`    | `/api/job-descriptions/:id`         | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段     |
 | `DELETE` | `/api/job-descriptions/:id`         | `{deleted: true}`，永久删除岗位及其完整求职聚合并释放来源唯一标识         |
+| `GET`    | `/api/job-descriptions/:id/match?resume_id=` | `{match}`；该岗位与指定简历的分析结果，从未分析为 `null` |
+| `POST`   | `/api/job-descriptions/:id/match:analyze` | 请求 `{resume_id}`；同步分析并返回 `{match}`，命中未过期结果时不调用模型 |
+| `GET`    | `/api/job-matches/recommendations`  | `{state, resume, items, pending_count, can_compute}`，只读不调用模型 |
+| `POST`   | `/api/job-matches/recommendations:ensure` | 同上结构；有可算岗位时启动后台分析，幂等 |
+
+**简历匹配度**：`match` 含 `status`（`pending`、`ready`、`failed`）、`stale`、`score`（0–100）、`headline`、`hits`、`gaps`、`highlights{covered,missing}`、`analyzed_at` 与 `error_code`。分数是岗位要求被简历覆盖的加权比例，不是录取概率。`stale` 表示岗位描述或简历内容在分析后变化；仅改简历标题或排版不会过期。错误：岗位或简历不存在或不属于当前用户 `404 JOB_NOT_FOUND`、`RESUME_NOT_FOUND`；无描述且无技能 `400 JOB_MATCH_NO_DESCRIPTION`；同一岗位与简历正在分析 `409 JOB_MATCH_IN_PROGRESS`；模型未配置 `503 LLM_MODEL_NOT_CONFIGURED`，模型失败 `502`。推荐接口的 `state` 取 `no_resume`、`no_jobs`、`computing`、`ready`、`idle`、`unavailable`，`items` 至多 3 条且按分数降序，`application_status` 为该岗位最新未归档求职记录的阶段文案。桌面 Bearer 不在白名单内，这些路径仍拒绝 desktop。
 
 岗位 `employment_type` 只接受 `internship`（实习）、`campus`（校招）、`full_time`（正式）或 `null`（未分类）。文字/图片识别和插件导入使用同一分类语义：实习优先于校招，校招优先于全职；无法判断不猜测。旧的 `part_time/contract/temporary` 不再接受。个人画像的 `employment_types` 是独立契约，不随岗位分类变更。
 
