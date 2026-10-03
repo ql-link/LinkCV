@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLocale } from "@/i18n";
 import { describeOfferGap, formatOfferSalary } from "./offerCompare";
 
 const offer = (salary: string | null, currency: string | null = "CNY", period: "hour" | "day" | "month" | "year" | null = "month") => ({
@@ -6,6 +7,8 @@ const offer = (salary: string | null, currency: string | null = "CNY", period: "
   offer_salary_currency: currency,
   offer_salary_period: period,
 });
+
+afterEach(() => setLocale("zh-CN", false));
 
 describe("formatOfferSalary", () => {
   it("人民币过千显示为 K，并带计薪周期", () => {
@@ -22,6 +25,14 @@ describe("formatOfferSalary", () => {
   it("没有薪资时提示待填", () => {
     expect(formatOfferSalary(offer(null))).toBe("薪资待填");
     expect(formatOfferSalary(offer("0"))).toBe("薪资待填");
+  });
+
+  it("英文界面翻译薪资周期与比较文案，金额和计算结果保持不变", () => {
+    setLocale("en-US", false);
+    expect(formatOfferSalary(offer("32000"))).toBe("32K/Month");
+    expect(formatOfferSalary(offer(null))).toBe("Salary not set");
+    expect(describeOfferGap([offer("32000"), offer("30000")])).toBe("6% salary difference");
+    expect(describeOfferGap([offer("30000"), offer("30000")])).toBe("Same salary");
   });
 });
 

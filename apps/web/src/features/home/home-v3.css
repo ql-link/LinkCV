@@ -7,7 +7,7 @@
 .hv3-head { position: relative; display: flex; align-items: flex-start; justify-content: space-between; }
 .hv3-head-copy { min-width: 0; }
 .hv3-eyebrow { margin: 0; }
-.hv3-title { margin: 9px 0 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: 28px; font-weight: 600; line-height: 40px; }
+.hv3-title { margin: 9px 0 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: var(--ui-text-2xl); font-weight: 600; line-height: var(--ui-line-page-title); }
 .hv3-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
 .hv3-sub.is-warn { color: var(--v3-or); }
 .hv3-head-actions { display: flex; flex: 0 0 auto; gap: 8px; margin-top: 32px; }
@@ -15,7 +15,7 @@
 
 /* 工具行：全部简历 N + 搜索框（y=162，高 30），下方细线（y=194） */
 .hv3-toolbar { display: flex; height: 30px; align-items: center; justify-content: space-between; margin-top: 26px; }
-.hv3-toolbar-title { margin: 0; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; }
+.hv3-toolbar-title { margin: 0; color: var(--v3-txt); font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); line-height: var(--ui-line-subsection-title); font-family: var(--ui-font-display); }
 .hv3-toolbar-title .v3-num { margin-left: 4px; color: var(--v3-fnt); font-size: 11px; font-weight: 500; }
 .hv3-toolbar .v3-search { height: 30px; border-radius: 7px; padding: 0 12px; }
 .hv3-toolbar .v3-search input { font-size: 12px; }

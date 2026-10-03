@@ -1,3 +1,4 @@
+from pydantic import SecretStr
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -61,6 +62,12 @@ def build_app():
 
 
 def mini_headers(app, email: str) -> dict[str, str]:
+    # Seed users through development credentials, then exercise the production
+    # mini-program capability with fictional WeChat configuration.
+    app.state.settings = app.state.settings.model_copy(update={
+        "app_environment": "production", "wechat_appid": "wx-fictional",
+        "wechat_secret": SecretStr("fictional-secret"),
+    })
     with app.state.session_factory() as session:
         user = session.scalar(select(User).where(User.email == email))
         assert user is not None

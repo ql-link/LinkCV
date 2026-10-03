@@ -11,7 +11,7 @@
   --ui-surface-subtle: #fcfcfc;
   --ui-surface-muted: #fcfcfc;
   --ui-text-secondary: #3f4752;
-  --ui-text-muted: #6f7a8c;
+  --ui-text-muted: #66717f;
   --ui-text-subtle: #8791a1;
   --ui-primary: #17191c;
   --ui-primary-hover: #2c3137;
@@ -41,19 +41,33 @@
   --ui-warning-subtle: #fff6e8;
   --ui-overlay: rgba(15, 18, 22, 0.46);
 
-  /* Typography. */
-  --ui-font-display: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --ui-font-sans: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --ui-font-content: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* Typography: interface, reading and document fonts have separate roles. */
+  --ui-font-display: "Poppins", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-sans: var(--ui-font-display);
+  --ui-font-heading: "Poppins", "Noto Serif SC", "Source Han Serif SC", "Songti SC", sans-serif;
+  --ui-font-content: "Lora", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-number: var(--ui-font-display);
   --ui-font-mono: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", "Source Han Sans SC", monospace;
   --ui-text-xs: 0.75rem;
   --ui-text-sm: 0.875rem;
   --ui-text-md: 1rem;
   --ui-text-lg: 1.125rem;
   --ui-text-xl: 1.25rem;
+  --ui-text-content-title: 1.5rem;
   --ui-text-2xl: 1.75rem;
   --ui-leading-tight: 1.25;
   --ui-leading-normal: 1.55;
+  --ui-line-page-title: 2.25rem;
+  --ui-line-section-title: 1.75rem;
+  --ui-line-subsection-title: 1.5rem;
+  --ui-line-body: 1.375rem;
+  --ui-line-control: 1.25rem;
+  --ui-line-content: 1.625rem;
+  --ui-line-content-title: 2rem;
+  --ui-line-metadata: 1.125rem;
+  --ui-weight-regular: 400;
+  --ui-weight-medium: 500;
+  --ui-weight-semibold: 600;
 
   /* Space, shape and elevation. */
   --ui-space-1: 0.25rem;

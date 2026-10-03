@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 from copy import deepcopy
 from datetime import timedelta, timezone
 from dataclasses import dataclass
@@ -272,6 +273,7 @@ def find_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | Non
 
 
 def lock_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | None:
+    lock_active_user(db, user_id)
     parsed_id = parse_decimal_id(resume_id)
     if parsed_id is None:
         return None
@@ -426,6 +428,7 @@ def persist_resume(
     command: CreateResumeCommand,
     db: Session,
 ) -> Resume:
+    lock_active_user(db, command.user_id)
     snapshot = parse_persisted_resume_snapshot(
         _model_json(command.data),
         _model_json(command.style),
@@ -540,6 +543,7 @@ def update_resume_snapshot(
     data: ResumeDocumentValue | None,
     style: ResumePresentationValue | None,
 ) -> Resume | None:
+    lock_active_user(db, user_id)
     current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     next_data = data if data is not None else current.data
     next_style = merge_resume_presentation(current.style, style)
@@ -611,6 +615,7 @@ def apply_resume_template(
     data: ResumeDocumentValue | None = None,
 ) -> Resume | None:
     """Atomically save current content and switch presentation provenance."""
+    lock_active_user(db, user_id)
     template = db.scalar(
         select(ResumeTemplate).where(
             ResumeTemplate.id == template_id,

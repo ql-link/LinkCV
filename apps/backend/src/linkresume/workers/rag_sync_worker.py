@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from uuid import uuid4
 
 from linkresume.services.rag_sync_service import RagSyncService
-from linkresume.workers.resume_import_worker import UNLOCK_SCRIPT
+from linkresume.workers.leases import RedisLease
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +15,16 @@ LOCK_KEY = "linkresume:linkrag-sync:lock"
 
 async def run_rag_sync_once(service: RagSyncService, redis, *, lock_seconds: int) -> bool:
     """Run one round if no other Worker replica holds the lock."""
-    token = uuid4().hex
-    acquired = await asyncio.to_thread(redis.set, LOCK_KEY, token, nx=True, ex=lock_seconds)
+    lease = RedisLease(redis, LOCK_KEY, lock_seconds)
+    acquired = await asyncio.to_thread(lease.acquire)
     if not acquired:
         return False
     try:
         await asyncio.to_thread(service.run_once)
+        lease.check()
     finally:
         try:
-            await asyncio.to_thread(redis.eval, UNLOCK_SCRIPT, 1, LOCK_KEY, token)
+            await asyncio.to_thread(lease.close)
         except Exception:
             logger.warning("linkrag sync lock release failed", exc_info=True)
     return True

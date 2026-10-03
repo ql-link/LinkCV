@@ -151,7 +151,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 ### 微信账号、双端会话与扫码登录
 
-`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。`account-status` 仍提供只读账号存在性查询，不写用户、不更新时间、不签发 session，但随仓库发布的小程序不再在统一登录前调用它；客户端只在用户确认隐私指引并主动点击后调用登录接口，由后端自动复用或创建账号。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；普通改密路由仍不公开。`GET /api/auth/capabilities` 向 Web 暴露邮箱密码能力布尔值，不返回具体环境名。`create_schema=True` 的隔离集成测试继续保留隐藏造数入口。启用管理员与普通账号一样可通过网页扫码确认并由匹配 `poll_token` 的 status 获取 Web Cookie，也可通过小程序 login 建立并 refresh 轮换小程序 Bearer 会话，访问小程序业务接口；停用账号的 Web、Bearer 和 refresh 会话仍被拒绝。密码登录仍可使用 `/api/auth/admin-login`。
+`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。`account-status` 仍提供只读账号存在性查询，不写用户、不更新时间、不签发 session，但随仓库发布的小程序不再在统一登录前调用它；客户端只在用户确认隐私指引并主动点击后调用登录接口，由后端自动复用或创建账号。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；开发环境开放普通改密，正式环境关闭；Local/Development 的微信路由全部关闭。`GET /api/auth/capabilities` 暴露邮箱密码和微信能力，不返回环境名；测试 schema 开关不能绕过环境限制。启用管理员与普通账号一样可通过网页扫码确认并由匹配 `poll_token` 的 status 获取 Web Cookie，也可通过小程序 login 建立并 refresh 轮换小程序 Bearer 会话，访问小程序业务接口；停用账号的 Web、Bearer 和 refresh 会话仍被拒绝。密码登录仍可使用 `/api/auth/admin-login`。
 
 `session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
 
@@ -171,7 +171,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 创建和改期排期时，请求必须在显式 `end_at` 与正整数 `duration_minutes` 中二选一；新 Web 流程提交持续分钟，应用服务据此推算并持久化 `end_at`，旧消费方仍可继续提交显式结束时间。开放窗口的个人作答计划遵循同一兼容契约，并继续在推算后校验完整落入官方窗口。
 
-绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
+普通微信绑定路由已撤下。正式环境的注销操作确认由 `wechat_action_service.py` 管理五分钟 Redis hash，以 user、Web session、action、poll token 哈希绑定请求；小程序仅提交当前微信 code，网页凭正确 poll token 领取单次 action token。刷新、取消、到期和消费旧凭证均不能再使用。接口见 [HTTP 契约](../api/http-contracts.md#账号补充接口)。
 
 扫码登录挂在 `/api/auth/wechat` 下，scene 状态机存 Redis（key `wechat:login:<scene>`，TTL 默认 300 秒）：
 
@@ -214,7 +214,7 @@ Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定�
 
 超过结构化输入上限的内容不会发送给模型。合规输入经 `SourceLayoutIR → 模型映射决策 → 规范组合器` 处理：组合器只复制已校验源块文字，并按任务受理时冻结的完整 `TemplateDefinition` 选择受控联系信息行、左右条目和 CommonMark 列表配方；Worker 不重新读取当前模板行的样式或启用状态。同块经历头只有显式 `entry_header` 决策及原文确定性分隔符同时存在时才生成左右行，普通 `body` 中的 `｜`/`|` 原样保留。与父章节语义相同的嵌套 heading 作为父章节可见标题保留，只有根标题或语义切换才建立新章节。有序列表的起始值、项目编号和嵌套深度由程序输出，超过单 item 50 个源引用时在安全边界确定性分片并延续实际序号。所有源块必须保持来源顺序且恰好进入一个规范 custom 章节，不存在“未分类内容”运行时兜底。结构化模型引用未知/重复源块、非法锚点/复合键或 graph hash 不匹配时仅使可选增强降级为空标注；确定性组合器或模板布局无法完整承载时分别以 `RESUME_STRUCTURE_INVALID` 或 `RESUME_LAYOUT_UNSUPPORTED` 失败，不创建半成品。日期、联系方式、错别字和空缺字段作为可见源文字原样保留；字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。
 
-HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
+HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。 导入的同步事务及对象写入在工作线程中完整执行，账号行锁不跨越事件循环中的等待。结果事务先锁定账号，再建立配额统计快照；超额任务在同一事务内标记失败并释放占位，避免多个并发任务重复拒绝或突破十份简历的限制。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkResume 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
 
@@ -323,3 +323,14 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 `0104` 只整理新增 Muse 目录：按已知 key 和完整种子定义停用 14 套近似款，保留 65 套。仅在全套目录仍为初始排序时重排新增保留款，只为启用且未分类的空标签补初始风格与场景。原有模板、自定义定义、上传项、已有简历与模板快照不修改，无 schema 或 HTTP 结构变化；默认启用目录为 150 套。重复执行不重置后续管理员设置。
 
 仍保留全部 Muse 主题的 Web/PDF 渲染支持，不删除模板或外键关联。迁移只含 DML，沿用 SQL-first 事务和 forward-only 链；目标环境的 current 需要单独查询。撤回通过管理端重新启用或新的向前 revision，数据恢复依赖备份。具体下架、代表款和展示顺序见[模板目录整理](../features/resume-template-curation.md)。
+
+
+### 账号偏好、联系邮箱与持久注销
+
+`0105` 在 users 新增 contact_email 和 deletion_requested_at，将历史 email 回填为联系邮箱（不表示已验证），建立一对一 account_preferences 和持久 account_deletion_jobs。清理任务使用独立 user_id 无外键，删除 users 后仍可继续对象/RAG 清理。迁移为 SQL-first、forward-only，不修改历史 revision。
+
+`lock_active_user` 以用户行锁和最新状态协调个人写事务与注销受理；长模型调用不持有调用方事务，模型日志和写回分别在有界事务重新验证账号。受理同一事务禁用账号、写注销时间和清理任务，管理员不能重启该账号。公开分享检查所有者状态，刷新与登录均拒绝注销账号。
+
+清理 worker 以可续租的数据库租约领取任务，数据库清理阶段同时持有 RAG 同步的可续租 Redis 锁，按实际 0090 后 schema 的外键顺序清除本人数据，并先将已登记 RAG file ID 存入任务 manifest。对象阶段限定 `users/{uid}/` 和既有录音目录 `mock-interviews/{uid}/`，RAG 阶段只清 manifest 中的文件。Redis 会话撤销、MinIO 或 LinkRag 失败保留任务重试，最多十次转 needs_attention；缺少必须的 RAG 配置直接需人工处理。失去租约后不覆盖新持有者结果，已完成任务清除 manifest 并在七天后删除。`python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 仅重排 needs_attention 任务，不恢复账号。
+
+RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记；远程文件变更在用户行锁内与注销协调，上传结果登记前不能受理注销，避免丢失外部清理清单。所有异步个人写回仍须遵守已有任务令牌和版本条件。业务边界见[账号功能](../features/identity-account.md#注销与失败边界)。

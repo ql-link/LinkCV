@@ -21,10 +21,11 @@ from linkresume.core.redis import get_redis
 from linkresume.core.security import hash_secret, parse_refresh_token
 from linkresume.integrations.wechat_client import WechatApiError, WechatClient
 from linkresume.modules.identity import desktop_login_service as service
+from linkresume.modules.identity.capabilities import wechat_login_enabled
 from linkresume.modules.identity.dependencies import get_current_desktop_user, get_settings
 from linkresume.modules.identity.models import User
 from linkresume.modules.identity.schemas import UserResponse
-from linkresume.modules.identity.wechat_routes import client_ip, get_wechat_client, scene_key
+from linkresume.modules.identity.wechat_routes import client_ip, get_wechat_client, require_wechat_environment, scene_key
 
 
 class DesktopRoute(APIRoute):
@@ -107,10 +108,10 @@ class RefreshRequest(LogoutRequest):
 
 @router.get('/capabilities')
 def capabilities(settings: Settings = Depends(get_settings)):
-    return {'wechat_login_enabled': settings.wechat_enabled and settings.desktop_retry_cipher is not None, 'session_protocol': 1}
+    return {'wechat_login_enabled': wechat_login_enabled(settings) and settings.desktop_retry_cipher is not None, 'session_protocol': 1}
 
 
-@router.post('/wechat/qrcode')
+@router.post('/wechat/qrcode', dependencies=[Depends(require_wechat_environment)])
 def qrcode(payload: QrcodeRequest, request: Request, settings: Settings = Depends(get_settings),
            redis_client=Depends(get_redis), wechat: WechatClient = Depends(get_wechat_client)):
     service.cipher(settings)
@@ -137,7 +138,7 @@ return 1
     return {'scene': scene, 'poll_token': poll_token, 'qr_base64': base64.b64encode(image).decode('ascii'), 'expires_in': ttl, 'poll_interval_seconds': 2}
 
 
-@router.post('/wechat/status')
+@router.post('/wechat/status', dependencies=[Depends(require_wechat_environment)])
 def status(payload: StatusRequest, request: Request, redis_client=Depends(get_redis)):
     rate_limit(redis_client, f'status:ip:{client_ip(request)}', 120)
     rate_limit(redis_client, f'status:scene:{payload.scene}', 30)
@@ -152,7 +153,7 @@ def status(payload: StatusRequest, request: Request, redis_client=Depends(get_re
     return {'status': 'pending' if state == 'processing' else state}
 
 
-@router.post('/wechat/exchange')
+@router.post('/wechat/exchange', dependencies=[Depends(require_wechat_environment)])
 def exchange(payload: ExchangeRequest, request: Request, settings: Settings = Depends(get_settings),
              db: Session = Depends(get_db), redis_client=Depends(get_redis)):
     rate_limit(redis_client, f'exchange:ip:{client_ip(request)}', 120)
@@ -160,7 +161,7 @@ def exchange(payload: ExchangeRequest, request: Request, settings: Settings = De
     return service.exchange(payload.scene, payload.poll_token, payload.code_verifier, str(payload.request_id), settings, db, redis_client)
 
 
-@router.post('/refresh')
+@router.post('/refresh', dependencies=[Depends(require_wechat_environment)])
 def refresh(payload: RefreshRequest, request: Request, settings: Settings = Depends(get_settings),
             db: Session = Depends(get_db), redis_client=Depends(get_redis)):
     rate_limit(redis_client, f'refresh:ip:{client_ip(request)}', 120)

@@ -75,6 +75,11 @@ Web `/datasets` 采用文件夹卡片和文件表格。文件夹网格按正文�
 
 修改上传限制、格式、幂等语义、状态或转换对象路径时，需同步后端配置、迁移、Worker、Web API 类型与上传队列、HTTP 契约和开发/部署依赖。主要测试入口为 `test_user_datasets.py`、`test_dataset_upload_service.py`、`test_dataset_parse_worker.py`、`DatasetsPage.test.tsx`、`datasetMarkdown.test.ts` 和 `datasetMermaid.test.ts`，并复用 MySQL 迁移、文档转换与消息消费相关测试。
 
+
+## 账号能力与客户端边界
+
+资料库操作、错误、预览工具和日期支持普通 Web 界面语言，文件名和正文保留原文。资料写入与账号注销使用账号行锁协调；RAG 同步遇到注销标记时由持久清理任务接管外部文件删除，避免创建新的映射或上传。见[Backend 清理边界](../internals/backend.md#账号偏好联系邮箱与持久注销)。
+
 ## 原生资料库
 
 Mac `DatasetLibraryView.swift` 与 Windows `DatasetLibraryPage.cs` 使用原生控件呈现文件夹、最近上传和文件表格。资料库根页按 Figma 的资料库状态设计呈现：860px 内容列、页头搜索与新建按钮、居中的 520px 空状态卡片；空状态插画直接使用设计稿 `533:1188` 的本地导出资源，两端随包分发，不运行时联网获取。页头和空状态使用本地 Noto 衍生字体；有资料时按同一设计呈现文件夹装饰卡片和最近上传列表，装饰不代替真实文件名、数量与状态。游客显示与空账号相同的“还没有文件夹”画面，个人管理操作触发登录。已有账号的数据只在列表与文件夹均读取成功后显示；失败保留错误与刷新入口，不伪装为空列表。

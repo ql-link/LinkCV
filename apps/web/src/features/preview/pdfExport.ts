@@ -1,3 +1,4 @@
+import { t, getLocale } from "@/i18n";
 import { ApiRequestError, api, type ResumePdfDownload } from "../../api/client";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 
@@ -60,35 +61,35 @@ export function resumePdfExportErrorMessage(error: unknown): string {
   if (isResumePdfExportCancelled(error)) return "";
   if (error instanceof ResumePdfExportError) {
     if (error.code === "RESUME_SAVE_FAILED") {
-      return resumeImageContractErrorMessage(error.saveError) ?? "简历保存失败，请修正后重试";
+      return resumeImageContractErrorMessage(error.saveError) ?? t("简历保存失败，请修正后重试");
     }
-    return "简历暂时无法导出，请稍后重试";
+    return t("简历暂时无法导出，请稍后重试");
   }
   if (error instanceof ApiRequestError) {
     switch (error.message) {
       case "RESUME_PDF_SNAPSHOT_STALE":
-        return "简历内容已变化，请重新导出";
+        return t("简历内容已变化，请重新导出");
       case "RESUME_PDF_PAGE_TOO_TALL":
-        return "简历内容过长，请调整内容后重试";
+        return t("简历内容过长，请调整内容后重试");
       case "RESUME_PDF_ASSETS_TOO_LARGE":
-        return "简历中引用的图片总大小不能超过 10MB";
+        return t("简历中引用的图片总大小不能超过 10MB");
       case "RESUME_PDF_ASSET_TOO_LARGE":
-        return "图片不能超过 10MB";
+        return t("图片不能超过 10MB");
       case "RESUME_PDF_ASSET_READ_FAILED":
       case "RESUME_PDF_IMAGE_UNAVAILABLE":
       case "RESUME_PDF_IMAGE_UNSUPPORTED":
-        return "PDF 生成失败，请检查简历中的图片后重试";
+        return t("PDF 生成失败，请检查简历中的图片后重试");
       case "RESUME_PDF_BUSY":
       case "RESUME_PDF_RENDERER_UNAVAILABLE":
       case "RESUME_PDF_RENDER_FAILED":
       case "RESUME_PDF_TIMEOUT":
-        return "PDF 服务暂时不可用，请稍后重试";
+        return t("PDF 服务暂时不可用，请稍后重试");
       default:
         break;
     }
-    if (error.status === 409) return "简历内容已变化，请重新导出";
+    if (error.status === 409) return t("简历内容已变化，请重新导出");
   }
-  return "PDF 生成失败，请稍后重试";
+  return t("PDF 生成失败，请稍后重试");
 }
 
 export function downloadPdfBlob(blob: Blob, filename: string): void {

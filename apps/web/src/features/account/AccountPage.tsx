@@ -3,15 +3,13 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, 
 
 import { Reveal, SkeletonCards } from "@/v3/skeletons";
 import { readPageCache, updatePageCache, useRevalidateOnFocus, writePageCache } from "@/v3/pageCache";
-import bindQrAsset from "../../assets/figma/account-bind-qr.svg";
-import { api, AccountProfile, UserProfile } from "../../api/client";
+import { api, AccountProfile, UserProfile, type AccountPreferences } from "../../api/client";
 import { navigateTo } from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
 import { Icon, type V3IconName } from "../../v3/Icon";
-import { MOCK_ACCOUNT_META, MOCK_ACCOUNT_PREFS } from "../../v3/mocks";
-import { Avatar, BeTag, Dialog, Toast, Toggle, PageEyebrow } from "../../v3/primitives";
+import { Avatar, Dialog, Toast, PageEyebrow, Select } from "../../v3/primitives";
 import "./account.css";
-import { ChangeEmailArt, ChangePasswordArt, DeleteAccountArt, LogoutArt, UnbindWechatArt } from "./accountArt";
+import { ChangeEmailArt, ChangePasswordArt, DeleteAccountArt, LogoutArt } from "./accountArt";
 import { accountErrorMessage, MAX_NICKNAME_LENGTH } from "./accountErrors";
 import {
   AVATAR_CROP_MAX_ZOOM,
@@ -26,276 +24,116 @@ import {
 } from "./avatarCrop";
 import { UserProfilePanel } from "./UserProfilePanel";
 
+import { formatDate, setLocale, useLocale, type Locale, t } from "../../i18n";
+import { setLocaleWithTransition } from "../../i18n/transition";
+import { saveDeletionReceipt } from "./AccountDeletionPage";
 const ACCOUNT_CACHE_KEY = "account-profile";
-
 export { accountErrorMessage } from "./accountErrors";
-
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
-// 设计稿裁剪区 232×232、圆窗 192；avatarCrop 的坐标系是 320 / 264，整体缩放 0.725 显示
 const CROP_SCALE = 232 / AVATAR_CROP_VIEWPORT_SIZE;
-// 未提供接口的账号操作只在本页模拟，不写入登录资料或持久化状态。
-const NEEDS_BACKEND = { title: "该功能需要后端支持", message: "当前为界面示例，没有保存任何修改。" };
-
 type ToastState = { kind: "success" | "error" | "warn"; title: string; message?: string } | null;
-type DialogKind = "profile" | "email" | "password" | "bindWechat" | "unbindWechat" | "logout" | "delete" | "avatarPreview" | null;
-
+type DialogKind = "profile" | "email" | "password" | "logout" | "delete" | "avatarPreview" | null;
 type AvatarDrag = { pointerId: number; startX: number; startY: number; offsetX: number; offsetY: number };
 
-// 08.4 账号：顶部资料卡 + 四个「左栏标题 / 右栏设置卡」区块
 export function AccountPage() {
+  const locale = useLocale();
   const syncProfile = useResumeStore((state) => state.syncProfile);
   const logout = useResumeStore((state) => state.logout);
-  // 回到账号页时先用上一次的资料直接显示，超过 5 分钟再在后台静默刷新
   const [profile, setProfile] = useState<AccountProfile | null>(() => readPageCache<AccountProfile>(ACCOUNT_CACHE_KEY)?.value ?? null);
   const [loading, setLoading] = useState(() => !readPageCache(ACCOUNT_CACHE_KEY));
   const [loadFailed, setLoadFailed] = useState(false);
+  const [preferences, setPreferences] = useState<AccountPreferences | null>(null);
+  const [preferencesFailed, setPreferencesFailed] = useState(false);
+  const [savingPreference, setSavingPreference] = useState(false);
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [loggingOut, setLoggingOut] = useState(false);
-  const [localAccount, setLocalAccount] = useState<Partial<UserProfile>>({});
-  const [reminderOn, setReminderOn] = useState(MOCK_ACCOUNT_PREFS.interviewReminderOn);
-  const [passwordChanged, setPasswordChanged] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const cached = readPageCache<AccountProfile>(ACCOUNT_CACHE_KEY);
-    if (cached?.fresh) return undefined;
-    void (async () => {
-      try {
-        const data = await api.getAccountProfile();
-        if (cancelled) return;
-        setProfile(data);
-        writePageCache(ACCOUNT_CACHE_KEY, data);
-        syncProfile(data.user);
-      } catch {
-        if (!cancelled && !cached) setLoadFailed(true);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    if (!cached?.fresh) void api.getAccountProfile().then((data) => {
+      if (!cancelled) { setProfile(data); writePageCache(ACCOUNT_CACHE_KEY, data); syncProfile(data.user); }
+    }).catch(() => { if (!cancelled && !cached) setLoadFailed(true); }).finally(() => { if (!cancelled) setLoading(false); });
+    void api.getAccountPreferences().then((data) => {
+      if (!cancelled) { setPreferences(data); setLocale(data.locale); }
+    }).catch(() => { if (!cancelled) setPreferencesFailed(true); });
+    return () => { cancelled = true; };
   }, [syncProfile]);
-
-  // 窗口回到前台：后台静默刷新账号资料
   useRevalidateOnFocus(() => {
     void api.getAccountProfile().then((data) => { setProfile(data); writePageCache(ACCOUNT_CACHE_KEY, data); syncProfile(data.user); }).catch(() => undefined);
   });
-
-  // 本页改了昵称、头像、绑定等，也同步进缓存，下次进入看到的是最新资料
-  useEffect(() => {
-    if (profile) updatePageCache(ACCOUNT_CACHE_KEY, profile);
-  }, [profile]);
-
-  const applyUserUpdate = (user: UserProfile) => {
-    syncProfile(user);
-    setProfile((current) => (current ? { ...current, user } : current));
+  useEffect(() => { if (profile) updatePageCache(ACCOUNT_CACHE_KEY, profile); }, [profile]);
+  const applyUserUpdate = (user: UserProfile) => { syncProfile(user); setProfile((current) => current ? { ...current, user } : current); };
+  const savePreference = async (payload: Pick<AccountPreferences, "locale">) => {
+    if (savingPreference) return;
+    setSavingPreference(true);
+    try {
+      const data = await api.updateAccountPreferences(payload);
+      setPreferences(data);
+      await setLocaleWithTransition(data.locale);
+      setToast({ kind: "success", title: t("偏好已保存") });
+    } catch (error) { setToast({ kind: "error", title: accountErrorMessage(error, t("偏好保存失败，请重试。")) }); }
+    finally { setSavingPreference(false); }
   };
-
-  const needsBackend = () => setToast({ kind: "warn", ...NEEDS_BACKEND });
-  const finishLocalChange = (title: string, message = "仅本次页面访问有效，未修改真实账号；刷新后恢复。") => {
-    setDialog(null);
-    setToast({ kind: "warn", title: `${title}（本地模拟）`, message });
-  };
-
   const handleLogout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
-    try {
-      await logout();
-      navigateTo("/", { replace: true });
-    } catch {
-      setToast({ kind: "error", title: "退出失败", message: "退出登录失败，请稍后重试。" });
-      setLoggingOut(false);
-    }
+    try { await logout(); navigateTo("/", { replace: true }); }
+    catch { setToast({ kind: "error", title: t("退出失败"), message: t("退出登录失败，请稍后重试。") }); setLoggingOut(false); }
   };
-
-  const user = profile ? { ...profile.user, ...localAccount } : undefined;
-  const hasEmail = Boolean(user?.email);
-  const wechatBound = user?.wechat_status === "bound";
-  const initial = [...(user?.nickname.trim() || "我")][0];
-
+  const user = profile?.user;
+  const initial = [...(user?.nickname.trim() || t("我"))][0];
   return (
     <div className="acc-page">
-      <PageEyebrow segments={["ACCOUNT", user?.email || (user ? "微信登录" : null)]} />
-      <h1 className="v3-page-title">账号</h1>
-      <p className="v3-page-sub acc-sub">管理个人资料、登录安全与偏好设置。</p>
-
-      <Reveal loading={loading} placeholder={<SkeletonCards cards={[92, 168, 132]} label="正在加载个人资料…" className="acc-loading" />}>
-
-      {!loading && loadFailed && !profile && (
-        <section className="v3-empty is-error acc-load-error" role="alert">
-          <div className="v3-stage has-dots" />
-          <h3>暂时无法读取个人资料</h3>
-          <p>请检查网络连接后重新加载。</p>
-          <div className="v3-empty-actions">
-            <button type="button" className="v3-btn v3-btn-dark" onClick={() => window.location.reload()}>重新加载</button>
-          </div>
-        </section>
-      )}
-
-      {user && (
-        <div>
-          {/* 10.3 局部状态 · 保存失败：标题下方的行内提示 */}
-          {inlineError && (
-            <div className="acc-inline-error" role="alert">
-              <span className="acc-inline-error-ic" aria-hidden="true">!</span>
-              <strong>保存失败</strong>
-              <span>{inlineError}</span>
-              <button type="button" className="v3-icon-btn" aria-label="关闭提示" onClick={() => setInlineError(null)}>
-                <Icon name="x" size={12} />
-              </button>
-            </div>
-          )}
-
-          <section className="acc-hero" aria-label="个人资料摘要">
-            <button
-              type="button"
-              className="acc-hero-avatar"
-              aria-label={user.avatar_url ? "查看头像原图" : "头像预览不可用"}
-              disabled={!user.avatar_url}
-              onClick={() => setDialog("avatarPreview")}
-            >
-              <Avatar name={user.nickname} src={user.avatar_url} size={56} />
-            </button>
-            <div className="acc-hero-copy">
-              <div className="acc-hero-name">
-                <h2>{user.nickname}</h2>
-                {hasEmail && <span className="acc-verified">邮箱已验证</span>}
-                {hasEmail && <BeTag title="账号接口没有邮箱验证状态" />}
-              </div>
-              <p className="acc-hero-meta">
-                <span>{hasEmail ? user.email : "微信登录"} · 注册于 {MOCK_ACCOUNT_META.registeredAt}</span>
-                <BeTag title="账号接口没有注册时间" />
-              </p>
-            </div>
-            <button type="button" className="v3-btn v3-btn-ghost acc-hero-edit" onClick={() => { setInlineError(null); setDialog("profile"); }}>
-              编辑资料
-            </button>
+      <PageEyebrow segments={["ACCOUNT", profile?.capabilities.auth_mode === "password" ? user?.email : profile?.capabilities.auth_mode === "wechat" ? t("微信登录") : null]} />
+      <h1 className="v3-page-title" data-locale-motion>{t("账号")}</h1>
+      <p className="v3-page-sub acc-sub" data-locale-motion>{t("管理个人资料、登录安全与偏好设置。")}</p>
+      <Reveal loading={loading} placeholder={<SkeletonCards cards={[92, 168, 132]} label={t("正在加载个人资料…")} className="acc-loading" />}>
+        {!loading && loadFailed && !profile && <section className="v3-empty is-error acc-load-error" role="alert"><h3>{t("暂时无法读取个人资料")}</h3><p>{t("请检查网络连接后重新加载。")}</p><button type="button" className="v3-btn" onClick={() => window.location.reload()}>{t("重新加载")}</button></section>}
+        {user && profile && <div>
+          {inlineError && <div className="acc-inline-error" role="alert"><strong>{t("保存失败")}</strong><span>{inlineError}</span><button type="button" aria-label={t("关闭提示")} onClick={() => setInlineError(null)}><Icon name="x" size={12} /></button></div>}
+          <section className="acc-hero" aria-label={t("个人资料摘要")}>
+            <button type="button" className="acc-hero-avatar" aria-label={user.avatar_url ? t("查看头像原图") : t("头像预览不可用")} disabled={!user.avatar_url} onClick={() => setDialog("avatarPreview")}><Avatar name={user.nickname} src={user.avatar_url} size={56} /></button>
+            <div className="acc-hero-copy"><div className="acc-hero-name"><h2>{user.nickname}</h2></div><p className="acc-hero-meta" data-locale-motion>{t("注册于")} {formatDate(user.registered_at)}</p></div>
+            <button type="button" className="v3-btn v3-btn-ghost acc-hero-edit" onClick={() => { setInlineError(null); setDialog("profile"); }}><span data-locale-motion>{t("编辑资料")}</span></button>
           </section>
-
-          <Section title="账号与安全" desc="登录方式和账号安全。至少保留一种登录方式。">
-            <Row label="登录邮箱" be value={hasEmail ? user.email! : "未绑定"}>
-              <RowLink label={hasEmail ? "修改" : "绑定"} onClick={() => setDialog("email")} />
-            </Row>
-            <Row
-              label="登录密码"
-              be
-              value={hasEmail ? <>上次修改 {passwordChanged ? "刚刚（本地模拟）" : MOCK_ACCOUNT_META.passwordChangedAt}<BeTag title="账号接口没有上次修改密码时间" /></> : "绑定邮箱后可以设置"}
-            >
-              <RowLink label="修改" disabled={!hasEmail} onClick={() => setDialog("password")} />
-            </Row>
-            <Row
-              label="微信"
-              be
-              value={wechatBound ? `已绑定 · ${user.nickname}` : user.wechat_status === "unavailable" ? "当前环境不可用" : "未绑定"}
-            >
-              {wechatBound ? (
-                // 只有微信一种登录方式时不能解绑，避免账号无法再登录
-                <button
-                  type="button"
-                  className="v3-btn v3-btn-ghost is-sm acc-row-btn"
-                  disabled={!hasEmail}
-                  title={hasEmail ? undefined : "只有微信一种登录方式时不能解绑"}
-                  onClick={() => setDialog("unbindWechat")}
-                >
-                  解绑
-                </button>
-              ) : (
-                <button type="button" className="v3-btn v3-btn-ghost is-sm acc-row-btn" title="本地模拟，不会绑定真实微信" onClick={() => setDialog("bindWechat")}>绑定</button>
-              )}
+          <Section title={t("账号与安全")} desc={t("管理登录方式与联系信息。")}>
+            {profile.capabilities.auth_mode === "password" && <>
+              <Row label={t("登录邮箱")} value={user.email ?? <span data-locale-motion>{t("未设置")}</span>} />
+              {profile.capabilities.can_change_password && <Row label={t("登录密码")} value={<span data-locale-motion>{t("修改后所有设备需要重新登录")}</span>}><RowLink label={t("修改")} onClick={() => setDialog("password")} /></Row>}
+            </>}
+            {profile.capabilities.auth_mode === "wechat" && <Row label={t("登录方式")} value={<span data-locale-motion>{t("微信登录")}</span>} />}
+            <Row label={t("联系邮箱")} value={user.contact_email ?? <span data-locale-motion>{t("未设置")}</span>}><RowLink label={user.contact_email ? t("修改") : t("设置")} onClick={() => setDialog("email")} /></Row>
+          </Section>
+          <Section title={t("求职资料")} desc={t("由你选择后供 AI 参考，不会自动修改简历。")}><UserProfilePanel /></Section>
+          <Section title={t("偏好")} desc={t("界面显示偏好。")}>
+            {preferencesFailed && <p role="alert">{t("偏好读取失败，请重新加载后重试。")} <button type="button" className="v3-link" onClick={() => { void api.getAccountPreferences().then((data) => { setPreferences(data); setPreferencesFailed(false); setLocale(data.locale); }).catch(() => setPreferencesFailed(true)); }}>{t("重试")}</button></p>}
+            <Row label={t("界面语言")}>
+              <Select<Locale>
+                className="acc-language-select"
+                label={t("界面语言")}
+                size="sm"
+                value={locale}
+                disabled={!preferences || savingPreference}
+                options={[{ value: "zh-CN", label: "简体中文" }, { value: "en-US", label: "English" }]}
+                onChange={(nextLocale) => void savePreference({ locale: nextLocale })}
+              />
             </Row>
           </Section>
-
-          <Section title="求职资料" desc="生成简历时会用到的个人信息，所有简历共用。">
-            <UserProfilePanel />
+          <Section title={t("退出与注销")} desc={t("注销后个人数据会被永久清理，无法恢复。")}>
+            <Row label={t("退出登录")} value={t(profile.current_session.device_label)}><button type="button" className="v3-btn v3-btn-ghost is-sm acc-row-btn" onClick={() => setDialog("logout")}><span data-locale-motion>{t("退出")}</span></button></Row>
+            {profile.capabilities.can_delete_account && <Row label={t("注销账号")} value={<span data-locale-motion>{t("永久删除账号和个人数据")}</span>}><button type="button" className="acc-row-danger" onClick={() => setDialog("delete")}><span data-locale-motion>{t("注销账号")}</span></button></Row>}
           </Section>
-
-          <Section title="偏好" desc="界面显示与消息提醒。">
-            <Row label="界面语言" onClick={needsBackend}>
-              <span className="acc-row-right">
-                <BeTag title="暂不支持切换界面语言" />
-                <span className="acc-row-meta">{MOCK_ACCOUNT_META.language}</span>
-                <Icon name="chev" size={12} />
-              </span>
-            </Row>
-            <Row label="面试提醒" be value={MOCK_ACCOUNT_PREFS.interviewReminderLabel}>
-              <Toggle checked={reminderOn} label="面试提醒" onChange={(checked) => { setReminderOn(checked); setToast({ kind: "warn", title: `面试提醒已${checked ? "开启" : "关闭"}（本地模拟）`, message: "仅本次页面访问有效，未保存到账号，也不会发送通知。" }); }} />
-            </Row>
-          </Section>
-
-          <Section title="退出与注销" desc="注销后简历、岗位记录和资料库都会删除，无法恢复。">
-            <Row label="退出登录" value={<>当前设备 · {MOCK_ACCOUNT_META.device}<BeTag title="会话接口不返回设备信息" /></>}>
-              <button type="button" className="v3-btn v3-btn-ghost is-sm acc-row-btn" onClick={() => setDialog("logout")}>退出</button>
-            </Row>
-            <Row label="注销账号" be value="永久删除账号和所有数据">
-              <button type="button" className="acc-row-danger" onClick={() => setDialog("delete")}>注销账号</button>
-            </Row>
-          </Section>
-
-          <MotionPresence>{dialog === "profile" && (
-            <EditProfileDialog
-              user={user}
-              onClose={() => setDialog(null)}
-              onUserUpdate={applyUserUpdate}
-              onError={setInlineError}
-              onSaved={(message) => {
-                setDialog(null);
-                setInlineError(null);
-                setToast({ kind: "success", title: message });
-              }}
-              onNotice={(title) => setToast({ kind: "error", title })}
-            />
-          )}</MotionPresence>
-          <MotionPresence>{dialog === "email" && <ChangeEmailDialog email={user.email} onClose={() => setDialog(null)} onNotice={(message) => setToast({ kind: "warn", title: "验证码已生成（本地模拟）", message })} onConfirm={(email) => { setLocalAccount((current) => ({ ...current, email })); finishLocalChange("邮箱已修改", "未发送邮件、未修改真实登录邮箱；刷新后恢复。"); }} />}</MotionPresence>
-          <MotionPresence>{dialog === "password" && <ChangePasswordDialog onClose={() => setDialog(null)} onConfirm={() => { setPasswordChanged(true); finishLocalChange("密码修改流程已完成", "未校验或修改真实密码，所有设备的登录状态保持不变。"); }} />}</MotionPresence>
-          <MotionPresence>{dialog === "bindWechat" && <BindWechatDialog onClose={() => setDialog(null)} onComplete={() => { setLocalAccount((current) => ({ ...current, wechat_status: "bound" })); finishLocalChange("微信已绑定", "未连接微信、未绑定真实微信账号；刷新后恢复。"); }} />}</MotionPresence>
-          <MotionPresence>{dialog === "unbindWechat" && (
-            <CenterConfirm
-              label="解绑微信？"
-              title={<>解绑微信？<span className="acc-need-tag">需要后端支持</span></>}
-              desc="解绑后不能再用微信扫码登录这个账号。"
-              art={<UnbindWechatArt initial={initial} />}
-              impacts={[
-                { icon: "check", text: `仍可以用 ${user.email ?? "邮箱"} 登录` },
-                { icon: "send", text: "面试提醒不再推送到微信" },
-              ]}
-              confirmLabel="解绑"
-              danger
-              onClose={() => setDialog(null)}
-              onConfirm={() => { setLocalAccount((current) => ({ ...current, wechat_status: "unbound" })); finishLocalChange("微信已解绑"); }}
-            />
-          )}</MotionPresence>
-          <MotionPresence>{dialog === "logout" && (
-            <CenterConfirm
-              label="确认退出登录"
-              title="确认退出登录？"
-              desc="退出后需要重新登录。"
-              art={<LogoutArt initial={initial} />}
-              impacts={[
-                { icon: "logout", text: `当前设备 · ${MOCK_ACCOUNT_META.device} 会退出` },
-                { icon: "check", text: "其他设备上的登录不受影响" },
-              ]}
-              confirmLabel={loggingOut ? "正在退出…" : "退出登录"}
-              busy={loggingOut}
-              onClose={() => setDialog(null)}
-              onConfirm={() => void handleLogout()}
-            />
-          )}</MotionPresence>
-          <MotionPresence>{dialog === "delete" && (
-            <DeleteAccountDialog initial={initial} resumeCount={profile!.resume_count} onClose={() => setDialog(null)} onConfirm={() => finishLocalChange("注销流程已完成", "未注销真实账号、未删除任何数据，当前登录状态保持不变。")} />
-          )}</MotionPresence>
-          <MotionPresence>{dialog === "avatarPreview" && user.avatar_url && (
-            <Dialog width={420} label="查看头像原图" onClose={() => setDialog(null)} className="acc-avatar-preview">
-              <img className="acc-avatar-preview-image" src={user.avatar_url} alt="头像原图" />
-            </Dialog>
-          )}</MotionPresence>
-        </div>
-      )}
+          <MotionPresence>{dialog === "profile" && <EditProfileDialog user={user} onClose={() => setDialog(null)} onUserUpdate={applyUserUpdate} onError={setInlineError} onSaved={(message) => { setDialog(null); setInlineError(null); setToast({ kind: "success", title: message }); }} onNotice={(title) => setToast({ kind: "error", title })} />}</MotionPresence>
+          <MotionPresence>{dialog === "email" && <ChangeEmailDialog email={user.contact_email} onClose={() => setDialog(null)} onSaved={(email) => { applyUserUpdate({ ...user, contact_email: email }); setDialog(null); setToast({ kind: "success", title: t("联系邮箱已保存") }); }} />}</MotionPresence>
+          <MotionPresence>{dialog === "password" && profile.capabilities.can_change_password && <ChangePasswordDialog onClose={() => setDialog(null)} />}</MotionPresence>
+          <MotionPresence>{dialog === "logout" && <CenterConfirm label={t("确认退出登录")} title={t("确认退出登录？")} desc={t("退出后需要重新登录。")} art={<LogoutArt initial={initial} />} impacts={[{ icon: "logout", text: profile.current_session.device_label }, { icon: "check", text: t("其他设备上的登录不受影响") }]} confirmLabel={loggingOut ? t("正在退出…") : t("退出登录")} busy={loggingOut} onClose={() => setDialog(null)} onConfirm={() => void handleLogout()} />}</MotionPresence>
+          <MotionPresence>{dialog === "delete" && profile.capabilities.can_delete_account && profile.capabilities.deletion_confirmation_method && <DeleteAccountDialog initial={initial} resumeCount={profile.resume_count} method={profile.capabilities.deletion_confirmation_method} onClose={() => setDialog(null)} />}</MotionPresence>
+          <MotionPresence>{dialog === "avatarPreview" && user.avatar_url && <Dialog width={420} label={t("查看头像原图")} onClose={() => setDialog(null)} className="acc-avatar-preview"><img className="acc-avatar-preview-image" src={user.avatar_url} alt={t("头像原图")} /></Dialog>}</MotionPresence>
+        </div>}
       </Reveal>
-
       <MotionPresence>{toast && <Toast kind={toast.kind} title={toast.title} message={toast.message} onDismiss={() => setToast(null)} />}</MotionPresence>
     </div>
   );
@@ -303,23 +141,25 @@ export function AccountPage() {
 
 /* ───────────── 区块与设置行 ───────────── */
 
-function Section({ title, desc, children }: { title: string; desc: string; children: ReactNode }) {
+function Section({ title, desc, children, className = "" }: { title: string; desc: string; children: ReactNode; className?: string }) {
+  useLocale();
   return (
-    <section className="acc-section" aria-label={title}>
+    <section className={`acc-section ${className}`} aria-label={title}>
       <div className="acc-section-head">
-        <h2>{title}</h2>
-        <p>{desc}</p>
+        <h2 data-locale-motion>{title}</h2>
+        <p data-locale-motion>{desc}</p>
       </div>
       <div className="acc-card">{children}</div>
     </section>
   );
 }
 
-// 52 高设置行：标签（可带「需后端」）| 当前值 | 右侧操作
-function Row({ label, be = false, value, onClick, children }: { label: string; be?: boolean; value?: ReactNode; onClick?: () => void; children?: ReactNode }) {
+// 52 高设置行：标签| 当前值 | 右侧操作
+function Row({ label, value, onClick, children }: { label: string; value?: ReactNode; onClick?: () => void; children?: ReactNode }) {
+  useLocale();
   const body = (
     <>
-      <span className="acc-row-label">{label}{be && <BeTag />}</span>
+      <span className="acc-row-label" data-locale-motion>{label}</span>
       {value != null && <span className="acc-row-value">{value}</span>}
       {children}
     </>
@@ -332,20 +172,17 @@ function Row({ label, be = false, value, onClick, children }: { label: string; b
 }
 
 function RowLink({ label, disabled, onClick }: { label: string; disabled?: boolean; onClick: () => void }) {
+  useLocale();
   return (
     <button type="button" className="acc-row-link" disabled={disabled} onClick={onClick}>
-      {label}
+      <span data-locale-motion>{label}</span>
       <Icon name="chev" size={12} />
     </button>
   );
 }
 
-function NeedTag() {
-  return <span className="acc-need-tag">需要后端支持</span>;
-}
-
 // 弹窗底部：分隔线 + 取消 / 主按钮（右对齐）
-function Foot({ left, cancel = "取消", confirm, confirmWidth = 100, danger = false, disabled = false, busy = false, onCancel, onConfirm }: {
+function Foot({ left, cancel = t("取消"), confirm, confirmWidth = 100, danger = false, disabled = false, busy = false, onCancel, onConfirm }: {
   left?: ReactNode;
   cancel?: string;
   confirm?: string;
@@ -356,6 +193,7 @@ function Foot({ left, cancel = "取消", confirm, confirmWidth = 100, danger = f
   onCancel: () => void;
   onConfirm?: () => void;
 }) {
+  useLocale();
   return (
     <div className="v3-dialog-foot acc-foot">
       <div className="v3-dialog-foot-left">{left}</div>
@@ -385,6 +223,7 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
   onError: (message: string | null) => void;
   onNotice: (title: string) => void;
 }) {
+  useLocale();
   const [nickname, setNickname] = useState(user.nickname);
   const [draft, setDraft] = useState<AvatarCropDraft | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
@@ -405,7 +244,7 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
   const pickFile = async (file: File | undefined) => {
     if (!file) return;
     if (file.size > MAX_AVATAR_BYTES) {
-      onNotice("头像图片不能超过 10MB。");
+      onNotice(t("头像图片不能超过 10MB。"));
       return;
     }
     const requestId = ++readRequestRef.current;
@@ -416,7 +255,7 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
       setRemoveAvatar(false);
     } catch {
       if (requestId !== readRequestRef.current) return;
-      onNotice("头像图片无法读取，请选择其他图片。");
+      onNotice(t("头像图片无法读取，请选择其他图片。"));
     }
   };
 
@@ -455,7 +294,7 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
     if (saving) return;
     const trimmed = nickname.trim();
     if (!trimmed || trimmed.length > MAX_NICKNAME_LENGTH) {
-      fail(`昵称不能为空，且不能超过 ${MAX_NICKNAME_LENGTH} 个字符。`);
+      fail(t("昵称不能为空，且不能超过 {value0} 个字符。", { value0: MAX_NICKNAME_LENGTH }));
       return;
     }
     setSaving(true);
@@ -467,7 +306,7 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
           latest = await api.updateAccountProfile(trimmed);
           onUserUpdate(latest);
         } catch (saveError) {
-          fail(accountErrorMessage(saveError, "昵称保存失败，请稍后重试。"));
+          fail(accountErrorMessage(saveError, t("昵称保存失败，请稍后重试。")));
           return;
         }
       }
@@ -480,7 +319,7 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
           onUserUpdate(latest);
           setDraft(null);
         } catch (uploadError) {
-          fail(accountErrorMessage(uploadError, "头像处理或上传失败，请重试。"));
+          fail(accountErrorMessage(uploadError, t("头像处理或上传失败，请重试。")));
           return;
         }
       } else if (removeAvatar && user.avatar_url) {
@@ -489,11 +328,11 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
           latest = { ...latest, avatar_url: null };
           onUserUpdate(latest);
         } catch (deleteError) {
-          fail(accountErrorMessage(deleteError, "头像删除失败，请稍后重试。"));
+          fail(accountErrorMessage(deleteError, t("头像删除失败，请稍后重试。")));
           return;
         }
       }
-      onSaved(draft ? "头像已更新。" : removeAvatar && user.avatar_url ? "头像已删除。" : "资料已保存。");
+      onSaved(draft ? t("头像已更新。") : removeAvatar && user.avatar_url ? t("头像已删除。") : t("资料已保存。"));
     } finally {
       setSaving(false);
     }
@@ -516,10 +355,10 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
   };
 
   return (
-    <Dialog width={620} label="编辑资料" onClose={() => { if (!saving) onClose(); }} closable={!saving} className="acc-dialog">
+    <Dialog width={620} label={t("编辑资料")} onClose={() => { if (!saving) onClose(); }} closable={!saving} className="acc-dialog">
       <div className="v3-dialog-body acc-edit-body" aria-busy={saving}>
-        <h2 className="v3-dialog-title">编辑资料</h2>
-        <p className="v3-dialog-sub">头像和昵称会显示在侧栏、分享页和 AI 对话里。</p>
+        <h2 className="v3-dialog-title">{t("编辑资料")}</h2>
+        <p className="v3-dialog-sub">{t("头像和昵称会显示在侧栏、分享页和 AI 对话里。")}</p>
 
         <div className="acc-edit-grid">
           <div>
@@ -527,7 +366,7 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
               className={`acc-crop${draft ? " is-draft" : ""}`}
               role="group"
               tabIndex={0}
-              aria-label={draft ? "头像裁剪区域，可使用方向键移动" : "头像区域，点击选择图片"}
+              aria-label={draft ? t("头像裁剪区域，可使用方向键移动") : t("头像区域，点击选择图片")}
               onKeyDown={onCropKeyDown}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
@@ -556,13 +395,13 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
               )}
               <span className="acc-crop-window" aria-hidden="true" style={{ width: AVATAR_CROP_WINDOW_SIZE, height: AVATAR_CROP_WINDOW_SIZE }} />
               </span>
-              <span className="acc-crop-hint" aria-hidden="true">{draft ? "拖动调整位置" : "点击选择图片"}</span>
+              <span className="acc-crop-hint" aria-hidden="true">{draft ? t("拖动调整位置") : t("点击选择图片")}</span>
             </div>
             <label className="acc-zoom">
-              <span>缩放</span>
+              <span>{t("缩放")}</span>
               <input
                 type="range"
-                aria-label="缩放"
+                aria-label={t("缩放")}
                 min={AVATAR_CROP_MIN_ZOOM}
                 max={AVATAR_CROP_MAX_ZOOM}
                 step="0.01"
@@ -579,17 +418,17 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
 
           <div className="acc-edit-side">
             <label className="acc-edit-label" htmlFor="acc-nickname">
-              <span>昵称<em>*</em></span>
+              <span>{t("昵称")}<em>*</em></span>
               <small className="v3-num">{[...nickname].length} / {MAX_NICKNAME_LENGTH}</small>
             </label>
             <input
               id="acc-nickname"
               className="v3-input"
-              aria-label="昵称"
+              aria-label={t("昵称")}
               value={nickname}
               maxLength={MAX_NICKNAME_LENGTH}
               disabled={saving}
-              aria-invalid={Boolean(error && error.includes("昵称"))}
+              aria-invalid={Boolean(error && error.includes(t("昵称")))}
               onChange={(event) => setNickname(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -599,12 +438,10 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
               }}
             />
 
-            <span className="acc-edit-label is-gap">头像</span>
+            <span className="acc-edit-label is-gap">{t("头像")}</span>
             <div className="acc-avatar-actions">
               <button type="button" className="v3-btn v3-btn-ghost acc-reselect" disabled={saving} onClick={() => fileInputRef.current?.click()}>
-                <Icon name="upload" size={13} />
-                重新选择
-              </button>
+                <Icon name="upload" size={13} />{t("重新选择")}</button>
               <button
                 type="button"
                 className="acc-remove"
@@ -614,17 +451,15 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
                   setDraft(null);
                   setRemoveAvatar(true);
                 }}
-              >
-                移除头像
-              </button>
+              >{t("移除头像")}</button>
             </div>
-            <p className="acc-edit-hint">支持 JPG、PNG、WebP，最大 10 MB。</p>
+            <p className="acc-edit-hint">{t("支持 JPG、PNG、WebP，最大 10 MB。")}</p>
             <input
               ref={fileInputRef}
               className="v3-visually-hidden"
               type="file"
               accept="image/*"
-              aria-label="选择头像图片"
+              aria-label={t("选择头像图片")}
               tabIndex={-1}
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
@@ -633,14 +468,14 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
               }}
             />
 
-            <span className="acc-edit-label is-gap2">预览</span>
+            <span className="acc-edit-label is-gap2">{t("预览")}</span>
             <div className="acc-previews">{[56, 36, 24].map(preview)}</div>
           </div>
         </div>
       </div>
       <Foot
         left={error && <span className="acc-foot-error" role="alert">{error}</span>}
-        confirm={saving ? "保存中…" : "保存"}
+        confirm={saving ? t("保存中…") : t("保存")}
         confirmWidth={88}
         busy={saving}
         onCancel={onClose}
@@ -650,49 +485,25 @@ function EditProfileDialog({ user, onClose, onUserUpdate, onSaved, onError, onNo
   );
 }
 
-/* ───────────── 08.4b 修改登录邮箱（520×628） · 需后端 ───────────── */
+/* ───────────── 08.4b 联系邮箱（520×628） ───────────── */
 
-function ChangeEmailDialog({ email, onClose, onConfirm, onNotice }: { email: string | null; onClose: () => void; onConfirm: (email: string) => void; onNotice: (message: string) => void }) {
-  const [nextEmail, setNextEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [sentEmail, setSentEmail] = useState("");
-  const [countdown, setCountdown] = useState(0);
-  const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail.trim()) && nextEmail.trim() !== email;
-  useEffect(() => {
-    if (!countdown) return;
-    const timer = window.setTimeout(() => setCountdown((remaining) => Math.max(0, remaining - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [countdown]);
-  // 只用微信登录时是「绑定邮箱」：去掉当前邮箱一行
-  const title = email ? "修改登录邮箱" : "绑定邮箱";
-  return (
-    <Dialog width={520} label={title} onClose={onClose} className="acc-dialog">
-      <div className="v3-dialog-body acc-form-body">
-        <h2 className="v3-dialog-title">{title}<NeedTag /></h2>
-        <p className="v3-dialog-sub">新邮箱验证通过后生效，之后用新邮箱登录。</p>
-        <div className="v3-stage acc-art" style={{ height: 120 }}><ChangeEmailArt email={email ?? "未绑定"} /></div>
-        {email && (
-          <div className="acc-fld">
-            <span className="acc-fld-label">当前邮箱</span>
-            <IconInput icon="mail" value={email} readOnly ariaLabel="当前邮箱" />
-          </div>
-        )}
-        <div className="acc-fld">
-          <span className="acc-fld-label">新邮箱<em>*</em></span>
-          <IconInput icon="mail" value={nextEmail} placeholder="输入新的登录邮箱" ariaLabel="新邮箱" type="email" onChange={(value) => { setNextEmail(value); setSentEmail(""); setCountdown(0); }} />
-        </div>
-        <div className="acc-fld">
-          <span className="acc-fld-label">验证码<em>*</em><small>{sentEmail ? "本地模拟，未发送邮件" : "发送到新邮箱"}</small></span>
-          <div className="acc-code-row">
-            <input className="v3-input v3-num" aria-label="验证码" inputMode="numeric" maxLength={6} placeholder="6 位验证码" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} />
-            <button type="button" className="v3-btn v3-btn-ghost" disabled={!validEmail || countdown > 0} onClick={() => { setSentEmail(nextEmail.trim()); setCountdown(60); onNotice("本地模拟验证码：482913。没有发送真实邮件。"); }}>{countdown > 0 ? `${countdown}秒后重发` : "发送验证码"}</button>
-          </div>
-        </div>
-        <p className="acc-note">修改后旧邮箱会收到一封通知；登录密码不变。</p>
-      </div>
-      <Foot confirm="确认修改" disabled={!validEmail || sentEmail !== nextEmail.trim() || code !== "482913"} onCancel={onClose} onConfirm={() => onConfirm(nextEmail.trim())} />
-    </Dialog>
-  );
+function ChangeEmailDialog({ email, onClose, onSaved }: { email: string | null; onClose: () => void; onSaved: (email: string | null) => void }) {
+  useLocale();
+  const [draft, setDraft] = useState(email ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const valid = !draft.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.trim());
+  const save = async () => {
+    if (saving || !valid) return;
+    setSaving(true); setError(null);
+    try { const result = await api.updateContactEmail(draft.trim() || null); onSaved(result.contact_email); }
+    catch (failure) { setError(accountErrorMessage(failure, t("联系邮箱保存失败，请重试。"))); }
+    finally { setSaving(false); }
+  };
+  return <Dialog width={520} label={t("联系邮箱")} closable={!saving} onClose={() => { if (!saving) onClose(); }} className="acc-dialog">
+    <div className="v3-dialog-body acc-form-body"><h2 className="v3-dialog-title">{t("联系邮箱")}</h2><p className="v3-dialog-sub">{t("用于联系信息；保存后不会发送验证邮件或通知。")}</p><div className="v3-stage acc-art" style={{ height: 120 }}><ChangeEmailArt email={email ?? t("未设置")} /></div><div className="acc-fld"><span className="acc-fld-label">{t("邮箱地址")}</span><IconInput icon="mail" value={draft} type="email" ariaLabel={t("邮箱地址")} placeholder="you@example.com" onChange={setDraft} /></div><p className="acc-note">{t("留空即可清除联系邮箱。")}</p></div>
+    <Foot left={error && <span role="alert">{error}</span>} confirm={saving ? t("保存中…") : t("保存")} busy={saving} disabled={!valid || (draft.trim() || null) === email} onCancel={onClose} onConfirm={() => void save()} />
+  </Dialog>;
 }
 
 function IconInput({ icon, value, placeholder, ariaLabel, type = "text", readOnly, onChange, trailing }: {
@@ -705,6 +516,7 @@ function IconInput({ icon, value, placeholder, ariaLabel, type = "text", readOnl
   onChange?: (value: string) => void;
   trailing?: ReactNode;
 }) {
+  useLocale();
   return (
     <span className={`acc-icon-input${readOnly ? " is-readonly" : ""}`}>
       <Icon name={icon} size={14} />
@@ -714,9 +526,12 @@ function IconInput({ icon, value, placeholder, ariaLabel, type = "text", readOnl
   );
 }
 
-/* ───────────── 08.4c 修改密码（520×634） · 需后端 ───────────── */
+/* ───────────── 08.4c 修改密码（520×634） ───────────── */
 
-function ChangePasswordDialog({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
+function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
+  useLocale();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -724,13 +539,22 @@ function ChangePasswordDialog({ onClose, onConfirm }: { onClose: () => void; onC
   const longEnough = next.length >= 8;
   const mixed = /[A-Za-z]/.test(next) && /\d/.test(next);
 
+  const save = async () => {
+    if (saving) return;
+    setSaving(true); setError(null);
+    try {
+      await api.changePassword({ current_password: current, new_password: next, confirm_password: confirm });
+      useResumeStore.getState().clearSession();
+      navigateTo("/login", { replace: true });
+    } catch (failure) { setError(accountErrorMessage(failure, t("密码修改失败，请重试。"))); setSaving(false); }
+  };
   const field = (key: keyof typeof visible, label: string, value: string, set: (value: string) => void, autoComplete: string) => (
     <div className="acc-fld">
       <span className="acc-fld-label">{label}<em>*</em></span>
       <span className="acc-icon-input">
         <Icon name="lock" size={14} />
         <input className="v3-input" type={visible[key] ? "text" : "password"} aria-label={label} autoComplete={autoComplete} value={value} onChange={(event) => set(event.target.value)} />
-        <button type="button" className="acc-eye" aria-label={visible[key] ? `隐藏${label}` : `显示${label}`} onClick={() => setVisible((prev) => ({ ...prev, [key]: !prev[key] }))}>
+        <button type="button" className="acc-eye" aria-label={visible[key] ? t("隐藏{value0}", { value0: label }) : t("显示{value0}", { value0: label })} onClick={() => setVisible((prev) => ({ ...prev, [key]: !prev[key] }))}>
           <Icon name="eye" size={14} />
         </button>
       </span>
@@ -738,63 +562,26 @@ function ChangePasswordDialog({ onClose, onConfirm }: { onClose: () => void; onC
   );
 
   return (
-    <Dialog width={520} label="修改密码" onClose={onClose} className="acc-dialog">
+    <Dialog width={520} label={t("修改密码")} closable={!saving} onClose={() => { if (!saving) onClose(); }} className="acc-dialog">
       <div className="v3-dialog-body acc-form-body">
-        <h2 className="v3-dialog-title">修改密码<NeedTag /></h2>
-        <p className="v3-dialog-sub">修改后所有设备都会退出，需要用新密码重新登录。</p>
+        <h2 className="v3-dialog-title">{t("修改密码")}</h2>
+        <p className="v3-dialog-sub">{t("修改后所有设备都会退出，需要用新密码重新登录。")}</p>
         <div className="v3-stage acc-art" style={{ height: 96 }}><ChangePasswordArt /></div>
-        {field("current", "当前密码", current, setCurrent, "current-password")}
-        {field("next", "新密码", next, setNext, "new-password")}
+        {field("current", t("当前密码"), current, setCurrent, "current-password")}
+        {field("next", t("新密码"), next, setNext, "new-password")}
         <div className="acc-rules">
-          <span className={longEnough ? "is-ok" : ""}><Icon name="check" size={12} />至少 8 位</span>
-          <span className={mixed ? "is-ok" : ""}><Icon name="check" size={12} />同时包含字母和数字</span>
+          <span className={longEnough ? "is-ok" : ""}><Icon name="check" size={12} />{t("至少 8 位")}</span>
+          <span className={mixed ? "is-ok" : ""}><Icon name="check" size={12} />{t("同时包含字母和数字")}</span>
         </div>
-        {field("confirm", "确认新密码", confirm, setConfirm, "new-password")}
-        <p className="acc-note">{confirm && confirm !== next ? "两次输入的新密码不一致。" : "新密码不能和当前密码相同。"}</p>
+        {field("confirm", t("确认新密码"), confirm, setConfirm, "new-password")}
+        <p className="acc-note">{confirm && confirm !== next ? t("两次输入的新密码不一致。") : t("新密码不能和当前密码相同。")}</p>
       </div>
-      <Foot confirm="确认修改" disabled={!current || !longEnough || !mixed || confirm !== next || next === current} onCancel={onClose} onConfirm={onConfirm} />
+      <Foot confirm={t("确认修改")} disabled={!current || !longEnough || !mixed || confirm !== next || next === current} onCancel={onClose} busy={saving} left={error && <span role="alert">{error}</span>} onConfirm={() => void save()} />
     </Dialog>
   );
 }
 
-/* ───────────── 08.4d 绑定微信（480×508） · 需后端 ───────────── */
-
-function BindWechatDialog({ onClose, onComplete }: { onClose: () => void; onComplete: () => void }) {
-  const [generation, setGeneration] = useState(0);
-  const [step, setStep] = useState(0);
-  const completeRef = useRef(onComplete);
-  useEffect(() => { completeRef.current = onComplete; }, [onComplete]);
-  useEffect(() => {
-    setStep(0);
-    const scanned = window.setTimeout(() => setStep(1), 3500);
-    const confirmed = window.setTimeout(() => setStep(2), 6000);
-    const complete = window.setTimeout(() => completeRef.current(), 7500);
-    return () => { window.clearTimeout(scanned); window.clearTimeout(confirmed); window.clearTimeout(complete); };
-  }, [generation]);
-  return (
-    <Dialog width={480} label="绑定微信" onClose={onClose} className="acc-dialog">
-      <div className="v3-dialog-body acc-form-body">
-        <h2 className="v3-dialog-title">绑定微信<NeedTag /></h2>
-        <p className="v3-dialog-sub">绑定后可以用微信扫码登录这个账号。</p>
-        <div className="v3-stage acc-bind-stage">
-          <span className="acc-bind-qr"><img src={bindQrAsset} width={168} height={168} alt="本地模拟二维码，不用于真实微信绑定" /><span className="acc-bind-mark" aria-hidden="true">L</span></span>
-          <span className="acc-bind-status"><i />本地模拟 · {["等待扫码", "等待确认绑定", "绑定完成"][step]}</span>
-        </div>
-        <ol className="acc-steps">
-          <li className={step === 0 ? "is-on" : undefined}><span>1</span>打开微信扫一扫</li>
-          <li className={step === 1 ? "is-on" : undefined}><span>2</span>在手机上确认绑定</li>
-          <li className={step === 2 ? "is-on" : undefined}><span>3</span>页面自动完成</li>
-        </ol>
-      </div>
-      <Foot
-        left={<button type="button" className="v3-link" onClick={() => setGeneration((value) => value + 1)}><Icon name="refresh" size={13} />刷新二维码</button>}
-        onCancel={onClose}
-      />
-    </Dialog>
-  );
-}
-
-/* ───────────── 08.4e 解绑 / 08.4h 退出：居中确认（420×410） ───────────── */
+/* ───────────── 08.4h 退出：居中确认（420×410） ───────────── */
 
 function CenterConfirm({ label, title, desc, art, impacts, confirmLabel, danger = false, busy = false, onClose, onConfirm }: {
   label: string;
@@ -808,6 +595,7 @@ function CenterConfirm({ label, title, desc, art, impacts, confirmLabel, danger 
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  useLocale();
   return (
     <Dialog width={420} label={label} onClose={() => { if (!busy) onClose(); }} closable={!busy} className="v3-confirm acc-confirm">
       <div className="v3-dialog-body">
@@ -821,7 +609,7 @@ function CenterConfirm({ label, title, desc, art, impacts, confirmLabel, danger 
         </ul>
       </div>
       <div className="v3-confirm-foot acc-confirm-foot">
-        <button type="button" className="v3-btn v3-btn-ghost" disabled={busy} onClick={onClose}>取消</button>
+        <button type="button" className="v3-btn v3-btn-ghost" disabled={busy} onClick={onClose}>{t("取消")}</button>
         <button type="button" className={`v3-btn ${danger ? "v3-btn-danger" : "v3-btn-dark"}`} disabled={busy} onClick={onConfirm} data-autofocus>
           {confirmLabel}
         </button>
@@ -830,31 +618,71 @@ function CenterConfirm({ label, title, desc, art, impacts, confirmLabel, danger 
   );
 }
 
-/* ───────────── 08.4i 注销账号（480×570） · 需后端 ───────────── */
+/* ───────────── 08.4i 注销账号（480×570） ───────────── */
 
 const DELETE_WORD = "注销账号";
 
-function DeleteAccountDialog({ initial, resumeCount, onClose, onConfirm }: { initial: string; resumeCount: number; onClose: () => void; onConfirm: () => void }) {
+function DeleteAccountDialog({ initial, resumeCount, method, onClose }: { initial: string; resumeCount: number; method: "password" | "wechat"; onClose: () => void }) {
+  useLocale();
   const [word, setWord] = useState("");
-  return (
-    <Dialog width={480} label="注销账号" onClose={onClose} className="acc-dialog">
-      <div className="v3-dialog-body acc-form-body">
-        <h2 className="v3-dialog-title">注销账号<NeedTag /></h2>
-        <p className="v3-dialog-sub">注销后账号和所有数据会永久删除，无法恢复。</p>
-        <div className="v3-stage acc-art" style={{ height: 104 }}><DeleteAccountArt initial={initial} /></div>
-        <span className="acc-fld-label acc-delete-label">会被永久删除</span>
-        <ul className="acc-impact is-list">
-          <li><Icon name="doc" size={14} />{resumeCount} 份简历和它们的公开分享链接</li>
-          <li><Icon name="brief" size={14} />全部求职记录和面试安排</li>
-          <li><Icon name="folder" size={14} />资料库里的全部文件</li>
-          <li><Icon name="user" size={14} />个人画像和 AI 对话记录</li>
-        </ul>
-        <div className="acc-fld">
-          <span className="acc-fld-label">输入「{DELETE_WORD}」确认<em>*</em></span>
-          <input className="v3-input" aria-label={`输入「${DELETE_WORD}」确认`} placeholder={DELETE_WORD} value={word} onChange={(event) => setWord(event.target.value)} />
-        </div>
-      </div>
-      <Foot confirm="永久注销" confirmWidth={104} danger disabled={word.trim() !== DELETE_WORD} onCancel={onClose} onConfirm={onConfirm} />
-    </Dialog>
-  );
+  const [password, setPassword] = useState("");
+  const [verification, setVerification] = useState<Awaited<ReturnType<typeof api.createAccountVerification>> | null>(null);
+  const [proof, setProof] = useState<string | null>(null);
+  const [status, setStatus] = useState("pending");
+  const [qrBusy, setQrBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const currentVerification = useRef(verification);
+  const accepted = useRef(false);
+  const mounted = useRef(true);
+  const generation = useRef(0);
+  useEffect(() => { mounted.current = true; return () => {
+    mounted.current = false; generation.current += 1;
+    if (currentVerification.current && !accepted.current) void api.cancelAccountVerification(currentVerification.current).catch(() => undefined);
+  }; }, []);
+  const refreshQr = async () => {
+    const request = ++generation.current;
+    setQrBusy(true); setProof(null); setVerification(null); currentVerification.current = null; setError(null);
+    try {
+      const data = await api.createAccountVerification();
+      if (!mounted.current || generation.current !== request) { void api.cancelAccountVerification(data).catch(() => undefined); return; }
+      currentVerification.current = data; setVerification(data); setStatus("pending");
+    } catch (failure) { if (mounted.current && generation.current === request) setError(accountErrorMessage(failure, t("二维码获取失败，请重试。"))); }
+    finally { if (mounted.current && generation.current === request) setQrBusy(false); }
+  };
+  useEffect(() => {
+    if (!verification) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (Date.now() >= new Date(verification.expires_at).getTime()) { setProof(null); setStatus("expired"); return; }
+      try {
+        const result = await api.accountVerificationStatus(verification);
+        if (!active || currentVerification.current?.scene !== verification.scene) return;
+        setStatus(result.status); setProof(result.status === "verified" ? result.action_token ?? null : null);
+        if (result.status === "pending" || result.status === "verified") timer = setTimeout(() => void tick(), 2000);
+      } catch (failure) { if (active) { setProof(null); setError(accountErrorMessage(failure, t("身份确认失败，请刷新二维码。"))); } }
+    };
+    timer = setTimeout(() => void tick(), 2000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [verification]);
+  const submit = async () => {
+    if (busy || word !== DELETE_WORD || (method === "wechat" && !proof) || (method === "password" && !password)) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await api.deleteAccount(method === "password" ? { method, confirmation: word, current_password: password } : { method, confirmation: word, action_token: proof! });
+      accepted.current = true; saveDeletionReceipt(result);
+      navigateTo("/account-deletion", { replace: true });
+      useResumeStore.getState().clearSession();
+    } catch (failure) { setError(accountErrorMessage(failure, t("注销未完成，请重试。"))); setBusy(false); }
+  };
+  return <Dialog width={480} label={t("注销账号")} closable={!busy} onClose={() => { if (!busy) onClose(); }} className="acc-dialog">
+    <div className="v3-dialog-body acc-form-body"><h2 className="v3-dialog-title">{t("注销账号")}</h2><p className="v3-dialog-sub">{t("受理后立即停用登录和分享，后台永久清理个人数据，无法恢复。")}</p><div className="v3-stage acc-art" style={{ height: 104 }}><DeleteAccountArt initial={initial} /></div>
+      <ul className="acc-impact is-list"><li><Icon name="doc" size={14} />{resumeCount}{t("份简历和公开分享链接")}</li><li><Icon name="brief" size={14} />{t("全部求职记录和面试安排")}</li><li><Icon name="folder" size={14} />{t("资料库里的全部文件")}</li><li><Icon name="user" size={14} />{t("个人画像和 AI 对话记录")}</li></ul>
+      {method === "password" && <div className="acc-fld"><span className="acc-fld-label">{t("当前密码")}</span><IconInput icon="lock" value={password} ariaLabel={t("当前密码")} type="password" onChange={setPassword} /></div>}
+      {method === "wechat" && <div className="acc-fld"><p>{t("用当前账号的微信扫码，仅确认注销身份。")}</p>{verification && <img width={180} height={180} src={`data:image/png;base64,${verification.qrcode_data}`} alt={t("注销身份确认二维码")} />}{status === "verified" && <p role="status">{t("身份已确认")}</p>}{status === "expired" && <p role="status">{t("二维码已过期，请刷新。")}</p>}<button type="button" className="v3-btn" disabled={qrBusy || busy} onClick={() => void refreshQr()}>{qrBusy ? t("加载中…") : verification ? t("刷新二维码") : t("获取确认二维码")}</button></div>}
+      <div className="acc-fld"><label className="acc-fld-label" htmlFor="account-delete-word">{t("输入「")}{DELETE_WORD}{t("」确认")}</label><input id="account-delete-word" className="v3-input" placeholder={DELETE_WORD} value={word} onChange={(event) => setWord(event.target.value)} /></div>
+    </div>
+    <Foot confirm={busy ? t("正在受理…") : t("永久注销")} confirmWidth={104} danger busy={busy} left={error && <span role="alert">{error}</span>} disabled={word !== DELETE_WORD || (method === "password" ? !password : !proof)} onCancel={onClose} onConfirm={() => void submit()} />
+  </Dialog>;
 }

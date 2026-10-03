@@ -1,3 +1,4 @@
+import { t, useLocale, weekdayName, weekdays } from "@/i18n";
 import {
   createContext,
   isValidElement,
@@ -111,6 +112,7 @@ export function useDismiss(open: boolean, onClose: () => void, refs: Array<RefOb
 }
 
 export function Popover(props: ComponentProps<typeof PopoverSurface>) {
+  useLocale();
   return <MotionPresence>{props.open && <PopoverSurface {...props} />}</MotionPresence>;
 }
 
@@ -139,6 +141,7 @@ function PopoverSurface({
   matchWidth?: boolean;
   children: ReactNode;
 }) {
+  useLocale();
   const floatingRef = useRef<HTMLDivElement>(null);
   const present = useExitPresence(floatingRef);
   const parentIds = useContext(PopoverAncestors);
@@ -192,6 +195,7 @@ export function Menu({
   label?: string;
   width?: number;
 }) {
+  useLocale();
   return (
     <Popover anchorRef={anchorRef} open={open} onClose={onClose} placement={placement} role="menu" label={label} style={width ? { width } : undefined}>
       {items.map((item, index) => item.kind === "separator" ? (
@@ -245,6 +249,7 @@ export function Select<T extends string>({
   className?: string;
   id?: string;
 }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -327,8 +332,8 @@ const pad = (value: number) => String(value).padStart(2, "0");
 
 export function formatDateTimeLabel(value: Date | null, withTime = true) {
   if (!value) return "";
-  const week = "日一二三四五六"[value.getDay()];
-  const date = `${pad(value.getMonth() + 1)}-${pad(value.getDate())} 周${week}`;
+  const week = weekdayName(value.getDay());
+  const date = t("{value0}-{value1} 周{value2}", { value0: pad(value.getMonth() + 1), value1: pad(value.getDate()), value2: week });
   return withTime ? `${date} ${pad(value.getHours())}:${pad(value.getMinutes())}` : date;
 }
 
@@ -355,6 +360,7 @@ export function DateTimeField({
   min?: Date;
   icon?: V3IconName | null;
 }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [draft, setDraft] = useState<Date>(() => value ?? roundToStep(new Date(), minuteStep));
@@ -389,11 +395,11 @@ export function DateTimeField({
         <span className={`v3-select-value v3-num${value ? "" : " is-placeholder"}`}>{value ? formatDateTimeLabel(value, withTime) : placeholder}</span>
         <Icon className="v3-select-chev" name="chevd" size={12} />
       </button>
-      <Popover anchorRef={buttonRef} open={open} onClose={close} className="v3-picker" label={label ?? "选择日期"}>
+      <Popover anchorRef={buttonRef} open={open} onClose={close} className="v3-picker" label={label ?? t("选择日期")}>
         <div className="v3-picker-head">
-          <button type="button" className="v3-icon-btn" aria-label="上个月" onClick={() => setMonth(addMonths(month, -1))}><Icon name="chevl" size={14} /></button>
-          <strong className="v3-num">{month.getFullYear()} 年 {month.getMonth() + 1} 月</strong>
-          <button type="button" className="v3-icon-btn" aria-label="下个月" onClick={() => setMonth(addMonths(month, 1))}><Icon name="chev" size={14} /></button>
+          <button type="button" className="v3-icon-btn" aria-label={t("上个月")} onClick={() => setMonth(addMonths(month, -1))}><Icon name="chevl" size={14} /></button>
+          <strong className="v3-num">{month.getFullYear()}{t(" 年 ")}{month.getMonth() + 1}{t(" 月")}</strong>
+          <button type="button" className="v3-icon-btn" aria-label={t("下个月")} onClick={() => setMonth(addMonths(month, 1))}><Icon name="chev" size={14} /></button>
         </div>
         <div ref={calendarRef} className="v3-picker-grid">
           {WEEK.map((day) => <span key={day}>{day}</span>)}
@@ -425,14 +431,14 @@ export function DateTimeField({
           <>
             <div className="v3-picker-time">
               <Icon name="clock" size={14} />
-              <span>时间</span>
-              <Select size="sm" label="小时" value={pad(draft.getHours())} options={hours} onChange={(hour) => { const next = new Date(draft); next.setHours(Number(hour)); setDraft(next); }} />
+              <span>{t("时间")}</span>
+              <Select size="sm" label={t("小时")} value={pad(draft.getHours())} options={hours} onChange={(hour) => { const next = new Date(draft); next.setHours(Number(hour)); setDraft(next); }} />
               <span>:</span>
-              <Select size="sm" label="分钟" value={pad(draft.getMinutes() - (draft.getMinutes() % minuteStep))} options={minutes} onChange={(minute) => { const next = new Date(draft); next.setMinutes(Number(minute)); setDraft(next); }} />
+              <Select size="sm" label={t("分钟")} value={pad(draft.getMinutes() - (draft.getMinutes() % minuteStep))} options={minutes} onChange={(minute) => { const next = new Date(draft); next.setMinutes(Number(minute)); setDraft(next); }} />
             </div>
             <div className="v3-picker-foot">
-              <button type="button" className="v3-btn v3-btn-ghost is-sm" onClick={() => setOpen(false)}>取消</button>
-              <button type="button" className="v3-btn v3-btn-dark is-sm" onClick={() => { onChange(draft); setOpen(false); }}>确定</button>
+              <button type="button" className="v3-btn v3-btn-ghost is-sm" onClick={() => setOpen(false)}>{t("取消")}</button>
+              <button type="button" className="v3-btn v3-btn-dark is-sm" onClick={() => { onChange(draft); setOpen(false); }}>{t("确定")}</button>
             </div>
           </>
         )}
@@ -451,6 +457,7 @@ export function MiniCalendar({
   onPick: (day: Date) => void;
   range?: { start: Date; end: Date };
 }) {
+  useLocale();
   const [month, setMonth] = useState(() => startOfMonth(value));
   const calendarRef = useContentMotion<HTMLDivElement>(month.toISOString());
   useEffect(() => { setMonth(startOfMonth(value)); }, [value]);
@@ -459,9 +466,9 @@ export function MiniCalendar({
   return (
     <div className="v3-mini-calendar">
       <div className="v3-picker-head">
-        <button type="button" className="v3-icon-btn" aria-label="上个月" onClick={() => setMonth(addMonths(month, -1))}><Icon name="chevl" size={14} /></button>
-        <strong className="v3-num" aria-live="polite">{month.getFullYear()} 年 {month.getMonth() + 1} 月</strong>
-        <button type="button" className="v3-icon-btn" aria-label="下个月" onClick={() => setMonth(addMonths(month, 1))}><Icon name="chev" size={14} /></button>
+        <button type="button" className="v3-icon-btn" aria-label={t("上个月")} onClick={() => setMonth(addMonths(month, -1))}><Icon name="chevl" size={14} /></button>
+        <strong className="v3-num" aria-live="polite">{month.getFullYear()}{t(" 年 ")}{month.getMonth() + 1}{t(" 月")}</strong>
+        <button type="button" className="v3-icon-btn" aria-label={t("下个月")} onClick={() => setMonth(addMonths(month, 1))}><Icon name="chev" size={14} /></button>
       </div>
       <div ref={calendarRef} className="v3-picker-grid">
         {WEEK.map((day) => <span key={day}>{day}</span>)}
@@ -469,7 +476,7 @@ export function MiniCalendar({
           <button
             key={day.toISOString()}
             type="button"
-            aria-label={`${day.getFullYear()} 年 ${day.getMonth() + 1} 月 ${day.getDate()} 日`}
+            aria-label={t("{value0} 年 {value1} 月 {value2} 日", { value0: day.getFullYear(), value1: day.getMonth() + 1, value2: day.getDate() })}
             aria-pressed={sameDay(day, value)}
             className={`v3-picker-day${day.getMonth() !== month.getMonth() ? " is-muted" : ""}${sameDay(day, today) ? " is-today" : ""}${inRange(day) ? " is-in-range" : ""}${sameDay(day, value) ? " is-selected" : ""}`}
             onClick={() => onPick(day)}
@@ -479,7 +486,7 @@ export function MiniCalendar({
         ))}
       </div>
       <div className="v3-mini-calendar-foot">
-        <button type="button" className="v3-link" onClick={() => onPick(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}>回到今天</button>
+        <button type="button" className="v3-link" onClick={() => onPick(new Date(today.getFullYear(), today.getMonth(), today.getDate()))}>{t("回到今天")}</button>
       </div>
     </div>
   );
@@ -491,6 +498,7 @@ export function MiniCalendar({
  * onPick 收到该周周一。
  */
 export function WeekCalendar({ value, onPick }: { value: Date; onPick: (weekStart: Date) => void }) {
+  useLocale();
   const [month, setMonth] = useState(() => startOfMonth(value));
   const calendarRef = useContentMotion<HTMLDivElement>(month.toISOString());
   useEffect(() => { setMonth(startOfMonth(value)); }, [value]);
@@ -501,15 +509,15 @@ export function WeekCalendar({ value, onPick }: { value: Date; onPick: (weekStar
   // 只显示和本月有交集的周（5 或 6 行），不画整行都是下个月的空周
   const weeks = Array.from({ length: 6 }, (_, index) => days.slice(index * 7, index * 7 + 7))
     .filter((week) => week.some((day) => day.getMonth() === month.getMonth()));
-  const md = (day: Date) => `${day.getMonth() + 1} 月 ${day.getDate()} 日`;
+  const md = (day: Date) => t("{value0} 月 {value1} 日", { value0: day.getMonth() + 1, value1: day.getDate() });
   return (
     <div className="v3-mini-calendar v3-week-picker">
       <div className="v3-picker-head">
-        <strong className="v3-num" aria-live="polite">{month.getFullYear()} 年 {month.getMonth() + 1} 月</strong>
+        <strong className="v3-num" aria-live="polite">{month.getFullYear()}{t(" 年 ")}{month.getMonth() + 1}{t(" 月")}</strong>
         <div className="v3-picker-nav">
-          <button type="button" className="v3-icon-btn" aria-label="上个月" onClick={() => setMonth(addMonths(month, -1))}><Icon name="chevl" size={14} /></button>
-          <button type="button" className="v3-picker-today" disabled={sameDay(selectedWeek, thisWeek)} onClick={() => onPick(thisWeek)}>本周</button>
-          <button type="button" className="v3-icon-btn" aria-label="下个月" onClick={() => setMonth(addMonths(month, 1))}><Icon name="chev" size={14} /></button>
+          <button type="button" className="v3-icon-btn" aria-label={t("上个月")} onClick={() => setMonth(addMonths(month, -1))}><Icon name="chevl" size={14} /></button>
+          <button type="button" className="v3-picker-today" disabled={sameDay(selectedWeek, thisWeek)} onClick={() => onPick(thisWeek)}>{t("本周")}</button>
+          <button type="button" className="v3-icon-btn" aria-label={t("下个月")} onClick={() => setMonth(addMonths(month, 1))}><Icon name="chev" size={14} /></button>
         </div>
       </div>
       <div className="v3-week-picker-row is-head" aria-hidden="true">
@@ -525,7 +533,7 @@ export function WeekCalendar({ value, onPick }: { value: Date; onPick: (weekStar
               key={start.toISOString()}
               type="button"
               className={`v3-week-picker-row${selected ? " is-selected" : ""}${sameDay(start, thisWeek) ? " is-current" : ""}`}
-              aria-label={`${start.getFullYear()} 年 ${md(start)} – ${md(end)}`}
+              aria-label={t("{value0} 年 {value1} – {value2}", { value0: start.getFullYear(), value1: md(start), value2: md(end) })}
               aria-pressed={selected}
               onClick={() => onPick(start)}
             >
@@ -549,6 +557,7 @@ export function WeekCalendar({ value, onPick }: { value: Date; onPick: (weekStar
 
 /** 按月选择：一年 12 个月；「本月」放在页头箭头中间。onPick 收到该月 1 日 */
 export function MonthCalendar({ value, onPick }: { value: Date; onPick: (monthStart: Date) => void }) {
+  useLocale();
   const [year, setYear] = useState(() => value.getFullYear());
   const calendarRef = useContentMotion<HTMLDivElement>(String(year));
   useEffect(() => { setYear(value.getFullYear()); }, [value]);
@@ -557,11 +566,11 @@ export function MonthCalendar({ value, onPick }: { value: Date; onPick: (monthSt
   return (
     <div className="v3-mini-calendar v3-month-picker">
       <div className="v3-picker-head">
-        <strong className="v3-num" aria-live="polite">{year} 年</strong>
+        <strong className="v3-num" aria-live="polite">{year}{t(" 年")}</strong>
         <div className="v3-picker-nav">
-          <button type="button" className="v3-icon-btn" aria-label="上一年" onClick={() => setYear(year - 1)}><Icon name="chevl" size={14} /></button>
-          <button type="button" className="v3-picker-today" disabled={isThisMonth} onClick={() => onPick(new Date(today.getFullYear(), today.getMonth(), 1))}>本月</button>
-          <button type="button" className="v3-icon-btn" aria-label="下一年" onClick={() => setYear(year + 1)}><Icon name="chev" size={14} /></button>
+          <button type="button" className="v3-icon-btn" aria-label={t("上一年")} onClick={() => setYear(year - 1)}><Icon name="chevl" size={14} /></button>
+          <button type="button" className="v3-picker-today" disabled={isThisMonth} onClick={() => onPick(new Date(today.getFullYear(), today.getMonth(), 1))}>{t("本月")}</button>
+          <button type="button" className="v3-icon-btn" aria-label={t("下一年")} onClick={() => setYear(year + 1)}><Icon name="chev" size={14} /></button>
         </div>
       </div>
       <div ref={calendarRef} className="v3-picker-months">
@@ -573,12 +582,11 @@ export function MonthCalendar({ value, onPick }: { value: Date; onPick: (monthSt
               key={index}
               type="button"
               className={`v3-picker-month${current ? " is-today" : ""}${selected ? " is-selected" : ""}`}
-              aria-label={`${year} 年 ${index + 1} 月`}
+              aria-label={t("{value0} 年 {value1} 月", { value0: year, value1: index + 1 })}
               aria-pressed={selected}
               onClick={() => onPick(new Date(year, index, 1))}
             >
-              <span className="v3-num">{index + 1}</span> 月
-            </button>
+              <span className="v3-num">{index + 1}</span>{t(" 月")}</button>
           );
         })}
       </div>
@@ -618,6 +626,7 @@ function calendarDays(month: Date) {
 /* ───────────────────────── 弹窗 ───────────────────────── */
 
 export function Dialog(props: ComponentProps<typeof DialogSurface>) {
+  useLocale();
   return <MotionPresence>{props.open !== false && <DialogSurface {...props} />}</MotionPresence>;
 }
 
@@ -638,6 +647,7 @@ function DialogSurface({
   children: ReactNode;
   closable?: boolean;
 }) {
+  useLocale();
   const dialogRef = useRef<HTMLDivElement>(null);
   const present = useExitPresence(dialogRef);
   // onClose 存进 ref：调用方每次渲染传新函数时，不重新执行下面的聚焦逻辑（否则焦点会被抢回第一个元素）
@@ -676,7 +686,7 @@ function DialogSurface({
     <div className="v3 v3-overlay ui-motion-overlay" data-ui-theme="light" data-state={present ? "open" : "closed"} inert={!present || undefined} aria-hidden={!present || undefined} onMouseDown={(event) => { if (present && event.target === event.currentTarget && closable) onClose(); }}>
       <div ref={dialogRef} className={`v3-dialog ui-motion-dialog ${className}`} data-state={present ? "open" : "closed"} role="dialog" aria-modal="true" aria-label={label} style={{ width }}>
         {closable && (
-          <button type="button" className="v3-dialog-close" aria-label="关闭" onClick={onClose}>
+          <button type="button" className="v3-dialog-close" aria-label={t("关闭")} onClick={onClose}>
             <Icon name="x" size={16} />
           </button>
         )}
@@ -711,6 +721,7 @@ export function ConfirmDialog({
   onCancel: () => void;
   children?: ReactNode;
 }) {
+  useLocale();
   return (
     <Dialog width={420} label={title} onClose={onCancel} className="v3-confirm" closable={!busy}>
       <div className="v3-dialog-body">
@@ -720,9 +731,9 @@ export function ConfirmDialog({
         {children}
       </div>
       <div className="v3-confirm-foot">
-        <button type="button" className="v3-btn v3-btn-ghost" disabled={busy} onClick={onCancel}>取消</button>
+        <button type="button" className="v3-btn v3-btn-ghost" disabled={busy} onClick={onCancel}>{t("取消")}</button>
         <button type="button" className={`v3-btn ${danger ? "v3-btn-danger" : "v3-btn-dark"}`} disabled={busy} onClick={onConfirm} data-autofocus>
-          {busy ? busyLabel ?? "处理中…" : confirmLabel}
+          {busy ? busyLabel ?? t("处理中…") : confirmLabel}
         </button>
       </div>
     </Dialog>
@@ -730,6 +741,7 @@ export function ConfirmDialog({
 }
 
 export function DialogFooter({ left, children }: { left?: ReactNode; children?: ReactNode }) {
+  useLocale();
   return (
     <div className="v3-dialog-foot">
       <div className="v3-dialog-foot-left">{left}</div>
@@ -749,6 +761,7 @@ export type EyebrowLink = { label: ReactNode; onClick: () => void; href?: string
 export type EyebrowSegment = ReactNode | EyebrowLink;
 
 export function PageEyebrow({ segments, className = "" }: { segments: EyebrowSegment[]; className?: string }) {
+  useLocale();
   const items = segments.filter((segment) => segment !== null && segment !== undefined && segment !== false && segment !== "");
   return (
     <p className={`v3-page-eyebrow ${className}`}>
@@ -786,10 +799,12 @@ function isLinkSegment(segment: EyebrowSegment): segment is EyebrowLink {
 
 
 export function BeTag({ title = "需要后端支持，目前为示例数据" }: { title?: string }) {
-  return <span className="v3-be-tag" title={title}>需后端</span>;
+  useLocale();
+  return <span className="v3-be-tag" title={title}>{t("需后端")}</span>;
 }
 
 export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: Array<{ value: T; label: string; disabled?: boolean }>; onChange: (value: T) => void; label?: string }) {
+  useLocale();
   const root = useRef<HTMLDivElement>(null);
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
   useLayoutEffect(() => {
@@ -817,10 +832,12 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 }
 
 export function Toggle({ checked, onChange, label, disabled }: { checked: boolean; onChange: (checked: boolean) => void; label: string; disabled?: boolean }) {
+  useLocale();
   return <button type="button" role="switch" className="v3-toggle" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)} />;
 }
 
 export function SearchBox({ value, onChange, placeholder, width, label }: { value: string; onChange: (value: string) => void; placeholder: string; width?: number; label?: string }) {
+  useLocale();
   return (
     <label className="v3-search" style={width ? { width } : undefined}>
       <Icon name="search" size={14} />
@@ -830,14 +847,16 @@ export function SearchBox({ value, onChange, placeholder, width, label }: { valu
 }
 
 export function Avatar({ name, src, size = 36 }: { name: string; src?: string | null; size?: number }) {
+  useLocale();
   return (
     <span className="v3-avatar" style={{ width: size, height: size, fontSize: size * 0.4 }}>
-      {src ? <img src={src} alt="" /> : [...(name || "我")][0]}
+      {src ? <img src={src} alt="" /> : [...(name || t("我"))][0]}
     </span>
   );
 }
 
 export function Toast({ title, message, kind = "info", onDismiss, action }: { title: string; message?: string; kind?: "info" | "error" | "warn" | "success"; onDismiss: () => void; action?: ReactNode }) {
+  useLocale();
   const ref = useRef<HTMLDivElement>(null);
   const present = useExitPresence(ref);
   useEffect(() => {

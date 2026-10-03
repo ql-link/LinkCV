@@ -617,4 +617,3 @@ export const demoMockInterviewApi: MockInterviewApi = {
     return { mock_interview: clone(item) };
   },
 };
-

@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -39,6 +40,7 @@ export function DatasetUploadDialog({
   onClose: () => void;
   retryKeys: Map<string, string>;
 }) {
+  useLocale();
   const [conflicts, setConflicts] = useState<DatasetConflict[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [picked, setPicked] = useState<File[]>([]);
@@ -100,24 +102,24 @@ export function DatasetUploadDialog({
 
   const totalBytes = picked.reduce((sum, file) => sum + file.size, 0);
   const summary = busy
-    ? "正在上传…"
+    ? t("正在上传…")
     : picked.length === 0
-      ? "未选择文件"
+      ? t("未选择文件")
       : picked.length === 1
         ? `${picked[0].name} · ${formatDatasetFileSize(totalBytes)}`
-        : `已选择 ${picked.length} 个文件 · ${formatDatasetFileSize(totalBytes)}`;
+        : t("已选择 {value0} 个文件 · {value1}", { value0: picked.length, value1: formatDatasetFileSize(totalBytes) });
   const mediaLimit = formatDatasetFileSize(limits.max_media_file_bytes ?? 500 * 1024 * 1024);
   const accept = `${limits.allowed_extensions.join(",")},${(limits.media_allowed_extensions ?? []).join(",")},application/pdf,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,audio/*,video/mp4,video/webm,video/quicktime`;
 
   return (
     <>
-      <Dialog width={560} label="上传资料" onClose={() => { if (!busy) onClose(); }} className="ds-dialog" closable={false}>
-        <button type="button" className="v3-dialog-close" aria-label="关闭上传窗口" disabled={busy} onClick={() => { if (!busy) onClose(); }}>
+      <Dialog width={560} label={t("上传资料")} onClose={() => { if (!busy) onClose(); }} className="ds-dialog" closable={false}>
+        <button type="button" className="v3-dialog-close" aria-label={t("关闭上传窗口")} disabled={busy} onClick={() => { if (!busy) onClose(); }}>
           <Icon name="x" size={16} />
         </button>
         <div className="v3-dialog-body">
-          <h2 className="v3-dialog-title">上传资料</h2>
-          <p className="v3-dialog-sub">简历附件、证书、作品集、岗位 JD 和面试录音都可以放在这里。</p>
+          <h2 className="v3-dialog-title">{t("上传资料")}</h2>
+          <p className="v3-dialog-sub">{t("简历附件、证书、作品集、岗位 JD 和面试录音都可以放在这里。")}</p>
           <button
             type="button"
             className={`ds-upload-drop${dragOver ? " is-over" : ""}`}
@@ -135,9 +137,8 @@ export function DatasetUploadDialog({
             }}
           >
             <UploadArt />
-            <span className="ds-upload-drop-title">{busy ? "正在上传…" : "拖入资料文件，或点击选择"}</span>
-            <span className="ds-upload-drop-hint" id="ds-upload-hint">
-              PDF、DOCX、Markdown、TXT 最大 {formatDatasetFileSize(limits.max_file_bytes)}；音视频最大 {mediaLimit}
+            <span className="ds-upload-drop-title">{busy ? t("正在上传…") : t("拖入资料文件，或点击选择")}</span>
+            <span className="ds-upload-drop-hint" id="ds-upload-hint">{t("PDF、DOCX、Markdown、TXT 最大 ")}{formatDatasetFileSize(limits.max_file_bytes)}{t("；音视频最大 ")}{mediaLimit}
             </span>
           </button>
           <input
@@ -146,7 +147,7 @@ export function DatasetUploadDialog({
             hidden
             multiple
             accept={accept}
-            aria-label="选择资料文件"
+            aria-label={t("选择资料文件")}
             disabled={busy}
             onChange={(event) => {
               pick(Array.from(event.currentTarget.files ?? []));
@@ -155,16 +156,16 @@ export function DatasetUploadDialog({
           />
           <div className="ds-target">
             <div className="ds-target-copy">
-              <strong>上传到</strong>
-              <small>当前文件夹，之后可以移动到别的文件夹</small>
+              <strong>{t("上传到")}</strong>
+              <small>{t("当前文件夹，之后可以移动到别的文件夹")}</small>
             </div>
-            <span className="ds-target-folder"><Icon name="folder" size={14} /><span>{folderName ?? "当前文件夹"}</span></span>
+            <span className="ds-target-folder"><Icon name="folder" size={14} /><span>{folderName ?? t("当前文件夹")}</span></span>
           </div>
         </div>
         <DialogFooter left={<span title={summary}>{summary}</span>}>
-          <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={busy} onClick={onClose}>取消</button>
+          <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={busy} onClick={onClose}>{t("取消")}</button>
           <button type="button" className="v3-btn v3-btn-dark" style={{ width: 88 }} disabled={busy || picked.length === 0} onClick={() => void submitFiles(picked)}>
-            {busy ? "上传中…" : "上传"}
+            {busy ? t("上传中…") : t("上传")}
           </button>
         </DialogFooter>
       </Dialog>

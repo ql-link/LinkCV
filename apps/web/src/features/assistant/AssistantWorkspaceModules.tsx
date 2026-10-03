@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { lazy, Suspense } from "react";
 import { PageLoading } from "@/components/ui";
 import { type AssistantWorkspaceSection } from "../../routing";
@@ -20,15 +21,16 @@ export function AssistantWorkspaceModules({
   section: AssistantWorkspaceSection;
   careerView?: "applications" | "schedule";
 }) {
+  useLocale();
   return (
     <div className="assistant-module-content">
-      <Suspense fallback={<PageLoading label="正在加载工作台模块…" scope="workspace" />}>
+      <Suspense fallback={<PageLoading label={t("正在加载工作台模块…")} scope="workspace" />}>
         {section === "resumes" && <HomePage />}
         {section === "templates" && <ResumeTemplatesPage />}
         {section === "career" && (
           <InterviewCenterPage
             view={careerView}
-            moduleTitle={careerView === "schedule" ? "面试排期" : "求职记录"}
+            moduleTitle={careerView === "schedule" ? t("面试排期") : t("求职记录")}
           />
         )}
         {section === "datasets" && <DatasetsPage embedded />}

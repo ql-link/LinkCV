@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { t } from "@/i18n";
 import type { DatasetRecord } from "../../../api/client";
 import { Icon } from "../../../v3/Icon";
 import { Badge, Bar, Centered, DashArrow, Paper, StageText } from "../../../v3/art";
@@ -79,7 +80,7 @@ function MiniDoc({ x, y, w, h, tag, color, rotate, opacity }: { x: number; y: nu
       <Bar x={7} y={9} w={w * 0.55} h={4} r={2} color="var(--v3-sk2)" />
       <Bar x={7} y={18} w={w * 0.7} h={3} r={2} />
       <Bar x={7} y={25} w={w * 0.5} h={3} r={2} />
-      <span style={{ position: "absolute", left: 7, top: h - 20, display: "grid", height: 13, placeItems: "center", borderRadius: 3, background: color, padding: "0 7px", color: "#fff", fontFamily: tag.length > 2 ? "var(--v3-num)" : undefined, fontSize: 7.5, fontWeight: 700 }}>{tag}</span>
+      <span style={{ position: "absolute", left: 7, top: h - 20, display: "grid", height: 13, placeItems: "center", borderRadius: 3, background: color, padding: "0 7px", color: "#fff", fontFamily: tag.length > 2 ? "var(--v3-num)" : undefined, fontSize: 7.5, fontWeight: 700 }}>{t(tag)}</span>
     </Paper>
   );
 }

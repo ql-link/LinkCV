@@ -32,6 +32,8 @@ def build_desktop_app(cache, database_url):
         auth_desktop_retry_encryption_key=Fernet.generate_key().decode(),
         wechat_appid='wx-fixture-appid', wechat_secret='fixture-secret',
     )
+    # Exercise production identity policy with fictional service credentials.
+    settings.app_environment = 'production'
     app = create_app(settings, storage=FakeStorage(), redis=cache, create_schema=True)
     app.state.wechat_client = WechatClient(
         appid='wx-fixture-appid', secret='fixture-secret',
@@ -293,6 +295,34 @@ def test_desktop_key_fails_closed_without_disabling_web(desktop_app):
             })
             assert response.status_code == 503
             assert client.get('/api/auth/me').status_code == 200
+
+
+@pytest.mark.parametrize('environment', ['local', 'development', 'unknown'])
+def test_desktop_wechat_routes_follow_the_environment_policy(desktop_app, environment):
+    desktop_app.state.settings.app_environment = environment
+    with TestClient(desktop_app) as client:
+        assert client.get('/api/auth/desktop/capabilities').json()['wechat_login_enabled'] is False
+        for path in ('wechat/qrcode', 'wechat/status', 'wechat/exchange', 'refresh'):
+            response = client.post('/api/auth/desktop/' + path, json={})
+            assert response.status_code == 404
+
+
+def test_deletion_marker_denies_desktop_credentials_even_with_enabled_status(desktop_app):
+    from linkresume.core.database import utc_now
+
+    with TestClient(desktop_app) as client:
+        qr, tokens = login(client)
+        with desktop_app.state.session_factory() as db:
+            user = db.get(User, 1)
+            user.deletion_requested_at = utc_now()
+            db.commit()
+        assert client.get('/api/auth/desktop/me', headers={
+            'Authorization': 'Bearer ' + tokens['access_token'],
+        }).status_code == 401
+        assert client.post('/api/auth/desktop/wechat/exchange', json=exchange_body(qr)).json()['error'] == 'ACCOUNT_DISABLED'
+        assert client.post('/api/auth/desktop/refresh', json={
+            'refresh_token': tokens['refresh_token'], 'request_id': str(uuid4()),
+        }).status_code == 401
 
 
 def test_expiry_proof_and_validation_do_not_issue_session(desktop_app):

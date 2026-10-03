@@ -1,8 +1,10 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, type DatasetRecord } from "../../../api/client";
 import { getLocalThumbnail, THUMBNAIL_TEXT_LIMIT } from "../datasetThumbnails";
 
 export function DocumentThumbnail({ dataset, fallback }: { dataset: DatasetRecord; fallback: ReactNode }) {
+  useLocale();
   const host = useRef<HTMLDivElement>(null);
   const [text, setText] = useState<string | undefined>(() => getLocalThumbnail(dataset));
   const [html, setHtml] = useState("");
@@ -45,8 +47,8 @@ export function DocumentThumbnail({ dataset, fallback }: { dataset: DatasetRecor
   return <div ref={host} className="dataset-thumbnail-host">
     {text === undefined ? fallback : <div className="dataset-paper-thumbnail">
       {dataset.file_format.toLowerCase() === "txt" && !dataset.content_updated_at
-        ? <div className="dataset-paper-content is-plain">{text || "空白文档"}</div>
-        : <div className="dataset-paper-content" dangerouslySetInnerHTML={{ __html: html || "<p>空白文档</p>" }} />}
+        ? <div className="dataset-paper-content is-plain">{text || t("空白文档")}</div>
+        : <div className="dataset-paper-content" dangerouslySetInnerHTML={{ __html: html || t("<p>空白文档</p>") }} />}
     </div>}
   </div>;
 }

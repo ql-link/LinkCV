@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError, api } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
+import { setLocale } from "../../i18n";
 import { ResumeTemplatesPage } from "./ResumeTemplatesPage";
 
 vi.mock("../../api/client", async (importOriginal) => {
@@ -40,11 +41,24 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setLocale("zh-CN", false);
   vi.restoreAllMocks();
   window.history.replaceState(null, "", "/templates");
 });
 
 describe("ResumeTemplatesPage", () => {
+  it("英文界面翻译分类标签，同时保留模板名称和筛选的原始分类值", async () => {
+    setLocale("en-US", false);
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+    await screen.findByRole("button", { name: "View template: 经典单页技术简历" });
+    expect(screen.getAllByText("Classic").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Filter resume templates" }));
+    fireEvent.click(screen.getByRole("button", { name: "Modern" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "View template: 经典单页技术简历" })).toBeNull());
+    expect(screen.getByRole("button", { name: "View template: 现代双栏" })).toBeInTheDocument();
+  });
+
   it("保留接口展示顺序，新增目录整理不会重排原有模板", async () => {
     const additions = [
       { ...templates[1], id: "100", key: "muse-mist-cn", name: "雾青圆章" },
