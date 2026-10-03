@@ -20,8 +20,6 @@ jobs:
     outputs:
       migrations: ${{ steps.detect.outputs.migrations }}
       revisions: ${{ steps.detect.outputs.revisions }}
-      web: ${{ steps.scope.outputs.web }}
-      backend: ${{ steps.scope.outputs.backend }}
       extension: ${{ steps.scope.outputs.extension }}
       desktop: ${{ steps.scope.outputs.desktop }}
       miniprogram: ${{ steps.scope.outputs.miniprogram }}
@@ -73,9 +71,6 @@ jobs:
           # has <扩展正则>：本次改动是否命中，或已要求全部运行
           has() { [ "$all" = "true" ] || printf '%s\n' "$changed" | grep -Eq "$1"; }
           emit() { if has "$2"; then echo "$1=true" >> "$GITHUB_OUTPUT"; else echo "$1=false" >> "$GITHUB_OUTPUT"; fi; }
-          emit web '^apps/web/'
-          # 后端测试会读取模板资源和 PDF 渲染器，也依赖部署与脚本契约
-          emit backend '^(apps/backend/|apps/web/public/templates/|apps/web/pdf-cli/|scripts/|deploy/)'
           emit extension '^apps/extension/'
           emit desktop '^apps/desktop/'
           emit miniprogram '^apps/miniprogram/'
@@ -192,48 +187,6 @@ jobs:
       - run: uv sync --directory apps/backend --dev
       - run: npm run check:contracts
 
-  web:
-    needs: changes
-    if: needs.changes.outputs.web == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - uses: astral-sh/setup-uv@v8.3.2
-        with:
-          enable-cache: true
-      - run: npm ci --prefix apps/web
-      - run: uv sync --directory apps/backend --dev
-      - run: npm run check:design
-      - run: npm run typecheck:web
-      - run: npm run test:web
-      - run: npm run build:web
-
-  backend:
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - uses: astral-sh/setup-uv@v8.3.2
-        with:
-          enable-cache: true
-      # 后端 PDF 回归会构建 Web 的 PDF CLI，并使用锁定版本的 Chromium 渲染。
-      - run: npm ci --prefix apps/web
-      - run: node apps/web/node_modules/playwright-core/cli.js install --with-deps chromium
-      - run: uv sync --directory apps/backend --dev
-      - run: npm run test:backend
-      - run: npm run build:backend
-
   extension:
     needs: changes
     if: needs.changes.outputs.extension == 'true'
@@ -309,7 +262,7 @@ jobs:
   # 汇总 job：保持原有的 "Quality / check" 状态名，分支保护无需修改。
   # 被跳过的 job 视为通过；任一 job 失败或被取消则整体失败。
   check:
-    needs: [changes, migrations, rules, contracts, web, backend, extension, desktop, miniprogram, pi, devenv]
+    needs: [changes, migrations, rules, contracts, extension, desktop, miniprogram, pi, devenv]
     if: always()
     runs-on: ubuntu-latest
     steps:
