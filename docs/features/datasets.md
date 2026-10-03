@@ -97,3 +97,5 @@ Mac `DatasetLibraryView.swift` 与 Windows `DatasetLibraryPage.cs` 使用原生�
 ## 录音识别关联
 
 关联到本人面试场次的音频可由求职中心主动发起文件 ASR，稿件和后台状态保存在 `dataset_transcription_tasks`，不改变原文件与文档解析状态。活动转写时资料/文件夹物理删除返回既有 `DATASET_BUSY`；解除场次关联会取消活动任务，但保留原资料和已完成稿件。重新关联相同文件可读取已完成稿件。
+
+后台领取的租约到期时间由领取时间加固定时长推导，读取资料或转写状态不会续租；进程重启后继续查询已知服务商任务，不重新提交付费请求。任务 schema 和恢复规则见 [Backend 录音文件转写](../internals/backend.md)。

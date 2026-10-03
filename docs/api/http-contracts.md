@@ -657,4 +657,6 @@ Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账�
 
 `Task` 含 `id,dataset_id,status,text,sentences,duration_ms,error_code,created_at,updated_at,completed_at`。状态为 queued/submitting/transcribing/ready/failed/cancelled；仅 ready 返回正文及 `{text,start_ms,end_ms}` 句子，没有真实时间时句子为空。活动状态不暴露临时查询错误、线路或供应商编号。归档进程、取消场次拒绝新建；同账号至多一项活动任务，同一文件已有活动任务或成功稿件直接复用。无模型、无下载配置分别返回 503 `INTERVIEW_TRANSCRIPTION_MODEL_UNAVAILABLE` / `INTERVIEW_TRANSCRIPTION_MEDIA_UNAVAILABLE`；非音频为 422 `INTERVIEW_TRANSCRIPTION_AUDIO_REQUIRED`，未上传完成为 409 `INTERVIEW_TRANSCRIPTION_UPLOAD_PENDING`，UUID 用于不同文件为 409 `INTERVIEW_TRANSCRIPTION_REQUEST_CONFLICT`，账号繁忙为 429 `INTERVIEW_TRANSCRIPTION_BUSY`。
 
+读取任务不会改变 `updated_at` 或延长后台租约；终态的 `completed_at` 由最后更新时间提供。后台租约改为推导到期时间后，以上请求、响应与错误契约保持一致。
+
 校对后仍经 `PUT /api/interview-sessions/{session_id}` 的 `questions_markdown` 和 `base_lock_version` 保存；归档/取消拒绝文字写入，冲突不覆盖原文。下载接口 `GET/HEAD /api/interview-asr/audio?token=...` 只接受专用 audience/purpose 签名；有效活动任务与归属、文件摘要和关联关系必须匹配，终态令牌失效。它流式读取内部 MinIO，支持单段 Range、206 与 416，不返回 MinIO 地址。探测令牌仅能读固定一秒静音 WAV。反向代理日志必须省略该路径的 query。

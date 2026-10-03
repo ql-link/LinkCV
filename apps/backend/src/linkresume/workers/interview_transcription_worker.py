@@ -38,7 +38,7 @@ class InterviewTranscriptionProcessor:
         now = utc_now()
         with self.factory() as db:
             candidates = db.scalars(select(Task.id).where(Task.status.in_(TRANSCRIPTION_ACTIVE),
-                or_(Task.lease_until.is_(None), Task.lease_until <= now),
+                or_(Task.lease_token.is_(None), Task.updated_at <= now - timedelta(seconds=service.LEASE_SECONDS)),
                 or_(Task.status.in_(("queued", "submitting")),
                     and_(Task.error_code.is_(None), Task.updated_at <= now - timedelta(seconds=15)),
                     and_(Task.error_code.is_not(None), Task.updated_at <= now - timedelta(seconds=300))),
@@ -50,7 +50,8 @@ class InterviewTranscriptionProcessor:
                     continue
                 db.scalar(select(User).where(User.id == owner_id).with_for_update())
                 task = db.scalar(select(Task).where(Task.id == task_id).with_for_update().execution_options(populate_existing=True))
-                if not task or task.status not in TRANSCRIPTION_ACTIVE or (task.lease_until and service.aware(task.lease_until) > now):
+                now = utc_now()  # Claim time must not precede time spent waiting for row locks.
+                if not task or task.status not in TRANSCRIPTION_ACTIVE or service.lease_active(task, now):
                     continue
                 dataset = service.active_context(db, task)
                 if dataset is None:
@@ -80,14 +81,14 @@ class InterviewTranscriptionProcessor:
                     continue
                 submit = task.status == "queued"
                 lease = str(uuid4())
-                task.lease_token, task.lease_until = lease, now + timedelta(seconds=120)
+                task.lease_token = lease
                 if submit:
                     task.status = "submitting"
                     db.add(LLMCallLog(call_id=service.call_id(task), use_case=plan.use_case, source="interview_recording",
                         user_id=owner_id, route_id=plan.route_id, runtime_config_version=plan.runtime_config_version,
                         protocol_code=plan.protocol_code, selection_source=plan.selection_source,
                         price_snapshot_json=plan.pricing, status="pending", metering_status="unknown"))
-                task.updated_at = now
+                task.updated_at = utc_now()
                 provider_id = task.provider_task_id
                 db.commit()
                 return Step(task_id, owner_id, lease, submit, target, url if submit else None, provider_id)
@@ -98,7 +99,7 @@ class InterviewTranscriptionProcessor:
             db.scalar(select(User).where(User.id == step.user_id).with_for_update())
             task = db.scalar(select(Task).where(Task.id == step.id).with_for_update().execution_options(populate_existing=True))
             if (not task or task.status not in TRANSCRIPTION_ACTIVE or task.lease_token != step.lease
-                    or not task.lease_until or service.aware(task.lease_until) <= utc_now()):
+                    or not service.lease_active(task, utc_now())):
                 return
             if service.active_context(db, task) is None:
                 service.finish(db, task, "cancelled", "INTERVIEW_TRANSCRIPTION_SOURCE_CHANGED")
@@ -115,7 +116,7 @@ class InterviewTranscriptionProcessor:
                     task.status = "transcribing"
                 task.error_code = error.code if error else None
                 task.updated_at = utc_now()
-                task.lease_token = task.lease_until = None
+                task.lease_token = None
             db.commit()
 
     async def run_once(self) -> bool:

@@ -100,12 +100,10 @@ def start(client, session, asset, request_id=None):
     return client.post(f'/api/interview-sessions/{session["id"]}/assets/{asset["id"]}/transcription', json={'request_id': request_id or str(uuid4())})
 
 
-def due(app, *, expired_lease=False):
+def due(app):
     with app.state.session_factory() as db:
         task = db.scalar(select(DatasetTranscriptionTask))
         task.updated_at = utc_now() - timedelta(minutes=6)
-        if expired_lease:
-            task.lease_until = utc_now() - timedelta(seconds=1)
         db.commit()
 
 
@@ -184,7 +182,7 @@ def test_unknown_submission_is_failed_without_repeating_paid_post(tmp_path):
         start(client,session,asset)
         step=worker._claim(); assert step.submit
         assert worker._claim() is None  # Existing lease prevents another worker POST.
-        due(app,expired_lease=True)
+        due(app)
         assert not asyncio.run(worker.run_once())
         with app.state.session_factory() as db:
             task=db.scalar(select(DatasetTranscriptionTask)); log=db.scalar(select(LLMCallLog))
@@ -300,7 +298,7 @@ def test_recovery_never_accepts_an_invalid_or_expired_write(tmp_path,failure):
         start(client,session,asset)
         if failure=='expired_writer':
             step=worker._claim()
-            due(app,expired_lease=True)
+            due(app)
             worker._save(step,provider_id='late-id')
             assert not asyncio.run(worker.run_once())
         else:
@@ -342,3 +340,82 @@ def test_step_timeout_bounds_slow_streams_without_resubmitting(tmp_path,monkeypa
             assert task.error_code=='INTERVIEW_TRANSCRIPTION_'+('SUBMIT_UNCERTAIN' if phase=='submit' else 'PROVIDER_UNAVAILABLE')
             assert task.result_json is None and task.lease_token is None
         assert len(gateway.submits)==1
+
+
+def test_expired_poll_claim_is_replaced_and_old_token_cannot_write(tmp_path):
+    app,gateway,worker=make_app(tmp_path)
+    with TestClient(app) as client:
+        register(client,'lease-recovery@example.test');session=create_session(client);asset=audio(client,session)
+        task=start(client,session,asset).json()['task']
+        assert asyncio.run(worker.run_once());due(app)
+        old=worker._claim();assert old and not old.submit
+        path=f'/api/interview-sessions/{session["id"]}/assets/{asset["id"]}/transcription'
+        before=client.get(path).json()['task']['updated_at']
+        assert client.get(path).json()['task']['updated_at']==before
+        assert worker._claim() is None
+        with app.state.session_factory() as db:
+            current=db.get(DatasetTranscriptionTask,int(task['id']))
+            current.updated_at=utc_now()-timedelta(seconds=121)
+            db.commit()
+        new=worker._claim();assert new and new.lease!=old.lease
+        result={'schema_version':1,'text':'张三校对前的识别稿','sentences':[],'duration_ms':4000}
+        worker._save(old,result=result)
+        with app.state.session_factory() as db:
+            current=db.get(DatasetTranscriptionTask,int(task['id']))
+            assert current.status=='transcribing' and current.result_json is None
+            assert db.scalar(select(LLMCallLog)).status=='pending'
+        worker._save(new,result=result)
+        assert client.get(path).json()['task']['text']==result['text']
+        assert len(gateway.submits)==1
+
+
+@pytest.mark.parametrize('change',['unlink','legacy_unlink','delete_session','delete_application','delete_job'])
+def test_relinking_recording_never_revives_old_task_or_call(tmp_path,change):
+    app,gateway,worker=make_app(tmp_path)
+    with TestClient(app) as client:
+        register(client,'relink-recording@example.test');session=create_session(client);asset=audio(client,session)
+        task=start(client,session,asset).json()['task'];assert asyncio.run(worker.run_once());due(app)
+        late=worker._claim();assert late and not late.submit
+        if change=='unlink':
+            response=client.delete(f'/api/interview-sessions/{session["id"]}/assets/{asset["id"]}')
+        elif change=='legacy_unlink':
+            response=client.delete(f'/api/interview-assets/{asset["id"]}')
+        elif change=='delete_session':
+            response=client.delete(f'/api/interview-sessions/{session["id"]}')
+        elif change=='delete_job':
+            application=client.get(f'/api/job-applications/{session["application_id"]}').json()['application']
+            response=client.delete(f'/api/job-descriptions/{application["job_description_id"]}')
+        else:
+            application=client.get(f'/api/job-applications/{session["application_id"]}').json()['application']
+            terminated=client.post(f'/api/job-applications/{application["id"]}/terminate',json={
+                'client_request_id':str(uuid4()),'reason':'company_rejected','base_lock_version':application['lock_version']})
+            assert terminated.status_code==200,terminated.text
+            response=client.delete(f'/api/job-applications/{application["id"]}')
+        assert response.status_code in (200,204),response.text
+        replacement=create_session(client)
+        response=client.post(f'/api/interview-sessions/{replacement["id"]}/assets/attach',json={'dataset_id':asset['id']})
+        assert response.status_code==201,response.text
+        worker._save(late,result={'schema_version':1,'text':'旧场次晚到结果','sentences':[]})
+        with app.state.session_factory() as db:
+            current=db.get(DatasetTranscriptionTask,int(task['id']))
+            assert current.status=='cancelled' and current.result_json is None
+            assert db.get(UserDataset,int(asset['id'])).interview_session_id==int(replacement['id'])
+            assert db.scalar(select(LLMCallLog)).status=='cancelled'
+        assert start(client,replacement,asset).status_code==202
+
+
+def test_request_ids_remain_user_scoped_and_reject_cross_owner_cancel(tmp_path):
+    app,gateway,worker=make_app(tmp_path)
+    request_id=str(uuid4())
+    with TestClient(app) as client:
+        register(client,'first-owner@example.test');first_session=create_session(client);first_asset=audio(client,first_session)
+        first=start(client,first_session,first_asset,request_id).json()['task']
+        client.post('/api/auth/logout');register(client,'second-owner@example.test')
+        second_session=create_session(client);second_asset=audio(client,second_session)
+        second=start(client,second_session,second_asset,request_id)
+        assert second.status_code==202 and second.json()['task']['id']!=first['id']
+        response=client.post(f'/api/interview-sessions/{second_session["id"]}/assets/{second_asset["id"]}/transcription/cancel',
+                             json={'task_id':first['id']})
+        assert response.status_code==404
+        with app.state.session_factory() as db:
+            assert db.get(DatasetTranscriptionTask,int(first['id'])).status=='queued'

@@ -169,6 +169,8 @@ ACCOUNT_DELETION_ENABLED 默认 false；ACCOUNT_DELETION_POLL_SECONDS 默认 10�
 
 ## 录音文件 ASR
 
-部署前备份并以 forward-only Alembic 升级至 `0109`，再部署 API、Worker 与 Web；旧代码兼容新增空任务表，新代码须迁移后启动。配置 `ASR_MEDIA_BASE_URL` 为同环境、对百炼可达的 HTTPS 应用根地址；现有 Compose 的环境文件同时供 API/Worker 读取，无需公网 MinIO。
+部署前备份并以 forward-only Alembic 升级至 `0110`，再部署 API、Worker 与 Web。`0109` 新建任务表，`0110` 删除可推导的租约到期列；若环境已启用 `0109` 版转写，先阻止新增请求、完成或取消活动任务，再停止旧 API/Worker 并迁移。存在活动任务时 `0110` 会拒绝升级，不取消任务或清除稿件。删除列后不能运行依赖 `lease_until` 的旧 API/Worker；可回退到尚未接入文件 ASR 的旧版本并保留表，schema 修正使用向前 revision。
+
+配置 `ASR_MEDIA_BASE_URL` 为同环境、对百炼可达的 HTTPS 应用根地址；现有 Compose 的环境文件同时供 API/Worker 读取，无需公网 MinIO。
 
 反向代理必须转发 `/api/interview-asr/audio` 的 GET、HEAD 和 Range，并禁止 access log 记录该路径的 query token。管理员配置百炼北京或新加坡连接，绑定文件模型的 `recording_transcription` / `aliyun_asr_file`，执行一秒静音探测，再用虚构短录音验证实际下载、识别、刷新和校对保存。文件 URL 在后台生成，不提供登录 Cookie/存储密钥，处理终态后失效。外部模型任务已经受理时，取消不承诺停止计费。回退应用不会删除任务或原文件；数据库恢复依赖备份，schema 修正使用新的向前 revision。

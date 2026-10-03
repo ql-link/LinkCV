@@ -1,7 +1,7 @@
 """Owned ASR drafts; all admission, cancellation and worker writes lock the user first."""
 from dataclasses import asdict
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import select
@@ -17,9 +17,16 @@ from linkresume.modules.llm.resolver import RECORDING_TRANSCRIPTION, RoutePlan, 
 from linkresume.modules.llm.service import LLMError
 from linkresume.modules.resumes.models import DocumentParseTask
 
+LEASE_SECONDS = 120
+
 
 def aware(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
+def lease_active(task, now: datetime) -> bool:
+    # While leased, updated_at is the claim time; no progress writes renew it.
+    return task.lease_token is not None and aware(task.updated_at) + timedelta(seconds=LEASE_SECONDS) > now
 
 
 def call_id(task) -> str:
@@ -111,7 +118,7 @@ def finish(db, task, status, error=None, *, result=None, duration_seconds=None):
     task.status = status
     task.error_code = error
     task.result_json = result
-    task.lease_token = task.lease_until = None
+    task.lease_token = None
     task.updated_at = utc_now()
     log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == call_id(task), LLMCallLog.status == "pending"))
     if log is not None:

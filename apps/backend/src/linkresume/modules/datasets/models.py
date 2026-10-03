@@ -283,7 +283,7 @@ class DatasetTranscriptionTask(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "client_request_id", name="uk_transcription_user_request"),
         CheckConstraint("status IN ('queued','submitting','transcribing','ready','failed','cancelled')", name="ck_transcription_status"),
-        CheckConstraint("status IN ('queued','submitting','transcribing') OR (lease_token IS NULL AND lease_until IS NULL)", name="ck_transcription_terminal_lease"),
+        CheckConstraint("status IN ('queued','submitting','transcribing') OR lease_token IS NULL", name="ck_transcription_terminal_lease"),
         Index("idx_transcription_dataset", "dataset_id", "id"),
         Index("idx_transcription_poll", "status", "updated_at", "id"),
         Index("idx_transcription_session", "interview_session_id", "status"),
@@ -300,6 +300,5 @@ class DatasetTranscriptionTask(Base):
     result_json: Mapped[dict | None] = mapped_column(JSON, comment="版本化文字与句子时间结果")
     error_code: Mapped[str | None] = mapped_column(String(64), comment="脱敏错误码")
     lease_token: Mapped[str | None] = mapped_column(String(36).with_variant(mysql.CHAR(36, charset="ascii", collation="ascii_bin"), "mysql"), comment="后台领取令牌")
-    lease_until: Mapped[datetime | None] = mapped_column(timestamp_type(), comment="领取有效时间 UTC")
     created_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间 UTC")
     updated_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="最后处理时间 UTC")
