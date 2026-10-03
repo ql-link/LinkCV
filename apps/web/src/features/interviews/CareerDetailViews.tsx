@@ -1161,6 +1161,9 @@ export function ScheduleDateTimePicker({
 }
 
 type OfferFormValues = {
+  receivedOn: string;
+  replyDueOn: string;
+  startOn: string;
   baseLocation: string;
   salary: string;
   salaryCurrency: string;
@@ -1197,6 +1200,9 @@ function offerRequestPayload(values: OfferFormValues, baseLockVersion: number) {
   const salary = optionalSalaryNumber(values.salary);
   return {
     base_lock_version: baseLockVersion,
+    received_on: values.receivedOn || null,
+    reply_due_on: values.replyDueOn || null,
+    start_on: values.startOn || null,
     base_location: values.baseLocation.trim() || null,
     salary,
     salary_currency: salary !== null ? values.salaryCurrency.trim().toUpperCase() : null,
@@ -1229,6 +1235,14 @@ function OfferDetailsFields({
   return (
     <section className="career-next-stage-offer-panel" aria-label={t("Offer 信息")}>
       <div className="career-next-stage-offer-form">
+        {([
+          ["receivedOn", "收到日期"],
+          ["replyDueOn", "回复截止日期"],
+          ["startOn", "预计入职日期"],
+        ] as const).map(([key, label]) => <div className="career-next-stage-field" key={key}>
+          <Label htmlFor={`career-offer-${key}`}>{t(label)}</Label>
+          <input id={`career-offer-${key}`} type="date" min="1000-01-01" max="9999-12-31" value={values[key]} disabled={disabled} onInput={(event) => update(key, event.currentTarget.value)} onChange={(event) => update(key, event.target.value)} />
+        </div>)}
         <div className="career-next-stage-field">
           <Label htmlFor="career-offer-base-location">Base</Label>
           <input
@@ -1478,6 +1492,9 @@ export function AddNextStageDialog({
   const [interviewMode, setInterviewMode] = useState<InterviewSessionRecord["mode"]>("video");
   const [interviewMeetingOrLocation, setInterviewMeetingOrLocation] = useState("");
   const [offerValues, setOfferValues] = useState<OfferFormValues>({
+    receivedOn: "",
+    replyDueOn: "",
+    startOn: "",
     baseLocation: "",
     salary: "",
     salaryCurrency: "CNY",
@@ -2210,6 +2227,9 @@ function OfferApplicationDialog({
   const [busy, setBusy] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [offerValues, setOfferValues] = useState<OfferFormValues>({
+    receivedOn: application.offer_received_on ?? "",
+    replyDueOn: application.offer_reply_due_on ?? "",
+    startOn: application.offer_start_on ?? "",
     baseLocation: application.offer_base_location ?? "",
     salary: application.offer_salary?.toString() ?? "",
     salaryCurrency: application.offer_salary_currency ?? "CNY",
@@ -3334,7 +3354,7 @@ export function InterviewSessionDetailView({
   }
 
   if (!isAssessment && session.status === "completed") {
-    return (<><ReviewV3Content detail={detail} onBack={onBack} onUpload={() => setShowContentDialog(true)} onText={() => setShowEditTextDialog(true)} onNotice={onNotice} recordContent={<>{detailBody}<div className="cd3-record-management">{editScheduleAction}{recordActions}</div></>} />{detailDialogs}</>);
+    return (<><ReviewV3Content detail={detail} onChanged={() => onChanged(session.id)} onBack={onBack} onUpload={() => setShowContentDialog(true)} onText={() => setShowEditTextDialog(true)} onNotice={onNotice} recordContent={<>{detailBody}<div className="cd3-record-management">{editScheduleAction}{recordActions}</div></>} />{detailDialogs}</>);
   }
   return (
     <div className="career-session-detail-page">

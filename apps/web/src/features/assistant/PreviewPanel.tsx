@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { api, ApiRequestError, type DatasetContent, type ResumeRecord } from "../../api/client";
 import { datasetsPath, editorPath, navigateTo } from "../../routing";
 import { Icon, type V3IconName } from "../../v3/Icon";
-import { BeTag, Menu } from "../../v3/primitives";
+import { Menu } from "../../v3/primitives";
 import { renderDatasetMarkdown } from "../datasets/datasetMarkdown";
 import { ResumePreview } from "../preview/ResumePreview";
 import { useExitPresence } from "../../components/ui/motion";
@@ -167,7 +167,7 @@ export function PreviewPanel({ tabs, activeKey, width = 520, onWidthChange, onAc
       </div>
       <footer className="assistant-preview-foot">
         <span>{active.kind === "resume" ? (active.pendingChanges?.length ? t("{value0} 处待确认修改已在简历中标出", { value0: active.pendingChanges.length }) : t("只读预览 · 编辑请在编辑器中打开")) : active.kind === "dataset" ? (active.excerpts?.length ? t("只读预览 · AI 本次引用了 {value0} 条内容", { value0: active.excerpts.length }) : t("只读预览 · AI 已读取其中的文字内容")) : active.kind === "image" ? t("截图 · 仅在本次对话中可见") : active.saved ? t("已保存到资料库") : t("未保存 · 仅在本次对话中可见")}</span>
-        {active.kind === "generated" ? <><button type="button" className="v3-btn v3-btn-text" onClick={() => void navigator.clipboard.writeText(active.content).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }).catch(() => onNotice(t("复制失败，请允许剪贴板访问后重试。")))}><Icon name="copy" size={13} />{copied ? t("已复制") : t("复制")}</button><button type="button" className="v3-btn v3-btn-dark" disabled={active.saved} onClick={() => void onSaveGenerated?.(active.id)}>{active.saved ? t("已保存") : t("保存到资料库")}</button><BeTag title={t("文档内容目前由本地模板给出，AI 文档生成需要后端")} /></> : active.kind !== "image" && <button type="button" className="v3-btn v3-btn-ghost" onClick={() => navigateTo(active.kind === "resume" ? editorPath(active.id) : datasetsPath())}><Icon name="ext" size={13} />{active.kind === "resume" ? t("在编辑器中打开") : t("在资料库中打开")}</button>}
+        {active.kind === "generated" ? <><button type="button" className="v3-btn v3-btn-text" onClick={() => void navigator.clipboard.writeText(active.content).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); }).catch(() => onNotice(t("复制失败，请允许剪贴板访问后重试。")))}><Icon name="copy" size={13} />{copied ? t("已复制") : t("复制")}</button><button type="button" className="v3-btn v3-btn-dark" disabled={active.saved} onClick={() => void onSaveGenerated?.(active.id)}>{active.saved ? t("已保存") : t("保存到资料库")}</button></> : active.kind !== "image" && <button type="button" className="v3-btn v3-btn-ghost" onClick={() => navigateTo(active.kind === "resume" ? editorPath(active.id) : datasetsPath())}><Icon name="ext" size={13} />{active.kind === "resume" ? t("在编辑器中打开") : t("在资料库中打开")}</button>}
       </footer>
     </aside>
   </>;

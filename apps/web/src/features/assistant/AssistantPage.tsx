@@ -54,7 +54,7 @@ import { HomeCardView } from "./HomeCards";
 import { greetingPrefix, homeCopy, useHomeDashboard } from "./homeDashboard";
 import { ModelPicker } from "./ModelPicker";
 import { openPreviewTab, PreviewPanel, previewTabKey, type PreviewTab, type GeneratedDocument, type ScreenshotAttachment } from "./PreviewPanel";
-import { createLocalDocument, GeneratedDocumentCard, isLocalDocumentRequest, ScreenshotStrip } from "./localArtifacts";
+import { attachGeneratedDocuments, GeneratedDocumentCard, isDocumentRequest, ScreenshotStrip } from "./localArtifacts";
 import { GeneratedDocumentSaveDialog } from "./GeneratedDocumentSaveDialog";
 import { SuggestionCard } from "./SuggestionCard";
 import "./assistant.css";
@@ -568,11 +568,12 @@ function messageText(message: LocalMessage) {
   return message.content || (message.message_type === "clarification" ? t("需要你补充一些信息。") : "");
 }
 
-function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]) {
+function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[], sessionId: string) {
   const localMessages = current.filter((message) => message.localOnly);
   const persistedAssistant = persisted.some((message) => message.role === "assistant");
   const partialAssistant = persistedAssistant ? [] : current.filter((message) => !message.localOnly && message.role === "assistant" && message.sequence_no < 0);
-  return [...persisted, ...partialAssistant, ...localMessages].sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at));
+  const documents = new Map(current.filter(item => item.generatedDocument).map(item => [item.generatedDocument!.id, item.generatedDocument!]));
+  return attachGeneratedDocuments([...persisted, ...partialAssistant, ...localMessages].sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)), sessionId).map(item => ({ ...item, generatedDocument: item.generatedDocument ? documents.get(item.generatedDocument.id) ?? item.generatedDocument : undefined }));
 }
 
 type AssistantPageProps = {
@@ -767,7 +768,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           ...blankConversation(),
           loadState: "loading",
           session,
-          messages: session.messages ?? [],
+          messages: attachGeneratedDocuments(session.messages ?? [], session.id),
         };
       }
       return next;
@@ -1012,7 +1013,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       updateConversation(sessionIdToSelect, {
         loadState: "ready",
         session: detail.session,
-        messages: detail.session.messages ?? [],
+        messages: attachGeneratedDocuments(detail.session.messages ?? [], detail.session.id),
         proposals: proposalResult.proposals,
         contexts: [],
         invalidContextIds: [],
@@ -1275,9 +1276,9 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       updateConversation(key, (state) => {
         const lastPrompt = state.messages.map((message) => message.role).lastIndexOf("user");
         return {
-          messages: state.messages.map((message, index) => index >= lastPrompt
-            ? { ...message, temporary: false, status: undefined }
-            : message),
+          messages: attachGeneratedDocuments(state.messages.map((message, index) => index >= lastPrompt
+            ? { ...message, run_id: message.run_id ?? event.runId, temporary: false, status: undefined }
+            : message), key),
         };
       });
       return;
@@ -1343,7 +1344,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
       updateConversation(key, (latest) => ({
         session: detail?.session ?? latest.session,
-        messages: detail ? mergeSessionMessages(detail.session.messages ?? [], latest.messages) : latest.messages,
+        messages: detail ? mergeSessionMessages(detail.session.messages ?? [], latest.messages, key) : latest.messages,
         proposals: proposalResult.proposals.length > 0 ? proposalResult.proposals : latest.proposals,
         running: false,
         stage: latest.stage === "failed" || latest.stage === "stopped" ? latest.stage : "idle",
@@ -1396,14 +1397,14 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     const state = conversationStates[key] ?? blankConversation();
     const statePendingClarification = pendingClarificationMessage(state.messages);
     if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) return;
-    if (replyToSequenceNo === undefined && (isLocalDocumentRequest(trimmed) || state.screenshots?.length)) {
+    if (replyToSequenceNo === undefined && state.screenshots?.length) {
+      if (isDocumentRequest(trimmed)) { setNotice(t("截图目前仅支持本地预览，请移除截图后发送文字请求。")); return; }
       const timestamp = new Date().toISOString();
-      const generatedDocument = isLocalDocumentRequest(trimmed) ? createLocalDocument(idempotencyKey(), state.contexts) : undefined;
       updateConversation(key, {
         draft: "", screenshots: [], contexts: [], error: null,
         messages: [...state.messages,
-          { role: "user", sequence_no: -(Date.now()), created_at: timestamp, content: trimmed, contexts: state.contexts, screenshots: state.screenshots, localOnly: true },
-          { role: "assistant", sequence_no: -(Date.now() + 1), created_at: timestamp, content: generatedDocument ? "准备文档已整理在下方，可以打开预览、复制或保存。文档生成目前使用本地示例，尚未连接 AI 生成接口。" : "截图已加入本次对话，可点击缩略图查看。截图理解尚未连接后端，当前仅保留本地预览。", generatedDocument, artifactFollowup: generatedDocument ? t("需要的话，我可以按这份文档陪你做一轮模拟面试。") : undefined, localOnly: true },
+          { role: "user", sequence_no: -Date.now(), created_at: timestamp, content: trimmed, contexts: state.contexts, screenshots: state.screenshots, localOnly: true },
+          { role: "assistant", sequence_no: -(Date.now() + 1), created_at: timestamp, content: "截图已加入本次对话，可点击缩略图查看。截图理解尚未连接后端，当前仅保留本地预览。", localOnly: true },
         ],
       });
       refreshComposerView("", [], []);
@@ -1489,7 +1490,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       await api.streamAgentMessage(
         session.id,
         {
-          content: trimmed,
+          content: isDocumentRequest(trimmed) ? `${trimmed}\n\n请输出完整 Markdown 文档，以一级标题开头；如果资料不足，请先询问，不要编造经历或数据。` : trimmed,
           idempotency_key: idempotencyKey(),
           ...(state.revisionProposalId ? { revision_proposal_id: state.revisionProposalId } : {}),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
@@ -1505,7 +1506,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       const proposalResult = await api.listAgentProposals(null, session.id, true).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber) return;
       updateConversation(requestKey, (latest) => {
-        const messages = detail ? mergeSessionMessages(detail.session.messages, latest.messages) : latest.messages;
+        const messages = detail ? mergeSessionMessages(detail.session.messages, latest.messages, requestKey) : latest.messages;
         const runCompleted = latest.stage !== "failed" && latest.stage !== "stopped";
         return {
           ...(runCompleted ? {

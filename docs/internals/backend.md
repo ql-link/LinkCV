@@ -171,6 +171,8 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 创建和改期排期时，请求必须在显式 `end_at` 与正整数 `duration_minutes` 中二选一；新 Web 流程提交持续分钟，应用服务据此推算并持久化 `end_at`，旧消费方仍可继续提交显式结束时间。开放窗口的个人作答计划遵循同一兼容契约，并继续在推算后校验完整落入官方窗口。
 
+Offer 收到日期、回复截止和预计入职日期由 `JobApplication` 的 `offer_received_on/offer_reply_due_on/offer_start_on` 映射既有迁移 `0105` 的三个可空 DATE 列；本次接通不新增迁移或回填。`record_offer` 仅在请求显式携带相应字段时写入，与既有归属、状态和版本校验共用事务，旧客户端省略时保留结构化值。部署前目标 schema 必须已包含 `0105` 日期列，仓库 head 不代表目标环境 current。
+
 普通微信绑定路由已撤下。正式环境的注销操作确认由 `wechat_action_service.py` 管理五分钟 Redis hash，以 user、Web session、action、poll token 哈希绑定请求；小程序仅提交当前微信 code，网页凭正确 poll token 领取单次 action token。刷新、取消、到期和消费旧凭证均不能再使用。接口见 [HTTP 契约](../api/http-contracts.md#账号补充接口)。
 
 扫码登录挂在 `/api/auth/wechat` 下，scene 状态机存 Redis（key `wechat:login:<scene>`，TTL 默认 300 秒）：
@@ -347,3 +349,7 @@ RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记�
 `0108` 在 `interview_sessions` 新增 `prep_items`（JSON，可空）和 `prep_generated_at`（可空时间）。清单只随场次整体读写、不跨场次查询，所以不单独建表；每场至多 12 条，条目 id 由服务端保证唯一。`prep_generated_at` 是“本场已成功生成过一次”的唯一标记，用户清空或编辑清单都不会清除它。
 
 `POST /api/interview-sessions/:id/prep-items:generate` 以 `source=interview_prep`、`interview_prep` 场景调用结构化输出，管理员需像其他场景一样为它绑定并探测可用线路。流程分三段：先在短事务内校验归属、状态并组装提示词（岗位快照、阶段、本人关联简历、备注、最近两场已完成面试复盘、最近一次已完成模拟面试报告的 `improvements` 与 `resume_risks`，用户文本都以 `<data>` 引用且声明不是指令）；再无事务调用模型，结构无效时重试一次；最后在 `SELECT … FOR UPDATE` 行锁内重新校验并合并写入。合并保留生成期间用户新增的条目，按标题去重，总数封顶 12。模型失败、结构无效或去重后为空时不写 `prep_generated_at`，用户可以重试。迁移只含 DDL，沿用 forward-only 链。
+
+## 结构化面试复盘（0105 已有字段）
+
+ORM 映射既有 `review_report` JSON、`review_request_id` CHAR(36)、`review_started_at` DATETIME(6)、`review_status` VARCHAR(16)、`review_error` VARCHAR(64)，本次不修改历史 SQL 或新增迁移。报告含 schema_version=1、源文字哈希、生成时间、三维评分与问题分析；请求中的源哈希保存在 JSON 元数据，未完成及不兼容结构不作为有效报告返回。`review_status` 为 generating/ready/failed；请求 UUID 用于生成幂等，活动状态按 3 分钟租期处理。目标数据库需要沿现有链升级到 head（0108）；历史账号版 0105 由 0106 补齐 Offer/复盘字段；SQLite 测试不证明 MySQL 迁移已应用。

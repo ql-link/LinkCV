@@ -453,3 +453,9 @@
   .v3-content.assistant-v3-content.has-preview { right: 0; }
   .assistant-preview, .assistant-preview.is-expanded { top: 52px; right: 0; bottom: 0; left: auto; max-width: 100vw; border-radius: 0; }
 }
+
+.offer-comparison { padding: 28px; overflow-x: auto; }
+.offer-comparison table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+.offer-comparison th, .offer-comparison td { padding: 12px; border-bottom: 1px solid var(--v3-fl); text-align: left; vertical-align: top; white-space: pre-wrap; }
+.offer-comparison th { font-weight: 600; }
+.offer-comparison footer { display: flex; flex-wrap: wrap; gap: 20px; }

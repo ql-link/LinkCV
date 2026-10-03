@@ -884,6 +884,9 @@ export type JobApplicationRecord = {
     | "accepted"
     | "declined";
   offer_base_location: string | null;
+  offer_received_on?: string | null;
+  offer_reply_due_on?: string | null;
+  offer_start_on?: string | null;
   offer_salary: string | null;
   offer_salary_currency: string | null;
   offer_salary_period: SalaryPeriod | null;
@@ -923,6 +926,13 @@ export type InterviewPrepItem = {
   done: boolean;
 };
 
+export type InterviewReviewScore = { score: number | null; reason: string; evidence: string | null };
+export type InterviewReviewReport = {
+  schema_version: 1; source_hash: string; generated_at: string; summary: string; overall_score: number | null;
+  project_expression: InterviewReviewScore; system_design: InterviewReviewScore; communication: InterviewReviewScore;
+  questions: Array<{ question: string; answer: string | null; evidence: string; strength: string | null; improvement: string | null; suggested_answer: string | null }>;
+};
+
 export type InterviewSessionRecord = {
   id: string;
   application_id: string;
@@ -948,6 +958,12 @@ export type InterviewSessionRecord = {
   preparation_note: string | null;
   questions_markdown: string | null;
   review_summary: string | null;
+  review_report?: InterviewReviewReport | null;
+  review_status?: "generating" | "ready" | "failed" | null;
+  review_request_id?: string | null;
+  review_started_at?: string | null;
+  review_error?: string | null;
+  review_stale?: boolean;
   improvement_markdown: string | null;
   prep_items: InterviewPrepItem[];
   prep_generated_at: string | null;
@@ -2016,6 +2032,9 @@ export const api = {
     id: string,
     payload: {
       base_lock_version: number;
+      received_on?: string | null;
+      reply_due_on?: string | null;
+      start_on?: string | null;
       base_location?: string | null;
       salary?: number | null;
       salary_currency?: string | null;
@@ -2136,6 +2155,8 @@ export const api = {
       `/api/interview-sessions/${id}/prep-items:generate`,
       { method: "POST" },
     ),
+  generateInterviewReview: (id: string, payload: { request_id: string; base_lock_version: number }) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}/review:generate`, { method: "POST", body: payload }),
   rescheduleInterviewSession: (
     id: string,
     payload: ({

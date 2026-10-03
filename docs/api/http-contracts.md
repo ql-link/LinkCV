@@ -333,6 +333,8 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 
 原生 V4 使用 Offer 阶段且 `offer_status=none` 表示 OC 口头意向，`POST /offer` 才将其标记为 `received`，即使未填写数值薪资也可确认正式 Offer。`POST /close` 携带 `status=closed` 和 `offer_status=accepted|declined` 完成最终决策；OC 不能直接接受或婉拒，已归档记录不能作决策。`terminate` 的 `offer_declined` 原因同样要求已收到正式 Offer。双方均沿用归属检查和 `base_lock_version`。原生将 `status=closed` 的接受记录归入已结束，不因恢复归档而重新开启流程。
 
+`POST /offer` 另可携带 `received_on/reply_due_on/start_on` 三个独立日期字段；仅接受 MySQL DATE 支持的 `YYYY-MM-DD`（年份 1000–9999）或 `null`，不接受时间戳或时分。省略字段保留原值，显式 `null` 清空，与 Offer 状态在同一乐观锁事务中更新。求职详情与列表返回可空 `offer_received_on/offer_reply_due_on/offer_start_on`。旧原生备注内的日期标签仍保留，不解析回填；旧客户端省略新字段不会清除 Web 保存的结构化日期。复用 `400 INVALID_INTERVIEW_REQUEST`、`404 INTERVIEW_NOT_FOUND` 和 `409 INTERVIEW_EDIT_CONFLICT`。
+
 `POST /stages` 与 `POST /offer` 可选携带 `notes`（最多 16,000 字符），在同一版本校验与事务中保存补充说明；省略保持原备注，显式 `null` 清空。原生 V4 的投递渠道、口头薪酬、收到日期、回复截止、薪酬说明、预计入职、试用期与 Offer 材料名称按可读标签保存于备注，保留其他行；材料名称不是附件上传或关联。旧 Web 请求无需新增字段。阶段请求继续复用 UUID，重放不会重复追加阶段或覆盖后续备注。
 
 | Method | Path | 行为 |
@@ -633,3 +635,11 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 主要账号错误包括 `INVALID_CONTACT_EMAIL`、`INVALID_ACCOUNT_PREFERENCES`、`INVALID_CURRENT_PASSWORD`、`WEAK_PASSWORD`、`PASSWORD_MISMATCH`、`PASSWORD_UNCHANGED`、`INVALID_ACCOUNT_CONFIRMATION_METHOD`、`INVALID_ACCOUNT_DELETION_CONFIRMATION`、`ACCOUNT_DELETION_FORBIDDEN`、`ACCOUNT_SHARED_RESOURCE_OWNER`、`ACCOUNT_BUSY`、`WECHAT_IDENTITY_REQUIRED` 和 `WECHAT_IDENTITY_MISMATCH`。清理状态为 pending/processing/retry_wait/needs_attention/completed；阶段为 database/objects/rag/complete。详细语义见[账号功能](../features/identity-account.md)。
 
 Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账号，`version` 必须准确匹配画像的当前 `lock_version`。材料目录只返回元数据，显式选择后才以只读 `profile_markdown` 进入 Pi，认证和联系字段不进入正文。
+
+## 文字 AI 面试复盘
+
+`POST /api/interview-sessions/:id/review:generate` 接受 canonical UUID `request_id` 和 `base_lock_version`，返回既有场次详情结构。仅本人未归档的已完成场次可生成；必须有不超过 50,000 字符的 `questions_markdown`。401 为失效账号，越权或不存在返回 404；状态不适用、乐观锁过期、源记录变化的重复请求和账号已有活动生成返回 409。无文字或超长返回 400。模型未配置返回 503，模型或证据验证失败返回 502，原文字和已有报告不被清除。
+
+场次详情和列表增加可空的 `review_report`、`review_status`、`review_request_id`、`review_error`、`review_started_at`，以及 `review_stale`。报告包含 `schema_version: 1`、`source_hash`、`generated_at`、`summary`、可空 `overall_score`、三项 `{score, reason, evidence}` 和问题数组 `{question, answer, evidence, strength, improvement, suggested_answer}`。`score` 范围 0–10，证据不足留空；综合分要求三项分数齐全。问题、原回答和非空评分证据须摘录源记录；建议回答与原回答分开保存。旧手写 `review_summary` 等字段仍可编辑，生成不覆盖它们。
+
+响应中的 `review_request_id` 标识当前生成。网络结果不明确时，只有读到同 UUID 的终态才结束该次重试，读到旧报告或读取失败仍复用原 UUID。相同 UUID 和源文字重复请求复用原生成状态，不再次调用模型；失败后的显式重新生成使用新 UUID。源记录在生成期间改变，返回详情中的 `review_status=failed`、`review_error=INTERVIEW_REVIEW_SOURCE_CHANGED`，原记录和旧报告保留。旧报告源哈希与当前文字不同即 `review_stale=true`。活动生成超过 3 分钟允许重新发起；这里没有录音转写契约。

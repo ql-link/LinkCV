@@ -9,6 +9,7 @@ import {
 import { resumeDocumentToMarkdown } from "../../api/resumeContract";
 import { evaluateResumeCompleteness } from "../workbench/resumeCompleteness";
 import { useResumeStore } from "../../store/resumeStore";
+import { parseOfferDate } from "../interviews/offerDates";
 
 // 首页卡片规则（Figma「01.1 首页 · 状态变体」右侧「首页卡片规则」）：
 // 三个卡片位各自按顺序取第一个满足条件的候选；新用户固定三张引导卡。
@@ -20,7 +21,7 @@ export type HomeCard =
   | { kind: "firstResume" }
   | { kind: "target" }
   | { kind: "plugin" }
-  | { kind: "offer"; company: string; applicationId: string }
+  | { kind: "offer"; company: string; applicationId: string; replyDueOn?: string | null }
   | { kind: "today"; session: InterviewSessionSummary; others: number }
   | { kind: "deadline"; session: InterviewSessionSummary; daysLeft: number }
   | { kind: "week"; sessions: InterviewSessionSummary[] }
@@ -112,13 +113,14 @@ export function buildHomeDashboard(input: HomeInput): HomeDashboard {
   }) ?? null;
   const active = applications.filter(isActiveApplication);
   // applications 的 offer_status = received 即「收到 Offer、还没回复」
-  const offers = active.filter((application) => application.offer_status === "received");
+  const offers = active.filter((application) => application.offer_status === "received")
+    .sort((a, b) => (parseOfferDate(a.offer_reply_due_on)?.getTime() ?? Infinity) - (parseOfferDate(b.offer_reply_due_on)?.getTime() ?? Infinity));
 
   // 位置 1 · 最紧急的事
   let first: HomeCard;
   let variant: HomeVariant;
   if (offers.length > 0) {
-    first = { kind: "offer", company: offers[0].company_name_snapshot, applicationId: offers[0].id };
+    first = { kind: "offer", company: offers[0].company_name_snapshot, applicationId: offers[0].id, replyDueOn: offers[0].offer_reply_due_on };
     variant = "offer";
   } else if (today.length > 0) {
     first = { kind: "today", session: today[0], others: today.length - 1 };

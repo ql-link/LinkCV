@@ -2687,6 +2687,9 @@ describe("InterviewCenterPage API projections", () => {
         salary: null,
         salary_currency: null,
         salary_period: null,
+        received_on: null,
+        reply_due_on: null,
+        start_on: null,
         benefits_description: null,
       },
     ));
@@ -2767,6 +2770,9 @@ describe("InterviewCenterPage API projections", () => {
       salary: null,
       salary_currency: null,
       salary_period: null,
+      received_on: null,
+      reply_due_on: null,
+      start_on: null,
       benefits_description: null,
     });
     expect(mocks.createInterviewSession).not.toHaveBeenCalled();
@@ -2805,7 +2811,7 @@ describe("InterviewCenterPage API projections", () => {
 
     expect(await screen.findByRole("heading", { name: /二面复盘/, level: 1 })).toBeInTheDocument();
     expect(screen.getByText("沟通清晰，系统设计完整。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "做得好" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "复盘评分" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "文字记录" }));
     expect(await screen.findByText("如何保证接口幂等？")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "编辑记录" })).toBeInTheDocument();
@@ -4085,6 +4091,9 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "薪资减少" }));
     expect(salary).toHaveValue(20000);
     fireEvent.change(within(dialog).getByLabelText("福利待遇"), { target: { value: "餐补、补充医疗" } });
+    fireEvent.input(within(dialog).getByLabelText("收到日期"), { target: { value: "2026-10-01" } });
+    fireEvent.input(within(dialog).getByLabelText("回复截止日期"), { target: { value: "2026-10-05" } });
+    fireEvent.input(within(dialog).getByLabelText("预计入职日期"), { target: { value: "2026-11-01" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(mocks.recordJobApplicationOffer).toHaveBeenCalledWith("65", {
@@ -4093,6 +4102,9 @@ describe("InterviewCenterPage API projections", () => {
       salary: 20000,
       salary_currency: "CNY",
       salary_period: "month",
+      received_on: "2026-10-01",
+      reply_due_on: "2026-10-05",
+      start_on: "2026-11-01",
       benefits_description: "餐补、补充医疗",
     }));
     expect(mocks.recordJobApplicationOffer).toHaveBeenCalledTimes(1);
@@ -4136,6 +4148,9 @@ describe("InterviewCenterPage API projections", () => {
         salary: null,
         salary_currency: null,
         salary_period: null,
+        received_on: null,
+        reply_due_on: null,
+        start_on: null,
         benefits_description: null,
       },
     ));

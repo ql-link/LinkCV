@@ -33,3 +33,12 @@
 /* 面试：没有「时间安排」选择，轮次下面直接是时间；轮次与时间两行对齐成两列 */
 .cd3-stage-dialog.is-interview .cd3-time-fields{margin-top:20px}
 .cd3-stage-dialog.is-interview .cd3-interview-round{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+.cd3-review .cd3-scores { align-items: flex-start; flex: 1; flex-wrap: wrap; }
+.cd3-review .cd3-scores > div { flex: 1; min-width: 140px; }
+.cd3-review .cd3-scores p, .cd3-review blockquote { font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cd3-review blockquote { margin: 12px 0; color: var(--v3-sub); }
+.cd3-review-questions { display: flex; gap: 10px; flex-wrap: wrap; margin: 24px 0; }
+.cd3-review-questions button { padding: 8px 12px; border: 1px solid var(--v3-fl); border-radius: 8px; }
+.cd3-review-questions button[aria-pressed="true"] { background: var(--v3-field); font-weight: 600; }
+.cd3-review .cd3-next select { max-width: 100%; padding: 8px; margin: 8px; }

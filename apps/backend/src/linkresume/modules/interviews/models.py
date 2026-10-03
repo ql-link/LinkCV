@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     CHAR,
     CheckConstraint,
+    Date,
     ForeignKey,
     Index,
     Integer,
@@ -198,6 +199,9 @@ class JobApplication(Base):
     offer_status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="none"
     )
+    offer_received_on: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    offer_reply_due_on: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    offer_start_on: Mapped[date | None] = mapped_column(Date(), nullable=True)
     offer_base_location: Mapped[str | None] = mapped_column(
         String(100), nullable=True
     )
@@ -473,6 +477,11 @@ class InterviewSession(Base):
         long_text_type, nullable=True
     )
     review_summary: Mapped[str | None] = mapped_column(long_text_type, nullable=True)
+    review_report: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)
+    review_request_id: Mapped[str | None] = mapped_column(ascii_char(36), nullable=True)
+    review_started_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
+    review_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    review_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
     improvement_markdown: Mapped[str | None] = mapped_column(
         long_text_type, nullable=True
     )

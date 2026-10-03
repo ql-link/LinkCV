@@ -977,6 +977,9 @@ def record_offer(
     }
     if "notes" in payload.model_fields_set:
         values["notes"] = payload.notes
+    for field in ("received_on", "reply_due_on", "start_on"):
+        if field in payload.model_fields_set:
+            values[f"offer_{field}"] = getattr(payload, field)
     return _commit_application_update(
         db, application, payload.base_lock_version, values
     )
