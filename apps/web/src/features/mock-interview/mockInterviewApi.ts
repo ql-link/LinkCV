@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 // 模拟面试数据层门面：页面只从这里调用，默认走真实的 /api/mock-interviews（mockInterviewLive.ts）。
 // 自动化测试（vitest MODE=test）默认使用本地假数据实现（mockInterviewDemo.ts），保证不依赖后端。
 import { liveMockInterviewApi } from "./mockInterviewLive";
@@ -47,12 +48,16 @@ export const mockInterviewApi: MockInterviewApi = {
 };
 
 export function mockInterviewErrorMessage(error: unknown) {
-  const generic = "操作没有完成，请稍后重试。";
+  const generic = t("操作没有完成，请稍后重试。");
   if (error instanceof MockInterviewError) {
-    if (error.message !== error.code) return error.message;
-    return MOCK_INTERVIEW_ERROR_MESSAGES[error.code] ?? generic;
+    if (error.message !== error.code) return t(error.message);
+    const message = MOCK_INTERVIEW_ERROR_MESSAGES[error.code];
+    return message ? t(message) : generic;
   }
   // SSE 的 interviewer.failed 只带错误码，页面会把它包成普通 Error
-  if (error instanceof Error) return MOCK_INTERVIEW_ERROR_MESSAGES[error.message] ?? generic;
+  if (error instanceof Error) {
+    const message = MOCK_INTERVIEW_ERROR_MESSAGES[error.message];
+    return message ? t(message) : generic;
+  }
   return generic;
 }

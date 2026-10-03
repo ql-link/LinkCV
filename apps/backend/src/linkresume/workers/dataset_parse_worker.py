@@ -407,11 +407,17 @@ class DatasetParseProcessor:
         )
         persistence_failed = False
         try:
-            self._storage.upload(
-                converted_object_name,
-                markdown.encode("utf-8"),
-                "text/markdown",
-            )
+            with self._session_factory() as owner_db:
+                content_service.lock_user(owner_db, user_id)
+                conditions = [DocumentParseTask.id == parse_task_id,
+                    DocumentParseTask.user_id == user_id,
+                    DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
+                    DocumentParseTask.parse_status == "processing"]
+                if self._uses_attempt_fields() and attempt is not None:
+                    conditions.append(DocumentParseTask.parse_attempt_count == attempt)
+                if owner_db.scalar(select(DocumentParseTask.id).where(*conditions).with_for_update()) is None:
+                    return False
+                self._storage.upload(converted_object_name, markdown.encode("utf-8"), "text/markdown")
         except Exception:
             logger.warning(
                 "dataset converted markdown persistence failed",

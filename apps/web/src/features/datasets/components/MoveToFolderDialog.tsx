@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useState } from "react";
 
 import type { DatasetFolder } from "../../../api/client";
@@ -27,18 +28,19 @@ export function MoveToFolderDialog({
   singleItemFormat,
   onMove,
 }: MoveToFolderDialogProps) {
+  useLocale();
   const [selectedTarget, setSelectedTarget] = useState<string | null>(currentFolderId ?? null);
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 标题保留旧版文案结构，便于辅助技术区分单条与批量
   const label = singleItemName
-    ? `移动「${singleItemName}」到文件夹`
-    : `批量移动 ${itemCount} 份资料到文件夹`;
+    ? t("移动「{value0}」到文件夹", { value0: singleItemName })
+    : t("批量移动 {value0} 份资料到文件夹", { value0: itemCount });
   const sub = singleItemName
-    ? `「${singleItemName}」 · 选择目标文件夹`
-    : `已选择 ${itemCount} 份资料 · 选择目标文件夹`;
-  const targetName = folders.find((folder) => folder.id === selectedTarget)?.name ?? "文件夹";
+    ? t("「{value0}」 · 选择目标文件夹", { value0: singleItemName })
+    : t("已选择 {value0} 份资料 · 选择目标文件夹", { value0: itemCount });
+  const targetName = folders.find((folder) => folder.id === selectedTarget)?.name ?? t("文件夹");
   const artTag = (singleItemFormat ?? "").toUpperCase().slice(0, 4) || String(itemCount);
 
   const handleSubmit = async () => {
@@ -53,7 +55,7 @@ export function MoveToFolderDialog({
       await onMove(selectedTarget);
       onOpenChange(false);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "移动失败，请稍后重试。");
+      setError(err instanceof Error ? err.message : t("移动失败，请稍后重试。"));
     } finally {
       setMoving(false);
     }
@@ -62,14 +64,14 @@ export function MoveToFolderDialog({
   return (
     <Dialog open={open} width={480} label={label} className="ds-dialog" closable={!moving} onClose={() => { if (!moving) onOpenChange(false); }}>
       <div className="v3-dialog-body">
-        <h2 className="v3-dialog-title">{singleItemName ? "移动资料到文件夹" : `移动 ${itemCount} 份资料到文件夹`}</h2>
+        <h2 className="v3-dialog-title">{singleItemName ? t("移动资料到文件夹") : t("移动 {value0} 份资料到文件夹", { value0: itemCount })}</h2>
         <p className="v3-dialog-sub ds-one-line" title={sub}>{sub}</p>
         <div className="v3-stage ds-dialog-art" style={{ height: 84 }}>
           <MoveArt tag={artTag} folderName={targetName} />
         </div>
-        <div className="ds-list-label"><span>选择目标分类</span></div>
-        <div className="ds-pick" role="radiogroup" aria-label="目标文件夹列表" style={{ maxHeight: 228 }}>
-          {folders.length === 0 && <p className="ds-pick-empty">还没有其他文件夹</p>}
+        <div className="ds-list-label"><span>{t("选择目标分类")}</span></div>
+        <div className="ds-pick" role="radiogroup" aria-label={t("目标文件夹列表")} style={{ maxHeight: 228 }}>
+          {folders.length === 0 && <p className="ds-pick-empty">{t("还没有其他文件夹")}</p>}
           {folders.map((folder) => {
             const isSelected = selectedTarget === folder.id;
             return (
@@ -84,7 +86,7 @@ export function MoveToFolderDialog({
               >
                 <Icon name="folder" size={14} />
                 <span>{folder.name}</span>
-                <small className="v3-num">{folder.dataset_count} 份</small>
+                <small className="v3-num">{folder.dataset_count}{t(" 份")}</small>
                 {isSelected && <Icon className="v3-menu-check" name="check" size={14} />}
               </button>
             );
@@ -93,7 +95,7 @@ export function MoveToFolderDialog({
         {error && <p className="ds-inline-error" role="alert">{error}</p>}
       </div>
       <DialogFooter>
-        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={moving} onClick={() => onOpenChange(false)}>取消</button>
+        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={moving} onClick={() => onOpenChange(false)}>{t("取消")}</button>
         <button
           type="button"
           className="v3-btn v3-btn-dark"
@@ -101,7 +103,7 @@ export function MoveToFolderDialog({
           disabled={moving || !selectedTarget || selectedTarget === currentFolderId}
           onClick={() => void handleSubmit()}
         >
-          {moving ? "正在移动…" : "确定移动"}
+          {moving ? t("正在移动…") : t("确定移动")}
         </button>
       </DialogFooter>
     </Dialog>

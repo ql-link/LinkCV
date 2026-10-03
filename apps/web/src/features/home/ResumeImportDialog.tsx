@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { api, type ResumeTemplate } from "../../api/client";
@@ -23,6 +24,7 @@ const ACCEPT = ".md,.docx,.pdf,text/markdown,application/pdf,application/vnd.ope
 
 // 02.1b 导入简历（560 宽）：未选文件时是虚线拖入区；选好文件后换成单文件插图 + 文件卡；提交中文件卡下方出现进度
 export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogProps) {
+  useLocale();
   const importResume = useResumeStore((state) => state.importResume);
   const inputRef = useRef<HTMLInputElement>(null);
   const [importTemplate, setImportTemplate] = useState<ResumeTemplate | null>(null);
@@ -47,7 +49,7 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
       },
       () => {
         if (cancelled) return;
-        fail("导入所需的默认版式暂时无法加载，请稍后重试。");
+        fail(t("导入所需的默认版式暂时无法加载，请稍后重试。"));
         setLoadingTemplate(false);
       },
     );
@@ -77,7 +79,7 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
   const submit = async () => {
     if (submitting) return;
     if (!file) {
-      fail("请先选择需要导入的文件。");
+      fail(t("请先选择需要导入的文件。"));
       return;
     }
     const titleError = validateImportTitle(title, file.name);
@@ -86,7 +88,7 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
       return;
     }
     if (!importTemplate) {
-      fail("导入所需的默认版式暂时不可用，请稍后重试。");
+      fail(t("导入所需的默认版式暂时不可用，请稍后重试。"));
       return;
     }
     setSubmitting(true);
@@ -104,10 +106,10 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
   const format = file ? formatTag(file.name) : null;
 
   return (
-    <Dialog width={560} label="导入简历" onClose={close} closable={!submitting} className="hv3-import">
+    <Dialog width={560} label={t("导入简历")} onClose={close} closable={!submitting} className="hv3-import">
       <div className="v3-dialog-body">
-        <h2 className="v3-dialog-title">导入简历</h2>
-        <p className="v3-dialog-sub">AI 会把文件拆成可编辑的模块，之后可以随时修改。</p>
+        <h2 className="v3-dialog-title">{t("导入简历")}</h2>
+        <p className="v3-dialog-sub">{t("AI 会把文件拆成可编辑的模块，之后可以随时修改。")}</p>
 
         {!file ? (
           <div
@@ -123,15 +125,15 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
             onDrop={onDrop}
           >
             <span className="hv3-dropzone-art" aria-hidden="true"><ImportArt /></span>
-            <strong>拖入简历文件，或点击选择</strong>
-            <small>支持 Markdown、DOCX、PDF，最大 10 MB</small>
+            <strong>{t("拖入简历文件，或点击选择")}</strong>
+            <small>{t("支持 Markdown、DOCX、PDF，最大 10 MB")}</small>
             <input
               ref={inputRef}
               className="hv3-dropzone-input"
               type="file"
               name="resume-file"
               accept={ACCEPT}
-              aria-label="选择 Markdown、DOCX 或 PDF 文件"
+              aria-label={t("选择 Markdown、DOCX 或 PDF 文件")}
               disabled={submitting}
               onClick={(event) => {
                 event.currentTarget.value = "";
@@ -151,14 +153,12 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
                   <strong title={file.name}>{file.name}</strong>
                   <small className="v3-num">{formatImportFileSize(file.size)}</small>
                 </span>
-                <button type="button" className="v3-link" aria-label="移除文件" disabled={submitting} onClick={() => pickFile(null)}>
-                  移除文件
-                </button>
+                <button type="button" className="v3-link" aria-label={t("移除文件")} disabled={submitting} onClick={() => pickFile(null)}>{t("移除文件")}</button>
               </div>
               {submitting && (
                 <div className="hv3-file-progress">
-                  <span className="hv3-file-progress-copy">正在导入… 上传完成后自动开始解析</span>
-                  <span className="hv3-file-bar" role="progressbar" aria-label={`${file.name} 正在导入`} aria-valuetext="正在上传，暂时无法估算完成时间"><span /></span>
+                  <span className="hv3-file-progress-copy">{t("正在导入… 上传完成后自动开始解析")}</span>
+                  <span className="hv3-file-bar" role="progressbar" aria-label={t("{value0} 正在导入", { value0: file.name })} aria-valuetext={t("正在上传，暂时无法估算完成时间")}><span /></span>
                 </div>
               )}
             </div>
@@ -166,15 +166,15 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
         )}
 
         <label className="v3-field hv3-import-field">
-          <span className="v3-field-label">简历名称</span>
+          <span className="v3-field-label">{t("简历名称")}</span>
           <input
             className="v3-input is-filled"
             name="resume-title"
             autoComplete="off"
-            aria-label="简历名称"
+            aria-label={t("简历名称")}
             value={title}
             maxLength={255}
-            placeholder="例如：张三｜产品经理"
+            placeholder={t("例如：张三｜产品经理")}
             disabled={submitting}
             onChange={(event) => {
               setTitleTouched(true);
@@ -187,16 +187,16 @@ export function ResumeImportDialog({ onClose, onAccepted }: ResumeImportDialogPr
 
       <div className="v3-dialog-foot hv3-foot">
         <div className="v3-dialog-foot-left">
-          <span className="hv3-foot-note">{file ? "默认使用文件名（不含扩展名），可修改" : "未选择文件"}</span>
+          <span className="hv3-foot-note">{file ? t("默认使用文件名（不含扩展名），可修改") : t("未选择文件")}</span>
         </div>
-        <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" disabled={submitting} onClick={onClose}>取消</button>
+        <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" disabled={submitting} onClick={onClose}>{t("取消")}</button>
         <button
           type="button"
           className="v3-btn v3-btn-dark hv3-import-submit"
           disabled={submitting || loadingTemplate || !file}
           onClick={() => void submit()}
         >
-          {submitting ? "正在导入…" : loadingTemplate ? "正在准备…" : "导入并开始解析"}
+          {submitting ? t("正在导入…") : loadingTemplate ? t("正在准备…") : t("导入并开始解析")}
         </button>
       </div>
       <MotionPresence>{error && <Toast key={error.key} kind="error" title={error.message} onDismiss={() => setError(null)} />}</MotionPresence>

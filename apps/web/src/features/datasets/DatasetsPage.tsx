@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { MotionPresence, useContentMotion } from "@/components/ui/motion";
 import { Reveal, SkeletonRows, Sk } from "@/v3/skeletons";
 import { readPageCache, updatePageCache, useRevalidateOnFocus, writePageCache } from "@/v3/pageCache";
@@ -44,19 +45,19 @@ function formatUploadFailureNotice(failures: DatasetUploadFailure[], limitMessag
   const details = failures
     .map(({ fileName, reason }) => `${fileName}：${trimTerminalPunctuation(reason)}`)
     .join("；");
-  const prefix = failures.length === 1 ? "文件上传失败：" : "部分文件上传失败：";
+  const prefix = failures.length === 1 ? t("文件上传失败：") : t("部分文件上传失败：");
   const limitSuffix = limitMessage ? `；${trimTerminalPunctuation(limitMessage)}` : "";
   return `${prefix}${details}${limitSuffix}`;
 }
 
 const FAILURE_REASON_LABELS: Record<NonNullable<DatasetRecord["failure_reason"]>, string> = {
-  format_unsupported: "文件格式不受支持，请重新选择文件。",
-  content_invalid: "文件内容无效，请检查后重新上传。",
-  size_exceeded: "文件内容超出解析限制，请缩小文件后重试。",
-  service_unavailable: "解析服务暂不可用，请稍后重试。",
-  timeout: "解析超时，请稍后重试。",
-  quota_exceeded: "当前资料数量已达上限。",
-  internal_error: "解析失败，请稍后重试。",
+  get format_unsupported() { return t("文件格式不受支持，请重新选择文件。"); },
+  get content_invalid() { return t("文件内容无效，请检查后重新上传。"); },
+  get size_exceeded() { return t("文件内容超出解析限制，请缩小文件后重试。"); },
+  get service_unavailable() { return t("解析服务暂不可用，请稍后重试。"); },
+  get timeout() { return t("解析超时，请稍后重试。"); },
+  get quota_exceeded() { return t("当前资料数量已达上限。"); },
+  get internal_error() { return t("解析失败，请稍后重试。"); },
 };
 
 export { datasetFormatError, datasetUploadErrorMessage } from "./datasetUploadValidation";
@@ -65,27 +66,27 @@ function datasetActionErrorMessage(error: unknown, fallback: string) {
   if (!(error instanceof ApiRequestError)) return fallback;
   switch (error.message) {
     case "INVALID_DATASET_NAME":
-      return "资料名称不能为空，不能包含路径符号或控制字符。";
+      return t("资料名称不能为空，不能包含路径符号或控制字符。");
     case "DATASET_NOT_FOUND":
-      return "这份资料不存在或你无权操作。";
+      return t("这份资料不存在或你无权操作。");
     case "FOLDER_NOT_FOUND":
-      return "文件夹不存在或已被删除，请重新选择。";
+      return t("文件夹不存在或已被删除，请重新选择。");
     case "FOLDER_DELETE_CONFIRMATION_REQUIRED":
-      return "文件夹内包含资料，请确认后再删除。";
+      return t("文件夹内包含资料，请确认后再删除。");
     case "DATASET_IN_PROGRESS":
     case "DATASET_BUSY":
-      return "资料正在解析，处理完成后再删除。";
+      return t("资料正在解析，处理完成后再删除。");
     case "DATASET_NOT_RETRYABLE":
-      return "只有解析失败的资料可以重新解析。";
+      return t("只有解析失败的资料可以重新解析。");
     case "DATASET_SOURCE_UNAVAILABLE":
-      return "原始文件已不可用，请重新上传资料。";
+      return t("原始文件已不可用，请重新上传资料。");
     case "DATASET_QUEUE_UNAVAILABLE":
-      return "解析服务暂不可用，资料已保留为解析失败。";
+      return t("解析服务暂不可用，资料已保留为解析失败。");
     case "ASSET_DELETE_FAILED":
-      return "资料清理失败，请稍后重试。";
+      return t("资料清理失败，请稍后重试。");
     default:
-      if (error.status === 401) return "登录状态已失效，请重新登录。";
-      return error.status >= 500 ? "服务暂时不可用，请稍后重试。" : fallback;
+      if (error.status === 401) return t("登录状态已失效，请重新登录。");
+      return error.status >= 500 ? t("服务暂时不可用，请稍后重试。") : fallback;
   }
 }
 
@@ -100,9 +101,9 @@ function formatBulkDeleteNotice(
   const details = failures
     .map(({ dataset, reason }) => `${datasetDisplayName(dataset)}：${trimTerminalPunctuation(reason)}`)
     .join("；");
-  if (failures.length === 0) return `已删除 ${successCount} 份资料。`;
-  if (successCount === 0) return `所选 ${totalCount} 份资料删除失败：${details}`;
-  return `已删除 ${successCount} 份资料，${failures.length} 份删除失败：${details}`;
+  if (failures.length === 0) return t("已删除 {value0} 份资料。", { value0: successCount });
+  if (successCount === 0) return t("所选 {value0} 份资料删除失败：{value1}", { value0: totalCount, value1: details });
+  return t("已删除 {value0} 份资料，{value1} 份删除失败：{value2}", { value0: successCount, value1: failures.length, value2: details });
 }
 
 function formatFileSize(bytes: number) {
@@ -128,15 +129,15 @@ function datasetVisualStatus(dataset: DatasetRecord): DatasetVisualStatus {
 }
 
 function datasetStatusLabel(status: DatasetVisualStatus) {
-  if (status === "queued") return "等待解析";
-  if (status === "succeeded") return "可用";
-  if (status === "failed") return "解析失败";
-  return "正在解析";
+  if (status === "queued") return t("等待解析");
+  if (status === "succeeded") return t("可用");
+  if (status === "failed") return t("解析失败");
+  return t("正在解析");
 }
 
 export function datasetAssetKindLabel(dataset: Pick<DatasetRecord, "asset_kind">): string | null {
-  if (dataset.asset_kind === "audio") return "音频";
-  if (dataset.asset_kind === "video") return "视频";
+  if (dataset.asset_kind === "audio") return t("音频");
+  if (dataset.asset_kind === "video") return t("视频");
   return null;
 }
 
@@ -146,21 +147,21 @@ function datasetStatusReason(dataset: DatasetRecord) {
 }
 
 // 资料行副标题：可用时写格式名（音视频提示点击下载），解析中 / 失败写状态
-const FORMAT_NAMES: Record<string, string> = { md: "Markdown", pdf: "PDF", docx: "Word", txt: "纯文本" };
+const FORMAT_NAMES: Record<string, string> = { md: "Markdown", pdf: "PDF", docx: "Word", get txt() { return t("纯文本"); } };
 
 function datasetRowMeta(dataset: DatasetRecord): { text: string; tone?: "processing" | "failed"; status: DatasetVisualStatus } {
   const status = datasetVisualStatus(dataset);
   if (isMediaDataset(dataset)) {
-    const kind = datasetAssetKindLabel(dataset) ?? "媒体";
-    if (dataset.upload_status === "failed") return { text: "上传失败", tone: "failed", status: "failed" };
-    if (dataset.upload_status === "uploading") return { text: "正在上传…", tone: "processing", status: "processing" };
-    return { text: `${kind} · 点击下载`, status: "succeeded" };
+    const kind = datasetAssetKindLabel(dataset) ?? t("媒体");
+    if (dataset.upload_status === "failed") return { text: t("上传失败"), tone: "failed", status: "failed" };
+    if (dataset.upload_status === "uploading") return { text: t("正在上传…"), tone: "processing", status: "processing" };
+    return { text: t("{value0} · 点击下载", { value0: kind }), status: "succeeded" };
   }
   if (status === "queued") return { text: datasetStatusLabel(status), tone: "processing", status };
-  if (status === "processing") return { text: "正在解析…", tone: "processing", status };
+  if (status === "processing") return { text: t("正在解析…"), tone: "processing", status };
   if (status === "failed") {
     const reason = datasetStatusReason(dataset)?.replace(/[。，].*$/u, "");
-    return { text: reason ? `解析失败 · ${reason}` : "解析失败", tone: "failed", status };
+    return { text: reason ? t("解析失败 · {value0}", { value0: reason }) : t("解析失败"), tone: "failed", status };
   }
   return { text: FORMAT_NAMES[dataset.file_format.toLowerCase()] ?? dataset.file_format.toUpperCase(), status };
 }
@@ -187,6 +188,7 @@ export function DatasetSelectionCheckbox({
   label: string;
   onChange: (checked: boolean) => void;
 }) {
+  useLocale();
   const checkboxRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -240,6 +242,7 @@ function DatasetRow({
   onRetry: (dataset: DatasetRecord) => void;
   onDelete: (dataset: DatasetRecord) => void;
 }) {
+  useLocale();
   const moreRef = useRef<HTMLButtonElement>(null);
   const displayName = datasetDisplayName(dataset);
   const media = isMediaDataset(dataset);
@@ -254,13 +257,13 @@ function DatasetRow({
     onOpen(dataset, event.currentTarget);
   };
   const items: MenuItem[] = [
-    { label: media ? "下载文件" : "查看文件", icon: media ? "dl" : "eye", disabled: !available, onSelect: () => onOpen(dataset, moreRef.current ?? document.body) },
-    { label: "重命名", icon: "edit", onSelect: () => onRename(dataset) },
-    { label: "移动到文件夹", icon: "folder", onSelect: () => onMove(dataset) },
-    { label: "管理关联", icon: "cal", disabled: !canAssociate, title: canAssociate ? undefined : "上传完成后才能关联面试", onSelect: () => onAssociate(dataset) },
-    ...(meta.status === "failed" && !media ? [{ label: "重新解析", icon: "refresh", onSelect: () => onRetry(dataset) } satisfies MenuItem] : []),
+    { label: media ? t("下载文件") : t("查看文件"), icon: media ? "dl" : "eye", disabled: !available, onSelect: () => onOpen(dataset, moreRef.current ?? document.body) },
+    { label: t("重命名"), icon: "edit", onSelect: () => onRename(dataset) },
+    { label: t("移动到文件夹"), icon: "folder", onSelect: () => onMove(dataset) },
+    { label: t("管理关联"), icon: "cal", disabled: !canAssociate, title: canAssociate ? undefined : t("上传完成后才能关联面试"), onSelect: () => onAssociate(dataset) },
+    ...(meta.status === "failed" && !media ? [{ label: t("重新解析"), icon: "refresh", onSelect: () => onRetry(dataset) } satisfies MenuItem] : []),
     { kind: "separator" },
-    { label: "删除资料", icon: "trash", danger: true, onSelect: () => onDelete(dataset) },
+    { label: t("删除资料"), icon: "trash", danger: true, onSelect: () => onDelete(dataset) },
   ];
 
   return (
@@ -268,7 +271,7 @@ function DatasetRow({
       className={`ds-row ds-cols${isInteractive ? " is-clickable" : ""}${menuOpen ? " is-active" : ""}`}
       role={isInteractive ? "button" : undefined}
       tabIndex={isInteractive ? 0 : undefined}
-      aria-label={isInteractive ? (media ? `下载「${displayName}」` : `打开「${displayName}」解析预览`) : undefined}
+      aria-label={isInteractive ? (media ? t("下载「{value0}」", { value0: displayName }) : t("打开「{value0}」解析预览", { value0: displayName })) : undefined}
       onClick={isInteractive ? (event) => onOpen(dataset, event.currentTarget) : undefined}
       onKeyDown={handleKeyDown}
     >
@@ -283,14 +286,14 @@ function DatasetRow({
         {dataset.interview_label && (
           <>
             <Icon name="cal" size={13} />
-            <span title={`面试 · ${dataset.interview_label}`}>面试 · {dataset.interview_label}</span>
+            <span title={t("面试 · {value0}", { value0: dataset.interview_label })}>{t("面试 · ")}{dataset.interview_label}</span>
           </>
         )}
       </div>
       <div className="is-right v3-num">{formatFileSize(dataset.file_size)}</div>
       <div className="is-right" onClick={(event) => event.stopPropagation()}>
         {meta.status === "failed" && !media ? (
-          <button type="button" className="ds-row-retry" disabled={busy || batchMode} onClick={() => onRetry(dataset)}>重试</button>
+          <button type="button" className="ds-row-retry" disabled={busy || batchMode} onClick={() => onRetry(dataset)}>{t("重试")}</button>
         ) : (
           <span className="v3-num">{formatListDate(dataset.created_at)}</span>
         )}
@@ -305,7 +308,7 @@ function DatasetRow({
             <DatasetSelectionCheckbox
               checked={selected}
               disabled={selectionDisabled}
-              label={`选择「${displayName}」`}
+              label={t("选择「{value0}」", { value0: displayName })}
               onChange={(checked) => onToggleSelection(dataset.id, checked)}
             />
           </div>
@@ -315,7 +318,7 @@ function DatasetRow({
               ref={moreRef}
               type="button"
               className="ds-row-more"
-              aria-label={`打开「${displayName}」操作菜单`}
+              aria-label={t("打开「{value0}」操作菜单", { value0: displayName })}
               aria-haspopup="menu"
               aria-expanded={menuOpen}
               disabled={busy}
@@ -323,7 +326,7 @@ function DatasetRow({
             >
               <Icon name="more" size={14} />
             </button>
-            <Menu anchorRef={moreRef} open={menuOpen} onClose={onCloseMenu} placement="bottom-end" width={176} label={`${displayName} 操作`} items={items} />
+            <Menu anchorRef={moreRef} open={menuOpen} onClose={onCloseMenu} placement="bottom-end" width={176} label={t("{value0} 操作", { value0: displayName })} items={items} />
           </>
         )}
       </div>
@@ -359,6 +362,7 @@ export function DatasetsPage({
   initialFolderId?: string;
   embedded?: boolean;
 } = {}) {
+  useLocale();
   const previewTriggerRef = useRef<HTMLElement | null>(null);
   const [previewDataset, setPreviewDataset] = useState<DatasetRecord | null>(null);
   const locallyAccepted = useRef(new Map<string, DatasetRecord>());
@@ -427,9 +431,9 @@ export function DatasetsPage({
 
   const validateFolderName = (name: string): string | null => {
     const trimmed = name.trim();
-    if (!trimmed) return "文件夹名称不能为空";
-    if (trimmed.includes("/") || trimmed.includes("\\")) return "文件夹名称不能包含斜杠符号";
-    if (trimmed.length > 64) return "文件夹名称不能超过 64 个字符";
+    if (!trimmed) return t("文件夹名称不能为空");
+    if (trimmed.includes("/") || trimmed.includes("\\")) return t("文件夹名称不能包含斜杠符号");
+    if (trimmed.length > 64) return t("文件夹名称不能超过 64 个字符");
     return null;
   };
 
@@ -446,15 +450,15 @@ export function DatasetsPage({
       await refreshFolders();
       setCreateFolderDialogOpen(false);
       setNewFolderName("");
-      setNotice({ kind: "success", message: `文件夹「${newFolderName.trim()}」已创建。` });
+      setNotice({ kind: "success", message: t("文件夹「{value0}」已创建。", { value0: newFolderName.trim() }) });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === "FOLDER_NAME_DUPLICATE") {
-        setCreateFolderError("已存在同名文件夹，请使用其他名称");
+        setCreateFolderError(t("已存在同名文件夹，请使用其他名称"));
       } else if (msg === "FOLDER_LIMIT_EXCEEDED") {
-        setCreateFolderError("最多创建 50 个文件夹");
+        setCreateFolderError(t("最多创建 50 个文件夹"));
       } else {
-        setCreateFolderError("创建失败，请检查名称后重试");
+        setCreateFolderError(t("创建失败，请检查名称后重试"));
       }
     } finally {
       setCreatingFolder(false);
@@ -474,13 +478,13 @@ export function DatasetsPage({
       await api.renameDatasetFolder(renameFolderTarget.id, renameFolderName.trim());
       await refreshFolders();
       setRenameFolderTarget(null);
-      setNotice({ kind: "success", message: "文件夹名称已更新。" });
+      setNotice({ kind: "success", message: t("文件夹名称已更新。") });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg === "FOLDER_NAME_DUPLICATE") {
-        setRenameFolderError("已存在同名文件夹，请使用其他名称");
+        setRenameFolderError(t("已存在同名文件夹，请使用其他名称"));
       } else {
-        setRenameFolderError("重命名失败，请重试");
+        setRenameFolderError(t("重命名失败，请重试"));
       }
     } finally {
       setRenamingFolder(false);
@@ -499,10 +503,10 @@ export function DatasetsPage({
       await refreshFolders();
       await refreshDatasets();
       setDeleteFolderTarget(null);
-      setNotice({ kind: "success", message: "文件夹及其中的资料已删除。" });
+      setNotice({ kind: "success", message: t("文件夹及其中的资料已删除。") });
     } catch (error) {
       setDeleteFolderTarget(null);
-      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "删除失败，请稍后重试。") });
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, t("删除失败，请稍后重试。")) });
     } finally {
       setDeletingFolder(false);
     }
@@ -514,9 +518,9 @@ export function DatasetsPage({
       const updated = await api.moveDataset(moveTarget.id, targetFolderId);
       setDatasets((items) => items.map((item) => (item.id === updated.id ? updated : item)));
       await refreshFolders();
-      setNotice({ kind: "success", message: "资料分类已更新。" });
+      setNotice({ kind: "success", message: t("资料分类已更新。") });
     } catch (error) {
-      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "移动分类失败，请稍后重试。") });
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, t("移动分类失败，请稍后重试。")) });
     } finally {
       setMoveTarget(null);
     }
@@ -535,9 +539,9 @@ export function DatasetsPage({
       await refreshFolders();
       setSelectedDatasetIds(new Set());
       setBatchMode(false);
-      setNotice({ kind: "success", message: `已成功移动 ${ids.length} 份资料。` });
+      setNotice({ kind: "success", message: t("已成功移动 {value0} 份资料。", { value0: ids.length }) });
     } catch (error) {
-      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "批量移动失败，请稍后重试。") });
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, t("批量移动失败，请稍后重试。")) });
     } finally {
       setBatchMoveOpen(false);
     }
@@ -556,7 +560,7 @@ export function DatasetsPage({
       return true;
     } catch {
       if (!pageMounted.current) return false;
-      setSyncFailure(accepted ? ACCEPTED_SYNC_FAILURE : "资料列表同步失败，请稍后重试。");
+      setSyncFailure(accepted ? ACCEPTED_SYNC_FAILURE : t("资料列表同步失败，请稍后重试。"));
       return false;
     }
   }, []);
@@ -749,7 +753,7 @@ export function DatasetsPage({
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length > 0) {
       if (!canUploadHere || !effectiveUploadFolderId) {
-        setNotice({ kind: "error", message: "请先进入文件夹再上传资料。" });
+        setNotice({ kind: "error", message: t("请先进入文件夹再上传资料。") });
         return;
       }
       setNotice(null);
@@ -785,14 +789,14 @@ export function DatasetsPage({
     } else if (result.deferredCount > 0) {
       setNotice({
         kind: "error",
-        message: `资料已保存，但解析提交失败（${result.deferredCount} 份），请在列表中重新解析。`,
+        message: t("资料已保存，但解析提交失败（{value0} 份），请在列表中重新解析。", { value0: result.deferredCount }),
       });
     } else if (result.acceptedCount > 0) {
       setNotice({
         kind: "success",
         message: result.limitMessage
-          ? `已上传 ${result.acceptedCount} 份资料，${result.limitMessage}`
-          : `已上传 ${result.acceptedCount} 份资料，正在后台解析。`,
+          ? t("已上传 {value0} 份资料，{value1}", { value0: result.acceptedCount, value1: result.limitMessage })
+          : t("已上传 {value0} 份资料，正在后台解析。", { value0: result.acceptedCount }),
       });
     } else if (result.limitMessage) {
       setNotice({ kind: "error", message: result.limitMessage });
@@ -837,7 +841,7 @@ export function DatasetsPage({
     if (!renameTarget || busyAction) return;
     const value = renameValue.trim();
     if (!value) {
-      setRenameError("请输入资料名称。");
+      setRenameError(t("请输入资料名称。"));
       return;
     }
     setBusyAction({ kind: "rename", id: renameTarget.id });
@@ -847,9 +851,9 @@ export function DatasetsPage({
       if (locallyAccepted.current.has(updated.id)) locallyAccepted.current.set(updated.id, updated);
       setDatasets((items) => items.map((item) => item.id === updated.id ? updated : item));
       setRenameTarget(null);
-      setNotice({ kind: "success", message: "资料名称已更新。" });
+      setNotice({ kind: "success", message: t("资料名称已更新。") });
     } catch (error) {
-      setRenameError(datasetActionErrorMessage(error, "重命名失败，请稍后重试。"));
+      setRenameError(datasetActionErrorMessage(error, t("重命名失败，请稍后重试。")));
     } finally {
       setBusyAction(null);
     }
@@ -863,10 +867,10 @@ export function DatasetsPage({
       const updated = await api.retryDataset(dataset.id);
       if (locallyAccepted.current.has(updated.id)) locallyAccepted.current.set(updated.id, updated);
       setDatasets((items) => items.map((item) => item.id === updated.id ? updated : item));
-      setNotice({ kind: "success", message: "已重新提交解析。" });
+      setNotice({ kind: "success", message: t("已重新提交解析。") });
     } catch (error) {
       await refreshDatasets();
-      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "重新解析失败，请稍后重试。") });
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, t("重新解析失败，请稍后重试。")) });
     } finally {
       setBusyAction(null);
     }
@@ -883,7 +887,7 @@ export function DatasetsPage({
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      setSyncFailure(datasetUploadErrorMessage(error, "下载失败，请稍后重试。"));
+      setSyncFailure(datasetUploadErrorMessage(error, t("下载失败，请稍后重试。")));
     }
   };
 
@@ -907,10 +911,10 @@ export function DatasetsPage({
         return next;
       });
       setDeleteTarget(null);
-      setNotice({ kind: "success", message: `已删除「${datasetDisplayName(deleteTarget)}」。` });
+      setNotice({ kind: "success", message: t("已删除「{value0}」。", { value0: datasetDisplayName(deleteTarget) }) });
     } catch (error) {
       setDeleteTarget(null);
-      setNotice({ kind: "error", message: datasetActionErrorMessage(error, "删除失败，请稍后重试。") });
+      setNotice({ kind: "error", message: datasetActionErrorMessage(error, t("删除失败，请稍后重试。")) });
     } finally {
       setBusyAction(null);
     }
@@ -998,7 +1002,7 @@ export function DatasetsPage({
       } catch (error) {
         failures.push({
           dataset: target,
-          reason: datasetActionErrorMessage(error, "删除失败，请稍后重试。"),
+          reason: datasetActionErrorMessage(error, t("删除失败，请稍后重试。")),
         });
       }
     }
@@ -1023,7 +1027,7 @@ export function DatasetsPage({
   };
 
   const currentFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
-  const currentFolderName = currentFolder?.name ?? "文件夹";
+  const currentFolderName = currentFolder?.name ?? t("文件夹");
 
   // 首页「最近上传」与文件夹卡片缩略纸张：前端按上传时间倒序排，不需要新接口
   const datasetsByRecent = useMemo(
@@ -1072,7 +1076,7 @@ export function DatasetsPage({
   return (
     <RootTag
       className={`v3 ds-root${embedded ? " is-embedded" : ""}`}
-      aria-label={embedded ? "资料库" : undefined}
+      aria-label={embedded ? t("资料库") : undefined}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -1082,8 +1086,8 @@ export function DatasetsPage({
         <div className="ds-drag-overlay" aria-hidden="true">
           <div>
             <Icon name="upload" size={28} />
-            <strong>释放鼠标立即上传</strong>
-            <span>将直接上传至「{currentFolderName}」</span>
+            <strong>{t("释放鼠标立即上传")}</strong>
+            <span>{t("将直接上传至「")}{currentFolderName}」</span>
           </div>
         </div>
       )}
@@ -1091,35 +1095,34 @@ export function DatasetsPage({
       <div className="ds-page">
         {selectedFolderId === "all" ? (
           <header className="ds-head">
-            <PageEyebrow className="ds-eyebrow" segments={["DATASETS", <Reveal inline loading={loading} placeholder={<LoadingText width={36} />}>{`${libraryCount} 份`}</Reveal>]} />
-            <h1 className="ds-title">资料库</h1>
+            <PageEyebrow className="ds-eyebrow" segments={["DATASETS", <Reveal inline loading={loading} placeholder={<LoadingText width={36} />}>{t("{value0} 份", { value0: libraryCount })}</Reveal>]} />
+            <h1 className="ds-title">{t("资料库")}</h1>
             <p className="ds-sub">
               <Reveal inline loading={loading} placeholder={<LoadingText width={230} />}>{loadFailed ? null : libraryCount > 0 || folders.length > 0
-                ? <span className="v3-num">{libraryCount} 份资料 · {folders.length} 个文件夹</span>
-                : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。"}</Reveal>
+                ? <span className="v3-num">{libraryCount}{t(" 份资料 · ")}{folders.length}{t(" 个文件夹")}</span>
+                : t("把履历、项目记录和参考资料集中在这里，写简历时随时调用。")}</Reveal>
             </p>
             <div className="ds-actions">
-              <SearchBox value={query} onChange={setQuery} placeholder="搜索资料…" label="搜索资料" />
-              <button type="button" className="v3-btn v3-btn-dark" style={{ width: 120 }} disabled={batchMode} onClick={openCreateFolder}>新建文件夹</button>
+              <SearchBox value={query} onChange={setQuery} placeholder={t("搜索资料…")} label={t("搜索资料")} />
+              <button type="button" className="v3-btn v3-btn-dark" style={{ width: 120 }} disabled={batchMode} onClick={openCreateFolder}>{t("新建文件夹")}</button>
             </div>
             <div className="ds-divider" />
           </header>
         ) : (
           <header className="ds-head has-crumb">
-            <nav aria-label="资料库路径">
-              <PageEyebrow className="ds-eyebrow" segments={[{ label: "DATASETS", onClick: handleBackToAll, ariaLabel: "返回全部资料" }, <span aria-current="page"><Reveal inline loading={loading} placeholder={<LoadingText />}>{currentFolderName}</Reveal></span>]} />
+            <nav aria-label={t("资料库路径")}>
+              <PageEyebrow className="ds-eyebrow" segments={[{ label: "DATASETS", onClick: handleBackToAll, ariaLabel: t("返回全部资料") }, <span aria-current="page"><Reveal inline loading={loading} placeholder={<LoadingText />}>{currentFolderName}</Reveal></span>]} />
             </nav>
             <h1 className="ds-title" title={loading ? undefined : currentFolderName}><Reveal inline loading={loading} placeholder={<LoadingText width={180} />}>{currentFolderName}</Reveal></h1>
             <p className="ds-sub">
-              <Reveal inline loading={loading} placeholder={<LoadingText width={160} />}>{!loadFailed && <>共 <span className="v3-num">{folderDatasetCount}</span> 份资料
-              {folderLinkedCount > 0 && <> · <span className="v3-num">{folderLinkedCount}</span> 份已关联面试</>}</>}</Reveal>
+              <Reveal inline loading={loading} placeholder={<LoadingText width={160} />}>{!loadFailed && <>{t("共 ")}<span className="v3-num">{folderDatasetCount}</span>{t(" 份资料")}{folderLinkedCount > 0 && <> · <span className="v3-num">{folderLinkedCount}</span>{t("份已关联面试")}</>}</>}</Reveal>
             </p>
             <div className="ds-actions is-folder">
-              <SearchBox value={query} onChange={setQuery} placeholder="搜索资料…" label="搜索资料" />
+              <SearchBox value={query} onChange={setQuery} placeholder={t("搜索资料…")} label={t("搜索资料")} />
               <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 92 }} disabled={batchDeleteBusy} onClick={toggleBatchMode}>
-                {batchMode ? "取消操作" : "批量操作"}
+                {batchMode ? t("取消操作") : t("批量操作")}
               </button>
-              <button type="button" className="v3-btn v3-btn-dark" style={{ width: 108 }} disabled={batchMode} onClick={openUploadDialog}>上传资料</button>
+              <button type="button" className="v3-btn v3-btn-dark" style={{ width: 108 }} disabled={batchMode} onClick={openUploadDialog}>{t("上传资料")}</button>
             </div>
             <div className="ds-divider" />
           </header>
@@ -1131,18 +1134,17 @@ export function DatasetsPage({
           placeholder={(
             <div className="ds-loading">
               <div className="v3-sk-folders" aria-hidden="true">{[0, 1, 2].map((index) => <Sk key={index} h={172} r={12} />)}</div>
-              <SkeletonRows rows={4} header={false} label="正在加载资料…" />
+              <SkeletonRows rows={4} header={false} label={t("正在加载资料…")} />
             </div>
           )}
         >{loadFailed ? (
           <section className="v3-empty is-error ds-error" aria-labelledby="ds-error-title">
             <div className="v3-stage has-dots"><LoadFailedArt /></div>
-            <h3 id="ds-error-title">资料加载失败</h3>
-            <p>请稍后重试。资料和文件夹都还在，刷新一下试试。</p>
+            <h3 id="ds-error-title">{t("资料加载失败")}</h3>
+            <p>{t("请稍后重试。资料和文件夹都还在，刷新一下试试。")}</p>
             <div className="v3-empty-actions">
               <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 96 }} onClick={() => void loadInitialData()}>
-                <Icon name="refresh" size={13} />重新加载
-              </button>
+                <Icon name="refresh" size={13} />{t("重新加载")}</button>
             </div>
           </section>
         ) : (
@@ -1151,13 +1153,13 @@ export function DatasetsPage({
               folders.length === 0 && datasets.length === 0 ? (
                 <section className="v3-empty ds-empty" aria-labelledby="ds-empty-title">
                   <div className="v3-stage has-dots"><EmptyLibraryArt /></div>
-                  <h3 id="ds-empty-title">还没有文件夹</h3>
-                  <p>建议先新建文件夹分类整理，后续写简历时可以快速检索和引用相关资料。</p>
+                  <h3 id="ds-empty-title">{t("还没有文件夹")}</h3>
+                  <p>{t("建议先新建文件夹分类整理，后续写简历时可以快速检索和引用相关资料。")}</p>
                 </section>
               ) : (
                 <>
-                  <div className="ds-section-head"><strong>文件夹</strong><span>按最近更新</span></div>
-                  <div className="ds-folder-grid" aria-label="资料与文件夹列表">
+                  <div className="ds-section-head"><strong>{t("文件夹")}</strong><span>{t("按最近更新")}</span></div>
+                  <div className="ds-folder-grid" aria-label={t("资料与文件夹列表")}>
                     {sortedFolders.map((folder) => (
                       <FolderCard
                         key={folder.id}
@@ -1176,10 +1178,10 @@ export function DatasetsPage({
                   </div>
                   {recentUploads.length > 0 && (
                     <>
-                      <h2 className="ds-recent-head">最近上传</h2>
-                      <div className="ds-recent" role="list" aria-label="最近上传">
+                      <h2 className="ds-recent-head">{t("最近上传")}</h2>
+                      <div className="ds-recent" role="list" aria-label={t("最近上传")}>
                         {recentUploads.map((dataset) => {
-                          const folderName = folders.find((folder) => folder.id === dataset.folder_id)?.name ?? "未分类";
+                          const folderName = folders.find((folder) => folder.id === dataset.folder_id)?.name ?? t("未分类");
                           const available = isMediaDataset(dataset)
                             ? dataset.upload_status === "succeeded"
                             : datasetVisualStatus(dataset) === "succeeded";
@@ -1189,7 +1191,7 @@ export function DatasetsPage({
                               type="button"
                               role="listitem"
                               className="ds-recent-row"
-                              aria-label={`${dataset.file_name}，位于「${folderName}」`}
+                              aria-label={t("{value0}，位于「{value1}」", { value0: dataset.file_name, value1: folderName })}
                               onClick={(event) => {
                                 if (available) openDataset(dataset, event.currentTarget, true);
                                 else if (dataset.folder_id) handleSelectFolder(dataset.folder_id);
@@ -1207,36 +1209,36 @@ export function DatasetsPage({
                       </div>
                     </>
                   )}
-                  <p className="ds-foot-note">写简历或和 AI 助手对话时，可以通过「添加资料」选择要引用的文件。</p>
+                  <p className="ds-foot-note">{t("写简历或和 AI 助手对话时，可以通过「添加资料」选择要引用的文件。")}</p>
                 </>
               )
             ) : folderDatasetCount === 0 ? (
               <section className="v3-empty ds-empty" aria-labelledby="ds-empty-title">
                 <div className="v3-stage has-dots"><EmptyLibraryArt /></div>
-                <h3 id="ds-empty-title">还没有资料</h3>
-                <p>建议先上传一份与当前分类相关的资料，后续写简历时可以快速检索和引用。</p>
+                <h3 id="ds-empty-title">{t("还没有资料")}</h3>
+                <p>{t("建议先上传一份与当前分类相关的资料，后续写简历时可以快速检索和引用。")}</p>
               </section>
             ) : (
-              <section className="ds-table" aria-label="文件夹内部资料列表">
+              <section className="ds-table" aria-label={t("文件夹内部资料列表")}>
                 <div className="ds-table-head ds-cols" role="presentation">
-                  <span className="is-name">名称</span>
-                  <span>关联</span>
-                  <span className="is-right">大小</span>
-                  <span className="is-right">上传日期</span>
+                  <span className="is-name">{t("名称")}</span>
+                  <span>{t("关联")}</span>
+                  <span className="is-right">{t("大小")}</span>
+                  <span className="is-right">{t("上传日期")}</span>
                   {batchMode ? (
                     <span className="is-check">
                       <DatasetSelectionCheckbox
                         checked={allFilteredSelected}
                         disabled={filteredDatasets.length === 0 || batchDeleteBusy}
                         indeterminate={someFilteredSelected && !allFilteredSelected}
-                        label="全选当前列表"
+                        label={t("全选当前列表")}
                         onChange={toggleAllFilteredDatasets}
                       />
                     </span>
                   ) : <span />}
                 </div>
                 {filteredDatasets.length === 0 ? (
-                  <p className="ds-no-match">没有匹配的资料。</p>
+                  <p className="ds-no-match">{t("没有匹配的资料。")}</p>
                 ) : (
                   <div className="ds-rows">
                     {filteredDatasets.map((dataset) => (
@@ -1262,8 +1264,8 @@ export function DatasetsPage({
                   </div>
                 )}
                 <button type="button" className="ds-dropzone" disabled={batchMode} onClick={openUploadDialog}>
-                  <strong><Icon name="upload" size={16} />拖入文件，或点击上传到「{currentFolderName}」</strong>
-                  <small>PDF、DOCX、Markdown、TXT 最大 {formatDatasetFileSize(limits.max_file_bytes)}；音视频最大 {mediaLimit}</small>
+                  <strong><Icon name="upload" size={16} />{t("拖入文件，或点击上传到「")}{currentFolderName}」</strong>
+                  <small>{t("PDF、DOCX、Markdown、TXT 最大 ")}{formatDatasetFileSize(limits.max_file_bytes)}{t("；音视频最大 ")}{mediaLimit}</small>
                 </button>
               </section>
             )}
@@ -1273,8 +1275,7 @@ export function DatasetsPage({
 
       {uploading && !dialogOpen && (
         <div className="ds-uploading" role="status" aria-live="polite">
-          <span className="ds-spinner" aria-hidden="true" />
-          正在上传资料至「{effectiveUploadFolderId ? folders.find((f) => f.id === effectiveUploadFolderId)?.name ?? "当前文件夹" : "未分类"}」…
+          <span className="ds-spinner" aria-hidden="true" />{t("正在上传资料至「")}{effectiveUploadFolderId ? folders.find((f) => f.id === effectiveUploadFolderId)?.name ?? t("当前文件夹") : t("未分类")}」…
         </div>
       )}
 
@@ -1298,15 +1299,15 @@ export function DatasetsPage({
 
       <MotionPresence>{renameTarget && (
         <NameDialog
-          title="重命名资料"
-          description="只修改资料显示名称，不改变文件格式或已保存的内容。"
-          label="资料名称"
+          title={t("重命名资料")}
+          description={t("只修改资料显示名称，不改变文件格式或已保存的内容。")}
+          label={t("资料名称")}
           value={renameValue}
           maxLength={255}
           error={renameError}
           busy={busyAction?.kind === "rename"}
-          confirmLabel="保存名称"
-          busyLabel="正在保存…"
+          confirmLabel={t("保存名称")}
+          busyLabel={t("正在保存…")}
           onChange={(value) => { setRenameValue(value); setRenameError(null); }}
           onCancel={() => { if (!busyAction) setRenameTarget(null); }}
           onSubmit={() => void submitRename()}
@@ -1315,11 +1316,11 @@ export function DatasetsPage({
 
       <MotionPresence>{deleteTarget && (
         <ConfirmDialog
-          title={`永久删除「${datasetDisplayName(deleteTarget)}」？`}
-          description="删除后将移除源文件、解析结果和资料记录，且无法恢复。"
+          title={t("永久删除「{value0}」？", { value0: datasetDisplayName(deleteTarget) })}
+          description={t("删除后将移除源文件、解析结果和资料记录，且无法恢复。")}
           art={<DeleteDatasetArt tag={datasetFormatTone(deleteTarget).label} color={datasetFormatTone(deleteTarget).color} />}
-          confirmLabel="永久删除"
-          busyLabel="正在删除…"
+          confirmLabel={t("永久删除")}
+          busyLabel={t("正在删除…")}
           busy={busyAction?.kind === "delete"}
           onCancel={() => { if (!busyAction) setDeleteTarget(null); }}
           onConfirm={() => void confirmDelete()}
@@ -1328,11 +1329,11 @@ export function DatasetsPage({
 
       <MotionPresence>{bulkDeleteTarget && (
         <ConfirmDialog
-          title={`永久删除所选资料（${bulkDeleteTarget.length} 份）？`}
-          description={`将删除所选 ${bulkDeleteTarget.length} 份资料，移除源文件、解析结果和资料记录，且无法恢复。`}
+          title={t("永久删除所选资料（{value0} 份）？", { value0: bulkDeleteTarget.length })}
+          description={t("将删除所选 {value0} 份资料，移除源文件、解析结果和资料记录，且无法恢复。", { value0: bulkDeleteTarget.length })}
           art={<DeleteDatasetArt tag={String(bulkDeleteTarget.length)} color="var(--v3-sub)" />}
-          confirmLabel="永久删除所选"
-          busyLabel="正在删除…"
+          confirmLabel={t("永久删除所选")}
+          busyLabel={t("正在删除…")}
           busy={batchDeleteBusy}
           onCancel={() => { if (!batchDeleteBusy) setBulkDeleteTarget(null); }}
           onConfirm={() => void confirmBulkDelete()}
@@ -1341,16 +1342,16 @@ export function DatasetsPage({
 
       <MotionPresence>{createFolderDialogOpen && (
         <NameDialog
-          title="新建文件夹"
-          description="创建分类文件夹，整理和归类求职资料。"
-          label="文件夹名称"
+          title={t("新建文件夹")}
+          description={t("创建分类文件夹，整理和归类求职资料。")}
+          label={t("文件夹名称")}
           value={newFolderName}
           maxLength={64}
-          placeholder="例如：核心项目、工作复盘、资格证书"
+          placeholder={t("例如：核心项目、工作复盘、资格证书")}
           error={createFolderError}
           busy={creatingFolder}
-          confirmLabel="创建文件夹"
-          busyLabel="正在创建…"
+          confirmLabel={t("创建文件夹")}
+          busyLabel={t("正在创建…")}
           onChange={(value) => { setNewFolderName(value); setCreateFolderError(null); }}
           onCancel={() => { if (!creatingFolder) setCreateFolderDialogOpen(false); }}
           onSubmit={() => void handleCreateFolder()}
@@ -1359,15 +1360,15 @@ export function DatasetsPage({
 
       <MotionPresence>{renameFolderTarget && (
         <NameDialog
-          title="重命名文件夹"
-          description="修改文件夹名称，内部资料归属将自动同步。"
-          label="文件夹名称"
+          title={t("重命名文件夹")}
+          description={t("修改文件夹名称，内部资料归属将自动同步。")}
+          label={t("文件夹名称")}
           value={renameFolderName}
           maxLength={64}
           error={renameFolderError}
           busy={renamingFolder}
-          confirmLabel="保存"
-          busyLabel="正在保存…"
+          confirmLabel={t("保存")}
+          busyLabel={t("正在保存…")}
           onChange={(value) => { setRenameFolderName(value); setRenameFolderError(null); }}
           onCancel={() => { if (!renamingFolder) setRenameFolderTarget(null); }}
           onSubmit={() => void handleRenameFolder()}
@@ -1376,11 +1377,11 @@ export function DatasetsPage({
 
       <MotionPresence>{deleteFolderTarget && (
         <ConfirmDialog
-          title={`确认删除文件夹「${deleteFolderTarget.name}」？`}
-          description={`将永久删除该文件夹及其中的 ${deleteFolderTarget.dataset_count} 份资料，包括源文件和解析结果，删除后无法恢复。`}
+          title={t("确认删除文件夹「{value0}」？", { value0: deleteFolderTarget.name })}
+          description={t("将永久删除该文件夹及其中的 {value0} 份资料，包括源文件和解析结果，删除后无法恢复。", { value0: deleteFolderTarget.dataset_count })}
           art={<DeleteDatasetArt tag="DIR" color="var(--v3-sub)" />}
-          confirmLabel="确认删除"
-          busyLabel="正在删除…"
+          confirmLabel={t("确认删除")}
+          busyLabel={t("正在删除…")}
           busy={deletingFolder}
           onConfirm={() => void handleDeleteFolder()}
           onCancel={() => { if (!deletingFolder) setDeleteFolderTarget(null); }}
@@ -1437,9 +1438,7 @@ export function DatasetsPage({
           message={syncFailure}
           onDismiss={() => setSyncFailure(null)}
           action={(
-            <button type="button" className="v3-link" onClick={() => void refreshDatasets({ accepted: syncFailure === ACCEPTED_SYNC_FAILURE })}>
-              重新刷新
-            </button>
+            <button type="button" className="v3-link" onClick={() => void refreshDatasets({ accepted: syncFailure === ACCEPTED_SYNC_FAILURE })}>{t("重新刷新")}</button>
           )}
         />
       ) : notice ? (
@@ -1447,39 +1446,35 @@ export function DatasetsPage({
       ) : null}
 
       {batchMode && (
-        <div className="v3 ds-batch-bar" role="region" aria-label="批量操作栏">
+        <div className="v3 ds-batch-bar" role="region" aria-label={t("批量操作栏")}>
           <label>
             <DatasetSelectionCheckbox
               checked={allFilteredSelected}
               disabled={filteredDatasets.length === 0 || batchDeleteBusy}
               indeterminate={someFilteredSelected && !allFilteredSelected}
-              label="全选当前筛选结果"
+              label={t("全选当前筛选结果")}
               onChange={toggleAllFilteredDatasets}
-            />
-            全选
-          </label>
-          <span className="ds-batch-bar-count">已选 <strong>{selectedDatasetCount}</strong> 项</span>
+            />{t("全选")}</label>
+          <span className="ds-batch-bar-count">{t("已选 ")}<strong>{selectedDatasetCount}</strong>{t(" 项")}</span>
           <span className="ds-batch-bar-sep" aria-hidden="true" />
           <button
             type="button"
             className="v3-btn v3-btn-ghost"
             disabled={selectedDatasetCount === 0 || batchDeleteBusy}
-            aria-label={`移动到文件夹（已选择 ${selectedDatasetCount} 份）`}
+            aria-label={t("移动到文件夹（已选择 {value0} 份）", { value0: selectedDatasetCount })}
             onClick={() => setBatchMoveOpen(true)}
           >
-            <Icon name="folder" size={13} />移动到文件夹
-          </button>
+            <Icon name="folder" size={13} />{t("移动到文件夹")}</button>
           <button
             type="button"
             className="v3-btn v3-btn-danger"
             disabled={selectedDatasetCount === 0 || batchDeleteBusy}
-            aria-label={`删除资料（已选择 ${selectedDatasetCount} 份）`}
+            aria-label={t("删除资料（已选择 {value0} 份）", { value0: selectedDatasetCount })}
             onClick={startBulkDelete}
           >
-            <Icon name="trash" size={13} />删除
-          </button>
+            <Icon name="trash" size={13} />{t("删除")}</button>
           <span className="ds-batch-bar-sep" aria-hidden="true" />
-          <button type="button" className="v3-icon-btn" aria-label="取消选择" title="取消选择并退出批量" onClick={toggleBatchMode}>
+          <button type="button" className="v3-icon-btn" aria-label={t("取消选择")} title={t("取消选择并退出批量")} onClick={toggleBatchMode}>
             <Icon name="x" size={15} />
           </button>
         </div>
@@ -1518,6 +1513,7 @@ function NameDialog({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
+  useLocale();
   return (
     <Dialog width={440} label={title} className="ds-dialog" closable={!busy} onClose={onCancel}>
       <div className="v3-dialog-body">
@@ -1546,7 +1542,7 @@ function NameDialog({
         </label>
       </div>
       <DialogFooter>
-        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={busy} onClick={onCancel}>取消</button>
+        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={busy} onClick={onCancel}>{t("取消")}</button>
         <button type="button" className="v3-btn v3-btn-dark" disabled={busy} onClick={onSubmit}>{busy ? busyLabel : confirmLabel}</button>
       </DialogFooter>
     </Dialog>
@@ -1565,6 +1561,7 @@ function NoticeToast({
   onDismiss: () => void;
   action?: React.ReactNode;
 }) {
+  useLocale();
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
   useEffect(() => {

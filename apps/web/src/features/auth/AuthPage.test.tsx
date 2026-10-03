@@ -15,7 +15,7 @@ const wechatUser: User = {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.spyOn(api, "authCapabilities").mockResolvedValue({
-    password_login_enabled: false,
+    password_login_enabled: false, wechat_login_enabled: true,
   });
   vi.spyOn(api, "wechatQrcode").mockResolvedValue({
     scene: "login:abc123",
@@ -62,9 +62,9 @@ describe("AuthPage environment-aware login", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("开发环境展示邮箱密码登录，并允许切换到微信扫码", async () => {
+  it("开发环境只有邮箱密码登录", async () => {
     vi.mocked(api.authCapabilities).mockResolvedValue({
-      password_login_enabled: true,
+      password_login_enabled: true, wechat_login_enabled: false,
     });
     vi.spyOn(api, "wechatStatus").mockResolvedValue({
       status: "pending",
@@ -93,15 +93,22 @@ describe("AuthPage environment-aware login", () => {
     await act(async () => {});
     expect(login).toHaveBeenCalledWith("developer@example.test", "password-123");
 
-    fireEvent.click(screen.getByRole("button", { name: /使用微信扫码登录/ }));
+    expect(screen.queryByRole("button", { name: /使用微信扫码登录/ })).not.toBeInTheDocument();
+    expect(api.wechatQrcode).not.toHaveBeenCalled();
+  });
+
+  it("能力查询失败不猜测登录方式", async () => {
+    vi.mocked(api.authCapabilities).mockRejectedValue(new Error("offline"));
+    render(<AuthPage />);
     await act(async () => {});
-    expect(screen.getByAltText("微信扫码登录二维码")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "返回邮箱密码登录" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("登录服务暂时不可用");
+    expect(api.wechatQrcode).not.toHaveBeenCalled();
+    expect(document.querySelector("form")).toBeNull();
   });
 
   it("开发环境的注册入口创建账号而不是提交登录", async () => {
     vi.mocked(api.authCapabilities).mockResolvedValue({
-      password_login_enabled: true,
+      password_login_enabled: true, wechat_login_enabled: false,
     });
     const login = vi
       .spyOn(useResumeStore.getState(), "login")

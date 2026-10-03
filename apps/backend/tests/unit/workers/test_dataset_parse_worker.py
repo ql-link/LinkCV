@@ -160,6 +160,23 @@ def test_dataset_worker_persists_markdown_and_is_idempotent() -> None:
     assert converter.request_pdf_layout_calls == [False]
 
 
+def test_late_conversion_cannot_upload_after_account_deletion_marker() -> None:
+    app, storage, processor, task_id = build_processor()
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, task_id)
+        task.parse_status = "processing"
+        uid = task.user_id
+        user = db.get(User, uid)
+        user.status = 0
+        user.deletion_requested_at = utc_now()
+        db.commit()
+    existing_objects = dict(storage.objects)
+    assert processor._persist_success(
+        parse_task_id=task_id, user_id=uid, markdown="# Fictional late content", started=0,
+    ) is False
+    assert storage.objects == existing_objects
+
+
 def test_dataset_worker_claims_queued_task_before_conversion() -> None:
     app, _storage, processor, task_id = build_processor()
 

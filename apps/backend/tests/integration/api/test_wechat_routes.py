@@ -46,6 +46,7 @@ def build_test_app(openid: str = "openid-fixture"):
         wechat_appid="wx-fixture-appid",
         wechat_secret="fixture-secret",
     )
+    settings.app_environment = "production"
     app = create_app(
         settings,
         storage=FakeStorage(),
@@ -78,7 +79,7 @@ def test_retired_public_identity_routes_are_absent_outside_test_scaffolding() ->
     )
     with TestClient(app) as client:
         assert client.get("/api/auth/capabilities").json() == {
-            "password_login_enabled": False
+            "password_login_enabled": False, "wechat_login_enabled": False
         }
         assert client.post(
             "/api/auth/register",
@@ -121,7 +122,7 @@ def test_local_and_development_allow_password_login_and_registration() -> None:
 
         with TestClient(app) as client:
             assert client.get("/api/auth/capabilities").json() == {
-                "password_login_enabled": True
+                "password_login_enabled": True, "wechat_login_enabled": False
             }
             login = client.post(
                 "/api/auth/login",

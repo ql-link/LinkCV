@@ -3,7 +3,8 @@ import { PageLoading } from "@/components/ui";
 import { EditorOpenError } from "./features/workbench/EditorOpenError";
 import { V3Shell, type V3Section } from "./v3/Shell";
 import { RouteSkeleton } from "./v3/skeletons";
-import { ApiRequestError } from "./api/client";
+import { getLocaleRevision, setLocale, t, useLocale } from "./i18n";
+import { api, ApiRequestError } from "./api/client";
 import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
 import { applyRouteSeo } from "./seo";
 import { useResumeStore } from "./store/resumeStore";
@@ -24,6 +25,7 @@ export function startResumeAutosave(save: () => void) {
   return window.setInterval(save, RESUME_AUTOSAVE_INTERVAL_MS);
 }
 
+const AccountDeletionPage = lazy(() => import("./features/account/AccountDeletionPage").then((module) => ({ default: module.AccountDeletionPage })));
 const AccountPage = lazy(() => loadAccountPage().then((module) => ({ default: module.AccountPage })));
 const AssistantPage = lazy(() => loadAssistantPage().then((module) => ({ default: module.AssistantPage })));
 const AdminApp = lazy(() => import("./features/admin/AdminApp").then((module) => ({ default: module.AdminApp })));
@@ -43,6 +45,7 @@ const SharePage = lazy(() => import("./features/share/SharePage").then((module) 
 const ResumeWorkbench = lazy(() => import("./features/workbench/ResumeWorkbench").then((module) => ({ default: module.ResumeWorkbench })));
 
 export function App() {
+  useLocale();
   return (
     <Suspense fallback={<AppRouteLoadingFallback />}>
       <AppContent />
@@ -51,8 +54,9 @@ export function App() {
 }
 
 export function AppRouteLoadingFallback() {
+  const locale = useLocale();
   const route = useAppRoute();
-  const loading = <PageLoading label="正在加载页面…" scope="page" />;
+  const loading = <PageLoading label={t("正在加载页面…")} scope="page" />;
   const usesLightWorkspace = route.kind === "resumes"
     || route.kind === "assistant"
     || route.kind === "templates"
@@ -67,12 +71,13 @@ export function AppRouteLoadingFallback() {
 }
 
 export function WorkspacePageBoundary({ children, fallback }: { children: ReactNode; fallback?: ReactNode }) {
+  useLocale();
   // Keep the current page while the next module loads, avoiding a spinner between pages.
   const content = useDeferredValue(children);
   return (
     <Suspense fallback={fallback ?? (
       <main className="dashboard-content workspace-route-loading">
-        <PageLoading label="正在加载模块…" scope="workspace" />
+        <PageLoading label={t("正在加载模块…")} scope="workspace" />
       </main>
     )}>
       {content}
@@ -82,6 +87,7 @@ export function WorkspacePageBoundary({ children, fallback }: { children: ReactN
 
 // 页面代码下载期间：外壳照常显示，内容卡里画和该页一致的骨架，代码到了直接换成真实页面
 function WorkspaceRouteLoading({ active }: { active: V3Section }) {
+  useLocale();
   return (
     <V3Shell active={active} scroll={false}>
       <RouteSkeleton section={active} />
@@ -90,12 +96,24 @@ function WorkspaceRouteLoading({ active }: { active: V3Section }) {
 }
 
 function AppContent() {
+  const locale = useLocale();
   const route = useAppRoute();
   const currentLocation = `${window.location.pathname}${window.location.search}`;
   const routeResumeId = route.kind === "editor" ? route.resumeId : null;
   const isAdminArea = route.kind === "admin" || route.kind === "adminLogin";
   const [routeError, setRouteError] = useState<{ resumeId: string; message: string } | null>(null);
   const authStatus = useResumeStore((state) => state.authStatus);
+  const userId = useResumeStore((state) => state.user?.id);
+  useEffect(() => {
+    if (isAdminArea) { setLocale("zh-CN", false); return; }
+    let active = true;
+    if (authStatus === "authenticated" && userId) {
+      setLocale("zh-CN", false);
+      const revision = getLocaleRevision();
+      void api.getAccountPreferences().then((preferences) => { if (active && getLocaleRevision() === revision) setLocale(preferences.locale); }).catch(() => undefined);
+    }
+    return () => { active = false; };
+  }, [authStatus, userId, isAdminArea]);
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const hydrate = useResumeStore((state) => state.hydrate);
   const loadResume = useResumeStore((state) => state.loadResume);
@@ -105,7 +123,7 @@ function AppContent() {
 
   useEffect(() => {
     applyRouteSeo(route);
-  }, [route]);
+  }, [route, locale]);
 
   useEffect(() => {
     const redirect = legacyCareerRedirect(window.location.pathname, window.location.search);
@@ -156,8 +174,8 @@ function AppContent() {
       return;
     }
 
-    // Signed-in users treat the bare domain as the app entry; /home keeps the landing page reachable.
-    if (route.kind === "auth" || isBareDomain(window.location.pathname)) {
+    // Public landing routes remain public for signed-in users as well.
+    if (route.kind === "auth") {
       navigateTo("/resumes", { replace: true });
     }
   }, [authStatus, currentLocation, route.kind]);
@@ -175,7 +193,7 @@ function AppContent() {
       if (dirty && activeResumeId) {
         await saveCurrentResume();
         if (useResumeStore.getState().error) {
-          throw new Error("当前简历保存失败，尚未切换。");
+          throw new Error(t("当前简历保存失败，尚未切换。"));
         }
       }
       try {
@@ -220,12 +238,14 @@ function AppContent() {
     return <AdminLoginPage key={route.next ?? ""} next={route.next} />;
   }
 
+  if (route.kind === "accountDeletion") return <AccountDeletionPage />;
+
   if (route.kind === "share") {
     return <SharePage token={route.token} />;
   }
 
   if (authStatus === "checking") {
-    return <PageLoading label="正在加载简历工作台…" scope="page" />;
+    return <PageLoading label={t("正在加载简历工作台…")} scope="page" />;
   }
 
   if (route.kind === "notFound") {
@@ -243,9 +263,6 @@ function AppContent() {
   }
 
   if (route.kind === "landing") {
-    if (authStatus === "authenticated" && isBareDomain(window.location.pathname)) {
-      return <PageLoading label="正在进入简历主页…" scope="page" />;
-    }
     const landingDestination = authStatus === "authenticated"
       ? "/resumes"
       : null;
@@ -263,7 +280,7 @@ function AppContent() {
       return <AuthPage key={`${route.mode}:${route.next ?? ""}`} initialMode={route.mode} next={route.next} />;
     }
 
-    return <PageLoading label="正在进入首页…" scope="page" />;
+    return <PageLoading label={t("正在进入首页…")} scope="page" />;
   }
 
   if (route.kind === "resumeCreate") {
@@ -321,7 +338,7 @@ function AppContent() {
               initialJobId={route.jobId}
               initialCreateApplication={route.createApplication}
               initialJobImport={route.importJob}
-              moduleTitle={route.view === "schedule" ? "面试排期" : route.view === "records" ? "面试记录" : "求职记录"}
+              moduleTitle={route.view === "schedule" ? t("面试排期") : route.view === "records" ? t("面试记录") : t("求职记录")}
             />
           )}
           {route.kind === "datasets" && <DatasetsPage initialFolderId={route.folderId} />}
@@ -348,26 +365,22 @@ function AppContent() {
       );
     }
     if (activeResumeId !== route.resumeId) {
-      return <V3Shell active="none" bare contentClassName="wb3-content"><PageLoading label="正在打开简历…" scope="panel" /></V3Shell>;
+      return <V3Shell active="none" bare contentClassName="wb3-content"><PageLoading label={t("正在打开简历…")} scope="panel" /></V3Shell>;
     }
     return <ResumeWorkbench />;
   }
 
-  return <PageLoading label="正在进入简历主页…" scope="page" />;
-}
-
-function isBareDomain(pathname: string) {
-  return pathname === "/" || pathname === "";
+  return <PageLoading label={t("正在进入简历主页…")} scope="page" />;
 }
 
 export function resumeLoadErrorMessage(error: unknown) {
   if (error instanceof ApiRequestError) {
-    if (error.status === 404) return "简历不存在，或当前账号没有访问权限。";
-    if (error.status === 401) return "登录状态已失效，请重新登录后再试。";
+    if (error.status === 404) return t("简历不存在，或当前账号没有访问权限。");
+    if (error.status === 401) return t("登录状态已失效，请重新登录后再试。");
     if (error.message === "RESUME_SCHEMA_INVALID") {
-      return "这份简历的数据格式暂时无法读取，请先完成数据迁移。";
+      return t("这份简历的数据格式暂时无法读取，请先完成数据迁移。");
     }
-    if (error.status >= 500) return "服务暂时无法读取这份简历，请稍后重试。";
+    if (error.status >= 500) return t("服务暂时无法读取这份简历，请稍后重试。");
   }
-  return "无法连接到服务，请检查本地服务后重试。";
+  return t("无法连接到服务，请检查本地服务后重试。");
 }

@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 // 07 模拟面试入口：按路由分发到各页面。数据来自 ./mockInterviewApi（真实 /api/mock-interviews）。
 // 语音面试（answer_mode === "voice"）的进行中与报告页交给 voice/ 目录，外壳由它们自己决定。
 import { useEffect } from "react";
@@ -27,12 +28,14 @@ export function MockInterviewPage({
   applicationId?: string;
   resumeId?: string;
 }) {
+  useLocale();
   if (view === "home") return <V3Shell active="mock"><MockInterviewHome /></V3Shell>;
   if (view === "new") return <V3Shell active="mock"><MockInterviewNew applicationId={applicationId} resumeId={resumeId} /></V3Shell>;
   return <InterviewRoute id={interviewId ?? ""} report={view === "report"} />;
 }
 
 function InterviewRoute({ id, report }: { id: string; report: boolean }) {
+  useLocale();
   const { interview, error, refresh, pause } = useMockInterview(id);
 
   // 报告只对 completed 场次返回：状态不对时跳到对应页
@@ -47,9 +50,9 @@ function InterviewRoute({ id, report }: { id: string; report: boolean }) {
       <V3Shell active="mock">
         <div className="mi-page">
           <div className="mi-load-error" role="alert">
-            <strong>{error.includes("不存在") ? "找不到这场模拟面试" : "模拟面试没有加载出来"}</strong>
+            <strong>{error.includes(t("不存在")) ? t("找不到这场模拟面试") : t("模拟面试没有加载出来")}</strong>
             <span>{error}</span>
-            <button type="button" className="v3-btn v3-btn-ghost" onClick={() => navigateTo("/mock-interviews")}><Icon name="chevl" size={13} />返回模拟面试</button>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={() => navigateTo("/mock-interviews")}><Icon name="chevl" size={13} />{t("返回模拟面试")}</button>
           </div>
         </div>
       </V3Shell>

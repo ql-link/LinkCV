@@ -10,7 +10,8 @@
     "pages/career/session",
     "pages/career/select",
     "pages/career/form",
-    "pages/career/material"
+    "pages/career/material",
+    "pages/account-confirm/index"
   ],
   "window": {
     "navigationBarTitleText": "LinkResume",

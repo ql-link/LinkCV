@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { api, ApiRequestError, type UserProfileData } from "../../api/client";
 import { UserProfilePanel } from "./UserProfilePanel";
+import { setLocale } from "../../i18n";
 
 const emptyProfile: UserProfileData = {
   candidate_cities: [],
@@ -53,44 +54,84 @@ const mockProfile: UserProfileData = {
 };
 
 afterEach(() => {
+  setLocale("zh-CN");
   vi.restoreAllMocks();
 });
 
 async function openEditor() {
-  const row = await screen.findByRole("button", { name: "个人画像" });
+  const row = await screen.findByRole("button", { name: "个人画像详情" });
   await waitFor(() => expect(row).not.toBeDisabled());
   fireEvent.click(row);
   return screen.findByRole("dialog", { name: "编辑个人画像" });
 }
 
+function chooseCandidateStatus(label: string) {
+  fireEvent.click(screen.getByRole("button", { name: "工作经验" }));
+  fireEvent.click(screen.getByRole("option", { name: label }));
+}
+
 describe("UserProfilePanel", () => {
-  it("账号页只显示填写进度，不展示画像内容", async () => {
+  it("账号页显示画像摘要，通过详情进入原编辑弹窗", async () => {
     const getSpy = vi.spyOn(api, "getUserProfile").mockResolvedValue(mockProfile);
 
     render(<UserProfilePanel />);
 
     expect(await screen.findByText(/已填 \d+ \/ 14 项/)).toBeInTheDocument();
     expect(getSpy).toHaveBeenCalledOnce();
-    expect(screen.getByText("城市、薪资、学历等 · 所有简历共用")).toBeInTheDocument();
-    expect(screen.queryByText("杭州")).not.toBeInTheDocument();
-    expect(screen.queryByText("去填写")).not.toBeInTheDocument();
+    const summary = screen.getByLabelText("个人画像摘要");
+    expect(within(summary).getByText("杭州、上海、深圳、成都")).toBeInTheDocument();
+    expect(within(summary).getByText("CNY 15,000–25,000 · 月薪")).toBeInTheDocument();
+    expect(within(summary).getByText("5 年工作经验")).toBeInTheDocument();
+    expect(within(summary).getByText("硕士 · 浙江大学 · 软件工程")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByText("React")).not.toBeInTheDocument();
+    await openEditor();
   });
 
-  it("还没有填写时右侧显示「去填写」，技能里的「无」不计入进度", async () => {
+  it("空画像显示未填写和零进度，仍可从详情填写", async () => {
     vi.spyOn(api, "getUserProfile").mockResolvedValue({ ...emptyProfile, skills: ["无"], honors: [" 无 "] });
 
     render(<UserProfilePanel />);
 
-    expect(await screen.findByText("去填写")).toBeInTheDocument();
+    expect(await screen.findByText("已填 0 / 14 项")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("个人画像摘要")).getAllByText("未填写")).toHaveLength(4);
+    await openEditor();
   });
 
-  it("加载失败时入口置灰并提示不可用", async () => {
-    vi.spyOn(api, "getUserProfile").mockRejectedValue(new ApiRequestError(503, "SERVICE_UNAVAILABLE"));
+  it("加载失败后可从入口重试，恢复后能打开编辑弹窗", async () => {
+    const getProfile = vi.spyOn(api, "getUserProfile")
+      .mockRejectedValueOnce(new ApiRequestError(503, "SERVICE_UNAVAILABLE"))
+      .mockResolvedValueOnce(mockProfile);
 
     render(<UserProfilePanel />);
 
-    expect(await screen.findByText("个人画像暂不可用，请稍后重试。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "个人画像" })).toBeDisabled();
+    expect(await screen.findByText("读取失败，点击重试")).toBeInTheDocument();
+    const entry = screen.getByRole("button", { name: "重新读取个人画像" });
+    expect(entry).not.toBeDisabled();
+    fireEvent.click(entry);
+    expect(await screen.findByText(/已填 \d+ \/ 14 项/)).toBeInTheDocument();
+    expect(getProfile).toHaveBeenCalledTimes(2);
+    await openEditor();
+  });
+
+  it("摘要保留零值，并展示原币种和计薪周期", async () => {
+    vi.spyOn(api, "getUserProfile").mockResolvedValue({ ...mockProfile, salary_min: 0, salary_max: 0, salary_currency: "USD", salary_period: "hour", years_experience: 0 });
+    render(<UserProfilePanel />);
+    const summary = await screen.findByLabelText("个人画像摘要");
+    expect(within(summary).getByText("USD 0 · 时薪")).toBeInTheDocument();
+    expect(within(summary).getByText("0 年工作经验")).toBeInTheDocument();
+  });
+
+  it("摘要显示单侧薪资和应届毕业年份，中英文切换保留用户内容", async () => {
+    vi.spyOn(api, "getUserProfile").mockResolvedValue({ ...mockProfile, salary_min: null, salary_max: 30000, candidate_status: "fresh_graduate", graduation_year: 2027, years_experience: 0 });
+    setLocale("en-US");
+    render(<UserProfilePanel />);
+    const summary = await screen.findByLabelText("Career profile summary");
+    expect(within(summary).getByText("CNY ≤ 30,000 · Monthly")).toBeInTheDocument();
+    expect(within(summary).getByText("New graduate · class of 2027")).toBeInTheDocument();
+    expect(within(summary).getByText("杭州, 上海, 深圳, 成都")).toBeInTheDocument();
+    expect(within(summary).getByText(/浙江大学 · 软件工程/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Career profile details" })).not.toBeDisabled();
   });
 
   it("可接受城市支持逗号批量添加，工作性质可多选", async () => {
@@ -111,10 +152,15 @@ describe("UserProfilePanel", () => {
     expect(screen.getByLabelText("移除 深圳")).toBeInTheDocument();
     expect(screen.getByLabelText("移除 苏州")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "全职" }));
-    fireEvent.click(screen.getByRole("button", { name: "实习" }));
-    expect(screen.getByRole("button", { name: "全职" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "实习" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("combobox", { name: "工作性质" }));
+    const list = screen.getByRole("listbox", { name: "工作性质" });
+    expect(list).toHaveAttribute("aria-multiselectable", "true");
+    fireEvent.click(within(list).getByRole("option", { name: "全职" }));
+    fireEvent.click(within(list).getByRole("option", { name: "实习" }));
+    expect(within(list).getByRole("option", { name: "全职" })).toHaveAttribute("aria-selected", "true");
+    expect(within(list).getByRole("option", { name: "实习" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "工作性质" }), { key: "Escape" });
+    expect(screen.getByRole("combobox", { name: "工作性质" })).toHaveTextContent("实习全职");
 
     fireEvent.click(screen.getByRole("button", { name: "保存画像" }));
     await waitFor(() => expect(putSpy).toHaveBeenCalledOnce());
@@ -127,6 +173,47 @@ describe("UserProfilePanel", () => {
     );
     expect(await screen.findByText("个人画像已保存。")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "编辑个人画像" })).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("个人画像摘要")).getByText("深圳、苏州")).toBeInTheDocument();
+  });
+
+  it("工作性质支持键盘多选、取消选择和 Escape 只关闭下拉", async () => {
+    vi.spyOn(api, "getUserProfile").mockResolvedValue(emptyProfile);
+    render(<UserProfilePanel />);
+    await openEditor();
+    const trigger = screen.getByRole("combobox", { name: "工作性质" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: " " });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "Enter" });
+    expect(screen.getByRole("option", { name: "实习" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("option", { name: "全职" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(trigger, { key: "Home" });
+    fireEvent.keyDown(trigger, { key: " " });
+    expect(screen.getByRole("option", { name: "实习" })).toHaveAttribute("aria-selected", "false");
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("listbox", { name: "工作性质" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "编辑个人画像" })).toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveTextContent("全职");
+    fireEvent.click(trigger);
+    expect(screen.getByRole("option", { name: "全职" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "求职条件" }));
+    expect(screen.queryByRole("listbox", { name: "工作性质" })).not.toBeInTheDocument();
+  });
+
+  it("多选工作性质在英文编辑弹窗回填，两项可全部取消", async () => {
+    vi.spyOn(api, "getUserProfile").mockResolvedValue(mockProfile);
+    setLocale("en-US");
+    render(<UserProfilePanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Career profile details" }));
+    const trigger = await screen.findByRole("combobox", { name: "Employment type" });
+    expect(trigger).toHaveTextContent("InternshipFull-time");
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("option", { name: "Internship" }));
+    fireEvent.click(screen.getByRole("option", { name: "Full-time" }));
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(trigger).toHaveTextContent("Select employment types");
   });
 
   it("可接受城市最多 20 个", async () => {
@@ -156,7 +243,7 @@ describe("UserProfilePanel", () => {
     await openEditor();
     expect(screen.queryByRole("spinbutton", { name: "毕业年份" })).not.toBeInTheDocument();
     expect(screen.queryByRole("spinbutton", { name: "工作年限" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "应届生" }));
+    chooseCandidateStatus("应届生");
 
     expect(screen.getByRole("spinbutton", { name: "毕业年份" })).toBeInTheDocument();
     expect(screen.queryByRole("spinbutton", { name: "工作年限" })).not.toBeInTheDocument();
@@ -175,7 +262,7 @@ describe("UserProfilePanel", () => {
 
     render(<UserProfilePanel />);
     await openEditor();
-    fireEvent.click(screen.getByRole("button", { name: "应届生" }));
+    chooseCandidateStatus("应届生");
     fireEvent.click(screen.getByRole("button", { name: "保存画像" }));
 
     expect(await screen.findByText("应届生请填写 1900–9999 之间的四位毕业年份。")).toBeInTheDocument();
@@ -189,7 +276,7 @@ describe("UserProfilePanel", () => {
 
     render(<UserProfilePanel />);
     await openEditor();
-    expect(screen.getByRole("button", { name: "非应届生" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "工作经验" })).toHaveTextContent("非应届生");
     expect(screen.queryByRole("spinbutton", { name: "毕业年份" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole("spinbutton", { name: "工作年限" }), { target: { value: "3" } });
     fireEvent.click(screen.getByRole("button", { name: "保存画像" }));

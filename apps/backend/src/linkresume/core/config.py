@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     )
 
     app_environment: str = Field(default="development", alias="APP_ENV")
+    account_deletion_enabled: bool = Field(default=False, alias="ACCOUNT_DELETION_ENABLED")
+    account_deletion_poll_seconds: int = Field(default=10, alias="ACCOUNT_DELETION_POLL_SECONDS", ge=1, le=60)
+    account_deletion_lease_seconds: int = Field(default=60, alias="ACCOUNT_DELETION_LEASE_SECONDS", ge=30, le=300)
     backend_host: str = Field(default="127.0.0.1", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="BACKEND_PORT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -395,7 +398,7 @@ class Settings(BaseSettings):
     wechat_appid: str | None = Field(default=None, alias="WECHAT_APPID")
     wechat_secret: SecretStr | None = Field(default=None, alias="WECHAT_SECRET")
     wechat_qr_page: str = Field(
-        default="pages/bind/bind",
+        default="pages/account-confirm/index",
         alias="WECHAT_QR_PAGE",
         min_length=1,
     )

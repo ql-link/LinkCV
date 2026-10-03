@@ -32,8 +32,8 @@
 /* ───────────── 07.4 设备检测（节点 198:129） ───────────── */
 .vx-check-page { position: relative; min-height: 100%; padding: 52px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 60px; }
 .vx-check-head { display: flex; align-items: flex-start; justify-content: space-between; }
-.vx-check-head .v3-page-title { margin-top: 9px; line-height: 40px; }
-.vx-check-head .v3-page-eyebrow { line-height: 13px; }
+.vx-check-head .v3-page-title { margin-top: 9px; line-height: var(--ui-line-page-title); }
+.vx-check-head .v3-page-eyebrow { line-height: var(--ui-line-metadata); }
 .vx-check-rule { height: 1px; margin-top: 45px; background: var(--v3-line); }
 .vx-ghost-sm { height: 26px; margin-top: 32px; border: 0; border-radius: 7px; background: transparent; padding: 0 10px; color: var(--v3-sub); cursor: pointer; font-size: 11.5px; }
 .vx-ghost-sm:hover:not(:disabled) { background: var(--v3-field); color: var(--v3-txt); }
@@ -202,8 +202,8 @@
 .vr-page { position: relative; min-height: 100%; padding: 52px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 36px; }
 .vr-actions { position: absolute; top: 56px; right: max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)); display: flex; gap: 8px; }
 .vr-actions .v3-btn { height: 32px; }
-.vr-head .v3-page-eyebrow { line-height: 13px; }
-.vr-head .v3-page-title { margin-top: 8px; line-height: 40px; }
+.vr-head .v3-page-eyebrow { line-height: var(--ui-line-metadata); }
+.vr-head .v3-page-title { margin-top: 8px; line-height: var(--ui-line-page-title); }
 .vr-head-meta { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .vr-meta-text { margin-left: 0; color: var(--v3-fnt); font-size: 12px; }
 .vr-tag { display: inline-flex; height: 17px; flex: 0 0 auto; align-items: center; border-radius: 5px; background: var(--v3-stage); padding: 0 7px; color: var(--v3-sub); font-size: 11px; line-height: 1; white-space: nowrap; }

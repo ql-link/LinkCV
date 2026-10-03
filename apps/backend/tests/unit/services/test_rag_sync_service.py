@@ -261,3 +261,36 @@ def test_strip_local_images_keeps_code_and_remote_links() -> None:
     assert "./a.png" not in cleaned and "![ref][pic]" not in cleaned
     assert "local.png" not in cleaned and "wiki.png" not in cleaned
     assert "https://cdn.test/x.png" in cleaned and "https://cdn.test/y.png" in cleaned
+
+
+def test_stale_upload_batch_does_not_create_a_second_remote_file(env):
+    factory, storage, rag, service, _ = env
+    uid = add_user(factory)
+    dataset_id = add_dataset(factory, storage, uid, "# Fictional material")
+    assert service._create_missing() == 1
+    stale = service._due("pending")[0]
+    assert service._upload(stale) == 1
+    assert service._upload(stale) == 0
+    assert len(rag.files) == 1
+    assert record(factory, dataset_id).rag_file_id in rag.files
+
+
+def test_deleting_owner_retains_registered_files_for_durable_cleanup(env):
+    factory, storage, rag, service, _ = env
+    uid = add_user(factory)
+    dataset_id = add_dataset(factory, storage, uid, "# Fictional material")
+    service._create_missing()
+    pending = service._due("pending")[0]
+    service._upload(pending)
+    parsing = service._due("parsing")[0]
+    with factory() as db:
+        user = db.get(User, uid)
+        user.status = 0
+        user.deletion_requested_at = NOW
+        db.commit()
+    assert service._create_missing() == 0
+    assert service._upload(pending) == 0
+    assert service._poll(parsing) == 0
+    assert service._delete_orphan(parsing) == 0
+    assert record(factory, dataset_id).rag_file_id in rag.files
+    assert rag.deleted == []

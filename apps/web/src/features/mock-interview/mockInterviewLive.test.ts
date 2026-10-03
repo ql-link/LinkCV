@@ -1,7 +1,9 @@
 // 真实数据层：请求形状、错误映射与 SSE 回合流解析（fetch 全部替身，不连后端）。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "@/i18n";
 import { liveMockInterviewApi } from "./mockInterviewLive";
-import { MockInterviewError, type MockTurnEvent } from "./mockInterviewTypes";
+import { mockInterviewErrorMessage } from "./mockInterviewApi";
+import { DIFFICULTY_LABELS, DIMENSION_LABELS, INTERVIEW_TYPE_LABELS, MockInterviewError, type MockTurnEvent } from "./mockInterviewTypes";
 
 const fetchMock = vi.fn();
 
@@ -34,7 +36,10 @@ beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  setLocale("zh-CN", false);
+  vi.unstubAllGlobals();
+});
 
 describe("liveMockInterviewApi", () => {
   it("create 不向后端发送演示用的 display 字段", async () => {
@@ -62,6 +67,20 @@ describe("liveMockInterviewApi", () => {
     expect(error).toBeInstanceOf(MockInterviewError);
     expect((error as MockInterviewError).code).toBe("MOCK_INTERVIEW_IN_PROGRESS");
     expect((error as MockInterviewError).message).toContain("进行中");
+  });
+
+  it("切换语言后，真实接口错误与 SSE 错误使用当前界面语言，标签同步变化", async () => {
+    fetchMock.mockResolvedValue(json({ error: "MOCK_INTERVIEW_IN_PROGRESS" }, 409));
+    const error = await liveMockInterviewApi.create({ resume_id: "7" }).catch((reason: unknown) => reason);
+    setLocale("en-US", false);
+    expect(mockInterviewErrorMessage(error)).toBe("A mock interview is already in progress. Finish or abandon it first.");
+    expect(mockInterviewErrorMessage(new Error("MOCK_INTERVIEW_TURN_FAILED"))).toBe("The interviewer could not generate a reply. Your answer is saved. Regenerate the reply.");
+    expect(INTERVIEW_TYPE_LABELS.technical).toBe("Technical");
+    expect(DIFFICULTY_LABELS.junior).toBe("Beginner");
+    expect(DIMENSION_LABELS.structure).toBe("Answer structure");
+    setLocale("zh-CN", false);
+    expect(mockInterviewErrorMessage(error)).toContain("进行中");
+    expect(INTERVIEW_TYPE_LABELS.technical).toBe("技术面");
   });
 
   it("answer 携带幂等键并按顺序产出 SSE 事件，turn 结束后停止", async () => {

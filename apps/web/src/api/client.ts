@@ -28,10 +28,13 @@ export type WeChatStatusResponse = {
 
 export type AuthCapabilities = {
   password_login_enabled: boolean;
+  wechat_login_enabled: boolean;
 };
 
 export type UserProfile = User & {
   avatar_url: string | null;
+  contact_email: string | null;
+  registered_at: string;
   wechat_status: "unbound" | "bound" | "unavailable";
   wechat_bound_at: string | null;
 };
@@ -46,7 +49,26 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
+  current_session: { device_label: string };
+  capabilities: {
+    auth_mode: "password" | "wechat" | "unavailable";
+    can_change_password: boolean;
+    can_delete_account: boolean;
+    deletion_confirmation_method: "password" | "wechat" | null;
+  };
 };
+
+export type AccountPreferences = {
+  locale: "zh-CN" | "en-US";
+  interview_reminder_enabled: boolean;
+  notifications_available: false;
+};
+export type AccountVerification = { scene: string; poll_token: string; qrcode_data: string; expires_at: string };
+export type AccountDeletionReceipt = { job_id: string; receipt_token: string; status: string };
+export type AccountDeletionRequest = { confirmation: string } & (
+  | { method: "password"; current_password: string }
+  | { method: "wechat"; action_token: string }
+);
 
 export type EmploymentType =
   | "internship"
@@ -417,6 +439,7 @@ export type AgentSelectionContext = {
 };
 
 export type AgentContextType =
+  | "user_profile"
   | "resume"
   | "resume_version"
   | "dataset"
@@ -1442,6 +1465,22 @@ export const api = {
     ),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  getAccountPreferences: () => request<AccountPreferences>("/api/account/preferences"),
+  updateAccountPreferences: (payload: Partial<Pick<AccountPreferences, "locale" | "interview_reminder_enabled">>) =>
+    request<AccountPreferences>("/api/account/preferences", { method: "PATCH", body: payload }),
+  updateContactEmail: (email: string | null) =>
+    request<{ contact_email: string | null }>("/api/account/contact-email", { method: "PUT", body: { email } }),
+  changePassword: (payload: { current_password: string; new_password: string; confirm_password: string }) =>
+    request<{ ok: boolean }>("/api/account/change-password", { method: "POST", body: payload }),
+  createAccountVerification: () => request<AccountVerification>("/api/account/wechat/verification-request", { method: "POST", body: { action: "delete_account" } }),
+  accountVerificationStatus: (payload: { scene: string; poll_token: string }) =>
+    request<{ status: "pending" | "verified" | "cancelled" | "consumed" | "expired"; action_token?: string }>("/api/account/wechat/verification-status", { method: "POST", body: payload }),
+  cancelAccountVerification: (payload: { scene: string; poll_token: string }) =>
+    request<{ status: string }>("/api/account/wechat/verification-cancel", { method: "POST", body: payload }),
+  deleteAccount: (payload: AccountDeletionRequest) =>
+    request<AccountDeletionReceipt>("/api/account/deletion", { method: "POST", body: payload }),
+  accountDeletionStatus: (payload: { job_id: string; receipt_token: string }) =>
+    request<{ status: string; phase: string; error_code?: string }>("/api/account/deletion-status", { method: "POST", body: payload }),
   getAccountProfile: () => request<AccountProfile>("/api/account/profile"),
   updateAccountProfile: (nickname: string) =>
     request<UserProfile>("/api/account/profile", {

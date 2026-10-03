@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { Badge, Bar, Centered, DashArrow, MiniResume, Paper } from "../../v3/art";
 import { Icon } from "../../v3/Icon";
 
@@ -5,6 +6,7 @@ import { Icon } from "../../v3/Icon";
 
 // 头像小圆：黑底白字，插图里代表「我的账号」
 function MiniAvatar({ x, y, size, initial }: { x: number; y: number; size: number; initial: string }) {
+  useLocale();
   return (
     <span
       aria-hidden="true"
@@ -17,6 +19,7 @@ function MiniAvatar({ x, y, size, initial }: { x: number; y: number; size: numbe
 
 // 6 个圆点表示密码
 function PasswordDots({ x, y, dark }: { x: number; y: number; dark: boolean }) {
+  useLocale();
   return (
     <Paper x={x} y={y} w={124} h={48} style={dark ? undefined : { opacity: 0.8 }}>
       <Icon name="lock" size={14} style={{ position: "absolute", left: 12, top: 16, color: "var(--v3-fnt)" }} />
@@ -29,6 +32,7 @@ function PasswordDots({ x, y, dark }: { x: number; y: number; dark: boolean }) {
 
 /* 08.4c 修改密码：旧密码 → 新密码 + 绿色对勾（舞台 456×96） */
 export function ChangePasswordArt() {
+  useLocale();
   return (
     <Centered width={456} height={96}>
       <PasswordDots x={52} y={24} dark={false} />
@@ -41,13 +45,14 @@ export function ChangePasswordArt() {
 
 /* 08.4b 修改登录邮箱：当前邮箱卡 → 信封里露出 6 位验证码（舞台 456×120） */
 export function ChangeEmailArt({ email }: { email: string }) {
+  useLocale();
   return (
     <Centered width={456} height={120}>
       <Paper x={45} y={50} w={150} h={44} r={10}>
         <span style={{ position: "absolute", left: 10, top: 10, display: "grid", width: 24, height: 24, placeItems: "center", borderRadius: 12, background: "var(--v3-field)", color: "var(--v3-sub)" }}>
           <Icon name="mail" size={12} />
         </span>
-        <span style={{ position: "absolute", left: 42, top: 8, color: "var(--v3-fnt)", fontSize: 9 }}>当前邮箱</span>
+        <span style={{ position: "absolute", left: 42, top: 8, color: "var(--v3-fnt)", fontSize: 9 }}>{t("当前邮箱")}</span>
         <span style={{ position: "absolute", left: 42, top: 21, maxWidth: 100, overflow: "hidden", color: "var(--v3-sub)", fontFamily: "var(--v3-num)", fontSize: 10.5, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</span>
       </Paper>
       <DashArrow x={211} y={65} w={58} />
@@ -69,6 +74,7 @@ export function ChangeEmailArt({ email }: { email: string }) {
 
 /* 08.4e 解绑微信：账号卡与微信之间的虚线被红 × 断开（舞台 372×128） */
 export function UnbindWechatArt({ initial }: { initial: string }) {
+  useLocale();
   return (
     <Centered width={372} height={128}>
       <Paper x={64} y={38} w={100} h={52}>
@@ -91,6 +97,7 @@ export function UnbindWechatArt({ initial }: { initial: string }) {
 
 /* 08.4h 退出登录：当前电脑带退出角标，手机淡掉表示不受影响（舞台 372×128） */
 export function LogoutArt({ initial }: { initial: string }) {
+  useLocale();
   return (
     <Centered width={372} height={128}>
       <Paper x={112} y={22} w={136} h={86} r={8}>
@@ -115,6 +122,7 @@ export function LogoutArt({ initial }: { initial: string }) {
 
 /* 08.4i 注销账号：账号卡带红色垃圾桶，两侧淡掉的简历和资料夹（舞台 416×104） */
 export function DeleteAccountArt({ initial }: { initial: string }) {
+  useLocale();
   return (
     <Centered width={416} height={104}>
       <MiniResume x={82} y={24} w={44} h={58} rotate={-8} style={{ opacity: 0.45 }} />
@@ -133,6 +141,7 @@ export function DeleteAccountArt({ initial }: { initial: string }) {
 
 /* 08.4g 编辑个人画像横幅：画像卡 → 虚线箭头 → 三份简历 → 「所有简历共用」（舞台 656×104） */
 export function ProfileBannerArt({ empty }: { empty: boolean }) {
+  useLocale();
   const slots = empty ? ["城市", "薪资", "学历"] : ["北京", "25–35K", "硕士"];
   return (
     <Centered width={656} height={104}>
@@ -154,7 +163,7 @@ export function ProfileBannerArt({ empty }: { empty: boolean }) {
       <MiniResume x={392} y={22} w={44} h={58} rotate={8} accent="var(--v3-sub)" style={{ opacity: 0.85 }} />
       <MiniResume x={358} y={22} w={44} h={58} />
       <span style={{ position: "absolute", left: 460, top: 42, display: "inline-flex", height: 20, alignItems: "center", border: "1px solid var(--v3-cl)", borderRadius: 10, background: "#fff", padding: "0 10px", color: "var(--v3-sub)", fontSize: 9.5, fontWeight: 500, whiteSpace: "nowrap" }}>
-        {empty ? "填写后所有简历共用" : "所有简历共用 · 不改简历内容"}
+        {empty ? t("填写后所有简历共用") : t("所有简历共用 · 不改简历内容")}
       </span>
     </Centered>
   );
@@ -163,6 +172,7 @@ export function ProfileBannerArt({ empty }: { empty: boolean }) {
 /* 08.4d 绑定微信的示例二维码：21×21 模块 + 三个定位角 + 中间品牌角标。
    绑定接口线上不可用，这里只画固定图案，不能真的扫码。 */
 export function DemoQr({ size, seed }: { size: number; seed: string }) {
+  useLocale();
   const n = 21;
   const cell = size / n;
   let state = [...seed].reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 7);
@@ -191,7 +201,7 @@ export function DemoQr({ size, seed }: { size: number; seed: string }) {
       {finder(0, n - 7)}
       {finder(n - 7, 0)}
       <rect x={size / 2 - 20} y={size / 2 - 20} width={40} height={40} rx={8} fill="#fff" stroke="#e4e4e0" />
-      <text x={size / 2} y={size / 2 + 5.5} textAnchor="middle" fontFamily="Inter, sans-serif" fontSize={15} fontWeight={700} fill="#1d1d1b">L</text>
+      <text x={size / 2} y={size / 2 + 5.5} textAnchor="middle" fontFamily="var(--v3-num)" fontSize={15} fontWeight={700} fill="#1d1d1b">L</text>
     </svg>
   );
 }

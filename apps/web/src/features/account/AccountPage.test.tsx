@@ -9,12 +9,16 @@ import {
 import { useResumeStore } from "../../store/resumeStore";
 import { AccountPage, accountErrorMessage } from "./AccountPage";
 
+import { setLocale, t } from "../../i18n";
+
 const user: UserProfile = {
   id: "1",
   email: "user@example.test",
   nickname: "测试用户",
   is_admin: false,
   avatar_url: null,
+  contact_email: "contact@example.test",
+  registered_at: "2026-07-30T08:00:00Z",
   wechat_status: "unbound",
   wechat_bound_at: null,
 };
@@ -22,6 +26,8 @@ const user: UserProfile = {
 const profile: AccountProfile = {
   user,
   resume_count: 3,
+  current_session: { device_label: "macOS · Chrome" },
+  capabilities: { auth_mode: "password", can_change_password: true, can_delete_account: true, deletion_confirmation_method: "password" },
   recent_resumes: [
     { id: "11", title: "产品经理简历", updated_at: "2026-07-30T08:00:00Z" },
   ],
@@ -36,6 +42,7 @@ beforeEach(() => {
     ...profile,
     user: { ...user },
   });
+  vi.spyOn(api, "getAccountPreferences").mockResolvedValue({ locale: "zh-CN", interview_reminder_enabled: false, notifications_available: false });
   vi.spyOn(api, "getUserProfile").mockResolvedValue({
     candidate_cities: ["北京"],
     salary_min: 20000,
@@ -62,6 +69,7 @@ beforeEach(() => {
   });
 
 afterEach(() => {
+  setLocale("zh-CN");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -121,110 +129,75 @@ function pickAvatarFile() {
 }
 
 describe("AccountPage", () => {
-  it("加载资料卡与四个设置区块，需后端项贴标签", async () => {
+  it("显示真实资料并移除模拟功能", async () => {
     render(<AccountPage />);
-
     expect(await screen.findByLabelText("个人资料摘要")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "账号" })).toBeInTheDocument();
-    for (const title of ["账号与安全", "求职资料", "偏好", "退出与注销"]) {
-      expect(screen.getByRole("region", { name: title })).toBeInTheDocument();
-    }
-    expect(screen.getByText(/user@example.test · 注册于/)).toBeInTheDocument();
-    expect(screen.getByText("邮箱已验证")).toBeInTheDocument();
-    expect(screen.getAllByText("需后端").length).toBeGreaterThanOrEqual(6);
-    expect(screen.getByRole("button", { name: "头像预览不可用" })).toBeDisabled();
-    // 账号页不展示画像内容，只保留一行入口
-    await waitFor(() => expect(api.getUserProfile).toHaveBeenCalledOnce());
-    expect(await screen.findByText(/已填 \d+ \/ 14 项/)).toBeInTheDocument();
-    expect(screen.queryByText("清华大学")).not.toBeInTheDocument();
-  });
-
-  it("只用微信登录时邮箱显示未绑定、密码不可修改", async () => {
-    vi.spyOn(api, "getAccountProfile").mockResolvedValue({
-      ...profile,
-      user: { ...user, email: null, wechat_status: "bound", wechat_bound_at: "2026-09-01T00:00:00Z" },
-    });
-    render(<AccountPage />);
-
-    expect(await screen.findByText("未绑定")).toBeInTheDocument();
-    expect(screen.getByText("绑定邮箱后可以设置")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^修改/ })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "解绑" })).toBeDisabled();
+    for (const title of ["账号与安全", "求职资料", "偏好", "退出与注销"]) expect(screen.getByRole("region", { name: title })).toBeInTheDocument();
+    expect(screen.getByText("macOS · Chrome")).toBeInTheDocument();
     expect(screen.queryByText("邮箱已验证")).not.toBeInTheDocument();
+    expect(screen.queryByText("需后端")).not.toBeInTheDocument();
+    expect(screen.queryByText("面试提醒")).not.toBeInTheDocument();
+    expect(screen.queryByText("仅保存偏好，暂不发送通知")).not.toBeInTheDocument();
+    expect(screen.queryByText("微信")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "绑定" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "头像预览不可用" })).toBeDisabled();
   });
 
-  it("注销仅完成本地模拟，不删除资料或退出真实账号", async () => {
+  it("正式版只有微信登录信息，没有登录邮箱和密码入口", async () => {
+    vi.mocked(api.getAccountProfile).mockResolvedValue({ ...profile, capabilities: { auth_mode: "wechat", can_change_password: false, can_delete_account: true, deletion_confirmation_method: "wechat" } });
     render(<AccountPage />);
     await screen.findByLabelText("个人资料摘要");
+    expect(screen.getAllByText("微信登录").length).toBeGreaterThan(0);
+    expect(screen.queryByText("登录邮箱")).not.toBeInTheDocument();
+    expect(screen.queryByText("登录密码")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "解绑" })).not.toBeInTheDocument();
+  });
 
+  it("联系邮箱直接保存或清空，不改变登录邮箱", async () => {
+    const save = vi.spyOn(api, "updateContactEmail").mockResolvedValue({ contact_email: "new@example.test" });
+    render(<AccountPage />);
+    await screen.findByLabelText("个人资料摘要");
+    const row = screen.getByText("联系邮箱").closest(".acc-row")!;
+    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "修改" }));
+    const dialog = await screen.findByRole("dialog", { name: "联系邮箱" });
+    expect(within(dialog).queryByLabelText("验证码")).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText("邮箱地址"), { target: { value: "new@example.test" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith("new@example.test"));
+    expect(await screen.findByText("new@example.test")).toBeInTheDocument();
+    expect(useResumeStore.getState().user?.email).toBe("user@example.test");
+  });
+
+  it("修改密码调用真实接口，成功后清空会话", async () => {
+    const save = vi.spyOn(api, "changePassword").mockResolvedValue({ ok: true });
+    render(<AccountPage />);
+    await screen.findByLabelText("个人资料摘要");
+    fireEvent.click(within(screen.getByText("登录密码").closest(".acc-row")! as HTMLElement).getByRole("button", { name: "修改" }));
+    const dialog = await screen.findByRole("dialog", { name: "修改密码" });
+    fireEvent.change(within(dialog).getByLabelText("当前密码"), { target: { value: "Current123" } });
+    fireEvent.change(within(dialog).getByLabelText("新密码"), { target: { value: "Changed123" } });
+    fireEvent.change(within(dialog).getByLabelText("确认新密码"), { target: { value: "Changed123" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认修改" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ current_password: "Current123", new_password: "Changed123", confirm_password: "Changed123" }));
+    await waitFor(() => expect(useResumeStore.getState().user).toBeNull());
+    expect(window.location.pathname).toBe("/login");
+  });
+
+  it("注销需要确认文字和身份，受理后显示进度并清空会话", async () => {
+    const remove = vi.spyOn(api, "deleteAccount").mockResolvedValue({ job_id: "fictional-job", receipt_token: "fictional-receipt", status: "pending" });
+    render(<AccountPage />);
+    await screen.findByLabelText("个人资料摘要");
     fireEvent.click(screen.getByRole("button", { name: "注销账号" }));
     const dialog = await screen.findByRole("dialog", { name: "注销账号" });
-    const confirm = within(dialog).getByRole("button", { name: "永久注销" });
-    expect(confirm).toBeDisabled();
-    fireEvent.change(within(dialog).getByRole("textbox", { name: "输入「注销账号」确认" }), { target: { value: "注销账号" } });
-    fireEvent.click(confirm);
-    expect(await screen.findByText("注销流程已完成（本地模拟）")).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "注销账号" })).not.toBeInTheDocument();
-    expect(useResumeStore.getState().user?.email).toBe(user.email);
-    expect(useResumeStore.getState().authStatus).toBe("authenticated");
-
-    fireEvent.click(screen.getAllByRole("button", { name: /^修改/ })[1]);
-    const password = await screen.findByRole("dialog", { name: "修改密码" });
-    expect(within(password).getByText("需要后端支持")).toBeInTheDocument();
-  });
-
-  it("提醒可以切换，修改邮箱只更新当前页面且要求本地验证码", async () => {
-    render(<AccountPage />);
-    await screen.findByLabelText("个人资料摘要");
-    const toggle = screen.getByRole("switch", { name: "面试提醒" });
-    const before = toggle.getAttribute("aria-checked");
-    fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-checked")).not.toBe(before);
-    fireEvent.click(screen.getAllByRole("button", { name: /^修改/ })[0]);
-    const email = await screen.findByRole("dialog", { name: "修改登录邮箱" });
-    fireEvent.change(within(email).getByLabelText("新邮箱"), { target: { value: "local@example.test" } });
-    expect(within(email).getByRole("button", { name: "确认修改" })).toBeDisabled();
-    fireEvent.click(within(email).getByRole("button", { name: "发送验证码" }));
-    expect(within(email).getByRole("button", { name: "60秒后重发" })).toBeDisabled();
-    fireEvent.change(within(email).getByLabelText("验证码"), { target: { value: "482913" } });
-    fireEvent.click(within(email).getByRole("button", { name: "确认修改" }));
-    expect(await screen.findByText("邮箱已修改（本地模拟）")).toBeInTheDocument();
-    expect(screen.getAllByText("local@example.test").length).toBeGreaterThan(0);
-    expect(useResumeStore.getState().user?.email).toBe(user.email);
-  });
-
-  it("密码模拟遵守校验，成功后不登出账号", async () => {
-    render(<AccountPage />);
-    await screen.findByLabelText("个人资料摘要");
-    fireEvent.click(screen.getAllByRole("button", { name: /^修改/ })[1]);
-    const password = await screen.findByRole("dialog", { name: "修改密码" });
-    const submit = within(password).getByRole("button", { name: "确认修改" });
+    const submit = within(dialog).getByRole("button", { name: "永久注销" });
     expect(submit).toBeDisabled();
-    fireEvent.change(within(password).getByLabelText("当前密码"), { target: { value: "Existing123" } });
-    fireEvent.change(within(password).getByLabelText("新密码"), { target: { value: "Changed456" } });
-    fireEvent.change(within(password).getByLabelText("确认新密码"), { target: { value: "Different456" } });
+    fireEvent.change(within(dialog).getByLabelText("输入「注销账号」确认"), { target: { value: "注销账号" } });
     expect(submit).toBeDisabled();
-    fireEvent.change(within(password).getByLabelText("确认新密码"), { target: { value: "Changed456" } });
+    fireEvent.change(within(dialog).getByLabelText("当前密码"), { target: { value: "Current123" } });
     fireEvent.click(submit);
-    expect(await screen.findByText("密码修改流程已完成（本地模拟）")).toBeInTheDocument();
-    expect(useResumeStore.getState().authStatus).toBe("authenticated");
-  });
-
-  it("微信绑定分步模拟并可解绑，不修改真实账号状态", async () => {
-    render(<AccountPage />);
-    await screen.findByLabelText("个人资料摘要");
-    vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: "绑定" }));
-    expect(screen.getByText("本地模拟 · 等待扫码")).toBeInTheDocument();
-    await act(() => vi.advanceTimersByTimeAsync(3500));
-    expect(screen.getByText("本地模拟 · 等待确认绑定")).toBeInTheDocument();
-    await act(() => vi.advanceTimersByTimeAsync(4000));
-    expect(screen.queryByRole("dialog", { name: "绑定微信" })).not.toBeInTheDocument();
-    expect(useResumeStore.getState().user).toMatchObject({ wechat_status: "unbound" });
-    fireEvent.click(screen.getByRole("button", { name: "解绑" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "解绑微信？" })).getByRole("button", { name: "解绑" }));
-    expect(screen.getByText("微信已解绑（本地模拟）")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "绑定" })).toBeInTheDocument();
+    await waitFor(() => expect(remove).toHaveBeenCalledWith({ method: "password", confirmation: "注销账号", current_password: "Current123" }));
+    await waitFor(() => expect(useResumeStore.getState().authStatus).toBe("guest"));
+    expect(window.location.pathname).toBe("/account-deletion");
   });
 
   it("修改昵称成功后同步本地资料与 store", async () => {
@@ -406,5 +379,78 @@ describe("AccountPage", () => {
 
     await waitFor(() => expect(logout).toHaveBeenCalledOnce());
     expect(window.location.pathname).toBe("/");
+  });
+});
+
+
+describe("账号语言与正式版注销确认", () => {
+  it("语言只在服务端保存成功后切换，用户文本不变", async () => {
+    let finish!: (value: Awaited<ReturnType<typeof api.updateAccountPreferences>>) => void;
+    const save = vi.spyOn(api, "updateAccountPreferences").mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    render(<AccountPage />);
+    const language = await screen.findByLabelText("界面语言");
+    await waitFor(() => expect(language).not.toBeDisabled());
+    fireEvent.click(language);
+    fireEvent.click(screen.getByRole("option", { name: "English" }));
+    expect(screen.getByRole("region", { name: "账号与安全" })).toBeInTheDocument();
+    expect(language).toBeDisabled();
+    expect(language).toHaveTextContent("简体中文");
+    await act(async () => finish({ locale: "en-US", interview_reminder_enabled: false, notifications_available: false }));
+    expect(await screen.findByRole("region", { name: "Account and security" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "测试用户" })).toBeInTheDocument();
+    expect(save).toHaveBeenCalledWith({ locale: "en-US" });
+    expect(localStorage.getItem("linkresume.interface-locale")).toBe("en-US");
+  });
+  it("语言保存失败时保留原语言和选择值", async () => {
+    vi.spyOn(api, "updateAccountPreferences").mockRejectedValue(new Error("offline"));
+    render(<AccountPage />);
+    const language = await screen.findByLabelText("界面语言");
+    await waitFor(() => expect(language).not.toBeDisabled());
+    fireEvent.click(language);
+    fireEvent.click(screen.getByRole("option", { name: "English" }));
+    expect(await screen.findByText("偏好保存失败，请重试。")).toBeInTheDocument();
+    expect(language).toHaveTextContent("简体中文");
+    expect(screen.getByRole("region", { name: "账号与安全" })).toBeInTheDocument();
+  });
+  it("自绘语言菜单支持键盘打开和 Escape 取消，不保存未确认的选择", async () => {
+    const save = vi.spyOn(api, "updateAccountPreferences");
+    render(<AccountPage />);
+    const language = await screen.findByRole("button", { name: "界面语言" });
+    await waitFor(() => expect(language).not.toBeDisabled());
+    language.focus();
+    fireEvent.keyDown(language, { key: "ArrowDown" });
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "简体中文" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(language, { key: "ArrowDown" });
+    fireEvent.keyDown(language, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(language).toHaveAttribute("aria-expanded", "false");
+    expect(language).toHaveFocus();
+    expect(save).not.toHaveBeenCalled();
+  });
+  it("正式版获取新微信确认，刷新清除旧证明，关闭取消当前请求", async () => {
+    vi.mocked(api.getAccountProfile).mockResolvedValue({ ...profile, capabilities: { auth_mode: "wechat", can_change_password: false, can_delete_account: true, deletion_confirmation_method: "wechat" } });
+    const first = { scene: "del:first", poll_token: "fictional-poll-1", qrcode_data: "aW1hZ2U=", expires_at: new Date(Date.now() + 300000).toISOString() };
+    const second = { ...first, scene: "del:second", poll_token: "fictional-poll-2" };
+    vi.spyOn(api, "createAccountVerification").mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    vi.spyOn(api, "accountVerificationStatus").mockResolvedValue({ status: "verified", action_token: "fictional-proof" });
+    const cancel = vi.spyOn(api, "cancelAccountVerification").mockResolvedValue({ status: "cancelled" });
+    const remove = vi.spyOn(api, "deleteAccount");
+    render(<AccountPage />); await screen.findByLabelText("个人资料摘要");
+    fireEvent.click(screen.getByRole("button", { name: "注销账号" }));
+    const dialog = await screen.findByRole("dialog", { name: "注销账号" });
+    expect(within(dialog).queryByLabelText("当前密码")).not.toBeInTheDocument();
+    fireEvent.change(within(dialog).getByPlaceholderText("注销账号"), { target: { value: "注销账号" } });
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "获取确认二维码" })); });
+    const submit = within(dialog).getByRole("button", { name: "永久注销" });
+    expect(submit).toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(submit).not.toBeDisabled();
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "刷新二维码" })); });
+    expect(submit).toBeDisabled();
+    await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "取消" })); });
+    expect(cancel).toHaveBeenCalledWith(second);
+    expect(remove).not.toHaveBeenCalled();
   });
 });

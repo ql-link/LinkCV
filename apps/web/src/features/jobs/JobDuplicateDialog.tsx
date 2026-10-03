@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import type { JobDuplicateDetails } from "../../api/client";
 import { Badge, Bar, Centered, Paper } from "@/v3/art";
 import { ConfirmDialog } from "@/v3/primitives";
@@ -14,13 +15,14 @@ export function JobDuplicateDialog({
   busy: boolean;
   onAction: (action: DuplicateAction) => void | Promise<void>;
 }) {
+  useLocale();
   return (
     <ConfirmDialog
       title={details.existing.job_title}
-      description={<>发现相同来源：这条岗位已经存在。<br />可以更新原记录，系统不会创建第二条。</>}
+      description={<>{t("发现相同来源：这条岗位已经存在。")}<br />{t("可以更新原记录，系统不会创建第二条。")}</>}
       art={<DuplicateArt />}
-      confirmLabel="更新原记录"
-      busyLabel="正在处理…"
+      confirmLabel={t("更新原记录")}
+      busyLabel={t("正在处理…")}
       danger={false}
       busy={busy}
       onCancel={() => void onAction("cancel")}
@@ -31,6 +33,7 @@ export function JobDuplicateDialog({
 
 // 两张重叠的岗位卡 + 蓝色刷新角标（舞台 372×128）
 function DuplicateArt() {
+  useLocale();
   return (
     <Centered width={372} height={128}>
       <Paper x={106} y={22} w={150} h={64} r={8} style={{ opacity: 0.55 }}>

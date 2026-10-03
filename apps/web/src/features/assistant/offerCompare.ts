@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { JobApplicationSummary, SalaryPeriod } from "../../api/client";
 
 const PERIOD_LABELS: Record<SalaryPeriod, string> = { hour: "时", day: "日", month: "月", year: "年" };
@@ -14,9 +15,9 @@ function amountOf(offer: OfferSalary): number | null {
 // 首页 Offer 对比卡里的薪资文案：人民币过千显示为 K，如 32K/月；其他币种保留币种符号或代码。
 export function formatOfferSalary(offer: OfferSalary): string {
   const amount = amountOf(offer);
-  if (amount === null) return "薪资待填";
+  if (amount === null) return t("薪资待填");
   const currency = offer.offer_salary_currency ?? "CNY";
-  const period = offer.offer_salary_period ? `/${PERIOD_LABELS[offer.offer_salary_period]}` : "";
+  const period = offer.offer_salary_period ? `/${t(PERIOD_LABELS[offer.offer_salary_period])}` : "";
   const rounded = (value: number) => String(Math.round(value * 10) / 10);
   const symbol = CURRENCY_SYMBOLS[currency];
   if (currency === "CNY" && amount >= 1000) return `${rounded(amount / 1000)}K${period}`;
@@ -33,5 +34,5 @@ export function describeOfferGap(offers: OfferSalary[]): string | null {
   if (a === null || b === null) return null;
   if ((first.offer_salary_currency ?? "CNY") !== (second.offer_salary_currency ?? "CNY") || first.offer_salary_period !== second.offer_salary_period) return null;
   const gap = Math.round((Math.abs(a - b) / Math.max(a, b)) * 100);
-  return gap === 0 ? "薪资持平" : `薪资相差 ${gap}%`;
+  return gap === 0 ? t("薪资持平") : t("薪资相差 {value0}%", { value0: gap });
 }
