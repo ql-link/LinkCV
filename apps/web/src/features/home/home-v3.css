@@ -1,7 +1,7 @@
 /* 02.1 我的简历（Figma a5BQtKwoGEDvCg5Iv13nPr 13:142 等）。坐标以内容卡为原点：正文列 x=146、宽 860。 */
 
 .hv3-page { position: relative; min-height: 100%; padding: 51px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 60px; }  /* 内容卡自带 1px 描边，51 + 1 = 画板的 52 */
-.hv3-page > * { max-width: var(--v3-page-max); margin-inline: auto; }
+.hv3-page > :where(:not(.hv3-empty)) { max-width: var(--v3-page-max); margin-inline: auto; }
 
 /* 页头：眉题 11 / 衬线标题 28 / 副标题 13，按钮组贴正文列右侧（y=84） */
 .hv3-head { position: relative; display: flex; align-items: flex-start; justify-content: space-between; }
@@ -215,7 +215,7 @@ output.hv3-step-aside { font-weight: 500; }
 /* 列表只在自己的区域里滚动：页头和搜索栏固定，简历网格单独滚动 */
 .hv3-page { display: flex; height: 100%; flex-direction: column; overflow: hidden; padding-bottom: 0; }
 .hv3-page > .hv3-head, .hv3-page > .hv3-toolbar { flex: 0 0 auto; width: 100%; }
-.hv3-page > .hv3-grid, .hv3-page > .hv3-empty { width: 100%; }
+.hv3-page > .hv3-grid { width: 100%; }
 .hv3-page > .hv3-grid-slot { display: grid; min-height: 0; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
 .hv3-page > .hv3-grid-slot > .v3-reveal-out, .hv3-page > .hv3-grid-slot > .v3-reveal-in { display: grid; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .hv3-page > .hv3-grid, .hv3-page > .hv3-grid-slot .hv3-grid { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; margin-top: 0; margin-inline: -8px; padding: 27px 8px 48px; max-width: calc(var(--v3-page-max) + 16px); width: calc(100% + 16px); }
