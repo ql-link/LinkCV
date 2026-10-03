@@ -2558,3 +2558,78 @@ def test_media_capacity_limit_rejects_extra_media() -> None:
         )
         assert rejected.status_code == 409
         assert rejected.json()["error"] == "DATASET_MEDIA_COUNT_LIMIT_REACHED"
+
+
+def test_elapsed_schedule_waits_for_result_and_settles_on_next_stage() -> None:
+    from linkresume.modules.interviews.models import InterviewSession
+
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "elapsed-schedule@example.test")
+        application = create_application(client, create_job(client, "按时完成公司"))
+        past_start = (datetime.now(TEST_TIMEZONE) - timedelta(days=1)).replace(
+            second=0, microsecond=0
+        )
+        payload = session_payload("77777777-7777-4777-8777-777777777771")
+        payload.update(
+            {
+                "start_at": past_start.isoformat(),
+                "end_at": (past_start + timedelta(hours=1)).isoformat(),
+            }
+        )
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=payload,
+        )
+        assert created.status_code == 201, created.text
+        session_id = created.json()["session"]["id"]
+        assert created.json()["session"]["status"] == "completed"
+        assert created.json()["application"]["stage_state"] == "awaiting_result"
+
+        detail = client.get(f"/api/interview-sessions/{session_id}")
+        assert detail.status_code == 200, detail.text
+        session = detail.json()["session"]
+        assert session["status"] == "completed"
+        assert session["completed_at"] == session["end_at"]
+
+        scheduled = client.get("/api/interview-sessions", params={"status": "scheduled"})
+        assert [item["id"] for item in scheduled.json()["items"]] == []
+        completed = client.get("/api/interview-sessions", params={"status": "completed"})
+        items = completed.json()["items"]
+        assert [item["id"] for item in items] == [session_id]
+        assert items[0]["application_stage_state"] == "awaiting_result"
+
+        current = client.get(f"/api/job-applications/{application['id']}").json()
+        advanced = client.post(
+            f"/api/job-applications/{application['id']}/advance",
+            json={
+                "target_stage_type": "interview",
+                "target_round_no": 2,
+                "target_stage_label": "二面",
+                "base_lock_version": current["application"]["lock_version"],
+            },
+        )
+        assert advanced.status_code == 200, advanced.text
+        assert advanced.json()["application"]["current_stage_label"] == "二面"
+
+        with app.state.session_factory() as db:
+            stored = db.get(InterviewSession, int(session_id))
+            assert stored is not None
+            assert stored.status == "completed"
+            assert stored.completed_at is not None
+            assert stored.round_result == "passed"
+
+
+def test_future_schedule_stays_scheduled_until_its_end_time() -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "future-schedule@example.test")
+        application = create_application(client, create_job(client, "未来面试公司"))
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json=session_payload("77777777-7777-4777-8777-777777777772"),
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["session"]["status"] == "scheduled"
+        assert created.json()["session"]["completed_at"] is None
+        assert created.json()["application"]["stage_state"] == "scheduled"

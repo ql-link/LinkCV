@@ -181,7 +181,7 @@ export function projectApplicationProgress(
   const isPending = active && phase === "pending";
   const isWaiting = active
     && application.stage_state === "awaiting_result"
-    && (stableStageType === "interview" || stableStageType === "ai_interview");
+    && (stableStageType === "interview" || stableStageType === "hr" || stableStageType === "ai_interview");
   const isAssessment = active
     && (stableStageType === "assessment" || stableStageType === "written_test");
   const isAcceptedOffer = application.archived_at === null
@@ -228,8 +228,8 @@ export function projectApplicationProgress(
     };
   }
 
-  if (active && stableStageType === "offer") {
-    const statusLabel = offerStatusLabel(application.offer_status);
+  if (active && (stableStageType === "offer" || stableStageType === "oc")) {
+    const statusLabel = stableStageType === "oc" ? t("口头意向") : offerStatusLabel(application.offer_status);
     return {
       columnKey: "offer",
       stageLabel: normalizedStageLabel,

@@ -167,7 +167,7 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0033` 新增 `job_applications`、`interview_sessions` 和 `interview_assets`；`0057` 再把求职生命周期、阶段历史和排期拆开。岗位 JD 创建或导入时在同一事务内创建或复用待投递 `job_applications`，因此正常入口不会只产生 JD。待投递记录可通过一次阶段命令直接进入 `screening/assessment/written_test/ai_interview/interview/offer`，不需要单独写“已投递”；命令可补填带时区的 `applied_at`，省略时以后端有效操作时间为准。每次推进追加一条 `job_application_stages`，旧当前阶段完成并保留，普通面试名称由用户填写且轮次可空。终止命令独立保存生命周期、时间和原因，并关闭当前阶段。
 
-排期与复盘继续共用 `interview_sessions`，通过 `scheduled/completed/cancelled` 区分生命周期；新排期必须关联当前且可排期的 `assessment/written_test/ai_interview/interview` 阶段，筛选、Offer、待投递和已终止记录不能排期。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），同一用户的多个排期允许时间重叠并直接保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。写操作校验当前用户归属；阶段和进程动作使用 `lock_version` 与请求 UUID 拒绝过期或内容不一致的重复修改，场次创建也会核对原业务内容。旧扁平状态字段和 `/advance`、`/offer`、`/close` 仍由兼容投影维护，新消费方只读取稳定阶段与生命周期字段。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
+排期与复盘继续共用 `interview_sessions`，通过 `scheduled/completed/cancelled` 区分生命周期，结束时间已过的 `scheduled` 场次由响应投影为已完成、阶段投影为等待结果，并在下一次添加阶段或终止时落库，不依赖定时任务；新排期必须关联当前且可排期的 `assessment/written_test/ai_interview/interview` 阶段，筛选、Offer、待投递和已终止记录不能排期。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），同一用户的多个排期允许时间重叠并直接保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。写操作校验当前用户归属；阶段和进程动作使用 `lock_version` 与请求 UUID 拒绝过期或内容不一致的重复修改，场次创建也会核对原业务内容。旧扁平状态字段和 `/advance`、`/offer`、`/close` 仍由兼容投影维护，新消费方只读取稳定阶段与生命周期字段。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
 
 创建和改期排期时，请求必须在显式 `end_at` 与正整数 `duration_minutes` 中二选一；新 Web 流程提交持续分钟，应用服务据此推算并持久化 `end_at`，旧消费方仍可继续提交显式结束时间。开放窗口的个人作答计划遵循同一兼容契约，并继续在推算后校验完整落入官方窗口。
 
@@ -295,7 +295,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0108`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107 → 0108`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
+当前迁移链 head 为 `0110`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107 → 0108 → 0109 → 0110`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
 
 `0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
 
@@ -349,6 +349,20 @@ RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记�
 `0108` 在 `interview_sessions` 新增 `prep_items`（JSON，可空）和 `prep_generated_at`（可空时间）。清单只随场次整体读写、不跨场次查询，所以不单独建表；每场至多 12 条，条目 id 由服务端保证唯一。`prep_generated_at` 是“本场已成功生成过一次”的唯一标记，用户清空或编辑清单都不会清除它。
 
 `POST /api/interview-sessions/:id/prep-items:generate` 以 `source=interview_prep`、`interview_prep` 场景调用结构化输出，管理员需像其他场景一样为它绑定并探测可用线路。流程分三段：先在短事务内校验归属、状态并组装提示词（岗位快照、阶段、本人关联简历、备注、最近两场已完成面试复盘、最近一次已完成模拟面试报告的 `improvements` 与 `resume_risks`，用户文本都以 `<data>` 引用且声明不是指令）；再无事务调用模型，结构无效时重试一次；最后在 `SELECT … FOR UPDATE` 行锁内重新校验并合并写入。合并保留生成期间用户新增的条目，按标题去重，总数封顶 12。模型失败、结构无效或去重后为空时不写 `prep_generated_at`，用户可以重试。迁移只含 DDL，沿用 forward-only 链。
+
+## 投递渠道、HR 面与 OC（0109）
+
+`0109` 在 `job_applications` 新增可空的 `applied_channel` VARCHAR(100)，以及 OC 口头意向的 `oc_communicated_at` DATETIME(6)、`oc_contact`/`oc_salary_text`/`oc_start_text` VARCHAR(100) 和 `oc_note` VARCHAR(500)；这些字段只随一次求职读写，不建独立表。`job_application_stages.stage_type` 的检查约束放开 `hr` 与 `oc`，存量阶段保持原类型，不做回填：旧的“HR 面”仍是名称为 HR 面的普通面试，旧的“未收到正式 Offer 的 Offer 阶段”仍按 OC 展示。
+
+新 `hr` 阶段可排期，旧扁平字段投影为 `current_stage_type=hr`，场次类型为 `hr`；`oc` 阶段不排期，投影为 `current_stage_type=offer`、`stage_state=negotiating`，因此在 Offer 列展示。当前阶段是 `oc` 时 `POST /offer` 返回 `409 INTERVIEW_INVALID_TRANSITION`，正式 Offer 通过追加 `offer` 阶段再记录。0105 已建的 `offer_probation` 与 `job_application_offer_materials` 现由 ORM 映射：`POST /offer` 的 `material_dataset_ids` 整体替换关联，只接受本人资料库文件；删除求职时先删关联，资料库文件保留。forward-only，回退依赖备份。
+
+## 面试录音转写、逐题笔记与复盘 v2（0110）
+
+`0110` 新增 `interview_recording_transcriptions`（每个录音资料一条，`dataset_id` 唯一，状态 queued/running/succeeded/failed/cancelled，含服务任务号、提交次数、下次处理时间、租约、结果全文、待替换标记和错误码）与 `interview_review_question_notes`（`(session_id, question_key)` 唯一，`question_key` 为题目原文去空白和标点后的 SHA-256，另存题目快照、`good/improve` 标记、笔记与乐观锁），并为 `interview_sessions` 增加 `transcript_source`（manual/transcription）和 `review_heartbeat_at`。两张表随场次级联删除；转写任务随录音资料删除；服务层在删除场次和资料时同步显式删除。forward-only，无回填。
+
+录音转写：上传或关联音视频到非笔试场次时建任务；Worker 进程每 `INTERVIEW_TRANSCRIPTION_POLL_SECONDS` 秒在 Redis 锁内处理一轮（`workers/transcription_worker.py`），用 `MINIO_PUBLIC_ENDPOINT` 生成 6 小时 GET 预签名链接提交阿里云百炼录音文件识别（异步提交 + 轮询，`modules/speech/file_transcription.py`），模型由实时语音线路推导或由 `INTERVIEW_TRANSCRIPTION_MODEL` 指定，凭据复用 `speech_to_text` 线路。提交失败按 1/5/15 分钟最多 3 次，识别 3 小时未完成即失败。结果写入时场次文字稿为空则直接写入，否则保留为待替换；录音取消关联或删除后任务置为已取消，迟到结果不写入。按音频秒数写语音调用日志，不记录链接和文字。
+
+AI 复盘 v2：`review:generate` 校验后立即返回 202，在 API 进程内后台执行：抽题 → 不看回答的要点生成 → 逐题评分（召回用户全部已就绪资料，LinkRag 失败整场降级为本地匹配）→ 整场维度。所有原句由代码校验，分数、权重、档位与把握由 `application/interviews/review_rubric.py` 计算，规则版本 `real-v1`。报告 `schema_version=2` 存入既有 `review_report`；v1 报告继续按原结构返回。心跳超过 5 分钟视为中断。
 
 ## 结构化面试复盘（0105 已有字段）
 

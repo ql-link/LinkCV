@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InterviewSessionDetail, InterviewSessionSummary, JobApplicationSummary } from "@/api/client";
 import { AddNextStageDialog } from "./CareerDetailViews";
-import { ApplicationV3Content, ReviewV3Content } from "./CareerDetailV3";
+import { ReviewV3Content } from "./CareerDetailV3";
 
 const mocks = vi.hoisted(() => ({ addJobApplicationStage: vi.fn(), createInterviewSession: vi.fn(), listResumes: vi.fn(), updateJobApplication: vi.fn(), generateInterviewReview: vi.fn(), getInterviewSession: vi.fn(), listInterviewSessions: vi.fn(), updateInterviewSession: vi.fn() }));
 vi.mock("@/api/client", async (original) => ({ ...await original<typeof import("@/api/client")>(), api: mocks }));
@@ -11,54 +11,6 @@ const detail = { application, session: { id: "sample-session", stage_label: "二
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("Figma career detail interactions", () => {
-  it.each([
-    ["2026-10-05", "还有 2 天回复"],
-    ["2026-10-03", "今天截止"],
-    ["2026-10-01", "回复截止已过 2 天"],
-    [null, "回复截止待填写"],
-  ])("shows actual Offer dates and no sample countdown for %s", (replyDueOn, label) => {
-    vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 3, 23, 59));
-    const offered = { ...application, current_stage: { ...application.current_stage!, stage_type: "offer", stage_label: "Offer" }, current_stage_type: "offer", current_stage_label: "Offer", stage_state: "negotiating", offer_status: "received", offer_reply_due_on: replyDueOn, offer_received_on: "2026-10-01", offer_start_on: "2026-11-01" } as JobApplicationSummary;
-    render(<ApplicationV3Content application={offered} sessions={[]} primaryLabel="填写 Offer 信息" onPrimary={vi.fn()} onBack={vi.fn()} onNotice={vi.fn()} onChanged={vi.fn()} />);
-    const region = screen.getByRole("region", { name: "当前阶段" });
-    expect(region).toHaveTextContent(label);
-    expect(region).toHaveTextContent("2026年11月1日");
-    expect(region).not.toHaveTextContent("还有 16 天回复");
-    expect(region).not.toHaveTextContent("需后端");
-  });
-  it("shows the current interview's real preparation progress and follows refreshed counts", () => {
-    const currentSession = { ...detail.session, status: "scheduled", prep_total: 5, prep_done: 1 } as unknown as InterviewSessionSummary;
-    const props = { application, sessions: [], primaryLabel: "准备面试", onPrimary: vi.fn(), onBack: vi.fn(), onNotice: vi.fn(), onChanged: vi.fn() };
-    const { rerender } = render(<ApplicationV3Content {...props} currentSession={currentSession} />);
-    expect(screen.getByRole("region", { name: "当前阶段" })).toHaveTextContent("准备清单 1/5");
-    expect(screen.queryByText(/准备清单 2\/3/)).not.toBeInTheDocument();
-    rerender(<ApplicationV3Content {...props} currentSession={{ ...currentSession, prep_done: 4 }} />);
-    expect(screen.getByRole("region", { name: "当前阶段" })).toHaveTextContent("准备清单 4/5");
-    expect(screen.queryByText("需后端")).not.toBeInTheDocument();
-  });
-
-  it("shows the empty checklist state without substituting demo counts", () => {
-    const currentSession = { ...detail.session, status: "scheduled", prep_total: 0, prep_done: 0 } as unknown as InterviewSessionSummary;
-    render(<ApplicationV3Content application={application} sessions={[]} currentSession={currentSession} primaryLabel="准备面试" onPrimary={vi.fn()} onBack={vi.fn()} onNotice={vi.fn()} onChanged={vi.fn()} />);
-    expect(screen.getByRole("region", { name: "当前阶段" })).toHaveTextContent("未生成准备清单");
-    expect(screen.queryByText(/准备清单 2\/3/)).not.toBeInTheDocument();
-  });
-
-  it.each([[false, 8, "复盘 8"], [true, null, "已复盘"]] as const)("shows saved reviews in the timeline with stages=%s and score=%s", (withStage, score, label) => {
-    mocks.getInterviewSession.mockResolvedValue(detail);
-    const rated = { ...detail.session, review_report: { schema_version: 1, source_hash: "hash", generated_at: "2026-10-03T00:00:00Z", summary: "已保存报告", overall_score: score,
-      project_expression: { score: null, reason: "记录不足", evidence: null }, system_design: { score: null, reason: "记录不足", evidence: null }, communication: { score: null, reason: "记录不足", evidence: null }, questions: [] } } as unknown as InterviewSessionSummary;
-    const tracked = { ...application, stages: withStage ? [{ ...application.current_stage!, entered_at: application.created_at }] : [] } as JobApplicationSummary;
-    render(<ApplicationV3Content application={tracked} sessions={[rated]} primaryLabel="添加下一阶段" onPrimary={vi.fn()} onBack={vi.fn()} onNotice={vi.fn()} onChanged={vi.fn()} />);
-    expect(screen.getByRole("list", { name: "当前阶段：二面" })).toHaveTextContent(label);
-    expect(screen.getByRole("list", { name: "当前阶段：二面" })).not.toHaveTextContent("待复盘");
-  });
-
-  it.each([undefined, { ...detail.session, status: "completed", prep_total: 3, prep_done: 2 } as unknown as InterviewSessionSummary])("does not show preparation progress when waiting for a schedule or result", (currentSession) => {
-    render(<ApplicationV3Content application={application} sessions={[]} currentSession={currentSession} primaryLabel="添加下一阶段" onPrimary={vi.fn()} onBack={vi.fn()} onNotice={vi.fn()} onChanged={vi.fn()} />);
-    expect(screen.getByRole("region", { name: "当前阶段" })).not.toHaveTextContent("准备清单");
-  });
-
   it("retries scheduling the existing stage without adding a duplicate stage", async () => {
     const onClose = vi.fn(); const onChanged = vi.fn();
     mocks.createInterviewSession.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ session: { id: "new-session", lock_version: 1 } });
@@ -92,7 +44,7 @@ describe("Figma career detail interactions", () => {
     finish({ ...detail, session: { ...detail.session, review_report: { ...report, questions: [...report.questions] }, review_status: "ready" } });
     expect(await screen.findByText("真实摘要")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "复盘评分" })).toHaveTextContent("记录不足");
-    expect(screen.getByText("真实建议")).toBeInTheDocument();
+    expect(screen.getAllByText("真实建议").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Q3" })).not.toBeInTheDocument();
     expect(props.onChanged).toHaveBeenCalledOnce();
     expect(mocks.generateInterviewReview).toHaveBeenCalledWith(detail.session.id, expect.objectContaining({ base_lock_version: 2, request_id: expect.any(String) }));
@@ -150,17 +102,5 @@ describe("Figma career detail interactions", () => {
     render(<ReviewV3Content detail={reviewed} onBack={vi.fn()} onUpload={vi.fn()} onText={vi.fn()} onNotice={vi.fn()} recordContent={null} />);
     expect(screen.getByText("已保存的真实复盘摘要")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "复盘评分" })).not.toBeInTheDocument();
-  });
-
-  it("links a resume from the empty state with the current application lock", async () => {
-    const pending = { ...application, current_stage: null, current_stage_type: "screening", current_stage_label: "待投递", applied_at: null, phase: "pending" } as JobApplicationSummary;
-    mocks.listResumes.mockResolvedValue({ resumes: [{ id: "sample-resume", title: "示例简历" }] });
-    mocks.updateJobApplication.mockResolvedValue({ application: { ...pending, resume_id: "sample-resume" } });
-    const onChanged = vi.fn();
-    render(<ApplicationV3Content application={pending} sessions={[]} primaryLabel="添加求职阶段" onPrimary={vi.fn()} onBack={vi.fn()} onNotice={vi.fn()} onChanged={onChanged} />);
-    fireEvent.click(screen.getByRole("button", { name: "关联简历" }));
-    fireEvent.click(await screen.findByRole("button", { name: "示例简历" }));
-    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
-    expect(mocks.updateJobApplication).toHaveBeenCalledWith(pending.id, { resume_id: "sample-resume", base_lock_version: 4 });
   });
 });

@@ -42,3 +42,32 @@
 .cd3-review-questions button { padding: 8px 12px; border: 1px solid var(--v3-fl); border-radius: 8px; }
 .cd3-review-questions button[aria-pressed="true"] { background: var(--v3-field); font-weight: 600; }
 .cd3-review .cd3-next select { max-width: 100%; padding: 8px; margin: 8px; }
+
+/* 04.C01 · 05.N10–N15：左侧摘要（已走过的阶段 → 保存后写入 → 规则提示），右侧表单 */
+.cd3-stage-dialog.is-v4 .cd3-stage-summary{display:flex;flex-direction:column;min-height:540px}
+.cd3-summary-track{position:relative;margin:16px 0 0;padding:0 0 18px;list-style:none;border-bottom:1px solid var(--v3-line)}
+.cd3-summary-track::before{position:absolute;top:10px;bottom:28px;left:3px;width:1px;background:var(--v3-sk2);content:""}
+.cd3-summary-track>li{position:relative;display:flex;align-items:center;gap:10px;min-height:22px;margin-top:18px;font-size:11.5px;color:var(--v3-sub)}
+.cd3-summary-track>li:first-child{margin-top:0}
+.cd3-summary-track>li>i{position:relative;flex-shrink:0;width:7px;height:7px;border-radius:50%;background:var(--v3-gn)}
+.cd3-summary-track>li.is-current>i{background:var(--v3-dark);box-shadow:0 0 0 2px var(--v3-stage)}
+.cd3-summary-track>li>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cd3-summary-track>li.is-current>span{color:var(--v3-txt)}
+.cd3-summary-track>li>em{font-style:normal;font-weight:500;color:var(--v3-gn)}
+.cd3-summary-track>li>b{border-radius:10px;background:var(--v3-dark);padding:2px 8px;color:#fff;font-size:10.5px;font-weight:500}
+.cd3-stage-dialog.is-v4 .cd3-summary-steps{border-top:0;padding-top:18px}
+.cd3-stage-dialog.is-v4 .cd3-summary-note{position:static;display:flex;gap:6px;margin-top:auto;border:1px solid var(--v3-line);border-radius:10px;background:#ffffffd9;padding:10px;color:var(--v3-sub);white-space:pre-line}
+.cd3-stage-dialog.is-v4 .cd3-summary-note>svg{flex-shrink:0;margin-top:1px;color:var(--v3-fnt)}
+.cd3-stage-dialog.is-v4 .cd3-stage-choices{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.cd3-stage-dialog.is-v4 .cd3-stage-choices>button:disabled{background:var(--v3-field);color:var(--v3-fnt2);cursor:default;opacity:.7}
+.cd3-pending-fields,.cd3-oc-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:22px}
+.cd3-pending-fields>*{grid-column:1/-1}
+.cd3-stage-dialog.is-v4 .cd3-mode-segmented{width:auto;height:40px;margin-top:8px}
+.cd3-stage-dialog.is-v4 .cd3-mode-segmented>button{height:32px;font-size:12.5px}
+.cd3-stage-dialog.is-v4 :is(.cd3-mode-fields,.cd3-oc-fields) input{margin-top:8px}
+.cd3-stage-dialog.is-v4 .cd3-mode-fields{align-items:start}
+.cd3-stage-dialog.is-v4 .cd3-mode-field{margin-top:0}
+.cd3-stage-dialog.is-v4 .career-schedule-datetime-picker{display:block;width:100%}
+.cd3-stage-dialog.is-v4 .cd3-stage-field .career-schedule-datetime-trigger{display:flex;align-items:center;gap:8px;width:100%}
+@media(max-width:650px){.cd3-stage-dialog.is-v4 .cd3-stage-choices{grid-template-columns:repeat(2,minmax(0,1fr))}.cd3-pending-fields,.cd3-oc-fields{grid-template-columns:1fr}}
+.cd3-summary-track>li>em.is-todo{color:var(--v3-fnt);font-weight:400}

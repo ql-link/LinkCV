@@ -23,7 +23,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from linkresume.core.database import Base
 from linkresume.modules.job_descriptions.models import ascii_char, timestamp_type
@@ -202,6 +202,7 @@ class JobApplication(Base):
     offer_received_on: Mapped[date | None] = mapped_column(Date(), nullable=True)
     offer_reply_due_on: Mapped[date | None] = mapped_column(Date(), nullable=True)
     offer_start_on: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    offer_probation: Mapped[str | None] = mapped_column(String(100), nullable=True)
     offer_base_location: Mapped[str | None] = mapped_column(
         String(100), nullable=True
     )
@@ -221,6 +222,14 @@ class JobApplication(Base):
         unsigned_tinyint_type(), nullable=False, default=0
     )
     applied_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
+    applied_channel: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    oc_communicated_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
+    oc_contact: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    oc_salary_text: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    oc_start_text: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    oc_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text(), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(
         timestamp_type(), nullable=True
@@ -238,6 +247,32 @@ class JobApplication(Base):
     @property
     def phase(self) -> str:
         return "pending" if self.applied_at is None else "applied"
+
+
+class JobApplicationOfferMaterial(Base):
+    __tablename__ = "job_application_offer_materials"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "application_id", "dataset_id", name="pk_application_offer_materials"
+        ),
+        Index("idx_application_offer_materials_dataset", "dataset_id"),
+        {"comment": "正式 Offer 与资料库文件的关联"},
+    )
+
+    application_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "job_applications.id",
+            name="fk_offer_material_application",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    dataset_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey("user_dataset.id", name="fk_offer_material_dataset", ondelete="CASCADE"),
+        nullable=False,
+    )
 
 
 class JobApplicationStage(Base):
@@ -260,7 +295,8 @@ class JobApplicationStage(Base):
             name="uk_job_application_stages_current",
         ),
         CheckConstraint(
-            "stage_type IN ('screening', 'assessment', 'written_test', 'ai_interview', 'interview', 'offer')",
+            "stage_type IN ('screening', 'assessment', 'written_test', 'ai_interview', "
+            "'interview', 'hr', 'oc', 'offer')",
             name="ck_job_application_stages_type",
         ),
         CheckConstraint(
@@ -399,6 +435,11 @@ class InterviewSession(Base):
             name="ck_interview_sessions_reminder_minutes",
         ),
         CheckConstraint("lock_version >= 1", name="ck_interview_sessions_lock_version"),
+        CheckConstraint(
+            "transcript_source IS NULL OR transcript_source IN ('manual', 'transcription')",
+            name="ck_interview_sessions_transcript_source",
+        ),
+
         Index(
             "idx_interview_sessions_application_time",
             "application_id",
@@ -482,6 +523,21 @@ class InterviewSession(Base):
     review_started_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
     review_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     review_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    review_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True
+    )
+    transcript_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Read-only views for session responses; writes go through the child tables.
+    transcriptions: Mapped[list["InterviewRecordingTranscription"]] = relationship(
+        viewonly=True,
+        lazy="selectin",
+        order_by="InterviewRecordingTranscription.id",
+    )
+    review_question_notes: Mapped[list["InterviewReviewQuestionNote"]] = relationship(
+        viewonly=True,
+        lazy="selectin",
+        order_by="InterviewReviewQuestionNote.id",
+    )
     improvement_markdown: Mapped[str | None] = mapped_column(
         long_text_type, nullable=True
     )
@@ -501,6 +557,106 @@ class InterviewSession(Base):
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1
     )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class InterviewRecordingTranscription(Base):
+    __tablename__ = "interview_recording_transcriptions"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_interview_recording_transcriptions"),
+        UniqueConstraint("dataset_id", name="uk_interview_recording_transcriptions_dataset"),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')",
+            name="ck_interview_recording_transcriptions_status",
+        ),
+        Index("idx_interview_recording_transcriptions_due", "status", "next_attempt_at"),
+        Index("idx_interview_recording_transcriptions_session", "session_id"),
+        {"comment": "面试录音转写任务", "sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey("users.id", name="fk_interview_recording_transcriptions_user", ondelete="CASCADE"),
+        nullable=False,
+    )
+    session_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "interview_sessions.id",
+            name="fk_interview_recording_transcriptions_session",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    dataset_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "user_dataset.id",
+            name="fk_interview_recording_transcriptions_dataset",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attempts: Mapped[int] = mapped_column(unsigned_int_type(), nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False)
+    lease_until: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
+    result_markdown: Mapped[str | None] = mapped_column(long_text_type, nullable=True)
+    result_duration_ms: Mapped[int | None] = mapped_column(unsigned_int_type(), nullable=True)
+    pending_replace: Mapped[bool] = mapped_column(
+        unsigned_tinyint_type(), nullable=False, default=0
+    )
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class InterviewReviewQuestionNote(Base):
+    __tablename__ = "interview_review_question_notes"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_interview_review_question_notes"),
+        UniqueConstraint(
+            "session_id", "question_key", name="uk_interview_review_question_notes_session_key"
+        ),
+        CheckConstraint(
+            "verdict IS NULL OR verdict IN ('good', 'improve')",
+            name="ck_interview_review_question_notes_verdict",
+        ),
+        {"comment": "逐题复盘笔记", "sqlite_autoincrement": True},
+    )
+
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey("users.id", name="fk_interview_review_question_notes_user", ondelete="CASCADE"),
+        nullable=False,
+    )
+    session_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(),
+        ForeignKey(
+            "interview_sessions.id",
+            name="fk_interview_review_question_notes_session",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    question_key: Mapped[str] = mapped_column(ascii_char(64), nullable=False)
+    question_text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    lock_version: Mapped[int] = mapped_column(unsigned_int_type(), nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now()
     )

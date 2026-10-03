@@ -856,6 +856,14 @@ def delete_dataset(
 
     try:
         db.flush()
+        # Local import: interviews depends on datasets, not the other way round.
+        from linkresume.modules.interviews.models import InterviewRecordingTranscription
+
+        db.execute(
+            delete(InterviewRecordingTranscription).where(
+                InterviewRecordingTranscription.dataset_id == dataset.id
+            )
+        )
         dataset_result = db.execute(
             delete(UserDataset).where(
                 UserDataset.id == dataset.id,

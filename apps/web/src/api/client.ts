@@ -826,6 +826,8 @@ export type ApplicationStageType =
   | "written_test"
   | "ai_interview"
   | "interview"
+  | "hr"
+  | "oc"
   | "offer";
 export type LegacyApplicationStageType = "screening" | "interview" | "hr" | "offer";
 export type ApplicationStageState =
@@ -887,12 +889,20 @@ export type JobApplicationRecord = {
   offer_received_on?: string | null;
   offer_reply_due_on?: string | null;
   offer_start_on?: string | null;
+  offer_probation?: string | null;
+  offer_materials?: { dataset_id: string; file_name: string }[];
   offer_salary: string | null;
   offer_salary_currency: string | null;
   offer_salary_period: SalaryPeriod | null;
   offer_benefits_description: string | null;
   is_favorite: boolean;
   applied_at: string | null;
+  applied_channel?: string | null;
+  oc_communicated_at?: string | null;
+  oc_contact?: string | null;
+  oc_salary_text?: string | null;
+  oc_start_text?: string | null;
+  oc_note?: string | null;
   notes: string | null;
   archived_at: string | null;
   lock_version: number;
@@ -933,6 +943,100 @@ export type InterviewReviewReport = {
   questions: Array<{ question: string; answer: string | null; evidence: string; strength: string | null; improvement: string | null; suggested_answer: string | null }>;
 };
 
+export type InterviewReviewDimensionKey =
+  | "professional_depth"
+  | "motivation_fit"
+  | "structure"
+  | "job_fit"
+  | "resume_consistency"
+  | "communication";
+export type InterviewQuestionCategory = "technical" | "project" | "behavioral" | "hr";
+export type InterviewReviewVerdictLevel = "likely_pass" | "promising" | "at_risk" | "likely_fail";
+export type InterviewReviewQuestionV2 = {
+  index: number;
+  key: string;
+  question: string;
+  answer: string | null;
+  category: InterviewQuestionCategory;
+  answer_status: "answered" | "declined" | "missing";
+  follow_ups: number;
+  expected_depth: number;
+  achieved_depth: number | null;
+  score: number | null;
+  signals: Array<{ signal: string; verdict: "hit" | "partial" | "miss"; quote: string | null }>;
+  factual_errors: string[];
+  resume_conflict: string | null;
+  strength: string | null;
+  improvement: string | null;
+  suggested_answer: string | null;
+  evidence_snippets: Array<{ dataset_id: string; title: string; text: string }>;
+};
+export type InterviewReviewReportV2 = {
+  schema_version: 2;
+  rubric_version: string;
+  source_hash: string;
+  generated_at: string;
+  headline: string;
+  summary: string;
+  verdict: {
+    level: InterviewReviewVerdictLevel;
+    confidence: "high" | "medium" | "low";
+    confidence_reason: string | null;
+    signals: Array<{ polarity: "positive" | "negative"; quote: string; meaning: string }>;
+    adjusted_by_signals: number;
+    fatal_questions: number;
+  };
+  total_score: number | null;
+  grade: "excellent" | "good" | "pass" | "improve" | null;
+  question_average: number | null;
+  dimension_score: number | null;
+  first_axis: "professional_depth" | "motivation_fit";
+  category_counts: Partial<Record<InterviewQuestionCategory, number>>;
+  dimensions: Array<{
+    key: InterviewReviewDimensionKey;
+    assessed: boolean;
+    score: number | null;
+    weight: number;
+    evidence: string | null;
+    comment: string | null;
+  }>;
+  questions: InterviewReviewQuestionV2[];
+  improvements: Array<{
+    title: string;
+    detail: string;
+    priority: "key" | "tip";
+    dimension: string | null;
+    question_indexes: number[];
+  }>;
+  basis: {
+    transcript_source: "manual" | "transcription" | null;
+    transcript_chars: number;
+    resume_title: string | null;
+    has_job: boolean;
+    material_snippets: number;
+    material_mode: "rag" | "local" | "none";
+    downgraded_quotes: number;
+    dropped_questions: number;
+  };
+};
+export type InterviewTranscriptionRecord = {
+  dataset_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  error_code: string | null;
+  pending_replace: boolean;
+  result_duration_ms: number | null;
+  updated_at: string;
+};
+export type InterviewReviewQuestionNote = {
+  id: string;
+  question_key: string;
+  question_text: string;
+  verdict: "good" | "improve" | null;
+  note: string | null;
+  lock_version: number;
+  updated_at: string;
+};
+
 export type InterviewSessionRecord = {
   id: string;
   application_id: string;
@@ -958,7 +1062,10 @@ export type InterviewSessionRecord = {
   preparation_note: string | null;
   questions_markdown: string | null;
   review_summary: string | null;
-  review_report?: InterviewReviewReport | null;
+  review_report?: InterviewReviewReport | InterviewReviewReportV2 | null;
+  transcript_source?: "manual" | "transcription" | null;
+  transcriptions?: InterviewTranscriptionRecord[];
+  review_question_notes?: InterviewReviewQuestionNote[];
   review_status?: "generating" | "ready" | "failed" | null;
   review_request_id?: string | null;
   review_started_at?: string | null;
@@ -1974,6 +2081,7 @@ export const api = {
       is_favorite: boolean;
       notes: string | null;
       applied_at: string | null;
+      applied_channel: string | null;
       resume_id: string | null;
     }> & { base_lock_version: number },
   ) =>
@@ -2002,7 +2110,13 @@ export const api = {
       stage_label?: string | null;
       interview_round_no?: number | null;
       applied_at?: string | null;
+      applied_channel?: string | null;
       resume_id?: string | null;
+      oc_communicated_at?: string | null;
+      oc_contact?: string | null;
+      oc_salary_text?: string | null;
+      oc_start_text?: string | null;
+      oc_note?: string | null;
       base_lock_version: number;
     },
   ) =>
@@ -2040,6 +2154,8 @@ export const api = {
       salary_currency?: string | null;
       salary_period?: SalaryPeriod | null;
       benefits_description?: string | null;
+      probation?: string | null;
+      material_dataset_ids?: string[];
     },
   ) =>
     request<{ application: JobApplicationRecord }>(
@@ -2157,6 +2273,46 @@ export const api = {
     ),
   generateInterviewReview: (id: string, payload: { request_id: string; base_lock_version: number }) =>
     request<InterviewSessionDetail>(`/api/interview-sessions/${id}/review:generate`, { method: "POST", body: payload }),
+  retryInterviewTranscription: (sessionId: string, datasetId: string) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${sessionId}/transcriptions/${datasetId}:retry`,
+      { method: "POST" },
+    ),
+  applyInterviewTranscription: (sessionId: string, datasetId: string, baseLockVersion: number) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${sessionId}/transcriptions/${datasetId}:apply`,
+      { method: "POST", body: { base_lock_version: baseLockVersion } },
+    ),
+  saveInterviewReviewNote: (
+    sessionId: string,
+    payload: { question_text: string; verdict: "good" | "improve" | null; note: string | null; lock_version: number | null },
+  ) =>
+    request<{ note?: InterviewReviewQuestionNote }>(
+      `/api/interview-sessions/${sessionId}/review-notes`,
+      { method: "PUT", body: payload },
+    ),
+  deleteInterviewReviewNote: (sessionId: string, noteId: string) =>
+    request<Record<string, never>>(
+      `/api/interview-sessions/${sessionId}/review-notes/${noteId}`,
+      { method: "DELETE" },
+    ),
+  extractWrittenQuestions: (
+    sessionId: string,
+    source:
+      | { kind: "text"; text: string }
+      | { kind: "dataset"; datasetId: string }
+      | { kind: "images"; files: File[] },
+  ) => {
+    const formData = new FormData();
+    formData.append("source", source.kind);
+    if (source.kind === "text") formData.append("text", source.text);
+    if (source.kind === "dataset") formData.append("dataset_id", source.datasetId);
+    if (source.kind === "images") source.files.forEach((file) => formData.append("files", file));
+    return request<{ questions: Array<{ no: number; text: string }>; markdown: string }>(
+      `/api/interview-sessions/${sessionId}/written-questions:extract`,
+      { method: "POST", formData },
+    );
+  },
   rescheduleInterviewSession: (
     id: string,
     payload: ({
