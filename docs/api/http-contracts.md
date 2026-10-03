@@ -341,6 +341,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `GET` | `/api/interview-sessions` | 按时间、状态、`application_id`、归档范围和游标列出当前用户的面试记录 |
 | `POST` | `/api/job-applications/:id/interview-sessions` | 在指定求职进程的当前阶段创建排期 |
 | `GET/PUT/DELETE` | `/api/interview-sessions/:id` | 读取、乐观锁更新或删除无素材的单场记录 |
+| `POST` | `/api/interview-sessions/:id/prep-items:generate` | 让 AI 为本场生成准备清单，成功返回更新后的场次；每场只能成功一次 |
 | `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间接受有效 24 小时制 `HH:mm`（小时 `00–23`、分钟 `00–59`） |
 | `PUT` | `/api/interview-sessions/:id/answer-plan` | 设置或清除开放笔试/测评的一组个人作答计划时间 |
 | `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
@@ -357,6 +358,8 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 `GET /api/job-applications` 按 `updated_at DESC, id DESC` 分页，`GET /api/interview-sessions` 按 `start_at ASC, id ASC` 分页；两者的 `next_cursor` 都是不透明且与当前筛选条件绑定的游标。调用方必须把游标与原筛选一起回传；游标损坏、跨筛选复用或超长都返回 `400 INVALID_INTERVIEW_QUERY`。创建面试的 `(application_id, client_request_id)` 唯一：相同请求重放返回原场次，相同标识绑定到不同时间或内容时返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
 面试模块的求职进程、岗位、简历版本、单场面试和素材 ID 与项目其他 BIGINT 资源一致，在 JSON、查询参数和路径中都使用无前导零的十进制字符串；前端不得把这些 ID 转成 JavaScript `number`。
+
+**面试准备清单**：清单保存在场次行的 `prep_items`（JSON，最多 12 条，元素 `{id,title,category,reason,done}`，`category` 取 `intro|project|technical|system_design|behavior|company|other`），`prep_generated_at` 非空表示本场已用掉唯一一次 AI 生成。场次响应附带只读的 `prep_total`、`prep_done`。用户通过 `PUT /api/interview-sessions/:id` 的 `prep_items` 整体替换清单（需 `base_lock_version`，服务端为缺失或重复的 `id` 重新分配），清空清单不会恢复生成次数。`prep-items:generate` 只对 `scheduled` 且未归档的本人场次可用，否则 `409 INTERVIEW_INVALID_TRANSITION`；已生成过返回 `409 INTERVIEW_PREP_ALREADY_GENERATED`；`interview_prep` 场景未配置返回 `503 LLM_MODEL_NOT_CONFIGURED`，模型失败或两次结构无效返回 `502`（含 `LLM_RESPONSE_INVALID`），失败和空结果都不占用次数。
 
 素材上传是 `multipart/form-data`，必须携带 canonical UUID `Idempotency-Key`；`source_type=recorded|uploaded` 仅记录来源路径。上传复用资料库入库链路：文件落入 `users/{user_id}/datasets/` 前缀，`user_dataset.interview_session_id` 记录场次关联，场次侧不再持有独立素材记录。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256；单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制，媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`/`MEDIA_MAX_TOTAL_BYTES_PER_USER` 控制。格式、大小、配额和对象存储失败复用资料库的 `DATASET_*` 错误码。文档类素材上传后进入解析队列，音视频落地为终态、不参与解析。`POST /interview-sessions/:id/assets/attach` 要求资料属本人、`upload_status=succeeded` 且未关联其他场次；重复关联本场次幂等返回，已关联其他场次返回 `409 DATASET_ALREADY_LINKED`，资料不存在或越权返回 `404 DATASET_NOT_FOUND`。统一入库和关联服务保证 `interview_session_id` 与 `interview_source_type` 同时设置或同时为空；该内部一致性校验不增加新的请求或响应字段。解除关联只清空这两列，物理删除只能在资料库进行；删除场次或求职进程同样只解除关联。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
 

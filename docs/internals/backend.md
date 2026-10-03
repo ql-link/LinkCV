@@ -334,3 +334,10 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 清理 worker 以可续租的数据库租约领取任务，数据库清理阶段同时持有 RAG 同步的可续租 Redis 锁，按实际 0090 后 schema 的外键顺序清除本人数据，并先将已登记 RAG file ID 存入任务 manifest。对象阶段限定 `users/{uid}/` 和既有录音目录 `mock-interviews/{uid}/`，RAG 阶段只清 manifest 中的文件。Redis 会话撤销、MinIO 或 LinkRag 失败保留任务重试，最多十次转 needs_attention；缺少必须的 RAG 配置直接需人工处理。失去租约后不覆盖新持有者结果，已完成任务清除 manifest 并在七天后删除。`python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 仅重排 needs_attention 任务，不恢复账号。
 
 RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记；远程文件变更在用户行锁内与注销协调，上传结果登记前不能受理注销，避免丢失外部清理清单。所有异步个人写回仍须遵守已有任务令牌和版本条件。业务边界见[账号功能](../features/identity-account.md#注销与失败边界)。
+
+
+## 面试准备清单（0106）
+
+`0106` 在 `interview_sessions` 新增 `prep_items`（JSON，可空）和 `prep_generated_at`（可空时间）。清单只随场次整体读写、不跨场次查询，所以不单独建表；每场至多 12 条，条目 id 由服务端保证唯一。`prep_generated_at` 是“本场已成功生成过一次”的唯一标记，用户清空或编辑清单都不会清除它。
+
+`POST /api/interview-sessions/:id/prep-items:generate` 以 `source=interview_prep`、`interview_prep` 场景调用结构化输出，管理员需像其他场景一样为它绑定并探测可用线路。流程分三段：先在短事务内校验归属、状态并组装提示词（岗位快照、阶段、本人关联简历、备注、最近两场已完成面试复盘、最近一次已完成模拟面试报告的 `improvements` 与 `resume_risks`，用户文本都以 `<data>` 引用且声明不是指令）；再无事务调用模型，结构无效时重试一次；最后在 `SELECT … FOR UPDATE` 行锁内重新校验并合并写入。合并保留生成期间用户新增的条目，按标题去重，总数封顶 12。模型失败、结构无效或去重后为空时不写 `prep_generated_at`，用户可以重试。迁移只含 DDL，沿用 forward-only 链。

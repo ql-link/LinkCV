@@ -72,7 +72,8 @@ import {
   formatDateTimeLabel,
 } from "@/v3/primitives";
 import { Badge, Bar, Centered, DeleteSessionArt, Paper } from "@/v3/art";
-import { MOCK_PREP_CHECKLIST, MOCK_SESSION_CONFIRMED } from "@/v3/mocks";
+import { MOCK_SESSION_CONFIRMED } from "@/v3/mocks";
+import { PrepChecklistCard } from "./PrepChecklistCard";
 import { CareerNotice, CareerPageHead, ScheduleArt, type ScheduleArtKind } from "./careerV3";
 import { describeScheduleConflict, findScheduleConflicts } from "./scheduleConflicts";
 import { NewProcessDialog } from "./NewProcessDialog";
@@ -201,6 +202,8 @@ type Interview = {
   meetingLabel: string;
   interviewer: string;
   note: string;
+  prepTotal: number;
+  prepDone: number;
   calendarDay: number;
   calendarStart: number;
   calendarSpan: number;
@@ -445,6 +448,8 @@ function toInterview(
         .join("（") + (session.interviewer_name && session.interviewer_title ? "）" : "") ||
       t("暂未填写"),
     note: session.preparation_note ?? t("暂未填写面试准备备注。"),
+    prepTotal: session.prep_total ?? 0,
+    prepDone: session.prep_done ?? 0,
     calendarDay,
     calendarStart: start.getHours() * 2 + start.getMinutes() / 30,
     calendarSpan: Math.max(
@@ -2414,7 +2419,7 @@ function ScheduleView({
                     <strong>{item.company} · {item.role} {item.stage}</strong>
                     <span className="career-upcoming-meta">{item.meetingLabel}</span>
                     <span className="career-upcoming-state">
-                      {item.scheduleKind === "open_window" ? (item.status === "active" ? t("待完成") : t("未开始")) : isToday ? <>{t("准备清单")}{MOCK_PREP_CHECKLIST.filter((entry) => entry.done).length}/{MOCK_PREP_CHECKLIST.length}<BeTag /></> : MOCK_SESSION_CONFIRMED ? <>{t("已确认")}<BeTag /></> : t("待确认")}
+                      {item.scheduleKind === "open_window" ? (item.status === "active" ? t("待完成") : t("未开始")) : isToday ? (item.prepTotal > 0 ? <>{t("准备清单")} {item.prepDone}/{item.prepTotal}</> : t("未生成准备清单")) : MOCK_SESSION_CONFIRMED ? <>{t("已确认")}<BeTag /></> : t("待确认")}
                     </span>
                   </button>
                 </li>
@@ -3300,6 +3305,7 @@ function AssetSidebar({
         />
         <Button variant="outline" icon={<Import />} onClick={() => fileInput.current?.click()}>{t("上传文件")}</Button>
       </section>
+      <PrepChecklistCard detail={detail} onChanged={onChanged} onNotice={onNotice} fallbackError={errorMessage} />
       <InterviewContextSidebar className="record-context-card" interview={selected} />
     </aside>
   );
