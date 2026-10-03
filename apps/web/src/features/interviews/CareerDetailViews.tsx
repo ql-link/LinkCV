@@ -10,6 +10,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { ApplicationV3Content, ReviewV3Content } from "./CareerDetailV3";
+import { RecordingTranscription } from "./RecordingTranscription";
 import { PrepChecklistCard } from "./PrepChecklistCard";
 import { Dialog as V3Dialog, Select as V3Select } from "@/v3/primitives";
 import { Badge, Centered, DashArrow, MiniResume, TagCard } from "@/v3/art";
@@ -2521,7 +2522,8 @@ function SessionAssetList({
   recordKind,
   hasTextRecord,
   onEmptyAction,
-  sessionId,
+  session,
+  readOnly,
   onChanged,
   onNotice,
 }: {
@@ -2529,11 +2531,13 @@ function SessionAssetList({
   recordKind: "笔试" | "面试";
   hasTextRecord: boolean;
   onEmptyAction?: () => void;
-  sessionId: string;
+  session: InterviewSessionRecord;
+  readOnly: boolean;
   onChanged: () => void;
   onNotice: (notice: string) => void;
 }) {
   useLocale();
+  const sessionId = session.id;
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioVolumeRef = useRef<HTMLDivElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -2643,6 +2647,7 @@ function SessionAssetList({
           <button type="button" aria-label={t("下载 {value0}", { value0: asset.original_file_name })} disabled={busyAssetId === asset.id} onClick={() => void download(asset)}><Download aria-hidden="true" /></button>
           <button type="button" aria-label={t("移除 {value0}", { value0: asset.original_file_name })} disabled={busyAssetId === asset.id} onClick={() => setAssetToRemove(asset)}><Trash2 aria-hidden="true" /></button>
         </div>
+        {asset.asset_type === "audio" && <RecordingTranscription session={session} datasetId={asset.id} readOnly={readOnly} onChanged={onChanged} />}
         {audioUrl && activeAssetId === asset.id && <div className="career-session-audio-player" role="group" aria-label={t("{value0}录音播放器", { value0: t(recordKind) })}>
           <audio
             ref={audioRef}
@@ -3302,7 +3307,7 @@ export function InterviewSessionDetailView({
         )}
         <section className="career-session-content-section">
           <header><h2>{recordTitle}</h2></header>
-          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} onEmptyAction={isDialog && isAssessment && assets.length === 0 && !questions.trim() ? () => setShowContentDialog(true) : undefined} sessionId={session.id} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
+          <SessionAssetList assets={assets} recordKind={recordKind} hasTextRecord={Boolean(questions.trim())} onEmptyAction={isDialog && isAssessment && assets.length === 0 && !questions.trim() ? () => setShowContentDialog(true) : undefined} session={session} readOnly={isArchived || session.status === "cancelled"} onChanged={() => onChanged(session.id)} onNotice={onNotice} />
           {questions.trim() && <article className={`career-session-transcript${textExpanded ? " is-expanded" : ""}`}>
             <header>
               <div className="career-session-transcript-title">

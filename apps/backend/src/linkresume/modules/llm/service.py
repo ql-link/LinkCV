@@ -25,11 +25,11 @@ from linkresume.modules.llm.models import (
     LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
 )
 from linkresume.modules.llm.providers import (
-    OPENAI_CHAT, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route,
+    OPENAI_CHAT, ALIYUN_ASR_FILE, SPEECH_PROTOCOLS, file_asr_base_url, inference_base_url, speech_ws_url, validate_route,
 )
 from linkresume.modules.llm.resolver import (
     ASSISTANT_CONVERSATION, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
-    RESUME_STRUCTURING, SPEECH_TO_TEXT, SPEECH_USE_CASES, TEXT_TO_SPEECH,
+    RESUME_STRUCTURING, SPEECH_TO_TEXT, SPEECH_USE_CASES, TEXT_TO_SPEECH, RECORDING_TRANSCRIPTION,
     RoutePlan, resolve, validation_fingerprint, resolve_candidates,
 )
 from linkresume.modules.speech.gateway import (
@@ -178,6 +178,7 @@ class LLMService:
         gateway: LLMGateway,
         cipher: CredentialCipher,
         speech_gateway: SpeechGateway | None = None,
+        file_transcription_gateway=None,
     ) -> None:
         self._session_factory = session_factory
         self._gateway = gateway
@@ -187,6 +188,8 @@ class LLMService:
 
             speech_gateway = AliyunSpeechGateway()
         self._speech_gateway = speech_gateway
+        from linkresume.modules.speech.file_transcription import AliyunFileTranscriptionGateway
+        self.file_transcription_gateway = file_transcription_gateway or AliyunFileTranscriptionGateway()
 
     def encrypt_credential(self, plaintext: str) -> str:
         return self._cipher.encrypt(plaintext)
@@ -467,6 +470,7 @@ class LLMService:
         route_id: int,
         *,
         pi_probe=None,
+        file_probe_url: str | None = None,
     ) -> str:
         with self._session_factory() as db:
             binding = db.get(LLMUseCaseRoute, (use_case, route_id))
@@ -486,11 +490,25 @@ class LLMService:
                 selection_source="probe",
             )
             fingerprint = validation_fingerprint(binding, route, connection)
-        runtime = None if use_case in SPEECH_USE_CASES else self.runtime_model_for_plan(plan)
+        runtime = None if use_case in (*SPEECH_USE_CASES, RECORDING_TRANSCRIPTION) else self.runtime_model_for_plan(plan)
         call_id = create_call_id()
         await self._db(self._start_log_sync, plan, call_id=call_id, source="capability_probe", user_id=user_id)
         try:
-            if use_case in SPEECH_USE_CASES:
+            if use_case == RECORDING_TRANSCRIPTION:
+                if not file_probe_url:
+                    raise LLMError("INTERVIEW_TRANSCRIPTION_MEDIA_UNAVAILABLE", call_id)
+                target = self.file_transcription_target(plan)
+                gateway = self.file_transcription_gateway
+                async with asyncio.timeout(90):
+                    task_id = await gateway.submit(target, file_probe_url)
+                    while True:
+                        polled = await gateway.poll(target, task_id)
+                        if polled["status"] == "succeeded":
+                            await gateway.result(target, polled["url"], allow_empty=True)
+                            break
+                        await asyncio.sleep(3)
+                result = GatewayResult(content="OK", usage=GatewayUsage(None, None, details={"audio_seconds": polled.get("duration_seconds")}))
+            elif use_case in SPEECH_USE_CASES:
                 await self._probe_speech(plan, call_id)
                 result = GatewayResult(content="OK", usage=None)
             elif use_case == ASSISTANT_CONVERSATION:
@@ -544,6 +562,17 @@ class LLMService:
             db.commit()
         return call_id
 
+
+    def file_transcription_target(self, plan: RoutePlan):
+        from linkresume.modules.speech.file_transcription import FileTranscriptionTarget
+        if plan.provider_code != "aliyun" or plan.protocol_code != ALIYUN_ASR_FILE:
+            raise LLMError("INTERVIEW_TRANSCRIPTION_MODEL_UNAVAILABLE")
+        try:
+            validate_route(plan.provider_code, plan.target_kind, plan.protocol_code)
+            base = file_asr_base_url(plan.settings)
+        except ValueError as error:
+            raise LLMError("INTERVIEW_TRANSCRIPTION_MODEL_UNAVAILABLE") from error
+        return FileTranscriptionTarget(base, _credential_key(self._cipher, plan), plan.invoke_target, plan.settings["region"])
 
     # -- speech -------------------------------------------------------------
 

@@ -295,7 +295,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0108`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107 → 0108`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
+当前迁移链 head 为 `0109`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107 → 0108 → 0109`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
 
 `0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
 
@@ -352,4 +352,12 @@ RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记�
 
 ## 结构化面试复盘（0105 已有字段）
 
-ORM 映射既有 `review_report` JSON、`review_request_id` CHAR(36)、`review_started_at` DATETIME(6)、`review_status` VARCHAR(16)、`review_error` VARCHAR(64)，本次不修改历史 SQL 或新增迁移。报告含 schema_version=1、源文字哈希、生成时间、三维评分与问题分析；请求中的源哈希保存在 JSON 元数据，未完成及不兼容结构不作为有效报告返回。`review_status` 为 generating/ready/failed；请求 UUID 用于生成幂等，活动状态按 3 分钟租期处理。目标数据库需要沿现有链升级到 head（0108）；历史账号版 0105 由 0106 补齐 Offer/复盘字段；SQLite 测试不证明 MySQL 迁移已应用。
+ORM 映射既有 `review_report` JSON、`review_request_id` CHAR(36)、`review_started_at` DATETIME(6)、`review_status` VARCHAR(16)、`review_error` VARCHAR(64)，本次不修改历史 SQL 或新增迁移。报告含 schema_version=1、源文字哈希、生成时间、三维评分与问题分析；请求中的源哈希保存在 JSON 元数据，未完成及不兼容结构不作为有效报告返回。`review_status` 为 generating/ready/failed；请求 UUID 用于生成幂等，活动状态按 3 分钟租期处理。目标数据库需要沿现有链升级到 head（0109）；历史账号版 0105 由 0106 补齐 Offer/复盘字段；SQLite 测试不证明 MySQL 迁移已应用。
+
+## 录音文件转写（0109）
+
+`dataset_transcription_tasks` 独立保存文件识别状态和可校对稿件，不复用文档解析状态。14 个字段包括用户/文件/场次关系、客户端 UUID、状态、非秘密线路快照、供应商任务编号、版本化结果、脱敏错误、领取令牌/期限与创建/更新时间。场次外键 SET NULL，文件外键 CASCADE，用户外键 RESTRICT；账号注销先清此表。
+
+`application/interviews/transcription_service.py` 以 User 行锁协调任务准入、取消、文件删除和注销；同用户活动任务上限由事务查询保证，不宣称有数据库唯一约束。Worker 在消息消费旁运行 `interview_transcription_worker.py` 的数据库调度，每次领取只执行提交或一次查询，租期 120 秒，外部操作整步最多 100 秒，避免慢速流占住调度器。正常查询间隔 15 秒，临时故障 300 秒，创建后 23 小时截止。所有写回重新锁用户并校验状态、令牌、期限和文件关联。提交前持久化 submitting 与调用日志；提交结果不确定或该阶段进程中断，不自动重提。已保存供应商编号则在重启后继续查询。取消、解除关联和删除场次立即关闭任务/日志，供应商已受理的工作可能仍计费。
+
+结果 JSON 为 schema_version=1，含 text、sentences、duration_ms。后台不修改 `questions_markdown` 或复盘报告；Web 校对后用既有乐观锁保存。私有文件由目的限定的签名应用接口读取；源链接最长有效 24 小时，任务终态立即撤销。部署配置及真实供应商验收见 [部署文档](../ops/deployment.md#录音文件-asr)。

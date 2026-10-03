@@ -4,7 +4,7 @@ import type { InterviewSessionDetail, InterviewSessionSummary, JobApplicationSum
 import { AddNextStageDialog } from "./CareerDetailViews";
 import { ApplicationV3Content, ReviewV3Content } from "./CareerDetailV3";
 
-const mocks = vi.hoisted(() => ({ addJobApplicationStage: vi.fn(), createInterviewSession: vi.fn(), listResumes: vi.fn(), updateJobApplication: vi.fn(), generateInterviewReview: vi.fn(), getInterviewSession: vi.fn(), listInterviewSessions: vi.fn(), updateInterviewSession: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getInterviewTranscription: vi.fn(), interviewTranscriptionCapability: vi.fn(), addJobApplicationStage: vi.fn(), createInterviewSession: vi.fn(), listResumes: vi.fn(), updateJobApplication: vi.fn(), generateInterviewReview: vi.fn(), getInterviewSession: vi.fn(), listInterviewSessions: vi.fn(), updateInterviewSession: vi.fn() }));
 vi.mock("@/api/client", async (original) => ({ ...await original<typeof import("@/api/client")>(), api: mocks }));
 const application = { id: "sample-application", job_description_id: "sample-job", company_name_snapshot: "示例公司", job_title_snapshot: "后端工程师", job_snapshot: {}, current_stage_type: "interview", current_stage_label: "二面", current_round_no: 2, stage_state: "awaiting_schedule", current_stage: { id: "sample-stage", stage_type: "interview", stage_label: "二面", sequence_no: 2, stage_status: "active" }, status: "active", offer_status: "none", archived_at: null, applied_at: "2026-09-10T08:00:00Z", created_at: "2026-09-10T08:00:00Z", updated_at: "2026-09-20T08:00:00Z", lock_version: 4 } as JobApplicationSummary;
 const detail = { application, session: { id: "sample-session", stage_label: "二面", status: "completed", start_at: "2026-09-20T08:00:00Z", end_at: "2026-09-20T09:00:00Z", lock_version: 2, questions_markdown: "示例文字记录" }, assets: [] } as unknown as InterviewSessionDetail;
@@ -163,4 +163,14 @@ describe("Figma career detail interactions", () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
     expect(mocks.updateJobApplication).toHaveBeenCalledWith(pending.id, { resume_id: "sample-resume", base_lock_version: 4 });
   });
+});
+
+
+it("offers transcription directly on the completed interview recording card", async () => {
+  mocks.getInterviewTranscription.mockResolvedValue({ task: null });
+  mocks.interviewTranscriptionCapability.mockResolvedValue({ available: true, error_code: null });
+  const withRecording = { ...detail, assets: [{ id: "audio-1", asset_type: "audio", original_file_name: "虚构面试.wav", duration_ms: 1000 }] } as unknown as InterviewSessionDetail;
+  render(<ReviewV3Content detail={withRecording} onBack={vi.fn()} onUpload={vi.fn()} onText={vi.fn()} onNotice={vi.fn()} recordContent={<p>素材管理</p>} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "转成文字" })).toBeEnabled());
+  expect(screen.queryByText("素材管理")).not.toBeInTheDocument();
 });

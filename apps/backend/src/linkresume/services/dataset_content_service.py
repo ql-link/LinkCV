@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.core.errors import ApiError
-from linkresume.modules.datasets.models import UserDataset
+from linkresume.modules.datasets.models import UserDataset, DatasetTranscriptionTask, TRANSCRIPTION_ACTIVE
 from linkresume.modules.identity.models import User
 from linkresume.modules.identity.dependencies import lock_active_user
 from linkresume.modules.resumes.models import DocumentParseTask, DATASET_SOURCE_TYPE
@@ -54,6 +54,10 @@ def check_match(dataset, value):
 
 
 def ensure_not_busy(db, dataset, task):
+    if db.scalar(select(DatasetTranscriptionTask.id).where(
+        DatasetTranscriptionTask.dataset_id == dataset.id,
+        DatasetTranscriptionTask.status.in_(TRANSCRIPTION_ACTIVE)).limit(1)):
+        raise ApiError(409, "DATASET_BUSY")
     if task.upload_status == "uploading" or task.parse_status in ("queued", "processing"):
         raise ApiError(409, "DATASET_BUSY")
 

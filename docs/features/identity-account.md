@@ -61,3 +61,5 @@ Web 使用 HttpOnly Cookie，小程序使用 Bearer，两种 channel 不能混�
 | `features/auth/`、`features/account/`、`i18n/` | 普通 Web 认证、账号、进度和语言 |
 
 主要测试为后端 `test_account_completion.py`、`test_account_completion_mysql.py`、`test_profile_material.py`，Web 账号、认证与 i18n 测试，以及小程序 `account-confirm` 测试。微信平台的真机确认和真实 MinIO/LinkRag 清理须在目标环境单独验收，组件与接口替身测试不等同于跨端验收。
+
+录音文件转写也属于注销前须结束的 AI 活动：queued/submitting/transcribing 返回 `ACCOUNT_BUSY` 的 `ai` 活动类型。取消或完成后才允许注销；个人数据库清理先删除转写稿件，再删除文件、场次和账号。

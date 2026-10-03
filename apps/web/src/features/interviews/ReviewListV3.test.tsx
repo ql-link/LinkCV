@@ -8,7 +8,7 @@ describe("real review scores", () => {
     expect(screen.queryByText(/平均/)).not.toBeInTheDocument();
     expect(screen.getByText("上传记录后生成复盘")).toBeInTheDocument();
     expect(screen.queryByText("需后端")).not.toBeInTheDocument();
-    expect(screen.getByText("保存文字记录后生成 AI 复盘；录音转写后续提供。")).toBeInTheDocument();
+    expect(screen.getByText("保存文字记录后生成 AI 复盘；录音可先转写并校对。")).toBeInTheDocument();
     expect(screen.queryByText(/自动生成复盘/)).not.toBeInTheDocument();
   });
   it("averages only the actual available scores", () => {

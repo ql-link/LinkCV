@@ -42,3 +42,6 @@
 .cd3-review-questions button { padding: 8px 12px; border: 1px solid var(--v3-fl); border-radius: 8px; }
 .cd3-review-questions button[aria-pressed="true"] { background: var(--v3-field); font-weight: 600; }
 .cd3-review .cd3-next select { max-width: 100%; padding: 8px; margin: 8px; }
+
+.cd3-recording-audio { height: auto; min-height: 200px; }
+.cd3-recording-audio > .career-recording-transcription { margin: 0 16px 16px; }

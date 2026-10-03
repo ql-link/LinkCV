@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from linkresume.application.interviews.transcription_service import cancel_tasks
+
 from linkresume.modules.identity.dependencies import lock_active_user
 
 from linkresume.application.interviews.resume_binding_service import bind_resume
@@ -1044,12 +1046,13 @@ def set_application_archived(
     *,
     archived: bool,
 ) -> JobApplication:
+    lock_active_user(db, user_id)
     application = require_owned_application(db, user_id, application_id)
+    if archived:
+        for sid in db.scalars(select(InterviewSession.id).where(InterviewSession.application_id == application_id)):
+            cancel_tasks(db, user_id, session_id=sid)
     return _commit_application_update(
-        db,
-        application,
-        base_lock_version,
-        {"archived_at": utc_now() if archived else None},
+        db, application, base_lock_version, {"archived_at": utc_now() if archived else None},
     )
 
 
@@ -1498,7 +1501,12 @@ def normalize_prep_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def update_session(
     db: Session, user_id: int, session_id: int, payload: InterviewSessionUpdateRequest
 ) -> InterviewSession:
-    result = require_owned_session(db, user_id, session_id)
+    writing_text = "questions_markdown" in payload.model_fields_set
+    if writing_text:
+        lock_active_user(db, user_id)
+    result = require_owned_session(db, user_id, session_id, for_update=writing_text)
+    if writing_text and (result.application.archived_at is not None or result.session.status == "cancelled"):
+        raise InterviewInvalidTransition
     values = payload.model_dump(exclude_unset=True)
     values.pop("base_lock_version", None)
     if "prep_items" in values:
@@ -1645,6 +1653,7 @@ def cancel_interview(
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
     now = utc_now()
+    cancel_tasks(db, user_id, session_id=session_id)
     session.status = "cancelled"
     session.cancelled_at = now
     session.cancellation_reason = payload.reason
@@ -1666,6 +1675,7 @@ def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication
         .where(UserDataset.interview_session_id == session_id)
         .values(interview_session_id=None, interview_source_type=None)
     )
+    cancel_tasks(db, user_id, session_id=session_id)
     db.delete(result.session)
     remaining_scheduled = db.scalar(
         select(func.count(InterviewSession.id)).where(
@@ -1757,6 +1767,7 @@ def unlink_session_dataset(
     dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if dataset.interview_session_id != session_id:
         raise InterviewAssetNotLinked
+    cancel_tasks(db, user_id, dataset_id=dataset_id)
     dataset.interview_session_id = None
     dataset.interview_source_type = None
     db.commit()
@@ -1768,6 +1779,7 @@ def unlink_owned_dataset(db: Session, user_id: int, dataset_id: int) -> None:
     dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if dataset.interview_session_id is None:
         raise InterviewAssetNotLinked
+    cancel_tasks(db, user_id, dataset_id=dataset_id)
     dataset.interview_session_id = None
     dataset.interview_source_type = None
     db.commit()

@@ -14,6 +14,7 @@ OPENAI_RESPONSES = "openai_responses"
 ANTHROPIC_MESSAGES = "anthropic_messages"
 GOOGLE_GENERATE = "google_generate"
 ALIYUN_ASR_REALTIME = "aliyun_asr_realtime"
+ALIYUN_ASR_FILE = "aliyun_asr_file"
 ALIYUN_TTS_REALTIME = "aliyun_tts_realtime"
 SPEECH_PROTOCOLS = {
     "speech_to_text": frozenset({ALIYUN_ASR_REALTIME}),
@@ -35,7 +36,7 @@ PROVIDERS = {
         ProviderSpec("deepseek", "DeepSeek 直连", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("volcengine", "火山方舟", frozenset({OPENAI_CHAT, OPENAI_RESPONSES}), frozenset({"model", "endpoint"})),
         ProviderSpec("aliyun", "阿里云百炼", frozenset({
-            OPENAI_CHAT, ALIYUN_ASR_REALTIME, ALIYUN_TTS_REALTIME,
+            OPENAI_CHAT, ALIYUN_ASR_REALTIME, ALIYUN_ASR_FILE, ALIYUN_TTS_REALTIME,
         }), frozenset({"model", "deployment"})),
         ProviderSpec("opencode_zen", "OpenCode Zen", frozenset({
             OPENAI_CHAT, OPENAI_RESPONSES, ANTHROPIC_MESSAGES, GOOGLE_GENERATE,
@@ -129,7 +130,8 @@ def speech_ws_url(provider_code: str, settings: dict | None = None) -> str:
 
 def validate_use_case_protocol(use_case: str, protocol_code: str) -> None:
     """Speech use cases take only their speech protocol; chat use cases never do."""
-    speech = SPEECH_PROTOCOLS.get(use_case)
+    speech = (frozenset({ALIYUN_ASR_FILE}) if use_case == "recording_transcription"
+              else SPEECH_PROTOCOLS.get(use_case))
     if speech is not None:
         if protocol_code not in speech:
             raise ValueError("protocol unsupported for speech use case")
@@ -141,6 +143,16 @@ def validate_route(provider_code: str, target_kind: str, protocol_code: str) -> 
     spec = PROVIDERS.get(provider_code)
     if spec is None or target_kind not in spec.target_kinds or protocol_code not in spec.protocols:
         raise ValueError("provider route or protocol unsupported")
+
+
+def file_asr_base_url(settings: dict) -> str:
+    value = validate_settings("aliyun", settings)
+    region = value["region"]
+    if region not in _DASHSCOPE_SPEECH_HOSTS:
+        raise ValueError("file speech is unavailable in this region")
+    workspace = value.get("workspace_id")
+    host = f"{workspace}.{region}.maas.aliyuncs.com" if workspace else _DASHSCOPE_SPEECH_HOSTS[region]
+    return f"https://{host}/api/v1"
 
 
 def pi_api(protocol_code: str) -> str:

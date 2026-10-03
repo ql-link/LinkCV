@@ -16,7 +16,7 @@ from linkresume.modules.agent.models import (
     ResumeChangeProposal,
 )
 from linkresume.modules.announcements.models import Announcement, AnnouncementReadCursor
-from linkresume.modules.datasets.models import UserDataset, UserDatasetFolder, UserDatasetRagSync
+from linkresume.modules.datasets.models import UserDataset, UserDatasetFolder, UserDatasetRagSync, DatasetTranscriptionTask, TRANSCRIPTION_ACTIVE
 from linkresume.modules.identity.capabilities import password_login_enabled, wechat_login_enabled
 from linkresume.modules.identity.dependencies import lock_active_user
 from linkresume.modules.identity.models import AccountDeletionJob, AccountPreference, User, UserProfile
@@ -59,6 +59,10 @@ def active_types(db: Session, user_id: int) -> list[str]:
         or_(DocumentParseTask.upload_status == "uploading", DocumentParseTask.parse_status.in_(["queued", "processing"])),
     )):
         result.append("document_processing")
+    if _has(db, select(DatasetTranscriptionTask.id).where(
+        DatasetTranscriptionTask.user_id == user_id, DatasetTranscriptionTask.status.in_(TRANSCRIPTION_ACTIVE))):
+        if "ai" not in result:
+            result.append("ai")
     return result
 
 
@@ -139,6 +143,7 @@ def clear_personal_rows(db: Session, job: AccountDeletionJob) -> None:
     db.execute(update(MockInterviewQuestion).where(MockInterviewQuestion.interview_id.in_(interviews)).values(parent_id=None))
     db.execute(update(MockInterview).where(MockInterview.user_id == uid).values(repeat_of_id=None))
     targets = [
+        (DatasetTranscriptionTask, DatasetTranscriptionTask.user_id == uid),
         (ResumeChangeProposal, ResumeChangeProposal.user_id == uid),
         (AgentToolCall, AgentToolCall.run_id.in_(runs)),
         (AgentMessage, AgentMessage.session_id.in_(sessions)),

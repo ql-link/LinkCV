@@ -982,3 +982,25 @@ describe("资料正文与替换契约",()=>{
     await expect(api.uploadDataset(new File(["text"],"notes.md"),"key","8")).rejects.toMatchObject({status:409,payload});
   });
 });
+
+describe("interview recording API contract", () => {
+  it("uploads recording files with a canonical UUID idempotency key", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(201, { asset: { id: "42" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["fictional audio"], "interview.wav", { type: "audio/wav" });
+    await api.uploadInterviewAsset("11", file, "uploaded");
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/interview-sessions/11/assets");
+    expect(init.headers["Idempotency-Key"]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(init.body.get("file")).toBe(file);
+  });
+  it("submits a client UUID without sending a supplier model or file URL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(202, { task: { id: "9" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const requestId = "d077da05-956e-4b81-a862-12c8d94639b6";
+    await api.createInterviewTranscription("11", "42", requestId);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/interview-sessions/11/assets/42/transcription");
+    expect(JSON.parse(init.body)).toEqual({ request_id: requestId });
+  });
+});

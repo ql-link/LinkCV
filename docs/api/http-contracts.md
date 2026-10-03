@@ -643,3 +643,18 @@ Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账�
 场次详情和列表增加可空的 `review_report`、`review_status`、`review_request_id`、`review_error`、`review_started_at`，以及 `review_stale`。报告包含 `schema_version: 1`、`source_hash`、`generated_at`、`summary`、可空 `overall_score`、三项 `{score, reason, evidence}` 和问题数组 `{question, answer, evidence, strength, improvement, suggested_answer}`。`score` 范围 0–10，证据不足留空；综合分要求三项分数齐全。问题、原回答和非空评分证据须摘录源记录；建议回答与原回答分开保存。旧手写 `review_summary` 等字段仍可编辑，生成不覆盖它们。
 
 响应中的 `review_request_id` 标识当前生成。网络结果不明确时，只有读到同 UUID 的终态才结束该次重试，读到旧报告或读取失败仍复用原 UUID。相同 UUID 和源文字重复请求复用原生成状态，不再次调用模型；失败后的显式重新生成使用新 UUID。源记录在生成期间改变，返回详情中的 `review_status=failed`、`review_error=INTERVIEW_REVIEW_SOURCE_CHANGED`，原记录和旧报告保留。旧报告源哈希与当前文字不同即 `review_stale=true`。活动生成超过 3 分钟允许重新发起；这里没有录音转写契约。
+
+## 面试录音文件转写
+
+新任务接口只接受 Web Cookie，沿用 CSRF、本人场次和当前文件关联校验，不开放 desktop Bearer。ID 使用正十进制字符串，客户端不传模型、文件 URL 或密钥。
+
+| 方法与路径 | 请求 | 响应 |
+| --- | --- | --- |
+| `GET /api/interview-sessions/{session_id}/transcription-capability` | 无 | `{available,error_code}` |
+| `GET /api/interview-sessions/{session_id}/assets/{dataset_id}/transcription` | 无 | `{task}`，没有任务时为 null |
+| `POST /api/interview-sessions/{session_id}/assets/{dataset_id}/transcription` | `{request_id:UUID}` | 新建 202，幂等或已存在稿件 200，`{task}` |
+| `POST /api/interview-sessions/{session_id}/assets/{dataset_id}/transcription/cancel` | `{task_id:string}` | 200 `{task}`，终态幂等 |
+
+`Task` 含 `id,dataset_id,status,text,sentences,duration_ms,error_code,created_at,updated_at,completed_at`。状态为 queued/submitting/transcribing/ready/failed/cancelled；仅 ready 返回正文及 `{text,start_ms,end_ms}` 句子，没有真实时间时句子为空。活动状态不暴露临时查询错误、线路或供应商编号。归档进程、取消场次拒绝新建；同账号至多一项活动任务，同一文件已有活动任务或成功稿件直接复用。无模型、无下载配置分别返回 503 `INTERVIEW_TRANSCRIPTION_MODEL_UNAVAILABLE` / `INTERVIEW_TRANSCRIPTION_MEDIA_UNAVAILABLE`；非音频为 422 `INTERVIEW_TRANSCRIPTION_AUDIO_REQUIRED`，未上传完成为 409 `INTERVIEW_TRANSCRIPTION_UPLOAD_PENDING`，UUID 用于不同文件为 409 `INTERVIEW_TRANSCRIPTION_REQUEST_CONFLICT`，账号繁忙为 429 `INTERVIEW_TRANSCRIPTION_BUSY`。
+
+校对后仍经 `PUT /api/interview-sessions/{session_id}` 的 `questions_markdown` 和 `base_lock_version` 保存；归档/取消拒绝文字写入，冲突不覆盖原文。下载接口 `GET/HEAD /api/interview-asr/audio?token=...` 只接受专用 audience/purpose 签名；有效活动任务与归属、文件摘要和关联关系必须匹配，终态令牌失效。它流式读取内部 MinIO，支持单段 Range、206 与 416，不返回 MinIO 地址。探测令牌仅能读固定一秒静音 WAV。反向代理日志必须省略该路径的 query。

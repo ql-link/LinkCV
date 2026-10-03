@@ -40,7 +40,10 @@ from linkresume.modules.resumes.template_admin_routes import (
     router as template_admin_router,
 )
 
+from linkresume.modules.interviews.transcription_routes import router as transcription_router
+
 api_router = APIRouter()
+api_router.include_router(transcription_router)
 api_router.include_router(health_router)
 api_router.include_router(agent_router)
 api_router.include_router(agent_admin_router)

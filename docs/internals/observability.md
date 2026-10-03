@@ -69,3 +69,5 @@ request ID 是跨日志关联键，不是用户身份；actor 只能来自已验
 ## 账号能力与客户端边界
 
 普通 Web 的错误边界、反馈提示和恢复操作使用账号界面语言；上报错误码、request ID 和原始诊断标识保持稳定。注销回执、微信操作 poll/action token 只随请求体传递，不进入 URL；清理日志仅记录安全错误码，不包含私有 manifest、邮箱或身份凭据。见[账号功能](../features/identity-account.md)。
+
+录音文件转写发起与取消分别审计为 `interview.transcription_create`、`interview.transcription_cancel`，目标为 dataset。专用音频下载仅按规范化路由记录，不写 query、签名令牌、正文或供应商完整响应。部署入口关闭 Uvicorn access log；外部反向代理亦须对 `/api/interview-asr/audio` 省略 query。

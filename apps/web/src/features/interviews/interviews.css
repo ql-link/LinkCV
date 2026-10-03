@@ -5771,3 +5771,9 @@
 .prep-add button { display: grid; width: 26px; place-items: center; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: transparent; color: var(--ui-text-secondary); cursor: pointer; }
 .prep-add button:disabled { cursor: not-allowed; opacity: .5; }
 .prep-add button svg { width: 12px; height: 12px; }
+
+.career-recording-transcription { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--ui-border); padding-top: 10px; }
+.career-recording-transcription-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.career-recording-transcription-actions > span { display: inline-flex; align-items: center; gap: 6px; color: var(--ui-text-muted); font-size: var(--ui-text-sm); }
+.career-recording-transcription-actions > span svg { width: 14px; height: 14px; }
+.career-recording-transcription p { margin: 8px 0 0; color: var(--ui-text-muted); font-size: var(--ui-text-xs); line-height: 1.6; }

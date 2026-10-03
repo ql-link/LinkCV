@@ -158,9 +158,9 @@ class AssetStorage:
             sha256=reader.digest.hexdigest(),
         )
 
-    def get(self, object_name: str):
+    def get(self, object_name: str, *, offset: int = 0, length: int = 0):
         self.ensure_bucket()
-        return self.client.get_object(self.bucket, object_name)
+        return self.client.get_object(self.bucket, object_name, offset=offset, length=length)
 
     def stat(self, object_name: str):
         self.ensure_bucket()

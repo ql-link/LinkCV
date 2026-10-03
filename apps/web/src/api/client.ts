@@ -997,6 +997,19 @@ export type InterviewAssetRecord = {
   created_at: string;
 };
 
+export type InterviewTranscriptionTask = {
+  id: string;
+  dataset_id: string;
+  status: "queued" | "submitting" | "transcribing" | "ready" | "failed" | "cancelled";
+  text: string | null;
+  sentences: { text: string; start_ms: number; end_ms: number }[];
+  duration_ms: number | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+
 export type InterviewSessionDetail = {
   session: InterviewSessionRecord;
   application: JobApplicationRecord;
@@ -2240,7 +2253,7 @@ export const api = {
       {
         method: "POST",
         formData,
-        headers: { "Idempotency-Key": createRequestId() },
+        headers: { "Idempotency-Key": crypto.randomUUID() },
       },
     );
   },
@@ -2254,6 +2267,18 @@ export const api = {
       `/api/interview-sessions/${sessionId}/assets/${datasetId}`,
       { method: "DELETE" },
     ),
+  interviewTranscriptionCapability: (sessionId: string) =>
+    request<{ available: boolean; error_code: string | null }>(`/api/interview-sessions/${sessionId}/transcription-capability`),
+  getInterviewTranscription: (sessionId: string, datasetId: string) =>
+    request<{ task: InterviewTranscriptionTask | null }>(`/api/interview-sessions/${sessionId}/assets/${datasetId}/transcription`),
+  createInterviewTranscription: (sessionId: string, datasetId: string, requestId: string) =>
+    request<{ task: InterviewTranscriptionTask }>(`/api/interview-sessions/${sessionId}/assets/${datasetId}/transcription`, {
+      method: "POST", body: { request_id: requestId },
+    }),
+  cancelInterviewTranscription: (sessionId: string, datasetId: string, taskId: string) =>
+    request<{ task: InterviewTranscriptionTask }>(`/api/interview-sessions/${sessionId}/assets/${datasetId}/transcription/cancel`, {
+      method: "POST", body: { task_id: taskId },
+    }),
   downloadInterviewAsset: (assetId: string) =>
     requestBlob(`/api/interview-assets/${assetId}/content`),
   downloadDatasetSource: (datasetId: string) =>

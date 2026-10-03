@@ -1,4 +1,5 @@
 import os
+import ipaddress
 import re
 import secrets
 from functools import lru_cache
@@ -7,7 +8,7 @@ from typing import Literal
 from urllib.parse import quote, urlsplit
 
 from cryptography.fernet import Fernet
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -177,6 +178,28 @@ class Settings(BaseSettings):
     agent_proposal_ttl_days: int = Field(
         default=30, alias="AGENT_PROPOSAL_TTL_DAYS", ge=1, le=90
     )
+
+    asr_media_base_url: str | None = Field(default=None, alias="ASR_MEDIA_BASE_URL")
+
+    @field_validator("asr_media_base_url")
+    @classmethod
+    def validate_asr_media_base(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        parts = urlsplit(value)
+        _ = parts.port  # Validate numeric/range syntax as well.
+        if (parts.scheme != "https" or not parts.hostname or parts.username or parts.password
+                or parts.query or parts.fragment or parts.path not in ("", "/")):
+            raise ValueError("ASR_MEDIA_BASE_URL must be an HTTPS application origin")
+        if parts.hostname == "localhost" or parts.hostname.endswith((".localhost", ".local")):
+            raise ValueError("ASR_MEDIA_BASE_URL must be reachable by the provider")
+        try:
+            address = ipaddress.ip_address(parts.hostname)
+        except ValueError:
+            address = None
+        if address is not None and not address.is_global:
+            raise ValueError("ASR_MEDIA_BASE_URL cannot use a private address")
+        return value.rstrip("/")
 
     minio_endpoint: str = Field(default="http://127.0.0.1:9000", alias="MINIO_ENDPOINT")
     minio_access_key: str = Field(default="linkresume", alias="MINIO_ACCESS_KEY")

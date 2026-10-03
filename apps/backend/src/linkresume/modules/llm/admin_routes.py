@@ -618,8 +618,12 @@ async def probe_binding(
     pi_probe: PiProbeCoordinator = Depends(get_pi_probe_coordinator),
 ) -> dict:
     try:
+        file_probe_url = None
+        if use_case == "recording_transcription":
+            from linkresume.modules.speech.media_token import audio_url
+            file_probe_url = audio_url(request.app.state.settings)
         call_id = await service.probe_route(
-            admin.id, use_case, _id(route_id), pi_probe=pi_probe,
+            admin.id, use_case, _id(route_id), pi_probe=pi_probe, file_probe_url=file_probe_url,
         )
     except LLMError as error:
         raise ApiError(422, error.code) from error

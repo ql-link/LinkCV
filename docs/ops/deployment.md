@@ -166,3 +166,9 @@ uv run --directory apps/backend python scripts/release/migrate_interview_assets.
 ACCOUNT_DELETION_ENABLED 默认 false；ACCOUNT_DELETION_POLL_SECONDS 默认 10，ACCOUNT_DELETION_LEASE_SECONDS 默认 60。关闭受理开关不停止已受理任务的清理。部署前先查询目标真实 Alembic current 并备份，按既有升级流程应用 0106；必须在独立目标测试账号确认同身份真机扫码、租约恢复、MinIO 私有前缀及真实 LinkRag 文件清理，再决定开启受理。不能将 SQLite、假对象存储和替身微信测试视作上述验收。
 
 需要人工处理的任务可在配置或外部故障修复后运行 `uv run --directory apps/backend python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 重排，不能恢复账号。完成回执仅保留七天。租约、重试与 schema 事实源见[Backend](../internals/backend.md#账号偏好联系邮箱与持久注销)。
+
+## 录音文件 ASR
+
+部署前备份并以 forward-only Alembic 升级至 `0109`，再部署 API、Worker 与 Web；旧代码兼容新增空任务表，新代码须迁移后启动。配置 `ASR_MEDIA_BASE_URL` 为同环境、对百炼可达的 HTTPS 应用根地址；现有 Compose 的环境文件同时供 API/Worker 读取，无需公网 MinIO。
+
+反向代理必须转发 `/api/interview-asr/audio` 的 GET、HEAD 和 Range，并禁止 access log 记录该路径的 query token。管理员配置百炼北京或新加坡连接，绑定文件模型的 `recording_transcription` / `aliyun_asr_file`，执行一秒静音探测，再用虚构短录音验证实际下载、识别、刷新和校对保存。文件 URL 在后台生成，不提供登录 Cookie/存储密钥，处理终态后失效。外部模型任务已经受理时，取消不承诺停止计费。回退应用不会删除任务或原文件；数据库恢复依赖备份，schema 修正使用新的向前 revision。

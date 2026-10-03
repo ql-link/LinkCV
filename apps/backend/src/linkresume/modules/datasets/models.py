@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     PrimaryKeyConstraint,
     String,
     UniqueConstraint,
@@ -16,6 +17,8 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
 
 from linkresume.core.database import Base
+
+TRANSCRIPTION_ACTIVE = ("queued", "submitting", "transcribing")
 
 
 def unsigned_bigint_type():
@@ -273,3 +276,30 @@ class UserDatasetRagSync(Base):
     updated_at: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class DatasetTranscriptionTask(Base):
+    __tablename__ = "dataset_transcription_tasks"
+    __table_args__ = (
+        UniqueConstraint("user_id", "client_request_id", name="uk_transcription_user_request"),
+        CheckConstraint("status IN ('queued','submitting','transcribing','ready','failed','cancelled')", name="ck_transcription_status"),
+        CheckConstraint("status IN ('queued','submitting','transcribing') OR (lease_token IS NULL AND lease_until IS NULL)", name="ck_transcription_terminal_lease"),
+        Index("idx_transcription_dataset", "dataset_id", "id"),
+        Index("idx_transcription_poll", "status", "updated_at", "id"),
+        Index("idx_transcription_session", "interview_session_id", "status"),
+        {"comment": "面试录音异步识别任务及可校对稿件"},
+    )
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), primary_key=True, autoincrement=True, comment="任务自增主键")
+    user_id: Mapped[int] = mapped_column(unsigned_bigint_type(), ForeignKey("users.id", name="fk_transcription_user", ondelete="RESTRICT"), nullable=False, comment="所属用户")
+    dataset_id: Mapped[int] = mapped_column(unsigned_bigint_type(), ForeignKey("user_dataset.id", name="fk_transcription_dataset", ondelete="CASCADE"), nullable=False, comment="原音频资料")
+    interview_session_id: Mapped[int | None] = mapped_column(unsigned_bigint_type(), ForeignKey("interview_sessions.id", name="fk_transcription_session", ondelete="SET NULL"), comment="发起时场次")
+    client_request_id: Mapped[str] = mapped_column(String(36).with_variant(mysql.CHAR(36, charset="ascii", collation="ascii_bin"), "mysql"), nullable=False, comment="客户端幂等 UUID")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", server_default="queued", comment="任务状态")
+    route_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, comment="非秘密模型线路快照")
+    provider_task_id: Mapped[str | None] = mapped_column(String(64), comment="供应商任务标识")
+    result_json: Mapped[dict | None] = mapped_column(JSON, comment="版本化文字与句子时间结果")
+    error_code: Mapped[str | None] = mapped_column(String(64), comment="脱敏错误码")
+    lease_token: Mapped[str | None] = mapped_column(String(36).with_variant(mysql.CHAR(36, charset="ascii", collation="ascii_bin"), "mysql"), comment="后台领取令牌")
+    lease_until: Mapped[datetime | None] = mapped_column(timestamp_type(), comment="领取有效时间 UTC")
+    created_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间 UTC")
+    updated_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="最后处理时间 UTC")

@@ -1,5 +1,7 @@
 import asyncio
 
+from linkresume.workers.interview_transcription_worker import InterviewTranscriptionProcessor, run_interview_transcription_loop
+
 from linkresume.core.config import load_settings
 from linkresume.core.database import build_engine, build_session_factory
 from linkresume.core.redis import build_redis_client
@@ -71,6 +73,9 @@ async def main() -> None:
     rag_client = build_linkrag_client(
         settings, timeout_seconds=settings.linkrag_sync_timeout_seconds
     )
+    transcription_task = asyncio.create_task(run_interview_transcription_loop(InterviewTranscriptionProcessor(
+        session_factory=session_factory, settings=settings, llm_service=llm_service,
+    )))
     rag_task = None
     deletion_task = asyncio.create_task(run_account_deletion_loop(AccountDeletionProcessor(
         session_factory=session_factory, storage=storage, redis=redis,
@@ -98,6 +103,11 @@ async def main() -> None:
             settings=settings,
         )
     finally:
+        transcription_task.cancel()
+        try:
+            await transcription_task
+        except asyncio.CancelledError:
+            pass
         deletion_task.cancel()
         try:
             await deletion_task

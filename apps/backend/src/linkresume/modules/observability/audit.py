@@ -14,6 +14,8 @@ class AuditAction:
 
 
 AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
+    ("POST", "/api/interview-sessions/{session_id}/assets/{dataset_id}/transcription"): AuditAction("interview.transcription_create", "dataset", "dataset_id"),
+    ("POST", "/api/interview-sessions/{session_id}/assets/{dataset_id}/transcription/cancel"): AuditAction("interview.transcription_cancel", "dataset", "dataset_id"),
     ("POST", "/api/auth/register"): AuditAction("auth.register", "user"),
     ("POST", "/api/auth/login"): AuditAction("auth.login", "user"),
     ("POST", "/api/auth/admin-login"): AuditAction("auth.admin_login", "user"),

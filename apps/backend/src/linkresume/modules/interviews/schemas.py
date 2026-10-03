@@ -821,3 +821,39 @@ class DeleteResponse(StrictModel):
 
 class DeleteSessionResponse(DeleteResponse):
     application: JobApplicationRecord
+
+
+class TranscriptionCreateRequest(StrictModel):
+    request_id: UUID
+
+
+class TranscriptionCancelRequest(StrictModel):
+    task_id: str = Field(pattern=r"^[1-9][0-9]*$", max_length=20)
+
+
+class TranscriptionSentence(StrictModel):
+    text: str
+    start_ms: int
+    end_ms: int
+
+
+class TranscriptionTaskRecord(StrictModel):
+    id: str
+    dataset_id: str
+    status: Literal["queued", "submitting", "transcribing", "ready", "failed", "cancelled"]
+    text: str | None
+    sentences: list[TranscriptionSentence]
+    duration_ms: int | None
+    error_code: str | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+
+
+class TranscriptionTaskResponse(StrictModel):
+    task: TranscriptionTaskRecord | None
+
+
+class TranscriptionCapability(StrictModel):
+    available: bool
+    error_code: str | None

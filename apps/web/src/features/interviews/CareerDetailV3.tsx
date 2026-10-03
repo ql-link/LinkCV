@@ -8,6 +8,7 @@ import { Bar, MiniResume, Paper } from "@/v3/art";
 import { careerApplicationPath, editorPath, jobDetailPath, navigateTo } from "@/routing";
 import { projectApplicationProgress } from "./applicationProgress";
 import { formatOfferDate, offerDeadline } from "./offerDates";
+import { RecordingTranscription } from "./RecordingTranscription";
 import playerArt from "./v3-assets/player.svg";
 import "./careerDetailsV3.css";
 
@@ -193,7 +194,7 @@ export function ReviewV3Content({ detail, onBack, onUpload, onText, onNotice, re
     catch { onNotice(t("录音加载失败，请稍后重试。")); }
   };
   const title = t("{value0}复盘", { value0: session.stage_label });
-  const subtitle = generating ? t("正在生成文字复盘，可以稍后回来查看。") : report?.summary || session.review_summary || t("保存文字记录后生成 AI 复盘；录音转写后续提供。");
+  const subtitle = generating ? t("正在生成文字复盘，可以稍后回来查看。") : report?.summary || session.review_summary || t("保存文字记录后生成 AI 复盘；录音可先转写并校对。");
   return <div className={`cd3-page cd3-review is-${generating || busy ? "generating" : report ? "ready" : "empty"}`}>
     <CareerDetailHeader eyebrow={[{ label: "REVIEWS", onClick: onBack, ariaLabel: t("返回复盘列表") }, detail.application.company_name_snapshot, detail.application.job_title_snapshot, shortDate(session.start_at)]}
       title={title} subtitle={subtitle} actions={<><button onClick={() => setTextOpen(true)}>{t("文字记录")}</button><button disabled={!canGenerate || busy || (generating && !interrupted)} onClick={() => void generate()}>{busy || (generating && !interrupted) ? t("正在生成…") : report ? t("重新生成") : t("生成复盘")}</button></>} />
@@ -202,8 +203,9 @@ export function ReviewV3Content({ detail, onBack, onUpload, onText, onNotice, re
     {session.review_status === "failed" && <p role="alert">{t("复盘生成失败，原记录和已有报告已保留。")}</p>}
     {interrupted && <p role="status">{t("上次生成已中断，可以重新生成。")}</p>}
     {(busy || (generating && !interrupted)) && <p role="status">{t("正在生成文字复盘，可以稍后回来查看。")}</p>}
-    {!hasText && <section className="cd3-empty"><div className="cd3-empty-copy"><h2>{t("添加面试文字记录")}</h2><p>{t("保存文字记录后生成 AI 复盘；录音转写后续提供。")}</p><button className="v3-btn v3-btn-dark" onClick={onText}>{t("粘贴文字记录")}</button><button className="v3-btn v3-btn-text" onClick={onUpload}>{t("上传录音")}</button></div></section>}
-    {audio && <section className="cd3-recording" aria-label={t("面试录音播放器")}><div className="cd3-wave-stage"><button className="cd3-play" aria-label={playing ? t("暂停录音") : t("播放录音")} onClick={() => void play()}><Icon name={playing ? "stop" : "play"} size={14}/></button><input type="range" aria-label={t("录音播放进度")} min={0} max={duration || (audio.duration_ms || 0) / 1000} value={playhead} disabled={!duration} onChange={event => { const value = Number(event.target.value); setPlayhead(value); if (audioRef.current) audioRef.current.currentTime = value; }}/></div><footer><strong>{audio.original_file_name}</strong><small>{stamp(playhead)} / {duration || audio.duration_ms ? stamp(duration || audio.duration_ms! / 1000) : "—"}</small></footer>
+    {!hasText && <section className="cd3-empty"><div className="cd3-empty-copy"><h2>{t("添加面试文字记录")}</h2><p>{t("保存文字记录后生成 AI 复盘；录音可先转写并校对。")}</p><button className="v3-btn v3-btn-dark" onClick={onText}>{t("粘贴文字记录")}</button><button className="v3-btn v3-btn-text" onClick={onUpload}>{t("上传录音")}</button></div></section>}
+    {audio && <section className="cd3-recording cd3-recording-audio" aria-label={t("面试录音播放器")}><div className="cd3-wave-stage"><button className="cd3-play" aria-label={playing ? t("暂停录音") : t("播放录音")} onClick={() => void play()}><Icon name={playing ? "stop" : "play"} size={14}/></button><input type="range" aria-label={t("录音播放进度")} min={0} max={duration || (audio.duration_ms || 0) / 1000} value={playhead} disabled={!duration} onChange={event => { const value = Number(event.target.value); setPlayhead(value); if (audioRef.current) audioRef.current.currentTime = value; }}/></div><footer><strong>{audio.original_file_name}</strong><small>{stamp(playhead)} / {duration || audio.duration_ms ? stamp(duration || audio.duration_ms! / 1000) : "—"}</small></footer>
+      {!textOpen && <RecordingTranscription session={session} datasetId={audio.id} readOnly={Boolean(detail.application.archived_at) || session.status === "cancelled"} onChanged={() => void onChanged?.()} />}
       {audioUrl && <audio ref={audioRef} autoPlay src={audioUrl} onLoadedMetadata={event => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onTimeUpdate={event => setPlayhead(event.currentTarget.currentTime)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} onError={() => onNotice(t("录音暂时无法播放。"))}/>}</section>}
     {report && <><section className="cd3-recording" aria-label={t("复盘评分")}><footer><div className="cd3-scores">{([
       [t("项目表达"), report.project_expression], [t("系统设计"), report.system_design], [t("沟通"), report.communication],
