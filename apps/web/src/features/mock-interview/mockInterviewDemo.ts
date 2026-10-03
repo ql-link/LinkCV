@@ -470,7 +470,7 @@ export const demoMockInterviewApi: MockInterviewApi = {
   },
 
   // POST /api/mock-interviews/:id/repeat
-  async repeat(id: string) {
+  async repeat(id: string, options?: { answer_mode?: MockInterviewDetail["answer_mode"] }) {
     const source = find(id);
     const { mock_interview } = await demoMockInterviewApi.create({
       job_application_id: source.job_application_id ?? undefined,
@@ -480,7 +480,7 @@ export const demoMockInterviewApi: MockInterviewApi = {
       question_count: source.question_count,
       follow_up_enabled: source.follow_up_enabled,
       language: source.language,
-      answer_mode: source.answer_mode,
+      answer_mode: options?.answer_mode ?? source.answer_mode,
       display: { resume_title: source.resume_title, company_name: source.company_name ?? undefined, job_title: source.job_title ?? undefined, stage_label: source.stage_label ?? undefined, materials: source.materials },
     });
     const created = find(mock_interview.id);
@@ -522,6 +522,12 @@ export const demoMockInterviewApi: MockInterviewApi = {
         return { session_id: uuid().replace(/-/g, "").slice(0, 32).padEnd(32, "0"), text, duration_ms: Date.now() - startedAt, partial: false };
       },
     };
+  },
+
+  // 演示数据没有真实语音合成：返回空音频，试听页会把它当作播放结束
+  async speechPlayback() {
+    await delay(80);
+    return new Blob([], { type: "audio/mpeg" });
   },
 
   // 演示数据没有真实录音

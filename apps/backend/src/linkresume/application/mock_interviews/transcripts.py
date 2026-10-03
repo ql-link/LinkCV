@@ -8,6 +8,7 @@ Correction is limited to recognition errors; any result that changes more than
 from __future__ import annotations
 
 import difflib
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
@@ -327,17 +328,17 @@ def recording_for(db: Session, user_id: int, public_id: str, question_id: int) -
     return question.recording_object_name
 
 
-def delete_recordings(db: Session, user_id: int, public_id: str) -> list[str]:
-    """Detach recordings; returns object names the caller deletes after commit."""
+def delete_recordings(db: Session, user_id: int, public_id: str, *, purge: Callable[[list[str]], None]) -> None:
+    """A failed purge retains references so the caller can retry deletion."""
     interview = require_owned(db, user_id, public_id, lock=True)
     if interview.answer_mode != "voice" or interview.status in ("preparing", "in_progress", "evaluating"):
         raise _state_invalid()
-    names = []
-    for question in list_questions(db, interview.id):
+    questions = list_questions(db, interview.id)
+    names = [question.recording_object_name for question in questions if question.recording_object_name]
+    purge(names)
+    for question in questions:
         if question.recording_object_name:
-            names.append(question.recording_object_name)
             question.recording_object_name = None
     interview.recordings_deleted_at = interview.recordings_deleted_at or utc_now()
     interview.lock_version += 1
     db.commit()
-    return names

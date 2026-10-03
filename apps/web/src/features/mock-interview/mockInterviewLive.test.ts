@@ -51,6 +51,31 @@ describe("liveMockInterviewApi", () => {
     expect(JSON.parse(init.body)).toEqual({ resume_id: "7", question_count: 5 });
   });
 
+  it("repeat 可选带 answer_mode 覆盖新场作答方式，省略时不带请求体", async () => {
+    fetchMock.mockResolvedValue(json({ mock_interview: { id: "i2" } }, 201));
+    await liveMockInterviewApi.repeat("i1", { answer_mode: "voice" });
+    await liveMockInterviewApi.repeat("i1");
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe("/api/mock-interviews/i1/repeat");
+    expect(JSON.parse(init.body)).toEqual({ answer_mode: "voice" });
+    expect(fetchMock.mock.calls[1][1].body).toBeUndefined();
+  });
+
+  it("speechPlayback 省略题号为设备试音，带题号时请求当前题目，失败映射为错误码", async () => {
+    // jsdom 的 Blob 不能作为 Response 体，直接用最小响应替身
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, blob: async () => new Blob(["mp3"], { type: "audio/mpeg" }) });
+    const blob = await liveMockInterviewApi.speechPlayback("i1");
+    expect(blob.size).toBe(3);
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe("/api/mock-interviews/i1/speech/playback");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({});
+
+    fetchMock.mockResolvedValueOnce(json({ error: "MOCK_INTERVIEW_QUESTION_MISMATCH" }, 409));
+    await expect(liveMockInterviewApi.speechPlayback("i1", "9")).rejects.toMatchObject({ code: "MOCK_INTERVIEW_QUESTION_MISMATCH" });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ question_id: "9" });
+  });
+
   it("list 跟随游标翻页直到没有下一页", async () => {
     fetchMock
       .mockResolvedValueOnce(json({ items: [{ id: "a" }], next_cursor: "c1" }))

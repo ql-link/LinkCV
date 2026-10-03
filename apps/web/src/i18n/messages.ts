@@ -2698,6 +2698,7 @@ export const messages: Record<string, string> = {
   "播放中…": "Playing…",
   "未试听": "Not previewed",
   "当前浏览器不支持朗读试听，请直接检查系统输出设备；语音合成失败时只显示字幕。": "Browser speech preview is unsupported. Check your system audio output; subtitles remain available if speech synthesis fails.",
+  "语音合成或播放失败，请检查系统输出设备后重试；也可以阅读字幕继续。": "Speech synthesis or playback failed. Check your system audio output and try again, or continue with the subtitles.",
   "听不到声音时检查系统输出设备；语音合成失败时只显示字幕。": "Check system output if you hear nothing. Subtitles remain available if speech synthesis fails.",
   "正在切换为文字面试…": "Switching to text interview…",
   "不方便说话？改为文字面试": "Can't speak? Switch to text",
