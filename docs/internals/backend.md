@@ -325,6 +325,12 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 仍保留全部 Muse 主题的 Web/PDF 渲染支持，不删除模板或外键关联。迁移只含 DML，沿用 SQL-first 事务和 forward-only 链；目标环境的 current 需要单独查询。撤回通过管理端重新启用或新的向前 revision，数据恢复依赖备份。具体下架、代表款和展示顺序见[模板目录整理](../features/resume-template-curation.md)。
 
 
+### 简历匹配度（0106）
+
+`0106` 新增 `job_resume_matches`：每个（岗位，简历）一行，唯一键 `uk_job_resume_matches_job_resume`，保存状态（`pending`、`ready`、`failed`）、分数、`result_json`（逐条要求、原句核对结果与高亮词）、岗位与简历内容哈希、来源（`auto`、`manual`）、尝试次数、租约令牌与到期时间。外键均为 `RESTRICT`，所以删除岗位、删除简历和账号注销都在各自事务中显式先删匹配行。分数由 `application/job_matches/scoring.py` 按权重计算，不接受模型直接给分。
+
+分析分三段：短事务占位并取得租约，无事务调用模型（`job_match` 用途，结构无效时重试一次），再锁行并核对租约令牌后写回。首页卡经 `JobMatchRunner` 在后台任务中运行，复用同一流程。迁移是 forward-only；目标环境 current 需要单独查询。
+
 ### 账号偏好、联系邮箱与持久注销
 
 `0105` 在 users 新增 contact_email 和 deletion_requested_at，将历史 email 回填为联系邮箱（不表示已验证），建立一对一 account_preferences 和持久 account_deletion_jobs。清理任务使用独立 user_id 无外键，删除 users 后仍可继续对象/RAG 清理。迁移为 SQL-first、forward-only，不修改历史 revision。

@@ -14,6 +14,7 @@ from linkresume.modules.identity.desktop_routes import router as desktop_identit
 from linkresume.modules.identity.wechat_routes import router as wechat_router
 from linkresume.modules.interviews.routes import router as interview_router
 from linkresume.modules.job_descriptions.routes import router as job_description_router
+from linkresume.modules.job_matches.routes import router as job_match_router
 from linkresume.modules.llm.admin_routes import router as llm_admin_router
 from linkresume.modules.mock_interviews.routes import router as mock_interview_router
 from linkresume.modules.miniprogram.account_routes import router as miniprogram_account_router
@@ -54,6 +55,7 @@ api_router.include_router(interview_router)
 api_router.include_router(wechat_router)
 api_router.include_router(account_router)
 api_router.include_router(job_description_router)
+api_router.include_router(job_match_router)
 api_router.include_router(llm_admin_router)
 api_router.include_router(mock_interview_router)
 api_router.include_router(miniprogram_router)

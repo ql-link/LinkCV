@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from sqlalchemy import String, and_, cast, func, or_, select, update
+from sqlalchemy import String, and_, cast, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from linkresume.domain.job_source import (
 )
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.job_matches.models import JobResumeMatch
 from linkresume.modules.job_descriptions.schemas import (
     JobDescriptionCreateRequest,
     JobDescriptionUpdateRequest,
@@ -234,6 +235,9 @@ def hard_delete_owned_job(
             delete_asset_object=delete_asset_object,
         )
         detach_mock_interview_job(db, job.id)
+        db.execute(
+            delete(JobResumeMatch).where(JobResumeMatch.job_description_id == job.id)
+        )
         db.delete(job)
         db.commit()
         return True
