@@ -689,6 +689,45 @@ export type JobEmploymentType =
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
+export type JobMatchStatus = "pending" | "ready" | "failed";
+
+export type JobMatch = {
+  status: JobMatchStatus;
+  stale: boolean;
+  score: number | null;
+  headline: string | null;
+  hits: string[];
+  gaps: string[];
+  highlights: { covered: string[]; missing: string[] };
+  analyzed_at: string | null;
+  error_code: string | null;
+};
+
+export type JobMatchRecommendationState =
+  | "no_resume"
+  | "no_jobs"
+  | "computing"
+  | "ready"
+  | "idle"
+  | "unavailable";
+
+export type JobMatchRecommendationItem = {
+  job_id: string;
+  job_title: string;
+  company_name: string;
+  logo_url: string | null;
+  score: number;
+  application_status: string | null;
+};
+
+export type JobMatchRecommendations = {
+  state: JobMatchRecommendationState;
+  resume: { id: string; title: string } | null;
+  items: JobMatchRecommendationItem[];
+  pending_count: number;
+  can_compute: boolean;
+};
+
 export type JobDescriptionSummary = {
   id: string;
   job_title: string;
@@ -1785,6 +1824,22 @@ export const api = {
       next_cursor: string | null;
     }>(`/api/job-descriptions${suffix ? `?${suffix}` : ""}`);
   },
+  getJobMatch: (jobId: string, resumeId: string) =>
+    request<{ match: JobMatch | null }>(
+      `/api/job-descriptions/${jobId}/match?resume_id=${encodeURIComponent(resumeId)}`,
+    ),
+  analyzeJobMatch: (jobId: string, resumeId: string) =>
+    request<{ match: JobMatch | null }>(
+      `/api/job-descriptions/${jobId}/match:analyze`,
+      { method: "POST", body: { resume_id: resumeId } },
+    ),
+  getJobMatchRecommendations: () =>
+    request<JobMatchRecommendations>("/api/job-matches/recommendations"),
+  ensureJobMatchRecommendations: () =>
+    request<JobMatchRecommendations>(
+      "/api/job-matches/recommendations:ensure",
+      { method: "POST" },
+    ),
   createJobDescription: (payload: JobDescriptionCreatePayload) =>
     request<{
       job_description: JobDescriptionRecord;

@@ -188,3 +188,9 @@ body:has(.jd-v3 .job-quick-edit.is-editing) .v3-select-menu .v3-menu-item { min-
 .jd-notes:has(.is-editing) { padding-bottom: 10px; }
 .jd-notes .job-quick-edit.is-editing { height: 76px; }
 .jd-notes .job-quick-edit.is-editing > textarea { min-height: 76px; height: 76px; margin-top: -7px; padding-top: 6px; }
+
+/* 匹配分析：说明、长标签和操作区 */
+.jd-match-note { margin-top: 8px; color: var(--v3-sub); font-size: 12px; line-height: 19px; }
+.jd-match .jd-tag { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jd-match-actions { position: absolute; bottom: 19px; left: 19px; right: 19px; display: grid; gap: 8px; }
+.jd-match-actions .v3-btn { width: 100%; height: 36px; font-size: 12px; }

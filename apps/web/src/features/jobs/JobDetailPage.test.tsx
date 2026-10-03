@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, type JobApplicationSummary, type JobDescriptionRecord } from "../../api/client";
+import { ApiRequestError, api, type JobApplicationSummary, type JobDescriptionRecord, type JobMatch } from "../../api/client";
 import { JobDetailPage } from "./JobDetailPage";
 
 const activeJob: JobDescriptionRecord = {
@@ -42,8 +42,21 @@ const activeJob: JobDescriptionRecord = {
   updated_at: "2026-07-29T08:00:00Z",
 };
 
+async function clickWhenEnabled(name: string) {
+  const button = await screen.findByRole("button", { name });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+}
+
+const readyMatch: JobMatch = {
+  status: "ready", stale: false, score: 72, headline: "有 Kubernetes 经验",
+  hits: ["有后端开发经验"], gaps: ["有 Kubernetes 经验"],
+  highlights: { covered: ["后端"], missing: ["Kubernetes"] }, analyzed_at: "2026-10-03T08:00:00Z", error_code: null,
+};
+
 beforeEach(() => {
   vi.spyOn(api, "listJobApplications").mockResolvedValue({ items: [], next_cursor: null });
+  vi.spyOn(api, "getJobMatch").mockResolvedValue({ match: null });
 });
 
 afterEach(() => {
@@ -345,15 +358,59 @@ describe("岗位详情 V3 状态", () => {
     status: "active", lifecycle_status: "active", archived_at: null, current_stage_label: "三面", lock_version: 4,
   } as JobApplicationSummary;
 
-  it("有关联简历与 JD 时展示有标记的匹配示例、阶段和优化入口", async () => {
+  it("有关联简历与 JD 但还没分析时提示分析，不展示示例数字，并保留优化入口", async () => {
     vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
     vi.mocked(api.listJobApplications).mockResolvedValue({ items: [linkedApplication], next_cursor: null });
     render(<JobDetailPage jobId={activeJob.id} />);
-    expect(await screen.findByText("86")).toBeInTheDocument();
-    expect(screen.getAllByText("需后端")).toHaveLength(2);
+    expect(await screen.findByText("还没有分析匹配度")).toBeInTheDocument();
+    expect(api.getJobMatch).toHaveBeenCalledWith(activeJob.id, "resume-1");
+    expect(screen.queryByText("需后端")).not.toBeInTheDocument();
+    expect(screen.queryByText("86")).not.toBeInTheDocument();
     expect(screen.getByText("三面")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "按 JD 优化关联简历" }));
     expect(window.location.pathname).toBe("/resumes/resume-1/edit");
+  });
+
+  it("点击分析后展示分数、命中项、缺口，并按结果高亮岗位描述", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: { ...activeJob, description: "参与后端业务开发，需要 Kubernetes 经验" } });
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [linkedApplication], next_cursor: null });
+    vi.spyOn(api, "analyzeJobMatch").mockResolvedValue({ match: readyMatch });
+    const { container } = render(<JobDetailPage jobId={activeJob.id} />);
+    await clickWhenEnabled("分析匹配度");
+    expect(await screen.findByText("72")).toBeInTheDocument();
+    expect(api.analyzeJobMatch).toHaveBeenCalledWith(activeJob.id, "resume-1");
+    expect(screen.getByText("还缺：有 Kubernetes 经验")).toBeInTheDocument();
+    expect(screen.getByText("有后端开发经验")).toBeInTheDocument();
+    expect(container.querySelector(".jd-keyword-missing")?.textContent).toBe("Kubernetes");
+    expect(container.querySelector(".jd-markdown strong")?.textContent).toBe("后端");
+    expect(screen.getByRole("button", { name: "重新分析" })).toBeInTheDocument();
+  });
+
+  it("已有结果过期时仍展示旧分数并提示重新分析", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [linkedApplication], next_cursor: null });
+    vi.mocked(api.getJobMatch).mockResolvedValue({ match: { ...readyMatch, stale: true } });
+    render(<JobDetailPage jobId={activeJob.id} />);
+    expect(await screen.findByText("72")).toBeInTheDocument();
+    expect(screen.getByText("简历或岗位描述已变化，这个分数可能已过期。")).toBeInTheDocument();
+  });
+
+  it("上次分析失败或被中断时显示原因而不是分数", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [linkedApplication], next_cursor: null });
+    vi.mocked(api.getJobMatch).mockResolvedValue({ match: { ...readyMatch, status: "failed", stale: false, score: null, headline: null, hits: [], gaps: [], error_code: "JOB_MATCH_INTERRUPTED" } });
+    render(<JobDetailPage jobId={activeJob.id} />);
+    expect(await screen.findByText("上次分析被中断，请重新分析。")).toBeInTheDocument();
+    expect(screen.queryByText("72")).not.toBeInTheDocument();
+  });
+
+  it("模型未配置时提示暂未开放", async () => {
+    vi.spyOn(api, "getJobDescription").mockResolvedValue({ job_description: activeJob });
+    vi.mocked(api.listJobApplications).mockResolvedValue({ items: [linkedApplication], next_cursor: null });
+    vi.spyOn(api, "analyzeJobMatch").mockRejectedValue(new ApiRequestError(503, "LLM_MODEL_NOT_CONFIGURED"));
+    render(<JobDetailPage jobId={activeJob.id} />);
+    await clickWhenEnabled("分析匹配度");
+    expect(await screen.findByText("AI 匹配分析暂未开放。")).toBeInTheDocument();
   });
 
   it("无 JD 时提供粘贴入口，匹配示例变淡且不可优化", async () => {
@@ -362,6 +419,8 @@ describe("岗位详情 V3 状态", () => {
     render(<JobDetailPage jobId={activeJob.id} />);
     expect(await screen.findByText("岗位描述暂未记录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "按 JD 优化关联简历" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "分析匹配度" })).toBeDisabled();
+    expect(api.getJobMatch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "粘贴岗位文字" }));
     expect(screen.getByLabelText("职位描述")).toHaveFocus();
   });

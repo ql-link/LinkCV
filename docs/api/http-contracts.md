@@ -287,6 +287,8 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 列表查询支持最长 200 字符的 `keyword`、不透明 `cursor` 和 `limit=1..100`。关键词忽略大小写，覆盖岗位名、公司名、城市、地址、正文和技能；分页按 `updated_at DESC, id DESC` 稳定排序。非法筛选或游标返回 `400 INVALID_JOB_QUERY`。JD 不维护活动、归档、投递或面试状态。
 
+Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和 `ensureJobMatchRecommendations` 对应岗位匹配接口：详情页只在用户点击时调用分析，首页卡在显示时读取、必要时触发后台计算并轮询。
+
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用当前 `chat` 能力；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_structuring` 能力。响应中的 `draft` 与普通创建字段同构但全部可空，`warnings` 提示未识别的核心字段；调用方必须先让用户核对或补充，再另行调用创建接口。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
 
 创建必填 `job_title`、`company_name` 和 `source_type=manual|external_import`；手工创建的 `description` 可省略或留空，服务端统一保存为空字符串。普通更新同样允许把 `description` 清空为空字符串，但不接受 `null`；`job_title` 和 `company_name` 更新后仍必须非空。可选 `logo_url` 最长 2048 字符且必须是无内嵌凭据的 HTTPS 绝对 URL，此字段只保存外链；托管图片通过独立 Logo 上传接口写入。`external_import` 仍必须带非空 `description` 和 `http/https source_url`；服务端负责规范化 URL 并计算来源身份。当前 BOSS 直聘岗位链接提取 `/job_detail/{source_job_id}.html`，保存 `source_site=boss`、原生 `source_job_id`、规范化 `source_url` 及其 SHA-256；其他链接保存 `source_site=web` 和 URL 哈希。`source_type`、`source_site`、`source_job_id`、`source_url`、`source_url_hash`、`imported_at` 创建后均不可通过更新接口修改。
