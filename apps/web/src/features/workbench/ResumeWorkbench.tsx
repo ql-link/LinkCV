@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { type Editor, type JSONContent } from "@tiptap/core";
 import { BubbleMenu, EditorContent, useEditor } from "@tiptap/react";
@@ -83,6 +84,7 @@ type WorkbenchTitleInputProps = {
 
 // 标题输入框：宽度跟随文字（Figma 标题 14.5 Medium，居中在顶栏）
 export function WorkbenchTitleInput({ value, disabled, onChange }: WorkbenchTitleInputProps) {
+  useLocale();
   const truncated = truncateWorkbenchTitle(value) !== value;
 
   return (
@@ -93,7 +95,7 @@ export function WorkbenchTitleInput({ value, disabled, onChange }: WorkbenchTitl
         name="resume-title"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        aria-label="简历标题"
+        aria-label={t("简历标题")}
         disabled={disabled}
         title={truncated ? value : undefined}
       />
@@ -127,6 +129,7 @@ export function resumeWorkbenchStyle(
 
 // ⋯ 更多操作：只保留删除简历（导出 PDF 是顶栏主按钮，完整度走分数胶囊）
 export function WorkbenchMoreMenu({ onDelete }: { onDelete: () => void }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement | null>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -138,8 +141,8 @@ export function WorkbenchMoreMenu({ onDelete }: { onDelete: () => void }) {
         className={`wb3-more${open ? " is-active" : ""}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="更多操作"
-        title="更多操作"
+        aria-label={t("更多操作")}
+        title={t("更多操作")}
         onClick={() => setOpen((value) => !value)}
       >
         <Icon name="more" size={16} />
@@ -150,8 +153,8 @@ export function WorkbenchMoreMenu({ onDelete }: { onDelete: () => void }) {
         onClose={close}
         placement="bottom-end"
         width={160}
-        label="更多操作"
-        items={[{ label: "删除简历", icon: "trash", danger: true, onSelect: onDelete }]}
+        label={t("更多操作")}
+        items={[{ label: t("删除简历"), icon: "trash", danger: true, onSelect: onDelete }]}
       />
     </>
   );
@@ -159,11 +162,12 @@ export function WorkbenchMoreMenu({ onDelete }: { onDelete: () => void }) {
 
 // 顶栏完整度胶囊：小号仪表盘 + 分数 + 等级，点开 02.2d 简历检查
 export function WorkbenchScorePill({ result, active, onClick }: { result: ResumeCompletenessResult; active: boolean; onClick: () => void }) {
+  useLocale();
   return (
     <button
       type="button"
       className={`wb3-score${active ? " is-active" : ""}`}
-      aria-label={`简历完整度 ${result.score} 分，${result.level}，打开简历检查`}
+      aria-label={t("简历完整度 {value0} 分，{value1}，打开简历检查", { value0: result.score, value1: result.level })}
       aria-pressed={active}
       onClick={onClick}
     >
@@ -176,10 +180,10 @@ export function WorkbenchScorePill({ result, active, onClick }: { result: Resume
 
 type RailItem = { mode: Exclude<DrawerMode, null>; icon: V3IconName; label: string };
 const RAIL_ITEMS: RailItem[] = [
-  { mode: "outline", icon: "outline", label: "大纲" },
-  { mode: "template", icon: "layout", label: "模板" },
-  { mode: "type", icon: "typeA", label: "排版" },
-  { mode: "quality", icon: "ccheck", label: "检查" },
+  { mode: "outline", icon: "outline", get label() { return t("大纲"); } },
+  { mode: "template", icon: "layout", get label() { return t("模板"); } },
+  { mode: "type", icon: "typeA", get label() { return t("排版"); } },
+  { mode: "quality", icon: "ccheck", get label() { return t("检查"); } },
 ];
 
 // 右侧竖向工具卡片（Figma lib12 · ewRail）：56 宽，每项 48×52，选中灰底；「检查」右上角橙色角标 = 待完善项数
@@ -194,11 +198,12 @@ export function WorkbenchToolRail({
   templateDisabled?: boolean;
   onToggle: (mode: Exclude<DrawerMode, null>) => void;
 }) {
+  useLocale();
   return (
-    <nav className="wb3-rail" aria-label="编辑工具">
+    <nav className="wb3-rail" aria-label={t("编辑工具")}>
       {RAIL_ITEMS.map((item) => {
         const active = mode === item.mode;
-        const label = item.mode === "template" ? "简历模板" : item.mode === "quality" ? "简历检查" : item.label;
+        const label = item.mode === "template" ? t("简历模板") : item.mode === "quality" ? t("简历检查") : item.label;
         return (
           <button
             key={item.mode}
@@ -235,31 +240,32 @@ export function WorkbenchPageBar({
   onArrangementChange: (value: PageArrangement) => void;
   onSmartOnePageChange: (enabled: boolean) => void;
 }) {
+  useLocale();
   return (
-    <div className="wb3-pagebar" role="toolbar" aria-label="页面设置">
+    <div className="wb3-pagebar" role="toolbar" aria-label={t("页面设置")}>
       <div className="wb3-type-section">
-        <strong>页面排列</strong>
-        <small>选择多页简历在编辑区中的浏览方式。</small>
+        <strong>{t("页面排列")}</strong>
+        <small>{t("选择多页简历在编辑区中的浏览方式。")}</small>
       </div>
-      <div className="wb3-arrangement-options" role="group" aria-label="页面排列">
+      <div className="wb3-arrangement-options" role="group" aria-label={t("页面排列")}>
         {(["vertical", "horizontal"] as const).map((value) => (
-          <button key={value} type="button" aria-label={value === "vertical" ? "上下排列" : "左右排列"}
+          <button key={value} type="button" aria-label={value === "vertical" ? t("上下排列") : t("左右排列")}
             aria-pressed={!smartOnePage && arrangement === value} disabled={disabled}
             onClick={() => {
               if (smartOnePage) onSmartOnePageChange(false);
               onArrangementChange(value);
             }}>
             <span className="wb3-arrangement-icon">{value === "vertical" ? <Rows2 size={24} /> : <Columns2 size={24} />}</span>
-            <span>{value === "vertical" ? "上下排列" : "左右排列"}</span>
+            <span>{value === "vertical" ? t("上下排列") : t("左右排列")}</span>
           </button>
         ))}
-        <button type="button" role="switch" aria-checked={smartOnePage} aria-label="智能一页"
+        <button type="button" role="switch" aria-checked={smartOnePage} aria-label={t("智能一页")}
           disabled={disabled} onClick={() => onSmartOnePageChange(!smartOnePage)}>
           <span className="wb3-arrangement-icon"><Sparkles size={24} /></span>
-          <span>智能一页</span>
+          <span>{t("智能一页")}</span>
         </button>
       </div>
-      <p className="wb3-arrangement-note">排列只影响编辑时的浏览方向。</p>
+      <p className="wb3-arrangement-note">{t("排列只影响编辑时的浏览方向。")}</p>
     </div>
   );
 }
@@ -276,16 +282,17 @@ export function saveStatusKind({ saveStatus, dirty }: Pick<WorkbenchSaveStatusPr
 }
 
 export function WorkbenchSaveStatus({ saveStatus, dirty, error }: WorkbenchSaveStatusProps) {
+  useLocale();
   const kind = saveStatusKind({ saveStatus, dirty });
   const imageError = resumeImageContractErrorMessage(error);
   const conflict = error === "RESUME_EDIT_CONFLICT";
   const label = kind === "saving"
-    ? "保存中…"
+    ? t("保存中…")
     : kind === "error"
-      ? `保存失败 · ${imageError ?? (conflict ? "简历已在其他地方修改" : "请重试")}`
+      ? t("保存失败 · {value0}", { value0: imageError ?? (conflict ? t("简历已在其他地方修改") : t("请重试")) })
       : kind === "editing"
-        ? "编辑中"
-        : "已保存";
+        ? t("编辑中")
+        : t("已保存");
 
   return (
     <span aria-live="polite" className={`workbench-save-status ${kind}`} role="status">
@@ -300,14 +307,15 @@ export function WorkbenchSaveStatus({ saveStatus, dirty, error }: WorkbenchSaveS
 }
 
 export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[]; onDismiss: () => void }) {
+  useLocale();
   return (
     <div className="workbench-import-warning" role="status">
       <Icon name="alert" size={16} />
       <div>
-        <strong>请检查导入结果</strong>
+        <strong>{t("请检查导入结果")}</strong>
         <p>{warnings.map(importWarningMessage).join("；")}</p>
       </div>
-      <button type="button" aria-label="关闭导入质量提示" onClick={onDismiss}>
+      <button type="button" aria-label={t("关闭导入质量提示")} onClick={onDismiss}>
         <Icon name="x" size={15} />
       </button>
     </div>
@@ -315,6 +323,7 @@ export function ImportWarningBanner({ warnings, onDismiss }: { warnings: string[
 }
 
 export function ZoomFeedback({ scale }: { scale: number }) {
+  useLocale();
   return <div className="workbench-zoom-feedback" role="status" aria-live="polite">{Math.round(scale * 100)}%</div>;
 }
 
@@ -349,6 +358,7 @@ function StableSelectionToolbarBubble({
   scale: number;
   children: ReactNode;
 }) {
+  useLocale();
   const anchorRef = useRef<ReturnType<typeof createSelectionBubbleAnchor> | null>(null);
   const tippyRef = useRef<TippyInstance | null>(null);
   if (!anchorRef.current) anchorRef.current = createSelectionBubbleAnchor();
@@ -460,13 +470,13 @@ export function normalizeVersionName(value: string) {
 
 export function versionNameValidationMessage(value: string) {
   const normalized = normalizeVersionName(value);
-  if (!normalized) return "请填写版本名称";
-  if (normalized.length > MAX_VERSION_NAME_LENGTH) return `版本名称不能超过 ${MAX_VERSION_NAME_LENGTH} 个字符`;
+  if (!normalized) return t("请填写版本名称");
+  if (normalized.length > MAX_VERSION_NAME_LENGTH) return t("版本名称不能超过 {value0} 个字符", { value0: MAX_VERSION_NAME_LENGTH });
   return null;
 }
 
 function versionTime(value: string) {
-  return new Date(value).toLocaleString("zh-CN", {
+  return new Date(value).toLocaleString(getLocale(), {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",
@@ -482,15 +492,15 @@ export function versionOperationErrorMessage(error: unknown, operation: "create"
   if (operation !== "create" || !(error instanceof ApiRequestError) || error.message !== "RESUME_VERSION_LIMIT_REACHED") {
     return null;
   }
-  return "当前内容已保存，但版本数量已达上限。请删除一个旧版本后再保存新版本。";
+  return t("当前内容已保存，但版本数量已达上限。请删除一个旧版本后再保存新版本。");
 }
 
 export function versionRenameErrorMessage(error: unknown) {
   if (error instanceof ApiRequestError) {
-    if (error.message === "INVALID_RESUME_VERSION_NAME") return "版本名称不能为空且不能超过 80 个字符。";
-    if (error.message === "RESUME_VERSION_NOT_FOUND") return "该版本不存在，请刷新后重试。";
+    if (error.message === "INVALID_RESUME_VERSION_NAME") return t("版本名称不能为空且不能超过 80 个字符。");
+    if (error.message === "RESUME_VERSION_NOT_FOUND") return t("该版本不存在，请刷新后重试。");
   }
-  return "保存版本名称失败，请稍后重试。";
+  return t("保存版本名称失败，请稍后重试。");
 }
 
 export function VersionRenameAction({
@@ -510,6 +520,7 @@ export function VersionRenameAction({
   onStartRename?: () => void;
   onRename: (name: string) => void | Promise<void>;
 }) {
+  useLocale();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -538,11 +549,11 @@ export function VersionRenameAction({
     const nextName = draft.trim();
     if (busy) return;
     if (!nextName) {
-      setValidationError("请填写版本名称");
+      setValidationError(t("请填写版本名称"));
       return;
     }
     if (nextName.length > 80) {
-      setValidationError("版本名称不能超过 80 个字符");
+      setValidationError(t("版本名称不能超过 80 个字符"));
       return;
     }
     if (nextName === name.trim()) {
@@ -571,7 +582,7 @@ export function VersionRenameAction({
             value={draft}
             disabled={busy}
             aria-invalid={Boolean(visibleError)}
-            aria-label={`版本 ${versionNo} 名称`}
+            aria-label={t("版本 {value0} 名称", { value0: versionNo })}
             aria-describedby={visibleError ? `version-name-error-${versionNo}` : undefined}
             onChange={(event) => {
               setDraft(event.target.value);
@@ -593,7 +604,7 @@ export function VersionRenameAction({
           <strong title={name}>{name}</strong>
           <IconButton
             className="version-rename-icon"
-            label={`重命名版本 ${versionNo}`}
+            label={t("重命名版本 {value0}", { value0: versionNo })}
             disabled={disabled || busy}
             onClick={startEditing}
           >
@@ -698,6 +709,7 @@ export function ResumeWorkbench({
   onClose,
   onAgentSelectionChange,
 }: ResumeWorkbenchProps = {}) {
+  useLocale();
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const importWarningsByResumeId = useResumeStore((state) => state.importWarningsByResumeId);
   const dismissImportWarnings = useResumeStore((state) => state.dismissImportWarnings);
@@ -1034,12 +1046,12 @@ export function ResumeWorkbench({
     try {
       await applyTemplate(template.id, editor.getJSON());
       editor.commands.setContent(useResumeStore.getState().editorContent, false);
-      setToast({ kind: "success", label: `已切换为“${template.name}”，内容已按新模板重新排版` });
+      setToast({ kind: "success", label: t("已切换为“{value0}”，内容已按新模板重新排版", { value0: template.name }) });
     } catch (error) {
       const imageError = error instanceof ApiRequestError
         ? resumeImageContractErrorMessage(error.message)
         : null;
-      setToast({ kind: "error", label: imageError ?? "模板切换失败，当前简历未被替换" });
+      setToast({ kind: "error", label: imageError ?? t("模板切换失败，当前简历未被替换") });
     }
   };
 
@@ -1049,7 +1061,7 @@ export function ResumeWorkbench({
     const controller = new AbortController();
     pdfExportAbortRef.current = controller;
     setPdfExportPending(true);
-    setToast({ kind: "info", label: "正在生成 PDF…" });
+    setToast({ kind: "info", label: t("正在生成 PDF…") });
     void exportResumePdf({
       resumeId: activeResumeId,
       title,
@@ -1065,7 +1077,7 @@ export function ResumeWorkbench({
         };
       },
     })
-      .then(() => setToast({ kind: "success", label: "PDF 已下载" }))
+      .then(() => setToast({ kind: "success", label: t("PDF 已下载") }))
       .catch((error: unknown) => {
         if (!isResumePdfExportCancelled(error)) {
           setToast({ kind: "error", label: resumePdfExportErrorMessage(error) });
@@ -1087,7 +1099,7 @@ export function ResumeWorkbench({
       if (savedState.error) {
         setToast({
           kind: "error",
-          label: resumeImageContractErrorMessage(savedState.error) ?? "保存失败，已留在当前页面，请重试",
+          label: resumeImageContractErrorMessage(savedState.error) ?? t("保存失败，已留在当前页面，请重试"),
         });
         return;
       }
@@ -1108,7 +1120,7 @@ export function ResumeWorkbench({
     } catch {
       setDeletePending(false);
       setDeleteDialogOpen(false);
-      setToast({ kind: "error", label: "删除简历失败，请稍后重试" });
+      setToast({ kind: "error", label: t("删除简历失败，请稍后重试") });
       return;
     }
     setDeleteDialogOpen(false);
@@ -1133,8 +1145,8 @@ export function ResumeWorkbench({
   const saveKind = saveStatusKind({ saveStatus, dirty });
   const saveErrorMessage = resumeImageContractErrorMessage(saveError)
     ?? (saveError === "RESUME_EDIT_CONFLICT"
-      ? "这份简历已在其他地方修改，刷新页面后再编辑。"
-      : "已留在当前页面，请重试。");
+      ? t("这份简历已在其他地方修改，刷新页面后再编辑。")
+      : t("已留在当前页面，请重试。"));
 
   const canvas = (
     <main
@@ -1150,7 +1162,7 @@ export function ResumeWorkbench({
             ref={paperRef}
             className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}${horizontalMode ? " pages-horizontal" : ""}`}
             style={resumeStyle}
-            aria-label="可编辑简历页面"
+            aria-label={t("可编辑简历页面")}
           >
             <EditorContent editor={editor} />
           </article>
@@ -1228,10 +1240,10 @@ export function ResumeWorkbench({
             <div className="wb3-save-notice" role="alert">
               <span className="wb3-save-notice-icon" aria-hidden="true">!</span>
               <span>
-                <strong>保存失败</strong>
+                <strong>{t("保存失败")}</strong>
                 <small>{saveErrorMessage}</small>
               </span>
-              <button type="button" onClick={() => void retrySave()}>重试</button>
+              <button type="button" onClick={() => void retrySave()}>{t("重试")}</button>
             </div>
           )}
         </>
@@ -1245,10 +1257,10 @@ export function ResumeWorkbench({
         {!embedded && (
           <header className="wb3-head">
             <div className="wb3-head-left">
-              <button type="button" className="wb3-home" aria-label="返回全部简历" title="返回全部简历" onClick={() => void leaveSafely()}>
+              <button type="button" className="wb3-home" aria-label={t("返回全部简历")} title={t("返回全部简历")} onClick={() => void leaveSafely()}>
                 <Icon name="home" size={16} />
               </button>
-              <span className="wb3-context">简历编辑</span>
+              <span className="wb3-context">{t("简历编辑")}</span>
               <i className="wb3-head-sep" aria-hidden="true" />
               {editor && <WorkbenchHistoryActions editor={editor} />}
             </div>
@@ -1265,7 +1277,7 @@ export function ResumeWorkbench({
                 disabled={pdfExportPending || !activeResumeId}
                 onClick={exportPdf}
               >
-                {pdfExportPending ? "导出中…" : "导出 PDF"}
+                {pdfExportPending ? t("导出中…") : t("导出 PDF")}
               </button>
             </div>
           </header>
@@ -1320,11 +1332,11 @@ export function ResumeWorkbench({
 
         <MotionPresence>{deleteDialogOpen && (
           <ConfirmDialog
-            title={`删除“${title}”？`}
-            description="删除后无法恢复。求职记录会保留，关联简历将被清空。"
+            title={t("删除“{value0}”？", { value0: title })}
+            description={t("删除后无法恢复。求职记录会保留，关联简历将被清空。")}
             art={<DeleteResumeArt />}
-            confirmLabel="永久删除"
-            busyLabel="正在删除…"
+            confirmLabel={t("永久删除")}
+            busyLabel={t("正在删除…")}
             busy={deletePending}
             onCancel={() => setDeleteDialogOpen(false)}
             onConfirm={() => void confirmDeleteResume()}
@@ -1344,6 +1356,7 @@ export function ResumeWorkbench({
 
 // 删除确认插图：迷你简历 + 红色垃圾桶角标（舞台 372×128，同 01.1j 的构图）
 function DeleteResumeArt() {
+  useLocale();
   return (
     <Centered width={372} height={128}>
       <MiniResume x={146} y={16} w={80} h={100} />
@@ -1354,15 +1367,15 @@ function DeleteResumeArt() {
 
 function importWarningMessage(warning: string) {
   const messages: Record<string, string> = {
-    pdf_ocr_applied: "PDF 已使用 OCR，请核对姓名、日期和数字",
-    pdf_low_text_quality: "PDF 文本质量偏低，请重点核对遗漏和错字",
-    docx_embedded_images_omitted: "DOCX 中的图片未导入",
-    docx_textbox_order_may_change: "DOCX 文本框的阅读顺序可能发生变化",
-    document_heading_structure_missing: "原文缺少明确章节标题，已按全文识别",
-    source_quote_not_found: "部分结构化内容无法定位到原文短句",
-    unparsed_work_start_date: "部分工作开始日期未能识别",
-    unparsed_work_end_date: "部分工作结束日期未能识别",
-    unmapped_fragments_preserved: "部分原文已按自定义章节保留，请人工整理",
+    pdf_ocr_applied: t("PDF 已使用 OCR，请核对姓名、日期和数字"),
+    pdf_low_text_quality: t("PDF 文本质量偏低，请重点核对遗漏和错字"),
+    docx_embedded_images_omitted: t("DOCX 中的图片未导入"),
+    docx_textbox_order_may_change: t("DOCX 文本框的阅读顺序可能发生变化"),
+    document_heading_structure_missing: t("原文缺少明确章节标题，已按全文识别"),
+    source_quote_not_found: t("部分结构化内容无法定位到原文短句"),
+    unparsed_work_start_date: t("部分工作开始日期未能识别"),
+    unparsed_work_end_date: t("部分工作结束日期未能识别"),
+    unmapped_fragments_preserved: t("部分原文已按自定义章节保留，请人工整理"),
   };
-  return messages[warning] ?? "部分内容需要人工核对";
+  return messages[warning] ?? t("部分内容需要人工核对");
 }

@@ -13,6 +13,7 @@ from linkresume.core.errors import ApiError
 from linkresume.core.redis import get_redis
 from linkresume.core.security import decode_access_token, session_key
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.capabilities import wechat_login_enabled
 from linkresume.modules.identity.session_service import MINIPROGRAM_CHANNEL, WEB_CHANNEL
 from linkresume.modules.observability.audit import bind_audit_actor
 
@@ -47,8 +48,9 @@ def _load_context(
     if not session or session.get("uid") != str(user_id) or session_channel != channel:
         return None
     user = db.scalar(select(User).where(User.id == user_id))
-    if user is None or user.status != 1:
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         return None
+    request.state.session_id = sid
     bind_audit_actor(request, user.id, is_admin=bool(user.is_admin))
     request.state.auth_channel = channel
     return AuthenticationContext(user, sid, channel)
@@ -157,6 +159,8 @@ def get_optional_miniprogram_user(
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> User | None:
+    if not wechat_login_enabled(settings):
+        return None
     if request.cookies.get(settings.access_cookie_name):
         return None
     return _load_user(
@@ -167,6 +171,17 @@ def get_optional_miniprogram_user(
         settings,
         redis_client,
     )
+
+
+def lock_active_user(db: Session, user_id: int) -> User:
+    """Take the owner lock before any personal resource lock or write."""
+    user = db.scalar(
+        select(User).where(User.id == user_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
+        raise ApiError(401, "UNAUTHORIZED")
+    return user
 
 
 def get_current_user(user: User | None = Depends(get_optional_user)) -> User:

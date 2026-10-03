@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { t } from "@/i18n";
 import resumeErrorCloud from "../../assets/figma/resume-error-cloud.svg";
 import { Badge, Bar, Centered, DashArrow, Dot, FilePaper, MiniResume, Paper, StageText, TagCard } from "../../v3/art";
 
@@ -37,7 +38,7 @@ export function EmptyListArt() {
 function ModuleChip({ x, y, rotate, text }: { x: number; y: number; rotate: number; text: string }) {
   return (
     <span style={{ position: "absolute", left: x, top: y, display: "grid", width: 60, height: 24, placeItems: "center", border: "1px solid var(--v3-cl)", borderRadius: 6, background: "#fff", color: "var(--v3-sub)", fontSize: 10.5, fontWeight: 500, boxShadow: "0 2px 6px rgb(0 0 0 / 6%)", transform: `rotate(${rotate}deg)` }}>
-      {text}
+      {t(text)}
     </span>
   );
 }
@@ -129,7 +130,7 @@ export function ShareArt({ visibility, token }: { visibility: "public" | "privat
         <Bar x={12} y={58} w={118} h={3} />
         <Bar x={12} y={66} w={88} h={3} />
       </Paper>
-      <TagCard x={370} y={10} text={visibility === "public" ? "公开" : "仅自己"} dot={visibility === "public" ? "var(--v3-gn)" : "var(--v3-fnt2)"} />
+      <TagCard x={370} y={10} text={visibility === "public" ? t("公开") : t("仅自己")} dot={visibility === "public" ? "var(--v3-gn)" : "var(--v3-fnt2)"} />
     </Centered>
   );
 }

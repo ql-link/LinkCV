@@ -1,6 +1,7 @@
 // 面试日程时间冲突检测（设计稿 10.3「面试日程时间冲突」）：
 // 只看未来、未取消、未完成的安排，两段 [start, end) 有交集即算冲突。
 import type { InterviewSessionSummary } from "../../api/client";
+import { getLocale, t } from "../../i18n";
 
 export type ScheduleConflict = {
   key: string;
@@ -41,8 +42,11 @@ function shortCompany(name: string) {
 // 文案对齐设计稿：「10-09 14:00 阿里二面和美团笔试时间重叠。」
 export function describeScheduleConflict(conflict: ScheduleConflict, timezone?: string) {
   const start = new Date(interval(conflict.second)?.from ?? Date.parse(conflict.second.start_at));
-  const parts = new Intl.DateTimeFormat("zh-CN", { timeZone: timezone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(start);
+  const parts = new Intl.DateTimeFormat(getLocale(), { timeZone: timezone, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(start);
   const pick = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
   const label = (session: InterviewSessionSummary) => `${shortCompany(session.company_name)}${session.stage_label}`;
-  return `${pick("month")}-${pick("day")} ${pick("hour")}:${pick("minute")} ${label(conflict.first)}和${label(conflict.second)}时间重叠。`;
+  return t("{value0} {value1}和{value2}时间重叠。", {
+    value0: `${pick("month")}-${pick("day")} ${pick("hour")}:${pick("minute")}`,
+    value1: label(conflict.first), value2: label(conflict.second),
+  });
 }

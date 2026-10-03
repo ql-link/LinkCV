@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
@@ -7,6 +8,7 @@ import { DialogMotionState, useDialogPresence, usePresenceRef } from "./motion"
 import { cn } from "@/lib/utils"
 
 function Dialog(props: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
+  useLocale();
   const presence = useDialogPresence(props)
   return <DialogMotionState.Provider value={presence.open}><DialogPrimitive.Root {...props} {...presence} /></DialogMotionState.Provider>
 }
@@ -58,7 +60,7 @@ const DialogContent = React.forwardRef<
         className="absolute right-4 top-4 grid size-9 place-items-center bg-transparent text-muted-foreground transition-colors duration-fast hover:bg-transparent hover:text-foreground focus-visible:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-foreground"
       >
         <X className="h-[18px] w-[18px]" aria-hidden="true" />
-        <span className="sr-only">关闭</span>
+        <span className="sr-only">{t("关闭")}</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>

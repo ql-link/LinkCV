@@ -10,19 +10,20 @@ import "./app.css";
 import "./muse-templates.css";
 import "./components/ui/layout-patterns.css";
 import "./features/preview/print/resume-fonts.css";
-// V3 的数字字体（Inter）和衬线标题字体在入口就注册，并在空闲时预先加载：
-// 否则第一次出现数字或标题时才开始下载，回退字体换成正式字体的那一下会让文字上下跳动。
+// Preserve Inter for existing user-selected resume font stacks.
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
 import "@fontsource/inter/700.css";
+// Register local product fonts before rendering to reduce fallback reflow.
+import "./design-system/fonts.css";
 import "@fontsource/noto-serif-sc/600.css";
 
 installCryptoRandomUuid();
 
 if (typeof document !== "undefined" && "fonts" in document) {
-  for (const font of ["400 12px Inter", "500 12px Inter", "600 12px Inter", "700 12px Inter", "600 28px \"Noto Serif SC\""]) {
-    void document.fonts.load(font, "0123456789 年月日模板简历").catch(() => undefined);
+  for (const font of ["400 14px Poppins", "500 14px Poppins", "600 28px Poppins", "400 16px Lora", "600 28px \"Noto Serif SC\""]) {
+    void document.fonts.load(font, "Account Aa 0123456789 年月日模板简历").catch(() => undefined);
   }
 }
 

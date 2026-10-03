@@ -106,8 +106,8 @@
 .v3-page.tpl-page { margin: 0 auto; padding-right: max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)); padding-left: max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)); }
 
 /* 页头行高按画板：眉题 52 / 13 高，标题 74 / 40 高，副标题 120 / 16 高 */
-.tpl-page .v3-page-eyebrow { line-height: 13px; }
-.tpl-page .v3-page-title { margin-top: 9px; line-height: 40px; }
+.tpl-page .v3-page-eyebrow { line-height: var(--ui-line-metadata); }
+.tpl-page .v3-page-title { margin-top: 9px; line-height: var(--ui-line-page-title); }
 .tpl-page .v3-page-sub { margin-top: 6px; line-height: 16px; }
 
 /* 摘要行：「找到 N 套模板 · 清除筛选」左，「需后端 · 按热度排序 · 筛选」右；按钮顶 164，距副标题 28 */
@@ -156,7 +156,7 @@
 /* 把整份 A4 缩到缩略图宽度 */
 .tpl-card-thumb .resume-readonly-preview-card .resume-preview-paper { top: 0; scale: calc(100cqw / 210mm); }
 .tpl-page[data-resizing] .tpl-card-thumb .resume-preview-paper { will-change: transform; }
-.tpl-card-name { overflow: hidden; margin: 14px 0 0; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-card-name { overflow: hidden; margin: 14px 0 0; color: var(--v3-txt); font-size: var(--ui-text-sm); font-weight: 500; line-height: var(--ui-line-control); text-overflow: ellipsis; white-space: nowrap; }
 .tpl-card-meta { display: flex; height: 20px; align-items: center; gap: 6px; margin-top: 4px; }
 .tpl-card-uses { margin-left: auto; color: var(--v3-fnt); font-family: var(--v3-num); font-size: 10.5px; white-space: nowrap; }
 

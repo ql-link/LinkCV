@@ -35,7 +35,7 @@ FastAPI 在 `apps/backend/src/linkresume/main.py` 以 `/api` 前缀挂载浏览�
 
 - MySQL 是用户、简历、Agent 会话/提案、结构化 JD 和治理数据的权威存储，表结构只通过 Alembic 迁移演进。各业务对象归属见对应[功能文档](../README.md#功能文档)。
 - Web 登录态使用短 JWT access Cookie 与不透明 refresh Cookie；小程序与 desktop 分别使用独立渠道的 Bearer access 与 JSON refresh，Redis session channel 阻止三渠道凭据混用并支持统一撤销，桌面协议见 [HTTP 契约](../api/http-contracts.md#桌面-bearer-会话)。启用管理员可使用小程序本人资料、只读简历和扫码确认能力，停用账号仍会被拒绝。小程序游客示例、隐私确认、主动登录、预览缓存、交互视口和本地调试安全回退见 [小程序架构](miniprogram.md)。
-- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Development 可使用邮箱密码或微信扫码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`，管理员也可通过微信双端登录。
+- 普通 Web 登录页由 `/api/auth/capabilities` 控制：Local/Development 只使用邮箱密码，Production 只显示微信小程序码；管理员密码表单只存在于 `/admin/login`，管理员也可通过微信双端登录。
 - 图片存储在私有 MinIO bucket 中；现有兼容资源位于 `users/<user-id>/assets/`，简历编辑器新增资源位于 `users/<user-id>/resumes/<resume-id>/assets/`，两者都由服务端生成对象键并在读取时校验所有权。
 - 原型 Express/SQLite 数据不迁移到 MySQL。
 
@@ -45,3 +45,8 @@ FastAPI 在 `apps/backend/src/linkresume/main.py` 以 `/api` 前缀挂载浏览�
 - Vite 使用 `BACKEND_PORT` 构造默认代理目标，也允许 `BACKEND_PROXY_TARGET` 覆盖完整地址。
 - Pi 服务默认监听 `127.0.0.1:8010`；FastAPI 与 Pi 使用相反方向的内网 URL 和两枚独立服务 token，不复用用户 Cookie。
 - 数据库、JWT、MinIO 和 LinkParse 变量以 `.env.example` 为入口；本地依赖端口以 `deploy/docker-compose.yml` 为入口。LinkParse API Key 只进入被忽略的 `.local` 覆盖或进程环境。
+
+
+## 账号能力与客户端边界
+
+账号偏好、联系邮箱和持久注销由 FastAPI 账号模块管理，清理执行器复用现有 Worker 进程；普通 Web 语言由 i18n 消息模块和账号偏好驱动。环境认证能力与数据清理边界见[账号功能](../features/identity-account.md)。

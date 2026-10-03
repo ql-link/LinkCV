@@ -831,3 +831,11 @@ test("planning catalog reveals authorized identities without another task's body
   assert.match(catalog, /示例岗位/);
   assert.doesNotMatch(catalog, /PRIVATE_FIRST_TASK|PRIVATE_SECOND_TASK/);
 });
+
+test("career profile materials expose only the explicitly selected career fields", () => {
+  const profile = { type: "user_profile", id: "1", version: "3", label: "个人画像", updated_at: "2026-10-02T00:00:00Z", content: { profile_markdown: "- skills: React, TypeScript" } };
+  assert.deepEqual(validateContextMaterials([profile]), [profile]);
+  assert.match(formatContextMaterials([profile]), /React, TypeScript/);
+  assert.throws(() => validateContextMaterials([{ ...profile, content: { ...profile.content, contact_email: "fictional@example.test" } }]), /INVALID_CONTEXT_MATERIALS/);
+  assert.throws(() => validateContextMaterials([profile, profile]), /INVALID_CONTEXT_MATERIALS/);
+});

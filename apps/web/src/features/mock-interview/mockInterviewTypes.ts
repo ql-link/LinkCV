@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 // 模拟面试的前端类型、错误与标签。类型与 FastAPI modules/mock_interviews/schemas.py 对齐，
 // 详见 docs/api/http-contracts.md#ai-模拟面试。
 
@@ -171,18 +172,18 @@ export class MockInterviewError extends Error {
 }
 
 export const INTERVIEW_TYPE_LABELS: Record<MockInterviewType, string> = {
-  technical: "技术面",
-  project_deep_dive: "项目深挖",
-  comprehensive: "综合面",
-  hr: "HR 面",
+  get technical() { return t("技术面"); },
+  get project_deep_dive() { return t("项目深挖"); },
+  get comprehensive() { return t("综合面"); },
+  get hr() { return t("HR 面"); },
 };
-export const DIFFICULTY_LABELS: Record<MockDifficulty, string> = { junior: "初级", intermediate: "中级", senior: "高级" };
+export const DIFFICULTY_LABELS: Record<MockDifficulty, string> = { get junior() { return t("初级"); }, get intermediate() { return t("中级"); }, get senior() { return t("高级"); } };
 export const DIMENSION_LABELS: Record<MockDimension["key"], string> = {
-  professional_depth: "专业深度",
-  structure: "表达结构",
-  job_fit: "岗位匹配",
-  resume_consistency: "简历一致性",
-  communication: "沟通表现",
+  get professional_depth() { return t("专业深度"); },
+  get structure() { return t("表达结构"); },
+  get job_fit() { return t("岗位匹配"); },
+  get resume_consistency() { return t("简历一致性"); },
+  get communication() { return t("沟通表现"); },
 };
 export const ACTIVE_STATUSES: MockInterviewStatus[] = ["preparing", "in_progress", "evaluating"];
 

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { AppRoute } from "./routing";
 
 export const SITE_URL = "https://linkresume.cn";
@@ -7,6 +8,7 @@ export const SITE_DESCRIPTION = "LinkResume 是面向中文求职者的一站式
 export const SOCIAL_DESCRIPTION = "从简历制作与优化，到岗位追踪和面试复盘，LinkResume 帮你清晰管理求职过程中的每一步。";
 
 const privateRouteTitles: Partial<Record<AppRoute["kind"], string>> = {
+  accountDeletion: "账号注销进度 | LinkResume",
   account: "账号设置 | LinkResume",
   admin: "管理后台 | LinkResume",
   adminLogin: "管理员登录 | LinkResume",
@@ -16,6 +18,7 @@ const privateRouteTitles: Partial<Record<AppRoute["kind"], string>> = {
   editor: "简历编辑器 | LinkResume",
   interviews: "求职中心 | LinkResume",
   jobDetail: "岗位详情 | LinkResume",
+  mockInterview: "模拟面试 | LinkResume",
   notFound: "页面不存在 | LinkResume",
   resumeCreate: "创建简历 | LinkResume",
   resumes: "我的简历 | LinkResume",
@@ -51,7 +54,7 @@ function setCanonical(href: string | null) {
 
 export function applyRouteSeo(route: AppRoute) {
   const isLanding = route.kind === "landing";
-  const title = isLanding ? SITE_TITLE : privateRouteTitles[route.kind] ?? SITE_NAME;
+  const title = isLanding ? SITE_TITLE : (privateRouteTitles[route.kind] ? `${t(privateRouteTitles[route.kind]!.replace(" | LinkResume", ""))} | LinkResume` : SITE_NAME);
   document.title = title;
 
   upsertMeta('meta[name="description"]', { name: "description" }, isLanding ? SITE_DESCRIPTION : "LinkResume AI 简历制作与求职管理平台。此页面不对搜索引擎开放索引。");

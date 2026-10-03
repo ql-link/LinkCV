@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import "./print/resume-print.css";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import type { CanonicalResumeDocument, CanonicalResumePresentation, LayoutPlan } from "../../api/client";
@@ -16,6 +17,7 @@ export function ResumePreview({
   layoutPlan?: LayoutPlan | null;
   mode?: "card" | "full";
 }) {
+  useLocale();
   const documentHtml = useMemo(
     () => renderResumePrintDocument({ title: resumeDocumentTitle(data) || "LinkResume Resume", data, style, layout_plan: layoutPlan }),
     [data, layoutPlan, style],
@@ -37,7 +39,7 @@ export function ResumePreview({
     <div
       ref={previewRef}
       className={`resume-readonly-preview resume-readonly-preview-${mode}`}
-      aria-label="简历只读预览"
+      aria-label={t("简历只读预览")}
       dangerouslySetInnerHTML={{ __html: documentHtml }}
     />
   );

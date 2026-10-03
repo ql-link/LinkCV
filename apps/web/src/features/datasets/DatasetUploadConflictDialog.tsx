@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useRef, useState } from "react";
 import { api, ApiRequestError, type DatasetRecord } from "../../api/client";
 import { Dialog, DialogFooter, Select } from "../../v3/primitives";
@@ -30,6 +31,7 @@ export function DatasetUploadConflictDialog({
   conflict: DatasetConflict;
   onDone: () => void;
 }) {
+  useLocale();
   const [name, setName] = useState(conflict.suggestedName);
   const [target, setTarget] = useState(conflict.candidates[0]?.id ?? "");
   // 默认选中「保留两份」（与画板一致，也更安全）
@@ -61,7 +63,7 @@ export function DatasetUploadConflictDialog({
           .slice(conflict.file.name.lastIndexOf("."))
           .toLowerCase()
     ) {
-      setError("重命名时请保留原文件扩展名。");
+      setError(t("重命名时请保留原文件扩展名。"));
       return;
     }
     const request = attempt.current ?? {
@@ -94,13 +96,13 @@ export function DatasetUploadConflictDialog({
       const ambiguous = !(e instanceof ApiRequestError) || e.status >= 500;
       setUncertain(ambiguous);
       if (ambiguous) {
-        setError("暂时无法确认上传结果，请重试以查询同一次上传。");
+        setError(t("暂时无法确认上传结果，请重试以查询同一次上传。"));
       } else {
         attempt.current = null;
         setError(
           e.status === 412
-            ? "原文件已更新，请取消并重新上传，确认最新文件后再替换。"
-            : "操作未完成，文件可能正在处理中，或名称仍有冲突。",
+            ? t("原文件已更新，请取消并重新上传，确认最新文件后再替换。")
+            : t("操作未完成，文件可能正在处理中，或名称仍有冲突。"),
         );
       }
     } finally {
@@ -114,20 +116,20 @@ export function DatasetUploadConflictDialog({
     : choice === "replace" ? replaceDisabled : !name.trim();
 
   return (
-    <Dialog width={520} label="文件夹里已有同名文件" className="ds-dialog" closable={!locked} onClose={() => { if (!locked) done(null); }}>
+    <Dialog width={520} label={t("文件夹里已有同名文件")} className="ds-dialog" closable={!locked} onClose={() => { if (!locked) done(null); }}>
       <div className="v3-dialog-body">
-        <h2 className="v3-dialog-title">文件夹里已有同名文件</h2>
-        <p className="v3-dialog-sub ds-one-line" title={existingName}>「{existingName}」已经存在，选择要怎么处理。</p>
+        <h2 className="v3-dialog-title">{t("文件夹里已有同名文件")}</h2>
+        <p className="v3-dialog-sub ds-one-line" title={existingName}>「{existingName}{t("」已经存在，选择要怎么处理。")}</p>
         <div className="v3-stage ds-dialog-art" style={{ height: 96 }}>
           <ConflictArt name={conflict.file.name} />
         </div>
-        <div className="ds-options" role="radiogroup" aria-label="同名文件处理方式">
+        <div className="ds-options" role="radiogroup" aria-label={t("同名文件处理方式")}>
           <div
             className={`ds-option${replaceDisabled ? " is-disabled" : ""}`}
             role="radio"
             aria-checked={choice === "replace"}
             aria-disabled={replaceDisabled || locked}
-            aria-label="替换现有文件"
+            aria-label={t("替换现有文件")}
             tabIndex={0}
             onClick={() => { if (!replaceDisabled && !locked) setChoice("replace"); }}
             onKeyDown={(event) => {
@@ -139,13 +141,13 @@ export function DatasetUploadConflictDialog({
           >
             <span className={`v3-radio${choice === "replace" ? " is-on" : ""}`} aria-hidden="true" />
             <div className="ds-option-copy">
-              <strong>替换现有文件</strong>
-              <small>替换会先删除原文件和解析内容，再上传新文件；失败后不会恢复原文件。</small>
+              <strong>{t("替换现有文件")}</strong>
+              <small>{t("替换会先删除原文件和解析内容，再上传新文件；失败后不会恢复原文件。")}</small>
               {conflict.candidates.length > 1 && (
                 <div onClick={(event) => event.stopPropagation()}>
                   <Select
                     size="sm"
-                    label="选择要替换的文件"
+                    label={t("选择要替换的文件")}
                     disabled={locked}
                     value={target}
                     options={conflict.candidates.map((c) => ({ value: c.id, label: `${c.file_name} · ${new Date(c.created_at).toLocaleString()}` }))}
@@ -160,7 +162,7 @@ export function DatasetUploadConflictDialog({
             role="radio"
             aria-checked={choice === "rename"}
             aria-disabled={locked}
-            aria-label="保留两份"
+            aria-label={t("保留两份")}
             tabIndex={0}
             onClick={() => { if (!locked) setChoice("rename"); }}
             onKeyDown={(event) => {
@@ -172,30 +174,28 @@ export function DatasetUploadConflictDialog({
           >
             <span className={`v3-radio${choice === "rename" ? " is-on" : ""}`} aria-hidden="true" />
             <div className="ds-option-copy">
-              <strong>保留两份</strong>
-              <small>给新文件换个名字。</small>
+              <strong>{t("保留两份")}</strong>
+              <small>{t("给新文件换个名字。")}</small>
               <input
                 id="conflict-name"
                 className="v3-input is-filled"
-                aria-label="新文件名称"
+                aria-label={t("新文件名称")}
                 value={name}
                 disabled={locked}
                 onFocus={() => setChoice("rename")}
                 onClick={(event) => event.stopPropagation()}
                 onChange={(event) => { setName(event.target.value); setChoice("rename"); setError(""); }}
               />
-              <span className="ds-option-hint">重命名时请保留原文件扩展名。</span>
+              <span className="ds-option-hint">{t("重命名时请保留原文件扩展名。")}</span>
             </div>
           </div>
         </div>
         {error && <p className="ds-inline-error" role="alert">{error}</p>}
       </div>
       <DialogFooter>
-        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={locked} onClick={() => done(null)}>取消</button>
+        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={locked} onClick={() => done(null)}>{t("取消")}</button>
         {uncertain ? (
-          <button type="button" className="v3-btn v3-btn-dark" disabled={busy} onClick={() => void submit(attempt.current?.replace ?? true)}>
-            重试确认结果
-          </button>
+          <button type="button" className="v3-btn v3-btn-dark" disabled={busy} onClick={() => void submit(attempt.current?.replace ?? true)}>{t("重试确认结果")}</button>
         ) : (
           <button
             type="button"
@@ -204,7 +204,7 @@ export function DatasetUploadConflictDialog({
             disabled={primaryDisabled}
             onClick={() => void submit(choice === "replace")}
           >
-            {busy ? "正在上传…" : "上传"}
+            {busy ? t("正在上传…") : t("上传")}
           </button>
         )}
       </DialogFooter>

@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from minio.error import S3Error
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from linkresume.core.database import get_db
 
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import (
@@ -15,7 +17,7 @@ from linkresume.core.storage import (
     get_storage,
     infer_image_content_type,
 )
-from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user
+from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user, lock_active_user
 from linkresume.modules.identity.models import User
 
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -50,7 +52,9 @@ def upload_asset(
     payload: AssetUploadRequest,
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
+    db: Session = Depends(get_db),
 ) -> AssetUploadResponse:
+    user = lock_active_user(db, user.id)
     image = decode_image_data_url(payload.dataUrl)
     if image is None:
         raise ApiError(400, "INVALID_IMAGE")

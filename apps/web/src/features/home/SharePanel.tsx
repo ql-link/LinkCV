@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ResumeShareState, type ResumeShareUpdatePayload } from "../../api/client";
@@ -21,13 +22,13 @@ function isShareExpired(expiresAt: string | null) {
 
 // 有效期文案：Figma 写法「有效至 2026-10-27 18:00」
 function formatShareExpiry(expiresAt: string | null, expired = false) {
-  if (!expiresAt) return "永久有效";
+  if (!expiresAt) return t("永久有效");
   const time = parseShareExpiry(expiresAt);
-  if (time === null) return "到期时间不可用";
+  if (time === null) return t("到期时间不可用");
   const date = new Date(time);
   const pad = (value: number) => String(value).padStart(2, "0");
   const label = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  return expired ? `已于 ${label} 过期` : `有效至 ${label}`;
+  return expired ? t("已于 {value0} 过期", { value0: label }) : t("有效至 {value0}", { value0: label });
 }
 
 type SharePanelProps = {
@@ -37,17 +38,17 @@ type SharePanelProps = {
 };
 
 const EXPIRY_OPTIONS = [
-  { key: "7d", label: "7 天", expiresAt: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() },
-  { key: "1m", label: "30 天", expiresAt: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
-  { key: "forever", label: "永久", expiresAt: () => null },
+  { key: "7d", get label() { return t("7 天"); }, expiresAt: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() },
+  { key: "1m", get label() { return t("30 天"); }, expiresAt: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+  { key: "forever", get label() { return t("永久"); }, expiresAt: () => null },
 ] as const;
 
 type ExpiryKey = (typeof EXPIRY_OPTIONS)[number]["key"];
 type Visibility = "private" | "public";
 
 const VISIBILITY_OPTIONS: Array<{ value: Visibility; label: string }> = [
-  { value: "public", label: "公开" },
-  { value: "private", label: "仅自己" },
+  { value: "public", get label() { return t("公开"); } },
+  { value: "private", get label() { return t("仅自己"); } },
 ];
 
 function shareUrl(token: string) {
@@ -67,6 +68,7 @@ function matchExpiry(expiresAt: string | null): ExpiryKey | null {
 
 // 设置卡里的一行：左侧标题 + 说明，右侧控件
 function SettingRow({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+  useLocale();
   return (
     <div className="v3-grow hv3-share-row">
       <div className="v3-grow-copy">
@@ -80,6 +82,7 @@ function SettingRow({ title, hint, children }: { title: string; hint: string; ch
 
 // 02.1d 分享简历（520 宽）：插图 → 链接栏（唯一黑按钮「复制链接」）→ 状态 → 设置卡 → 底部重新生成 / 删除 + 完成
 export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) {
+  useLocale();
   const close = useStableCallback(onClose);
   const [share, setShare] = useState<ResumeShareState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,7 +108,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     setLoading(true);
     void load()
       .catch(() => {
-        if (!cancelled) setError("分享状态读取失败，请稍后重试。");
+        if (!cancelled) setError(t("分享状态读取失败，请稍后重试。"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -136,7 +139,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
       allow_download: createAllowDownload,
     });
     setShare(result.share);
-  }, "生成分享链接失败，请稍后重试。");
+  }, t("生成分享链接失败，请稍后重试。"));
 
   // 重新生成：保留可见性与下载权限；未过期保留原到期时间，已过期按原有效时长顺延（推算不出时默认 7 天）
   const regenerate = () => {
@@ -157,14 +160,14 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         allow_download: share.share_allow_download,
       });
       setShare(result.share);
-    }, "重新生成分享链接失败，请稍后重试。");
+    }, t("重新生成分享链接失败，请稍后重试。"));
   };
 
   const updateConfig = (payload: ResumeShareUpdatePayload) =>
     runAction(async () => {
       const result = await api.updateShare(resumeId, payload);
       setShare(result.share);
-    }, "更新链接配置失败，请稍后重试。");
+    }, t("更新链接配置失败，请稍后重试。"));
 
   // 下载开关先乐观更新，失败回滚
   const updateAllowDownload = async (allowDownload: boolean) => {
@@ -179,7 +182,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
       setShare(result.share);
     } catch {
       setShare(previousShare);
-      setError("更新链接配置失败，请稍后重试。");
+      setError(t("更新链接配置失败，请稍后重试。"));
     } finally {
       allowDownloadPendingRef.current = false;
       setAllowDownloadPending(false);
@@ -193,7 +196,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError("复制失败，请手动复制链接。");
+      setError(t("复制失败，请手动复制链接。"));
     }
   };
 
@@ -203,10 +206,10 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
   const originalCreatedAt = parseShareExpiry(share?.share_created_at ?? null);
   const canRenewOriginalDuration = originalExpiresAt !== null && originalCreatedAt !== null && originalCreatedAt < originalExpiresAt;
   const regenerationExpiryDescription = !expired
-    ? "现有到期时间会保留。"
+    ? t("现有到期时间会保留。")
     : canRenewOriginalDuration
-      ? "新链接按原有效时长重新计算到期时间。"
-      : "原有效时长无法确定，新链接默认有效 7 天。";
+      ? t("新链接按原有效时长重新计算到期时间。")
+      : t("原有效时长无法确定，新链接默认有效 7 天。");
   const locked = busy || allowDownloadPending;
   const visibility = share?.share_visibility ?? createVisibility;
   const allowDownload = share ? share.share_allow_download : createAllowDownload;
@@ -216,22 +219,22 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     <>
       <Dialog
         width={520}
-        label={`分享「${resumeTitle}」`}
+        label={t("分享「{value0}」", { value0: resumeTitle })}
         onClose={close}
         closable={!confirmOpen}
         className="hv3-share"
       >
         <div className="v3-dialog-body" data-download-pending={allowDownloadPending || undefined}>
-          <h2 className="v3-dialog-title">分享简历</h2>
-          <p className="v3-dialog-sub hv3-share-sub">为「{resumeTitle}」生成只读链接，对方不用登录就能查看。</p>
+          <h2 className="v3-dialog-title">{t("分享简历")}</h2>
+          <p className="v3-dialog-sub hv3-share-sub">{t("为「")}{resumeTitle}{t("」生成只读链接，对方不用登录就能查看。")}</p>
           <div className="v3-stage has-dots hv3-share-stage"><ShareArt visibility={visibility} token={share?.share_token} /></div>
 
           {loading ? (
-            <div className="hv3-share-loading" role="status" aria-label="正在读取分享状态…">正在读取分享状态…</div>
+            <div className="hv3-share-loading" role="status" aria-label={t("正在读取分享状态…")}>{t("正在读取分享状态…")}</div>
           ) : error && !share && !busy && !createPending(error) ? (
             <div className="hv3-share-loading">
               <p className="hv3-share-error" role="alert">{error}</p>
-              <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void load().catch(() => setError("分享状态读取失败，请稍后重试。"))}>重试</button>
+              <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void load().catch(() => setError(t("分享状态读取失败，请稍后重试。")))}>{t("重试")}</button>
             </div>
           ) : (
             <>
@@ -240,24 +243,24 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                   <div className={`hv3-share-link${expired ? " is-expired" : ""}`}>
                     <Icon name="link" size={14} />
                     <span className="hv3-share-url v3-num" title={expired ? undefined : shareUrl(share.share_token)}>
-                      {expired ? "该分享链接已失效，访客将无法继续访问简历" : shareUrl(share.share_token)}
+                      {expired ? t("该分享链接已失效，访客将无法继续访问简历") : shareUrl(share.share_token)}
                     </span>
                     <button type="button" className="v3-btn v3-btn-dark hv3-share-copy" onClick={() => void copyLink()} disabled={busy || expired}>
-                      {expired ? "不可复制" : copied ? "已复制" : "复制链接"}
+                      {expired ? t("不可复制") : copied ? t("已复制") : t("复制链接")}
                     </button>
                   </div>
                   <p className={`hv3-share-status${expired ? " is-expired" : ""}`} role="status">
                     <span className="hv3-share-dot" />
-                    <span className="hv3-share-status-label">{expired ? "链接已过期" : "链接可用"}</span>
+                    <span className="hv3-share-status-label">{expired ? t("链接已过期") : t("链接可用")}</span>
                     <span className="hv3-share-status-time v3-num">{formatShareExpiry(share.share_expires_at, expired)}</span>
                   </p>
                 </>
               )}
 
               <div className="v3-gcard hv3-share-settings">
-                <SettingRow title="谁可以查看" hint={visibility === "public" ? "公开后，拿到链接的人都能打开" : "仅自己登录后可以打开"}>
+                <SettingRow title={t("谁可以查看")} hint={visibility === "public" ? t("公开后，拿到链接的人都能打开") : t("仅自己登录后可以打开")}>
                   <Segmented<Visibility>
-                    label="访问权限"
+                    label={t("访问权限")}
                     value={visibility}
                     options={VISIBILITY_OPTIONS}
                     onChange={(value) => {
@@ -268,9 +271,9 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                     }}
                   />
                 </SettingRow>
-                <SettingRow title="链接有效期" hint="到期后链接自动失效，可以重新生成">
+                <SettingRow title={t("链接有效期")} hint={t("到期后链接自动失效，可以重新生成")}>
                   <Segmented<ExpiryKey | "custom">
-                    label="有效期"
+                    label={t("有效期")}
                     value={share ? currentExpiry ?? "custom" : createExpiry}
                     options={EXPIRY_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
                     onChange={(value) => {
@@ -282,11 +285,11 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
                   />
                 </SettingRow>
                 <SettingRow
-                  title="允许下载 PDF"
-                  hint={allowDownload ? "关闭后，公开页面不显示下载入口" : "关闭后，任何访问者（包括分享者）均不可下载"}
+                  title={t("允许下载 PDF")}
+                  hint={allowDownload ? t("关闭后，公开页面不显示下载入口") : t("关闭后，任何访问者（包括分享者）均不可下载")}
                 >
                   <Toggle
-                    label="允许下载 PDF"
+                    label={t("允许下载 PDF")}
                     checked={allowDownload}
                     disabled={locked}
                     onChange={(next) => {
@@ -306,23 +309,20 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
             {share && (
               <>
                 <button type="button" className="v3-link hv3-share-regen" disabled={locked} onClick={() => setConfirmRegenerate(true)}>
-                  <Icon name="refresh" size={13} />重新生成链接
-                </button>
-                <button type="button" className="v3-link hv3-share-delete" disabled={locked} onClick={() => setConfirmDelete(true)}>
-                  删除链接
-                </button>
+                  <Icon name="refresh" size={13} />{t("重新生成链接")}</button>
+                <button type="button" className="v3-link hv3-share-delete" disabled={locked} onClick={() => setConfirmDelete(true)}>{t("删除链接")}</button>
               </>
             )}
           </div>
           {!loading && !share ? (
             <>
-              <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" onClick={onClose}>取消</button>
+              <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" onClick={onClose}>{t("取消")}</button>
               <button type="button" className="v3-btn v3-btn-dark" disabled={busy} onClick={() => void createShare()}>
-                {busy ? "正在创建…" : "创建分享链接"}
+                {busy ? t("正在创建…") : t("创建分享链接")}
               </button>
             </>
           ) : (
-            <button type="button" className="v3-btn v3-btn-ghost hv3-share-done" onClick={onClose}>完成</button>
+            <button type="button" className="v3-btn v3-btn-ghost hv3-share-done" onClick={onClose}>{t("完成")}</button>
           )}
         </div>
       </Dialog>
@@ -330,10 +330,10 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
       <MotionPresence>{confirmRegenerate && (
         <ConfirmDialog
           danger={false}
-          title="重新生成分享链接？"
-          description={`重新生成后旧链接将立即失效，已转发的旧地址无法再访问。「${resumeTitle}」的可见性与下载权限会保留。${regenerationExpiryDescription}`}
-          confirmLabel="确认重新生成"
-          busyLabel="正在重新生成…"
+          title={t("重新生成分享链接？")}
+          description={t("重新生成后旧链接将立即失效，已转发的旧地址无法再访问。「{value0}」的可见性与下载权限会保留。{value1}", { value0: resumeTitle, value1: regenerationExpiryDescription })}
+          confirmLabel={t("确认重新生成")}
+          busyLabel={t("正在重新生成…")}
           busy={busy}
           onCancel={() => setConfirmRegenerate(false)}
           onConfirm={() => {
@@ -344,10 +344,10 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
       )}</MotionPresence>
       <MotionPresence>{confirmDelete && (
         <ConfirmDialog
-          title="删除分享链接？"
-          description={`删除后旧地址将显示「分享链接已失效」，之后可重新创建。「${resumeTitle}」本身不受影响。`}
-          confirmLabel="确认删除"
-          busyLabel="正在删除…"
+          title={t("删除分享链接？")}
+          description={t("删除后旧地址将显示「分享链接已失效」，之后可重新创建。「{value0}」本身不受影响。", { value0: resumeTitle })}
+          confirmLabel={t("确认删除")}
+          busyLabel={t("正在删除…")}
           busy={busy}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
@@ -358,7 +358,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
               setCreateExpiry("forever");
               setCreateAllowDownload(true);
               setShare(null);
-            }, "删除分享链接失败，请稍后重试。");
+            }, t("删除分享链接失败，请稍后重试。"));
           }}
         />
       )}</MotionPresence>
@@ -368,5 +368,5 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
 
 // 只有「读取失败」才进入重试态；创建 / 删除失败仍留在设置界面并显示错误
 function createPending(error: string) {
-  return error !== "分享状态读取失败，请稍后重试。";
+  return error !== t("分享状态读取失败，请稍后重试。");
 }

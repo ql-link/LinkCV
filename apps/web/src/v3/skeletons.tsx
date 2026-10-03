@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 // 骨架屏：页面等数据（或等页面代码加载）时，先按真实页面的版式画出灰色占位块。
 // 两个用途共用同一套版式，避免「转圈 → 骨架 → 内容」三段切换造成的闪烁：
 //   1. 路由级：页面代码还在下载时，App.tsx 用 <RouteSkeleton section> 画整页（页头 + 主体）。
@@ -8,10 +9,12 @@ import type { V3Section } from "./Shell";
 import "./skeletons.css";
 
 export function Sk({ w, h = 12, r, style, className = "" }: { w?: number | string; h?: number | string; r?: number; style?: CSSProperties; className?: string }) {
+  useLocale();
   return <span aria-hidden="true" className={`v3-sk ${className}`} style={{ width: w, height: h, borderRadius: r, ...style }} />;
 }
 
 function SkeletonRoot({ label, className = "", children }: { label: string; className?: string; children: ReactNode }) {
+  useLocale();
   return (
     <div className={`v3-skeleton ${className}`} role="status" aria-busy="true" aria-label={label}>
       {children}
@@ -21,6 +24,7 @@ function SkeletonRoot({ label, className = "", children }: { label: string; clas
 
 // 页头：小字 + 衬线大标题 + 副标题，右侧按钮
 export function SkeletonHead({ actions = 1, sub = true }: { actions?: number; sub?: boolean }) {
+  useLocale();
   return (
     <div className="v3-sk-head">
       <div>
@@ -37,6 +41,7 @@ export function SkeletonHead({ actions = 1, sub = true }: { actions?: number; su
 
 // 卡片网格（简历、模板）：A4 比例纸面 + 两行文字
 export function SkeletonGrid({ count = 8, label = "正在加载…", className = "" }: { count?: number; label?: string; className?: string }) {
+  useLocale();
   return (
     <SkeletonRoot label={label} className={`v3-sk-grid ${className}`}>
       {Array.from({ length: count }, (_, index) => (
@@ -53,6 +58,7 @@ export function SkeletonGrid({ count = 8, label = "正在加载…", className =
 
 // 列表 / 表格：可选表头 + 若干行
 export function SkeletonRows({ rows = 6, label = "正在加载…", header = true, className = "" }: { rows?: number; label?: string; header?: boolean; className?: string }) {
+  useLocale();
   return (
     <SkeletonRoot label={label} className={`v3-sk-rows ${className}`}>
       {header && <div className="v3-sk-row is-head"><Sk w={64} h={10} /><Sk w={48} h={10} /><Sk w={40} h={10} /><Sk w={56} h={10} /></div>}
@@ -70,6 +76,7 @@ export function SkeletonRows({ rows = 6, label = "正在加载…", header = tru
 
 // 若干张收纳卡片（账号、报告、详情页）
 export function SkeletonCards({ cards = [120, 180, 140], label = "正在加载…", className = "" }: { cards?: number[]; label?: string; className?: string }) {
+  useLocale();
   return (
     <SkeletonRoot label={label} className={`v3-sk-cards ${className}`}>
       {cards.map((height, index) => (
@@ -85,6 +92,7 @@ export function SkeletonCards({ cards = [120, 180, 140], label = "正在加载�
 
 // 看板：列宽随容器变化，预留足够的占位列供超宽屏显示。
 export function SkeletonBoard({ label = "正在加载求职数据…" }: { label?: string }) {
+  useLocale();
   return (
     <SkeletonRoot label={label} className="v3-sk-board">
       {[3, 2, 2, 1, 2, 3, 2, 2, 1, 2].map((count, column) => (
@@ -99,6 +107,7 @@ export function SkeletonBoard({ label = "正在加载求职数据…" }: { label
 
 // 日历：7 列 × 若干行的格子
 export function SkeletonCalendar({ label = "正在加载日程…" }: { label?: string }) {
+  useLocale();
   return (
     <SkeletonRoot label={label} className="v3-sk-calendar">
       <div className="v3-sk-calendar-bar"><Sk w={112} h={30} r={8} /><Sk w={120} h={30} r={8} /></div>
@@ -116,10 +125,11 @@ export function SkeletonCalendar({ label = "正在加载日程…" }: { label?: 
 
 // 路由级整页骨架：页面代码下载期间显示，版式与各页面加载数据时的骨架一致
 export function RouteSkeleton({ section }: { section: V3Section }) {
+  useLocale();
   // 首页是居中的对话输入区，不套页头
   if (section === "home") {
     return (
-      <div className="v3-sk-page is-home" role="status" aria-busy="true" aria-label="正在加载页面…">
+      <div className="v3-sk-page is-home" role="status" aria-busy="true" aria-label={t("正在加载页面…")}>
         <Sk w={260} h={30} r={6} />
         <Sk w={340} h={12} style={{ marginTop: 14 }} />
         <div className="v3-sk-home-cards">{[0, 1, 2].map((index) => <Sk key={index} h={150} r={12} />)}</div>
@@ -141,7 +151,7 @@ export function RouteSkeleton({ section }: { section: V3Section }) {
               ? <SkeletonCards cards={[196, 150, 120]} />
               : <SkeletonCards />;
   return (
-    <div className={`v3-sk-page is-${section}`} role="status" aria-busy="true" aria-label="正在加载页面…">
+    <div className={`v3-sk-page is-${section}`} role="status" aria-busy="true" aria-label={t("正在加载页面…")}>
       <SkeletonHead actions={section === "jobs" || section === "datasets" ? 2 : 1} />
       {body}
     </div>
@@ -169,6 +179,7 @@ export function Reveal({
   inline?: boolean;
   className?: string;
 }) {
+  useLocale();
   const [loadingSince, setLoadingSince] = useState<number | null>(() => (loading ? Date.now() : null));
   const [fadeKey, setFadeKey] = useState(0);
   const [previousLoading, setPreviousLoading] = useState(loading);

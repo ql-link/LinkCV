@@ -904,7 +904,7 @@ export async function executeAgentRun({
           label: { type: "string", minLength: 1, maxLength: 120 },
           depends_on: { type: "array", maxItems: 8, items: { type: "string" } },
           context_refs: { type: "array", maxItems: 10, items: objectSchema({
-            type: { type: "string", enum: ["resume", "dataset", "job", "application", "interview"] },
+            type: { type: "string", enum: ["resume", "dataset", "job", "application", "interview", "user_profile"] },
             id: { type: "string", pattern: "^[1-9][0-9]{0,19}$" },
           }, ["type", "id"]) },
         }, ["id", "workflow", "output", "label"]),

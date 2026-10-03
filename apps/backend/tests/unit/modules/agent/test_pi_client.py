@@ -26,6 +26,12 @@ class FinalizeSession:
     def __exit__(self, *_args):
         return None
 
+    def scalar(self, statement):
+        self.statements.append(statement)
+        if len(self.statements) == 1:
+            return 1
+        return SimpleNamespace(status=1, deletion_requested_at=None)
+
     def execute(self, statement):
         self.statements.append(statement)
         return Result()
@@ -37,8 +43,9 @@ def test_finalize_locks_run_before_checking_terminal_state() -> None:
 
     _finalize(app, "run-public-id", "succeeded", error_code=None)
 
-    assert len(db.statements) == 1
-    assert getattr(db.statements[0], "_for_update_arg", None) is not None
+    assert len(db.statements) == 3
+    assert getattr(db.statements[1], "_for_update_arg", None) is not None
+    assert getattr(db.statements[2], "_for_update_arg", None) is not None
 
 
 def test_cancel_and_readiness_use_their_own_pi_endpoints(

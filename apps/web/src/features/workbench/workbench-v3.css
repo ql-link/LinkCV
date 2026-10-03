@@ -319,7 +319,7 @@
   background: #fff;
   padding: 0 5px;
   box-shadow: 0 6px 18px rgb(0 0 0 / 12%);
-  font-family: var(--v3-sans, "Noto Sans SC", sans-serif);
+  font-family: var(--ui-font-sans);
 }
 .selection-formatting-toolbar .workbench-tool-button { width: 28px; height: 28px; flex: 0 0 28px; border-radius: 6px; color: #55554f; }
 .selection-formatting-toolbar .workbench-tool-button:hover { background: #f4f4f2; color: #1d1d1b; }

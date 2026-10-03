@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { ChevronLeft, CircleCheck, History, LoaderCircle, Pencil, Plus, RotateCcw, Send, Sparkles, Square, X } from "lucide-react";
 import MarkdownIt from "markdown-it";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -53,28 +54,28 @@ function proposalChanges(
   currentStyle?: CanonicalResumePresentation,
 ) {
   if (proposal.preview?.changes.length) {
-    return proposal.preview.changes.map((change, index) => ({ label: `修改内容 ${index + 1}`, before: change.before, after: change.after }));
+    return proposal.preview.changes.map((change, index) => ({ label: t("修改内容 {value0}", { value0: index + 1 }), before: change.before, after: change.after }));
   }
   if (proposal.operations?.length) {
     return proposal.operations.map((operation, index) => ({
       label: operation.op === "insert_after_target"
-        ? `新增内容 ${index + 1}`
+        ? t("新增内容 {value0}", { value0: index + 1 })
         : operation.op === "delete_target"
-          ? `删除内容 ${index + 1}`
-          : `修改内容 ${index + 1}`,
+          ? t("删除内容 {value0}", { value0: index + 1 })
+          : t("修改内容 {value0}", { value0: index + 1 }),
       before: typeof operation.target.selected_text === "string"
         ? operation.target.selected_text
-        : "当前定位内容",
-      after: operation.op === "delete_target" ? "删除该条目" : operation.new_text,
+        : t("当前定位内容"),
+      after: operation.op === "delete_target" ? t("删除该条目") : operation.new_text,
     }));
   }
   if (!currentData || !currentStyle || !proposal.data || !proposal.style) return [];
   const changes: Array<{ label: string; before: string; after: string }> = [];
   if (JSON.stringify(currentData) !== JSON.stringify(proposal.data)) {
-    changes.push({ label: "简历正文", before: "当前内容", after: "有修改" });
+    changes.push({ label: t("简历正文"), before: t("当前内容"), after: t("有修改") });
   }
   if (JSON.stringify(currentStyle) !== JSON.stringify(proposal.style)) {
-    changes.push({ label: "排版样式", before: resumePresentationTemplateKey(currentStyle), after: resumePresentationTemplateKey(proposal.style) });
+    changes.push({ label: t("排版样式"), before: resumePresentationTemplateKey(currentStyle), after: resumePresentationTemplateKey(proposal.style) });
   }
   return changes;
 }
@@ -84,31 +85,31 @@ export function agentErrorMessage(error: unknown) {
   const imageMessage = resumeImageContractErrorMessage(code);
   if (imageMessage) return imageMessage;
   const messages: Record<string, string> = {
-    AGENT_UNAVAILABLE: "智能助手暂时不可用，简历编辑不受影响。",
-    AGENT_STREAM_INCOMPLETE: "智能助手连接意外中断，请稍后重试。",
-    AGENT_MODEL_UNAVAILABLE: "当前模型暂时不可用，请稍后重试。",
-    AGENT_MODEL_UNSUPPORTED: "当前管理员模型暂不受智能助手支持。",
-    AGENT_MODEL_TIMEOUT: "当前模型响应超时，请稍后重试。",
-    AGENT_MODEL_REQUEST_FAILED: "当前模型请求失败，请稍后重试。",
-    AGENT_TIMEOUT: "智能助手本轮运行超时，请稍后重试。",
-    AGENT_RUN_IN_PROGRESS: "上一条请求仍在处理中，请等待或取消后重试。",
-    RESUME_EDIT_CONFLICT: "简历已发生新的修改，这份提案没有应用。请重新生成建议。",
-    RESUME_DRAFT_SAVE_FAILED: "当前草稿保存失败，提案没有应用。请先保存后重试。",
-    RESUME_WRITE_PENDING: "正在保存或应用修改，请稍后重试。",
-    AGENT_PROPOSAL_RESULT_UNKNOWN: "暂时无法确认修改结果，请刷新提案状态后再操作。",
-    TARGET_STALE: "所选内容已发生变化，请重新选择后再试。",
-    TARGET_RESOLUTION_REQUIRED: "还不能唯一定位要处理的内容，请重新选择或说得更具体。",
-    DIAGNOSIS_REQUIRED: "诊断依据已失效，请重新分析后再生成修改。",
-    SKILL_MODE_CONFLICT: "本轮同时出现了不同修改方式，请新建对话后只选择一种方式。",
-    PATCH_OUT_OF_SCOPE: "修改超出了已定位范围，系统没有创建提案。",
-    SOURCE_REQUIRED: "从资料生成内容前需要先选择可追溯的授权资料。",
-    SOURCE_FORBIDDEN: "引用资料不存在、已变化或不属于当前账号。",
-    AGENT_CLARIFICATION_STALE: "这个问题已经更新，请按当前问题重新回答。",
-    AGENT_CLARIFICATION_CONTEXT_CONFLICT: "这次回答选择了另一份资料，请继续使用原问题对应的资料。",
-    AGENT_CLARIFICATION_CONTEXT_INVALID: "原问题的资料记录已损坏，请重新发起修改请求。",
-    AGENT_RESUME_REQUIRED: "需要先打开或选择一份简历。",
+    AGENT_UNAVAILABLE: t("智能助手暂时不可用，简历编辑不受影响。"),
+    AGENT_STREAM_INCOMPLETE: t("智能助手连接意外中断，请稍后重试。"),
+    AGENT_MODEL_UNAVAILABLE: t("当前模型暂时不可用，请稍后重试。"),
+    AGENT_MODEL_UNSUPPORTED: t("当前管理员模型暂不受智能助手支持。"),
+    AGENT_MODEL_TIMEOUT: t("当前模型响应超时，请稍后重试。"),
+    AGENT_MODEL_REQUEST_FAILED: t("当前模型请求失败，请稍后重试。"),
+    AGENT_TIMEOUT: t("智能助手本轮运行超时，请稍后重试。"),
+    AGENT_RUN_IN_PROGRESS: t("上一条请求仍在处理中，请等待或取消后重试。"),
+    RESUME_EDIT_CONFLICT: t("简历已发生新的修改，这份提案没有应用。请重新生成建议。"),
+    RESUME_DRAFT_SAVE_FAILED: t("当前草稿保存失败，提案没有应用。请先保存后重试。"),
+    RESUME_WRITE_PENDING: t("正在保存或应用修改，请稍后重试。"),
+    AGENT_PROPOSAL_RESULT_UNKNOWN: t("暂时无法确认修改结果，请刷新提案状态后再操作。"),
+    TARGET_STALE: t("所选内容已发生变化，请重新选择后再试。"),
+    TARGET_RESOLUTION_REQUIRED: t("还不能唯一定位要处理的内容，请重新选择或说得更具体。"),
+    DIAGNOSIS_REQUIRED: t("诊断依据已失效，请重新分析后再生成修改。"),
+    SKILL_MODE_CONFLICT: t("本轮同时出现了不同修改方式，请新建对话后只选择一种方式。"),
+    PATCH_OUT_OF_SCOPE: t("修改超出了已定位范围，系统没有创建提案。"),
+    SOURCE_REQUIRED: t("从资料生成内容前需要先选择可追溯的授权资料。"),
+    SOURCE_FORBIDDEN: t("引用资料不存在、已变化或不属于当前账号。"),
+    AGENT_CLARIFICATION_STALE: t("这个问题已经更新，请按当前问题重新回答。"),
+    AGENT_CLARIFICATION_CONTEXT_CONFLICT: t("这次回答选择了另一份资料，请继续使用原问题对应的资料。"),
+    AGENT_CLARIFICATION_CONTEXT_INVALID: t("原问题的资料记录已损坏，请重新发起修改请求。"),
+    AGENT_RESUME_REQUIRED: t("需要先打开或选择一份简历。"),
   };
-  return messages[code] ?? "智能助手没有完成这次请求，请稍后重试。";
+  return messages[code] ?? t("智能助手没有完成这次请求，请稍后重试。");
 }
 
 function messageKey(message: AgentMessage, index: number) {
@@ -116,12 +117,12 @@ function messageKey(message: AgentMessage, index: number) {
 }
 
 const agentToolLabels: Record<string, string> = {
-  resolve_resume_target: "正在定位所选内容…",
-  get_resume_context: "正在读取授权简历上下文…",
-  search_resume_materials: "正在查找你的资料…",
-  analyze_resume_content: "正在进行结构化诊断…",
-  create_resume_change_proposal: "正在生成待确认修改…",
-  create_resume_proposal: "正在生成待确认修改…",
+  get resolve_resume_target() { return t("正在定位所选内容…"); },
+  get get_resume_context() { return t("正在读取授权简历上下文…"); },
+  get search_resume_materials() { return t("正在查找你的资料…"); },
+  get analyze_resume_content() { return t("正在进行结构化诊断…"); },
+  get create_resume_change_proposal() { return t("正在生成待确认修改…"); },
+  get create_resume_proposal() { return t("正在生成待确认修改…"); },
 };
 
 function messageTime(createdAt: string) {
@@ -188,14 +189,15 @@ export function clarificationAnswerPayload(
 }
 
 function avatarFallback(displayName: string) {
-  return [...displayName.trim()][0]?.toLocaleUpperCase("zh-CN") ?? "用";
+  return [...displayName.trim()][0]?.toLocaleUpperCase("zh-CN") ?? t("用");
 }
 
 export function AgentUserAvatar({ avatarUrl, displayName = "用户" }: { avatarUrl?: string | null; displayName?: string }) {
+  useLocale();
   return (
     <Avatar className="agent-user-avatar">
-      {avatarUrl && <AvatarImage src={avatarUrl} alt={`${displayName}的头像`} width={32} height={32} />}
-      <AvatarFallback aria-label={`${displayName}的头像`}>{avatarFallback(displayName)}</AvatarFallback>
+      {avatarUrl && <AvatarImage src={avatarUrl} alt={t("{value0}的头像", { value0: displayName })} width={32} height={32} />}
+      <AvatarFallback aria-label={t("{value0}的头像", { value0: displayName })}>{avatarFallback(displayName)}</AvatarFallback>
     </Avatar>
   );
 }
@@ -233,7 +235,7 @@ agentMarkdown.renderer.rules.link_open = (tokens, index, options, _env, self) =>
 };
 
 agentMarkdown.renderer.rules.image = (tokens, index) => {
-  const alt = agentMarkdown.utils.escapeHtml(tokens[index].content || "图片");
+  const alt = agentMarkdown.utils.escapeHtml(tokens[index].content || t("图片"));
   return `<span class="agent-markdown-image" role="img" aria-label="${alt}">[图片：${alt}]</span>`;
 };
 
@@ -246,13 +248,13 @@ agentMarkdown.renderer.rules.fence = (tokens, index) => {
   const escapedLanguage = agentMarkdown.utils.escapeHtml(language);
   const escapedSource = agentMarkdown.utils.escapeHtml(token.content.replace(/\n$/u, ""));
   const languageClass = escapedLanguage ? ` class="language-${escapedLanguage}"` : "";
-  const label = escapedLanguage ? `${escapedLanguage} 代码` : "代码";
+  const label = escapedLanguage ? t("{value0} 代码", { value0: escapedLanguage }) : t("代码");
 
   return [
     `<div class="agent-code-block" role="group" aria-label="${label}">`,
     '<div class="agent-code-toolbar">',
     `<span class="agent-code-language">${escapedLanguage}</span>`,
-    '<button class="agent-code-copy" type="button" data-agent-copy-code aria-label="复制代码">复制</button>',
+    t("<button class=\"agent-code-copy\" type=\"button\" data-agent-copy-code aria-label=\"复制代码\">复制</button>"),
     "</div>",
     '<div class="agent-code-scroll">',
     `<pre><code${languageClass}>${escapedSource}</code></pre>`,
@@ -270,16 +272,17 @@ async function copyAgentCode(event: ReactMouseEvent<HTMLDivElement>) {
 
   try {
     await navigator.clipboard.writeText(source);
-    button.textContent = "已复制";
+    button.textContent = t("已复制");
   } catch {
-    button.textContent = "复制失败";
+    button.textContent = t("复制失败");
   }
   window.setTimeout(() => {
-    button.textContent = "复制";
+    button.textContent = t("复制");
   }, 1500);
 }
 
 export function AgentMarkdown({ content }: { content: string }) {
+  useLocale();
   // 内容不变时复用同一个 __html 对象：每次重渲染都换新对象会让 React 重设 innerHTML，
   // 丢掉用户正在选中的文字，也会让测试里拿到的节点失效
   const html = useMemo(() => ({ __html: agentMarkdown.render(content) }), [content]);
@@ -304,6 +307,7 @@ export function AgentPanel({
   onClose = () => undefined,
   draft,
 }: AgentPanelProps) {
+  useLocale();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<AgentModelSummary[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string>("");
@@ -431,7 +435,7 @@ export function AgentPanel({
         }];
       });
     } else if (event.type === "tool.started") {
-      setToolStatus(agentToolLabels[event.tool] ?? "正在处理…");
+      setToolStatus(agentToolLabels[event.tool] ?? t("正在处理…"));
     } else if (event.type === "tool.completed") {
       setToolStatus(null);
     } else if (event.type === "assistant.activity.status") {
@@ -694,29 +698,29 @@ export function AgentPanel({
   };
 
   return (
-    <section className="agent-panel" aria-label="简历智能助手">
+    <section className="agent-panel" aria-label={t("简历智能助手")}>
       <header className="agent-panel-head">
         <div className="agent-panel-identity">
           <span className="agent-mark" aria-hidden="true"><Sparkles size={16} /></span>
-          <span><strong id="workbench-agent-title">AI 简历助手</strong><small>{selectedContext ? "正在处理所选内容" : "智能优化，高效提升"}</small></span>
+          <span><strong id="workbench-agent-title">{t("AI 简历助手")}</strong><small>{selectedContext ? t("正在处理所选内容") : t("智能优化，高效提升")}</small></span>
         </div>
         <div className="agent-panel-head-actions">
           {conversationView === "history" ? (
-            <button type="button" aria-label="返回当前对话" title="返回当前对话" onClick={() => setConversationView("conversation")}><ChevronLeft size={17} /></button>
+            <button type="button" aria-label={t("返回当前对话")} title={t("返回当前对话")} onClick={() => setConversationView("conversation")}><ChevronLeft size={17} /></button>
           ) : (
-            <button type="button" aria-label="历史对话" title="历史对话" onClick={() => void openHistory()}><History size={17} /></button>
+            <button type="button" aria-label={t("历史对话")} title={t("历史对话")} onClick={() => void openHistory()}><History size={17} /></button>
           )}
-          <button type="button" aria-label="新建对话" title="新建对话" onClick={startNewConversation}><Plus size={17} /></button>
-          <button type="button" aria-label="关闭智能助手" title="关闭" onClick={closePanel}><X size={17} /></button>
+          <button type="button" aria-label={t("新建对话")} title={t("新建对话")} onClick={startNewConversation}><Plus size={17} /></button>
+          <button type="button" aria-label={t("关闭智能助手")} title={t("关闭")} onClick={closePanel}><X size={17} /></button>
         </div>
       </header>
 
       {conversationView === "history" ? (
-        <section className="agent-conversation-history" aria-label="历史对话">
-          <header><strong>历史对话</strong><small>当前简历 · 最近 50 条</small></header>
-          {historyLoading && <PageLoading label="正在读取历史对话…" scope="panel" />}
-          {historyError && <div className="agent-error" role="alert">{historyError}<button type="button" onClick={() => void openHistory()}>重试</button></div>}
-          {!historyLoading && !historyError && sessions.length === 0 && <p className="agent-empty">暂无历史对话。发送第一条消息后会显示在这里。</p>}
+        <section className="agent-conversation-history" aria-label={t("历史对话")}>
+          <header><strong>{t("历史对话")}</strong><small>{t("当前简历 · 最近 50 条")}</small></header>
+          {historyLoading && <PageLoading label={t("正在读取历史对话…")} scope="panel" />}
+          {historyError && <div className="agent-error" role="alert">{historyError}<button type="button" onClick={() => void openHistory()}>{t("重试")}</button></div>}
+          {!historyLoading && !historyError && sessions.length === 0 && <p className="agent-empty">{t("暂无历史对话。发送第一条消息后会显示在这里。")}</p>}
           {!historyLoading && !historyError && sessions.length > 0 && (
             <div className="agent-conversation-list">
               {sessions.map((item) => (
@@ -735,11 +739,11 @@ export function AgentPanel({
         </section>
       ) : <>
       <div className="agent-message-list" ref={messageListRef} aria-live="polite">
-        {loading && <PageLoading label="正在读取对话…" scope="panel" />}
+        {loading && <PageLoading label={t("正在读取对话…")} scope="panel" />}
         {!loading && messages.length === 0 && (
           <div className="agent-welcome-message">
-            <strong>你好！我是你的 AI 简历助手</strong>
-            <p>专注于为你提供简历优化建议。你可以直接输入问题，也可以先选中一段简历内容。</p>
+            <strong>{t("你好！我是你的 AI 简历助手")}</strong>
+            <p>{t("专注于为你提供简历优化建议。你可以直接输入问题，也可以先选中一段简历内容。")}</p>
           </div>
         )}
         {messages.filter((message) => message !== pendingClarification).map((message, index) => (
@@ -757,15 +761,15 @@ export function AgentPanel({
         {toolStatus && <p className="agent-tool-status"><LoaderCircle aria-hidden="true" className="agent-spinner" />{toolStatus}</p>}
       </div>
 
-      {proposals.length > 0 && <div className="agent-proposal-list" aria-label="待确认修改提案">
+      {proposals.length > 0 && <div className="agent-proposal-list" aria-label={t("待确认修改提案")}>
         {proposals.map((proposal) => (
           <article className="agent-proposal" key={proposal.id}>
           <header>
-            <span><CircleCheck aria-hidden="true" size={15} />待你确认</span>
+            <span><CircleCheck aria-hidden="true" size={15} />{t("待你确认")}</span>
           </header>
           <p>{proposal.summary}</p>
           {proposal.rationale && proposal.rationale.length > 0 && (
-            <ul className="agent-proposal-rationale" aria-label="修改依据">
+            <ul className="agent-proposal-rationale" aria-label={t("修改依据")}>
               {proposal.rationale.map((item, index) => (
                 <li key={`${item.code ?? "reason"}-${index}`}>{item.reason ?? item.message ?? JSON.stringify(item)}</li>
               ))}
@@ -773,7 +777,7 @@ export function AgentPanel({
           )}
           {proposalChanges(proposal, currentData, currentStyle).length > 0 && (
             <details className="agent-proposal-diff">
-              <summary>查看修改范围</summary>
+              <summary>{t("查看修改范围")}</summary>
               <dl>
                 {proposalChanges(proposal, currentData, currentStyle).map((change) => (
                   <div key={change.label}>
@@ -791,16 +795,14 @@ export function AgentPanel({
               variant="accent"
               onClick={() => void confirmProposal(proposal)}
             >
-              {proposalBusyId === proposal.id ? "处理中…" : "应用到简历"}
+              {proposalBusyId === proposal.id ? t("处理中…") : t("应用到简历")}
             </Button>
             <Button
               disabled={proposalBusyId !== null}
               size="sm"
               variant="ghost"
               onClick={() => void rejectProposal(proposal)}
-            >
-              放弃提案
-            </Button>
+            >{t("放弃提案")}</Button>
           </div>
           </article>
         ))}
@@ -814,22 +816,21 @@ export function AgentPanel({
 
       {messages.some((message) => message.role === "assistant") && !running && !pendingClarification && (
         <button type="button" className="agent-regenerate" onClick={regenerateLastAnswer}>
-          <RotateCcw aria-hidden="true" size={14} />重新生成
-        </button>
+          <RotateCcw aria-hidden="true" size={14} />{t("重新生成")}</button>
       )}
 
       <form className="agent-composer" onSubmit={sendMessage}>
-        <label>对话模型 <select aria-label="对话模型" value={selectedModelId} disabled={running || loading || availableModels.length === 0} onChange={(event) => void changeModel(event.target.value)}>{availableModels.length === 0 && <option value="">当前没有可用模型</option>}{availableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select></label>
+        <label>{t("对话模型 ")}<select aria-label={t("对话模型")} value={selectedModelId} disabled={running || loading || availableModels.length === 0} onChange={(event) => void changeModel(event.target.value)}>{availableModels.length === 0 && <option value="">{t("当前没有可用模型")}</option>}{availableModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select></label>
         {selectedContext && (
           <div className="agent-selection-context">
-            <span><Sparkles aria-hidden="true" size={13} />已选内容</span>
+            <span><Sparkles aria-hidden="true" size={13} />{t("已选内容")}</span>
             <p>{selectedContext.selected_text}</p>
-            <button type="button" onClick={() => setSelectedContext(null)}>移除上下文</button>
+            <button type="button" onClick={() => setSelectedContext(null)}>{t("移除上下文")}</button>
           </div>
         )}
         {pendingClarification?.clarification && (
-          <section className="agent-clarification" aria-label="需要你确认">
-            <header><Sparkles aria-hidden="true" size={15} /><span><strong>需要你确认</strong><small>回答后我再继续处理</small></span></header>
+          <section className="agent-clarification" aria-label={t("需要你确认")}>
+            <header><Sparkles aria-hidden="true" size={15} /><span><strong>{t("需要你确认")}</strong><small>{t("回答后我再继续处理")}</small></span></header>
             {pendingClarification.clarification.questions.map((question) => {
               const answer = clarificationAnswers[question.id] ?? { optionId: "", other: "" };
               const allowCustom = clarificationAllowsCustom(pendingClarification.clarification!, question);
@@ -859,12 +860,12 @@ export function AgentPanel({
                           checked={answer.optionId === "__other__"}
                           onChange={() => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: current[question.id]?.other ?? "" } }))}
                         />
-                        <span><strong>其他</strong><small>用自己的话补充</small></span>
+                        <span><strong>{t("其他")}</strong><small>{t("用自己的话补充")}</small></span>
                       </label>
                       {answer.optionId === "__other__" && (
                         <input
                           className="agent-clarification-other"
-                          aria-label={`${question.header}的其他回答`}
+                          aria-label={t("{value0}的其他回答", { value0: question.header })}
                           maxLength={500}
                           value={answer.other}
                           onChange={(event) => setClarificationAnswers((current) => ({ ...current, [question.id]: { optionId: "__other__", other: event.target.value } }))}
@@ -872,37 +873,37 @@ export function AgentPanel({
                       )}
                     </>
                   )}
-                  {missing && <small className="agent-clarification-error" id={`${question.id}-error`}>请选择一个选项或填写其他答案。</small>}
+                  {missing && <small className="agent-clarification-error" id={`${question.id}-error`}>{t("请选择一个选项或填写其他答案。")}</small>}
                 </fieldset>
               );
             })}
-            <Button type="button" variant="accent" disabled={running} onClick={submitClarification}>提交回答</Button>
+            <Button type="button" variant="accent" disabled={running} onClick={submitClarification}>{t("提交回答")}</Button>
           </section>
         )}
-        {!pendingClarification && <div className="agent-quick-prompts" aria-label="AI 快捷指令">
+        {!pendingClarification && <div className="agent-quick-prompts" aria-label={t("AI 快捷指令")}>
           {agentQuickPrompts.map(({ label, prompt, icon: PromptIcon }) => (
             <button type="button" key={label} onClick={() => setInput(prompt)}>
               <PromptIcon aria-hidden="true" size={14} />{label}
             </button>
           ))}
         </div>}
-        <label className="visually-hidden" htmlFor="agent-message-input">告诉助手你想改善什么</label>
+        <label className="visually-hidden" htmlFor="agent-message-input">{t("告诉助手你想改善什么")}</label>
         <div className="agent-input-shell">
           <textarea
             id="agent-message-input"
             value={input}
             maxLength={32_768}
-            placeholder={pendingClarification ? "请先回答上方问题…" : "输入你的问题…"}
+            placeholder={pendingClarification ? t("请先回答上方问题…") : t("输入你的问题…")}
             disabled={loading || running || Boolean(pendingClarification)}
             onChange={(event) => setInput(event.target.value)}
           />
           {running ? (
-            <button className="agent-send-button is-stop" type="button" aria-label="停止生成" onClick={() => void cancelRun()}><Square aria-hidden="true" size={15} /></button>
+            <button className="agent-send-button is-stop" type="button" aria-label={t("停止生成")} onClick={() => void cancelRun()}><Square aria-hidden="true" size={15} /></button>
           ) : (
-            <button className="agent-send-button" disabled={loading || !input.trim() || Boolean(pendingClarification)} type="submit" aria-label="发送"><Send aria-hidden="true" size={17} /></button>
+            <button className="agent-send-button" disabled={loading || !input.trim() || Boolean(pendingClarification)} type="submit" aria-label={t("发送")}><Send aria-hidden="true" size={17} /></button>
           )}
         </div>
-        <small className="agent-composer-note">修改提案不会自动覆盖简历，需要你确认后应用。</small>
+        <small className="agent-composer-note">{t("修改提案不会自动覆盖简历，需要你确认后应用。")}</small>
       </form>
       </>}
     </section>

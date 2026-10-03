@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { MotionPresence, useContentMotion } from "../../components/ui/motion";
 
@@ -25,23 +26,24 @@ function followAppLink(event: MouseEvent<HTMLAnchorElement>, path: string) {
 }
 
 function createErrorMessage(error: unknown) {
-  if (!(error instanceof ApiRequestError)) return "创建简历失败，请稍后重试。";
-  if (error.message === "INVALID_RESUME_TITLE") return "请输入 1–255 个字符的简历名称。";
-  if (error.message === "RESUME_TITLE_CONFLICT") return "该名称已经存在，请换一个名称。";
-  if (error.message === "RESUME_LIMIT_REACHED") return "简历数量已达上限，请先清理已有简历。";
-  if (error.message === "TEMPLATE_INACTIVE") return "所选模板已不可用，请重新选择。";
-  return "创建简历失败，请稍后重试。";
+  if (!(error instanceof ApiRequestError)) return t("创建简历失败，请稍后重试。");
+  if (error.message === "INVALID_RESUME_TITLE") return t("请输入 1–255 个字符的简历名称。");
+  if (error.message === "RESUME_TITLE_CONFLICT") return t("该名称已经存在，请换一个名称。");
+  if (error.message === "RESUME_LIMIT_REACHED") return t("简历数量已达上限，请先清理已有简历。");
+  if (error.message === "TEMPLATE_INACTIVE") return t("所选模板已不可用，请重新选择。");
+  return t("创建简历失败，请稍后重试。");
 }
 
 // 空结果说明里点出冲突的条件（状态变体 ② 规则 1）
 function filterConflictText(styles: string[], useCases: string[]) {
-  const quote = (values: string[]) => values.map((value) => `「${value}」`).join("");
-  if (styles.length && useCases.length) return `${quote(styles)}风格和${quote(useCases)}场景同时选中时没有模板。试试减少一个筛选条件。`;
-  if (styles.length) return `${quote(styles)}风格下没有模板。试试换一个筛选条件。`;
-  return `${quote(useCases)}场景下没有模板。试试换一个筛选条件。`;
+  const quote = (values: string[]) => values.map((value) => `「${t(value)}」`).join("");
+  if (styles.length && useCases.length) return t("{value0}风格和{value1}场景同时选中时没有模板。试试减少一个筛选条件。", { value0: quote(styles), value1: quote(useCases) });
+  if (styles.length) return t("{value0}风格下没有模板。试试换一个筛选条件。", { value0: quote(styles) });
+  return t("{value0}场景下没有模板。试试换一个筛选条件。", { value0: quote(useCases) });
 }
 
 export function ResumeTemplatesPage() {
+  useLocale();
   const createResume = useResumeStore((state) => state.createResume);
   const pageRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -138,7 +140,7 @@ export function ResumeTemplatesPage() {
     if (!selectedTemplate || submitting) return;
     const normalizedTitle = title.trim();
     if (!normalizedTitle) {
-      setCreateError("请输入简历名称。");
+      setCreateError(t("请输入简历名称。"));
       queueMicrotask(() => titleInputRef.current?.focus());
       return;
     }
@@ -160,9 +162,9 @@ export function ResumeTemplatesPage() {
 
   return (
     <div ref={pageRef} className="v3-page tpl-page">
-      <PageEyebrow segments={["TEMPLATES", <><Reveal inline loading={loading} placeholder={<LoadingText width={16} />}>{ready ? templates.length : "–"}</Reveal> 套</>]} />
-      <h1 className="v3-page-title">简历模板</h1>
-      <p className="v3-page-sub">浏览当前可用版式，选择后填写简历名称并进入编辑器。</p>
+      <PageEyebrow segments={["TEMPLATES", <><Reveal inline loading={loading} placeholder={<LoadingText width={16} />}>{ready ? templates.length : "–"}</Reveal>{t(" 套")}</>]} />
+      <h1 className="v3-page-title">{t("简历模板")}</h1>
+      <p className="v3-page-sub">{t("浏览当前可用版式，选择后填写简历名称并进入编辑器。")}</p>
 
 
       {!loading && failed && (
@@ -171,13 +173,11 @@ export function ResumeTemplatesPage() {
             <MiniResume x={176} y={20} w={72} h={96} rotate={-4} style={{ opacity: 0.6 }} />
             <Badge x={234} y={82} icon="refresh" size={26} />
           </div>
-          <h3>模板暂时无法加载</h3>
-          <p>请检查网络后重试，已有简历不会受到影响。</p>
+          <h3>{t("模板暂时无法加载")}</h3>
+          <p>{t("请检查网络后重试，已有简历不会受到影响。")}</p>
           <div className="v3-empty-actions">
             <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={() => void loadTemplates()}>
-              <Icon name="refresh" size={13} />
-              重新加载
-            </button>
+              <Icon name="refresh" size={13} />{t("重新加载")}</button>
           </div>
         </div>
       )}
@@ -193,13 +193,11 @@ export function ResumeTemplatesPage() {
               </span>
             ))}
           </div>
-          <h3>当前没有可用模板</h3>
-          <p>模板启用后会显示在这里，你仍可以从已有简历继续编辑。</p>
+          <h3>{t("当前没有可用模板")}</h3>
+          <p>{t("模板启用后会显示在这里，你仍可以从已有简历继续编辑。")}</p>
           <div className="v3-empty-actions">
             <a className="v3-btn v3-btn-ghost is-lg" href="/resumes" onClick={(event) => followAppLink(event, "/resumes")}>
-              <Icon name="doc" size={13} />
-              返回全部简历
-            </a>
+              <Icon name="doc" size={13} />{t("返回全部简历")}</a>
           </div>
         </div>
       )}
@@ -211,30 +209,30 @@ export function ResumeTemplatesPage() {
           placeholder={(
             <>
               <div className="tpl-toolbar" aria-hidden="true"><Sk w={96} h={12} /><Sk w={88} h={30} r={8} style={{ marginLeft: "auto" }} /></div>
-              <SkeletonGrid label="正在加载简历模板…" className="tpl-grid" />
+              <SkeletonGrid label={t("正在加载简历模板…")} className="tpl-grid" />
             </>
           )}
         >
           <div className="tpl-toolbar">
-            <span className="tpl-summary" aria-live="polite">找到 {filteredTemplates.length} 套模板</span>
+            <span className="tpl-summary" aria-live="polite">{t("找到 ")}{filteredTemplates.length}{t(" 套模板")}</span>
             {hasFilters && (
-              <button type="button" className="tpl-clear" onClick={() => applyFilters([], [])}>清除筛选</button>
+              <button type="button" className="tpl-clear" onClick={() => applyFilters([], [])}>{t("清除筛选")}</button>
             )}
             <span className="tpl-sort">
-              <span>按展示顺序</span>
+              <span>{t("按展示顺序")}</span>
             </span>
             <V3TemplateFilter styles={selectedStyles} useCases={selectedUseCases} onChange={applyFilters} />
           </div>
 
           {filteredTemplates.length > 0 ? (
-            <section ref={gridMotionRef} className="tpl-grid" aria-label="可用简历模板">
+            <section ref={gridMotionRef} className="tpl-grid" aria-label={t("可用简历模板")}>
               {filteredTemplates.map((template) => (
                 <article className="tpl-card" key={template.id}>
                   {/* 整张卡片可点，打开 03.1a 模板预览 */}
                   <button
                     type="button"
                     className="tpl-card-trigger"
-                    aria-label={`查看模板：${template.name}`}
+                    aria-label={t("查看模板：{value0}", { value0: template.name })}
                     aria-haspopup="dialog"
                     onClick={() => setPreviewTemplate(template)}
                   />
@@ -243,9 +241,9 @@ export function ResumeTemplatesPage() {
                   </div>
                   <h3 className="tpl-card-name">{template.name}</h3>
                   <div className="tpl-card-meta">
-                    {template.style_categories?.map((style) => <span key={`style-${style}`} className="v3-chip">{style}</span>)}
-                    {template.use_cases?.map((useCase) => <span key={`case-${useCase}`} className="v3-chip">{useCase}</span>)}
-                    {typeof template.use_count === "number" && <span className="tpl-card-uses">{formatTemplateUses(template.use_count)} 使用</span>}
+                    {template.style_categories?.map((style) => <span key={`style-${style}`} className="v3-chip">{t(style)}</span>)}
+                    {template.use_cases?.map((useCase) => <span key={`case-${useCase}`} className="v3-chip">{t(useCase)}</span>)}
+                    {typeof template.use_count === "number" && <span className="tpl-card-uses">{formatTemplateUses(template.use_count)}{t(" 使用")}</span>}
                   </div>
                 </article>
               ))}
@@ -260,13 +258,11 @@ export function ResumeTemplatesPage() {
                 <span className="tpl-funnel" aria-hidden="true"><Icon name="filter" size={24} /></span>
                 <span className="tpl-funnel-count" aria-hidden="true">{selectedStyles.length + selectedUseCases.length}</span>
               </div>
-              <h3>没有符合条件的模板</h3>
+              <h3>{t("没有符合条件的模板")}</h3>
               <p>{filterConflictText(selectedStyles, selectedUseCases)}</p>
               <div className="v3-empty-actions">
                 <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={() => applyFilters([], [])}>
-                  <Icon name="filter" size={13} />
-                  清除筛选
-                </button>
+                  <Icon name="filter" size={13} />{t("清除筛选")}</button>
               </div>
             </div>
           )}
@@ -276,14 +272,14 @@ export function ResumeTemplatesPage() {
       <MotionPresence>{previewTemplate && <TemplatePreviewDialog
         templates={filteredTemplates}
         template={previewTemplate}
-        primaryActionLabel="创建简历"
+        primaryActionLabel={t("创建简历")}
         onTemplateChange={setPreviewTemplate}
         onPrimaryAction={openCreateDialog}
         onClose={() => setPreviewTemplate(null)}
       />}</MotionPresence>
 
       {/* 命名弹窗：沿用原有「从模板创建简历」流程，创建成功后进入编辑器 */}
-      <Dialog open={selectedTemplate !== null} width={440} label="创建简历" onClose={closeCreateDialog} closable={!submitting}>
+      <Dialog open={selectedTemplate !== null} width={440} label={t("创建简历")} onClose={closeCreateDialog} closable={!submitting}>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -291,10 +287,10 @@ export function ResumeTemplatesPage() {
           }}
         >
           <div className="v3-dialog-body">
-            <h2 className="v3-dialog-title">创建简历</h2>
-            <p className="v3-dialog-sub">基于“{selectedTemplate?.name}”创建简历，输入一个便于识别的名称。</p>
+            <h2 className="v3-dialog-title">{t("创建简历")}</h2>
+            <p className="v3-dialog-sub">{t("基于“")}{selectedTemplate?.name}{t("”创建简历，输入一个便于识别的名称。")}</p>
             <label className="v3-field tpl-create-field">
-              <span className="v3-field-label">简历名称</span>
+              <span className="v3-field-label">{t("简历名称")}</span>
               <input
                 ref={titleInputRef}
                 id="template-resume-title"
@@ -302,7 +298,7 @@ export function ResumeTemplatesPage() {
                 name="resume-title"
                 autoComplete="off"
                 maxLength={255}
-                placeholder="例如：2026 产品经理简历"
+                placeholder={t("例如：2026 产品经理简历")}
                 value={title}
                 aria-invalid={createError ? "true" : undefined}
                 disabled={submitting}
@@ -316,9 +312,9 @@ export function ResumeTemplatesPage() {
             </label>
           </div>
           <DialogFooter>
-            <button type="button" className="v3-btn v3-btn-ghost" disabled={submitting} onClick={closeCreateDialog}>取消</button>
+            <button type="button" className="v3-btn v3-btn-ghost" disabled={submitting} onClick={closeCreateDialog}>{t("取消")}</button>
             <button type="submit" className="v3-btn v3-btn-dark" disabled={submitting}>
-              {submitting ? "正在创建…" : "确认创建"}
+              {submitting ? t("正在创建…") : t("确认创建")}
             </button>
           </DialogFooter>
         </form>

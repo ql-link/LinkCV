@@ -461,7 +461,7 @@ async def _record_answer(
         object_name = None
         if result.purpose == "voice_answer" and audio:
             object_name = service.recording_object_name(owned, result.question_id)
-            await asyncio.to_thread(_store_recording, request.app.state.storage, object_name, audio)
+            await asyncio.to_thread(_store_owned_recording, request, user.id, object_name, audio)
         voice = VoiceAnswer(
             source="voice" if result.purpose == "voice_answer" else "voice_input",
             transcript=result.text,
@@ -513,6 +513,16 @@ def _wav(pcm: bytes) -> bytes:
         file.setframerate(SAMPLE_RATE)
         file.writeframes(pcm)
     return output.getvalue()
+
+
+def _store_owned_recording(request: Request, user_id: int, object_name: str, audio: bytes) -> None:
+    from linkresume.modules.identity.dependencies import lock_active_user
+
+    # Keep the owner lock through the object write, so cleanup cannot finish
+    # before a recording upload that was authorized by an earlier request.
+    with request.app.state.session_factory() as db:
+        lock_active_user(db, user_id)
+        _store_recording(request.app.state.storage, object_name, audio)
 
 
 def _store_recording(storage, object_name: str, pcm: bytes) -> None:

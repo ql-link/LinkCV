@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
+import { setLocale } from "../i18n";
 import { V3Shell } from "./Shell";
 import { useSessionStore } from "./sessionStore";
 
@@ -16,13 +17,14 @@ function resize(width: number) {
 
 describe("工作区响应式导航", () => {
   beforeEach(() => {
+    setLocale("zh-CN", false);
     vi.stubGlobal("innerWidth", 390);
     vi.stubGlobal("matchMedia", undefined);
     vi.spyOn(api, "listJobApplications").mockResolvedValue({ items: [], next_cursor: null });
     useSessionStore.setState({ sessions: [], status: "ready" });
     window.history.replaceState(null, "", "/resumes");
   });
-  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  afterEach(() => { act(() => setLocale("zh-CN", false)); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
   it("窄屏打开导航后限制背景交互，Escape 关闭并还原焦点", async () => {
     const user = userEvent.setup();
@@ -70,6 +72,23 @@ describe("工作区响应式导航", () => {
     await user.click(within(screen.getByRole("dialog")).getAllByRole("button", { name: "新建对话" })[0]);
     expect(onNewConversation).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("打开抽屉时切换英文更新导航文案并保留关闭行为", async () => {
+    const user = userEvent.setup();
+    render(<V3Shell active="resumes">页面内容</V3Shell>);
+    const trigger = screen.getByRole("button", { name: "打开工作区导航" });
+    await user.click(trigger);
+    act(() => setLocale("en-US", false));
+    const dialog = screen.getByRole("dialog", { name: "Workspace navigation" });
+    expect(trigger).toHaveAccessibleName("Open workspace navigation");
+    expect(within(dialog).getByRole("navigation", { name: "Workspace navigation" })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: "New conversation" })).toHaveLength(2);
+    expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("link", { name: "Library" }));
+    expect(window.location.pathname).toBe("/datasets");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("拉宽窗口恢复桌面侧栏，再缩小时抽屉保持关闭", async () => {

@@ -8,7 +8,7 @@
 
 Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话发送重试保持原 `idempotency_key`，恢复订阅保持原 run ID，取消后不重发。跨标签页续期协调与浏览器兼容边界见[账号功能](../features/identity-account.md)。收到 Agent SSE 终态后即可结束订阅，后续连接关闭或会话回读失败不改变已经收到的运行终态。
 
-`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择普通邮箱密码入口。普通用户邮箱密码登录和注册仅在 `APP_ENV=local|development` 时开放；Production 的 `POST /api/auth/login` 与 `POST /api/auth/register` 都返回 `404 NOT_FOUND`。普通改密和微信绑定接口仍不公开；`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`。这些环境受限路由不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
+`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled, wechat_login_enabled}`。Local/Development 只开放普通邮箱密码注册、登录及改密，微信相关认证与身份确认接口返回 `404 NOT_FOUND`；Production 只开放微信认证，普通注册、密码登录及改密返回 404。微信能力还要求配置上游凭据，未配置时能力为 false、接口为 `503 WECHAT_SERVICE_UNAVAILABLE`。未知环境两种能力都关闭。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。普通微信绑定、解绑和换绑接口不公开。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
@@ -23,11 +23,13 @@ Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话
 | `POST` | `/api/auth/wechat/miniprogram/refresh` | 同上；JSON `{refresh_token}`，成功后旧 refresh 立即失效 |
 | `POST` | `/api/auth/wechat/miniprogram/logout` | `{ok: true}`；JSON `{refresh_token?}`，幂等撤销小程序 session |
 
-会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram|desktop` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
+会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram|desktop` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销、用户停用或申请注销时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
 微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 仍可使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；随仓库发布的小程序不再把它用于登录前置探测。该接口与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序冷启动在“简历”页展示一张内置“示例简历 · 内容为虚构信息”卡片，点击详情也只渲染包内虚构内容；游客首页与示例详情不发起账号探测、登录、隐私授权或个人数据请求，可切换“我的”游客态。登录入口位于“我的”页和求职游客引导；用户查看并勾选微信平台隐私保护指引并点击主操作后，客户端才调用建号或登录接口；未勾选时在协议区行内提示。普通登录成功后返回“我的”页；扫码确认先用一个 code 确认 Web scene，再用新的 code 建立独立小程序会话。登录后的简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；启用管理员账号即使历史上已有 openid，也与普通账号一样可以通过网页扫码确认并由匹配 `poll_token` 的 status 签发 Web Cookie，也可以通过小程序 login 建立、refresh 轮换小程序 Bearer 会话并访问小程序业务接口；管理员仍可使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。开发者工具和真机的 `develop` 运行时都默认使用 `https://linkresume.cn`；只有环境被明确识别为 `develop` 且设备本地执行 `wx.setStorageSync("linkresume_local_debug_enabled", true)` 时才读取每次 `npm run dev` 自动更新的 `local.js`，环境识别缺失或异常时不读取开发 storage/local.js；`linkresume_api_base_url` 显式 URL 覆盖优先于 `local.js`。关闭 opt-in 可执行 `wx.removeStorageSync("linkresume_local_debug_enabled")` 或写入 `false`；体验版和正式版忽略全部开发 storage/local.js，继续使用该 HTTPS 地址。
 
 ### 桌面 Bearer 会话
+
+桌面微信能力沿用普通用户环境规则：仅配置可用的 Production 可获取二维码、查询和领取微信会话及续期；Local/Development/未知环境能力为 false，这些路径返回 404。退出接口仍可用于撤销已有凭据。领取、恢复结果和续期在账号行锁内重新检查停用及注销标记，不能与注销并发穿透。
 
 桌面使用独立 `channel=desktop` Bearer，不能使用 Web Cookie、小程序 token 或无 channel 的旧凭据。桌面认证路由拒绝认证 Cookie；只有 `/me` 接受 Authorization，其余路由以 JSON 证明或 refresh secret 鉴权。响应均为 `Cache-Control: no-store`，不设置 Cookie。
 
@@ -77,7 +79,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 ### 用户中心
 
-`/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
+`/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。除 profile、昵称、头像和求职画像外，还提供联系邮箱、偏好、当前会话、环境对应的敏感操作及注销回执接口，详见本文「账号补充接口」。Web 账号页按能力显示开发改密或正式微信注销确认，普通微信绑定入口已撤下。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
 `GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合可比较的求职条件、教育背景与技能成果，独立保存于 `user_profiles` 表，不修改任何简历内容；这是唯一画像资源入口。未创建时 `GET` 返回 `lock_version=1` 的约定空画像且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。可编辑字段包括 `candidate_cities`（最多 20 项）、`employment_types`（最多 2 项且只接受 `internship`/`full_time`）、薪资四字段、`candidate_status`、`graduation_year`、`years_experience`、教育字段和语言/技能/证书/荣誉/校园经历列表。城市及普通字符串列表会去除空串、去重并保留首次顺序；单项最长 100 字符，普通列表最多 100 项，`school_tier` 只接受 `project_985`/`project_211`/`double_first_class` 且最多 10 项。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空，最高值不得低于最低值。`candidate_status=fresh_graduate` 时 `graduation_year` 必须为 1900–9999 的四位年份且 `years_experience` 固定为 0；`experienced` 时毕业年份必须为空；未选择类型时毕业年份也必须为空。非法枚举、超长列表或违反联动约束返回 `400 INVALID_USER_PROFILE`。`GET /api/account/profile` 只返回账号资料、简历数量和最近简历，不内嵌 `profile`。
 
@@ -594,3 +596,28 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 ### 桌面资料库权限
 
 `get_current_dataset_user` 在 Authorization 存在时只接受 desktop Bearer，拒绝认证 Cookie 混用及 Web/小程序 token；无 Authorization 的 Web Cookie 行为保持不变。白名单为 `GET/POST /api/datasets`、`GET/POST /api/datasets/folders`、`PATCH/DELETE /api/datasets/folders/:id`、`GET/PATCH/DELETE /api/datasets/:id`、`GET /api/datasets/:id/{content|source}`、`POST /api/datasets/:id/retry`、`PATCH /api/datasets/:id/folder`、`POST /api/datasets/move-batch`、`PUT /api/datasets/:id/file`、`POST /api/interview-sessions/:id/assets/attach` 和 `DELETE /api/interview-sessions/:id/assets/:dataset_id`。ID 为无前导零的正十进制数，其他路径/方法拒绝该渠道。路由复用原有资源归属、文件真实性、容量、幂等、正文版本与永久删除规则，不开放任意对象存储 URL 或 legacy 素材上传入口。原文件流继续 private/no-store，客户端不得把 Bearer 注入网页或媒体外链。
+
+
+## 账号补充接口
+
+以下接口除回执查询与小程序身份确认外都要求当前 Web Cookie。不能由客户端指定另一个用户。
+
+| Method | Path | 契约 |
+| --- | --- | --- |
+| GET | `/api/account/profile` | 既有资料和简历摘要，新增 `user.contact_email`、`user.registered_at`、`current_session.device_label` 和 `capabilities`（auth_mode、can_change_password、can_delete_account、deletion_confirmation_method） |
+| PUT | `/api/account/contact-email` | JSON `{email: string|null}`；去空白后空串视为 null，仅校验格式和 254 字符上限，不验证所有权；返回 `{contact_email}` |
+| GET | `/api/account/preferences` | `{locale, interview_reminder_enabled, notifications_available:false}`；无记录默认 zh-CN/false |
+| PATCH | `/api/account/preferences` | 非空严格 JSON，仅接受 `locale:zh-CN|en-US` 与布尔 `interview_reminder_enabled` 的局部字段；非法类型、未知键或空请求拒绝 |
+| POST | `/api/account/change-password` | 仅 Local/Development；`{current_password,new_password,confirm_password}`，成功 `{ok:true}`，撤销账号全部会话并清 Cookie |
+| POST | `/api/account/wechat/verification-request` | 仅 Production 且注销开启；`{action:"delete_account"}`，返回 `{scene,poll_token,qrcode_data,expires_at}` |
+| POST | `/api/account/wechat/verification-confirm` | 小程序 JSON `{scene,code}`，以新微信 code 确认原账号与原网页会话；不建号、不发会话 |
+| POST | `/api/account/wechat/verification-status` | Web JSON `{scene,poll_token}`，仅原 session 可查询；verified 时返回本次 `action_token` |
+| POST | `/api/account/wechat/verification-cancel` | 同上；取消后旧凭证不可用 |
+| POST | `/api/account/deletion` | `confirmation` 必须为 `注销账号`；开发 `{method:"password",current_password,confirmation}`，正式 `{method:"wechat",action_token,confirmation}`；严格拒绝额外字段。受理 `202 {job_id,receipt_token,status:"pending"}` |
+| POST | `/api/account/deletion-status` | 匿名 JSON `{job_id,receipt_token}`；只返回 `status`、`phase`、可选 `error_code`。错误回执或过期均 404 |
+
+微信确认五分钟有效，绑定 user/session/action；状态为 pending、verified、cancelled、consumed、expired，刷新取码取消旧请求。验证失败、跨账号或会话、取消、到期、消费后不允许注销。回执和 poll token 放请求体，不放 URL。
+
+主要账号错误包括 `INVALID_CONTACT_EMAIL`、`INVALID_ACCOUNT_PREFERENCES`、`INVALID_CURRENT_PASSWORD`、`WEAK_PASSWORD`、`PASSWORD_MISMATCH`、`PASSWORD_UNCHANGED`、`INVALID_ACCOUNT_CONFIRMATION_METHOD`、`INVALID_ACCOUNT_DELETION_CONFIRMATION`、`ACCOUNT_DELETION_FORBIDDEN`、`ACCOUNT_SHARED_RESOURCE_OWNER`、`ACCOUNT_BUSY`、`WECHAT_IDENTITY_REQUIRED` 和 `WECHAT_IDENTITY_MISMATCH`。清理状态为 pending/processing/retry_wait/needs_attention/completed；阶段为 database/objects/rag/complete。详细语义见[账号功能](../features/identity-account.md)。
+
+Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账号，`version` 必须准确匹配画像的当前 `lock_version`。材料目录只返回元数据，显式选择后才以只读 `profile_markdown` 进入 Pi，认证和联系字段不进入正文。

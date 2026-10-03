@@ -18,7 +18,7 @@
 5. 注意有的画板左上角图标是错的（例如画板里出现了不该有的图标或默认图形）——以功能和同类画板为准，不要照抄明显的错误图标。拿不准的在汇报里列出来。
 6. 后端没有的功能先写前端，用 `mocks.ts` 的假数据，界面上照 Figma 贴 `<BeTag />`（橙色「需后端」）。
 7. 每页只有一个黑色主按钮；危险操作用红色。
-8. 字体：衬线标题 `font-family: var(--v3-serif); font-weight: 600`；数字 `var(--v3-num)`（Inter）；正文 `var(--v3-sans)`。
+8. 字体：页面标题 `font-family: var(--v3-serif); font-weight: 600`（西文 Poppins，中文 Noto Serif SC）；数字 `var(--v3-num)`（Poppins）；正文 `var(--v3-sans)`（西文 Lora，中文思源黑体）。
 9. 复用现有 API（`src/api/client.ts` 的 `api.*`）和现有业务逻辑（store、hooks、校验函数），不要改接口契约，不要改 `apps/backend`。
 10. 不要做 git commit / push。不要改其他模块负责的文件。
 
