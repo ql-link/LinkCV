@@ -1,11 +1,42 @@
 from sqlalchemy import select, func
 from fastapi.testclient import TestClient
+import pytest
+
+from linkresume.core.database import utc_now
+from linkresume.modules.identity.models import User
 
 from tests.integration.api.test_agent_routes import build_app, register, create_resume, create_active_run, internal_headers
 from linkresume.modules.agent.models import AgentMessage, AgentRun, ResumeChangeProposal
 from linkresume.modules.resumes.models import Resume
 from linkresume.modules.agent.message_scope import request_hash
 from linkresume.modules.agent.schemas import SteeringRequest, MessageCreateRequest
+
+
+@pytest.mark.parametrize("account_state", ["disabled", "deleting"])
+@pytest.mark.parametrize("action,payload", [
+    ("steering:activate", {"content": "新请求", "idempotency_key": "owner_guard_1"}),
+    ("steering:ack", {"submission_key": "owner_guard_1", "user_sequence_no": 1}),
+    ("messages:complete", {"user_sequence_no": 1, "content": "迟到的回复"}),
+])
+def test_request_scope_callbacks_reject_inactive_owner(account_state, action, payload):
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "callback-owner@example.test")
+        session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+        run_id = create_active_run(app, session_id)
+        with app.state.session_factory() as db:
+            owner = db.scalar(select(User).where(User.email == "callback-owner@example.test"))
+            if account_state == "disabled":
+                owner.status = 0
+            else:
+                owner.deletion_requested_at = utc_now()
+            db.commit()
+        response = client.post(f"/internal/agent/runs/{run_id}/{action}",
+                               headers={**internal_headers(), "X-Agent-User-Sequence": "1"}, json=payload)
+        assert response.status_code == 401
+        assert response.json()["error"] == "UNAUTHORIZED"
+        with app.state.session_factory() as db:
+            assert db.scalar(select(func.count()).select_from(AgentMessage)) == 1
 
 
 def test_steering_activation_revalidates_target_and_preserves_request_results():

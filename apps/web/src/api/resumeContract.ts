@@ -5,6 +5,7 @@ import { openThemes, type OpenTheme } from "./openThemes";
 import { originalThemes, type OriginalTheme } from "./originalThemes";
 import { careerThemes, type CareerTheme } from "./careerThemes";
 import { featuredThemes, type FeaturedTheme } from "./featuredThemes";
+import { museThemes, type MuseTheme } from "./museThemes";
 import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
 import type { InlineIconName } from "../lib/resumeInlineIcon";
 import { isResumeEmailLink } from "../lib/resumeLink";
@@ -725,6 +726,7 @@ type EditorSettings = {
     | OriginalTheme
     | CareerTheme
     | FeaturedTheme
+    | MuseTheme
     | "classic"
     | "modern"
     | "compact"
@@ -1206,7 +1208,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
     const supportedThemes = [
       ...atlasThemes,
       ...studioThemes,
-      ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes,
+      ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes, ...museThemes,
       "timeline-gutter",
       "centered-portrait",
       "mist-masthead",
@@ -1244,7 +1246,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
   const supportedThemes = [
     ...atlasThemes,
     ...studioThemes,
-    ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes,
+    ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes, ...museThemes,
     "timeline-gutter",
     "centered-portrait",
     "mist-masthead",

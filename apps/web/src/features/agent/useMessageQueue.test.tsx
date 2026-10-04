@@ -9,6 +9,19 @@ beforeEach(() => { vi.restoreAllMocks(); installMessageQueueEnvironment(); });
 
 describe("消息队列推进与恢复", () => {
   const options = { userId: "1", sessionId: "session", running: false, runId: null, blocked: false };
+  it("首次发送固定文档提示，重试沿用原正文、哈希和标识", async () => {
+    const prepareRequest = vi.fn((request: { content: string }) => ({ ...request, content: `${request.content}\n文档要求` }));
+    const send = vi.fn().mockRejectedValue(new Error("network disconnected"));
+    const { result } = renderHook(() => useMessageQueue({ ...options, prepareRequest, send }));
+    await act(async () => { await enqueueMessage("1", "session", { content: "生成文档" }, { startIfEmpty: true }); });
+    await waitFor(() => expect(result.current.queue.items[0]?.state).toBe("uncertain"));
+    const original = send.mock.calls[0][0];
+    expect(original.request.content).toBe("生成文档\n文档要求");
+    await act(async () => { await result.current.retryOriginal(original.itemId); });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    expect(prepareRequest).toHaveBeenCalledOnce();
+    expect(send.mock.calls[1][0]).toMatchObject({ request: original.request, submissionKey: original.submissionKey, submittedRequestHash: original.submittedRequestHash });
+  });
   it("等待其他标签页释放发送锁时，采用用户重新调整后的队首", async () => {
     let release!: () => void;
     const held = navigator.locks.request(`${queueKey("1", "session")}:dispatch`, () => new Promise<void>((resolve) => { release = resolve; }));

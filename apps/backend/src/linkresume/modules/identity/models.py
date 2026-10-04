@@ -66,6 +66,12 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(
         String(254), nullable=True, comment="规范化后的登录邮箱（微信登录用户可为空）"
     )
+    contact_email: Mapped[str | None] = mapped_column(
+        String(254), nullable=True, comment="联系邮箱，不验证归属，不参与登录"
+    )
+    deletion_requested_at: Mapped[datetime | None] = mapped_column(
+        timestamp_type(), nullable=True, comment="注销受理时间 UTC，非空时拒绝业务访问"
+    )
     password_hash: Mapped[str | None] = mapped_column(
         String(255), nullable=True, comment="密码摘要，不保存明文（微信登录用户可为空）"
     )
@@ -121,6 +127,55 @@ class User(Base):
         if not self.avatar_object_key:
             return None
         return asset_url(self.avatar_object_key)
+
+
+class AccountPreference(Base):
+    __tablename__ = "account_preferences"
+    __table_args__ = (
+        PrimaryKeyConstraint("user_id", name="pk_account_preferences"),
+        CheckConstraint("locale IN ('zh-CN', 'en-US')", name="ck_account_preferences_locale"),
+        CheckConstraint("interview_reminder_enabled IN (0, 1)", name="ck_account_preferences_reminder"),
+        {"comment": "账号界面语言与提醒偏好"},
+    )
+    user_id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), ForeignKey("users.id", name="fk_account_preferences_user", ondelete="RESTRICT"),
+        nullable=False, comment="所属用户",
+    )
+    locale: Mapped[str] = mapped_column(String(5), nullable=False, default="zh-CN", server_default="zh-CN", comment="界面语言")
+    interview_reminder_enabled: Mapped[int] = mapped_column(
+        SmallInteger().with_variant(mysql.TINYINT(unsigned=True), "mysql"),
+        nullable=False, default=0, server_default="0", comment="提醒偏好，当前不发送通知",
+    )
+    created_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间 UTC")
+    updated_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间 UTC")
+
+
+class AccountDeletionJob(Base):
+    __tablename__ = "account_deletion_jobs"
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="pk_account_deletion_jobs"),
+        UniqueConstraint("public_id", name="uk_account_deletion_jobs_public"),
+        UniqueConstraint("user_id", name="uk_account_deletion_jobs_user"),
+        CheckConstraint("status IN ('pending', 'processing', 'retry_wait', 'needs_attention', 'completed')", name="ck_account_deletion_jobs_status"),
+        CheckConstraint("phase IN ('database', 'objects', 'rag', 'complete')", name="ck_account_deletion_jobs_phase"),
+        Index("idx_account_deletion_jobs_due", "status", "next_attempt_at", "id"),
+        Index("idx_account_deletion_jobs_completed", "status", "completed_at", "id"),
+        {"comment": "持久账号清理任务，不依赖已删除用户外键"},
+    )
+    id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True, comment="清理任务主键")
+    public_id: Mapped[str] = mapped_column(ascii_char(36), nullable=False, comment="公开 UUID")
+    user_id: Mapped[int] = mapped_column(unsigned_bigint_type(), nullable=False, comment="原用户 ID，无外键")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending", comment="清理状态")
+    phase: Mapped[str] = mapped_column(String(16), nullable=False, default="database", server_default="database", comment="清理阶段")
+    cleanup_manifest: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, comment="受控清理目标，无个人正文")
+    receipt_hash: Mapped[str] = mapped_column(ascii_char(64), nullable=False, comment="随机回执哈希")
+    attempt_count: Mapped[int] = mapped_column(unsigned_int_type(), nullable=False, default=0, server_default="0", comment="失败次数")
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="有限错误码")
+    next_attempt_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True, comment="下次执行 UTC")
+    lease_until: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True, comment="执行租约 UTC")
+    created_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="受理时间 UTC")
+    updated_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间 UTC")
+    completed_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True, comment="清理完成 UTC")
 
 
 class UserProfile(Base):

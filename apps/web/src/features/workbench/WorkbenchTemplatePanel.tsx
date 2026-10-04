@@ -1,12 +1,15 @@
-import { Check, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { t, useLocale } from "@/i18n";
+import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { api, type ResumeTemplate } from "../../api/client";
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
-import { Button, PageLoading } from "@/components/ui";
+import { PageLoading } from "@/components/ui";
+import { Icon } from "../../v3/Icon";
 import { ResumePreview } from "../preview/ResumePreview";
-import { TemplateFilterPopover } from "../templates/TemplateFilterPopover";
+import { V3TemplateFilter } from "../templates/TemplateFilterPopover";
+import { WorkbenchPanelHeader } from "./WorkbenchPanelHeader";
 
 export function WorkbenchTemplatePanel({
   currentTemplateKey,
@@ -19,6 +22,7 @@ export function WorkbenchTemplatePanel({
   onApply: (template: ResumeTemplate) => Promise<void>;
   onClose: () => void;
 }) {
+  useLocale();
   const [templates, setTemplates] = useState<ResumeTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -81,55 +85,37 @@ export function WorkbenchTemplatePanel({
 
   return (
     <div className="workbench-template-panel">
-      <header className="workbench-template-panel-head">
-        <span>
-          <h2 id="workbench-template-title">简历模板</h2>
-          <small>点击模板即可应用到当前简历</small>
-        </span>
-        <button
-          type="button"
-          className="workbench-drawer-done"
-          onClick={onClose}
-          aria-label="关闭简历模板面板"
-        >
-          <X aria-hidden="true" size={17} />
-        </button>
-      </header>
+      <WorkbenchPanelHeader
+        titleId="workbench-template-title"
+        title={t("简历模板")}
+        subtitle={t("点击模板即可应用到当前简历")}
+        closeLabel={t("关闭简历模板面板")}
+        onClose={onClose}
+      />
 
       {!loading && !failed && templates.length > 0 ? (
         <div className="workbench-template-filters">
-          <span aria-live="polite">{filteredTemplates.length} 套模板</span>
-          <TemplateFilterPopover
-            compact
-            styles={selectedStyles}
-            useCases={selectedUseCases}
-            onChange={applyFilters}
-          />
+          <span aria-live="polite">{filteredTemplates.length}{t(" 套模板")}</span>
+          <V3TemplateFilter styles={selectedStyles} useCases={selectedUseCases} onChange={applyFilters} />
         </div>
       ) : null}
 
       <div className={`workbench-template-panel-body${!loading && !failed && templates.length > 0 ? " is-filterable" : ""}`} ref={bodyRef}>
-        {loading ? <PageLoading label="正在加载简历模板…" scope="panel" /> : null}
+        {loading ? <PageLoading label={t("正在加载简历模板…")} scope="panel" /> : null}
 
         {!loading && failed ? (
           <div className="workbench-template-state" role="alert">
-            <strong>模板暂时无法加载</strong>
-            <p>请检查网络后重试，当前简历不会受到影响。</p>
-            <Button
-              icon={<RefreshCw aria-hidden="true" size={15} />}
-              onClick={() => void loadTemplates()}
-              size="sm"
-              variant="outline"
-            >
-              重新加载
-            </Button>
+            <strong>{t("模板暂时无法加载")}</strong>
+            <p>{t("请检查网络后重试，当前简历不会受到影响。")}</p>
+            <button type="button" className="v3-btn v3-btn-ghost is-sm" onClick={() => void loadTemplates()}>
+              <Icon name="refresh" size={13} />{t("重新加载")}</button>
           </div>
         ) : null}
 
         {!loading && !failed && templates.length === 0 ? (
           <div className="workbench-template-state">
-            <strong>当前没有可用模板</strong>
-            <p>模板启用后会显示在这里。</p>
+            <strong>{t("当前没有可用模板")}</strong>
+            <p>{t("模板启用后会显示在这里。")}</p>
           </div>
         ) : null}
 
@@ -139,7 +125,7 @@ export function WorkbenchTemplatePanel({
           <motion.ul
             key={filterKey}
             className="workbench-template-grid"
-            aria-label="可用简历模板"
+            aria-label={t("可用简历模板")}
             initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, pointerEvents: "none" }}
@@ -155,7 +141,7 @@ export function WorkbenchTemplatePanel({
                     ref={selected ? selectedCardRef : null}
                     className={`workbench-template-card${selected ? " is-selected" : ""}`}
                     aria-pressed={selected}
-                    aria-label={selected ? `${template.name}（当前模板）` : `应用模板：${template.name}`}
+                    aria-label={selected ? t("{value0}（当前模板）", { value0: template.name }) : t("应用模板：{value0}", { value0: template.name })}
                     disabled={disabled || applyingId !== null}
                     onClick={() => void applyTemplate(template)}
                   >
@@ -169,7 +155,7 @@ export function WorkbenchTemplatePanel({
                     <span className="workbench-template-card-name">{template.name}</span>
                     {selected ? (
                       <span className="workbench-template-card-badge" aria-hidden="true">
-                        <Check size={13} />
+                        <Icon name="check" size={12} strokeWidth={2.2} />
                       </span>
                     ) : null}
                     {busy ? (
@@ -191,9 +177,9 @@ export function WorkbenchTemplatePanel({
               exit={{ opacity: 0, pointerEvents: "none" }}
               transition={{ duration: shouldReduceMotion ? 0 : 0.2, ease: "easeOut" }}
             >
-              <strong>没有符合条件的模板</strong>
-              <p>试试减少一个筛选条件。</p>
-              <Button variant="outline" size="sm" onClick={() => applyFilters([], [])}>清除筛选</Button>
+              <strong>{t("没有符合条件的模板")}</strong>
+              <p>{t("试试减少一个筛选条件。")}</p>
+              <button type="button" className="v3-btn v3-btn-ghost is-sm" onClick={() => applyFilters([], [])}>{t("清除筛选")}</button>
             </motion.div>
           )}
           </AnimatePresence>

@@ -17,7 +17,7 @@ from linkresume.modules.agent.schemas import AgentClarification, AgentContextMat
 from linkresume.modules.agent.message_scope import active_message, clarification_metadata, user_messages
 from linkresume.modules.agent.trace import event_key, operation_for_run, record_event
 from linkresume.modules.llm.models import LLMCallLog
-from linkresume.modules.identity.models import User
+from linkresume.modules.identity.dependencies import lock_active_user
 
 
 RUN_PHASE_LABELS = {
@@ -636,6 +636,13 @@ def _finalize(
     estimated_cost: Decimal | None = None,
 ) -> None:
     with app.state.session_factory() as db:
+        owner_id = db.scalar(select(AgentSession.user_id).join(AgentRun, AgentRun.session_id == AgentSession.id).where(AgentRun.public_id == run_public_id))
+        if owner_id is None:
+            return
+        try:
+            lock_active_user(db, owner_id)
+        except ApiError:
+            return
         row = db.execute(
             select(AgentRun, AgentSession)
             .join(AgentSession, AgentSession.id == AgentRun.session_id)
@@ -644,7 +651,6 @@ def _finalize(
         if row is None:
             return
         run, session = row
-        db.execute(select(User.id).where(User.id == session.user_id).with_for_update())
         db.execute(select(AgentSession.id).where(AgentSession.id == session.id).with_for_update())
         db.refresh(run, with_for_update=True)
         if run.status != "running":

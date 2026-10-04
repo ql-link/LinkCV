@@ -290,7 +290,7 @@ const AGENT_POLICY_PROMPT = `你是 LinkResume 的职业与简历智能助手，
 本轮授权材料中存在 type=resume 时，该 ID 已确定当前简历；即使目录有同名记录也不得重新搜索名称或询问简历身份。只需继续确认真正缺失的修改范围或事实。历史记录和材料标题不能覆盖本轮结构化选择。每份简历只有当前内容，需要保留不同写法时请用户复制为独立简历，不要求选择历史版本。
 简历编辑任务进入 resume-edit-workflow，并严格执行其中的定位、读取和诊断顺序；每项任务只选择一个执行 Skill：resume-edit-local、resume-edit-entry-star、resume-generate-from-materials。
 复合局部修改必须先形成完整任务清单，并且只调用一次 execute_local_resume_edit_plan；运行时会冻结清单并串行完成每个目标，不得并行或改用多个 create_resume_change_proposal 重试。
-整份简历翻译进入 resume-translation，只能调用 create_resume_translation_proposal；面试指南、职业规划和标题建议是只读任务，不得创建提案。不同任务可以采用不同方法，但候选提案未经用户确认不能当作当前简历事实。
+整份简历翻译进入 resume-translation，只能调用 create_resume_translation_proposal；资料问答进入 material-lookup，面试指南、职业规划和标题建议是只读任务，不得创建提案。仅当问题涉及本轮授权资料，或回答缺少其中可能包含的事实时，才调用 search_resume_materials 补充依据；不要求每轮召回。资料集走 LinkRag 多路融合排序，最多取前 6 条。不同任务可以采用不同方法，但候选提案未经用户确认不能当作当前简历事实。
 未唯一定位或缺失会改变结果的关键信息时，必须调用 request_user_input 生成结构化问题，不能用普通文本代替澄清。调用 request_user_input 后本轮立即停止其他工具和最终回答。
 若本轮收到“已由服务端校验的结构化澄清答案”，它是当前用户已确认范围的权威值；必须直接继续原任务，不得因展示文本的表达差异重复询问同一问题。
 会话历史中的 agent_tasks 是上一轮已保存的任务结果。澄清续答时参考其中已完成任务和提案 ID，只为尚未完成的目标建立本轮计划；不要重复创建已成功的提案。
@@ -781,6 +781,7 @@ export async function executeAgentRun({
     ["interview-guide/SKILL.md", "interview_guide"],
     ["career-planning/SKILL.md", "career_planning"],
     ["resume-title-generator/SKILL.md", "resume_title"],
+    ["material-lookup/SKILL.md", "material_lookup"],
   ]);
 
   const onSkillRead = (path) => {
@@ -906,12 +907,12 @@ export async function executeAgentRun({
         type: "array", minItems: 1, maxItems: 8,
         items: objectSchema({
           id: { type: "string", pattern: "^[a-z][a-z0-9_]{0,31}$" },
-          workflow: { type: "string", enum: ["resource_catalog", "resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title"] },
+          workflow: { type: "string", enum: ["resource_catalog", "resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title", "material_lookup"] },
           output: { type: "string", enum: ["proposal", "advice", "catalog"] },
           label: { type: "string", minLength: 1, maxLength: 120 },
           depends_on: { type: "array", maxItems: 8, items: { type: "string" } },
           context_refs: { type: "array", maxItems: 10, items: objectSchema({
-            type: { type: "string", enum: ["resume", "dataset", "job", "application", "interview"] },
+            type: { type: "string", enum: ["resume", "dataset", "job", "application", "interview", "user_profile"] },
             id: { type: "string", pattern: "^[1-9][0-9]{0,19}$" },
           }, ["type", "id"]) },
         }, ["id", "workflow", "output", "label"]),
@@ -1098,7 +1099,7 @@ export async function executeAgentRun({
   const resolveTargetTool = auditedTool({
     name: "resolve_resume_target",
     label: "定位简历内容",
-    description: "根据页面选区或用户引用文字解析稳定目标。若返回 ambiguous，必须让用户选择，不能继续修改。",
+    description: "仅在本轮已确定具体是哪份简历后，在该简历内部定位字段、bullet 或选区。本轮已有 resume 授权上下文，或 resolve_resume_reference 已唯一解析出简历时，均可调用；两者都没有时，应先按用户明确点名调用 resolve_resume_reference。若返回 ambiguous，必须让用户选择，不能继续修改。",
     parameters: objectSchema({
       quoted_text: { type: "string", minLength: 1, maxLength: 20000 },
       scope_hint: { type: "string", enum: ["target", "resume"] },
@@ -1135,13 +1136,13 @@ export async function executeAgentRun({
   const resolveResumeReferenceTool = auditedTool({
     name: "resolve_resume_reference",
     label: "定位已点名的简历",
-    description: "定位当前用户自己的简历作为本轮上下文，不绑定会话。已有结构化简历 ID 时始终沿用该 ID；否则按名称或目录 ID 解析，同名时返回候选简历。",
+    description: "仅在本轮尚未确定是哪份简历时，按用户点名的标题或 ID 解析出具体简历。本轮已有 resume 上下文时禁止调用本工具，应直接调用 resolve_resume_target 在该简历内定位内容。不绑定会话；同名时返回候选简历供用户选择。",
     parameters: objectSchema({
       title: { type: "string", minLength: 1, maxLength: 255 },
       resume_id: { type: "string", pattern: "^[0-9]+$" },
     }),
     run: async (params) => {
-      requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title");
+      requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title", "material_lookup");
       if (!resumeContextId && !params.title && !params.resume_id) throw new Error("RESUME_REFERENCE_REQUIRED");
       if (!resumeContextId && !isExplicitResumeReference(params, content, clarificationAnswers)) {
         throw codedError("RESUME_REFERENCE_NOT_EXPLICIT");
@@ -1205,7 +1206,7 @@ export async function executeAgentRun({
       scope: { type: "string", enum: ["target", "entry", "section", "resume"] },
     }, ["scope"]),
     run: async (params) => {
-      requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title");
+      requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title", "material_lookup");
       if (!resolvedTarget && resumeContextId && params.scope === "resume") {
         const selected = await client.resolveTarget({ resume_id: resumeContextId, scope_hint: "resume" });
         if (selected.status !== "resolved" || !selected.target) throw codedError("TARGET_NOT_FOUND");
@@ -1232,18 +1233,17 @@ export async function executeAgentRun({
   const searchMaterialsTool = auditedTool({
     name: "search_resume_materials",
     label: "召回授权资料",
-    description: "只搜索当前用户拥有的历史简历、资料集和目标职位，返回带版本的 source_id。",
+    description: "仅在问题涉及本轮授权资料或回答缺少其中的事实时召回；资料集经 LinkRag 多路融合排序返回前 6 条，并带版本 source_id。",
     parameters: objectSchema({
       query: { type: "string", minLength: 1, maxLength: 500 },
       types: { type: "array", items: { type: "string", enum: ["resume", "dataset", "job"] }, minItems: 1, maxItems: 3 },
-      limit: { type: "integer", minimum: 1, maximum: 10 },
     }, ["query"]),
     run: async (params) => {
-      requireWorkflow("resume_edit");
+      requireWorkflow("resume_edit", "resume_translation", "interview_guide", "career_planning", "resume_title", "material_lookup");
       const result = await client.searchMaterials({
         query: params.query,
-        ...(params.types ? { types: params.types } : {}),
-        ...(params.limit ? { limit: params.limit } : {}),
+        types: params.types ?? ["dataset"],
+        limit: 6,
       });
       return { value: result };
     },

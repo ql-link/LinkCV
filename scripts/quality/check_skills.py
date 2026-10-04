@@ -355,14 +355,14 @@ REDUCTION_CONTRACTS = {
     Path("run-all-tests/SKILL.md"): (
         "**任务范围验证**",
         "**PR 范围验证**",
-        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
+        "`npm run check`、`check:web` 和 `build:*` 仅在用户明确要求时运行",
         "同一会话中，如果任务范围验证后",
         "任务范围验证不因为“最终验证”自动变成全仓检查",
     ),
     Path("branch-pr-workflow/SKILL.md"): (
         "来源 Issue 是可选的追踪信息",
         "同一会话中，任务范围验证后",
-        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
+        "`npm run check`、`check:web` 和 `build:*` 仅在用户明确要求时运行",
         "共享 CI 仍运行其配置的检查",
     ),
     Path("code-review-and-quality/SKILL.md"): (

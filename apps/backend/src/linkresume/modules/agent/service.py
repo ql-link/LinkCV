@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import timedelta, timezone
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session, object_session
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
+from linkresume.modules.product_events import service as product_events
+from linkresume.modules.product_events.service import ProposalEntry
 from linkresume.application.resumes.service import (
     InvalidResumeTitle,
     ResumeTitleConflict,
@@ -317,6 +320,7 @@ def update_session(
     model_id: str | None = None,
 ) -> AgentSession:
     """Update owner-scoped session display state or explicit logical model choice."""
+    lock_active_user(db, user_id)
     if not fields:
         raise ApiError(400, "INVALID_AGENT_SESSION")
 
@@ -359,6 +363,7 @@ def update_session(
 
 def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
     """Delete one owned session and all of its Agent-owned dependent rows."""
+    lock_active_user(db, user_id)
     session = db.scalar(
         select(AgentSession)
         .where(
@@ -410,6 +415,7 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
 def create_session(
     db: Session, *, user_id: int, title: str | None, model_id: str | None = None,
 ) -> AgentSession:
+    lock_active_user(db, user_id)
     default_title = "新对话"
     normalized_title = " ".join((title or default_title).split())
     if not normalized_title or len(normalized_title) > 128:
@@ -515,6 +521,7 @@ def create_run(
     trace_request_id: str | None = None,
     submitted_request_hash: str | None = None,
 ) -> tuple[AgentRun, bool]:
+    lock_active_user(db, session.user_id)
     normalized_content = content.strip()
     if not normalized_content:
         raise ApiError(400, "INVALID_AGENT_MESSAGE")
@@ -744,7 +751,9 @@ def get_active_run(db: Session, public_id: str) -> tuple[AgentRun, AgentSession]
     if row is None:
         raise ApiError(404, "AGENT_RUN_NOT_FOUND")
     run, session = row
-    if run.status != "running" or session.status != "active":
+    lock_active_user(db, session.user_id)
+    run = db.scalar(select(AgentRun).where(AgentRun.id == run.id).with_for_update().execution_options(populate_existing=True))
+    if run is None or run.status != "running" or session.status != "active":
         raise ApiError(409, "AGENT_RUN_NOT_ACTIVE")
     active_message(db, run)
     return run, session
@@ -819,6 +828,7 @@ def resolve_resume_reference(
 def _owned_resume_for_target(
     db: Session, *, user_id: int, resume_id: str, lock: bool = False
 ) -> Resume:
+    lock_active_user(db, user_id)
     if not resume_id.isascii() or not resume_id.isdecimal():
         raise ApiError(404, "RESUME_NOT_FOUND")
     query = select(Resume).where(
@@ -1050,9 +1060,11 @@ def confirm_proposal(
     | None = None,
     delete_asset: Callable[[str], None] | None = None,
     trace_request_id: str | None = None,
+    entry: ProposalEntry = "unknown",
 ) -> tuple[ResumeChangeProposal, Resume]:
     # Read only the mode before acquiring locks. Translation allocates a new
     # resume, so its lock order must agree with other quota-checked creations.
+    lock_active_user(db, user_id)
     mode = db.scalar(
         select(ResumeChangeProposal.proposal_mode).where(
             ResumeChangeProposal.public_id == public_id,
@@ -1176,6 +1188,7 @@ def confirm_proposal(
             proposal.result_resume_id = result.id
             proposal.applied_lock_version = proposal.base_lock_version
             proposal.applied_at = utc_now()
+            product_events.resume_created(db, user_id, result.id, "translate")
             trace_confirmation("succeeded")
             db.commit()
             db.refresh(result)
@@ -1256,6 +1269,9 @@ def confirm_proposal(
     proposal.status = "applied"
     proposal.applied_lock_version = resume.lock_version
     proposal.applied_at = utc_now()
+    product_events.ai_customization_applied(
+        db, user_id, proposal_id=proposal.id, resume_id=resume.id, mode=proposal.proposal_mode, entry=entry
+    )
     trace_confirmation("succeeded")
     try:
         db.commit()
@@ -1269,6 +1285,7 @@ def confirm_proposal(
 def reject_proposal(
     db: Session, *, public_id: str, user_id: int
 ) -> ResumeChangeProposal:
+    lock_active_user(db, user_id)
     proposal = db.scalar(
         select(ResumeChangeProposal)
         .where(
@@ -1290,6 +1307,7 @@ def reject_proposal(
 
 def delete_resume_agent_data(db: Session, *, resume_id: int, user_id: int) -> None:
     """Delete resume-scoped proposals without deleting independent conversations."""
+    lock_active_user(db, user_id)
     db.execute(
         delete(ResumeChangeProposal).where(
             ResumeChangeProposal.resume_id == resume_id,

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from linkresume.core.errors import ApiError
 from linkresume.modules.announcements.models import Announcement, AnnouncementReadCursor
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.dependencies import lock_active_user
 
 NOT_FOUND = "ANNOUNCEMENT_NOT_FOUND"
 STATE_CONFLICT = "ANNOUNCEMENT_STATE_CONFLICT"
@@ -79,6 +80,12 @@ def active_filter(now: datetime):
         start <= now,
         or_(Announcement.ends_at.is_(None), Announcement.ends_at > now),
     )
+
+
+def scheduled_filter(now: datetime):
+    """SQL predicate equivalent to ``visibility(row, now) == 'scheduled'``."""
+    start = func.coalesce(Announcement.starts_at, Announcement.published_at)
+    return and_(Announcement.status == "published", start > now)
 
 
 def validate_window(starts_at: datetime | None, ends_at: datetime | None) -> None:
@@ -225,6 +232,7 @@ class Stats:
     published: int
     unpublished: int
     active: int
+    scheduled: int
 
 
 def stats(db: Session, now: datetime | None = None) -> Stats:
@@ -233,11 +241,13 @@ def stats(db: Session, now: datetime | None = None) -> Stats:
         select(Announcement.status, func.count()).group_by(Announcement.status)
     ).all())
     active = db.scalar(select(func.count(Announcement.id)).where(active_filter(now))) or 0
+    scheduled = db.scalar(select(func.count(Announcement.id)).where(scheduled_filter(now))) or 0
     return Stats(
         draft=by_status.get("draft", 0),
         published=by_status.get("published", 0),
         unpublished=by_status.get("unpublished", 0),
         active=active,
+        scheduled=scheduled,
     )
 
 
@@ -284,6 +294,7 @@ def unread_count(db: Session, user: User, now: datetime | None = None) -> int:
 
 def mark_all_read(db: Session, user: User, now: datetime | None = None) -> int:
     """Move the user's read-through time to ``now``; it never moves backwards."""
+    user = lock_active_user(db, user.id)
     now = now or utcnow()
     moved = db.execute(
         update(AnnouncementReadCursor)

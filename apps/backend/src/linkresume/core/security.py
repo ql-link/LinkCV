@@ -138,7 +138,7 @@ def decode_access_token(
         return None
     if not isinstance(sid, str) or not sid:
         return None
-    if channel not in {"web", "miniprogram"}:
+    if channel not in {"web", "miniprogram", "desktop"}:
         return None
     user_id = int(subject)
     if user_id <= 0 or str(user_id) != subject:

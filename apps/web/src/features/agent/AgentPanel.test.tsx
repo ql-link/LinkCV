@@ -334,7 +334,7 @@ const answer = 42;
     await user.click(screen.getByRole("button", { name: "应用到简历" }));
 
     await waitFor(() => expect(onBeforeConfirm).toHaveBeenCalledOnce());
-    expect(confirm).toHaveBeenCalledWith("proposal-1");
+    expect(confirm).toHaveBeenCalledWith("proposal-1", "editor");
     expect(onApplied).toHaveBeenCalledOnce();
   });
 

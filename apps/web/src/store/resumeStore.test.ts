@@ -1,3 +1,4 @@
+import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { ApiRequestError, api, type ResumeImportSummary, type ResumeRecord } from "../api/client";
@@ -209,7 +210,7 @@ describe("proposal confirmation write coordination", () => {
     expect(useResumeStore.getState().title).toBe(originalTitle);
     expect(useResumeStore.getState().editorContent).toEqual(originalContent);
     saving.resolve({ resume: record(2, "已保存草稿") });
-    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-1"));
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-1", undefined));
     const autosave = useResumeStore.getState().saveCurrentResume();
     confirming.resolve({ resume: record(3, "AI 修改后的正文") });
     await operation;
@@ -1025,7 +1026,7 @@ describe("account profile sync and password change", () => {
       is_admin: false,
       avatar_url: "/api/assets/users/1/assets/avatar",
       wechat_status: "unbound",
-      wechat_bound_at: null,
+      wechat_bound_at: null, contact_email: null, registered_at: "2026-01-01T00:00:00Z",
     });
     expect(useResumeStore.getState().user).toMatchObject({
       nickname: "新昵称",
@@ -1042,9 +1043,43 @@ describe("account profile sync and password change", () => {
       is_admin: false,
       avatar_url: null,
       wechat_status: "unbound",
-      wechat_bound_at: null,
+      wechat_bound_at: null, contact_email: null, registered_at: "2026-01-01T00:00:00Z",
     });
     expect(useResumeStore.getState().user).toBeNull();
   });
 
+});
+
+it("清空会话时清除编辑器内容并丢弃迟到的列表和简历详情", async () => {
+  const user = { id: "fictional-cache-user", email: "fictional@example.test", nickname: "虚构用户", is_admin: false };
+  useResumeStore.setState({ user });
+  let finishList!: (value: Awaited<ReturnType<typeof api.getResumeOverview>>) => void;
+  let finishDetail!: (value: Awaited<ReturnType<typeof api.getResume>>) => void;
+  vi.spyOn(api, "getResumeOverview").mockReturnValue(new Promise((resolve) => { finishList = resolve; }));
+  vi.spyOn(api, "getResume").mockReturnValue(new Promise((resolve) => { finishDetail = resolve; }));
+  const list = useResumeStore.getState().listResumes();
+  const detail = useResumeStore.getState().loadResume("1");
+  useResumeStore.getState().clearSession();
+  expect(useResumeStore.getState().markdown).toBe(defaultResumeMarkdown);
+  finishList({ resumes: [record(1, "# 旧账号的虚构简历")], active_imports: [], failed_imports: [], next_failed_cursor: null });
+  finishDetail({ resume: record(1, "# 旧账号的虚构简历") });
+  await Promise.all([list, detail]);
+  expect(useResumeStore.getState().user).toBeNull();
+  expect(useResumeStore.getState().resumes).toEqual([]);
+  expect(useResumeStore.getState().activeResumeId).toBeNull();
+  expect(useResumeStore.getState().markdown).toBe(defaultResumeMarkdown);
+});
+
+it("重新登录后忽略上一会话迟到的模板响应，即使重新打开同一简历", async () => {
+  const user = { id: "fictional-cache-user", email: "fictional@example.test", nickname: "虚构用户", is_admin: false };
+  useResumeStore.setState({ user, activeResumeId: "1", versionOperationPending: false });
+  const response = deferred<Awaited<ReturnType<typeof api.applyResumeTemplate>>>();
+  vi.spyOn(api, "applyResumeTemplate").mockReturnValue(response.promise);
+  const applying = useResumeStore.getState().applyTemplate("9", editorDocument("旧会话正文"));
+  useResumeStore.getState().clearSession();
+  useResumeStore.setState({ user, activeResumeId: "1", resumes: [record(5, "# 新会话正文")], lockVersion: 5 });
+  response.resolve({ resume: { ...record(2, "# 旧会话正文"), template_id: "9" } });
+  await applying;
+  expect(useResumeStore.getState().lockVersion).toBe(5);
+  expect(useResumeStore.getState().resumes).toEqual([record(5, "# 新会话正文")]);
 });

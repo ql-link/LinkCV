@@ -1,12 +1,20 @@
+import json
+from uuid import uuid4
+
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from linkresume.core.config import Settings
+from linkresume.core.database import utc_now
 from linkresume.main import create_app
+from linkresume.modules.agent.models import AgentRun, AgentSession
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
-from linkresume.modules.llm.models import LLMCallLog, LLMProviderConnection
+from linkresume.modules.llm.models import (
+    LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
+)
+from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, resolve, validation_fingerprint
 from tests.fakes import FakeRedis
 
 
@@ -72,6 +80,14 @@ def test_admin_only_route_configuration_and_probe():
         calls = client.get("/api/admin/llm/calls")
         assert calls.status_code == 200
         assert calls.json()["calls"][0]["source"] == "capability_probe"
+        call_id = calls.json()["calls"][0]["callId"]
+        by_call = client.get("/api/admin/llm/calls", params={"callId": call_id}).json()
+        assert [item["callId"] for item in by_call["calls"]] == [call_id]
+        assert by_call["summary"]["callCount"] == 1
+        assert client.get("/api/admin/llm/calls", params={"callId": "call_missing"}).json()["calls"] == []
+        # Probes run without a user, so a user filter excludes them.
+        assert client.get("/api/admin/llm/calls", params={"userId": 999999}).json()["calls"] == []
+        assert client.get("/api/admin/llm/calls", params={"userId": 0}).status_code == 400
         with app.state.session_factory() as db:
             assert db.scalar(select(LLMCallLog)).route_id == int(route_id)
 
@@ -166,3 +182,108 @@ def test_speech_use_cases_bind_only_speech_protocols_and_probe_through_speech_ga
         logs = db.scalars(select(LLMCallLog).where(LLMCallLog.source == "capability_probe")).all()
         assert {log.use_case for log in logs} == {"speech_to_text", "text_to_speech"}
         assert all(log.status == "succeeded" for log in logs)
+
+
+def test_model_user_selectable_is_admin_editable_and_ignored_by_system_use_cases():
+    app, gateway = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        created = client.post("/api/admin/llm/models", json={"displayName": "示例模型"})
+        assert created.json()["model"]["userSelectable"] is True
+        hidden = client.post("/api/admin/llm/models", json={"displayName": "隐藏模型", "userSelectable": False})
+        assert hidden.json()["model"]["userSelectable"] is False
+        model_id = created.json()["model"]["id"]
+        toggled = client.patch(f"/api/admin/llm/models/{model_id}", json={"userSelectable": False})
+        assert toggled.status_code == 200 and toggled.json()["model"]["userSelectable"] is False
+        # Editing another field leaves the flag untouched.
+        renamed = client.patch(f"/api/admin/llm/models/{model_id}", json={"displayName": "示例模型 2"})
+        assert renamed.json()["model"]["userSelectable"] is False
+        assert client.patch(f"/api/admin/llm/models/{model_id}", json={"userSelectable": None}).json()["model"]["userSelectable"] is False
+
+    # System capabilities keep resolving hidden models; only conversation is filtered.
+    with app.state.session_factory() as db:
+        connection = LLMProviderConnection(provider_code="aihubmix", name="系统连接", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        model = db.get(LLMModel, int(model_id))
+        db.add(connection); db.flush()
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="vendor/model", origin="manual", enabled=True, target_available=True)
+        db.add(route); db.flush()
+        binding = LLMUseCaseRoute(use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat", priority=1, enabled=True, validated_at=utc_now())
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
+        db.commit()
+        assert resolve(db, JOB_TEXT_EXTRACTION).model_id == model.id
+
+
+def _create_route(client, model_id, connection_id, target="vendor/model"):
+    response = client.post("/api/admin/llm/routes", json={"modelId": int(model_id), "connectionId": int(connection_id), "targetKind": "model", "invokeTarget": target})
+    assert response.status_code == 201, response.text
+    return response.json()["route"]["id"]
+
+
+def test_unused_route_model_and_connection_can_be_deleted():
+    app, _ = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        connection_id = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "临时连接", "apiKey": "fictional-key", "settings": {}}).json()["connection"]["id"]
+        model_id = client.post("/api/admin/llm/models", json={"displayName": "临时模型"}).json()["model"]["id"]
+        other_model = client.post("/api/admin/llm/models", json={"displayName": "另一个模型"}).json()["model"]["id"]
+        route_id = _create_route(client, model_id, connection_id)
+        _create_route(client, model_id, connection_id, "vendor/model-2")
+        kept_route = _create_route(client, other_model, connection_id, "vendor/other")
+
+        assert client.delete(f"/api/admin/llm/routes/{route_id}").status_code == 204
+        assert client.delete(f"/api/admin/llm/routes/{route_id}").status_code == 404
+        # Deleting a model takes its remaining unused routes with it.
+        assert client.delete(f"/api/admin/llm/models/{model_id}").status_code == 204
+        assert client.delete(f"/api/admin/llm/models/{model_id}").status_code == 404
+        routes = client.get("/api/admin/llm/routes").json()["routes"]
+        assert [route["id"] for route in routes] == [kept_route]
+        # Deleting a connection takes its routes but keeps logical models.
+        assert client.delete(f"/api/admin/llm/connections/{connection_id}").status_code == 204
+        assert client.get("/api/admin/llm/routes").json()["routes"] == []
+        assert [model["id"] for model in client.get("/api/admin/llm/models").json()["models"]] == [other_model]
+        assert client.delete("/api/admin/llm/connections/abc").status_code == 404
+
+
+def test_referenced_llm_configuration_cannot_be_deleted():
+    app, _ = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        connection_id = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "主连接", "apiKey": "fictional-key", "settings": {}}).json()["connection"]["id"]
+        model_id = client.post("/api/admin/llm/models", json={"displayName": "示例模型"}).json()["model"]["id"]
+        route_id = _create_route(client, model_id, connection_id)
+        path = f"/api/admin/llm/use-cases/job_text_extraction/routes/{route_id}"
+        assert client.put(path, json={"useCase": "job_text_extraction", "routeId": int(route_id), "protocolCode": "openai_chat", "priority": 100}).status_code == 200
+
+        # A binding blocks deletion of the route, its model and its connection.
+        for target, code in (("routes/" + route_id, "LLM_ROUTE_IN_USE"), ("models/" + model_id, "LLM_MODEL_IN_USE"), ("connections/" + connection_id, "LLM_CONNECTION_IN_USE")):
+            response = client.delete(f"/api/admin/llm/{target}")
+            assert response.status_code == 409 and response.json()["error"] == code, response.text
+
+        # A probe writes a call log; once unbound, that history still blocks deletion.
+        assert client.post(f"{path}/probe").status_code == 200
+        assert client.delete(path).status_code == 204
+        response = client.delete(f"/api/admin/llm/routes/{route_id}")
+        assert response.status_code == 409 and response.json()["error"] == "LLM_ROUTE_IN_USE"
+        assert len(client.get("/api/admin/llm/routes").json()["routes"]) == 1
+        assert len(client.get("/api/admin/llm/connections").json()["connections"]) == 1
+
+
+def test_agent_history_blocks_deleting_its_model_and_route():
+    app, _ = build_app()
+    with TestClient(app) as client:
+        register_admin(app, client)
+        connection_id = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "主连接", "apiKey": "fictional-key", "settings": {}}).json()["connection"]["id"]
+        selected = client.post("/api/admin/llm/models", json={"displayName": "会话所选模型"}).json()["model"]["id"]
+        resolved = client.post("/api/admin/llm/models", json={"displayName": "运行所用模型"}).json()["model"]["id"]
+        route_id = _create_route(client, resolved, connection_id)
+        with app.state.session_factory() as db:
+            user = db.scalar(select(User).where(User.email == "admin@example.invalid"))
+            session = AgentSession(public_id=str(uuid4()), user_id=user.id, title="示例", status="active", selected_llm_model_id=int(selected))
+            db.add(session); db.flush()
+            db.add(AgentRun(public_id=str(uuid4()), session_id=session.id, idempotency_key=uuid4().hex, status="succeeded", resolved_llm_model_id=int(resolved), resolved_llm_route_id=int(route_id), started_at=utc_now()))
+            db.commit()
+        assert client.delete(f"/api/admin/llm/models/{selected}").json()["error"] == "LLM_MODEL_IN_USE"
+        assert client.delete(f"/api/admin/llm/models/{resolved}").json()["error"] == "LLM_MODEL_IN_USE"
+        assert client.delete(f"/api/admin/llm/routes/{route_id}").json()["error"] == "LLM_ROUTE_IN_USE"
+        assert client.delete(f"/api/admin/llm/connections/{connection_id}").json()["error"] == "LLM_CONNECTION_IN_USE"

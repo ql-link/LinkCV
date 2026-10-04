@@ -37,7 +37,7 @@ def assert_for_update(statement: object) -> None:
 
 
 def test_create_session_has_no_resume_binding_field() -> None:
-    db = RecordingSession([])
+    db = RecordingSession([SimpleNamespace(status=1, deletion_requested_at=None)])
 
     record = create_session(
         db,  # type: ignore[arg-type]
@@ -46,13 +46,14 @@ def test_create_session_has_no_resume_binding_field() -> None:
     )
 
     assert not hasattr(record, "resume_id")
-    assert db.scalar_statements == []
+    assert_for_update(db.scalar_statements[0])
 
 
 def test_create_proposal_locks_resume_before_idempotency_lookup() -> None:
     # No existing idempotent proposal and no originating revision message.
     message = SimpleNamespace(sequence_no=1, metadata_json=None)
-    db = RecordingSession([SimpleNamespace(id=7, lock_version=4), None, message, message])
+    db = RecordingSession([SimpleNamespace(status=1, deletion_requested_at=None),
+                           SimpleNamespace(id=7, lock_version=4), None, message, message])
     data, style = canonical_resume_payload()
 
     proposal = create_proposal(
@@ -69,13 +70,13 @@ def test_create_proposal_locks_resume_before_idempotency_lookup() -> None:
 
     assert proposal.resume_id == 7
     assert_for_update(db.scalar_statements[0])
-    assert getattr(db.scalar_statements[1], "_for_update_arg", None) is None
-    assert_for_update(db.scalar_statements[2])
+    assert getattr(db.scalar_statements[2], "_for_update_arg", None) is None
+    assert_for_update(db.scalar_statements[3])
 
 
 def test_reject_proposal_locks_proposal_before_terminal_transition() -> None:
     pending = SimpleNamespace(status="pending")
-    db = RecordingSession([pending])
+    db = RecordingSession([SimpleNamespace(status=1, deletion_requested_at=None), pending])
 
     result = reject_proposal(
         db,  # type: ignore[arg-type]

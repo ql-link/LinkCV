@@ -96,7 +96,7 @@ def build_app():
     loki = FakeLoki()
     app = create_app(
         Settings(
-            app_environment="test",
+            app_environment="development",
             database_url="sqlite+pysqlite:///:memory:",
             jwt_secret="observability-test-secret-32-bytes",
         ),

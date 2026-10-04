@@ -49,7 +49,8 @@ describe("LinkResume routes", () => {
     expect(parseAppRoute("/career/applications/application_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: undefined });
     expect(parseAppRoute("/career/applications/application_1", "?session=session_1")).toEqual({ kind: "interviews", view: "applications", applicationId: "application_1", sessionId: "session_1" });
     expect(parseAppRoute("/career/schedule")).toEqual({ kind: "interviews", view: "schedule" });
-    expect(parseAppRoute("/career/reviews")).toEqual({ kind: "interviews", view: "records", sessionId: undefined });
+    expect(parseAppRoute("/career/reviews")).toEqual({ kind: "interviews", view: "records", sessionId: undefined, applicationId: undefined });
+    expect(parseAppRoute("/career/reviews", "?session=31&application=21")).toEqual({ kind: "interviews", view: "records", sessionId: "31", applicationId: "21" });
     expect(parseAppRoute("/interviews", "?view=schedule")).toEqual({ kind: "interviews", view: "schedule" });
     expect(parseAppRoute("/interviews", "?view=records")).toEqual({ kind: "interviews", view: "records" });
     expect(parseAppRoute("/interviews", "?view=overview")).toEqual({ kind: "interviews", view: "applications" });
@@ -119,6 +120,8 @@ describe("LinkResume routes", () => {
     expect(datasetsPath("all")).toBe("/datasets");
     expect(datasetsPath("folder-1")).toBe("/datasets?folder=folder-1");
     expect(isSafeAppPath("/account")).toBe(true);
+    expect(isSafeAppPath("/share/token_123")).toBe(true);
+    expect(parseAppRoute("/login", "?next=%2Fshare%2Ftoken_123")).toEqual({ kind: "auth", mode: "login", next: "/share/token_123" });
     expect(isSafeAppPath("/account/password")).toBe(true);
     expect(isSafeAppPath("//example.com/resumes")).toBe(false);
     expect(isSafeAppPath("https://example.com/resumes")).toBe(false);

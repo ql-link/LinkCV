@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { CircleAlert, CircleCheck, CircleHelp, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -10,10 +11,10 @@ export type FeedbackNoticeKind = "info" | "success" | "warning" | "error";
 export const FLOATING_FEEDBACK_NOTICE_DURATION_MS = 3000;
 
 const defaultTitles: Record<FeedbackNoticeKind, string> = {
-  info: "提示",
-  success: "操作成功",
-  warning: "请注意",
-  error: "操作失败",
+  get info() { return t("提示"); },
+  get success() { return t("操作成功"); },
+  get warning() { return t("请注意"); },
+  get error() { return t("操作失败"); },
 };
 
 const noticeIcons: Record<FeedbackNoticeKind, typeof CircleAlert> = {
@@ -42,6 +43,7 @@ export function FeedbackNotice({
   dismissKey?: string | number;
   children: ReactNode;
 }) {
+  useLocale();
   const Icon = noticeIcons[kind];
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;

@@ -10,6 +10,7 @@ type Options = {
   runId: string | null;
   blocked: boolean;
   visible?: boolean;
+  prepareRequest?: (request: QueueDraft) => QueueDraft;
   send: (item: QueueItem) => Promise<void>;
 };
 
@@ -163,6 +164,9 @@ export function useMessageQueue(options: Options) {
         if (item.mode === "steer") {
           item.targetRunId = current.current.runId!;
           if (item.request.contexts?.some((ref) => ref.type === "resume")) item.request.replace_inherited_resume = true;
+        }
+        if (!item.submissionKey && current.current.prepareRequest) {
+          item.request = structuredClone(current.current.prepareRequest(item.request));
         }
         await freezeItem(item);
         claimed = structuredClone(item);

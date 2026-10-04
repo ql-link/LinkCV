@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
 from linkresume.modules.agent.models import AgentMessage, AgentRun, AgentSession
-from linkresume.modules.identity.models import User
+from linkresume.modules.identity.dependencies import lock_active_user
 
 source_sequence_no: ContextVar[int | None] = ContextVar("agent_source_sequence_no", default=None)
 
@@ -85,7 +85,7 @@ def lock_run(db: Session, public_id: str) -> tuple[AgentRun, AgentSession]:
     if row is None:
         raise ApiError(404, "AGENT_RUN_NOT_FOUND")
     run, session = row
-    db.execute(select(User.id).where(User.id == session.user_id).with_for_update())
+    lock_active_user(db, session.user_id)
     db.execute(select(AgentSession.id).where(AgentSession.id == session.id).with_for_update())
     db.refresh(run, with_for_update=True)
     if run.status != "running" or session.status != "active":

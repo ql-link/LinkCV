@@ -79,6 +79,7 @@ def announcement_stats(
         published=result.published,
         unpublished=result.unpublished,
         active=result.active,
+        scheduled=result.scheduled,
     )
 
 

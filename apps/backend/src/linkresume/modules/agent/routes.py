@@ -1,7 +1,7 @@
 from uuid import NAMESPACE_URL, uuid5
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, Body, Depends, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -30,6 +30,7 @@ from linkresume.modules.agent.schemas import (
     AgentModelResponse,
     AgentReadinessResponse,
     MessageCreateRequest,
+    ProposalConfirmRequest,
     ProposalListResponse,
     ProposalResponse,
     RunResponse,
@@ -722,12 +723,14 @@ def confirm_agent_proposal(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
+    payload: ProposalConfirmRequest | None = Body(default=None),
 ) -> ResumeResponse:
     try:
         _, resume = confirm_proposal(
             db,
             public_id=proposal_id,
             user_id=user.id,
+            entry=(payload.entry if payload else None) or "unknown",
             validate_resume_data=lambda data, resume_id: validate_resume_pdf_asset_contract(
                 storage,
                 data,

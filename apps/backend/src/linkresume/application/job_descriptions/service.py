@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from linkresume.modules.identity.dependencies import lock_active_user
+
 import base64
 import hashlib
 import json
@@ -7,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from sqlalchemy import String, and_, cast, func, or_, select, update
+from sqlalchemy import String, and_, cast, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -25,6 +27,7 @@ from linkresume.domain.job_source import (
 )
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.job_matches.models import JobResumeMatch
 from linkresume.modules.job_descriptions.schemas import (
     JobDescriptionCreateRequest,
     JobDescriptionUpdateRequest,
@@ -88,6 +91,7 @@ def create_or_resolve_job(
     payload: JobDescriptionCreateRequest,
     commit: bool = True,
 ) -> CreateJobResult:
+    lock_active_user(db, user_id)
     source = _normalize_payload_source(payload)
     duplicate = _find_duplicate(db, user_id, source)
     if duplicate is not None:
@@ -153,6 +157,7 @@ def update_owned_job(
     user_id: int,
     payload: JobDescriptionUpdateRequest,
 ) -> JobDescription | None:
+    lock_active_user(db, user_id)
     provided = payload.model_dump(exclude_unset=True)
     provided.pop("base_lock_version", None)
     _validate_merged_salary(job, provided)
@@ -198,6 +203,7 @@ def hard_delete_owned_job(
     *,
     delete_asset_object: Callable[[str], None] | None = None,
 ) -> bool:
+    lock_active_user(db, user_id)
     parsed = parse_decimal_id(job_id)
     if parsed is None:
         return False
@@ -229,6 +235,9 @@ def hard_delete_owned_job(
             delete_asset_object=delete_asset_object,
         )
         detach_mock_interview_job(db, job.id)
+        db.execute(
+            delete(JobResumeMatch).where(JobResumeMatch.job_description_id == job.id)
+        )
         db.delete(job)
         db.commit()
         return True
@@ -342,6 +351,7 @@ def _resolve_duplicate(
     *,
     commit: bool,
 ) -> JobDescription:
+    lock_active_user(db, user_id)
     resolution = payload.duplicate_resolution
     if resolution is None or source is None:
         raise JobEditConflict

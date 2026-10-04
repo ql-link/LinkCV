@@ -15,13 +15,14 @@ from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import AssetStorage, get_storage
 from linkresume.domain.resume import compile_layout_plan
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_workspace_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.pdf_service import (
     RENDER_PROTOCOL_VERSION,
     ResumePdfRenderer,
     build_render_assets,
 )
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.resumes.models import Resume
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
@@ -100,9 +101,10 @@ def resume_pdf_response(resume: Resume, pdf: bytes) -> Response:
 @router.get("/{resume_id}/pdf", response_model=None)
 def download_resume_pdf(
     resume_id: str,
+    request: Request,
     lock_version: int = Query(..., ge=1),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
     storage: AssetStorage = Depends(get_storage),
     renderer: ResumePdfRenderer = Depends(get_pdf_renderer),
 ) -> Response:
@@ -112,4 +114,6 @@ def download_resume_pdf(
     if resume.lock_version != lock_version:
         raise ApiError(409, "RESUME_PDF_SNAPSHOT_STALE")
     pdf = render_resume_pdf(resume, user.id, storage, renderer)
-    return resume_pdf_response(resume, pdf)
+    response = resume_pdf_response(resume, pdf)
+    product_events.pdf_exported(db, user.id, resume.id, request.state.auth_channel)
+    return response
