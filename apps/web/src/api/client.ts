@@ -251,6 +251,8 @@ export type SemanticClassificationSuggestion = {
 };
 
 export type AgentMessage = {
+  submission_key?: string | null;
+  reply_to_sequence_no?: number | null;
   run_id?: string | null;
   sequence_no: number;
   role: "user" | "assistant";
@@ -274,6 +276,7 @@ export type AgentMessage = {
     proposal_ids: string[];
     error_code?: string | null;
     result?: string | null;
+    superseded_by_sequence_no?: number | null;
   }> | null;
   created_at: string;
 };
@@ -347,6 +350,7 @@ export type AgentActiveRun = {
 };
 
 export type AgentProposal = {
+  source_user_sequence_no?: number | null;
   superseded_by?: string | null;
   id: string;
   run_id: string;
@@ -376,7 +380,11 @@ export type AgentProposal = {
   created_at: string;
 };
 
-export type AgentStreamEvent =
+export type AgentStreamEvent = (
+  | { type: "user.message.accepted"; runId: string; submissionKey: string; content: string; contexts: AgentContextSnapshot[] }
+  | { type: "user.message.applied"; runId: string; submissionKey: string }
+  | { type: "user.message.rejected"; runId: string; submissionKey: string; error: string }
+  | { type: "assistant.message.completed"; runId: string; submissionKey?: string; sequenceNo: number; content: string; clarification?: AgentClarification }
   | { type: "run.started"; runId: string }
   | {
       type: "run.phase";
@@ -400,7 +408,18 @@ export type AgentStreamEvent =
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
   | { type: "proposal.created"; runId: string; proposal: AgentProposal }
   | { type: "run.completed" | "run.cancelled"; runId: string }
-  | { type: "run.failed"; runId: string; error: string };
+  | { type: "run.failed"; runId: string; error: string }) & { userSequenceNo?: number; submissionKey?: string };
+
+export type AgentSubmissionReceipt = {
+  run_id: string;
+  submission_key: string;
+  state: "waiting" | "accepted" | "applied" | "not_applied" | "unknown";
+  user_sequence_no?: number | null;
+  run_status?: "running" | "succeeded" | "failed" | "cancelled";
+  error?: string;
+};
+
+export type AgentMessageRequest = Parameters<typeof streamAgentMessage>[1];
 
 export type ResumeShareState = {
   share_token: string;
@@ -1245,6 +1264,7 @@ async function consumeAgentStream(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
+    "user.message.accepted", "user.message.applied", "user.message.rejected", "assistant.message.completed",
     "run.started", "run.phase", "assistant.activity.delta", "assistant.activity.status", "assistant.activity.clear", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
@@ -1367,7 +1387,7 @@ export const api = {
     ),
   listAgentSessions: () =>
     request<{ sessions: AgentSession[] }>("/api/agent/sessions"),
-  getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
+  getAgentReadiness: () => request<{ ready: boolean; steering?: boolean }>("/api/agent/readiness"),
   getAgentModel: () => request<{ model: AgentModelSummary }>("/api/agent/model"),
   getAgentModels: () => request<{ models: AgentModelSummary[]; defaultModelId: string | null }>("/api/agent/models"),
   listAgentContexts: (options: {
@@ -1418,6 +1438,12 @@ export const api = {
     request<void>(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
   streamAgentMessage,
   streamAgentRun,
+  steerAgentRun: (runId: string, payload: AgentMessageRequest) =>
+    request<AgentSubmissionReceipt>(`/api/agent/runs/${encodeURIComponent(runId)}/steer`, { method: "POST", body: payload }),
+  getAgentSteering: (runId: string, key: string) =>
+    request<AgentSubmissionReceipt>(`/api/agent/runs/${encodeURIComponent(runId)}/steer/${encodeURIComponent(key)}`),
+  getAgentSubmission: (sessionId: string, key: string) =>
+    request<AgentSubmissionReceipt>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/submissions/${encodeURIComponent(key)}`),
   cancelAgentRun: (runId: string) =>
     request<{ run_id: string; status: string }>(
       `/api/agent/runs/${encodeURIComponent(runId)}/cancel`,

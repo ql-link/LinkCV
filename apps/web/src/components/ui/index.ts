@@ -7,6 +7,7 @@ export { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 export { ContentFrame, contentFrameVariants, type ContentFrameProps } from "./content-frame";
 export { ConfirmDialog } from "./confirm-dialog";
 export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "./dialog";
+export { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./dropdown-menu";
 export { ExpandableSearch, type ExpandableSearchProps } from "./expandable-search";
 export { FeedbackNotice, type FeedbackNoticeKind } from "./feedback-notice";
 export { FileUpload, type FileUploadHandle } from "./file-upload";

@@ -1,6 +1,7 @@
 from uuid import NAMESPACE_URL, uuid5
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -19,6 +20,7 @@ from linkresume.modules.agent.pi_client import (
     check_pi_readiness,
     sse_event,
     stream_pi_run,
+    pi_steering_request,
 )
 from linkresume.modules.agent.schemas import (
     ActiveRunRecord,
@@ -35,8 +37,11 @@ from linkresume.modules.agent.schemas import (
     SessionListResponse,
     SessionResponse,
     SessionUpdateRequest,
+    SteeringRequest, SubmissionReceipt,
 )
 from linkresume.modules.agent.run_stream import get_agent_run_stream_hub
+from linkresume.modules.agent.message_scope import active_message, request_hash
+from linkresume.modules.agent.steering import receipt as submission_receipt, resolve_input
 from linkresume.modules.agent.trace import (
     begin_operation, event_key, fail_run_creation, finish_preflight,
     operation_for_run, record_event,
@@ -106,8 +111,8 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 @router.get("/readiness", response_model=AgentReadinessResponse)
 async def get_agent_readiness(request: Request) -> AgentReadinessResponse:
-    await check_pi_readiness(request.app)
-    return AgentReadinessResponse(ready=True)
+    capabilities = await check_pi_readiness(request.app)
+    return AgentReadinessResponse(ready=True, steering=capabilities.get("steering") is True)
 
 
 @router.get("/model", response_model=AgentModelResponse)
@@ -386,6 +391,14 @@ async def send_agent_message(
             AgentRun.idempotency_key == payload.idempotency_key,
         )
     )
+    fingerprint = request_hash(payload)
+    if existing_run is not None:
+        original = db.scalar(select(AgentMessage).where(
+            AgentMessage.run_id == existing_run.id, AgentMessage.role == "user")
+            .order_by(AgentMessage.sequence_no).limit(1))
+        original_hash = (original.metadata_json or {}).get("submission", {}).get("hash") if original else None
+        if original_hash and original_hash != fingerprint:
+            raise ApiError(409, "AGENT_SUBMISSION_CONFLICT")
     operation_id = (
         existing_run.public_id
         if existing_run is not None
@@ -533,6 +546,7 @@ async def send_agent_message(
             revision_proposal_id=payload.revision_proposal_id,
             operation=trace_operation,
             trace_request_id=request.state.request_id if trace_operation else None,
+            submitted_request_hash=fingerprint,
         )
     except Exception as error:
         public_error = isinstance(error, ApiError)
@@ -598,6 +612,73 @@ async def send_agent_message(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/sessions/{session_id}/submissions/{submission_key}", response_model=SubmissionReceipt)
+def get_submission(session_id: str, submission_key: Annotated[str, Path(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")], db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    session = get_owned_session(db, session_id, user.id)
+    run = db.scalar(select(AgentRun).where(AgentRun.session_id == session.id,
+                                         AgentRun.idempotency_key == submission_key))
+    if run is None:
+        raise ApiError(404, "AGENT_SUBMISSION_NOT_FOUND")
+    stored = submission_receipt(db, run, submission_key)
+    if stored:
+        return stored
+    message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == run.id,
+        AgentMessage.role == "user").order_by(AgentMessage.sequence_no).limit(1))
+    return SubmissionReceipt(run_id=run.public_id, submission_key=submission_key,
+                             state="applied", user_sequence_no=message.sequence_no if message else None,
+                             run_status=run.status)
+
+
+def _owned_run(db, run_id, user_id):
+    row = db.execute(select(AgentRun, AgentSession).join(AgentSession, AgentSession.id == AgentRun.session_id).where(
+        AgentRun.public_id == run_id, AgentSession.user_id == user_id)).one_or_none()
+    if row is None:
+        raise ApiError(404, "AGENT_RUN_NOT_FOUND")
+    return row
+
+
+@router.post("/runs/{run_id}/steer", response_model=SubmissionReceipt, status_code=202)
+async def steer_run(run_id: str, payload: SteeringRequest, request: Request,
+                    db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                    storage: AssetStorage = Depends(get_storage)):
+    run, session = _owned_run(db, run_id, user.id)
+    fingerprint = request_hash(payload)
+    stored = submission_receipt(db, run, payload.idempotency_key, fingerprint=fingerprint)
+    if stored:
+        return stored
+    if run.status != "running" or session.status != "active":
+        raise ApiError(409, "AGENT_STEER_TARGET_FINISHED")
+    # A repeated waiting submission keeps its original admission even if a
+    # referenced object has changed since the first preflight. Activation still
+    # validates fresh references before creating the formal user message.
+    try:
+        pending = await pi_steering_request(request.app, run_id, key=payload.idempotency_key)
+    except ApiError:
+        pending = None
+    if pending and pending.get("request_hash"):
+        if pending["request_hash"] != fingerprint:
+            raise ApiError(409, "AGENT_SUBMISSION_CONFLICT")
+        return pending
+    resolve_input(db, run, session, payload, storage=storage, settings=request.app.state.settings)
+    return await pi_steering_request(request.app, run_id, payload=payload.model_dump(mode="json", by_alias=True))
+
+
+@router.get("/runs/{run_id}/steer/{submission_key}", response_model=SubmissionReceipt)
+async def get_steering(run_id: str, submission_key: Annotated[str, Path(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")], request: Request,
+                       db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    run, _ = _owned_run(db, run_id, user.id)
+    stored = submission_receipt(db, run, submission_key)
+    if stored:
+        return stored
+    if run.status != "running":
+        return SubmissionReceipt(run_id=run_id, submission_key=submission_key, state="not_applied", run_status=run.status)
+    try:
+        return await pi_steering_request(request.app, run_id, key=submission_key)
+    except ApiError:
+        return SubmissionReceipt(run_id=run_id, submission_key=submission_key, state="unknown", run_status="running")
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunResponse)

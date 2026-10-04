@@ -6,6 +6,8 @@ import { api, ApiRequestError, type AgentContextSnapshot, type AgentProposal, ty
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { useResumeStore } from "../../store/resumeStore";
 import { AssistantPage, parseAgentTimestamp } from "./AssistantPage";
+import { installMessageQueueEnvironment } from "../../test/messageQueueEnvironment";
+import { queueKey, readQueue } from "../agent/messageQueue";
 
 vi.mock("../datasets/DatasetsPage", () => ({
   DatasetsPage: ({ embedded }: { embedded?: boolean }) => (
@@ -57,11 +59,14 @@ const session: AgentSession = {
 };
 
 beforeEach(() => {
+  installMessageQueueEnvironment();
   window.history.replaceState(null, "", "/assistant");
   useResumeStore.setState({
     ...originalResumeStore,
+    user: { id: "1", email: "queue-user@example.test", nickname: "测试用户", is_admin: false },
     resumes: [],
     activeResumeId: null,
+    lockVersion: 1,
   }, true);
   vi.spyOn(api, "getAgentModels").mockResolvedValue({ models: [{ id: "1", name: "deepseek/deepseek-v4-flash" }], defaultModelId: "1" });
   vi.spyOn(api, "getActiveAgentRun").mockResolvedValue({ run: null });
@@ -74,6 +79,37 @@ afterEach(() => {
 });
 
 describe("AssistantPage", () => {
+  it("首次连续发送共享会话创建，并保留创建期间后来输入的草稿", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    let created!: (result: { session: AgentSession }) => void;
+    const create = vi.spyOn(api, "createAgentSession").mockImplementation(() => new Promise((resolve) => { created = resolve; }));
+    let finish!: () => void;
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation((_id, request, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-1", userSequenceNo: 1, submissionKey: request.idempotency_key });
+      return new Promise<void>((resolve) => { finish = resolve; });
+    });
+    const { unmount } = render(<AssistantPage />);
+    const input = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(input, "第一条指令");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    await user.clear(input);
+    await user.type(input, "第二条指令");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await user.clear(input);
+    await user.type(input, "后来输入的草稿");
+    await act(async () => { created({ session }); });
+    await waitFor(() => expect(stream).toHaveBeenCalledOnce());
+    expect(create).toHaveBeenCalledOnce();
+    expect(stream.mock.calls[0][1].content).toBe("第一条指令");
+    expect(readQueue(queueKey("1", session.id)).items.map((item) => item.request.content)).toEqual(["第二条指令"]);
+    expect(input).toHaveTextContent("后来输入的草稿");
+    unmount();
+    await act(async () => { finish(); });
+  });
   it("使用侧栏品牌返回工作区，收起侧栏后只保留展开按钮", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
@@ -443,7 +479,7 @@ describe("AssistantPage", () => {
       },
     });
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
-    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => { onEvent({ type: "run.started", runId: "run-1" }); onEvent({ type: "run.completed", runId: "run-1" }); });
     const saveCurrentResume = vi.fn().mockResolvedValue(undefined);
     useResumeStore.setState({
       resumes: [{
@@ -470,7 +506,7 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(stream).toHaveBeenCalledOnce());
     expect(saveCurrentResume).toHaveBeenCalledOnce();
     expect(stream.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
-      contexts: [{ type: "resume", id: "1", presentation: "implicit" }],
+      contexts: [{ type: "resume", id: "1", presentation: "implicit", version: "1" }],
       selection_context: expect.objectContaining({
         block_ids: ["node_location000000001"],
         selected_text: "123",
@@ -491,7 +527,7 @@ describe("AssistantPage", () => {
         ? [{ type: "resume", id: explicitId, version: "1", label: "Java 开发实习简历" }]
         : [],
     }));
-    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => { onEvent({ type: "run.started", runId: "run-1" }); onEvent({ type: "run.completed", runId: "run-1" }); });
     useResumeStore.setState({
       resumes: [{
         id: "1",
@@ -541,7 +577,7 @@ describe("AssistantPage", () => {
     vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
     vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
-    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => { onEvent({ type: "run.started", runId: "run-1" }); onEvent({ type: "run.completed", runId: "run-1" }); });
     useResumeStore.setState({
       resumes: [
         {
@@ -572,7 +608,7 @@ describe("AssistantPage", () => {
 
     await waitFor(() => expect(stream).toHaveBeenCalledOnce());
     expect(stream.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
-      contexts: [{ type: "resume", id: "2", presentation: "implicit" }],
+      contexts: [{ type: "resume", id: "2", presentation: "implicit", version: "1" }],
     }));
     expect(stream.mock.calls[0]?.[1]).not.toHaveProperty("selection_context");
   });
@@ -1484,7 +1520,7 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "收起对话资料" }));
     expect(screen.queryByRole("complementary", { name: "最新一轮对话的引用资料与修改内容" })).not.toBeInTheDocument();
 
-    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => { onEvent({ type: "run.started", runId: "run-1" }); onEvent({ type: "run.completed", runId: "run-1" }); });
     const reject = vi.spyOn(api, "rejectAgentProposal");
     vi.mocked(api.getAgentSession).mockResolvedValue({ session: { ...proposalSession, messages: [
       ...proposalSession.messages,
@@ -1527,7 +1563,7 @@ describe("AssistantPage", () => {
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
-  it("生成中只保留输入区的停止入口，并保留已显示内容", async () => {
+  it("生成中可以继续编辑，停止保留新草稿和已显示内容", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
@@ -1543,10 +1579,13 @@ describe("AssistantPage", () => {
     await user.type(input, "请分析");
     await user.click(screen.getByRole("button", { name: "发送" }));
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
-    expect(await screen.findByText("已显示的部分回复")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("已显示的部分回复")).toBeInTheDocument());
     expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "下一条草稿");
     await user.click(screen.getByRole("button", { name: "停止生成" }));
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("下一条草稿");
   });
 
   it("在思考区累计工具阶段文字，并在最终正文开始前一次清空", async () => {
@@ -1704,10 +1743,10 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getAllByText("润色项目经历")).toHaveLength(2);
-    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("润色项目经历");
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
-  it("流失败时保留已显示回复与可重试草稿", async () => {
+  it("流失败时保留已显示回复，不把已发送消息覆盖到新草稿", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
@@ -1729,7 +1768,7 @@ describe("AssistantPage", () => {
     expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
     expect(alert.parentElement).toBe(document.body);
     expect(container.querySelector(".assistant-error-notice")).not.toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("请分析");
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
   it("收到 run.cancelled 后刷新会话仍保留停止终态", async () => {

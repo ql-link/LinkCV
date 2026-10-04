@@ -13,7 +13,7 @@ from linkresume.modules.agent.pi_client import (
 
 class Result:
     def one_or_none(self):
-        return SimpleNamespace(status="cancelled"), SimpleNamespace()
+        return SimpleNamespace(status="cancelled"), SimpleNamespace(id=1, user_id=2)
 
 
 class FinalizeSession:
@@ -30,6 +30,10 @@ class FinalizeSession:
         self.statements.append(statement)
         return Result()
 
+    def refresh(self, instance, *, with_for_update):
+        assert with_for_update is True
+        self.statements.append("lock_run")
+
 
 def test_finalize_locks_run_before_checking_terminal_state() -> None:
     db = FinalizeSession()
@@ -37,8 +41,10 @@ def test_finalize_locks_run_before_checking_terminal_state() -> None:
 
     _finalize(app, "run-public-id", "succeeded", error_code=None)
 
-    assert len(db.statements) == 1
-    assert getattr(db.statements[0], "_for_update_arg", None) is not None
+    assert len(db.statements) == 4
+    assert getattr(db.statements[0], "_for_update_arg", None) is None
+    assert all(getattr(statement, "_for_update_arg", None) is not None for statement in db.statements[1:3])
+    assert db.statements[-1] == "lock_run"
 
 
 def test_cancel_and_readiness_use_their_own_pi_endpoints(

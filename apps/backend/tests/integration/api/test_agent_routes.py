@@ -11,7 +11,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
-from sqlalchemy import delete, event, select, update
+from sqlalchemy import delete, event, func, select, update
 
 from linkresume.core.config import Settings
 from linkresume.core.database import utc_now
@@ -170,14 +170,15 @@ def create_active_run(
         )
         db.add(run)
         db.flush()
-        if message_content is not None:
+        if run.id is not None:
             db.add(
                 AgentMessage(
                     session_id=session.id,
                     run_id=run.id,
-                    sequence_no=1,
+                    sequence_no=int(db.scalar(select(func.coalesce(func.max(AgentMessage.sequence_no), 0)).where(
+                        AgentMessage.session_id == session.id)) or 0) + 1,
                     role="user",
-                    content=message_content,
+                    content=message_content or "测试请求",
                 )
             )
         db.commit()
@@ -2727,7 +2728,7 @@ def test_deleting_resume_cleans_proposals_but_preserves_independent_conversation
                 AgentMessage(
                     session_id=run.session_id,
                     run_id=run.id,
-                    sequence_no=1,
+                    sequence_no=2,
                     role="user",
                     content="删除清理测试消息",
                 )
@@ -3276,7 +3277,7 @@ def test_pi_stream_persists_structured_clarification_only_after_success(
             )
             assert message is not None
             assert message.message_type == "clarification"
-            assert message.metadata_json == clarification
+            assert message.metadata_json == {"clarification": clarification, "reply_to_sequence_no": 1}
             assert message.content == (
                 "继续前需要确认：\n"
                 "1. 你的目标岗位是什么？\n"
@@ -3365,16 +3366,16 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
     app.state.llm_service.agent_runtime_model = AsyncMock(
         return_value=SimpleNamespace(adapter="openai")
     )
-    check_chain = AsyncMock()
+    check_chain = AsyncMock(return_value={"ready": True, "steering": True})
     monkeypatch.setattr("linkresume.modules.agent.routes.check_pi_readiness", check_chain)
     with TestClient(app) as client:
         internal = client.get("/internal/agent/readiness", headers=internal_headers())
         public = client.get("/api/agent/readiness")
 
     assert internal.status_code == 200
-    assert internal.json() == {"ready": True}
+    assert internal.json() == {"ready": True, "steering": True}
     assert public.status_code == 200
-    assert public.json() == {"ready": True}
+    assert public.json() == {"ready": True, "steering": True}
     check_chain.assert_awaited_once_with(app)
 
 
@@ -3661,7 +3662,7 @@ def test_agent_session_delete_cleans_only_target_dependencies_in_order() -> None
                 AgentMessage(
                     session_id=target_run.session_id,
                     run_id=target_run.id,
-                    sequence_no=1,
+                    sequence_no=2,
                     role="user",
                     content="会话删除测试消息",
                 )
@@ -3670,7 +3671,7 @@ def test_agent_session_delete_cleans_only_target_dependencies_in_order() -> None
                 AgentMessage(
                     session_id=other_run.session_id,
                     run_id=other_run.id,
-                    sequence_no=1,
+                    sequence_no=2,
                     role="user",
                     content="其他会话保留消息",
                 )

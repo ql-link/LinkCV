@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { clearMessageQueues } from "../features/agent/messageQueue";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
@@ -523,6 +524,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   logout: async () => {
     const currentUserId = get().user?.id;
     if (currentUserId) clearLocalResumeDraftsForUser(currentUserId);
+    const queuesCleared = !currentUserId || await clearMessageQueues(currentUserId).then(() => true, () => false);
     await api.logout();
     set({
       authStatus: "guest",
@@ -536,6 +538,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       lockVersion: 0,
       dirty: false,
       saveStatus: "idle",
+      error: queuesCleared ? null : "已退出登录，本机消息清理失败，请清理浏览器存储。",
     });
   },
 
