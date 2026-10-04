@@ -1,3 +1,153 @@
+# Hero 薄片与纤维材质修订 — 2026-10-04
+
+用户已确认薄片叠层、纤维细纹与局部景深的修正提案，并要求直接实现。本节记录新版本的实现验证；下方被否定的波纹版本仅作为历史记录，不再代表当前效果。没有将自动化检查或实现自评视为用户的视觉验收。
+
+## Evidence
+
+- 材质参考：官方公开背景视频 `https://persistent.oaistatic.com/codex/background-video-jan-28.mp4`；实际视频及逐秒截帧保存在 `.runtime/hero-codex-review/`。官网当前存在验证拦截，未声称完成整站审查。
+- 实现：`feat/landing-page` 未提交工作区；公开预览 `https://prices-clinton-lecture-identifies.trycloudflare.com/home#top` 已更新构建。
+- 桌面：1280 × 720 CSS px、density 1、浅色、菜单关闭、新建对话首页；`.runtime/hero-membrane/public.png` 为公开页面截图。
+- 手机：390 × 844 CSS px；`.runtime/hero-membrane/mobile.png` 为公开页面截图，实际视口尺寸已读取确认。
+- 参考与实现并排：`.runtime/hero-membrane/reference-comparison.png`；参考首帧以 cover 归一化为 1280 × 720，比较材质的边缘、细纹、遮挡与虚实，不比较官方视频没有包含的品牌文字和产品 UI。
+- 材质局部对照：`.runtime/hero-membrane/material-detail.png`；原生品牌文字清晰度截图：`brand-copy.png`。
+- 动态相位：`phase-a.png`、`phase-b.png`，两张已完整加载的截图相隔 36.538 秒；时间与差值见 `phase-times.json`、`motion-metrics.json`。
+
+## Implementation findings
+
+- 移除上一版的大幅连续波纹和镜面高光。三个独立半透明薄片使用不同的轮廓、方向、遮挡和深度；各自小幅漂移，细纹焦点与柔和光照缓慢变化。
+- 纤维纹理由着色器噪声生成，采样频率随投影像素数调整。背景没有图片、视频、纹理 sampler 或媒体上传；公开页面实际显示 `data-renderer=procedural`，canvas 不透明度为 1，背景 img/video 数量为 0。
+- 保留已确认的蓝白配色和现有布局，中央文字区域明亮；窄视口提高文字背景亮度。官方参考更偏蓝紫，当前版本的配色差别来自已确认的产品方向。
+- 品牌、文字、导航和产品演示保持原生代码。产品演示桌面 x=60、y=360、宽 1160、高 720；没有新增外围边距、按钮或弹窗。
+- 相隔 36.538 秒，左侧背景平均 RGB 差值为 [3.900, 3.399, 2.864]；已加载的产品内容区域差值为 [0, 0, 0]，背景缓慢变化且前景保持稳定。
+- 桌面与手机没有横向溢出；公开页面浏览器 error/warn 日志为空。
+- 保留 30 FPS、DPR 1.5、1920 × 1440 缓冲区上限；离屏及隐藏标签页暂停，恢复时相位连续。减少动态效果绘制固定相位，GPU 不可用或 context 丢失使用 CSS 蓝白回退，卸载释放资源。
+
+## Verification and limits
+
+- 8 个相关测试文件、44 项测试通过；Web TypeScript 检查和最终 Vite 构建通过。构建仍有既有大 chunk 提示。
+- `npm run check` 的 AI、文档、契约、设计及 Web 类型检查通过；扩展 `wxt prepare` 因 `wxt: command not found` 退出 127，后续全量步骤未执行，不宣称完整仓库检查通过。
+- GPU 失败、静态偏好、暂停恢复、context 丢失及清理由单元测试覆盖；系统减少动态偏好未做浏览器模拟，实体低端手机 GPU 性能未实测。
+- 当前是已确认方向的程序化材质近似。与官方素材相比，轮廓、细纹和光影仍有差别，不宣称逐像素复刻。是否达到用户期待的精致程度需要用户观察新版后判断。
+
+implementation QA: verified within the scope above
+
+user visual acceptance: pending
+
+---
+
+# 用户视觉反馈：Hero 需返工 — 2026-10-04（历史版本）
+
+用户明确否定下方纯代码波纹版本，认为与 Codex 官网细节不一致；上一轮 `passed` 不代表视觉已经获得用户认可。新对照与修正提案见 `.runtime/hero-codex-review/review.md`，证据为本轮预览截图及重新获取的官方背景视频截帧；官网本身当前有验证拦截，不声称完成整站审查。没有继续替换应用背景，待确认薄片层叠、纤维细纹与局部景深的修正提案。
+
+current visual status: needs_revision
+
+---
+
+# Hero 纯代码动态材质修订 — 2026-10-04
+
+本节取代下方素材版结论。用户指出素材形变并非所需的代码实现，且动态有限；本轮保留蓝白方向，改为原生 WebGL 着色器生成曲面、细纹与光照，无背景图片或视频。
+
+## Evidence
+
+- 视觉方向：用户选定的第二张效果图 `/Users/fang/.codex/generated_images/01a0fec5-7fe7-7f90-93ed-b448522321ea/exec-a7011c4d-2f67-4014-bc6d-a3151fa6ab3a.png`，1672 × 941；用户最新反馈允许并要求以代码生成动态材质，因此纹理形态并非静态图的逐像素复制。
+- 本地：`http://127.0.0.1:5192/home#top`，`feat/landing-page` 的未提交工作区。
+- 公开：`https://prices-clinton-lecture-identifies.trycloudflare.com/home`；构建产物静态预览，已刷新并验证 `data-renderer=procedural`，背景中 img/video 数量为 0。
+- 桌面：1280 × 720 CSS px、density 1、浅色、菜单关闭、虚构张三账号、新建对话首页；`.runtime/hero-procedural/desktop.png` 和 `public.png`。
+- 手机：390 × 844 CSS px；公开页面 `.runtime/hero-procedural/mobile.png`，确认代码渲染和无横向溢出。
+- 同图比较：`.runtime/hero-procedural/comparison.png`，来源归一化为 1280 × 720，左侧来源、右侧代码实现；`type-comparison.png` 与 `product-comparison.png` 为局部核对。
+- 动态相位：`phase-a.png` 与 `phase-b.png`，截图相隔 26.009 秒；`phase-times.json` 记录时间。
+
+## Findings
+
+无剩余可执行 P0/P1/P2。
+
+- 布局、文字和品牌保持原生；产品演示实测 x=60、y=360、宽 1160、高 720，没有增加外围边距或缩放。
+- 材质曲面使用随时间改变的坐标、弯曲与噪声生成，法线决定柔和明暗与高光；细纹和光源使用独立相位。褶皱弯曲、展开与移动，已超出旧版图片的小幅位移。
+- 蓝白柔软材质、中央明亮开口和黑色标题保留；窄视口扩大文字区域的亮部，避免深蓝褶皱影响副标题阅读。纹理形态与静态参考的差别是用户指定代码生成后的预期结果。
+- 两个相位的左侧背景平均 RGB 差值为 [47.38707818930041, 34.677736625514406, 13.105288065843622]；已加载的产品主体同一区域差值为 [0.0, 0.0, 0.0]，背景变化没有移动或模糊产品内容。
+- 背景不接收指针事件，没有新增按钮、弹窗或 UI 内容；“开始使用”仍指向 `https://linkresume.cn/resumes`。
+- GPU 不可用或 context 丢失时使用代码生成的 CSS 蓝白回退；减少动态效果时绘制单帧，尺寸改变只重绘同一相位。离开视口及标签页隐藏暂停，恢复相位连续，卸载释放资源。
+
+## Verification
+
+- 8 个相关测试文件、44 项测试通过；最后的着色器细节调整后重跑 9 项渲染与组件测试通过。
+- Web TypeScript 检查通过；最终 Vite 双入口构建通过，仍有既有大 chunk 提示；浏览器确认真实 shader 编译和绘制成功。
+- `npm run check` 的 AI、文档、契约、设计与 Web 类型检查通过；扩展 `wxt prepare` 因 `wxt: command not found` 退出 127，完整仓库检查未通过，不将局部测试称为全量或端到端测试。
+- 单元测试覆盖静态偏好、GPU 失败、context 丢失、离屏与隐藏暂停、恢复连续、资源释放和绘制分辨率上限。系统动态偏好没有浏览器模拟能力，此项未声称已做浏览器实测。
+- 静态背景素材已从应用资产移至 `.runtime/hero-background-concepts/hero-blue-material-retired.webp` 供历史参考；代码不存在纹理图片导入、sampler 或图片上传。
+
+## Limitations
+
+- 实体低端手机 GPU 性能未实测；动画限制为 30 FPS，像素比最多 1.5，缓冲区不超过 1920 × 1440。
+- P3：固定导航的轻微模糊仍产生一条细微的材质边界，文字清楚，沿用当前导航行为。
+
+final result: passed
+
+---
+
+# Hero 蓝白动态材质视觉对照 — 2026-10-04
+
+## Evidence
+
+- Source visual truth：用户选定的第二张效果图 `/Users/fang/.codex/generated_images/01a0fec5-7fe7-7f90-93ed-b448522321ea/exec-a7011c4d-2f67-4014-bc6d-a3151fa6ab3a.png`，1672 × 941 px。
+- Implementation：`http://127.0.0.1:5192/home#top`，分支 `feat/landing-page`，当前未提交工作区。
+- Implementation screenshot：`.runtime/hero-background-concepts/implementation-phase-b.png`，1280 × 720 px；手机 `.runtime/hero-background-concepts/implementation-mobile.png`，390 × 844 px。
+- Viewport：桌面 1280 × 720 CSS px，density 1；来源按 1280 × 720 归一化。来源约为 16:9，尺寸舍入差异不足 1 px，不据此判断布局偏差。
+- State：浅色、虚构张三账号、产品新建对话首页、菜单关闭。效果图为静态设计，代码额外实现用户要求的缓慢动效。
+- Full-view comparison：`.runtime/hero-background-concepts/qa-full-comparison.png`，左侧为来源，右侧为实现，放在同一图像中检查。
+- Focused comparisons：`.runtime/hero-background-concepts/qa-type-comparison.png` 核对品牌、标题与副标题；`.runtime/hero-background-concepts/qa-product-comparison.png` 核对原生产品尺寸与控件。
+
+## Findings
+
+无剩余可执行 P0/P1/P2 问题。
+
+- 字体与排版：原生品牌标识、中文标题的字号、字重、行高与单行关系保持原布局；产品标题继续使用真实 V3 中文衬线字体，没有将文字栅格化。
+- 间距与布局：产品演示实测 x=60、y=360、宽 1160、高 720；背景铺满页面层，未增加演示外围边距。手机保留原布局的双行标题和 350px 宽产品视口，无页面横向溢出。
+- 颜色：两侧为蓝白柔软纤维材质，中央明亮，黑色标题保持清晰；副标题使用 #59616d；下方功能区仍使用中性底色。
+- 图像质量：材质由内置 Image Gen 单独生成，原始 1672 × 941 PNG 转为 67418 字节 WebP；使用真实材质纹理，没有以 CSS 图形或渐变代替素材。GPU 形变幅度较小，边缘无空洞与接缝。
+- 文案与内容：沿用当前品牌、标语、导航及虚构示例内容，没有增加宣传按钮或弹窗。
+
+## Comparison history
+
+1. 初次浏览器检查发现 P2：导航的白色材质过强，产生明显横向分隔。降低背景不透明度，保留轻微模糊用于固定导航。
+2. 修改后重新捕获两个动画相位，并制作上述整屏与局部并排对照；未发现剩余 P0/P1/P2。背景相位的差别为用户要求的预期动态变化。
+
+## Interaction evidence
+
+- 两个桌面相位截图的左侧背景平均 RGB 差值为 [16.365, 12.599, 5.503]；产品主体同一区域差值为 [0, 0, 0]，确认背景确实变化且前景保持稳定。
+- 桌面产品菜单可展开、收起；手机菜单可展开并锁定背景，关闭后恢复滚动。
+- 在产品演示区域滚动后，外层 scrollY=360，演示文档与 body 的 scrollTop 都为 0。
+- 示例历史“把项目经历写得更具体”可切换并显示项目正文，随后恢复新建对话首页。
+- 桌面与手机背景均处于 webgl 渲染状态；浏览器 error/warn 日志为空。
+- 减少动态效果、GPU 不可用、context 丢失、离开视口及标签页隐藏由组件与渲染生命周期测试核实；本轮浏览器工具不能模拟系统动态偏好，未声称该项已做浏览器实测。
+
+## Automated evidence
+
+- 8 个相关测试文件、42 项测试通过，包括 7 项新增动画生命周期及回退测试。
+- Web TypeScript 检查与 Vite 两入口构建通过；构建仍有既有大 chunk 警告。
+- `npm run check` 的 AI 链接、Skill、长期文档、运行时契约、设计检查及 Web 类型检查通过；扩展类型检查因缺少 `wxt` 以退出码 127 中止，未宣称完整仓库通过。
+
+## Asset provenance
+
+- Consumed asset：`apps/web/src/assets/landing/hero-blue-material.webp`；原始素材保存在 `.runtime/hero-background-concepts/hero-blue-material-source.png`。
+- 使用内置 Image Gen，根据选定效果图生成独立背景。Prompt 摘要：去掉所有 UI、文字、Logo 和窗口，保留蓝白透光纤维材质、两侧斜向纹理、明亮中央留白；左侧淡雾蓝，右上稍深蓝，避免霓虹、过量紫色与普通色块。
+
+## Follow-up polish
+
+- P3：固定导航使用轻微模糊材质，和效果图完全透出的背景存在细小差别，文字与交互保持清晰。
+- 不将 Vite 构建或组件测试描述为自动化端到端验收；实体低端移动设备的 GPU 性能未做本轮实测。
+
+## Implementation checklist
+
+- [x] 蓝白材质背景与原生前景分开呈现。
+- [x] 纹理与光照缓慢变化，限制帧率和绘制分辨率。
+- [x] 静态回退、减少动态效果、离屏暂停与资源释放。
+- [x] 桌面并排视觉对照、手机布局、导航与示例会话回归。
+
+final result: passed
+
+---
+
 # 简历模板 0081 视觉对照 — 2026-09-21
 
 ## Evidence

@@ -263,16 +263,7 @@ function AppContent() {
   }
 
   if (route.kind === "landing") {
-    const landingDestination = authStatus === "authenticated"
-      ? "/resumes"
-      : null;
-
-    return (
-      <LandingPage
-        onLogin={() => navigateTo(landingDestination ?? authPath("login"))}
-        onStart={() => navigateTo(landingDestination ?? authPath("register"))}
-      />
-    );
+    return <LandingPage />;
   }
 
   if (authStatus === "guest") {

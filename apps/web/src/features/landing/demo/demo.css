@@ -1,0 +1,9 @@
+html, body, #root { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+.np-product { position: relative; min-width: 0; background: var(--v3-win); container-type: inline-size; }
+.np-product :is(button, input, select) { font-family: var(--ui-font-sans); }
+.np-product svg { flex-shrink: 0; }
+.np-product :is(button, a, input):focus-visible { outline: 2px solid var(--v3-bl); outline-offset: 3px; }
+.np-product.np-home { position: absolute; inset: 0; overflow: hidden; container-type: size; }
+.np-home .v3-window { position: absolute; inset: 0; }
+.np-home .v3-content { overscroll-behavior: contain; }
+.np-home .assistant-home { padding-top: clamp(40px, calc(40cqh - 130px), 251px); }

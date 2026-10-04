@@ -21,6 +21,8 @@
 
 ## 本地请求路径
 
+Web 构建包含主应用 `index.html` 与独立的 `landing-demo.html`。公共落地页通过原生尺寸的演示框复用产品组件；演示账号、接口和存储仅存在于该入口，不进入真实应用运行上下文。结构和交互边界见 [Web 公共落地页](web.md#公共落地页与产品演示)。
+
 Web 页面统一请求相对 `/api` 路径。`apps/web/vite.config.mjs` 将全部 `/api` 流量代理到 FastAPI，默认目标为 `http://127.0.0.1:8000`；语音面试的 `/api/mock-interviews/{id}/speech` 使用优先匹配的 WebSocket 代理，并保留浏览器 `Host` 供后端与 `Origin` 比较。开发服务器额外允许 `*.trycloudflare.com` Host，用于把本地页面通过临时 Cloudflare Tunnel 交付验收；该白名单不改变生产请求路径或鉴权边界。
 
 同一 Vite 配置把 `@` 解析到 `apps/web/src`，与 TypeScript、Vitest 和 `components.json` 的路径约定一致；集中 UI 组件和 shadcn 生成源码使用该别名，不影响浏览器请求路径。

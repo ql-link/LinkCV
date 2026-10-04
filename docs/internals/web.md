@@ -9,6 +9,7 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 ## 职责与入口
 
 - `apps/web/src/main.tsx`：React 启动入口。
+- `apps/web/src/features/landing/`：公共落地页及独立产品演示入口。
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
 - `apps/web/src/features/`：鉴权、首页、编辑器、预览、求职、资料库和管理端功能。
 - `apps/web/src/v3/`：V3 共享侧栏、图标、控件、插图与样式；西文界面和数字使用 Poppins，长篇阅读正文使用 Lora；中文正文沿用思源黑体，V3 中文页面标题使用 Noto Serif SC。
@@ -23,6 +24,16 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 全局加载占位、日历“另有 N 项”弹层和编辑器选区工具栏直接使用根层产品字体 Token `--ui-font-sans`；日历弹层的时间使用 `--ui-font-display`。这些组件可能渲染在 V3 外壳或纸张之外，不依赖 `.v3` 内的局部字体变量，也不覆盖简历正文字体。
 
 搜索引擎只收录生产主域名 `https://linkresume.cn/` 的公共落地页，兼容入口 `/home` 使用同一个 canonical。`index.html` 提供标题、简介、Open Graph、Twitter Card 和 `Organization`/`WebSite` JSON-LD，组织 Logo 复用公开的 256×256 `favicon.png`；根目录 `robots.txt` 声明 `sitemap.xml`，站点地图只列 canonical 首页。React 路由切换会同步页面标题和 robots meta，FastAPI 的 SPA 静态回退还会为除 `/`、`/home` 和 `/index.html` 外的 HTML 深链返回 `X-Robots-Tag: noindex, nofollow, noarchive`。因此登录、管理、用户工作区、未知地址和带 token 的简历分享页都不会作为公开搜索结果入口；`/api/` 另由 `robots.txt` 禁止抓取。
+
+## 公共落地页与产品演示
+
+`/` 与 `/home` 复用 `LandingPage`，由 `FullLanding` 组织品牌 Hero、五张目录联动的滚动叠卡、六项细节卡片和页尾。上半屏展示完整 LinkResume 标识与标语，产品首页从视口中部开始；桌面叠卡逐张覆盖，手机改为纵向卡片。细节区以代码绘制模型图标、导入文件、中文版式、资料引用、岗位收集和偏好标签。落地页样式限制在 `.marketing-landing` 内，页面滚动规则只在该页面挂载时生效。
+
+Hero 复用 dev 的 V3 首页、侧栏、对话及工作区组件。Vite 同时构建 `index.html` 和 `landing-demo.html`；后者通过独立 iframe 入口承载演示，保持原生控件尺寸，不缩小或做三维变换。独立入口先将本地和会话存储替换为内存存储，再加载演示组件；`DemoRuntime` 只允许在带 `data-landing-demo="true"` 的文档内安装，以虚构账号、简历、岗位、资料和历史对话响应操作，未实现的 `/api/*` 请求直接返回 501。刷新演示会恢复示例数据，父页面真实账号、API 客户端和浏览器存储不被替换。
+
+演示内 `navigateTo` 由局部导航事件接管，点击侧栏和历史会话不会修改外层页面 URL。普通滚轮与触摸纵向滑动通过同源 `postMessage` 交给外层页面，接收端同时校验来源窗口、origin、消息类型和有限数值；`Command/Ctrl + 滚轮` 保留给编辑器缩放。演示入口声明 `noindex, nofollow`，不作为公开搜索入口。导航和页面中的“开始使用”链接统一指向 `https://linkresume.cn/resumes`。
+
+Hero 页面层由 `HeroBackdrop` 的 WebGL 着色器实时生成蓝白材质，不加载背景图片或视频。三层独立半透明薄片使用不同的轮廓、遮挡、纤维方向与虚实程度建立层次；各层轻微漂移，局部纹理清晰度和柔和光照按独立相位缓慢变化，没有全屏连续波纹或镜面高光。纤维采样频率按实际投影像素调整，窄屏保留文字区域的亮部；前景文字与产品演示保持原生组件。动画上限为 30 FPS，设备像素比最多 1.5，绘制缓冲区上限 1920 × 1440；离开视口或标签页隐藏时暂停，恢复时从原相位继续。`prefers-reduced-motion` 启用时生成固定相位的单帧材质，尺寸变化只重绘该相位，不调度动画；WebGL 不可用或 context 丢失时回退到纯 CSS 蓝白底色。卸载释放 GPU 资源与观察器。背景仅位于 Hero，并逐渐淡出到下方中性页面，不增加演示框外围边距。
 
 ## 响应式布局
 
@@ -42,7 +53,7 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 
 React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 
-普通登录页 `/login` 先读取 `/api/auth/capabilities`。Local/Development 根据路由模式展示邮箱密码登录或注册表单，两者可以互相切换，也可以切换到 `WechatQrLogin`；Production 对登录与注册链接都不渲染邮箱密码表单，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。Landing 的“登录”进入登录模式，“开始使用”进入注册模式。个人资料页展示改密与微信绑定的“需后端”本地模拟交互，不发送真实账号变更；管理员密码表单仍只保留在 `/admin/login`。
+普通登录页 `/login` 先读取 `/api/auth/capabilities`。Local/Development 根据路由模式展示邮箱密码登录或注册表单，两者可以互相切换，也可以切换到 `WechatQrLogin`；Production 对登录与注册链接都不渲染邮箱密码表单，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。公共落地页的“开始使用”直接进入线上项目 `https://linkresume.cn/resumes`，鉴权由目标应用处理。个人资料页展示改密与微信绑定的“需后端”本地模拟交互，不发送真实账号变更；管理员密码表单仍只保留在 `/admin/login`。
 
 新增或迁移接口时同时检查：
 

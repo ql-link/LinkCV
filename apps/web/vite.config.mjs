@@ -118,6 +118,7 @@ export default defineConfig({
   base: assetBase,
   build: {
     rollupOptions: {
+      input: { app: resolve(webRoot, "index.html"), landingDemo: resolve(webRoot, "landing-demo.html") },
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
