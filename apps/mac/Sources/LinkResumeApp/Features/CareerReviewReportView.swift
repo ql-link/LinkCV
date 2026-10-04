@@ -277,7 +277,7 @@ struct CareerReviewReportView: View {
         let tone = CareerReview.scoreTone(score)
         let follow = item["follow_ups"]?.integer ?? 0
         let meta = [CareerReview.categoryLabel(item.text("category")), follow > 0 ? "\(follow) 次追问" : "无追问",
-                    item["achieved_depth"]?.integer.map { "深度 L\($0)" }, item.text("resume_conflict").isEmpty ? nil : "与简历不一致", hasNote ? "有笔记" : nil]
+                    item["achieved_depth"].map { "深度 L\($0.integer)" }, item.text("resume_conflict").isEmpty ? nil : "与简历不一致", hasNote ? "有笔记" : nil]
             .compactMap { $0 }.joined(separator: " · ")
         return HStack(spacing: 14) {
             Text("Q\(item["index"]?.integer ?? 0)").font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(CareerPalette.faint).frame(width: 24, alignment: .leading)

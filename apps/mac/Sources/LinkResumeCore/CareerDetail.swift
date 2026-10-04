@@ -70,6 +70,7 @@ public struct CareerInfoRow: Identifiable, Sendable {
     public let label: String
     public let value: String
     public var tone: CareerTone? = nil
+    public init(label: String, value: String, tone: CareerTone? = nil) { self.label = label; self.value = value; self.tone = tone }
 }
 
 public struct CareerOfferCard: Sendable {

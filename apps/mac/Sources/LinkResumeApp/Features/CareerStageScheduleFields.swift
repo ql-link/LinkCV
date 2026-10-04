@@ -1,3 +1,4 @@
+import LinkResumeCore
 import SwiftUI
 
 /// Schedule part of Web `AddNextStageDialog` (`.cd3-time-*`, `.cd3-mode-*`, `.cd3-stage-field`).
