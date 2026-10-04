@@ -450,7 +450,8 @@ def test_dataset_task_materials_are_rechecked_and_have_source_receipts() -> None
         assert stale.json() == {"error": "AGENT_CONTEXT_STALE"}
 
 
-def test_read_only_task_can_record_partial_delivery_without_a_proposal() -> None:
+@pytest.mark.parametrize("workflow", ["career_planning", "material_lookup"])
+def test_read_only_task_can_record_partial_delivery_without_a_proposal(workflow: str) -> None:
     app = build_app()
     with TestClient(app) as client:
         register(client, "agent-partial-advice@example.test")
@@ -458,7 +459,7 @@ def test_read_only_task_can_record_partial_delivery_without_a_proposal() -> None
         run_id = create_active_run(app, session_id, message_content="给出三条建议")
         base = f"/internal/agent/runs/{run_id}/tasks"
         assert client.post(f"{base}:plan", headers=internal_headers(), json={"tasks": [{
-            "id": "advice", "workflow": "career_planning", "output": "advice", "label": "三条建议",
+            "id": "advice", "workflow": workflow, "output": "advice", "label": "三条建议",
         }]}).status_code == 200
         assert client.post(f"{base}/advice:status", headers=internal_headers(), json={
             "status": "running",
