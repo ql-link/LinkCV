@@ -3,10 +3,15 @@
 import * as React from "react"
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
+import { DialogMotionState, useDialogPresence, usePresenceRef } from "./motion"
+
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
 
-const AlertDialog = AlertDialogPrimitive.Root
+function AlertDialog(props: React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Root>) {
+  const presence = useDialogPresence(props)
+  return <DialogMotionState.Provider value={presence.open}><AlertDialogPrimitive.Root {...props} {...presence} /></DialogMotionState.Provider>
+}
 
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 
@@ -20,7 +25,7 @@ const AlertDialogOverlay = React.forwardRef<
     data-slot="alert-dialog-overlay"
     data-ui-theme="light"
     className={cn(
-      "fixed inset-0 z-50 bg-black/80 transition-opacity duration-base data-[state=closed]:opacity-0 data-[state=open]:opacity-100 motion-reduce:duration-75",
+      "ui-motion-overlay fixed inset-0 z-50 bg-black/80",
       className
     )}
     {...props}
@@ -34,20 +39,23 @@ const AlertDialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content> & {
     overlayClassName?: string
   }
->(({ className, overlayClassName, ...props }, ref) => (
+>(({ className, overlayClassName, ...props }, ref) => {
+  const presence = usePresenceRef(ref)
+  return (
   <AlertDialogPortal>
     <AlertDialogOverlay className={overlayClassName} />
     <AlertDialogPrimitive.Content
-      ref={ref}
+      {...presence}
       data-ui-theme="light"
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface p-6 text-foreground shadow-md outline-none transition-[opacity,transform] duration-base data-[state=closed]:opacity-0 data-[state=open]:opacity-100 motion-reduce:duration-75",
+        "ui-motion-dialog fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface p-6 text-foreground shadow-md outline-none",
         className
       )}
       {...props}
     />
   </AlertDialogPortal>
-))
+)
+})
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName
 
 const AlertDialogHeader = ({

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 InterviewType = Literal["technical", "project_deep_dive", "hr", "comprehensive"]
 Difficulty = Literal["junior", "intermediate", "senior"]
@@ -39,6 +39,9 @@ class MockInterviewCreateRequest(StrictModel):
     language: Language = "zh"
     answer_mode: AnswerMode = "text"
     material_ids: list[str] = Field(default_factory=list, max_length=10)
+    # Off by default: questions come from the resume, job and answers only;
+    # selected materials are still used to fact-check the report.
+    materials_in_questions: bool = False
 
     @field_validator("material_ids")
     @classmethod
@@ -97,6 +100,15 @@ class MockInterviewSkipRequest(StrictModel):
     question_id: str = Field(pattern=_DECIMAL_ID)
 
 
+class MockInterviewRepeatRequest(StrictModel):
+    answer_mode: AnswerMode | None = None
+
+
+class SpeechPlaybackRequest(StrictModel):
+    # Omitted for the device test; supplied to replay the current question.
+    question_id: str | None = Field(default=None, pattern=_DECIMAL_ID)
+
+
 class MockInterviewQuestionRecord(BaseModel):
     id: str
     parent_id: str | None
@@ -118,6 +130,10 @@ class MockInterviewQuestionRecord(BaseModel):
     re_evaluate_count: int = 0
     evaluation_history: list[dict[str, Any]] | None = None
 
+    @field_serializer("answered_at")
+    def serialize_answered_at(self, value: datetime | None) -> str | None:
+        return _utc_time(value)
+
 
 class MockInterviewSummary(BaseModel):
     id: str
@@ -138,6 +154,7 @@ class MockInterviewSummary(BaseModel):
     follow_up_enabled: bool
     language: Language
     answer_mode: AnswerMode = "text"
+    materials_in_questions: bool = False
     total_score: float | None
     low_confidence: bool
     error_code: str | None
@@ -145,6 +162,10 @@ class MockInterviewSummary(BaseModel):
     finished_at: datetime | None
     created_at: datetime
     lock_version: int
+
+    @field_serializer("started_at", "finished_at", "created_at")
+    def serialize_time(self, value: datetime | None) -> str | None:
+        return _utc_time(value)
 
 
 class MockInterviewMaterialRef(BaseModel):
@@ -162,6 +183,18 @@ class MockInterviewDetail(MockInterviewSummary):
     report: dict[str, Any] | None
     transcript_corrected_at: datetime | None = None
     recordings_deleted: bool = False
+
+    @field_serializer("transcript_corrected_at")
+    def serialize_corrected_at(self, value: datetime | None) -> str | None:
+        return _utc_time(value)
+
+
+def _utc_time(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    # MySQL DATETIME stores UTC without a timezone; browsers need an explicit offset.
+    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return aware.isoformat().replace("+00:00", "Z")
 
 
 class MockInterviewResponse(BaseModel):

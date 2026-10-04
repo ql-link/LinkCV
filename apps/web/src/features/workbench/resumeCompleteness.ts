@@ -1,3 +1,4 @@
+import { t, getLocale } from "@/i18n";
 export type ResumeCompletenessStatus = "passed" | "partial" | "failed";
 
 export type ResumeCompletenessCheck = {
@@ -22,7 +23,7 @@ export type ResumeCompletenessResult = {
   rawScore: number;
   earnedPoints: number;
   maxPoints: 100;
-  level: "待补充" | "基本完整" | "较完整" | "完整";
+  level: string;
   checks: ResumeCompletenessCheck[];
   scoreCaps: ResumeCompletenessCap[];
 };
@@ -211,10 +212,10 @@ function positioningText(preamble: string) {
 }
 
 function scoreLevel(score: number): ResumeCompletenessResult["level"] {
-  if (score >= 90) return "完整";
-  if (score >= 70) return "较完整";
-  if (score >= 40) return "基本完整";
-  return "待补充";
+  if (score >= 90) return t("完整");
+  if (score >= 70) return t("较完整");
+  if (score >= 40) return t("基本完整");
+  return t("待补充");
 }
 
 export function resumeCompletenessTone(score: number): ResumeCompletenessTone {
@@ -252,122 +253,122 @@ export function evaluateResumeCompleteness(markdown: string): ResumeCompleteness
     check(
       "name",
       "basics",
-      "姓名",
+      t("姓名"),
       name && !sampleIdentity ? 8 : 0,
       8,
-      name ? "姓名仍是系统示例内容。" : "缺少唯一的一级标题姓名。",
-      "把第一行一级标题改为你的真实姓名。",
+      name ? t("姓名仍是系统示例内容。") : t("缺少唯一的一级标题姓名。"),
+      t("把第一行一级标题改为你的真实姓名。"),
     ),
     check(
       "phone",
       "basics",
-      "联系电话",
+      t("联系电话"),
       phoneNumbers.some((digits) => digits !== SAMPLE_PHONE_DIGITS) ? 6 : 0,
       6,
-      "未识别到有效的非示例联系电话。",
-      "补充常用联系电话，并检查区号和位数。",
+      t("未识别到有效的非示例联系电话。"),
+      t("补充常用联系电话，并检查区号和位数。"),
     ),
     check(
       "email",
       "basics",
-      "联系邮箱",
+      t("联系邮箱"),
       email && !/@example\.(?:com|org|net)$/iu.test(email) ? 6 : 0,
       6,
-      "未识别到有效的非示例邮箱。",
-      "补充用于求职联系的邮箱地址。",
+      t("未识别到有效的非示例邮箱。"),
+      t("补充用于求职联系的邮箱地址。"),
     ),
     check(
       "positioning",
       "basics",
-      "职业定位",
+      t("职业定位"),
       position.length >= 10 ? 10 : position.length > 0 ? 5 : 0,
       10,
-      position ? "职业定位过短，目标方向还不够明确。" : "姓名和联系方式后缺少职业定位。",
-      "用一句话写明目标岗位、经验方向或核心优势。",
+      position ? t("职业定位过短，目标方向还不够明确。") : t("姓名和联系方式后缺少职业定位。"),
+      t("用一句话写明目标岗位、经验方向或核心优势。"),
     ),
     check(
       "experience-section",
       "experience",
-      "经历章节",
+      t("经历章节"),
       experienceSections.length > 0 && visibleText(experienceBody) ? 10 : 0,
       10,
-      "缺少工作、实习、项目或研究经历。",
-      "至少补充一段与目标岗位相关的经历。",
+      t("缺少工作、实习、项目或研究经历。"),
+      t("至少补充一段与目标岗位相关的经历。"),
     ),
     check(
       "experience-basics",
       "experience",
-      "经历基本信息",
+      t("经历基本信息"),
       experienceHasIdentity && experienceHasDate ? 10 : experienceHasIdentity || experienceHasDate ? 5 : 0,
       10,
-      "经历中的单位、角色或起止时间不完整。",
-      "为经历补齐单位或项目、角色以及起止时间。",
+      t("经历中的单位、角色或起止时间不完整。"),
+      t("为经历补齐单位或项目、角色以及起止时间。"),
     ),
     check(
       "experience-details",
       "experience",
-      "经历成果描述",
+      t("经历成果描述"),
       experienceDetails >= 3 ? 15 : experienceDetails === 2 ? 10 : experienceDetails === 1 ? 5 : 0,
       15,
-      "可验证的经历成果条目不足。",
-      "增加 3 条以上职责或成果，优先写行动、结果和数据。",
+      t("可验证的经历成果条目不足。"),
+      t("增加 3 条以上职责或成果，优先写行动、结果和数据。"),
     ),
     check(
       "education-section",
       "education",
-      "教育章节",
+      t("教育章节"),
       educationSections.length > 0 && visibleText(educationBody) ? 8 : 0,
       8,
-      "缺少教育经历章节。",
-      "补充学校、专业或学习经历。",
+      t("缺少教育经历章节。"),
+      t("补充学校、专业或学习经历。"),
     ),
     check(
       "education-basics",
       "education",
-      "教育基本信息",
+      t("教育基本信息"),
       educationHasIdentity && educationHasDate ? 7 : educationHasIdentity || educationHasDate ? 3 : 0,
       7,
-      "教育经历中的学校、专业或时间不完整。",
-      "补齐学校或专业，以及起止时间。",
+      t("教育经历中的学校、专业或时间不完整。"),
+      t("补齐学校或专业，以及起止时间。"),
     ),
     check(
       "skills-section",
       "skills",
-      "技能内容",
+      t("技能内容"),
       skillEntries.length >= 2 ? 7 : skillEntries.length === 1 ? 4 : 0,
       7,
-      skillsSections.length > 0 ? "技能章节缺少具体、有效的内容。" : "缺少技能章节及其具体内容。",
-      "补充至少 2 项具体技能，可写明技术、工具、熟悉程度或应用场景。",
+      skillsSections.length > 0 ? t("技能章节缺少具体、有效的内容。") : t("缺少技能章节及其具体内容。"),
+      t("补充至少 2 项具体技能，可写明技术、工具、熟悉程度或应用场景。"),
     ),
     check(
       "skills-entries",
       "skills",
-      "技能条目质量",
+      t("技能条目质量"),
       skillPoints.earnedPoints,
       8,
       skillEntries.length < 3
-        ? "具体技能条目不足 3 项。"
-        : `已有 ${skillEntries.length} 项技能，但只有 ${skillPoints.qualityCount} 项足够具体。`,
-      "列出至少 3 项岗位相关技能，并写明工具、熟悉程度或实际应用场景。",
+        ? t("具体技能条目不足 3 项。")
+        : t("已有 {value0} 项技能，但只有 {value1} 项足够具体。", { value0: skillEntries.length, value1: skillPoints.qualityCount }),
+      t("列出至少 3 项岗位相关技能，并写明工具、熟悉程度或实际应用场景。"),
     ),
     check(
       "structure",
       "structure",
-      "文档结构",
+      t("文档结构"),
       (parsed.h1.length === 1 && Boolean(name) ? 2 : 0) + (parsed.h2.length >= 3 ? 3 : 0),
       5,
-      "一级标题不唯一，或二级章节少于 3 个。",
-      "保留一个姓名一级标题，并使用至少 3 个清晰的二级章节。",
+      t("一级标题不唯一，或二级章节少于 3 个。"),
+      t("保留一个姓名一级标题，并使用至少 3 个清晰的二级章节。"),
     ),
   ];
 
   const rawScore = checks.reduce((total, item) => total + item.earnedPoints, 0);
   const scoreCaps: ResumeCompletenessCap[] = [];
   if (sampleIdentity) {
-    scoreCaps.push({ id: "sample-identity", maxScore: 20, reason: "姓名仍是系统示例内容，完整度最高按 20 分计算。" });
+    scoreCaps.push({ id: "sample-identity", maxScore: 20, reason: t("姓名仍是系统示例内容，完整度最高按 20 分计算。") });
   }
   if (SAMPLE_CONTENT_MARKERS.some((marker) => markdown.includes(marker))) {
-    scoreCaps.push({ id: "sample-content", maxScore: 60, reason: "正文仍包含系统示例内容，完整度最高按 60 分计算。" });
+    scoreCaps.push({ id: "sample-content", maxScore: 60, reason: t("正文仍包含系统示例内容，完整度最高按 60 分计算。") });
   }
   const score = Math.min(rawScore, ...scoreCaps.map((cap) => cap.maxScore), 100);
 

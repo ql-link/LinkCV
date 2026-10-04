@@ -390,6 +390,7 @@ def search_run_materials(
             storage=request.app.state.storage,
             max_bytes=request.app.state.settings.dataset_upload_max_bytes,
             allowed_refs=allowed,
+            rag=getattr(request.app.state, "linkrag_recall", None),
         )
     )
 

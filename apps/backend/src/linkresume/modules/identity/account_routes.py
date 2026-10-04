@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 
 import redis
 from fastapi import APIRouter, Depends, Request, Response
@@ -16,6 +17,7 @@ from linkresume.core.security import (
     hash_password,
     revoke_user_sessions,
     verify_password,
+    session_key,
 )
 from linkresume.core.storage import (
     AssetStorage,
@@ -25,8 +27,14 @@ from linkresume.core.storage import (
     get_storage,
 )
 from linkresume.integrations.wechat_client import WechatApiError, WechatClient
-from linkresume.modules.identity.dependencies import get_current_user, get_settings
-from linkresume.modules.identity.models import User, UserProfile
+from linkresume.modules.identity import wechat_action_service as actions
+from linkresume.modules.identity.account_deletion_service import (
+    active_types, deletion_status, ensure_no_public_responsibility, request_deletion,
+)
+from linkresume.modules.identity.wechat_routes import require_wechat_environment
+from linkresume.modules.identity.dependencies import get_current_user, get_settings, lock_active_user
+from linkresume.modules.identity.capabilities import password_login_enabled, require_password_enabled, wechat_login_enabled
+from linkresume.modules.identity.models import AccountPreference, User, UserProfile
 from linkresume.modules.identity.schemas import (
     AccountProfileResponse,
     AvatarResponse,
@@ -39,15 +47,13 @@ from linkresume.modules.identity.schemas import (
     UserProfileData,
     UserProfileResponse,
     UserProfileUpdateRequest,
-    WechatBindConfirmRequest,
-    WechatBindRequestResponse,
-    WechatBindStatusResponse,
-)
-from linkresume.modules.identity.wechat_bind_service import (
-    bind_status,
-    bind_ticket_user,
-    mark_bind_success,
-    new_bind_ticket,
+    AccountCapabilities,
+    AccountPreferencesResponse,
+    ContactEmailRequest,
+    ContactEmailResponse,
+    CurrentSessionResponse,
+    WechatActionRequest, WechatActionPoll, WechatActionConfirm,
+    AccountDeletionRequest, AccountDeletionStatusRequest,
 )
 from linkresume.modules.resumes.models import Resume
 
@@ -59,26 +65,21 @@ RECENT_RESUMES_LIMIT = 5
 logger = logging.getLogger(__name__)
 
 
-def require_legacy_test_route(request: Request) -> None:
-    if not getattr(request.app.state, "legacy_identity_test_routes", False):
-        raise ApiError(404, "NOT_FOUND")
-
-
 def _password_strong(password: str) -> bool:
     """至少 8 位且同时包含字母和数字。"""
     if len(password) < MIN_PASSWORD_LENGTH:
         return False
-    return any(character.isalpha() for character in password) and any(
-        character.isdigit() for character in password
-    )
+    return bool(re.search(r"[A-Za-z]", password) and re.search(r"[0-9]", password))
 
 
-def get_wechat_client(request: Request) -> WechatClient:
-    return request.app.state.wechat_client
+def require_development_password(settings: Settings = Depends(get_settings)) -> None:
+    require_password_enabled(settings)
 
 
 def _profile(user: User, settings: Settings) -> UserProfileResponse:
-    if user.wechat_openid:
+    if not wechat_login_enabled(settings):
+        wechat_status = "unavailable"
+    elif user.wechat_openid:
         wechat_status = "bound"
     elif settings.wechat_enabled:
         wechat_status = "unbound"
@@ -93,8 +94,34 @@ def _profile(user: User, settings: Settings) -> UserProfileResponse:
             asset_url(user.avatar_object_key) if user.avatar_object_key else None
         ),
         wechat_status=wechat_status,
-        wechat_bound_at=user.wechat_bound_at,
+        wechat_bound_at=user.wechat_bound_at if wechat_login_enabled(settings) else None,
+        contact_email=user.contact_email,
+        registered_at=user.created_at,
     )
+
+
+def account_capabilities(user: User, settings: Settings) -> AccountCapabilities:
+    password = password_login_enabled(settings)
+    wechat = wechat_login_enabled(settings)
+    method = "password" if password and user.password_hash else "wechat" if wechat and user.wechat_openid else None
+    return AccountCapabilities(
+        auth_mode="password" if password else "wechat" if wechat else "unavailable",
+        can_change_password=password and bool(user.password_hash),
+        can_delete_account=settings.account_deletion_enabled and not bool(user.is_admin) and method is not None,
+        deletion_confirmation_method=method,
+    )
+
+
+def device_label(user_agent: str) -> str:
+    browser = next((label for marker, label in [
+        ("Edg/", "Edge"), ("OPR/", "Opera"), ("Chrome/", "Chrome"),
+        ("Firefox/", "Firefox"), ("Safari/", "Safari"),
+    ] if marker in user_agent), None)
+    system = next((label for marker, label in [
+        ("Android", "Android"), ("iPhone", "iOS"), ("iPad", "iPadOS"),
+        ("Windows", "Windows"), ("Macintosh", "macOS"), ("Linux", "Linux"),
+    ] if marker in user_agent), None)
+    return " · ".join(part for part in [system, browser] if part) or "当前浏览器"
 
 
 def _user_profile_data(profile: UserProfile | None) -> UserProfileData:
@@ -134,9 +161,11 @@ def _apply_profile_fields(
 
 @router.get("/profile", response_model=AccountProfileResponse)
 def get_profile(
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
 ) -> AccountProfileResponse:
     resume_count = (
         db.scalar(
@@ -152,6 +181,12 @@ def get_profile(
     ).all()
     return AccountProfileResponse(
         user=_profile(user, settings),
+        current_session=CurrentSessionResponse(
+            device_label=device_label(redis_client.hget(
+                session_key(request.state.session_id), "user_agent"
+            ) or "")
+        ),
+        capabilities=account_capabilities(user, settings),
         resume_count=resume_count,
         recent_resumes=[
             RecentResumeSummary(
@@ -160,6 +195,57 @@ def get_profile(
             for resume in recent
         ],
     )
+
+
+@router.put("/contact-email", response_model=ContactEmailResponse)
+def update_contact_email(
+    payload: ContactEmailRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ContactEmailResponse:
+    user = lock_active_user(db, user.id)
+    email = payload.email.strip() if payload.email is not None else ""
+    if email and (len(email) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email)):
+        raise ApiError(400, "INVALID_CONTACT_EMAIL")
+    user.contact_email = email or None
+    db.commit()
+    return ContactEmailResponse(contact_email=user.contact_email)
+
+
+def _preferences(row: AccountPreference | None) -> AccountPreferencesResponse:
+    return AccountPreferencesResponse(
+        locale=row.locale if row else "zh-CN",
+        interview_reminder_enabled=bool(row.interview_reminder_enabled) if row else False,
+    )
+
+
+@router.get("/preferences", response_model=AccountPreferencesResponse)
+def get_preferences(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> AccountPreferencesResponse:
+    return _preferences(db.get(AccountPreference, user.id))
+
+
+@router.patch("/preferences", response_model=AccountPreferencesResponse)
+def update_preferences(
+    payload: dict[str, object],
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+) -> AccountPreferencesResponse:
+    user = lock_active_user(db, user.id)
+    if not payload or set(payload) - {"locale", "interview_reminder_enabled"}:
+        raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
+    if "locale" in payload and payload["locale"] not in ("zh-CN", "en-US"):
+        raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
+    if "interview_reminder_enabled" in payload and type(payload["interview_reminder_enabled"]) is not bool:
+        raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
+    row = db.get(AccountPreference, user.id)
+    if row is None:
+        row = AccountPreference(user_id=user.id, locale="zh-CN", interview_reminder_enabled=0)
+        db.add(row)
+    for key, value in payload.items():
+        setattr(row, key, int(value) if key == "interview_reminder_enabled" else value)
+    db.commit()
+    return _preferences(row)
 
 
 @router.get("/user-profile", response_model=UserProfileData)
@@ -177,6 +263,7 @@ def put_user_profile(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UserProfileData:
+    user = lock_active_user(db, user.id)
     current = _select_user_profile(db, user.id)
 
     # 首次写入：尝试 INSERT，并发时 UNIQUE 冲突回退到 409。
@@ -268,6 +355,7 @@ def update_profile(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> UserProfileResponse:
+    user = lock_active_user(db, user.id)
     nickname = payload.nickname.strip()
     if not nickname or len(nickname) > NICKNAME_MAX_LENGTH:
         raise ApiError(400, "INVALID_NICKNAME")
@@ -289,6 +377,7 @@ def upload_avatar(
     db: Session = Depends(get_db),
     storage: AssetStorage = Depends(get_storage),
 ) -> AvatarResponse:
+    user = lock_active_user(db, user.id)
     image = decode_image_data_url(payload.dataUrl)
     if image is None:
         raise ApiError(400, "INVALID_IMAGE")
@@ -331,6 +420,7 @@ def delete_avatar(
     db: Session = Depends(get_db),
     storage: AssetStorage = Depends(get_storage),
 ) -> OkResponse:
+    user = lock_active_user(db, user.id)
     previous_key = user.avatar_object_key
     user.avatar_object_key = None
     try:
@@ -350,19 +440,20 @@ def delete_avatar(
 @router.post(
     "/change-password",
     response_model=PasswordChangedResponse,
-    include_in_schema=False,
+    dependencies=[Depends(require_development_password)],
 )
 def change_password(
     payload: ChangePasswordRequest,
     request: Request,
     response: Response,
-    _legacy_route: None = Depends(require_legacy_test_route),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> PasswordChangedResponse:
-    require_legacy_test_route(request)
+    user = lock_active_user(db, user.id)
+    require_password_enabled(settings)
+    _limit_sensitive(request, redis_client, "password-change", user.id)
     if not verify_password(payload.current_password, user.password_hash):
         raise ApiError(400, "INVALID_CURRENT_PASSWORD")
     if not _password_strong(payload.new_password):
@@ -374,6 +465,9 @@ def change_password(
 
     user.password_hash = hash_password(payload.new_password)
     try:
+        # Revoke under the same owner lock used by login/refresh. A Redis
+        # failure rolls back the password instead of leaving old sessions valid.
+        revoke_user_sessions(redis_client, user.id)
         db.commit()
     except Exception:
         db.rollback()
@@ -382,116 +476,114 @@ def change_password(
 
     # Every existing session is revoked, so the user must sign in with the new
     # password; the current cookies are cleared in the same response.
-    revoke_user_sessions(redis_client, user.id)
     clear_auth_cookies(response, settings)
     return PasswordChangedResponse(ok=True, message="密码已修改，请重新登录")
 
 
-@router.post(
-    "/wechat/bind-request",
-    response_model=WechatBindRequestResponse,
-    include_in_schema=False,
-)
-def create_wechat_bind_request(
-    request: Request,
-    _legacy_route: None = Depends(require_legacy_test_route),
-    user: User = Depends(get_current_user),
-    settings: Settings = Depends(get_settings),
-    redis_client: "redis.Redis" = Depends(get_redis),
+def _limit_sensitive(request: Request, redis_client, operation: str, user_id: int | None = None) -> None:
+    actions.rate_limit(redis_client, operation, "ip:" + (request.client.host if request.client else "unknown"))
+    if user_id is not None:
+        actions.rate_limit(redis_client, operation, f"user:{user_id}")
+
+
+def get_wechat_client(request: Request) -> WechatClient:
+    return request.app.state.wechat_client
+
+
+@router.post("/wechat/verification-request", dependencies=[Depends(require_wechat_environment)])
+def create_verification(
+    payload: WechatActionRequest, request: Request,
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings), redis_client=Depends(get_redis),
     wechat: WechatClient = Depends(get_wechat_client),
-) -> WechatBindRequestResponse:
-    require_legacy_test_route(request)
-    if not settings.wechat_enabled:
-        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
-    if user.wechat_openid:
-        raise ApiError(400, "WECHAT_ALREADY_BOUND")
-
-    ticket = new_bind_ticket(
-        redis_client, user.id, settings.wechat_bind_ticket_ttl_seconds
-    )
+) -> dict:
+    user = lock_active_user(db, user.id)
+    if not settings.account_deletion_enabled:
+        raise ApiError(404, "NOT_FOUND")
+    if user.is_admin:
+        raise ApiError(403, "ACCOUNT_DELETION_FORBIDDEN")
+    if not user.wechat_openid:
+        raise ApiError(409, "WECHAT_IDENTITY_REQUIRED")
+    ensure_no_public_responsibility(db, user.id)
+    busy = active_types(db, user.id)
+    if busy:
+        raise ApiError(409, "ACCOUNT_BUSY", details={"activity_types": busy})
+    _limit_sensitive(request, redis_client, "wechat-verification", user.id)
+    result = actions.new_action(redis_client, user.id, request.state.session_id, settings.jwt_secret)
     try:
-        qrcode = wechat.mini_program_qrcode(ticket)
-    except WechatApiError as error:
-        logger.warning(
-            "failed to generate wechat qrcode",
-            extra={"user_id": user.id, "error_code": error.code},
-        )
-        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from error
-    return WechatBindRequestResponse(
-        ticket=ticket, qrcode_data=base64.b64encode(qrcode).decode("ascii")
-    )
+        image = wechat.mini_program_qrcode(result["scene"])
+    except WechatApiError:
+        redis_client.delete(actions.action_key(result["scene"]))
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from None
+    return {**result, "qrcode_data": base64.b64encode(image).decode("ascii")}
 
 
-@router.post(
-    "/wechat/bind-confirm",
-    response_model=OkResponse,
-    include_in_schema=False,
-)
-def confirm_wechat_bind(
-    payload: WechatBindConfirmRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-    settings: Settings = Depends(get_settings),
-    redis_client: "redis.Redis" = Depends(get_redis),
-    wechat: WechatClient = Depends(get_wechat_client),
-) -> OkResponse:
-    require_legacy_test_route(request)
-    if not settings.wechat_enabled:
-        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE")
-    try:
-        owner_id = bind_ticket_user(redis_client, payload.ticket)
-    except ValueError:
-        owner_id = None
-    if owner_id is None:
-        raise ApiError(400, "BIND_TICKET_INVALID")
-    if bind_status(redis_client, payload.ticket) == "bound":
-        return OkResponse(ok=True)
-
+@router.post("/wechat/verification-confirm", dependencies=[Depends(require_wechat_environment)])
+def confirm_verification(
+    payload: WechatActionConfirm, request: Request,
+    db: Session = Depends(get_db), settings: Settings = Depends(get_settings),
+    redis_client=Depends(get_redis), wechat: WechatClient = Depends(get_wechat_client),
+) -> dict:
+    if not settings.account_deletion_enabled:
+        raise ApiError(404, "NOT_FOUND")
+    actions.rate_limit(redis_client, "wechat-confirm", request.client.host if request.client else "unknown", 30)
+    row = actions.confirmation_action(redis_client, payload.scene)
+    user = lock_active_user(db, int(row["uid"]))
     try:
         openid = wechat.code_to_openid(payload.code)
-    except WechatApiError as error:
-        logger.warning(
-            "failed to exchange wechat code",
-            extra={"ticket": payload.ticket, "error_code": error.code},
-        )
-        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from error
+    except WechatApiError:
+        raise ApiError(503, "WECHAT_SERVICE_UNAVAILABLE") from None
+    if not user.wechat_openid or user.wechat_openid != openid:
+        raise ApiError(403, "WECHAT_IDENTITY_MISMATCH")
+    state = redis_client.eval(actions.TRANSITION_SCRIPT, 1, actions.action_key(payload.scene), "verify")
+    if state != "verified":
+        raise ApiError(409, "ACCOUNT_CONFIRMATION_UNAVAILABLE")
+    return {"ok": True}
 
-    existing = db.scalar(select(User).where(User.wechat_openid == openid))
-    if existing is not None and existing.id != owner_id:
-        raise ApiError(409, "WECHAT_ALREADY_BOUND")
-    if existing is not None:
-        mark_bind_success(
-            redis_client, payload.ticket, settings.wechat_bind_ticket_ttl_seconds
-        )
-        return OkResponse(ok=True)
 
-    owner = db.get(User, owner_id)
-    if owner is None:
-        raise ApiError(400, "BIND_TICKET_INVALID")
-    owner.wechat_openid = openid
-    owner.wechat_bound_at = utc_now()
-    try:
-        db.commit()
-    except IntegrityError as error:
-        db.rollback()
-        raise ApiError(409, "WECHAT_ALREADY_BOUND") from error
-    mark_bind_success(
-        redis_client, payload.ticket, settings.wechat_bind_ticket_ttl_seconds
+@router.post("/wechat/verification-status", dependencies=[Depends(require_wechat_environment)])
+def verification_status(
+    payload: WechatActionPoll, request: Request,
+    user: User = Depends(get_current_user), settings: Settings = Depends(get_settings),
+    redis_client=Depends(get_redis),
+) -> dict:
+    return actions.status(redis_client, payload.scene, payload.poll_token, user.id, request.state.session_id, settings.jwt_secret)
+
+
+@router.post("/wechat/verification-cancel", dependencies=[Depends(require_wechat_environment)])
+def cancel_verification(
+    payload: WechatActionPoll, request: Request,
+    user: User = Depends(get_current_user), redis_client=Depends(get_redis),
+) -> dict:
+    actions.owned_action(redis_client, payload.scene, payload.poll_token, user.id, request.state.session_id)
+    return {"status": redis_client.eval(actions.TRANSITION_SCRIPT, 1, actions.action_key(payload.scene), "cancel")}
+
+
+@router.post("/deletion", status_code=202)
+def delete_account(
+    payload: AccountDeletionRequest, request: Request, response: Response,
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings), redis_client=Depends(get_redis),
+) -> dict:
+    _limit_sensitive(request, redis_client, "deletion", user.id)
+    result = request_deletion(
+        db, user_id=user.id, sid=request.state.session_id, payload=payload,
+        settings=settings, redis_client=redis_client,
     )
-    return OkResponse(ok=True)
+    # The persisted deletion marker already denies all old credentials even
+    # if Redis is temporarily unavailable after this committed transaction.
+    try:
+        revoke_user_sessions(redis_client, user.id)
+    except redis.RedisError:
+        logger.warning("account session cleanup deferred", extra={"user_id": user.id})
+    clear_auth_cookies(response, settings)
+    return result
 
 
-@router.get(
-    "/wechat/bind-status",
-    response_model=WechatBindStatusResponse,
-    include_in_schema=False,
-)
-def get_wechat_bind_status(
-    ticket: str,
-    request: Request,
-    _legacy_route: None = Depends(require_legacy_test_route),
-    user: User = Depends(get_current_user),
-    redis_client: "redis.Redis" = Depends(get_redis),
-) -> WechatBindStatusResponse:
-    require_legacy_test_route(request)
-    return WechatBindStatusResponse(status=bind_status(redis_client, ticket))
+@router.post("/deletion-status")
+def get_deletion_status(
+    payload: AccountDeletionStatusRequest, request: Request,
+    db: Session = Depends(get_db), redis_client=Depends(get_redis),
+) -> dict:
+    actions.rate_limit(redis_client, "deletion-status", request.client.host if request.client else "unknown", 60)
+    return deletion_status(db, payload.job_id, payload.receipt_token)

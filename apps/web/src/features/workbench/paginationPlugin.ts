@@ -1,6 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { syncResumeSheetColumns } from "../preview/print/resumeSheetDecoration";
 import { A4_HEIGHT_CSS_PX, PAGE_CONTINUATION_INSET_PX, computePageBreaks, pageContentHeight, type PageBlock, type PageBreak } from "./pagination";
 
 export const paginationPluginKey = new PluginKey<DecorationSet>("resumePagination");
@@ -254,6 +255,7 @@ export const PaginationExtension = Extension.create({
             deferredRelevantMeasure ||= relevantMeasure;
             return;
           }
+          if (paper && !paper.classList.contains("pages-horizontal")) syncResumeSheetColumns({ paper });
           if (!paper || paper.classList.contains("smart-one-page")) {
             if (paper) setPageStripMetrics(paper, 1);
             if (lastBreaks.length > 0 || lastCollapsedPositions.length > 0) {
@@ -295,6 +297,7 @@ export const PaginationExtension = Extension.create({
             measurementPaper.style.zoom = "1";
             paper.parentElement?.appendChild(measurementPaper);
             measurementEditor = measurementPaper.querySelector<HTMLElement>(".resume-content") ?? editor;
+            syncResumeSheetColumns({ paper, measurementPaper });
           }
           const editorRect = measurementEditor.getBoundingClientRect();
           const paperRect = measurementPaper?.getBoundingClientRect() ?? paper.getBoundingClientRect();

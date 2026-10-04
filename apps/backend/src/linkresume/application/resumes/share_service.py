@@ -155,6 +155,8 @@ def resolve_public_share(
         assets=assets,
         sharer=PublicShareSharer(nickname=owner.nickname, avatar_url=owner.avatar_url),
         allow_download=bool(resume.share_allow_download),
+        expires_at=resume.share_expires_at,
+        updated_at=resume.updated_at,
     )
 
 
@@ -177,6 +179,6 @@ def resolve_public_share_access(
         if viewer is None or viewer.id != resume.user_id:
             raise ShareLinkUnavailable
     owner = db.get(User, resume.user_id)
-    if owner is None:
+    if owner is None or owner.status != 1 or owner.deletion_requested_at is not None:
         raise ShareLinkUnavailable
     return resume, owner

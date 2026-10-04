@@ -250,6 +250,9 @@ class LLMService:
         agent_run_id: int | None = None,
     ) -> None:
         with self._session_factory() as db:
+            if user_id is not None:
+                from linkresume.modules.identity.dependencies import lock_active_user
+                lock_active_user(db, user_id)
             db.add(LLMCallLog(
                 call_id=call_id,
                 use_case=plan.use_case,

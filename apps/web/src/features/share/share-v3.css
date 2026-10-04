@@ -1,0 +1,196 @@
+/* 09.1 分享页（Figma 44:940）与状态变体（399:3969）。
+   整窗无侧栏：窗口 #f1f1ef，内容卡四边各留 12；顶部 64 高品牌栏，下面灰色画布里是 A4 + 右栏。
+   类名沿用 .share-page 根节点，使 app.css 里纸面分页遮罩（.share-page .share-page-paper）继续生效。 */
+
+.v3.share-page {
+  position: fixed;
+  inset: 0;
+  display: block;
+  height: auto;
+  background: var(--v3-win);
+  font-family: var(--v3-sans);
+}
+
+.share-v3-card {
+  position: absolute;
+  inset: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--v3-cl);
+  border-radius: 16px;
+  background: var(--v3-card);
+}
+
+/* 顶部品牌栏：Brand(29,20) 127×26 → 竖线(172,26) → 说明文字(185,25) → 需后端(326,23) */
+.share-v3-head {
+  display: flex;
+  height: 64px;
+  flex: 0 0 auto;
+  align-items: center;
+  border-bottom: 1px solid var(--v3-line);
+  padding: 0 32px 0 28px; /* 29 - 1px 卡片边框 */
+}
+.share-v3-brand { display: flex; align-items: center; }
+.share-v3-brand img { display: block; width: 127px; height: 26px; object-fit: contain; object-position: left; }
+.share-v3-divider { width: 1px; height: 14px; margin: 0 12px 0 16px; flex: 0 0 auto; background: var(--v3-cl); }
+.share-v3-note { color: var(--v3-fnt); font-size: 11px; white-space: nowrap; }
+.share-v3-note + .v3-be-tag { margin-left: 6px; }
+.share-v3-access-art { position: absolute; top: 0; left: 50%; width: 464px; height: 180px; transform: translateX(-50%); }
+.share-v3-access-badge { position: absolute; top: 68px; left: 206px; display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid var(--v3-cl); border-radius: 26px; background: #fff; box-shadow: 0 6px 16px rgb(0 0 0 / 12%); }
+.share-v3-access.v3-empty > .v3-stage { background-image: url("../../assets/figma/share-private-dots.svg"); }
+.share-v3-access h3 { display: flex; align-items: center; gap: 7px; }
+.share-v3-access.v3-empty { padding: 7px 7px 30px; }
+.share-v3-access.v3-empty h3 { line-height: 26px; }
+.share-v3-access.v3-empty p { margin-top: 8px; }
+.share-v3-access p { min-height: 44px; }
+.share-v3-access .v3-empty-actions { margin-top: 13px; }
+.share-v3-access .v3-empty-actions .v3-btn { width: 112px; height: 36px; }
+.share-v3-head-right { margin-left: auto; color: var(--v3-sub); font-size: 11px; font-weight: 500; text-decoration: none; }
+.share-v3-head-right:hover { color: var(--v3-txt); }
+
+/* 画布：#f7f7f5，A4(600) + 48 间距 + 右栏(340) 整组居中，顶部留 40 */
+.share-v3-canvas {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  background: #f7f7f5;
+}
+.share-v3-layout {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 48px;
+  padding: 40px 32px 56px;
+}
+.share-v3-paper-col { width: 600px; max-width: 100%; flex: 0 1 600px; min-width: 0; }
+.share-v3-paper-fit { width: 100%; }
+
+/* 纸面：设计稿 A4 圆角 3、描边 #e4e4e0、浅阴影；覆盖旧版的蓝灰描边 */
+.share-page.v3 .share-page-paper {
+  outline: 1px solid var(--v3-cl);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 7%);
+  filter: none;
+}
+
+.share-v3-foot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  color: var(--v3-fnt);
+  font-family: var(--v3-num);
+  font-size: 11px;
+}
+
+.share-v3-side {
+  position: sticky;
+  top: 40px;
+  display: flex;
+  width: 340px;
+  flex: 0 0 340px;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 右栏卡片：白底描边圆角 16，内部 8px 处是插图舞台 */
+.share-v3-pcard {
+  position: relative;
+  border: 1px solid var(--v3-cl);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--v3-shadow-card);
+  padding: 7px; /* 1px 边框 + 7 = 舞台距卡片外沿 8 */
+}
+
+/* Profile 340×384：舞台 96 高；头像 72 圆（4px 白边）压在舞台下沿，左上角 (24,64) */
+.share-v3-profile { display: flex; min-height: 384px; flex-direction: column; }
+.share-v3-profile > .v3-stage { height: 96px; flex: 0 0 auto; }
+.share-v3-avatar {
+  position: absolute;
+  top: 63px;
+  left: 23px;
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  overflow: hidden;
+  border: 4px solid #fff;
+  border-radius: 50%;
+  background: var(--v3-dark);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 700;
+}
+.share-v3-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.share-v3-name { margin: 46px 16px 0; font-family: var(--v3-serif); font-size: 20px; font-weight: 600; line-height: 29px; }
+.share-v3-headline { margin: 3px 16px 0; color: var(--v3-sub); font-size: 12px; line-height: 14px; }
+.share-v3-contacts { display: grid; gap: 16px; margin: 22px 16px 0; padding: 0; list-style: none; }
+.share-v3-contacts li { display: flex; min-width: 0; align-items: center; gap: 10px; color: var(--v3-txt); font-size: 12px; line-height: 14px; }
+.share-v3-contacts li svg { flex: 0 0 auto; color: var(--v3-fnt); }
+.share-v3-contacts li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-v3-actions { display: flex; align-items: center; gap: 8px; margin: auto 16px 14px; padding-top: 24px; }
+.share-v3-actions .v3-btn-dark { height: 36px; flex: 1; }
+.share-v3-copy {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--v3-cl);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--v3-sub);
+  cursor: pointer;
+}
+.share-v3-copy:hover { background: var(--v3-field); color: var(--v3-txt); }
+/* ② 不允许下载：只剩复制链接方块 + 「复制链接」文字 */
+.share-v3-copy-wide { display: inline-flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; font-size: 12.5px; font-weight: 500; }
+.share-v3-copy-wide:hover { color: var(--v3-txt); }
+.share-v3-copy-wide:hover .share-v3-copy { background: var(--v3-field); }
+.share-v3-error { margin: -2px 16px 12px; color: var(--v3-rd); font-size: 11px; line-height: 1.4; }
+
+/* Promo 340×236：舞台 120 高，三张迷你简历 */
+.share-v3-promo { height: 236px; }
+.share-v3-promo > .v3-stage { height: 120px; }
+.share-v3-promo h2 { margin: 18px 16px 0; font-family: var(--v3-serif); font-size: 14px; font-weight: 600; line-height: 20px; }
+.share-v3-promo p { margin: 6px 16px 0; color: var(--v3-sub); font-size: 12px; line-height: 14px; }
+.share-v3-promo .v3-link { margin: 16px 16px 3px; }
+
+/* 链接不可用：画布里 y=150 的空状态卡 480 宽、舞台 180 高 */
+.share-v3-empty { padding-top: 150px; }
+.share-v3-empty .v3-empty { width: 480px; }
+.share-v3-empty .v3-empty > .v3-stage { height: 180px; }
+
+.share-v3-loading { display: grid; height: 100%; place-items: center; }
+
+.share-v3-head a:focus-visible,
+.share-v3-copy:focus-visible,
+.share-v3-copy-wide:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+
+/* 窄屏（手机、微信内置浏览器）：去掉外框，右栏移到纸面下方 */
+@media (max-width: 1100px) {
+  .share-v3-layout { flex-direction: column; align-items: center; gap: 24px; }
+  .share-v3-side { position: static; width: min(600px, 100%); flex-basis: auto; }
+}
+@media (max-width: 760px) {
+  .share-v3-card { inset: 0; border: 0; border-radius: 0; }
+  .share-v3-head { padding: 0 16px; }
+  .share-v3-layout { padding: 16px 12px 40px; }
+  .share-v3-note { overflow: hidden; text-overflow: ellipsis; }
+  .share-v3-empty { padding: 60px 12px 0; }
+}
+
+@media print {
+  .v3.share-page { position: static; background: #fff; }
+  .share-v3-card { position: static; overflow: visible; border: 0; }
+  .share-v3-head, .share-v3-side, .share-v3-foot { display: none; }
+  .share-v3-canvas { overflow: visible; background: #fff; }
+  .share-v3-layout { display: block; padding: 0; }
+  .share-v3-paper-col { width: auto; max-width: none; }
+  .share-page.v3 .share-page-paper { outline: 0; box-shadow: none; }
+}
+
+/* 纸面缩放容器：复用旧版 .share-page-paper-scroll 结构（usePaperFit 读它的内容宽度），去掉旧版的 flex 与内边距 */
+.share-page.v3 .share-page-paper-scroll { display: block; min-height: 0; flex: none; padding: 0; overflow: visible; }

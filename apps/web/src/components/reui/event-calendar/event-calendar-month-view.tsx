@@ -373,9 +373,9 @@ function EventCalendarMonthWeek({
   // like an event chip. If bars already occupy every measured row, reserve the
   // last lane for "+N more"; otherwise the indicator is squeezed underneath
   // the fixed day-number footer and only its upper half remains visible.
-  const hasHiddenBars = bars.some((b) => (b.lane ?? 0) >= cap)
-  const visibleBarCap =
-    autoFit && hasHiddenBars ? Math.max(0, cap - 1) : cap
+  // 「+N more」放在日期数字那一行（格子底部 footer），不占事件行；所以这里不再为它让出一行，
+  // 否则格子只够放一行时，这一行被按钮占掉，结果只有按钮、一张卡片都没有
+  const visibleBarCap = cap
   // bars fit within the adjusted cap; deeper lanes fall into each day's "+N more"
   const visibleBars = bars.filter((b) => (b.lane ?? 0) < visibleBarCap)
   const covers = (b: EventCalendarSegment, dayOffset: number) =>
@@ -811,8 +811,9 @@ function EventCalendarMonthCell({
   // cell, so it never duplicates them. autoFit gives up one timed row to the
   // "+N more" indicator so the visible chips fit the clipped cell height.
   const staticOverflow = extraHidden > 0 || m > timedSlots
-  const staticShown =
-    autoFit && staticOverflow ? Math.max(0, timedSlots - 1) : timedSlots
+  // 按钮在 footer 里，不占事件行：能放几张就放几张
+  void staticOverflow
+  const staticShown = timedSlots
   const overflowSegments = [
     ...hiddenBarSegs,
     ...segments.timed.slice(staticShown),
@@ -841,11 +842,7 @@ function EventCalendarMonthCell({
     ).length
     const dropOverflow = extraHidden > 0 || m + 1 > timedSlots
     // rows for timed items INCLUDING the phantom, before the "+N more" row
-    const vis = !dropOverflow
-      ? m + 1
-      : autoFit
-        ? Math.max(0, timedSlots - 1)
-        : timedSlots
+    const vis = !dropOverflow ? m + 1 : timedSlots
     placeholderAtMore = insertRank >= vis
     visibleTimed = placeholderAtMore
       ? segments.timed.slice(0, vis)
@@ -944,18 +941,6 @@ function EventCalendarMonthCell({
         {placeholderIndex >= 0 &&
           placeholderIndex >= visibleTimed.length &&
           dropPlaceholder}
-        {overflowCount > 0 && (
-          <EventCalendarMoreIndicator
-            day={day}
-            count={overflowCount}
-            segments={overflowSegments}
-            dropInto={
-              placeholderAtMore && inlineDrop
-                ? { color: inlineDrop.color, valid: inlineDrop.valid }
-                : undefined
-            }
-          />
-        )}
       </div>
       {/* Day number + add affordance, bottom-right (Notion-style) */}
       <div
@@ -1005,6 +990,18 @@ function EventCalendarMonthCell({
             { locale: settings.locale }
           )}
         </span>
+        {overflowCount > 0 && (
+          <EventCalendarMoreIndicator
+            day={day}
+            count={overflowCount}
+            segments={overflowSegments}
+            dropInto={
+              placeholderAtMore && inlineDrop
+                ? { color: inlineDrop.color, valid: inlineDrop.valid }
+                : undefined
+            }
+          />
+        )}
       </div>
     </>
   )
@@ -1065,10 +1062,13 @@ function EventCalendarMonthCell({
       }}
       onClick={(e) => {
         if (wasRecentDrag() || wasRecentChipPress()) return
+        if (isInsideMoreControl(e.target)) return
         settings.onSlotClick?.({ date: day, allDay: true, view: "month" }, e)
       }}
       onDoubleClick={(e) => {
         if (wasRecentDrag() || wasRecentChipPress()) return
+        // 连点「另有 N 项」会被浏览器算成双击；双击事件冒泡到格子上就会新建日程，这里排除掉
+        if (isInsideMoreControl(e.target)) return
         settings.onSlotDoubleClick?.({ date: day, allDay: true, view: "month" }, e)
       }}
     >
@@ -1281,6 +1281,12 @@ function EventCalendarMoreIndicator({
       </PopoverContent>
     </Popover>
   )
+}
+
+/** 点击 / 双击是否落在「+N more」按钮或它弹出的列表上（弹窗经 portal 渲染，但 React 事件仍会冒泡到格子） */
+function isInsideMoreControl(target: EventTarget | null): boolean {
+  return target instanceof Element
+    && Boolean(target.closest("[data-slot=event-calendar-more], [data-slot=event-calendar-more-popover]"))
 }
 
 /** Built-in "+N more" popover body: day header + the day's chips. */

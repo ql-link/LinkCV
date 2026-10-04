@@ -1,32 +1,6 @@
-import {
-  ArrowUp,
-  BriefcaseBusiness,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ChevronUp,
-  CircleAlert,
-  Database,
-  FileText,
-  FolderOpen,
-  LayoutTemplate,
-  ListChecks,
-  Menu,
-  MessageCircleQuestion,
-  MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Pencil,
-  Pin,
-  Plus,
-  Search,
-  Square,
-  Target,
-  Trash2,
-  X,
-} from "lucide-react";
+import { t, useLocale, getLocale } from "@/i18n";
+import { MotionPresence } from "@/components/ui/motion";
+import { PageLoading } from "@/components/ui/page-loading";
 import {
   Fragment,
   useCallback,
@@ -34,9 +8,9 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type CSSProperties,
   type KeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
+  type CSSProperties,
 } from "react";
 
 import {
@@ -49,7 +23,6 @@ import {
   type ClarificationAnswer,
 } from "../agent/AgentPanel";
 import {
-  AgentClarification,
   AgentActiveRun,
   AgentContextRef,
   AgentContextSnapshot,
@@ -57,64 +30,66 @@ import {
   AgentModelSummary,
   AgentMessage,
   AgentProposal,
-  AgentSelectionContext,
   AgentSession,
   AgentStreamEvent,
   ApiRequestError,
   api,
 } from "../../api/client";
-import { Brand, Button, ConfirmDialog, FeedbackNotice } from "@/components/ui";
-import { assistantPath, assistantWorkspacePath, navigateTo, rememberAssistantSession, type AssistantWorkspaceSection } from "../../routing";
+import {
+  assistantPath,
+  careerViewPath,
+  datasetsPath,
+  navigateTo,
+  rememberAssistantSession,
+  type AssistantWorkspaceSection,
+} from "../../routing";
 import { useResumeStore } from "../../store/resumeStore";
-import { AssistantWorkspaceModules } from "./AssistantWorkspaceModules";
-import { ResumeWorkbench } from "../workbench/ResumeWorkbench";
+import { V3Shell } from "../../v3/Shell";
+import { Icon, type V3IconName } from "../../v3/Icon";
+import { BeTag, Dialog, DialogFooter, SearchBox, Toast } from "../../v3/primitives";
+import { useActiveSessionStore, useSessionStore } from "../../v3/sessionStore";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import { MessageActions } from "../agent/MessageActions";
+import { HomeCardView } from "./HomeCards";
+import { greetingPrefix, homeCopy, useHomeDashboard } from "./homeDashboard";
+import { ModelPicker } from "./ModelPicker";
+import { openPreviewTab, PreviewPanel, previewTabKey, type PreviewTab, type GeneratedDocument, type ScreenshotAttachment } from "./PreviewPanel";
+import { attachGeneratedDocuments, GeneratedDocumentCard, isDocumentRequest, ScreenshotStrip } from "./localArtifacts";
+import { GeneratedDocumentSaveDialog } from "./GeneratedDocumentSaveDialog";
+import { SuggestionCard } from "./SuggestionCard";
 import "./assistant.css";
 
 const NEW_CONVERSATION_KEY = "__assistant_new__";
-const CONTEXT_TYPES: Array<{ type: AgentContextType; label: string; icon: typeof FileText }> = [
-  { type: "resume", label: "当前简历", icon: FileText },
-  { type: "dataset", label: "资料", icon: Database },
-  { type: "job", label: "岗位", icon: BriefcaseBusiness },
-  { type: "application", label: "求职进程", icon: Target },
-  { type: "interview", label: "面试记录", icon: CalendarDays },
+const CONTEXT_TYPES: Array<{ type: AgentContextType; label: string; icon: V3IconName }> = [
+  { type: "user_profile", get label() { return t("个人画像"); }, icon: "user" },
+  { type: "resume", get label() { return t("当前简历"); }, icon: "resume" },
+  { type: "dataset", get label() { return t("资料"); }, icon: "folder" },
+  { type: "job", get label() { return t("岗位"); }, icon: "brief" },
+  { type: "application", get label() { return t("求职进程"); }, icon: "flag" },
+  { type: "interview", get label() { return t("面试记录"); }, icon: "cal" },
 ];
 
 const PHASE_LABELS: Record<string, string> = {
-  loading_context: "正在读取所选资料…",
-  comparing_context: "正在分析简历与岗位要求…",
-  drafting: "正在整理建议…",
+  get loading_context() { return t("正在读取所选资料…"); },
+  get comparing_context() { return t("正在对比岗位 JD 与项目经历…"); },
+  get drafting() { return t("正在整理建议…"); },
 };
 
 const MESSAGE_FOLLOW_THRESHOLD = 96;
-const ASSISTANT_SIDEBAR_DEFAULT_WIDTH = 260;
-const ASSISTANT_SIDEBAR_MIN_WIDTH = 220;
-const ASSISTANT_SIDEBAR_MAX_WIDTH = 420;
 
-function AssistantWorkspaceHomeLink() {
-  return (
-    <a
-      className="assistant-workspace-brand"
-      href="/resumes"
-      aria-label="返回工作区"
-      title="返回工作区"
-      onClick={(event) => {
-        if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        event.preventDefault();
-        navigateTo("/resumes");
-      }}
-    >
-      <Brand />
-    </a>
-  );
-}
-
-function clampAssistantSidebarWidth(width: number) {
-  return Math.min(ASSISTANT_SIDEBAR_MAX_WIDTH, Math.max(ASSISTANT_SIDEBAR_MIN_WIDTH, width));
+// V3 不再在助手里嵌其他模块：旧的 /assistant/workspace/... 直接跳到独立页面
+function workspaceRedirectPath(section: AssistantWorkspaceSection, careerView?: "applications" | "schedule") {
+  if (section === "resumes") return "/resumes";
+  if (section === "templates") return "/templates";
+  if (section === "datasets") return datasetsPath();
+  return careerViewPath(careerView === "schedule" ? "schedule" : "applications");
 }
 
 type LocalMessage = AgentMessage & {
+  screenshots?: ScreenshotAttachment[];
+  generatedDocument?: GeneratedDocument;
+  artifactFollowup?: string;
+  localOnly?: boolean;
   temporary?: boolean;
   status?: "streaming" | "stopped" | "failed";
 };
@@ -259,6 +234,8 @@ function insertComposerPlainText(element: HTMLElement, text: string) {
 }
 
 type ConversationState = {
+  loadState: "loading" | "ready" | "error";
+  screenshots?: ScreenshotAttachment[];
   revisionProposalId?: string;
   session: AgentSession;
   messages: LocalMessage[];
@@ -299,7 +276,7 @@ function blankSession(): AgentSession {
   return {
     id: NEW_CONVERSATION_KEY,
     selected_model_id: null,
-    title: "新对话",
+    title: t("新对话"),
     pinned: false,
     status: "active",
     last_message_at: null,
@@ -311,6 +288,7 @@ function blankSession(): AgentSession {
 
 function blankConversation(): ConversationState {
   return {
+    loadState: "ready",
     session: blankSession(),
     messages: [],
     proposals: [],
@@ -320,7 +298,7 @@ function blankConversation(): ConversationState {
     cancelling: false,
     stage: "idle",
     runId: null,
-    phase: "正在准备…",
+    phase: t("正在准备…"),
     activityText: "",
     activities: [],
     referencedContextCount: 0,
@@ -335,20 +313,30 @@ function blankConversation(): ConversationState {
   };
 }
 
-function sortSessions(items: AgentSession[]) {
-  return [...items].sort((left, right) => {
-    const pinnedDifference = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned));
-    if (pinnedDifference !== 0) return pinnedDifference;
-    return new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime();
-  });
-}
-
-function promoteSession(items: AgentSession[], session: AgentSession) {
-  return [session, ...items.filter((item) => item.id !== session.id)];
-}
-
 function contextKey(context: Pick<AgentContextRef, "type" | "id">) {
   return `${context.type}:${context.id}`;
+}
+
+// 输入框上方的简历小标签：从「添加资料」选的简历（正文里没有 @简历名），234:2 ④
+function isChipContext(context: AgentContextSnapshot, draft: string) {
+  return (context.type === "resume" || context.type === "resume_version") && !draft.includes(`@${context.label}`);
+}
+
+// AI 回答里提到本会话引用过的文件时，改写成特殊链接，渲染成可点击的蓝色文字（代码块里不改）
+const REF_HREF_PREFIX = "#linkresume-ref:";
+function linkContextMentions(content: string, contexts: AgentContextSnapshot[]) {
+  const targets = contexts.filter((context) => context.label.trim().length >= 2 && previewTabForContext(context));
+  if (targets.length === 0) return content;
+  return content.split(/(```[\s\S]*?```|`[^`\n]*`)/u).map((part, index) => {
+    if (index % 2 === 1) return part;
+    let next = part;
+    for (const context of [...targets].sort((left, right) => right.label.length - left.label.length)) {
+      const label = context.label.replace(/[[\]]/gu, "");
+      const href = `${REF_HREF_PREFIX}${encodeURIComponent(context.type)}:${encodeURIComponent(context.resume_id ?? context.id)}`;
+      next = next.split(context.label).join(`[${label}](${href})`);
+    }
+    return next;
+  }).join("");
 }
 
 function withoutContextToken(draft: string, context: AgentContextSnapshot) {
@@ -361,29 +349,83 @@ function withoutContextToken(draft: string, context: AgentContextSnapshot) {
 }
 
 function contextLabel(type: AgentContextType) {
-  return CONTEXT_TYPES.find((item) => item.type === type)?.label ?? "资料";
+  return CONTEXT_TYPES.find((item) => item.type === type)?.label ?? t("资料");
 }
 
-function ContextSourceIcon({ type, size }: { type: AgentContextType; size: number }) {
-  const Icon = type === "dataset" ? Database : FileText;
-  return <Icon size={size} aria-hidden="true" />;
+function contextIcon(type: AgentContextType): V3IconName {
+  return type === "resume" || type === "resume_version" ? "resume" : type === "dataset" ? "doc" : CONTEXT_TYPES.find((item) => item.type === type)?.icon ?? "doc";
 }
 
-function UserMessageContent({ content, contexts }: { content: string; contexts: AgentContextSnapshot[] }) {
+// 可以在右侧面板预览的引用：简历和资料库文件
+export function previewTabForContext(context: AgentContextSnapshot): PreviewTab | null {
+  if (context.type === "resume" || context.type === "resume_version") {
+    return { kind: "resume", id: context.resume_id ?? context.id, label: context.label };
+  }
+  if (context.type === "dataset") return { kind: "dataset", id: context.id, label: context.label };
+  return null;
+}
+
+// 已发送的用户消息（234:2）：简历 = 气泡上方的小标签；@ 引用的文件 = 气泡里的蓝色文字，点击在右侧预览
+function UserMessageContent({
+  content,
+  contexts,
+  activePreviewKey,
+  unavailableKeys,
+  onOpen,
+}: {
+  content: string;
+  contexts: AgentContextSnapshot[];
+  activePreviewKey: string | null;
+  unavailableKeys: string[];
+  onOpen: (context: AgentContextSnapshot) => void;
+}) {
+  useLocale();
   const visibleContexts = contexts.filter((context) => context.presentation !== "implicit");
+  const attachedResumes = visibleContexts.filter((context) => (context.type === "resume" || context.type === "resume_version") && !content.includes(`@${context.label}`));
+  const inlineContexts = visibleContexts.filter((context) => !attachedResumes.includes(context));
+  const isUnavailable = (context: AgentContextSnapshot) => { const tab = previewTabForContext(context); return Boolean(tab && unavailableKeys.includes(previewTabKey(tab))); };
+  const isActive = (context: AgentContextSnapshot) => {
+    const tab = previewTabForContext(context);
+    return Boolean(tab && previewTabKey(tab) === activePreviewKey);
+  };
   return (
-    <div className="assistant-user-message-content">
-      {composerSegments(content, visibleContexts).map((segment) => segment.kind === "text" ? segment.text : (
-        <span
-          className="assistant-message-context-token"
-          key={segment.key}
-          aria-label={`引用文件 ${segment.context.label}`}
-        >
-          <ContextSourceIcon type={segment.context.type} size={14} />
-          <span>{segment.context.label}</span>
-        </span>
-      ))}
-    </div>
+    <>
+      {attachedResumes.length > 0 && (
+        <div className="assistant-sent-attachments">
+          {attachedResumes.map((context) => (
+            <button
+              type="button"
+              key={contextKey(context)}
+              className={`assistant-resume-chip${isActive(context) ? " is-active" : ""}`}
+              aria-label={t("引用文件 {value0}", { value0: context.label })}
+              disabled={isUnavailable(context)}
+              onClick={() => onOpen(context)}
+            >
+              <Icon name="resume" size={12} />
+              <span>{context.type === "user_profile" ? t("个人画像") : context.label}</span>
+              <small>{t("简历")}</small>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="assistant-message-content">
+        <div className="assistant-user-message-content">
+          {composerSegments(content, inlineContexts).map((segment) => segment.kind === "text" ? segment.text : (
+            <button
+              type="button"
+              className={`assistant-message-context-token${isActive(segment.context) ? " is-active" : ""}`}
+              key={segment.key}
+              data-context-type={segment.context.type}
+              aria-label={t("引用文件 {value0}", { value0: segment.context.label })}
+              disabled={!previewTabForContext(segment.context) || isUnavailable(segment.context)}
+              onClick={() => onOpen(segment.context)}
+            >
+              {segment.context.type === "user_profile" ? t("个人画像") : segment.context.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -394,7 +436,7 @@ function proposalResumeLabel(state: ConversationState, resumeId: string) {
   ].find((context) => (
     context.type === "resume" || context.type === "resume_version"
   ) && (context.resume_id ?? context.id) === resumeId);
-  return referenced?.label ?? `简历 #${resumeId}`;
+  return referenced?.label ?? t("简历 #{value0}", { value0: resumeId });
 }
 
 export function parseAgentTimestamp(value: string | null | undefined): number | null {
@@ -465,7 +507,7 @@ function normalizeContext(value: unknown, fallbackType: AgentContextType): Agent
   if (!CONTEXT_TYPES.some((entry) => entry.type === type)) return null;
   const id = item.id ?? item.object_id ?? item.resume_id;
   if (typeof id !== "string" && typeof id !== "number") return null;
-  const label = item.label ?? item.title ?? item.name ?? item.job_title ?? "未命名资料";
+  const label = item.label ?? item.title ?? item.name ?? item.job_title ?? t("未命名资料");
   return {
     type: type as AgentContextType,
     id: String(id),
@@ -488,22 +530,22 @@ function safeAgentError(error: unknown) {
   const code = error instanceof ApiRequestError ? error.message : "";
   if (code === "AGENT_RUN_IN_PROGRESS") return null;
   const messages: Record<string, string> = {
-    AGENT_CONTEXT_NOT_FOUND: "所选资料已不可用，请重新选择。",
-    AGENT_CONTEXT_STALE: "所选资料已发生变化，请刷新选择后重试。",
-    AGENT_CONTEXT_READ_FAILED: "所选资料暂时无法读取，请稍后重试。",
-    AGENT_CLARIFICATION_CONTEXT_CONFLICT: "这次回答选择了另一份资料，请继续使用原问题对应的资料。",
-    AGENT_CLARIFICATION_CONTEXT_INVALID: "原问题的资料记录已损坏，请重新发起请求。",
-    AGENT_SESSION_NOT_FOUND: "对话不存在或已无法访问。",
-    AGENT_UNAVAILABLE: "智能助手暂时不可用，草稿和已选资料不会丢失。",
-    AGENT_MODEL_UNAVAILABLE: "当前模型暂时不可用，请稍后重试。",
-    AGENT_STREAM_INCOMPLETE: "智能助手连接意外中断，请稍后重试。",
-    RESUME_EDIT_CONFLICT: "简历已发生新的修改，这份提案没有应用。",
-    TARGET_STALE: "提案定位内容已发生变化，请重新定位后再试。",
-    AGENT_PROPOSAL_EXPIRED: "这份提案已过期，请重新生成建议。",
-    AGENT_PROPOSAL_NOT_PENDING: "这份提案已经处理过，不能重复应用。",
-    RESUME_DRAFT_SAVE_FAILED: "当前草稿保存失败，提案没有应用。请先保存后重试。",
-    RESUME_WRITE_PENDING: "正在保存或应用修改，请稍后重试。",
-    AGENT_PROPOSAL_RESULT_UNKNOWN: "暂时无法确认修改结果，请刷新提案状态后再操作。",
+    AGENT_CONTEXT_NOT_FOUND: t("所选资料已不可用，请重新选择。"),
+    AGENT_CONTEXT_STALE: t("所选资料已发生变化，请刷新选择后重试。"),
+    AGENT_CONTEXT_READ_FAILED: t("所选资料暂时无法读取，请稍后重试。"),
+    AGENT_CLARIFICATION_CONTEXT_CONFLICT: t("这次回答选择了另一份资料，请继续使用原问题对应的资料。"),
+    AGENT_CLARIFICATION_CONTEXT_INVALID: t("原问题的资料记录已损坏，请重新发起请求。"),
+    AGENT_SESSION_NOT_FOUND: t("对话不存在或已无法访问。"),
+    AGENT_UNAVAILABLE: t("智能助手暂时不可用，草稿和已选资料不会丢失。"),
+    AGENT_MODEL_UNAVAILABLE: t("当前模型暂时不可用，请稍后重试。"),
+    AGENT_STREAM_INCOMPLETE: t("智能助手连接意外中断，请稍后重试。"),
+    RESUME_EDIT_CONFLICT: t("简历已发生新的修改，这份提案没有应用。"),
+    TARGET_STALE: t("提案定位内容已发生变化，请重新定位后再试。"),
+    AGENT_PROPOSAL_EXPIRED: t("这份提案已过期，请重新生成建议。"),
+    AGENT_PROPOSAL_NOT_PENDING: t("这份提案已经处理过，不能重复应用。"),
+    RESUME_DRAFT_SAVE_FAILED: t("当前草稿保存失败，提案没有应用。请先保存后重试。"),
+    RESUME_WRITE_PENDING: t("正在保存或应用修改，请稍后重试。"),
+    AGENT_PROPOSAL_RESULT_UNKNOWN: t("暂时无法确认修改结果，请刷新提案状态后再操作。"),
   };
   return messages[code] ?? agentErrorMessage(error);
 }
@@ -523,14 +565,15 @@ function idempotencyKey() {
 }
 
 function messageText(message: LocalMessage) {
-  return message.content || (message.message_type === "clarification" ? "需要你补充一些信息。" : "");
+  return message.content || (message.message_type === "clarification" ? t("需要你补充一些信息。") : "");
 }
 
-function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[]) {
+function mergeSessionMessages(persisted: AgentMessage[], current: LocalMessage[], sessionId: string) {
+  const localMessages = current.filter((message) => message.localOnly);
   const persistedAssistant = persisted.some((message) => message.role === "assistant");
-  if (persistedAssistant) return persisted;
-  const partialAssistant = current.filter((message) => message.role === "assistant" && message.sequence_no < 0);
-  return partialAssistant.length > 0 ? [...persisted, ...partialAssistant] : persisted;
+  const partialAssistant = persistedAssistant ? [] : current.filter((message) => !message.localOnly && message.role === "assistant" && message.sequence_no < 0);
+  const documents = new Map(current.filter(item => item.generatedDocument).map(item => [item.generatedDocument!.id, item.generatedDocument!]));
+  return attachGeneratedDocuments([...persisted, ...partialAssistant, ...localMessages].sort((left, right) => Date.parse(left.created_at) - Date.parse(right.created_at)), sessionId).map(item => ({ ...item, generatedDocument: item.generatedDocument ? documents.get(item.generatedDocument.id) ?? item.generatedDocument : undefined }));
 }
 
 type AssistantPageProps = {
@@ -540,18 +583,15 @@ type AssistantPageProps = {
 };
 
 export function AssistantPage({ sessionId, workspaceSection, careerView }: AssistantPageProps = {}) {
-  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  useLocale();
   const [conversationStates, setConversationStates] = useState<Record<string, ConversationState>>(() => ({
     [NEW_CONVERSATION_KEY]: blankConversation(),
   }));
   const [activeKey, setActiveKey] = useState(NEW_CONVERSATION_KEY);
-  const [sessionsLoading, setSessionsLoading] = useState(true);
-  const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [runtimeModel, setRuntimeModel] = useState<AgentModelSummary | null>(null);
   const [runtimeModels, setRuntimeModels] = useState<AgentModelSummary[]>([]);
   const [pendingModelId, setPendingModelId] = useState<string | null>(null);
   const [runtimeModelLoading, setRuntimeModelLoading] = useState(true);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const [contextType, setContextType] = useState<AgentContextType>("resume");
   const [contextOptions, setContextOptions] = useState<AgentContextSnapshot[]>([]);
@@ -559,52 +599,49 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const [contextError, setContextError] = useState<string | null>(null);
   const [contextSearch, setContextSearch] = useState("");
   const [contextDrafts, setContextDrafts] = useState<AgentContextSnapshot[]>([]);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [clarificationPage, setClarificationPage] = useState(0);
   const [clock, setClock] = useState(() => Date.now());
-  const [sessionMenuId, setSessionMenuId] = useState<string | null>(null);
-  const [renamingSessionId, setRenamingSessionId] = useState<string | null>(null);
-  const [renameDraft, setRenameDraft] = useState("");
-  const [pendingDeleteSession, setPendingDeleteSession] = useState<AgentSession | null>(null);
-  const [sessionActionBusyId, setSessionActionBusyId] = useState<string | null>(null);
-  const [sidebarWidth, setSidebarWidth] = useState(ASSISTANT_SIDEBAR_DEFAULT_WIDTH);
-  const [sidebarResizing, setSidebarResizing] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [resumePickerOpen, setResumePickerOpen] = useState(false);
-  const [resumeListLoading, setResumeListLoading] = useState(false);
-  const [embeddedResumeId, setEmbeddedResumeId] = useState<string | null>(null);
-  const [embeddedResumeRefreshVersion, setEmbeddedResumeRefreshVersion] = useState(0);
-  const [embeddedSelectionContext, setEmbeddedSelectionContext] = useState<AgentSelectionContext | null>(null);
-  const [resumeOpeningId, setResumeOpeningId] = useState<string | null>(null);
-  const [resumeOpenError, setResumeOpenError] = useState<string | null>(null);
-  const [pinnedSessionsExpanded, setPinnedSessionsExpanded] = useState(true);
-  const [recentSessionsExpanded, setRecentSessionsExpanded] = useState(true);
-  const [recallDrawerOpen, setRecallDrawerOpen] = useState(false);
-  const [recallReferencesOpen, setRecallReferencesOpen] = useState(false);
-  const [recallModificationsOpen, setRecallModificationsOpen] = useState(false);
   const [contextMention, setContextMention] = useState<ContextMention | null>(null);
   const [mentionOptions, setMentionOptions] = useState<AgentContextSnapshot[]>([]);
   const [mentionLoading, setMentionLoading] = useState(false);
   const [mentionError, setMentionError] = useState<string | null>(null);
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  // 右侧预览面板：按会话保留已打开的标签（本会话内保留，切会话时各自独立）
+  const [previewTabs, setPreviewTabs] = useState<Record<string, PreviewTab[]>>({});
+  const [previewActive, setPreviewActive] = useState<Record<string, string | null>>({});
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(520);
+  const [documentToSave, setDocumentToSave] = useState<{ conversationKey: string; userId: string | null; document: GeneratedDocument } | null>(null);
+  const [unavailableKeys, setUnavailableKeys] = useState<string[]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
   const [composerView, setComposerView] = useState(() => ({
     revision: 0,
     draft: "",
     contexts: [] as AgentContextSnapshot[],
     invalidContextIds: [] as string[],
   }));
-  const resumes = useResumeStore((state) => state.resumes);
-  const listResumes = useResumeStore((state) => state.listResumes);
-  const loadResume = useResumeStore((state) => state.loadResume);
-  const saveCurrentResume = useResumeStore((state) => state.saveCurrentResume);
+  const user = useResumeStore((state) => state.user);
+  useEffect(() => { setDocumentToSave(null); }, [user?.id]);
+  const storeSessions = useSessionStore((state) => state.sessions);
+  const loadSessions = useSessionStore((state) => state.load);
+  const upsertSession = useSessionStore((state) => state.upsert);
+  const promoteStoreSession = useSessionStore((state) => state.promote);
+  const setSessionRunning = useSessionStore((state) => state.setRunning);
+  const setActiveSession = useActiveSessionStore((state) => state.setActive);
+  // 只更新会话内容、不改变列表顺序（打开历史会话、生成结束后刷新详情时用）
+  const replaceStoreSession = useCallback((updated: AgentSession) => {
+    useSessionStore.setState((state) => ({
+      sessions: state.sessions.some((item) => item.id === updated.id)
+        ? state.sessions.map((item) => item.id === updated.id ? updated : item)
+        : state.sessions,
+    }));
+  }, []);
   const streamRequestRef = useRef(0);
+  const sessionRequestRef = useRef(0);
+  const pageMountedRef = useRef(true);
   const mentionRequestRef = useRef(0);
   const activeKeyRef = useRef(activeKey);
   const abortRef = useRef<AbortController | null>(null);
-  const assistantShellRef = useRef<HTMLDivElement>(null);
-  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const contextCloseButtonRef = useRef<HTMLButtonElement>(null);
-  const modelSelectorRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
   const pendingComposerCaretRef = useRef<number | null>(null);
   const mentionMenuRef = useRef<HTMLDivElement>(null);
@@ -613,6 +650,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const isComposingRef = useRef(false);
   activeKeyRef.current = activeKey;
 
+  const conversationStatesRef = useRef(conversationStates);
+  conversationStatesRef.current = conversationStates;
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
   const [proposalViews, setProposalViews] = useState<Record<string, { id?: string }>>({});
   const [proposalBatchProgress, setProposalBatchProgress] = useState<ProposalBatchProgress>(null);
@@ -623,114 +662,38 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     return owner ? String(owner.sequence_no) : `history-${proposal.run_id}`;
   };
   const newestGroup = String(turnUsers.slice(-1)[0]?.sequence_no ?? "none");
+  // 多项修改建议卡：同一轮提问产生的全部提案合并在一张卡里
   const proposalPanel = (group: string) => {
     const proposals = current.proposals.filter((item) => proposalGroup(item) === group);
     if (!proposals.length) return null;
     const viewKey = `${activeKey}:${group}`;
-    const view = proposalViews[viewKey] ?? {};
-    const selected = proposals.find((item) => item.id === view.id)
-      ?? proposals.find((item) => item.status === "pending") ?? proposals[0];
-    const selectedIndex = proposals.findIndex((item) => item.id === selected?.id);
-    const pendingCount = proposals.filter((item) => item.status === "pending").length;
-    const batchProgress = proposalBatchProgress?.viewKey === viewKey ? proposalBatchProgress : null;
-    const batchInProgress = proposalBatchProgress !== null;
-    const selectedStatus = !selected || selected.status === "pending"
-      ? null
-      : selected.superseded_by
-        ? "已被替代"
-        : selected.status === "applied"
-          ? "已应用"
-          : selected.status === "rejected"
-            ? "已放弃"
-            : "无法应用";
-    const updateView = (patch: { id?: string }) => {
-      setProposalViews((views) => ({ ...views, [viewKey]: { ...views[viewKey], ...patch } }));
-    };
+    const batch = proposalBatchProgress?.viewKey === viewKey ? proposalBatchProgress : null;
     return (
-      <div className="assistant-proposal-list" aria-label="待确认简历修改提案">
-        <div className="assistant-proposal-dock-header">
-          <div>
-            <strong>{group !== newestGroup ? "历史修改建议 · " : ""}{pendingCount > 0 ? `${pendingCount} 项待确认修改` : "修改记录"}</strong>
-            {selectedStatus && <span className={`is-${selected?.status}`}>{selectedStatus}</span>}
-          </div>
-          <div className="assistant-proposal-pagination" aria-label="切换修改提案">
-            <button type="button" aria-label="上一项修改" disabled={selectedIndex <= 0 || batchInProgress} onClick={() => updateView({ id: proposals[selectedIndex - 1].id })}>‹</button>
-            <span aria-live="polite">{selectedIndex + 1} / {proposals.length}</span>
-            <button type="button" aria-label="下一项修改" disabled={selectedIndex >= proposals.length - 1 || batchInProgress} onClick={() => updateView({ id: proposals[selectedIndex + 1].id })}>›</button>
-          </div>
-        </div>
-        <div className="assistant-proposal-detail">
-          {(selected ? [selected] : []).map((proposal) => {
-            const changes = proposal.preview?.changes ?? (proposal.operations?.length
-              ? proposal.operations.map((operation) => ({
-                before: typeof operation.target.selected_text === "string"
-                  ? operation.target.selected_text
-                  : "当前定位内容",
-                after: operation.op === "delete_target"
-                  ? "删除该条目"
-                  : operation.new_text,
-              }))
-              : [{ before: "当前简历内容", after: "候选简历内容" }]);
-            const actionable = proposal.status === "pending";
-            return (
-              <article className={`assistant-proposal-card is-${proposal.status}`} key={proposal.id}>
-                <dl className="assistant-proposal-meta">
-                  <div><dt>目标简历</dt><dd>{proposalResumeLabel(current, proposal.resume_id)}</dd></div>
-                  <div><dt>修改理由</dt><dd>{proposal.summary}</dd></div>
-                </dl>
-                <div className="assistant-proposal-diff">
-                  {changes.map((change, index) => (
-                    <div className="assistant-proposal-change" key={`${proposal.id}-${index}`}>
-                      <div><span className="is-deleted">修改前</span><del>{change.before}</del></div>
-                      <div><span className="is-added">修改后</span><ins>{change.after}</ins></div>
-                    </div>
-                  ))}
-                </div>
-                <div className="assistant-proposal-toolbar">
-                  {actionable && (
-                    <>
-                      <Button variant={pendingCount > 1 ? "outline" : "accent"} size="sm" disabled={current.busyProposalId !== null || current.running || batchInProgress} onClick={() => void applyProposal(proposal)}>
-                        {current.busyProposalId === proposal.id ? "处理中…" : pendingCount > 1 ? "应用当前项" : "应用修改"}
-                      </Button>
-                      <Button variant="outline" size="sm" disabled={current.busyProposalId !== null || current.running || batchInProgress} onClick={() => continueProposal(proposal)}>继续调整</Button>
-                      <Button variant="ghost" size="sm" disabled={current.busyProposalId !== null || batchInProgress} onClick={() => void rejectProposal(proposal)}>放弃</Button>
-                      {(pendingCount > 1 || batchProgress) && (
-                        <Button
-                          className="assistant-proposal-batch-action"
-                          variant="accent"
-                          size="sm"
-                          disabled={current.busyProposalId !== null || current.running || batchInProgress}
-                          onClick={() => void applyAllProposals(viewKey, proposals)}
-                        >
-                          {batchProgress
-                            ? `正在应用（${batchProgress.completed}/${batchProgress.total}）`
-                            : `全部应用（${pendingCount}项）`}
-                        </Button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </div>
+      <SuggestionCard
+        key={viewKey}
+        proposals={proposals}
+        resumeLabel={proposalResumeLabel(current, proposals[0].resume_id)}
+        historical={group !== newestGroup}
+        busyProposalId={current.busyProposalId}
+        running={current.running}
+        batchProgress={batch ? { completed: batch.completed, total: batch.total } : null}
+        batchLocked={proposalBatchProgress !== null}
+        selectedId={proposalViews[viewKey]?.id}
+        onSelect={(id) => setProposalViews((views) => ({ ...views, [viewKey]: { id } }))}
+        onApply={applyProposal}
+        onReject={rejectProposal}
+        onApplyAll={() => void applyAllProposals(viewKey, proposals)}
+        onContinue={continueProposal}
+      />
     );
   };
   const pendingClarification = pendingClarificationMessage(current.messages);
-  const isEmptyConversation = current.messages.length === 0 && !current.running;
+  const conversationPending = current.loadState === "loading";
+  const isEmptyConversation = !conversationPending && current.loadState === "ready" && current.messages.length === 0 && !current.running;
   const clarificationQuestions = pendingClarification?.clarification?.questions ?? [];
   const clarificationQuestion = clarificationQuestions[Math.min(clarificationPage, Math.max(0, clarificationQuestions.length - 1))];
   const latestUserMessage = [...current.messages].reverse().find((message) => message.role === "user");
   const latestTurnContexts = latestUserMessage?.contexts ?? (current.running ? current.contexts : []);
-  const latestUserCreatedAt = latestUserMessage ? new Date(latestUserMessage.created_at).getTime() : Number.NaN;
-  const latestTurnProposal = [...current.proposals]
-    .filter((proposal) => {
-      if (!latestUserMessage || Number.isNaN(latestUserCreatedAt)) return true;
-      const proposalCreatedAt = new Date(proposal.created_at).getTime();
-      return Number.isNaN(proposalCreatedAt) || proposalCreatedAt >= latestUserCreatedAt;
-    })
-    .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())[0] ?? null;
 
   const refreshComposerView = useCallback((draft: string, contexts: AgentContextSnapshot[], invalidContextIds: string[]) => {
     setComposerView((view) => ({
@@ -741,9 +704,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     }));
   }, []);
 
+  // 首页与对话中是两套输入框布局，切换时编辑区会重新挂载，也要按最新草稿重建
+  const isHomeLayout = isEmptyConversation;
   useEffect(() => {
     refreshComposerView(current.draft, current.contexts, current.invalidContextIds);
-  }, [activeKey, current.running, current.cancelling]);
+  }, [activeKey, current.running, current.cancelling, isHomeLayout]);
 
   useLayoutEffect(() => {
     const caret = pendingComposerCaretRef.current;
@@ -775,86 +740,71 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     pendingComposerCaretRef.current = options.restoreCaret ? caret : null;
     updateConversation(activeKey, (state) => ({
       draft: nextDraft,
-      contexts: state.contexts.filter((context) => retainedContextKeys.has(contextKey(context))),
+      // 简历小标签放在输入框上方、不在编辑区里，所以编辑区的 DOM 里找不到它，要单独保留
+      contexts: state.contexts.filter((context) => retainedContextKeys.has(contextKey(context)) || isChipContext(context, state.draft)),
       invalidContextIds: state.invalidContextIds.filter((id) => retainedContextKeys.has(id)),
     }));
     if (options.updateMention) setContextMention(contextMentionAt(nextDraft, caret));
   };
 
+  // 会话列表由 sessionStore 统一读取（侧栏也读它）；进入首页时强制刷新一次。
+  // 刷新结果可能晚于本页刚创建的新会话返回，这时把当前会话补回列表，避免侧栏丢掉它
   useEffect(() => {
-    let cancelled = false;
-    void api.listAgentSessions()
-      .then(({ sessions: nextSessions }) => {
-        if (cancelled) return;
-        setSessions(nextSessions);
-        setConversationStates((states) => {
-          const next = { ...states };
-          for (const session of nextSessions) {
-            next[session.id] = next[session.id] ?? {
-              ...blankConversation(),
-              session,
-              messages: session.messages ?? [],
-            };
-          }
-          return next;
-        });
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setSessionsError(safeAgentError(error));
-      })
-      .finally(() => {
-        if (!cancelled) setSessionsLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
+    void loadSessions(true).then(() => {
+      const key = activeKeyRef.current;
+      if (key === NEW_CONVERSATION_KEY) return;
+      const { sessions } = useSessionStore.getState();
+      const state = conversationStatesRef.current[key];
+      if (state && !sessions.some((item) => item.id === key)) useSessionStore.getState().promote(state.session);
+    });
+  }, [loadSessions]);
 
   useEffect(() => {
-    if (!sidebarResizing) return undefined;
-    const previousCursor = document.body.style.cursor;
-    const previousUserSelect = document.body.style.userSelect;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    return () => {
-      document.body.style.cursor = previousCursor;
-      document.body.style.userSelect = previousUserSelect;
-    };
-  }, [sidebarResizing]);
+    if (storeSessions.length === 0) return;
+    setConversationStates((states) => {
+      const next = { ...states };
+      for (const session of storeSessions) {
+        next[session.id] = next[session.id] ?? {
+          ...blankConversation(),
+          loadState: "loading",
+          session,
+          messages: attachGeneratedDocuments(session.messages ?? [], session.id),
+        };
+      }
+      return next;
+    });
+  }, [storeSessions]);
 
-  useEffect(() => {
-    if (!sessionMenuId) return undefined;
-    const closeMenu = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest(".assistant-session-actions")) return;
-      setSessionMenuId(null);
-    };
-    const closeMenuWithKeyboard = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setSessionMenuId(null);
-    };
-    document.addEventListener("pointerdown", closeMenu);
-    window.addEventListener("keydown", closeMenuWithKeyboard);
-    return () => {
-      document.removeEventListener("pointerdown", closeMenu);
-      window.removeEventListener("keydown", closeMenuWithKeyboard);
-    };
-  }, [sessionMenuId]);
+  // 侧栏删除当前会话时，Shell 会把「当前会话」清空并导航回 /assistant；这里据此回到新对话
+  useEffect(() => useActiveSessionStore.subscribe((state, previous) => {
+    if (!previous.activeId || state.activeId || activeKeyRef.current !== previous.activeId) return;
+    const removed = previous.activeId;
+    setConversationStates((states) => {
+      const next = { ...states };
+      delete next[removed];
+      return next;
+    });
+    resetToNewConversation();
+  }), []);
 
+  // 告诉侧栏当前会话（高亮）和正在生成的会话（删除置灰）
   useEffect(() => {
-    if (!resumePickerOpen) return undefined;
-    const closePicker = (event: PointerEvent) => {
-      const target = event.target;
-      if (target instanceof Element && target.closest(".assistant-resume-picker-wrap")) return;
-      setResumePickerOpen(false);
-    };
-    const closePickerWithKeyboard = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setResumePickerOpen(false);
-    };
-    document.addEventListener("pointerdown", closePicker);
-    window.addEventListener("keydown", closePickerWithKeyboard);
-    return () => {
-      document.removeEventListener("pointerdown", closePicker);
-      window.removeEventListener("keydown", closePickerWithKeyboard);
-    };
-  }, [resumePickerOpen]);
+    setActiveSession(activeKey === NEW_CONVERSATION_KEY ? null : activeKey);
+  }, [activeKey, setActiveSession]);
+  useEffect(() => () => setActiveSession(null), [setActiveSession]);
+  const runningMarksRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    for (const [key, state] of Object.entries(conversationStates)) {
+      if (key === NEW_CONVERSATION_KEY) continue;
+      const running = state.running || state.cancelling;
+      if (Boolean(runningMarksRef.current[key]) === running) continue;
+      runningMarksRef.current[key] = running;
+      setSessionRunning(key, running);
+    }
+  }, [conversationStates, setSessionRunning]);
+  useEffect(() => () => {
+    Object.keys(runningMarksRef.current).forEach((key) => setSessionRunning(key, false));
+  }, [setSessionRunning]);
 
   useEffect(() => {
     let cancelled = false;
@@ -881,22 +831,13 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   }, [activeKey, current.running]);
 
   useEffect(() => {
-    if (!mobileMenuOpen) return undefined;
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setMobileMenuOpen(false);
-        window.setTimeout(() => mobileMenuButtonRef.current?.focus(), 0);
-      }
+    pageMountedRef.current = true;
+    return () => {
+      pageMountedRef.current = false;
+      streamRequestRef.current += 1;
+      abortRef.current?.abort();
+      abortRef.current = null;
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mobileMenuOpen]);
-
-  useEffect(() => () => {
-    streamRequestRef.current += 1;
-    abortRef.current?.abort();
-    abortRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -974,32 +915,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     activeOption?.scrollIntoView?.({ block: "nearest" });
   }, [contextMention, mentionActiveIndex, mentionOptions.length]);
 
-  useEffect(() => {
-    if (!contextPickerOpen && !modelMenuOpen) return undefined;
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      if (contextPickerOpen) {
-        setContextPickerOpen(false);
-        window.setTimeout(() => inputRef.current?.focus(), 0);
-      } else {
-        setModelMenuOpen(false);
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [contextPickerOpen, modelMenuOpen]);
-
-  useEffect(() => {
-    if (!modelMenuOpen) return undefined;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (modelSelectorRef.current?.contains(event.target as Node)) return;
-      setModelMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [modelMenuOpen]);
-
   const handleMessageViewportScroll = () => {
     const element = messageViewportRef.current;
     if (!element) return;
@@ -1016,7 +931,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     .filter((line) => line && !structuredActivityLabels.has(line.replace(/[…：].*$/, "")));
   const activityStatusText = (activity: ConversationState["activities"][number]) => {
     if (activity.status === "succeeded") return `${activity.label} ✓`;
-    if (activity.status === "failed") return `${activity.label}（失败：${activity.errorCode ?? "AGENT_TOOL_FAILED"}）`;
+    if (activity.status === "failed") return t("{value0}（失败：{value1}）", { value0: activity.label, value1: activity.errorCode ?? "AGENT_TOOL_FAILED" });
     return `${activity.label}…`;
   };
   const latestStructuredActivity = current.activities[current.activities.length - 1];
@@ -1028,10 +943,9 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     ? (pendingModelId ?? runtimeModel?.id)
     : (current.session.selected_model_id ?? runtimeModel?.id);
   const selectedModel = runtimeModels.find((model) => model.id === selectedModelId) ?? null;
-  const runtimeModelLabel = selectedModel?.name ?? (runtimeModelLoading ? "正在读取模型" : "模型不可用");
+  const runtimeModelLabel = selectedModel?.name ?? (runtimeModelLoading ? t("正在读取模型") : t("模型不可用"));
 
   const selectModel = async (modelId: string) => {
-    setModelMenuOpen(false);
     if (activeKey === NEW_CONVERSATION_KEY) {
       setPendingModelId(modelId);
       return;
@@ -1040,7 +954,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     try {
       const result = await api.updateAgentSession(current.session.id, { modelId });
       updateConversation(current.session.id, { session: result.session });
-      setSessions((items) => items.map((item) => item.id === result.session.id ? result.session : item));
+      upsertSession(result.session);
     } catch (error) {
       updateConversation(current.session.id, { error: safeAgentError(error) });
     }
@@ -1074,30 +988,32 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     updateConversation(key, { cancelling: false });
   }, [conversationStates, refreshComposerView, updateConversation]);
 
-  const selectSession = async (sessionIdToSelect: string) => {
-    if (sessionIdToSelect === activeKeyRef.current) {
+  const selectSession = async (sessionIdToSelect: string, retry = false) => {
+    if (sessionIdToSelect === activeKeyRef.current && !retry) {
       navigateTo(assistantPath(sessionIdToSelect));
-      setMobileMenuOpen(false);
       return;
     }
+    const request = ++sessionRequestRef.current;
     streamRequestRef.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
     activeKeyRef.current = sessionIdToSelect;
     setActiveKey(sessionIdToSelect);
     navigateTo(assistantPath(sessionIdToSelect));
-    setMobileMenuOpen(false);
-    updateConversation(sessionIdToSelect, { error: null });
+    updateConversation(sessionIdToSelect, { error: null, loadState: "loading" });
     try {
       const [activeRun, detail] = await Promise.all([
         api.getActiveAgentRun(sessionIdToSelect).catch(() => ({ run: null })),
         api.getAgentSession(sessionIdToSelect),
       ]);
-      rememberAssistantSession(detail.session.id);
+      if (!pageMountedRef.current || request !== sessionRequestRef.current || activeKeyRef.current !== sessionIdToSelect) return;
       const proposalResult = await api.listAgentProposals(null, sessionIdToSelect, true);
+      if (!pageMountedRef.current || request !== sessionRequestRef.current || activeKeyRef.current !== sessionIdToSelect) return;
+      rememberAssistantSession(detail.session.id);
       updateConversation(sessionIdToSelect, {
+        loadState: "ready",
         session: detail.session,
-        messages: detail.session.messages ?? [],
+        messages: attachGeneratedDocuments(detail.session.messages ?? [], detail.session.id),
         proposals: proposalResult.proposals,
         contexts: [],
         invalidContextIds: [],
@@ -1109,20 +1025,46 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         stage: activeRun.run ? "thinking" : "idle",
         runId: activeRun.run?.run_id ?? null,
         startedAt: activeRun.run ? parseAgentTimestamp(activeRun.run.started_at) : null,
-        phase: activeRun.run ? "AI 正在处理…" : "正在准备…",
+        phase: activeRun.run ? t("AI 正在处理…") : t("正在准备…"),
         activityText: "",
       });
-      setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+      replaceStoreSession(detail.session);
       if (activeRun.run) reconnectToRun(sessionIdToSelect, activeRun.run);
     } catch (error) {
-      updateConversation(sessionIdToSelect, { error: safeAgentError(error) });
+      if (!pageMountedRef.current || request !== sessionRequestRef.current || activeKeyRef.current !== sessionIdToSelect) return;
+      // 会话已被删除或无权访问：回到新对话，并提示一次
+      if (error instanceof ApiRequestError && (error.status === 404 || error.message === "AGENT_SESSION_NOT_FOUND")) {
+        if (activeKeyRef.current === sessionIdToSelect) {
+          resetToNewConversation();
+          navigateTo(assistantPath(), { replace: true });
+          setNotice(t("这条对话不存在或已被删除，已为你打开新对话。"));
+        }
+        return;
+      }
+      updateConversation(sessionIdToSelect, { error: safeAgentError(error), loadState: "error" });
     }
   };
 
+  // 回到空白新对话（不改地址）：删除当前会话、会话不存在时共用
+  function resetToNewConversation() {
+    rememberAssistantSession(null);
+    streamRequestRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    activeKeyRef.current = NEW_CONVERSATION_KEY;
+    setActiveKey(NEW_CONVERSATION_KEY);
+    updateConversation(NEW_CONVERSATION_KEY, { ...blankConversation(), session: blankSession() });
+  }
+
   const createNewConversation = async () => {
     rememberAssistantSession(null);
+    setPreviewOpen(false);
     if (activeKeyRef.current === NEW_CONVERSATION_KEY) {
-      setMobileMenuOpen(false);
+      if (conversationStatesRef.current[NEW_CONVERSATION_KEY]?.messages.some((message) => message.localOnly)) {
+        updateConversation(NEW_CONVERSATION_KEY, blankConversation());
+        setPreviewTabs((all) => ({ ...all, [NEW_CONVERSATION_KEY]: [] }));
+        setPreviewActive((all) => ({ ...all, [NEW_CONVERSATION_KEY]: null }));
+      }
       navigateTo(assistantPath());
       window.setTimeout(() => inputRef.current?.focus(), 0);
       return;
@@ -1133,7 +1075,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     activeKeyRef.current = NEW_CONVERSATION_KEY;
     setActiveKey(NEW_CONVERSATION_KEY);
     navigateTo(assistantPath());
-    setMobileMenuOpen(false);
     updateConversation(NEW_CONVERSATION_KEY, {
       ...blankConversation(),
       session: blankSession(),
@@ -1141,7 +1082,12 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  // 旧版「在助手里嵌其他模块」的地址：直接跳到对应独立页面
   useEffect(() => {
+    if (workspaceSection) navigateTo(workspaceRedirectPath(workspaceSection, careerView), { replace: true });
+  }, [workspaceSection, careerView]);
+
+  useLayoutEffect(() => {
     if (workspaceSection) return;
     const routeSessionId = sessionId ?? NEW_CONVERSATION_KEY;
     if (routeSessionId === activeKeyRef.current) return;
@@ -1171,7 +1117,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     setContextDrafts(current.contexts);
     setContextPickerOpen(true);
     void loadContexts(contextType);
-    window.setTimeout(() => contextCloseButtonRef.current?.focus(), 0);
   };
 
   const closeContextPicker = () => {
@@ -1235,7 +1180,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     if (event.type === "run.phase") {
       const phase = typeof event.phase === "string" ? event.phase : "";
       updateConversation(key, {
-        phase: PHASE_LABELS[phase] ?? "AI 正在处理…",
+        phase: PHASE_LABELS[phase] ?? t("AI 正在处理…"),
         referencedContextCount: typeof event.referencedContextCount === "number"
           ? event.referencedContextCount
           : undefined,
@@ -1331,9 +1276,9 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       updateConversation(key, (state) => {
         const lastPrompt = state.messages.map((message) => message.role).lastIndexOf("user");
         return {
-          messages: state.messages.map((message, index) => index >= lastPrompt
-            ? { ...message, temporary: false, status: undefined }
-            : message),
+          messages: attachGeneratedDocuments(state.messages.map((message, index) => index >= lastPrompt
+            ? { ...message, run_id: message.run_id ?? event.runId, temporary: false, status: undefined }
+            : message), key),
         };
       });
       return;
@@ -1399,7 +1344,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
       updateConversation(key, (latest) => ({
         session: detail?.session ?? latest.session,
-        messages: detail ? mergeSessionMessages(detail.session.messages ?? [], latest.messages) : latest.messages,
+        messages: detail ? mergeSessionMessages(detail.session.messages ?? [], latest.messages, key) : latest.messages,
         proposals: proposalResult.proposals.length > 0 ? proposalResult.proposals : latest.proposals,
         running: false,
         stage: latest.stage === "failed" || latest.stage === "stopped" ? latest.stage : "idle",
@@ -1410,7 +1355,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           invalidContextIds: [],
         }),
       }));
-      if (detail) setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+      if (detail) replaceStoreSession(detail.session);
     }).catch((error) => {
       if (controller.signal.aborted || streamRequestRef.current !== requestNumber) return;
       updateConversation(key, {
@@ -1436,7 +1381,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     });
     activeKeyRef.current = result.session.id;
     rememberAssistantSession(result.session.id);
-    setSessions((items) => promoteSession(items, result.session));
+    promoteStoreSession(result.session);
     setActiveKey(result.session.id);
     navigateTo(assistantPath(result.session.id), { replace: true });
     return result.session;
@@ -1452,18 +1397,23 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     const state = conversationStates[key] ?? blankConversation();
     const statePendingClarification = pendingClarificationMessage(state.messages);
     if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) return;
+    if (replyToSequenceNo === undefined && state.screenshots?.length) {
+      if (isDocumentRequest(trimmed)) { setNotice(t("截图目前仅支持本地预览，请移除截图后发送文字请求。")); return; }
+      const timestamp = new Date().toISOString();
+      updateConversation(key, {
+        draft: "", screenshots: [], contexts: [], error: null,
+        messages: [...state.messages,
+          { role: "user", sequence_no: -Date.now(), created_at: timestamp, content: trimmed, contexts: state.contexts, screenshots: state.screenshots, localOnly: true },
+          { role: "assistant", sequence_no: -(Date.now() + 1), created_at: timestamp, content: "截图已加入本次对话，可点击缩略图查看。截图理解尚未连接后端，当前仅保留本地预览。", localOnly: true },
+        ],
+      });
+      refreshComposerView("", [], []);
+      return;
+    }
     const explicitResume = state.contexts.find((item) => item.type === "resume");
     const revisionResume = state.proposals.find((item) => item.id === state.revisionProposalId)?.resume_id;
-    const runResumeContextId = revisionResume ?? explicitResume?.id ?? embeddedResumeId;
-    const usesEmbeddedResume = Boolean(embeddedResumeId && runResumeContextId === embeddedResumeId);
-    const runSelectionContext = usesEmbeddedResume ? embeddedSelectionContext : null;
-    if (usesEmbeddedResume) {
-      await saveCurrentResume();
-      if (useResumeStore.getState().saveStatus === "error") {
-        updateConversation(key, { error: "当前简历保存失败，智能助手没有读取所选内容。" });
-        return;
-      }
-    }
+    // V3 不再在助手里嵌入简历编辑器，所以没有「当前打开的简历」这一隐式上下文，也没有编辑器选区
+    const runResumeContextId = revisionResume ?? explicitResume?.id ?? null;
     let session: AgentSession;
     try {
       session = await ensureSession(state);
@@ -1473,7 +1423,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     }
     const requestKey = session.id;
     setProposalViews((views) => ({ ...views, [requestKey]: {} }));
-    setSessions((items) => promoteSession(items, session));
+    promoteStoreSession(session);
     const requestNumber = streamRequestRef.current + 1;
     streamRequestRef.current = requestNumber;
     const controller = new AbortController();
@@ -1519,7 +1469,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       cancelling: false,
       stage: "submitting",
       runId: null,
-      phase: sentContexts.length > 0 ? "正在读取所选资料…" : "正在准备…",
+      phase: sentContexts.length > 0 ? t("正在读取所选资料…") : t("正在准备…"),
       activityText: "",
       activities: [],
       referencedContextCount: sentContexts.length,
@@ -1540,13 +1490,12 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       await api.streamAgentMessage(
         session.id,
         {
-          content: trimmed,
+          content: isDocumentRequest(trimmed) ? `${trimmed}\n\n请输出完整 Markdown 文档，以一级标题开头；如果资料不足，请先询问，不要编造经历或数据。` : trimmed,
           idempotency_key: idempotencyKey(),
           ...(state.revisionProposalId ? { revision_proposal_id: state.revisionProposalId } : {}),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
           ...(replacesInheritedResume ? { replace_inherited_resume: true } : {}),
           ...(clarificationAnswersPayload ? { clarification_answers: clarificationAnswersPayload } : {}),
-          ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
           ...(requestContexts.length > 0 ? { contexts: requestContexts } : {}),
         },
         controller.signal,
@@ -1557,7 +1506,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       const proposalResult = await api.listAgentProposals(null, session.id, true).catch(() => ({ proposals: [] }));
       if (streamRequestRef.current !== requestNumber) return;
       updateConversation(requestKey, (latest) => {
-        const messages = detail ? mergeSessionMessages(detail.session.messages, latest.messages) : latest.messages;
+        const messages = detail ? mergeSessionMessages(detail.session.messages, latest.messages, requestKey) : latest.messages;
         const runCompleted = latest.stage !== "failed" && latest.stage !== "stopped";
         return {
           ...(runCompleted ? {
@@ -1579,7 +1528,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           startedAt: null,
         };
       });
-      if (detail) setSessions((items) => items.map((item) => item.id === detail.session.id ? detail.session : item));
+      if (detail) replaceStoreSession(detail.session);
     } catch (error) {
       if (controller.signal.aborted || streamRequestRef.current !== requestNumber) return;
       const code = error instanceof ApiRequestError ? error.message : "";
@@ -1592,7 +1541,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         cancelling: false,
         runId: null,
         startedAt: null,
-        draft: runStillStopping ? "" : latest.draft || trimmed,
+        // 上一轮还在停止中：这次没有发出去，保留用户刚输入的内容，方便稍后重发
+        draft: latest.draft || trimmed,
         invalidContextIds: invalid
           ? latest.contexts.map(contextKey)
           : latest.invalidContextIds,
@@ -1675,29 +1625,26 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   };
 
   const continueProposal = (proposal: AgentProposal) => {
-    pendingComposerCaretRef.current = "继续调整：".length;
-    refreshComposerView("继续调整：", current.contexts, current.invalidContextIds);
-    updateConversation(activeKey, { draft: "继续调整：", revisionProposalId: proposal.id, error: null });
+    pendingComposerCaretRef.current = t("继续调整：").length;
+    refreshComposerView(t("继续调整："), current.contexts, current.invalidContextIds);
+    updateConversation(activeKey, { draft: t("继续调整："), revisionProposalId: proposal.id, error: null });
     window.setTimeout(() => {
       if (!inputRef.current) return;
-      placeComposerCaret(inputRef.current, "继续调整：".length);
+      placeComposerCaret(inputRef.current, t("继续调整：").length);
       inputRef.current.focus();
     }, 0);
   };
 
+  // 返回是否成功，建议卡据此决定是否自动切到下一项
   const applyProposal = async (proposal: AgentProposal) => {
     updateConversation(activeKey, { busyProposalId: proposal.id, error: null });
     try {
-      const refreshEmbeddedResume = embeddedResumeId === proposal.resume_id
-        && useResumeStore.getState().activeResumeId === proposal.resume_id;
-      const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
+      await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id, "assistant");
       updateConversation(activeKey, (state) => ({
         proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
         busyProposalId: null,
       }));
-      if (refreshEmbeddedResume && result.id === embeddedResumeId) {
-        setEmbeddedResumeRefreshVersion((version) => version + 1);
-      }
+      return true;
     } catch (error) {
       updateConversation(activeKey, (state) => ({
         proposals: isConflictError(error)
@@ -1706,6 +1653,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         busyProposalId: null,
         error: safeAgentError(error),
       }));
+      return false;
     }
   };
 
@@ -1713,21 +1661,14 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     const pendingProposals = proposals.filter((proposal) => proposal.status === "pending");
     if (pendingProposals.length < 2 || proposalBatchProgress || current.busyProposalId !== null || current.running) return;
     const conversationKey = activeKey;
-    const refreshEmbeddedResume = pendingProposals.some((proposal) => (
-      embeddedResumeId === proposal.resume_id
-      && useResumeStore.getState().activeResumeId === proposal.resume_id
-    ));
     setProposalBatchProgress({ viewKey, completed: 0, total: pendingProposals.length });
     updateConversation(conversationKey, { error: null });
     let completed = 0;
-    let appliedToEmbeddedResume = false;
     try {
       for (const proposal of pendingProposals) {
         updateConversation(conversationKey, { busyProposalId: proposal.id });
         try {
-          const result = await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id);
-          appliedToEmbeddedResume = appliedToEmbeddedResume
-            || (refreshEmbeddedResume && result.id === embeddedResumeId);
+          await useResumeStore.getState().confirmResumeProposal(proposal.id, proposal.resume_id, "assistant");
           completed += 1;
           updateConversation(conversationKey, (state) => ({
             proposals: state.proposals.map((item) => item.id === proposal.id ? { ...item, status: "applied" } : item),
@@ -1741,14 +1682,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
               : state.proposals,
             busyProposalId: null,
             error: completed > 0
-              ? `已应用 ${completed} 项，批量处理已停止：${safeAgentError(error)}`
+              ? t("已应用 {value0} 项，批量处理已停止：{value1}", { value0: completed, value1: safeAgentError(error) })
               : safeAgentError(error),
           }));
           break;
         }
-      }
-      if (appliedToEmbeddedResume && embeddedResumeId) {
-        setEmbeddedResumeRefreshVersion((version) => version + 1);
       }
     } finally {
       updateConversation(conversationKey, { busyProposalId: null });
@@ -1766,979 +1704,649 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           : item),
         busyProposalId: null,
       }));
+      return true;
     } catch (error) {
       updateConversation(activeKey, { busyProposalId: null, error: safeAgentError(error) });
+      return false;
     }
   };
 
-  const replaceSession = (updatedSession: AgentSession) => {
-    setSessions((items) => sortSessions([
-      updatedSession,
-      ...items.filter((item) => item.id !== updatedSession.id),
-    ]));
-    updateConversation(updatedSession.id, { session: updatedSession });
-  };
+  /* ───────────── 右侧文件预览 ───────────── */
 
-  const toggleSessionPin = async (session: AgentSession) => {
-    setSessionMenuId(null);
-    setSessionActionBusyId(session.id);
-    setSessionsError(null);
-    try {
-      const result = await api.updateAgentSession(session.id, { pinned: !Boolean(session.pinned) });
-      replaceSession(result.session);
-    } catch (error) {
-      setSessionsError(safeAgentError(error));
-    } finally {
-      setSessionActionBusyId(null);
+  const sessionPreviewTabs = previewTabs[activeKey] ?? [];
+  const activePreviewKey = previewOpen ? (previewActive[activeKey] ?? null) : null;
+  // 本会话引用过的所有文件（用户消息与当前输入框里的上下文），右上角「N 个文件」汇总它们
+  const sessionContexts = (() => {
+    const seen = new Map<string, AgentContextSnapshot>();
+    for (const context of [...current.messages.flatMap((message) => message.contexts ?? []), ...current.contexts]) {
+      if (context.presentation === "implicit" || !previewTabForContext(context)) continue;
+      seen.set(previewTabKey(previewTabForContext(context)!), context);
     }
-  };
+    return [...seen.values()];
+  })();
 
-  const beginSessionRename = (session: AgentSession) => {
-    setSessionMenuId(null);
-    setRenamingSessionId(session.id);
-    setRenameDraft(session.title);
-  };
+  useEffect(() => {
+    messageViewportRef.current?.querySelectorAll<HTMLAnchorElement>('a[href^="#linkresume-ref:"]').forEach((anchor) => {
+      const [type, id] = (anchor.getAttribute("href") ?? "").slice(REF_HREF_PREFIX.length).split(":").map(decodeURIComponent);
+      const key = `${type === "resume_version" ? "resume" : type}:${id}`;
+      anchor.classList.toggle("is-active", key === activePreviewKey);
+      if (unavailableKeys.includes(key)) { anchor.setAttribute("aria-disabled", "true"); anchor.tabIndex = -1; }
+      else { anchor.removeAttribute("aria-disabled"); anchor.removeAttribute("tabindex"); }
+    });
+  }, [current.messages, activePreviewKey, unavailableKeys]);
 
-  const saveSessionRename = async (session: AgentSession) => {
-    if (renamingSessionId !== session.id) return;
-    const title = renameDraft.trim();
-    setRenamingSessionId(null);
-    if (!title || title === session.title) return;
-    setSessionActionBusyId(session.id);
-    setSessionsError(null);
-    try {
-      const result = await api.updateAgentSession(session.id, { title });
-      replaceSession(result.session);
-    } catch (error) {
-      setSessionsError(safeAgentError(error));
-    } finally {
-      setSessionActionBusyId(null);
+  const localFiles = current.messages.flatMap((message) => [...(message.screenshots ?? []), ...(message.generatedDocument ? [message.generatedDocument] : [])]);
+  const allFileCount = sessionContexts.length + localFiles.length;
+
+  const openPreview = (tab: PreviewTab) => {
+    setPreviewTabs((all) => ({ ...all, [activeKey]: openPreviewTab(all[activeKey] ?? [], tab) }));
+    setPreviewActive((all) => ({ ...all, [activeKey]: previewTabKey(tab) }));
+    setPreviewOpen(true);
+  };
+  const openContextPreview = (context: AgentContextSnapshot) => {
+    const tab = previewTabForContext(context);
+    if (tab?.kind === "resume") tab.pendingChanges = current.proposals.filter((proposal) => proposal.status === "pending" && proposal.resume_id === tab.id).flatMap((proposal) => proposal.preview?.changes.map((change) => change.before) ?? []);
+    if (tab?.kind === "dataset") tab.excerpts = current.proposals.flatMap((proposal) => proposal.source_refs ?? []).filter((source) => source.id === tab.id || source.dataset_id === tab.id).flatMap((source) => typeof source.quote === "string" ? [source.quote] : typeof source.excerpt === "string" ? [source.excerpt] : []);
+    if (tab && !unavailableKeys.includes(previewTabKey(tab))) openPreview(tab);
+  };
+  const openAllFiles = () => {
+    let tabs = sessionPreviewTabs;
+    sessionContexts.forEach((context) => { tabs = openPreviewTab(tabs, previewTabForContext(context)!); });
+    localFiles.forEach((file) => { tabs = openPreviewTab(tabs, file); });
+    setPreviewTabs((all) => ({ ...all, [activeKey]: tabs }));
+    setPreviewActive((all) => ({ ...all, [activeKey]: all[activeKey] ?? (tabs[0] ? previewTabKey(tabs[0]) : null) }));
+    if (tabs.length) setPreviewOpen(true);
+  };
+  const closePreviewTab = (key: string) => {
+    const tabs = sessionPreviewTabs.filter((tab) => previewTabKey(tab) !== key);
+    setPreviewTabs((all) => ({ ...all, [activeKey]: (all[activeKey] ?? []).filter((tab) => previewTabKey(tab) !== key) }));
+    if (previewActive[activeKey] === key) {
+      setPreviewActive((all) => ({ ...all, [activeKey]: tabs[tabs.length - 1] ? previewTabKey(tabs[tabs.length - 1]) : null }));
     }
+    if (tabs.length === 0) setPreviewOpen(false);
   };
-
-  const deleteSession = async () => {
-    const session = pendingDeleteSession;
-    if (!session) return;
-    setSessionActionBusyId(session.id);
-    setSessionsError(null);
-    try {
-      await api.deleteAgentSession(session.id);
-      setSessions((items) => items.filter((item) => item.id !== session.id));
-      setConversationStates((states) => {
-        const next = { ...states };
-        delete next[session.id];
-        return next;
-      });
-      setPendingDeleteSession(null);
-      if (activeKeyRef.current === session.id) {
-        rememberAssistantSession(null);
-        activeKeyRef.current = NEW_CONVERSATION_KEY;
-        setActiveKey(NEW_CONVERSATION_KEY);
-        updateConversation(NEW_CONVERSATION_KEY, {
-          ...blankConversation(),
-          session: blankSession(),
-        });
-        navigateTo(assistantPath(), { replace: true });
-      }
-    } catch (error) {
-      setSessionsError(safeAgentError(error));
-    } finally {
-      setSessionActionBusyId(null);
-    }
+  const saveGeneratedDocument = (id: string) => {
+    const document = sessionPreviewTabs.find((tab): tab is GeneratedDocument => tab.kind === "generated" && tab.id === id);
+    if (!document || document.saved) return;
+    setDocumentToSave({ conversationKey: activeKey, userId: user?.id ?? null, document });
   };
-
-  const pinnedSessions = sessions.filter((session) => Boolean(session.pinned));
-  const recentSessions = sessions.filter((session) => !session.pinned);
-  const resizeSidebar = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!sidebarResizing || !assistantShellRef.current) return;
-    const shellLeft = assistantShellRef.current.getBoundingClientRect().left;
-    setSidebarWidth(clampAssistantSidebarWidth(event.clientX - shellLeft));
-  };
-  const finishSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!sidebarResizing) return;
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    setSidebarResizing(false);
-  };
-  const resizeSidebarWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
-    let nextWidth: number | null = null;
-    if (event.key === "ArrowLeft") nextWidth = sidebarWidth - 10;
-    if (event.key === "ArrowRight") nextWidth = sidebarWidth + 10;
-    if (event.key === "Home") nextWidth = ASSISTANT_SIDEBAR_MIN_WIDTH;
-    if (event.key === "End") nextWidth = ASSISTANT_SIDEBAR_MAX_WIDTH;
-    if (nextWidth === null) return;
+  // AI 回答里的文件引用（蓝色文字）：拦截特殊链接，在右侧打开
+  const handleAssistantClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    const anchor = (event.target as Element).closest?.("a");
+    const href = anchor?.getAttribute("href") ?? "";
+    if (!href.startsWith(REF_HREF_PREFIX)) return;
     event.preventDefault();
-    setSidebarWidth(clampAssistantSidebarWidth(nextWidth));
+    const [type, id] = href.slice(REF_HREF_PREFIX.length).split(":").map(decodeURIComponent);
+    const context = sessionContexts.find((item) => item.type === type && (item.resume_id ?? item.id) === id);
+    if (context) openContextPreview(context);
   };
-  const renderSessionItem = (session: AgentSession, index: number) => {
-    const isActive = session.id === activeKey;
-    const isRenaming = renamingSessionId === session.id;
-    const isBusy = sessionActionBusyId === session.id;
-    const isRunning = Boolean(conversationStates[session.id]?.running);
-    return (
-      <div className={`assistant-session-item${isActive ? " is-active" : ""}`} key={session.id}>
-        {isRenaming ? (
-          <form
-            className="assistant-session-rename"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveSessionRename(session);
-            }}
-          >
-            <input
-              autoFocus
-              aria-label={`重命名对话 ${session.title}`}
-              disabled={isBusy}
-              maxLength={120}
-              value={renameDraft}
-              onBlur={() => void saveSessionRename(session)}
-              onChange={(event) => setRenameDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setRenamingSessionId(null);
-                }
-              }}
-            />
-          </form>
-        ) : (
-          <button
-            type="button"
-            className="assistant-session-open"
-            onClick={() => void selectSession(session.id)}
-            title={session.title}
-          >
-            <span>{session.title}</span>
-          </button>
-        )}
-        <div className="assistant-session-actions">
-          <button
-            type="button"
-            className="assistant-session-more"
-            aria-label={`${session.title} 的更多操作`}
-            aria-haspopup="menu"
-            aria-expanded={sessionMenuId === session.id}
-            disabled={isBusy || isRenaming}
-            onClick={() => setSessionMenuId((openId) => openId === session.id ? null : session.id)}
-          >
-            <MoreHorizontal size={17} aria-hidden="true" />
-          </button>
-          {sessionMenuId === session.id && (
-            <div
-              className={`assistant-session-menu${index >= 4 ? " is-above" : ""}`}
-              role="menu"
-              aria-label={`${session.title} 的操作菜单`}
-            >
-              <button type="button" role="menuitem" onClick={() => void toggleSessionPin(session)}>
-                <Pin size={16} aria-hidden="true" />
-                <span>{session.pinned ? "Unpin" : "Pin"}</span>
-              </button>
-              <button type="button" role="menuitem" onClick={() => beginSessionRename(session)}>
-                <Pencil size={16} aria-hidden="true" />
-                <span>Rename</span>
-              </button>
-              <div className="assistant-session-menu-separator" role="separator" />
+
+  /* ───────────── 首页（空闲） ───────────── */
+
+  const home = useHomeDashboard(isEmptyConversation);
+  const now = new Date();
+  const displayName = user?.nickname || "";
+  const dashboard = home.status === "ready" ? home.dashboard : null;
+  const copy = dashboard ? homeCopy(dashboard) : null;
+  const chipResumes = current.contexts.filter((context) => isChipContext(context, current.draft));
+
+  const applyQuickPrompt = (text: string) => {
+    pendingComposerCaretRef.current = text.length;
+    refreshComposerView(text, current.contexts, current.invalidContextIds);
+    updateConversation(activeKey, { draft: text, error: null });
+  };
+
+  // 首页默认附上最近编辑的简历（规则说明第 3 条：输入框默认附件跟位置 1 的主题走；
+  // Offer 没有可作为上下文的对象，这里统一附最近的简历）
+  const homeDefaultResume = home.status === "ready" ? home.defaultResume : null;
+  const homeResumeAttachedRef = useRef(false);
+  useLayoutEffect(() => {
+    // 离开新对话后，下次回到首页重新附上默认简历
+    if (activeKey !== NEW_CONVERSATION_KEY) {
+      homeResumeAttachedRef.current = false;
+      return;
+    }
+    if (!homeDefaultResume || homeResumeAttachedRef.current || !isEmptyConversation) return;
+    if (current.contexts.some((context) => context.type === "resume")) return;
+    homeResumeAttachedRef.current = true;
+    const resumeContext: AgentContextSnapshot = {
+      type: "resume",
+      id: homeDefaultResume.id,
+      version: String(homeDefaultResume.lock_version),
+      resume_id: homeDefaultResume.id,
+      label: homeDefaultResume.title,
+      presentation: "mention",
+      updated_at: homeDefaultResume.updated_at,
+    };
+    // The default resume is a separate chip; don't remount an editor the user is typing in.
+    updateConversation(NEW_CONVERSATION_KEY, (state) => ({ contexts: [resumeContext, ...state.contexts] }));
+  }, [homeDefaultResume?.id, activeKey]);
+
+  /* ───────────── 渲染 ───────────── */
+
+  const composerDisabled = current.running || current.cancelling || Boolean(pendingClarification);
+  const isHome = isEmptyConversation;
+
+  const mentionMenu = contextMention && (
+    <div ref={mentionMenuRef} id="assistant-context-mention-list" className="assistant-mention" role="listbox" aria-label={t("可引用的资料和简历")}>
+      {mentionLoading && <p className="assistant-mention-status">{t("正在搜索…")}</p>}
+      {mentionError && <p className="assistant-mention-status" role="alert">{mentionError}</p>}
+      {!mentionLoading && !mentionError && mentionOptions.length === 0 && <p className="assistant-mention-status">{t("没有匹配的文件")}</p>}
+      {!mentionLoading && !mentionError && (["dataset", "resume"] as const).map((type) => {
+        const groupedOptions = mentionOptions
+          .map((context, index) => ({ context, index }))
+          .filter(({ context }) => context.type === type);
+        if (groupedOptions.length === 0) return null;
+        return (
+          <div key={type} className="assistant-mention-group" role="group" aria-label={type === "resume" ? t("简历") : t("资料")}>
+            <div className="assistant-mention-group-label">{type === "resume" ? t("简历") : t("资料库")}</div>
+            {groupedOptions.map(({ context, index }) => (
               <button
                 type="button"
-                role="menuitem"
-                className="is-danger"
-                disabled={isRunning}
-                title={isRunning ? "请先停止正在生成的回答" : undefined}
-                onClick={() => {
-                  setSessionMenuId(null);
-                  setPendingDeleteSession(session);
-                }}
+                id={`assistant-context-mention-option-${index}`}
+                role="option"
+                aria-selected={mentionActiveIndex === index}
+                className={mentionActiveIndex === index ? "is-active" : undefined}
+                key={contextKey(context)}
+                onMouseEnter={() => setMentionActiveIndex(index)}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => selectMentionContext(context)}
               >
-                <Trash2 size={16} aria-hidden="true" />
-                <span>Delete</span>
+                <Icon name={contextIcon(context.type)} size={14} />
+                <strong>{context.type === "user_profile" ? t("个人画像") : context.label}</strong>
+                <small>{context.type === "resume" ? t("简历") : context.description || t("资料")}</small>
               </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
 
-  const sidebar = (
-    <aside className="assistant-sidebar" aria-label="对话列表">
-      <div className="assistant-sidebar-brand-row">
-        <AssistantWorkspaceHomeLink />
+  const editor = (
+    <div
+      key={`${activeKey}:${composerView.revision}`}
+      ref={inputRef}
+      className="assistant-composer-editor"
+      role="textbox"
+      aria-multiline="true"
+      aria-label={t("告诉助手你想完成什么")}
+      data-placeholder={isHome ? t("问问 LinkResume：改简历、分析 JD、准备面试…") : t("继续提问或说明调整要求…")}
+      aria-autocomplete="list"
+      aria-controls={contextMention ? "assistant-context-mention-list" : undefined}
+      aria-expanded={Boolean(contextMention)}
+      aria-activedescendant={contextMention && mentionOptions.length > 0 ? `assistant-context-mention-option-${mentionActiveIndex}` : undefined}
+      aria-disabled={composerDisabled}
+      contentEditable={!composerDisabled}
+      suppressContentEditableWarning
+      onInput={(event) => {
+        const composing = (event.nativeEvent as InputEvent).isComposing || isComposingRef.current;
+        syncComposerFromDom(event.currentTarget, { restoreCaret: !composing, updateMention: !composing });
+      }}
+      onPaste={(event) => {
+        event.preventDefault();
+        const files = Array.from(event.clipboardData.items ?? []).filter((item) => item.type.startsWith("image/")).map((item) => item.getAsFile()).filter((file): file is File => Boolean(file));
+        if (files.length) {
+          const pasteKey = activeKey;
+          files.forEach((file) => {
+            const reader = new FileReader();
+            reader.onload = () => updateConversation(pasteKey, (state) => ({ screenshots: [...(state.screenshots ?? []), { kind: "image", id: idempotencyKey(), label: file.name || t("粘贴的截图.png"), url: String(reader.result) }] }));
+            reader.onerror = () => setNotice(t("截图读取失败，请重新粘贴。"));
+            reader.readAsDataURL(file);
+          });
+        }
+        insertComposerPlainText(event.currentTarget, event.clipboardData.getData("text/plain"));
+        syncComposerFromDom(event.currentTarget, { restoreCaret: true, updateMention: true });
+      }}
+      onKeyDown={handleInputKeyDown}
+      onCompositionStart={() => {
+        isComposingRef.current = true;
+        pendingComposerCaretRef.current = null;
+      }}
+      onCompositionEnd={(event) => {
+        isComposingRef.current = false;
+        syncComposerFromDom(event.currentTarget, { restoreCaret: true, updateMention: true });
+      }}
+    >
+      {composerSegments(composerView.draft, composerView.contexts.filter((context) => !isChipContext(context, composerView.draft))).map((segment) => segment.kind === "text" ? segment.text : (
+        <span
+          key={segment.key}
+          className={`assistant-composer-context-token${composerView.invalidContextIds.includes(contextKey(segment.context)) ? " is-invalid" : ""}`}
+          contentEditable={false}
+          data-context-key={contextKey(segment.context)}
+          data-context-value={`@${segment.context.label}`}
+          aria-label={t("引用文件 {value0}", { value0: segment.context.label })}
+        >
+          {segment.context.type === "user_profile" ? t("个人画像") : segment.context.label}
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={t("移除上下文 {value0}", { value0: segment.context.label })}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => removeContext(segment.context)}
+          >
+            <Icon name="x" size={10} />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+
+  const sendButton = current.running ? (
+    <button type="button" className="assistant-send is-stop" aria-label={t("停止生成")} onClick={stopGeneration}>
+      <span aria-hidden="true" />
+    </button>
+  ) : (
+    <button type="submit" className="assistant-send" aria-label={t("发送")} disabled={current.cancelling || !current.draft.trim() || Boolean(pendingClarification)}>
+      <Icon name="up" size={16} strokeWidth={2.2} />
+    </button>
+  );
+
+  const resumeChips = chipResumes.length > 0 && (
+    <div className="assistant-composer-chips">
+      {chipResumes.map((context) => (
+        <span
+          key={contextKey(context)}
+          className={`assistant-resume-chip${composerView.invalidContextIds.includes(contextKey(context)) ? " is-invalid" : ""}`}
+        >
+          <button type="button" className="assistant-resume-chip-open" aria-label={t("预览简历 {value0}", { value0: context.label })} onClick={() => openContextPreview(context)}>
+            <Icon name="resume" size={12} />
+            <span>{context.type === "user_profile" ? t("个人画像") : context.label}</span>
+            <small>{t("简历")}</small>
+          </button>
+          <button type="button" className="assistant-resume-chip-remove" aria-label={t("移除上下文 {value0}", { value0: context.label })} onClick={() => removeContext(context)}>
+            <Icon name="x" size={11} />
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+
+  const modelPicker = (compact: boolean) => (
+    <ModelPicker
+      compact={compact}
+      models={runtimeModels}
+      selectedId={selectedModelId}
+      label={runtimeModelLabel}
+      loading={runtimeModelLoading}
+      disabled={current.running || current.cancelling}
+      onSelect={(modelId) => void selectModel(modelId)}
+    />
+  );
+
+  const clarificationPanel = pendingClarification?.clarification && (
+    <section className={`assistant-clarification${current.clarificationCollapsed ? " is-collapsed" : ""}`} aria-label={t("需要你确认")}>
+      {current.clarificationCollapsed ? (
         <button
           type="button"
-          className="assistant-sidebar-visibility-toggle"
-          aria-label="收起会话侧栏"
-          aria-expanded="true"
-          onClick={() => setSidebarCollapsed(true)}
+          className="assistant-clarification-summary"
+          aria-expanded="false"
+          aria-label={t("展开主动询问")}
+          onClick={() => updateConversation(activeKey, { clarificationCollapsed: false })}
         >
-          <PanelLeftClose size={18} aria-hidden="true" />
+          <span>
+            <strong>{t("需要你确认")}</strong>
+            <small>{clarificationQuestion?.header ?? t("补充关键信息")} · {clarificationPage + 1} / {clarificationQuestions.length}</small>
+          </span>
+          <Icon name="chevu" size={16} />
         </button>
-        <button type="button" className="assistant-mobile-close" aria-label="关闭会话菜单" onClick={() => setMobileMenuOpen(false)}>
-          <X size={18} />
-        </button>
-      </div>
-      <button type="button" className="assistant-new-button" onClick={() => void createNewConversation()}>
-        <Plus size={16} aria-hidden="true" />新建对话
-      </button>
-      <nav className="assistant-sidebar-shortcuts" aria-label="AI 工作台导航">
-        {([
-          { section: "resumes", view: undefined, label: "我的简历", icon: FileText },
-          { section: "templates", view: undefined, label: "简历模板", icon: LayoutTemplate },
-          { section: "career", view: "applications", label: "求职记录", icon: ListChecks },
-          { section: "career", view: "schedule", label: "面试排期", icon: CalendarDays },
-          { section: "datasets", view: undefined, label: "资料库", icon: FolderOpen },
-        ] as const).map(({ section, view, label, icon: Icon }) => {
-          const href = assistantWorkspacePath(section, view);
-          const active = workspaceSection === section && (section !== "career" || (careerView ?? "applications") === view);
-          return (
-            <a
-              key={href}
-              className={`assistant-sidebar-shortcut${active ? " is-active" : ""}`}
-              aria-current={active ? "page" : undefined}
-              href={href}
-              onClick={(event) => {
-                if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-                event.preventDefault();
-                void (async () => {
-                  if (embeddedResumeId) {
-                    await saveCurrentResume();
-                    if (useResumeStore.getState().saveStatus === "error") {
-                      updateConversation(activeKey, { error: "当前简历尚未保存，暂时不能切换工作台模块。请稍后重试。" });
-                      return;
-                    }
-                    setEmbeddedResumeId(null);
-                    setEmbeddedSelectionContext(null);
-                    setSidebarCollapsed(false);
-                  }
-                  setResumePickerOpen(false);
-                  setMobileMenuOpen(false);
-                  navigateTo(href);
-                })();
-              }}
-            >
-              <Icon size={16} aria-hidden="true" />
-              <span>{label}</span>
-            </a>
-          );
-        })}
-      </nav>
-      {(sessionsLoading || sessionsError || sessions.length === 0) && (
-        <div className="assistant-sidebar-section-title">最近对话</div>
-      )}
-      {sessionsLoading && <p className="assistant-sidebar-muted">正在读取对话…</p>}
-      {sessionsError && (
-        <div className="assistant-sidebar-error" role="alert">
-          {sessionsError}
-          <button type="button" onClick={() => window.location.reload()}>重试</button>
-        </div>
-      )}
-      {!sessionsLoading && !sessionsError && sessions.length === 0 && (
-        <div className="assistant-sidebar-empty">
-          <span aria-hidden="true"><MessageCircleQuestion size={38} /></span>
-          <p>暂无历史会话</p>
-        </div>
-      )}
-      {!sessionsLoading && sessions.length > 0 && (
-        <div className="assistant-session-list">
-          {pinnedSessions.length > 0 && (
-            <section className="assistant-session-group" aria-label="Pinned">
-              <div className="assistant-sidebar-section-heading">
-                <span className="assistant-sidebar-section-title">Pinned</span>
-                <button
-                  type="button"
-                  className="assistant-session-group-toggle"
-                  aria-label={`${pinnedSessionsExpanded ? "收起" : "展开"} Pinned`}
-                  aria-expanded={pinnedSessionsExpanded}
-                  aria-controls="assistant-pinned-sessions"
-                  onClick={() => {
-                    setSessionMenuId(null);
-                    setPinnedSessionsExpanded((expanded) => !expanded);
-                  }}
-                >
-                  {pinnedSessionsExpanded
-                    ? <ChevronUp size={16} aria-hidden="true" />
-                    : <ChevronDown size={16} aria-hidden="true" />}
-                </button>
-              </div>
-              <div id="assistant-pinned-sessions" className="assistant-session-group-items" hidden={!pinnedSessionsExpanded}>
-                {pinnedSessions.map((session, index) => renderSessionItem(session, index))}
-              </div>
-            </section>
-          )}
-          <section className="assistant-session-group" aria-label="最近对话">
-            <div className="assistant-sidebar-section-heading">
-              <span className="assistant-sidebar-section-title">最近对话</span>
-              <button
-                type="button"
-                className="assistant-session-group-toggle"
-                aria-label={`${recentSessionsExpanded ? "收起" : "展开"}最近对话`}
-                aria-expanded={recentSessionsExpanded}
-                aria-controls="assistant-recent-sessions"
-                onClick={() => {
-                  setSessionMenuId(null);
-                  setRecentSessionsExpanded((expanded) => !expanded);
-                }}
-              >
-                {recentSessionsExpanded
-                  ? <ChevronUp size={16} aria-hidden="true" />
-                  : <ChevronDown size={16} aria-hidden="true" />}
-              </button>
-            </div>
-            <div id="assistant-recent-sessions" className="assistant-session-group-items" hidden={!recentSessionsExpanded}>
-              {recentSessions.map((session, index) => renderSessionItem(session, pinnedSessions.length + index))}
-            </div>
-          </section>
-        </div>
-      )}
-    </aside>
-  );
-
-  const toggleResumePicker = () => {
-    const opening = !resumePickerOpen;
-    setResumePickerOpen(opening);
-    setResumeOpenError(null);
-    if (opening) {
-      setResumeListLoading(true);
-      void listResumes()
-        .catch(() => setResumeOpenError("简历列表暂时无法读取，请稍后重试。"))
-        .finally(() => setResumeListLoading(false));
-    }
-  };
-
-  const openEmbeddedResume = async (resumeId: string) => {
-    if (resumeOpeningId) return;
-    setResumeOpeningId(resumeId);
-    setResumeOpenError(null);
-    setEmbeddedSelectionContext(null);
-    try {
-      if (embeddedResumeId && embeddedResumeId !== resumeId) {
-        await saveCurrentResume();
-        if (useResumeStore.getState().saveStatus === "error") {
-          setResumeOpenError("当前简历尚未保存，暂时不能切换。请稍后重试。");
-          return;
-        }
-      }
-      await loadResume(resumeId);
-      setEmbeddedResumeId(resumeId);
-      setSidebarCollapsed(true);
-      setResumePickerOpen(false);
-    } catch {
-      setResumeOpenError("这份简历暂时无法打开，请稍后重试。");
-    } finally {
-      setResumeOpeningId(null);
-    }
-  };
-
-  const closeEmbeddedResume = () => {
-    setEmbeddedResumeId(null);
-    setEmbeddedSelectionContext(null);
-    setSidebarCollapsed(false);
-  };
-
-  const mobileToolbar = (
-    <header className="assistant-mobile-toolbar">
-      <button
-        type="button"
-        className="assistant-icon-button assistant-mobile-menu-button"
-        aria-label="打开会话菜单"
-        aria-expanded={mobileMenuOpen}
-        ref={mobileMenuButtonRef}
-        onClick={() => setMobileMenuOpen(true)}
-      >
-        <Menu size={20} />
-      </button>
-      <AssistantWorkspaceHomeLink />
-    </header>
-  );
-
-  return (
-    <main className={`assistant-page${embeddedResumeId ? " is-resume-open" : ""}${workspaceSection ? " is-module-open" : ""}`}>
-      <div
-        ref={assistantShellRef}
-        className={`assistant-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${embeddedResumeId ? " is-resume-open" : ""}`}
-        style={{ "--assistant-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
-      >
-        {!sidebarCollapsed && sidebar}
-        {!sidebarCollapsed && <div
-          className={`assistant-sidebar-resizer${sidebarResizing ? " is-resizing" : ""}`}
-          role="separator"
-          aria-label="调整最近对话栏宽度"
-          aria-orientation="vertical"
-          aria-valuemin={ASSISTANT_SIDEBAR_MIN_WIDTH}
-          aria-valuemax={ASSISTANT_SIDEBAR_MAX_WIDTH}
-          aria-valuenow={sidebarWidth}
-          aria-valuetext={`${sidebarWidth} 像素`}
-          tabIndex={0}
-          onKeyDown={resizeSidebarWithKeyboard}
-          onPointerDown={(event) => {
-            if (event.pointerType === "mouse" && event.button !== 0) return;
-            event.preventDefault();
-            event.currentTarget.setPointerCapture?.(event.pointerId);
-            setSidebarResizing(true);
-          }}
-          onPointerMove={resizeSidebar}
-          onPointerUp={finishSidebarResize}
-          onPointerCancel={finishSidebarResize}
-          onLostPointerCapture={() => setSidebarResizing(false)}
-        />}
-        {sidebarCollapsed && (
-          <div className="assistant-collapsed-header">
+      ) : (
+        <>
+          <header>
+            <span><strong>{t("需要你确认")}</strong><small className="v3-num">{clarificationPage + 1} / {clarificationQuestions.length}</small></span>
             <button
               type="button"
-              className="assistant-sidebar-visibility-toggle"
-              aria-label="展开会话侧栏"
-              aria-expanded="false"
-              onClick={() => setSidebarCollapsed(false)}
+              className="v3-icon-btn"
+              aria-expanded="true"
+              aria-label={t("收起主动询问")}
+              onClick={() => updateConversation(activeKey, { clarificationCollapsed: true })}
             >
-              <PanelLeftOpen size={18} aria-hidden="true" />
+              <Icon name="chevd" size={16} />
             </button>
-          </div>
-        )}
-
-        <div className="assistant-main-area">
-        {workspaceSection && !embeddedResumeId ? (
-          <div className="assistant-module-view">
-            {mobileToolbar}
-            <AssistantWorkspaceModules section={workspaceSection} careerView={careerView} />
-          </div>
-        ) : (
-        <section className={`assistant-conversation${isEmptyConversation ? " is-empty" : ""}`} aria-label="AI 求职助手工作区">
-          <div className="assistant-workspace-actions">
-            <div className="assistant-resume-picker-wrap">
-              <button
-                type="button"
-                className="assistant-workspace-pill"
-                aria-haspopup="dialog"
-                aria-expanded={resumePickerOpen}
-                onClick={toggleResumePicker}
-              >
-                <FileText size={15} aria-hidden="true" />
-                我的简历
-              </button>
-              {resumePickerOpen && (
-                <section className="assistant-resume-picker" role="dialog" aria-label="选择我的简历">
-                  <header>我的简历</header>
-                  {resumeOpenError && <p className="assistant-resume-picker-error" role="alert">{resumeOpenError}</p>}
-                  {!resumeOpenError && resumeListLoading && resumes.length === 0 && <p className="assistant-resume-picker-empty">正在读取简历…</p>}
-                  {!resumeOpenError && !resumeListLoading && resumes.length === 0 && <p className="assistant-resume-picker-empty">暂无可用简历</p>}
-                  {resumes.map((resume) => (
-                    <button
-                      type="button"
-                      key={resume.id}
-                      disabled={resumeOpeningId !== null}
-                      onClick={() => void openEmbeddedResume(resume.id)}
-                    >
-                      <FileText size={17} aria-hidden="true" />
-                      <span>
-                        <strong>{resume.title}</strong>
-                        <small>{resumeOpeningId === resume.id ? "正在打开…" : `更新于 ${new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(resume.updated_at))}`}</small>
-                      </span>
-                    </button>
-                  ))}
-                </section>
-              )}
-            </div>
-          </div>
-          {mobileToolbar}
-
-          <button
-            type="button"
-            className="assistant-recall-drawer-toggle"
-            aria-label={recallDrawerOpen ? "收起对话资料" : "展开对话资料"}
-            aria-expanded={recallDrawerOpen}
-            aria-controls="assistant-recall-drawer"
-            onClick={() => setRecallDrawerOpen((open) => !open)}
-          >
-            {recallDrawerOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-          </button>
-
-          <div
-            className="assistant-message-viewport"
-            ref={messageViewportRef}
-            onScroll={handleMessageViewportScroll}
-            aria-live={current.running ? "off" : "polite"}
-          >
-            {isEmptyConversation && (
-              <section className="assistant-empty-state" aria-label="开始使用 AI 求职助手">
-                <img className="assistant-empty-feather" src={assistantFeather} alt="" />
-                <h2>你好，今天想完成什么？</h2>
-              </section>
-            )}
-            {current.messages.filter((message) => message !== pendingClarification).map((message, index) => {
-              const messageIndex = current.messages.indexOf(message);
-              const source = current.messages.slice(0, messageIndex + 1).filter((item) => item.role === "user").slice(-1)[0];
-              const next = current.messages[messageIndex + 1];
-              const proposalGroupAfterMessage = source && (!next || next.role === "user")
-                ? String(source.sequence_no)
-                : null;
+          </header>
+          {latestTurnContexts.some((item) => item.type === "resume") && (
+            <p className="assistant-clarification-context-hint">{t("需要改用另一份简历时，先点下方“添加资料”选择目标简历，再提交回答。")}</p>
+          )}
+          <div className="assistant-clarification-questions">
+            {clarificationQuestion && [clarificationQuestion].map((question) => {
+              const answer = current.clarificationAnswers[question.id] ?? { optionId: "", other: "" };
+              const allowCustom = clarificationAllowsCustom(pendingClarification.clarification!, question);
+              const missing = current.clarificationAttempted && (!answer.optionId || (answer.optionId === "__other__" && allowCustom && !answer.other.trim()));
+              const choose = (optionId: string, other = "") => updateConversation(activeKey, (state) => ({
+                clarificationAnswers: { ...state.clarificationAnswers, [question.id]: { optionId, other } },
+              }));
               return (
-              <Fragment key={`${message.sequence_no}-${message.created_at}-${index}`}>
-              <article className={`assistant-message is-${message.role}${message.status ? ` is-${message.status}` : ""}`}>
-                {message.role === "assistant" && (
-                  <span
-                    className="assistant-feather-motion"
-                    aria-hidden="true"
-                  />
-                )}
-                <div className="assistant-message-body">
-                  <div className="assistant-message-content">
-                    {message.role === "user" && message.contexts && message.contexts.length > 0
-                      ? <UserMessageContent content={messageText(message)} contexts={message.contexts} />
-                      : <AgentMarkdown content={messageText(message)} />}
-                  </div>
-                  {message.status === "stopped" && <small className="assistant-stopped-label">已停止生成</small>}
-                  {message.status === "failed" && <small className="assistant-stopped-label">生成未完成</small>}
-                  <MessageActions content={messageText(message)} createdAt={message.created_at} timeLabel={formatTime(message.created_at)} />
-                </div>
-              </article>
-              {proposalGroupAfterMessage && proposalPanel(proposalGroupAfterMessage)}
-              </Fragment>
+                <fieldset key={question.id} aria-describedby={missing ? `${question.id}-error` : undefined}>
+                  <legend><span>{question.header}</span>{question.question}</legend>
+                  {question.options.map((option) => (
+                    <label key={option.id} className={answer.optionId === option.id ? "is-checked" : undefined}>
+                      <input
+                        type="radio"
+                        name={`assistant-clarification-${question.id}`}
+                        value={option.id}
+                        checked={answer.optionId === option.id}
+                        onChange={() => choose(option.id)}
+                      />
+                      <span className={`v3-radio${answer.optionId === option.id ? " is-on" : ""}`} aria-hidden="true" />
+                      <span className="assistant-clarification-option"><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
+                    </label>
+                  ))}
+                  {allowCustom && (
+                    <label className={`assistant-clarification-other-option${answer.optionId === "__other__" ? " is-checked" : ""}`}>
+                      <input
+                        type="radio"
+                        name={`assistant-clarification-${question.id}`}
+                        value="__other__"
+                        checked={answer.optionId === "__other__"}
+                        onChange={() => choose("__other__", current.clarificationAnswers[question.id]?.other ?? "")}
+                      />
+                      <span className={`v3-radio${answer.optionId === "__other__" ? " is-on" : ""}`} aria-hidden="true" />
+                      <span className="assistant-clarification-option"><strong>{t("其他")}</strong></span>
+                      <input
+                        className="v3-input assistant-clarification-other"
+                        aria-label={t("{value0}的其他回答", { value0: question.header })}
+                        maxLength={500}
+                        placeholder={t("请输入补充内容")}
+                        value={answer.other}
+                        onFocus={() => choose("__other__", current.clarificationAnswers[question.id]?.other ?? "")}
+                        onChange={(event) => choose("__other__", event.target.value)}
+                      />
+                    </label>
+                  )}
+                  {missing && <small className="assistant-clarification-error" id={`${question.id}-error`}>{t("请选择一个选项或填写其他答案。")}</small>}
+                </fieldset>
               );
             })}
-            {current.running && current.stage !== "streaming" && (
-              <section className="assistant-thinking" aria-label="AI 正在思考" aria-live="polite">
-                <span
-                  className="assistant-feather-motion is-writing"
-                  aria-hidden="true"
-                >
-                  <svg className="assistant-writing-ink" viewBox="0 0 56 44" focusable="false">
-                    <path pathLength="1" d="M 3 34 C 10 33 16 31 22 27 C 27 24 30 19 28 15 C 27 11 22 12 20 17 C 17 23 20 29 26 30 C 32 31 35 26 40 28 C 44 31 48 28 53 25" />
-                  </svg>
-                  <img className="assistant-message-feather" src={assistantFeather} alt="" />
-                </span>
-                <div className="assistant-thinking-line">
-                  <strong>{current.phase || "AI 正在处理…"}</strong>
-                  <span>{elapsedSeconds} 秒</span>
-                </div>
-                {latestActivity && <p className="assistant-thinking-latest">{latestActivity}</p>}
-                {processDetailsReady && (
-                  <>
-                    <button type="button" className="assistant-thinking-details-toggle" onClick={() => updateConversation(activeKey, { detailsOpen: !current.detailsOpen })}>
-                      {current.detailsOpen ? "收起过程" : "查看过程"}
-                      {current.detailsOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                    </button>
-                    {current.detailsOpen && (
-                      <div className="assistant-thinking-details">
-                        <div><Check size={16} aria-hidden="true" /><strong>已读取 {current.referencedContextCount} 项资料</strong></div>
-                        {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.label}</span>)}
-                        {activityLines.length > 0 && <p className="assistant-thinking-activity">{activityLines.join("\n")}</p>}
-                        {current.activities.map((activity) => (
-                          <p className="assistant-thinking-activity" key={activity.callKey}>{activityStatusText(activity)}</p>
-                        ))}
-                        <div className="assistant-thinking-current"><Target size={16} aria-hidden="true" /><span>{PHASE_LABELS.comparing_context === current.phase ? current.phase : "AI 正在处理…"}</span></div>
-                      </div>
-                    )}
-                  </>
-                )}
-              </section>
-            )}
-            {[...new Set(current.proposals.map(proposalGroup))]
-              .filter((group) => group.startsWith("history-"))
-              .map((group) => <div className="assistant-orphan-proposal" key={group}>{proposalPanel(group)}</div>)}
           </div>
-
-          {recallDrawerOpen && (
-            <aside id="assistant-recall-drawer" className="assistant-context-panel" aria-label="最新一轮对话的引用资料与修改内容">
-              <section className="assistant-context-panel-section">
-                <button
-                  type="button"
-                  className="assistant-context-panel-trigger"
-                  aria-label={recallReferencesOpen ? "收起引用资料" : "展开引用资料"}
-                  aria-expanded={recallReferencesOpen}
-                  aria-controls="assistant-recall-references"
-                  onClick={() => setRecallReferencesOpen((open) => !open)}
-                >
-                  <strong>引用资料</strong>
-                  <span>{latestTurnContexts.length === 0 ? "0 个文件" : `${latestTurnContexts.length} 项`}<ChevronRight size={15} aria-hidden="true" /></span>
-                </button>
-                <div id="assistant-recall-references" className="assistant-context-panel-content" hidden={!recallReferencesOpen}>
-                  <div className="assistant-context-panel-list">
-                    {latestTurnContexts.length === 0 && <span className="is-muted">本轮没有引用资料</span>}
-                    {latestTurnContexts.map((context) => (
-                      <div key={contextKey(context)}><span>{context.label}</span></div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-              <section className="assistant-context-panel-section">
-                <button
-                  type="button"
-                  className="assistant-context-panel-trigger"
-                  aria-label={recallModificationsOpen ? "收起修改内容" : "展开修改内容"}
-                  aria-expanded={recallModificationsOpen}
-                  aria-controls="assistant-recall-modifications"
-                  onClick={() => setRecallModificationsOpen((open) => !open)}
-                >
-                  <strong>修改内容</strong>
-                  <span>{latestTurnProposal ? "1 个文件" : "0 个文件"}<ChevronRight size={15} aria-hidden="true" /></span>
-                </button>
-                <div id="assistant-recall-modifications" className="assistant-context-panel-content" hidden={!recallModificationsOpen}>
-                  <div className="assistant-context-panel-modification">
-                    {latestTurnProposal ? (
-                      <div>
-                        <span>{proposalResumeLabel(current, latestTurnProposal.resume_id)}</span>
-                        <ChevronRight size={16} aria-hidden="true" />
-                      </div>
-                    ) : <span className="is-muted">本轮没有修改内容</span>}
-                  </div>
-                </div>
-              </section>
-            </aside>
-          )}
-
-          {current.error && (
-            <FeedbackNotice
-              kind="error"
-              placement="floating"
-              title="本次请求未完成"
-              onDismiss={() => updateConversation(activeKey, { error: null })}
-            >
-              {current.error}
-            </FeedbackNotice>
-          )}
-
-          <form className="assistant-composer" onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
-            {current.revisionProposalId && <div className="assistant-proposal-revision-context">
-              <span>继续调整所选修改建议</span>
-              <button type="button" onClick={() => updateConversation(activeKey, { revisionProposalId: undefined })}>取消关联</button>
-            </div>}
-            {pendingClarification?.clarification && (
-              <section className={`assistant-clarification${current.clarificationCollapsed ? " is-collapsed" : ""}`} aria-label="需要你确认">
-                {current.clarificationCollapsed ? (
-                  <button
-                    type="button"
-                    className="assistant-clarification-summary"
-                    aria-expanded="false"
-                    aria-label="展开主动询问"
-                    onClick={() => updateConversation(activeKey, { clarificationCollapsed: false })}
-                  >
-                    <span>
-                      <strong>需要你确认</strong>
-                      <small>{clarificationQuestion?.header ?? "补充关键信息"} · {clarificationPage + 1} / {clarificationQuestions.length}</small>
-                    </span>
-                    <ChevronUp size={18} aria-hidden="true" />
-                  </button>
-                ) : (
-                  <>
-                    <header>
-                      <span><strong>需要你确认</strong><small>{clarificationPage + 1} / {clarificationQuestions.length}</small></span>
-                      <button
-                        type="button"
-                        className="assistant-clarification-toggle"
-                        aria-expanded="true"
-                        aria-label="收起主动询问"
-                        onClick={() => updateConversation(activeKey, { clarificationCollapsed: true })}
-                      >
-                        <ChevronDown size={18} aria-hidden="true" />
-                      </button>
-                    </header>
-                    {latestTurnContexts.some((item) => item.type === "resume") && (
-                      <p className="assistant-clarification-context-hint">需要改用另一份简历时，先点下方“添加资料”选择目标简历，再提交回答。</p>
-                    )}
-                    <div className="assistant-clarification-questions">
-                  {clarificationQuestion && [clarificationQuestion].map((question) => {
-                    const answer = current.clarificationAnswers[question.id] ?? { optionId: "", other: "" };
-                    const allowCustom = clarificationAllowsCustom(pendingClarification.clarification!, question);
-                    const missing = current.clarificationAttempted && (!answer.optionId || (answer.optionId === "__other__" && allowCustom && !answer.other.trim()));
-                    return (
-                      <fieldset key={question.id} aria-describedby={missing ? `${question.id}-error` : undefined}>
-                        <legend><span>{question.header}</span>{question.question}</legend>
-                      {question.options.map((option) => (
-                        <label key={option.id}>
-                          <input
-                            type="radio"
-                            name={`assistant-clarification-${question.id}`}
-                            value={option.id}
-                            checked={answer.optionId === option.id}
-                            onChange={() => updateConversation(activeKey, (state) => ({
-                              clarificationAnswers: {
-                                ...state.clarificationAnswers,
-                                [question.id]: { optionId: option.id, other: "" },
-                              },
-                            }))}
-                          />
-                          <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
-                        </label>
-                      ))}
-                      {allowCustom && (
-                        <label className="assistant-clarification-other-option">
-                          <input
-                            type="radio"
-                            name={`assistant-clarification-${question.id}`}
-                            value="__other__"
-                            checked={answer.optionId === "__other__"}
-                            onChange={() => updateConversation(activeKey, (state) => ({
-                              clarificationAnswers: {
-                                ...state.clarificationAnswers,
-                                [question.id]: { optionId: "__other__", other: state.clarificationAnswers[question.id]?.other ?? "" },
-                              },
-                            }))}
-                          />
-                          <span className="assistant-clarification-other-copy">
-                            <strong>其他</strong>
-                          </span>
-                          <input
-                            className="assistant-clarification-other"
-                            aria-label={`${question.header}的其他回答`}
-                            maxLength={500}
-                            placeholder="请输入补充内容"
-                            value={answer.other}
-                            onFocus={() => updateConversation(activeKey, (state) => ({
-                              clarificationAnswers: {
-                                ...state.clarificationAnswers,
-                                [question.id]: { optionId: "__other__", other: state.clarificationAnswers[question.id]?.other ?? "" },
-                              },
-                            }))}
-                            onChange={(event) => updateConversation(activeKey, (state) => ({
-                              clarificationAnswers: {
-                                ...state.clarificationAnswers,
-                                [question.id]: { optionId: "__other__", other: event.target.value },
-                              },
-                            }))}
-                          />
-                        </label>
-                      )}
-                        {missing && <small className="assistant-clarification-error" id={`${question.id}-error`}>请选择一个选项或填写其他答案。</small>}
-                      </fieldset>
-                    );
-                  })}
-                    </div>
-                    <footer>
-                      <Button type="button" variant="ghost" size="sm" disabled={clarificationPage === 0} onClick={() => setClarificationPage((page) => Math.max(0, page - 1))}>
-                        <ChevronLeft size={15} />上一题
-                      </Button>
-                      {clarificationPage < clarificationQuestions.length - 1 ? (
-                        <Button type="button" variant="accent" size="sm" onClick={() => setClarificationPage((page) => Math.min(clarificationQuestions.length - 1, page + 1))}>
-                          下一题<ChevronRight size={15} />
-                        </Button>
-                      ) : (
-                        <Button type="button" variant="accent" size="sm" disabled={current.running} onClick={submitClarification}>提交回答</Button>
-                      )}
-                    </footer>
-                  </>
-                )}
-              </section>
-            )}
-            <div className="assistant-composer-context-row">
-              <button type="button" className="assistant-add-context" onClick={openContextPicker}>
-                <Plus size={15} aria-hidden="true" />添加资料
+          <footer>
+            <button type="button" className="v3-btn v3-btn-text" disabled={clarificationPage === 0} onClick={() => setClarificationPage((page) => Math.max(0, page - 1))}>
+              <Icon name="chevl" size={13} />{t("上一题")}</button>
+            {clarificationPage < clarificationQuestions.length - 1 ? (
+              <button type="button" className="v3-btn v3-btn-dark" onClick={() => setClarificationPage((page) => Math.min(clarificationQuestions.length - 1, page + 1))}>{t("下一题")}<Icon name="chev" size={13} />
               </button>
-              <div ref={modelSelectorRef} className="assistant-model-selector">
-                <button type="button" aria-haspopup="menu" aria-expanded={modelMenuOpen} onClick={() => setModelMenuOpen((open) => !open)}>
-                  <span title={selectedModel?.name}>{runtimeModelLabel}</span><ChevronDown size={14} />
-                </button>
-                {modelMenuOpen && (
-                  <div role="menu" className="assistant-model-menu">
-                    {runtimeModels.length ? runtimeModels.map((model) => <button key={model.id} type="button" role="menuitemradio" aria-checked={model.id === selectedModelId} disabled={current.running || current.cancelling} onClick={() => void selectModel(model.id)}><span><strong>{model.name}</strong><small>{model.id === selectedModelId ? "当前模型" : "选择此模型"}</small></span>{model.id === selectedModelId && <Check size={16} />}</button>) : <span>{runtimeModelLoading ? "正在读取模型" : "当前没有可用模型"}</span>}
+            ) : (
+              <button type="button" className="v3-btn v3-btn-dark" disabled={current.running} onClick={submitClarification}>{t("提交回答")}</button>
+            )}
+          </footer>
+        </>
+      )}
+    </section>
+  );
+
+  const thinking = current.running && current.stage !== "streaming" && (
+    <section className="assistant-thinking" aria-label={t("AI 正在思考")} aria-live="polite">
+      <span className="assistant-feather-motion is-writing" aria-hidden="true">
+        <svg className="assistant-writing-ink" viewBox="0 0 56 44" focusable="false">
+          <path pathLength="1" d="M 3 34 C 10 33 16 31 22 27 C 27 24 30 19 28 15 C 27 11 22 12 20 17 C 17 23 20 29 26 30 C 32 31 35 26 40 28 C 44 31 48 28 53 25" />
+        </svg>
+        <img className="assistant-message-feather" src={assistantFeather} alt="" />
+      </span>
+      <div className="assistant-thinking-copy">
+        <div className="assistant-thinking-line">
+          <strong>{current.phase || t("AI 正在处理…")}</strong>
+          <span className="v3-num">{elapsedSeconds}{t(" 秒")}</span>
+        </div>
+        {latestActivity && <p className="assistant-thinking-latest">{latestActivity}</p>}
+        {processDetailsReady && (
+          <>
+            <button type="button" className="assistant-thinking-details-toggle" aria-expanded={current.detailsOpen} onClick={() => updateConversation(activeKey, { detailsOpen: !current.detailsOpen })}>
+              {current.detailsOpen ? t("收起过程") : t("查看过程")}
+              <Icon name={current.detailsOpen ? "chevd" : "chev"} size={12} />
+            </button>
+            {current.detailsOpen && (
+              <div className="assistant-thinking-details">
+                <div><Icon name="check" size={13} /><strong>{t("已读取 ")}{current.referencedContextCount}{t(" 项资料")}</strong></div>
+                {current.contexts.length > 0 && (
+                  <div className="assistant-thinking-sources">
+                    {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.type === "user_profile" ? t("个人画像") : context.label}</span>)}
                   </div>
                 )}
-              </div>
-            </div>
-            <div className="assistant-input-shell">
-              {contextMention && (
-                <div ref={mentionMenuRef} id="assistant-context-mention-list" className="assistant-context-mention-menu" role="listbox" aria-label="可引用的资料和简历">
-                  <header>
-                    <strong>{contextMention.token ? `@${contextMention.token}` : "选择资料或简历"}</strong>
-                    <span>Tab 选择第一项</span>
-                  </header>
-                  {mentionLoading && <p>正在搜索…</p>}
-                  {mentionError && <p role="alert">{mentionError}</p>}
-                  {!mentionLoading && !mentionError && mentionOptions.length === 0 && <p>没有匹配的文件</p>}
-                  {!mentionLoading && !mentionError && (["resume", "dataset"] as const).map((type) => {
-                    const groupedOptions = mentionOptions
-                      .map((context, index) => ({ context, index }))
-                      .filter(({ context }) => context.type === type);
-                    if (groupedOptions.length === 0) return null;
-                    return (
-                      <div key={type} className="assistant-context-mention-group" role="group" aria-label={type === "resume" ? "简历" : "资料"}>
-                        <div className="assistant-context-mention-group-label">{type === "resume" ? "简历" : "资料"}</div>
-                        {groupedOptions.map(({ context, index }) => (
-                          <button
-                            type="button"
-                            id={`assistant-context-mention-option-${index}`}
-                            role="option"
-                            aria-selected={mentionActiveIndex === index}
-                            className={mentionActiveIndex === index ? "is-active" : undefined}
-                            key={contextKey(context)}
-                            onMouseEnter={() => setMentionActiveIndex(index)}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => selectMentionContext(context)}
-                          >
-                            <ContextSourceIcon type={context.type} size={16} />
-                            <span><strong>{context.label}</strong></span>
-                          </button>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              <div
-                key={`${activeKey}:${composerView.revision}`}
-                ref={inputRef}
-                className="assistant-composer-editor"
-                role="textbox"
-                aria-multiline="true"
-                aria-label="告诉助手你想完成什么"
-                data-placeholder={current.messages.length > 0 ? "继续提问或说明调整要求…" : "告诉我你想完成什么…"}
-                aria-autocomplete="list"
-                aria-controls={contextMention ? "assistant-context-mention-list" : undefined}
-                aria-expanded={Boolean(contextMention)}
-                aria-activedescendant={contextMention && mentionOptions.length > 0 ? `assistant-context-mention-option-${mentionActiveIndex}` : undefined}
-                aria-disabled={current.running || current.cancelling || Boolean(pendingClarification)}
-                contentEditable={!(current.running || current.cancelling || Boolean(pendingClarification))}
-                suppressContentEditableWarning
-                onInput={(event) => {
-                  const composing = (event.nativeEvent as InputEvent).isComposing || isComposingRef.current;
-                  syncComposerFromDom(event.currentTarget, {
-                    restoreCaret: !composing,
-                    updateMention: !composing,
-                  });
-                }}
-                onPaste={(event) => {
-                  event.preventDefault();
-                  insertComposerPlainText(
-                    event.currentTarget,
-                    event.clipboardData.getData("text/plain"),
-                  );
-                  syncComposerFromDom(event.currentTarget, {
-                    restoreCaret: true,
-                    updateMention: true,
-                  });
-                }}
-                onKeyDown={handleInputKeyDown}
-                onCompositionStart={() => {
-                  isComposingRef.current = true;
-                  pendingComposerCaretRef.current = null;
-                }}
-                onCompositionEnd={(event) => {
-                  isComposingRef.current = false;
-                  syncComposerFromDom(event.currentTarget, {
-                    restoreCaret: true,
-                    updateMention: true,
-                  });
-                }}
-              >
-                {composerSegments(composerView.draft, composerView.contexts).map((segment) => segment.kind === "text" ? segment.text : (
-                  <span
-                    key={segment.key}
-                    className={`assistant-composer-context-token${composerView.invalidContextIds.includes(contextKey(segment.context)) ? " is-invalid" : ""}`}
-                    contentEditable={false}
-                    data-context-key={contextKey(segment.context)}
-                    data-context-value={`@${segment.context.label}`}
-                    aria-label={`引用文件 ${segment.context.label}`}
-                  >
-                    <ContextSourceIcon type={segment.context.type} size={14} />
-                    <span>{segment.context.label}</span>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      aria-label={`移除上下文 ${segment.context.label}`}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => removeContext(segment.context)}
-                    >
-                      <X size={12} aria-hidden="true" />
-                    </button>
-                  </span>
+                {activityLines.length > 0 && <p className="assistant-thinking-activity">{activityLines.join("\n")}</p>}
+                {current.activities.map((activity) => (
+                  <p className="assistant-thinking-activity" key={activity.callKey}>{activityStatusText(activity)}</p>
                 ))}
               </div>
-              {current.running ? (
-                <button type="button" className="assistant-send-button is-stop" aria-label="停止生成" onClick={stopGeneration}>
-                  <Square size={16} fill="currentColor" />
-                </button>
-              ) : (
-                <button type="submit" className="assistant-send-button" aria-label="发送" disabled={current.cancelling || !current.draft.trim() || Boolean(pendingClarification)}>
-                  <ArrowUp size={18} strokeWidth={2.2} />
-                </button>
-              )}
-            </div>
-          </form>
-        </section>
+            )}
+          </>
         )}
-
-        {embeddedResumeId && (
-          <section className="assistant-resume-pane" aria-label="简历编辑区">
-            <button
-              type="button"
-              className="assistant-resume-close"
-              aria-label="关闭右侧简历"
-              onClick={closeEmbeddedResume}
-            >
-              <X size={18} aria-hidden="true" />
-            </button>
-            <ResumeWorkbench
-              embedded
-              externalRefreshVersion={embeddedResumeRefreshVersion}
-              onClose={closeEmbeddedResume}
-              onAgentSelectionChange={setEmbeddedSelectionContext}
-            />
-          </section>
-        )}
-        </div>
       </div>
+    </section>
+  );
 
-      {mobileMenuOpen && (
-        <div className="assistant-mobile-menu-layer" role="presentation">
-          <button type="button" className="assistant-mobile-menu-scrim" aria-label="关闭会话菜单" onClick={() => setMobileMenuOpen(false)} />
-          <div className="assistant-mobile-menu" role="dialog" aria-modal="true" aria-label="会话列表">
-            {sidebar}
+  const screenshots = <ScreenshotStrip images={current.screenshots ?? []} activeKey={activePreviewKey} onOpen={openPreview} onRemove={(id) => updateConversation(activeKey, { screenshots: (current.screenshots ?? []).filter((image) => image.id !== id) })} />;
+  const composer = (
+    <form className={`assistant-composer${isHome ? " is-home" : ""}`} onSubmit={(event) => { event.preventDefault(); submitMessage(); }}>
+      {current.revisionProposalId && (
+        <div className="assistant-proposal-revision-context">
+          <span>{t("继续调整所选修改建议")}</span>
+          <button type="button" className="v3-link" onClick={() => updateConversation(activeKey, { revisionProposalId: undefined })}>{t("取消关联")}</button>
+        </div>
+      )}
+      {clarificationPanel}
+      {isHome ? (
+        // 首页输入框卡：720×120，底部左侧 + 和简历标签，右侧模型名与发送
+        <div className={`assistant-home-input${current.screenshots?.length ? " has-screenshots" : ""}`}>
+          {mentionMenu}
+          {screenshots}
+          {editor}
+          <div className="assistant-home-input-foot">
+            <button type="button" className="assistant-attach" aria-label={t("添加资料")} onClick={openContextPicker}><Icon name="plus" size={14} strokeWidth={2} /></button>
+            {chipResumes.map((context) => (
+              <span key={contextKey(context)} className="v3-chip assistant-home-resume-chip">
+                <span>{t("简历 · ")}{context.type === "user_profile" ? t("个人画像") : context.label}</span>
+                <button type="button" aria-label={t("移除上下文 {value0}", { value0: context.label })} onClick={() => removeContext(context)}><Icon name="x" size={10} /></button>
+              </span>
+            ))}
+            <span className="assistant-home-input-spacer" />
+            {modelPicker(true)}
+            {sendButton}
           </div>
         </div>
+      ) : (
+        <>
+          {resumeChips}
+          <div className="assistant-input">
+            {mentionMenu}
+            <div className="assistant-input-content">{screenshots}{editor}</div>
+            {sendButton}
+          </div>
+          <div className="assistant-composer-foot">
+            <button type="button" className="assistant-add-context" onClick={openContextPicker}>
+              <Icon name="plus" size={11} strokeWidth={2} />{t("添加资料")}</button>
+            {modelPicker(false)}
+          </div>
+        </>
       )}
+    </form>
+  );
 
-      {pendingDeleteSession && (
-        <ConfirmDialog
-          kind="delete"
-          title="删除这条对话？"
-          description={`“${pendingDeleteSession.title}”及其中的全部消息将被永久删除，此操作无法撤销。`}
-          confirmLabel="删除"
-          busyLabel="正在删除…"
-          busy={sessionActionBusyId === pendingDeleteSession.id}
-          onCancel={() => setPendingDeleteSession(null)}
-          onConfirm={deleteSession}
+  const renderMessages = () => current.messages.filter((message) => message !== pendingClarification).map((message, index) => {
+    const messageIndex = current.messages.indexOf(message);
+    const source = current.messages.slice(0, messageIndex + 1).filter((item) => item.role === "user").slice(-1)[0];
+    const next = current.messages[messageIndex + 1];
+    const proposalGroupAfterMessage = source && (!next || next.role === "user") ? String(source.sequence_no) : null;
+    return (
+      <Fragment key={`${message.sequence_no}-${message.created_at}-${index}`}>
+        <article className={`assistant-message is-${message.role}${message.status ? ` is-${message.status}` : ""}`}>
+          <div className="assistant-message-body">
+            {message.screenshots && <ScreenshotStrip images={message.screenshots} sent activeKey={activePreviewKey} onOpen={openPreview} />}
+            {message.role === "user" && message.contexts && message.contexts.length > 0 ? (
+              <UserMessageContent
+                content={messageText(message)}
+                contexts={message.contexts}
+                activePreviewKey={activePreviewKey}
+                unavailableKeys={unavailableKeys}
+                onOpen={openContextPreview}
+              />
+            ) : (
+              <div className="assistant-message-content" onClick={message.role === "assistant" ? handleAssistantClick : undefined}>
+                <AgentMarkdown content={message.role === "assistant" ? linkContextMentions(messageText(message), sessionContexts) : messageText(message)} />
+              </div>
+            )}
+            {message.generatedDocument && <GeneratedDocumentCard document={message.generatedDocument} active={activePreviewKey === previewTabKey(message.generatedDocument)} onOpen={() => openPreview(message.generatedDocument!)} />}
+            {message.artifactFollowup && <p className="assistant-artifact-followup">{message.artifactFollowup}</p>}
+            {message.localOnly && message.role === "assistant" && !message.generatedDocument && <BeTag />}
+            {message.status === "stopped" && <small className="assistant-stopped-label">{t("已停止生成")}</small>}
+            {message.status === "failed" && <small className="assistant-stopped-label">{t("生成未完成")}</small>}
+            <MessageActions content={messageText(message)} createdAt={message.created_at} timeLabel={formatTime(message.created_at)} />
+          </div>
+        </article>
+        {proposalGroupAfterMessage && proposalPanel(proposalGroupAfterMessage)}
+      </Fragment>
+    );
+  });
+
+  if (workspaceSection) return null;
+
+  return (
+    <V3Shell
+      active="home"
+      scroll={false}
+      contentClassName={`assistant-v3-content${previewOpen && sessionPreviewTabs.length ? " has-preview" : ""}`}
+      onNewConversation={() => void createNewConversation()}
+      onSelectSession={(id) => void selectSession(id)}
+    >
+      <style>{`.v3-content.assistant-v3-content.has-preview { --assistant-preview-width: ${previewWidth}px; }`}</style>
+      <section style={{ "--assistant-preview-width": `${previewWidth}px` } as CSSProperties} className={`assistant-conversation${isHome ? " is-empty" : ""}`} aria-label={t("AI 求职助手工作区")}>
+        {!isHome && allFileCount > 0 && !(previewOpen && sessionPreviewTabs.length) && (
+          <button type="button" className="assistant-files-toggle" onClick={openAllFiles} aria-label={t("查看本会话的 {value0} 个文件", { value0: allFileCount })}>
+            <Icon name="panel" size={15} />
+            <span>{allFileCount}{t(" 个文件")}</span>
+          </button>
+        )}
+
+        {conversationPending ? (
+          <PageLoading label={t("正在读取对话…")} scope="workspace" />
+        ) : current.loadState === "error" ? (
+          <div className="assistant-session-error" role="alert">
+            <p>{t("对话暂时无法读取")}</p>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void selectSession(activeKey, true)}>{t("重试")}</button>
+          </div>
+        ) : isHome ? (
+          <div className="assistant-home" aria-label={t("开始使用 AI 求职助手")}>
+            {/* 首页文字不用骨架：加载时先占住同样的高度，数据到了整行从下方慢慢浮现 */}
+            <h1 className="assistant-home-title">
+              {home.status === "loading" && !copy
+                ? <span className="assistant-home-rise-slot" aria-hidden="true" />
+                : <span className="assistant-home-rise">{copy ? <>{greetingPrefix(now)}{displayName ? `，${displayName}` : ""}。{copy.title}</> : t("首页信息暂时无法读取")}</span>}
+            </h1>
+            <p className="assistant-home-sub">
+              {home.status === "loading" && !copy
+                ? <span className="assistant-home-rise-slot" aria-hidden="true" />
+                : <span className="assistant-home-rise is-delay-1">{copy ? copy.subtitle
+                  : <>{t("请稍后重试。")}<button type="button" className="v3-link" onClick={home.retry}>{t("重新加载")}</button></>}</span>}
+            </p>
+            {composer}
+            {copy && (
+              <div className="assistant-home-chips assistant-home-rise is-delay-2" aria-label={t("快捷指令")}>
+                {copy.chips.map((chip) => (
+                  <button type="button" key={chip} className="v3-chip assistant-home-chip" onClick={() => applyQuickPrompt(chip)}>{chip}</button>
+                ))}
+              </div>
+            )}
+            {home.status === "loading" && <div className="assistant-home-chips is-placeholder" aria-hidden="true" />}
+            {dashboard && (
+              <div className="assistant-home-cards assistant-home-cards-rise">
+                {dashboard.cards.map((card, index) => <HomeCardView key={`${card.kind}-${index}`} card={card} now={now} />)}
+              </div>
+            )}
+            {/* 加载中只占位不画骨架，卡片到了再逐张浮现 */}
+            {home.status === "loading" && <div className="assistant-home-cards is-placeholder" role="status" aria-label={t("正在加载首页信息…")} />}
+          </div>
+        ) : (
+          <>
+            <div
+              className="assistant-message-viewport"
+              ref={messageViewportRef}
+              onScroll={handleMessageViewportScroll}
+              aria-live={current.running ? "off" : "polite"}
+            >
+              <div className="assistant-thread">
+                {renderMessages()}
+                {thinking}
+                {[...new Set(current.proposals.map(proposalGroup))]
+                  .filter((group) => group.startsWith("history-"))
+                  .map((group) => <div className="assistant-orphan-proposal" key={group}>{proposalPanel(group)}</div>)}
+              </div>
+            </div>
+            <div className="assistant-composer-dock">{composer}</div>
+          </>
+        )}
+      </section>
+
+      <MotionPresence>{previewOpen && sessionPreviewTabs.length > 0 && (
+        <PreviewPanel
+          tabs={sessionPreviewTabs}
+          width={previewWidth}
+          onWidthChange={setPreviewWidth}
+          onUnavailable={(key) => setUnavailableKeys((keys) => keys.includes(key) ? keys : [...keys, key])}
+          onSaveGenerated={saveGeneratedDocument}
+          onNotice={setNotice}
+          activeKey={previewActive[activeKey] ?? null}
+          onActivate={(key) => setPreviewActive((all) => ({ ...all, [activeKey]: key }))}
+          onCloseTab={closePreviewTab}
+          onClose={() => setPreviewOpen(false)}
         />
-      )}
+      )}</MotionPresence>
 
-      {contextPickerOpen && (
-        <div className="assistant-context-picker-layer" role="presentation">
-          <button type="button" className="assistant-mobile-menu-scrim" aria-label="关闭资料选择器" onClick={closeContextPicker} />
-          <section className="assistant-context-picker" role="dialog" aria-modal="true" aria-label="选择资料">
-            <header>
-              <div><h2>添加资料</h2><p>选择本轮对话需要参考的内容，每类最多一项</p></div>
-              <button ref={contextCloseButtonRef} type="button" className="assistant-icon-button" aria-label="关闭资料选择器" onClick={closeContextPicker}><X size={18} /></button>
-            </header>
-            <div className="assistant-context-type-list" role="tablist" aria-label="上下文类型">
-              {CONTEXT_TYPES.map(({ type, label, icon: Icon }) => (
+      <GeneratedDocumentSaveDialog key={user?.id ?? "guest"} document={documentToSave?.document ?? null} onClose={() => setDocumentToSave(null)} onSaved={(saved) => {
+        if (!documentToSave || !pageMountedRef.current || (useResumeStore.getState().user?.id ?? null) !== documentToSave.userId) return;
+        const { conversationKey, document } = documentToSave;
+        updateConversation(conversationKey, (state) => ({ messages: state.messages.map((message) => message.generatedDocument?.id === document.id ? { ...message, generatedDocument: { ...message.generatedDocument, saved: true } } : message) }));
+        setPreviewTabs((all) => ({ ...all, [conversationKey]: (all[conversationKey] ?? []).map((tab) => tab.kind === "generated" && tab.id === document.id ? { ...tab, saved: true } : tab) }));
+        setDocumentToSave(null);
+        setNotice(t("已保存到资料库：{value0}。", { value0: saved.file_name }));
+      }} />
+
+      <MotionPresence>{current.error && (
+        <Toast title={t("本次请求未完成")} message={current.error} kind="error" onDismiss={() => updateConversation(activeKey, { error: null })} />
+      )}</MotionPresence>
+      <MotionPresence>{notice && <Toast title={t("提示")} message={notice} onDismiss={() => setNotice(null)} />}</MotionPresence>
+
+      <MotionPresence>{contextPickerOpen && (
+        <Dialog width={560} label={t("选择资料")} onClose={closeContextPicker} className="assistant-context-dialog">
+          <div className="v3-dialog-body">
+            <h2 className="v3-dialog-title">{t("添加资料")}</h2>
+            <p className="v3-dialog-sub">{t("选择本轮对话需要参考的内容，每类最多一项")}</p>
+            <div className="assistant-context-types" role="tablist" aria-label={t("上下文类型")}>
+              {CONTEXT_TYPES.map(({ type, label, icon }) => (
                 <button type="button" role="tab" aria-selected={contextType === type} className={contextType === type ? "is-active" : undefined} key={type} onClick={() => void loadContexts(type)}>
-                  <Icon size={15} aria-hidden="true" />{label}
+                  <Icon name={icon} size={13} />{label}
                 </button>
               ))}
             </div>
-            <label className="assistant-context-search">
-              <span className="visually-hidden">搜索资料</span>
-              <Search size={17} aria-hidden="true" />
-              <input value={contextSearch} placeholder="搜索资料" onChange={(event) => setContextSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void loadContexts(contextType, contextSearch); }} />
-            </label>
-            {contextLoading && <p className="assistant-context-status">正在读取可选资料…</p>}
+            <div
+              className="assistant-context-search"
+              onKeyDown={(event) => { if (event.key === "Enter") void loadContexts(contextType, contextSearch); }}
+            >
+              <SearchBox value={contextSearch} onChange={setContextSearch} placeholder={t("搜索资料")} label={t("搜索资料")} />
+            </div>
+            {contextLoading && <p className="assistant-context-status">{t("正在读取可选资料…")}</p>}
             {contextError && <p className="assistant-context-error" role="alert">{contextError}</p>}
-            {!contextLoading && !contextError && contextOptions.length === 0 && <p className="assistant-context-status">暂无可选择的{contextLabel(contextType)}。</p>}
+            {!contextLoading && !contextError && contextOptions.length === 0 && <p className="assistant-context-status">{t("暂无可选择的")}{contextLabel(contextType)}。</p>}
             {!contextLoading && !contextError && contextOptions.length > 0 && (
-              <div className="assistant-context-option-list">
-                {contextOptions.map((context) => (
-                  <button type="button" className={contextDrafts.some((item) => contextKey(item) === contextKey(context)) ? "is-selected" : undefined} aria-pressed={contextDrafts.some((item) => contextKey(item) === contextKey(context))} key={contextKey(context)} onClick={() => toggleContextDraft(context)}>
-                    <span><strong>{context.label}</strong>{context.description && <small>{context.description}</small>}</span>
-                    {contextDrafts.some((item) => contextKey(item) === contextKey(context)) ? <Check size={18} aria-label="已选择" /> : <time dateTime={context.updated_at ?? undefined}>{formatConversationDate(context.updated_at)}</time>}
-                  </button>
-                ))}
+              <div className="v3-gcard assistant-context-options">
+                {contextOptions.map((context) => {
+                  const selected = contextDrafts.some((item) => contextKey(item) === contextKey(context));
+                  return (
+                    <button type="button" className={`v3-grow${selected ? " is-selected" : ""}`} aria-pressed={selected} key={contextKey(context)} onClick={() => toggleContextDraft(context)}>
+                      <Icon name={contextIcon(context.type)} size={15} />
+                      <span className="v3-grow-copy"><strong>{context.type === "user_profile" ? t("个人画像") : context.label}</strong>{context.description && <small>{context.description}</small>}</span>
+                      <span className="v3-grow-right">
+                        {selected ? <Icon name="ccheck" size={16} aria-label={t("已选择")} /> : <time className="v3-num" dateTime={context.updated_at ?? undefined}>{formatConversationDate(context.updated_at)}</time>}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
-            <footer className="assistant-context-picker-actions">
-              <Button type="button" variant="ghost" onClick={closeContextPicker}>取消</Button>
-              <Button type="button" variant="accent" onClick={confirmContextDrafts}>添加 {contextDrafts.length} 项</Button>
-            </footer>
-          </section>
-        </div>
-      )}
-    </main>
+          </div>
+          <DialogFooter left={<span className="assistant-context-count">{t("已选 ")}{contextDrafts.length}{t(" 项")}</span>}>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={closeContextPicker}>{t("取消")}</button>
+            <button type="button" className="v3-btn v3-btn-dark" onClick={confirmContextDrafts}>{t("添加 ")}{contextDrafts.length}{t(" 项")}</button>
+          </DialogFooter>
+        </Dialog>
+      )}</MotionPresence>
+    </V3Shell>
   );
 }

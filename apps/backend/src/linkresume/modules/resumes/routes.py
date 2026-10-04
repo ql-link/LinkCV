@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import hashlib
 import json
 import logging
@@ -35,9 +36,10 @@ from linkresume.core.storage import (
 )
 from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.agent.service import delete_resume_agent_data
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.job_matches.models import JobResumeMatch
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -145,7 +147,7 @@ def resume_record(resume: Resume) -> ResumeRecord:
 @router.get("", response_model=ResumeListResponse)
 def list_resumes(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeListResponse:
     resumes = db.scalars(
         select(Resume)
@@ -204,7 +206,7 @@ def create_resume(
 def get_resume(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeResponse:
     return ResumeResponse(resume=resume_record(require_owned_resume(db, resume_id, user.id)))
 
@@ -340,6 +342,7 @@ def delete_resume(
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResumeResponse:
+    user = lock_active_user(db, user.id)
     parsed_id = parse_decimal_id(resume_id)
     if parsed_id is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
@@ -398,6 +401,7 @@ def delete_resume(
             JobApplication.user_id == user.id,
         ).values(resume_id=None, resume_title_snapshot=None))
         detach_mock_interview_resume(db, user_id=user.id, resume_id=resume.id)
+        db.execute(delete(JobResumeMatch).where(JobResumeMatch.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
     except Exception:

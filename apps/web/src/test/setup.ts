@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 // jsdom 没有 WebGL 上下文，@paper-design/shaders-react 的着色器组件（登录页
 // GrainGradient、落地页 FlutedGlass）在测试中挂载会抛未处理错误
@@ -55,3 +55,8 @@ Object.defineProperties(HTMLElement.prototype, {
 afterEach(() => {
   cleanup();
 });
+
+// 页面短时缓存是模块级状态，每个测试结束后清空，避免上一个用例的数据被下一个用例直接显示
+import { clearPageCache } from "../v3/pageCache";
+beforeEach(() => clearPageCache());
+afterEach(() => clearPageCache());

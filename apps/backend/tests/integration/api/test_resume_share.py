@@ -147,8 +147,12 @@ def test_create_share_public_read_and_overwrite() -> None:
             "assets",
             "sharer",
             "allow_download",
+            "expires_at",
+            "updated_at",
         }
         assert payload["allow_download"] is True
+        assert payload["expires_at"] is None
+        assert payload["updated_at"]
         assert payload["assets"] == {}
         assert set(payload["sharer"]) == {"nickname", "avatar_url"}
         assert payload["sharer"]["nickname"]

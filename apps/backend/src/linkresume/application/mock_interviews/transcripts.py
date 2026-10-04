@@ -8,6 +8,7 @@ Manual edits remain measured against the original characters.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
 
@@ -72,6 +73,7 @@ def release_correction(db: Session, interview_id: int) -> None:
     """Undo the claim when correction could not run at all (e.g. model unconfigured)."""
     interview = db.get(MockInterview, interview_id)
     if interview is not None:
+        interview = require_owned(db, interview.user_id, interview.public_id, lock=True)
         interview.transcript_corrected_at = None
         interview.lock_version += 1
         db.commit()
@@ -139,11 +141,15 @@ async def correct_answers(
     return results
 
 
+def _locked_current_interview(db: Session, interview_id: int) -> MockInterview:
+    identity = db.execute(select(MockInterview.user_id, MockInterview.public_id).where(MockInterview.id == interview_id)).first()
+    if identity is None:
+        raise MockInterviewError(404, "MOCK_INTERVIEW_NOT_FOUND")
+    return require_owned(db, identity.user_id, identity.public_id, lock=True)
+
+
 def store_corrections(db: Session, interview_id: int, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    interview = db.scalar(
-        select(MockInterview).where(MockInterview.id == interview_id).with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    interview = _locked_current_interview(db, interview_id)
     questions = {item.id: item for item in list_questions(db, interview_id)}
     applied_at = utc_now().isoformat()
     public = []
@@ -243,10 +249,7 @@ async def judge_question(llm: LLMService, interview: MockInterview, root, questi
 def store_reevaluation(
     db: Session, interview_id: int, root_id: int, questions, value: QuestionEvaluation | None
 ) -> dict[str, Any]:
-    interview = db.scalar(
-        select(MockInterview).where(MockInterview.id == interview_id).with_for_update()
-        .execution_options(populate_existing=True)
-    )
+    interview = _locked_current_interview(db, interview_id)
     root = db.get(MockInterviewQuestion, root_id)
     if root.re_evaluate_count >= MAX_RE_EVALUATIONS:
         db.rollback()
@@ -318,17 +321,17 @@ def recording_for(db: Session, user_id: int, public_id: str, question_id: int) -
     return question.recording_object_name
 
 
-def delete_recordings(db: Session, user_id: int, public_id: str) -> list[str]:
-    """Detach recordings; returns object names the caller deletes after commit."""
+def delete_recordings(db: Session, user_id: int, public_id: str, *, purge: Callable[[list[str]], None]) -> None:
+    """A failed purge retains references so the caller can retry deletion."""
     interview = require_owned(db, user_id, public_id, lock=True)
     if interview.answer_mode != "voice" or interview.status in ("preparing", "in_progress", "evaluating"):
         raise _state_invalid()
-    names = []
-    for question in list_questions(db, interview.id):
+    questions = list_questions(db, interview.id)
+    names = [question.recording_object_name for question in questions if question.recording_object_name]
+    purge(names)
+    for question in questions:
         if question.recording_object_name:
-            names.append(question.recording_object_name)
             question.recording_object_name = None
     interview.recordings_deleted_at = interview.recordings_deleted_at or utc_now()
     interview.lock_version += 1
     db.commit()
-    return names
