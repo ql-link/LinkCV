@@ -355,7 +355,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 | `GET/PUT/DELETE` | `/api/interview-sessions/:id` | 读取、乐观锁更新或删除无素材的单场记录 |
 | `POST` | `/api/interview-sessions/:id/prep-items:generate` | 让 AI 为本场生成准备清单，成功返回更新后的场次；每场只能成功一次 |
 | `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间接受有效 24 小时制 `HH:mm`（小时 `00–23`、分钟 `00–59`） |
-| `PUT` | `/api/interview-sessions/:id/answer-plan` | 设置或清除开放笔试/测评的一组个人作答计划时间 |
+| `PUT` | `/api/interview-sessions/:id/answer-plan` | 设置或清除开放笔试、测评或 AI 面试的一组个人作答计划时间 |
 | `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试；完成接口保留兼容，正常流程按结束时间自动完成 |
 | `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传素材；上传与资料库共用同一入库链路，成功后自动关联该场次 |
 | `POST` | `/api/interview-sessions/:id/assets/attach` | 把本人资料库中未关联的资料（`{dataset_id}`）关联到本场次 |
@@ -363,7 +363,7 @@ Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和
 | `GET` | `/api/interview-assets/:id/content` | 所有权校验后流式读取仍关联场次的素材；已解除关联返回 `404` |
 | `DELETE` | `/api/interview-assets/:id` | 解除素材与场次的关联，不删除文件 |
 
-排期请求可携带 `application_stage_id` 和 `schedule_kind=fixed_slot|open_window`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期，且只有测评、笔试支持开放窗口。创建与改期请求在 `start_at` 之外必须且只能提交 `end_at` 或正整数 `duration_minutes` 之一；提交持续分钟时由服务端计算并保存 `end_at`，旧的显式结束时间写法继续兼容。开放窗口的个人作答计划同样可用 `answer_plan_start_at + duration_minutes` 让服务端推算结束时间，也兼容 `answer_plan_start_at/answer_plan_end_at` 成对设置；清除时两端同时为空。计划必须完整落在官方窗口内，否则返回 `INTERVIEW_ANSWER_PLAN_INVALID_TIME`、`INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW` 或 `INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED`。不支持开放窗口的阶段返回 `INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED`。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。同一用户的多个排期允许时间重叠。调整排期只要求场次仍为 `scheduled` 且所属求职进程未归档，不受求职进程是否已经结束影响。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
+排期请求可携带 `application_stage_id` 和 `schedule_kind=fixed_slot|open_window`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期，其中测评、笔试和 AI 面试支持开放窗口，普通面试只支持固定场次。创建与改期请求在 `start_at` 之外必须且只能提交 `end_at` 或正整数 `duration_minutes` 之一；提交持续分钟时由服务端计算并保存 `end_at`，旧的显式结束时间写法继续兼容。开放窗口的个人作答计划同样可用 `answer_plan_start_at + duration_minutes` 让服务端推算结束时间，也兼容 `answer_plan_start_at/answer_plan_end_at` 成对设置；清除时两端同时为空。计划必须完整落在官方窗口内，否则返回 `INTERVIEW_ANSWER_PLAN_INVALID_TIME`、`INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW` 或 `INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED`。不支持开放窗口的阶段返回 `INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED`。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。同一用户的多个排期允许时间重叠。调整排期只要求场次仍为 `scheduled` 且所属求职进程未归档，不受求职进程是否已经结束影响。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
 
 **按时间完成**：`end_at` 已过的 `scheduled` 场次在所有场次响应中投影为 `status=completed`、`completed_at=end_at`；当前阶段的全部已排期场次都已结束时，求职进程的 `stage_state` 与场次摘要的 `application_stage_state` 投影为 `awaiting_result`。`GET /api/interview-sessions?status=scheduled|completed` 与总览的已完成数量按同一投影筛选。读取不写库；添加阶段或终止流程时在同一事务内把已结束场次落库为 `completed`，该结算不递增 `lock_version`。改期和取消仍按库内 `scheduled` 判断，因此已过时间的场次可以改到未来时间，从而恢复为已安排。
 

@@ -1858,6 +1858,29 @@ describe("InterviewCenterPage API projections", () => {
     }));
   });
 
+  it("shows an open AI interview as an interview with its answer plan", async () => {
+    const opensAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const aiSession = {
+      ...session,
+      stage_type: "other" as const,
+      round_no: null,
+      stage_label: "AI 面试",
+      schedule_kind: "open_window" as const,
+      start_at: opensAt.toISOString(),
+      end_at: new Date(opensAt.getTime() + 72 * 60 * 60 * 1000).toISOString(),
+      questions_markdown: null,
+    };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [aiSession], next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: aiSession, application, assets: [] });
+
+    render(<InterviewCenterPage view="records" initialApplicationId="21" initialSessionId="31" />);
+
+    expect((await screen.findAllByRole("heading", { name: "AI 面试记录" })).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "我的作答计划" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存作答计划" })).toBeInTheDocument();
+    expect(screen.queryByText("笔试记录")).not.toBeInTheDocument();
+  });
+
   it("offers to replace the transcript with a finished recording transcription", async () => {
     const audioAsset = {
       id: "71", interview_session_id: "31", source_type: "uploaded" as const, asset_type: "audio" as const,
@@ -2402,7 +2425,7 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(within(dialog).getByRole("radio", { name: "测评" }));
     expect(within(dialog).queryByLabelText("当前状态")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("测评链接（选填）")).toBeInTheDocument();
-    expect(within(dialog).getByRole("radio", { name: /截止前完成/ })).toHaveAttribute("aria-checked", "true");
+    expect(within(dialog).queryByRole("radiogroup", { name: "时间安排" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "开放时间" })).toHaveTextContent("收到通知就开放");
     fireEvent.change(within(dialog).getByLabelText("测评链接（选填）"), { target: { value: "https://assessment.example/68" } });
     chooseScheduleDateTime(dialog, "开放时间", "2026-09-12", "09", "17");
