@@ -1,0 +1,325 @@
+import { MotionPresence } from "@/components/ui/motion";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import brandWordmark from "@/assets/linkresume-wordmark.png";
+import { api, type AgentSession } from "../api/client";
+import { assistantPath, navigateTo, rememberAssistantSession } from "../routing";
+import { useResumeStore } from "../store/resumeStore";
+import { preloadWorkspacePage } from "../workspacePageLoaders";
+import { Icon, type V3IconName } from "./Icon";
+import { Avatar, ConfirmDialog, Menu } from "./primitives";
+import { useActiveSessionStore, useSessionStore } from "./sessionStore";
+import { DeleteSessionArt } from "./art";
+import { readPageCache, writePageCache } from "./pageCache";
+import "./v3.css";
+
+export type V3Section = "home" | "resumes" | "templates" | "jobs" | "schedule" | "mock" | "datasets" | "account" | "none";
+
+const NAV: Array<{ key: V3Section; icon: V3IconName; label: string; href: string; count?: () => number | null }> = [
+  { key: "home", icon: "sun", label: "首页", href: "/assistant" },
+  { key: "resumes", icon: "doc", label: "我的简历", href: "/resumes", count: () => useResumeStore.getState().resumes.length || null },
+  { key: "templates", icon: "layout", label: "简历模板", href: "/templates" },
+  { key: "jobs", icon: "brief", label: "岗位看板", href: "/career/applications" },
+  { key: "schedule", icon: "cal", label: "面试日程", href: "/career/schedule" },
+  { key: "mock", icon: "mic", label: "模拟面试", href: "/mock-interviews" },
+  { key: "datasets", icon: "folder", label: "资料库", href: "/datasets" },
+];
+
+// 侧栏选中滑块的上一次位置（跨页面保留）
+let lastIndicatorTop: number | null = null;
+
+function go(event: React.MouseEvent, href: string) {
+  if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+  event.preventDefault();
+  navigateTo(href);
+}
+
+export function V3Sidebar({
+  active,
+  onNewConversation,
+  onSelectSession,
+}: {
+  active: V3Section;
+  onNewConversation?: () => void;
+  onSelectSession?: (sessionId: string) => void;
+}) {
+  const user = useResumeStore((state) => state.user);
+  const resumeCount = useResumeStore((state) => state.resumes.length);
+  const sessions = useSessionStore((state) => state.sessions);
+  const status = useSessionStore((state) => state.status);
+  const load = useSessionStore((state) => state.load);
+  const activeSessionId = useActiveSessionStore((state) => state.activeId);
+  const displayName = user?.nickname || user?.email || "我";
+  const [applicationCount, setApplicationCount] = useState<number | null>(() => readPageCache<number>("sidebar-application-count")?.value ?? null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 侧栏「岗位看板」计数：5 分钟内切换页面直接用上次的数，不重复请求
+    const cached = readPageCache<number>("sidebar-application-count");
+    const refresh = async () => {
+      try {
+        let count = 0;
+        let cursor: string | undefined;
+        const seen = new Set<string>();
+        do {
+          const result = await api.listJobApplications({ scope: "active", limit: 200, cursor });
+          if (!result || cancelled) return;
+          count += result.items.filter((item) => item.status === "active" && !item.archived_at).length;
+          cursor = result.next_cursor ?? undefined;
+          if (cursor && seen.has(cursor)) break;
+          if (cursor) seen.add(cursor);
+        } while (cursor);
+        if (!cancelled) { setApplicationCount(count); writePageCache("sidebar-application-count", count); }
+      } catch { /* 计数暂不可用时保留导航。 */ }
+    };
+    const changed = (event: Event) => {
+      const count = (event as CustomEvent<number>).detail;
+      setApplicationCount(count);
+      writePageCache("sidebar-application-count", count);
+    };
+    if (!cached?.fresh) void refresh();
+    window.addEventListener("career-applications-changed", changed);
+    return () => { cancelled = true; window.removeEventListener("career-applications-changed", changed); };
+  }, [active, user?.id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // 选中项的高亮背景用一个滑块表示：切换页面时从旧位置滑到新位置
+  // 不同页面各自挂载一份侧栏，所以记住上一次的位置：新侧栏先放在旧位置，下一帧再滑到当前项
+  const navRef = useRef<HTMLElement>(null);
+  const [indicatorTop, setIndicatorTop] = useState<number | null>(() => lastIndicatorTop);
+  useLayoutEffect(() => {
+    // 相对导航容器取位置：offsetTop 依赖 offsetParent，导航还没加上定位时会量到侧栏顶部，滑块就偏到下面几项
+    const nav = navRef.current;
+    const target = nav?.querySelector<HTMLElement>(".v3-side-row.is-active");
+    const next = nav && target ? Math.round(target.getBoundingClientRect().top - nav.getBoundingClientRect().top) : null;
+    if (next === null || lastIndicatorTop === null || lastIndicatorTop === next) {
+      setIndicatorTop(next);
+      lastIndicatorTop = next;
+      return undefined;
+    }
+    const frame = requestAnimationFrame(() => { setIndicatorTop(next); lastIndicatorTop = next; });
+    return () => cancelAnimationFrame(frame);
+  }, [active]);
+
+  const newConversation = () => {
+    if (onNewConversation) {
+      onNewConversation();
+      return;
+    }
+    rememberAssistantSession(null);
+    navigateTo(assistantPath());
+  };
+
+  return (
+    <aside className="v3-sidebar" aria-label="工作区侧栏">
+      <a className="v3-sidebar-brand" href="/assistant" aria-label="LinkResume 首页" onClick={(event) => go(event, "/assistant")}>
+        <img src={brandWordmark} alt="" width={146} height={30} />
+      </a>
+      <button type="button" className="v3-side-row v3-side-new" onClick={newConversation}>
+        <Icon name="plus" size={16} />
+        <span>新建对话</span>
+      </button>
+      <nav ref={navRef} className={`v3-side-nav${indicatorTop !== null ? " has-indicator" : ""}`} aria-label="工作区导航">
+        {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)` }} />}
+        {NAV.map((item) => {
+          const count = item.key === "resumes" ? resumeCount || null : item.key === "jobs" ? applicationCount : item.count?.() ?? null;
+          const isActive = item.key === active;
+          return (
+            <a
+              key={item.key}
+              href={item.href}
+              className={`v3-side-row${isActive ? " is-active" : ""}`}
+              aria-current={isActive ? "page" : undefined}
+              onMouseEnter={() => { void preloadWorkspacePage(item.href); }}
+              onFocus={() => { void preloadWorkspacePage(item.href); }}
+              onClick={(event) => go(event, item.href)}
+            >
+              <Icon name={item.icon} size={16} />
+              <span>{item.label}</span>
+              {count ? <span className="v3-side-count">{count}</span> : null}
+            </a>
+          );
+        })}
+      </nav>
+      <div className="v3-side-section">
+        <span>最近对话</span>
+        <button type="button" aria-label="新建对话" onClick={newConversation}><Icon name="plus" size={13} /></button>
+      </div>
+      <div className="v3-side-sessions">
+        {status === "loading" && <p className="v3-side-muted">正在读取对话…</p>}
+        {status === "error" && <p className="v3-side-muted">对话列表暂时无法读取</p>}
+        {status === "ready" && sessions.length === 0 && <p className="v3-side-muted">还没有对话</p>}
+        {sessions.slice(0, 30).map((session) => (
+          <SessionRow
+            key={session.id}
+            session={session}
+            active={active === "home" && session.id === activeSessionId}
+            onSelect={() => {
+              if (onSelectSession) onSelectSession(session.id);
+              else navigateTo(assistantPath(session.id));
+            }}
+          />
+        ))}
+      </div>
+      <div className="v3-side-foot">
+        {/* 账号与设置的唯一入口：点击头像进入（原来单独的「设置」行与它重复，已删除） */}
+        <a href="/account" className={`v3-side-user${active === "account" ? " is-active" : ""}`} aria-current={active === "account" ? "page" : undefined} onClick={(event) => go(event, "/account")} aria-label={`打开账号设置，当前账号：${displayName}`}>
+          <Avatar name={displayName} src={user?.avatar_url} size={36} />
+          <span style={{ minWidth: 0 }}>
+            <strong>{user?.nickname || "未设置昵称"}</strong>
+            <small>{user?.email || "微信登录"}</small>
+          </span>
+        </a>
+      </div>
+    </aside>
+  );
+}
+
+// 对话行：悬停出现 ⋯，菜单里「重命名 / 删除」（01.1h–01.1j）
+function SessionRow({ session, active, onSelect }: { session: AgentSession; active: boolean; onSelect: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(session.title);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rename = useSessionStore((state) => state.rename);
+  const destroy = useSessionStore((state) => state.destroy);
+  const running = useSessionStore((state) => state.runningIds.includes(session.id));
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  useEffect(() => {
+    if (!renaming) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [renaming]);
+
+  const saveRename = async () => {
+    const title = draft.trim();
+    setRenaming(false);
+    if (!title || title === session.title) return;
+    try {
+      await rename(session.id, title);
+    } catch {
+      setDraft(session.title);
+    }
+  };
+
+  if (renaming) {
+    return (
+      <form className="v3-side-rename" onSubmit={(event) => { event.preventDefault(); void saveRename(); }}>
+        <input
+          ref={inputRef}
+          aria-label={`重命名对话 ${session.title}`}
+          maxLength={120}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => void saveRename()}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setDraft(session.title);
+              setRenaming(false);
+            }
+          }}
+        />
+        <small className="v3-num">Enter 保存 · Esc 取消</small>
+      </form>
+    );
+  }
+
+  return (
+    <div className={`v3-side-session${active ? " is-active" : ""}`}>
+      <button type="button" className="v3-side-session-open" title={session.title} onClick={onSelect} aria-current={active ? "page" : undefined}>
+        {session.title}
+      </button>
+      <button
+        ref={moreRef}
+        type="button"
+        className="v3-side-more"
+        aria-label={`${session.title} 的更多操作`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        <Icon name="more" size={16} />
+      </button>
+      <Menu
+        anchorRef={moreRef}
+        open={menuOpen}
+        onClose={closeMenu}
+        width={148}
+        label={`${session.title} 的操作菜单`}
+        placement="bottom-start"
+        items={[
+          { label: "重命名", icon: "edit", onSelect: () => { setDraft(session.title); setRenaming(true); } },
+          { kind: "separator" },
+          {
+            label: "删除",
+            icon: "trash",
+            danger: true,
+            disabled: running,
+            title: running ? "请先停止正在生成的回答" : undefined,
+            onSelect: () => setConfirming(true),
+          },
+        ]}
+      />
+      <MotionPresence>{confirming && (
+        <ConfirmDialog
+          title="删除这条对话？"
+          description={<>「{session.title}」及其中的全部消息将被永久删除。<br />此操作无法撤销。</>}
+          art={<DeleteSessionArt />}
+          confirmLabel="删除"
+          busyLabel="正在删除…"
+          busy={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={async () => {
+            setBusy(true);
+            try {
+              await destroy(session.id);
+              setConfirming(false);
+              if (active) {
+                rememberAssistantSession(null);
+                useActiveSessionStore.getState().setActive(null);
+                navigateTo(assistantPath(), { replace: true });
+              }
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      )}</MotionPresence>
+    </div>
+  );
+}
+
+// 窗口外壳：左侧栏 + 右侧白色内容卡。bare 用于编辑器、分享页等不带侧栏的整窗页面。
+export function V3Shell({
+  active,
+  children,
+  bare = false,
+  onNewConversation,
+  onSelectSession,
+  contentClassName = "",
+  scroll = true,
+}: {
+  active: V3Section;
+  children: ReactNode;
+  bare?: boolean;
+  onNewConversation?: () => void;
+  onSelectSession?: (sessionId: string) => void;
+  contentClassName?: string;
+  scroll?: boolean;
+}) {
+  return (
+    <div className={`v3 v3-window${bare ? " is-bare" : ""}`} data-ui-theme="light">
+      {!bare && <V3Sidebar active={active} onNewConversation={onNewConversation} onSelectSession={onSelectSession} />}
+      <main className={`v3-content ${contentClassName}`}>
+        {scroll ? <div className="v3-content-scroll">{children}</div> : children}
+      </main>
+    </div>
+  );
+}

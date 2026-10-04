@@ -23,9 +23,31 @@ Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话
 | `POST` | `/api/auth/wechat/miniprogram/refresh` | 同上；JSON `{refresh_token}`，成功后旧 refresh 立即失效 |
 | `POST` | `/api/auth/wechat/miniprogram/logout` | `{ok: true}`；JSON `{refresh_token?}`，幂等撤销小程序 session |
 
-会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
+会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram|desktop` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
 微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 仍可使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；随仓库发布的小程序不再把它用于登录前置探测。该接口与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序冷启动在“简历”页展示一张内置“示例简历 · 内容为虚构信息”卡片，点击详情也只渲染包内虚构内容；游客首页与示例详情不发起账号探测、登录、隐私授权或个人数据请求，可切换“我的”游客态。登录入口位于“我的”页和求职游客引导；用户查看并勾选微信平台隐私保护指引并点击主操作后，客户端才调用建号或登录接口；未勾选时在协议区行内提示。普通登录成功后返回“我的”页；扫码确认先用一个 code 确认 Web scene，再用新的 code 建立独立小程序会话。登录后的简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；启用管理员账号即使历史上已有 openid，也与普通账号一样可以通过网页扫码确认并由匹配 `poll_token` 的 status 签发 Web Cookie，也可以通过小程序 login 建立、refresh 轮换小程序 Bearer 会话并访问小程序业务接口；管理员仍可使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。开发者工具和真机的 `develop` 运行时都默认使用 `https://linkresume.cn`；只有环境被明确识别为 `develop` 且设备本地执行 `wx.setStorageSync("linkresume_local_debug_enabled", true)` 时才读取每次 `npm run dev` 自动更新的 `local.js`，环境识别缺失或异常时不读取开发 storage/local.js；`linkresume_api_base_url` 显式 URL 覆盖优先于 `local.js`。关闭 opt-in 可执行 `wx.removeStorageSync("linkresume_local_debug_enabled")` 或写入 `false`；体验版和正式版忽略全部开发 storage/local.js，继续使用该 HTTPS 地址。
+
+### 桌面 Bearer 会话
+
+桌面使用独立 `channel=desktop` Bearer，不能使用 Web Cookie、小程序 token 或无 channel 的旧凭据。桌面认证路由拒绝认证 Cookie；只有 `/me` 接受 Authorization，其余路由以 JSON 证明或 refresh secret 鉴权。响应均为 `Cache-Control: no-store`，不设置 Cookie。
+
+| Method | Path | 输入与结果 |
+| --- | --- | --- |
+| `GET` | `/api/auth/desktop/capabilities` | `{wechat_login_enabled, session_protocol: 1}` |
+| `POST` | `/api/auth/desktop/wechat/qrcode` | `{platform: macos\|windows, client_version, code_challenge, code_challenge_method: S256}` → `{scene, poll_token, qr_base64, expires_in, poll_interval_seconds}` |
+| `POST` | `/api/auth/desktop/wechat/status` | `{scene, poll_token}` → `{status}`；pending/confirmed/consumed/cancelled/expired，不返回凭据 |
+| `POST` | `/api/auth/desktop/wechat/exchange` | `{scene, poll_token, code_verifier, request_id}` → token envelope |
+| `POST` | `/api/auth/desktop/refresh` | `{refresh_token, request_id}` → token envelope |
+| `POST` | `/api/auth/desktop/logout` | `{refresh_token}` → `{ok: true}`；撤销前验证 secret，已不存在的 session 幂等成功 |
+| `GET` | `/api/auth/desktop/me` | desktop Bearer → `{user}` |
+
+Token envelope 为 `{user, access_token, refresh_token, expires_in, session_protocol: 1}`。每个逻辑 exchange/refresh 使用固定 UUID `request_id`；响应丢失时必须复用原证明和标识。结果以独立 Fernet 密钥 `AUTH_DESKTOP_RETRY_ENCRYPTION_KEY` 加密保留 120 秒，恢复必须同时匹配操作、渠道、请求、证明、当前 session 的 uid/refresh hash 和启用账号，不延长原 access 到期时间或 session TTL。过期领取返回 `410 LOGIN_RESULT_EXPIRED`；证明错误返回 `401 LOGIN_CHALLENGE_INVALID`；领取冲突返回 `409 LOGIN_EXCHANGE_CONFLICT`；刷新同标识不同证明返回 `409 AUTH_IDEMPOTENCY_CONFLICT`，旧 secret 在允许恢复条件外重放返回 `401 REFRESH_REPLAYED` 并撤销 session。非法请求返回脱敏的 `422 INVALID_DESKTOP_REQUEST`；鉴权服务不可用返回 `503 AUTH_SERVICE_UNAVAILABLE`，限流返回 `429 AUTH_RATE_LIMITED`。
+
+桌面简历业务权限开放以下 GET：`/api/resume-templates`、`/api/resume-templates/{id}`、`/api/resumes`、`/api/resumes/{id}`、`/api/resumes/{id}/pdf`、`/api/resumes/{id}/assets/{asset_name}`、`/api/assets/{object_name:path}`。保留原资源归属、版本和 PDF 校验；不开放简历写入、账号、管理端或语音 WebSocket；文字模拟面试 SSE 与只读资料列表按本文的独立白名单开放。管理员桌面凭据也不能扩大渠道权限。`GET /api/auth/me` 仍只识别 Web Cookie，desktop Bearer 得到 `user: null`。
+
+桌面岗位看板复用既有求职接口，通过独立的 `get_current_career_user` 白名单识别 desktop Bearer：允许读取岗位、本人岗位的带版本 Logo、求职进程、排期与周概览；创建岗位和求职进程；编辑或删除本人岗位/进程；添加阶段、终止、记录 Offer、接受/婉拒正式 Offer、归档/恢复、添加排期；编辑排期信息、改期、设置个人作答计划、标记完成和取消排期。其中 `PUT /api/interview-sessions/{id}` 只更新既有可编辑信息，携带 `base_lock_version`；时间变化仍使用 reschedule，个人计划仍使用 answer-plan，不开放场次 DELETE。岗位文字/PNG/JPEG 的智能提取通过既有 multipart `POST /api/job-descriptions/parse-draft`，继续使用原模型就绪与错误语义。排期 DELETE、独立求职复盘与匹配等其他岗位路径仍拒绝 desktop；场次 PUT 中既有的 questions_markdown、review_summary 和 improvement_markdown 可编辑，资料关联另由资料库白名单控制。数字 ID 路径、HTTP method、资源归属、乐观锁与幂等请求规则沿用原服务，管理员不能绕过渠道边界。Web Cookie 的原调用行为保留；游客和小程序 Bearer 不能使用这些桌面权限。
+
+手机通过既有 confirm/cancel 处理固定为 desktop 的 scene，只确认账号、不签发桌面或 Web 凭据；小程序确认页按服务端 `login_target/platform` 显示目标，不在桌面确认后自动创建小程序会话。
 
 ### 网页扫码登录
 
@@ -49,7 +71,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 | `GET` | `/api/miniprogram/account/profile` | `{nickname, avatar_url}`；本人资料，`avatar_url` 恒为 `/api/miniprogram/account/avatar` 或 `null` |
 | `PATCH` | `/api/miniprogram/account/profile` | 同上；JSON `{nickname}`，去空白后非空且不超过 50 字，否则 `400 INVALID_NICKNAME` |
 | `PUT` | `/api/miniprogram/account/avatar` | `{url}`；JSON `{dataUrl, fileName?}`，复用 `/api/account/avatar` 的解码、10MB 上限与 MinIO 归属键规则，替换后删除旧头像对象 |
-| `GET` | `/api/miniprogram/account/avatar` | 本人头像二进制流（`image/*`、`private`）；无头像返回 `404 ASSET_NOT_FOUND`。普通 `/api/assets/*` 仍只接受 Web Cookie，小程序只能经此专用端点读取头像 |
+| `GET` | `/api/miniprogram/account/avatar` | 本人头像二进制流（`image/*`、`private`）；无头像返回 `404 ASSET_NOT_FOUND`。普通 `/api/assets/*` 接受 Web Cookie 或只读白名单内的 desktop Bearer，不接受小程序 Bearer；小程序只能经此专用端点读取头像 |
 
 四个端点只接受小程序 Bearer，不接受 Web Cookie；小程序 Bearer 也不能调用普通 `/api/resumes*` 读写接口。预览读取当前已保存内容；必填 lock_version 不匹配返回 409 RESUME_EDIT_CONFLICT。旧四个简历协议端点返回 426 CLIENT_UPDATE_REQUIRED。服务端按请求启动一次性 Node 渲染进程，强制智能一页，从当前内容真实引用且通过用户/简历对象键校验的 PNG/JPEG 私有图片构造输入；`preview.png` 再用 PDFium 把单页 PDF 栅格化为宽度不超过 1440 像素的 PNG。PNG 栅格化进入进程级 PDFium 互斥区；预览槽位耗尽仍返回 `503 RESUME_PDF_BUSY`，不改变版本与归属校验。PDF 和 PNG 都只保留在请求内存，不写 MySQL、MinIO 或服务端文件缓存。输入、页面尺寸、像素数和输出大小都有上限；渲染脚本缺失、超时、异常退出、非法 PDF 或栅格化失败以稳定的 4xx/503 错误收口。
 
@@ -93,7 +115,7 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 语义分类请求携带当前规范 `data` 的 `sha256:` 内容哈希和可选章节 ID 列表。分类器只接收自定义章节的标题、正文和相邻标题，必须综合上下文，不在模板切换时调用，也不改写正文或持久化建议；相同用户、简历、内容哈希和章节集合的成功结果在 Redis 缓存 1 小时，重复请求不重复调用模型；响应包含稳定章节 ID、建议类型、置信度和依据。内容已变化返回 `409 RESUME_SEMANTIC_CLASSIFICATION_STALE`，章节选择非法返回 `400 INVALID_RESUME_SEMANTIC_CLASSIFICATION`，模型不可用或返回越界 ID 返回 `503 RESUME_SEMANTIC_CLASSIFICATION_UNAVAILABLE`。未登录返回 `401 UNAUTHORIZED`，不存在或越权统一返回 `404 RESUME_NOT_FOUND`。
 
-Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Cookie 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和复制当前简历均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
+Web PDF 请求必须携带当前保存成功后的 `lock_version`。服务端再次校验 Web Cookie 或 desktop Bearer 用户、简历归属和版本，然后以当前 `data/style` 快照调用受控 Chromium；Linux 部署可用专用账号降权运行，Windows 本地环境没有 Unix 账号 API 时直接运行 Node，这一内部选择不改变 HTTP 响应契约。成功响应为 `application/pdf`、`private, no-store`，并携带 `Content-Disposition`、`X-LinkResume-Pdf-Lock-Version` 和 `X-Content-Type-Options: nosniff`。固定模式按 A4 分页，智能一页保持 210mm 宽并按内容增长，超过 2000mm 返回 `413 RESUME_PDF_PAGE_TOO_TALL`。简历级图片只接受 PNG/JPEG，上传与 PDF 读取共用 10 MiB 单图上限，一份当前快照引用的私有图片原始二进制总量上限为 10 MiB；更新简历、切换模板和复制当前简历均在持久化前校验该契约，超限返回 `413 RESUME_PDF_ASSET_TOO_LARGE` 或 `413 RESUME_PDF_ASSETS_TOO_LARGE`，因此不能保存成随后无法导出的当前快照。私有图片只从已校验的用户/简历对象键读取，缺失、不支持或超限分别以稳定 `RESUME_PDF_*` 错误失败关闭；正文中的外部资源不会被渲染器联网获取。
 
 每个用户最多保存 10 份正式简历；创建事务锁定用户行后检查，达到上限返回 `409 RESUME_LIMIT_REACHED`。创建只写当前简历，不创建历史记录。更新同时保存完整 data/style 并递增 `lock_version`，不创建历史版本；过期基准返回 `409 RESUME_EDIT_CONFLICT`。非法内容和样式分别返回 `400 INVALID_RESUME_DOCUMENT`、`400 INVALID_RESUME_STYLE`。不存在或不属于当前用户的简历统一返回 `404 RESUME_NOT_FOUND`。
 
@@ -117,7 +139,7 @@ Pi 在执行前通过服务间 `POST /internal/agent/runs/:runId/tasks:plan` 保
 | --- | --- | --- |
 | `GET` | `/api/agent/readiness` | `200 {ready: true}`；只读校验完整 Agent 服务链，不返回模型或凭据 |
 | `GET` | `/api/agent/model` | `200 {model: {id, name}}`；返回默认有效对话逻辑模型的非敏感摘要 |
-| `GET` | `/api/agent/models` | `{models:[{id,name}],defaultModelId}`；只返回有效对话模型，按逻辑模型去重 |
+| `GET` | `/api/agent/models` | `{models:[{id,name}],defaultModelId}`；只返回管理员标记为用户可选的有效对话模型，按逻辑模型去重 |
 | `GET` | `/api/agent/contexts[?type=:type&q=:query&prefix=:bool&limit=:limit]` | `{contexts}`；返回当前用户可选的轻量资料引用，类型为 `resume`、`dataset`、`job`、`application` 或 `interview`；`prefix=true` 时按名称前缀匹配；`dataset` 只包含解析成功且转换对象有效的本人资料，不返回正文 |
 | `GET` | `/api/agent/sessions` | `{sessions}`；返回当前用户最近更新的至多 50 个独立会话，不按简历绑定或过滤 |
 | `POST` | `/api/agent/sessions` | `201 {session}`；请求为 `{title?,modelId?,resume_id?}`，其中 `resume_id` 只为旧 Web 缓存兼容而接收并忽略，不校验、不持久化也不返回绑定语义；会话不保存默认简历 |
@@ -129,13 +151,13 @@ Pi 在执行前通过服务间 `POST /internal/agent/runs/:runId/tasks:plan` 保
 | `GET` | `/api/agent/runs/:runId/events` | SSE；重新订阅本人 run 的缓冲事件，运行完成后仍以既有 `run.*` 终态结束 |
 | `POST` | `/api/agent/runs/:runId/cancel` | `{run_id, status}`；重复取消幂等 |
 | `GET` | `/api/agent/proposals?resume_id=:id&session_id=:sessionId` | `{proposals}`，只返回当前待确认提案；两个过滤条件至少提供一个，`session_id` 按本人会话过滤且不要求会话绑定该简历 |
-| `POST` | `/api/agent/proposals/:proposalId/confirm` | `{resume}`；普通范围化提案只更新源简历的当前内容；若仅有无关提案先行应用导致版本变化，服务端按目标哈希在当前快照安全重放，目标自身变化才返回 `TARGET_STALE`；旧快照与 `translate_resume` 仍要求原始版本，翻译提案返回新创建的独立简历 |
+| `POST` | `/api/agent/proposals/:proposalId/confirm` | 可选请求体 `{entry: "assistant" \| "editor"}` 只用于产品漏斗，缺省记为 `unknown`，其他取值返回 422；`{resume}`；普通范围化提案只更新源简历的当前内容；若仅有无关提案先行应用导致版本变化，服务端按目标哈希在当前快照安全重放，目标自身变化才返回 `TARGET_STALE`；旧快照与 `translate_resume` 仍要求原始版本，翻译提案返回新创建的独立简历 |
 | `POST` | `/api/agent/proposals/:proposalId/reject` | `{proposal}`；放弃待确认提案 |
 
 SSE 事件包括 `run.started`、`run.phase`、`assistant.activity.delta`、`assistant.activity.status`、`assistant.activity.clear`、`assistant.delta`、`clarification.requested`、`tool.started`、`tool.completed`、`proposal.created`、`run.completed`、`run.cancelled` 和 `run.failed`。Pi 在工具阶段把模型主动生成的可见 `text_delta` 和兼容的工具执行标签逐个发送为临时 `assistant.activity.delta`；结构化 `assistant.activity.status` 携带 `{runId,callKey,label,status,errorCode?}`，其中 `status` 为 `running|succeeded|failed`，浏览器必须按 `callKey` 原位更新而不是追加重复步骤，失败时只暴露稳定错误码。隐藏思考 delta、工具调用参数和工具结果不进入这些事件；原有 `tool.started/tool.completed` 继续只服务运行兼容与业务工具审计。全部业务工具完成后，模型必须调用不进入工具审计的内部切换工具；Pi 先发送一次 `assistant.activity.clear` 并关闭本轮工具，再把下一轮每个正式回复 `text_delta` 实时发送为 `assistant.delta`，不等待整条 assistant message 结束。临时活动只保存在运行事件缓冲中，不进入助手消息正文；结构化澄清也会先清空活动区，并只持久化服务端生成的澄清文本。`run.phase` 只允许服务端定义的稳定阶段和安全化文案，并可携带实际引用资料数量，不暴露工具参数或推理内容。`clarification.requested` 携带版本化的 `clarification`：1–3 个问题，每题 2–3 个 `{id,label,description?}` 选项；客户端额外提供自由输入的“其他”。该成功运行把助手消息以 `message_type=clarification` 持久化，普通文本消息为 `message_type=text`。回答只有在 `reply_to_sequence_no` 仍指向当前会话最后一条澄清消息时才创建新运行，否则返回 `409 AGENT_CLARIFICATION_STALE`，客户端应刷新当前会话。服务端从该澄清所属 run 的用户消息继承原始 `contexts` 和 `selection_context`，重新校验资源存在性、归属和版本，再与客户端本轮引用合并；未经显式替换的同类资源目标或选区不同返回 `409 AGENT_CLARIFICATION_CONTEXT_CONFLICT`；仅当澄清续答显式携带新的简历引用与 `replace_inherited_resume:true` 时允许更换简历，服务端重新验证归属与当前内容并丢弃原简历选区，其他资料仍沿用冲突保护；历史快照损坏返回 `409 AGENT_CLARIFICATION_CONTEXT_INVALID`。服务端按原问题复验 `clarification_answers` 的问题与选项并保存规范化答案；历史客户端可以只发送展示文本，但当前 Web 不依赖该兼容路径。澄清续答要改用另一份简历时，必须同时提交新简历引用与 `replace_inherited_resume=true`；服务端重新校验归属和当前内容，丢弃旧简历选区。该标记不允许在普通新消息中使用，也不能替换其他类型的资料。每个成功建立的 SSE 响应必须以后三种 `run.*` 终态之一结束；Pi 在 HTTP 200 后提前 EOF 时 FastAPI 补发 `run.failed/AGENT_UPSTREAM_FAILED`，浏览器也会把无终态 EOF 识别为 `AGENT_STREAM_INCOMPLETE`。只有 `run.completed` 才把完整助手文本或结构化澄清消息和可用的 Token/估算成本写入数据库；失败、取消或缺失终态不会把已经流出的部分文本保存成历史消息。同一用户只允许一个 running 运行；相同 `idempotency_key` 重放现有运行状态。取消与流式完成并发时采用第一个成功写入的终态，后到操作不得覆盖。
 FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器订阅断开不会取消模型运行；Web 返回助手页时先查询当前 run，再从头重放该 run 的缓冲事件，因此刷新、SPA 路由切换或切换其他会话不会丢失思考/输出状态。只有显式调用 cancel 才取消运行。事件缓冲是 FastAPI 进程内状态；若后端进程重启而数据库仍残留 running run，重连会以 `AGENT_STREAM_INCOMPLETE` 失败收口，不会重复调用模型。
 
-`/api/agent/model` 返回默认有效对话模型的 `{model:{id,name}}`；`/api/agent/models` 返回去重后的可选列表和 `defaultModelId`，均不返回密钥、地址或价格。没有有效线路时前者返回 `503 LLM_MODEL_NOT_CONFIGURED`，后者返回空列表。`AgentSessionRecord.selected_model_id` 为可空字符串；null 表示跟随当前默认。POST/PATCH 的 `modelId` 由服务端按当前有效对话模型列表校验，其他用户的会话仍按 `404 AGENT_SESSION_NOT_FOUND` 处理。用户已选模型失效时新运行返回 `409 AGENT_MODEL_UNAVAILABLE`，不切换到其他逻辑模型。
+`/api/agent/model` 返回默认有效对话模型的 `{model:{id,name}}`；`/api/agent/models` 返回去重后的可选列表和 `defaultModelId`，均不返回密钥、地址或价格。没有有效线路时前者返回 `503 LLM_MODEL_NOT_CONFIGURED`，后者返回空列表。`AgentSessionRecord.selected_model_id` 为可空字符串；null 表示跟随当前默认。POST/PATCH 的 `modelId` 由服务端按当前有效对话模型列表校验，其他用户的会话仍按 `404 AGENT_SESSION_NOT_FOUND` 处理。用户已选模型失效时新运行返回 `409 AGENT_MODEL_UNAVAILABLE`，不切换到其他逻辑模型。逻辑模型的 `user_selectable=false` 时，该模型在对话能力中视同无效：不进入列表、不作为默认模型、不能被新建或修改的会话选择，已选中它的会话新运行同样返回 `409 AGENT_MODEL_UNAVAILABLE`；已开始的运行继续使用冻结线路。所有对话模型都被隐藏时按未配置处理。该开关只作用于 `assistant_conversation`，系统能力仍可使用隐藏模型。
 
 `AgentSessionRecord` 仍包含布尔 `pinned`，不包含默认 `resume_id`；会话列表先按 `pinned DESC`，再按 `updated_at DESC, id DESC`。PATCH 不创建消息或启动模型调用。DELETE 会锁定会话和运行；存在 `status=running` 的运行返回 `409 AGENT_RUN_IN_PROGRESS`，否则清理该会话及其 Agent 依赖数据。
 
@@ -145,7 +167,7 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 
 确认翻译提案时源简历保持不变，创建新的 Resume，不创建历史记录，并以 `result_resume_id` 保证重复确认幂等。源 Resume 私有图片复制到新命名空间，账户级图片保持共享引用。翻译还可能返回 `RESUME_TITLE_CONFLICT`、`RESUME_LIMIT_REACHED`、`RESUME_TRANSLATION_INVALID` 或 `RESUME_TRANSLATION_ASSET_COPY_FAILED`。过期提案返回 `410 AGENT_PROPOSAL_EXPIRED`。服务或模型错误继续使用安全化公开 code，供应商原始错误和 API Key 不进入浏览器响应。
 
-`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`POST /runs/:runId/resources:list` 接受可选的 `{types,query,limit}`，其中类型只允许 `resume/dataset/interview`；它从 run 反查当前用户，按类型分别限制数量，并只返回 ID、名称、状态、版本和更新时间等轻量目录，不返回简历、资料或面试正文。`POST /runs/:runId/resumes:resolve-reference` 接受至少一个 `{title?,resume_id?}`，只解析属于当前用户的简历并返回整份简历 locator，不修改会话；名称不存在或同名不唯一返回 `not_found/ambiguous`，候选 ID 可用于用户已明确版本后的精确解析。除兼容的完整上下文和快照提案接口外，范围化编辑工具继续使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`；`targets:resolve` 可携带当前运行已由 `resolve-reference` 得到的 `resume_id`，仍由 FastAPI 复验当前用户归属。Pi 的模型工具只提交 `context:read` 已返回的 `block_id`、操作类型和新文本，Pi 运行时用同一读取结果补入完整 locator 与 expected-text hash 后再请求 `proposals:v2`，未知块在进入 FastAPI 前即拒绝。经历字段 locator 的 `field` 使用具体字段键；空字符串 `replace_target_text` 清空块内选区或可选字段，`delete_target` 删除 section/entry 正文中的完整 paragraph/list item canonical 节点且禁止携带新文本，`insert_after_target` 仍禁止空内容。整篇翻译使用 `POST /runs/:runId/proposals:translation`。目标出现零处或多处时不允许创建提案；用户已经明确父 section/entry 时，Pi 可先读取该范围，再按返回的不同 `block_id` 为重复短文本分别创建提案。诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证默认有效对话线路、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件的 `tool_name` 白名单包含批量局部修改工具 `execute_local_resume_edit_plan`，并以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。工具参数在 Pi 执行函数前校验失败时以 `AGENT_TOOL_ARGUMENT_INVALID` 记为 failed，不上传原始参数。内部运行配置读取 `agent_runs` 冻结的首选线路，并下发同模型的有序备用线路及其价格快照；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
+`/internal/agent/**` 仅供 Pi 服务使用，以独立 Bearer token 鉴权且不出现在 OpenAPI。`POST /runs/:runId/resources:list` 接受可选的 `{types,query,limit}`，其中类型只允许 `resume/dataset/interview`；它从 run 反查当前用户，按类型分别限制数量，并只返回 ID、名称、状态、版本和更新时间等轻量目录，不返回简历、资料或面试正文。`POST /runs/:runId/resumes:resolve-reference` 接受至少一个 `{title?,resume_id?}`，只解析属于当前用户的简历并返回整份简历 locator，不修改会话；名称不存在或同名不唯一返回 `not_found/ambiguous`，候选 ID 可用于用户已明确版本后的精确解析。除兼容的完整上下文和快照提案接口外，范围化编辑工具继续使用 `POST /runs/:runId/targets:resolve`、`context:read`、`materials:search`、`diagnoses` 和 `proposals:v2`；`materials:search` 的请求与响应不变，启用 LinkRag 时其 `dataset` 部分对已建索引的资料改用语义召回，未建索引的资料和 LinkRag 失败时回退子串匹配；`targets:resolve` 可携带当前运行已由 `resolve-reference` 得到的 `resume_id`，仍由 FastAPI 复验当前用户归属。Pi 的模型工具只提交 `context:read` 已返回的 `block_id`、操作类型和新文本，Pi 运行时用同一读取结果补入完整 locator 与 expected-text hash 后再请求 `proposals:v2`，未知块在进入 FastAPI 前即拒绝。经历字段 locator 的 `field` 使用具体字段键；空字符串 `replace_target_text` 清空块内选区或可选字段，`delete_target` 删除 section/entry 正文中的完整 paragraph/list item canonical 节点且禁止携带新文本，`insert_after_target` 仍禁止空内容。整篇翻译使用 `POST /runs/:runId/proposals:translation`。目标出现零处或多处时不允许创建提案；用户已经明确父 section/entry 时，Pi 可先读取该范围，再按返回的不同 `block_id` 为重复短文本分别创建提案。诊断 fingerprint、资料版本、执行模式和 operation 范围由 FastAPI 复验。`GET /internal/agent/readiness` 验证默认有效对话线路、凭据解密和 Pi provider 映射，不发起供应商模型调用；工具事件的 `tool_name` 白名单包含批量局部修改工具 `execute_local_resume_edit_plan`，并以 `(run_id, call_key)` 幂等，同一工具调用进入 succeeded、failed 或 cancelled 后不可回退或改写为另一终态。工具参数在 Pi 执行函数前校验失败时以 `AGENT_TOOL_ARGUMENT_INVALID` 记为 failed，不上传原始参数。内部运行配置读取 `agent_runs` 冻结的首选线路，并下发同模型的有序备用线路及其价格快照；模型配置页面仍是 `/admin/llm/models`，不新增第二套 Pi 配置 UI。
 
 ## 简历分享链接
 
@@ -197,7 +219,7 @@ RabbitMQ 是默认 Broker，V2 使用 `tolink.resume.resume_import.v2` exchange�
 
 ## 简历模板管理
 
-`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回按 `sort_order`、ID 升序排列的全部模板（包括启用、停用和结构无效项），包含 `style_categories`、`use_cases`、`style_review_status` 和 `sort_order`；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用、分类为空，排序值取当前最大值加 10（上限 1000000），相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用；`PUT /:id/sort-order` 接收整数 `sort_order`（0–1000000），保存后普通用户的模板列表和编辑器模板侧栏按该值升序展示，相同值按 ID 升序，非法值返回 422、不存在返回 `404 TEMPLATE_NOT_FOUND`；`PUT /:id/classification` 接收完整的风格数组、场景数组和风格状态（`pending/classified/unsure`），校验标签枚举、重复值及状态与风格数组的一致性后覆盖该模板分类，不存在返回 `404 TEMPLATE_NOT_FOUND`。模板包必须携带合法 `TemplateManifest`，包含受支持 renderer、区域、插槽、唯一自定义兜底区和头像策略；同时拒绝未知字段、脚本、任意 HTML/CSS、外链、文件 URL、本地路径和媒体引用。当前不提供模板覆盖或硬删除。
+`/api/admin/resume-templates` 只允许管理员访问。`GET` 返回按 `sort_order`、ID 升序排列的全部模板（包括启用、停用和结构无效项），包含 `style_categories`、`use_cases`、`style_review_status` 和 `sort_order`；`POST /import` 接受最大 512 KiB 的严格 UTF-8 JSON 模板包，新模板默认停用、分类为空，排序值取当前最大值加 10（上限 1000000），相同 `key` 返回 `409 TEMPLATE_KEY_CONFLICT`，不覆盖已有模板；`PUT /:id/status` 幂等启停，结构无效模板不能启用；`PUT /:id/sort-order` 接收整数 `sort_order`（0–1000000），保存后普通用户的模板列表和编辑器模板侧栏按该值升序展示，相同值按 ID 升序，非法值返回 422、不存在返回 `404 TEMPLATE_NOT_FOUND`；`PUT /order` 接收 `{template_ids}`，按列表顺序一次重写全部模板的 `sort_order` 为 10、20、30…，返回按新顺序排列的 `{templates}`；列表必须恰好包含每个现有模板一次，缺少或多出模板返回 `409 TEMPLATE_ORDER_STALE`（页面数据已过期，需重新加载），重复或非法 ID 返回 `422 TEMPLATE_ORDER_INVALID`，失败时已有顺序保持不变；`PUT /:id/classification` 接收完整的风格数组、场景数组和风格状态（`pending/classified/unsure`），校验标签枚举、重复值及状态与风格数组的一致性后覆盖该模板分类，不存在返回 `404 TEMPLATE_NOT_FOUND`。模板包必须携带合法 `TemplateManifest`，包含受支持 renderer、区域、插槽、唯一自定义兜底区和头像策略；同时拒绝未知字段、脚本、任意 HTML/CSS、外链、文件 URL、本地路径和媒体引用。`DELETE /:id` 硬删除模板并返回 204：只要仍有简历（`resumes.template_id`）或导入任务（`document_parse_tasks.selected_template_id`）引用该模板，就返回 `409 TEMPLATE_IN_USE`，响应附带 `resume_count` 与 `parse_task_count`，模板保持不变，下线应改用停用；不存在或 ID 非法返回 `404 TEMPLATE_NOT_FOUND`。当前不提供模板覆盖或强制删除。
 
 ## 知识库资料
 
@@ -299,6 +321,10 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 `POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。删除只解除资料库文件与场次的关联，不再清理素材对象；数据库删除失败返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
 
+原生 V4 使用 Offer 阶段且 `offer_status=none` 表示 OC 口头意向，`POST /offer` 才将其标记为 `received`，即使未填写数值薪资也可确认正式 Offer。`POST /close` 携带 `status=closed` 和 `offer_status=accepted|declined` 完成最终决策；OC 不能直接接受或婉拒，已归档记录不能作决策。`terminate` 的 `offer_declined` 原因同样要求已收到正式 Offer。双方均沿用归属检查和 `base_lock_version`。原生将 `status=closed` 的接受记录归入已结束，不因恢复归档而重新开启流程。
+
+`POST /stages` 与 `POST /offer` 可选携带 `notes`（最多 16,000 字符），在同一版本校验与事务中保存补充说明；省略保持原备注，显式 `null` 清空。原生 V4 的投递渠道、口头薪酬、收到日期、回复截止、薪酬说明、预计入职、试用期与 Offer 材料名称按可读标签保存于备注，保留其他行；材料名称不是附件上传或关联。旧 Web 请求无需新增字段。阶段请求继续复用 UUID，重放不会重复追加阶段或覆盖后续备注。
+
 | Method | Path | 行为 |
 | --- | --- | --- |
 | `GET` | `/api/interview-overview` | 返回本周指标、当前阶段流程和周排期；支持 `week_start` 与 IANA `timezone` |
@@ -357,7 +383,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 | `GET` | `/api/mock-interviews/:id/questions/:qid/recording` | 本人读取一条回答的录音（`audio/wav`，16 kHz 单声道） |
 | `DELETE` | `/api/mock-interviews/:id/recordings` | 删除本场全部录音，保留文字 |
 
-发起请求必须提供 `job_application_id` 或 `resume_id`；求职记录来源不能再带 `job_description_id` 或 `job_description_text`，后两者也不能同时提交，违反时返回 `422`。可选字段为 `target_role`（≤200）、`interview_type=technical|project_deep_dive|hr|comprehensive`、`difficulty=junior|intermediate|senior`（默认 `intermediate`）、`question_count` 3–10（默认 5）、`follow_up_enabled`（默认 `true`）、`language=zh|en`（默认 `zh`）、`answer_mode=text|voice`（默认 `text`）和最多 10 个 `material_ids`。`answer_mode=voice` 要求 `speech_to_text` 与 `text_to_speech` 都有有效线路，否则返回 `503 MOCK_INTERVIEW_SPEECH_UNAVAILABLE` 且不创建记录；再练一次沿用原场作答方式。
+发起请求必须提供 `job_application_id` 或 `resume_id`；求职记录来源不能再带 `job_description_id` 或 `job_description_text`，后两者也不能同时提交，违反时返回 `422`。可选字段为 `target_role`（≤200）、`interview_type=technical|project_deep_dive|hr|comprehensive`、`difficulty=junior|intermediate|senior`（默认 `intermediate`）、`question_count` 3–10（默认 5）、`follow_up_enabled`（默认 `true`）、`language=zh|en`（默认 `zh`）、`answer_mode=text|voice`（默认 `text`）最多 10 个 `material_ids`，以及 `materials_in_questions`（默认 `false`）。`materials_in_questions=false` 时所选资料只用于报告事实核验，背景分析与出题不读取资料；为 `true` 时出题也参考所选资料；未选资料时按 `false` 保存。详情和列表返回同名字段，再练一次沿用原值。`answer_mode=voice` 要求 `speech_to_text` 与 `text_to_speech` 都有有效线路，否则返回 `503 MOCK_INTERVIEW_SPEECH_UNAVAILABLE` 且不创建记录；再练一次沿用原场作答方式。
 
 作答和跳过请求体为 `{question_id, answer}` 与 `{question_id}`，必须携带 8–64 位 `[A-Za-z0-9_.:-]` 的 `Idempotency-Key`；回答去除首尾空白后为 1–8000 字符。同一题目以相同幂等键重放只返回 `answer.accepted`，不产生新回答或新回合。SSE 事件依次为 `answer.accepted {question_id, skipped, lock_version}`、零到多个 `interviewer.delta {content}`，最后是 `interviewer.turn {status, action, question, closing_message, lock_version}` 或 `interviewer.failed {error}`。`action=finish` 时 `question` 为空、`closing_message` 为结束语，场次进入 `evaluating`。每个回合流都以 `interviewer.turn` 或 `interviewer.failed` 之一结束；非模型错误的失败码为 `MOCK_INTERVIEW_TURN_FAILED`。回合失败时回答已保存，详情的 `needs_reply=true`，调用方用 `reply:retry` 重新生成；无需重新生成时该接口返回 `409 MOCK_INTERVIEW_STATE_INVALID`。
 
@@ -411,7 +437,7 @@ PDF 导出审计上报接口只接受当前用户拥有的简历 ID；不存在�
 
 管理员日志查询接口复用 `is_admin=true` 权限；未登录返回 `401 UNAUTHORIZED`，普通用户返回 `403 FORBIDDEN`：
 
-Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations` 接受 `from`、`to`（带时区且最多 31 天）、`status`、`errorCode`、`cursor`、`limit`，返回 `{items, next_cursor}`。每项含操作 ID、内部 `user_id`、创建时间、状态、错误码、失败阶段、运行时请求的 `model_name` 快照和 `legacy` 标志。`GET /api/admin/agent-operations/:operationId` 返回同一模型快照、状态、`timeline_status`、按事件 ID 分页的 `events`、工具摘要和提案摘要；尚未选中模型或无法可靠还原的旧记录返回 `model_name: null`。阶段事件不含消息或简历正文。旧运行可查询但标记 `legacy`，不补造阶段事件；会话删除后相关轨迹一并删除。
+Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations` 接受 `from`、`to`（带时区且最多 31 天）、`status`、`errorCode`、`operationId`、`userId`（二者均为时间窗内的精确匹配）、`cursor`、`limit`，返回 `{items, next_cursor}`。每项含操作 ID、内部 `user_id`、创建时间、状态、错误码、失败阶段、运行时请求的 `model_name` 快照和 `legacy` 标志。`GET /api/admin/agent-operations/:operationId` 返回同一模型快照、状态、`timeline_status`、按事件 ID 分页的 `events`、工具摘要和提案摘要；尚未选中模型或无法可靠还原的旧记录返回 `model_name: null`。阶段事件不含消息或简历正文。旧运行可查询但标记 `legacy`，不补造阶段事件；会话删除后相关轨迹一并删除。
 
 | Method | Path | 查询参数 | 成功结果 |
 | --- | --- | --- | --- |
@@ -432,20 +458,22 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/admin/llm/catalog` | `{useCases,providers}`；代码注册的场景和接入商能力 |
-| `GET/POST/PATCH` | `/api/admin/llm/connections[/:id]` | 连接列表、创建或按 `baseVersion` 编辑连接；密钥只写，响应仅含 `keyConfigured` |
+| `GET/POST/PATCH/DELETE` | `/api/admin/llm/connections[/:id]` | 连接列表、创建或按 `baseVersion` 编辑连接；密钥只写，响应仅含 `keyConfigured`；删除成功 `204` |
 | `POST` | `/api/admin/llm/connections/:id/sync` | 从支持目录的接入商同步模型和线路；新线路默认停用 |
-| `GET/POST/PATCH` | `/api/admin/llm/models[/:id]` | 逻辑模型列表、创建或编辑显示名称 |
-| `GET/POST/PATCH` | `/api/admin/llm/routes[/:id]` | 线路列表、创建或修改线路启停、标识类型与价格规则 |
+| `GET/POST/PATCH/DELETE` | `/api/admin/llm/models[/:id]` | 逻辑模型列表、创建或编辑显示名称与 `userSelectable`（对话页是否可选，创建时默认 `true`）；删除成功 `204` |
+| `GET/POST/PATCH/DELETE` | `/api/admin/llm/routes[/:id]` | 线路列表、创建或修改线路启停、标识类型与价格规则；删除成功 `204` |
 | `GET` | `/api/admin/llm/use-cases` | `{bindings}`；包含探测时间和当前是否生效 |
 | `PUT/PATCH/DELETE` | `/api/admin/llm/use-cases/:useCase/routes/:routeId` | 创建或调整场景绑定、停用或删除绑定 |
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
-| `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
+| `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`callId`、`userId`（精确匹配）、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
 
 连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的字段，不能提交任意推理 URL。AIHubMix 的 `settings.endpoint` 可选 `primary` 或 `alternate`，缺省为 `primary`；后者使用官方备用 `api.inferera.com`，目录与推理地址同步切换。修改连接设置会递增推理配置版本、清除旧目录同步状态并要求关联绑定重新探测。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`、`mock_interview`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
 
 `llm_call_logs` 每条记录对应一次实际请求，切换前失败的线路和切换后成功的线路分别记录，保存场景、来源、用户、运行、真实线路、调用协议、用量、价格规则快照、估算费用与币种及安全错误分类；不保存提示词、图片、完整响应或明文凭据。目录价格带分档、缓存或优惠规则时，缺少充分用量明细的估算费用留空，`meteringStatus=partial`。Pi 的费用由后端根据线路价格规则计算，不信任 Pi 回传的金额。`0091` 删除并重建旧 LLM 四张表，保留 Agent 会话与运行；迁移前需检查目标 revision、旧数据与备份。
 
 结构化调用是后端内部能力，服务端在系统指令中提供 JSON Schema，并本地验证输出；非法结构以 `LLM_RESPONSE_INVALID` 收口。
+
+删除是物理删除，只用于清理从未使用过的配置，历史数据一律不删。线路只要仍被场景绑定、`llm_call_logs` 或 `agent_runs` 引用，删除返回 `409 LLM_ROUTE_IN_USE`，此时应改为停用。删除逻辑模型会同时删除它的全部线路：模型被 `agent_sessions`/`agent_runs` 引用，或其中任一线路被引用时，返回 `409 LLM_MODEL_IN_USE`。删除连接会同时删除它的全部线路，但保留逻辑模型，因为同一模型可能还有其他连接的线路；任一线路被引用时返回 `409 LLM_CONNECTION_IN_USE`。以上删除都整体成功或整体失败，不会只删掉一部分线路。
 
 ## 管理台用户管理
 
@@ -473,6 +501,7 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `GET` | `/api/admin/insights/llm-usage?groupBy&from&to` | `{from, to, summary, previous, groups}`；`groupBy` 为 `model`、`useCase` 或 `connection`，默认最近 24 小时 |
 | `GET` | `/api/admin/insights/llm-health` | `{connections, models}`；24 小时请求数、成功率与验证有效的绑定数 |
 | `GET` | `/api/admin/insights/agent?from&to` | `{operations, failed, failureRate, running, p95Ms, topFailureStage, topErrorCode, daily (7 天)}`；状态口径与 Agent 排障列表一致 |
+| `GET` | `/api/admin/insights/funnel?from&to` | `{window, steps, registrationsByMethod, aiCustomizationByEntry, resumeBySource, daily}`；以窗口内注册的用户为一组（默认最近 30 天，最长 31 天），`steps` 依次为 `registered`、`resume`（仅模板创建或文件导入）、`ai_customization`、`mock_interview`、`pdf_export` 的去重人数；分布统计每人首个对应事件，缺失维度计为 `unknown` |
 | `GET` | `/api/admin/insights/log-heatmap` | `{buckets}`；最近 7 天按 3 小时分桶的 ERROR（含 CRITICAL）与 WARNING 数，共 56 桶；Loki 不可用返回 `503 LOG_QUERY_UNAVAILABLE` |
 
 `alerts` 每项为 `{type, severity, title, description, target}`，按请求时的数据现场判定：对话能力存在已启用但验证失效的绑定（`critical`）；最近 1 小时 Agent 失败不少于 3 次且失败率不低于 10%（`warning`）；最近 1 小时已结束的 LLM 调用不少于 20 次且成功率低于 98%（`warning`）；存在分类状态为待讨论的启用模板（`info`）。
@@ -487,7 +516,7 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | --- | --- | --- | --- |
 | `GET` | `/api/admin/announcements` | `status?`、`cursor?`、`limit?`（1–100，默认 20） | `{items, nextCursor}`，按创建顺序倒序 |
 | `POST` | `/api/admin/announcements` | `{level?, title, body, startsAt?, endsAt?}` | `201 {announcement}`，状态为草稿 |
-| `GET` | `/api/admin/announcements/stats` | 无 | `{draft, published, unpublished, active}` |
+| `GET` | `/api/admin/announcements/stats` | 无 | `{draft, published, unpublished, active, scheduled}`；`scheduled` 为已发布但尚未到开始时间的数量，`published - active - scheduled` 即已过期 |
 | `GET` | `/api/admin/announcements/{id}` | 无 | `{announcement}` |
 | `PATCH` | `/api/admin/announcements/{id}` | 上述字段任意子集 | `{announcement}` |
 | `DELETE` | `/api/admin/announcements/{id}` | 无 | `204` |
@@ -552,3 +581,14 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 | GET | `/applications/:id/resume-preview.png` | 按本人求职记录关联的当前简历渲染；返回 PNG、private/no-store 和 X-LinkResume-Lock-Version；无关联或源已删除返回 409 APPLICATION_RESUME_UNAVAILABLE |
 
 修改复用 base_lock_version；过期锁返回 `409 INTERVIEW_EDIT_CONFLICT`，非法阶段动作返回 `409 INTERVIEW_INVALID_TRANSITION`，排期允许时间重叠；兼容字段 `allow_conflict` 不再影响是否可保存。非法 ID、不存在或越权统一 `404 INTERVIEW_NOT_FOUND`。日期查询缺时区或范围倒置返回 `400 INVALID_INTERVIEW_QUERY`。阶段与安排分别提交，阶段成功后排期失败不会回滚阶段。原 overview、advance、close 兼容端点保留，新页面使用 stages/terminate。Web API、数据库 schema 和代理配置未改变。
+
+### 桌面文字模拟面试权限
+
+模拟面试 REST 和资料列表在有 Authorization 时只接受 desktop Bearer，会话校验拒绝认证 Cookie 与 Bearer 混用及 Web/小程序 token。允许 `GET/POST /api/mock-interviews`、`GET/DELETE /api/mock-interviews/{UUID}`、`POST /api/mock-interviews/{UUID}/{answers|skip|reply:retry|finish|abandon|retry|repeat}` 和 `GET /api/datasets`。所有个人资源仍执行原有归属校验；模拟面试配置只消费已完成的本人资料列表；独立资料库权限见下文。桌面创建与再练仅限文字模式，语音能力、WebSocket、识别稿修正、重评和录音仍不在桌面权限内。Web Cookie 调用保持原行为。
+
+桌面 answers/skip transport 将本地 `__idempotency_key` 字段转为 HTTP `Idempotency-Key`，从 JSON 正文移除；重试沿用原值。SSE 的 `interviewer.failed` 转为失败提示，但不能据此推断回答未保存，客户端随后读取详情确认。原生缓冲 SSE，响应最多 4 MiB，拒绝重定向且不接收或发送 Cookie。
+
+
+### 桌面资料库权限
+
+`get_current_dataset_user` 在 Authorization 存在时只接受 desktop Bearer，拒绝认证 Cookie 混用及 Web/小程序 token；无 Authorization 的 Web Cookie 行为保持不变。白名单为 `GET/POST /api/datasets`、`GET/POST /api/datasets/folders`、`PATCH/DELETE /api/datasets/folders/:id`、`GET/PATCH/DELETE /api/datasets/:id`、`GET /api/datasets/:id/{content|source}`、`POST /api/datasets/:id/retry`、`PATCH /api/datasets/:id/folder`、`POST /api/datasets/move-batch`、`PUT /api/datasets/:id/file`、`POST /api/interview-sessions/:id/assets/attach` 和 `DELETE /api/interview-sessions/:id/assets/:dataset_id`。ID 为无前导零的正十进制数，其他路径/方法拒绝该渠道。路由复用原有资源归属、文件真实性、容量、幂等、正文版本与永久删除规则，不开放任意对象存储 URL 或 legacy 素材上传入口。原文件流继续 private/no-store，客户端不得把 Bearer 注入网页或媒体外链。

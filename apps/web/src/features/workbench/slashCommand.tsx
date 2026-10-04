@@ -28,6 +28,13 @@ type LineInsertMenuOptions = {
   onOpen: (state: CommandMenuState) => void;
 };
 
+// 光标前的行文本是否以「/查询词」结尾：返回查询词，不匹配返回 null。
+// 行首的块定位符（resumeBlockAnchor 在 textBetween 里以 \ufffc 占位）也算行首，否则新建的空行输入 / 打不开插入菜单。
+export function slashCommandQuery(lineBeforeCursor: string): string | null {
+  const match = lineBeforeCursor.match(/(?:^|[\s\ufffc])\/([^\s/\ufffc]*)$/u);
+  return match ? match[1] ?? "" : null;
+}
+
 const groupedVisualLineNodeNames = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow"]);
 
 export function editableLineStartPositions(state: EditorState) {
@@ -165,6 +172,20 @@ export function runWorkbenchBlockCommand(
   return false;
 }
 
+// 插入菜单左侧的字形方块（Figma 509:259）
+const commandGlyphs: Record<string, string> = {
+  paragraph: "T",
+  "resume-row": "‖",
+  "heading-1": "H1",
+  "heading-2": "H2",
+  "heading-3": "H3",
+  "bullet-list": "•",
+  "ordered-list": "1.",
+  image: "▣",
+  "inline-image": "▫",
+  "inline-icon": "★",
+};
+
 export function SlashCommandMenu({
   editor,
   resumeId,
@@ -254,11 +275,12 @@ export function SlashCommandMenu({
       aria-label="插入与转换块"
       style={{ left: state.x, top: state.y }}
     >
-      <div className="workbench-command-heading">
-        {iconPickerOpen ? (
+      {/* Figma 509:259 插入菜单没有标题行；选图标的二级页保留「返回」 */}
+      {iconPickerOpen ? (
+        <div className="workbench-command-heading">
           <button type="button" aria-label="返回插入与转换" onClick={() => setIconPickerOpen(false)}><ChevronLeft size={14} />选择图标</button>
-        ) : "插入与转换"}
-      </div>
+        </div>
+      ) : null}
       {iconPickerOpen ? (
         <div className="workbench-inline-icon-picker" role="listbox" aria-label="选择图标">
           {resumeInlineIconOptions.map((option, index) => {
@@ -294,8 +316,11 @@ export function SlashCommandMenu({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => execute(command)}
           >
-            <span>{command.label}</span>
-            <small>{command.id === "resume-row" && current ? "当前行 · 点击取消分栏" : command.keywords[0]}</small>
+            <span className="workbench-command-glyph" aria-hidden="true">{commandGlyphs[command.id] ?? "T"}</span>
+            <span>{command.id === "heading-2" ? "标题 2 · 新增模块" : command.label}</span>
+            {command.id === "resume-row" && current
+              ? <small>当前行 · 点击取消分栏</small>
+              : <small className="v3-visually-hidden">{command.keywords[0]}</small>}
           </button>
         );
       })}

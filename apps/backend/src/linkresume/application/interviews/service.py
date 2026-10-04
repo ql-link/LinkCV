@@ -657,6 +657,8 @@ def add_application_stage(
 
     stage_label = _stage_label(payload.stage_type, payload.stage_label)
     bind_resume(db, application, payload)
+    if "notes" in payload.model_fields_set:
+        application.notes = payload.notes
     now = utc_now()
     previous = current_application_stage(db, application.id)
     if previous is not None:
@@ -754,6 +756,8 @@ def terminate_application(
         raise InterviewInvalidTransition
     if application.lock_version != payload.base_lock_version:
         raise InterviewEditConflict
+    if payload.reason == "offer_declined" and application.offer_status != "received":
+        raise InterviewInvalidTransition
     now = utc_now()
     current = current_application_stage(db, application.id)
     if current is not None:
@@ -964,6 +968,8 @@ def record_offer(
         "offer_salary_period": payload.salary_period,
         "offer_benefits_description": payload.benefits_description,
     }
+    if "notes" in payload.model_fields_set:
+        values["notes"] = payload.notes
     return _commit_application_update(
         db, application, payload.base_lock_version, values
     )
@@ -976,6 +982,17 @@ def close_application(
     payload: CloseApplicationRequest,
 ) -> JobApplication:
     application = require_owned_application(db, user_id, application_id)
+    if application.archived_at is not None:
+        raise InterviewInvalidTransition
+    if payload.offer_status is not None:
+        try:
+            transition_close(
+                _application_state(application),
+                status=payload.status,
+                offer_status=payload.offer_status,
+            )
+        except InvalidTransition as error:
+            raise InterviewInvalidTransition from error
     if payload.offer_status != "accepted":
         reason = (
             "offer_declined"

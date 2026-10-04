@@ -7,6 +7,7 @@ import "./styles.css";
 import "./design-system/tokens.css";
 import "./design-system/utilities.css";
 import "./app.css";
+import "./muse-templates.css";
 import "./components/ui/layout-patterns.css";
 import "./features/preview/print/resume-fonts.css";
 import { resumeEditorExtensions } from "./features/workbench/editorExtensions";

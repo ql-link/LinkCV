@@ -277,3 +277,38 @@ def test_production_rejects_reused_agent_service_token() -> None:
             wechat_appid="fictional-production-appid",
             wechat_secret="fictional-production-wechat-secret",
         )
+
+
+def test_linkrag_is_on_by_default_and_degrades_without_credentials(caplog) -> None:
+    from linkresume.integrations.linkrag_client import LinkRagClient, build_linkrag_client
+
+    default = Settings()
+    assert default.linkrag_enabled is True
+    assert default.linkrag_configured is False
+    # Missing credentials never block startup, in any environment.
+    with caplog.at_level("WARNING"):
+        assert build_linkrag_client(default, timeout_seconds=1) is None
+    assert "LINKRAG_NOT_CONFIGURED" in caplog.text or "credentials are missing" in caplog.text
+
+    configured = Settings(
+        linkrag_base_url="http://tolink-rag:8000/",
+        linkrag_client_id="lr_fictional",
+        linkrag_client_secret="fictional-linkrag-secret",
+    )
+    assert configured.linkrag_configured is True
+    assert configured.linkrag_base_url == "http://tolink-rag:8000"
+    client = build_linkrag_client(configured, timeout_seconds=1)
+    assert isinstance(client, LinkRagClient)
+    client.close()
+    # The explicit switch still turns it off.
+    disabled = Settings(
+        linkrag_enabled=False,
+        linkrag_client_id="lr_fictional",
+        linkrag_client_secret="fictional-linkrag-secret",
+    )
+    assert build_linkrag_client(disabled, timeout_seconds=1) is None
+
+
+def test_linkrag_base_url_must_be_http() -> None:
+    with pytest.raises(ValidationError, match="LINKRAG_BASE_URL"):
+        Settings(linkrag_base_url="ftp://rag.test")

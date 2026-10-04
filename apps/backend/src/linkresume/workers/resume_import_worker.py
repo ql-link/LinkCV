@@ -32,6 +32,7 @@ from linkresume.domain.resume import (
     TemplateDefinition,
 )
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -547,6 +548,7 @@ class ResumeImportProcessor:
                     db,
                 )
                 resume.parse_task_id = record.id
+                product_events.resume_created(db, record.user_id, resume.id, "import")
                 record.parse_status = "succeeded"
                 record.parse_duration_ms = min(
                     round((monotonic() - started) * 1000),

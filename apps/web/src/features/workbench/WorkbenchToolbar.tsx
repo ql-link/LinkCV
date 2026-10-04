@@ -6,29 +6,21 @@ import {
   AlignLeft,
   AlignRight,
   Baseline,
-  Bold,
   Check,
-  ChevronDown,
   Heading1,
   Heading2,
   Heading3,
   Highlighter,
-  Italic,
-  Link2,
   Minus,
   Pilcrow,
   Plus,
-  Redo2,
-  Strikethrough,
-  Type,
-  Underline,
-  Undo2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { INLINE_FONT_SIZE_MAX, INLINE_FONT_SIZE_MIN, INLINE_FONT_SIZE_STEP, normalizeInlineFontSize } from "../../lib/resumeInlineStyle";
 import { isResumeEmailLink } from "../../lib/resumeLink";
 import { api } from "../../api/client";
 import { validateResumeImageFile } from "./resumeImageLimits";
+import { Icon } from "../../v3/Icon";
 
 const textColors = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#3478f6", "#af52de", "#8a8a8e"];
 // 浅色在前、饱和色在后，铺成两行网格；弹层里的第一格是「无背景」。
@@ -61,7 +53,7 @@ function ToolButton({ label, active, disabled, children, onClick, caret }: ToolB
       onClick={onClick}
     >
       {children}
-      {caret ? <ChevronDown className="workbench-tool-caret" aria-hidden="true" size={13} /> : null}
+      {caret ? <Icon className="workbench-tool-caret" name="chevd" size={12} /> : null}
     </motion.button>
   );
 }
@@ -187,7 +179,7 @@ function FontControl({ editor }: { editor: Editor }) {
   return (
     <div ref={anchorRef} className="workbench-popover-anchor">
       <ToolButton label="字体" active={open || applied} caret onClick={() => setOpen((value) => !value)}>
-        <Baseline aria-hidden="true" size={18} />
+        <span className="workbench-tool-text">字体</span>
       </ToolButton>
       <AnchoredPopover open={open} className="color-popover" role="group" ariaLabel="字体">
         <div className="color-section">
@@ -325,7 +317,7 @@ function LinkControl({ editor }: { editor: Editor }) {
           setOpen(true);
         }}
       >
-        <Link2 aria-hidden="true" size={18} />
+        <Icon name="link" size={16} />
       </ToolButton>
       <AnchoredPopover open={open} className="link-popover">
         <input
@@ -421,11 +413,12 @@ function SelectionMenu({
   );
 }
 
-const blockTypeOptions: { label: string; level: 1 | 2 | 3 | null; Icon: typeof AlignLeft }[] = [
-  { label: "正文", level: null, Icon: Pilcrow },
-  { label: "一级标题", level: 1, Icon: Heading1 },
-  { label: "二级标题", level: 2, Icon: Heading2 },
-  { label: "三级标题", level: 3, Icon: Heading3 },
+// short 是工具栏按钮上显示的当前类型（Figma 509:113「正文 ▾」）
+const blockTypeOptions: { label: string; short: string; level: 1 | 2 | 3 | null; Icon: typeof AlignLeft }[] = [
+  { label: "正文", short: "正文", level: null, Icon: Pilcrow },
+  { label: "一级标题", short: "标题 1", level: 1, Icon: Heading1 },
+  { label: "二级标题", short: "标题 2", level: 2, Icon: Heading2 },
+  { label: "三级标题", short: "标题 3", level: 3, Icon: Heading3 },
 ];
 
 function BlockTypeControl({ editor }: { editor: Editor }) {
@@ -439,7 +432,10 @@ function BlockTypeControl({ editor }: { editor: Editor }) {
     },
   }));
 
-  return <SelectionMenu label="本行类型" icon={<Type aria-hidden="true" size={18} />} options={options} />;
+  const current = blockTypeOptions.find(({ level }) => (
+    level === null ? editor.isActive("paragraph") : editor.isActive("heading", { level })
+  ));
+  return <SelectionMenu label="本行类型" icon={<span className="workbench-tool-text">{current?.short ?? "正文"}</span>} options={options} />;
 }
 
 const alignOptions: { label: string; align: "left" | "center" | "right"; Icon: typeof AlignLeft }[] = [
@@ -455,10 +451,7 @@ function AlignControl({ editor }: { editor: Editor }) {
     isActive: () => editor.isActive({ textAlign: align }),
     run: () => { editor.chain().focus().setTextAlign(align).run(); },
   }));
-  const activeAlign = alignOptions.find(({ align }) => editor.isActive({ textAlign: align })) ?? alignOptions[0];
-  const ActiveIcon = activeAlign.Icon;
-
-  return <SelectionMenu label="对齐方式" icon={<ActiveIcon aria-hidden="true" size={18} />} options={options} />;
+  return <SelectionMenu label="对齐方式" icon={<Icon name="align" size={16} />} options={options} />;
 }
 
 export function SelectionFormattingToolbar({ editor }: { editor: Editor }) {
@@ -478,14 +471,17 @@ export function SelectionFormattingToolbar({ editor }: { editor: Editor }) {
 
   return (
     <div className="selection-formatting-toolbar" data-ui-theme="light" role="toolbar" aria-label="所选文字工具栏">
-      <ToolButton label="加粗" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Bold aria-hidden="true" size={18} /></ToolButton>
-      <ToolButton label="删除线" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough aria-hidden="true" size={18} /></ToolButton>
-      <ToolButton label="斜体" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic aria-hidden="true" size={18} /></ToolButton>
-      <ToolButton label="下划线" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><Underline aria-hidden="true" size={18} /></ToolButton>
+      {/* Figma 509:113：加粗 / 删除线 / 斜体 / 下划线 / 链接 | 字体 | 本行类型 | 对齐方式 */}
+      <ToolButton label="加粗" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Icon name="fbold" size={16} /></ToolButton>
+      <ToolButton label="删除线" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}><Icon name="fstrike" size={16} /></ToolButton>
+      <ToolButton label="斜体" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Icon name="fital" size={16} /></ToolButton>
+      <ToolButton label="下划线" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><Icon name="funder" size={16} /></ToolButton>
       <LinkControl editor={editor} />
+      <span className="selection-toolbar-divider" aria-hidden="true" />
       <FontControl editor={editor} />
       <span className="selection-toolbar-divider" aria-hidden="true" />
       <BlockTypeControl editor={editor} />
+      <span className="selection-toolbar-divider" aria-hidden="true" />
       <AlignControl editor={editor} />
     </div>
   );
@@ -505,13 +501,13 @@ export function WorkbenchHistoryActions({ editor }: { editor: Editor }) {
 
   const shortcut = (key: string) => isApplePlatform ? `⌘${key}` : `Ctrl+${key}`;
   const actions = [
-    { key: "Z", label: "撤销", Icon: Undo2, run: () => editor.chain().focus().undo().run(), enabled: editor.can().undo() },
-    { key: "Y", label: "重做", Icon: Redo2, run: () => editor.chain().focus().redo().run(), enabled: editor.can().redo() },
+    { key: "Z", label: "撤销", icon: "undo", run: () => editor.chain().focus().undo().run(), enabled: editor.can().undo() },
+    { key: "Y", label: "重做", icon: "redo", run: () => editor.chain().focus().redo().run(), enabled: editor.can().redo() },
   ] as const;
 
   return (
     <div className="workbench-history-actions" role="group" aria-label="撤销与重做">
-      {actions.map(({ key, label, Icon, run, enabled }) => (
+      {actions.map(({ key, label, icon, run, enabled }) => (
         <button
           type="button"
           className="workbench-history-button"
@@ -522,7 +518,7 @@ export function WorkbenchHistoryActions({ editor }: { editor: Editor }) {
           onMouseDown={(event) => event.preventDefault()}
           onClick={run}
         >
-          <Icon aria-hidden="true" size={17} />
+          <Icon name={icon} size={16} />
         </button>
       ))}
     </div>

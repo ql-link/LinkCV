@@ -1944,6 +1944,13 @@ select:not([data-slot]):focus-visible {
   mask-clip: no-clip;
 }
 
+/* Page seams are masked by the paper itself. Whole-sheet decoration must
+   remain visible in the text gutters at the top and bottom of each page. */
+.resume-workbench .resume-paper:not(.smart-one-page):not(.pages-horizontal) .resume-content:has(> .resume-layout-columns:only-child) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
 .resume-workbench .resume-paper.smart-one-page {
   background: #fff;
   box-shadow: 0 1px 2px rgba(15, 18, 22, 0.08), 0 24px 64px rgba(15, 18, 22, 0.16);
@@ -2286,6 +2293,11 @@ select:not([data-slot]):focus-visible {
 .resume-avatar { float: right; margin: 0 0 8px 16px; border-radius: 4px; }
 .resume-avatar-image-frame { display: block; width: 100%; height: 100%; overflow: hidden; border-radius: inherit; }
 .resume-avatar img { height: 100%; border-radius: inherit; object-fit: cover; }
+.resume-avatar[data-system-fallback="true"] {
+  background: radial-gradient(circle at 50% 36%, #a7b6c3 0 17%, transparent 17.5%),
+    radial-gradient(ellipse at 50% 103%, #a7b6c3 0 43%, transparent 43.5%), #e4ebf0;
+}
+.resume-avatar[data-system-fallback="true"] img { visibility: hidden; }
 .resume-image.align-left { float: left; margin: 4px 16px 8px 0; }
 .resume-image.align-right { float: right; margin: 4px 0 8px 16px; }
 .resume-image.align-center { margin: 10px auto; }

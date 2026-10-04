@@ -6,14 +6,17 @@ from linkresume.core.redis import build_redis_client
 from linkresume.core.storage import AssetStorage
 from linkresume.integrations.document_converter import DocumentConverter
 from linkresume.integrations.linkparse_client import LinkParseClient
+from linkresume.integrations.linkrag_client import build_linkrag_client
 from linkresume.integrations.resume_structuring import LLMResumeStructuringClient
 from linkresume.modules.llm.crypto import CredentialCipher
 from linkresume.modules.llm.gateway import LiteLLMGateway
 from linkresume.modules.llm.service import LLMService
 from linkresume.modules.observability.logging import configure_logging
+from linkresume.services.rag_sync_service import RagSyncService
 from linkresume.services.resume_import_service import ResumeImportService
 from linkresume.workers.dataset_parse_worker import DatasetParseProcessor
 from linkresume.workers.document_parse_consumer import run_consumer
+from linkresume.workers.rag_sync_worker import run_rag_sync_loop
 from linkresume.workers.resume_import_worker import ResumeImportProcessor
 
 
@@ -64,6 +67,25 @@ async def main() -> None:
         document_converter=converter,
         settings=settings,
     )
+    rag_client = build_linkrag_client(
+        settings, timeout_seconds=settings.linkrag_sync_timeout_seconds
+    )
+    rag_task = None
+    if rag_client is not None:
+        rag_task = asyncio.create_task(
+            run_rag_sync_loop(
+                RagSyncService(
+                    session_factory=session_factory,
+                    storage=storage,
+                    client=rag_client,
+                    batch_size=settings.linkrag_sync_batch_size,
+                    max_attempts=settings.linkrag_sync_max_attempts,
+                    markdown_max_bytes=settings.dataset_upload_max_bytes,
+                ),
+                redis,
+                interval_seconds=settings.linkrag_sync_interval_seconds,
+            )
+        )
     try:
         await run_consumer(
             resume_processor=resume_processor,
@@ -71,6 +93,13 @@ async def main() -> None:
             settings=settings,
         )
     finally:
+        if rag_task is not None:
+            rag_task.cancel()
+            try:
+                await rag_task
+            except asyncio.CancelledError:
+                pass
+            rag_client.close()
         redis.close()
 
 

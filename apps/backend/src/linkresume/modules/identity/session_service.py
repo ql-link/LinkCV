@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import redis
@@ -21,6 +23,18 @@ from linkresume.modules.identity.models import User
 
 WEB_CHANNEL = "web"
 MINIPROGRAM_CHANNEL = "miniprogram"
+DESKTOP_CHANNEL = "desktop"
+
+
+def prepare_session(user: User, settings: Settings, *, channel: str, sid: str | None = None) -> SessionCredentials:
+    if channel not in {WEB_CHANNEL, MINIPROGRAM_CHANNEL, DESKTOP_CHANNEL}:
+        raise ValueError("unsupported session channel")
+    sid = sid or new_session_id()
+    return SessionCredentials(
+        sid=sid,
+        access_token=create_access_token(user.id, sid, settings, channel),
+        refresh_token=build_refresh_token(sid, new_refresh_secret()),
+    )
 
 ROTATE_REFRESH_SCRIPT = """-- auth_rotate_refresh
 local channel = redis.call('HGET', KEYS[1], 'channel')
@@ -48,8 +62,9 @@ def issue_session(
 ) -> SessionCredentials:
     if channel not in {WEB_CHANNEL, MINIPROGRAM_CHANNEL}:
         raise ValueError("unsupported session channel")
-    sid = new_session_id()
-    secret = new_refresh_secret()
+    credentials = prepare_session(user, settings, channel=channel)
+    sid = credentials.sid
+    secret = credentials.refresh_token.partition('.')[2]
     key = session_key(sid)
     redis_client.hset(
         key,
@@ -62,11 +77,7 @@ def issue_session(
     )
     redis_client.expire(key, refresh_max_age_seconds(settings))
     redis_client.sadd(user_sessions_key(user.id), sid)
-    return SessionCredentials(
-        sid=sid,
-        access_token=create_access_token(user.id, sid, settings, channel),
-        refresh_token=build_refresh_token(sid, secret),
-    )
+    return credentials
 
 
 def rotate_session(

@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
-import { CircleAlert } from "lucide-react";
-import { Brand, Button, PageLoading } from "@/components/ui";
-import { AssistantWorkspaceLayout, WorkspaceLayout, type WorkspaceSection } from "./components/WorkspaceLayout";
+import { lazy, Suspense, useDeferredValue, useEffect, useState, type ReactNode } from "react";
+import { PageLoading } from "@/components/ui";
+import { EditorOpenError } from "./features/workbench/EditorOpenError";
+import { V3Shell, type V3Section } from "./v3/Shell";
+import { RouteSkeleton } from "./v3/skeletons";
 import { ApiRequestError } from "./api/client";
 import { authPath, editorPath, legacyCareerRedirect, navigateTo, useAppRoute } from "./routing";
 import { applyRouteSeo } from "./seo";
@@ -12,6 +13,7 @@ import {
   loadDatasetsPage,
   loadHomePage,
   loadInterviewCenterPage,
+  loadMockInterviewPage,
   loadResumeTemplatesPage,
   scheduleAuthenticatedWorkspacePreload,
 } from "./workspacePageLoaders";
@@ -30,11 +32,13 @@ const AuthPage = lazy(() => import("./features/auth/AuthPage").then((module) => 
 const DatasetsPage = lazy(() => loadDatasetsPage().then((module) => ({ default: module.DatasetsPage })));
 const HomePage = lazy(() => loadHomePage().then((module) => ({ default: module.HomePage })));
 const ResumeCreatePage = lazy(() => import("./features/home/ResumeCreatePage").then((module) => ({ default: module.ResumeCreatePage })));
+const MockInterviewPage = lazy(() => loadMockInterviewPage().then((module) => ({ default: module.MockInterviewPage })));
 const ResumeTemplatesPage = lazy(() => loadResumeTemplatesPage().then((module) => ({ default: module.ResumeTemplatesPage })));
 const JobDetailPage = lazy(() => import("./features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
 const InterviewCenterPage = lazy(() => loadInterviewCenterPage().then((module) => ({ default: module.InterviewCenterPage })));
 const LandingPage = lazy(() => import("./features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
 const NotFoundPage = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.NotFoundPage })));
+const InAppNotFound = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.InAppNotFound })));
 const SharePage = lazy(() => import("./features/share/SharePage").then((module) => ({ default: module.SharePage })));
 const ResumeWorkbench = lazy(() => import("./features/workbench/ResumeWorkbench").then((module) => ({ default: module.ResumeWorkbench })));
 
@@ -57,28 +61,37 @@ export function AppRouteLoadingFallback() {
     || route.kind === "jobDetail"
     || route.kind === "interviews"
     || route.kind === "datasets"
+    || route.kind === "mockInterview"
     || route.kind === "account";
   return usesLightWorkspace ? <div data-ui-theme="light">{loading}</div> : loading;
 }
 
-export function WorkspacePageBoundary({ children }: { children: ReactNode }) {
+export function WorkspacePageBoundary({ children, fallback }: { children: ReactNode; fallback?: ReactNode }) {
+  // Keep the current page while the next module loads, avoiding a spinner between pages.
+  const content = useDeferredValue(children);
   return (
-    <Suspense fallback={(
+    <Suspense fallback={fallback ?? (
       <main className="dashboard-content workspace-route-loading">
         <PageLoading label="正在加载模块…" scope="workspace" />
       </main>
     )}>
-      {children}
+      {content}
     </Suspense>
+  );
+}
+
+// 页面代码下载期间：外壳照常显示，内容卡里画和该页一致的骨架，代码到了直接换成真实页面
+function WorkspaceRouteLoading({ active }: { active: V3Section }) {
+  return (
+    <V3Shell active={active} scroll={false}>
+      <RouteSkeleton section={active} />
+    </V3Shell>
   );
 }
 
 function AppContent() {
   const route = useAppRoute();
   const currentLocation = `${window.location.pathname}${window.location.search}`;
-  const isInterviewMockPreview = import.meta.env.DEV
-    && route.kind === "interviews"
-    && new URLSearchParams(window.location.search).get("mock") === "1";
   const routeResumeId = route.kind === "editor" ? route.resumeId : null;
   const isAdminArea = route.kind === "admin" || route.kind === "adminLogin";
   const [routeError, setRouteError] = useState<{ resumeId: string; message: string } | null>(null);
@@ -95,23 +108,22 @@ function AppContent() {
   }, [route]);
 
   useEffect(() => {
-    if (isInterviewMockPreview) return;
     const redirect = legacyCareerRedirect(window.location.pathname, window.location.search);
     if (redirect) navigateTo(redirect, { replace: true });
-  }, [currentLocation, isInterviewMockPreview]);
+  }, [currentLocation]);
 
   useEffect(() => {
-    if (isAdminArea || isInterviewMockPreview) return;
+    if (isAdminArea) return;
     void hydrate();
-  }, [hydrate, isAdminArea, isInterviewMockPreview]);
+  }, [hydrate, isAdminArea]);
 
   useEffect(() => {
-    if (authStatus !== "authenticated" || isAdminArea || isInterviewMockPreview) return;
+    if (authStatus !== "authenticated" || isAdminArea) return;
     return scheduleAuthenticatedWorkspacePreload();
-  }, [authStatus, isAdminArea, isInterviewMockPreview]);
+  }, [authStatus, isAdminArea]);
 
   useEffect(() => {
-    if (isAdminArea || isInterviewMockPreview) return;
+    if (isAdminArea) return;
     const timer = startResumeAutosave(() => {
       const state = useResumeStore.getState();
       if (!state.dirty || !state.activeResumeId || state.versionOperationPending) return;
@@ -119,10 +131,10 @@ function AppContent() {
     });
 
     return () => window.clearInterval(timer);
-  }, [isAdminArea, isInterviewMockPreview]);
+  }, [isAdminArea]);
 
   useEffect(() => {
-    if (isAdminArea || isInterviewMockPreview) return;
+    if (isAdminArea) return;
     if (authStatus === "checking") return;
 
     if (authStatus === "guest") {
@@ -135,6 +147,7 @@ function AppContent() {
         || route.kind === "jobDetail"
         || route.kind === "interviews"
         || route.kind === "datasets"
+        || route.kind === "mockInterview"
         || route.kind === "account"
       ) {
         const next = `${window.location.pathname}${window.location.search}`;
@@ -143,10 +156,11 @@ function AppContent() {
       return;
     }
 
-    if (route.kind === "auth") {
+    // Signed-in users treat the bare domain as the app entry; /home keeps the landing page reachable.
+    if (route.kind === "auth" || isBareDomain(window.location.pathname)) {
       navigateTo("/resumes", { replace: true });
     }
-  }, [authStatus, isInterviewMockPreview, route.kind]);
+  }, [authStatus, currentLocation, route.kind]);
 
   useEffect(() => {
     if (authStatus !== "authenticated" || !routeResumeId) return;
@@ -210,28 +224,28 @@ function AppContent() {
     return <SharePage token={route.token} />;
   }
 
-  if (isInterviewMockPreview && route.kind === "interviews") {
-    return (
-      <WorkspaceLayout active={route.view === "schedule" ? "schedule" : "applications"}>
-        <WorkspacePageBoundary>
-          <InterviewCenterPage
-            view={route.view}
-            moduleTitle={route.view === "schedule" ? "面试排期" : route.view === "records" ? "面试记录" : "求职记录"}
-          />
-        </WorkspacePageBoundary>
-      </WorkspaceLayout>
-    );
-  }
-
   if (authStatus === "checking") {
     return <PageLoading label="正在加载简历工作台…" scope="page" />;
   }
 
   if (route.kind === "notFound") {
+    // 登录后的 404 在工作区外壳里显示（10.4），访客看网页端 404（09.2）
+    if (authStatus === "authenticated") {
+      return (
+        <WorkspacePageBoundary fallback={<WorkspaceRouteLoading active="none" />}>
+          <V3Shell active="none">
+            <InAppNotFound />
+          </V3Shell>
+        </WorkspacePageBoundary>
+      );
+    }
     return <NotFoundPage />;
   }
 
   if (route.kind === "landing") {
+    if (authStatus === "authenticated" && isBareDomain(window.location.pathname)) {
+      return <PageLoading label="正在进入简历主页…" scope="page" />;
+    }
     const landingDestination = authStatus === "authenticated"
       ? "/resumes"
       : null;
@@ -258,11 +272,18 @@ function AppContent() {
 
   if (route.kind === "assistant") {
     return (
-      <AssistantWorkspaceLayout>
-        <WorkspacePageBoundary>
-          <AssistantPage sessionId={route.sessionId} workspaceSection={route.workspaceSection} careerView={route.careerView} />
-        </WorkspacePageBoundary>
-      </AssistantWorkspaceLayout>
+      <WorkspacePageBoundary fallback={<WorkspaceRouteLoading active="home" />}>
+        <AssistantPage sessionId={route.sessionId} workspaceSection={route.workspaceSection} careerView={route.careerView} />
+      </WorkspacePageBoundary>
+    );
+  }
+
+  // 模拟面试页面自己决定外壳（语音面试进行中是无侧栏整窗）
+  if (route.kind === "mockInterview") {
+    return (
+      <WorkspacePageBoundary fallback={<WorkspaceRouteLoading active="mock" />}>
+        <MockInterviewPage view={route.view} interviewId={route.interviewId} applicationId={route.applicationId} resumeId={route.resumeId} />
+      </WorkspacePageBoundary>
     );
   }
 
@@ -274,7 +295,7 @@ function AppContent() {
     || route.kind === "datasets"
     || route.kind === "account"
   ) {
-    const activeSection: WorkspaceSection = route.kind === "resumes"
+    const activeSection: V3Section = route.kind === "resumes"
       ? "resumes"
       : route.kind === "templates"
         ? "templates"
@@ -284,11 +305,11 @@ function AppContent() {
           ? "datasets"
           : route.kind === "interviews" && route.view === "schedule"
             ? "schedule"
-            : "applications";
+            : "jobs";
 
     return (
-      <WorkspaceLayout active={activeSection}>
-        <WorkspacePageBoundary>
+      <WorkspacePageBoundary fallback={<WorkspaceRouteLoading active={activeSection} />}>
+        <V3Shell active={activeSection}>
           {route.kind === "resumes" && <HomePage />}
           {route.kind === "templates" && <ResumeTemplatesPage />}
           {route.kind === "jobDetail" && <JobDetailPage jobId={route.jobId} />}
@@ -305,44 +326,29 @@ function AppContent() {
           )}
           {route.kind === "datasets" && <DatasetsPage initialFolderId={route.folderId} />}
           {route.kind === "account" && <AccountPage />}
-        </WorkspacePageBoundary>
-      </WorkspaceLayout>
+        </V3Shell>
+      </WorkspacePageBoundary>
     );
   }
 
   if (route.kind === "editor") {
     if (routeError?.resumeId === route.resumeId) {
       return (
-        <StatusShell>
-          <div className="status-card">
-            <span className="status-icon" aria-hidden="true">
-              <CircleAlert size={26} />
-            </span>
-            <h1>无法打开这份简历</h1>
-            <p className="status-desc">{routeError.message}</p>
-            <p className="status-desc">你可以返回主页选择其他简历，或稍后重试。</p>
-            <div className="status-actions">
-              <Button variant="outline" onClick={() => navigateTo("/resumes", { replace: true })}>
-                返回主页
-              </Button>
-              <Button
-                onClick={() => {
-                  const resumeId = route.resumeId;
-                  setRouteError(null);
-                  void loadResume(resumeId).catch((error: unknown) => {
-                    setRouteError({ resumeId, message: resumeLoadErrorMessage(error) });
-                  });
-                }}
-              >
-                重新尝试
-              </Button>
-            </div>
-          </div>
-        </StatusShell>
+        <EditorOpenError
+          message={routeError.message}
+          onBack={() => navigateTo("/resumes", { replace: true })}
+          onRetry={() => {
+            const resumeId = route.resumeId;
+            setRouteError(null);
+            void loadResume(resumeId).catch((error: unknown) => {
+              setRouteError({ resumeId, message: resumeLoadErrorMessage(error) });
+            });
+          }}
+        />
       );
     }
     if (activeResumeId !== route.resumeId) {
-      return <StatusShell><PageLoading label="正在打开简历…" scope="panel" /></StatusShell>;
+      return <V3Shell active="none" bare contentClassName="wb3-content"><PageLoading label="正在打开简历…" scope="panel" /></V3Shell>;
     }
     return <ResumeWorkbench />;
   }
@@ -350,17 +356,8 @@ function AppContent() {
   return <PageLoading label="正在进入简历主页…" scope="page" />;
 }
 
-function StatusShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="status-shell">
-      <header className="status-topbar">
-        <a href="/" aria-label="返回 LinkResume 首页" className="status-brand">
-          <Brand />
-        </a>
-      </header>
-      <main className="status-body">{children}</main>
-    </div>
-  );
+function isBareDomain(pathname: string) {
+  return pathname === "/" || pathname === "";
 }
 
 export function resumeLoadErrorMessage(error: unknown) {

@@ -128,6 +128,9 @@ def eligible_routes(
     )
     if model_id is not None:
         statement = statement.where(LLMModel.id == model_id)
+    if use_case == ASSISTANT_CONVERSATION:
+        # Users may only list, default to, or run models an admin marked selectable.
+        statement = statement.where(LLMModel.user_selectable.is_(True))
     return [row for row in db.execute(statement).all() if is_effective(*row[:3])]
 
 

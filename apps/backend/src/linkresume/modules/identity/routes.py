@@ -23,6 +23,7 @@ from linkresume.core.security import (
 )
 from linkresume.modules.identity.dependencies import get_optional_user, get_settings
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.identity.session_service import (
     WEB_CHANNEL,
     issue_session as create_session,
@@ -119,6 +120,8 @@ def register(
     )
     db.add(user)
     try:
+        db.flush()
+        product_events.registered(db, user.id, "email")
         db.commit()
     except IntegrityError as error:
         db.rollback()

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, ScanLine, ShieldCheck } from "lucide-react";
 import { api, ApiRequestError, User } from "../../api/client";
-import { Button, PageLoading } from "@/components/ui";
+import { PageLoading } from "@/components/ui";
+import { Icon } from "../../v3/Icon";
 
 const POLL_INTERVAL_MS = 2000;
 let qrRequestInFlight: ReturnType<typeof api.wechatQrcode> | null = null;
 
+// 同一时刻只发一次二维码请求（Strict Mode 下挂载两次也只拿到一张码）
 function requestLoginQr() {
   if (!qrRequestInFlight) {
     qrRequestInFlight = api.wechatQrcode().finally(() => {
@@ -18,11 +19,11 @@ function requestLoginQr() {
 type QrPhase = "loading" | "waiting" | "cancelled" | "expired" | "error";
 
 type WechatQrLoginProps = {
-  appearance?: "default" | "auth";
   onSuccess: (user: User) => void;
 };
 
-export function WechatQrLogin({ appearance = "default", onSuccess }: WechatQrLoginProps) {
+// 08.3 微信扫码登录：200×200 二维码 + 两行说明；过期 / 取消 / 失败时在二维码上盖一层白色浮层，点击刷新
+export function WechatQrLogin({ onSuccess }: WechatQrLoginProps) {
   const [phase, setPhase] = useState<QrPhase>("loading");
   const [qrBase64, setQrBase64] = useState("");
   const [message, setMessage] = useState("");
@@ -104,50 +105,34 @@ export function WechatQrLogin({ appearance = "default", onSuccess }: WechatQrLog
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const blocked = phase === "expired" || phase === "cancelled" || phase === "error";
+  const blockedTitle = phase === "cancelled" ? "登录已取消" : phase === "error" ? "二维码暂时无法生成" : "二维码已过期";
+
   return (
-    <div className={`wechat-qr-panel${appearance === "auth" ? " wechat-qr-panel--auth" : ""}`}>
-      <div className={`wechat-qr-box is-${phase}`} aria-live="polite">
+    <div className="auth-qr">
+      <div className={`auth-qr-box is-${phase}`} aria-live="polite">
         {phase === "loading" && <PageLoading label="正在生成二维码…" scope="panel" />}
-        {phase === "waiting" && (
+        {(phase === "waiting" || ((phase === "expired" || phase === "cancelled") && qrBase64)) && (
           <img
-            className="wechat-qr-img"
+            className="auth-qr-img"
             fetchPriority="high"
             src={`data:image/png;base64,${qrBase64}`}
-            alt="微信扫码登录二维码"
+            alt={phase === "waiting" ? "微信扫码登录二维码" : ""}
           />
         )}
-        {(phase === "expired" || phase === "cancelled") && (
-          <div className="wechat-qr-fallback">
-            <ScanLine size={26} aria-hidden="true" />
-            <span>{phase === "cancelled" ? "登录已取消" : "二维码已过期"}</span>
-          </div>
-        )}
-        {phase === "error" && (
-          <div className="wechat-qr-fallback">
-            <ScanLine size={26} aria-hidden="true" />
-            <span>二维码暂时无法生成</span>
-          </div>
+        {blocked && (
+          // 08.3 · 已过期：白色浮层（94% 不透明）+ 标题 + 「点击刷新」
+          <button type="button" className="auth-qr-overlay" onClick={() => void loadQr()}>
+            <strong>{blockedTitle}</strong>
+            <span><Icon name="refresh" size={12} />点击刷新</span>
+          </button>
         )}
       </div>
 
-      <p className="wechat-qr-hint">
-        {appearance === "auth" && phase === "waiting" && (
-          <ShieldCheck aria-hidden="true" size={20} strokeWidth={1.8} />
-        )}
-        <span>
-          {phase === "waiting"
-            ? (appearance === "auth"
-              ? "扫码后在微信中确认登录，保障账号安全"
-              : "使用微信扫一扫，扫码确认后自动登录。")
-            : message}
-        </span>
+      <p className={`auth-qr-hint${blocked ? " is-warn" : ""}`}>
+        {phase === "waiting" || phase === "loading" ? "使用微信扫一扫，扫码确认后自动登录。" : message}
       </p>
-
-      {(phase === "expired" || phase === "cancelled" || phase === "error") && (
-        <Button variant="outline" size="sm" onClick={() => void loadQr()}>
-          <RefreshCw size={14} /> 刷新二维码
-        </Button>
-      )}
+      <p className="auth-qr-sub">扫码后在微信中确认登录，保障账号安全</p>
     </div>
   );
 }

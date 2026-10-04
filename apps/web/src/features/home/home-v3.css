@@ -1,0 +1,248 @@
+/* 02.1 我的简历（Figma a5BQtKwoGEDvCg5Iv13nPr 13:142 等）。坐标以内容卡为原点：正文列 x=146、宽 860。 */
+
+.hv3-page { position: relative; min-height: 100%; padding: 51px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 60px; }  /* 内容卡自带 1px 描边，51 + 1 = 画板的 52 */
+.hv3-page > * { max-width: var(--v3-page-max); margin-inline: auto; }
+
+/* 页头：眉题 11 / 衬线标题 28 / 副标题 13，按钮组贴正文列右侧（y=84） */
+.hv3-head { position: relative; display: flex; align-items: flex-start; justify-content: space-between; }
+.hv3-head-copy { min-width: 0; }
+.hv3-eyebrow { margin: 0; }
+.hv3-title { margin: 9px 0 0; color: var(--v3-txt); font-family: var(--v3-serif); font-size: 28px; font-weight: 600; line-height: 40px; }
+.hv3-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
+.hv3-sub.is-warn { color: var(--v3-or); }
+.hv3-head-actions { display: flex; flex: 0 0 auto; gap: 8px; margin-top: 32px; }
+.hv3-head-actions .v3-btn:disabled { opacity: 0.35; }
+
+/* 工具行：全部简历 N + 搜索框（y=162，高 30），下方细线（y=194） */
+.hv3-toolbar { display: flex; height: 30px; align-items: center; justify-content: space-between; margin-top: 26px; }
+.hv3-toolbar-title { margin: 0; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; }
+.hv3-toolbar-title .v3-num { margin-left: 4px; color: var(--v3-fnt); font-size: 11px; font-weight: 500; }
+.hv3-toolbar .v3-search { height: 30px; border-radius: 7px; padding: 0 12px; }
+.hv3-toolbar .v3-search input { font-size: 12px; }
+.hv3-divider { height: 1px; margin-top: 2px; background: var(--v3-line); }
+.hv3-divider.is-empty { margin-top: 24px; }
+.hv3-divider.is-error { margin-top: 58px; }
+.hv3-load-error { width: 480px; max-width: 100%; margin-top: 55px; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; padding: 7px 7px 30px; box-shadow: 0 4px 16px rgb(0 0 0 / 4%); }
+.hv3-load-error > .v3-stage { height: 150px; border-radius: 11px; background-image: url("../../assets/figma/resume-error-dots.svg"); }
+.hv3-load-error-badge { position: absolute; left: 204px; top: 51px; display: grid; width: 56px; height: 48px; place-items: center; border: 1px solid var(--v3-cl); border-radius: 14px; background: white; box-shadow: 0 4px 12px rgb(0 0 0 / 8%); }
+.hv3-load-error h3 { margin: 22px 24px 0; font-family: var(--v3-serif); font-size: 18px; font-weight: 600; line-height: 26px; }
+.hv3-load-error p { min-height: 44px; margin: 8px 24px 0; color: var(--v3-sub); font-size: 13px; line-height: 22px; }
+.hv3-load-error > .v3-btn { width: 112px; height: 36px; margin: 13px 24px 0; }
+
+/* 卡片网格：200 宽，列间 20，行间 37（与画板第二行 y=572 对齐） */
+.hv3-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(199px, 1fr)); gap: 37px 20px; margin-top: 27px; }
+/* 卡片不再套灰底：纸面直接铺满卡片宽度（A4 比例），用加深的描边和白色背景区分 */
+.hv3-card { position: relative; display: flex; min-width: 0; flex-direction: column; }
+.hv3-thumb { position: relative; width: 100%; aspect-ratio: 210 / 297; border-radius: 6px; }
+.hv3-thumb-open { position: absolute; inset: 0; border: 0; border-radius: 6px; background: transparent; padding: 0; cursor: pointer; }
+.hv3-thumb-open:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+/* 缩略图放在 button 里，button 默认居中对齐会被简历正文继承，这里恢复成和编辑器一致的起始对齐 */
+.hv3-paper { position: absolute; inset: 0; overflow: hidden; text-align: start; white-space: normal; letter-spacing: normal; border: 1px solid #d3d3ce; border-radius: 6px; background: #fff; container-type: inline-size; transition: box-shadow 140ms ease, transform 140ms ease; }
+.hv3-thumb-open:hover .hv3-paper { border-color: #b9b9b3; box-shadow: 0 8px 22px rgb(0 0 0 / 8%); transform: translateY(-2px); }
+.hv3-paper .resume-readonly-preview-card { background: #fff; }
+.hv3-paper .resume-readonly-preview-card .resume-preview-paper { top: 0; translate: -50% 0; transform-origin: top center; scale: calc(100cqw / 210mm); }
+.hv3-paper-unavailable { display: grid; height: 100%; place-items: center; color: var(--v3-fnt); font-size: 11px; }
+
+/* 右上角 ⋯：悬停、聚焦或菜单展开时出现 */
+.hv3-card-more { position: absolute; z-index: 1; top: 8px; right: 8px; background: rgb(255 255 255 / 92%); box-shadow: 0 1px 3px rgb(0 0 0 / 8%); opacity: 0; transition: opacity 120ms ease; }
+.hv3-card:hover .hv3-card-more, .hv3-card-more:focus-visible, .hv3-card-more[aria-expanded="true"] { opacity: 1; }
+.hv3-card-more:hover, .hv3-card-more[aria-expanded="true"] { background: #fff; color: var(--v3-txt); }
+@media (hover: none) { .hv3-card-more { opacity: 1; } }
+
+.hv3-card-meta { display: grid; min-width: 0; gap: 6px; margin-top: 14px; }
+.hv3-card-meta strong { overflow: hidden; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-card-sub { display: flex; min-height: 13px; align-items: center; justify-content: space-between; gap: 8px; }
+.hv3-card-sub small { overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-card-sub small.is-danger { color: var(--v3-rd); }
+
+/* 新建空白简历：虚线卡 */
+.hv3-new-card { display: flex; width: 100%; aspect-ratio: 210 / 297; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border: 1px dashed #c9c9c3; border-radius: 6px; background: #fff; padding: 0; color: var(--v3-fnt); cursor: pointer; font-size: 12px; line-height: 14px; }
+.hv3-new-card:hover:not(:disabled) { border-color: var(--v3-sk2); background: #fafaf8; color: var(--v3-sub); }
+.hv3-new-card:disabled { cursor: not-allowed; }
+.hv3-new-card:disabled svg { opacity: 0.35; }
+.hv3-new-card:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+
+/* 02.1c 导入任务卡 */
+.hv3-task-doc { position: absolute; inset: 0; border: 1px solid #d3d3ce; border-radius: 6px; background: #fff; opacity: 0.6; }
+.hv3-task-state { position: absolute; top: 50%; left: 50%; translate: -50% -50%; display: grid; width: 96px; height: 44px; justify-items: center; align-content: start; border: 1px solid var(--v3-cl); border-radius: 8px; background: #fff; padding-top: 6px; box-shadow: 0 4px 12px rgb(0 0 0 / 6%); }
+.hv3-task-state-label { color: var(--v3-txt); font-size: 11.5px; font-weight: 500; line-height: 14px; }
+.hv3-task-progress { position: relative; display: block; width: 72px; height: 3px; margin-top: 10px; overflow: hidden; border-radius: 2px; background: var(--v3-line); }
+.hv3-task-progress > span { position: absolute; top: 0; left: 0; width: 30px; height: 3px; border-radius: 2px; background: var(--v3-dark); animation: hv3-indeterminate 1.4s ease-in-out infinite; }
+@keyframes hv3-indeterminate { 0% { transform: translateX(-30px); } 100% { transform: translateX(72px); } }
+@media (prefers-reduced-motion: reduce) { .hv3-task-progress > span { animation: none; } }
+.hv3-import-card.is-failed .hv3-task-doc { border-color: #efc9c9; background: #fdf5f5; opacity: 1; }
+.hv3-import-card.is-failed .hv3-task-state { height: 28px; border-color: #f3d6d6; }
+.hv3-import-card.is-failed .hv3-task-state-label { color: var(--v3-rd); }
+.hv3-task-delete.v3-btn { width: 72px; height: 26px; margin: -6px 0 -7px; padding: 0; }
+
+/* 空列表 / 搜索没有结果：共用 v3-empty，尺寸按画板覆盖 */
+.v3-empty.hv3-empty { padding-bottom: 30px; }
+.hv3-empty.is-list { margin-top: 53px; }
+.hv3-empty.is-list > .v3-stage { height: 236px; }
+.hv3-empty.is-list .v3-empty-actions { margin-top: 32px; }
+.hv3-empty.is-search { margin-top: 45px; }
+.hv3-empty.is-search .v3-empty-actions { margin-top: 36px; }
+.hv3-empty .v3-empty-actions .v3-btn { height: 36px; }
+.hv3-empty-new { width: 120px; }
+.hv3-clear-search { width: 112px; }
+
+/* 骨架屏 */
+.hv3-card.is-skeleton .hv3-thumb { background: var(--v3-field); animation: hv3-pulse 1.2s ease-in-out infinite alternate; }
+.hv3-sk { display: block; width: 72px; height: 11px; border-radius: 3px; background: var(--v3-sk); }
+.hv3-sk.is-title { width: 128px; height: 14px; }
+@keyframes hv3-pulse { from { opacity: 1; } to { opacity: 0.55; } }
+
+/* ───────── 弹窗公共 ───────── */
+.hv3-foot .hv3-foot-cancel { width: 80px; }
+.hv3-foot-note { overflow: hidden; color: var(--v3-fnt); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-foot .v3-link:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* 02.1a 新建简历（760×660） */
+.hv3-create .v3-dialog-body { padding-bottom: 35px; }
+.hv3-step-head { display: flex; height: 20px; align-items: center; gap: 8px; margin-top: 20px; }
+.hv3-step-head.is-second { margin-top: 28px; }
+.hv3-step-head h3 { margin: 0; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; }
+.hv3-step-head h3 label { cursor: default; }
+.hv3-step { display: grid; width: 20px; height: 20px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--v3-field); color: var(--v3-sub); font-size: 10.5px; font-weight: 600; }
+.hv3-step.is-on { background: var(--v3-dark); color: #fff; }
+.hv3-step-aside { margin-left: auto; color: var(--v3-fnt); font-size: 11.5px; }
+output.hv3-step-aside { font-weight: 500; }
+.hv3-create-stage { height: 276px; margin-top: 12px; }
+.hv3-create-state { display: grid; height: 100%; place-content: center; justify-items: center; gap: 12px; color: var(--v3-sub); font-size: 12.5px; }
+.hv3-create-state p { margin: 0; }
+.hv3-create-carousel { position: absolute; top: 16px; left: 50%; display: grid; width: 168px; justify-items: center; transform: translateX(-50%); outline: none; }
+.hv3-create-carousel:focus-visible .hv3-create-card { outline: 2px solid var(--v3-dark); outline-offset: 3px; }
+.hv3-create-card { position: relative; width: 168px; height: 222px; border: 1px solid var(--v3-cl); border-radius: 6px; background: #fff; box-shadow: 0 6px 16px rgb(0 0 0 / 6%); }
+.hv3-create-paper { position: absolute; top: 13px; left: 13px; width: 140px; height: 194px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 4px; background: #fff; container-type: inline-size; }
+.hv3-create-paper .resume-readonly-preview-card { background: #fff; }
+.hv3-create-paper .resume-readonly-preview-card .resume-preview-paper { top: 0; translate: -50% 0; transform-origin: top center; scale: calc(100cqw / 210mm); }
+.hv3-create-name { margin-top: 10px; overflow: hidden; max-width: 260px; color: var(--v3-txt); font-size: 12.5px; font-weight: 500; line-height: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-create-nav { position: absolute; top: 109px; display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--v3-cl); border-radius: 18px; background: #fff; padding: 0; color: var(--v3-txt); cursor: pointer; box-shadow: 0 2px 6px rgb(0 0 0 / 6%); }
+.hv3-create-nav.is-prev { left: calc(50% - 144px); }
+.hv3-create-nav.is-next { left: calc(50% + 108px); }
+.hv3-create-nav:hover:not(:disabled) { background: var(--v3-field); }
+.hv3-create-nav:disabled { cursor: not-allowed; opacity: 0.4; }
+.hv3-create-nav:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.hv3-create-input.v3-input { height: 44px; margin-top: 12px; border-radius: 10px; font-size: 13.5px; }
+.hv3-create-hint { margin: 8px 0 0; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.hv3-create-submit { width: 148px; }
+
+/* 02.1b 导入简历（560 宽） */
+.hv3-import .v3-dialog-body { padding-bottom: 32px; }
+.hv3-dropzone { position: relative; height: 184px; margin-top: 16px; overflow: hidden; border: 1px dashed var(--v3-fl); border-radius: 11px; background-color: var(--v3-stage); background-image: radial-gradient(circle, #d6d6d1 0.8px, transparent 1.1px); background-position: 5px 5px; background-size: 14px 14px; text-align: center; }
+.hv3-dropzone.is-dragging, .hv3-dropzone:hover { border-color: var(--v3-sk2); background-color: #efefeb; }
+.hv3-dropzone:focus-within { border-color: var(--v3-dark); }
+.hv3-dropzone-art { position: absolute; inset: 0 0 auto; height: 104px; }
+.hv3-dropzone strong { position: absolute; top: 121px; right: 0; left: 0; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; }
+.hv3-dropzone small { position: absolute; top: 145px; right: 0; left: 0; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.hv3-dropzone-input { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+.hv3-dropzone-input:disabled { cursor: not-allowed; }
+.hv3-import-stage { height: 116px; margin-top: 16px; }
+.hv3-file { margin-top: 20px; border: 1px solid var(--v3-cl); border-radius: 12px; background: #fff; }
+.hv3-file-row { display: flex; height: 64px; align-items: center; gap: 12px; padding: 0 18px 0 14px; }
+.hv3-file-type { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border-radius: 8px; font-size: 9.5px; font-weight: 700; }
+.hv3-file-copy { display: grid; min-width: 0; flex: 1; gap: 5px; }
+.hv3-file-copy strong { overflow: hidden; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-file-copy small { color: var(--v3-fnt); font-size: 11px; font-weight: 500; line-height: 13px; }
+.hv3-file-progress { display: grid; gap: 10px; margin: 0 18px; border-top: 1px solid var(--v3-line); padding: 11px 0 15px; }
+.hv3-file-progress-copy { color: var(--v3-sub); font-size: 11.5px; line-height: 14px; }
+.hv3-file-bar { position: relative; display: block; height: 4px; overflow: hidden; border-radius: 2px; background: var(--v3-line); }
+.hv3-file-bar > span { position: absolute; top: 0; left: 0; width: 62%; height: 4px; border-radius: 2px; background: var(--v3-dark); animation: hv3-file-indeterminate 1.6s ease-in-out infinite; }
+@keyframes hv3-file-indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(170%); } }
+@media (prefers-reduced-motion: reduce) { .hv3-file-bar > span { animation: none; } }
+.hv3-import-field { margin-top: 24px; }
+.hv3-import-submit { width: 132px; }
+.hv3-import-submit:disabled { opacity: 0.35; }
+
+/* 02.1d 分享简历（520 宽） */
+.hv3-share .v3-dialog-body { padding-bottom: 32px; }
+.hv3-share-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-share-stage { height: 116px; margin-top: 16px; }
+.hv3-share-loading { display: grid; min-height: 180px; place-content: center; justify-items: center; gap: 12px; margin-top: 20px; color: var(--v3-fnt); font-size: 12.5px; }
+.hv3-share-link { display: flex; height: 44px; align-items: center; gap: 10px; margin-top: 20px; border-radius: 10px; background: var(--v3-field); padding: 0 4px 0 14px; color: var(--v3-sub); }
+.hv3-share-url { min-width: 0; flex: 1; overflow: hidden; color: var(--v3-txt); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-share-link.is-expired .hv3-share-url { color: var(--v3-fnt); font-family: var(--v3-sans); font-size: 12px; }
+.hv3-share-copy.v3-btn { width: 100px; height: 36px; }
+.hv3-share-status { display: flex; height: 14px; align-items: center; gap: 8px; margin: 12px 0 0 2px; font-size: 11.5px; line-height: 14px; }
+.hv3-share-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 3px; background: var(--v3-gn); }
+.hv3-share-status.is-expired .hv3-share-dot { background: var(--v3-rd); }
+.hv3-share-status-label { margin-left: -2px; color: var(--v3-sub); font-weight: 500; }
+.hv3-share-status.is-expired .hv3-share-status-label { color: var(--v3-rd); }
+.hv3-share-status-time { color: var(--v3-fnt); }
+.hv3-share-settings { margin-top: 18px; }
+.hv3-share-link + .hv3-share-status + .hv3-share-settings { margin-top: 18px; }
+.hv3-share-stage + .hv3-share-settings { margin-top: 20px; }
+.hv3-share-error { margin: 12px 0 0; color: var(--v3-rd); font-size: 12px; }
+.hv3-share-loading .hv3-share-error { margin: 0; }
+.hv3-share-regen { gap: 5px; }
+.hv3-share-delete.v3-link { color: var(--v3-rd); }
+.hv3-share-delete.v3-link:hover { color: #b93a3a; }
+.hv3-share-done { width: 88px; }
+
+/* 02.1e 重命名简历（480 宽） */
+.hv3-rename .v3-dialog-body { padding-bottom: 32px; }
+.hv3-rename-stage { height: 96px; margin-top: 16px; }
+.hv3-rename-field { margin-top: 20px; }
+.hv3-rename-copy { margin-top: 24px; }
+.hv3-rename-copy .v3-grow { min-height: 60px; }
+.hv3-rename-copy-btn.v3-link { color: var(--v3-txt); }
+.hv3-rename-copy-btn.v3-link:disabled { cursor: not-allowed; opacity: 0.4; }
+.hv3-rename .v3-btn-dark { width: 96px; }
+
+/* 02.1f 删除确认（420 宽） */
+.hv3-delete .v3-dialog-sub { overflow: hidden; margin-top: 6px; text-overflow: ellipsis; white-space: nowrap; }
+.hv3-delete-impact { display: grid; gap: 14px; margin: 13px 0 0; border-radius: 10px; background: var(--v3-field); padding: 18px 16px; list-style: none; text-align: left; }
+.hv3-delete-impact li { display: flex; align-items: center; gap: 10px; color: var(--v3-sub); font-size: 12px; line-height: 14px; }
+.hv3-delete-impact svg { flex: 0 0 auto; }
+.hv3-delete .v3-confirm-foot { padding-top: 30px; }
+.hv3-delete .v3-confirm-foot .v3-btn { height: 40px; }
+.hv3-delete .v3-btn-danger { font-size: 12.5px; }
+
+/* 表单标签按画板 13 行高、下方 7 间距（标签 y 与输入框 y 相差 20） */
+.hv3-rename-field.v3-field, .hv3-import-field.v3-field { gap: 7px; }
+.hv3-rename-field .v3-field-label, .hv3-import-field .v3-field-label { line-height: 13px; }
+.hv3-rename-copy .v3-grow { min-height: 58px; }
+.hv3-share-settings .v3-grow { min-height: 59.33px; }
+
+/* 空状态卡：画板文字列 x=32、宽 456（卡片自带 1px 描边，所以内边距取 31） */
+.v3-empty.hv3-empty { padding: 7px 7px 30px; }
+.hv3-empty > .v3-stage { width: 504px; max-width: 100%; }
+.hv3-empty h3 { margin: 22px 24px 0; }
+.hv3-empty p, .hv3-empty h3 { margin-inline: 24px; }
+.hv3-empty p { margin-top: 8px; }
+.hv3-empty .v3-empty-actions { margin-inline: 24px; }
+
+/* 列表只在自己的区域里滚动：页头和搜索栏固定，简历网格单独滚动 */
+.hv3-page { display: flex; height: 100%; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.hv3-page > .hv3-head, .hv3-page > .hv3-toolbar { flex: 0 0 auto; width: 100%; }
+.hv3-page > .hv3-grid, .hv3-page > .hv3-empty { width: 100%; }
+.hv3-page > .hv3-grid-slot { display: grid; min-height: 0; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
+.hv3-page > .hv3-grid-slot > .v3-reveal-out, .hv3-page > .hv3-grid-slot > .v3-reveal-in { display: grid; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.hv3-page > .hv3-grid, .hv3-page > .hv3-grid-slot .hv3-grid { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; margin-top: 0; margin-inline: -8px; padding: 27px 8px 48px; max-width: calc(var(--v3-page-max) + 16px); width: calc(100% + 16px); }
+/* 骨架卡的文字区与真实卡片同高（标题 16 + 间距 6 + 副行 13），避免加载完成后卡片变高 */
+.hv3-card.is-skeleton .hv3-card-meta { min-height: 35px; align-content: start; }
+.hv3-card.is-skeleton .hv3-sk.is-title { margin-top: 1px; }
+.hv3-page > .hv3-divider, .hv3-page > .hv3-head-note { flex: 0 0 auto; }
+/* 新建简历（布局同「简历模板」预览弹窗）：标题 + 当前模板名 / 点阵舞台里放大的 A4 纸面 / 简历名称 / 底栏 */
+.v3-dialog.hv3-create.is-preview { height: min(900px, calc(100dvh - 48px)); }
+.hv3-create-form { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.hv3-create-head { flex: 0 0 auto; padding: 28px 32px 0; }
+.hv3-create-head .v3-dialog-title { height: 29px; line-height: 29px; }
+.hv3-create-head-meta { height: 20px; margin-top: 7px; }
+.hv3-create-head-meta .v3-dialog-sub { display: flex; height: 20px; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
+.hv3-create-head-swap { overflow: clip visible; }
+.hv3-create.is-preview .hv3-create-name { max-width: 360px; margin: 0 4px 0 0; overflow: hidden; color: var(--v3-txt); font-size: 13px; font-weight: 500; text-overflow: ellipsis; }
+.hv3-create.is-preview .hv3-create-stage { position: relative; min-height: 0; height: auto; flex: 1; margin: 20px 31px 0; }
+.hv3-create.is-preview .hv3-create-carousel { position: absolute; inset: 24px 76px; display: flex; width: auto; transform: none; justify-content: center; }
+.hv3-create-slide { height: 100%; overflow: clip visible; }
+.hv3-create-slide > .v3-slide-item { display: flex; height: 100%; justify-content: center; }
+.hv3-create.is-preview .hv3-create-card { width: auto; height: 100%; max-width: 100%; aspect-ratio: 210 / 297; overflow: hidden; border: 0; border-radius: 4px; box-shadow: 0 8px 24px rgb(0 0 0 / 8%); }
+.hv3-create.is-preview .hv3-create-paper { inset: 0; width: 100%; height: 100%; border: 0; border-radius: 0; }
+.hv3-create.is-preview .hv3-create-nav { top: calc(50% - 18px); color: var(--v3-sub); }
+.hv3-create.is-preview .hv3-create-nav.is-prev { left: 20px; }
+.hv3-create.is-preview .hv3-create-nav.is-next { left: auto; right: 20px; }
+.hv3-create.is-preview .hv3-create-nav:hover:not(:disabled) { color: var(--v3-txt); }
+.hv3-create-name-field { flex: 0 0 auto; padding: 20px 32px 24px; }
+.hv3-create-name-field .hv3-step-head { margin-top: 0; }
+.hv3-create-name-field .hv3-create-input.v3-input { margin-top: 10px; }
+.hv3-create-count { color: var(--v3-sub); font-size: 11.5px; font-weight: 500; white-space: nowrap; }

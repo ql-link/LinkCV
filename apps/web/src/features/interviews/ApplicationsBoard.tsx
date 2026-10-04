@@ -7,13 +7,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, Ban, Clock3, Eye, GripVertical, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, Ban, Eye, MoreHorizontal, Trash2 } from "lucide-react";
 import type { JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
 import {
   APPLICATION_PROGRESS_COLUMNS,
   applicationProgressToneClass as projectApplicationProgressToneClass,
   applicationScheduleStatusLabel,
+  applicationStageRank,
   applicationStatusLabel as projectApplicationStatusLabel,
   formatApplicationScheduleDateTime,
   projectApplicationProgress,
@@ -348,6 +349,7 @@ export function sortApplications(
 function applicationDropBlockReason(
   application: JobApplicationSummary,
   _completedCurrentStageApplicationIds: ReadonlySet<string>,
+  target?: ProgressColumnKey,
 ): string | null {
   const source = progressColumnKey(application);
   if (application.archived_at !== null) {
@@ -356,13 +358,17 @@ function applicationDropBlockReason(
   if (application.status !== "active") {
     return "该求职流程已经结束，不能拖入其他状态栏。";
   }
-  if (source === "offer") {
-    return "该求职流程已经进入 Offer 阶段，不能再拖入其他状态栏。";
+  if (source === "offer" && target !== "ended") {
+    return "该求职流程已经进入 Offer 阶段，只能拖到「已结束」。";
   }
   if (source === "pending") {
     return null;
   }
   return null;
+}
+
+function progressColumnLabel(key: ProgressColumnKey): string {
+  return APPLICATION_PROGRESS_COLUMNS.find((column) => column.key === key)?.label ?? "当前阶段";
 }
 
 function applicationBoardColumnId(application: JobApplicationSummary): string {
@@ -385,6 +391,7 @@ function validateApplicationDrop(
   const blockReason = applicationDropBlockReason(
     application,
     completedCurrentStageApplicationIds,
+    target.key,
   );
   if (blockReason) {
     return { valid: false, message: blockReason };
@@ -405,16 +412,18 @@ function validateApplicationDrop(
     }
     return { valid: true, prefill: { initialTab: "assessment" } };
   }
+  // 只能往后走：筛选 → 测评 → 笔试 → 面试（多轮）→ Offer，任意跳过中间阶段都允许；不能退回更早的阶段
+  const sourceRank = applicationStageRank(source);
   if (target.key === "assessment" || target.key === "written_test") {
-    return source === "screening"
+    return applicationStageRank(target.key) > sourceRank
       ? { valid: true, prefill: { initialTab: target.key, initialStage: target.key } }
-      : { valid: false, message: `${target.label}阶段只能从筛选中进入。` };
+      : { valid: false, message: `当前已经在${progressColumnLabel(source)}，不能退回${target.label}。` };
   }
   if (target.key === "offer") {
     return { valid: true, prefill: { initialTab: "offer" } };
   }
   if (target.key !== "interview") {
-    return { valid: false, message: "只能拖动到后续的笔试、面试或 Offer 阶段。" };
+    return { valid: false, message: "只能拖动到后续的测评、笔试、面试或 Offer 阶段。" };
   }
 
   if (source === "interview") {
@@ -586,11 +595,12 @@ function applicationAdvanceAction(
   }
   return {
     enabled: true,
-    prefill: columnKey === "screening"
-      ? { initialTab: "written_test" }
+    // 默认选中流程里的下一步：筛选 → 测评，测评 → 笔试，笔试 → 一面，面试 → 下一轮
+    prefill: columnKey === "screening" || columnKey === "assessment"
+      ? { initialTab: columnKey === "screening" ? "assessment" : "written_test", initialStage: columnKey === "screening" ? "assessment" : "written_test" }
       : {
         initialTab: "interview",
-        initialInterviewLabel: columnKey === "assessment" || columnKey === "written_test" ? "一面" : "",
+        initialInterviewLabel: columnKey === "written_test" ? "一面" : "",
       },
   };
 }
@@ -1215,7 +1225,7 @@ export function ProgressColumn({
         onDragEnd={onColumnDragEnd}
         onKeyDown={onColumnKeyDown}
       >
-        <GripVertical className="progress-column-drag-handle" aria-hidden="true" />
+        <span className="progress-column-dot" aria-hidden="true" data-tone={columnTone(column.key)} />
         <h3><span className="progress-column-label">{column.label}</span><span className="progress-column-count">{column.items.length}</span></h3>
       </header>
       <div className="progress-column-cards">
@@ -1274,6 +1284,9 @@ export function ProgressCard({
     now,
   } satisfies ApplicationProgressLabelOptions);
   const advanceAction = applicationAdvanceAction(item, completedCurrentStageApplicationIds);
+  const categoryLabel = employmentCategoryLabel(item.job_snapshot?.employment_type);
+  // 今天有安排且还没开始时，底部改成黑色胶囊「今天 HH:mm」（设计稿 04.1 三面卡片）
+  const todayLabel = !currentStageCompleted ? todayScheduleLabel(item, now) : null;
   const cardRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -1347,22 +1360,20 @@ export function ProgressCard({
       onDragEnd={onDragEnd}
     >
       <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={handleCardOpen}>
-        <span className="progress-card-main">
-          <CompanyLogo companyName={item.company_name_snapshot} logoUrl={item.company_logo_url} />
-          <span className="progress-card-copy">
-            <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
-            <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
-          </span>
-        </span>
+        {/* 设计稿 04.1 jobCard：标题「公司 · 职位」→ 求职分类标签 → 底部状态（圆点 + 文字，今天的安排用黑色胶囊）+ 右下角公司标 */}
+        <strong className="progress-card-title" title={`${item.company_name_snapshot} · ${item.job_title_snapshot}`}>
+          <span className="progress-card-company">{item.company_name_snapshot}</span>
+          <span aria-hidden="true"> · </span>
+          <span className="progress-card-job-title">{item.job_title_snapshot}</span>
+        </strong>
+        {categoryLabel && <span className="v3-chip progress-card-category">{categoryLabel}</span>}
         <span className="progress-card-footer">
-          <span className={`progress-card-stage ${stageToneClass}`}>{statusLabel}</span>
-          {timeLabel && (
-            <span className="progress-card-time">
-              <Clock3 aria-hidden="true" />
-              <span>{timeLabel}</span>
-            </span>
-          )}
+          {todayLabel && <span className="progress-card-today" aria-hidden="true">{todayLabel}</span>}
+          {/* 状态文字自身带语义色 class，圆点用 ::before 画出 */}
+          <span className={`progress-card-stage ${stageToneClass}${todayLabel ? " v3-visually-hidden" : ""}`} title={timeLabel ?? undefined}>{statusLabel}</span>
+          {timeLabel && <span className="progress-card-time v3-visually-hidden">{timeLabel}</span>}
         </span>
+        <CompanyLogo companyName={item.company_name_snapshot} logoUrl={item.company_logo_url} />
       </button>
       <div
         ref={menuRef}
@@ -1450,6 +1461,27 @@ export function ProgressCard({
       </div>
     </article>
   );
+}
+
+function columnTone(key: ProgressColumnKey): "muted" | "orange" | "blue" | "green" {
+  if (key === "assessment" || key === "written_test") return "orange";
+  if (key === "interview") return "blue";
+  if (key === "offer") return "green";
+  return "muted";
+}
+
+function employmentCategoryLabel(value: unknown): string | null {
+  return value === "internship" ? "实习" : value === "campus" ? "校招" : value === "full_time" ? "正式" : null;
+}
+
+function todayScheduleLabel(application: JobApplicationSummary, now = new Date()): string | null {
+  const key = progressColumnKey(application);
+  if (key !== "interview" && key !== "written_test" && key !== "assessment") return null;
+  const start = validApplicationTimestamp(application.next_session_start_at);
+  if (start === null || start <= now.getTime()) return null;
+  const date = new Date(start);
+  if (date.toDateString() !== now.toDateString()) return null;
+  return `今天 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function CompanyLogo({ companyName, logoUrl }: { companyName: string; logoUrl?: string | null }) {

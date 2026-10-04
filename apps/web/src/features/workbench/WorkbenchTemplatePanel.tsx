@@ -1,12 +1,14 @@
-import { Check, LoaderCircle, RefreshCw, X } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import { api, type ResumeTemplate } from "../../api/client";
 import { resumePresentationTemplateKey } from "../../api/resumeContract";
-import { Button, PageLoading } from "@/components/ui";
+import { PageLoading } from "@/components/ui";
+import { Icon } from "../../v3/Icon";
 import { ResumePreview } from "../preview/ResumePreview";
-import { TemplateFilterPopover } from "../templates/TemplateFilterPopover";
+import { V3TemplateFilter } from "../templates/TemplateFilterPopover";
+import { WorkbenchPanelHeader } from "./WorkbenchPanelHeader";
 
 export function WorkbenchTemplatePanel({
   currentTemplateKey,
@@ -81,30 +83,18 @@ export function WorkbenchTemplatePanel({
 
   return (
     <div className="workbench-template-panel">
-      <header className="workbench-template-panel-head">
-        <span>
-          <h2 id="workbench-template-title">简历模板</h2>
-          <small>点击模板即可应用到当前简历</small>
-        </span>
-        <button
-          type="button"
-          className="workbench-drawer-done"
-          onClick={onClose}
-          aria-label="关闭简历模板面板"
-        >
-          <X aria-hidden="true" size={17} />
-        </button>
-      </header>
+      <WorkbenchPanelHeader
+        titleId="workbench-template-title"
+        title="简历模板"
+        subtitle="点击模板即可应用到当前简历"
+        closeLabel="关闭简历模板面板"
+        onClose={onClose}
+      />
 
       {!loading && !failed && templates.length > 0 ? (
         <div className="workbench-template-filters">
           <span aria-live="polite">{filteredTemplates.length} 套模板</span>
-          <TemplateFilterPopover
-            compact
-            styles={selectedStyles}
-            useCases={selectedUseCases}
-            onChange={applyFilters}
-          />
+          <V3TemplateFilter styles={selectedStyles} useCases={selectedUseCases} onChange={applyFilters} />
         </div>
       ) : null}
 
@@ -115,14 +105,10 @@ export function WorkbenchTemplatePanel({
           <div className="workbench-template-state" role="alert">
             <strong>模板暂时无法加载</strong>
             <p>请检查网络后重试，当前简历不会受到影响。</p>
-            <Button
-              icon={<RefreshCw aria-hidden="true" size={15} />}
-              onClick={() => void loadTemplates()}
-              size="sm"
-              variant="outline"
-            >
+            <button type="button" className="v3-btn v3-btn-ghost is-sm" onClick={() => void loadTemplates()}>
+              <Icon name="refresh" size={13} />
               重新加载
-            </Button>
+            </button>
           </div>
         ) : null}
 
@@ -169,7 +155,7 @@ export function WorkbenchTemplatePanel({
                     <span className="workbench-template-card-name">{template.name}</span>
                     {selected ? (
                       <span className="workbench-template-card-badge" aria-hidden="true">
-                        <Check size={13} />
+                        <Icon name="check" size={12} strokeWidth={2.2} />
                       </span>
                     ) : null}
                     {busy ? (
@@ -193,7 +179,7 @@ export function WorkbenchTemplatePanel({
             >
               <strong>没有符合条件的模板</strong>
               <p>试试减少一个筛选条件。</p>
-              <Button variant="outline" size="sm" onClick={() => applyFilters([], [])}>清除筛选</Button>
+              <button type="button" className="v3-btn v3-btn-ghost is-sm" onClick={() => applyFilters([], [])}>清除筛选</button>
             </motion.div>
           )}
           </AnimatePresence>

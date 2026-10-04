@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_workspace_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import ResumeTemplate
 from linkresume.modules.resumes.template_compilation import (
@@ -42,7 +42,7 @@ def template_record(template: ResumeTemplate) -> ResumeTemplateRecord:
 @router.get("", response_model=ResumeTemplateListResponse)
 def list_templates(
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(get_current_workspace_user),
 ) -> ResumeTemplateListResponse:
     templates = db.scalars(
         select(ResumeTemplate)
@@ -62,7 +62,7 @@ def list_templates(
 def get_template(
     template_id: str,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(get_current_workspace_user),
 ) -> ResumeTemplateResponse:
     parsed_id = parse_decimal_id(template_id)
     template = (

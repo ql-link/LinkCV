@@ -10,6 +10,7 @@ from linkresume.modules.agent.admin_routes import router as agent_admin_router
 from linkresume.modules.identity.admin_routes import router as admin_identity_router
 from linkresume.modules.identity.account_routes import router as account_router
 from linkresume.modules.identity.routes import router as identity_router
+from linkresume.modules.identity.desktop_routes import router as desktop_identity_router
 from linkresume.modules.identity.wechat_routes import router as wechat_router
 from linkresume.modules.interviews.routes import router as interview_router
 from linkresume.modules.job_descriptions.routes import router as job_description_router
@@ -48,6 +49,7 @@ api_router.include_router(announcement_admin_router)
 api_router.include_router(admin_identity_router)
 api_router.include_router(dataset_router)
 api_router.include_router(identity_router)
+api_router.include_router(desktop_identity_router)
 api_router.include_router(interview_router)
 api_router.include_router(wechat_router)
 api_router.include_router(account_router)

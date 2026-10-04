@@ -12,7 +12,7 @@
 
 结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `TextRun` 和字号边界，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
 
-`apps/backend` 承接健康检查、Web/小程序双通道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
+`apps/backend` 承接健康检查、Web/小程序/desktop 三渠道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
 
 | 位置 | 职责 |
 | --- | --- |
@@ -24,14 +24,14 @@
 | `src/linkresume/application/job_descriptions/` | JD 创建、AI 草稿提取、重复解决、搜索分页、乐观锁更新，以及连同求职进程聚合的永久删除 |
 | `src/linkresume/application/interviews/` | 求职进程状态机、面试排期冲突、完成/推进/关闭和素材元数据事务 |
 | `src/linkresume/application/mock_interviews/` | 模拟面试状态机、后台准备与评估任务、面试官回合、评分规则、资料内存检索、语音识别会话、语音表现与识别稿修正 |
-| `src/linkresume/integrations/` | LinkParse PDF/DOCX Adapter、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
+| `src/linkresume/integrations/` | LinkParse PDF/DOCX Adapter、LinkRag 应用 API 客户端、转换分发、微信小程序上游封装、统一 LLM 简历结构化与未分类章节语义建议 Adapter |
 | `src/linkresume/services/resume_import_service.py` | Worker 使用的 Markdown 转换、严格布局损失检查、决策式结构化与规范组合原语，不提交业务事务 |
 | `src/linkresume/services/resume_import_idempotency.py` | Redis Lua 请求指纹到导入 ID 的短期绑定与冲突保护 |
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
-| `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、双通道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
+| `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
-| `src/linkresume/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
+| `src/linkresume/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
 | `src/linkresume/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
@@ -48,7 +48,11 @@
 
 ## 数据与事务
 
-本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列；`0084` 扩展当前简历与求职进程的关联；`0085` 为模板增加多选风格、场景及风格审核状态，并按稳定 key 给当时的 85 套启用模板写入初版分类；`0086` 增加模板展示排序值；`0087` 在没有人工排序值时按原有 ID 顺序填入 10、20、30……，已有人工排序值的环境整体跳过回填。当前迁移链由 `0087` 进入已在 Dev 执行的历史 `0088`，再进入 `0089` 和 `0090`，删除资料替换、对象清理、面试素材、简历历史表及旧外键；`0091` 重建 LLM 治理与调用日志，保留 Agent 会话和运行并增加模型线路快照字段；`0092` 将上游调用目标改为区分大小写；`0093` 在确认历史 `llm_providers` 与 `llm_provider_models` 均为空后移除它们。`0094` 新增应用内公告 `announcements` 与用户已读时间点 `announcement_read_cursors` 两张空表。`0095` 新增 `mock_interviews` 与 `mock_interview_questions`，以可空 `active_user_id` 唯一键保证每个用户最多一场进行中的模拟面试，来源简历、岗位和求职记录外键删除时置空。`0096` 为模拟面试增加作答方式、语音快照、热词表、整场修正与录音删除时间，以及每条回答的作答来源、录音 key、原始识别稿、分词时间戳、修正稿与修正记录、识别稿状态、手动修改与重新评估次数和历史评估。仓库 head 为 `0096`；目标环境的实际 revision 必须单独查询。
+本批模板迁移从 `0066` 连续追加到 `0081`，`0082` 为访谈资料统一迁移。`0083` 为 Agent 操作与阶段轨迹新增两张 MySQL 表、运行创建时间索引及运行时模型名快照列；`0084` 扩展当前简历与求职进程的关联；`0085` 为模板增加多选风格、场景及风格审核状态，并按稳定 key 给当时的 85 套启用模板写入初版分类；`0086` 增加模板展示排序值；`0087` 在没有人工排序值时按原有 ID 顺序填入 10、20、30……，已有人工排序值的环境整体跳过回填。当前迁移链由 `0087` 进入已在 Dev 执行的历史 `0088`，再进入 `0089` 和 `0090`，删除资料替换、对象清理、面试素材、简历历史表及旧外键；`0091` 重建 LLM 治理与调用日志，保留 Agent 会话和运行并增加模型线路快照字段；`0092` 将上游调用目标改为区分大小写；`0093` 在确认历史 `llm_providers` 与 `llm_provider_models` 均为空后移除它们。`0094` 新增应用内公告 `announcements` 与用户已读时间点 `announcement_read_cursors` 两张空表。`0095` 新增 `mock_interviews` 与 `mock_interview_questions`，以可空 `active_user_id` 唯一键保证每个用户最多一场进行中的模拟面试，来源简历、岗位和求职记录外键删除时置空。`0096` 为模拟面试增加作答方式、语音快照、热词表、整场修正与录音删除时间，以及每条回答的作答来源、录音 key、原始识别稿、分词时间戳、修正稿与修正记录、识别稿状态、手动修改与重新评估次数和历史评估。`0097` 为 `llm_models` 增加 `user_selectable`，存量模型默认可选。后续迁移及当前 head 见本文「当前 Muse 目录迁移」；目标环境的实际 revision 必须单独查询。
+
+`0098` 接在 `0097` 之后新增 `product_events` 产品漏斗事件表，用户删除时级联删除。
+
+`0099` 新增 `user_dataset_rag_sync` 空表，记录每份资料在 LinkRag 中的文件 ID、已同步正文修订和同步状态（`pending/parsing/ready/failed`），`dataset_id` 唯一且刻意不建外键，资料删除后记录仍保留以驱动 LinkRag 侧删除；同时为 `mock_interviews` 增加默认 `false` 的 `materials_in_questions`。两者都不回填数据，存量资料由 Worker 对账逐批补传。revision 为 forward-only，后续目录迁移见本文「当前 Muse 目录迁移」。
 
 迁移 `0077` 停用废弃的「经典单栏」(`classic-cn`)、「现代双栏」(`modern-two-column-cn`) 和「紧凑技术型」(`compact-tech-cn`)，默认启用目录为 69 套。只修改这三个稳定 key 的启用状态，保留模板记录、已有简历及历史版本；普通目录、创建和切换入口沿用启用校验。重复执行不影响其他模板；如需恢复，通过管理端重新启用或新增向前迁移，不改写历史迁移。
 
@@ -194,7 +198,7 @@ Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发�
 
 `LLMService.chat()`、`LLMService.stream_chat()` 和 `LLMService.structured_chat()` 是后端业务模块使用的内部异步接口，不注册通用模型 HTTP route。调用方只传可信 `user_id`、稳定 `source`、消息及固定场景代码，不传接入商 URL、密钥或供应商模型 ID。`ModelResolver` 从 `llm_use_case_routes` 选择优先级最低的有效线路：连接、线路与绑定启用，目录未确认下线，探针指纹匹配当前配置且未过期。对话从 `agent_sessions.selected_llm_model_id` 或默认模型确定逻辑模型，`agent_runs` 冻结当次线路；用户已选模型失效时失败，不切换到其他逻辑模型。结构化调用将 Pydantic JSON Schema 加入系统指令，本地提取并验证 JSON，非法输出以 `LLM_RESPONSE_INVALID` 收口。
 
-`llm_provider_connections` 保存接入商代码、独立凭据密文、受控设置和配置版本。`llm_models` 保存稳定逻辑模型；`llm_model_routes` 保存连接上的实际调用目标、目录元数据和价格规则；`llm_use_case_routes` 同时承载系统能力绑定与对话开放列表；`llm_call_logs` 保存每次上游请求的安全用量、价格和错误快照。`0091` 删除旧治理表并按这五张表重建；`0092` 使调用目标 ID 的唯一键区分大小写，以容纳上游大小写不同的模型 ID；迁移前须核对目标 revision、旧行数、运行中 Agent 任务和备份。原有 Agent 会话与运行保留。Pi 每次模型请求通过内部接口回传 Token，后端使用 run 冻结的价格规则计费；缺少可核定价格或缓存明细时费用为 NULL。运行级费用从持久化调用日志汇总。
+`llm_provider_connections` 保存接入商代码、独立凭据密文、受控设置和配置版本。`llm_models` 保存稳定逻辑模型；`llm_model_routes` 保存连接上的实际调用目标、目录元数据和价格规则；`llm_use_case_routes` 同时承载系统能力绑定与对话开放列表；`llm_call_logs` 保存每次上游请求的安全用量、价格和错误快照。`0091` 删除旧治理表并按这五张表重建；`0092` 使调用目标 ID 的唯一键区分大小写，以容纳上游大小写不同的模型 ID；迁移前须核对目标 revision、旧行数、运行中 Agent 任务和备份。原有 Agent 会话与运行保留。管理员可以物理删除线路、逻辑模型和连接。删除前先检查绑定、调用日志和 Agent 会话/运行是否引用，有引用就返回 409，所以历史数据永远不会随配置被删。删除模型或连接时，先在同一事务内删掉它名下的线路，再删它本身，这样不会触发 `RESTRICT` 外键。Pi 每次模型请求通过内部接口回传 Token，后端使用 run 冻结的价格规则计费；缺少可核定价格或缓存明细时费用为 NULL。运行级费用从持久化调用日志汇总。
 
 FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 不决定模型目录、价格、业务路由或 fallback；Pi 按线路声明的协议直接调用供应商。接入商推理地址由后端固定映射并按允许的地域/工作空间构建，管理 API 不接受任意 URL。AIHubMix 连接可在默认 `aihubmix.com` 与官方备用 `api.inferera.com` 之间切换；目录同步和推理使用同一选择，切换会递增配置版本、清除旧目录同步状态并使既有场景探测失效。Fernet 密钥环由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 配置，列表只返回 `keyConfigured`。日志和 HTTP 响应不保存或透出凭据、提示词、图片或完整模型响应。外部请求期间不持有 SQLAlchemy 事务；进程被强制终止留下的 `pending` 日志保留以供排查。
 
@@ -213,6 +217,14 @@ Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定�
 HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkResume 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
+
+## LinkRag 资料索引
+
+LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/apps/*` 服务端 API，以 `Authorization: Bearer <client_id>.<secret>` 和 `X-App-User-Id: <users.id>` 代表用户操作；LinkRag 把每个 LinkResume 用户映射为独立影子用户，数据按该用户隔离。`LINKRAG_ENABLED` 默认开启；凭证缺失时 FastAPI 与 Worker 照常启动，记录 `LINKRAG_NOT_CONFIGURED` 告警并不构建客户端，召回全部回退本地匹配，配置凭证后重启即切换到 LinkRag。显式设为 `false` 时同样不产生任何出站请求。
+
+- **同步**：Worker 进程与消息消费并列运行 `workers/rag_sync_worker.py`，每 `LINKRAG_SYNC_INTERVAL_SECONDS` 在 Redis 锁 `linkresume:linkrag-sync:lock` 下执行一轮 `services/rag_sync_service.py` 对账：为已解析成功的文档资料建立记录，上传 LinkResume 保存的当前 Markdown 正文（去除本地图片引用，文件名 `<dataset_id>.md`），轮询解析，并在资料删除或正文修订变化时先删 LinkRag 旧文件再上传新正文。上传、替换、删除接口本身不调用 LinkRag，行为和失败语义不变。数据库写入均为短事务并以原状态、修订和文件 ID 做条件更新，HTTP 调用不持有事务。失败按指数退避（最长 60 分钟）重试，达到 `LINKRAG_SYNC_MAX_ATTEMPTS` 后标记 `failed`；`scripts/release/sync_datasets_to_linkrag.py [--rounds N] [--reset-failed]` 可手动加速补传或重排失败记录。
+- **召回**：FastAPI 在 `app.state.linkrag_recall` 持有同步客户端（超时 `LINKRAG_RECALL_TIMEOUT_SECONDS`）。`recall_dataset_snippets` 只对"调用方范围 ∩ `ready` 且已同步修订等于当前修订"的资料请求 LinkRag，并按 LinkResume 自己的记录复验每条命中的归属与修订；未就绪资料继续用本地匹配，任何 LinkRag 错误都整体回退本地匹配。
+- **安全**：凭证只在 FastAPI 与 Worker 环境中，不下发 Pi 或前端；日志只记录方法、状态码和稳定错误码，不记录凭证、正文或查询原文。外发内容仅为资料正文副本、`dataset:<id>:<revision>` 引用和查询文本。
 
 ## 可观测性与业务审计
 
@@ -251,7 +263,7 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 
 - `npm run test:backend:unit`：领域、Adapter 和仓库脚本测试。
 - `npm run test:backend:integration`：SQLite、Fake Redis、Fake MinIO、Fake 转换/LLM 的 HTTP 组合测试。
-- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 另以一次性 MySQL 8.4 服务固定验证 `0081 → 0082`。
+- `LINKRESUME_TEST_MYSQL_URL`：仅允许指向本机一次性 `linkresume` 数据库，用于从根 revision 向前升级到当前 head、模板初始化和物理约束验证；GitHub Quality 的 `migrations` job 在迁移相关改动的 PR 和共享分支 push 上以一次性 MySQL 8.4 服务从空库升级到 head，并运行新增 revision 的同名测试。
 - 真实 LinkParse、模型、MinIO 和浏览器流程不进入默认 CI，需单独授权联调。
 # 插件发布与私有下载
 
@@ -278,3 +290,36 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 迁移 `0076` 追加「错位页眉」「折页边注」「悬挂章节」，默认目录达到 72 套。错位页眉与悬挂章节在 header 中连续承载身份、简介、工作和项目，教育/技能占 main/sidebar；折页边注将工作置于 main、简介/技能置于短 sidebar，项目和教育由 footer 恢复全宽。附加章节均由 universal fallback 保留，不修改已有模板、简历及版本，无 schema 变化。
 
 迁移 `0078` 新增五套 `career-*` 跨行业模板，默认启用目录达到 74 套，覆盖财务、制造业社招，师范、护理校招与市场实习。仅插入目录项，不改变 schema、旧模板或用户快照；重复执行保留启停状态，同 key 定义冲突拒绝覆盖。发布时先部署支持 Career 主题的 Web/打印渲染器，再执行迁移；上游固定提交和 MIT 声明见[模板来源](resume-template-sources.md)。
+
+## 当前 Muse 目录迁移
+
+当前迁移链 head 为 `0104`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
+
+`0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
+
+发布先部署识别 Muse 的 Web 和 Node/PDF 渲染器，再执行目录迁移。撤回时停用新增目录；用户已创建简历的模板快照继续保留。迁移仍为 forward-only，不能 downgrade。来源、行业数据及装饰适配边界见[模板来源](resume-template-sources.md#muse-选择集0100)。
+
+
+桌面岗位与面试排期请求由 identity 的 `get_current_career_user` 显式方法/路径白名单接入既有 job_descriptions/interviews 路由；仍复用 Web 的业务服务、本人资源归属和乐观锁，不建立第二套求职数据。排期信息更新通过既有 PUT 场次路由，仍要求本人归属及 base_lock_version；排期删除仍不开放桌面渠道。简历仍为桌面只读，岗位权限不扩展到账号、资料、复盘与管理端，具体开放面见 [桌面 Bearer 契约](../api/http-contracts.md#桌面-bearer-会话)。
+
+原生文字模拟面试复用 `modules/mock_interviews/routes.py` 的现有持久化状态机和后台 runner，经 `get_current_mock_interview_user` 接受限定 desktop Bearer；资料库独立使用 `get_current_dataset_user`，复用原有资料、文件夹和场次关联服务，允许本人管理及私有文件流。无需新表或迁移。语音 REST/WS 不开放该渠道，具体权限见 [桌面文字模拟面试权限](../api/http-contracts.md#桌面文字模拟面试权限)。
+## 内置模板名称（0101）
+
+`0101` 只为新增的 79 套 Muse 目录指定唯一的中文意象名称，按稳定 key 和已知旧名称更新 `resume_templates.name`。原有模板的全部字段保持不变；新增项的说明、正文、定义、分类、启停、排序与用户简历均不修改。已改名的 Muse 项和自行上传的模板保留。重跑时已经更名的条目不再写入，无 schema 或 HTTP 结构变化，旧客户端仍按同一 ID/key 创建和切换模板。完整名称及旧名见[模板名称对照](../features/resume-template-names.md)。修正或恢复名称使用新的向前 revision，历史种子迁移不重写。
+
+## 模板名称细化（0102）
+
+`0102` 只将上述 79 个 Muse 的已知 `0101` 名称改为 4–6 字完整名称，让配色、版式或用途可以从名称中辨认。按稳定 key 和 `0101` 名称精确匹配，原有模板及管理员自定义名称仍保留；重复执行不再写入。模板定义、样式、状态和用户简历不变，无 schema 或 HTTP 结构变化。当前名称见[模板名称对照](../features/resume-template-names.md)。
+
+## 一页模板示例（0103）
+
+`0103` 只精简 11 套 Muse 模板中超出默认 A4 一页的虚构示例：夜航代码、纤线留白、数字锚点、岁月年谱、彩页侧签、筑梦图录、金衡交易簿、法律备忘录、白衣行路、元素微光、赤红编年。原有模板的示例保持现状。合并日期与职务、压缩重复说明和技能条目、保留代表性项目；金衡交易簿的两组重复指标合并为「关键数据」。字体、字号、页边距及模板定义均不修改。
+
+迁移按稳定 key、完整旧正文及完整旧定义精确匹配，只更新 `resume_templates.data_json`，更新时间由数据库维护。自定义正文或定义不覆盖，名称、分类、启停与排序保留；已创建的用户简历继续使用独立快照，新建简历采用精简示例。无 schema 或 HTTP 结构变化，模板 API 按新正文重新编译 layout plan；重跑不再写入，后续修正继续使用向前 revision。
+
+
+## Muse 去重与目录整理（0104）
+
+`0104` 只整理新增 Muse 目录：按已知 key 和完整种子定义停用 14 套近似款，保留 65 套。仅在全套目录仍为初始排序时重排新增保留款，只为启用且未分类的空标签补初始风格与场景。原有模板、自定义定义、上传项、已有简历与模板快照不修改，无 schema 或 HTTP 结构变化；默认启用目录为 150 套。重复执行不重置后续管理员设置。
+
+仍保留全部 Muse 主题的 Web/PDF 渲染支持，不删除模板或外键关联。迁移只含 DML，沿用 SQL-first 事务和 forward-only 链；目标环境的 current 需要单独查询。撤回通过管理端重新启用或新的向前 revision，数据恢复依赖备份。具体下架、代表款和展示顺序见[模板目录整理](../features/resume-template-curation.md)。
