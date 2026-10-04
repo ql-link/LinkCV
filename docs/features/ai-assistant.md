@@ -20,7 +20,7 @@ LinkResume AI 助手提供独立对话工作区和简历编辑器侧栏，允许
 
 已验证的 AIHubMix 快速模型在按推荐协议绑定后，助手探测和正式对话都显式关闭上游思考；GPT-6 Luna 需要使用 Responses，原有 Chat 绑定不会被代码自动替换。适用模型及参数见 [运行时模型治理](../internals/agent-runtime.md#治理数据)。其他模型沿用其原有请求参数。
 
-供应商返回超长调用编号时，FastAPI 保留成功结果和计量，管理日志的对应可选编号留空；边界处理见 [运行时模型治理](../internals/agent-runtime.md#治理数据)。
+供应商返回超长调用编号时，FastAPI 与 Pi 保留成功结果和计量，管理日志的对应可选编号留空；边界处理见 [运行时模型治理](../internals/agent-runtime.md#治理数据)。
 
 ## 用户入口
 

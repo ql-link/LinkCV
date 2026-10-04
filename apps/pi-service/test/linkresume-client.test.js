@@ -3,6 +3,36 @@ import test from "node:test";
 
 import { createLinkResumeClient } from "../src/tools/linkresume-client.js";
 
+for (const [label, requestId, modelId, expectedRequest, expectedModel] of [
+  ["ordinary", "resp_fictional", "fictional-model", "resp_fictional", "fictional-model"],
+  ["column boundary", "r".repeat(128), "m".repeat(256), "r".repeat(128), "m".repeat(256)],
+  ["long Responses ID", "resp_" + "x".repeat(2048), "m".repeat(257), null, null],
+  ["Unicode characters", "😀".repeat(128), "模".repeat(256), "😀".repeat(128), "模".repeat(256)],
+]) {
+  test(`LLM metering preserves usage with ${label}`, async (context) => {
+    const originalFetch = globalThis.fetch;
+    context.after(() => { globalThis.fetch = originalFetch; });
+    let captured;
+    globalThis.fetch = async (url, options) => {
+      captured = { url, body: JSON.parse(options.body) };
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+    const client = createLinkResumeClient(
+      { linkresumeBaseUrl: "http://linkresume:8000", linkresumeToken: "fictional-token", toolTimeoutMs: 1000 },
+      "fictional-run", new AbortController().signal,
+    );
+    const payload = {
+      callId: "fictional-call", routeId: "3", configVersion: 2,
+      status: "succeeded", inputTokens: 100, outputTokens: 20,
+      responseModelId: modelId, upstreamRequestId: requestId,
+    };
+    assert.deepEqual(await client.recordLlmCall(payload), { ok: true });
+    assert.equal(captured.url, "http://linkresume:8000/internal/agent/runs/fictional-run/llm-calls");
+    assert.deepEqual(captured.body, { ...payload, responseModelId: expectedModel, upstreamRequestId: expectedRequest });
+    assert.equal(payload.upstreamRequestId, requestId);
+  });
+}
+
 test("readiness calls the protected LinkResume internal endpoint", async (context) => {
   const originalFetch = globalThis.fetch;
   context.after(() => {
