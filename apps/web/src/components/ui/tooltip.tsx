@@ -1,3 +1,4 @@
+import "./motion.css"
 import * as React from "react"
 import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
@@ -19,7 +20,7 @@ const TooltipContent = React.forwardRef<
       data-ui-theme="light"
       sideOffset={sideOffset}
       className={cn(
-        "z-50 overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-sm transition-opacity duration-fast data-[state=closed]:opacity-0 data-[state=open]:opacity-100 origin-[--radix-tooltip-content-transform-origin]",
+        "z-50 overflow-hidden rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-sm ui-motion-tooltip origin-[--radix-tooltip-content-transform-origin]",
         className
       )}
       {...props}

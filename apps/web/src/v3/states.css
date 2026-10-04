@@ -1,0 +1,37 @@
+/* 10.1 / 10.2 通用页面状态。坐标取自 Figma 159:426 / 159:528（内容卡坐标系，正文列 146..1006） */
+.v3-state-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+.v3-state-head-actions { display: flex; gap: 10px; margin-top: 32px; }
+
+/* 筛选胶囊骨架：y=168 高 14；分隔线 y=194 */
+.v3-state-chips { display: flex; height: 14px; margin-top: 32px; gap: 1px; }
+.v3-state-chips span { height: 14px; border-radius: 3px; background: var(--v3-sk); }
+.v3-state-chips span:nth-child(2) { margin-right: 22px; }
+.v3-state-chips span:nth-child(3) { margin-right: 22px; }
+.v3-state-rule { height: 1px; margin-top: 12px; background: var(--v3-line); }
+.v3-state-head + .v3-state-rule.is-error { margin-top: 58px; }
+
+/* 4 列骨架卡片，列距 20、行距 350-264-... 与真实卡片一致 */
+.v3-state-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 20px; row-gap: 36px; margin-top: 27px; }
+.v3-state-skel { display: flex; flex-direction: column; }
+.v3-state-skel-cover { display: block; aspect-ratio: 200 / 264; border-radius: 10px; background: var(--v3-field); }
+.v3-state-skel-line { display: block; margin-top: 10px; border-radius: 3px; background: var(--v3-sk); }
+.v3-state-skel-cover + .v3-state-skel-line { margin-top: 16px; }
+.v3-state-skel-cover, .v3-state-skel-line { animation: v3-state-pulse 1.4s ease-in-out infinite; }
+@keyframes v3-state-pulse { 50% { opacity: .55; } }
+
+/* 错误卡：480 宽、舞台 150，距分隔线 55（设计稿 y=250） */
+.v3-state-error.v3-empty.is-error { width: 480px; margin-top: 55px; padding: 7px 7px 29px; /* 1px 边框 + 7 = 设计稿的 8 */ }
+.v3-state-error.v3-empty.is-error > .v3-stage { height: 150px; }
+.v3-state-error h3 { margin-top: 22px; line-height: 26px; }
+.v3-state-error p { margin-top: 8px; }
+.v3-state-error .v3-empty-actions { margin-top: 36px; }
+.v3-state-retry { width: 112px; padding: 0; }
+.v3-state-retry svg { color: var(--v3-sub); }
+
+.v3-state-art { position: absolute; top: 0; left: 50%; width: 464px; height: 150px; transform: translateX(-50%); }
+.v3-state-cloud { position: absolute; left: 204px; top: 51px; display: block; width: 56px; height: 48px; border: 1px solid var(--v3-cl); border-radius: 14px; background: #fff; padding: 3px 7px; box-shadow: 0 6px 16px rgb(0 0 0 / 12%); }
+.v3-state-cloud svg { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .v3-state-skel-cover, .v3-state-skel-line { animation: none; }
+}

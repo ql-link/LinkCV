@@ -1,5 +1,3 @@
-import { LoaderCircle } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 import "./page-loading.css";
 
@@ -8,6 +6,11 @@ export type PageLoadingProps = {
   scope?: "page" | "workspace" | "panel";
   className?: string;
 };
+
+/** Reserve a text slot without showing a guessed value before its request settles. */
+export function LoadingText({ width = "8em" }: { width?: string | number }) {
+  return <span aria-hidden="true" className="ui-loading-text ui-loading-placeholder" style={{ width }} />;
+}
 
 export function PageLoading({
   label,
@@ -22,7 +25,7 @@ export function PageLoading({
       className={cn("page-loading", `is-${scope}`, className)}
       role="status"
     >
-      <LoaderCircle aria-hidden="true" className="page-loading-spinner" />
+      <span aria-hidden="true" className="page-loading-spinner" />
       <p>{label}</p>
     </div>
   );

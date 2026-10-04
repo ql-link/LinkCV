@@ -68,18 +68,51 @@ html[data-resume-pdf-cli] [data-resume-print-document] {
 html[data-resume-pdf-cli],
 html[data-resume-pdf-cli] body {
   width: auto;
+  height: auto;
   min-height: 0;
 }
 
 html[data-resume-pdf-cli] [data-resume-print-document] .resume-print-content { min-height: 0; }
 
-/* These column templates own the A4 canvas but are intentionally inset.
-   The CLI uses zero @page margins for column layouts, so preserve their gutters. */
-html[data-resume-pdf-cli] [data-resume-print-document]:is(.theme-original-balanced, .theme-original-dossier, .theme-original-axis, .theme-original-warm, .theme-original-index, .theme-original-offset, .theme-original-marginal, .theme-original-hanging, .theme-career-kendall, .theme-featured-campus, .theme-featured-professional, .theme-featured-sales, .theme-featured-product, .theme-featured-finance, .theme-featured-card-dashed, .theme-featured-card-rail, .theme-featured-classic-business, .theme-featured-vitality) {
-  padding: var(--resume-page-margin-top) var(--resume-page-margin-right) var(--resume-page-margin-bottom) var(--resume-page-margin-left) !important;
-}
-
 @media print {
+  html[data-resume-pdf-cli] body { isolation: isolate; }
+  html[data-resume-pdf-cli] body::before {
+    content: "";
+    position: fixed;
+    inset: var(--resume-print-bleed-top, 0px) var(--resume-print-bleed-right, 0px) var(--resume-print-bleed-bottom, 0px) var(--resume-print-bleed-left, 0px);
+    z-index: -1;
+    background: var(--resume-sheet-background, transparent);
+    pointer-events: none;
+  }
+
+  /* The CLI measures the real column bounds after fonts/images settle.
+     Repeating only their paint fills short and continuation pages without
+     adding layout height, blank pages, or stretching the resume's text. */
+  [data-resume-print-document] [data-resume-column-fill] {
+    position: relative;
+    isolation: isolate;
+  }
+  [data-resume-print-document] [data-resume-column-fill]::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    left: var(--resume-column-fill-left);
+    top: var(--resume-column-fill-top);
+    bottom: var(--resume-column-fill-bottom);
+    width: var(--resume-column-fill-width);
+    box-sizing: border-box;
+    right: auto;
+    background: var(--resume-column-fill-background);
+    border-top: var(--resume-column-fill-border-top);
+    border-right: var(--resume-column-fill-border-right);
+    border-bottom: var(--resume-column-fill-border-bottom);
+    border-left: var(--resume-column-fill-border-left);
+    border-radius: var(--resume-column-fill-radius);
+    pointer-events: none;
+  }
+  [data-resume-print-document] .resume-column-sidebar[data-resume-column-fill]::after {
+    box-shadow: var(--resume-column-fill-shadow);
+  }
   [data-resume-print-document] {
     box-shadow: none !important;
     transform: none !important;
@@ -88,6 +121,12 @@ html[data-resume-pdf-cli] [data-resume-print-document]:is(.theme-original-balanc
   }
 
   [data-resume-print-document] .resume-print-content { height: auto; }
+
+  /* Keep a chapter or entry title with its first line on the same page. */
+  [data-resume-print-document] .resume-print-content :is(h2,h3) {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
 
   [data-resume-print-document] .resume-print-content h2,
   [data-resume-print-document] .resume-row,

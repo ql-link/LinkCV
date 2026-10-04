@@ -14,6 +14,7 @@ import {
   filterWorkbenchCommands,
   LineInsertMenuExtension,
   SlashCommandMenu,
+  slashCommandQuery,
 } from "./slashCommand";
 
 describe("命令面板过滤", () => {
@@ -28,6 +29,17 @@ describe("命令面板过滤", () => {
     expect(filterWorkbenchCommands("").map((item) => item.id)).not.toContain("avatar");
     expect(filterWorkbenchCommands("").map((item) => item.label)).not.toContain("上传或更换头像");
     expect(filterWorkbenchCommands("头像")).toEqual([]);
+  });
+});
+
+describe("斜杠命令触发", () => {
+  it("行首、空格后以及块定位符之后的 / 都能打开插入菜单", () => {
+    expect(slashCommandQuery("/")).toBe("");
+    expect(slashCommandQuery("工作 /标题")).toBe("标题");
+    expect(slashCommandQuery("\ufffc/")).toBe("");
+    expect(slashCommandQuery("\ufffc/h2")).toBe("h2");
+    expect(slashCommandQuery("https://a")).toBeNull();
+    expect(slashCommandQuery("正文")).toBeNull();
   });
 });
 

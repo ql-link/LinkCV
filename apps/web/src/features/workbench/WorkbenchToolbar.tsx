@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import type { Editor } from "@tiptap/react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -6,29 +7,21 @@ import {
   AlignLeft,
   AlignRight,
   Baseline,
-  Bold,
   Check,
-  ChevronDown,
   Heading1,
   Heading2,
   Heading3,
   Highlighter,
-  Italic,
-  Link2,
   Minus,
   Pilcrow,
   Plus,
-  Redo2,
-  Strikethrough,
-  Type,
-  Underline,
-  Undo2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { INLINE_FONT_SIZE_MAX, INLINE_FONT_SIZE_MIN, INLINE_FONT_SIZE_STEP, normalizeInlineFontSize } from "../../lib/resumeInlineStyle";
 import { isResumeEmailLink } from "../../lib/resumeLink";
 import { api } from "../../api/client";
 import { validateResumeImageFile } from "./resumeImageLimits";
+import { Icon } from "../../v3/Icon";
 
 const textColors = ["#ff3b30", "#ff9500", "#ffcc00", "#34c759", "#3478f6", "#af52de", "#8a8a8e"];
 // 浅色在前、饱和色在后，铺成两行网格；弹层里的第一格是「无背景」。
@@ -47,6 +40,7 @@ type ToolButtonProps = {
 };
 
 function ToolButton({ label, active, disabled, children, onClick, caret }: ToolButtonProps) {
+  useLocale();
   return (
     <motion.button
       type="button"
@@ -61,7 +55,7 @@ function ToolButton({ label, active, disabled, children, onClick, caret }: ToolB
       onClick={onClick}
     >
       {children}
-      {caret ? <ChevronDown className="workbench-tool-caret" aria-hidden="true" size={13} /> : null}
+      {caret ? <Icon className="workbench-tool-caret" name="chevd" size={12} /> : null}
     </motion.button>
   );
 }
@@ -75,6 +69,7 @@ type AnchoredPopoverProps = {
 };
 
 export function AnchoredPopover({ open, className = "", role, ariaLabel, children }: AnchoredPopoverProps) {
+  useLocale();
   return (
     <AnimatePresence>
       {open && (
@@ -124,6 +119,7 @@ function selectionHasInlineFontSize(editor: Editor) {
 }
 
 function FontSizeControl({ editor }: { editor: Editor }) {
+  useLocale();
   const sizes = new Set<number>();
   const { from, to } = editor.state.selection;
   editor.state.doc.nodesBetween(from, to, (node, pos) => {
@@ -146,17 +142,17 @@ function FontSizeControl({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div className="selection-font-size-control" role="group" aria-label="字号调整">
-      <ToolButton label="减小字号" disabled={!mixed && size <= INLINE_FONT_SIZE_MIN} onClick={() => adjust(-1)}>
+    <div className="selection-font-size-control" role="group" aria-label={t("字号调整")}>
+      <ToolButton label={t("减小字号")} disabled={!mixed && size <= INLINE_FONT_SIZE_MIN} onClick={() => adjust(-1)}>
         <Minus aria-hidden="true" size={14} />
       </ToolButton>
       <output
-        aria-label="所选文字字号"
-        title={mixed ? "混合字号，箭头以选区首字字号为基准统一调整" : "所选文字当前字号"}
+        aria-label={t("所选文字字号")}
+        title={mixed ? t("混合字号，箭头以选区首字字号为基准统一调整") : t("所选文字当前字号")}
       >
-        {mixed ? "混合" : <>{size}<small>pt</small></>}
+        {mixed ? t("混合") : <>{size}<small>pt</small></>}
       </output>
-      <ToolButton label="增大字号" disabled={!mixed && size >= INLINE_FONT_SIZE_MAX} onClick={() => adjust(1)}>
+      <ToolButton label={t("增大字号")} disabled={!mixed && size >= INLINE_FONT_SIZE_MAX} onClick={() => adjust(1)}>
         <Plus aria-hidden="true" size={14} />
       </ToolButton>
     </div>
@@ -164,6 +160,7 @@ function FontSizeControl({ editor }: { editor: Editor }) {
 }
 
 function FontControl({ editor }: { editor: Editor }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const textColor = editor.getAttributes("textStyle").color;
@@ -186,25 +183,25 @@ function FontControl({ editor }: { editor: Editor }) {
 
   return (
     <div ref={anchorRef} className="workbench-popover-anchor">
-      <ToolButton label="字体" active={open || applied} caret onClick={() => setOpen((value) => !value)}>
-        <Baseline aria-hidden="true" size={18} />
+      <ToolButton label={t("字体")} active={open || applied} caret onClick={() => setOpen((value) => !value)}>
+        <span className="workbench-tool-text">{t("字体")}</span>
       </ToolButton>
-      <AnchoredPopover open={open} className="color-popover" role="group" ariaLabel="字体">
+      <AnchoredPopover open={open} className="color-popover" role="group" ariaLabel={t("字体")}>
         <div className="color-section">
-          <span className="color-section-label"><ALargeSmall aria-hidden="true" size={13} />字号</span>
+          <span className="color-section-label"><ALargeSmall aria-hidden="true" size={13} />{t("字号")}</span>
           <div className="color-section-row">
             <FontSizeControl editor={editor} />
           </div>
         </div>
         <div className="color-section">
-          <span className="color-section-label"><Baseline aria-hidden="true" size={13} />字体颜色</span>
+          <span className="color-section-label"><Baseline aria-hidden="true" size={13} />{t("字体颜色")}</span>
           <div className="color-section-row">
             <motion.button
               type="button"
               className={`color-letter is-none${textColor ? "" : " is-active"}`}
-              aria-label="取消文字颜色"
+              aria-label={t("取消文字颜色")}
               aria-pressed={!textColor}
-              title="取消文字颜色"
+              title={t("取消文字颜色")}
               whileTap={{ scale: 0.9 }}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pickTextColor(null)}
@@ -218,9 +215,9 @@ function FontControl({ editor }: { editor: Editor }) {
                 key={color}
                 className={`color-letter${textColor === color ? " is-active" : ""}`}
                 style={{ color }}
-                aria-label={`文字颜色 ${color}`}
+                aria-label={t("文字颜色 {value0}", { value0: color })}
                 aria-pressed={textColor === color}
-                title={`文字颜色 ${color}`}
+                title={t("文字颜色 {value0}", { value0: color })}
                 whileTap={{ scale: 0.9 }}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => pickTextColor(color)}
@@ -231,14 +228,14 @@ function FontControl({ editor }: { editor: Editor }) {
           </div>
         </div>
         <div className="color-section">
-          <span className="color-section-label"><Highlighter aria-hidden="true" size={13} />背景颜色</span>
+          <span className="color-section-label"><Highlighter aria-hidden="true" size={13} />{t("背景颜色")}</span>
           <div className="color-section-row color-blocks">
             <motion.button
               type="button"
               className={`color-block is-none${highlightColor ? "" : " is-active"}`}
-              aria-label="取消背景颜色"
+              aria-label={t("取消背景颜色")}
               aria-pressed={!highlightColor}
-              title="取消背景颜色"
+              title={t("取消背景颜色")}
               whileTap={{ scale: 0.9 }}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => pickHighlight(null)}
@@ -251,9 +248,9 @@ function FontControl({ editor }: { editor: Editor }) {
                 key={color}
                 className={`color-block${highlightColor === color ? " is-active" : ""}`}
                 style={{ background: color }}
-                aria-label={`背景颜色 ${color}`}
+                aria-label={t("背景颜色 {value0}", { value0: color })}
                 aria-pressed={highlightColor === color}
-                title={`背景颜色 ${color}`}
+                title={t("背景颜色 {value0}", { value0: color })}
                 whileTap={{ scale: 0.9 }}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => pickHighlight(color)}
@@ -264,23 +261,22 @@ function FontControl({ editor }: { editor: Editor }) {
         <motion.button
           type="button"
           className="color-reset"
-          aria-label="恢复默认颜色"
-          title="同时清除文字颜色和背景颜色"
+          aria-label={t("恢复默认颜色")}
+          title={t("同时清除文字颜色和背景颜色")}
           whileTap={{ scale: 0.98 }}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             editor.chain().focus().unsetColor().unsetHighlight().run();
             setOpen(false);
           }}
-        >
-          恢复默认
-        </motion.button>
+        >{t("恢复默认")}</motion.button>
       </AnchoredPopover>
     </div>
   );
 }
 
 function LinkControl({ editor }: { editor: Editor }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
@@ -294,15 +290,15 @@ function LinkControl({ editor }: { editor: Editor }) {
   const apply = () => {
     const href = value.trim();
     if (!href) {
-      setError("请输入链接地址");
+      setError(t("请输入链接地址"));
       return;
     }
     if (isResumeEmailLink(href)) {
-      setError("邮箱属于简历联系方式，不设为链接");
+      setError(t("邮箱属于简历联系方式，不设为链接"));
       return;
     }
     if (!editor.chain().focus().extendMarkRange("link").setLink({ href }).run()) {
-      setError("链接地址无效，请填写完整网址");
+      setError(t("链接地址无效，请填写完整网址"));
       return;
     }
     setOpen(false);
@@ -312,7 +308,7 @@ function LinkControl({ editor }: { editor: Editor }) {
   return (
     <div ref={anchorRef} className="workbench-popover-anchor">
       <ToolButton
-        label="链接"
+        label={t("链接")}
         active={open || active}
         onClick={() => {
           if (open) {
@@ -325,14 +321,14 @@ function LinkControl({ editor }: { editor: Editor }) {
           setOpen(true);
         }}
       >
-        <Link2 aria-hidden="true" size={18} />
+        <Icon name="link" size={16} />
       </ToolButton>
       <AnchoredPopover open={open} className="link-popover">
         <input
           className="link-popover-field"
           type="url"
           inputMode="url"
-          aria-label="链接地址"
+          aria-label={t("链接地址")}
           placeholder="https://example.com"
           value={value}
           onChange={(event) => { setValue(event.target.value); setError(""); }}
@@ -355,9 +351,7 @@ function LinkControl({ editor }: { editor: Editor }) {
                 editor.chain().focus().extendMarkRange("link").unsetLink().run();
                 setOpen(false);
               }}
-            >
-              取消链接
-            </motion.button>
+            >{t("取消链接")}</motion.button>
           ) : null}
           <motion.button
             type="button"
@@ -365,9 +359,7 @@ function LinkControl({ editor }: { editor: Editor }) {
             whileTap={{ scale: 0.97 }}
             onMouseDown={(event) => event.preventDefault()}
             onClick={apply}
-          >
-            应用
-          </motion.button>
+          >{t("应用")}</motion.button>
         </div>
       </AnchoredPopover>
     </div>
@@ -390,6 +382,7 @@ function SelectionMenu({
   icon: React.ReactNode;
   options: SelectionMenuOption[];
 }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
   useDismissPopover(open, () => setOpen(false), anchorRef);
@@ -421,14 +414,16 @@ function SelectionMenu({
   );
 }
 
-const blockTypeOptions: { label: string; level: 1 | 2 | 3 | null; Icon: typeof AlignLeft }[] = [
-  { label: "正文", level: null, Icon: Pilcrow },
-  { label: "一级标题", level: 1, Icon: Heading1 },
-  { label: "二级标题", level: 2, Icon: Heading2 },
-  { label: "三级标题", level: 3, Icon: Heading3 },
+// short 是工具栏按钮上显示的当前类型（Figma 509:113「正文 ▾」）
+const blockTypeOptions: { label: string; short: string; level: 1 | 2 | 3 | null; Icon: typeof AlignLeft }[] = [
+  { get label() { return t("正文"); }, short: "正文", level: null, Icon: Pilcrow },
+  { get label() { return t("一级标题"); }, short: "标题 1", level: 1, Icon: Heading1 },
+  { get label() { return t("二级标题"); }, short: "标题 2", level: 2, Icon: Heading2 },
+  { get label() { return t("三级标题"); }, short: "标题 3", level: 3, Icon: Heading3 },
 ];
 
 function BlockTypeControl({ editor }: { editor: Editor }) {
+  useLocale();
   const options = blockTypeOptions.map(({ label, level, Icon }) => ({
     label,
     Icon,
@@ -439,29 +434,31 @@ function BlockTypeControl({ editor }: { editor: Editor }) {
     },
   }));
 
-  return <SelectionMenu label="本行类型" icon={<Type aria-hidden="true" size={18} />} options={options} />;
+  const current = blockTypeOptions.find(({ level }) => (
+    level === null ? editor.isActive("paragraph") : editor.isActive("heading", { level })
+  ));
+  return <SelectionMenu label={t("本行类型")} icon={<span className="workbench-tool-text">{t(current?.short ?? "正文")}</span>} options={options} />;
 }
 
 const alignOptions: { label: string; align: "left" | "center" | "right"; Icon: typeof AlignLeft }[] = [
-  { label: "左对齐", align: "left", Icon: AlignLeft },
-  { label: "居中对齐", align: "center", Icon: AlignCenter },
-  { label: "右对齐", align: "right", Icon: AlignRight },
+  { get label() { return t("左对齐"); }, align: "left", Icon: AlignLeft },
+  { get label() { return t("居中对齐"); }, align: "center", Icon: AlignCenter },
+  { get label() { return t("右对齐"); }, align: "right", Icon: AlignRight },
 ];
 
 function AlignControl({ editor }: { editor: Editor }) {
+  useLocale();
   const options = alignOptions.map(({ label, align, Icon }) => ({
     label,
     Icon,
     isActive: () => editor.isActive({ textAlign: align }),
     run: () => { editor.chain().focus().setTextAlign(align).run(); },
   }));
-  const activeAlign = alignOptions.find(({ align }) => editor.isActive({ textAlign: align })) ?? alignOptions[0];
-  const ActiveIcon = activeAlign.Icon;
-
-  return <SelectionMenu label="对齐方式" icon={<ActiveIcon aria-hidden="true" size={18} />} options={options} />;
+  return <SelectionMenu label={t("对齐方式")} icon={<Icon name="align" size={16} />} options={options} />;
 }
 
 export function SelectionFormattingToolbar({ editor }: { editor: Editor }) {
+  useLocale();
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -477,15 +474,18 @@ export function SelectionFormattingToolbar({ editor }: { editor: Editor }) {
   if (editor.state.selection.empty) return null;
 
   return (
-    <div className="selection-formatting-toolbar" data-ui-theme="light" role="toolbar" aria-label="所选文字工具栏">
-      <ToolButton label="加粗" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Bold aria-hidden="true" size={18} /></ToolButton>
-      <ToolButton label="删除线" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}><Strikethrough aria-hidden="true" size={18} /></ToolButton>
-      <ToolButton label="斜体" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Italic aria-hidden="true" size={18} /></ToolButton>
-      <ToolButton label="下划线" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><Underline aria-hidden="true" size={18} /></ToolButton>
+    <div className="selection-formatting-toolbar" data-ui-theme="light" role="toolbar" aria-label={t("所选文字工具栏")}>
+      {/* Figma 509:113：加粗 / 删除线 / 斜体 / 下划线 / 链接 | 字体 | 本行类型 | 对齐方式 */}
+      <ToolButton label={t("加粗")} active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}><Icon name="fbold" size={16} /></ToolButton>
+      <ToolButton label={t("删除线")} active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}><Icon name="fstrike" size={16} /></ToolButton>
+      <ToolButton label={t("斜体")} active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}><Icon name="fital" size={16} /></ToolButton>
+      <ToolButton label={t("下划线")} active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}><Icon name="funder" size={16} /></ToolButton>
       <LinkControl editor={editor} />
+      <span className="selection-toolbar-divider" aria-hidden="true" />
       <FontControl editor={editor} />
       <span className="selection-toolbar-divider" aria-hidden="true" />
       <BlockTypeControl editor={editor} />
+      <span className="selection-toolbar-divider" aria-hidden="true" />
       <AlignControl editor={editor} />
     </div>
   );
@@ -495,6 +495,7 @@ const isApplePlatform = typeof navigator !== "undefined"
   && /Mac|iPhone|iPad/.test(navigator.platform ?? "");
 
 export function WorkbenchHistoryActions({ editor }: { editor: Editor }) {
+  useLocale();
   const [, refresh] = useState(0);
 
   useEffect(() => {
@@ -505,13 +506,13 @@ export function WorkbenchHistoryActions({ editor }: { editor: Editor }) {
 
   const shortcut = (key: string) => isApplePlatform ? `⌘${key}` : `Ctrl+${key}`;
   const actions = [
-    { key: "Z", label: "撤销", Icon: Undo2, run: () => editor.chain().focus().undo().run(), enabled: editor.can().undo() },
-    { key: "Y", label: "重做", Icon: Redo2, run: () => editor.chain().focus().redo().run(), enabled: editor.can().redo() },
+    { key: "Z", label: t("撤销"), icon: "undo", run: () => editor.chain().focus().undo().run(), enabled: editor.can().undo() },
+    { key: "Y", label: t("重做"), icon: "redo", run: () => editor.chain().focus().redo().run(), enabled: editor.can().redo() },
   ] as const;
 
   return (
-    <div className="workbench-history-actions" role="group" aria-label="撤销与重做">
-      {actions.map(({ key, label, Icon, run, enabled }) => (
+    <div className="workbench-history-actions" role="group" aria-label={t("撤销与重做")}>
+      {actions.map(({ key, label, icon, run, enabled }) => (
         <button
           type="button"
           className="workbench-history-button"
@@ -522,7 +523,7 @@ export function WorkbenchHistoryActions({ editor }: { editor: Editor }) {
           onMouseDown={(event) => event.preventDefault()}
           onClick={run}
         >
-          <Icon aria-hidden="true" size={17} />
+          <Icon name={icon} size={16} />
         </button>
       ))}
     </div>
@@ -543,10 +544,10 @@ export function readImage(
     return;
   }
   const reader = new FileReader();
-  reader.onerror = () => onError("图片读取失败");
+  reader.onerror = () => onError(t("图片读取失败"));
   reader.onload = () => {
     if (typeof reader.result !== "string") {
-      onError("图片读取失败");
+      onError(t("图片读取失败"));
       return;
     }
     const preview = new window.Image();
@@ -556,9 +557,9 @@ export function readImage(
           naturalWidth: preview.naturalWidth,
           naturalHeight: preview.naturalHeight,
         }))
-        .catch((error) => onError(`图片上传失败：${(error as Error).message}`));
+        .catch((error) => onError(t("图片上传失败：{value0}", { value0: (error as Error).message })));
     };
-    preview.onerror = () => onError("图片已损坏或格式不受支持");
+    preview.onerror = () => onError(t("图片已损坏或格式不受支持"));
     preview.src = reader.result;
   };
   reader.readAsDataURL(file);

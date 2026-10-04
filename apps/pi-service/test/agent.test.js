@@ -53,6 +53,73 @@ test("runtime keeps separate provider configuration for each route of one model"
   assert.deepEqual(routes.map((route) => route.model.provider), ["linkresume-aihubmix-11", "linkresume-deepseek-12"]);
 });
 
+test("configured Pi runtime sends non-thinking options through the actual OpenAI stream", async () => {
+  for (const name of ["deepseek-v4.1-flash", "qwen3.8-flash"]) {
+    const { modelRuntime, model } = await configuredModel({
+      provider: "aihubmix", api: "openai-completions", name,
+      apiKey: "fictional-key", baseUrl: "https://api.inferera.com/v1",
+    });
+    let requests = 0;
+    const result = await modelRuntime.streamSimple(model, {
+      messages: [{ role: "user", content: [{ type: "text", text: "虚构问题" }], timestamp: 0 }],
+    }, {
+      maxRetries: 0,
+      fetch: async (url, options) => {
+        requests += 1;
+        assert.equal(new URL(url).hostname, "api.inferera.com");
+        const payload = JSON.parse(options.body);
+        if (name === "deepseek-v4.1-flash") assert.deepEqual(payload.thinking, { type: "disabled" });
+        else assert.equal(payload.enable_thinking, false);
+        assert.equal(payload.model, name);
+        const chunks = [
+          { id: "fixture", model: name, choices: [{ index: 0, delta: { role: "assistant", content: "OK" }, finish_reason: null }] },
+          { id: "fixture", model: name, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+        ];
+        return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    }).result();
+    assert.equal(result.stopReason, "stop", result.errorMessage);
+    assert.equal(requests, 1);
+    assert.equal(result.content[0].text, "OK");
+  }
+});
+
+test("GPT-6 Luna Responses runtime sends reasoning none and reads its native stream", async () => {
+  const { modelRuntime, model } = await configuredModel({
+    provider: "aihubmix", api: "openai-responses", name: "gpt-6-luna",
+    apiKey: "fictional-key", baseUrl: "https://api.inferera.com/v1",
+  });
+  const message = { type: "message", id: "msg_fixture", role: "assistant", status: "completed",
+    content: [{ type: "output_text", text: "OK", annotations: [] }] };
+  const result = await modelRuntime.streamSimple(model, {
+    messages: [{ role: "user", content: [{ type: "text", text: "虚构问题" }], timestamp: 0 }],
+  }, {
+    maxRetries: 0,
+    fetch: async (url, options) => {
+      assert.equal(new URL(url).pathname, "/v1/responses");
+      const payload = JSON.parse(options.body);
+      assert.deepEqual(payload.reasoning, { effort: "none" });
+      assert.equal(payload.store, false);
+      const chunks = [
+        { type: "response.output_item.added", output_index: 0, item: { ...message, content: [] } },
+        { type: "response.output_text.delta", output_index: 0, content_index: 0, item_id: message.id, delta: "OK" },
+        { type: "response.output_item.done", output_index: 0, item: message },
+        { type: "response.completed", response: { id: "resp_fixture", status: "completed", output: [message], usage: {
+          input_tokens: 3, output_tokens: 1, total_tokens: 4, output_tokens_details: { reasoning_tokens: 0 },
+        } } },
+      ];
+      return new Response(chunks.map((chunk) => `event: ${chunk.type}\ndata: ${JSON.stringify(chunk)}\n\n`).join(""), {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  }).result();
+  assert.equal(result.stopReason, "stop", result.errorMessage);
+  assert.equal(result.content[0].text, "OK");
+  assert.equal(result.usage.reasoning, 0);
+});
+
 test("model request switches to the next route only before content is emitted", async () => {
   const routes = [{ routeId: "11" }, { routeId: "12" }];
   const used = [];
@@ -745,6 +812,7 @@ test("read tool can load every P1 career workflow", async () => {
     "interview-guide/SKILL.md",
     "career-planning/SKILL.md",
     "resume-title-generator/SKILL.md",
+    "material-lookup/SKILL.md",
   ]) {
     const result = await tool.execute(`read-${path}`, { path });
     assert.match(result.content[0].text, /^---/);
@@ -830,4 +898,12 @@ test("planning catalog reveals authorized identities without another task's body
   assert.match(catalog, /张三的简历/);
   assert.match(catalog, /示例岗位/);
   assert.doesNotMatch(catalog, /PRIVATE_FIRST_TASK|PRIVATE_SECOND_TASK/);
+});
+
+test("career profile materials expose only the explicitly selected career fields", () => {
+  const profile = { type: "user_profile", id: "1", version: "3", label: "个人画像", updated_at: "2026-10-02T00:00:00Z", content: { profile_markdown: "- skills: React, TypeScript" } };
+  assert.deepEqual(validateContextMaterials([profile]), [profile]);
+  assert.match(formatContextMaterials([profile]), /React, TypeScript/);
+  assert.throws(() => validateContextMaterials([{ ...profile, content: { ...profile.content, contact_email: "fictional@example.test" } }]), /INVALID_CONTEXT_MATERIALS/);
+  assert.throws(() => validateContextMaterials([profile, profile]), /INVALID_CONTEXT_MATERIALS/);
 });

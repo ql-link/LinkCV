@@ -14,6 +14,8 @@ export type AppRoute =
   | { kind: "jobDetail"; jobId: string }
   | { kind: "datasets"; folderId?: string }
   | { kind: "account" }
+  | { kind: "accountDeletion" }
+  | { kind: "mockInterview"; view: "home" | "new" | "session" | "report"; interviewId?: string; applicationId?: string; resumeId?: string }
   | { kind: "share"; token: string }
   | { kind: "notFound" };
 
@@ -39,7 +41,7 @@ function normalizePathname(pathname: string) {
 }
 
 export function isSafeAppPath(value: string | null) {
-  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|assistant|templates|jobs|career|interviews|account|datasets)(?:\/|$|\?)/.test(value));
+  return Boolean(value && value.startsWith("/") && !value.startsWith("//") && /^\/(?:resumes|assistant|templates|jobs|career|interviews|account|datasets|share|mock-interviews)(?:\/|$|\?)/.test(value));
 }
 
 export function isSafeAdminPath(value: string | null) {
@@ -107,7 +109,8 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   }
   if (normalizedPath === "/career/schedule") return { kind: "interviews", view: "schedule" };
   if (normalizedPath === "/career/reviews") {
-    return { kind: "interviews", view: "records", sessionId: new URLSearchParams(search).get("session") ?? undefined };
+    const params = new URLSearchParams(search);
+    return { kind: "interviews", view: "records", sessionId: params.get("session") ?? undefined, applicationId: params.get("application") ?? undefined };
   }
   if (normalizedPath === "/career/jobs/new" || normalizedPath === "/jobs/new") {
     return { kind: "interviews", view: "applications", importJob: true };
@@ -118,7 +121,21 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
     const folderId = new URLSearchParams(search).get("folder") ?? undefined;
     return { kind: "datasets", folderId };
   }
+  if (normalizedPath === "/account-deletion") return { kind: "accountDeletion" };
   if (normalizedPath === "/account") return { kind: "account" };
+  if (normalizedPath === "/mock-interviews") return { kind: "mockInterview", view: "home" };
+  if (normalizedPath === "/mock-interviews/new") {
+    const params = new URLSearchParams(search);
+    return { kind: "mockInterview", view: "new", applicationId: params.get("application") ?? undefined, resumeId: params.get("resume") ?? undefined };
+  }
+  const mockInterviewMatch = normalizedPath.match(/^\/mock-interviews\/([^/]+)(\/report)?$/);
+  if (mockInterviewMatch) {
+    try {
+      return { kind: "mockInterview", view: mockInterviewMatch[2] ? "report" : "session", interviewId: decodeURIComponent(mockInterviewMatch[1]) };
+    } catch {
+      return { kind: "notFound" };
+    }
+  }
 
   const assistantSessionMatch = normalizedPath.match(assistantSessionPathPattern);
   if (assistantSessionMatch) {
@@ -181,6 +198,19 @@ export function parseAppRoute(pathname: string, search = ""): AppRoute {
   }
 
   return { kind: "notFound" };
+}
+
+export function mockInterviewPath(id?: string | null, report = false) {
+  if (!id) return "/mock-interviews";
+  return `/mock-interviews/${encodeURIComponent(id)}${report ? "/report" : ""}`;
+}
+
+export function newMockInterviewPath(source: { applicationId?: string; resumeId?: string } = {}) {
+  const search = new URLSearchParams();
+  if (source.applicationId) search.set("application", source.applicationId);
+  if (source.resumeId) search.set("resume", source.resumeId);
+  const query = search.toString();
+  return `/mock-interviews/new${query ? `?${query}` : ""}`;
 }
 
 export function sharePath(token: string) {

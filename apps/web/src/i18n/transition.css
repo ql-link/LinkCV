@@ -1,0 +1,19 @@
+:root {
+  --locale-fade-out: 80ms;
+  --locale-fade-in: var(--ui-duration-fast, 140ms);
+}
+
+/* Only UI copy carries this marker; cards, icons, avatars and authored content stay opaque. */
+html[data-locale-stage="out"] [data-locale-motion] {
+  animation: ui-locale-out var(--locale-fade-out) var(--ui-ease-exit) forwards;
+}
+html[data-locale-stage="in"] [data-locale-motion] {
+  animation: ui-locale-in var(--locale-fade-in) var(--ui-ease-standard) backwards;
+}
+html[data-locale-stage] [data-locale-scroll] { overflow-anchor: none; }
+@keyframes ui-locale-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ui-locale-in { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-locale-stage] [data-locale-motion] { animation: none; }
+}

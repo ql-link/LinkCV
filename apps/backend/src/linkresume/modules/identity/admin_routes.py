@@ -169,9 +169,11 @@ def update_user_status(
     if user_id == admin.id:
         raise ApiError(422, "CANNOT_SELF_DISABLE")
 
-    target = db.scalar(select(User).where(User.id == user_id))
+    target = db.scalar(select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True))
     if target is None:
         raise ApiError(404, "USER_NOT_FOUND")
+    if target.deletion_requested_at is not None:
+        raise ApiError(409, "ACCOUNT_DELETION_IN_PROGRESS")
 
     new_status = 1 if body.action == "enable" else 0
 

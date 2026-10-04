@@ -832,6 +832,8 @@ describe("API resume share", () => {
           assets: {},
           sharer: { nickname: "于晏", avatar_url: null },
           allow_download: true,
+          expires_at: null,
+          updated_at: "2026-09-26T08:00:00Z",
         }),
       );
     vi.stubGlobal("fetch", fetchMock);

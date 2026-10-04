@@ -1,29 +1,31 @@
-import { FormEvent, lazy, Suspense, useEffect, useState } from "react";
-import { ArrowRight } from "lucide-react";
-import { Button, PageLoading, TextField } from "@/components/ui";
-import { api, User } from "../../api/client";
+import { t, useLocale, setLocale, type Locale } from "@/i18n";
+import { useContentMotion } from "../../components/ui/motion";
+import { FormEvent, useEffect, useState } from "react";
+import { PageLoading } from "@/components/ui";
+import { api, User, type AuthCapabilities } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
 import { authPath, navigateTo } from "../../routing";
+import { V3Shell } from "../../v3/Shell";
+import { Icon } from "../../v3/Icon";
 import { WechatQrLogin } from "./WechatQrLogin";
 import "./auth.css";
 
-const GrainGradient = lazy(() =>
-  import("@paper-design/shaders-react").then((module) => ({
-    default: module.GrainGradient,
-  })),
-);
-
+// 08 登录：整窗白色内容卡（不带侧栏），左上角品牌字，正文一列 360 宽水平居中。
+// 登录入口由服务端能力决定，能力读取失败时显示可重试错误。
 export function AuthPage(props: {
   initialMode?: "login" | "register";
   next?: string | null;
 }) {
+  const locale = useLocale();
   const next = props.next ?? null;
   const isRegister = props.initialMode === "register";
   const login = useResumeStore((state) => state.login);
   const register = useResumeStore((state) => state.register);
   const loginWithWechat = useResumeStore((state) => state.loginWithWechat);
-  const [passwordLoginEnabled, setPasswordLoginEnabled] = useState<boolean | null>(null);
-  const [showWechat, setShowWechat] = useState(false);
+  const [capabilities, setCapabilities] = useState<AuthCapabilities | null>(null);
+  const [capabilitiesFailed, setCapabilitiesFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const contentRef = useContentMotion<HTMLElement>(`${props.initialMode}:${capabilities?.password_login_enabled}`);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -32,16 +34,14 @@ export function AuthPage(props: {
   useEffect(() => {
     let active = true;
     api.authCapabilities()
-      .then(({ password_login_enabled }) => {
-        if (active) setPasswordLoginEnabled(password_login_enabled);
-      })
+      .then((data) => { if (active) { setCapabilities(data); setCapabilitiesFailed(false); } })
       .catch(() => {
-        if (active) setPasswordLoginEnabled(false);
+        if (active) setCapabilitiesFailed(true);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [retry]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -63,163 +63,105 @@ export function AuthPage(props: {
     navigateTo(next ?? "/resumes", { replace: true });
   };
 
-  const showPasswordForm = passwordLoginEnabled === true && !showWechat;
-  const showWechatLogin = passwordLoginEnabled === false || showWechat;
+  const showPasswordForm = capabilities?.password_login_enabled === true;
+  const showWechatLogin = capabilities?.wechat_login_enabled === true && !showPasswordForm;
 
   return (
-    <main className="auth-entry min-h-screen bg-background p-3 text-foreground antialiased [font-synthesis:none]">
-      <div className="grid min-h-[calc(100vh-1.5rem)] gap-6 lg:grid-cols-[0.94fr_1.06fr]">
-        <section className="flex items-center rounded-md border border-border bg-surface px-6 py-12 sm:px-10 lg:px-14 lg:py-20 xl:px-20">
-          <div className="mx-auto w-full max-w-[520px]">
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-              {showPasswordForm
-                ? (isRegister ? "Development account" : "Development sign in")
-                : "WeChat sign in"}
-            </span>
-            <h1 className="mt-3 text-3xl font-medium tracking-[-0.04em] sm:text-4xl lg:text-[42px] lg:leading-[1.05] xl:text-[48px]">
-              {showPasswordForm
-                ? (isRegister ? "注册 LinkResume" : "登录 LinkResume")
-                : "微信扫码登录 LinkResume"}
-            </h1>
-            <p className="mt-3 text-base leading-snug text-text-secondary sm:text-lg">
-              {showPasswordForm
-                ? (isRegister
-                  ? "创建仅用于本地或开发环境调试的邮箱账号。"
-                  : "开发环境支持使用邮箱和密码进入工作台。")
-                : "使用微信扫描小程序码，并在小程序中确认本次登录。"}
+    <V3Shell active="none" bare contentClassName="auth-page">
+      <select className="v3-input auth-language" aria-label={t("界面语言")} value={locale} onChange={(event) => setLocale(event.target.value as Locale)}><option value="zh-CN">简体中文</option><option value="en-US">English</option></select>
+      <div className="auth-brand" aria-label={t("LinkResume 求职工作台")}>
+        <strong>LinkResume</strong>
+        <span>{t("求职工作台")}</span>
+      </div>
+
+      <section ref={contentRef} className="auth-col">
+        {capabilities === null && !capabilitiesFailed && (
+          <PageLoading className="auth-loading" label={t("正在确认登录方式…")} scope="panel" />
+        )}
+
+        {(capabilitiesFailed || (capabilities && !showPasswordForm && !showWechatLogin)) && (
+          <div role="alert"><p>{t("登录服务暂时不可用，请稍后重试。")}</p><button type="button" className="v3-btn" onClick={() => { setCapabilitiesFailed(false); setCapabilities(null); setRetry((value) => value + 1); }}>{t("重试")}</button></div>
+        )}
+        {showPasswordForm && (
+          <>
+            <span className="auth-dev-tag">{t("仅开发环境")}</span>
+            <h1 className="auth-title">{isRegister ? t("注册 LinkResume。") : t("登录 LinkResume。")}</h1>
+            <p className="auth-sub">
+              {isRegister ? t("创建仅用于本地或开发环境调试的邮箱账号。") : t("开发环境支持使用邮箱和密码进入工作台。")}
             </p>
-
-            {passwordLoginEnabled === null && (
-              <PageLoading className="mt-10" label="正在确认登录方式…" scope="panel" />
-            )}
-
-            {showPasswordForm && (
-              <>
-                <form className="mt-10 space-y-4" onSubmit={submit}>
-                  <TextField
+            <form className="auth-form" onSubmit={submit}>
+              <label className="auth-field">
+                <span className="v3-field-label">{t("邮箱")}</span>
+                <span className="auth-input">
+                  <Icon name="mail" size={14} />
+                  <input
+                    className="v3-input is-filled"
                     autoComplete="email"
-                    inputClassName="h-12 text-base"
-                    label="邮箱"
                     name="email"
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="you@example.com"
+                    type="email"
                     required
                     spellCheck={false}
-                    type="email"
+                    placeholder="you@example.com"
                     value={email}
+                    onChange={(event) => setEmail(event.target.value)}
                   />
-                  <TextField
+                </span>
+              </label>
+              <label className="auth-field">
+                <span className="v3-field-label">{t("密码")}</span>
+                <span className="auth-input">
+                  <Icon name="lock" size={14} />
+                  <input
+                    className="v3-input is-filled"
                     autoComplete={isRegister ? "new-password" : "current-password"}
-                    inputClassName="h-12 text-base"
-                    label="密码"
-                    minLength={8}
                     name="password"
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="至少 8 位"
-                    required
                     type="password"
+                    required
+                    minLength={8}
+                    placeholder={t("至少 8 位")}
                     value={password}
+                    onChange={(event) => setPassword(event.target.value)}
                   />
-                  {error && (
-                    <p className="rounded-md border border-destructive bg-[var(--ui-destructive-subtle)] px-4 py-2.5 text-sm text-destructive" role="alert">
-                      {error}
-                    </p>
-                  )}
-                  <Button
-                    className="mt-6 h-12 w-full text-base"
-                    disabled={submitting}
-                    type="submit"
-                  >
-                    {submitting
-                      ? (isRegister ? "注册中…" : "登录中…")
-                      : (isRegister ? "注册" : "登录")}
-                  </Button>
-                </form>
-                <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
-                  <a
-                    className="inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    href={authPath(isRegister ? "login" : "register", next)}
-                  >
-                    {isRegister ? "已有账号，去登录" : "没有账号，去注册"}
-                    <ArrowRight aria-hidden size={14} />
-                  </a>
-                  <button
-                    className="inline-flex items-center gap-1.5 bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    onClick={() => setShowWechat(true)}
-                    type="button"
-                  >
-                    使用微信扫码登录
-                    <ArrowRight aria-hidden size={14} />
-                  </button>
-                </div>
-              </>
-            )}
+                </span>
+              </label>
+              {isRegister && <span className="auth-hint">{t("密码至少需要 8 位。")}</span>}
+              {error && <p className="auth-error" role="alert">{error}</p>}
+              <button className="v3-btn v3-btn-dark auth-submit" type="submit" disabled={submitting}>
+                {submitting ? (isRegister ? t("注册中…") : t("登录中…")) : (isRegister ? t("注册") : t("登录"))}
+                {!submitting && <Icon name="arrow" size={12} />}
+              </button>
+            </form>
+            <div className="auth-links">
+              <a className="v3-link" href={authPath(isRegister ? "login" : "register", next)}>
+                {isRegister ? t("已有账号，去登录") : t("没有账号，去注册")}
+                <Icon name="arrow" size={12} />
+              </a>
 
-            {showWechatLogin && (
-              <div className="auth-wechat-login mt-10">
-                <WechatQrLogin
-                  appearance="auth"
-                  onSuccess={(user) => void handleWechatSuccess(user)}
-                />
-                {passwordLoginEnabled && (
-                  <button
-                    className="mx-auto mt-6 block bg-transparent p-0 text-sm text-muted-foreground transition-colors hover:text-foreground"
-                    onClick={() => setShowWechat(false)}
-                    type="button"
-                  >
-                    返回邮箱密码登录
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </section>
+            </div>
+          </>
+        )}
 
-        <aside className="auth-entry-visual relative min-h-[420px] overflow-hidden rounded-md bg-black text-white lg:min-h-0">
-          <div className="auth-entry-shader absolute inset-0">
-            <Suspense fallback={null}>
-              <GrainGradient
-                className="absolute inset-0 bg-black"
-                colorBack="#00000000"
-                colors={["#FFFFFF", "#155fd7", "#155fd7", "#FFFFFF"]}
-                frame={2854.5}
-                intensity={0.5}
-                noise={0.25}
-                offsetX={0}
-                offsetY={0}
-                rotation={0}
-                scale={1}
-                shape="corners"
-                softness={0.5}
-                speed={1}
-              />
-            </Suspense>
-          </div>
-          <div className="relative z-10 flex h-full w-full flex-col justify-between gap-10 p-8 sm:p-12 lg:p-14 xl:p-16">
-            <h2 className="max-w-[560px] text-4xl font-medium leading-[0.98] tracking-[-0.05em] sm:text-5xl xl:text-[64px]">
-              扫码确认，
-              <br />
-              安全进入工作台。
-            </h2>
-            <p className="max-w-[420px] text-base leading-relaxed text-white/70 xl:text-lg">
-              {showPasswordForm
-                ? (isRegister
-                  ? "本地创建测试账号，正式环境仍只开放微信身份入口。"
-                  : "开发环境可使用已有账号调试；微信扫码登录仍可随时验证。")
-                : "普通账号由微信身份自动创建，无需填写注册或登录表单。"}
-            </p>
-          </div>
-        </aside>
-      </div>
-    </main>
+        {showWechatLogin && (
+          <>
+            <p className="auth-eyebrow">{t("微信登录")}</p>
+            <h1 className="auth-title">{t("微信扫码登录 LinkResume。")}</h1>
+            <p className="auth-sub">{t("普通账号由微信身份自动创建，无需填写注册或登录表单。")}</p>
+            <WechatQrLogin onSuccess={(user) => void handleWechatSuccess(user)} />
+            <p className="auth-agree">{t("登录即表示同意《用户协议》与《隐私政策》")}</p>
+          </>
+        )}
+      </section>
+
+      <p className="auth-foot">{t("© 2026 LinkResume · 让每一份简历都被认真对待")}</p>
+    </V3Shell>
   );
 }
 
 function normalizeAuthError(error: string) {
-  if (error === "INVALID_CREDENTIALS") return "邮箱或密码不正确。";
-  if (error === "EMAIL_EXISTS") return "该邮箱已经注册，请直接登录。";
-  if (error === "INVALID_EMAIL") return "请输入有效的邮箱地址。";
-  if (error === "WEAK_PASSWORD") return "密码至少需要 8 位。";
-  if (error === "NOT_FOUND") return "当前环境未开放邮箱密码登录或注册。";
-  return "操作失败，请稍后再试。";
+  if (error === "INVALID_CREDENTIALS") return t("邮箱或密码不正确。");
+  if (error === "EMAIL_EXISTS") return t("该邮箱已经注册，请直接登录。");
+  if (error === "INVALID_EMAIL") return t("请输入有效的邮箱地址。");
+  if (error === "WEAK_PASSWORD") return t("密码至少需要 8 位。");
+  if (error === "NOT_FOUND") return t("当前环境未开放邮箱密码登录或注册。");
+  return t("操作失败，请稍后再试。");
 }

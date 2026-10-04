@@ -11,7 +11,7 @@
   --ui-surface-subtle: #fcfcfc;
   --ui-surface-muted: #fcfcfc;
   --ui-text-secondary: #3f4752;
-  --ui-text-muted: #6f7a8c;
+  --ui-text-muted: #66717f;
   --ui-text-subtle: #8791a1;
   --ui-primary: #17191c;
   --ui-primary-hover: #2c3137;
@@ -41,19 +41,33 @@
   --ui-warning-subtle: #fff6e8;
   --ui-overlay: rgba(15, 18, 22, 0.46);
 
-  /* Typography. */
-  --ui-font-display: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --ui-font-sans: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --ui-font-content: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* Typography: interface, reading and document fonts have separate roles. */
+  --ui-font-display: "Poppins", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-sans: var(--ui-font-display);
+  --ui-font-heading: "Poppins", "Noto Serif SC", "Source Han Serif SC", "Songti SC", sans-serif;
+  --ui-font-content: "Lora", "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --ui-font-number: var(--ui-font-display);
   --ui-font-mono: "JetBrains Mono", SFMono-Regular, Consolas, "Liberation Mono", "Source Han Sans SC", monospace;
   --ui-text-xs: 0.75rem;
   --ui-text-sm: 0.875rem;
   --ui-text-md: 1rem;
   --ui-text-lg: 1.125rem;
   --ui-text-xl: 1.25rem;
+  --ui-text-content-title: 1.5rem;
   --ui-text-2xl: 1.75rem;
   --ui-leading-tight: 1.25;
   --ui-leading-normal: 1.55;
+  --ui-line-page-title: 2.25rem;
+  --ui-line-section-title: 1.75rem;
+  --ui-line-subsection-title: 1.5rem;
+  --ui-line-body: 1.375rem;
+  --ui-line-control: 1.25rem;
+  --ui-line-content: 1.625rem;
+  --ui-line-content-title: 2rem;
+  --ui-line-metadata: 1.125rem;
+  --ui-weight-regular: 400;
+  --ui-weight-medium: 500;
+  --ui-weight-semibold: 600;
 
   /* Space, shape and elevation. */
   --ui-space-1: 0.25rem;
@@ -81,11 +95,16 @@
   --ui-shadow-xs: 0 1px 2px rgba(15, 18, 22, 0.05);
   --ui-shadow-sm: 0 2px 8px rgba(15, 18, 22, 0.06);
   --ui-shadow-md: 0 14px 35px rgba(29, 33, 31, 0.06);
-  --ui-ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
-  --ui-ease-press: cubic-bezier(0.4, 0, 0.2, 1);
-  --ui-duration-fast: 100ms;
-  --ui-duration-base: 180ms;
-  --ui-duration-slow: 260ms;
+  /* 动效：参照 Apple 的系统动效——快起步、长而柔的收尾，位移和缩放都很克制。
+     standard 用于绝大多数进出场；press 用于悬停 / 按下这类即时反馈；
+     spring 是带极轻回弹（过冲约 1%）的弹簧曲线（CSS linear() 采样），用于弹窗、浮层、滑块这类「有质量」的元素。 */
+  --ui-ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ui-ease-press: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ui-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ui-ease-spring: linear(0.0, 0.0241, 0.0851, 0.1691, 0.2652, 0.3653, 0.4637, 0.5565, 0.641, 0.7161, 0.7812, 0.8364, 0.8821, 0.9193, 0.9488, 0.9716, 0.9887, 1.0012, 1.0097, 1.0153, 1.0184, 1.0198, 1.0198, 1.0189, 1.0175, 1.0157, 1.0137, 1.0117, 1.0098, 1.008, 1.0064, 1.005, 1.0038, 1.0028, 1.002, 1.0013, 1.0008, 1.0004, 1.0001, 0.9999, 1);
+  --ui-duration-fast: 140ms;
+  --ui-duration-base: 240ms;
+  --ui-duration-slow: 360ms;
 
   /* Legacy aliases. New UI code must use --ui-* tokens. */
   --gray-050: var(--ui-background);

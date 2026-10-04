@@ -143,6 +143,9 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("PATCH", "/api/admin/llm/connections/{connection_id}"): AuditAction(
         "admin.llm_connection_update", "llm_connection", "connection_id"
     ),
+    ("DELETE", "/api/admin/llm/connections/{connection_id}"): AuditAction(
+        "admin.llm_connection_delete", "llm_connection", "connection_id"
+    ),
     ("POST", "/api/admin/llm/connections/{connection_id}/sync"): AuditAction(
         "admin.llm_connection_sync", "llm_connection", "connection_id"
     ),
@@ -152,11 +155,17 @@ AUDIT_ACTIONS: dict[tuple[str, str], AuditAction] = {
     ("PATCH", "/api/admin/llm/models/{model_id}"): AuditAction(
         "admin.llm_model_update", "llm_model", "model_id"
     ),
+    ("DELETE", "/api/admin/llm/models/{model_id}"): AuditAction(
+        "admin.llm_model_delete", "llm_model", "model_id"
+    ),
     ("POST", "/api/admin/llm/routes"): AuditAction(
         "admin.llm_route_create", "llm_route"
     ),
     ("PATCH", "/api/admin/llm/routes/{route_id}"): AuditAction(
         "admin.llm_route_update", "llm_route", "route_id"
+    ),
+    ("DELETE", "/api/admin/llm/routes/{route_id}"): AuditAction(
+        "admin.llm_route_delete", "llm_route", "route_id"
     ),
     # A route can serve several use cases, so binding targets are "<use_case>:<route_id>".
     ("PUT", "/api/admin/llm/use-cases/{use_case}/routes/{route_id}"): AuditAction(

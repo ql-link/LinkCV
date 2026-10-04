@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { LayoutTemplate, Link2, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -35,6 +36,7 @@ export function ConfirmDialog({
   onCancel,
   onConfirm,
 }: ConfirmDialogProps) {
+  useLocale();
   return (
     <AlertDialog
       open
@@ -67,7 +69,7 @@ export function ConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter className="home-confirm-actions">
           <AlertDialogCancel asChild>
-            <Button disabled={busy} variant="secondary">取消</Button>
+            <Button disabled={busy} variant="secondary">{t("取消")}</Button>
           </AlertDialogCancel>
           <Button
             className={kind === "delete" ? "home-confirm-danger" : undefined}

@@ -32,6 +32,8 @@
 | --- | --- | --- |
 | 账号与身份 | [features/identity-account.md](features/identity-account.md) | 登录、注册、微信、用户中心、管理员用户管理 |
 | 简历与工作台 | [features/resume-workbench.md](features/resume-workbench.md) | 简历、编辑器、模板、复制、分享、PDF |
+| 简历模板名称 | [features/resume-template-names.md](features/resume-template-names.md) | 新增 Muse 的名称、旧名与稳定 key 对照（含下架款式），原有模板保持现状 |
+| 新增模板整理 | [features/resume-template-curation.md](features/resume-template-curation.md) | Muse 去重、保留款式、分类与展示顺序 |
 | 求职中心 | [features/career-center.md](features/career-center.md) | 岗位、求职进程、排期、复盘 |
 | AI 求职助手 | [features/ai-assistant.md](features/ai-assistant.md) | 独立助手、编辑器侧栏、提案确认 |
 | 用户资料集 | [features/datasets.md](features/datasets.md) | 资料上传、解析状态、预览、助手引用 |

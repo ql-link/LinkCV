@@ -1,4 +1,6 @@
+import { t, useLocale } from "@/i18n";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { syncResumeSheetColumns } from "./print/resumeSheetDecoration";
 import type { JSONContent } from "@tiptap/core";
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { useResumeStore, type ResumeSettings } from "../../store/resumeStore";
@@ -72,6 +74,7 @@ function buildPageFragments(children: Element[]): PageFragment[] {
 }
 
 export function PreviewPanel() {
+  useLocale();
   const editorContent = useResumeStore((state) => state.editorContent);
   const settings = useResumeStore((state) => state.settings);
   const style = useResumeStore((state) => state.style);
@@ -154,6 +157,10 @@ export function PreviewPanel() {
     settings.verticalPageMargin,
   ]);
 
+  useLayoutEffect(() => {
+    pagesRootRef.current?.querySelectorAll<HTMLElement>(".resume-paper").forEach((paper) => syncResumeSheetColumns({ paper }));
+  });
+
   useEffect(() => {
     const images = pagesRootRef.current?.querySelectorAll<HTMLImageElement>("img[data-local-asset]");
     if (!images) return;
@@ -219,15 +226,15 @@ export function PreviewPanel() {
                 style={resumeStyle}
               >
                 <div className="resume-content" dangerouslySetInnerHTML={{ __html: pageHtml }} />
-                {!settings.smartOnePage && <div className="page-number">第 {index + 1} 页</div>}
+                {!settings.smartOnePage && <div className="page-number">{t("第 ")}{index + 1}{t(" 页")}</div>}
               </article>
             </div>
           ))}
         </div>
         <div className="page-break-hint">
           {settings.smartOnePage
-            ? "智能一页已开启：页面高度随内容增长，导出为单页"
-            : "固定 A4 页面边界，超出内容自动进入下一页"}
+            ? t("智能一页已开启：页面高度随内容增长，导出为单页")
+            : t("固定 A4 页面边界，超出内容自动进入下一页")}
         </div>
       </div>
       <div className="pagination-measure" aria-hidden="true">

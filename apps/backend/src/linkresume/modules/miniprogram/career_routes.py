@@ -12,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.application.interviews.service import (
+    effective_stage_state,
+    list_offer_materials,
     InterviewEditConflict,
     InterviewInvalidTransition,
     InterviewNotFound,
@@ -69,6 +71,7 @@ from linkresume.modules.interviews.schemas import (
     InterviewSessionSummary,
     JobApplicationListResponse,
     JobApplicationRecord,
+    OfferMaterialRecord,
     JobApplicationUpdateRequest,
     ResumeAssociationUpdateRequest,
     JobApplicationResponse,
@@ -106,6 +109,11 @@ def _application_record(
         update={
             "resume_title_snapshot": current_resume_title(db, application),
             "company_logo_url": application_logo_url(application),
+            "stage_state": effective_stage_state(db, application),
+            "offer_materials": [
+                OfferMaterialRecord(dataset_id=str(dataset_id), file_name=file_name)
+                for dataset_id, file_name in list_offer_materials(db, application.id)
+            ],
             "current_stage": ApplicationStageRecord.model_validate(current)
             if current
             else None,
@@ -144,7 +152,11 @@ def _application_summary(
     )
     return CareerApplicationSummary(
         **record.model_dump(),
-        current_session_status=current_session.status if current_session else None,
+        current_session_status=(
+            InterviewSessionRecord.model_validate(current_session).status
+            if current_session
+            else None
+        ),
         next_session_id=str(next_session.id) if next_session else None,
         next_session_start_at=next_session.start_at if next_session else None,
         next_session_end_at=next_session.end_at if next_session else None,
@@ -152,14 +164,16 @@ def _application_summary(
     )
 
 
-def _session_summary(item: SessionWithApplication) -> InterviewSessionSummary:
+def _session_summary(
+    db: Session, item: SessionWithApplication
+) -> InterviewSessionSummary:
     return InterviewSessionSummary(
         **InterviewSessionRecord.model_validate(item.session).model_dump(),
         company_name=item.application.company_name_snapshot,
         job_title=item.application.job_title_snapshot,
         company_logo_url=application_logo_url(item.application),
         calendar_color=item.application.calendar_color,
-        application_stage_state=item.application.stage_state,
+        application_stage_state=effective_stage_state(db, item.application),
     )
 
 
@@ -204,7 +218,7 @@ def get_career_overview(
     return InterviewOverviewResponse(
         metrics=OverviewMetrics(**metrics),
         pipeline=[_application_summary(db, item) for item in pipeline],
-        week_sessions=[_session_summary(item) for item in sessions],
+        week_sessions=[_session_summary(db, item) for item in sessions],
     )
 
 
@@ -247,7 +261,7 @@ def list_career_sessions(
         _raise_service_error(error)
         raise AssertionError("unreachable")
     return InterviewSessionListResponse(
-        items=[_session_summary(item) for item in items],
+        items=[_session_summary(db, item) for item in items],
         next_cursor=next_cursor,
     )
 

@@ -16,6 +16,7 @@ from linkresume.core.database import get_db, utc_now
 from linkresume.core.errors import ApiError
 from linkresume.modules.admin_insights.llm import cost_totals
 from linkresume.modules.admin_insights.window import resolve_window
+from linkresume.modules.agent.models import AgentRun, AgentSession
 from linkresume.modules.identity.dependencies import get_current_admin
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.catalog import CATALOG_URLS, fetch_catalog
@@ -26,7 +27,7 @@ from linkresume.modules.llm.models import (
 )
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
 from linkresume.modules.llm.providers import (
-    PROVIDERS, validate_route, validate_settings, validate_use_case_protocol,
+    OPENAI_CHAT, PROVIDERS, validate_route, validate_settings, validate_use_case_protocol,
 )
 from linkresume.modules.llm.resolver import (
     USE_CASES, eligible_routes, is_effective, probe_valid,
@@ -82,6 +83,37 @@ def _commit(db: Session) -> None:
         raise ApiError(409, "LLM_CONFLICT") from error
 
 
+def _referenced_route_ids(db: Session, route_ids: list[int]) -> set[int]:
+    """Routes that bindings or call/run history still point at; those are never deleted."""
+    if not route_ids:
+        return set()
+    referenced: set[int] = set()
+    for column in (LLMUseCaseRoute.route_id, LLMCallLog.route_id, AgentRun.resolved_llm_route_id):
+        referenced.update(db.scalars(select(column).where(column.in_(route_ids)).distinct()))
+    return referenced
+
+
+def _model_referenced(db: Session, model_id: int) -> bool:
+    for column in (AgentSession.selected_llm_model_id, AgentRun.resolved_llm_model_id):
+        if db.scalar(select(column).where(column == model_id).limit(1)) is not None:
+            return True
+    return False
+
+
+def _delete_routes(db: Session, routes: list[LLMModelRoute], error_code: str) -> None:
+    if _referenced_route_ids(db, [route.id for route in routes]):
+        raise ApiError(409, error_code)
+    for route in routes:
+        db.delete(route)
+    # Flush child rows first so the parent delete never trips the RESTRICT foreign keys;
+    # a reference written concurrently after the check is still caught by those keys.
+    try:
+        db.flush()
+    except IntegrityError as error:
+        db.rollback()
+        raise ApiError(409, error_code) from error
+
+
 def _bundle(service: LLMService, row: LLMProviderConnection) -> dict[str, str]:
     if row.credential_ciphertext is None:
         raise ApiError(503, "LLM_CREDENTIALS_UNAVAILABLE")
@@ -114,6 +146,7 @@ def _model_record(row: LLMModel) -> dict:
         "id": str(row.id),
         "displayName": row.display_name,
         "developerName": row.developer_name,
+        "userSelectable": bool(row.user_selectable),
         "createdAt": row.created_at,
         "updatedAt": row.updated_at,
     }
@@ -160,7 +193,8 @@ def catalog(_: User = Depends(get_current_admin)) -> dict:
             {
                 "code": spec.code,
                 "label": spec.label,
-                "protocols": sorted(spec.protocols),
+                # Keep the existing chat default when speech protocols are added.
+                "protocols": sorted(spec.protocols, key=lambda value: (value != OPENAI_CHAT, value)),
                 "targetKinds": sorted(spec.target_kinds),
                 "catalogSync": spec.code in CATALOG_URLS,
             }
@@ -256,6 +290,24 @@ def patch_connection(
     return {"connection": _connection_record(row)}
 
 
+@router.delete("/connections/{connection_id}", status_code=204)
+def delete_connection(
+    connection_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> None:
+    row = _connection(db, connection_id, lock=True)
+    # Its unused routes go with it; logical models stay, they may be served by other connections.
+    routes = db.scalars(
+        select(LLMModelRoute).where(LLMModelRoute.connection_id == row.id).with_for_update()
+    ).all()
+    _delete_routes(db, list(routes), "LLM_CONNECTION_IN_USE")
+    db.delete(row)
+    _commit(db)
+    bind_audit_target(request, row.id)
+
+
 @router.post("/connections/{connection_id}/sync")
 async def sync_connection_catalog(
     connection_id: str,
@@ -338,6 +390,7 @@ def create_model(
     row = LLMModel(
         display_name=payload.display_name.strip(),
         developer_name=payload.developer_name.strip() if payload.developer_name else None,
+        user_selectable=payload.user_selectable,
     )
     db.add(row)
     _commit(db)
@@ -358,10 +411,31 @@ def patch_model(
         row.display_name = payload.display_name.strip()
     if "developer_name" in payload.model_fields_set:
         row.developer_name = payload.developer_name.strip() if payload.developer_name else None
+    if payload.user_selectable is not None:
+        row.user_selectable = payload.user_selectable
     row.updated_at = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
     return {"model": _model_record(row)}
+
+
+@router.delete("/models/{model_id}", status_code=204)
+def delete_model(
+    model_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> None:
+    row = _model(db, model_id)
+    if _model_referenced(db, row.id):
+        raise ApiError(409, "LLM_MODEL_IN_USE")
+    routes = db.scalars(
+        select(LLMModelRoute).where(LLMModelRoute.model_id == row.id).with_for_update()
+    ).all()
+    _delete_routes(db, list(routes), "LLM_MODEL_IN_USE")
+    db.delete(row)
+    _commit(db)
+    bind_audit_target(request, row.id)
 
 
 @router.get("/routes")
@@ -431,6 +505,19 @@ def patch_route(
     _commit(db)
     bind_audit_target(request, row.id)
     return {"route": _route_record(row)}
+
+
+@router.delete("/routes/{route_id}", status_code=204)
+def delete_route(
+    route_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_admin),
+) -> None:
+    row = _route(db, route_id, lock=True)
+    _delete_routes(db, [row], "LLM_ROUTE_IN_USE")
+    _commit(db)
+    bind_audit_target(request, row.id)
 
 
 @router.get("/use-cases")
@@ -547,6 +634,8 @@ def list_calls(
     use_case: str | None = Query(default=None, alias="useCase", max_length=48),
     status: Literal["pending", "succeeded", "failed", "cancelled"] | None = None,
     error_code: str | None = Query(default=None, alias="errorCode", max_length=64),
+    call_id: str | None = Query(default=None, alias="callId", min_length=1, max_length=40),
+    user_id: int | None = Query(default=None, alias="userId", ge=1),
     from_at: datetime | None = Query(default=None, alias="from"),
     to_at: datetime | None = Query(default=None, alias="to"),
     db: Session = Depends(get_db),
@@ -555,6 +644,11 @@ def list_calls(
     if use_case is not None and use_case not in USE_CASES:
         raise ApiError(422, "LLM_USE_CASE_INVALID")
     filters = []
+    # Exact matches only: both columns are indexed (uk_llm_call_logs_call_id, idx_llm_calls_user_created).
+    if call_id is not None:
+        filters.append(LLMCallLog.call_id == call_id)
+    if user_id is not None:
+        filters.append(LLMCallLog.user_id == user_id)
     if use_case is not None:
         filters.append(LLMCallLog.use_case == use_case)
     if status is not None:

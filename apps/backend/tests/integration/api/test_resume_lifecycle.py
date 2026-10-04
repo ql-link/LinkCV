@@ -445,6 +445,8 @@ def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> N
         listed_ids = [item["id"] for item in listed.json()["templates"]]
         assert active_id in listed_ids
         assert inactive_id not in listed_ids
+        listed_active = next(item for item in listed.json()["templates"] if item["id"] == active_id)
+        assert listed_active["use_count"] == 0
 
         created = client.post(
             "/api/resumes",
@@ -453,6 +455,12 @@ def test_template_creation_copies_snapshot_and_filters_inactive_templates() -> N
         assert created.status_code == 201
         assert created.json()["resume"]["source_type"] == "template"
         assert created.json()["resume"]["template_id"] == active_id
+
+        # 使用次数统计引用该模板的简历数，列表与详情一致
+        relisted = client.get("/api/resume-templates").json()["templates"]
+        assert next(item for item in relisted if item["id"] == active_id)["use_count"] == 1
+        detail = client.get(f"/api/resume-templates/{active_id}")
+        assert detail.json()["template"]["use_count"] == 1
 
         rejected = client.post(
             "/api/resumes", json={"title": "停用模板", "template_id": inactive_id}

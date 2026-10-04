@@ -1,4 +1,4 @@
-"""Provider adapters for realtime speech recognition and synthesis.
+"""Provider adapters for speech recognition and synthesis.
 
 Routes, credentials and call logs come from the LLM module; adapters only
 speak the upstream wire protocol.
@@ -40,6 +40,8 @@ class SpeechTarget:
     api_key: str
     model: str
     workspace_id: str | None = None
+    provider_code: str = "aliyun"
+    api_base: str | None = None
 
 
 SAMPLE_RATE = 16_000

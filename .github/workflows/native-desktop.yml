@@ -1,0 +1,71 @@
+name: Native desktop authentication and paper
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [dev, master]
+    paths:
+      - 'apps/mac/**'
+      - 'apps/windows/**'
+      - 'apps/native/**'
+      - 'apps/web/src/**'
+      - 'apps/web/public/templates/**'
+      - 'apps/web/pdf-cli/**'
+      - 'apps/web/package*.json'
+      - 'apps/backend/src/linkresume/modules/identity/**'
+      - 'apps/backend/tests/integration/api/test_desktop_auth.py'
+      - '.github/workflows/native-desktop.yml'
+      - 'package.json'
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm ci --prefix apps/web
+      - run: npm run test:mac
+        env:
+          RUN_DESKTOP_KEYCHAIN_TESTS: '1'
+      - run: node apps/web/node_modules/playwright-core/cli.js install chromium
+      - run: npm run test:native-webkit
+      - run: npm run test:native-pdf
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - run: npm ci --prefix apps/web
+      - run: npm run build:native-renderer
+      - run: dotnet test --project tests/LinkResume.Core.Tests/LinkResume.Core.Tests.csproj
+        working-directory: apps/windows
+      - run: dotnet test --project tests/LinkResume.Platform.Tests/LinkResume.Platform.Tests.csproj
+        working-directory: apps/windows
+        env:
+          RUN_DESKTOP_CREDENTIAL_TESTS: '1'
+      - run: dotnet build src/LinkResume.App/LinkResume.App.csproj -p:Platform=x64 -r win-x64
+        working-directory: apps/windows
+
+  redis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.3.2
+      - run: sudo apt-get update && sudo apt-get install -y redis-server
+      - run: uv run --directory apps/backend pytest tests/integration/api/test_desktop_auth.py -q
+        env:
+          RUN_DESKTOP_REDIS_TESTS: '1'

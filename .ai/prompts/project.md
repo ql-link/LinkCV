@@ -37,7 +37,7 @@ npm run dev:development # 本地代码 + 共享 Dev 中间件（.env.development
 npm run check:ai        # 校验 AI 入口和 Skill
 npm run check:docs      # 校验长期文档同步
 npm run check:contracts # 校验确定性运行时契约
-npm run check:web       # Web 设计规则、测试、类型与生产构建
+npm run check:web       # Web 设计规则、测试、类型与生产构建（按需运行，非完成前提）
 npm test                # 运行三个应用的自动化测试
 npm run check:app       # 测试、类型检查和构建三个应用
 npm run check           # 完整本地质量入口
@@ -46,7 +46,7 @@ npm run check           # 完整本地质量入口
 - 启动或重启开发服务时必须按用户要连接的中间件显式选择 profile：“全部本地”使用 `npm run dev:local`，“本地项目使用共享 Dev 中间件”使用 `npm run dev:development`。`npm run dev` 只是 `dev:local` 的兼容别名，不作为未说明目标时的默认选择。
 - `APP_ENV` 控制应用功能，不负责选择 env 文件；不得根据 `APP_ENV=development` 推断进程已加载 `.env.development`。以启动器打印的“基础配置”和“共享私密覆盖”路径为准，启动后再核对 5173 Web、8000 FastAPI 和目标中间件的实际连通性。
 - Python 命令统一通过 `uv run --directory apps/backend` 执行，不依赖系统 `python`。
-- 任务完成时只运行与实际改动和风险匹配的范围检查；单一后端、前端、Extension、AI 规则或文档改动不得仅因进入收尾阶段扩大成全仓检查。创建 PR 时按当前可提交内容组合受影响领域的检查；只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时才运行完整 `npm run check`。同一会话中代码、配置、依赖和测试替身未变化，且已有命令完整覆盖 PR 差异时可以复用结果，不机械重跑。
+- 不要求运行全量测试用例（`npm test`、`npm run check`）或生产构建（`npm run build:*`、`check:web` 中的构建）：完成任务和创建 PR 都不以它们为前提，用户明确要求时才运行。需要验证时只选与实际改动直接相关的最小检查（如受影响的测试文件、类型检查），并如实报告运行了什么、没运行什么。
 - 只报告亲自运行并看到结果的测试、构建、迁移或部署命令；环境阻塞和未执行项要如实说明。
 - 当前没有自动化跨端 E2E。Gherkin、组件测试和后端接口测试不能描述成已完成自动化端到端验收。
 
@@ -85,7 +85,7 @@ npm run check           # 完整本地质量入口
 - `docs/` 只描述已经实现的长期事实；后端方案、用户提供的前端原型、Acceptance、实施报告和人工验收记录放在 `.specs/<KEY>/`，用户指定的 Figma 设计保留在 Figma。
 - 新依赖必须说明必要性并更新对应 lockfile。
 - 示例和测试使用虚构信息，不得写入真实简历、联系方式、账号、密钥或私有部署凭据。
-- `/` 与 `/home` 无论登录状态都保持展示公共落地页，不能自动跳转到工作台；未登录 CTA 进入 `/login`，已登录 CTA 进入 `/resumes`。
+- 未登录访问 `/` 展示公共落地页；已登录访问 `/` 以替换历史的方式进入 `/resumes`。`/home` 无论登录状态都展示落地页，是登录用户回到落地页的固定入口，不能自动跳转；落地页上未登录 CTA 进入 `/login`，已登录 CTA 进入 `/resumes`。
 - 可能造成数据丢失、越权、凭据泄露，或目标与作用范围仍不明确时，停止执行并说明具体阻塞。
 
 ## 6. Git 与完成定义

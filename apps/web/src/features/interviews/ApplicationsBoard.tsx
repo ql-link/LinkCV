@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import {
   useEffect,
   useMemo,
@@ -7,13 +8,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, Ban, Clock3, Eye, GripVertical, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, Ban, Eye, MoreHorizontal, Trash2 } from "lucide-react";
 import type { JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
 import {
   APPLICATION_PROGRESS_COLUMNS,
   applicationProgressToneClass as projectApplicationProgressToneClass,
   applicationScheduleStatusLabel,
+  applicationStageRank,
   applicationStatusLabel as projectApplicationStatusLabel,
   formatApplicationScheduleDateTime,
   projectApplicationProgress,
@@ -244,7 +246,7 @@ function interviewColumnPrefill(column: BoardProgressColumn): NextStagePrefill {
   // existing first-round convention when opening the stage dialog.
   return {
     initialTab: "interview",
-    initialInterviewLabel: column.label === INTERVIEW_FALLBACK_LABEL && !column.items.length ? "一面" : column.label,
+    initialInterviewLabel: column.label === INTERVIEW_FALLBACK_LABEL && !column.items.length ? t("一面") : column.label,
   };
 }
 
@@ -348,21 +350,26 @@ export function sortApplications(
 function applicationDropBlockReason(
   application: JobApplicationSummary,
   _completedCurrentStageApplicationIds: ReadonlySet<string>,
+  target?: ProgressColumnKey,
 ): string | null {
   const source = progressColumnKey(application);
   if (application.archived_at !== null) {
-    return "该求职流程已归档，不能拖入其他状态栏。";
+    return t("该求职流程已归档，不能拖入其他状态栏。");
   }
   if (application.status !== "active") {
-    return "该求职流程已经结束，不能拖入其他状态栏。";
+    return t("该求职流程已经结束，不能拖入其他状态栏。");
   }
-  if (source === "offer") {
-    return "该求职流程已经进入 Offer 阶段，不能再拖入其他状态栏。";
+  if (source === "offer" && target !== "ended") {
+    return t("该求职流程已经进入 Offer 阶段，只能拖到「已结束」。");
   }
   if (source === "pending") {
     return null;
   }
   return null;
+}
+
+function progressColumnLabel(key: ProgressColumnKey): string {
+  return APPLICATION_PROGRESS_COLUMNS.find((column) => column.key === key)?.label ?? t("当前阶段");
 }
 
 function applicationBoardColumnId(application: JobApplicationSummary): string {
@@ -385,6 +392,7 @@ function validateApplicationDrop(
   const blockReason = applicationDropBlockReason(
     application,
     completedCurrentStageApplicationIds,
+    target.key,
   );
   if (blockReason) {
     return { valid: false, message: blockReason };
@@ -395,7 +403,7 @@ function validateApplicationDrop(
   }
   if (source === "pending") {
     if (target.key === "pending") {
-      return { valid: false, message: "该记录已经位于待投递。" };
+      return { valid: false, message: t("该记录已经位于待投递。") };
     }
     if (target.key === "offer") {
       return { valid: true, prefill: { initialTab: "offer" } };
@@ -405,16 +413,18 @@ function validateApplicationDrop(
     }
     return { valid: true, prefill: { initialTab: "assessment" } };
   }
+  // 只能往后走：筛选 → 测评 → 笔试 → 面试（多轮）→ Offer，任意跳过中间阶段都允许；不能退回更早的阶段
+  const sourceRank = applicationStageRank(source);
   if (target.key === "assessment" || target.key === "written_test") {
-    return source === "screening"
+    return applicationStageRank(target.key) > sourceRank
       ? { valid: true, prefill: { initialTab: target.key, initialStage: target.key } }
-      : { valid: false, message: `${target.label}阶段只能从筛选中进入。` };
+      : { valid: false, message: t("当前已经在{value0}，不能退回{value1}。", { value0: progressColumnLabel(source), value1: target.label }) };
   }
   if (target.key === "offer") {
     return { valid: true, prefill: { initialTab: "offer" } };
   }
   if (target.key !== "interview") {
-    return { valid: false, message: "只能拖动到后续的笔试、面试或 Offer 阶段。" };
+    return { valid: false, message: t("只能拖动到后续的测评、笔试、面试或 Offer 阶段。") };
   }
 
   if (source === "interview") {
@@ -432,7 +442,7 @@ function validateApplicationDrop(
           ? false
           : targetColumnIndex > sourceColumnIndex;
     if (target.id === sourceColumnId || !isLater) {
-      return { valid: false, message: "不能拖回当前或更早的面试阶段。" };
+      return { valid: false, message: t("不能拖回当前或更早的面试阶段。") };
     }
   }
   return {
@@ -442,9 +452,9 @@ function validateApplicationDrop(
 }
 
 export function interviewRoundLabel(roundNo: number): string {
-  if (roundNo === 1) return "一面";
-  if (roundNo === 2) return "二面";
-  return `第 ${roundNo} 轮`;
+  if (roundNo === 1) return t("一面");
+  if (roundNo === 2) return t("二面");
+  return t("第 {value0} 轮", { value0: roundNo });
 }
 
 export function applicationStatusLabel(application: JobApplicationSummary): string {
@@ -483,11 +493,11 @@ export function formatApplicationUpdatedAt(value: string, now = new Date()): str
     && left.getMonth() === right.getMonth()
     && left.getDate() === right.getDate();
   const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-  if (isSameDay(date, now)) return `今天 ${time}`;
+  if (isSameDay(date, now)) return t("今天 {value0}", { value0: time });
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
-  if (isSameDay(date, yesterday)) return `昨天 ${time}`;
-  return `${date.getMonth() + 1}月${date.getDate()}日`;
+  if (isSameDay(date, yesterday)) return t("昨天 {value0}", { value0: time });
+  return t("{value0}月{value1}日", { value0: date.getMonth() + 1, value1: date.getDate() });
 }
 
 export function applicationCardStatusLabel(
@@ -497,7 +507,7 @@ export function applicationCardStatusLabel(
 ): string {
   const projection = projectApplicationProgress(application);
   if (projection.columnKey === "ended") {
-    return `结束阶段：${projection.stageLabel}`;
+    return t("结束阶段：{value0}", { value0: projection.stageLabel });
   }
   const scheduleLabel = applicationScheduleStatusLabel(application, { currentStageCompleted, now });
   return scheduleLabel ?? projection.supportingLabel ?? projection.statusLabel;
@@ -507,7 +517,7 @@ function formatBoardCardDateTime(value: string | null | undefined): string | nul
   const timestamp = validApplicationTimestamp(value);
   if (timestamp === null) return null;
   const date = new Date(timestamp);
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return t("{value0}月{value1}日 {value2}:{value3}", { value0: date.getMonth() + 1, value1: date.getDate(), value2: String(date.getHours()).padStart(2, "0"), value3: String(date.getMinutes()).padStart(2, "0") });
 }
 
 function formatBoardCardScheduleRange(
@@ -533,30 +543,30 @@ export function applicationCardTimeLabel(application: JobApplicationSummary): st
   const projection = projectApplicationProgress(application);
   if (projection.columnKey === "pending") {
     const createdAt = formatBoardCardDateTime(application.created_at);
-    return createdAt ? `创建于 ${createdAt}` : "创建时间待确认";
+    return createdAt ? t("创建于 {value0}", { value0: createdAt }) : t("创建时间待确认");
   }
   if (projection.columnKey === "assessment" || projection.columnKey === "written_test") {
     const deadline = formatBoardCardDateTime(application.next_session_end_at);
-    return deadline ? `截止 ${deadline}` : "尚未安排时间";
+    return deadline ? t("截止 {value0}", { value0: deadline }) : t("尚未安排时间");
   }
   if (projection.columnKey === "interview") {
     return formatBoardCardScheduleRange(
       application.next_session_start_at,
       application.next_session_end_at,
-    ) ?? "尚未安排时间";
+    ) ?? t("尚未安排时间");
   }
   if (projection.columnKey === "offer") {
     const offerAt = application.current_stage?.stage_type === "offer"
       ? formatBoardCardDateTime(application.current_stage.entered_at)
       : null;
-    return offerAt ? `${offerAt} 获得 Offer` : "Offer 时间待确认";
+    return offerAt ? t("{value0} 获得 Offer", { value0: offerAt }) : t("Offer 时间待确认");
   }
   if (projection.columnKey === "ended") {
     const terminatedAt = formatBoardCardDateTime(application.terminated_at);
-    return terminatedAt ? `结束于 ${terminatedAt}` : "结束时间待确认";
+    return terminatedAt ? t("结束于 {value0}", { value0: terminatedAt }) : t("结束时间待确认");
   }
   const appliedAt = formatBoardCardDateTime(application.applied_at);
-  return appliedAt ? `投递于 ${appliedAt}` : "投递时间待确认";
+  return appliedAt ? t("投递于 {value0}", { value0: appliedAt }) : t("投递时间待确认");
 }
 
 type ApplicationAdvanceAction = {
@@ -586,11 +596,12 @@ function applicationAdvanceAction(
   }
   return {
     enabled: true,
-    prefill: columnKey === "screening"
-      ? { initialTab: "written_test" }
+    // 默认选中流程里的下一步：筛选 → 测评，测评 → 笔试，笔试 → 一面，面试 → 下一轮
+    prefill: columnKey === "screening" || columnKey === "assessment"
+      ? { initialTab: columnKey === "screening" ? "assessment" : "written_test", initialStage: columnKey === "screening" ? "assessment" : "written_test" }
       : {
         initialTab: "interview",
-        initialInterviewLabel: columnKey === "assessment" || columnKey === "written_test" ? "一面" : "",
+        initialInterviewLabel: columnKey === "written_test" ? t("一面") : "",
       },
   };
 }
@@ -632,6 +643,7 @@ export function ApplicationsBoard({
   onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
+  useLocale();
   const defaultColumnIds = buildBoardColumns(visibleApplications).map((column) => column.id);
   const [columnOrder, setColumnOrder] = useState(readStoredColumnOrder);
   useEffect(() => {
@@ -652,14 +664,14 @@ export function ApplicationsBoard({
   };
   if (displayMode !== "board" || !visibleApplications.length) return null;
   const groups = groupByCategory
-    ? [["internship", "实习"], ["campus", "校招"], ["full_time", "正式"], ["", "未分类"]]
-    : [["all", "全部"]];
+    ? [["internship", t("实习")], ["campus", t("校招")], ["full_time", t("正式")], ["", t("未分类")]]
+    : [["all", t("全部")]];
   return <div className={groupByCategory ? "career-category-board" : "career-ungrouped-board"}>
     <div className={groupByCategory ? "career-category-board-content" : "career-ungrouped-board-content"}>
     {groups.map(([key, label]) => {
       const items = key === "all" ? visibleApplications : visibleApplications.filter((item) =>
         (item.job_snapshot.employment_type ?? "") === key);
-      return <section key={key} aria-label={groupByCategory ? `${label}分类` : undefined}>
+      return <section key={key} aria-label={groupByCategory ? t("{value0}分类", { value0: label }) : undefined}>
         {groupByCategory && <h2 className="career-category-heading"><span className="career-category-heading-label">{label}<span>{items.length}</span></span></h2>}
         <ProgressBoard
           applications={items}
@@ -720,6 +732,7 @@ export function ProgressBoard({
   onRequestDelete: (application: JobApplicationSummary) => void;
   onRequestCategory: (application: JobApplicationSummary) => void;
 }) {
+  useLocale();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [invalidDropTarget, setInvalidDropTarget] = useState<string | null>(null);
@@ -909,7 +922,7 @@ export function ProgressBoard({
   return (
     <section
       className="interview-surface career-applications-board"
-      aria-label="求职进程看板"
+      aria-label={t("求职进程看板")}
       onPointerDownCapture={(event) => {
         if (!openMenuApplicationId) {
           dismissMenuClickApplicationIdRef.current = null;
@@ -1100,6 +1113,7 @@ export function ProgressColumn({
   onRequestCategory: (application: JobApplicationSummary) => void;
   onOpen: (item: JobApplicationSummary) => void;
 }) {
+  useLocale();
   const shouldReduceMotion = useReducedMotion();
   const isSourceColumn = Boolean(draggingSourceColumnId && draggingSourceColumnId === column.id);
   const isReturningToSource = Boolean(
@@ -1208,19 +1222,19 @@ export function ProgressColumn({
         role="button"
         tabIndex={0}
         draggable
-        aria-label={`拖动调整“${column.label}”栏目位置；也可使用左右方向键`}
+        aria-label={t("拖动调整“{value0}”栏目位置；也可使用左右方向键", { value0: column.label })}
         aria-grabbed={isDraggingColumn}
-        title="拖动调整栏目位置"
+        title={t("拖动调整栏目位置")}
         onDragStart={onColumnDragStart}
         onDragEnd={onColumnDragEnd}
         onKeyDown={onColumnKeyDown}
       >
-        <GripVertical className="progress-column-drag-handle" aria-hidden="true" />
+        <span className="progress-column-dot" aria-hidden="true" data-tone={columnTone(column.key)} />
         <h3><span className="progress-column-label">{column.label}</span><span className="progress-column-count">{column.items.length}</span></h3>
       </header>
       <div className="progress-column-cards">
         {cardNodes}
-        {!renderedItems.length && !showDropPreview && <p className="pipeline-empty">暂无进程</p>}
+        {!renderedItems.length && !showDropPreview && <p className="pipeline-empty">{t("暂无进程")}</p>}
       </div>
     </div>
   );
@@ -1267,6 +1281,7 @@ export function ProgressCard({
   onRequestCategory?: (application: JobApplicationSummary) => void;
   onOpen: () => void;
 }) {
+  useLocale();
   const statusLabel = applicationCardStatusLabel(item, currentStageCompleted, now);
   const timeLabel = currentStageCompleted ? null : applicationCardTimeLabel(item);
   const stageToneClass = projectApplicationProgressToneClass(item, {
@@ -1274,6 +1289,9 @@ export function ProgressCard({
     now,
   } satisfies ApplicationProgressLabelOptions);
   const advanceAction = applicationAdvanceAction(item, completedCurrentStageApplicationIds);
+  const categoryLabel = employmentCategoryLabel(item.job_snapshot?.employment_type);
+  // 今天有安排且还没开始时，底部改成黑色胶囊「今天 HH:mm」（设计稿 04.1 三面卡片）
+  const todayLabel = !currentStageCompleted ? todayScheduleLabel(item, now) : null;
   const cardRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -1346,23 +1364,21 @@ export function ProgressCard({
       onDragStart={(event) => onDragStart(item, event)}
       onDragEnd={onDragEnd}
     >
-      <button type="button" className="progress-card-open" aria-label={`查看 ${item.company_name_snapshot} ${item.job_title_snapshot} 求职进程`} onClick={handleCardOpen}>
-        <span className="progress-card-main">
-          <CompanyLogo companyName={item.company_name_snapshot} logoUrl={item.company_logo_url} />
-          <span className="progress-card-copy">
-            <strong className="progress-card-company" title={item.company_name_snapshot}>{item.company_name_snapshot}</strong>
-            <strong className="progress-card-job-title" title={item.job_title_snapshot}>{item.job_title_snapshot}</strong>
-          </span>
-        </span>
+      <button type="button" className="progress-card-open" aria-label={t("查看 {value0} {value1} 求职进程", { value0: item.company_name_snapshot, value1: item.job_title_snapshot })} onClick={handleCardOpen}>
+        {/* 设计稿 04.1 jobCard：标题「公司 · 职位」→ 求职分类标签 → 底部状态（圆点 + 文字，今天的安排用黑色胶囊）+ 右下角公司标 */}
+        <strong className="progress-card-title" title={`${item.company_name_snapshot} · ${item.job_title_snapshot}`}>
+          <span className="progress-card-company">{item.company_name_snapshot}</span>
+          <span aria-hidden="true"> · </span>
+          <span className="progress-card-job-title">{item.job_title_snapshot}</span>
+        </strong>
+        {categoryLabel && <span className="v3-chip progress-card-category">{categoryLabel}</span>}
         <span className="progress-card-footer">
-          <span className={`progress-card-stage ${stageToneClass}`}>{statusLabel}</span>
-          {timeLabel && (
-            <span className="progress-card-time">
-              <Clock3 aria-hidden="true" />
-              <span>{timeLabel}</span>
-            </span>
-          )}
+          {todayLabel && <span className="progress-card-today" aria-hidden="true">{todayLabel}</span>}
+          {/* 状态文字自身带语义色 class，圆点用 ::before 画出 */}
+          <span className={`progress-card-stage ${stageToneClass}${todayLabel ? " v3-visually-hidden" : ""}`} title={timeLabel ?? undefined}>{statusLabel}</span>
+          {timeLabel && <span className="progress-card-time v3-visually-hidden">{timeLabel}</span>}
         </span>
+        <CompanyLogo companyName={item.company_name_snapshot} logoUrl={item.company_logo_url} />
       </button>
       <div
         ref={menuRef}
@@ -1376,7 +1392,7 @@ export function ProgressCard({
           ref={menuTriggerRef}
           className="progress-card-menu-trigger"
           type="button"
-          aria-label={`更多求职操作 ${item.company_name_snapshot} ${item.job_title_snapshot}`}
+          aria-label={t("更多求职操作 {value0} {value1}", { value0: item.company_name_snapshot, value1: item.job_title_snapshot })}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           aria-controls={`progress-card-menu-${item.id}`}
@@ -1392,7 +1408,7 @@ export function ProgressCard({
             id={`progress-card-menu-${item.id}`}
             className="progress-card-menu-panel"
             role="menu"
-            aria-label={`${item.company_name_snapshot} ${item.job_title_snapshot} 操作菜单`}
+            aria-label={t("{value0} {value1} 操作菜单", { value0: item.company_name_snapshot, value1: item.job_title_snapshot })}
             onKeyDown={handleMenuKeyDown}
           >
             <button
@@ -1400,13 +1416,10 @@ export function ProgressCard({
               role="menuitem"
               onClick={() => runMenuAction(onOpen)}
             >
-              <Eye size={15} aria-hidden="true" />查看详情
-            </button>
+              <Eye size={15} aria-hidden="true" />{t("查看详情")}</button>
             {columnKey !== "ended" && (
               <>
-                <button type="button" role="menuitem" onClick={() => runMenuAction(() => onRequestCategory?.(item))}>
-                  修改分类
-                </button>
+                <button type="button" role="menuitem" onClick={() => runMenuAction(() => onRequestCategory?.(item))}>{t("修改分类")}</button>
                 <button
                   type="button"
                   role="menuitem"
@@ -1419,8 +1432,7 @@ export function ProgressCard({
                     onRequestNextStage?.(item, advanceAction.prefill);
                   })}
                 >
-                  <ArrowRight size={15} aria-hidden="true" />推进流程
-                </button>
+                  <ArrowRight size={15} aria-hidden="true" />{t("推进流程")}</button>
                 {item.status === "active" && item.archived_at === null && item.offer_status === "none" && (
                   <button
                     type="button"
@@ -1429,8 +1441,7 @@ export function ProgressCard({
                     disabled={isAdvancing}
                     onClick={() => runMenuAction(() => onRequestTerminate?.(item))}
                   >
-                    <Ban size={15} aria-hidden="true" />终止求职
-                  </button>
+                    <Ban size={15} aria-hidden="true" />{t("终止求职")}</button>
                 )}
               </>
             )}
@@ -1442,8 +1453,7 @@ export function ProgressCard({
                 disabled={isAdvancing}
                 onClick={() => runMenuAction(() => onRequestDelete?.(item))}
               >
-                <Trash2 size={15} aria-hidden="true" />删除岗位
-              </button>
+                <Trash2 size={15} aria-hidden="true" />{t("删除岗位")}</button>
             )}
           </div>
         )}
@@ -1452,13 +1462,35 @@ export function ProgressCard({
   );
 }
 
+function columnTone(key: ProgressColumnKey): "muted" | "orange" | "blue" | "green" {
+  if (key === "assessment" || key === "written_test") return "orange";
+  if (key === "interview") return "blue";
+  if (key === "offer") return "green";
+  return "muted";
+}
+
+function employmentCategoryLabel(value: unknown): string | null {
+  return value === "internship" ? t("实习") : value === "campus" ? t("校招") : value === "full_time" ? t("正式") : null;
+}
+
+function todayScheduleLabel(application: JobApplicationSummary, now = new Date()): string | null {
+  const key = progressColumnKey(application);
+  if (key !== "interview" && key !== "written_test" && key !== "assessment") return null;
+  const start = validApplicationTimestamp(application.next_session_start_at);
+  if (start === null || start <= now.getTime()) return null;
+  const date = new Date(start);
+  if (date.toDateString() !== now.toDateString()) return null;
+  return t("今天 {value0}:{value1}", { value0: String(date.getHours()).padStart(2, "0"), value1: String(date.getMinutes()).padStart(2, "0") });
+}
+
 function CompanyLogo({ companyName, logoUrl }: { companyName: string; logoUrl?: string | null }) {
+  useLocale();
   const [failed, setFailed] = useState(false);
 
   useEffect(() => setFailed(false), [logoUrl]);
 
   if (!logoUrl || failed) {
-    return <span className="progress-card-logo is-fallback" aria-hidden="true">{companyName.trim().slice(0, 1) || "企"}</span>;
+    return <span className="progress-card-logo is-fallback" aria-hidden="true">{companyName.trim().slice(0, 1) || t("企")}</span>;
   }
   return (
     <span className="progress-card-logo">

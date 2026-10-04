@@ -30,6 +30,11 @@ def test_admin_trace_exposes_user_and_stage_without_message_content() -> None:
         listing = client.get("/api/admin/agent-operations")
         assert listing.status_code == 200
         assert listing.json()["items"][0]["user_id"] == str(user_id)
+        by_id = client.get("/api/admin/agent-operations", params={"operationId": operation_id}).json()
+        assert [item["id"] for item in by_id["items"]] == [operation_id]
+        assert client.get("/api/admin/agent-operations", params={"operationId": str(uuid4())}).json()["items"] == []
+        assert len(client.get("/api/admin/agent-operations", params={"userId": user_id}).json()["items"]) == 1
+        assert client.get("/api/admin/agent-operations", params={"userId": user_id + 1}).json()["items"] == []
         detail = client.get(f"/api/admin/agent-operations/{operation_id}")
         assert detail.status_code == 200
         body = detail.json()
