@@ -44,7 +44,19 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 4. 内部能力和对话请求都先固定逻辑模型，再按该模型在 `llm_use_case_routes` 中的优先级依次尝试有效线路；可切换的上游失败才进入下一条。每次实际上游请求写入 `llm_call_logs`。
 5. Pi 每轮先加载 `career-assistant-router`，保存有界任务清单，再按任务选择工作流并记录完成、部分完成、受阻或失败。简历上下文通过统一的 persisted canonical 解析边界读取；结构化 `InlineIcon/title_icon` 只在 Agent Markdown 边界序列化为白名单 `:icon[Name]:`。普通简历改动保存为范围化 canonical 提案；整篇翻译保存为独立 `translate_resume` 提案，服务端复验结构、节点、日期、数字、链接、联系方式和样式不变。确认普通提案时更新当前快照；确认翻译提案时创建新 Resume 与初始版本，并复制源 Resume 私有图片。图片缺失、不支持、复制失败或超过限额时不应用提案，已复制对象在事务失败时补偿删除。
 
-任务计划通过内部 `tasks:plan` 接口在当前用户消息元数据中保存，限制为 1–8 项，并校验工作流、产物类型、已授权资料引用、唯一 ID 和先后依赖。Pi 逐项调用 `tasks/{taskId}:status` 更新 `running/completed/partial/blocked/failed`；服务端只接受属于同一 run 的真实提案 ID。工作流切换以当前任务为边界，读取 Skill 只提供方法，不决定用户资料授权。运行意外结束时，FastAPI 把未收口任务标记为失败或受阻，并把该 run 已创建但未计入其他任务的提案归到当时正在执行的任务。`agent_runs.status=succeeded` 仍只表示运行和回复正常结束；每项业务结果以任务状态为准。单项提案使用基于目标与操作的稳定请求键，服务端按 run 与请求键幂等返回，批量目标部分失败时保留已创建提案 ID。
+任务计划通过内部 `tasks:plan` 接口在当前用户消息元数据中保存，限制为 1–8 项，并校验工作流、产物类型、已授权资料引用、唯一 ID 和先后依赖。Pi 逐项调用 `tasks/{taskId}:status` 更新 `running/completed/partial/blocked/failed`；服务端只接受属于同一 run 的真实提案 ID。工作流切换以当前任务为边界，读取 Skill 只提供方法，不决定用户资料授权。运行意外结束时，FastAPI 把未收口任务标记为失败或受阻，并把该请求已创建但未计入其他任务的提案归到当时正在执行的任务。`agent_runs.status=succeeded` 仍只表示运行和回复正常结束；每项业务结果以任务状态为准。单项提案使用基于目标与操作的稳定请求键，服务端按 run 与请求键幂等返回，批量目标部分失败时保留已创建提案 ID。
+
+## 同一运行内的请求来源
+
+浏览器管理未发送队列，普通排队仍逐条调用现有消息接口。Pi Service 的 `steering.js` 只管理当前运行已接收的插入及回执，最多一条尚未消费的输入；不提供服务端队列编辑、排序或后台调度。运行句柄和插入接收回执在 Pi 内存，业务真值仍在 MySQL。
+
+Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在完整模型轮次及全部工具结束后调用 FastAPI `steering:activate`。FastAPI 按 User → Session → Run → Message 加锁，复验引用和版本，分配正式用户消息；Pi 切换可信来源序号、目标和工具状态，恢复规划工具，并在用户输入进入原生对话后调用 `steering:ack`。激活重试返回原授权快照和回执，不因后来的资料变化改判成未接受；真正读取正文时仍复验版本。资料正文不写入消息快照。
+
+`message_scope.py` 从同一 run 最新用户消息解析活动请求。Pi 客户端在所有工具回调注入 `X-Agent-User-Sequence`，模型不能自行选择序号；旧请求迟到回调返回 `AGENT_REQUEST_SCOPE_STALE`。旧单用户消息 run 可以兼容推导，多消息 run 缺少来源时拒绝猜测。任务、显式目标和提案授权都跟随当前来源，旧任务结果及提案继续保留。
+
+不改变数据库 schema：正式用户消息的既有 `metadata_json` 保存 `submission`（key/hash/mode）、`steering` 接收/生效状态和 `generated_proposal_ids`；任务仍在各自消息的 `agent_tasks`，被调整的未完成任务增加 `superseded_by_sequence_no`。助手消息元数据保存 `reply_to_sequence_no`。完整回复由 `messages:complete` 在发送完成事件前持久化，后续插入失败不删除此前完整回复；当前未完成片段仍不保存。终态先写回数据库，再对浏览器发送，避免下一条普通消息与上一轮收口竞争。
+
+浏览器断开不会取消当前运行，但本机队列暂停；恢复查询优先读取正式消息回执，其次查询 Pi 句柄，未知结果保持冻结。客户端重放事件按来源与消息序号去重。用户行为及本机保留边界见[助手功能](../features/ai-assistant.md#消息排队与插入)，接口状态见[HTTP 契约](../api/http-contracts.md#消息排队与插入回执)。
 
 ## 进程与信任边界
 
@@ -104,7 +116,7 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 - 独立助手确认当前嵌入简历的提案前先完成现有草稿保存；确认成功后 Web 重新读取返回的目标简历，并用非编辑事务替换 Tiptap 文档。刷新读取失败不回滚已经完成的服务端提案，而是保留应用状态并提示用户重新打开简历；非当前简历的提案不触发右侧工作台替换。
 - `/api/agent/model` 没有可用对话默认模型时返回 `503 LLM_MODEL_NOT_CONFIGURED`；成功时只返回默认逻辑模型的 `id` 和 `name`，不触发凭据解密。
 - 模型未绑定、凭据不可解密、探针失败、供应商超时和计量缺失分别保留稳定状态；调用日志只记录非敏感错误码。
-- 单个浏览器 SSE 订阅断开不改变 run；后端进程重启导致运行中缓冲不存在时以 `AGENT_STREAM_INCOMPLETE` 收口。取消和失败不会生成可确认提案。
+- 单个浏览器 SSE 订阅断开不改变 run；后端进程重启导致运行中缓冲不存在时以 `AGENT_STREAM_INCOMPLETE` 收口。取消和失败保留此前已经创建的提案，不将其自动应用。
 - 内部工具失败只影响当前调用；数据库事务由 FastAPI 控制，Pi 不能直接连接 MySQL、Redis 或对象存储。
 - Pi 运行异常在进程日志中记录结构化 `agent_run_failed` 终点，只包含 run ID、稳定内部错误码、取消标记和时间，不记录对话或简历正文；浏览器仍只接收白名单公开错误码。
 - 管理端通过停用连接、线路或场景绑定撤下新请求；已写入的调用日志和运行模型快照继续保留。

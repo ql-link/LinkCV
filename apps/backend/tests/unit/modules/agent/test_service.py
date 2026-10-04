@@ -18,6 +18,10 @@ class RecordingSession:
         self.scalar_statements.append(statement)
         return next(self.scalar_results)
 
+    def scalars(self, statement):
+        result = self.scalar(statement)
+        return [result] if result is not None else []
+
     def add(self, _record: object) -> None:
         pass
 
@@ -47,7 +51,9 @@ def test_create_session_has_no_resume_binding_field() -> None:
 
 def test_create_proposal_locks_resume_before_idempotency_lookup() -> None:
     # No existing idempotent proposal and no originating revision message.
-    db = RecordingSession([SimpleNamespace(status=1, deletion_requested_at=None), SimpleNamespace(id=7, lock_version=4), None, None])
+    message = SimpleNamespace(sequence_no=1, metadata_json=None)
+    db = RecordingSession([SimpleNamespace(status=1, deletion_requested_at=None),
+                           SimpleNamespace(id=7, lock_version=4), None, message, message])
     data, style = canonical_resume_payload()
 
     proposal = create_proposal(

@@ -1,8 +1,28 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { api, type AgentSession } from "../api/client";
 import { resetSessionStores, useSessionStore } from "./sessionStore";
+import { useResumeStore } from "../store/resumeStore";
+import { enqueueMessage, queueKey, readQueue } from "../features/agent/messageQueue";
+import { installMessageQueueEnvironment } from "../test/messageQueueEnvironment";
 
 afterEach(() => vi.restoreAllMocks());
+
+it("删除 V3 对话只清理该对话队列，失败时保留消息", async () => {
+  installMessageQueueEnvironment();
+  const originalUser = useResumeStore.getState().user;
+  useResumeStore.setState({ user: { id: "queue-owner", email: "queue@example.test", nickname: "测试", is_admin: false } });
+  try {
+    await enqueueMessage("queue-owner", "deleted", { content: "待发送" });
+    await enqueueMessage("queue-owner", "kept", { content: "保留" });
+    const remove = vi.spyOn(api, "deleteAgentSession").mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+    await expect(useSessionStore.getState().destroy("deleted")).rejects.toThrow("offline");
+    expect(readQueue(queueKey("queue-owner", "deleted")).items).toHaveLength(1);
+    await useSessionStore.getState().destroy("deleted");
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(readQueue(queueKey("queue-owner", "deleted")).items).toHaveLength(0);
+    expect(readQueue(queueKey("queue-owner", "kept")).items).toHaveLength(1);
+  } finally { useResumeStore.setState({ user: originalUser }); vi.unstubAllGlobals(); }
+});
 
 it("已确认没有最近对话时，后台刷新不会闪回读取中", async () => {
   useSessionStore.setState({ sessions: [], status: "ready", error: null });

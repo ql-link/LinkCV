@@ -1,5 +1,5 @@
 import { defaultResumeMarkdown } from "../parser/defaultResume";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { ApiRequestError, api, type ResumeImportSummary, type ResumeRecord } from "../api/client";
 import {
@@ -10,6 +10,8 @@ import {
   type LayoutPlan,
 } from "../api/resumeContract";
 import { resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
+import { enqueueMessage, queueKey } from "../features/agent/messageQueue";
+import { installMessageQueueEnvironment } from "../test/messageQueueEnvironment";
 import {
   defaultSettings,
   flushPendingLocalResumeDraft,
@@ -161,6 +163,34 @@ beforeEach(() => {
     editVersion: 1,
     saveStatus: "idle",
     error: null,
+  });
+});
+
+afterEach(() => { vi.unstubAllGlobals(); });
+
+describe("logout message queue cleanup", () => {
+  const user = { id: "logout-user", email: "logout@example.test", nickname: "测试用户", is_admin: false };
+  it("退出登录只清理当前账号的本机队列", async () => {
+    installMessageQueueEnvironment();
+    useResumeStore.setState({ user });
+    await enqueueMessage(user.id, "conversation", { content: "当前账号待发送消息" });
+    await enqueueMessage("another-user", "conversation", { content: "其他账号待发送消息" });
+    vi.spyOn(api, "logout").mockResolvedValue({ ok: true });
+    await useResumeStore.getState().logout();
+    expect(localStorage.getItem(queueKey(user.id, "conversation"))).toBeNull();
+    expect(localStorage.getItem(queueKey("another-user", "conversation"))).not.toBeNull();
+    expect(useResumeStore.getState()).toMatchObject({ user: null, authStatus: "guest", error: null });
+  });
+
+  it("本机队列清理失败仍完成退出登录并提示清理存储", async () => {
+    installMessageQueueEnvironment();
+    useResumeStore.setState({ user });
+    await enqueueMessage(user.id, "conversation", { content: "待发送消息" });
+    vi.spyOn(localStorage, "removeItem").mockImplementation(() => { throw new Error("storage denied"); });
+    const logout = vi.spyOn(api, "logout").mockResolvedValue({ ok: true });
+    await useResumeStore.getState().logout();
+    expect(logout).toHaveBeenCalledOnce();
+    expect(useResumeStore.getState()).toMatchObject({ user: null, authStatus: "guest", error: expect.stringContaining("本机消息清理失败") });
   });
 });
 

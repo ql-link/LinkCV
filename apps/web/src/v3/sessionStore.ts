@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { api, type AgentSession } from "../api/client";
+import { clearMessageQueues } from "../features/agent/messageQueue";
+import { useResumeStore } from "../store/resumeStore";
 
 // 侧栏「最近对话」和首页对话共用的会话列表。
 // 侧栏在所有工作区页面都显示，所以会话列表不能只存在 AssistantPage 里。
@@ -59,8 +61,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return session;
   },
   destroy: async (sessionId) => {
+    const scope = scopeRevision;
+    const userId = useResumeStore.getState().user?.id;
     await api.deleteAgentSession(sessionId);
-    get().remove(sessionId);
+    if (scope === scopeRevision) get().remove(sessionId);
+    if (userId) await clearMessageQueues(userId, sessionId);
   },
   setRunning: (sessionId, running) => set((state) => ({
     runningIds: running

@@ -1,5 +1,6 @@
 import { resetSessionStores } from "../v3/sessionStore";
 import { create } from "zustand";
+import { clearMessageQueues } from "../features/agent/messageQueue";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
@@ -118,7 +119,7 @@ type ResumeState = {
   register: (email: string, password: string) => Promise<void>;
   loginWithWechat: (user: User) => Promise<void>;
   logout: () => Promise<void>;
-  clearSession: () => void;
+  clearSession: () => Promise<void>;
   syncProfile: (user: UserProfile) => void;
   listResumes: () => Promise<void>;
   /** 最近一次成功读取简历列表的时间；null 表示本次登录还没读过（我的简历页据此决定是否画骨架） */
@@ -533,14 +534,17 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
 
   logout: async () => {
     await api.logout();
-    get().clearSession();
+    await get().clearSession();
   },
 
-  clearSession: () => {
+  clearSession: async () => {
     personalScopeRevision += 1;
     resetSessionStores();
     const currentUserId = get().user?.id;
     if (currentUserId) clearLocalResumeDraftsForUser(currentUserId);
+    const queuesCleared = currentUserId
+      ? clearMessageQueues(currentUserId).then(() => true, () => false)
+      : Promise.resolve(true);
     set({
       authStatus: "guest",
       user: null,
@@ -567,6 +571,10 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       saveStatus: "idle",
       error: null,
     });
+    const scope = personalScopeRevision;
+    if (!await queuesCleared && personalScopeRevision === scope && !get().user) {
+      set({ error: "已退出登录，本机消息清理失败，请清理浏览器存储。" });
+    }
   },
 
   syncProfile: (profile) => {

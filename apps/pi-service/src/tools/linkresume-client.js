@@ -16,7 +16,8 @@ function optionalLogIdentifier(value, maxLength) {
   return value;
 }
 
-export function createLinkResumeClient(config, runId, signal) {
+export function createLinkResumeClient(config, runId, signal, initialSource = null) {
+  let source = initialSource;
   async function request(path, options = {}) {
     const timeout = AbortSignal.timeout(config.toolTimeoutMs);
     const combined = AbortSignal.any([signal, timeout]);
@@ -26,6 +27,7 @@ export function createLinkResumeClient(config, runId, signal) {
       headers: {
         Authorization: `Bearer ${config.linkresumeToken}`,
         "Content-Type": "application/json",
+        ...(source == null ? {} : { "X-Agent-User-Sequence": String(source) }),
         ...options.headers,
       },
     });
@@ -44,6 +46,16 @@ export function createLinkResumeClient(config, runId, signal) {
   }
 
   return {
+    setSource: (value) => { source = value; },
+    activateSteering: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/steering:activate`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+    acknowledgeSteering: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/steering:ack`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+    completeReply: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/messages:complete`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
     readiness: () => request("/internal/agent/readiness"),
     runtimeConfig: () => request(`/internal/agent/runtime-config?run_id=${encodeURIComponent(runId)}`),
     recordLlmCall: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/llm-calls`, {

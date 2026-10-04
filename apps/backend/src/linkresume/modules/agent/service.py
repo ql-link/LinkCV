@@ -35,6 +35,9 @@ from linkresume.modules.agent.models import (
     ResumeChangeProposal,
 )
 from linkresume.modules.agent.context_service import resolve_contexts
+from linkresume.modules.agent.message_scope import (
+    active_message, clarification_metadata, proposal_message, register_proposal, reply_source_message,
+)
 from linkresume.modules.agent.schemas import (
     AgentMessageRecord,
     AgentClarification,
@@ -180,12 +183,14 @@ def session_record(
         messages=[
             AgentMessageRecord(
                 sequence_no=item.sequence_no,
+                submission_key=(item.metadata_json or {}).get("submission", {}).get("key"),
+                reply_to_sequence_no=(item.metadata_json or {}).get("reply_to_sequence_no"),
                 run_id=run_ids.get(item.run_id),
                 role=item.role,
                 message_type=item.message_type,
                 content=item.content,
                 clarification=(
-                    item.metadata_json if item.message_type == "clarification" else None
+                    clarification_metadata(item) if item.message_type == "clarification" else None
                 ),
                 contexts=message_contexts(item),
                 tasks=(item.metadata_json.get("agent_tasks")
@@ -206,6 +211,7 @@ def proposal_record(
     ) if proposal.proposed_data_json is not None and proposal.proposed_style_json is not None else None
     return ProposalRecord(
         superseded_by=proposal_superseded_by(proposal),
+        source_user_sequence_no=proposal_source_sequence(proposal),
         id=proposal.public_id,
         run_id=run_public_id,
         resume_id=str(proposal.resume_id),
@@ -233,13 +239,17 @@ def proposal_record(
     )
 
 
+def proposal_source_sequence(proposal: ResumeChangeProposal) -> int | None:
+    db = object_session(proposal)
+    message = proposal_message(db, proposal.run_id, proposal.public_id) if db else None
+    return message.sequence_no if message else None
+
+
 def proposal_superseded_by(proposal: ResumeChangeProposal) -> str | None:
     db = object_session(proposal)
     if db is None:
         return None
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == proposal.run_id, AgentMessage.role == "user"
-    ))
+    message = proposal_message(db, proposal.run_id, proposal.public_id)
     return ((message.metadata_json or {}).get("superseded_proposals", {}).get(proposal.public_id)
             if message is not None else None)
 
@@ -258,9 +268,8 @@ def revision_source(db: Session, session: AgentSession, public_id: str) -> Resum
 
 
 def supersede_revision_source(db: Session, run: AgentRun, proposal: ResumeChangeProposal) -> None:
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == run.id, AgentMessage.role == "user"
-    ).with_for_update())
+    message = active_message(db, run, lock=True)
+    register_proposal(db, run, proposal.public_id)
     source_id = (message.metadata_json or {}).get("revision_proposal_id") if message else None
     if not source_id:
         return
@@ -280,9 +289,7 @@ def supersede_revision_source(db: Session, run: AgentRun, proposal: ResumeChange
         if replacement is not None:
             return
         raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
-    original_message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == source.run_id, AgentMessage.role == "user"
-    ).with_for_update())
+    original_message = proposal_message(db, source.run_id, source.public_id)
     if original_message is None:
         raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
     metadata = deepcopy(original_message.metadata_json or {})
@@ -463,16 +470,7 @@ def clarification_context_state(
         raise ApiError(409, "AGENT_CLARIFICATION_STALE")
     if latest_message.run_id is None:
         return [], None
-    source_message = db.scalar(
-        select(AgentMessage)
-        .where(
-            AgentMessage.session_id == session.id,
-            AgentMessage.run_id == latest_message.run_id,
-            AgentMessage.role == "user",
-        )
-        .order_by(AgentMessage.sequence_no.asc())
-        .limit(1)
-    )
+    source_message = reply_source_message(db, latest_message)
     if source_message is None:
         return [], None
     if source_message.metadata_json is None:
@@ -521,6 +519,7 @@ def create_run(
     revision_proposal_id: str | None = None,
     operation: AgentOperation | None = None,
     trace_request_id: str | None = None,
+    submitted_request_hash: str | None = None,
 ) -> tuple[AgentRun, bool]:
     lock_active_user(db, session.user_id)
     normalized_content = content.strip()
@@ -551,6 +550,12 @@ def create_run(
         )
     )
     if existing is not None:
+        original_message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == existing.id,
+            AgentMessage.role == "user").order_by(AgentMessage.sequence_no).limit(1))
+        original_hash = ((original_message.metadata_json or {}).get("submission", {}).get("hash")
+                         if original_message is not None else None)
+        if submitted_request_hash and original_hash and original_hash != submitted_request_hash:
+            raise ApiError(409, "AGENT_SUBMISSION_CONFLICT")
         if operation is not None and trace_request_id is not None:
             operation.state = "run_created"
             operation.error_code = None
@@ -565,9 +570,7 @@ def create_run(
             AgentMessage.session_id == session.id, AgentMessage.sequence_no == reply_to_sequence_no,
             AgentMessage.role == "assistant", AgentMessage.message_type == "clarification",
         ))
-        original = db.scalar(select(AgentMessage).where(
-            AgentMessage.run_id == reply.run_id, AgentMessage.role == "user"
-        )) if reply else None
+        original = reply_source_message(db, reply) if reply else None
         revision_proposal_id = (original.metadata_json or {}).get("revision_proposal_id") if original else None
     revision = revision_source(db, session, revision_proposal_id) if revision_proposal_id else None
     normalized_answers: list[dict[str, str]] = []
@@ -587,7 +590,7 @@ def create_run(
         ):
             raise ApiError(409, "AGENT_CLARIFICATION_STALE")
         try:
-            clarification = AgentClarification.model_validate(latest_message.metadata_json)
+            clarification = AgentClarification.model_validate(clarification_metadata(latest_message))
         except Exception as error:
             raise ApiError(409, "AGENT_CLARIFICATION_STALE") from error
         if clarification_answers is not None:
@@ -685,6 +688,8 @@ def create_run(
             metadata_json=(
                 {
                     "version": 1,
+                    **({"submission": {"key": idempotency_key, "hash": submitted_request_hash,
+                                        "mode": "follow_up"}} if submitted_request_hash else {}),
                     **({"revision_proposal_id": revision.public_id,
                         "revision_proposal": {"summary": revision.summary, "operations": revision.operations_json or [],
                                               "resume_id": str(revision.resume_id)}} if revision else {}),
@@ -716,7 +721,7 @@ def create_run(
                         else {}
                     ),
                 }
-                if context_snapshots or selection_context is not None or normalized_answers or revision
+                if context_snapshots or selection_context is not None or normalized_answers or revision or submitted_request_hash
                 else None
             ),
         )
@@ -750,6 +755,7 @@ def get_active_run(db: Session, public_id: str) -> tuple[AgentRun, AgentSession]
     run = db.scalar(select(AgentRun).where(AgentRun.id == run.id).with_for_update().execution_options(populate_existing=True))
     if run is None or run.status != "running" or session.status != "active":
         raise ApiError(409, "AGENT_RUN_NOT_ACTIVE")
+    active_message(db, run)
     return run, session
 
 
@@ -1314,12 +1320,7 @@ def _run_task_message(db: Session, run: AgentRun) -> AgentMessage:
     status = db.scalar(select(AgentRun.status).where(AgentRun.id == run.id).with_for_update())
     if status != "running":
         raise ApiError(409, "AGENT_RUN_NOT_ACTIVE")
-    message = db.scalar(
-        select(AgentMessage).where(
-            AgentMessage.run_id == run.id,
-            AgentMessage.role == "user",
-        ).with_for_update()
-    )
+    message = active_message(db, run, lock=True)
     if message is None:
         raise ApiError(409, "AGENT_TASK_MESSAGE_NOT_FOUND")
     return message
@@ -1371,11 +1372,13 @@ def task_authorized_refs(
     db: Session, *, run: AgentRun, require_running: bool = True,
 ) -> set[tuple[str, str]] | None:
     """None means a legacy run without a task plan; a planned run is scoped."""
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == run.id, AgentMessage.role == "user",
-    ))
+    message = active_message(db, run)
     tasks = (message.metadata_json or {}).get("agent_tasks") if message else None
     if not isinstance(tasks, list):
+        count = db.scalar(select(func.count(AgentMessage.id)).where(
+            AgentMessage.run_id == run.id, AgentMessage.role == "user"))
+        if count > 1:
+            return {(item["type"], item["id"]) for item in (message.metadata_json or {}).get("contexts", [])}
         return None
     active = [item for item in tasks if item.get("status") == "running"]
     if require_running and len(active) != 1:
@@ -1414,9 +1417,7 @@ def require_task_sources(
 def authorize_resolved_task_resume(
     db: Session, *, run: AgentRun, resume_id: str,
 ) -> None:
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == run.id, AgentMessage.role == "user",
-    ).with_for_update())
+    message = active_message(db, run, lock=True)
     if message is None:
         return
     metadata = dict(message.metadata_json or {})

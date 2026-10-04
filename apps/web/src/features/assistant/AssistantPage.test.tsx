@@ -7,6 +7,8 @@ import { api, ApiRequestError, type AgentContextSnapshot, type AgentProposal, ty
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { useResumeStore } from "../../store/resumeStore";
 import { useActiveSessionStore, useSessionStore } from "../../v3/sessionStore";
+import { installMessageQueueEnvironment } from "../../test/messageQueueEnvironment";
+import { queueKey, readQueue } from "../agent/messageQueue";
 import { AssistantPage, parseAgentTimestamp } from "./AssistantPage";
 
 vi.mock("../datasets/DatasetsPage", () => ({
@@ -63,9 +65,11 @@ const session: AgentSession = {
 };
 
 beforeEach(() => {
+  installMessageQueueEnvironment();
   window.history.replaceState(null, "", "/assistant");
   useResumeStore.setState({
     ...originalResumeStore,
+    user: { id: "1", email: "queue-user@example.test", nickname: "测试用户", is_admin: false },
     resumes: [],
     activeResumeId: null,
   }, true);
@@ -88,6 +92,38 @@ afterEach(() => {
 });
 
 describe("AssistantPage", () => {
+  it("首次连续发送共享会话创建，并保留创建期间后来输入的草稿", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    let created!: (result: { session: AgentSession }) => void;
+    const create = vi.spyOn(api, "createAgentSession").mockImplementation(() => new Promise((resolve) => { created = resolve; }));
+    let finish!: () => void;
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation((_id, request, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-1", userSequenceNo: 1, submissionKey: request.idempotency_key });
+      return new Promise<void>((resolve) => { finish = resolve; });
+    });
+    const { unmount } = render(<AssistantPage />);
+    const input = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(input, "第一条指令");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(create).toHaveBeenCalledOnce());
+    await user.clear(input);
+    await user.type(input, "第二条指令");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await user.clear(input);
+    await user.type(input, "后来输入的草稿");
+    await act(async () => { created({ session }); });
+    await waitFor(() => expect(stream).toHaveBeenCalledOnce());
+    expect(create).toHaveBeenCalledOnce();
+    expect(stream.mock.calls[0][1].content).toBe("第一条指令");
+    expect(readQueue(queueKey("1", session.id)).items.map((item) => item.request.content)).toEqual(["第二条指令"]);
+    expect(input).toHaveTextContent("后来输入的草稿");
+    unmount();
+    await act(async () => { finish(); });
+  });
+
   it("首页数据未齐时只占位，不先显示通用问候或临时模型文案，输入草稿不受影响", async () => {
     let finish!: (value: Awaited<ReturnType<typeof api.listInterviewSessions>>) => void;
     let finishModel!: (value: Awaited<ReturnType<typeof api.getAgentModels>>) => void;
@@ -1340,7 +1376,12 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "上一项修改" }));
     expect(screen.getByText("将接口 P95 延迟降低 32%")).toBeVisible();
 
-    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    let runNumber = 1;
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, request, _signal, onEvent) => {
+      const runId = `run-${++runNumber}`;
+      onEvent({ type: "run.started", runId, submissionKey: request.idempotency_key });
+      onEvent({ type: "run.completed", runId });
+    });
     const reject = vi.spyOn(api, "rejectAgentProposal");
     vi.mocked(api.getAgentSession).mockResolvedValue({ session: { ...proposalSession, messages: [
       ...proposalSession.messages,
@@ -1383,7 +1424,7 @@ describe("AssistantPage", () => {
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
-  it("生成中只保留输入区的停止入口，并保留已显示内容", async () => {
+  it("生成中可继续输入，停止保留新草稿和已显示内容", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
@@ -1401,8 +1442,13 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("已显示的部分回复")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
+    const nextInput = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
+    expect(nextInput).not.toHaveAttribute("contenteditable", "false");
+    await user.type(nextInput, "下一条草稿");
+    expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "停止生成" }));
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
+    expect(nextInput).toHaveTextContent("下一条草稿");
   });
 
   it("在思考区累计工具阶段文字，并在最终正文开始前一次清空", async () => {
@@ -1560,10 +1606,10 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getAllByText("润色项目经历")).toHaveLength(2);
-    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("润色项目经历");
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
-  it("流失败时保留已显示回复与可重试草稿", async () => {
+  it("流失败时保留已显示回复，不把已接受请求回填输入框", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
@@ -1585,7 +1631,8 @@ describe("AssistantPage", () => {
     expect(alert).toHaveClass("v3-toast");
     expect(alert.parentElement).toBe(document.body);
     expect(container.contains(alert)).toBe(false);
-    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("请分析");
+    expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
+    await waitFor(() => expect(readQueue(queueKey("1", session.id)).paused).toBe(true));
   });
 
   it("收到 run.cancelled 后刷新会话仍保留停止终态", async () => {

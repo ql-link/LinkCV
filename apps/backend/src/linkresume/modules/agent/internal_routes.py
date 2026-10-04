@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Header
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.application.resumes.service import parse_persisted_resume_snapshot
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
+from linkresume.core.storage import get_storage, AssetStorage
+from linkresume.modules.agent.message_scope import source_sequence_no, persist_reply
+from linkresume.modules.agent.steering import activate, acknowledge
 from linkresume.modules.agent.context_service import list_contexts
 from linkresume.modules.agent.schemas import (
     AgentReadinessResponse,
@@ -30,6 +33,7 @@ from linkresume.modules.agent.schemas import (
     TargetResolveResponse,
     ToolEventRequest,
     TranslationProposalCreateRequest,
+    SteeringActivation, SteeringAck, ReplyCompletion, SubmissionReceipt,
 )
 from linkresume.modules.agent.resume_tools import (
     diagnose_content,
@@ -67,12 +71,40 @@ from linkresume.modules.llm.gateway import GatewayUsage
 from linkresume.modules.llm.service import LLMError, LLMService
 from linkresume.modules.resumes.models import Resume
 
+async def request_scope(x_agent_user_sequence: int | None = Header(default=None)):
+    token = source_sequence_no.set(x_agent_user_sequence)
+    try:
+        yield
+    finally:
+        source_sequence_no.reset(token)
+
+
 router = APIRouter(
     prefix="/internal/agent",
     tags=["internal-agent"],
-    dependencies=[Depends(require_pi_service)],
+    dependencies=[Depends(require_pi_service), Depends(request_scope)],
     include_in_schema=False,
 )
+
+
+@router.post("/runs/{run_id}/steering:activate")
+def activate_steering(run_id: str, payload: SteeringActivation, request: Request,
+                      db: Session = Depends(get_db), storage: AssetStorage = Depends(get_storage)):
+    return activate(db, run_id, payload, storage=storage, settings=request.app.state.settings)
+
+
+@router.post("/runs/{run_id}/steering:ack", response_model=SubmissionReceipt)
+def ack_steering(run_id: str, payload: SteeringAck, db: Session = Depends(get_db)):
+    return acknowledge(db, run_id, payload)
+
+
+@router.post("/runs/{run_id}/messages:complete")
+def complete_reply(run_id: str, payload: ReplyCompletion, db: Session = Depends(get_db)):
+    if source_sequence_no.get() != payload.user_sequence_no:
+        raise ApiError(409, "AGENT_REQUEST_SCOPE_STALE")
+    message = persist_reply(db, run_id, source=payload.user_sequence_no, content=payload.content,
+                            clarification=payload.clarification.model_dump(mode="json") if payload.clarification else None)
+    return {"sequence_no": message.sequence_no}
 
 def _run_resume(
     db: Session, run_id: str, resume_id: str | None = None
@@ -115,7 +147,7 @@ async def get_internal_agent_readiness(request: Request) -> AgentReadinessRespon
         await llm_service.agent_model_summary()
     except LLMError as error:
         raise ApiError(503, "AGENT_NOT_READY") from error
-    return AgentReadinessResponse(ready=True)
+    return AgentReadinessResponse(ready=True, steering=True)
 
 
 @router.get("/runtime-config", response_model=RuntimeConfigResponse)
