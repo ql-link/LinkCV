@@ -28,7 +28,7 @@ Web 账号页的英文标题、字段值、说明和操作控件使用 Poppins�
 
 ## 会话与密码
 
-- Web 使用 Cookie，mini 与 desktop 使用各自 Bearer，三渠道不能互换或混合认证 Cookie。桌面拥有简历只读、岗位看板、面试排期、文字模拟面试和资料库的明确方法/路径白名单，管理员角色不能扩大渠道权限，详见 [桌面会话契约](../api/http-contracts.md#桌面-bearer-会话)。
+- Web 使用 Cookie，mini 与 desktop 使用各自 Bearer，三渠道不能互换或混合认证 Cookie。桌面拥有简历只读、岗位看板、面试排期与阶段详情（录音、转写、逐题笔记、笔试题导入、AI 复盘生成）、文字模拟面试和资料库的明确方法/路径白名单，管理员角色不能扩大渠道权限，详见 [桌面会话契约](../api/http-contracts.md#桌面-bearer-会话)。
 - 桌面 Core 的 access 仅驻留内存，refresh 与固定请求 ID 的恢复日志通过原子安全存储接口保存；网络失败保留日志，明确失效清理。共享续期负责统一保存，退出以会话代次拒绝迟到写回，远端撤销失败不冒充成功。两端正式 App 已注入 HTTP 与 Keychain/Credential Locker，支持扫码及状态消费；进程唯一所有者、凭据保存和验收边界见 [`apps/native/README.md`](../../apps/native/README.md)。
 
 Web 使用 HttpOnly Cookie，小程序使用 Bearer，两种 channel 不能混用。Web 的 401 请求合并续期，最多重试一次；支持 Web Locks 时跨标签页串行续期。冷启动先确认当前用户，普通业务 5xx 不清空已确认的登录态。

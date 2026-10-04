@@ -532,7 +532,8 @@ def test_desktop_career_owned_commands_and_channel_boundaries(desktop_app):
         assert terminated.status_code == 200, terminated.text
         for path in ('/api/account/profile', '/api/auth/admin/users'):
             assert client.get(path, headers=headers).status_code == 401
-        assert client.get('/api/interview-assets/1/content', headers=headers).status_code == 403
+        assert client.get('/api/interview-assets/999999/content', headers=headers).status_code == 404
+        assert client.delete('/api/interview-assets/999999', headers=headers).status_code == 403
         assert client.delete(f'/api/job-applications/{aid}', headers=other_headers).status_code == 404
         deleted = client.delete(f'/api/job-applications/{aid}', headers=headers)
         assert deleted.status_code == 200, deleted.text
@@ -592,7 +593,56 @@ def test_desktop_schedule_open_window_plan_clear_cancel_and_stage_boundary(deskt
         })
         assert cancelled.status_code == 200, cancelled.text
         assert cancelled.json()['session']['status'] == 'cancelled'
-        assert client.delete(f"/api/interview-sessions/{session['id']}", headers=headers).status_code == 403
+        assert client.post(f"/api/interview-sessions/{session['id']}/prep-items:generate", headers=headers, json={}).status_code == 403
+        deleted = client.delete(f"/api/interview-sessions/{session['id']}", headers=headers)
+        assert deleted.status_code == 200, deleted.text
+        assert client.get(f"/api/interview-sessions/{session['id']}", headers=headers).status_code == 404
+
+
+def test_desktop_stage_detail_routes_keep_ownership(desktop_app):
+    settings = desktop_app.state.settings
+    with desktop_app.state.session_factory() as db:
+        stranger = User(wechat_openid='openid-stage-stranger', nickname='王五')
+        db.add(stranger)
+        db.commit()
+        from linkresume.modules.identity.session_service import prepare_session
+        stranger_credentials = prepare_session(stranger, settings, channel='desktop')
+        desktop_app.state.redis.hset(session_key(stranger_credentials.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
+    with TestClient(desktop_app) as client:
+        _, tokens = login(client)
+        headers = {'Authorization': 'Bearer ' + tokens['access_token']}
+        other = {'Authorization': 'Bearer ' + stranger_credentials.access_token}
+        created = client.post('/api/job-descriptions', headers=headers, json={
+            'company_name': '虚构详情公司', 'job_title': '虚构工程师', 'description': '', 'source_type': 'manual',
+        })
+        aid = created.json()['application']['id']
+        app = client.get(f'/api/job-applications/{aid}', headers=headers).json()['application']
+        app = client.post(f'/api/job-applications/{aid}/stages', headers=headers, json={
+            'client_request_id': str(uuid4()), 'base_lock_version': app['lock_version'],
+            'stage_type': 'interview', 'stage_label': '技术一面', 'interview_round_no': 1,
+        }).json()['application']
+        session = client.post(f'/api/job-applications/{aid}/interview-sessions', headers=headers, json={
+            'client_request_id': str(uuid4()), 'application_stage_id': app['current_stage']['id'],
+            'stage_type': 'interview', 'stage_label': '技术一面', 'round_no': 1,
+            'start_at': '2035-01-01T09:00:00+08:00', 'end_at': '2035-01-01T10:00:00+08:00',
+            'timezone': 'Asia/Shanghai', 'mode': 'video', 'schedule_kind': 'fixed_slot',
+        }).json()['session']
+        sid = session['id']
+        assert client.get(f'/api/interview-sessions/{sid}/assets', headers=headers).status_code == 200
+        assert client.get(f'/api/interview-sessions/{sid}/assets', headers=other).status_code == 404
+        note = {'question_text': '介绍一个虚构项目', 'verdict': 'improve', 'note': '虚构笔记'}
+        assert client.put(f'/api/interview-sessions/{sid}/review-notes', headers=other, json=note).status_code == 404
+        saved = client.put(f'/api/interview-sessions/{sid}/review-notes', headers=headers, json=note)
+        assert saved.status_code == 200, saved.text
+        note_id = saved.json()['note']['id']
+        assert client.delete(f'/api/interview-sessions/{sid}/review-notes/{note_id}', headers=other).status_code == 404
+        assert client.delete(f'/api/interview-sessions/{sid}/review-notes/{note_id}', headers=headers).status_code == 204
+        for path in (f'/api/interview-sessions/{sid}/review:generate', f'/api/interview-sessions/{sid}/written-questions:extract',
+                     f'/api/interview-sessions/{sid}/transcriptions/999999:retry'):
+            response = client.post(path, headers=other, json={})
+            assert response.status_code != 403, (path, response.text)
+        assert client.delete(f'/api/interview-sessions/{sid}', headers=other).status_code == 404
+
 
 @pytest.mark.parametrize('decision', ['accepted', 'declined'])
 def test_desktop_v4_offer_requires_formal_offer_and_preserves_ownership(desktop_app, decision):
