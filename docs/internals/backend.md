@@ -36,7 +36,7 @@
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
 | `src/linkresume/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
 | `src/linkresume/modules/mock_interviews/` | 模拟面试与提问 ORM、HTTP DTO、`/api/mock-interviews` 路由与语音 WebSocket |
-| `src/linkresume/modules/speech/` | 语音识别与合成的服务商适配层；首期实现阿里云百炼 DashScope 实时 WebSocket |
+| `src/linkresume/modules/speech/` | 语音服务商分派；百炼 DashScope 实时 WebSocket 与 AIHubMix 文件识别、MP3 合成及受限音频下载 |
 | `src/linkresume/modules/llm/` | 接入商连接、逻辑模型、场景线路解析、凭据加密、LiteLLM/Pi 适配、计量与管理员 API |
 | `src/linkresume/modules/agent/` | 用户会话、所有权与版本校验的多来源上下文、SSE 代理、Pi 服务间鉴权、内部工具、运行/工具审计和简历修改提案 |
 | `src/linkresume/modules/announcements/` | 全站应用内公告与每个用户的已读时间点：管理员草稿、发布、下线与状态统计，用户侧生效公告、未读数和全部已读；可见性按状态与生效时段现场计算，没有定时任务 |
@@ -45,6 +45,8 @@
 | `migrations/` | SQL-first Alembic revision；仓库 head 见下文迁移链说明 |
 | `tests/unit/` | 不访问外部资源的快速单元测试 |
 | `tests/integration/` | 使用隔离 SQLite、Fake Redis、Fake MinIO 和外部服务替身的组合测试 |
+
+统一 LLM Gateway 对内部文本、图片能力同时支持 Chat 与 Responses，保持业务层的文本、Token 和流式终态接口。Responses 请求不在供应商端保存结果；AIHubMix 逐模型关闭思考与语音协议配置见 [Agent/LLM 运行时](agent-runtime.md#治理数据)。
 
 ## 数据与事务
 
@@ -135,7 +137,9 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `POST /api/job-descriptions/import` 是浏览器插件的受保护入口，只接受 BOSS 岗位详情 URL 和有限的页面采集字段。`application/job_descriptions/import_service.py` 先清理不可见字符、空白和明确页尾噪声，再映射就业类型、工作形态、月薪/日薪/时薪及公司标签；它还会把 `5天/周`、`6个月` 等实习安排从误传的经验字段移入 `work_schedule`，并在入库前剔除福利标签。最后构造已有 `JobDescriptionCreateRequest` 并复用统一创建与重复解决事务。该过程不调用 LLM，不保存输入 DTO，也不绕过既有用户条件、来源唯一键或乐观锁。
 
-`POST /api/job-descriptions/parse-draft` 是 Web 新建流程的受保护智能导入入口，只接受一份文字或一张受限图片。`ai_import_service.py` 把文字交给 `job_text_extraction` 场景，把图片以多模态消息交给独立 `job_image_extraction` 场景，并通过同一个可空 `JobDescriptionDraft` Schema 严格解析。接口只返回待确认草稿、核心字段缺失提示和调用 ID，不创建或更新 `job_descriptions`；原始输入、消息和模型正文不落库。`0035` 只扩展 LLM binding/validation 的能力约束并预置空视觉 binding，不修改 JD schema。
+`POST /api/job-descriptions/parse-draft` 是 Web 新建流程的受保护智能导入入口，只接受一份文字或一张受限图片。`ai_import_service.py` 把文字交给 `job_text_extraction` 场景，把图片以多模态消息交给独立 `job_image_extraction` 场景，并通过同一个可空 `JobDescriptionDraft` Schema 严格解析。提示词要求隔离当前岗位与推荐、评论、候选人期望及作废信息，保留工作安排、实习和合同期限。草稿校验将明确的币种别名转为三字母代码；`draft_normalization.py` 仅在模型选出的薪资片段能与文字输入对应、币种和周期唯一且已有结构化值不冲突时，补全缺失薪资字段。空白、全角字符及常见区间符号差异允许匹配，不改词句或金额；不扫描全文寻找工资、不默认发薪月数、不把年薪换算成月薪。图片没有可核对的文字来源，不执行数值补全。规范化不增加模型调用。
+
+接口只返回待确认草稿、调用 ID 和核心字段缺失、薪资缺漏/冲突或目标不明确提示，不创建或更新 `job_descriptions`；冲突值保留在草稿供用户核对。`warnings` 是提示，不能代替最终创建校验。原始输入、消息和模型正文不落库。`0035` 只扩展 LLM binding/validation 的能力约束并预置空视觉 binding，不修改 JD schema。
 
 `0008` 在模型配置上增加 `capability`、LiteLLM `adapter`、不含前缀的模型调用名和配置版本；新增按能力保存唯一当前候选的 `llm_capability_bindings`，并预置一行可为空的 `chat` 绑定。调用日志增加能力、来源、adapter 和调用名快照。这些旧列已在 `0091` 随旧表一起删除。revision 在 DDL 前先删除 `llm_call_logs`，再删除 `llm_model_configs`；旧数据不迁移，恢复依赖迁移前备份，升级完成后的 `chat` 绑定为空。
 

@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import io
 import json
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -6,6 +8,7 @@ from decimal import Decimal
 from cryptography.fernet import Fernet
 import pytest
 from pydantic import BaseModel
+from PIL import Image
 from sqlalchemy import select
 
 import linkresume.models  # noqa: F401
@@ -14,7 +17,7 @@ from linkresume.modules.identity.models import User
 from linkresume.modules.llm.crypto import CredentialCipher
 from linkresume.modules.llm.gateway import GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage
 from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
-from linkresume.modules.llm.resolver import JOB_TEXT_EXTRACTION, validation_fingerprint
+from linkresume.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION, validation_fingerprint
 from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError, LLMService
 
@@ -71,6 +74,33 @@ def context():
 
 class Answer(BaseModel):
     answer: str
+
+
+def test_image_probe_sends_provider_compatible_rgb_image(context):
+    service, gateway, sessions = context
+    with sessions() as db:
+        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding.use_case = JOB_IMAGE_EXTRACTION
+        db.commit()
+    asyncio.run(service.probe_route(user_id=1, use_case=JOB_IMAGE_EXTRACTION, route_id=1))
+    image_url = gateway.calls[0]["messages"][0].content[1].image_url.url
+    with Image.open(io.BytesIO(base64.b64decode(image_url.split(",", 1)[1]))) as image:
+        assert image.mode == "RGB" and min(image.size) > 10
+
+
+def test_responses_binding_reaches_structured_gateway_and_records_actual_protocol(context):
+    service, gateway, sessions = context
+    with sessions() as db:
+        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding.protocol_code = "openai_responses"
+        binding.validated_fingerprint = validation_fingerprint(binding, db.get(LLMModelRoute, 1), db.get(LLMProviderConnection, 1))
+        db.commit()
+    gateway.result = GatewayResult(content='{"answer":"OK"}', usage=GatewayUsage(3, 1))
+    result = asyncio.run(service.structured_chat(1, [ChatMessage(role="user", content="虚构请求")], source="test_call", response_model=Answer))
+    assert result.value.answer == "OK" and gateway.calls[0]["protocol_code"] == "openai_responses"
+    with sessions() as db:
+        log = db.scalar(select(LLMCallLog))
+        assert log.protocol_code == "openai_responses" and log.status == "succeeded" and log.output_tokens == 1
 
 
 def add_route(sessions, service, *, same_model=True, priority=200):

@@ -81,7 +81,7 @@ class CorrectingGateway(ScriptedGateway):
         super().__init__()
         self.corrections: list[dict] = []
 
-    async def complete(self, *, model, messages, api_base, api_key):
+    async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat"):
         system = self._system(messages)
         if "语音识别校对员" in system:
             from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
@@ -89,7 +89,7 @@ class CorrectingGateway(ScriptedGateway):
             payload = self.corrections.pop(0)
             return GatewayResult(content=json.dumps(payload, ensure_ascii=False),
                                  usage=GatewayUsage(input_tokens=5, output_tokens=5))
-        return await super().complete(model=model, messages=messages, api_base=api_base, api_key=api_key)
+        return await super().complete(model=model, messages=messages, api_base=api_base, api_key=api_key, protocol_code=protocol_code)
 
 
 def _bind(app, use_case: str, protocol: str, *, provider: str, settings: dict, target: str) -> None:

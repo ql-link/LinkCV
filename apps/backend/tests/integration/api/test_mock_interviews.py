@@ -75,7 +75,7 @@ class ScriptedGateway:
     def _system(self, messages) -> str:
         return "\n".join(m.content for m in messages if m.role == "system" and isinstance(m.content, str))
 
-    async def complete(self, *, model, messages, api_base, api_key) -> GatewayResult:
+    async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat") -> GatewayResult:
         del model, api_base, api_key
         system = self._system(messages)
         self.systems.append(system)
@@ -121,7 +121,7 @@ class ScriptedGateway:
             raise AssertionError(system[:200])
         return GatewayResult(content=json.dumps(payload, ensure_ascii=False), usage=USAGE)
 
-    async def start_stream(self, *, model, messages, api_base, api_key):
+    async def start_stream(self, *, model, messages, api_base, api_key, protocol_code="openai_chat"):
         del model, api_base, api_key
         system = self._system(messages)
         self.systems.append(system)

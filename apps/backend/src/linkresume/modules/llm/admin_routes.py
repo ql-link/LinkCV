@@ -26,7 +26,7 @@ from linkresume.modules.llm.models import (
 )
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
 from linkresume.modules.llm.providers import (
-    PROVIDERS, validate_route, validate_settings, validate_use_case_protocol,
+    OPENAI_CHAT, PROVIDERS, validate_route, validate_settings, validate_use_case_protocol,
 )
 from linkresume.modules.llm.resolver import (
     USE_CASES, eligible_routes, is_effective, probe_valid,
@@ -160,7 +160,8 @@ def catalog(_: User = Depends(get_current_admin)) -> dict:
             {
                 "code": spec.code,
                 "label": spec.label,
-                "protocols": sorted(spec.protocols),
+                # Keep the existing chat default when speech protocols are added.
+                "protocols": sorted(spec.protocols, key=lambda value: (value != OPENAI_CHAT, value)),
                 "targetKinds": sorted(spec.target_kinds),
                 "catalogSync": spec.code in CATALOG_URLS,
             }

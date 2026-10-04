@@ -58,11 +58,23 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 - `llm_provider_connections`：接入商代码、独立凭据、受控设置、配置版本与目录同步状态。推理地址由接入商适配器确定，后台不能提交任意 URL；AIHubMix 可选择官方默认或备用地址，切换会让旧探测失效。
 - `llm_models`：供用户选择的稳定逻辑模型名称。
 - `llm_model_routes`：逻辑模型在某连接上的实际 `invoke_target`、目标类型、目录元数据、价格规则和启停状态。同一逻辑模型可配置多条线路。
-- `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别、模拟面试、识别稿修正、语音识别（`speech_to_text`）、语音合成（`text_to_speech`）和用户对话；场景代码由后端注册，不建字典表。语音场景只能绑定阿里云百炼连接上的 `aliyun_asr_realtime`、`aliyun_tts_realtime` 协议，其余非对话场景只能用 `openai_chat`；语音线路的探针经 `modules/speech` 适配层发送一秒静音或合成一句固定文本，调用日志在 `usage_json` 记录音频秒数或字符数，不记录音频与正文。
+- `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别、模拟面试、识别稿修正、语音识别（`speech_to_text`）、语音合成（`text_to_speech`）和用户对话；场景代码由后端注册，不建字典表。语音支持百炼连接的 `aliyun_asr_realtime`、`aliyun_tts_realtime`，以及 AIHubMix 连接的 `openai_asr_file`、`openai_tts`；协议不能跨场景或跨接入商使用。其他非对话场景支持接入商声明的 `openai_chat`、`openai_responses`。语音探针通过同一个服务商适配器发送一秒静音或合成一句固定文本；调用日志在 `usage_json` 记录音频秒数或字符数，不记录音频与正文，也不把缺少计费依据的语音请求估成零费用。
 - `llm_call_logs`：每次实际模型请求的线路、配置版本、用量、价格快照、费用和安全错误分类；失败后切换线路会产生多条记录，不保存提示词或正文。Pi 的模型请求由内部服务令牌回传；运行费用由这些记录汇总。
 - `agent_sessions` 保存用户对话显式选中的逻辑模型 ID；`agent_runs` 冻结本轮解析出的逻辑模型、线路、连接配置版本、协议和价格规则。正在运行的请求若遇配置版本变化会失败，避免静默切换凭据。
 
 只有连接、线路、绑定都启用，目录未确认目标下线，并且该场景探针指纹匹配且未过期时，线路才进入解析结果。内部能力和 Pi 都先确定一个逻辑模型，再按该模型在对应场景下的线路优先级尝试；可切换的上游失败会转向下一条有效线路，不跨模型。对话模型列表按逻辑模型去重，用户选定模型失效时返回错误。Pi 在单次模型请求失败且尚未产生内容或工具调用时切换，不重跑整轮 Agent，也不重复已完成的业务工具。当前 FastAPI 的 OpenAI-compatible 请求由薄的 `LiteLLMGateway` 处理，目录、价格和路由均不依赖 LiteLLM。Pi 根据线路声明的协议直接调用供应商。
+
+FastAPI 与 Pi 对 AIHubMix 的两个受控地址使用逐模型验证的参数：
+
+| 模型 | 绑定协议 | 关闭思考参数 |
+| --- | --- | --- |
+| `gpt-6-luna` | `openai_responses` | `reasoning:{effort:"none"}` |
+| `deepseek-v4.1-flash` | `openai_chat` | `thinking:{type:"disabled"}` |
+| `qwen3.8-flash` | `openai_chat` | `enable_thinking:false` |
+
+探测、非流式和流式请求均经过同一参数策略。统一 `reasoning_effort:"none"` 在已验证渠道上未可靠关闭 GPT/DeepSeek 的思考，因此不使用该捷径；Pi 的 `thinkingLevel:"off"` 本身也不足以关闭上游思考。其他地址与模型不额外注入这些参数。已有 GPT-6 Luna 的 Chat 绑定必须改为 Responses 并重新探测，代码不静默替换管理员选择的协议。FastAPI Responses Adapter 把文本、图片、终态与 input/output 用量映射到既有调用结果，不保存供应商响应（`store:false`），流在失败、incomplete 或缺失终态时不报告成功。图片探针使用 64×64 RGB PNG，满足 Qwen 的最小尺寸限制。
+
+`ProviderSpeechGateway` 按连接接入商分派。AIHubMix Whisper 将 16 kHz 单声道 PCM16 在内存封装为 WAV，停止录音后调用 `/audio/transcriptions`；词时间戳缺失时返回空列表。Qwen Audio 3.0 TTS Flash 与 `tts-1` 调用 `/audio/speech` 请求 MP3，默认音色分别为 `longanhuan_v3.6` 和 `alloy`。Qwen 的 JSON 音频 URL 只允许已验证的百炼北京结果存储域名，升级为 HTTPS、独立无凭据下载、拒绝重定向并限制响应 8 MiB；返回其他域名或格式时失败，不扩展任意 URL 访问。HTTP 合成/转写请求总时限 75 秒，不自动重试。
 
 旧 `llm_model_configs`、`llm_capability_bindings`、`llm_model_validations` 和旧版 `llm_call_logs` 在 `0088` 中删除并重建。该迁移丢弃旧 LLM 治理和日志数据；Agent 会话及运行记录保留。目标环境迁移前必须核对 revision、旧表行数、运行中任务并备份。
 

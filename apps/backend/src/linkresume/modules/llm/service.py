@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
 import re
 from collections.abc import AsyncIterator, Sequence
@@ -12,6 +14,7 @@ from time import perf_counter
 from typing import TypeVar
 from uuid import uuid4
 
+from PIL import Image
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
@@ -25,7 +28,7 @@ from linkresume.modules.llm.models import (
     LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
 )
 from linkresume.modules.llm.providers import (
-    OPENAI_CHAT, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route,
+    OPENAI_CHAT, OPENAI_RESPONSES, OPENAI_ASR_FILE, OPENAI_TTS, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route,
 )
 from linkresume.modules.llm.resolver import (
     ASSISTANT_CONVERSATION, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
@@ -41,10 +44,16 @@ from linkresume.modules.llm.schemas import (
 )
 
 SOURCE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
-VISION_PROBE_IMAGE_DATA_URL = (
-    "data:image/png;base64,"
-    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP8zwACTGCSAQANHQEDgslx/wAAAABJRU5ErkJggg=="
-)
+
+
+def _vision_probe_image() -> str:
+    # Qwen rejects dimensions <=10; use a valid RGB PNG without user data.
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 64), "red").save(buffer, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+VISION_PROBE_IMAGE_DATA_URL = _vision_probe_image()
 StructuredValue = TypeVar("StructuredValue", bound=BaseModel)
 
 
@@ -183,9 +192,9 @@ class LLMService:
         self._gateway = gateway
         self._cipher = cipher
         if speech_gateway is None:
-            from linkresume.modules.speech.aliyun import AliyunSpeechGateway
+            from linkresume.modules.speech.router import ProviderSpeechGateway
 
-            speech_gateway = AliyunSpeechGateway()
+            speech_gateway = ProviderSpeechGateway()
         self._speech_gateway = speech_gateway
 
     def encrypt_credential(self, plaintext: str) -> str:
@@ -304,7 +313,7 @@ class LLMService:
             raise LLMError("LLM_MODEL_NOT_CONFIGURED")
         last_error: LLMError | None = None
         for plan in plans:
-            if plan.protocol_code != OPENAI_CHAT:
+            if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES}:
                 continue
             try:
                 runtime = self.runtime_model_for_plan(plan)
@@ -317,6 +326,7 @@ class LLMService:
                 result = await self._gateway.complete(
                     model=plan.invoke_target, messages=tuple(messages),
                     api_base=runtime.base_url, api_key=runtime.api_key,
+                    protocol_code=plan.protocol_code,
                 )
             except GatewayError as error:
                 await self._db(
@@ -392,7 +402,7 @@ class LLMService:
         async def events() -> AsyncIterator[ChatStreamEvent]:
             last_error = "LLM_MODEL_UNAVAILABLE"
             for index, plan in enumerate(plans):
-                if plan.protocol_code != OPENAI_CHAT:
+                if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES}:
                     continue
                 try:
                     runtime = self.runtime_model_for_plan(plan)
@@ -408,6 +418,7 @@ class LLMService:
                     upstream = await self._gateway.start_stream(
                         model=plan.invoke_target, messages=tuple(messages),
                         api_base=runtime.base_url, api_key=runtime.api_key,
+                        protocol_code=plan.protocol_code,
                     )
                     async for event in upstream:
                         if event.type == "delta":
@@ -496,7 +507,7 @@ class LLMService:
                 usage = await pi_probe.run_probe(runtime, runtime.api_key)
                 result = GatewayResult(content="OK", usage=usage)
             else:
-                if plan.protocol_code != OPENAI_CHAT:
+                if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES}:
                     raise LLMError("LLM_MODEL_UNAVAILABLE", call_id)
                 prompt = ('Reply only with this JSON: {"ok":true}'
                           if use_case == RESUME_STRUCTURING else "Reply with OK.")
@@ -510,6 +521,7 @@ class LLMService:
                     model=plan.invoke_target,
                     messages=(message,),
                     api_base=runtime.base_url, api_key=runtime.api_key,
+                    protocol_code=plan.protocol_code,
                 )
                 if use_case == RESUME_STRUCTURING:
                     try:
@@ -549,7 +561,8 @@ class LLMService:
             raise LLMError("LLM_MODEL_UNAVAILABLE")
         try:
             validate_route(plan.provider_code, plan.target_kind, plan.protocol_code)
-            url = speech_ws_url(plan.provider_code, plan.settings)
+            http_speech = plan.protocol_code in {OPENAI_ASR_FILE, OPENAI_TTS}
+            url = "" if http_speech else speech_ws_url(plan.provider_code, plan.settings)
         except ValueError as error:
             raise LLMError("LLM_MODEL_UNAVAILABLE") from error
         return SpeechTarget(
@@ -557,6 +570,8 @@ class LLMService:
             api_key=_credential_key(self._cipher, plan),
             model=plan.invoke_target,
             workspace_id=plan.settings.get("workspace_id"),
+            provider_code=plan.provider_code,
+            api_base=inference_base_url(plan.provider_code, plan.settings) if http_speech else None,
         )
 
     async def speech_plan(self, use_case: str) -> RoutePlan:
