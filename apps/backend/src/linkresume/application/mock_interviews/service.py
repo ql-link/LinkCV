@@ -477,7 +477,7 @@ def voice_report(questions: list[MockInterviewQuestion]) -> dict[str, object] | 
     per_answer = [
         voice_metrics.answer_metrics(list(item.words_json or []), item.audio_duration_ms)
         for item in questions
-        if item.answer_status == "answered" and item.answer_source == "voice"
+        if item.answer_status == "answered" and item.answer_source == "voice" and item.words_json
     ]
     return voice_metrics.summarize(per_answer)
 

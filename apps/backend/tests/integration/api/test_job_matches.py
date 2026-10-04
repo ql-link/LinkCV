@@ -87,7 +87,7 @@ class MatchGateway:
         self.invalid = False
         self.user_messages: list[str] = []
 
-    async def complete(self, *, model, messages, api_base, api_key) -> GatewayResult:
+    async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat") -> GatewayResult:
         del model, api_base, api_key
         self.calls += 1
         self.user_messages.append(

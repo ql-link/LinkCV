@@ -4,6 +4,7 @@ from uuid import uuid4
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+import pytest
 
 from linkresume.core.config import Settings
 from linkresume.core.database import utc_now
@@ -46,7 +47,8 @@ def register_admin(app, client):
         db.commit()
 
 
-def test_admin_only_route_configuration_and_probe():
+@pytest.mark.parametrize("protocol", ["openai_chat", "openai_responses"])
+def test_admin_only_route_configuration_and_probe(protocol):
     app, gateway = build_app()
     with TestClient(app) as client:
         assert client.get("/api/admin/llm/catalog").status_code == 401
@@ -64,12 +66,13 @@ def test_admin_only_route_configuration_and_probe():
         assert route.status_code == 201, route.text
         route_id = route.json()["route"]["id"]
         path = f"/api/admin/llm/use-cases/job_text_extraction/routes/{route_id}"
-        bind = client.put(path, json={"useCase": "job_text_extraction", "routeId": int(route_id), "protocolCode": "openai_chat", "priority": 100})
+        bind = client.put(path, json={"useCase": "job_text_extraction", "routeId": int(route_id), "protocolCode": protocol, "priority": 100})
         assert bind.status_code == 200, bind.text
         assert client.patch(path, json={"enabled": True}).status_code == 422
         probe = client.post(f"{path}/probe")
         assert probe.status_code == 200, probe.text
         assert gateway.calls[0]["model"] == "vendor/model"
+        assert gateway.calls[0]["protocol_code"] == protocol
         assert client.patch(f"/api/admin/llm/routes/{route_id}", json={"enabled": True}).status_code == 200
         enabled = client.patch(path, json={"enabled": True})
         assert enabled.status_code == 200 and enabled.json()["binding"]["effective"] is True
@@ -182,6 +185,57 @@ def test_speech_use_cases_bind_only_speech_protocols_and_probe_through_speech_ga
         logs = db.scalars(select(LLMCallLog).where(LLMCallLog.source == "capability_probe")).all()
         assert {log.use_case for log in logs} == {"speech_to_text", "text_to_speech"}
         assert all(log.status == "succeeded" for log in logs)
+
+
+def test_aihubmix_speech_models_bind_probe_and_activate_using_controlled_http_targets():
+    from linkresume.modules.speech.gateway import RecognitionEvent
+
+    class CapturingSpeech:
+        def __init__(self):
+            self.targets = []
+        async def recognize(self, target, audio, **kwargs):
+            self.targets.append(target)
+            async for _ in audio:
+                pass
+            yield RecognitionEvent("", 0, True)
+        async def synthesize(self, target, text, **kwargs):
+            self.targets.append(target)
+            return b"ID3"
+    speech = CapturingSpeech()
+    settings = Settings(database_url="sqlite+pysqlite:///:memory:", jwt_secret="integration-test-secret-with-32-bytes", llm_credential_encryption_keys=f"test:{Fernet.generate_key().decode('ascii')}")
+    app = create_app(settings, storage=FakeStorage(), redis=FakeRedis(), llm_gateway=FakeGateway(), speech_gateway=speech, create_schema=True)
+    with TestClient(app) as client:
+        register_admin(app, client)
+        catalog = client.get("/api/admin/llm/catalog").json()
+        provider = next(item for item in catalog["providers"] if item["code"] == "aihubmix")
+        assert {"openai_asr_file", "openai_tts"} <= set(provider["protocols"])
+        assert provider["protocols"][0] == "openai_chat"
+        connection = client.post("/api/admin/llm/connections", json={"providerCode": "aihubmix", "name": "测试连接", "apiKey": "fictional-key", "settings": {"endpoint": "alternate"}, "enabled": True})
+        assert connection.status_code == 201
+        assert "fictional-key" not in connection.text
+        connection_id = int(connection.json()["connection"]["id"])
+        cases = [
+            ("speech_to_text", "whisper-large-v3", "openai_asr_file"),
+            ("speech_to_text", "whisper-large-v3-turbo", "openai_asr_file"),
+            ("text_to_speech", "qwen-audio-3.0-tts-flash", "openai_tts"),
+            ("text_to_speech", "tts-1", "openai_tts"),
+        ]
+        for index, (use_case, model_name, protocol) in enumerate(cases):
+            model_id = client.post("/api/admin/llm/models", json={"displayName": model_name}).json()["model"]["id"]
+            route = client.post("/api/admin/llm/routes", json={"modelId": int(model_id), "connectionId": connection_id, "targetKind": "model", "invokeTarget": model_name})
+            assert route.status_code == 201
+            route_id = route.json()["route"]["id"]
+            path = f"/api/admin/llm/use-cases/{use_case}/routes/{route_id}"
+            bind = client.put(path, json={"useCase": use_case, "routeId": int(route_id), "protocolCode": protocol, "priority": 10 + index})
+            assert bind.status_code == 200 and bind.json()["binding"]["effective"] is False
+            wrong = client.put(f"/api/admin/llm/use-cases/mock_interview/routes/{route_id}", json={"useCase": "mock_interview", "routeId": int(route_id), "protocolCode": protocol, "priority": 100})
+            assert wrong.status_code == 422
+            assert client.post(f"{path}/probe").status_code == 200
+            assert client.patch(f"/api/admin/llm/routes/{route_id}", json={"enabled": True}).status_code == 200
+            enabled = client.patch(path, json={"enabled": True})
+            assert enabled.status_code == 200 and enabled.json()["binding"]["effective"] is True
+        assert [target.model for target in speech.targets] == [case[1] for case in cases]
+        assert all(target.provider_code == "aihubmix" and target.ws_url == "" and target.api_base == "https://api.inferera.com/v1" for target in speech.targets)
 
 
 def test_model_user_selectable_is_admin_editable_and_ignored_by_system_use_cases():

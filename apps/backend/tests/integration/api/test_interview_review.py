@@ -83,7 +83,7 @@ class ReviewGateway:
     def queue(self, step: str, *bodies: object) -> None:
         self.replies[step].extend(bodies)
 
-    async def complete(self, *, model, messages, api_base, api_key) -> GatewayResult:
+    async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat") -> GatewayResult:
         del model, api_base, api_key
         system = "\n".join(m.content for m in messages if m.role == "system" and isinstance(m.content, str))
         step = (

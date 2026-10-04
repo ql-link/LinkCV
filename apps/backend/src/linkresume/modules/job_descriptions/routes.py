@@ -219,7 +219,7 @@ async def parse_job_description_draft(
             raise_draft_parse_error(error, "text")
         return JobDescriptionDraftResponse(
             draft=result.value,
-            warnings=draft_warnings(result.value),
+            warnings=draft_warnings(result.value, source_text=normalized_text),
             input_type="text",
             call_id=result.call_id,
         )

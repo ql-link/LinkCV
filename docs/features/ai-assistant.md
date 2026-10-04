@@ -18,6 +18,8 @@ LinkResume AI 助手提供独立对话工作区和简历编辑器侧栏，允许
 
 接口与 SSE 终态见 [HTTP 接口契约](../api/http-contracts.md)；服务拆分、内部工具和模型治理见 [Agent/LLM 运行时架构](../internals/agent-runtime.md)。
 
+已验证的 AIHubMix 快速模型在按推荐协议绑定后，助手探测和正式对话都显式关闭上游思考；GPT-6 Luna 需要使用 Responses，原有 Chat 绑定不会被代码自动替换。适用模型及参数见 [运行时模型治理](../internals/agent-runtime.md#治理数据)。其他模型沿用其原有请求参数。
+
 ## 用户入口
 
 - `/assistant` 展示首页任务卡与输入框；`/assistant/:sessionId` 展示可恢复的会话。共享侧栏提供首页、简历、模板、岗位看板、面试日程、资料库和最近对话，点击工作区入口进入对应独立路由。最近会话提供置顶、重命名与删除菜单。

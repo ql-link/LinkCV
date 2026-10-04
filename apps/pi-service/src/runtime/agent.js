@@ -15,6 +15,7 @@ import { isRetryableAssistantError } from "../../../../third_party/pi/packages/a
 
 import { createLinkResumeClient } from "../tools/linkresume-client.js";
 import { createSteeringHandle } from "../steering.js";
+import { installInferenceOptions } from "./inference-options.js";
 
 const objectSchema = (properties, required = []) => ({
   type: "object",
@@ -403,6 +404,7 @@ export async function configuredModels(modelConfigs) {
     allowModelNetwork: false,
     refreshOnCreate: false,
   });
+  installInferenceOptions(modelRuntime);
   const routes = [];
   for (const modelConfig of modelConfigs) {
     if (!ALLOWED_MODEL_APIS.has(modelConfig.api) || !modelConfig.baseUrl?.startsWith("https://")) {
