@@ -48,6 +48,8 @@
 
 统一 LLM Gateway 对内部文本、图片能力同时支持 Chat 与 Responses，保持业务层的文本、Token 和流式终态接口。Responses 请求不在供应商端保存结果；AIHubMix 逐模型关闭思考与语音协议配置见 [Agent/LLM 运行时](agent-runtime.md#治理数据)。
 
+LLM 日志的供应商编号按现有 ORM 字段长度收口；文件 ASR 探针读取随源码包和 wheel 发布的 `modules/speech/asr_probe.wav` 固定合成录音。编号与探针的失败边界见 [Agent/LLM 运行时](agent-runtime.md#治理数据)，部署包必须保留该录音资源。
+
 Agent 任务计划增加只读 `material_lookup` 工作流，用于按需回答本轮授权资料中的问题。Pi 默认对资料库调用 `materials:search` 时提交 `types=["dataset"]` 和 `limit=6`；FastAPI 将这个上限作为 LinkRag 多路融合召回的 `topK`，并在返回前复验资料归属及版本。
 
 ## 数据与事务
