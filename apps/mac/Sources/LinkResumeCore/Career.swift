@@ -12,13 +12,35 @@ public enum CareerRequest {
         guard parts.count >= 3, parts[0] == "api", parts[2].allSatisfy({ $0 >= "0" && $0 <= "9" }), !parts[2].isEmpty else { return false }
         if parts.count == 3 {
             if ["job-applications", "job-descriptions"].contains(parts[1]) { return ["GET", "PUT", "DELETE"].contains(method) }
-            return parts[1] == "interview-sessions" && ["GET", "PUT"].contains(method)
+            return parts[1] == "interview-sessions" && ["GET", "PUT", "DELETE"].contains(method)
         }
         if parts.count == 4, parts[1] == "job-descriptions", parts[3] == "logo" { return method == "GET" }
         if parts.count == 4, parts[1] == "interview-sessions", parts[3] == "answer-plan" { return method == "PUT" }
+        if parts[1] == "interview-sessions", let stage = stageDetail(parts, method: method) { return stage }
+        if parts.count == 4, parts[1] == "interview-assets", parts[3] == "content" { return method == "GET" }
         guard parts.count == 4, method == "POST" else { return false }
         if parts[1] == "job-applications" { return ["stages", "terminate", "offer", "close", "archive", "restore", "interview-sessions"].contains(parts[3]) }
         return parts[1] == "interview-sessions" && ["complete", "cancel", "reschedule"].contains(parts[3])
+    }
+
+    /// Stage detail (04.C03): recordings, transcription, review notes, written import and AI review.
+    /// `nil` leaves the decision to the general career rules.
+    private static func stageDetail(_ parts: [String], method: String) -> Bool? {
+        let numeric = { (value: String) in !value.isEmpty && value.allSatisfy { $0 >= "0" && $0 <= "9" } }
+        if parts.count == 4 {
+            switch parts[3] {
+            case "assets": return ["GET", "POST"].contains(method)
+            case "review-notes": return method == "PUT"
+            case "written-questions:extract", "review:generate": return method == "POST"
+            default: return nil
+            }
+        }
+        if parts.count == 5, parts[3] == "review-notes" { return numeric(parts[4]) && method == "DELETE" }
+        if parts.count == 5, parts[3] == "transcriptions" {
+            let segment = parts[4].split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+            return segment.count == 2 && numeric(segment[0]) && ["retry", "apply"].contains(segment[1]) && method == "POST"
+        }
+        return nil
     }
 }
 
@@ -58,6 +80,7 @@ public struct CareerApplication: Identifiable, Sendable {
         if raw.text("phase") == "pending" || (raw.text("phase").isEmpty && raw.text("applied_at").isEmpty && (raw["current_stage"] == nil || raw["current_stage"] == .null) && raw.text("current_stage_type") == "screening") { return "pending" }
         let value = (raw["current_stage"]?.text("stage_type") ?? "").nonempty(raw.text("current_stage_type"))
         if value == "hr" { return "interview" }
+        if value == "oc" { return "offer" }
         if value == "screening" {
             if raw.text("current_stage_label").contains("笔试") { return "written_test" }
             if raw.text("current_stage_label").contains("测评") { return "assessment" }
@@ -65,7 +88,11 @@ public struct CareerApplication: Identifiable, Sendable {
         return CareerStage.keys.contains(value) ? value : "screening"
     }
     public var stageLabel: String { if stage == "offer" && raw.text("offer_status") == "none" { return "OC" }; return ["interview", "ai_interview"].contains(stage) ? (raw["current_stage"]?.text("stage_label") ?? "").nonempty(raw.text("current_stage_label")).nonempty(CareerStage.label(stage)) : CareerStage.label(stage) }
-    public var column: String { ["interview", "ai_interview"].contains(stage) ? "interview:\(stageLabel)" : stage }
+    /// Board column. An accepted Offer stays in the Offer column like Web, although the flow has ended.
+    public var column: String {
+        if raw.text("archived_at").isEmpty && raw.text("status") == "closed" && raw.text("offer_status") == "accepted" { return "offer" }
+        return ["interview", "ai_interview"].contains(stage) ? "interview:\(stageLabel)" : stage
+    }
     public var statusLabel: String {
         if raw.text("offer_status") == "accepted" { return "已接受 Offer" }; if raw.text("offer_status") == "declined" { return "已婉拒 Offer" }
         if stage == "pending" { return "等待确认投递" }
