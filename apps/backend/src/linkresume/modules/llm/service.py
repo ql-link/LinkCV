@@ -10,9 +10,11 @@ import re
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from importlib.resources import files
 from time import perf_counter
 from typing import TypeVar
 from uuid import uuid4
+import wave
 
 from PIL import Image
 from pydantic import BaseModel, ValidationError
@@ -55,6 +57,24 @@ def _vision_probe_image() -> str:
 
 VISION_PROBE_IMAGE_DATA_URL = _vision_probe_image()
 StructuredValue = TypeVar("StructuredValue", bound=BaseModel)
+
+
+def _bounded_log_identifier(value: str, field: str) -> str | None:
+    """Opaque upstream identifiers must fit the existing optional log column."""
+    limit = LLMCallLog.__table__.c[field].type.length
+    return value if isinstance(value, str) and len(value) <= limit else None
+
+
+def _speech_probe_pcm(protocol_code: str) -> bytes:
+    if protocol_code != OPENAI_ASR_FILE:
+        return bytes(SAMPLE_RATE * 2)
+    # Whisper can hallucinate ~30-second word times for one second of silence.
+    # A fixed synthetic recording exercises the same strict timestamp checks.
+    with files("linkresume.modules.speech").joinpath("asr_probe.wav").open("rb") as source:
+        with wave.open(source, "rb") as recording:
+            if (recording.getframerate(), recording.getnchannels(), recording.getsampwidth()) != (SAMPLE_RATE, 1, 2):
+                raise ValueError("invalid speech probe fixture")
+            return recording.readframes(recording.getnframes())
 
 
 def create_call_id() -> str:
@@ -294,9 +314,9 @@ class LLMService:
                 row.estimated_cost = cost
                 row.cost_currency = currency
             if response_model_id is not None:
-                row.response_model_id = response_model_id
+                row.response_model_id = _bounded_log_identifier(response_model_id, "response_model_id")
             if upstream_request_id is not None:
-                row.upstream_request_id = upstream_request_id
+                row.upstream_request_id = _bounded_log_identifier(upstream_request_id, "upstream_request_id")
             row.error_code = error_code
             row.latency_ms = latency_ms
             db.commit()
@@ -648,11 +668,13 @@ class LLMService:
                 await self._speech_gateway.synthesize(target, "你好。", voice=None)
                 return
 
-            async def silence():
-                # One second of 16 kHz PCM16 silence proves the full task cycle.
-                yield bytes(SAMPLE_RATE * 2)
+            async def probe_audio():
+                yield _speech_probe_pcm(plan.protocol_code)
 
-            async for _ in self._speech_gateway.recognize(target, silence(), hotwords=[], language="zh"):
-                pass
+            recognized = False
+            async for event in self._speech_gateway.recognize(target, probe_audio(), hotwords=[], language="zh"):
+                recognized = recognized or (event.final and bool(event.text.strip()))
+            if plan.protocol_code == OPENAI_ASR_FILE and not recognized:
+                raise LLMError("LLM_RESPONSE_INVALID", call_id)
         except SpeechProviderError as error:
             raise LLMError("LLM_CONNECTION_FAILED", call_id) from error

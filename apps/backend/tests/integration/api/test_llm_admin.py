@@ -197,7 +197,7 @@ def test_aihubmix_speech_models_bind_probe_and_activate_using_controlled_http_ta
             self.targets.append(target)
             async for _ in audio:
                 pass
-            yield RecognitionEvent("", 0, True)
+            yield RecognitionEvent("虚构测试语音", 0, True)
         async def synthesize(self, target, text, **kwargs):
             self.targets.append(target)
             return b"ID3"

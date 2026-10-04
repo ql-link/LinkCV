@@ -499,6 +499,8 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 
 结构化调用是后端内部能力，服务端在系统指令中提供 JSON Schema，并本地验证输出；非法结构以 `LLM_RESPONSE_INVALID` 收口。
 
+调用日志中的上游模型、请求编号超过存储字段上限时，对应可选值为 `null`，调用结果、用量和本系统 `callId` 仍保留。文件 ASR 探针要求固定测试录音的最终转写非空；为空返回 `422 LLM_RESPONSE_INVALID`，不会写入成功验证。
+
 删除是物理删除，只用于清理从未使用过的配置，历史数据一律不删。线路只要仍被场景绑定、`llm_call_logs` 或 `agent_runs` 引用，删除返回 `409 LLM_ROUTE_IN_USE`，此时应改为停用。删除逻辑模型会同时删除它的全部线路：模型被 `agent_sessions`/`agent_runs` 引用，或其中任一线路被引用时，返回 `409 LLM_MODEL_IN_USE`。删除连接会同时删除它的全部线路，但保留逻辑模型，因为同一模型可能还有其他连接的线路；任一线路被引用时返回 `409 LLM_CONNECTION_IN_USE`。以上删除都整体成功或整体失败，不会只删掉一部分线路。
 
 ## 管理台用户管理
