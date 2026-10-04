@@ -1442,6 +1442,8 @@ export function AddNextStageDialog({
   const [customCompletionDays, setCustomCompletionDays] = useState("3");
   const [aiInterviewStartAt, setAiInterviewStartAt] = useState(initialStartAt);
   const [aiInterviewDuration, setAiInterviewDuration] = useState(60);
+  const [aiInterviewEndAt, setAiInterviewEndAt] = useState(initialEndAt);
+  const [aiInterviewScheduleKind, setAiInterviewScheduleKind] = useState<"fixed_slot" | "open_window">("fixed_slot");
   const [aiInterviewLink, setAiInterviewLink] = useState("");
   const [writtenStartAt, setWrittenStartAt] = useState(initialStartAt);
   const [writtenEndAt, setWrittenEndAt] = useState(initialEndAt);
@@ -1574,14 +1576,16 @@ export function AddNextStageDialog({
     const fixedLabel = NEXT_STAGE_CHOICES.find((choice) => choice.key === activeStage)?.label ?? "";
     const isWrittenTest = activeStage === "written_test";
     const isInterview = activeStage === "interview";
-    const isOpenWindow = activeStage === "assessment" || (isWrittenTest && writtenScheduleKind === "open_window");
+    const isOpenWindow = activeStage === "assessment" || (isWrittenTest && writtenScheduleKind === "open_window") || (activeStage === "ai_interview" && aiInterviewScheduleKind === "open_window");
     const startAt = (isWrittenTest ? writtenStartAt : isInterview ? interviewStartAt : activeAsyncStartAt) || (isOpenWindow ? schedulePickerValue(new Date().toISOString()) : "");
     const start = parseScheduleStart(startAt);
     const hasScheduleDetails = isWrittenTest
       ? Boolean(writtenStartAt || writtenEndAt || writtenMeetingOrLocation.trim() || preparationNote.trim())
       : isInterview
         ? Boolean(interviewStartAt || interviewMeetingOrLocation.trim() || preparationNote.trim())
-        : Boolean(activeAsyncStartAt || assessmentEndAt || activeAsyncLink.trim() || preparationNote.trim());
+        : activeStage === "ai_interview"
+          ? Boolean(aiInterviewStartAt || aiInterviewEndAt || aiInterviewLink.trim() || preparationNote.trim())
+          : Boolean(assessmentStartAt || assessmentEndAt || assessmentLink.trim() || preparationNote.trim());
     if (scheduleOnly && !hasScheduleDetails) {
       setErrorMessage("请选择开始时间或截止时间。");
       return;
@@ -1593,12 +1597,12 @@ export function AddNextStageDialog({
         setErrorMessage(isWrittenTest ? "请填写有效的笔试开始时间。" : `请填写有效的${fixedLabel}开始时间。`);
         return;
       }
-      if ((isWrittenTest && writtenScheduleKind === "open_window") || activeStage === "assessment") {
+      if (isOpenWindow) {
         if (activeStage === "assessment" && (!Number.isFinite(completionMinutes) || completionMinutes <= 0)) {
           setErrorMessage("完成期限必须大于 0 天。");
           return;
         }
-        end = parseScheduleStart(activeStage === "assessment" ? assessmentEndAt : writtenEndAt);
+        end = parseScheduleStart(activeStage === "assessment" ? assessmentEndAt : activeStage === "ai_interview" ? aiInterviewEndAt : writtenEndAt);
         if (!end || end <= start) {
           setErrorMessage("截止时间必须晚于开放时间。");
           return;
@@ -1659,9 +1663,7 @@ export function AddNextStageDialog({
           stage_label: activeStage === "interview" ? interviewLabel.trim() : fixedLabel,
           start_at: start.toISOString(),
           ...scheduleTiming,
-          schedule_kind: activeStage === "assessment" || (isWrittenTest && writtenScheduleKind === "open_window")
-            ? "open_window"
-            : "fixed_slot",
+          schedule_kind: isOpenWindow ? "open_window" : "fixed_slot",
           timezone,
           mode,
           meeting_url: mode === "video" || mode === "phone" ? meetingOrLocation || null : null,
@@ -1722,12 +1724,12 @@ export function AddNextStageDialog({
   ));
 
   const stageName = NEXT_STAGE_CHOICES.find(item => item.key === activeStage)?.label ?? "";
-  const isWindow = activeStage === "assessment" || (activeStage === "written_test" && writtenScheduleKind === "open_window");
+  const isWindow = activeStage === "assessment" || (activeStage === "written_test" && writtenScheduleKind === "open_window") || (activeStage === "ai_interview" && aiInterviewScheduleKind === "open_window");
   const scheduledStart = activeStage === "assessment" ? assessmentStartAt : activeStage === "written_test" ? writtenStartAt : activeStage === "ai_interview" ? aiInterviewStartAt : interviewStartAt;
-  const scheduledEnd = activeStage === "assessment" ? assessmentEndAt : writtenEndAt;
+  const scheduledEnd = activeStage === "assessment" ? assessmentEndAt : activeStage === "ai_interview" ? aiInterviewEndAt : writtenEndAt;
   const scheduleDuration = activeStage === "written_test" ? writtenDuration : activeStage === "ai_interview" ? aiInterviewDuration : interviewDuration;
   const setStart = activeStage === "assessment" ? setAssessmentStartAt : activeStage === "written_test" ? setWrittenStartAt : activeStage === "ai_interview" ? setAiInterviewStartAt : setInterviewStartAt;
-  const setEnd = activeStage === "assessment" ? setAssessmentEndAt : setWrittenEndAt;
+  const setEnd = activeStage === "assessment" ? setAssessmentEndAt : activeStage === "ai_interview" ? setAiInterviewEndAt : setWrittenEndAt;
   const setDuration = activeStage === "written_test" ? setWrittenDuration : activeStage === "ai_interview" ? setAiInterviewDuration : setInterviewDuration;
   const summaryDate = parseScheduleStart(isWindow ? scheduledEnd : scheduledStart);
   const iconNames: Record<NextStageChoice, V3IconName> = { screening: "send", assessment: "text", written_test: "edit", ai_interview: "spark", interview: "user", offer: "mail" };
@@ -1770,8 +1772,7 @@ export function AddNextStageDialog({
         {startsPending && <label className="cd3-stage-field">投递日期（选填）<AppliedAtDatePicker id="career-next-stage-applied-at" value={appliedAt} onChange={setAppliedAt}/></label>}
         {activeStage === "offer" ? <OfferDetailsFields values={offerValues} disabled={busy} onChange={setOfferValues}/> : activeStage === "screening" ? <p className="cd3-stage-hint">保存后岗位将从待投递进入筛选中。</p> : <>
           {activeStage === "interview" && <div className="cd3-interview-round"><label className="cd3-stage-field">面试轮次<V3Select label="面试轮次" disabled={scheduleOnly} value={["一面","二面","三面"].includes(interviewLabel) ? interviewLabel : interviewLabel ? "custom" : ""} placeholder="选择轮次" options={[{value:"一面",label:"一面"},{value:"二面",label:"二面"},{value:"三面",label:"三面"},{value:"custom",label:"自定义"}]} onChange={value=>{setInterviewLabel(value === "custom" ? "自定义面试" : value);if(value !== "custom")setInterviewRoundNo(String(["一面","二面","三面"].indexOf(value)+1));}}/></label>{interviewLabel && !["一面","二面","三面"].includes(interviewLabel) && <label className="cd3-stage-field">面试名称<input aria-label="面试名称" value={interviewLabel} maxLength={100} onChange={e=>setInterviewLabel(e.target.value)}/></label>}</div>}
-          {/* 面试只有「按时参加」一种安排，不再显示单选项和说明 */}
-          {activeStage !== "interview" && <><h3 className="cd3-time-heading">时间安排</h3><div className="cd3-time-choices" role="radiogroup" aria-label="时间安排">{[{value:"fixed_slot",title:"按时参加",sub:"准点开始，有时长",icon:"clock"},{value:"open_window",title:"截止前完成",sub:"期间自己选时间",icon:"flag"}].map(item=><button type="button" key={item.value} role="radio" aria-checked={isWindow === (item.value === "open_window")} disabled={busy || (activeStage === "assessment" && item.value === "fixed_slot") || (activeStage === "ai_interview" && item.value === "open_window")} className={isWindow === (item.value === "open_window") ? "is-active" : ""} onClick={()=>setWrittenScheduleKind(item.value as "fixed_slot" | "open_window")}><span><V3Icon name={item.icon as V3IconName} size={14}/></span><div><strong>{item.title}</strong><small>{activeStage === "ai_interview" && item.value === "open_window" ? "AI 面试仅支持按时参加" : item.sub}</small></div>{isWindow === (item.value === "open_window") && <i><V3Icon name="check" size={10}/></i>}</button>)}</div></>}
+          {(activeStage === "written_test" || activeStage === "ai_interview") && <><h3 className="cd3-time-heading">时间安排</h3><div className="cd3-time-choices" role="radiogroup" aria-label="时间安排">{[{value:"fixed_slot",title:"按时参加",sub:"准点开始，有时长",icon:"clock"},{value:"open_window",title:"截止前完成",sub:"期间自己选时间",icon:"flag"}].map(item=><button type="button" key={item.value} role="radio" aria-checked={isWindow === (item.value === "open_window")} disabled={busy} className={isWindow === (item.value === "open_window") ? "is-active" : ""} onClick={()=> (activeStage === "ai_interview" ? setAiInterviewScheduleKind : setWrittenScheduleKind)(item.value as "fixed_slot" | "open_window")}><span><V3Icon name={item.icon as V3IconName} size={14}/></span><div><strong>{item.title}</strong><small>{item.sub}</small></div>{isWindow === (item.value === "open_window") && <i><V3Icon name="check" size={10}/></i>}</button>)}</div></>}
           <div className="cd3-time-fields">{isWindow ? <><label className="cd3-stage-field">截止时间 <em>*</em><ScheduleDateTimePicker id="career-next-stage-end" label="截止时间" value={scheduledEnd} required disabled={busy} onChange={setEnd}/></label><label className="cd3-stage-field">开放时间 <small>不填从现在开始</small><ScheduleDateTimePicker id="career-next-stage-start" label="开放时间" value={scheduledStart} placeholder="收到通知就开放" disabled={busy} onChange={setStart}/></label></> : <><label className="cd3-stage-field">开始时间 <em>*</em><ScheduleDateTimePicker id="career-next-stage-start" label={activeStage === "written_test" ? "笔试时间" : activeStage === "interview" ? "面试时间" : "开始时间"} value={scheduledStart} disabled={busy} onChange={setStart}/></label><label className="cd3-stage-field">时长<V3Select label="时长" value={String(scheduleDuration)} options={Array.from(new Set([30,60,90,120,180,scheduleDuration])).sort((a,b)=>a-b).map(value=>({value:String(value),label:`${value} 分钟`}))} onChange={value=>setDuration(Number(value))}/></label></>}</div>
           {isWindow && <>{activeStage === "assessment" && <div className="cd3-quick-deadlines">{[1,3,7].map(days=><button type="button" key={days} onClick={()=>chooseDeadline(days)} className={completionWindow === String(days*1440) && scheduledEnd ? "is-active" : ""}>{days===1?"24 小时":`${days} 天后`}</button>)}</div>}<label className="cd3-stage-field cd3-plan-field">我的作答计划 <small>可选 · 只提醒自己，不改官方时间</small><ScheduleDateTimePicker id="career-next-stage-plan" label="我的作答计划" value={answerPlanStart} placeholder="选一段打算作答的时间" durationMinutes={answerPlanDuration} minimumStartAt={scheduledStart || schedulePickerValue(new Date().toISOString())} maximumEndAt={scheduledEnd || undefined} onChange={setAnswerPlanStart} onDurationMinutesChange={setAnswerPlanDuration}/></label></>}
           {(activeStage === "written_test" && !isWindow) || activeStage === "interview" ? <><div className="cd3-stage-field cd3-mode-field">方式{activeStage === "written_test" ? <div className="cd3-mode-segmented" role="radiogroup" aria-label="笔试方式">{[{value:"video",label:"在线"},{value:"onsite",label:"线下"}].map(item=><button type="button" role="radio" aria-checked={writtenMode===item.value} className={writtenMode===item.value?"is-active":""} key={item.value} onClick={()=>setWrittenMode(item.value as "video"|"onsite")}>{item.label}</button>)}</div> : <V3Select label="方式" value={interviewMode} options={[{value:"video",label:"视频面试"},{value:"onsite",label:"现场面试"},{value:"phone",label:"电话"},{value:"other",label:"其他"}]} onChange={setInterviewMode}/>}</div><label className="cd3-stage-field cd3-link-field">{activeStage === "written_test" ? writtenMode === "onsite" ? "笔试地点" : "笔试链接" : "面试链接或地点"}<small>可选</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={activeStage === "written_test" ? "笔试链接或地点（选填）" : "面试链接或地点（选填）"} placeholder="粘贴链接或填写地点" value={activeStage === "written_test" ? writtenMeetingOrLocation : interviewMeetingOrLocation} maxLength={2048} onChange={e=>(activeStage === "written_test" ? setWrittenMeetingOrLocation : setInterviewMeetingOrLocation)(e.target.value)}/></div></label></> : <label className="cd3-stage-field cd3-link-field">{activeStage === "assessment" ? "测评链接" : activeStage === "written_test" ? "笔试链接" : "面试链接"}<small>可选</small><div className="cd3-input-icon"><V3Icon name="link" size={14}/><input aria-label={activeStage === "assessment" ? "测评链接（选填）" : "面试链接（选填）"} placeholder="粘贴链接" maxLength={2048} value={activeStage === "written_test" ? writtenMeetingOrLocation : activeAsyncLink} onChange={e=>(activeStage === "written_test" ? setWrittenMeetingOrLocation : activeStage === "assessment" ? setAssessmentLink : setAiInterviewLink)(e.target.value)}/></div></label>}
@@ -3226,11 +3227,15 @@ export function InterviewSessionDetailView({
   }
   const { session, application, assets } = detail;
   const isArchived = application.archived_at !== null;
-  const isAssessment = session.stage_type === "other";
-  const recordTitle = isAssessment ? "笔试记录" : "面试记录";
+  const isAiInterview = session.stage_type === "other" && (
+    application.stages?.find((stage) => stage.id === session.application_stage_id)?.stage_type === "ai_interview"
+    || session.stage_label === "AI 面试"
+  );
+  const isAssessment = session.stage_type === "other" && !isAiInterview;
+  const recordTitle = isAiInterview ? "AI 面试记录" : isAssessment ? "笔试记录" : "面试记录";
   const recordKind = isAssessment ? "笔试" : "面试";
   const overviewTitle = `${recordKind}概况`;
-  const overviewNameLabel = isAssessment ? "笔试名称" : "面试轮次";
+  const overviewNameLabel = isAssessment ? "笔试名称" : isAiInterview ? "面试名称" : "面试轮次";
   const addContentLabel = isAssessment ? "添加笔试内容" : "添加面试内容";
   const completeLabel = isAssessment ? "完成笔试" : "完成本轮面试";
   const canEditAnswerPlan = !isArchived && session.status === "scheduled";
@@ -3252,7 +3257,7 @@ export function InterviewSessionDetailView({
           <div><CalendarDays aria-hidden="true" /><span><small>{session.schedule_kind === "open_window" ? "官方作答时段" : `${recordKind}时间`}</small><strong className="career-session-time-range" title={formatFullDateTimeRange(session.start_at, session.end_at)}>{formatFullDateTimeRange(session.start_at, session.end_at)}</strong></span></div>
           <div><Video aria-hidden="true" /><span><small>{recordKind}方式</small><strong>{sessionModeLabel(session.mode)}{session.location ? ` · ${session.location}` : ""}</strong></span></div>
         </section>
-        {isAssessment && session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} inRecordDialog={isDialog} onChanged={() => onChanged(session.id)} />}
+        {session.schedule_kind === "open_window" && <InterviewAnswerPlanSection session={session} canEdit={canEditAnswerPlan} inRecordDialog={isDialog} onChanged={() => onChanged(session.id)} />}
         {session.meeting_url && <a className="career-session-meeting-link" href={session.meeting_url} target="_blank" rel="noreferrer"><Video aria-hidden="true" />打开{isAssessment ? "笔试" : "会议"}链接 <ExternalLink aria-hidden="true" /></a>}
         <section className="career-session-content-section">
           <header><h2>{recordTitle}</h2></header>

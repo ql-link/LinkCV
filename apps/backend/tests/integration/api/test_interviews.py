@@ -793,6 +793,51 @@ def test_open_window_answer_plan_is_persisted_and_bounded() -> None:
         assert terminal_update.json() == {"error": "INTERVIEW_INVALID_TRANSITION"}
 
 
+def test_ai_interview_supports_open_window_and_answer_plan() -> None:
+    app = build_app(FakeStorage())
+    with TestClient(app) as client:
+        register(client, "ai-window@example.test")
+        pending = create_pending_application(client, "示例 AI 面试公司")
+        staged = client.post(
+            f"/api/job-applications/{pending['id']}/stages",
+            json={
+                "client_request_id": "a1000000-0000-4000-8000-000000000011",
+                "stage_type": "ai_interview",
+                "base_lock_version": pending["lock_version"],
+            },
+        )
+        assert staged.status_code == 200, staged.text
+        application = staged.json()["application"]
+        created = client.post(
+            f"/api/job-applications/{application['id']}/interview-sessions",
+            json={
+                "client_request_id": "a2000000-0000-4000-8000-000000000012",
+                "application_stage_id": application["current_stage"]["id"],
+                "stage_type": "other",
+                "round_no": None,
+                "stage_label": "AI 面试",
+                "start_at": fixture_datetime(3, 12).isoformat(),
+                "end_at": fixture_datetime(6, 23, 45).isoformat(),
+                "schedule_kind": "open_window",
+                "timezone": "Asia/Shanghai",
+                "mode": "video",
+            },
+        )
+        assert created.status_code == 201, created.text
+        session = created.json()["session"]
+        assert session["schedule_kind"] == "open_window"
+        planned = client.put(
+            f"/api/interview-sessions/{session['id']}/answer-plan",
+            json={
+                "answer_plan_start_at": fixture_datetime(5, 19).isoformat(),
+                "duration_minutes": 120,
+                "base_lock_version": session["lock_version"],
+            },
+        )
+        assert planned.status_code == 200, planned.text
+        assert planned.json()["session"]["answer_plan_start_at"] is not None
+
+
 def test_open_window_and_answer_plan_reject_unsupported_or_unowned_sessions() -> None:
     app = build_app(FakeStorage())
     with TestClient(app) as client:

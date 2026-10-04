@@ -55,10 +55,24 @@ describe("新建求职流程的分步保存", () => {
     expect(mocks.addJobApplicationStage).toHaveBeenCalledWith("app-test", expect.objectContaining({ stage_type: "assessment", interview_round_no: null }));
     const payload = mocks.createInterviewSession.mock.calls[0][1]; expect(payload.schedule_kind).toBe("open_window"); expect(+new Date(payload.end_at)).toBeGreaterThan(+new Date(payload.start_at)); expect(payload.duration_minutes).toBeUndefined();
   });
-  it("AI面试只提供按时参加，且不留下测评的截止前完成状态", async () => {
+  it("AI面试默认按时参加，切换阶段时不沿用测评的截止窗口", async () => {
     open(); fireEvent.click(screen.getByRole("button", { name: "测评" })); fireEvent.click(screen.getByRole("button", { name: "AI 面试" }));
+    expect(screen.getByRole("button", { name: "按时参加" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "截止前完成" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("button", { name: "开始时间" })).toBeInTheDocument(); expect(screen.queryByRole("button", { name: "截止时间" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "创建求职流程" })); await waitFor(() => expect(mocks.createInterviewSession).toHaveBeenCalled()); expect(mocks.createInterviewSession.mock.calls[0][1].schedule_kind).toBe("fixed_slot");
+  });
+  it("AI面试可选择截止前完成并保存开放窗口", async () => {
+    open(); fireEvent.click(screen.getByRole("button", { name: "AI 面试" }));
+    fireEvent.click(screen.getByRole("button", { name: "截止前完成" }));
+    chooseDate("截止时间");
+    fireEvent.click(screen.getByRole("button", { name: "创建求职流程" }));
+    await waitFor(() => expect(mocks.createInterviewSession).toHaveBeenCalled());
+    const payload = mocks.createInterviewSession.mock.calls[0][1];
+    expect(payload.stage_label).toBe("AI 面试");
+    expect(payload.schedule_kind).toBe("open_window");
+    expect(+new Date(payload.end_at)).toBeGreaterThan(+new Date(payload.start_at));
+    expect(payload.duration_minutes).toBeUndefined();
   });
   it("开放时间省略且排期响应丢失时，重试保持整份原始请求不变", async () => {
     mocks.createInterviewSession.mockRejectedValueOnce(new Error("连接中断"));
