@@ -42,6 +42,26 @@ def test_ready_dataset_is_recalled_semantically(indexed) -> None:
     assert search(factory, storage, user, "订单服务吞吐量提升了多少", rag=None) == []
 
 
+def test_recall_requests_and_keeps_only_first_six_ranked_hits(indexed, env) -> None:  # noqa: F811
+    factory, storage, rag, user, _ = indexed
+    service = env[3]
+    for number in range(6):
+        dataset_id = add_dataset(factory, storage.objects, user, f"第 {number} 份资料")
+        service.run_once()
+        rag.recall_hits[record(factory, dataset_id).rag_file_id] = f"排序片段 {number}"
+
+    with factory() as db:
+        sources = search_materials(
+            db, user_id=user, query="排序", types=["dataset"], limit=6,
+            storage=storage, max_bytes=1_000_000, rag=rag,
+        )
+    assert rag.recall_calls[-1]["top_k"] == 6
+    assert len(sources) == 6
+    assert [item["excerpt"] for item in sources] == [
+        rag.recall_hits[file_id] for file_id in rag.recall_calls[-1]["file_ids"][:6]
+    ]
+
+
 def test_rag_failure_falls_back_to_substring_matching(indexed) -> None:
     factory, storage, rag, user, ready = indexed
     rag.fail = {"recall"}

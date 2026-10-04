@@ -745,6 +745,7 @@ test("read tool can load every P1 career workflow", async () => {
     "interview-guide/SKILL.md",
     "career-planning/SKILL.md",
     "resume-title-generator/SKILL.md",
+    "material-lookup/SKILL.md",
   ]) {
     const result = await tool.execute(`read-${path}`, { path });
     assert.match(result.content[0].text, /^---/);

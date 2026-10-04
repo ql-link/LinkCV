@@ -471,7 +471,7 @@ class AgentTaskSpec(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
     workflow: Literal[
         "resource_catalog", "resume_edit", "resume_translation",
-        "interview_guide", "career_planning", "resume_title",
+        "interview_guide", "career_planning", "resume_title", "material_lookup",
     ]
     output: Literal["proposal", "advice", "catalog"]
     label: str = Field(min_length=1, max_length=120)
@@ -486,6 +486,7 @@ class AgentTaskSpec(BaseModel):
             "interview_guide": "advice",
             "career_planning": "advice",
             "resume_title": "advice",
+            "material_lookup": "advice",
         }
         if self.workflow in expected and self.output != expected[self.workflow]:
             raise ValueError("task output does not match workflow")
