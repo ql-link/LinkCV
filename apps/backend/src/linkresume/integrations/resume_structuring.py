@@ -27,7 +27,19 @@ source_id，且只提供语义角色、受限字段名、条目锚点和置信�
 同一 source_id 可以用不同 field_key 提供多个字段，但相同的
 (source_id, role, field_key) 不能重复。entry_field 的锚点必须是输入中较早或同一
 来源，contact 的 field_key 只能是 phone/email/website/location/github/linkedin/other。
-真实章节标题只用于来源映射，不能通过 normalized_value 改名。"""
+真实章节标题只用于来源映射，不能通过 normalized_value 改名。
+source_graph_sha256 必须原样复制输入顶层的 source_graph_sha256，不能复制
+source_graph.source_document_sha256，也不要自行计算哈希。
+所有 annotation 都必须包含 schema 要求的字段；不适用的字段使用 null。
+identity_name 与 contact 的 semantic_kind、entry_anchor_source_id 必须为 null；
+identity_name 的 field_key 必须为 null，只有明确的姓名来源才能标注为 identity_name。
+section_title 的 semantic_kind 必须非空；field_key 与 entry_anchor_source_id 为 null。
+entry_field 的 field_key 只能是 name/organization/role/location/start_date/end_date/
+url/degree/major，不能使用 employer、title、job_title 或 date_range 等别名。
+同一 entry_anchor_source_id 下的 entry_field 必须使用相同、非空的 semantic_kind。
+body、list_item、section_title、identity_name 的 field_key 必须为 null。
+normalized_value 仅用于来源中已有字段的规范化；无法可靠规范化时使用 null。
+不确定的标注应省略，不要为了填满 schema 编造姓名、章节或字段。"""
 
 LAYOUT_HINT_FIELDS = (
     "block_id",
@@ -128,7 +140,10 @@ def structuring_payload(
         layout_hints = layout
     if source_graph is None:
         raise ValueError("structuring payload requires a SourceGraph")
-    payload = {"source_graph": source_graph.model_dump(mode="json")}
+    payload = {
+        "source_graph_sha256": source_graph.graph_sha256(),
+        "source_graph": source_graph.model_dump(mode="json"),
+    }
     safe_layout = _safe_layout_hint_payload(layout_hints)
     if safe_layout is not None:
         # These are advisory physical blocks, not source IR entries.  The

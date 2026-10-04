@@ -237,7 +237,8 @@ def transcript_correction_messages(
         "禁止：增删观点、补充未说出的内容、润色措辞、调整结构、删除「嗯」「那个」等口头禅与停顿词、判断回答对错。\n"
         "glossary 是本场可能出现的术语，context 是简历与岗位摘要，只用来判断正确写法。\n"
         "没有需要修复的错误时 corrected 原样返回转写文本，changes 为空。"
-        "每处修改在 changes 中给出 original（原文片段）、corrected（修正片段）与 reason。\n"
+        "每处修改在 changes 中给出 original（逐字原文片段）、corrected（逐字修正片段）与 reason；"
+        "列出全部修改，不得编造片段，同一处不重复记录。\n"
         + DATA_ISOLATION
     )
     user = (

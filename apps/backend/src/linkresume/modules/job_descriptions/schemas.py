@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
@@ -85,6 +86,19 @@ class JobDescriptionDraft(BaseModel):
             if normalized and normalized not in result:
                 result.append(normalized)
         return result
+
+    @field_validator("salary_currency", mode="before")
+    @classmethod
+    def normalize_draft_currency(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = unicodedata.normalize("NFKC", value).strip().upper()
+        aliases = {
+            "人民币": "CNY", "RMB": "CNY", "美元": "USD", "美金": "USD",
+            "欧元": "EUR", "英镑": "GBP", "港币": "HKD", "港元": "HKD",
+            "日元": "JPY", "日圆": "JPY",
+        }
+        return aliases.get(normalized, normalized) or None
 
 
 class JobDescriptionDraftResponse(BaseModel):

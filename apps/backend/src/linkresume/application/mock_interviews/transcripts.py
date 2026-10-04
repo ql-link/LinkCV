@@ -1,13 +1,13 @@
 """Voice transcript correction, manual edits and single-question re-evaluation.
 
 All three run only on completed voice interviews and are triggered by the user.
-Correction is limited to recognition errors; any result that changes more than
-``MAX_CHANGE_RATIO`` of the transcript is rejected instead of trusted.
+AI corrections validate edit traces and preserve numbers, negations and roles;
+equivalent grounded terms and number spellings do not consume the edit budget.
+Manual edits remain measured against the original characters.
 """
 
 from __future__ import annotations
 
-import difflib
 from collections.abc import Callable
 from decimal import Decimal
 from typing import Any
@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from linkresume.application.mock_interviews import prompts, rubric
 from linkresume.application.mock_interviews.outputs import QuestionEvaluation, TranscriptCorrection
+from linkresume.application.mock_interviews.transcript_correction_policy import change_ratio, rejection_reason
 from linkresume.application.mock_interviews.service import (
     LLM_SOURCE,
     MockInterviewError,
@@ -36,18 +37,6 @@ from linkresume.modules.mock_interviews.models import MockInterview, MockIntervi
 MAX_CHANGE_RATIO = 0.15
 MAX_RE_EVALUATIONS = 3
 CONTEXT_CHARS = 3_000
-
-
-def change_ratio(original: str, corrected: str) -> float:
-    """Share of the original transcript that was replaced, inserted or deleted."""
-    if not original:
-        return 1.0 if corrected else 0.0
-    changed = 0
-    matcher = difflib.SequenceMatcher(a=original, b=corrected, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag != "equal":
-            changed += max(i2 - i1, j2 - j1)
-    return changed / len(original)
 
 
 def _completed_voice(db: Session, user_id: int, public_id: str, *, lock: bool = True) -> MockInterview:
@@ -133,11 +122,15 @@ async def correct_answers(
                             "reason": "model_failed", "changes": []})
             continue
         corrected = value.corrected.strip()
+        reason = None if corrected == original else rejection_reason(
+            original, corrected, value.changes, glossary=glossary, context=context,
+            max_change_ratio=MAX_CHANGE_RATIO,
+        )
         if corrected == original:
             results.append({"question_id": item["question_id"], "state": "original", "changes": []})
-        elif change_ratio(original, corrected) > MAX_CHANGE_RATIO:
+        elif reason:
             results.append({"question_id": item["question_id"], "state": "correction_rejected",
-                            "reason": "change_ratio_exceeded", "changes": []})
+                            "reason": reason, "changes": []})
         else:
             results.append({
                 "question_id": item["question_id"],
