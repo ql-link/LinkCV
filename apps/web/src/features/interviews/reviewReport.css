@@ -145,7 +145,7 @@
 .rp-note h4 { margin: 0; }
 .rp-note-verdict { display: flex; gap: 6px; }
 .rp-note-verdict button { border: 1px solid var(--v3-hl); border-radius: 999px; background: var(--v3-card); padding: 3px 10px; color: var(--v3-sub); font-size: 11.5px; }
-.rp-note-verdict button[aria-pressed="true"] { border-color: var(--v3-dark); background: var(--v3-dark); color: #fff; }
+.rp-note-verdict button[aria-pressed="true"] { border-color: #c9d7f4; background: var(--v3-bl-soft); color: var(--v3-bl); }
 .rp-note textarea { min-height: 84px; resize: vertical; border: 1px solid var(--v3-cl); border-radius: 8px; background: var(--v3-card); padding: 8px 10px; color: var(--v3-txt); font: 13px/20px var(--v3-sans); }
 .rp-answer .rp-note footer { justify-content: space-between; margin: 0; border: 0; padding: 0; }
 .rp-note footer small { color: var(--rp-faint); font-size: 11.5px; }

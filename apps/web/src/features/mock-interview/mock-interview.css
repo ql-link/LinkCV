@@ -376,7 +376,7 @@
 .mi-dim-list p { margin-top: 6px !important; padding-left: 96px; color: var(--v3-sub); font-size: 12px; line-height: 18px; }
 .mi-filter { display: flex; gap: 6px; }
 .mi-filter button { height: 24px; border: 1px solid var(--v3-cl); border-radius: 999px; background: #fff; padding: 0 11px; color: var(--v3-sub); cursor: pointer; font-size: 12px; }
-.mi-filter button[aria-pressed="true"] { border-color: var(--v3-dark); background: var(--v3-dark); color: #fff; font-weight: 500; }
+.mi-filter button[aria-pressed="true"] { border-color: #c9d7f4; background: var(--v3-bl-soft); color: var(--v3-bl); font-weight: 500; }
 .mi-qlist { margin-top: 14px; border-top: 1px solid var(--v3-line); }
 .mi-qrow { display: flex; width: 100%; height: 51px; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--v3-line); background: transparent; padding: 0; color: var(--v3-txt); cursor: pointer; text-align: left; }
 .mi-qrow:hover, .mi-qrow.has-conflict { background: #fafaf8; }

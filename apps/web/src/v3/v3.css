@@ -215,9 +215,9 @@
 .v3-picker-day { display: grid; height: 32px; place-items: center; border: 0; border-radius: 7px; background: transparent; padding: 0; color: var(--v3-txt); cursor: pointer; font: 12px var(--v3-num); }
 .v3-picker-day:hover { background: var(--v3-field); }
 .v3-picker-day.is-muted { color: var(--v3-fnt2); }
-.v3-picker-day.is-today { box-shadow: inset 0 0 0 1px var(--v3-sk2); }
-.v3-picker-day.is-in-range { border-radius: 0; background: var(--v3-field); }
-.v3-picker-day.is-selected { border-radius: 7px; background: var(--v3-dark); color: #fff; }
+.v3-picker-day.is-today { box-shadow: inset 0 0 0 1px var(--v3-bl); color: var(--v3-bl); }
+.v3-picker-day.is-in-range { border-radius: 0; background: var(--v3-bl-soft); }
+.v3-picker-day.is-selected { border-radius: 7px; background: var(--v3-bl); box-shadow: none; color: #fff; }
 .v3-picker-day:disabled { color: var(--v3-fnt2); cursor: not-allowed; background: transparent; }
 .v3-picker-time { display: flex; align-items: center; gap: 8px; margin-top: 10px; border-top: 1px solid var(--v3-line); padding-top: 10px; color: var(--v3-sub); font-size: 12px; }
 .v3-picker-time .v3-select { width: 84px; }
@@ -240,20 +240,20 @@
 .v3-week-picker-day.is-muted { color: var(--v3-fnt2); }
 .v3-week-picker-day.is-today::after { position: absolute; bottom: 4px; left: 50%; width: 3px; height: 3px; border-radius: 50%; background: currentColor; content: ""; translate: -50% 0; }
 .v3-week-picker-row:hover:not(.is-selected) .v3-week-picker-band { background: var(--v3-field); }
-.v3-week-picker-row.is-selected .v3-week-picker-band { background: var(--v3-line); }
+.v3-week-picker-row.is-selected .v3-week-picker-band { background: var(--v3-bl-soft); }
 .v3-week-picker-row.is-selected .v3-week-picker-day.is-muted { color: var(--v3-fnt); }
 .v3-week-picker-row.is-selected .v3-week-picker-day:first-child,
-.v3-week-picker-row.is-selected .v3-week-picker-day:last-child { background: var(--v3-dark); color: #fff; font-weight: 500; }
+.v3-week-picker-row.is-selected .v3-week-picker-day:last-child { background: var(--v3-bl); color: #fff; font-weight: 500; }
 .v3-week-picker-row:focus-visible { outline: none; }
-.v3-week-picker-row:focus-visible .v3-week-picker-band { box-shadow: 0 0 0 2px var(--v3-dark); }
+.v3-week-picker-row:focus-visible .v3-week-picker-band { box-shadow: 0 0 0 2px var(--v3-bl); }
 
 /* 按月选：3 × 4 月份格 */
 .v3-picker-months { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .v3-picker-month { height: 44px; border: 0; border-radius: 9px; background: transparent; padding: 0; color: var(--v3-txt); cursor: pointer; font: 13px var(--v3-sans); transition: background-color var(--motion-duration-fast, 140ms) ease, color var(--motion-duration-fast, 140ms) ease; }
 .v3-picker-month:hover:not(.is-selected) { background: var(--v3-field); }
-.v3-picker-month.is-today:not(.is-selected) { box-shadow: inset 0 0 0 1px var(--v3-sk2); }
-.v3-picker-month.is-selected { background: var(--v3-dark); color: #fff; font-weight: 500; }
-.v3-picker-month:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 1px; }
+.v3-picker-month.is-today:not(.is-selected) { box-shadow: inset 0 0 0 1px var(--v3-bl); color: var(--v3-bl); }
+.v3-picker-month.is-selected { background: var(--v3-bl); color: #fff; font-weight: 500; }
+.v3-picker-month:focus-visible { outline: 2px solid var(--v3-bl); outline-offset: 1px; }
 .v3-picker-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
 /* 分段选择 */

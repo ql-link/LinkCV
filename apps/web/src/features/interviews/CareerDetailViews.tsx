@@ -1,4 +1,4 @@
-import { t, useLocale, weekdays } from "@/i18n";
+import { t, useLocale, weekdayName, weekdays } from "@/i18n";
 import { MotionPresence, MotionSurface } from "@/components/ui/motion";
 import {
   useEffect,
@@ -53,6 +53,7 @@ import {
   Video,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import {
   ApiRequestError,
@@ -584,12 +585,14 @@ function formatDurationMinutes(durationMinutes: number): string {
   return t("{value0} 小时 {value1} 分钟", { value0: hours, value1: minutes });
 }
 
-const SCHEDULE_PICKER_MAX_WIDTH = 640;
-const SCHEDULE_PICKER_MAX_HEIGHT = 420;
+const SCHEDULE_PICKER_MAX_WIDTH = 600;
+const SCHEDULE_PICKER_MAX_HEIGHT = 560;
 const SCHEDULE_PICKER_VIEWPORT_GUTTER = 32;
 const SCHEDULE_PICKER_GAP = 8;
 const SCHEDULE_PICKER_DEFAULT_TIME = "09:00";
-const SCHEDULE_PICKER_TIME_OPTION_HEIGHT = 32;
+const SCHEDULE_PICKER_DURATIONS = [30, 45, 60, 90, 120];
+const SCHEDULE_PICKER_COMMON_TIMES = ["10:00", "14:00", "15:30", "19:00"];
+const SCHEDULE_PICKER_DEADLINE_TIME = "23:59";
 
 function schedulePickerPosition(
   trigger: DOMRect,
@@ -597,7 +600,7 @@ function schedulePickerPosition(
   viewportWidth: number,
   viewportHeight: number,
   renderedHeight = SCHEDULE_PICKER_MAX_HEIGHT,
-): { left: number; top: number } {
+): { left: number; top: number; width: number } {
   // 浮层挂在弹窗里，弹窗 overflow:hidden：左右都要收在弹窗内（各留 16px），否则右半边会被切掉
   const hostInset = 16;
   const pickerWidth = Math.min(
@@ -628,6 +631,7 @@ function schedulePickerPosition(
   return {
     left: boundedLeft - host.left,
     top: boundedTop - host.top,
+    width: pickerWidth,
   };
 }
 
@@ -640,6 +644,45 @@ function SchedulePickerPortal({
 }) {
   useLocale();
   return host ? createPortal(children, host) : children;
+}
+
+/** 周一开头的月历格子，只排到本月最后一周。 */
+function buildSchedulePickerDays(month: Date): Date[] {
+  const firstDay = startOfDatePickerMonth(month);
+  const offset = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(firstDay.getFullYear(), firstDay.getMonth() + 1, 0).getDate();
+  const rows = Math.ceil((offset + daysInMonth) / 7);
+  return Array.from({ length: rows * 7 }, (_, index) => new Date(firstDay.getFullYear(), firstDay.getMonth(), 1 - offset + index));
+}
+
+/** 允许直接键入 2359、930、9:30，统一成 HH:mm；无法识别时原样返回。 */
+function normalizeScheduleTimeInput(value: string): string {
+  const digits = /^(\d{3,4})$/.exec(value);
+  if (digits) {
+    const raw = digits[1].padStart(4, "0");
+    return `${raw.slice(0, 2)}:${raw.slice(2)}`;
+  }
+  const short = /^(\d):(\d{2})$/.exec(value);
+  return short ? `0${short[1]}:${short[2]}` : value;
+}
+
+function addDays(base: Date, days: number): Date {
+  return new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
+}
+
+function formatSchedulePickerSummary(date: Date, time: string): string {
+  const day = `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${weekdayName(date)}`;
+  return time ? `${day} ${time}` : t("{value0} · 选择时间", { value0: day });
+}
+
+function formatRemaining(target: Date, now: Date): string {
+  const minutes = Math.round((target.getTime() - now.getTime()) / 60_000);
+  if (minutes <= 0) return t("已过当前时间");
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  if (days) return t("距现在 {value0} 天 {value1} 小时", { value0: days, value1: hours });
+  if (hours) return t("距现在 {value0} 小时 {value1} 分钟", { value0: hours, value1: minutes % 60 });
+  return t("距现在 {value0} 分钟", { value0: minutes });
 }
 
 export function ScheduleDateTimePicker({
@@ -674,27 +717,22 @@ export function ScheduleDateTimePicker({
   const fallbackDate = parseDatePickerValue(defaultDate ?? "");
   const [displayMonth, setDisplayMonth] = useState(() => startOfDatePickerMonth(parseScheduleDateTimeValue(value)?.date ?? fallbackDate ?? new Date()));
   const [draftDate, setDraftDate] = useState<Date | null>(null);
-  const [draftHour, setDraftHour] = useState("");
-  const [draftMinute, setDraftMinute] = useState("");
   const [draftTimeInput, setDraftTimeInput] = useState("");
   const [draftDurationMinutes, setDraftDurationMinutes] = useState(durationMinutes ?? 60);
   const [customDurationOpen, setCustomDurationOpen] = useState(false);
-  const [openTimeMenu, setOpenTimeMenu] = useState<"hour" | "minute" | "start" | null>(null);
   const [popoverHost, setPopoverHost] = useState<HTMLElement | null>(null);
-  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(null);
+  const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number; width: number } | null>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const timeControlRef = useRef<HTMLDivElement>(null);
-  const timeMenuRef = useRef<HTMLDivElement>(null);
+  const timeListRef = useRef<HTMLDivElement>(null);
   const selectedValue = parseScheduleDateTimeValue(value);
   const durationMode = durationMinutes !== undefined && onDurationMinutesChange !== undefined;
-  const calendarDays = useMemo(() => buildDatePickerDays(displayMonth), [displayMonth]);
+  const deadlineMode = !durationMode && label.includes(t("截止"));
+  const calendarDays = useMemo(() => buildSchedulePickerDays(displayMonth), [displayMonth]);
   const monthLabel = formatDatePickerMonth(displayMonth);
   const selectedDuration = durationMinutes ?? 60;
-  const draftTime = durationMode
-    ? draftTimeInput
-    : draftHour && draftMinute ? `${draftHour}:${draftMinute}` : "";
+  const draftTime = normalizeScheduleTimeInput(draftTimeInput);
   const displayedValue = open
     ? durationMode
       ? formatScheduleDurationDisplay(draftDate, draftTime, draftDurationMinutes)
@@ -707,30 +745,83 @@ export function ScheduleDateTimePicker({
         ? formatScheduleDateTimeDisplay(fallbackDate, "")
         : placeholder;
   const parsedDraftTime = parseScheduleTime(draftTime);
+  const draftStart = draftDate && parsedDraftTime ? new Date(`${formatDatePickerValue(draftDate)}T${draftTime}`) : null;
   const draftEnd = durationMode ? scheduleEndDate(draftDate, draftTime, draftDurationMinutes) : null;
   const minimumStart = minimumStartAt ? new Date(minimumStartAt) : null;
   const maximumEnd = maximumEndAt ? new Date(maximumEndAt) : null;
-  const durationPickerTitle = label.includes(t("作答"))
-    ? t("选择作答时间段")
-    : label === t("开始时间")
-      ? t("选择时间段")
-      : t("选择{value0}时间段", { value0: label.replace(/时间$/, "") });
-  const availableWindowLabel = minimumStart && maximumEnd
+  const hasWindow = Boolean(
+    durationMode
+    && minimumStart && maximumEnd
     && !Number.isNaN(minimumStart.getTime())
-    && !Number.isNaN(maximumEnd.getTime())
+    && !Number.isNaN(maximumEnd.getTime()),
+  );
+  const pickerTitle = durationMode
+    ? label.includes(t("作答"))
+      ? t("选择作答时间段")
+      : label === t("开始时间")
+        ? t("选择时间段")
+        : t("选择{value0}时间段", { value0: label.replace(/时间$/, "") })
+    : t("选择{value0}", { value0: label });
+  const pickerSubtitle = hasWindow
+    ? t("只提醒自己，必须落在可安排时段内")
+    : durationMode
+      ? t("开始时间与时长分开设置，结束时间自动计算")
+      : deadlineMode
+        ? t("截止前完成即可，常用当天 23:59")
+        : null;
+  const availableWindowLabel = hasWindow && minimumStart && maximumEnd
     ? t("可安排：{value0}月{value1}日 {value2} – {value3}月{value4}日 {value5}", { value0: minimumStart.getMonth() + 1, value1: minimumStart.getDate(), value2: formatLocalTime(minimumStart), value3: maximumEnd.getMonth() + 1, value4: maximumEnd.getDate(), value5: formatLocalTime(maximumEnd) })
     : null;
-  const rangeWithinBounds = !durationMode || Boolean(
-    draftDate
-    && parsedDraftTime
-    && draftEnd
-    && (!minimumStart || new Date(`${formatDatePickerValue(draftDate)}T${draftTime}`) >= minimumStart)
-    && (!maximumEnd || draftEnd <= maximumEnd)
+  const withinBounds = (start: Date | null, end: Date | null) => Boolean(
+    start && end
+    && (!minimumStart || start >= minimumStart)
+    && (!maximumEnd || end <= maximumEnd),
   );
+  const rangeWithinBounds = !durationMode || withinBounds(draftStart, draftEnd);
+  const durationValid = !durationMode || (Number.isInteger(draftDurationMinutes) && draftDurationMinutes > 0);
+  const canConfirm = !disabled && Boolean(draftDate && parsedDraftTime) && rangeWithinBounds && durationValid;
+  const timeOptions = useMemo(() => {
+    const options = Array.from({ length: 48 }, (_, index) => `${String(Math.floor(index / 2)).padStart(2, "0")}:${index % 2 ? "30" : "00"}`);
+    if (deadlineMode) options.push(SCHEDULE_PICKER_DEADLINE_TIME);
+    if (parsedDraftTime && !options.includes(draftTime)) options.push(draftTime);
+    return options.sort();
+  }, [deadlineMode, draftTime, parsedDraftTime]);
+  const today = new Date();
+  const quickChoices: Array<{ label: string; days: number; time: string }> = hasWindow
+    ? [
+      { label: t("今晚 20:00"), days: 0, time: "20:00" },
+      { label: t("明早 09:00"), days: 1, time: "09:00" },
+      { label: t("明晚 20:00"), days: 1, time: "20:00" },
+    ]
+    : deadlineMode
+      ? [
+        { label: t("今天 23:59"), days: 0, time: SCHEDULE_PICKER_DEADLINE_TIME },
+        { label: t("明天 23:59"), days: 1, time: SCHEDULE_PICKER_DEADLINE_TIME },
+        { label: t("3 天后 23:59"), days: 3, time: SCHEDULE_PICKER_DEADLINE_TIME },
+        { label: t("7 天后 23:59"), days: 7, time: SCHEDULE_PICKER_DEADLINE_TIME },
+      ]
+      : [];
+  const quickChoiceAvailable = (choice: { days: number; time: string }) => {
+    if (!hasWindow) return true;
+    const start = new Date(`${formatDatePickerValue(addDays(today, choice.days))}T${choice.time}`);
+    return withinBounds(start, new Date(start.getTime() + draftDurationMinutes * 60_000));
+  };
+  const summarySub = (() => {
+    if (durationMode && draftEnd && !rangeWithinBounds) return { text: t("所选时间段超出可安排范围"), tone: "error" as const };
+    if (durationMode && draftStart && draftEnd) {
+      return { text: hasWindow ? t("在可安排时段内 · 时长 {value0}", { value0: formatDurationMinutes(draftDurationMinutes) }) : t("时长 {value0}", { value0: formatDurationMinutes(draftDurationMinutes) }), tone: "muted" as const };
+    }
+    if (deadlineMode && draftStart) return { text: formatRemaining(draftStart, today), tone: "muted" as const };
+    return null;
+  })();
+  const summaryText = draftDate
+    ? durationMode && draftEnd
+      ? `${formatSchedulePickerSummary(draftDate, draftTime)} – ${sameLocalDate(draftDate, draftEnd) ? formatLocalTime(draftEnd) : formatSchedulePickerSummary(draftEnd, formatLocalTime(draftEnd))}`
+      : formatSchedulePickerSummary(draftDate, parsedDraftTime ? draftTime : "")
+    : t("未选择日期");
 
   const closePicker = () => {
     setOpen(false);
-    setOpenTimeMenu(null);
     triggerRef.current?.focus();
   };
 
@@ -784,38 +875,26 @@ export function ScheduleDateTimePicker({
     };
   }, [open, popoverHost]);
 
+  // 打开时把时间列表滚到已选时间（没有则 09:00），放在列表中间
   useEffect(() => {
-    if (!openTimeMenu) return;
-    const handleTimeMenuPointerDown = (event: PointerEvent) => {
-      if (!timeControlRef.current?.contains(event.target as Node)) setOpenTimeMenu(null);
-    };
-    document.addEventListener("pointerdown", handleTimeMenuPointerDown, true);
-    return () => document.removeEventListener("pointerdown", handleTimeMenuPointerDown, true);
-  }, [openTimeMenu]);
-
-  useEffect(() => {
-    if (openTimeMenu !== "start") return;
-    const menu = timeMenuRef.current;
-    const defaultOption = menu?.querySelector<HTMLElement>(`[data-time-option="${SCHEDULE_PICKER_DEFAULT_TIME}"]`);
-    if (!menu || !defaultOption) return;
-    const fallbackOffset = (9 * 60 / 15) * SCHEDULE_PICKER_TIME_OPTION_HEIGHT;
-    menu.scrollTop = defaultOption.offsetTop > 0
-      ? Math.max(0, defaultOption.offsetTop - menu.clientTop)
-      : fallbackOffset;
-  }, [openTimeMenu]);
+    if (!open) return;
+    const list = timeListRef.current;
+    if (!list) return;
+    const target = list.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?? list.querySelector<HTMLElement>(`[data-time-option="${SCHEDULE_PICKER_DEFAULT_TIME}"]`);
+    if (target) list.scrollTop = Math.max(0, target.offsetTop - (list.clientHeight - target.offsetHeight) / 2);
+    // 只在打开时定位一次，之后由用户自己滚动
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, popoverHost]);
 
   const openPicker = () => {
     const current = parseScheduleDateTimeValue(value);
-    const currentTime = current ? parseScheduleTime(current.time) : null;
     const initialDate = current?.date ?? fallbackDate ?? new Date();
     setDraftDate(initialDate);
-    setDraftHour(currentTime ? String(currentTime.hour).padStart(2, "0") : "");
-    setDraftMinute(currentTime ? String(currentTime.minute).padStart(2, "0") : "");
     setDraftTimeInput(current?.time ?? "");
     setDraftDurationMinutes(durationMinutes ?? 60);
-    setCustomDurationOpen(![30, 60, 120].includes(durationMinutes ?? 60));
+    setCustomDurationOpen(!SCHEDULE_PICKER_DURATIONS.includes(durationMinutes ?? 60));
     setDisplayMonth(startOfDatePickerMonth(initialDate));
-    setOpenTimeMenu(null);
     const nextHost = window.innerWidth > 640
       ? pickerRef.current?.closest<HTMLElement>(".cd3-stage-dialog, .new-process-dialog, .career-next-stage-dialog, .interview-dialog, .career-session-record-dialog") ?? null
       : null;
@@ -833,22 +912,18 @@ export function ScheduleDateTimePicker({
     setOpen(true);
   };
 
-  const selectDate = (date: Date) => setDraftDate(date);
-  const selectToday = () => {
-    const today = new Date();
-    setDisplayMonth(startOfDatePickerMonth(today));
-    selectDate(today);
+  const selectDate = (date: Date) => {
+    setDraftDate(date);
+    if (date.getMonth() !== displayMonth.getMonth() || date.getFullYear() !== displayMonth.getFullYear()) {
+      setDisplayMonth(startOfDatePickerMonth(date));
+    }
   };
-  const selectQuickTime = (time: string) => {
-    const parsedTime = parseScheduleTime(time);
-    if (!parsedTime) return;
-    setDraftHour(String(parsedTime.hour).padStart(2, "0"));
-    setDraftMinute(String(parsedTime.minute).padStart(2, "0"));
-    setDraftTimeInput(time);
-    setOpenTimeMenu(null);
+  const selectQuickChoice = (choice: { days: number; time: string }) => {
+    selectDate(addDays(new Date(), choice.days));
+    setDraftTimeInput(choice.time);
   };
   const confirm = () => {
-    if (!draftDate || !parsedDraftTime || !rangeWithinBounds) return;
+    if (!canConfirm || !draftDate) return;
     onChange(formatScheduleDateTimeValue(draftDate, draftTime));
     if (durationMode) onDurationMinutesChange(draftDurationMinutes);
     closePicker();
@@ -884,27 +959,31 @@ export function ScheduleDateTimePicker({
           <MotionSurface as="div" variant="popover"
             ref={popoverRef}
             id={`${id}-calendar`}
-            className="career-date-picker-popover career-schedule-picker-popover"
+            className="v3 career-date-picker-popover career-schedule-picker-popover"
             role="dialog"
             aria-label={t("选择{value0}", { value0: label })}
-            style={popoverPosition ? { left: popoverPosition.left, right: "auto", top: popoverPosition.top } : undefined}
+            style={popoverPosition ? { left: popoverPosition.left, right: "auto", top: popoverPosition.top, width: popoverPosition.width } : undefined}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
                 event.preventDefault();
                 event.stopPropagation();
                 closePicker();
+              } else if (event.key === "Enter" && (event.target as HTMLElement).tagName === "INPUT") {
+                event.preventDefault();
+                confirm();
               }
             }}
           >
-          <header className="career-schedule-picker-heading">
-            <strong>{durationMode ? durationPickerTitle : t("选择{value0}", { value0: label })}</strong>
-            {availableWindowLabel && (
-              <span><Info aria-hidden="true" />{availableWindowLabel}</span>
-            )}
+          <header className="tp2-head">
+            <div>
+              <strong>{pickerTitle}</strong>
+              {pickerSubtitle && <span>{pickerSubtitle}</span>}
+            </div>
+            <button type="button" className="tp2-close" aria-label={t("关闭时间选择")} onClick={closePicker}><X aria-hidden="true" /></button>
           </header>
-          <div className="career-schedule-picker-layout">
-            <div className="career-schedule-picker-calendar-pane">
-              <header className="career-date-picker-header">
+          <div className="tp2-body">
+            <div className="tp2-date">
+              <header className="career-date-picker-header tp2-month">
                 <strong aria-live="polite">{monthLabel}</strong>
                 <div>
                   <button
@@ -925,234 +1004,225 @@ export function ScheduleDateTimePicker({
                   </button>
                 </div>
               </header>
-              <div className="career-date-picker-calendar" role="grid" aria-label={t("{value0}日期", { value0: monthLabel })}>
-                <div className="career-date-picker-weekdays" role="row">
-                  {weekdays().map((weekday) => (
+              <div className="tp2-calendar" role="grid" aria-label={t("{value0}日期", { value0: monthLabel })}>
+                <div className="tp2-weekdays" role="row">
+                  {[...weekdays().slice(1), weekdays()[0]].map((weekday) => (
                     <span key={weekday} role="columnheader">{weekday}</span>
                   ))}
                 </div>
-                <div className="career-date-picker-days">
-                  {Array.from({ length: 6 }, (_, weekIndex) => (
-                    <div key={weekIndex} className="career-date-picker-week" role="row">
-                      {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
-                        const dateValue = formatDatePickerValue(date);
-                        const isSelected = dateValue === (draftDate ? formatDatePickerValue(draftDate) : null);
-                        const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
-                          && date.getFullYear() === displayMonth.getFullYear();
-                        const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-                        const nextDayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
-                        const isUnavailable = durationMode && (
-                          Boolean(minimumStart && nextDayStart <= minimumStart)
-                          || Boolean(maximumEnd && dayStart >= maximumEnd)
-                        );
-                        return (
-                          <div
-                            key={dateValue}
-                            role="gridcell"
-                            aria-label={formatDatePickerDay(date)}
-                            aria-selected={isSelected}
-                            className={!isCurrentMonth ? "is-adjacent-month" : undefined}
-                          >
-                            <button
-                              type="button"
-                              aria-label={formatDatePickerDay(date)}
-                              className={isSelected ? "is-selected" : undefined}
-                              disabled={isUnavailable}
-                              onClick={() => selectDate(date)}
-                            >
-                              {date.getDate()}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <section className="career-schedule-picker-time" aria-label={t("选择时间")}>
-              <span className="career-schedule-picker-time-label">{durationMode ? t("开始时间") : t("时间")}</span>
-              {durationMode ? (
-                <div ref={timeControlRef} className="career-schedule-picker-start-time">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    role="combobox"
-                    aria-label={t("开始时间")}
-                    aria-controls={`${id}-start-options`}
-                    aria-expanded={openTimeMenu === "start"}
-                    aria-autocomplete="list"
-                    placeholder={t("选择时间")}
-                    value={draftTime}
-                    disabled={disabled}
-                    onChange={(event) => {
-                      const nextValue = event.target.value.replace(/[^\d:]/g, "").slice(0, 5);
-                      const parsed = parseScheduleTime(nextValue);
-                      setDraftTimeInput(nextValue);
-                      setDraftHour(parsed ? String(parsed.hour).padStart(2, "0") : nextValue.slice(0, 2));
-                      setDraftMinute(parsed ? String(parsed.minute).padStart(2, "0") : nextValue.includes(":") ? nextValue.slice(3, 5) : "");
-                    }}
-                  />
-                  <button
-                    type="button"
-                    aria-label={t("展开开始时间选项")}
-                    aria-controls={`${id}-start-options`}
-                    aria-expanded={openTimeMenu === "start"}
-                    disabled={disabled}
-                    onClick={() => setOpenTimeMenu(openTimeMenu === "start" ? null : "start")}
-                  ><ChevronDown aria-hidden="true" /></button>
-                  {openTimeMenu === "start" && (
-                    <div ref={timeMenuRef} id={`${id}-start-options`} className="career-schedule-picker-time-menu" role="listbox" aria-label={t("开始时间选项")}>
-                      {Array.from({ length: 96 }, (_, index) => {
-                        const option = `${String(Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`;
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            role="option"
-                            data-time-option={option}
-                            aria-selected={draftTime === option}
-                            className={draftTime === option ? "is-selected" : undefined}
-                            onClick={() => selectQuickTime(option)}
-                          >{option}</button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ) : <div ref={timeControlRef} className="career-schedule-picker-time-fields">
-                {(["hour", "minute"] as const).map((kind) => {
-                  const isHour = kind === "hour";
-                  const currentValue = isHour ? draftHour : draftMinute;
-                  const values = Array.from(
-                    { length: isHour ? 24 : 60 },
-                    (_, value) => String(value).padStart(2, "0"),
-                  );
-                  const unit = isHour ? t("时") : t("分");
-                  const menuOpen = openTimeMenu === kind;
-                  return (
-                    <div className="career-schedule-picker-time-select" key={kind}>
-                      <button
-                        type="button"
-                        role="combobox"
-                        aria-label={isHour ? t("小时") : t("分钟")}
-                        aria-controls={`${id}-${kind}-options`}
-                        aria-expanded={menuOpen}
-                        aria-haspopup="listbox"
-                        aria-required={required ? "true" : undefined}
-                        disabled={disabled}
-                        onClick={() => setOpenTimeMenu(menuOpen ? null : kind)}
-                      >
-                        <span>{currentValue ? `${currentValue} ${unit}` : t("选择{value0}", { value0: unit })}</span>
-                        <ChevronDown aria-hidden="true" />
-                      </button>
-                      {menuOpen && (
+                {Array.from({ length: calendarDays.length / 7 }, (_, weekIndex) => (
+                  <div key={weekIndex} className="tp2-week" role="row">
+                    {calendarDays.slice(weekIndex * 7, weekIndex * 7 + 7).map((date) => {
+                      const dateValue = formatDatePickerValue(date);
+                      const isSelected = Boolean(draftDate && sameLocalDate(date, draftDate));
+                      const isCurrentMonth = date.getMonth() === displayMonth.getMonth()
+                        && date.getFullYear() === displayMonth.getFullYear();
+                      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                      const nextDayStart = addDays(date, 1);
+                      const isUnavailable = durationMode && (
+                        Boolean(minimumStart && nextDayStart <= minimumStart)
+                        || Boolean(maximumEnd && dayStart >= maximumEnd)
+                      );
+                      const inWindow = hasWindow && !isUnavailable;
+                      const windowStart = inWindow && minimumStart && sameLocalDate(date, minimumStart);
+                      const windowEnd = inWindow && maximumEnd && sameLocalDate(date, new Date(maximumEnd.getTime() - 1));
+                      const classes = [
+                        !isCurrentMonth && "is-adjacent-month",
+                        inWindow && "is-in-window",
+                        windowStart && "is-window-start",
+                        windowEnd && "is-window-end",
+                      ].filter(Boolean).join(" ");
+                      return (
                         <div
-                          id={`${id}-${kind}-options`}
-                          ref={timeMenuRef}
-                          className="career-schedule-picker-time-menu"
-                          role="listbox"
-                          aria-label={isHour ? t("小时") : t("分钟")}
-                          aria-required={required ? "true" : undefined}
+                          key={dateValue}
+                          role="gridcell"
+                          aria-label={formatDatePickerDay(date)}
+                          aria-selected={isSelected}
+                          className={classes || undefined}
                         >
-                          {values.map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              role="option"
-                              aria-selected={currentValue === option}
-                              className={currentValue === option ? "is-selected" : undefined}
-                              disabled={disabled}
-                              onClick={() => {
-                                if (isHour) setDraftHour(option);
-                                else setDraftMinute(option);
-                                setOpenTimeMenu(null);
-                              }}
-                            >
-                              {option} {unit}
-                            </button>
-                          ))}
+                          <button
+                            type="button"
+                            aria-label={formatDatePickerDay(date)}
+                            aria-current={sameLocalDate(date, today) ? "date" : undefined}
+                            className={isSelected ? "is-selected" : undefined}
+                            disabled={isUnavailable}
+                            onClick={() => selectDate(date)}
+                          >
+                            {date.getDate()}
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>}
-              {!durationMode && (
-                <>
-                  <span className="career-schedule-picker-quick-label">{t("快捷选择")}</span>
-                  <div className="career-schedule-picker-quick-times" role="group" aria-label={t("快捷时间")}>
-                    {["09:00", "14:00", "18:00"].map((time) => (
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div className="tp2-legend" aria-hidden="true">
+                <span><i className="is-today" />{t("今天")}</span>
+                <span><i className="is-selected" />{t("已选")}</span>
+                {hasWindow && <span><i className="is-window" />{t("可安排时段")}</span>}
+              </div>
+              {availableWindowLabel && (
+                <div className="tp2-window">
+                  <Info aria-hidden="true" />
+                  <div>
+                    <strong>{availableWindowLabel}</strong>
+                    <span>{t("计划需完整落在此时段内，时段外日期不可选")}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            <section className="tp2-time" aria-label={t("选择时间")}>
+              {quickChoices.length > 0 && (
+                <div className="tp2-section">
+                  <span className="tp2-label">{hasWindow ? t("建议时段") : t("快捷截止")}</span>
+                  <div className={`tp2-chips${quickChoices.length === 4 ? " is-grid" : ""}`} role="group" aria-label={hasWindow ? t("建议时段") : t("快捷截止")}>
+                    {quickChoices.map((choice) => {
+                      const active = Boolean(draftDate && sameLocalDate(draftDate, addDays(today, choice.days)) && draftTime === choice.time);
+                      return (
+                        <button
+                          key={choice.label}
+                          type="button"
+                          className={active ? "is-selected" : undefined}
+                          aria-pressed={active}
+                          disabled={disabled || !quickChoiceAvailable(choice)}
+                          onClick={() => selectQuickChoice(choice)}
+                        >{choice.label}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {!hasWindow && !deadlineMode && (
+                <div className="tp2-section">
+                  <span className="tp2-label">{t("常用时间")}</span>
+                  <div className="tp2-chips is-row" role="group" aria-label={t("常用时间")}>
+                    {SCHEDULE_PICKER_COMMON_TIMES.map((time) => (
                       <button
                         key={time}
                         type="button"
                         className={draftTime === time ? "is-selected" : undefined}
                         aria-pressed={draftTime === time}
                         disabled={disabled}
-                        onClick={() => selectQuickTime(time)}
+                        onClick={() => setDraftTimeInput(time)}
                       >{time}</button>
                     ))}
                   </div>
-                </>
+                </div>
               )}
-              {durationMode && (
-                <>
-                  <span className="career-schedule-picker-quick-label">{t("预计时长")}</span>
-                  <div className="career-schedule-picker-duration-options" role="group" aria-label={t("预计时长")}>
-                    {[30, 60, 120].map((minutes) => (
+              <div className="tp2-section">
+                <span className="tp2-label">
+                  {durationMode ? t("开始时间") : t("时间")}
+                  <small>{deadlineMode ? t("常用 23:59") : t("30 分钟步长，可直接输入")}</small>
+                </span>
+                <label className={`tp2-input${draftTimeInput && !parsedDraftTime ? " is-invalid" : ""}`}>
+                  <Clock3 aria-hidden="true" />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    aria-label={durationMode ? t("开始时间") : t("时间")}
+                    aria-controls={`${id}-time-options`}
+                    aria-invalid={draftTimeInput && !parsedDraftTime ? "true" : undefined}
+                    placeholder={t("如 {value0}", { value0: deadlineMode ? "2359" : "1400" })}
+                    value={draftTimeInput}
+                    disabled={disabled}
+                    onChange={(event) => setDraftTimeInput(event.target.value.replace(/[^\d:]/g, "").slice(0, 5))}
+                    onBlur={() => { if (parsedDraftTime) setDraftTimeInput(draftTime); }}
+                  />
+                </label>
+                <div ref={timeListRef} id={`${id}-time-options`} className="tp2-time-list" role="listbox" aria-label={t("时间选项")}>
+                  {timeOptions.map((option) => {
+                    const selected = draftTime === option;
+                    return (
                       <button
-                        key={minutes}
+                        key={option}
                         type="button"
-                        className={draftDurationMinutes === minutes ? "is-selected" : undefined}
-                        aria-pressed={draftDurationMinutes === minutes}
-                        onClick={() => { setDraftDurationMinutes(minutes); setCustomDurationOpen(false); }}
-                      >{minutes === 30 ? t("30分钟") : minutes === 60 ? t("1小时") : t("2小时")}</button>
-                    ))}
-                    {customDurationOpen ? (
-                      <label className="is-selected">
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          autoFocus
-                          aria-label={t("自定义时长（分钟）")}
-                          value={draftDurationMinutes > 0 ? draftDurationMinutes : ""}
-                          placeholder={t("分钟")}
-                          onChange={(event) => setDraftDurationMinutes(Number(event.target.value))}
-                        />
-                        <span>{t("分钟")}</span>
-                      </label>
-                    ) : (
-                      <button type="button" onClick={() => { setDraftDurationMinutes(0); setCustomDurationOpen(true); }}>{t("自定义")}</button>
-                    )}
-                  </div>
-                </>
-              )}
-              {durationMode && !rangeWithinBounds && draftEnd && (
-                <p className="career-schedule-picker-error" role="alert">{t("所选时间段超出可安排范围")}</p>
+                        role="option"
+                        data-time-option={option}
+                        aria-selected={selected}
+                        className={selected ? "is-selected" : undefined}
+                        disabled={disabled}
+                        onClick={() => setDraftTimeInput(option)}
+                      >
+                        <span>{option}</span>
+                        {selected && <Check aria-hidden="true" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {durationMode && (
+                <div className="tp2-section">
+                  <span className="tp2-label">
+                    {t("时长")}
+                    {draftEnd && <small>{t("结束 {value0}", { value0: formatLocalTime(draftEnd) })}</small>}
+                    <button
+                      type="button"
+                      className="tp2-link"
+                      aria-pressed={customDurationOpen}
+                      onClick={() => {
+                        if (customDurationOpen) {
+                          setCustomDurationOpen(false);
+                          if (!SCHEDULE_PICKER_DURATIONS.includes(draftDurationMinutes)) setDraftDurationMinutes(60);
+                        } else {
+                          setCustomDurationOpen(true);
+                        }
+                      }}
+                    >{customDurationOpen ? t("用预设") : t("自定义")}</button>
+                  </span>
+                  {customDurationOpen ? (
+                    <label className="tp2-input tp2-custom-duration">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        autoFocus
+                        aria-label={t("自定义时长（分钟）")}
+                        value={draftDurationMinutes > 0 ? draftDurationMinutes : ""}
+                        placeholder={t("分钟")}
+                        onChange={(event) => setDraftDurationMinutes(Number(event.target.value))}
+                      />
+                      <span>{t("分钟")}</span>
+                    </label>
+                  ) : (
+                    <div className="tp2-segmented" role="group" aria-label={t("预计时长")}>
+                      {SCHEDULE_PICKER_DURATIONS.map((minutes) => (
+                        <button
+                          key={minutes}
+                          type="button"
+                          className={draftDurationMinutes === minutes ? "is-selected" : undefined}
+                          aria-pressed={draftDurationMinutes === minutes}
+                          onClick={() => setDraftDurationMinutes(minutes)}
+                        >{t("{value0} 分", { value0: minutes })}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </section>
           </div>
-          <footer className="career-date-picker-footer">
-            <div className="career-schedule-picker-footer-secondary">
-              <button
-                type="button"
-                disabled={!value && !draftDate}
-                onClick={() => {
-                  setDraftDate(null);
-                  setDraftHour("");
-                  setDraftMinute("");
-                  setDraftTimeInput("");
-                  onChange("");
-                  closePicker();
-                }}
-              >{t("清除")}</button>
-              <button type="button" onClick={selectToday}>{t("今天")}</button>
+          <footer className="tp2-foot">
+            <div className="tp2-summary">
+              <strong>{summaryText}</strong>
+              {summarySub && (
+                <span className={summarySub.tone === "error" ? "is-error" : undefined} role={summarySub.tone === "error" ? "alert" : undefined}>{summarySub.text}</span>
+              )}
             </div>
             <button
               type="button"
-              className="career-schedule-picker-confirm"
-              disabled={disabled || !draftDate || !parsedDraftTime || !rangeWithinBounds || (durationMode && (!Number.isInteger(draftDurationMinutes) || draftDurationMinutes <= 0))}
+              className="tp2-link"
+              disabled={!value && !draftDate}
+              onClick={() => {
+                setDraftDate(null);
+                setDraftTimeInput("");
+                onChange("");
+                closePicker();
+              }}
+            >{t("清除")}</button>
+            <button type="button" className="v3-btn v3-btn-ghost" onClick={closePicker}>{t("取消")}</button>
+            <button
+              type="button"
+              className="v3-btn v3-btn-dark career-schedule-picker-confirm"
+              disabled={!canConfirm}
               onClick={confirm}
             >{t("确定")}</button>
           </footer>

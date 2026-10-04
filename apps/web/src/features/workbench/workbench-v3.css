@@ -190,7 +190,7 @@
 /* 模板卡片只显示模板本身：A4 比例、纸面铺满卡片，不再放在灰色底板里留一圈空隙（与「我的简历」「简历模板」一致） */
 .wb3 .workbench-template-card-preview { aspect-ratio: 210 / 297; border: 1px solid #d3d3ce; border-radius: 6px; background: #fff; }
 .wb3 .workbench-template-card:hover:not(:disabled) .workbench-template-card-preview { border-color: #b9b9b3; }
-.wb3 .workbench-template-card.is-selected .workbench-template-card-preview { border-color: var(--v3-dark); box-shadow: 0 0 0 1px var(--v3-dark); }
+.wb3 .workbench-template-card.is-selected .workbench-template-card-preview { border-color: var(--v3-bl); box-shadow: 0 0 0 1px var(--v3-bl); }
 .wb3 .workbench-template-card-preview .resume-readonly-preview-card { background: #fff; }
 .wb3 .workbench-template-card-preview .resume-readonly-preview-card .resume-preview-paper { top: 0; scale: calc(100cqw / 210mm); box-shadow: none; }
 .wb3 .workbench-template-card-name { padding: 0; color: var(--v3-txt); font-size: 12px; font-weight: 400; }
