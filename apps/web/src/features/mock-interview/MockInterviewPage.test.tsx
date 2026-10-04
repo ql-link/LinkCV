@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockInterviewPage } from "./MockInterviewPage";
 import { mockInterviewApi, resetMockInterviewStore } from "./mockInterviewApi";
+import { setLocale } from "../../i18n";
 
 // 真实接口（简历 / 求职记录 / 面试安排 / 资料）全部替身；模拟面试本身走本地假数据层
 const mocks = vi.hoisted(() => ({
@@ -39,9 +40,24 @@ beforeEach(() => {
   mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
   mocks.listDatasets.mockResolvedValue({ datasets: [] });
 });
-afterEach(() => { vi.useRealTimers(); go("/"); });
+afterEach(() => { setLocale("zh-CN", false); vi.useRealTimers(); go("/"); });
 
 describe("07 模拟面试 · 文字面试", () => {
+  it("英文设置摘要不残留中文提示，也不会改变默认的面试作答语言", async () => {
+    setLocale("en-US", false);
+    go("/mock-interviews/new?application=app-1");
+    render(<MockInterviewPage view="new" applicationId="app-1" />);
+    await waitFor(() => expect(screen.getByLabelText("Resume")).toHaveTextContent(resume.title));
+    const summary = screen.getByRole("button", { name: /More settings/ });
+    expect(summary).toHaveTextContent("Chinese");
+    expect(summary).toHaveTextContent("Allow follow-ups");
+    expect(summary).not.toHaveTextContent("允许追问");
+    const create = vi.spyOn(mockInterviewApi, "create").mockRejectedValueOnce(new Error("Fictional test failure"));
+    fireEvent.click(screen.getByRole("button", { name: "Start interview" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ language: "zh" })));
+    create.mockRestore();
+  });
+
   it("新建 → 准备中 → 作答（逐字输出、追问）→ 跳过 → 结束 → 评估报告与单题详情", async () => {
     go("/mock-interviews/new?application=app-1");
     const view = render(<MockInterviewPage view="new" applicationId="app-1" />);
@@ -106,7 +122,8 @@ describe("07 模拟面试 · 文字面试", () => {
     expect(screen.getByText("5 题全部作答", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "能力维度" })).toHaveTextContent("简历一致性");
     expect(screen.getByRole("region", { name: "事实核验" })).toHaveTextContent("一致");
-    expect(screen.getAllByTitle("需要后端支持，目前为示例数据").length).toBeGreaterThan(0);
+    // 报告已接真实接口，不再贴「需后端」
+    expect(screen.queryAllByTitle("需要后端支持，目前为示例数据")).toHaveLength(0);
 
     const questions = screen.getByRole("region", { name: "逐题表现" });
     fireEvent.click(within(questions).getByRole("button", { name: /待提升/ }));

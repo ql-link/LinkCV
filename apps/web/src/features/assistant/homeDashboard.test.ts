@@ -55,6 +55,14 @@ const application = (patch: Partial<JobApplicationSummary> = {}) => ({
 const base = { now, latestResumeScore: null, sessions: [], applications: [] };
 
 describe("首页异步状态", () => {
+  it("prioritizes the earliest known Offer deadline and keeps missing dates last", () => {
+    const dashboard = buildHomeDashboard({ ...base, resumes: [resume("1", "2026-09-29T00:00:00Z")], applications: [
+      application({ id: "unknown", offer_status: "received" }),
+      application({ id: "later", offer_status: "received", offer_reply_due_on: "2026-10-10" }),
+      application({ id: "urgent", offer_status: "received", offer_reply_due_on: "2026-10-01" }),
+    ] });
+    expect(dashboard.cards[0]).toMatchObject({ kind: "offer", applicationId: "urgent", replyDueOn: "2026-10-01" });
+  });
   const originalStore = useResumeStore.getState();
   afterEach(() => { vi.restoreAllMocks(); useResumeStore.setState(originalStore, true); });
 

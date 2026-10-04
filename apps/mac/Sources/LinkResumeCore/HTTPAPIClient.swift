@@ -120,6 +120,9 @@ final class DesktopTransport: DesktopRequesting {
                 } else { append("--\(boundary)\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\n\(body.text("text"))\r\n") }
                 append("--\(boundary)--\r\n"); request.httpBody = data
                 request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            } else if path.hasSuffix("/written-questions:extract") {
+                let (data, type) = try CareerUpload.writtenImport(body)
+                request.httpBody = data; request.setValue(type, forHTTPHeaderField: "Content-Type")
             } else { request.httpBody = try JSONEncoder().encode(payload); request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         }
         let data: Data
@@ -143,6 +146,7 @@ final class DesktopTransport: DesktopRequesting {
             throw APIError.server(status: http.statusCode, code: code ?? "HTTP_\(http.statusCode)")
         }
         if http.mimeType == "text/event-stream", path.hasPrefix("/api/mock-interviews/") { return try MockInterviewRequest.decodeEvents(data) }
+        if http.statusCode == 204 || data.isEmpty { return .null }
         return try JSONDecoder().decode(JSONValue.self, from: data)
     }
 

@@ -9,6 +9,11 @@ type WheelZoomOptions = {
 const A4_WIDTH_CSS_PX = (210 / 25.4) * 96;
 const PAGE_GAP_CSS_PX = 24;
 
+export function getSinglePageFitScale(workspaceWidth: number, horizontalPadding: number, baseScale: number) {
+  const usableWidth = Math.max(0, workspaceWidth - Math.max(0, horizontalPadding));
+  return Math.floor(Math.min(baseScale, Math.max(0.1, usableWidth / A4_WIDTH_CSS_PX)) * 10_000) / 10_000;
+}
+
 export function getTwoPageFitScale(workspaceWidth: number, horizontalPadding: number) {
   const usableWidth = Math.max(0, workspaceWidth - Math.max(0, horizontalPadding));
   const twoPageWidth = A4_WIDTH_CSS_PX * 2 + PAGE_GAP_CSS_PX;

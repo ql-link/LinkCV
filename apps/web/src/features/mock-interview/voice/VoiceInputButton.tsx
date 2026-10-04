@@ -1,11 +1,11 @@
+import { t, useLocale } from "@/i18n";
 // 07.2 文字面试 · 语音输入按钮（二期）：放在文字面试输入框工具栏里。
 // 状态：空闲 → 录音中（计时 + 波形 + 取消 / 停止）→ 识别中 → 完成（交给 onText，文字进入输入框可编辑）/ 失败（可重录）；
 // 另有权限被拒、不可用（浏览器不支持或语音服务未开启）。
 // 组件渲染一整行工具栏左侧的状态区 + 右侧麦克风/停止按钮，宿主把它放进输入框底部工具栏，发送按钮跟在后面。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/v3/Icon";
-import { BeTag } from "@/v3/primitives";
-import { mockInterviewApi } from "../mockInterviewApi";
+import { mockInterviewApi, type MockRecognition } from "../mockInterviewApi";
 import { MAX_RECORDING_MS, microphoneSupported, useMicrophone } from "./useMicrophone";
 import { Waveform, formatClock, lastSamples } from "./voiceParts";
 import "./voice.css";
@@ -18,16 +18,20 @@ export function VoiceInputButton({
   interviewId,
   questionId,
   onText,
+  onPartial,
   disabled = false,
   onStateChange,
 }: {
   interviewId: string;
   questionId: string;
   onText: (text: string, speechSessionId: string) => void;
+  /** 可选：录音中实时识别出的文字（会随识别更新） */
+  onPartial?: (text: string) => void;
   disabled?: boolean;
   /** 可选：录音中宿主输入框要加深描边、换底部提示 */
   onStateChange?: (state: VoiceInputState) => void;
 }) {
+  useLocale();
   const [state, setState] = useState<VoiceInputState>(() => (microphoneSupported() ? "idle" : "unavailable"));
   const [speechOn, setSpeechOn] = useState<boolean | null>(null);
   const [startedAt, setStartedAt] = useState(0);
@@ -36,8 +40,12 @@ export function VoiceInputButton({
   const mic = useMicrophone();
   const alive = useRef(true);
   const busyRef = useRef(false);
+  const recognitionRef = useRef<MockRecognition | null>(null);
 
-  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => () => {
+    alive.current = false;
+    recognitionRef.current?.cancel();
+  }, []);
 
   // 语音服务是否开启（管理端未配置识别线路时按钮不可用）
   useEffect(() => {
@@ -64,6 +72,12 @@ export function VoiceInputButton({
     const permission = await mic.start();
     if (!alive.current) return;
     if (permission === "granted") {
+      recognitionRef.current = mockInterviewApi.startRecognition(interviewId, {
+        questionId,
+        purpose: "voice_input",
+        stream: mic.currentStream(),
+        onPartial,
+      });
       setStartedAt(Date.now());
       setNow(Date.now());
       setState("recording");
@@ -74,9 +88,11 @@ export function VoiceInputButton({
     } else {
       setState("failed");
     }
-  }, [disabled, mic]);
+  }, [disabled, interviewId, mic, onPartial, questionId]);
 
   const cancel = useCallback(() => {
+    recognitionRef.current?.cancel();
+    recognitionRef.current = null;
     mic.release();
     setState("idle");
   }, [mic]);
@@ -85,11 +101,14 @@ export function VoiceInputButton({
     if (busyRef.current) return;
     busyRef.current = true;
     const durationMs = Date.now() - startedAt;
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
     mic.release();
     setLastDuration(durationMs);
     setState("recognizing");
     try {
-      const result = await mockInterviewApi.recognize(interviewId, { durationMs });
+      if (!recognition) throw new Error("recognition not started");
+      const result = await recognition.stop();
       if (!alive.current) return;
       onText(result.text, result.session_id);
       setState("done");
@@ -98,7 +117,7 @@ export function VoiceInputButton({
     } finally {
       busyRef.current = false;
     }
-  }, [interviewId, mic, onText, startedAt]);
+  }, [mic, onText, startedAt]);
 
   const recordingMs = state === "recording" ? Math.max(0, now - startedAt) : 0;
   useEffect(() => {
@@ -121,7 +140,7 @@ export function VoiceInputButton({
   return (
     <div className={`vx-vib is-${effective}`} data-state={effective}>
       <div className="vx-vib-status" aria-live="polite">
-        {effective === "idle" && <span className="vx-vib-hint">打字或说话都可以，随时切换</span>}
+        {effective === "idle" && <span className="vx-vib-hint">{t("打字或说话都可以，随时切换")}</span>}
         {effective === "recording" && (
           <span className="vx-vib-rec">
             <i className="vx-vib-dot" />
@@ -129,28 +148,27 @@ export function VoiceInputButton({
             <Waveform values={lastSamples(mic.history, RECORD_WAVE_BARS).map((value) => value * 1.6)} barWidth={2} gap={2} height={20} minHeight={3} />
           </span>
         )}
-        {effective === "recognizing" && <span className="vx-vib-hint">正在识别最后一段…</span>}
-        {effective === "done" && <span className="vx-vib-tag">语音输入 · {formatClock(lastDuration)}</span>}
+        {effective === "recognizing" && <span className="vx-vib-hint">{t("正在识别最后一段…")}</span>}
+        {effective === "done" && <span className="vx-vib-tag">{t("语音输入 · ")}{formatClock(lastDuration)}</span>}
         {effective === "failed" && (
           <>
-            <span className="vx-vib-hint is-bad">识别中断，已识别的文字保留在输入框中</span>
-            <button type="button" className="vx-vib-retry" disabled={disabled} onClick={() => void startRecording()}>重新录音</button>
+            <span className="vx-vib-hint is-bad">{t("识别中断，已识别的文字保留在输入框中")}</span>
+            <button type="button" className="vx-vib-retry" disabled={disabled} onClick={() => void startRecording()}>{t("重新录音")}</button>
           </>
         )}
-        {effective === "denied" && <span className="vx-vib-hint is-warn">麦克风权限被拒绝，请在浏览器地址栏允许后重试</span>}
-        {effective === "unavailable" && <span className="vx-vib-hint">当前浏览器不支持录音，或语音服务未开启；可继续打字作答</span>}
-        {(effective === "recording" || effective === "recognizing") && <BeTag title="实时识别需要后端 WebSocket 识别通道；目前停止后一次性返回示例识别稿" />}
+        {effective === "denied" && <span className="vx-vib-hint is-warn">{t("麦克风权限被拒绝，请在浏览器地址栏允许后重试")}</span>}
+        {effective === "unavailable" && <span className="vx-vib-hint">{t("当前浏览器不支持录音，或语音服务未开启；可继续打字作答")}</span>}
       </div>
       {effective === "recording" ? (
         <div className="vx-vib-actions">
-          <button type="button" className="vx-vib-cancel" onClick={cancel}>取消</button>
-          <button type="button" className="vx-vib-stop" aria-label="停止录音" onClick={() => void stop()}><span /></button>
+          <button type="button" className="vx-vib-cancel" onClick={cancel}>{t("取消")}</button>
+          <button type="button" className="vx-vib-stop" aria-label={t("停止录音")} onClick={() => void stop()}><span /></button>
         </div>
       ) : (
         <button
           type="button"
           className={`vx-vib-mic${micDisabled && effective !== "idle" ? " is-off" : ""}`}
-          aria-label={effective === "denied" ? "麦克风权限被拒绝，点击重试" : "语音输入"}
+          aria-label={effective === "denied" ? t("麦克风权限被拒绝，点击重试") : t("语音输入")}
           disabled={micDisabled && effective !== "denied"}
           onClick={() => void startRecording()}
         >
@@ -163,5 +181,5 @@ export function VoiceInputButton({
 
 // 录音中时输入框描边加深、底部提示换成「再次点击停止 · Esc 取消录音」，宿主可用此函数取文案
 export function voiceInputFooterHint(state: VoiceInputState) {
-  return state === "recording" ? "再次点击停止 · Esc 取消录音" : "Enter 发送 · Shift + Enter 换行";
+  return state === "recording" ? t("再次点击停止 · Esc 取消录音") : t("Enter 发送 · Shift + Enter 换行");
 }

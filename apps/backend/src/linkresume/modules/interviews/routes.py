@@ -18,6 +18,7 @@ from fastapi import (
     Header,
     Query,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.responses import StreamingResponse
@@ -25,7 +26,25 @@ from minio.error import S3Error
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from linkresume.application.interviews.prep_service import (
+    InterviewPrepAlreadyGenerated,
+    generate_prep_items,
+)
+from linkresume.application.interviews.review_service import generate_review
+from linkresume.modules.interviews.schemas import (
+    GenerateReviewRequest,
+    ReviewQuestionNoteRecord,
+    ReviewQuestionNoteRequest,
+    ReviewQuestionNoteResponse,
+    TranscriptionApplyRequest,
+    WrittenQuestion,
+    WrittenQuestionsResponse,
+)
+from linkresume.application.interviews import review_notes_service, written_import_service
+from linkresume.application.interviews import transcription_service
 from linkresume.application.interviews.service import (
+    effective_stage_state,
+    list_offer_materials,
     DatasetAlreadyLinked,
     InterviewApplicationNotEmpty,
     InterviewApplicationAlreadyExists,
@@ -77,6 +96,7 @@ from linkresume.application.resumes.service import parse_decimal_id
 from linkresume.core.config import Settings
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
+from linkresume.modules.llm.service import LLMError
 from linkresume.core.mq import DatasetParseMessage, MQPublishError
 from linkresume.core.storage import (
     AssetStorage,
@@ -125,6 +145,7 @@ from linkresume.modules.interviews.schemas import (
     JobApplicationCreateRequest,
     JobApplicationListResponse,
     JobApplicationRecord,
+    OfferMaterialRecord,
     JobApplicationResponse,
     JobApplicationSummary,
     JobApplicationUpdateRequest,
@@ -170,6 +191,11 @@ def _application_record(
         update={
             "resume_title_snapshot": current_resume_title(db, application),
             "company_logo_url": application_logo_url(application),
+            "stage_state": effective_stage_state(db, application),
+            "offer_materials": [
+                OfferMaterialRecord(dataset_id=str(dataset_id), file_name=file_name)
+                for dataset_id, file_name in list_offer_materials(db, application.id)
+            ],
             "current_stage": (
                 ApplicationStageRecord.model_validate(current) if current else None
             ),
@@ -203,13 +229,15 @@ def _application_summary(
     )
 
 
-def _session_summary(item: SessionWithApplication) -> InterviewSessionSummary:
+def _session_summary(
+    db: Session, item: SessionWithApplication
+) -> InterviewSessionSummary:
     return InterviewSessionSummary(
         **InterviewSessionRecord.model_validate(item.session).model_dump(),
         company_name=item.application.company_name_snapshot,
         job_title=item.application.job_title_snapshot,
         calendar_color=item.application.calendar_color,
-        application_stage_state=item.application.stage_state,
+        application_stage_state=effective_stage_state(db, item.application),
     )
 
 
@@ -241,6 +269,8 @@ def _raise_service_error(error: Exception) -> None:
         ) from error
     if isinstance(error, InterviewEditConflict):
         raise ApiError(409, "INTERVIEW_EDIT_CONFLICT") from error
+    if isinstance(error, InterviewPrepAlreadyGenerated):
+        raise ApiError(409, "INTERVIEW_PREP_ALREADY_GENERATED") from error
     if isinstance(error, InterviewInvalidTransition):
         raise ApiError(409, "INTERVIEW_INVALID_TRANSITION") from error
     if isinstance(error, InterviewScheduleKindNotSupported):
@@ -289,7 +319,7 @@ def get_interview_overview(
     return InterviewOverviewResponse(
         metrics=OverviewMetrics(**metrics),
         pipeline=[_application_summary(db, item) for item in pipeline],
-        week_sessions=[_session_summary(item) for item in sessions],
+        week_sessions=[_session_summary(db, item) for item in sessions],
     )
 
 
@@ -603,7 +633,7 @@ def get_interview_sessions(
         _raise_service_error(error)
         raise AssertionError("unreachable")
     return InterviewSessionListResponse(
-        items=[_session_summary(item) for item in items],
+        items=[_session_summary(db, item) for item in items],
         next_cursor=next_cursor,
     )
 
@@ -684,6 +714,273 @@ def put_interview_session(
     user: User = Depends(get_current_user),
 ) -> InterviewSessionResponse:
     return _session_command(update_session, db, user.id, session_id, payload)
+
+
+def _owned_session_response(db: Session, user_id: int, session_id: int) -> InterviewSessionResponse:
+    db.expire_all()
+    item = require_owned_session(db, user_id, session_id)
+    assets = list_assets(db, user_id, session_id)
+    return InterviewSessionResponse(
+        session=InterviewSessionRecord.model_validate(item.session),
+        application=_application_record(db, item.application),
+        assets=[_asset_record(asset) for asset in assets],
+    )
+
+
+@router.post(
+    "/interview-sessions/{session_id}/transcriptions/{dataset_id}:retry",
+    response_model=InterviewSessionResponse,
+)
+def post_retry_transcription(
+    session_id: str,
+    dataset_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+) -> InterviewSessionResponse:
+    try:
+        parsed = _database_id(session_id)
+        transcription_service.retry(
+            db,
+            user.id,
+            parsed,
+            _database_id(dataset_id, "INTERVIEW_ASSET_NOT_FOUND"),
+            enabled=settings.interview_transcription_enabled,
+        )
+        return _owned_session_response(db, user.id, parsed)
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+
+
+@router.post(
+    "/interview-sessions/{session_id}/transcriptions/{dataset_id}:apply",
+    response_model=InterviewSessionResponse,
+)
+def post_apply_transcription(
+    session_id: str,
+    dataset_id: str,
+    payload: TranscriptionApplyRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> InterviewSessionResponse:
+    try:
+        parsed = _database_id(session_id)
+        transcription_service.apply(
+            db,
+            user.id,
+            parsed,
+            _database_id(dataset_id, "INTERVIEW_ASSET_NOT_FOUND"),
+            payload.base_lock_version,
+        )
+        return _owned_session_response(db, user.id, parsed)
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+
+
+def _written_material(
+    session_factory: Any, storage: AssetStorage, settings: Settings, user_id: int, session_id: int, dataset_id: str | None
+) -> str | None:
+    """Ownership/stage checks plus the parsed text of a library document."""
+    from linkresume.services import dataset_content_service as content
+
+    with session_factory() as db:
+        written_import_service.require_written_session(db, user_id, session_id)
+        if dataset_id is None:
+            return None
+        dataset, task = content.owned(db, user_id, _database_id(dataset_id, "DATASET_NOT_FOUND"))
+        if dataset.asset_kind != "document":
+            raise ApiError(400, "INTERVIEW_IMPORT_DATASET_NOT_DOCUMENT")
+        try:
+            key = content.content_key(dataset, task)
+        except ApiError as error:
+            raise ApiError(400, "INTERVIEW_IMPORT_DATASET_NOT_READY") from error
+    try:
+        return content.read_markdown(storage, key, settings.dataset_upload_max_bytes)
+    except ValueError as error:
+        raise ApiError(400, "INTERVIEW_IMPORT_TEXT_TOO_LONG") from error
+
+
+async def _read_import_image(image: UploadFile) -> str:
+    from linkresume.modules.job_descriptions.routes import validated_image_data_url
+
+    data = await image.read(written_import_service.MAX_IMAGE_BYTES + 1)
+    if not data:
+        raise ApiError(400, "INTERVIEW_IMPORT_IMAGE_INVALID")
+    if len(data) > written_import_service.MAX_IMAGE_BYTES:
+        raise ApiError(400, "INTERVIEW_IMPORT_IMAGE_TOO_LARGE")
+    try:
+        return validated_image_data_url(data)
+    except ApiError as error:
+        raise ApiError(400, "INTERVIEW_IMPORT_IMAGE_INVALID") from error
+
+
+@router.post(
+    "/interview-sessions/{session_id}/written-questions:extract",
+    response_model=WrittenQuestionsResponse,
+)
+async def post_extract_written_questions(
+    request: Request,
+    session_id: str,
+    source: Literal["text", "dataset", "images"] = Form(...),
+    text: str | None = Form(default=None),
+    dataset_id: str | None = Form(default=None),
+    files: list[UploadFile] | None = File(default=None),
+    user: User = Depends(get_current_user),
+    settings: Settings = Depends(get_settings),
+    storage: AssetStorage = Depends(get_storage),
+) -> WrittenQuestionsResponse:
+    state = request.app.state
+    try:
+        parsed = _database_id(session_id)
+        material = await asyncio.to_thread(
+            _written_material,
+            state.session_factory,
+            storage,
+            settings,
+            user.id,
+            parsed,
+            dataset_id if source == "dataset" else None,
+        )
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+    if source == "images":
+        images = files or []
+        if not images or len(images) > written_import_service.MAX_IMAGES:
+            raise ApiError(400, "INTERVIEW_IMPORT_IMAGE_COUNT")
+        urls = [await _read_import_image(image) for image in images]
+        questions = await written_import_service.extract_from_images(state.llm_service, user.id, urls)
+    elif source == "dataset":
+        if dataset_id is None:
+            raise ApiError(400, "INTERVIEW_IMPORT_DATASET_REQUIRED")
+        questions = await written_import_service.extract_from_text(state.llm_service, user.id, material or "")
+    else:
+        questions = await written_import_service.extract_from_text(state.llm_service, user.id, text or "")
+    return WrittenQuestionsResponse(
+        questions=[WrittenQuestion(no=index, text=item) for index, item in enumerate(questions, start=1)],
+        markdown=written_import_service.to_markdown(questions),
+    )
+
+
+@router.put(
+    "/interview-sessions/{session_id}/review-notes",
+    response_model=ReviewQuestionNoteResponse,
+    responses={204: {"description": "The emptied note was removed"}},
+)
+def put_review_note(
+    session_id: str,
+    payload: ReviewQuestionNoteRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    try:
+        row = review_notes_service.save_note(
+            db,
+            user.id,
+            _database_id(session_id),
+            question_text=payload.question_text,
+            verdict=payload.verdict,
+            note=payload.note,
+            lock_version=payload.lock_version,
+        )
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+    if row is None:
+        return Response(status_code=204)
+    return ReviewQuestionNoteResponse(note=ReviewQuestionNoteRecord.model_validate(row))
+
+
+@router.delete("/interview-sessions/{session_id}/review-notes/{note_id}", status_code=204)
+def delete_review_note(
+    session_id: str,
+    note_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        review_notes_service.delete_note(
+            db, user.id, _database_id(session_id), _database_id(note_id, "INTERVIEW_REVIEW_NOTE_NOT_FOUND")
+        )
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+    return Response(status_code=204)
+
+
+def _load_session_response(
+    session_factory: Any, user_id: int, session_id: int
+) -> InterviewSessionResponse:
+    with session_factory() as db:
+        item = require_owned_session(db, user_id, session_id)
+        assets = list_assets(db, user_id, session_id)
+        return InterviewSessionResponse(
+            session=InterviewSessionRecord.model_validate(item.session),
+            application=_application_record(db, item.application),
+            assets=[_asset_record(asset) for asset in assets],
+        )
+
+
+@router.post(
+    "/interview-sessions/{session_id}/review:generate",
+    response_model=InterviewSessionResponse,
+    status_code=202,
+)
+async def post_generate_review(request: Request, session_id: str, payload: GenerateReviewRequest, user: User = Depends(get_current_user)) -> InterviewSessionResponse:
+    """Accept the review and generate it in the background; poll the session for the result."""
+    state = request.app.state
+    try:
+        parsed = _database_id(session_id)
+        await generate_review(
+            state.session_factory, state.llm_service, user.id, parsed, payload,
+            rag=getattr(state, "linkrag_recall", None),
+            storage=getattr(state, "storage", None),
+            spawn=getattr(state, "review_spawn", None),
+        )
+        return await asyncio.to_thread(_load_session_response, state.session_factory, user.id, parsed)
+    except ApiError:
+        raise
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
+
+
+@router.post(
+    "/interview-sessions/{session_id}/prep-items:generate",
+    response_model=InterviewSessionResponse,
+)
+async def post_generate_prep_items(
+    request: Request,
+    session_id: str,
+    user: User = Depends(get_current_user),
+) -> InterviewSessionResponse:
+    state = request.app.state
+    try:
+        parsed_session_id = _database_id(session_id)
+        await generate_prep_items(
+            state.session_factory, state.llm_service, user.id, parsed_session_id
+        )
+        return await asyncio.to_thread(
+            _load_session_response, state.session_factory, user.id, parsed_session_id
+        )
+    except LLMError as error:
+        status = 503 if error.code == "LLM_MODEL_NOT_CONFIGURED" else 502
+        raise ApiError(status, error.code) from error
+    except Exception as error:
+        _raise_service_error(error)
+        raise AssertionError("unreachable")
 
 
 @router.post(
@@ -844,6 +1141,15 @@ async def post_interview_asset(
             result.task.last_dispatched_at = datetime.now(UTC)
             db.commit()
             db.refresh(result.task)
+    if not result.replayed:
+        transcription_service.ensure_task(
+            db,
+            session=item.session,
+            dataset=result.dataset,
+            enabled=settings.interview_transcription_enabled,
+        )
+        db.commit()
+        db.refresh(result.dataset)
     bind_audit_target(request, result.dataset.id)
     return InterviewAssetResponse(asset=_asset_record(result.dataset))
 
@@ -859,6 +1165,7 @@ def attach_interview_asset(
     payload: DatasetAttachRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_dataset_user),
+    settings: Settings = Depends(get_settings),
 ) -> InterviewAssetResponse:
     try:
         parsed_dataset_id = _database_id(payload.dataset_id, "DATASET_NOT_FOUND")
@@ -867,6 +1174,7 @@ def attach_interview_asset(
             user.id,
             _database_id(session_id),
             parsed_dataset_id,
+            transcribe=settings.interview_transcription_enabled,
         )
     except ApiError:
         raise

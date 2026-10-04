@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 // 求职中心（岗位看板 / 面试日程 / 岗位详情）在 V3 设计里共用的小件：浮动提示、页头、插图。
 // 公共 Token 与基础件来自 src/v3，这里只放本模块的组合。
 import { useEffect, type ReactNode } from "react";
@@ -23,6 +24,7 @@ export function CareerNotice({
   onDismiss: () => void;
   action?: ReactNode;
 }) {
+  useLocale();
   // 3 秒后自动消失，和旧的 FeedbackNotice 行为一致（没有关闭按钮）
   useEffect(() => {
     const timer = window.setTimeout(onDismiss, 3000);
@@ -56,6 +58,7 @@ export function CareerPageHead({
   actions?: ReactNode;
   className?: string;
 }) {
+  useLocale();
   return (
     <header className={`career-v3-head ${className}`}>
       <div className="career-v3-head-copy">
@@ -81,6 +84,7 @@ const TILE_COLORS: Record<TileColor, string> = {
 
 // 日期卡：顶部色条写月份，中间大号日期，底部一行小字
 function DateTile({ x, y, color, month, day, sub, dim = false }: { x: number; y: number; color: TileColor; month: string; day: string; sub: string; dim?: boolean }) {
+  useLocale();
   return (
     <Paper x={x} y={y} w={72} h={82} r={10} style={{ opacity: dim ? 0.5 : 1, boxShadow: "0 4px 12px rgb(0 0 0 / 8%)" }}>
       <span style={{ position: "absolute", inset: "0 0 auto", height: 20, background: TILE_COLORS[color], color: "#fff", fontSize: 9.5, fontWeight: 500, lineHeight: "20px", textAlign: "center" }}>{month}</span>
@@ -91,6 +95,7 @@ function DateTile({ x, y, color, month, day, sub, dim = false }: { x: number; y:
 }
 
 function ArtCard({ x, y, w = 168, h = 88, background, children }: { x: number; y: number; w?: number; h?: number; background?: string; children?: ReactNode }) {
+  useLocale();
   return <Paper x={x} y={y} w={w} h={h} r={10} style={{ background: background ?? "#fff", boxShadow: "0 4px 12px rgb(0 0 0 / 6%)" }}>{children}</Paper>;
 }
 
@@ -100,6 +105,7 @@ export type ScheduleArtDate = { month: string; day: string; sub: string };
 
 // 每类安排一张插图：视频通话 / 地图定位 / 试卷 / 官方时段时间轴 / 测评量表 / AI 语音波形 / 结果 / 划掉的日期
 export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind; date: ScheduleArtDate; windowInfo?: { open: string; close: string; remain: string; todayRatio: number; planRatio: number | null } }) {
+  useLocale();
   return (
     <Centered width={456} height={128}>
       {kind === "video" && (
@@ -107,7 +113,7 @@ export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind;
           <DateTile x={96} y={23} color="blue" {...date} />
           <ArtCard x={192} y={20}>
             {[0, 1, 2].map((i) => <span key={i} style={{ position: "absolute", left: 10 + i * 9, top: 9, width: 5, height: 5, borderRadius: 3, background: "var(--v3-fl)" }} />)}
-            {[["张", 10, false], ["我", 88, true]].map(([name, left, dark]) => (
+            {[[t("张"), 10, false], [t("我"), 88, true]].map(([name, left, dark]) => (
               <span key={String(name)} style={{ position: "absolute", left: Number(left), top: 22, width: 70, height: 44, borderRadius: 6, background: "var(--v3-field)" }}>
                 <span style={{ position: "absolute", left: 23, top: 8, display: "grid", width: 24, height: 24, placeItems: "center", borderRadius: 12, background: dark ? "var(--v3-dark)" : "var(--v3-sk2)", color: dark ? "#fff" : "var(--v3-sub)", fontSize: 10, fontWeight: 500 }}>{name}</span>
               </span>
@@ -153,7 +159,7 @@ export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind;
       )}
       {kind === "window" && windowInfo && (
         <ArtCard x={48} y={24} w={360} h={80}>
-          <StageText x={20} y={12} color="var(--v3-fnt)">官方时段</StageText>
+          <StageText x={20} y={12} color="var(--v3-fnt)">{t("官方时段")}</StageText>
           <StageText x={260} y={12} color="var(--v3-or)" style={{ width: 80, textAlign: "right" }}>{windowInfo.remain}</StageText>
           <Bar x={20} y={40} w={320} h={6} color="var(--v3-sk2)" r={3} />
           <Bar x={20} y={40} w={Math.round(320 * windowInfo.todayRatio)} h={6} color="var(--v3-fl)" r={3} />
@@ -161,8 +167,8 @@ export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind;
           <Bar x={20 + Math.round(320 * windowInfo.todayRatio)} y={35} w={1.5} h={16} color="var(--v3-or)" r={1} />
           <StageText x={20} y={56} size={9.5} color="var(--v3-fnt)" weight={400} num>{windowInfo.open}</StageText>
           <StageText x={260} y={56} size={9.5} color="var(--v3-fnt)" weight={400} num style={{ width: 80, textAlign: "right" }}>{windowInfo.close}</StageText>
-          <StageText x={20 + Math.round(320 * windowInfo.todayRatio) - 10} y={56} size={9.5} color="var(--v3-or)">今天</StageText>
-          {windowInfo.planRatio !== null && <StageText x={20 + Math.round(320 * windowInfo.planRatio) - 14} y={20} size={9.5} color="var(--v3-txt)">我的计划</StageText>}
+          <StageText x={20 + Math.round(320 * windowInfo.todayRatio) - 10} y={56} size={9.5} color="var(--v3-or)">{t("今天")}</StageText>
+          {windowInfo.planRatio !== null && <StageText x={20 + Math.round(320 * windowInfo.planRatio) - 14} y={20} size={9.5} color="var(--v3-txt)">{t("我的计划")}</StageText>}
         </ArtCard>
       )}
       {kind === "test" && (
@@ -172,8 +178,8 @@ export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind;
             <Bar x={14} y={14} w={108} h={5} color="var(--v3-dark)" r={2} />
             <Bar x={14} y={24} w={72} h={4} color="var(--v3-sk2)" r={2} />
             {[0, 1, 2, 3, 4].map((i) => <span key={i} style={{ position: "absolute", left: 18 + i * 30, top: 44, width: 14, height: 14, borderRadius: 7, border: i === 3 ? 0 : "1.2px solid var(--v3-fl)", background: i === 3 ? "var(--v3-dark)" : "#fff" }} />)}
-            <StageText x={14} y={66} size={8.5} color="var(--v3-fnt)" weight={400}>不符合</StageText>
-            <StageText x={124} y={66} size={8.5} color="var(--v3-fnt)" weight={400}>很符合</StageText>
+            <StageText x={14} y={66} size={8.5} color="var(--v3-fnt)" weight={400}>{t("不符合")}</StageText>
+            <StageText x={124} y={66} size={8.5} color="var(--v3-fnt)" weight={400}>{t("很符合")}</StageText>
           </ArtCard>
         </>
       )}
@@ -193,8 +199,8 @@ export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind;
           <DateTile x={96} y={23} color="orange" {...date} />
           <Badge x={158} y={17} icon="check" fill="var(--v3-gn)" />
           <ArtCard x={210} y={34} w={150} h={60}>
-            <StageText x={14} y={12} color="var(--v3-fnt)">本轮结果</StageText>
-            <span style={{ position: "absolute", left: 14, top: 30, display: "grid", width: 56, height: 20, placeItems: "center", borderRadius: 10, background: "var(--v3-gn-soft)", color: "var(--v3-gn)", fontSize: 10, fontWeight: 500 }}>已完成</span>
+            <StageText x={14} y={12} color="var(--v3-fnt)">{t("本轮结果")}</StageText>
+            <span style={{ position: "absolute", left: 14, top: 30, display: "grid", width: 56, height: 20, placeItems: "center", borderRadius: 10, background: "var(--v3-gn-soft)", color: "var(--v3-gn)", fontSize: 10, fontWeight: 500 }}>{t("已完成")}</span>
             <Bar x={80} y={38} w={54} h={4} r={2} />
           </ArtCard>
         </>
@@ -213,10 +219,12 @@ export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind;
 /* ───────────── 通用插图：一张卡片 + 箭头 + 目标（导入 / 插件 / 空状态复用） ───────────── */
 
 export function ArrowArt({ x, y, w }: { x: number; y: number; w: number }) {
+  useLocale();
   return <DashArrow x={x} y={y} w={w} />;
 }
 
 export function StageCaption({ title, body }: { title: string; body: string }) {
+  useLocale();
   return (
     <span className="career-stage-caption" aria-hidden="true">
       <strong>{title}</strong>
@@ -226,5 +234,6 @@ export function StageCaption({ title, body }: { title: string; body: string }) {
 }
 
 export function IconBadge({ icon, dark = true }: { icon: V3IconName; dark?: boolean }) {
+  useLocale();
   return <span className={`career-icon-badge${dark ? " is-dark" : ""}`} aria-hidden="true"><Icon name={icon} size={12} /></span>;
 }

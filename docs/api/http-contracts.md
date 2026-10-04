@@ -8,7 +8,7 @@
 
 Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话发送重试保持原 `idempotency_key`，恢复订阅保持原 run ID，取消后不重发。跨标签页续期协调与浏览器兼容边界见[账号功能](../features/identity-account.md)。收到 Agent SSE 终态后即可结束订阅，后续连接关闭或会话回读失败不改变已经收到的运行终态。
 
-`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled}`，Web 据此选择普通邮箱密码入口。普通用户邮箱密码登录和注册仅在 `APP_ENV=local|development` 时开放；Production 的 `POST /api/auth/login` 与 `POST /api/auth/register` 都返回 `404 NOT_FOUND`。普通改密和微信绑定接口仍不公开；`POST /api/account/change-password` 和 `/api/account/wechat/bind-*` 在正常运行环境返回 `404 NOT_FOUND`。这些环境受限路由不进入 OpenAPI。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。
+`GET /api/health` 返回 `{status, service, version}`。`GET /api/auth/capabilities` 公开返回 `{password_login_enabled, wechat_login_enabled}`。Local/Development 只开放普通邮箱密码注册、登录及改密，微信相关认证与身份确认接口返回 `404 NOT_FOUND`；Production 只开放微信认证，普通注册、密码登录及改密返回 404。微信能力还要求配置上游凭据，未配置时能力为 false、接口为 `503 WECHAT_SERVICE_UNAVAILABLE`。未知环境两种能力都关闭。`POST /api/auth/admin-login` 保持独立，只允许管理员成功。普通微信绑定、解绑和换绑接口不公开。
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
@@ -23,11 +23,13 @@ Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话
 | `POST` | `/api/auth/wechat/miniprogram/refresh` | 同上；JSON `{refresh_token}`，成功后旧 refresh 立即失效 |
 | `POST` | `/api/auth/wechat/miniprogram/logout` | `{ok: true}`；JSON `{refresh_token?}`，幂等撤销小程序 session |
 
-会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram|desktop` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销或用户停用时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
+会话统一保存为 Redis `auth:session:{sid}` hash 和 `auth:user_sessions:{uid}` 集合。Hash 包含 `uid`、refresh secret 哈希、`channel=web|miniprogram|desktop` 和创建时间；access JWT 同样携带 channel。Web 只接受 HttpOnly Cookie 中的 `channel=web` 凭据，小程序只接受 `Authorization: Bearer` 中的 `channel=miniprogram` 凭据；同时携带两种载体、JWT 与 Redis 的 uid/channel 不一致、session 被撤销、用户停用或申请注销时均视为未登录。为兼容本功能上线前已签发的 Web 会话，缺少 channel 的旧 JWT/Redis session 仅按 Web 凭据接受，并在 refresh 轮换时补写 `channel=web`；它不会被小程序接口接受。Refresh 每次轮换 secret，重放旧 refresh 会撤销整个 session。
 
 微信 code 只由后端提交微信平台换取 openid。`/api/auth/wechat/miniprogram/account-status` 仍可使用当前 `wx.login` code 返回该 openid 是否已有关联账号，只返回布尔值，不创建用户、不更新登录时间、不签发会话；随仓库发布的小程序不再把它用于登录前置探测。该接口与小程序登录共用来源 IP 默认每分钟 30 次的限流。openid 已存在时登录接口直接复用；不存在时，`/api/auth/wechat/confirm` 和 `/api/auth/wechat/miniprogram/login` 只有在收到 `privacy_accepted=true` 后才创建 `email/password_hash` 为空的普通账号，缺失或为 `false` 时返回 `400 PRIVACY_AGREEMENT_REQUIRED`，唯一约束负责并发建号收敛。该字段只表示本次注册请求已经通过客户端确认门禁，不是服务端持久化的同意审计记录。随仓库发布的小程序冷启动在“简历”页展示一张内置“示例简历 · 内容为虚构信息”卡片，点击详情也只渲染包内虚构内容；游客首页与示例详情不发起账号探测、登录、隐私授权或个人数据请求，可切换“我的”游客态。登录入口位于“我的”页和求职游客引导；用户查看并勾选微信平台隐私保护指引并点击主操作后，客户端才调用建号或登录接口；未勾选时在协议区行内提示。普通登录成功后返回“我的”页；扫码确认先用一个 code 确认 Web scene，再用新的 code 建立独立小程序会话。登录后的简历页与请求重试路径只能以 `privacy_accepted=false` 尝试恢复已有账号，不能静默触发首次建号。停用账号不能登录或续期；启用管理员账号即使历史上已有 openid，也与普通账号一样可以通过网页扫码确认并由匹配 `poll_token` 的 status 签发 Web Cookie，也可以通过小程序 login 建立、refresh 轮换小程序 Bearer 会话并访问小程序业务接口；管理员仍可使用 `/api/auth/admin-login`。超出上述限流时返回 `429 WECHAT_RATE_LIMITED`。开发者工具和真机的 `develop` 运行时都默认使用 `https://linkresume.cn`；只有环境被明确识别为 `develop` 且设备本地执行 `wx.setStorageSync("linkresume_local_debug_enabled", true)` 时才读取每次 `npm run dev` 自动更新的 `local.js`，环境识别缺失或异常时不读取开发 storage/local.js；`linkresume_api_base_url` 显式 URL 覆盖优先于 `local.js`。关闭 opt-in 可执行 `wx.removeStorageSync("linkresume_local_debug_enabled")` 或写入 `false`；体验版和正式版忽略全部开发 storage/local.js，继续使用该 HTTPS 地址。
 
 ### 桌面 Bearer 会话
+
+桌面微信能力沿用普通用户环境规则：仅配置可用的 Production 可获取二维码、查询和领取微信会话及续期；Local/Development/未知环境能力为 false，这些路径返回 404。退出接口仍可用于撤销已有凭据。领取、恢复结果和续期在账号行锁内重新检查停用及注销标记，不能与注销并发穿透。
 
 桌面使用独立 `channel=desktop` Bearer，不能使用 Web Cookie、小程序 token 或无 channel 的旧凭据。桌面认证路由拒绝认证 Cookie；只有 `/me` 接受 Authorization，其余路由以 JSON 证明或 refresh secret 鉴权。响应均为 `Cache-Control: no-store`，不设置 Cookie。
 
@@ -45,7 +47,7 @@ Token envelope 为 `{user, access_token, refresh_token, expires_in, session_prot
 
 桌面简历业务权限开放以下 GET：`/api/resume-templates`、`/api/resume-templates/{id}`、`/api/resumes`、`/api/resumes/{id}`、`/api/resumes/{id}/pdf`、`/api/resumes/{id}/assets/{asset_name}`、`/api/assets/{object_name:path}`。保留原资源归属、版本和 PDF 校验；不开放简历写入、账号、管理端或语音 WebSocket；文字模拟面试 SSE 与只读资料列表按本文的独立白名单开放。管理员桌面凭据也不能扩大渠道权限。`GET /api/auth/me` 仍只识别 Web Cookie，desktop Bearer 得到 `user: null`。
 
-桌面岗位看板复用既有求职接口，通过独立的 `get_current_career_user` 白名单识别 desktop Bearer：允许读取岗位、本人岗位的带版本 Logo、求职进程、排期与周概览；创建岗位和求职进程；编辑或删除本人岗位/进程；添加阶段、终止、记录 Offer、接受/婉拒正式 Offer、归档/恢复、添加排期；编辑排期信息、改期、设置个人作答计划、标记完成和取消排期。其中 `PUT /api/interview-sessions/{id}` 只更新既有可编辑信息，携带 `base_lock_version`；时间变化仍使用 reschedule，个人计划仍使用 answer-plan，不开放场次 DELETE。岗位文字/PNG/JPEG 的智能提取通过既有 multipart `POST /api/job-descriptions/parse-draft`，继续使用原模型就绪与错误语义。排期 DELETE、独立求职复盘与匹配等其他岗位路径仍拒绝 desktop；场次 PUT 中既有的 questions_markdown、review_summary 和 improvement_markdown 可编辑，资料关联另由资料库白名单控制。数字 ID 路径、HTTP method、资源归属、乐观锁与幂等请求规则沿用原服务，管理员不能绕过渠道边界。Web Cookie 的原调用行为保留；游客和小程序 Bearer 不能使用这些桌面权限。
+桌面岗位看板复用既有求职接口，通过独立的 `get_current_career_user` 白名单识别 desktop Bearer：允许读取岗位、本人岗位的带版本 Logo、求职进程、排期与周概览；创建岗位和求职进程；编辑或删除本人岗位/进程；添加阶段、终止、记录 Offer、接受/婉拒正式 Offer、归档/恢复、添加排期；编辑排期信息、改期、设置个人作答计划、标记完成和取消排期。其中 `PUT /api/interview-sessions/{id}` 只更新既有可编辑信息，携带 `base_lock_version`；时间变化仍使用 reschedule，个人计划仍使用 answer-plan。阶段详情另开放：场次 `DELETE`、`GET/POST /api/interview-sessions/{id}/assets`（录音列表与上传）、`GET /api/interview-assets/{id}/content`（播放）、`POST .../transcriptions/{dataset_id}:retry|:apply`、`POST .../written-questions:extract`、`POST .../review:generate` 以及 `PUT .../review-notes`、`DELETE .../review-notes/{note_id}`；它们与 Web 共用同一服务、归属校验和错误语义，准备清单生成和 `DELETE /api/interview-assets/{id}` 仍拒绝 desktop。岗位文字/PNG/JPEG 的智能提取通过既有 multipart `POST /api/job-descriptions/parse-draft`，继续使用原模型就绪与错误语义。独立求职复盘与匹配等其他岗位路径仍拒绝 desktop；场次 PUT 中既有的 questions_markdown、review_summary 和 improvement_markdown 可编辑，资料关联另由资料库白名单控制。数字 ID 路径、HTTP method、资源归属、乐观锁与幂等请求规则沿用原服务，管理员不能绕过渠道边界。Web Cookie 的原调用行为保留；游客和小程序 Bearer 不能使用这些桌面权限。
 
 手机通过既有 confirm/cancel 处理固定为 desktop 的 scene，只确认账号、不签发桌面或 Web 凭据；小程序确认页按服务端 `login_target/platform` 显示目标，不在桌面确认后自动创建小程序会话。
 
@@ -77,7 +79,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 ### 用户中心
 
-`/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。当前公开接口为 profile、昵称和头像读写；Web 账号页不再显示密码或微信绑定入口。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
+`/api/account/*` 通过当前用户身份确定资源归属，不接受 `user_id`。除 profile、昵称、头像和求职画像外，还提供联系邮箱、偏好、当前会话、环境对应的敏感操作及注销回执接口，详见本文「账号补充接口」。Web 账号页按能力显示开发改密或正式微信注销确认，普通微信绑定入口已撤下。`user.email` 对微信用户为 `null`。最近简历仍按更新时间倒序返回最多 5 条。
 
 `GET/PUT /api/account/user-profile` 维护跨简历共享的个人画像，聚合可比较的求职条件、教育背景与技能成果，独立保存于 `user_profiles` 表，不修改任何简历内容；这是唯一画像资源入口。未创建时 `GET` 返回 `lock_version=1` 的约定空画像且不写库；`PUT` 整体替换全部可编辑字段，缺省字段以 `null`/空数组覆盖旧值。`PUT` 必须携带 `base_lock_version`（首次创建固定为 1），服务端原子比较版本号，并发基准过期返回 `409 USER_PROFILE_VERSION_CONFLICT`，响应 `{profile}` 携带最新画像供调用方刷新后重试。可编辑字段包括 `candidate_cities`（最多 20 项）、`employment_types`（最多 2 项且只接受 `internship`/`full_time`）、薪资四字段、`candidate_status`、`graduation_year`、`years_experience`、教育字段和语言/技能/证书/荣誉/校园经历列表。城市及普通字符串列表会去除空串、去重并保留首次顺序；单项最长 100 字符，普通列表最多 100 项，`school_tier` 只接受 `project_985`/`project_211`/`double_first_class` 且最多 10 项。薪资必须成组填写：`salary_min`/`salary_max` 任一非空时要求 `salary_currency`（大写三字母 ISO 4217）与 `salary_period` 同时非空，最高值不得低于最低值。`candidate_status=fresh_graduate` 时 `graduation_year` 必须为 1900–9999 的四位年份且 `years_experience` 固定为 0；`experienced` 时毕业年份必须为空；未选择类型时毕业年份也必须为空。非法枚举、超长列表或违反联动约束返回 `400 INVALID_USER_PROFILE`。`GET /api/account/profile` 只返回账号资料、简历数量和最近简历，不内嵌 `profile`。
 
@@ -96,8 +98,8 @@ Alembic `0036` 在写入前预检全部模板、当前简历和历史版本，�
 
 | Method   | Path                        | 鉴权 | 成功结果                                                         |
 | -------- | --------------------------- | ---- | ---------------------------------------------------------------- |
-| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组；按 `sort_order`、ID 升序 |
-| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组 |
+| `GET`    | `/api/resume-templates`     | 是   | `{templates}` 启用且结构有效的模板列表，含 `style_categories`、`use_cases` 数组和 `use_count`（当前引用该模板的简历数，全站聚合）；按 `sort_order`、ID 升序 |
+| `GET`    | `/api/resume-templates/:id` | 是   | `{template}`，含同样的分类数组和 `use_count` |
 | `GET`    | `/api/resumes`              | 是   | `{resumes}`，摘要含可选 `preview`，按更新时间倒序                |
 | `POST`   | `/api/resumes`              | 是   | `201 {resume}`；请求必填 `{title, template_id}`                  |
 | `GET`    | `/api/resumes/:id`          | 是   | `{resume}`                                                       |
@@ -179,7 +181,7 @@ FastAPI 在进程内独立消费 Pi 流并缓冲可见事件，单个浏览器�
 | `POST`   | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，无链接时创建，已有链接时作废旧 token 并生成新 token（一键覆盖） |
 | `PATCH`  | `/api/resumes/:id/share`    | 是   | `{share}`；请求可选 `{visibility, expires_at, allow_download}`，可续期、修改可见性或下载权限 |
 | `DELETE` | `/api/resumes/:id/share`    | 是   | `{deleted: true}`；清空分享字段，旧地址访问统一失效，重复删除幂等          |
-| `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download}`；`sharer` 为 `{nickname, avatar_url}` |
+| `GET`    | `/api/share/{token}`        | 否   | `{data, style, layout_plan, assets, sharer, allow_download, expires_at, updated_at}`；`sharer` 为 `{nickname, avatar_url}`；`expires_at` 为分享有效期（`null` 表示长期有效），`updated_at` 为简历主记录最近更新时间（分享设置变更也会刷新） |
 | `GET`    | `/api/share/{token}/pdf`    | 否   | 当前已保存草稿的 A4 分页 PDF；沿用分享 token 的访问规则并要求允许下载 |
 
 `share` 为 `{share_token, share_visibility, share_expires_at, share_allow_download, share_created_at}`。`share_visibility` 只允许 `public|private`，`share_expires_at` 为带时区的 ISO 8601，`null` 表示长期有效；`share_allow_download` 为布尔值，旧记录和创建缺省值均为 `true`。`private` 时只有分享者本人登录可见，未登录或其他用户访问一律按失效处理。
@@ -280,10 +282,18 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `GET`    | `/api/job-descriptions/:id`         | `{job_description}`                                                      |
 | `PUT`    | `/api/job-descriptions/:id`         | `{job_description}`；请求含 `base_lock_version` 和至少一个可编辑字段     |
 | `DELETE` | `/api/job-descriptions/:id`         | `{deleted: true}`，永久删除岗位及其完整求职聚合并释放来源唯一标识         |
+| `GET`    | `/api/job-descriptions/:id/match?resume_id=` | `{match}`；该岗位与指定简历的分析结果，从未分析为 `null` |
+| `POST`   | `/api/job-descriptions/:id/match:analyze` | 请求 `{resume_id}`；同步分析并返回 `{match}`，命中未过期结果时不调用模型 |
+| `GET`    | `/api/job-matches/recommendations`  | `{state, resume, items, pending_count, can_compute}`，只读不调用模型 |
+| `POST`   | `/api/job-matches/recommendations:ensure` | 同上结构；有可算岗位时启动后台分析，幂等 |
+
+**简历匹配度**：`match` 含 `status`（`pending`、`ready`、`failed`）、`stale`、`score`（0–100）、`headline`、`hits`、`gaps`、`highlights{covered,missing}`、`analyzed_at` 与 `error_code`。分数是岗位要求被简历覆盖的加权比例，不是录取概率。`stale` 表示岗位描述或简历内容在分析后变化；仅改简历标题或排版不会过期。错误：岗位或简历不存在或不属于当前用户 `404 JOB_NOT_FOUND`、`RESUME_NOT_FOUND`；无描述且无技能 `400 JOB_MATCH_NO_DESCRIPTION`；同一岗位与简历正在分析 `409 JOB_MATCH_IN_PROGRESS`；模型未配置 `503 LLM_MODEL_NOT_CONFIGURED`，模型失败 `502`。推荐接口的 `state` 取 `no_resume`、`no_jobs`、`computing`、`ready`、`idle`、`unavailable`，`items` 至多 3 条且按分数降序，`application_status` 为该岗位最新未归档求职记录的阶段文案。桌面 Bearer 不在白名单内，这些路径仍拒绝 desktop。
 
 岗位 `employment_type` 只接受 `internship`（实习）、`campus`（校招）、`full_time`（正式）或 `null`（未分类）。文字/图片识别和插件导入使用同一分类语义：实习优先于校招，校招优先于全职；无法判断不猜测。旧的 `part_time/contract/temporary` 不再接受。个人画像的 `employment_types` 是独立契约，不随岗位分类变更。
 
 列表查询支持最长 200 字符的 `keyword`、不透明 `cursor` 和 `limit=1..100`。关键词忽略大小写，覆盖岗位名、公司名、城市、地址、正文和技能；分页按 `updated_at DESC, id DESC` 稳定排序。非法筛选或游标返回 `400 INVALID_JOB_QUERY`。JD 不维护活动、归档、投递或面试状态。
+
+Web 的 `api.getJobMatch`、`analyzeJobMatch`、`getJobMatchRecommendations` 和 `ensureJobMatchRecommendations` 对应岗位匹配接口：详情页只在用户点击时调用分析，首页卡在显示时读取、必要时触发后台计算并轮询。
 
 智能导入使用 `multipart/form-data`，必须且只能提交一个非空 `text` 或一个 `image`。文字去除首尾空白后最长 60,000 字符，使用当前 `chat` 能力；图片只接受实际内容可解码的 PNG、JPEG 或 WebP，最大 10 MiB、最多 4,000 万像素，使用独立的 `job_image_structuring` 能力。响应中的 `draft` 与普通创建字段同构但全部可空，`warnings` 提示未识别的核心字段；调用方必须先让用户核对或补充，再另行调用创建接口。输入缺失或同时提供两种输入返回 `400 JD_IMPORT_INPUT_REQUIRED|JD_IMPORT_INPUT_AMBIGUOUS`，大小、格式或内容非法返回对应的 `JD_IMPORT_TEXT_TOO_LARGE`、`JD_IMPORT_IMAGE_TOO_LARGE`、`JD_IMPORT_IMAGE_UNSUPPORTED` 或 `JD_IMPORT_IMAGE_INVALID`。能力未绑定返回 `503 JD_IMPORT_MODEL_NOT_CONFIGURED`，超时返回 `504 JD_IMPORT_PARSE_TIMEOUT`，其他模型或结构化结果失败返回 `502 JD_IMPORT_PARSE_FAILED`；模型调用已建立记录时错误详情包含脱敏的 `callId` 和 `inputType`。
 
@@ -313,7 +323,7 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 求职中心以 `job_descriptions` 保存岗位资料，以 `job_applications` 表达一家公司和岗位的一次完整求职尝试，以 `job_application_stages` 保存追加式阶段历史，以 `interview_sessions` 表达其中一场可排期、可完成、可复盘的面试。所有接口都要求当前登录用户，后端只从会话取得所有者；不存在和越权资源统一返回 `404 INTERVIEW_NOT_FOUND`。JD 创建或导入会原子创建或复用待投递记录；求职记录保存公司、岗位和完整 JD 快照（包括创建时的可选 `logo_url`），响应以可选 `company_logo_url` 暴露该快照值，后续修改原 JD 不会改写历史快照的正文和其他业务信息；补充托管图片或明确修改原 Logo 外链时，仅同步图标键并递增求职记录锁版本。Web 与小程序两侧共用同一个快照投影：只输出 `https://` 开头的绝对 URL，或该求职记录自己岗位的托管 Logo 地址（`/api/job-descriptions/{id}/logo?v=...`），其余取值一律投影为 `null`。
 
-待投递由 `applied_at=null` 且 `lifecycle_status=active` 表示，不生成虚构业务阶段。`POST /api/job-applications/:id/stages` 接受 `client_request_id`、稳定 `stage_type`、可选 `stage_label/interview_round_no/applied_at/resume_id` 和 `base_lock_version`，可直接进入 `screening/assessment/written_test/ai_interview/interview/offer`。普通面试必须提供非空显示名称，轮次可空；其他类型不能携带轮次。首次阶段写入同时保存投递时间，未提供时使用服务端操作时间；旧当前阶段改为已完成，新阶段成为唯一当前阶段。相同请求 UUID 和相同阶段内容幂等返回，内容不同或版本过期返回 `409 INTERVIEW_EDIT_CONFLICT`。
+待投递由 `applied_at=null` 且 `lifecycle_status=active` 表示，不生成虚构业务阶段。`POST /api/job-applications/:id/stages` 接受 `client_request_id`、稳定 `stage_type`、可选 `stage_label/interview_round_no/applied_at/resume_id` 和 `base_lock_version`，可直接进入 `screening/assessment/written_test/ai_interview/interview/hr/oc/offer`。普通面试必须提供非空显示名称，轮次可空；其他类型不能携带轮次，`hr`、`oc` 默认名称为“HR 面”“OC”。首次阶段写入同时保存投递时间，未提供时使用服务端操作时间；旧当前阶段改为已完成，新阶段成为唯一当前阶段。相同请求 UUID 和相同阶段内容幂等返回，内容不同或版本过期返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
 `PUT /api/job-applications/:id` 可提交 `employment_type`（上述三类或 `null`）及 `base_lock_version`，在同一次版本校验中更新当前记录的 `job_snapshot.employment_type`，保留其他快照属性和阶段。它不改原岗位或其他求职进程。非法分类返回 `400 INVALID_INTERVIEW_REQUEST`，非本人记录返回 `404 INTERVIEW_NOT_FOUND`，过期版本返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
@@ -322,6 +332,10 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 `POST /api/job-applications/:id/terminate` 接受请求 UUID、终止原因、可选投递时间和版本，一次完成待投递或进行中记录的终止；当前阶段如存在会被关闭并保留。响应中的 `phase=pending|applied`、`lifecycle_status=active|terminated`、`current_stage` 和有序 `stages` 是新消费方真值。归档只影响列表范围，不改变投递、当前阶段或终止事实。`DELETE /api/job-applications/:id` 对已终止且仍关联 JD 的记录执行完整岗位聚合删除；活动记录不能通过该接口删除，历史遗留的无 JD 记录仍沿用原有归档/终止清理条件。删除只解除资料库文件与场次的关联，不再清理素材对象；数据库删除失败返回 `502 INTERVIEW_APPLICATION_DELETE_FAILED` 并保留数据库记录，用户可重试删除。旧扁平字段以及 `/advance`、`/offer`、`/close` 保留一个兼容期。
 
 原生 V4 使用 Offer 阶段且 `offer_status=none` 表示 OC 口头意向，`POST /offer` 才将其标记为 `received`，即使未填写数值薪资也可确认正式 Offer。`POST /close` 携带 `status=closed` 和 `offer_status=accepted|declined` 完成最终决策；OC 不能直接接受或婉拒，已归档记录不能作决策。`terminate` 的 `offer_declined` 原因同样要求已收到正式 Offer。双方均沿用归属检查和 `base_lock_version`。原生将 `status=closed` 的接受记录归入已结束，不因恢复归档而重新开启流程。
+
+`POST /offer` 另可携带 `received_on/reply_due_on/start_on` 三个独立日期字段；仅接受 MySQL DATE 支持的 `YYYY-MM-DD`（年份 1000–9999）或 `null`，不接受时间戳或时分。省略字段保留原值，显式 `null` 清空，与 Offer 状态在同一乐观锁事务中更新。求职详情与列表返回可空 `offer_received_on/offer_reply_due_on/offer_start_on`。旧原生备注内的日期标签仍保留，不解析回填；旧客户端省略新字段不会清除 Web 保存的结构化日期。复用 `400 INVALID_INTERVIEW_REQUEST`、`404 INTERVIEW_NOT_FOUND` 和 `409 INTERVIEW_EDIT_CONFLICT`。
+
+**投递渠道、HR 面与 OC（0109）**：`POST /stages` 与 `PUT /job-applications/:id` 可选携带 `applied_channel`（最多 100 字符，首尾空白去除）；记录投递时随首次阶段一并保存。`hr` 阶段可排期，排期时场次 `stage_type` 必须为 `hr`。`oc` 阶段可选携带 `oc_communicated_at`（须带时区）、`oc_contact`、`oc_salary_text`、`oc_start_text`（各最多 100 字符）与 `oc_note`（最多 500 字符），非 `oc` 阶段携带这些字段返回 `400`。`oc` 阶段投影为 `current_stage_type=offer`；当前阶段为 `oc` 时 `POST /offer` 返回 `409 INTERVIEW_INVALID_TRANSITION`，正式 Offer 需先追加 `offer` 阶段。`POST /offer` 另可携带 `probation`（最多 100 字符）和 `material_dataset_ids`（最多 10 个、不可重复的本人资料库文件 ID，提供时整体替换，空数组清空，省略保留）；任一文件不属于当前用户时返回 `404 INTERVIEW_NOT_FOUND` 且不改写。求职响应新增可空 `applied_channel`、`oc_*`、`offer_probation` 与 `offer_materials`（`dataset_id`、`file_name` 列表），小程序求职响应同样返回这些字段。
 
 `POST /stages` 与 `POST /offer` 可选携带 `notes`（最多 16,000 字符），在同一版本校验与事务中保存补充说明；省略保持原备注，显式 `null` 清空。原生 V4 的投递渠道、口头薪酬、收到日期、回复截止、薪酬说明、预计入职、试用期与 Offer 材料名称按可读标签保存于备注，保留其他行；材料名称不是附件上传或关联。旧 Web 请求无需新增字段。阶段请求继续复用 UUID，重放不会重复追加阶段或覆盖后续备注。
 
@@ -339,9 +353,10 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 | `GET` | `/api/interview-sessions` | 按时间、状态、`application_id`、归档范围和游标列出当前用户的面试记录 |
 | `POST` | `/api/job-applications/:id/interview-sessions` | 在指定求职进程的当前阶段创建排期 |
 | `GET/PUT/DELETE` | `/api/interview-sessions/:id` | 读取、乐观锁更新或删除无素材的单场记录 |
+| `POST` | `/api/interview-sessions/:id/prep-items:generate` | 让 AI 为本场生成准备清单，成功返回更新后的场次；每场只能成功一次 |
 | `POST` | `/api/interview-sessions/:id/reschedule` | 调整排期，开始时间接受有效 24 小时制 `HH:mm`（小时 `00–23`、分钟 `00–59`） |
 | `PUT` | `/api/interview-sessions/:id/answer-plan` | 设置或清除开放笔试、测评或 AI 面试的一组个人作答计划时间 |
-| `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试 |
+| `POST` | `/api/interview-sessions/:id/complete\|cancel` | 明确完成或取消一场面试；完成接口保留兼容，正常流程按结束时间自动完成 |
 | `GET/POST` | `/api/interview-sessions/:id/assets` | 列出或上传素材；上传与资料库共用同一入库链路，成功后自动关联该场次 |
 | `POST` | `/api/interview-sessions/:id/assets/attach` | 把本人资料库中未关联的资料（`{dataset_id}`）关联到本场次 |
 | `DELETE` | `/api/interview-sessions/:id/assets/:dataset_id` | 解除资料与场次的关联，文件保留在资料库 |
@@ -350,11 +365,15 @@ JD 管理接口接受和返回最终结构化数据；浏览器导入接口接�
 
 排期请求可携带 `application_stage_id` 和 `schedule_kind=fixed_slot|open_window`，服务端要求它是该求职记录当前且可排期的测评、笔试、AI 面试或普通面试阶段；筛选和 Offer 不能排期，其中测评、笔试和 AI 面试支持开放窗口，普通面试只支持固定场次。创建与改期请求在 `start_at` 之外必须且只能提交 `end_at` 或正整数 `duration_minutes` 之一；提交持续分钟时由服务端计算并保存 `end_at`，旧的显式结束时间写法继续兼容。开放窗口的个人作答计划同样可用 `answer_plan_start_at + duration_minutes` 让服务端推算结束时间，也兼容 `answer_plan_start_at/answer_plan_end_at` 成对设置；清除时两端同时为空。计划必须完整落在官方窗口内，否则返回 `INTERVIEW_ANSWER_PLAN_INVALID_TIME`、`INTERVIEW_ANSWER_PLAN_OUTSIDE_WINDOW` 或 `INTERVIEW_ANSWER_PLAN_NOT_SUPPORTED`。不支持开放窗口的阶段返回 `INTERVIEW_SCHEDULE_KIND_NOT_SUPPORTED`。开始时间必须是带时区的有效分钟时间，服务端转成 UTC 保存。同一用户的多个排期允许时间重叠。调整排期只要求场次仍为 `scheduled` 且所属求职进程未归档，不受求职进程是否已经结束影响。过期 `base_lock_version` 返回 `409 INTERVIEW_EDIT_CONFLICT`，不合法状态跳转返回 `409 INTERVIEW_INVALID_TRANSITION`。
 
+**按时间完成**：`end_at` 已过的 `scheduled` 场次在所有场次响应中投影为 `status=completed`、`completed_at=end_at`；当前阶段的全部已排期场次都已结束时，求职进程的 `stage_state` 与场次摘要的 `application_stage_state` 投影为 `awaiting_result`。`GET /api/interview-sessions?status=scheduled|completed` 与总览的已完成数量按同一投影筛选。读取不写库；添加阶段或终止流程时在同一事务内把已结束场次落库为 `completed`，该结算不递增 `lock_version`。改期和取消仍按库内 `scheduled` 判断，因此已过时间的场次可以改到未来时间，从而恢复为已安排。
+
 Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `received`；迁移 `0053` 将历史 `oc_received` 与 `written_offer_received` 合并为 `received`。`POST /api/job-applications/:id/offer` 只要求 `base_lock_version`，并接受全部可空的 `base_location`、`salary`、`salary_currency`、`salary_period`、`benefits_description`；空请求仍会记录为已收到 Offer。填写数值薪资时必须同时提供大写三字母币种与 `hour/day/month/year` 计薪周期。求职进程响应以 `offer_` 前缀返回这五个详情字段。迁移 `0054` 将原薪资下限重命名为单值 `offer_salary` 并删除薪资上限；旧记录缺少下限但存在上限时保留原上限值。总览指标使用 `offers_received`，统计 `received/accepted/declined`，不再返回 `written_offers`。
 
 `GET /api/job-applications` 按 `updated_at DESC, id DESC` 分页，`GET /api/interview-sessions` 按 `start_at ASC, id ASC` 分页；两者的 `next_cursor` 都是不透明且与当前筛选条件绑定的游标。调用方必须把游标与原筛选一起回传；游标损坏、跨筛选复用或超长都返回 `400 INVALID_INTERVIEW_QUERY`。创建面试的 `(application_id, client_request_id)` 唯一：相同请求重放返回原场次，相同标识绑定到不同时间或内容时返回 `409 INTERVIEW_EDIT_CONFLICT`。
 
 面试模块的求职进程、岗位、简历版本、单场面试和素材 ID 与项目其他 BIGINT 资源一致，在 JSON、查询参数和路径中都使用无前导零的十进制字符串；前端不得把这些 ID 转成 JavaScript `number`。
+
+**面试准备清单**：清单保存在场次行的 `prep_items`（JSON，最多 12 条，元素 `{id,title,category,reason,done}`，`category` 取 `intro|project|technical|system_design|behavior|company|other`），`prep_generated_at` 非空表示本场已用掉唯一一次 AI 生成。场次响应附带只读的 `prep_total`、`prep_done`。用户通过 `PUT /api/interview-sessions/:id` 的 `prep_items` 整体替换清单（需 `base_lock_version`，服务端为缺失或重复的 `id` 重新分配），清空清单不会恢复生成次数。`prep-items:generate` 只对 `scheduled` 且未归档的本人场次可用，否则 `409 INTERVIEW_INVALID_TRANSITION`；已生成过返回 `409 INTERVIEW_PREP_ALREADY_GENERATED`；`interview_prep` 场景未配置返回 `503 LLM_MODEL_NOT_CONFIGURED`，模型失败或两次结构无效返回 `502`（含 `LLM_RESPONSE_INVALID`），失败和空结果都不占用次数。
 
 素材上传是 `multipart/form-data`，必须携带 canonical UUID `Idempotency-Key`；`source_type=recorded|uploaded` 仅记录来源路径。上传复用资料库入库链路：文件落入 `users/{user_id}/datasets/` 前缀，`user_dataset.interview_session_id` 记录场次关联，场次侧不再持有独立素材记录。服务端按扩展名与规范化 MIME 双重校验，流式计算大小和 SHA-256；单文件上限由 `INTERVIEW_ASSET_UPLOAD_MAX_BYTES=524288000` 控制，媒体个数与总量由 `MEDIA_MAX_COUNT_PER_USER`/`MEDIA_MAX_TOTAL_BYTES_PER_USER` 控制。格式、大小、配额和对象存储失败复用资料库的 `DATASET_*` 错误码。文档类素材上传后进入解析队列，音视频落地为终态、不参与解析。`POST /interview-sessions/:id/assets/attach` 要求资料属本人、`upload_status=succeeded` 且未关联其他场次；重复关联本场次幂等返回，已关联其他场次返回 `409 DATASET_ALREADY_LINKED`，资料不存在或越权返回 `404 DATASET_NOT_FOUND`。统一入库和关联服务保证 `interview_session_id` 与 `interview_source_type` 同时设置或同时为空；该内部一致性校验不增加新的请求或响应字段。解除关联只清空这两列，物理删除只能在资料库进行；删除场次或求职进程同样只解除关联。音视频内容使用 `inline` 分发以支持播放，文档使用附件下载；响应不暴露对象键。
 
@@ -373,9 +392,10 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 | `POST` | `/api/mock-interviews/:id/finish` | 提前结束；有作答时进入 `evaluating`，否则为 `abandoned` |
 | `POST` | `/api/mock-interviews/:id/abandon` | 放弃 `preparing`、`preparation_failed` 或 `in_progress` 的场次 |
 | `POST` | `/api/mock-interviews/:id/retry` | 准备失败或评估失败后重试 |
-| `POST` | `/api/mock-interviews/:id/repeat` | 按原来源与配置重新读取来源并发起新场次，返回 `201` |
+| `POST` | `/api/mock-interviews/:id/repeat` | 按原来源与配置发起新场次，返回 `201`；可选请求体 `{answer_mode:"text"|"voice"}` 覆盖新场作答方式，省略时沿用原场 |
 | `DELETE` | `/api/mock-interviews/:id` | 删除非进行中场次及其提问和录音，返回 `{deleted: true}` |
 | `GET` | `/api/mock-interviews/speech-capability` | 返回 `{stt, tts}`，表示语音识别与语音合成场景是否有有效线路 |
+| `POST` | `/api/mock-interviews/:id/speech/playback` | 本人语音场次的设备试音 `{}` 或当前未答题目 `{question_id}`；返回 `audio/mpeg`、`Cache-Control: no-store`，不接受任意文本 |
 | `WS` | `/api/mock-interviews/:id/speech?question_id=&purpose=voice_input\|voice_answer` | 实时语音识别，见下文 |
 | `POST` | `/api/mock-interviews/:id/transcripts:correct` | 已完成的语音面试整场 AI 修正识别稿，每场一次 |
 | `PUT` | `/api/mock-interviews/:id/questions/:qid/transcript` | 对照录音手动修改一条语音回答的最终稿 `{text}` |
@@ -383,17 +403,19 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 | `GET` | `/api/mock-interviews/:id/questions/:qid/recording` | 本人读取一条回答的录音（`audio/wav`，16 kHz 单声道） |
 | `DELETE` | `/api/mock-interviews/:id/recordings` | 删除本场全部录音，保留文字 |
 
-发起请求必须提供 `job_application_id` 或 `resume_id`；求职记录来源不能再带 `job_description_id` 或 `job_description_text`，后两者也不能同时提交，违反时返回 `422`。可选字段为 `target_role`（≤200）、`interview_type=technical|project_deep_dive|hr|comprehensive`、`difficulty=junior|intermediate|senior`（默认 `intermediate`）、`question_count` 3–10（默认 5）、`follow_up_enabled`（默认 `true`）、`language=zh|en`（默认 `zh`）、`answer_mode=text|voice`（默认 `text`）最多 10 个 `material_ids`，以及 `materials_in_questions`（默认 `false`）。`materials_in_questions=false` 时所选资料只用于报告事实核验，背景分析与出题不读取资料；为 `true` 时出题也参考所选资料；未选资料时按 `false` 保存。详情和列表返回同名字段，再练一次沿用原值。`answer_mode=voice` 要求 `speech_to_text` 与 `text_to_speech` 都有有效线路，否则返回 `503 MOCK_INTERVIEW_SPEECH_UNAVAILABLE` 且不创建记录；再练一次沿用原场作答方式。
+发起请求必须提供 `job_application_id` 或 `resume_id`；求职记录来源不能再带 `job_description_id` 或 `job_description_text`，后两者也不能同时提交，违反时返回 `422`。可选字段为 `target_role`（≤200）、`interview_type=technical|project_deep_dive|hr|comprehensive`、`difficulty=junior|intermediate|senior`（默认 `intermediate`）、`question_count` 3–10（默认 5）、`follow_up_enabled`（默认 `true`）、`language=zh|en`（默认 `zh`）、`answer_mode=text|voice`（默认 `text`）最多 10 个 `material_ids`，以及 `materials_in_questions`（默认 `false`）。`materials_in_questions=false` 时所选资料只用于报告事实核验，背景分析与出题不读取资料；为 `true` 时出题也参考所选资料；未选资料时按 `false` 保存。详情和列表返回同名字段，再练一次沿用原值。`answer_mode=voice` 要求 `speech_to_text` 与 `text_to_speech` 都有有效线路，否则返回 `503 MOCK_INTERVIEW_SPEECH_UNAVAILABLE` 且不创建记录；再练一次默认沿用原场作答方式，显式覆盖为语音时也检查 STT/TTS 线路。
 
-作答和跳过请求体为 `{question_id, answer}` 与 `{question_id}`，必须携带 8–64 位 `[A-Za-z0-9_.:-]` 的 `Idempotency-Key`；回答去除首尾空白后为 1–8000 字符。同一题目以相同幂等键重放只返回 `answer.accepted`，不产生新回答或新回合。SSE 事件依次为 `answer.accepted {question_id, skipped, lock_version}`、零到多个 `interviewer.delta {content}`，最后是 `interviewer.turn {status, action, question, closing_message, lock_version}` 或 `interviewer.failed {error}`。`action=finish` 时 `question` 为空、`closing_message` 为结束语，场次进入 `evaluating`。每个回合流都以 `interviewer.turn` 或 `interviewer.failed` 之一结束；非模型错误的失败码为 `MOCK_INTERVIEW_TURN_FAILED`。回合失败时回答已保存，详情的 `needs_reply=true`，调用方用 `reply:retry` 重新生成；无需重新生成时该接口返回 `409 MOCK_INTERVIEW_STATE_INVALID`。
+作答和跳过请求体为 `{question_id, answer}` 与 `{question_id}`，必须携带 8–64 位 `[A-Za-z0-9_.:-]` 的 `Idempotency-Key`；回答去除首尾空白后为 1–8000 字符。同一题目以相同幂等键重放不产生新回答，也不再次消费语音会话；面试官已回复时只返回 `answer.accepted`，尚未回复时可继续生成回合。`created_at`、`started_at`、`finished_at`、`answered_at` 与 `transcript_corrected_at` 均为带 `Z` 的 UTC 时间；可空时间未设置时为 `null`。SSE 事件依次为 `answer.accepted {question_id, skipped, lock_version}`、零到多个 `interviewer.delta {content}`，最后是 `interviewer.turn {status, action, question, closing_message, lock_version}` 或 `interviewer.failed {error}`。`action=finish` 时 `question` 为空、`closing_message` 为结束语，场次进入 `evaluating`。每个回合流都以 `interviewer.turn` 或 `interviewer.failed` 之一结束；非模型错误的失败码为 `MOCK_INTERVIEW_TURN_FAILED`。回合失败时回答已保存，详情的 `needs_reply=true`，调用方用 `reply:retry` 重新生成；无需重新生成时该接口返回 `409 MOCK_INTERVIEW_STATE_INVALID`。
 
-**语音识别通道**：WebSocket 使用登录 Cookie 鉴权，并要求 `Origin` 与 `Host` 同源，否则以关闭码 `4403` 拒绝；场次不属于本人、不在 `in_progress`、`question_id` 不是当前题或 `purpose` 与作答方式不符（文字面试只能 `voice_input`，语音面试只能 `voice_answer`）时以 `4409` 关闭。客户端发送 16 kHz 单声道 PCM16 二进制帧，发送 `{"type":"stop"}` 结束；单次最长 5 分钟、10 MB，达到上限自动结束。服务端推送 `{"type":"partial","text"}`，结束时推送 `{"type":"final","session_id","text","duration_ms","words":[{text,start_ms,end_ms}],"partial"}` 后关闭；服务商失败且没有识别出文字时推送 `{"type":"error","code":"MOCK_INTERVIEW_SPEECH_FAILED"}`，已识别出文字时仍返回 `final` 且 `partial=true`。`session_id` 10 分钟内有效、只能用于本人本场当前题的一次提交。
+**语音识别通道**：WebSocket 使用登录 Cookie 鉴权，并要求 `Origin` 与 `Host` 同源，否则以关闭码 `4403` 拒绝；场次不属于本人、不在 `in_progress`、`question_id` 不是当前题或 `purpose` 与作答方式不符（文字面试只能 `voice_input`，语音面试只能 `voice_answer`）时以 `4409` 关闭。客户端发送 16 kHz 单声道 PCM16 二进制帧，发送 `{"type":"stop"}` 结束；单次最长 5 分钟、10 MB，达到上限自动结束。服务端推送 `{"type":"partial","text"}`，结束时推送 `{"type":"final","session_id","text","duration_ms","words":[{text,start_ms,end_ms}],"partial"}` 后关闭；服务商失败且没有识别出文字时推送 `{"type":"error","code":"MOCK_INTERVIEW_SPEECH_FAILED"}`，已识别出文字时仍返回 `final` 且 `partial=true`。识别结果与待提交录音共享 Redis 的 10 分钟 TTL，支持跨进程提交；`session_id` 10 分钟内有效、只能用于本人本场当前题的一次提交。
 
-**语音作答**：作答请求可带 `speech_session_id`（32 位小写十六进制），此时 `answer` 可省略。语音面试只接受 `speech_session_id`（或跳过），回答以服务端识别稿为准并保存录音，提交纯文字返回 `422 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`；文字面试带 `speech_session_id` 时仍以 `answer` 为准，只记录来源 `voice_input` 与时长，不保存录音。识别会话过期、已使用或不属于该题返回 `409 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`，识别稿为空返回 `422 MOCK_INTERVIEW_SPEECH_EMPTY`。语音面试的回合 SSE 在 `interviewer.delta` 之间按句追加 `interviewer.audio {seq, text, format:"mp3", data}`（base64），合成失败时改发 `interviewer.audio_failed {seq, text}`，面试不中断；所有音频事件都在 `interviewer.turn` 之前发出。
+**语音作答**：作答请求可带 `speech_session_id`（32 位小写十六进制），此时 `answer` 可省略。语音面试只接受 `speech_session_id`（或跳过），回答以服务端识别稿为准并保存录音，提交纯文字返回 `422 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`；文字面试带 `speech_session_id` 时仍以 `answer` 为准，只记录来源 `voice_input` 与时长，不保存录音。识别会话过期、已使用或不属于该题返回 `409 MOCK_INTERVIEW_SPEECH_SESSION_INVALID`，识别稿为空返回 `422 MOCK_INTERVIEW_SPEECH_EMPTY`。录音存储失败返回 `502 MOCK_INTERVIEW_RECORDING_STORE_FAILED` 并恢复识别会话，可用原幂等键重试。语音面试的回合 SSE 在 `interviewer.delta` 之间按句追加 `interviewer.audio {seq, text, format:"mp3", data}`（base64），合成失败时改发 `interviewer.audio_failed {seq, text}`，面试不中断；所有音频事件都在 `interviewer.turn` 之前发出。
 
 **识别稿修正与重新评估**：`transcripts:correct` 只对 `completed` 的语音面试可用，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；已执行过返回 `409 MOCK_INTERVIEW_TRANSCRIPT_ALREADY_CORRECTED`；`transcript_correction` 未配置返回 `503 LLM_MODEL_NOT_CONFIGURED` 且不消耗本场次数。响应为 `{items:[{question_id, state, changes}], mock_interview}`，`state` 为 `corrected|correction_rejected|original`。手动修改相对原始识别稿的字符变化超过 15% 返回 `422 MOCK_INTERVIEW_TRANSCRIPT_CORRECTION_REJECTED`，录音已删除返回 `404 MOCK_INTERVIEW_RECORDING_NOT_FOUND`。重新评估要求该题（含追问）识别稿已被修正或修改，否则 `409 MOCK_INTERVIEW_STATE_INVALID`；超过 3 次返回 `409 MOCK_INTERVIEW_RE_EVALUATE_LIMIT`；响应为 `{question_id, evaluation, re_evaluate_count, remaining, total_score, previous_total_score, mock_interview}`。
 
 详情返回来源与配置摘要、`materials`、`current_question_id`、`answered_main_questions`、`needs_reply`、有序 `questions` 和 `report`；`report` 只在 `completed` 时返回，包含 `rubric_version`、`answer_mode`、`voice_metrics`（语音面试的 `chars_per_minute`、`long_pauses`、`filler_ratio`、`answer_duration_ms`、`reference` 与 `tip`，文字面试为 `null`）、`re_evaluations`（如有）、`total_score`、`question_average`、`dimension_score`、`dimensions`、逐题 `questions`、`fact_check`、`resume_risks`、`improvements`、`low_confidence` 与 `closing_message`。`fact_check.status` 为 `not_requested|completed|failed`。详情另含 `answer_mode`、`transcript_corrected_at`、`recordings_deleted`；每条提问另含 `answer_source`、`audio_duration_ms`、`has_recording`、`raw_transcript`、`transcript_state`、`correction`、`re_evaluate_count` 与 `evaluation_history`。
+
+Web 消费方：作答与跳过每次发送新的 `Idempotency-Key`；回合 SSE 没有 `interviewer.turn` 或 `interviewer.failed` 就结束视为连接中断，页面据详情的 `needs_reply` 提供 `reply:retry`；真实接口下 `preparing`、`evaluating` 靠轮询详情感知完成；录音读取 404 显示为不可用。详见 [AI 模拟面试](../features/mock-interview.md#web-前端)。
 
 | 错误码 | 场景 |
 | --- | --- |
@@ -592,3 +614,44 @@ Development 与 Production 使用独立 MinIO。各自 Bucket 内的当前指针
 ### 桌面资料库权限
 
 `get_current_dataset_user` 在 Authorization 存在时只接受 desktop Bearer，拒绝认证 Cookie 混用及 Web/小程序 token；无 Authorization 的 Web Cookie 行为保持不变。白名单为 `GET/POST /api/datasets`、`GET/POST /api/datasets/folders`、`PATCH/DELETE /api/datasets/folders/:id`、`GET/PATCH/DELETE /api/datasets/:id`、`GET /api/datasets/:id/{content|source}`、`POST /api/datasets/:id/retry`、`PATCH /api/datasets/:id/folder`、`POST /api/datasets/move-batch`、`PUT /api/datasets/:id/file`、`POST /api/interview-sessions/:id/assets/attach` 和 `DELETE /api/interview-sessions/:id/assets/:dataset_id`。ID 为无前导零的正十进制数，其他路径/方法拒绝该渠道。路由复用原有资源归属、文件真实性、容量、幂等、正文版本与永久删除规则，不开放任意对象存储 URL 或 legacy 素材上传入口。原文件流继续 private/no-store，客户端不得把 Bearer 注入网页或媒体外链。
+
+
+## 账号补充接口
+
+以下接口除回执查询与小程序身份确认外都要求当前 Web Cookie。不能由客户端指定另一个用户。
+
+| Method | Path | 契约 |
+| --- | --- | --- |
+| GET | `/api/account/profile` | 既有资料和简历摘要，新增 `user.contact_email`、`user.registered_at`、`current_session.device_label` 和 `capabilities`（auth_mode、can_change_password、can_delete_account、deletion_confirmation_method） |
+| PUT | `/api/account/contact-email` | JSON `{email: string|null}`；去空白后空串视为 null，仅校验格式和 254 字符上限，不验证所有权；返回 `{contact_email}` |
+| GET | `/api/account/preferences` | `{locale, interview_reminder_enabled, notifications_available:false}`；无记录默认 zh-CN/false |
+| PATCH | `/api/account/preferences` | 非空严格 JSON，仅接受 `locale:zh-CN|en-US` 与布尔 `interview_reminder_enabled` 的局部字段；非法类型、未知键或空请求拒绝 |
+| POST | `/api/account/change-password` | 仅 Local/Development；`{current_password,new_password,confirm_password}`，成功 `{ok:true}`，撤销账号全部会话并清 Cookie |
+| POST | `/api/account/wechat/verification-request` | 仅 Production 且注销开启；`{action:"delete_account"}`，返回 `{scene,poll_token,qrcode_data,expires_at}` |
+| POST | `/api/account/wechat/verification-confirm` | 小程序 JSON `{scene,code}`，以新微信 code 确认原账号与原网页会话；不建号、不发会话 |
+| POST | `/api/account/wechat/verification-status` | Web JSON `{scene,poll_token}`，仅原 session 可查询；verified 时返回本次 `action_token` |
+| POST | `/api/account/wechat/verification-cancel` | 同上；取消后旧凭证不可用 |
+| POST | `/api/account/deletion` | `confirmation` 必须为 `注销账号`；开发 `{method:"password",current_password,confirmation}`，正式 `{method:"wechat",action_token,confirmation}`；严格拒绝额外字段。受理 `202 {job_id,receipt_token,status:"pending"}` |
+| POST | `/api/account/deletion-status` | 匿名 JSON `{job_id,receipt_token}`；只返回 `status`、`phase`、可选 `error_code`。错误回执或过期均 404 |
+
+微信确认五分钟有效，绑定 user/session/action；状态为 pending、verified、cancelled、consumed、expired，刷新取码取消旧请求。验证失败、跨账号或会话、取消、到期、消费后不允许注销。回执和 poll token 放请求体，不放 URL。
+
+主要账号错误包括 `INVALID_CONTACT_EMAIL`、`INVALID_ACCOUNT_PREFERENCES`、`INVALID_CURRENT_PASSWORD`、`WEAK_PASSWORD`、`PASSWORD_MISMATCH`、`PASSWORD_UNCHANGED`、`INVALID_ACCOUNT_CONFIRMATION_METHOD`、`INVALID_ACCOUNT_DELETION_CONFIRMATION`、`ACCOUNT_DELETION_FORBIDDEN`、`ACCOUNT_SHARED_RESOURCE_OWNER`、`ACCOUNT_BUSY`、`WECHAT_IDENTITY_REQUIRED` 和 `WECHAT_IDENTITY_MISMATCH`。清理状态为 pending/processing/retry_wait/needs_attention/completed；阶段为 database/objects/rag/complete。详细语义见[账号功能](../features/identity-account.md)。
+
+Agent 结构化上下文增加 `type:"user_profile"`；ID 必须属于当前账号，`version` 必须准确匹配画像的当前 `lock_version`。材料目录只返回元数据，显式选择后才以只读 `profile_markdown` 进入 Pi，认证和联系字段不进入正文。
+
+## 文字 AI 面试复盘
+
+`POST /api/interview-sessions/:id/review:generate` 接受 canonical UUID `request_id` 和 `base_lock_version`，校验通过后返回 `202` 与既有场次详情结构（`review_status=generating`），报告在后台生成，客户端轮询场次详情读取终态。仅本人未归档的已完成场次可生成；必须有不超过 50,000 字符的 `questions_markdown`。401 为失效账号，越权或不存在返回 404；状态不适用、乐观锁过期、源记录变化的重复请求和账号已有活动生成返回 409。无文字或超长返回 400。模型未配置返回 503，模型或证据验证失败返回 502，原文字和已有报告不被清除。
+
+场次详情和列表增加可空的 `review_report`、`review_status`、`review_request_id`、`review_error`、`review_started_at`，以及 `review_stale`。报告包含 `schema_version: 1`、`source_hash`、`generated_at`、`summary`、可空 `overall_score`、三项 `{score, reason, evidence}` 和问题数组 `{question, answer, evidence, strength, improvement, suggested_answer}`。`score` 范围 0–10，证据不足留空；综合分要求三项分数齐全。问题、原回答和非空评分证据须摘录源记录；建议回答与原回答分开保存。旧手写 `review_summary` 等字段仍可编辑，生成不覆盖它们。
+
+响应中的 `review_request_id` 标识当前生成。网络结果不明确时，只有读到同 UUID 的终态才结束该次重试，读到旧报告或读取失败仍复用原 UUID。相同 UUID 和源文字重复请求复用原生成状态，不再次调用模型；失败后的显式重新生成使用新 UUID。源记录在生成期间改变，返回详情中的 `review_status=failed`、`review_error=INTERVIEW_REVIEW_SOURCE_CHANGED`，原记录和旧报告保留。旧报告源哈希与当前文字不同即 `review_stale=true`。活动生成超过 5 分钟没有心跳即视为中断，同 UUID 重试返回 `502 INTERVIEW_REVIEW_INTERRUPTED`。
+
+**复盘报告 v2（0110）**：新生成的报告为 `schema_version: 2`，包含 `rubric_version`、`headline`、`summary`、`verdict{level: likely_pass|promising|at_risk|likely_fail, confidence: high|medium|low, confidence_reason, signals[{polarity, quote, meaning}], adjusted_by_signals, fatal_questions}`、可空 `total_score`（0–100）与 `grade`（excellent/good/pass/improve）、`question_average`、`dimension_score`、`first_axis`（professional_depth 或 motivation_fit）、`category_counts`、`dimensions[{key, assessed, score(1–5), weight, evidence, comment}]`、`questions[{index, key, question, answer, category, answer_status, follow_ups, expected_depth, achieved_depth, score, signals[{signal, verdict, quote}], factual_errors, resume_conflict, strength, improvement, suggested_answer, evidence_snippets[{dataset_id, title, text}]}]`、`improvements[{title, detail, priority, dimension, question_indexes}]` 与 `basis{transcript_source, transcript_chars, resume_title, has_job, material_snippets, material_mode, downgraded_quotes, dropped_questions}`。识别不出可评估题目时失败为 `INTERVIEW_REVIEW_NO_QUESTIONS`。v1 报告保持原结构。
+
+**逐题复盘笔记（0110）**：场次详情增加 `review_question_notes[{id, question_key, question_text, verdict: good|improve|null, note, lock_version, updated_at}]`。`PUT /api/interview-sessions/:id/review-notes` 接受 `question_text`（1–1000）、`verdict`、`note`（≤2000）和 `lock_version`（新建时省略，更新时必须等于当前值，否则 409）；返回 `{note}`，标记与笔记都为空时删除并返回 204。`DELETE /api/interview-sessions/:id/review-notes/:noteId` 返回 204。笔记按题目原文指纹挂接，客户端用报告题目的 `key` 匹配，未匹配的笔记照常返回。
+
+**录音转写（0110）**：场次详情增加 `transcript_source`（manual/transcription/null）与 `transcriptions[{dataset_id, status, error_code, pending_replace, result_duration_ms, updated_at}]`。上传或关联音视频到非笔试场次时自动建任务；`PUT /api/interview-sessions/:id` 修改 `questions_markdown` 时来源置为 manual。`POST /api/interview-sessions/:id/transcriptions/:datasetId:retry` 对失败或已取消的任务重新排队（录音未关联本场返回 400，其他状态 409 `INTERVIEW_TRANSCRIPTION_INVALID_STATE`，功能关闭 503）；`POST …/transcriptions/:datasetId:apply` 接受 `base_lock_version`，用待替换结果覆盖文字稿（无待替换结果 409，版本过期 409）。失败码包括 `INTERVIEW_TRANSCRIPTION_NOT_CONFIGURED`、`…_STORAGE_UNAVAILABLE`、`…_FORMAT_UNSUPPORTED`、`…_DOWNLOAD_FAILED`、`…_AUDIO_TOO_LONG`、`…_EMPTY`、`…_TIMEOUT`、`…_FAILED`。
+
+**笔试题导入（只预览，不保存）**：`POST /api/interview-sessions/:id/written-questions:extract` 为 multipart：`source=text` + `text`（≤20,000 字）、`source=dataset` + `dataset_id`（本人已解析完成的文档）、或 `source=images` + 1–5 个 `files`（png/jpg/webp，每张 ≤5MB，识别后不保存）。仅笔试或测评场次可用（否则 400 `INTERVIEW_NOT_WRITTEN_TEST`）。返回 `{questions[{no, text}], markdown}`；识别不到题目 422，模型未配置 503。确认后由客户端通过 `PUT /api/interview-sessions/:id` 保存 `questions_markdown`。

@@ -81,6 +81,7 @@ class AgentSelectionContext(BaseModel):
 
 
 AgentContextType = Literal[
+    "user_profile",
     "resume",
     "resume_version",
     "dataset",

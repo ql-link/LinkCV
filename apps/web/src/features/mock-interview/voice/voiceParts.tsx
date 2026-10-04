@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 // 语音面试各页面共用的小件：波形、计时格式、面试官头像（羽毛）、用户头像。
 import type { CSSProperties } from "react";
 import feather from "@/features/assistant/assistant-assets/assistant-feather.png";
@@ -40,6 +41,7 @@ export function Waveform({
   className?: string;
   style?: CSSProperties;
 }) {
+  useLocale();
   return (
     <span className={`vx-wave ${className}`} aria-hidden="true" style={{ height, gap, ...style }}>
       {values.map((value, index) => {
@@ -67,6 +69,7 @@ export function lastSamples(history: number[], count: number) {
 }
 
 export function FeatherOrb({ size, ring = "var(--v3-cl)", icon, className = "", style }: { size: number; ring?: string; icon: number; className?: string; style?: CSSProperties }) {
+  useLocale();
   return (
     <span className={`vx-orb ${className}`} style={{ width: size, height: size, borderColor: ring, ...style }} aria-hidden="true">
       <img src={feather} alt="" style={{ width: icon, height: Math.round(icon * 0.96) }} />
@@ -75,16 +78,18 @@ export function FeatherOrb({ size, ring = "var(--v3-cl)", icon, className = "", 
 }
 
 export function FeatherMark({ size = 24 }: { size?: number }) {
+  useLocale();
   return <img className="vx-feather-mark" src={feather} alt="" aria-hidden="true" style={{ width: size, height: Math.round(size * 0.96) }} />;
 }
 
 export function useUserInitial() {
   const user = useResumeStore((state) => state.user);
-  const name = user?.nickname || user?.email || "我";
-  return [...name][0] ?? "我";
+  const name = user?.nickname || user?.email || t("我");
+  return [...name][0] ?? t("我");
 }
 
 export function UserAvatar({ size, fontSize, className = "", style }: { size: number; fontSize: number; className?: string; style?: CSSProperties }) {
+  useLocale();
   const initial = useUserInitial();
   return (
     <span className={`vx-user ${className}`} style={{ width: size, height: size, fontSize, ...style }} aria-hidden="true">

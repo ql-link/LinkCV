@@ -1,73 +1,63 @@
 # 账号与身份功能
 
-## 功能范围
+## 功能范围与入口
 
-LinkResume 的账号功能覆盖普通用户注册和登录、微信扫码登录、小程序登录、Web、小程序与 desktop 会话刷新与退出、微信绑定、本人资料维护，以及管理员查询和启停用户。它为简历、求职中心、AI 助手和资料集提供统一身份，不包含这些领域自己的业务操作。
+账号功能提供普通用户身份、本人资料、联系邮箱、求职画像、偏好、Web、小程序与 desktop 会话管理和账号注销。普通用户的认证方式按环境互斥：Local/Development 只开放邮箱密码注册、登录和改密，Production 只开放微信扫码与小程序登录；管理员的 `/admin/login` 密码入口独立保留。开发环境的所有微信认证和身份确认接口返回 404（包括桌面二维码、状态、领取与续期），正式环境的普通邮箱注册、密码登录和改密接口返回 404。前端从后端能力响应选择入口，能力读取失败时显示重试。
 
-浅色 Web 工作区的页面背景统一使用暖白背景 Token，账号页的卡片和交互层仍保持独立表面层级。
+`/account` 展示真实注册时间、当前 Web 会话的设备摘要和简历数量，支持昵称、头像、联系邮箱、求职资料和偏好保存。普通用户不再提供微信绑定、解绑或换绑操作。`/account-deletion` 是匿名注销进度页，受理后通过当前标签页持有的回执查询状态。
 
-完整 HTTP 路径、请求字段和错误码见 [HTTP 接口契约](../api/http-contracts.md)；运行时鉴权与渠道关系见 [Backend 架构](../internals/backend.md) 和 [小程序架构](../internals/miniprogram.md)。
+Web 账号页的英文标题、字段值、说明和操作控件使用 Poppins；中文沿用思源黑体及 V3 页面标题字体。两套产品西文字体随应用本地发布，界面与阅读字体的分工、加载及授权见 [Web 架构](../internals/web.md)。
 
-## 用户入口
+完整路径和错误见 [HTTP 接口契约](../api/http-contracts.md)，数据与清理实现见 [Backend 架构](../internals/backend.md)，微信身份确认客户端见 [小程序架构](../internals/miniprogram.md)。
 
-- Web `features/auth/`：登录、注册和微信扫码；Local/Development 支持邮箱密码，Production 普通用户只显示微信扫码。
-- Web `/account`：个人信息、安全、偏好与求职资料。昵称、头像和个人画像沿用真实接口；最近会话放在共享侧栏。邮箱修改、改密、微信绑定/解绑、提醒和注销的设计交互目前标有“需后端”，只做本地模拟，不发送账号写请求，也不更改真实邮箱、绑定、密码或注销账号。退出登录继续使用真实接口。
-- 小程序登录页、“我的”页和扫码确认页：用户主动确认隐私指引后登录或建号。
-- 管理端用户页：管理员查询用户、查看统计并启用或禁用账号。
+## 本人资料与联系邮箱
 
-## 代码地图
+账号页在内容卡较窄时将区块标题与设置卡上下排列，更窄时允许设置值换行。头像编辑表单与个人画像弹窗在窄容器中使用单列，个人画像分类在窄弹窗中使用两列选项；登录表单宽度受可用空间约束，顶部留白随窗口高度收缩。共享导航与弹窗约束见 [Web 响应式布局](../internals/web.md#响应式布局)。
 
-| 层级 | 入口 | 职责 |
-| --- | --- | --- |
-| HTTP | `modules/identity/routes.py` | Web 注册、登录、能力查询、刷新、退出和当前用户 |
-| 微信 | `modules/identity/wechat_routes.py` | 二维码、轮询、确认/取消、小程序登录与刷新 |
-| 账号 | `modules/identity/account_routes.py` | 本人资料、头像，以及个人画像的读取和整体替换 |
-| 管理 | `modules/identity/admin_routes.py` | 管理员用户列表、详情、状态和统计；详情中的累计 LLM 调用数与估算费用读取 `llm_call_logs` |
-| 管理台统计 | `modules/admin_insights/` | 用户总数、新增、活跃、禁用、管理员数和 14 天注册趋势等只读统计 |
-| 会话 | `modules/identity/session_service.py` | 统一凭据准备、Web/小程序创建与轮换、三渠道撤销基础原语 |
-| 桌面 | `modules/identity/desktop_routes.py`、`desktop_login_service.py` | 桌面扫码证明、原子领取与轮换、短期密文恢复、验证 secret 的退出 |
-| 鉴权依赖 | `modules/identity/dependencies.py` | 统一认证上下文及 Web、mini、desktop、只读 workspace 和管理员的显式渠道边界 |
-| Web | `features/auth/`、`features/account/` | 登录与用户中心界面 |
+- `users.email` 是开发环境的登录身份；`users.contact_email` 是可编辑、可清空的联系邮箱。修改联系邮箱不修改登录邮箱，不发送验证码，不宣称已验证。
+- 昵称和头像沿用本人归属校验；头像为私有对象。注册时间来自数据库，设备摘要来自当前可信 session 保存的有界 User-Agent，旧会话缺少信息时显示通用摘要。
+- `user_profiles` 一对一保存城市、薪资、工作性质、教育、经验与技能成果。账号页展示城市、薪资、工作经验和学历院校的只读摘要，“详情”打开完整编辑弹窗。保存使用 `base_lock_version` 乐观锁，成功同步摘要，冲突返回最新资料供刷新，不覆盖简历。
+- 求职画像可被用户显式选为当前 AI 运行的只读材料。后端按本人归属和当前版本读取，只传求职字段，不传认证身份或联系邮箱；没有选择时不自动读取。见 [AI 求职助手](ai-assistant.md)。
+- 画像读取兼容旧数据中与 `education_level` 对应的重复学历标签（例如 `bachelor` 配合 `school_tier=["本科"]`），响应中仅保留合法院校层次，数据库原记录与版本号不变；API 读取、版本冲突响应和 AI 材料使用同一规则。新写入继续严格校验院校层次。Web 读取失败时可以点击画像入口重试。
 
-## 核心规则
+## 偏好与界面语言
 
-- Web 使用 Cookie，mini 与 desktop 使用各自 Bearer，三渠道不能互换或混合认证 Cookie。桌面拥有简历只读、岗位看板与面试排期的明确方法/路径白名单，管理员角色不能扩大渠道权限，详见 [桌面会话契约](../api/http-contracts.md#桌面-bearer-会话)。
+账号页的偏好区域只提供界面语言设置，不展示面试提醒开关。`account_preferences` 保存 `locale`（`zh-CN|en-US`），保留 `interview_reminder_enabled` 字段以兼容已有数据和接口；未写入偏好的账号读取默认中文。PATCH 只保存本次字段，失败保留界面旧值。当前不发送邮件或微信通知，响应中的 `notifications_available` 恒为 false。
+
+普通用户 Web 工作区支持中英文，覆盖登录、导航、账号、简历、模板、求职中心、资料库、AI 助手、模拟面试界面及公共分享和错误状态。访客语言保存在浏览器，登录后以账号偏好为准。切换不翻译简历正文、模板样例、岗位原文或 AI 回答，不改变模拟面试的作答语言；管理台和小程序不包含在此本地化范围。实现入口见 [Web 架构](../internals/web.md)。
+
+## 会话与密码
+
+- Web 使用 Cookie，mini 与 desktop 使用各自 Bearer，三渠道不能互换或混合认证 Cookie。桌面拥有简历只读、岗位看板、面试排期与阶段详情（录音、转写、逐题笔记、笔试题导入、AI 复盘生成）、文字模拟面试和资料库的明确方法/路径白名单，管理员角色不能扩大渠道权限，详见 [桌面会话契约](../api/http-contracts.md#桌面-bearer-会话)。
 - 桌面 Core 的 access 仅驻留内存，refresh 与固定请求 ID 的恢复日志通过原子安全存储接口保存；网络失败保留日志，明确失效清理。共享续期负责统一保存，退出以会话代次拒绝迟到写回，远端撤销失败不冒充成功。两端正式 App 已注入 HTTP 与 Keychain/Credential Locker，支持扫码及状态消费；进程唯一所有者、凭据保存和验收边界见 [`apps/native/README.md`](../../apps/native/README.md)。
-- Web 受保护请求遇到 `401` 时共用一次续期并最多重试一次；支持 Web Locks 的浏览器还会跨同源标签页串行续期，取得锁后先检查当前登录态，复用其他标签页已经更新的 Cookie，避免并发轮换触发会话撤销。不支持 Web Locks 时保留单标签页内的并发合并。对话发送与恢复订阅同样遵守该规则，续期期间取消的对话不会重发。
-- Web 冷启动先独立确认当前用户，再加载简历概览；概览或其他业务数据返回普通 `5xx` 时保留已经确认的登录态并显示加载错误，只有当前用户为空或后续请求明确返回 `401` 才进入访客状态。
-- 用户中心的保存、上传和个人画像提交反馈统一通过页面根层在视口上方居中展示，不使用占据业务卡片或编辑弹窗位置的局部错误块，并在 3 秒后自动消失；首次页面加载失败保留完整错误状态和重试入口。
-- 微信 openid 已存在时复用账号；首次建号必须由用户主动操作并携带 `privacy_accepted=true`，不能由冷启动、重试或状态探测静默触发。
-- 普通用户只能维护本人资料；头像保存为私有对象，读取继续经过归属校验。
-- 个人画像独立于简历保存，通过唯一的 `GET/PUT /api/account/user-profile` 入口维护；保存使用乐观锁，过期版本返回最新画像供用户刷新后重试。
-- `GET /api/account/profile` 只聚合账号、已成功创建的简历数量和最近简历摘要，不内嵌个人画像，也不把失败或仍在处理的导入任务计入简历数量。
-- 工作性质只接受实习和全职；应届生必须填写毕业年份且工作年限固定为 0，非应届生只填写工作年限。薪资上下限、币种和计薪周期按同一组约束校验。
-- 被禁用账号不能继续使用既有会话；退出和刷新由统一 session 生命周期处理。
-- 管理员身份与普通用户身份使用同一 `users` 表，但管理员登录入口、依赖和授权检查独立。
 
-- 新账号在建号的同一事务内写入一条 `user_registered` 产品漏斗事件（方式为 `wechat_qr`、`wechat_miniprogram` 或 `email`）；复用已有账号或并发建号回查时不写，建号失败则事件一并回滚。口径见 `docs/internals/observability.md`。
+Web 使用 HttpOnly Cookie，小程序使用 Bearer，两种 channel 不能混用。Web 的 401 请求合并续期，最多重试一次；支持 Web Locks 时跨标签页串行续期。冷启动先确认当前用户，普通业务 5xx 不清空已确认的登录态。
 
-## 数据归属
+开发环境改密要求当前密码、新密码和重复确认；新密码至少八位且包含字母和数字，不得与旧密码相同。成功后撤销该账号的所有会话并回到登录页。撤销失败不提交新密码。退出只撤销当前会话。
 
-`users` 是账号、状态、管理员标记、昵称、头像对象键和微信绑定信息的权威表。`user_profiles` 与用户一对一，保存城市、工作性质、薪资、工作经验、教育背景和技能成果，不复制到简历内容。Redis 保存可撤销 session；对象存储保存头像二进制。业务模块不能自行解析 Cookie/Bearer token 或复制用户状态。
+被停用或已申请注销的账号不能登录、续期、访问业务接口或公开分享；管理员不能重新启用申请注销的账号。认证和写操作以可信身份为准，不接受客户端指定另一用户。
 
-## 关键流程
+## 注销与失败边界
 
-1. Web 登录验证账号后创建 Web channel session，并以 HttpOnly Cookie 返回 access/refresh。
-2. 小程序以微信 code 换取 openid，在隐私门禁通过后复用或创建用户，再返回小程序 channel token。
-3. 网页扫码由 Web 创建二维码状态，小程序主动确认后建立网页端会话；取消、过期和已消费状态不能重复签发。
-4. 账号资料修改先校验当前用户；头像写入受控对象键，替换或删除时同步处理旧对象。
-5. 个人画像保存先比较 `base_lock_version`，再整体替换可编辑字段；版本冲突不覆盖数据库，客户端保留编辑窗口并使用响应中的最新画像刷新。
-6. 管理员启停用户只改变账号状态，其他模块在鉴权依赖处统一阻止禁用账号继续访问。管理台统计中的“活跃”只计算最近登录在窗口内且仍为启用状态的账号。
+`ACCOUNT_DELETION_ENABLED` 默认关闭。开启后，开发环境以当前密码确认，正式环境以本次操作的新微信确认凭证确认；两边均须准确输入 `注销账号`。微信确认绑定原网页会话、当前账号和注销动作，刷新二维码、取消、过期、退出和已消费状态均使旧凭证不可用。小程序确认不能建立登录会话或更换身份。
 
-## 权限与失败边界
+管理员、有公告等公共资源责任的账号，以及存在活跃 AI、模拟面试、上传或解析任务的账号不能注销。其他账号受理时在同一事务中禁用账号并建立持久清理任务；清理随后删除本人业务记录、私有对象及已登记 RAG 文件，保留其他用户和公共资源。注销不可恢复；外部清理失败进入重试或需人工处理状态，不提前宣称完成。
 
-- 未登录、普通用户、管理员和小程序用户使用不同依赖，不以客户端传入的用户 ID 代替会话身份。
-- Production 不公开普通邮箱注册、密码登录或普通改密入口；能力开关由后端返回，不由前端猜测环境。
-- 微信上游失败、二维码过期、channel 不匹配、refresh 重放和账号禁用都必须收敛为稳定 HTTP 错误，具体值见接口契约。
-- 头像对象存储失败不能留下数据库引用与实际对象不一致的成功结果。
+账号注销的数据库清理同时删除该用户的岗位与简历匹配结果（`job_resume_matches`），它们在岗位和简历之前删除。
 
-## 修改联动与验证
+回执密钥只保存在标签页的 sessionStorage/内存并随 POST 请求体发送，不进入 URL。进度只返回状态、阶段和安全错误码；完成任务七天后清除，密钥遗失或回执到期不提供身份恢复。部署开关、备份和真实外部服务验收见 [部署说明](../ops/deployment.md)。
 
-修改会话、Cookie、Bearer、微信、用户或个人画像字段时，需同步 `schemas.py`、Web API client、小程序请求层、数据库迁移、[HTTP 契约](../api/http-contracts.md)和[小程序架构](../internals/miniprogram.md)。主要自动化入口为 `test_account_routes.py`、画像迁移测试、`test_wechat_routes.py`、`test_identity_resumes_assets.py`、`test_wechat_bind_service.py`，以及 Web `AuthPage`、`WechatQrLogin`、`AccountPage`、`UserProfilePanel` 测试和小程序 `auth/account/request` 测试。
+## 代码地图与验证入口
 
-桌面文字模拟面试的受限接口由 `get_current_mock_interview_user` 校验，支持本人练习流程与只读资料选择；语音和资料写入仍拒绝 desktop Bearer。精确范围见 [HTTP 契约](../api/http-contracts.md#桌面文字模拟面试权限)。
+| 入口 | 职责 |
+| --- | --- |
+| `identity/routes.py`、`capabilities.py` | 环境认证能力与 Web 登录 |
+| `identity/account_routes.py` | 本人资料、联系邮箱、偏好、密码、微信操作确认与注销回执 |
+| `identity/session_service.py`、`dependencies.py` | 渠道会话、撤销、账号状态和有界写事务的用户行锁 |
+| `identity/desktop_routes.py`、`desktop_login_service.py` | 桌面扫码证明、原子领取与轮换、短期密文恢复和退出 |
+| `identity/wechat_action_service.py` | 单次微信操作确认状态与凭证 |
+| `identity/account_deletion_service.py` | 受理条件、停用事务和个人记录清理 |
+| `workers/account_deletion_worker.py` | 持久清理任务租约、重试和保留期 |
+| `features/auth/`、`features/account/`、`i18n/` | 普通 Web 认证、账号、进度和语言 |
+
+主要测试为后端 `test_account_completion.py`、`test_account_completion_mysql.py`、`test_profile_material.py`，Web 账号、认证与 i18n 测试，以及小程序 `account-confirm` 测试。微信平台的真机确认和真实 MinIO/LinkRag 清理须在目标环境单独验收，组件与接口替身测试不等同于跨端验收。

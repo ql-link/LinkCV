@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { forwardRef, useImperativeHandle, useRef, useState, type ReactNode } from "react";
 import { FileUp } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -31,7 +32,7 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
   supportingText,
   onFileSelect,
   onFilesSelect,
-  browseLabel = "浏览文件",
+  browseLabel = t("浏览文件"),
   className,
   children,
   icon = <FileUp />,
@@ -39,7 +40,7 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
   file = null,
   multiple = false,
   name = "import-file",
-  replaceLabel = "重新选择",
+  replaceLabel = t("重新选择"),
 }, forwardedRef) {
   const inputRef = useRef<HTMLInputElement>(null);
   const lastHandledFilesRef = useRef<File[] | null>(null);
@@ -101,7 +102,7 @@ export const FileUpload = forwardRef<FileUploadHandle, FileUploadProps>(function
         >
           <span className="file-upload-icon" aria-hidden="true">{icon}</span>
           <span className="file-upload-copy">
-            <strong>{file ? "点击重新选择或拖放文件替换" : multiple ? "点击上传或拖放多个文件" : "点击上传或拖放文件"}</strong>
+            <strong>{file ? t("点击重新选择或拖放文件替换") : multiple ? t("点击上传或拖放多个文件") : t("点击上传或拖放文件")}</strong>
             <small>{supportingText}</small>
             <span className="file-upload-browse"><FileUp aria-hidden="true" />{file ? replaceLabel : browseLabel}</span>
           </span>

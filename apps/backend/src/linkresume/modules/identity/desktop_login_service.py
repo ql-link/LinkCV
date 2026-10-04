@@ -8,6 +8,7 @@ import time
 
 import jwt
 from cryptography.fernet import InvalidToken
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.core.config import Settings
@@ -89,10 +90,11 @@ def challenge_for(verifier: str) -> str:
 
 
 def active_user(db: Session, uid: str, redis_client, sid: str | None = None) -> User:
-    user = db.get(User, int(uid)) if uid.isdecimal() else None
-    if user is not None:
-        db.refresh(user)
-    if user is None or user.status != 1:
+    user = db.scalar(
+        select(User).where(User.id == int(uid)).with_for_update()
+        .execution_options(populate_existing=True)
+    ) if uid.isdecimal() else None
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         if sid:
             revoke_session(redis_client, sid)
         raise ApiError(401, 'ACCOUNT_DISABLED')

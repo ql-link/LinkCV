@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { V3Shell } from "../../v3/Shell";
 import { Bar, Centered, Paper } from "../../v3/art";
 import "./workbench-v3.css";
@@ -13,6 +14,7 @@ export function EditorOpenError({
   onBack: () => void;
   onRetry: () => void;
 }) {
+  useLocale();
   return (
     <V3Shell active="none" bare scroll={false}>
       <div className="wb3-open-error-wrap">
@@ -35,12 +37,12 @@ export function EditorOpenError({
               <span className="wb3-open-error-badge" aria-hidden="true">!</span>
             </Centered>
           </div>
-          <h3 id="wb3-open-error-title">无法打开这份简历</h3>
+          <h3 id="wb3-open-error-title">{t("无法打开这份简历")}</h3>
           <p className="wb3-open-error-reason">{message}</p>
-          <p className="wb3-open-error-hint">你可以返回主页选择其他简历，或稍后重试。</p>
+          <p className="wb3-open-error-hint">{t("你可以返回主页选择其他简历，或稍后重试。")}</p>
           <div className="v3-empty-actions wb3-open-error-actions">
-            <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={onBack}>返回主页</button>
-            <button type="button" className="v3-btn v3-btn-dark is-lg" onClick={onRetry}>重新尝试</button>
+            <button type="button" className="v3-btn v3-btn-ghost is-lg" onClick={onBack}>{t("返回主页")}</button>
+            <button type="button" className="v3-btn v3-btn-dark is-lg" onClick={onRetry}>{t("重新尝试")}</button>
           </div>
         </section>
       </div>

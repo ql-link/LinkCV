@@ -7,6 +7,8 @@ concurrent request or a stale background task cannot overwrite newer progress.
 
 from __future__ import annotations
 
+from linkresume.modules.identity.dependencies import lock_active_user
+
 import asyncio
 import json
 import logging
@@ -135,6 +137,7 @@ def require_owned(db: Session, user_id: int, public_id: str, *, lock: bool = Fal
         MockInterview.public_id == public_id, MockInterview.user_id == user_id
     )
     if lock:
+        lock_active_user(db, user_id)
         statement = statement.with_for_update().execution_options(populate_existing=True)
     interview = db.scalar(statement)
     if interview is None:
@@ -317,6 +320,7 @@ def release_expired(db: Session, user_id: int) -> None:
     matches no row takes an InnoDB gap lock on the unique slot index, and two
     concurrent creates would then deadlock on their INSERTs.
     """
+    lock_active_user(db, user_id)
     now = utc_now()
     expired_task = db.execute(
         update(MockInterview)
@@ -1472,6 +1476,7 @@ def start(
     repeat_of_id: int | None = None,
     speech_snapshot: dict[str, object] | None = None,
 ) -> MockInterview:
+    lock_active_user(db, user_id)
     ensure_slot_free(db, user_id)
     interview = build_interview(db, user_id, request)
     interview.repeat_of_id = repeat_of_id
@@ -1482,7 +1487,7 @@ def start(
     return interview
 
 
-def repeat_request(interview: MockInterview) -> StartRequest:
+def repeat_request(interview: MockInterview, *, answer_mode: str | None = None) -> StartRequest:
     application_id = (
         interview.job_application_id if interview.source_type == "job_application" else None
     )
@@ -1503,7 +1508,7 @@ def repeat_request(interview: MockInterview) -> StartRequest:
         language=interview.language,
         material_ids=[int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []],
         materials_in_questions=interview.materials_in_questions,
-        answer_mode=interview.answer_mode,
+        answer_mode=answer_mode or interview.answer_mode,
     )
 
 
@@ -1554,6 +1559,7 @@ def submit_answer(
     A voice interview accepts only server recognition (``voice``) or a skip;
     typed text for it is rejected so the transcript cannot be forged.
     """
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     if _expire_if_stale(interview, utc_now()):
         db.commit()
@@ -1609,6 +1615,7 @@ def needs_reply(db: Session, interview: MockInterview) -> bool:
 
 def finish(db: Session, user_id: int, public_id: str) -> tuple[MockInterview, bool]:
     """End early. Returns (interview, should_evaluate)."""
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     if interview.status != "in_progress":
         raise _state_invalid()
@@ -1635,6 +1642,7 @@ def finish(db: Session, user_id: int, public_id: str) -> tuple[MockInterview, bo
 
 
 def abandon(db: Session, user_id: int, public_id: str) -> MockInterview:
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     if interview.status not in ("preparing", "preparation_failed", "in_progress"):
         raise _state_invalid()
@@ -1650,6 +1658,7 @@ def abandon(db: Session, user_id: int, public_id: str) -> MockInterview:
 
 
 def retry(db: Session, user_id: int, public_id: str) -> MockInterview:
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     _expire_if_stale(interview, utc_now())
     if interview.status == "preparation_failed":
@@ -1675,23 +1684,23 @@ def retry(db: Session, user_id: int, public_id: str) -> MockInterview:
     return interview
 
 
-def delete_interview(db: Session, user_id: int, public_id: str) -> str:
-    """Delete the interview; returns the recording prefix the caller must purge."""
+def delete_interview(db: Session, user_id: int, public_id: str, *, purge: Callable[[str], None]) -> None:
+    """Keep the row and object references available until storage deletion succeeds."""
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     _expire_if_stale(interview, utc_now())
     if interview.status in MOCK_INTERVIEW_ACTIVE_STATUSES:
         db.commit()
         raise _state_invalid()
+    purge(recording_prefix(interview))
     db.execute(
         update(MockInterview)
         .where(MockInterview.repeat_of_id == interview.id)
         .values(repeat_of_id=None)
     )
-    prefix = recording_prefix(interview)
     db.execute(delete(MockInterviewQuestion).where(MockInterviewQuestion.interview_id == interview.id))
     db.delete(interview)
     db.commit()
-    return prefix
 
 
 def serialize_question(question: MockInterviewQuestion) -> dict[str, object]:

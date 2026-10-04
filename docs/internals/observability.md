@@ -64,3 +64,8 @@ request ID 是跨日志关联键，不是用户身份；actor 只能来自已验
 ## 修改联动与验证
 
 修改上下文字段、审计动作或查询标签时，需同步 `middleware/audit/logging/loki/schemas`、管理端筛选、Promtail 配置、部署文档和接口契约。主要验证入口为 `test_observability.py`、`modules/observability/test_logging.py`、`test_loki.py`、管理端 `AdminObservabilityPanels` 测试和运行时契约检查。
+
+
+## 账号能力与客户端边界
+
+普通 Web 的错误边界、反馈提示和恢复操作使用账号界面语言；上报错误码、request ID 和原始诊断标识保持稳定。注销回执、微信操作 poll/action token 只随请求体传递，不进入 URL；清理日志仅记录安全错误码，不包含私有 manifest、邮箱或身份凭据。见[账号功能](../features/identity-account.md)。

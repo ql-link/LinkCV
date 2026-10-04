@@ -3,8 +3,10 @@ from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import QueuePool
 
 from linkresume.application.resumes.commands import CreateResumeCommand
 from linkresume.application.resumes.service import (
@@ -12,6 +14,7 @@ from linkresume.application.resumes.service import (
     resume_slot_count,
 )
 from linkresume.core.config import Settings
+from linkresume.core.database import Base, utc_now
 from linkresume.domain.resume import (
     CanonicalResumeDocument,
     ResumePresentation,
@@ -190,6 +193,7 @@ def build_processor(
     structuring_client=None,
     renderer_key: str = "flow",
     template_key: str = "classic-cn",
+    session_factory=None,
 ):
     settings = Settings(
         database_url="sqlite+pysqlite:///:memory:",
@@ -199,11 +203,12 @@ def build_processor(
     redis = FakeRedis()
     app = create_app(
         settings,
+        session_factory=session_factory,
         storage=storage,
         redis=redis,
         document_converter=converter or FakeConverter(),
         structuring_client=structuring_client or FakeStructuringClient(),
-        create_schema=True,
+        create_schema=session_factory is None,
     )
     service = ResumeImportService(
         document_converter=converter or FakeConverter(),
@@ -260,6 +265,29 @@ def build_processor(
         db.commit()
         storage.objects[record.object_name] = b"# Zhang San"
         return app, storage, processor, record.id, template.id
+
+
+def test_late_import_artifacts_cannot_upload_after_account_deletion_marker() -> None:
+    app, storage, processor, import_id, _ = build_processor()
+    with app.state.session_factory() as db:
+        task = db.get(DocumentParseTask, import_id)
+        uid = task.user_id
+        user = db.get(User, uid)
+        user.status = 0
+        user.deletion_requested_at = utc_now()
+        db.commit()
+    existing_objects = dict(storage.objects)
+    asyncio.run(processor._persist_converted_markdown(
+        import_id=import_id, user_id=uid, operation_id="fictional-late-import",
+        markdown="# Fictional late content",
+    ))
+    with pytest.raises(WorkerTaskRetryable):
+        asyncio.run(processor._persist_source_graph(
+            import_id=import_id, user_id=uid, operation_id="fictional-late-import",
+            source_graph=empty_source_graph(),
+        ))
+    assert storage.objects == existing_objects
+    assert storage.uploaded == []
 
 
 def test_worker_creates_one_resume_and_repeated_delivery_is_idempotent() -> None:
@@ -368,8 +396,26 @@ def test_worker_keeps_final_resume_count_with_active_task_placeholder(
 
 
 def test_worker_serializes_concurrent_finalization_at_capacity() -> None:
-    app, storage, processor, import_id, template_id = build_processor()
+    # StaticPool hands simultaneous sessions the very same DBAPI connection.
+    # SQLite cannot validate row locks; serialize its test transactions and
+    # verify real concurrent owner locking separately against MySQL.
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=QueuePool,
+        pool_size=1,
+        max_overflow=0,
+    )
+    Base.metadata.create_all(engine)
+    try:
+        factory = sessionmaker(engine, autoflush=False, expire_on_commit=False)
+        assert_concurrent_finalization_at_capacity(build_processor(session_factory=factory))
+    finally:
+        engine.dispose()
 
+
+def assert_concurrent_finalization_at_capacity(built_processor) -> None:
+    app, storage, processor, import_id, template_id = built_processor
     with app.state.session_factory() as db:
         task = db.get(DocumentParseTask, import_id)
         template = db.get(ResumeTemplate, template_id)
@@ -413,19 +459,25 @@ def test_worker_serializes_concurrent_finalization_at_capacity() -> None:
             processor.process(import_id=second_import_id, template_id=template_id),
         )
 
-    asyncio.run(process_both())
+    async def bounded_process_both() -> None:
+        await asyncio.wait_for(process_both(), timeout=15)
+
+    asyncio.run(bounded_process_both())
 
     with app.state.session_factory() as db:
         tasks = db.scalars(
             select(DocumentParseTask)
-            .where(DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE)
+            .where(DocumentParseTask.id.in_([import_id, second_import_id]))
             .order_by(DocumentParseTask.id)
         ).all()
         tasks_by_status = {task.parse_status: task for task in tasks}
         assert set(tasks_by_status) == {"failed", "succeeded"}
         assert tasks_by_status["failed"].failure_reason == "quota_exceeded"
         assert tasks_by_status["succeeded"].failure_reason is None
-        assert len(db.scalars(select(Resume)).all()) == 10
+        resumes = db.scalars(
+            select(Resume).where(Resume.user_id == tasks[0].user_id)
+        ).all()
+        assert len(resumes) == 10
         assert resume_slot_count(db, tasks[0].user_id) == 10
 
 

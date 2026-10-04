@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { t, useLocale } from "@/i18n";
+import { useEffect, useMemo, useState } from "react";
 import {
   api,
   type InterviewSessionSummary,
@@ -8,6 +9,7 @@ import {
 import { resumeDocumentToMarkdown } from "../../api/resumeContract";
 import { evaluateResumeCompleteness } from "../workbench/resumeCompleteness";
 import { useResumeStore } from "../../store/resumeStore";
+import { parseOfferDate } from "../interviews/offerDates";
 
 // 首页卡片规则（Figma「01.1 首页 · 状态变体」右侧「首页卡片规则」）：
 // 三个卡片位各自按顺序取第一个满足条件的候选；新用户固定三张引导卡。
@@ -19,7 +21,7 @@ export type HomeCard =
   | { kind: "firstResume" }
   | { kind: "target" }
   | { kind: "plugin" }
-  | { kind: "offer"; company: string; applicationId: string }
+  | { kind: "offer"; company: string; applicationId: string; replyDueOn?: string | null }
   | { kind: "today"; session: InterviewSessionSummary; others: number }
   | { kind: "deadline"; session: InterviewSessionSummary; daysLeft: number }
   | { kind: "week"; sessions: InterviewSessionSummary[] }
@@ -111,13 +113,14 @@ export function buildHomeDashboard(input: HomeInput): HomeDashboard {
   }) ?? null;
   const active = applications.filter(isActiveApplication);
   // applications 的 offer_status = received 即「收到 Offer、还没回复」
-  const offers = active.filter((application) => application.offer_status === "received");
+  const offers = active.filter((application) => application.offer_status === "received")
+    .sort((a, b) => (parseOfferDate(a.offer_reply_due_on)?.getTime() ?? Infinity) - (parseOfferDate(b.offer_reply_due_on)?.getTime() ?? Infinity));
 
   // 位置 1 · 最紧急的事
   let first: HomeCard;
   let variant: HomeVariant;
   if (offers.length > 0) {
-    first = { kind: "offer", company: offers[0].company_name_snapshot, applicationId: offers[0].id };
+    first = { kind: "offer", company: offers[0].company_name_snapshot, applicationId: offers[0].id, replyDueOn: offers[0].offer_reply_due_on };
     variant = "offer";
   } else if (today.length > 0) {
     first = { kind: "today", session: today[0], others: today.length - 1 };
@@ -168,13 +171,13 @@ export function buildHomeDashboard(input: HomeInput): HomeDashboard {
 
 function pipelineHint(active: JobApplicationSummary[], now: Date) {
   const offer = active.find((application) => application.offer_status === "received");
-  if (offer) return `${offer.company_name_snapshot} Offer 待回复`;
+  if (offer) return t("{value0} Offer 待回复", { value0: offer.company_name_snapshot });
   const waiting = active.find((application) => application.stage_state === "awaiting_result");
-  if (waiting) return `${waiting.company_name_snapshot}${waiting.current_stage_label}结果待出`;
+  if (waiting) return t("{value0}{value1}结果待出", { value0: waiting.company_name_snapshot, value1: waiting.current_stage_label });
   const weekAgo = now.getTime() - 7 * DAY;
   const fresh = active.filter((application) => application.applied_at && new Date(application.applied_at).getTime() >= weekAgo).length;
-  if (fresh > 0) return `本周新增 ${fresh} 个投递`;
-  return "按阶段查看每个岗位";
+  if (fresh > 0) return t("本周新增 {value0} 个投递", { value0: fresh });
+  return t("按阶段查看每个岗位");
 }
 
 // 岗位看板插图的四列：待投递 / 笔试 / 面试 / Offer
@@ -192,10 +195,10 @@ export function pipelineColumns(applications: JobApplicationSummary[]) {
 
 export function greetingPrefix(now: Date) {
   const hour = now.getHours();
-  if (hour < 11) return "早上好";
-  if (hour < 13) return "中午好";
-  if (hour < 18) return "下午好";
-  return "晚上好";
+  if (hour < 11) return t("早上好");
+  if (hour < 13) return t("中午好");
+  if (hour < 18) return t("下午好");
+  return t("晚上好");
 }
 
 // AI 生成问候副标题与快捷指令没有接口，按位置 1 的主题给固定文案
@@ -203,43 +206,44 @@ export function homeCopy(dashboard: HomeDashboard) {
   switch (dashboard.variant) {
     case "new":
       return {
-        title: "先准备第一份简历吧。",
-        subtitle: "也可以直接在下面告诉我你的经历，我来起草。",
-        chips: ["帮我写第一版简历", "简历该写几页", "我适合什么岗位"],
+        title: t("先准备第一份简历吧。"),
+        subtitle: t("也可以直接在下面告诉我你的经历，我来起草。"),
+        chips: [t("帮我写第一版简历"), t("简历该写几页"), t("我适合什么岗位")],
       };
     case "offer":
       return {
-        title: `${dashboard.offerCompany}的 Offer 还没回复。`,
-        subtitle: "对比一下手上的机会，再决定怎么回复。",
-        chips: ["比较手上的 Offer", "帮我写回复邮件", "谈薪建议"],
+        title: t("{value0}的 Offer 还没回复。", { value0: dashboard.offerCompany }),
+        subtitle: t("对比一下手上的机会，再决定怎么回复。"),
+        chips: [t("比较手上的 Offer"), t("帮我写回复邮件"), t("谈薪建议")],
       };
     case "today":
       return {
-        title: "今天想推进什么？",
-        subtitle: `今天有 ${dashboard.todayCount} 场面试或笔试。`,
-        chips: ["帮我准备今天的面试", "模拟一轮面试", "按 JD 改简历"],
+        title: t("今天想推进什么？"),
+        subtitle: t("今天有 {value0} 场面试或笔试。", { value0: dashboard.todayCount }),
+        chips: [t("帮我准备今天的面试"), t("模拟一轮面试"), t("按 JD 改简历")],
       };
     case "deadline":
       return {
-        title: "今天想推进什么？",
+        title: t("今天想推进什么？"),
         subtitle: dashboard.deadline!.daysLeft === 0
-          ? `${dashboard.deadline!.company}的笔试今天截止。`
-          : `${dashboard.deadline!.company}的笔试 ${dashboard.deadline!.daysLeft} 天后截止。`,
-        chips: ["帮我准备笔试", "按 JD 改简历", "复盘上周面试"],
+          ? t("{value0}的笔试今天截止。", { value0: dashboard.deadline!.company })
+          : t("{value0}的笔试 {value1} 天后截止。", { value0: dashboard.deadline!.company, value1: dashboard.deadline!.daysLeft }),
+        chips: [t("帮我准备笔试"), t("按 JD 改简历"), t("复盘上周面试")],
       };
     default:
       return {
-        title: "今天没有安排。",
-        subtitle: "适合补一段项目经历，或者看看新岗位。",
-        chips: ["帮我找合适的岗位", "润色项目经历", "复盘上周面试"],
+        title: t("今天没有安排。"),
+        subtitle: t("适合补一段项目经历，或者看看新岗位。"),
+        chips: [t("帮我找合适的岗位"), t("润色项目经历"), t("复盘上周面试")],
       };
   }
 }
 
-type LoadState = { status: "loading" } | { status: "ready"; dashboard: HomeDashboard; defaultResume: ResumeSummary | null } | { status: "error" };
+type LoadState = { status: "loading" } | { status: "ready"; input: HomeInput; markdown: string | null; defaultResume: ResumeSummary | null } | { status: "error" };
 
 // 读首页需要的三类数据：简历（含最近一份的完整度）、本周与未来几天的面试、岗位进度
 export function useHomeDashboard(enabled: boolean) {
+  const locale = useLocale();
   const userId = useResumeStore((store) => store.user?.id);
   const [attempt, setAttempt] = useState(0);
   const [scope, setScope] = useState({ userId, enabled, revision: 0 });
@@ -265,24 +269,28 @@ export function useHomeDashboard(enabled: boolean) {
           api.listJobApplications({ scope: "active" })
             .then((result) => result.items),
         ]);
-        let latestResumeScore: HomeInput["latestResumeScore"] = null;
+        let markdown: string | null = null;
         const recent = latestResume(resumes);
         if (recent) {
           // 完整度用编辑器同一套前端规则；列表里带预览数据时直接用，否则读一次详情
           const data = recent.preview?.data ?? await api.getResume(recent.id).then((result) => result.resume.data).catch(() => null);
           if (data) {
-            const result = evaluateResumeCompleteness(resumeDocumentToMarkdown(data));
-            const missing = result.checks.find((item) => item.status !== "passed")?.label ?? null;
-            latestResumeScore = { score: result.score, missing };
+            markdown = resumeDocumentToMarkdown(data);
           }
         }
         if (cancelled) return;
-        setResult({ key, state: { status: "ready", dashboard: buildHomeDashboard({ now, resumes, latestResumeScore, sessions, applications }), defaultResume: recent } });
+        setResult({ key, state: { status: "ready", input: { now, resumes, latestResumeScore: null, sessions, applications }, markdown, defaultResume: recent } });
       } catch {
         if (!cancelled) setResult({ key, state: { status: "error" } });
       }
     })();
     return () => { cancelled = true; };
   }, [enabled, key]);
-  return { ...state, retry: () => setAttempt((value) => value + 1) };
+  const localized = useMemo(() => {
+    if (state.status !== "ready") return state;
+    const score = state.markdown === null ? null : evaluateResumeCompleteness(state.markdown);
+    const latestResumeScore = score ? { score: score.score, missing: score.checks.find((item) => item.status !== "passed")?.label ?? null } : null;
+    return { status: "ready" as const, dashboard: buildHomeDashboard({ ...state.input, latestResumeScore }), defaultResume: state.defaultResume };
+  }, [state, locale]);
+  return { ...localized, retry: () => setAttempt((value) => value + 1) };
 }

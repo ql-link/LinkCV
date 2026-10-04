@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useRef, useState } from "react";
 import type { AgentModelSummary } from "../../api/client";
 import claudeIcon from "@/assets/model-icons/claude.svg";
@@ -26,6 +27,7 @@ export function modelVendor(name: string): ModelVendor | null {
 }
 
 export function ModelIcon({ name, size = 18 }: { name: string; size?: number }) {
+  useLocale();
   const vendor = modelVendor(name);
   if (!vendor) return <Icon name="spark" size={size} style={{ color: "var(--v3-sub)" }} />;
   return <img className="assistant-model-icon" src={VENDOR_ICONS[vendor]} alt="" width={size} height={size} data-vendor={vendor} />;
@@ -49,6 +51,7 @@ export function ModelPicker({
   onSelect: (modelId: string) => void;
   compact?: boolean;
 }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const selected = models.find((model) => model.id === selectedId) ?? null;
@@ -76,10 +79,10 @@ export function ModelPicker({
         onClose={() => setOpen(false)}
         placement="top-end"
         role="menu"
-        label="选择模型"
+        label={t("选择模型")}
         className="assistant-model-menu"
       >
-        <div className="assistant-model-menu-head">选择模型</div>
+        <div className="assistant-model-menu-head">{t("选择模型")}</div>
         <div className="assistant-model-menu-list">
           {models.length ? models.map((model) => (
             <button
@@ -98,7 +101,7 @@ export function ModelPicker({
               <span>{model.name}</span>
               {model.id === selectedId && <Icon className="assistant-model-check" name="check" size={12} />}
             </button>
-          )) : <p className="assistant-model-menu-empty">{loading ? "正在读取模型" : "当前没有可用模型"}</p>}
+          )) : <p className="assistant-model-menu-empty">{loading ? t("正在读取模型") : t("当前没有可用模型")}</p>}
         </div>
       </Popover>
     </>

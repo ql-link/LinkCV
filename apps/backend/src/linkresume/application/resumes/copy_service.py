@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 from copy import deepcopy
 import hashlib
 import json
@@ -18,6 +19,7 @@ from linkresume.modules.product_events import service as product_events
 
 def copy_resume(db: Session, storage, *, user_id: int, resume_id: str, title: str,
                 client_request_id: str, base_lock_version: int | None = None) -> tuple[Resume, bool]:
+    lock_active_user(db, user_id)
     db.scalar(select(User.id).where(User.id == user_id).with_for_update())
     source = db.scalar(select(Resume).where(
         Resume.id == parse_decimal_id(resume_id), Resume.user_id == user_id,

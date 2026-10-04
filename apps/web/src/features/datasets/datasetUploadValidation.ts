@@ -1,3 +1,4 @@
+import { t, getLocale } from "@/i18n";
 import { ApiRequestError, type DatasetLimits } from "../../api/client";
 
 export const DEFAULT_DATASET_LIMITS: DatasetLimits = {
@@ -70,7 +71,7 @@ export function datasetFormatError(
   rawLimits: DatasetLimits = DEFAULT_DATASET_LIMITS,
 ): string | null {
   const limits = normalizeDatasetLimits(rawLimits);
-  if (file.size === 0) return "文件为空，请重新选择。";
+  if (file.size === 0) return t("文件为空，请重新选择。");
   const extension = fileExtension(file);
   const isMedia = (limits.media_allowed_extensions ?? []).some(
     (allowed) => allowed.toLowerCase() === extension,
@@ -79,17 +80,17 @@ export function datasetFormatError(
     (allowed) => allowed.toLowerCase() === extension,
   );
   if (!isMedia && !isDocument) {
-    return "仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件。";
+    return t("仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件。");
   }
   if (isMedia) {
     const mediaLimit = limits.max_media_file_bytes ?? DEFAULT_DATASET_LIMITS.max_media_file_bytes!;
     if (file.size > mediaLimit) {
-      return `音视频文件过大，最大支持 ${formatDatasetFileSize(mediaLimit)}。`;
+      return t("音视频文件过大，最大支持 {value0}。", { value0: formatDatasetFileSize(mediaLimit) });
     }
     return null;
   }
   if (file.size > limits.max_file_bytes) {
-    return `文件过大，最大支持 ${formatDatasetFileSize(limits.max_file_bytes)}。`;
+    return t("文件过大，最大支持 {value0}。", { value0: formatDatasetFileSize(limits.max_file_bytes) });
   }
   return null;
 }
@@ -103,47 +104,47 @@ export function datasetUploadErrorMessage(
 
   switch (error.message) {
     case "INVALID_IDEMPOTENCY_KEY":
-      return "上传请求无效，请重试。";
+      return t("上传请求无效，请重试。");
     case "DATASET_FOLDER_REQUIRED":
-      return "请先进入文件夹再上传资料。";
+      return t("请先进入文件夹再上传资料。");
     case "FOLDER_NOT_FOUND":
-      return "目标文件夹已不存在或不可访问，请重新选择文件夹。";
+      return t("目标文件夹已不存在或不可访问，请重新选择文件夹。");
     case "INVALID_DATASET_FILENAME":
-      return "文件名无效，请重命名后再上传。";
+      return t("文件名无效，请重命名后再上传。");
     case "UNSUPPORTED_DATASET_FILE":
     case "UNSUPPORTED_DATASET_FORMAT":
-      return "仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件。";
+      return t("仅支持 DOCX、PDF、Markdown、TXT 和常见音视频文件。");
     case "DATASET_FILE_EXTENSION_MISMATCH":
-      return "文件内容与扩展名不匹配，请检查后重试。";
+      return t("文件内容与扩展名不匹配，请检查后重试。");
     case "EMPTY_DATASET_FILE":
-      return "文件为空，请重新选择。";
+      return t("文件为空，请重新选择。");
     case "DATASET_FILE_TOO_LARGE":
     case "DATASET_TOO_LARGE":
-      return `文件过大，最大支持 ${formatDatasetFileSize(normalizeDatasetLimits(rawLimits).max_file_bytes)}，请缩小文件后重试。`;
+      return t("文件过大，最大支持 {value0}，请缩小文件后重试。", { value0: formatDatasetFileSize(normalizeDatasetLimits(rawLimits).max_file_bytes) });
     case "DATASET_UPLOAD_FAILED":
-      return "上传失败，请稍后重试。";
+      return t("上传失败，请稍后重试。");
     case "DATASET_STORAGE_UNAVAILABLE":
-      return "文件存储暂不可用，请稍后重试。";
+      return t("文件存储暂不可用，请稍后重试。");
     case "DATASET_RECORD_FAILED":
-      return "资料保存失败，请稍后重试。";
+      return t("资料保存失败，请稍后重试。");
     case "DATASET_COUNT_LIMIT_REACHED":
-      return "当前资料数量已达上限。";
+      return t("当前资料数量已达上限。");
     case "DATASET_STORAGE_LIMIT_REACHED":
-      return "当前资料容量已达上限。";
+      return t("当前资料容量已达上限。");
     case "DATASET_MEDIA_COUNT_LIMIT_REACHED":
-      return "音视频资料数量已达上限。";
+      return t("音视频资料数量已达上限。");
     case "DATASET_MEDIA_STORAGE_LIMIT_REACHED":
-      return "音视频资料容量已达上限。";
+      return t("音视频资料容量已达上限。");
     case "DATASET_UPLOAD_RATE_LIMITED":
-      return "上传过于频繁，请稍后重试。";
+      return t("上传过于频繁，请稍后重试。");
     case "DATASET_ADMISSION_UNAVAILABLE":
-      return "上传准入暂不可用，请稍后重试。";
+      return t("上传准入暂不可用，请稍后重试。");
     case "IDEMPOTENCY_KEY_REUSED":
-      return "本次上传请求已用于其他文件，请重新选择后上传。";
+      return t("本次上传请求已用于其他文件，请重新选择后上传。");
     case "DATASET_UPLOAD_PREVIOUSLY_FAILED":
-      return "上次上传已明确失败，请重新发起上传。";
+      return t("上次上传已明确失败，请重新发起上传。");
     default:
-      if (error.status === 401) return "登录状态已失效，请重新登录。";
-      return error.status >= 500 ? "服务暂时不可用，请稍后重试。" : fallback;
+      if (error.status === 401) return t("登录状态已失效，请重新登录。");
+      return error.status >= 500 ? t("服务暂时不可用，请稍后重试。") : fallback;
   }
 }

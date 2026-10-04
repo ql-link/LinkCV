@@ -1,3 +1,4 @@
+import { t, getLocale } from "@/i18n";
 import type { Editor } from "@tiptap/react";
 import { Fragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
@@ -23,16 +24,16 @@ export type WorkbenchBlockCommand = {
 };
 
 export const workbenchBlockCommands: WorkbenchBlockCommand[] = [
-  { id: "paragraph", label: "正文", keywords: ["文本", "paragraph"] },
-  { id: "resume-row", label: "左右分栏", keywords: ["同一行左 / 右独立输入", "当前行左右对齐", "双栏", "两栏", "分栏", "左右", "日期", "columns"] },
-  { id: "heading-1", label: "标题 1", keywords: ["一级标题", "h1"] },
-  { id: "heading-2", label: "标题 2", keywords: ["章节", "二级标题", "h2"] },
-  { id: "heading-3", label: "标题 3", keywords: ["小标题", "三级标题", "h3"] },
-  { id: "bullet-list", label: "无序列表", keywords: ["分点", "项目符号", "ul"] },
-  { id: "ordered-list", label: "有序列表", keywords: ["编号", "ol"] },
-  { id: "image", label: "插入图片", keywords: ["正文图片", "image"] },
-  { id: "inline-image", label: "插入行内图片", keywords: ["公司 Logo", "文字内嵌图片", "行内", "logo"] },
-  { id: "inline-icon", label: "插入图标", keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
+  { id: "paragraph", get label() { return t("正文"); }, keywords: ["文本", "paragraph"] },
+  { id: "resume-row", get label() { return t("左右分栏"); }, keywords: ["同一行左 / 右独立输入", "当前行左右对齐", "双栏", "两栏", "分栏", "左右", "日期", "columns"] },
+  { id: "heading-1", get label() { return t("标题 1"); }, keywords: ["一级标题", "h1"] },
+  { id: "heading-2", get label() { return t("标题 2"); }, keywords: ["章节", "二级标题", "h2"] },
+  { id: "heading-3", get label() { return t("标题 3"); }, keywords: ["小标题", "三级标题", "h3"] },
+  { id: "bullet-list", get label() { return t("无序列表"); }, keywords: ["分点", "项目符号", "ul"] },
+  { id: "ordered-list", get label() { return t("有序列表"); }, keywords: ["编号", "ol"] },
+  { id: "image", get label() { return t("插入图片"); }, keywords: ["正文图片", "image"] },
+  { id: "inline-image", get label() { return t("插入行内图片"); }, keywords: ["公司 Logo", "文字内嵌图片", "行内", "logo"] },
+  { id: "inline-icon", get label() { return t("插入图标"); }, keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
 ];
 
 export function insertInlineIcon(

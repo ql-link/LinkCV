@@ -11,20 +11,34 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 - `apps/web/src/main.tsx`：React 启动入口。
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
 - `apps/web/src/features/`：鉴权、首页、编辑器、预览、求职、资料库和管理端功能。
-- `apps/web/src/v3/`：V3 共享侧栏、图标、控件、插图与样式；正文沿用思源黑体，标题使用本地 Noto Serif SC，数字使用 Inter。
+- `apps/web/src/v3/`：V3 共享侧栏、图标、控件、插图与样式；西文界面和数字使用 Poppins，长篇阅读正文使用 Lora；中文正文沿用思源黑体，V3 中文页面标题使用 Noto Serif SC。
 - `apps/web/src/store/resumeStore.ts`：简历编辑状态。
 - `apps/web/src/api/client.ts`：鉴权、模板、简历与异步导入、智能助手 SSE、JD、资源、日志上报和管理员查询 API 客户端。
 - `apps/web/src/components/ui/feedback-notice.tsx`：全局操作反馈入口；浮层模式通过 Portal 挂载到页面根层，固定在视口上方居中，并统一在 3 秒后通知业务清理状态。
 - `apps/web/src/api/resumeContract.ts`：语义简历 TypeScript 契约，以及领域 JSON、Markdown 和现有 Tiptap 编辑器之间的过渡适配。
 - `apps/web/vite.config.mjs`：开发服务器、FastAPI 代理和本地图片预览插件。
 
-生产构建按页面路由拆分 React 功能包，并把 React、React DOM 与 Zustand 放入稳定的 `vendor-react` 缓存分包；公共 HTML 不依赖 Google Fonts 等境外样式服务，入口只加载应用壳、稳定运行时和当前页面所需代码。Vite 的 `VITE_ASSET_BASE_URL` 为空时继续生成同源 `/assets/*`，只接受不带凭据、查询和片段的 HTTPS 绝对地址；Production 镜像由发布脚本把 `.env.production` 中的 `WEB_ASSET_OSS_URL=https://qingluo-public.oss-cn-shanghai.aliyuncs.com/LinkResume/` 显式传入，因此生产 HTML、动态 import、CSS 和字体直接引用 OSS 的 `LinkResume/assets/` 前缀，不依赖 CDN、自定义静态域名或证书，页面路由与 `/api/*` 仍保持 `linkresume.cn` 同源。发布脚本还会从最终 Web 镜像提取 `favicon.png`，上传到 OSS 的 `LinkResume/favicon.png`，并在数据库迁移与应用切换前通过 HTTPS 验证其返回 2xx 与 `image/png`，避免入口 HTML 引用的 favicon 因未随静态资源发布而缺失。用户通过鉴权后，浏览器在空闲阶段预加载 `/templates` 与 `/datasets` 页面包，导航鼠标移入或键盘聚焦仍会即时预加载目标模块，触摸点击则复用已经完成的空闲预热。V3 产品正文、输入、按钮与导航沿用思源黑体可变字体，页面标题使用 Noto Serif SC 600，数值使用 Inter；新增两项 @fontsource 依赖用于还原设计字体并随构建本地分发，避免依赖外部字体服务。独立 AI 助手和简历编辑器侧栏的消息正文也复用同一字体栈，以保持紧凑的对话排版。简历画布仍以用户选择的版式字体为准。简历可选字体随应用发布，来自固定版本的本地字体文件；霞鹜文楷在编辑器、分享页与 PDF 导出均使用 Medium 字重，思源宋体和 Noto Sans SC 均使用 Regular 字重，思源黑体在浏览器与 PDF 中均使用同一可变字体；PDF CLI 复用同一批字体文件，并等待 `document.fonts.ready` 后才测量分页。
+生产构建按页面路由拆分 React 功能包，并把 React、React DOM 与 Zustand 放入稳定的 `vendor-react` 缓存分包；公共 HTML 不依赖 Google Fonts 等境外样式服务，入口只加载应用壳、稳定运行时和当前页面所需代码。Vite 的 `VITE_ASSET_BASE_URL` 为空时继续生成同源 `/assets/*`，只接受不带凭据、查询和片段的 HTTPS 绝对地址；Production 镜像由发布脚本把 `.env.production` 中的 `WEB_ASSET_OSS_URL=https://qingluo-public.oss-cn-shanghai.aliyuncs.com/LinkResume/` 显式传入，因此生产 HTML、动态 import、CSS 和字体直接引用 OSS 的 `LinkResume/assets/` 前缀，不依赖 CDN、自定义静态域名或证书，页面路由与 `/api/*` 仍保持 `linkresume.cn` 同源。发布脚本还会从最终 Web 镜像提取 `favicon.png`，上传到 OSS 的 `LinkResume/favicon.png`，并在数据库迁移与应用切换前通过 HTTPS 验证其返回 2xx 与 `image/png`，避免入口 HTML 引用的 favicon 因未随静态资源发布而缺失。用户通过鉴权后，浏览器在空闲阶段预加载 `/templates` 与 `/datasets` 页面包，导航鼠标移入或键盘聚焦仍会即时预加载目标模块，触摸点击则复用已经完成的空闲预热。产品西文标题、导航、输入、按钮、字段值和普通说明使用 Poppins，AI 长回复、岗位说明和资料长文使用 Lora；中文正文沿用思源黑体可变字体，V3 中文页面标题使用 Noto Serif SC 600。字体角色、字号、行高和字重以 DESIGN.md 与 design-system/tokens.css 为准。Poppins 与 Lora 由固定版本的 @fontsource 依赖提供 Latin 子集，Lora 包含常规及斜体字重；共享 fonts.css 在 Web 入口及 V3 样式注册字体，入口预加载常用字重。字体随构建本地分发，SIL OFL 1.1 授权保存在 public/fonts/Poppins-OFL.txt 与 Lora-OFL.txt，避免依赖外部字体服务。独立 AI 助手与编辑器侧栏的 AI 回复使用阅读栈，用户消息、输入和操作使用界面栈。简历画布仍以用户选择的版式字体为准。简历可选字体随应用发布，来自固定版本的本地字体文件；霞鹜文楷在编辑器、分享页与 PDF 导出均使用 Medium 字重，思源宋体和 Noto Sans SC 均使用 Regular 字重，思源黑体在浏览器与 PDF 中均使用同一可变字体；PDF CLI 复用同一批字体文件，并等待 `document.fonts.ready` 后才测量分页。
+
+全局加载占位、日历“另有 N 项”弹层和编辑器选区工具栏直接使用根层产品字体 Token `--ui-font-sans`；日历弹层的时间使用 `--ui-font-display`。这些组件可能渲染在 V3 外壳或纸张之外，不依赖 `.v3` 内的局部字体变量，也不覆盖简历正文字体。
 
 搜索引擎只收录生产主域名 `https://linkresume.cn/` 的公共落地页，兼容入口 `/home` 使用同一个 canonical。`index.html` 提供标题、简介、Open Graph、Twitter Card 和 `Organization`/`WebSite` JSON-LD，组织 Logo 复用公开的 256×256 `favicon.png`；根目录 `robots.txt` 声明 `sitemap.xml`，站点地图只列 canonical 首页。React 路由切换会同步页面标题和 robots meta，FastAPI 的 SPA 静态回退还会为除 `/`、`/home` 和 `/index.html` 外的 HTML 深链返回 `X-Robots-Tag: noindex, nofollow, noarchive`。因此登录、管理、用户工作区、未知地址和带 token 的简历分享页都不会作为公开搜索结果入口；`/api/` 另由 `robots.txt` 禁止抓取。
 
+## 响应式布局
+
+V3 工作区在视口宽度小于 1024px 时使用顶部导航按钮和模态抽屉；抽屉不显示关闭叉号，顶部品牌留白与桌面侧栏一致。选择页面或对话、点击抽屉外区域或按 Escape 后收起并返回触发按钮，背景在打开期间不可交互。桌面侧栏的中间内容独立滚动，账号入口保留在底部，低高度窗口也可访问。
+
+侧栏选中底板按菜单行相对导航容器的 `offsetTop` 定位，不用包含抽屉入场缩放的视觉坐标，因此动画结束后仍与当前菜单项对齐。
+
+共享内容卡是命名容器 `workspace`，页面通过 CSS Container Queries 按实际内容宽度重排标题、操作、卡片和表单。正文填满可用区域，桌面两侧各留内容卡宽度的 3%、至少 24px；移动端页面边距为 16px，不再以固定正文上限制造超宽屏的大块留白。对话区与新建表单仍保留独立阅读宽度，路由骨架沿用正文边距。弹窗使用命名容器 `dialog`，受视口宽高约束，正文独立滚动、底部操作保持可见。列表和看板保留局部横向滚动；模板和简历缩略图等固定纸面媒体继续等比显示，产品文字与按钮不随整页缩小。
+
+模板库的 IntersectionObserver 按浏览器视口和祖先滚动容器裁剪后的可见范围挂载完整 A4 缩略图，视口上下预留 320px，远处保留外层宽高比占位并卸载预览；低高度窗口改为整页滚动时也沿用该规则。连续改变窗口宽度时，当前缩略图使用 `will-change: transform` 复用合成层；最后一次宽度变化 200ms 后撤掉提示，让纸面按最终比例清晰绘制。只读预览仅在 HTML 或展示模式变化时重新安装纸面测量观察器；编辑器通过 ResizeObserver 合并到每帧一次测量，不再同时监听窗口 resize，只有不支持 ResizeObserver 时使用窗口事件回退。
+
+编辑器的 ResizeObserver 测量纸张滚动区宽度和左右内边距，独立编辑器单页以 560px 显示宽度为上限，内嵌编辑器以一张 A4 的原始宽度为上限，双页按两张 A4 与页间空隙适配；窗口或面板改变可用空间时重新计算。手动预览缩放在适配基准上生效，纸面数据、打印尺寸与持久化格式不由屏幕尺寸决定。
+
 ## API 调用
 
-API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。模拟面试语音通道 `/api/mock-interviews/{id}/speech` 在 Vite 中单独启用 WebSocket 代理并保留浏览器的 `Host`，使后端的 `Origin` 同源校验成立；代理读写等待上限为 600 秒。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
+API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。模拟面试语音通道 `/api/mock-interviews/{id}/speech` 在 Vite 中单独启用 WebSocket 代理并保留浏览器的 `Host`，使后端的 `Origin` 同源校验成立；代理读写等待上限为 600 秒。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；模拟面试的 SSE 回合流与录音下载不走 JSON 请求封装，通过 `client.ts` 导出的 `apiRequest`、`refreshApiSession`、`createApiRequestId` 复用同一套会话刷新与请求标识，401 时在流开始前刷新并重试一次；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
 
 React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 
@@ -39,15 +53,18 @@ React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器�
 
 账号页的个人画像由 `features/account/UserProfilePanel.tsx` 独立读取
 `GET /api/account/user-profile`，`AccountPage` 的账号概览只读取账号、简历统计和最近简历，
-不再把画像副本作为 props 传入。画像卡片继续沿用账号页现有的头部、空态、底部和三组只读布局，
-三组分别展示求职与经验、教育背景、技能与成果；只读字段对应可接受工作城市、
-薪资四字段、工作性质、工作经验、学校、专业/学历、语言、技能、证书、荣誉
-和校园经历。
+不再把画像副本作为 props 传入。画像卡片展示填写进度和两列只读摘要：可接受工作城市、
+期望薪资、工作经验、学历与院校（含学校和专业）。薪资保留原币种、计薪周期和单侧边界，
+未填写字段显示“未填写”；点击“详情”进入原编辑弹窗，保存成功同步更新摘要。
+读取失败时提供“重试”，不展示空白字段冒充成功结果。卡片与区块说明文字均参与正常布局，
+不使用超出内容高度的装饰背景。
 
-编辑弹窗继续使用求职意向、教育与背景、技能与亮点三页签，以及既有的 `TagInput`、
-`TogglePill` 和 `ProfileSelectField`。城市由用户手动输入并以标签形式维护，工作性质只提供
-“实习”和“全职”两项受控多选；薪资仍以最低值、最高值、币种和计薪周期四字段组合保存。工作经验
-初始未选择时不显示“未选择”按钮，也不显示毕业年份或工作年限输入；选择应届生时只显示毕业年份并在
+编辑弹窗使用求职条件、学历与院校、技能与证书、荣誉与经历四页签，以及既有的 `TagInput`、
+自绘 `Select` 和受控多选控件。弹窗宽度为 900px，并受视口宽高约束，分类内容独立滚动。
+城市由用户手动输入并以标签形式维护，工作性质通过自绘下拉多选“实习”和“全职”，
+选中后浮层保持打开，触发器显示已选标签；支持方向键、空格或 Enter 切换选项，Escape 只关闭下拉。
+薪资仍以最低值、最高值、币种和计薪周期四字段组合保存。工作经验通过单选下拉选择互斥的应届／非应届身份，
+初始未选择时显示占位文案，不显示毕业年份或工作年限输入；选择应届生时只显示毕业年份并在
 保存时固定发送 `years_experience=0`，选择非应届生时只显示工作年限并发送 `graduation_year=null`，
 已选项再次点击不会取消选择。迁移保留但尚未标注类型的历史工作年限不在编辑表单中显示，保存不会构造非法组合。
 保存成功更新卡片，`409 USER_PROFILE_VERSION_CONFLICT` 保留编辑窗口并以响应中的最新画像刷新表单。
@@ -173,3 +190,11 @@ Career 跨行业模板由 `api/careerThemes.ts` 登记主题，`app.css` 提供�
 ### 原生纸面资源与一致性边界
 
 Mac WKWebView 和 Windows WebView2 的离线纸面由 `apps/native/scripts/build_renderer.mjs` 从共享 Web 渲染函数及基础、应用、打印、Muse 四组样式生成，并将同一份 HTML 复制至两端资源目录。原生显示连续可滚动纸面，等待图片和字体就绪后按实际高度扩展舞台；无效布局或图片失败显式提示。模板预览提示最终排版以 PDF 为准；内容、模块顺序、模板结构、配色、图片与关键布局需保留，字形、换行、分页及像素一致尚未作为跨引擎承诺。内置头像随包内联；私有 PNG／JPEG 图片由原生 HTTP 会话下载、校验并通过 assets 注入，使用现有桌面 Bearer 资源接口及后端所有权校验。图片仅保留在当前纸面内存，不写共享缓存；单张失败显示占位和提示，正文仍可预览。原生入口拒绝任意网页导航，退出与切换拒绝迟到图片写回。代表样例与 Chromium／WebKit／PDF 的检查命令见 `apps/native/README.md`。
+
+## 普通工作区界面语言
+
+`src/i18n/index.ts` 提供 useLocale、t 和 Intl 日期格式，`messages.ts` 保存应用拥有的 UI 消息。React 通过 useSyncExternalStore 原地更新语言，静态选项在读取时翻译，异步首页保留原始数据以按当前语言派生展示；不重挂编辑器，不用 DOM 文本替换。只对程序定义的消息调用 t，禁止把用户正文、文件名、模型回复或模板样例当作翻译键。
+
+浏览器键 `linkresume.interface-locale` 保存访客语言；App 登录后读取账号 preferences，保存成功才更新语言，读取失败可在账号页重试。管理员固定中文且不覆写普通用户浏览器偏好。账号页联系邮箱、改密、偏好和注销使用真实 API，环境能力由后端返回。受理注销或改密后清理本地会话、个人草稿和编辑器数据，并导航到进度页或登录页。范围见[账号功能](../features/identity-account.md)。
+
+账号页主动切换语言时，`src/i18n/transition.ts` 在偏好保存成功后先将标记的界面文案淡出 80ms，再原地更新语言并淡入 140ms，使用 CSS opacity，不叠加整页截图。过渡只作用于标题、标签、说明和按钮内的文字，卡片背景、边框、图标、头像及用户填写的数据不淡出。原 DOM、表单与滚动容器不重新挂载；新的切换会取消旧定时器。首次读取偏好或开启减少动态效果时直接更新语言，关闭和清理不依赖动画事件。

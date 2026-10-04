@@ -31,10 +31,11 @@ describe("App landing routes", () => {
     });
   });
 
-  it("已登录访问纯域名时进入简历工作台", async () => {
+  it("已登录访问纯域名时仍展示公共落地页", async () => {
     render(createElement(App));
 
-    await waitFor(() => expect(window.location.pathname).toBe("/resumes"));
+    expect(await screen.findByRole("heading", { name: "把每一份经历，都写成下一份机会" }, { timeout: 5000 })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
   });
 
   it("已登录访问 /home 时仍展示落地页", async () => {

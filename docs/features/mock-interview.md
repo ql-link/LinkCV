@@ -81,7 +81,7 @@ preparation_failed  abandoned   evaluation_failed
 
 ## 语音作答
 
-作答方式 `answer_mode` 在发起时确定，面试中不能切换，再练一次沿用原场。语音面试要求语音识别与语音合成两个场景都已绑定有效线路；两者由管理端在「模型配置」中与其他场景一样绑定和探测，当前只支持阿里云百炼（实时识别 `aliyun_asr_realtime`、CosyVoice 合成 `aliyun_tts_realtime`），北京与新加坡地域可用。
+作答方式 `answer_mode` 在发起时确定，面试中不能切换；再练一次默认沿用原场，`POST /repeat` 可选带 `{answer_mode}` 为新场次覆盖作答方式。语音面试要求语音识别与语音合成两个场景都已绑定有效线路；两者由管理端在「模型配置」中与其他场景一样绑定和探测，当前只支持阿里云百炼（实时识别 `aliyun_asr_realtime`、CosyVoice 合成 `aliyun_tts_realtime`），北京与新加坡地域可用。
 
 - **识别通道**：浏览器以 WebSocket 推送 16 kHz PCM16 音频，后端转发给服务商并推送中间与最终结果；单次最长 5 分钟、10 MB。结束时生成 10 分钟有效的一次性识别会话，提交回答时后端按会话取出识别稿，不信任前端文本。识别中断时已识别的文字保留并标记 `partial`，也可重录；重录只是新的识别会话，不计入追问次数。
 - **语音输入**（文字面试）：识别文字交给用户编辑后按普通文字提交，只记录来源与时长，不保存录音，也没有 AI 修正。
@@ -105,15 +105,24 @@ preparation_failed  abandoned   evaluation_failed
 - 报告只对 `completed` 场次返回。
 - 简历、JD、资料正文与回答只作为引用数据传给模型，提示词明确要求忽略其中改变规则或评分的内容；LLM 调用日志只记录 `mock_interview` 场景与 `source=mock_interview` 的安全计量，不记录正文。
 
-## Web 前端（当前使用本地示例数据）
+Web 模拟面试首页与练习记录页复用工作区的 `.v3-page-title`，统一页面标题的字体、字号与字重。模拟面试页在窄内容卡中重排统计与操作，练习记录保留局部横向滚动，发起表单受容器宽度约束；文字与语音报告的摘要、维度图表和建议允许堆叠，单题详情适配窄弹窗。语音设备检测中的设备选择与状态允许换行；语音舞台在窄窗或低高度窗口中使用可滚动的自然布局，保持字幕和控制区可访问。共享约束见 [Web 响应式布局](../internals/web.md#响应式布局)。
+
+## Web 前端
 
 - 入口为侧栏「模拟面试」，路由 `/mock-interviews`（首页，`?view=records` 为练习记录）、`/mock-interviews/new?application=&resume=`（新建）、`/mock-interviews/:id`（准备中、进行中、评估中）和 `/mock-interviews/:id/report`（评估报告）；页面位于 `apps/web/src/features/mock-interview/`，语音作答相关组件在其 `voice/` 目录。语音面试进行中为无侧栏整窗。
-- 页面尚未连接上述 FastAPI 接口：全部读写走 `mockInterviewApi.ts`，其类型与 `modules/mock_interviews/schemas.py` 对齐、函数与接口一一对应，数据保存在浏览器 localStorage，准备与评估用定时器模拟状态推进，SSE 回合用异步生成器模拟。依赖该示例数据的区块显示「需后端」标签。接入后端时只替换该文件的实现。
-- 录音与设备检测使用浏览器真实麦克风；识别结果、面试官语音合成、录音回放为示例或占位。
+- 页面通过 `mockInterviewApi.ts` 门面调用，生产默认走 `mockInterviewLive.ts` 的真实 `/api/mock-interviews`：REST 复用 `apiRequest`（含会话刷新），后端错误码映射为当前界面语言的提示；作答、跳过带 `Idempotency-Key`，回合 SSE 解析 `answer.accepted`、`interviewer.delta`、`interviewer.audio`、`interviewer.audio_failed` 与终止事件，没有终止事件视为中断；列表按游标最多翻 5 页。类型与 `modules/mock_interviews/schemas.py` 对齐，放在 `mockInterviewTypes.ts`。
+- 后台任务不推送状态：真实接口下场次处于 `preparing`、`evaluating` 时详情每 2.5 秒轮询一次。回答已保存但面试官回复丢失（详情 `needs_reply`）时输入框锁定，提供「重新生成回复」，调用 `reply:retry`。首页能力维度只读取最近 10 场已完成场次的报告详情。
+- 语音：`useMicrophone` 取麦克风流，`SpeechRecognition` 用 AudioWorklet 把麦克风采样降采样为 16 kHz 单声道 PCM16（不要求 AudioContext 本身是 16 kHz，停止时先冲出不足一帧的尾部），经 `WS /api/mock-interviews/:id/speech` 实时识别；握手前先发一次 HTTP 请求以刷新过期的登录 Cookie，握手超时 15 秒、发出结束信号后 30 秒内没有最终稿按识别失败处理，发送缓冲积压超过 1 MB 主动放弃，关闭码 `4401` 映射为登录失效（文字面试 `voice_input`，语音面试 `voice_answer`），停止时发送 `{"type":"stop"}` 取得最终稿与一次性 `session_id`；面试官语音由回合 SSE 的 mp3 片段按序播放，合成失败只显示字幕；报告页录音回放点击时读取 `GET .../recording`（`audio/wav`），已删除或不存在时显示不可用。设备检测里的扬声器试听调用 `POST /api/mock-interviews/:id/speech/playback`（不带题号时为固定试音内容）播放后端合成的面试官声音，合成或播放失败只提示无法试听，不阻止开始面试。
+- 自动化测试（vitest `MODE=test`）默认使用 `mockInterviewDemo.ts` 的本地假数据；`mockInterviewLive.test.ts` 用替身 fetch 覆盖真实层的请求形状、错误映射和 SSE 解析。`DeviceCheck.test.tsx` 覆盖试听成功与失败；WebSocket 与 AudioWorklet 采集没有自动化覆盖，需在真实浏览器与语音线路上验收。
 
 ## 修改联动与验证
 
 新增状态、面试类型、难度或语言需同步数据库 CHECK、Pydantic schema 和本文档；评分规则变化需递增 `RUBRIC_VERSION`。主要验证入口为 `tests/unit/application/test_mock_interview_rules.py`、`test_mock_interview_voice_rules.py`、`tests/unit/modules/speech/test_aliyun.py`、`tests/integration/api/test_mock_interviews.py` 与 `test_mock_interview_voice.py`；后者使用文件型 SQLite，使后台任务与请求线程各自持有连接。
+
+
+## 账号与界面边界
+
+模拟面试的界面选项、工具提示和日期支持普通 Web 界面语言，题目、用户回答、评估正文及独立作答语言保持不变。活跃场次阻止账号注销；录音上传在账号行锁内执行，防止已完成清理后出现迟到对象。注销清理覆盖既有 `mock-interviews/{uid}/` 录音前缀，见[账号功能](identity-account.md)。
 
 ## 原生文字面试
 

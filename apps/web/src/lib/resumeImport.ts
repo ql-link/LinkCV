@@ -1,7 +1,8 @@
 import { ApiRequestError } from "@/api/client";
+import { t } from "@/i18n";
 
 export function importErrorMessage(error: unknown) {
-  if (!(error instanceof ApiRequestError)) return "导入请求失败，请检查网络后重试。";
+  if (!(error instanceof ApiRequestError)) return t("导入请求失败，请检查网络后重试。");
   const messages: Record<string, string> = {
     RESUME_LIMIT_REACHED: "每个账号最多保存 10 份简历，请先删除一份后再导入。",
     TEMPLATE_INACTIVE: "导入所需的默认版式暂时不可用，请稍后重试。",
@@ -28,7 +29,7 @@ export function importErrorMessage(error: unknown) {
     IMPORT_CREATE_FAILED: "正式简历创建失败，请稍后重试。",
     IMPORT_DEADLINE_EXCEEDED: "导入处理超时，请稍后重新导入。",
   };
-  return messages[error.message] ?? `导入失败（${error.message}），请稍后重试。`;
+  return messages[error.message] ? t(messages[error.message]) : t("导入失败（{value0}），请稍后重试。", { value0: error.message });
 }
 
 export function formatImportFileSize(bytes: number) {
@@ -52,11 +53,11 @@ export function buildNamedImportFile(file: File, title: string) {
 
 export function validateImportTitle(title: string, filename: string) {
   const normalizedTitle = title.trim();
-  if (!normalizedTitle) return "请输入简历名称。";
+  if (!normalizedTitle) return t("请输入简历名称。");
   if (/[\\/]/.test(normalizedTitle) || Array.from(normalizedTitle).some((character) => character.charCodeAt(0) < 32)) {
-    return "简历名称不能包含路径符号或控制字符。";
+    return t("简历名称不能包含路径符号或控制字符。");
   }
   const extensionLength = filename.match(/\.[^.]+$/)?.[0].length ?? 0;
-  if (normalizedTitle.length + extensionLength > 255) return "简历名称过长，请缩短后重试。";
+  if (normalizedTitle.length + extensionLength > 255) return t("简历名称过长，请缩短后重试。");
   return null;
 }

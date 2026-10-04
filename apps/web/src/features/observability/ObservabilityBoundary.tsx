@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { Component, type ErrorInfo, type ReactNode, useEffect } from "react";
 import { api } from "../../api/client";
 
@@ -25,6 +26,7 @@ function report(type: ClientEventType, value: unknown, componentStack?: string):
 }
 
 function BrowserErrorListeners() {
+  useLocale();
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
       report("unhandled_error", event.error ?? event.message);
@@ -60,11 +62,9 @@ class RenderErrorBoundary extends Component<
     if (this.state.failed) {
       return (
         <main className="fatal-error" role="alert">
-          <h1>页面暂时无法显示</h1>
-          <p>错误已经记录，请刷新页面后重试。</p>
-          <button type="button" onClick={() => window.location.reload()}>
-            刷新页面
-          </button>
+          <h1>{t("页面暂时无法显示")}</h1>
+          <p>{t("错误已经记录，请刷新页面后重试。")}</p>
+          <button type="button" onClick={() => window.location.reload()}>{t("刷新页面")}</button>
         </main>
       );
     }
@@ -73,6 +73,7 @@ class RenderErrorBoundary extends Component<
 }
 
 export function ObservabilityBoundary({ children }: { children: ReactNode }) {
+  useLocale();
   return (
     <RenderErrorBoundary>
       <BrowserErrorListeners />

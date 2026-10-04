@@ -30,51 +30,70 @@ colors:
   scrim: "rgba(15, 18, 22, 0.46)"
 typography:
   page-title:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Noto Serif SC, Source Han Serif SC, Songti SC, sans-serif"
     fontSize: 1.75rem
     fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: -0.02em
+    lineHeight: 2.25rem
   section-title:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1.25rem
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 1.75rem
   subsection-title:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 1.5rem
   body-md:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.5rem
   body-sm:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.375rem
   content-md:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Lora, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.625rem
   content-sm:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Lora, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 400
-    lineHeight: 1.55
-  label-sm:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: 0.875rem
+    lineHeight: 1.375rem
+  content-title:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 1.5rem
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 2rem
+  label-sm:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 0.875rem
+    fontWeight: 500
+    lineHeight: 1.25rem
+  navigation:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 0.875rem
+    fontWeight: 500
+    lineHeight: 1.25rem
   metadata:
-    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, Source Han Sans SC, monospace"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.75rem
     fontWeight: 500
-    lineHeight: 1.25
+    lineHeight: 1.125rem
+  metric:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 1.75rem
+    fontWeight: 600
+    lineHeight: 2.25rem
+  code:
+    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, Source Han Sans SC, monospace"
+    fontSize: 0.875rem
+    fontWeight: 400
+    lineHeight: 1.375rem
 rounded:
   xs: 0.375rem
   sm: 0.5rem
@@ -293,10 +312,10 @@ LinkResume 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率
 
 排版强调快速扫描。页面通常只使用页面标题、区域标题、正文和辅助信息四级，不通过连续增加字号或字重制造层级。
 
-- 产品界面的标题、正文、输入和按钮统一使用随应用发布的思源黑体可变字体，通过字号、字重和紧凑字距建立层级；简历画布继续尊重用户选择的版式字体。
-- 正文默认 16px，密集控件和说明使用 14px。
-- 技术标识、时间、版本和短元数据的拉丁字符可以使用等宽字体，其中的中文回退到思源黑体；正文不使用等宽字体。
-- 独立 AI 助手和简历编辑器侧栏的用户消息与 AI 回复正文使用思源宋体，空状态、输入编辑器、会话导航和操作控件仍使用全局思源黑体。
+- 产品界面的西文标题、导航、按钮、输入、字段值与普通说明使用 Poppins（`--ui-font-sans` / `--ui-font-display`）；AI 长回复、岗位说明与资料长文使用 Lora（`--ui-font-content`）。中文界面和阅读正文沿用思源黑体，页面大标题使用 Noto Serif SC（`--ui-font-heading`）；弹窗、分区和卡片标题使用界面字体。两套西文字体随应用本地发布并保留 SIL OFL 1.1 授权；简历画布和 PDF 继续尊重用户选择的版式字体。
+- 页面标题 28px/36px/600，弹窗标题 20px/28px/600，分区与卡片标题 16px/24px/600；导航和控件 14px/20px/500，普通正文与说明 14px/22px/400，长文阅读 16px/26px/400，时间和短状态 12px/18px。选中导航以背景与颜色强调，保持字重稳定，避免切换时文字宽度跳动。
+- 独立统计数值使用 Poppins；正文中的数字跟随所在文字角色。代码、需要逐字符辨认的技术标识使用等宽字体，普通日期、时间和状态不默认使用等宽字体。
+- 独立 AI 助手和简历编辑器侧栏的 AI 回复使用阅读栈；用户消息、输入和操作控件使用界面栈。Markdown 标题使用 Poppins / 思源黑体，代码保留等宽字体。
 - 删除“欢迎使用”“轻松完成”“一站式管理”等不能帮助用户决策的文案；说明文字只解释限制、后果或下一步动作。
 
 设置页使用 `subsection-title`（16px/600）作为区域标题；核心正文、字段标签和控件使用 14–16px，只有时间、短状态和其他元信息使用 12px `metadata`。不把账户页个案字号直接推广为全局规则。
@@ -315,6 +334,8 @@ Settings Pattern 只约束显式选择它的共享组件或页面，不是所有
 
 每个页面只有一个主任务，默认阅读顺序是：页面上下文与标题 → 主要操作 → 核心内容 → 必要说明。一个区域通常只有一个主按钮；筛选和次要操作不能与主操作争夺注意力。
 
+V3 工作区正文随可用内容卡宽度伸展，桌面左右留白各为内容卡宽度的 3%、最少 24px，窄屏使用 16px；对话和新建表单保留独立阅读宽度。岗位看板单列保持 220–280px、列间距 10px，超宽屏增加可见列数，窄屏保留看板内横向滚动。
+
 布局采用流式内容区和 4px 基础间距。控件内部通常使用 8–16px，相关内容间使用 16–24px，大分区间使用 32–48px。不要为了整齐把所有内容装入卡片；先使用排版、间距、分隔线和背景层级。
 
 响应式基准为 1440、1024、390px。桌面保留完整导航和高价值辅助信息；小桌面收窄辅助区或转为主次堆叠；移动端采用单列、16px 页面边距和可触达操作。关键值不得截断，表格应重排或显式横向滚动。
@@ -325,7 +346,7 @@ Settings Pattern 只约束显式选择它的共享组件或页面，不是所有
 
 ### Page Eyebrow
 
-工作区页面标题上方的小字统一使用 `PageEyebrow`（`apps/web/src/v3/primitives.tsx`，样式 `.v3-page-eyebrow`：思源黑体 11px、行高 13px、`--v3-fnt` 灰色），距内容卡顶部 52–53px。格式为「英文模块名 · 当前位置或摘要」，以 ` · ` 分隔：一级页面写摘要（`TEMPLATES · 85 套`、`SCHEDULE · 2026 年 · 周视图`），子页面把模块名做成可点击的返回链接（`DATASETS · 证书`、`MOCK INTERVIEW · 练习记录`、`JOBS · 公司 · 岗位详情`）。模块名固定为 RESUMES、TEMPLATES、JOBS、SCHEDULE、REVIEWS、DATASETS、MOCK INTERVIEW、ACCOUNT；小字不重复大标题的内容。
+工作区页面标题上方的小字统一使用 `PageEyebrow`（`apps/web/src/v3/primitives.tsx`，样式 `.v3-page-eyebrow`：西文 Poppins／中文思源黑体 12px、字重 500、行高 18px、`--v3-fnt` 灰色），距内容卡顶部 52–53px。格式为「英文模块名 · 当前位置或摘要」，以 ` · ` 分隔：一级页面写摘要（`TEMPLATES · 85 套`、`SCHEDULE · 2026 年 · 周视图`），子页面把模块名做成可点击的返回链接（`DATASETS · 证书`、`MOCK INTERVIEW · 练习记录`、`JOBS · 公司 · 岗位详情`）。模块名固定为 RESUMES、TEMPLATES、JOBS、SCHEDULE、REVIEWS、DATASETS、MOCK INTERVIEW、ACCOUNT；小字不重复大标题的内容。
 
 ### Motion & Interaction
 

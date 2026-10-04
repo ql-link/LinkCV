@@ -42,7 +42,9 @@ private func appointment(_ id: String, _ start: String, _ end: String, status: S
 }
 @Test func desktopSessionEditingHasNarrowMethodBoundary() {
     #expect(CareerRequest.allowed(path: "/api/interview-sessions/12", method: "PUT"))
-    #expect(!CareerRequest.allowed(path: "/api/interview-sessions/12", method: "DELETE"))
+    // Stage detail (04.C03) deletes a session; the backend keeps ownership checks.
+    #expect(CareerRequest.allowed(path: "/api/interview-sessions/12", method: "DELETE"))
+    #expect(!CareerRequest.allowed(path: "/api/interview-sessions/12", method: "POST"))
     #expect(!CareerRequest.allowed(path: "/api/interview-sessions/12", method: "PATCH"))
 }
 

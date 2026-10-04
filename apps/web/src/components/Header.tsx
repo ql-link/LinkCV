@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { FileDown, Home, Save } from "lucide-react";
 import { useState } from "react";
 import { exportResumePdf, resumePdfExportErrorMessage } from "../features/preview/pdfExport";
@@ -10,6 +11,7 @@ type SaveToast = {
 };
 
 export function Header() {
+  useLocale();
   const title = useResumeStore((state) => state.title);
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const setTitle = useResumeStore((state) => state.setTitle);
@@ -27,8 +29,8 @@ export function Header() {
     const latestError = useResumeStore.getState().error;
     setSaveToast(
       latestError
-        ? { kind: "error", message: "保存失败" }
-        : { kind: "success", message: "保存成功" },
+        ? { kind: "error", message: t("保存失败") }
+        : { kind: "success", message: t("保存成功") },
     );
     setIsManualSaving(false);
   };
@@ -36,7 +38,7 @@ export function Header() {
   return (
     <header className="top-nav">
       <div className="nav-left">
-        <IconButton label="回主页" variant="circular" onClick={goHome}>
+        <IconButton label={t("回主页")} variant="circular" onClick={goHome}>
           <Home size={16} />
         </IconButton>
         <Brand />
@@ -46,16 +48,16 @@ export function Header() {
             className="document-title-input"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
-            aria-label="简历标题"
-            placeholder="未命名简历"
+            aria-label={t("简历标题")}
+            placeholder={t("未命名简历")}
           />
           <span className="save-status">
             {saveStatus === "saving"
-              ? "保存中..."
+              ? t("保存中...")
               : saveStatus === "saved" && !dirty
-                ? "已保存"
+                ? t("已保存")
                 : dirty
-                  ? "未保存"
+                  ? t("未保存")
                   : user?.email}
           </span>
         </div>
@@ -79,12 +81,8 @@ export function Header() {
             kind: "error",
             message: resumePdfExportErrorMessage(error),
           }));
-        }}>
-          导出 PDF
-        </Button>
-        <Button icon={<Save size={14} />} disabled={isManualSaving} onClick={() => void handleManualSave()}>
-          保存
-        </Button>
+        }}>{t("导出 PDF")}</Button>
+        <Button icon={<Save size={14} />} disabled={isManualSaving} onClick={() => void handleManualSave()}>{t("保存")}</Button>
       </div>
       {saveToast && (
         <FeedbackNotice kind={saveToast.kind} placement="floating" onDismiss={() => setSaveToast(null)}>

@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,8 +19,9 @@ export function ExpandableSearch({
   value,
   onValueChange,
   className,
-  placeholder = "搜索…",
+  placeholder = t("搜索…"),
 }: ExpandableSearchProps) {
+  useLocale();
   const [expanded, setExpanded] = useState(value.length > 0);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -78,7 +80,7 @@ export function ExpandableSearch({
         }}
       />
       <button
-        aria-label="清除并收起搜索"
+        aria-label={t("清除并收起搜索")}
         className="expandable-search-close"
         type="button"
         onClick={collapse}

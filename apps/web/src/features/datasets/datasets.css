@@ -2,7 +2,7 @@
    坐标以内容卡为原点：正文列 CX=146、CW=860；这里把 860 列居中，宽度不够时随窗口收缩。 */
 
 .ds-root { position: relative; min-height: 100%; }
-.ds-page { position: relative; width: min(var(--v3-page-max), calc(100% - 2 * var(--v3-gutter))); min-width: 640px; margin: 0 auto; padding: 0 0 72px; }
+.ds-page { position: relative; width: min(var(--v3-page-max), calc(100% - 2 * var(--v3-gutter))); min-width: 0; margin: 0 auto; padding: 0 0 72px; }
 .ds-root.is-embedded .ds-page { width: auto; min-width: 0; max-width: none; padding: 0 24px 48px; }
 
 /* ── 页头：眉标 / 面包屑 → 衬线标题 → 摘要 → 分隔线（y=160） */
@@ -14,8 +14,8 @@
 .ds-crumb-back:hover { color: var(--v3-txt); }
 .ds-crumb-sep { color: var(--v3-fnt2); }
 .ds-crumb-current { overflow: hidden; color: var(--v3-fnt); text-overflow: ellipsis; white-space: nowrap; }
-.ds-title { overflow: hidden; max-width: calc(100% - 440px); margin: 0; font-family: var(--v3-serif); font-size: 28px; font-weight: 600; line-height: 40px; text-overflow: ellipsis; white-space: nowrap; }
-.ds-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 16px; }
+.ds-title { overflow: hidden; max-width: calc(100% - 440px); margin: 0; font-family: var(--v3-serif); font-size: var(--ui-text-2xl); font-weight: 600; line-height: var(--ui-line-page-title); text-overflow: ellipsis; white-space: nowrap; }
+.ds-sub { margin: 6px 0 0; color: var(--v3-sub); font-size: var(--ui-text-sm); line-height: var(--ui-line-body); font-family: var(--ui-font-sans); }
 .ds-actions { position: absolute; top: 84px; right: 0; display: flex; align-items: center; gap: 10px; }
 .ds-actions .v3-search { width: 200px; }
 .ds-actions.is-folder .v3-search { width: 180px; }
@@ -24,9 +24,9 @@
 
 /* ── 06.1 文件夹网格（3 列 273×172，间距 20）。正文列随窗口变宽时卡片按 273:172 等比放大，文字行贴底保持设计稿间距 */
 .ds-section-head { display: flex; height: 16px; align-items: center; justify-content: space-between; margin: 23px 0 12px; }
-.ds-section-head strong { font-size: 13px; font-weight: 500; }
-.ds-section-head span { color: var(--v3-fnt); font-size: 11.5px; }
-.ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(273px, 1fr)); gap: 20px; }
+.ds-section-head strong { font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); font-family: var(--ui-font-display); line-height: var(--ui-line-subsection-title); }
+.ds-section-head span { color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); }
+.ds-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 273px), 1fr)); gap: 20px; }
 .ds-folder { position: relative; aspect-ratio: 273 / 172; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); cursor: pointer; transition: border-color 120ms ease, box-shadow 120ms ease; }
 .ds-folder:hover { border-color: var(--v3-sk2); box-shadow: 0 6px 20px rgb(0 0 0 / 6%); }
 .ds-folder:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
@@ -34,7 +34,7 @@
 .ds-folder-stage-inner { position: absolute; top: 50%; left: 50%; width: 257px; height: 96px; translate: -50% -50%; transform-origin: center; scale: min(calc(100cqw / 257px), calc(100cqh / 96px)); }
 .ds-folder-empty-sheet { position: absolute; top: 16px; left: 98px; width: 60px; height: 78px; border: 1px dashed var(--v3-fnt2); border-radius: 4px; }
 .ds-folder-name { position: absolute; bottom: 36px; right: 52px; left: 17px; overflow: hidden; font-size: 14px; font-weight: 500; line-height: 17px; text-overflow: ellipsis; white-space: nowrap; }
-.ds-folder-meta { position: absolute; bottom: 16px; right: 17px; left: 17px; overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-folder-meta { position: absolute; bottom: 16px; right: 17px; left: 17px; overflow: hidden; color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); text-overflow: ellipsis; white-space: nowrap; }
 .ds-folder-more { position: absolute; bottom: 30px; right: 12px; }
 .ds-folder-more[aria-expanded="true"] { background: var(--v3-field); color: var(--v3-txt); }
 .ds-sheet { position: absolute; width: 60px; height: 78px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 4px; background: #fff; box-shadow: 0 3px 8px rgb(0 0 0 / 7%); }
@@ -50,7 +50,7 @@
 .ds-new-folder small { margin-top: 6px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
 
 /* 最近上传：卡片内 56 高的行 */
-.ds-recent-head { margin: 32px 0 12px; font-size: 13px; font-weight: 500; line-height: 16px; }
+.ds-recent-head { margin: 32px 0 12px; font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); line-height: var(--ui-line-subsection-title); font-family: var(--ui-font-display); }
 .ds-recent { overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); }
 .ds-recent-row { position: relative; display: grid; width: 100%; height: 56px; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 0; background: transparent; padding: 0 17px; color: inherit; cursor: pointer; text-align: left; }
 .ds-recent-row + .ds-recent-row::before { position: absolute; top: 0; right: 17px; left: 17px; height: 1px; background: var(--v3-line); content: ""; }
@@ -60,7 +60,7 @@
 .ds-recent-time { color: var(--v3-fnt); font-family: var(--v3-num); font-size: 11.5px; white-space: nowrap; }
 .ds-folder-chip { display: inline-flex; overflow: hidden; max-width: 200px; height: 22px; align-items: center; gap: 5px; justify-self: start; border-radius: 11px; background: var(--v3-field); padding: 0 10px 0 8px; color: var(--v3-sub); font-size: 11px; font-weight: 500; white-space: nowrap; }
 .ds-folder-chip span { overflow: hidden; text-overflow: ellipsis; }
-.ds-foot-note { margin: 20px 0 0; color: var(--v3-fnt); font-size: 11.5px; line-height: 19px; }
+.ds-foot-note { margin: 20px 0 0; color: var(--v3-fnt); font-size: var(--ui-text-sm); line-height: var(--ui-line-body); }
 
 /* 格式方块（32×32，浅色底 + 同色文字） */
 .ds-fmt { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 8px; font-family: var(--v3-num); font-size: 8px; font-weight: 700; line-height: 1; }
@@ -71,9 +71,9 @@
 .ds-cols { display: grid; grid-template-columns: 32px minmax(0, 1fr) 190px 66px 144px 42px; align-items: center; padding: 0 10px 0 12px; }
 .ds-cols > :nth-child(2) { padding-right: 12px; padding-left: 12px; }
 .ds-cols > :nth-child(6) { justify-self: end; }
-.ds-table-head { height: 46px; align-items: start; border-bottom: 1px solid var(--v3-line); padding-top: 22px; color: var(--v3-fnt); font-size: 11px; }
-.ds-table-head > span { line-height: 13px; }
-.ds-table-head > span { padding: 0 !important; }
+.ds-table-head { height: 46px; align-items: start; border-bottom: 1px solid var(--v3-line); padding-top: 22px; color: var(--v3-fnt); font-size: var(--ui-text-xs); }
+.ds-table-head > span { line-height: var(--ui-line-metadata); }
+.ds-table-head > span { padding: 0 !important; line-height: var(--ui-line-metadata); }
 .ds-table-head > .is-name { grid-column: 1 / 3; }
 .ds-table-head > .is-right, .ds-row .is-right { text-align: right; }
 .ds-table-head > .is-check { display: grid; width: 28px; place-items: center; }
@@ -86,8 +86,8 @@
 .ds-row:hover::before, .ds-row.is-active::before, .ds-row:hover + .ds-row::before, .ds-row.is-active + .ds-row::before { opacity: 0; }
 .ds-row:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: -2px; }
 .ds-row-name { display: grid; min-width: 0; align-self: start; gap: 4px; padding-top: 9px; }
-.ds-row-name strong { overflow: hidden; color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.ds-row-name small { overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.ds-row-name strong { overflow: hidden; color: var(--v3-txt); font-size: var(--ui-text-sm); font-weight: 500; line-height: var(--ui-line-control); text-overflow: ellipsis; white-space: nowrap; }
+.ds-row-name small { overflow: hidden; color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); text-overflow: ellipsis; white-space: nowrap; }
 .ds-row-name small.is-processing { color: var(--v3-bl); }
 .ds-row-name small.is-failed { color: var(--v3-rd); }
 .ds-row-link { display: flex; min-width: 0; align-items: center; gap: 5px; line-height: 14px; }
@@ -216,18 +216,19 @@
 .ds-preview-meta .v3-link { color: var(--v3-txt); font-size: 12px; }
 .ds-preview-stage { height: 612px; max-height: calc(100dvh - 200px); margin-top: 23px; border-radius: 11px; background: var(--v3-stage); padding: 24px; }
 .ds-preview-doc { height: 100%; overflow-y: auto; border: 1px solid var(--v3-cl); border-radius: 6px; background: #fff; padding: 28px 32px; }
-.ds-preview-doc .ds-markdown { color: var(--v3-sub); font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.ds-preview-doc .ds-markdown { color: var(--v3-sub); font-size: var(--ui-text-md); line-height: var(--ui-line-content); overflow-wrap: anywhere; font-family: var(--ui-font-content); }
 .ds-preview-doc .ds-markdown > :first-child { margin-top: 0; }
-.ds-preview-doc .ds-markdown h1 + p { color: var(--v3-fnt); font-size: 11.5px; }
+.ds-preview-doc .ds-markdown h1 + p { color: var(--v3-sub); font-size: inherit; }
 .ds-preview-doc .ds-markdown li { margin: 0 0 6px; }
 .ds-preview-doc .ds-markdown a { color: var(--v3-link); }
-.ds-preview-doc .ds-markdown code { border-radius: 4px; background: var(--v3-field); padding: 1px 4px; font-size: 11.5px; }
+.ds-preview-doc .ds-markdown code { border-radius: 4px; background: var(--v3-field); padding: 1px 4px; font-size: 0.875em; font-family: var(--ui-font-mono); }
 .ds-preview-doc .ds-markdown pre code { background: transparent; padding: 0; }
 .ds-preview-doc .ds-markdown blockquote { margin: 0 0 8px; border-left: 3px solid var(--v3-line); padding-left: 12px; color: var(--v3-fnt); }
 .ds-preview-doc .ds-markdown h1,
-.ds-preview-doc .ds-markdown h2 { margin: 0 0 10px; color: var(--v3-txt); font-family: var(--v3-serif); font-size: 17px; font-weight: 600; line-height: 24px; }
+.ds-preview-doc .ds-markdown h2 { margin: 0 0 10px; color: var(--v3-txt); font-family: var(--ui-font-display); font-size: var(--ui-text-xl); font-weight: var(--ui-weight-semibold); line-height: var(--ui-line-section-title); }
 .ds-preview-doc .ds-markdown h3,
-.ds-preview-doc .ds-markdown h4 { margin: 18px 0 8px; color: var(--v3-txt); font-size: 13px; font-weight: 500; }
+.ds-preview-doc .ds-markdown h4 { margin: 18px 0 8px; color: var(--v3-txt); font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); font-family: var(--ui-font-display); line-height: var(--ui-line-subsection-title); }
+.ds-preview-doc .ds-markdown h1 { font-size: var(--ui-text-content-title); line-height: var(--ui-line-content-title); }
 .ds-preview-doc .ds-markdown p { margin: 0 0 8px; }
 .ds-preview-doc .ds-markdown ul, .ds-preview-doc .ds-markdown ol { margin: 0 0 8px; padding-left: 16px; }
 .ds-preview-doc .ds-markdown hr { height: 1px; margin: 16px 0; border: 0; background: var(--v3-line); }
@@ -252,3 +253,26 @@
 .ds-root:not(.is-embedded) .ds-page > .ds-body-slot { display: grid; min-height: 0; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
 .ds-body-slot > .v3-reveal-out, .ds-body-slot > .v3-reveal-in { display: grid; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .ds-body-slot .ds-body { overflow-y: auto; overscroll-behavior: contain; margin-inline: -8px; padding-inline: 8px; padding-bottom: 48px; }
+
+@container workspace (max-width: 900px) {
+  .ds-title { max-width: 100%; }
+  .ds-actions { position: static; flex-wrap: wrap; margin-top: 20px; }
+  .ds-actions .v3-search, .ds-actions.is-folder .v3-search { width: auto; min-width: 160px; flex: 1; }
+  .ds-table { overflow-x: auto; overscroll-behavior-x: contain; }
+  .ds-cols { min-width: 720px; }
+}
+@container workspace (max-width: 560px) {
+  .ds-head { padding-top: 28px; }
+  .ds-root.is-embedded .ds-page { padding-inline: 16px; }
+  .ds-recent-row { height: auto; min-height: 64px; gap: 8px; padding: 12px; grid-template-columns: 32px minmax(0, 1fr); }
+  .ds-recent-name { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .ds-recent-time { grid-column: 2; }
+}
+@media (max-width: 1023px) {
+  .ds-batch-bar { left: 50%; width: max-content; max-width: calc(100vw - 24px); height: auto; flex-wrap: wrap; gap: 8px 12px; padding: 12px; }
+}
+
+@media (max-height: 600px) {
+  .ds-root:not(.is-embedded) { height: auto; min-height: 100%; }
+  .ds-root:not(.is-embedded) .ds-page { height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }
+}

@@ -1,10 +1,14 @@
-import type { ReactNode } from "react";
-import { careerApplicationPath, careerViewPath, editorPath, navigateTo } from "../../routing";
+import { getLocale, t, useLocale, weekdayName, weekdays } from "@/i18n";
+import { useState, type ReactNode } from "react";
+import { careerApplicationPath, careerViewPath, editorPath, jobDetailPath, navigateTo } from "../../routing";
 import { Icon } from "../../v3/Icon";
 import { Bar, Dot, Paper, StageText } from "../../v3/art";
-import { BeTag } from "../../v3/primitives";
-import { MOCK_HOME_OFFER_COMPARE, MOCK_HOME_RECOMMENDED_JOB_ROWS, MOCK_OFFER, MOCK_RECOMMENDED_JOBS } from "../../v3/mocks";
+import { BeTag, Dialog } from "../../v3/primitives";
+import type { JobApplicationSummary, JobMatchRecommendationItem } from "../../api/client";
+import { formatOfferDate, offerDeadline } from "../interviews/offerDates";
+import { describeOfferGap, formatOfferSalary } from "./offerCompare";
 import { pipelineColumns, startOfWeek, type HomeCard } from "./homeDashboard";
+import { useJobMatchRecommendations } from "./useJobMatchRecommendations";
 
 // 首页三张 227×236 卡片：上方 211×112 插图舞台（点阵底），下方衬线标题 + 说明 + 文字按钮。
 // 插图坐标全部取自 Figma「01.1 首页」「01.1 首页 · 状态变体」。
@@ -22,6 +26,7 @@ function CardFrame({
   beTitle,
   beSub,
   label,
+  onActivate,
 }: {
   stage: ReactNode;
   title: ReactNode;
@@ -31,7 +36,9 @@ function CardFrame({
   beTitle?: boolean;
   beSub?: boolean;
   label: string;
+  onActivate?: () => void;
 }) {
+  useLocale();
   return (
     <a
       className="assistant-home-card"
@@ -40,7 +47,7 @@ function CardFrame({
       onClick={(event) => {
         if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
         event.preventDefault();
-        navigateTo(href);
+        if (onActivate) onActivate(); else navigateTo(href);
       }}
     >
       <span className="v3-stage has-dots assistant-home-stage" aria-hidden="true">{stage}</span>
@@ -54,6 +61,7 @@ function CardFrame({
 /* ── 各卡片的插图 ── */
 
 function FirstResumeArt() {
+  useLocale();
   return (
     <>
       <Paper x={68} y={8} w={74} h={96} r={4}>
@@ -63,9 +71,9 @@ function FirstResumeArt() {
         ))}
       </Paper>
       {[
-        { x: 22, y: 26, r: -4, t: "教育" },
-        { x: 150, y: 52, r: 3, t: "项目" },
-        { x: 28, y: 76, r: 2, t: "技能" },
+        { x: 22, y: 26, r: -4, t: t("教育") },
+        { x: 150, y: 52, r: 3, t: t("项目") },
+        { x: 28, y: 76, r: 2, t: t("技能") },
       ].map((item) => (
         <span key={item.t} className="assistant-home-module" style={{ left: item.x, top: item.y, transform: `rotate(${item.r}deg)` }}>{item.t}</span>
       ))}
@@ -74,18 +82,20 @@ function FirstResumeArt() {
 }
 
 function TargetArt() {
+  useLocale();
   const row = (items: Array<[number, string, boolean]>, y: number) => items.map(([x, text, strong]) => (
     <span key={text} className={`assistant-home-tag${strong ? " is-strong" : ""}`} style={{ left: x, top: y }}>{text}</span>
   ));
   return (
     <>
-      {row([[16, "后端开发", true], [78, "Java", true], [123, "基础架构", true]], 22)}
-      {row([[16, "北京", false], [58, "2026 校招", false]], 52)}
+      {row([[16, t("后端开发"), true], [78, "Java", true], [123, t("基础架构"), true]], 22)}
+      {row([[16, t("北京"), false], [58, t("2026 校招"), false]], 52)}
     </>
   );
 }
 
 function PluginArt() {
+  useLocale();
   return (
     <Paper x={18} y={14} w={175} h={86} r={6} shadow={false}>
       <Bar x={0} y={0} w={175} h={14} color="var(--v3-field)" r={0} />
@@ -95,12 +105,13 @@ function PluginArt() {
       <Bar x={10} y={46} w={110} h={3} />
       <Bar x={10} y={54} w={110} h={3} />
       <Bar x={10} y={62} w={70} h={3} />
-      <span style={{ position: "absolute", left: 89, top: 60, display: "grid", width: 76, height: 20, placeItems: "center", borderRadius: 5, background: "var(--v3-gn-soft)", color: "var(--v3-gn)", fontSize: 10, fontWeight: 500 }}>收藏到简历</span>
+      <span style={{ position: "absolute", left: 89, top: 60, display: "grid", width: 76, height: 20, placeItems: "center", borderRadius: 5, background: "var(--v3-gn-soft)", color: "var(--v3-gn)", fontSize: 10, fontWeight: 500 }}>{t("收藏到简历")}</span>
     </Paper>
   );
 }
 
 function TodayArt({ start, end, title, mode }: { start: Date; end: Date; title: string; mode: string }) {
+  useLocale();
   const hour = start.getHours();
   const slots = [hour - 1, hour, hour + 1];
   const top = 22 + ((start.getMinutes() / 60) * 32) + 32;
@@ -125,6 +136,7 @@ function TodayArt({ start, end, title, mode }: { start: Date; end: Date; title: 
 }
 
 function ResumeArt({ missing }: { missing: string | null }) {
+  useLocale();
   return (
     <>
       <Paper x={26} y={10} w={78} h={96} r={4}>
@@ -142,7 +154,7 @@ function ResumeArt({ missing }: { missing: string | null }) {
       {missing && (
         <>
           <Bar x={104} y={95} w={8} h={1} color="var(--v3-or)" r={0} />
-          <span className="assistant-home-flag" style={{ left: 112, top: 86 }}>待补 · {missing}</span>
+          <span className="assistant-home-flag" style={{ left: 112, top: 86 }}>{t("待补 · ")}{missing}</span>
         </>
       )}
     </>
@@ -150,10 +162,11 @@ function ResumeArt({ missing }: { missing: string | null }) {
 }
 
 function PipelineArt({ columns }: { columns: ReturnType<typeof pipelineColumns> }) {
+  useLocale();
   const items: Array<{ x: number; label: string; color: string; count: number; accent?: boolean }> = [
-    { x: 12, label: "待投递", color: "var(--v3-fnt)", count: columns.pending },
-    { x: 60, label: "笔试", color: "var(--v3-or)", count: columns.test },
-    { x: 108, label: "面试", color: "var(--v3-bl)", count: columns.interview },
+    { x: 12, label: t("待投递"), color: "var(--v3-fnt)", count: columns.pending },
+    { x: 60, label: t("笔试"), color: "var(--v3-or)", count: columns.test },
+    { x: 108, label: t("面试"), color: "var(--v3-bl)", count: columns.interview },
     { x: 157, label: "Offer", color: "var(--v3-gn)", count: columns.offer, accent: true },
   ];
   return (
@@ -174,8 +187,9 @@ function PipelineArt({ columns }: { columns: ReturnType<typeof pipelineColumns> 
 }
 
 function WeekArt({ now, sessionDays }: { now: Date; sessionDays: Set<number> }) {
+  useLocale();
   const monday = startOfWeek(now);
-  const names = ["一", "二", "三", "四", "五", "六", "日"];
+  const names = [t("一"), t("二"), t("三"), t("四"), t("五"), t("六"), t("日")];
   return (
     <>
       {names.map((name, index) => {
@@ -195,21 +209,72 @@ function WeekArt({ now, sessionDays }: { now: Date; sessionDays: Set<number> }) 
   );
 }
 
-function JobsArt() {
+const JOB_ROW_STYLE = { position: "absolute", left: 12, display: "flex", width: 187, height: 24, alignItems: "center", gap: 6, border: "1px solid var(--v3-cl)", borderRadius: 5, background: "#fff", padding: "0 10px", fontSize: 10, fontWeight: 500 } as const;
+
+function JobsArt({ items, loading }: { items: JobMatchRecommendationItem[]; loading: boolean }) {
+  useLocale();
+  if (!items.length) {
+    // 还没有结果：灰色占位行，不显示任何数字
+    return <>{[0, 1, 2].map((index) => (
+      <span key={index} style={{ ...JOB_ROW_STYLE, top: 14 + index * 30, opacity: loading ? 0.6 : 0.35 }}>
+        <span style={{ flex: 1, height: 6, borderRadius: 3, background: "var(--v3-field)" }} />
+        <span style={{ width: 22, height: 6, borderRadius: 3, background: "var(--v3-field)" }} />
+      </span>
+    ))}</>;
+  }
   return (
     <>
-      {MOCK_HOME_RECOMMENDED_JOB_ROWS.map((row, index) => (
-        <span key={row.title} style={{ position: "absolute", left: 12, top: 14 + index * 30, display: "flex", width: 187, height: 24, alignItems: "center", justifyContent: "space-between", border: "1px solid var(--v3-cl)", borderRadius: 5, background: "#fff", padding: "0 10px", fontSize: 10, fontWeight: 500 }}>
-          <span style={{ color: "var(--v3-sub)" }}>{row.title}</span>
-          <span style={{ color: "var(--v3-gn)", fontFamily: "var(--v3-num)", fontWeight: 600 }}>{row.match}%</span>
+      {items.map((item, index) => (
+        <span key={item.job_id} style={{ ...JOB_ROW_STYLE, top: 14 + index * 30 }} title={`${item.company_name} · ${item.job_title}`}>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--v3-sub)" }}>{item.company_name} · {item.job_title}</span>
+          <span style={{ flex: "none", color: "var(--v3-fnt)", fontSize: 9 }}>{item.application_status ?? t("未投递")}</span>
+          <span style={{ flex: "none", color: "var(--v3-gn)", fontFamily: "var(--v3-num)", fontWeight: 600 }}>{item.score}</span>
         </span>
       ))}
     </>
   );
 }
 
-function OfferArt({ deadline }: { deadline: Date }) {
-  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][deadline.getDay()];
+function JobsCard() {
+  useLocale();
+  const { status, data, stalled } = useJobMatchRecommendations(true);
+  const items = data?.items ?? [];
+  const resumeTitle = data?.resume?.title ?? "";
+  const label = t("查看匹配的岗位");
+  const board = "/career/applications";
+
+  if (status === "loading") {
+    return <CardFrame label={label} stage={<JobsArt items={[]} loading />} title={t("与简历最匹配的岗位")} sub={t("正在读取…")} action={t("岗位看板")} href={board} />;
+  }
+  if (items.length) {
+    const waiting = (data?.pending_count ?? 0) > 0 && !stalled;
+    return (
+      <CardFrame
+        label={label}
+        stage={<JobsArt items={items} loading={false} />}
+        title={t("与简历最匹配的岗位")}
+        sub={waiting ? t("基于《{value0}》· 还在分析 {value1} 个", { value0: resumeTitle, value1: data?.pending_count ?? 0 }) : t("基于《{value0}》", { value0: resumeTitle })}
+        action={t("查看岗位")}
+        href={jobDetailPath(items[0].job_id)}
+      />
+    );
+  }
+  if (status === "ready" && data?.state === "no_jobs") {
+    return <CardFrame label={t("保存岗位")} stage={<JobsArt items={[]} loading={false} />} title={t("保存岗位，查看匹配度")} sub={t("用插件导入或粘贴岗位描述即可")} action={t("添加岗位")} href={board} />;
+  }
+  if (status === "ready" && data?.state === "no_resume") {
+    return <CardFrame label={t("新建简历")} stage={<JobsArt items={[]} loading={false} />} title={t("先创建一份简历")} sub={t("有了简历才能计算岗位匹配度")} action={t("去创建")} href="/resumes" />;
+  }
+  if (status === "ready" && !stalled && (data?.state === "computing" || data?.state === "idle")) {
+    return <CardFrame label={label} stage={<JobsArt items={[]} loading />} title={t("正在对照你的简历…")} sub={t("基于《{value0}》", { value0: resumeTitle })} action={t("岗位看板")} href={board} />;
+  }
+  return <CardFrame label={t("打开岗位看板")} stage={<JobsArt items={[]} loading={false} />} title={t("暂时无法计算匹配度")} sub={stalled ? t("还在分析，稍后刷新查看") : t("稍后再试")} action={t("岗位看板")} href={board} />;
+}
+
+function OfferArt({ deadline, label }: { deadline: Date | null; label: string }) {
+  useLocale();
+  if (!deadline) return <Paper x={47} y={14} w={64} h={84} r={8} shadow={false}><StageText x={0} y={28} size={24} style={{ width: 62, textAlign: "center" }}>—</StageText></Paper>;
+  const weekday = weekdays()[deadline.getDay()];
   return (
     <>
       <Paper x={47} y={14} w={64} h={84} r={8} shadow={false}>
@@ -217,21 +282,22 @@ function OfferArt({ deadline }: { deadline: Date }) {
           {new Intl.DateTimeFormat("zh-CN", { month: "long" }).format(deadline)}
         </span>
         <StageText x={0} y={26} size={28} color="var(--v3-txt)" weight={600} num style={{ width: 62, textAlign: "center" }}>{deadline.getDate()}</StageText>
-        <StageText x={0} y={64} size={8.5} color="var(--v3-fnt)" style={{ width: 62, textAlign: "center" }}>{`${weekday} ${formatClock(deadline.toISOString())}`}</StageText>
+        <StageText x={0} y={64} size={8.5} color="var(--v3-fnt)" style={{ width: 62, textAlign: "center" }}>{weekday}</StageText>
       </Paper>
-      <span className="assistant-home-flag" style={{ left: 123, top: 46 }}>还剩 {MOCK_OFFER.daysLeft} 天</span>
+      <span className="assistant-home-flag" style={{ left: 123, top: 46 }}>{label}</span>
     </>
   );
 }
 
-function CompareArt() {
+function CompareArt({ offers }: { offers: JobApplicationSummary[] }) {
+  useLocale();
   return (
     <>
-      {MOCK_HOME_OFFER_COMPARE.map((offer, index) => (
-        <Paper key={offer.company} x={12 + index * 99} y={14} w={87} h={84} r={8} shadow={false}>
+      {offers.slice(0, 2).map((offer, index) => (
+        <Paper key={offer.id} x={12 + index * 99} y={14} w={87} h={84} r={8} shadow={false}>
           <Bar x={0} y={0} w={3} h={84} color={index === 0 ? "var(--v3-gn)" : "var(--v3-bl)"} r={0} />
-          <StageText x={12} y={10} size={10}>{offer.company}</StageText>
-          <StageText x={12} y={28} size={13} color="var(--v3-txt)" weight={600} num>{offer.salary}</StageText>
+          <StageText x={12} y={10} size={10}>{offer.company_name_snapshot}</StageText>
+          <StageText x={12} y={28} size={13} color="var(--v3-txt)" weight={600} num>{formatOfferSalary(offer)}</StageText>
           <Bar x={12} y={56} w={63} h={3} />
           <Bar x={12} y={64} w={38} h={3} />
         </Paper>
@@ -243,25 +309,26 @@ function CompareArt() {
 /* ── 卡片 ── */
 
 export function HomeCardView({ card, now }: { card: HomeCard; now: Date }) {
+  useLocale();
   switch (card.kind) {
     case "firstResume":
-      return <CardFrame label="新建第一份简历" stage={<FirstResumeArt />} title="新建第一份简历" sub="选模板新建，或导入已有文件" action="新建简历" href="/resumes/new" />;
+      return <CardFrame label={t("新建第一份简历")} stage={<FirstResumeArt />} title={t("新建第一份简历")} sub={t("选模板新建，或导入已有文件")} action={t("新建简历")} href="/resumes/new" />;
     case "target":
-      return <CardFrame label="设置求职方向" stage={<TargetArt />} title="设置求职方向" sub="用来推荐岗位和优化简历" action="去设置" href="/account" />;
+      return <CardFrame label={t("设置求职方向")} stage={<TargetArt />} title={t("设置求职方向")} sub={t("用来推荐岗位和优化简历")} action={t("去设置")} href="/account" />;
     case "plugin":
       // 岗位看板的插件弹窗没有路由参数可以直接打开，这里只导航到看板
-      return <CardFrame label="安装浏览器插件" stage={<PluginArt />} title="安装浏览器插件" sub="在招聘网站一键收藏岗位" action="安装插件" href="/career/applications" />;
+      return <CardFrame label={t("安装浏览器插件")} stage={<PluginArt />} title={t("安装浏览器插件")} sub={t("在招聘网站一键收藏岗位")} action={t("安装插件")} href="/career/applications" />;
     case "today": {
       const start = new Date(card.session.start_at);
       const title = `${card.session.company_name}${card.session.stage_label}`;
-      const mode = { video: "视频", onsite: "现场", phone: "电话", other: "其他" }[card.session.mode];
+      const mode = { video: t("视频"), onsite: t("现场"), phone: t("电话"), other: t("其他") }[card.session.mode];
       return (
         <CardFrame
-          label="查看今日日程"
+          label={t("查看今日日程")}
           stage={<TodayArt start={start} end={new Date(card.session.end_at)} title={title} mode={`${mode} · ${formatClock(card.session.start_at)}–${formatClock(card.session.end_at)}`} />}
           title={`${formatClock(card.session.start_at)} ${title}`}
-          sub={card.others > 0 ? `另有 ${card.others} 场安排` : "今天只有这一场"}
-          action="查看日程"
+          sub={card.others > 0 ? t("另有 {value0} 场安排", { value0: card.others }) : t("今天只有这一场")}
+          action={t("查看日程")}
           href={careerViewPath("schedule")}
         />
       );
@@ -270,11 +337,11 @@ export function HomeCardView({ card, now }: { card: HomeCard; now: Date }) {
       // 「截止提醒」卡 Figma 还没画，按规则说明参照「Offer 待回复」的样式
       return (
         <CardFrame
-          label="查看截止提醒"
+          label={t("查看截止提醒")}
           stage={<OfferArtForDate date={new Date(card.session.answer_plan_end_at ?? card.session.end_at)} daysLeft={card.daysLeft} />}
-          title={`${card.session.company_name} · ${card.daysLeft === 0 ? "今天截止" : `${card.daysLeft} 天后截止`}`}
-          sub={`${card.session.stage_label} · ${formatClock(card.session.answer_plan_end_at ?? card.session.end_at)} 前完成`}
-          action="查看日程"
+          title={`${card.session.company_name} · ${card.daysLeft === 0 ? t("今天截止") : t("{value0} 天后截止", { value0: card.daysLeft })}`}
+          sub={t("{value0} · {value1} 前完成", { value0: card.session.stage_label, value1: formatClock(card.session.answer_plan_end_at ?? card.session.end_at) })}
+          action={t("查看日程")}
           href={careerViewPath("schedule")}
         />
       );
@@ -284,65 +351,72 @@ export function HomeCardView({ card, now }: { card: HomeCard; now: Date }) {
       const weekdays = [...days].sort().map((day) => ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][day]).filter(Boolean);
       return (
         <CardFrame
-          label="查看本周日程"
+          label={t("查看本周日程")}
           stage={<WeekArt now={now} sessionDays={days} />}
-          title={card.sessions.length > 0 ? `本周 ${card.sessions.length} 场面试` : "本周还没有面试"}
-          sub={card.sessions.length > 0 ? `${weekdays.join("、")}各有安排` : "可以先投几个新岗位"}
-          action="查看日程"
+          title={card.sessions.length > 0 ? t("本周 {value0} 场面试", { value0: card.sessions.length }) : t("本周还没有面试")}
+          sub={card.sessions.length > 0 ? t("{value0}各有安排", { value0: weekdays.map((label) => t(label)).join(getLocale() === "en-US" ? ", " : "、") }) : t("可以先投几个新岗位")}
+          action={t("查看日程")}
           href={careerViewPath("schedule")}
         />
       );
     }
     case "resumeTodo":
-      return <CardFrame label="继续编辑简历" stage={<ResumeArt missing={card.missing} />} title={`${card.resume.title} · ${card.score}%`} sub={`待完善：${card.missing}`} action="继续编辑" href={editorPath(card.resume.id)} />;
+      return <CardFrame label={t("继续编辑简历")} stage={<ResumeArt missing={card.missing} />} title={`${card.resume.title} · ${card.score}%`} sub={t("待完善：{value0}", { value0: card.missing })} action={t("继续编辑")} href={editorPath(card.resume.id)} />;
     case "resumeRecent":
       // 「最近编辑的简历」卡 Figma 还没画，参照「简历待完善」样式，去掉待补标记
-      return <CardFrame label="继续编辑简历" stage={<ResumeArt missing={null} />} title={card.score !== null ? `${card.resume.title} · ${card.score}%` : card.resume.title} sub="最近编辑的简历" action="继续编辑" href={editorPath(card.resume.id)} />;
+      return <CardFrame label={t("继续编辑简历")} stage={<ResumeArt missing={null} />} title={card.score !== null ? `${card.resume.title} · ${card.score}%` : card.resume.title} sub={t("最近编辑的简历")} action={t("继续编辑")} href={editorPath(card.resume.id)} />;
     case "pipeline": {
       const columns = pipelineColumns(card.applications);
-      return <CardFrame label="打开岗位看板" stage={<PipelineArt columns={columns} />} title={`${card.applications.length} 个岗位进行中`} sub={card.hint} action="岗位看板" href="/career/applications" />;
+      return <CardFrame label={t("打开岗位看板")} stage={<PipelineArt columns={columns} />} title={t("{value0} 个岗位进行中", { value0: card.applications.length })} sub={card.hint} action={t("岗位看板")} href="/career/applications" />;
     }
     case "jobs":
-      return <CardFrame label="查看推荐岗位" stage={<JobsArt />} title={`${MOCK_RECOMMENDED_JOBS.count} 个新岗位匹配`} beTitle sub={`最高匹配度 ${MOCK_RECOMMENDED_JOBS.bestMatch}%`} action="查看岗位" href="/career/applications" />;
-    case "offer":
-      // Offer 回复截止没有后端字段，日期与剩余天数用示例数据
+      return <JobsCard />;
+    case "offer": {
+      const deadline = offerDeadline(card.replyDueOn, now);
       return (
         <CardFrame
-          label="查看 Offer"
-          stage={<OfferArt deadline={mockOfferDeadline(now)} />}
-          title={`${card.company} · ${MOCK_OFFER.daysLeft} 天后截止`}
-          sub={MOCK_OFFER.deadlineLabel}
-          beSub
-          action="查看 Offer"
+          label={t("查看 Offer")}
+          stage={<OfferArt deadline={deadline?.date ?? null} label={deadline?.label ?? ""} />}
+          title={`${card.company} · ${deadline?.label ?? t("回复截止待填写")}`}
+          sub={formatOfferDate(card.replyDueOn) ?? t("填写 Offer 信息后显示截止提醒")}
+          action={t("查看 Offer")}
           href={careerApplicationPath(card.applicationId)}
         />
       );
+    }
     case "compare":
-      return (
-        <CardFrame
-          label="开始对比 Offer"
-          stage={<CompareArt />}
-          title={`${card.offers.length} 个 Offer 可对比`}
-          beTitle
-          sub={`${card.offers.map((offer) => offer.company_name_snapshot).join("和")}，薪资接近`}
-          action="开始对比"
-          href="/career/applications"
-        />
-      );
+      return <OfferComparisonCard offers={card.offers} />;
     default:
       return null;
   }
 }
 
-function mockOfferDeadline(now: Date) {
-  const date = new Date(now);
-  date.setDate(date.getDate() + MOCK_OFFER.daysLeft);
-  date.setHours(18, 0, 0, 0);
-  return date;
+function OfferComparisonCard({ offers }: { offers: JobApplicationSummary[] }) {
+  const [open, setOpen] = useState(false);
+  const rows: Array<[string, (offer: JobApplicationSummary) => string | null | undefined]> = [
+    [t("岗位"), offer => offer.job_title_snapshot], [t("薪资"), formatOfferSalary],
+    [t("工作地点"), offer => offer.offer_base_location],
+    [t("收到日期"), offer => formatOfferDate(offer.offer_received_on)],
+    [t("回复截止日期"), offer => formatOfferDate(offer.offer_reply_due_on)],
+    [t("预计入职日期"), offer => formatOfferDate(offer.offer_start_on)],
+    [t("福利说明"), offer => offer.offer_benefits_description],
+  ];
+  return <><CardFrame label={t("开始对比 Offer")} stage={<CompareArt offers={offers} />}
+    title={t("{value0} 个 Offer 可对比", { value0: offers.length })}
+    sub={[offers.map(offer => offer.company_name_snapshot).join(t("和")), describeOfferGap(offers)].filter(Boolean).join(t("，"))}
+    action={t("开始对比")} href="/career/applications" onActivate={() => setOpen(true)} />
+    {open && <Dialog label={t("Offer 对比")} width={900} onClose={() => setOpen(false)}><div className="offer-comparison"><h2>{t("Offer 对比")}</h2>
+      <p>{describeOfferGap(offers) ?? t("币种或计薪周期不同，或薪资未填，暂不比较薪资差距。")}</p>
+      <table><thead><tr><th>{t("信息")}</th>{offers.map(offer => <th key={offer.id}>{offer.company_name_snapshot}</th>)}</tr></thead>
+        <tbody>{rows.map(([label, value]) => <tr key={label}><th scope="row">{label}</th>{offers.map(offer => <td key={offer.id}>{value(offer) || "—"}</td>)}</tr>)}</tbody></table>
+      <footer>{offers.map(offer => <a key={offer.id} href={careerApplicationPath(offer.id)} onClick={event => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateTo(careerApplicationPath(offer.id)); }}>{t("查看 Offer")} · {offer.company_name_snapshot}</a>)}</footer>
+    </div></Dialog>}
+  </>;
 }
 
 function OfferArtForDate({ date, daysLeft }: { date: Date; daysLeft: number }) {
-  const weekday = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][date.getDay()];
+  useLocale();
+  const weekday = weekdays()[date.getDay()];
   return (
     <>
       <Paper x={47} y={14} w={64} h={84} r={8} shadow={false}>
@@ -352,7 +426,7 @@ function OfferArtForDate({ date, daysLeft }: { date: Date; daysLeft: number }) {
         <StageText x={0} y={26} size={28} color="var(--v3-txt)" weight={600} num style={{ width: 62, textAlign: "center" }}>{date.getDate()}</StageText>
         <StageText x={0} y={64} size={8.5} color="var(--v3-fnt)" style={{ width: 62, textAlign: "center" }}>{`${weekday} ${formatClock(date.toISOString())}`}</StageText>
       </Paper>
-      <span className="assistant-home-flag" style={{ left: 123, top: 46 }}>{daysLeft === 0 ? "今天截止" : `还剩 ${daysLeft} 天`}</span>
+      <span className="assistant-home-flag" style={{ left: 123, top: 46 }}>{daysLeft === 0 ? t("今天截止") : t("还剩 {value0} 天", { value0: daysLeft })}</span>
     </>
   );
 }

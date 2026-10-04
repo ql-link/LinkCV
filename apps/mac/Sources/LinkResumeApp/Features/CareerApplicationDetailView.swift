@@ -25,140 +25,365 @@ struct CareerIcon: View {
         }
     }
 }
+
+/// 04.C01 求职进度页: stepper, the single "next step" card, stage history and side cards.
+/// Stage records open 04.C03 stage detail; the AI report (04.C03.C) opens from there.
 struct CareerApplicationDetailView: View {
     let application: CareerApplication
     let api: any APIClient
     let back: () -> Void
     let perform: (String, CareerApplication) -> Void
-    @State private var historyScroll = 0
-    @State private var current: CareerApplication?
+    private enum Route: Equatable { case stage(String), report(String) }
+    @State private var route: Route?
+    @State private var current: JSONValue?
     @State private var sessions: [JSONValue] = []
     @State private var assets: [JSONValue] = []
     @State private var error: String?
+    @State private var notice: String?
     @State private var loading = true
-    @State private var record: JSONValue?
+    @State private var busy = false
     @State private var jobDescription: String?
     @State private var showJob = false
+    @State private var showAllHistory = false
+    @State private var rescheduling: JSONValue?
+    @State private var cancelling: JSONValue?
     @State private var refreshed = UUID()
-    private var item: CareerApplication { (current ?? application).includingSessions(sessions) }
-    private var flow: CareerFlow { CareerFlow(item) }
-    private var stages: [JSONValue] { item.raw["stages"]?.items ?? [] }
+    @State private var now = Date()
+    private var raw: JSONValue { current ?? application.raw }
+    private var item: CareerApplication { CareerApplication(raw).includingSessions(sessions) }
+    private var model: CareerDetailModel { CareerDetailModel(application: raw, sessions: sessions, now: now) }
+    private var active: Bool { raw.text("lifecycle_status") != "terminated" && raw.text("status") == "active" && raw.text("archived_at").isEmpty }
+
     var body: some View {
-        ScrollViewReader { proxy in ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                header
-                if loading { ProgressView("正在读取求职记录…") }
-                if let error { HStack { Text(error).foregroundStyle(.red); Button("重试") { refreshed = UUID() } }.font(LibraryTypography.sans(12)) }
-                pipeline
-                nextAction
-                HStack(alignment: .top, spacing: 24) {
-                    history.id("career-history").frame(maxWidth: .infinity, alignment: .leading)
-                    sidebar.frame(width: 276)
-                }
-            }.padding(.horizontal, 32).padding(.top, 35).padding(.bottom, 32).frame(maxWidth: 924)
-                .frame(maxWidth: .infinity, alignment: .top)
-        }.onChange(of: historyScroll) { _, _ in withAnimation { proxy.scrollTo("career-history", anchor: .top) } } }.foregroundStyle(Color(hex: 0x1D1D1B)).font(LibraryTypography.sans(13))
-            .task(id: refreshed) { await load() }
-            .sheet(item: Binding(get: { record.map(CareerRecord.init) }, set: { if $0 == nil { record = nil } })) { entry in
-                CareerSessionRecordView(session: entry.value, api: api, close: { record = nil }, saved: { record = nil; refreshed = UUID() }).frame(width: 880, height: 740)
-            }
-            .sheet(isPresented: $showJob) {
-                VStack(alignment: .leading, spacing: 20) { HStack { Text("岗位详情").font(LibraryTypography.serif(24)); Spacer(); Button("关闭") { showJob = false } }; ScrollView { Text(jobDescription ?? "正在读取岗位描述…").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) } }.padding(32).frame(width: 720, height: 600)
-            }
+        switch route {
+        case .stage(let id):
+            CareerStageDetailView(sessionID: id, api: api, back: { route = nil; refreshed = UUID() }, openReport: { route = .report(id) })
+        case .report(let id):
+            CareerReviewReportView(sessionID: id, api: api, back: { route = .stage(id) })
+        case nil:
+            progressPage
+        }
     }
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Button("← 岗位看板 / " + item.company, action: back).buttonStyle(.plain).font(LibraryTypography.sans(12)).foregroundStyle(Color(hex: 0x96968F))
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(item.company + " · " + item.title).font(LibraryTypography.serif(28)).fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 10) { if !item.category.isEmpty { Text(item.categoryLabel).font(LibraryTypography.sans(11)).padding(.horizontal, 8).padding(.vertical, 4).background(Color(hex: 0xF4F4F1), in: RoundedRectangle(cornerRadius: 5)) }; Text(item.raw["job_snapshot"]?.text("work_city") ?? "").foregroundStyle(Color(hex: 0x55554F)); Text(date(item.raw.text("created_at")) + " 导入").foregroundStyle(Color(hex: 0x96968F)) }
+
+    private var progressPage: some View {
+        let model = self.model
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header(model)
+                if loading && current == nil { ProgressView("正在读取求职记录…").font(LibraryTypography.sans(12)) }
+                if let error { HStack { Text(error).foregroundStyle(CareerPalette.red); Button("重试") { refreshed = UUID() }.buttonStyle(CareerActionStyle()) }.font(LibraryTypography.sans(12)) }
+                if let notice { Text(notice).font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.sub) }
+                pipeline(model)
+                nextCard(model.next)
+                HStack(alignment: .top, spacing: 24) {
+                    history(model).frame(maxWidth: .infinity, alignment: .leading)
+                    side(model).frame(width: 276)
                 }
-                Spacer(minLength: 12)
-                Button("岗位详情") { showJob = true }.buttonStyle(CareerButtonStyle())
+            }
+            .padding(.top, 35).padding(.bottom, 64).frame(maxWidth: 860).padding(.horizontal, 32)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .foregroundStyle(CareerPalette.text).font(LibraryTypography.sans(13))
+        .task(id: refreshed) { await load() }
+        .sheet(isPresented: $showJob) {
+            CareerSheet(title: "岗位详情", subtitle: item.company + " · " + item.title, width: 720) {
+                Text(jobDescription ?? "原岗位资料已不可用。").font(LibraryTypography.sans(13)).foregroundStyle(CareerPalette.sub).textSelection(.enabled)
+            } footer: { Button("关闭") { showJob = false }.buttonStyle(CareerActionStyle(kind: .primary, large: true)) }
+            .frame(height: 600)
+        }
+        .sheet(item: Binding(get: { rescheduling.map(CareerSessionRef.init) }, set: { if $0 == nil { rescheduling = nil } })) { entry in
+            CareerRescheduleSheet(session: entry.value, api: api, close: { rescheduling = nil }, saved: { rescheduling = nil; refreshed = UUID() })
+        }
+        .confirmationDialog(cancelling.map { "取消「\($0.text("stage_label"))」这场安排？" } ?? "", isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }), titleVisibility: .visible) {
+            Button("取消本场", role: .destructive) { if let session = cancelling { Task { await cancel(session) } } }
+            Button("返回", role: .cancel) { cancelling = nil }
+        } message: { Text("取消后阶段回到“等待安排”，可以重新安排时间；已上传的资料会保留。") }
+    }
+
+    // MARK: Header
+
+    private func header(_ model: CareerDetailModel) -> some View {
+        let snapshot = raw["job_snapshot"] ?? .null
+        let employment = ["full_time": "正式", "campus": "校招", "internship": "实习"][snapshot.text("employment_type")]
+        let city = [snapshot.text("work_city"), snapshot.text("city"), snapshot.text("location")].first { !$0.isEmpty }
+        let salary = [snapshot.text("salary_text"), snapshot.text("salary")].first { !$0.isEmpty }
+        let summary = [city, salary].compactMap { $0 }.joined(separator: " · ")
+        return HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                CareerBreadcrumb(back: "← 岗位看板", current: item.company, action: back)
+                Text(item.title).font(LibraryTypography.serif(28)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(item.company + "，" + item.title)
+                HStack(spacing: 8) {
+                    if let employment { CareerChipView(employment, .gray) }
+                    if !summary.isEmpty { Text(summary).foregroundStyle(CareerPalette.sub) }
+                    Text("·").foregroundStyle(CareerPalette.faint)
+                    Text(model.headerMeta).foregroundStyle(CareerPalette.faint)
+                }.font(LibraryTypography.sans(13))
+            }
+            Spacer(minLength: 16)
+            HStack(spacing: 8) {
+                Button(raw["is_favorite"]?.bool == true ? "★ 已收藏" : "☆ 收藏") { Task { await toggleFavorite() } }
+                    .buttonStyle(CareerActionStyle(kind: .text)).disabled(busy || current == nil)
+                Button("岗位详情") { showJob = true }.buttonStyle(CareerActionStyle())
                 Menu {
                     Button("修改求职分类") { perform("category", item) }
-                    Button("编辑备注") { perform("notes", item) }
-                    if item.stage == "offer" && !item.ended {
-                        Button("修改 Offer 信息") { perform("offer", item) }
-                        if item.raw.text("offer_status") == "received" { Button("婉拒 Offer") { perform("decline", item) } }
+                    Button("岗位详情") { showJob = true }
+                    if !active && raw.text("archived_at").isEmpty { Button("归档（从看板隐藏）") { perform("archive", item) } }
+                    if !raw.text("archived_at").isEmpty { Button("恢复岗位") { perform("restore", item) } }
+                    if active && raw.text("offer_status") == "none" || model.ended {
+                        Divider()
+                        if active && raw.text("offer_status") == "none" { Button(model.pending ? "不投了" : "结束本次求职", role: .destructive) { perform("terminate", item) } }
+                        if model.ended { Button("删除岗位", role: .destructive) { perform("delete", item) } }
                     }
-                    if !item.ended { Button(item.stage == "pending" ? "不投了" : "结束本次求职") { perform("terminate", item) } }
-                    if item.raw.text("archived_at").isEmpty { Button("归档岗位") { perform("archive", item) } } else { Button("恢复岗位") { perform("restore", item) } }
-                    if item.ended { Button("删除岗位", role: .destructive) { perform("delete", item) } }
-                } label: { Text("⋯").font(.system(size: 20)).frame(width: 32, height: 34) }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                } label: { Text("•••").font(.system(size: 9, weight: .bold)).foregroundStyle(CareerPalette.text) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .frame(width: 32, height: 18).overlay(RoundedRectangle(cornerRadius: 9).stroke(CareerPalette.border)).accessibilityLabel("更多操作")
             }
         }
     }
-    private var pipeline: some View {
-        let steps = CareerProgress.steps(item)
-        return VStack(alignment: .leading, spacing: 14) {
+
+    // MARK: Stepper
+
+    private func pipeline(_ model: CareerDetailModel) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
             Text("求职进度").font(LibraryTypography.sans(14, weight: .medium))
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            ZStack { Circle().fill(step.state == "current" ? Color(hex: 0x3F6FD8) : step.state == "completed" ? Color(hex: 0xF0F0EC) : .white).frame(width: 18, height: 18).overlay(Circle().stroke(step.state == "current" ? Color(hex: 0x3F6FD8) : Color(hex: 0xBBBBB5))); if step.state == "completed" { Text("✓").font(.system(size: 10)).foregroundStyle(Color(hex: 0x96968F)) } }
-                            if index < steps.count - 1 { Rectangle().fill(Color(hex: 0xE4E4E0)).frame(height: 2) }
-                        }.padding(.trailing, 6)
-                        Text(step.label).font(LibraryTypography.sans(13, weight: step.state == "current" ? .medium : .regular)).foregroundStyle(step.state == "current" ? Color(hex: 0x3F6FD8) : Color(hex: 0x96968F)).lineLimit(2)
-                        Text(step.date.isEmpty ? " " : date(step.date)).font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F))
-                    }.frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(Array(model.steps.enumerated()), id: \.element.id) { index, step in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                stepMark(step.state)
+                                if index < model.steps.count - 1 {
+                                    Rectangle().fill(step.state == .done ? CareerPalette.green : CareerPalette.border).frame(height: 2).padding(.trailing, 6)
+                                }
+                            }
+                            Text(step.label).font(LibraryTypography.sans(13, weight: step.state == .current ? .bold : .medium)).lineLimit(1).fixedSize()
+                                .foregroundStyle(step.state == .current ? CareerPalette.blue : step.state == .failed ? CareerPalette.red : [.next, .todo].contains(step.state) ? CareerPalette.faint : CareerPalette.text)
+                            Text(step.meta.isEmpty ? " " : step.meta).font(.system(size: 11, weight: .medium, design: .monospaced)).lineLimit(1).fixedSize()
+                                .foregroundStyle(step.state == .failed ? CareerPalette.red : CareerPalette.faint)
+                        }.frame(minWidth: 88, maxWidth: .infinity, alignment: .leading)
+                    }
+                }.frame(minWidth: 780, alignment: .leading)
+            }
+            .accessibilityLabel("当前阶段：" + model.currentLabel)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 16)
+        .background(CareerPalette.soft, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(CareerPalette.pipelineLine))
+    }
+
+    @ViewBuilder private func stepMark(_ state: CareerDetailStep.State) -> some View {
+        switch state {
+        case .done, .failed, .offer:
+            Circle().fill(state == .done ? CareerPalette.green : state == .failed ? CareerPalette.red : CareerPalette.text).frame(width: 18, height: 18)
+                .overlay(Text(state == .done ? "✓" : state == .failed ? "✕" : "★").font(.system(size: 10, weight: .bold)).foregroundStyle(.white))
+        case .current:
+            Circle().fill(.white).frame(width: 18, height: 18).overlay(Circle().stroke(CareerPalette.blue, lineWidth: 1.5)).overlay(Circle().fill(CareerPalette.blue).frame(width: 9, height: 9))
+        case .next:
+            Circle().fill(.white).frame(width: 18, height: 18).overlay(Circle().stroke(CareerPalette.dashed, style: StrokeStyle(lineWidth: 1, dash: [2, 2])))
+        case .todo:
+            Circle().fill(.white).frame(width: 18, height: 18).overlay(Circle().stroke(CareerPalette.dashed))
+        }
+    }
+
+    // MARK: Next action
+
+    private func nextCard(_ next: CareerDetailNext) -> some View {
+        HStack(spacing: 20) {
+            tile(next.tile)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(next.lead).font(LibraryTypography.sans(11, weight: .medium)).foregroundStyle(CareerPalette.faint)
+                    ForEach(next.chips, id: \.label) { CareerChipView($0) }
+                }
+                Text(next.title).font(LibraryTypography.sans(19, weight: .medium)).fixedSize(horizontal: false, vertical: true)
+                if !next.detail.isEmpty { Text(next.detail).font(LibraryTypography.sans(13)).foregroundStyle(CareerPalette.sub).fixedSize(horizontal: false, vertical: true) }
+                if let hint = next.hint { Text(hint).font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.hint) }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .trailing, spacing: 8) {
+                if let primary = next.primary {
+                    Button(primary.label) { handle(primary.action) }.buttonStyle(CareerActionStyle(kind: primary.dark ? .primary : .outline, large: true)).disabled(busy || loading)
+                }
+                if !next.secondary.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(next.secondary, id: \.label) { button in
+                            Button(button.label) { handle(button.action) }.buttonStyle(CareerActionStyle(kind: button.danger ? .danger : .text)).disabled(busy || loading)
+                        }
+                    }
                 }
             }
-        }.padding(.horizontal, 20).padding(.vertical, 16).background(Color(hex: 0xFAFAF9), in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(hex: 0xEDEDE9)))
+        }
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(alignment: .leading) { Rectangle().fill(next.accent == .gray ? CareerPalette.dashed : CareerPalette.solid(next.accent)).frame(width: 3) }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(CareerPalette.border))
+        .shadow(color: Color(hex: 0x1C1C1A).opacity(0.05), radius: 12, y: 6)
     }
-    private var nextAction: some View {
-        HStack(spacing: 20) {
-            VStack(spacing: 8) { Text(item.stageLabel).font(LibraryTypography.sans(15, weight: .medium)); Text(item.ended ? "已结束" : item.stage == "pending" ? "等待投递" : item.statusLabel).font(LibraryTypography.sans(10)).foregroundStyle(Color(hex: 0x96968F)) }.frame(width: 88, height: 88).background(Color(hex: 0xF0F0EC), in: RoundedRectangle(cornerRadius: 12))
-            VStack(alignment: .leading, spacing: 8) { Text("下一步").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x96968F)); Text(flow.headline).font(LibraryTypography.sans(19, weight: .medium)); Text(flow.explanation).font(LibraryTypography.sans(13)).foregroundStyle(Color(hex: 0x55554F)) }.frame(maxWidth: .infinity, alignment: .leading)
-            Button(flow.button) {
-                if flow.kind == "history" { historyScroll += 1 }
-                else if flow.kind == "records" { if let latest = sessions.last(where: { $0.text("status") != "cancelled" && (flow.kind == "history" || $0.text("application_stage_id") == item.raw["current_stage"]?.text("id")) }) { record = latest } }
-                else { perform(flow.kind, item) }
-            }.buttonStyle(CareerButtonStyle(primary: true)).disabled(loading || error != nil || (flow.kind == "records" && sessions.isEmpty))
-        }.padding(20).background(.white, in: RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(hex: 0xE6E6E2)))
+
+    @ViewBuilder private func tile(_ tile: CareerDetailTile) -> some View {
+        switch tile {
+        case .date(let head, let day, let foot):
+            VStack(spacing: 0) {
+                Text(head).font(LibraryTypography.sans(11, weight: .medium)).foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 4).background(CareerPalette.text)
+                Text(day).font(.system(size: 30, weight: .medium)).padding(.top, 6)
+                Text(foot).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(CareerPalette.sub).padding(.bottom, 6)
+            }
+            .frame(width: 88).background(.white).clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(CareerPalette.border))
+        case .status(let title, let sub, let tone):
+            VStack(spacing: 2) {
+                Text(title).font(LibraryTypography.sans(15, weight: .medium))
+                if !sub.isEmpty { Text(sub).font(LibraryTypography.sans(11)).foregroundStyle(tone == .gray ? CareerPalette.sub : CareerPalette.solid(tone)) }
+            }
+            .foregroundStyle(tone == .gray ? CareerPalette.text : CareerPalette.solid(tone))
+            .frame(width: 88, height: 88).background(CareerPalette.background(tone), in: RoundedRectangle(cornerRadius: 12))
+        }
     }
-    private var history: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("阶段记录").font(LibraryTypography.sans(14, weight: .medium))
-            if stages.isEmpty { Text("还没有阶段记录。记录投递后，会在这里留下求职进程。").font(LibraryTypography.sans(12)).foregroundStyle(Color(hex: 0x96968F)).padding(.top, 10) }
-            ForEach(Array(stages.reversed().enumerated()), id: \.offset) { _, stage in
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack { Text(stage.text("stage_label")).font(LibraryTypography.sans(14, weight: .medium)); Spacer(); Text(date(stage.text("entered_at"))).foregroundStyle(Color(hex: 0x96968F)) }
-                    Text(stage.text("stage_status") == "completed" ? (stage.text("stage_result") == "rejected" ? "未通过" : "已完成") : item.ended ? "已结束" : "当前阶段").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x55554F))
-                    ForEach(Array(sessions.filter { $0.text("application_stage_id") == stage.text("id") }.enumerated()), id: \.offset) { _, entry in
-                        Button { record = entry } label: {
-                            HStack { CareerIcon(name: "calendar", size: 14); Text(date(entry.text("start_at"), time: true)); Spacer(); Text(["scheduled": "已安排", "completed": "已完成", "cancelled": "已取消"][entry.text("status")] ?? "查看记录"); Text("→") }.font(LibraryTypography.sans(12)).padding(12).background(Color(hex: 0xFAFAF9), in: RoundedRectangle(cornerRadius: 8))
-                        }.buttonStyle(.plain)
+
+    // MARK: History and side cards
+
+    private func history(_ model: CareerDetailModel) -> some View {
+        let visible = showAllHistory || model.history.count <= 5 ? model.history : Array(model.history.prefix(4))
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("阶段记录").font(LibraryTypography.sans(15, weight: .medium)).padding(.bottom, 2)
+            if visible.isEmpty {
+                VStack(spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach([120, 96, 72], id: \.self) { width in
+                            HStack(spacing: 8) { Circle().stroke(CareerPalette.dashed, lineWidth: 1.5).frame(width: 8, height: 8); Capsule().fill(CareerPalette.pipelineLine).frame(width: CGFloat(width), height: 8) }
+                        }
+                    }.padding(.bottom, 8)
+                    Text("还没有阶段记录").font(LibraryTypography.sans(13, weight: .medium))
+                    Text("记录投递后，筛选、笔试、面试和 Offer 会按时间排在这里").font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.faint)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 28).padding(.horizontal, 24)
+                .background(CareerPalette.soft, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(CareerPalette.rail, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            }
+            ForEach(Array(visible.enumerated()), id: \.element.id) { index, entry in
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(spacing: 6) {
+                        Group {
+                            if let dot = entry.dot { Circle().fill(CareerPalette.solid(dot)) }
+                            else { Circle().fill(.white).overlay(Circle().stroke(CareerPalette.faint, lineWidth: 1.5)) }
+                        }.frame(width: 10, height: 10)
+                        Text(entry.date).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(CareerPalette.faint)
+                        if index < visible.count - 1 { Rectangle().fill(CareerPalette.rail).frame(width: 1.5).frame(maxHeight: .infinity).padding(.bottom, -14) }
+                    }.frame(width: 52).padding(.top, 16)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) { Text(entry.title).font(LibraryTypography.sans(14, weight: .medium)).lineLimit(1); Spacer(minLength: 0); CareerChipView(entry.chip) }
+                        HStack(spacing: 12) {
+                            Text(entry.detail).font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.sub).lineLimit(1).truncationMode(.tail)
+                            Spacer(minLength: 0)
+                            if let id = entry.sessionID { Button("查看详情 →") { route = .stage(id) }.buttonStyle(CareerActionStyle(kind: .link)) }
+                        }
                     }
-                    if stage.text("stage_type") == "offer" { ForEach(["口头薪酬", "薪酬说明", "收到日期", "回复截止", "预计入职", "试用期", "Offer 材料"], id: \.self) { field in let value = CareerNotes.value(field, in: item.raw.text("notes")); if !value.isEmpty { info(field, field == "收到日期" ? date(value) : value) } }; Text(item.raw.text("offer_status") == "none" ? "OC · 口头意向" : "正式 Offer").font(LibraryTypography.sans(12)); if !item.raw.text("offer_salary").isEmpty { Text("薪资：" + item.raw.text("offer_salary") + " " + item.raw.text("offer_salary_currency")) }; if !item.raw.text("offer_base_location").isEmpty { Text("工作地点：" + item.raw.text("offer_base_location")) }; if !item.raw.text("offer_benefits_description").isEmpty { Text(item.raw.text("offer_benefits_description")) } }
-                }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(hex: 0xE6E6E2)))
+                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(entry.highlight.map(CareerPalette.solid) ?? CareerPalette.border, lineWidth: entry.highlight == nil ? 1 : 1.5))
+                }
+            }
+            if visible.count < model.history.count {
+                Button("查看更早 \(model.history.count - visible.count) 个阶段 ↓") { showAllHistory = true }
+                    .buttonStyle(CareerActionStyle(kind: .muted)).padding(.leading, 66)
             }
         }
     }
-    private var sidebar: some View {
+
+    private func side(_ model: CareerDetailModel) -> some View {
         VStack(spacing: 14) {
-            sideCard("投递信息", edit: "编辑备注", action: { perform("notes", item) }) {
-                info("投递日期", date(item.raw.text("applied_at")))
-                info("投递渠道", CareerNotes.value("投递渠道", in: item.raw.text("notes")))
-                info("简历", item.raw.text("resume_title_snapshot").isEmpty ? (item.raw.text("resume_id").isEmpty ? "未关联" : "已关联简历") : item.raw.text("resume_title_snapshot"))
-                if !item.raw.text("notes").isEmpty { Text(CareerNotes.freeText(item.raw.text("notes"))).font(LibraryTypography.sans(12)).foregroundStyle(Color(hex: 0x55554F)).textSelection(.enabled) }
+            if let card = model.offerCard {
+                sideCard(card.title, action: card.action, onAction: { handle(model.verbalOffer ? .recordOffer : .editOffer) }) { CareerInfoRows(rows: card.rows) }
             }
-            sideCard("关联资料", edit: nil, action: {}) {
-                if assets.isEmpty { Text(sessions.isEmpty ? "暂无关联资料" : "在各轮记录中查看关联资料").foregroundStyle(Color(hex: 0x96968F)).font(LibraryTypography.sans(12)) }
-                ForEach(Array(assets.enumerated()), id: \.offset) { _, asset in Text(asset.text("file_name").isEmpty ? asset.text("display_name") : asset.text("file_name")).font(LibraryTypography.sans(12)) }
+            sideCard("投递信息", action: model.pending || !active ? nil : "编辑", onAction: { showJob = true }) { CareerInfoRows(rows: model.deliveryRows) }
+            sideCard("关联资料", action: nil, onAction: {}) {
+                let items = resources
+                if items.isEmpty { Text("还没有关联简历和资料").font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.faint) }
+                else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(items, id: \.key) { resource in
+                            HStack(spacing: 10) {
+                                CareerFileBadge(name: resource.name)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(resource.name).font(LibraryTypography.sans(12, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                                    Text(resource.meta).font(LibraryTypography.sans(11)).foregroundStyle(CareerPalette.faint)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
-    private func sideCard<Content: View>(_ title: String, edit: String?, action: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) { HStack { Text(title).font(LibraryTypography.sans(13, weight: .medium)); Spacer(); if let edit { Button(edit, action: action).buttonStyle(.plain).font(LibraryTypography.sans(11)).foregroundStyle(Color(hex: 0x3F6FD8)) } }; content() }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(hex: 0xE6E6E2)))
+
+    private var resources: [(key: String, name: String, meta: String)] {
+        var result: [(key: String, name: String, meta: String)] = []
+        if !raw.text("resume_id").isEmpty {
+            let title = raw.text("resume_title_snapshot").nonEmptyOr("投递简历")
+            result.append(("resume", title, "投递简历 · " + CareerFormat.monthDay(raw.text("applied_at").nonEmptyOr(raw.text("updated_at")))))
+        }
+        if !raw.text("job_description_id").isEmpty {
+            result.append(("jd", item.company + "_岗位JD.md", "岗位要求 · " + CareerFormat.monthDay(raw.text("created_at"))))
+        }
+        for asset in assets {
+            let kind = ["audio": "面试录音", "video": "面试视频"][asset.text("asset_type")] ?? "面试材料"
+            result.append((asset.text("id"), asset.text("original_file_name"), kind + " · " + CareerFormat.monthDay(asset.text("created_at"))))
+        }
+        for material in raw["offer_materials"]?.items ?? [] { result.append(("offer-" + material.text("dataset_id"), material.text("file_name"), "Offer 材料")) }
+        return result
     }
-    private func info(_ name: String, _ value: String) -> some View { HStack { Text(name).foregroundStyle(Color(hex: 0x96968F)); Spacer(); Text(value.isEmpty ? "—" : value) }.font(LibraryTypography.sans(12)) }
-    private func progress(_ type: String) -> Int { type == "pending" ? 0 : type == "screening" ? 1 : ["assessment", "written_test"].contains(type) ? 2 : type == "offer" ? 4 : 3 }
-    private func date(_ raw: String, time: Bool = false) -> String { guard let date = CareerApplication.date(raw) else { return "—" }; let format = DateFormatter(); format.dateFormat = time ? "MM.dd HH:mm" : "MM.dd"; return format.string(from: date) }
+
+    private func sideCard<Content: View>(_ title: String, action: String?, onAction: @escaping () -> Void, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(title).font(LibraryTypography.sans(13, weight: .medium))
+                Spacer()
+                if let action { Button(action, action: onAction).buttonStyle(CareerActionStyle(kind: .link)).font(LibraryTypography.sans(11)) }
+            }
+            content()
+        }.careerCard()
+    }
+
+    // MARK: Actions
+
+    private func handle(_ action: CareerDetailAction) {
+        let model = self.model
+        switch action {
+        case .recordApplied: perform("apply", item)
+        case .advance: perform("stage", item)
+        case .schedule: perform("schedule-current", item)
+        case .recordReview, .answerPlan: if let id = model.currentSession?.text("id") { route = .stage(id) }
+        case .reschedule: rescheduling = model.currentSession
+        case .cancelSession: cancelling = model.currentSession
+        case .recordOffer, .editOffer: perform("offer", item)
+        case .acceptOffer: perform("accept", item)
+        case .declineOffer: perform("decline", item)
+        case .viewReview:
+            if let id = model.latestRecorded?.text("id") { route = .stage(id) }
+            else { notice = "这次求职还没有可查看的复盘记录。" }
+        }
+    }
+
+    private func toggleFavorite() async {
+        busy = true; defer { busy = false }
+        do {
+            let result = try await api.careerRequest(path: "/api/job-applications/\(application.id)", method: "PUT", query: [:],
+                                                     body: .object(["base_lock_version": .number(Double(raw["lock_version"]?.integer ?? 0)), "is_favorite": .bool(raw["is_favorite"]?.bool != true)]))
+            if let updated = result["application"] { current = updated }
+        } catch { notice = CareerErrors.message(error) }
+    }
+
+    private func cancel(_ session: JSONValue) async {
+        cancelling = nil; busy = true; defer { busy = false }
+        do {
+            _ = try await api.careerRequest(path: "/api/interview-sessions/\(session.text("id"))/cancel", method: "POST", query: [:], body: .object(["base_lock_version": session["lock_version"] ?? .number(1)]))
+            refreshed = UUID()
+        } catch { notice = CareerErrors.message(error) }
+    }
+
     private func load() async {
-        loading = true; error = nil
+        loading = true; error = nil; now = Date()
         do {
             let detail = try await api.careerRequest(path: "/api/job-applications/\(application.id)", method: "GET", query: [:], body: nil)
             var all: [JSONValue] = []; var cursor = ""; var seen = Set<String>()
@@ -168,63 +393,67 @@ struct CareerApplicationDetailView: View {
                 all += page["items"]?.items ?? []; cursor = page.text("next_cursor")
                 if !cursor.isEmpty && !seen.insert(cursor).inserted { throw APIError.invalidResponse }
             } while !cursor.isEmpty
-            let app = CareerApplication(detail["application"] ?? .null)
-            if !app.raw.text("job_description_id").isEmpty {
-                let jd = try await api.careerRequest(path: "/api/job-descriptions/\(app.raw.text("job_description_id"))", method: "GET", query: [:], body: nil)
-                try Task.checkCancellation(); jobDescription = jd["job_description"]?.text("description") ?? "暂无岗位描述"
+            try Task.checkCancellation()
+            let app = detail["application"] ?? .null
+            current = app; sessions = all
+            let latest = CareerDetailModel(application: app, sessions: all, now: now).latestRecorded
+            if let id = latest?.text("id"), !id.isEmpty, let session = try? await api.careerRequest(path: "/api/interview-sessions/\(id)", method: "GET", query: [:], body: nil) {
+                assets = session["assets"]?.items ?? []
+            } else { assets = [] }
+            if !app.text("job_description_id").isEmpty, let job = try? await api.careerRequest(path: "/api/job-descriptions/\(app.text("job_description_id"))", method: "GET", query: [:], body: nil) {
+                jobDescription = job["job_description"]?.text("description").nonEmptyOr("暂无岗位描述")
             }
-            try Task.checkCancellation(); current = app; sessions = all.sorted { $0.text("start_at") < $1.text("start_at") }
-        } catch is CancellationError { return } catch { self.error = "求职记录读取失败，请重试。" }
+        } catch is CancellationError { return }
+        catch APIError.unauthorized { error = "登录已失效，请重新登录。" }
+        catch { self.error = "求职记录读取失败，请重试。" }
         loading = false
     }
 }
-private struct CareerRecord: Identifiable { let value: JSONValue; var id: String { value.text("id") } }
 
-struct CareerSessionRecordView: View {
+struct CareerSessionRef: Identifiable { let value: JSONValue; var id: String { value.text("id") } }
+
+extension String {
+    func nonEmptyOr(_ fallback: String) -> String { isEmpty ? fallback : self }
+}
+
+/// 修改安排: change the time of a scheduled session (or the window of an open-window test).
+struct CareerRescheduleSheet: View {
     let session: JSONValue
     let api: any APIClient
     let close: () -> Void
     let saved: () -> Void
-    @State private var text = ""
-    @State private var questions = ""
-    @State private var improvement = ""
+    @State private var start = Date()
+    @State private var end = Date().addingTimeInterval(3600)
     @State private var busy = false
     @State private var error: String?
-    @State private var loaded = false
-    @State private var full: JSONValue = .null
-    @State private var frozenCommand: String?
-    @State private var command: String?
     @State private var payload: JSONValue?
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack { Text(session.text("stage_label") + " · 记录与复盘").font(LibraryTypography.serif(24)); Spacer(); Button("关闭", action: close).disabled(busy) }
-            Text(session.text("start_at") + " · " + (["scheduled": "已安排", "completed": "已完成", "cancelled": "已取消"][session.text("status")] ?? "")).foregroundStyle(Color(hex: 0x96968F))
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("面试记录 / 文字稿").font(LibraryTypography.sans(14, weight: .medium)); TextEditor(text: $text).frame(minHeight: 180).border(Color(hex: 0xE4E4E0))
-                    Text("问题记录").font(LibraryTypography.sans(14, weight: .medium)); TextEditor(text: $questions).frame(minHeight: 100).border(Color(hex: 0xE4E4E0))
-                    Text("复盘与改进").font(LibraryTypography.sans(14, weight: .medium)); TextEditor(text: $improvement).frame(minHeight: 100).border(Color(hex: 0xE4E4E0))
-                    if let error { Text(error).foregroundStyle(.red) }
-                }.disabled(!loaded || busy || payload != nil)
-            }
-            HStack {
-                Group { if session.text("status") == "scheduled" { Button("标记已完成") { command = "complete" }.buttonStyle(CareerButtonStyle()); Button("取消安排") { command = "cancel" }.buttonStyle(CareerButtonStyle()) } }.disabled(!loaded || busy || payload != nil)
-                Spacer(); Button(busy ? "保存中…" : payload != nil ? "重试上次操作" : "保存记录") { Task { await save(frozenCommand == "edit" ? nil : frozenCommand) } }.buttonStyle(CareerButtonStyle(primary: true)).disabled(busy || !loaded)
-            }
-        }.padding(32).font(LibraryTypography.sans(13)).interactiveDismissDisabled(busy)
-        .task { do { let result = try await api.careerRequest(path: "/api/interview-sessions/\(session.text("id"))", method: "GET", query: [:], body: nil); try Task.checkCancellation(); full = result["session"] ?? .null; guard !full.text("id").isEmpty else { throw APIError.invalidResponse }; text = full.text("review_summary"); questions = full.text("questions_markdown"); improvement = full.text("improvement_markdown"); loaded = true } catch is CancellationError { return } catch { self.error = "记录读取失败，请关闭后重试。" } }
-        .confirmationDialog(command == "cancel" ? "确认取消这次安排？" : "确认标记为已完成？", isPresented: Binding(get: { command != nil }, set: { if !$0 { command = nil } })) {
-            Button("确认") { let value = command; command = nil; Task { await save(value) } }
+        CareerSheet(title: "修改安排", subtitle: session.text("stage_label") + " · " + CareerSessions.line(session), width: 520) {
+            DatePicker("开始时间", selection: $start).disabled(payload != nil)
+            DatePicker("结束时间", selection: $end).disabled(payload != nil)
+            if let error { Text(error).font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.red) }
+        } footer: {
+            Button("取消", action: close).buttonStyle(CareerActionStyle(large: true)).disabled(busy)
+            Button(busy ? "正在保存…" : payload == nil ? "保存" : "重试") { Task { await save() } }.buttonStyle(CareerActionStyle(kind: .primary, large: true)).disabled(busy)
+        }
+        .interactiveDismissDisabled(busy)
+        .task {
+            start = CareerApplication.date(session.text("start_at")) ?? Date()
+            end = CareerApplication.date(session.text("end_at")) ?? start.addingTimeInterval(3600)
         }
     }
-    private func save(_ command: String?) async {
-        guard !busy && loaded else { return }; if payload != nil && frozenCommand != (command ?? "edit") { error = "请重试上次操作，或关闭后刷新确认状态。"; return }; busy = true; error = nil
+    private func save() async {
+        guard end > start else { error = "结束时间须晚于开始时间。"; return }
+        busy = true; error = nil; defer { busy = false }
+        let formatter = ISO8601DateFormatter()
+        // A lost response keeps the same request so a retry cannot apply a second, different change.
+        if payload == nil { payload = .object(["base_lock_version": session["lock_version"] ?? .number(1), "start_at": .string(formatter.string(from: start)), "end_at": .string(formatter.string(from: end)), "timezone": .string(TimeZone.current.identifier)]) }
         do {
-            if payload == nil { frozenCommand = command ?? "edit" }
-            if payload == nil { payload = .object(command == nil ? ["base_lock_version": full["lock_version"] ?? .number(1), "review_summary": .string(text), "questions_markdown": .string(questions), "improvement_markdown": .string(improvement)] : ["base_lock_version": full["lock_version"] ?? .number(1)]) }
-            _ = try await api.careerRequest(path: "/api/interview-sessions/\(session.text("id"))" + (command.map { "/" + $0 } ?? ""), method: command == nil ? "PUT" : "POST", query: [:], body: payload)
-            try Task.checkCancellation(); saved()
-        } catch { self.error = "保存失败，输入已保留。请关闭后刷新确认状态，避免覆盖其他窗口的改动。" }
-        busy = false
+            _ = try await api.careerRequest(path: "/api/interview-sessions/\(session.text("id"))/reschedule", method: "POST", query: [:], body: payload)
+            saved()
+        } catch {
+            if case APIError.server(let status, _) = error, [400, 409, 422].contains(status) { payload = nil }
+            self.error = CareerErrors.message(error)
+        }
     }
 }

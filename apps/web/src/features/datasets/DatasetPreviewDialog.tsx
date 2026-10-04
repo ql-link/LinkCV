@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiRequestError, type DatasetContent, type DatasetRecord } from "../../api/client";
 import { Icon } from "../../v3/Icon";
@@ -12,14 +13,14 @@ type PreviewState =
   | { status: "error"; message: string };
 
 function previewErrorMessage(error: unknown) {
-  if (!(error instanceof ApiRequestError)) return "解析结果读取失败，请稍后重试。";
+  if (!(error instanceof ApiRequestError)) return t("解析结果读取失败，请稍后重试。");
   if (error.message === "DATASET_CONTENT_UNAVAILABLE") {
-    return "这份资料的解析结果暂不可查看，请稍后重试。";
+    return t("这份资料的解析结果暂不可查看，请稍后重试。");
   }
   if (error.message === "DATASET_NOT_FOUND") {
-    return "这份资料不存在或你无权查看。";
+    return t("这份资料不存在或你无权查看。");
   }
-  return "解析结果读取失败，请稍后重试。";
+  return t("解析结果读取失败，请稍后重试。");
 }
 
 function formatUploadDate(value: string) {
@@ -42,6 +43,7 @@ export function DatasetPreviewDialog({
   onClose: () => void;
   onManageAssociation?: (dataset: DatasetRecord) => void;
 }) {
+  useLocale();
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<PreviewState>({ status: "loading" });
   const displayName = dataset.file_name.toLowerCase().endsWith(`.${dataset.file_format.toLowerCase()}`)
@@ -82,28 +84,26 @@ export function DatasetPreviewDialog({
       <div className="v3-dialog-body" style={{ paddingBottom: 32 }}>
         <h2 className="v3-dialog-title" title={dataset.file_name}>{dataset.file_name}</h2>
         <div className="ds-preview-meta">
-          <span className="v3-num">{dataset.file_format.toUpperCase()} · {formatDatasetFileSize(dataset.file_size)} · 上传于 {formatUploadDate(dataset.created_at)}</span>
+          <span className="v3-num">{dataset.file_format.toUpperCase()} · {formatDatasetFileSize(dataset.file_size)}{t(" · 上传于 ")}{formatUploadDate(dataset.created_at)}</span>
           {(dataset.interview_label || onManageAssociation) && <span className="is-dot" aria-hidden="true">·</span>}
           {dataset.interview_label && (
-            <span className="is-link"><Icon name="cal" size={13} />已关联：面试 · {dataset.interview_label}</span>
+            <span className="is-link"><Icon name="cal" size={13} />{t("已关联：面试 · ")}{dataset.interview_label}</span>
           )}
           {onManageAssociation && (
-            <button type="button" className="v3-link" onClick={() => onManageAssociation(dataset)}>管理关联</button>
+            <button type="button" className="v3-link" onClick={() => onManageAssociation(dataset)}>{t("管理关联")}</button>
           )}
         </div>
         <div className="ds-preview-stage">
           <div className="ds-preview-doc" aria-live="polite">
             {state.status === "loading" && (
-              <div className="ds-preview-state" role="status" aria-label="正在读取解析结果…">
-                <span className="ds-spinner" aria-hidden="true" />正在读取解析结果…
-              </div>
+              <div className="ds-preview-state" role="status" aria-label={t("正在读取解析结果…")}>
+                <span className="ds-spinner" aria-hidden="true" />{t("正在读取解析结果…")}</div>
             )}
             {state.status === "error" && (
               <div className="ds-preview-state">
                 <span role="alert">{state.message}</span>
                 <button type="button" className="v3-btn v3-btn-ghost" onClick={() => setReloadKey((value) => value + 1)}>
-                  <Icon name="refresh" size={13} />重新加载
-                </button>
+                  <Icon name="refresh" size={13} />{t("重新加载")}</button>
               </div>
             )}
             {state.status === "loaded" && <PreviewContent html={rendered} />}

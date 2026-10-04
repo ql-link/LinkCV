@@ -7,7 +7,7 @@ from linkresume.core.config import Settings
 from linkresume.core.security import verify_password
 from linkresume.integrations.wechat_client import WechatApiError
 from linkresume.main import create_app
-from linkresume.modules.identity.models import User
+from linkresume.modules.identity.models import User, UserProfile
 from linkresume.modules.resumes.models import ResumeTemplate
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
@@ -355,103 +355,10 @@ def test_profile_reports_wechat_unavailable_without_config() -> None:
         assert profile["wechat_bound_at"] is None
 
 
-def test_wechat_bind_full_flow() -> None:
-    app, _wechat = build_wechat_test_app()
-    with TestClient(app) as client:
-        client.post(
-            "/api/auth/register",
-            json={"email": "bind@example.com", "password": "password-123"},
-        )
-        assert (
-            client.get("/api/account/profile").json()["user"]["wechat_status"]
-            == "unbound"
-        )
-
-        requested = client.post("/api/account/wechat/bind-request")
-        assert requested.status_code == 200
-        body = requested.json()
-        ticket = body["ticket"]
-        assert base64.b64decode(body["qrcode_data"]).startswith(b"\x89PNG-")
-        assert client.get(f"/api/account/wechat/bind-status?ticket={ticket}").json() == {
-            "status": "pending"
-        }
-
-        confirmed = client.post(
-            "/api/account/wechat/bind-confirm",
-            json={"ticket": ticket, "code": "code-a"},
-        )
-        assert confirmed.status_code == 200
-        assert confirmed.json() == {"ok": True}
-        assert client.get(f"/api/account/wechat/bind-status?ticket={ticket}").json() == {
-            "status": "bound"
-        }
-        profile = client.get("/api/account/profile").json()["user"]
-        assert profile["wechat_status"] == "bound"
-        assert profile["wechat_bound_at"] is not None
-
-        with app.state.session_factory() as session:
-            row = session.scalar(select(User).where(User.email == "bind@example.com"))
-            assert row is not None
-            assert row.wechat_openid == "openid-code-a"
-
-        # Already-bound users cannot request another binding.
-        re_request = client.post("/api/account/wechat/bind-request")
-        assert re_request.status_code == 400
-        assert re_request.json() == {"error": "WECHAT_ALREADY_BOUND"}
 
 
-def test_wechat_bind_rejects_unknown_ticket() -> None:
-    app, _wechat = build_wechat_test_app()
-    with TestClient(app) as client:
-        client.post(
-            "/api/auth/register",
-            json={"email": "ticket@example.com", "password": "password-123"},
-        )
-        confirmed = client.post(
-            "/api/account/wechat/bind-confirm",
-            json={"ticket": "missing-ticket", "code": "code-a"},
-        )
-        assert confirmed.status_code == 400
-        assert confirmed.json() == {"error": "BIND_TICKET_INVALID"}
 
 
-def test_wechat_bind_conflicts_with_another_user() -> None:
-    app, wechat = build_wechat_test_app()
-    wechat.openids = {"code-shared": "openid-shared"}
-    with TestClient(app) as client:
-        client.post(
-            "/api/auth/register",
-            json={"email": "first@example.com", "password": "password-123"},
-        )
-        first_ticket = client.post("/api/account/wechat/bind-request").json()["ticket"]
-        assert (
-            client.post(
-                "/api/account/wechat/bind-confirm",
-                json={"ticket": first_ticket, "code": "code-shared"},
-            ).status_code
-            == 200
-        )
-
-        # A second account tries to bind the same openid; it must be rejected.
-        client.post(
-            "/api/auth/register",
-            json={"email": "second@example.com", "password": "password-123"},
-        )
-        second_ticket = client.post("/api/account/wechat/bind-request").json()["ticket"]
-        conflict = client.post(
-            "/api/account/wechat/bind-confirm",
-            json={"ticket": second_ticket, "code": "code-shared"},
-        )
-        assert conflict.status_code == 409
-        assert conflict.json() == {"error": "WECHAT_ALREADY_BOUND"}
-
-        with app.state.session_factory() as session:
-            second = session.scalar(select(User).where(User.email == "second@example.com"))
-            assert second is not None
-            assert second.wechat_openid is None
-            first = session.scalar(select(User).where(User.email == "first@example.com"))
-            assert first is not None
-            assert first.wechat_openid == "openid-shared"
 
 
 def _register_account(client: TestClient, email: str = "profile@example.com") -> None:
@@ -529,6 +436,31 @@ def test_user_profile_put_and_get_roundtrip() -> None:
         assert get_response.json() == saved
 
 
+def test_user_profile_reads_redundant_legacy_education_tag_without_changing_storage() -> None:
+    app = build_test_app()
+    with TestClient(app) as client:
+        _register_account(client)
+        assert client.put("/api/account/user-profile", json=_valid_profile_payload()).status_code == 200
+        with app.state.session_factory() as session:
+            row = session.scalar(select(UserProfile))
+            row.school_tier = ["本科", "project_985"]
+            session.commit()
+
+        response = client.get("/api/account/user-profile")
+        assert response.status_code == 200
+        assert response.json()["education_level"] == "bachelor"
+        assert response.json()["school_tier"] == ["project_985"]
+        assert response.json()["lock_version"] == 1
+        with app.state.session_factory() as session:
+            row = session.scalar(select(UserProfile))
+            assert row.school_tier == ["本科", "project_985"]
+            assert row.lock_version == 1
+
+        conflict = client.put("/api/account/user-profile", json=_valid_profile_payload(base_lock_version=2))
+        assert conflict.status_code == 409
+        assert conflict.json()["profile"]["school_tier"] == ["project_985"]
+
+
 def test_account_profile_does_not_include_profile_field() -> None:
     app = build_test_app()
     with TestClient(app) as client:
@@ -557,6 +489,8 @@ def test_user_profile_rejects_invalid_enums() -> None:
             ("salary_period", "century"),
             ("candidate_status", "student"),
             ("education_level", "phd"),
+            ("school_tier", ["本科"]),
+            ("school_tier", ["unknown_tier"]),
         ]:
             payload = _valid_profile_payload()
             payload[field] = value
@@ -679,26 +613,17 @@ def test_user_profile_rejects_stale_lock_version() -> None:
         assert stale.json()["profile"]["lock_version"] == 2
 
 
-def test_wechat_bind_unavailable_without_config() -> None:
+
+
+
+
+def test_ordinary_wechat_binding_routes_are_removed_in_both_environments():
     app = build_test_app()
     with TestClient(app) as client:
-        client.post(
-            "/api/auth/register",
-            json={"email": "wxoff@example.com", "password": "password-123"},
-        )
-        requested = client.post("/api/account/wechat/bind-request")
-        assert requested.status_code == 503
-        assert requested.json() == {"error": "WECHAT_SERVICE_UNAVAILABLE"}
-
-
-def test_wechat_bind_surfaces_wechat_api_failure() -> None:
-    app, wechat = build_wechat_test_app()
-    wechat.fail = True
-    with TestClient(app) as client:
-        client.post(
-            "/api/auth/register",
-            json={"email": "wxdown@example.com", "password": "password-123"},
-        )
-        requested = client.post("/api/account/wechat/bind-request")
-        assert requested.status_code == 503
-        assert requested.json() == {"error": "WECHAT_SERVICE_UNAVAILABLE"}
+        _register_account(client)
+        for environment in ["development", "production"]:
+            app.state.settings = app.state.settings.model_copy(update={"app_environment": environment})
+            assert client.post("/api/account/wechat/bind-request").status_code == 404
+            assert client.post("/api/account/wechat/bind-confirm", json={"ticket": "fictional", "code": "fictional"}).status_code == 404
+            assert client.get("/api/account/wechat/bind-status?ticket=fictional").status_code == 404
+            assert client.post("/api/account/wechat/unbind").status_code == 404

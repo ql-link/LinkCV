@@ -52,6 +52,6 @@ describe("文件预览", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("# 准备文档\n\n文档内容"));
     await user.click(screen.getByRole("button", { name: "保存到资料库" }));
     expect(onSaveGenerated).toHaveBeenCalledWith("g1");
-    expect(screen.getByText("需后端")).toBeInTheDocument();
+    expect(screen.queryByText("需后端")).not.toBeInTheDocument();
   });
 });

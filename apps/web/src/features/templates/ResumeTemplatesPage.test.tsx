@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError, api } from "../../api/client";
 import { useResumeStore } from "../../store/resumeStore";
+import { setLocale } from "../../i18n";
 import { ResumeTemplatesPage } from "./ResumeTemplatesPage";
 
 vi.mock("../../api/client", async (importOriginal) => {
@@ -23,9 +24,9 @@ vi.mock("../preview/ResumePreview", () => ({
 }));
 
 const templates = [
-  { id: "8", key: "classic-technical-cn", name: "经典单页技术简历", description: "技术岗位单页版式", style_categories: ["经典"], use_cases: ["校招"], data: {}, style: {} },
-  { id: "9", key: "modern-cn", name: "现代双栏", description: null, style_categories: ["现代"], use_cases: ["社招"], data: {}, style: {} },
-  { id: "10", key: "campus-cn", name: "校园简历", description: "适合校招求职", style_categories: ["简约", "现代"], use_cases: ["校招"], data: {}, style: {} },
+  { id: "8", key: "classic-technical-cn", use_count: 3200, name: "经典单页技术简历", description: "技术岗位单页版式", style_categories: ["经典"], use_cases: ["校招"], data: {}, style: {} },
+  { id: "9", key: "modern-cn", use_count: 980, name: "现代双栏", description: null, style_categories: ["现代"], use_cases: ["社招"], data: {}, style: {} },
+  { id: "10", key: "campus-cn", use_count: 12, name: "校园简历", description: "适合校招求职", style_categories: ["简约", "现代"], use_cases: ["校招"], data: {}, style: {} },
 ];
 
 // V3 卡片本身不放「创建简历」按钮：点卡片打开 03.1a 预览，再点预览里的主按钮进入命名弹窗
@@ -37,14 +38,31 @@ async function openCreateFromPreview(name: string) {
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/templates");
+  // Catalog interactions run in jsdom without viewport geometry; thumbnail
+  // visibility is covered separately with controlled browser observer entries.
+  vi.stubGlobal("IntersectionObserver", undefined);
 });
 
 afterEach(() => {
+  setLocale("zh-CN", false);
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/templates");
 });
 
 describe("ResumeTemplatesPage", () => {
+  it("英文界面翻译分类标签，同时保留模板名称和筛选的原始分类值", async () => {
+    setLocale("en-US", false);
+    vi.mocked(api.listResumeTemplates).mockResolvedValue({ templates } as never);
+    render(<ResumeTemplatesPage />);
+    await screen.findByRole("button", { name: "View template: 经典单页技术简历" });
+    expect(screen.getAllByText("Classic").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Filter resume templates" }));
+    fireEvent.click(screen.getByRole("button", { name: "Modern" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "View template: 经典单页技术简历" })).toBeNull());
+    expect(screen.getByRole("button", { name: "View template: 现代双栏" })).toBeInTheDocument();
+  });
+
   it("保留接口展示顺序，新增目录整理不会重排原有模板", async () => {
     const additions = [
       { ...templates[1], id: "100", key: "muse-mist-cn", name: "雾青圆章" },
@@ -124,7 +142,7 @@ describe("ResumeTemplatesPage", () => {
 
     const cards = Array.from(container.querySelectorAll(".tpl-card"));
     const uses = cards.map((card) => card.querySelector(".tpl-card-uses")?.textContent ?? "");
-    expect(uses.every((text) => /使用$/.test(text))).toBe(true);
+    expect(uses).toEqual(["3.2k 使用", "980 使用", "12 使用"]);
     const campus = cards.find((card) => card.textContent?.includes("校园简历"))!;
     expect(within(campus as HTMLElement).getByText("简约")).toHaveClass("v3-chip");
     expect(within(campus as HTMLElement).getByText("校招")).toHaveClass("v3-chip");
@@ -166,8 +184,8 @@ describe("ResumeTemplatesPage", () => {
     const previewDialog = screen.getByRole("dialog", { name: "现代双栏" });
     expect(previewDialog).toHaveClass("tpl-preview-dialog");
     expect(within(previewDialog).getByRole("button", { name: "创建简历" })).toHaveClass("v3-btn-dark");
-    expect(previewDialog).toHaveTextContent(/使用/);
-    expect(within(previewDialog).getByText("需后端")).toBeInTheDocument();
+    expect(previewDialog).toHaveTextContent("980 使用");
+    expect(within(previewDialog).queryByText("需后端")).not.toBeInTheDocument();
     expect(within(previewDialog).getByTestId("resume-preview-full")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/templates");
 

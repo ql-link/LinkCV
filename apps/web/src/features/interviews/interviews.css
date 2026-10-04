@@ -5174,41 +5174,39 @@
 /* 页头：日期小字 11 → 衬线标题 28（y+22）→ 副标题 13（y+68）；右侧按钮与标题同高（y=84） */
 .career-v3-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .career-v3-head-copy { min-width: 0; }
-.career-v3-head .v3-page-eyebrow { line-height: 13px; }
-.career-v3-head .v3-page-title { margin-top: 8px; line-height: 40px; }
-.career-v3-head .v3-page-sub { margin-top: 6px; line-height: 16px; }
+.career-v3-head .v3-page-eyebrow { line-height: var(--ui-line-metadata); }
+.career-v3-head .v3-page-title { margin-top: 8px; line-height: var(--ui-line-page-title); }
+.career-v3-head .v3-page-sub { margin-top: 6px; line-height: var(--ui-line-body); }
 .career-v3-head-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; margin-top: 31px; }
 .career-board-head .career-v3-head-actions .v3-btn-ghost { width: 124px; }
 .career-board-head .career-v3-head-actions .v3-btn-dark { width: 100px; }
 .career-v3-head-actions .v3-btn-ghost svg { color: var(--v3-sub); }
 
-/* 统计 4 格：每格 215 宽，第 2 格起左侧 1px 竖线，数字 Inter 22 Semi Bold */
-.career-board-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); height: 66px; margin: 29px 0 0; border-bottom: 1px solid var(--v3-line); }
-.career-board-stat { display: flex; min-width: 0; height: 44px; flex-direction: column; justify-content: flex-start; margin-top: 0; padding-left: 20px; }
-.career-board-stat + .career-board-stat { margin-top: 4px; height: 40px; }
-.career-board-stat + .career-board-stat > * { margin-top: -4px; }
+/* 独立统计：数字 28/36，说明 12/18，四列共享基线。 */
+.career-board-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); height: 72px; margin: 29px 0 0; border-bottom: 1px solid var(--v3-line); }
+.career-board-stat { display: flex; min-width: 0; height: auto; flex-direction: column; justify-content: flex-start; margin-top: 0; padding-left: 20px; min-height: 59px; }
 .career-board-stat:first-child { padding-left: 0; }
 .career-board-stat + .career-board-stat { border-left: 1px solid var(--v3-line); }
 .career-board-stat dd { display: flex; align-items: baseline; gap: 8px; margin: 0; }
-.career-board-stat dd strong { font-family: var(--v3-num); font-size: 22px; font-weight: 600; line-height: 27px; }
-.career-board-stat dd small { color: var(--v3-fnt); font-size: 10.5px; font-weight: 500; }
-.career-board-stat dt { display: flex; align-items: center; gap: 8px; margin-top: 5px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.career-board-stat dd strong { font-family: var(--v3-num); font-size: var(--ui-text-2xl); font-weight: 600; line-height: var(--ui-line-page-title); }
+.career-board-stat dd small { color: var(--v3-fnt); font-size: var(--ui-text-xs); font-weight: 500; line-height: var(--ui-line-metadata); }
+.career-board-stat dt { display: flex; align-items: center; gap: 8px; margin-top: 5px; color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); }
 
 /* 工具栏：左侧 看板/列表 分段；右侧 搜索 + 排序 + 筛选 */
 .career-board-toolbar { display: flex; height: 30px; align-items: center; justify-content: space-between; gap: 16px; margin: 20px 0 18px; }
 .career-board-toolbar .v3-seg { height: 30px; }
-.career-board-toolbar .v3-seg button { width: 60px; padding: 0; font-size: 11.5px; }
+.career-board-toolbar .v3-seg button { width: 60px; padding: 0; font-size: var(--ui-text-sm); }
 .career-board-toolbar-right { display: flex; align-items: center; gap: 18px; }
-.career-toolbar-link { display: inline-flex; height: 28px; align-items: center; gap: 5px; border: 0; border-radius: 6px; background: transparent; padding: 0 2px; color: var(--v3-sub); cursor: pointer; font-size: 12px; }
+.career-toolbar-link { display: inline-flex; height: 28px; align-items: center; gap: 5px; border: 0; border-radius: 6px; background: transparent; padding: 0 2px; color: var(--v3-sub); cursor: pointer; font-size: var(--ui-text-sm); line-height: var(--ui-line-control); }
 .career-toolbar-link svg { color: var(--v3-fnt); }
 .career-toolbar-link:hover, .career-toolbar-link[aria-expanded="true"] { color: var(--v3-txt); }
 .career-filter-panel { width: 240px; padding: 6px; }
-.career-filter-row { display: flex; min-height: 34px; align-items: center; justify-content: space-between; gap: 10px; border-radius: 6px; padding: 0 10px; color: var(--v3-txt); cursor: pointer; font-size: 12.5px; }
+.career-filter-row { display: flex; min-height: 34px; align-items: center; justify-content: space-between; gap: 10px; border-radius: 6px; padding: 0 10px; color: var(--v3-txt); cursor: pointer; font-size: var(--ui-text-sm); }
 .career-filter-row:hover { background: var(--v3-field); }
 .career-filter-stages { max-height: 260px; overflow-y: auto; }
 .career-filter-check { width: 14px; height: 14px; accent-color: var(--v3-dark); cursor: pointer; }
 
-/* 看板：一屏最多 5 列，列宽 = (正文宽 − 4×10) / 5，不小于 164；列间距 10；列底 #f7f7f5、圆角 10，高 592，横向滚动 */
+/* 看板：常规宽度按约 5 列分配，单列保持 220–280px；宽屏容纳更多列，窄屏局部横向滚动。 */
 .v3-career .career-applications-layout { display: block; padding: 0; }
 .v3-career.career-workspace-frame .career-applications-board-content,
 .v3-career .career-applications-board-content { display: block; overflow: visible; }
@@ -5220,10 +5218,10 @@
   overflow-y: hidden;
   scrollbar-width: none;
 }
-.v3-career .progress-board-grid { --career-column-width: calc((100cqw - 40px) / 5); display: flex; width: max-content; min-width: 100%; height: 100%; gap: 10px; }
+.v3-career .progress-board-grid { --career-column-width: clamp(220px, calc((100cqw - 40px) / 5), 280px); display: flex; width: max-content; min-width: 100%; height: 100%; gap: 10px; }
 .v3-career .progress-column {
-  width: max(164px, var(--career-column-width));
-  min-width: 164px;
+  width: var(--career-column-width);
+  min-width: 220px;
   flex: 0 0 auto;
   height: 100%;
   border: 0;
@@ -5409,7 +5407,7 @@
 /* 日历内容撑满页头与「接下来」之间的剩余高度：月视图各行均分，周视图时间轴在区域内滚动 */
 .v3-career .career-reui-calendar [data-slot="event-calendar-content"] { display: flex; height: auto; min-height: 0; flex: 1 1 0; flex-direction: column; }
 
-/* 月视图：星期行 158，行高 104，日期数字 Inter 10.5；今天整格浅蓝底 + 蓝色圆形日期 */
+/* 月视图：星期行 158，行高 104，日期数字 Poppins 10.5；今天整格浅蓝底 + 蓝色圆形日期 */
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-view"] { display: flex; height: auto; min-height: 0; flex: 1 1 0; flex-direction: column; overflow: hidden; border-top: 0; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-header"] { border-bottom: 1px solid var(--v3-line); }
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-header"] > div { height: 24px; padding: 2px 8px 0; line-height: 13px; color: var(--v3-fnt); font-size: 10.5px; font-weight: 400; }
@@ -5431,7 +5429,7 @@
 .v3-career .interview-calendar-day-header { color: var(--v3-fnt); font-size: 10.5px; font-weight: 400; }
 .v3-career .interview-calendar-more-indicator { color: var(--v3-fnt); font-size: 10px; }
 
-/* 周视图：星期 + 日期（Inter 14）；今天日期蓝色圆 30；左侧时间刻度 52 宽；每小时 56 */
+/* 周视图：星期 + 日期（Poppins 14）；今天日期蓝色圆 30；左侧时间刻度 52 宽；每小时 56 */
 .v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] { --ec-hour-height: 56px !important; height: auto !important; min-height: 0; flex: 1 1 0 !important; border-top: 0; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] > .min-h-0 { height: 0; min-height: 0; flex: 1 1 auto; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-day-header"] { display: grid; height: 56px; place-items: center; border: 0; padding: 0; color: var(--v3-fnt); }
@@ -5447,7 +5445,7 @@
 .v3-career .career-reui-calendar [data-slot="event-calendar-all-day-section"] { border-bottom: 1px solid var(--v3-line); }
 .v3-career .career-reui-calendar [data-slot="event-calendar-all-day-section"] > div:first-child { color: var(--v3-fnt); font-size: 10px; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-now-indicator"] > div { background: var(--v3-rd); }
-/* 周视图日程块：浅色底（按颜色）+ 左侧 2px 色条；时间 Inter 10 着色 → 标题 11.5 Medium → 次要 10 */
+/* 周视图日程块：浅色底（按颜色）+ 左侧 2px 色条；时间 Poppins 10 着色 → 标题 11.5 Medium → 次要 10 */
 .v3-career .interview-calendar-timed-event,
 .v3-career .career-reui-calendar [data-view="week"] [data-slot="event-calendar-event"]:not([data-all-day]) {
   border: 0;
@@ -5477,7 +5475,7 @@
 .v3-career .interview-calendar-open-window-content .interview-calendar-event-title { font-weight: 500; }
 .v3-career .interview-calendar-open-window-content :is(.interview-calendar-window-range, .interview-calendar-window-status) { color: var(--v3-sub); font-style: normal; }
 
-/* 「接下来」列表：时间 Inter 12 → 标题 13.5 Medium → 形式 11.5 → 右侧状态 */
+/* 「接下来」列表：时间 Poppins 12 → 标题 13.5 Medium → 形式 11.5 → 右侧状态 */
 .career-upcoming { margin-top: 24px; border-top: 1px solid var(--v3-line); padding-top: 24px; }
 .career-upcoming ul { margin: 0; padding: 0; list-style: none; }
 .career-upcoming li + li { border-top: 1px solid var(--v3-line); }
@@ -5640,7 +5638,7 @@
   background: #fff !important;
   padding: 6px !important;
   color: #1d1d1b !important;
-  font-family: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--ui-font-sans);
   box-shadow: 0 12px 32px rgb(0 0 0 / 10%), 0 2px 6px rgb(0 0 0 / 5%);
   --ec-more-max-height: 320px;
 }
@@ -5699,7 +5697,7 @@
   flex: 0 0 auto;
   margin-left: auto;
   color: #96968f;
-  font-family: "Inter", "Source Han Sans SC", sans-serif;
+  font-family: var(--ui-font-display);
   font-size: 11px;
   line-height: 16px;
 }
@@ -5716,3 +5714,60 @@
    而不是把格子压到只剩一行——那一行会被跨天横条占掉，结果只看得到「另有 N 项」、看不到卡片 */
 /* 周视图：起始刻度线贴着表头，时间标签放在刻度线下方（否则第一条标签会被表头遮住半截） */
 .v3-career .career-reui-calendar [data-slot="event-calendar-time-gutter"] span { top: 3px; line-height: 12px; }
+
+@container workspace (max-width: 850px) {
+  .career-v3-head { flex-wrap: wrap; gap: 20px; }
+  .career-v3-head-actions { flex-wrap: wrap; margin-top: 0; }
+  .career-board-toolbar { height: auto; flex-wrap: wrap; }
+  .career-board-toolbar-right { min-width: 0; flex-wrap: wrap; gap: 12px; }
+  .v3-career .career-applications-board { scrollbar-width: auto; }
+}
+@container workspace (max-width: 560px) {
+  .v3-career .career-v3-page { padding-top: 28px; }
+  .career-board-stats { height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-bottom: 16px; }
+  .career-board-stat:nth-child(3) { border-left: 0; padding-left: 0; }
+  .career-board-toolbar-right .v3-search { width: 100%; }
+}
+/* 低高度窗口允许整页滚动，避免固定头部挤掉列表或日历。 */
+@media (max-height: 600px) {
+  .v3-career.career-workspace-frame:not(.is-standalone-detail) { height: auto; min-height: 100%; }
+  .v3-career .career-v3-page.career-applications-board-content, .v3-career .career-v3-page.career-schedule-content { height: auto; overflow: visible; padding-bottom: 24px; }
+  .v3-career .career-schedule-v3 > .schedule-calendar-panel { min-height: 480px; flex: 0 0 480px; }
+  .v3-career .career-applications-layout.is-list > .career-application-list-groups { overflow: visible; }
+}
+
+.prep-card { padding: 11px; }
+.career-session-preparation { display: grid; gap: 16px; margin-top: 24px; }
+.career-session-record-dialog:has(.career-session-preparation) .career-session-detail-body { min-height: 0; overflow-y: auto; }
+.career-session-preparation .prep-card { padding: 16px; }
+.career-session-preparation .prep-card h3,
+.career-session-preparation-note h3 { margin: 0; font-size: 16px; line-height: 1.5; }
+.career-session-preparation .prep-card > header span,
+.career-session-preparation .prep-card li small,
+.career-session-preparation .prep-card .prep-status { font-size: 12px; }
+.career-session-preparation .prep-card li strong { font-size: 14px; }
+.career-session-preparation .prep-add input { min-height: 36px; font-size: 14px; }
+.career-session-preparation .prep-add button { width: 36px; }
+.career-session-preparation-note p { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.7; }
+.prep-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.prep-card h3 { margin: 0; font-size: 11px; }
+.prep-card > header span { color: var(--ui-text-muted); font-size: 8px; }
+.prep-card ul { display: grid; gap: 0; margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); list-style: none; }
+.prep-card li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 9px; }
+.prep-card li + li { border-top: 1px solid var(--ui-border); }
+.prep-card li > button { display: grid; flex: 0 0 auto; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ui-text-muted); cursor: pointer; }
+.prep-card li > button[role="checkbox"] { width: 18px; height: 18px; margin-top: 1px; border: 1px solid var(--ui-border-strong); border-radius: 4px; color: var(--ui-primary-foreground); }
+.prep-card li.is-done > button[role="checkbox"] { border-color: var(--ui-primary); background: var(--ui-primary); }
+.prep-card li > button svg { width: 10px; height: 10px; }
+.prep-card li > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.prep-card li strong { overflow-wrap: anywhere; font-size: 9px; font-weight: 500; line-height: 1.5; }
+.prep-card li.is-done strong { color: var(--ui-text-muted); text-decoration: line-through; }
+.prep-card li small { color: var(--ui-text-muted); font-size: 8px; line-height: 1.5; }
+.prep-card li > button:disabled { cursor: not-allowed; opacity: .5; }
+.prep-card .prep-status { margin: 0; color: var(--ui-text-secondary); font-size: 8px; line-height: 1.7; }
+.prep-card > .ui-button { width: 100%; margin-top: 8px; }
+.prep-add { display: flex; gap: 6px; margin-top: 8px; }
+.prep-add input { min-width: 0; flex: 1; box-sizing: border-box; padding: 5px 8px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: transparent; color: inherit; font: inherit; font-size: 9px; }
+.prep-add button { display: grid; width: 26px; place-items: center; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm); background: transparent; color: var(--ui-text-secondary); cursor: pointer; }
+.prep-add button:disabled { cursor: not-allowed; opacity: .5; }
+.prep-add button svg { width: 12px; height: 12px; }

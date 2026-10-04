@@ -32,8 +32,8 @@
 /* ───────────── 07.4 设备检测（节点 198:129） ───────────── */
 .vx-check-page { position: relative; min-height: 100%; padding: 52px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 60px; }
 .vx-check-head { display: flex; align-items: flex-start; justify-content: space-between; }
-.vx-check-head .v3-page-title { margin-top: 9px; line-height: 40px; }
-.vx-check-head .v3-page-eyebrow { line-height: 13px; }
+.vx-check-head .v3-page-title { margin-top: 9px; line-height: var(--ui-line-page-title); }
+.vx-check-head .v3-page-eyebrow { line-height: var(--ui-line-metadata); }
 .vx-check-rule { height: 1px; margin-top: 45px; background: var(--v3-line); }
 .vx-ghost-sm { height: 26px; margin-top: 32px; border: 0; border-radius: 7px; background: transparent; padding: 0 10px; color: var(--v3-sub); cursor: pointer; font-size: 11.5px; }
 .vx-ghost-sm:hover:not(:disabled) { background: var(--v3-field); color: var(--v3-txt); }
@@ -202,8 +202,8 @@
 .vr-page { position: relative; min-height: 100%; padding: 52px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 36px; }
 .vr-actions { position: absolute; top: 56px; right: max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)); display: flex; gap: 8px; }
 .vr-actions .v3-btn { height: 32px; }
-.vr-head .v3-page-eyebrow { line-height: 13px; }
-.vr-head .v3-page-title { margin-top: 8px; line-height: 40px; }
+.vr-head .v3-page-eyebrow { line-height: var(--ui-line-metadata); }
+.vr-head .v3-page-title { margin-top: 8px; line-height: var(--ui-line-page-title); }
 .vr-head-meta { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .vr-meta-text { margin-left: 0; color: var(--v3-fnt); font-size: 12px; }
 .vr-tag { display: inline-flex; height: 17px; flex: 0 0 auto; align-items: center; border-radius: 5px; background: var(--v3-stage); padding: 0 7px; color: var(--v3-sub); font-size: 11px; line-height: 1; white-space: nowrap; }
@@ -380,7 +380,7 @@
 .vr-answer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .vr-player { display: inline-flex; height: 36px; align-items: center; gap: 10px; border: 1px solid var(--v3-cl); border-radius: 18px; background: #fff; padding: 0 12px 0 7px; }
 .vr-player.is-deleted { padding: 0 14px; color: var(--v3-fnt); font-size: 11.5px; }
-.vr-player-play { display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 11px; background: var(--v3-dark); padding: 0 0 0 1px; color: #fff; cursor: not-allowed; }
+.vr-player-play { display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 11px; background: var(--v3-dark); padding: 0 0 0 1px; color: #fff; cursor: pointer; }
 .vr-player-wave { display: inline-flex; height: 15px; align-items: center; gap: 2px; }
 .vr-player-wave i { display: block; width: 2px; border-radius: 1px; background: #d6d6d0; }
 .vr-player-time, .vr-player-rate { color: var(--v3-fnt); font-family: var(--v3-num); font-size: 11px; }
@@ -409,6 +409,89 @@
 .vr-reference { margin-top: 16px; border: 1px solid var(--v3-cl); border-radius: 10px; padding: 13px 17px; }
 .vr-reference strong { color: var(--v3-txt); font-size: 12px; font-weight: 500; }
 .vr-reference p { margin: 6px 0 0; color: var(--v3-sub); font-size: 13px; line-height: 21px; }
+
+@container workspace (max-width: 850px) {
+  .vr-actions { position: static; flex-wrap: wrap; margin: 16px 0; }
+  .vr-head-meta { flex-wrap: wrap; }
+  .vr-dims { flex-direction: column; gap: 16px; }
+  .vr-radar { align-self: center; margin-top: 20px; }
+  .vr-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vr-q-head { height: auto; min-height: 42px; flex-wrap: wrap; padding-bottom: 12px; }
+  .vr-filters { flex-wrap: wrap; margin-left: 0; }
+  .vr-q-note { white-space: normal; }
+}
+
+@container workspace (max-width: 560px) {
+  .vr-page, .vx-check-page { padding-top: 28px; }
+  .vr-head .v3-page-title { overflow-wrap: anywhere; }
+  .vr-summary { flex-direction: column; gap: 20px; padding: 20px; }
+  .vr-summary-rule { display: none; }
+  .vr-low { position: static; }
+  .vr-dim-row { gap: 8px; }
+  .vr-dim-row small { width: 48px; }
+  .vr-dim-list p { margin-left: 0; }
+  .vr-metric { padding: 12px; }
+  .vr-metric-top { height: auto; flex-wrap: wrap; gap: 8px; line-height: 1.4; }
+  .vr-tip { flex-direction: column; gap: 8px; }
+  .vr-hw { grid-template-columns: minmax(0, 1fr); }
+  .vx-check-head { flex-wrap: wrap; gap: 16px; }
+  .vx-check-head .vx-ghost-sm { margin-top: 0; }
+  .vx-check-card { padding: 24px 16px; }
+  .vx-check-sub, .vx-check-note p { line-height: 20px; }
+  .vx-check-row { padding: 16px 12px; }
+  .vx-check-top { height: auto; flex-wrap: wrap; }
+  .vx-device-select { width: 100%; }
+  .vx-meter { height: auto; min-height: 38px; flex-wrap: wrap; gap: 10px; padding: 12px; }
+  .vx-meter-label { width: auto; }
+  .vx-meter-bars { min-width: 0; flex: 1; gap: 2px; }
+  .vx-meter-bars i { min-width: 0; max-width: 4px; flex: 1; }
+  .vx-meter-state { flex-basis: 100%; }
+  .vx-quote { height: auto; line-height: 20px; }
+  .vx-check-actions { flex-wrap: wrap; }
+  .vx-check-wait { flex-basis: 100%; }
+}
+
+@container dialog (max-width: 600px) {
+  .vr-detail-head { padding: 24px 20px 18px; }
+  .vr-detail-body { padding: 20px; }
+  .vr-detail-title, .vr-detail-nav, .vr-detail-meta, .vr-sub-head, .vr-reeval-top, .vr-answer-meta, .vr-edit-foot { flex-wrap: wrap; }
+  .vr-detail-title { padding-right: 28px; }
+  .vr-detail-title > div:first-child { flex-basis: 100%; }
+  .vr-detail .v3-dialog-close { top: 20px; right: 16px; }
+  .vr-round { gap: 8px; }
+  .vr-round-label { flex-wrap: wrap; }
+  .vr-answer { gap: 8px; padding: 12px; }
+  .vr-answer-text { overflow-wrap: anywhere; }
+  .vr-corrections li { height: auto; min-height: 30px; flex-wrap: wrap; padding-block: 8px; }
+  .vr-hw { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* 语音舞台没有侧栏；窄窗和低高度窗口使用可滚动的自然布局。 */
+@media (max-width: 900px), (max-height: 900px) {
+  .vx-stage { display: grid; min-height: 0; overflow-y: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "head head" "tools tools" "progress progress" "chip chip" "interviewer user" "subtitle subtitle" "notice notice" "controls controls"; align-content: start; gap: 20px 16px; padding: 24px 16px; }
+  .vx-stage-head, .vx-stage-tools, .vx-progress, .vx-qchip, .vx-subtitle, .vx-notice, .vx-controls { position: static; transform: none; }
+  .vx-stage-head { grid-area: head; }
+  .vx-stage-head h1 { overflow-wrap: anywhere; }
+  .vx-stage-tools { grid-area: tools; flex-wrap: wrap; justify-content: flex-end; }
+  .vx-progress { grid-area: progress; }
+  .vx-progress-bars { width: min(560px, calc(100cqw - 32px)); }
+  .vx-progress-bars i { min-width: 0; max-width: 56px; flex: 1; }
+  .vx-qchip { grid-area: chip; justify-self: center; }
+  .vx-side { position: relative; top: auto; width: 100%; height: 240px; }
+  .vx-side.is-interviewer { grid-area: interviewer; left: auto; }
+  .vx-side.is-user { grid-area: user; left: auto; }
+  .vx-side > .vx-orb, .vx-side > .vx-user { max-width: clamp(64px, 26cqw, 112px); max-height: clamp(64px, 26cqw, 112px); }
+  .vx-ring, .vx-halo, .vx-user-ring, .vx-side.is-recognizing .vx-user-ring { max-width: clamp(100px, 38cqw, 156px); max-height: clamp(100px, 38cqw, 156px); }
+  .vx-side-label { top: 190px; width: 100%; white-space: normal; text-align: center; }
+  .vx-side-label > span { flex-wrap: wrap; justify-content: center; }
+  .vx-subtitle { grid-area: subtitle; width: 100%; max-width: none; }
+  .vx-subtitle p { display: block; font-size: 18px; line-height: 28px; }
+  .vx-notice { grid-area: notice; width: fit-content; max-width: 100%; height: auto; justify-self: center; line-height: 20px; white-space: normal; }
+  .vx-controls { grid-area: controls; height: auto; flex-wrap: wrap; gap: 20px; }
+  .vx-controls-center { flex-basis: 100%; order: -1; }
+  .vx-controls-left, .vx-controls-right { min-width: 0; flex-wrap: wrap; padding-bottom: 0; }
+  .vx-controls-right span { overflow-wrap: anywhere; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .vx-wave.is-animated i, .vx-ring, .vx-rec i, .vx-vib-dot, .vx-spinner, .vx-side.is-recognizing .vx-user-ring { animation: none; }

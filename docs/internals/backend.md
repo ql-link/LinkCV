@@ -31,7 +31,7 @@
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
 | `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
-| `src/linkresume/modules/resumes/` | ORM、HTTP DTO、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
+| `src/linkresume/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
 | `src/linkresume/modules/interviews/` | 求职进程、单场面试和素材 ORM、HTTP DTO 与受保护路由 |
@@ -145,13 +145,13 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0009` 曾新增 `admin_operation_logs` 管理操作审计表，记录管理员对用户的 enable/disable 操作。字段包括 `id`（BIGINT UNSIGNED PK）、`actor_user_id`（操作人，FK → users.id）、`target_user_id`（目标用户，FK → users.id）、`action`（受 CHECK 约束的 VARCHAR，只允许 "disable"/"enable"）和 `created_at`。该表仅写入不读取，管理端无查询入口，`0011` 将其删除；enable/disable 操作不再持久化审计记录。
 
-`0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照；当前公开读取实时使用 `resumes` 主记录中最近一次保存成功的草稿。
+`0013` 为 `resumes` 增加分享字段：`share_token`（VARCHAR(64)，全局唯一索引）、`share_visibility`（VARCHAR(16)，`private|public`）、`share_expires_at`（可空，UTC 过期时间）和 `share_created_at`。两个 CHECK 约束保证分享字段要么全部为空（未分享）、要么全部非空（已分享），且可见性只允许 `private/public`。分享不单独建表、不落内容快照；当前公开读取实时使用 `resumes` 主记录中最近一次保存成功的草稿。公开读取响应额外返回 `share_expires_at`（`expires_at`）与 `resumes.updated_at`（`updated_at`），无新增列或迁移。
 
 `0018` 新增 `user_dataset` 用户知识库数据集表，`0022` 让资料通过唯一 `parse_task_id` 关联通用解析任务，`0043` 增加数据库幂等键、请求指纹和可靠调度字段。`0060` 新增 `user_dataset_folders` 文件夹分类表并在 `user_dataset` 增加 `folder_id` 字段（`ON DELETE SET NULL` 外键），支持文件夹 CRUD、按分类查询、单项/批量移动与带文件夹上传。删除非空文件夹需显式确认，预检无活动任务后清理内部资料记录、解析任务及 MinIO 对象，不再退回未分类。`POST /api/datasets` 要求提供当前用户拥有的现存文件夹，缺少目标返回 `400 DATASET_FOLDER_REQUIRED`，非法或不可访问目标返回 `404 FOLDER_NOT_FOUND`，不再自动存入未分类；创建资料前锁定文件夹以防删除竞争，并执行有界格式与内容校验，在用户行锁内检查数量和总容量，再创建 `uploading` 预留；MinIO 成功后提交为 `upload_status=succeeded/parse_status=queued`，RabbitMQ confirm 失败仍返回已受理记录。Worker 扫描器周期补发未分发或超时的 `queued` 任务，消费方用数据库条件更新把任务原子抢占为 `processing`；陈旧处理任务在尝试上限内回到 `queued`，超过上限收口失败。每次尝试把转换 Markdown 保存为 `users/{uid}/datasets/converted/{task_id}-{attempt}.md`，条件提交失败会删除本次对象，避免陈旧消费者覆盖较新结果；读取仍兼容历史 `{task_id}.md`。上传失败预留由 Worker 清理，只有对象删除成功才删除数据库记录。列表只暴露上传成功资料；重试把失败任务重新置为 `queued`，活动任务禁止删除。本模块不使用 Outbox，不提供分片、RAG 或源文件下载。
 
 ### 微信账号、双端会话与扫码登录
 
-`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。`account-status` 仍提供只读账号存在性查询，不写用户、不更新时间、不签发 session，但随仓库发布的小程序不再在统一登录前调用它；客户端只在用户确认隐私指引并主动点击后调用登录接口，由后端自动复用或创建账号。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；普通改密路由仍不公开。`GET /api/auth/capabilities` 向 Web 暴露邮箱密码能力布尔值，不返回具体环境名。`create_schema=True` 的隔离集成测试继续保留隐藏造数入口。启用管理员与普通账号一样可通过网页扫码确认并由匹配 `poll_token` 的 status 获取 Web Cookie，也可通过小程序 login 建立并 refresh 轮换小程序 Bearer 会话，访问小程序业务接口；停用账号的 Web、Bearer 和 refresh 会话仍被拒绝。密码登录仍可使用 `/api/auth/admin-login`。
+`0019` 为 `users` 增加全局唯一的 `wechat_openid` 和可空 `wechat_bound_at`，`0020` 将 `email/password_hash` 放宽为可空。微信身份登录时，code2session 得到的 openid 存在则复用；不存在时，扫码确认和小程序登录请求只有携带 `privacy_accepted=true` 才创建无邮箱密码账号，否则返回 `400 PRIVACY_AGREEMENT_REQUIRED`。`account-status` 仍提供只读账号存在性查询，不写用户、不更新时间、不签发 session，但随仓库发布的小程序不再在统一登录前调用它；客户端只在用户确认隐私指引并主动点击后调用登录接口，由后端自动复用或创建账号。`privacy_accepted` 是本次建号门禁，不写入数据库作为同意审计记录；数据库唯一约束仍负责收敛并发建号。普通邮箱注册和密码登录仅在 `APP_ENV=local|development` 开放，Production 均返回 404；开发环境开放普通改密，正式环境关闭；Local/Development 的微信路由全部关闭。`GET /api/auth/capabilities` 暴露邮箱密码和微信能力，不返回环境名；测试 schema 开关不能绕过环境限制。启用管理员与普通账号一样可通过网页扫码确认并由匹配 `poll_token` 的 status 获取 Web Cookie，也可通过小程序 login 建立并 refresh 轮换小程序 Bearer 会话，访问小程序业务接口；停用账号的 Web、Bearer 和 refresh 会话仍被拒绝。密码登录仍可使用 `/api/auth/admin-login`。
 
 `session_service.py` 统一发放、轮换和撤销 Redis session。`auth:session:{sid}` 保存 `uid/rhash/channel/created_at`，access JWT 也保存 `channel=web|miniprogram`。Web 只从 Cookie 接受 web channel，小程序只从 Bearer 接受 miniprogram channel；Redis uid/channel 必须与 JWT 完全一致。小程序的 login/refresh/logout 返回 JSON token，refresh 每次轮换，旧 secret 重放会删除 session；管理员停用用户时原有用户会话集合仍可撤销两个 channel。
 
@@ -167,11 +167,13 @@ Alembic `0002` 建立 `users`、`resume_templates`、`resumes` 和 `resume_versi
 
 `0033` 新增 `job_applications`、`interview_sessions` 和 `interview_assets`；`0057` 再把求职生命周期、阶段历史和排期拆开。岗位 JD 创建或导入时在同一事务内创建或复用待投递 `job_applications`，因此正常入口不会只产生 JD。待投递记录可通过一次阶段命令直接进入 `screening/assessment/written_test/ai_interview/interview/offer`，不需要单独写“已投递”；命令可补填带时区的 `applied_at`，省略时以后端有效操作时间为准。每次推进追加一条 `job_application_stages`，旧当前阶段完成并保留，普通面试名称由用户填写且轮次可空。终止命令独立保存生命周期、时间和原因，并关闭当前阶段。
 
-排期与复盘继续共用 `interview_sessions`，通过 `scheduled/completed/cancelled` 区分生命周期；新排期必须关联当前且可排期的 `assessment/written_test/ai_interview/interview` 阶段，筛选、Offer、待投递和已终止记录不能排期。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），同一用户的多个排期允许时间重叠并直接保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。写操作校验当前用户归属；阶段和进程动作使用 `lock_version` 与请求 UUID 拒绝过期或内容不一致的重复修改，场次创建也会核对原业务内容。旧扁平状态字段和 `/advance`、`/offer`、`/close` 仍由兼容投影维护，新消费方只读取稳定阶段与生命周期字段。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
+排期与复盘继续共用 `interview_sessions`，通过 `scheduled/completed/cancelled` 区分生命周期，结束时间已过的 `scheduled` 场次由响应投影为已完成、阶段投影为等待结果，并在下一次添加阶段或终止时落库，不依赖定时任务；新排期必须关联当前且可排期的 `assessment/written_test/ai_interview/interview` 阶段，筛选、Offer、待投递和已终止记录不能排期。排期开始时间使用 IANA 时区校验，接受分钟精度的任意有效时间（秒和微秒必须为 0），同一用户的多个排期允许时间重叠并直接保存；归档进程不能再执行排期生命周期，也不会进入总览统计。求职进程和场次列表使用与筛选摘要绑定的时间加 ID 游标稳定分页，全部 BIGINT 资源 ID 在 HTTP 与 TypeScript 中保持规范十进制字符串。写操作校验当前用户归属；阶段和进程动作使用 `lock_version` 与请求 UUID 拒绝过期或内容不一致的重复修改，场次创建也会核对原业务内容。旧扁平状态字段和 `/advance`、`/offer`、`/close` 仍由兼容投影维护，新消费方只读取稳定阶段与生命周期字段。进程、排期和素材的创建、更新、状态动作与删除沿用统一审计链，创建型接口显式绑定新记录 ID，普通读取不写审计。
 
 创建和改期排期时，请求必须在显式 `end_at` 与正整数 `duration_minutes` 中二选一；新 Web 流程提交持续分钟，应用服务据此推算并持久化 `end_at`，旧消费方仍可继续提交显式结束时间。开放窗口的个人作答计划遵循同一兼容契约，并继续在推算后校验完整落入官方窗口。
 
-绑定由 Web 已登录用户发起，走 `/api/account/wechat/bind-request|bind-confirm|bind-status`（ticket 票据）。绑定票据是临时凭证，只存 Redis（`wechat:bind_ticket:<ticket>` 存用户、`wechat:bind_status:<ticket>` 存 `pending/bound`、`wechat:bind_user_ticket:<uid>` 指向当前票据），TTL 默认 300 秒，同用户重新发起时覆盖旧票据。`bind-confirm` 提交小程序 `wx.login()` 的临时 code，服务端换 openid 后关联到发起用户；openid 已被其他用户绑定时返回 `409 WECHAT_ALREADY_BOUND`，原绑定关系不被覆盖。
+Offer 收到日期、回复截止和预计入职日期由 `JobApplication` 的 `offer_received_on/offer_reply_due_on/offer_start_on` 映射既有迁移 `0105` 的三个可空 DATE 列；本次接通不新增迁移或回填。`record_offer` 仅在请求显式携带相应字段时写入，与既有归属、状态和版本校验共用事务，旧客户端省略时保留结构化值。部署前目标 schema 必须已包含 `0105` 日期列，仓库 head 不代表目标环境 current。
+
+普通微信绑定路由已撤下。正式环境的注销操作确认由 `wechat_action_service.py` 管理五分钟 Redis hash，以 user、Web session、action、poll token 哈希绑定请求；小程序仅提交当前微信 code，网页凭正确 poll token 领取单次 action token。刷新、取消、到期和消费旧凭证均不能再使用。接口见 [HTTP 契约](../api/http-contracts.md#账号补充接口)。
 
 扫码登录挂在 `/api/auth/wechat` 下，scene 状态机存 Redis（key `wechat:login:<scene>`，TTL 默认 300 秒）：
 
@@ -202,7 +204,7 @@ Agent 会话不保存默认简历；简历侧栏和内嵌工作台在每轮发�
 
 FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 不决定模型目录、价格、业务路由或 fallback；Pi 按线路声明的协议直接调用供应商。接入商推理地址由后端固定映射并按允许的地域/工作空间构建，管理 API 不接受任意 URL。AIHubMix 连接可在默认 `aihubmix.com` 与官方备用 `api.inferera.com` 之间切换；目录同步和推理使用同一选择，切换会递增配置版本、清除旧目录同步状态并使既有场景探测失效。Fernet 密钥环由 `LLM_CREDENTIAL_ENCRYPTION_KEYS` 配置，列表只返回 `keyConfigured`。日志和 HTTP 响应不保存或透出凭据、提示词、图片或完整模型响应。外部请求期间不持有 SQLAlchemy 事务；进程被强制终止留下的 `pending` 日志保留以供排查。
 
-模拟面试以 `source=mock_interview` 调用 `mock_interview` 场景：准备与评估作为进程内后台任务运行，外部请求期间不持有事务；每个任务以 `task_token` 标识并在每次模型调用前续租 `task_lease_until`，所有写回都要求状态与令牌同时匹配，重试换发令牌后旧任务的写回自动失效。进程重启遗留的过期租约在下次读取时以条件 UPDATE 收口为可重试失败。面试官回合在作答请求的 SSE 响应内流式生成，完成后才持久化。发起前以 `LLMService.ensure_configured()` 确认场景可路由；语音面试另要求 `speech_to_text` 与 `text_to_speech` 可路由。语音能力复用同一套连接、线路、场景绑定、凭据加密、探针与调用日志：`LLMService.speech_plan()` 解析语音线路，`modules/speech` 只负责上游协议。识别中的音频在进程内存中保存到回答提交，识别结果以一次性会话 ID 存入 Redis（10 分钟）；语音面试录音写入对象存储 `mock-interviews/{user_id}/{public_id}/{question_id}.wav`，删除场次或本场录音时一并删除。详见 [AI 模拟面试](../features/mock-interview.md)。
+模拟面试以 `source=mock_interview` 调用 `mock_interview` 场景：准备与评估作为进程内后台任务运行，外部请求期间不持有事务；每个任务以 `task_token` 标识并在每次模型调用前续租 `task_lease_until`，所有写回都要求状态与令牌同时匹配，重试换发令牌后旧任务的写回自动失效。进程重启遗留的过期租约在下次读取时以条件 UPDATE 收口为可重试失败。面试官回合在作答请求的 SSE 响应内流式生成，完成后才持久化。发起前以 `LLMService.ensure_configured()` 确认场景可路由；语音面试另要求 `speech_to_text` 与 `text_to_speech` 可路由。语音能力复用同一套连接、线路、场景绑定、凭据加密、探针与调用日志：`LLMService.speech_plan()` 解析语音线路，`modules/speech` 只负责上游协议。识别结果与待提交的语音录音共享 Redis 的 10 分钟 TTL，音频以 Base64 保存，支持不同进程处理识别与提交；语音面试录音写入对象存储 `mock-interviews/{user_id}/{public_id}/{question_id}-{speech_session_id}.wav`，不同识别尝试不会覆盖已接受回答的音频。同键重放先核对已保存的回答，不再次消费语音会话。存储失败恢复一次性会话供重试；删除场次或录音先清理对象，失败保留数据库引用并返回错误。设备检测和当前未答问题的 TTS 由受鉴权的播放接口提供。详见 [AI 模拟面试](../features/mock-interview.md)。
 
 简历导入 Worker 通过 `integrations/resume_structuring.py` 以 `source=resume_import` 调用 `resume_structuring` 场景。模型只接收稳定源块及必要布局元数据，返回稀疏语义标注；来源文本由确定性组合器保留。带 layout hints 的领域校验失败时最多再尝试一次不带 hints；未配置、超时、上游失败或非法输出均记录脱敏 warning 并返回匹配当前来源图的空标注。
 
@@ -214,7 +216,7 @@ Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定�
 
 超过结构化输入上限的内容不会发送给模型。合规输入经 `SourceLayoutIR → 模型映射决策 → 规范组合器` 处理：组合器只复制已校验源块文字，并按任务受理时冻结的完整 `TemplateDefinition` 选择受控联系信息行、左右条目和 CommonMark 列表配方；Worker 不重新读取当前模板行的样式或启用状态。同块经历头只有显式 `entry_header` 决策及原文确定性分隔符同时存在时才生成左右行，普通 `body` 中的 `｜`/`|` 原样保留。与父章节语义相同的嵌套 heading 作为父章节可见标题保留，只有根标题或语义切换才建立新章节。有序列表的起始值、项目编号和嵌套深度由程序输出，超过单 item 50 个源引用时在安全边界确定性分片并延续实际序号。所有源块必须保持来源顺序且恰好进入一个规范 custom 章节，不存在“未分类内容”运行时兜底。结构化模型引用未知/重复源块、非法锚点/复合键或 graph hash 不匹配时仅使可选增强降级为空标注；确定性组合器或模板布局无法完整承载时分别以 `RESUME_STRUCTURE_INVALID` 或 `RESUME_LAYOUT_UNSUPPORTED` 失败，不创建半成品。日期、联系方式、错别字和空缺字段作为可见源文字原样保留；字段类型、数量和长度上限、危险链接、Markdown 主动内容及内部 ID 完整性仍严格校验。
 
-HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
+HTTP 导入入口先校验所选模板与文件，再使用 canonical UUID `Idempotency-Key`；Redis key 按用户和 Header 哈希隔离，先以 30 秒租约占有请求，再绑定持久化导入 ID 并保留 15 分钟。`document_parse_tasks` 中 `source_type=resume_import` 的记录是上传和解析状态真值；API 只上传、更新为解析中并等待 MQ confirm，Worker 才执行转换和结果事务。单任务状态接口按当前用户和 `source_type` 查询，非法 ID、不存在和越权统一隐藏为 `RESUME_IMPORT_NOT_FOUND`，并在读取前沿用现有陈旧任务收口。Worker 只有在仍持有本人 `processing` 任务行锁时才上传转换存档并写回引用；删除或终态并发胜出时不会产生新的转换对象。 导入的同步事务及对象写入在工作线程中完整执行，账号行锁不跨越事件循环中的等待。结果事务先锁定账号，再建立配额统计快照；超额任务在同一事务内标记失败并释放占位，避免多个并发任务重复拒绝或突破十份简历的限制。上传失败补偿对象；业务解析失败保留源文件、可能存在的转换存档与失败记录供用户删除，不自动重试。
 
 Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可用，PDF/DOCX 返回 `DOCUMENT_CONVERSION_UNAVAILABLE`；Production 缺 Key 会安全拒绝启动。默认测试全部使用确定性 Fake 和 `httpx.MockTransport`，不访问真实网络或读取密钥。PDF/DOCX 解析日志只记录 LinkResume 调用 LinkParse 的开始、结果、耗时、解析器/页数/OCR 摘要、DOCX Word 元数据和稳定错误码；不读取 LinkParse 内部日志，也不记录正文、Prompt、Cookie、密钥或完整供应商响应。Markdown 本地转换只记录格式、结果和耗时。
 
@@ -293,14 +295,14 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0104`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
+当前迁移链 head 为 `0110`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107 → 0108 → 0109 → 0110`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
 
 `0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
 
 发布先部署识别 Muse 的 Web 和 Node/PDF 渲染器，再执行目录迁移。撤回时停用新增目录；用户已创建简历的模板快照继续保留。迁移仍为 forward-only，不能 downgrade。来源、行业数据及装饰适配边界见[模板来源](resume-template-sources.md#muse-选择集0100)。
 
 
-桌面岗位与面试排期请求由 identity 的 `get_current_career_user` 显式方法/路径白名单接入既有 job_descriptions/interviews 路由；仍复用 Web 的业务服务、本人资源归属和乐观锁，不建立第二套求职数据。排期信息更新通过既有 PUT 场次路由，仍要求本人归属及 base_lock_version；排期删除仍不开放桌面渠道。简历仍为桌面只读，岗位权限不扩展到账号、资料、复盘与管理端，具体开放面见 [桌面 Bearer 契约](../api/http-contracts.md#桌面-bearer-会话)。
+桌面岗位与面试排期请求由 identity 的 `get_current_career_user` 显式方法/路径白名单接入既有 job_descriptions/interviews 路由；仍复用 Web 的业务服务、本人资源归属和乐观锁，不建立第二套求职数据。排期信息更新通过既有 PUT 场次路由，仍要求本人归属及 base_lock_version；阶段详情所需的场次删除、录音上传播放、转写、逐题笔记、笔试题导入与 AI 复盘生成也在该白名单内。简历仍为桌面只读，岗位权限不扩展到账号与管理端，具体开放面见 [桌面 Bearer 契约](../api/http-contracts.md#桌面-bearer-会话)。
 
 原生文字模拟面试复用 `modules/mock_interviews/routes.py` 的现有持久化状态机和后台 runner，经 `get_current_mock_interview_user` 接受限定 desktop Bearer；资料库独立使用 `get_current_dataset_user`，复用原有资料、文件夹和场次关联服务，允许本人管理及私有文件流。无需新表或迁移。语音 REST/WS 不开放该渠道，具体权限见 [桌面文字模拟面试权限](../api/http-contracts.md#桌面文字模拟面试权限)。
 ## 内置模板名称（0101）
@@ -323,3 +325,45 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 `0104` 只整理新增 Muse 目录：按已知 key 和完整种子定义停用 14 套近似款，保留 65 套。仅在全套目录仍为初始排序时重排新增保留款，只为启用且未分类的空标签补初始风格与场景。原有模板、自定义定义、上传项、已有简历与模板快照不修改，无 schema 或 HTTP 结构变化；默认启用目录为 150 套。重复执行不重置后续管理员设置。
 
 仍保留全部 Muse 主题的 Web/PDF 渲染支持，不删除模板或外键关联。迁移只含 DML，沿用 SQL-first 事务和 forward-only 链；目标环境的 current 需要单独查询。撤回通过管理端重新启用或新的向前 revision，数据恢复依赖备份。具体下架、代表款和展示顺序见[模板目录整理](../features/resume-template-curation.md)。
+
+
+### 简历匹配度（0107）
+
+`0107` 新增 `job_resume_matches`：每个（岗位，简历）一行，唯一键 `uk_job_resume_matches_job_resume`，保存状态（`pending`、`ready`、`failed`）、分数、`result_json`（逐条要求、原句核对结果与高亮词）、岗位与简历内容哈希、来源（`auto`、`manual`）、尝试次数、租约令牌与到期时间。外键均为 `RESTRICT`，所以删除岗位、删除简历和账号注销都在各自事务中显式先删匹配行。分数由 `application/job_matches/scoring.py` 按权重计算，不接受模型直接给分。
+
+分析分三段：短事务占位并取得租约，无事务调用模型（`job_match` 用途，结构无效时重试一次），再锁行并核对租约令牌后写回。首页卡经 `JobMatchRunner` 在后台任务中运行，复用同一流程。迁移是 forward-only；目标环境 current 需要单独查询。
+
+### 账号偏好、联系邮箱与持久注销
+
+`0106` 在 users 新增 contact_email 和 deletion_requested_at，将历史 email 回填为联系邮箱（不表示已验证），建立一对一 account_preferences 和持久 account_deletion_jobs。清理任务使用独立 user_id 无外键，删除 users 后仍可继续对象/RAG 清理。`0105` 按创建顺序保留正式 Offer 与面试复盘结构。历史数据库的 `0105` 曾代表两套不同迁移，因此 `0106` 先检查两套结构，整套缺失才执行对应 up SQL；完整存在则保留原数据，部分结构存在时在任何 DDL 前拒绝迁移。已有联系邮箱不重新回填。发布 runner 在 `0106` 后核对两套结构，避免仅凭版本号误判。迁移为 SQL-first、forward-only；共享数据库只能按核实后的结构向前对齐。
+
+`lock_active_user` 以用户行锁和最新状态协调个人写事务与注销受理；长模型调用不持有调用方事务，模型日志和写回分别在有界事务重新验证账号。受理同一事务禁用账号、写注销时间和清理任务，管理员不能重启该账号。公开分享检查所有者状态，刷新与登录均拒绝注销账号。
+
+清理 worker 以可续租的数据库租约领取任务，数据库清理阶段同时持有 RAG 同步的可续租 Redis 锁，按实际 0090 后 schema 的外键顺序清除本人数据，并先将已登记 RAG file ID 存入任务 manifest。对象阶段限定 `users/{uid}/` 和既有录音目录 `mock-interviews/{uid}/`，RAG 阶段只清 manifest 中的文件。Redis 会话撤销、MinIO 或 LinkRag 失败保留任务重试，最多十次转 needs_attention；缺少必须的 RAG 配置直接需人工处理。失去租约后不覆盖新持有者结果，已完成任务清除 manifest 并在七天后删除。`python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 仅重排 needs_attention 任务，不恢复账号。
+
+RAG 上传、轮询、孤儿清理和映射创建重新核对用户注销标记；远程文件变更在用户行锁内与注销协调，上传结果登记前不能受理注销，避免丢失外部清理清单。所有异步个人写回仍须遵守已有任务令牌和版本条件。业务边界见[账号功能](../features/identity-account.md#注销与失败边界)。
+
+
+## 面试准备清单（0108）
+
+`0108` 在 `interview_sessions` 新增 `prep_items`（JSON，可空）和 `prep_generated_at`（可空时间）。清单只随场次整体读写、不跨场次查询，所以不单独建表；每场至多 12 条，条目 id 由服务端保证唯一。`prep_generated_at` 是“本场已成功生成过一次”的唯一标记，用户清空或编辑清单都不会清除它。
+
+`POST /api/interview-sessions/:id/prep-items:generate` 以 `source=interview_prep`、`interview_prep` 场景调用结构化输出，管理员需像其他场景一样为它绑定并探测可用线路。流程分三段：先在短事务内校验归属、状态并组装提示词（岗位快照、阶段、本人关联简历、备注、最近两场已完成面试复盘、最近一次已完成模拟面试报告的 `improvements` 与 `resume_risks`，用户文本都以 `<data>` 引用且声明不是指令）；再无事务调用模型，结构无效时重试一次；最后在 `SELECT … FOR UPDATE` 行锁内重新校验并合并写入。合并保留生成期间用户新增的条目，按标题去重，总数封顶 12。模型失败、结构无效或去重后为空时不写 `prep_generated_at`，用户可以重试。迁移只含 DDL，沿用 forward-only 链。
+
+## 投递渠道、HR 面与 OC（0109）
+
+`0109` 在 `job_applications` 新增可空的 `applied_channel` VARCHAR(100)，以及 OC 口头意向的 `oc_communicated_at` DATETIME(6)、`oc_contact`/`oc_salary_text`/`oc_start_text` VARCHAR(100) 和 `oc_note` VARCHAR(500)；这些字段只随一次求职读写，不建独立表。`job_application_stages.stage_type` 的检查约束放开 `hr` 与 `oc`，存量阶段保持原类型，不做回填：旧的“HR 面”仍是名称为 HR 面的普通面试，旧的“未收到正式 Offer 的 Offer 阶段”仍按 OC 展示。
+
+新 `hr` 阶段可排期，旧扁平字段投影为 `current_stage_type=hr`，场次类型为 `hr`；`oc` 阶段不排期，投影为 `current_stage_type=offer`、`stage_state=negotiating`，因此在 Offer 列展示。当前阶段是 `oc` 时 `POST /offer` 返回 `409 INTERVIEW_INVALID_TRANSITION`，正式 Offer 通过追加 `offer` 阶段再记录。0105 已建的 `offer_probation` 与 `job_application_offer_materials` 现由 ORM 映射：`POST /offer` 的 `material_dataset_ids` 整体替换关联，只接受本人资料库文件；删除求职时先删关联，资料库文件保留。forward-only，回退依赖备份。
+
+## 面试录音转写、逐题笔记与复盘 v2（0110）
+
+`0110` 新增 `interview_recording_transcriptions`（每个录音资料一条，`dataset_id` 唯一，状态 queued/running/succeeded/failed/cancelled，含服务任务号、提交次数、下次处理时间、租约、结果全文、待替换标记和错误码）与 `interview_review_question_notes`（`(session_id, question_key)` 唯一，`question_key` 为题目原文去空白和标点后的 SHA-256，另存题目快照、`good/improve` 标记、笔记与乐观锁），并为 `interview_sessions` 增加 `transcript_source`（manual/transcription）和 `review_heartbeat_at`。两张表随场次级联删除；转写任务随录音资料删除；服务层在删除场次和资料时同步显式删除。forward-only，无回填。
+
+录音转写：上传或关联音视频到非笔试场次时建任务；Worker 进程每 `INTERVIEW_TRANSCRIPTION_POLL_SECONDS` 秒在 Redis 锁内处理一轮（`workers/transcription_worker.py`），用 `MINIO_PUBLIC_ENDPOINT` 生成 6 小时 GET 预签名链接提交阿里云百炼录音文件识别（异步提交 + 轮询，`modules/speech/file_transcription.py`），模型由实时语音线路推导或由 `INTERVIEW_TRANSCRIPTION_MODEL` 指定，凭据复用 `speech_to_text` 线路。提交失败按 1/5/15 分钟最多 3 次，识别 3 小时未完成即失败。结果写入时场次文字稿为空则直接写入，否则保留为待替换；录音取消关联或删除后任务置为已取消，迟到结果不写入。按音频秒数写语音调用日志，不记录链接和文字。
+
+AI 复盘 v2：`review:generate` 校验后立即返回 202，在 API 进程内后台执行：抽题 → 不看回答的要点生成 → 逐题评分（召回用户全部已就绪资料，LinkRag 失败整场降级为本地匹配）→ 整场维度。所有原句由代码校验，分数、权重、档位与把握由 `application/interviews/review_rubric.py` 计算，规则版本 `real-v1`。报告 `schema_version=2` 存入既有 `review_report`；v1 报告继续按原结构返回。心跳超过 5 分钟视为中断。
+
+## 结构化面试复盘（0105 已有字段）
+
+ORM 映射既有 `review_report` JSON、`review_request_id` CHAR(36)、`review_started_at` DATETIME(6)、`review_status` VARCHAR(16)、`review_error` VARCHAR(64)，本次不修改历史 SQL 或新增迁移。报告含 schema_version=1、源文字哈希、生成时间、三维评分与问题分析；请求中的源哈希保存在 JSON 元数据，未完成及不兼容结构不作为有效报告返回。`review_status` 为 generating/ready/failed；请求 UUID 用于生成幂等，活动状态按 3 分钟租期处理。目标数据库需要沿现有链升级到 head（0108）；历史账号版 0105 由 0106 补齐 Offer/复盘字段；SQLite 测试不证明 MySQL 迁移已应用。

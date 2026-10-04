@@ -28,10 +28,13 @@ export type WeChatStatusResponse = {
 
 export type AuthCapabilities = {
   password_login_enabled: boolean;
+  wechat_login_enabled: boolean;
 };
 
 export type UserProfile = User & {
   avatar_url: string | null;
+  contact_email: string | null;
+  registered_at: string;
   wechat_status: "unbound" | "bound" | "unavailable";
   wechat_bound_at: string | null;
 };
@@ -46,7 +49,26 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
+  current_session: { device_label: string };
+  capabilities: {
+    auth_mode: "password" | "wechat" | "unavailable";
+    can_change_password: boolean;
+    can_delete_account: boolean;
+    deletion_confirmation_method: "password" | "wechat" | null;
+  };
 };
+
+export type AccountPreferences = {
+  locale: "zh-CN" | "en-US";
+  interview_reminder_enabled: boolean;
+  notifications_available: false;
+};
+export type AccountVerification = { scene: string; poll_token: string; qrcode_data: string; expires_at: string };
+export type AccountDeletionReceipt = { job_id: string; receipt_token: string; status: string };
+export type AccountDeletionRequest = { confirmation: string } & (
+  | { method: "password"; current_password: string }
+  | { method: "wechat"; action_token: string }
+);
 
 export type EmploymentType =
   | "internship"
@@ -268,6 +290,7 @@ export type ResumeTemplate = {
   layout_plan?: LayoutPlan | null;
   switchable: true;
   incompatibility_reason: null;
+  use_count?: number | null;
 };
 
 type ResumeTemplateWire = Omit<ResumeTemplate, "style"> & {
@@ -416,6 +439,7 @@ export type AgentSelectionContext = {
 };
 
 export type AgentContextType =
+  | "user_profile"
   | "resume"
   | "resume_version"
   | "dataset"
@@ -543,6 +567,8 @@ export type PublicSharePayload = {
   assets: Record<string, string>;
   sharer: PublicShareSharer;
   allow_download: boolean;
+  expires_at: string | null;
+  updated_at: string;
 };
 
 export type UploadedAsset = {
@@ -663,6 +689,45 @@ export type JobEmploymentType =
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
+export type JobMatchStatus = "pending" | "ready" | "failed";
+
+export type JobMatch = {
+  status: JobMatchStatus;
+  stale: boolean;
+  score: number | null;
+  headline: string | null;
+  hits: string[];
+  gaps: string[];
+  highlights: { covered: string[]; missing: string[] };
+  analyzed_at: string | null;
+  error_code: string | null;
+};
+
+export type JobMatchRecommendationState =
+  | "no_resume"
+  | "no_jobs"
+  | "computing"
+  | "ready"
+  | "idle"
+  | "unavailable";
+
+export type JobMatchRecommendationItem = {
+  job_id: string;
+  job_title: string;
+  company_name: string;
+  logo_url: string | null;
+  score: number;
+  application_status: string | null;
+};
+
+export type JobMatchRecommendations = {
+  state: JobMatchRecommendationState;
+  resume: { id: string; title: string } | null;
+  items: JobMatchRecommendationItem[];
+  pending_count: number;
+  can_compute: boolean;
+};
+
 export type JobDescriptionSummary = {
   id: string;
   job_title: string;
@@ -761,6 +826,8 @@ export type ApplicationStageType =
   | "written_test"
   | "ai_interview"
   | "interview"
+  | "hr"
+  | "oc"
   | "offer";
 export type LegacyApplicationStageType = "screening" | "interview" | "hr" | "offer";
 export type ApplicationStageState =
@@ -819,12 +886,23 @@ export type JobApplicationRecord = {
     | "accepted"
     | "declined";
   offer_base_location: string | null;
+  offer_received_on?: string | null;
+  offer_reply_due_on?: string | null;
+  offer_start_on?: string | null;
+  offer_probation?: string | null;
+  offer_materials?: { dataset_id: string; file_name: string }[];
   offer_salary: string | null;
   offer_salary_currency: string | null;
   offer_salary_period: SalaryPeriod | null;
   offer_benefits_description: string | null;
   is_favorite: boolean;
   applied_at: string | null;
+  applied_channel?: string | null;
+  oc_communicated_at?: string | null;
+  oc_contact?: string | null;
+  oc_salary_text?: string | null;
+  oc_start_text?: string | null;
+  oc_note?: string | null;
   notes: string | null;
   archived_at: string | null;
   lock_version: number;
@@ -839,6 +917,124 @@ export type JobApplicationSummary = JobApplicationRecord & {
   next_session_start_at: string | null;
   next_session_end_at: string | null;
   next_session_mode: InterviewMode | null;
+};
+
+export type InterviewPrepCategory =
+  | "intro"
+  | "project"
+  | "technical"
+  | "system_design"
+  | "behavior"
+  | "company"
+  | "other";
+
+export type InterviewPrepItem = {
+  id?: string | null;
+  title: string;
+  category: InterviewPrepCategory;
+  reason?: string | null;
+  done: boolean;
+};
+
+export type InterviewReviewScore = { score: number | null; reason: string; evidence: string | null };
+export type InterviewReviewReport = {
+  schema_version: 1; source_hash: string; generated_at: string; summary: string; overall_score: number | null;
+  project_expression: InterviewReviewScore; system_design: InterviewReviewScore; communication: InterviewReviewScore;
+  questions: Array<{ question: string; answer: string | null; evidence: string; strength: string | null; improvement: string | null; suggested_answer: string | null }>;
+};
+
+export type InterviewReviewDimensionKey =
+  | "professional_depth"
+  | "motivation_fit"
+  | "structure"
+  | "job_fit"
+  | "resume_consistency"
+  | "communication";
+export type InterviewQuestionCategory = "technical" | "project" | "behavioral" | "hr";
+export type InterviewReviewVerdictLevel = "likely_pass" | "promising" | "at_risk" | "likely_fail";
+export type InterviewReviewQuestionV2 = {
+  index: number;
+  key: string;
+  question: string;
+  answer: string | null;
+  category: InterviewQuestionCategory;
+  answer_status: "answered" | "declined" | "missing";
+  follow_ups: number;
+  expected_depth: number;
+  achieved_depth: number | null;
+  score: number | null;
+  signals: Array<{ signal: string; verdict: "hit" | "partial" | "miss"; quote: string | null }>;
+  factual_errors: string[];
+  resume_conflict: string | null;
+  strength: string | null;
+  improvement: string | null;
+  suggested_answer: string | null;
+  evidence_snippets: Array<{ dataset_id: string; title: string; text: string }>;
+};
+export type InterviewReviewReportV2 = {
+  schema_version: 2;
+  rubric_version: string;
+  source_hash: string;
+  generated_at: string;
+  headline: string;
+  summary: string;
+  verdict: {
+    level: InterviewReviewVerdictLevel;
+    confidence: "high" | "medium" | "low";
+    confidence_reason: string | null;
+    signals: Array<{ polarity: "positive" | "negative"; quote: string; meaning: string }>;
+    adjusted_by_signals: number;
+    fatal_questions: number;
+  };
+  total_score: number | null;
+  grade: "excellent" | "good" | "pass" | "improve" | null;
+  question_average: number | null;
+  dimension_score: number | null;
+  first_axis: "professional_depth" | "motivation_fit";
+  category_counts: Partial<Record<InterviewQuestionCategory, number>>;
+  dimensions: Array<{
+    key: InterviewReviewDimensionKey;
+    assessed: boolean;
+    score: number | null;
+    weight: number;
+    evidence: string | null;
+    comment: string | null;
+  }>;
+  questions: InterviewReviewQuestionV2[];
+  improvements: Array<{
+    title: string;
+    detail: string;
+    priority: "key" | "tip";
+    dimension: string | null;
+    question_indexes: number[];
+  }>;
+  basis: {
+    transcript_source: "manual" | "transcription" | null;
+    transcript_chars: number;
+    resume_title: string | null;
+    has_job: boolean;
+    material_snippets: number;
+    material_mode: "rag" | "local" | "none";
+    downgraded_quotes: number;
+    dropped_questions: number;
+  };
+};
+export type InterviewTranscriptionRecord = {
+  dataset_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  error_code: string | null;
+  pending_replace: boolean;
+  result_duration_ms: number | null;
+  updated_at: string;
+};
+export type InterviewReviewQuestionNote = {
+  id: string;
+  question_key: string;
+  question_text: string;
+  verdict: "good" | "improve" | null;
+  note: string | null;
+  lock_version: number;
+  updated_at: string;
 };
 
 export type InterviewSessionRecord = {
@@ -866,7 +1062,20 @@ export type InterviewSessionRecord = {
   preparation_note: string | null;
   questions_markdown: string | null;
   review_summary: string | null;
+  review_report?: InterviewReviewReport | InterviewReviewReportV2 | null;
+  transcript_source?: "manual" | "transcription" | null;
+  transcriptions?: InterviewTranscriptionRecord[];
+  review_question_notes?: InterviewReviewQuestionNote[];
+  review_status?: "generating" | "ready" | "failed" | null;
+  review_request_id?: string | null;
+  review_started_at?: string | null;
+  review_error?: string | null;
+  review_stale?: boolean;
   improvement_markdown: string | null;
+  prep_items: InterviewPrepItem[];
+  prep_generated_at: string | null;
+  prep_total: number;
+  prep_done: number;
   completed_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
@@ -1403,6 +1612,13 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
   return request<{ user: User | null }>("/api/auth/me", {}, false);
 }
 
+// 供不属于 api 对象的流式或二进制调用（如模拟面试的 SSE、录音）复用同一套会话刷新与请求标识。
+export {
+  createRequestId as createApiRequestId,
+  refreshSession as refreshApiSession,
+  request as apiRequest,
+};
+
 export const api = {
   me: getCurrentUser,
   authCapabilities: () =>
@@ -1432,6 +1648,22 @@ export const api = {
     ),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  getAccountPreferences: () => request<AccountPreferences>("/api/account/preferences"),
+  updateAccountPreferences: (payload: Partial<Pick<AccountPreferences, "locale" | "interview_reminder_enabled">>) =>
+    request<AccountPreferences>("/api/account/preferences", { method: "PATCH", body: payload }),
+  updateContactEmail: (email: string | null) =>
+    request<{ contact_email: string | null }>("/api/account/contact-email", { method: "PUT", body: { email } }),
+  changePassword: (payload: { current_password: string; new_password: string; confirm_password: string }) =>
+    request<{ ok: boolean }>("/api/account/change-password", { method: "POST", body: payload }),
+  createAccountVerification: () => request<AccountVerification>("/api/account/wechat/verification-request", { method: "POST", body: { action: "delete_account" } }),
+  accountVerificationStatus: (payload: { scene: string; poll_token: string }) =>
+    request<{ status: "pending" | "verified" | "cancelled" | "consumed" | "expired"; action_token?: string }>("/api/account/wechat/verification-status", { method: "POST", body: payload }),
+  cancelAccountVerification: (payload: { scene: string; poll_token: string }) =>
+    request<{ status: string }>("/api/account/wechat/verification-cancel", { method: "POST", body: payload }),
+  deleteAccount: (payload: AccountDeletionRequest) =>
+    request<AccountDeletionReceipt>("/api/account/deletion", { method: "POST", body: payload }),
+  accountDeletionStatus: (payload: { job_id: string; receipt_token: string }) =>
+    request<{ status: string; phase: string; error_code?: string }>("/api/account/deletion-status", { method: "POST", body: payload }),
   getAccountProfile: () => request<AccountProfile>("/api/account/profile"),
   updateAccountProfile: (nickname: string) =>
     request<UserProfile>("/api/account/profile", {
@@ -1736,6 +1968,22 @@ export const api = {
       next_cursor: string | null;
     }>(`/api/job-descriptions${suffix ? `?${suffix}` : ""}`);
   },
+  getJobMatch: (jobId: string, resumeId: string) =>
+    request<{ match: JobMatch | null }>(
+      `/api/job-descriptions/${jobId}/match?resume_id=${encodeURIComponent(resumeId)}`,
+    ),
+  analyzeJobMatch: (jobId: string, resumeId: string) =>
+    request<{ match: JobMatch | null }>(
+      `/api/job-descriptions/${jobId}/match:analyze`,
+      { method: "POST", body: { resume_id: resumeId } },
+    ),
+  getJobMatchRecommendations: () =>
+    request<JobMatchRecommendations>("/api/job-matches/recommendations"),
+  ensureJobMatchRecommendations: () =>
+    request<JobMatchRecommendations>(
+      "/api/job-matches/recommendations:ensure",
+      { method: "POST" },
+    ),
   createJobDescription: (payload: JobDescriptionCreatePayload) =>
     request<{
       job_description: JobDescriptionRecord;
@@ -1833,6 +2081,7 @@ export const api = {
       is_favorite: boolean;
       notes: string | null;
       applied_at: string | null;
+      applied_channel: string | null;
       resume_id: string | null;
     }> & { base_lock_version: number },
   ) =>
@@ -1861,7 +2110,13 @@ export const api = {
       stage_label?: string | null;
       interview_round_no?: number | null;
       applied_at?: string | null;
+      applied_channel?: string | null;
       resume_id?: string | null;
+      oc_communicated_at?: string | null;
+      oc_contact?: string | null;
+      oc_salary_text?: string | null;
+      oc_start_text?: string | null;
+      oc_note?: string | null;
       base_lock_version: number;
     },
   ) =>
@@ -1891,11 +2146,16 @@ export const api = {
     id: string,
     payload: {
       base_lock_version: number;
+      received_on?: string | null;
+      reply_due_on?: string | null;
+      start_on?: string | null;
       base_location?: string | null;
       salary?: number | null;
       salary_currency?: string | null;
       salary_period?: SalaryPeriod | null;
       benefits_description?: string | null;
+      probation?: string | null;
+      material_dataset_ids?: string[];
     },
   ) =>
     request<{ application: JobApplicationRecord }>(
@@ -1999,12 +2259,60 @@ export const api = {
       questions_markdown: string | null;
       review_summary: string | null;
       improvement_markdown: string | null;
+      prep_items: InterviewPrepItem[];
     }> & { base_lock_version: number },
   ) =>
     request<InterviewSessionDetail>(`/api/interview-sessions/${id}`, {
       method: "PUT",
       body: payload,
     }),
+  generateInterviewPrepItems: (id: string) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/prep-items:generate`,
+      { method: "POST" },
+    ),
+  generateInterviewReview: (id: string, payload: { request_id: string; base_lock_version: number }) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}/review:generate`, { method: "POST", body: payload }),
+  retryInterviewTranscription: (sessionId: string, datasetId: string) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${sessionId}/transcriptions/${datasetId}:retry`,
+      { method: "POST" },
+    ),
+  applyInterviewTranscription: (sessionId: string, datasetId: string, baseLockVersion: number) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${sessionId}/transcriptions/${datasetId}:apply`,
+      { method: "POST", body: { base_lock_version: baseLockVersion } },
+    ),
+  saveInterviewReviewNote: (
+    sessionId: string,
+    payload: { question_text: string; verdict: "good" | "improve" | null; note: string | null; lock_version: number | null },
+  ) =>
+    request<{ note?: InterviewReviewQuestionNote }>(
+      `/api/interview-sessions/${sessionId}/review-notes`,
+      { method: "PUT", body: payload },
+    ),
+  deleteInterviewReviewNote: (sessionId: string, noteId: string) =>
+    request<Record<string, never>>(
+      `/api/interview-sessions/${sessionId}/review-notes/${noteId}`,
+      { method: "DELETE" },
+    ),
+  extractWrittenQuestions: (
+    sessionId: string,
+    source:
+      | { kind: "text"; text: string }
+      | { kind: "dataset"; datasetId: string }
+      | { kind: "images"; files: File[] },
+  ) => {
+    const formData = new FormData();
+    formData.append("source", source.kind);
+    if (source.kind === "text") formData.append("text", source.text);
+    if (source.kind === "dataset") formData.append("dataset_id", source.datasetId);
+    if (source.kind === "images") source.files.forEach((file) => formData.append("files", file));
+    return request<{ questions: Array<{ no: number; text: string }>; markdown: string }>(
+      `/api/interview-sessions/${sessionId}/written-questions:extract`,
+      { method: "POST", formData },
+    );
+  },
   rescheduleInterviewSession: (
     id: string,
     payload: ({
