@@ -222,31 +222,17 @@ function chooseScheduleDateTime(
   durationMinutes?: number,
 ) {
   const picker = openScheduleDateTimePicker(dialog, label, dateValue);
-  const directTime = within(picker).queryByLabelText("开始时间");
-  if (directTime) {
-    fireEvent.change(directTime, { target: { value: `${hour}:${minute}` } });
-    if (durationMinutes !== undefined) {
-      const presetLabel = durationMinutes === 30
-        ? "30分钟"
-        : durationMinutes === 60
-          ? "1小时"
-          : durationMinutes === 120
-            ? "2小时"
-            : null;
-      if (presetLabel) fireEvent.click(within(picker).getByRole("button", { name: presetLabel }));
-      else {
-        fireEvent.click(within(picker).getByRole("button", { name: "自定义" }));
-        fireEvent.change(within(picker).getByLabelText("自定义时长（分钟）"), { target: { value: String(durationMinutes) } });
-      }
+  const startTime = within(picker).queryByLabelText("开始时间");
+  fireEvent.change(startTime ?? within(picker).getByLabelText("时间"), { target: { value: `${hour}:${minute}` } });
+  if (startTime && durationMinutes !== undefined) {
+    if ([30, 45, 60, 90, 120].includes(durationMinutes)) fireEvent.click(within(picker).getByRole("button", { name: `${durationMinutes} 分` }));
+    else {
+      fireEvent.click(within(picker).getByRole("button", { name: "自定义" }));
+      fireEvent.change(within(picker).getByLabelText("自定义时长（分钟）"), { target: { value: String(durationMinutes) } });
     }
-  } else {
-    fireEvent.click(within(picker).getByRole("combobox", { name: "小时" }));
-    fireEvent.click(within(picker).getByRole("option", { name: `${hour} 时` }));
-    fireEvent.click(within(picker).getByRole("combobox", { name: "分钟" }));
-    fireEvent.click(within(picker).getByRole("option", { name: `${minute} 分` }));
   }
   fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
-  if (!directTime && durationMinutes !== undefined) chooseSelectOption(dialog, "时长", `${durationMinutes} 分钟`);
+  if (!startTime && durationMinutes !== undefined) chooseSelectOption(dialog, "时长", `${durationMinutes} 分钟`);
 }
 
 function chooseSelectOption(dialog: HTMLElement, label: string, option: string) {
@@ -2585,10 +2571,7 @@ describe("InterviewCenterPage API projections", () => {
 
     expect(within(picker).getByText("选择笔试时间")).toBeInTheDocument();
     expect(picker.querySelector('input[type="time"]')).not.toBeInTheDocument();
-    fireEvent.click(within(picker).getByRole("combobox", { name: "小时" }));
-    fireEvent.click(within(picker).getByRole("option", { name: "14 时" }));
-    fireEvent.click(within(picker).getByRole("combobox", { name: "分钟" }));
-    fireEvent.click(within(picker).getByRole("option", { name: "00 分" }));
+    fireEvent.click(within(within(picker).getByRole("listbox", { name: "时间选项" })).getByRole("option", { name: "14:00" }));
     fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
     expect(within(dialog).getByRole("button", { name: "笔试时间" })).toHaveTextContent("2026-09-10 14:00");
     expect(within(dialog).getByRole("button", { name: "时长" })).toHaveTextContent("60 分钟");
@@ -2999,7 +2982,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(outsidePicker).getByText("选择作答时间段")).toBeInTheDocument();
     expect(within(outsidePicker).getByText("可安排：9月10日 12:00 – 9月13日 13:00")).toBeInTheDocument();
     fireEvent.change(within(outsidePicker).getByLabelText("开始时间"), { target: { value: "12:00" } });
-    fireEvent.click(within(outsidePicker).getByRole("button", { name: "2小时" }));
+    fireEvent.click(within(outsidePicker).getByRole("button", { name: "120 分" }));
     expect(within(outsidePicker).getByRole("button", { name: "确定" })).toBeDisabled();
     fireEvent.keyDown(outsidePicker, { key: "Escape" });
     expect(mocks.updateInterviewAnswerPlan).not.toHaveBeenCalled();

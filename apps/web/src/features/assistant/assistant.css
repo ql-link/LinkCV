@@ -313,7 +313,7 @@
 .assistant-save-hint { color: var(--v3-sub); font-size: 12px; }
 .assistant-context-types { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 20px; }
 .assistant-context-types button { display: inline-flex; height: 30px; align-items: center; gap: 6px; border: 1px solid var(--v3-cl); border-radius: 999px; background: #fff; padding: 0 12px; color: var(--v3-sub); cursor: pointer; font-size: 12px; }
-.assistant-context-types button.is-active { border-color: var(--v3-dark); color: var(--v3-txt); font-weight: 500; }
+.assistant-context-types button.is-active { border-color: #c9d7f4; background: var(--v3-bl-soft); color: var(--v3-bl); font-weight: 500; }
 .assistant-context-search { margin-top: 14px; }
 .assistant-context-options { max-height: 320px; margin-top: 14px; overflow-y: auto; }
 .assistant-context-options button.v3-grow { width: 100%; border: 0; background: #fff; color: var(--v3-sub); cursor: pointer; text-align: left; }

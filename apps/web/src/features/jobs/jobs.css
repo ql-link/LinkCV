@@ -1133,8 +1133,8 @@
 .job-import-tile { position: relative; display: grid; height: 58px; place-items: center; align-content: center; gap: 6px; border: 1px solid var(--v3-cl); border-radius: 10px; background: #fff; padding: 0; color: var(--v3-sub); cursor: pointer; font-size: 12px; }
 .job-import-tile svg { color: var(--v3-fnt); }
 .job-import-tile:hover { border-color: var(--v3-sk2); }
-.job-import-tile.is-selected { border: 1.5px solid var(--v3-dark); color: var(--v3-txt); font-weight: 500; }
-.job-import-tile.is-selected > svg { color: var(--v3-txt); }
+.job-import-tile.is-selected { border: 1.5px solid var(--v3-bl); color: var(--v3-txt); font-weight: 500; }
+.job-import-tile.is-selected > svg { color: var(--v3-bl); }
 .job-import-tile:disabled { cursor: not-allowed; opacity: .5; }
 .job-import-tile-check { position: absolute; top: 6px; right: 6px; display: grid; width: 14px; height: 14px; place-items: center; border-radius: 7px; background: var(--v3-dark); color: #fff; }
 .job-import-stage { height: 120px; margin: 18px 0 22px; }

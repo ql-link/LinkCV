@@ -181,14 +181,14 @@ export function SuggestionCard({
               >{t("忽略")}</button>
               <button
                 type="button"
-                className={`v3-btn ${pending.length > 1 ? "v3-btn-ghost" : "v3-btn-dark"}`}
+                className="v3-btn v3-btn-ghost"
                 disabled={locked || running}
                 onClick={() => { void onApply(selected).then((ok) => { if (ok) advance(); }); }}
               >
                 {busyProposalId === selected.id && !batchProgress ? t("处理中…") : pending.length > 1 ? t("采用此项") : t("采用")}
               </button>
               {(pending.length > 1 || batchProgress) && (
-                <button type="button" className="v3-btn v3-btn-dark" disabled={locked || running} onClick={onApplyAll}>
+                <button type="button" className="v3-btn v3-btn-ghost" disabled={locked || running} onClick={onApplyAll}>
                   {batchProgress ? t("正在采用（{value0}/{value1}）", { value0: batchProgress.completed, value1: batchProgress.total }) : t("全部采用（{value0}）", { value0: pending.length })}
                 </button>
               )}

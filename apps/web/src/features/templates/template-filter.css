@@ -124,7 +124,7 @@
 .tpl-filter-trigger .tpl-filter-chev { color: var(--v3-fnt); transition: transform 140ms ease; }
 .tpl-filter-trigger:hover, .tpl-filter-trigger.is-open { background: var(--v3-field); }
 .tpl-filter-trigger.is-open .tpl-filter-chev { transform: rotate(180deg); }
-.tpl-filter-trigger.is-active { border-color: var(--v3-dark); }
+.tpl-filter-trigger.is-active { border-color: #c9d7f4; background: var(--v3-bl-soft); color: var(--v3-bl); }
 .tpl-filter-trigger:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
 
 /* 03.1b 筛选弹层：300 宽、圆角 12，胶囊 28 高 */
@@ -140,7 +140,7 @@
 .tpl-filter-group > div { display: flex; gap: 8px; margin-top: 9px; }
 .tpl-filter-group button { height: 28px; border: 0; border-radius: 14px; background: var(--v3-field); padding: 0 12px; color: var(--v3-sub); cursor: pointer; font-size: 12px; font-weight: 500; }
 .tpl-filter-group button:hover { background: var(--v3-fl); }
-.tpl-filter-group button[aria-pressed="true"] { background: var(--v3-dark); color: #fff; }
+.tpl-filter-group button[aria-pressed="true"] { background: var(--v3-bl-soft); color: var(--v3-bl); }
 .tpl-filter-group button:focus-visible, .tpl-filter-reset:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
 
 /* 模板卡网格：4 列、列间 20、行间 32；封面 264 高灰底，缩略图四周留 22 / 18 */

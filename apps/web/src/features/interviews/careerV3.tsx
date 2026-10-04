@@ -163,12 +163,12 @@ export function ScheduleArt({ kind, date, windowInfo }: { kind: ScheduleArtKind;
           <StageText x={260} y={12} color="var(--v3-or)" style={{ width: 80, textAlign: "right" }}>{windowInfo.remain}</StageText>
           <Bar x={20} y={40} w={320} h={6} color="var(--v3-sk2)" r={3} />
           <Bar x={20} y={40} w={Math.round(320 * windowInfo.todayRatio)} h={6} color="var(--v3-fl)" r={3} />
-          {windowInfo.planRatio !== null && <Bar x={20 + Math.round(320 * windowInfo.planRatio)} y={37} w={12} h={12} color="var(--v3-dark)" r={4} />}
+          {windowInfo.planRatio !== null && <Bar x={20 + Math.round(320 * windowInfo.planRatio)} y={37} w={12} h={12} color="var(--v3-bl)" r={4} />}
           <Bar x={20 + Math.round(320 * windowInfo.todayRatio)} y={35} w={1.5} h={16} color="var(--v3-or)" r={1} />
           <StageText x={20} y={56} size={9.5} color="var(--v3-fnt)" weight={400} num>{windowInfo.open}</StageText>
           <StageText x={260} y={56} size={9.5} color="var(--v3-fnt)" weight={400} num style={{ width: 80, textAlign: "right" }}>{windowInfo.close}</StageText>
           <StageText x={20 + Math.round(320 * windowInfo.todayRatio) - 10} y={56} size={9.5} color="var(--v3-or)">{t("今天")}</StageText>
-          {windowInfo.planRatio !== null && <StageText x={20 + Math.round(320 * windowInfo.planRatio) - 14} y={20} size={9.5} color="var(--v3-txt)">{t("我的计划")}</StageText>}
+          {windowInfo.planRatio !== null && <StageText x={20 + Math.round(320 * windowInfo.planRatio) - 14} y={20} size={9.5} color="var(--v3-bl)">{t("我的计划")}</StageText>}
         </ArtCard>
       )}
       {kind === "test" && (

@@ -275,7 +275,7 @@
 .vr-q-head .vr-h2-sub { margin-top: 7px; }
 .vr-filters { display: flex; gap: 6px; margin: 2px 0 0 8px; }
 .vr-filters button { height: 24px; border: 1px solid var(--v3-cl); border-radius: 999px; background: #fff; padding: 0 11px; color: var(--v3-sub); cursor: pointer; font-size: 12px; }
-.vr-filters button[aria-pressed="true"] { height: 22px; border-color: var(--v3-dark); background: var(--v3-dark); padding: 0 10px; color: #fff; font-weight: 500; }
+.vr-filters button[aria-pressed="true"] { height: 22px; border-color: #c9d7f4; background: var(--v3-bl-soft); padding: 0 10px; color: var(--v3-bl); font-weight: 500; }
 .vr-q-note { margin-top: 8px; color: var(--v3-fnt); font-size: 11px; white-space: nowrap; }
 .vr-btn-sm { height: 28px; flex: 0 0 auto; border: 1px solid var(--v3-cl); border-radius: 999px; background: #fff; padding: 0 12px; color: var(--v3-txt); cursor: pointer; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .vr-btn-sm.is-plain { color: var(--v3-sub); font-weight: 400; }
