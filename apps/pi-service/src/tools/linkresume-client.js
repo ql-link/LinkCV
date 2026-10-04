@@ -6,6 +6,16 @@ export class LinkResumeToolError extends Error {
   }
 }
 
+function optionalLogIdentifier(value, maxLength) {
+  if (typeof value !== "string") return null;
+  let length = 0;
+  // Match Python/MySQL character counts rather than UTF-16 code units.
+  for (const character of value) {
+    if (++length > maxLength) return null;
+  }
+  return value;
+}
+
 export function createLinkResumeClient(config, runId, signal, initialSource = null) {
   let source = initialSource;
   async function request(path, options = {}) {
@@ -50,7 +60,12 @@ export function createLinkResumeClient(config, runId, signal, initialSource = nu
     runtimeConfig: () => request(`/internal/agent/runtime-config?run_id=${encodeURIComponent(runId)}`),
     recordLlmCall: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/llm-calls`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        // Existing PiCallRecord/LLMCallLog limits; identifiers are optional.
+        responseModelId: optionalLogIdentifier(payload.responseModelId, 256),
+        upstreamRequestId: optionalLogIdentifier(payload.upstreamRequestId, 128),
+      }),
     }),
     context: (resumeId) => request(
       `/internal/agent/runs/${encodeURIComponent(runId)}/context?resume_id=${encodeURIComponent(resumeId)}`,

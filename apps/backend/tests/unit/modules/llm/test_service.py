@@ -20,6 +20,7 @@ from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, L
 from linkresume.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION, validation_fingerprint
 from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError, LLMService
+from linkresume.modules.speech.gateway import RecognitionEvent
 
 
 class FakeGateway:
@@ -74,6 +75,70 @@ def context():
 
 class Answer(BaseModel):
     answer: str
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("request_id,model_id,expected_request,expected_model", [
+    ("resp_fictional", "fictional-model", "resp_fictional", "fictional-model"),
+    ("r" * 128, "m" * 256, "r" * 128, "m" * 256),
+    ("r" * 129, "m" * 257, None, None),
+    ("resp_" + "x" * 2048, "fictional-model", None, "fictional-model"),
+], ids=["normal", "column-boundary", "over-column-limit", "long-responses-id"])
+def test_successful_calls_keep_usage_when_upstream_identifiers_exceed_mysql_columns(
+    context, streaming, request_id, model_id, expected_request, expected_model,
+):
+    service, gateway, sessions = context
+    if streaming:
+        gateway.result = [[
+            GatewayStreamEvent(type="delta", content="OK"),
+            GatewayStreamEvent(type="done", usage=GatewayUsage(100, 20),
+                               response_model_id=model_id, upstream_request_id=request_id),
+        ]]
+        async def run():
+            stream = await service.stream_chat(1, [ChatMessage(role="user", content="虚构请求")], source="test_call")
+            return [event async for event in stream.events]
+        events = asyncio.run(run())
+        assert events[-1].type == "done" and not any(event.type == "error" for event in events)
+    else:
+        gateway.result = GatewayResult(content="OK", usage=GatewayUsage(100, 20),
+                                       response_model_id=model_id, upstream_request_id=request_id)
+        assert asyncio.run(service.chat(1, [ChatMessage(role="user", content="虚构请求")], source="test_call")).content == "OK"
+    with sessions() as db:
+        log = db.scalar(select(LLMCallLog))
+        assert log.status == "succeeded" and log.input_tokens == 100 and log.output_tokens == 20
+        assert log.estimated_cost == Decimal("0.00014")
+        assert log.upstream_request_id == expected_request and log.response_model_id == expected_model
+
+
+@pytest.mark.parametrize("transcript,successful", [("虚构测试语音", True), ("", False)])
+def test_file_asr_probe_uses_voiced_pcm_and_requires_a_final_transcript(context, transcript, successful):
+    service, gateway, sessions = context
+    recordings = []
+    class SpeechGateway:
+        async def recognize(self, target, audio, **kwargs):
+            recordings.append(b"".join([frame async for frame in audio]))
+            yield RecognitionEvent(transcript, 0, True)
+        async def synthesize(self, *args, **kwargs):
+            pytest.fail("ASR probe unexpectedly called TTS")
+    service._speech_gateway = SpeechGateway()
+    with sessions() as db:
+        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding.use_case = "speech_to_text"
+        binding.protocol_code = "openai_asr_file"
+        binding.validated_at = None
+        binding.validated_fingerprint = None
+        db.get(LLMModelRoute, 1).invoke_target = "whisper-large-v3"
+        db.commit()
+    if successful:
+        asyncio.run(service.probe_route(1, "speech_to_text", 1))
+    else:
+        with pytest.raises(LLMError, match="LLM_RESPONSE_INVALID"):
+            asyncio.run(service.probe_route(1, "speech_to_text", 1))
+    assert len(recordings) == 1 and len(recordings[0]) > 32000 and any(recordings[0])
+    with sessions() as db:
+        binding = db.get(LLMUseCaseRoute, ("speech_to_text", 1))
+        assert (binding.validated_at is not None) is successful
+        assert db.scalar(select(LLMCallLog)).status == ("succeeded" if successful else "failed")
 
 
 def test_image_probe_sends_provider_compatible_rgb_image(context):
