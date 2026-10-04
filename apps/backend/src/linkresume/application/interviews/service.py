@@ -1408,6 +1408,7 @@ def create_session(
     if payload.schedule_kind == "open_window" and current_stage.stage_type not in {
         "assessment",
         "written_test",
+        "ai_interview",
     }:
         raise InterviewScheduleKindNotSupported
     requested_stage_id = (
@@ -1742,7 +1743,7 @@ def update_answer_plan(
         if session.application_stage_id is not None
         else None
     )
-    if stage is None or stage.stage_type not in {"assessment", "written_test"}:
+    if stage is None or stage.stage_type not in {"assessment", "written_test", "ai_interview"}:
         raise InterviewAnswerPlanNotSupported
     if payload.answer_plan_start_at is None:
         return _commit_session_update(
