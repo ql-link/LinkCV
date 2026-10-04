@@ -14,7 +14,10 @@ extension DesktopTransport {
         func write(_ text:String) throws { try output.write(contentsOf:Data(text.utf8)) }
         func field(_ name:String,_ value:String) throws { try write("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n") }
         var path = "/api/datasets", method = "POST"
-        if let replacing = upload.replacing {
+        if let session = upload.session {
+            guard DatasetRequest.id(session), upload.replacing == nil else { throw APIError.invalidResponse }
+            path = "/api/interview-sessions/" + session + "/assets"; try field("source_type","uploaded")
+        } else if let replacing = upload.replacing {
             guard DatasetRequest.id(replacing), let revision = upload.revision, revision.allSatisfy({$0 >= "0" && $0 <= "9"}), !revision.isEmpty else { throw APIError.invalidResponse }
             path += "/" + replacing + "/file"; method = "PUT"; try field("confirm_replace","true")
         } else { try field("folder_id",upload.folder); try field("file_name",upload.name) }

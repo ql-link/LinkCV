@@ -45,6 +45,8 @@ struct DatasetLibraryView: View {
     @State private var active = true
     @State private var loadID = UUID()
     @State private var uploadTask: Task<Void,Never>?
+    @State private var batchMode = false
+    @State private var hoveredRow: String?
     private var account: String { if case .signedIn(let user) = session.phase { return user.id }; return "" }
     private var folderName: String { folder == "uncategorized" ? "未分类" : folders.first { $0.text("id") == folder }?.text("name") ?? "资料库" }
     private var visible: [DatasetRecord] { datasets.filter { item in (folder.isEmpty || (folder == "uncategorized" ? item.folder.isEmpty : item.folder == folder)) && (query.isEmpty || item.name.localizedCaseInsensitiveContains(query)) && (filter == "all" || filter == "ready" && item.ready || filter == "processing" && item.busy || filter == "failed" && item.status.contains("失败") || filter == item.raw.text("asset_kind")) } }
@@ -59,19 +61,26 @@ struct DatasetLibraryView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment:.leading,spacing:24) {
+            VStack(alignment:.leading,spacing:0) {
                 header
-                if loading && !loaded { ProgressView("正在加载资料与文件夹…").frame(maxWidth:.infinity,minHeight:250) }
-                else if !account.isEmpty && !loaded { VStack { empty("加载失败","资料与文件夹暂不可用，请重新加载。",symbol:"exclamationmark.arrow.triangle.2.circlepath"); Button("重新加载") { refresh = UUID() }.disabled(busy) } }
+                if loading && !loaded { ProgressView("正在加载资料…").font(V3.sans(13)).frame(maxWidth:.infinity,minHeight:250) }
+                else if !account.isEmpty && !loaded { empty("资料加载失败","请稍后重试。资料和文件夹都还在，刷新一下试试。",symbol:"exclamationmark.arrow.triangle.2.circlepath") }
                 else if folder.isEmpty { root }
                 else { fileList }
-                if let error { HStack { Text(error).font(LibraryTypography.sans(13)).foregroundStyle(.red); Spacer(); Button("重新加载") { refresh = UUID() }.disabled(busy) } }
-                if let notice { Text(notice).font(LibraryTypography.sans(13)).foregroundStyle(.secondary) }
-                if !queue.isEmpty { uploadQueue }
-            }.padding(.horizontal,32).padding(.top,52).padding(.bottom,40).frame(maxWidth:924).frame(maxWidth:.infinity,alignment:.top)
-        }.task(id:account + refresh.uuidString) { active = true; await load(poll:true) }
+                if let error {
+                    HStack(spacing:10) { Text(error).font(V3.sans(12.5)).foregroundStyle(V3.red); Spacer(); Button("重新刷新") { refresh = UUID() }.buttonStyle(CareerActionStyle(kind:.link)).disabled(busy) }.padding(.top,16)
+                }
+                if let notice {
+                    HStack(spacing:10) { Text(notice).font(V3.sans(12.5)).foregroundStyle(V3.sub); Spacer(); Button { self.notice = nil } label:{ Image(systemName:"xmark").font(.system(size:10)) }.buttonStyle(.plain).foregroundStyle(V3.fnt) }.padding(.top,16)
+                }
+                if !queue.isEmpty { uploadQueue.padding(.top,24) }
+            }.padding(.horizontal,32).padding(.bottom,72).frame(maxWidth:.infinity,alignment:.top)
+        }
+        .overlay(alignment:.bottom) { if batchMode && !folder.isEmpty { batchBar } }
+        .task(id:account + refresh.uuidString) { active = true; await load(poll:true) }
             .onChange(of:account) { _, id in
                 player?.pause(); player = nil; mediaFile?.discard(); mediaFile = nil; uploadTask?.cancel(); queue.forEach { $0.upload.discard() }; queue = []; action = nil; selected = []; inspected = ""; datasets = []; folders = []; loaded = false; limits = .null; preview = ""; error = nil; sheetError = nil; notice = nil; busy = false; folder = ""; history = []; query = ""; sessions = []
+                batchMode = false
                 if !id.isEmpty && !pending.isEmpty { let next = pending; pending = ""; action = next; name = "" } else { pending = "" }
             }
             .onChange(of:action) { _, value in if value != "media" { player?.pause(); player = nil; mediaFile?.discard(); mediaFile = nil } }
@@ -84,155 +93,307 @@ struct DatasetLibraryView: View {
                 return true
             }
     }
+    /// 06.1 / 06.2 page head: eyebrow (with the breadcrumb inside a folder), serif title, subtitle and actions.
     private var header: some View {
         VStack(alignment:.leading,spacing:0) {
             HStack(alignment:.top,spacing:24) {
                 VStack(alignment:.leading,spacing:0) {
-                    Text("DATASETS").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex:0x96968F)).frame(height:13,alignment:.top)
-                    Text(folderName).font(LibraryTypography.serif(28)).foregroundStyle(Color(hex:0x1D1D1B)).frame(height:40,alignment:.leading).padding(.top,9)
-                    Text(folder.isEmpty && (!datasets.isEmpty || !folders.isEmpty) ? "\(datasets.count) 份资料 · \(folders.count) 个文件夹" : "把履历、项目记录和参考资料集中在这里，写简历时随时调用。")
-                        .font(LibraryTypography.sans(13)).foregroundStyle(Color(hex:0x55554F)).frame(minHeight:19,alignment:.leading).padding(.top,6)
+                    if folder.isEmpty {
+                        Text("DATASETS · \(datasets.count) 份").font(V3.sans(12,weight:.medium)).foregroundStyle(V3.fnt).frame(height:13)
+                    } else {
+                        HStack(spacing:6) {
+                            Button("DATASETS") { navigate(""); history = [] }.buttonStyle(.plain).foregroundStyle(V3.sub).accessibilityLabel("返回全部资料").disabled(busy)
+                            Text("·").foregroundStyle(V3.fnt)
+                            Text(folderName).foregroundStyle(V3.fnt).lineLimit(1)
+                        }.font(V3.sans(12,weight:.medium)).frame(height:13)
+                    }
+                    Text(folder.isEmpty ? "资料库" : folderName).font(V3.serif(28)).foregroundStyle(V3.txt).lineLimit(1).frame(height:36).padding(.top,9)
+                    Text(subtitle).font(V3.sans(14)).foregroundStyle(V3.sub).padding(.top,6)
                 }.frame(maxWidth:.infinity,alignment:.leading)
                 HStack(spacing:10) {
-                    HStack(spacing:7) {
-                        LibraryIcon(name:"icon-search",size:13)
-                        TextField("搜索资料…",text:$query).textFieldStyle(.plain).font(LibraryTypography.sans(12))
-                    }.padding(.horizontal,12).frame(width:200,height:32).background(Color(hex:0xF4F4F2),in:RoundedRectangle(cornerRadius:8))
-                    Button("新建文件夹") { show("createFolder") }.buttonStyle(LibraryCreateButtonStyle()).disabled(busy)
+                    V3SearchField(text:$query,placeholder:"搜索资料…",width:folder.isEmpty ? 200 : 180)
+                    if folder.isEmpty {
+                        Button("新建文件夹") { show("createFolder") }.buttonStyle(V3ButtonStyle(kind:.dark,width:120)).disabled(busy || batchMode)
+                    } else {
+                        Button(batchMode ? "取消操作" : "批量操作") { batchMode.toggle(); selected = [] }.buttonStyle(V3ButtonStyle(kind:.ghost,width:92)).disabled(busy)
+                        Button("上传资料") { pick() }.buttonStyle(V3ButtonStyle(kind:.dark,width:108)).disabled(busy || batchMode || !loaded || !DatasetRequest.id(folder))
+                    }
                 }.padding(.top,32)
             }
-            Rectangle().fill(Color(hex:0xECECEA)).frame(height:1).padding(.top,21)
-            if !folder.isEmpty {
-                HStack(spacing:12) {
-                    if !history.isEmpty { Button("‹ 返回") { folder = history.removeLast(); selected = []; query = "" }.disabled(busy) }
-                    Button("资料库") { navigate("") }.buttonStyle(.plain).disabled(busy)
-                    Text("/ " + folderName).font(LibraryTypography.sans(12)).foregroundStyle(.secondary)
-                    Spacer()
-                    Picker("筛选",selection:$filter) { Text("全部").tag("all"); Text("文档").tag("document"); Text("音频").tag("audio"); Text("视频").tag("video"); Text("可用").tag("ready"); Text("处理中").tag("processing"); Text("失败").tag("failed") }.frame(width:140)
-                    Button { refresh = UUID() } label:{ Image(systemName:"arrow.clockwise") }.help("刷新资料库").disabled(busy)
-                    if DatasetRequest.id(folder) { Button("上传文件") { pick() }.buttonStyle(WebActionStyle()).disabled(busy || !loaded) }
-                }.padding(.top,24)
-            }
+            Rectangle().fill(V3.line).frame(height:1).padding(.top,24)
         }
+    }
+    private var subtitle: String {
+        if !account.isEmpty && !loaded { return loading ? "正在加载…" : "" }
+        if folder.isEmpty {
+            return datasets.isEmpty && folders.isEmpty ? "把履历、项目记录和参考资料集中在这里，写简历时随时调用。" : "\(datasets.count) 份资料 · \(folders.count) 个文件夹"
+        }
+        let inside = datasets.filter { folder == "uncategorized" ? $0.folder.isEmpty : $0.folder == folder }
+        let linked = inside.filter { !$0.raw.text("interview_label").isEmpty }.count
+        return "共 \(inside.count) 份资料" + (linked > 0 ? " · \(linked)份已关联面试" : "")
     }
     private var emptyFolders: some View {
-        VStack(alignment:.leading,spacing:0) {
+        V3EmptyCard(title:folder.isEmpty ? "还没有文件夹" : "还没有资料",
+                    message:folder.isEmpty ? "建议先新建文件夹分类整理，后续写简历时可以快速检索和引用相关资料。" : "建议先上传一份与当前分类相关的资料，后续写简历时可以快速检索和引用。") {
             if let url = Bundle.module.url(forResource:"empty-folders",withExtension:"png",subdirectory:"Library"), let illustration = NSImage(contentsOf:url) {
-                Image(nsImage:illustration).resizable().aspectRatio(504.0/200,contentMode:.fit)
-                    .clipShape(RoundedRectangle(cornerRadius:11)).padding(8)
-                    .accessibilityHidden(true)
+                Image(nsImage:illustration).resizable().scaledToFit().accessibilityHidden(true)
             }
-            Text("还没有文件夹").font(LibraryTypography.serif(18))
-                .foregroundStyle(Color(hex:0x1D1D1B)).frame(height:26,alignment:.leading).padding(.horizontal,32).padding(.top,14)
-            Text("建议先新建文件夹分类整理，后续写简历时可以快速检索和引用相关资料。")
-                .font(LibraryTypography.sans(13)).foregroundStyle(Color(hex:0x55554F)).lineSpacing(4)
-                .frame(maxWidth:.infinity,minHeight:22,alignment:.leading).padding(.horizontal,32).padding(.top,8).padding(.bottom,32)
-        }.frame(maxWidth:520,alignment:.leading)
-            .background(.white,in:RoundedRectangle(cornerRadius:16))
-            .overlay(RoundedRectangle(cornerRadius:16).stroke(Color(hex:0xE4E4E0),lineWidth:1))
-            .shadow(color:.black.opacity(0.04),radius:8,x:0,y:4)
-            .frame(maxWidth:.infinity).padding(.top,35)
+        } actions: { EmptyView() }
+        .frame(maxWidth:.infinity).padding(.top,59)
     }
-    private func navigate(_ id:String) { guard !busy else { return }; history.append(folder); folder = id; selected = []; inspected = ""; query = "" }
+    private func navigate(_ id:String) { guard !busy else { return }; history.append(folder); folder = id; selected = []; inspected = ""; query = ""; batchMode = false }
+    private func relativeDay(_ value:String,withTime:Bool = false) -> String {
+        guard let date = CareerApplication.date(value) else { return "" }
+        let calendar = Calendar.current
+        let days = calendar.dateComponents([.day],from:calendar.startOfDay(for:date),to:calendar.startOfDay(for:Date())).day ?? 0
+        let time = self.date(value,format:"HH:mm")
+        if days == 0 { return withTime ? "今天 " + time : "今天" }
+        if days == 1 { return withTime ? "昨天 " + time : "昨天" }
+        return listDate(value)
+    }
+    private func listDate(_ value:String) -> String {
+        guard let date = CareerApplication.date(value) else { return value }
+        return self.date(value,format:Calendar.current.component(.year,from:date) == Calendar.current.component(.year,from:Date()) ? "MM-dd" : "yyyy-MM-dd")
+    }
     private var root: some View {
-        VStack(alignment:.leading,spacing:12) {
+        VStack(alignment:.leading,spacing:0) {
             if folders.isEmpty && datasets.isEmpty { emptyFolders }
             else {
-            HStack { Text("文件夹").font(LibraryTypography.sans(13,weight:.medium)); Spacer(); Text("按最近更新").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex:0x96968F)) }
-            LazyVGrid(columns:[GridItem(.adaptive(minimum:260),spacing:20)],spacing:20) {
-                ForEach(folders.filter { query.isEmpty || $0.text("name").localizedCaseInsensitiveContains(query) },id:\.self) { item in folderCard(item) }
-                if datasets.contains(where:{$0.folder.isEmpty}) { folderCard(.object(["id":.string("uncategorized"),"name":.string("未分类"),"dataset_count":.number(Double(datasets.filter{$0.folder.isEmpty}.count))])) }
-                Button { show("createFolder") } label:{ VStack(spacing:12) { LibraryIcon(name:"icon-plus",size:16).frame(width:36,height:36).background(Color(hex:0xF4F4F2),in:Circle()); Text("新建文件夹").font(LibraryTypography.sans(13,weight:.medium)); Text("按求职用途分类，最多 50 个").font(LibraryTypography.sans(11)).foregroundStyle(.secondary) }.frame(maxWidth:.infinity).frame(height:172).overlay(RoundedRectangle(cornerRadius:16).stroke(Color(hex:0xC4C4BE),style:StrokeStyle(lineWidth:1,dash:[4,3]))) }.buttonStyle(.plain).disabled(busy)
-            }
-
-                Text(query.isEmpty ? "最近上传" : "搜索结果").font(LibraryTypography.sans(13,weight:.medium)).padding(.top,20)
-                let recent = query.isEmpty ? Array(visible.prefix(5)) : visible
-                VStack(spacing:0) {
-                    ForEach(recent) { item in
-                        HStack(spacing:12) {
-                            formatIcon(item)
-                            Button(item.name) { navigate(item.folder.isEmpty ? "uncategorized" : item.folder); inspected = item.id }.buttonStyle(.plain).font(LibraryTypography.sans(13,weight:.medium)).lineLimit(1).frame(maxWidth:.infinity,alignment:.leading)
-                            if !item.folder.isEmpty { Button { navigate(item.folder) } label:{ HStack(spacing:5) { LibraryIcon(name:"icon-folder",size:13); Text(folders.first{$0.text("id")==item.folder}?.text("name") ?? "文件夹") }.font(LibraryTypography.sans(11)).foregroundStyle(Color(hex:0x55554F)).padding(.horizontal,8).padding(.vertical,4).background(Color(hex:0xF4F4F2),in:Capsule()) }.buttonStyle(.plain) }
-                            Spacer(minLength:12)
-                            if !item.ready { Text(item.status).font(LibraryTypography.sans(11)).foregroundStyle(.secondary) }
-                            Text(date(item.raw.text("created_at"))).font(LibraryTypography.sans(11)).foregroundStyle(Color(hex:0x96968F)).frame(width:90,alignment:.trailing)
-                        }.frame(height:55)
-                        if item.id != recent.last?.id { Rectangle().fill(Color(hex:0xECECEA)).frame(height:1) }
+                HStack {
+                    Text("文件夹").font(V3.sans(15,weight:.semibold)).foregroundStyle(V3.txt)
+                    Spacer()
+                    Text("按最近更新").font(V3.sans(12)).foregroundStyle(V3.fnt)
+                }.frame(height:16).padding(.top,23).padding(.bottom,12)
+                LazyVGrid(columns:[GridItem(.adaptive(minimum:273),spacing:20)],spacing:20) {
+                    ForEach(sortedFolders.filter { query.isEmpty || $0.text("name").localizedCaseInsensitiveContains(query) },id:\.self) { item in folderCard(item) }
+                    if datasets.contains(where:{$0.folder.isEmpty}) { folderCard(.object(["id":.string("uncategorized"),"name":.string("未分类"),"dataset_count":.number(Double(datasets.filter{$0.folder.isEmpty}.count))])) }
+                    Button { show("createFolder") } label:{
+                        VStack(spacing:0) {
+                            LibraryIcon(name:"icon-plus",size:16).frame(width:36,height:36).background(V3.field,in:Circle())
+                            Text("新建文件夹").font(V3.sans(13,weight:.medium)).foregroundStyle(V3.txt).padding(.top,12)
+                            Text("按求职用途分类，最多 50 个").font(V3.sans(11)).foregroundStyle(V3.fnt).padding(.top,6)
+                        }.frame(maxWidth:.infinity).frame(height:172).contentShape(Rectangle())
+                        .overlay(RoundedRectangle(cornerRadius:16).stroke(V3.fnt2,style:StrokeStyle(lineWidth:1,dash:[4,3])))
+                    }.buttonStyle(.plain).disabled(busy || batchMode)
+                }
+                let recent = query.isEmpty ? Array(datasets.sorted { $0.raw.text("created_at") > $1.raw.text("created_at") }.prefix(5)) : visible
+                if !recent.isEmpty {
+                    Text(query.isEmpty ? "最近上传" : "搜索结果").font(V3.sans(15,weight:.semibold)).foregroundStyle(V3.txt).padding(.top,32).padding(.bottom,12)
+                    VStack(spacing:0) {
+                        ForEach(recent) { item in
+                            if item.id != recent.first?.id { Rectangle().fill(V3.line).frame(height:1).padding(.horizontal,17) }
+                            recentRow(item)
+                        }
                     }
-                    if recent.isEmpty { Text("没有匹配的资料。").foregroundStyle(.secondary).padding(20) }
-                }.padding(.horizontal,18).background(.white,in:RoundedRectangle(cornerRadius:16)).overlay(RoundedRectangle(cornerRadius:16).stroke(Color(hex:0xE4E4E0))).shadow(color:.black.opacity(0.04),radius:8,x:0,y:4)
-                Text("写简历或和 AI 助手对话时，可以通过「添加资料」选择要引用的文件。").font(LibraryTypography.sans(11)).foregroundStyle(Color(hex:0x96968F)).padding(.top,8)
-
+                    .background(.white,in:RoundedRectangle(cornerRadius:16)).clipShape(RoundedRectangle(cornerRadius:16))
+                    .overlay(RoundedRectangle(cornerRadius:16).stroke(V3.cl)).shadow(color:.black.opacity(0.04),radius:8,x:0,y:2)
+                } else if !query.isEmpty {
+                    Text("没有匹配的资料。").font(V3.sans(13)).foregroundStyle(V3.fnt).frame(maxWidth:.infinity).padding(.vertical,40)
+                }
+                Text("写简历或和 AI 助手对话时，可以通过「添加资料」选择要引用的文件。").font(V3.sans(14)).foregroundStyle(V3.fnt).padding(.top,20)
             }
-
         }
     }
+    private var sortedFolders: [JSONValue] {
+        folders.sorted { left, right in
+            let l = datasets.filter { $0.folder == left.text("id") }.map { $0.raw.text("created_at") }.max() ?? left.text("updated_at")
+            let r = datasets.filter { $0.folder == right.text("id") }.map { $0.raw.text("created_at") }.max() ?? right.text("updated_at")
+            return l > r
+        }
+    }
+    private func recentRow(_ item:DatasetRecord) -> some View {
+        let folderTitle = item.folder.isEmpty ? "未分类" : folders.first { $0.text("id") == item.folder }?.text("name") ?? "未分类"
+        return Button {
+            if item.ready { open(item) } else { navigate(item.folder.isEmpty ? "uncategorized" : item.folder) }
+        } label:{
+            HStack(spacing:12) {
+                formatIcon(item,tinted:false)
+                Text(item.name).font(V3.sans(13,weight:.medium)).foregroundStyle(V3.txt).lineLimit(1).frame(maxWidth:346,alignment:.leading).fixedSize(horizontal:false,vertical:true)
+                HStack(spacing:5) { LibraryIcon(name:"icon-folder",size:13); Text(folderTitle).lineLimit(1) }
+                    .font(V3.sans(11.5)).foregroundStyle(V3.sub).padding(.leading,8).padding(.trailing,10).frame(height:22).frame(maxWidth:200).background(V3.field,in:Capsule())
+                Spacer(minLength:12)
+                Text(relativeDay(item.raw.text("created_at"),withTime:true)).font(V3.number(11.5,weight:.regular)).foregroundStyle(V3.fnt)
+            }.padding(.horizontal,17).frame(height:56).contentShape(Rectangle())
+        }.buttonStyle(CareerRowStyle()).accessibilityLabel("\(item.name)，位于「\(folderTitle)」").disabled(busy)
+    }
+    /// `FolderCard`: an art stage with up to three recent sheets, the name, the count line and a ⋯ menu.
     private func folderCard(_ item:JSONValue) -> some View {
-        let records = datasets.filter { $0.folder == item.text("id") }
+        let records = datasets.filter { item.text("id") == "uncategorized" ? $0.folder.isEmpty : $0.folder == item.text("id") }
+            .sorted { $0.raw.text("created_at") > $1.raw.text("created_at") }
         let count = item["dataset_count"]?.integer ?? records.count
-        let art = count == 0 ? "folder-empty" : count < 3 ? "folder-project" : "folder-documents"
+        let meta = count == 0 ? "空文件夹 · 进入后上传资料" : records.first.map { "\(count) 份资料 · 最近上传 " + relativeDay($0.raw.text("created_at")) } ?? "\(count) 份资料"
         return Button { navigate(item.text("id")) } label:{
             VStack(alignment:.leading,spacing:0) {
-                if let url = Bundle.module.url(forResource:art,withExtension:"png",subdirectory:"Library"), let image = NSImage(contentsOf:url) {
-                    Image(nsImage:image).resizable().scaledToFill().frame(height:96).clipped().clipShape(RoundedRectangle(cornerRadius:11)).padding(8).accessibilityHidden(true)
+                ZStack {
+                    V3.stage
+                    if count == 0 || records.isEmpty {
+                        RoundedRectangle(cornerRadius:4).stroke(V3.fnt2,style:StrokeStyle(lineWidth:1,dash:[3,2])).frame(width:60,height:78)
+                    } else {
+                        ForEach(Array(records.prefix(3).enumerated().reversed()),id:\.offset) { index,record in
+                            folderSheet(record).rotationEffect(.degrees([0,-6,6][index])).offset(x:[0,-46,46][index],y:index == 0 ? 0 : 6)
+                        }
+                    }
                 }
-                Text(item.text("name")).font(LibraryTypography.sans(14,weight:.medium)).lineLimit(1).padding(.leading,18).padding(.trailing,42).padding(.top,6)
-                Text(count == 0 ? "空文件夹 · 进入后上传资料" : "\(count) 份资料" + (records.first.map { " · 最近上传 " + date($0.raw.text("created_at")) } ?? ""))
-                    .font(LibraryTypography.sans(11)).foregroundStyle(Color(hex:0x96968F)).lineLimit(1).padding(.horizontal,18).padding(.top,4)
+                .frame(maxWidth:.infinity).frame(height:98).clipShape(RoundedRectangle(cornerRadius:11)).padding(7)
+                Text(item.text("name")).font(V3.sans(14,weight:.medium)).foregroundStyle(V3.txt).lineLimit(1).padding(.leading,17).padding(.trailing,52).padding(.top,6)
+                Text(meta).font(V3.sans(12)).foregroundStyle(V3.fnt).lineLimit(1).padding(.horizontal,17).padding(.top,4)
                 Spacer(minLength:0)
-            }.frame(maxWidth:.infinity).frame(height:172).background(.white,in:RoundedRectangle(cornerRadius:16)).overlay(RoundedRectangle(cornerRadius:16).stroke(Color(hex:0xE4E4E0))).shadow(color:.black.opacity(0.04),radius:8,x:0,y:4)
-        }.buttonStyle(.plain).overlay(alignment:.topTrailing) {
-            if DatasetRequest.id(item.text("id")) { Menu { Button("重命名") { show("renameFolder",item) }; Button("删除文件夹及其中资料",role:.destructive) { show("deleteFolder",item) } } label:{LibraryIcon(name:"icon-more",size:14)}.menuStyle(.borderlessButton).frame(width:20).padding(.top,119).padding(.trailing,18).disabled(busy) }
-        }
-    }
-    private func formatIcon(_ item:DatasetRecord) -> some View { Text(item.format).font(LibraryTypography.sans(8,weight:.bold)).foregroundStyle(item.media ? Color(hex:0x7763AE) : item.format == "PDF" ? Color(hex:0xD64545) : item.format == "MD" ? Color(hex:0x3B9A5B) : Color(hex:0x3F6FD8)).frame(width:32,height:32).background(Color(hex:0xF4F4F2),in:RoundedRectangle(cornerRadius:8)) }
-    private func empty(_ title:String,_ subtitle:String,symbol:String) -> some View { VStack(spacing:16) { Image(systemName:symbol).font(LibraryTypography.sans(64,weight:.ultraLight)).foregroundStyle(Color(hex:0xD2D2CC)); Text(title).font(.custom("Songti SC",size:20).weight(.semibold)); Text(subtitle).font(LibraryTypography.sans(13)).foregroundStyle(.secondary) }.frame(maxWidth:.infinity,minHeight:230) }
-    private var fileList: some View {
-        ViewThatFits(in:.horizontal) {
-            HStack(alignment:.top,spacing:24) { fileTable.frame(minWidth:650); if let item = datasets.first(where:{$0.id==inspected}) { inspector(item).frame(width:260) } }
-            VStack(alignment:.leading,spacing:24) { fileTable; if let item = datasets.first(where:{$0.id==inspected}) { inspector(item) } }
-        }
-    }
-    private func inspector(_ item:DatasetRecord) -> some View {
-        VStack(alignment:.leading,spacing:16) {
-            HStack { Text("资料详情").font(LibraryTypography.sans(14,weight:.semibold)); Spacer(); Button { inspected = "" } label:{Image(systemName:"xmark")} }
-            formatIcon(item); Text(item.name).font(LibraryTypography.sans(14,weight:.medium)).textSelection(.enabled)
-            Text(detailSummary(item)).font(LibraryTypography.sans(12)).foregroundStyle(.secondary)
-            if !item.raw.text("failure_reason").isEmpty { Text(item.raw.text("failure_reason")).font(LibraryTypography.sans(12)).foregroundStyle(.red) }
-            Button(item.media ? "播放音视频" : "查看文件") { open(item) }.buttonStyle(WebActionStyle()).disabled(!item.ready)
-            Button("下载原文件") { Task { await download(item) } }.disabled(item.raw.text("upload_status") != "succeeded")
-            Group {
-            Button("重命名") { show("rename",item.raw) }
-            Button("移动到文件夹") { selected = [item.id]; show("move") }
-            Button("管理关联") { show("associate",item.raw); Task { await loadSessions() } }
-            if item.retryable { Button("重新解析") { Task { await mutate("/api/datasets/" + item.id + "/retry","POST") } } }
-            Button("删除资料…",role:.destructive) { selected = [item.id]; show("deleteBatch") }.disabled(item.busy)
             }
-        }.frame(maxWidth:.infinity,alignment:.leading).padding(20).background(Color(hex:0xF8F8F5),in:RoundedRectangle(cornerRadius:14)).disabled(busy)
-    }
-    private func detailSummary(_ item:DatasetRecord) -> String {
-        let association = item.raw.text("interview_label").isEmpty ? "未关联" : item.raw.text("interview_label")
-        return ["状态：" + item.status,"大小：" + item.size,"上传：" + date(item.raw.text("created_at")),"关联：" + association].joined(separator:"\n")
-    }
-    private var fileTable: some View {
-        VStack(alignment:.leading,spacing:16) {
-            HStack { Toggle("全选",isOn:Binding(get:{!visible.isEmpty && visible.allSatisfy{selected.contains($0.id)}},set:{if $0 { selected.formUnion(visible.map(\.id)) } else { selected.subtract(visible.map(\.id)) }})).toggleStyle(.checkbox); Text("名称").frame(maxWidth:.infinity,alignment:.leading); Text("关联").frame(width:160,alignment:.leading); Text("大小").frame(width:80,alignment:.trailing); Text("上传日期").frame(width:100,alignment:.trailing); Spacer().frame(width:28) }.font(LibraryTypography.sans(11)).foregroundStyle(.secondary).disabled(busy)
-            Divider()
-            ForEach(visible) { item in fileRow(item) }
-            if visible.isEmpty { empty(datasets.contains{$0.folder==folder} ? "没有匹配的资料" : "还没有资料","上传文档和音视频，集中管理你的个人材料。",symbol:"doc.badge.plus") }
-            if DatasetRequest.id(folder) { Button { pick() } label:{VStack(spacing:5) { Label("拖入文件，或点击上传到「\(folderName)」",systemImage:"arrow.up.doc"); Text("PDF、Word、Markdown、纯文本与音视频 · 最多 \(limits["max_files_per_batch"]?.integer ?? 10) 个文件").font(LibraryTypography.sans(11)).foregroundStyle(.secondary) }.frame(maxWidth:.infinity).padding(16).overlay(RoundedRectangle(cornerRadius:10).stroke(Color(hex:0xCACAC5),style:StrokeStyle(lineWidth:1,dash:[4,3]))) }.buttonStyle(.plain).disabled(busy || !loaded) }
-            if !selected.isEmpty { HStack { Text("已选择 \(selected.count) 份"); Button("移动到文件夹") { show("move") }; Button("删除所选",role:.destructive) { show("deleteBatch") }; Spacer(); Button("取消选择") { selected = [] } }.padding(16).background(Color(hex:0xF4F4F1),in:RoundedRectangle(cornerRadius:12)).disabled(busy) }
+            .frame(maxWidth:.infinity).frame(height:172)
+            .background(.white,in:RoundedRectangle(cornerRadius:16)).overlay(RoundedRectangle(cornerRadius:16).stroke(V3.cl))
+            .shadow(color:.black.opacity(0.04),radius:8,x:0,y:2).contentShape(RoundedRectangle(cornerRadius:16))
+        }.buttonStyle(.plain).accessibilityLabel("打开文件夹「\(item.text("name"))」").overlay(alignment:.bottomTrailing) {
+            if DatasetRequest.id(item.text("id")) {
+                Menu { Button("重命名") { show("renameFolder",item) }; Divider(); Button("删除文件夹",role:.destructive) { show("deleteFolder",item) } } label:{ LibraryIcon(name:"icon-more",size:14).frame(width:28,height:28) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().padding(.trailing,12).padding(.bottom,26).disabled(busy)
+                    .accessibilityLabel("文件夹「\(item.text("name"))」操作菜单")
+            }
         }
+    }
+    /// `FolderSheet`: 60×78 thumbnail with a title bar, grey lines and the format tag.
+    private func folderSheet(_ item:DatasetRecord) -> some View {
+        let tone = formatTone(item)
+        return ZStack(alignment:.topLeading) {
+            RoundedRectangle(cornerRadius:4).fill(.white).overlay(RoundedRectangle(cornerRadius:4).stroke(V3.cl)).shadow(color:.black.opacity(0.07),radius:4,y:3)
+            RoundedRectangle(cornerRadius:1).fill(V3.txt).frame(width:25,height:4).offset(x:8,y:11)
+            ForEach([23,34,44],id:\.self) { y in RoundedRectangle(cornerRadius:1).fill(V3.line).frame(width:43,height:3).offset(x:8,y:CGFloat(y)) }
+            Text(tone.label).font(V3.number(7,weight:.bold)).foregroundStyle(.white).padding(.horizontal,4).frame(height:12).background(tone.color,in:RoundedRectangle(cornerRadius:3)).offset(x:8,y:55)
+        }.frame(width:60,height:78)
+    }
+    /// `datasetFormatTone`: PDF red, MD green, DOCX blue, TXT grey, audio/video orange.
+    private func formatTone(_ item:DatasetRecord) -> (label:String,color:Color,tint:Color) {
+        let label = String((item.format.isEmpty ? "FILE" : item.format).prefix(4))
+        if item.media { return (label,V3.orange,Color(hex:0xFBF1E6)) }
+        switch label {
+        case "PDF": return (label,V3.red,Color(hex:0xFBEEEE))
+        case "MD": return (label,V3.green,Color(hex:0xECF5EF))
+        case "DOCX": return (label,V3.blue,Color(hex:0xEDF2FC))
+        default: return (label,V3.sub,V3.field)
+        }
+    }
+    private func formatIcon(_ item:DatasetRecord,tinted:Bool = true) -> some View {
+        let tone = formatTone(item)
+        return Text(tone.label).font(V3.number(tone.label.count > 3 ? 7 : 8,weight:.bold)).foregroundStyle(tone.color)
+            .frame(width:32,height:32).background(tinted ? tone.tint : V3.field,in:RoundedRectangle(cornerRadius:8)).accessibilityHidden(true)
+    }
+    private func empty(_ title:String,_ subtitle:String,symbol:String) -> some View {
+        V3EmptyCard(title:title,message:subtitle,stageHeight:112) { Image(systemName:symbol).font(.system(size:36,weight:.ultraLight)).foregroundStyle(V3.fnt2) } actions: {
+            Button { refresh = UUID() } label:{ Image(systemName:"arrow.clockwise").font(.system(size:11)); Text("重新加载") }.buttonStyle(V3ButtonStyle(kind:.ghost,height:34,width:96)).disabled(busy)
+        }.frame(maxWidth:.infinity).padding(.top,115)
+    }
+    /// 06.2 folder table: format / name + status / 关联 / 大小 / 上传日期 (or 重试) / ⋯ or a checkbox in batch mode.
+    private var fileList: some View {
+        let inside = datasets.filter { folder == "uncategorized" ? $0.folder.isEmpty : $0.folder == folder }
+        return VStack(alignment:.leading,spacing:0) {
+            if inside.isEmpty { emptyFolders }
+            else {
+                HStack(spacing:0) {
+                    Text("名称").frame(maxWidth:.infinity,alignment:.leading)
+                    Text("关联").frame(width:190,alignment:.leading)
+                    Text("大小").frame(width:66,alignment:.trailing)
+                    Text("上传日期").frame(width:144,alignment:.trailing)
+                    Group {
+                        if batchMode {
+                            Toggle("全选当前列表",isOn:Binding(get:{!visible.isEmpty && visible.allSatisfy{selected.contains($0.id)}},set:{if $0 { selected.formUnion(visible.map(\.id)) } else { selected.subtract(visible.map(\.id)) }}))
+                                .labelsHidden().toggleStyle(.checkbox).disabled(visible.isEmpty || busy)
+                        } else { Color.clear }
+                    }.frame(width:42,alignment:.trailing)
+                }
+                .font(V3.sans(12)).foregroundStyle(V3.fnt).padding(.leading,12).padding(.trailing,10).padding(.top,22).frame(height:46,alignment:.top)
+                .overlay(alignment:.bottom) { Rectangle().fill(V3.line).frame(height:1) }
+                if visible.isEmpty { Text("没有匹配的资料。").font(V3.sans(13)).foregroundStyle(V3.fnt).frame(maxWidth:.infinity).padding(.vertical,40) }
+                else {
+                    VStack(spacing:6) { ForEach(visible) { item in fileRow(item) } }.padding(.top,5)
+                }
+                if DatasetRequest.id(folder) {
+                    Button { pick() } label:{
+                        VStack(spacing:4) {
+                            HStack(spacing:8) { Image(systemName:"arrow.up.doc").font(.system(size:13)); Text("拖入文件，或点击上传到「\(folderName)」") }.font(V3.sans(12.5,weight:.medium)).foregroundStyle(V3.txt)
+                            Text("PDF、DOCX、Markdown、TXT 最大 \(ByteCountFormatter.string(fromByteCount:Int64(limits["max_file_bytes"]?.numberValue ?? 20*1024*1024),countStyle:.file))；音视频最大 \(ByteCountFormatter.string(fromByteCount:maximum,countStyle:.file))")
+                                .font(V3.sans(10.5)).foregroundStyle(V3.fnt)
+                        }.frame(maxWidth:.infinity).frame(height:52).contentShape(Rectangle())
+                        .overlay(RoundedRectangle(cornerRadius:10).stroke(V3.fnt2,style:StrokeStyle(lineWidth:1,dash:[4,3])))
+                    }.buttonStyle(.plain).padding(.top,16).disabled(busy || batchMode || !loaded)
+                }
+            }
+        }
+    }
+    /// `datasetRowMeta`: format name when ready, otherwise the status (blue while processing, red when failed).
+    private func rowMeta(_ item:DatasetRecord) -> (String,Color) {
+        if item.media {
+            if item.raw.text("upload_status") == "failed" { return ("上传失败",V3.red) }
+            if item.raw.text("upload_status") == "uploading" { return ("正在上传…",V3.blue) }
+            return ((item.raw.text("asset_kind") == "audio" ? "音频" : "视频") + " · 点击下载",V3.fnt)
+        }
+        if item.raw.text("parse_status") == "failed" || item.raw.text("upload_status") == "failed" {
+            let reason = item.raw.text("failure_reason")
+            let label = ["format_unsupported":"文件格式不受支持","content_invalid":"文件内容无效","size_exceeded":"文件内容超出解析限制","service_unavailable":"解析服务暂不可用","timeout":"解析超时","quota_exceeded":"当前资料数量已达上限"][reason]
+            return (label.map { "解析失败 · " + $0 } ?? "解析失败",V3.red)
+        }
+        if item.raw.text("parse_status") == "queued" { return ("等待解析",V3.blue) }
+        if item.busy { return ("正在解析…",V3.blue) }
+        return (["MD":"Markdown","PDF":"PDF","DOCX":"Word","TXT":"纯文本"][item.format] ?? item.format,V3.fnt)
     }
     private func fileRow(_ item:DatasetRecord) -> some View {
-        HStack(spacing:12) {
-            Toggle("选择 \(item.name)",isOn:Binding(get:{selected.contains(item.id)},set:{if $0 {selected.insert(item.id)} else {selected.remove(item.id)}})).labelsHidden().toggleStyle(.checkbox).disabled(busy)
+        let meta = rowMeta(item)
+        let failed = meta.1 == V3.red && !item.media
+        return HStack(spacing:0) {
             formatIcon(item)
-            Button { inspected = item.id } label:{ VStack(alignment:.leading,spacing:5) { Text(item.name).font(LibraryTypography.sans(13,weight:.medium)).lineLimit(1); Text(item.status + (item.raw.text("failure_reason").isEmpty ? "" : " · " + item.raw.text("failure_reason"))).font(LibraryTypography.sans(11)).foregroundStyle(item.status.contains("失败") ? .red : .secondary) }.frame(maxWidth:.infinity,alignment:.leading) }.buttonStyle(.plain).disabled(busy)
-            Button { show("associate",item.raw); Task { await loadSessions() } } label:{Text(item.raw.text("interview_label").isEmpty ? "未关联" : item.raw.text("interview_label")).font(LibraryTypography.sans(12)).lineLimit(1).frame(width:160,alignment:.leading)}.buttonStyle(.plain).disabled(busy || item.raw.text("upload_status") != "succeeded")
-            Text(item.size).font(LibraryTypography.sans(12)).frame(width:80,alignment:.trailing); Text(date(item.raw.text("created_at"))).font(LibraryTypography.sans(12)).foregroundStyle(.secondary).frame(width:100,alignment:.trailing)
-            Menu { Button(item.media ? "下载原文件" : "查看文档") { open(item) }.disabled(!item.ready); Button("下载原文件") { Task { await download(item) } }.disabled(item.raw.text("upload_status") != "succeeded"); Button("重命名") { show("rename",item.raw) }; Button("移动到文件夹") { selected = [item.id]; show("move") }; Button("管理关联") { show("associate",item.raw); Task { await loadSessions() } }; if item.retryable { Button("重新解析") { Task { await mutate("/api/datasets/" + item.id + "/retry","POST") } } }; Button("删除",role:.destructive) { selected = [item.id]; show("deleteBatch") }.disabled(item.busy) } label:{ Image(systemName:"ellipsis") }.menuStyle(.borderlessButton).frame(width:28).disabled(busy)
-        }.padding(.vertical,10)
+            VStack(alignment:.leading,spacing:4) {
+                Text(item.name).font(V3.sans(14,weight:.medium)).foregroundStyle(V3.txt).lineLimit(1).help(item.name)
+                Text(meta.0).font(V3.sans(12)).foregroundStyle(meta.1).lineLimit(1)
+            }.padding(.horizontal,12).frame(maxWidth:.infinity,alignment:.leading)
+            HStack(spacing:5) {
+                if !item.raw.text("interview_label").isEmpty {
+                    CareerIcon(name:"calendar",size:13,template:true).foregroundStyle(V3.sub)
+                    Text("面试 · " + item.raw.text("interview_label")).lineLimit(1)
+                }
+            }.font(V3.sans(12)).foregroundStyle(V3.sub).frame(width:190,alignment:.leading)
+            Text(item.size).font(V3.number(12,weight:.regular)).foregroundStyle(V3.sub).frame(width:66,alignment:.trailing)
+            Group {
+                if failed && item.retryable { Button("重试") { Task { await mutate("/api/datasets/" + item.id + "/retry","POST") } }.buttonStyle(.plain).font(V3.sans(12)).foregroundStyle(V3.txt).disabled(busy || batchMode) }
+                else { Text(listDate(item.raw.text("created_at"))).font(V3.number(12,weight:.regular)).foregroundStyle(V3.sub) }
+            }.frame(width:144,alignment:.trailing)
+            Group {
+                if batchMode {
+                    Toggle("选择「\(item.name)」",isOn:Binding(get:{selected.contains(item.id)},set:{if $0 {selected.insert(item.id)} else {selected.remove(item.id)}})).labelsHidden().toggleStyle(.checkbox).disabled(busy)
+                } else {
+                    Menu {
+                        Button(item.media ? "下载文件" : "查看文件") { open(item) }.disabled(!item.ready)
+                        Button("重命名") { show("rename",item.raw) }
+                        Button("移动到文件夹") { selected = [item.id]; show("move") }
+                        Button("管理关联") { show("associate",item.raw); Task { await loadSessions() } }.disabled(item.raw.text("upload_status") != "succeeded")
+                        if item.retryable { Button("重新解析") { Task { await mutate("/api/datasets/" + item.id + "/retry","POST") } } }
+                        Divider()
+                        Button("删除资料",role:.destructive) { selected = [item.id]; show("deleteBatch") }.disabled(item.busy)
+                    } label:{ Image(systemName:"ellipsis").font(.system(size:13)).foregroundStyle(V3.fnt).frame(width:28,height:28) }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().disabled(busy).accessibilityLabel("打开「\(item.name)」操作菜单")
+                }
+            }.frame(width:42,alignment:.trailing)
+        }
+        .padding(.leading,12).padding(.trailing,10).frame(height:54)
+        .background(RoundedRectangle(cornerRadius:8).fill(hoveredRow == item.id ? Color(hex:0xF6F6F3) : .clear))
+        .contentShape(Rectangle())
+        .onHover { inside in hoveredRow = inside ? item.id : (hoveredRow == item.id ? nil : hoveredRow) }
+        .onTapGesture { if batchMode { if selected.contains(item.id) { selected.remove(item.id) } else { selected.insert(item.id) } } else if item.ready { open(item) } }
+    }
+    /// `.ds-batch-bar`: floating bar while selecting several datasets.
+    private var batchBar: some View {
+        HStack(spacing:14) {
+            Toggle(isOn:Binding(get:{!visible.isEmpty && visible.allSatisfy{selected.contains($0.id)}},set:{if $0 { selected.formUnion(visible.map(\.id)) } else { selected.subtract(visible.map(\.id)) }})) { Text("全选").font(V3.sans(13)).foregroundStyle(V3.txt) }
+                .toggleStyle(.checkbox).disabled(visible.isEmpty || busy)
+            HStack(spacing:0) { Text("已选 ").foregroundStyle(V3.sub); Text("\(selected.count)").font(V3.number(13)).foregroundStyle(V3.txt); Text(" 项").foregroundStyle(V3.sub) }.font(V3.sans(13))
+            Rectangle().fill(V3.line).frame(width:1,height:20)
+            Button { show("move") } label:{ LibraryIcon(name:"icon-folder",size:13); Text("移动到文件夹") }.buttonStyle(V3ButtonStyle(kind:.ghost,height:30)).disabled(selected.isEmpty || busy)
+            Button { show("deleteBatch") } label:{ Image(systemName:"trash").font(.system(size:11)); Text("删除") }.buttonStyle(V3ButtonStyle(kind:.danger,height:30)).disabled(selected.isEmpty || busy)
+            Rectangle().fill(V3.line).frame(width:1,height:20)
+            Button { batchMode = false; selected = [] } label:{ Image(systemName:"xmark").font(.system(size:12,weight:.medium)).foregroundStyle(V3.sub).frame(width:28,height:28) }
+                .buttonStyle(.plain).accessibilityLabel("取消选择").help("取消选择并退出批量")
+        }
+        .padding(.horizontal,16).frame(height:48)
+        .background(.white,in:RoundedRectangle(cornerRadius:12)).overlay(RoundedRectangle(cornerRadius:12).stroke(V3.cl))
+        .shadow(color:.black.opacity(0.10),radius:16,y:6)
+        .padding(.bottom,28)
     }
     private func show(_ kind:String,_ item:JSONValue = .null) {
         guard !busy else { return }; if account.isEmpty { pending = kind == "createFolder" ? kind : "createFolder"; requireAccount(); return }
@@ -240,17 +401,55 @@ struct DatasetLibraryView: View {
     }
     private var sheet: some View {
         VStack(alignment:.leading,spacing:20) {
-            HStack { Text(["createFolder":"新建文件夹","renameFolder":"重命名文件夹","rename":"重命名资料","move":"移动到文件夹","deleteFolder":"删除文件夹？","deleteBatch":"删除所选资料？","associate":"管理关联","preview":"文档预览","media":"音视频预览","uploadRename":"保留两份","replace":"替换现有文档？"][action ?? ""] ?? "资料库").font(.custom("Songti SC",size:24).weight(.semibold)); Spacer(); Button("关闭") { action = nil }.disabled(busy) }
+            HStack(alignment:.top) {
+                VStack(alignment:.leading,spacing:5) {
+                    Text(sheetTitle).font(V3.serif(20)).foregroundStyle(V3.txt).lineLimit(1)
+                    if let description = sheetDescription { Text(description).font(V3.sans(12.5)).foregroundStyle(V3.sub).fixedSize(horizontal:false,vertical:true) }
+                }
+                Spacer()
+                Button { action = nil } label:{ Image(systemName:"xmark").font(.system(size:12,weight:.medium)).foregroundStyle(V3.fnt) }.buttonStyle(.plain).accessibilityLabel("关闭").disabled(busy)
+            }
             sheetContent
             if let sheetError { Text(sheetError).foregroundStyle(.red).font(LibraryTypography.sans(12)) }
-            if !["preview","media"].contains(action ?? "") { HStack { if action == "associate" && !target.text("interview_session_id").isEmpty { Button("取消关联",role:.destructive) { Task { await save(unlink:true) } }.disabled(busy) }; Spacer(); Button("取消") { action = nil }.disabled(busy); Button(busy ? "处理中…" : ["deleteFolder","deleteBatch"].contains(action ?? "") ? "永久删除" : action == "replace" ? "确认替换" : "保存") { Task { await save() } }.buttonStyle(WebActionStyle()).disabled(busy || loading) } }
-        }.padding(28).frame(width:["preview","media"].contains(action ?? "") ? 820:560).frame(minHeight:250,maxHeight:740).interactiveDismissDisabled(busy)
+            if !["preview","media"].contains(action ?? "") {
+                HStack(spacing:10) {
+                    if action == "associate" && !target.text("interview_session_id").isEmpty { Button("取消关联") { Task { await save(unlink:true) } }.buttonStyle(CareerActionStyle(kind:.danger)).disabled(busy) }
+                    Spacer()
+                    Button("取消") { action = nil }.buttonStyle(V3ButtonStyle(kind:.ghost,height:36,width:80)).disabled(busy)
+                    Button(busy ? "处理中…" : confirmLabel) { Task { await save() } }
+                        .buttonStyle(V3ButtonStyle(kind:["deleteFolder","deleteBatch"].contains(action ?? "") ? .danger : .dark,height:36)).disabled(busy || loading)
+                }.padding(.top,8)
+            }
+        }.padding(28).frame(width:["preview","media"].contains(action ?? "") ? 820 : ["associate","move"].contains(action ?? "") ? 520 : 440).frame(minHeight:200,maxHeight:740).interactiveDismissDisabled(busy)
+    }
+    private var sheetTitle: String {
+        switch action {
+        case "deleteFolder": return "确认删除文件夹「\(target.text("name"))」？"
+        case "deleteBatch": return selected.count == 1 ? "永久删除「\(datasets.first { selected.contains($0.id) }?.name ?? "资料")」？" : "永久删除所选资料（\(selected.count) 份）？"
+        default: return ["createFolder":"新建文件夹","renameFolder":"重命名文件夹","rename":"重命名资料","move":"移动到文件夹","associate":"管理关联","preview":"文档预览","media":"音视频预览","uploadRename":"保留两份","replace":"替换现有文档？"][action ?? ""] ?? "资料库"
+        }
+    }
+    private var sheetDescription: String? {
+        ["createFolder":"创建分类文件夹，整理和归类求职资料。","renameFolder":"修改文件夹名称，内部资料归属将自动同步。","rename":"只修改资料显示名称，不改变文件格式或已保存的内容。"][action ?? ""]
+    }
+    private var confirmLabel: String {
+        ["createFolder":"创建文件夹","rename":"保存名称","deleteFolder":"确认删除","deleteBatch":selected.count == 1 ? "永久删除" : "永久删除所选","replace":"确认替换","move":"移动"][action ?? ""] ?? "保存"
     }
     @ViewBuilder private var sheetContent: some View {
-        if ["createFolder","renameFolder","rename","uploadRename"].contains(action ?? "") { TextField("名称",text:$name).textFieldStyle(.roundedBorder).disabled(busy) }
+        if ["createFolder","renameFolder","rename","uploadRename"].contains(action ?? "") {
+            VStack(alignment:.leading,spacing:8) {
+                Text(["createFolder":"文件夹名称","renameFolder":"文件夹名称"][action ?? ""] ?? "资料名称").font(V3.sans(12)).foregroundStyle(V3.sub)
+                TextField("",text:$name,prompt:Text(action == "createFolder" ? "例如：核心项目、工作复盘、资格证书" : "").foregroundStyle(V3.fnt2)).textFieldStyle(.plain).font(V3.sans(13))
+                    .padding(.horizontal,12).frame(height:40).background(.white,in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).stroke(V3.cl))
+                    .onSubmit { Task { await save() } }.disabled(busy)
+            }
+        }
         else if action == "move" { Text("移动 \(selected.count) 份资料"); Picker("目标文件夹",selection:$destination) { Text("请选择").tag(""); ForEach(folders,id:\.self) { Text($0.text("name")).tag($0.text("id")) } }.disabled(busy) }
-        else if action == "deleteFolder" { Text("永久删除「\(target.text("name"))」及其中全部 \(target["dataset_count"]?.integer ?? 0) 份资料，无法恢复。正在上传或解析的资料会阻止删除。") }
-        else if action == "deleteBatch" { Text("永久删除以下 \(selected.count) 份资料及原文件，无法恢复。"); ScrollView { VStack(alignment:.leading,spacing:8) { ForEach(datasets.filter{selected.contains($0.id)}) { Text($0.name) } } }.frame(maxHeight:200) }
+        else if action == "deleteFolder" { Text("将永久删除该文件夹及其中的 \(target["dataset_count"]?.integer ?? 0) 份资料，包括源文件和解析结果，删除后无法恢复。").font(V3.sans(13)).foregroundStyle(V3.sub).fixedSize(horizontal:false,vertical:true) }
+        else if action == "deleteBatch" {
+            Text(selected.count == 1 ? "删除后将移除源文件、解析结果和资料记录，且无法恢复。" : "将删除所选 \(selected.count) 份资料，移除源文件、解析结果和资料记录，且无法恢复。").font(V3.sans(13)).foregroundStyle(V3.sub).fixedSize(horizontal:false,vertical:true)
+            if selected.count > 1 { ScrollView { VStack(alignment:.leading,spacing:8) { ForEach(datasets.filter{selected.contains($0.id)}) { Text($0.name).font(V3.sans(12)).foregroundStyle(V3.sub) } } }.frame(maxHeight:160) }
+        }
         else if action == "associate" { Text("一份资料最多关联一场面试。换场次先解除旧关联，新关联失败时旧关联不会自动恢复。").font(LibraryTypography.sans(12)).foregroundStyle(.secondary); Picker("面试场次",selection:$destination) { Text("请选择").tag(""); ForEach(sessions,id:\.self) { Text($0.text("company_name") + " · " + $0.text("job_title") + " · " + $0.text("stage_label") + " " + date($0.text("start_at"))).tag($0.text("id")) } }.disabled(busy) }
         else if action == "preview" { Text(target.text("file_name")).font(LibraryTypography.sans(12)).foregroundStyle(.secondary); if loading { ProgressView() } else if preview.isEmpty { Button("重新读取正文") { Task { await loadPreview() } } } else { ScrollView { NativeMarkdownView(source:preview).frame(maxWidth:.infinity,alignment:.leading) }.frame(minHeight:300,maxHeight:600) } }
         else if action == "media" { if let player { VideoPlayer(player:player).frame(height:380) } else if loading { ProgressView("正在读取私有媒体…") } else { Text("媒体不可用，请下载原文件重试。") } }
@@ -350,7 +549,7 @@ struct DatasetLibraryView: View {
         }
         if owner == account { busy = false; await load(); refresh = UUID() }
     }
-    private func date(_ value:String) -> String { guard let date = CareerApplication.date(value) else { return "—" }; let format = DateFormatter(); format.dateFormat = "yyyy-MM-dd"; return format.string(from:date) }
+    private func date(_ value:String,format pattern:String = "yyyy-MM-dd") -> String { guard let date = CareerApplication.date(value) else { return "—" }; let format = DateFormatter(); format.dateFormat = pattern; return format.string(from:date) }
     private func explain(_ error:Error) -> String {
         if case APIError.unauthorized = error { return "登录已失效，请重新登录。" }
         if case APIError.server(_,let code) = error { return ["FOLDER_NAME_CONFLICT":"文件夹名称已存在。", "DATASET_NAME_CONFLICT":"同一文件夹已有同名文件，请选择保留两份或确认替换。", "DATASET_FILENAME_CONFLICT":"同一文件夹已有同名文件，请选择保留两份或确认替换。", "DATASET_IN_PROGRESS":"资料正在处理，暂时不能删除或替换。", "DATASET_NOT_RETRYABLE":"只有解析失败的文档可重新解析。", "DATASET_FILE_TOO_LARGE":"文件超出上传限制。", "INVALID_DATASET_NAME":"名称无效，请去除路径符号或控制字符。", "DATASET_ALREADY_LINKED":"已关联其他面试，请刷新后重试。", "FOLDER_NOT_FOUND":"文件夹已不存在，请刷新后选择。", "DATASET_NOT_FOUND":"资料已不存在或不可访问。", "ASSET_DELETE_FAILED":"原文件清理失败，请刷新确认后重试。", "DATASET_BUSY":"资料正在处理，暂时不能删除或替换。", "FOLDER_NAME_DUPLICATE":"文件夹名称已存在。", "DATASET_CONTENT_CONFLICT":"资料已更新，请刷新后重新确认替换。", "PRECONDITION_FAILED":"资料已更新，请刷新后重新确认替换。"][code] ?? "操作未完成（\(code)）。请刷新确认状态后再试。" }

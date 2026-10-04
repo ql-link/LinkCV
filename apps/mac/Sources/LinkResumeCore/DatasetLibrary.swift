@@ -40,6 +40,14 @@ public struct DatasetUpload: Sendable, Identifiable {
     public var replacing: String?
     public var revision: String?
     public let limit: Int64
+    /// Upload straight to an interview session (`POST /api/interview-sessions/{id}/assets`) instead of a folder.
+    public var session: String? = nil
+    public static func snapshot(_ source: URL, session: String, limit: Int64) throws -> DatasetUpload {
+        guard DatasetRequest.id(session) else { throw APIError.invalidResponse }
+        var upload = try snapshot(source, folder: "1", limit: limit)
+        upload.session = session
+        return upload
+    }
     public static func snapshot(_ source: URL, folder: String, limit: Int64) throws -> DatasetUpload {
         guard DatasetRequest.id(folder), limit > 0, limit <= 512 * 1024 * 1024,
               try source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else { throw APIError.invalidResponse }
@@ -54,7 +62,7 @@ public struct DatasetUpload: Sendable, Identifiable {
             return DatasetUpload(id:UUID().uuidString.lowercased(),file:file,directory:directory,folder:folder,name:source.lastPathComponent,replacing:nil,revision:nil,limit:limit)
         } catch { try? FileManager.default.removeItem(at:directory); throw error }
     }
-    public func rekey() -> DatasetUpload { DatasetUpload(id:UUID().uuidString.lowercased(),file:file,directory:directory,folder:folder,name:name,replacing:replacing,revision:revision,limit:limit) }
+    public func rekey() -> DatasetUpload { DatasetUpload(id:UUID().uuidString.lowercased(),file:file,directory:directory,folder:folder,name:name,replacing:replacing,revision:revision,limit:limit,session:session) }
     public func discard() { try? FileManager.default.removeItem(at:directory) }
     public static func privateDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("LinkResumeLibrary-" + UUID().uuidString)

@@ -104,10 +104,11 @@ def get_current_career_user(
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> User:
-    """Desktop career surface; materials, reviews and AI remain Web-only."""
+    """Desktop career surface, including stage records, recordings and AI review."""
     if request.headers.get("authorization") is None:
         return get_current_user(get_optional_user(request, db, settings, redis_client))
     path, method = request.url.path, request.method
+    session = r"/api/interview-sessions/[0-9]+"
     allowed = (
         method == "GET" and path in {"/api/interview-overview", "/api/job-applications", "/api/interview-sessions", "/api/job-descriptions"}
         or method in {"GET", "PUT", "DELETE"} and re.fullmatch(r"/api/(?:job-applications|job-descriptions)/[0-9]+", path)
@@ -117,6 +118,14 @@ def get_current_career_user(
         or method in {"GET", "PUT"} and re.fullmatch(r"/api/interview-sessions/[0-9]+", path)
         or method == "POST" and re.fullmatch(r"/api/interview-sessions/[0-9]+/(?:complete|cancel|reschedule)", path)
         or method == "PUT" and re.fullmatch(r"/api/interview-sessions/[0-9]+/answer-plan", path)
+        # Stage detail: delete, recordings, transcription, review notes and AI review.
+        or method == "DELETE" and re.fullmatch(session, path)
+        or method in {"GET", "POST"} and re.fullmatch(session + r"/assets", path)
+        or method == "GET" and re.fullmatch(r"/api/interview-assets/[0-9]+/content", path)
+        or method == "POST" and re.fullmatch(session + r"/transcriptions/[0-9]+:(?:retry|apply)", path)
+        or method == "POST" and re.fullmatch(session + r"/(?:written-questions:extract|review:generate)", path)
+        or method == "PUT" and re.fullmatch(session + r"/review-notes", path)
+        or method == "DELETE" and re.fullmatch(session + r"/review-notes/[0-9]+", path)
     )
     if not allowed:
         raise ApiError(403, "DESKTOP_ROUTE_FORBIDDEN")
