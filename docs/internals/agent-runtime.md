@@ -48,7 +48,7 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 
 ## 同一运行内的请求来源
 
-浏览器管理未发送队列，普通排队仍逐条调用现有消息接口。Pi Service 的 `steering.js` 只管理当前运行已接收的插入及回执，最多一条尚未消费的输入；不提供服务端队列编辑、排序或后台调度。运行句柄和插入接收回执在 Pi 内存，业务真值仍在 MySQL。
+浏览器管理未发送队列，普通排队仍逐条调用现有消息接口。Web 使用支持 HTTP 的 IndexedDB 读写事务修改队列和认领普通发送，保存成功后才清理草稿；网络和流订阅不占用数据库事务。普通发送的本机占用在消息被接受后继续保留，收到结束事件、取消成功响应或查询原回执确认运行结束后释放，不按超时抢占。跨标签页变化通过 BroadcastChannel 或读取轮询同步，同站点旧 localStorage 队列在事务提交后迁移并暂停。随机编号使用 getRandomValues，SHA-256 由纯 JavaScript 实现，不要求 HTTPS 专用 API。Pi Service 的 `steering.js` 只管理当前运行已接收的插入及回执，最多一条尚未消费的输入；不提供服务端队列编辑、排序或后台调度。运行句柄和插入接收回执在 Pi 内存，业务真值仍在 MySQL。
 
 Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在完整模型轮次及全部工具结束后调用 FastAPI `steering:activate`。FastAPI 按 User → Session → Run → Message 加锁，复验引用和版本，分配正式用户消息；Pi 切换可信来源序号、目标和工具状态，恢复规划工具，并在用户输入进入原生对话后调用 `steering:ack`。激活重试返回原授权快照和回执，不因后来的资料变化改判成未接受；真正读取正文时仍复验版本。资料正文不写入消息快照。
 

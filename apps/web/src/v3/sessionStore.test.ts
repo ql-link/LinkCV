@@ -16,11 +16,11 @@ it("删除 V3 对话只清理该对话队列，失败时保留消息", async () 
     await enqueueMessage("queue-owner", "kept", { content: "保留" });
     const remove = vi.spyOn(api, "deleteAgentSession").mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
     await expect(useSessionStore.getState().destroy("deleted")).rejects.toThrow("offline");
-    expect(readQueue(queueKey("queue-owner", "deleted")).items).toHaveLength(1);
+    expect((await readQueue(queueKey("queue-owner", "deleted"))).items).toHaveLength(1);
     await useSessionStore.getState().destroy("deleted");
     expect(remove).toHaveBeenCalledTimes(2);
-    expect(readQueue(queueKey("queue-owner", "deleted")).items).toHaveLength(0);
-    expect(readQueue(queueKey("queue-owner", "kept")).items).toHaveLength(1);
+    expect((await readQueue(queueKey("queue-owner", "deleted"))).items).toHaveLength(0);
+    expect((await readQueue(queueKey("queue-owner", "kept"))).items).toHaveLength(1);
   } finally { useResumeStore.setState({ user: originalUser }); vi.unstubAllGlobals(); }
 });
 

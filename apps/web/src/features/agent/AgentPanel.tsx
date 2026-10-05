@@ -784,7 +784,9 @@ export function AgentPanel({
     await messageQueue.pause("本轮已停止，队列暂停");
     if (conversationEpochRef.current !== epoch) return;
     streamRequestRef.current += 1;
-    if (targetRunId) await api.cancelAgentRun(targetRunId).catch(() => undefined);
+    if (targetRunId) await api.cancelAgentRun(targetRunId).then((receipt) => {
+      if (receipt.status === "cancelled" && conversationEpochRef.current === epoch) messageQueueRef.current.onEvent({ type: "run.cancelled", runId: targetRunId });
+    }, () => undefined);
     if (conversationEpochRef.current !== epoch) return;
     abortRef.current?.abort();
     abortRef.current = null;

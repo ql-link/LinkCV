@@ -1,16 +1,12 @@
 import { webcrypto } from "node:crypto";
+import { IDBFactory } from "fake-indexeddb";
 import { vi } from "vitest";
 
-/** Serialize callbacks like the browser API, including concurrent test mounts. */
-export function installMessageQueueEnvironment() {
-  const tails = new Map<string, Promise<unknown>>();
-  Object.defineProperty(navigator, "locks", { configurable: true, value: {
-    request: vi.fn((key: string, callback: () => unknown) => {
-      const result = (tails.get(key) ?? Promise.resolve()).catch(() => undefined).then(callback);
-      tails.set(key, result);
-      return result;
-    }),
-  } });
-  vi.stubGlobal("crypto", webcrypto);
+/** Reproduce an HTTP origin: no Web Locks, randomUUID or SubtleCrypto. */
+export function installMessageQueueEnvironment(options: { secureCrypto?: boolean } = {}) {
+  Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  vi.stubGlobal("BroadcastChannel", undefined);
+  vi.stubGlobal("crypto", options.secureCrypto ? webcrypto : { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) });
   localStorage.clear();
 }
