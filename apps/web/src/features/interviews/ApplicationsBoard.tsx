@@ -8,7 +8,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowRight, Ban, Eye, MoreHorizontal, Trash2 } from "lucide-react";
+import { ArrowRight, Ban, Clock3, Eye, MoreHorizontal, Trash2 } from "lucide-react";
 import type { JobApplicationSummary } from "@/api/client";
 import { careerApplicationPath, navigateTo } from "../../routing";
 import {
@@ -1290,7 +1290,7 @@ export function ProgressCard({
   } satisfies ApplicationProgressLabelOptions);
   const advanceAction = applicationAdvanceAction(item, completedCurrentStageApplicationIds);
   const categoryLabel = employmentCategoryLabel(item.job_snapshot?.employment_type);
-  // 今天有安排且还没开始时，底部改成黑色胶囊「今天 HH:mm」（设计稿 04.1 三面卡片）
+  // 今天尚未开始的安排使用与阶段配色一致的轻量时间标签。
   const todayLabel = !currentStageCompleted ? todayScheduleLabel(item, now) : null;
   const cardRef = useRef<HTMLElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -1365,7 +1365,7 @@ export function ProgressCard({
       onDragEnd={onDragEnd}
     >
       <button type="button" className="progress-card-open" aria-label={t("查看 {value0} {value1} 求职进程", { value0: item.company_name_snapshot, value1: item.job_title_snapshot })} onClick={handleCardOpen}>
-        {/* 设计稿 04.1 jobCard：标题「公司 · 职位」→ 求职分类标签 → 底部状态（圆点 + 文字，今天的安排用黑色胶囊）+ 右下角公司标 */}
+        {/* 设计稿 04.1 jobCard：标题「公司 · 职位」→ 求职分类标签 → 底部状态（圆点 + 文字，今天的安排用浅色时间标签）+ 右下角公司标 */}
         <strong className="progress-card-title" title={`${item.company_name_snapshot} · ${item.job_title_snapshot}`}>
           <span className="progress-card-company">{item.company_name_snapshot}</span>
           <span aria-hidden="true"> · </span>
@@ -1373,7 +1373,7 @@ export function ProgressCard({
         </strong>
         {categoryLabel && <span className="v3-chip progress-card-category">{categoryLabel}</span>}
         <span className="progress-card-footer">
-          {todayLabel && <span className="progress-card-today" aria-hidden="true">{todayLabel}</span>}
+          {todayLabel && <span className={`progress-card-today${progressColumnKey(item) === "assessment" || progressColumnKey(item) === "written_test" ? " is-window" : ""}`} aria-hidden="true"><Clock3 />{todayLabel}</span>}
           {/* 状态文字自身带语义色 class，圆点用 ::before 画出 */}
           <span className={`progress-card-stage ${stageToneClass}${todayLabel ? " v3-visually-hidden" : ""}`} title={timeLabel ?? undefined}>{statusLabel}</span>
           {timeLabel && <span className="progress-card-time v3-visually-hidden">{timeLabel}</span>}
