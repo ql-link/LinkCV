@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "@/i18n";
 import { api, type InterviewAssetRecord, type JobApplicationSummary } from "@/api/client";
 import { Icon } from "@/v3/Icon";
+import { Button } from "@/components/ui";
 import { Menu, type MenuItem } from "@/v3/primitives";
 import type { ApplicationDetailModel, DetailAction, DetailTone } from "./applicationDetailModel";
 import { formatMonthDay } from "./applicationDetailModel";
@@ -34,9 +35,9 @@ export function ApplicationProgressPage({
   busy,
   onBack,
   onOpenJob,
-  onToggleFavorite,
   onAction,
   onOpenSession,
+  onEditSession,
   onOfferCardAction,
 }: {
   application: JobApplicationSummary;
@@ -46,9 +47,9 @@ export function ApplicationProgressPage({
   busy: boolean;
   onBack: () => void;
   onOpenJob: () => void;
-  onToggleFavorite: () => void;
   onAction: (action: DetailAction) => void;
   onOpenSession: (sessionId: string) => void;
+  onEditSession?: (sessionId: string) => void;
   onOfferCardAction: () => void;
 }) {
   useLocale();
@@ -134,9 +135,6 @@ export function ApplicationProgressPage({
           </p>
         </div>
         <div className="ap-header-actions">
-          <button type="button" className="ap-text-button" aria-pressed={application.is_favorite} onClick={onToggleFavorite}>
-            {application.is_favorite ? t("★ 已收藏") : t("☆ 收藏")}
-          </button>
           <button type="button" className="ap-outline-button" onClick={onOpenJob}>{t("岗位详情")}</button>
           <button type="button" ref={menuRef} className="ap-more-button" aria-label={t("更多操作")} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
             <Icon name="more" size={14} />
@@ -182,9 +180,9 @@ export function ApplicationProgressPage({
         </div>
         <div className="ap-next-actions">
           {next.primary && (
-            <button type="button" className={next.primary.variant === "dark" ? "ap-primary-button" : "ap-outline-button is-lg"} disabled={busy} onClick={() => onAction(next.primary!.action)}>
+            <Button variant="outline" size="sm" className="h-9 px-4 text-[13px] font-medium" disabled={busy} onClick={() => onAction(next.primary!.action)}>
               {next.primary.label}
-            </button>
+            </Button>
           )}
           {next.secondary.length > 0 && (
             <div className="ap-next-secondary">
@@ -217,14 +215,12 @@ export function ApplicationProgressPage({
                     <time>{item.date}</time>
                   </div>
                   <article className={`ap-stage-card${item.highlight ? ` is-highlight-${item.highlight}` : ""}`}>
-                    <header><h3>{item.title}</h3><Chip {...item.chip} /></header>
+                    <header><div className="ap-stage-identity"><h3>{item.sessionId ? <button type="button" className="ap-stage-title" onClick={() => onOpenSession(item.sessionId!)}>{item.title}</button> : item.title}</h3><Chip {...item.chip} /></div>
+                      {item.sessionId && onEditSession && <button type="button" className="ap-link-button ap-stage-edit" disabled={busy} onClick={() => onEditSession(item.sessionId!)}>{item.highlight === "blue" && item.chip.label === t("已安排") ? t("修改安排") : t("编辑信息")}</button>}
+                    </header>
                     <div>
                       <p>{item.detail}</p>
-                      {item.sessionId && (
-                        <button type="button" className="ap-link-button" onClick={() => onOpenSession(item.sessionId!)}>
-                          {t("查看详情 →")}
-                        </button>
-                      )}
+
                     </div>
                   </article>
                 </li>
