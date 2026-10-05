@@ -294,7 +294,7 @@ class JobApplicationStage(Base):
         CheckConstraint(
             "stage_type IN ('screening', 'assessment', 'written_test', 'ai_interview', "
             "'interview', 'hr', 'oc', 'offer')",
-            name="ck_job_application_stage_type",
+            name="ck_job_application_stage_stage_type",
         ),
         CheckConstraint(
             "LENGTH(TRIM(stage_label)) > 0 AND "

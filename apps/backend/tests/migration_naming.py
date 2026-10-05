@@ -78,6 +78,10 @@ OBJECTS_ADDED_BY_0114 = {
     "job_application_offer_materials": {"uk_job_application_offer_material_application_dataset"},
     "llm_use_case_routes": {"uk_llm_use_case_route_use_case_route"},
 }
+# Singularizing would give both tables the same schema-wide CHECK name.
+RENAMED_OBJECT_OVERRIDES = {
+    "ck_job_application_stages_type": "ck_job_application_stage_stage_type",
+}
 
 
 def current_table(table: str) -> str:
@@ -91,6 +95,8 @@ def current_column(table: str, column: str) -> str:
 
 def current_object_name(name: str, table: str) -> str:
     """Index or constraint name after 0115 replaced the owning table's name."""
+    if name in RENAMED_OBJECT_OVERRIDES:
+        return RENAMED_OBJECT_OVERRIDES[name]
     new_table = current_table(table)
     for prefix in ("pk_", "uk_", "idx_", "ck_", "fk_"):
         head = prefix + table

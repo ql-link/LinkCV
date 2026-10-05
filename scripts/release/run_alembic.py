@@ -147,6 +147,12 @@ SINGULAR_TABLE_NAMES = {
 TIME_COLUMN_RENAMES = {"created_at": "create_time", "updated_at": "update_time"}
 
 
+# Singularizing would give both tables the same schema-wide CHECK name.
+RENAMED_OBJECT_OVERRIDES = {
+    "ck_job_application_stages_type": "ck_job_application_stage_stage_type",
+}
+
+
 def _current_table(table: str, applied: set[str]) -> str:
     if SINGULAR_NAMING_REVISION in applied:
         return SINGULAR_TABLE_NAMES.get(table, table)
@@ -164,6 +170,8 @@ def _current_column(table: str, column: str, applied: set[str]) -> str:
 def _current_index(table: str, index: str, applied: set[str]) -> str:
     if SINGULAR_NAMING_REVISION not in applied or table not in SINGULAR_TABLE_NAMES:
         return index
+    if index in RENAMED_OBJECT_OVERRIDES:
+        return RENAMED_OBJECT_OVERRIDES[index]
     for prefix in ("pk_", "uk_", "idx_", "ck_"):
         head = prefix + table
         if index == head or index.startswith(head + "_"):

@@ -612,7 +612,7 @@ ALTER TABLE `job_application_stage`
 	ADD CONSTRAINT `ck_job_application_stage_status` CHECK ((`stage_status` in (_utf8mb4'active',_utf8mb4'completed',_utf8mb4'cancelled')));
 
 ALTER TABLE `job_application_stage`
-	ADD CONSTRAINT `ck_job_application_stage_type` CHECK ((`stage_type` in (_utf8mb4'screening',_utf8mb4'assessment',_utf8mb4'written_test',_utf8mb4'ai_interview',_utf8mb4'interview',_utf8mb4'hr',_utf8mb4'oc',_utf8mb4'offer')));
+	ADD CONSTRAINT `ck_job_application_stage_stage_type` CHECK ((`stage_type` in (_utf8mb4'screening',_utf8mb4'assessment',_utf8mb4'written_test',_utf8mb4'ai_interview',_utf8mb4'interview',_utf8mb4'hr',_utf8mb4'oc',_utf8mb4'offer')));
 
 ALTER TABLE `job_application`
 	ADD CONSTRAINT `ck_job_application_calendar_color` CHECK ((`calendar_color` in (_utf8mb4'red',_utf8mb4'orange',_utf8mb4'yellow',_utf8mb4'green',_utf8mb4'blue',_utf8mb4'purple',_utf8mb4'gray')));
