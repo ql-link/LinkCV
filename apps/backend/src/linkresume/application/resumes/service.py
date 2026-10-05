@@ -585,7 +585,7 @@ def update_resume_snapshot(
         "data_json": snapshot.data_json,
         "style_json": snapshot.style_json,
         "lock_version": Resume.lock_version + 1,
-        "updated_at": utc_now(),
+        "update_time": utc_now(),
     }
     result = db.execute(
         update(Resume)

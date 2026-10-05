@@ -827,7 +827,7 @@ def _commit_application_update(
     values = {
         **values,
         "lock_version": JobApplication.lock_version + 1,
-        "updated_at": utc_now(),
+        "update_time": utc_now(),
     }
     result = db.execute(
         update(JobApplication)
@@ -1660,7 +1660,7 @@ def _commit_session_update(
     values = {
         **values,
         "lock_version": InterviewSession.lock_version + 1,
-        "updated_at": utc_now(),
+        "update_time": utc_now(),
     }
     result = db.execute(
         update(InterviewSession)

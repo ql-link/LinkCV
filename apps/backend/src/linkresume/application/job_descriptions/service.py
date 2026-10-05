@@ -168,7 +168,7 @@ def update_owned_job(
     values.update(
         {
             "lock_version": JobDescription.lock_version + 1,
-            "updated_at": utc_now(),
+            "update_time": utc_now(),
         }
     )
     try:

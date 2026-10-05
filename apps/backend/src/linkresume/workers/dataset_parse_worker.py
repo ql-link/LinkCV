@@ -725,7 +725,7 @@ class DatasetParseProcessor:
                             "parse_status": "failed",
                             "parse_duration_ms": elapsed_ms,
                             "failure_reason": "timeout",
-                            "updated_at": now,
+                            "update_time": now,
                         }
                     else:
                         values = {
@@ -734,7 +734,7 @@ class DatasetParseProcessor:
                             "parse_duration_ms": None,
                             "failure_reason": None,
                             "last_dispatched_at": None,
-                            "updated_at": now,
+                            "update_time": now,
                         }
                     result = db.execute(
                         update(DocumentParseTask)

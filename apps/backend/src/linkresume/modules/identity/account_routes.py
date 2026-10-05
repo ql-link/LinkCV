@@ -242,8 +242,10 @@ def update_preferences(
     if row is None:
         row = AccountPreference(user_id=user.id, locale="zh-CN", is_interview_reminder_enabled=0)
         db.add(row)
-    for key, value in payload.items():
-        setattr(row, key, int(value) if key == "interview_reminder_enabled" else value)
+    if "locale" in payload:
+        row.locale = str(payload["locale"])
+    if "interview_reminder_enabled" in payload:
+        row.is_interview_reminder_enabled = int(bool(payload["interview_reminder_enabled"]))
     db.commit()
     return _preferences(row)
 
