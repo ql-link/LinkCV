@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "LinkResume FastAPI backend"
 requires-python = ">=3.11,<3.14"
 dependencies = [
+  "anyio>=4,<5", # Match FastAPI's cancellation scopes for intent requests.
   "alembic>=1.15,<2.0",
   "bcrypt>=4.1,<5.0",
   "pwdlib[argon2,bcrypt]>=0.2,<1.0",

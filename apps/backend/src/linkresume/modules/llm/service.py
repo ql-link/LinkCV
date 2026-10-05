@@ -33,7 +33,7 @@ from linkresume.modules.llm.providers import (
     OPENAI_CHAT, OPENAI_RESPONSES, OPENAI_ASR_FILE, OPENAI_TTS, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route,
 )
 from linkresume.modules.llm.resolver import (
-    ASSISTANT_CONVERSATION, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
+    ASSISTANT_CONVERSATION, ASSISTANT_INTENT, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
     RESUME_STRUCTURING, SPEECH_TO_TEXT, SPEECH_USE_CASES, TEXT_TO_SPEECH,
     RoutePlan, resolve, validation_fingerprint, resolve_candidates,
 )
@@ -328,6 +328,7 @@ class LLMService:
         *,
         source: str,
         use_case: str = JOB_TEXT_EXTRACTION,
+        agent_run_id: int | None = None,
     ) -> ChatResult:
         if not messages or not SOURCE_PATTERN.fullmatch(source):
             raise ValueError("invalid LLM request")
@@ -344,7 +345,7 @@ class LLMService:
                 continue
             call_id = create_call_id()
             started = perf_counter()
-            await self._db(self._start_log_sync, plan, call_id=call_id, source=source, user_id=user_id)
+            await self._db(self._start_log_sync, plan, call_id=call_id, source=source, user_id=user_id, agent_run_id=agent_run_id)
             try:
                 result = await self._gateway.complete(
                     model=plan.invoke_target, messages=tuple(messages),
@@ -393,10 +394,12 @@ class LLMService:
         source: str,
         response_model: type[StructuredValue],
         use_case: str = JOB_TEXT_EXTRACTION,
+        agent_run_id: int | None = None,
     ) -> StructuredChatResult[StructuredValue]:
         result = await self.chat(
             user_id, _structured_messages(messages, response_model),
             source=source, use_case=use_case,
+            agent_run_id=agent_run_id,
         )
         try:
             value = _validate_structured_content(result.content, response_model)
@@ -540,12 +543,22 @@ class LLMService:
                         {"type": "text", "text": "Read this image and reply OK."},
                         {"type": "image_url", "image_url": {"url": VISION_PROBE_IMAGE_DATA_URL}},
                     ])
+                messages = (message,)
+                if use_case == ASSISTANT_INTENT:
+                    from linkresume.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
+                    messages = _structured_messages(intent_probe_messages(), IntentDecision)
                 result = await self._gateway.complete(
                     model=plan.invoke_target,
-                    messages=(message,),
+                    messages=messages,
                     api_base=runtime.base_url, api_key=runtime.api_key,
                     protocol_code=plan.protocol_code,
                 )
+                if use_case == ASSISTANT_INTENT:
+                    from linkresume.modules.agent.intent_schemas import validate_intent_probe
+                    try:
+                        validate_intent_probe(_validate_structured_content(result.content, IntentDecision))
+                    except ValueError as error:
+                        raise LLMError("LLM_RESPONSE_INVALID", call_id) from error
                 if use_case == RESUME_STRUCTURING:
                     try:
                         valid = json.loads(result.content).get("ok") is True

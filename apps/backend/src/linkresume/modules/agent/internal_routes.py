@@ -556,6 +556,14 @@ def plan_run_tasks(
     return {"tasks": save_task_plan(db, run=run, payload=payload)}
 
 
+@router.post("/runs/{run_id}/intent:recognize")
+async def recognize_intent(
+    run_id: str, request: Request, db: Session = Depends(get_db),
+) -> dict[str, object]:
+    from linkresume.modules.agent.intent import recognize_run_intent
+    return await recognize_run_intent(request, db, run_id)
+
+
 @router.get("/runs/{run_id}/tasks/{task_id}/materials")
 def read_run_task_materials(
     run_id: str,

@@ -20,6 +20,7 @@ import { visualScale } from "./viewportScale";
 
 export const useCaseLabels: Record<string, string> = {
   assistant_conversation: "用户对话",
+  assistant_intent: "助手意图识别",
   resume_structuring: "简历结构化",
   job_text_extraction: "职位文本提取",
   job_image_extraction: "职位图片识别",

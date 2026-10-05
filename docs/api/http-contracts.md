@@ -507,9 +507,13 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
 | `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`callId`、`userId`（精确匹配）、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
 
+模型 catalog 与场景绑定支持 `assistant_intent`（助手意图识别），只接受 `openai_chat`。此场景的探测验证结构化多意图结果，独立于 `assistant_conversation` 的 Pi Tool 探测。
+
+`POST /internal/agent/runs/{run_id}/intent:recognize` 只接受 Pi 服务令牌，不接收自定义提示词、用户 ID 或模型密钥。输入从运行的用户消息与本轮授权资料解析。响应 `version=1`、`mode=plan|conversation|clarify|fallback`；plan 携带已保存的任务（包括状态），clarify 携带 `clarification_purposes`，fallback 携带稳定 `reason`，实际调用可携带 `call_id`。未配置和调用失败返回 fallback；`AGENT_TASK_CONTEXT_NOT_AUTHORIZED`、`AGENT_TASK_PLAN_CONFLICT` 和 `AGENT_RUN_NOT_ACTIVE` 返回 409，服务令牌无效返回 401。识别的执行、取消、计量与数据最小化边界见 [Agent 运行时](../internals/agent-runtime.md#调用链)。
+
 连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的字段，不能提交任意推理 URL。AIHubMix 的 `settings.endpoint` 可选 `primary` 或 `alternate`，缺省为 `primary`；后者使用官方备用 `api.inferera.com`，目录与推理地址同步切换。修改连接设置会递增推理配置版本、清除旧目录同步状态并要求关联绑定重新探测。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`、`mock_interview`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
 
-语音场景还包括 `speech_to_text` 与 `text_to_speech`，识别稿修正为 `transcript_correction`。目录的 AIHubMix `protocols` 兼容新增 `openai_responses`、`openai_asr_file`（仅识别）与 `openai_tts`（仅合成），百炼保留实时语音协议。目录继续优先列出 Chat，兼容管理台新增绑定时的原有默认值；Responses 和语音绑定通过管理 API 显式设置 `protocolCode`。非语音内部能力也接受接入商支持的 Responses，文本、图片与流式请求响应保持原有 DTO。接入商与场景交叉使用不支持的协议返回 `422 LLM_ROUTE_INVALID`；新绑定及修改协议后的绑定同样需要先探测，再启用线路与绑定，逐模型参数和协议边界见 [Agent/LLM 运行时](../internals/agent-runtime.md#治理数据)。
+语音场景还包括 `speech_to_text` 与 `text_to_speech`，识别稿修正为 `transcript_correction`。目录的 AIHubMix `protocols` 兼容新增 `openai_responses`、`openai_asr_file`（仅识别）与 `openai_tts`（仅合成），百炼保留实时语音协议。目录继续优先列出 Chat，兼容管理台新增绑定时的原有默认值；Responses 和语音绑定通过管理 API 显式设置 `protocolCode`。除 `assistant_intent` 外，非语音内部能力也接受接入商支持的 Responses，文本、图片与流式请求响应保持原有 DTO。接入商与场景交叉使用不支持的协议返回 `422 LLM_ROUTE_INVALID`；新绑定及修改协议后的绑定同样需要先探测，再启用线路与绑定，逐模型参数和协议边界见 [Agent/LLM 运行时](../internals/agent-runtime.md#治理数据)。
 
 `llm_call_logs` 每条记录对应一次实际请求，切换前失败的线路和切换后成功的线路分别记录，保存场景、来源、用户、运行、真实线路、调用协议、用量、价格规则快照、估算费用与币种及安全错误分类；不保存提示词、图片、完整响应或明文凭据。目录价格带分档、缓存或优惠规则时，缺少充分用量明细的估算费用留空，`meteringStatus=partial`。Pi 的费用由后端根据线路价格规则计算，不信任 Pi 回传的金额。`0091` 删除并重建旧 LLM 四张表，保留 Agent 会话与运行；迁移前需检查目标 revision、旧数据与备份。
 
