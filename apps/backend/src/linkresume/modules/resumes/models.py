@@ -85,7 +85,7 @@ class ResumeTemplate(Base):
         comment="风格审核状态：pending、classified、unsure",
     )
     sort_order: Mapped[int] = mapped_column(
-        Integer(), nullable=False, default=1000, server_default="1000",
+        unsigned_int_type(), nullable=False, default=1000, server_default="1000",
         comment="模板展示顺序，数字越小越靠前；相同值按 ID 排序",
     )
     is_active: Mapped[int] = mapped_column(
