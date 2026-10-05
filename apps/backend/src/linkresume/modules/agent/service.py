@@ -38,6 +38,8 @@ from linkresume.modules.agent.context_service import resolve_contexts
 from linkresume.modules.agent.message_scope import (
     active_message, clarification_metadata, proposal_message, register_proposal, reply_source_message,
 )
+
+from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.schemas import (
     AgentMessageRecord,
     AgentClarification,
@@ -52,6 +54,8 @@ from linkresume.modules.agent.schemas import (
     ProposalRecord,
     ProposalOperation,
     ResumeTargetLocator,
+    ResumeReferenceResolveRequest,
+    ResourceReferenceResolveRequest,
     TranslationProposalCreateRequest,
 )
 from linkresume.modules.agent.resume_tools import (
@@ -1385,13 +1389,23 @@ def task_authorized_refs(
         raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
     if not active:
         return set()
-    return {
+    allowed = {
         (item["type"], item["id"])
         for item in [
             *(active[0].get("context_refs") or []),
             *(active[0].get("resolved_refs") or []),
         ]
     }
+    resolution = next((item for item in (message.metadata_json or {}).get("resume_resolutions", [])
+                       if item.get("task_id") == active[0]["id"]), None)
+    if resolution:
+        allowed = {(kind, resource_id) for kind, resource_id in allowed
+                   if kind != "resume" or resource_id == resolution["resume_id"]}
+    for resolution in (message.metadata_json or {}).get("resource_resolutions", []):
+        if resolution.get("task_id") == active[0]["id"]:
+            allowed = {(kind, resource_id) for kind, resource_id in allowed
+                       if kind != resolution["type"] or resource_id == resolution["id"]}
+    return allowed
 
 
 def require_task_resource(
@@ -1416,24 +1430,179 @@ def require_task_sources(
 
 def authorize_resolved_task_resume(
     db: Session, *, run: AgentRun, resume_id: str,
+    label: str = "", source: str = "explicit",
+    source_sequence_no: int | None = None, relation: str | None = None,
+    referring_text: str | None = None,
+    commit: bool = True,
 ) -> None:
     message = active_message(db, run, lock=True)
     if message is None:
         return
     metadata = dict(message.metadata_json or {})
     tasks = deepcopy(metadata.get("agent_tasks"))
+    active = [item for item in tasks if item.get("status") == "running"] if isinstance(tasks, list) else []
+    if isinstance(tasks, list) and len(active) != 1:
+        raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+    task_id = active[0]["id"] if active else None
+    records = deepcopy(metadata.get("resume_resolutions", []))
+    existing = next((item for item in records if item.get("task_id") == task_id), None)
+    if existing and existing["resume_id"] != resume_id:
+        raise ApiError(409, "AGENT_RESUME_TARGET_CONFLICT")
+    if active:
+        # Keep the plan immutable; the frozen resolution narrows effective grants.
+        refs = active[0].setdefault("resolved_refs", [])
+        ref = {"type": "resume", "id": resume_id}
+        if ref not in refs:
+            refs.append(ref)
+        metadata["agent_tasks"] = tasks
+    if existing is None:
+        records.append({
+            "task_id": task_id, "resume_id": resume_id, "label_at_resolution": label,
+            "source": source, "source_sequence_no": source_sequence_no,
+            "relation": relation, "referring_text": referring_text,
+        })
+    metadata["resume_resolutions"] = records
+    message.metadata_json = metadata
+    if commit:
+        db.commit()
+
+
+def resolve_task_resume_reference(
+    db: Session, *, run: AgentRun, session: AgentSession,
+    payload: ResumeReferenceResolveRequest,
+    commit: bool = True,
+) -> dict[str, Any]:
+    """Resolve identity evidence into a current, task-scoped resource grant."""
+    source_message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == run.id, AgentMessage.role == "user",
+    ))
+    if source_message is None:
+        if payload.memory_ref:
+            raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+        # Legacy internal callers have no persisted user message or task plan.
+        return resolve_resume_reference(db, session=session, title=payload.title, resume_id=payload.resume_id)
+    message = _run_task_message(db, run)
+    metadata = message.metadata_json or {}
+    resume_id = payload.resume_id
+    memory_event = None
+    if payload.memory_ref:
+        tasks = metadata.get("agent_tasks", [])
+        if not any(item.get("status") == "running" for item in tasks):
+            raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+        memory_event = next((event for event in conversation_memory(db, run)["events"]
+                             if event["memory_ref"] == payload.memory_ref), None)
+        if memory_event is None:
+            raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+        texts = [message.content] + [item.get("value", "") for item in metadata.get("clarification_answers", [])]
+        if not payload.referring_text or not payload.referring_text.strip() or not any(
+            payload.referring_text in text for text in texts
+        ):
+            raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+        resume_id = memory_event["resource"]["id"]
+    result = resolve_resume_reference(db, session=session, title=payload.title, resume_id=resume_id)
+    if memory_event and result["status"] != "resolved":
+        raise ApiError(404, "AGENT_MEMORY_TARGET_UNAVAILABLE")
+    if result["status"] != "resolved":
+        return result
+    target_id = result["target"]["resume_id"]
+    explicit = {item["id"] for item in metadata.get("contexts", [])
+                if item.get("type") == "resume" and item.get("presentation", "mention") != "implicit"}
+    if explicit and target_id not in explicit:
+        raise ApiError(409, "AGENT_RESUME_SELECTION_CONFLICT")
+    resume = db.scalar(select(Resume).where(Resume.id == int(target_id), Resume.user_id == session.user_id))
+    selected = next((item for item in metadata.get("contexts", [])
+                     if item.get("type") == "resume" and item.get("id") == target_id), None)
+    source = "memory" if memory_event else "implicit" if selected and selected.get("presentation") == "implicit" else "explicit"
+    authorize_resolved_task_resume(
+        db, run=run, resume_id=target_id, label=resume.title, source=source,
+        source_sequence_no=memory_event["source_sequence_no"] if memory_event else None,
+        relation=payload.relation, referring_text=payload.referring_text,
+        commit=commit,
+    )
+    return result
+
+
+def _material_content_sha256(content: dict[str, Any]) -> str:
+    return sha256(json.dumps(content, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def resolve_task_resource_reference(
+    db: Session, *, run: AgentRun, session: AgentSession,
+    payload: ResourceReferenceResolveRequest, storage: Any, settings: Any,
+) -> dict[str, Any]:
+    """Convert same-conversation identity evidence into a bounded current read."""
+    message = _run_task_message(db, run)
+    metadata = dict(message.metadata_json or {})
+    tasks = deepcopy(metadata.get("agent_tasks", []))
     if not isinstance(tasks, list):
-        return
-    active = [item for item in tasks if item.get("status") == "running"]
+        raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+    active = [task for task in tasks if task.get("status") == "running"]
     if len(active) != 1:
         raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
-    refs = active[0].setdefault("resolved_refs", [])
-    ref = {"type": "resume", "id": resume_id}
-    if ref not in refs:
-        refs.append(ref)
+    event = next((item for item in conversation_memory(db, run)["events"]
+                  if item["memory_ref"] == payload.memory_ref), None)
+    texts = [message.content] + [item.get("value", "") for item in metadata.get("clarification_answers", [])]
+    if event is None or not payload.referring_text.strip() or not any(payload.referring_text in text for text in texts):
+        raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+    kind, resource_id = event["resource"]["type"], event["resource"]["id"]
+    explicit = {item["id"] for item in metadata.get("contexts", [])
+                if item.get("type") == kind and item.get("presentation", "mention") != "implicit"}
+    if explicit and resource_id not in explicit:
+        raise ApiError(409, "AGENT_RESOURCE_SELECTION_CONFLICT")
+    records = deepcopy(metadata.get("resource_resolutions", []))
+    existing = next((item for item in records if item.get("task_id") == active[0]["id"]
+                     and item.get("type") == kind), None)
+    if existing and existing["id"] != resource_id:
+        raise ApiError(409, "AGENT_RESOURCE_TARGET_CONFLICT")
+    selected_version = existing["snapshot"]["version"] if existing else None
+    if kind == "user_profile" and existing is None:
+        from linkresume.modules.identity.models import UserProfile
+        profile = db.scalar(select(UserProfile).where(UserProfile.user_id == session.user_id).with_for_update())
+        if resource_id != str(session.user_id) or profile is None:
+            raise ApiError(404, "AGENT_MEMORY_TARGET_UNAVAILABLE")
+        selected_version = str(profile.lock_version)
+    try:
+        resolved = resolve_contexts(
+            db, user_id=session.user_id,
+            refs=[AgentContextRef(type=kind, id=resource_id,
+                                  version=selected_version)],
+            storage=storage, settings=settings,
+        )
+    except ApiError as error:
+        if error.code == "AGENT_CONTEXT_NOT_FOUND":
+            raise ApiError(404, "AGENT_MEMORY_TARGET_UNAVAILABLE") from error
+        raise
+    content_hash = _material_content_sha256(resolved.materials[0].content)
+    if existing and existing.get("content_sha256") not in (None, content_hash):
+        raise ApiError(409, "AGENT_CONTEXT_STALE")
+    if kind == "resume":
+        # Keep the existing resume conflict, selection and editing safeguards.
+        resolve_task_resume_reference(db, run=run, session=session,
+                                      payload=ResumeReferenceResolveRequest(**payload.model_dump()), commit=False)
+        metadata = dict(message.metadata_json or {})
+        tasks = deepcopy(metadata["agent_tasks"])
+        active = [task for task in tasks if task.get("status") == "running"]
+    snapshot = resolved.snapshots[0].model_dump(mode="json")
+    ref = {"type": kind, "id": resource_id}
+    if ref not in active[0].setdefault("resolved_refs", []):
+        active[0]["resolved_refs"].append(ref)
+    if existing is None:
+        records.append({
+            **ref, "task_id": active[0]["id"], "label_at_resolution": snapshot["label"],
+            "source": "memory", "source_sequence_no": event["source_sequence_no"],
+            "relation": payload.relation, "referring_text": payload.referring_text,
+            "snapshot": snapshot,
+            "content_sha256": content_hash,
+        })
     metadata["agent_tasks"] = tasks
+    metadata["resource_resolutions"] = records
     message.metadata_json = metadata
     db.commit()
+    package = get_task_materials(db, run=run, task_id=active[0]["id"], storage=storage, settings=settings)
+    return {"resource": snapshot,
+            "materials": [item for item in package["materials"] if (item["type"], item["id"]) == (kind, resource_id)],
+            "sources": [item for item in package["sources"] if (item["type"], item["id"]) == (kind, resource_id)]}
 
 
 def get_task_materials(
@@ -1455,14 +1624,27 @@ def get_task_materials(
         for item in metadata.get("contexts", [])
         if isinstance(item, dict)
     }
+    snapshots.update({(item["type"], item["id"]): item["snapshot"]
+                      for item in metadata.get("resource_resolutions", [])
+                      if item.get("task_id") == task_id})
     refs = []
-    for selected in task.get("context_refs", []):
+    allowed = task_authorized_refs(db, run=run)
+    selected_refs = {(item["type"], item["id"]): item for item in [
+        *task.get("context_refs", []), *task.get("resolved_refs", []),
+    ]}
+    for selected in selected_refs.values():
+        if allowed is not None and (selected["type"], selected["id"]) not in allowed:
+            continue
         snapshot = snapshots.get((selected["type"], selected["id"]))
         if snapshot is None:
+            if selected in task.get("resolved_refs", []) and selected["type"] == "resume":
+                # Legacy resume references use the scoped resume reader.
+                continue
             raise ApiError(409, "AGENT_TASK_CONTEXT_NOT_AUTHORIZED")
         refs.append(AgentContextRef(
             type=selected["type"], id=selected["id"],
             version=snapshot["version"],
+            presentation=snapshot.get("presentation", "mention"),
         ))
     resolved = resolve_contexts(
         db, user_id=db.scalar(select(AgentSession.user_id).where(
@@ -1471,14 +1653,18 @@ def get_task_materials(
         storage=storage, settings=settings,
     )
     materials = [item.model_dump(mode="json") for item in resolved.materials]
+    frozen_hashes = {(item["type"], item["id"]): item.get("content_sha256")
+                     for item in metadata.get("resource_resolutions", [])
+                     if item.get("task_id") == task_id}
+    for item in materials:
+        expected_hash = frozen_hashes.get((item["type"], item["id"]))
+        if expected_hash is not None and expected_hash != _material_content_sha256(item["content"]):
+            raise ApiError(409, "AGENT_CONTEXT_STALE")
     receipts = [{
         "type": item["type"], "id": item["id"], "version": item["version"],
         "source_role": TASK_SOURCE_ROLES.get(item["type"], "source_material"),
         "claim_status": "source_only",
-        "content_sha256": sha256(json.dumps(
-            item["content"], ensure_ascii=False, sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")).hexdigest(),
+        "content_sha256": _material_content_sha256(item["content"]),
     } for item in materials]
     task["material_receipts"] = receipts
     metadata["agent_tasks"] = tasks

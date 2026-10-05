@@ -6,7 +6,7 @@ from linkresume.application.resumes.service import parse_persisted_resume_snapsh
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import get_storage, AssetStorage
-from linkresume.modules.agent.message_scope import source_sequence_no, persist_reply
+from linkresume.modules.agent.message_scope import active_message, source_sequence_no, persist_reply
 from linkresume.modules.agent.steering import activate, acknowledge
 from linkresume.modules.agent.context_service import list_contexts
 from linkresume.modules.agent.schemas import (
@@ -26,6 +26,8 @@ from linkresume.modules.agent.schemas import (
     ResumeContextResponse,
     ResumeReferenceResolveRequest,
     ResumeReferenceResolveResponse,
+    ResourceReferenceResolveRequest,
+    ResourceReferenceResolveResponse,
     RuntimeConfigResponse,
     RuntimeRouteConfig,
     ScopedResumeContextResponse,
@@ -55,7 +57,8 @@ from linkresume.modules.agent.service import (
     get_task_materials,
     get_active_run,
     proposal_record,
-    resolve_resume_reference,
+    resolve_task_resume_reference,
+    resolve_task_resource_reference,
     save_task_plan,
     require_task_resource,
     require_task_sources,
@@ -144,8 +147,9 @@ def _model_limit(metadata: dict, key: str) -> int | None:
 async def get_internal_agent_readiness(request: Request) -> AgentReadinessResponse:
     llm_service: LLMService = request.app.state.llm_service
     try:
-        await llm_service.agent_model_summary()
-    except LLMError as error:
+        config = await llm_service.agent_runtime_model()
+        pi_api(config.plan.protocol_code)
+    except (LLMError, KeyError) as error:
         raise ApiError(503, "AGENT_NOT_READY") from error
     return AgentReadinessResponse(ready=True, steering=True)
 
@@ -322,16 +326,33 @@ def resolve_run_target(
     payload: TargetResolveRequest,
     db: Session = Depends(get_db),
 ) -> TargetResolveResponse:
-    _, _, resume, snapshot = _run_resume(db, run_id, payload.resume_id)
-    return TargetResolveResponse.model_validate(
-        resolve_target(
-            resume,
-            snapshot.data,
-            selection_context=payload.selection_context,
-            quoted_text=payload.quoted_text,
-            scope_hint=payload.scope_hint,
-        )
+    run, _, resume, snapshot = _run_resume(db, run_id, payload.resume_id)
+    result = resolve_target(
+        resume,
+        snapshot.data,
+        selection_context=payload.selection_context,
+        quoted_text=payload.quoted_text,
+        scope_hint=payload.scope_hint,
     )
+    if result["status"] == "resolved":
+        message = active_message(db, run)
+        selected = next((item for item in ((message.metadata_json or {}) if message else {}).get("contexts", [])
+                         if item.get("type") == "resume" and item.get("id") == str(resume.id)), None)
+        authorize_resolved_task_resume(db, run=run, resume_id=str(resume.id), label=resume.title,
+                                      source="implicit" if selected and selected.get("presentation") == "implicit" else "explicit")
+    return TargetResolveResponse.model_validate(result)
+
+
+@router.post("/runs/{run_id}/resources:resolve-reference", response_model=ResourceReferenceResolveResponse)
+def resolve_run_resource_reference(
+    run_id: str, payload: ResourceReferenceResolveRequest, request: Request,
+    db: Session = Depends(get_db),
+) -> ResourceReferenceResolveResponse:
+    run, session = get_active_run(db, run_id)
+    return ResourceReferenceResolveResponse.model_validate(resolve_task_resource_reference(
+        db, run=run, session=session, payload=payload,
+        storage=request.app.state.storage, settings=request.app.state.settings,
+    ))
 
 
 @router.post(
@@ -344,13 +365,7 @@ def resolve_run_resume_reference(
     db: Session = Depends(get_db),
 ) -> ResumeReferenceResolveResponse:
     run, session = get_active_run(db, run_id)
-    result = resolve_resume_reference(
-        db, session=session, title=payload.title, resume_id=payload.resume_id,
-    )
-    if result.get("status") == "resolved" and result.get("target"):
-        authorize_resolved_task_resume(
-            db, run=run, resume_id=str(result["target"]["resume_id"]),
-        )
+    result = resolve_task_resume_reference(db, run=run, session=session, payload=payload)
     return ResumeReferenceResolveResponse.model_validate(result)
 
 

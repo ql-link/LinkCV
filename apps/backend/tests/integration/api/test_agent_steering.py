@@ -239,3 +239,37 @@ def test_inserted_proposal_revision_keeps_prior_proposal_until_replacement():
         assert by_id[original_id]['source_user_sequence_no'] == 1
         assert by_id[original_id]['superseded_by'] == replacement_id
         assert by_id[replacement_id]['source_user_sequence_no'] == 2
+
+
+def test_inserted_request_resolves_memory_into_its_own_task_and_rejects_old_source():
+    from tests.integration.api.test_agent_routes import generic_memory_fixture, generic_memory_run
+    app = build_app()
+    with TestClient(app) as client:
+        refs = generic_memory_fixture(app, client)
+        run_id, base = generic_memory_run(app, client, refs)
+        headers = {**internal_headers(), "X-Agent-User-Sequence": "3"}
+        activated = client.post(f"{base}/steering:activate", headers=headers, json={
+            "content": "继续刚才的文件", "idempotency_key": "memory_inserted_1",
+        })
+        assert activated.status_code == 200, activated.text
+        result = activated.json()
+        source = result["receipt"]["user_sequence_no"]
+        dataset = next(item for item in refs if item["type"] == "dataset")
+        ref = f"m:1:dataset:{dataset['id']}"
+        assert any(item["memory_ref"] == ref for item in result["conversationMemory"]["events"])
+        current = {**internal_headers(), "X-Agent-User-Sequence": str(source)}
+        assert client.post(f"{base}/tasks:plan", headers=current, json={"tasks": [{
+            "id": "next", "workflow": "material_lookup", "output": "advice", "label": "查看文件", "context_refs": [],
+        }]}).status_code == 200
+        assert client.post(f"{base}/tasks/next:status", headers=current, json={"status": "running"}).status_code == 200
+        payload = {"memory_ref": ref, "relation": "continuation", "referring_text": "继续刚才的文件"}
+        stale = client.post(f"{base}/resources:resolve-reference", headers=headers, json=payload)
+        assert stale.status_code == 409
+        assert stale.json()["error"] == "AGENT_REQUEST_SCOPE_STALE"
+        read = client.post(f"{base}/resources:resolve-reference", headers=current, json=payload)
+        assert read.status_code == 200, read.text
+        assert "MEMORY_FILE_MARKER" in read.json()["materials"][0]["content"]["dataset_markdown"]
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == run.id, AgentMessage.sequence_no == source))
+            assert message.metadata_json["resource_resolutions"][0]["task_id"] == "next"

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
 from linkresume.modules.agent.context_service import resolve_contexts
+from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.message_scope import active_message, lock_run, request_hash, user_messages
 from linkresume.modules.agent.models import AgentMessage, AgentRun
 from linkresume.modules.agent.schemas import AgentContextRef, AgentSelectionContext, SubmissionReceipt
@@ -68,8 +69,9 @@ def activate(db: Session, run_id: str, payload, *, storage, settings):
         # Replays use the activated snapshot, never inherit a later request.
         selection = (message.metadata_json or {}).get("selection_context")
         return {"receipt": previous.model_dump(), "contextMaterials": [
-            {**{key: value for key, value in item.items() if key != "presentation"}, "content": {}}
+            {**item, "content": {}}
             for item in (message.metadata_json or {}).get("contexts", [])],
+            "conversationMemory": conversation_memory(db, run, before_sequence_no=message.sequence_no),
             "selectionContext": selection, "revisionProposal": (message.metadata_json or {}).get("revision_proposal")}
     active_message(db, run, lock=True)
     current, resolved, selection, revision = resolve_input(db, run, session, payload, storage=storage, settings=settings)
@@ -97,6 +99,7 @@ def activate(db: Session, run_id: str, payload, *, storage, settings):
     db.commit()
     return {"receipt": receipt(db, run, payload.idempotency_key).model_dump(),
             "contextMaterials": [{**item.model_dump(mode="json"), "content": {}} for item in resolved.materials],
+            "conversationMemory": conversation_memory(db, run),
             "selectionContext": selection.model_dump(mode="json", by_alias=True) if selection else None,
             "revisionProposal": (message.metadata_json or {}).get("revision_proposal")}
 
