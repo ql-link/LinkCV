@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
+from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.models import (
     AgentMessage, AgentOperation, AgentRun, AgentSession, AgentStageEvent,
     ResumeChangeProposal,
@@ -161,6 +162,9 @@ async def stream_pi_run(
     headers = {"Authorization": f"Bearer {token.get_secret_value()}"}
     timeout = httpx.Timeout(settings.agent_run_timeout_seconds, connect=5.0)
     history = _conversation_history(app, run_public_id)
+    with app.state.session_factory() as memory_db:
+        memory_run = memory_db.scalar(select(AgentRun).where(AgentRun.public_id == run_public_id))
+        memory = conversation_memory(memory_db, memory_run) if memory_run else None
     revision_context = _revision_prompt(app, run_public_id, "")
     if revision_context:
         history.append({"role": "user", "content": revision_context})
@@ -193,6 +197,7 @@ async def stream_pi_run(
                     "submissionKey": initial_submission,
                     "content": content,
                     "history": history,
+                    **({"conversationMemory": memory} if memory else {}),
                     **(
                         {"clarificationAnswers": clarification_answers}
                         if clarification_answers

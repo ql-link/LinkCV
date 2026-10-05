@@ -10,6 +10,11 @@ import {
   configuredModels,
   streamWithRouteFallback,
   createResumeContextPolicy,
+  validateMemoryReference,
+  resumeReferenceParameters,
+  resourceReferenceParameters,
+  selectionForResume,
+  referenceNeedsResolution,
   createSerialExecutor,
   createSkillReadTool,
   enableToolOnce,
@@ -30,6 +35,7 @@ import {
   intentDecisionContext,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
+import { validateToolArguments } from "../../../third_party/pi/packages/ai/dist/utils/validation.js";
 
 const codedTestError = (code) => Object.assign(new Error(code), { code });
 
@@ -230,7 +236,7 @@ test("system prompt identifies the assistant as LinkResume", () => {
   assert.match(SYSTEM_PROMPT, /resolve_resume_reference/);
   assert.match(SYSTEM_PROMPT, /begin_final_response/);
   assert.match(SYSTEM_PROMPT, /临时工作过程/);
-  assert.match(SYSTEM_PROMPT, /不绑定或改写会话/);
+  assert.match(SYSTEM_PROMPT, /不绑定会话/);
   assert.doesNotMatch(SYSTEM_PROMPT, /通过 `@`/);
   assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
 });
@@ -924,4 +930,97 @@ test("career profile materials expose only the explicitly selected career fields
   assert.match(formatContextMaterials([profile]), /React, TypeScript/);
   assert.throws(() => validateContextMaterials([{ ...profile, content: { ...profile.content, contact_email: "fictional@example.test" } }]), /INVALID_CONTEXT_MATERIALS/);
   assert.throws(() => validateContextMaterials([profile, profile]), /INVALID_CONTEXT_MATERIALS/);
+
+});
+
+const identityMemory = { schema_version: 1, truncated: false, events: [
+  { memory_ref: "m:1:resume:11", source_sequence_no: 1,
+    resource: { type: "resume", id: "11", label: "张三后端简历" }, source: "explicit",
+    tasks: [{ id: "a", label: "分析第一段", status: "completed", result: "建议说明职责" }] },
+  { memory_ref: "m:3:resume:22", source_sequence_no: 3,
+    resource: { type: "resume", id: "22", label: "张三产品简历" }, source: "explicit", tasks: [] },
+] };
+
+test("conversation memory preserves several identities separately from authorized context", () => {
+  const prompt = buildAgentConversation({ content: "回到前面那份", history: [], conversationMemory: identityMemory });
+  assert.match(prompt, /m:1:resume:11/);
+  assert.match(prompt, /m:3:resume:22/);
+  assert.match(prompt, /不是本轮正文授权或默认目标/);
+  assert.doesNotMatch(prompt, /<authorized-context-catalog>/);
+  assert.match(SYSTEM_PROMPT, /没有指向时即使只有一个历史对象也不能自动读取/);
+});
+
+test("history resolution requires a real memory key and current user evidence", () => {
+  const params = { memory_ref: "m:1:resume:11", relation: "historical_selection", referring_text: "回到前面那份" };
+  assert.equal(validateMemoryReference(params, identityMemory, "请回到前面那份看第二段"), "11");
+  assert.throws(() => validateMemoryReference({ ...params, memory_ref: "m:9:resume:99" }, identityMemory, "回到前面那份"), /AGENT_MEMORY_REFERENCE_INVALID/);
+  assert.throws(() => validateMemoryReference(params, identityMemory, "聊聊面试"), /AGENT_MEMORY_REFERENCE_INVALID/);
+  assert.throws(() => validateMemoryReference({ ...params, resume_id: "22" }, identityMemory, "回到前面那份"), /AGENT_MEMORY_REFERENCE_INVALID/);
+  assert.equal(validateMemoryReference(params, identityMemory, "确认", [{ value: "回到前面那份" }]), "11");
+});
+
+test("reference schema separates explicit selection and current-turn memory evidence", () => {
+  const tool = { name: "resolve_resume_reference", parameters: resumeReferenceParameters(identityMemory, "再看第二段", [{ value: "回到前面那份" }]) };
+  const call = (args) => validateToolArguments(tool, { type: "toolCall", id: "fictional-call", name: tool.name, arguments: args });
+  const params = { memory_ref: "m:1:resume:11", relation: "continuation", referring_text: "再看第二段" };
+  assert.deepEqual(call(params), params);
+  assert.deepEqual(call({ title: "虚构简历" }), { title: "虚构简历" });
+  assert.deepEqual(call({}), {});
+  for (const invalid of [
+    { ...params, resume_id: "11" }, { ...params, title: "虚构简历" },
+    { ...params, memory_ref: "m:9:resume:99" }, { ...params, referring_text: "第二段实习经历" },
+    { memory_ref: params.memory_ref }, { relation: "continuation" },
+  ]) assert.throws(() => call(invalid));
+  assert.deepEqual(call({ ...params, referring_text: "回到前面那份" }), { ...params, referring_text: "回到前面那份" });
+  const empty = { ...tool, parameters: resumeReferenceParameters({ events: [] }, "继续") };
+  assert.throws(() => validateToolArguments(empty, { name: tool.name, arguments: params }));
+  const longRequest = "再看第二段" + "虚构说明".repeat(100);
+  const longTool = { ...tool, parameters: resumeReferenceParameters(identityMemory, longRequest, [{ value: "确认" }]) };
+  assert.deepEqual(validateToolArguments(longTool, { name: tool.name, arguments: params }), params);
+  assert.equal(validateMemoryReference(params, identityMemory, longRequest), "11");
+});
+
+test("resource reference schema includes all mention kinds while resume tools remain scoped", () => {
+  const memory = { ...identityMemory, events: ["user_profile", "resume", "dataset", "job", "application", "interview"].map((type) => ({
+    ...identityMemory.events[0], resource: { type, id: "11", label: "虚构对象" }, memory_ref: `m:1:${type}:11`,
+  })) };
+  const tool = { name: "resolve_resource_reference", parameters: resourceReferenceParameters(memory, "继续刚才的资料") };
+  for (const type of ["user_profile", "resume", "dataset", "job", "application", "interview"]) {
+    const params = { memory_ref: `m:1:${type}:11`, relation: "continuation", referring_text: "继续刚才的资料" };
+    assert.deepEqual(validateToolArguments(tool, { name: tool.name, arguments: params }), params);
+    assert.equal(validateMemoryReference(params, memory, "继续刚才的资料", [], null), "11");
+    if (type !== "resume") assert.throws(() => validateMemoryReference(params, memory, "继续刚才的资料"));
+    assert.throws(() => validateToolArguments(tool, { name: tool.name, arguments: { ...params, title: "伪造" } }));
+  }
+  const scoped = resumeReferenceParameters(memory, "继续刚才的资料");
+  assert.deepEqual(scoped.properties.memory_ref.enum, ["m:1:resume:11"]);
+});
+
+test("editor background permits switching instead of pinning the run", async () => {
+  const policy = createResumeContextPolicy([{ type: "resume", id: "11", presentation: "implicit" }]);
+  assert.equal(policy.resumeId, null);
+  assert.equal(policy.backgroundId, "11");
+  const calls = [];
+  const client = {
+    resolveTarget: async (params) => { calls.push(params); return { target: { resume_id: params.resume_id } }; },
+    resolveResumeReference: async (params) => { calls.push(params); return { target: { resume_id: "22" } }; },
+  };
+  const result = await policy.resolveReference(client, { title: "张三产品简历" });
+  assert.equal(result.target.resume_id, "22");
+  assert.deepEqual(calls, [{ title: "张三产品简历" }]);
+  await policy.resolveReference(client, {});
+  assert.deepEqual(calls[1], { resume_id: "11", scope_hint: "resume" });
+  const selection = { selected_text: "旧简历选区" };
+  assert.equal(selectionForResume(policy, "11", selection), selection);
+  assert.equal(selectionForResume(policy, "22", selection), null);
+  assert.equal(selectionForResume(policy, null, selection), null);
+});
+
+test("explicit selected identity survives duplicate title guesses but real alternatives are checked", () => {
+  const explicit = [{ type: "resume", id: "11", label: "张三后端简历" }];
+  assert.equal(referenceNeedsResolution({ title: "张三后端简历" }, explicit, "看看张三后端简历"), false);
+  assert.equal(referenceNeedsResolution({ resume_id: "999" }, explicit, "看看这份"), false);
+  assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, explicit, "换张三产品简历"), true);
+  assert.equal(referenceNeedsResolution({ memory_ref: "m:1:resume:22" }, explicit, "回到前面那份"), true);
+  assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, [{ ...explicit[0], presentation: "implicit" }], "换张三产品简历"), true);
 });
