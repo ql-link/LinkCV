@@ -222,17 +222,13 @@ function chooseScheduleDateTime(
   durationMinutes?: number,
 ) {
   const picker = openScheduleDateTimePicker(dialog, label, dateValue);
-  const startTime = within(picker).queryByLabelText("开始时间");
-  fireEvent.change(startTime ?? within(picker).getByLabelText("时间"), { target: { value: `${hour}:${minute}` } });
-  if (startTime && durationMinutes !== undefined) {
-    if ([30, 45, 60, 90, 120].includes(durationMinutes)) fireEvent.click(within(picker).getByRole("button", { name: `${durationMinutes} 分` }));
-    else {
-      fireEvent.click(within(picker).getByRole("button", { name: "自定义" }));
-      fireEvent.change(within(picker).getByLabelText("自定义时长（分钟）"), { target: { value: String(durationMinutes) } });
-    }
-  }
+  fireEvent.change(within(picker).getByLabelText("时间"), { target: { value: `${hour}:${minute}` } });
   fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
-  if (!startTime && durationMinutes !== undefined) chooseSelectOption(dialog, "时长", `${durationMinutes} 分钟`);
+  if (durationMinutes !== undefined) {
+    const duration = within(dialog).queryByLabelText("时长（分钟）");
+    if (duration) fireEvent.change(duration, { target: { value: String(durationMinutes) } });
+    else chooseSelectOption(dialog, "时长", `${durationMinutes} 分钟`);
+  }
 }
 
 function chooseSelectOption(dialog: HTMLElement, label: string, option: string) {
@@ -2426,9 +2422,12 @@ describe("InterviewCenterPage API projections", () => {
     expect(within(dialog).queryByLabelText("当前状态")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("测评链接（选填）")).toBeInTheDocument();
     expect(within(dialog).queryByRole("radiogroup", { name: "时间安排" })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "开放时间" })).toHaveTextContent("收到通知就开放");
+    expect(within(dialog).getByRole("button", { name: "可开始作答时间" })).toHaveTextContent("现在即可开始作答");
     fireEvent.change(within(dialog).getByLabelText("测评链接（选填）"), { target: { value: "https://assessment.example/68" } });
-    chooseScheduleDateTime(dialog, "开放时间", "2026-09-12", "09", "17");
+    chooseScheduleDateTime(dialog, "可开始作答时间", "2026-09-12", "09", "17");
+    for (const name of ["24 小时", "3 天后", "7 天后"]) {
+      expect(within(dialog).queryByRole("button", { name })).not.toBeInTheDocument();
+    }
     chooseScheduleDateTime(dialog, "截止时间", "2026-09-15", "09", "17");
     expect(within(dialog).getByRole("button", { name: /^(添加(测评|笔试|AI 面试|面试|HR 面)|记录 Offer)$/ })).toBeEnabled();
     fireEvent.click(within(dialog).getByRole("button", { name: /^(添加(测评|笔试|AI 面试|面试|HR 面)|记录 Offer)$/ }));
@@ -2519,7 +2518,7 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(within(dialog).getByRole("radio", { name: "测评" }));
     expect(within(dialog).getByLabelText("测评链接（选填）")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "截止时间" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "3 天后" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "3 天后" })).not.toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("radio", { name: "笔试" }));
     expect(within(dialog).getByRole("button", { name: "笔试时间" })).toBeInTheDocument();
@@ -2590,18 +2589,50 @@ describe("InterviewCenterPage API projections", () => {
     fireEvent.click(await screen.findByRole("button", { name: /添加下一(阶段|轮)|进入下一阶段/ }));
     const dialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
     fireEvent.click(within(dialog).getByRole("radio", { name: "笔试" }));
+    const beforeOpen = new Date();
     const picker = openScheduleDateTimePicker(dialog, "笔试时间", "2026-09-10");
+    const afterOpen = new Date();
+    const localTime = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+    expect([localTime(beforeOpen), localTime(afterOpen)]).toContain((within(picker).getByLabelText("时间") as HTMLInputElement).value);
 
-    expect(within(picker).getByText("选择笔试时间")).toBeInTheDocument();
+    expect(within(picker).getByText("选择日期和时间")).toBeInTheDocument();
     expect(picker.querySelector('input[type="time"]')).not.toBeInTheDocument();
-    fireEvent.click(within(within(picker).getByRole("listbox", { name: "时间选项" })).getByRole("option", { name: "14:00" }));
+    fireEvent.focus(within(picker).getByLabelText("时间"));
+    for (const [label, last] of [["小时", "23"], ["分钟", "59"]]) {
+      const list = within(picker).getByRole("listbox", { name: label });
+      fireEvent.keyDown(within(list).getByRole("option", { name: last }), { key: "ArrowDown" });
+      expect(within(list).getByRole("option", { name: "00" })).toHaveAttribute("aria-selected", "true");
+      fireEvent.keyDown(within(list).getByRole("option", { name: "00" }), { key: "ArrowUp" });
+      expect(within(list).getByRole("option", { name: last })).toHaveAttribute("aria-selected", "true");
+      Object.defineProperty(list, "scrollHeight", { configurable: true, value: 3000 });
+      list.scrollTop = 2100;
+      fireEvent.scroll(list);
+      expect(list.scrollTop).toBe(1100);
+      list.scrollTop = 900;
+      fireEvent.scroll(list);
+      expect(list.scrollTop).toBe(1900);
+    }
+    fireEvent.click(within(within(picker).getByRole("listbox", { name: "小时" })).getByRole("option", { name: "14" }));
+    fireEvent.click(within(within(picker).getByRole("listbox", { name: "分钟" })).getByRole("option", { name: "07" }));
+    expect(within(picker).getByLabelText("时间")).toHaveValue("14:07");
+    fireEvent.change(within(picker).getByLabelText("时间"), { target: { value: "25:75" } });
+    expect(within(picker).getByRole("alert")).toHaveTextContent("请输入有效时间");
+    expect(within(picker).getByRole("button", { name: "确定" })).toBeDisabled();
+    fireEvent.change(within(picker).getByLabelText("时间"), { target: { value: "1400" } });
     fireEvent.click(within(picker).getByRole("button", { name: "确定" }));
     expect(within(dialog).getByRole("button", { name: "笔试时间" })).toHaveTextContent("2026-09-10 14:00");
+    const reopened = openScheduleDateTimePicker(dialog, "笔试时间", "2026-09-11");
+    fireEvent.change(within(reopened).getByLabelText("时间"), { target: { value: "08:17" } });
+    fireEvent.keyDown(reopened, { key: "Escape" });
+    expect(within(dialog).getByRole("button", { name: "笔试时间" })).toHaveTextContent("2026-09-10 14:00");
+    expect(within(dialog).getByRole("button", { name: "笔试时间" })).toHaveFocus();
+
     expect(within(dialog).getByRole("button", { name: "时长" })).toHaveTextContent("60 分钟");
   });
 
   it("keeps the schedule picker inside a narrow viewport without scrolling the dialog", async () => {
     const previousInnerWidth = window.innerWidth;
+    const previousInnerHeight = window.innerHeight;
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 700 });
     const waitingApplication = {
       ...application,
@@ -2655,10 +2686,14 @@ describe("InterviewCenterPage API projections", () => {
       const picker = within(dialog).getByRole("dialog", { name: "选择笔试时间" });
       expect(picker.parentElement).toBe(dialog);
       expect(panel.contains(picker)).toBe(false);
-      expect(picker).toHaveStyle({ left: "22px", right: "auto", top: "112px" });
+      expect(picker).toHaveStyle({ left: "16px", right: "auto", top: "16px", width: "320px", maxHeight: "480px" });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 420 });
+      fireEvent(window, new Event("resize"));
+      expect(picker).toHaveStyle({ top: "16px", maxHeight: "368px" });
       expect(panel.scrollTop).toBe(96);
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: previousInnerWidth });
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: previousInnerHeight });
     }
   });
 
@@ -2682,7 +2717,7 @@ describe("InterviewCenterPage API projections", () => {
     const stageDialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
     fireEvent.click(within(stageDialog).getByRole("radio", { name: "测评" }));
     fireEvent.change(within(stageDialog).getByLabelText("测评链接（选填）"), { target: { value: "https://assessment.example/fail" } });
-    chooseScheduleDateTime(stageDialog, "开放时间", "2026-09-10", "09", "30");
+    chooseScheduleDateTime(stageDialog, "可开始作答时间", "2026-09-10", "09", "30");
     chooseScheduleDateTime(stageDialog, "截止时间", "2026-09-13", "09", "30");
     fireEvent.click(within(stageDialog).getByRole("button", { name: /^(添加(测评|笔试|AI 面试|面试|HR 面)|记录 Offer)$/ }));
 
@@ -2712,7 +2747,7 @@ describe("InterviewCenterPage API projections", () => {
     const stageDialog = await screen.findByRole("dialog", { name: "添加下一阶段" });
     fireEvent.click(within(stageDialog).getByRole("radio", { name: "测评" }));
     fireEvent.change(within(stageDialog).getByLabelText("测评链接（选填）"), { target: { value: "https://assessment.example/conflict" } });
-    chooseScheduleDateTime(stageDialog, "开放时间", "2026-09-10", "09", "30");
+    chooseScheduleDateTime(stageDialog, "可开始作答时间", "2026-09-10", "09", "30");
     chooseScheduleDateTime(stageDialog, "截止时间", "2026-09-13", "09", "30");
     fireEvent.click(within(stageDialog).getByRole("button", { name: /^(添加(测评|笔试|AI 面试|面试|HR 面)|记录 Offer)$/ }));
 
@@ -3002,15 +3037,17 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByRole("heading", { name: "我的作答计划" })).toBeInTheDocument();
 
     const outsidePicker = openScheduleDateTimePicker(document.body, "计划作答时间", "2026-09-13");
-    expect(within(outsidePicker).getByText("选择作答时间段")).toBeInTheDocument();
-    expect(within(outsidePicker).getByText("可安排：9月10日 12:00 – 9月13日 13:00")).toBeInTheDocument();
-    fireEvent.change(within(outsidePicker).getByLabelText("开始时间"), { target: { value: "12:00" } });
-    fireEvent.click(within(outsidePicker).getByRole("button", { name: "120 分" }));
+    expect(within(outsidePicker).getByText("选择日期和时间")).toBeInTheDocument();
+    fireEvent.change(within(outsidePicker).getByLabelText("时间"), { target: { value: "12:00" } });
+    fireEvent.change(screen.getByLabelText("时长（分钟）"), { target: { value: "120" } });
     expect(within(outsidePicker).getByRole("button", { name: "确定" })).toBeDisabled();
     fireEvent.keyDown(outsidePicker, { key: "Escape" });
     expect(mocks.updateInterviewAnswerPlan).not.toHaveBeenCalled();
 
     chooseScheduleDateTime(document.body, "计划作答时间", "2026-09-11", "19", "00", 120);
+    expect(screen.getByRole("button", { name: "计划作答时间" })).toHaveTextContent("09-11 19:00");
+    expect(screen.getByRole("button", { name: "计划作答时间" })).not.toHaveTextContent("21:00");
+    expect(screen.getByLabelText("时长（分钟）")).toHaveValue(120);
     fireEvent.click(screen.getByRole("button", { name: "保存作答计划" }));
 
     await waitFor(() => expect(mocks.updateInterviewAnswerPlan).toHaveBeenCalledWith("31", {
