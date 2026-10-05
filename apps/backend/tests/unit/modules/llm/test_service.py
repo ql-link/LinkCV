@@ -83,7 +83,7 @@ def bind_intent(sessions):
         route = db.get(LLMModelRoute, 1)
         connection = db.get(LLMProviderConnection, route.connection_id)
         binding = LLMUseCaseRoute(use_case=ASSISTANT_INTENT, route_id=route.id,
-                                  protocol_code="openai_chat", priority=100, enabled=True,
+                                  protocol_code="openai_chat", priority=100, is_enabled=True,
                                   validated_at=datetime.now(timezone.utc))
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
