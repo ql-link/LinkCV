@@ -13,7 +13,7 @@ export function MessageQueue({ controller, running, onEdit }: {
   onEdit: (item: QueueItem) => void;
 }) {
   const { queue } = controller;
-  if (!queue.items.length && !controller.error) return null;
+  if (!queue.items.length && !controller.error && !(queue.dispatch && queue.paused)) return null;
 
   return (
     <section className="agent-message-queue" aria-label="待发送消息">
@@ -33,6 +33,7 @@ export function MessageQueue({ controller, running, onEdit }: {
         </Button>
       </div>}
       {controller.error && <p className="agent-message-queue-error" role="alert">{controller.error}</p>}
+      {queue.dispatch && queue.paused && <Button className="agent-queue-button" type="button" variant="ghost" size="sm" onClick={() => void controller.recover()}>核实当前运行</Button>}
       <ol className="agent-message-queue-list">
         {queue.items.map((item, index) => {
           const editable = item.state === "queued" && !item.submissionKey;

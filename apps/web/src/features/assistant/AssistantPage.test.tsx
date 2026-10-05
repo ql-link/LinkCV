@@ -65,7 +65,7 @@ const session: AgentSession = {
 };
 
 beforeEach(() => {
-  installMessageQueueEnvironment();
+  installMessageQueueEnvironment({ secureCrypto: true });
   window.history.replaceState(null, "", "/assistant");
   useResumeStore.setState({
     ...originalResumeStore,
@@ -118,7 +118,7 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(stream).toHaveBeenCalledOnce());
     expect(create).toHaveBeenCalledOnce();
     expect(stream.mock.calls[0][1].content).toBe("第一条指令");
-    expect(readQueue(queueKey("1", session.id)).items.map((item) => item.request.content)).toEqual(["第二条指令"]);
+    expect((await readQueue(queueKey("1", session.id))).items.map((item) => item.request.content)).toEqual(["第二条指令"]);
     expect(input).toHaveTextContent("后来输入的草稿");
     unmount();
     await act(async () => { finish(); });
@@ -1632,7 +1632,7 @@ describe("AssistantPage", () => {
     expect(alert.parentElement).toBe(document.body);
     expect(container.contains(alert)).toBe(false);
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
-    await waitFor(() => expect(readQueue(queueKey("1", session.id)).paused).toBe(true));
+    await waitFor(async () => expect((await readQueue(queueKey("1", session.id))).paused).toBe(true));
   });
 
   it("收到 run.cancelled 后刷新会话仍保留停止终态", async () => {
@@ -1739,8 +1739,10 @@ describe("Figma 文件与截图交互", () => {
     render(<AssistantPage />);
     await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "生成一份面试准备文档");
     await user.click(screen.getByRole("button", { name: "发送" }));
-    await user.click(await screen.findByRole("button", { name: "打开" }));
-    const panel = screen.getByRole("complementary", { name: "文件预览" });
+    await screen.findByRole("button", { name: "打开" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "打开" }));
+    const panel = await screen.findByRole("complementary", { name: "文件预览" });
     expect(within(panel).getByRole("heading", { name: "面试准备" })).toBeInTheDocument();
     await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
     await confirmDocumentSave(user);
@@ -1769,8 +1771,10 @@ describe("Figma 文件与截图交互", () => {
     render(<AssistantPage />);
     await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "生成一份面试准备文档");
     await user.click(screen.getByRole("button", { name: "发送" }));
-    await user.click(await screen.findByRole("button", { name: "打开" }));
-    const panel = screen.getByRole("complementary", { name: "文件预览" });
+    await screen.findByRole("button", { name: "打开" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "打开" }));
+    const panel = await screen.findByRole("complementary", { name: "文件预览" });
     await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
     await confirmDocumentSave(user);
     expect(await screen.findByText("已保存到资料库：面试准备-1002.md。")).toBeInTheDocument();
@@ -1786,8 +1790,10 @@ describe("Figma 文件与截图交互", () => {
     render(<AssistantPage />);
     await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "生成一份面试准备文档");
     await user.click(screen.getByRole("button", { name: "发送" }));
-    await user.click(await screen.findByRole("button", { name: "打开" }));
-    const panel = screen.getByRole("complementary", { name: "文件预览" });
+    await screen.findByRole("button", { name: "打开" });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "打开" }));
+    const panel = await screen.findByRole("complementary", { name: "文件预览" });
     await user.click(within(panel).getByRole("button", { name: "保存到资料库" }));
     await confirmDocumentSave(user);
     expect(await screen.findByText("保存到资料库失败，请稍后重试。")).toBeInTheDocument();

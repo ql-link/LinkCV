@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiRequestError, type AgentStreamEvent, type AgentSubmissionReceipt } from "../../api/client";
-import { changeQueue, emptyQueue, freezeItem, queueKey, queueSupported, readQueue, QUEUE_CHANGE_EVENT,
+import { changeQueue, emptyQueue, freezeItem, queueKey, queueSupported, readQueue, queueId, subscribeQueue,
   enterQueue, leaveQueue, submissionPayload, type MessageQueue, type QueueDraft, type QueueItem } from "./messageQueue";
 
 type Options = {
@@ -25,12 +25,12 @@ export function useMessageQueue(options: Options) {
   const keyRef = useRef(key);
   keyRef.current = key;
   const mounted = useRef(false);
-  const sending = useRef<QueueItem | null>(null);
+  const sending = useRef<{ item: QueueItem; ownerId: string; runId?: string; terminal?: string } | null>(null);
   const ordinaryWorking = useRef(false);
   const steeringWorking = useRef(false);
   const [processing, setProcessing] = useState(false);
 
-  const mutate = useCallback(async (change: (value: MessageQueue) => void | Promise<void>, targetKey = key) => {
+  const mutate = useCallback(async (change: (value: MessageQueue) => void, targetKey = key) => {
     if (!targetKey) throw new Error("请先登录并打开会话，输入内容已保留。");
     try {
       const next = await changeQueue(targetKey, change);
@@ -48,6 +48,17 @@ export function useMessageQueue(options: Options) {
   const applyReceipt = useCallback(async (item: QueueItem, receipt: AgentSubmissionReceipt, targetKey: string) => {
     await mutate((value) => {
       const stored = value.items.find((entry) => entry.itemId === item.itemId && entry.submissionKey === item.submissionKey);
+      if (item.mode === "follow_up") {
+        if (value.dispatch && value.dispatch.submissionKey === item.submissionKey) {
+          value.dispatch.runId = receipt.run_id;
+        }
+        if (stored && receipt.state === "applied") value.items = value.items.filter((entry) => entry !== stored);
+        else if (stored) {
+          stored.state = "uncertain";
+          value.paused = true; value.pauseReason = "发送结果待核实";
+        }
+        return;
+      }
       if (!stored) return;
       if (receipt.state === "applied") {
         value.items = value.items.filter((entry) => entry !== stored);
@@ -71,10 +82,22 @@ export function useMessageQueue(options: Options) {
     }, targetKey);
   }, [mutate]);
 
+  const reconcileDispatch = useCallback(async (dispatch: NonNullable<MessageQueue["dispatch"]>, receipt: AgentSubmissionReceipt, targetKey: string) => {
+    await mutate((value) => {
+      if (value.dispatch?.ownerId !== dispatch.ownerId || value.dispatch.submissionKey !== receipt.submission_key) return;
+      value.dispatch.runId = receipt.run_id;
+      // A missing receipt or a stale tab is never evidence that the server stopped.
+      if (receipt.state === "applied" && receipt.run_status && receipt.run_status !== "running") {
+        delete value.dispatch;
+        if (receipt.run_status !== "succeeded") { value.paused = true; value.pauseReason = "本轮已停止，队列暂停"; }
+      }
+    }, targetKey);
+  }, [mutate]);
+
   const recover = useCallback(async () => {
     if (!key) return;
     let snapshot: MessageQueue;
-    try { snapshot = readQueue(key); } catch { return; }
+    try { snapshot = await readQueue(key); } catch { return; }
     for (const item of snapshot.items) {
       if (!item.submissionKey || !["submitting", "waiting_insert", "uncertain"].includes(item.state)) continue;
       try {
@@ -84,13 +107,25 @@ export function useMessageQueue(options: Options) {
         await applyReceipt(item, receipt, key);
       } catch (reason) {
         await mutate((value) => {
-          const stored = value.items.find((entry) => entry.itemId === item.itemId);
-          if (stored) { stored.state = "uncertain"; stored.error = "发送结果待核实，请稍后再次核实。"; }
+          const stored = value.items.find((entry) => entry.itemId === item.itemId && entry.submissionKey === item.submissionKey);
+          if (!stored) return;
+          stored.state = "uncertain"; stored.error = "发送结果待核实，请稍后再次核实。";
           value.paused = true; value.pauseReason = "发送结果待核实";
         }, key).catch(() => undefined);
       }
     }
-  }, [key, options.sessionId, applyReceipt, mutate]);
+    if (snapshot.dispatch) {
+      try {
+        const receipt = await api.getAgentSubmission(options.sessionId!, snapshot.dispatch.submissionKey);
+        await reconcileDispatch(snapshot.dispatch, receipt, key);
+      } catch {
+        await mutate((value) => {
+          if (value.dispatch?.ownerId !== snapshot.dispatch?.ownerId) return;
+          value.paused = true; value.pauseReason = "发送结果待核实";
+        }, key).catch(() => undefined);
+      }
+    }
+  }, [key, options.sessionId, applyReceipt, reconcileDispatch, mutate]);
 
   useEffect(() => {
     mounted.current = true;
@@ -100,15 +135,16 @@ export function useMessageQueue(options: Options) {
     setError(null);
     if (!key || !queueSupported()) return () => { mounted.current = false; };
     const fresh = enterQueue(key);
+    let disposed = false;
     const refresh = () => {
-      try { setQueue(readQueue(key)); } catch (reason) { setError((reason as Error).message); }
+      void readQueue(key).then((value) => {
+        if (!disposed) setQueue((previous) => value.revision === previous.revision ? previous
+          : value.revision > previous.revision || value.revision === 0 ? value : previous);
+      }, (reason) => { if (!disposed) setError((reason as Error).message); });
     };
-    const storage = (event: StorageEvent) => { if (event.key === key || event.key === null) refresh(); };
-    const local = (event: Event) => { if ((event as CustomEvent).detail === key) refresh(); };
-    window.addEventListener("storage", storage);
-    window.addEventListener(QUEUE_CHANGE_EVENT, local);
+    const unsubscribe = subscribeQueue(key, refresh);
     void mutate((value) => {
-      if (value.items.length && !fresh) {
+      if ((value.items.length || value.dispatch) && !fresh) {
         value.paused = true; value.pauseReason = "恢复队列后请主动继续";
         for (const item of value.items) if (["submitting", "waiting_insert"].includes(item.state)) item.state = "uncertain";
       }
@@ -118,10 +154,10 @@ export function useMessageQueue(options: Options) {
     window.addEventListener("pagehide", leave);
     document.addEventListener("visibilitychange", visibility);
     return () => {
+      disposed = true;
       mounted.current = false;
       leaveQueue(key);
-      window.removeEventListener("storage", storage);
-      window.removeEventListener(QUEUE_CHANGE_EVENT, local);
+      unsubscribe();
       window.removeEventListener("pagehide", leave);
       document.removeEventListener("visibilitychange", visibility);
       void pause("页面已离开，队列暂停");
@@ -141,17 +177,18 @@ export function useMessageQueue(options: Options) {
     const candidate = options.running
       ? queue.items.find((item) => item.mode === "steer" && item.state === "queued")
       : queue.items[0];
-    if (!candidate || candidate.state !== "queued") return;
+    if (!candidate || candidate.state !== "queued" || (!options.running && queue.dispatch)) return;
     if (options.running && (!options.runId || queue.items.some((item) => item.mode === "steer" && ["submitting", "waiting_insert", "uncertain"].includes(item.state)))) return;
     worker.current = true;
     setProcessing(true);
     const send = options.send;
     const dispatch = async () => {
       let claimed: QueueItem | null = null;
-      await mutate(async (value) => {
+      const ownerId = queueId();
+      await mutate((value) => {
         if (!mounted.current || keyRef.current !== key || document.visibilityState !== "visible"
             || value.paused || current.current.visible === false || current.current.blocked
-            || options.running !== current.current.running) return;
+            || options.running !== current.current.running || (!current.current.running && value.dispatch)) return;
         const first = current.current.running
           ? value.items.find((entry) => entry.mode === "steer" && entry.state === "queued")
           : value.items[0];
@@ -168,15 +205,17 @@ export function useMessageQueue(options: Options) {
         if (!item.submissionKey && current.current.prepareRequest) {
           item.request = structuredClone(current.current.prepareRequest(item.request));
         }
-        await freezeItem(item);
+        freezeItem(item);
+        if (item.mode === "follow_up") value.dispatch = { ownerId, submissionKey: item.submissionKey! };
         claimed = structuredClone(item);
       }, key);
       const item = claimed as QueueItem | null;
       if (!item) return;
-      sending.current = item;
+      if (item.mode === "follow_up") sending.current = { item, ownerId };
+      let requestFinished = false;
       try {
         if (!mounted.current || keyRef.current !== key || document.visibilityState !== "visible"
-            || current.current.visible === false || current.current.blocked || readQueue(key).paused) {
+            || current.current.visible === false || current.current.blocked || (await readQueue(key)).paused) {
           throw new ApiRequestError(409, "AGENT_QUEUE_PAUSED");
         }
         if (item.mode === "steer") {
@@ -184,15 +223,11 @@ export function useMessageQueue(options: Options) {
           await applyReceipt(item, receipt, key);
         } else {
           await send(item);
-          if (readQueue(key).items.some((entry) => entry.submissionKey === item.submissionKey)) {
-            try { await applyReceipt(item, await api.getAgentSubmission(options.sessionId!, item.submissionKey!), key); }
-            catch {
-              await mutate((value) => {
-                const stored = value.items.find((entry) => entry.submissionKey === item.submissionKey);
-                if (stored) stored.state = "uncertain";
-                value.paused = true; value.pauseReason = "发送结果待核实";
-              }, key);
-            }
+          requestFinished = true;
+          if (!sending.current?.terminal) {
+            const receipt = await api.getAgentSubmission(options.sessionId!, item.submissionKey!);
+            await applyReceipt(item, receipt, key);
+            await reconcileDispatch({ ownerId, submissionKey: item.submissionKey! }, receipt, key);
           }
         }
       } catch (reason) {
@@ -200,31 +235,43 @@ export function useMessageQueue(options: Options) {
           try { await applyReceipt(item, await api.getAgentSteering(item.targetRunId!, item.submissionKey!), key); return; }
           catch { /* Keep the original frozen input if lookup also fails. */ }
         }
-        const known = reason instanceof ApiRequestError && ((reason.status >= 400 && reason.status < 500) || reason.message === "AGENT_NOT_READY")
+        const known = !requestFinished && !(item.mode === "follow_up" && sending.current?.runId)
+          && reason instanceof ApiRequestError && ((reason.status >= 400 && reason.status < 500) || reason.message === "AGENT_NOT_READY")
           && !["AGENT_SUBMISSION_CONFLICT", "AGENT_STEER_TARGET_FINISHED"].includes(reason.message);
         await mutate((value) => {
+          if (item.mode === "follow_up" && value.dispatch?.ownerId !== ownerId) return;
           const stored = value.items.find((entry) => entry.itemId === item.itemId);
           if (stored) {
             stored.state = known ? "blocked" : "uncertain";
             stored.retrySafe = known;
             stored.error = known ? "请求未被接受，请调整内容或引用后重试。" : "发送结果待核实。";
           }
+          if (known && value.dispatch?.ownerId === ownerId) delete value.dispatch;
           value.paused = true; value.pauseReason = known ? "消息发送受阻" : "发送结果待核实";
         }, key);
-      } finally { sending.current = null; }
+      } finally {
+        if (item.mode === "follow_up" && sending.current?.ownerId === ownerId) {
+          const terminal = sending.current.terminal;
+          if (terminal) await mutate((value) => {
+            if (value.dispatch?.ownerId !== ownerId) return;
+            delete value.dispatch;
+            if (terminal !== "run.completed") { value.paused = true; value.pauseReason = "本轮已停止，队列暂停"; }
+          }, key);
+          sending.current = null;
+        }
+      }
     };
-    // An ordinary dispatch owns this lock until its stream ends, so a second
-    // tab cannot start the next run after the first item leaves the queue.
-    // Steering uses its own worker and can enter while that stream is open.
-    const operation = options.running ? dispatch() : navigator.locks.request(`${key}:dispatch`, dispatch);
+    // The short DB transaction claims ownership; network work stays outside it.
+    const operation = dispatch();
     void operation.catch(() => undefined).finally(() => { worker.current = false; setProcessing((value) => !value); });
-  }, [key, queue, options.running, options.runId, options.blocked, options.visible, editingId, error, processing, mutate, applyReceipt]);
+  }, [key, queue, options.running, options.runId, options.blocked, options.visible, editingId, error, processing, mutate, applyReceipt, reconcileDispatch]);
 
+  const needsRecovery = Boolean(queue.dispatch || queue.items.some((item) => item.state === "waiting_insert"));
   useEffect(() => {
-    if (!queue.items.some((item) => item.state === "waiting_insert")) return;
+    if (!needsRecovery) return;
     const timer = window.setInterval(() => { void recover(); }, 3000);
     return () => window.clearInterval(timer);
-  }, [queue.items, recover]);
+  }, [needsRecovery, recover]);
 
   const onEvent = (event: AgentStreamEvent) => {
     if (!key) return;
@@ -233,10 +280,21 @@ export function useMessageQueue(options: Options) {
     }
     if (event.type === "run.started") {
       const submitted = sending.current;
-      if (submitted?.mode === "follow_up") void mutate((value) => {
-        value.items = value.items.filter((item) => item.submissionKey !== submitted.submissionKey);
-      }).catch(() => undefined);
+      if (submitted && (!event.submissionKey || event.submissionKey === submitted.item.submissionKey)) {
+        submitted.runId = event.runId;
+        void mutate((value) => {
+          if (value.dispatch?.ownerId === submitted.ownerId) value.dispatch.runId = event.runId;
+          value.items = value.items.filter((item) => item.submissionKey !== submitted.item.submissionKey);
+        }).catch(() => undefined);
+      }
     }
+    if (["run.completed", "run.failed", "run.cancelled"].includes(event.type) && sending.current
+        && "runId" in event && event.runId === sending.current.runId) sending.current.terminal = event.type;
+    if (["run.completed", "run.failed", "run.cancelled"].includes(event.type) && "runId" in event) void mutate((value) => {
+      if (value.dispatch?.runId !== event.runId) return;
+      delete value.dispatch;
+      if (event.type !== "run.completed") { value.paused = true; value.pauseReason = "本轮已停止，队列暂停"; }
+    }).catch(() => undefined);
     if (event.type === "user.message.applied") void mutate((value) => {
       value.items = value.items.filter((item) => item.submissionKey !== event.submissionKey);
     }).catch(() => undefined);
@@ -319,6 +377,7 @@ export function useMessageQueue(options: Options) {
     retryOriginal: (itemId: string) => mutate((value) => {
       const item = value.items.find((entry) => entry.itemId === itemId);
       if (item?.state !== "uncertain" || item.mode !== "follow_up" || !item.submissionKey) return;
+      if (value.dispatch && value.dispatch.submissionKey === item.submissionKey) delete value.dispatch;
       item.state = "queued"; item.error = undefined;
       value.paused = false; value.pauseReason = null;
     }).catch(() => undefined),

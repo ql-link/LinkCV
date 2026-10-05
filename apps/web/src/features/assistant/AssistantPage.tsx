@@ -1008,7 +1008,9 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           : message
       )),
     }));
-    if (runId) await api.cancelAgentRun(runId).catch(() => undefined);
+    if (runId) await api.cancelAgentRun(runId).then((receipt) => {
+      if (receipt.status === "cancelled" && activeKeyRef.current === key) messageQueueRef.current.onEvent({ type: "run.cancelled", runId });
+    }, () => undefined);
     updateConversation(key, { cancelling: false });
   }, [conversationStates, messageQueue.pause, updateConversation]);
 

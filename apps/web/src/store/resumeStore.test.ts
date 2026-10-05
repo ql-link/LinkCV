@@ -10,7 +10,7 @@ import {
   type LayoutPlan,
 } from "../api/resumeContract";
 import { resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
-import { enqueueMessage, queueKey } from "../features/agent/messageQueue";
+import { enqueueMessage, queueKey, readQueue } from "../features/agent/messageQueue";
 import { installMessageQueueEnvironment } from "../test/messageQueueEnvironment";
 import {
   defaultSettings,
@@ -177,8 +177,8 @@ describe("logout message queue cleanup", () => {
     await enqueueMessage("another-user", "conversation", { content: "其他账号待发送消息" });
     vi.spyOn(api, "logout").mockResolvedValue({ ok: true });
     await useResumeStore.getState().logout();
-    expect(localStorage.getItem(queueKey(user.id, "conversation"))).toBeNull();
-    expect(localStorage.getItem(queueKey("another-user", "conversation"))).not.toBeNull();
+    expect((await readQueue(queueKey(user.id, "conversation"))).items).toHaveLength(0);
+    expect((await readQueue(queueKey("another-user", "conversation"))).items).toHaveLength(1);
     expect(useResumeStore.getState()).toMatchObject({ user: null, authStatus: "guest", error: null });
   });
 
@@ -186,6 +186,7 @@ describe("logout message queue cleanup", () => {
     installMessageQueueEnvironment();
     useResumeStore.setState({ user });
     await enqueueMessage(user.id, "conversation", { content: "待发送消息" });
+    localStorage.setItem(queueKey(user.id, "legacy"), "legacy data");
     vi.spyOn(localStorage, "removeItem").mockImplementation(() => { throw new Error("storage denied"); });
     const logout = vi.spyOn(api, "logout").mockResolvedValue({ ok: true });
     await useResumeStore.getState().logout();
