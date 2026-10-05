@@ -429,7 +429,7 @@ def _make_material(
     if len(encoded) > MAX_ITEM_CHARS:
         content = {"summary": _clip(encoded, MAX_ITEM_CHARS)}
     return AgentContextMaterial(
-        **snapshot.model_dump(exclude={"presentation"}),
+        **snapshot.model_dump(),
         content=content,
     )
 
@@ -684,6 +684,7 @@ def resolve_contexts(
         else:
             _, _, snapshot, material = _resolve_interview(db, user_id=user_id, ref=ref)
         snapshot.presentation = ref.presentation
+        material.presentation = ref.presentation
         snapshots.append(snapshot)
         materials.append(material)
 

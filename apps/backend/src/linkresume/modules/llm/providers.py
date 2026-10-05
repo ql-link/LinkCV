@@ -30,7 +30,7 @@ class ProviderSpec:
 
 PROVIDERS = {
     spec.code: spec for spec in (
-        ProviderSpec("aihubmix", "AIHubMix", frozenset({OPENAI_CHAT}), frozenset({"model"})),
+        ProviderSpec("aihubmix", "AIHubMix", frozenset({OPENAI_CHAT, OPENAI_RESPONSES}), frozenset({"model"})),
         ProviderSpec("siliconflow", "硅基流动", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("deepseek", "DeepSeek 直连", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("volcengine", "火山方舟", frozenset({OPENAI_CHAT, OPENAI_RESPONSES}), frozenset({"model", "endpoint"})),

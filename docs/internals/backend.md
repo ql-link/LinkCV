@@ -184,6 +184,8 @@ scene 使用结构化 hash 保存 state、Web poll token 哈希、claim 所有�
 
 ## 统一 LLM 调用
 
+Agent 的 `conversation_memory.py` 从既有消息元数据构建有界资源身份记忆，`pi_client.py` 与聊天文字、本轮授权材料分开发送。`resumes:resolve-reference` 支持当前点名和历史指代，服务端按运行反查用户并复验近期同会话来源，解析后才写入当前任务授权及轻量来源记录；不新增表、迁移或会话默认简历。目标冻结后有效权限按该 ID 收敛，原任务计划保持不可变。完整记忆与失败语义见 [Agent 运行时](agent-runtime.md)。
+
 Agent 的 Pi SSE 由 `modules/agent/run_stream.py` 在 FastAPI 进程内独立消费并缓冲；浏览器切页、切换会话或刷新只断开当前订阅，返回后可按本人会话查询 active run 并重放事件。只有显式取消才停止模型运行；后端进程重启而缓冲丢失时，遗留 running run 以 `AGENT_STREAM_INCOMPLETE` 失败收口，不重复调用模型。
 
 一次 Agent run 的任务清单保存在所属用户消息的 `metadata_json.agent_tasks`，不增加并行的任务表。内部计划接口校验任务数、工作流与产物组合、唯一任务 ID 和有序依赖；内部状态接口校验状态转换及同一 run 的提案 ID。Pi 按任务切换工作流，简历提案仍由 FastAPI 复验目标、诊断和操作。`agent_runs.status` 表示运行终态，任务是否完成以各任务状态和真实提案为准；会话回读可提供这些任务结果。
@@ -278,3 +280,5 @@ Development 未配置 LinkParse Key 时应用仍可启动，Markdown 保持可�
 迁移 `0076` 追加「错位页眉」「折页边注」「悬挂章节」，默认目录达到 72 套。错位页眉与悬挂章节在 header 中连续承载身份、简介、工作和项目，教育/技能占 main/sidebar；折页边注将工作置于 main、简介/技能置于短 sidebar，项目和教育由 footer 恢复全宽。附加章节均由 universal fallback 保留，不修改已有模板、简历及版本，无 schema 变化。
 
 迁移 `0078` 新增五套 `career-*` 跨行业模板，默认启用目录达到 74 套，覆盖财务、制造业社招，师范、护理校招与市场实习。仅插入目录项，不改变 schema、旧模板或用户快照；重复执行保留启停状态，同 key 定义冲突拒绝覆盖。发布时先部署支持 Career 主题的 Web/打印渲染器，再执行迁移；上游固定提交和 MIT 声明见[模板来源](resume-template-sources.md)。
+
+Agent 跨轮身份记忆覆盖现有五类 contexts；通用历史引用通过内部 `resources:resolve-reference` 接口重建同会话证据并复用 `resolve_contexts` 的归属、解析状态、受控对象键与版本校验。每个任务按资源类型冻结解析目标，正文仅在当前读取响应中出现，JSON 元数据中的 resource_resolutions 保存身份 snapshot，任务材料收据保存 SHA256 而不保存正文。旧 resume_resolutions 与简历专用接口继续兼容，无数据库 schema 迁移。

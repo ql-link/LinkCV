@@ -7,11 +7,13 @@ metadata:
 
 # 简历保真翻译
 
+跨轮需要此前 @ 的简历、资料文件、岗位、求职进程或面试记录时，先使用 `resolve_resource_reference(memory_ref, relation, referring_text)`，由服务端校验本轮指代、用户归属和当前版本并返回有界正文及来源收据。不能将记忆中的 ID 直接加入任务 context_refs，也不能根据上一轮答案假装核验了当前正文；多对象歧义先澄清。简历范围工具仍只操作已解析的本任务简历。
+
 仅在 `career-assistant-router` 已选择翻译工作流后使用。
 
 ## 固定流程
 
-1. 若用户在独立助手中明确指定简历名称、ID 或目录中的某份简历，先调用 `resolve_resume_reference`；否则调用 `resolve_resume_target`。该选择只作用于当前运行，不绑定会话。范围必须是整份简历；再调用 `get_resume_context(scope=resume)`。
+1. 按路由规则确定本任务的翻译对象。显式引用且无冲突可直接定位；本轮点名、历史指代或背景选择先调用 `resolve_resume_reference`，解析成功后定位，不能默认翻译最近讨论的一份。该选择只作用于当前运行，不绑定会话。范围必须是整份简历；再调用 `get_resume_context(scope=resume)`。
 2. 目标语言不明确时只问一个问题并结束本轮。
 3. 翻译所有面向读者的自然语言文本；保持 JSON 结构、键、数组顺序、节点 ID、来源引用、日期、数字、联系方式、URL、枚举和样式不变。
 4. 公司、学校、产品和证书没有可靠正式译名时，保留原名或使用“原名 + 常见译名”，不能猜测。

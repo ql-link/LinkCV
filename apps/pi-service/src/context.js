@@ -16,6 +16,7 @@ const CONTEXT_FIELDS = new Set([
   "description",
   "updated_at",
   "content",
+  "presentation",
 ]);
 const MAX_CONTEXT_MATERIALS = 10;
 const MAX_CONTEXT_ITEM_CHARS = 24_000;
@@ -80,6 +81,7 @@ export function validateContextMaterials(value) {
     }
     if (
       !CONTEXT_TYPES.has(material.type) ||
+      (material.presentation != null && !["mention", "implicit"].includes(material.presentation)) ||
       seenTypes.has(material.type) ||
       !isBoundedString(material.id, 64, true) ||
       !isBoundedString(material.version, 128, true) ||
@@ -109,5 +111,39 @@ export function validateContextMaterials(value) {
     }
     seenTypes.add(material.type);
   }
+  return value;
+}
+
+export function validateConversationMemory(value) {
+  if (value == null) return { schema_version: 1, events: [], truncated: false };
+  const plain = (item) => item && typeof item === "object" && !Array.isArray(item);
+  const keys = (item, allowed) => plain(item) && Object.keys(item).every((key) => allowed.includes(key));
+  const invalid = () => { throw new Error("INVALID_CONVERSATION_MEMORY"); };
+  const bounded = (item, max, required = false) => typeof item === "string"
+    && [...item].length <= max && (!required || item.trim().length > 0);
+  if (!keys(value, ["schema_version", "events", "truncated"]) || value.schema_version !== 1
+      || !Array.isArray(value.events) || value.events.length > 41 * 10
+      || typeof value.truncated !== "boolean" || [...JSON.stringify(value)].length > 6000) invalid();
+  const refs = new Set();
+  const ids = new Set();
+  for (const event of value.events) {
+    if (!keys(event, ["memory_ref", "source_sequence_no", "resource", "source", "tasks"])
+        || !Number.isSafeInteger(event.source_sequence_no) || event.source_sequence_no < 1
+        || !keys(event.resource, ["type", "id", "label"]) || !CONTEXT_TYPES.has(event.resource.type)
+        || !/^[1-9][0-9]{0,19}$/.test(event.resource.id)
+        || !bounded(event.resource.label, 255)
+        || event.memory_ref !== `m:${event.source_sequence_no}:${event.resource.type}:${event.resource.id}`
+        || refs.has(event.memory_ref) || !["explicit", "implicit", "memory"].includes(event.source)
+        || !Array.isArray(event.tasks) || event.tasks.length > 8) invalid();
+    for (const task of event.tasks) {
+      if (!keys(task, ["id", "label", "status", "result"])
+          || !bounded(task.id, 32, true) || !bounded(task.label, 120, true)
+          || !["planned", "running", "completed", "partial", "blocked", "failed"].includes(task.status)
+          || (task.result != null && !bounded(task.result, 300))) invalid();
+    }
+    refs.add(event.memory_ref);
+    ids.add(`${event.resource.type}:${event.resource.id}`);
+  }
+  if (ids.size > 10) invalid();
   return value;
 }

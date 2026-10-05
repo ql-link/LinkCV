@@ -3,7 +3,7 @@ import { configureHttpDispatcher } from "../../../third_party/pi/packages/coding
 
 import { bearerToken, tokensEqual } from "./auth.js";
 import { loadConfig } from "./config.js";
-import { validateContextMaterials } from "./context.js";
+import { validateContextMaterials, validateConversationMemory } from "./context.js";
 import { executeAgentProbe, executeAgentRun } from "./runtime/agent.js";
 import { createLinkResumeClient } from "./tools/linkresume-client.js";
 
@@ -108,8 +108,10 @@ const server = createServer(async (request, response) => {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
     }
     let contextMaterials;
+    let conversationMemory;
     try {
       contextMaterials = validateContextMaterials(payload.contextMaterials);
+      conversationMemory = validateConversationMemory(payload.conversationMemory);
     } catch {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
     }
@@ -171,6 +173,7 @@ const server = createServer(async (request, response) => {
         clarificationAnswers,
         selectionContext: payload.selectionContext ?? null,
         contextMaterials,
+        conversationMemory,
         emit: (type, data) => writeEvent(response, type, data),
         signal: controller.signal,
       });

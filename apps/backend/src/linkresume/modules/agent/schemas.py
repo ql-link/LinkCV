@@ -179,6 +179,7 @@ class AgentContextMaterial(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: AgentContextType
+    presentation: Literal["mention", "implicit"] = "mention"
     id: str
     version: str
     lock_version: int | None = None
@@ -425,6 +426,7 @@ class ToolEventRequest(BaseModel):
         "get_resume_context",
         "create_resume_proposal",
         "resolve_resume_reference",
+        "resolve_resource_reference",
         "resolve_resume_target",
         "search_resume_materials",
         "analyze_resume_content",
@@ -561,14 +563,39 @@ class TargetResolveResponse(BaseModel):
     candidates: list[TargetCandidate] = Field(default_factory=list)
 
 
+class ResourceReferenceResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory_ref: str = Field(pattern=r"^m:[1-9][0-9]*:(?:resume|dataset|job|application|interview):[1-9][0-9]{0,19}$")
+    relation: Literal["continuation", "historical_selection"]
+    referring_text: str = Field(min_length=1, max_length=300)
+
+
+class ResourceReferenceResolveResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resource: AgentContextSnapshot
+    materials: list[AgentContextMaterial]
+    sources: list[dict[str, Any]]
+
+
 class ResumeReferenceResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
     resume_id: str | None = Field(default=None, pattern=r"^[0-9]+$")
+    memory_ref: str | None = Field(default=None, pattern=r"^m:[1-9][0-9]*:resume:[1-9][0-9]*$")
+    relation: Literal["continuation", "historical_selection"] | None = None
+    referring_text: str | None = Field(default=None, min_length=1, max_length=300)
 
     @model_validator(mode="after")
     def require_reference(self) -> "ResumeReferenceResolveRequest":
+        if self.memory_ref is not None:
+            if self.title is not None or self.resume_id is not None or self.relation is None or self.referring_text is None:
+                raise ValueError("memory reference requires relation and referring_text exclusively")
+            return self
+        if self.relation is not None or self.referring_text is not None:
+            raise ValueError("memory_ref is required")
         if self.title is None and self.resume_id is None:
             raise ValueError("title or resume_id is required")
         return self
