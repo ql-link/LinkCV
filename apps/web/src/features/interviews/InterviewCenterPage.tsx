@@ -56,7 +56,7 @@ import { SelectField } from "@/components/ui/select-field";
 import { LoadingText } from "@/components/ui/page-loading";
 import { Icon, type V3IconName } from "@/v3/Icon";
 import { Reveal, Sk, SkeletonBoard, SkeletonCalendar, SkeletonCards, SkeletonHead } from "@/v3/skeletons";
-import { readPageCache, useRevalidateOnFocus, writePageCache } from "@/v3/pageCache";
+import { readPageCache, updatePageCache, useRevalidateOnFocus, writePageCache } from "@/v3/pageCache";
 import {
   BeTag,
   ConfirmDialog as V3ConfirmDialog,
@@ -639,7 +639,10 @@ export function InterviewCenterPage({
   const dedupedMountRef = useRef(false);
   const [cachedCareer] = useState(() => readPageCache<{ sessions: InterviewSessionSummary[]; applications: JobApplicationSummary[] }>(careerCacheKey));
   const [sessions, setSessions] = useState<InterviewSessionSummary[]>(() => cachedCareer?.value.sessions ?? []);
-  const [applications, setApplications] = useState<JobApplicationSummary[]>(() => cachedCareer?.value.applications ?? []);
+  const [cachedBoard] = useState(() => readPageCache<{ sessions: InterviewSessionSummary[]; applications: JobApplicationSummary[] }>("career:applications::"));
+  const [applicationBoardSessions, setApplicationBoardSessions] = useState<InterviewSessionSummary[]>(() => cachedBoard?.value.sessions ?? []);
+  const [hasLoadedApplicationBoard, setHasLoadedApplicationBoard] = useState(() => Boolean(cachedBoard));
+  const [applications, setApplications] = useState<JobApplicationSummary[]>(() => cachedCareer?.value.applications ?? cachedBoard?.value.applications ?? []);
   const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
   const [detail, setDetail] = useState<InterviewSessionDetail | null>(null);
   const [query, setQuery] = useState("");
@@ -746,7 +749,7 @@ export function InterviewCenterPage({
     }
   }, [showNotice]);
 
-  const loadData = useCallback(async (preferredId?: string | null, background = false) => {
+  const loadData = useCallback(async (preferredId?: string | null, background = false, syncBoardApplication = false) => {
     const requestId = ++loadRequestRef.current;
     const invalidatedDetailRequest = ++detailRequestRef.current;
     if (!background) {
@@ -777,6 +780,15 @@ export function InterviewCenterPage({
       ]);
       if (requestId !== loadRequestRef.current) return;
       setSessions(nextSessions);
+      if (view === "applications" && !initialApplicationId) {
+        setApplicationBoardSessions(nextSessions);
+        setHasLoadedApplicationBoard(true);
+      } else if (syncBoardApplication && initialApplicationId) {
+        setApplicationBoardSessions((current) => [
+          ...current.filter((session) => session.application_id !== initialApplicationId),
+          ...nextSessions,
+        ]);
+      }
       setApplications(nextApplications);
       writePageCache(`career:${view}:${initialApplicationId ?? ""}:${initialSessionId ?? ""}`, { sessions: nextSessions, applications: nextApplications });
       window.dispatchEvent(new CustomEvent("career-applications-changed", { detail: nextApplications.filter((item) => item.status === "active" && !item.archived_at).length }));
@@ -822,19 +834,39 @@ export function InterviewCenterPage({
   const applySavedStage = useCallback((saved: JobApplicationRecord, session?: InterviewSessionRecord) => {
     ++loadRequestRef.current;
     setLoading(false);
-    setApplications((items) => items.map((item) => item.id === saved.id ? {
-      ...item,
-      ...saved,
-      next_session_id: session?.id ?? null,
-      next_session_start_at: session?.start_at ?? null,
-      next_session_end_at: session?.end_at ?? null,
-      next_session_mode: session?.mode ?? null,
-    } : item));
-    if (session) setSessions((items) => {
-      const summary: InterviewSessionSummary = { ...session, company_name: saved.company_name_snapshot, job_title: saved.job_title_snapshot, calendar_color: saved.calendar_color, application_stage_state: saved.stage_state };
-      return items.some((item) => item.id === session.id) ? items.map((item) => item.id === session.id ? summary : item) : [...items, summary];
-    });
+    setApplications((items) => items.map((item) => {
+      if (item.id !== saved.id) return item;
+      const stageChanged = item.current_stage?.id !== saved.current_stage?.id
+        || item.current_stage_type !== saved.current_stage_type
+        || item.current_stage_label !== saved.current_stage_label;
+      const currentSession = session && applicationStageMatchesSession(saved, session);
+      return {
+        ...item, ...saved,
+        ...(stageChanged || currentSession ? {
+          next_session_id: currentSession && session.status === "scheduled" ? session.id : null,
+          next_session_start_at: currentSession && session.status === "scheduled" ? session.start_at : null,
+          next_session_end_at: currentSession && session.status === "scheduled" ? session.end_at : null,
+          next_session_mode: currentSession && session.status === "scheduled" ? session.mode : null,
+        } : {}),
+      };
+    }));
+    if (session) {
+      const mergeSession = (items: InterviewSessionSummary[]) => {
+        const summary: InterviewSessionSummary = { ...session, company_name: saved.company_name_snapshot, job_title: saved.job_title_snapshot, calendar_color: saved.calendar_color, application_stage_state: saved.stage_state };
+        return items.some((item) => item.id === session.id) ? items.map((item) => item.id === session.id ? summary : item) : [...items, summary];
+      };
+      setSessions(mergeSession);
+      setApplicationBoardSessions(mergeSession);
+    }
   }, []);
+
+  // Preserve the complete board snapshot across route remounts without marking
+  // a local mutation as a fresh server fetch.
+  useEffect(() => {
+    if (hasLoadedApplicationBoard && view === "applications") {
+      updatePageCache("career:applications::", { sessions: applicationBoardSessions, applications });
+    }
+  }, [applicationBoardSessions, applications, hasLoadedApplicationBoard, view]);
 
   useEffect(() => {
     selectedIdRef.current = initialSessionId ?? null;
@@ -984,7 +1016,8 @@ export function InterviewCenterPage({
     setCreateInterviewEndAt(null);
   };
 
-  const showSkeleton = (loading && !hasLoadedData) || applicationDetailPending;
+  const showSkeleton = (loading && !hasLoadedData) || applicationDetailPending
+    || (view === "applications" && !initialApplicationId && !hasLoadedApplicationBoard);
   return (
     <div className={`career-workspace-frame v3-career${isStandaloneDetailRoute ? " is-standalone-detail" : ""}`}>
       {/* 看板 / 列表共用同一套撑满高度的布局：切换时页头、统计、工具栏都不动，只有下方区域切换 */}
@@ -1023,7 +1056,7 @@ export function InterviewCenterPage({
       {!isStandaloneDetailRoute && view === "applications" && (
         <ApplicationsHeader
           applications={applications}
-          sessions={sessions}
+          sessions={applicationBoardSessions}
           loading={showSkeleton}
           weekStart={weekStart}
           timezone={timezone}
@@ -1066,7 +1099,8 @@ export function InterviewCenterPage({
           ? <StageDetailPage
             detail={detail}
             onBack={closeApplicationSessionDialog}
-            onChanged={() => loadData(initialSessionId)}
+            onChanged={() => loadData(initialSessionId, true, true)}
+            onSaved={applySavedStage}
             onNotice={showNotice}
           />
           : detailLoading
@@ -1083,7 +1117,8 @@ export function InterviewCenterPage({
               setCreateInterviewApplicationId(applicationId);
               setShowCreate(true);
             }}
-            onChanged={() => loadData(initialSessionId)}
+            onChanged={() => loadData(initialSessionId, true, true)}
+            onSaved={applySavedStage}
             onNotice={showNotice}
           />
         </>
@@ -1092,13 +1127,14 @@ export function InterviewCenterPage({
           detail={detail?.session.id === initialSessionId ? detail : null}
           detailLoading={detailLoading}
           onBack={() => navigateTo(careerViewPath("records"))}
-          onChanged={(preferredId) => loadData(preferredId)}
+          onChanged={(preferredId) => loadData(preferredId, true, true)}
+          onSaved={applySavedStage}
           onNotice={showNotice}
         />
       ) : view === "applications" ? (
         <ApplicationsView
           applications={applications}
-          sessions={sessions}
+          sessions={applicationBoardSessions}
           query={query}
           displayMode={applicationDisplayMode}
           hiddenColumnIds={hiddenApplicationBoardColumnIds}

@@ -2250,11 +2250,13 @@ export function TerminateApplicationConfirmDialog({
   application,
   onClose,
   onChanged,
+  onSaved,
   onNotice,
 }: {
   application: JobApplicationSummary;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
+  onSaved?: (application: JobApplicationRecord, session?: InterviewSessionRecord) => void;
   onNotice: (notice: string) => void;
 }) {
   useLocale();
@@ -2264,11 +2266,12 @@ export function TerminateApplicationConfirmDialog({
     if (busy) return;
     setBusy(true);
     try {
-      await api.terminateJobApplication(application.id, {
+      const response = await api.terminateJobApplication(application.id, {
         client_request_id: crypto.randomUUID(),
         reason: "user_withdrew",
         base_lock_version: application.lock_version,
       });
+      onSaved?.(response.application);
       onClose();
       onChanged();
     } catch (error) {
@@ -2296,11 +2299,13 @@ function OfferApplicationDialog({
   application,
   onClose,
   onChanged,
+  onSaved,
   onNotice,
 }: {
   application: JobApplicationSummary;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
+  onSaved?: (application: JobApplicationRecord, session?: InterviewSessionRecord) => void;
   onNotice: (notice: string) => void;
 }) {
   useLocale();
@@ -2330,10 +2335,11 @@ function OfferApplicationDialog({
     setErrorMessage(null);
     setBusy(true);
     try {
-      await api.recordJobApplicationOffer(
+      const response = await api.recordJobApplicationOffer(
         application.id,
         offerRequestPayload(offerValues, application.lock_version),
       );
+      onSaved?.(response.application);
       onClose();
       await onChanged();
     } catch (error) {
@@ -2369,6 +2375,7 @@ export function ApplicationDetailView({
   timezone,
   onBack,
   onChanged,
+  onSaved,
   onNotice,
 }: {
   application: JobApplicationSummary | null;
@@ -2377,6 +2384,7 @@ export function ApplicationDetailView({
   onBack: () => void;
   onCreateInterview: (applicationId: string) => void;
   onChanged: () => void | Promise<void>;
+  onSaved?: (application: JobApplicationRecord, session?: InterviewSessionRecord) => void;
   onNotice: (notice: string) => void;
 }) {
   useLocale();
@@ -2426,11 +2434,12 @@ export function ApplicationDetailView({
   const openJob = () => application.job_description_id
     ? navigateTo(jobDetailPath(application.job_description_id, application.id))
     : onNotice(t("原岗位资料已不可用。"));
-  const run = async (operation: () => Promise<unknown>, after?: () => void) => {
+  const run = async (operation: () => Promise<{ application: JobApplicationRecord } | { deleted: boolean }>, after?: () => void) => {
     if (busy) return;
     setBusy(true);
     try {
-      await operation();
+      const result = await operation();
+      if ("application" in result) onSaved?.(result.application);
       after?.();
       await onChanged();
     } catch (error) {
@@ -2495,7 +2504,7 @@ export function ApplicationDetailView({
         }}
       />
       <MotionPresence>{stageDialogOpen && (progress.isPending
-        ? <MarkApplicationAppliedDialog application={application} timezone={timezone} onClose={() => setStageDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />
+        ? <MarkApplicationAppliedDialog application={application} timezone={timezone} onClose={() => setStageDialogOpen(false)} onChanged={onChanged} onSaved={onSaved} onNotice={onNotice} />
         : <AddNextStageDialog
           application={application}
           timezone={timezone}
@@ -2505,10 +2514,10 @@ export function ApplicationDetailView({
           initialInterviewLabel={canSchedule ? application.current_stage_label ?? progress.stageLabel : undefined}
           title={canSchedule ? scheduleActionLabel : undefined}
           onClose={() => setStageDialogOpen(false)}
-          onChanged={onChanged}
+          onChanged={onChanged} onSaved={onSaved}
           onNotice={onNotice}
         />)}</MotionPresence>
-      <MotionPresence>{offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{offerDialogOpen && <OfferApplicationDialog application={application} onClose={() => setOfferDialogOpen(false)} onChanged={onChanged} onSaved={onSaved} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{formalOfferOpen && (
         <AddNextStageDialog
           application={application}
@@ -2517,12 +2526,12 @@ export function ApplicationDetailView({
           lockStageSelection
           title={t("记录正式 Offer")}
           onClose={() => setFormalOfferOpen(false)}
-          onChanged={onChanged}
+          onChanged={onChanged} onSaved={onSaved}
           onNotice={onNotice}
         />
       )}</MotionPresence>
-      <MotionPresence>{terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
-      <MotionPresence>{editingSession && <EditInterviewScheduleDialog session={editingSession} readOnlySchedule={!active || !applicationStageMatchesSession(application, editingSession) || effectiveSessionStatus(editingSession, now) !== "scheduled"} recordKind={sessionRecordKind(editingSession) === "笔试" ? "笔试" : "面试"} onClose={() => setEditingSession(null)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{terminateDialogOpen && <TerminateApplicationConfirmDialog application={application} onClose={() => setTerminateDialogOpen(false)} onChanged={onChanged} onSaved={onSaved} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{editingSession && <EditInterviewScheduleDialog session={editingSession} readOnlySchedule={!active || !applicationStageMatchesSession(application, editingSession) || effectiveSessionStatus(editingSession, now) !== "scheduled"} recordKind={sessionRecordKind(editingSession) === "笔试" ? "笔试" : "面试"} onClose={() => setEditingSession(null)} onChanged={onChanged} onSaved={onSaved} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{offerDecision && (
         <ConfirmDialog
           kind={offerDecision === "accepted" ? "warning" : "delete"}
@@ -3011,6 +3020,7 @@ export function EditInterviewScheduleDialog({
   readOnlySchedule = effectiveSessionStatus(session, new Date()) !== "scheduled",
   onClose,
   onChanged,
+  onSaved,
   onNotice,
 }: {
   session: InterviewSessionRecord;
@@ -3018,6 +3028,7 @@ export function EditInterviewScheduleDialog({
   readOnlySchedule?: boolean;
   onClose: () => void;
   onChanged: () => void | Promise<void>;
+  onSaved?: (application: JobApplicationRecord, session?: InterviewSessionRecord) => void;
   onNotice: (notice: string) => void;
 }) {
   useLocale();
@@ -3084,6 +3095,7 @@ export function EditInterviewScheduleDialog({
             allow_conflict: allowConflict,
             base_lock_version: currentLockVersion,
           });
+          onSaved?.(response.application, response.session);
           currentLockVersion = response.session.lock_version;
           scheduleWasSaved = true;
           setHasConflict(false);
@@ -3098,7 +3110,7 @@ export function EditInterviewScheduleDialog({
 
       if (detailsChanged || notesChanged) {
         try {
-          await api.updateInterviewSession(session.id, {
+          const response = await api.updateInterviewSession(session.id, {
             ...(!readOnlySchedule ? { mode } : {}),
             ...(detailsChanged ? readOnlySchedule
               ? { meeting_url: normalizedMeetingOrLocation || null }
@@ -3110,6 +3122,7 @@ export function EditInterviewScheduleDialog({
             ...(notesChanged ? { preparation_note: preparationNote.trim() || null } : {}),
             base_lock_version: currentLockVersion,
           });
+          onSaved?.(response.application, response.session);
         } catch (error) {
           if (scheduleWasSaved) {
             onClose();
@@ -3321,6 +3334,7 @@ type InterviewSessionDetailViewProps = {
   detailLoading: boolean;
   onBack: () => void;
   onChanged: (preferredId?: string | null) => void | Promise<void>;
+  onSaved?: (application: JobApplicationRecord, session?: InterviewSessionRecord) => void;
   onNotice: (notice: string) => void;
   displayMode?: "page" | "dialog";
 };
@@ -3330,6 +3344,7 @@ export function InterviewSessionDetailView({
   detailLoading,
   onBack,
   onChanged,
+  onSaved,
   onNotice,
   displayMode = "page",
 }: InterviewSessionDetailViewProps) {
@@ -3428,7 +3443,7 @@ export function InterviewSessionDetailView({
       <MotionPresence>{showContentDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} onClose={() => setShowContentDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{showEditTextDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} mode="edit" initialText={questions} onClose={() => setShowEditTextDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{showDeleteTextDialog && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setShowDeleteTextDialog(false)} onDeleted={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
-      <MotionPresence>{showEditScheduleDialog && <EditInterviewScheduleDialog session={session} recordKind={recordKind} onClose={() => setShowEditScheduleDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{showEditScheduleDialog && <EditInterviewScheduleDialog onSaved={onSaved} session={session} recordKind={recordKind} onClose={() => setShowEditScheduleDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}</MotionPresence>
     </>
   );
 

@@ -92,11 +92,13 @@ export function StageDetailPage({
   detail,
   onBack,
   onChanged,
+  onSaved,
   onNotice,
 }: {
   detail: InterviewSessionDetail;
   onBack: () => void;
   onChanged: () => void | Promise<void>;
+  onSaved?: (application: InterviewSessionDetail["application"], session?: InterviewSessionDetail["session"]) => void;
   onNotice: (notice: string) => void;
 }) {
   useLocale();
@@ -304,7 +306,7 @@ export function StageDetailPage({
       <MotionPresence>{contentDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} initialMode={contentDialog} onClose={() => setContentDialog(null)} onChanged={() => void onChanged()} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{editTextOpen && <AddInterviewContentDialog session={session} recordKind={recordKind} mode="edit" initialText={text} onClose={() => setEditTextOpen(false)} onChanged={() => void onChanged()} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{deleteTextOpen && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setDeleteTextOpen(false)} onDeleted={() => void onChanged()} onNotice={onNotice} />}</MotionPresence>
-      <MotionPresence>{scheduleOpen && <EditInterviewScheduleDialog session={session} recordKind={recordKind} onClose={() => setScheduleOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
+      <MotionPresence>{scheduleOpen && <EditInterviewScheduleDialog onSaved={onSaved} session={session} recordKind={recordKind} onClose={() => setScheduleOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{importOpen && <WrittenImportDialog detail={detail} onClose={() => setImportOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{notesOpen && <ReviewNotesDialog session={session} onClose={() => setNotesOpen(false)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>
       <MotionPresence>{analysisOpen && <AiReviewDialog detail={detail} audioName={audio?.original_file_name ?? null} onClose={() => setAnalysisOpen(false)} onDone={() => navigateTo(reportPath)} onChanged={onChanged} onNotice={onNotice} />}</MotionPresence>

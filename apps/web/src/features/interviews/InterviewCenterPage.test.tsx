@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError, type JobApplicationSummary, type ResumeSummary } from "@/api/client";
+import { setPageCacheUser, clearPageCache } from "@/v3/pageCache";
 import { useResumeStore } from "@/store/resumeStore";
 import { applicationCardTimeLabel, sortApplications } from "./ApplicationsBoard";
 import { InterviewCenterPage } from "./InterviewCenterPage";
@@ -699,6 +700,100 @@ describe("InterviewCenterPage API projections", () => {
 
     expect(await screen.findByRole("heading", { name: "示例科技，平台工程师" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "无法打开这条求职进程" })).not.toBeInTheDocument();
+  });
+
+  it("保留其他岗位的完成排期，返回看板期间和刷新后顺序一致", async () => {
+    const summaries = [
+      { ...application, applied_at: "2026-08-18T01:00:00Z", stage_state: "awaiting_result" as const,
+        next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null },
+      { ...application, id: "22", company_name_snapshot: "示例公司", applied_at: "2026-08-18T01:00:00Z",
+        stage_state: "awaiting_result" as const, created_at: "2026-08-19T01:00:00Z",
+        next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null },
+    ];
+    const completedSessions = [
+      { ...session, status: "completed" as const },
+      { ...session, id: "32", application_id: "22", status: "completed" as const,
+        start_at: new Date(fixtureSessionStart.getTime() + 3600000).toISOString() },
+    ];
+    mocks.listJobApplications.mockResolvedValue({ items: summaries, next_cursor: null });
+    mocks.listInterviewSessions.mockResolvedValue({ items: completedSessions, next_cursor: null });
+    const { rerender } = render(<InterviewCenterPage view="applications" />);
+    const cardOrder = () => screen.getAllByRole("article").map((card) => card.getAttribute("aria-label"));
+    await screen.findByRole("region", { name: "求职进程看板" });
+    const originalOrder = cardOrder();
+    expect(originalOrder).toEqual(["示例公司 后端开发工程师", "腾讯 后端开发工程师"]);
+
+    mocks.listInterviewSessions.mockResolvedValueOnce({ items: [completedSessions[0]], next_cursor: null });
+    rerender(<InterviewCenterPage view="applications" initialApplicationId="21" />);
+    await screen.findByRole("heading", { name: "腾讯，后端开发工程师" });
+    const refresh = deferred<{ items: typeof completedSessions; next_cursor: null }>();
+    mocks.listInterviewSessions.mockReturnValueOnce(refresh.promise);
+    rerender(<InterviewCenterPage view="applications" />);
+    expect(cardOrder()).toEqual(originalOrder);
+    await act(async () => refresh.resolve({ items: completedSessions, next_cursor: null }));
+    expect(cardOrder()).toEqual(originalOrder);
+  });
+
+  it("状态修改成功即同步到看板，不等待列表刷新", async () => {
+    const activeApplication = { ...application, applied_at: "2026-08-18T01:00:00Z" };
+    mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+    mocks.listJobApplications.mockResolvedValue({ items: [activeApplication], next_cursor: null });
+    mocks.terminateJobApplication.mockResolvedValue({ application: {
+      ...activeApplication, status: "withdrawn", lifecycle_status: "terminated", lock_version: 4,
+    } });
+    const { rerender } = render(<InterviewCenterPage view="applications" />);
+    await screen.findByRole("region", { name: "求职进程看板" });
+    rerender(<InterviewCenterPage view="applications" initialApplicationId="21" />);
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "结束本次求职" }));
+    const refresh = deferred<never>();
+    mocks.listJobApplications.mockReturnValue(refresh.promise);
+    fireEvent.click(within(screen.getByRole("dialog", { name: "终止这条求职记录？" })).getByRole("button", { name: "确认终止" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "终止这条求职记录？" })).not.toBeInTheDocument());
+    rerender(<InterviewCenterPage view="applications" />);
+    const card = screen.getByRole("article", { name: "腾讯 后端开发工程师" });
+    expect(card.closest("[data-column-key]")).toHaveAttribute("data-column-key", "ended");
+  });
+
+  it("详情修改成功后重新挂载看板仍读取新状态，不回退到旧缓存", async () => {
+    setPageCacheUser("board-regression-user");
+    clearPageCache();
+    try {
+      const activeApplication = { ...application, applied_at: "2026-08-18T01:00:00Z" };
+      mocks.listInterviewSessions.mockResolvedValue({ items: [], next_cursor: null });
+      mocks.listJobApplications.mockResolvedValue({ items: [activeApplication], next_cursor: null });
+      mocks.terminateJobApplication.mockResolvedValue({ application: {
+        ...activeApplication, status: "withdrawn", lifecycle_status: "terminated", lock_version: 4,
+      } });
+      const board = render(<InterviewCenterPage view="applications" />);
+      await screen.findByRole("region", { name: "求职进程看板" });
+      board.unmount();
+      const detail = render(<InterviewCenterPage view="applications" initialApplicationId="21" />);
+      fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "结束本次求职" }));
+      mocks.listJobApplications.mockReturnValue(new Promise(() => {}));
+      fireEvent.click(within(screen.getByRole("dialog", { name: "终止这条求职记录？" })).getByRole("button", { name: "确认终止" }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "终止这条求职记录？" })).not.toBeInTheDocument());
+      detail.unmount();
+      render(<InterviewCenterPage view="applications" />);
+      expect(screen.getByRole("article", { name: "腾讯 后端开发工程师" }).closest("[data-column-key]"))
+        .toHaveAttribute("data-column-key", "ended");
+    } finally {
+      setPageCacheUser(null);
+      clearPageCache();
+    }
+  });
+
+  it("首次从详情进入看板时等待完整排期，避免先按局部数据排序", async () => {
+    const { rerender } = render(<InterviewCenterPage view="applications" initialApplicationId="21" />);
+    await screen.findByRole("heading", { name: "腾讯，后端开发工程师" });
+    const refresh = deferred<{ items: typeof session[]; next_cursor: null }>();
+    mocks.listInterviewSessions.mockReturnValueOnce(refresh.promise);
+    rerender(<InterviewCenterPage view="applications" />);
+    expect(screen.getByRole("status", { name: "正在加载求职数据…" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "求职进程看板" })).not.toBeInTheDocument();
+    await act(async () => refresh.resolve({ items: [session], next_cursor: null }));
+    expect(screen.getByRole("region", { name: "求职进程看板" })).toBeInTheDocument();
   });
 
   it("切换到面试排期时保留旧数据并避免回退到整页加载态", async () => {
