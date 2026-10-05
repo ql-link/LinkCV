@@ -514,7 +514,7 @@ export function buildApplicationDetail(
       primary: openWindow
         ? { action: "answer-plan", label: t("作答计划"), variant: "dark" }
         : { action: "record-review", label: t("记录与复盘"), variant: "dark" },
-      secondary: [{ action: "reschedule", label: t("修改安排") }, { action: "cancel-session", label: t("取消本场") }],
+      secondary: [],
     };
   } else {
     const days = elapsedSession ? daysBetween(elapsedSession.end_at, now) : 0;

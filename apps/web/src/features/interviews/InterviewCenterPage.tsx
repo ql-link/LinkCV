@@ -112,6 +112,7 @@ import {
   type InterviewOverview,
   type InterviewSessionDetail,
   type InterviewSessionSummary,
+  type InterviewSessionRecord,
   type JobApplicationRecord,
   type JobApplicationSummary,
   type JobDescriptionSummary,
@@ -745,12 +746,14 @@ export function InterviewCenterPage({
     }
   }, [showNotice]);
 
-  const loadData = useCallback(async (preferredId?: string | null) => {
+  const loadData = useCallback(async (preferredId?: string | null, background = false) => {
     const requestId = ++loadRequestRef.current;
     const invalidatedDetailRequest = ++detailRequestRef.current;
-    setLoading(true);
-    setDetail(null);
-    setDetailLoading(true);
+    if (!background) {
+      setLoading(true);
+      setDetail(null);
+      setDetailLoading(true);
+    }
     try {
       const applicationDetail = view === "applications" && Boolean(initialApplicationId);
       const interviewDetail = view === "records" && Boolean(initialSessionId);
@@ -778,6 +781,7 @@ export function InterviewCenterPage({
       writePageCache(`career:${view}:${initialApplicationId ?? ""}:${initialSessionId ?? ""}`, { sessions: nextSessions, applications: nextApplications });
       window.dispatchEvent(new CustomEvent("career-applications-changed", { detail: nextApplications.filter((item) => item.status === "active" && !item.archived_at).length }));
       setHasLoadedData(true);
+      if (background && view === "applications" && !initialApplicationId) return;
       if (applicationDetail) {
         setResolvedApplicationDetailId(initialApplicationId as string);
         selectedIdRef.current = initialSessionId ?? null;
@@ -811,9 +815,26 @@ export function InterviewCenterPage({
           setDetailLoading(false);
       }
     } finally {
-      if (requestId === loadRequestRef.current) setLoading(false);
+      if (!background && requestId === loadRequestRef.current) setLoading(false);
     }
   }, [initialApplicationId, initialSessionId, loadDetail, scheduleRange, showNotice, timezone, view, weekStart]);
+
+  const applySavedStage = useCallback((saved: JobApplicationRecord, session?: InterviewSessionRecord) => {
+    ++loadRequestRef.current;
+    setLoading(false);
+    setApplications((items) => items.map((item) => item.id === saved.id ? {
+      ...item,
+      ...saved,
+      next_session_id: session?.id ?? null,
+      next_session_start_at: session?.start_at ?? null,
+      next_session_end_at: session?.end_at ?? null,
+      next_session_mode: session?.mode ?? null,
+    } : item));
+    if (session) setSessions((items) => {
+      const summary: InterviewSessionSummary = { ...session, company_name: saved.company_name_snapshot, job_title: saved.job_title_snapshot, calendar_color: saved.calendar_color, application_stage_state: saved.stage_state };
+      return items.some((item) => item.id === session.id) ? items.map((item) => item.id === session.id ? summary : item) : [...items, summary];
+    });
+  }, []);
 
   useEffect(() => {
     selectedIdRef.current = initialSessionId ?? null;
@@ -1087,7 +1108,8 @@ export function InterviewCenterPage({
           onCreate={() => setShowCreateApplication(true)}
           onInstallPlugin={() => setShowPluginInstall(true)}
           onImport={openJobImport}
-          onChanged={() => loadData(initialSessionId)}
+          onChanged={() => loadData(initialSessionId, true)}
+          onSaved={applySavedStage}
           onNotice={showNotice}
         />
       ) : view === "schedule" ? (
@@ -1633,6 +1655,7 @@ function ApplicationsView({
   onInstallPlugin,
   onImport,
   onChanged,
+  onSaved,
   onNotice,
 }: {
   applications: JobApplicationSummary[];
@@ -1647,6 +1670,7 @@ function ApplicationsView({
   onInstallPlugin: () => void;
   onImport: () => void;
   onChanged: () => Promise<void>;
+  onSaved: (application: JobApplicationRecord, session?: InterviewSessionRecord) => void;
   onNotice: (notice: string) => void;
 }) {
   useLocale();
@@ -1769,6 +1793,7 @@ function ApplicationsView({
           timezone={timezone}
           onClose={() => setDraggedPendingApplication(null)}
           onChanged={onChanged}
+          onSaved={onSaved}
           onNotice={onNotice}
         />
       )}</MotionPresence>
@@ -1776,6 +1801,7 @@ function ApplicationsView({
         <AddNextStageDialog
           application={draggedNextStage.application}
           timezone={timezone}
+          onSaved={onSaved}
           initialTab={draggedNextStage.prefill.initialTab}
           initialStage={draggedNextStage.prefill.initialStage}
           initialInterviewLabel={draggedNextStage.prefill.initialInterviewLabel}
