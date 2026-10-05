@@ -134,7 +134,10 @@ class AccountPreference(Base):
     __table_args__ = (
         PrimaryKeyConstraint("user_id", name="pk_account_preferences"),
         CheckConstraint("locale IN ('zh-CN', 'en-US')", name="ck_account_preferences_locale"),
-        CheckConstraint("interview_reminder_enabled IN (0, 1)", name="ck_account_preferences_reminder"),
+        CheckConstraint(
+            "is_interview_reminder_enabled IN (0, 1)",
+            name="ck_account_preferences_is_interview_reminder_enabled",
+        ),
         {"comment": "账号界面语言与提醒偏好"},
     )
     user_id: Mapped[int] = mapped_column(
@@ -142,9 +145,9 @@ class AccountPreference(Base):
         nullable=False, comment="所属用户",
     )
     locale: Mapped[str] = mapped_column(String(5), nullable=False, default="zh-CN", server_default="zh-CN", comment="界面语言")
-    interview_reminder_enabled: Mapped[int] = mapped_column(
+    is_interview_reminder_enabled: Mapped[int] = mapped_column(
         SmallInteger().with_variant(mysql.TINYINT(unsigned=True), "mysql"),
-        nullable=False, default=0, server_default="0", comment="提醒偏好，当前不发送通知",
+        nullable=False, default=0, server_default="0", comment="是否开启面试提醒：1 是，0 否；当前不发送通知",
     )
     created_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间 UTC")
     updated_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间 UTC")

@@ -44,5 +44,5 @@ def test_sql_matches_orm_table() -> None:
 
 def test_mock_interview_switch_defaults_off() -> None:
     assert "ADD COLUMN materials_in_questions BOOL NOT NULL DEFAULT false" in SQL
-    column = MockInterview.__table__.c.materials_in_questions
+    column = MockInterview.__table__.c.is_materials_in_questions
     assert column.nullable is False and column.server_default.arg == "0"

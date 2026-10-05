@@ -256,12 +256,12 @@ def test_model_user_selectable_is_admin_editable_and_ignored_by_system_use_cases
 
     # System capabilities keep resolving hidden models; only conversation is filtered.
     with app.state.session_factory() as db:
-        connection = LLMProviderConnection(provider_code="aihubmix", name="系统连接", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        connection = LLMProviderConnection(provider_code="aihubmix", name="系统连接", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, is_enabled=True, runtime_config_version=1)
         model = db.get(LLMModel, int(model_id))
         db.add(connection); db.flush()
-        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="vendor/model", origin="manual", enabled=True, target_available=True)
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="vendor/model", origin="manual", is_enabled=True, is_target_available=True)
         db.add(route); db.flush()
-        binding = LLMUseCaseRoute(use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat", priority=1, enabled=True, validated_at=utc_now())
+        binding = LLMUseCaseRoute(use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat", priority=1, is_enabled=True, validated_at=utc_now())
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()

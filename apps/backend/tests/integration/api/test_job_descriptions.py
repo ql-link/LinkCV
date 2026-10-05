@@ -76,14 +76,14 @@ def build_app(*, llm_gateway=None, with_llm_key: bool = False):
 
 def configure_draft_models(app) -> None:
     with app.state.session_factory() as db:
-        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, is_enabled=True, runtime_config_version=1)
         db.add(connection); db.flush()
         for use_case, target in [(JOB_TEXT_EXTRACTION, "chat-model"), (JOB_IMAGE_EXTRACTION, "vision-model")]:
             model = LLMModel(display_name=target)
             db.add(model); db.flush()
-            route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=target, origin="manual", enabled=True, target_available=True)
+            route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=target, origin="manual", is_enabled=True, is_target_available=True)
             db.add(route); db.flush()
-            binding = LLMUseCaseRoute(use_case=use_case, route_id=route.id, protocol_code="openai_chat", priority=100, enabled=True, validated_at=utc_now())
+            binding = LLMUseCaseRoute(use_case=use_case, route_id=route.id, protocol_code="openai_chat", priority=100, is_enabled=True, validated_at=utc_now())
             db.add(binding); db.flush()
             binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()

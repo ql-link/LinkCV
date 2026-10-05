@@ -133,7 +133,7 @@ def _connection_record(row: LLMProviderConnection) -> dict:
         "name": row.name,
         "settings": row.settings_json or {},
         "keyConfigured": row.credential_ciphertext is not None,
-        "enabled": row.enabled,
+        "enabled": row.is_enabled,
         "runtimeConfigVersion": row.runtime_config_version,
         "catalogSyncedAt": row.catalog_synced_at,
         "createdAt": row.created_at,
@@ -146,7 +146,7 @@ def _model_record(row: LLMModel) -> dict:
         "id": str(row.id),
         "displayName": row.display_name,
         "developerName": row.developer_name,
-        "userSelectable": bool(row.user_selectable),
+        "userSelectable": bool(row.is_user_selectable),
         "createdAt": row.created_at,
         "updatedAt": row.updated_at,
     }
@@ -164,8 +164,8 @@ def _route_record(row: LLMModelRoute) -> dict:
         "origin": row.origin,
         "metadata": row.metadata_json,
         "pricing": row.pricing_json,
-        "targetAvailable": row.target_available,
-        "enabled": row.enabled,
+        "targetAvailable": row.is_target_available,
+        "enabled": row.is_enabled,
         "createdAt": row.created_at,
         "updatedAt": row.updated_at,
     }
@@ -179,7 +179,7 @@ def _binding_record(
         "routeId": str(row.route_id),
         "protocolCode": row.protocol_code,
         "priority": row.priority,
-        "enabled": row.enabled,
+        "enabled": row.is_enabled,
         "validatedAt": row.validated_at,
         "effective": is_effective(row, route, connection),
     }
@@ -232,7 +232,7 @@ def create_connection(
         name=payload.name.strip(),
         credential_ciphertext=ciphertext,
         settings_json=settings,
-        enabled=payload.enabled,
+        is_enabled=payload.enabled,
         runtime_config_version=1,
     )
     db.add(row)
@@ -256,7 +256,7 @@ def patch_connection(
     if payload.name is not None:
         row.name = payload.name.strip()
     if payload.enabled is not None:
-        row.enabled = payload.enabled
+        row.is_enabled = payload.enabled
     runtime_changed = False
     if payload.settings is not None:
         try:
@@ -355,15 +355,15 @@ async def sync_connection_catalog(
                 route = LLMModelRoute(
                     model_id=model.id, connection_id=row.id, target_kind="model",
                     invoke_target=item.model_id, catalog_model_id=item.model_id,
-                    identifier_kind="unknown", origin="catalog", enabled=False,
+                    identifier_kind="unknown", origin="catalog", is_enabled=False,
                 )
                 db.add(route)
             route.metadata_json = item.metadata
             route.pricing_json = item.pricing
-            route.target_available = True
+            route.is_target_available = True
         for target, route in existing.items():
             if route.origin == "catalog" and target not in found:
-                route.target_available = False
+                route.is_target_available = False
     row.catalog_state_json = {"etag": result.etag} if result.etag else None
     row.catalog_synced_at = utc_now()
     _commit(db)
@@ -390,7 +390,7 @@ def create_model(
     row = LLMModel(
         display_name=payload.display_name.strip(),
         developer_name=payload.developer_name.strip() if payload.developer_name else None,
-        user_selectable=payload.user_selectable,
+        is_user_selectable=payload.user_selectable,
     )
     db.add(row)
     _commit(db)
@@ -412,7 +412,7 @@ def patch_model(
     if "developer_name" in payload.model_fields_set:
         row.developer_name = payload.developer_name.strip() if payload.developer_name else None
     if payload.user_selectable is not None:
-        row.user_selectable = payload.user_selectable
+        row.is_user_selectable = payload.user_selectable
     row.updated_at = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
@@ -471,7 +471,7 @@ def create_route(
         identifier_kind=payload.identifier_kind,
         origin="manual",
         pricing_json=payload.pricing,
-        enabled=False,
+        is_enabled=False,
     )
     db.add(row)
     _commit(db)
@@ -500,7 +500,7 @@ def patch_route(
             connection = db.get(LLMProviderConnection, row.connection_id)
             if not any(probe_valid(item, row, connection) for item in bindings):
                 raise ApiError(422, "LLM_PROBE_REQUIRED")
-        row.enabled = payload.enabled
+        row.is_enabled = payload.enabled
     row.updated_at = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
@@ -555,7 +555,7 @@ def bind_route(
     if row is None:
         row = LLMUseCaseRoute(
             use_case=use_case, route_id=route.id,
-            protocol_code=payload.protocol_code, priority=payload.priority, enabled=False,
+            protocol_code=payload.protocol_code, priority=payload.priority, is_enabled=False,
         )
         db.add(row)
     else:
@@ -567,7 +567,7 @@ def bind_route(
     if payload.enabled:
         if not probe_valid(row, route, connection):
             raise ApiError(422, "LLM_PROBE_REQUIRED")
-    row.enabled = payload.enabled
+    row.is_enabled = payload.enabled
     row.updated_at = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}
@@ -592,7 +592,7 @@ def patch_binding(
     if payload.enabled is not None:
         if payload.enabled and not probe_valid(row, route, connection):
             raise ApiError(422, "LLM_PROBE_REQUIRED")
-        row.enabled = payload.enabled
+        row.is_enabled = payload.enabled
     row.updated_at = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}

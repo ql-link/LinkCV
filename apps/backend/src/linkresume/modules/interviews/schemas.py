@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -838,7 +839,10 @@ class TranscriptionRecord(BaseModel):
     dataset_id: DatabaseId
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     error_code: str | None = None
-    pending_replace: bool = False
+    # ORM column is is_pending_replace; the response keeps the public field name.
+    pending_replace: bool = Field(
+        default=False, validation_alias=AliasChoices("is_pending_replace", "pending_replace")
+    )
     result_duration_ms: int | None = None
     updated_at: datetime
 

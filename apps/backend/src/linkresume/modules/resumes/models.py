@@ -141,8 +141,8 @@ class Resume(Base):
             name="ck_resumes_share_visibility",
         ),
         CheckConstraint(
-            "share_allow_download IN (0, 1)",
-            name="ck_resumes_share_allow_download",
+            "is_share_allow_download IN (0, 1)",
+            name="ck_resumes_is_share_allow_download",
         ),
         {"comment": "用户简历当前内容"},
     )
@@ -203,7 +203,7 @@ class Resume(Base):
         nullable=True,
         comment="分享过期时间（UTC），NULL 表示长期有效",
     )
-    share_allow_download: Mapped[int] = mapped_column(
+    is_share_allow_download: Mapped[int] = mapped_column(
         unsigned_tinyint_type(),
         nullable=False,
         default=1,

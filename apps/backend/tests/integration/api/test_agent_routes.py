@@ -144,11 +144,11 @@ def bind_pi_agent_model(app) -> None:
         if db.scalar(select(LLMModel).limit(1)) is not None:
             return
         model = LLMModel(display_name="fictional-agent-model")
-        connection = LLMProviderConnection(provider_code="aihubmix", name="测试连接", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-provider-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        connection = LLMProviderConnection(provider_code="aihubmix", name="测试连接", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-provider-key"})), settings_json={}, is_enabled=True, runtime_config_version=1)
         db.add_all([model, connection]); db.flush()
-        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="fictional-agent-model", origin="manual", enabled=True, target_available=True, metadata_json={"context_length": 16384, "max_output": 4096})
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="fictional-agent-model", origin="manual", is_enabled=True, is_target_available=True, metadata_json={"context_length": 16384, "max_output": 4096})
         db.add(route); db.flush()
-        binding = LLMUseCaseRoute(use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat", priority=100, enabled=True, validated_at=utc_now())
+        binding = LLMUseCaseRoute(use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat", priority=100, is_enabled=True, validated_at=utc_now())
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
@@ -3463,18 +3463,18 @@ def test_pi_receives_same_model_backup_and_records_its_actual_route() -> None:
         backup = LLMProviderConnection(
             provider_code="deepseek", name="备用连接",
             credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-backup-key"})),
-            settings_json={}, enabled=True, runtime_config_version=1,
+            settings_json={}, is_enabled=True, runtime_config_version=1,
         )
         db.add(backup); db.flush()
         route = LLMModelRoute(
             model_id=1, connection_id=backup.id, target_kind="model",
-            invoke_target="fictional-backup-model", origin="manual", enabled=True,
-            target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"},
+            invoke_target="fictional-backup-model", origin="manual", is_enabled=True,
+            is_target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"},
         )
         db.add(route); db.flush()
         binding = LLMUseCaseRoute(
             use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat",
-            priority=200, enabled=True, validated_at=utc_now(),
+            priority=200, is_enabled=True, validated_at=utc_now(),
         )
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, backup)
@@ -3798,9 +3798,9 @@ def add_conversation_model(app, name: str, *, priority: int) -> int:
         connection = db.scalar(select(LLMProviderConnection).limit(1))
         model = LLMModel(display_name=name)
         db.add(model); db.flush()
-        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=name, origin="manual", enabled=True, target_available=True, metadata_json={})
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=name, origin="manual", is_enabled=True, is_target_available=True, metadata_json={})
         db.add(route); db.flush()
-        binding = LLMUseCaseRoute(use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat", priority=priority, enabled=True, validated_at=utc_now())
+        binding = LLMUseCaseRoute(use_case=ASSISTANT_CONVERSATION, route_id=route.id, protocol_code="openai_chat", priority=priority, is_enabled=True, validated_at=utc_now())
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
@@ -3809,7 +3809,7 @@ def add_conversation_model(app, name: str, *, priority: int) -> int:
 
 def set_user_selectable(app, model_id: int, value: bool) -> None:
     with app.state.session_factory() as db:
-        db.execute(update(LLMModel).where(LLMModel.id == model_id).values(user_selectable=value))
+        db.execute(update(LLMModel).where(LLMModel.id == model_id).values(is_user_selectable=value))
         db.commit()
 
 

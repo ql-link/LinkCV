@@ -174,7 +174,7 @@ def session_record(
     return AgentSessionRecord(
         id=session.public_id,
         title=session.title,
-        pinned=bool(getattr(session, "pinned", False)),
+        pinned=bool(getattr(session, "is_pinned", False)),
         status=session.status,
         selected_model_id=str(session.selected_llm_model_id) if session.selected_llm_model_id else None,
         last_message_at=session.last_message_at,
@@ -343,7 +343,7 @@ def update_session(
     if "pinned" in fields:
         if pinned is None:
             raise ApiError(400, "INVALID_AGENT_SESSION")
-        record.pinned = pinned
+        record.is_pinned = pinned
     if "model_id" in fields:
         selected = int(model_id) if model_id is not None else None
         if selected is not None and not eligible_routes(

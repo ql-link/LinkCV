@@ -139,7 +139,7 @@ def build_app(database_url: str, gateway: MatchGateway, *, configure: bool = Tru
                 credential_ciphertext=app.state.llm_service.encrypt_credential(
                     json.dumps({"api_key": "fictional-key"})
                 ),
-                settings_json={}, enabled=True, runtime_config_version=1,
+                settings_json={}, is_enabled=True, runtime_config_version=1,
             )
             db.add(connection)
             db.flush()
@@ -148,13 +148,13 @@ def build_app(database_url: str, gateway: MatchGateway, *, configure: bool = Tru
             db.flush()
             route = LLMModelRoute(
                 model_id=model.id, connection_id=connection.id, target_kind="model",
-                invoke_target="match-model", origin="manual", enabled=True, target_available=True,
+                invoke_target="match-model", origin="manual", is_enabled=True, is_target_available=True,
             )
             db.add(route)
             db.flush()
             binding = LLMUseCaseRoute(
                 use_case=JOB_MATCH, route_id=route.id, protocol_code="openai_chat",
-                priority=100, enabled=True, validated_at=utc_now(),
+                priority=100, is_enabled=True, validated_at=utc_now(),
             )
             db.add(binding)
             db.flush()

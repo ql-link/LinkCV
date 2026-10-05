@@ -46,7 +46,7 @@ def share_state_of(resume: Resume) -> ResumeShareState | None:
         share_token=resume.share_token,
         share_visibility=resume.share_visibility,  # type: ignore[arg-type]
         share_expires_at=resume.share_expires_at,
-        share_allow_download=bool(resume.share_allow_download),
+        share_allow_download=bool(resume.is_share_allow_download),
         share_created_at=resume.share_created_at,  # type: ignore[arg-type]
     )
 
@@ -69,7 +69,7 @@ def create_or_overwrite_share(
             resume.share_token = _generate_share_token()
             resume.share_visibility = visibility or DEFAULT_SHARE_VISIBILITY
             resume.share_expires_at = expires_at
-            resume.share_allow_download = int(allow_download)
+            resume.is_share_allow_download = int(allow_download)
             resume.share_created_at = utc_now()
             try:
                 db.commit()
@@ -123,7 +123,7 @@ def update_share(
     if "expires_at" in provided_fields:
         resume.share_expires_at = expires_at
     if "allow_download" in provided_fields:
-        resume.share_allow_download = int(bool(allow_download))
+        resume.is_share_allow_download = int(bool(allow_download))
     db.commit()
     db.refresh(resume)
     return resume
@@ -154,7 +154,7 @@ def resolve_public_share(
         ),
         assets=assets,
         sharer=PublicShareSharer(nickname=owner.nickname, avatar_url=owner.avatar_url),
-        allow_download=bool(resume.share_allow_download),
+        allow_download=bool(resume.is_share_allow_download),
         expires_at=resume.share_expires_at,
         updated_at=resume.updated_at,
     )

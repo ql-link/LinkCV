@@ -231,7 +231,7 @@ def list_agent_sessions(
     query = select(AgentSession).where(AgentSession.user_id == user.id)
     records = db.scalars(
         query.order_by(
-            AgentSession.pinned.desc(),
+            AgentSession.is_pinned.desc(),
             AgentSession.updated_at.desc(),
             AgentSession.id.desc(),
         ).limit(50)

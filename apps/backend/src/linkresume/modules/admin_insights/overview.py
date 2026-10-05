@@ -53,9 +53,9 @@ def _invalid_conversation_bindings(db: Session, now: datetime) -> list[str]:
         .join(LLMProviderConnection, LLMProviderConnection.id == LLMModelRoute.connection_id)
         .where(
             LLMUseCaseRoute.use_case == ASSISTANT_CONVERSATION,
-            LLMUseCaseRoute.enabled.is_(True),
-            LLMModelRoute.enabled.is_(True),
-            LLMProviderConnection.enabled.is_(True),
+            LLMUseCaseRoute.is_enabled.is_(True),
+            LLMModelRoute.is_enabled.is_(True),
+            LLMProviderConnection.is_enabled.is_(True),
         )
     ).all()
     return [

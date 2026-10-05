@@ -107,8 +107,8 @@ def is_effective(
     now: datetime | None = None,
 ) -> bool:
     return bool(
-        binding.enabled and route.enabled and connection.enabled
-        and route.target_available is not False and connection.credential_ciphertext
+        binding.is_enabled and route.is_enabled and connection.is_enabled
+        and route.is_target_available is not False and connection.credential_ciphertext
         and probe_valid(binding, route, connection, now=now)
     )
 
@@ -133,7 +133,7 @@ def eligible_routes(
         statement = statement.where(LLMModel.id == model_id)
     if use_case == ASSISTANT_CONVERSATION:
         # Users may only list, default to, or run models an admin marked selectable.
-        statement = statement.where(LLMModel.user_selectable.is_(True))
+        statement = statement.where(LLMModel.is_user_selectable.is_(True))
     return [row for row in db.execute(statement).all() if is_effective(*row[:3])]
 
 

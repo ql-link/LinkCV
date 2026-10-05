@@ -39,9 +39,9 @@ class AgentSession(Base):
             "status IN ('active', 'archived')", name="ck_agent_sessions_status"
         ),
         Index(
-            "idx_agent_sessions_user_pinned_updated",
+            "idx_agent_sessions_user_is_pinned_updated",
             "user_id",
-            "pinned",
+            "is_pinned",
             "updated_at",
             "id",
         ),
@@ -55,12 +55,12 @@ class AgentSession(Base):
     user_id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, nullable=False)
     pi_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     title: Mapped[str] = mapped_column(String(128), nullable=False)
-    pinned: Mapped[bool] = mapped_column(
+    is_pinned: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
         server_default="0",
-        comment="是否置顶",
+        comment="是否置顶：1 是，0 否",
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     selected_llm_model_id: Mapped[int | None] = mapped_column(

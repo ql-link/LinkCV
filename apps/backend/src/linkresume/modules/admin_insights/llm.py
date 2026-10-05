@@ -107,14 +107,14 @@ def health(db: Session, window: Window) -> dict[str, object]:
     for binding in db.execute(select(LLMUseCaseRoute)).scalars():
         route = route_by_id.get(binding.route_id)
         connection = connection_by_id.get(route.connection_id) if route else None
-        if route and connection and binding.enabled and probe_valid(binding, route, connection):
+        if route and connection and binding.is_enabled and probe_valid(binding, route, connection):
             valid_bindings[connection.id] += 1
 
     enabled_routes: dict[int, int] = defaultdict(int)
     route_count: dict[int, int] = defaultdict(int)
     for route in routes:
         route_count[route.model_id] += 1
-        if route.enabled:
+        if route.is_enabled:
             enabled_routes[route.connection_id] += 1
 
     models = db.execute(select(LLMModel).order_by(LLMModel.display_name)).scalars().all()
@@ -124,7 +124,7 @@ def health(db: Session, window: Window) -> dict[str, object]:
                 "id": str(connection.id),
                 "name": connection.name,
                 "providerCode": connection.provider_code,
-                "enabled": bool(connection.enabled),
+                "enabled": bool(connection.is_enabled),
                 "enabledRoutes": enabled_routes[connection.id],
                 "validBindings": valid_bindings[connection.id],
                 "calls24h": len(by_connection[connection.id]),

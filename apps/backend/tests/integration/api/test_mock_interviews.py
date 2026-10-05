@@ -204,7 +204,7 @@ def configure_mock_interview_model(app) -> None:
             name="测试",
             credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})),
             settings_json={},
-            enabled=True,
+            is_enabled=True,
             runtime_config_version=1,
         )
         db.add(connection)
@@ -214,13 +214,13 @@ def configure_mock_interview_model(app) -> None:
         db.flush()
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="interview-model",
-            origin="manual", enabled=True, target_available=True,
+            origin="manual", is_enabled=True, is_target_available=True,
         )
         db.add(route)
         db.flush()
         binding = LLMUseCaseRoute(
             use_case=MOCK_INTERVIEW, route_id=route.id, protocol_code="openai_chat", priority=100,
-            enabled=True, validated_at=utc_now(),
+            is_enabled=True, validated_at=utc_now(),
         )
         db.add(binding)
         db.flush()

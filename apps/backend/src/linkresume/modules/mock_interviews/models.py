@@ -140,7 +140,7 @@ class MockInterview(Base):
     interview_type: Mapped[str] = mapped_column(String(24), nullable=False)
     difficulty: Mapped[str] = mapped_column(String(16), nullable=False)
     question_count: Mapped[int] = mapped_column(unsigned_tinyint_type(), nullable=False)
-    follow_up_enabled: Mapped[bool] = mapped_column(
+    is_follow_up_enabled: Mapped[bool] = mapped_column(
         Boolean(), nullable=False, default=True, server_default="1"
     )
     language: Mapped[str] = mapped_column(String(8), nullable=False)
@@ -160,7 +160,7 @@ class MockInterview(Base):
     recordings_deleted_at: Mapped[datetime | None] = mapped_column(
         timestamp_type(), nullable=True, comment="本场录音被删除的时间"
     )
-    materials_in_questions: Mapped[bool] = mapped_column(
+    is_materials_in_questions: Mapped[bool] = mapped_column(
         Boolean(), nullable=False, default=False, server_default="0",
         comment="出题是否参考所选资料；false 时资料只用于报告核验",
     )
@@ -189,7 +189,7 @@ class MockInterview(Base):
         timestamp_type(), nullable=False, server_default=func.now()
     )
     total_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    low_confidence: Mapped[bool] = mapped_column(
+    is_low_confidence: Mapped[bool] = mapped_column(
         Boolean(), nullable=False, default=False, server_default="0"
     )
     report_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)

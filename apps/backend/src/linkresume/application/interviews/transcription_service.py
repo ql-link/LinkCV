@@ -89,7 +89,7 @@ def ensure_task(
             status="queued",
             attempts=0,
             next_attempt_at=now,
-            pending_replace=False,
+            is_pending_replace=False,
         )
         db.add(row)
         return row
@@ -108,7 +108,7 @@ def _requeue(row: InterviewRecordingTranscription, session_id: int, now: datetim
     row.provider_task_id = None
     row.result_markdown = None
     row.result_duration_ms = None
-    row.pending_replace = False
+    row.is_pending_replace = False
     row.error_code = None
     row.updated_at = now
 
@@ -125,7 +125,7 @@ def cancel_for_dataset(db: Session, dataset_id: int) -> None:
     if row.status in ACTIVE:
         row.status = "cancelled"
         row.error_code = None
-    row.pending_replace = False
+    row.is_pending_replace = False
     row.updated_at = _now()
 
 
@@ -186,7 +186,7 @@ def apply(db: Session, user_id: int, session_id: int, dataset_id: int, base_lock
     from linkresume.application.interviews.service import InterviewEditConflict
 
     session, _, row = _owned_linked_row(db, user_id, session_id, dataset_id)
-    if row is None or row.status != "succeeded" or not row.pending_replace or not row.result_markdown:
+    if row is None or row.status != "succeeded" or not row.is_pending_replace or not row.result_markdown:
         raise ApiError(409, "INTERVIEW_TRANSCRIPTION_INVALID_STATE")
     if session.lock_version != base_lock_version:
         raise InterviewEditConflict
@@ -195,7 +195,7 @@ def apply(db: Session, user_id: int, session_id: int, dataset_id: int, base_lock
     session.transcript_source = "transcription"
     session.lock_version += 1
     session.updated_at = now
-    row.pending_replace = False
+    row.is_pending_replace = False
     row.updated_at = now
     db.commit()
 
@@ -216,13 +216,13 @@ def store_result(db: Session, row: InterviewRecordingTranscription, transcript: 
         row.status = "cancelled"
         return
     if (session.questions_markdown or "").strip():
-        row.pending_replace = True
+        row.is_pending_replace = True
         return
     session.questions_markdown = transcript.markdown
     session.transcript_source = "transcription"
     session.lock_version += 1
     session.updated_at = now
-    row.pending_replace = False
+    row.is_pending_replace = False
 
 
 @dataclass(frozen=True)

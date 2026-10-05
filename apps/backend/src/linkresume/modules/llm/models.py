@@ -38,7 +38,7 @@ class LLMProviderConnection(Base):
     runtime_config_version: Mapped[int] = mapped_column(
         ID, nullable=False, default=1, server_default="1"
     )
-    enabled: Mapped[bool] = mapped_column(
+    is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
     catalog_state_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
@@ -57,7 +57,7 @@ class LLMModel(Base):
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     developer_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Hidden models stay configured but are excluded from assistant conversation entirely.
-    user_selectable: Mapped[bool] = mapped_column(
+    is_user_selectable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
     created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
@@ -73,7 +73,7 @@ class LLMModelRoute(Base):
             "connection_id", "target_kind", "invoke_target",
             name="uk_llm_routes_connection_target",
         ),
-        Index("idx_llm_routes_model_enabled", "model_id", "enabled", "id"),
+        Index("idx_llm_routes_model_is_enabled", "model_id", "is_enabled", "id"),
         CheckConstraint(
             "target_kind IN ('model', 'endpoint', 'deployment')",
             name="ck_llm_routes_target_kind",
@@ -108,8 +108,8 @@ class LLMModelRoute(Base):
     origin: Mapped[str] = mapped_column(String(16), nullable=False)
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     pricing_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
-    target_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    enabled: Mapped[bool] = mapped_column(
+    is_target_available: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
     created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
@@ -136,7 +136,7 @@ class LLMUseCaseRoute(Base):
     priority: Mapped[int] = mapped_column(
         Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"), nullable=False
     )
-    enabled: Mapped[bool] = mapped_column(
+    is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
     validated_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)

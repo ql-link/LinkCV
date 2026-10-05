@@ -611,7 +611,7 @@ class InterviewRecordingTranscription(Base):
     submitted_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
     result_markdown: Mapped[str | None] = mapped_column(long_text_type, nullable=True)
     result_duration_ms: Mapped[int | None] = mapped_column(unsigned_int_type(), nullable=True)
-    pending_replace: Mapped[bool] = mapped_column(
+    is_pending_replace: Mapped[bool] = mapped_column(
         unsigned_tinyint_type(), nullable=False, default=0
     )
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

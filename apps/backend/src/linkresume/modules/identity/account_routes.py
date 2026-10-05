@@ -215,7 +215,7 @@ def update_contact_email(
 def _preferences(row: AccountPreference | None) -> AccountPreferencesResponse:
     return AccountPreferencesResponse(
         locale=row.locale if row else "zh-CN",
-        interview_reminder_enabled=bool(row.interview_reminder_enabled) if row else False,
+        interview_reminder_enabled=bool(row.is_interview_reminder_enabled) if row else False,
     )
 
 
@@ -240,7 +240,7 @@ def update_preferences(
         raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
     row = db.get(AccountPreference, user.id)
     if row is None:
-        row = AccountPreference(user_id=user.id, locale="zh-CN", interview_reminder_enabled=0)
+        row = AccountPreference(user_id=user.id, locale="zh-CN", is_interview_reminder_enabled=0)
         db.add(row)
     for key, value in payload.items():
         setattr(row, key, int(value) if key == "interview_reminder_enabled" else value)

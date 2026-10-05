@@ -99,7 +99,7 @@ def test_write_and_deletion_serialize_on_owner_row(mysql):
     def writer():
         with factory() as db:
             lock_active_user(db, uid)
-            db.add(AccountPreference(user_id=uid, locale="en-US", interview_reminder_enabled=1))
+            db.add(AccountPreference(user_id=uid, locale="en-US", is_interview_reminder_enabled=1))
             db.flush(); held.set()
             assert release.wait(5)
             db.commit()

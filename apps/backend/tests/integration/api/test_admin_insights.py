@@ -103,11 +103,11 @@ class LLMFixture:
         self.db = db
         self.now = now
         self.connection = LLMProviderConnection(
-            provider_code="openrouter", name="Example Gateway", enabled=True,
+            provider_code="openrouter", name="Example Gateway", is_enabled=True,
             credential_ciphertext="ciphertext", runtime_config_version=1,
         )
         self.other = LLMProviderConnection(
-            provider_code="deepseek", name="Direct", enabled=True,
+            provider_code="deepseek", name="Direct", is_enabled=True,
             credential_ciphertext="ciphertext", runtime_config_version=1,
         )
         db.add_all([self.connection, self.other])
@@ -122,7 +122,7 @@ class LLMFixture:
     def _route(self, model, connection, target):
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model",
-            invoke_target=target, origin="manual", enabled=True,
+            invoke_target=target, origin="manual", is_enabled=True,
         )
         self.db.add(route)
         self.db.flush()
@@ -132,7 +132,7 @@ class LLMFixture:
         self.priority = getattr(self, "priority", 0) + 1
         binding = LLMUseCaseRoute(
             use_case=use_case, route_id=route.id, protocol_code="openai_chat",
-            priority=self.priority, enabled=True,
+            priority=self.priority, is_enabled=True,
         )
         self.db.add(binding)
         self.db.flush()
