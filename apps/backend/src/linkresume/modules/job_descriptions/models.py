@@ -58,7 +58,7 @@ def ascii_char(length: int):
 
 
 class JobDescription(Base):
-    __tablename__ = "job_descriptions"
+    __tablename__ = "job_description"
 
     logo_sha256: Mapped[str | None] = mapped_column(
         ascii_char(64), nullable=True, comment="托管公司图片最终字节的 SHA-256"
@@ -75,71 +75,71 @@ class JobDescription(Base):
         return company_logo_url(self.id, self.logo_sha256) or self.logo_url
 
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_job_descriptions"),
+        PrimaryKeyConstraint("id", name="pk_job_description"),
         UniqueConstraint(
             "user_id",
             "source_site",
             "source_job_id",
-            name="uk_job_descriptions_user_source_job",
+            name="uk_job_description_user_source_job",
         ),
         UniqueConstraint(
             "user_id",
             "source_url_hash",
-            name="uk_job_descriptions_user_source_url",
+            name="uk_job_description_user_source_url",
         ),
         CheckConstraint(
             "LENGTH(TRIM(job_title)) > 0",
-            name="ck_job_descriptions_job_title_not_blank",
+            name="ck_job_description_job_title_not_blank",
         ),
         CheckConstraint(
             "LENGTH(TRIM(company_name)) > 0",
-            name="ck_job_descriptions_company_name_not_blank",
+            name="ck_job_description_company_name_not_blank",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(skills)) = 'array'",
-            name="ck_job_descriptions_skills_array",
+            name="ck_job_description_skills_array",
         ),
         CheckConstraint(
             "employment_type IS NULL OR employment_type IN "
             "('internship', 'campus', 'full_time')",
-            name="ck_job_descriptions_employment_type",
+            name="ck_job_description_employment_type",
         ),
         CheckConstraint(
             "work_mode IS NULL OR work_mode IN ('onsite', 'hybrid', 'remote')",
-            name="ck_job_descriptions_work_mode",
+            name="ck_job_description_work_mode",
         ),
         CheckConstraint(
             "salary_period IS NULL OR salary_period IN ('hour', 'day', 'month', 'year')",
-            name="ck_job_descriptions_salary_period",
+            name="ck_job_description_salary_period",
         ),
         CheckConstraint(
             "salary_min IS NULL OR salary_min >= 0",
-            name="ck_job_descriptions_salary_min",
+            name="ck_job_description_salary_min",
         ),
         CheckConstraint(
             "salary_max IS NULL OR salary_max >= 0",
-            name="ck_job_descriptions_salary_max",
+            name="ck_job_description_salary_max",
         ),
         CheckConstraint(
             "salary_min IS NULL OR salary_max IS NULL OR salary_max >= salary_min",
-            name="ck_job_descriptions_salary_range",
+            name="ck_job_description_salary_range",
         ),
         CheckConstraint(
             "(salary_min IS NULL AND salary_max IS NULL) OR "
             "(salary_currency IS NOT NULL AND salary_period IS NOT NULL)",
-            name="ck_job_descriptions_salary_context",
+            name="ck_job_description_salary_context",
         ),
         CheckConstraint(
             "salary_currency IS NULL OR LENGTH(salary_currency) = 3",
-            name="ck_job_descriptions_salary_currency",
+            name="ck_job_description_salary_currency",
         ),
         CheckConstraint(
             "salary_months_per_year IS NULL OR salary_months_per_year >= 1",
-            name="ck_job_descriptions_salary_months",
+            name="ck_job_description_salary_months",
         ),
         CheckConstraint(
             "source_type IN ('manual', 'external_import')",
-            name="ck_job_descriptions_source_type",
+            name="ck_job_description_source_type",
         ),
         CheckConstraint(
             "(((source_url IS NULL) AND (source_url_hash IS NULL) "
@@ -151,9 +151,9 @@ class JobDescription(Base):
             "AND source_site IS NOT NULL AND source_url_hash IS NOT NULL "
             "AND imported_at IS NOT NULL) OR "
             "(source_type = 'manual' AND imported_at IS NULL))",
-            name="ck_job_descriptions_source_fields",
+            name="ck_job_description_source_fields",
         ),
-        CheckConstraint("lock_version >= 1", name="ck_job_descriptions_lock_version"),
+        CheckConstraint("lock_version >= 1", name="ck_job_description_lock_version"),
         {
             "comment": "用户保存的结构化岗位描述",
             "sqlite_autoincrement": True,
@@ -269,10 +269,10 @@ class JobDescription(Base):
     lock_version: Mapped[int] = mapped_column(
         unsigned_int_type(), nullable=False, default=1, comment="乐观锁版本"
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间（UTC）"
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
@@ -282,27 +282,27 @@ class JobDescription(Base):
 
 
 Index(
-    "idx_job_descriptions_user_updated_id",
+    "idx_job_description_user_updated_id",
     JobDescription.user_id,
-    JobDescription.updated_at.desc(),
+    JobDescription.update_time.desc(),
     JobDescription.id.desc(),
 )
 
 
 class GlobalCompany(Base):
-    __tablename__ = "global_companies"
+    __tablename__ = "global_company"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_global_companies"),
+        PrimaryKeyConstraint("id", name="pk_global_company"),
         UniqueConstraint(
-            "normalized_name", name="uk_global_companies_normalized_name"
+            "normalized_name", name="uk_global_company_normalized_name"
         ),
         CheckConstraint(
             "LENGTH(TRIM(company_name)) > 0",
-            name="ck_global_companies_company_name_not_blank",
+            name="ck_global_company_company_name_not_blank",
         ),
         CheckConstraint(
             "LENGTH(TRIM(normalized_name)) > 0",
-            name="ck_global_companies_normalized_name_not_blank",
+            name="ck_global_company_normalized_name_not_blank",
         ),
         {
             "comment": "平台独立维护的全局公司资料",
@@ -342,10 +342,10 @@ class GlobalCompany(Base):
         nullable=True,
         comment="公司简介",
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间（UTC）"
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),

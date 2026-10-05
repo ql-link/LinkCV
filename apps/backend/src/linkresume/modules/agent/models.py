@@ -31,17 +31,17 @@ TIMESTAMP = DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql")
 
 
 class AgentSession(Base):
-    __tablename__ = "agent_sessions"
+    __tablename__ = "agent_session"
     __table_args__ = (
-        UniqueConstraint("public_id", name="uk_agent_sessions_public_id"),
+        UniqueConstraint("public_id", name="uk_agent_session_public_id"),
         CheckConstraint(
-            "status IN ('active', 'archived')", name="ck_agent_sessions_status"
+            "status IN ('active', 'archived')", name="ck_agent_session_status"
         ),
         Index(
-            "idx_agent_sessions_user_is_pinned_updated",
+            "idx_agent_session_user_is_pinned_updated",
             "user_id",
             "is_pinned",
-            "updated_at",
+            "update_time",
             "id",
         ),
         {"comment": "用户智能助手会话"},
@@ -67,40 +67,40 @@ class AgentSession(Base):
         nullable=True,
     )
     last_message_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class AgentRun(Base):
-    __tablename__ = "agent_runs"
+    __tablename__ = "agent_run"
     __table_args__ = (
-        UniqueConstraint("public_id", name="uk_agent_runs_public_id"),
+        UniqueConstraint("public_id", name="uk_agent_run_public_id"),
         UniqueConstraint(
-            "session_id", "idempotency_key", name="uk_agent_runs_session_idempotency"
+            "session_id", "idempotency_key", name="uk_agent_run_session_idempotency"
         ),
         CheckConstraint(
             "status IN ('running', 'succeeded', 'failed', 'cancelled')",
-            name="ck_agent_runs_status",
+            name="ck_agent_run_status",
         ),
         CheckConstraint(
             "input_tokens IS NULL OR input_tokens >= 0",
-            name="ck_agent_runs_input_tokens_nonnegative",
+            name="ck_agent_run_input_tokens_nonnegative",
         ),
         CheckConstraint(
             "output_tokens IS NULL OR output_tokens >= 0",
-            name="ck_agent_runs_output_tokens_nonnegative",
+            name="ck_agent_run_output_tokens_nonnegative",
         ),
         CheckConstraint(
             "estimated_cost IS NULL OR estimated_cost >= 0",
-            name="ck_agent_runs_cost_nonnegative",
+            name="ck_agent_run_cost_nonnegative",
         ),
-        Index("idx_agent_runs_session_created", "session_id", "created_at", "id"),
-        Index("idx_agent_runs_status_updated", "status", "updated_at", "id"),
-        Index("idx_agent_runs_created", "created_at", "id"),
+        Index("idx_agent_run_session_created", "session_id", "create_time", "id"),
+        Index("idx_agent_run_status_updated", "status", "update_time", "id"),
+        Index("idx_agent_run_created", "create_time", "id"),
         {"comment": "智能助手单次运行"},
     )
 
@@ -133,25 +133,25 @@ class AgentRun(Base):
     )
     started_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class AgentOperation(Base):
-    __tablename__ = "agent_operations"
+    __tablename__ = "agent_operation"
     __table_args__ = (
-        UniqueConstraint("public_id", name="uk_agent_operations_public_id"),
+        UniqueConstraint("public_id", name="uk_agent_operation_public_id"),
         CheckConstraint(
             "state IN ('preflighting', 'failed', 'run_created')",
-            name="ck_agent_operations_state",
+            name="ck_agent_operation_state",
         ),
-        Index("idx_agent_operations_state_created", "state", "created_at", "id"),
-        Index("idx_agent_operations_created", "created_at", "id"),
-        Index("idx_agent_operations_session", "session_id", "id"),
+        Index("idx_agent_operation_state_created", "state", "create_time", "id"),
+        Index("idx_agent_operation_created", "create_time", "id"),
+        Index("idx_agent_operation_session", "session_id", "id"),
         {"comment": "智能助手消息操作排障摘要"},
     )
 
@@ -164,26 +164,26 @@ class AgentOperation(Base):
     state: Mapped[str] = mapped_column(String(20), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     failure_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class AgentStageEvent(Base):
-    __tablename__ = "agent_stage_events"
+    __tablename__ = "agent_stage_event"
     __table_args__ = (
         UniqueConstraint(
-            "agent_operation_id", "event_key", name="uk_agent_stage_events_operation_key"
+            "agent_operation_id", "event_key", name="uk_agent_stage_event_operation_key"
         ),
         CheckConstraint(
             "result IN ('started', 'succeeded', 'failed', 'cancelled')",
-            name="ck_agent_stage_events_result",
+            name="ck_agent_stage_event_result",
         ),
         Index(
-            "idx_agent_stage_events_operation_time",
+            "idx_agent_stage_event_operation_time",
             "agent_operation_id", "occurred_at", "id",
         ),
         {"comment": "智能助手安全阶段事件"},
@@ -204,26 +204,26 @@ class AgentStageEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class AgentMessage(Base):
-    __tablename__ = "agent_messages"
+    __tablename__ = "agent_message"
     __table_args__ = (
         UniqueConstraint(
-            "session_id", "sequence_no", name="uk_agent_messages_session_sequence"
+            "session_id", "sequence_no", name="uk_agent_message_session_sequence"
         ),
-        CheckConstraint("role IN ('user', 'assistant')", name="ck_agent_messages_role"),
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_agent_message_role"),
         CheckConstraint(
             "message_type IN ('text', 'clarification')",
-            name="ck_agent_messages_message_type",
+            name="ck_agent_message_message_type",
         ),
-        Index("idx_agent_messages_session_created", "session_id", "created_at", "id"),
+        Index("idx_agent_message_session_created", "session_id", "create_time", "id"),
         {"comment": "智能助手对话消息"},
     )
 
@@ -241,24 +241,24 @@ class AgentMessage(Base):
         Text().with_variant(mysql.MEDIUMTEXT(), "mysql"), nullable=False
     )
     metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class AgentToolCall(Base):
-    __tablename__ = "agent_tool_calls"
+    __tablename__ = "agent_tool_call"
     __table_args__ = (
-        UniqueConstraint("run_id", "call_key", name="uk_agent_tool_calls_run_key"),
+        UniqueConstraint("run_id", "call_key", name="uk_agent_tool_call_run_key"),
         CheckConstraint(
             "status IN ('running', 'succeeded', 'failed', 'cancelled')",
-            name="ck_agent_tool_calls_status",
+            name="ck_agent_tool_call_status",
         ),
-        Index("idx_agent_tool_calls_run_created", "run_id", "created_at", "id"),
-        Index("idx_agent_tool_calls_tool_created", "tool_name", "created_at", "id"),
+        Index("idx_agent_tool_call_run_created", "run_id", "create_time", "id"),
+        Index("idx_agent_tool_call_tool_created", "tool_name", "create_time", "id"),
         {"comment": "受控智能助手工具调用审计"},
     )
 
@@ -273,29 +273,29 @@ class AgentToolCall(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class ResumeChangeProposal(Base):
-    __tablename__ = "resume_change_proposals"
+    __tablename__ = "resume_change_proposal"
     __table_args__ = (
-        UniqueConstraint("public_id", name="uk_resume_change_proposals_public_id"),
+        UniqueConstraint("public_id", name="uk_resume_change_proposal_public_id"),
         UniqueConstraint(
-            "run_id", "call_key", name="uk_resume_change_proposals_run_call_key"
+            "run_id", "call_key", name="uk_resume_change_proposal_run_call_key"
         ),
         CheckConstraint(
             "status IN ('pending', 'applied', 'rejected', 'expired', 'conflicted')",
-            name="ck_resume_change_proposals_status",
+            name="ck_resume_change_proposal_status",
         ),
         CheckConstraint(
             "proposal_mode IN ('legacy_snapshot', 'polish_local', "
             "'rewrite_entry_star', 'generate_from_materials', 'translate_resume')",
-            name="ck_resume_change_proposals_mode",
+            name="ck_resume_change_proposal_mode",
         ),
         CheckConstraint(
             "(proposal_mode = 'translate_resume' AND "
@@ -303,25 +303,25 @@ class ResumeChangeProposal(Base):
             "(status <> 'applied' AND result_resume_id IS NULL))) OR "
             "(proposal_mode <> 'translate_resume' AND proposed_title IS NULL "
             "AND result_resume_id IS NULL)",
-            name="ck_resume_change_proposals_translation_result",
+            name="ck_resume_change_proposal_translation_result",
         ),
         CheckConstraint(
             "base_lock_version >= 1 AND "
             "(applied_lock_version IS NULL OR applied_lock_version >= base_lock_version)",
-            name="ck_resume_change_proposals_lock_versions",
+            name="ck_resume_change_proposal_lock_versions",
         ),
         Index(
-            "idx_resume_change_proposals_user_created", "user_id", "created_at", "id"
+            "idx_resume_change_proposal_user_created", "user_id", "create_time", "id"
         ),
         Index(
-            "idx_resume_change_proposals_resume_status_created",
+            "idx_resume_change_proposal_resume_status_created",
             "resume_id",
             "status",
-            "created_at",
+            "create_time",
             "id",
         ),
         Index(
-            "idx_resume_change_proposals_pending_expiry",
+            "idx_resume_change_proposal_pending_expiry",
             "status",
             "expires_at",
             "id",
@@ -378,9 +378,9 @@ class ResumeChangeProposal(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     applied_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )

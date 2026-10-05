@@ -29,15 +29,15 @@ def user_stats(db: Session, now: datetime) -> dict[str, object]:
     week = now - timedelta(days=7)
     count = lambda *where: db.scalar(select(func.count(User.id)).where(*where)) or 0  # noqa: E731
     created = db.scalars(
-        select(User.created_at).where(User.created_at >= _start_of_day(now) - timedelta(days=13))
+        select(User.create_time).where(User.create_time >= _start_of_day(now) - timedelta(days=13))
     ).all()
     return {
         "total": count(),
-        "newUsers7d": count(User.created_at >= week),
+        "newUsers7d": count(User.create_time >= week),
         "activeUsers7d": count(User.last_login_at >= week, User.status == 1),
         "disabled": count(User.status == 0),
         "admins": count(User.is_admin == 1),
-        "registeredToday": count(User.created_at >= _start_of_day(now)),
+        "registeredToday": count(User.create_time >= _start_of_day(now)),
         "daily": _daily(created, now, 14),
     }
 
@@ -56,7 +56,7 @@ def template_stats(db: Session, now: datetime, limit: int) -> dict[str, object]:
         db.execute(select(Resume.template_id, func.count(Resume.id)).group_by(Resume.template_id)).all()
     )
     used_today = db.scalar(
-        select(func.count(Resume.id)).where(Resume.created_at >= _start_of_day(now))
+        select(func.count(Resume.id)).where(Resume.create_time >= _start_of_day(now))
     ) or 0
     items = sorted(
         (

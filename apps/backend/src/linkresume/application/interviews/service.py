@@ -307,7 +307,7 @@ def find_application_for_job(
             JobApplication.user_id == user_id,
             JobApplication.job_description_id == job_description_id,
         )
-        .order_by(JobApplication.created_at.desc(), JobApplication.id.desc())
+        .order_by(JobApplication.create_time.desc(), JobApplication.id.desc())
         .limit(1)
     )
 
@@ -354,8 +354,8 @@ def ensure_pending_application_for_job(
         applied_at=None,
         notes=notes,
         lock_version=1,
-        created_at=now,
-        updated_at=now,
+        create_time=now,
+        update_time=now,
     )
     db.add(application)
     db.flush()
@@ -532,9 +532,9 @@ def list_applications(
         )
         query = query.where(
             or_(
-                JobApplication.updated_at < cursor_time,
+                JobApplication.update_time < cursor_time,
                 and_(
-                    JobApplication.updated_at == cursor_time,
+                    JobApplication.update_time == cursor_time,
                     JobApplication.id < cursor_id,
                 ),
             )
@@ -542,7 +542,7 @@ def list_applications(
     rows = list(
         db.scalars(
             query.order_by(
-                JobApplication.updated_at.desc(), JobApplication.id.desc()
+                JobApplication.update_time.desc(), JobApplication.id.desc()
             ).limit(limit + 1)
         )
     )
@@ -551,7 +551,7 @@ def list_applications(
     next_cursor = (
         _encode_cursor(
             kind="job_applications",
-            timestamp=items[-1].updated_at,
+            timestamp=items[-1].update_time,
             row_id=items[-1].id,
             filter_digest=filter_digest,
         )
@@ -690,7 +690,7 @@ def add_application_stage(
         previous.stage_status = "completed"
         previous.stage_result = "passed"
         previous.completed_at = now
-        previous.updated_at = now
+        previous.update_time = now
         db.execute(
             update(InterviewSession)
             .where(
@@ -698,7 +698,7 @@ def add_application_stage(
                 InterviewSession.status == "completed",
                 InterviewSession.round_result == "pending",
             )
-            .values(round_result="passed", updated_at=now)
+            .values(round_result="passed", update_time=now)
         )
     last_sequence_no = db.scalar(
         select(func.max(JobApplicationStage.sequence_no)).where(
@@ -718,8 +718,8 @@ def add_application_stage(
         current_marker=1,
         entered_at=now,
         completed_at=None,
-        created_at=now,
-        updated_at=now,
+        create_time=now,
+        update_time=now,
     )
     application.applied_at = (
         payload.applied_at.astimezone(UTC)
@@ -735,7 +735,7 @@ def add_application_stage(
     application.terminated_at = None
     application.termination_reason = None
     application.lock_version += 1
-    application.updated_at = now
+    application.update_time = now
     try:
         db.add(stage)
         db.commit()
@@ -793,7 +793,7 @@ def terminate_application(
             "rejected" if payload.reason == "company_rejected" else "skipped"
         )
         current.completed_at = now
-        current.updated_at = now
+        current.update_time = now
     application.applied_at = (
         payload.applied_at.astimezone(UTC)
         if payload.applied_at is not None
@@ -812,7 +812,7 @@ def terminate_application(
     if payload.reason == "offer_declined":
         application.offer_status = "declined"
     application.lock_version += 1
-    application.updated_at = now
+    application.update_time = now
     db.commit()
     db.refresh(application)
     return StageChangeResult(application=application, stage=None)
@@ -1360,7 +1360,7 @@ def settle_elapsed_sessions(
     for session in elapsed:
         session.status = "completed"
         session.completed_at = session.end_at
-        session.updated_at = now
+        session.update_time = now
     if waits_for_result:
         application.stage_state = "awaiting_result"
     db.flush()
@@ -1490,8 +1490,8 @@ def create_session(
         reminder_minutes=payload.reminder_minutes,
         preparation_note=payload.preparation_note,
         lock_version=1,
-        created_at=now,
-        updated_at=now,
+        create_time=now,
+        update_time=now,
     )
     try:
         db.add(session)
@@ -1508,7 +1508,7 @@ def create_session(
             .values(
                 **_state_values(state),
                 lock_version=JobApplication.lock_version + 1,
-                updated_at=now,
+                update_time=now,
             )
         )
         if transition.rowcount != 1:
@@ -1812,10 +1812,10 @@ def complete_interview(
     session.status = "completed"
     session.completed_at = now
     session.lock_version += 1
-    session.updated_at = now
+    session.update_time = now
     _apply_state(result.application, state)
     result.application.lock_version += 1
-    result.application.updated_at = now
+    result.application.update_time = now
     db.commit()
     db.refresh(session)
     return session
@@ -1846,10 +1846,10 @@ def cancel_interview(
     session.cancelled_at = now
     session.cancellation_reason = payload.reason
     session.lock_version += 1
-    session.updated_at = now
+    session.update_time = now
     _apply_state(result.application, state)
     result.application.lock_version += 1
-    result.application.updated_at = now
+    result.application.update_time = now
     db.commit()
     db.refresh(session)
     return session
@@ -1879,7 +1879,7 @@ def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication
     ):
         result.application.stage_state = "awaiting_schedule"
         result.application.lock_version += 1
-        result.application.updated_at = utc_now()
+        result.application.update_time = utc_now()
     db.commit()
     db.refresh(result.application)
     return result.application
@@ -1899,7 +1899,7 @@ def list_assets(db: Session, user_id: int, session_id: int) -> list[UserDataset]
                 UserDataset.user_id == user_id,
                 DocumentParseTask.upload_status == "succeeded",
             )
-            .order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
+            .order_by(UserDataset.create_time.desc(), UserDataset.id.desc())
         )
     )
 
@@ -2067,7 +2067,7 @@ def overview(
                 JobApplication.archived_at.is_(None),
                 JobApplication.status == "active",
             )
-            .order_by(JobApplication.updated_at.desc(), JobApplication.id.desc())
+            .order_by(JobApplication.update_time.desc(), JobApplication.id.desc())
         )
     )
     return metrics, pipeline, week_sessions

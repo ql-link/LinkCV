@@ -23,7 +23,7 @@ TARGET_ID = String(256).with_variant(
 
 
 class LLMProviderConnection(Base):
-    __tablename__ = "llm_provider_connections"
+    __tablename__ = "llm_provider_connection"
     __table_args__ = (
         UniqueConstraint("provider_code", "name", name="uk_llm_connections_provider_name"),
         CheckConstraint("runtime_config_version >= 1", name="ck_llm_connections_version"),
@@ -43,14 +43,14 @@ class LLMProviderConnection(Base):
     )
     catalog_state_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     catalog_synced_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    update_time: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class LLMModel(Base):
-    __tablename__ = "llm_models"
+    __tablename__ = "llm_model"
     __table_args__ = ({"comment": "用户选择的稳定逻辑模型"},)
 
     id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
@@ -60,14 +60,14 @@ class LLMModel(Base):
     is_user_selectable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=true()
     )
-    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    update_time: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class LLMModelRoute(Base):
-    __tablename__ = "llm_model_routes"
+    __tablename__ = "llm_model_route"
     __table_args__ = (
         UniqueConstraint(
             "connection_id", "target_kind", "invoke_target",
@@ -110,18 +110,18 @@ class LLMModelRoute(Base):
     is_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
-    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    update_time: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class LLMUseCaseRoute(Base):
-    __tablename__ = "llm_use_case_routes"
+    __tablename__ = "llm_use_case_route"
     __table_args__ = (
-        UniqueConstraint("use_case", "route_id", name="uk_llm_use_case_routes_use_case_route"),
+        UniqueConstraint("use_case", "route_id", name="uk_llm_use_case_route_use_case_route"),
         UniqueConstraint("use_case", "priority", name="uk_llm_use_case_priority"),
-        Index("idx_llm_use_case_routes_route", "route_id"),
+        Index("idx_llm_use_case_route_route", "route_id"),
         CheckConstraint("priority >= 0", name="ck_llm_use_case_priority"),
         {"comment": "系统能力和对话列表共用的场景线路绑定"},
     )
@@ -138,8 +138,8 @@ class LLMUseCaseRoute(Base):
     )
     validated_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     validated_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    update_time: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
@@ -155,13 +155,13 @@ def get_use_case_route(db: Session, use_case: str, route_id: int) -> "LLMUseCase
 
 
 class LLMCallLog(Base):
-    __tablename__ = "llm_call_logs"
+    __tablename__ = "llm_call_log"
     __table_args__ = (
-        UniqueConstraint("call_id", name="uk_llm_call_logs_call_id"),
-        Index("idx_llm_calls_created", "created_at", "id"),
-        Index("idx_llm_calls_user_created", "user_id", "created_at", "id"),
-        Index("idx_llm_calls_route_created", "route_id", "created_at", "id"),
-        Index("idx_llm_calls_run_created", "agent_run_id", "created_at", "id"),
+        UniqueConstraint("call_id", name="uk_llm_call_log_call_id"),
+        Index("idx_llm_calls_created", "create_time", "id"),
+        Index("idx_llm_calls_user_created", "user_id", "create_time", "id"),
+        Index("idx_llm_calls_route_created", "route_id", "create_time", "id"),
+        Index("idx_llm_calls_run_created", "agent_run_id", "create_time", "id"),
         CheckConstraint(
             "status IN ('pending', 'succeeded', 'failed', 'cancelled')",
             name="ck_llm_calls_status",
@@ -211,7 +211,7 @@ class LLMCallLog(Base):
     cost_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(ID, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    update_time: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()
     )

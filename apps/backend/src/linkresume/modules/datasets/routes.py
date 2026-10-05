@@ -253,7 +253,7 @@ def dataset_record(
         upload_status=task.upload_status,
         parse_status=task.parse_status,
         failure_reason=task.failure_reason,
-        created_at=dataset.created_at,
+        created_at=dataset.create_time,
         content_revision=str(dataset.content_revision or 0),
         content_updated_at=dataset.content_updated_at,
         asset_kind=dataset.asset_kind,
@@ -378,7 +378,7 @@ def list_datasets(
             except ValueError:
                 raise ApiError(400, "INVALID_FOLDER_ID")
     rows = db.execute(
-        query.order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
+        query.order_by(UserDataset.create_time.desc(), UserDataset.id.desc())
     ).all()
     return UserDatasetListResponse(
         datasets=[dataset_record(dataset, task) for dataset, task in rows],
@@ -419,7 +419,7 @@ def list_folders(
         db.execute(
             select(UserDatasetFolder)
             .where(UserDatasetFolder.user_id == user.id)
-            .order_by(UserDatasetFolder.created_at.asc(), UserDatasetFolder.id.asc())
+            .order_by(UserDatasetFolder.create_time.asc(), UserDatasetFolder.id.asc())
         )
         .scalars()
         .all()
@@ -449,8 +449,8 @@ def list_folders(
             id=str(f.id),
             name=f.name,
             dataset_count=counts_map.get(f.id, 0),
-            created_at=f.created_at,
-            updated_at=f.updated_at,
+            created_at=f.create_time,
+            updated_at=f.update_time,
         )
         for f in folders
     ]
@@ -505,8 +505,8 @@ def create_folder(
         id=str(folder.id),
         name=folder.name,
         dataset_count=0,
-        created_at=folder.created_at,
-        updated_at=folder.updated_at,
+        created_at=folder.create_time,
+        updated_at=folder.update_time,
     )
 
 
@@ -564,8 +564,8 @@ def rename_folder(
         id=str(folder.id),
         name=folder.name,
         dataset_count=count,
-        created_at=folder.created_at,
-        updated_at=folder.updated_at,
+        created_at=folder.create_time,
+        updated_at=folder.update_time,
     )
 
 

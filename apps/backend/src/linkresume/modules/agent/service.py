@@ -180,8 +180,8 @@ def session_record(
         status=session.status,
         selected_model_id=str(session.selected_llm_model_id) if session.selected_llm_model_id else None,
         last_message_at=session.last_message_at,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
+        created_at=session.create_time,
+        updated_at=session.update_time,
         messages=[
             AgentMessageRecord(
                 sequence_no=item.sequence_no,
@@ -198,7 +198,7 @@ def session_record(
                 tasks=(item.metadata_json.get("agent_tasks")
                        if item.role == "user" and isinstance(item.metadata_json, dict)
                        else None),
-                created_at=item.created_at,
+                created_at=item.create_time,
             )
             for item in (messages or [])
         ],
@@ -237,7 +237,7 @@ def proposal_record(
         status=proposal.status,
         applied_lock_version=proposal.applied_lock_version,
         expires_at=proposal.expires_at,
-        created_at=proposal.created_at,
+        created_at=proposal.create_time,
     )
 
 
@@ -353,7 +353,7 @@ def update_session(
         ):
             raise ApiError(409, "AGENT_MODEL_UNAVAILABLE")
         record.selected_llm_model_id = selected
-    record.updated_at = utc_now()
+    record.update_time = utc_now()
     try:
         db.commit()
     except Exception:
@@ -787,7 +787,7 @@ def resolve_resume_reference(
         db.scalars(
         select(Resume)
         .where(Resume.user_id == session.user_id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
         ).all()
     )
     if resume_id is not None:
@@ -822,7 +822,7 @@ def resolve_resume_reference(
                 {
                     "resume_id": str(resume.id),
                     "title": resume.title,
-                    "updated_at": resume.updated_at,
+                    "updated_at": resume.update_time,
                 }
                 for resume in matches[:10]
             ],

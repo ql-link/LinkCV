@@ -105,6 +105,8 @@ FastAPI 与 Pi 对 AIHubMix 的两个受控地址使用逐模型验证的参数�
 
 提案确认接口接受可选请求体 `{entry}`，只用于产品漏斗统计，不参与提案校验、重放或权限判断；非法取值在进入确认逻辑前由请求校验返回 422。
 
+`0111–0115` 之后，治理表名为 `llm_provider_connection`、`llm_model`、`llm_model_route`、`llm_use_case_route`、`llm_call_log`，启用与可选标记为 `is_enabled`、`is_user_selectable`、`is_target_available`（NULL 表示未探测）。`llm_use_case_route` 以 `id` 为主键、`(use_case, route_id)` 唯一，代码通过 `get_use_case_route()` 按自然键读取。删除连接、模型或线路前，管理端检查绑定、调用日志和 Agent 运行的引用并返回 409；数据库不再用外键兜底。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
+
 ## 扩展边界
 
 `resume_tools.replace_editor_markdown` 在修改结构化字段的 `value` 时同步清除该字段的旧 `runs`，随后仍走 canonical 校验；字段样式模型见 [语义简历契约](../api/http-contracts.md#语义简历契约)。

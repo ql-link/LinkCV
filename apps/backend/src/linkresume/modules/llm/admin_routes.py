@@ -138,8 +138,8 @@ def _connection_record(row: LLMProviderConnection) -> dict:
         "enabled": row.is_enabled,
         "runtimeConfigVersion": row.runtime_config_version,
         "catalogSyncedAt": row.catalog_synced_at,
-        "createdAt": row.created_at,
-        "updatedAt": row.updated_at,
+        "createdAt": row.create_time,
+        "updatedAt": row.update_time,
     }
 
 
@@ -149,8 +149,8 @@ def _model_record(row: LLMModel) -> dict:
         "displayName": row.display_name,
         "developerName": row.developer_name,
         "userSelectable": bool(row.is_user_selectable),
-        "createdAt": row.created_at,
-        "updatedAt": row.updated_at,
+        "createdAt": row.create_time,
+        "updatedAt": row.update_time,
     }
 
 
@@ -168,8 +168,8 @@ def _route_record(row: LLMModelRoute) -> dict:
         "pricing": row.pricing_json,
         "targetAvailable": row.is_target_available,
         "enabled": row.is_enabled,
-        "createdAt": row.created_at,
-        "updatedAt": row.updated_at,
+        "createdAt": row.create_time,
+        "updatedAt": row.update_time,
     }
 
 
@@ -286,7 +286,7 @@ def patch_connection(
             raise ApiError(503, "LLM_CREDENTIALS_UNAVAILABLE") from error
     if runtime_changed:
         row.runtime_config_version += 1
-    row.updated_at = utc_now()
+    row.update_time = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
     return {"connection": _connection_record(row)}
@@ -415,7 +415,7 @@ def patch_model(
         row.developer_name = payload.developer_name.strip() if payload.developer_name else None
     if payload.user_selectable is not None:
         row.is_user_selectable = payload.user_selectable
-    row.updated_at = utc_now()
+    row.update_time = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
     return {"model": _model_record(row)}
@@ -503,7 +503,7 @@ def patch_route(
             if not any(probe_valid(item, row, connection) for item in bindings):
                 raise ApiError(422, "LLM_PROBE_REQUIRED")
         row.is_enabled = payload.enabled
-    row.updated_at = utc_now()
+    row.update_time = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
     return {"route": _route_record(row)}
@@ -570,7 +570,7 @@ def bind_route(
         if not probe_valid(row, route, connection):
             raise ApiError(422, "LLM_PROBE_REQUIRED")
     row.is_enabled = payload.enabled
-    row.updated_at = utc_now()
+    row.update_time = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}
 
@@ -595,7 +595,7 @@ def patch_binding(
         if payload.enabled and not probe_valid(row, route, connection):
             raise ApiError(422, "LLM_PROBE_REQUIRED")
         row.is_enabled = payload.enabled
-    row.updated_at = utc_now()
+    row.update_time = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}
 
@@ -660,7 +660,7 @@ def list_calls(
     if from_at is not None or to_at is not None:
         window = resolve_window(from_at, to_at, default=timedelta(hours=24))
         filters.extend(
-            [LLMCallLog.created_at >= window.start, LLMCallLog.created_at < window.end]
+            [LLMCallLog.create_time >= window.start, LLMCallLog.create_time < window.end]
         )
     statement = (
         select(LLMCallLog).where(*filters).order_by(LLMCallLog.id.desc()).limit(limit + 1)
@@ -689,7 +689,7 @@ def list_calls(
                 "inputTokens": row.input_tokens, "outputTokens": row.output_tokens,
                 "estimatedCost": str(row.estimated_cost) if row.estimated_cost is not None else None,
                 "costCurrency": row.cost_currency, "errorCode": row.error_code,
-                "createdAt": row.created_at,
+                "createdAt": row.create_time,
             }
             for row in page
         ],

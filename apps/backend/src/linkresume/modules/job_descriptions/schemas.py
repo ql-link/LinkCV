@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 EmploymentType = Literal[
@@ -412,7 +412,7 @@ class JobDescriptionSummary(BaseModel):
     source_site: str | None
     source_url: str | None
     lock_version: int
-    updated_at: datetime
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @field_validator("id", mode="before")
     @classmethod
@@ -449,7 +449,7 @@ class JobDescriptionRecord(JobDescriptionSummary):
     source_url_hash: str | None
     imported_at: datetime | None
     notes: str | None
-    created_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
 
     @field_validator("source_url_hash", mode="before")
     @classmethod

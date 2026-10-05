@@ -156,7 +156,7 @@ def resolve_public_share(
         sharer=PublicShareSharer(nickname=owner.nickname, avatar_url=owner.avatar_url),
         allow_download=bool(resume.is_share_allow_download),
         expires_at=resume.share_expires_at,
-        updated_at=resume.updated_at,
+        updated_at=resume.update_time,
     )
 
 

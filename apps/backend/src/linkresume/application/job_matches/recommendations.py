@@ -53,7 +53,7 @@ def _latest_resume(db: Session, user_id: int) -> Resume | None:
     return db.scalar(
         select(Resume)
         .where(Resume.user_id == user_id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
         .limit(1)
     )
 
@@ -70,7 +70,7 @@ def _application_statuses(
             JobApplication.job_description_id.in_(job_ids),
             JobApplication.archived_at.is_(None),
         )
-        .order_by(JobApplication.updated_at.desc(), JobApplication.id.desc())
+        .order_by(JobApplication.update_time.desc(), JobApplication.id.desc())
     ).all()
     statuses: dict[int, str] = {}
     for application in rows:
@@ -94,7 +94,7 @@ def plan(db: Session, user_id: int) -> tuple[str | None, Plan | None, int]:
         for job in db.scalars(
             select(JobDescription)
             .where(JobDescription.user_id == user_id)
-            .order_by(JobDescription.updated_at.desc(), JobDescription.id.desc())
+            .order_by(JobDescription.update_time.desc(), JobDescription.id.desc())
             .limit(SCAN_LIMIT)
         )
         if service.has_analyzable_content(job)

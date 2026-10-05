@@ -110,7 +110,7 @@ def _requeue(row: InterviewRecordingTranscription, session_id: int, now: datetim
     row.result_duration_ms = None
     row.is_pending_replace = False
     row.error_code = None
-    row.updated_at = now
+    row.update_time = now
 
 
 def cancel_for_dataset(db: Session, dataset_id: int) -> None:
@@ -126,7 +126,7 @@ def cancel_for_dataset(db: Session, dataset_id: int) -> None:
         row.status = "cancelled"
         row.error_code = None
     row.is_pending_replace = False
-    row.updated_at = _now()
+    row.update_time = _now()
 
 
 def list_for_sessions(
@@ -194,9 +194,9 @@ def apply(db: Session, user_id: int, session_id: int, dataset_id: int, base_lock
     session.questions_markdown = row.result_markdown
     session.transcript_source = "transcription"
     session.lock_version += 1
-    session.updated_at = now
+    session.update_time = now
     row.is_pending_replace = False
-    row.updated_at = now
+    row.update_time = now
     db.commit()
 
 
@@ -211,7 +211,7 @@ def store_result(db: Session, row: InterviewRecordingTranscription, transcript: 
     row.result_duration_ms = transcript.duration_ms
     row.error_code = None
     row.lease_until = None
-    row.updated_at = now
+    row.update_time = now
     if session is None:
         row.status = "cancelled"
         return
@@ -221,7 +221,7 @@ def store_result(db: Session, row: InterviewRecordingTranscription, transcript: 
     session.questions_markdown = transcript.markdown
     session.transcript_source = "transcription"
     session.lock_version += 1
-    session.updated_at = now
+    session.update_time = now
     row.is_pending_replace = False
 
 
@@ -313,7 +313,7 @@ class TranscriptionRunner:
                 row.status = "failed"
                 row.error_code = code
                 row.lease_until = None
-                row.updated_at = _now()
+                row.update_time = _now()
             db.commit()
 
     def _claim(self, job_id: int) -> _Work | None:
@@ -334,13 +334,13 @@ class TranscriptionRunner:
             dataset = db.get(UserDataset, row.dataset_id)
             if dataset is None or dataset.interview_session_id != row.session_id:
                 row.status = "cancelled"
-                row.updated_at = now
+                row.update_time = now
                 db.commit()
                 return None
             if row.status == "running" and row.submitted_at is not None and _naive_utc(row.submitted_at) + TASK_TIMEOUT < now:
                 row.status = "failed"
                 row.error_code = "INTERVIEW_TRANSCRIPTION_TIMEOUT"
-                row.updated_at = now
+                row.update_time = now
                 db.commit()
                 return None
             row.lease_until = now + LEASE
@@ -362,11 +362,11 @@ class TranscriptionRunner:
             if dataset is None or dataset.interview_session_id != row.session_id:
                 row.status = "cancelled"
                 row.lease_until = None
-                row.updated_at = _now()
+                row.update_time = _now()
             else:
                 mutate(db, row)
                 row.lease_until = None
-                row.updated_at = _now()
+                row.update_time = _now()
             db.commit()
 
     def _advance(self, job_id: int, target: SpeechTarget) -> _Billing | None:

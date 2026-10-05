@@ -249,7 +249,7 @@ class ResumeImportProcessor:
                 record.parse_status = "failed"
                 record.failure_reason = failure_reason
                 if started is None:
-                    created_at = record.created_at
+                    created_at = record.create_time
                     if created_at.tzinfo is None:
                         created_at = created_at.replace(tzinfo=timezone.utc)
                     elapsed_ms = round((utc_now() - created_at).total_seconds() * 1000)

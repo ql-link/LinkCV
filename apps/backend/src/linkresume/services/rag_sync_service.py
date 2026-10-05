@@ -475,7 +475,7 @@ def ready_files(
             UserDatasetRagSync.rag_file_id.is_not(None),
             UserDatasetRagSync.synced_revision == UserDataset.content_revision,
         )
-        .order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
+        .order_by(UserDataset.create_time.desc(), UserDataset.id.desc())
     )
     if dataset_ids is not None:
         if not dataset_ids:

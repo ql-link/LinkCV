@@ -96,7 +96,7 @@ def _profile(user: User, settings: Settings) -> UserProfileResponse:
         wechat_status=wechat_status,
         wechat_bound_at=user.wechat_bound_at if wechat_login_enabled(settings) else None,
         contact_email=user.contact_email,
-        registered_at=user.created_at,
+        registered_at=user.create_time,
     )
 
 
@@ -176,7 +176,7 @@ def get_profile(
     recent = db.scalars(
         select(Resume)
         .where(Resume.user_id == user.id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
         .limit(RECENT_RESUMES_LIMIT)
     ).all()
     return AccountProfileResponse(
@@ -190,7 +190,7 @@ def get_profile(
         resume_count=resume_count,
         recent_resumes=[
             RecentResumeSummary(
-                id=str(resume.id), title=resume.title, updated_at=resume.updated_at
+                id=str(resume.id), title=resume.title, updated_at=resume.update_time
             )
             for resume in recent
         ],

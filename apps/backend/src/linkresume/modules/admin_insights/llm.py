@@ -37,12 +37,12 @@ def call_rows(db: Session, window: Window):
             LLMCallLog.cost_currency,
             LLMCallLog.estimated_cost,
             LLMCallLog.use_case,
-            LLMCallLog.created_at,
+            LLMCallLog.create_time,
             LLMModelRoute.model_id,
             LLMModelRoute.connection_id,
         )
         .join(LLMModelRoute, LLMModelRoute.id == LLMCallLog.route_id)
-        .where(LLMCallLog.created_at >= window.start, LLMCallLog.created_at < window.end)
+        .where(LLMCallLog.create_time >= window.start, LLMCallLog.create_time < window.end)
     ).all()
 
 
@@ -182,4 +182,4 @@ def user_totals(db: Session, user_id: int) -> tuple[int, dict[str, object]]:
 
 
 def calls_since(db: Session, start) -> int:
-    return db.scalar(select(func.count(LLMCallLog.id)).where(LLMCallLog.created_at >= start)) or 0
+    return db.scalar(select(func.count(LLMCallLog.id)).where(LLMCallLog.create_time >= start)) or 0

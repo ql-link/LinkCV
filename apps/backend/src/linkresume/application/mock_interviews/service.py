@@ -305,7 +305,7 @@ def build_interview(db: Session, user_id: int, request: StartRequest) -> MockInt
         task_token=new_task_token(),
         last_activity_at=utc_now(),
         # Explicit microsecond timestamps keep list cursors stable on every backend.
-        created_at=utc_now(),
+        create_time=utc_now(),
     )
 
 

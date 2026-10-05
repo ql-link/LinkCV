@@ -110,6 +110,8 @@ desktop 渠道仅获得模板、本人简历、PDF 和私有图片的明确 GET 
 3. 系统示例身份按未填写处理并把总分封顶为 20，残留示例学校、公司或项目把总分封顶为 60。结果不评价整体表达质量或岗位匹配度，也不写入 Store 持久状态、API、数据库或版本。
 4. 检查失败或低分不阻止编辑、保存和导出；切换简历后根据当前正文重新计算。
 
+`0111–0115` 之后，简历相关表名为 `resume`、`resume_template`、`document_parse_task`，时间列为 `create_time`/`update_time`，分享下载开关列为 `is_share_allow_download`；接口仍输出 `created_at`、`updated_at` 和 `share_allow_download`。删除简历时，求职记录与模拟面试上的简历引用和匹配结果由服务显式解除或删除，不依赖数据库外键。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
+
 ## 权限、并发与失败边界
 
 - 所有简历、版本和资源操作同时校验 `resume_id + user_id`，不能仅凭资源路径授权。

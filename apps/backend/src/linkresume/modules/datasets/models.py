@@ -30,13 +30,13 @@ def timestamp_type():
 
 
 class UserDatasetFolder(Base):
-    __tablename__ = "user_dataset_folders"
+    __tablename__ = "user_dataset_folder"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_user_dataset_folders"),
+        PrimaryKeyConstraint("id", name="pk_user_dataset_folder"),
         UniqueConstraint(
             "user_id",
             "name",
-            name="uk_user_dataset_folders_user_name",
+            name="uk_user_dataset_folder_user_name",
         ),
         {"comment": "用户资料分类文件夹"},
     )
@@ -50,13 +50,13 @@ class UserDatasetFolder(Base):
         comment="所属用户 ID",
     )
     name: Mapped[str] = mapped_column(String(64), nullable=False, comment="文件夹名称")
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
         comment="创建时间（UTC）",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
@@ -109,7 +109,7 @@ class UserDataset(Base):
         Index(
             "idx_user_dataset_session_created",
             "interview_session_id",
-            "created_at",
+            "create_time",
             "id",
         ),
         {"comment": "用户知识库数据集"},
@@ -190,13 +190,13 @@ class UserDataset(Base):
         nullable=True,
         comment="迁移来源 interview_assets.id",
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
         comment="创建时间（UTC）",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
@@ -259,9 +259,9 @@ class UserDatasetRagSync(Base):
     )
     last_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
     next_attempt_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
     )

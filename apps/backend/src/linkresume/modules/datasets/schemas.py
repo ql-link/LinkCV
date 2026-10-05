@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class UserDatasetRenameRequest(BaseModel):
@@ -27,8 +27,8 @@ class DatasetFolderRecord(BaseModel):
     id: str
     name: str
     dataset_count: int = 0
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @field_validator("id", mode="before")
     @classmethod
@@ -79,7 +79,7 @@ class UserDatasetRecord(BaseModel):
     upload_status: str
     parse_status: str | None
     failure_reason: str | None
-    created_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
     content_revision: str = "0"
     content_updated_at: datetime | None = None
     folder_name: str | None = None

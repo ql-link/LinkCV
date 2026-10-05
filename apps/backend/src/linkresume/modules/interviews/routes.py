@@ -252,7 +252,7 @@ def _asset_record(dataset: UserDataset) -> InterviewAssetRecord:
         file_size=dataset.file_size,
         duration_ms=dataset.duration_ms,
         sha256=dataset.sha256,
-        created_at=dataset.created_at,
+        created_at=dataset.create_time,
     )
 
 

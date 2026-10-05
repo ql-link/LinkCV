@@ -323,18 +323,18 @@ def close_stale_resume_imports(
             or_(
                 and_(
                     DocumentParseTask.upload_status == "uploading",
-                    DocumentParseTask.updated_at < upload_cutoff,
+                    DocumentParseTask.update_time < upload_cutoff,
                 ),
                 and_(
                     DocumentParseTask.parse_status == "processing",
-                    DocumentParseTask.updated_at < parse_cutoff,
+                    DocumentParseTask.update_time < parse_cutoff,
                 ),
             ),
         )
         .with_for_update()
     ).all()
     for record in records:
-        created_at = record.created_at
+        created_at = record.create_time
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
         elapsed_ms = round((now - created_at).total_seconds() * 1000)
@@ -678,7 +678,7 @@ def apply_resume_template(
             data_json=deepcopy(candidate.data_json),
             style_json=deepcopy(candidate.style_json),
             lock_version=Resume.lock_version + 1,
-            updated_at=utc_now(),
+            update_time=utc_now(),
         )
     )
     if result.rowcount != 1:

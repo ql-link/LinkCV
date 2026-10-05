@@ -27,8 +27,8 @@ NOW = datetime(2026, 9, 20, 8, 0, tzinfo=UTC)
 
 
 def seed(db: Session) -> tuple[int, int]:
-    email_user = User(email="backfill@example.invalid", nickname="张三", created_at=NOW)
-    wechat_user = User(wechat_openid="openid-fixture", nickname="微信用户", created_at=NOW + timedelta(hours=1))
+    email_user = User(email="backfill@example.invalid", nickname="张三", create_time=NOW)
+    wechat_user = User(wechat_openid="openid-fixture", nickname="微信用户", create_time=NOW + timedelta(hours=1))
     db.add_all([email_user, wechat_user])
     db.flush()
     # A live event already exists for the email user's registration.

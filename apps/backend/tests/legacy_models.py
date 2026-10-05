@@ -33,7 +33,7 @@ class ResumeVersion(Base):
     resume_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
         ForeignKey(
-            "resumes.id",
+            "resume.id",
             name="fk_resume_versions_resume",
             ondelete="CASCADE",
         ),
@@ -43,7 +43,7 @@ class ResumeVersion(Base):
     template_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
         ForeignKey(
-            "resume_templates.id",
+            "resume_template.id",
             name="fk_resume_versions_template",
             ondelete="RESTRICT",
         ),
@@ -115,7 +115,7 @@ class InterviewAsset(Base):
     interview_session_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
         ForeignKey(
-            "interview_sessions.id",
+            "interview_session.id",
             name="fk_interview_assets_session",
             ondelete="RESTRICT",
         ),

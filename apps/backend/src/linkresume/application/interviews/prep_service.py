@@ -262,7 +262,7 @@ def store_generated_items(
     session.prep_items = merged
     session.prep_generated_at = utc_now()
     session.lock_version += 1
-    session.updated_at = utc_now()
+    session.update_time = utc_now()
     db.commit()
     db.refresh(session)
     return session

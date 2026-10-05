@@ -1,6 +1,7 @@
 """Account schema, cleanup and owner serialization on disposable MySQL 8.4."""
 import asyncio
 import os
+import re
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -25,6 +26,9 @@ from linkresume.modules.identity.schemas import PasswordDeletionRequest
 from linkresume.workers.account_deletion_worker import AccountDeletionProcessor
 from tests.fakes import FakeRedis
 from tests.integration.api.test_identity_resumes_assets import FakeStorage
+
+# The owner row lives in `user` since 0115; do not match user_dataset or other prefixes.
+OWNER_ROW_SELECT = re.compile(r"\bFROM `?user`?(?!\w)")
 
 BACKEND = Path(__file__).resolve().parents[3]
 
@@ -82,13 +86,13 @@ def close(factory, uid, redis):
 def test_historical_upgrade_and_actual_schema(mysql):
     with mysql.connect() as db:
         assert db.scalar(text("SELECT version_num FROM alembic_version")) >= "0106"  # head may be later; this test covers the account tables
-        assert db.scalar(text("SELECT contact_email FROM users WHERE email='historical@example.test'")) == "historical@example.test"
-        assert db.scalar(text("SELECT COUNT(*) FROM account_preferences")) == 0
+        assert db.scalar(text("SELECT contact_email FROM `user` WHERE email='historical@example.test'")) == "historical@example.test"
+        assert db.scalar(text("SELECT COUNT(*) FROM account_preference")) == 0
     schema = inspect(mysql)
-    assert {c["name"] for c in schema.get_columns("account_preferences")} == set(AccountPreference.__table__.columns.keys())
-    assert {c["name"] for c in schema.get_columns("account_deletion_jobs")} == set(AccountDeletionJob.__table__.columns.keys())
-    assert schema.get_foreign_keys("account_deletion_jobs") == []
-    assert len(schema.get_check_constraints("account_preferences")) == 2
+    assert {c["name"] for c in schema.get_columns("account_preference")} == set(AccountPreference.__table__.columns.keys())
+    assert {c["name"] for c in schema.get_columns("account_deletion_job")} == set(AccountDeletionJob.__table__.columns.keys())
+    assert schema.get_foreign_keys("account_deletion_job") == []
+    assert len(schema.get_check_constraints("account_preference")) == 2
     assert "resume_versions" not in schema.get_table_names()
 
 
@@ -329,7 +333,7 @@ def test_imports_keep_event_loop_live_and_respect_owner_capacity(mysql):
     upload = storage.upload
 
     def owner_lock_attempted(_connection, _cursor, statement, *_args):
-        if held.is_set() and "FROM users" in statement and "FOR UPDATE" in statement:
+        if held.is_set() and OWNER_ROW_SELECT.search(statement) and "FOR UPDATE" in statement:
             attempting.set()
 
     event.listen(mysql, "before_cursor_execute", owner_lock_attempted)

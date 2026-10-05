@@ -216,7 +216,7 @@ def _claim(factory, user_id: int, session_id: int, payload: GenerateReviewReques
                 session.review_status = "failed"
                 session.review_error = "INTERVIEW_REVIEW_INTERRUPTED"
                 session.lock_version += 1
-                session.updated_at = utc_now()
+                session.update_time = utc_now()
                 db.commit()
             if session.review_status == "failed":
                 raise ApiError(502, session.review_error or "INTERVIEW_REVIEW_FAILED")
@@ -245,7 +245,7 @@ def _claim(factory, user_id: int, session_id: int, payload: GenerateReviewReques
         session.review_status = "generating"
         session.review_error = None
         session.lock_version += 1
-        session.updated_at = now
+        session.update_time = now
         db.commit()
         return True
 
@@ -288,7 +288,7 @@ def _store(factory, user_id: int, session_id: int, request_id: str, *, report=No
         session.review_status = "ready" if report is not None else "failed"
         session.review_error = error
         session.lock_version += 1
-        session.updated_at = utc_now()
+        session.update_time = utc_now()
         db.commit()
 
 

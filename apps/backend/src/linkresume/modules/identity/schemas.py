@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from linkresume.modules.job_descriptions.schemas import (
     SalaryPeriod,
@@ -363,8 +363,8 @@ class UserProfileData(UserProfileBase):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     lock_version: int
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime | None = Field(default=None, validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime | None = Field(default=None, validation_alias=AliasChoices("update_time", "updated_at"))
 
     @model_validator(mode="before")
     @classmethod

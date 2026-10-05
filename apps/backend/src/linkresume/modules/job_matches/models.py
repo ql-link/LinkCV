@@ -22,27 +22,27 @@ from linkresume.modules.job_descriptions.models import ascii_char, timestamp_typ
 
 
 class JobResumeMatch(Base):
-    __tablename__ = "job_resume_matches"
+    __tablename__ = "job_resume_match"
     __table_args__ = (
         UniqueConstraint(
-            "job_description_id", "resume_id", name="uk_job_resume_matches_job_resume"
+            "job_description_id", "resume_id", name="uk_job_resume_match_job_resume"
         ),
         CheckConstraint(
             "status IN ('pending', 'ready', 'failed')",
-            name="ck_job_resume_matches_status",
+            name="ck_job_resume_match_status",
         ),
         CheckConstraint(
-            "source IN ('auto', 'manual')", name="ck_job_resume_matches_source"
+            "source IN ('auto', 'manual')", name="ck_job_resume_match_source"
         ),
         CheckConstraint(
-            "score IS NULL OR score <= 100", name="ck_job_resume_matches_score"
+            "score IS NULL OR score <= 100", name="ck_job_resume_match_score"
         ),
         CheckConstraint(
             "(status = 'ready') = (score IS NOT NULL AND result_json IS NOT NULL)",
-            name="ck_job_resume_matches_ready",
+            name="ck_job_resume_match_ready",
         ),
         Index(
-            "idx_job_resume_matches_user_resume_score",
+            "idx_job_resume_match_user_resume_score",
             "user_id",
             "resume_id",
             "status",
@@ -79,9 +79,9 @@ class JobResumeMatch(Base):
     lease_until: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     analyzed_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
     )

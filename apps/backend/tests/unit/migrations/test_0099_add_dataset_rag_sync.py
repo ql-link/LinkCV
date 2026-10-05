@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from linkresume.modules.datasets.models import UserDatasetRagSync
+from tests.migration_naming import current_columns
 from linkresume.modules.mock_interviews.models import MockInterview
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -36,7 +37,7 @@ def test_sql_matches_orm_table() -> None:
         for m in re.finditer(r"^\s{2}([a-z_]+)\s+[A-Z]", BODY, re.M)
         if m.group(1) not in {"CONSTRAINT", "INDEX"}
     }
-    assert declared == {column.name for column in table.columns}
+    assert current_columns("user_dataset_rag_sync", declared) == {column.name for column in table.columns}
     names = {c.name for c in table.constraints if c.name} | {i.name for i in table.indexes}
     assert names <= set(re.findall(r"\b((?:pk|fk|ck|idx|uk)_[a-z_]+)\b", SQL))
     assert not table.foreign_keys  # rows outlive deleted datasets on purpose

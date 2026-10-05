@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from linkresume.modules.product_events.models import EVENT_NAMES, ProductEvent
+from tests.migration_naming import current_columns, current_object_names
 
 ROOT = Path(__file__).resolve().parents[5]
 MIGRATIONS = ROOT / "apps/backend/migrations"
@@ -31,7 +32,8 @@ def test_revision_chain_and_forward_only() -> None:
 def test_sql_declares_every_orm_constraint_and_index() -> None:
     table = ProductEvent.__table__
     names = {c.name for c in table.constraints if c.name} | {i.name for i in table.indexes}
-    assert names <= set(re.findall(r"\b((?:pk|fk|ck|idx|uk)_[a-z_]+)\b", SQL))
+    declared = set(re.findall(r"\b((?:pk|fk|ck|idx|uk)_[a-z_]+)\b", SQL))
+    assert names <= current_object_names("product_events", declared)
 
 
 def test_sql_columns_match_orm_columns() -> None:
@@ -40,7 +42,9 @@ def test_sql_columns_match_orm_columns() -> None:
         for m in re.finditer(r"^\s{2}([a-z_]+)\s+[A-Z]", BODY, re.M)
         if m.group(1) not in {"CONSTRAINT", "INDEX"}
     }
-    assert declared == {column.name for column in ProductEvent.__table__.columns}
+    assert current_columns("product_events", declared) == {
+        column.name for column in ProductEvent.__table__.columns
+    }
 
 
 def test_events_follow_user_deletion_and_names_match() -> None:
