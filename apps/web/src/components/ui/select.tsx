@@ -1,3 +1,4 @@
+import "./motion.css"
 "use client"
 
 import * as React from "react"
@@ -77,7 +78,7 @@ const SelectContent = React.forwardRef<
       data-slot="select-content"
       data-ui-theme="light"
       className={cn(
-        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface-elevated)] text-[var(--ui-foreground)] shadow-md transition-opacity duration-base data-[state=closed]:opacity-0 data-[state=open]:opacity-100 origin-[--radix-select-content-transform-origin]",
+        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border border-[var(--ui-border)] bg-[var(--ui-surface-elevated)] text-[var(--ui-foreground)] shadow-md ui-motion-popover origin-[--radix-select-content-transform-origin]",
         position === "popper" &&
           "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
         className

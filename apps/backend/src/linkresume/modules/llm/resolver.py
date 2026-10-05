@@ -18,14 +18,17 @@ JOB_TEXT_EXTRACTION = "job_text_extraction"
 RESUME_STRUCTURING = "resume_structuring"
 JOB_IMAGE_EXTRACTION = "job_image_extraction"
 ASSISTANT_CONVERSATION = "assistant_conversation"
+ASSISTANT_INTENT = "assistant_intent"
 MOCK_INTERVIEW = "mock_interview"
 TRANSCRIPT_CORRECTION = "transcript_correction"
+JOB_MATCH = "job_match"
+INTERVIEW_PREP = "interview_prep"
 SPEECH_TO_TEXT = "speech_to_text"
 TEXT_TO_SPEECH = "text_to_speech"
 SPEECH_USE_CASES = (SPEECH_TO_TEXT, TEXT_TO_SPEECH)
 USE_CASES = (
     JOB_TEXT_EXTRACTION, RESUME_STRUCTURING, JOB_IMAGE_EXTRACTION,
-    ASSISTANT_CONVERSATION, MOCK_INTERVIEW, TRANSCRIPT_CORRECTION,
+    ASSISTANT_CONVERSATION, ASSISTANT_INTENT, MOCK_INTERVIEW, TRANSCRIPT_CORRECTION, JOB_MATCH, INTERVIEW_PREP,
     *SPEECH_USE_CASES,
 )
 PROBE_VERSION = 1
@@ -128,6 +131,9 @@ def eligible_routes(
     )
     if model_id is not None:
         statement = statement.where(LLMModel.id == model_id)
+    if use_case == ASSISTANT_CONVERSATION:
+        # Users may only list, default to, or run models an admin marked selectable.
+        statement = statement.where(LLMModel.user_selectable.is_(True))
     return [row for row in db.execute(statement).all() if is_effective(*row[:3])]
 
 

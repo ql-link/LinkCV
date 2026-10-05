@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     )
 
     app_environment: str = Field(default="development", alias="APP_ENV")
+    account_deletion_enabled: bool = Field(default=False, alias="ACCOUNT_DELETION_ENABLED")
+    account_deletion_poll_seconds: int = Field(default=10, alias="ACCOUNT_DELETION_POLL_SECONDS", ge=1, le=60)
+    account_deletion_lease_seconds: int = Field(default=60, alias="ACCOUNT_DELETION_LEASE_SECONDS", ge=30, le=300)
     backend_host: str = Field(default="127.0.0.1", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="BACKEND_PORT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -134,6 +137,18 @@ class Settings(BaseSettings):
     )
     session_ttl_days: int = Field(default=7, alias="SESSION_TTL_DAYS")
     cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
+    auth_desktop_retry_encryption_key: SecretStr | None = Field(
+        default=None, alias="AUTH_DESKTOP_RETRY_ENCRYPTION_KEY"
+    )
+
+    @property
+    def desktop_retry_cipher(self) -> Fernet | None:
+        if self.auth_desktop_retry_encryption_key is None:
+            return None
+        try:
+            return Fernet(self.auth_desktop_retry_encryption_key.get_secret_value().encode("ascii"))
+        except (ValueError, UnicodeEncodeError):
+            return None
 
     llm_credential_encryption_keys: SecretStr | None = Field(
         default=None,
@@ -170,6 +185,10 @@ class Settings(BaseSettings):
         alias="MINIO_SECRET_KEY",
     )
     minio_bucket: str = Field(default="linkresume", alias="MINIO_BUCKET")
+    # Origin reachable by external services (speech recognition) for presigned
+    # downloads; empty disables recording transcription.
+    minio_public_endpoint: str | None = Field(default=None, alias="MINIO_PUBLIC_ENDPOINT")
+    minio_region: str = Field(default="us-east-1", alias="MINIO_REGION")
     pdf_renderer_script: str | None = Field(default=None, alias="PDF_RENDERER_SCRIPT")
     pdf_renderer_timeout_seconds: float = Field(
         default=20,
@@ -257,6 +276,16 @@ class Settings(BaseSettings):
         default=5 * 1024 * 1024 * 1024,
         alias="MEDIA_MAX_TOTAL_BYTES_PER_USER",
         ge=1,
+    )
+    interview_transcription_enabled: bool = Field(
+        default=True, alias="INTERVIEW_TRANSCRIPTION_ENABLED"
+    )
+    # Empty derives the recorded-file model from the realtime speech route.
+    interview_transcription_model: str | None = Field(
+        default=None, alias="INTERVIEW_TRANSCRIPTION_MODEL"
+    )
+    interview_transcription_poll_seconds: int = Field(
+        default=20, alias="INTERVIEW_TRANSCRIPTION_POLL_SECONDS", ge=5, le=600
     )
     interview_asset_upload_max_bytes: int = Field(
         default=500 * 1024 * 1024,
@@ -383,7 +412,7 @@ class Settings(BaseSettings):
     wechat_appid: str | None = Field(default=None, alias="WECHAT_APPID")
     wechat_secret: SecretStr | None = Field(default=None, alias="WECHAT_SECRET")
     wechat_qr_page: str = Field(
-        default="pages/bind/bind",
+        default="pages/account-confirm/index",
         alias="WECHAT_QR_PAGE",
         min_length=1,
     )
@@ -444,6 +473,46 @@ class Settings(BaseSettings):
         alias="LINKPARSE_RESPONSE_MAX_BYTES",
         ge=1,
     )
+    # LinkRag vector recall for dataset materials, on by default. Credentials
+    # identify this product to LinkRag's /api/v1/apps API; only FastAPI and the
+    # Worker hold them. Missing credentials degrade to local matching.
+    linkrag_enabled: bool = Field(default=True, alias="LINKRAG_ENABLED")
+    linkrag_base_url: str = Field(
+        default="http://tolink-rag:8000", alias="LINKRAG_BASE_URL"
+    )
+    linkrag_client_id: str | None = Field(default=None, alias="LINKRAG_CLIENT_ID")
+    linkrag_client_secret: SecretStr | None = Field(
+        default=None, alias="LINKRAG_CLIENT_SECRET"
+    )
+    linkrag_recall_timeout_seconds: float = Field(
+        default=5, alias="LINKRAG_RECALL_TIMEOUT_SECONDS", gt=0, le=60
+    )
+    linkrag_sync_timeout_seconds: float = Field(
+        default=60, alias="LINKRAG_SYNC_TIMEOUT_SECONDS", gt=0, le=600
+    )
+    linkrag_sync_interval_seconds: int = Field(
+        default=60, alias="LINKRAG_SYNC_INTERVAL_SECONDS", ge=5, le=3600
+    )
+    linkrag_sync_batch_size: int = Field(
+        default=20, alias="LINKRAG_SYNC_BATCH_SIZE", ge=1, le=200
+    )
+    linkrag_sync_max_attempts: int = Field(
+        default=5, alias="LINKRAG_SYNC_MAX_ATTEMPTS", ge=1, le=20
+    )
+    @property
+    def linkrag_configured(self) -> bool:
+        """Enabled and holding real credentials; otherwise recall stays local."""
+        secret = (
+            self.linkrag_client_secret.get_secret_value()
+            if self.linkrag_client_secret is not None
+            else None
+        )
+        return (
+            self.linkrag_enabled
+            and not _is_placeholder(self.linkrag_client_id)
+            and not _is_placeholder(secret)
+        )
+
     redis_url_override: str | None = Field(default=None, alias="REDIS_URL")
     redis_host: str = Field(default="127.0.0.1", alias="REDIS_HOST")
     redis_port: int = Field(default=6379, alias="REDIS_PORT")
@@ -569,6 +638,11 @@ class Settings(BaseSettings):
         ):
             raise ValueError("PI_SERVICE_BASE_URL must be an HTTP(S) URL")
         self.pi_service_base_url = self.pi_service_base_url.rstrip("/")
+        if self.linkrag_enabled:
+            rag_origin = urlsplit(self.linkrag_base_url.strip())
+            if rag_origin.scheme not in {"http", "https"} or not rag_origin.hostname:
+                raise ValueError("LINKRAG_BASE_URL must be an HTTP(S) URL")
+            self.linkrag_base_url = self.linkrag_base_url.strip().rstrip("/")
 
         if self.app_environment.lower() != "production":
             return self

@@ -160,6 +160,10 @@ class MockInterview(Base):
     recordings_deleted_at: Mapped[datetime | None] = mapped_column(
         timestamp_type(), nullable=True, comment="本场录音被删除的时间"
     )
+    materials_in_questions: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False, server_default="0",
+        comment="出题是否参考所选资料；false 时资料只用于报告核验",
+    )
     material_refs_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON(), nullable=True, comment="参考资料 ID 与发起时正文版本"
     )

@@ -17,6 +17,8 @@ function formRequest(path, data) {
 Page({
   data: {
     scene: "",
+    loginTarget: "web",
+    platform: "",
     statusBarHeight: getStatusBarHeight(),
     loading: true,
     submitting: false,
@@ -86,11 +88,19 @@ Page({
       method: "GET",
       data: { scene: this.data.scene },
       success: (response) => {
+        if (response.statusCode !== 200) {
+          this.setData({ loading: false, phase: "error", message: "暂时无法校验登录请求，请稍后重试。" });
+          return;
+        }
         const status = response.data && response.data.status;
+        const desktop = response.data && response.data.login_target === "desktop";
+        this.setData({ loginTarget: desktop ? "desktop" : "web", platform: desktop ? response.data.platform : "" });
         if (status === "pending") {
-          this.setData({ loading: false, phase: "pending", message: "请确认是否允许当前网页登录 LinkResume。" });
+          this.setData({ loading: false, phase: "pending", message: desktop ? "请确认是否允许当前桌面客户端登录 LinkResume。" : "请确认是否允许当前网页登录 LinkResume。" });
         } else if (status === "success") {
-          if (auth.hasSession()) {
+          if (desktop) {
+            this.setData({ loading: false, phase: "confirmed", message: "已确认桌面登录请求，请返回客户端完成登录。" });
+          } else if (auth.hasSession()) {
             wx.switchTab({ url: "/pages/resumes/index" });
           } else {
             wx.reLaunch({
@@ -98,9 +108,9 @@ Page({
             });
           }
         } else if (status === "cancelled") {
-          this.setData({ loading: false, phase: "cancelled", message: "已取消本次网页登录。" });
+          this.setData({ loading: false, phase: "cancelled", message: this.data.loginTarget === "desktop" ? "已取消本次桌面登录。" : "已取消本次网页登录。" });
         } else {
-          this.setData({ loading: false, phase: "expired", message: "登录请求已过期，请返回网页重新扫码。" });
+          this.setData({ loading: false, phase: "expired", message: desktop ? "登录请求已过期，请返回桌面客户端重新扫码。" : "登录请求已过期，请返回网页重新扫码。" });
         }
       },
       fail: () => this.setData({ loading: false, phase: "error", message: "网络异常，请稍后重试。" }),
@@ -129,6 +139,10 @@ Page({
       if (response.statusCode !== 200) {
         throw new Error((response.data && response.data.error) || "确认失败");
       }
+      if (this.data.loginTarget === "desktop") {
+        this.setData({ submitting: false, phase: "confirmed", message: "已确认桌面登录请求，请返回客户端完成登录。" });
+        return;
+      }
       await auth.loginExistingAccount();
       require('../../services/tabPrefetch').schedule();
       require('../../services/tabResources').prepare();
@@ -152,7 +166,7 @@ Page({
       if (response.statusCode !== 200) {
         throw new Error((response.data && response.data.error) || "取消失败");
       }
-      this.setData({ submitting: false, phase: "cancelled", message: "已取消本次网页登录。" });
+      this.setData({ submitting: false, phase: "cancelled", message: this.data.loginTarget === "desktop" ? "已取消本次桌面登录。" : "已取消本次网页登录。" });
     } catch (error) {
       this.setData({ submitting: false, message: error.message || "取消失败，请重试。" });
     }

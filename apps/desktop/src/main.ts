@@ -64,6 +64,9 @@ function showErrorPage(win: BrowserWindow, targetUrl: string): void {
 }
 
 function createMainWindow(): void {
+  if (!app.isPackaged && process.platform === "darwin") {
+    app.dock?.setIcon(join(__dirname, "../build/icon.png"));
+  }
   const win = new BrowserWindow({
     width: 1280,
     height: 832,

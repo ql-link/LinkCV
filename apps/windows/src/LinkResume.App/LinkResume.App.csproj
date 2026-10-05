@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- WinUI 3 桌面应用。只能在 Windows 上用 Visual Studio 2022+ 或 `dotnet build -r win-x64` 构建。 -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <ApplicationIcon>Assets\LinkResume.ico</ApplicationIcon>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>LinkResume.App</RootNamespace>
+    <UseWinUI>true</UseWinUI>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- 先用非打包（unpackaged）模式跑通；MSIX 打包与签名属于发布阶段 -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LinkResume.Core\LinkResume.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 离线纸面渲染页，由 apps/native/scripts/build_renderer.mjs 生成 -->
+    <Content Include="Assets\LinkResume.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Home\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Library\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Career\*" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Branding\*.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Renderer\paper.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

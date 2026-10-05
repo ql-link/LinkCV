@@ -1,3 +1,4 @@
+from pydantic import SecretStr
 import base64
 
 from fastapi.testclient import TestClient
@@ -64,6 +65,12 @@ def build_app():
 
 
 def mini_headers(app, email: str) -> dict[str, str]:
+    # Seed users through development credentials, then exercise the production
+    # mini-program capability with fictional WeChat configuration.
+    app.state.settings = app.state.settings.model_copy(update={
+        "app_environment": "production", "wechat_appid": "wx-fictional",
+        "wechat_secret": SecretStr("fictional-secret"),
+    })
     with app.state.session_factory() as session:
         user = session.scalar(select(User).where(User.email == email))
         assert user is not None
@@ -77,6 +84,8 @@ def mini_headers(app, email: str) -> dict[str, str]:
 
 
 def register_user(web_client: TestClient, email: str) -> None:
+    settings = web_client.app.state.settings
+    web_client.app.state.settings = settings.model_copy(update={"app_environment": "development"})
     response = web_client.post(
         "/api/auth/register",
         json={"email": email, "password": "password-123"},

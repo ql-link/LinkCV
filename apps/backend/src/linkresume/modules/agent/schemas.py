@@ -81,6 +81,7 @@ class AgentSelectionContext(BaseModel):
 
 
 AgentContextType = Literal[
+    "user_profile",
     "resume",
     "resume_version",
     "dataset",
@@ -308,6 +309,8 @@ class AgentClarification(BaseModel):
 
 class AgentMessageRecord(BaseModel):
     sequence_no: int
+    submission_key: str | None = None
+    reply_to_sequence_no: int | None = None
     run_id: str | None = None
     role: Literal["user", "assistant"]
     message_type: Literal["text", "clarification"] = "text"
@@ -353,6 +356,41 @@ class ActiveRunResponse(BaseModel):
 
 class AgentReadinessResponse(BaseModel):
     ready: bool
+    steering: bool = False
+
+
+class SteeringRequest(MessageCreateRequest):
+    @model_validator(mode="after")
+    def require_plain_request(self) -> "SteeringRequest":
+        if self.reply_to_sequence_no is not None or self.clarification_answers is not None:
+            raise ValueError("steering cannot answer clarification")
+        return self
+
+
+class SubmissionReceipt(BaseModel):
+    run_id: str
+    submission_key: str
+    state: Literal["waiting", "accepted", "applied", "not_applied", "unknown"]
+    user_sequence_no: int | None = None
+    run_status: Literal["running", "succeeded", "failed", "cancelled"] | None = None
+    error: str | None = None
+
+
+class SteeringActivation(SteeringRequest):
+    pass
+
+
+class SteeringAck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    submission_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    user_sequence_no: int = Field(ge=1)
+
+
+class ReplyCompletion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_sequence_no: int = Field(ge=1)
+    content: str = Field(max_length=1_000_000)
+    clarification: AgentClarification | None = None
 
 
 class AgentModelSummary(BaseModel):
@@ -368,6 +406,12 @@ class AgentModelResponse(BaseModel):
     model: AgentModelSummary
 
 
+class ProposalConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry: Literal["assistant", "editor"] | None = None
+
+
 class ProposalCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -379,6 +423,7 @@ class ProposalCreateRequest(BaseModel):
 
 
 class ProposalRecord(BaseModel):
+    source_user_sequence_no: int | None = None
     superseded_by: str | None = None
     id: str
     run_id: str
@@ -464,7 +509,7 @@ class AgentTaskSpec(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
     workflow: Literal[
         "resource_catalog", "resume_edit", "resume_translation",
-        "interview_guide", "career_planning", "resume_title",
+        "interview_guide", "career_planning", "resume_title", "material_lookup",
     ]
     output: Literal["proposal", "advice", "catalog"]
     label: str = Field(min_length=1, max_length=120)
@@ -479,6 +524,7 @@ class AgentTaskSpec(BaseModel):
             "interview_guide": "advice",
             "career_planning": "advice",
             "resume_title": "advice",
+            "material_lookup": "advice",
         }
         if self.workflow in expected and self.output != expected[self.workflow]:
             raise ValueError("task output does not match workflow")

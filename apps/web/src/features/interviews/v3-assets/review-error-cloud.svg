@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Cloud" clip-path="url(#clip0_0_7)">
+<path id="Vector" d="M10 40C7.0721 38.9136 4.59151 36.8793 2.95276 34.2209C1.314 31.5624 0.611176 28.4323 0.956051 25.3284C1.30093 22.2246 2.6737 19.3251 4.85605 17.0912C7.03841 14.8573 9.90502 13.4172 13 13C14.5897 9.54823 17.2311 6.68814 20.5458 4.82947C23.8605 2.97079 27.6784 2.20889 31.4526 2.65292C35.2268 3.09694 38.7637 4.72411 41.5565 7.30132C44.3493 9.87852 46.2548 13.2735 47 17C49.5147 17.6235 51.7601 19.0442 53.4005 21.0497C55.0409 23.0551 55.9882 25.5376 56.1007 28.1261C56.2132 30.7145 55.485 33.2698 54.0249 35.4101C52.5647 37.5504 50.4511 39.1606 48 40" stroke="#C4C4BE" stroke-width="2.2" stroke-linecap="round"/>
+<path id="Vector_2" d="M28 34L36 42M36 34L28 42" stroke="#D64545" stroke-width="2.2" stroke-linecap="round"/>
+</g>
+<defs>
+<clipPath id="clip0_0_7">
+<rect width="64" height="64" fill="white"/>
+</clipPath>
+</defs>
+</svg>

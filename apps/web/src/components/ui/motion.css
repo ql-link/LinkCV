@@ -1,0 +1,60 @@
+/* Shared motion uses individual scale/translate so existing centering transforms survive. */
+@keyframes ui-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ui-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ui-page-in { from { opacity: .94; } to { opacity: 1; } }
+@keyframes ui-dialog-in { from { opacity: 0; scale: .98; } to { opacity: 1; scale: 1; } }
+@keyframes ui-dialog-out { from { opacity: 1; scale: 1; } to { opacity: 0; scale: .98; } }
+@keyframes ui-popover-in { from { opacity: 0; translate: var(--motion-x, 0) var(--motion-y, -4px); } to { opacity: 1; translate: 0 0; } }
+@keyframes ui-popover-out { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: var(--motion-x, 0) var(--motion-y, -4px); } }
+@keyframes ui-drawer-in { from { opacity: 0; translate: 16px 0; } to { opacity: 1; translate: 0 0; } }
+@keyframes ui-drawer-out { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 16px 0; } }
+
+.ui-motion-overlay, .ui-motion-dialog, .ui-motion-popover, .ui-motion-drawer {
+  animation-duration: var(--ui-duration-base);
+  animation-timing-function: var(--ui-ease-standard);
+  animation-fill-mode: both;
+}
+.ui-motion-overlay[data-state="open"] { animation-name: ui-fade-in; }
+.ui-motion-overlay[data-state="closed"] { animation-name: ui-fade-out; }
+.ui-motion-dialog[data-state="open"] { animation-name: ui-dialog-in; }
+.ui-motion-dialog[data-state="closed"] { animation-name: ui-dialog-out; }
+.ui-motion-popover[data-state="open"] { animation-name: ui-popover-in; }
+.ui-motion-popover[data-state="closed"] { animation-name: ui-popover-out; }
+.ui-motion-popover[data-side="top"] { --motion-y: 4px; transform-origin: bottom; }
+.ui-motion-popover[data-side="bottom"] { transform-origin: top; }
+.ui-motion-popover[data-side="left"] { --motion-x: 4px; --motion-y: 0px; transform-origin: right; }
+.ui-motion-popover[data-side="right"] { --motion-x: -4px; --motion-y: 0px; transform-origin: left; }
+.ui-motion-drawer { animation-duration: var(--ui-duration-slow); }
+.ui-motion-drawer[data-state="open"] { animation-name: ui-drawer-in; }
+.ui-motion-drawer[data-state="closed"] { animation-name: ui-drawer-out; }
+.ui-motion-tooltip:is([data-state="delayed-open"], [data-state="instant-open"]) {
+  animation: ui-fade-in var(--ui-duration-fast) var(--ui-ease-standard);
+}
+.ui-motion-tooltip[data-state="closed"] { animation: none; pointer-events: none; }
+:is(.ui-motion-overlay, .ui-motion-dialog, .ui-motion-popover, .ui-motion-drawer)[data-state="closed"] { pointer-events: none; }
+
+/* Small mounted surfaces: feedback, tab bodies, disclosure contents and loading results. */
+:where(.assistant-preview-body, .assistant-mention, .assistant-clarification, .v3-toast,
+  .career-notice, .feedback-notice, .auth-col, .not-found-page,
+  .wb3-drawer > *, .prof-pane, .cd3-answer, .acc-inline-error, .wb3-save-notice,
+  .v3 details[open] > :not(summary)) {
+  animation: ui-fade-in var(--ui-duration-base) var(--ui-ease-standard);
+}
+
+/* Keep the white shell opaque; a page change must never fade through a blank screen. */
+/* 页面切换不做整页透明度动画（见 v3/motion.css），避免与骨架交接叠加成一次闪烁 */
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.ui-motion-overlay, .ui-motion-dialog, .ui-motion-popover, .ui-motion-drawer)[data-state="open"] { animation-name: ui-fade-in; animation-duration: var(--ui-duration-fast); }
+  :is(.ui-motion-overlay, .ui-motion-dialog, .ui-motion-popover, .ui-motion-drawer)[data-state="closed"] { animation-name: ui-fade-out; animation-duration: var(--ui-duration-fast); }
+  :where(.assistant-preview-body, .assistant-mention, .assistant-clarification, .v3-toast,
+    .career-notice, .feedback-notice, .auth-col, .not-found-page,
+    .wb3-drawer > *, .prof-pane, .cd3-answer, .acc-inline-error, .wb3-save-notice,
+    .v3 details[open] > :not(summary)) { animation-duration: var(--ui-duration-fast); }
+  .v3-content-scroll > :not(style, .workspace-route-loading) { animation: none; }
+}
+
+@media print {
+  .ui-motion-overlay, .ui-motion-dialog, .ui-motion-popover, .ui-motion-drawer, .ui-motion-tooltip,
+  .v3-content-scroll > :not(style), .tpl-preview-paper, .assistant-preview-body { animation: none !important; }
+}

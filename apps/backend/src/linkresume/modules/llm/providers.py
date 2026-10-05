@@ -15,10 +15,13 @@ ANTHROPIC_MESSAGES = "anthropic_messages"
 GOOGLE_GENERATE = "google_generate"
 ALIYUN_ASR_REALTIME = "aliyun_asr_realtime"
 ALIYUN_TTS_REALTIME = "aliyun_tts_realtime"
+OPENAI_ASR_FILE = "openai_asr_file"
+OPENAI_TTS = "openai_tts"
 SPEECH_PROTOCOLS = {
-    "speech_to_text": frozenset({ALIYUN_ASR_REALTIME}),
-    "text_to_speech": frozenset({ALIYUN_TTS_REALTIME}),
+    "speech_to_text": frozenset({ALIYUN_ASR_REALTIME, OPENAI_ASR_FILE}),
+    "text_to_speech": frozenset({ALIYUN_TTS_REALTIME, OPENAI_TTS}),
 }
+
 
 @dataclass(frozen=True)
 class ProviderSpec:
@@ -30,7 +33,7 @@ class ProviderSpec:
 
 PROVIDERS = {
     spec.code: spec for spec in (
-        ProviderSpec("aihubmix", "AIHubMix", frozenset({OPENAI_CHAT}), frozenset({"model"})),
+        ProviderSpec("aihubmix", "AIHubMix", frozenset({OPENAI_CHAT, OPENAI_RESPONSES, OPENAI_ASR_FILE, OPENAI_TTS}), frozenset({"model"})),
         ProviderSpec("siliconflow", "硅基流动", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("deepseek", "DeepSeek 直连", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("volcengine", "火山方舟", frozenset({OPENAI_CHAT, OPENAI_RESPONSES}), frozenset({"model", "endpoint"})),
@@ -133,7 +136,9 @@ def validate_use_case_protocol(use_case: str, protocol_code: str) -> None:
     if speech is not None:
         if protocol_code not in speech:
             raise ValueError("protocol unsupported for speech use case")
-    elif use_case != "assistant_conversation" and protocol_code != OPENAI_CHAT:
+    elif use_case == "assistant_intent" and protocol_code != OPENAI_CHAT:
+        raise ValueError("protocol unsupported for intent use case")
+    elif use_case != "assistant_conversation" and protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES}:
         raise ValueError("protocol unsupported for use case")
 
 

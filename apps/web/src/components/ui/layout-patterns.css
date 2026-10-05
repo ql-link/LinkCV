@@ -24,10 +24,11 @@
 .ui-page-header h1 {
   margin: 0;
   color: var(--ui-foreground);
+  font-family: var(--ui-font-heading);
   font-size: var(--ui-text-2xl);
-  font-weight: 700;
+  font-weight: var(--ui-weight-semibold);
   letter-spacing: -0.01em;
-  line-height: var(--ui-leading-tight);
+  line-height: var(--ui-line-page-title);
 }
 
 .ui-page-header__description {

@@ -5,6 +5,8 @@ import type {
   TemplateDefinition,
 } from "./resumeContract";
 
+export type AgentProposalEntry = "assistant" | "editor";
+
 export type User = {
   id: string;
   email: string | null;
@@ -26,10 +28,13 @@ export type WeChatStatusResponse = {
 
 export type AuthCapabilities = {
   password_login_enabled: boolean;
+  wechat_login_enabled: boolean;
 };
 
 export type UserProfile = User & {
   avatar_url: string | null;
+  contact_email: string | null;
+  registered_at: string;
   wechat_status: "unbound" | "bound" | "unavailable";
   wechat_bound_at: string | null;
 };
@@ -44,7 +49,26 @@ export type AccountProfile = {
   user: UserProfile;
   resume_count: number;
   recent_resumes: RecentResumeSummary[];
+  current_session: { device_label: string };
+  capabilities: {
+    auth_mode: "password" | "wechat" | "unavailable";
+    can_change_password: boolean;
+    can_delete_account: boolean;
+    deletion_confirmation_method: "password" | "wechat" | null;
+  };
 };
+
+export type AccountPreferences = {
+  locale: "zh-CN" | "en-US";
+  interview_reminder_enabled: boolean;
+  notifications_available: false;
+};
+export type AccountVerification = { scene: string; poll_token: string; qrcode_data: string; expires_at: string };
+export type AccountDeletionReceipt = { job_id: string; receipt_token: string; status: string };
+export type AccountDeletionRequest = { confirmation: string } & (
+  | { method: "password"; current_password: string }
+  | { method: "wechat"; action_token: string }
+);
 
 export type EmploymentType =
   | "internship"
@@ -107,7 +131,120 @@ export type AdminUserSummary = User & {
 
 export type AdminUserDetail = AdminUserSummary & {
   llm_call_count: number;
+  llm_costs?: CostSummary | null;
   updated_at: string;
+};
+
+export type CostSummary = { costs: Array<{ currency: string; amount: string }>; unmeteredCallCount: number };
+
+export type AdminInsightAlert = {
+  type: string;
+  severity: "critical" | "warning" | "info";
+  title: string;
+  description: string;
+  target: string;
+};
+
+export type AdminInsightOverview = {
+  metrics: { activeUsers7d: number; newUsers7d: number; callsToday: number; cost7d: CostSummary };
+  deltas: { activeUsers7d: string | null; newUsers7d: string | null; callsToday: string | null; cost7d: string | null };
+  trend: Array<{ date: string; calls: number; successRate: number | null; p95Ms: number | null }>;
+  alerts: AdminInsightAlert[];
+};
+
+export type AdminInsightUsers = {
+  total: number;
+  newUsers7d: number;
+  activeUsers7d: number;
+  disabled: number;
+  admins: number;
+  registeredToday: number;
+  daily: Array<{ date: string; count: number }>;
+};
+
+/** GET /api/admin/insights/funnel (LOCAL-20260929-GTM-PLAN solution.md §8): users registered in the window and how far they got. */
+export type AdminFunnelStepKey = "registered" | "resume" | "ai_customization" | "mock_interview" | "pdf_export";
+export type AdminInsightFunnel = {
+  window: { from: string; to: string };
+  steps: Array<{ key: AdminFunnelStepKey; users: number }>;
+  registrationsByMethod: Record<string, number>;
+  aiCustomizationByEntry: Record<string, number>;
+  resumeBySource: Record<string, number>;
+  daily: Array<{ date: string; registered: number }>;
+};
+
+export type AdminInsightJobImports = {
+  imported7d: number;
+  imported30d: number;
+  users7d: number;
+  sources: Array<{ site: string; count: number }>;
+  daily: Array<{ date: string; count: number }>;
+};
+
+export type LlmUsageSummary = CostSummary & { calls: number; successRate: number | null; p95Ms: number | null };
+
+export type AdminInsightLlmUsage = {
+  from: string;
+  to: string;
+  summary: LlmUsageSummary;
+  previous: LlmUsageSummary;
+  groups: Array<LlmUsageSummary & { key: string; label: string }>;
+};
+
+export type AdminInsightAgent = {
+  from: string;
+  to: string;
+  operations: number;
+  failed: number;
+  failureRate: number | null;
+  running: number;
+  p95Ms: number | null;
+  topFailureStage: string | null;
+  topErrorCode: string | null;
+  daily: Array<{ date: string; succeeded: number; failed: number; running: number }>;
+};
+
+export type AdminLogHeatmap = { buckets: Array<{ start: string; error: number; warn: number }> };
+
+export type AnnouncementLevel = "normal" | "important";
+export type AdminAnnouncement = {
+  id: string;
+  level: AnnouncementLevel;
+  title: string;
+  body: string;
+  status: "draft" | "published" | "unpublished";
+  visibility: "draft" | "scheduled" | "active" | "expired" | "unpublished";
+  startsAt: string | null;
+  endsAt: string | null;
+  publishedAt: string | null;
+  unpublishedAt: string | null;
+  createdBy: string;
+  publishedBy: string | null;
+  unpublishedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type AdminAnnouncementStats = { draft: number; published: number; unpublished: number; active: number; scheduled: number };
+export type AnnouncementFields = { level: AnnouncementLevel; title: string; body: string; startsAt: string | null; endsAt: string | null };
+
+export type LlmCallQuery = {
+  cursor?: string;
+  limit?: number;
+  useCase?: string;
+  status?: "pending" | "succeeded" | "failed" | "cancelled";
+  errorCode?: string;
+  /** Exact match on the public call ID. */
+  callId?: string;
+  userId?: string;
+  from?: string;
+  to?: string;
+};
+export type LlmCallSummary = CostSummary & {
+  callCount: number;
+  succeeded: number;
+  failed: number;
+  inputTokens: number;
+  outputTokens: number;
 };
 
 export type AdminUserListResponse = {
@@ -153,6 +290,7 @@ export type ResumeTemplate = {
   layout_plan?: LayoutPlan | null;
   switchable: true;
   incompatibility_reason: null;
+  use_count?: number | null;
 };
 
 type ResumeTemplateWire = Omit<ResumeTemplate, "style"> & {
@@ -251,6 +389,8 @@ export type SemanticClassificationSuggestion = {
 };
 
 export type AgentMessage = {
+  submission_key?: string | null;
+  reply_to_sequence_no?: number | null;
   run_id?: string | null;
   sequence_no: number;
   role: "user" | "assistant";
@@ -274,6 +414,7 @@ export type AgentMessage = {
     proposal_ids: string[];
     error_code?: string | null;
     result?: string | null;
+    superseded_by_sequence_no?: number | null;
   }> | null;
   created_at: string;
 };
@@ -301,6 +442,7 @@ export type AgentSelectionContext = {
 };
 
 export type AgentContextType =
+  | "user_profile"
   | "resume"
   | "resume_version"
   | "dataset"
@@ -347,6 +489,7 @@ export type AgentActiveRun = {
 };
 
 export type AgentProposal = {
+  source_user_sequence_no?: number | null;
   superseded_by?: string | null;
   id: string;
   run_id: string;
@@ -376,7 +519,11 @@ export type AgentProposal = {
   created_at: string;
 };
 
-export type AgentStreamEvent =
+export type AgentStreamEvent = (
+  | { type: "user.message.accepted"; runId: string; submissionKey: string; content: string; contexts: AgentContextSnapshot[] }
+  | { type: "user.message.applied"; runId: string; submissionKey: string }
+  | { type: "user.message.rejected"; runId: string; submissionKey: string; error: string }
+  | { type: "assistant.message.completed"; runId: string; submissionKey?: string; sequenceNo: number; content: string; clarification?: AgentClarification }
   | { type: "run.started"; runId: string }
   | {
       type: "run.phase";
@@ -400,7 +547,18 @@ export type AgentStreamEvent =
   | { type: "tool.started" | "tool.completed"; runId: string; tool: string; callKey: string }
   | { type: "proposal.created"; runId: string; proposal: AgentProposal }
   | { type: "run.completed" | "run.cancelled"; runId: string }
-  | { type: "run.failed"; runId: string; error: string };
+  | { type: "run.failed"; runId: string; error: string }) & { userSequenceNo?: number; submissionKey?: string };
+
+export type AgentSubmissionReceipt = {
+  run_id: string;
+  submission_key: string;
+  state: "waiting" | "accepted" | "applied" | "not_applied" | "unknown";
+  user_sequence_no?: number | null;
+  run_status?: "running" | "succeeded" | "failed" | "cancelled";
+  error?: string;
+};
+
+export type AgentMessageRequest = Parameters<typeof streamAgentMessage>[1];
 
 export type ResumeShareState = {
   share_token: string;
@@ -428,6 +586,8 @@ export type PublicSharePayload = {
   assets: Record<string, string>;
   sharer: PublicShareSharer;
   allow_download: boolean;
+  expires_at: string | null;
+  updated_at: string;
 };
 
 export type UploadedAsset = {
@@ -548,6 +708,45 @@ export type JobEmploymentType =
 export type JobWorkMode = "onsite" | "hybrid" | "remote";
 export type JobSalaryPeriod = "hour" | "day" | "month" | "year";
 
+export type JobMatchStatus = "pending" | "ready" | "failed";
+
+export type JobMatch = {
+  status: JobMatchStatus;
+  stale: boolean;
+  score: number | null;
+  headline: string | null;
+  hits: string[];
+  gaps: string[];
+  highlights: { covered: string[]; missing: string[] };
+  analyzed_at: string | null;
+  error_code: string | null;
+};
+
+export type JobMatchRecommendationState =
+  | "no_resume"
+  | "no_jobs"
+  | "computing"
+  | "ready"
+  | "idle"
+  | "unavailable";
+
+export type JobMatchRecommendationItem = {
+  job_id: string;
+  job_title: string;
+  company_name: string;
+  logo_url: string | null;
+  score: number;
+  application_status: string | null;
+};
+
+export type JobMatchRecommendations = {
+  state: JobMatchRecommendationState;
+  resume: { id: string; title: string } | null;
+  items: JobMatchRecommendationItem[];
+  pending_count: number;
+  can_compute: boolean;
+};
+
 export type JobDescriptionSummary = {
   id: string;
   job_title: string;
@@ -646,6 +845,8 @@ export type ApplicationStageType =
   | "written_test"
   | "ai_interview"
   | "interview"
+  | "hr"
+  | "oc"
   | "offer";
 export type LegacyApplicationStageType = "screening" | "interview" | "hr" | "offer";
 export type ApplicationStageState =
@@ -704,12 +905,23 @@ export type JobApplicationRecord = {
     | "accepted"
     | "declined";
   offer_base_location: string | null;
+  offer_received_on?: string | null;
+  offer_reply_due_on?: string | null;
+  offer_start_on?: string | null;
+  offer_probation?: string | null;
+  offer_materials?: { dataset_id: string; file_name: string }[];
   offer_salary: string | null;
   offer_salary_currency: string | null;
   offer_salary_period: SalaryPeriod | null;
   offer_benefits_description: string | null;
   is_favorite: boolean;
   applied_at: string | null;
+  applied_channel?: string | null;
+  oc_communicated_at?: string | null;
+  oc_contact?: string | null;
+  oc_salary_text?: string | null;
+  oc_start_text?: string | null;
+  oc_note?: string | null;
   notes: string | null;
   archived_at: string | null;
   lock_version: number;
@@ -724,6 +936,124 @@ export type JobApplicationSummary = JobApplicationRecord & {
   next_session_start_at: string | null;
   next_session_end_at: string | null;
   next_session_mode: InterviewMode | null;
+};
+
+export type InterviewPrepCategory =
+  | "intro"
+  | "project"
+  | "technical"
+  | "system_design"
+  | "behavior"
+  | "company"
+  | "other";
+
+export type InterviewPrepItem = {
+  id?: string | null;
+  title: string;
+  category: InterviewPrepCategory;
+  reason?: string | null;
+  done: boolean;
+};
+
+export type InterviewReviewScore = { score: number | null; reason: string; evidence: string | null };
+export type InterviewReviewReport = {
+  schema_version: 1; source_hash: string; generated_at: string; summary: string; overall_score: number | null;
+  project_expression: InterviewReviewScore; system_design: InterviewReviewScore; communication: InterviewReviewScore;
+  questions: Array<{ question: string; answer: string | null; evidence: string; strength: string | null; improvement: string | null; suggested_answer: string | null }>;
+};
+
+export type InterviewReviewDimensionKey =
+  | "professional_depth"
+  | "motivation_fit"
+  | "structure"
+  | "job_fit"
+  | "resume_consistency"
+  | "communication";
+export type InterviewQuestionCategory = "technical" | "project" | "behavioral" | "hr";
+export type InterviewReviewVerdictLevel = "likely_pass" | "promising" | "at_risk" | "likely_fail";
+export type InterviewReviewQuestionV2 = {
+  index: number;
+  key: string;
+  question: string;
+  answer: string | null;
+  category: InterviewQuestionCategory;
+  answer_status: "answered" | "declined" | "missing";
+  follow_ups: number;
+  expected_depth: number;
+  achieved_depth: number | null;
+  score: number | null;
+  signals: Array<{ signal: string; verdict: "hit" | "partial" | "miss"; quote: string | null }>;
+  factual_errors: string[];
+  resume_conflict: string | null;
+  strength: string | null;
+  improvement: string | null;
+  suggested_answer: string | null;
+  evidence_snippets: Array<{ dataset_id: string; title: string; text: string }>;
+};
+export type InterviewReviewReportV2 = {
+  schema_version: 2;
+  rubric_version: string;
+  source_hash: string;
+  generated_at: string;
+  headline: string;
+  summary: string;
+  verdict: {
+    level: InterviewReviewVerdictLevel;
+    confidence: "high" | "medium" | "low";
+    confidence_reason: string | null;
+    signals: Array<{ polarity: "positive" | "negative"; quote: string; meaning: string }>;
+    adjusted_by_signals: number;
+    fatal_questions: number;
+  };
+  total_score: number | null;
+  grade: "excellent" | "good" | "pass" | "improve" | null;
+  question_average: number | null;
+  dimension_score: number | null;
+  first_axis: "professional_depth" | "motivation_fit";
+  category_counts: Partial<Record<InterviewQuestionCategory, number>>;
+  dimensions: Array<{
+    key: InterviewReviewDimensionKey;
+    assessed: boolean;
+    score: number | null;
+    weight: number;
+    evidence: string | null;
+    comment: string | null;
+  }>;
+  questions: InterviewReviewQuestionV2[];
+  improvements: Array<{
+    title: string;
+    detail: string;
+    priority: "key" | "tip";
+    dimension: string | null;
+    question_indexes: number[];
+  }>;
+  basis: {
+    transcript_source: "manual" | "transcription" | null;
+    transcript_chars: number;
+    resume_title: string | null;
+    has_job: boolean;
+    material_snippets: number;
+    material_mode: "rag" | "local" | "none";
+    downgraded_quotes: number;
+    dropped_questions: number;
+  };
+};
+export type InterviewTranscriptionRecord = {
+  dataset_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  error_code: string | null;
+  pending_replace: boolean;
+  result_duration_ms: number | null;
+  updated_at: string;
+};
+export type InterviewReviewQuestionNote = {
+  id: string;
+  question_key: string;
+  question_text: string;
+  verdict: "good" | "improve" | null;
+  note: string | null;
+  lock_version: number;
+  updated_at: string;
 };
 
 export type InterviewSessionRecord = {
@@ -751,7 +1081,20 @@ export type InterviewSessionRecord = {
   preparation_note: string | null;
   questions_markdown: string | null;
   review_summary: string | null;
+  review_report?: InterviewReviewReport | InterviewReviewReportV2 | null;
+  transcript_source?: "manual" | "transcription" | null;
+  transcriptions?: InterviewTranscriptionRecord[];
+  review_question_notes?: InterviewReviewQuestionNote[];
+  review_status?: "generating" | "ready" | "failed" | null;
+  review_request_id?: string | null;
+  review_started_at?: string | null;
+  review_error?: string | null;
+  review_stale?: boolean;
   improvement_markdown: string | null;
+  prep_items: InterviewPrepItem[];
+  prep_generated_at: string | null;
+  prep_total: number;
+  prep_done: number;
   completed_at: string | null;
   cancelled_at: string | null;
   cancellation_reason: string | null;
@@ -837,7 +1180,7 @@ export type AgentModelSummary = {
 export type LlmProviderSpec = { code: string; label: string; protocols: string[]; targetKinds: string[]; catalogSync: boolean };
 export type LlmCatalog = { useCases: string[]; providers: LlmProviderSpec[] };
 export type LlmConnection = { id: string; providerCode: string; name: string; settings: Record<string, unknown>; keyConfigured: boolean; enabled: boolean; runtimeConfigVersion: number; catalogSyncedAt: string | null; createdAt: string; updatedAt: string };
-export type LlmModel = { id: string; displayName: string; developerName: string | null; createdAt: string; updatedAt: string };
+export type LlmModel = { id: string; displayName: string; developerName: string | null; userSelectable: boolean; createdAt: string; updatedAt: string };
 export type LlmRoute = { id: string; modelId: string; connectionId: string; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId: string | null; identifierKind: "pinned" | "alias" | "unknown"; origin: string; metadata: Record<string, unknown> | null; pricing: Record<string, unknown> | null; targetAvailable: boolean; enabled: boolean; createdAt: string; updatedAt: string };
 export type LlmBinding = { useCase: string; routeId: string; protocolCode: string; priority: number; enabled: boolean; validatedAt: string | null; effective: boolean };
 export type LlmCallRecord = { id: string; callId: string; useCase: string; source: string; userId: string | null; agentRunId: string | null; routeId: string; protocolCode: string; status: string; meteringStatus: string; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | null; costCurrency: string | null; errorCode: string | null; createdAt: string };
@@ -1245,6 +1588,7 @@ async function consumeAgentStream(
   let terminalReceived = false;
   const terminalEvents = new Set(["run.completed", "run.failed", "run.cancelled"]);
   const allowedEvents = new Set([
+    "user.message.accepted", "user.message.applied", "user.message.rejected", "assistant.message.completed",
     "run.started", "run.phase", "assistant.activity.delta", "assistant.activity.status", "assistant.activity.clear", "assistant.delta", "clarification.requested", "tool.started", "tool.completed",
     "proposal.created", ...terminalEvents,
   ]);
@@ -1288,6 +1632,13 @@ async function getCurrentUser(): Promise<{ user: User | null }> {
   return request<{ user: User | null }>("/api/auth/me", {}, false);
 }
 
+// 供不属于 api 对象的流式或二进制调用（如模拟面试的 SSE、录音）复用同一套会话刷新与请求标识。
+export {
+  createRequestId as createApiRequestId,
+  refreshSession as refreshApiSession,
+  request as apiRequest,
+};
+
 export const api = {
   me: getCurrentUser,
   authCapabilities: () =>
@@ -1317,6 +1668,22 @@ export const api = {
     ),
   logout: () =>
     request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
+  getAccountPreferences: () => request<AccountPreferences>("/api/account/preferences"),
+  updateAccountPreferences: (payload: Partial<Pick<AccountPreferences, "locale" | "interview_reminder_enabled">>) =>
+    request<AccountPreferences>("/api/account/preferences", { method: "PATCH", body: payload }),
+  updateContactEmail: (email: string | null) =>
+    request<{ contact_email: string | null }>("/api/account/contact-email", { method: "PUT", body: { email } }),
+  changePassword: (payload: { current_password: string; new_password: string; confirm_password: string }) =>
+    request<{ ok: boolean }>("/api/account/change-password", { method: "POST", body: payload }),
+  createAccountVerification: () => request<AccountVerification>("/api/account/wechat/verification-request", { method: "POST", body: { action: "delete_account" } }),
+  accountVerificationStatus: (payload: { scene: string; poll_token: string }) =>
+    request<{ status: "pending" | "verified" | "cancelled" | "consumed" | "expired"; action_token?: string }>("/api/account/wechat/verification-status", { method: "POST", body: payload }),
+  cancelAccountVerification: (payload: { scene: string; poll_token: string }) =>
+    request<{ status: string }>("/api/account/wechat/verification-cancel", { method: "POST", body: payload }),
+  deleteAccount: (payload: AccountDeletionRequest) =>
+    request<AccountDeletionReceipt>("/api/account/deletion", { method: "POST", body: payload }),
+  accountDeletionStatus: (payload: { job_id: string; receipt_token: string }) =>
+    request<{ status: string; phase: string; error_code?: string }>("/api/account/deletion-status", { method: "POST", body: payload }),
   getAccountProfile: () => request<AccountProfile>("/api/account/profile"),
   updateAccountProfile: (nickname: string) =>
     request<UserProfile>("/api/account/profile", {
@@ -1367,7 +1734,7 @@ export const api = {
     ),
   listAgentSessions: () =>
     request<{ sessions: AgentSession[] }>("/api/agent/sessions"),
-  getAgentReadiness: () => request<{ ready: boolean }>("/api/agent/readiness"),
+  getAgentReadiness: () => request<{ ready: boolean; steering?: boolean }>("/api/agent/readiness"),
   getAgentModel: () => request<{ model: AgentModelSummary }>("/api/agent/model"),
   getAgentModels: () => request<{ models: AgentModelSummary[]; defaultModelId: string | null }>("/api/agent/models"),
   listAgentContexts: (options: {
@@ -1418,15 +1785,22 @@ export const api = {
     request<void>(`/api/agent/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }),
   streamAgentMessage,
   streamAgentRun,
+  steerAgentRun: (runId: string, payload: AgentMessageRequest) =>
+    request<AgentSubmissionReceipt>(`/api/agent/runs/${encodeURIComponent(runId)}/steer`, { method: "POST", body: payload }),
+  getAgentSteering: (runId: string, key: string) =>
+    request<AgentSubmissionReceipt>(`/api/agent/runs/${encodeURIComponent(runId)}/steer/${encodeURIComponent(key)}`),
+  getAgentSubmission: (sessionId: string, key: string) =>
+    request<AgentSubmissionReceipt>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/submissions/${encodeURIComponent(key)}`),
   cancelAgentRun: (runId: string) =>
     request<{ run_id: string; status: string }>(
       `/api/agent/runs/${encodeURIComponent(runId)}/cancel`,
       { method: "POST" },
     ),
-  confirmAgentProposal: (proposalId: string) =>
+  /** `entry` only feeds the product funnel; omitting it is recorded as unknown. */
+  confirmAgentProposal: (proposalId: string, entry?: AgentProposalEntry) =>
     request<{ resume: ResumeRecord }>(
       `/api/agent/proposals/${encodeURIComponent(proposalId)}/confirm`,
-      { method: "POST" },
+      entry ? { method: "POST", body: { entry } } : { method: "POST" },
     ),
   rejectAgentProposal: (proposalId: string) =>
     request<{ proposal: AgentProposal }>(
@@ -1517,6 +1891,13 @@ export const api = {
       `/api/admin/resume-templates/${id}/status`,
       { method: "PUT", body: { active } },
     ).then(({ template }) => ({ template: adminResumeTemplateFromWire(template) })),
+  reorderAdminResumeTemplates: (templateIds: string[]) =>
+    request<{ templates: AdminResumeTemplateWire[] }>(
+      "/api/admin/resume-templates/order",
+      { method: "PUT", body: { template_ids: templateIds } },
+    ).then(({ templates }) => ({ templates: templates.map(adminResumeTemplateFromWire) })),
+  deleteAdminResumeTemplate: (id: string) =>
+    request<void>(`/api/admin/resume-templates/${id}`, { method: "DELETE" }),
   updateAdminResumeTemplateSortOrder: (id: string, sortOrder: number) =>
     request<{ template: AdminResumeTemplateWire }>(
       `/api/admin/resume-templates/${id}/sort-order`,
@@ -1613,6 +1994,22 @@ export const api = {
       next_cursor: string | null;
     }>(`/api/job-descriptions${suffix ? `?${suffix}` : ""}`);
   },
+  getJobMatch: (jobId: string, resumeId: string) =>
+    request<{ match: JobMatch | null }>(
+      `/api/job-descriptions/${jobId}/match?resume_id=${encodeURIComponent(resumeId)}`,
+    ),
+  analyzeJobMatch: (jobId: string, resumeId: string) =>
+    request<{ match: JobMatch | null }>(
+      `/api/job-descriptions/${jobId}/match:analyze`,
+      { method: "POST", body: { resume_id: resumeId } },
+    ),
+  getJobMatchRecommendations: () =>
+    request<JobMatchRecommendations>("/api/job-matches/recommendations"),
+  ensureJobMatchRecommendations: () =>
+    request<JobMatchRecommendations>(
+      "/api/job-matches/recommendations:ensure",
+      { method: "POST" },
+    ),
   createJobDescription: (payload: JobDescriptionCreatePayload) =>
     request<{
       job_description: JobDescriptionRecord;
@@ -1710,6 +2107,7 @@ export const api = {
       is_favorite: boolean;
       notes: string | null;
       applied_at: string | null;
+      applied_channel: string | null;
       resume_id: string | null;
     }> & { base_lock_version: number },
   ) =>
@@ -1738,7 +2136,13 @@ export const api = {
       stage_label?: string | null;
       interview_round_no?: number | null;
       applied_at?: string | null;
+      applied_channel?: string | null;
       resume_id?: string | null;
+      oc_communicated_at?: string | null;
+      oc_contact?: string | null;
+      oc_salary_text?: string | null;
+      oc_start_text?: string | null;
+      oc_note?: string | null;
       base_lock_version: number;
     },
   ) =>
@@ -1768,11 +2172,16 @@ export const api = {
     id: string,
     payload: {
       base_lock_version: number;
+      received_on?: string | null;
+      reply_due_on?: string | null;
+      start_on?: string | null;
       base_location?: string | null;
       salary?: number | null;
       salary_currency?: string | null;
       salary_period?: SalaryPeriod | null;
       benefits_description?: string | null;
+      probation?: string | null;
+      material_dataset_ids?: string[];
     },
   ) =>
     request<{ application: JobApplicationRecord }>(
@@ -1876,12 +2285,60 @@ export const api = {
       questions_markdown: string | null;
       review_summary: string | null;
       improvement_markdown: string | null;
+      prep_items: InterviewPrepItem[];
     }> & { base_lock_version: number },
   ) =>
     request<InterviewSessionDetail>(`/api/interview-sessions/${id}`, {
       method: "PUT",
       body: payload,
     }),
+  generateInterviewPrepItems: (id: string) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${id}/prep-items:generate`,
+      { method: "POST" },
+    ),
+  generateInterviewReview: (id: string, payload: { request_id: string; base_lock_version: number }) =>
+    request<InterviewSessionDetail>(`/api/interview-sessions/${id}/review:generate`, { method: "POST", body: payload }),
+  retryInterviewTranscription: (sessionId: string, datasetId: string) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${sessionId}/transcriptions/${datasetId}:retry`,
+      { method: "POST" },
+    ),
+  applyInterviewTranscription: (sessionId: string, datasetId: string, baseLockVersion: number) =>
+    request<InterviewSessionDetail>(
+      `/api/interview-sessions/${sessionId}/transcriptions/${datasetId}:apply`,
+      { method: "POST", body: { base_lock_version: baseLockVersion } },
+    ),
+  saveInterviewReviewNote: (
+    sessionId: string,
+    payload: { question_text: string; verdict: "good" | "improve" | null; note: string | null; lock_version: number | null },
+  ) =>
+    request<{ note?: InterviewReviewQuestionNote }>(
+      `/api/interview-sessions/${sessionId}/review-notes`,
+      { method: "PUT", body: payload },
+    ),
+  deleteInterviewReviewNote: (sessionId: string, noteId: string) =>
+    request<Record<string, never>>(
+      `/api/interview-sessions/${sessionId}/review-notes/${noteId}`,
+      { method: "DELETE" },
+    ),
+  extractWrittenQuestions: (
+    sessionId: string,
+    source:
+      | { kind: "text"; text: string }
+      | { kind: "dataset"; datasetId: string }
+      | { kind: "images"; files: File[] },
+  ) => {
+    const formData = new FormData();
+    formData.append("source", source.kind);
+    if (source.kind === "text") formData.append("text", source.text);
+    if (source.kind === "dataset") formData.append("dataset_id", source.datasetId);
+    if (source.kind === "images") source.files.forEach((file) => formData.append("files", file));
+    return request<{ questions: Array<{ no: number; text: string }>; markdown: string }>(
+      `/api/interview-sessions/${sessionId}/written-questions:extract`,
+      { method: "POST", formData },
+    );
+  },
   rescheduleInterviewSession: (
     id: string,
     payload: ({
@@ -2050,19 +2507,48 @@ export const api = {
   listLlmConnections: () => request<{ connections: LlmConnection[] }>("/api/admin/llm/connections"),
   createLlmConnection: (body: { providerCode: string; name: string; apiKey: string; settings?: Record<string, unknown>; enabled?: boolean }) => request<{ connection: LlmConnection }>("/api/admin/llm/connections", { method: "POST", body }),
   updateLlmConnection: (id: string, body: { baseVersion: number; name?: string; apiKey?: string; settings?: Record<string, unknown>; enabled?: boolean }) => request<{ connection: LlmConnection }>(`/api/admin/llm/connections/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteLlmConnection: (id: string) => request<void>(`/api/admin/llm/connections/${encodeURIComponent(id)}`, { method: "DELETE" }),
   syncLlmCatalog: (id: string) => request<{ synced: number; unchanged: boolean }>(`/api/admin/llm/connections/${encodeURIComponent(id)}/sync`, { method: "POST" }),
   listLlmModels: () => request<{ models: LlmModel[] }>("/api/admin/llm/models"),
-  createLlmModel: (body: { displayName: string; developerName?: string | null }) => request<{ model: LlmModel }>("/api/admin/llm/models", { method: "POST", body }),
-  updateLlmModel: (id: string, body: { displayName?: string; developerName?: string | null }) => request<{ model: LlmModel }>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  createLlmModel: (body: { displayName: string; developerName?: string | null; userSelectable?: boolean }) => request<{ model: LlmModel }>("/api/admin/llm/models", { method: "POST", body }),
+  updateLlmModel: (id: string, body: { displayName?: string; developerName?: string | null; userSelectable?: boolean }) => request<{ model: LlmModel }>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteLlmModel: (id: string) => request<void>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listLlmRoutes: () => request<{ routes: LlmRoute[] }>("/api/admin/llm/routes"),
   createLlmRoute: (body: { modelId: number; connectionId: number; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId?: string | null; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>("/api/admin/llm/routes", { method: "POST", body }),
   updateLlmRoute: (id: string, body: { enabled?: boolean; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  deleteLlmRoute: (id: string) => request<void>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listLlmBindings: () => request<{ bindings: LlmBinding[] }>("/api/admin/llm/use-cases"),
   putLlmBinding: (useCase: string, routeId: string, body: { protocolCode: string; priority: number; enabled: boolean }) => request<{ binding: LlmBinding }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "PUT", body: { useCase, routeId: Number(routeId), ...body } }),
   updateLlmBinding: (useCase: string, routeId: string, body: { priority?: number; enabled?: boolean }) => request<{ binding: LlmBinding }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "PATCH", body }),
   deleteLlmBinding: (useCase: string, routeId: string) => request<void>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "DELETE" }),
   probeLlmBinding: (useCase: string, routeId: string) => request<{ callId: string; validated: boolean }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}/probe`, { method: "POST" }),
-  listLlmCalls: (cursor?: string) => request<{ calls: LlmCallRecord[]; nextCursor: string | null; summary: { callCount: number } }>(`/api/admin/llm/calls${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
+  listLlmCalls: (query: LlmCallQuery | string = {}) => {
+    const params = typeof query === "string" ? { cursor: query } : query;
+    return request<{ calls: LlmCallRecord[]; nextCursor: string | null; summary: LlmCallSummary }>(withLogQuery("/api/admin/llm/calls", params));
+  },
+  adminInsightOverview: () => request<AdminInsightOverview>("/api/admin/insights/overview"),
+  adminInsightUsers: () => request<AdminInsightUsers>("/api/admin/insights/users"),
+  adminInsightJobImports: () => request<AdminInsightJobImports>("/api/admin/insights/job-imports"),
+  adminInsightFunnel: (params: { from?: string; to?: string } = {}) =>
+    request<AdminInsightFunnel>(withLogQuery("/api/admin/insights/funnel", params)),
+  adminInsightLlmUsage: (params: { groupBy?: "model" | "useCase" | "connection"; from?: string; to?: string } = {}) =>
+    request<AdminInsightLlmUsage>(withLogQuery("/api/admin/insights/llm-usage", params)),
+  adminInsightAgent: (params: { from?: string; to?: string } = {}) =>
+    request<AdminInsightAgent>(withLogQuery("/api/admin/insights/agent", params)),
+  adminLogHeatmap: () => request<AdminLogHeatmap>("/api/admin/insights/log-heatmap"),
+  adminListAnnouncements: (params: { status?: AdminAnnouncement["status"]; cursor?: string; limit?: number } = {}) =>
+    request<{ items: AdminAnnouncement[]; nextCursor: string | null }>(withLogQuery("/api/admin/announcements", params)),
+  adminAnnouncementStats: () => request<AdminAnnouncementStats>("/api/admin/announcements/stats"),
+  adminCreateAnnouncement: (body: AnnouncementFields) =>
+    request<{ announcement: AdminAnnouncement }>("/api/admin/announcements", { method: "POST", body }),
+  adminUpdateAnnouncement: (id: string, body: Partial<AnnouncementFields>) =>
+    request<{ announcement: AdminAnnouncement }>(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  adminDeleteAnnouncement: (id: string) =>
+    request<void>(`/api/admin/announcements/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  adminPublishAnnouncement: (id: string) =>
+    request<{ announcement: AdminAnnouncement }>(`/api/admin/announcements/${encodeURIComponent(id)}/publish`, { method: "POST" }),
+  adminUnpublishAnnouncement: (id: string) =>
+    request<{ announcement: AdminAnnouncement }>(`/api/admin/announcements/${encodeURIComponent(id)}/unpublish`, { method: "POST" }),
   reportClientEvent: (payload: {
     eventType: "unhandled_error" | "unhandled_rejection" | "render_error" | "api_5xx";
     errorName: string;
@@ -2105,7 +2591,7 @@ export const api = {
     request<LogListResponse>(withLogQuery("/api/admin/logs/audit", params)),
   adminLogSummary: (params: { from?: string; to?: string } = {}) =>
     request<LogSummary>(withLogQuery("/api/admin/logs/summary", params)),
-  adminListAgentOperations: (params: { from?: string; to?: string; status?: string; errorCode?: string; cursor?: string; limit?: number } = {}) =>
+  adminListAgentOperations: (params: { from?: string; to?: string; status?: string; errorCode?: string; operationId?: string; userId?: string; cursor?: string; limit?: number } = {}) =>
     request<{ items: AgentOperationItem[]; next_cursor: string | null }>(withLogQuery("/api/admin/agent-operations", params)),
   adminGetAgentOperation: (id: string, params: { cursor?: string; limit?: number } = {}) =>
     request<AgentOperationDetail>(withLogQuery(`/api/admin/agent-operations/${encodeURIComponent(id)}`, params)),

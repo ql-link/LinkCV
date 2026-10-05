@@ -6,7 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index,
-    Integer, JSON, Numeric, String, Text, UniqueConstraint, false, func,
+    Integer, JSON, Numeric, String, Text, UniqueConstraint, false, func, true,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column
@@ -56,6 +56,10 @@ class LLMModel(Base):
     id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     developer_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Hidden models stay configured but are excluded from assistant conversation entirely.
+    user_selectable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
+    )
     created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()

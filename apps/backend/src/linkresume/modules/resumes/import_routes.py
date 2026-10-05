@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import asyncio
 from copy import deepcopy
 import logging

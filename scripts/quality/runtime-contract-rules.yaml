@@ -196,7 +196,7 @@ contracts:
         message: Production 配置必须声明双 Token Cookie 契约
 
   - id: wechat-miniprogram-environment-contract
-    description: Production 普通登录使用微信，且小程序本地联调必须显式 opt-in
+    description: 普通用户开发版仅密码、正式版仅微信，小程序地址覆盖须显式选择
     assertions:
       - path: .env.development
         pattern: '(?m)^APP_ENV=development$'
@@ -204,9 +204,12 @@ contracts:
       - path: .env.example
         pattern: '(?m)^APP_ENV=local$'
         message: 本地模板必须使用允许普通账号密码登录的 local 环境
-      - path: apps/backend/src/linkresume/modules/identity/routes.py
+      - path: apps/backend/src/linkresume/modules/identity/capabilities.py
         pattern: 'app_environment\.strip\(\)\.lower\(\) in \{"local", "development"\}'
         message: 本地和 Development 必须共享密码登录能力，Production 必须排除在外
+      - path: apps/backend/src/linkresume/modules/identity/capabilities.py
+        pattern: 'app_environment\.strip\(\)\.lower\(\) == "production" and settings\.wechat_enabled'
+        message: 微信普通登录仅允许配置可用的 Production
       - path: .env.production
         pattern: '(?m)^APP_ENV=production$'
         message: Production 必须关闭普通账号密码登录
@@ -217,8 +220,8 @@ contracts:
         pattern: 'invalid\.append\("WECHAT_APPID"\)[\s\S]*invalid\.append\("WECHAT_SECRET"\)'
         message: Production 必须在启动时拒绝缺少微信凭据的配置
       - path: deploy/scripts/build-development-on-primary.sh
-        pattern: 'required_secret_keys=\([\s\S]*WECHAT_APPID[\s\S]*WECHAT_SECRET[\s\S]*Missing required Development secret setting[\s\S]*Settings\(\)\.wechat_enabled[\s\S]*docker network inspect'
-        message: Dev 发布必须在迁移与容器替换前拒绝缺失、空值或占位的微信凭据
+        pattern: 'APP_ENV=development[\s\S]*not password_login_enabled\(settings\) or wechat_login_enabled\(settings\)[\s\S]*docker network inspect'
+        message: Dev 发布必须在迁移与容器替换前确认仅密码能力，不依赖微信凭据
       - path: apps/miniprogram/config/runtime.js
         pattern: 'productionApiBaseUrl: "https://linkresume\.cn"'
         message: 小程序必须保留 linkresume.cn 作为生产默认 API 地址

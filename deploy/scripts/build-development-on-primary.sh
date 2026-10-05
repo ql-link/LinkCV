@@ -76,17 +76,7 @@ if [[ "${secret_mode}" != "600" ]]; then
   exit 11
 fi
 
-required_secret_keys=(
-  WECHAT_APPID
-  WECHAT_SECRET
-)
-for required_key in "${required_secret_keys[@]}"; do
-  if ! grep -Eq "^${required_key}=.+$" "${secret_env}"; then
-    echo "Missing required Development secret setting: ${required_key}" >&2
-    exit 12
-  fi
-done
-
+# Development ordinary users authenticate by password; WeChat is production-only.
 docker run --rm \
   --env-file "${base_env}" \
   --env-file "${secret_env}" \
@@ -94,9 +84,10 @@ docker run --rm \
   "${image}:${tag}" \
   python -c '
 from linkresume.core.config import Settings
-
-if not Settings().wechat_enabled:
-    raise SystemExit("Development WeChat settings are missing or unsafe")
+from linkresume.modules.identity.capabilities import password_login_enabled, wechat_login_enabled
+settings = Settings()
+if not password_login_enabled(settings) or wechat_login_enabled(settings):
+    raise SystemExit("Development identity capabilities are inconsistent")
 '
 docker network inspect "${docker_network}" >/dev/null
 

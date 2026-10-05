@@ -1,8 +1,13 @@
 import asyncio
+import json
 import traceback
 from types import SimpleNamespace
 
 import litellm
+import httpx
+import pytest
+from openai import AsyncOpenAI
+from litellm.llms.openai.openai import OpenAIChatCompletion
 
 from linkresume.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error
 from linkresume.modules.llm.schemas import (
@@ -77,6 +82,39 @@ def test_complete_forwards_zero_retries_and_timeout_without_provider_schema(
     assert captured["num_retries"] == 0
     assert captured["model"] == "fictional-model-id"
     assert captured["custom_llm_provider"] == "openai"
+
+
+@pytest.mark.parametrize(("model", "base", "expected"), [
+    ("gpt-6-luna", "https://aihubmix.com/v1", {}),
+    ("deepseek-v4.1-flash", "https://api.inferera.com/v1", {"thinking": {"type": "disabled"}}),
+    ("qwen3.8-flash", "https://api.inferera.com/v1", {"enable_thinking": False}),
+    ("deepseek-v4.1-flash", "https://models.example.invalid/v1", {}),
+])
+def test_non_thinking_option_reaches_real_litellm_openai_wire(monkeypatch, model, base, expected):
+    bodies = []
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={
+            "id": "chatcmpl-fixture", "object": "chat.completion", "created": 0, "model": model,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4},
+        })
+    async def run():
+        async with AsyncOpenAI(api_key="fictional-key", base_url=base, max_retries=0,
+                               http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler))) as client:
+            monkeypatch.setattr(OpenAIChatCompletion, "_get_openai_client", lambda *args, **kwargs: client)
+            return await LiteLLMGateway().complete(
+                model=model, messages=[ChatMessage(role="user", content="虚构请求")],
+                api_base=base, api_key="fictional-key",
+            )
+    assert asyncio.run(run()).content == "OK"
+    assert len(bodies) == 1
+    assert "reasoning_effort" not in bodies[0]
+    for field, value in expected.items():
+        assert bodies[0][field] == value
+    if not expected:
+        assert "thinking" not in bodies[0] and "enable_thinking" not in bodies[0]
+    assert "extra_body" not in bodies[0]
 
 
 def test_complete_forwards_multimodal_message_parts(monkeypatch) -> None:

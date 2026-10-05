@@ -29,7 +29,9 @@ describe("PluginInstallDialog", () => {
 
   it("展示完整安装与使用说明，不暴露发布元数据", async () => {
     vi.spyOn(api, "getPluginRelease").mockResolvedValue({ status: "available", release });
-    const { container } = render(<PluginInstallDialog onClose={vi.fn()} />);
+    render(<PluginInstallDialog onClose={vi.fn()} />);
+    // V3 弹窗通过 portal 渲染到 body
+    const container = document.body;
 
     expect(await screen.findByText(/chrome:\/\/extensions/)).toBeInTheDocument();
     expect(screen.getByText(/edge:\/\/extensions/)).toBeInTheDocument();

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from linkresume.application.resumes.copy_service import copy_resume
 from linkresume.core.errors import ApiError
 from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.resumes.models import Resume
 from tests.integration.api.test_interviews import build_app, register, create_job, create_resume
 
@@ -214,6 +215,14 @@ def test_copy_is_independent_and_retry_does_not_duplicate_after_source_change():
         assert client.post(url + "/copy", json=copy_payload(source, "过期复制")).status_code == 409
         with app.state.session_factory() as db:
             assert len(db.scalars(select(Resume)).all()) == 2
+            sources = [
+                event.properties_json["source"]
+                for event in db.scalars(
+                    select(ProductEvent).where(ProductEvent.event_name == "resume_created").order_by(ProductEvent.id)
+                )
+            ]
+        # The idempotent replay returns the existing copy without a second event.
+        assert sources == ["template", "copy"]
 
 
 @pytest.mark.parametrize("method,suffix,body", [
