@@ -7,7 +7,6 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    ForeignKey,
     Index,
     JSON,
     Numeric,
@@ -88,7 +87,6 @@ class MockInterview(Base):
     public_id: Mapped[str] = mapped_column(ascii_char(36), nullable=False)
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_mock_interviews_user", ondelete="RESTRICT"),
         nullable=False,
     )
     active_user_id: Mapped[int | None] = mapped_column(
@@ -101,30 +99,18 @@ class MockInterview(Base):
     )
     job_application_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_applications.id",
-            name="fk_mock_interviews_application",
-            ondelete="SET NULL",
-        ),
         nullable=True,
     )
     resume_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("resumes.id", name="fk_mock_interviews_resume", ondelete="SET NULL"),
         nullable=True,
     )
     job_description_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_descriptions.id", name="fk_mock_interviews_job", ondelete="SET NULL"
-        ),
         nullable=True,
     )
     repeat_of_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "mock_interviews.id", name="fk_mock_interviews_repeat_of", ondelete="SET NULL"
-        ),
         nullable=True,
         comment="再练一次的来源面试",
     )
@@ -250,20 +236,10 @@ class MockInterviewQuestion(Base):
     )
     interview_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "mock_interviews.id",
-            name="fk_mock_interview_questions_interview",
-            ondelete="CASCADE",
-        ),
         nullable=False,
     )
     parent_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "mock_interview_questions.id",
-            name="fk_mock_interview_questions_parent",
-            ondelete="CASCADE",
-        ),
         nullable=True,
         comment="追问指向的主问题",
     )

@@ -7,7 +7,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -166,7 +165,6 @@ class JobDescription(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_job_descriptions_user", ondelete="RESTRICT"),
         nullable=False,
         comment="JD 所有者",
     )

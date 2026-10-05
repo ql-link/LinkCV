@@ -619,6 +619,24 @@ def delete_folder(
     except Exception as error:
         db.rollback()
         raise ApiError(502, "ASSET_DELETE_FAILED") from error
+    if rows:
+        # Local import: interviews depends on datasets, not the other way round.
+        from linkresume.modules.interviews.models import (
+            InterviewRecordingTranscription,
+            JobApplicationOfferMaterial,
+        )
+
+        dataset_ids = [dataset.id for dataset, _ in rows]
+        db.execute(
+            delete(InterviewRecordingTranscription).where(
+                InterviewRecordingTranscription.dataset_id.in_(dataset_ids)
+            )
+        )
+        db.execute(
+            delete(JobApplicationOfferMaterial).where(
+                JobApplicationOfferMaterial.dataset_id.in_(dataset_ids)
+            )
+        )
     for dataset, task in rows:
         db.delete(dataset)
         db.delete(task)
@@ -857,11 +875,20 @@ def delete_dataset(
     try:
         db.flush()
         # Local import: interviews depends on datasets, not the other way round.
-        from linkresume.modules.interviews.models import InterviewRecordingTranscription
+        from linkresume.modules.interviews.models import (
+            InterviewRecordingTranscription,
+            JobApplicationOfferMaterial,
+        )
 
+        # No database foreign keys: remove every row that references this file.
         db.execute(
             delete(InterviewRecordingTranscription).where(
                 InterviewRecordingTranscription.dataset_id == dataset.id
+            )
+        )
+        db.execute(
+            delete(JobApplicationOfferMaterial).where(
+                JobApplicationOfferMaterial.dataset_id == dataset.id
             )
         )
         dataset_result = db.execute(

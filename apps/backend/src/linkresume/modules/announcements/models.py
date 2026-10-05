@@ -6,7 +6,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     PrimaryKeyConstraint,
@@ -67,22 +66,18 @@ class Announcement(Base):
     unpublished_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
     created_by: Mapped[int] = mapped_column(
         ID,
-        ForeignKey("users.id", name="fk_announcements_created_by", ondelete="RESTRICT"),
         nullable=False,
     )
     updated_by: Mapped[int] = mapped_column(
         ID,
-        ForeignKey("users.id", name="fk_announcements_updated_by", ondelete="RESTRICT"),
         nullable=False,
     )
     published_by: Mapped[int | None] = mapped_column(
         ID,
-        ForeignKey("users.id", name="fk_announcements_published_by", ondelete="RESTRICT"),
         nullable=True,
     )
     unpublished_by: Mapped[int | None] = mapped_column(
         ID,
-        ForeignKey("users.id", name="fk_announcements_unpublished_by", ondelete="RESTRICT"),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
@@ -102,7 +97,6 @@ class AnnouncementReadCursor(Base):
 
     user_id: Mapped[int] = mapped_column(
         ID,
-        ForeignKey("users.id", name="fk_announcement_read_cursors_user", ondelete="RESTRICT"),
         nullable=False,
     )
     read_through_at: Mapped[datetime] = mapped_column(TIME, nullable=False)

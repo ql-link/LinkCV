@@ -105,8 +105,9 @@ def _delete_routes(db: Session, routes: list[LLMModelRoute], error_code: str) ->
         raise ApiError(409, error_code)
     for route in routes:
         db.delete(route)
-    # Flush child rows first so the parent delete never trips the RESTRICT foreign keys;
-    # a reference written concurrently after the check is still caught by those keys.
+    # Flush the routes before the parent row is deleted. The tables have no database
+    # foreign keys, so the reference check above is the only guard against deleting
+    # a route that bindings, call logs or agent runs still point at.
     try:
         db.flush()
     except IntegrityError as error:

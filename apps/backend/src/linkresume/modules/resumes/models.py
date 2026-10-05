@@ -6,7 +6,6 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -155,17 +154,11 @@ class Resume(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_resumes_user", ondelete="RESTRICT"),
         nullable=False,
         comment="简历所有者",
     )
     template_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "resume_templates.id",
-            name="fk_resumes_template",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
         comment="当前绑定模板",
     )
@@ -299,11 +292,6 @@ class DocumentParseTask(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "users.id",
-            name="fk_document_parse_tasks_user",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
         comment="所属用户标识",
     )
@@ -318,11 +306,6 @@ class DocumentParseTask(Base):
     )
     selected_template_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "resume_templates.id",
-            name="fk_document_parse_tasks_selected_template",
-            ondelete="RESTRICT",
-        ),
         nullable=True,
         comment="简历导入冻结模板；Dataset 任务为空",
     )

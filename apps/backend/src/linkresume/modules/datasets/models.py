@@ -4,7 +4,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     PrimaryKeyConstraint,
@@ -47,9 +46,6 @@ class UserDatasetFolder(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "users.id", name="fk_user_dataset_folders_user", ondelete="RESTRICT"
-        ),
         nullable=False,
         comment="所属用户 ID",
     )
@@ -124,17 +120,11 @@ class UserDataset(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_user_dataset_user", ondelete="RESTRICT"),
         nullable=False,
         comment="所属用户 ID",
     )
     folder_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "user_dataset_folders.id",
-            name="fk_user_dataset_folder",
-            ondelete="SET NULL",
-        ),
         nullable=True,
         comment="所属文件夹 ID，为 NULL 表示未分类",
     )
@@ -182,11 +172,6 @@ class UserDataset(Base):
     )
     interview_session_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "interview_sessions.id",
-            name="fk_user_dataset_interview_session",
-            ondelete="SET NULL",
-        ),
         nullable=True,
         comment="关联面试场次 ID；NULL 为普通资料",
     )

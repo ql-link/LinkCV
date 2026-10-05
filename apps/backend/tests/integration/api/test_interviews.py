@@ -2678,3 +2678,38 @@ def test_future_schedule_stays_scheduled_until_its_end_time() -> None:
         assert created.json()["session"]["status"] == "scheduled"
         assert created.json()["session"]["completed_at"] is None
         assert created.json()["application"]["stage_state"] == "scheduled"
+
+
+def test_deleting_archived_legacy_application_removes_its_stages() -> None:
+    """Stages used to rely on a database cascade; the service now deletes them."""
+    from sqlalchemy import func, select, update
+
+    from linkresume.core.database import utc_now
+    from linkresume.modules.interviews.models import JobApplication, JobApplicationStage
+
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "legacy-application-delete@example.test")
+        application = create_application(client, create_job(client, "历史记录公司"))
+        application_id = int(application["id"])
+        with app.state.session_factory() as db:
+            assert db.scalar(
+                select(func.count()).select_from(JobApplicationStage)
+                .where(JobApplicationStage.application_id == application_id)
+            )
+            # Legacy shape: no linked job description, archived instead of terminated.
+            db.execute(
+                update(JobApplication)
+                .where(JobApplication.id == application_id)
+                .values(job_description_id=None, archived_at=utc_now())
+            )
+            db.commit()
+
+        deleted = client.delete(f"/api/job-applications/{application_id}")
+        assert deleted.status_code == 200, deleted.text
+        with app.state.session_factory() as db:
+            assert db.get(JobApplication, application_id) is None
+            assert db.scalar(
+                select(func.count()).select_from(JobApplicationStage)
+                .where(JobApplicationStage.application_id == application_id)
+            ) == 0

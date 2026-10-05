@@ -1138,7 +1138,7 @@ def delete_application(
     delete_asset_object: Callable[[str], None] | None = None,
 ) -> None:
     # delete_asset_object is retained for signature compatibility; linked
-    # datasets are only unlinked (FK ON DELETE SET NULL), never removed here.
+    # datasets are only unlinked (interview_session_id set to NULL), never removed here.
     lock_active_user(db, user_id)
     application = db.scalar(
         select(JobApplication)
@@ -1173,11 +1173,18 @@ def delete_application(
         db.commit()
         return
 
+    # No database foreign keys: clear the aggregate's own rows explicitly.
+    db.execute(
+        delete(JobApplicationStage).where(
+            JobApplicationStage.application_id == application.id
+        )
+    )
     db.execute(
         delete(JobApplicationOfferMaterial).where(
             JobApplicationOfferMaterial.application_id == application.id
         )
     )
+    detach_mock_interview_applications(db, [application.id])
     result = db.execute(
         delete(JobApplication).where(
             JobApplication.id == application.id,

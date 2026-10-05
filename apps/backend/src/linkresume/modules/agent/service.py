@@ -8,7 +8,7 @@ import re
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, object_session
 
 from linkresume.core.database import utc_now
@@ -31,9 +31,11 @@ from linkresume.modules.agent.models import (
     AgentOperation,
     AgentRun,
     AgentSession,
+    AgentStageEvent,
     AgentToolCall,
     ResumeChangeProposal,
 )
+from linkresume.modules.llm.models import LLMCallLog
 from linkresume.modules.agent.context_service import resolve_contexts
 from linkresume.modules.agent.message_scope import (
     active_message, clarification_metadata, proposal_message, register_proposal, reply_source_message,
@@ -398,7 +400,20 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
             db.execute(delete(AgentToolCall).where(AgentToolCall.run_id.in_(run_ids)))
         db.execute(delete(AgentMessage).where(AgentMessage.session_id == session.id))
         if run_ids:
+            # Call logs are billing history: keep them and detach the deleted runs.
+            db.execute(
+                update(LLMCallLog)
+                .where(LLMCallLog.agent_run_id.in_(run_ids))
+                .values(agent_run_id=None)
+            )
             db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+        db.execute(
+            delete(AgentStageEvent).where(
+                AgentStageEvent.agent_operation_id.in_(
+                    select(AgentOperation.id).where(AgentOperation.session_id == session.id)
+                )
+            )
+        )
         db.execute(delete(AgentOperation).where(AgentOperation.session_id == session.id))
         db.execute(
             delete(AgentSession).where(

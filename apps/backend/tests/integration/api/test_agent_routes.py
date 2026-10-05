@@ -3869,3 +3869,47 @@ def test_hiding_every_conversation_model_reports_not_configured() -> None:
             with pytest.raises(ApiError) as error:
                 create_run(db, session=session, content="无模型", idempotency_key="none", timeout_seconds=60)
             assert (error.value.status_code, error.value.code) == (503, "LLM_MODEL_NOT_CONFIGURED")
+
+
+def test_agent_session_delete_removes_stage_events_and_keeps_detached_call_logs() -> None:
+    """Without database foreign keys the service deletes stage events and detaches call logs."""
+    from linkresume.modules.agent.models import AgentOperation, AgentStageEvent
+
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "agent-session-delete-no-fk@example.test")
+        target = client.post("/api/agent/sessions", json={}).json()["session"]
+        run_public_id = create_active_run(app, target["id"])
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_public_id))
+            assert run is not None
+            run.status = "succeeded"
+            operation = AgentOperation(
+                public_id=str(uuid4()), session_id=run.session_id, state="completed"
+            )
+            db.add(operation)
+            db.flush()
+            db.add(AgentStageEvent(
+                agent_operation_id=operation.id, event_key="fictional-event",
+                stage="planning", result="succeeded", occurred_at=utc_now(),
+            ))
+            db.add(LLMCallLog(
+                call_id="fictional-call-no-fk", use_case="assistant_conversation",
+                source="pi_agent", agent_run_id=run.id, route_id=1,
+                runtime_config_version=1, protocol_code="openai_chat",
+                selection_source="default",
+            ))
+            db.commit()
+            operation_id = operation.id
+
+        response = client.delete(f"/api/agent/sessions/{target['id']}")
+        assert response.status_code == 204
+
+    with app.state.session_factory() as db:
+        assert db.get(AgentOperation, operation_id) is None
+        assert db.scalars(
+            select(AgentStageEvent).where(AgentStageEvent.agent_operation_id == operation_id)
+        ).all() == []
+        call_log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == "fictional-call-no-fk"))
+        assert call_log is not None
+        assert call_log.agent_run_id is None

@@ -526,7 +526,7 @@ class ResumeImportProcessor:
                     .where(ResumeTemplate.id == selected_template_id)
                     .with_for_update()
                 )
-                # The row is required by the resume foreign key, but its
+                # The resume must reference an existing template row, but its
                 # current style and active flag are not part of this task's
                 # render contract.  The accepted task snapshot is the only
                 # source of the imported presentation.

@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
-    BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index,
+    BigInteger, Boolean, CheckConstraint, DateTime, Index,
     Integer, JSON, Numeric, String, Text, UniqueConstraint, false, func, true,
 )
 from sqlalchemy.dialects import mysql
@@ -91,12 +91,10 @@ class LLMModelRoute(Base):
 
     id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
     model_id: Mapped[int] = mapped_column(
-        ID, ForeignKey("llm_models.id", name="fk_llm_routes_model", ondelete="RESTRICT"),
-        nullable=False,
+        ID, nullable=False,
     )
     connection_id: Mapped[int] = mapped_column(
         ID,
-        ForeignKey("llm_provider_connections.id", name="fk_llm_routes_connection", ondelete="RESTRICT"),
         nullable=False,
     )
     target_kind: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -129,8 +127,7 @@ class LLMUseCaseRoute(Base):
 
     use_case: Mapped[str] = mapped_column(String(48), primary_key=True)
     route_id: Mapped[int] = mapped_column(
-        ID, ForeignKey("llm_model_routes.id", name="fk_llm_use_case_route", ondelete="RESTRICT"),
-        primary_key=True,
+        ID, primary_key=True,
     )
     protocol_code: Mapped[str] = mapped_column(String(32), nullable=False)
     priority: Mapped[int] = mapped_column(
@@ -178,16 +175,13 @@ class LLMCallLog(Base):
     use_case: Mapped[str] = mapped_column(String(48), nullable=False)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     user_id: Mapped[int | None] = mapped_column(
-        ID, ForeignKey("users.id", name="fk_llm_calls_user", ondelete="RESTRICT"),
-        nullable=True,
+        ID, nullable=True,
     )
     agent_run_id: Mapped[int | None] = mapped_column(
-        ID, ForeignKey("agent_runs.id", name="fk_llm_calls_run", ondelete="SET NULL"),
-        nullable=True,
+        ID, nullable=True,
     )
     route_id: Mapped[int] = mapped_column(
-        ID, ForeignKey("llm_model_routes.id", name="fk_llm_calls_route", ondelete="RESTRICT"),
-        nullable=False,
+        ID, nullable=False,
     )
     runtime_config_version: Mapped[int] = mapped_column(ID, nullable=False)
     protocol_code: Mapped[str] = mapped_column(String(32), nullable=False)

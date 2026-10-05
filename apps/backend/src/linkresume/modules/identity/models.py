@@ -5,7 +5,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -141,8 +140,7 @@ class AccountPreference(Base):
         {"comment": "账号界面语言与提醒偏好"},
     )
     user_id: Mapped[int] = mapped_column(
-        unsigned_bigint_type(), ForeignKey("users.id", name="fk_account_preferences_user", ondelete="RESTRICT"),
-        nullable=False, comment="所属用户",
+        unsigned_bigint_type(), nullable=False, comment="所属用户",
     )
     locale: Mapped[str] = mapped_column(String(5), nullable=False, default="zh-CN", server_default="zh-CN", comment="界面语言")
     is_interview_reminder_enabled: Mapped[int] = mapped_column(
@@ -271,7 +269,6 @@ class UserProfile(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_user_profiles_user", ondelete="RESTRICT"),
         nullable=False,
         comment="画像所有者用户 id",
     )

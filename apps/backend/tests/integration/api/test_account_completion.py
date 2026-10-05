@@ -367,3 +367,41 @@ def test_lost_cleanup_lease_cannot_report_completion_and_expired_job_recovers():
         with app.state.session_factory() as db:
             assert db.scalar(select(AccountDeletionJob)).status == "completed"
         assert name not in backing.objects
+
+
+def test_deletion_removes_rows_that_used_to_rely_on_database_cascades():
+    """Without database foreign keys, cleanup must delete these rows explicitly."""
+    from linkresume.modules.interviews.models import (
+        InterviewRecordingTranscription,
+        InterviewReviewQuestionNote,
+        JobApplicationOfferMaterial,
+    )
+    from tests.integration.api.test_interviews import create_application, create_job
+
+    app = build_test_app()
+    enable_deletion(app)
+    with TestClient(app) as client, TestClient(app) as other:
+        uid = register(client)
+        other_uid = register(other, "other@example.com")
+        application_id = int(create_application(client, create_job(client, "示例公司"))["id"])
+        now = utc_now()
+        with app.state.session_factory() as db:
+            for owner in (uid, other_uid):
+                db.add(InterviewRecordingTranscription(
+                    user_id=owner, session_id=900000 + owner, dataset_id=910000 + owner,
+                    status="queued", attempts=0, next_attempt_at=now,
+                ))
+                db.add(InterviewReviewQuestionNote(
+                    user_id=owner, session_id=900000 + owner,
+                    question_key="a" * 64, question_text="虚构的面试问题",
+                ))
+            db.add(JobApplicationOfferMaterial(application_id=application_id, dataset_id=920000))
+            db.commit()
+        assert delete_password(client).status_code == 202
+        assert processor(app).run_once() is True
+        with app.state.session_factory() as db:
+            transcription_owners = db.scalars(select(InterviewRecordingTranscription.user_id)).all()
+            note_owners = db.scalars(select(InterviewReviewQuestionNote.user_id)).all()
+            assert transcription_owners == [other_uid]
+            assert note_owners == [other_uid]
+            assert db.scalars(select(JobApplicationOfferMaterial)).all() == []

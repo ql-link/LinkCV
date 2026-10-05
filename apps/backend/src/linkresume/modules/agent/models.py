@@ -7,7 +7,6 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -65,7 +64,6 @@ class AgentSession(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     selected_llm_model_id: Mapped[int | None] = mapped_column(
         UNSIGNED_BIGINT,
-        ForeignKey("llm_models.id", name="fk_agent_sessions_llm_model", ondelete="RESTRICT"),
         nullable=True,
     )
     last_message_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
@@ -115,12 +113,10 @@ class AgentRun(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
     resolved_llm_model_id: Mapped[int | None] = mapped_column(
         UNSIGNED_BIGINT,
-        ForeignKey("llm_models.id", name="fk_agent_runs_llm_model", ondelete="RESTRICT"),
         nullable=True,
     )
     resolved_llm_route_id: Mapped[int | None] = mapped_column(
         UNSIGNED_BIGINT,
-        ForeignKey("llm_model_routes.id", name="fk_agent_runs_llm_route", ondelete="RESTRICT"),
         nullable=True,
     )
     runtime_config_version: Mapped[int | None] = mapped_column(UNSIGNED_BIGINT, nullable=True)
@@ -163,7 +159,6 @@ class AgentOperation(Base):
     public_id: Mapped[str] = mapped_column(String(36), nullable=False)
     session_id: Mapped[int] = mapped_column(
         UNSIGNED_BIGINT,
-        ForeignKey("agent_sessions.id", ondelete="RESTRICT", name="fk_agent_operations_session"),
         nullable=False,
     )
     state: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -194,7 +189,6 @@ class AgentStageEvent(Base):
     id: Mapped[int] = mapped_column(UNSIGNED_BIGINT, primary_key=True, autoincrement=True)
     agent_operation_id: Mapped[int] = mapped_column(
         UNSIGNED_BIGINT,
-        ForeignKey("agent_operations.id", ondelete="CASCADE", name="fk_agent_stage_events_operation"),
         nullable=False,
     )
     event_key: Mapped[str] = mapped_column(String(160), nullable=False)

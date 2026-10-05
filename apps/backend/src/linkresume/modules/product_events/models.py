@@ -8,7 +8,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     String,
@@ -51,7 +50,6 @@ class ProductEvent(Base):
     id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         ID,
-        ForeignKey("users.id", name="fk_product_events_user", ondelete="CASCADE"),
         nullable=False,
     )
     event_name: Mapped[str] = mapped_column(String(32), nullable=False)

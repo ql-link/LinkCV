@@ -5,7 +5,6 @@ from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
-    ForeignKey,
     Index,
     JSON,
     String,
@@ -57,19 +56,14 @@ class JobResumeMatch(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_job_resume_matches_user", ondelete="RESTRICT"),
         nullable=False,
     )
     job_description_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_descriptions.id", name="fk_job_resume_matches_job", ondelete="RESTRICT"
-        ),
         nullable=False,
     )
     resume_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("resumes.id", name="fk_job_resume_matches_resume", ondelete="RESTRICT"),
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)

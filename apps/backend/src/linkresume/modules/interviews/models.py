@@ -9,7 +9,6 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Date,
-    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -158,21 +157,14 @@ class JobApplication(Base):
     id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_job_applications_user", ondelete="RESTRICT"),
         nullable=False,
     )
     job_description_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_descriptions.id",
-            name="fk_job_applications_job_description",
-            ondelete="SET NULL",
-        ),
         nullable=True,
     )
     resume_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("resumes.id", name="fk_job_applications_resume", ondelete="SET NULL"),
         nullable=True,
     )
     company_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -261,16 +253,10 @@ class JobApplicationOfferMaterial(Base):
 
     application_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_applications.id",
-            name="fk_offer_material_application",
-            ondelete="CASCADE",
-        ),
         nullable=False,
     )
     dataset_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("user_dataset.id", name="fk_offer_material_dataset", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -342,11 +328,6 @@ class JobApplicationStage(Base):
     id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
     application_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_applications.id",
-            name="fk_job_application_stages_application",
-            ondelete="CASCADE",
-        ),
         nullable=False,
     )
     client_request_id: Mapped[str] = mapped_column(ascii_char(36), nullable=False)
@@ -467,20 +448,10 @@ class InterviewSession(Base):
     id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
     application_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_applications.id",
-            name="fk_interview_sessions_application",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
     )
     application_stage_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_application_stages.id",
-            name="fk_interview_sessions_application_stage",
-            ondelete="RESTRICT",
-        ),
         nullable=True,
     )
     client_request_id: Mapped[str] = mapped_column(ascii_char(36), nullable=False)
@@ -529,11 +500,15 @@ class InterviewSession(Base):
     transcript_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Read-only views for session responses; writes go through the child tables.
     transcriptions: Mapped[list["InterviewRecordingTranscription"]] = relationship(
+        # No database foreign key: declare the join explicitly.
+        primaryjoin="InterviewSession.id == foreign(InterviewRecordingTranscription.session_id)",
         viewonly=True,
         lazy="selectin",
         order_by="InterviewRecordingTranscription.id",
     )
     review_question_notes: Mapped[list["InterviewReviewQuestionNote"]] = relationship(
+        # No database foreign key: declare the join explicitly.
+        primaryjoin="InterviewSession.id == foreign(InterviewReviewQuestionNote.session_id)",
         viewonly=True,
         lazy="selectin",
         order_by="InterviewReviewQuestionNote.id",
@@ -582,25 +557,14 @@ class InterviewRecordingTranscription(Base):
     id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_interview_recording_transcriptions_user", ondelete="CASCADE"),
         nullable=False,
     )
     session_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "interview_sessions.id",
-            name="fk_interview_recording_transcriptions_session",
-            ondelete="CASCADE",
-        ),
         nullable=False,
     )
     dataset_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "user_dataset.id",
-            name="fk_interview_recording_transcriptions_dataset",
-            ondelete="CASCADE",
-        ),
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -640,16 +604,10 @@ class InterviewReviewQuestionNote(Base):
     id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_interview_review_question_notes_user", ondelete="CASCADE"),
         nullable=False,
     )
     session_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "interview_sessions.id",
-            name="fk_interview_review_question_notes_session",
-            ondelete="CASCADE",
-        ),
         nullable=False,
     )
     question_key: Mapped[str] = mapped_column(ascii_char(64), nullable=False)

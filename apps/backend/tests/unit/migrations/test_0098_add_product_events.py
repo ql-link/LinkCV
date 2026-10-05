@@ -45,7 +45,7 @@ def test_sql_columns_match_orm_columns() -> None:
 
 def test_events_follow_user_deletion_and_names_match() -> None:
     assert "REFERENCES users (id) ON DELETE CASCADE" in SQL
-    (fk,) = ProductEvent.__table__.foreign_keys
-    assert fk.ondelete == "CASCADE"
+    # 0113 drops the foreign key; account deletion removes events explicitly.
+    assert not ProductEvent.__table__.foreign_keys
     for name in EVENT_NAMES:
         assert f"'{name}'" in SQL
