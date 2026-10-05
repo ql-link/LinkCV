@@ -26,10 +26,28 @@ import {
   translationCallKey,
   SYSTEM_PROMPT,
   USER_FACING_RESPONSE_PROMPT,
+  loadIntentDecision,
+  intentDecisionContext,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
 
 const codedTestError = (code) => Object.assign(new Error(code), { code });
+
+test("intent plan is loaded before execution and cannot be replanned", async () => {
+  const tasks = [{ id: "diagnose", workflow: "resume_edit", status: "planned" }];
+  const decision = await loadIntentDecision({ recognizeIntent: async () => ({ version: 1, mode: "plan", tasks }) });
+  assert.deepEqual(decision.tasks, tasks);
+  assert.match(intentDecisionContext(decision), /不得重新规划/);
+  assert.match(intentDecisionContext({ mode: "clarify", clarification_purposes: ["edit_scope"] }), /禁止规划/);
+  assert.equal(intentDecisionContext({ mode: "fallback" }), "");
+});
+
+test("intent authorization failure and cancellation do not become fallback", async () => {
+  for (const code of ["AGENT_TASK_CONTEXT_NOT_AUTHORIZED", "AGENT_RUN_NOT_ACTIVE", "AbortError"]) {
+    await assert.rejects(loadIntentDecision({ recognizeIntent: async () => { throw codedTestError(code); } }), { code });
+  }
+  await assert.rejects(loadIntentDecision({ recognizeIntent: async () => ({ version: 1, mode: "plan", tasks: [] }) }), { code: "AGENT_INTENT_RESPONSE_INVALID" });
+});
 
 test("runtime registers an arbitrary OpenAI-compatible provider route", async () => {
   const { modelRuntime, model } = await configuredModel({

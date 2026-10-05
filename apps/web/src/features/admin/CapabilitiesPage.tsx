@@ -43,6 +43,7 @@ const ASSISTANT = "assistant_conversation";
 
 const useCaseIcons: Record<string, LucideIcon> = {
   assistant_conversation: MessageSquare,
+  assistant_intent: Workflow,
   resume_structuring: ScanText,
   job_text_extraction: FileText,
   job_image_extraction: Image,
@@ -404,6 +405,7 @@ export function CapabilitiesPage() {
             )}
           </section>
           <Footnote icon={CircleAlert}>
+            {useCase === "assistant_intent" && "独立识别本轮目标，未配置或识别调用失败时沿用原有路由；启用后每轮可能增加模型调用。 "}
             {groups.length > 1 ? "拖动序号调整默认顺序，拖动“主 / 备”调整线路切换顺序。" : ""}
             {assistant
               ? "用户在对话里能选的，是这里列出且开启“用户可选”的模型；没选时使用排第一的可用模型。某个模型的主线路失败时，只会切到它自己的备用线路，不会换成别的模型。"
@@ -458,6 +460,8 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
 }) {
   const { notify } = useConsole();
   const assistant = useCase === ASSISTANT;
+  const intent = useCase === "assistant_intent";
+  const eligibleConnections = intent ? data.connections.filter((item) => data.catalog.providers.find((spec) => spec.code === item.providerCode)?.protocols.includes("openai_chat")) : data.connections;
   const boundRoutes = new Set(existing.map((item) => item.routeId));
   const boundModels = new Set(existing.map((item) => data.routes.find((route) => route.id === item.routeId)?.modelId));
   const [mode, setMode] = useState<Mode>("existing");
@@ -472,7 +476,7 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
   const [name, setName] = useState("");
   const [developer, setDeveloper] = useState("");
   const [selectable, setSelectable] = useState(true);
-  const [connectionId, setConnectionId] = useState(data.connections[0]?.id ?? "");
+  const [connectionId, setConnectionId] = useState(eligibleConnections[0]?.id ?? "");
   const [target, setTarget] = useState("");
   const [inputPrice, setInputPrice] = useState("");
   const [outputPrice, setOutputPrice] = useState("");
@@ -480,9 +484,9 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
 
   const routesByModel = useMemo(() => {
     const map = new Map<string, LlmRoute[]>();
-    for (const route of data.routes) map.set(route.modelId, [...(map.get(route.modelId) ?? []), route]);
+    for (const route of data.routes.filter((item) => !intent || eligibleConnections.some((connection) => connection.id === item.connectionId))) map.set(route.modelId, [...(map.get(route.modelId) ?? []), route]);
     return map;
-  }, [data.routes]);
+  }, [data.routes, intent]);
   const keyword = query.trim().toLowerCase();
   const candidates = useMemo(() => data.models
     .filter((model) => (routesByModel.get(model.id) ?? []).some((route) => !boundRoutes.has(route.id)))
@@ -498,7 +502,7 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
   const chosen = picked ?? new Set(available.filter((route) => route.enabled).map((route) => route.id));
   const connection = data.connections.find((item) => item.id === connectionId);
   const provider = data.catalog.providers.find((item) => item.code === connection?.providerCode);
-  const protocolFor = (route: LlmRoute) => data.catalog.providers.find((spec) => spec.code === data.connections.find((item) => item.id === route.connectionId)?.providerCode)?.protocols[0] ?? "openai_chat";
+  const protocolFor = (route: LlmRoute) => intent ? "openai_chat" : data.catalog.providers.find((spec) => spec.code === data.connections.find((item) => item.id === route.connectionId)?.providerCode)?.protocols[0] ?? "openai_chat";
   const nextPriority = (existing.reduce((max, item) => Math.max(max, item.priority), 0) || 0) + PRIORITY_STEP;
 
   const priceMismatch = Boolean(inputPrice.trim()) !== Boolean(outputPrice.trim());
@@ -605,7 +609,7 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
             )}
             <p className="adm-subhead">第一条线路</p>
             <div className="adm-form-row">
-              <Field label="接入连接"><SelectBox label="接入连接" value={connectionId} onChange={setConnectionId} options={data.connections.map((item) => ({ value: item.id, label: `${data.catalog.providers.find((spec) => spec.code === item.providerCode)?.label ?? item.providerCode} · ${item.name}` }))} /></Field>
+              <Field label="接入连接"><SelectBox label="接入连接" value={connectionId} onChange={setConnectionId} options={eligibleConnections.map((item) => ({ value: item.id, label: `${data.catalog.providers.find((spec) => spec.code === item.providerCode)?.label ?? item.providerCode} · ${item.name}` }))} /></Field>
               <Field label="调用目标 ID" htmlFor="cap-target" hint="上游 model / endpoint / deployment ID"><input id="cap-target" className="adm-input" value={target} maxLength={256} onChange={(event) => setTarget(event.target.value)} placeholder="例如 deepseek-chat" /></Field>
             </div>
             <div className="adm-form-row is-three">

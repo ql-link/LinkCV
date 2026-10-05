@@ -318,6 +318,21 @@ describe("CapabilitiesPage", () => {
     await waitFor(() => expect(updateModel).toHaveBeenCalledWith("5", { userSelectable: false }));
   });
 
+  it("binds intent with chat independently of the conversation protocol", async () => {
+    mockLlm();
+    vi.mocked(api.getLlmCatalog).mockResolvedValue({ ...catalog, useCases: ["assistant_conversation", "assistant_intent"], providers: [{ ...catalog.providers[0], protocols: ["openai_responses", "openai_chat"] }] });
+    const put = vi.spyOn(api, "putLlmBinding").mockResolvedValue({ binding: {} as LlmBinding });
+    render(wrap(<CapabilitiesPage />));
+    fireEvent.click(await screen.findByRole("tab", { name: /助手意图识别/ }));
+    expect(screen.getByText(/未配置或识别调用失败时沿用原有路由/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "加入模型" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("搜索模型"), { target: { value: "示例" } });
+    fireEvent.click(within(dialog).getByRole("option", { name: /示例模型/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /加入 1 条线路/ }));
+    await waitFor(() => expect(put).toHaveBeenCalledWith("assistant_intent", "12", { protocolCode: "openai_chat", priority: 10, enabled: false }));
+  });
+
   it("adds an existing model with all of its enabled routes, disabled and after the last priority", async () => {
     const other: LlmModel = { ...model, id: "7", displayName: "另一个模型" };
     const r1: LlmRoute = { ...route, id: "21", modelId: "7", invokeTarget: "vendor/other-a" };

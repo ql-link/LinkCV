@@ -3,6 +3,21 @@ import test from "node:test";
 
 import { createLinkResumeClient } from "../src/tools/linkresume-client.js";
 
+test("intent recognition is bound to the run and sends no prompt or credentials in the body", async (context) => {
+  const requests = [];
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, ...options });
+    return Response.json({ version: 1, mode: "fallback", reason: "LLM_MODEL_NOT_CONFIGURED" });
+  };
+  const client = createLinkResumeClient({ linkresumeBaseUrl: "http://127.0.0.1:8000", linkresumeToken: "fictional-token", toolTimeoutMs: 15000 }, "run/1", new AbortController().signal);
+  assert.equal((await client.recognizeIntent()).mode, "fallback");
+  assert.equal(requests[0].url, "http://127.0.0.1:8000/internal/agent/runs/run%2F1/intent:recognize");
+  assert.equal(requests[0].method, "POST");
+  assert.equal(requests[0].body, undefined);
+});
+
 for (const [label, requestId, modelId, expectedRequest, expectedModel] of [
   ["ordinary", "resp_fictional", "fictional-model", "resp_fictional", "fictional-model"],
   ["column boundary", "r".repeat(128), "m".repeat(256), "r".repeat(128), "m".repeat(256)],

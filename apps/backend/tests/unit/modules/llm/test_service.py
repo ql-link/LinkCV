@@ -77,6 +77,65 @@ class Answer(BaseModel):
     answer: str
 
 
+def bind_intent(sessions):
+    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    with sessions() as db:
+        route = db.get(LLMModelRoute, 1)
+        connection = db.get(LLMProviderConnection, route.connection_id)
+        binding = LLMUseCaseRoute(use_case=ASSISTANT_INTENT, route_id=route.id,
+                                  protocol_code="openai_chat", priority=100, enabled=True,
+                                  validated_at=datetime.now(timezone.utc))
+        db.add(binding); db.flush()
+        binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
+        db.commit()
+
+
+def test_intent_call_uses_independent_scene_and_run_log(context):
+    from linkresume.modules.agent.intent_schemas import IntentDecision
+    from linkresume.modules.agent.models import AgentRun, AgentSession
+    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    service, gateway, sessions = context
+    bind_intent(sessions)
+    with sessions() as db:
+        session = AgentSession(public_id="intent-session", user_id=1, title="测试")
+        db.add(session); db.flush()
+        run = AgentRun(public_id="intent-run", session_id=session.id,
+                       idempotency_key="intent-key", started_at=datetime.now(timezone.utc))
+        db.add(run); db.commit()
+        run_id = run.id
+    gateway.result = GatewayResult(content='{"mode":"conversation"}', usage=GatewayUsage(100, 20))
+    result = asyncio.run(service.structured_chat(
+        1, [ChatMessage(role="user", content="你好")], source="agent_intent",
+        use_case=ASSISTANT_INTENT, response_model=IntentDecision, agent_run_id=run_id,
+    ))
+    assert result.value.mode == "conversation"
+    with sessions() as db:
+        log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == result.call_id))
+        assert (log.use_case, log.agent_run_id, log.source) == (ASSISTANT_INTENT, run_id, "agent_intent")
+        assert log.input_tokens == 100
+        assert log.estimated_cost is not None
+
+
+@pytest.mark.parametrize("content,valid", [
+    ('{"ok":true}', False),
+    ('{"mode":"conversation"}', False),
+    (json.dumps({"mode": "plan", "tasks": [
+        {"id": "diagnose", "workflow": "resume_edit", "output": "advice", "label": "诊断"},
+        {"id": "interview", "workflow": "interview_guide", "output": "advice", "label": "面试准备"},
+    ]}), True),
+])
+def test_intent_probe_checks_multiple_goals(context, content, valid):
+    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    service, gateway, sessions = context
+    bind_intent(sessions)
+    gateway.result = GatewayResult(content=content, usage=GatewayUsage(100, 20))
+    if valid:
+        asyncio.run(service.probe_route(1, ASSISTANT_INTENT, 1))
+    else:
+        with pytest.raises(LLMError) as error:
+            asyncio.run(service.probe_route(1, ASSISTANT_INTENT, 1))
+        assert error.value.code == "LLM_RESPONSE_INVALID"
+
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("request_id,model_id,expected_request,expected_model", [
     ("resp_fictional", "fictional-model", "resp_fictional", "fictional-model"),

@@ -20,6 +20,12 @@ test("native Pi persists each reply before inserting, restores tools and switche
     let body = {};
     if (path.endsWith("runtime-config")) body = { provider: "fake", api: "openai-completions", model: "fake",
       api_key: "fictional-key", api_base: "https://fake.test/v1", route_id: "1", config_version: 1 };
+    if (path.endsWith("intent:recognize")) {
+      if (source === "3") {
+        tasks = [{ id: "second", workflow: "career_planning", output: "advice", label: "职业建议", depends_on: [], context_refs: [], status: "planned", proposal_ids: [] }];
+        body = { version: 1, mode: "plan", tasks };
+      } else body = { version: 1, mode: "fallback" };
+    }
     if (path.endsWith("tasks:plan")) {
       tasks = payload.tasks.map((task) => ({ ...task, depends_on: [], context_refs: [], status: "planned", proposal_ids: [] }));
       body = { tasks };
@@ -93,6 +99,8 @@ test("native Pi persists each reply before inserting, restores tools and switche
   assert.equal(callbacks[activation].source, "1");
   assert.ok(callbacks.slice(activation + 1).filter((item) => !item.path.endsWith("llm-calls")).every((item) => item.source === "3"));
   assert.equal(handle.lookup("steer_native_1").state, "applied");
+  assert.deepEqual(callbacks.filter((item) => item.path.endsWith("intent:recognize")).map((item) => item.source), ["1", "3"]);
+  assert.equal(callbacks.filter((item) => item.path.endsWith("tasks:plan")).length, 1);
 });
 
 for (const outcome of ["clarification", "cancel"]) {
@@ -105,6 +113,7 @@ for (const outcome of ["clarification", "cancel"]) {
       callbacks.push(path);
       const body = path.endsWith("runtime-config")
         ? { provider: "fake", api: "openai-completions", model: "fake", api_key: "fictional", api_base: "https://fake.test/v1", route_id: "1", config_version: 1 }
+        : path.endsWith("intent:recognize") ? { version: 1, mode: "fallback" }
         : path.endsWith("messages:complete") ? { sequence_no: 2 } : {};
       return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
     });
