@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from linkresume.core.errors import ApiError
 from linkresume.modules.agent.intent_schemas import INTENT_POLICY, IntentDecision
 from linkresume.modules.agent.models import AgentMessage, AgentRun
+from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.schemas import AgentTaskPlanRequest
 from linkresume.modules.agent.service import get_active_run, save_task_plan, _run_task_message
 from linkresume.modules.llm.resolver import ASSISTANT_INTENT
@@ -64,10 +65,10 @@ async def _complete(request: Request, run_id: int, **kwargs):
     return result["value"]
 
 
-def intent_input(message: AgentMessage, history: list[AgentMessage]) -> str:
+def intent_input(message: AgentMessage, history: list[AgentMessage], memory: dict | None = None) -> str:
     metadata = message.metadata_json or {}
     contexts = [
-        {key: ref[key] for key in ("type", "id", "label") if key in ref}
+        {key: ref[key] for key in ("type", "id", "label", "presentation") if key in ref}
         for ref in metadata.get("contexts", []) if isinstance(ref, dict)
     ]
     # Never include material bodies, locators, credentials or provider responses.
@@ -75,6 +76,7 @@ def intent_input(message: AgentMessage, history: list[AgentMessage]) -> str:
         "request": message.content[:12000],
         "history": [{"role": item.role, "content": item.content[:1500]} for item in history[-4:]],
         "authorized_contexts": contexts,
+        "conversation_memory": memory or {"schema_version": 1, "events": [], "truncated": False},
         "clarification_answers": metadata.get("clarification_answers", [])[:5],
     }, ensure_ascii=False)
 
@@ -101,9 +103,10 @@ async def recognize_run_intent(request: Request, db: Session, run_id: str) -> di
             AgentMessage.session_id == session.id,
             AgentMessage.sequence_no < message.sequence_no,
         ).order_by(AgentMessage.sequence_no.desc()).limit(4)))[::-1]
-        text = intent_input(message, history)
+        text = intent_input(message, history, conversation_memory(db, run))
         user_id, run_pk = session.user_id, run.id
-        has_resume = any(ref.get("type") == "resume" for ref in metadata.get("contexts", []))
+        has_resume = any(ref.get("type") == "resume" and ref.get("presentation", "mention") != "implicit"
+                         for ref in metadata.get("contexts", []))
         # Release DB row locks before the network request.
         db.rollback()
         try:

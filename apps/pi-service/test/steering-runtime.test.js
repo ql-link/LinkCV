@@ -38,8 +38,9 @@ test("native Pi persists each reply before inserting, restores tools and switche
     if (path.endsWith("steering:activate")) {
       assert.equal(completed.length, 1, "earlier complete reply must be durable at the boundary");
       assert.equal(tasks[0].status, "completed", "all tools finish before activation");
-      body = { receipt: { state: "accepted", user_sequence_no: 3 }, contextMaterials: [material], selectionContext: null };
+      body = { receipt: { state: "accepted", user_sequence_no: 3 }, contextMaterials: [material], selectionContext: null, conversationMemory: { schema_version: 1, truncated: false, events: [{ memory_ref: "m:1:dataset:7", source_sequence_no: 1, resource: { type: "dataset", id: "7", label: "虚构首轮文件" }, source: "explicit", tasks: [] }] } };
     }
+    if (path.endsWith("resources:resolve-reference")) body = { resource: { type: "dataset", id: "7" }, materials: [], sources: [] };
     if (path.endsWith("messages:complete")) {
       completed.push(payload);
       body = { sequence_no: payload.user_sequence_no + 1 };
@@ -54,7 +55,7 @@ test("native Pi persists each reply before inserting, restores tools and switche
     [call("b1", "begin_final_response", {})],
     [{ type: "text", text: "第一条完整回复" }],
     [call("r2", "read", { path: "career-assistant-router/SKILL.md" }), call("p2", "plan_agent_request", plan("second"))],
-    [call("s2", "start_agent_task", { task_id: "second" }), call("w2", "read", { path: "career-planning/SKILL.md" }), call("f2", "finish_agent_task", { status: "completed", result: "新结果" })],
+    [call("s2", "start_agent_task", { task_id: "second" }), call("w2", "read", { path: "career-planning/SKILL.md" }), call("m2", "resolve_resource_reference", { memory_ref: "m:1:dataset:7", relation: "continuation", referring_text: "切换后继续" }), call("f2", "finish_agent_task", { status: "completed", result: "新结果" })],
     [call("b2", "begin_final_response", {})],
     [{ type: "text", text: "第二条完整回复" }],
   ];
@@ -73,6 +74,8 @@ test("native Pi persists each reply before inserting, restores tools and switche
           if (index === 4) {
             assert.ok(context.tools.some((tool) => tool.name === "plan_agent_request"), "final-response tools must be restored");
             assert.match(JSON.stringify(context.messages.at(-1)), /第二份简历/);
+            assert.match(JSON.stringify(context.messages.at(-1)), /m:1:dataset:7/);
+            assert.deepEqual(context.tools.find((tool) => tool.name === "resolve_resource_reference").parameters.properties.referring_text.enum, ["切换后继续"]);
           }
           const content = responses[index];
           const message = { role: "assistant", api: "openai-completions", provider: runtime.model.provider,

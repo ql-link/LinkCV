@@ -77,6 +77,10 @@ export function createLinkResumeClient(config, runId, signal, initialSource = nu
       method: "POST",
       body: JSON.stringify(payload),
     }),
+    resolveResourceReference: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/resources:resolve-reference`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
     listUserResources: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/resources:list`, {
       method: "POST",
       body: JSON.stringify(payload),

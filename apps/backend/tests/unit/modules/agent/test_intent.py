@@ -62,3 +62,12 @@ def test_intent_only_accepts_chat_protocol():
     validate_use_case_protocol("assistant_intent", "openai_chat")
     with pytest.raises(ValueError):
         validate_use_case_protocol("assistant_intent", "openai_responses")
+
+
+def test_intent_receives_identity_memory_separately_from_current_grants():
+    memory = {"schema_version": 1, "events": [{"memory_ref": "m:1:dataset:7",
+        "resource": {"type": "dataset", "id": "7", "label": "虚构资料"}}], "truncated": False}
+    message = SimpleNamespace(content="继续刚才的文件", metadata_json={"contexts": []})
+    payload = json.loads(intent_input(message, [], memory))
+    assert payload["authorized_contexts"] == []
+    assert payload["conversation_memory"] == memory

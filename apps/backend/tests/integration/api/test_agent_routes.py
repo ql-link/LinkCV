@@ -678,6 +678,167 @@ def test_session_is_owned_and_internal_context_requires_service_token() -> None:
         assert context.json()["lock_version"] == 1
 
 
+def memory_run(app, client, a, b, *, contexts=None, task_refs=None):
+    session_id = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+    run_id = create_active_run(app, session_id, message_content="回到前面那份看第二段，再看产品简历")
+    with app.state.session_factory() as db:
+        run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+        current = db.scalar(select(AgentMessage).where(AgentMessage.run_id == run.id))
+        current.sequence_no = 5
+        current.metadata_json = {"contexts": contexts or []}
+        db.flush()
+        db.add_all([
+            AgentMessage(session_id=run.session_id, sequence_no=1, role="user", content="分析后端简历",
+                         metadata_json={"contexts": [{"type": "resume", "id": a["id"], "label": a["title"]}]}),
+            AgentMessage(session_id=run.session_id, sequence_no=3, role="user", content="分析产品简历",
+                         metadata_json={"resume_resolutions": [{"resume_id": b["id"], "label_at_resolution": b["title"], "source": "explicit"}],
+                                        "agent_tasks": [{"id": "old", "label": "分析产品", "status": "completed",
+                                                         "resolved_refs": [{"type": "resume", "id": b["id"]}]}]}),
+        ])
+        db.commit()
+    base = f"/internal/agent/runs/{run_id}"
+    plan = {"tasks": [{"id": "a", "workflow": "resume_edit", "output": "advice", "label": "分析第二段", "context_refs": task_refs or []}]}
+    assert client.post(f"{base}/tasks:plan", headers=internal_headers(), json=plan).status_code == 200
+    assert client.post(f"{base}/tasks/a:status", headers=internal_headers(), json={"status": "running"}).status_code == 200
+    return run_id, base
+
+
+def test_memory_reference_uses_current_identity_and_freezes_task() -> None:
+    from linkresume.modules.agent.conversation_memory import conversation_memory
+    from linkresume.modules.resumes.models import Resume
+
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "memory-owner@example.test")
+        a = create_resume(client, app, "张三后端简历")
+        b = create_resume(client, app, "张三产品简历")
+        run_id, base = memory_run(app, client, a, b)
+        with app.state.session_factory() as db:
+            resume = db.get(Resume, int(a["id"]))
+            resume.title = "张三后端简历新名称"
+            resume.data_json = editor_data(resume.data_json, "\n\n".join([
+                "## [[linkresume-block:node_section000000001]]工作经历",
+                "### [[linkresume-block:node_entry00000000001]]示例公司",
+                "- [[linkresume-block:node_bullet0000000001]]最新工作内容",
+            ]))
+            resume.lock_version += 1
+            db.commit()
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            memory = conversation_memory(db, run)
+            assert [item["resource"]["id"] for item in memory["events"]] == [a["id"], b["id"]]
+        payload = {"memory_ref": f"m:1:resume:{a['id']}", "relation": "historical_selection", "referring_text": "回到前面那份"}
+        resolved = client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json=payload)
+        assert resolved.status_code == 200
+        target = resolved.json()["target"]
+        assert target["resume_id"] == a["id"]
+        assert target["base_lock_version"] == 2
+        assert client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json=payload).json()["target"] == target
+        read = client.post(f"{base}/context:read", headers=internal_headers(), json={"target": target, "scope": "resume"})
+        assert read.status_code == 200
+        assert read.json()["title"] == "张三后端简历新名称"
+        assert "最新工作内容" in str(read.json()["data"])
+        switch = client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json={
+            **payload, "memory_ref": f"m:3:resume:{b['id']}", "referring_text": "产品简历",
+        })
+        assert switch.status_code == 409
+        assert switch.json()["error"] == "AGENT_RESUME_TARGET_CONFLICT"
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == run.id))
+            assert message.metadata_json["agent_tasks"][0]["resolved_refs"] == [{"type": "resume", "id": a["id"]}]
+            assert len(message.metadata_json["resume_resolutions"]) == 1
+            assert message.metadata_json["resume_resolutions"][0]["source"] == "memory"
+            # Reopening the conversation rebuilds identity from the new resolution.
+            run.status = "succeeded"
+            next_run = AgentRun(public_id=str(uuid4()), session_id=run.session_id,
+                                idempotency_key=uuid4().hex, status="running", started_at=utc_now())
+            db.add(next_run)
+            db.flush()
+            db.add(AgentMessage(session_id=run.session_id, run_id=next_run.id,
+                                sequence_no=6, role="user", content="继续看看"))
+            db.add(AgentMessage(session_id=run.session_id, sequence_no=9, role="user", content="未来消息",
+                                metadata_json={"contexts": [{"type": "resume", "id": "999", "label": "不应带入"}]}))
+            db.commit()
+            reopened = conversation_memory(db, next_run)
+            current_events = [event for event in reopened["events"] if event["source_sequence_no"] == 5]
+            assert current_events[0]["memory_ref"] == f"m:5:resume:{a['id']}"
+            assert current_events[0]["resource"]["label"] == "张三后端简历新名称"
+            assert "999" not in str(reopened)
+
+
+@pytest.mark.parametrize("presentation,expected", [("mention", 409), ("implicit", 200)])
+def test_memory_selection_respects_explicit_choice_but_can_leave_editor_background(presentation, expected) -> None:
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "memory-choice@example.test")
+        a = create_resume(client, app, "张三后端简历")
+        b = create_resume(client, app, "张三产品简历")
+        _, base = memory_run(app, client, a, b, task_refs=[{"type": "resume", "id": a["id"]}], contexts=[{
+            "type": "resume", "id": a["id"], "version": "1", "presentation": presentation,
+        }])
+        result = client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json={
+            "memory_ref": f"m:3:resume:{b['id']}", "relation": "historical_selection", "referring_text": "产品简历",
+        })
+        assert result.status_code == expected
+        if expected == 409:
+            assert result.json()["error"] == "AGENT_RESUME_SELECTION_CONFLICT"
+        else:
+            target = result.json()["target"]
+            assert target["resume_id"] == b["id"]
+            assert client.post(f"{base}/context:read", headers=internal_headers(), json={"target": target, "scope": "resume"}).status_code == 200
+            blocked = client.get(f"{base}/context?resume_id={a['id']}", headers=internal_headers())
+            assert blocked.status_code == 409
+            assert blocked.json()["error"] == "AGENT_TASK_CONTEXT_NOT_AUTHORIZED"
+            replay = client.post(f"{base}/tasks:plan", headers=internal_headers(), json={"tasks": [{
+                "id": "a", "workflow": "resume_edit", "output": "advice", "label": "分析第二段",
+                "context_refs": [{"type": "resume", "id": a["id"]}],
+            }]})
+            assert replay.status_code == 200
+            materials = client.get(f"{base}/tasks/a/materials", headers=internal_headers())
+            assert materials.status_code == 200
+            assert materials.json()["materials"] == []
+
+
+def test_memory_rejects_missing_evidence_foreign_session_and_unavailable_owner() -> None:
+    from linkresume.modules.resumes.models import Resume
+
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, "memory-security@example.test")
+        a = create_resume(client, app, "张三后端简历")
+        b = create_resume(client, app, "张三产品简历")
+        _, base = memory_run(app, client, a, b)
+        payload = {"memory_ref": f"m:1:resume:{a['id']}", "relation": "continuation", "referring_text": "第二段"}
+        for invalid in [
+            {**payload, "referring_text": "不在用户消息中"},
+            {**payload, "memory_ref": f"m:2:resume:{a['id']}"},
+        ]:
+            result = client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json=invalid)
+            assert result.status_code == 409
+            assert result.json()["error"] == "AGENT_MEMORY_REFERENCE_INVALID"
+        assert client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json={
+            **payload, "resume_id": b["id"],
+        }).status_code == 422
+        with TestClient(app) as other:
+            register(other, "memory-other@example.test")
+            other_resume = create_resume(other, app, "张三其他简历")
+            other_session = other.post("/api/agent/sessions", json={}).json()["session"]["id"]
+            with app.state.session_factory() as db:
+                session = db.scalar(select(AgentSession).where(AgentSession.public_id == other_session))
+                db.add(AgentMessage(session_id=session.id, sequence_no=1, role="user", content="另一会话",
+                                    metadata_json={"contexts": [{"type": "resume", "id": other_resume["id"], "label": "张三其他简历"}]}))
+                db.commit()
+                db.get(Resume, int(a["id"])).user_id = session.user_id
+                db.commit()
+            result = client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json={
+                **payload, "memory_ref": f"m:1:resume:{other_resume['id']}",
+            })
+            assert result.status_code == 409
+        unavailable = client.post(f"{base}/resumes:resolve-reference", headers=internal_headers(), json=payload)
+        assert unavailable.status_code == 404
+        assert unavailable.json()["error"] == "AGENT_MEMORY_TARGET_UNAVAILABLE"
+
+
 def test_explicit_resume_title_resolves_for_run_without_binding_session() -> None:
     app = build_app()
     with TestClient(app) as client:
@@ -3384,7 +3545,7 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
 ) -> None:
     app = build_app()
     app.state.llm_service.agent_runtime_model = AsyncMock(
-        return_value=SimpleNamespace(adapter="openai")
+        return_value=SimpleNamespace(plan=SimpleNamespace(protocol_code="openai_responses"))
     )
     check_chain = AsyncMock(return_value={"ready": True, "steering": True})
     monkeypatch.setattr("linkresume.modules.agent.routes.check_pi_readiness", check_chain)
@@ -3397,6 +3558,29 @@ def test_agent_readiness_checks_model_config_and_full_service_chain(
     assert public.status_code == 200
     assert public.json() == {"ready": True, "steering": True}
     check_chain.assert_awaited_once_with(app)
+    app.state.llm_service.agent_runtime_model.assert_awaited_once_with()
+
+
+@pytest.mark.parametrize("code", ["LLM_MODEL_UNAVAILABLE", "LLM_CREDENTIALS_UNAVAILABLE"])
+def test_agent_readiness_rejects_unusable_default_runtime(code: str) -> None:
+    app = build_app()
+    app.state.llm_service.agent_runtime_model = AsyncMock(side_effect=LLMError(code))
+    with TestClient(app) as client:
+        response = client.get("/internal/agent/readiness", headers=internal_headers())
+    assert response.status_code == 503
+    assert response.json() == {"error": "AGENT_NOT_READY"}
+    app.state.llm_service.agent_runtime_model.assert_awaited_once_with()
+
+
+def test_agent_readiness_rejects_protocol_without_pi_mapping() -> None:
+    app = build_app()
+    app.state.llm_service.agent_runtime_model = AsyncMock(
+        return_value=SimpleNamespace(plan=SimpleNamespace(protocol_code="aliyun_asr_realtime"))
+    )
+    with TestClient(app) as client:
+        response = client.get("/internal/agent/readiness", headers=internal_headers())
+    assert response.status_code == 503
+    assert response.json() == {"error": "AGENT_NOT_READY"}
 
 
 def test_agent_model_requires_login_and_returns_only_safe_bound_summary() -> None:
@@ -3913,3 +4097,220 @@ def test_agent_session_delete_removes_stage_events_and_keeps_detached_call_logs(
         call_log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == "fictional-call-no-fk"))
         assert call_log is not None
         assert call_log.agent_run_id is None
+
+
+def generic_memory_fixture(app, client):
+    email = "all-resource-memory@example.test"
+    register(client, email)
+    resume = create_resume(client, app)
+    from tests.integration.api.test_account_routes import _valid_profile_payload
+    profile_response = client.put("/api/account/user-profile", json=_valid_profile_payload())
+    assert profile_response.status_code == 200, profile_response.text
+    job_response = client.post("/api/job-descriptions", json={
+        "job_title": "虚构后端工程师", "company_name": "虚构云杉", "description": "虚构岗位职责", "source_type": "manual",
+    })
+    assert job_response.status_code == 201, job_response.text
+    job = job_response.json()["job_description"]
+    application_response = client.post("/api/job-applications", json={
+        "job_description_id": job["id"], "current_stage_type": "interview", "current_round_no": 1,
+        "current_stage_label": "一面", "stage_state": "awaiting_schedule",
+    })
+    assert application_response.status_code == 201, application_response.text
+    application = application_response.json()["application"]
+    start = (utc_now() + timedelta(days=1)).replace(second=0, microsecond=0)
+    interview_response = client.post(f"/api/job-applications/{application['id']}/interview-sessions", json={
+        "client_request_id": str(uuid4()), "stage_type": "interview", "round_no": 1, "stage_label": "一面",
+        "start_at": start.isoformat(), "end_at": (start + timedelta(hours=1)).isoformat(), "timezone": "Asia/Shanghai", "mode": "video",
+    })
+    assert interview_response.status_code == 201, interview_response.text
+    interview = interview_response.json()["session"]
+    with app.state.session_factory() as db:
+        owner = db.scalar(select(User).where(User.email == email))
+        path = f"users/{owner.id}/datasets/converted/fictional-memory.md"
+        task = DocumentParseTask(source_type=DATASET_SOURCE_TYPE, user_id=owner.id,
+                                 file_name="虚构说明.md", file_format="md", object_name=f"users/{owner.id}/datasets/source/memory.md",
+                                 converted_object_name=path, upload_status="succeeded", parse_status="succeeded",
+                                 upload_duration_ms=1, parse_duration_ms=1, parse_attempt_count=1)
+        db.add(task)
+        db.flush()
+        path = f"users/{owner.id}/datasets/converted/{task.id}.md"
+        task.converted_object_name = path
+        dataset = UserDataset(user_id=owner.id, idempotency_key=uuid4().hex, request_fingerprint="a" * 64,
+                              parse_task_id=task.id, file_name="虚构说明.md", file_format="md", content_type="text/markdown",
+                              file_size=10, object_name=task.object_name, sha256="b" * 64, asset_kind="document")
+        db.add(dataset)
+        db.commit()
+        dataset_id = str(dataset.id)
+    app.state.storage.objects[path] = "虚构文件正文 MEMORY_FILE_MARKER".encode()
+    refs = [{"type": kind, "id": resource_id, "label": f"虚构{kind}"} for kind, resource_id in [
+        ("user_profile", str(owner.id)), ("resume", resume["id"]), ("dataset", dataset_id), ("job", job["id"]),
+        ("application", application["id"]), ("interview", interview["id"]),
+    ]]
+    return refs
+
+
+def generic_memory_run(app, client, refs, *, contexts=None):
+    sid = client.post("/api/agent/sessions", json={}).json()["session"]["id"]
+    run_id = create_active_run(app, sid, message_content="继续刚才的资料")
+    with app.state.session_factory() as db:
+        run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+        message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == run.id))
+        message.sequence_no = 3
+        message.metadata_json = {"contexts": contexts or []}
+        db.flush()
+        db.add(AgentMessage(session_id=run.session_id, sequence_no=1, role="user", content="分析这些对象",
+                            metadata_json={"contexts": refs}))
+        db.commit()
+    base = f"/internal/agent/runs/{run_id}"
+    assert client.post(f"{base}/tasks:plan", headers=internal_headers(), json={"tasks": [
+        {"id": "a", "workflow": "career_planning", "output": "advice", "label": "继续分析", "context_refs": []},
+    ]}).status_code == 200
+    assert client.post(f"{base}/tasks/a:status", headers=internal_headers(), json={"status": "running"}).status_code == 200
+    return run_id, base
+
+
+@pytest.mark.parametrize("kind", ["user_profile", "resume", "dataset", "job", "application", "interview"])
+def test_generic_memory_reads_owned_current_material_and_records_receipt(kind):
+    app = build_app()
+    with TestClient(app) as client:
+        refs = generic_memory_fixture(app, client)
+        ref = next(item for item in refs if item["type"] == kind)
+        run_id, base = generic_memory_run(app, client, refs)
+        payload = {"memory_ref": f"m:1:{kind}:{ref['id']}", "relation": "continuation", "referring_text": "继续刚才的资料"}
+        assert client.post(f"{base}/resources:resolve-reference", json=payload).status_code == 401
+        response = client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json=payload)
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert (result["resource"]["type"], result["resource"]["id"]) == (kind, ref["id"])
+        assert result["materials"][0]["content"]
+        assert result["sources"][0]["claim_status"] == "source_only"
+        if kind == "dataset":
+            assert "MEMORY_FILE_MARKER" in result["materials"][0]["content"]["dataset_markdown"]
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == run.id))
+            metadata = message.metadata_json
+            assert metadata["resource_resolutions"][0]["source"] == "memory"
+            assert "content" not in metadata["resource_resolutions"][0]["snapshot"]
+            assert "MEMORY_FILE_MARKER" not in json.dumps(metadata)
+            assert metadata["agent_tasks"][0]["resolved_refs"] == [{"type": kind, "id": ref["id"]}]
+        assert client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json=payload).status_code == 200
+        assert client.get(f"{base}/tasks/a/materials", headers=internal_headers()).status_code == 200
+        invalid = {**payload, "memory_ref": f"m:99:{kind}:{ref['id']}"}
+        assert client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json=invalid).status_code == 409
+        assert client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json={**payload, "referring_text": "上一轮没有说过的话"}).status_code == 409
+
+
+@pytest.mark.parametrize("kind", ["user_profile", "resume", "dataset", "job", "application", "interview"])
+def test_generic_memory_checks_latest_version_conflicts_and_owner(kind):
+    from linkresume.modules.interviews.models import JobApplication, InterviewSession
+    from linkresume.modules.identity.models import UserProfile
+    app = build_app()
+    models = {"user_profile": UserProfile, "resume": Resume, "dataset": UserDataset, "job": JobDescription,
+              "application": JobApplication, "interview": InterviewSession}
+    with TestClient(app) as client:
+        refs = generic_memory_fixture(app, client)
+        ref = next(item for item in refs if item["type"] == kind)
+        _, base = generic_memory_run(app, client, refs)
+        payload = {"memory_ref": f"m:1:{kind}:{ref['id']}", "relation": "historical_selection", "referring_text": "刚才的资料"}
+        # A version changed between rounds is read as current, rather than using history's body.
+        with app.state.session_factory() as db:
+            obj = db.get(models[kind], int(ref["id"]))
+            if kind == "dataset":
+                obj.sha256 = "c" * 64
+            else:
+                obj.lock_version += 1
+            expected_version = obj.sha256 if kind == "dataset" else str(obj.lock_version)
+            db.commit()
+        result = client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json=payload)
+        assert result.status_code == 200, result.text
+        assert result.json()["resource"]["version"] == expected_version
+        with app.state.session_factory() as db:
+            obj = db.get(models[kind], int(ref["id"]))
+            if kind == "dataset":
+                obj.sha256 = "d" * 64
+            else:
+                obj.lock_version += 1
+            db.commit()
+        stale = client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json=payload)
+        assert stale.status_code == 409, stale.text
+        assert stale.json()["error"] == "AGENT_CONTEXT_STALE"
+        # An explicit mention of another object must never be replaced by history.
+        _, conflict_base = generic_memory_run(app, client, refs, contexts=[{"type": kind, "id": "999", "presentation": "mention"}])
+        conflict = client.post(f"{conflict_base}/resources:resolve-reference", headers=internal_headers(), json=payload)
+        assert conflict.status_code == 409
+        assert conflict.json()["error"] == "AGENT_RESOURCE_SELECTION_CONFLICT"
+        # Fabricated or formerly owned history cannot grant access to another user's object.
+        with TestClient(app) as stranger:
+            register(stranger, "resource-memory-stranger@example.test")
+        with app.state.session_factory() as db:
+            stranger_id = db.scalar(select(User.id).where(User.email == "resource-memory-stranger@example.test"))
+            obj = db.get(models[kind], int(ref["id"]))
+            if kind == "interview":
+                db.get(JobApplication, obj.application_id).user_id = stranger_id
+            else:
+                obj.user_id = stranger_id
+            db.commit()
+        _, denied_base = generic_memory_run(app, client, refs)
+        denied = client.post(f"{denied_base}/resources:resolve-reference", headers=internal_headers(), json=payload)
+        assert denied.status_code == 404, denied.text
+        assert denied.json()["error"] == "AGENT_MEMORY_TARGET_UNAVAILABLE"
+        _, no_history_base = generic_memory_run(app, client, [])
+        absent = client.post(f"{no_history_base}/resources:resolve-reference", headers=internal_headers(), json=payload)
+        assert absent.status_code == 409
+        assert absent.json()["error"] == "AGENT_MEMORY_REFERENCE_INVALID"
+
+
+def test_generic_file_read_detects_body_change_deletion_and_same_task_switch():
+    app = build_app()
+    with TestClient(app) as client:
+        refs = generic_memory_fixture(app, client)
+        ref = next(item for item in refs if item["type"] == "dataset")
+        other = {**ref, "id": "999", "label": "虚构另一个文件"}
+        _, base = generic_memory_run(app, client, [*refs, other])
+        payload = {"memory_ref": f"m:1:dataset:{ref['id']}", "relation": "continuation", "referring_text": "继续刚才的资料"}
+        assert client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json=payload).status_code == 200
+        conflict = client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json={**payload, "memory_ref": "m:1:dataset:999"})
+        assert conflict.status_code == 409
+        assert conflict.json()["error"] == "AGENT_RESOURCE_TARGET_CONFLICT"
+        with app.state.session_factory() as db:
+            dataset = db.get(UserDataset, int(ref["id"]))
+            task = db.get(DocumentParseTask, dataset.parse_task_id)
+            path = task.converted_object_name
+        app.state.storage.objects[path] = "虚构正文改变但源文件 SHA 不变".encode()
+        for method, url, body in [("POST", f"{base}/resources:resolve-reference", payload), ("GET", f"{base}/tasks/a/materials", None)]:
+            result = client.request(method, url, headers=internal_headers(), **({"json": body} if body else {}))
+            assert result.status_code == 409, result.text
+            assert result.json()["error"] == "AGENT_CONTEXT_STALE"
+        deleted = client.delete(f"/api/datasets/{ref['id']}")
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json() == {"deleted": True}
+        _, deleted_base = generic_memory_run(app, client, refs)
+        unavailable = client.post(f"{deleted_base}/resources:resolve-reference", headers=internal_headers(), json=payload)
+        assert unavailable.status_code == 404
+        assert unavailable.json()["error"] == "AGENT_MEMORY_TARGET_UNAVAILABLE"
+
+
+def test_generic_resume_grant_rolls_back_if_resolution_is_interrupted(monkeypatch):
+    from linkresume.core.errors import ApiError
+    from linkresume.modules.agent import service as agent_service
+    app = build_app()
+    with TestClient(app) as client:
+        refs = generic_memory_fixture(app, client)
+        ref = next(item for item in refs if item["type"] == "resume")
+        run_id, base = generic_memory_run(app, client, refs)
+        original = agent_service.authorize_resolved_task_resume
+        def interrupted(*args, **kwargs):
+            original(*args, **kwargs)
+            raise ApiError(503, "TEST_RESOLUTION_INTERRUPTED")
+        monkeypatch.setattr(agent_service, "authorize_resolved_task_resume", interrupted)
+        response = client.post(f"{base}/resources:resolve-reference", headers=internal_headers(), json={
+            "memory_ref": f"m:1:resume:{ref['id']}", "relation": "continuation", "referring_text": "继续刚才的资料",
+        })
+        assert response.status_code == 503
+        with app.state.session_factory() as db:
+            run = db.scalar(select(AgentRun).where(AgentRun.public_id == run_id))
+            metadata = db.scalar(select(AgentMessage).where(AgentMessage.run_id == run.id)).metadata_json
+            assert "resume_resolutions" not in metadata
+            assert "resource_resolutions" not in metadata
+            assert metadata["agent_tasks"][0].get("resolved_refs", []) == []

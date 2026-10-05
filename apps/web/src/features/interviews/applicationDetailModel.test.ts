@@ -146,7 +146,7 @@ describe("buildApplicationDetail", () => {
   it("offers no manual completion while an interview is scheduled", () => {
     const model = buildApplicationDetail(interviewApplication(), [session({})], NOW);
     expect(model.next.primary).toMatchObject({ action: "record-review", label: "记录与复盘" });
-    expect(model.next.secondary.map((button) => button.label)).toEqual(["修改安排", "取消本场"]);
+    expect(model.next.secondary).toEqual([]);
     expect(JSON.stringify(model.next)).not.toContain("标记已完成");
     expect(model.next.hint).toContain("自动进入「等待结果」");
     expect(model.next.chips.map((chip) => chip.label)).toEqual(["一面", "已安排", "还有 2 天"]);

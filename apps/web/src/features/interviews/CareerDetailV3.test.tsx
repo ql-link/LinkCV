@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InterviewSessionDetail, InterviewSessionSummary, JobApplicationSummary } from "@/api/client";
-import { AddNextStageDialog } from "./CareerDetailViews";
+import { AddNextStageDialog, EditInterviewScheduleDialog } from "./CareerDetailViews";
 import { ReviewV3Content } from "./CareerDetailV3";
 
-const mocks = vi.hoisted(() => ({ addJobApplicationStage: vi.fn(), createInterviewSession: vi.fn(), listResumes: vi.fn(), updateJobApplication: vi.fn(), generateInterviewReview: vi.fn(), getInterviewSession: vi.fn(), listInterviewSessions: vi.fn(), updateInterviewSession: vi.fn() }));
+const mocks = vi.hoisted(() => ({ rescheduleInterviewSession: vi.fn(), addJobApplicationStage: vi.fn(), createInterviewSession: vi.fn(), listResumes: vi.fn(), updateJobApplication: vi.fn(), generateInterviewReview: vi.fn(), getInterviewSession: vi.fn(), listInterviewSessions: vi.fn(), updateInterviewSession: vi.fn() }));
 vi.mock("@/api/client", async (original) => ({ ...await original<typeof import("@/api/client")>(), api: mocks }));
 const application = { id: "sample-application", job_description_id: "sample-job", company_name_snapshot: "示例公司", job_title_snapshot: "后端工程师", job_snapshot: {}, current_stage_type: "interview", current_stage_label: "二面", current_round_no: 2, stage_state: "awaiting_schedule", current_stage: { id: "sample-stage", stage_type: "interview", stage_label: "二面", sequence_no: 2, stage_status: "active" }, status: "active", offer_status: "none", archived_at: null, applied_at: "2026-09-10T08:00:00Z", created_at: "2026-09-10T08:00:00Z", updated_at: "2026-09-20T08:00:00Z", lock_version: 4 } as JobApplicationSummary;
 const detail = { application, session: { id: "sample-session", stage_label: "二面", status: "completed", start_at: "2026-09-20T08:00:00Z", end_at: "2026-09-20T09:00:00Z", lock_version: 2, questions_markdown: "示例文字记录" }, assets: [] } as unknown as InterviewSessionDetail;
@@ -103,4 +103,48 @@ describe("Figma career detail interactions", () => {
     expect(screen.getByText("已保存的真实复盘摘要")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "复盘评分" })).not.toBeInTheDocument();
   });
+});
+
+
+describe("completed stage information editing", () => {
+  it("locks historical scheduling fields and only saves mutable information", async () => {
+    vi.clearAllMocks();
+    mocks.updateInterviewSession.mockResolvedValue({});
+    const session = { ...detail.session, mode: "video", schedule_kind: "open_window", timezone: "Asia/Shanghai", meeting_url: "https://example.com/exam", location: null, preparation_note: "原备注", answer_plan_start_at: "2026-09-20T08:10:00Z", answer_plan_end_at: "2026-09-20T08:40:00Z" } as InterviewSessionSummary;
+    const onChanged = vi.fn();
+    render(<EditInterviewScheduleDialog session={session} recordKind="笔试" onClose={vi.fn()} onChanged={onChanged} onNotice={vi.fn()} />);
+    expect(screen.getByRole("heading", { name: "编辑笔试信息" })).toBeInTheDocument();
+    expect(screen.queryByText("阶段")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("笔试时间")).toBeDisabled();
+    expect(screen.getByLabelText("截止时间")).toBeDisabled();
+    expect(screen.getByLabelText("笔试方式")).toBeDisabled();
+    expect(screen.getByLabelText("已记录的作答计划")).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("备注"), { target: { value: "新的备注" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+    expect(mocks.rescheduleInterviewSession).not.toHaveBeenCalled();
+    expect(mocks.updateInterviewSession).toHaveBeenCalledWith(session.id, { preparation_note: "新的备注", base_lock_version: session.lock_version });
+  });
+  it("keeps historical meeting location immutable when editing a link", async () => {
+    vi.clearAllMocks();
+    mocks.updateInterviewSession.mockResolvedValue({});
+    const session = { ...detail.session, mode: "video", schedule_kind: "fixed_slot", timezone: "Asia/Shanghai", meeting_url: null, location: "保留的历史地点", preparation_note: null } as InterviewSessionSummary;
+    render(<EditInterviewScheduleDialog session={session} recordKind="面试" onClose={vi.fn()} onChanged={vi.fn()} onNotice={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("链接（选填）"), { target: { value: "https://example.com/record" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
+    await waitFor(() => expect(mocks.updateInterviewSession).toHaveBeenCalledWith(session.id, { meeting_url: "https://example.com/record", base_lock_version: session.lock_version }));
+    expect(mocks.rescheduleInterviewSession).not.toHaveBeenCalled();
+  });
+});
+
+
+it("does not round scheduled times when only updating notes", async () => {
+  vi.clearAllMocks();
+  mocks.updateInterviewSession.mockResolvedValue({});
+  const session = { ...detail.session, status: "scheduled", mode: "video", schedule_kind: "fixed_slot", timezone: "Asia/Shanghai", start_at: "2030-09-20T08:00:25Z", end_at: "2030-09-20T09:00:25Z", meeting_url: null, location: null, preparation_note: null } as InterviewSessionSummary;
+  render(<EditInterviewScheduleDialog session={session} recordKind="面试" onClose={vi.fn()} onChanged={vi.fn()} onNotice={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("备注"), { target: { value: "准备事项" } });
+  fireEvent.click(screen.getByRole("button", { name: "确认修改" }));
+  await waitFor(() => expect(mocks.updateInterviewSession).toHaveBeenCalledWith(session.id, { mode: "video", preparation_note: "准备事项", base_lock_version: session.lock_version }));
+  expect(mocks.rescheduleInterviewSession).not.toHaveBeenCalled();
 });

@@ -3679,7 +3679,7 @@
 }
 
 .career-edit-schedule-dialog {
-  width: min(720px, calc(100vw - 48px));
+  width: min(564px, calc(100vw - 48px));
   height: auto;
   min-height: 430px;
   padding-bottom: 24px;
@@ -5535,3 +5535,6 @@
 
 .cd3-stage-dialog:has(> .unified-date-time-picker) { overflow: visible; }
 .unified-date-time-picker .tp3-time > input:focus-visible { outline: none; }
+
+.career-edit-schedule-dialog input:disabled, .career-edit-schedule-dialog button:disabled, .career-edit-schedule-dialog [data-disabled] { background: var(--v3-soft, #f4f4f2); color: var(--v3-faint, #989890); cursor: not-allowed; }
+.career-edit-schedule-dialog textarea { min-height: 88px; width: 100%; border: 1px solid var(--v3-hl); border-radius: 8px; padding: 12px; resize: vertical; }

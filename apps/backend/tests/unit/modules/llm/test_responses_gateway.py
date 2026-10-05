@@ -58,6 +58,9 @@ def test_responses_native_wire_uses_correct_image_parts_no_storage_and_no_reason
 
 
 def test_responses_native_stream_emits_text_and_final_metering(monkeypatch):
+    # This test targets native SSE; do not let a mutable LiteLLM model catalog
+    # choose fake streaming for a model missing from the local metadata cache.
+    monkeypatch.setattr(litellm.utils, "supports_native_streaming", lambda *args, **kwargs: True)
     def handler(request):
         assert json.loads(request.content)["stream"] is True
         events = [
