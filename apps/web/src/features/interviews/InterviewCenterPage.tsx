@@ -554,6 +554,8 @@ export function InterviewCenterPage({
   }, [scheduleAnchor, scheduleGranularity, scheduleGridStart, scheduleWeekStart]);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
   const [sessions, setSessions] = useState<InterviewSessionSummary[]>([]);
+  const [applicationBoardSessions, setApplicationBoardSessions] = useState<InterviewSessionSummary[]>([]);
+  const [applicationDetailSessions, setApplicationDetailSessions] = useState<InterviewSessionSummary[]>([]);
   const [applications, setApplications] = useState<JobApplicationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(initialSessionId ?? null);
   const [detail, setDetail] = useState<InterviewSessionDetail | null>(null);
@@ -567,6 +569,7 @@ export function InterviewCenterPage({
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoadedData, setHasLoadedData] = useState(false);
+  const [hasLoadedApplicationBoard, setHasLoadedApplicationBoard] = useState(false);
   const [resolvedApplicationDetailId, setResolvedApplicationDetailId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -649,7 +652,7 @@ export function InterviewCenterPage({
     }
   }, [showNotice]);
 
-  const loadData = useCallback(async (preferredId?: string | null) => {
+  const loadData = useCallback(async (preferredId?: string | null, refreshBoardApplication = false) => {
     const requestId = ++loadRequestRef.current;
     const invalidatedDetailRequest = ++detailRequestRef.current;
     setLoading(true);
@@ -677,7 +680,21 @@ export function InterviewCenterPage({
         listAllJobApplications(applicationScope),
       ]);
       if (requestId !== loadRequestRef.current) return;
-      setSessions(nextSessions);
+      if (applicationDetail || interviewDetail) {
+        setApplicationDetailSessions(nextSessions);
+        if (refreshBoardApplication) {
+          setApplicationBoardSessions((current) => [
+            ...current.filter((session) => session.application_id !== initialApplicationId),
+            ...nextSessions,
+          ]);
+        }
+      } else {
+        setSessions(nextSessions);
+        if (view === "applications") {
+          setApplicationBoardSessions(nextSessions);
+          setHasLoadedApplicationBoard(true);
+        }
+      }
       setApplications(nextApplications);
       setHasLoadedData(true);
       if (applicationDetail) {
@@ -727,6 +744,54 @@ export function InterviewCenterPage({
       ++detailRequestRef.current;
     };
   }, [initialSessionId, loadData]);
+
+  const syncSessionChange = useCallback((changed: InterviewSessionDetail) => {
+    const { session, application } = changed;
+    const mergeSessions = (current: InterviewSessionSummary[]) => {
+      const previous = current.find((item) => item.id === session.id);
+      const updated = {
+        ...previous, ...session,
+        company_name: application.company_name_snapshot,
+        job_title: application.job_title_snapshot,
+        calendar_color: application.calendar_color,
+        application_stage_state: application.stage_state,
+      };
+      return [...current.filter((item) => item.id !== session.id), updated];
+    };
+    setSessions(mergeSessions);
+    setApplicationBoardSessions(mergeSessions);
+    setApplicationDetailSessions(mergeSessions);
+    setApplications((current) => current.map((item) => item.id === application.id ? {
+      ...item, ...application,
+      ...(applicationStageMatchesSession(application, session) ? {
+        next_session_id: session.status === "scheduled" ? session.id : null,
+        next_session_start_at: session.status === "scheduled" ? session.start_at : null,
+        next_session_end_at: session.status === "scheduled" ? session.end_at : null,
+        next_session_mode: session.status === "scheduled" ? session.mode : null,
+      } : {}),
+    } : item));
+  }, []);
+
+  const onApplicationChanged = useCallback(async (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => {
+    if (updated) {
+      setApplications((current) => current.map((item) => {
+        if (item.id !== updated.id) return item;
+        const stageChanged = item.current_stage?.id !== updated.current_stage?.id
+          || item.current_stage_type !== updated.current_stage_type
+          || item.current_stage_label !== updated.current_stage_label;
+        return {
+          ...item,
+          ...(stageChanged ? {
+            next_session_id: null, next_session_start_at: null,
+            next_session_end_at: null, next_session_mode: null,
+          } : {}),
+          ...updated,
+        };
+      }));
+    }
+    if (changed) syncSessionChange(changed);
+    await loadData(initialSessionId, true);
+  }, [initialSessionId, loadData, syncSessionChange]);
 
   const interviews = useMemo(() => {
     const applicationById = new Map(applications.map((item) => [item.id, item]));
@@ -926,20 +991,20 @@ export function InterviewCenterPage({
           {scheduleToast}
         </FeedbackNotice>
       )}
-      {(loading && !hasLoadedData) || applicationDetailPending ? (
+      {(loading && !hasLoadedData) || (view === "applications" && !isApplicationDetailRoute && !hasLoadedApplicationBoard) || applicationDetailPending ? (
         <PageLoading label="正在加载求职数据…" />
       ) : isApplicationDetailRoute ? (
         <>
           <ApplicationDetailView
             application={selectedApplication}
-            sessions={sessions}
+            sessions={applicationDetailSessions}
             timezone={timezone}
             onBack={() => navigateTo(careerViewPath("applications"))}
             onCreateInterview={(applicationId) => {
               setCreateInterviewApplicationId(applicationId);
               setShowCreate(true);
             }}
-            onChanged={() => loadData(initialSessionId)}
+            onChanged={onApplicationChanged}
             onNotice={showNotice}
           />
           {isApplicationSessionDialogRoute && (
@@ -948,12 +1013,13 @@ export function InterviewCenterPage({
               detail={detail?.session.id === initialSessionId ? detail : null}
               detailLoading={detailLoading}
               onBack={closeApplicationSessionDialog}
-              onChanged={(preferredId) => {
+              onChanged={(preferredId, changed) => {
+                if (changed) syncSessionChange(changed);
                 if (preferredId === null) {
                   closeApplicationSessionDialog();
                   return;
                 }
-                void loadData(initialSessionId ?? preferredId);
+                void loadData(initialSessionId ?? preferredId, true);
               }}
               onNotice={showNotice}
             />
@@ -964,13 +1030,16 @@ export function InterviewCenterPage({
           detail={detail?.session.id === initialSessionId ? detail : null}
           detailLoading={detailLoading}
           onBack={() => navigateTo(careerApplicationPath(initialApplicationId as string))}
-          onChanged={(preferredId) => loadData(preferredId)}
+          onChanged={(preferredId, changed) => {
+            if (changed) syncSessionChange(changed);
+            return loadData(preferredId, true);
+          }}
           onNotice={showNotice}
         />
       ) : view === "applications" ? (
         <ApplicationsView
           applications={applications}
-          sessions={sessions}
+          sessions={applicationBoardSessions}
           query={query}
           displayMode={applicationDisplayMode}
           hiddenColumnIds={hiddenApplicationBoardColumnIds}
@@ -978,7 +1047,7 @@ export function InterviewCenterPage({
           groupByCategory={groupByCategory}
           timezone={timezone}
           onCreate={() => setShowCreateApplication(true)}
-          onChanged={() => loadData(initialSessionId)}
+          onChanged={onApplicationChanged}
           onNotice={showNotice}
         />
       ) : view === "schedule" ? (
@@ -1334,7 +1403,7 @@ function ApplicationsView({
   sortMode: ApplicationSortMode;
   timezone: string;
   onCreate: () => void;
-  onChanged: () => Promise<void>;
+  onChanged: (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const [categoryApplication, setCategoryApplication] = useState<JobApplicationSummary | null>(null);
@@ -3236,7 +3305,7 @@ function interviewViewPath(view: InterviewView): string {
 function ApplicationCategoryDialog({ application, onClose, onChanged }: {
   application: JobApplicationSummary;
   onClose: () => void;
-  onChanged: () => Promise<void>;
+  onChanged: (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => Promise<void>;
 }) {
   const [category, setCategory] = useState(String(application.job_snapshot.employment_type ?? "unclassified"));
   const [saving, setSaving] = useState(false);

@@ -1408,7 +1408,7 @@ export function AddNextStageDialog({
   title?: string;
   description?: string;
   onClose: () => void;
-  onChanged: () => void | Promise<void>;
+  onChanged: (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => void | Promise<void>;
   onNotice: (notice: string) => void;
   onApplicationChange?: (application: JobApplicationSummary) => void;
 }) {
@@ -1526,15 +1526,17 @@ export function AddNextStageDialog({
           return;
         }
 
+        let offeredApplication = advancedApplication;
         try {
-          await api.recordJobApplicationOffer(
+          const offerResponse = await api.recordJobApplicationOffer(
             selectedApplication.id,
             offerRequestPayload(offerValues, advancedApplication.lock_version),
           );
+          offeredApplication = offerResponse.application;
         } catch {
           onClose();
           try {
-            await onChanged();
+            await onChanged(advancedApplication);
           } catch {
             // The refresh callback owns its own error notice; preserve the
             // partial-success message below if it rejects unexpectedly.
@@ -1544,7 +1546,7 @@ export function AddNextStageDialog({
         }
 
         onClose();
-        await onChanged();
+        await onChanged(offeredApplication);
       } finally {
         setBusy(false);
       }
@@ -1597,7 +1599,8 @@ export function AddNextStageDialog({
     setErrorMessage(null);
     setBusy(true);
     try {
-      let savedApplication: JobApplicationRecord;
+      let savedApplication: JobApplicationRecord & Partial<JobApplicationSummary>;
+      let changedSession: InterviewSessionDetail | undefined;
       try {
         const result = await saveStage();
         if (!result) return;
@@ -1609,7 +1612,7 @@ export function AddNextStageDialog({
 
       if (!hasScheduleDetails) {
         onClose();
-        await onChanged();
+        await onChanged(savedApplication, changedSession);
         return;
       }
 
@@ -1625,7 +1628,7 @@ export function AddNextStageDialog({
         const scheduleTiming = end
           ? { end_at: end.toISOString() }
           : { duration_minutes: durationMinutes! };
-        await api.createInterviewSession(selectedApplication.id, {
+        const scheduleResponse = await api.createInterviewSession(selectedApplication.id, {
           client_request_id: clientRequestId,
           application_stage_id: savedApplication.current_stage?.id,
           stage_type: isInterview ? "interview" : "other",
@@ -1642,10 +1645,18 @@ export function AddNextStageDialog({
           location: mode === "onsite" || mode === "other" ? meetingOrLocation || null : null,
           preparation_note: preparationNote.trim() || null,
         });
+        changedSession = scheduleResponse;
+        savedApplication = {
+          ...scheduleResponse.application,
+          next_session_id: scheduleResponse.session.id,
+          next_session_start_at: scheduleResponse.session.start_at,
+          next_session_end_at: scheduleResponse.session.end_at,
+          next_session_mode: scheduleResponse.session.mode,
+        };
       } catch {
         onClose();
         try {
-          await onChanged();
+          await onChanged(savedApplication, changedSession);
         } catch {
           // The refresh callback owns its own error notice; preserve the
           // partial-success message below even if it rejects unexpectedly.
@@ -1655,7 +1666,7 @@ export function AddNextStageDialog({
       }
 
       onClose();
-      await onChanged();
+      await onChanged(savedApplication, changedSession);
     } finally {
       setBusy(false);
     }
@@ -2314,7 +2325,7 @@ export function MarkApplicationAppliedDialog({
   initialTargetColumnId?: string | null;
   timezone: string;
   onClose: () => void;
-  onChanged: () => void;
+  onChanged: (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => void;
   onNotice: (notice: string) => void;
 }) {
   const initialInterviewLabel = initialTargetColumnId?.startsWith("interview:")
@@ -2359,7 +2370,7 @@ export function TerminateApplicationConfirmDialog({
 }: {
   application: JobApplicationSummary;
   onClose: () => void;
-  onChanged: () => void | Promise<void>;
+  onChanged: (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -2368,13 +2379,13 @@ export function TerminateApplicationConfirmDialog({
     if (busy) return;
     setBusy(true);
     try {
-      await api.terminateJobApplication(application.id, {
+      const response = await api.terminateJobApplication(application.id, {
         client_request_id: crypto.randomUUID(),
         reason: "user_withdrew",
         base_lock_version: application.lock_version,
       });
       onClose();
-      onChanged();
+      onChanged(response.application);
     } catch (error) {
       onNotice(requestErrorMessage(error));
     } finally {
@@ -2404,7 +2415,7 @@ function OfferApplicationDialog({
 }: {
   application: JobApplicationSummary;
   onClose: () => void;
-  onChanged: () => void | Promise<void>;
+  onChanged: (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const progress = projectApplicationProgress(application);
@@ -2428,12 +2439,12 @@ function OfferApplicationDialog({
     setErrorMessage(null);
     setBusy(true);
     try {
-      await api.recordJobApplicationOffer(
+      const response = await api.recordJobApplicationOffer(
         application.id,
         offerRequestPayload(offerValues, application.lock_version),
       );
       onClose();
-      await onChanged();
+      await onChanged(response.application);
     } catch (error) {
       onNotice(requestErrorMessage(error));
     } finally {
@@ -2477,7 +2488,7 @@ export function ApplicationDetailView({
   timezone: string;
   onBack: () => void;
   onCreateInterview: (applicationId: string) => void;
-  onChanged: () => void | Promise<void>;
+  onChanged: (updated?: JobApplicationRecord & Partial<JobApplicationSummary>, changed?: InterviewSessionDetail) => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const [stageDialogOpen, setStageDialogOpen] = useState(false);
@@ -3112,7 +3123,7 @@ function CompleteInterviewDialog({
   review: string;
   improvement: string;
   onClose: () => void;
-  onCompleted: () => void;
+  onCompleted: (changed: InterviewSessionDetail) => void;
   onNotice: (notice: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -3120,14 +3131,14 @@ function CompleteInterviewDialog({
   const complete = async () => {
     setBusy(true);
     try {
-      await api.completeInterviewSession(session.id, {
+      const response = await api.completeInterviewSession(session.id, {
         questions_markdown: questions.trim() || null,
         review_summary: review.trim() || null,
         improvement_markdown: improvement.trim() || null,
         base_lock_version: session.lock_version,
       });
       onClose();
-      onCompleted();
+      onCompleted(response);
     } catch (error) {
       onNotice(requestErrorMessage(error));
     } finally {
@@ -3164,7 +3175,7 @@ function EditInterviewScheduleDialog({
   session: InterviewSessionRecord;
   recordKind: "笔试" | "面试";
   onClose: () => void;
-  onChanged: () => void | Promise<void>;
+  onChanged: (changed?: InterviewSessionDetail) => void | Promise<void>;
   onNotice: (notice: string) => void;
 }) {
   const initialDurationMinutes = Math.max(
@@ -3215,6 +3226,7 @@ function EditInterviewScheduleDialog({
     setErrorMessage(null);
     let currentLockVersion = session.lock_version;
     let scheduleWasSaved = false;
+    let changed: InterviewSessionDetail | undefined;
     try {
       if (scheduleChanged) {
         try {
@@ -3225,6 +3237,7 @@ function EditInterviewScheduleDialog({
             allow_conflict: allowConflict,
             base_lock_version: currentLockVersion,
           });
+          changed = response;
           currentLockVersion = response.session.lock_version;
           scheduleWasSaved = true;
           setHasConflict(false);
@@ -3239,7 +3252,7 @@ function EditInterviewScheduleDialog({
 
       if (detailsChanged) {
         try {
-          await api.updateInterviewSession(session.id, {
+          changed = await api.updateInterviewSession(session.id, {
             mode,
             meeting_url: mode === "video" || mode === "phone" ? normalizedMeetingOrLocation || null : null,
             location: mode === "onsite" || mode === "other" ? normalizedMeetingOrLocation || null : null,
@@ -3248,7 +3261,7 @@ function EditInterviewScheduleDialog({
         } catch (error) {
           if (scheduleWasSaved) {
             onClose();
-            await onChanged();
+            await onChanged(changed);
             onNotice(`已更新${recordKind}时间，但方式或链接保存失败，请重新修改。`);
             return;
           }
@@ -3257,7 +3270,7 @@ function EditInterviewScheduleDialog({
       }
 
       onClose();
-      await onChanged();
+      await onChanged(changed);
     } catch (error) {
       setErrorMessage(requestErrorMessage(error));
     } finally {
@@ -3452,7 +3465,7 @@ type InterviewSessionDetailViewProps = {
   detail: InterviewSessionDetail | null;
   detailLoading: boolean;
   onBack: () => void;
-  onChanged: (preferredId?: string | null) => void | Promise<void>;
+  onChanged: (preferredId?: string | null, changed?: InterviewSessionDetail) => void | Promise<void>;
   onNotice: (notice: string) => void;
   displayMode?: "page" | "dialog";
 };
@@ -3552,8 +3565,11 @@ export function InterviewSessionDetailView({
       {showContentDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} onClose={() => setShowContentDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
       {showEditTextDialog && <AddInterviewContentDialog session={session} recordKind={recordKind} mode="edit" initialText={questions} onClose={() => setShowEditTextDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
       {showDeleteTextDialog && <DeleteInterviewTextConfirmDialog session={session} recordKind={recordKind} onClose={() => setShowDeleteTextDialog(false)} onDeleted={() => onChanged(session.id)} onNotice={onNotice} />}
-      {showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={() => isDialog ? onChanged(null) : navigateTo(careerApplicationPath(application.id))} onNotice={onNotice} />}
-      {showEditScheduleDialog && <EditInterviewScheduleDialog session={session} recordKind={recordKind} onClose={() => setShowEditScheduleDialog(false)} onChanged={() => onChanged(session.id)} onNotice={onNotice} />}
+      {showCompleteDialog && <CompleteInterviewDialog session={session} questions={questions} review={review} improvement={improvement} onClose={() => setShowCompleteDialog(false)} onCompleted={(changed) => {
+        void onChanged(null, changed);
+        if (!isDialog) navigateTo(careerApplicationPath(application.id));
+      }} onNotice={onNotice} />}
+      {showEditScheduleDialog && <EditInterviewScheduleDialog session={session} recordKind={recordKind} onClose={() => setShowEditScheduleDialog(false)} onChanged={(changed) => onChanged(session.id, changed)} onNotice={onNotice} />}
     </>
   );
 
