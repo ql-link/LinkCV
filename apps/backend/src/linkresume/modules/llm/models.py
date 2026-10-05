@@ -6,10 +6,10 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, DateTime, Index,
-    Integer, JSON, Numeric, String, Text, UniqueConstraint, false, func, true,
+    Integer, JSON, Numeric, String, Text, UniqueConstraint, false, func, select, true,
 )
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from linkresume.core.database import Base
 
@@ -119,16 +119,16 @@ class LLMModelRoute(Base):
 class LLMUseCaseRoute(Base):
     __tablename__ = "llm_use_case_routes"
     __table_args__ = (
+        UniqueConstraint("use_case", "route_id", name="uk_llm_use_case_routes_use_case_route"),
         UniqueConstraint("use_case", "priority", name="uk_llm_use_case_priority"),
         Index("idx_llm_use_case_routes_route", "route_id"),
         CheckConstraint("priority >= 0", name="ck_llm_use_case_priority"),
         {"comment": "系统能力和对话列表共用的场景线路绑定"},
     )
 
-    use_case: Mapped[str] = mapped_column(String(48), primary_key=True)
-    route_id: Mapped[int] = mapped_column(
-        ID, primary_key=True,
-    )
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
+    use_case: Mapped[str] = mapped_column(String(48), nullable=False)
+    route_id: Mapped[int] = mapped_column(ID, nullable=False)
     protocol_code: Mapped[str] = mapped_column(String(32), nullable=False)
     priority: Mapped[int] = mapped_column(
         Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql"), nullable=False
@@ -138,8 +138,19 @@ class LLMUseCaseRoute(Base):
     )
     validated_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     validated_at: Mapped[datetime | None] = mapped_column(TIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+
+def get_use_case_route(db: Session, use_case: str, route_id: int) -> "LLMUseCaseRoute | None":
+    """Look up a binding by its natural key; ``id`` is only the surrogate primary key."""
+    return db.scalar(
+        select(LLMUseCaseRoute).where(
+            LLMUseCaseRoute.use_case == use_case, LLMUseCaseRoute.route_id == route_id
+        )
     )
 
 
@@ -201,3 +212,6 @@ class LLMCallLog(Base):
     latency_ms: Mapped[int | None] = mapped_column(ID, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIME, nullable=False, server_default=func.now(), onupdate=func.now()
+    )

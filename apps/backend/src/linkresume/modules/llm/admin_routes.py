@@ -24,6 +24,7 @@ from linkresume.modules.llm.crypto import CredentialUnavailableError
 from linkresume.modules.llm.dependencies import get_llm_service, get_pi_probe_coordinator
 from linkresume.modules.llm.models import (
     LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
+    get_use_case_route,
 )
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
 from linkresume.modules.llm.providers import (
@@ -552,7 +553,7 @@ def bind_route(
         validate_use_case_protocol(use_case, payload.protocol_code)
     except ValueError as error:
         raise ApiError(422, "LLM_ROUTE_INVALID") from error
-    row = db.get(LLMUseCaseRoute, (use_case, route.id))
+    row = get_use_case_route(db, use_case, route.id)
     if row is None:
         row = LLMUseCaseRoute(
             use_case=use_case, route_id=route.id,
@@ -585,7 +586,7 @@ def patch_binding(
 ) -> dict:
     route = _route(db, route_id)
     connection = _connection(db, str(route.connection_id))
-    row = db.get(LLMUseCaseRoute, (use_case, route.id))
+    row = get_use_case_route(db, use_case, route.id)
     if row is None:
         raise ApiError(404, "LLM_BINDING_NOT_FOUND")
     if payload.priority is not None:
@@ -604,7 +605,7 @@ def unbind_route(
     use_case: str, route_id: str, request: Request,
     db: Session = Depends(get_db), _: User = Depends(get_current_admin),
 ) -> None:
-    row = db.get(LLMUseCaseRoute, (use_case, _id(route_id)))
+    row = get_use_case_route(db, use_case, _id(route_id))
     if row is None:
         raise ApiError(404, "LLM_BINDING_NOT_FOUND")
     db.delete(row)

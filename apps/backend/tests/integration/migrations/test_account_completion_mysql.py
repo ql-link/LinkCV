@@ -115,7 +115,7 @@ def test_write_and_deletion_serialize_on_owner_row(mysql):
         release.set(); write.result(timeout=5); deletion.result(timeout=5)
     with factory() as db:
         assert db.get(User, uid).deletion_requested_at is not None
-        assert db.get(AccountPreference, uid).locale == "en-US"
+        assert db.scalar(select(AccountPreference).where(AccountPreference.user_id == uid)).locale == "en-US"
         with pytest.raises(ApiError) as caught:
             lock_active_user(db, uid)
         assert caught.value.status_code == 401
@@ -154,9 +154,9 @@ def test_cleanup_respects_real_foreign_keys_and_other_users(mysql):
         job = db.scalar(select(AccountDeletionJob).where(AccountDeletionJob.public_id == receipt["job_id"]))
         assert job.status == "completed"
         assert db.get(User, uid) is None
-        assert db.get(AccountPreference, uid) is None
+        assert db.scalar(select(AccountPreference).where(AccountPreference.user_id == uid)) is None
         assert db.get(User, other) is not None
-        assert db.get(AccountPreference, other) is not None
+        assert db.scalar(select(AccountPreference).where(AccountPreference.user_id == other)) is not None
     assert f"users/{uid}/avatar/test.png" not in storage.objects
     assert f"users/{other}/avatar/test.png" in storage.objects
 

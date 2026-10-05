@@ -58,7 +58,7 @@ def test_real_metadata_contact_email_and_independent_preferences():
             "locale": "zh-CN", "interview_reminder_enabled": False, "notifications_available": False,
         }
         with app.state.session_factory() as db:
-            assert db.get(AccountPreference, uid) is None
+            assert db.scalar(select(AccountPreference).where(AccountPreference.user_id == uid)) is None
         assert client.put("/api/account/contact-email", json={"email": " contact@example.org "}).json() == {"contact_email": "contact@example.org"}
         client.patch("/api/account/preferences", json={"locale": "en-US"})
         client.patch("/api/account/preferences", json={"interview_reminder_enabled": True})
@@ -69,7 +69,7 @@ def test_real_metadata_contact_email_and_independent_preferences():
         assert client.put("/api/account/contact-email", json={"email": " "}).json() == {"contact_email": None}
         with app.state.session_factory() as db:
             assert db.get(User, uid).email == "account@example.com"
-            assert db.get(AccountPreference, uid).locale == "en-US"
+            assert db.scalar(select(AccountPreference).where(AccountPreference.user_id == uid)).locale == "en-US"
 
 
 @pytest.mark.parametrize("payload", [{}, {"locale": "fr"}, {"locale": None}, {"interview_reminder_enabled": 1}, {"unknown": True}])

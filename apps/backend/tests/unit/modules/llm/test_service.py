@@ -16,7 +16,7 @@ from linkresume.core.database import Base, build_engine, build_session_factory
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.crypto import CredentialCipher
 from linkresume.modules.llm.gateway import GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage
-from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute, get_use_case_route
 from linkresume.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION, validation_fingerprint
 from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError, LLMService
@@ -181,7 +181,7 @@ def test_file_asr_probe_uses_voiced_pcm_and_requires_a_final_transcript(context,
             pytest.fail("ASR probe unexpectedly called TTS")
     service._speech_gateway = SpeechGateway()
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding = get_use_case_route(db, JOB_TEXT_EXTRACTION, 1)
         binding.use_case = "speech_to_text"
         binding.protocol_code = "openai_asr_file"
         binding.validated_at = None
@@ -195,7 +195,7 @@ def test_file_asr_probe_uses_voiced_pcm_and_requires_a_final_transcript(context,
             asyncio.run(service.probe_route(1, "speech_to_text", 1))
     assert len(recordings) == 1 and len(recordings[0]) > 32000 and any(recordings[0])
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, ("speech_to_text", 1))
+        binding = get_use_case_route(db, "speech_to_text", 1)
         assert (binding.validated_at is not None) is successful
         assert db.scalar(select(LLMCallLog)).status == ("succeeded" if successful else "failed")
 
@@ -203,7 +203,7 @@ def test_file_asr_probe_uses_voiced_pcm_and_requires_a_final_transcript(context,
 def test_image_probe_sends_provider_compatible_rgb_image(context):
     service, gateway, sessions = context
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding = get_use_case_route(db, JOB_TEXT_EXTRACTION, 1)
         binding.use_case = JOB_IMAGE_EXTRACTION
         db.commit()
     asyncio.run(service.probe_route(user_id=1, use_case=JOB_IMAGE_EXTRACTION, route_id=1))
@@ -215,7 +215,7 @@ def test_image_probe_sends_provider_compatible_rgb_image(context):
 def test_responses_binding_reaches_structured_gateway_and_records_actual_protocol(context):
     service, gateway, sessions = context
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding = get_use_case_route(db, JOB_TEXT_EXTRACTION, 1)
         binding.protocol_code = "openai_responses"
         binding.validated_fingerprint = validation_fingerprint(binding, db.get(LLMModelRoute, 1), db.get(LLMProviderConnection, 1))
         db.commit()
@@ -282,7 +282,7 @@ def test_structured_error_keeps_tokens_and_cost(context):
 def test_inactive_binding_never_calls_gateway(context):
     service, gateway, sessions = context
     with sessions() as db:
-        db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1)).is_enabled = False
+        get_use_case_route(db, JOB_TEXT_EXTRACTION, 1).is_enabled = False
         db.commit()
     with pytest.raises(LLMError, match="LLM_MODEL_NOT_CONFIGURED"):
         asyncio.run(service.chat(1, [ChatMessage(role="user", content="hello")], source="test_call"))

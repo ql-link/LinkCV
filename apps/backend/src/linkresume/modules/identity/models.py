@@ -131,13 +131,16 @@ class User(Base):
 class AccountPreference(Base):
     __tablename__ = "account_preferences"
     __table_args__ = (
-        PrimaryKeyConstraint("user_id", name="pk_account_preferences"),
+        UniqueConstraint("user_id", name="uk_account_preferences_user_id"),
         CheckConstraint("locale IN ('zh-CN', 'en-US')", name="ck_account_preferences_locale"),
         CheckConstraint(
             "is_interview_reminder_enabled IN (0, 1)",
             name="ck_account_preferences_is_interview_reminder_enabled",
         ),
         {"comment": "账号界面语言与提醒偏好"},
+    )
+    id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), primary_key=True, autoincrement=True, comment="主键",
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(), nullable=False, comment="所属用户",

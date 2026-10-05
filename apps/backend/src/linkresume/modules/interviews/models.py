@@ -244,13 +244,18 @@ class JobApplication(Base):
 class JobApplicationOfferMaterial(Base):
     __tablename__ = "job_application_offer_materials"
     __table_args__ = (
-        PrimaryKeyConstraint(
-            "application_id", "dataset_id", name="pk_application_offer_materials"
+        UniqueConstraint(
+            "application_id",
+            "dataset_id",
+            name="uk_job_application_offer_materials_application_dataset",
         ),
         Index("idx_application_offer_materials_dataset", "dataset_id"),
         {"comment": "正式 Offer 与资料库文件的关联"},
     )
 
+    id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), primary_key=True, autoincrement=True
+    )
     application_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
         nullable=False,
@@ -258,6 +263,12 @@ class JobApplicationOfferMaterial(Base):
     dataset_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
         nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 

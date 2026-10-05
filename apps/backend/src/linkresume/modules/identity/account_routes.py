@@ -223,7 +223,7 @@ def _preferences(row: AccountPreference | None) -> AccountPreferencesResponse:
 def get_preferences(
     user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ) -> AccountPreferencesResponse:
-    return _preferences(db.get(AccountPreference, user.id))
+    return _preferences(db.scalar(select(AccountPreference).where(AccountPreference.user_id == user.id)))
 
 
 @router.patch("/preferences", response_model=AccountPreferencesResponse)
@@ -238,7 +238,7 @@ def update_preferences(
         raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
     if "interview_reminder_enabled" in payload and type(payload["interview_reminder_enabled"]) is not bool:
         raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
-    row = db.get(AccountPreference, user.id)
+    row = db.scalar(select(AccountPreference).where(AccountPreference.user_id == user.id))
     if row is None:
         row = AccountPreference(user_id=user.id, locale="zh-CN", is_interview_reminder_enabled=0)
         db.add(row)

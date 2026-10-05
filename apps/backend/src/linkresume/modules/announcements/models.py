@@ -8,9 +8,9 @@ from sqlalchemy import (
     DateTime,
     Index,
     Integer,
-    PrimaryKeyConstraint,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects import mysql
@@ -91,15 +91,17 @@ class AnnouncementReadCursor(Base):
 
     __tablename__ = "announcement_read_cursors"
     __table_args__ = (
-        PrimaryKeyConstraint("user_id", name="pk_announcement_read_cursors"),
+        UniqueConstraint("user_id", name="uk_announcement_read_cursors_user_id"),
         {"comment": "用户公告已读时间点，每个用户至多一行"},
     )
 
+    id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         ID,
         nullable=False,
     )
     read_through_at: Mapped[datetime] = mapped_column(TIME, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIME, nullable=False, server_default=func.now(), onupdate=func.now()
     )
