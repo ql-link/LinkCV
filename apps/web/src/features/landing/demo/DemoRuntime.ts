@@ -1,6 +1,7 @@
 import { api, type AgentSession, type AgentMessage, type AgentContextSnapshot, type AgentProposal, type ResumeRecord, type ResumeTemplate, type JobDescriptionRecord, type JobApplicationSummary, type InterviewSessionSummary, type DatasetRecord, type DatasetFolder, type UserProfile, type UserProfileData, type AccountPreferences } from "@/api/client";
 import { useResumeStore } from "@/store/resumeStore";
 import { useDemoMockInterviewApi, resetMockInterviewStore } from "@/features/mock-interview/mockInterviewApi";
+import { setLocale } from "@/i18n";
 import fixtures from "./demo-templates.json";
 
 // This adapter is imported only by landing-demo.html. Everything lives in memory
@@ -19,7 +20,10 @@ if (resumeSeed.data.identity.name) resumeSeed.data.identity.name.value = "张三
 export const resumes = [resumeSeed, { ...clone(resumeSeed), id: "demo-resume-growth", title: "增长产品经理 · 张三", updated_at: dateAt(-1, 16) }];
 const resumeContext: AgentContextSnapshot = { type: "resume", id: resumeSeed.id, resume_id: resumeSeed.id, label: resumeSeed.title, version: "1", presentation: "mention" };
 const profile: UserProfile = { id: "landing-demo-user", nickname: "张三", email: "zhangsan@example.com", is_admin: false, avatar_url: null, contact_email: "zhangsan@example.com", registered_at: dateAt(-30, 10), wechat_status: "unavailable", wechat_bound_at: null };
-let preferences: AccountPreferences = { locale: "zh-CN", interview_reminder_enabled: true, notifications_available: false };
+// The landing page passes its current interface language so the demo workspace matches it.
+const initialLocale = new URLSearchParams(location.search).get("locale") === "en-US" ? "en-US" : "zh-CN";
+setLocale(initialLocale, false);
+let preferences: AccountPreferences = { locale: initialLocale, interview_reminder_enabled: true, notifications_available: false };
 let userProfile: UserProfileData = { candidate_cities: ["上海", "杭州"], salary_min: 20000, salary_max: 30000, salary_currency: "CNY", salary_period: "month", employment_types: ["full_time"], school: "示例大学", school_tier: [], major: "信息管理", education_level: "bachelor", candidate_status: "experienced", graduation_year: 2020, years_experience: 5, languages: ["中文", "英语"], skills: ["产品设计", "用户研究", "数据分析"], certifications: [], honors: [], campus_experiences: [], lock_version: 1, created_at: stamp, updated_at: stamp };
 
 function job(index: number, company: string, title: string, skills: string[]): JobDescriptionRecord {

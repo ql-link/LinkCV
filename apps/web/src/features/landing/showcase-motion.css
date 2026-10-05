@@ -1,0 +1,87 @@
+/* 五个功能场景的演示动效：静态稿即结束帧。data-motion=armed 停在开场帧，playing 播放一次；无该属性时直接显示结束帧。 */
+.fs-block { --fs-ease: cubic-bezier(.2, .8, .2, 1); }
+.fs-block[data-motion="armed"] .fs-visual *, .fs-block[data-motion="armed"] .fs-visual *::before { animation-play-state: paused !important; }
+
+@keyframes fs-up { from { opacity: 0; translate: 0 16px; } }
+@keyframes fs-rise { from { opacity: 0; translate: 0 6px; } }
+@keyframes fs-in { from { opacity: 0; } }
+@keyframes fs-pop { from { opacity: 0; scale: .9; } }
+@keyframes fs-out { to { opacity: 0; translate: 0 -6px; } }
+@keyframes fs-in-below { from { opacity: 0; translate: 0 6px; } }
+.fs-block[data-motion] .fx-up { animation: fs-up .3s var(--fs-ease) var(--d, 0s) both; }
+.fs-block[data-motion] .fx-rise { animation: fs-rise .25s var(--fs-ease) var(--d, 0s) both; }
+.fs-block[data-motion] .fx-in { animation: fs-in .25s ease var(--d, 0s) both; }
+.fs-block[data-motion] .fx-pop { animation: fs-pop .22s var(--fs-ease) var(--d, 0s) both; }
+.fs-block[data-motion] .fx-char { animation: fs-in .12s linear var(--d, 0s) both; }
+.fs-block[data-motion] .fx-grow { transform-origin: left center; animation: fs-grow .6s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-grow { from { scale: 0 1; } }
+
+/* 假鼠标指针 */
+.fs-pointer { display: none; position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; filter: drop-shadow(0 2px 3px #0000002e); transform-origin: 3px 2px; }
+.fs-block[data-motion] .fs-pointer { display: block; }
+.fs-block[data-motion] .fs-pointer.is-agent { animation: fs-pointer-agent .7s var(--fs-ease) 3.5s both; }
+.fs-block[data-motion] .fs-pointer.is-board { animation: fs-pointer-board 2s ease-in-out .1s both; }
+.fs-block[data-motion] .fs-pointer.is-interview { animation: fs-pointer-interview .8s var(--fs-ease) 2.1s both; }
+@keyframes fs-pointer-agent { 0% { opacity: 0; translate: 560px 470px; } 20% { opacity: 1; } 100% { opacity: 1; translate: 259px 580px; } }
+@keyframes fs-pointer-board {
+  0% { opacity: 0; translate: 560px 430px; scale: 1; }
+  10% { opacity: 1; }
+  20% { translate: 459px 292px; scale: 1; }
+  25% { scale: .86; }
+  37% { translate: 459px 288px; scale: .86; }
+  68% { translate: 533px 207px; }
+  100% { opacity: 1; translate: 593px 187px; scale: .86; }
+}
+@keyframes fs-pointer-interview { 0% { opacity: 0; translate: 600px 300px; scale: 1; } 15% { opacity: 1; } 86% { translate: 732px 83px; scale: 1; } 93% { scale: .86; } 100% { opacity: 1; translate: 732px 83px; scale: 1; } }
+
+/* 场景 1：求职进度 */
+.fs-block[data-motion] .fs-step.is-current { animation: fs-rise .25s var(--fs-ease) var(--d, 0s) both, fs-current .45s ease .8s both; }
+@keyframes fs-current { from { background-color: transparent; } }
+.fs-block[data-motion] .fs-step-marker.is-current { animation: fs-marker .45s ease .8s both; }
+@keyframes fs-marker { from { border-color: #dcdcd8; } }
+.fs-block[data-motion] .fs-step-marker.is-current i { animation: fs-pop .3s var(--fs-ease) .85s both; }
+.fs-count { display: inline-grid; }
+.fs-count > span { grid-area: 1 / 1; }
+.fs-count-old { visibility: hidden; }
+.fs-block[data-motion] .fs-count-old { visibility: visible; animation: fs-out .25s ease 2.4s both; }
+.fs-block[data-motion] .fs-count-new { animation: fs-in-below .25s ease 2.45s both; }
+.fs-block[data-motion] .fs-checklist-bar span { animation: fs-fill .5s var(--fs-ease) 2.4s both; }
+@keyframes fs-fill { from { width: 66.8%; } }
+.fs-block[data-motion] .fs-checklist > p.is-last { animation: fs-done-text .3s ease 2.4s both; }
+@keyframes fs-done-text { from { color: #1d1d1b; } }
+.fs-block[data-motion] .fs-checklist > p.is-last > span { animation: fs-done-box .25s ease 2.4s both; }
+@keyframes fs-done-box { from { background: #fff; box-shadow: inset 0 0 0 1.5px #d4d4cf; } }
+.fs-block[data-motion] .fs-checklist > p.is-last > span svg { animation: fs-pop .25s var(--fs-ease) 2.45s both; }
+.fs-block[data-motion] .fs-checklist .fs-primary-btn { animation: fs-pulse .9s ease 3.2s both; }
+@keyframes fs-pulse { 40% { box-shadow: 0 2px 6px #264db22e, 0 0 0 6px #3f6fd82e; filter: brightness(1.08); } }
+
+/* 场景 2：AI 修改简历 */
+.fs-block[data-motion] .fs-paper-pending { animation: fs-pending .5s ease var(--d, 0s) both; }
+@keyframes fs-pending { from { background-color: transparent; } }
+.fs-paper-pending::before { transform-origin: top; }
+.fs-block[data-motion] .fs-paper-pending::before { animation: fs-bar-y .45s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-bar-y { from { scale: 1 0; } }
+.fs-block[data-motion] .fs-hover-target { animation: fs-hover .2s ease 4.2s both; }
+@keyframes fs-hover { from { background-color: transparent; } to { background-color: #efefec; } }
+
+/* 场景 3：岗位匹配分析 */
+.fs-scan { display: none; position: absolute; left: 0; right: 0; top: 0; height: 56px; border-bottom: 1px solid #3f6fd84d; background: linear-gradient(#3f6fd800, #3f6fd814 70%, #3f6fd826); pointer-events: none; }
+.fs-block[data-motion] .fs-scan { display: block; animation: fs-scan 1.2s ease-in-out both; }
+@keyframes fs-scan { from { top: 0; opacity: 1; } 85% { opacity: 1; } to { top: calc(100% - 56px); opacity: 0; } }
+.fs-block[data-motion] .fs-gauge-arc { animation: fs-arc 1s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-arc { from { stroke-dasharray: 0 100; opacity: 0; } 8% { opacity: 1; } }
+
+/* 场景 4：岗位看板 */
+.fs-block[data-motion] .fs-board-card.is-dragging { animation: fs-drag 1.6s ease-in-out .5s both; }
+@keyframes fs-drag {
+  0% { translate: -134px 107px; rotate: 0deg; box-shadow: 0 0 0 1px #ececea; }
+  22% { translate: -134px 101px; rotate: 4deg; box-shadow: 0 2px 4px #171a290f, 0 16px 36px #171a291a, 0 40px 80px #171a291f; }
+  60% { translate: -60px 20px; }
+  100% { translate: 0 0; rotate: 4deg; box-shadow: 0 2px 4px #171a290f, 0 16px 36px #171a291a, 0 40px 80px #171a291f; }
+}
+
+/* 场景 5：模拟面试 */
+.fs-block[data-motion] .fs-segments i.is-current { animation: fs-segment .3s ease var(--d, 0s) both; }
+@keyframes fs-segment { from { background-color: #ececea; } }
+.fs-block[data-motion] .fs-click-target { animation: fs-click .3s ease 2.8s both; }
+@keyframes fs-click { 40% { scale: .94; filter: brightness(.9); } }

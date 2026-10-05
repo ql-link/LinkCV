@@ -1,44 +1,46 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowRight, ArrowUp, ChevronDown, Menu, X } from "lucide-react";
+import { ArrowRight, ArrowUp, ChevronDown, Languages, Menu, X } from "lucide-react";
+import { setLocale, useLocale } from "@/i18n";
 import wordmark from "@/assets/linkresume-wordmark.png";
 import { HeroDemo } from "./HeroDemo";
 import { HeroBackdrop } from "./HeroBackdrop";
-import "@/v3/v3.css";
-import "@/features/assistant/assistant.css";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
-import { CaseScene, type SceneKey } from "./CaseScenes";
-import { DetailFeatures } from "./DetailFeatures";
+import { FeatureShowcase } from "./FeatureShowcase";
+import { DetailCards } from "./DetailCards";
+import { prefersStaticMotion, useScrollReveal } from "./motion";
+import { lt } from "./landingCopy";
 import "./full-landing.css";
 
 const projectUrl = "https://linkresume.cn/resumes";
 
-type Case = { id: SceneKey; title: string; headline: string; description: string; hint: string };
-const cases: Case[] = [
-  { id: "workspace", title: "一体化工作台", headline: "从简历到面试，每一步都接得上", description: "把简历、岗位、项目资料与面试记录关联起来，让每一步准备都有依据。", hint: "切换关联资料，看看准备如何串起来" },
-  { id: "agent", title: "简历 AI Agent", headline: "让 AI 把建议落实到简历里", description: "带上你的简历与项目资料，分析内容、生成修改提案，确认后应用到简历。", hint: "试试采用修改，查看简历的变化" },
-  { id: "job-fit", title: "岗位与简历联动", headline: "为这个岗位，打磨这份简历", description: "结合岗位要求检查经历的表达，让相关能力和贡献更清楚。", hint: "点击岗位要求，查看对应的经历" },
-  { id: "progress", title: "求职进程管理", headline: "每个机会，推进到哪都清楚", description: "在岗位看板里整理求职进度，把简历、面试时间与记录放在对应机会旁。", hint: "推进求职阶段，保留这次机会的准备" },
-  { id: "practice", title: "面试准备", headline: "把写下的经历，练成讲得清楚的回答", description: "围绕简历和目标岗位练习，从追问与反馈中找到下一次回答的改进点。", hint: "看看面试官怎样追问这段经历" },
-];
 type NavGroup = { title: string; links: { text: string; target: string }[] };
 const menus: Record<string, NavGroup[]> = {
   产品: [
-    { title: "工作区", links: [{ text: "一体化工作台", target: "#case-workspace" }, { text: "简历 AI Agent", target: "#case-agent" }, { text: "岗位看板", target: "#case-progress" }, { text: "模拟面试", target: "#case-practice" }] },
+    { title: "工作区", links: [{ text: "一体化工作台", target: "#feature-job" }, { text: "AI 助手", target: "#feature-agent" }, { text: "岗位看板", target: "#feature-board" }, { text: "模拟面试", target: "#feature-interview" }] },
     { title: "更多细节", links: [{ text: "多模型选择", target: "#feature-models" }, { text: "导入已有简历", target: "#feature-import" }, { text: "模板与中文排版", target: "#feature-templates" }] },
-    { title: "求职准备", links: [{ text: "针对岗位改简历", target: "#case-job-fit" }, { text: "逐题反馈", target: "#case-practice" }] },
+    { title: "求职准备", links: [{ text: "按 JD 改简历", target: "#feature-match" }, { text: "面试评估报告", target: "#feature-interview" }] },
   ],
   使用场景: [
-    { title: "写好经历", links: [{ text: "整理项目资料", target: "#case-workspace" }, { text: "让 AI 完成修改", target: "#case-agent" }, { text: "针对岗位准备简历", target: "#case-job-fit" }] },
-    { title: "准备机会", links: [{ text: "管理求职进程", target: "#case-progress" }, { text: "练习项目追问", target: "#case-practice" }] },
+    { title: "写好经历", links: [{ text: "整理项目资料", target: "#feature-references" }, { text: "让 AI 完成修改", target: "#feature-agent" }, { text: "针对岗位准备简历", target: "#feature-match" }] },
+    { title: "准备机会", links: [{ text: "管理求职进程", target: "#feature-board" }, { text: "练习项目追问", target: "#feature-interview" }] },
     { title: "顺手准备", links: [{ text: "资料随手引用", target: "#feature-references" }, { text: "岗位快速收集", target: "#feature-capture" }, { text: "求职偏好", target: "#feature-preferences" }] },
   ],
   了解更多: [
-    { title: "探索", links: [{ text: "产品能力", target: "#features" }, { text: "功能演示", target: "#use-cases" }, { text: "从哪里开始", target: "#start" }] },
-    { title: "LinkResume", links: [{ text: "产品理念", target: "#purpose" }, { text: "功能概览", target: "#use-cases" }] },
+    { title: "探索", links: [{ text: "产品能力", target: "#use-cases" }, { text: "更多细节", target: "#features" }, { text: "常见问题", target: "#faq" }] },
+    { title: "LinkResume", links: [{ text: "产品理念", target: "#purpose" }, { text: "从哪里开始", target: "#start" }] },
   ],
 };
+const stats = [["30,000+", "求职者"], ["120,000+", "份简历"], ["38,000+", "次岗位匹配"], ["6,500+", "场模拟面试"]];
+const faqs = [
+  { q: "LinkResume 免费吗？", a: "简历编辑、导出和岗位看板都可以免费使用；AI 相关能力按用量提供免费额度，后续会推出更多方案。" },
+  { q: "我的简历数据安全吗？", a: "简历、岗位和资料保存在你自己的账号里，只在你发起编辑、分析或模拟面试时使用；不需要的内容可以随时删除。" },
+  { q: "支持导入哪些格式的简历？", a: "支持 PDF、Word（DOCX）和 Markdown，导入后会整理成可以直接编辑的简历。" },
+  { q: "AI 使用的是哪些模型？", a: "对话中可以切换 DeepSeek 等模型，实际可用的模型以工作区里的列表为准。" },
+  { q: "可以导出成什么格式？", a: "简历导出为 PDF，可以按标准 A4 分页，也可以用智能一页把内容收进一张连续页面。" },
+];
+const footerFeatures = [["一体化工作台", "#feature-job"], ["AI 助手", "#feature-agent"], ["岗位与简历联动", "#feature-match"], ["求职进程管理", "#feature-board"], ["面试准备", "#feature-interview"]];
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -46,26 +48,61 @@ function useReducedMotion() {
   return reduced;
 }
 
+function PrimaryLink() {
+  return <a className="fl-button" href={projectUrl}>{lt("免费开始")}<ArrowRight size={14} strokeWidth={2} /></a>;
+}
+
+function StatValue({ value }: { value: string }) {
+  const target = Number(value.replace(/\D/g, ""));
+  const suffix = value.replace(/[\d,]/g, "");
+  const node = useRef<HTMLElement>(null);
+  const [shown, setShown] = useState(value);
+  useEffect(() => {
+    const element = node.current;
+    if (!element || prefersStaticMotion()) return;
+    setShown(`0${suffix}`);
+    let frame = 0;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      observer.disconnect();
+      const start = performance.now();
+      const tick = (now: number) => {
+        const progress = Math.min(1, (now - start) / 1400);
+        setShown(`${Math.round(target * (1 - Math.pow(1 - progress, 3))).toLocaleString("en-US")}${suffix}`);
+        if (progress < 1) frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+    }, { threshold: 0.6 });
+    observer.observe(element);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, [target, suffix]);
+  return <dd ref={node}>{shown}</dd>;
+}
+
+function Faq() {
+  const [open, setOpen] = useState<number | null>(0);
+  return <section id="faq" className="fl-faq-section" aria-labelledby="faq-title"><div className="fl-faq fl-container">
+    <header data-reveal><p className="fl-eyebrow"><span />{lt("常见问题")}</p><h2 id="faq-title">{lt("还有疑问？")}</h2><p>{lt("没有找到答案？写信给我们：")}<br />hello@linkresume.example</p></header>
+    <div className="fl-faq-list">{faqs.map((item, index) => <div className="fl-faq-item" data-reveal style={{ "--reveal-delay": `${index * 0.06}s` } as CSSProperties} key={item.q}>
+      <h3><button type="button" id={`faq-question-${index}`} aria-expanded={open === index} aria-controls={`faq-answer-${index}`} onClick={() => setOpen(open === index ? null : index)}>{lt(item.q)}<ChevronDown size={20} strokeWidth={1.6} /></button></h3>
+      <div className="fl-faq-answer" id={`faq-answer-${index}`} role="region" aria-labelledby={`faq-question-${index}`} data-open={open === index} inert={open !== index}><div><p>{lt(item.a)}</p></div></div>
+    </div>)}</div>
+  </div></section>;
+}
+
 export function FullLanding() {
+  const locale = useLocale();
   const reduced = useReducedMotion();
   const [menu, setMenu] = useState<string | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
-  const [activeCase, setActiveCase] = useState(0);
-  const [desktop, setDesktop] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
-  const markers = useRef<(HTMLDivElement | null)[]>([]);
   const nav = useRef<HTMLElement>(null);
-  useEffect(() => {
-    let frame = 0;
-    const update = () => { frame = 0; const wide = window.matchMedia("(min-width: 1024px)").matches; setDesktop(wide); const threshold = wide ? 275 : 160; let current = 0; markers.current.forEach((marker,index) => { if (marker && marker.getBoundingClientRect().top <= threshold) current = index; }); setActiveCase(current); };
-    const scroll = () => { if (!frame) frame = requestAnimationFrame(update); };
-    update(); window.addEventListener("scroll", scroll, { passive: true }); window.addEventListener("resize", scroll);
-    return () => { cancelAnimationFrame(frame); window.removeEventListener("scroll", scroll); window.removeEventListener("resize", scroll); };
-  }, []);
+  const page = useRef<HTMLDivElement>(null);
+  const motion = useScrollReveal(page);
   useEffect(() => {
     const close = (event: PointerEvent) => { if (menu && !nav.current?.contains(event.target as Node)) setMenu(null); };
     const key = (event: KeyboardEvent) => { if (event.key === "Escape") { setMenu(null); setMobileMenu(false); } };
-    document.addEventListener("pointerdown", close); document.addEventListener("keydown",key);
-    return () => { document.removeEventListener("pointerdown",close); document.removeEventListener("keydown",key); };
+    document.addEventListener("pointerdown", close); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", key); };
   }, [menu]);
   useEffect(() => { if (!mobileMenu) return; const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = previous; }; }, [mobileMenu]);
   useEffect(() => {
@@ -81,18 +118,18 @@ export function FullLanding() {
     else window.addEventListener("load", resolveHash, { once: true });
     return () => { cancelAnimationFrame(frame); window.removeEventListener("load", resolveHash); };
   }, []);
-  function jump(index: number) { setActiveCase(index); markers.current[index]?.scrollIntoView({ behavior: reduced ? "instant" : "smooth", block: "start" }); setMenu(null); setMobileMenu(false); }
-  function menuLink(link: NavGroup["links"][number]) { return <a key={link.text} href={link.target} onClick={() => { setMenu(null); setMobileMenu(false); }}>{link.text}</a>; }
-  return <div className={`marketing-landing fl-page${reduced ? " fl-reduced" : ""}`}>
-    <a className="fl-skip" href="#content">跳到主要内容</a>
-    <nav ref={nav} className="fl-nav" aria-label="主导航">
-      <div className="fl-nav-row fl-container"><a className="fl-logo" href="#top" aria-label="LinkResume 首页"><img src={wordmark} alt="LinkResume" width="136" height="28" /></a>
-        <div className="fl-desktop-links">{Object.keys(menus).map(label => <button key={label} type="button" aria-expanded={menu === label} aria-controls="desktop-menu" onClick={() => setMenu(menu === label ? null : label)}>{label}<ChevronDown size={11} /></button>)}<a href="#features">更多细节</a><a href="#use-cases">功能演示</a></div>
-        <div className="fl-nav-actions"><a className="fl-pill-dark" href={projectUrl}>开始使用</a></div>
-        <button className="fl-mobile-toggle" type="button" aria-label={mobileMenu ? "关闭导航菜单" : "打开导航菜单"} aria-expanded={mobileMenu} onClick={() => { setMobileMenu(value => !value); setMenu(null); }}>{mobileMenu ? <X size={21} /> : <Menu size={21} />}</button>
+  function menuLink(link: NavGroup["links"][number]) { return <a key={link.text} href={link.target} onClick={() => { setMenu(null); setMobileMenu(false); }}>{lt(link.text)}</a>; }
+  const languageButton = <button type="button" className="fl-lang" aria-label={lt("切换语言")} onClick={() => setLocale(locale === "en-US" ? "zh-CN" : "en-US")}><Languages size={14} strokeWidth={1.8} />{locale === "en-US" ? "中文" : "EN"}</button>;
+  return <div ref={page} className={`marketing-landing fl-page${reduced ? " fl-reduced" : ""}${motion ? " fl-motion" : ""}`}>
+    <a className="fl-skip" href="#content">{lt("跳到主要内容")}</a>
+    <nav ref={nav} className="fl-nav" aria-label={lt("主导航")}>
+      <div className="fl-nav-row fl-container"><a className="fl-logo" href="#top" aria-label={lt("LinkResume 首页")}><img src={wordmark} alt="LinkResume" width="136" height="28" /></a>
+        <div className="fl-desktop-links">{Object.keys(menus).map(label => <button key={label} type="button" aria-expanded={menu === label} aria-controls="desktop-menu" onClick={() => setMenu(menu === label ? null : label)}>{lt(label)}<ChevronDown size={11} /></button>)}<a href="#features">{lt("更多细节")}</a><a href="#use-cases">{lt("功能演示")}</a></div>
+        <div className="fl-nav-actions">{languageButton}<a className="fl-pill-primary" href={projectUrl}>{lt("免费开始")}</a></div>
+        <button className="fl-mobile-toggle" type="button" aria-label={lt(mobileMenu ? "关闭导航菜单" : "打开导航菜单")} aria-expanded={mobileMenu} onClick={() => { setMobileMenu(value => !value); setMenu(null); }}>{mobileMenu ? <X size={21} /> : <Menu size={21} />}</button>
       </div>
-      {menu && !mobileMenu && <div id="desktop-menu" className="fl-mega-menu"><div className="fl-container fl-menu-columns">{menus[menu].map(group => <div key={group.title}><p>{group.title}</p>{group.links.map(menuLink)}</div>)}</div></div>}
-      {mobileMenu && <div className="fl-mobile-menu"><div>{Object.keys(menus).map(label => <div key={label} className="fl-mobile-menu-group"><button type="button" aria-expanded={menu === label} onClick={() => setMenu(menu === label ? null : label)}>{label}<ChevronDown size={13} /></button>{menu === label && <div className="fl-mobile-menu-links">{menus[label].map(group => <div key={group.title}><p>{group.title}</p>{group.links.map(menuLink)}</div>)}</div>}</div>)}<a href="#features" onClick={() => setMobileMenu(false)}>更多细节</a><a href="#use-cases" onClick={() => setMobileMenu(false)}>功能演示</a></div><div className="fl-mobile-menu-actions"><a className="fl-pill-dark" href={projectUrl}>开始使用</a></div></div>}
+      {menu && !mobileMenu && <div id="desktop-menu" className="fl-mega-menu"><div className="fl-container fl-menu-columns">{menus[menu].map(group => <div key={group.title}><p>{lt(group.title)}</p>{group.links.map(menuLink)}</div>)}</div></div>}
+      {mobileMenu && <div className="fl-mobile-menu"><div>{Object.keys(menus).map(label => <div key={label} className="fl-mobile-menu-group"><button type="button" aria-expanded={menu === label} onClick={() => setMenu(menu === label ? null : label)}>{lt(label)}<ChevronDown size={13} /></button>{menu === label && <div className="fl-mobile-menu-links">{menus[label].map(group => <div key={group.title}><p>{lt(group.title)}</p>{group.links.map(menuLink)}</div>)}</div>}</div>)}<a href="#features" onClick={() => setMobileMenu(false)}>{lt("更多细节")}</a><a href="#use-cases" onClick={() => setMobileMenu(false)}>{lt("功能演示")}</a></div><div className="fl-mobile-menu-actions"><a className="fl-pill-primary" href={projectUrl}>{lt("免费开始")}</a>{languageButton}</div></div>}
     </nav>
     <main id="content" inert={mobileMenu} className={menu && !mobileMenu ? "fl-menu-blur" : ""}>
       <section id="top" className="fl-hero">
@@ -100,19 +137,23 @@ export function FullLanding() {
         <div className="fl-hero-content fl-container">
           <div className="fl-hero-copy">
             <img className="fl-hero-wordmark" src={wordmark} alt="LinkResume" width="1701" height="349" />
-            <h1><span>写好你的经历，</span><span>走向下一次机会</span></h1>
-            <p>简历创作、AI 推敲与面试准备，在同一个工作区里完成。</p>
+            <h1>{lt("懂你经历的求职搭档。")}</h1>
+            <p>{lt("它读过你的简历、项目和面试记录，帮你改简历、对岗位、练面试。")}<br />{lt("每一步怎么走，还是你说了算。")}</p>
+            <div className="fl-hero-cta"><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo">{lt("看 2 分钟演示")}</a></div><small>{lt("免费使用 · 支持导入 PDF / Word / Markdown 简历")}</small></div>
           </div>
           <HeroDemo />
         </div>
       </section>
-      <section id="use-cases" className="fl-cases fl-container" aria-labelledby="case-section-title"><aside className="fl-case-directory"><div><p className="fl-eyebrow"><span />AI 驱动的求职工作台</p><h2 id="case-section-title">一个工作台，<br />串起你的求职准备</h2><nav aria-label="场景目录">{cases.map((item,index) => <button key={item.id} type="button" aria-current={activeCase === index ? "step" : undefined} onClick={() => jump(index)}>{item.title}</button>)}</nav></div></aside>
-        <div className="fl-case-cards">{cases.map((item,index) => <div className="fl-case-entry" key={item.id}><div ref={element => { markers.current[index] = element; }} className="fl-case-marker" id={`case-${item.id}`} style={{ "--case-anchor": `${40 + index * 24}px` } as CSSProperties} /><article aria-labelledby={`case-title-${item.id}`} className={`fl-case-card${activeCase === index ? " is-active" : ""}`} style={{ "--case-top": `${120 + index * 24}px`, zIndex: index + 1 } as CSSProperties}><div className="fl-case-content"><div className="fl-case-copy"><div><p className="fl-case-topic">0{index + 1} / {item.title}</p><h3 id={`case-title-${item.id}`} className="fl-case-headline">{item.id === "agent" ? <><span>让 AI 把建议</span><span>落实到简历里</span></> : item.headline.split("，").map((line, lineIndex, lines) => <span key={line}>{line}{lineIndex < lines.length - 1 ? "，" : ""}</span>)}</h3><p className="fl-case-description">{item.description}</p></div><p className="fl-case-hint">{item.hint}<ArrowRight size={13} /></p></div><div className="fl-case-visual" data-scene={item.id} inert={desktop && activeCase !== index}><CaseScene scene={item.id} /></div></div></article></div>)}</div>
-      </section>
-      <section id="start" className="fl-start fl-container"><p className="fl-eyebrow"><span />为每一步求职做好准备</p><h2>从你的下一份简历开始</h2><div className="fl-cta-row"><a className="fl-button" href={projectUrl}>开始使用</a></div></section>
-      <DetailFeatures />
-      <section id="purpose" className="fl-purpose fl-container"><p className="fl-eyebrow"><span />LinkResume</p><h2>好好准备，走向下一次机会</h2><a className="fl-button" href={projectUrl}>开始使用</a></section>
+      <section className="fl-stats-section" aria-labelledby="stats-title"><div className="fl-container" data-reveal>
+        <p id="stats-title">{lt("30,000+ 求职者正在用 LinkResume 准备求职（示例数据）")}</p>
+        <dl className="fl-stats">{stats.map(([value, label]) => <div key={label}><dt>{lt(label)}</dt><StatValue value={value} /></div>)}</dl>
+      </div></section>
+      <FeatureShowcase />
+      <section id="start" className="fl-start-section"><div className="fl-start fl-container" data-reveal><p className="fl-eyebrow"><span />{lt("现在开始")}</p><h2>{lt("每场面试，都有备而来。")}</h2><div className="fl-cta-row"><PrimaryLink /></div></div></section>
+      <DetailCards />
+      <Faq />
+      <section id="purpose" className="fl-purpose-section"><div className="fl-purpose fl-container" data-reveal><p className="fl-eyebrow"><span />LinkResume</p><h2>{lt("准备求职的新方式。")}</h2><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo">{lt("看演示")}</a></div></div></section>
     </main>
-    <footer className="fl-footer fl-container" aria-label="页脚导航" inert={mobileMenu}><div className="fl-footer-brand"><a href="#top"><img src={wordmark} alt="LinkResume" width="136" height="28" /></a><p>为每一步求职做好准备。</p><small>© 2026 LinkResume · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">皖ICP备2026017322号</a></small></div><div><h2>产品功能</h2>{cases.map(item => <a key={item.id} href={`#case-${item.id}`}>{item.title}</a>)}</div><div><h2>了解 LinkResume</h2><a href="#features">更多细节</a><a href="#purpose">产品理念</a><a href="#top">返回顶部<ArrowUp size={11} /></a></div></footer>
+    <div className="fl-footer-section" inert={mobileMenu}><footer className="fl-footer fl-container" aria-label={lt("页脚导航")}><div className="fl-footer-brand"><a href="#top"><img src={wordmark} alt="LinkResume" width="136" height="28" /></a><p>{lt("懂你经历的求职搭档。")}</p><small>© 2026 LinkResume · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">皖ICP备2026017322号</a></small></div><div><h2>{lt("产品功能")}</h2>{footerFeatures.map(([text, target]) => <a key={text} href={target}>{lt(text)}</a>)}</div><div><h2>{lt("了解 LinkResume")}</h2><a href="#features">{lt("更多细节")}</a><a href="#purpose">{lt("产品理念")}</a><a href="#top">{lt("返回顶部")}<ArrowUp size={11} /></a></div></footer></div>
   </div>;
 }

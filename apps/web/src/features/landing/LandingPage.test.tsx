@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLocale } from "@/i18n";
 import { api } from "@/api/client";
 import { useResumeStore } from "@/store/resumeStore";
 import { LandingPage } from "./LandingPage";
@@ -12,23 +13,48 @@ beforeEach(() => {
     removeEventListener: vi.fn(),
   })));
 });
+afterEach(() => setLocale("zh-CN"));
 
 describe("LandingPage", () => {
-  it("展示已确认的 Hero、五个场景和六项细节，开始使用进入真实项目", () => {
+  it("按 Figma 新稿展示 Hero、五个功能场景、六张细节卡和常见问题，免费开始进入真实项目", () => {
     const { container } = render(<LandingPage />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("写好你的经历，走向下一次机会");
-    expect(container.querySelectorAll(".fl-case-card")).toHaveLength(5);
-    expect(container.querySelectorAll(".df-card")).toHaveLength(6);
-    expect(screen.getByTitle("LinkResume 产品互动演示 · 示例数据")).toHaveAttribute("src", "/landing-demo.html");
-    expect(screen.getAllByRole("link", { name: "开始使用" })).toHaveLength(3);
-    for (const link of screen.getAllByRole("link", { name: "开始使用" })) {
-      expect(link).toHaveAttribute("href", "https://linkresume.cn/resumes");
-    }
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档。");
+    expect(container.querySelectorAll(".fs-block")).toHaveLength(5);
+    expect(container.querySelectorAll(".dc-card")).toHaveLength(6);
+    expect(container.querySelectorAll(".fl-stats > div")).toHaveLength(4);
+    expect(screen.getByTitle("LinkResume 产品互动演示 · 示例数据")).toHaveAttribute("src", "/landing-demo.html?locale=zh-CN");
+    const starts = screen.getAllByRole("link", { name: "免费开始" });
+    expect(starts).toHaveLength(4);
+    for (const link of starts) expect(link).toHaveAttribute("href", "https://linkresume.cn/resumes");
+    expect(screen.getByRole("link", { name: "看 2 分钟演示" })).toHaveAttribute("href", "#demo");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "皖ICP备2026017322号" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
     for (const anchor of Array.from(container.querySelectorAll<HTMLAnchorElement>('a[href^="#"]'))) {
       expect(container.querySelector(anchor.getAttribute("href")!)).not.toBeNull();
     }
+  });
+
+  it("语言按钮在中英文之间切换整页文案和演示语言", () => {
+    render(<LandingPage />);
+    fireEvent.click(screen.getByRole("button", { name: "切换语言" }));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The job-search partner that knows your story.");
+    expect(screen.getAllByRole("link", { name: "Start free" })).toHaveLength(4);
+    expect(screen.getByTitle("LinkResume interactive demo · Sample data")).toHaveAttribute("src", "/landing-demo.html?locale=en-US");
+    expect(document.documentElement.lang).toBe("en-US");
+    fireEvent.click(screen.getByRole("button", { name: "Switch language" }));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档。");
+  });
+
+  it("常见问题默认展开第一项，点击后切换展开项", () => {
+    render(<LandingPage />);
+    const first = screen.getByRole("button", { name: "LinkResume 免费吗？" });
+    const second = screen.getByRole("button", { name: "支持导入哪些格式的简历？" });
+    expect(first).toHaveAttribute("aria-expanded", "true");
+    expect(second).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(second);
+    expect(first).toHaveAttribute("aria-expanded", "false");
+    expect(second).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/支持 PDF、Word（DOCX）和 Markdown/)).toBeVisible();
   });
 
   it("展开导航后可定位细节区并收起菜单", () => {
