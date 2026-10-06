@@ -783,7 +783,7 @@ function downloadUsageCsv(rows: UsageGroup[], label: (row: UsageGroup) => string
 }
 
 export function UsagePage() {
-  const [costModal, setCostModal] = useState<"backfill" | "statement" | null>(null);
+  const [costModal, setCostModal] = useState<"statement" | null>(null);
   const [range, setRange] = useState<keyof typeof windows>("24h");
   const [groupBy, setGroupBy] = useState<"model" | "useCase" | "connection">("model");
   const [query, setQuery] = useState("");
@@ -813,7 +813,7 @@ export function UsagePage() {
 
   return (
     <>
-      <PageHeader title="模型使用情况" actions={<><Segmented label="时间范围" value={range} onChange={setRange} options={[{ value: "24h", label: "24 小时" }, { value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} /><Button onClick={() => setCostModal("backfill")}>历史补算</Button><Button onClick={() => setCostModal("statement")}>导入账单</Button><Button disabled={!data?.groups.length} onClick={() => data && downloadUsageCsv(data.groups, label, groupNoun, range)}><Download size={14} aria-hidden="true" />导出数据</Button></>} />
+      <PageHeader title="模型使用情况" actions={<><Segmented label="时间范围" value={range} onChange={setRange} options={[{ value: "24h", label: "24 小时" }, { value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} /><Button onClick={() => setCostModal("statement")}>导入账单</Button><Button disabled={!data?.groups.length} onClick={() => data && downloadUsageCsv(data.groups, label, groupNoun, range)}><Download size={14} aria-hidden="true" />导出数据</Button></>} />
       {usage.loading && !data ? <LoadingRegion label="正在加载使用情况…"><SkeletonMetrics /></LoadingRegion> : !data ? <ErrorState code={usage.error} onRetry={() => void usage.reload()} /> : (
         <Metrics items={[
           { label: "调用", value: formatNumber(data.summary.calls), note: calls?.text, tone: calls?.tone, icon: Zap, tint: "blue" },

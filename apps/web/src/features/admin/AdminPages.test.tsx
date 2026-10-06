@@ -6,7 +6,7 @@ import { AnnouncementsPage } from "./AnnouncementsPage";
 import { AdminConsoleProvider, insertionIndex, parseRecordSearch } from "./kit";
 import { LlmCallsPage, countDelta } from "./SecurityPages";
 import { CapabilitiesPage, planPriorities, previewOrder, type ModelGroup } from "./CapabilitiesPage";
-import { ConnectionsPage, ModelsPage, compositionSlices, groupByVendor } from "./LlmPages";
+import { ConnectionsPage, ModelsPage, UsagePage, compositionSlices, groupByVendor } from "./LlmPages";
 import { SERIES_COLORS, donutArcs } from "./charts";
 import { DateTimeInput, dayLabel } from "./DateTimeInput";
 import { modelIcon, providerIcon, vendorIcon } from "./brandIcons";
@@ -43,6 +43,17 @@ function mockLlm(overrides: { models?: LlmModel[]; routes?: LlmRoute[] } = {}) {
 
 beforeEach(() => notify.mockReset());
 afterEach(() => vi.restoreAllMocks());
+
+describe("UsagePage", () => {
+  it("shows historical usage without asking administrators to run a backfill", async () => {
+    mockLlm();
+    render(wrap(<UsagePage />));
+    expect((await screen.findAllByText("示例模型")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "历史补算" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导入账单" })).toBeInTheDocument();
+    expect(api.adminInsightLlmUsage).toHaveBeenCalled();
+  });
+});
 
 describe("ConnectionsPage", () => {
   it("creates an Aliyun connection that needs a workspace in cn-beijing", async () => {
