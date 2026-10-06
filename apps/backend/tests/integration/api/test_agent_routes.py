@@ -3965,9 +3965,18 @@ def test_selected_conversation_model_and_pi_call_use_frozen_route_price() -> Non
         recorded = client.post(
             f"/internal/agent/runs/{run_id}/llm-calls",
             headers=internal_headers(),
-            json={"callId": "llmcall_" + "a" * 32, "status": "succeeded", "inputTokens": 100, "outputTokens": 20},
+            json={"callId": "llmcall_" + "a" * 32, "status": "succeeded", "inputTokens": 100, "outputTokens": 20,
+                  "requestStartedAt": "2026-10-06T00:00:00Z", "requestFinishedAt": "2026-10-06T00:00:01Z",
+                  "usage": {"usagePresent": True, "usageSource": "pi", "cacheRead": 0, "cacheWrite": 0}},
         )
         assert recorded.status_code == 200, recorded.text
+        original_payload = {"callId": "llmcall_" + "a" * 32, "status": "succeeded", "inputTokens": 100, "outputTokens": 20,
+            "requestStartedAt": "2026-10-06T00:00:00Z", "requestFinishedAt": "2026-10-06T00:00:01Z",
+            "usage": {"usagePresent": True, "usageSource": "pi", "cacheRead": 0, "cacheWrite": 0}}
+        path = f"/internal/agent/runs/{run_id}/llm-calls"
+        assert client.post(path, headers=internal_headers(), json=original_payload).status_code == 200
+        for changes in ({"inputTokens": 200}, {"requestStartedAt": "2026-10-06T00:00:00.5Z"}):
+            assert client.post(path, headers=internal_headers(), json={**original_payload, **changes}).status_code == 409
         with app.state.session_factory() as db:
             log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == "llmcall_" + "a" * 32))
             assert log.price_snapshot_json["input_per_million"] == "1"

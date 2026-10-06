@@ -135,8 +135,12 @@ async def run_recognition(
     finals: dict[int, tuple[str, list[dict[str, object]]]] = {}
     pending = ""
     error: Exception | None = None
+    billing_usage = None
+    upstream_request_id = None
     try:
         async for event in llm.speech_gateway.recognize(target, audio(), hotwords=hotwords, language=language):
+            billing_usage = event.usage or billing_usage
+            upstream_request_id = event.request_id or upstream_request_id
             if event.final:
                 finals[event.sentence_id] = (
                     event.text,
@@ -155,7 +159,8 @@ async def run_recognition(
         error = caught
     await llm.finish_speech_call(
         call_id, started=started, error_code=error.code if error else None,
-        details={"audio_seconds": round(buffer.duration_ms / 1000, 2)},
+        details=billing_usage or {"audio_seconds": round(buffer.duration_ms / 1000, 2)},
+        upstream_request_id=upstream_request_id,
     )
     text = "".join(finals[key][0] for key in sorted(finals)) + pending
     if error is not None and not text.strip():

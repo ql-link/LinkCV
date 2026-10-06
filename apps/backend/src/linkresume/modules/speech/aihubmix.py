@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from linkresume.modules.speech.gateway import (
-    SAMPLE_RATE, RecognitionEvent, SpeechProviderError, SpeechTarget, SpeechWord,
+    SAMPLE_RATE, RecognitionEvent, SpeechProviderError, SpeechTarget, SpeechWord, SpeechAudio,
 )
 
 MAX_PCM_BYTES = SAMPLE_RATE * 2 * 300
@@ -132,12 +132,15 @@ class AIHubMixSpeechGateway:
                     files={"file": ("answer.wav", output.getvalue(), "audio/wav")},
                 ) as response:
                     result = _json(await _read_response(response))
+                    request_id = response.headers.get("x-request-id")
             text = result.get("text")
             if not isinstance(text, str) or len(text) > 8000:
                 raise SpeechProviderError()
             yield RecognitionEvent(
                 text=text, sentence_id=0, final=True,
                 words=_words(result.get("words"), len(pcm) / (SAMPLE_RATE * 2)),
+                usage={"audioSeconds": len(pcm) / (SAMPLE_RATE * 2), "usageSource": "measured_audio", "usagePresent": True},
+                request_id=request_id if request_id and len(request_id) <= 128 else None,
             )
         except (httpx.HTTPError, TimeoutError, OSError):
             raise SpeechProviderError() from None
@@ -155,6 +158,7 @@ class AIHubMixSpeechGateway:
                           "response_format": "mp3"},
                 ) as response:
                     data = await _read_response(response)
+                    request_id = response.headers.get("x-request-id")
                     is_json = "json" in response.headers.get("content-type", "").lower() or data.lstrip().startswith(b"{")
                 if is_json:
                     result = _json(data)
@@ -166,6 +170,7 @@ class AIHubMixSpeechGateway:
                     async with self._client() as downloader:
                         async with downloader.stream("GET", url) as response:
                             data = await _read_response(response)
-                return _mp3(data)
+                return SpeechAudio(_mp3(data), usage={"characters": len(text), "usageSource": "measured_characters", "usagePresent": True},
+                                   request_id=request_id if request_id and len(request_id) <= 128 else None)
         except (httpx.HTTPError, TimeoutError, OSError):
             raise SpeechProviderError() from None

@@ -135,7 +135,9 @@ export type AdminUserDetail = AdminUserSummary & {
   updated_at: string;
 };
 
-export type CostSummary = { costs: Array<{ currency: string; amount: string }>; unmeteredCallCount: number };
+export type CostSummary = { costs: Array<{ currency: string; amount: string }>; unmeteredCallCount: number;
+  settledCosts?: Array<{ currency: string; amount: string }>; accountedCosts?: Array<{ currency: string; amount: string }>;
+  estimatedCallCount?: number; reconciledCallCount?: number; accountedCallCount?: number; unpricedReasons?: Record<string, number> };
 
 export type AdminInsightAlert = {
   type: string;
@@ -189,6 +191,7 @@ export type AdminInsightLlmUsage = {
   summary: LlmUsageSummary;
   previous: LlmUsageSummary;
   groups: Array<LlmUsageSummary & { key: string; label: string }>;
+  unknownTimeCallCount?: number;
 };
 
 export type AdminInsightAgent = {
@@ -1181,9 +1184,14 @@ export type LlmProviderSpec = { code: string; label: string; protocols: string[]
 export type LlmCatalog = { useCases: string[]; providers: LlmProviderSpec[] };
 export type LlmConnection = { id: string; providerCode: string; name: string; settings: Record<string, unknown>; keyConfigured: boolean; enabled: boolean; runtimeConfigVersion: number; catalogSyncedAt: string | null; createdAt: string; updatedAt: string };
 export type LlmModel = { id: string; displayName: string; developerName: string | null; userSelectable: boolean; createdAt: string; updatedAt: string };
-export type LlmRoute = { id: string; modelId: string; connectionId: string; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId: string | null; identifierKind: "pinned" | "alias" | "unknown"; origin: string; metadata: Record<string, unknown> | null; pricing: Record<string, unknown> | null; targetAvailable: boolean; enabled: boolean; createdAt: string; updatedAt: string };
+export type LlmRoute = { id: string; modelId: string; connectionId: string; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId: string | null; identifierKind: "pinned" | "alias" | "unknown"; origin: string; metadata: Record<string, unknown> | null; pricing: Record<string, unknown> | null; pricingMode?: "provider" | "manual_override"; priceRevisionId?: string | null; targetAvailable: boolean; enabled: boolean; createdAt: string; updatedAt: string };
+export type LlmCostOperation = { operationId: string; operationType: string; state: string; digest: string; summary: { total: number; applicable: number; reasons: Record<string, number>; remaining?: number; states?: Record<string, number> }; scope: Record<string, unknown>; nextCursor: string | null;
+  items: Array<{ id: string; callId: string | null; source: string; state: string; reason: string | null; estimatedCost: string | null; costCurrency: string | null; settledCost: string | null; settledCurrency: string | null; breakdown: Array<Record<string, unknown>> }> };
 export type LlmBinding = { useCase: string; routeId: string; protocolCode: string; priority: number; enabled: boolean; validatedAt: string | null; effective: boolean };
-export type LlmCallRecord = { id: string; callId: string; useCase: string; source: string; userId: string | null; agentRunId: string | null; routeId: string; protocolCode: string; status: string; meteringStatus: string; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | null; costCurrency: string | null; errorCode: string | null; createdAt: string };
+export type LlmCallRecord = { id: string; callId: string; useCase: string; source: string; userId: string | null; agentRunId: string | null; routeId: string; protocolCode: string; status: string; meteringStatus: string; inputTokens: number | null; outputTokens: number | null; estimatedCost: string | null; costCurrency: string | null; errorCode: string | null; createdAt: string;
+  costState?: string; costReason?: string | null; settledCost?: string | null; settledCurrency?: string | null;
+  requestStartedAt?: string | null; requestFinishedAt?: string | null; timeBasis?: string | null; upstreamRequestId?: string | null;
+  priceRevisionId?: string | null; costRevisionId?: string | null; normalizedUsage?: Record<string, unknown> | null; priceSnapshot?: Record<string, unknown> | null };
 
 export type JobDuplicateDetails = {
   duplicate: {
@@ -2515,7 +2523,11 @@ export const api = {
   deleteLlmModel: (id: string) => request<void>(`/api/admin/llm/models/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listLlmRoutes: () => request<{ routes: LlmRoute[] }>("/api/admin/llm/routes"),
   createLlmRoute: (body: { modelId: number; connectionId: number; targetKind: "model" | "endpoint" | "deployment"; invokeTarget: string; catalogModelId?: string | null; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>("/api/admin/llm/routes", { method: "POST", body }),
-  updateLlmRoute: (id: string, body: { enabled?: boolean; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null }) => request<{ route: LlmRoute }>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  updateLlmRoute: (id: string, body: { enabled?: boolean; identifierKind?: "pinned" | "alias" | "unknown"; pricing?: Record<string, unknown> | null; pricingMode?: "provider" | "manual_override" }) => request<{ route: LlmRoute }>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "PATCH", body }),
+  previewLlmCostBackfill: (body: { connectionId: number; from: string; to: string; idempotencyKey: string; pricePolicy: "snapshot" | "specified_rule"; acceptCurrentRules: boolean; legacyTimezone: string | null }) => request<LlmCostOperation>("/api/admin/llm/cost-backfills/preview", { method: "POST", body }),
+  previewLlmCostStatement: (body: { connectionId: number; idempotencyKey: string; csvContent: string }) => request<LlmCostOperation>("/api/admin/llm/cost-statements/preview", { method: "POST", body }),
+  applyLlmCostOperation: (id: string, expectedDigest: string) => request<LlmCostOperation>(`/api/admin/llm/cost-operations/${encodeURIComponent(id)}/apply`, { method: "POST", body: { expectedDigest } }),
+  getLlmCostOperation: (id: string, cursor?: string) => request<LlmCostOperation>(`/api/admin/llm/cost-operations/${encodeURIComponent(id)}${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`),
   deleteLlmRoute: (id: string) => request<void>(`/api/admin/llm/routes/${encodeURIComponent(id)}`, { method: "DELETE" }),
   listLlmBindings: () => request<{ bindings: LlmBinding[] }>("/api/admin/llm/use-cases"),
   putLlmBinding: (useCase: string, routeId: string, body: { protocolCode: string; priority: number; enabled: boolean }) => request<{ binding: LlmBinding }>(`/api/admin/llm/use-cases/${encodeURIComponent(useCase)}/routes/${encodeURIComponent(routeId)}`, { method: "PUT", body: { useCase, routeId: Number(routeId), ...body } }),

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import timedelta
 from decimal import Decimal
 from typing import Literal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from linkresume.modules.admin_insights.window import (
@@ -36,13 +36,16 @@ def call_rows(db: Session, window: Window):
             LLMCallLog.latency_ms,
             LLMCallLog.cost_currency,
             LLMCallLog.estimated_cost,
+            LLMCallLog.settled_cost,
+            LLMCallLog.settled_currency,
+            LLMCallLog.cost_reason,
             LLMCallLog.use_case,
-            LLMCallLog.create_time,
+            LLMCallLog.request_started_at.label("create_time"),
             LLMModelRoute.model_id,
             LLMModelRoute.connection_id,
         )
         .join(LLMModelRoute, LLMModelRoute.id == LLMCallLog.route_id)
-        .where(LLMCallLog.create_time >= window.start, LLMCallLog.create_time < window.end)
+        .where(LLMCallLog.request_started_at >= window.start, LLMCallLog.request_started_at < window.end)
     ).all()
 
 
@@ -55,6 +58,13 @@ def summarize(rows) -> dict[str, object]:
         ),
         "p95Ms": percentile_95(row.latency_ms for row in finished),
         **costs((row.cost_currency, row.estimated_cost) for row in rows),
+        "settledCosts": costs((row.settled_currency, row.settled_cost) for row in rows)["costs"],
+        "accountedCosts": costs((row.settled_currency, row.settled_cost) if row.settled_cost is not None
+                                else (row.cost_currency, row.estimated_cost) for row in rows)["costs"],
+        "estimatedCallCount": sum(row.estimated_cost is not None for row in rows),
+        "reconciledCallCount": sum(row.settled_cost is not None for row in rows),
+        "accountedCallCount": sum(row.settled_cost is not None or row.estimated_cost is not None for row in rows),
+        "unpricedReasons": dict(Counter(row.cost_reason or "legacy_unpriced" for row in rows if row.estimated_cost is None)),
     }
 
 
@@ -84,6 +94,7 @@ def usage(db: Session, window: Window, group_by: GroupBy) -> dict[str, object]:
         "summary": summarize(rows),
         "previous": summarize(call_rows(db, window.previous)),
         "groups": groups,
+        "unknownTimeCallCount": db.scalar(select(func.count(LLMCallLog.id)).where(LLMCallLog.request_started_at.is_(None))) or 0,
     }
 
 
@@ -166,11 +177,29 @@ def cost_totals(db: Session, *filters) -> dict[str, object]:
             or_(LLMCallLog.cost_currency.is_(None), LLMCallLog.estimated_cost.is_(None)),
         )
     ) or 0
+    settled = db.execute(select(LLMCallLog.settled_currency, func.sum(LLMCallLog.settled_cost)).where(
+        *filters, LLMCallLog.settled_cost.is_not(None), LLMCallLog.settled_currency.is_not(None)
+    ).group_by(LLMCallLog.settled_currency).order_by(LLMCallLog.settled_currency)).all()
+    accounted_currency = case((LLMCallLog.settled_cost.is_not(None), LLMCallLog.settled_currency), else_=LLMCallLog.cost_currency)
+    accounted_amount = case((LLMCallLog.settled_cost.is_not(None), LLMCallLog.settled_cost), else_=LLMCallLog.estimated_cost)
+    accounted = db.execute(select(accounted_currency, func.sum(accounted_amount)).where(
+        *filters, accounted_currency.is_not(None), accounted_amount.is_not(None)
+    ).group_by(accounted_currency).order_by(accounted_currency)).all()
+    counts = db.execute(select(func.count(LLMCallLog.id),
+        func.sum(case((LLMCallLog.estimated_cost.is_not(None), 1), else_=0)),
+        func.sum(case((LLMCallLog.settled_cost.is_not(None), 1), else_=0)),
+        func.sum(case((accounted_amount.is_not(None), 1), else_=0))).where(*filters)).one()
+    reasons = db.execute(select(LLMCallLog.cost_reason, func.count(LLMCallLog.id)).where(*filters,
+        LLMCallLog.estimated_cost.is_(None)).group_by(LLMCallLog.cost_reason)).all()
     return {
         "costs": [
             {"currency": currency, "amount": str(Decimal(amount))} for currency, amount in metered
         ],
         "unmeteredCallCount": unmetered,
+        "settledCosts": [{"currency": currency, "amount": str(Decimal(amount))} for currency, amount in settled],
+        "accountedCosts": [{"currency": currency, "amount": str(Decimal(amount))} for currency, amount in accounted],
+        "estimatedCallCount": int(counts[1] or 0), "reconciledCallCount": int(counts[2] or 0), "accountedCallCount": int(counts[3] or 0),
+        "unpricedReasons": {reason or "legacy_unpriced": count for reason, count in reasons},
     }
 
 
@@ -182,4 +211,4 @@ def user_totals(db: Session, user_id: int) -> tuple[int, dict[str, object]]:
 
 
 def calls_since(db: Session, start) -> int:
-    return db.scalar(select(func.count(LLMCallLog.id)).where(LLMCallLog.create_time >= start)) or 0
+    return db.scalar(select(func.count(LLMCallLog.id)).where(LLMCallLog.request_started_at >= start)) or 0

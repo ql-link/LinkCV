@@ -1,3 +1,4 @@
+from datetime import timezone
 from fastapi import APIRouter, Depends, Request, Header
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -268,9 +269,24 @@ def record_run_llm_call(
     config_version = run.runtime_config_version if is_primary else (
         payload.config_version or connection.runtime_config_version
     )
+    start, finish = payload.request_started_at, payload.request_finished_at
+    if (start is None) != (finish is None) or (start is not None and (
+            start.tzinfo is None or finish.tzinfo is None or finish < start)):
+        raise ApiError(422, "LLM_CALL_TIME_INVALID")
+    def utc_time(value):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
     existing = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == payload.call_id))
     if existing is not None:
-        if existing.agent_run_id != run.id or existing.route_id != route_id:
+        if (existing.agent_run_id != run.id or existing.route_id != route_id or existing.status != payload.status
+                or existing.input_tokens != payload.input_tokens or existing.output_tokens != payload.output_tokens
+                or existing.usage_json != payload.usage or existing.upstream_request_id != payload.upstream_request_id
+                or existing.error_code != payload.error_code or existing.price_snapshot_json != price_snapshot
+                or utc_time(existing.request_started_at) != utc_time(start)
+                or utc_time(existing.request_finished_at) != utc_time(finish)):
             raise ApiError(409, "LLM_CALL_CONFLICT")
         return {"recorded": True}
     usage = GatewayUsage(
@@ -279,8 +295,11 @@ def record_run_llm_call(
         details=payload.usage,
     )
     from linkresume.modules.llm.service import _metering
+    from linkresume.modules.llm.pricing import normalize_usage
+    from linkresume.modules.llm.accounting import record_runtime_cost, store_price
     metering_status, estimated_cost, currency = _metering(usage, price_snapshot)
-    db.add(LLMCallLog(
+    price_revision = store_price(db, route, price_snapshot, update_route=False)
+    call = LLMCallLog(
         call_id=payload.call_id,
         use_case=ASSISTANT_CONVERSATION,
         source="pi_agent",
@@ -298,11 +317,18 @@ def record_run_llm_call(
         output_tokens=payload.output_tokens,
         metering_status=metering_status,
         price_snapshot_json=price_snapshot,
+        price_revision_id=price_revision.id if price_revision else None,
+        request_started_at=payload.request_started_at.astimezone(timezone.utc) if payload.request_started_at else None,
+        request_finished_at=payload.request_finished_at.astimezone(timezone.utc) if payload.request_finished_at else None,
+        time_basis="explicit_utc" if payload.request_started_at is not None else "unknown",
+        normalized_usage_json=normalize_usage(payload.input_tokens, payload.output_tokens, payload.usage, exclusive=True),
         estimated_cost=estimated_cost,
         cost_currency=currency,
         latency_ms=payload.latency_ms,
         error_code=payload.error_code,
-    ))
+    )
+    db.add(call)
+    record_runtime_cost(db, call)
     db.commit()
     return {"recorded": True}
 

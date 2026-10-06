@@ -829,7 +829,7 @@ export function LlmCallsPage() {
               rowLabel={(row) => `查看调用 ${row.callId}`}
               empty="当前筛选下没有调用"
               columns={[
-                { key: "time", label: "时间", width: "60px", render: (row) => <span className="adm-ink2">{formatWhen(row.createdAt, "—", { compact: true })}</span> },
+                { key: "time", label: "请求时间", width: "60px", render: (row) => <span className="adm-ink2">{formatWhen(row.requestStartedAt, "待核实", { compact: true })}</span> },
                 { key: "useCase", label: "能力", width: "110px", render: (row) => <strong className="adm-medium">{useCaseLabel(row.useCase)}</strong> },
                 { key: "source", label: "来源", width: "80px", render: (row) => <span className="adm-ink2">{row.source}</span> },
                 { key: "route", label: "线路 / 协议", width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-stack"><span className="adm-ellipsis adm-ink2">{routeLabel(row.routeId)}</span><small className="adm-medium adm-faint">{row.errorCode ? <span className="adm-tone-bad">{row.errorCode}</span> : row.protocolCode}</small></span> },
@@ -848,7 +848,7 @@ export function LlmCallsPage() {
           onClose={() => setSelected(null)}
           eyebrow="LLM 调用详情"
           title={<span className="adm-title-row">{selected.source}<Badge tone={(callStatus[selected.status] ?? callStatus.cancelled).tone}>{(callStatus[selected.status] ?? { label: selected.status }).label}</Badge></span>}
-          subtitle={`${formatDateTime(selected.createdAt)} · ${useCaseLabel(selected.useCase)} · 不包含提示词和回复正文`}
+          subtitle={`${selected.requestStartedAt ? formatDateTime(selected.requestStartedAt) : "请求时间待核实"} · ${useCaseLabel(selected.useCase)} · 不包含提示词和回复正文`}
           footer={<><CopyCallId value={selected.callId} /><Button variant="primary" dismiss>关闭</Button></>}
         >
           <DetailList items={[
@@ -860,8 +860,15 @@ export function LlmCallsPage() {
             ["Agent Run", selected.agentRunId ?? "—"],
             ["Token（入 / 出）", `${formatNumber(selected.inputTokens)} / ${formatNumber(selected.outputTokens)}`],
             ["计量", selected.meteringStatus],
-            ["费用", selected.estimatedCost ? formatMoney(selected.estimatedCost, selected.costCurrency) : "—"],
+            ["估算费用", selected.estimatedCost != null ? formatMoney(selected.estimatedCost, selected.costCurrency) : "—"],
+            ["结算费用", selected.settledCost != null ? formatMoney(selected.settledCost, selected.settledCurrency) : "—"],
+            ["计费状态 / 原因", `${selected.costState ?? "历史记录"}${selected.costReason ? ` / ${selected.costReason}` : ""}`],
+            ["请求时间依据", selected.timeBasis ?? "待核实"],
+            ["供应商请求 ID", selected.upstreamRequestId ?? "—"],
+            ["价格 / 费用版本", `${selected.priceRevisionId ?? "—"} / ${selected.costRevisionId ?? "—"}`],
           ]} />
+          {selected.normalizedUsage && <details><summary>计费用量</summary><pre>{JSON.stringify(selected.normalizedUsage, null, 2)}</pre></details>}
+          {selected.priceSnapshot && <details><summary>冻结的价格依据</summary><pre>{JSON.stringify(selected.priceSnapshot, null, 2)}</pre></details>}
           {selected.errorCode && <InlineError>错误码 {selected.errorCode}{callErrorHints[selected.errorCode] ? `：${callErrorHints[selected.errorCode]}` : ""}</InlineError>}
         </Modal>
       )}
