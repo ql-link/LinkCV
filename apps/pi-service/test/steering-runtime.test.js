@@ -152,3 +152,70 @@ for (const outcome of ["clarification", "cancel"]) {
     assert.equal(callbacks.filter((path) => path.endsWith("messages:complete")).length, outcome === "clarification" ? 1 : 0);
   });
 }
+
+test("canonical range is read and diagnosed by an authorized advice workflow", async (t) => {
+  const first = "node_1111111111111111", last = "node_2222222222222222";
+  const target = { resume_id: "1", base_lock_version: 1, surface: "canonical", format: "canonical-target.v1",
+    target_kind: "range", section: "node_3333333333333333", entry_id: null, field: "markdown", block_id: first,
+    node_ids: [first, last], selected_text: null, expected_text_hash: "sha256:fictional", allowed_scopes: ["target", "range", "section", "resume"] };
+  let tasks = []; const callbacks = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const path = new URL(url).pathname, payload = options.body ? JSON.parse(options.body) : null;
+    callbacks.push({ path, payload, source: options.headers["X-Agent-User-Sequence"] });
+    let body = {};
+    if (path.endsWith("runtime-config")) body = { provider: "fake", api: "openai-completions", model: "fake", api_key: "fictional", api_base: "https://fake.test/v1", route_id: "1", config_version: 1 };
+    if (path.endsWith("intent:recognize")) body = { version: 1, mode: "fallback" };
+    if (path.endsWith("tasks:plan")) { tasks = payload.tasks.map(x => ({ ...x, status: "planned", proposal_ids: [], depends_on: [] })); body = { tasks }; }
+    if (/\/tasks\/[^/]+:status$/.test(path)) { tasks = tasks.map(x => ({ ...x, ...payload })); body = { tasks }; }
+    if (path.endsWith("/materials")) body = { materials: [], sources: [] };
+    if (path.endsWith("targets:resolve")) body = { status: "resolved", target: payload.scope_hint === "resume" ? { ...target, target_kind: "resume", block_id: null, node_ids: [], allowed_scopes: ["resume"] } : target, candidates: [] };
+    if (path.endsWith("context:read")) body = { target, scope: payload.scope, resume_id: "1", lock_version: 1, content: "虚构第一段正文", blocks: [first, last].map(id => ({ node_id: id, target: { ...target, block_id: id, node_ids: [], target_kind: "paragraph" } })), truncated: false };
+    if (path.endsWith("diagnoses")) body = { diagnosis: { target, scope: "range", issues: [] }, diagnosis_fingerprint: "fictional-fingerprint" };
+    if (path.endsWith("messages:complete")) body = { sequence_no: 2 };
+    return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  });
+  let callSequence = 0;
+  const call = (name, args) => ({ type: "toolCall", id: name + (++callSequence), name, arguments: args });
+  const responses = [
+    [call("read", { path: "career-assistant-router/SKILL.md" }), call("plan_agent_request", { tasks: [{ id: "analysis", workflow: "career_planning", output: "advice", label: "分析经历", context_refs: [{ type: "resume", id: "1" }] }] })],
+    [call("start_agent_task", { task_id: "analysis" })],
+    [call("resolve_resume_target", { scope_hint: "resume" })],
+    [call("get_resume_context", { scope: "resume" })],
+    [call("resolve_resume_target", { start_node_id: first, end_node_id: last })],
+    [call("get_resume_context", { scope: "range" })],
+    [call("analyze_resume_content", { scope: "range", source_ids: [] })],
+    [call("finish_agent_task", { status: "completed", result: "已诊断实际范围" })],
+    [call("begin_final_response", {})],
+    [{ type: "text", text: "已分析第一段经历。" }],
+  ];
+  let turn = 0;
+  await executeAgentRun({ config: { linkresumeBaseUrl: "http://app.test", linkresumeToken: "fictional", toolTimeoutMs: 10000 },
+    runId: "range-advice", userSequenceNo: 1, content: "分析第一段经历", history: [],
+    contextMaterials: [{ type: "resume", id: "1", resume_id: "1", version: "1", lock_version: 1, label: "虚构简历", updated_at: "2026-10-06T00:00:00Z", content: {} }],
+    signal: new AbortController().signal, emit: () => {},
+    modelFactory: async configs => {
+      const runtime = await configuredModels(configs);
+      runtime.modelRuntime.streamSimple = (_model, context) => {
+        const output = createAssistantMessageEventStream();
+        if (turn === 6) {
+          const schema = context.tools.find(tool => tool.name === "analyze_resume_content").parameters;
+          assert.deepEqual(schema.properties.scope.enum, ["target", "range"]);
+          assert.equal(schema.properties.job_id, undefined);
+          assert.equal(schema.properties.source_ids.maxItems, 0);
+        }
+        const content = responses[turn++]; assert.ok(content, "unexpected model turn");
+        const message = { role: "assistant", api: "openai-completions", provider: runtime.model.provider, model: "fake", content,
+          stopReason: content[0].type === "text" ? "stop" : "toolUse", timestamp: Date.now(),
+          usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
+        output.push({ type: "start", partial: message });
+        if (content[0].type === "text") output.push({ type: "text_delta", contentIndex: 0, delta: content[0].text, partial: message });
+        output.push({ type: "done", reason: message.stopReason, message }); return output;
+      }; return runtime;
+    },
+  });
+  assert.equal(turn, 10);
+  assert.deepEqual(callbacks.filter(x => /context:read|diagnoses$/.test(x.path)).map(x => x.payload.scope), ["resume", "range", "range"]);
+  assert.equal(tasks[0].status, "completed");
+  assert.ok(callbacks.filter(x => /targets:resolve|context:read|diagnoses$/.test(x.path)).every(x => x.source === "1"));
+  assert.ok(!callbacks.some(x => x.path.endsWith("tool-events") && x.payload.status === "failed"));
+});
