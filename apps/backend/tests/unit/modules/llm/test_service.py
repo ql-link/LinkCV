@@ -90,6 +90,42 @@ def bind_intent(sessions):
         db.commit()
 
 
+@pytest.mark.parametrize('invalid', [False, True])
+def test_native_intent_service_maps_decisions_and_records_metering(context, invalid):
+    from linkresume.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
+    from tests.unit.modules.agent.test_systemone_intent import native_answers
+    from linkresume.modules.llm.resolver import ASSISTANT_INTENT
+    service, gateway, sessions = context
+    bind_intent(sessions)
+    with sessions() as db:
+        route = db.get(LLMModelRoute, 1)
+        route.invoke_target = 'jev-latest'
+        binding = get_use_case_route(db, ASSISTANT_INTENT, 1)
+        binding.protocol_code = 'system_one'
+        binding.validated_fingerprint = validation_fingerprint(binding, route, db.get(LLMProviderConnection, route.connection_id))
+        db.commit()
+    payload = native_answers()
+    if invalid: payload['answers']['context_0']['choice'] = 'ref_99'
+    gateway.result = GatewayResult(content=json.dumps(payload), usage=GatewayUsage(30, 4))
+    async def call():
+        return await service.structured_chat(1, intent_probe_messages(), source='agent_intent',
+            use_case=ASSISTANT_INTENT, response_model=IntentDecision)
+    if invalid:
+        with pytest.raises(LLMError) as error: asyncio.run(call())
+        assert error.value.code == 'LLM_RESPONSE_INVALID'
+    else:
+        result = asyncio.run(call())
+        assert [task.workflow for task in result.value.tasks] == ['resume_edit', 'interview_guide']
+        asyncio.run(service.probe_route(1, ASSISTANT_INTENT, 1))
+    with sessions() as db:
+        log = db.scalar(select(LLMCallLog).order_by(LLMCallLog.id.desc()))
+        assert log.protocol_code == 'system_one' and log.input_tokens == 30
+        assert log.status == ('failed' if invalid else 'succeeded')
+    wire = json.loads(gateway.calls[0]['messages'][0].content)
+    assert 'state' in wire and 'questions' in wire
+    assert gateway.calls[0]['protocol_code'] == 'system_one'
+
+
 def test_intent_call_uses_independent_scene_and_run_log(context):
     from linkresume.modules.agent.intent_schemas import IntentDecision
     from linkresume.modules.agent.models import AgentRun, AgentSession

@@ -40,6 +40,9 @@ import { modelIcon } from "./brandIcons";
 import { ProviderAvatar, ProviderLogo, type LlmData, llmMessage, priceText, useLlmData, vendorInfo } from "./LlmPages";
 
 const ASSISTANT = "assistant_conversation";
+const intentProtocols = ["openai_chat", "system_one"];
+const protocolLabel = (code: string) => code === "system_one" ? "原生决策（System One）" : "Chat 结构化识别";
+const suggestedIntentProtocol = (target: string) => /^(?:typesafe(?:-ai)?\/)?jev(?:-|$)/i.test(target) ? "system_one" : "openai_chat";
 
 const useCaseIcons: Record<string, LucideIcon> = {
   assistant_conversation: MessageSquare,
@@ -360,7 +363,9 @@ export function CapabilitiesPage() {
                                   <small className="adm-route-meta">
                                     <span title={route?.invokeTarget}>{route?.invokeTarget ?? "—"}</span>
                                     <span>{priceText(route?.pricing ?? null)}</span>
-                                    <span>{item.protocolCode}</span>
+                                    {useCase === "assistant_intent" ? <SelectBox label={`线路 #${item.routeId} 识别协议`} value={item.protocolCode} disabled={busy !== null}
+                                      options={intentProtocols.filter((code) => data!.catalog.providers.find((spec) => spec.code === connection?.providerCode)?.protocols.includes(code)).map((code) => ({ value: code, label: protocolLabel(code) }))}
+                                      onChange={(code) => void run(`protocol:${item.routeId}`, () => api.putLlmBinding(item.useCase, item.routeId, { protocolCode: code, priority: item.priority, enabled: false }), "协议已修改，请重新探测并启用")} /> : <span>{item.protocolCode}</span>}
                                     <span>{item.validatedAt ? `探测于 ${formatWhen(item.validatedAt)}` : "未探测"}</span>
                                   </small>
                                 </span>
@@ -461,7 +466,8 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
   const { notify } = useConsole();
   const assistant = useCase === ASSISTANT;
   const intent = useCase === "assistant_intent";
-  const eligibleConnections = intent ? data.connections.filter((item) => data.catalog.providers.find((spec) => spec.code === item.providerCode)?.protocols.includes("openai_chat")) : data.connections;
+  const eligibleConnections = intent ? data.connections.filter((item) => data.catalog.providers.find((spec) => spec.code === item.providerCode)?.protocols.some((code) => intentProtocols.includes(code))) : data.connections;
+  const [intentProtocol, setIntentProtocol] = useState<string | null>(null);
   const boundRoutes = new Set(existing.map((item) => item.routeId));
   const boundModels = new Set(existing.map((item) => data.routes.find((route) => route.id === item.routeId)?.modelId));
   const [mode, setMode] = useState<Mode>("existing");
@@ -486,7 +492,7 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
     const map = new Map<string, LlmRoute[]>();
     for (const route of data.routes.filter((item) => !intent || eligibleConnections.some((connection) => connection.id === item.connectionId))) map.set(route.modelId, [...(map.get(route.modelId) ?? []), route]);
     return map;
-  }, [data.routes, intent]);
+  }, [data.routes, data.connections, data.catalog.providers, intent]);
   const keyword = query.trim().toLowerCase();
   const candidates = useMemo(() => data.models
     .filter((model) => (routesByModel.get(model.id) ?? []).some((route) => !boundRoutes.has(route.id)))
@@ -502,13 +508,14 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
   const chosen = picked ?? new Set(available.filter((route) => route.enabled).map((route) => route.id));
   const connection = data.connections.find((item) => item.id === connectionId);
   const provider = data.catalog.providers.find((item) => item.code === connection?.providerCode);
-  const protocolFor = (route: LlmRoute) => intent ? "openai_chat" : data.catalog.providers.find((spec) => spec.code === data.connections.find((item) => item.id === route.connectionId)?.providerCode)?.protocols[0] ?? "openai_chat";
+  const protocolFor = (route: LlmRoute) => intent ? (intentProtocol ?? suggestedIntentProtocol(route.invokeTarget)) : data.catalog.providers.find((spec) => spec.code === data.connections.find((item) => item.id === route.connectionId)?.providerCode)?.protocols[0] ?? "openai_chat";
   const nextPriority = (existing.reduce((max, item) => Math.max(max, item.priority), 0) || 0) + PRIORITY_STEP;
 
   const priceMismatch = Boolean(inputPrice.trim()) !== Boolean(outputPrice.trim());
   const priceInvalid = [inputPrice, outputPrice].some((value) => value.trim() && !(Number(value) >= 0));
-  const validExisting = Boolean(model && chosen.size > 0);
-  const validNew = Boolean(name.trim() && connectionId && target.trim() && !priceMismatch && !priceInvalid);
+  const supportsIntentProtocol = (route: LlmRoute) => data.catalog.providers.find((spec) => spec.code === data.connections.find((item) => item.id === route.connectionId)?.providerCode)?.protocols.includes(protocolFor(route));
+  const validExisting = Boolean(model && chosen.size > 0 && (!intent || available.filter((route) => chosen.has(route.id)).every(supportsIntentProtocol)));
+  const validNew = Boolean(name.trim() && connectionId && target.trim() && !priceMismatch && !priceInvalid && (!intent || provider?.protocols.includes(intentProtocol ?? suggestedIntentProtocol(target))));
 
   const bind = async (routes: LlmRoute[]) => {
     let priority = nextPriority;
@@ -557,6 +564,9 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
     >
       <div className="adm-form">
         {!lockedModelId && <Segmented label="添加方式" value={mode} onChange={(next) => { setMode(next); setError(null); }} options={[{ value: "existing", label: "选择已有模型" }, { value: "new", label: "新建模型" }]} />}
+        {intent && <Field label="识别协议" hint="自动选择会为 Jev 使用原生决策接口；加入后仍需探测。"><SelectBox label="识别协议" value={intentProtocol ?? "auto"} onChange={(value) => setIntentProtocol(value === "auto" ? null : value)} options={[
+          { value: "auto", label: "按模型自动选择" }, ...intentProtocols.map((code) => ({ value: code, label: protocolLabel(code) })),
+        ]} /></Field>}
         {mode === "existing" ? (
           <>
             {!lockedModelId && (

@@ -18,6 +18,54 @@ from linkresume.modules.llm.schemas import (
 )
 
 
+@pytest.mark.parametrize('status,expected', [(200, None), (404, 'LLM_UNAVAILABLE'), (422, 'LLM_REQUEST_REJECTED')])
+def test_systemone_uses_native_endpoint_and_typed_payload(monkeypatch, status, expected):
+    original_client = httpx.AsyncClient
+    captured = []
+    def handler(request):
+        captured.append(request)
+        return httpx.Response(status, json={'answers': {}, 'model': 'jev-1.13', 'id': 'fictional-call',
+                                           'usage': {'input_tokens': 14, 'output_tokens': 2}})
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(handler)))
+    payload = {'state': '虚构请求', 'questions': {'mode': {'type': 'choice', 'criteria': {'chat': '普通聊天'}}}}
+    async def call():
+        return await LiteLLMGateway().complete(model='jev-latest', messages=[ChatMessage(role='user', content=json.dumps(payload))],
+            api_base='https://aihubmix.com/v1', api_key='fictional-key', protocol_code='system_one')
+    if expected:
+        with pytest.raises(GatewayError) as error: asyncio.run(call())
+        assert error.value.code == expected
+    else:
+        result = asyncio.run(call())
+        assert result.usage.input_tokens == 14 and result.upstream_request_id == 'fictional-call'
+    assert str(captured[0].url) == 'https://aihubmix.com/v1/systemone'
+    assert json.loads(captured[0].content) == {'model': 'jev-latest', **payload}
+    assert 'messages' not in json.loads(captured[0].content)
+
+
+def test_systemone_cancellation_propagates_without_conversion(monkeypatch):
+    original_client = httpx.AsyncClient
+    async def handler(request):
+        raise asyncio.CancelledError
+    monkeypatch.setattr(httpx, 'AsyncClient', lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(handler)))
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(LiteLLMGateway().complete(model='jev-latest',
+            messages=[ChatMessage(role='user', content='{"state":"test","questions":{}}')],
+            api_base='https://aihubmix.com/v1', api_key='fictional-key', protocol_code='system_one'))
+
+
+@pytest.mark.parametrize('kind,code', [('timeout','LLM_TIMEOUT'), ('malformed','LLM_RESPONSE_INVALID'), ('negative_usage','LLM_RESPONSE_INVALID')])
+def test_systemone_refuses_invalid_response_or_timeout(monkeypatch, kind, code):
+    original_client = httpx.AsyncClient
+    def handler(request):
+        if kind == 'timeout': raise httpx.ReadTimeout('fictional timeout',request=request)
+        return httpx.Response(200,json={} if kind == 'malformed' else {'answers':{},'usage':{'input_tokens':-1}})
+    monkeypatch.setattr(httpx,'AsyncClient',lambda **kwargs: original_client(**kwargs,transport=httpx.MockTransport(handler)))
+    with pytest.raises(GatewayError) as error:
+        asyncio.run(LiteLLMGateway().complete(model='jev-latest',messages=[ChatMessage(role='user',content='{"state":"fictional","questions":{}}')],
+            api_base='https://aihubmix.com/v1',api_key='fictional-key',protocol_code='system_one'))
+    assert error.value.code == code
+
+
 def test_provider_errors_map_without_retry_or_switch_semantics() -> None:
     rate_limit = _gateway_error(
         litellm.RateLimitError("limited", "openai", "fictional-model")

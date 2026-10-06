@@ -103,6 +103,42 @@ def test_connection_does_not_accept_arbitrary_url():
         assert response.status_code == 422
 
 
+def test_native_intent_binding_requires_compatible_protocol_and_reprobe():
+    from tests.unit.modules.agent.test_systemone_intent import native_answers
+    app, gateway = build_app()
+    async def complete(**kwargs):
+        gateway.calls.append(kwargs)
+        return GatewayResult(content=json.dumps(native_answers()), usage=GatewayUsage(30, 2))
+    gateway.complete = complete
+    with TestClient(app) as client:
+        register_admin(app, client)
+        connection = client.post('/api/admin/llm/connections', json={'providerCode':'aihubmix','name':'fictional','apiKey':'fictional-key','enabled':True}).json()['connection']
+        model = client.post('/api/admin/llm/models', json={'displayName':'虚构决策模型'}).json()['model']
+        route = client.post('/api/admin/llm/routes', json={'modelId':int(model['id']),'connectionId':int(connection['id']),
+            'targetKind':'model','invokeTarget':'jev-latest','identifierKind':'pinned'}).json()['route']
+        path = f"/api/admin/llm/use-cases/assistant_intent/routes/{route['id']}"
+        payload = {'useCase':'assistant_intent','routeId':int(route['id']),'protocolCode':'openai_chat','priority':10,'enabled':False}
+        assert client.put(path,json=payload).status_code == 422
+        payload['protocolCode'] = 'system_one'
+        assert client.put(path,json=payload).status_code == 200
+        assert client.patch(path,json={'enabled':True}).json()['error'] == 'LLM_PROBE_REQUIRED'
+        response = client.post(path+'/probe')
+        assert response.status_code == 200, response.text
+        assert gateway.calls[-1]['protocol_code'] == 'system_one'
+        assert client.patch(path,json={'enabled':True}).status_code == 200
+        # A non-Jev native-capable target can change protocol, invalidating its prior probe.
+        with app.state.session_factory() as db:
+            row = db.get(LLMModelRoute,int(route['id']))
+            row.invoke_target = 'fictional-decision-target'
+            db.commit()
+        payload['protocolCode'] = 'openai_chat'
+        changed = client.put(path,json=payload)
+        assert changed.status_code == 200, changed.text
+        assert changed.json()['binding']['enabled'] is False
+        assert changed.json()['binding']['validatedAt'] is None
+        assert client.patch(path,json={'enabled':True}).json()['error'] == 'LLM_PROBE_REQUIRED'
+
+
 def test_switching_aihubmix_endpoint_invalidates_catalog_and_probe_version():
     app, _ = build_app()
     with TestClient(app) as client:
@@ -116,7 +152,7 @@ def test_switching_aihubmix_endpoint_invalidates_catalog_and_probe_version():
         with app.state.session_factory() as db:
             row = db.get(LLMProviderConnection, int(connection_id))
             row.catalog_state_json = {"etag": "old-endpoint"}
-            row.catalog_synced_at = row.created_at
+            row.catalog_synced_at = row.create_time
             db.commit()
         changed = client.patch(f"/api/admin/llm/connections/{connection_id}", json={
             "baseVersion": 1, "settings": {"endpoint": "alternate"},
