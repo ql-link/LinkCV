@@ -168,10 +168,12 @@ describe("ModelsPage", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "添加线路" }))[0]);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("调用目标 ID"), { target: { value: "vendor/new" } });
-    fireEvent.change(within(dialog).getByLabelText("输入单价 / 百万 Token"), { target: { value: "1" } });
-    expect(within(dialog).getByText("输入和输出单价需要同时填写")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "价格来源" }));
+    fireEvent.click(await screen.findByRole("option", { name: "人工价格规则" }));
+    fireEvent.change(within(dialog).getByLabelText("完整计费规则"), { target: { value: '{"currency":"USD","input_per_million":"1"}' } });
+    expect(within(dialog).getByText("请填写有效的完整价格规则，输入和输出单价需要同时填写")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "添加线路" })).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText("输出单价 / 百万 Token"), { target: { value: "2" } });
+    fireEvent.change(within(dialog).getByLabelText("完整计费规则"), { target: { value: '{"currency":"USD","input_per_million":"1","output_per_million":"2"}' } });
     fireEvent.click(within(dialog).getByRole("button", { name: "添加线路" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ modelId: 5, connectionId: 1, invokeTarget: "vendor/new", pricing: { currency: "USD", input_per_million: "1", output_per_million: "2" } })));
   });

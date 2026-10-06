@@ -9,7 +9,8 @@ import json
 import re
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, replace
-from decimal import Decimal, InvalidOperation
+from datetime import datetime, timezone
+from decimal import Decimal
 from importlib.resources import files
 from time import perf_counter
 from typing import TypeVar
@@ -22,6 +23,8 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkresume.core.database import utc_now
+from linkresume.modules.llm.pricing import calculate_cost, normalize_usage, route_pricing
+from linkresume.modules.llm.accounting import record_runtime_cost, store_price
 from linkresume.modules.llm.crypto import CredentialCipher, CredentialUnavailableError
 from linkresume.modules.llm.gateway import (
     GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage, LLMGateway,
@@ -175,30 +178,11 @@ def _credential_key(cipher: CredentialCipher, plan: RoutePlan) -> str:
 def _metering(usage: GatewayUsage | None, pricing: dict | None) -> tuple[str, Decimal | None, str | None]:
     if usage is None:
         return "unknown", None, None
-    if usage.input_tokens is None or usage.output_tokens is None:
-        return "partial" if usage.input_tokens is not None or usage.output_tokens is not None else "unknown", None, None
-    if not pricing:
-        return "partial", None, None
-    details = usage.details or {}
-    if details.get("cacheRead") not in (None, 0) or details.get("cacheWrite") not in (None, 0):
-        return "partial", None, None
-    try:
-        currency = pricing["currency"]
-        input_price = Decimal(str(pricing["input_per_million"]))
-        output_price = Decimal(str(pricing["output_per_million"]))
-        if (
-            not isinstance(currency, str) or len(currency) != 3
-            or not input_price.is_finite() or input_price < 0
-            or not output_price.is_finite() or output_price < 0
-        ):
-            raise ValueError
-        cost = (
-            Decimal(usage.input_tokens) * input_price
-            + Decimal(usage.output_tokens) * output_price
-        ) / Decimal(1_000_000)
-        return "complete", cost, currency.upper()
-    except (KeyError, ValueError, TypeError, InvalidOperation):
-        return "partial", None, None
+    normalized = normalize_usage(usage.input_tokens, usage.output_tokens, usage.details,
+                                 exclusive=(usage.details or {}).get("usageSource") == "pi")
+    result = calculate_cost(normalized, pricing)
+    return ("complete" if result.amount is not None else "partial" if normalized.get("usagePresent") else "unknown",
+            result.amount, result.currency)
 
 
 class LLMService:
@@ -275,6 +259,8 @@ class LLMService:
             if user_id is not None:
                 from linkresume.modules.identity.dependencies import lock_active_user
                 lock_active_user(db, user_id)
+            route = db.get(LLMModelRoute, plan.route_id)
+            price_revision = store_price(db, route, plan.pricing, update_route=False) if route else None
             db.add(LLMCallLog(
                 call_id=call_id,
                 use_case=plan.use_case,
@@ -286,6 +272,8 @@ class LLMService:
                 protocol_code=plan.protocol_code,
                 selection_source=plan.selection_source,
                 price_snapshot_json=plan.pricing,
+                price_revision_id=price_revision.id if price_revision else None,
+                request_started_at=utc_now(), time_basis="explicit_utc",
                 status="pending",
                 metering_status="unknown",
             ))
@@ -301,18 +289,25 @@ class LLMService:
         upstream_request_id: str | None = None,
         error_code: str | None = None,
         latency_ms: int | None = None,
+        request_started_at: datetime | None = None,
     ) -> None:
         with self._session_factory() as db:
             row = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == call_id))
             if row is None:
                 return
             row.status = status
+            if request_started_at is not None:
+                row.request_started_at = request_started_at.astimezone(timezone.utc)
+                row.time_basis = "explicit_utc"
+            row.request_finished_at = utc_now()
             if usage is not None:
                 metering_status, cost, currency = _metering(usage, row.price_snapshot_json)
                 row.metering_status = metering_status
                 row.input_tokens = usage.input_tokens
                 row.output_tokens = usage.output_tokens
                 row.usage_json = usage.details
+                row.normalized_usage_json = normalize_usage(usage.input_tokens, usage.output_tokens, usage.details,
+                    exclusive=(usage.details or {}).get("usageSource") == "pi")
                 row.estimated_cost = cost
                 row.cost_currency = currency
             if response_model_id is not None:
@@ -321,6 +316,7 @@ class LLMService:
                 row.upstream_request_id = _bounded_log_identifier(upstream_request_id, "upstream_request_id")
             row.error_code = error_code
             row.latency_ms = latency_ms
+            record_runtime_cost(db, row)
             db.commit()
 
     async def _complete_plan(self, plan, runtime, messages):
@@ -533,21 +529,36 @@ class LLMService:
                 target_kind=route.target_kind, invoke_target=route.invoke_target,
                 protocol_code=binding.protocol_code, settings=dict(connection.settings_json or {}),
                 credential_ciphertext=connection.credential_ciphertext,
-                pricing=dict(route.pricing_json) if route.pricing_json else None,
+                pricing=route_pricing(route),
                 selection_source="probe",
             )
             fingerprint = validation_fingerprint(binding, route, connection)
         runtime = None if use_case in SPEECH_USE_CASES else self.runtime_model_for_plan(plan)
         call_id = create_call_id()
         await self._db(self._start_log_sync, plan, call_id=call_id, source="capability_probe", user_id=user_id)
+        probe_started_at = None
         try:
             if use_case in SPEECH_USE_CASES:
-                await self._probe_speech(plan, call_id)
-                result = GatewayResult(content="OK", usage=None)
+                speech_details = await self._probe_speech(plan, call_id)
+                result = GatewayResult(content="OK", usage=GatewayUsage(None, None, speech_details),
+                                       upstream_request_id=speech_details.pop("upstreamRequestId", None))
             elif use_case == ASSISTANT_CONVERSATION:
                 if pi_probe is None:
                     raise LLMError("LLM_PI_AGENT_UNAVAILABLE", call_id)
                 usage = await pi_probe.run_probe(runtime, runtime.api_key)
+                probe_calls = (usage.details or {}).get("calls")
+                if isinstance(probe_calls, list) and 1 <= len(probe_calls) <= 20:
+                    for index, entry in enumerate(probe_calls):
+                        started_at = datetime.fromisoformat(entry["requestStartedAt"])
+                        call_usage = GatewayUsage(entry.get("inputTokens"), entry.get("outputTokens"), {
+                            "cacheRead": entry.get("cacheRead"), "cacheWrite": entry.get("cacheWrite"),
+                            "usageSource": "pi", "usagePresent": entry.get("usagePresent", False)})
+                        if index == 0:
+                            usage, probe_started_at = call_usage, started_at
+                        else:
+                            extra_id = create_call_id()
+                            await self._db(self._start_log_sync, plan, call_id=extra_id, source="capability_probe", user_id=user_id)
+                            await self._db(self._finish_log_sync, extra_id, status="succeeded", usage=call_usage, request_started_at=started_at)
                 result = GatewayResult(content="OK", usage=usage)
             else:
                 if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES, SYSTEM_ONE}:
@@ -578,7 +589,8 @@ class LLMService:
                         valid = False
                     if not valid:
                         raise LLMError("LLM_RESPONSE_INVALID", call_id)
-            await self._db(self._finish_log_sync, call_id, status="succeeded", usage=result.usage)
+            await self._db(self._finish_log_sync, call_id, status="succeeded", usage=result.usage, request_started_at=probe_started_at,
+                           upstream_request_id=result.upstream_request_id, response_model_id=result.response_model_id)
         except BaseException as error:
             code = getattr(error, "code", "LLM_CONNECTION_FAILED")
             await asyncio.shield(self._db(self._finish_log_sync, call_id,
@@ -655,12 +667,17 @@ class LLMService:
         error_code: str | None = None,
         cancelled: bool = False,
         details: dict | None = None,
+        upstream_request_id: str | None = None,
     ) -> None:
         """Speech calls record audio seconds or characters, never content."""
         status = "cancelled" if cancelled else ("failed" if error_code else "succeeded")
+        safe_details = dict(details or {})
+        if "audio_seconds" in safe_details:
+            safe_details["audioSeconds"] = safe_details.pop("audio_seconds")
         await asyncio.shield(self._db(
             self._finish_log_sync, call_id, status=status,
-            usage=GatewayUsage(input_tokens=None, output_tokens=None, details=details),
+            usage=GatewayUsage(input_tokens=None, output_tokens=None, details=safe_details),
+            upstream_request_id=upstream_request_id,
             error_code=error_code, latency_ms=int((perf_counter() - started) * 1000),
         ))
 
@@ -683,23 +700,27 @@ class LLMService:
                 call_id, started=started, error_code=error.code, details={"characters": len(text)}
             )
             raise
-        await self.finish_speech_call(call_id, started=started, details={"characters": len(text)})
+        await self.finish_speech_call(call_id, started=started, details=getattr(audio, "usage", None) or {"characters": len(text)},
+                                      upstream_request_id=getattr(audio, "request_id", None))
         return audio
 
-    async def _probe_speech(self, plan: RoutePlan, call_id: str) -> None:
+    async def _probe_speech(self, plan: RoutePlan, call_id: str) -> dict:
         target = self.speech_target_for_plan(plan)
         try:
             if plan.use_case == TEXT_TO_SPEECH:
-                await self._speech_gateway.synthesize(target, "你好。", voice=None)
-                return
+                audio = await self._speech_gateway.synthesize(target, "你好。", voice=None)
+                return {"characters": len("你好。"), "usageSource": "measured_characters", "upstreamRequestId": getattr(audio, "request_id", None)}
 
             async def probe_audio():
                 yield _speech_probe_pcm(plan.protocol_code)
 
             recognized = False
+            request_id = None
             async for event in self._speech_gateway.recognize(target, probe_audio(), hotwords=[], language="zh"):
                 recognized = recognized or (event.final and bool(event.text.strip()))
+                request_id = event.request_id or request_id
             if plan.protocol_code == OPENAI_ASR_FILE and not recognized:
                 raise LLMError("LLM_RESPONSE_INVALID", call_id)
+            return {"audioSeconds": len(_speech_probe_pcm(plan.protocol_code)) / (SAMPLE_RATE * 2), "usageSource": "measured_audio", "upstreamRequestId": request_id}
         except SpeechProviderError as error:
             raise LLMError("LLM_CONNECTION_FAILED", call_id) from error

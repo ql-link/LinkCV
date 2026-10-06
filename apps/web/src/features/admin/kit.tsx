@@ -108,7 +108,7 @@ const currencySymbols: Record<string, string> = { USD: "$", CNY: "¥" };
 export function formatMoney(amount: string | number, currency: string | null | undefined): string {
   const value = Number(amount);
   const symbol = currency ? currencySymbols[currency] : undefined;
-  const digits = Math.abs(value) > 0 && Math.abs(value) < 0.01 ? 4 : 2;
+  const digits = Math.abs(value) > 0 && Math.abs(value) < 0.01 ? Math.min(10, Math.max(4, 1 - Math.floor(Math.log10(Math.abs(value))))) : 2;
   const text = Number.isFinite(value) ? value.toFixed(digits) : String(amount);
   return symbol ? `${symbol}${text}` : `${text} ${currency ?? ""}`.trim();
 }

@@ -770,6 +770,10 @@ export function clarificationFallbackText(clarification) {
 
 export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
   const { modelRuntime, model } = await configuredModel(modelConfig);
+  const calls = [];
+  let requestStartedAt;
+  const originalStream = modelRuntime.streamSimple.bind(modelRuntime);
+  modelRuntime.streamSimple = (...args) => { requestStartedAt = new Date().toISOString(); return originalStream(...args); };
   let toolCallId = null;
   const probeTool = defineTool({
     name: "linkresume_probe",
@@ -809,6 +813,11 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
   const unsubscribe = session.subscribe((event) => {
     if (event.type === "message_end" && event.message.role === "assistant") {
       finalAssistantMessage = event.message;
+      const usage = event.message.usage;
+      calls.push({ requestStartedAt, requestFinishedAt: new Date().toISOString(),
+        inputTokens: usage?.input ?? null, outputTokens: usage?.output ?? null,
+        cacheRead: usage?.cacheRead, cacheWrite: usage?.cacheWrite,
+        usagePresent: usage?.providerReported === true });
     }
   });
   const abort = () => void session.abort();
@@ -817,7 +826,7 @@ export async function executeAgentProbe({ model: modelConfig, nonce, signal }) {
     await session.prompt(`nonce: ${nonce}`);
     assertAgentCompleted(finalAssistantMessage);
     if (!toolCallId) throw new Error("AGENT_PROBE_TOOL_NOT_CALLED");
-    return { toolCallId, usage: agentUsage(session.getSessionStats()) };
+    return { toolCallId, usage: { ...agentUsage(session.getSessionStats()), calls } };
   } finally {
     signal.removeEventListener("abort", abort);
     unsubscribe();
@@ -863,16 +872,20 @@ export async function executeAgentRun({
   const callRecords = [];
   const meteringFailures = [];
   let activeRoute = routes[0];
+  let requestStartedAt = null;
   const originalStreamSimple = modelRuntime.streamSimple.bind(modelRuntime);
   modelRuntime.streamSimple = (_model, context, options) => streamWithRouteFallback(
     routes,
     (route) => originalStreamSimple(route.model, context, { ...options, maxRetries: 0 }),
-    (route) => { activeRoute = route; },
+    (route) => { activeRoute = route; requestStartedAt = new Date().toISOString(); },
     async (route, message) => {
       const usage = message?.usage;
       const record = meteringClient.recordLlmCall({
         callId: randomUUID(), routeId: route.routeId, status: "failed",
         configVersion: route.configVersion, priceSnapshot: route.pricing,
+        requestStartedAt, requestFinishedAt: new Date().toISOString(),
+        usage: usage ? { usagePresent: usage.providerReported === true, usageSource: "pi",
+          cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite, cacheWrite1h: usage.cacheWrite1h, reasoning: usage.reasoning } : null,
         inputTokens: Number.isSafeInteger(usage?.input) ? usage.input : null,
         outputTokens: Number.isSafeInteger(usage?.output) ? usage.output : null,
         errorCode: "AGENT_MODEL_REQUEST_FAILED",
@@ -1886,13 +1899,17 @@ export async function executeAgentRun({
         routeId: activeRoute.routeId,
         configVersion: activeRoute.configVersion,
         priceSnapshot: activeRoute.pricing,
+        requestStartedAt, requestFinishedAt: new Date().toISOString(),
         status: message.stopReason === "error" ? "failed"
           : message.stopReason === "aborted" ? "cancelled" : "succeeded",
         inputTokens: Number.isSafeInteger(usage?.input) ? usage.input : null,
         outputTokens: Number.isSafeInteger(usage?.output) ? usage.output : null,
         usage: usage ? {
+          usagePresent: usage.providerReported === true,
+          usageSource: "pi",
           cacheRead: usage.cacheRead,
           cacheWrite: usage.cacheWrite,
+          cacheWrite1h: usage.cacheWrite1h,
           reasoning: usage.reasoning,
         } : null,
         responseModelId: message.responseModel ?? null,

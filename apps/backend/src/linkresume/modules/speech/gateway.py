@@ -32,6 +32,17 @@ class RecognitionEvent:
     sentence_id: int
     final: bool
     words: tuple[SpeechWord, ...] = field(default_factory=tuple)
+    usage: dict | None = None
+    request_id: str | None = None
+
+
+class SpeechAudio(bytes):
+    """Bytes-compatible output carrying only safe billing evidence."""
+    def __new__(cls, content: bytes, *, usage: dict | None = None, request_id: str | None = None):
+        result = super().__new__(cls, content)
+        result.usage = usage
+        result.request_id = request_id
+        return result
 
 
 @dataclass(frozen=True)

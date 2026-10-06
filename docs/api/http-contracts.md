@@ -513,7 +513,13 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `GET` | `/api/admin/llm/use-cases` | `{bindings}`；包含探测时间和当前是否生效 |
 | `PUT/PATCH/DELETE` | `/api/admin/llm/use-cases/:useCase/routes/:routeId` | 创建或调整场景绑定、停用或删除绑定 |
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
+| `POST` | `/api/admin/llm/cost-backfills/preview` | 管理员费用补算预览；`connectionId/from/to/idempotencyKey`，含时区时间范围最多 31 天、5000 条；`pricePolicy` 为 `snapshot` 或 `specified_rule`，指定规则需要 `acceptCurrentRules=true`；`legacyTimezone` 为 `UTC`、`Asia/Shanghai` 或 `null`，仅在核实旧时区后填写；已计价旧记录只校正请求时间，保留原金额 |
+| `POST` | `/api/admin/llm/cost-statements/preview` | `connectionId/idempotencyKey/csvContent`；UTF-8 CSV 仅允许 `recordId,requestId,amount,currency` 四列，最多 5 MiB、5000 条；精确匹配连接和请求 ID；金额非负，退款不支持 |
+| `GET` | `/api/admin/llm/cost-operations/:operationId` | 操作状态、范围、摘要与费用明细；`cursor` 为内部 ID，`limit` 最大 100 |
+| `POST` | `/api/admin/llm/cost-operations/:operationId/apply` | 必传 `expectedDigest`；按冻结的预览证据每次执行最多 100 条；返回 `remaining`，重复执行安全；调用已变化或账单记录冲突保留原因 |
 | `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`callId`、`userId`（精确匹配）、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
+
+上述费用操作只允许管理员。预览返回 `operationId/state/digest/summary/scope/items/nextCursor`；估算与结算金额为十进制字符串，币种独立，不自动换汇。`/api/admin/insights/llm-usage` 与调用汇总保留 `costs/unmeteredCallCount`，增加 `settledCosts/accountedCosts/estimatedCallCount/reconciledCallCount/accountedCallCount/unpricedReasons`；使用情况另返回全库未确定请求时间的 `unknownTimeCallCount`。调用列表的时间窗使用 `request_started_at`，详情增加 `costState/costReason/normalizedUsage/priceSnapshot/priceRevisionId/costRevisionId/settledCost/settledCurrency/requestStartedAt/requestFinishedAt/timeBasis/upstreamRequestId`，不包含提示词和正文。线路支持 `pricingMode=provider|manual_override`；人工规则编辑不丢弃缓存、分时和阶梯明细。内部 `POST /internal/agent/runs/:runId/llm-calls` 增加带时区的逐次请求开始、结束时间及真实 usage 存在标记；同 Call ID 的不同用量或终态返回 `409 LLM_CALL_CONFLICT`。
 
 模型 catalog 与场景绑定支持 `assistant_intent`（助手意图识别），接受 `openai_chat` 和 AIHubMix 的 `system_one` 原生决策协议。Jev 目标必须使用 `system_one`；不兼容的模型协议绑定返回 `422 LLM_ROUTE_INVALID`。管理端可在加入模型时选择协议，也可修改已绑定线路；修改协议会停用绑定并清除旧探针指纹，必须重新探测后启用。此场景的探测验证结构化多意图结果，独立于 `assistant_conversation` 的 Pi Tool 探测。
 
