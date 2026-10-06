@@ -1,5 +1,6 @@
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
+import { copyText } from "../../utils/clipboard";
 
 type MessageActionsProps = {
   content: string;
@@ -18,7 +19,7 @@ export function MessageActions({ content, createdAt, timeLabel }: MessageActions
 
   async function copyMessage() {
     try {
-      await navigator.clipboard.writeText(content);
+      await copyText(content);
       setCopyState("copied");
     } catch {
       setCopyState("failed");

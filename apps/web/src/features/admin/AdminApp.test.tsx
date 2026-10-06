@@ -54,6 +54,8 @@ describe("AdminApp access control", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    delete (document as Partial<Document>).execCommand;
     window.history.replaceState(null, "", "/");
   });
 
@@ -76,6 +78,32 @@ describe("AdminApp access control", () => {
     expect(
       await screen.findByRole("heading", { name: "早上好，陈听澜" }, { timeout: 4_000 }),
     ).toBeInTheDocument();
+  });
+
+  it.each([true, false])("HTTP 环境复制用户 ID 的反馈符合实际结果（成功：%s）", async (success) => {
+    vi.stubGlobal("navigator", {});
+    let copiedText = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => {
+        copiedText = (document.activeElement as HTMLTextAreaElement).value;
+        return success;
+      },
+    });
+    vi.spyOn(api, "me").mockResolvedValue({ user: mockAdminUser });
+    vi.spyOn(api, "adminListUsers").mockResolvedValue({
+      items: [{ ...mockRegularUser, status: 1, resume_count: 0, last_login_at: null, created_at: "2026-10-06T08:00:00Z" }],
+      total: 1,
+      page: 1,
+      size: 20,
+    });
+    window.history.replaceState(null, "", "/admin/users");
+    render(<AdminApp />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "user-1" }));
+
+    expect(await screen.findByText(success ? "已复制用户 ID user-1" : "复制失败")).toBeInTheDocument();
+    expect(copiedText).toBe("user-1");
   });
 
   it("opens the system log center from its direct route", async () => {

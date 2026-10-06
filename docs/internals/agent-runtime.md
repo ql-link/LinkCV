@@ -6,7 +6,7 @@ Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operat
 
 ## 运行时边界
 
-独立助手和编辑器侧栏复用本地 `MessageActions` 展示消息已有的 `created_at`，并将该条 `content` 写入浏览器剪贴板；悬停显隐和复制反馈只发生在 Web，不新增 Agent 请求或持久化字段。
+独立助手和编辑器侧栏复用本地 `MessageActions` 展示消息已有的 `created_at`，并通过 Web 共用的 `copyText()` 将该条 `content` 写入浏览器剪贴板；消息与代码块共用 [HTTP 复制兼容](web.md#浏览器能力兼容)，悬停显隐和复制反馈只发生在 Web，不新增 Agent 请求或持久化字段。
 
 新 scoped 提案保存有界 preview 与操作，不再保存整篇 data/style；旧快照与翻译仍保留完整内容。新上下文目录不列出 resume_version，显式请求或澄清继承这种退休引用时返回 409 AGENT_CONTEXT_RETIRED，不能悄悄替换为当前简历；历史消息中的展示快照继续可读。
 

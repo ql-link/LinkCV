@@ -21,6 +21,12 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 
 搜索引擎只收录生产主域名 `https://linkresume.cn/` 的公共落地页，兼容入口 `/home` 使用同一个 canonical。`index.html` 提供标题、简介、Open Graph、Twitter Card 和 `Organization`/`WebSite` JSON-LD，组织 Logo 复用公开的 256×256 `favicon.png`；根目录 `robots.txt` 声明 `sitemap.xml`，站点地图只列 canonical 首页。React 路由切换会同步页面标题和 robots meta，FastAPI 的 SPA 静态回退还会为除 `/`、`/home` 和 `/index.html` 外的 HTML 深链返回 `X-Robots-Tag: noindex, nofollow, noarchive`。因此登录、管理、用户工作区、未知地址和带 token 的简历分享页都不会作为公开搜索结果入口；`/api/` 另由 `robots.txt` 禁止抓取。
 
+## 浏览器能力兼容
+
+分享链接、助手消息与代码块、管理台用户 ID 共用 `src/utils/clipboard.ts`。复制优先使用原生 Clipboard API；远程 HTTP 页面缺少该 API 或调用被拒绝时，改用临时文本选区和 `execCommand("copy")`。这个旧 API 仅作兼容兜底，复制结束后清理临时节点并恢复焦点、输入框选区和文档选区；两种方式均失败时由对应入口显示失败反馈，不提示已复制。
+
+编辑器选区摘要通过 `src/utils/sha256.ts` 计算：优先使用 Web Crypto，不可用或失败时按需加载 `@noble/hashes` 的 SHA-256 实现。两条路径都对原文 UTF-8 字节生成相同的十六进制摘要，继续遵守服务端 `sha256:<hex>` 校验。入口现有的 `installCryptoRandomUuid()` 则为缺少原生 `crypto.randomUUID()` 的 HTTP 环境提供 UUID v4 兼容。
+
 ## API 调用
 
 API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。

@@ -44,6 +44,7 @@ import {
   type AdminUserDetail as AdminUserDetailType,
 } from "../../api/client";
 import { adminLoginPath, navigateTo } from "../../routing";
+import { copyText } from "../../utils/clipboard";
 type AdminSection = "overview" | "users" | "templates" | "models" | "plugins" | "logs" | "agentTrace";
 
 function initialAdminSection(): AdminSection {
@@ -732,7 +733,7 @@ function UsersPanel({
   };
 
   const copyId = (id: string) => {
-    navigator.clipboard.writeText(id).then(
+    void copyText(id).then(
       () => notify(`已复制用户 ID ${id}`),
       () => notify("复制失败"),
     );

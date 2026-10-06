@@ -1,6 +1,7 @@
 import { Copy, RefreshCw, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ResumeShareState, type ResumeShareUpdatePayload } from "../../api/client";
+import { copyText } from "../../utils/clipboard";
 import {
   ConfirmDialog,
   PageLoading,
@@ -191,8 +192,10 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
 
   const copyLink = async () => {
     if (!share) return;
+    setError(null);
+    setCopied(false);
     try {
-      await navigator.clipboard.writeText(shareUrl(share.share_token));
+      await copyText(shareUrl(share.share_token));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {

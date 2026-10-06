@@ -40,6 +40,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  delete (document as Partial<Document>).execCommand;
 });
 
 describe("SharePanel", () => {
@@ -101,6 +103,44 @@ describe("SharePanel", () => {
         expect.stringMatching(/\/share\/token_abc$/),
       ),
     );
+  });
+
+  it("HTTP 环境没有 Clipboard API 时仍可复制完整分享链接", async () => {
+    vi.stubGlobal("navigator", {});
+    let copiedText = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn(() => {
+        copiedText = (document.activeElement as HTMLTextAreaElement).value;
+        return true;
+      }),
+    });
+    mockedGetState.mockResolvedValue({ share: shareState });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
+
+    expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
+    expect(copiedText).toBe(`${window.location.origin}/share/token_abc`);
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
+  it("浏览器拒绝两种复制方式时提示手动复制，重试成功后清除错误", async () => {
+    vi.mocked(navigator.clipboard.writeText).mockRejectedValue(new Error("Denied"));
+    const execCommand = vi.fn().mockReturnValue(false);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand });
+    mockedGetState.mockResolvedValue({ share: shareState });
+    render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
+    expect(await screen.findByText("复制失败，请手动复制链接。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "已复制" })).not.toBeInTheDocument();
+
+    execCommand.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "复制链接" }));
+
+    expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
+    expect(screen.queryByText("复制失败，请手动复制链接。")).not.toBeInTheDocument();
   });
 
   it("可见性与有效期改动立即分别保存", async () => {
