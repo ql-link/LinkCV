@@ -316,11 +316,14 @@ def test_task_materials_are_rechecked_and_isolated_from_other_task_sources() -> 
         }).status_code == 200
         second = client.get(f"{base}/tasks/interview/materials", headers=internal_headers())
         assert second.status_code == 200
+        # The selected resume follows the request to every task; the job stays with its own task.
         assert [(item["type"], item["id"]) for item in second.json()["materials"]] == [
-            ("job", job["id"]),
+            ("resume", resume["id"]), ("job", job["id"]),
         ]
-        assert second.json()["sources"][0]["source_role"] == "job_requirement"
-        denied = client.get(f"{base}/context?resume_id={resume['id']}", headers=internal_headers())
+        assert {item["source_role"] for item in second.json()["sources"]} == {"user_resume_statement", "job_requirement"}
+        assert client.get(f"{base}/context?resume_id={resume['id']}", headers=internal_headers()).status_code == 200
+        other = create_resume(client, app, "张三未选择的简历")
+        denied = client.get(f"{base}/context?resume_id={other['id']}", headers=internal_headers())
         assert denied.status_code == 409
         assert denied.json()["error"] == "AGENT_TASK_CONTEXT_NOT_AUTHORIZED"
         replay = client.post(f"{base}/tasks:plan", headers=internal_headers(), json=plan)

@@ -90,10 +90,10 @@ def bind_intent(sessions):
         db.commit()
 
 
-@pytest.mark.parametrize('invalid,expected_error', [(False,None), ('foreign_ref','LLM_RESPONSE_INVALID'), ('low_confidence','INTENT_UNCERTAIN'), ('empty_plan','INTENT_DECISION_INCONSISTENT')])
+@pytest.mark.parametrize('invalid,expected_error', [(False,None), ('unknown_action','LLM_RESPONSE_INVALID'), ('low_confidence','INTENT_UNCERTAIN')])
 def test_native_intent_service_maps_decisions_and_records_metering(context, invalid, expected_error):
     from linkresume.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
-    from tests.unit.modules.agent.test_systemone_intent import native_answers
+    from tests.unit.modules.agent.test_systemone_intent import probe_answers
     from linkresume.modules.llm.resolver import ASSISTANT_INTENT
     service, gateway, sessions = context
     bind_intent(sessions)
@@ -104,10 +104,9 @@ def test_native_intent_service_maps_decisions_and_records_metering(context, inva
         binding.protocol_code = 'system_one'
         binding.validated_fingerprint = validation_fingerprint(binding, route, db.get(LLMProviderConnection, route.connection_id))
         db.commit()
-    payload = native_answers()
-    if invalid == 'foreign_ref': payload['answers']['context_0']['choice'] = 'ref_99'
-    if invalid == 'low_confidence': payload['answers']['mode']['confidence'] = 0.45
-    if invalid == 'empty_plan': payload['answers']['goal_count']['choice'] = '0'
+    payload = probe_answers()
+    if invalid == 'unknown_action': payload['answers']['task_0']['choice'] = 'delete_user'
+    if invalid == 'low_confidence': payload['answers']['task_0']['confidence'] = 0.45
     gateway.result = GatewayResult(content=json.dumps(payload), usage=GatewayUsage(30, 4))
     async def call():
         return await service.structured_chat(1, intent_probe_messages(), source='agent_intent',
@@ -116,10 +115,10 @@ def test_native_intent_service_maps_decisions_and_records_metering(context, inva
         with pytest.raises(LLMError) as error: asyncio.run(call())
         assert error.value.code == expected_error
         if invalid == 'low_confidence':
-            assert error.value.decision_detail == {'field':'mode','confidence':0.45}
+            assert error.value.decision_detail == {'field':'task_0','confidence':0.45}
     else:
         result = asyncio.run(call())
-        assert [task.workflow for task in result.value.tasks] == ['resume_edit', 'interview_guide']
+        assert [task.workflow for task in result.value.tasks] == ['resume_diagnosis', 'interview_guide']
         asyncio.run(service.probe_route(1, ASSISTANT_INTENT, 1))
     with sessions() as db:
         log = db.scalar(select(LLMCallLog).order_by(LLMCallLog.id.desc()))

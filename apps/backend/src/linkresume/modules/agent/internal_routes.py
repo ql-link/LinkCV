@@ -326,6 +326,8 @@ def resolve_run_target(
     payload: TargetResolveRequest,
     db: Session = Depends(get_db),
 ) -> TargetResolveResponse:
+    if payload.scope_hint == "resume" and payload.quoted_text:
+        raise ApiError(422, "TARGET_REQUEST_INVALID")
     run, _, resume, snapshot = _run_resume(db, run_id, payload.resume_id)
     result = resolve_target(
         resume,

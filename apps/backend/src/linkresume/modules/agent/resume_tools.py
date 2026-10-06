@@ -572,12 +572,13 @@ def scoped_blocks(
     resume: Resume, data: Any, target: Any, scope: str
 ) -> list[dict[str, Any]]:
     target_content(resume, data, target, scope)
-    if target.surface == "semantic":
-        return []
     markdown = editor_markdown(data)
     if markdown is None:
         return []
     blocks = parse_editor_blocks(markdown)
+    if target.surface == "semantic":
+        # A whole-resume read exposes every editable block so edits can cite block ids.
+        return [{"target": _locator(resume, item, None), "content": item.text} for item in blocks]
     anchor = next((item for item in blocks if item.block_id == target.block_id), None)
     if anchor is None:
         raise ApiError(409, "TARGET_STALE")

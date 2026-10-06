@@ -105,11 +105,11 @@ def test_connection_does_not_accept_arbitrary_url():
 
 
 def test_native_intent_binding_requires_compatible_protocol_and_reprobe():
-    from tests.unit.modules.agent.test_systemone_intent import native_answers
+    from tests.unit.modules.agent.test_systemone_intent import probe_answers
     app, gateway = build_app()
     async def complete(**kwargs):
         gateway.calls.append(kwargs)
-        return GatewayResult(content=json.dumps(native_answers()), usage=GatewayUsage(30, 2))
+        return GatewayResult(content=json.dumps(probe_answers()), usage=GatewayUsage(30, 2))
     gateway.complete = complete
     with TestClient(app) as client:
         register_admin(app, client)

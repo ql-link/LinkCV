@@ -38,6 +38,11 @@ TOOL_STAGES = {
     "plan_agent_request": "model_execution",
     "start_agent_task": "model_execution",
     "finish_agent_task": "model_execution",
+    "runtime_step": "model_execution",
+    "reply_directly": "model_execution",
+    "submit_task_result": "model_execution",
+    "submit_resume_edit_plan": "proposal_creation",
+    "submit_translation": "proposal_creation",
 }
 
 
