@@ -17,7 +17,7 @@ import { useScrollReveal } from "./motion";
 import { lt } from "./landingCopy";
 import "./full-landing.css";
 
-const projectUrl = "https://linkresume.cn/resumes";
+const projectUrl = "/resumes";
 
 type NavGroup = { title: string; links: { text: string; target: string }[] };
 const menus: Record<string, NavGroup[]> = {

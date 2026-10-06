@@ -25,12 +25,23 @@ describe("LandingPage", () => {
     expect(screen.getByRole("img", { name: "首页 · 示例数据" })).toHaveAttribute("src", expect.stringContaining("zh-CN/home"));
     const starts = screen.getAllByRole("link", { name: "免费开始" });
     expect(starts).toHaveLength(3);
-    for (const link of starts) expect(link).toHaveAttribute("href", "https://linkresume.cn/resumes");
+    for (const link of starts) expect(link).toHaveAttribute("href", "/resumes");
     expect(screen.getByRole("link", { name: "看 2 分钟演示" })).toHaveAttribute("href", "#demo");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "皖ICP备2026017322号" })).toHaveAttribute("href", "https://beian.miit.gov.cn/");
     for (const anchor of Array.from(container.querySelectorAll<HTMLAnchorElement>('a[href^="#"]'))) {
       expect(container.querySelector(anchor.getAttribute("href")!)).not.toBeNull();
+    }
+  });
+
+  it.each(["http://localhost:5173", "https://dev.example.test", "https://linkresume.cn"])("工作区链接保留当前环境 %s", (origin) => {
+    const { container } = render(<LandingPage />);
+    const links = [...screen.getAllByRole("link", { name: "免费开始" }), ...Array.from(container.querySelectorAll<HTMLAnchorElement>(".fs-copy a"))];
+    expect(links).toHaveLength(8);
+    for (const link of links) {
+      const target = new URL(link.getAttribute("href")!, origin);
+      expect(target.origin).toBe(origin);
+      expect(target.pathname).toBe("/resumes");
     }
   });
 

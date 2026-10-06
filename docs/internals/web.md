@@ -35,7 +35,7 @@ Hero 演示是只读展示：`HeroDemo` 显示真实产品界面在 1440×900 �
 
 截图由 `apps/web/scripts/capture-landing-demo.mjs` 生成：先启动 Web 开发服务，在仓库根目录运行 `node apps/web/scripts/capture-landing-demo.mjs --url <开发服务地址>`（Chrome 路径用 `--chrome` 或 `CHROME_PATH` 指定）。脚本把时间固定在 2026-10-06（周二）09:30 东八区，打开仅开发服务提供的 `landing-demo.html`（不进入生产构建），用真实 V3 页面组件和虚构数据逐页截图，并记录侧栏各行位置到 `layout.json`。该入口第一条导入 `demo/bootstrap.ts`，将本地和会话存储替换为内存存储（测试守护导入顺序）；`DemoRuntime` 只允许在带 `data-landing-demo="true"` 的文档内安装，以统一的虚构人物“张三”（三份产品经理简历、八个求职岗位、本周六场面试、三个资料文件夹与四段历史对话）响应接口，未实现的 `/api/*` 请求直接返回 501。示例数据或产品界面变化后需重新运行脚本更新截图。
 
-开发期截图工作区内的 `navigateTo` 由局部导航事件接管；生产落地页点击侧栏和历史会话只切换截图，不修改页面 URL。开发演示入口声明 `noindex, nofollow`。导航和页面中的“开始使用”链接统一指向 `https://linkresume.cn/resumes`。
+开发期截图工作区内的 `navigateTo` 由局部导航事件接管；生产落地页点击侧栏和历史会话只切换截图，不修改页面 URL。开发演示入口声明 `noindex, nofollow`。导航和页面中的“免费开始”与功能介绍链接统一使用同源 `/resumes`：Local/Development 留在当前开发站点，Production 留在生产站点，由当前环境处理登录。已登录访问 `/` 以替换历史方式进入 `/resumes`；访客访问 `/` 和任何登录状态访问 `/home` 均展示落地页。
 
 Hero 页面层由 `HeroBackdrop` 的 WebGL 着色器实时生成蓝白材质，不加载背景图片或视频。三层独立半透明薄片使用不同的轮廓、遮挡、纤维方向与虚实程度建立层次；各层轻微漂移，局部纹理清晰度和柔和光照按独立相位缓慢变化，没有全屏连续波纹或镜面高光。纤维采样频率按实际投影像素调整，窄屏保留文字区域的亮部；前景文字与产品演示保持原生组件。动画上限为 30 FPS，设备像素比最多 1.5，绘制缓冲区上限 1920 × 1440；离开视口或标签页隐藏时暂停，恢复时从原相位继续。`prefers-reduced-motion` 启用时生成固定相位的单帧材质，尺寸变化只重绘该相位，不调度动画；WebGL 不可用或 context 丢失时回退到纯 CSS 蓝白底色。卸载释放 GPU 资源与观察器。背景仅位于 Hero，并逐渐淡出到下方中性页面，不增加演示框外围边距。
 
@@ -57,7 +57,7 @@ API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组
 
 React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 
-普通登录页 `/login` 先读取 `/api/auth/capabilities`。Local/Development 根据路由模式展示邮箱密码登录或注册表单，两者可以互相切换，也可以切换到 `WechatQrLogin`；Production 对登录与注册链接都不渲染邮箱密码表单，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。公共落地页的“免费开始”直接进入线上项目 `https://linkresume.cn/resumes`，鉴权由目标应用处理。个人资料页展示改密与微信绑定的“需后端”本地模拟交互，不发送真实账号变更；管理员密码表单仍只保留在 `/admin/login`。
+普通登录页 `/login` 先读取 `/api/auth/capabilities`。Local/Development 根据路由模式展示邮箱密码登录或注册表单，两者可以互相切换，也可以切换到 `WechatQrLogin`；Production 对登录与注册链接都不渲染邮箱密码表单，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。公共落地页的“免费开始”进入同源 `/resumes`，鉴权由当前环境处理。个人资料页展示改密与微信绑定的“需后端”本地模拟交互，不发送真实账号变更；管理员密码表单仍只保留在 `/admin/login`。
 
 新增或迁移接口时同时检查：
 

@@ -32,11 +32,13 @@ describe("App landing routes", () => {
     });
   });
 
-  it("已登录访问纯域名时仍展示公共落地页", async () => {
+  it("已登录访问纯域名时替换历史进入当前环境的简历工作区", async () => {
+    const replace = vi.spyOn(window.history, "replaceState");
     render(createElement(App));
 
-    expect(await screen.findByRole("heading", { name: "懂你经历的求职搭档" }, { timeout: 5000 })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    await waitFor(() => expect(window.location.pathname).toBe("/resumes"));
+    expect(replace).toHaveBeenCalledWith(null, "", "/resumes");
+    replace.mockRestore();
   });
 
   it("已登录访问 /home 时仍展示落地页", async () => {

@@ -181,8 +181,8 @@ function AppContent() {
       return;
     }
 
-    // Public landing routes remain public for signed-in users as well.
-    if (route.kind === "auth") {
+    // 根入口进入当前环境工作区；/home 保持为显式公共落地页入口。
+    if (route.kind === "auth" || (route.kind === "landing" && window.location.pathname === "/")) {
       navigateTo("/resumes", { replace: true });
     }
   }, [authStatus, currentLocation, route.kind]);

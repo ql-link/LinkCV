@@ -154,7 +154,8 @@ body:has(.marketing-landing) { background: #fcfcfc; }
  .fl-desktop-links, .fl-mega-menu { display: none; }
  .fl-nav-actions .fl-pill-primary { min-height: 40px; }
  .fl-mobile-toggle { display: flex; align-items: center; justify-content: center; border: 0; background: transparent; padding: 7px 0 7px 7px; }
- .fl-mobile-menu { animation: fl-drop .26s var(--fl-ease) both; display: flex; flex-direction: column; justify-content: space-between; position: fixed; inset: 60px 0 0; padding: 20px; background: #fcfcfc; overflow: hidden; }
+ /* 导航栏的 backdrop-filter 会成为定位容器；菜单高度显式取视口剩余空间，避免被压成白条。 */
+ .fl-mobile-menu { animation: fl-drop .26s var(--fl-ease) both; display: flex; flex-direction: column; justify-content: space-between; position: absolute; inset: 100% 0 auto; height: calc(100vh - 60px); height: calc(100dvh - 60px); padding: 20px; background: #fcfcfc; overflow: hidden; }
  .fl-mobile-menu > div:first-child { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 10px; }
  .fl-mobile-menu > div:first-child > a, .fl-mobile-menu-group > button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 17px 0; border: 0; border-bottom: 1px solid #e9e9e9; background: transparent; font-size: 14px; }
  .fl-mobile-menu-group > button[aria-expanded=true] { border-bottom-color: transparent; }

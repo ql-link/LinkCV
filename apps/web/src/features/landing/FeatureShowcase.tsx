@@ -6,7 +6,7 @@ import { lt } from "./landingCopy";
 import "./feature-showcase.css";
 import "./showcase-motion.css";
 
-const projectUrl = "https://linkresume.cn/resumes";
+const projectUrl = "/resumes";
 
 function AppWindow({ children }: { children: ReactNode }) {
   return <div className="fs-window">{children}</div>;
