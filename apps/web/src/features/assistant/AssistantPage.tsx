@@ -2434,7 +2434,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
             <h2 className="v3-dialog-title">{t("添加资料")}</h2>
             <p className="v3-dialog-sub">{t("选择本轮对话需要参考的内容，每类最多一项")}</p>
             <div className="assistant-context-types" role="tablist" aria-label={t("上下文类型")}>
-              {CONTEXT_TYPES.map(({ type, label, icon }) => (
+              {CONTEXT_TYPES.filter(({ type }) => type !== "user_profile").map(({ type, label, icon }) => (
                 <button type="button" role="tab" aria-selected={contextType === type} className={contextType === type ? "is-active" : undefined} key={type} onClick={() => void loadContexts(type)}>
                   <Icon name={icon} size={13} />{label}
                 </button>
