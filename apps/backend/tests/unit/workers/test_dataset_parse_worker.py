@@ -47,7 +47,7 @@ class FakeStorage:
         self.objects.pop(object_name, None)
 
 
-def test_dataset_worker_entry_registers_interview_foreign_key_in_fresh_process() -> None:
+def test_dataset_worker_entry_configures_mappers_in_fresh_process() -> None:
     result = subprocess.run(
         [
             sys.executable,
@@ -56,7 +56,7 @@ def test_dataset_worker_entry_registers_interview_foreign_key_in_fresh_process()
             "from linkresume.modules.datasets.models import UserDataset; "
             "from sqlalchemy.orm import configure_mappers; "
             "configure_mappers(); "
-            "next(iter(UserDataset.__table__.c.interview_session_id.foreign_keys)).column",
+            "assert not UserDataset.__table__.c.interview_session_id.foreign_keys",
         ],
         capture_output=True,
         text=True,

@@ -249,7 +249,7 @@ class ResumeImportProcessor:
                 record.parse_status = "failed"
                 record.failure_reason = failure_reason
                 if started is None:
-                    created_at = record.created_at
+                    created_at = record.create_time
                     if created_at.tzinfo is None:
                         created_at = created_at.replace(tzinfo=timezone.utc)
                     elapsed_ms = round((utc_now() - created_at).total_seconds() * 1000)
@@ -526,7 +526,7 @@ class ResumeImportProcessor:
                     .where(ResumeTemplate.id == selected_template_id)
                     .with_for_update()
                 )
-                # The row is required by the resume foreign key, but its
+                # The resume must reference an existing template row, but its
                 # current style and active flag are not part of this task's
                 # render contract.  The accepted task snapshot is the only
                 # source of the imported presentation.

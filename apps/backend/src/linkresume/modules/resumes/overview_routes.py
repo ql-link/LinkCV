@@ -94,14 +94,14 @@ def get_resume_overview(
                 Resume.source_type,
                 Resume.template_id,
                 Resume.lock_version,
-                Resume.created_at,
-                Resume.updated_at,
+                Resume.create_time,
+                Resume.update_time,
                 Resume.data_json,
                 Resume.style_json,
             )
         )
         .where(Resume.user_id == user.id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
     ).all()
     active = db.scalars(
         select(DocumentParseTask)
@@ -114,7 +114,7 @@ def get_resume_overview(
             ),
         )
         .order_by(
-            DocumentParseTask.created_at.desc(),
+            DocumentParseTask.create_time.desc(),
             DocumentParseTask.id.desc(),
         )
     ).all()
@@ -135,16 +135,16 @@ def get_resume_overview(
         cursor_boundary = literal(cursor_timestamp)
         failed_query = failed_query.where(
             or_(
-                DocumentParseTask.created_at < cursor_boundary,
+                DocumentParseTask.create_time < cursor_boundary,
                 and_(
-                    DocumentParseTask.created_at == cursor_boundary,
+                    DocumentParseTask.create_time == cursor_boundary,
                     DocumentParseTask.id < import_id,
                 ),
             )
         )
     failed = db.scalars(
         failed_query.order_by(
-            DocumentParseTask.created_at.desc(),
+            DocumentParseTask.create_time.desc(),
             DocumentParseTask.id.desc(),
         ).limit(failed_limit + 1)
     ).all()
@@ -152,7 +152,7 @@ def get_resume_overview(
     if len(failed) > failed_limit:
         failed = failed[:failed_limit]
         last = failed[-1]
-        next_cursor = _encode_cursor(last.created_at, last.id)
+        next_cursor = _encode_cursor(last.create_time, last.id)
     return ResumeOverviewResponse(
         resumes=[resume_summary(item) for item in resumes],
         active_imports=[import_summary(db, item) for item in active],

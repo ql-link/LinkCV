@@ -104,7 +104,7 @@ def begin_operation(
     if row is None:
         row = AgentOperation(
             public_id=public_id, session_id=session_id, state="preflighting",
-            created_at=utc_now(),
+            create_time=utc_now(),
         )
         db.add(row)
         try:

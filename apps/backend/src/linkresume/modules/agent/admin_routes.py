@@ -61,7 +61,7 @@ def operation_rows():
             literal(1).label("source"), AgentOperation.id.label("row_id"),
             AgentOperation.public_id.label("public_id"),
             AgentSession.user_id.label("user_id"),
-            AgentOperation.created_at.label("created_at"),
+            AgentOperation.create_time.label("created_at"),
             op_status.label("status"),
             func.coalesce(AgentRun.error_code, AgentOperation.error_code).label("error_code"),
             AgentOperation.failure_stage.label("failure_stage"),
@@ -77,7 +77,7 @@ def operation_rows():
             literal(0).label("source"), AgentRun.id.label("row_id"),
             AgentRun.public_id.label("public_id"),
             AgentSession.user_id.label("user_id"),
-            AgentRun.created_at.label("created_at"),
+            AgentRun.create_time.label("created_at"),
             AgentRun.status.label("status"),
             AgentRun.error_code.label("error_code"),
             literal(None).label("failure_stage"),
@@ -232,6 +232,6 @@ def get_agent_operation(
         } for item in tools],
         "proposals": [{
             "id": item.public_id, "status": item.status,
-            "created_at": item.created_at, "applied_at": item.applied_at,
+            "created_at": item.create_time, "applied_at": item.applied_at,
         } for item in proposals],
     }

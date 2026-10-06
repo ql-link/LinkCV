@@ -88,6 +88,97 @@ REVISION_REMOVED_INDEX_MARKERS = {
     },
 }
 
+# Markers above use the names each revision created. 0112 renamed yes/no columns to
+# is_xxx and 0115 renamed tables (singular), created_at/updated_at and the indexes
+# that embed a table name, so once those revisions are applied the markers are
+# translated before they are compared with the live schema.
+BOOLEAN_NAMING_REVISION = "0112"
+BOOLEAN_COLUMN_RENAMES = {
+    ("account_preferences", "interview_reminder_enabled"): "is_interview_reminder_enabled",
+    ("agent_sessions", "pinned"): "is_pinned",
+    ("interview_recording_transcriptions", "pending_replace"): "is_pending_replace",
+    ("llm_model_routes", "enabled"): "is_enabled",
+    ("llm_model_routes", "target_available"): "is_target_available",
+    ("llm_models", "user_selectable"): "is_user_selectable",
+    ("llm_provider_connections", "enabled"): "is_enabled",
+    ("llm_use_case_routes", "enabled"): "is_enabled",
+    ("mock_interviews", "follow_up_enabled"): "is_follow_up_enabled",
+    ("mock_interviews", "low_confidence"): "is_low_confidence",
+    ("mock_interviews", "materials_in_questions"): "is_materials_in_questions",
+    ("resumes", "share_allow_download"): "is_share_allow_download",
+}
+SINGULAR_NAMING_REVISION = "0115"
+SINGULAR_TABLE_NAMES = {
+    "account_deletion_jobs": "account_deletion_job",
+    "account_preferences": "account_preference",
+    "agent_messages": "agent_message",
+    "agent_operations": "agent_operation",
+    "agent_runs": "agent_run",
+    "agent_sessions": "agent_session",
+    "agent_stage_events": "agent_stage_event",
+    "agent_tool_calls": "agent_tool_call",
+    "announcement_read_cursors": "announcement_read_cursor",
+    "announcements": "announcement",
+    "document_parse_tasks": "document_parse_task",
+    "global_companies": "global_company",
+    "interview_recording_transcriptions": "interview_recording_transcription",
+    "interview_review_question_notes": "interview_review_question_note",
+    "interview_sessions": "interview_session",
+    "job_application_offer_materials": "job_application_offer_material",
+    "job_application_stages": "job_application_stage",
+    "job_applications": "job_application",
+    "job_descriptions": "job_description",
+    "job_resume_matches": "job_resume_match",
+    "llm_call_logs": "llm_call_log",
+    "llm_model_routes": "llm_model_route",
+    "llm_models": "llm_model",
+    "llm_provider_connections": "llm_provider_connection",
+    "llm_use_case_routes": "llm_use_case_route",
+    "mock_interview_questions": "mock_interview_question",
+    "mock_interviews": "mock_interview",
+    "product_events": "product_event",
+    "resume_change_proposals": "resume_change_proposal",
+    "resume_templates": "resume_template",
+    "resumes": "resume",
+    "user_dataset_folders": "user_dataset_folder",
+    "user_profiles": "user_profile",
+    "users": "user",
+}
+TIME_COLUMN_RENAMES = {"created_at": "create_time", "updated_at": "update_time"}
+
+
+# Singularizing would give both tables the same schema-wide CHECK name.
+RENAMED_OBJECT_OVERRIDES = {
+    "ck_job_application_stages_type": "ck_job_application_stage_stage_type",
+}
+
+
+def _current_table(table: str, applied: set[str]) -> str:
+    if SINGULAR_NAMING_REVISION in applied:
+        return SINGULAR_TABLE_NAMES.get(table, table)
+    return table
+
+
+def _current_column(table: str, column: str, applied: set[str]) -> str:
+    if BOOLEAN_NAMING_REVISION in applied:
+        column = BOOLEAN_COLUMN_RENAMES.get((table, column), column)
+    if SINGULAR_NAMING_REVISION in applied:
+        column = TIME_COLUMN_RENAMES.get(column, column)
+    return column
+
+
+def _current_index(table: str, index: str, applied: set[str]) -> str:
+    if SINGULAR_NAMING_REVISION not in applied or table not in SINGULAR_TABLE_NAMES:
+        return index
+    if index in RENAMED_OBJECT_OVERRIDES:
+        return RENAMED_OBJECT_OVERRIDES[index]
+    for prefix in ("pk_", "uk_", "idx_", "ck_"):
+        head = prefix + table
+        if index == head or index.startswith(head + "_"):
+            return prefix + SINGULAR_TABLE_NAMES[table] + index[len(head):]
+    return index
+
+
 # 0051 repairs a profile table that may have been stamped past the actual
 # 0045/0046 DDL.  Unlike ordinary removed-column markers, a complete target
 # profile schema is a valid pre-0051 state: the migration itself will validate
@@ -180,18 +271,19 @@ def validate_schema_revision_alignment(
     inspector = inspect(connection)
     existing_tables = set(inspector.get_table_names())
     drift: list[str] = []
+    profile_table = _current_table("user_profiles", applied)
 
     if (
         USER_PROFILE_REVISION in applied
-        and "user_profiles" not in existing_tables
+        and profile_table not in existing_tables
     ):
         drift.append("0051 missing table: user_profiles")
-    elif "0050" in applied and "user_profiles" not in existing_tables:
+    elif "0050" in applied and profile_table not in existing_tables:
         drift.append("0051 missing table before revision: user_profiles")
-    elif "user_profiles" in existing_tables:
+    elif profile_table in existing_tables:
         profile_columns = {
             str(column["name"])
-            for column in inspector.get_columns("user_profiles")
+            for column in inspector.get_columns(profile_table)
         }
         target_present = USER_PROFILE_TARGET_COLUMNS & profile_columns
         legacy_present = USER_PROFILE_LEGACY_COLUMNS & profile_columns
@@ -242,6 +334,7 @@ def validate_schema_revision_alignment(
     for revision, marker_tables in REVISION_TABLE_MARKERS.items():
         if "0090" in applied:
             marker_tables = marker_tables - {"interview_assets"}
+        marker_tables = frozenset(_current_table(table, applied) for table in marker_tables)
         present = marker_tables & existing_tables
         missing = marker_tables - existing_tables
         if revision in applied and missing:
@@ -252,7 +345,11 @@ def validate_schema_revision_alignment(
             )
 
     for revision, table_markers in REVISION_COLUMN_MARKERS.items():
-        for table_name, marker_columns in table_markers.items():
+        for marker_table, marker_columns in table_markers.items():
+            table_name = _current_table(marker_table, applied)
+            marker_columns = frozenset(
+                _current_column(marker_table, column, applied) for column in marker_columns
+            )
             if table_name not in existing_tables:
                 if revision in applied:
                     drift.append(f"{revision} missing table: {table_name}")
@@ -274,7 +371,8 @@ def validate_schema_revision_alignment(
                 )
 
     for revision, table_markers in REVISION_REMOVED_COLUMN_MARKERS.items():
-        for table_name, removed_columns in table_markers.items():
+        for marker_table, removed_columns in table_markers.items():
+            table_name = _current_table(marker_table, applied)
             if table_name not in existing_tables:
                 continue
             existing_columns = {
@@ -294,7 +392,11 @@ def validate_schema_revision_alignment(
                 )
 
     for revision, table_markers in REVISION_REMOVED_INDEX_MARKERS.items():
-        for table_name, removed_indexes in table_markers.items():
+        for marker_table, removed_indexes in table_markers.items():
+            table_name = _current_table(marker_table, applied)
+            removed_indexes = frozenset(
+                _current_index(marker_table, index, applied) for index in removed_indexes
+            )
             if table_name not in existing_tables:
                 continue
             existing_indexes = {

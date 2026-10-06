@@ -20,7 +20,14 @@ from linkresume.modules.datasets.models import UserDataset, UserDatasetFolder, U
 from linkresume.modules.identity.capabilities import password_login_enabled, wechat_login_enabled
 from linkresume.modules.identity.dependencies import lock_active_user
 from linkresume.modules.identity.models import AccountDeletionJob, AccountPreference, User, UserProfile
-from linkresume.modules.interviews.models import InterviewSession, JobApplication, JobApplicationStage
+from linkresume.modules.interviews.models import (
+    InterviewRecordingTranscription,
+    InterviewReviewQuestionNote,
+    InterviewSession,
+    JobApplication,
+    JobApplicationOfferMaterial,
+    JobApplicationStage,
+)
 from linkresume.modules.llm.models import LLMCallLog
 from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
 from linkresume.modules.product_events.models import ProductEvent
@@ -150,6 +157,10 @@ def clear_personal_rows(db: Session, job: AccountDeletionJob) -> None:
         (MockInterviewQuestion, MockInterviewQuestion.interview_id.in_(interviews)),
         (MockInterview, MockInterview.user_id == uid),
         (UserDatasetRagSync, UserDatasetRagSync.user_id == uid),
+        # No database foreign keys: rows that used to cascade are deleted explicitly.
+        (InterviewRecordingTranscription, InterviewRecordingTranscription.user_id == uid),
+        (InterviewReviewQuestionNote, InterviewReviewQuestionNote.user_id == uid),
+        (JobApplicationOfferMaterial, JobApplicationOfferMaterial.application_id.in_(applications)),
         (UserDataset, UserDataset.user_id == uid),
         (JobResumeMatch, JobResumeMatch.user_id == uid),
         (InterviewSession, InterviewSession.application_id.in_(applications)),

@@ -135,16 +135,16 @@ def _summary(interview: MockInterview) -> MockInterviewSummary:
         interview_type=interview.interview_type,  # type: ignore[arg-type]
         difficulty=interview.difficulty,  # type: ignore[arg-type]
         question_count=interview.question_count,
-        follow_up_enabled=interview.follow_up_enabled,
+        follow_up_enabled=interview.is_follow_up_enabled,
         language=interview.language,  # type: ignore[arg-type]
         answer_mode=interview.answer_mode,  # type: ignore[arg-type]
-        materials_in_questions=interview.materials_in_questions,
+        materials_in_questions=interview.is_materials_in_questions,
         total_score=float(interview.total_score) if interview.total_score is not None else None,
-        low_confidence=interview.low_confidence,
+        low_confidence=interview.is_low_confidence,
         error_code=interview.error_code,
         started_at=interview.started_at,
         finished_at=interview.finished_at,
-        created_at=interview.created_at,
+        created_at=interview.create_time,
         lock_version=interview.lock_version,
     )
 
@@ -214,7 +214,7 @@ async def _ensure_voice_available(request: Request) -> dict[str, object]:
 
 
 def _encode_cursor(interview: MockInterview) -> str:
-    created = interview.created_at
+    created = interview.create_time
     created = created if created.tzinfo else created.replace(tzinfo=UTC)
     raw = json.dumps({"c": created.isoformat(), "i": interview.id}).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
@@ -252,13 +252,13 @@ def list_mock_interviews(
         created = created.astimezone(UTC)
         statement = statement.where(
             or_(
-                MockInterview.created_at < created,
-                and_(MockInterview.created_at == created, MockInterview.id < identifier),
+                MockInterview.create_time < created,
+                and_(MockInterview.create_time == created, MockInterview.id < identifier),
             )
         )
     rows = list(
         db.scalars(
-            statement.order_by(MockInterview.created_at.desc(), MockInterview.id.desc()).limit(limit + 1)
+            statement.order_by(MockInterview.create_time.desc(), MockInterview.id.desc()).limit(limit + 1)
         )
     )
     page = rows[:limit]

@@ -295,17 +295,17 @@ def build_interview(db: Session, user_id: int, request: StartRequest) -> MockInt
         interview_type=request.interview_type or _default_interview_type(stage),
         difficulty=request.difficulty,
         question_count=request.question_count,
-        follow_up_enabled=request.follow_up_enabled,
+        is_follow_up_enabled=request.follow_up_enabled,
         language=request.language,
         answer_mode=request.answer_mode,
         material_refs_json=_material_refs(db, user_id, request.material_ids),
-        materials_in_questions=bool(request.materials_in_questions and request.material_ids),
+        is_materials_in_questions=bool(request.materials_in_questions and request.material_ids),
         status="preparing",
         task_lease_until=utc_now() + TASK_LEASE,
         task_token=new_task_token(),
         last_activity_at=utc_now(),
         # Explicit microsecond timestamps keep list cursors stable on every backend.
-        created_at=utc_now(),
+        create_time=utc_now(),
     )
 
 
@@ -791,7 +791,7 @@ class MockInterviewRunner:
                     and previous.resume_markdown_snapshot == interview.resume_markdown_snapshot
                     and previous.job_snapshot_json == interview.job_snapshot_json
                     and previous.material_refs_json == interview.material_refs_json
-                    and previous.materials_in_questions == interview.materials_in_questions
+                    and previous.is_materials_in_questions == interview.is_materials_in_questions
                 ):
                     reused = dict(previous.analysis_json)
         db.expunge(interview)
@@ -848,7 +848,7 @@ class MockInterviewRunner:
         root = next(item for item in questions if item.id == _root_id(current))
         follow_ups = sum(1 for item in questions if item.parent_id == root.id)
         allow = (
-            interview.follow_up_enabled
+            interview.is_follow_up_enabled
             and current.answer_status == "answered"
             and follow_ups < rubric.MAX_FOLLOW_UPS
         )
@@ -1342,7 +1342,7 @@ class MockInterviewRunner:
             report["closing_message"] = closing
         interview.report_json = report
         interview.total_score = Decimal(str(report["total_score"]))
-        interview.low_confidence = bool(report["low_confidence"])
+        interview.is_low_confidence = bool(report["low_confidence"])
         interview.rubric_version = rubric.RUBRIC_VERSION
         interview.status = "completed"
         interview.error_code = None
@@ -1504,10 +1504,10 @@ def repeat_request(interview: MockInterview, *, answer_mode: str | None = None) 
         interview_type=interview.interview_type,
         difficulty=interview.difficulty,
         question_count=interview.question_count,
-        follow_up_enabled=interview.follow_up_enabled,
+        follow_up_enabled=interview.is_follow_up_enabled,
         language=interview.language,
         material_ids=[int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []],
-        materials_in_questions=interview.materials_in_questions,
+        materials_in_questions=interview.is_materials_in_questions,
         answer_mode=answer_mode or interview.answer_mode,
     )
 

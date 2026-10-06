@@ -117,8 +117,8 @@ def create_or_resolve_job(
         source_url=source.url if source else None,
         source_url_hash=source.url_hash if source else None,
         imported_at=now if payload.source_type == "external_import" else None,
-        created_at=now,
-        updated_at=now,
+        create_time=now,
+        update_time=now,
     )
     try:
         db.add(job)
@@ -168,7 +168,7 @@ def update_owned_job(
     values.update(
         {
             "lock_version": JobDescription.lock_version + 1,
-            "updated_at": utc_now(),
+            "update_time": utc_now(),
         }
     )
     try:
@@ -284,9 +284,9 @@ def list_owned_jobs(
         )
         query = query.where(
             or_(
-                JobDescription.updated_at < cursor_time,
+                JobDescription.update_time < cursor_time,
                 and_(
-                    JobDescription.updated_at == cursor_time,
+                    JobDescription.update_time == cursor_time,
                     JobDescription.id < cursor_id,
                 ),
             )
@@ -295,7 +295,7 @@ def list_owned_jobs(
     rows = list(
         db.scalars(
             query.order_by(
-                JobDescription.updated_at.desc(), JobDescription.id.desc()
+                JobDescription.update_time.desc(), JobDescription.id.desc()
             ).limit(limit + 1)
         ).all()
     )
@@ -383,7 +383,7 @@ def _resolve_duplicate(
     for field, value in values.items():
         setattr(target, field, value)
     target.lock_version += 1
-    target.updated_at = now
+    target.update_time = now
     try:
         if logo_changed:
             sync_application_logos(db, target)
@@ -431,7 +431,7 @@ def _keyword_digest(keyword: str) -> str:
 
 
 def _encode_cursor(job: JobDescription, keyword: str) -> str:
-    cursor_time = job.updated_at
+    cursor_time = job.update_time
     if cursor_time.tzinfo is None:
         # MySQL DATETIME intentionally has no timezone metadata; the application
         # and database contract store these values in UTC.

@@ -101,7 +101,7 @@ def _bind(app, use_case: str, protocol: str, *, provider: str, settings: dict, t
             connection = LLMProviderConnection(
                 provider_code=provider, name=f"{provider}-test",
                 credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})),
-                settings_json=settings, enabled=True, runtime_config_version=1,
+                settings_json=settings, is_enabled=True, runtime_config_version=1,
             )
             db.add(connection)
             db.flush()
@@ -110,13 +110,13 @@ def _bind(app, use_case: str, protocol: str, *, provider: str, settings: dict, t
         db.flush()
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=target,
-            origin="manual", enabled=True, target_available=True,
+            origin="manual", is_enabled=True, is_target_available=True,
         )
         db.add(route)
         db.flush()
         binding = LLMUseCaseRoute(
             use_case=use_case, route_id=route.id, protocol_code=protocol, priority=100,
-            enabled=True, validated_at=utc_now(),
+            is_enabled=True, validated_at=utc_now(),
         )
         db.add(binding)
         db.flush()

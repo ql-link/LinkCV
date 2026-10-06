@@ -305,8 +305,8 @@ def delete_admin_template(
     )
     if template is None:
         raise ApiError(404, "TEMPLATE_NOT_FOUND")
-    # Resumes and import tasks keep a RESTRICT reference to their template, so a
-    # template in use is never removed; admins disable it instead.
+    # Resumes and import tasks reference their template without a database foreign
+    # key; this check keeps a template in use from being removed (admins disable it).
     resume_count = db.scalar(
         select(func.count()).select_from(Resume).where(Resume.template_id == template.id)
     ) or 0

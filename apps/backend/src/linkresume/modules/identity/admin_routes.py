@@ -112,7 +112,7 @@ def list_users(
             status=u.status,
             resume_count=resume_counts.get(u.id, 0),
             last_login_at=u.last_login_at,
-            created_at=u.created_at,
+            created_at=u.create_time,
         )
         for u in rows
     ]
@@ -146,8 +146,8 @@ def get_user_detail(
         llm_call_count=llm_call_count,
         llm_costs=llm_costs,
         last_login_at=user.last_login_at,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
+        created_at=user.create_time,
+        updated_at=user.update_time,
     )
 
 
@@ -206,7 +206,7 @@ def update_user_status(
             status=target.status,
             resume_count=0,
             last_login_at=target.last_login_at,
-            created_at=target.created_at,
+            created_at=target.create_time,
         ),
     )
 

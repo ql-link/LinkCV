@@ -8,7 +8,7 @@ import re
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, object_session
 
 from linkresume.core.database import utc_now
@@ -31,9 +31,11 @@ from linkresume.modules.agent.models import (
     AgentOperation,
     AgentRun,
     AgentSession,
+    AgentStageEvent,
     AgentToolCall,
     ResumeChangeProposal,
 )
+from linkresume.modules.llm.models import LLMCallLog
 from linkresume.modules.agent.context_service import resolve_contexts
 from linkresume.modules.agent.message_scope import (
     active_message, clarification_metadata, proposal_message, register_proposal, reply_source_message,
@@ -178,12 +180,12 @@ def session_record(
     return AgentSessionRecord(
         id=session.public_id,
         title=session.title,
-        pinned=bool(getattr(session, "pinned", False)),
+        pinned=bool(getattr(session, "is_pinned", False)),
         status=session.status,
         selected_model_id=str(session.selected_llm_model_id) if session.selected_llm_model_id else None,
         last_message_at=session.last_message_at,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
+        created_at=session.create_time,
+        updated_at=session.update_time,
         messages=[
             AgentMessageRecord(
                 sequence_no=item.sequence_no,
@@ -200,7 +202,7 @@ def session_record(
                 tasks=(item.metadata_json.get("agent_tasks")
                        if item.role == "user" and isinstance(item.metadata_json, dict)
                        else None),
-                created_at=item.created_at,
+                created_at=item.create_time,
             )
             for item in (messages or [])
         ],
@@ -239,7 +241,7 @@ def proposal_record(
         status=proposal.status,
         applied_lock_version=proposal.applied_lock_version,
         expires_at=proposal.expires_at,
-        created_at=proposal.created_at,
+        created_at=proposal.create_time,
     )
 
 
@@ -347,7 +349,7 @@ def update_session(
     if "pinned" in fields:
         if pinned is None:
             raise ApiError(400, "INVALID_AGENT_SESSION")
-        record.pinned = pinned
+        record.is_pinned = pinned
     if "model_id" in fields:
         selected = int(model_id) if model_id is not None else None
         if selected is not None and not eligible_routes(
@@ -355,7 +357,7 @@ def update_session(
         ):
             raise ApiError(409, "AGENT_MODEL_UNAVAILABLE")
         record.selected_llm_model_id = selected
-    record.updated_at = utc_now()
+    record.update_time = utc_now()
     try:
         db.commit()
     except Exception:
@@ -402,7 +404,20 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
             db.execute(delete(AgentToolCall).where(AgentToolCall.run_id.in_(run_ids)))
         db.execute(delete(AgentMessage).where(AgentMessage.session_id == session.id))
         if run_ids:
+            # Call logs are billing history: keep them and detach the deleted runs.
+            db.execute(
+                update(LLMCallLog)
+                .where(LLMCallLog.agent_run_id.in_(run_ids))
+                .values(agent_run_id=None)
+            )
             db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+        db.execute(
+            delete(AgentStageEvent).where(
+                AgentStageEvent.agent_operation_id.in_(
+                    select(AgentOperation.id).where(AgentOperation.session_id == session.id)
+                )
+            )
+        )
         db.execute(delete(AgentOperation).where(AgentOperation.session_id == session.id))
         db.execute(
             delete(AgentSession).where(
@@ -776,7 +791,7 @@ def resolve_resume_reference(
         db.scalars(
         select(Resume)
         .where(Resume.user_id == session.user_id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
         ).all()
     )
     if resume_id is not None:
@@ -811,7 +826,7 @@ def resolve_resume_reference(
                 {
                     "resume_id": str(resume.id),
                     "title": resume.title,
-                    "updated_at": resume.updated_at,
+                    "updated_at": resume.update_time,
                 }
                 for resume in matches[:10]
             ],

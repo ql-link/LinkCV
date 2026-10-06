@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import Field, AliasChoices, BaseModel, ConfigDict, field_validator
 
 
 class _StringIdMixin(BaseModel):
@@ -20,7 +20,7 @@ class AdminUserSummary(_StringIdMixin):
     status: int
     resume_count: int = 0
     last_login_at: datetime | None = None
-    created_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
 
 
 class AdminUserListResponse(BaseModel):
@@ -33,7 +33,7 @@ class AdminUserListResponse(BaseModel):
 class AdminUserDetail(AdminUserSummary):
     llm_call_count: int = 0
     llm_costs: dict[str, object] | None = None
-    updated_at: datetime
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
 
 class AdminStatusUpdateRequest(BaseModel):

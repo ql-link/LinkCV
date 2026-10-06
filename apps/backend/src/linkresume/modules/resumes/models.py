@@ -6,7 +6,6 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -47,12 +46,12 @@ def timestamp_type():
 
 
 class ResumeTemplate(Base):
-    __tablename__ = "resume_templates"
+    __tablename__ = "resume_template"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_resume_templates"),
-        UniqueConstraint("key", name="uk_resume_templates_key"),
-        CheckConstraint("is_active IN (0, 1)", name="ck_resume_templates_is_active"),
-        CheckConstraint("sort_order BETWEEN 0 AND 1000000", name="ck_resume_templates_sort_order"),
+        PrimaryKeyConstraint("id", name="pk_resume_template"),
+        UniqueConstraint("key", name="uk_resume_template_key"),
+        CheckConstraint("is_active IN (0, 1)", name="ck_resume_template_is_active"),
+        CheckConstraint("sort_order BETWEEN 0 AND 1000000", name="ck_resume_template_sort_order"),
         {"comment": "简历模板"},
     )
 
@@ -85,7 +84,7 @@ class ResumeTemplate(Base):
         comment="风格审核状态：pending、classified、unsure",
     )
     sort_order: Mapped[int] = mapped_column(
-        Integer(), nullable=False, default=1000, server_default="1000",
+        unsigned_int_type(), nullable=False, default=1000, server_default="1000",
         comment="模板展示顺序，数字越小越靠前；相同值按 ID 排序",
     )
     is_active: Mapped[int] = mapped_column(
@@ -94,13 +93,13 @@ class ResumeTemplate(Base):
         default=1,
         comment="模板状态：0 停用，1 启用",
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
         comment="创建时间（UTC）",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
@@ -110,39 +109,39 @@ class ResumeTemplate(Base):
 
 
 class Resume(Base):
-    __tablename__ = "resumes"
+    __tablename__ = "resume"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_resumes"),
+        PrimaryKeyConstraint("id", name="pk_resume"),
         CheckConstraint(
             "source_type IN ('blank', 'template', 'import')",
-            name="ck_resumes_source_type",
+            name="ck_resume_source_type",
         ),
         CheckConstraint(
             "LENGTH(TRIM(title)) > 0",
-            name="ck_resumes_title_not_blank",
+            name="ck_resume_title_not_blank",
         ),
-        CheckConstraint("lock_version >= 1", name="ck_resumes_lock_version"),
-        UniqueConstraint("parse_task_id", name="uk_resumes_parse_task_id"),
-        UniqueConstraint("share_token", name="uk_resumes_share_token"),
-        UniqueConstraint("user_id", "creation_request_id", name="uk_resumes_user_creation_request"),
+        CheckConstraint("lock_version >= 1", name="ck_resume_lock_version"),
+        UniqueConstraint("parse_task_id", name="uk_resume_parse_task_id"),
+        UniqueConstraint("share_token", name="uk_resume_share_token"),
+        UniqueConstraint("user_id", "creation_request_id", name="uk_resume_user_creation_request"),
         CheckConstraint(
             "(creation_request_id IS NULL AND creation_request_hash IS NULL) OR "
             "(creation_request_id IS NOT NULL AND creation_request_hash IS NOT NULL)",
-            name="ck_resumes_creation_request_pair",
+            name="ck_resume_creation_request_pair",
         ),
         CheckConstraint(
             "(share_token IS NULL AND share_visibility IS NULL AND share_created_at IS NULL) "
             "OR (share_token IS NOT NULL AND share_visibility IS NOT NULL "
             "AND share_created_at IS NOT NULL)",
-            name="ck_resumes_share_fields",
+            name="ck_resume_share_fields",
         ),
         CheckConstraint(
             "share_visibility IS NULL OR share_visibility IN ('private', 'public')",
-            name="ck_resumes_share_visibility",
+            name="ck_resume_share_visibility",
         ),
         CheckConstraint(
-            "share_allow_download IN (0, 1)",
-            name="ck_resumes_share_allow_download",
+            "is_share_allow_download IN (0, 1)",
+            name="ck_resume_is_share_allow_download",
         ),
         {"comment": "用户简历当前内容"},
     )
@@ -155,17 +154,11 @@ class Resume(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_resumes_user", ondelete="RESTRICT"),
         nullable=False,
         comment="简历所有者",
     )
     template_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "resume_templates.id",
-            name="fk_resumes_template",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
         comment="当前绑定模板",
     )
@@ -203,7 +196,7 @@ class Resume(Base):
         nullable=True,
         comment="分享过期时间（UTC），NULL 表示长期有效",
     )
-    share_allow_download: Mapped[int] = mapped_column(
+    is_share_allow_download: Mapped[int] = mapped_column(
         unsigned_tinyint_type(),
         nullable=False,
         default=1,
@@ -213,13 +206,13 @@ class Resume(Base):
     share_created_at: Mapped[datetime | None] = mapped_column(
         timestamp_type(), nullable=True, comment="分享创建时间（UTC）"
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
         comment="创建时间（UTC）",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
@@ -229,35 +222,35 @@ class Resume(Base):
 
 
 Index(
-    "idx_resumes_user_updated_id",
+    "idx_resume_user_updated_id",
     Resume.user_id,
-    Resume.updated_at.desc(),
+    Resume.update_time.desc(),
     Resume.id.desc(),
 )
-Index("idx_resumes_template_id", Resume.template_id)
+Index("idx_resume_template_id", Resume.template_id)
 
 
 class DocumentParseTask(Base):
-    __tablename__ = "document_parse_tasks"
+    __tablename__ = "document_parse_task"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_document_parse_tasks"),
+        PrimaryKeyConstraint("id", name="pk_document_parse_task"),
         CheckConstraint(
             "source_type IN ('resume_import', 'dataset')",
-            name="ck_document_parse_tasks_source_type",
+            name="ck_document_parse_task_source_type",
         ),
         CheckConstraint(
             "file_format IN ('md', 'docx', 'pdf', 'txt', 'webm', 'm4a', 'mp3', "
             "'wav', 'ogg', 'mp4', 'mov')",
-            name="ck_document_parse_tasks_file_format",
+            name="ck_document_parse_task_file_format",
         ),
         CheckConstraint(
             "upload_status IN ('uploading', 'succeeded', 'failed')",
-            name="ck_document_parse_tasks_upload_status",
+            name="ck_document_parse_task_upload_status",
         ),
         CheckConstraint(
             "parse_status IS NULL OR "
             "parse_status IN ('queued', 'processing', 'succeeded', 'failed')",
-            name="ck_document_parse_tasks_parse_status",
+            name="ck_document_parse_task_parse_status",
         ),
         CheckConstraint(
             "(upload_status = 'uploading' "
@@ -284,7 +277,7 @@ class DocumentParseTask(Base):
             "AND upload_duration_ms IS NOT NULL "
             "AND parse_status = 'succeeded' "
             "AND parse_duration_ms IS NOT NULL)",
-            name="ck_document_parse_tasks_lifecycle",
+            name="ck_document_parse_task_lifecycle",
         ),
         {"comment": "通用文档上传解析任务"},
     )
@@ -299,11 +292,6 @@ class DocumentParseTask(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "users.id",
-            name="fk_document_parse_tasks_user",
-            ondelete="RESTRICT",
-        ),
         nullable=False,
         comment="所属用户标识",
     )
@@ -318,11 +306,6 @@ class DocumentParseTask(Base):
     )
     selected_template_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "resume_templates.id",
-            name="fk_document_parse_tasks_selected_template",
-            ondelete="RESTRICT",
-        ),
         nullable=True,
         comment="简历导入冻结模板；Dataset 任务为空",
     )
@@ -370,13 +353,13 @@ class DocumentParseTask(Base):
     failure_reason: Mapped[str | None] = mapped_column(
         String(32), nullable=True, comment="解析失败分类原因"
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
         comment="创建时间（UTC）",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
@@ -386,25 +369,25 @@ class DocumentParseTask(Base):
 
 
 Index(
-    "idx_document_parse_tasks_user_created_id",
+    "idx_document_parse_task_user_created_id",
     DocumentParseTask.user_id,
-    DocumentParseTask.created_at.desc(),
+    DocumentParseTask.create_time.desc(),
     DocumentParseTask.id.desc(),
 )
 Index(
-    "idx_document_parse_tasks_user_state",
+    "idx_document_parse_task_user_state",
     DocumentParseTask.user_id,
     DocumentParseTask.upload_status,
     DocumentParseTask.parse_status,
 )
 Index(
-    "idx_document_parse_tasks_dispatch",
+    "idx_document_parse_task_dispatch",
     DocumentParseTask.source_type,
     DocumentParseTask.parse_status,
     DocumentParseTask.last_dispatched_at,
     DocumentParseTask.id,
 )
 Index(
-    "idx_document_parse_tasks_selected_template",
+    "idx_document_parse_task_selected_template",
     DocumentParseTask.selected_template_id,
 )

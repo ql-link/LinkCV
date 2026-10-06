@@ -24,6 +24,7 @@ from linkresume.modules.llm.crypto import CredentialUnavailableError
 from linkresume.modules.llm.dependencies import get_llm_service, get_pi_probe_coordinator
 from linkresume.modules.llm.models import (
     LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
+    get_use_case_route,
 )
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
 from linkresume.modules.llm.providers import (
@@ -105,8 +106,9 @@ def _delete_routes(db: Session, routes: list[LLMModelRoute], error_code: str) ->
         raise ApiError(409, error_code)
     for route in routes:
         db.delete(route)
-    # Flush child rows first so the parent delete never trips the RESTRICT foreign keys;
-    # a reference written concurrently after the check is still caught by those keys.
+    # Flush the routes before the parent row is deleted. The tables have no database
+    # foreign keys, so the reference check above is the only guard against deleting
+    # a route that bindings, call logs or agent runs still point at.
     try:
         db.flush()
     except IntegrityError as error:
@@ -133,11 +135,11 @@ def _connection_record(row: LLMProviderConnection) -> dict:
         "name": row.name,
         "settings": row.settings_json or {},
         "keyConfigured": row.credential_ciphertext is not None,
-        "enabled": row.enabled,
+        "enabled": row.is_enabled,
         "runtimeConfigVersion": row.runtime_config_version,
         "catalogSyncedAt": row.catalog_synced_at,
-        "createdAt": row.created_at,
-        "updatedAt": row.updated_at,
+        "createdAt": row.create_time,
+        "updatedAt": row.update_time,
     }
 
 
@@ -146,9 +148,9 @@ def _model_record(row: LLMModel) -> dict:
         "id": str(row.id),
         "displayName": row.display_name,
         "developerName": row.developer_name,
-        "userSelectable": bool(row.user_selectable),
-        "createdAt": row.created_at,
-        "updatedAt": row.updated_at,
+        "userSelectable": bool(row.is_user_selectable),
+        "createdAt": row.create_time,
+        "updatedAt": row.update_time,
     }
 
 
@@ -164,10 +166,10 @@ def _route_record(row: LLMModelRoute) -> dict:
         "origin": row.origin,
         "metadata": row.metadata_json,
         "pricing": row.pricing_json,
-        "targetAvailable": row.target_available,
-        "enabled": row.enabled,
-        "createdAt": row.created_at,
-        "updatedAt": row.updated_at,
+        "targetAvailable": row.is_target_available,
+        "enabled": row.is_enabled,
+        "createdAt": row.create_time,
+        "updatedAt": row.update_time,
     }
 
 
@@ -179,7 +181,7 @@ def _binding_record(
         "routeId": str(row.route_id),
         "protocolCode": row.protocol_code,
         "priority": row.priority,
-        "enabled": row.enabled,
+        "enabled": row.is_enabled,
         "validatedAt": row.validated_at,
         "effective": is_effective(row, route, connection),
     }
@@ -232,7 +234,7 @@ def create_connection(
         name=payload.name.strip(),
         credential_ciphertext=ciphertext,
         settings_json=settings,
-        enabled=payload.enabled,
+        is_enabled=payload.enabled,
         runtime_config_version=1,
     )
     db.add(row)
@@ -256,7 +258,7 @@ def patch_connection(
     if payload.name is not None:
         row.name = payload.name.strip()
     if payload.enabled is not None:
-        row.enabled = payload.enabled
+        row.is_enabled = payload.enabled
     runtime_changed = False
     if payload.settings is not None:
         try:
@@ -284,7 +286,7 @@ def patch_connection(
             raise ApiError(503, "LLM_CREDENTIALS_UNAVAILABLE") from error
     if runtime_changed:
         row.runtime_config_version += 1
-    row.updated_at = utc_now()
+    row.update_time = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
     return {"connection": _connection_record(row)}
@@ -355,15 +357,15 @@ async def sync_connection_catalog(
                 route = LLMModelRoute(
                     model_id=model.id, connection_id=row.id, target_kind="model",
                     invoke_target=item.model_id, catalog_model_id=item.model_id,
-                    identifier_kind="unknown", origin="catalog", enabled=False,
+                    identifier_kind="unknown", origin="catalog", is_enabled=False,
                 )
                 db.add(route)
             route.metadata_json = item.metadata
             route.pricing_json = item.pricing
-            route.target_available = True
+            route.is_target_available = True
         for target, route in existing.items():
             if route.origin == "catalog" and target not in found:
-                route.target_available = False
+                route.is_target_available = False
     row.catalog_state_json = {"etag": result.etag} if result.etag else None
     row.catalog_synced_at = utc_now()
     _commit(db)
@@ -390,7 +392,7 @@ def create_model(
     row = LLMModel(
         display_name=payload.display_name.strip(),
         developer_name=payload.developer_name.strip() if payload.developer_name else None,
-        user_selectable=payload.user_selectable,
+        is_user_selectable=payload.user_selectable,
     )
     db.add(row)
     _commit(db)
@@ -412,8 +414,8 @@ def patch_model(
     if "developer_name" in payload.model_fields_set:
         row.developer_name = payload.developer_name.strip() if payload.developer_name else None
     if payload.user_selectable is not None:
-        row.user_selectable = payload.user_selectable
-    row.updated_at = utc_now()
+        row.is_user_selectable = payload.user_selectable
+    row.update_time = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
     return {"model": _model_record(row)}
@@ -471,7 +473,7 @@ def create_route(
         identifier_kind=payload.identifier_kind,
         origin="manual",
         pricing_json=payload.pricing,
-        enabled=False,
+        is_enabled=False,
     )
     db.add(row)
     _commit(db)
@@ -500,8 +502,8 @@ def patch_route(
             connection = db.get(LLMProviderConnection, row.connection_id)
             if not any(probe_valid(item, row, connection) for item in bindings):
                 raise ApiError(422, "LLM_PROBE_REQUIRED")
-        row.enabled = payload.enabled
-    row.updated_at = utc_now()
+        row.is_enabled = payload.enabled
+    row.update_time = utc_now()
     _commit(db)
     bind_audit_target(request, row.id)
     return {"route": _route_record(row)}
@@ -551,11 +553,11 @@ def bind_route(
         validate_use_case_protocol(use_case, payload.protocol_code)
     except ValueError as error:
         raise ApiError(422, "LLM_ROUTE_INVALID") from error
-    row = db.get(LLMUseCaseRoute, (use_case, route.id))
+    row = get_use_case_route(db, use_case, route.id)
     if row is None:
         row = LLMUseCaseRoute(
             use_case=use_case, route_id=route.id,
-            protocol_code=payload.protocol_code, priority=payload.priority, enabled=False,
+            protocol_code=payload.protocol_code, priority=payload.priority, is_enabled=False,
         )
         db.add(row)
     else:
@@ -567,8 +569,8 @@ def bind_route(
     if payload.enabled:
         if not probe_valid(row, route, connection):
             raise ApiError(422, "LLM_PROBE_REQUIRED")
-    row.enabled = payload.enabled
-    row.updated_at = utc_now()
+    row.is_enabled = payload.enabled
+    row.update_time = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}
 
@@ -584,7 +586,7 @@ def patch_binding(
 ) -> dict:
     route = _route(db, route_id)
     connection = _connection(db, str(route.connection_id))
-    row = db.get(LLMUseCaseRoute, (use_case, route.id))
+    row = get_use_case_route(db, use_case, route.id)
     if row is None:
         raise ApiError(404, "LLM_BINDING_NOT_FOUND")
     if payload.priority is not None:
@@ -592,8 +594,8 @@ def patch_binding(
     if payload.enabled is not None:
         if payload.enabled and not probe_valid(row, route, connection):
             raise ApiError(422, "LLM_PROBE_REQUIRED")
-        row.enabled = payload.enabled
-    row.updated_at = utc_now()
+        row.is_enabled = payload.enabled
+    row.update_time = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}
 
@@ -603,7 +605,7 @@ def unbind_route(
     use_case: str, route_id: str, request: Request,
     db: Session = Depends(get_db), _: User = Depends(get_current_admin),
 ) -> None:
-    row = db.get(LLMUseCaseRoute, (use_case, _id(route_id)))
+    row = get_use_case_route(db, use_case, _id(route_id))
     if row is None:
         raise ApiError(404, "LLM_BINDING_NOT_FOUND")
     db.delete(row)
@@ -658,7 +660,7 @@ def list_calls(
     if from_at is not None or to_at is not None:
         window = resolve_window(from_at, to_at, default=timedelta(hours=24))
         filters.extend(
-            [LLMCallLog.created_at >= window.start, LLMCallLog.created_at < window.end]
+            [LLMCallLog.create_time >= window.start, LLMCallLog.create_time < window.end]
         )
     statement = (
         select(LLMCallLog).where(*filters).order_by(LLMCallLog.id.desc()).limit(limit + 1)
@@ -687,7 +689,7 @@ def list_calls(
                 "inputTokens": row.input_tokens, "outputTokens": row.output_tokens,
                 "estimatedCost": str(row.estimated_cost) if row.estimated_cost is not None else None,
                 "costCurrency": row.cost_currency, "errorCode": row.error_code,
-                "createdAt": row.created_at,
+                "createdAt": row.create_time,
             }
             for row in page
         ],

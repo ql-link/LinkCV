@@ -8,7 +8,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     String,
@@ -35,23 +34,22 @@ EVENT_NAMES = (
 
 
 class ProductEvent(Base):
-    __tablename__ = "product_events"
+    __tablename__ = "product_event"
     __table_args__ = (
-        UniqueConstraint("dedupe_key", name="uk_product_events_dedupe"),
+        UniqueConstraint("dedupe_key", name="uk_product_event_dedupe"),
         CheckConstraint(
             "event_name IN ('user_registered', 'resume_created', 'ai_customization_applied',"
             " 'mock_interview_completed', 'resume_pdf_exported')",
-            name="ck_product_events_name",
+            name="ck_product_event_name",
         ),
-        Index("idx_product_events_name_time", "event_name", "occurred_at"),
-        Index("idx_product_events_user_name", "user_id", "event_name"),
+        Index("idx_product_event_name_time", "event_name", "occurred_at"),
+        Index("idx_product_event_user_name", "user_id", "event_name"),
         {"comment": "产品漏斗事件，只记录行为是否发生、时间与入口"},
     )
 
     id: Mapped[int] = mapped_column(ID, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(
         ID,
-        ForeignKey("users.id", name="fk_product_events_user", ondelete="CASCADE"),
         nullable=False,
     )
     event_name: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -61,4 +59,7 @@ class ProductEvent(Base):
     )
     properties_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(TIME, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    create_time: Mapped[datetime] = mapped_column(TIME, nullable=False, server_default=func.now())
+    update_time: Mapped[datetime] = mapped_column(
+        TIME, nullable=False, server_default=func.now(), onupdate=func.now()
+    )

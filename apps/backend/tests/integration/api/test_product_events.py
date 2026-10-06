@@ -94,7 +94,7 @@ def seed_funnel(app, now: datetime) -> None:
     """Three users registered in the window, one before it."""
     with app.state.session_factory() as db:
         def user(email: str, created_at: datetime) -> int:
-            row = User(email=email, password_hash="x", nickname="张三", created_at=created_at)
+            row = User(email=email, password_hash="x", nickname="张三", create_time=created_at)
             db.add(row)
             db.flush()
             return row.id

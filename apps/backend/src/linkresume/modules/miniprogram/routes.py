@@ -54,7 +54,7 @@ def retired_resume_reader(user: User = Depends(get_current_miniprogram_user)):
 
 @v2_router.get("", response_model=ResumeListResponse)
 def list_resumes(db: Session = Depends(get_db), user: User = Depends(get_current_miniprogram_user)):
-    rows = db.scalars(select(Resume).where(Resume.user_id == user.id).order_by(Resume.updated_at.desc(), Resume.id.desc())).all()
+    rows = db.scalars(select(Resume).where(Resume.user_id == user.id).order_by(Resume.update_time.desc(), Resume.id.desc())).all()
     return ResumeListResponse(resumes=[resume_summary(row) for row in rows])
 
 

@@ -31,6 +31,6 @@ def test_sql_adds_non_null_column_defaulting_to_selectable() -> None:
     assert re.search(
         r"ALTER TABLE llm_models\s+ADD COLUMN user_selectable TINYINT\(1\) NOT NULL DEFAULT 1", SQL
     )
-    column = LLMModel.__table__.c.user_selectable
+    column = LLMModel.__table__.c.is_user_selectable
     assert column.nullable is False
     assert column.server_default is not None

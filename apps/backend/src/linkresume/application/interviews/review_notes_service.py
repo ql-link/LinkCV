@@ -62,8 +62,8 @@ def save_note(
             verdict=verdict,
             note=text,
             lock_version=1,
-            created_at=now,
-            updated_at=now,
+            create_time=now,
+            update_time=now,
         )
         db.add(row)
     else:
@@ -71,7 +71,7 @@ def save_note(
         row.note = text
         row.question_text = question_text.strip()
         row.lock_version += 1
-        row.updated_at = now
+        row.update_time = now
     db.commit()
     db.refresh(row)
     return row

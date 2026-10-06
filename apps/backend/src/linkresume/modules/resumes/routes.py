@@ -117,8 +117,8 @@ def resume_summary(resume: Resume) -> ResumeSummary:
         title=resume.title,
         source_type=resume.source_type,
         lock_version=resume.lock_version,
-        created_at=resume.created_at,
-        updated_at=resume.updated_at,
+        created_at=resume.create_time,
+        updated_at=resume.update_time,
         preview=preview,
     )
 
@@ -158,14 +158,14 @@ def list_resumes(
                 Resume.source_type,
                 Resume.template_id,
                 Resume.lock_version,
-                Resume.created_at,
-                Resume.updated_at,
+                Resume.create_time,
+                Resume.update_time,
                 Resume.data_json,
                 Resume.style_json,
             )
         )
         .where(Resume.user_id == user.id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
     ).all()
     return ResumeListResponse(resumes=[resume_summary(resume) for resume in resumes])
 

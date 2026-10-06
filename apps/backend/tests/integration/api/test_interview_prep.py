@@ -85,7 +85,7 @@ def build_app(database_url: str, gateway: PrepGateway, *, configure: bool = True
                     json.dumps({"api_key": "fictional-key"})
                 ),
                 settings_json={},
-                enabled=True,
+                is_enabled=True,
                 runtime_config_version=1,
             )
             db.add(connection)
@@ -99,8 +99,8 @@ def build_app(database_url: str, gateway: PrepGateway, *, configure: bool = True
                 target_kind="model",
                 invoke_target="prep-model",
                 origin="manual",
-                enabled=True,
-                target_available=True,
+                is_enabled=True,
+                is_target_available=True,
             )
             db.add(route)
             db.flush()
@@ -109,7 +109,7 @@ def build_app(database_url: str, gateway: PrepGateway, *, configure: bool = True
                 route_id=route.id,
                 protocol_code="openai_chat",
                 priority=100,
-                enabled=True,
+                is_enabled=True,
                 validated_at=utc_now(),
             )
             db.add(binding)

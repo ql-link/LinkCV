@@ -38,12 +38,12 @@ class Candidate:
 
 
 def candidates(db: Session) -> Iterator[Candidate]:
-    for user_id, email, created_at in db.execute(select(User.id, User.email, User.created_at).order_by(User.id)):
+    for user_id, email, created_at in db.execute(select(User.id, User.email, User.create_time).order_by(User.id)):
         # Email accounts are certain; WeChat QR and mini program accounts cannot be told apart.
         props: dict = {"method": "email"} if email else {}
         yield Candidate(user_id, "user_registered", f"reg:{user_id}", {**props, "backfilled": True}, created_at)
     for resume_id, user_id, source_type, created_at in db.execute(
-        select(Resume.id, Resume.user_id, Resume.source_type, Resume.created_at)
+        select(Resume.id, Resume.user_id, Resume.source_type, Resume.create_time)
         .where(Resume.source_type.in_(("template", "import")))
         .order_by(Resume.id)
     ):
@@ -72,7 +72,7 @@ def candidates(db: Session) -> Iterator[Candidate]:
     for interview_id, user_id, answer_mode, finished_at, updated_at in db.execute(
         select(
             MockInterview.id, MockInterview.user_id, MockInterview.answer_mode,
-            MockInterview.finished_at, MockInterview.updated_at,
+            MockInterview.finished_at, MockInterview.update_time,
         )
         .where(MockInterview.status == "completed")
         .order_by(MockInterview.id)

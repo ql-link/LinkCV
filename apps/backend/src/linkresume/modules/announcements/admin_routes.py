@@ -43,8 +43,8 @@ def to_admin(row: Announcement, now: datetime) -> AdminAnnouncement:
         created_by=str(row.created_by),
         published_by=_optional_id(row.published_by),
         unpublished_by=_optional_id(row.unpublished_by),
-        created_at=service._aware(row.created_at),
-        updated_at=service._aware(row.updated_at),
+        created_at=service._aware(row.create_time),
+        updated_at=service._aware(row.update_time),
     )
 
 

@@ -116,7 +116,7 @@ class Recaller:
                         DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                         DocumentParseTask.parse_status == "succeeded",
                     )
-                    .order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
+                    .order_by(UserDataset.create_time.desc(), UserDataset.id.desc())
                     .limit(LOCAL_DOCUMENTS)
                 ).all()
             for dataset, task in rows:

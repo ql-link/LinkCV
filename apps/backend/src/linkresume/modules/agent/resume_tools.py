@@ -652,7 +652,7 @@ def search_materials(
         if resume_ids is not None:
             statement = statement.where(Resume.id.in_(resume_ids))
         for resume in db.scalars(
-            statement.order_by(Resume.updated_at.desc()).limit(20)
+            statement.order_by(Resume.update_time.desc()).limit(20)
         ):
             content = json.dumps(resume.data_json, ensure_ascii=False)
             add(
@@ -668,7 +668,7 @@ def search_materials(
         if job_ids is not None:
             statement = statement.where(JobDescription.id.in_(job_ids))
         for job in db.scalars(
-            statement.order_by(JobDescription.updated_at.desc()).limit(20)
+            statement.order_by(JobDescription.update_time.desc()).limit(20)
         ):
             content = "\n".join(
                 [
@@ -727,7 +727,7 @@ def search_materials(
                 )
         if covered:
             statement = statement.where(UserDataset.id.not_in(covered))
-        rows = db.execute(statement.order_by(UserDataset.created_at.desc()).limit(20)).all()
+        rows = db.execute(statement.order_by(UserDataset.create_time.desc()).limit(20)).all()
         for dataset, task in rows:
             if len(sources) >= limit or not (dataset.content_object_name or task.converted_object_name):
                 continue

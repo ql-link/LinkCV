@@ -96,7 +96,7 @@ def _profile(user: User, settings: Settings) -> UserProfileResponse:
         wechat_status=wechat_status,
         wechat_bound_at=user.wechat_bound_at if wechat_login_enabled(settings) else None,
         contact_email=user.contact_email,
-        registered_at=user.created_at,
+        registered_at=user.create_time,
     )
 
 
@@ -176,7 +176,7 @@ def get_profile(
     recent = db.scalars(
         select(Resume)
         .where(Resume.user_id == user.id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
         .limit(RECENT_RESUMES_LIMIT)
     ).all()
     return AccountProfileResponse(
@@ -190,7 +190,7 @@ def get_profile(
         resume_count=resume_count,
         recent_resumes=[
             RecentResumeSummary(
-                id=str(resume.id), title=resume.title, updated_at=resume.updated_at
+                id=str(resume.id), title=resume.title, updated_at=resume.update_time
             )
             for resume in recent
         ],
@@ -215,7 +215,7 @@ def update_contact_email(
 def _preferences(row: AccountPreference | None) -> AccountPreferencesResponse:
     return AccountPreferencesResponse(
         locale=row.locale if row else "zh-CN",
-        interview_reminder_enabled=bool(row.interview_reminder_enabled) if row else False,
+        interview_reminder_enabled=bool(row.is_interview_reminder_enabled) if row else False,
     )
 
 
@@ -223,7 +223,7 @@ def _preferences(row: AccountPreference | None) -> AccountPreferencesResponse:
 def get_preferences(
     user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ) -> AccountPreferencesResponse:
-    return _preferences(db.get(AccountPreference, user.id))
+    return _preferences(db.scalar(select(AccountPreference).where(AccountPreference.user_id == user.id)))
 
 
 @router.patch("/preferences", response_model=AccountPreferencesResponse)
@@ -238,12 +238,14 @@ def update_preferences(
         raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
     if "interview_reminder_enabled" in payload and type(payload["interview_reminder_enabled"]) is not bool:
         raise ApiError(400, "INVALID_ACCOUNT_PREFERENCES")
-    row = db.get(AccountPreference, user.id)
+    row = db.scalar(select(AccountPreference).where(AccountPreference.user_id == user.id))
     if row is None:
-        row = AccountPreference(user_id=user.id, locale="zh-CN", interview_reminder_enabled=0)
+        row = AccountPreference(user_id=user.id, locale="zh-CN", is_interview_reminder_enabled=0)
         db.add(row)
-    for key, value in payload.items():
-        setattr(row, key, int(value) if key == "interview_reminder_enabled" else value)
+    if "locale" in payload:
+        row.locale = str(payload["locale"])
+    if "interview_reminder_enabled" in payload:
+        row.is_interview_reminder_enabled = int(bool(payload["interview_reminder_enabled"]))
     db.commit()
     return _preferences(row)
 

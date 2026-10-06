@@ -628,7 +628,7 @@ def test_resume_capacity_and_stale_cleanup_ignore_other_task_types() -> None:
                 file_format="md",
                 object_name=f"users/{user_id}/future/notes.md",
                 upload_status="uploading",
-                updated_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+                update_time=datetime.now(timezone.utc) - timedelta(minutes=5),
             )
             db.add(other_task)
             db.commit()

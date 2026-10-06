@@ -91,7 +91,7 @@ def admin_client(app) -> TestClient:
 def add_user(db, email: str, *, created_at: datetime, last_login_at=None, status=1) -> User:
     user = User(
         email=email, password_hash="x", nickname="张三", status=status,
-        created_at=created_at, last_login_at=last_login_at,
+        create_time=created_at, last_login_at=last_login_at,
     )
     db.add(user)
     db.flush()
@@ -103,11 +103,11 @@ class LLMFixture:
         self.db = db
         self.now = now
         self.connection = LLMProviderConnection(
-            provider_code="openrouter", name="Example Gateway", enabled=True,
+            provider_code="openrouter", name="Example Gateway", is_enabled=True,
             credential_ciphertext="ciphertext", runtime_config_version=1,
         )
         self.other = LLMProviderConnection(
-            provider_code="deepseek", name="Direct", enabled=True,
+            provider_code="deepseek", name="Direct", is_enabled=True,
             credential_ciphertext="ciphertext", runtime_config_version=1,
         )
         db.add_all([self.connection, self.other])
@@ -122,7 +122,7 @@ class LLMFixture:
     def _route(self, model, connection, target):
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model",
-            invoke_target=target, origin="manual", enabled=True,
+            invoke_target=target, origin="manual", is_enabled=True,
         )
         self.db.add(route)
         self.db.flush()
@@ -132,7 +132,7 @@ class LLMFixture:
         self.priority = getattr(self, "priority", 0) + 1
         binding = LLMUseCaseRoute(
             use_case=use_case, route_id=route.id, protocol_code="openai_chat",
-            priority=self.priority, enabled=True,
+            priority=self.priority, is_enabled=True,
         )
         self.db.add(binding)
         self.db.flush()
@@ -151,7 +151,7 @@ class LLMFixture:
             selection_source="default", status=status, latency_ms=latency,
             estimated_cost=Decimal(cost) if cost is not None else None,
             cost_currency=currency if cost is not None else None,
-            created_at=self.now - ago,
+            create_time=self.now - ago,
         ))
 
 
@@ -330,12 +330,12 @@ def _operation(db, session, *, ago, state="run_created", run_status=None, stage=
     public_id = str(uuid4())
     created = now - ago
     db.add(AgentOperation(public_id=public_id, session_id=session.id, state=state,
-                          failure_stage=stage, error_code=code, created_at=created))
+                          failure_stage=stage, error_code=code, create_time=created))
     if run_status is not None:
         db.add(AgentRun(
             public_id=public_id, session_id=session.id, idempotency_key=uuid4().hex,
             status=run_status, error_code=code, started_at=created,
-            completed_at=created + duration if duration else None, created_at=created,
+            completed_at=created + duration if duration else None, create_time=created,
         ))
 
 
@@ -465,7 +465,7 @@ def test_llm_call_list_filters_and_summarizes() -> None:
             call_id=uuid4().hex, use_case="assistant_conversation", source="test",
             route_id=f.route.id, runtime_config_version=1, protocol_code="openai_chat",
             selection_source="default", status="failed", error_code="AUTH_FAILED",
-            input_tokens=10, output_tokens=0, created_at=now - timedelta(minutes=1),
+            input_tokens=10, output_tokens=0, create_time=now - timedelta(minutes=1),
         ))
         db.commit()
 

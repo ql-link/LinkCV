@@ -16,7 +16,7 @@ from linkresume.core.database import Base, build_engine, build_session_factory
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.crypto import CredentialCipher
 from linkresume.modules.llm.gateway import GatewayError, GatewayResult, GatewayStreamEvent, GatewayUsage
-from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute, get_use_case_route
 from linkresume.modules.llm.resolver import JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION, validation_fingerprint
 from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError, LLMService
@@ -60,12 +60,12 @@ def context():
     service = LLMService(sessions, gateway, cipher)
     with sessions() as db:
         db.add(User(email="person@example.invalid", password_hash="fictional", nickname="用户"))
-        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, is_enabled=True, runtime_config_version=1)
         model = LLMModel(display_name="测试模型")
         db.add_all([connection, model]); db.flush()
-        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="vendor/model", origin="manual", enabled=True, target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"})
+        route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="vendor/model", origin="manual", is_enabled=True, is_target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"})
         db.add(route); db.flush()
-        binding = LLMUseCaseRoute(use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat", priority=100, enabled=True, validated_at=datetime.now(timezone.utc))
+        binding = LLMUseCaseRoute(use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat", priority=100, is_enabled=True, validated_at=datetime.now(timezone.utc))
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
@@ -83,7 +83,7 @@ def bind_intent(sessions):
         route = db.get(LLMModelRoute, 1)
         connection = db.get(LLMProviderConnection, route.connection_id)
         binding = LLMUseCaseRoute(use_case=ASSISTANT_INTENT, route_id=route.id,
-                                  protocol_code="openai_chat", priority=100, enabled=True,
+                                  protocol_code="openai_chat", priority=100, is_enabled=True,
                                   validated_at=datetime.now(timezone.utc))
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
@@ -181,7 +181,7 @@ def test_file_asr_probe_uses_voiced_pcm_and_requires_a_final_transcript(context,
             pytest.fail("ASR probe unexpectedly called TTS")
     service._speech_gateway = SpeechGateway()
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding = get_use_case_route(db, JOB_TEXT_EXTRACTION, 1)
         binding.use_case = "speech_to_text"
         binding.protocol_code = "openai_asr_file"
         binding.validated_at = None
@@ -195,7 +195,7 @@ def test_file_asr_probe_uses_voiced_pcm_and_requires_a_final_transcript(context,
             asyncio.run(service.probe_route(1, "speech_to_text", 1))
     assert len(recordings) == 1 and len(recordings[0]) > 32000 and any(recordings[0])
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, ("speech_to_text", 1))
+        binding = get_use_case_route(db, "speech_to_text", 1)
         assert (binding.validated_at is not None) is successful
         assert db.scalar(select(LLMCallLog)).status == ("succeeded" if successful else "failed")
 
@@ -203,7 +203,7 @@ def test_file_asr_probe_uses_voiced_pcm_and_requires_a_final_transcript(context,
 def test_image_probe_sends_provider_compatible_rgb_image(context):
     service, gateway, sessions = context
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding = get_use_case_route(db, JOB_TEXT_EXTRACTION, 1)
         binding.use_case = JOB_IMAGE_EXTRACTION
         db.commit()
     asyncio.run(service.probe_route(user_id=1, use_case=JOB_IMAGE_EXTRACTION, route_id=1))
@@ -215,7 +215,7 @@ def test_image_probe_sends_provider_compatible_rgb_image(context):
 def test_responses_binding_reaches_structured_gateway_and_records_actual_protocol(context):
     service, gateway, sessions = context
     with sessions() as db:
-        binding = db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1))
+        binding = get_use_case_route(db, JOB_TEXT_EXTRACTION, 1)
         binding.protocol_code = "openai_responses"
         binding.validated_fingerprint = validation_fingerprint(binding, db.get(LLMModelRoute, 1), db.get(LLMProviderConnection, 1))
         db.commit()
@@ -232,19 +232,19 @@ def add_route(sessions, service, *, same_model=True, priority=200):
         connection = LLMProviderConnection(
             provider_code="deepseek", name=f"备用-{priority}",
             credential_ciphertext=service.encrypt_credential(json.dumps({"api_key": "fictional-fallback"})),
-            settings_json={}, enabled=True, runtime_config_version=1,
+            settings_json={}, is_enabled=True, runtime_config_version=1,
         )
         model = db.get(LLMModel, 1) if same_model else LLMModel(display_name="另一个模型")
         db.add_all([connection, model]); db.flush()
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model",
-            invoke_target=f"fallback/model-{priority}", origin="manual", enabled=True,
-            target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"},
+            invoke_target=f"fallback/model-{priority}", origin="manual", is_enabled=True,
+            is_target_available=True, pricing_json={"currency": "USD", "input_per_million": "1", "output_per_million": "2"},
         )
         db.add(route); db.flush()
         binding = LLMUseCaseRoute(
             use_case=JOB_TEXT_EXTRACTION, route_id=route.id, protocol_code="openai_chat",
-            priority=priority, enabled=True, validated_at=datetime.now(timezone.utc),
+            priority=priority, is_enabled=True, validated_at=datetime.now(timezone.utc),
         )
         db.add(binding); db.flush()
         binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
@@ -282,7 +282,7 @@ def test_structured_error_keeps_tokens_and_cost(context):
 def test_inactive_binding_never_calls_gateway(context):
     service, gateway, sessions = context
     with sessions() as db:
-        db.get(LLMUseCaseRoute, (JOB_TEXT_EXTRACTION, 1)).enabled = False
+        get_use_case_route(db, JOB_TEXT_EXTRACTION, 1).is_enabled = False
         db.commit()
     with pytest.raises(LLMError, match="LLM_MODEL_NOT_CONFIGURED"):
         asyncio.run(service.chat(1, [ChatMessage(role="user", content="hello")], source="test_call"))

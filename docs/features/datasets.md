@@ -53,6 +53,8 @@ Web `/datasets` 采用文件夹卡片和文件表格。文件夹网格按正文�
 - 当前 Markdown 优先使用 `user_dataset.content_object_name`，历史资料回退到成功解析任务的转换对象。只有通过资料与任务归属校验后才返回；预览和 Agent 均读取同一份最新正文。
 - `parse_task_id` 是跨模块任务引用并受唯一约束保护，但没有数据库外键。
 
+`0111–0115` 之后，`user_dataset` 增加 `update_time`，时间列为 `create_time`/`update_time`，文件夹表为 `user_dataset_folder`；接口字段不变。数据库没有外键，删除资料或文件夹时，服务在同一事务内删除引用这些文件的转写记录和 Offer 材料关联。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
+
 ## 扩展边界
 
 新增文件格式需同步服务端真实性校验、Worker 分派（媒体除外）、对象存储、前端接受类型和 HTTP 契约。面试素材在迁移 `0082` 后并入本表；存量 `interview_assets` 记录由 `scripts/release/migrate_interview_assets.py` 一次性搬入（幂等可重跑），旧表暂留待后续 revision 删除。LinkRag 索引由 Worker 周期对账跟随资料的上传、替换和删除（最长延迟一个同步周期），详见 [Backend 架构](../internals/backend.md#linkrag-资料索引)。当前删除是终态资料的同步永久删除；`queued` 和 `processing` 资料不可删除。目录树、共享、检索、回收站或异步删除需要新的产品与持久化设计，不能作为当前功能宣称。

@@ -28,6 +28,7 @@ from linkresume.modules.llm.gateway import (
 )
 from linkresume.modules.llm.models import (
     LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
+    get_use_case_route,
 )
 from linkresume.modules.llm.providers import (
     OPENAI_CHAT, OPENAI_RESPONSES, OPENAI_ASR_FILE, OPENAI_TTS, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route,
@@ -503,7 +504,7 @@ class LLMService:
         pi_probe=None,
     ) -> str:
         with self._session_factory() as db:
-            binding = db.get(LLMUseCaseRoute, (use_case, route_id))
+            binding = get_use_case_route(db, use_case, route_id)
             route = db.get(LLMModelRoute, route_id)
             connection = db.get(LLMProviderConnection, route.connection_id) if route else None
             model = db.get(LLMModel, route.model_id) if route else None
@@ -576,7 +577,7 @@ class LLMService:
                 raise
             raise LLMError(code, call_id) from error
         with self._session_factory() as db:
-            current = db.get(LLMUseCaseRoute, (use_case, route_id))
+            current = get_use_case_route(db, use_case, route_id)
             current_route = db.get(LLMModelRoute, route_id)
             current_connection = db.get(LLMProviderConnection, current_route.connection_id) if current_route else None
             if (

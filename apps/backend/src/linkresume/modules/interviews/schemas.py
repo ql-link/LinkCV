@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -558,8 +559,8 @@ class ApplicationStageRecord(BaseModel):
     current_marker: int | None
     entered_at: datetime
     completed_at: datetime | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @field_validator("id", "application_id", mode="before")
     @classmethod
@@ -627,8 +628,8 @@ class JobApplicationRecord(BaseModel):
     notes: str | None
     archived_at: datetime | None
     lock_version: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
     current_stage: ApplicationStageRecord | None = None
     stages: list[ApplicationStageRecord] = Field(default_factory=list)
 
@@ -838,9 +839,12 @@ class TranscriptionRecord(BaseModel):
     dataset_id: DatabaseId
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     error_code: str | None = None
-    pending_replace: bool = False
+    # ORM column is is_pending_replace; the response keeps the public field name.
+    pending_replace: bool = Field(
+        default=False, validation_alias=AliasChoices("is_pending_replace", "pending_replace")
+    )
     result_duration_ms: int | None = None
-    updated_at: datetime
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @field_validator("dataset_id", mode="before")
     @classmethod
@@ -862,7 +866,7 @@ class ReviewQuestionNoteRecord(BaseModel):
     verdict: Literal["good", "improve"] | None = None
     note: str | None = None
     lock_version: int
-    updated_at: datetime
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @field_validator("id", mode="before")
     @classmethod
@@ -939,8 +943,8 @@ class InterviewSessionRecord(BaseModel):
     cancelled_at: datetime | None
     cancellation_reason: str | None
     lock_version: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @model_validator(mode="after")
     def project_elapsed_schedule(self) -> InterviewSessionRecord:
@@ -1011,7 +1015,7 @@ class InterviewAssetRecord(BaseModel):
     file_size: int
     duration_ms: int | None
     sha256: str | None
-    created_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
 
     @field_validator("created_at", mode="before")
     @classmethod

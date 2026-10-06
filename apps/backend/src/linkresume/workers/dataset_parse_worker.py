@@ -218,7 +218,7 @@ class DatasetParseProcessor:
                 if task is None:
                     return None
                 if task.upload_status == "uploading" and task.parse_status is None:
-                    created_at = task.created_at
+                    created_at = task.create_time
                     if created_at.tzinfo is None:
                         created_at = created_at.replace(tzinfo=timezone.utc)
                     elapsed_ms = round((utc_now() - created_at).total_seconds() * 1000)
@@ -259,7 +259,7 @@ class DatasetParseProcessor:
                         converted_object_name=None,
                         parse_duration_ms=None,
                         failure_reason=None,
-                        updated_at=now,
+                        update_time=now,
                     )
                     .execution_options(synchronize_session=False)
                 )
@@ -305,7 +305,7 @@ class DatasetParseProcessor:
             with self._session_factory() as db:
                 if started is None:
                     task = db.scalar(
-                        select(DocumentParseTask.created_at).where(
+                        select(DocumentParseTask.create_time).where(
                             DocumentParseTask.id == parse_task_id,
                             DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                         )
@@ -333,7 +333,7 @@ class DatasetParseProcessor:
                         parse_status="failed",
                         failure_reason=failure_reason,
                         parse_duration_ms=min(max(0, elapsed_ms), 2**32 - 1),
-                        updated_at=utc_now(),
+                        update_time=utc_now(),
                     )
                     .execution_options(synchronize_session=False)
                 )
@@ -363,7 +363,7 @@ class DatasetParseProcessor:
                         parse_duration_ms=None,
                         failure_reason=None,
                         last_dispatched_at=None,
-                        updated_at=utc_now(),
+                        update_time=utc_now(),
                     )
                     .execution_options(synchronize_session=False)
                 )
@@ -466,7 +466,7 @@ class DatasetParseProcessor:
                             max(0, round((monotonic() - started) * 1000)),
                             2**32 - 1,
                         ),
-                        updated_at=utc_now(),
+                        update_time=utc_now(),
                     )
                     .execution_options(synchronize_session=False)
                 )
@@ -680,12 +680,12 @@ class DatasetParseProcessor:
                     select(
                         DocumentParseTask.id,
                         DocumentParseTask.parse_attempt_count,
-                        DocumentParseTask.updated_at,
+                        DocumentParseTask.update_time,
                     ).where(
                         DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                         DocumentParseTask.upload_status == "succeeded",
                         DocumentParseTask.parse_status == "processing",
-                        DocumentParseTask.updated_at < cutoff,
+                        DocumentParseTask.update_time < cutoff,
                     )
                 ).all()
                 return [
@@ -718,14 +718,14 @@ class DatasetParseProcessor:
                         DocumentParseTask.upload_status == "succeeded",
                         DocumentParseTask.parse_status == "processing",
                         DocumentParseTask.parse_attempt_count == attempt,
-                        DocumentParseTask.updated_at < cutoff,
+                        DocumentParseTask.update_time < cutoff,
                     ]
                     if attempt >= self._parse_max_attempts:
                         values = {
                             "parse_status": "failed",
                             "parse_duration_ms": elapsed_ms,
                             "failure_reason": "timeout",
-                            "updated_at": now,
+                            "update_time": now,
                         }
                     else:
                         values = {
@@ -734,7 +734,7 @@ class DatasetParseProcessor:
                             "parse_duration_ms": None,
                             "failure_reason": None,
                             "last_dispatched_at": None,
-                            "updated_at": now,
+                            "update_time": now,
                         }
                     result = db.execute(
                         update(DocumentParseTask)
@@ -767,12 +767,12 @@ class DatasetParseProcessor:
                         DocumentParseTask.id,
                         DocumentParseTask.user_id,
                         DocumentParseTask.object_name,
-                        DocumentParseTask.created_at,
+                        DocumentParseTask.create_time,
                     ).where(
                         DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                         DocumentParseTask.upload_status == "uploading",
                         DocumentParseTask.parse_status.is_(None),
-                        DocumentParseTask.updated_at < cutoff,
+                        DocumentParseTask.update_time < cutoff,
                     )
                 ).all()
                 expired: list[_UploadReservation] = []
@@ -789,7 +789,7 @@ class DatasetParseProcessor:
                             DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                             DocumentParseTask.upload_status == "uploading",
                             DocumentParseTask.parse_status.is_(None),
-                            DocumentParseTask.updated_at < cutoff,
+                            DocumentParseTask.update_time < cutoff,
                         )
                         .values(
                             upload_status="failed",
@@ -802,7 +802,7 @@ class DatasetParseProcessor:
                                 ),
                                 2**32 - 1,
                             ),
-                            updated_at=now,
+                            update_time=now,
                         )
                         .execution_options(synchronize_session=False)
                     )
@@ -861,7 +861,7 @@ class DatasetParseProcessor:
                         DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                         DocumentParseTask.upload_status == "failed",
                         DocumentParseTask.parse_status.is_(None),
-                        DocumentParseTask.updated_at < cutoff,
+                        DocumentParseTask.update_time < cutoff,
                     )
                     ).all()
                 )
@@ -899,7 +899,7 @@ class DatasetParseProcessor:
                             DocumentParseTask.source_type == DATASET_SOURCE_TYPE,
                             DocumentParseTask.upload_status == "failed",
                             DocumentParseTask.parse_status.is_(None),
-                            DocumentParseTask.updated_at < cutoff,
+                            DocumentParseTask.update_time < cutoff,
                         )
                     )
                     deleted_count += int(task_result.rowcount == 1)

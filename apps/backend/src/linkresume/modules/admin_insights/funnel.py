@@ -33,9 +33,9 @@ def _first_by_user(db: Session, cohort, name: str) -> dict[int, dict]:
 
 
 def funnel(db: Session, window: Window) -> dict:
-    cohort = select(User.id).where(User.created_at >= window.start, User.created_at < window.end)
+    cohort = select(User.id).where(User.create_time >= window.start, User.create_time < window.end)
     created = db.execute(
-        select(User.id, User.created_at).where(User.created_at >= window.start, User.created_at < window.end)
+        select(User.id, User.create_time).where(User.create_time >= window.start, User.create_time < window.end)
     ).all()
     registrations = _first_by_user(db, cohort, "user_registered")
     resumes = _first_by_user(db, cohort, "resume_created")

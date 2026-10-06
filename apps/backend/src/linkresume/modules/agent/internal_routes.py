@@ -66,7 +66,7 @@ from linkresume.modules.agent.service import (
     update_task_status,
     upsert_tool_event,
 )
-from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute
+from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute, get_use_case_route
 from linkresume.modules.llm.providers import pi_api
 from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, RoutePlan, resolve_candidates
 from linkresume.modules.llm.schemas import PiCallRecord
@@ -255,7 +255,7 @@ def record_run_llm_call(
     route_id = int(payload.route_id) if payload.route_id is not None else run.resolved_llm_route_id
     route = db.get(LLMModelRoute, route_id)
     connection = db.get(LLMProviderConnection, route.connection_id) if route else None
-    binding = db.get(LLMUseCaseRoute, (ASSISTANT_CONVERSATION, route_id))
+    binding = get_use_case_route(db, ASSISTANT_CONVERSATION, route_id)
     if (route is None or connection is None or binding is None
             or route.model_id != run.resolved_llm_model_id):
         raise ApiError(409, "LLM_CALL_CONFLICT")

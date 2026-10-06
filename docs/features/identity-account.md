@@ -47,6 +47,8 @@ Web 使用 HttpOnly Cookie，小程序使用 Bearer，两种 channel 不能混�
 
 回执密钥只保存在标签页的 sessionStorage/内存并随 POST 请求体发送，不进入 URL。进度只返回状态、阶段和安全错误码；完成任务七天后清除，密钥遗失或回执到期不提供身份恢复。部署开关、备份和真实外部服务验收见 [部署说明](../ops/deployment.md)。
 
+`0111–0115` 之后，账号相关表名为 `user`、`account_preference`、`account_deletion_job`，提醒偏好列为 `is_interview_reminder_enabled`；接口字段仍为 `interview_reminder_enabled`。`account_preference` 以 `id` 为主键、`user_id` 唯一，代码按 `user_id` 查询。数据库不再有外键，注销清理在同一事务内逐表删除该用户的数据，其中转写记录、复盘题目笔记和 Offer 材料关联原来依赖数据库级联，现在由清理服务显式删除。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
+
 ## 代码地图与验证入口
 
 | 入口 | 职责 |

@@ -5,7 +5,6 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
-    ForeignKey,
     Index,
     Integer,
     JSON,
@@ -46,13 +45,13 @@ def ascii_char(length: int):
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "user"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_users"),
-        UniqueConstraint("email", name="uk_users_email"),
-        UniqueConstraint("wechat_openid", name="uk_users_wechat_openid"),
-        CheckConstraint("status IN (0, 1)", name="ck_users_status"),
-        CheckConstraint("is_admin IN (0, 1)", name="ck_users_is_admin"),
+        PrimaryKeyConstraint("id", name="pk_user"),
+        UniqueConstraint("email", name="uk_user_email"),
+        UniqueConstraint("wechat_openid", name="uk_user_wechat_openid"),
+        CheckConstraint("status IN (0, 1)", name="ck_user_status"),
+        CheckConstraint("is_admin IN (0, 1)", name="ck_user_is_admin"),
         {"comment": "用户账号"},
     )
 
@@ -108,13 +107,13 @@ class User(Base):
         nullable=True,
         comment="微信绑定时间（UTC）",
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=False,
         server_default=func.now(),
         comment="创建时间（UTC）",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         DateTime(timezone=True).with_variant(mysql.DATETIME(fsp=6), "mysql"),
         nullable=False,
         server_default=func.now(),
@@ -130,36 +129,41 @@ class User(Base):
 
 
 class AccountPreference(Base):
-    __tablename__ = "account_preferences"
+    __tablename__ = "account_preference"
     __table_args__ = (
-        PrimaryKeyConstraint("user_id", name="pk_account_preferences"),
-        CheckConstraint("locale IN ('zh-CN', 'en-US')", name="ck_account_preferences_locale"),
-        CheckConstraint("interview_reminder_enabled IN (0, 1)", name="ck_account_preferences_reminder"),
+        UniqueConstraint("user_id", name="uk_account_preference_user_id"),
+        CheckConstraint("locale IN ('zh-CN', 'en-US')", name="ck_account_preference_locale"),
+        CheckConstraint(
+            "is_interview_reminder_enabled IN (0, 1)",
+            name="ck_account_preference_is_interview_reminder_enabled",
+        ),
         {"comment": "账号界面语言与提醒偏好"},
     )
+    id: Mapped[int] = mapped_column(
+        unsigned_bigint_type(), primary_key=True, autoincrement=True, comment="主键",
+    )
     user_id: Mapped[int] = mapped_column(
-        unsigned_bigint_type(), ForeignKey("users.id", name="fk_account_preferences_user", ondelete="RESTRICT"),
-        nullable=False, comment="所属用户",
+        unsigned_bigint_type(), nullable=False, comment="所属用户",
     )
     locale: Mapped[str] = mapped_column(String(5), nullable=False, default="zh-CN", server_default="zh-CN", comment="界面语言")
-    interview_reminder_enabled: Mapped[int] = mapped_column(
+    is_interview_reminder_enabled: Mapped[int] = mapped_column(
         SmallInteger().with_variant(mysql.TINYINT(unsigned=True), "mysql"),
-        nullable=False, default=0, server_default="0", comment="提醒偏好，当前不发送通知",
+        nullable=False, default=0, server_default="0", comment="是否开启面试提醒：1 是，0 否；当前不发送通知",
     )
-    created_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间 UTC")
-    updated_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间 UTC")
+    create_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="创建时间 UTC")
+    update_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间 UTC")
 
 
 class AccountDeletionJob(Base):
-    __tablename__ = "account_deletion_jobs"
+    __tablename__ = "account_deletion_job"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_account_deletion_jobs"),
-        UniqueConstraint("public_id", name="uk_account_deletion_jobs_public"),
-        UniqueConstraint("user_id", name="uk_account_deletion_jobs_user"),
-        CheckConstraint("status IN ('pending', 'processing', 'retry_wait', 'needs_attention', 'completed')", name="ck_account_deletion_jobs_status"),
-        CheckConstraint("phase IN ('database', 'objects', 'rag', 'complete')", name="ck_account_deletion_jobs_phase"),
-        Index("idx_account_deletion_jobs_due", "status", "next_attempt_at", "id"),
-        Index("idx_account_deletion_jobs_completed", "status", "completed_at", "id"),
+        PrimaryKeyConstraint("id", name="pk_account_deletion_job"),
+        UniqueConstraint("public_id", name="uk_account_deletion_job_public"),
+        UniqueConstraint("user_id", name="uk_account_deletion_job_user"),
+        CheckConstraint("status IN ('pending', 'processing', 'retry_wait', 'needs_attention', 'completed')", name="ck_account_deletion_job_status"),
+        CheckConstraint("phase IN ('database', 'objects', 'rag', 'complete')", name="ck_account_deletion_job_phase"),
+        Index("idx_account_deletion_job_due", "status", "next_attempt_at", "id"),
+        Index("idx_account_deletion_job_completed", "status", "completed_at", "id"),
         {"comment": "持久账号清理任务，不依赖已删除用户外键"},
     )
     id: Mapped[int] = mapped_column(unsigned_bigint_type(), autoincrement=True, comment="清理任务主键")
@@ -173,83 +177,83 @@ class AccountDeletionJob(Base):
     last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="有限错误码")
     next_attempt_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True, comment="下次执行 UTC")
     lease_until: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True, comment="执行租约 UTC")
-    created_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="受理时间 UTC")
-    updated_at: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间 UTC")
+    create_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), comment="受理时间 UTC")
+    update_time: Mapped[datetime] = mapped_column(timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间 UTC")
     completed_at: Mapped[datetime | None] = mapped_column(timestamp_type(), nullable=True, comment="清理完成 UTC")
 
 
 class UserProfile(Base):
-    __tablename__ = "user_profiles"
+    __tablename__ = "user_profile"
     __table_args__ = (
-        PrimaryKeyConstraint("id", name="pk_user_profiles"),
-        UniqueConstraint("user_id", name="uk_user_profiles_user_id"),
-        CheckConstraint("lock_version >= 1", name="ck_user_profiles_lock_version"),
+        PrimaryKeyConstraint("id", name="pk_user_profile"),
+        UniqueConstraint("user_id", name="uk_user_profile_user_id"),
+        CheckConstraint("lock_version >= 1", name="ck_user_profile_lock_version"),
         CheckConstraint(
             "salary_period IS NULL OR salary_period IN ('hour', 'day', 'month', 'year')",
-            name="ck_user_profiles_salary_period",
+            name="ck_user_profile_salary_period",
         ),
         CheckConstraint(
             "salary_min IS NULL OR salary_max IS NULL OR salary_max >= salary_min",
-            name="ck_user_profiles_salary_range",
+            name="ck_user_profile_salary_range",
         ),
         CheckConstraint(
             "(salary_min IS NULL AND salary_max IS NULL) OR "
             "(salary_currency IS NOT NULL AND salary_period IS NOT NULL)",
-            name="ck_user_profiles_salary_context",
+            name="ck_user_profile_salary_context",
         ),
         CheckConstraint(
             "salary_currency IS NULL OR LENGTH(salary_currency) = 3",
-            name="ck_user_profiles_salary_currency",
+            name="ck_user_profile_salary_currency",
         ),
         CheckConstraint(
             "education_level IS NULL OR education_level IN "
             "('high_school', 'junior_college', 'bachelor', 'master', 'doctor')",
-            name="ck_user_profiles_education_level",
+            name="ck_user_profile_education_level",
         ),
         CheckConstraint(
             "years_experience IS NULL OR years_experience >= 0",
-            name="ck_user_profiles_years_experience",
+            name="ck_user_profile_years_experience",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(candidate_cities)) = 'array'",
-            name="ck_user_profiles_candidate_cities_array",
+            name="ck_user_profile_candidate_cities_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(employment_types)) = 'array'",
-            name="ck_user_profiles_employment_types_array",
+            name="ck_user_profile_employment_types_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(languages)) = 'array'",
-            name="ck_user_profiles_languages_array",
+            name="ck_user_profile_languages_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(skills)) = 'array'",
-            name="ck_user_profiles_skills_array",
+            name="ck_user_profile_skills_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(certifications)) = 'array'",
-            name="ck_user_profiles_certifications_array",
+            name="ck_user_profile_certifications_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(honors)) = 'array'",
-            name="ck_user_profiles_honors_array",
+            name="ck_user_profile_honors_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(campus_experiences)) = 'array'",
-            name="ck_user_profiles_campus_experiences_array",
+            name="ck_user_profile_campus_experiences_array",
         ),
         CheckConstraint(
             "LOWER(JSON_TYPE(school_tier)) = 'array'",
-            name="ck_user_profiles_school_tier_array",
+            name="ck_user_profile_school_tier_array",
         ),
         CheckConstraint(
             "candidate_status IS NULL OR candidate_status IN "
             "('fresh_graduate', 'experienced')",
-            name="ck_user_profiles_candidate_status",
+            name="ck_user_profile_candidate_status",
         ),
         CheckConstraint(
             "graduation_year IS NULL OR graduation_year BETWEEN 1900 AND 9999",
-            name="ck_user_profiles_graduation_year",
+            name="ck_user_profile_graduation_year",
         ),
         CheckConstraint(
             "(candidate_status IS NULL AND graduation_year IS NULL) OR "
@@ -258,7 +262,7 @@ class UserProfile(Base):
             "AND years_experience = 0) OR "
             "(candidate_status IS NOT NULL AND candidate_status = 'experienced' "
             "AND graduation_year IS NULL)",
-            name="ck_user_profiles_candidate_experience_context",
+            name="ck_user_profile_candidate_experience_context",
         ),
         {"comment": "用户个人画像"},
     )
@@ -268,7 +272,6 @@ class UserProfile(Base):
     )
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_user_profiles_user", ondelete="RESTRICT"),
         nullable=False,
         comment="画像所有者用户 id",
     )
@@ -334,11 +337,11 @@ class UserProfile(Base):
     campus_experiences: Mapped[list[str]] = mapped_column(
         JSON(), nullable=False, default=list, comment="校园经历字符串数组"
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(),
         comment="创建时间（UTC）",
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(),
         nullable=False,
         server_default=func.now(),
@@ -348,8 +351,8 @@ class UserProfile(Base):
 
 
 Index(
-    "idx_user_profiles_user_updated",
+    "idx_user_profile_user_updated",
     UserProfile.user_id,
-    UserProfile.updated_at.desc(),
+    UserProfile.update_time.desc(),
     UserProfile.id.desc(),
 )

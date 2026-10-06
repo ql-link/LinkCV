@@ -113,8 +113,8 @@ def import_summary(db: Session, record: DocumentParseTask) -> ResumeImportSummar
         result_resume_id=(
             str(result_resume_id) if result_resume_id is not None else None
         ),
-        created_at=record.created_at,
-        updated_at=record.updated_at,
+        created_at=record.create_time,
+        updated_at=record.update_time,
     )
 
 

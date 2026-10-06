@@ -309,11 +309,23 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 ## 当前 Muse 目录迁移
 
-当前迁移链 head 为 `0110`（`0099 → 0100 → 0101 → 0102 → 0103 → 0104 → 0105 → 0106 → 0107 → 0108 → 0109 → 0110`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。
+当前迁移链 head 为 `0115`（`0099 → 0100 → … → 0110 → 0111 → 0112 → 0113 → 0114 → 0115`）；目标环境的实际 revision 仍须单独查询。它依赖已经发布的 `0097–0099`，不能从 `0096` 跳过中间 revision 直接升级。`0111–0115` 的内容见下文「阿里巴巴 MySQL 规约整改」。
 
 `0100` 只向 `resume_templates` 插入 79 个新 key，不改变 schema、旧模板或用户简历。十二份 canonical 虚构样本以 JSON 常量冻结，定义使用现有 `TemplateDefinition`，新增项在最大排序值后逐次增加 10（上限 1000000），分类采用表的空默认值。相同 key 的名称、描述、正文与定义均相同时重复执行保留启停、排序和分类；任一内容冲突通过非空约束拒绝，事务回滚整批 DML，避免部分目录写入。
 
 发布先部署识别 Muse 的 Web 和 Node/PDF 渲染器，再执行目录迁移。撤回时停用新增目录；用户已创建简历的模板快照继续保留。迁移仍为 forward-only，不能 downgrade。来源、行业数据及装饰适配边界见[模板来源](resume-template-sources.md#muse-选择集0100)。
+
+## 阿里巴巴 MySQL 规约整改
+
+`0111–0115` 把全部业务表整改到 `.ai/skills/mysql-ddl-conventions/alibaba-mysql-rules.md` 的规约。本文其余章节描述各 revision 时使用的是当时的表名和列名；当前 schema 以本节为准。
+
+- **表名**：全部为单数，例如 `user`、`resume`、`job_application`、`llm_call_log`；`user_dataset`、`user_dataset_rag_sync` 原本就是单数。索引和 CHECK 约束名称中包含的表名同步改为单数，缩写形式的名称（如 `idx_llm_calls_created`）保持不变。
+- **必备字段**：每张表都有 `id bigint unsigned` 自增主键以及 `create_time`、`update_time`（`datetime(6)`，UTC）。`0114` 为 `account_preference`、`announcement_read_cursor`、`job_application_offer_material`、`llm_use_case_route` 增加 `id`，原主键改为唯一索引；为缺少时间字段的 9 张表补列并回填。代码按自然键读取这些表，例如 `get_use_case_route(db, use_case, route_id)`，不再用复合主键 `db.get`。
+- **布尔字段**：统一为 `is_xxx tinyint unsigned`（1 是，0 否）并带 CHECK 约束；`llm_model_route.is_target_available` 保留 NULL 表示尚未探测。
+- **注释**：全部表和字段都有中文注释，`resume_template.sort_order` 为 `int unsigned`。
+- **无数据库外键**：`0113` 删除了全部 51 个外键（含 12 个 CASCADE、9 个 SET NULL）。引用的存在性、归属校验和删除清理由 FastAPI 在同一事务内显式完成：注销账号逐表删除用户数据（包括转写记录、复盘题目笔记和 Offer 材料关联）；删除资料或文件夹时删除转写记录和 Offer 材料关联；删除求职进程时删除阶段、场次子表并解除模拟面试关联；删除 Agent 会话时删除阶段事件，并把调用日志的 `agent_run_id` 置空；LLM 管理端和模板管理在删除前检查引用并返回 409。原外键列都保留了以 `idx_` 命名的索引。
+- **API 不变**：ORM 属性随列改名（`create_time`、`is_pinned` 等），响应模型通过别名继续输出 `created_at`、`updated_at`、`pinned` 等原字段名，Web、插件和小程序无需修改。
+- **发布**：`0111–0115` 在部署脚本既有的“停止旧服务 → 迁移 → 启动新镜像”窗口内执行，必须先完成数据库备份。`0115` 之后旧镜像无法在新 schema 上运行，恢复只能依赖备份。`scripts/release/run_alembic.py` 的迁移前漂移检查会根据已执行到的 revision，把历史标记中的表名和列名翻译成 `0112`/`0115` 之后的名称。
 
 
 桌面岗位与面试排期请求由 identity 的 `get_current_career_user` 显式方法/路径白名单接入既有 job_descriptions/interviews 路由；仍复用 Web 的业务服务、本人资源归属和乐观锁，不建立第二套求职数据。排期信息更新通过既有 PUT 场次路由，仍要求本人归属及 base_lock_version；阶段详情所需的场次删除、录音上传播放、转写、逐题笔记、笔试题导入与 AI 复盘生成也在该白名单内。简历仍为桌面只读，岗位权限不扩展到账号与管理端，具体开放面见 [桌面 Bearer 契约](../api/http-contracts.md#桌面-bearer-会话)。

@@ -189,7 +189,7 @@ def list_agent_proposals(
         .where(
             ResumeChangeProposal.user_id == user.id,
         )
-        .order_by(ResumeChangeProposal.created_at.desc())
+        .order_by(ResumeChangeProposal.create_time.desc())
         .limit(200 if include_history else 20)
     )
     if not include_history:
@@ -231,8 +231,8 @@ def list_agent_sessions(
     query = select(AgentSession).where(AgentSession.user_id == user.id)
     records = db.scalars(
         query.order_by(
-            AgentSession.pinned.desc(),
-            AgentSession.updated_at.desc(),
+            AgentSession.is_pinned.desc(),
+            AgentSession.update_time.desc(),
             AgentSession.id.desc(),
         ).limit(50)
     ).all()
