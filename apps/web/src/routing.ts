@@ -322,6 +322,8 @@ export function adminLoginPath(next?: string | null) {
 }
 
 export function navigateTo(path: string, options: NavigateOptions = {}) {
+  if (document.documentElement.dataset.landingDemo === "true"
+    && !window.dispatchEvent(new CustomEvent("linkresume:showcase-navigate", { cancelable: true, detail: { path, options } }))) return;
   const current = `${window.location.pathname}${window.location.search}`;
   if (current === path) return;
   if (options.replace) window.history.replaceState(options.state ?? null, "", path);

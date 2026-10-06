@@ -152,4 +152,37 @@ describe("LinkResume routes", () => {
     navigateTo("/login", { replace: true });
     expect(window.location.pathname).toBe("/login");
   });
+
+  it("keeps demo navigation local without changing the host URL", () => {
+    window.history.replaceState(null, "", "/landing-demo.html");
+    document.documentElement.dataset.landingDemo = "true";
+    let target: string | undefined;
+    const intercept = (event: Event) => {
+      target = (event as CustomEvent<{ path: string }>).detail.path;
+      event.preventDefault();
+    };
+    window.addEventListener("linkresume:showcase-navigate", intercept);
+    try {
+      navigateTo("/assistant/workspace/resumes");
+      expect(target).toBe("/assistant/workspace/resumes");
+      expect(window.location.pathname).toBe("/landing-demo.html");
+    } finally {
+      window.removeEventListener("linkresume:showcase-navigate", intercept);
+      delete document.documentElement.dataset.landingDemo;
+      window.history.replaceState(null, "", "/");
+    }
+  });
+
+  it("does not allow demo interception to change real workspace navigation", () => {
+    window.history.replaceState(null, "", "/");
+    const intercept = (event: Event) => event.preventDefault();
+    window.addEventListener("linkresume:showcase-navigate", intercept);
+    try {
+      navigateTo("/resumes");
+      expect(window.location.pathname).toBe("/resumes");
+    } finally {
+      window.removeEventListener("linkresume:showcase-navigate", intercept);
+      window.history.replaceState(null, "", "/");
+    }
+  });
 });
