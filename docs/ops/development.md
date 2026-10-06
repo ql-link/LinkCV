@@ -83,7 +83,7 @@ LINKRESUME_ENV_FILE=.env.development npm run db:init
 
 Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都维护相同别名。新增 shadcn 组件时从 `apps/web` 运行 CLI，使 `components.json` 能把源码写入 `src/components/ui/`。
 
-Web 的 `/` 与 `/home` 展示公共落地页；Hero 使用同源 `/landing-demo.html` 作为独立互动演示入口。两份 HTML 由同一次 Vite 构建输出，预览与发布时须保留整个 `apps/web/dist`。演示数据在浏览器内生成，不依赖业务后端；真实登录与工作区仍使用上述 `/api` 代理。演示存储和导航边界见 [Web 模块](../internals/web.md#公共落地页与产品演示)。
+公共落地页与截图演示、`/` 登录态跳转及同源 `/resumes` 入口见 [Web 模块](../internals/web.md#公共落地页与产品演示)。本地 Vite 工作区默认为 `http://127.0.0.1:5173/resumes`；共享 Dev 的部署地址见 [Dev Pipeline](deployment.md#dev-pipeline)，生产工作区为 `https://linkresume.cn/resumes`。开发期 `/landing-demo.html` 只用于生成截图，生产落地页展示已保存的 WebP 资源。
 
 ## 日志配置
 
