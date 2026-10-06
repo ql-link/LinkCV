@@ -92,7 +92,7 @@ afterEach(() => {
 });
 
 describe("AssistantPage", () => {
-  it("首次连续发送共享会话创建，并保留创建期间后来输入的草稿", async () => {
+  it("首次发送期间阻止重复提交，并保留创建期间后来输入的草稿", async () => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
@@ -118,7 +118,7 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(stream).toHaveBeenCalledOnce());
     expect(create).toHaveBeenCalledOnce();
     expect(stream.mock.calls[0][1].content).toBe("第一条指令");
-    expect((await readQueue(queueKey("1", session.id))).items.map((item) => item.request.content)).toEqual(["第二条指令"]);
+    expect((await readQueue(queueKey("1", session.id))).items.map((item) => item.request.content)).toEqual([]);
     expect(input).toHaveTextContent("后来输入的草稿");
     unmount();
     await act(async () => { finish(); });
@@ -1569,9 +1569,17 @@ describe("AssistantPage", () => {
     expect(screen.queryByText("正在召回相关资料")).not.toBeInTheDocument();
     expect(container.querySelector(".assistant-state-header")).not.toBeInTheDocument();
 
+    const followupInput = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
+    await user.type(followupInput, "后续草稿");
+    await user.keyboard("{Enter}");
+    expect(api.streamAgentMessage).toHaveBeenCalledOnce();
+    expect((await readQueue(queueKey("1", session.id))).items).toHaveLength(0);
+    expect(screen.queryByRole("region", { name: "待发送消息" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "核实当前运行" })).not.toBeInTheDocument();
     finishStream();
     await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+    expect(followupInput).toHaveTextContent("后续草稿");
+    expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
   });
 
   it("暂停后不把已发送 query 回填输入框，手动重试也不会重复用户消息", async () => {
@@ -1611,7 +1619,7 @@ describe("AssistantPage", () => {
 
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getAllByText("润色项目经历")).toHaveLength(2);
+    expect(screen.getAllByText("润色项目经历")).toHaveLength(1);
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
   });
 
@@ -1638,7 +1646,7 @@ describe("AssistantPage", () => {
     expect(alert.parentElement).toBe(document.body);
     expect(container.contains(alert)).toBe(false);
     expect(screen.getByRole("textbox", { name: "告诉助手你想完成什么" })).toHaveTextContent("");
-    await waitFor(async () => expect((await readQueue(queueKey("1", session.id))).paused).toBe(true));
+    expect((await readQueue(queueKey("1", session.id))).items).toHaveLength(0);
   });
 
   it("收到 run.cancelled 后刷新会话仍保留停止终态", async () => {

@@ -50,9 +50,6 @@ import { BeTag, Dialog, DialogFooter, SearchBox, Toast } from "../../v3/primitiv
 import { useActiveSessionStore, useSessionStore } from "../../v3/sessionStore";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import { MessageActions } from "../agent/MessageActions";
-import { MessageQueue } from "../agent/QueuedMessages";
-import { useMessageQueue } from "../agent/useMessageQueue";
-import { enqueueMessage, submissionPayload, type QueueDraft, type QueueItem } from "../agent/messageQueue";
 import { HomeCardView } from "./HomeCards";
 import { greetingPrefix, homeCopy, useHomeDashboard } from "./homeDashboard";
 import { ModelPicker } from "./ModelPicker";
@@ -656,23 +653,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const conversationStatesRef = useRef(conversationStates);
   conversationStatesRef.current = conversationStates;
   const current = conversationStates[activeKey] ?? conversationStates[NEW_CONVERSATION_KEY] ?? blankConversation();
-  const previousQueueDraft = useRef<{ draft: string; contexts: AgentContextSnapshot[]; revisionProposalId?: string } | null>(null);
-  const editingQueueRequest = useRef<QueueDraft | null>(null);
   const newSessionPromise = useRef<Promise<AgentSession> | null>(null);
-  useEffect(() => { previousQueueDraft.current = null; editingQueueRequest.current = null; }, [activeKey]);
-  const messageQueue = useMessageQueue({
-    userId: user?.id ?? null,
-    sessionId: activeKey === NEW_CONVERSATION_KEY ? null : activeKey,
-    running: current.running,
-    runId: current.runId,
-    blocked: Boolean(pendingClarificationMessage(current.messages)),
-    visible: !workspaceSection,
-    prepareRequest: (request) => ({ ...request, content: isDocumentRequest(request.content)
-      ? `${request.content}\n\n请输出完整 Markdown 文档，以一级标题开头；如果资料不足，请先询问，不要编造经历或数据。` : request.content }),
-    send: (item) => runMessage(item.request.content, undefined, undefined, item),
-  });
-  const messageQueueRef = useRef(messageQueue);
-  messageQueueRef.current = messageQueue;
+  const submittingMessage = useRef(false);
   const [proposalViews, setProposalViews] = useState<Record<string, { id?: string }>>({});
   const [proposalBatchProgress, setProposalBatchProgress] = useState<ProposalBatchProgress>(null);
   const turnUsers = current.messages.filter((item) => item.role === "user");
@@ -985,7 +967,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     const state = conversationStates[key];
     if (!state?.running) return;
     const requestBeforePause = streamRequestRef.current;
-    await messageQueue.pause("本轮已停止，队列暂停");
     const runId = state.runId;
     if (streamRequestRef.current === requestBeforePause && activeKeyRef.current === key) {
       streamRequestRef.current += 1;
@@ -1007,11 +988,9 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           : message
       )),
     }));
-    if (runId) await api.cancelAgentRun(runId).then((receipt) => {
-      if (receipt.status === "cancelled" && activeKeyRef.current === key) messageQueueRef.current.onEvent({ type: "run.cancelled", runId });
-    }, () => undefined);
+    if (runId) await api.cancelAgentRun(runId).catch(() => undefined);
     updateConversation(key, { cancelling: false });
-  }, [conversationStates, messageQueue.pause, updateConversation]);
+  }, [conversationStates, updateConversation]);
 
   const selectSession = async (sessionIdToSelect: string, retry = false) => {
     if (sessionIdToSelect === activeKeyRef.current && !retry) {
@@ -1195,7 +1174,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
 
   const handleEvent = (key: string, requestNumber: number, event: AgentStreamEvent) => {
     if (streamRequestRef.current !== requestNumber || activeKeyRef.current !== key) return;
-    messageQueueRef.current.onEvent(event);
     if (event.type === "user.message.accepted") {
       updateConversation(key, (state) => state.messages.some((item) => item.sequence_no === event.userSequenceNo && item.role === "user") ? {} : ({ messages: [...state.messages, {
         sequence_no: event.userSequenceNo!, role: "user", run_id: event.runId,
@@ -1443,19 +1421,12 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     content: string,
     replyToSequenceNo?: number,
     clarificationAnswersPayload?: ReturnType<typeof clarificationAnswerPayload>,
-    queuedItem?: QueueItem,
   ) => {
     const trimmed = content.trim();
     const key = activeKeyRef.current;
-    const originalState = conversationStates[key] ?? blankConversation();
-    const state = queuedItem ? { ...originalState,
-      contexts: (queuedItem.request.contexts ?? []) as AgentContextSnapshot[],
-      revisionProposalId: queuedItem.request.revision_proposal_id,
-      screenshots: [],
-    } : originalState;
+    const state = conversationStatesRef.current[key] ?? blankConversation();
     const statePendingClarification = pendingClarificationMessage(state.messages);
     if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) {
-      if (queuedItem) throw new ApiRequestError(409, "AGENT_RUN_IN_PROGRESS");
       return;
     }
     if (replyToSequenceNo === undefined && state.screenshots?.length) {
@@ -1480,11 +1451,15 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       session = await ensureSession(state);
     } catch (error) {
       updateConversation(key, { error: safeAgentError(error) });
-      if (queuedItem) throw error;
       return;
     }
     const requestKey = session.id;
-    if (queuedItem && activeKeyRef.current !== key) throw new ApiRequestError(409, "AGENT_QUEUE_PAUSED");
+    if (activeKeyRef.current !== requestKey) return;
+    const latestDraft = conversationStatesRef.current[requestKey] ?? state;
+    if (latestDraft.draft === state.draft && JSON.stringify(latestDraft.contexts) === JSON.stringify(state.contexts)) {
+      updateConversation(requestKey, { draft: "", contexts: [], invalidContextIds: [] });
+      refreshComposerView("", [], []);
+    }
     setProposalViews((views) => ({ ...views, [requestKey]: {} }));
     promoteStoreSession(session);
     const requestNumber = streamRequestRef.current + 1;
@@ -1548,10 +1523,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           temporary: true,
         }],
     });
+    let requestAccepted = false;
     try {
       await api.streamAgentMessage(
         session.id,
-        queuedItem ? submissionPayload(queuedItem) : {
+        {
           content: isDocumentRequest(trimmed) ? `${trimmed}\n\n请输出完整 Markdown 文档，以一级标题开头；如果资料不足，请先询问，不要编造经历或数据。` : trimmed,
           idempotency_key: idempotencyKey(),
           ...(state.revisionProposalId ? { revision_proposal_id: state.revisionProposalId } : {}),
@@ -1561,7 +1537,10 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           ...(requestContexts.length > 0 ? { contexts: requestContexts } : {}),
         },
         controller.signal,
-        (event) => handleEvent(requestKey, requestNumber, event),
+        (event) => {
+          if (["run.started", "user.message.accepted", "assistant.delta"].includes(event.type)) requestAccepted = true;
+          handleEvent(requestKey, requestNumber, event);
+        },
       );
       if (streamRequestRef.current !== requestNumber) return;
       const detail = await api.getAgentSession(session.id).catch(() => null);
@@ -1599,12 +1578,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         cancelling: false,
         runId: null,
         startedAt: null,
-        ...(!queuedItem ? { draft: latest.draft || trimmed } : {}),
+        draft: latest.draft || (requestAccepted || runStillStopping ? "" : trimmed),
         invalidContextIds: invalid
           ? latest.contexts.map(contextKey)
           : latest.invalidContextIds,
       }));
-      if (queuedItem) throw error;
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       if (streamRequestRef.current === requestNumber) {
@@ -1614,74 +1592,10 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   };
 
   const submitMessage = () => {
-    if (current.cancelling || !current.draft.trim()) return;
+    if (submittingMessage.current || current.running || current.cancelling || !current.draft.trim()) return;
     setContextMention(null);
-    // Screenshots retain V3's existing local-preview behavior; queues send text and references.
-    if (current.screenshots?.length) {
-      if (messageQueue.editingId) { setNotice(t("请先移除截图，再保存排队消息。")); return; }
-      void runMessage(current.draft);
-      return;
-    }
-    const snapshot = { draft: current.draft, contexts: current.contexts };
-    let targetKey = activeKey;
-    const editingRequest = editingQueueRequest.current;
-    const previousDraft = previousQueueDraft.current;
-    void (async () => {
-      const queueUserId = user?.id;
-      if (!queueUserId) throw new Error("请先登录，输入内容已保留。");
-      if (activeKeyRef.current !== targetKey) throw new DOMException("Agent session changed", "AbortError");
-      const request: QueueDraft = { ...(messageQueue.editingId ? editingRequest : {}), content: snapshot.draft.trim(), contexts: snapshot.contexts,
-        revision_proposal_id: current.revisionProposalId };
-      if (messageQueue.editingId) {
-        await messageQueue.saveEdit(request);
-      } else {
-        const session = await ensureSession(current);
-        if (useResumeStore.getState().user?.id !== queueUserId) throw new DOMException("Agent account changed", "AbortError");
-        targetKey = session.id;
-        await enqueueMessage(queueUserId, session.id, request, { startIfEmpty: activeKeyRef.current === targetKey && !current.running && !pendingClarification });
-      }
-      updateConversation(targetKey, (latest) => latest.draft === snapshot.draft
-        && JSON.stringify(latest.contexts) === JSON.stringify(snapshot.contexts)
-        ? { draft: "", contexts: [], invalidContextIds: [] } : {});
-      if (messageQueue.editingId && previousDraft) {
-        updateConversation(targetKey, previousDraft);
-        if (activeKeyRef.current === targetKey) {
-          refreshComposerView(previousDraft.draft, previousDraft.contexts, []);
-          previousQueueDraft.current = null;
-          editingQueueRequest.current = null;
-        }
-      } else {
-        const latest = conversationStatesRef.current[targetKey] ?? current;
-        if (activeKeyRef.current === targetKey && latest.draft === snapshot.draft && JSON.stringify(latest.contexts) === JSON.stringify(snapshot.contexts)) {
-          refreshComposerView("", [], []);
-        }
-      }
-    })().catch((reason) => {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
-      updateConversation(targetKey, { error: reason instanceof ApiRequestError ? safeAgentError(reason) : (reason as Error).message });
-    });
-  };
-
-  const editQueuedMessage = (item: QueueItem) => {
-    previousQueueDraft.current ??= { draft: current.draft, contexts: current.contexts, revisionProposalId: current.revisionProposalId };
-    void messageQueue.beginEdit(item.itemId).then((request) => {
-      if (activeKeyRef.current !== activeKey) return;
-      editingQueueRequest.current = request;
-      const contexts = (request.contexts ?? []) as AgentContextSnapshot[];
-      refreshComposerView(request.content, contexts, []);
-      updateConversation(activeKey, { draft: request.content, contexts, invalidContextIds: [], revisionProposalId: request.revision_proposal_id });
-      inputRef.current?.focus();
-    }).catch(() => undefined);
-  };
-
-  const cancelQueueEdit = () => {
-    void messageQueue.cancelEdit();
-    editingQueueRequest.current = null;
-    if (previousQueueDraft.current) {
-      updateConversation(activeKey, previousQueueDraft.current);
-      refreshComposerView(previousQueueDraft.current.draft, previousQueueDraft.current.contexts, []);
-      previousQueueDraft.current = null;
-    }
+    submittingMessage.current = true;
+    void runMessage(current.draft).finally(() => { submittingMessage.current = false; });
   };
 
   const submitClarification = () => {
@@ -2060,7 +1974,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       <span aria-hidden="true" />
     </button>
   ) : (
-    <button type="submit" className="assistant-send" aria-label={messageQueue.editingId ? "保存排队消息" : t("发送")} disabled={current.cancelling || !current.draft.trim()}>
+    <button type="submit" className="assistant-send" aria-label={t("发送")} disabled={current.cancelling || !current.draft.trim()}>
       <Icon name="up" size={16} strokeWidth={2.2} />
     </button>
   );
@@ -2246,8 +2160,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         </div>
       )}
       {clarificationPanel}
-      <MessageQueue controller={messageQueue} running={current.running} onEdit={editQueuedMessage} />
-      {messageQueue.editingId && <div className="agent-queue-edit-notice"><span>正在编辑排队消息</span><button className="v3-link" type="button" onClick={cancelQueueEdit}>取消编辑</button></div>}
       {isHome ? (
         // 首页输入框卡：720×120，底部左侧 + 和简历标签，右侧模型名与发送
         <div className={`assistant-home-input${current.screenshots?.length ? " has-screenshots" : ""}`}>
