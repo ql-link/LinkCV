@@ -93,19 +93,25 @@ export function V3Sidebar({
   // 选中项的高亮背景用一个滑块表示：切换页面时从旧位置滑到新位置
   // 不同页面各自挂载一份侧栏，所以记住上一次的位置：新侧栏先放在旧位置，下一帧再滑到当前项
   const navRef = useRef<HTMLElement>(null);
-  const [indicatorTop, setIndicatorTop] = useState<number | null>(() => lastIndicatorTop);
+  // snap 表示这次定位不播放滑动动画
+  const [indicator, setIndicator] = useState<{ top: number | null; snap: boolean }>(() => ({ top: lastIndicatorTop, snap: true }));
+  const indicatorTop = indicator.top;
   useLayoutEffect(() => {
     // nav 始终是定位容器；offsetTop 不受抽屉入场 scale 影响。
     // getBoundingClientRect 会把入场缩放计入位置，动画结束后高亮就会偏移。
     const nav = navRef.current;
     const target = nav?.querySelector<HTMLElement>(".v3-side-row.is-active");
     const next = target ? target.offsetTop : null;
-    if (next === null || lastIndicatorTop === null || lastIndicatorTop === next) {
-      setIndicatorTop(next);
+    const from = lastIndicatorTop;
+    if (next === null || from === null || from === next) {
+      setIndicator({ top: next, snap: true });
       lastIndicatorTop = next;
       return undefined;
     }
-    const frame = requestAnimationFrame(() => { setIndicatorTop(next); lastIndicatorTop = next; });
+    // 懒加载页面的侧栏可能在 Suspense 等待期间就被隐藏挂载，初始位置已经过时；
+    // 显示时先无动画放到最近一次的位置，下一帧再滑到当前项，避免从旧位置重新滑一遍。
+    setIndicator({ top: from, snap: true });
+    const frame = requestAnimationFrame(() => { setIndicator({ top: next, snap: false }); lastIndicatorTop = next; });
     return () => cancelAnimationFrame(frame);
   }, [active]);
 
@@ -130,7 +136,7 @@ export function V3Sidebar({
           <span data-locale-motion>{t("新建对话")}</span>
         </button>
         <nav ref={navRef} className={`v3-side-nav${indicatorTop !== null ? " has-indicator" : ""}`} aria-label={t("工作区导航")}>
-          {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)` }} />}
+          {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)`, transition: indicator.snap ? "none" : undefined }} />}
           {NAV.map((item) => {
             const count = item.key === "resumes" ? resumeCount || null : item.key === "jobs" ? applicationCount : item.count?.() ?? null;
             const isActive = item.key === active;
