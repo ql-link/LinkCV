@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from "react";
-import { ArrowUp, BriefcaseBusiness, Check, ChevronLeft, ChevronRight, FileText, Folder, Mic, PenLine, Sparkles } from "lucide-react";
+import { ArrowUp, BriefcaseBusiness, Check, ChevronLeft, ChevronRight, FileText, Folder, Mic, PenLine, RotateCw } from "lucide-react";
 import { FitStage } from "./FitStage";
 import { at, CountUp, FakePointer, SceneMotion, Typed, useScenePlayback } from "./motion";
 import { lt } from "./landingCopy";
@@ -58,7 +58,9 @@ function JobDetailVisual() {
   </>;
 }
 
-/* 场景 2：用户发一句话，AI 给出修改建议并写入简历（约 6s） */
+/* 场景 2：用户发一句话，AI 读取资料后给出修改建议，点击采用后简历原文被划掉并改写为新句子（约 6s） */
+const originalLine = "负责审批配置功能优化，通过原型测试改进配置流程，提升了用户体验。";
+const rewrittenLine = "主导审批配置改版：基于 1,200+ 条工单归因出 3 类高频问题，灰度期任务完成率 71% → 86%，平均配置时长缩短 42%。";
 const assistantReply = "复盘里有 4 条可量化结果，简历目前一条都没用上。对照 JD 的「数据驱动」要求，我准备了 2 处修改。";
 function AgentVisual() {
   return <>
@@ -68,24 +70,30 @@ function AgentVisual() {
           <div className="fs-chips"><span><FileText size={12} />{lt("产品经理简历")}</span><span><Folder size={12} />{lt("项目复盘.md")}</span><span><BriefcaseBusiness size={12} />{lt("星河科技 JD")}</span></div>
           <p className="fs-bubble">{lt("按这个 JD，把复盘里的结果整理进简历。")}</p>
         </div>
-        <p className="fs-thinking fx-in" style={at(0.4)}><Check size={13} />{lt("已分析 3 份资料，提取 4 条可量化结果")}<ChevronRight size={12} /></p>
-        <div className="fs-assistant"><span className="fx-in" style={at(0.6)}><Sparkles size={13} /></span><p><Typed text={lt(assistantReply)} start={0.6} duration={1.2} /></p></div>
+        <p className="fs-thinking fx-in" style={at(0.4)}><Check size={13} />{lt("已分析 3 份资料，提取 4 条可量化结果")}</p>
+        <div className="fs-assistant"><span className="fx-in" style={at(0.6)}><i /></span><p><Typed text={lt(assistantReply)} start={0.6} duration={1.2} /></p></div>
       </div>
       <div className="fs-preview">
         <div className="fs-preview-tabs"><span className="is-active"><FileText size={12} />{lt("产品经理简历")}</span><span><Folder size={12} />{lt("项目复盘.md")}</span><span><BriefcaseBusiness size={12} />{lt("星河科技 JD")}</span></div>
         <div className="fs-paper">
-          <h4>{lt("张三")}</h4>
-          <p className="fs-paper-contact">138 0000 0000&emsp;&ensp;zhangsan@example.com&emsp;&ensp;{lt("上海")}</p>
-          <p className="fs-paper-intent">{lt("求职意向：高级产品经理（B 端 SaaS）")}</p>
+          <header className="fs-paper-head">
+            <div><h4>{lt("张三")}</h4><p>{lt("高级产品经理 · B 端 SaaS")}</p></div>
+            <p className="fs-paper-contact">138 0000 0000<br />zhangsan@example.com<br />{lt("上海")}</p>
+          </header>
           <h5>{lt("工作经历")}</h5>
-          <p className="fs-paper-item">{lt("星图软件")}&ensp;{lt("产品经理")}<span>{lt("2021.07 – 至今")}</span></p>
-          <p>{lt("负责企业审批与权限模块，服务 3,000+ 家企业客户，月活管理员 4.2 万。")}</p>
+          <p className="fs-paper-item"><strong>{lt("星图软件")}</strong>{lt("产品经理")}<span>{lt("2021.07 – 至今")}</span></p>
+          <ul><li>{lt("负责企业审批与权限模块，服务 3,000+ 家企业客户，月活管理员 4.2 万。")}</li><li>{lt("搭建权限模板体系，权限相关工单季度环比下降 35%。")}</li></ul>
           <h5>{lt("项目经历")}</h5>
-          <p className="fs-paper-item">{lt("审批配置体验优化")}<span>2025.03 – 2025.09</span></p>
-          <p className="fs-paper-pending" style={at(3)}>{lt("主导审批配置改版：基于 1,200+ 条工单归因出 3 类高频问题，两轮原型测试后重构配置路径；灰度期任务完成率 71% → 86%，平均配置时长缩短 42%。")}</p>
-          <p>{lt("联合研发、运营梳理 23 个配置项，沉淀 6 套行业模板，新客户上线周期从 14 天缩短至 5 天。")}</p>
+          <p className="fs-paper-item"><strong>{lt("审批配置体验优化")}</strong>{lt("负责人")}<span>2025.03 – 2025.09</span></p>
+          <ul>
+            <li><div className="fs-paper-rewrite">
+              <p className="fs-paper-old" style={at(4.4)}><span>{lt(originalLine)}</span></p>
+              <p className="fs-paper-pending" style={at(4.85)}><Typed text={lt(rewrittenLine)} start={4.9} duration={1} /></p>
+            </div></li>
+            <li>{lt("联合研发、运营梳理 23 个配置项，沉淀 6 套行业模板，新客户上线周期从 14 天缩短至 5 天。")}</li>
+          </ul>
           <h5>{lt("教育经历")}</h5>
-          <p className="fs-paper-item">{lt("华东理工大学")}&ensp;{lt("工商管理")}<span>2014 – 2018</span></p>
+          <p className="fs-paper-item"><strong>{lt("华东理工大学")}</strong>{lt("工商管理 本科")}<span>2014 – 2018</span></p>
         </div>
       </div>
     </AppWindow>
@@ -94,10 +102,10 @@ function AgentVisual() {
       <header><strong>{lt("建议修改")}</strong><span>{lt("2 项待确认")}</span></header>
       <div className="fs-pill-tabs"><span className="is-active">{lt("量化项目结果")}</span><span>{lt("补充协作范围")}</span></div>
       <div className="fs-change">
-        <div className="fx-in" style={at(2.3)}><small>{lt("原文")}</small><p className="is-before">{lt("负责审批配置功能优化，通过原型测试改进配置流程，提升了用户体验。")}</p></div>
-        <div className="fx-in" style={at(2.6)}><small className="is-after">{lt("建议")}</small><p>{lt("主导审批配置改版：基于 ")}<b>1,200+</b>{lt(" 条工单归因出 3 类高频问题，两轮原型测试后重构配置路径；灰度期任务完成率 ")}<b>71% → 86%</b>{lt("，平均配置时长缩短 ")}<b>42%</b>{lt("。")}</p></div>
+        <div className="fx-in" style={at(2.3)}><small>{lt("原文")}</small><p className="is-before">{lt(originalLine)}</p></div>
+        <div className="fx-in" style={at(2.6)}><small className="is-after">{lt("建议")}</small><p>{lt("主导审批配置改版：基于 ")}<b>1,200+</b>{lt(" 条工单归因出 3 类高频问题，灰度期任务完成率 ")}<b>71% → 86%</b>{lt("，平均配置时长缩短 ")}<b>42%</b>{lt("。")}</p></div>
       </div>
-      <footer><span className="fs-pager"><ChevronLeft size={14} className="is-disabled" />1 / 2<ChevronRight size={14} /></span><span className="fs-actions"><span className="fs-text-btn">{lt("忽略")}</span><span className="fs-ghost-btn fs-hover-target">{lt("采用此项")}</span><span className="fs-primary-btn">{lt("全部采用")}</span></span></footer>
+      <footer><span className="fs-pager"><ChevronLeft size={14} className="is-disabled" />1 / 2<ChevronRight size={14} /></span><span className="fs-actions"><span className="fs-text-btn">{lt("忽略")}</span><span className="fs-ghost-btn fs-apply-target">{lt("采用此项")}</span><span className="fs-primary-btn">{lt("全部采用")}</span></span></footer>
     </div>
     <FakePointer className="is-agent" />
   </>;
@@ -130,18 +138,18 @@ function JobMatchVisual() {
     <div className="fs-fade" />
     <div className="fs-float fs-match fx-up" style={at(1.4)}>
       <div className="fs-gauge">
-        <svg viewBox="0 0 276 140" fill="none"><path d="M52 118a86 86 0 0 1 172 0" stroke="#e6e6e2" strokeWidth="12" strokeLinecap="round" /><path className="fs-gauge-arc" style={at(1.5)} d="M52 118a86 86 0 0 1 172 0" stroke="#3b9a5b" strokeWidth="12" strokeLinecap="round" pathLength="100" strokeDasharray="82 100" /></svg>
+        <svg viewBox="0 0 276 140" fill="none"><path d="M52 118a86 86 0 0 1 172 0" strokeWidth="12" style={{ stroke: "var(--fs-line)" }} strokeLinecap="round" /><path className="fs-gauge-arc" style={{ ...at(1.5), stroke: "var(--fs-good)" }} d="M52 118a86 86 0 0 1 172 0" strokeWidth="12" strokeLinecap="round" pathLength="100" strokeDasharray="82 100" /></svg>
         <strong><CountUp to={82} delay={1.5} duration={1} /></strong><small>{lt("匹配度")}</small><i className="is-min">0</i><i className="is-max">100</i>
       </div>
       <p className="fs-match-basis fx-in" style={at(2.4)}>{lt("基于「产品经理简历」")}</p>
       <p className="fs-match-gap fx-in" style={at(2.4)}>{lt("还缺：SQL 数据分析、SaaS 商业化经验")}</p>
       {[true, false].map(hit => <div className="fs-match-group" key={String(hit)}><small>{hit ? "已命中 6" : "待补充 2"}</small><div>{matchTags.filter(item => item.hit === hit).map(item => <span className={`fx-pop ${hit ? "is-green" : "is-orange"}`} style={at(2.6 + matchTags.indexOf(item) * 0.06)} key={item.tag}>{lt(item.tag)}</span>)}</div></div>)}
-      <div className="fs-match-actions"><span className="fs-ghost-btn"><Sparkles size={13} />{lt("重新分析")}</span><span className="fs-primary-btn"><PenLine size={13} />{lt("按 JD 优化简历")}</span></div>
+      <div className="fs-match-actions"><span className="fs-ghost-btn"><RotateCw size={13} />{lt("重新分析")}</span><span className="fs-primary-btn"><PenLine size={13} />{lt("按 JD 优化简历")}</span></div>
     </div>
   </>;
 }
 
-/* 场景 4：把一张卡从「一面」拖到「二面」（约 5s，停在拖拽中） */
+/* 场景 4：把「蓝鲸支付」从「一面」拖到「二面」，放下后列计数与卡片状态同步更新（约 4s，停在放好的状态） */
 type BoardCard = { company: string; title: string; category: string; status: string; logo: string; tone: string };
 const columns: { title: string; tone: string; count: number; cards: BoardCard[] }[] = [
   { title: "筛选中", tone: "muted", count: 3, cards: [
@@ -149,28 +157,35 @@ const columns: { title: string; tone: string; count: number; cards: BoardCard[] 
     { company: "澄海科技", title: "产品运营", category: "校招", status: "投递于 10月1日", logo: "澄", tone: "muted" },
     { company: "星图云", title: "B 端产品经理", category: "正式", status: "投递于 9月28日", logo: "图", tone: "muted" },
   ] },
-  { title: "笔试", tone: "orange", count: 1, cards: [{ company: "拾光互娱", title: "游戏策划", category: "校招", status: "截止 10月8日 18:00", logo: "拾", tone: "orange" }] },
-  { title: "一面", tone: "blue", count: 1, cards: [{ company: "云杉医疗", title: "产品经理", category: "正式", status: "10月9日 10:00", logo: "云", tone: "blue" }] },
+  { title: "笔试", tone: "muted", count: 1, cards: [{ company: "拾光互娱", title: "游戏策划", category: "校招", status: "截止 10月8日 18:00", logo: "拾", tone: "muted" }] },
+  { title: "一面", tone: "muted", count: 1, cards: [{ company: "云杉医疗", title: "产品经理", category: "正式", status: "10月9日 10:00", logo: "云", tone: "muted" }] },
   { title: "二面", tone: "blue", count: 2, cards: [{ company: "星河科技", title: "高级产品经理", category: "正式", status: "今天 14:00", logo: "星", tone: "today" }] },
-  { title: "Offer", tone: "green", count: 1, cards: [{ company: "远航物流", title: "产品经理", category: "正式", status: "9月26日 获得 Offer", logo: "远", tone: "green" }] },
+  { title: "Offer", tone: "muted", count: 1, cards: [{ company: "远航物流", title: "产品经理", category: "正式", status: "9月26日 获得 Offer", logo: "远", tone: "muted" }] },
 ];
-function ProgressCard({ card, className = "" }: { card: BoardCard; className?: string }) {
-  return <div className={`fs-board-card ${className}`}><div><small>{lt(card.company)}</small><strong>{lt(card.title)}</strong><span>{lt(card.category)}</span></div><footer>{card.tone === "today" ? <em>{lt(card.status)}</em> : <p><i className={`is-${card.tone}`} />{lt(card.status)}</p>}<b>{lt(card.logo)}</b></footer></div>;
+const movingCard: BoardCard = { company: "蓝鲸支付", title: "产品经理", category: "正式", status: "10月12日 14:00", logo: "鲸", tone: "blue" };
+const movingFrom = "10月10日 15:00";
+const countSwaps: Record<string, string> = { 一面: "2", 二面: "1" };
+/** 数值在 delay 秒时由旧值切换为新值；结束帧和降级时只显示新值。 */
+function Swap({ from, to, delay }: { from: string; to: string; delay: number }) {
+  return <span className="fs-swap"><span className="fs-swap-old" style={at(delay)}>{from}</span><span className="fs-swap-new" style={at(delay)}>{to}</span></span>;
+}
+function ProgressCard({ card, className = "", statusFrom }: { card: BoardCard; className?: string; statusFrom?: string }) {
+  const status = statusFrom ? <Swap from={lt(statusFrom)} to={lt(card.status)} delay={2.7} /> : lt(card.status);
+  return <div className={`fs-board-card ${className}`}><div><small>{lt(card.company)}</small><strong>{lt(card.title)}</strong><span>{lt(card.category)}</span></div><footer>{card.tone === "today" ? <em>{status}</em> : <p><i className={`is-${card.tone}`} />{status}</p>}<b>{lt(card.logo)}</b></footer></div>;
 }
 function BoardVisual() {
   return <>
     <AppWindow>
-      <p className="fs-board-head"><strong>{lt("岗位看板")}</strong>{lt("9 个求职进程")}</p>
+      <p className="fs-board-head"><strong>{lt("岗位看板")}</strong>{lt("8 个求职进程")}</p>
       <div className="fs-board-tools"><span className="fs-toggle"><b>{lt("看板")}</b><span>{lt("列表")}</span></span><span className="fs-outline-btn">{lt("+ 新建求职")}</span></div>
       <div className="fs-board">{columns.map(column => <section key={column.title}>
-        <header><i className={`is-${column.tone}`} /><strong>{lt(column.title)}</strong>{column.count}</header>
-        {column.title === "二面" && <div className="fs-drop-slot fx-in" style={at(0.9)} />}
+        <header><i className={`is-${column.title === "二面" ? "blue" : column.tone}`} /><strong>{lt(column.title)}</strong>{countSwaps[column.title] ? <Swap from={countSwaps[column.title]} to={String(column.count)} delay={column.title === "一面" ? 1.6 : 2.6} /> : column.count}</header>
+        {column.title === "二面" && <div className="fs-slot"><ProgressCard className="is-moving" card={movingCard} statusFrom={movingFrom} /></div>}
         {column.cards.map(card => <ProgressCard key={card.company} card={card} />)}
+        {column.title === "一面" && <div className="fs-source"><ProgressCard card={{ ...movingCard, status: movingFrom }} /></div>}
       </section>)}</div>
     </AppWindow>
     <div className="fs-fade is-board" />
-    <ProgressCard className="is-dragging" card={{ company: "蓝鲸支付", title: "产品经理", category: "正式", status: "10月10日 15:00", logo: "鲸", tone: "blue" }} />
-    <p className="fs-drop-hint fx-up" style={at(2)}><strong>{lt("推进到二面")}</strong>{lt("10月12日 14:00")}</p>
     <FakePointer className="is-board" />
   </>;
 }

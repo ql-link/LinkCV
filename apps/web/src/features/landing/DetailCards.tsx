@@ -1,5 +1,5 @@
 import type { ComponentType, CSSProperties } from "react";
-import { ArrowUp, BriefcaseBusiness, Check, ChevronDown, FileText, Sparkles, X } from "lucide-react";
+import { ArrowUp, BriefcaseBusiness, Check, ChevronDown, FileText, X } from "lucide-react";
 import openai from "@/assets/model-icons/openai.svg";
 import claude from "@/assets/model-icons/claude.svg";
 import gemini from "@/assets/model-icons/gemini.svg";
@@ -17,7 +17,7 @@ function Models() {
   const models = [{ name: "DeepSeek", icon: deepseek }, { name: "Claude", icon: claude }, { name: "GPT", icon: openai }, { name: "Gemini", icon: gemini }, { name: "Kimi", icon: kimi }];
   return <>
     <div className="dc-menu dc-model-menu"><p className="dc-menu-head">{lt("选择模型")}</p>{models.map((model, index) => <p key={model.name} className={`dc-menu-row${index === 0 ? " is-selected" : ""}`}><span><img src={model.icon} alt="" width="16" height="16" />{model.name}{index === 0 && <em>{lt("默认")}</em>}</span>{index === 0 && <Check size={14} strokeWidth={2} />}</p>)}</div>
-    <div className="dc-composer dc-model-composer"><p>{lt("问点什么，或输入 @ 引用资料")}</p><span className="dc-model-pill"><img src={deepseek} alt="" width="13" height="13" />DeepSeek<ChevronDown size={12} /></span><SendButton /></div>
+    <div className="dc-composer dc-model-composer"><p>{lt("问点什么，或输入 @ 引用资料")}</p><span className="dc-model-pill"><img src={deepseek} alt="" width="13" height="13" />DeepSeek</span><SendButton /></div>
   </>;
 }
 
@@ -49,7 +49,7 @@ function CaptureJob() {
   const fields = [["公司", "云帆科技"], ["岗位", "增长产品经理"], ["城市", "杭州"], ["薪资", "25–35K × 15 薪"], ["经验", "3–5 年"]];
   return <>
     <div className="dc-pasted"><p className="dc-label">{lt("粘贴岗位文字")}</p><p>{lt("【云帆科技】增长产品经理\n杭州 余杭区  25-35K·15薪\n经验 3-5 年  本科\n\n岗位职责：\n1. 负责新用户增长策略，设计并推动拉新、激活实验；\n2. 搭建增长数据看板，定位转化漏斗中的关键问题；")}</p></div>
-    <div className="dc-dialog dc-parsed"><p className="dc-parsed-head"><Sparkles size={13} />{lt("已识别 6 项")}</p><div className="dc-fields">{fields.map(([label, value]) => <p key={label}><small>{lt(label)}</small>{lt(value)}</p>)}<p><small>{lt("类型")}</small><span className="dc-type-chip">{lt("正式")}</span></p></div><footer><small>{lt("核对后保存")}</small><span className="dc-primary">{lt("保存岗位")}</span></footer></div>
+    <div className="dc-dialog dc-parsed"><p className="dc-parsed-head">{lt("已识别 6 项")}</p><div className="dc-fields">{fields.map(([label, value]) => <p key={label}><small>{lt(label)}</small>{lt(value)}</p>)}<p><small>{lt("类型")}</small><span className="dc-type-chip">{lt("正式")}</span></p></div><footer><small>{lt("核对后保存")}</small><span className="dc-primary">{lt("保存岗位")}</span></footer></div>
   </>;
 }
 

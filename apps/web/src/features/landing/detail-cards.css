@@ -42,8 +42,7 @@
 .dc-model-menu svg { color: #3f6fd8; }
 .dc-model-composer { left: 24px; top: 212px; height: 60px; }
 .dc-model-composer > p { left: 14px; top: 10px; color: #a3a39d; }
-.dc-model-pill { left: 10px; top: 36px; display: flex; align-items: center; gap: 4px; height: 25px; padding: 0 8px 0 6px; border: 1px solid #e4e4e0; border-radius: 7px; font-size: 11px; line-height: 17px; font-weight: 500; color: #55554f; }
-.dc-model-pill svg { color: #8a8a84; }
+.dc-model-pill { right: 42px; top: 33px; display: flex; align-items: center; gap: 5px; height: 25px; padding: 0 4px; border-radius: 7px; font-size: 11px; line-height: 17px; font-weight: 500; color: #55554f; }
 .dc-model-composer .dc-send { top: 32px; }
 
 /* 02 已有简历导入 */
@@ -105,7 +104,6 @@
 .dc-pasted > p:last-child { font-size: 11px; line-height: 18px; color: #a3a39d; white-space: pre-wrap; }
 .dc-parsed { left: 160px; top: 27px; width: 188px; height: 235px; gap: 10px; padding: 14px; }
 .dc-parsed-head { display: flex; align-items: center; gap: 6px; font-weight: 700; }
-.dc-parsed-head svg { color: #3f6fd8; }
 .dc-fields { display: flex; flex-direction: column; gap: 6px; }
 .dc-fields p { display: flex; align-items: center; gap: 10px; height: 18px; font-weight: 500; white-space: nowrap; }
 .dc-fields small { width: 22px; font-size: 11px; line-height: 17px; font-weight: 400; color: #8a8a84; }
