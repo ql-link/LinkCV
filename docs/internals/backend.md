@@ -10,6 +10,8 @@
 
 ## 当前职责与结构
 
+原生决策协议 `system_one` 由统一 LLM 网关通过现有 HTTPX 依赖调用受控 AIHubMix `/v1/systemone`，不引入 SDK、自由推理 URL 或数据库迁移。意图适配器将固定分类问题转换为既有任务契约，沿用凭据加密、场景探测、run 计量、取消和失败回退；协议、阈值和配置边界见 [Agent 运行时](agent-runtime.md#调用链)。
+
 意图识别的上游调用与断开监控使用 AnyIO 任务组，与 FastAPI/Starlette 的取消作用域一致；`anyio>=4,<5` 已显式声明为直接依赖，锁文件沿用已有版本。场景与执行边界见 [Agent 运行时](agent-runtime.md#调用链)。
 
 结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `TextRun` 和字号边界，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。

@@ -513,7 +513,7 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
 | `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`callId`、`userId`（精确匹配）、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
 
-模型 catalog 与场景绑定支持 `assistant_intent`（助手意图识别），只接受 `openai_chat`。此场景的探测验证结构化多意图结果，独立于 `assistant_conversation` 的 Pi Tool 探测。
+模型 catalog 与场景绑定支持 `assistant_intent`（助手意图识别），接受 `openai_chat` 和 AIHubMix 的 `system_one` 原生决策协议。Jev 目标必须使用 `system_one`；不兼容的模型协议绑定返回 `422 LLM_ROUTE_INVALID`。管理端可在加入模型时选择协议，也可修改已绑定线路；修改协议会停用绑定并清除旧探针指纹，必须重新探测后启用。此场景的探测验证结构化多意图结果，独立于 `assistant_conversation` 的 Pi Tool 探测。
 
 `POST /internal/agent/runs/{run_id}/intent:recognize` 只接受 Pi 服务令牌，不接收自定义提示词、用户 ID 或模型密钥。输入从运行的用户消息与本轮授权资料解析。响应 `version=1`、`mode=plan|conversation|clarify|fallback`；plan 携带已保存的任务（包括状态），clarify 携带 `clarification_purposes`，fallback 携带稳定 `reason`，实际调用可携带 `call_id`。未配置和调用失败返回 fallback；`AGENT_TASK_CONTEXT_NOT_AUTHORIZED`、`AGENT_TASK_PLAN_CONFLICT` 和 `AGENT_RUN_NOT_ACTIVE` 返回 409，服务令牌无效返回 401。识别的执行、取消、计量与数据最小化边界见 [Agent 运行时](../internals/agent-runtime.md#调用链)。
 

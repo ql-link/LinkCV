@@ -57,11 +57,20 @@ def test_input_does_not_include_material_bodies_or_locators():
     assert payload["authorized_contexts"] == [{"type": "resume", "id": "1", "label": "张三简历"}]
 
 
-def test_intent_only_accepts_chat_protocol():
-    from linkresume.modules.llm.providers import validate_use_case_protocol
+def test_intent_accepts_chat_and_native_decision_but_not_responses():
+    from linkresume.modules.llm.providers import validate_use_case_protocol, validate_route, validate_model_protocol
     validate_use_case_protocol("assistant_intent", "openai_chat")
+    validate_use_case_protocol("assistant_intent", "system_one")
+    validate_route("aihubmix", "model", "system_one")
+    validate_model_protocol("jev-latest", "system_one")
     with pytest.raises(ValueError):
         validate_use_case_protocol("assistant_intent", "openai_responses")
+    with pytest.raises(ValueError):
+        validate_use_case_protocol("assistant_conversation", "system_one")
+    with pytest.raises(ValueError):
+        validate_route("deepseek", "model", "system_one")
+    with pytest.raises(ValueError):
+        validate_model_protocol("jev-latest", "openai_chat")
 
 
 def test_intent_receives_identity_memory_separately_from_current_grants():

@@ -28,7 +28,7 @@ from linkresume.modules.llm.models import (
 )
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
 from linkresume.modules.llm.providers import (
-    OPENAI_CHAT, PROVIDERS, validate_route, validate_settings, validate_use_case_protocol,
+    OPENAI_CHAT, PROVIDERS, validate_route, validate_settings, validate_use_case_protocol, validate_model_protocol,
 )
 from linkresume.modules.llm.resolver import (
     USE_CASES, eligible_routes, is_effective, probe_valid,
@@ -551,6 +551,7 @@ def bind_route(
     try:
         validate_route(connection.provider_code, route.target_kind, payload.protocol_code)
         validate_use_case_protocol(use_case, payload.protocol_code)
+        validate_model_protocol(route.invoke_target, payload.protocol_code)
     except ValueError as error:
         raise ApiError(422, "LLM_ROUTE_INVALID") from error
     row = get_use_case_route(db, use_case, route.id)

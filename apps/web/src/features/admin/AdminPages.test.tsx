@@ -333,6 +333,33 @@ describe("CapabilitiesPage", () => {
     await waitFor(() => expect(put).toHaveBeenCalledWith("assistant_intent", "12", { protocolCode: "openai_chat", priority: 10, enabled: false }));
   });
 
+  it("selects native System One for Jev instead of Chat when joining intent recognition", async () => {
+    mockLlm({ routes: [{ ...route, invokeTarget: "jev-latest" }] });
+    vi.mocked(api.getLlmCatalog).mockResolvedValue({ ...catalog, useCases: ["assistant_conversation", "assistant_intent"], providers: [{ ...catalog.providers[0], protocols: ["openai_chat", "system_one"] }] });
+    const put = vi.spyOn(api, "putLlmBinding").mockResolvedValue({ binding: {} as LlmBinding });
+    render(wrap(<CapabilitiesPage />));
+    fireEvent.click(await screen.findByRole("tab", { name: /助手意图识别/ }));
+    fireEvent.click(screen.getByRole("button", { name: "加入模型" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("搜索模型"), { target: { value: "示例" } });
+    fireEvent.click(within(dialog).getByRole("option", { name: /示例模型/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /加入 1 条线路/ }));
+    await waitFor(() => expect(put).toHaveBeenCalledWith("assistant_intent", "12", { protocolCode: "system_one", priority: 10, enabled: false }));
+  });
+
+  it("changes an existing intent binding protocol and disables it for a new probe", async () => {
+    mockLlm();
+    vi.mocked(api.getLlmCatalog).mockResolvedValue({ ...catalog, useCases: ["assistant_conversation", "assistant_intent"], providers: [{ ...catalog.providers[0], protocols: ["openai_chat", "system_one"] }] });
+    vi.mocked(api.listLlmBindings).mockResolvedValue({ bindings: [{ useCase: "assistant_intent", routeId: "12", protocolCode: "openai_chat", priority: 10, enabled: true, validatedAt: stamp, effective: true }] });
+    const put = vi.spyOn(api, "putLlmBinding").mockResolvedValue({ binding: {} as LlmBinding });
+    render(wrap(<CapabilitiesPage />));
+    fireEvent.click(await screen.findByRole("tab", { name: /助手意图识别/ }));
+    fireEvent.click(screen.getByRole("button", { name: /示例模型 线路/ }));
+    fireEvent.click(screen.getByRole("combobox", { name: "线路 #12 识别协议" }));
+    fireEvent.click(await screen.findByRole("option", { name: "原生决策（System One）" }));
+    await waitFor(() => expect(put).toHaveBeenCalledWith("assistant_intent", "12", { protocolCode: "system_one", priority: 10, enabled: false }));
+  });
+
   it("adds an existing model with all of its enabled routes, disabled and after the last priority", async () => {
     const other: LlmModel = { ...model, id: "7", displayName: "另一个模型" };
     const r1: LlmRoute = { ...route, id: "21", modelId: "7", invokeTarget: "vendor/other-a" };
