@@ -8,6 +8,7 @@ for (const mode of ["plan", "conversation", "clarify", "fallback"]) test(`Pi exe
   const tasks = [{ id: "career", workflow: "career_planning", output: "advice", label: "职业规划", depends_on: [], context_refs: [], status: "planned", proposal_ids: [] }];
   const script = mode === "clarify" ? [
     ["read", { path: "career-assistant-router/SKILL.md" }],
+    ["request_user_input", { questions: [{ purpose: "missing_fact", id: "unrelated", header: "事实", question: "无关事实？", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] }] }],
     ["request_user_input", { questions: [{ purpose: "edit_scope", id: "scope", header: "修改范围", question: "需要修改哪个范围？", options: [{ id: "local", label: "局部" }, { id: "whole", label: "整份" }] }] }],
   ] : ["conversation", "fallback"].includes(mode) ? [
     ["read", { path: "career-assistant-router/SKILL.md" }],
@@ -21,7 +22,7 @@ for (const mode of ["plan", "conversation", "clarify", "fallback"]) test(`Pi exe
     ["begin_final_response", {}],
     null,
   ];
-  const calls = [];
+  const calls = [], skillAudits = [];
   const events = [];
   let turn = 0;
   globalThis.fetch = async (input, options = {}) => {
@@ -46,7 +47,12 @@ for (const mode of ["plan", "conversation", "clarify", "fallback"]) test(`Pi exe
       return Response.json({ tasks: structuredClone(tasks) });
     }
     if (url.endsWith("tasks/career/materials")) return Response.json({ materials: [], sources: [] });
-    if (url.endsWith("tool-events") || url.endsWith("llm-calls")) return Response.json({ recorded: true });
+    if (url.endsWith("tool-events")) {
+      const audit = JSON.parse(options.body);
+      if (audit.tool_name === "read_skill") skillAudits.push(audit);
+      return Response.json({ recorded: true });
+    }
+    if (url.endsWith("llm-calls")) return Response.json({ recorded: true });
     throw new Error(`unexpected endpoint ${url}`);
   };
   await executeAgentRun({
@@ -58,8 +64,13 @@ for (const mode of ["plan", "conversation", "clarify", "fallback"]) test(`Pi exe
   if (["conversation", "fallback"].includes(mode)) assert.equal(calls.some((url) => url.includes("tasks/career")), false);
   if (mode === "clarify") {
     assert.ok(events.some((event) => event.type === "clarification.requested"));
+    assert.ok(events.some((event) => event.type === "assistant.activity.status" && event.payload.errorCode === "AGENT_INTENT_CLARIFICATION_SCOPE_INVALID"));
     assert.equal(calls.some((url) => url.includes("tasks/career")), false);
   }
+  assert.deepEqual(skillAudits.map(item => [item.skill_name,item.status]), mode === "plan"
+    ? [["career-assistant-router","running"],["career-assistant-router","succeeded"],["career-planning","running"],["career-planning","succeeded"]]
+    : [["career-assistant-router","running"],["career-assistant-router","succeeded"]]);
+  assert.ok(skillAudits.every(item => item.target_type === "skill" && item.target_id === item.skill_name));
   assert.equal(turn, script.length);
   assert.equal(calls.filter((url) => url.endsWith("intent:recognize")).length, 1);
   assert.equal(calls.some((url) => url.endsWith("tasks:plan")), false);

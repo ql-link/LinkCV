@@ -1134,3 +1134,8 @@
 @media (prefers-contrast: more) {
   .adm-shell, .adm-modal, .adm-drawer { --adm-line: #8a8c87; --adm-line-soft: #a4a6a1; --adm-muted: #5d605b; --adm-faint: #6d706a; }
 }
+
+/* Protocol configuration has its own row so the metadata ellipsis cannot clip it. */
+.adm-cap-protocol { display: block; width: 100%; margin-top: 6px; }
+.adm-cap-protocol-select { width: 100%; max-width: none; }
+.adm-cap-validating { color: var(--adm-muted); font-size: 12px; white-space: nowrap; }

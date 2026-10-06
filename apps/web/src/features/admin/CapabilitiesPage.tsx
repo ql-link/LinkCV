@@ -363,19 +363,21 @@ export function CapabilitiesPage() {
                                   <small className="adm-route-meta">
                                     <span title={route?.invokeTarget}>{route?.invokeTarget ?? "—"}</span>
                                     <span>{priceText(route?.pricing ?? null)}</span>
-                                    {useCase === "assistant_intent" ? <SelectBox label={`线路 #${item.routeId} 识别协议`} value={item.protocolCode} disabled={busy !== null}
-                                      options={intentProtocols.filter((code) => data!.catalog.providers.find((spec) => spec.code === connection?.providerCode)?.protocols.includes(code)).map((code) => ({ value: code, label: protocolLabel(code) }))}
-                                      onChange={(code) => void run(`protocol:${item.routeId}`, () => api.putLlmBinding(item.useCase, item.routeId, { protocolCode: code, priority: item.priority, enabled: false }), "协议已修改，请重新探测并启用")} /> : <span>{item.protocolCode}</span>}
-                                    <span>{item.validatedAt ? `探测于 ${formatWhen(item.validatedAt)}` : "未探测"}</span>
+                                    {useCase !== "assistant_intent" && <span>{item.protocolCode}</span>}
+                                    <span>{item.validatedAt ? `验证于 ${formatWhen(item.validatedAt)}` : "启用时自动验证"}</span>
                                   </small>
+                                  {useCase === "assistant_intent" && <span className="adm-cap-protocol"><SelectBox className="adm-cap-protocol-select" label={`线路 #${item.routeId} 识别协议`} value={item.protocolCode} disabled={busy !== null}
+                                      options={intentProtocols.filter((code) => data!.catalog.providers.find((spec) => spec.code === connection?.providerCode)?.protocols.includes(code)).map((code) => ({ value: code, label: protocolLabel(code) }))}
+                                      onChange={(code) => void run(`protocol:${item.routeId}`, () => api.putLlmBinding(item.useCase, item.routeId, { protocolCode: code, priority: item.priority, enabled: false }), "协议已修改，启用时将自动验证")} /></span>}
                                 </span>
                               </span>
                             );
                           } },
-                          { key: "state", label: "状态", width: "72px", render: (item) => <StatusDot tone={item.effective ? "ok" : item.enabled ? "warn" : "muted"}>{item.effective ? "生效" : item.enabled ? "待恢复" : "停用"}</StatusDot> },
-                          { key: "actions", label: "", width: "150px", align: "right", render: (item) => (
+                          { key: "state", label: "状态", width: "72px", render: (item) => busy === `binding:${item.routeId}` && !item.enabled
+                            ? <span role="status" className="adm-cap-validating">验证中…</span>
+                            : <StatusDot tone={item.effective ? "ok" : item.enabled ? "warn" : "muted"}>{item.effective ? "生效" : item.enabled ? "待恢复" : "停用"}</StatusDot> },
+                          { key: "actions", label: "", width: "90px", align: "right", render: (item) => (
                             <span className="adm-row-actions is-tight">
-                              <Button className="adm-btn-sm" disabled={busy !== null} onClick={() => void run(`probe:${item.routeId}`, () => api.probeLlmBinding(item.useCase, item.routeId), "探测通过")}>{busy === `probe:${item.routeId}` ? "探测中…" : "探测"}</Button>
                               <Toggle label={`${item.enabled ? "停用" : "启用"}线路 #${item.routeId}`} checked={item.enabled} disabled={busy !== null} onChange={(next) => void run(`binding:${item.routeId}`, () => api.updateLlmBinding(item.useCase, item.routeId, { enabled: next }), next ? "线路已启用" : "线路已停用")} />
                               <MoreMenu label={`线路 #${item.routeId} 更多操作`} disabled={busy !== null} items={[
                                 { label: `复制线路 ID #${item.routeId}`, onSelect: () => void navigator.clipboard?.writeText(item.routeId) },
@@ -415,7 +417,7 @@ export function CapabilitiesPage() {
             {assistant
               ? "用户在对话里能选的，是这里列出且开启“用户可选”的模型；没选时使用排第一的可用模型。某个模型的主线路失败时，只会切到它自己的备用线路，不会换成别的模型。"
               : "这个场景使用排第一的可用模型；它的主线路失败时，只会切到它自己的备用线路，不会换成别的模型。"}
-            {" "}新加入的线路默认停用，探测通过后才能启用。
+            {" "}新加入的线路默认停用；点击启用时自动验证，失败会显示原因并保持停用。
           </Footnote>
         </div>
         </div>
@@ -531,13 +533,13 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
     try {
       if (mode === "existing") {
         await bind(available.filter((route) => chosen.has(route.id)));
-        notify(`已加入 ${chosen.size} 条线路，探测通过后再启用`);
+        notify(`已加入 ${chosen.size} 条线路，启用时自动验证`);
       } else {
         const created = (await api.createLlmModel({ displayName: name.trim(), developerName: developer.trim() || null, userSelectable: assistant ? selectable : true })).model;
         const pricing = inputPrice.trim() ? { currency, input_per_million: inputPrice.trim(), output_per_million: outputPrice.trim() } : null;
         const route = (await api.createLlmRoute({ modelId: Number(created.id), connectionId: Number(connectionId), targetKind: (provider?.targetKinds[0] ?? "model") as LlmRoute["targetKind"], invokeTarget: target.trim(), identifierKind: "pinned", pricing })).route;
         await bind([route]);
-        notify("模型已创建并加入场景，探测通过后再启用");
+        notify("模型已创建并加入场景，启用时自动验证");
       }
       onSaved();
     } catch (caught) {
@@ -557,14 +559,14 @@ function AddModelModal({ data, useCase, lockedModelId, existing, onClose, onSave
     <Modal
       width={600}
       title={lockedModelId ? `为「${model?.displayName ?? ""}」添加线路` : "添加模型"}
-      subtitle={`加入「${useCaseLabel(useCase)}」，排在当前顺序的最后；新线路默认停用，探测通过后再启用`}
+      subtitle={`加入「${useCaseLabel(useCase)}」，排在当前顺序的最后；新线路默认停用，启用时自动验证`}
       onClose={onClose}
       busy={busy}
       footer={<><Button dismiss disabled={busy}>取消</Button><Button variant="primary" disabled={busy || !(mode === "existing" ? validExisting : validNew)} onClick={() => void submit()}>{busy ? "保存中…" : mode === "existing" ? `加入 ${chosen.size || ""} 条线路`.replace("  ", " ") : "创建并加入"}</Button></>}
     >
       <div className="adm-form">
         {!lockedModelId && <Segmented label="添加方式" value={mode} onChange={(next) => { setMode(next); setError(null); }} options={[{ value: "existing", label: "选择已有模型" }, { value: "new", label: "新建模型" }]} />}
-        {intent && <Field label="识别协议" hint="自动选择会为 Jev 使用原生决策接口；加入后仍需探测。"><SelectBox label="识别协议" value={intentProtocol ?? "auto"} onChange={(value) => setIntentProtocol(value === "auto" ? null : value)} options={[
+        {intent && <Field label="识别协议" hint="自动选择会为 Jev 使用原生决策接口；启用时自动验证。"><SelectBox label="识别协议" value={intentProtocol ?? "auto"} onChange={(value) => setIntentProtocol(value === "auto" ? null : value)} options={[
           { value: "auto", label: "按模型自动选择" }, ...intentProtocols.map((code) => ({ value: code, label: protocolLabel(code) })),
         ]} /></Field>}
         {mode === "existing" ? (

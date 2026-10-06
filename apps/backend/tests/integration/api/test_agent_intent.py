@@ -64,7 +64,7 @@ def test_plan_is_saved_replayed_and_logged_with_run(context):
     assert metadata["agent_intent"]["call_id"] == "llmcall_test"
 
 
-@pytest.mark.parametrize("code", ["LLM_MODEL_NOT_CONFIGURED", "LLM_MODEL_UNAVAILABLE", "LLM_RESPONSE_INVALID"])
+@pytest.mark.parametrize("code", ["LLM_MODEL_NOT_CONFIGURED", "LLM_MODEL_UNAVAILABLE", "LLM_RESPONSE_INVALID", "INTENT_UNCERTAIN", "INTENT_DECISION_INCONSISTENT", "LLM_TIMEOUT", "LLM_CONNECTION_FAILED"])
 def test_model_failure_falls_back_without_plan(context, code):
     app, client, mock, run_id = context
     mock.side_effect = LLMError(code)
@@ -104,7 +104,48 @@ def test_nonplan_decision_is_replayed_without_business_tasks(context, mode, purp
 def test_known_resume_identity_cannot_be_asked_again(context):
     _, client, mock, run_id = context
     mock.return_value = decision("clarify", clarification_purposes=["resume_identity"])
-    assert recognize(client, run_id).json()["mode"] == "fallback"
+    response = recognize(client, run_id).json()
+    assert response["mode"] == "fallback" and response["reason"] == "INTENT_DECISION_INCONSISTENT"
+
+
+def test_explicit_identity_conflict_can_be_clarified_without_new_grants(context):
+    app, client, mock, run_id = context
+    mock.return_value = decision("clarify", clarification_purposes=["resume_identity"], resume_identity_conflict=True)
+    response = recognize(client, run_id).json()
+    assert response["mode"] == "clarify" and response["resume_identity_conflict"] is True
+    with app.state.session_factory() as db:
+        metadata = db.scalar(select(AgentMessage)).metadata_json
+        assert metadata['contexts'] == [{"type":"resume","id":"1"}]
+        assert "agent_tasks" not in metadata
+
+
+@pytest.mark.parametrize('detail,expected', [
+    ({'field':'mode','confidence':0.45},{'field':'mode','confidence':0.45}),
+    ({'field':'private-user-content','confidence':0.45},None),
+    ({'field':'mode','confidence':float('nan')},None),
+    ({'field':'mode','confidence':0.45,'raw_response':'private-response'},None),
+])
+def test_fallback_diagnostic_is_bounded_and_replayed(context,detail,expected):
+    app, client, mock, run_id = context
+    mock.side_effect = LLMError('INTENT_UNCERTAIN','llmcall_uncertain',decision_detail=detail)
+    response = recognize(client,run_id).json()
+    assert response.get('decision_detail') == expected
+    assert response['reason'] == 'INTENT_UNCERTAIN'
+    assert recognize(client,run_id).json() == response
+    with app.state.session_factory() as db:
+        metadata = db.scalar(select(AgentMessage)).metadata_json
+        assert metadata['agent_intent'].get('decision_detail') == expected
+        assert 'agent_tasks' not in metadata
+
+
+def test_identity_conflict_requires_explicit_current_resume(context):
+    app,client,mock,run_id = context
+    with app.state.session_factory() as db:
+        message = db.scalar(select(AgentMessage))
+        message.metadata_json = {'contexts':[{'type':'resume','id':'1','presentation':'implicit'}]}
+        db.commit()
+    mock.return_value = decision('clarify',clarification_purposes=['resume_identity'],resume_identity_conflict=True)
+    assert recognize(client,run_id).json()['reason'] == 'INTENT_DECISION_INCONSISTENT'
 
 
 def test_timeout_cancels_provider_before_fallback(context, monkeypatch):

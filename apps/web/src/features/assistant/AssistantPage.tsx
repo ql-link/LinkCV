@@ -252,6 +252,7 @@ type ConversationState = {
   runId: string | null;
   phase: string;
   activityText: string;
+  activityTimeline: Array<{ kind: "text"; text: string } | { kind: "tool"; callKey: string }>;
   activities: Array<{
     callKey: string;
     label: string;
@@ -303,7 +304,7 @@ function blankConversation(): ConversationState {
     stage: "idle",
     runId: null,
     phase: t("正在准备…"),
-    activityText: "",
+    activityText: "", activityTimeline: [],
     activities: [],
     referencedContextCount: 0,
     startedAt: null,
@@ -947,20 +948,22 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const elapsedSeconds = current.startedAt ? Math.max(0, Math.floor((clock - current.startedAt) / 1_000)) : 0;
   const detailsReady = current.running && current.stage !== "streaming" && elapsedSeconds >= 8;
   const structuredActivityLabels = new Set(current.activities.map((activity) => activity.label.replace(/[…：].*$/, "")));
-  const activityLines = current.activityText
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line && !structuredActivityLabels.has(line.replace(/[…：].*$/, "")));
   const activityStatusText = (activity: ConversationState["activities"][number]) => {
     if (activity.status === "succeeded") return `${activity.label} ✓`;
     if (activity.status === "failed") return t("{value0}（失败：{value1}）", { value0: activity.label, value1: activity.errorCode ?? "AGENT_TOOL_FAILED" });
     return `${activity.label}…`;
   };
-  const latestStructuredActivity = current.activities[current.activities.length - 1];
-  const latestActivity = latestStructuredActivity
-    ? activityStatusText(latestStructuredActivity)
-    : activityLines[activityLines.length - 1] ?? "";
-  const processDetailsReady = detailsReady || activityLines.length > 0 || current.activities.length > 0;
+  const processEntries = current.activityTimeline.flatMap((entry, index) => {
+    if (entry.kind === "tool") {
+      const activity = current.activities.find((item) => item.callKey === entry.callKey);
+      return activity ? [{ key: entry.callKey, text: activityStatusText(activity), latest: activityStatusText(activity) }] : [];
+    }
+    const lines = entry.text.split(/\n+/).map((line) => line.trim())
+      .filter((line) => line && !structuredActivityLabels.has(line.replace(/[…：].*$/, "")));
+    return lines.length ? [{ key: `text:${index}`, text: lines.join("\n"), latest: lines[lines.length - 1] }] : [];
+  });
+  const latestActivity = processEntries[processEntries.length - 1]?.latest ?? "";
+  const processDetailsReady = detailsReady || processEntries.length > 0;
   const selectedModelId = activeKey === NEW_CONVERSATION_KEY
     ? (pendingModelId ?? runtimeModel?.id)
     : (current.session.selected_model_id ?? runtimeModel?.id);
@@ -997,7 +1000,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       running: false,
       cancelling: Boolean(runId),
       stage: "stopped",
-      activityText: "",
+      activityText: "", activityTimeline: [],
       activities: [],
       runId: null,
       startedAt: null,
@@ -1052,7 +1055,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         runId: activeRun.run?.run_id ?? null,
         startedAt: activeRun.run ? parseAgentTimestamp(activeRun.run.started_at) : null,
         phase: activeRun.run ? t("AI 正在处理…") : t("正在准备…"),
-        activityText: "",
+        activityText: "", activityTimeline: [],
       });
       replaceStoreSession(detail.session);
       if (activeRun.run) reconnectToRun(sessionIdToSelect, activeRun.run);
@@ -1202,7 +1205,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         sequence_no: event.userSequenceNo!, role: "user", run_id: event.runId,
         submission_key: event.submissionKey, content: event.content, contexts: event.contexts,
         created_at: new Date().toISOString(),
-      }], stage: "thinking", activityText: "", activities: [] }));
+      }], stage: "thinking", activityText: "", activityTimeline: [], activities: [] }));
       return;
     }
     if (event.type === "assistant.message.completed") {
@@ -1240,6 +1243,10 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     if (event.type === "assistant.activity.delta") {
       updateConversation(key, (state) => ({
         activityText: state.activityText + event.delta,
+        activityTimeline: state.activityTimeline[state.activityTimeline.length - 1]?.kind === "text"
+          ? state.activityTimeline.map((item, index) => index === state.activityTimeline.length - 1 && item.kind === "text"
+            ? { ...item, text: item.text + event.delta } : item)
+          : [...state.activityTimeline, { kind: "text" as const, text: event.delta }],
         stage: "thinking",
         error: null,
       }));
@@ -1255,6 +1262,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         };
         const index = state.activities.findIndex((item) => item.callKey === event.callKey);
         return {
+          activityTimeline: index < 0 ? [...state.activityTimeline, { kind: "tool" as const, callKey: event.callKey }] : state.activityTimeline,
           activities: index < 0
             ? [...state.activities, activity]
             : state.activities.map((item, itemIndex) => itemIndex === index ? activity : item),
@@ -1265,7 +1273,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       return;
     }
     if (event.type === "assistant.activity.clear") {
-      updateConversation(key, { activityText: "", activities: [], detailsOpen: false });
+      updateConversation(key, { activityText: "", activityTimeline: [], activities: [], detailsOpen: false });
       return;
     }
     if (event.type === "assistant.delta") {
@@ -1288,7 +1296,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
             status: "streaming",
           });
         }
-        return { messages, stage: "streaming", activityText: "", activities: [], detailsOpen: false, error: null };
+        return { messages, stage: "streaming", activityText: "", activityTimeline: [], activities: [], detailsOpen: false, error: null };
       });
       return;
     }
@@ -1307,7 +1315,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           },
         ],
         stage: "thinking",
-        activityText: "",
+        activityText: "", activityTimeline: [],
         activities: [],
         error: null,
         clarificationAnswers: {},
@@ -1337,7 +1345,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       updateConversation(key, (state) => ({
         error: safeAgentError(new ApiRequestError(502, event.error)),
         stage: "failed",
-        activityText: "",
+        activityText: "", activityTimeline: [],
         activities: [],
         messages: state.messages.map((message, index, messages) => (
           index === messages.length - 1 && message.role === "assistant" && message.temporary
@@ -1351,7 +1359,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       updateConversation(key, (state) => ({
         running: false,
         stage: "stopped",
-        activityText: "",
+        activityText: "", activityTimeline: [],
         activities: [],
         runId: null,
         startedAt: null,
@@ -1373,7 +1381,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       running: true,
       cancelling: false,
       stage: "thinking",
-      activityText: "",
+      activityText: "", activityTimeline: [],
       activities: [],
       runId: run.run_id,
       startedAt: parseAgentTimestamp(run.started_at),
@@ -1533,7 +1541,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       stage: "submitting",
       runId: null,
       phase: sentContexts.length > 0 ? t("正在读取所选资料…") : t("正在准备…"),
-      activityText: "",
+      activityText: "", activityTimeline: [],
       activities: [],
       referencedContextCount: sentContexts.length,
       startedAt: Date.now(),
@@ -2225,9 +2233,8 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
                     {current.contexts.slice(0, 10).map((context) => <span key={contextKey(context)}>{context.type === "user_profile" ? t("个人画像") : context.label}</span>)}
                   </div>
                 )}
-                {activityLines.length > 0 && <p className="assistant-thinking-activity">{activityLines.join("\n")}</p>}
-                {current.activities.map((activity) => (
-                  <p className="assistant-thinking-activity" key={activity.callKey}>{activityStatusText(activity)}</p>
+                {processEntries.map((entry) => (
+                  <p className="assistant-thinking-activity" key={entry.key}>{entry.text}</p>
                 ))}
               </div>
             )}

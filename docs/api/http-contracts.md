@@ -4,6 +4,9 @@
 
 客户端可以发送最长 64 字符、仅包含字母数字、下划线和连字符的 `X-Request-ID`；不合法或缺失时服务端生成新值。所有正常及受控错误响应回传最终 `X-Request-ID`。命中状态变更审计映射的响应还带 `X-Audit-Recorded: true|false`，表示本地日志 sink 是否接受该次审计；它不表示事件已经同步到 Loki。
 
+
+内部 `tool-events` 的工具名包含 `read_skill`，可携带可选 `skill_name`（仅接受注册的 11 个 Skill 名称）；未知名称和任意路径返回 422。Skill 名称复用 target_type=skill、target_id 存储。可见进度复用 `assistant.activity.status` 的 callKey、label、status 和可选 errorCode，不增加事件类型。
+
 ## 健康检查与鉴权
 
 Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话发送重试保持原 `idempotency_key`，恢复订阅保持原 run ID，取消后不重发。跨标签页续期协调与浏览器兼容边界见[账号功能](../features/identity-account.md)。收到 Agent SSE 终态后即可结束订阅，后续连接关闭或会话回读失败不改变已经收到的运行终态。
@@ -513,13 +516,17 @@ Agent 排障查询也只允许管理员访问：`GET /api/admin/agent-operations
 | `POST` | `/api/admin/llm/use-cases/:useCase/routes/:routeId/probe` | 真实模型探针；成功返回 `{callId,validated:true}` |
 | `GET` | `/api/admin/llm/calls` | `{calls,nextCursor,summary}`；按内部 ID 倒序分页，可选 `cursor`、`limit`、`useCase`、`status`、`errorCode`、`callId`、`userId`（精确匹配）、`from`、`to`（带时区，最多 31 天）；`summary` 按同一筛选计算 `callCount/succeeded/failed/inputTokens/outputTokens/costs/unmeteredCallCount` |
 
-模型 catalog 与场景绑定支持 `assistant_intent`（助手意图识别），接受 `openai_chat` 和 AIHubMix 的 `system_one` 原生决策协议。Jev 目标必须使用 `system_one`；不兼容的模型协议绑定返回 `422 LLM_ROUTE_INVALID`。管理端可在加入模型时选择协议，也可修改已绑定线路；修改协议会停用绑定并清除旧探针指纹，必须重新探测后启用。此场景的探测验证结构化多意图结果，独立于 `assistant_conversation` 的 Pi Tool 探测。
+场景绑定的 PUT（enabled=true）及 PATCH（enabled=true）在从停用启用或验证失效时由后端自动执行该场景探针；验证通过才启用，失败保持停用并返回 422 和具体 LLM 错误码，实际调用可附带 details.callId。验证后重新读取并锁定配置，指纹变化返回 LLM_CONFIG_CHANGED。停用和仅调整优先级不触发模型调用；已启用且验证有效的重复启用请求复用状态。管理端不再显示手动探测按钮，POST probe 作为兼容诊断接口保留。协议修改的配置会保存为停用状态，即使同次请求的自动验证失败也不恢复旧协议。
+
+模型 catalog 与场景绑定支持 `assistant_intent`（助手意图识别），接受 `openai_chat` 和 AIHubMix 的 `system_one` 原生决策协议。Jev 目标必须使用 `system_one`；不兼容的模型协议绑定返回 `422 LLM_ROUTE_INVALID`。管理端可在加入模型时选择协议，也可修改已绑定线路；修改协议会停用绑定并清除旧探针指纹，再次启用时由后端自动验证。此场景的探测验证结构化多意图结果，独立于 `assistant_conversation` 的 Pi Tool 探测。
 
 `POST /internal/agent/runs/{run_id}/intent:recognize` 只接受 Pi 服务令牌，不接收自定义提示词、用户 ID 或模型密钥。输入从运行的用户消息与本轮授权资料解析。响应 `version=1`、`mode=plan|conversation|clarify|fallback`；plan 携带已保存的任务（包括状态），clarify 携带 `clarification_purposes`，fallback 携带稳定 `reason`，实际调用可携带 `call_id`。未配置和调用失败返回 fallback；`AGENT_TASK_CONTEXT_NOT_AUTHORIZED`、`AGENT_TASK_PLAN_CONFLICT` 和 `AGENT_RUN_NOT_ACTIVE` 返回 409，服务令牌无效返回 401。识别的执行、取消、计量与数据最小化边界见 [Agent 运行时](../internals/agent-runtime.md#调用链)。
 
-连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的字段，不能提交任意推理 URL。AIHubMix 的 `settings.endpoint` 可选 `primary` 或 `alternate`，缺省为 `primary`；后者使用官方备用 `api.inferera.com`，目录与推理地址同步切换。修改连接设置会递增推理配置版本、清除旧目录同步状态并要求关联绑定重新探测。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`、`mock_interview`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
+识别器先识别本轮全部业务目标，再检查对应任务的必要条件；能力介绍、使用方法和问候属于普通对话，混合请求保留业务目标，历史用于解释本轮指代。clarify 可携带缺省为 false 的 `resume_identity_conflict`：只有显式简历选择与用户原话冲突且包含 `resume_identity` 澄清时才可为 true，不改变资料授权。原生结果低置信度或概率不确定返回 fallback / `INTENT_UNCERTAIN`；普通对话却声明业务目标、空计划、澄清缺少原因或重复询问已确定身份等矛盾返回 `INTENT_DECISION_INCONSISTENT`；缺字段、非法类别、格式或 schema 错误保留 `LLM_RESPONSE_INVALID`。fallback 可附带 `decision_detail`，只允许固定问题名 `field` 和 [0,1] 的有限 `confidence`，不含原始回答。Pi 回退后继续按原有路由识别并执行；授权拒绝与取消仍不回退。
 
-语音场景还包括 `speech_to_text` 与 `text_to_speech`，识别稿修正为 `transcript_correction`。目录的 AIHubMix `protocols` 兼容新增 `openai_responses`、`openai_asr_file`（仅识别）与 `openai_tts`（仅合成），百炼保留实时语音协议。目录继续优先列出 Chat，兼容管理台新增绑定时的原有默认值；Responses 和语音绑定通过管理 API 显式设置 `protocolCode`。除 `assistant_intent` 外，非语音内部能力也接受接入商支持的 Responses，文本、图片与流式请求响应保持原有 DTO。接入商与场景交叉使用不支持的协议返回 `422 LLM_ROUTE_INVALID`；新绑定及修改协议后的绑定同样需要先探测，再启用线路与绑定，逐模型参数和协议边界见 [Agent/LLM 运行时](../internals/agent-runtime.md#治理数据)。
+连接的 `providerCode` 在创建后固定，`settings` 只接受该接入商已登记的字段，不能提交任意推理 URL。AIHubMix 的 `settings.endpoint` 可选 `primary` 或 `alternate`，缺省为 `primary`；后者使用官方备用 `api.inferera.com`，目录与推理地址同步切换。修改连接设置会递增推理配置版本、清除旧目录同步状态并要求关联绑定重新启用验证。`apiKey` 加密保存，列表不返回密文。模型的 `id` 是用户看到的稳定逻辑模型 ID；线路 `invokeTarget` 才是供应商调用 ID。场景绑定的 `priority` 越小，该逻辑模型下的线路越先尝试；连接失败、超时、限流或线路不可用时按优先级尝试同模型的下一条有效线路，不跨模型。流式输出产生内容后不再切换；请求被拒绝和取消不切换。有效绑定同时要求连接、线路和绑定启用、目标可用，以及与当前配置匹配且未过期的成功探针。`assistant_conversation` 的有效绑定去重后就是用户可选列表。内部能力使用固定场景代码 `job_text_extraction`、`resume_structuring`、`job_image_extraction`、`mock_interview`，对话使用 `assistant_conversation`。图片场景探针实际发送测试图片，助手场景通过 Pi 执行 Tool 探针。
+
+语音场景还包括 `speech_to_text` 与 `text_to_speech`，识别稿修正为 `transcript_correction`。目录的 AIHubMix `protocols` 兼容新增 `openai_responses`、`openai_asr_file`（仅识别）与 `openai_tts`（仅合成），百炼保留实时语音协议。目录继续优先列出 Chat，兼容管理台新增绑定时的原有默认值；Responses 和语音绑定通过管理 API 显式设置 `protocolCode`。除 `assistant_intent` 外，非语音内部能力也接受接入商支持的 Responses，文本、图片与流式请求响应保持原有 DTO。接入商与场景交叉使用不支持的协议返回 `422 LLM_ROUTE_INVALID`；新绑定及修改协议后的绑定在启用时由后端自动验证，逐模型参数和协议边界见 [Agent/LLM 运行时](../internals/agent-runtime.md#治理数据)。
 
 `llm_call_logs` 每条记录对应一次实际请求，切换前失败的线路和切换后成功的线路分别记录，保存场景、来源、用户、运行、真实线路、调用协议、用量、价格规则快照、估算费用与币种及安全错误分类；不保存提示词、图片、完整响应或明文凭据。目录价格带分档、缓存或优惠规则时，缺少充分用量明细的估算费用留空，`meteringStatus=partial`。Pi 的费用由后端根据线路价格规则计算，不信任 Pi 回传的金额。`0091` 删除并重建旧 LLM 四张表，保留 Agent 会话与运行；迁移前需检查目标 revision、旧数据与备份。
 

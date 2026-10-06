@@ -4,6 +4,9 @@ Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operat
 
 普通提案确认的事务边界为当前 Resume 与提案状态，不调用历史版本追加服务。scoped 模式始终在最新 canonical 内容重放 operation 并保留当前 presentation；旧完整快照模式继续严格检查内部锁。翻译需要检查新简历额度，锁顺序为 User、Proposal、源 Resume，与创建简历的 User-before-Resume 顺序一致。普通提案提交失败显式 rollback，幂等确认直接返回当前结果而不重放。
 
+
+Skill 读取通过既有 `assistant.activity.status` 输出注册名称、独立 callKey 与 running/succeeded/failed 状态，并以 `read_skill` 写入工具审计；审计目标为 skill 和注册名，日志记录 `skill_name`，不记录任意路径或文件正文。Web 按文本与工具事件首次到达的顺序展示，终态更新原位置；重复读取保留独立记录，最终回复开始时清空临时过程。范围读取在成功与 ApiError 失败时记录 scope、目标 surface、section 类型（resume/other/none）、entry/section 是否存在及选区是否存在，不记录简历正文、选区原文或哈希。
+
 ## 运行时边界
 
 独立助手和编辑器侧栏复用本地 `MessageActions` 展示消息已有的 `created_at`，并将该条 `content` 写入浏览器剪贴板；悬停显隐和复制反馈只发生在 Web，不新增 Agent 请求或持久化字段。
@@ -36,7 +39,9 @@ Pi 在业务工具前调用内部 `intent:recognize`，由 FastAPI 用独立 `as
 
 识别输入只含当前请求、有界近期对话、澄清答案及本轮授权资料轻量描述，不额外读取资料正文。有效计划复用现有任务 schema 和 `save_task_plan` 的授权校验，保存后 Pi 直接加载并执行，不再重新规划。信息不足沿用结构化澄清；未配置、无有效线路、10 秒总预算超时或模型输出无效时沿用现有路由。授权拒绝、计划冲突和取消不进入回退。运行取消或 Pi 断开内部识别请求会取消上游调用。
 
-原生决策由 `modules/agent/systemone_intent.py` 将有界识别输入转为 `state` 和固定 `questions`，通过受控 AIHubMix 地址的 `/v1/systemone` 发送，不使用 Chat 的 `messages` 接口。固定分类覆盖普通对话、澄清、独立目标数量、8 个任务槽位、任务工作流/产物、本轮授权资料引用及前序依赖集合；转换器只消费目标数量范围内的槽位，未使用槽位的独立分类回答不生成任务；已声明目标对应 none 则拒绝结果。转换器生成顺序标签，不要求模型生成自由文本。决策只映射为既有 `IntentDecision` 和任务 schema，仍经 `save_task_plan` 授权校验。choice 置信度低于 0.5、noul 概率落在 (0.4, 0.6)、结果缺失、未知类别、非连续目标、非法引用或依赖返回 `LLM_RESPONSE_INVALID` 并进入现有回退；超过 8 项和未支持目标要求澄清，不截断。原生协议只开放给意图场景，不能作为 Pi 对话或流式输出协议。管理端按 Jev 目标默认选择原生协议，修改协议后停用绑定并要求重新探测。
+原生决策由 `modules/agent/systemone_intent.py` 将有界识别输入转为 `state` 和固定 `questions`，通过受控 AIHubMix 地址的 `/v1/systemone` 发送，不使用 Chat 的 `messages` 接口。Chat 与原生模式共享分类规则，先识别本轮全部业务目标，再按对应任务检查必要条件；问候、能力介绍和使用方法不成为业务目标，混合请求保留业务部分，历史仅解释当前指代。泛优化中“先看看问题”是一项诊断，不额外生成修改提案。原生澄清以 choice 选择最先阻塞执行的一项原因，不逐项检查五种字段；显式简历冲突通过 `resume_identity_conflict` 标记保留，已确定身份且无冲突不能再问身份。Pi 在 clarify 模式下拒绝追问 `clarification_purposes` 之外的类别，错误码为 `AGENT_INTENT_CLARIFICATION_SCOPE_INVALID`。
+
+固定分类继续覆盖独立目标数量、8 个任务槽位、任务工作流/产物、本轮授权资料引用及前序依赖集合；转换器只消费目标数量范围内的槽位，未使用槽位的独立分类回答不生成任务。choice 置信度低于 0.5、noul 概率落在 (0.4, 0.6) 返回 `INTENT_UNCERTAIN`；conversation 的目标数非零、plan 的目标数为零、已声明目标对应 none 或澄清原因缺失返回 `INTENT_DECISION_INCONSISTENT`；缺字段、未知类别、非法引用和 schema 错误保留 `LLM_RESPONSE_INVALID`。阈值保持不变，失败继续沿用主模型路由和原权限、任务校验及提案确认约束。超过 8 项和未支持目标要求澄清，不截断。转换器生成顺序标签，不要求模型生成自由文本；生成的 `IntentDecision` 仍经 `save_task_plan` 授权校验。原生协议只开放给意图场景，不能作为 Pi 对话或流式输出协议。管理端修改协议后停用绑定，再次启用时自动验证。
 
 识别结果的版本、类别、调用 ID 和稳定回退原因保存在当前消息的有界 `agent_intent` 元数据；任务仍只有 `agent_tasks` 一个真值。重复请求复用已保存结果。实际调用以 `assistant_intent` 场景、`agent_intent` 来源关联用户与 run 写入 `llm_call_logs`，不记录提示词、原始响应或推理。配置此场景会增加识别调用的延迟与费用；不配置时不发起额外供应商请求。普通对话及回退路由中的纯问候可在读取路由后直接开启最终回复，无需创建业务任务；已有计划包含未完成任务时仍拒绝最终回复。
 
@@ -82,6 +87,8 @@ Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在�
 | FastAPI LLM service | 模型供应商 | 运行时解密凭据 | 当前绑定能力的一次模型调用 |
 
 两枚服务 token 方向不同且不能复用。Pi Service 默认只监听内部地址；浏览器、插件和小程序都不应感知 Pi URL。
+
+能力配置卡片将识别协议单独展示，避免价格元数据的单行裁切。启用绑定时由后端运行现有场景探针，失败保留停用并显示稳定错误；没有手动探测按钮。验证通过后在新的数据库快照中重新锁定、核对配置指纹，避免使用旧会话中未刷新的验证状态。停用、排序以及有效已启用绑定的幂等请求不发起额外模型调用。
 
 ## 治理数据
 

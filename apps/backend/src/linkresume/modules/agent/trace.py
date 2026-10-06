@@ -22,6 +22,7 @@ RESULTS = frozenset({"started", "succeeded", "failed", "cancelled"})
 SAFE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
 TOOL_STAGES = {
+    "read_skill": "model_execution",
     "list_user_resources": "context_loading",
     "resolve_resume_reference": "target_resolution",
     "resolve_resource_reference": "target_resolution",

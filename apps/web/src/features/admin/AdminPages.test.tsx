@@ -347,6 +347,30 @@ describe("CapabilitiesPage", () => {
     await waitFor(() => expect(put).toHaveBeenCalledWith("assistant_intent", "12", { protocolCode: "system_one", priority: 10, enabled: false }));
   });
 
+  it("enables through one backend request without a manual probe button", async () => {
+    mockLlm();
+    vi.mocked(api.getLlmCatalog).mockResolvedValue({ ...catalog, useCases:["assistant_intent"] });
+    vi.mocked(api.listLlmBindings).mockResolvedValue({bindings:[{useCase:"assistant_intent",routeId:"12",protocolCode:"openai_chat",priority:10,enabled:false,validatedAt:null,effective:false}]});
+    let failValidation!: (reason: unknown) => void;
+    const update = vi.spyOn(api,"updateLlmBinding").mockImplementation(() => new Promise((_resolve, reject) => { failValidation = reject; }));
+    const probe = vi.spyOn(api,"probeLlmBinding");
+    render(wrap(<CapabilitiesPage />));
+    fireEvent.click(await screen.findByRole("tab",{name:/助手意图识别/}));
+    fireEvent.click(await screen.findByRole("button",{name:/示例模型 线路/}));
+    expect(screen.queryByRole("button",{name:"探测"})).not.toBeInTheDocument();
+    const protocol = screen.getByRole("combobox",{name:"线路 #12 识别协议"});
+    expect(protocol.closest(".adm-route-meta")).toBeNull();
+    expect(protocol).toHaveTextContent("Chat 结构化识别");
+    fireEvent.click(screen.getByRole("switch",{name:"启用线路 #12"}));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("assistant_intent","12",{enabled:true}));
+    expect(screen.getByRole("status")).toHaveTextContent("验证中…");
+    expect(screen.getByRole("switch",{name:"启用线路 #12"})).toBeDisabled();
+    failValidation(new ApiRequestError(422,"LLM_TIMEOUT"));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith("模型验证超时，请稍后重新启用","error"));
+    expect(probe).not.toHaveBeenCalled();
+    expect(screen.getByRole("switch",{name:"启用线路 #12"})).toHaveAttribute("aria-checked","false");
+  });
+
   it("changes an existing intent binding protocol and disables it for a new probe", async () => {
     mockLlm();
     vi.mocked(api.getLlmCatalog).mockResolvedValue({ ...catalog, useCases: ["assistant_conversation", "assistant_intent"], providers: [{ ...catalog.providers[0], protocols: ["openai_chat", "system_one"] }] });

@@ -45,7 +45,7 @@ test("intent plan is loaded before execution and cannot be replanned", async () 
   assert.deepEqual(decision.tasks, tasks);
   assert.match(intentDecisionContext(decision), /不得重新规划/);
   assert.match(intentDecisionContext({ mode: "clarify", clarification_purposes: ["edit_scope"] }), /禁止规划/);
-  assert.equal(intentDecisionContext({ mode: "fallback" }), "");
+  assert.match(intentDecisionContext({ mode: "fallback", reason: "INTENT_UNCERTAIN" }), /权限、任务校验和提案确认/);
 });
 
 test("intent authorization failure and cancellation do not become fallback", async () => {
@@ -1023,4 +1023,23 @@ test("explicit selected identity survives duplicate title guesses but real alter
   assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, explicit, "换张三产品简历"), true);
   assert.equal(referenceNeedsResolution({ memory_ref: "m:1:resume:22" }, explicit, "回到前面那份"), true);
   assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, [{ ...explicit[0], presentation: "implicit" }], "换张三产品简历"), true);
+});
+
+
+test("skill activity records distinct attempts, failures and safe registered names", async () => {
+  const events = [];
+  let ready = false;
+  const tool = createSkillReadTool((path) => {
+    if (path === "resume-edit-workflow/SKILL.md" && !ready) throw new Error("TASK_WORKFLOW_REQUIRED");
+  }, () => {}, async (operation) => operation(), async (event) => events.push(event));
+  await tool.execute("router", {path:"career-assistant-router/SKILL.md"});
+  await assert.rejects(tool.execute("early", {path:"resume-edit-workflow/SKILL.md"}), /TASK_WORKFLOW_REQUIRED/);
+  ready = true;
+  await tool.execute("retry", {path:"resume-edit-workflow/SKILL.md"});
+  assert.deepEqual(events.map(e => [e.callKey,e.status]), [["router","running"],["router","succeeded"],["early","running"],["early","failed"],["retry","running"],["retry","succeeded"]]);
+  assert.equal(events[3].errorCode,"TASK_WORKFLOW_REQUIRED");
+  assert.equal(events[0].skillName,"career-assistant-router");
+  assert.equal(events[0].label,"读取工作流：职业助手路由");
+  await assert.rejects(tool.execute("private", {path:"/private/fictional-secret.md"}));
+  assert.ok(!JSON.stringify(events).includes("fictional-secret"));
 });

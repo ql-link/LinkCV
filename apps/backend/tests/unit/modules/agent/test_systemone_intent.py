@@ -17,6 +17,8 @@ def native_answers(actions=("diagnose", "interview"), mode="plan"):
         answers[f'task_{index}']['choice'] = action
         answers[f'context_{index}']['choice'] = 'ref_0'
     answers['goal_count']['choice'] = str(len(actions))
+    if mode == 'conversation': answers['goal_count']['choice'] = '0'
+    answers['clarification_purpose']['choice'] = 'edit_scope' if mode == 'clarify' else 'none'
     return {'answers': answers}
 
 
@@ -73,3 +75,51 @@ def test_count_overflow_does_not_truncate_goals():
     value = native_answers()
     value['answers']['goal_count']['choice'] = 'overflow'
     assert decision_from_answers(value, refs).mode == 'clarify'
+
+
+@pytest.mark.parametrize('field,value', [('mode', 0.45), ('goal_count', 0.49)])
+def test_uncertain_choice_has_distinct_reason(field, value):
+    from linkresume.modules.agent.systemone_intent import IntentDecisionError
+    _, refs = request_for_intent(intent_probe_messages())
+    payload = native_answers()
+    payload['answers'][field]['confidence'] = value
+    with pytest.raises(IntentDecisionError, match='INTENT_UNCERTAIN'):
+        decision_from_answers(payload, refs)
+
+
+def test_ambiguous_probability_has_distinct_reason():
+    from linkresume.modules.agent.systemone_intent import IntentDecisionError
+    _, refs = request_for_intent(intent_probe_messages())
+    payload = native_answers()
+    payload['answers']['overflow']['noul'] = 0.5
+    with pytest.raises(IntentDecisionError, match='INTENT_UNCERTAIN'):
+        decision_from_answers(payload, refs)
+
+
+@pytest.mark.parametrize('mode,count', [('conversation','1'), ('plan','0')])
+def test_contradictory_goal_counts_are_not_accepted(mode, count):
+    from linkresume.modules.agent.systemone_intent import IntentDecisionError
+    _, refs = request_for_intent(intent_probe_messages())
+    payload = native_answers(mode=mode)
+    payload['answers']['goal_count']['choice'] = count
+    with pytest.raises(IntentDecisionError, match='INTENT_DECISION_INCONSISTENT'):
+        decision_from_answers(payload, refs)
+
+
+def test_clarification_does_not_invent_a_missing_purpose():
+    from linkresume.modules.agent.systemone_intent import IntentDecisionError
+    _, refs = request_for_intent(intent_probe_messages())
+    payload = native_answers(mode='clarify')
+    payload['answers']['clarification_purpose']['choice'] = 'none'
+    with pytest.raises(IntentDecisionError, match='INTENT_DECISION_INCONSISTENT'):
+        decision_from_answers(payload, refs)
+
+
+def test_explicit_resume_conflict_is_preserved_for_clarification():
+    _, refs = request_for_intent(intent_probe_messages())
+    payload = native_answers(mode='clarify')
+    payload['answers']['clarification_purpose']['choice'] = 'resume_identity'
+    payload['answers']['resume_identity_conflict']['noul'] = 1
+    decision = decision_from_answers(payload, refs)
+    assert decision.resume_identity_conflict is True
+    assert decision.clarification_purposes == ['resume_identity']

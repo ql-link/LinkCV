@@ -4,6 +4,12 @@
 
 迁移 `0081` 在 `0080` 之后新增经典商务与活力，默认启用模板达到 85 套；无 schema 变化，不覆盖旧模板、简历或版本。`0080` 的卡片虚线、卡片分栏与 `0081` 两套模板均复用 `0079` 已验证的虚构产品经理样本，只新增独立呈现快照。重复执行保留启停状态，同 key 数据或定义冲突拒绝覆盖。发布先提供 Featured 主题的 Web/PDF 渲染器，再升级目录；需撤回时停用新增目录，历史简历快照保留。
 
+
+Agent 范围读取的安全日志覆盖成功与 ApiError 失败，记录读取范围和目标结构分类，不保存正文、选区文本或哈希；Skill 读取复用既有工具审计模型，无数据库迁移。FastAPI 与 Pi 必须一同更新，以支持新增的 read_skill 工具名。
+
+
+LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验证成功并重新核对配置后启用；复用现有场景验证器和调用日志，无新迁移。
+
 ## 功能与架构导航
 
 本页维护 FastAPI/Worker 运行结构、事务、迁移、外部集成和后端通用约定。用户能力与业务规则分别见[账号](../features/identity-account.md)、[简历](../features/resume-workbench.md)、[求职中心](../features/career-center.md)、[AI 助手](../features/ai-assistant.md)和[资料集](../features/datasets.md)；独立运行子系统见[小程序适配](miniprogram.md)、[Agent/LLM](agent-runtime.md)、[可观测性](observability.md)和[插件制品](plugin-delivery.md)。具体 URL、schema 和稳定错误仍以 [HTTP 接口契约](../api/http-contracts.md) 为准。

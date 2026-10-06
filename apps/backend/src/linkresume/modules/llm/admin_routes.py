@@ -31,7 +31,7 @@ from linkresume.modules.llm.providers import (
     OPENAI_CHAT, PROVIDERS, validate_route, validate_settings, validate_use_case_protocol, validate_model_protocol,
 )
 from linkresume.modules.llm.resolver import (
-    USE_CASES, eligible_routes, is_effective, probe_valid,
+    USE_CASES, eligible_routes, is_effective, probe_valid, validation_fingerprint,
 )
 from linkresume.modules.llm.schemas import (
     ConnectionCreate, ConnectionPatch, LogicalModelCreate, LogicalModelPatch,
@@ -535,14 +535,50 @@ def use_cases(
     return {"bindings": [_binding_record(*row) for row in rows]}
 
 
+async def _enable_binding(
+    db: Session, row: LLMUseCaseRoute, route: LLMModelRoute,
+    connection: LLMProviderConnection, admin: User,
+    service: LLMService, pi_probe: PiProbeCoordinator,
+) -> tuple[LLMUseCaseRoute, LLMModelRoute, LLMProviderConnection]:
+    if row.is_enabled and probe_valid(row, route, connection):
+        return row, route, connection
+    use_case, route_id = row.use_case, route.id
+    expected = validation_fingerprint(row, route, connection)
+    # Commit the disabled state before the external call; failure cannot leave it enabled.
+    row.is_enabled = False
+    row.validated_at = None
+    row.validated_fingerprint = None
+    _commit(db)
+    try:
+        await service.probe_route(admin.id, use_case, route_id, pi_probe=pi_probe)
+    except LLMError as error:
+        raise ApiError(422, error.code, {"callId": error.call_id} if error.call_id else None) from error
+    # End the previous snapshot and lock fresh configuration before enabling.
+    db.rollback()
+    db.expire_all()
+    route = db.get(LLMModelRoute, route_id, with_for_update=True)
+    connection = db.get(LLMProviderConnection, route.connection_id, with_for_update=True) if route else None
+    row = db.scalar(select(LLMUseCaseRoute).where(
+        LLMUseCaseRoute.use_case == use_case, LLMUseCaseRoute.route_id == route_id,
+    ).with_for_update())
+    if (row is None or route is None or connection is None
+            or validation_fingerprint(row, route, connection) != expected
+            or not probe_valid(row, route, connection)):
+        raise ApiError(422, "LLM_CONFIG_CHANGED")
+    row.is_enabled = True
+    return row, route, connection
+
+
 @router.put("/use-cases/{use_case}/routes/{route_id}")
-def bind_route(
+async def bind_route(
     use_case: str,
     route_id: str,
     payload: UseCaseBindingWrite,
     request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    admin: User = Depends(get_current_admin),
+    service: LLMService = Depends(get_llm_service),
+    pi_probe: PiProbeCoordinator = Depends(get_pi_probe_coordinator),
 ) -> dict:
     if use_case not in USE_CASES or payload.use_case != use_case or payload.route_id != _id(route_id):
         raise ApiError(422, "LLM_USE_CASE_INVALID")
@@ -565,37 +601,42 @@ def bind_route(
         if row.protocol_code != payload.protocol_code:
             row.validated_fingerprint = None
             row.validated_at = None
+            row.is_enabled = False
         row.protocol_code = payload.protocol_code
         row.priority = payload.priority
     if payload.enabled:
-        if not probe_valid(row, route, connection):
-            raise ApiError(422, "LLM_PROBE_REQUIRED")
-    row.is_enabled = payload.enabled
+        # The probe service reads its own session, so save requested configuration first.
+        _commit(db)
+        row, route, connection = await _enable_binding(db, row, route, connection, admin, service, pi_probe)
+    else:
+        row.is_enabled = False
     row.update_time = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}
 
 
 @router.patch("/use-cases/{use_case}/routes/{route_id}")
-def patch_binding(
+async def patch_binding(
     use_case: str,
     route_id: str,
     payload: UseCaseBindingPatch,
     request: Request,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_admin),
+    admin: User = Depends(get_current_admin),
+    service: LLMService = Depends(get_llm_service),
+    pi_probe: PiProbeCoordinator = Depends(get_pi_probe_coordinator),
 ) -> dict:
     route = _route(db, route_id)
     connection = _connection(db, str(route.connection_id))
     row = get_use_case_route(db, use_case, route.id)
     if row is None:
         raise ApiError(404, "LLM_BINDING_NOT_FOUND")
+    if payload.enabled:
+        row, route, connection = await _enable_binding(db, row, route, connection, admin, service, pi_probe)
+    elif payload.enabled is False:
+        row.is_enabled = False
     if payload.priority is not None:
         row.priority = payload.priority
-    if payload.enabled is not None:
-        if payload.enabled and not probe_valid(row, route, connection):
-            raise ApiError(422, "LLM_PROBE_REQUIRED")
-        row.is_enabled = payload.enabled
     row.update_time = utc_now()
     _commit(db)
     return {"binding": _binding_record(row, route, connection)}

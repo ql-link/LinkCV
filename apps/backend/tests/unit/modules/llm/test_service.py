@@ -90,8 +90,8 @@ def bind_intent(sessions):
         db.commit()
 
 
-@pytest.mark.parametrize('invalid', [False, True])
-def test_native_intent_service_maps_decisions_and_records_metering(context, invalid):
+@pytest.mark.parametrize('invalid,expected_error', [(False,None), ('foreign_ref','LLM_RESPONSE_INVALID'), ('low_confidence','INTENT_UNCERTAIN'), ('empty_plan','INTENT_DECISION_INCONSISTENT')])
+def test_native_intent_service_maps_decisions_and_records_metering(context, invalid, expected_error):
     from linkresume.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
     from tests.unit.modules.agent.test_systemone_intent import native_answers
     from linkresume.modules.llm.resolver import ASSISTANT_INTENT
@@ -105,14 +105,18 @@ def test_native_intent_service_maps_decisions_and_records_metering(context, inva
         binding.validated_fingerprint = validation_fingerprint(binding, route, db.get(LLMProviderConnection, route.connection_id))
         db.commit()
     payload = native_answers()
-    if invalid: payload['answers']['context_0']['choice'] = 'ref_99'
+    if invalid == 'foreign_ref': payload['answers']['context_0']['choice'] = 'ref_99'
+    if invalid == 'low_confidence': payload['answers']['mode']['confidence'] = 0.45
+    if invalid == 'empty_plan': payload['answers']['goal_count']['choice'] = '0'
     gateway.result = GatewayResult(content=json.dumps(payload), usage=GatewayUsage(30, 4))
     async def call():
         return await service.structured_chat(1, intent_probe_messages(), source='agent_intent',
             use_case=ASSISTANT_INTENT, response_model=IntentDecision)
     if invalid:
         with pytest.raises(LLMError) as error: asyncio.run(call())
-        assert error.value.code == 'LLM_RESPONSE_INVALID'
+        assert error.value.code == expected_error
+        if invalid == 'low_confidence':
+            assert error.value.decision_detail == {'field':'mode','confidence':0.45}
     else:
         result = asyncio.run(call())
         assert [task.workflow for task in result.value.tasks] == ['resume_edit', 'interview_guide']
@@ -121,6 +125,7 @@ def test_native_intent_service_maps_decisions_and_records_metering(context, inva
         log = db.scalar(select(LLMCallLog).order_by(LLMCallLog.id.desc()))
         assert log.protocol_code == 'system_one' and log.input_tokens == 30
         assert log.status == ('failed' if invalid else 'succeeded')
+        assert log.error_code == expected_error
     wire = json.loads(gateway.calls[0]['messages'][0].content)
     assert 'state' in wire and 'questions' in wire
     assert gateway.calls[0]['protocol_code'] == 'system_one'

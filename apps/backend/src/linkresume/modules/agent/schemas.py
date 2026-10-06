@@ -467,6 +467,7 @@ class ToolEventRequest(BaseModel):
 
     call_key: str = Field(min_length=1, max_length=128)
     tool_name: Literal[
+        "read_skill",
         "list_user_resources",
         "get_resume_context",
         "create_resume_proposal",
@@ -483,6 +484,11 @@ class ToolEventRequest(BaseModel):
         "start_agent_task",
         "finish_agent_task",
     ]
+    skill_name: Literal[
+        "career-assistant-router", "resume-edit-workflow", "resume-edit-local", "resume-edit-entry-star",
+        "resume-generate-from-materials", "resource-catalog", "resume-translation", "interview-guide",
+        "career-planning", "resume-title-generator", "material-lookup",
+    ] | None = None
     status: Literal["running", "succeeded", "failed", "cancelled"]
     target_type: str | None = Field(default=None, max_length=32)
     target_id: str | None = Field(default=None, max_length=64)

@@ -83,10 +83,11 @@ def create_call_id() -> str:
 
 
 class LLMError(Exception):
-    def __init__(self, code: str, call_id: str | None = None) -> None:
+    def __init__(self, code: str, call_id: str | None = None, decision_detail: dict | None = None) -> None:
         super().__init__(code)
         self.code = code
         self.call_id = call_id or create_call_id()
+        self.decision_detail = decision_detail
 
 
 @dataclass(frozen=True)
@@ -329,7 +330,7 @@ class LLMService:
                 api_base=runtime.base_url, api_key=runtime.api_key, protocol_code=plan.protocol_code)
         if plan.use_case != ASSISTANT_INTENT:
             raise GatewayError(code="LLM_REQUEST_REJECTED", may_have_reached_provider=False)
-        from linkresume.modules.agent.systemone_intent import request_for_intent, decision_from_answers
+        from linkresume.modules.agent.systemone_intent import request_for_intent, decision_from_answers, IntentDecisionError
         result = None
         try:
             payload, refs = request_for_intent(messages)
@@ -338,6 +339,10 @@ class LLMService:
                 api_base=runtime.base_url, api_key=runtime.api_key, protocol_code=SYSTEM_ONE)
             decision = decision_from_answers(json.loads(result.content), refs)
             return replace(result, content=decision.model_dump_json())
+        except IntentDecisionError as error:
+            raise GatewayError(code=error.code, may_have_reached_provider=True,
+                               usage=result.usage if result is not None else None,
+                               decision_detail=error.detail) from error
         except (ValueError, KeyError, TypeError, StopIteration) as error:
             raise GatewayError(code="LLM_RESPONSE_INVALID", may_have_reached_provider=True,
                                usage=result.usage if result is not None else None) from error
@@ -374,7 +379,7 @@ class LLMService:
                     self._finish_log_sync, call_id, status="failed", usage=error.usage,
                     error_code=error.code, latency_ms=round((perf_counter() - started) * 1000),
                 )
-                last_error = LLMError(error.code, call_id)
+                last_error = LLMError(error.code, call_id, error.decision_detail)
                 if error.code == "LLM_REQUEST_REJECTED":
                     raise last_error from error
                 continue
@@ -586,7 +591,7 @@ class LLMService:
                                           error_code=code, usage=getattr(error, "usage", None)))
             if isinstance(error, asyncio.CancelledError):
                 raise
-            raise LLMError(code, call_id) from error
+            raise LLMError(code, call_id, getattr(error, 'decision_detail', None)) from error
         with self._session_factory() as db:
             current = get_use_case_route(db, use_case, route_id)
             current_route = db.get(LLMModelRoute, route_id)

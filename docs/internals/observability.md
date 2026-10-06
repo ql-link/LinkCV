@@ -1,5 +1,8 @@
 # 可观测性与业务审计架构
 
+
+Agent 的 Skill 读取复用工具审计，新增 read_skill 工具名和注册名称 skill_name；任意文件路径不进入日志。范围读取日志记录 scope、target_surface、target_section_kind（resume/other/none）、target_has_entry、target_has_section、selection_present 和稳定错误码，覆盖成功及 ApiError 失败，不包含正文、选区原文或哈希。
+
 ## 架构职责
 
 LinkResume 可观测性子系统负责请求上下文、结构化系统日志、客户端事件、业务审计和管理员日志查询。它区分系统运行事件与业务操作者行为，不把日志存储当作业务数据库，也不允许浏览器直连 Loki。
@@ -24,6 +27,8 @@ LinkResume 可观测性子系统负责请求上下文、结构化系统日志、
 Agent 消息入口在解析上下文前由会话 ID 和幂等键确定性生成本轮 `operation_id`，并依次记录 `context_preflight` 和 `run_creation`；并发重试因此也落在同一观测链。成功创建的 `agent_runs.public_id` 复用同一值，FastAPI 到 Pi 的代理继续记录 `pi_dispatch`、`model_execution`、`stream_terminal` 和 `run_finalize` 的开始、结果、安全错误码与耗时；后续每次内部工具调用除写入 `agent_tool_calls` 的幂等终态外，也以它串联工具名、状态、scope、是否带选区、候选数量、目标字段、基础 lock version、耗时和稳定错误码。上下文不存在、越权、过期、澄清链冲突、Pi 连接失败、模型执行失败、缺失 SSE 终态和持久化失败都能按该 ID 定位。日志不记录用户提示词、澄清答案、简历正文、候选摘录或工具参数，因此可以定位阶段而不复制业务内容。
 
 LLM 调用日志保存在 MySQL，由 [Agent/LLM 运行时](agent-runtime.md) 管理；本子系统不复制模型计量。审计内容必须排除 Cookie、token、模型密钥、简历正文和文件内容等敏感数据。
+
+独立意图识别完成时记录 `action=recognize_intent`、run 的 `operation_id`、`intent_mode`、`call_id`、任务数量与稳定错误码。原生低置信度为 `INTENT_UNCERTAIN`，分类/目标/澄清矛盾为 `INTENT_DECISION_INCONSISTENT`，格式/schema 错误为 `LLM_RESPONSE_INVALID`；不确定或矛盾时可附加受限问题名 `decision_field` 与有界 `decision_confidence`。日志和消息元数据都不记录原始模型回答或提示词，不能把主模型完成回复等同于独立识别成功。
 
 ## 事件与存储边界
 

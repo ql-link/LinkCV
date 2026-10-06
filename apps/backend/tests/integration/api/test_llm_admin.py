@@ -48,7 +48,8 @@ def register_admin(app, client):
 
 
 @pytest.mark.parametrize("protocol", ["openai_chat", "openai_responses"])
-def test_admin_only_route_configuration_and_probe(protocol):
+@pytest.mark.parametrize("enable_method", ["put", "patch"])
+def test_admin_only_route_configuration_and_probe(protocol, enable_method):
     app, gateway = build_app()
     with TestClient(app) as client:
         assert client.get("/api/admin/llm/catalog").status_code == 401
@@ -68,9 +69,9 @@ def test_admin_only_route_configuration_and_probe(protocol):
         path = f"/api/admin/llm/use-cases/job_text_extraction/routes/{route_id}"
         bind = client.put(path, json={"useCase": "job_text_extraction", "routeId": int(route_id), "protocolCode": protocol, "priority": 100})
         assert bind.status_code == 200, bind.text
-        assert client.patch(path, json={"enabled": True}).status_code == 422
-        probe = client.post(f"{path}/probe")
-        assert probe.status_code == 200, probe.text
+        enabled_on_click = client.put(path, json={"useCase": "job_text_extraction", "routeId": int(route_id), "protocolCode": protocol, "priority": 100, "enabled": True}) if enable_method == "put" else client.patch(path, json={"enabled": True})
+        assert enabled_on_click.status_code == 200, enabled_on_click.text
+        assert len(gateway.calls) == 1
         assert gateway.calls[0]["model"] == "vendor/model"
         assert gateway.calls[0]["protocol_code"] == protocol
         assert client.patch(f"/api/admin/llm/routes/{route_id}", json={"enabled": True}).status_code == 200
@@ -121,8 +122,7 @@ def test_native_intent_binding_requires_compatible_protocol_and_reprobe():
         assert client.put(path,json=payload).status_code == 422
         payload['protocolCode'] = 'system_one'
         assert client.put(path,json=payload).status_code == 200
-        assert client.patch(path,json={'enabled':True}).json()['error'] == 'LLM_PROBE_REQUIRED'
-        response = client.post(path+'/probe')
+        response = client.patch(path,json={'enabled':True})
         assert response.status_code == 200, response.text
         assert gateway.calls[-1]['protocol_code'] == 'system_one'
         assert client.patch(path,json={'enabled':True}).status_code == 200
@@ -136,7 +136,7 @@ def test_native_intent_binding_requires_compatible_protocol_and_reprobe():
         assert changed.status_code == 200, changed.text
         assert changed.json()['binding']['enabled'] is False
         assert changed.json()['binding']['validatedAt'] is None
-        assert client.patch(path,json={'enabled':True}).json()['error'] == 'LLM_PROBE_REQUIRED'
+        assert client.patch(path,json={'enabled':True}).json()['error'] == 'LLM_RESPONSE_INVALID'
 
 
 def test_switching_aihubmix_endpoint_invalidates_catalog_and_probe_version():
@@ -212,8 +212,6 @@ def test_speech_use_cases_bind_only_speech_protocols_and_probe_through_speech_ga
         for use_case, route_id, protocol in (("speech_to_text", stt, "aliyun_asr_realtime"), ("text_to_speech", tts, "aliyun_tts_realtime")):
             path = f"/api/admin/llm/use-cases/{use_case}/routes/{route_id}"
             assert client.put(path, json={"useCase": use_case, "routeId": route_id, "protocolCode": protocol, "priority": 100}).status_code == 200
-            probe = client.post(f"{path}/probe")
-            assert probe.status_code == 200, probe.text
             assert client.patch(path, json={"enabled": True}).status_code == 200
         assert speech.calls[0] == ("recognize", "wss://dashscope.aliyuncs.com/api-ws/v1/inference/", "fun-asr-realtime", "ws-demo")
         assert speech.calls[1][0:3] == ("synthesize", "wss://dashscope.aliyuncs.com/api-ws/v1/inference/", "cosyvoice-v3-flash")
@@ -266,10 +264,10 @@ def test_aihubmix_speech_models_bind_probe_and_activate_using_controlled_http_ta
             assert bind.status_code == 200 and bind.json()["binding"]["effective"] is False
             wrong = client.put(f"/api/admin/llm/use-cases/mock_interview/routes/{route_id}", json={"useCase": "mock_interview", "routeId": int(route_id), "protocolCode": protocol, "priority": 100})
             assert wrong.status_code == 422
-            assert client.post(f"{path}/probe").status_code == 200
-            assert client.patch(f"/api/admin/llm/routes/{route_id}", json={"enabled": True}).status_code == 200
             enabled = client.patch(path, json={"enabled": True})
-            assert enabled.status_code == 200 and enabled.json()["binding"]["effective"] is True
+            assert enabled.status_code == 200 and enabled.json()["binding"]["enabled"] is True
+            assert client.patch(f"/api/admin/llm/routes/{route_id}", json={"enabled": True}).status_code == 200
+            assert client.patch(path, json={"enabled": True}).json()["binding"]["effective"] is True
         assert [target.model for target in speech.targets] == [case[1] for case in cases]
         assert all(target.provider_code == "aihubmix" and target.ws_url == "" and target.api_base == "https://api.inferera.com/v1" for target in speech.targets)
 
@@ -377,3 +375,36 @@ def test_agent_history_blocks_deleting_its_model_and_route():
         assert client.delete(f"/api/admin/llm/models/{resolved}").json()["error"] == "LLM_MODEL_IN_USE"
         assert client.delete(f"/api/admin/llm/routes/{route_id}").json()["error"] == "LLM_ROUTE_IN_USE"
         assert client.delete(f"/api/admin/llm/connections/{connection_id}").json()["error"] == "LLM_CONNECTION_IN_USE"
+
+
+@pytest.mark.parametrize("error_code", ["LLM_TIMEOUT", "LLM_UNAVAILABLE", "LLM_RESPONSE_INVALID", "LLM_CONFIG_CHANGED"])
+@pytest.mark.parametrize("enable_method", ["put", "patch"])
+def test_enabling_binding_probes_and_keeps_disabled_on_failure(error_code, enable_method):
+    from linkresume.modules.llm.gateway import GatewayError
+    app, gateway = build_app()
+    async def fail(**kwargs):
+        gateway.calls.append(kwargs)
+        if error_code == "LLM_CONFIG_CHANGED":
+            with app.state.session_factory() as db:
+                route = db.scalar(select(LLMModelRoute))
+                route.invoke_target = "fictional-changed-model"
+                db.commit()
+            return GatewayResult(content="OK", usage=GatewayUsage(10, 2))
+        raise GatewayError(code=error_code,may_have_reached_provider=True)
+    gateway.complete = fail
+    with TestClient(app) as client:
+        register_admin(app,client)
+        connection = client.post('/api/admin/llm/connections',json={'providerCode':'aihubmix','name':'fictional-auto','apiKey':'fictional-key','enabled':True}).json()['connection']
+        model = client.post('/api/admin/llm/models',json={'displayName':'虚构验证模型'}).json()['model']
+        route = client.post('/api/admin/llm/routes',json={'modelId':int(model['id']),'connectionId':int(connection['id']),'targetKind':'model','invokeTarget':'fictional-model'}).json()['route']
+        path = f"/api/admin/llm/use-cases/job_text_extraction/routes/{route['id']}"
+        assert client.put(path,json={'useCase':'job_text_extraction','routeId':int(route['id']),'protocolCode':'openai_chat','priority':10}).status_code == 200
+        response = client.put(path,json={'useCase':'job_text_extraction','routeId':int(route['id']),'protocolCode':'openai_chat','priority':10,'enabled':True}) if enable_method == "put" else client.patch(path,json={'enabled':True})
+        assert response.status_code == 422 and response.json()['error'] == error_code
+        assert len(gateway.calls) == 1
+        with app.state.session_factory() as db:
+            binding = db.scalar(select(LLMUseCaseRoute).where(LLMUseCaseRoute.route_id == int(route['id'])))
+            assert binding.is_enabled is False and binding.validated_at is None
+        assert client.patch(path,json={'enabled':False}).status_code == 200
+        assert client.patch(path,json={'priority':20}).status_code == 200
+        assert len(gateway.calls) == 1

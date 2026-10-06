@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from weakref import WeakValueDictionary
 
 import anyio
@@ -10,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.core.errors import ApiError
-from linkresume.modules.agent.intent_schemas import INTENT_POLICY, IntentDecision
+from linkresume.modules.agent.intent_schemas import INTENT_POLICY, IntentDecision, IntentDiagnostic
 from linkresume.modules.agent.models import AgentMessage, AgentRun
 from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.schemas import AgentTaskPlanRequest
@@ -20,6 +21,7 @@ from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError
 
 INTENT_TIMEOUT_SECONDS = 10
+logger = logging.getLogger("linkresume.agent")
 
 
 async def _watch_cancellation(request: Request, run_id: int) -> None:
@@ -119,8 +121,10 @@ async def recognize_run_intent(request: Request, db: Session, run_id: str) -> di
                     response_model=IntentDecision, agent_run_id=run_pk,
                 )
             decision = result.value
-            if has_resume and "resume_identity" in decision.clarification_purposes:
-                response = {"version": 1, "mode": "fallback", "reason": "LLM_RESPONSE_INVALID", "call_id": result.call_id}
+            if has_resume and "resume_identity" in decision.clarification_purposes and not decision.resume_identity_conflict:
+                response = {"version": 1, "mode": "fallback", "reason": "INTENT_DECISION_INCONSISTENT", "call_id": result.call_id}
+            elif decision.resume_identity_conflict and not has_resume:
+                response = {"version": 1, "mode": "fallback", "reason": "INTENT_DECISION_INCONSISTENT", "call_id": result.call_id}
             else:
                 response = decision.model_dump(mode="json")
                 response["call_id"] = result.call_id
@@ -128,6 +132,12 @@ async def recognize_run_intent(request: Request, db: Session, run_id: str) -> di
             response = {"version": 1, "mode": "fallback", "reason": "INTENT_TIMEOUT"}
         except LLMError as error:
             response = {"version": 1, "mode": "fallback", "reason": error.code, "call_id": error.call_id}
+            if error.decision_detail:
+                # Only known question names and bounded numeric values can enter metadata/logs.
+                try:
+                    response["decision_detail"] = IntentDiagnostic.model_validate(error.decision_detail).model_dump(exclude_none=True)
+                except ValueError:
+                    pass
         # Cancellation is deliberately not caught: it must not execute fallback.
         db.expire_all()
         run, _ = get_active_run(db, run_id)
@@ -146,4 +156,14 @@ async def recognize_run_intent(request: Request, db: Session, run_id: str) -> di
         metadata["agent_intent"] = {key: value for key, value in response.items() if key != "tasks"}
         message.metadata_json = metadata
         db.commit()
+        logger.log(logging.WARNING if response["mode"] == "fallback" else logging.INFO,
+                   "agent intent recognition result", extra={
+                       "action": "recognize_intent", "operation_id": run_id,
+                       "stage": "model_execution",
+                       "result": "failed" if response["mode"] == "fallback" else "succeeded",
+                       "error_code": response.get("reason"), "call_id": response.get("call_id"),
+                       "intent_mode": response["mode"], "candidate_count": len(response.get("tasks", [])),
+                       "decision_field": response.get("decision_detail", {}).get("field"),
+                       "decision_confidence": response.get("decision_detail", {}).get("confidence"),
+                   })
         return response
