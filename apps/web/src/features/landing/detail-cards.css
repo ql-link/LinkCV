@@ -1,6 +1,6 @@
 /* 省时间的小细节：六张小卡，产品画面按 Figma 370×288 绘制。 */
 .dc-section { padding-top: 120px; background: linear-gradient(#fcfcfc, #eef4fc 50%, #fcfcfc); }
-.dc-header .fl-eyebrow { font-family: Inter, "Showcase Sans", sans-serif; letter-spacing: .3px; line-height: 15px; }
+.dc-header .fl-eyebrow { font-family: Inter, "Noto Sans SC Variable", sans-serif; letter-spacing: .3px; line-height: 15px; }
 .dc-header h2 { margin-top: 19px !important; font-size: 38.4px; line-height: 48px; font-weight: 400; letter-spacing: -1px; }
 .dc-header > p:last-child { margin-top: 15px !important; font-size: 15px; line-height: 26px; color: #777; }
 .dc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 56px 24px; margin-top: 38px; }
@@ -17,7 +17,7 @@
 .dc-copy h3 span { color: #8a8a84; }
 .dc-copy small { margin-top: 9px; font-size: 11px; line-height: 16px; color: #a3a39d; }
 
-.dc-stage { font-family: Inter, "Showcase Sans", "PingFang SC", sans-serif; color: #1d1d1b; font-size: 12px; line-height: 18px; text-align: left; }
+.dc-stage { font-family: Inter, "Noto Sans SC Variable", "PingFang SC", sans-serif; color: #1d1d1b; font-size: 12px; line-height: 18px; text-align: left; }
 .dc-stage > * { position: absolute; }
 .dc-stage :is(p, h4, h5, strong, small, em, b) { margin: 0; font-style: normal; }
 .dc-stage small { display: block; }
@@ -59,7 +59,7 @@
 .dc-modules small { font-size: 11px; line-height: 17px; color: #8a8a84; }
 
 /* 03 模板与中文排版 */
-.dc-type-paper { left: 24px; top: 26px; width: 214px; height: 264px; display: flex; flex-direction: column; gap: 6px; padding: 22px 20px 20px; border-radius: 6px; font-family: "Showcase Serif", "Noto Serif SC", serif; font-size: 11px; line-height: 19px; color: #55554f; }
+.dc-type-paper { left: 24px; top: 26px; width: 214px; height: 264px; display: flex; flex-direction: column; gap: 6px; padding: 22px 20px 20px; border-radius: 6px; font-family: "Noto Serif SC", serif; font-size: 11px; line-height: 19px; color: #55554f; }
 .dc-type-paper h4 { font-family: "Noto Serif SC", serif; font-size: 20px; line-height: 30px; font-weight: 600; color: #1d1d1b; }
 .dc-type-meta { line-height: 17px !important; color: #8a8a84; white-space: pre; }
 .dc-type-paper h5 { margin-top: 8px !important; padding-bottom: 6px; border-bottom: 1px solid #e4e4e0; font-family: "Noto Serif SC", serif; font-size: 12px; line-height: 18px; font-weight: 600; color: #1d1d1b; }

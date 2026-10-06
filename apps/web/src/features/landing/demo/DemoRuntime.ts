@@ -17,7 +17,15 @@ function dateAt(days: number, hour: number) {
 }
 const resumeSeed: ResumeRecord = { id: "landing-demo-resume", title: "产品经理 · 张三", source_type: "template", lock_version: 1, created_at: stamp, updated_at: stamp, template_id: product.id, data: clone(product.data), style: clone(product.style), layout_plan: product.layout_plan };
 if (resumeSeed.data.identity.name) resumeSeed.data.identity.name.value = "张三";
-export const resumes = [resumeSeed, { ...clone(resumeSeed), id: "demo-resume-growth", title: "增长产品经理 · 张三", updated_at: dateAt(-1, 16) }];
+function resumeFrom(key: string, resumeId: string, title: string, updated: string): ResumeRecord {
+  const template = templates.find(item => item.key === key) ?? product;
+  const resume: ResumeRecord = { ...clone(resumeSeed), id: resumeId, title, template_id: template.id, data: clone(template.data), style: clone(template.style), layout_plan: template.layout_plan, updated_at: updated };
+  if (resume.data.identity.name) resume.data.identity.name.value = "张三";
+  return resume;
+}
+export const resumes = [resumeSeed, resumeFrom("muse-badge-cn", "demo-resume-growth", "增长产品经理 · 张三", dateAt(-1, 16)), resumeFrom("muse-triptych-cn", "demo-resume-platform", "平台产品经理 · 张三", dateAt(-4, 11))];
+/** 列表接口附带缩略图所需的 preview，否则“我的简历”只能显示“预览不可用”。 */
+const withPreview = (resume: ResumeRecord) => ({ ...clone(resume), preview: { data: clone(resume.data), style: clone(resume.style), layout_plan: resume.layout_plan } });
 const resumeContext: AgentContextSnapshot = { type: "resume", id: resumeSeed.id, resume_id: resumeSeed.id, label: resumeSeed.title, version: "1", presentation: "mention" };
 const profile: UserProfile = { id: "landing-demo-user", nickname: "张三", email: "zhangsan@example.com", is_admin: false, avatar_url: null, contact_email: "zhangsan@example.com", registered_at: dateAt(-30, 10), wechat_status: "unavailable", wechat_bound_at: null };
 // The landing page passes its current interface language so the demo workspace matches it.
@@ -29,21 +37,44 @@ let userProfile: UserProfileData = { candidate_cities: ["上海", "杭州"], sal
 function job(index: number, company: string, title: string, skills: string[]): JobDescriptionRecord {
   return { id: `demo-job-${index}`, job_title: title, company_name: company, logo_url: null, work_city: "上海", salary_text: "20–30K · 14薪", skills, source_type: "manual", source_site: null, source_url: null, lock_version: 1, updated_at: stamp, employment_type: "full_time", description: `## 岗位职责\n- 负责${title}相关产品的规划与落地。\n- 通过用户研究和数据分析发现机会，协同设计、研发推进迭代。\n- 建立业务指标，跟踪上线效果并持续优化。\n\n## 任职要求\n- 3 年以上产品工作经验。\n- 熟悉${skills.join("、")}，能够清楚表达产品决策的依据。`, education_requirement: "本科", experience_requirement: "3–5 年", work_schedule: null, work_address: "上海 · 示例办公园区", work_mode: "hybrid", salary_min: "20000", salary_max: "30000", salary_currency: "CNY", salary_period: "month", salary_months_per_year: 14, company_legal_name: company, company_industry: "互联网", company_size: "100–499 人", company_financing_stage: null, company_description: "虚构的产品团队，用于展示求职流程。", recruiter_name: null, recruiter_title: null, source_job_id: null, source_url_hash: null, imported_at: null, notes: "演示岗位", created_at: stamp };
 }
-const jobs = [job(1, "星河科技", "高级产品经理", ["用户研究", "B2B 产品", "数据分析"]), job(2, "青舟数据", "增长产品经理", ["增长策略", "A/B 测试", "SQL"]), job(3, "远山设计", "平台产品经理", ["需求分析", "产品设计", "跨团队协作"]), job(4, "云帆互联", "产品经理", ["产品规划", "指标体系"]), job(5, "光点软件", "商业化产品经理", ["商业化", "数据分析"])];
+const jobs = [job(1, "星河科技", "高级产品经理", ["用户研究", "B2B 产品", "数据分析"]), job(2, "青舟数据", "增长产品经理", ["增长策略", "A/B 测试", "SQL"]), job(3, "远山设计", "平台产品经理", ["需求分析", "产品设计", "跨团队协作"]), job(4, "云帆互联", "产品经理", ["产品规划", "指标体系"]), job(5, "光点软件", "商业化产品经理", ["商业化", "数据分析"]), job(6, "北辰数据", "数据产品经理", ["数据仓库", "指标体系", "SQL"]), job(7, "澄海科技", "B 端产品经理", ["权限体系", "流程引擎", "SaaS"]), job(8, "远航物流", "产品经理", ["供应链", "流程优化"])];
+type SessionPlan = { application: number; day: number; hour: number; label: string; round: number; mode: "video" | "onsite" | "phone" | "other"; status: "scheduled" | "completed" };
+const interviewPlan: SessionPlan[] = [
+  { application: 0, day: 0, hour: 14, label: "业务二面", round: 2, mode: "onsite", status: "scheduled" },
+  { application: 1, day: 0, hour: 16, label: "业务一面", round: 1, mode: "video", status: "scheduled" },
+  { application: 6, day: 1, hour: 10, label: "业务一面", round: 1, mode: "video", status: "scheduled" },
+  { application: 3, day: 2, hour: 19, label: "在线笔试", round: 1, mode: "other", status: "scheduled" },
+  { application: 0, day: -1, hour: 10, label: "业务一面", round: 1, mode: "video", status: "completed" },
+  { application: 7, day: -1, hour: 15, label: "HR 面", round: 1, mode: "phone", status: "completed" },
+];
+type StageSpec = { type: "screening" | "assessment" | "written_test" | "interview" | "hr" | "offer"; label: string; round?: number; state: "awaiting_schedule" | "scheduled" | "awaiting_result" | "negotiating"; pending?: boolean; offer?: boolean; color: "blue" | "green" | "purple" | "orange" | "red" | "yellow" | "gray"; applied: number };
+const stageSpecs: StageSpec[] = [
+  { type: "interview", label: "业务二面", round: 2, state: "scheduled", color: "blue", applied: -12 },
+  { type: "interview", label: "业务一面", round: 1, state: "scheduled", color: "green", applied: -6 },
+  { type: "screening", label: "简历筛选", state: "awaiting_result", color: "gray", applied: -3 },
+  { type: "written_test", label: "在线笔试", state: "scheduled", color: "orange", applied: -5 },
+  { type: "assessment", label: "性格测评", state: "awaiting_result", color: "purple", applied: -4 },
+  { type: "screening", label: "待投递", state: "awaiting_schedule", pending: true, color: "gray", applied: 0 },
+  { type: "interview", label: "业务一面", round: 1, state: "scheduled", color: "red", applied: -7 },
+  { type: "offer", label: "Offer", state: "negotiating", offer: true, color: "yellow", applied: -20 },
+];
 function application(job: JobDescriptionRecord, index: number): JobApplicationSummary {
-  const stage = index < 2 ? "interview" : "screening";
-  const label = index < 2 ? "业务一面" : "简历筛选";
-  const stageRecord = { id: `demo-stage-${index}`, application_id: `demo-application-${index}`, client_request_id: `demo-stage-${index}`, stage_type: stage, stage_label: label, interview_round_no: index < 2 ? 1 : null, sequence_no: 1, stage_status: "active", stage_result: "pending", current_marker: 1, entered_at: stamp, completed_at: null, created_at: stamp, updated_at: stamp } as const;
-  return { id: `demo-application-${index}`, resume_id: resumeSeed.id, job_description_id: job.id, company_name_snapshot: job.company_name, job_title_snapshot: job.job_title, company_logo_url: null, job_snapshot: clone(job), resume_title_snapshot: resumeSeed.title, calendar_color: index % 2 ? "green" : "blue", current_stage_type: stage, current_round_no: index < 2 ? 1 : null, current_stage_label: label, stage_state: index < 2 ? "scheduled" : "awaiting_result", status: "active", phase: "applied", lifecycle_status: "active", terminated_at: null, termination_reason: null, offer_status: "none", offer_base_location: null, offer_salary: null, offer_salary_currency: null, offer_salary_period: null, offer_benefits_description: null, is_favorite: index === 0, applied_at: dateAt(-3, 10), notes: "示例求职记录，可在演示中修改。", archived_at: null, lock_version: 1, created_at: dateAt(-4, 10), updated_at: stamp, current_stage: stageRecord, stages: [stageRecord], next_session_id: index < 2 ? `demo-interview-${index}` : null, next_session_start_at: index < 2 ? dateAt(0, index ? 16 : 14) : null, next_session_end_at: index < 2 ? dateAt(0, index ? 17 : 15) : null, next_session_mode: index < 2 ? "video" : null };
+  const spec = stageSpecs[index] ?? stageSpecs[2];
+  const legacy = spec.type === "offer" ? "offer" : spec.type === "hr" ? "hr" : spec.type === "interview" ? "interview" : "screening";
+  const stageRecord = { id: `demo-stage-${index}`, application_id: `demo-application-${index}`, client_request_id: `demo-stage-${index}`, stage_type: spec.type, stage_label: spec.label, interview_round_no: spec.round ?? null, sequence_no: 1, stage_status: "active", stage_result: "pending", current_marker: 1, entered_at: dateAt(spec.applied + 1, 10), completed_at: null, created_at: stamp, updated_at: stamp } as const;
+  const session = interviewPlan.find(item => item.application === index && item.status === "scheduled");
+  return { id: `demo-application-${index}`, resume_id: resumeSeed.id, job_description_id: job.id, company_name_snapshot: job.company_name, job_title_snapshot: job.job_title, company_logo_url: null, job_snapshot: clone(job), resume_title_snapshot: resumeSeed.title, calendar_color: spec.color, current_stage_type: legacy, current_round_no: spec.round ?? null, current_stage_label: spec.label, stage_state: spec.state, status: "active", phase: spec.pending ? "pending" : "applied", lifecycle_status: "active", terminated_at: null, termination_reason: null, offer_status: spec.offer ? "received" : "none", offer_base_location: spec.offer ? "上海" : null, offer_received_on: spec.offer ? dateAt(-2, 10).slice(0, 10) : null, offer_reply_due_on: spec.offer ? dateAt(5, 10).slice(0, 10) : null, offer_salary: spec.offer ? "28000" : null, offer_salary_currency: spec.offer ? "CNY" : null, offer_salary_period: spec.offer ? "month" : null, offer_benefits_description: null, is_favorite: index === 0, applied_at: spec.pending ? null : dateAt(spec.applied, 10), notes: "示例求职记录。", archived_at: null, lock_version: 1, created_at: dateAt(spec.applied - 1, 10), updated_at: stamp, current_stage: stageRecord, stages: [stageRecord], next_session_id: session ? `demo-interview-${interviewPlan.indexOf(session)}` : null, next_session_start_at: session ? dateAt(session.day, session.hour) : null, next_session_end_at: session ? dateAt(session.day, session.hour + 1) : null, next_session_mode: session ? session.mode : null };
 }
 const applications = jobs.map(application);
-function interview(application: JobApplicationSummary, index: number): InterviewSessionSummary {
-  const days = index < 2 ? 0 : 2;
-  return { id: `demo-interview-${index}`, application_id: application.id, application_stage_id: application.current_stage?.id, client_request_id: `demo-interview-${index}`, stage_type: "interview", round_no: 1, stage_label: "业务一面", status: "scheduled", round_result: "pending", start_at: dateAt(days, index ? 16 : 14), end_at: dateAt(days, index ? 17 : 15), schedule_kind: "fixed_slot", answer_plan_start_at: null, answer_plan_end_at: null, timezone: "Asia/Shanghai", mode: "video", meeting_url: null, location: null, interviewer_name: "示例面试官", interviewer_title: "产品负责人", reminder_minutes: 30, preparation_note: "准备 2 分钟自我介绍，重点讲审批配置项目的判断过程。", questions_markdown: null, review_summary: null, improvement_markdown: null, prep_items: [{ id: "intro", title: "练习 2 分钟自我介绍", category: "intro", reason: "突出与岗位相关的经历", done: true }, { id: "project", title: "复盘审批配置项目", category: "project", reason: "说明决策依据和可核实的结果", done: false }, { id: "company", title: "了解团队与产品方向", category: "company", done: false }], prep_generated_at: stamp, prep_total: 3, prep_done: 1, completed_at: null, cancelled_at: null, cancellation_reason: null, lock_version: 1, created_at: stamp, updated_at: stamp, company_name: application.company_name_snapshot, job_title: application.job_title_snapshot, calendar_color: application.calendar_color, application_stage_state: application.stage_state };
+function interview(plan: SessionPlan, index: number): InterviewSessionSummary {
+  const application = applications[plan.application];
+  const done = plan.status === "completed";
+  return { id: `demo-interview-${index}`, application_id: application.id, application_stage_id: application.current_stage?.id, client_request_id: `demo-interview-${index}`, stage_type: plan.label === "HR 面" ? "hr" : plan.label === "在线笔试" ? "other" : "interview", round_no: plan.round, stage_label: plan.label, status: plan.status, round_result: done ? "passed" : "pending", start_at: dateAt(plan.day, plan.hour), end_at: dateAt(plan.day, plan.hour + 1), schedule_kind: "fixed_slot", answer_plan_start_at: null, answer_plan_end_at: null, timezone: "Asia/Shanghai", mode: plan.mode, meeting_url: null, location: plan.mode === "onsite" ? "上海 · 示例办公园区" : null, interviewer_name: "示例面试官", interviewer_title: "产品负责人", reminder_minutes: 30, preparation_note: "准备 2 分钟自我介绍，重点讲审批配置项目的判断过程。", questions_markdown: null, review_summary: done ? "表达清晰，项目数据扎实。" : null, improvement_markdown: null, prep_items: [{ id: "intro", title: "练习 2 分钟自我介绍", category: "intro", reason: "突出与岗位相关的经历", done: true }, { id: "project", title: "复盘审批配置项目", category: "project", reason: "说明决策依据和可核实的结果", done: done }, { id: "company", title: "了解团队与产品方向", category: "company", done: false }], prep_generated_at: stamp, prep_total: 3, prep_done: done ? 2 : 1, completed_at: done ? dateAt(plan.day, plan.hour + 1) : null, cancelled_at: null, cancellation_reason: null, lock_version: 1, created_at: stamp, updated_at: stamp, company_name: application.company_name_snapshot, job_title: application.job_title_snapshot, calendar_color: application.calendar_color, application_stage_state: application.stage_state };
 }
-const interviews = applications.slice(0, 2).map(interview);
-const folders: DatasetFolder[] = [{ id: "demo-folder-1", name: "项目与作品", dataset_count: 2, created_at: stamp, updated_at: stamp }, { id: "demo-folder-2", name: "面试准备", dataset_count: 2, created_at: stamp, updated_at: stamp }];
-const datasets: DatasetRecord[] = ["审批配置项目复盘.md", "产品作品集.md", "产品经理面试题.md", "自我介绍草稿.md"].map((file_name, index) => ({ id: `demo-dataset-${index}`, folder_id: folders[index < 2 ? 0 : 1].id, folder_name: folders[index < 2 ? 0 : 1].name, file_name, file_format: "md", file_size: 2048 + index * 600, asset_kind: "document", upload_status: "succeeded", parse_status: "succeeded", failure_reason: null, created_at: dateAt(-index, 10), content_revision: "1", content_updated_at: stamp }));
+const interviews = interviewPlan.map(interview);
+const folders: DatasetFolder[] = [{ id: "demo-folder-1", name: "项目与作品", dataset_count: 3, created_at: stamp, updated_at: stamp }, { id: "demo-folder-2", name: "面试准备", dataset_count: 3, created_at: stamp, updated_at: stamp }, { id: "demo-folder-3", name: "求职材料", dataset_count: 2, created_at: stamp, updated_at: stamp }];
+const datasetFiles: [string, number][] = [["审批配置项目复盘.md", 0], ["产品作品集.md", 0], ["权限模板体系方案.md", 0], ["产品经理面试题.md", 1], ["自我介绍草稿.md", 1], ["星河科技二面准备.md", 1], ["求职信 · 星河科技.md", 2], ["作品集说明.md", 2]];
+const datasets: DatasetRecord[] = datasetFiles.map(([file_name, folder], index) => ({ id: `demo-dataset-${index}`, folder_id: folders[folder].id, folder_name: folders[folder].name, file_name, file_format: "md", file_size: 2048 + index * 600, asset_kind: "document", upload_status: "succeeded", parse_status: "succeeded", failure_reason: null, created_at: dateAt(-index, 10), content_revision: "1", content_updated_at: stamp }));
 const contents: Record<string, string> = {
   "demo-dataset-0": "# 审批配置项目复盘\n\n## 背景\n用户配置审批流程时经常中途退出。\n\n## 行动\n开展两轮原型测试，梳理配置步骤，优化字段说明和即时预览。\n\n## 结果\n灰度期任务完成率从 71% 提升至 86%。\n\n## 复盘\n下一步验证复杂分支场景，并跟踪上线后的长期表现。",
   "demo-dataset-1": "# 产品作品集\n\n## 审批配置\n从问题识别、方案测试到灰度验证的完整过程。\n\n## 数据看板\n围绕核心使用路径建立指标，帮助团队判断迭代方向。",
@@ -99,8 +130,8 @@ export function installDemoRuntime() {
   api.getResume = async key => ({ resume: clone(resumeFor(key)) });
   api.listResumeTemplates = async () => ({ templates: clone(templates) });
   api.getResumeTemplate = async key => ({ template: clone(templates.find(item => item.id === key) ?? product) });
-  api.listResumes = async () => ({ resumes: clone(resumes) });
-  api.getResumeOverview = async () => ({ resumes: clone(resumes), active_imports: [], failed_imports: [], next_failed_cursor: null });
+  api.listResumes = async () => ({ resumes: resumes.map(withPreview) });
+  api.getResumeOverview = async () => ({ resumes: resumes.map(withPreview), active_imports: [], failed_imports: [], next_failed_cursor: null });
   api.updateResume = async (key, patch) => ({ resume: touch(resumeFor(key), patch) });
   api.createResume = async payload => { const template = templates.find(item => item.id === payload.template_id) ?? product; const resume = { ...clone(resumeSeed), id: id("resume"), title: payload.title, template_id: template.id, data: clone(template.data), style: clone(template.style), layout_plan: template.layout_plan }; resumes.unshift(resume); return { resume: clone(resume) }; };
   api.applyResumeTemplate = async (key, patch) => { const template = templates.find(item => item.id === patch.template_id) ?? product; return { resume: touch(resumeFor(key), { ...patch, style: clone(template.style), template_id: template.id, layout_plan: template.layout_plan }) }; };
@@ -178,7 +209,7 @@ export function installDemoRuntime() {
   api.deleteInterviewSession = async key => { const parent = clone(applicationFor(interviewFor(key).application_id)); const index = interviews.findIndex(item => item.id === key); if (index >= 0) interviews.splice(index, 1); return { deleted: true, application: parent }; };
   api.createJobDescription = async payload => { const item = { ...clone(jobs[0]), ...payload, id: id("job") }; jobs.unshift(item); return { job_description: clone(item), application: null }; };
   api.createJobApplication = async payload => { const item = application(jobs.find(job => job.id === payload.job_description_id) ?? jobs[0], sequence++); item.id = id("application"); applications.unshift(item); return { application: clone(item) }; };
-  api.createInterviewSession = async (key, patch) => { const item = { ...interview(applicationFor(key), 0), ...patch, id: id("interview"), end_at: patch.end_at ?? new Date(new Date(patch.start_at).getTime() + (patch.duration_minutes ?? 60) * 60000).toISOString() }; interviews.push(item); return detail(item.id); };
+  api.createInterviewSession = async (key, patch) => { const item = { ...interview({ application: applications.indexOf(applicationFor(key)), day: 0, hour: 10, label: "业务面试", round: 1, mode: "video", status: "scheduled" }, 0), ...patch, id: id("interview"), end_at: patch.end_at ?? new Date(new Date(patch.start_at).getTime() + (patch.duration_minutes ?? 60) * 60000).toISOString() }; interviews.push(item); return detail(item.id); };
   api.listDatasets = async folder => ({ datasets: clone(datasets.filter(item => folder === undefined || folder === null || item.folder_id === folder)), limits: { max_file_bytes: 20 * 1024 * 1024, max_files_per_batch: 10, allowed_extensions: ["md", "txt", "pdf", "docx"] } });
   api.listDatasetFolders = async () => ({ folders: folders.map(folder => ({ ...folder, dataset_count: datasets.filter(item => item.folder_id === folder.id).length })), total_count: datasets.length, uncategorized_count: datasets.filter(item => !item.folder_id).length });
   api.getDataset = async key => clone(datasets.find(item => item.id === key)!);
@@ -203,5 +234,5 @@ export function installDemoRuntime() {
   api.uploadAccountAvatar = async payload => { profile.avatar_url = payload.dataUrl; return { url: payload.dataUrl }; };
   api.deleteAccountAvatar = async () => { profile.avatar_url = null; return { ok: true }; };
   useDemoMockInterviewApi(true); resetMockInterviewStore(true);
-  useResumeStore.setState({ user: clone(profile), authStatus: "authenticated", resumes: clone(resumes), resumesLoadedAt: Date.now(), activeImports: [], failedImports: [] });
+  useResumeStore.setState({ user: clone(profile), authStatus: "authenticated", resumes: resumes.map(withPreview), resumesLoadedAt: Date.now(), activeImports: [], failedImports: [] });
 }

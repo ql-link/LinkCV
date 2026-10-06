@@ -38,7 +38,8 @@ const MockInterviewPage = lazy(() => loadMockInterviewPage().then((module) => ({
 const ResumeTemplatesPage = lazy(() => loadResumeTemplatesPage().then((module) => ({ default: module.ResumeTemplatesPage })));
 const JobDetailPage = lazy(() => import("./features/jobs/JobDetailPage").then((module) => ({ default: module.JobDetailPage })));
 const InterviewCenterPage = lazy(() => loadInterviewCenterPage().then((module) => ({ default: module.InterviewCenterPage })));
-const LandingPage = lazy(() => import("./features/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
+const loadLandingPage = () => import("./features/landing/LandingPage");
+const LandingPage = lazy(() => loadLandingPage().then((module) => ({ default: module.LandingPage })));
 const NotFoundPage = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.NotFoundPage })));
 const InAppNotFound = lazy(() => import("./features/not-found/NotFoundPage").then((module) => ({ default: module.InAppNotFound })));
 const SharePage = lazy(() => import("./features/share/SharePage").then((module) => ({ default: module.SharePage })));
@@ -53,9 +54,15 @@ export function App() {
   );
 }
 
+/** 落地页加载占位不渲染可见中文：可见中文会让全站字体栈提前下载 13.8MB 的整包思源黑体。 */
+function LandingLoading() {
+  return <div role="status" aria-label={t("正在加载页面…")} style={{ minHeight: "100vh", background: "#fcfcfc" }} />;
+}
+
 export function AppRouteLoadingFallback() {
   const locale = useLocale();
   const route = useAppRoute();
+  if (route.kind === "landing") return <LandingLoading />;
   const loading = <PageLoading label={t("正在加载页面…")} scope="page" />;
   const usesLightWorkspace = route.kind === "resumes"
     || route.kind === "assistant"
@@ -245,6 +252,11 @@ function AppContent() {
   }
 
   if (authStatus === "checking") {
+    if (route.kind === "landing") {
+      // 登录态检查期间就并行下载落地页模块，不必等检查结束再开始。
+      void loadLandingPage();
+      return <LandingLoading />;
+    }
     return <PageLoading label={t("正在加载简历工作台…")} scope="page" />;
   }
 

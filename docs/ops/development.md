@@ -10,6 +10,10 @@
 
 `dev` 是业务需求的共享集成分支，禁止默认直推、自动合并、强推或改写历史。分支创建命令、PR 检查、授权边界和中文提交规范以 [`branch-pr-workflow`](../../.ai/skills/branch-pr-workflow/SKILL.md) 为唯一操作策略来源。
 
+## 落地页演示截图
+
+Vite 开发服务保留 `/landing-demo.html` 供截图脚本读取虚构产品工作区；生产落地页使用已保存的图片。修改示例数据或产品界面后，按 [Web 公共落地页的截图生成说明](../internals/web.md#公共落地页与产品演示) 更新中英文截图与点击区域。
+
 ## 环境要求
 
 - Node.js 22 LTS 和 npm 10+

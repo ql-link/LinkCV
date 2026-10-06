@@ -2,14 +2,18 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowRight, ArrowUp, ChevronDown, Languages, Menu, X } from "lucide-react";
 import { setLocale, useLocale } from "@/i18n";
 import wordmark from "@/assets/linkresume-wordmark.png";
+import brandMark from "@/assets/linkresume-mark-132.png";
+import groupQr from "@/assets/linkresume-qq-group-qr.svg";
 import { HeroDemo } from "./HeroDemo";
 import { HeroBackdrop } from "./HeroBackdrop";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
+import "@fontsource-variable/noto-sans-sc/wght.css";
+import "@fontsource/noto-serif-sc/400.css";
 import { FeatureShowcase } from "./FeatureShowcase";
 import { DetailCards } from "./DetailCards";
-import { prefersStaticMotion, useScrollReveal } from "./motion";
+import { useScrollReveal } from "./motion";
 import { lt } from "./landingCopy";
 import "./full-landing.css";
 
@@ -29,10 +33,9 @@ const menus: Record<string, NavGroup[]> = {
   ],
   了解更多: [
     { title: "探索", links: [{ text: "产品能力", target: "#use-cases" }, { text: "更多细节", target: "#features" }, { text: "常见问题", target: "#faq" }] },
-    { title: "LinkResume", links: [{ text: "产品理念", target: "#purpose" }, { text: "从哪里开始", target: "#start" }] },
+    { title: "LinkResume", links: [{ text: "从哪里开始", target: "#purpose" }] },
   ],
 };
-const stats = [["30,000+", "求职者"], ["120,000+", "份简历"], ["38,000+", "次岗位匹配"], ["6,500+", "场模拟面试"]];
 const faqs = [
   { q: "LinkResume 免费吗？", a: "简历编辑、导出和岗位看板都可以免费使用；AI 相关能力按用量提供免费额度，后续会推出更多方案。" },
   { q: "我的简历数据安全吗？", a: "简历、岗位和资料保存在你自己的账号里，只在你发起编辑、分析或模拟面试时使用；不需要的内容可以随时删除。" },
@@ -52,37 +55,11 @@ function PrimaryLink() {
   return <a className="fl-button" href={projectUrl}>{lt("免费开始")}<ArrowRight size={14} strokeWidth={2} /></a>;
 }
 
-function StatValue({ value }: { value: string }) {
-  const target = Number(value.replace(/\D/g, ""));
-  const suffix = value.replace(/[\d,]/g, "");
-  const node = useRef<HTMLElement>(null);
-  const [shown, setShown] = useState(value);
-  useEffect(() => {
-    const element = node.current;
-    if (!element || prefersStaticMotion()) return;
-    setShown(`0${suffix}`);
-    let frame = 0;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting) return;
-      observer.disconnect();
-      const start = performance.now();
-      const tick = (now: number) => {
-        const progress = Math.min(1, (now - start) / 1400);
-        setShown(`${Math.round(target * (1 - Math.pow(1 - progress, 3))).toLocaleString("en-US")}${suffix}`);
-        if (progress < 1) frame = requestAnimationFrame(tick);
-      };
-      frame = requestAnimationFrame(tick);
-    }, { threshold: 0.6 });
-    observer.observe(element);
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
-  }, [target, suffix]);
-  return <dd ref={node}>{shown}</dd>;
-}
-
 function Faq() {
   const [open, setOpen] = useState<number | null>(0);
   return <section id="faq" className="fl-faq-section" aria-labelledby="faq-title"><div className="fl-faq fl-container">
-    <header data-reveal><p className="fl-eyebrow"><span />{lt("常见问题")}</p><h2 id="faq-title">{lt("还有疑问？")}</h2><p>{lt("没有找到答案？写信给我们：")}<br />hello@linkresume.example</p></header>
+    <header data-reveal><p className="fl-eyebrow"><span />{lt("常见问题")}</p><h2 id="faq-title">{lt("加入用户交流群")}</h2><p>{lt("使用问题、功能建议，都可以在群里反馈。")}</p></header>
+    <figure className="fl-faq-qr" data-reveal><div className="fl-faq-qr-code"><img src={groupQr} alt={lt("LinkResume 交流群 QQ 二维码")} width="168" height="168" /><span><img src={brandMark} alt="" width="33" height="33" /></span></div><figcaption>{lt("QQ 扫码加入")}</figcaption></figure>
     <div className="fl-faq-list">{faqs.map((item, index) => <div className="fl-faq-item" data-reveal style={{ "--reveal-delay": `${index * 0.06}s` } as CSSProperties} key={item.q}>
       <h3><button type="button" id={`faq-question-${index}`} aria-expanded={open === index} aria-controls={`faq-answer-${index}`} onClick={() => setOpen(open === index ? null : index)}>{lt(item.q)}<ChevronDown size={20} strokeWidth={1.6} /></button></h3>
       <div className="fl-faq-answer" id={`faq-answer-${index}`} role="region" aria-labelledby={`faq-question-${index}`} data-open={open === index} inert={open !== index}><div><p>{lt(item.a)}</p></div></div>
@@ -137,23 +114,18 @@ export function FullLanding() {
         <div className="fl-hero-content fl-container">
           <div className="fl-hero-copy">
             <img className="fl-hero-wordmark" src={wordmark} alt="LinkResume" width="1701" height="349" />
-            <h1>{lt("懂你经历的求职搭档。")}</h1>
-            <p>{lt("它读过你的简历、项目和面试记录，帮你改简历、对岗位、练面试。")}<br />{lt("每一步怎么走，还是你说了算。")}</p>
+            <h1>{lt("懂你经历的求职搭档")}</h1>
+            <p>{lt("导入简历和项目资料，AI 帮你改简历、对照 JD、模拟面试。")}<br />{lt("每处修改都由你确认后再写入简历。")}</p>
             <div className="fl-hero-cta"><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo">{lt("看 2 分钟演示")}</a></div><small>{lt("免费使用 · 支持导入 PDF / Word / Markdown 简历")}</small></div>
           </div>
           <HeroDemo />
         </div>
       </section>
-      <section className="fl-stats-section" aria-labelledby="stats-title"><div className="fl-container" data-reveal>
-        <p id="stats-title">{lt("30,000+ 求职者正在用 LinkResume 准备求职（示例数据）")}</p>
-        <dl className="fl-stats">{stats.map(([value, label]) => <div key={label}><dt>{lt(label)}</dt><StatValue value={value} /></div>)}</dl>
-      </div></section>
       <FeatureShowcase />
-      <section id="start" className="fl-start-section"><div className="fl-start fl-container" data-reveal><p className="fl-eyebrow"><span />{lt("现在开始")}</p><h2>{lt("每场面试，都有备而来。")}</h2><div className="fl-cta-row"><PrimaryLink /></div></div></section>
       <DetailCards />
       <Faq />
-      <section id="purpose" className="fl-purpose-section"><div className="fl-purpose fl-container" data-reveal><p className="fl-eyebrow"><span />LinkResume</p><h2>{lt("准备求职的新方式。")}</h2><div className="fl-cta-row"><PrimaryLink /><a className="fl-button-secondary" href="#demo">{lt("看演示")}</a></div></div></section>
+      <section id="purpose" className="fl-purpose-section"><div className="fl-purpose fl-container" data-reveal><p className="fl-eyebrow"><span />LinkResume</p><h2>{lt("简历、岗位和面试，从这里开始准备")}</h2><div className="fl-cta-row"><PrimaryLink /></div></div></section>
     </main>
-    <div className="fl-footer-section" inert={mobileMenu}><footer className="fl-footer fl-container" aria-label={lt("页脚导航")}><div className="fl-footer-brand"><a href="#top"><img src={wordmark} alt="LinkResume" width="136" height="28" /></a><p>{lt("懂你经历的求职搭档。")}</p><small>© 2026 LinkResume · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">皖ICP备2026017322号</a></small></div><div><h2>{lt("产品功能")}</h2>{footerFeatures.map(([text, target]) => <a key={text} href={target}>{lt(text)}</a>)}</div><div><h2>{lt("了解 LinkResume")}</h2><a href="#features">{lt("更多细节")}</a><a href="#purpose">{lt("产品理念")}</a><a href="#top">{lt("返回顶部")}<ArrowUp size={11} /></a></div></footer></div>
+    <div className="fl-footer-section" inert={mobileMenu}><footer className="fl-footer fl-container" aria-label={lt("页脚导航")}><div className="fl-footer-brand"><a href="#top"><img src={wordmark} alt="LinkResume" width="136" height="28" /></a><p>{lt("懂你经历的求职搭档")}</p><small>© 2026 LinkResume · <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">皖ICP备2026017322号</a></small></div><div><h2>{lt("产品功能")}</h2>{footerFeatures.map(([text, target]) => <a key={text} href={target}>{lt(text)}</a>)}</div><div><h2>{lt("了解 LinkResume")}</h2><a href="#features">{lt("更多细节")}</a><a href="#faq">{lt("常见问题")}</a><a href="#top">{lt("返回顶部")}<ArrowUp size={11} /></a></div></footer></div>
   </div>;
 }

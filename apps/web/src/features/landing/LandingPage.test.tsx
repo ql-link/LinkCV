@@ -18,13 +18,13 @@ afterEach(() => setLocale("zh-CN"));
 describe("LandingPage", () => {
   it("按 Figma 新稿展示 Hero、五个功能场景、六张细节卡和常见问题，免费开始进入真实项目", () => {
     const { container } = render(<LandingPage />);
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档。");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档");
     expect(container.querySelectorAll(".fs-block")).toHaveLength(5);
     expect(container.querySelectorAll(".dc-card")).toHaveLength(6);
-    expect(container.querySelectorAll(".fl-stats > div")).toHaveLength(4);
-    expect(screen.getByTitle("LinkResume 产品互动演示 · 示例数据")).toHaveAttribute("src", "/landing-demo.html?locale=zh-CN");
+    expect(screen.getByRole("img", { name: "LinkResume 交流群 QQ 二维码" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "首页 · 示例数据" })).toHaveAttribute("src", expect.stringContaining("zh-CN/home"));
     const starts = screen.getAllByRole("link", { name: "免费开始" });
-    expect(starts).toHaveLength(4);
+    expect(starts).toHaveLength(3);
     for (const link of starts) expect(link).toHaveAttribute("href", "https://linkresume.cn/resumes");
     expect(screen.getByRole("link", { name: "看 2 分钟演示" })).toHaveAttribute("href", "#demo");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -37,12 +37,12 @@ describe("LandingPage", () => {
   it("语言按钮在中英文之间切换整页文案和演示语言", () => {
     render(<LandingPage />);
     fireEvent.click(screen.getByRole("button", { name: "切换语言" }));
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The job-search partner that knows your story.");
-    expect(screen.getAllByRole("link", { name: "Start free" })).toHaveLength(4);
-    expect(screen.getByTitle("LinkResume interactive demo · Sample data")).toHaveAttribute("src", "/landing-demo.html?locale=en-US");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("The job-search partner that knows your story");
+    expect(screen.getAllByRole("link", { name: "Start free" })).toHaveLength(3);
+    expect(screen.getByRole("img", { name: "Home · Sample data" })).toHaveAttribute("src", expect.stringContaining("en-US/home"));
     expect(document.documentElement.lang).toBe("en-US");
     fireEvent.click(screen.getByRole("button", { name: "Switch language" }));
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档。");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("懂你经历的求职搭档");
   });
 
   it("常见问题默认展开第一项，点击后切换展开项", () => {

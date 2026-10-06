@@ -1,8 +1,8 @@
 /* 功能展示：五个产品场景，静态画面按 Figma 800×640 视觉稿绘制，窄屏整体缩放。 */
-.fs-section { padding-top: 120px; background: linear-gradient(#f0f5fc, #fafcff 50%, #f3f1fb); }
+.fs-section { padding: 120px 0 40px; background: linear-gradient(#fcfcfc, #fafcff 40%, #f3f1fb 82%, #fcfcfc); }
 .fs-inner { width: min(100% - 40px, 1240px); margin-inline: auto; display: flex; flex-direction: column; gap: 80px; }
 .fs-header { padding-left: 20px; }
-.fs-header .fl-eyebrow { font-family: Inter, "Showcase Sans", sans-serif; letter-spacing: 0; text-transform: none; line-height: 13px; }
+.fs-header .fl-eyebrow { font-family: Inter, "Noto Sans SC Variable", sans-serif; letter-spacing: 0; text-transform: none; line-height: 13px; }
 .fs-header h2 { font-size: 40px; line-height: 56px; font-weight: 400; letter-spacing: -1px; }
 .fs-block { display: grid; grid-template-columns: minmax(0, 404fr) minmax(0, 800fr); align-items: center; padding: 18px; scroll-margin-top: 64px; }
 .fs-block.is-reversed { grid-template-columns: minmax(0, 800fr) minmax(0, 404fr); }
@@ -24,7 +24,7 @@
   --fs-ink: #1b1f27; --fs-text: #3a404b; --fs-ink-2: #4f5663; --fs-mute: #858c98; --fs-faint: #a7adb7;
   --fs-line: #e5e8ee; --fs-line-2: #eef0f4; --fs-line-3: #d5dae2; --fs-soft: #f3f5f8; --fs-paper: #f9fafc;
   --fs-blue: #3f6fd8; --fs-blue-soft: #3f6fd814; --fs-good: #3f8a66; --fs-warn: #c4823e; --fs-bg-end: #f5f7fb;
-  overflow: hidden; border-radius: 12px; background: linear-gradient(#e7edf7, var(--fs-bg-end)); font-family: Inter, "Showcase Sans", "PingFang SC", sans-serif; color: var(--fs-ink); line-height: 1.2; text-align: left;
+  overflow: hidden; border-radius: 12px; background: linear-gradient(#e7edf7, var(--fs-bg-end)); font-family: Inter, "Noto Sans SC Variable", "PingFang SC", sans-serif; color: var(--fs-ink); line-height: 1.2; text-align: left;
 }
 .fs-visual :is(p, h4, h5, small, strong, em, b) { margin: 0; font-style: normal; }
 .fs-visual small { display: block; }
@@ -110,13 +110,13 @@
 .fs-assistant p { font-size: 13px; line-height: 22px; color: var(--fs-text); }
 .fs-preview { left: 341px; top: 0; width: 559px; height: 640px; border-left: 1px solid var(--fs-line-2); margin-left: -1px; background: var(--fs-paper); }
 /* 简历纸：白纸 + 轻阴影，抬头左姓名右联系方式，经历用项目符号列表 */
-.fs-paper { position: absolute; left: 20px; top: 52px; width: 380px; height: 560px; overflow: hidden; display: flex; flex-direction: column; gap: 7px; padding: 28px 28px 0; border-radius: 3px; background: #fff; box-shadow: 0 0 0 1px #171a290a, 0 2px 4px #171a290a, 0 12px 28px #171a290f; font-family: "Showcase Serif", "Noto Serif SC", serif; font-size: 11px; line-height: 18px; color: var(--fs-text); }
+.fs-paper { position: absolute; left: 20px; top: 52px; width: 380px; height: 560px; overflow: hidden; display: flex; flex-direction: column; gap: 7px; padding: 28px 28px 0; border-radius: 3px; background: #fff; box-shadow: 0 0 0 1px #171a290a, 0 2px 4px #171a290a, 0 12px 28px #171a290f; font-family: "Noto Serif SC", serif; font-size: 11px; line-height: 18px; color: var(--fs-text); }
 .fs-paper-head { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 12px; margin-bottom: 4px; border-bottom: 1.5px solid var(--fs-ink); }
 .fs-paper h4 { font-size: 22px; line-height: 28px; font-weight: 500; letter-spacing: 2px; color: var(--fs-ink); }
 .fs-paper-head > div > p { margin-top: 2px !important; font-size: 11px; line-height: 15px; color: var(--fs-ink-2); }
-.fs-paper-contact { font-family: Inter, "Showcase Sans", sans-serif; font-size: 10px; line-height: 15px !important; text-align: right; color: var(--fs-mute); }
-.fs-paper h5 { margin-top: 6px !important; padding-bottom: 4px; border-bottom: 1px solid var(--fs-line); font-family: Inter, "Showcase Sans", sans-serif; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 2px; color: var(--fs-ink); }
-.fs-paper-item { display: flex; align-items: baseline; gap: 8px; font-family: Inter, "Showcase Sans", sans-serif; font-size: 11px; line-height: 16px !important; color: var(--fs-ink-2); white-space: pre; }
+.fs-paper-contact { font-family: Inter, "Noto Sans SC Variable", sans-serif; font-size: 10px; line-height: 15px !important; text-align: right; color: var(--fs-mute); }
+.fs-paper h5 { margin-top: 6px !important; padding-bottom: 4px; border-bottom: 1px solid var(--fs-line); font-family: Inter, "Noto Sans SC Variable", sans-serif; font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 2px; color: var(--fs-ink); }
+.fs-paper-item { display: flex; align-items: baseline; gap: 8px; font-family: Inter, "Noto Sans SC Variable", sans-serif; font-size: 11px; line-height: 16px !important; color: var(--fs-ink-2); white-space: pre; }
 .fs-paper-item strong { font-size: 12px; font-weight: 600; color: var(--fs-ink); }
 .fs-paper-item span { margin-left: auto; font-size: 10.5px; color: var(--fs-mute); }
 .fs-paper ul { display: flex; flex-direction: column; gap: 3px; margin: 0; padding: 0 0 0 14px; }
@@ -264,7 +264,7 @@
 .fs-report-link { font-size: 12px; color: #3f6fd8; }
 
 @media (max-width: 1023px) {
-  .fs-section { padding-top: 80px; }
+  .fs-section { padding: 80px 0 24px; }
   .fs-inner { width: calc(100% - 40px); gap: 56px; }
   .fs-header { padding-left: 0; }
   .fs-header h2 { font-size: 32px; line-height: 44px; }

@@ -62,17 +62,17 @@ function Preferences() {
 }
 
 const cards: { id: string; tag: string; lead: string; rest: string; label: string; visual: ComponentType; note?: string }[] = [
-  { id: "models", tag: "多模型选择", lead: "换个模型，对话不断。", rest: "DeepSeek、Claude、GPT 随时切换，不用离开当前对话。", label: "在对话输入框中选择 DeepSeek、Claude、GPT、Gemini 或 Kimi", visual: Models, note: "模型品牌示例，实际可用模型以工作区列表为准。" },
-  { id: "import", tag: "已有简历导入", lead: "旧简历拖进来就能改。", rest: "导入 PDF、Word 或 Markdown，它会整理成可以直接编辑的简历。", label: "导入 PDF 简历后识别出教育、工作、项目和技能四个模块", visual: ImportResume },
-  { id: "templates", tag: "模板与中文排版", lead: "排版细到行距。", rest: "选好模板，再细调字体、字号和行距。", label: "简历排版面板：思源宋体、11 号字、1.5 倍行距", visual: Typography },
-  { id: "references", tag: "资料随手引用", lead: "@ 一下，资料就在对话里。", rest: "项目复盘、面试笔记、岗位 JD，聊的时候直接 @ 进来，原文随时能看。", label: "在对话中用 @ 引用项目复盘、面试笔记、岗位和简历", visual: References },
-  { id: "capture", tag: "岗位快速收集", lead: "粘贴招聘文字，岗位就存好了。", rest: "粘贴招聘文字或截图，它识别关键信息，你核对一下就能保存。", label: "从粘贴的招聘文字中识别公司、岗位、城市、薪资、经验和类型", visual: CaptureJob },
-  { id: "preferences", tag: "个性化求职偏好", lead: "说一次偏好，之后都记得。", rest: "设好城市、薪资和工作类型，建议会跟着调整。", label: "求职偏好：期望城市、期望薪资和工作类型", visual: Preferences },
+  { id: "models", tag: "多模型选择", lead: "DeepSeek、Claude、GPT 随时切换。", rest: "换模型后继续当前对话，不用重新开始。", label: "在对话输入框中选择 DeepSeek、Claude、GPT、Gemini 或 Kimi", visual: Models, note: "模型品牌示例，实际可用模型以工作区列表为准。" },
+  { id: "import", tag: "已有简历导入", lead: "PDF、Word、Markdown 都能导入。", rest: "自动识别教育、工作、项目等模块，导入后直接编辑。", label: "导入 PDF 简历后识别出教育、工作、项目和技能四个模块", visual: ImportResume },
+  { id: "templates", tag: "模板与中文排版", lead: "字体、字号、行距都能单独调整。", rest: "选好模板后再细调，中文简历也能排得整齐。", label: "简历排版面板：思源宋体、11 号字、1.5 倍行距", visual: Typography },
+  { id: "references", tag: "资料随手引用", lead: "对话里 @ 一下就能引用资料。", rest: "项目复盘、面试笔记、岗位 JD 都能引用，原文随时可查。", label: "在对话中用 @ 引用项目复盘、面试笔记、岗位和简历", visual: References },
+  { id: "capture", tag: "岗位快速收集", lead: "粘贴招聘文字或截图即可保存岗位。", rest: "自动识别公司、薪资和经验要求，核对后保存。", label: "从粘贴的招聘文字中识别公司、岗位、城市、薪资、经验和类型", visual: CaptureJob },
+  { id: "preferences", tag: "个性化求职偏好", lead: "城市、薪资、工作类型设置一次。", rest: "之后 AI 给建议时都会参考。", label: "求职偏好：期望城市、期望薪资和工作类型", visual: Preferences },
 ];
 
 export function DetailCards() {
   return <section id="features" className="dc-section" aria-labelledby="detail-cards-title"><div className="fl-container">
-    <header className="dc-header" data-reveal><p className="fl-eyebrow"><span />{lt("细节")}</p><h2 id="detail-cards-title">{lt("省时间的小细节。")}</h2><p>{lt("换模型、导入简历、存岗位，这些顺手的事它都想到了。")}</p></header>
+    <header className="dc-header" data-reveal><p className="fl-eyebrow"><span />{lt("细节")}</p><h2 id="detail-cards-title">{lt("更多实用功能")}</h2><p>{lt("切换模型、导入简历、收集岗位，常用操作一步完成。")}</p></header>
     <div className="dc-grid">{cards.map(({ id, tag, lead, rest, label, visual: Visual, note }, index) => <article id={`feature-${id}`} className="dc-card" data-reveal style={{ "--reveal-delay": `${(index % 3) * 0.08}s` } as CSSProperties} key={id} aria-labelledby={`feature-${id}-copy`}>
       <FitStage width={370} height={288} className="dc-media" stageClassName="dc-stage" label={lt(label)}><Visual /></FitStage>
       <div className="dc-copy"><p className="dc-topic"><span>0{index + 1}</span>{lt(tag)}</p><h3 id={`feature-${id}-copy`}>{lt(lead)}<span> {lt(rest)}</span></h3>{note && <small>{lt(note)}</small>}</div>

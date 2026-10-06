@@ -1,7 +1,6 @@
+import "./bootstrap";
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { installCryptoRandomUuid } from "@/utils/randomUuid";
-import { installDemoStorage } from "./isolation";
 import "@/styles.css";
 import "@/design-system/tokens.css";
 import "@/design-system/fonts.css";
@@ -12,11 +11,9 @@ import "@/features/preview/print/resume-fonts.css";
 import "@fontsource/inter/400.css";
 import "@fontsource/inter/500.css";
 import "@fontsource/inter/600.css";
+import "@fontsource-variable/noto-sans-sc/wght.css";
+import "@fontsource/noto-serif-sc/600.css";
 import "./demo.css";
+import { DemoApp } from "./DemoApp";
 
-installDemoStorage();
-installCryptoRandomUuid();
-
-void import("./DemoApp").then(({ DemoApp }) => {
-  createRoot(document.getElementById("root")!).render(<React.StrictMode><DemoApp /></React.StrictMode>);
-});
+createRoot(document.getElementById("root")!).render(<React.StrictMode><DemoApp /></React.StrictMode>);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { installDemoStorage } from "./isolation";
+import entrySource from "./main.tsx?raw";
 
 describe("demo storage isolation", () => {
   it("不读取真实存储，演示写入和清理不修改真实数据", () => {
@@ -24,5 +25,10 @@ describe("demo storage isolation", () => {
       realLocal.removeItem("landing-test-real-draft");
       realSession.removeItem("landing-test-real-session");
     }
+  });
+
+  it("演示入口第一条导入安装存储隔离，业务模块加载时读不到真实存储", () => {
+    const firstImport = entrySource.split("\n").find(line => line.startsWith("import "));
+    expect(firstImport).toBe('import "./bootstrap";');
   });
 });

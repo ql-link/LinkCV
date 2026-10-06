@@ -35,7 +35,7 @@ describe("App landing routes", () => {
   it("已登录访问纯域名时仍展示公共落地页", async () => {
     render(createElement(App));
 
-    expect(await screen.findByRole("heading", { name: /写好你的经历.*走向下一次机会/ }, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "懂你经历的求职搭档" }, { timeout: 5000 })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
   });
 
@@ -46,7 +46,7 @@ describe("App landing routes", () => {
     expect(
       await screen.findByRole(
         "heading",
-        { name: /写好你的经历.*走向下一次机会/ },
+        { name: "懂你经历的求职搭档" },
         { timeout: 5_000 },
       ),
     ).toBeInTheDocument();
@@ -60,7 +60,7 @@ describe("App landing routes", () => {
     expect(
       await screen.findByRole(
         "heading",
-        { name: /写好你的经历.*走向下一次机会/ },
+        { name: "懂你经历的求职搭档" },
         { timeout: 5_000 },
       ),
     ).toBeInTheDocument();

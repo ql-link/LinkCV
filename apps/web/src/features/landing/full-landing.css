@@ -1,11 +1,10 @@
-@font-face { font-family: "Showcase Serif"; src: url("@fontpkg/source-han-serif-sc/SourceHanSerifSC-Regular.otf") format("opentype"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Showcase Sans"; src: url("@fontpkg/source-han-sans-sc-vf/SourceHanSansSC-VF.ttf.woff2") format("woff2-variations"); font-weight: 250 900; font-display: swap; }
-.marketing-landing { color-scheme: light; font-family: Inter, "Showcase Sans", "PingFang SC", sans-serif; background: #fcfcfc; color: #161616; }
+/* 落地页只用按字符分片的 Noto 字体（与思源同一设计），避免全站 token 里的整包思源字体（13.8–24MB）被按钮等控件触发下载 */
+.marketing-landing { --ui-font-display: Inter, "Noto Sans SC Variable", "PingFang SC", sans-serif; --ui-font-sans: var(--ui-font-display); --ui-font: var(--ui-font-display); --display-font: var(--ui-font-display); --ui-font-content: var(--ui-font-display); --ui-font-heading: var(--ui-font-display); color-scheme: light; font-family: var(--ui-font-display); background: #fcfcfc; color: #161616; }
 .fl-page, .fl-page * { box-sizing: border-box; }
 html:has(.marketing-landing) { scroll-behavior: smooth; scroll-padding-top: 80px; }
 body:has(.marketing-landing), body:has(.marketing-landing) #root { margin: 0; width: 100%; height: auto; min-height: 100%; overflow: visible; }
 body:has(.marketing-landing) { background: #fcfcfc; }
-.fl-page { background: #fcfcfc; color: #161616; font: 400 16px/1.4 Inter, "Showcase Sans", "PingFang SC", sans-serif; }
+.fl-page { background: #fcfcfc; color: #161616; font: 400 16px/1.4 Inter, "Noto Sans SC Variable", "PingFang SC", sans-serif; }
 .fl-page :is(a,button,input) { -webkit-tap-highlight-color: transparent; }
 .fl-page :is(a,button,input):focus-visible { outline: 2px solid #326bfe; outline-offset: 4px; }
 .fl-page button { font: inherit; color: inherit; cursor: pointer; }
@@ -83,39 +82,45 @@ body:has(.marketing-landing) { background: #fcfcfc; }
 .fl-hero-copy > :nth-child(4) { animation-delay: .24s; }
 .fl-hero-stage { animation: fl-hero-in 1s var(--fl-ease) .32s both; }
 @keyframes fl-hero-in { from { opacity: 0; translate: 0 18px; } }
-.fl-hero-stage { position: relative; aspect-ratio: 16 / 10; margin-bottom: 56px; scroll-margin-top: 80px; }
+.fl-hero-stage { position: relative; width: 100%; margin-bottom: 56px; scroll-margin-top: 80px; }
 .fl-demo-label { position: absolute; top: -24px; right: 0; font-size: 10px; line-height: 14px; color: #5d6b47; letter-spacing: .3px; }
 .fl-demo-viewport { position: absolute; inset: 0; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 0 0 1px #1d2a4a1f, 0 0 0 6px #ffffff8c, 0 0 0 7px #1d2a4a0f, 0 2px 4px #171a290f, 0 18px 40px #1d2a4a1f, 0 48px 100px #1d2a4a24; }
 .fl-demo-viewport::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px #ffffffb3; pointer-events: none; }
-.fl-demo-frame { display: block; border: 0; background: #fff; transform-origin: 0 0; }
-
-/* 数据条 */
-.fl-stats-section { padding: 88px 0 40px; background: linear-gradient(#fcfcfc, #f0f5fc); }
-.fl-stats-section p { text-align: center; font-size: 14px; line-height: 17px; color: #59616d; }
-.fl-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 28px; padding: 32px 0; border-block: 1px solid #dfe5ee; }
-.fl-stats > div { display: flex; flex-direction: column-reverse; align-items: center; gap: 6px; }
-.fl-stats dd { font-variant-numeric: tabular-nums; font-size: 44px; line-height: 51px; letter-spacing: -1.5px; color: #161616; }
-.fl-stats dt { font-size: 13px; line-height: 21px; color: #59616d; }
+.fl-demo-window { position: absolute; left: 0; top: 0; overflow: hidden; background: #f1f1ef; transform-origin: 0 0; user-select: none; }
+.fl-demo-window img { position: absolute; top: 0; display: block; max-width: none; pointer-events: none; -webkit-user-drag: none; }
+.fl-demo-sidebar { left: 0; }
+/* 选中项：已选中样式的侧栏图只露出当前行，切换时裁剪区域滑过去 */
+.fl-demo-selected { transition: clip-path .5s cubic-bezier(.22, 1, .36, 1), opacity .2s ease; }
+.fl-demo-selected[data-visible="false"] { opacity: 0; }
+.fl-demo-page { left: 216px; transition: opacity .22s ease; }
+.fl-demo-page[data-loaded="false"] { opacity: 0; }
+.fl-demo-nav { position: absolute; inset: 0 auto 0 0; width: 216px; }
+.fl-demo-hotspot { position: absolute; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.fl-demo-hotspot:hover { background: #1d1d1b0a; }
+.fl-demo-hotspot:focus-visible { outline: 2px solid #3f6fd8; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .fl-demo-selected, .fl-demo-page { transition: none; } }
 
 /* 居中 CTA */
-.fl-start-section { padding-top: 120px; background: linear-gradient(#f3f1fb, #fcfcfc); }
 .fl-purpose-section { padding: 120px 0; background: linear-gradient(#fcfcfc, #dbe7f7 55%, #ede8fa); }
-.fl-start, .fl-purpose { text-align: center; }
-.fl-start .fl-eyebrow, .fl-purpose .fl-eyebrow { justify-content: center; }
-.fl-start h2, .fl-purpose h2 { font-size: 40px; font-weight: 400; letter-spacing: -1.2px; }
-.fl-start h2 { margin-top: 21px; line-height: 48px; }
-.fl-start .fl-cta-row { margin-top: 32px; }
-.fl-purpose h2 { margin-top: 24px; line-height: 56px; }
+.fl-purpose { text-align: center; }
+.fl-purpose .fl-eyebrow { justify-content: center; }
+.fl-purpose h2 { margin-top: 24px; font-size: 40px; line-height: 56px; font-weight: 400; letter-spacing: -1.2px; }
 .fl-purpose .fl-cta-row { margin-top: 29px; }
 
 /* 常见问题 */
 .fl-faq-section { padding-top: 120px; background: linear-gradient(#fcfcfc, #f2f6fc 50%, #fcfcfc); scroll-margin-top: 0; }
-.fl-faq { display: flex; gap: 80px; align-items: flex-start; }
-.fl-faq > header { display: flex; flex-direction: column; gap: 12px; flex: 0 0 320px; }
+/* 左栏：介绍在上、群二维码贴底；列表跨两行 */
+.fl-faq { display: grid; grid-template-columns: 320px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 80px; }
+.fl-faq > header { display: flex; flex-direction: column; gap: 12px; grid-area: 1 / 1; }
 .fl-faq > header .fl-eyebrow { line-height: 13px; letter-spacing: 0; }
 .fl-faq > header h2 { font-size: 40px; line-height: 56px; font-weight: 400; letter-spacing: -1px; }
 .fl-faq > header > p:last-child { font-size: 14px; line-height: 22px; color: #59616d; }
-.fl-faq-list { flex: 1; min-width: 0; border-bottom: 1px solid #dfe5ee; }
+.fl-faq-list { grid-area: 1 / 2 / 3 / 3; min-width: 0; border-bottom: 1px solid #dfe5ee; }
+.fl-faq-qr { grid-area: 2 / 1; align-self: end; display: flex; flex-direction: column; gap: 12px; margin: 48px 0 0; }
+.fl-faq-qr-code { position: relative; width: fit-content; padding: 12px; border: 1px solid #e5e8ee; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px #171a290d; }
+.fl-faq-qr-code > img { display: block; width: 168px; height: 168px; }
+.fl-faq-qr-code > span { position: absolute; top: 50%; left: 50%; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; background: #fff; translate: -50% -50%; }
+.fl-faq-qr figcaption { font-size: 12px; line-height: 18px; color: #8a909a; }
 .fl-faq-item { padding: 24px 0; border-top: 1px solid #dfe5ee; }
 .fl-faq-item h3 { font: inherit; }
 .fl-faq-item button { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; font-size: 17px !important; line-height: 26px; font-weight: 500 !important; color: #161616 !important; }
@@ -167,22 +172,18 @@ body:has(.marketing-landing) { background: #fcfcfc; }
  .fl-hero-copy h1 { margin-top: 20px; font-size: clamp(32px, 6vw, 48px); line-height: 1.22; }
  .fl-hero-copy > p { max-width: 430px; }
  .fl-hero-stage { margin-bottom: 40px; }
- .fl-stats-section { padding-top: 64px; }
- .fl-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 0; }
- .fl-stats dd { font-size: 36px; line-height: 44px; }
- .fl-start-section, .fl-faq-section { padding-top: 80px; }
+ .fl-faq-section { padding-top: 80px; }
  .fl-purpose-section { padding: 80px 0; }
- .fl-start h2, .fl-purpose h2, .fl-faq > header h2 { font-size: 32px; line-height: 44px; }
- .fl-faq { flex-direction: column; gap: 32px; }
- .fl-faq > header { flex-basis: auto; }
- .fl-faq-list { width: 100%; }
+ .fl-purpose h2, .fl-faq > header h2 { font-size: 32px; line-height: 44px; }
+ .fl-faq { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; row-gap: 32px; }
+ .fl-faq > header, .fl-faq-list, .fl-faq-qr { grid-area: auto; }
+ .fl-faq-qr { order: 1; margin: 0; }
  .fl-footer-section { padding-top: 80px; }
 }
 @media (max-width: 600px) {
  .fl-hero-copy > p br { display: none; }
  .fl-hero-copy > p { font-size: 15px; max-width: 320px; }
  .fl-hero-cta small { max-width: 280px; line-height: 18px; }
- .fl-stats dd { font-size: 30px; line-height: 38px; letter-spacing: -1px; }
  .fl-faq-item button { font-size: 16px !important; }
  .fl-footer { grid-template-columns: 1fr 1fr; gap: 35px 20px; padding-top: 35px; padding-bottom: 90px; }
  .fl-footer-brand { grid-column: 1 / -1; }
@@ -191,3 +192,5 @@ body:has(.marketing-landing) { background: #fcfcfc; }
 @media (prefers-reduced-motion: reduce) { html:has(.marketing-landing) { scroll-behavior: auto; } .fl-page *, .fl-page *::before, .fl-page *::after { animation: none !important; transition: none !important; } }
 
 @media (max-width: 479px) { .fl-nav-actions .fl-lang { display: none; } }
+
+.marketing-landing :is(button, input, select, textarea) { font-family: inherit; }

@@ -220,11 +220,11 @@ function InterviewVisual() {
 }
 
 const blocks = [
-  { id: "job", title: "一个岗位的所有东西，都在一处。", description: "简历、JD、面试录音和复盘都挂在岗位下。二面之前，它已经帮你把准备清单列好。", visual: JobDetailVisual, label: "岗位详情：求职进度、关联资料与二面准备清单（示例数据）", tint: "blue" },
-  { id: "agent", title: "它来动笔，你来拍板。", description: "它读完你的项目复盘，找出简历里漏掉的成果，写好修改等你确认。", visual: AgentVisual, label: "AI 助手读取简历、项目复盘和 JD 后给出修改建议（示例数据）", tint: "violet" },
-  { id: "match", title: "投之前，先对一遍 JD。", description: "它逐条对照岗位要求，告诉你哪些已经命中、还差什么，再帮你按 JD 改简历。", visual: JobMatchVisual, label: "岗位要求逐条对照与 82 分匹配分析（示例数据）", tint: "green" },
-  { id: "board", title: "每个岗位走到哪，一眼看清。", description: "拖一下卡片就能推进阶段，面试时间和记录跟着岗位走。", visual: BoardVisual, label: "岗位看板：拖动卡片推进求职阶段（示例数据）", tint: "slate" },
-  { id: "interview", title: "面试官会追问的，先练一遍。", description: "它按你的简历出题、追问、打分，再告诉你下次可以怎么答。", visual: InterviewVisual, label: "模拟面试：主问题、追问与评估报告（示例数据）", tint: "indigo" },
+  { id: "job", title: "岗位资料集中管理", description: "简历、JD、面试录音和复盘按岗位归档，面试前自动整理准备清单。", visual: JobDetailVisual, label: "岗位详情：求职进度、关联资料与二面准备清单（示例数据）", tint: "blue" },
+  { id: "agent", title: "AI 改简历，你来确认", description: "读取项目复盘，补上简历里漏掉的成果，确认后才写入简历。", visual: AgentVisual, label: "AI 助手读取简历、项目复盘和 JD 后给出修改建议（示例数据）", tint: "violet" },
+  { id: "match", title: "对照 JD 查缺补漏", description: "逐条比对岗位要求，标出已满足和欠缺的项，再按 JD 调整简历。", visual: JobMatchVisual, label: "岗位要求逐条对照与 82 分匹配分析（示例数据）", tint: "green" },
+  { id: "board", title: "求职进度看板", description: "拖动卡片推进阶段，面试时间和记录随岗位保存。", visual: BoardVisual, label: "岗位看板：拖动卡片推进求职阶段（示例数据）", tint: "slate" },
+  { id: "interview", title: "按简历模拟面试", description: "根据你的经历出题、追问，结束后给出评分和改进建议。", visual: InterviewVisual, label: "模拟面试：主问题、追问与评估报告（示例数据）", tint: "indigo" },
 ];
 
 function ShowcaseBlock({ block, index }: { block: (typeof blocks)[number]; index: number }) {
@@ -240,7 +240,7 @@ function ShowcaseBlock({ block, index }: { block: (typeof blocks)[number]; index
 export function FeatureShowcase() {
   return <section id="use-cases" className="fs-section" aria-labelledby="feature-showcase-title">
     <div className="fs-inner">
-      <header className="fs-header" data-reveal><p className="fl-eyebrow"><span />{lt("它能帮你做什么")}</p><h2 id="feature-showcase-title">{lt("求职要用的，都连在一起。")}</h2></header>
+      <header className="fs-header" data-reveal><p className="fl-eyebrow"><span />{lt("产品能力")}</p><h2 id="feature-showcase-title">{lt("从改简历到准备面试，在一个工作台完成")}</h2></header>
       {blocks.map((block, index) => <ShowcaseBlock key={block.id} block={block} index={index} />)}
     </div>
   </section>;
