@@ -553,12 +553,42 @@ describe("AssistantPage", () => {
     expect(within(panel).getByText("✓ 已写入简历")).toBeInTheDocument();
   });
 
-  it("@ 引用简历时以显式引用发送，不再携带编辑器选区", async () => {
+  it.each([false, true])("首页默认简历发送时与 @ 一致，移除标签后不再引用（移除：%s）", async (remove) => {
     const user = userEvent.setup();
     vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
     vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
     vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.mocked(api.getResumeOverview).mockResolvedValue({ resumes: [
+      { id: "2", title: "测试简历", lock_version: 1, source_type: "blank", created_at: session.created_at, updated_at: session.updated_at },
+    ], active_imports: [], failed_imports: [] } as never);
+    vi.spyOn(api, "getResume").mockResolvedValue({ resume: { data: defaultCanonicalDocument } } as never);
+    let finish!: () => void;
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    render(<AssistantPage />);
+    const removeButton = await screen.findByRole("button", { name: "移除上下文 测试简历" });
+    if (remove) await user.click(removeButton);
+    await user.type(screen.getByRole("textbox", { name: "告诉助手你想完成什么" }), "分析我的第一段实习经历。");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(stream).toHaveBeenCalledOnce());
+    const expected = remove ? "分析我的第一段实习经历。" : "@测试简历 分析我的第一段实习经历。";
+    expect(stream.mock.calls[0][1].content).toBe(expected);
+    if (remove) expect(stream.mock.calls[0][1]).not.toHaveProperty("contexts");
+    else expect(stream.mock.calls[0][1].contexts).toEqual([{ type: "resume", id: "2", version: "1", presentation: "mention" }]);
+    expect(document.querySelector(".assistant-message.is-user")).toHaveTextContent(remove ? expected : "分析我的第一段实习经历。");
+    await act(async () => { finish(); });
+  });
+
+  it("手动 @ 替换首页默认简历，以显式引用发送且不重复名称或携带编辑器选区", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [] });
+    vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.mocked(api.getResumeOverview).mockResolvedValue({ resumes: [
+      { id: "1", title: "默认简历", lock_version: 3, source_type: "blank", created_at: session.created_at, updated_at: session.updated_at },
+    ], active_imports: [], failed_imports: [] } as never);
+    vi.spyOn(api, "getResume").mockResolvedValue({ resume: { data: defaultCanonicalDocument } } as never);
     vi.spyOn(api, "listAgentContexts").mockImplementation(async ({ type } = {}) => ({
       contexts: type === "resume"
         ? [{ type: "resume", id: "2", version: "1", label: "Java 开发实习简历" }]
@@ -567,15 +597,19 @@ describe("AssistantPage", () => {
     const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
 
     render(<AssistantPage />);
+    await screen.findByRole("button", { name: "移除上下文 默认简历" });
     const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
     await user.type(input, "@");
     expect(await screen.findByRole("option", { name: /Java 开发实习简历/ })).toBeInTheDocument();
     await user.keyboard("{Tab}");
-    await user.type(input, "请分析");
+    const selectedInput = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
+    selectedInput.append("请分析");
+    fireEvent.input(selectedInput);
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => expect(stream).toHaveBeenCalledOnce());
     expect(stream.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      content: "@Java 开发实习简历 请分析",
       contexts: [{ type: "resume", id: "2", version: "1", presentation: "mention" }],
     }));
     expect(stream.mock.calls[0]?.[1]).not.toHaveProperty("selection_context");
