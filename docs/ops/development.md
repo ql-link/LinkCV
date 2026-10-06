@@ -10,6 +10,10 @@
 
 `dev` 是业务需求的共享集成分支，禁止默认直推、自动合并、强推或改写历史。分支创建命令、PR 检查、授权边界和中文提交规范以 [`branch-pr-workflow`](../../.ai/skills/branch-pr-workflow/SKILL.md) 为唯一操作策略来源。
 
+## 落地页演示截图
+
+Vite 开发服务保留 `/landing-demo.html` 供截图脚本读取虚构产品工作区；生产落地页使用已保存的图片。修改示例数据或产品界面后，按 [Web 公共落地页的截图生成说明](../internals/web.md#公共落地页与产品演示) 更新中英文截图与点击区域。
+
 ## 环境要求
 
 - Node.js 22 LTS 和 npm 10+
@@ -78,6 +82,8 @@ LINKRESUME_ENV_FILE=.env.development npm run db:init
 需要临时分享本地 Web 供验收时，可以把 Vite 端口接入 Cloudflare Tunnel；开发服务器只额外接受 `.trycloudflare.com` 后缀的 Host。隧道只转发现有页面与 `/api` 代理，不改变 FastAPI、Cookie、私有资源和本地文件读取权限；不要把本地密钥、测试账号或真实用户数据写入公开预览说明。
 
 Web 源码中的 `@/` 指向 `apps/web/src/`；Vite、TypeScript 与 Vitest 都维护相同别名。新增 shadcn 组件时从 `apps/web` 运行 CLI，使 `components.json` 能把源码写入 `src/components/ui/`。
+
+公共落地页与截图演示、`/` 登录态跳转及同源 `/resumes` 入口见 [Web 模块](../internals/web.md#公共落地页与产品演示)。本地 Vite 工作区默认为 `http://127.0.0.1:5173/resumes`；共享 Dev 的部署地址见 [Dev Pipeline](deployment.md#dev-pipeline)，生产工作区为 `https://linkresume.cn/resumes`。开发期 `/landing-demo.html` 只用于生成截图，生产落地页展示已保存的 WebP 资源。
 
 ## 日志配置
 

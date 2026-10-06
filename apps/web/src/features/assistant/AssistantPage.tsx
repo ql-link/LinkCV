@@ -50,7 +50,6 @@ import { BeTag, Dialog, DialogFooter, SearchBox, Toast } from "../../v3/primitiv
 import { useActiveSessionStore, useSessionStore } from "../../v3/sessionStore";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import { MessageActions } from "../agent/MessageActions";
-import { AgentTaskSummary } from "../agent/AgentTaskSummary";
 import { MessageQueue } from "../agent/QueuedMessages";
 import { useMessageQueue } from "../agent/useMessageQueue";
 import { enqueueMessage, submissionPayload, type QueueDraft, type QueueItem } from "../agent/messageQueue";
@@ -2056,16 +2055,15 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     </div>
   );
 
-  const sendButton = <>
-    {current.running && (
+  const sendButton = current.running ? (
     <button type="button" className="assistant-send is-stop" aria-label={t("停止生成")} onClick={stopGeneration}>
       <span aria-hidden="true" />
     </button>
-    )}
+  ) : (
     <button type="submit" className="assistant-send" aria-label={messageQueue.editingId ? "保存排队消息" : t("发送")} disabled={current.cancelling || !current.draft.trim()}>
       <Icon name="up" size={16} strokeWidth={2.2} />
     </button>
-  </>;
+  );
 
   const resumeChips = chipResumes.length > 0 && (
     <div className="assistant-composer-chips">
@@ -2316,7 +2314,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
             {message.status === "stopped" && <small className="assistant-stopped-label">{t("已停止生成")}</small>}
             {message.status === "failed" && <small className="assistant-stopped-label">{t("生成未完成")}</small>}
             <MessageActions content={messageText(message)} createdAt={message.created_at} timeLabel={formatTime(message.created_at)} />
-            {message.role === "user" && <AgentTaskSummary tasks={message.tasks} />}
           </div>
         </article>
         {proposalGroupAfterMessage && proposalPanel(proposalGroupAfterMessage)}

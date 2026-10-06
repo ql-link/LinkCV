@@ -8,6 +8,10 @@ Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operat
 
 独立助手和编辑器侧栏复用本地 `MessageActions` 展示消息已有的 `created_at`，并将该条 `content` 写入浏览器剪贴板；悬停显隐和复制反馈只发生在 Web，不新增 Agent 请求或持久化字段。
 
+Web 不再将用户消息中的 `tasks` 渲染为消息下方的摘要列表；服务端仍保存并返回任务结果，任务执行链路不受这一呈现调整影响。
+
+独立助手输入框按当前运行状态互斥显示停止或发送按钮，这属于 Web 呈现，不改变取消运行接口或本机消息队列；具体操作见[消息排队与插入](../features/ai-assistant.md#消息排队与插入)。
+
 新 scoped 提案保存有界 preview 与操作，不再保存整篇 data/style；旧快照与翻译仍保留完整内容。新上下文目录不列出 resume_version，显式请求或澄清继承这种退休引用时返回 409 AGENT_CONTEXT_RETIRED，不能悄悄替换为当前简历；历史消息中的展示快照继续可读。
 
 Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `llm` 模块组成：`agent` 管理持久化会话、会话展示状态与提案，Pi 执行 agent loop，`llm` 管理模型选择、凭据、验证与计量。普通用户功能见 [AI 求职助手](../features/ai-assistant.md)，第三方 Pi 包边界见 [third_party/pi](third-party-pi.md)。
@@ -30,9 +34,11 @@ Pi Service 通过单一 `systemPromptOverride` 组合 Agent 业务策略和用�
 
 ## 调用链
 
-Pi 在业务工具前调用内部 `intent:recognize`，由 FastAPI 用独立 `assistant_intent` 场景执行结构化意图识别。管理员在模型与路由的场景绑定中配置并探测“助手意图识别”，与用户选择的对话模型独立；协议限定为 `openai_chat`。探测必须识别固定虚构请求中的两个只读目标，通用文本连通性不能代替识别探测。
+Pi 在业务工具前调用内部 `intent:recognize`，由 FastAPI 用独立 `assistant_intent` 场景执行结构化意图识别。管理员在模型与路由的场景绑定中配置并探测“助手意图识别”，与用户选择的对话模型独立；协议支持 `openai_chat` 结构化识别及 AIHubMix 的 `system_one` 原生决策。探测必须识别固定虚构请求中的两个只读目标，通用文本连通性不能代替识别探测。
 
 识别输入只含当前请求、有界近期对话、澄清答案及本轮授权资料轻量描述，不额外读取资料正文。有效计划复用现有任务 schema 和 `save_task_plan` 的授权校验，保存后 Pi 直接加载并执行，不再重新规划。信息不足沿用结构化澄清；未配置、无有效线路、10 秒总预算超时或模型输出无效时沿用现有路由。授权拒绝、计划冲突和取消不进入回退。运行取消或 Pi 断开内部识别请求会取消上游调用。
+
+原生决策由 `modules/agent/systemone_intent.py` 将有界识别输入转为 `state` 和固定 `questions`，通过受控 AIHubMix 地址的 `/v1/systemone` 发送，不使用 Chat 的 `messages` 接口。固定分类覆盖普通对话、澄清、独立目标数量、8 个任务槽位、任务工作流/产物、本轮授权资料引用及前序依赖集合；转换器只消费目标数量范围内的槽位，未使用槽位的独立分类回答不生成任务；已声明目标对应 none 则拒绝结果。转换器生成顺序标签，不要求模型生成自由文本。决策只映射为既有 `IntentDecision` 和任务 schema，仍经 `save_task_plan` 授权校验。choice 置信度低于 0.5、noul 概率落在 (0.4, 0.6)、结果缺失、未知类别、非连续目标、非法引用或依赖返回 `LLM_RESPONSE_INVALID` 并进入现有回退；超过 8 项和未支持目标要求澄清，不截断。原生协议只开放给意图场景，不能作为 Pi 对话或流式输出协议。管理端按 Jev 目标默认选择原生协议，修改协议后停用绑定并要求重新探测。
 
 识别结果的版本、类别、调用 ID 和稳定回退原因保存在当前消息的有界 `agent_intent` 元数据；任务仍只有 `agent_tasks` 一个真值。重复请求复用已保存结果。实际调用以 `assistant_intent` 场景、`agent_intent` 来源关联用户与 run 写入 `llm_call_logs`，不记录提示词、原始响应或推理。配置此场景会增加识别调用的延迟与费用；不配置时不发起额外供应商请求。普通对话及回退路由中的纯问候可在读取路由后直接开启最终回复，无需创建业务任务；已有计划包含未完成任务时仍拒绝最终回复。
 
@@ -84,7 +90,7 @@ Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在�
 - `llm_provider_connections`：接入商代码、独立凭据、受控设置、配置版本与目录同步状态。推理地址由接入商适配器确定，后台不能提交任意 URL；AIHubMix 的 model 目标支持 `openai_chat` 与 `openai_responses`，可选择官方默认或备用地址，切换会让旧探测失效。
 - `llm_models`：供用户选择的稳定逻辑模型名称；`user_selectable` 决定它能否出现在对话页，隐藏不影响系统能力绑定。
 - `llm_model_routes`：逻辑模型在某连接上的实际 `invoke_target`、目标类型、目录元数据、价格规则和启停状态。同一逻辑模型可配置多条线路。线路、逻辑模型一旦被 `agent_runs` 冻结或被 `agent_sessions` 选中，管理端就无法删除，只能停用；因此 Agent 历史里记录的模型和线路始终能查到。
-- `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别、模拟面试、识别稿修正、简历匹配度（`job_match`）、面试准备清单（`interview_prep`）、语音识别（`speech_to_text`）、语音合成（`text_to_speech`）和用户对话；场景代码由后端注册，不建字典表。语音支持百炼连接的 `aliyun_asr_realtime`、`aliyun_tts_realtime`，以及 AIHubMix 连接的 `openai_asr_file`、`openai_tts`；协议不能跨场景或跨接入商使用。其他非对话场景支持接入商声明的 `openai_chat`、`openai_responses`。语音探针通过同一个服务商适配器发送固定测试录音、一秒静音或合成一句固定文本；调用日志在 `usage_json` 记录音频秒数或字符数，不记录音频与正文，也不把缺少计费依据的语音请求估成零费用。
+- `llm_use_case_routes`：系统能力和对话列表共用的线路绑定，保存场景、协议、优先级及成功探针指纹。当前场景为职位文本提取、简历结构化、职位图片识别、模拟面试、识别稿修正、简历匹配度（`job_match`）、面试准备清单（`interview_prep`）、语音识别（`speech_to_text`）、语音合成（`text_to_speech`）和用户对话；场景代码由后端注册，不建字典表。语音支持百炼连接的 `aliyun_asr_realtime`、`aliyun_tts_realtime`，以及 AIHubMix 连接的 `openai_asr_file`、`openai_tts`；协议不能跨场景或跨接入商使用。除意图识别外，其他非对话场景支持接入商声明的 `openai_chat`、`openai_responses`。语音探针通过同一个服务商适配器发送固定测试录音、一秒静音或合成一句固定文本；调用日志在 `usage_json` 记录音频秒数或字符数，不记录音频与正文，也不把缺少计费依据的语音请求估成零费用。
 - `llm_call_logs`：每次实际模型请求的线路、配置版本、用量、价格快照、费用和安全错误分类；失败后切换线路会产生多条记录，不保存提示词或正文。Pi 的模型请求由内部服务令牌回传；运行费用由这些记录汇总。
 - FastAPI 写入调用日志时按 ORM 字段上限校验上游模型和请求编号；Pi 在计量回传前也按 `PiCallRecord` 的 256/128 字符上限处理这两个可选字段。超长编号记为 `null`，保留调用终态、用量和费用，避免 MySQL 或内部请求校验拒绝计量后使成功请求失败。不会截断编号后冒充完整上游标识。
 - `agent_sessions` 保存用户对话显式选中的逻辑模型 ID；`agent_runs` 冻结本轮解析出的逻辑模型、线路、连接配置版本、协议和价格规则。正在运行的请求若遇配置版本变化会失败，避免静默切换凭据。

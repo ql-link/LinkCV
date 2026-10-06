@@ -129,7 +129,8 @@
 
 
 /* ── AI 思考中（01.1c）：羽毛 + 写字墨迹动画，文字 15 号，秒数、最新活动、查看过程 */
-.assistant-thinking { display: flex; align-items: flex-start; gap: 18px; margin-left: -60px; }
+/* 抵消 56px 动态图标和 18px 间距，让思考文字与回复正文左对齐。 */
+.assistant-thinking { display: flex; align-items: flex-start; gap: 18px; margin-left: -74px; }
 .assistant-thinking-copy { display: grid; min-width: 0; gap: 6px; padding-top: 10px; }
 .assistant-thinking-line { display: flex; align-items: baseline; gap: 12px; }
 .assistant-thinking-line strong { color: #6e7582; font-size: 15px; font-weight: 400; line-height: 18px; }
@@ -235,7 +236,8 @@
 .assistant-mention-status { margin: 8px 10px; color: var(--v3-fnt); font-size: 12px; }
 
 /* 澄清问题（在输入框上方） */
-.assistant-clarification { display: grid; max-height: 390px; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; margin-bottom: 10px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); padding: 16px 20px; }
+.assistant-clarification { display: flex; max-height: 390px; flex-direction: column; gap: 12px; margin-bottom: 10px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: #fff; box-shadow: var(--v3-shadow-card); padding: 16px 20px; }
+.assistant-clarification > header, .assistant-clarification > footer { flex-shrink: 0; }
 .assistant-clarification > header { display: flex; align-items: center; justify-content: space-between; }
 .assistant-clarification > header > span { display: flex; align-items: baseline; gap: 10px; }
 .assistant-clarification > header strong { font-size: 13px; font-weight: 500; }
@@ -245,8 +247,8 @@
 .assistant-clarification-summary > span { display: flex; min-width: 0; align-items: baseline; gap: 10px; }
 .assistant-clarification-summary strong { font-size: 13px; font-weight: 500; }
 .assistant-clarification-summary small { overflow: hidden; color: var(--v3-fnt); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-clarification-context-hint { margin: 0; color: var(--v3-sub); font-size: 12px; }
-.assistant-clarification-questions { min-height: 0; overflow-y: auto; }
+.assistant-clarification-context-hint { flex-shrink: 0; margin: 0; color: var(--v3-sub); font-size: 12px; line-height: 1.5; }
+.assistant-clarification-questions { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .assistant-clarification fieldset { display: grid; gap: 6px; margin: 0; border: 0; padding: 0; }
 .assistant-clarification legend { display: grid; gap: 4px; margin-bottom: 8px; padding: 0; color: var(--v3-txt); font-size: 13.5px; line-height: 1.5; }
 .assistant-clarification legend span { color: var(--v3-fnt); font-size: 11px; }

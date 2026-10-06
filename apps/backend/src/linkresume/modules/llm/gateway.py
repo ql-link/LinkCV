@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass
+import json
 from typing import Literal, Protocol
 from urllib.parse import urlsplit
 
 import litellm
+import httpx
 
 from linkresume.modules.llm.schemas import ChatMessage
-from linkresume.modules.llm.providers import OPENAI_CHAT, OPENAI_RESPONSES
+from linkresume.modules.llm.providers import OPENAI_CHAT, OPENAI_RESPONSES, SYSTEM_ONE
 
 
 @dataclass(frozen=True)
@@ -39,7 +41,7 @@ class GatewayError(Exception):
     def __init__(
         self,
         *,
-        code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED", "LLM_TIMEOUT"],
+        code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED", "LLM_TIMEOUT", "LLM_RESPONSE_INVALID"],
         may_have_reached_provider: bool,
         usage: GatewayUsage | None = None,
     ) -> None:
@@ -165,6 +167,34 @@ class LiteLLMGateway:
     def __init__(self, timeout_seconds: float = 60.0) -> None:
         self.timeout_seconds = timeout_seconds
 
+    async def _system_one(self, *, model, messages, api_base, api_key):
+        # The service supplies a server-controlled provider address and typed questions.
+        if api_base not in {"https://aihubmix.com/v1", "https://api.inferera.com/v1"}:
+            raise GatewayError(code="LLM_REQUEST_REJECTED", may_have_reached_provider=False)
+        payload = json.loads(messages[-1].content)
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
+                response = await client.post(api_base + "/systemone", headers={"Authorization": f"Bearer {api_key}"},
+                                             json={"model": model, "state": payload["state"], "questions": payload["questions"]})
+            if response.is_error:
+                code = "LLM_REQUEST_REJECTED" if response.status_code in {400, 422} else "LLM_UNAVAILABLE"
+                raise GatewayError(code=code, may_have_reached_provider=True)
+            value = response.json()
+            if not isinstance(value, dict) or not isinstance(value.get("answers"), dict):
+                raise ValueError("missing decisions")
+            usage = value.get("usage") or {}
+            tokens = [usage.get(key) for key in ("input_tokens", "output_tokens")]
+            if any(token is not None and (type(token) is not int or token < 0) for token in tokens):
+                raise ValueError("invalid usage")
+            return GatewayResult(content=json.dumps(value), usage=GatewayUsage(*tokens),
+                                 response_model_id=value.get("model"), upstream_request_id=value.get("id"))
+        except httpx.TimeoutException as error:
+            raise GatewayError(code="LLM_TIMEOUT", may_have_reached_provider=True) from error
+        except httpx.RequestError as error:
+            raise GatewayError(code="LLM_UNAVAILABLE", may_have_reached_provider=True) from error
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            raise GatewayError(code="LLM_RESPONSE_INVALID", may_have_reached_provider=True) from error
+
     def _request_args(
         self,
         *,
@@ -209,6 +239,8 @@ class LiteLLMGateway:
         protocol_code: str = OPENAI_CHAT,
     ) -> GatewayResult:
         try:
+            if protocol_code == SYSTEM_ONE:
+                return await self._system_one(model=model, messages=messages, api_base=api_base, api_key=api_key)
             if protocol_code == OPENAI_RESPONSES:
                 response = await litellm.aresponses(**self._responses_args(
                     model=model, messages=messages, api_base=api_base, api_key=api_key,

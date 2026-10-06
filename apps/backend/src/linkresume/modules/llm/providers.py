@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 OPENAI_CHAT = "openai_chat"
 OPENAI_RESPONSES = "openai_responses"
+SYSTEM_ONE = "system_one"
 ANTHROPIC_MESSAGES = "anthropic_messages"
 GOOGLE_GENERATE = "google_generate"
 ALIYUN_ASR_REALTIME = "aliyun_asr_realtime"
@@ -33,7 +34,7 @@ class ProviderSpec:
 
 PROVIDERS = {
     spec.code: spec for spec in (
-        ProviderSpec("aihubmix", "AIHubMix", frozenset({OPENAI_CHAT, OPENAI_RESPONSES, OPENAI_ASR_FILE, OPENAI_TTS}), frozenset({"model"})),
+        ProviderSpec("aihubmix", "AIHubMix", frozenset({OPENAI_CHAT, OPENAI_RESPONSES, SYSTEM_ONE, OPENAI_ASR_FILE, OPENAI_TTS}), frozenset({"model"})),
         ProviderSpec("siliconflow", "硅基流动", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("deepseek", "DeepSeek 直连", frozenset({OPENAI_CHAT}), frozenset({"model"})),
         ProviderSpec("volcengine", "火山方舟", frozenset({OPENAI_CHAT, OPENAI_RESPONSES}), frozenset({"model", "endpoint"})),
@@ -136,8 +137,11 @@ def validate_use_case_protocol(use_case: str, protocol_code: str) -> None:
     if speech is not None:
         if protocol_code not in speech:
             raise ValueError("protocol unsupported for speech use case")
-    elif use_case == "assistant_intent" and protocol_code != OPENAI_CHAT:
-        raise ValueError("protocol unsupported for intent use case")
+    elif use_case == "assistant_intent":
+        if protocol_code not in {OPENAI_CHAT, SYSTEM_ONE}:
+            raise ValueError("protocol unsupported for intent use case")
+    elif use_case == "assistant_conversation" and protocol_code == SYSTEM_ONE:
+        raise ValueError("decision protocol cannot generate conversation")
     elif use_case != "assistant_conversation" and protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES}:
         raise ValueError("protocol unsupported for use case")
 
@@ -146,6 +150,11 @@ def validate_route(provider_code: str, target_kind: str, protocol_code: str) -> 
     spec = PROVIDERS.get(provider_code)
     if spec is None or target_kind not in spec.target_kinds or protocol_code not in spec.protocols:
         raise ValueError("provider route or protocol unsupported")
+
+
+def validate_model_protocol(invoke_target: str, protocol_code: str) -> None:
+    if re.match(r"^(?:typesafe(?:-ai)?/)?jev(?:-|$)", invoke_target.lower()) and protocol_code != SYSTEM_ONE:
+        raise ValueError("Jev requires its native decision protocol")
 
 
 def pi_api(protocol_code: str) -> str:

@@ -1,0 +1,115 @@
+/* 五个功能场景的演示动效：静态稿即结束帧。data-motion=armed 停在开场帧，playing 播放一次；无该属性时直接显示结束帧。 */
+.fs-block { --fs-ease: cubic-bezier(.2, .8, .2, 1); --fs-spring: cubic-bezier(.3, 1.35, .5, 1); }
+.fs-block[data-motion="armed"] .fs-visual *, .fs-block[data-motion="armed"] .fs-visual *::before { animation-play-state: paused !important; }
+
+@keyframes fs-up { from { opacity: 0; translate: 0 18px; scale: .97; } }
+@keyframes fs-rise { from { opacity: 0; translate: 0 6px; } }
+@keyframes fs-in { from { opacity: 0; } }
+@keyframes fs-pop { from { opacity: 0; scale: .85; } }
+@keyframes fs-out { to { opacity: 0; translate: 0 -6px; } }
+@keyframes fs-in-below { from { opacity: 0; translate: 0 6px; } }
+.fs-block[data-motion] .fx-up { animation: fs-up .5s var(--fs-spring) var(--d, 0s) both; }
+.fs-block[data-motion] .fx-rise { animation: fs-rise .25s var(--fs-ease) var(--d, 0s) both; }
+.fs-block[data-motion] .fx-in { animation: fs-in .25s ease var(--d, 0s) both; }
+.fs-block[data-motion] .fx-pop { animation: fs-pop .32s var(--fs-spring) var(--d, 0s) both; }
+.fs-block[data-motion] .fx-char { animation: fs-in .12s linear var(--d, 0s) both; }
+.fs-block[data-motion] .fx-grow { transform-origin: left center; animation: fs-grow .6s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-grow { from { scale: 0 1; } }
+
+/* 假鼠标指针 */
+.fs-pointer { display: none; position: absolute; left: 0; top: 0; z-index: 5; pointer-events: none; filter: drop-shadow(0 2px 3px #0000002e); transform-origin: 3px 2px; }
+.fs-block[data-motion] .fs-pointer { display: block; }
+.fs-block[data-motion] .fs-pointer.is-agent { animation: fs-pointer-agent .7s var(--fs-ease) 3.5s both; }
+.fs-block[data-motion] .fs-pointer.is-board { will-change: translate, scale; animation:
+  fs-pointer-in .6s cubic-bezier(.2, .7, .2, 1) 0s both,
+  fs-pointer-scale 2.2s ease .6s both,
+  fs-pointer-travel 1.7s cubic-bezier(.5, 0, .15, 1) .8s forwards,
+  fs-pointer-fade .4s ease 2.9s forwards; }
+.fs-block[data-motion] .fs-pointer.is-interview { animation: fs-pointer-interview .8s var(--fs-ease) 2.1s both; }
+@keyframes fs-pointer-agent { 0% { opacity: 0; translate: 560px 470px; } 20% { opacity: 1; } 100% { opacity: 1; translate: 263px 581px; } }
+/* 看板拖放按通道拆开：位移只用一整段曲线（避免逐段减速造成的顿挫），倾斜、缩放、阴影各自独立。
+   指针 = 卡片结束位置 (619, 184) + 卡片位移，位移曲线与卡片完全一致，保证手和卡始终一起动。 */
+@keyframes fs-pointer-in { from { opacity: 0; translate: 640px 440px; } to { opacity: 1; translate: 459px 292px; } }
+@keyframes fs-pointer-scale { 0% { scale: 1; } 7% { scale: .86; } 88% { scale: .86; } 100% { scale: 1; } }
+@keyframes fs-pointer-travel { from { translate: 459px 292px; } to { translate: 619px 184px; } }
+@keyframes fs-pointer-fade { to { opacity: 0; } }
+@keyframes fs-pointer-interview { 0% { opacity: 0; translate: 600px 300px; scale: 1; } 15% { opacity: 1; } 86% { translate: 732px 83px; scale: 1; } 93% { scale: .86; } 100% { opacity: 1; translate: 732px 83px; scale: 1; } }
+
+/* 场景 1：求职进度 */
+.fs-block[data-motion] .fs-step.is-current { animation: fs-rise .25s var(--fs-ease) var(--d, 0s) both, fs-current .45s ease .8s both; }
+@keyframes fs-current { from { background-color: transparent; } }
+.fs-block[data-motion] .fs-step-marker.is-current { animation: fs-marker .45s ease .8s both; }
+@keyframes fs-marker { from { border-color: var(--fs-line-3); } }
+.fs-block[data-motion] .fs-step-marker.is-current i { animation: fs-pop .3s var(--fs-ease) .85s both; }
+.fs-count { display: inline-grid; }
+.fs-count > span { grid-area: 1 / 1; }
+.fs-count-old { visibility: hidden; }
+.fs-block[data-motion] .fs-count-old { visibility: visible; animation: fs-out .25s ease 2.4s both; }
+.fs-block[data-motion] .fs-count-new { animation: fs-in-below .25s ease 2.45s both; }
+.fs-block[data-motion] .fs-checklist-bar span { animation: fs-fill .5s var(--fs-ease) 2.4s both; }
+@keyframes fs-fill { from { width: 66.8%; } }
+.fs-block[data-motion] .fs-checklist > p.is-last { animation: fs-done-text .3s ease 2.4s both; }
+@keyframes fs-done-text { from { color: var(--fs-ink); } }
+.fs-block[data-motion] .fs-checklist > p.is-last > span { animation: fs-done-box .25s ease 2.4s both; }
+@keyframes fs-done-box { from { background: #fff; box-shadow: inset 0 0 0 1.5px var(--fs-line-3); } }
+.fs-block[data-motion] .fs-checklist > p.is-last > span svg { animation: fs-pop .25s var(--fs-ease) 2.45s both; }
+.fs-block[data-motion] .fs-checklist .fs-primary-btn { animation: fs-pulse .9s ease 3.2s both; }
+@keyframes fs-pulse { 40% { box-shadow: 0 2px 6px #264db22e, 0 0 0 6px #3f6fd82e; filter: brightness(1.08); } }
+
+/* 场景 2：AI 修改简历 */
+.fs-block[data-motion] .fs-paper-pending { animation: fs-pending .8s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-pending { from { background-size: 0 100%; } }
+.fs-paper-pending::before { transform-origin: top; }
+/* 原文先被一道删除线划过，再淡出，新句子随后逐字写入 */
+.fs-block[data-motion] .fs-paper-old { visibility: visible; animation: fs-old-out .25s ease calc(var(--d, 0s) + .4s) both; }
+@keyframes fs-old-out { to { opacity: 0; translate: 0 -4px; } }
+.fs-block[data-motion] .fs-paper-old span { animation: fs-strike .4s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-strike { from { background-size: 0 1px; } }
+.fs-block[data-motion] .fs-paper-pending::before { animation: fs-bar-y .45s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-bar-y { from { scale: 1 0; } }
+.fs-block[data-motion] .fs-apply-target { animation: fs-apply .45s ease 4.2s both; }
+@keyframes fs-apply { 30% { background-color: var(--fs-soft); } 55% { scale: .94; background-color: var(--fs-line); } 100% { background-color: var(--fs-soft); } }
+
+/* 场景 3：岗位匹配分析 */
+.fs-scan { display: none; position: absolute; left: 0; right: 0; top: 0; height: 56px; border-bottom: 1px solid #3f6fd84d; background: linear-gradient(#3f6fd800, #3f6fd814 70%, #3f6fd826); pointer-events: none; }
+.fs-block[data-motion] .fs-scan { display: block; animation: fs-scan 1.2s ease-in-out both; }
+@keyframes fs-scan { from { top: 0; opacity: 1; } 85% { opacity: 1; } to { top: calc(100% - 56px); opacity: 0; } }
+.fs-block[data-motion] .fs-gauge-arc { animation: fs-arc 1s var(--fs-ease) var(--d, 0s) both; }
+@keyframes fs-arc { from { stroke-dasharray: 0 100; opacity: 0; } 8% { opacity: 1; } }
+
+/* 场景 4：岗位看板，一次完整的拖放：拿起 → 沿弧线移动并倾斜 → 目标列让位 → 回弹放下 → 计数与状态更新 */
+.fs-block[data-motion] .fs-slot .fs-board-card.is-moving { will-change: translate, rotate, scale; animation:
+  fs-board-travel 1.7s cubic-bezier(.5, 0, .15, 1) .8s both,
+  fs-board-tilt 1.9s ease-in-out .8s both,
+  fs-board-scale 2.5s ease .55s both; }
+@keyframes fs-board-travel { from { translate: -160px 108px; } to { translate: 0 0; } }
+@keyframes fs-board-tilt { 0% { rotate: 0deg; } 35% { rotate: 5deg; } 100% { rotate: 0deg; } }
+@keyframes fs-board-scale { 0% { scale: 1; } 10% { scale: 1.05; } 78% { scale: 1.05; } 88% { scale: .97; } 100% { scale: 1; } }
+/* 阴影放在独立图层里只做透明度动画，避免拖动时每帧重绘 box-shadow */
+.fs-block[data-motion] .fs-slot .fs-board-card.is-moving::before { animation: fs-board-shadow 2.2s ease .55s both; }
+@keyframes fs-board-shadow { 0% { opacity: 0; } 11% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+.fs-block[data-motion] .fs-slot .fs-board-card.is-moving::after { animation: fs-land-ring .7s ease 2.55s both; }
+@keyframes fs-land-ring { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
+.fs-block[data-motion] .fs-slot { animation: fs-slot-open .55s var(--fs-ease) 1.3s both; }
+@keyframes fs-slot-open { from { height: 0; margin-bottom: -8px; } }
+.fs-block[data-motion] .fs-slot::before { animation: fs-slot-glow 1.9s ease 1.3s both; }
+@keyframes fs-slot-glow { 0% { opacity: 0; } 25% { opacity: 1; } 65% { opacity: 1; } 100% { opacity: 0; } }
+.fs-block[data-motion] .fs-source { display: block; animation: fs-source-collapse .45s var(--fs-ease) 1.6s both; }
+@keyframes fs-source-collapse { to { height: 0; margin-top: -8px; opacity: 0; } }
+.fs-block[data-motion] .fs-source::before { animation: fs-in .2s ease .6s both; }
+.fs-block[data-motion] .fs-source .fs-board-card { animation: fs-card-hide .15s ease .6s both; }
+@keyframes fs-card-hide { to { opacity: 0; } }
+.fs-block[data-motion] .fs-swap-old { visibility: visible; animation: fs-out .25s ease var(--d, 0s) both; }
+.fs-block[data-motion] .fs-swap-new { animation: fs-in-below .25s ease calc(var(--d, 0s) + .05s) both; }
+
+/* 场景 5：模拟面试 */
+.fs-block[data-motion] .fs-segments i.is-current { animation: fs-segment .3s ease var(--d, 0s) both; }
+@keyframes fs-segment { from { background-color: var(--fs-line); } }
+.fs-block[data-motion] .fs-click-target { animation: fs-click .3s ease 2.8s both; }
+@keyframes fs-click { 40% { scale: .94; filter: brightness(.9); } }
+
+/* 浮层卡片入场后扫过一道微光，提示这里有新内容 */
+.fs-float { overflow: hidden; }
+.fs-float::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, #fff0 38%, #ffffffb3 50%, #fff0 62%); translate: -110% 0; pointer-events: none; }
+.fs-block[data-motion] .fs-float::after { animation: fs-sheen 1s ease calc(var(--d, 0s) + .3s) both; }
+@keyframes fs-sheen { from { translate: -110% 0; } to { translate: 110% 0; } }

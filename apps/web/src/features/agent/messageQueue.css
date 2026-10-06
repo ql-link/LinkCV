@@ -36,9 +36,6 @@
 .assistant-input-shell:has(.is-stop) .assistant-composer-editor { padding-right: 96px; }
 .assistant-conversation.is-empty .assistant-input-shell:has(.is-stop) .assistant-composer-editor { padding-right: 134px; }
 .agent-input-shell:has(.is-stop) textarea { padding-right: 100px; }
-.agent-task-summary { list-style: none; margin: 6px 0 0; padding: 0; font-size: 12px; }
-.agent-task-summary li { display: flex; gap: 12px; }
-.agent-task-summary small { color: var(--ui-text-muted); }
 @media (pointer: coarse) {
   .agent-queue-button.ui-button { height: 36px; }
   .agent-queue-icon.ui-button { width: 36px; }

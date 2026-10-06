@@ -8,7 +8,7 @@ import io
 import json
 import re
 from collections.abc import AsyncIterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from importlib.resources import files
 from time import perf_counter
@@ -31,7 +31,7 @@ from linkresume.modules.llm.models import (
     get_use_case_route,
 )
 from linkresume.modules.llm.providers import (
-    OPENAI_CHAT, OPENAI_RESPONSES, OPENAI_ASR_FILE, OPENAI_TTS, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route,
+    OPENAI_CHAT, OPENAI_RESPONSES, SYSTEM_ONE, OPENAI_ASR_FILE, OPENAI_TTS, SPEECH_PROTOCOLS, inference_base_url, speech_ws_url, validate_route, validate_model_protocol,
 )
 from linkresume.modules.llm.resolver import (
     ASSISTANT_CONVERSATION, ASSISTANT_INTENT, JOB_IMAGE_EXTRACTION, JOB_TEXT_EXTRACTION,
@@ -252,6 +252,7 @@ class LLMService:
     def runtime_model_for_plan(self, plan: RoutePlan) -> AgentRuntimeModel:
         try:
             validate_route(plan.provider_code, plan.target_kind, plan.protocol_code)
+            validate_model_protocol(plan.invoke_target, plan.protocol_code)
             base_url = inference_base_url(plan.provider_code, plan.settings)
         except ValueError as error:
             raise LLMError("LLM_MODEL_UNAVAILABLE") from error
@@ -322,6 +323,25 @@ class LLMService:
             row.latency_ms = latency_ms
             db.commit()
 
+    async def _complete_plan(self, plan, runtime, messages):
+        if plan.protocol_code != SYSTEM_ONE:
+            return await self._gateway.complete(model=plan.invoke_target, messages=tuple(messages),
+                api_base=runtime.base_url, api_key=runtime.api_key, protocol_code=plan.protocol_code)
+        if plan.use_case != ASSISTANT_INTENT:
+            raise GatewayError(code="LLM_REQUEST_REJECTED", may_have_reached_provider=False)
+        from linkresume.modules.agent.systemone_intent import request_for_intent, decision_from_answers
+        result = None
+        try:
+            payload, refs = request_for_intent(messages)
+            result = await self._gateway.complete(model=plan.invoke_target,
+                messages=(ChatMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),),
+                api_base=runtime.base_url, api_key=runtime.api_key, protocol_code=SYSTEM_ONE)
+            decision = decision_from_answers(json.loads(result.content), refs)
+            return replace(result, content=decision.model_dump_json())
+        except (ValueError, KeyError, TypeError, StopIteration) as error:
+            raise GatewayError(code="LLM_RESPONSE_INVALID", may_have_reached_provider=True,
+                               usage=result.usage if result is not None else None) from error
+
     async def chat(
         self,
         user_id: int,
@@ -338,7 +358,7 @@ class LLMService:
             raise LLMError("LLM_MODEL_NOT_CONFIGURED")
         last_error: LLMError | None = None
         for plan in plans:
-            if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES}:
+            if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES, SYSTEM_ONE}:
                 continue
             try:
                 runtime = self.runtime_model_for_plan(plan)
@@ -348,11 +368,7 @@ class LLMService:
             started = perf_counter()
             await self._db(self._start_log_sync, plan, call_id=call_id, source=source, user_id=user_id, agent_run_id=agent_run_id)
             try:
-                result = await self._gateway.complete(
-                    model=plan.invoke_target, messages=tuple(messages),
-                    api_base=runtime.base_url, api_key=runtime.api_key,
-                    protocol_code=plan.protocol_code,
-                )
+                result = await self._complete_plan(plan, runtime, messages)
             except GatewayError as error:
                 await self._db(
                     self._finish_log_sync, call_id, status="failed", usage=error.usage,
@@ -534,7 +550,7 @@ class LLMService:
                 usage = await pi_probe.run_probe(runtime, runtime.api_key)
                 result = GatewayResult(content="OK", usage=usage)
             else:
-                if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES}:
+                if plan.protocol_code not in {OPENAI_CHAT, OPENAI_RESPONSES, SYSTEM_ONE}:
                     raise LLMError("LLM_MODEL_UNAVAILABLE", call_id)
                 prompt = ('Reply only with this JSON: {"ok":true}'
                           if use_case == RESUME_STRUCTURING else "Reply with OK.")
@@ -548,12 +564,7 @@ class LLMService:
                 if use_case == ASSISTANT_INTENT:
                     from linkresume.modules.agent.intent_schemas import IntentDecision, intent_probe_messages
                     messages = _structured_messages(intent_probe_messages(), IntentDecision)
-                result = await self._gateway.complete(
-                    model=plan.invoke_target,
-                    messages=messages,
-                    api_base=runtime.base_url, api_key=runtime.api_key,
-                    protocol_code=plan.protocol_code,
-                )
+                result = await self._complete_plan(plan, runtime, messages)
                 if use_case == ASSISTANT_INTENT:
                     from linkresume.modules.agent.intent_schemas import validate_intent_probe
                     try:
@@ -572,7 +583,7 @@ class LLMService:
             code = getattr(error, "code", "LLM_CONNECTION_FAILED")
             await asyncio.shield(self._db(self._finish_log_sync, call_id,
                                           status="cancelled" if isinstance(error, asyncio.CancelledError) else "failed",
-                                          error_code=code))
+                                          error_code=code, usage=getattr(error, "usage", None)))
             if isinstance(error, asyncio.CancelledError):
                 raise
             raise LLMError(code, call_id) from error

@@ -52,7 +52,7 @@ def intent_probe_messages():
     from linkresume.modules.llm.schemas import ChatMessage
     return (
         ChatMessage(role="system", content=INTENT_POLICY),
-        ChatMessage(role="user", content='请先诊断简历，再给出面试准备建议。本轮授权资料：[{"type":"resume","id":"1"}]'),
+        ChatMessage(role="user", content='{"request":"请先诊断简历，再给出面试准备建议。","authorized_contexts":[{"type":"resume","id":"1"}],"history":[],"clarification_answers":[]}'),
     )
 
 
