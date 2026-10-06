@@ -70,7 +70,10 @@
 .v3-side-section { display: flex; height: auto; margin: 22px 12px 8px; align-items: center; justify-content: space-between; color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); min-height: var(--ui-line-metadata); }
 .v3-side-section button { display: grid; width: 18px; height: 18px; place-items: center; border: 0; border-radius: 5px; background: transparent; padding: 0; color: var(--v3-fnt); cursor: pointer; }
 .v3-side-section button:hover { background: var(--v3-field); color: var(--v3-txt); }
-.v3-side-sessions { min-height: 40px; flex: 1; overflow-y: auto; }
+.v3-side-session-group { flex: 0 0 auto; }
+.v3-side-sessions { min-height: 40px; }
+.v3-side-sessions[hidden] { display: none; }
+.v3-side-section button:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
 .v3-side-nav, .v3-side-section { flex: 0 0 auto; }
 .v3-side-session { position: relative; display: flex; width: 188px; height: 32px; margin-bottom: 0; align-items: center; border-radius: 8px; color: var(--v3-sub); }
 .v3-side-session > button.v3-side-session-open { min-width: 0; height: 32px; flex: 1; overflow: hidden; border: 0; background: transparent; padding: 0 36px 0 12px; color: inherit; cursor: pointer; font-size: var(--ui-text-sm); text-align: left; text-overflow: ellipsis; white-space: nowrap; line-height: var(--ui-line-control); }

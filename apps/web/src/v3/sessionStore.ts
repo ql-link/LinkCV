@@ -11,6 +11,9 @@ type SessionState = {
   error: string | null;
   // 正在生成回答的会话：删除入口要置灰（与 AssistantPage 原有规则一致）
   runningIds: string[];
+  collapsedGroups: { pin: boolean; recent: boolean };
+  toggleGroup: (group: "pin" | "recent") => void;
+  setPinned: (sessionId: string, pinned: boolean) => Promise<AgentSession>;
   load: (force?: boolean) => Promise<void>;
   upsert: (session: AgentSession) => void;
   promote: (session: AgentSession) => void;
@@ -36,6 +39,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   status: "idle",
   error: null,
   runningIds: [],
+  collapsedGroups: { pin: false, recent: false },
+  toggleGroup: (group) => set((state) => ({ collapsedGroups: { ...state.collapsedGroups, [group]: !state.collapsedGroups[group] } })),
+  setPinned: async (sessionId, pinned) => {
+    const scope = scopeRevision;
+    const { session } = await api.updateAgentSession(sessionId, { pinned });
+    if (scope === scopeRevision) get().upsert(session);
+    return session;
+  },
   load: async (force = false) => {
     if (inflight) return inflight;
     if (!force && get().status === "ready") return;
@@ -85,6 +96,6 @@ export const useActiveSessionStore = create<{ activeId: string | null; setActive
 export function resetSessionStores() {
   scopeRevision += 1;
   inflight = null;
-  useSessionStore.setState({ sessions: [], status: "idle", error: null, runningIds: [] });
+  useSessionStore.setState({ sessions: [], status: "idle", error: null, runningIds: [], collapsedGroups: { pin: false, recent: false } });
   useActiveSessionStore.setState({ activeId: null });
 }

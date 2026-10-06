@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "../api/client";
+import { api, type AgentSession } from "../api/client";
 import { setLocale } from "../i18n";
 import { V3Shell } from "./Shell";
 import { useSessionStore } from "./sessionStore";
@@ -21,7 +21,7 @@ describe("工作区响应式导航", () => {
     vi.stubGlobal("innerWidth", 390);
     vi.stubGlobal("matchMedia", undefined);
     vi.spyOn(api, "listJobApplications").mockResolvedValue({ items: [], next_cursor: null });
-    useSessionStore.setState({ sessions: [], status: "ready" });
+    useSessionStore.setState({ sessions: [], status: "ready", collapsedGroups: { pin: false, recent: false } });
     window.history.replaceState(null, "", "/resumes");
   });
   afterEach(() => { act(() => setLocale("zh-CN", false)); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -83,7 +83,7 @@ describe("工作区响应式导航", () => {
     const dialog = screen.getByRole("dialog", { name: "Workspace navigation" });
     expect(trigger).toHaveAccessibleName("Open workspace navigation");
     expect(within(dialog).getByRole("navigation", { name: "Workspace navigation" })).toBeInTheDocument();
-    expect(within(dialog).getAllByRole("button", { name: "New conversation" })).toHaveLength(2);
+    expect(within(dialog).getAllByRole("button", { name: "New conversation" })).toHaveLength(1);
     expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("link", { name: "Library" }));
     expect(window.location.pathname).toBe("/datasets");
@@ -123,5 +123,47 @@ describe("工作区响应式导航", () => {
     render(<V3Shell active="none" bare>编辑器</V3Shell>);
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打开工作区导航" })).not.toBeInTheDocument();
+  });
+
+  it("Pin 保存后移到独立分组，取消后回到最近对话，两栏分别收起展开", async () => {
+    resize(1440);
+    const session = { id: "pin-session", title: "测试对话", pinned: false, updated_at: "2026-10-06T00:00:00Z" } as AgentSession;
+    useSessionStore.setState({ sessions: [session] });
+    const update = vi.spyOn(api, "updateAgentSession")
+      .mockResolvedValueOnce({ session: { ...session, pinned: true } })
+      .mockResolvedValueOnce({ session });
+    const user = userEvent.setup();
+    render(<V3Shell active="home">页面内容</V3Shell>);
+    const pin = screen.getByRole("region", { name: "Pin" });
+    const recent = screen.getByRole("region", { name: "最近对话" });
+    expect(pin.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await user.click(within(recent).getByRole("button", { name: "测试对话 的更多操作" }));
+    await user.click(screen.getByRole("menuitem", { name: "Pin" }));
+    expect(update).toHaveBeenCalledWith(session.id, { pinned: true });
+    await waitFor(() => expect(within(pin).getByRole("button", { name: "测试对话" })).toBeInTheDocument());
+    expect(within(recent).queryByRole("button", { name: "测试对话" })).not.toBeInTheDocument();
+    await user.click(within(pin).getByRole("button", { name: "收起Pin" }));
+    expect(within(pin).queryByRole("button", { name: "测试对话" })).not.toBeInTheDocument();
+    expect(within(recent).getByRole("button", { name: "收起最近对话" })).toHaveAttribute("aria-expanded", "true");
+    await user.click(within(recent).getByRole("button", { name: "收起最近对话" }));
+    await user.click(within(pin).getByRole("button", { name: "展开Pin" }));
+    await user.click(within(pin).getByRole("button", { name: "测试对话 的更多操作" }));
+    await user.click(screen.getByRole("menuitem", { name: "取消 Pin" }));
+    await waitFor(() => expect(useSessionStore.getState().sessions[0].pinned).toBe(false));
+    await user.click(within(recent).getByRole("button", { name: "展开最近对话" }));
+    expect(within(recent).getByRole("button", { name: "测试对话" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "新建对话" })).toHaveLength(1);
+  });
+
+  it("Pin 保存失败显示错误且会话保留在原分组", async () => {
+    resize(1440);
+    useSessionStore.setState({ sessions: [{ id: "failure-session", title: "失败测试", pinned: false } as AgentSession] });
+    vi.spyOn(api, "updateAgentSession").mockRejectedValue(new Error("offline"));
+    const user = userEvent.setup();
+    render(<V3Shell active="home">页面内容</V3Shell>);
+    await user.click(screen.getByRole("button", { name: "失败测试 的更多操作" }));
+    await user.click(screen.getByRole("menuitem", { name: "Pin" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Pin 状态保存失败，请重试");
+    expect(within(screen.getByRole("region", { name: "最近对话" })).getByRole("button", { name: "失败测试" })).toBeInTheDocument();
   });
 });

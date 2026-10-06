@@ -10,7 +10,7 @@ Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operat
 
 Web 不再将用户消息中的 `tasks` 渲染为消息下方的摘要列表；服务端仍保存并返回任务结果，任务执行链路不受这一呈现调整影响。
 
-独立助手输入框按当前运行状态互斥显示停止或发送按钮，这属于 Web 呈现，不改变取消运行接口或本机消息队列；具体操作见[消息排队与插入](../features/ai-assistant.md#消息排队与插入)。
+两个 Web 助手入口按当前运行状态互斥显示停止或发送按钮，不挂载本机消息队列或排队状态栏；取消运行接口保持不变。具体操作见[消息排队与插入](../features/ai-assistant.md#消息排队与插入)。
 
 新 scoped 提案保存有界 preview 与操作，不再保存整篇 data/style；旧快照与翻译仍保留完整内容。新上下文目录不列出 resume_version，显式请求或澄清继承这种退休引用时返回 409 AGENT_CONTEXT_RETIRED，不能悄悄替换为当前简历；历史消息中的展示快照继续可读。
 
@@ -64,7 +64,7 @@ Web API client 在收到 `run.completed`、`run.failed` 或 `run.cancelled` 时�
 
 ## 同一运行内的请求来源
 
-浏览器管理未发送队列，普通排队仍逐条调用现有消息接口。Web 使用支持 HTTP 的 IndexedDB 读写事务修改队列和认领普通发送，保存成功后才清理草稿；网络和流订阅不占用数据库事务。普通发送的本机占用在消息被接受后继续保留，收到结束事件、取消成功响应或查询原回执确认运行结束后释放，不按超时抢占。跨标签页变化通过 BroadcastChannel 或读取轮询同步，同站点旧 localStorage 队列在事务提交后迁移并暂停。随机编号使用 getRandomValues，SHA-256 由纯 JavaScript 实现，不要求 HTTPS 专用 API。Pi Service 的 `steering.js` 只管理当前运行已接收的插入及回执，最多一条尚未消费的输入；不提供服务端队列编辑、排序或后台调度。运行句柄和插入接收回执在 Pi 内存，业务真值仍在 MySQL。
+两个 Web 助手入口直接调用消息接口，不再读取、修改或调度未发送队列；现存本机队列保留但不会自动执行。Pi Service 的 `steering.js` 只管理当前运行已接收的插入及回执，最多一条尚未消费的输入；不提供服务端队列编辑、排序或后台调度。运行句柄和插入接收回执在 Pi 内存，业务真值仍在 MySQL。
 
 Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在完整模型轮次及全部工具结束后调用 FastAPI `steering:activate`。FastAPI 按 User → Session → Run → Message 加锁，复验引用和版本，分配正式用户消息；Pi 切换可信来源序号、目标和工具状态，恢复规划工具，并在用户输入进入原生对话后调用 `steering:ack`。激活重试返回原授权快照和回执，不因后来的资料变化改判成未接受；真正读取正文时仍复验版本。资料正文不写入消息快照。
 
@@ -72,7 +72,7 @@ Pi 复用 SDK 的 `steer()` 和 `prepareNextTurnWithContext` 包装钩子，在�
 
 不改变数据库 schema：正式用户消息的既有 `metadata_json` 保存 `submission`（key/hash/mode）、`steering` 接收/生效状态和 `generated_proposal_ids`；任务仍在各自消息的 `agent_tasks`，被调整的未完成任务增加 `superseded_by_sequence_no`。助手消息元数据保存 `reply_to_sequence_no`。完整回复由 `messages:complete` 在发送完成事件前持久化，后续插入失败不删除此前完整回复；当前未完成片段仍不保存。终态先写回数据库，再对浏览器发送，避免下一条普通消息与上一轮收口竞争。
 
-浏览器断开不会取消当前运行，但本机队列暂停；恢复查询优先读取正式消息回执，其次查询 Pi 句柄，未知结果保持冻结。客户端重放事件按来源与消息序号去重。用户行为及本机保留边界见[助手功能](../features/ai-assistant.md#消息排队与插入)，接口状态见[HTTP 契约](../api/http-contracts.md#消息排队与插入回执)。
+浏览器断开不会取消当前运行；Web 通过历史会话和活跃运行接口恢复当前运行，不恢复或调度本机队列。客户端重放事件按来源与消息序号去重。用户行为及本机保留边界见[助手功能](../features/ai-assistant.md#消息排队与插入)，接口状态见[HTTP 契约](../api/http-contracts.md#消息排队与插入回执)。
 
 ## 进程与信任边界
 

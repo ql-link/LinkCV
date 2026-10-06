@@ -87,7 +87,8 @@ describe("AgentPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "历史对话" }));
     fireEvent.click(await screen.findByRole("button", { name: /简历助手/ }));
     await waitFor(() => expect(api.streamAgentRun).toHaveBeenCalledOnce());
-    await screen.findByText("等待插入");
+    expect(screen.queryByText("等待插入")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "待发送消息" })).not.toBeInTheDocument();
     act(() => {
       deliver({ type: "assistant.delta", runId: "run-1", userSequenceNo: 1, delta: "原始回复" });
       deliver({ type: "assistant.message.completed", runId: "run-1", userSequenceNo: 1, sequenceNo: 2, content: "原始回复" });
