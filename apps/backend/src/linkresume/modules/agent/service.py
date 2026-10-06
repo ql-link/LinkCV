@@ -1339,6 +1339,26 @@ def _run_task_message(db: Session, run: AgentRun) -> AgentMessage:
     return message
 
 
+def _message_resume_refs(metadata: dict[str, Any], *, resume_switch: bool = False) -> list[dict[str, str]]:
+    """Resumes authorized for this message: the explicit selection, plus editor background
+    unless the user asked for a different resume."""
+    ids = dict.fromkeys(
+        item["id"]
+        for item in (metadata.get("contexts") or [])
+        if isinstance(item, dict) and item.get("type") == "resume" and isinstance(item.get("id"), str)
+        and not (resume_switch and item.get("presentation") == "implicit")
+    )
+    return [{"type": "resume", "id": resume_id} for resume_id in ids]
+
+
+def _task_context_refs_with_resume(task: dict[str, Any], resume_refs: list[dict[str, str]]) -> list[dict[str, Any]]:
+    """Resume access follows the request's own selection, not a model's per-task guess."""
+    others = [ref for ref in task.get("context_refs") or [] if ref.get("type") != "resume"]
+    if task.get("workflow") == "resource_catalog":
+        return others
+    return [*resume_refs, *others]
+
+
 def save_task_plan(
     db: Session, *, run: AgentRun, payload: AgentTaskPlanRequest
 ) -> list[dict[str, Any]]:
@@ -1356,6 +1376,9 @@ def save_task_plan(
         {**task.model_dump(mode="json"), "status": "planned", "proposal_ids": []}
         for task in payload.tasks
     ]
+    resume_refs = _message_resume_refs(metadata, resume_switch=payload.resume_switch)
+    for task in tasks:
+        task["context_refs"] = _task_context_refs_with_resume(task, resume_refs)
     existing = metadata.get("agent_tasks")
     if existing is not None:
         fields = set(AgentTaskSpec.model_fields)

@@ -1473,7 +1473,9 @@ describe("AssistantPage", () => {
     vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
       onEvent({ type: "run.started", runId: "run-activity" });
       onEvent({ type: "assistant.activity.delta", runId: "run-activity", delta: "I'll read the router skill." });
+      onEvent({ type: "assistant.activity.status", runId: "run-activity", callKey:"skill-router", label:"读取工作流：职业助手路由", status:"running" });
       onEvent({ type: "assistant.activity.delta", runId: "run-activity", delta: "\n读取授权简历上下文…\n" });
+      onEvent({ type: "assistant.activity.status", runId: "run-activity", callKey:"skill-router", label:"读取工作流：职业助手路由", status:"succeeded" });
       onEvent({ type: "assistant.activity.delta", runId: "run-activity", delta: "\nI'll inspect the resume." });
       await new Promise<void>((resolve) => {
         beginFinalResponse = resolve;
@@ -1484,14 +1486,17 @@ describe("AssistantPage", () => {
       onEvent({ type: "run.completed", runId: "run-activity" });
     });
 
-    render(<AssistantPage />);
+    const view = render(<AssistantPage />);
     const input = await screen.findByRole("textbox", { name: "告诉助手你想完成什么" });
     await user.type(input, "准备面试");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("I'll inspect the resume.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "查看过程" }));
-    expect(screen.getByText(/I'll read the router skill\.[\s\S]*读取授权简历上下文…[\s\S]*I'll inspect the resume\./)).toBeInTheDocument();
+    const details = view.container.querySelector(".assistant-thinking-details")!;
+    const lines = [...details.querySelectorAll(".assistant-thinking-activity")].map(node => node.textContent);
+    expect(lines).toEqual(["I'll read the router skill.", "读取工作流：职业助手路由 ✓", "读取授权简历上下文…\nI'll inspect the resume."]);
+    expect(within(details as HTMLElement).getAllByText("读取工作流：职业助手路由 ✓")).toHaveLength(1);
 
     await act(async () => beginFinalResponse());
     expect(await screen.findByText("面试重点包括项目证据。")).toBeInTheDocument();

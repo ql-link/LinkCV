@@ -316,11 +316,14 @@ def test_task_materials_are_rechecked_and_isolated_from_other_task_sources() -> 
         }).status_code == 200
         second = client.get(f"{base}/tasks/interview/materials", headers=internal_headers())
         assert second.status_code == 200
+        # The selected resume follows the request to every task; the job stays with its own task.
         assert [(item["type"], item["id"]) for item in second.json()["materials"]] == [
-            ("job", job["id"]),
+            ("resume", resume["id"]), ("job", job["id"]),
         ]
-        assert second.json()["sources"][0]["source_role"] == "job_requirement"
-        denied = client.get(f"{base}/context?resume_id={resume['id']}", headers=internal_headers())
+        assert {item["source_role"] for item in second.json()["sources"]} == {"user_resume_statement", "job_requirement"}
+        assert client.get(f"{base}/context?resume_id={resume['id']}", headers=internal_headers()).status_code == 200
+        other = create_resume(client, app, "张三未选择的简历")
+        denied = client.get(f"{base}/context?resume_id={other['id']}", headers=internal_headers())
         assert denied.status_code == 409
         assert denied.json()["error"] == "AGENT_TASK_CONTEXT_NOT_AUTHORIZED"
         replay = client.post(f"{base}/tasks:plan", headers=internal_headers(), json=plan)
@@ -2116,7 +2119,8 @@ def test_section_anchor_can_authorize_one_local_child_block() -> None:
 
 
 def test_named_resume_local_field_can_be_resolved_and_deleted_without_session_binding() -> None:
-    app = build_app()
+    emitter = CapturingEmitter()
+    app = build_app(event_emitter=emitter)
     with TestClient(app) as client:
         register(client, "agent-named-field-delete@example.test")
         resume = create_resume(client, app, title="示例后端简历")
@@ -2155,6 +2159,11 @@ def test_named_resume_local_field_can_be_resolved_and_deleted_without_session_bi
         )
         assert wrong_scope.status_code == 422
         assert wrong_scope.json() == {"error": "SCOPE_FORBIDDEN"}
+        logged = [event for event in emitter.system_events if event.get("message") == "agent scoped context read"][-1]
+        assert logged["scope"] == "target" and logged["target_surface"] == "canonical"
+        assert logged["result"] == "failed" and logged["error_code"] == "SCOPE_FORBIDDEN"
+        assert "selected_text" not in logged and "expected_text_hash" not in logged
+        assert "示例后端简历" not in str(logged)
         resolved = client.post(
             f"/internal/agent/runs/{run_id}/targets:resolve",
             headers=internal_headers(),
@@ -4323,6 +4332,26 @@ def test_generic_resume_grant_rolls_back_if_resolution_is_interrupted(monkeypatc
             assert "resume_resolutions" not in metadata
             assert "resource_resolutions" not in metadata
             assert metadata["agent_tasks"][0].get("resolved_refs", []) == []
+
+
+def test_skill_tool_audit_records_safe_name_and_rejects_arbitrary_path():
+    emitter = CapturingEmitter()
+    app = build_app(event_emitter=emitter)
+    with TestClient(app) as client:
+        register(client, "skill-audit@example.test")
+        session_id = client.post("/api/agent/sessions",json={}).json()["session"]["id"]
+        run_id = create_active_run(app,session_id)
+        path = f"/internal/agent/runs/{run_id}/tool-events"
+        payload = {"call_key":"fictional-skill-read","tool_name":"read_skill","skill_name":"resume-edit-workflow","status":"running"}
+        assert client.post(path,headers=internal_headers(),json=payload).status_code == 204
+        payload.update(status="failed",error_code="TASK_WORKFLOW_REQUIRED")
+        assert client.post(path,headers=internal_headers(),json=payload).status_code == 204
+        logged = [e for e in emitter.system_events if e.get("action") == "read_skill"][-1]
+        assert logged["skill_name"] == "resume-edit-workflow"
+        assert logged["error_code"] == "TASK_WORKFLOW_REQUIRED"
+        payload["skill_name"] = "/private/fictional-secret.md"
+        assert client.post(path,headers=internal_headers(),json=payload).status_code == 422
+        assert "fictional-secret" not in str(emitter.system_events)
 
 
 def test_flat_canonical_range_is_task_bound_and_proposal_confirmation_is_native() -> None:

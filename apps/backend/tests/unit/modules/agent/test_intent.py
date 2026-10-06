@@ -35,6 +35,9 @@ def test_multigoal_plan_uses_existing_contract():
     {"mode": "plan", "tasks": [task()], "clarification_purposes": ["edit_scope"]},
     {"mode": "conversation", "reasoning": "hidden thoughts"},
     {"version": 2, "mode": "conversation"},
+    {"mode": "conversation", "resume_identity_conflict": True},
+    {"mode": "clarify", "clarification_purposes": ["edit_scope"], "resume_identity_conflict": True},
+    {"mode": "clarify", "clarification_purposes": ["resume_identity"], "resume_identity_conflict": "true"},
 ])
 def test_invalid_decisions_are_rejected(payload):
     with pytest.raises(ValueError):

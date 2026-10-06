@@ -17,7 +17,7 @@ REPO_ROOT = Path(
     os.environ.get("LINKRESUME_REPO_ROOT", Path(__file__).resolve().parents[2])
 ).resolve()
 DEFAULT_CONFIG = REPO_ROOT / "scripts" / "quality" / "runtime-contract-rules.yaml"
-PI_AGENT_RUNTIME = Path("apps/pi-service/src/runtime/agent.js")
+PI_AGENT_RUNTIME = Path("apps/pi-service/src/runtime/orchestrator.js")
 BACKEND_AGENT_SCHEMAS = Path(
     "apps/backend/src/linkresume/modules/agent/schemas.py"
 )
@@ -108,7 +108,7 @@ def check_agent_tool_audit_contract(repo_root: Path) -> list[str]:
 
     pi_tools = set(
         re.findall(
-            r'\bauditedTool\(\{\s*name:\s*"([a-z0-9_]+)"',
+            r'\bmodelTool\(\{\s*name:\s*"([a-z0-9_]+)"',
             pi_path.read_text(encoding="utf-8"),
         )
     )

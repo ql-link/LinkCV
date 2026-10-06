@@ -41,14 +41,16 @@ class GatewayError(Exception):
     def __init__(
         self,
         *,
-        code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED", "LLM_TIMEOUT", "LLM_RESPONSE_INVALID"],
+        code: Literal["LLM_UNAVAILABLE", "LLM_REQUEST_REJECTED", "LLM_TIMEOUT", "LLM_RESPONSE_INVALID", "INTENT_UNCERTAIN", "INTENT_DECISION_INCONSISTENT"],
         may_have_reached_provider: bool,
         usage: GatewayUsage | None = None,
+        decision_detail: dict | None = None,
     ) -> None:
         super().__init__("LLM provider request failed")
         self.code = code
         self.may_have_reached_provider = may_have_reached_provider
         self.usage = usage
+        self.decision_detail = decision_detail
 
 
 class LLMGateway(Protocol):

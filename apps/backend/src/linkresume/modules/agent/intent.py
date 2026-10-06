@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 from weakref import WeakValueDictionary
 
 import anyio
@@ -10,7 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from linkresume.core.errors import ApiError
-from linkresume.modules.agent.intent_schemas import INTENT_POLICY, IntentDecision
+from linkresume.modules.agent.intent_schemas import (
+    INTENT_POLICY, PLANNING_RULES, IntentDecision, IntentDiagnostic,
+)
 from linkresume.modules.agent.models import AgentMessage, AgentRun
 from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.schemas import AgentTaskPlanRequest
@@ -20,6 +23,8 @@ from linkresume.modules.llm.schemas import ChatMessage
 from linkresume.modules.llm.service import LLMError
 
 INTENT_TIMEOUT_SECONDS = 10
+RESPONSE_VERSION = 2
+logger = logging.getLogger("linkresume.agent")
 
 
 async def _watch_cancellation(request: Request, run_id: int) -> None:
@@ -81,6 +86,14 @@ def intent_input(message: AgentMessage, history: list[AgentMessage], memory: dic
     }, ensure_ascii=False)
 
 
+def _versioned(response: dict) -> dict:
+    """The one wire shape Pi accepts; fallback carries the single copy of the routing rules."""
+    response = {**response, "version": RESPONSE_VERSION}
+    if response["mode"] == "fallback":
+        response["routing_rules"] = PLANNING_RULES
+    return response
+
+
 async def recognize_run_intent(request: Request, db: Session, run_id: str) -> dict:
     # Serialize same-run requests without retaining a growing lock registry.
     locks = getattr(request.app.state, "intent_locks", None)
@@ -95,10 +108,11 @@ async def recognize_run_intent(request: Request, db: Session, run_id: str) -> di
         metadata = dict(message.metadata_json or {})
         if "agent_tasks" in metadata:
             db.rollback()
-            return {"version": 1, "mode": "plan", "tasks": metadata["agent_tasks"]}
+            return _versioned({"mode": "plan", "tasks": metadata["agent_tasks"],
+                               "resume_switch": bool((metadata.get("agent_intent") or {}).get("resume_switch"))})
         if "agent_intent" in metadata:
             db.rollback()
-            return metadata["agent_intent"]
+            return _versioned(metadata["agent_intent"])
         history = list(db.scalars(select(AgentMessage).where(
             AgentMessage.session_id == session.id,
             AgentMessage.sequence_no < message.sequence_no,
@@ -119,15 +133,23 @@ async def recognize_run_intent(request: Request, db: Session, run_id: str) -> di
                     response_model=IntentDecision, agent_run_id=run_pk,
                 )
             decision = result.value
-            if has_resume and "resume_identity" in decision.clarification_purposes:
-                response = {"version": 1, "mode": "fallback", "reason": "LLM_RESPONSE_INVALID", "call_id": result.call_id}
+            if has_resume and "resume_identity" in decision.clarification_purposes and not decision.resume_identity_conflict:
+                response = {"mode": "fallback", "reason": "INTENT_DECISION_INCONSISTENT", "call_id": result.call_id}
+            elif decision.resume_identity_conflict and not has_resume:
+                response = {"mode": "fallback", "reason": "INTENT_DECISION_INCONSISTENT", "call_id": result.call_id}
             else:
                 response = decision.model_dump(mode="json")
                 response["call_id"] = result.call_id
         except TimeoutError:
-            response = {"version": 1, "mode": "fallback", "reason": "INTENT_TIMEOUT"}
+            response = {"mode": "fallback", "reason": "INTENT_TIMEOUT"}
         except LLMError as error:
-            response = {"version": 1, "mode": "fallback", "reason": error.code, "call_id": error.call_id}
+            response = {"mode": "fallback", "reason": error.code, "call_id": error.call_id}
+            if error.decision_detail:
+                # Only known question names and bounded numeric values can enter metadata/logs.
+                try:
+                    response["decision_detail"] = IntentDiagnostic.model_validate(error.decision_detail).model_dump(exclude_none=True)
+                except ValueError:
+                    pass
         # Cancellation is deliberately not caught: it must not execute fallback.
         db.expire_all()
         run, _ = get_active_run(db, run_id)
@@ -138,12 +160,24 @@ async def recognize_run_intent(request: Request, db: Session, run_id: str) -> di
             raise ApiError(409, "AGENT_TASK_PLAN_CONFLICT")
         if response["mode"] == "plan":
             # Invalid authorization is a business refusal, not an LLM fallback.
-            tasks = save_task_plan(db, run=run, payload=AgentTaskPlanRequest(tasks=response["tasks"]))
+            tasks = save_task_plan(db, run=run, payload=AgentTaskPlanRequest(
+                tasks=response["tasks"], resume_switch=bool(response.get("resume_switch"))))
             response["tasks"] = tasks
             message = _run_task_message(db, run)
             metadata = dict(message.metadata_json or {})
         # Persist only bounded enums and call IDs, never the raw decision text.
         metadata["agent_intent"] = {key: value for key, value in response.items() if key != "tasks"}
+        response = _versioned(response)
         message.metadata_json = metadata
         db.commit()
+        logger.log(logging.WARNING if response["mode"] == "fallback" else logging.INFO,
+                   "agent intent recognition result", extra={
+                       "action": "recognize_intent", "operation_id": run_id,
+                       "stage": "model_execution",
+                       "result": "failed" if response["mode"] == "fallback" else "succeeded",
+                       "error_code": response.get("reason"), "call_id": response.get("call_id"),
+                       "intent_mode": response["mode"], "candidate_count": len(response.get("tasks", [])),
+                       "decision_field": response.get("decision_detail", {}).get("field"),
+                       "decision_confidence": response.get("decision_detail", {}).get("confidence"),
+                   })
         return response

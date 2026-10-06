@@ -230,6 +230,8 @@ Markdown 导入不调用 LinkParse，但 Worker 仍需要数据库中已配置�
 - 前端测试使用 Vitest、React Testing Library 和 jsdom，通过 Mock 隔离 API。
 - 后端单元测试不访问外部服务；集成测试使用内存 SQLite 和假 MinIO。
 - Pi 服务测试不访问真实模型或 FastAPI；真实 Agent 联调需要管理员为 `assistant_conversation` 配置已探测可用的 Pi 对话线路，并启动 FastAPI 与 Pi 两个进程。
+
+- 独立意图识别的虚构回归用例位于 `apps/backend/tests/fixtures/intent_routing_cases.json`。`LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/dev/verify_intent_routing.py` 默认只列出用例，不调用模型；加 `--live` 才使用当前有效的 Dev 意图模型，重复 `--case` 可限制场景和调用数量，`--output` 可保存安全结果。脚本拒绝 Production，不读取用户资料或创建业务任务，调用来源为 `intent_acceptance`；不能替代真实 Pi 工具、回退和权限验收，详见 [助手人工测试手册](assistant-resume-manual-testing.md#独立意图识别回归)。
 - 跨浏览器插件、BOSS 页面、Web、FastAPI、真实 MySQL 和 Redis 的完整导入流程由浏览器人工验证。侧载目录和步骤见 [`apps/extension/README.md`](../../apps/extension/README.md)。
 
 ### 小程序求职联调

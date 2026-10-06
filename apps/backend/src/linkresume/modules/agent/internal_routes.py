@@ -354,6 +354,8 @@ def resolve_run_target(
     payload: TargetResolveRequest,
     db: Session = Depends(get_db),
 ) -> TargetResolveResponse:
+    if payload.scope_hint == "resume" and payload.quoted_text:
+        raise ApiError(422, "TARGET_REQUEST_INVALID")
     run, _, resume, snapshot = _run_resume(db, run_id, payload.resume_id)
     result = resolve_target(
         resume,
@@ -432,13 +434,30 @@ def list_run_user_resources(
 def read_scoped_run_context(
     run_id: str,
     payload: ContextReadRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> ScopedResumeContextResponse:
-    run, _, resume, snapshot = _run_resume(db, run_id, payload.target.resume_id)
-    require_canonical_range(db, run, payload.target)
-    content = target_content(resume, snapshot.data, payload.target, payload.scope)
+    def log_read(result, error_code=None):
+        request.app.state.event_emitter.system(
+            "WARNING" if error_code else "INFO", "agent scoped context read", logger="linkresume.agent",
+            operation_id=run_id, action="get_resume_context", stage="scope_read", result=result,
+            scope=payload.scope, target_surface=payload.target.surface,
+            target_section_kind="resume" if payload.target.section == "resume" else "other" if payload.target.section else "none",
+            target_has_entry=payload.target.entry_id is not None,
+            target_has_section=payload.target.section is not None,
+            selection_present=payload.target.selected_text is not None, error_code=error_code,
+        )
+    log_read("started")
     from linkresume.modules.agent.canonical_targets import MAX_READ_CHARS
-    blocks = scoped_blocks(resume, snapshot.data, payload.target, payload.scope)
+    try:
+        run, _, resume, snapshot = _run_resume(db, run_id, payload.target.resume_id)
+        require_canonical_range(db, run, payload.target)
+        content = target_content(resume, snapshot.data, payload.target, payload.scope)
+        blocks = scoped_blocks(resume, snapshot.data, payload.target, payload.scope)
+    except ApiError as error:
+        log_read("failed", error.code)
+        raise
+    log_read("succeeded")
     bounded_blocks = []
     budget = MAX_READ_CHARS
     truncated = len(content) > MAX_READ_CHARS
@@ -684,4 +703,5 @@ def record_tool_event(
         question_count=payload.question_count,
         target_field=payload.target_field,
         base_lock_version=payload.base_lock_version,
+        skill_name=payload.skill_name,
     )

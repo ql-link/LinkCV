@@ -153,7 +153,15 @@ const llmErrors: Record<string, string> = {
   LLM_MODEL_IN_USE: "模型仍被线路绑定、会话或历史调用引用，不能删除",
   LLM_ROUTE_IN_USE: "线路仍被绑定或已有调用记录，不能删除；可以改为停用",
   LLM_ROUTE_INVALID: "线路配置与接入商不匹配",
-  LLM_PROBE_REQUIRED: "需要先探测通过才能启用",
+  LLM_PROBE_REQUIRED: "请重新启用线路，系统将自动验证",
+  LLM_UNAVAILABLE: "模型验证失败：上游不可用，请检查模型名称和接入配置",
+  LLM_RESPONSE_INVALID: "模型验证失败：返回结果不符合该场景要求",
+  INTENT_UNCERTAIN: "意图验证未通过：决策置信度不足，请检查识别规则后重试",
+  INTENT_DECISION_INCONSISTENT: "意图验证未通过：分类、目标或澄清结果互相矛盾",
+  LLM_REQUEST_REJECTED: "模型验证失败：上游拒绝请求，请检查协议和权限",
+  LLM_TIMEOUT: "模型验证超时，请稍后重新启用",
+  LLM_PI_AGENT_UNAVAILABLE: "模型验证失败：Pi Agent 服务不可用",
+  LLM_CONNECTION_FAILED: "模型验证失败：无法连接上游服务",
   LLM_CREDENTIALS_UNAVAILABLE: "连接密钥不可用，请更换 Key",
   LLM_CATALOG_UNAVAILABLE: "上游目录暂不可用，稍后再试",
   LLM_CATALOG_UNSUPPORTED: "该接入商不支持目录同步",
@@ -264,7 +272,7 @@ export function ConnectionsPage() {
           })}
         </ul>
       )}
-      <Footnote icon={CircleAlert}>一个连接 = 一个接入商账号的 API Key；Base URL 由服务端按接入商固定。修改 Key 或地址后，关联线路需要重新探测。</Footnote>
+      <Footnote icon={CircleAlert}>一个连接 = 一个接入商账号的 API Key；Base URL 由服务端按接入商固定。修改 Key 或地址后，关联线路需要重新启用验证。</Footnote>
       {editing && data && <ConnectionModal catalog={data.catalog} connection={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void llm.reload(); }} />}
       {rotating && <RotateKeyModal connection={rotating} providerLabel={label(rotating.providerCode)} onClose={() => setRotating(null)} onSaved={() => { setRotating(null); void llm.reload(); }} />}
       {deleting && (
@@ -301,7 +309,7 @@ function ConnectionModal({ catalog, connection, onClose, onSaved }: { catalog: L
     try {
       if (connection) {
         await api.updateLlmConnection(connection.id, { baseVersion: connection.runtimeConfigVersion, name: name.trim(), settings: settings() });
-        notify("连接已保存，关联线路需重新探测");
+        notify("连接已保存，关联线路需重新启用验证");
       } else {
         await api.createLlmConnection({ providerCode, name: name.trim(), apiKey: apiKey.trim(), settings: settings() });
         notify("连接已创建，默认停用");
@@ -373,7 +381,7 @@ function RotateKeyModal({ connection, providerLabel, onClose, onSaved }: { conne
     setError(null);
     try {
       await api.updateLlmConnection(connection.id, { baseVersion: connection.runtimeConfigVersion, apiKey: apiKey.trim() });
-      notify("API Key 已更新，关联线路需重新探测");
+      notify("API Key 已更新，关联线路需重新启用验证");
       onSaved();
     } catch (caught) { setError(llmMessage(caught, "保存失败")); } finally { setBusy(false); }
   };
@@ -381,7 +389,7 @@ function RotateKeyModal({ connection, providerLabel, onClose, onSaved }: { conne
     <Modal width={480} title="更换 API Key" subtitle={`${connection.name} · ${providerLabel}`} onClose={onClose} busy={busy}
       footer={<><Button dismiss disabled={busy}>取消</Button><Button variant="primary" disabled={!apiKey.trim() || busy} onClick={() => void submit()}>{busy ? "保存中…" : "保存新 Key"}</Button></>}>
       <div className="adm-form">
-        <Field label="新 API Key" htmlFor="rotate-key" hint="保存后，这个连接下所有线路的绑定需要重新探测才会恢复生效。">
+        <Field label="新 API Key" htmlFor="rotate-key" hint="保存后，这个连接下所有线路的绑定需要重新启用验证才会恢复生效。">
           <input id="rotate-key" className="adm-input" type="password" autoComplete="new-password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-…" />
         </Field>
         {error && <InlineError>{error}</InlineError>}
@@ -685,14 +693,14 @@ function RouteModal({ data, route, defaultModelId, onClose, onSaved }: { data: L
       const pricing = pricingMode === "provider" ? undefined : JSON.parse(rulesJson) as Record<string, unknown>;
       if (route) await api.updateLlmRoute(route.id, { identifierKind, ...(pricingMode === "manual_override" ? { pricing } : {}), pricingMode });
       else await api.createLlmRoute({ modelId: Number(modelId), connectionId: Number(connectionId), targetKind: effectiveKind, invokeTarget: invokeTarget.trim(), identifierKind, pricing });
-      notify(route ? "线路已保存" : "线路已创建，请绑定使用场景并探测");
+      notify(route ? "线路已保存" : "线路已创建，请绑定使用场景，启用时自动验证");
       onSaved();
     } catch (caught) { setError(llmMessage(caught, "保存失败")); } finally { setBusy(false); }
   };
 
   const modelName = data.models.find((item) => item.id === route?.modelId)?.displayName;
   return (
-    <Modal width={route ? 520 : 560} title={route ? "编辑线路" : "添加线路"} subtitle={route ? `#${route.id} · ${modelName ?? ""} · ${connection?.name ?? ""}` : "线路 = 模型通过哪个连接调用；创建后默认停用，需要绑定场景并探测"} onClose={onClose} busy={busy}
+    <Modal width={route ? 520 : 560} title={route ? "编辑线路" : "添加线路"} subtitle={route ? `#${route.id} · ${modelName ?? ""} · ${connection?.name ?? ""}` : "线路 = 模型通过哪个连接调用；创建后默认停用，需要绑定场景，启用时自动验证"} onClose={onClose} busy={busy}
       footer={<><Button dismiss disabled={busy}>取消</Button><Button variant="primary" disabled={!valid || busy} onClick={() => void submit()}>{busy ? "保存中…" : route ? "保存" : "添加线路"}</Button></>}>
       <div className="adm-form">
         {route ? (

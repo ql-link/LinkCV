@@ -5,27 +5,26 @@ metadata:
   mode: rewrite_entry_star
   allowed_scopes:
     - entry
-    - range
 ---
 
 # 经历整体 STAR 优化
 
-仅在 `resume-edit-workflow` 已选择 `rewrite_entry_star`、目标经历唯一且结构化诊断已完成时使用。
+适用于修改方式为 `rewrite_entry_star`、目标经历唯一的情形。
 
 ## 允许
 
-- 在同一个实际 `entry_id` 或已冻结的 canonical range 内重组摘要和多个 bullet。
+- 在同一个 `entry_id` 内重组摘要和多个 bullet。
 - 减少重复内容，把已有的情境、任务、行动和结果组织成清晰结构。
 - 根据授权岗位突出原文已经具备的相关关键词。
 - 结果可以是数字，也可以是可验证的交付物、质量变化、影响范围或业务作用。
-- 为同一经历提交多个 `replace_target_text` operation；需要删除该经历正文中的完整 paragraph/list item 时可以提交 `delete_target`。
+- 为同一经历提交多项替换；需要删除该经历正文中的完整段落或列表项时可以提交删除。
 
 ## 禁止
 
 - 修改其他经历、模块或样式。
-- 把局部润色再交给 `resume-edit-local`，同一任务不得加载第二个执行 Skill。
+- 同一计划混用局部润色方式，只能使用整段经历重写这一种方式。
 - 编造 STAR 中缺失的情境、职责、行动或结果。
 - 在没有用户或授权资料证据时生成量化数据。
 - 把参与、协助或团队成果改写成个人主导成果。
 
-缺少影响改写的 S/T/A/R 事实时停止创建提案，交回总控流程提出具体问题。创建提案时使用模式 `rewrite_entry_star`，且所有 operation 必须属于同一实际 `entry_id` 或当前定位返回的连续节点 range。entries 为空时先读取模块正文，使用起止 node_id 定位范围；边界不明必须澄清，不生成永久经历分组。
+缺少影响改写的 S/T/A/R 事实时不要生成修改，向用户提出一个具体问题。所有修改必须属于同一段经历。

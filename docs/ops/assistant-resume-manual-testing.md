@@ -75,6 +75,16 @@ LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend alembic cur
 
 ## 3. 基础资源与权限
 
+### 独立意图识别回归
+
+固定虚构用例保存在 `apps/backend/tests/fixtures/intent_routing_cases.json`，覆盖普通对话、混合请求、泛优化、缺少简历、明确与歧义历史指代、缺少真实事实、多目标和显式身份冲突。适配器单元测试验证合同映射，不证明真实模型分类正确。`scripts/dev/verify_intent_routing.py` 默认仅列出用例，只有 `--live` 才调用当前有效的 `assistant_intent` 模型；不会读取用户资料或创建任务。显式使用 Development 配置：
+
+```bash
+LINKRESUME_ENV_FILE=.env.development uv run --directory apps/backend python ../../scripts/dev/verify_intent_routing.py --live --case conversation --case mixed --case missing_resume --output /tmp/intent-routing-results.json
+```
+
+可重复 `--case` 限制调用数量，不指定时执行全部九项。结果只保留固定场景 ID、结构化决策、安全调用 ID 和失败原因；MySQL 调用来源为 `intent_acceptance`，与真实 Pi 请求的 `agent_intent` 区分。工具执行与回退仍需用专用测试账号发起真实 Pi 请求，核对当前消息的 `agent_intent` 与关联调用记录。此脚本明确拒绝 Production。
+
 ### TC-RES-01 查询本人资源目录
 
 状态：`未执行`

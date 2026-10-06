@@ -16,37 +16,28 @@ import {
   selectionForResume,
   referenceNeedsResolution,
   createSerialExecutor,
-  createSkillReadTool,
-  enableToolOnce,
   explicitNumberedGoalCount,
   isExplicitResumeReference,
   clarificationFallbackText,
-  executeLocalResumeEditPlan,
   formatContextCatalog,
   formatContextMaterials,
   materializeProposalOperations,
-  prepareLocalResumeEditPlanArguments,
+  executeResumeEditPlan,
+  prepareEditPlanArguments,
+  computeTaskOutcome,
+  editPlanSummary,
+  WORKFLOWS,
   proposalCallKey,
   retryIdempotentProposal,
   translationCallKey,
   SYSTEM_PROMPT,
   USER_FACING_RESPONSE_PROMPT,
   loadIntentDecision,
-  intentDecisionContext,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
 import { validateToolArguments } from "../../../third_party/pi/packages/ai/dist/utils/validation.js";
 
 const codedTestError = (code) => Object.assign(new Error(code), { code });
-
-test("intent plan is loaded before execution and cannot be replanned", async () => {
-  const tasks = [{ id: "diagnose", workflow: "resume_edit", status: "planned" }];
-  const decision = await loadIntentDecision({ recognizeIntent: async () => ({ version: 1, mode: "plan", tasks }) });
-  assert.deepEqual(decision.tasks, tasks);
-  assert.match(intentDecisionContext(decision), /不得重新规划/);
-  assert.match(intentDecisionContext({ mode: "clarify", clarification_purposes: ["edit_scope"] }), /禁止规划/);
-  assert.equal(intentDecisionContext({ mode: "fallback" }), "");
-});
 
 test("intent authorization failure and cancellation do not become fallback", async () => {
   for (const code of ["AGENT_TASK_CONTEXT_NOT_AUTHORIZED", "AGENT_RUN_NOT_ACTIVE", "AbortError"]) {
@@ -206,14 +197,11 @@ test("selected resume identity wins over duplicate title search and model suppli
   const calls = [];
   const policy = createResumeContextPolicy([{ type: "resume", id: "83", resume_id: "83" }]);
   const result = await policy.resolveReference({
-    resolveTarget: async (params) => { calls.push(params); return { status: "resolved", target: { resume_id: params.resume_id } }; },
-    resolveResumeReference: async () => { throw new Error("must not search duplicate titles"); },
+    resolveResumeReference: async (params) => { calls.push(params); return { status: "resolved", target: { resume_id: params.resume_id } }; },
   }, { title: "张三的简历", resume_id: "78" });
   assert.equal(result.target.resume_id, "83");
-  assert.deepEqual(calls, [{ resume_id: "83", scope_hint: "resume" }]);
-  assert.equal(policy.canListResources(null), false);
-  assert.equal(policy.canListResources("resume_edit"), false);
-  assert.equal(policy.canListResources("resource_catalog"), true);
+  // The selected identity wins over model guesses, and goes through the grant-recording endpoint.
+  assert.deepEqual(calls, [{ resume_id: "83" }]);
   assert.deepEqual(policy.unresolvedQuestions([
     { purpose: "resume_identity", id: "which_resume" },
     { purpose: "edit_scope", id: "scope" },
@@ -225,20 +213,7 @@ test("without a selected resume, explicit names can be resolved and identity cla
   const params = { title: "张三的简历" };
   const result = await policy.resolveReference({ resolveResumeReference: async (value) => value }, params);
   assert.deepEqual(result, params);
-  assert.equal(policy.canListResources("resume_edit"), true);
   assert.equal(policy.unresolvedQuestions([{ purpose: "resume_identity" }]).length, 1);
-});
-
-test("system prompt identifies the assistant as LinkResume", () => {
-  assert.match(SYSTEM_PROMPT, /你是 LinkResume 的职业与简历智能助手/);
-  assert.match(SYSTEM_PROMPT, /career-assistant-router/);
-  assert.match(SYSTEM_PROMPT, /list_user_resources/);
-  assert.match(SYSTEM_PROMPT, /resolve_resume_reference/);
-  assert.match(SYSTEM_PROMPT, /begin_final_response/);
-  assert.match(SYSTEM_PROMPT, /临时工作过程/);
-  assert.match(SYSTEM_PROMPT, /不绑定会话/);
-  assert.doesNotMatch(SYSTEM_PROMPT, /通过 `@`/);
-  assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
 });
 
 test("system prompt applies the user-facing response style after agent policy", () => {
@@ -355,34 +330,6 @@ test("serial executor never overlaps stateful agent tools", async () => {
   assert.deepEqual(order, ["start:1", "end:1", "start:2", "end:2", "start:3", "end:3"]);
 });
 
-test("local edit plan normalizes deletion text without hiding missing replacement text", () => {
-  const prepared = prepareLocalResumeEditPlanArguments({
-    tasks: [
-      { quoted_text: "占位", match: "unique", op: "delete_target", summary: "删除占位" },
-      { quoted_text: "旧内容", match: "unique", op: "replace_target_text", summary: "替换内容" },
-    ],
-  });
-
-  assert.equal(prepared.tasks[0].new_text, "");
-  assert.equal("new_text" in prepared.tasks[1], false);
-});
-
-test("skill reads opt into Pi sequential execution", () => {
-  assert.equal(createSkillReadTool().executionMode, "sequential");
-});
-
-test("resource catalog activation does not duplicate an already enabled tool", () => {
-  const updates = [];
-  const session = {
-    getActiveToolNames: () => ["read", "list_user_resources"],
-    setActiveToolsByName: (names) => updates.push(names),
-  };
-  enableToolOnce(session, "list_user_resources");
-  assert.deepEqual(updates, []);
-  enableToolOnce({ ...session, getActiveToolNames: () => ["read"] }, "list_user_resources");
-  assert.deepEqual(updates, [["read", "list_user_resources"]]);
-});
-
 test("resource listing cannot turn an unmentioned resume into an explicit target", () => {
   assert.equal(isExplicitResumeReference({ title: "张三的简历" }, "帮我优化简历"), false);
   assert.equal(isExplicitResumeReference({ resume_id: "92" }, "帮我优化简历"), false);
@@ -398,164 +345,6 @@ test("explicitly numbered goals over the task limit cannot be silently truncated
   assert.equal(explicitNumberedGoalCount(nineGoals), 9);
   assert.equal(explicitNumberedGoalCount("1分析简历，2准备面试，3职业规划"), 3);
   assert.equal(explicitNumberedGoalCount("我有 9 年经验，请给 3 个建议"), 0);
-});
-
-test("compound local edit plan freezes selectors and creates proposals serially", async () => {
-  const target = (blockId, content, extra = {}) => ({
-    resume_id: "88",
-    base_lock_version: 1,
-    surface: "editor",
-    section: "section-projects",
-    entry_id: null,
-    field: "markdown",
-    block_id: blockId,
-    selected_text: content,
-    expected_text_hash: `sha256:${blockId.padEnd(64, "a").slice(0, 64)}`,
-    ...extra,
-  });
-  const fieldTarget = target("node_field0000000001", "asd", { section: "section-education", field: "location" });
-  const parentTarget = target("node_entry0000000001", "LinkRag 项目", { entry_id: "node_entry0000000001" });
-  const placeholderTargets = [
-    target("node_bullet000000001", "1", { entry_id: "node_entry0000000001" }),
-    target("node_bullet000000002", "1", { entry_id: "node_entry0000000001" }),
-  ];
-  const calls = [];
-  let activeProposals = 0;
-  let maximumActiveProposals = 0;
-  const client = {
-    resolveTarget: async ({ quoted_text: quotedText }) => {
-      calls.push(`resolve:${quotedText}`);
-      return { status: "resolved", target: quotedText === "asd" ? fieldTarget : parentTarget };
-    },
-    scopedContext: async ({ target: currentTarget, scope }) => {
-      calls.push(`context:${currentTarget.block_id}:${scope}`);
-      if (currentTarget === parentTarget) {
-        return { target: parentTarget, blocks: placeholderTargets.map((item) => ({ target: item, content: "1" })) };
-      }
-      return { target: currentTarget, blocks: [{ target: currentTarget, content: currentTarget.selected_text }] };
-    },
-    diagnose: async ({ target: currentTarget }) => {
-      calls.push(`diagnose:${currentTarget.block_id}`);
-      return { diagnosis: { issues: [] }, diagnosis_fingerprint: `fingerprint:${currentTarget.block_id}` };
-    },
-    scopedProposal: async (payload) => {
-      activeProposals += 1;
-      maximumActiveProposals = Math.max(maximumActiveProposals, activeProposals);
-      calls.push(`proposal:${payload.target.block_id}`);
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      activeProposals -= 1;
-      return { proposal: { id: `proposal-${payload.target.block_id}` } };
-    },
-  };
-  const activities = [];
-  const proposals = [];
-  const tasks = [
-    { quoted_text: "asd", match: "unique", op: "replace_target_text", new_text: "", summary: "删除占位字段" },
-    { quoted_text: "1", parent_quoted_text: "LinkRag 项目", parent_scope: "entry", match: "all", op: "delete_target", new_text: "", summary: "删除占位条目" },
-  ];
-  const pending = executeLocalResumeEditPlan({
-    client,
-    resumeId: "88",
-    tasks,
-    toolCallId: "plan-1",
-    onActivity: (activity) => activities.push(activity),
-    onProposal: (proposal) => proposals.push(proposal),
-  });
-  tasks[0].quoted_text = "changed after execution started";
-  const results = await pending;
-
-  assert.equal(maximumActiveProposals, 1);
-  assert.deepEqual(results.map((item) => item.status), ["succeeded", "succeeded"]);
-  assert.equal(proposals.length, 3);
-  assert.equal(calls[0], "resolve:asd");
-  assert.deepEqual(calls.filter((item) => item.startsWith("proposal:")), [
-    "proposal:node_field0000000001",
-    "proposal:node_bullet000000001",
-    "proposal:node_bullet000000002",
-  ]);
-  assert.ok(activities.some((item) => item.callKey === "plan-1:task:2:target:2" && item.status === "succeeded"));
-});
-
-test("compound local edit plan records a failed task once and continues", async () => {
-  let resolveCalls = 0;
-  const activities = [];
-  const results = await executeLocalResumeEditPlan({
-    client: {
-      resolveTarget: async ({ quoted_text: quotedText }) => {
-        resolveCalls += 1;
-        if (quotedText === "missing") return { status: "not_found", target: null };
-        return {
-          status: "resolved",
-          target: {
-            resume_id: "88",
-            base_lock_version: 1,
-            surface: "editor",
-            section: "section-skills",
-            entry_id: null,
-            field: "markdown",
-            block_id: "node_skill00000000001",
-            selected_text: quotedText,
-            expected_text_hash: `sha256:${"a".repeat(64)}`,
-          },
-        };
-      },
-      scopedContext: async ({ target: currentTarget }) => ({ target: currentTarget, blocks: [{ target: currentTarget }] }),
-      diagnose: async () => ({ diagnosis: {}, diagnosis_fingerprint: "fingerprint" }),
-      scopedProposal: async ({ target: currentTarget }) => {
-        if (currentTarget.selected_text === "broken") throw codedTestError("PATCH_OUT_OF_SCOPE");
-        return { proposal: { id: "proposal-1" } };
-      },
-    },
-    resumeId: "88",
-    toolCallId: "plan-2",
-    onActivity: (activity) => activities.push(activity),
-    tasks: [
-      { quoted_text: "missing", match: "unique", op: "delete_target", new_text: "", summary: "不存在" },
-      { quoted_text: "broken", match: "unique", op: "delete_target", new_text: "", summary: "提案失败" },
-      { quoted_text: "占位", match: "unique", op: "replace_target_text", new_text: "", summary: "删除占位" },
-    ],
-  });
-
-  assert.equal(resolveCalls, 3);
-  assert.deepEqual(results.map((item) => item.status), ["failed", "failed", "succeeded"]);
-  assert.equal(results[0].error_code, "TARGET_NOT_FOUND");
-  assert.equal(results[1].error_code, "PATCH_OUT_OF_SCOPE");
-  assert.ok(activities.some((item) => (
-    item.callKey === "plan-2:task:2:target:1" &&
-    item.status === "failed" &&
-    item.errorCode === "PATCH_OUT_OF_SCOPE"
-  )));
-});
-
-test("compound edit retains proposals created before a later target fails", async () => {
-  const target = (blockId) => ({
-    resume_id: "88", base_lock_version: 1, surface: "editor", section: "projects",
-    entry_id: "node_entry0000000001", field: "markdown", block_id: blockId,
-    selected_text: "占位", expected_text_hash: `sha256:${"a".repeat(64)}`,
-  });
-  const first = target("node_bullet000000001");
-  const second = target("node_bullet000000002");
-  const proposals = [];
-  const results = await executeLocalResumeEditPlan({
-    client: {
-      resolveTarget: async () => ({ status: "resolved", target: target("node_entry0000000001") }),
-      scopedContext: async ({ target: current }) => current.block_id === "node_entry0000000001"
-        ? { blocks: [first, second].map((item) => ({ target: item, content: "占位" })) }
-        : { target: current, blocks: [{ target: current, content: "占位" }] },
-      diagnose: async () => ({ diagnosis: {}, diagnosis_fingerprint: "fingerprint" }),
-      scopedProposal: async ({ target: current }) => {
-        if (current.block_id === second.block_id) throw codedTestError("TARGET_STALE");
-        return { proposal: { id: "proposal-first" } };
-      },
-    },
-    resumeId: "88", toolCallId: "plan-partial",
-    tasks: [{ quoted_text: "占位", parent_quoted_text: "项目", match: "all", op: "delete_target", summary: "删除占位" }],
-    onProposal: (proposal) => proposals.push(proposal.id),
-  });
-  assert.deepEqual(results, [{
-    task: 1, status: "partial", error_code: "TARGET_STALE", proposal_ids: ["proposal-first"],
-  }]);
-  assert.deepEqual(proposals, ["proposal-first"]);
 });
 
 test("proposal retries use the same server idempotency key", () => {
@@ -592,67 +381,6 @@ test("translation retries preserve their proposal identity", () => {
   const params = { target_language: "en", proposed_title: "Resume", data: { identity: { name: "Zhang San" } }, style: {} };
   assert.equal(translationCallKey(target, params), translationCallKey(target, params));
   assert.notEqual(translationCallKey(target, params), translationCallKey(target, { ...params, target_language: "fr" }));
-});
-
-test("compound local edit plan rejects replacement tasks without replacement text", async () => {
-  const activities = [];
-  const results = await executeLocalResumeEditPlan({
-    client: {},
-    resumeId: "88",
-    toolCallId: "plan-missing-text",
-    onActivity: (activity) => activities.push(activity),
-    tasks: [{ quoted_text: "旧内容", match: "unique", op: "replace_target_text", summary: "替换内容" }],
-  });
-
-  assert.deepEqual(results, [{
-    task: 1,
-    status: "failed",
-    error_code: "TASK_NEW_TEXT_REQUIRED",
-    proposal_ids: [],
-  }]);
-  assert.ok(activities.some((item) => (
-    item.callKey === "plan-missing-text:task:1" &&
-    item.status === "failed" &&
-    item.errorCode === "TASK_NEW_TEXT_REQUIRED"
-  )));
-});
-
-test("compound local edit plan stops immediately after cancellation", async () => {
-  const controller = new AbortController();
-  let resolveCalls = 0;
-  const target = {
-    resume_id: "88",
-    base_lock_version: 1,
-    surface: "editor",
-    section: "section-skills",
-    entry_id: null,
-    field: "markdown",
-    block_id: "node_skill00000000001",
-    selected_text: "占位",
-    expected_text_hash: `sha256:${"a".repeat(64)}`,
-  };
-
-  await assert.rejects(executeLocalResumeEditPlan({
-    client: {
-      resolveTarget: async () => {
-        resolveCalls += 1;
-        return { status: "resolved", target };
-      },
-      scopedContext: async () => {
-        controller.abort();
-        throw Object.assign(new Error("aborted"), { name: "AbortError" });
-      },
-    },
-    resumeId: "88",
-    toolCallId: "plan-3",
-    signal: controller.signal,
-    tasks: [
-      { quoted_text: "first", match: "unique", op: "delete_target", new_text: "", summary: "第一项" },
-      { quoted_text: "second", match: "unique", op: "delete_target", new_text: "", summary: "第二项" },
-    ],
-  }), { name: "AbortError" });
-
-  assert.equal(resolveCalls, 1);
 });
 
 test("agent completion accepts a successful assistant message", () => {
@@ -811,47 +539,6 @@ test("clarification fallback remains readable for clients that ignore the struct
   }), "继续前需要确认：\n1. 要修改哪段经历？\n   选项：实习经历 / 项目经历 / 其他");
 });
 
-test("read tool can load a registered resume skill", async () => {
-  let loadedPath;
-  let started = false;
-  const tool = createSkillReadTool(
-    (path) => { loadedPath = path; },
-    () => { started = true; },
-  );
-  const result = await tool.execute("read-1", {
-    path: "resume-edit-workflow/SKILL.md",
-  });
-
-  assert.equal(started, true);
-  assert.match(result.content[0].text, /name: resume-edit-workflow/);
-  assert.equal(loadedPath, "resume-edit-workflow/SKILL.md");
-});
-
-test("read tool can load every P1 career workflow", async () => {
-  const tool = createSkillReadTool();
-  for (const path of [
-    "resource-catalog/SKILL.md",
-    "career-assistant-router/SKILL.md",
-    "resume-translation/SKILL.md",
-    "interview-guide/SKILL.md",
-    "career-planning/SKILL.md",
-    "resume-title-generator/SKILL.md",
-    "material-lookup/SKILL.md",
-  ]) {
-    const result = await tool.execute(`read-${path}`, { path });
-    assert.match(result.content[0].text, /^---/);
-  }
-});
-
-test("read tool rejects files outside the registered skills directory", async () => {
-  const tool = createSkillReadTool();
-
-  await assert.rejects(
-    tool.execute("read-2", { path: new URL("../../../package.json", import.meta.url).pathname }),
-    /AGENT_SKILL_READ_FORBIDDEN/,
-  );
-});
-
 test("context materials accept only bounded, unique authorized categories", () => {
   const materials = [{
     type: "job",
@@ -1002,14 +689,16 @@ test("editor background permits switching instead of pinning the run", async () 
   assert.equal(policy.backgroundId, "11");
   const calls = [];
   const client = {
-    resolveTarget: async (params) => { calls.push(params); return { target: { resume_id: params.resume_id } }; },
-    resolveResumeReference: async (params) => { calls.push(params); return { target: { resume_id: "22" } }; },
+    resolveResumeReference: async (params) => {
+      calls.push(params);
+      return { target: { resume_id: params.resume_id ?? "22" } };
+    },
   };
   const result = await policy.resolveReference(client, { title: "张三产品简历" });
   assert.equal(result.target.resume_id, "22");
   assert.deepEqual(calls, [{ title: "张三产品简历" }]);
   await policy.resolveReference(client, {});
-  assert.deepEqual(calls[1], { resume_id: "11", scope_hint: "resume" });
+  assert.deepEqual(calls[1], { resume_id: "11" });
   const selection = { selected_text: "旧简历选区" };
   assert.equal(selectionForResume(policy, "11", selection), selection);
   assert.equal(selectionForResume(policy, "22", selection), null);
@@ -1025,54 +714,239 @@ test("explicit selected identity survives duplicate title guesses but real alter
   assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, [{ ...explicit[0], presentation: "implicit" }], "换张三产品简历"), true);
 });
 
-test("canonical scope capability requires range resolution instead of claiming permission failure", async () => {
-  const { unavailableCanonicalScope } = await import("../src/runtime/agent.js");
-  const target = { surface: "canonical", allowed_scopes: ["target", "section", "resume"] };
-  assert.equal(unavailableCanonicalScope(target, "section"), null);
-  assert.equal(unavailableCanonicalScope(target, "entry").status, "scope_requires_resolution");
-  assert.match(unavailableCanonicalScope(target, "entry").next, /起止 node_id/);
-  assert.equal(unavailableCanonicalScope({ surface: "canonical", allowed_scopes: ["range"] }, "range"), null);
+
+
+test("system prompt identifies the assistant and describes runtime-driven steps", () => {
+  assert.match(SYSTEM_PROMPT, /你是 LinkResume 的职业与简历智能助手/);
+  assert.match(SYSTEM_PROMPT, /运行时按任务和步骤驱动整个流程/);
+  assert.match(SYSTEM_PROMPT, /临时工作过程/);
+  assert.match(SYSTEM_PROMPT, /不要调用没有提供的工具/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /通过 `@`/);
+  assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
+  // The model no longer drives the lifecycle, so the prompt must not teach lifecycle tools.
+  assert.doesNotMatch(SYSTEM_PROMPT, /career-assistant-router|begin_final_response|start_agent_task|finish_agent_task|list_user_resources/);
 });
 
-
-test("diagnosis can recover invalid optional material references without weakening authorization", async () => {
-  const { invalidDiagnosisMaterials } = await import("../src/runtime/agent.js");
-  const error = { code: "AGENT_TASK_CONTEXT_NOT_AUTHORIZED" };
-  assert.equal(invalidDiagnosisMaterials(error, { source_ids: ["node_fictional"] }).status, "invalid_material_references");
-  assert.match(invalidDiagnosisMaterials(error, { job_id: "123" }).next, /source_ids=\[\]/);
-  assert.equal(invalidDiagnosisMaterials(error, { source_ids: [] }), null);
-  assert.equal(invalidDiagnosisMaterials({ code: "TARGET_STALE" }, { job_id: "123" }), null);
+test("only the current intent response version is accepted", async () => {
+  const tasks = [{ id: "diagnose", workflow: "resume_diagnosis", status: "planned" }];
+  const plan = await loadIntentDecision({ recognizeIntent: async () => ({ version: 2, mode: "plan", tasks }) });
+  assert.deepEqual(plan.tasks, tasks);
+  for (const response of [
+    { version: 1, mode: "plan", tasks },
+    { version: 2, mode: "fallback", reason: "INTENT_TIMEOUT" },
+    { version: 2, mode: "plan", tasks: [] },
+    { version: 2, mode: "unknown" },
+  ]) {
+    await assert.rejects(loadIntentDecision({ recognizeIntent: async () => response }), { code: "AGENT_INTENT_RESPONSE_INVALID" });
+  }
+  const fallback = await loadIntentDecision({ recognizeIntent: async () => ({ version: 2, mode: "fallback", routing_rules: "规则" }) });
+  assert.equal(fallback.routing_rules, "规则");
 });
 
-
-test("an experience frozen as a range uses that precise range for entry reads", async () => {
-  const { canonicalReadScope } = await import("../src/runtime/agent.js");
-  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "range" }, "entry"), "range");
-  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "paragraph" }, "entry"), "entry");
-  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "range" }, "section"), "section");
+test("edit plans normalize deletion text without hiding missing replacement text", () => {
+  const prepared = prepareEditPlanArguments({
+    edits: [
+      { quoted_text: "占位", op: "delete_target", summary: "删除占位" },
+      { quoted_text: "旧内容", op: "replace_target_text", summary: "替换内容" },
+    ],
+  });
+  assert.equal(prepared.edits[0].new_text, "");
+  assert.equal("new_text" in prepared.edits[1], false);
 });
 
-
-test("diagnosis parameters expose only authorized materials and canonical scopes", async () => {
-  const { diagnosisParameters } = await import("../src/runtime/agent.js");
-  const shape = diagnosisParameters({ surface: "canonical", target_kind: "range", allowed_scopes: ["target", "range", "section", "resume"] });
-  assert.deepEqual(shape.properties.scope.enum, ["target", "range"]);
-  assert.equal(shape.properties.job_id, undefined);
-  assert.equal(shape.properties.source_ids.maxItems, 0);
-  const sourced = diagnosisParameters(null, ["7"], ["dataset:8:revision"]);
-  assert.deepEqual(sourced.properties.job_id.enum, ["7"]);
-  assert.deepEqual(sourced.properties.source_ids.items.enum, ["dataset:8:revision"]);
+const editTarget = (blockId, content, extra = {}) => ({
+  resume_id: "88", base_lock_version: 1, surface: "editor", section: "section-projects", entry_id: null,
+  field: "markdown", block_id: blockId, selected_text: content,
+  expected_text_hash: `sha256:${blockId.padEnd(64, "a").slice(0, 64)}`, ...extra,
 });
 
+const proposalClient = (overrides = {}) => ({
+  resolveTarget: async () => { throw new Error("must not locate by text"); },
+  scopedContext: async () => { throw new Error("must not read again"); },
+  diagnose: async ({ target }) => ({ diagnosis: { target }, diagnosis_fingerprint: `fingerprint:${target.block_id}` }),
+  scopedProposal: async (payload) => ({ proposal: { id: `proposal-${payload.target.block_id}` } }),
+  ...overrides,
+});
 
-test("native target identifiers are constrained to the current read directory and mutually exclusive", async () => {
-  const { targetParameters } = await import("../src/runtime/agent.js");
-  const first = "node_1111111111111111", last = "node_2222222222222222";
-  assert.equal(targetParameters().properties.node_id, undefined);
-  const tool = { name: "resolve_resume_target", parameters: targetParameters([first, last], [first, last]) };
-  const validate = args => validateToolArguments(tool, { name: tool.name, arguments: args });
-  assert.deepEqual(validate({ node_id: first }), { node_id: first });
-  assert.deepEqual(validate({ start_node_id: first, end_node_id: last }), { start_node_id: first, end_node_id: last });
-  assert.throws(() => validate({ node_id: first, start_node_id: first, end_node_id: last }));
-  assert.throws(() => validate({ node_id: "node_3333333333333333" }));
+test("edit plan cites server-read blocks and creates one proposal per edit in order", async () => {
+  const first = editTarget("node_bullet000000001", "第一条");
+  const second = editTarget("node_bullet000000002", "第二条");
+  const context = { blocks: [first, second].map((target) => ({ target, content: target.selected_text })) };
+  const created = [];
+  const activities = [];
+  const results = await executeResumeEditPlan({
+    client: proposalClient({ scopedProposal: async (payload) => {
+      created.push([payload.mode, payload.operations.map((item) => [item.op, item.new_text])]);
+      return { proposal: { id: `proposal-${payload.target.block_id}` } };
+    } }),
+    resumeId: "88", context, mode: "polish_local", toolCallId: "plan-1", summary: "计划",
+    edits: [
+      { block_id: first.block_id, op: "replace_target_text", new_text: "更精炼的第一条", summary: "精简第一条" },
+      { block_id: second.block_id, op: "delete_target", new_text: "", summary: "删除第二条" },
+    ],
+    onActivity: (activity) => activities.push(activity),
+  });
+  assert.deepEqual(results.map((item) => [item.status, item.proposal_ids]), [
+    ["succeeded", ["proposal-node_bullet000000001"]], ["succeeded", ["proposal-node_bullet000000002"]],
+  ]);
+  assert.deepEqual(created, [["polish_local", [["replace_target_text", "更精炼的第一条"]]], ["polish_local", [["delete_target", ""]]]]);
+  assert.ok(activities.some((item) => item.callKey === "plan-1:edit:2" && item.status === "succeeded"));
+});
+
+test("an edit that cites an unread block fails alone with PATCH_OUT_OF_SCOPE", async () => {
+  const known = editTarget("node_bullet000000001", "第一条");
+  const results = await executeResumeEditPlan({
+    client: proposalClient(), resumeId: "88", mode: "polish_local", toolCallId: "plan-2",
+    context: { blocks: [{ target: known, content: "第一条" }] },
+    edits: [
+      { block_id: "node_unknownblock0001", op: "delete_target", new_text: "", summary: "未读取的块" },
+      { block_id: known.block_id, op: "delete_target", new_text: "", summary: "合法的块" },
+    ],
+  });
+  assert.deepEqual(results.map((item) => [item.status, item.error_code]), [["failed", "PATCH_OUT_OF_SCOPE"], ["succeeded", undefined]]);
+});
+
+test("quoted text edits are located by the runtime, and a missing one fails alone", async () => {
+  const placeholder = editTarget("node_skill00000000001", "占位");
+  const results = await executeResumeEditPlan({
+    client: proposalClient({ resolveTarget: async ({ quoted_text: text }) => (
+      text === "missing" ? { status: "not_found", target: null } : { status: "resolved", target: placeholder }) }),
+    resumeId: "88", mode: "polish_local", toolCallId: "plan-3", context: { blocks: [] },
+    edits: [
+      { quoted_text: "missing", op: "delete_target", new_text: "", summary: "不存在" },
+      { quoted_text: "占位", op: "replace_target_text", new_text: "", summary: "清空占位" },
+    ],
+  });
+  assert.deepEqual(results.map((item) => [item.status, item.error_code]), [["failed", "TARGET_NOT_FOUND"], ["succeeded", undefined]]);
+});
+
+test("match all expands a repeated text inside its parent and keeps proposals created before a failure", async () => {
+  const parent = editTarget("node_entry0000000001", "LinkRag 项目", { entry_id: "node_entry0000000001" });
+  const bullets = ["node_bullet000000001", "node_bullet000000002"].map((id) => editTarget(id, "1", { entry_id: "node_entry0000000001" }));
+  const proposals = [];
+  const results = await executeResumeEditPlan({
+    client: proposalClient({
+      resolveTarget: async () => ({ status: "resolved", target: parent }),
+      scopedContext: async () => ({ blocks: bullets.map((target) => ({ target, content: "1" })) }),
+      scopedProposal: async ({ target }) => {
+        if (target.block_id === bullets[1].block_id) throw codedTestError("TARGET_STALE");
+        return { proposal: { id: "proposal-first" } };
+      },
+    }),
+    resumeId: "88", mode: "polish_local", toolCallId: "plan-4", context: { blocks: [] },
+    edits: [{ quoted_text: "1", parent_quoted_text: "LinkRag 项目", match: "all", op: "delete_target", new_text: "", summary: "删除占位" }],
+    onProposal: (proposal) => proposals.push(proposal.id),
+  });
+  assert.deepEqual(results, [{ edit: 1, status: "partial", error_code: "TARGET_STALE", proposal_ids: ["proposal-first"] }]);
+  assert.deepEqual(proposals, ["proposal-first"]);
+});
+
+test("a global match without a parent is refused", async () => {
+  const results = await executeResumeEditPlan({
+    client: proposalClient(), resumeId: "88", mode: "polish_local", toolCallId: "plan-5", context: { blocks: [] },
+    edits: [{ quoted_text: "1", match: "all", op: "delete_target", new_text: "", summary: "全局匹配" }],
+  });
+  assert.equal(results[0].error_code, "TARGET_PARENT_REQUIRED");
+});
+
+test("each edit mode only accepts its own operations and evidence", async () => {
+  const target = editTarget("node_bullet000000001", "第一条", { entry_id: "node_entry0000000001" });
+  const run = (mode, edit, sourceIds = []) => executeResumeEditPlan({
+    client: proposalClient(), resumeId: "88", mode, toolCallId: "plan-6", sourceIds,
+    context: { blocks: [{ target, content: "第一条" }] },
+    edits: [{ block_id: target.block_id, summary: "修改", ...edit }],
+  });
+  assert.equal((await run("polish_local", { op: "insert_after_target", new_text: "新增" }))[0].error_code, "PATCH_OUT_OF_SCOPE");
+  assert.equal((await run("generate_from_materials", { op: "replace_target_text", new_text: "替换" }, ["dataset:1:content-0"]))[0].error_code, "PATCH_OUT_OF_SCOPE");
+  assert.equal((await run("generate_from_materials", { op: "insert_after_target", new_text: "新增" }))[0].error_code, "SOURCE_REQUIRED");
+  assert.equal((await run("generate_from_materials", { op: "insert_after_target", new_text: "新增" }, ["dataset:1:content-0"]))[0].status, "succeeded");
+  assert.equal((await run("polish_local", { op: "replace_target_text" }))[0].error_code, "TASK_NEW_TEXT_REQUIRED");
+});
+
+test("rewriting an entry is one proposal and refuses edits that reach another entry", async () => {
+  const inEntry = (id) => editTarget(id, "内容", { entry_id: "node_entry0000000001" });
+  const proposals = [];
+  const targets = [inEntry("node_bullet000000001"), inEntry("node_bullet000000002"),
+    editTarget("node_bullet000000003", "别处", { entry_id: "node_entry0000000002" })];
+  const context = { blocks: targets.map((target) => ({ target, content: target.selected_text })) };
+  const run = (ids) => executeResumeEditPlan({
+    client: proposalClient({ scopedProposal: async (payload) => { proposals.push(payload.operations.length); return { proposal: { id: "proposal-entry" } }; } }),
+    resumeId: "88", mode: "rewrite_entry_star", toolCallId: "plan-7", context, summary: "重写经历",
+    edits: ids.map((id) => ({ block_id: id, op: "replace_target_text", new_text: "新内容", summary: "重写" })),
+  });
+  const same = await run(["node_bullet000000001", "node_bullet000000002"]);
+  assert.deepEqual(same.map((item) => [item.status, item.proposal_ids]), [["succeeded", ["proposal-entry"]], ["succeeded", ["proposal-entry"]]]);
+  assert.deepEqual(proposals, [2]);
+  const across = await run(["node_bullet000000001", "node_bullet000000003"]);
+  assert.deepEqual(across.map((item) => item.error_code), ["PATCH_OUT_OF_SCOPE", "PATCH_OUT_OF_SCOPE"]);
+  assert.deepEqual(proposals, [2]);
+});
+
+test("an edit plan stops immediately after cancellation", async () => {
+  const controller = new AbortController();
+  let located = 0;
+  await assert.rejects(executeResumeEditPlan({
+    client: proposalClient({ resolveTarget: async () => {
+      located += 1;
+      controller.abort();
+      throw Object.assign(new Error("aborted"), { name: "AbortError" });
+    } }),
+    resumeId: "88", mode: "polish_local", toolCallId: "plan-8", signal: controller.signal, context: { blocks: [] },
+    edits: [
+      { quoted_text: "first", op: "delete_target", new_text: "", summary: "第一项" },
+      { quoted_text: "second", op: "delete_target", new_text: "", summary: "第二项" },
+    ],
+  }), { name: "AbortError" });
+  assert.equal(located, 1);
+});
+
+test("an edit plan is limited to twenty expanded targets", async () => {
+  const targets = Array.from({ length: 21 }, (_, index) => editTarget(`node_bullet${String(index).padStart(9, "0")}`, "1"));
+  const results = await executeResumeEditPlan({
+    client: proposalClient({
+      resolveTarget: async () => ({ status: "resolved", target: editTarget("node_entry0000000001", "项目") }),
+      scopedContext: async () => ({ blocks: targets.map((target) => ({ target, content: "1" })) }),
+    }),
+    resumeId: "88", mode: "polish_local", toolCallId: "plan-9", context: { blocks: [] },
+    edits: [{ quoted_text: "1", parent_quoted_text: "项目", match: "all", op: "delete_target", new_text: "", summary: "删除" }],
+  });
+  assert.equal(results[0].error_code, "EDIT_PLAN_TARGET_LIMIT");
+});
+
+test("the runtime, not the model, decides each task outcome", () => {
+  const proposal = { output: "proposal" };
+  const advice = { output: "advice" };
+  const ids = (count) => Array.from({ length: count }, (_, index) => `p${index}`);
+  const cases = [
+    [proposal, { proposalIds: ids(3), editFailures: 0 }, "completed"],
+    [proposal, { proposalIds: ids(2), editFailures: 1, editErrorCode: "TARGET_NOT_FOUND" }, "partial"],
+    [proposal, { proposalIds: [] }, "failed"],
+    [proposal, { proposalIds: [], needsInput: true }, "blocked"],
+    [proposal, { proposalIds: ids(1), needsInput: true }, "partial"],
+    [proposal, { proposalIds: ids(1), error: "AGENT_STEP_RESULT_MISSING" }, "partial"],
+    [advice, { proposalIds: [], summary: "诊断结论" }, "completed"],
+    [advice, { proposalIds: [], needsInput: true }, "blocked"],
+    [advice, { proposalIds: [] }, "failed"],
+    [advice, { proposalIds: [], error: "RESUME_IDENTITY_UNRESOLVED" }, "blocked"],
+    [advice, { proposalIds: [], error: "AGENT_TASK_CONTEXT_NOT_AUTHORIZED" }, "failed"],
+  ];
+  for (const [task, facts, expected] of cases) assert.equal(computeTaskOutcome(task, facts).status, expected, JSON.stringify([task, facts]));
+  assert.equal(computeTaskOutcome(proposal, { proposalIds: [], needsInput: true }).errorCode, "USER_INPUT_REQUIRED");
+  assert.equal(computeTaskOutcome(proposal, { proposalIds: [] }).errorCode, "AGENT_TASK_NO_PROPOSAL");
+  assert.match(editPlanSummary([
+    { edit: 1, status: "succeeded", proposal_ids: ["a"] }, { edit: 2, status: "failed", error_code: "TARGET_NOT_FOUND", proposal_ids: [] },
+  ], "计划"), /已生成 1 份待确认提案，1 项未完成（第 2 项 TARGET_NOT_FOUND）/);
+});
+
+test("every workflow's rules are loadable content-only skills", async () => {
+  const { loadSkillRules, REGISTERED_SKILLS } = await import("../src/runtime/skills.js");
+  const toolNames = /\b(?:read|plan_agent_request|start_agent_task|finish_agent_task|begin_final_response|list_user_resources|resolve_resume_reference|resolve_resource_reference|resolve_resume_target|get_resume_context|search_resume_materials|analyze_resume_content|create_resume_change_proposal|execute_local_resume_edit_plan|create_resume_translation_proposal|request_user_input|submit_task_result|submit_resume_edit_plan|submit_translation)\b/;
+  for (const name of REGISTERED_SKILLS) {
+    const rules = await loadSkillRules(name);
+    assert.ok(rules.length > 40, name);
+    assert.doesNotMatch(rules, toolNames, `${name} must hold content rules, not tool instructions`);
+    assert.doesNotMatch(rules, /career-assistant-router|SKILL\.md/);
+  }
+  for (const workflow of Object.values(WORKFLOWS)) for (const skill of workflow.skills) assert.ok(REGISTERED_SKILLS.includes(skill));
+  await assert.rejects(loadSkillRules("career-assistant-router"), /AGENT_SKILL_UNKNOWN/);
 });

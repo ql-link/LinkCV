@@ -467,6 +467,7 @@ class ToolEventRequest(BaseModel):
 
     call_key: str = Field(min_length=1, max_length=128)
     tool_name: Literal[
+        "read_skill",
         "list_user_resources",
         "get_resume_context",
         "create_resume_proposal",
@@ -482,7 +483,17 @@ class ToolEventRequest(BaseModel):
         "plan_agent_request",
         "start_agent_task",
         "finish_agent_task",
+        "runtime_step",
+        "reply_directly",
+        "submit_task_result",
+        "submit_resume_edit_plan",
+        "submit_translation",
     ]
+    skill_name: Literal[
+        "career-assistant-router", "resume-edit-workflow", "resume-edit-local", "resume-edit-entry-star",
+        "resume-generate-from-materials", "resource-catalog", "resume-translation", "interview-guide",
+        "career-planning", "resume-title-generator", "material-lookup", "resume-diagnosis",
+    ] | None = None
     status: Literal["running", "succeeded", "failed", "cancelled"]
     target_type: str | None = Field(default=None, max_length=32)
     target_id: str | None = Field(default=None, max_length=64)
@@ -510,7 +521,7 @@ class AgentTaskSpec(BaseModel):
 
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
     workflow: Literal[
-        "resource_catalog", "resume_edit", "resume_translation",
+        "resource_catalog", "resume_diagnosis", "resume_edit", "resume_translation",
         "interview_guide", "career_planning", "resume_title", "material_lookup",
     ]
     output: Literal["proposal", "advice", "catalog"]
@@ -518,10 +529,19 @@ class AgentTaskSpec(BaseModel):
     depends_on: list[str] = Field(default_factory=list, max_length=8)
     context_refs: list[AgentTaskContextRef] = Field(default_factory=list, max_length=10)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_diagnosis(cls, value: Any) -> Any:
+        # A read-only resume review is its own workflow; accept the earlier spelling.
+        if isinstance(value, dict) and value.get("workflow") == "resume_edit" and value.get("output") == "advice":
+            return {**value, "workflow": "resume_diagnosis"}
+        return value
+
     @model_validator(mode="after")
     def validate_output(self) -> "AgentTaskSpec":
         expected = {
             "resource_catalog": "catalog",
+            "resume_diagnosis": "advice",
             "resume_translation": "proposal",
             "interview_guide": "advice",
             "career_planning": "advice",
@@ -530,8 +550,8 @@ class AgentTaskSpec(BaseModel):
         }
         if self.workflow in expected and self.output != expected[self.workflow]:
             raise ValueError("task output does not match workflow")
-        if self.workflow == "resume_edit" and self.output not in {"proposal", "advice"}:
-            raise ValueError("resume edit output must be proposal or advice")
+        if self.workflow == "resume_edit" and self.output != "proposal":
+            raise ValueError("resume edit output must be proposal")
         return self
 
 
@@ -539,6 +559,8 @@ class AgentTaskPlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tasks: list[AgentTaskSpec] = Field(min_length=1, max_length=8)
+    # The user explicitly wants a resume other than the editor background.
+    resume_switch: bool = False
 
     @model_validator(mode="after")
     def validate_dependencies(self) -> "AgentTaskPlanRequest":
