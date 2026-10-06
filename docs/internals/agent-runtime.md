@@ -15,6 +15,8 @@ Web 不再将用户消息中的 `tasks` 渲染为消息下方的摘要列表；�
 
 两个 Web 助手入口按当前运行状态互斥显示停止或发送按钮，不挂载本机消息队列或排队状态栏；取消运行接口保持不变。具体操作见[消息排队与插入](../features/ai-assistant.md#消息排队与插入)。
 
+独立助手在发送层统一简历标签与正文 `@` 的文字指向，继续通过同一消息接口提交结构化引用；标签呈现和输入草稿不承担权限判断。具体行为见[助手核心规则](../features/ai-assistant.md#核心规则)。
+
 新 scoped 提案保存有界 preview 与操作，不再保存整篇 data/style；旧快照与翻译仍保留完整内容。新上下文目录不列出 resume_version，显式请求或澄清继承这种退休引用时返回 409 AGENT_CONTEXT_RETIRED，不能悄悄替换为当前简历；历史消息中的展示快照继续可读。
 
 Agent 系统由 FastAPI `agent` 模块、独立 `apps/pi-service` 和 FastAPI `llm` 模块组成：`agent` 管理持久化会话、会话展示状态与提案，Pi 执行 agent loop，`llm` 管理模型选择、凭据、验证与计量。普通用户功能见 [AI 求职助手](../features/ai-assistant.md)，第三方 Pi 包边界见 [third_party/pi](third-party-pi.md)。

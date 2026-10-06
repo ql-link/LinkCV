@@ -1451,6 +1451,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       return;
     }
     const explicitResume = state.contexts.find((item) => item.type === "resume");
+    // 标签引用与正文中的 @ 引用使用相同的文字指向，结构化引用仍负责授权。
+    const resumeMention = explicitResume?.presentation !== "implicit" && explicitResume?.label.trim()
+      ? `@${explicitResume.label}` : null;
+    const sentContent = resumeMention && !trimmed.includes(resumeMention)
+      ? `${resumeMention} ${trimmed}` : trimmed;
     const revisionResume = state.proposals.find((item) => item.id === state.revisionProposalId)?.resume_id;
     // V3 不再在助手里嵌入简历编辑器，所以没有「当前打开的简历」这一隐式上下文，也没有编辑器选区
     const runResumeContextId = revisionResume ?? explicitResume?.id ?? null;
@@ -1502,7 +1507,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     const existingState = conversationStates[requestKey] ?? state;
     let reusedTemporaryPrompt = false;
     const existingMessages = existingState.messages.filter((message) => {
-      const matchesTemporaryPrompt = message.role === "user" && message.temporary && message.content.trim() === trimmed;
+      const matchesTemporaryPrompt = message.role === "user" && message.temporary && message.content.trim() === sentContent;
       if (!matchesTemporaryPrompt) return true;
       if (reusedTemporaryPrompt) return false;
       reusedTemporaryPrompt = true;
@@ -1525,7 +1530,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
         : [...existingMessages, {
           sequence_no: -2,
           role: "user",
-          content: trimmed,
+          content: sentContent,
           contexts: sentContexts,
           created_at: new Date().toISOString(),
           temporary: true,
@@ -1536,7 +1541,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       await api.streamAgentMessage(
         session.id,
         {
-          content: isDocumentRequest(trimmed) ? `${trimmed}\n\n请输出完整 Markdown 文档，以一级标题开头；如果资料不足，请先询问，不要编造经历或数据。` : trimmed,
+          content: isDocumentRequest(trimmed) ? `${sentContent}\n\n请输出完整 Markdown 文档，以一级标题开头；如果资料不足，请先询问，不要编造经历或数据。` : sentContent,
           idempotency_key: idempotencyKey(),
           ...(state.revisionProposalId ? { revision_proposal_id: state.revisionProposalId } : {}),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
