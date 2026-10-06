@@ -116,3 +116,20 @@ test("scoped tools call run-bound LinkResume endpoints", async (context) => {
   assert.ok(calls.every((call) => call.options.method === "POST"));
   assert.deepEqual(JSON.parse(calls[2].options.body), { resume_id: "1", quoted_text: "目标" });
 });
+
+test("canonical range parameters and trusted source survive transport", async (context) => {
+  const originalFetch = globalThis.fetch;
+  context.after(() => { globalThis.fetch = originalFetch; });
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return new Response(JSON.stringify({ status: "resolved" }), { status: 200 });
+  };
+  const client = createLinkResumeClient({ linkresumeBaseUrl: "http://fictional", linkresumeToken: "fictional", toolTimeoutMs: 1000 }, "run", new AbortController().signal, 3);
+  const range = { resume_id: "1", start_node_id: "node_start0000000001", end_node_id: "node_end000000000001" };
+  await client.resolveTarget(range);
+  await client.scopedContext({ target: { format: "canonical-target.v1", node_ids: [range.start_node_id, range.end_node_id] }, scope: "range" });
+  assert.deepEqual(JSON.parse(calls[0].options.body), range);
+  assert.equal(JSON.parse(calls[1].options.body).scope, "range");
+  assert.equal(calls[0].options.headers["X-Agent-User-Sequence"], "3");
+});

@@ -102,7 +102,7 @@ function resolvedTarget(result) {
 async function resolveEditTargets(client, resumeId, edit, blockTargets) {
   if (edit.block_id) {
     const block = blockTargets.get(edit.block_id);
-    if (!block?.target?.expected_text_hash) throw codedError("PATCH_OUT_OF_SCOPE");
+    if (!block?.target?.expected_text_hash || block.editable === false) throw codedError("PATCH_OUT_OF_SCOPE");
     // The model only saw the head of a long block; replacing it whole would drop the rest.
     if (edit.op === "replace_target_text" && block.text.length > BLOCK_TEXT_LIMIT) {
       throw codedError("TARGET_TOO_LONG_FOR_BLOCK_EDIT");
@@ -114,7 +114,8 @@ async function resolveEditTargets(client, resumeId, edit, blockTargets) {
     const parent = resolvedTarget(await client.resolveTarget({
       resume_id: resumeId, quoted_text: edit.parent_quoted_text, scope_hint: "target",
     }));
-    const parentContext = await client.scopedContext({ target: parent, scope: edit.parent_scope ?? "entry" });
+    const fallbackScope = parent.allowed_scopes && !parent.allowed_scopes.includes("entry") ? "section" : "entry";
+    const parentContext = await client.scopedContext({ target: parent, scope: edit.parent_scope ?? fallbackScope });
     const matches = (parentContext.blocks ?? []).filter(
       (item) => item?.content?.trim() === edit.quoted_text.trim() && item?.target,
     );
@@ -154,7 +155,9 @@ export async function executeResumeEditPlan({
   const plan = immutableCopy(edits);
   const blockTargets = new Map((context?.blocks ?? [])
     .filter((item) => item?.target?.block_id)
-    .map((item) => [item.target.block_id, { target: item.target, text: item.content ?? "" }]));
+    .map((item) => [item.target.block_id, { target: item.target, text: item.content ?? "", editable: item.editable !== false }]));
+  const orderedIds = (context?.blocks ?? []).filter((item) => item?.target?.block_id && item.target.field !== "title")
+    .map((item) => item.target.block_id);
   const results = plan.map((_, index) => ({ edit: index + 1, status: "failed", proposal_ids: [] }));
   const resolved = [];
   let expanded = 0;
@@ -177,10 +180,11 @@ export async function executeResumeEditPlan({
     }
   }
 
-  const create = async (items, targetsAndOps, proposalSummary, rationale) => {
-    const main = targetsAndOps[0].target;
+  const create = async (items, targetsAndOps, proposalSummary, rationale, rangeMain = null) => {
+    const main = rangeMain ?? targetsAndOps[0].target;
+    const mainScope = rangeMain ? "range" : "target";
     const operations = targetsAndOps.map(({ edit, target }) => operationFor(edit, target));
-    const diagnosis = await client.diagnose({ target: main, scope: "target", source_ids: sourceIds });
+    const diagnosis = await client.diagnose({ target: main, scope: mainScope, source_ids: sourceIds });
     const proposal = await retryIdempotentProposal(client.scopedProposal, {
       call_key: proposalCallKey(mode, main, operations, sourceIds),
       mode,
@@ -213,9 +217,22 @@ export async function executeResumeEditPlan({
     const pairs = resolved.flatMap((item) => item.targets.map((target) => ({ edit: item.edit, target })));
     if (pairs.length) {
       const entries = new Set(pairs.map(({ target }) => target.entry_id));
+      const rationale = resolved.flatMap((item) => item.edit.rationale ?? []);
       try {
-        if (entries.size !== 1 || !pairs[0].target.entry_id) throw codedError("PATCH_OUT_OF_SCOPE");
-        await create(resolved, pairs, summary, resolved.flatMap((item) => item.edit.rationale ?? []));
+        if (entries.size === 1 && pairs[0].target.entry_id) {
+          await create(resolved, pairs, summary, rationale);
+        } else {
+          // A section without entry groups is legal: the edited nodes are frozen as one range.
+          const sections = new Set(pairs.map(({ target }) => target.section));
+          const positions = pairs.map(({ target }) => orderedIds.indexOf(target.block_id));
+          if (entries.size !== 1 || sections.size !== 1 || positions.includes(-1)) throw codedError("PATCH_OUT_OF_SCOPE");
+          const range = resolvedTarget(await client.resolveTarget({
+            resume_id: resumeId,
+            start_node_id: orderedIds[Math.min(...positions)],
+            end_node_id: orderedIds[Math.max(...positions)],
+          }));
+          await create(resolved, pairs, summary, rationale, range);
+        }
       } catch (error) {
         fail(resolved, error);
       }

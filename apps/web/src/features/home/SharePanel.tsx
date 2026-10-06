@@ -2,6 +2,7 @@ import { t, useLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ResumeShareState, type ResumeShareUpdatePayload } from "../../api/client";
+import { copyText } from "../../utils/clipboard";
 import { Icon } from "../../v3/Icon";
 import { ConfirmDialog, Dialog, Segmented, Toggle } from "../../v3/primitives";
 import { ShareArt } from "./homeArt";
@@ -191,8 +192,10 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
 
   const copyLink = async () => {
     if (!share) return;
+    setError(null);
+    setCopied(false);
     try {
-      await navigator.clipboard.writeText(shareUrl(share.share_token));
+      await copyText(shareUrl(share.share_token));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {

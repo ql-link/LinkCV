@@ -50,3 +50,18 @@ it("账号切换清空对话，并丢弃旧账号迟到的列表", async () => {
   await pending;
   expect(useSessionStore.getState().sessions).toEqual([current]);
 });
+
+it("切换账号重置分组收起状态，旧账号迟到的 Pin 响应不会插入新账号列表", async () => {
+  resetSessionStores();
+  const old = { id: "old-pin-session", title: "旧账号测试", pinned: true } as AgentSession;
+  let finish!: (value: Awaited<ReturnType<typeof api.updateAgentSession>>) => void;
+  vi.spyOn(api, "updateAgentSession").mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  useSessionStore.getState().toggleGroup("pin");
+  useSessionStore.getState().toggleGroup("recent");
+  const pending = useSessionStore.getState().setPinned(old.id, true);
+  resetSessionStores();
+  finish({ session: old });
+  await pending;
+  expect(useSessionStore.getState().sessions).toEqual([]);
+  expect(useSessionStore.getState().collapsedGroups).toEqual({ pin: false, recent: false });
+});

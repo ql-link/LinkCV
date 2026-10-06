@@ -1861,7 +1861,7 @@ def test_scoped_edit_requires_resolved_target_and_diagnosis_before_confirmation(
         )
         assert context.status_code == 200
         assert [item["target"]["block_id"] for item in context.json()["blocks"]] == [
-            "node_entry00000000001",
+            "node_entryrole000000001",
             "node_bullet0000000001",
             "node_bullet0000000002",
         ]
@@ -2160,7 +2160,7 @@ def test_named_resume_local_field_can_be_resolved_and_deleted_without_session_bi
         assert wrong_scope.status_code == 422
         assert wrong_scope.json() == {"error": "SCOPE_FORBIDDEN"}
         logged = [event for event in emitter.system_events if event.get("message") == "agent scoped context read"][-1]
-        assert logged["scope"] == "target" and logged["target_surface"] == "semantic"
+        assert logged["scope"] == "target" and logged["target_surface"] == "canonical"
         assert logged["result"] == "failed" and logged["error_code"] == "SCOPE_FORBIDDEN"
         assert "selected_text" not in logged and "expected_text_hash" not in logged
         assert "示例后端简历" not in str(logged)
@@ -3974,9 +3974,18 @@ def test_selected_conversation_model_and_pi_call_use_frozen_route_price() -> Non
         recorded = client.post(
             f"/internal/agent/runs/{run_id}/llm-calls",
             headers=internal_headers(),
-            json={"callId": "llmcall_" + "a" * 32, "status": "succeeded", "inputTokens": 100, "outputTokens": 20},
+            json={"callId": "llmcall_" + "a" * 32, "status": "succeeded", "inputTokens": 100, "outputTokens": 20,
+                  "requestStartedAt": "2026-10-06T00:00:00Z", "requestFinishedAt": "2026-10-06T00:00:01Z",
+                  "usage": {"usagePresent": True, "usageSource": "pi", "cacheRead": 0, "cacheWrite": 0}},
         )
         assert recorded.status_code == 200, recorded.text
+        original_payload = {"callId": "llmcall_" + "a" * 32, "status": "succeeded", "inputTokens": 100, "outputTokens": 20,
+            "requestStartedAt": "2026-10-06T00:00:00Z", "requestFinishedAt": "2026-10-06T00:00:01Z",
+            "usage": {"usagePresent": True, "usageSource": "pi", "cacheRead": 0, "cacheWrite": 0}}
+        path = f"/internal/agent/runs/{run_id}/llm-calls"
+        assert client.post(path, headers=internal_headers(), json=original_payload).status_code == 200
+        for changes in ({"inputTokens": 200}, {"requestStartedAt": "2026-10-06T00:00:00.5Z"}):
+            assert client.post(path, headers=internal_headers(), json={**original_payload, **changes}).status_code == 409
         with app.state.session_factory() as db:
             log = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == "llmcall_" + "a" * 32))
             assert log.price_snapshot_json["input_per_million"] == "1"
@@ -4078,7 +4087,7 @@ def test_agent_session_delete_removes_stage_events_and_keeps_detached_call_logs(
             assert run is not None
             run.status = "succeeded"
             operation = AgentOperation(
-                public_id=str(uuid4()), session_id=run.session_id, state="completed"
+                public_id=str(uuid4()), session_id=run.session_id, state="run_created"
             )
             db.add(operation)
             db.flush()
@@ -4343,3 +4352,72 @@ def test_skill_tool_audit_records_safe_name_and_rejects_arbitrary_path():
         payload["skill_name"] = "/private/fictional-secret.md"
         assert client.post(path,headers=internal_headers(),json=payload).status_code == 422
         assert "fictional-secret" not in str(emitter.system_events)
+
+
+def test_flat_canonical_range_is_task_bound_and_proposal_confirmation_is_native() -> None:
+    from linkresume.modules.agent.canonical_targets import plain_run
+    app = build_app()
+    with TestClient(app) as client:
+        register(client, 'canonical-range@example.test')
+        resume = create_resume(client, app)
+        payload = deepcopy(resume['data'])
+        ids = [f'node_{uuid4().hex}' for _ in range(6)]
+        payload['sections'] = [{
+            'node_id': f'node_{uuid4().hex}', 'source_refs': [], 'semantic_kind': 'work',
+            'title': {'node_id': f'node_{uuid4().hex}', 'source_refs': [], 'value': '实习经历'},
+            'entries': [], 'blocks': [
+                {'node_id': n, 'source_refs': [], 'block_type': 'paragraph', 'runs': [plain_run(v)]}
+                for n, v in zip(ids, ['虚构实习一', '第一段项目说明', '第一段职责', '虚构实习二', '第二段项目说明', '第二段职责'])
+            ],
+        }]
+        payload['source_dispositions'] = []
+        saved = client.put(f"/api/resumes/{resume['id']}", json={'data': payload, 'style': resume['style'],
+                           'base_lock_version': resume['lock_version']})
+        assert saved.status_code == 200
+        resume = saved.json()['resume']
+        sid = client.post('/api/agent/sessions', json={}).json()['session']['id']
+        rid = create_active_run(app, sid, message_content='分析并改写第一段实习')
+        authorize_run_resume(app, rid, resume)
+        base = f'/internal/agent/runs/{rid}'
+        tasks = [{'id': 'edit', 'workflow': 'resume_edit', 'output': 'proposal', 'label': '改写第一段',
+                  'context_refs': [{'type': 'resume', 'id': resume['id']}]},
+                 {'id': 'next', 'workflow': 'material_lookup', 'output': 'advice', 'label': '另一任务',
+                  'depends_on': ['edit'], 'context_refs': [{'type': 'resume', 'id': resume['id']}]}]
+        assert client.post(f'{base}/tasks:plan', headers=internal_headers(), json={'tasks': tasks}).status_code == 200
+        assert client.post(f'{base}/tasks/edit:status', headers=internal_headers(), json={'status': 'running'}).status_code == 200
+        resolved = client.post(f'{base}/targets:resolve', headers=internal_headers(), json={
+            'resume_id': resume['id'], 'start_node_id': ids[0], 'end_node_id': ids[2]})
+        assert resolved.status_code == 200
+        target = resolved.json()['target']
+        assert target['surface'] == 'canonical'
+        read = client.post(f'{base}/context:read', headers=internal_headers(), json={'target': target, 'scope': 'range'})
+        assert read.status_code == 200
+        assert '第一段职责' in read.json()['content'] and '虚构实习二' not in read.json()['content']
+        assert read.json()['truncated'] is False
+        forged = deepcopy(target); forged['node_ids'].append(ids[3])
+        forbidden = client.post(f'{base}/context:read', headers=internal_headers(), json={'target': forged, 'scope': 'range'})
+        assert forbidden.status_code == 422
+        assert forbidden.json()['error'] == 'PATCH_OUT_OF_SCOPE'
+        child = read.json()['blocks'][1]['target']
+        diagnosis = client.post(f'{base}/diagnoses', headers=internal_headers(), json={'target': target, 'scope': 'range'})
+        assert diagnosis.status_code == 200
+        proposal = client.post(f'{base}/proposals:v2', headers=internal_headers(), json={
+            'call_key': 'native-range-proposal', 'mode': 'rewrite_entry_star', 'target': target,
+            'diagnosis': diagnosis.json()['diagnosis'], 'diagnosis_fingerprint': diagnosis.json()['diagnosis_fingerprint'],
+            'operations': [{'op': 'replace_target_text', 'target': child, 'expected_text_hash': child['expected_text_hash'],
+                            'new_text': '第一段项目说明的改写'}], 'summary': '改写第一段项目说明'})
+        assert proposal.status_code == 201
+        pid = proposal.json()['proposal']['id']
+        before = client.get(f"/api/resumes/{resume['id']}").json()['resume']
+        assert before['data'] == resume['data']
+        assert client.post(f'{base}/tasks/edit:status', headers=internal_headers(), json={
+            'status': 'completed', 'proposal_ids': [pid], 'result': '已生成提案'}).status_code == 200
+        assert client.post(f'{base}/tasks/next:status', headers=internal_headers(), json={'status': 'running'}).status_code == 200
+        other_task = client.post(f'{base}/context:read', headers=internal_headers(), json={'target': target, 'scope': 'range'})
+        assert other_task.status_code == 422
+        applied = client.post(f'/api/agent/proposals/{pid}/confirm')
+        assert applied.status_code == 200
+        after = applied.json()['resume']
+        assert after['data']['sections'][0]['entries'] == []
+        assert after['data']['sections'][0]['blocks'][3:] == resume['data']['sections'][0]['blocks'][3:]
+        assert after['data']['sections'][0]['blocks'][1]['runs'][0]['text'] == '第一段项目说明的改写'

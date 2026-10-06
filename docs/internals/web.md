@@ -9,6 +9,7 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 ## 职责与入口
 
 - `apps/web/src/main.tsx`：React 启动入口。
+- `apps/web/src/features/landing/`：公共落地页及独立产品演示入口。
 - `apps/web/src/App.tsx`：页面状态与主要功能组合。
 - `apps/web/src/features/`：鉴权、首页、编辑器、预览、求职、资料库和管理端功能。
 - `apps/web/src/v3/`：V3 共享侧栏、图标、控件、插图与样式；西文界面和数字使用 Poppins，长篇阅读正文使用 Lora；中文正文沿用思源黑体，V3 中文页面标题使用 Noto Serif SC。
@@ -24,6 +25,20 @@ Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中�
 
 搜索引擎只收录生产主域名 `https://linkresume.cn/` 的公共落地页，兼容入口 `/home` 使用同一个 canonical。`index.html` 提供标题、简介、Open Graph、Twitter Card 和 `Organization`/`WebSite` JSON-LD，组织 Logo 复用公开的 256×256 `favicon.png`；根目录 `robots.txt` 声明 `sitemap.xml`，站点地图只列 canonical 首页。React 路由切换会同步页面标题和 robots meta，FastAPI 的 SPA 静态回退还会为除 `/`、`/home` 和 `/index.html` 外的 HTML 深链返回 `X-Robots-Tag: noindex, nofollow, noarchive`。因此登录、管理、用户工作区、未知地址和带 token 的简历分享页都不会作为公开搜索结果入口；`/api/` 另由 `robots.txt` 禁止抓取。
 
+## 公共落地页与产品演示
+
+`/` 与 `/home` 复用 `LandingPage`，由 `FullLanding` 按 Figma 落地页设计稿组织品牌 Hero（标语、主次按钮与互动演示）、五个左右交替的功能场景、六张细节卡、常见问题（左栏底部放用户交流群的 QQ 二维码，静态 SVG 中心叠加品牌图标，使用 H 级纠错保证可扫）、结尾 CTA 和页尾。功能场景与细节卡是以代码绘制的静态产品画面（示例数据），分别按 800×640 与 370×288 的设计尺寸绘制，容器变窄时由 `FitStage` 整体等比缩小；1024px 以下场景改为上下排列，细节卡改为两列、窄屏一列。五个功能场景按 Figma 动效备注实现：进入视口 40% 时播放一次约 5–6s 的演示（逐字输出、上浮、打勾、仪表生长、分数滚动和假鼠标指针点击或拖拽），完全离开视口后回到开场帧，静态稿即结束帧。动态背景只在 Hero 范围内，由 WebGL 着色器实时生成，延伸到产品演示上部后淡出：两次域扭曲形成缓慢翻卷的蓝、淡紫、浅青光场，叠加随光场弯曲流动的丝绸光带和细颗粒；下方各区块使用设计稿的静态渐变。区块标题、细节卡和常见问题滚动入场，常见问题展开带高度过渡。系统要求减少动态效果、浏览器不支持 `IntersectionObserver` 或设备并发数不超过 2 时，全部直接显示结束帧。落地页样式限制在 `.marketing-landing` 内，页面滚动规则只在该页面挂载时生效。
+
+导航右上角的语言按钮在中文和英文之间切换，复用全局 `@/i18n` 的 `setLocale`，与登录页和工作区共用同一个浏览器本地语言设置；落地页文案由 `landingCopy.ts` 以中文原文为键提供英文，产品画面里的示例数据也一并翻译。Hero 演示按当前语言切换对应的截图（截图中的示例数据保持中文）。键盘用户的“跳到主要内容”链接平时隐藏，只在获得焦点时出现。
+
+Hero 演示是只读展示：`HeroDemo` 显示真实产品界面在 1440×900 视口下的静态截图（WebP，中英文各一套，位于 `features/landing/demo-shots/<locale>/`），任何宽度下都整体等比缩小，平板和手机上也保持桌面界面的比例与布局；舞台宽度跟随容器，高度按比例算出。只有侧栏可点击：七个页面、“新建对话”（回到首页）和四条对话记录；内容区不响应点击，也没有用户页面。侧栏由“全部未选中 / 全部已选中”两张截图叠加，选中项用 `clip-path` 裁剪区域滑动，与产品的选中滑块一致；页面图片首屏只加载当前一张，悬停或聚焦侧栏项时预取。落地页没有 iframe，触摸与滚轮均为页面原生滚动。访问落地页时，登录态检查期间就并行下载落地页模块，占位不渲染可见中文。落地页的中文界面字体使用按字符分片的 `@fontsource-variable/noto-sans-sc` 与 `@fontsource/noto-serif-sc`（与思源同一设计），不触发全站 Token 中 13.8–24MB 的整包思源字体。
+
+截图由 `apps/web/scripts/capture-landing-demo.mjs` 生成：先启动 Web 开发服务，在仓库根目录运行 `node apps/web/scripts/capture-landing-demo.mjs --url <开发服务地址>`（Chrome 路径用 `--chrome` 或 `CHROME_PATH` 指定）。脚本把时间固定在 2026-10-06（周二）09:30 东八区，打开仅开发服务提供的 `landing-demo.html`（不进入生产构建），用真实 V3 页面组件和虚构数据逐页截图，并记录侧栏各行位置到 `layout.json`。该入口第一条导入 `demo/bootstrap.ts`，将本地和会话存储替换为内存存储（测试守护导入顺序）；`DemoRuntime` 只允许在带 `data-landing-demo="true"` 的文档内安装，以统一的虚构人物“张三”（三份产品经理简历、八个求职岗位、本周六场面试、三个资料文件夹与四段历史对话）响应接口，未实现的 `/api/*` 请求直接返回 501。示例数据或产品界面变化后需重新运行脚本更新截图。
+
+开发期截图工作区内的 `navigateTo` 由局部导航事件接管；生产落地页点击侧栏和历史会话只切换截图，不修改页面 URL。开发演示入口声明 `noindex, nofollow`。导航和页面中的“免费开始”与功能介绍链接统一使用同源 `/resumes`：Local/Development 留在当前开发站点，Production 留在生产站点，由当前环境处理登录。已登录访问 `/` 以替换历史方式进入 `/resumes`；访客访问 `/` 和任何登录状态访问 `/home` 均展示落地页。
+
+Hero 页面层由 `HeroBackdrop` 的 WebGL 着色器实时生成蓝白材质，不加载背景图片或视频。三层独立半透明薄片使用不同的轮廓、遮挡、纤维方向与虚实程度建立层次；各层轻微漂移，局部纹理清晰度和柔和光照按独立相位缓慢变化，没有全屏连续波纹或镜面高光。纤维采样频率按实际投影像素调整，窄屏保留文字区域的亮部；前景文字与产品演示保持原生组件。动画上限为 30 FPS，设备像素比最多 1.5，绘制缓冲区上限 1920 × 1440；离开视口或标签页隐藏时暂停，恢复时从原相位继续。`prefers-reduced-motion` 启用时生成固定相位的单帧材质，尺寸变化只重绘该相位，不调度动画；WebGL 不可用或 context 丢失时回退到纯 CSS 蓝白底色。卸载释放 GPU 资源与观察器。背景仅位于 Hero，并逐渐淡出到下方中性页面，不增加演示框外围边距。
+
 ## 响应式布局
 
 V3 工作区在视口宽度小于 1024px 时使用顶部导航按钮和模态抽屉；抽屉不显示关闭叉号，顶部品牌留白与桌面侧栏一致。选择页面或对话、点击抽屉外区域或按 Escape 后收起并返回触发按钮，背景在打开期间不可交互。桌面侧栏的中间内容独立滚动，账号入口保留在底部，低高度窗口也可访问。
@@ -36,13 +51,19 @@ V3 工作区在视口宽度小于 1024px 时使用顶部导航按钮和模态抽
 
 编辑器的 ResizeObserver 测量纸张滚动区宽度和左右内边距，独立编辑器单页以 560px 显示宽度为上限，内嵌编辑器以一张 A4 的原始宽度为上限，双页按两张 A4 与页间空隙适配；窗口或面板改变可用空间时重新计算。手动预览缩放在适配基准上生效，纸面数据、打印尺寸与持久化格式不由屏幕尺寸决定。
 
+## 浏览器能力兼容
+
+远程 HTTP Dev 页面不具备安全上下文，不能假设 `navigator.clipboard` 或 `crypto.subtle` 存在。分享弹窗、公开分享页、Agent 消息与代码、生成文档预览和后台 ID 复制统一调用 `utils/clipboard.ts` 的 `copyText`：优先使用原生 Clipboard API，缺失或被拒绝时通过临时文本选区执行 `document.execCommand("copy")`，完成后清理临时节点并恢复焦点与选区。两种方式均失败时返回错误，由页面显示失败提示，不显示复制成功。
+
+编辑器 AI 选区摘要统一调用 `utils/sha256.ts` 的 `sha256Text`：优先使用 Web Crypto，缺失或失败时按需加载 `@noble/hashes`；两条路径都按 UTF-8 字节计算 SHA-256，保留 `sha256:<小写十六进制>` 契约。UUID 继续使用入口已有的兼容处理。
+
 ## API 调用
 
 API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。模拟面试语音通道 `/api/mock-interviews/{id}/speech` 在 Vite 中单独启用 WebSocket 代理并保留浏览器的 `Host`，使后端的 `Origin` 同源校验成立；代理读写等待上限为 600 秒。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；模拟面试的 SSE 回合流与录音下载不走 JSON 请求封装，通过 `client.ts` 导出的 `apiRequest`、`refreshApiSession`、`createApiRequestId` 复用同一套会话刷新与请求标识，401 时在流开始前刷新并重试一次；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。
 
 React 根入口用 Error Boundary 和 `error` / `unhandledrejection` 监听器捕获登录态页面的未处理异常，通过 FastAPI 受保护入口进入统一日志链路；上报失败被吞掉，不能形成递归上报或替代原始页面错误。上报内容限制为错误类型、消息、栈和可选 request ID，不发送 Store、表单、简历正文或浏览器 Cookie。
 
-普通登录页 `/login` 先读取 `/api/auth/capabilities`。Local/Development 根据路由模式展示邮箱密码登录或注册表单，两者可以互相切换，也可以切换到 `WechatQrLogin`；Production 对登录与注册链接都不渲染邮箱密码表单，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。Landing 的“登录”进入登录模式，“开始使用”进入注册模式。个人资料页展示改密与微信绑定的“需后端”本地模拟交互，不发送真实账号变更；管理员密码表单仍只保留在 `/admin/login`。
+普通登录页 `/login` 先读取 `/api/auth/capabilities`。Local/Development 根据路由模式展示邮箱密码登录或注册表单，两者可以互相切换，也可以切换到 `WechatQrLogin`；Production 对登录与注册链接都不渲染邮箱密码表单，直接请求二维码并每 2 秒轮询 scene。`success` 时后端设置双 Cookie 并进入工作区，`cancelled/expired` 或生成失败时停止轮询并提供刷新。公共落地页的“免费开始”进入同源 `/resumes`，鉴权由当前环境处理。个人资料页展示改密与微信绑定的“需后端”本地模拟交互，不发送真实账号变更；管理员密码表单仍只保留在 `/admin/login`。
 
 新增或迁移接口时同时检查：
 

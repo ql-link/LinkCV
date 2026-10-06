@@ -284,13 +284,16 @@ export async function executeAgentRun({
     const context = await client.scopedContext({ target: located.target, scope: "resume" });
     current.target = located.target;
     current.context = context;
+    const blocks = (context.blocks ?? []).filter((item) => item?.target?.block_id && item.editable !== false)
+      .map((item) => ({ id: item.target.block_id, text: item.content ?? "" }));
     return {
       id: context.resume_id,
       title: context.title,
-      content: context.content,
+      // The whole-resume read is the canonical document; the readable text is its node bodies.
+      content: blocks.map((block) => block.text).filter(Boolean).join("\n\n"),
+      truncated: context.truncated === true,
       data: context.data,
-      blocks: (context.blocks ?? []).filter((item) => item?.target?.block_id)
-        .map((item) => ({ id: item.target.block_id, text: item.content ?? "" })),
+      blocks,
     };
   };
 
@@ -384,7 +387,8 @@ export async function executeAgentRun({
         // Read-only workflows cannot ask for a separate read, so the body comes back with the identity.
         if (current.inlineResume) {
           const resume = await readResume();
-          value = { status: "resolved", resume: { id: resume.id, title: resume.title, content: resume.content } };
+          value = { status: "resolved", resume: { id: resume.id, title: resume.title, content: resume.content,
+            ...(resume.truncated ? { truncated: true } : {}) } };
         }
       }
       return {
@@ -773,6 +777,7 @@ export async function executeAgentRun({
 
     if (name === "resume_translation") {
       const resume = await reportedAction("read", `${task.label}：读取简历`, readResume);
+      if (resume.truncated || !resume.data) throw codedError("RESUME_TOO_LARGE_TO_TRANSLATE");
       await modelStep({
         name: "translate",
         label: "翻译简历",

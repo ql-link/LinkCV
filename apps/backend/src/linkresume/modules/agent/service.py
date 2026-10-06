@@ -61,9 +61,6 @@ from linkresume.modules.agent.schemas import (
     TranslationProposalCreateRequest,
 )
 from linkresume.modules.agent.resume_tools import (
-    apply_operations,
-    editor_markdown,
-    replace_editor_markdown,
     resolve_target,
     target_content,
     validate_source_ids,
@@ -917,6 +914,7 @@ def create_scoped_proposal(
     ttl_days: int,
     fingerprint_secret: str,
 ) -> ResumeChangeProposal:
+    require_canonical_range(db, run, payload.target)
     resume = _owned_resume_for_target(
         db,
         user_id=session.user_id,
@@ -955,18 +953,16 @@ def create_scoped_proposal(
         raise ApiError(422, "SOURCE_REQUIRED")
     snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     target_content(resume, snapshot.data, payload.target, "target")
-    markdown = editor_markdown(snapshot.data)
-    if markdown is None:
-        raise ApiError(422, "TARGET_INVALID")
-    updated_markdown = apply_operations(
-        markdown,
+    from linkresume.modules.agent.canonical_targets import apply_operations as apply_canonical_operations
+    updated_data = apply_canonical_operations(
+        snapshot.data, resume=resume,
         mode=payload.mode,
         main_target=payload.target,
         operations=payload.operations,
     )
     try:
         parse_persisted_resume_snapshot(
-            replace_editor_markdown(snapshot.data, updated_markdown), snapshot.style
+            updated_data, snapshot.style
         )
     except ValueError as error:
         raise ApiError(422, "PATCH_OUT_OF_SCOPE") from error
@@ -1027,7 +1023,7 @@ def create_translation_proposal(
     if (
         payload.target.resume_id != str(resume.id)
         or payload.target.base_lock_version != resume.lock_version
-        or payload.target.surface != "semantic"
+        or payload.target.surface not in {"semantic", "canonical"}
         or payload.target.section != "resume"
         or payload.target.field != "data"
     ):
@@ -1243,17 +1239,15 @@ def confirm_proposal(
                     ProposalOperation.model_validate(operation_payload)
                 )
             target_content(resume, current.data, rebased_target, "target")
-            markdown = editor_markdown(current.data)
-            if markdown is None:
-                raise ApiError(422, "TARGET_INVALID")
-            updated_markdown = apply_operations(
-                markdown,
+            from linkresume.modules.agent.canonical_targets import apply_operations as apply_canonical_operations
+            updated_data = apply_canonical_operations(
+                current.data, resume=resume,
                 mode=proposal.proposal_mode,
                 main_target=rebased_target,
                 operations=rebased_operations,
             )
             snapshot = parse_persisted_resume_snapshot(
-                replace_editor_markdown(current.data, updated_markdown),
+                updated_data,
                 current.style,
             )
         except (ApiError, KeyError, TypeError, ValueError):
@@ -1830,3 +1824,37 @@ def upsert_tool_event(db: Session, *, run: AgentRun, payload: object) -> AgentTo
     db.commit()
     db.refresh(record)
     return record
+
+
+def _range_grant_key(target: ResumeTargetLocator) -> str:
+    value = target.model_dump(mode='json')
+    return sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def record_canonical_range(db: Session, run: AgentRun, target: ResumeTargetLocator) -> None:
+    if not target.node_ids:
+        return
+    message = active_message(db, run, lock=True)
+    metadata = deepcopy(message.metadata_json or {})
+    task = next((t for t in metadata.get('agent_tasks', []) if t.get('status') == 'running'), None)
+    if task is None:
+        raise ApiError(409, 'AGENT_TASK_NOT_RUNNING')
+    grants = metadata.setdefault('canonical_range_grants', {})
+    keys = grants.setdefault(task['id'], [])
+    key = _range_grant_key(target)
+    if key not in keys:
+        if len(keys) >= 16:
+            raise ApiError(422, 'EDIT_PLAN_TARGET_LIMIT')
+        keys.append(key)
+    message.metadata_json = metadata
+    db.commit()
+
+
+def require_canonical_range(db: Session, run: AgentRun, target: ResumeTargetLocator) -> None:
+    if not target.node_ids:
+        return
+    message = active_message(db, run)
+    metadata = message.metadata_json or {}
+    task = next((t for t in metadata.get('agent_tasks', []) if t.get('status') == 'running'), None)
+    if task is None or _range_grant_key(target) not in metadata.get('canonical_range_grants', {}).get(task['id'], []):
+        raise ApiError(422, 'PATCH_OUT_OF_SCOPE')

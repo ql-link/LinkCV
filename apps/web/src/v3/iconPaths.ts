@@ -1,5 +1,6 @@
 // 由 Figma V3 设计稿的图标库生成（24×24 视图框、1.8 描边），保持与设计稿一致
 export const V3_ICON_PATHS = {
+  "thumbtack": '<path d="M9 3h6l-1 7 4 4v2H6v-2l4-4-1-7zM12 16v5"/>',
   "menu": "<path d=\"M4 6h16M4 12h16M4 18h16\"/>",
   "search": "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M20 20l-3.5-3.5\"/>",
   "sun": "<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4\"/>",

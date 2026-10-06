@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiRequestError, type CostSummary } from "../../api/client";
+import { copyText as copyToClipboard } from "../../utils/clipboard";
 import { visualScale } from "./viewportScale";
 
 /* ---------- formatting ---------- */
@@ -108,7 +109,7 @@ const currencySymbols: Record<string, string> = { USD: "$", CNY: "¥" };
 export function formatMoney(amount: string | number, currency: string | null | undefined): string {
   const value = Number(amount);
   const symbol = currency ? currencySymbols[currency] : undefined;
-  const digits = Math.abs(value) > 0 && Math.abs(value) < 0.01 ? 4 : 2;
+  const digits = Math.abs(value) > 0 && Math.abs(value) < 0.01 ? Math.min(10, Math.max(4, 1 - Math.floor(Math.log10(Math.abs(value))))) : 2;
   const text = Number.isFinite(value) ? value.toFixed(digits) : String(amount);
   return symbol ? `${symbol}${text}` : `${text} ${currency ?? ""}`.trim();
 }
@@ -903,7 +904,7 @@ export function DetailList({ items }: { items: Array<[string, ReactNode]> }) {
 }
 
 export function copyText(text: string, notify: ConsoleContext["notify"], label = "已复制") {
-  navigator.clipboard?.writeText(text).then(
+  return copyToClipboard(text).then(
     () => notify(`${label}：${text}`),
     () => notify("复制失败", "error"),
   );

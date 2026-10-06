@@ -29,6 +29,7 @@ import {
   SkeletonRows,
   StatusDot,
   Toggle,
+  copyText,
   formatWhen,
   insertionIndex,
   layoutMids,
@@ -380,7 +381,7 @@ export function CapabilitiesPage() {
                             <span className="adm-row-actions is-tight">
                               <Toggle label={`${item.enabled ? "停用" : "启用"}线路 #${item.routeId}`} checked={item.enabled} disabled={busy !== null} onChange={(next) => void run(`binding:${item.routeId}`, () => api.updateLlmBinding(item.useCase, item.routeId, { enabled: next }), next ? "线路已启用" : "线路已停用")} />
                               <MoreMenu label={`线路 #${item.routeId} 更多操作`} disabled={busy !== null} items={[
-                                { label: `复制线路 ID #${item.routeId}`, onSelect: () => void navigator.clipboard?.writeText(item.routeId) },
+                                { label: `复制线路 ID #${item.routeId}`, onSelect: () => void copyText(item.routeId, notify, "已复制线路 ID") },
                                 { label: "移出场景", icon: Trash2, tone: "bad", onSelect: () => setPendingDelete({ kind: "route", binding: item }) },
                               ]} />
                             </span>

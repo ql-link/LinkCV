@@ -27,6 +27,7 @@ from linkresume.modules.llm.models import (
     get_use_case_route,
 )
 from linkresume.modules.llm.pi_probe import PiProbeCoordinator
+from linkresume.modules.llm.pricing import route_pricing
 from linkresume.modules.llm.providers import (
     OPENAI_CHAT, PROVIDERS, validate_route, validate_settings, validate_use_case_protocol, validate_model_protocol,
 )
@@ -165,7 +166,9 @@ def _route_record(row: LLMModelRoute) -> dict:
         "identifierKind": row.identifier_kind,
         "origin": row.origin,
         "metadata": row.metadata_json,
-        "pricing": row.pricing_json,
+        "pricing": route_pricing(row),
+        "pricingMode": row.pricing_mode,
+        "priceRevisionId": str(row.current_price_revision_id) if row.current_price_revision_id else None,
         "targetAvailable": row.is_target_available,
         "enabled": row.is_enabled,
         "createdAt": row.create_time,
@@ -361,7 +364,11 @@ async def sync_connection_catalog(
                 )
                 db.add(route)
             route.metadata_json = item.metadata
-            route.pricing_json = item.pricing
+            if route.pricing_mode != "manual_override" and item.pricing is not None:
+                route.pricing_json = item.pricing
+                db.flush()
+                from linkresume.modules.llm.accounting import store_price
+                store_price(db, route, item.pricing)
             route.is_target_available = True
         for target, route in existing.items():
             if route.origin == "catalog" and target not in found:
@@ -472,10 +479,14 @@ def create_route(
         catalog_model_id=payload.catalog_model_id,
         identifier_kind=payload.identifier_kind,
         origin="manual",
-        pricing_json=payload.pricing,
+        pricing_json={**payload.pricing, "source": "manual_override"} if payload.pricing else None,
+        pricing_mode="manual_override" if payload.pricing else payload.pricing_mode,
         is_enabled=False,
     )
     db.add(row)
+    db.flush()
+    from linkresume.modules.llm.accounting import store_price
+    store_price(db, row, row.pricing_json)
     _commit(db)
     bind_audit_target(request, row.id)
     return {"route": _route_record(row)}
@@ -493,7 +504,19 @@ def patch_route(
     if payload.identifier_kind is not None:
         row.identifier_kind = payload.identifier_kind
     if "pricing" in payload.model_fields_set:
-        row.pricing_json = payload.pricing
+        row.pricing_json = {**payload.pricing, "source": "manual_override"} if payload.pricing else None
+        row.pricing_mode = "manual_override"
+        from linkresume.modules.llm.accounting import store_price
+        store_price(db, row, row.pricing_json)
+    if payload.pricing_mode is not None:
+        row.pricing_mode = payload.pricing_mode
+        if payload.pricing_mode == "provider":
+            from linkresume.modules.llm.pricing import catalog_pricing
+            from linkresume.modules.llm.accounting import store_price
+            provider_price = catalog_pricing(row.metadata_json or {})
+            if provider_price is not None:
+                row.pricing_json = provider_price
+                store_price(db, row, provider_price)
     if payload.enabled is not None:
         if payload.enabled:
             bindings = db.scalars(
@@ -702,7 +725,7 @@ def list_calls(
     if from_at is not None or to_at is not None:
         window = resolve_window(from_at, to_at, default=timedelta(hours=24))
         filters.extend(
-            [LLMCallLog.create_time >= window.start, LLMCallLog.create_time < window.end]
+            [LLMCallLog.request_started_at >= window.start, LLMCallLog.request_started_at < window.end]
         )
     statement = (
         select(LLMCallLog).where(*filters).order_by(LLMCallLog.id.desc()).limit(limit + 1)
@@ -731,6 +754,13 @@ def list_calls(
                 "inputTokens": row.input_tokens, "outputTokens": row.output_tokens,
                 "estimatedCost": str(row.estimated_cost) if row.estimated_cost is not None else None,
                 "costCurrency": row.cost_currency, "errorCode": row.error_code,
+                "costState": row.cost_state, "costReason": row.cost_reason,
+                "settledCost": str(row.settled_cost) if row.settled_cost is not None else None,
+                "settledCurrency": row.settled_currency, "normalizedUsage": row.normalized_usage_json,
+                "requestStartedAt": row.request_started_at, "requestFinishedAt": row.request_finished_at,
+                "timeBasis": row.time_basis, "priceRevisionId": str(row.price_revision_id) if row.price_revision_id else None,
+                "costRevisionId": str(row.current_cost_revision_id) if row.current_cost_revision_id else None,
+                "priceSnapshot": row.price_snapshot_json, "upstreamRequestId": row.upstream_request_id,
                 "createdAt": row.create_time,
             }
             for row in page
@@ -745,3 +775,7 @@ def list_calls(
             **cost_totals(db, *filters),
         },
     }
+
+
+from linkresume.modules.llm.cost_routes import router as cost_router
+router.include_router(cost_router)

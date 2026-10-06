@@ -6,7 +6,7 @@ import { AnnouncementsPage } from "./AnnouncementsPage";
 import { AdminConsoleProvider, insertionIndex, parseRecordSearch } from "./kit";
 import { LlmCallsPage, countDelta } from "./SecurityPages";
 import { CapabilitiesPage, planPriorities, previewOrder, type ModelGroup } from "./CapabilitiesPage";
-import { ConnectionsPage, ModelsPage, compositionSlices, groupByVendor } from "./LlmPages";
+import { ConnectionsPage, ModelsPage, UsagePage, compositionSlices, groupByVendor } from "./LlmPages";
 import { SERIES_COLORS, donutArcs } from "./charts";
 import { DateTimeInput, dayLabel } from "./DateTimeInput";
 import { modelIcon, providerIcon, vendorIcon } from "./brandIcons";
@@ -43,6 +43,17 @@ function mockLlm(overrides: { models?: LlmModel[]; routes?: LlmRoute[] } = {}) {
 
 beforeEach(() => notify.mockReset());
 afterEach(() => vi.restoreAllMocks());
+
+describe("UsagePage", () => {
+  it("shows historical usage without asking administrators to run a backfill", async () => {
+    mockLlm();
+    render(wrap(<UsagePage />));
+    expect((await screen.findAllByText("示例模型")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "历史补算" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导入账单" })).toBeInTheDocument();
+    expect(api.adminInsightLlmUsage).toHaveBeenCalled();
+  });
+});
 
 describe("ConnectionsPage", () => {
   it("creates an Aliyun connection that needs a workspace in cn-beijing", async () => {
@@ -168,10 +179,12 @@ describe("ModelsPage", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "添加线路" }))[0]);
     const dialog = await screen.findByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("调用目标 ID"), { target: { value: "vendor/new" } });
-    fireEvent.change(within(dialog).getByLabelText("输入单价 / 百万 Token"), { target: { value: "1" } });
-    expect(within(dialog).getByText("输入和输出单价需要同时填写")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "价格来源" }));
+    fireEvent.click(await screen.findByRole("option", { name: "人工价格规则" }));
+    fireEvent.change(within(dialog).getByLabelText("完整计费规则"), { target: { value: '{"currency":"USD","input_per_million":"1"}' } });
+    expect(within(dialog).getByText("请填写有效的完整价格规则，输入和输出单价需要同时填写")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "添加线路" })).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText("输出单价 / 百万 Token"), { target: { value: "2" } });
+    fireEvent.change(within(dialog).getByLabelText("完整计费规则"), { target: { value: '{"currency":"USD","input_per_million":"1","output_per_million":"2"}' } });
     fireEvent.click(within(dialog).getByRole("button", { name: "添加线路" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ modelId: 5, connectionId: 1, invokeTarget: "vendor/new", pricing: { currency: "USD", input_per_million: "1", output_per_million: "2" } })));
   });

@@ -95,17 +95,37 @@ def test_whole_resume_target_rejects_quoted_text_instead_of_matching_it():
 
 
 def test_whole_resume_read_exposes_every_editable_block():
+    from copy import deepcopy
+    from uuid import uuid4
+
+    from linkresume.modules.agent.canonical_targets import plain_run
+
     app = build_app()
     with TestClient(app) as client:
         register(client, "whole-blocks@example.test")
         resume, base, _ = plan_run(client, app, [{"presentation": "mention"}], tasks=TASKS)
+        # A section may hold paragraphs directly, without any entry grouping.
+        data = deepcopy(resume["data"])
+        ids = [f"node_{uuid4().hex}" for _ in range(2)]
+        data["sections"] = [{
+            "node_id": f"node_{uuid4().hex}", "source_refs": [], "semantic_kind": "work",
+            "title": {"node_id": f"node_{uuid4().hex}", "source_refs": [], "value": "实习经历"},
+            "entries": [], "blocks": [
+                {"node_id": node, "source_refs": [], "block_type": "paragraph", "runs": [plain_run(text)]}
+                for node, text in zip(ids, ["虚构实习一", "虚构实习二"])],
+        }]
+        data["source_dispositions"] = []
+        saved = client.put(f"/api/resumes/{resume['id']}", json={
+            "data": data, "style": resume["style"], "base_lock_version": resume["lock_version"]})
+        assert saved.status_code == 200, saved.text
         client.post(f"{base}/tasks/review:status", headers=internal_headers(), json={"status": "running"})
         target = client.post(f"{base}/targets:resolve", headers=internal_headers(), json={
             "resume_id": resume["id"], "scope_hint": "resume"}).json()["target"]
         read = client.post(f"{base}/context:read", headers=internal_headers(), json={"target": target, "scope": "resume"})
         assert read.status_code == 200, read.text
         blocks = read.json()["blocks"]
-        assert blocks and all(block["target"]["block_id"] and block["target"]["expected_text_hash"] for block in blocks)
+        assert {ids[0], ids[1]} <= {block["target"]["block_id"] for block in blocks}
+        assert all(block["target"]["expected_text_hash"] for block in blocks)
 
 
 @pytest.fixture

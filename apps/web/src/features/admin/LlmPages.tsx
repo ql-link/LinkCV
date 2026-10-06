@@ -7,6 +7,8 @@ import {
   type LlmConnection,
   type LlmModel,
   type LlmRoute,
+  type LlmCostOperation,
+  type LlmUsageSummary,
 } from "../../api/client";
 import { Donut, DonutLegend, OTHER_COLOR, SERIES_COLORS } from "./charts";
 import {
@@ -176,7 +178,8 @@ export function priceText(pricing: Record<string, unknown> | null) {
   const currency = typeof pricing.currency === "string" ? pricing.currency : "USD";
   const input = pricing.input_per_million;
   const output = pricing.output_per_million;
-  if (input == null || output == null) return "未定价";
+  if (Array.isArray(pricing.lines) && pricing.lines.length) return `${pricing.lines.length} 项规则 · ${currency}${pricing.legacy ? " · 目录估算" : ""}`;
+  if (input == null || output == null) return "价格规则待核实";
   return `${formatMoney(String(input), currency)} / ${formatMoney(String(output), currency)}`;
 }
 
@@ -668,23 +671,27 @@ function RouteModal({ data, route, defaultModelId, onClose, onSaved }: { data: L
   const [targetKind, setTargetKind] = useState<LlmRoute["targetKind"]>(route?.targetKind ?? "model");
   const [identifierKind, setIdentifierKind] = useState<LlmRoute["identifierKind"]>(route?.identifierKind ?? "pinned");
   const [invokeTarget, setInvokeTarget] = useState(route?.invokeTarget ?? "");
-  const [inputPrice, setInputPrice] = useState(route?.pricing?.input_per_million != null ? String(route.pricing.input_per_million) : "");
-  const [outputPrice, setOutputPrice] = useState(route?.pricing?.output_per_million != null ? String(route.pricing.output_per_million) : "");
-  const [currency, setCurrency] = useState(typeof route?.pricing?.currency === "string" ? route.pricing.currency : "USD");
+  const [pricingMode, setPricingMode] = useState<"provider" | "manual_override">(route?.pricingMode ?? (route?.pricing ? "manual_override" : "provider"));
+  const [rulesJson, setRulesJson] = useState(JSON.stringify(route?.pricing ?? { schemaVersion: 2, currency: "USD", source: "manual", lines: [] }, null, 2));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const priceMismatch = Boolean(inputPrice.trim()) !== Boolean(outputPrice.trim());
-  const priceInvalid = [inputPrice, outputPrice].some((value) => value.trim() && !(Number(value) >= 0));
-  const valid = (route || (modelId && connectionId && invokeTarget.trim())) && !priceMismatch && !priceInvalid;
+  let rulesValid = true;
+  if (pricingMode === "manual_override") {
+    try {
+      const parsed = JSON.parse(rulesJson);
+      rulesValid = parsed && typeof parsed.currency === "string" && (Array.isArray(parsed.lines) ? parsed.lines.length > 0 : parsed.input_per_million != null && parsed.output_per_million != null);
+    } catch { rulesValid = false; }
+  }
+  const valid = (route || (modelId && connectionId && invokeTarget.trim())) && rulesValid;
   const effectiveKind = kinds.includes(targetKind) ? targetKind : kinds[0];
 
   const submit = async () => {
     setBusy(true);
     setError(null);
-    const pricing = inputPrice.trim() ? { currency, input_per_million: inputPrice.trim(), output_per_million: outputPrice.trim() } : null;
     try {
-      if (route) await api.updateLlmRoute(route.id, { identifierKind, pricing });
+      const pricing = pricingMode === "provider" ? undefined : JSON.parse(rulesJson) as Record<string, unknown>;
+      if (route) await api.updateLlmRoute(route.id, { identifierKind, ...(pricingMode === "manual_override" ? { pricing } : {}), pricingMode });
       else await api.createLlmRoute({ modelId: Number(modelId), connectionId: Number(connectionId), targetKind: effectiveKind, invokeTarget: invokeTarget.trim(), identifierKind, pricing });
       notify(route ? "线路已保存" : "线路已创建，请绑定使用场景，启用时自动验证");
       onSaved();
@@ -716,12 +723,10 @@ function RouteModal({ data, route, defaultModelId, onClose, onSaved }: { data: L
           </>
         )}
         <Field label="标识类型"><SelectBox label="标识类型" value={identifierKind} onChange={setIdentifierKind} options={identifierOptions} /></Field>
-        <div className="adm-form-row is-three">
-          <Field label="输入单价 / 百万 Token" htmlFor="route-input-price"><input id="route-input-price" className="adm-input" inputMode="decimal" value={inputPrice} onChange={(event) => setInputPrice(event.target.value)} placeholder="0.00" /></Field>
-          <Field label="输出单价 / 百万 Token" htmlFor="route-output-price"><input id="route-output-price" className="adm-input" inputMode="decimal" value={outputPrice} onChange={(event) => setOutputPrice(event.target.value)} placeholder="0.00" /></Field>
-          <Field label="币种"><SelectBox label="币种" value={currency} onChange={setCurrency} options={[{ value: "USD", label: "USD" }, { value: "CNY", label: "CNY" }]} /></Field>
-        </div>
-        {priceMismatch || priceInvalid ? <InlineError>{priceMismatch ? "输入和输出单价需要同时填写" : "单价必须是非负数字"}</InlineError> : <small className="adm-muted">{route ? "调用目标、模型和连接创建后不可修改；如需更换请新建线路" : "单价可留空；填写时输入、输出需同时填写"}</small>}
+        <Field label="价格来源"><SelectBox label="价格来源" value={pricingMode} onChange={setPricingMode} options={[{ value: "provider", label: "供应商目录自动同步" }, { value: "manual_override", label: "人工价格规则" }]} /></Field>
+        <p className="adm-muted">{priceText(route?.pricing ?? null)}。缓存、上下文阶梯和分时价格按完整规则计算。</p>
+        {pricingMode === "manual_override" && <Field label="完整计费规则" htmlFor="route-price-rules" hint="保留所有计费项、单位、时区和生效依据。语音价格必须有明确单位。"><textarea id="route-price-rules" className="adm-input" rows={10} value={rulesJson} onChange={(event) => setRulesJson(event.target.value)} /></Field>}
+        {!rulesValid && <InlineError>请填写有效的完整价格规则，输入和输出单价需要同时填写</InlineError>}
         {error && <InlineError>{error}</InlineError>}
       </div>
     </Modal>
@@ -752,7 +757,7 @@ export function compositionSlices<T extends { key: string }>(items: T[], value: 
   return slices;
 }
 
-type UsageGroup = { key: string; label: string; calls: number; successRate: number | null; p95Ms: number | null; costs: Array<{ currency: string; amount: string }> };
+type UsageGroup = LlmUsageSummary & { key: string; label: string };
 
 /** V4 09: models show their vendor logo; use cases and channels keep the colour dot shared with the donuts. */
 function usageMark(row: UsageGroup, groupBy: string, colorOf: Map<string, string>) {
@@ -766,13 +771,16 @@ function usageMark(row: UsageGroup, groupBy: string, colorOf: Map<string, string
 /** Client-side CSV of the rows currently loaded (no export endpoint); BOM so Excel reads UTF-8. */
 function downloadUsageCsv(rows: UsageGroup[], label: (row: UsageGroup) => string, noun: string, range: string) {
   const cell = (value: string | number | null) => {
-    const text = value == null ? "" : String(value);
+    const raw = value == null ? "" : String(value);
+    const text = /^[=+@-]/.test(raw) ? `'${raw}` : raw;
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
-  const lines = [[noun, "调用", "费用", "成功率", "P95 (ms)"].join(",")];
+  const lines = [[noun, "调用", "估算费用", "结算费用", "已估算", "已对账", "未计价", "未计价原因", "成功率", "P95 (ms)"].join(",")];
   for (const row of rows) {
     const cost = row.costs.map((item) => `${item.amount} ${item.currency}`).join(" + ");
-    lines.push([label(row), row.calls, cost, row.successRate == null ? null : (row.successRate * 100).toFixed(1) + "%", row.p95Ms].map(cell).join(","));
+    lines.push([label(row), row.calls, cost, (row.settledCosts ?? []).map((item) => `${item.amount} ${item.currency}`).join(" + "),
+      row.estimatedCallCount ?? "", row.reconciledCallCount ?? "", row.unmeteredCallCount, JSON.stringify(row.unpricedReasons ?? {}),
+      row.successRate == null ? null : (row.successRate * 100).toFixed(1) + "%", row.p95Ms].map(cell).join(","));
   }
   const url = URL.createObjectURL(new Blob([`\ufeff${lines.join("\n")}`], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
@@ -783,6 +791,7 @@ function downloadUsageCsv(rows: UsageGroup[], label: (row: UsageGroup) => string
 }
 
 export function UsagePage() {
+  const [costModal, setCostModal] = useState<"statement" | null>(null);
   const [range, setRange] = useState<keyof typeof windows>("24h");
   const [groupBy, setGroupBy] = useState<"model" | "useCase" | "connection">("model");
   const [query, setQuery] = useState("");
@@ -812,15 +821,18 @@ export function UsagePage() {
 
   return (
     <>
-      <PageHeader title="模型使用情况" actions={<><Segmented label="时间范围" value={range} onChange={setRange} options={[{ value: "24h", label: "24 小时" }, { value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} /><Button disabled={!data?.groups.length} onClick={() => data && downloadUsageCsv(data.groups, label, groupNoun, range)}><Download size={14} aria-hidden="true" />导出数据</Button></>} />
+      <PageHeader title="模型使用情况" actions={<><Segmented label="时间范围" value={range} onChange={setRange} options={[{ value: "24h", label: "24 小时" }, { value: "7d", label: "7 天" }, { value: "30d", label: "30 天" }]} /><Button onClick={() => setCostModal("statement")}>导入账单</Button><Button disabled={!data?.groups.length} onClick={() => data && downloadUsageCsv(data.groups, label, groupNoun, range)}><Download size={14} aria-hidden="true" />导出数据</Button></>} />
       {usage.loading && !data ? <LoadingRegion label="正在加载使用情况…"><SkeletonMetrics /></LoadingRegion> : !data ? <ErrorState code={usage.error} onRetry={() => void usage.reload()} /> : (
         <Metrics items={[
           { label: "调用", value: formatNumber(data.summary.calls), note: calls?.text, tone: calls?.tone, icon: Zap, tint: "blue" },
-          { label: "费用", value: formatCosts(data.summary), note: data.summary.unmeteredCallCount ? `${data.summary.unmeteredCallCount} 次未计价` : undefined, icon: Coins, tint: "green" },
+          { label: "估算费用", value: formatCosts(data.summary), note: `${data.summary.estimatedCallCount ?? data.summary.calls - data.summary.unmeteredCallCount}/${data.summary.calls} 次已估算 · ${data.summary.reconciledCallCount ?? 0} 次已对账`, icon: Coins, tint: "green" },
           { label: "成功率", value: formatPercent(data.summary.successRate), note: rateDiff != null ? `${rateDiff >= 0 ? "+" : ""}${(rateDiff * 100).toFixed(1)}%` : undefined, tone: rateDiff == null ? undefined : rateDiff >= 0 ? "ok" : "bad", icon: BadgeCheck, tint: "violet" },
           { label: "P95 延迟", value: formatMs(data.summary.p95Ms), icon: Timer, tint: "amber" },
         ]} />
       )}
+      {data && <p className="adm-muted">结算费用：{formatCosts({ costs: data.summary.settledCosts ?? [], unmeteredCallCount: 0 })}。
+        {data.summary.unmeteredCallCount > 0 && `${data.summary.unmeteredCallCount} 次未计价：${Object.entries(data.summary.unpricedReasons ?? {}).map(([reason, count]) => `${costReasonLabel(reason)} ${count} 次`).join("；")}。`}
+        {!!data.unknownTimeCallCount && `另有 ${data.unknownTimeCallCount} 条历史记录的请求时间待核实，未纳入时间范围统计。`}</p>}
       <section className="adm-section adm-composition">
         <div className="adm-block-head">
           <div className="adm-block-title"><h2>调用与费用构成</h2><span>{rangeLabels[range]} · 颜色在两张图中对应同一个{groupNoun}</span></div>
@@ -864,13 +876,88 @@ export function UsagePage() {
             columns={[
               { key: "label", label: groupNoun, width: "minmax(0, 1fr)", render: (row) => <span className="adm-cell-inline">{usageMark(row, groupBy, colorOf)}<span className="adm-usage-name">{label(row)}</span></span> },
               { key: "calls", label: "调用", width: "90px", align: "right", render: (row) => formatNumber(row.calls) },
-              { key: "cost", label: "费用", width: "90px", align: "right", render: (row) => formatCosts(row) },
+              { key: "cost", label: "估算 / 结算", width: "150px", align: "right", render: (row) => <span title={`${row.unmeteredCallCount} 次未计价`}>{formatCosts(row)} / {formatCosts({ costs: row.settledCosts ?? [], unmeteredCallCount: 0 })}</span> },
               { key: "rate", label: "成功率", width: "90px", align: "right", render: (row) => <StatusDot tone={row.successRate == null ? "muted" : row.successRate >= 0.98 ? "ok" : row.successRate >= 0.9 ? "warn" : "bad"}>{formatPercent(row.successRate)}</StatusDot> },
               { key: "p95", label: "P95", width: "70px", align: "right", render: (row) => formatMs(row.p95Ms) },
             ]}
           />
         )}
       </section>
+      {costModal && <CostOperationModal mode={costModal} range={range} onClose={() => setCostModal(null)} onApplied={() => void usage.reload()} />}
     </>
   );
+}
+
+const costReasons: Record<string, string> = {
+  price_missing: "缺少价格", usage_missing: "缺少供应商用量", cache_usage_missing: "缺少缓存用量",
+  request_time_unknown: "请求时间待核实", speech_unit_unknown: "语音计费单位待核实",
+  price_item_missing: "缺少对应计费项", context_usage_missing: "缺少上下文用量",
+  request_not_found: "未找到请求", ambiguous_request: "请求 ID 不唯一", statement_conflict: "账单冲突",
+  duplicate_statement_record: "文件内重复", already_reconciled: "已对账", call_changed_since_preview: "预览后记录已变化",
+  legacy_unpriced: "历史记录待补算", promotion_rule_unverified: "促销规则待核实",
+};
+function costReasonLabel(reason: string) { return costReasons[reason] ?? reason; }
+
+function CostOperationModal({ mode, range, onClose, onApplied }: { mode: "backfill" | "statement"; range: keyof typeof windows; onClose: () => void; onApplied: () => void }) {
+  const connections = useLoad(() => api.listLlmConnections());
+  const [connectionId, setConnectionId] = useState("");
+  const selectedConnection = connectionId || connections.data?.connections[0]?.id || "";
+  const [from, setFrom] = useState(new Date(Date.now() - windows[range] * 3600_000).toISOString());
+  const [to, setTo] = useState(new Date().toISOString());
+  const [policy, setPolicy] = useState<"snapshot" | "specified_rule">("snapshot");
+  const [legacyTimezone, setLegacyTimezone] = useState("");
+  const [acceptRules, setAcceptRules] = useState(false);
+  const [csvContent, setCsvContent] = useState("");
+  const [operation, setOperation] = useState<LlmCostOperation | null>(null);
+  const [resumeId, setResumeId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const preview = async () => {
+    setBusy(true); setError(null);
+    try {
+      const key = crypto.randomUUID();
+      const result = mode === "statement"
+        ? await api.previewLlmCostStatement({ connectionId: Number(selectedConnection), idempotencyKey: key, csvContent })
+        : await api.previewLlmCostBackfill({ connectionId: Number(selectedConnection), idempotencyKey: key, from, to,
+          pricePolicy: policy, acceptCurrentRules: acceptRules, legacyTimezone: legacyTimezone || null });
+      setOperation(result);
+    } catch (caught) { setError(llmMessage(caught, "预览失败")); } finally { setBusy(false); }
+  };
+  const apply = async () => {
+    if (!operation) return;
+    setBusy(true); setError(null);
+    try {
+      const result = await api.applyLlmCostOperation(operation.operationId, operation.digest);
+      setOperation(result); onApplied();
+    } catch (caught) { setError(llmMessage(caught, "执行失败")); } finally { setBusy(false); }
+  };
+  const remaining = operation?.summary.remaining ?? operation?.summary.applicable ?? 0;
+  return <Modal title={mode === "backfill" ? "历史费用补算" : "供应商账单对账"} width={760} onClose={onClose} busy={busy}
+    footer={<><Button dismiss disabled={busy}>关闭</Button>{operation ? <Button variant="primary" disabled={busy || remaining === 0} onClick={() => void apply()}>{busy ? "执行中…" : `确认执行${remaining > 100 ? "下一批 100 条" : ` ${remaining} 条`}`}</Button>
+      : <Button variant="primary" disabled={busy || !selectedConnection || (mode === "statement" && !csvContent) || (policy === "specified_rule" && !acceptRules)} onClick={() => void preview()}>{busy ? "预览中…" : "生成预览"}</Button>}</>}>
+    <div className="adm-form">
+      {!operation ? <>
+        <Field label="恢复已有操作" hint="输入先前保存的操作 ID，查看预览或继续下一批。"><div className="adm-form-row"><input className="adm-input" value={resumeId} onChange={(e) => setResumeId(e.target.value)} /><Button disabled={busy || !resumeId.trim()} onClick={() => { setBusy(true); void api.getLlmCostOperation(resumeId.trim()).then(setOperation).catch((e) => setError(llmMessage(e, "恢复失败"))).finally(() => setBusy(false)); }}>恢复</Button></div></Field>
+        <Field label="接入连接"><SelectBox label="接入连接" value={selectedConnection} onChange={setConnectionId} options={(connections.data?.connections ?? []).map((c) => ({ value: c.id, label: c.name }))} /></Field>
+        {mode === "backfill" ? <>
+          <div className="adm-form-row"><Field label="开始时间（含时区）"><input className="adm-input" value={from} onChange={(e) => setFrom(e.target.value)} /></Field><Field label="结束时间（不含）"><input className="adm-input" value={to} onChange={(e) => setTo(e.target.value)} /></Field></div>
+          <Field label="价格依据"><SelectBox label="价格依据" value={policy} onChange={setPolicy} options={[{ value: "snapshot", label: "原调用价格快照" }, { value: "specified_rule", label: "当前已保存的完整价格规则" }]} /></Field>
+          {policy === "specified_rule" && <label><input type="checkbox" checked={acceptRules} onChange={(e) => setAcceptRules(e.target.checked)} />我已核实当前规则适用于所选历史区间；补算将标记为指定规则估算。</label>}
+          <Field label="旧记录时间依据" hint="只有核实旧数据库写入时区后才能转换。"><SelectBox label="旧记录时间依据" value={legacyTimezone} onChange={setLegacyTimezone} options={[{ value: "", label: "仅处理已有明确请求时间的记录" }, { value: "Asia/Shanghai", label: "已核实旧时间为北京时间" }, { value: "UTC", label: "已核实旧时间为 UTC" }]} /></Field>
+          <p className="adm-muted">最多 31 天、5000 条。仅补算缺少完整费用的记录；不重发模型请求、不覆盖原始价格和用量。缺少缓存用量的记录会保留原因。</p>
+        </> : <Field label="CSV 账单" hint="列名：recordId,requestId,amount,currency。最多 5 MiB、5000 条；退款和负数暂不支持。"><input type="file" accept=".csv,text/csv" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; if (file.size > 5 * 1024 * 1024) { setError("文件不能超过 5 MiB"); return; } void file.text().then(setCsvContent); }} /></Field>}
+      </> : <>
+        <p>{operation.operationType === "statement_import" ? "供应商账单对账" : "历史估算补算"}：共 {operation.summary.total} 条，可完整计价 {operation.summary.applicable} 条。当前状态：{operation.state}。{operation.summary.remaining != null && `剩余 ${operation.summary.remaining} 条。`}</p>
+        <p className="adm-muted">{Object.entries(operation.summary.reasons).map(([reason, count]) => `${costReasonLabel(reason)}：${count} 条`).join("；")}</p>
+        <DataTable rows={operation.items} rowKey={(r) => r.id} empty="没有记录" columns={[
+          { key: "call", label: "调用 ID", render: (r) => r.callId ?? "未匹配" },
+          { key: "amount", label: operation.operationType === "statement_import" ? "结算金额" : "估算金额", render: (r) => (r.source === "provider_statement" ? r.settledCost : r.estimatedCost) == null ? "—" : formatMoney((r.source === "provider_statement" ? r.settledCost : r.estimatedCost)!, r.source === "provider_statement" ? r.settledCurrency : r.costCurrency) },
+          { key: "state", label: "状态 / 原因", render: (r) => r.reason ? costReasonLabel(r.reason) : r.state },
+        ]} />
+        {operation.nextCursor && <Button disabled={busy} onClick={() => { setBusy(true); void api.getLlmCostOperation(operation.operationId, operation.nextCursor!).then(setOperation).catch((e) => setError(llmMessage(e, "加载失败"))).finally(() => setBusy(false)); }}>下一页预览</Button>}
+        <small className="adm-muted">操作 ID：{operation.operationId}。保存该 ID 可恢复查看。账单金额与估算分别保留，不重复相加。</small>
+      </>}
+      {error && <InlineError>{error}</InlineError>}
+    </div>
+  </Modal>;
 }

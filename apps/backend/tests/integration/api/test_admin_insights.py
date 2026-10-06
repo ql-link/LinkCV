@@ -152,6 +152,7 @@ class LLMFixture:
             estimated_cost=Decimal(cost) if cost is not None else None,
             cost_currency=currency if cost is not None else None,
             create_time=self.now - ago,
+            request_started_at=self.now - ago, time_basis="explicit_utc",
         ))
 
 
@@ -466,6 +467,7 @@ def test_llm_call_list_filters_and_summarizes() -> None:
             route_id=f.route.id, runtime_config_version=1, protocol_code="openai_chat",
             selection_source="default", status="failed", error_code="AUTH_FAILED",
             input_tokens=10, output_tokens=0, create_time=now - timedelta(minutes=1),
+            request_started_at=now - timedelta(minutes=1), time_basis="explicit_utc",
         ))
         db.commit()
 
@@ -515,7 +517,7 @@ def test_user_detail_and_legacy_stats_report_real_llm_usage() -> None:
 
     detail = admin.get(f"/api/auth/admin/users/{target_id}").json()
     assert detail["llm_call_count"] == 2
-    assert detail["llm_costs"] == {
+    assert {key: detail["llm_costs"][key] for key in ("costs", "unmeteredCallCount")} == {
         "costs": [{"currency": "USD", "amount": "0.2500000000"}],
         "unmeteredCallCount": 1,
     }

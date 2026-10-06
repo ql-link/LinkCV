@@ -9,13 +9,23 @@ import pytest
 from openai import AsyncOpenAI
 from litellm.llms.openai.openai import OpenAIChatCompletion
 
-from linkresume.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error
+from linkresume.modules.llm.gateway import GatewayError, LiteLLMGateway, _gateway_error, _normalized_gateway_usage
 from linkresume.modules.llm.schemas import (
     ChatImageContentPart,
     ChatImageUrl,
     ChatMessage,
     ChatTextContentPart,
 )
+
+
+@pytest.mark.parametrize("cache_field", ["prompt_cache_hit_tokens", "cached_tokens", "cache_read_input_tokens"])
+def test_provider_cache_variants_preserve_reported_usage(cache_field):
+    usage = _normalized_gateway_usage({"prompt_tokens": 100, "completion_tokens": 20, cache_field: 80}, responses=False)
+    assert usage.details["cacheRead"] == 80
+    assert usage.details["usagePresent"] is True
+    missing = _normalized_gateway_usage(None, responses=False)
+    assert missing.details["usagePresent"] is False
+    assert missing.details["cacheRead"] is None
 
 
 @pytest.mark.parametrize('status,expected', [(200, None), (404, 'LLM_UNAVAILABLE'), (422, 'LLM_REQUEST_REJECTED')])

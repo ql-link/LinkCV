@@ -1,13 +1,13 @@
 import { t, useLocale } from "@/i18n";
 import { MotionPresence } from "@/components/ui/motion";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } from "react";
 import brandWordmark from "@/assets/linkresume-wordmark.png";
 import { api, type AgentSession } from "../api/client";
 import { assistantPath, navigateTo, rememberAssistantSession } from "../routing";
 import { useResumeStore } from "../store/resumeStore";
 import { preloadWorkspacePage } from "../workspacePageLoaders";
 import { Icon, type V3IconName } from "./Icon";
-import { Avatar, ConfirmDialog, Dialog, Menu } from "./primitives";
+import { Avatar, ConfirmDialog, Dialog, Menu, Toast } from "./primitives";
 import { useActiveSessionStore, useSessionStore } from "./sessionStore";
 import { DeleteSessionArt } from "./art";
 import { readPageCache, writePageCache } from "./pageCache";
@@ -50,6 +50,9 @@ export function V3Sidebar({
   const user = useResumeStore((state) => state.user);
   const resumeCount = useResumeStore((state) => state.resumes.length);
   const sessions = useSessionStore((state) => state.sessions);
+  const collapsedGroups = useSessionStore((state) => state.collapsedGroups);
+  const toggleGroup = useSessionStore((state) => state.toggleGroup);
+  const groupId = useId();
   const status = useSessionStore((state) => state.status);
   const load = useSessionStore((state) => state.load);
   const activeSessionId = useActiveSessionStore((state) => state.activeId);
@@ -93,19 +96,25 @@ export function V3Sidebar({
   // 选中项的高亮背景用一个滑块表示：切换页面时从旧位置滑到新位置
   // 不同页面各自挂载一份侧栏，所以记住上一次的位置：新侧栏先放在旧位置，下一帧再滑到当前项
   const navRef = useRef<HTMLElement>(null);
-  const [indicatorTop, setIndicatorTop] = useState<number | null>(() => lastIndicatorTop);
+  // snap 表示这次定位不播放滑动动画
+  const [indicator, setIndicator] = useState<{ top: number | null; snap: boolean }>(() => ({ top: lastIndicatorTop, snap: true }));
+  const indicatorTop = indicator.top;
   useLayoutEffect(() => {
     // nav 始终是定位容器；offsetTop 不受抽屉入场 scale 影响。
     // getBoundingClientRect 会把入场缩放计入位置，动画结束后高亮就会偏移。
     const nav = navRef.current;
     const target = nav?.querySelector<HTMLElement>(".v3-side-row.is-active");
     const next = target ? target.offsetTop : null;
-    if (next === null || lastIndicatorTop === null || lastIndicatorTop === next) {
-      setIndicatorTop(next);
+    const from = lastIndicatorTop;
+    if (next === null || from === null || from === next) {
+      setIndicator({ top: next, snap: true });
       lastIndicatorTop = next;
       return undefined;
     }
-    const frame = requestAnimationFrame(() => { setIndicatorTop(next); lastIndicatorTop = next; });
+    // 懒加载页面的侧栏可能在 Suspense 等待期间就被隐藏挂载，初始位置已经过时；
+    // 显示时先无动画放到最近一次的位置，下一帧再滑到当前项，避免从旧位置重新滑一遍。
+    setIndicator({ top: from, snap: true });
+    const frame = requestAnimationFrame(() => { setIndicator({ top: next, snap: false }); lastIndicatorTop = next; });
     return () => cancelAnimationFrame(frame);
   }, [active]);
 
@@ -130,7 +139,7 @@ export function V3Sidebar({
           <span data-locale-motion>{t("新建对话")}</span>
         </button>
         <nav ref={navRef} className={`v3-side-nav${indicatorTop !== null ? " has-indicator" : ""}`} aria-label={t("工作区导航")}>
-          {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)` }} />}
+          {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)`, transition: indicator.snap ? "none" : undefined }} />}
           {NAV.map((item) => {
             const count = item.key === "resumes" ? resumeCount || null : item.key === "jobs" ? applicationCount : item.count?.() ?? null;
             const isActive = item.key === active;
@@ -151,27 +160,39 @@ export function V3Sidebar({
             );
           })}
         </nav>
-        <div className="v3-side-section">
-          <span data-locale-motion>{t("最近对话")}</span>
-          <button type="button" aria-label={t("新建对话")} onClick={newConversation}><Icon name="plus" size={13} /></button>
-        </div>
-        <div className="v3-side-sessions">
-          {status === "loading" && <p className="v3-side-muted">{t("正在读取对话…")}</p>}
-          {status === "error" && <p className="v3-side-muted">{t("对话列表暂时无法读取")}</p>}
-          {status === "ready" && sessions.length === 0 && <p className="v3-side-muted">{t("还没有对话")}</p>}
-          {sessions.slice(0, 30).map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              active={active === "home" && session.id === activeSessionId}
-              onSelect={() => {
-                if (onSelectSession) onSelectSession(session.id);
-                else navigateTo(assistantPath(session.id));
-                onNavigate?.();
-              }}
-            />
-          ))}
-        </div>
+        {(["pin", "recent"] as const).map((group) => {
+          const label = group === "pin" ? "Pin" : t("最近对话");
+          const items = sessions.filter((session) => Boolean(session.pinned) === (group === "pin"));
+          const collapsed = collapsedGroups[group];
+          const id = `${groupId}-${group}`;
+          return (
+            <section className="v3-side-session-group" key={group} aria-label={label}>
+              <div className="v3-side-section">
+                <span data-locale-motion>{label}</span>
+                <button type="button" aria-label={t(collapsed ? "展开{value0}" : "收起{value0}", { value0: label })} aria-expanded={!collapsed} aria-controls={id} onClick={() => toggleGroup(group)}>
+                  <Icon name={collapsed ? "chev" : "chevd"} size={13} />
+                </button>
+              </div>
+              <div id={id} className="v3-side-sessions" hidden={collapsed}>
+                {status === "loading" && <p className="v3-side-muted">{t("正在读取对话…")}</p>}
+                {status === "error" && <p className="v3-side-muted">{t("对话列表暂时无法读取")}</p>}
+                {status === "ready" && items.length === 0 && <p className="v3-side-muted">{t(group === "pin" ? "还没有 Pin 对话" : "还没有对话")}</p>}
+                {(group === "pin" ? items : items.slice(0, 30)).map((session) => (
+                  <SessionRow
+                    key={session.id}
+                    session={session}
+                    active={active === "home" && session.id === activeSessionId}
+                    onSelect={() => {
+                      if (onSelectSession) onSelectSession(session.id);
+                      else navigateTo(assistantPath(session.id));
+                      onNavigate?.();
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
       <div className="v3-side-foot">
         {/* 账号与设置的唯一入口：点击头像进入（原来单独的「设置」行与它重复，已删除） */}
@@ -187,7 +208,7 @@ export function V3Sidebar({
   );
 }
 
-// 对话行：悬停出现 ⋯，菜单里「重命名 / 删除」（01.1h–01.1j）
+// 对话行：悬停出现 ⋯，支持 Pin、重命名与删除。
 function SessionRow({ session, active, onSelect }: { session: AgentSession; active: boolean; onSelect: () => void }) {
   useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -197,6 +218,8 @@ function SessionRow({ session, active, onSelect }: { session: AgentSession; acti
   const [busy, setBusy] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [pinError, setPinError] = useState(false);
+  const setPinned = useSessionStore((state) => state.setPinned);
   const rename = useSessionStore((state) => state.rename);
   const destroy = useSessionStore((state) => state.destroy);
   const running = useSessionStore((state) => state.runningIds.includes(session.id));
@@ -266,6 +289,13 @@ function SessionRow({ session, active, onSelect }: { session: AgentSession; acti
         label={t("{value0} 的操作菜单", { value0: session.title })}
         placement="bottom-start"
         items={[
+          { label: t(session.pinned ? "取消 Pin" : "Pin"), icon: "thumbtack", disabled: busy, onSelect: async () => {
+            setBusy(true);
+            setPinError(false);
+            try { await setPinned(session.id, !session.pinned); }
+            catch { setPinError(true); }
+            finally { setBusy(false); }
+          } },
           { label: t("重命名"), icon: "edit", onSelect: () => { setDraft(session.title); setRenaming(true); } },
           { kind: "separator" },
           {
@@ -278,6 +308,7 @@ function SessionRow({ session, active, onSelect }: { session: AgentSession; acti
           },
         ]}
       />
+      <MotionPresence>{pinError && <Toast title={t("Pin 状态保存失败，请重试")} kind="error" onDismiss={() => setPinError(false)} />}</MotionPresence>
       <MotionPresence>{confirming && (
         <ConfirmDialog
           title={t("删除这条对话？")}

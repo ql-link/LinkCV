@@ -76,21 +76,27 @@ class LLMGateway(Protocol):
 
 
 def _usage(value: object) -> GatewayUsage:
-    usage = getattr(value, "usage", None)
-    return GatewayUsage(
-        input_tokens=getattr(usage, "prompt_tokens", None),
-        output_tokens=getattr(usage, "completion_tokens", None),
-        details=None,
-    )
+    return _normalized_gateway_usage(_field(value, "usage"), responses=False)
 
 
 def _responses_usage(value: object) -> GatewayUsage:
-    usage = getattr(value, "usage", None)
-    return GatewayUsage(
-        input_tokens=getattr(usage, "input_tokens", None),
-        output_tokens=getattr(usage, "output_tokens", None),
-        details=None,
-    )
+    return _normalized_gateway_usage(_field(value, "usage"), responses=True)
+
+
+def _normalized_gateway_usage(usage: object, *, responses: bool) -> GatewayUsage:
+    prompt = _field(usage, "input_tokens" if responses else "prompt_tokens")
+    output = _field(usage, "output_tokens" if responses else "completion_tokens")
+    inputs = _field(usage, "input_tokens_details" if responses else "prompt_tokens_details")
+    outputs = _field(usage, "output_tokens_details" if responses else "completion_tokens_details")
+    read = _field(inputs, "cached_tokens", _field(usage, "cache_read_input_tokens",
+        _field(usage, "prompt_cache_hit_tokens", _field(usage, "cached_tokens"))))
+    write = _field(usage, "cache_creation_input_tokens", _field(inputs, "cache_write_tokens", 0))
+    return GatewayUsage(input_tokens=prompt, output_tokens=output, details={
+        "usagePresent": usage is not None and prompt is not None and output is not None,
+        "usageSource": "provider", "cacheRead": read, "cacheWrite": write,
+        "cacheWrite1h": _field(_field(usage, "cache_creation"), "ephemeral_1h_input_tokens"),
+        "reasoning": _field(outputs, "reasoning_tokens"),
+    })
 
 
 def _responses_input(messages: Sequence[ChatMessage]) -> list[dict]:

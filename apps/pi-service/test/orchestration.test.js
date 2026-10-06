@@ -351,3 +351,24 @@ test("a plan saved with the earlier resume_edit/advice spelling still runs as a 
   assert.deepEqual(h.statuses(), { intent_1: "completed" });
   assert.equal(h.proposals.length, 0);
 });
+
+test("an entry-less section is rewritten through one frozen range instead of failing", async (t) => {
+  const context = structuredClone(wholeResumeContext);
+  for (const block of context.blocks) block.target.entry_id = null;
+  const h = createHarness(t, {
+    intent: { mode: "plan" }, tasks: [task("intent_1", "resume_edit", { context_refs: withResume() })], context,
+    script: [
+      [call("p1", "submit_resume_edit_plan", { mode: "rewrite_entry_star", summary: "改写实习经历", edits: [
+        { block_id: "node_project000000001", op: "replace_target_text", new_text: "主导订单系统重构，缩短发布周期。", summary: "补充结果" },
+        { block_id: "node_project000000002", op: "replace_target_text", new_text: "优化 MySQL 慢查询。", summary: "补充动作" }] })],
+      [say("已生成一份待确认修改。")],
+    ],
+  });
+  await h.run();
+  assert.equal(h.proposals.length, 1);
+  const range = h.called("targets:resolve").find((item) => item.payload.start_node_id);
+  assert.equal(range.payload.start_node_id, "node_project000000001");
+  assert.equal(range.payload.end_node_id, "node_project000000002");
+  assert.equal(h.called("diagnoses")[0].payload.scope, "range");
+  assert.deepEqual(h.statuses(), { intent_1: "completed" });
+});

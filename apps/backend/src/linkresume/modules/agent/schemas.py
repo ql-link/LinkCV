@@ -600,7 +600,11 @@ class ResumeTargetLocator(BaseModel):
 
     resume_id: str
     base_lock_version: int = Field(ge=1)
-    surface: Literal["semantic", "editor"]
+    surface: Literal["semantic", "editor", "canonical"]
+    format: Literal["canonical-target.v1"] | None = None
+    target_kind: str | None = None
+    node_ids: list[str] = Field(default_factory=list, max_length=100)
+    allowed_scopes: list[Literal["target", "entry", "section", "resume", "range"]] = Field(default_factory=list)
     section: str | None = Field(default=None, max_length=64)
     entry_id: str | None = Field(default=None, max_length=128)
     field: str | None = Field(default=None, max_length=64)
@@ -623,6 +627,9 @@ class TargetResolveRequest(BaseModel):
     selection_context: AgentSelectionContext | None = None
     quoted_text: str | None = Field(default=None, min_length=1, max_length=20_000)
     scope_hint: Literal["target", "resume"] = "target"
+    node_id: str | None = Field(default=None, pattern=r"^node_[a-z0-9]{16,64}$")
+    start_node_id: str | None = Field(default=None, pattern=r"^node_[a-z0-9]{16,64}$")
+    end_node_id: str | None = Field(default=None, pattern=r"^node_[a-z0-9]{16,64}$")
 
 
 class TargetResolveResponse(BaseModel):
@@ -685,7 +692,7 @@ class ContextReadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target: ResumeTargetLocator
-    scope: Literal["target", "entry", "section", "resume"] = "target"
+    scope: Literal["target", "entry", "section", "resume", "range"] = "target"
 
 
 class ScopedResumeContextResponse(BaseModel):
@@ -694,8 +701,9 @@ class ScopedResumeContextResponse(BaseModel):
     title: str
     lock_version: int
     target: ResumeTargetLocator
-    scope: Literal["target", "entry", "section", "resume"]
+    scope: Literal["target", "entry", "section", "resume", "range"]
     content: str
+    truncated: bool = False
     blocks: list[dict[str, Any]] = Field(default_factory=list)
     data: ResumeDocument | None = None
     style: ResumePresentation
@@ -729,7 +737,7 @@ class DiagnosisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target: ResumeTargetLocator
-    scope: Literal["target", "entry", "section", "resume"] = "target"
+    scope: Literal["target", "entry", "section", "resume", "range"] = "target"
     job_id: str | None = None
     source_ids: list[str] = Field(default_factory=list, max_length=20)
 

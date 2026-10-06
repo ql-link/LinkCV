@@ -21,11 +21,8 @@ import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoading } from "@/components/ui";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 import { useResumeStore } from "../../store/resumeStore";
+import { copyText } from "../../utils/clipboard";
 import { MessageActions } from "./MessageActions";
-import { AgentTaskSummary } from "./AgentTaskSummary";
-import { MessageQueue } from "./QueuedMessages";
-import { useMessageQueue } from "./useMessageQueue";
-import { enqueueMessage, submissionPayload, type QueueItem } from "./messageQueue";
 
 type AgentPanelProps = {
   resumeId: string;
@@ -275,7 +272,7 @@ async function copyAgentCode(event: ReactMouseEvent<HTMLDivElement>) {
   const source = button.closest(".agent-code-block")?.querySelector("code")?.textContent ?? "";
 
   try {
-    await navigator.clipboard.writeText(source);
+    await copyText(source);
     button.textContent = t("已复制");
   } catch {
     button.textContent = t("复制失败");
@@ -341,15 +338,7 @@ export function AgentPanel({
   const handledDraftIdRef = useRef<number | null>(null);
   activeResumeIdRef.current = resumeId;
   const pendingClarification = pendingClarificationMessage(messages);
-  const queueUserId = useResumeStore((state) => state.user?.id ?? null);
-  const previousQueueDraft = useRef<{ input: string; selection: AgentSelectionContext | null } | null>(null);
-  const editingQueueRequest = useRef<QueueItem["request"] | null>(null);
-  useEffect(() => { previousQueueDraft.current = null; editingQueueRequest.current = null; }, [sessionId]);
-  const messageQueue = useMessageQueue({ userId: queueUserId, sessionId, running, runId,
-    blocked: Boolean(pendingClarification), visible: conversationView === "conversation",
-    send: (item) => runMessage(item.request.content, undefined, undefined, item) });
-  const messageQueueRef = useRef(messageQueue);
-  messageQueueRef.current = messageQueue;
+  const submittingMessage = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -430,7 +419,6 @@ export function AgentPanel({
   };
 
   const handleEvent = (event: AgentStreamEvent) => {
-    messageQueueRef.current.onEvent(event);
     if (event.type === "user.message.accepted") {
       setMessages((current) => current.some((item) => item.role === "user" && item.sequence_no === event.userSequenceNo) ? current : [...current, { sequence_no: event.userSequenceNo!, role: "user", run_id: event.runId,
         submission_key: event.submissionKey, content: event.content, contexts: event.contexts, created_at: new Date().toISOString() }]);
@@ -495,20 +483,19 @@ export function AgentPanel({
     content: string,
     replyToSequenceNo?: number,
     clarificationAnswersPayload?: ReturnType<typeof clarificationAnswerPayload>,
-    queuedItem?: QueueItem,
   ) => {
     if (!content || loading || running || (pendingClarification && replyToSequenceNo === undefined)) {
-      if (queuedItem) throw new ApiRequestError(409, "AGENT_RUN_IN_PROGRESS");
       return;
     }
-    const runSelectionContext = queuedItem?.request.selection_context ?? selectedContext;
+    const runSelectionContext = selectedContext;
     const epoch = conversationEpochRef.current;
-    if (!queuedItem && !await onBeforeRun()) {
+    if (!await onBeforeRun()) {
       return;
     }
     if (conversationEpochRef.current !== epoch) return;
     const requestedResumeId = resumeId;
-    if (queuedItem && activeResumeIdRef.current !== requestedResumeId) throw new ApiRequestError(409, "AGENT_QUEUE_PAUSED");
+    setInput((latest) => latest.trim() === content ? "" : latest);
+    setSelectedContext((latest) => latest === runSelectionContext ? null : latest);
     setError(null);
     setRunning(true);
     setToolStatus(null);
@@ -523,21 +510,23 @@ export function AgentPanel({
     streamRequestRef.current = streamRequestId;
     abortRef.current = controller;
     let currentSessionId: string | null = null;
+    let requestAccepted = false;
     try {
       currentSessionId = await ensureSession();
       const idempotencyKey = globalThis.crypto?.randomUUID?.().replace(/-/g, "") ?? `${Date.now()}_agent`;
       await api.streamAgentMessage(
         currentSessionId,
-        queuedItem ? submissionPayload(queuedItem) : {
+        {
           content,
           idempotency_key: idempotencyKey,
-          contexts: [{ type: "resume", id: requestedResumeId }],
+          contexts: [{ type: "resume", id: requestedResumeId, version: String(useResumeStore.getState().lockVersion) }],
           ...(runSelectionContext ? { selection_context: runSelectionContext } : {}),
           ...(replyToSequenceNo !== undefined ? { reply_to_sequence_no: replyToSequenceNo } : {}),
           ...(clarificationAnswersPayload ? { clarification_answers: clarificationAnswersPayload } : {}),
         },
         controller.signal,
         (streamEvent) => {
+          if (["run.started", "user.message.accepted", "assistant.delta"].includes(streamEvent.type)) requestAccepted = true;
           if (
             streamRequestRef.current === streamRequestId &&
             activeResumeIdRef.current === requestedResumeId
@@ -570,6 +559,7 @@ export function AgentPanel({
         activeResumeIdRef.current === requestedResumeId
       ) {
         setError(agentErrorMessage(reason));
+        if (!requestAccepted) setInput((latest) => latest || content);
         if (reason instanceof ApiRequestError && reason.message === "AGENT_CLARIFICATION_STALE" && currentSessionId) {
           try {
             const [detail, proposalResult] = await Promise.all([
@@ -588,7 +578,6 @@ export function AgentPanel({
           }
         }
       }
-      if (queuedItem && !controller.signal.aborted) throw reason;
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       if (
@@ -604,65 +593,14 @@ export function AgentPanel({
 
   const sendMessage = (event: FormEvent) => {
     event.preventDefault();
-    if (!input.trim()) return;
-    const snapshot = input;
-    const epoch = conversationEpochRef.current;
-    const editingRequest = editingQueueRequest.current;
-    const previousDraft = previousQueueDraft.current;
-    void (async () => {
-      if (!queueUserId) throw new Error("请先登录，输入内容已保留。");
-      if (!await onBeforeRun()) throw new Error("当前简历保存失败，输入内容已保留。");
-      if (conversationEpochRef.current !== epoch) throw new DOMException("Agent session changed", "AbortError");
-      const request = { ...(messageQueue.editingId ? editingRequest : {}), content: snapshot.trim(),
-        contexts: messageQueue.editingId && editingRequest?.contexts
-          ? editingRequest.contexts.map((ref) => ref.type === "resume" && ref.id === resumeId
-            ? { ...ref, version: String(useResumeStore.getState().lockVersion) } : ref)
-          : [{ type: "resume" as const, id: resumeId, version: String(useResumeStore.getState().lockVersion) }],
-        selection_context: selectedContext ?? undefined };
-      if (messageQueue.editingId) await messageQueue.saveEdit(request);
-      else {
-        const targetSessionId = await ensureSession();
-        if (useResumeStore.getState().user?.id !== queueUserId) throw new DOMException("Agent account changed", "AbortError");
-        await enqueueMessage(queueUserId, targetSessionId, request, { startIfEmpty: !running && !pendingClarification });
-      }
-      if (conversationEpochRef.current !== epoch) return;
-      setInput((latest) => latest === snapshot ? "" : latest);
-      setSelectedContext((latest) => latest === selectedContext ? null : latest);
-      if (messageQueue.editingId && previousDraft) {
-        setInput(previousDraft.input);
-        setSelectedContext(previousDraft.selection);
-        previousQueueDraft.current = null;
-        editingQueueRequest.current = null;
-      }
-    })().catch((reason) => {
-      if (conversationEpochRef.current !== epoch || (reason instanceof DOMException && reason.name === "AbortError")) return;
-      setError(reason instanceof ApiRequestError ? agentErrorMessage(reason) : (reason as Error).message);
-    });
-  };
-
-  const editQueuedMessage = (item: QueueItem) => {
-    const epoch = conversationEpochRef.current;
-    previousQueueDraft.current ??= { input, selection: selectedContext };
-    void messageQueue.beginEdit(item.itemId).then((request) => {
-      if (conversationEpochRef.current !== epoch) return;
-      editingQueueRequest.current = request;
-      setInput(request.content); setSelectedContext(request.selection_context ?? null);
-      document.getElementById("agent-message-input")?.focus();
-    }).catch(() => undefined);
-  };
-  const cancelQueueEdit = () => {
-    void messageQueue.cancelEdit();
-    editingQueueRequest.current = null;
-    if (previousQueueDraft.current) {
-      setInput(previousQueueDraft.current.input); setSelectedContext(previousQueueDraft.current.selection);
-      previousQueueDraft.current = null;
-    }
+    if (submittingMessage.current || running || loading || !input.trim()) return;
+    submittingMessage.current = true;
+    void runMessage(input.trim()).finally(() => { submittingMessage.current = false; });
   };
 
   const startNewConversation = () => {
     conversationEpochRef.current += 1;
     streamRequestRef.current += 1;
-    void messageQueue.pause("已切换会话，队列暂停");
     abortRef.current?.abort();
     abortRef.current = null;
     setSessionId(null);
@@ -698,7 +636,6 @@ export function AgentPanel({
     const requestId = sessionRequestRef.current + 1;
     sessionRequestRef.current = requestId;
     streamRequestRef.current += 1;
-    await messageQueue.pause("已切换会话，队列暂停");
     if (conversationEpochRef.current !== epoch) return;
     abortRef.current?.abort();
     abortRef.current = null;
@@ -742,7 +679,6 @@ export function AgentPanel({
           if (latestProposals) setProposals(latestProposals.proposals);
         }).catch((reason) => {
           if (!controller.signal.aborted && streamRequestRef.current === streamRequestId) {
-            void messageQueueRef.current.pause("连接中断，队列暂停");
             setError(agentErrorMessage(reason));
           }
         }).finally(() => {
@@ -781,12 +717,9 @@ export function AgentPanel({
   const cancelRun = async () => {
     const epoch = conversationEpochRef.current;
     const targetRunId = runId;
-    await messageQueue.pause("本轮已停止，队列暂停");
     if (conversationEpochRef.current !== epoch) return;
     streamRequestRef.current += 1;
-    if (targetRunId) await api.cancelAgentRun(targetRunId).then((receipt) => {
-      if (receipt.status === "cancelled" && conversationEpochRef.current === epoch) messageQueueRef.current.onEvent({ type: "run.cancelled", runId: targetRunId });
-    }, () => undefined);
+    if (targetRunId) await api.cancelAgentRun(targetRunId).catch(() => undefined);
     if (conversationEpochRef.current !== epoch) return;
     abortRef.current?.abort();
     abortRef.current = null;
@@ -798,7 +731,6 @@ export function AgentPanel({
   const closePanel = () => {
     conversationEpochRef.current += 1;
     streamRequestRef.current += 1;
-    void messageQueue.pause("页面已离开，队列暂停");
     abortRef.current?.abort();
     onClose();
   };
@@ -901,7 +833,6 @@ export function AgentPanel({
               {message.role === "user" && <AgentUserAvatar avatarUrl={userAvatarUrl} displayName={userDisplayName} />}
             </div>
             <MessageActions content={message.content} createdAt={message.created_at} timeLabel={messageTime(message.created_at)} />
-            {message.role === "user" && <AgentTaskSummary tasks={message.tasks} />}
           </article>
         ))}
         {toolStatus && <p className="agent-tool-status"><LoaderCircle aria-hidden="true" className="agent-spinner" />{toolStatus}</p>}
@@ -1034,8 +965,6 @@ export function AgentPanel({
           ))}
         </div>}
         <label className="visually-hidden" htmlFor="agent-message-input">{t("告诉助手你想改善什么")}</label>
-        <MessageQueue controller={messageQueue} running={running} onEdit={editQueuedMessage} />
-        {messageQueue.editingId && <div className="agent-queue-edit-notice"><span>正在编辑排队消息</span><Button className="agent-queue-button" type="button" variant="ghost" size="sm" onClick={cancelQueueEdit}>取消编辑</Button></div>}
         <div className="agent-input-shell">
           <textarea
             id="agent-message-input"
@@ -1048,7 +977,7 @@ export function AgentPanel({
           {running && (
             <button className="agent-send-button is-stop" type="button" aria-label={t("停止生成")} onClick={() => void cancelRun()}><Square aria-hidden="true" size={15} /></button>
           )}
-          <button className="agent-send-button" disabled={loading || !input.trim()} type="submit" aria-label={messageQueue.editingId ? "保存排队消息" : t("发送")}><Send aria-hidden="true" size={17} /></button>
+          {!running && <button className="agent-send-button" disabled={loading || !input.trim() || Boolean(pendingClarification)} type="submit" aria-label={t("发送")}><Send aria-hidden="true" size={17} /></button>}
         </div>
         <small className="agent-composer-note">{t("修改提案不会自动覆盖简历，需要你确认后应用。")}</small>
       </form>

@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from linkresume.modules.llm.pricing import route_pricing
 
 from linkresume.modules.llm.models import (
     LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute,
@@ -175,7 +176,7 @@ def resolve_candidates(
             protocol_code=binding.protocol_code,
             settings=dict(connection.settings_json or {}),
             credential_ciphertext=connection.credential_ciphertext,
-            pricing=dict(route.pricing_json) if route.pricing_json else None,
+            pricing=route_pricing(route),
             selection_source=("fallback" if plans else ("user" if model_id is not None else "default")),
         ))
     return plans

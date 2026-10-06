@@ -1,3 +1,4 @@
+from datetime import timezone
 from fastapi import APIRouter, Depends, Request, Header
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -65,6 +66,8 @@ from linkresume.modules.agent.service import (
     task_authorized_refs,
     update_task_status,
     upsert_tool_event,
+    record_canonical_range,
+    require_canonical_range,
 )
 from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute, get_use_case_route
 from linkresume.modules.llm.providers import pi_api
@@ -266,9 +269,24 @@ def record_run_llm_call(
     config_version = run.runtime_config_version if is_primary else (
         payload.config_version or connection.runtime_config_version
     )
+    start, finish = payload.request_started_at, payload.request_finished_at
+    if (start is None) != (finish is None) or (start is not None and (
+            start.tzinfo is None or finish.tzinfo is None or finish < start)):
+        raise ApiError(422, "LLM_CALL_TIME_INVALID")
+    def utc_time(value):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
     existing = db.scalar(select(LLMCallLog).where(LLMCallLog.call_id == payload.call_id))
     if existing is not None:
-        if existing.agent_run_id != run.id or existing.route_id != route_id:
+        if (existing.agent_run_id != run.id or existing.route_id != route_id or existing.status != payload.status
+                or existing.input_tokens != payload.input_tokens or existing.output_tokens != payload.output_tokens
+                or existing.usage_json != payload.usage or existing.upstream_request_id != payload.upstream_request_id
+                or existing.error_code != payload.error_code or existing.price_snapshot_json != price_snapshot
+                or utc_time(existing.request_started_at) != utc_time(start)
+                or utc_time(existing.request_finished_at) != utc_time(finish)):
             raise ApiError(409, "LLM_CALL_CONFLICT")
         return {"recorded": True}
     usage = GatewayUsage(
@@ -277,8 +295,11 @@ def record_run_llm_call(
         details=payload.usage,
     )
     from linkresume.modules.llm.service import _metering
+    from linkresume.modules.llm.pricing import normalize_usage
+    from linkresume.modules.llm.accounting import record_runtime_cost, store_price
     metering_status, estimated_cost, currency = _metering(usage, price_snapshot)
-    db.add(LLMCallLog(
+    price_revision = store_price(db, route, price_snapshot, update_route=False)
+    call = LLMCallLog(
         call_id=payload.call_id,
         use_case=ASSISTANT_CONVERSATION,
         source="pi_agent",
@@ -296,11 +317,18 @@ def record_run_llm_call(
         output_tokens=payload.output_tokens,
         metering_status=metering_status,
         price_snapshot_json=price_snapshot,
+        price_revision_id=price_revision.id if price_revision else None,
+        request_started_at=payload.request_started_at.astimezone(timezone.utc) if payload.request_started_at else None,
+        request_finished_at=payload.request_finished_at.astimezone(timezone.utc) if payload.request_finished_at else None,
+        time_basis="explicit_utc" if payload.request_started_at is not None else "unknown",
+        normalized_usage_json=normalize_usage(payload.input_tokens, payload.output_tokens, payload.usage, exclusive=True),
         estimated_cost=estimated_cost,
         cost_currency=currency,
         latency_ms=payload.latency_ms,
         error_code=payload.error_code,
-    ))
+    )
+    db.add(call)
+    record_runtime_cost(db, call)
     db.commit()
     return {"recorded": True}
 
@@ -335,6 +363,9 @@ def resolve_run_target(
         selection_context=payload.selection_context,
         quoted_text=payload.quoted_text,
         scope_hint=payload.scope_hint,
+        node_id=payload.node_id,
+        start_node_id=payload.start_node_id,
+        end_node_id=payload.end_node_id,
     )
     if result["status"] == "resolved":
         message = active_message(db, run)
@@ -342,6 +373,7 @@ def resolve_run_target(
                          if item.get("type") == "resume" and item.get("id") == str(resume.id)), None)
         authorize_resolved_task_resume(db, run=run, resume_id=str(resume.id), label=resume.title,
                                       source="implicit" if selected and selected.get("presentation") == "implicit" else "explicit")
+        record_canonical_range(db, run, TargetResolveResponse.model_validate(result).target)
     return TargetResolveResponse.model_validate(result)
 
 
@@ -416,14 +448,28 @@ def read_scoped_run_context(
             selection_present=payload.target.selected_text is not None, error_code=error_code,
         )
     log_read("started")
+    from linkresume.modules.agent.canonical_targets import MAX_READ_CHARS
     try:
-        _, _, resume, snapshot = _run_resume(db, run_id, payload.target.resume_id)
+        run, _, resume, snapshot = _run_resume(db, run_id, payload.target.resume_id)
+        require_canonical_range(db, run, payload.target)
         content = target_content(resume, snapshot.data, payload.target, payload.scope)
         blocks = scoped_blocks(resume, snapshot.data, payload.target, payload.scope)
     except ApiError as error:
         log_read("failed", error.code)
         raise
     log_read("succeeded")
+    bounded_blocks = []
+    budget = MAX_READ_CHARS
+    truncated = len(content) > MAX_READ_CHARS
+    for block in blocks:
+        if budget <= 0:
+            truncated = True
+            break
+        value = block["content"]
+        if len(value) > budget:
+            truncated = True
+        bounded_blocks.append({**block, "content": value[:budget]})
+        budget -= len(value)
     return ScopedResumeContextResponse(
         run_id=run_id,
         resume_id=str(resume.id),
@@ -431,9 +477,10 @@ def read_scoped_run_context(
         lock_version=resume.lock_version,
         target=payload.target,
         scope=payload.scope,
-        content=content,
-        blocks=blocks,
-        data=snapshot.data if payload.scope == "resume" else None,
+        content=content[:MAX_READ_CHARS],
+        truncated=truncated,
+        blocks=bounded_blocks,
+        data=snapshot.data if payload.scope == "resume" and not truncated else None,
         style=snapshot.style,
     )
 
@@ -472,6 +519,7 @@ def diagnose_run_target(
     run, session, resume, snapshot = _run_resume(
         db, run_id, payload.target.resume_id
     )
+    require_canonical_range(db, run, payload.target)
     if payload.job_id is not None:
         require_task_resource(
             db, run=run, resource_type="job", resource_id=payload.job_id,

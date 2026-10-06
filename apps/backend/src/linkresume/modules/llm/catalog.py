@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 from linkresume.modules.llm.providers import aihubmix_base_url, validate_settings
+from linkresume.modules.llm.pricing import catalog_pricing
 
 CATALOG_URLS = {
     "aihubmix": "https://aihubmix.com/api/v1/models",
@@ -32,27 +32,7 @@ class CatalogResult:
 
 
 def _pricing(provider_code: str, item: dict[str, Any]) -> dict[str, Any] | None:
-    raw = item.get("pricing")
-    if provider_code != "aihubmix" or not isinstance(raw, dict):
-        return None
-    result: dict[str, Any] = {
-        "source": "aihubmix_catalog",
-        "checked_at": datetime.now(timezone.utc).isoformat(),
-        "currency": "USD",
-        "raw": raw,
-    }
-    # Tier, cache and promotion billing require more than plain token counts.
-    if (
-        isinstance(raw.get("input"), (int, float))
-        and isinstance(raw.get("output"), (int, float))
-        and not raw.get("tiers")
-        and not item.get("promotion")
-        and raw.get("cache_read") is None
-        and raw.get("cache_write") is None
-    ):
-        result["input_per_million"] = str(raw["input"])
-        result["output_per_million"] = str(raw["output"])
-    return result
+    return catalog_pricing(item) if provider_code == "aihubmix" else None
 
 
 async def fetch_catalog(

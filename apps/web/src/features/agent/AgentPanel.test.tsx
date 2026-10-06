@@ -43,6 +43,7 @@ const proposal: AgentProposal = {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  delete (document as Partial<Document>).execCommand;
 });
 
 describe("AgentPanel", () => {
@@ -87,7 +88,8 @@ describe("AgentPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "历史对话" }));
     fireEvent.click(await screen.findByRole("button", { name: /简历助手/ }));
     await waitFor(() => expect(api.streamAgentRun).toHaveBeenCalledOnce());
-    await screen.findByText("等待插入");
+    expect(screen.queryByText("等待插入")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "待发送消息" })).not.toBeInTheDocument();
     act(() => {
       deliver({ type: "assistant.delta", runId: "run-1", userSequenceNo: 1, delta: "原始回复" });
       deliver({ type: "assistant.message.completed", runId: "run-1", userSequenceNo: 1, sequenceNo: 2, content: "原始回复" });
@@ -165,6 +167,24 @@ const answer = 42;
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("const answer = 42;"));
     expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("已复制");
+  });
+
+  it("HTTP 环境可以复制代码块原文", async () => {
+    vi.stubGlobal("navigator", {});
+    let copiedText = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => {
+        copiedText = (document.activeElement as HTMLTextAreaElement).value;
+        return true;
+      },
+    });
+    render(<AgentMarkdown content={'```ts\nconst answer = 42;\n```'} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("已复制"));
+    expect(copiedText).toBe("const answer = 42;");
   });
 
   it("用户消息头像使用当前用户图片，并在缺少图片时回退到昵称首字", async () => {
