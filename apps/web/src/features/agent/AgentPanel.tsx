@@ -21,6 +21,7 @@ import { resumePresentationTemplateKey } from "../../api/resumeContract";
 import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoading } from "@/components/ui";
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 import { useResumeStore } from "../../store/resumeStore";
+import { copyText } from "../../utils/clipboard";
 import { MessageActions } from "./MessageActions";
 
 type AgentPanelProps = {
@@ -271,7 +272,7 @@ async function copyAgentCode(event: ReactMouseEvent<HTMLDivElement>) {
   const source = button.closest(".agent-code-block")?.querySelector("code")?.textContent ?? "";
 
   try {
-    await navigator.clipboard.writeText(source);
+    await copyText(source);
     button.textContent = t("已复制");
   } catch {
     button.textContent = t("复制失败");

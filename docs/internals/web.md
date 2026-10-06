@@ -51,6 +51,12 @@ V3 工作区在视口宽度小于 1024px 时使用顶部导航按钮和模态抽
 
 编辑器的 ResizeObserver 测量纸张滚动区宽度和左右内边距，独立编辑器单页以 560px 显示宽度为上限，内嵌编辑器以一张 A4 的原始宽度为上限，双页按两张 A4 与页间空隙适配；窗口或面板改变可用空间时重新计算。手动预览缩放在适配基准上生效，纸面数据、打印尺寸与持久化格式不由屏幕尺寸决定。
 
+## 浏览器能力兼容
+
+远程 HTTP Dev 页面不具备安全上下文，不能假设 `navigator.clipboard` 或 `crypto.subtle` 存在。分享弹窗、公开分享页、Agent 消息与代码、生成文档预览和后台 ID 复制统一调用 `utils/clipboard.ts` 的 `copyText`：优先使用原生 Clipboard API，缺失或被拒绝时通过临时文本选区执行 `document.execCommand("copy")`，完成后清理临时节点并恢复焦点与选区。两种方式均失败时返回错误，由页面显示失败提示，不显示复制成功。
+
+编辑器 AI 选区摘要统一调用 `utils/sha256.ts` 的 `sha256Text`：优先使用 Web Crypto，缺失或失败时按需加载 `@noble/hashes`；两条路径都按 UTF-8 字节计算 SHA-256，保留 `sha256:<小写十六进制>` 契约。UUID 继续使用入口已有的兼容处理。
+
 ## API 调用
 
 API 客户端只发送相对 `/api/...` 请求并携带 cookie，不在业务组件中写死后端主机。每次请求附加 `X-Request-ID`，错误对象保留服务端回传的追踪值；API 5xx 会异步上报稳定错误码和追踪值，不发送原响应 body。开发期全部 `/api` 请求由 Vite 代理到 FastAPI，见 [架构文档](architecture.md#本地请求路径)。模拟面试语音通道 `/api/mock-interviews/{id}/speech` 在 Vite 中单独启用 WebSocket 代理并保留浏览器的 `Host`，使后端的 `Origin` 同源校验成立；代理读写等待上限为 600 秒。短 access 过期后，受保护请求会复用单个 `/api/auth/refresh` 请求轮换双 Cookie，并重试一次原请求；模拟面试的 SSE 回合流与录音下载不走 JSON 请求封装，通过 `client.ts` 导出的 `apiRequest`、`refreshApiSession`、`createApiRequestId` 复用同一套会话刷新与请求标识，401 时在流开始前刷新并重试一次；应用启动时 `/api/auth/me` 返回空用户也会先尝试 refresh，再判定为访客。

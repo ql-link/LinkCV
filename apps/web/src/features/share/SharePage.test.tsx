@@ -90,9 +90,32 @@ const publicPayload: PublicSharePayload = {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  delete (document as Partial<Document>).execCommand;
 });
 
 describe("SharePage", () => {
+  it.each([true, false])("HTTP 下复制当前完整网址并反馈实际结果（成功：%s）", async (success) => {
+    vi.stubGlobal("navigator", {});
+    let copiedText = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => {
+        copiedText = (document.activeElement as HTMLTextAreaElement).value;
+        return success;
+      },
+    });
+    mockedFetch.mockResolvedValue(publicPayload);
+    render(<SharePage token="token_123" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "复制链接" }));
+
+    expect(await screen.findByText(success ? "链接已复制" : "复制失败，请手动复制地址栏链接")).toBeInTheDocument();
+    expect(copiedText).toBe(window.location.href);
+    expect(document.querySelector("textarea")).toBeNull();
+    if (!success) expect(screen.queryByText("链接已复制")).not.toBeInTheDocument();
+  });
+
   it("加载中显示占位文案", () => {
     mockedFetch.mockReturnValue(new Promise(() => undefined));
     render(<SharePage token="token_123" />);

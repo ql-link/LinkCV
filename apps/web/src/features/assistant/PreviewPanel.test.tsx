@@ -6,9 +6,40 @@ import { PreviewPanel, type PreviewTab } from "./PreviewPanel";
 
 const callbacks = () => ({ onActivate: vi.fn(), onCloseTab: vi.fn(), onClose: vi.fn() });
 const tab: PreviewTab = { kind: "dataset", id: "d1", label: "示例岗位.md" };
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  delete (document as Partial<Document>).execCommand;
+});
 
 describe("文件预览", () => {
+  it.each([true, false])("HTTP 下复制生成文档的完整 Markdown 并反馈实际结果（成功：%s）", async (success) => {
+    vi.stubGlobal("navigator", {});
+    let copiedText = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => {
+        copiedText = (document.activeElement as HTMLTextAreaElement).value;
+        return success;
+      },
+    });
+    const content = "# 面试准备\n\n- 示例内容 😀\n";
+    const onNotice = vi.fn();
+    render(<PreviewPanel tabs={[{ kind: "generated", id: "g1", label: "准备.md", content }]} activeKey="generated:g1" onNotice={onNotice} {...callbacks()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "复制" }));
+
+    if (success) {
+      expect(await screen.findByRole("button", { name: "已复制" })).toBeInTheDocument();
+      expect(onNotice).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(onNotice).toHaveBeenCalledWith("复制失败，请手动选择内容复制。"));
+      expect(screen.queryByRole("button", { name: "已复制" })).not.toBeInTheDocument();
+    }
+    expect(copiedText).toBe(content);
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+
   it("网络失败可以重试，引用片段标出已引用", async () => {
     vi.spyOn(api, "getDatasetContent").mockRejectedValueOnce(new ApiRequestError(500, "INTERNAL_ERROR")).mockResolvedValueOnce({ id: "d1", file_name: tab.label, file_format: "md", markdown: "# 示例岗位\n\n- 负责调度系统设计\n- 具备后端经验" });
     render(<PreviewPanel tabs={[{ ...tab, excerpts: ["负责调度系统设计"] }]} activeKey="dataset:d1" {...callbacks()} />);

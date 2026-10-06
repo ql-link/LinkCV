@@ -43,6 +43,7 @@ const proposal: AgentProposal = {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  delete (document as Partial<Document>).execCommand;
 });
 
 describe("AgentPanel", () => {
@@ -166,6 +167,24 @@ const answer = 42;
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("const answer = 42;"));
     expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("已复制");
+  });
+
+  it("HTTP 环境可以复制代码块原文", async () => {
+    vi.stubGlobal("navigator", {});
+    let copiedText = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => {
+        copiedText = (document.activeElement as HTMLTextAreaElement).value;
+        return true;
+      },
+    });
+    render(<AgentMarkdown content={'```ts\nconst answer = 42;\n```'} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("已复制"));
+    expect(copiedText).toBe("const answer = 42;");
   });
 
   it("用户消息头像使用当前用户图片，并在缺少图片时回退到昵称首字", async () => {

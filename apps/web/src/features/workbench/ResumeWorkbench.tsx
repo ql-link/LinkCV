@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { flushSync } from "react-dom";
 import type { Instance as TippyInstance } from "tippy.js";
 import { api, ApiRequestError, type AgentSelectionContext, type ResumeTemplate } from "../../api/client";
+import { sha256Text } from "../../utils/sha256";
 import { resumeImageContractErrorMessage } from "./resumeImageLimits";
 import { IconButton } from "@/components/ui";
 import { useResumeStore, type ResumeSettings } from "../../store/resumeStore";
@@ -692,8 +693,7 @@ async function selectionContextFromEditor(editor: Editor): Promise<AgentSelectio
   });
   const uniqueBlockIds = [...new Set(blockIds)];
   if (!uniqueBlockIds.length) return null;
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(selectedText));
-  const hash = Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+  const hash = await sha256Text(selectedText);
   return {
     block_ids: uniqueBlockIds,
     from,

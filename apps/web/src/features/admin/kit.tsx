@@ -14,6 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import { ApiRequestError, type CostSummary } from "../../api/client";
+import { copyText as copyToClipboard } from "../../utils/clipboard";
 import { visualScale } from "./viewportScale";
 
 /* ---------- formatting ---------- */
@@ -903,7 +904,7 @@ export function DetailList({ items }: { items: Array<[string, ReactNode]> }) {
 }
 
 export function copyText(text: string, notify: ConsoleContext["notify"], label = "已复制") {
-  navigator.clipboard?.writeText(text).then(
+  return copyToClipboard(text).then(
     () => notify(`${label}：${text}`),
     () => notify("复制失败", "error"),
   );

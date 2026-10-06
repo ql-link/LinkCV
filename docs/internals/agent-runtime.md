@@ -6,7 +6,7 @@ Agent 消息操作由会话 ID 与幂等键生成稳定公共 ID。`agent_operat
 
 ## 运行时边界
 
-独立助手和编辑器侧栏复用本地 `MessageActions` 展示消息已有的 `created_at`，并将该条 `content` 写入浏览器剪贴板；悬停显隐和复制反馈只发生在 Web，不新增 Agent 请求或持久化字段。
+独立助手和编辑器侧栏复用本地 `MessageActions` 展示消息已有的 `created_at`，并通过 Web 共用的 `copyText()` 将该条 `content` 写入浏览器剪贴板；消息与代码块共用 [HTTP 复制兼容](web.md#浏览器能力兼容)，悬停显隐和复制反馈只发生在 Web，不新增 Agent 请求或持久化字段。
 
 Web 不再将用户消息中的 `tasks` 渲染为消息下方的摘要列表；服务端仍保存并返回任务结果，任务执行链路不受这一呈现调整影响。
 

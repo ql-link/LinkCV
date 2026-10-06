@@ -1770,6 +1770,7 @@ export const messages: Record<string, string> = {
   "已保存到 资料库 / AI 文档（本地模拟）": "Saved to Library / AI Documents (local demo)",
   "未保存 · 仅在本次对话中可见": "Not saved · Visible only in this conversation",
   "复制失败，请允许剪贴板访问后重试。": "Copy failed. Allow clipboard access and retry.",
+  "复制失败，请手动选择内容复制。": "Copy failed. Select the content and copy it manually.",
   "保存到资料库": "Save to library",
   "在编辑器中打开": "Open in editor",
   "在资料库中打开": "Open in library",

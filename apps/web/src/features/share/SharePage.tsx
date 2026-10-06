@@ -4,6 +4,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type React
 import brandWordmark from "@/assets/linkresume-wordmark.png";
 import { PageLoading } from "@/components/ui";
 import { api, ApiRequestError, type PublicSharePayload } from "../../api/client";
+import { copyText } from "../../utils/clipboard";
 import privateLock from "../../assets/figma/share-private-lock.svg";
 import errorCloud from "../../assets/figma/resume-error-cloud.svg";
 import { authPath } from "../../routing";
@@ -284,7 +285,7 @@ export function SharePage({ token }: { token: string }) {
 
   const copyLink = () => {
     const url = window.location.href;
-    void (navigator.clipboard?.writeText(url) ?? Promise.reject(new Error("clipboard unavailable")))
+    void copyText(url)
       .then(() => setToast(t("链接已复制")))
       .catch(() => setToast(t("复制失败，请手动复制地址栏链接")));
   };
