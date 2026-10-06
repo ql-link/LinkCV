@@ -50,7 +50,6 @@ import { BeTag, Dialog, DialogFooter, SearchBox, Toast } from "../../v3/primitiv
 import { useActiveSessionStore, useSessionStore } from "../../v3/sessionStore";
 import assistantFeather from "./assistant-assets/assistant-feather.png";
 import { MessageActions } from "../agent/MessageActions";
-import { AgentTaskSummary } from "../agent/AgentTaskSummary";
 import { MessageQueue } from "../agent/QueuedMessages";
 import { useMessageQueue } from "../agent/useMessageQueue";
 import { enqueueMessage, submissionPayload, type QueueDraft, type QueueItem } from "../agent/messageQueue";
@@ -2315,7 +2314,6 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
             {message.status === "stopped" && <small className="assistant-stopped-label">{t("已停止生成")}</small>}
             {message.status === "failed" && <small className="assistant-stopped-label">{t("生成未完成")}</small>}
             <MessageActions content={messageText(message)} createdAt={message.created_at} timeLabel={formatTime(message.created_at)} />
-            {message.role === "user" && <AgentTaskSummary tasks={message.tasks} />}
           </div>
         </article>
         {proposalGroupAfterMessage && proposalPanel(proposalGroupAfterMessage)}

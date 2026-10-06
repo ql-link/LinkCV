@@ -22,7 +22,6 @@ import { Avatar, AvatarFallback, AvatarImage, Button, FeedbackNotice, PageLoadin
 import { resumeImageContractErrorMessage } from "../workbench/resumeImageLimits";
 import { useResumeStore } from "../../store/resumeStore";
 import { MessageActions } from "./MessageActions";
-import { AgentTaskSummary } from "./AgentTaskSummary";
 import { MessageQueue } from "./QueuedMessages";
 import { useMessageQueue } from "./useMessageQueue";
 import { enqueueMessage, submissionPayload, type QueueItem } from "./messageQueue";
@@ -901,7 +900,6 @@ export function AgentPanel({
               {message.role === "user" && <AgentUserAvatar avatarUrl={userAvatarUrl} displayName={userDisplayName} />}
             </div>
             <MessageActions content={message.content} createdAt={message.created_at} timeLabel={messageTime(message.created_at)} />
-            {message.role === "user" && <AgentTaskSummary tasks={message.tasks} />}
           </article>
         ))}
         {toolStatus && <p className="agent-tool-status"><LoaderCircle aria-hidden="true" className="agent-spinner" />{toolStatus}</p>}
