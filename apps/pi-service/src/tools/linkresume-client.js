@@ -6,7 +6,18 @@ export class LinkResumeToolError extends Error {
   }
 }
 
-export function createLinkResumeClient(config, runId, signal) {
+function optionalLogIdentifier(value, maxLength) {
+  if (typeof value !== "string") return null;
+  let length = 0;
+  // Match Python/MySQL character counts rather than UTF-16 code units.
+  for (const character of value) {
+    if (++length > maxLength) return null;
+  }
+  return value;
+}
+
+export function createLinkResumeClient(config, runId, signal, initialSource = null) {
+  let source = initialSource;
   async function request(path, options = {}) {
     const timeout = AbortSignal.timeout(config.toolTimeoutMs);
     const combined = AbortSignal.any([signal, timeout]);
@@ -16,6 +27,7 @@ export function createLinkResumeClient(config, runId, signal) {
       headers: {
         Authorization: `Bearer ${config.linkresumeToken}`,
         "Content-Type": "application/json",
+        ...(source == null ? {} : { "X-Agent-User-Sequence": String(source) }),
         ...options.headers,
       },
     });
@@ -34,16 +46,38 @@ export function createLinkResumeClient(config, runId, signal) {
   }
 
   return {
+    setSource: (value) => { source = value; },
+    activateSteering: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/steering:activate`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+    acknowledgeSteering: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/steering:ack`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
+    completeReply: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/messages:complete`, {
+      method: "POST", body: JSON.stringify(payload),
+    }),
     readiness: () => request("/internal/agent/readiness"),
     runtimeConfig: () => request(`/internal/agent/runtime-config?run_id=${encodeURIComponent(runId)}`),
+    recognizeIntent: () => request(`/internal/agent/runs/${encodeURIComponent(runId)}/intent:recognize`, {
+      method: "POST",
+    }),
     recordLlmCall: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/llm-calls`, {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        ...payload,
+        // Existing PiCallRecord/LLMCallLog limits; identifiers are optional.
+        responseModelId: optionalLogIdentifier(payload.responseModelId, 256),
+        upstreamRequestId: optionalLogIdentifier(payload.upstreamRequestId, 128),
+      }),
     }),
     context: (resumeId) => request(
       `/internal/agent/runs/${encodeURIComponent(runId)}/context?resume_id=${encodeURIComponent(resumeId)}`,
     ),
     resolveResumeReference: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/resumes:resolve-reference`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+    resolveResourceReference: (payload) => request(`/internal/agent/runs/${encodeURIComponent(runId)}/resources:resolve-reference`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ResumeShareState } from "../../api/client";
 import { SharePanel } from "./SharePanel";
@@ -73,10 +73,8 @@ describe("SharePanel", () => {
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
     await screen.findByRole("button", { name: "创建分享链接" });
-    fireEvent.click(screen.getByRole("combobox", { name: "访问权限" }));
-    fireEvent.click(await screen.findByRole("option", { name: "仅自己可见" }));
-    fireEvent.click(screen.getByRole("combobox", { name: "有效期" }));
-    fireEvent.click(await screen.findByRole("option", { name: "7 天" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "访问权限" })).getByRole("button", { name: "仅自己" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "有效期" })).getByRole("button", { name: "7 天" }));
     fireEvent.click(screen.getByRole("button", { name: "创建分享链接" }));
 
     await waitFor(() =>
@@ -157,14 +155,12 @@ describe("SharePanel", () => {
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
     await screen.findByText(/\/share\/token_abc$/);
-    fireEvent.click(screen.getByRole("combobox", { name: "访问权限" }));
-    fireEvent.click(await screen.findByRole("option", { name: "仅自己可见" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "访问权限" })).getByRole("button", { name: "仅自己" }));
     await waitFor(() =>
       expect(mockedUpdate).toHaveBeenNthCalledWith(1, "1", { visibility: "private" }),
     );
 
-    fireEvent.click(screen.getByRole("combobox", { name: "有效期" }));
-    fireEvent.click(await screen.findByRole("option", { name: "30 天" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "有效期" })).getByRole("button", { name: "30 天" }));
     await waitFor(() =>
       expect(mockedUpdate).toHaveBeenNthCalledWith(2, "1", {
         expires_at: expect.any(String),
@@ -287,7 +283,7 @@ describe("SharePanel", () => {
     render(<SharePanel resumeId="1" resumeTitle="简历A" onClose={vi.fn()} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "删除链接" }));
-    expect(await screen.findByRole("alertdialog", { name: "删除分享链接？" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "删除分享链接？" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
     await waitFor(() => expect(mockedDelete).toHaveBeenCalledWith("1"));
@@ -306,13 +302,11 @@ describe("SharePanel", () => {
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("链接已过期"),
     );
-    expect(screen.getByRole("status")).toHaveTextContent("已于 2020/01/01 过期");
-    expect(screen.getByText("状态说明")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/已于 2020-01-01 \d{2}:\d{2} 过期/);
     expect(screen.getByText("该分享链接已失效，访客将无法继续访问简历")).toBeInTheDocument();
     expect(screen.queryByText(/\/share\/token_old$/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "不可复制" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("combobox", { name: "有效期" }));
-    fireEvent.click(await screen.findByRole("option", { name: "7 天" }));
+    fireEvent.click(within(screen.getByRole("group", { name: "有效期" })).getByRole("button", { name: "7 天" }));
     await waitFor(() =>
       expect(mockedUpdate).toHaveBeenCalledWith("1", { expires_at: expect.any(String) }),
     );
@@ -344,7 +338,7 @@ describe("SharePanel", () => {
     expect(screen.getByRole("switch", { name: "允许下载 PDF" })).toHaveAttribute("aria-checked", "false");
     expect(screen.getByRole("button", { name: "重新生成链接" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "删除链接" })).toBeEnabled();
-    expect(document.querySelector(".ui-feedback-notice")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("可以识别后端返回的带时区有效期", async () => {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -86,7 +87,23 @@ class PiProbeCoordinator:
             or usage["outputTokens"] < 0
         ):
             raise PiProbeError("LLM_PI_AGENT_PROBE_FAILED")
+        calls = usage.get("calls")
+        if calls is not None:
+            if not isinstance(calls, list) or not 1 <= len(calls) <= 20:
+                raise PiProbeError("LLM_PI_AGENT_PROBE_FAILED")
+            try:
+                for call in calls:
+                    if not isinstance(call, dict) or datetime.fromisoformat(call["requestStartedAt"]).tzinfo is None:
+                        raise ValueError
+                    for key in ("inputTokens", "outputTokens", "cacheRead", "cacheWrite"):
+                        value = call.get(key)
+                        if value is not None and (not isinstance(value, int) or isinstance(value, bool) or value < 0):
+                            raise ValueError
+            except (KeyError, TypeError, ValueError):
+                raise PiProbeError("LLM_PI_AGENT_PROBE_FAILED") from None
         return GatewayUsage(
             input_tokens=usage["inputTokens"],
             output_tokens=usage["outputTokens"],
+            details={"cacheRead": usage.get("cacheRead"), "cacheWrite": usage.get("cacheWrite"),
+                     "usageSource": "pi", "usagePresent": usage.get("usagePresent", True), "calls": usage.get("calls")},
         )

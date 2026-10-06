@@ -1,0 +1,109 @@
+/* V3 动效层：参照 Apple 系统动效的「丝滑」手感——
+   · 快起步、长而柔的收尾（--ui-ease-standard），浮起的表面用极轻回弹的弹簧（--ui-ease-spring）；
+   · 位移 ≤ 8px、缩放 ≥ 0.96，只动 transform / opacity，颜色边框背景做短过渡；
+   · 所有状态变化都有来有回：进场从哪来，退场回哪去；
+   · prefers-reduced-motion 时全部退化为短淡入。
+   由 v3.css 引入；页面样式里需要的动效直接复用这里的类名和关键帧。 */
+
+/* ───────── 1. 即时反馈：悬停、按下、聚焦 ───────── */
+.v3 :is(.v3-btn, .v3-icon-btn, .v3-link, .v3-chip, .v3-menu-item, .v3-side-row, .v3-side-session, .v3-select, .v3-picker-day, .v3-seg button, .v3-search, .v3-input, .v3-textarea, .v3-radio, .v3-dialog-close) {
+  transition:
+    background-color var(--ui-duration-fast) var(--ui-ease-press),
+    border-color var(--ui-duration-fast) var(--ui-ease-press),
+    color var(--ui-duration-fast) var(--ui-ease-press),
+    box-shadow var(--ui-duration-base) var(--ui-ease-standard),
+    opacity var(--ui-duration-fast) var(--ui-ease-press),
+    scale var(--ui-duration-fast) var(--ui-ease-press);
+}
+/* 按下：轻轻缩一点，松手弹回（禁用态没有按压） */
+.v3 :is(.v3-btn, .v3-icon-btn, .v3-chip, .v3-side-row, .v3-picker-day, .v3-seg button):active:not(:disabled) {
+  scale: 0.97;
+  transition-duration: 60ms;
+}
+.v3 .v3-btn-dark:active:not(:disabled) { background: #0f0f0e; }
+
+/* ───────── 2. 浮起的表面：菜单、下拉、弹窗、提示 ───────── */
+/* 覆盖公共 motion.css 的默认值：打开走弹簧，关闭走更快的收尾曲线 */
+@keyframes v3-pop-in { from { opacity: 0; scale: 0.96; translate: var(--motion-x, 0) var(--motion-y, -6px); } to { opacity: 1; scale: 1; translate: 0 0; } }
+@keyframes v3-pop-out { from { opacity: 1; scale: 1; translate: 0 0; } to { opacity: 0; scale: 0.98; translate: var(--motion-x, 0) var(--motion-y, -4px); } }
+@keyframes v3-dialog-in { from { opacity: 0; scale: 0.96; translate: 0 8px; } to { opacity: 1; scale: 1; translate: 0 0; } }
+@keyframes v3-dialog-out { from { opacity: 1; scale: 1; translate: 0 0; } to { opacity: 0; scale: 0.98; translate: 0 4px; } }
+@keyframes v3-scrim-in { from { opacity: 0; backdrop-filter: blur(0); } to { opacity: 1; backdrop-filter: blur(2px); } }
+@keyframes v3-scrim-out { from { opacity: 1; } to { opacity: 0; } }
+
+.v3.ui-motion-popover[data-state="open"], .v3 .ui-motion-popover[data-state="open"] { animation: v3-pop-in var(--ui-duration-slow) var(--ui-ease-spring) both; transform-origin: top left; }
+.v3.ui-motion-popover[data-state="closed"], .v3 .ui-motion-popover[data-state="closed"] { animation: v3-pop-out var(--ui-duration-fast) var(--ui-ease-exit) both; }
+.v3.ui-motion-overlay[data-state="open"] { animation: v3-scrim-in var(--ui-duration-base) var(--ui-ease-standard) both; }
+.v3.ui-motion-overlay[data-state="closed"] { animation: v3-scrim-out var(--ui-duration-base) var(--ui-ease-exit) both; }
+.v3 .v3-dialog.ui-motion-dialog[data-state="open"] { animation: v3-dialog-in var(--ui-duration-slow) var(--ui-ease-spring) both; }
+.v3 .v3-dialog.ui-motion-dialog[data-state="closed"] { animation: v3-dialog-out var(--ui-duration-base) var(--ui-ease-exit) both; }
+/* Toast 从上方落下 */
+.v3.v3-toast.ui-motion-popover[data-state="open"] { --motion-y: -10px; transform-origin: top center; }
+
+/* ───────── 3. 页内切换：视图、标签、筛选结果 ───────── */
+/* 新内容原地淡入（不位移）；同一块区域切换时由 useContentMotion 在原节点上重播 */
+/* 只做透明度：加载、切换时文字和卡片不上下移动 */
+@keyframes v3-switch-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes v3-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.v3-switch-in { animation: v3-switch-in var(--ui-duration-slow) var(--ui-ease-standard) backwards; }
+
+/* 列表、网格的子项依次浮现（最多前 12 项有错位，之后同时出现），只在区域首次出现或切换时播放 */
+.v3-stagger > * { animation: v3-switch-in var(--ui-duration-slow) var(--ui-ease-standard) backwards; }
+.v3-stagger > :nth-child(2) { animation-delay: 24ms; }
+.v3-stagger > :nth-child(3) { animation-delay: 48ms; }
+.v3-stagger > :nth-child(4) { animation-delay: 72ms; }
+.v3-stagger > :nth-child(5) { animation-delay: 96ms; }
+.v3-stagger > :nth-child(6) { animation-delay: 120ms; }
+.v3-stagger > :nth-child(7) { animation-delay: 144ms; }
+.v3-stagger > :nth-child(8) { animation-delay: 168ms; }
+.v3-stagger > :nth-child(9) { animation-delay: 186ms; }
+.v3-stagger > :nth-child(10) { animation-delay: 204ms; }
+.v3-stagger > :nth-child(11) { animation-delay: 222ms; }
+.v3-stagger > :nth-child(n + 12) { animation-delay: 240ms; }
+
+/* 分段控件：滑块用弹簧跟过去；没有滑块的写法，选中背景做短交叉过渡 */
+.v3 .v3-seg-indicator { transition: transform var(--ui-duration-slow) var(--ui-ease-spring), width var(--ui-duration-slow) var(--ui-ease-spring); }
+.v3 .v3-seg button { transition: background-color var(--ui-duration-base) var(--ui-ease-standard), box-shadow var(--ui-duration-base) var(--ui-ease-standard), color var(--ui-duration-fast) var(--ui-ease-press), scale var(--ui-duration-fast) var(--ui-ease-press); }
+
+/* 开关：圆钮用弹簧滑动 */
+.v3 .v3-toggle, .v3 .v3-toggle::after { transition: background-color var(--ui-duration-base) var(--ui-ease-standard), transform var(--ui-duration-slow) var(--ui-ease-spring), translate var(--ui-duration-slow) var(--ui-ease-spring); }
+
+/* 箭头旋转、展开收起 */
+.v3 .v3-select-chev, .v3 [aria-expanded] > svg:last-child { transition: transform var(--ui-duration-base) var(--ui-ease-standard), rotate var(--ui-duration-base) var(--ui-ease-standard); }
+
+/* 页面切换不再给整页做透明度动画：页面代码和数据就绪后直接呈现，
+   由骨架残影（Reveal）负责交接；叠加整页淡入会在骨架淡出的同时让内容变暗一下，看起来像闪了一次。 */
+.v3-content-scroll > :not(style, .workspace-route-loading) { animation: none; }
+
+/* 侧栏选中项：高亮背景用滑块跟随（见 Shell.tsx 的 .v3-side-indicator） */
+.v3-side-indicator {
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  width: 188px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--v3-hl);
+  pointer-events: none;
+  transition: transform var(--ui-duration-slow) var(--ui-ease-spring), opacity var(--ui-duration-base) var(--ui-ease-standard);
+}
+.v3-side-nav.has-indicator { position: relative; }
+.v3-side-nav.has-indicator > .v3-side-row { z-index: 1; }
+.v3-side-nav.has-indicator > .v3-side-row.is-active { background: transparent; }
+
+/* 卡片悬停：纸面轻轻上浮（和按下反馈一样只动 transform） */
+.v3 :is(.hv3-paper, .tpl-card-thumb) { transition: border-color var(--ui-duration-base) var(--ui-ease-standard), box-shadow var(--ui-duration-slow) var(--ui-ease-standard), transform var(--ui-duration-slow) var(--ui-ease-spring); }
+
+/* ───────── 4. 减少动态效果 ───────── */
+@media (prefers-reduced-motion: reduce) {
+  .v3 *, .v3-content-scroll > *, .v3.ui-motion-popover, .v3.ui-motion-overlay, .v3-stagger > *, .v3-switch-in {
+    animation-duration: 100ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 100ms !important;
+  }
+  .v3 :is(.v3-btn, .v3-icon-btn, .v3-chip, .v3-side-row, .v3-picker-day, .v3-seg button):active:not(:disabled) { scale: 1; }
+  @keyframes v3-switch-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes v3-page-in { from { opacity: 0.6; } to { opacity: 1; } }
+  @keyframes v3-pop-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes v3-dialog-in { from { opacity: 0; } to { opacity: 1; } }
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Generic, Literal, TypeVar
 
@@ -109,11 +110,13 @@ class ConnectionPatch(ApiModel):
 class LogicalModelCreate(ApiModel):
     display_name: str = Field(alias="displayName", min_length=1, max_length=128)
     developer_name: str | None = Field(default=None, alias="developerName", max_length=128)
+    user_selectable: bool = Field(default=True, alias="userSelectable")
 
 
 class LogicalModelPatch(ApiModel):
     display_name: str | None = Field(default=None, alias="displayName", min_length=1, max_length=128)
     developer_name: str | None = Field(default=None, alias="developerName", max_length=128)
+    user_selectable: bool | None = Field(default=None, alias="userSelectable")
 
 
 class RouteCreate(ApiModel):
@@ -126,7 +129,15 @@ class RouteCreate(ApiModel):
         default="unknown", alias="identifierKind"
     )
     pricing: dict[str, Any] | None = None
+    pricing_mode: Literal["provider", "manual_override"] = Field(default="provider", alias="pricingMode")
     enabled: bool = False
+
+    @field_validator("pricing")
+    @classmethod
+    def validate_pricing(cls, value):
+        from linkresume.modules.llm.pricing import validate_manual_pricing
+        validate_manual_pricing(value)
+        return value
 
 
 class RoutePatch(ApiModel):
@@ -134,7 +145,15 @@ class RoutePatch(ApiModel):
         default=None, alias="identifierKind"
     )
     pricing: dict[str, Any] | None = None
+    pricing_mode: Literal["provider", "manual_override"] | None = Field(default=None, alias="pricingMode")
     enabled: bool | None = None
+
+    @field_validator("pricing")
+    @classmethod
+    def validate_pricing(cls, value):
+        from linkresume.modules.llm.pricing import validate_manual_pricing
+        validate_manual_pricing(value)
+        return value
 
 
 class UseCaseBindingWrite(ApiModel):
@@ -163,6 +182,8 @@ class PiCallRecord(ApiModel):
     upstream_request_id: str | None = Field(default=None, alias="upstreamRequestId", max_length=128)
     error_code: str | None = Field(default=None, alias="errorCode", max_length=64)
     latency_ms: int | None = Field(default=None, alias="latencyMs", ge=0)
+    request_started_at: datetime | None = Field(default=None, alias="requestStartedAt")
+    request_finished_at: datetime | None = Field(default=None, alias="requestFinishedAt")
 
 
 class CallLogListResponse(ApiModel):

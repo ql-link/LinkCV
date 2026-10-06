@@ -23,6 +23,12 @@ from linkresume.core.security import (
 )
 from linkresume.modules.identity.dependencies import get_optional_user, get_settings
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.capabilities import (
+    password_login_enabled,
+    require_password_enabled,
+    wechat_login_enabled,
+)
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.identity.session_service import (
     WEB_CHANNEL,
     issue_session as create_session,
@@ -52,9 +58,10 @@ def issue_session(
     user: User,
     settings: Settings,
     redis_client: "redis.Redis",
+    user_agent: str = "",
 ) -> None:
     credentials = create_session(
-        user, settings, redis_client, channel=WEB_CHANNEL
+        user, settings, redis_client, channel=WEB_CHANNEL, user_agent=user_agent
     )
     set_access_cookie(response, credentials.access_token, settings)
     set_refresh_cookie(response, credentials.refresh_token, settings)
@@ -70,23 +77,16 @@ def auth_capabilities(
     settings: Settings = Depends(get_settings),
 ) -> AuthCapabilitiesResponse:
     return AuthCapabilitiesResponse(
-        password_login_enabled=password_login_enabled(settings)
+        password_login_enabled=password_login_enabled(settings),
+        wechat_login_enabled=wechat_login_enabled(settings),
     )
-
-
-def password_login_enabled(settings: Settings) -> bool:
-    return settings.app_environment.strip().lower() in {"local", "development"}
 
 
 def require_password_registration_enabled(
     request: Request,
     settings: Settings,
 ) -> None:
-    if (
-        not password_login_enabled(settings)
-        and not getattr(request.app.state, "legacy_identity_test_routes", False)
-    ):
-        raise ApiError(404, "NOT_FOUND")
+    require_password_enabled(settings)
 
 
 @router.post(
@@ -114,18 +114,21 @@ def register(
 
     user = User(
         email=email,
+        contact_email=email,
         password_hash=hash_password(payload.password),
         nickname=f"用户{secrets.token_hex(3)}",
     )
     db.add(user)
     try:
+        db.flush()
+        product_events.registered(db, user.id, "email")
         db.commit()
     except IntegrityError as error:
         db.rollback()
         raise ApiError(409, "EMAIL_EXISTS") from error
     db.refresh(user)
 
-    issue_session(response, user, settings, redis_client)
+    issue_session(response, user, settings, redis_client, request.headers.get("user-agent", ""))
     bind_audit_actor(request, user.id)
     bind_audit_target(request, user.id)
     return AuthResponse(user=UserResponse.model_validate(user))
@@ -140,16 +143,13 @@ def login(
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> AuthResponse:
-    if (
-        not password_login_enabled(settings)
-        and not getattr(request.app.state, "legacy_identity_test_routes", False)
-    ):
-        raise ApiError(404, "NOT_FOUND")
+    require_password_enabled(settings)
     email = normalize_email(payload.email)
-    user = db.scalar(select(User).where(User.email == email))
+    user = db.scalar(select(User).where(User.email == email).with_for_update().execution_options(populate_existing=True))
     if (
         user is None
         or user.status != 1
+        or user.deletion_requested_at is not None
         or not user.password_hash
         or not verify_password(payload.password, user.password_hash)
     ):
@@ -160,10 +160,9 @@ def login(
         user.password_hash = hash_password(payload.password)
 
     user.last_login_at = utc_now()
+    issue_session(response, user, settings, redis_client, request.headers.get("user-agent", ""))
     db.commit()
     db.refresh(user)
-
-    issue_session(response, user, settings, redis_client)
     bind_audit_actor(request, user.id)
     bind_audit_target(request, user.id)
     return AuthResponse(user=UserResponse.model_validate(user))
@@ -179,10 +178,11 @@ def admin_login(
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> AuthResponse:
     email = normalize_email(payload.email)
-    user = db.scalar(select(User).where(User.email == email))
+    user = db.scalar(select(User).where(User.email == email).with_for_update().execution_options(populate_existing=True))
     if (
         user is None
         or user.status != 1
+        or user.deletion_requested_at is not None
         or not verify_password(payload.password, user.password_hash)
     ):
         raise ApiError(401, "INVALID_CREDENTIALS")
@@ -195,10 +195,9 @@ def admin_login(
         user.password_hash = hash_password(payload.password)
 
     user.last_login_at = utc_now()
+    issue_session(response, user, settings, redis_client, request.headers.get("user-agent", ""))
     db.commit()
     db.refresh(user)
-
-    issue_session(response, user, settings, redis_client)
     return AuthResponse(user=UserResponse.model_validate(user))
 
 

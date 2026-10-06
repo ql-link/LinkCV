@@ -36,7 +36,7 @@ def test_upgrade_requires_migrated_assets_before_any_ddl(monkeypatch, has_rows):
 
 def test_runtime_metadata_has_no_retired_tables_or_foreign_keys():
     assert {"resume_versions", "interview_assets"}.isdisjoint(Base.metadata.tables)
-    assert "resume_version_id" not in Base.metadata.tables["job_applications"].c
+    assert "resume_version_id" not in Base.metadata.tables["job_application"].c
     assert not any(fk.target_fullname.startswith(("resume_versions.", "interview_assets."))
                    for table in Base.metadata.tables.values() for fk in table.foreign_keys)
 

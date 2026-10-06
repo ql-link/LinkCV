@@ -136,7 +136,7 @@ def download_public_share_pdf(
         resume, owner = resolve_public_share_access(db, token, viewer)
     except ShareLinkUnavailable as error:
         raise ApiError(404, "SHARE_LINK_UNAVAILABLE") from error
-    if not resume.share_allow_download:
+    if not resume.is_share_allow_download:
         raise ApiError(404, "SHARE_LINK_UNAVAILABLE")
     pdf = render_resume_pdf(
         resume,

@@ -23,7 +23,7 @@
 | `frontend-browser-check` | 在真实 Web 路由观察当前问题涉及的交互、状态和响应式行为 | 独立报告运行时证据，不自动扩展成视觉或全站验收 |
 | `frontend-visual-check` | 将运行页面与已确认的 Figma、截图或原型进行视觉对照 | 独立报告视觉差异，不创建设计或实现页面 |
 | `decision-grilling` | 只沿决策树一次处理一个真实选择 | 把 `confirmed`、`blocked` 或 `replan` 结果返回调用方 |
-| `solution-generator` | 需求与技术方案合一：保留完整章节库并按需求选择，固定收敛需求描述、现状问题、主流程、真实文件、实施步骤和验证映射；状态机与数据模型命中时优先完整展开，其他章节按需；直接确认真实待决选择，已有后续路径时复用、未选择时随方案确认 | 契约验收转 `acceptance-generator`；直接施工返回 `flow-router` 继续实施 |
+| `solution-generator` | 面向开发者的方案文档：重点写清需求、需求拆分、难点和待确认问题；设计部分只强制写清数据库变更（遵守阿里巴巴 MySQL 规约）、接口与数据结构、中间件与外部依赖和状态机，实施细节交给实施 Agent；直接确认真实待决选择，已有后续路径时复用、未选择时随方案确认 | 契约验收转 `acceptance-generator`；直接施工返回 `flow-router` 继续实施 |
 | `acceptance-generator` | 生成可验证行为场景；只在选定契约验收路径时执行 | 确认后返回 `flow-router` 继续实施 |
 | `contract-guard` | 分析契约结构、语义、兼容影响和同步范围 | 按需转配置核对、文档同步或返回 `flow-router` 实施 |
 | `config-contract-sync` | 核对跨代码、配置和部署位置的具体契约值 | 诊断结束或返回 `flow-router` 实施修复 |
@@ -46,7 +46,7 @@
 
 | 技能 | 职责 | 边界或产出 |
 | --- | --- | --- |
-| `mysql-ddl-conventions` | 设计和审查 MySQL 物理表结构、约束与索引 | 由方案编写过程调用定稿；落地迁移转 `alembic-migration` |
+| `mysql-ddl-conventions` | 按阿里巴巴 MySQL 规约设计和审查物理表结构、约束与索引，输出规约自检；新表全量遵守，存量表不追溯 | 由方案编写过程调用定稿；落地迁移转 `alembic-migration` |
 | `alembic-migration` | 编写、校验和排查 forward-only SQL-first Alembic 迁移链与 up SQL | 业务实现转实施，文档转同步 |
 
 ## 运维与故障

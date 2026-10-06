@@ -1,0 +1,112 @@
+{
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "sidebarWidth": 216,
+  "create": {
+    "x": 14,
+    "y": 64,
+    "width": 188,
+    "height": 34
+  },
+  "nav": [
+    {
+      "key": "home",
+      "href": "/assistant",
+      "label": "首页",
+      "x": 14,
+      "y": 110,
+      "width": 188,
+      "height": 34
+    },
+    {
+      "key": "resumes",
+      "href": "/resumes",
+      "label": "我的简历3",
+      "x": 14,
+      "y": 148,
+      "width": 188,
+      "height": 34
+    },
+    {
+      "key": "templates",
+      "href": "/templates",
+      "label": "简历模板",
+      "x": 14,
+      "y": 186,
+      "width": 188,
+      "height": 34
+    },
+    {
+      "key": "jobs",
+      "href": "/career/applications",
+      "label": "岗位看板8",
+      "x": 14,
+      "y": 224,
+      "width": 188,
+      "height": 34
+    },
+    {
+      "key": "schedule",
+      "href": "/career/schedule",
+      "label": "面试日程",
+      "x": 14,
+      "y": 262,
+      "width": 188,
+      "height": 34
+    },
+    {
+      "key": "mock",
+      "href": "/mock-interviews",
+      "label": "模拟面试",
+      "x": 14,
+      "y": 300,
+      "width": 188,
+      "height": 34
+    },
+    {
+      "key": "datasets",
+      "href": "/datasets",
+      "label": "资料库",
+      "x": 14,
+      "y": 338,
+      "width": 188,
+      "height": 34
+    }
+  ],
+  "sessions": [
+    {
+      "key": "chat-0",
+      "label": "把项目经历写得更具体",
+      "x": 14,
+      "y": 420,
+      "width": 188,
+      "height": 32
+    },
+    {
+      "key": "chat-1",
+      "label": "准备今天的产品经理面试",
+      "x": 14,
+      "y": 452,
+      "width": 188,
+      "height": 32
+    },
+    {
+      "key": "chat-2",
+      "label": "分析高级产品经理岗位",
+      "x": 14,
+      "y": 484,
+      "width": 188,
+      "height": 32
+    },
+    {
+      "key": "chat-3",
+      "label": "打磨两分钟自我介绍",
+      "x": 14,
+      "y": 516,
+      "width": 188,
+      "height": 32
+    }
+  ]
+}

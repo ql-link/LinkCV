@@ -120,7 +120,7 @@ function columnSide(node: JSONContent): ResumeColumnSide | null {
   return variant === "sidebar" || variant === "main" ? variant : null;
 }
 
-export function resumeSectionOrderGroups(document: JSONContent): ResumeSectionOrderGroup[] {
+export function resumeSectionOrderGroups(document: JSONContent, sidebarOnRight = false): ResumeSectionOrderGroup[] {
   const columns = (document.content ?? []).filter((node) => node.type === "resumeColumns");
   if (columns.length === 1) {
     return (columns[0].content ?? [])
@@ -129,8 +129,9 @@ export function resumeSectionOrderGroups(document: JSONContent): ResumeSectionOr
         const side = columnSide(column);
         if (!side) return [];
         const items = sectionItems(column.content ?? []);
-        return items.length ? [{ side, label: columnSideLabels[side], items }] : [];
-      });
+        return items.length ? [{ side, label: columnSideLabels[sidebarOnRight ? (side === "sidebar" ? "main" : "sidebar") : side], items }] : [];
+      })
+      .sort((left, right) => Number(left.label === "右栏") - Number(right.label === "右栏"));
   }
   const items = sectionItems(document.content ?? []);
   return items.length ? [{ side: null, label: null, items }] : [];

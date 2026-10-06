@@ -24,6 +24,7 @@ from linkresume.modules.llm.models import (
 )
 from linkresume.modules.llm.resolver import MOCK_INTERVIEW, validation_fingerprint
 from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from tests.fakes import FakeRedis
 from tests.integration.api.test_interviews import (
@@ -75,7 +76,7 @@ class ScriptedGateway:
     def _system(self, messages) -> str:
         return "\n".join(m.content for m in messages if m.role == "system" and isinstance(m.content, str))
 
-    async def complete(self, *, model, messages, api_base, api_key) -> GatewayResult:
+    async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat") -> GatewayResult:
         del model, api_base, api_key
         system = self._system(messages)
         self.systems.append(system)
@@ -121,7 +122,7 @@ class ScriptedGateway:
             raise AssertionError(system[:200])
         return GatewayResult(content=json.dumps(payload, ensure_ascii=False), usage=USAGE)
 
-    async def start_stream(self, *, model, messages, api_base, api_key):
+    async def start_stream(self, *, model, messages, api_base, api_key, protocol_code="openai_chat"):
         del model, api_base, api_key
         system = self._system(messages)
         self.systems.append(system)
@@ -165,7 +166,9 @@ class _Database:
 _database = _Database()
 
 
-def build_app(gateway: ScriptedGateway, *, configure: bool = True, storage: FakeStorage | None = None):
+def build_app(
+    gateway: ScriptedGateway, *, configure: bool = True, storage: FakeStorage | None = None, linkrag=None
+):
     app = create_app(
         Settings(
             database_url=_database.url(),
@@ -175,6 +178,7 @@ def build_app(gateway: ScriptedGateway, *, configure: bool = True, storage: Fake
         storage=storage or FakeStorage(),
         redis=FakeRedis(),
         llm_gateway=gateway,
+        linkrag_client=linkrag,
         create_schema=True,
     )
     with app.state.session_factory() as db:
@@ -200,7 +204,7 @@ def configure_mock_interview_model(app) -> None:
             name="测试",
             credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})),
             settings_json={},
-            enabled=True,
+            is_enabled=True,
             runtime_config_version=1,
         )
         db.add(connection)
@@ -210,13 +214,13 @@ def configure_mock_interview_model(app) -> None:
         db.flush()
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="interview-model",
-            origin="manual", enabled=True, target_available=True,
+            origin="manual", is_enabled=True, is_target_available=True,
         )
         db.add(route)
         db.flush()
         binding = LLMUseCaseRoute(
             use_case=MOCK_INTERVIEW, route_id=route.id, protocol_code="openai_chat", priority=100,
-            enabled=True, validated_at=utc_now(),
+            is_enabled=True, validated_at=utc_now(),
         )
         db.add(binding)
         db.flush()
@@ -306,6 +310,11 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         report_detail = wait_for(client, created["id"], {"completed"})
         report = report_detail["report"]
         assert report["closing_message"].startswith("今天的面试")
+        with app.state.session_factory() as db:
+            completed = db.scalars(
+                select(ProductEvent).where(ProductEvent.event_name == "mock_interview_completed")
+            ).all()
+        assert [e.properties_json["answer_mode"] for e in completed] == ["text"]
         assert len(report["questions"]) == 3
         first_signals = report["questions"][0]["signals"]
         # The third judgement quoted text that is not in the answers.
@@ -570,9 +579,11 @@ def test_reference_materials_drive_fact_check_with_verified_quotes() -> None:
             json={"resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False, "material_ids": [dataset_id]},
         ).json()["mock_interview"]
         assert created["materials"][0]["dataset_id"] == dataset_id
+        assert created["materials_in_questions"] is False
         detail = wait_for(client, created["id"], {"in_progress"})
         analysis_user = next(user for system, user in zip(gateway.systems, gateway.users) if "正在为一场模拟面试做背景分析" in system)
-        assert "5000" in analysis_user  # material facts reach the analysis step
+        # By default questions come from the resume only; materials stay for the report.
+        assert "5000" not in analysis_user
         answer(client, created["id"], detail["questions"][0]["id"], "QPS 从 2000 提升到 10000，用火焰图定位热点")
         client.post(f"/api/mock-interviews/{created['id']}/finish")
         report = wait_for(client, created["id"], {"completed"})["report"]
@@ -581,6 +592,94 @@ def test_reference_materials_drive_fact_check_with_verified_quotes() -> None:
         assert fact["items"][0]["verdict"] == "conflict"
         assert fact["items"][0]["source"]["dataset_id"] == dataset_id
         assert fact["items"][0]["source"]["title"] == "项目复盘.md"
+
+
+def test_materials_in_questions_switch_feeds_analysis_and_carries_to_repeat() -> None:
+    storage = FakeStorage()
+    gateway = ScriptedGateway()
+    app = build_app(gateway, storage=storage)
+    with TestClient(app) as client:
+        register(client, "mock-material-switch@example.test")
+        dataset_id = seed_dataset(
+            app, "mock-material-switch@example.test", storage, "# 性能\n订单系统重构后 QPS 从 2000 提升到 5000。"
+        )
+        resume = create_resume(client, app)
+        created = client.post(
+            "/api/mock-interviews",
+            json={
+                "resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False,
+                "material_ids": [dataset_id], "materials_in_questions": True,
+            },
+        ).json()["mock_interview"]
+        assert created["materials_in_questions"] is True
+        detail = wait_for(client, created["id"], {"in_progress"})
+        analysis_user = next(user for system, user in zip(gateway.systems, gateway.users) if "正在为一场模拟面试做背景分析" in system)
+        assert "5000" in analysis_user
+        client.post(f"/api/mock-interviews/{created['id']}/abandon")
+        repeat = client.post(f"/api/mock-interviews/{created['id']}/repeat")
+        assert repeat.status_code == 201, repeat.text
+        assert repeat.json()["mock_interview"]["materials_in_questions"] is True
+        wait_for(client, repeat.json()["mock_interview"]["id"], {"in_progress"})
+        client.post(f"/api/mock-interviews/{repeat.json()['mock_interview']['id']}/abandon")
+        # Without materials the switch has nothing to act on and is stored off.
+        plain = client.post(
+            "/api/mock-interviews",
+            json={"resume_id": resume["id"], "question_count": 3, "materials_in_questions": True},
+        )
+        assert plain.status_code == 201, plain.text
+        assert plain.json()["mock_interview"]["materials_in_questions"] is False
+        assert detail["status"] == "in_progress"
+
+
+def mark_indexed(app, dataset_id: str, rag_file_id: int) -> None:
+    from linkresume.modules.datasets.models import UserDatasetRagSync
+
+    with app.state.session_factory() as db:
+        dataset = db.get(UserDataset, int(dataset_id))
+        db.add(UserDatasetRagSync(
+            dataset_id=dataset.id, user_id=dataset.user_id, status="ready",
+            content_revision=dataset.content_revision, synced_revision=dataset.content_revision,
+            rag_file_id=rag_file_id, attempt_count=0,
+        ))
+        db.commit()
+
+
+@pytest.mark.parametrize("rag_fails", [False, True])
+def test_fact_check_uses_rag_for_indexed_materials(rag_fails: bool) -> None:
+    from tests.fakes import FakeLinkRag
+
+    storage = FakeStorage()
+    gateway = ScriptedGateway()
+    rag = FakeLinkRag()
+    app = build_app(gateway, storage=storage, linkrag=rag)
+    with TestClient(app) as client:
+        register(client, "mock-rag@example.test")
+        # The local text never mentions 5000, so only RAG can supply the quote.
+        dataset_id = seed_dataset(app, "mock-rag@example.test", storage, "# 性能\n订单系统做过重构。")
+        mark_indexed(app, dataset_id, 7001)
+        rag.recall_hits = {7001: "订单系统重构后 QPS 从 2000 提升到 5000。"}
+        if rag_fails:
+            rag.fail = {"recall"}
+        resume = create_resume(client, app)
+        created = client.post(
+            "/api/mock-interviews",
+            json={"resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False, "material_ids": [dataset_id]},
+        ).json()["mock_interview"]
+        detail = wait_for(client, created["id"], {"in_progress"})
+        assert rag.recall_calls == []  # question generation never touches materials by default
+        answer(client, created["id"], detail["questions"][0]["id"], "QPS 从 2000 提升到 10000")
+        client.post(f"/api/mock-interviews/{created['id']}/finish")
+        fact = wait_for(client, created["id"], {"completed"})["report"]["fact_check"]
+    assert fact["status"] == "completed"
+    (item,) = fact["items"]
+    if rag_fails:
+        # Fallback: the in-memory text lacks the quote, so the verdict is downgraded.
+        assert item["verdict"] == "not_found"
+    else:
+        assert rag.recall_calls[0]["file_ids"] == [7001]
+        assert item["verdict"] == "conflict"
+        assert item["source"]["dataset_id"] == dataset_id
+        assert item["source"]["title"] == "项目复盘.md"
 
 
 def test_material_read_failure_skips_fact_check_only() -> None:
@@ -770,3 +869,64 @@ def test_repeat_keeps_job_context_after_application_is_deleted() -> None:
         repeated = client.post(f"/api/mock-interviews/{created['id']}/repeat").json()["mock_interview"]
         repeated_row = _row(app, repeated["id"])
         assert repeated_row.job_snapshot_json["description"] == "负责虚构业务的后端系统设计与开发。"
+
+
+def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -> None:
+    from linkresume.modules.identity.models import User
+    from linkresume.modules.identity.session_service import prepare_session
+    from linkresume.core.security import session_key
+    from linkresume.core.security import create_access_token
+
+    gateway = ScriptedGateway()
+    gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3}]
+    app = build_app(gateway)
+    with TestClient(app) as client:
+        assert client.get('/api/mock-interviews').status_code == 401
+        register(client, 'desktop-practice@example.test')
+        resume = create_resume(client, app)
+        uid = int(client.get('/api/auth/me').json()['user']['id'])
+        with app.state.session_factory() as db:
+            user = db.get(User, uid)
+            credentials = prepare_session(user, app.state.settings, channel='desktop')
+            app.state.redis.hset(session_key(credentials.sid), mapping={'uid': str(uid), 'channel': 'desktop'})
+            stranger = User(wechat_openid='mock-desktop-stranger', nickname='虚构用户')
+            db.add(stranger)
+            db.commit()
+            other = prepare_session(stranger, app.state.settings, channel='desktop')
+            app.state.redis.hset(session_key(other.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
+        headers = {'Authorization': 'Bearer ' + credentials.access_token}
+        assert client.get('/api/mock-interviews', headers=headers).status_code == 401  # mixed Cookie/Bearer
+        client.cookies.clear()
+        client.headers.update(headers)
+        wrong = create_access_token(uid, credentials.sid, app.state.settings, 'miniprogram')
+        assert client.get('/api/mock-interviews', headers={'Authorization': 'Bearer ' + wrong}).status_code == 401
+        assert client.get('/api/datasets').status_code == 200
+        assert client.get('/api/mock-interviews/speech-capability').status_code == 403
+        assert client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'answer_mode':'voice'}).status_code == 403
+        created = client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'question_count':3})
+        assert created.status_code == 201, created.text
+        identity = created.json()['mock_interview']['id']
+        path = '/api/mock-interviews/' + identity
+        other_headers = {'Authorization':'Bearer ' + other.access_token}
+        assert client.get(path, headers=other_headers).status_code == 404
+        assert client.post(path + '/finish', headers=other_headers).status_code == 404
+        ready = wait_for(client, identity, {'in_progress'})
+        question = ready['current_question_id']
+        key = str(uuid4())
+        result = answer(client, identity, question, '我用火焰图定位热点，也对比过本地缓存。', key)
+        assert result.status_code == 200
+        assert any(name == 'interviewer.turn' for name, _ in sse_events(result.text))
+        assert answer(client, identity, question, '我用火焰图定位热点，也对比过本地缓存。', key).status_code == 200
+        detail = client.get(path).json()['mock_interview']
+        assert len(detail['questions']) == 2
+        assert client.post(path + '/finish').status_code == 200
+        complete = wait_for(client, identity, {'completed'})
+        assert complete['report']['total_score'] == complete['total_score']
+        assert client.post(path + '/transcripts:correct').status_code == 403
+        repeat = client.post(path + '/repeat')
+        assert repeat.status_code == 201, repeat.text
+        repeat_id = repeat.json()['mock_interview']['id']
+        wait_for(client, repeat_id, {'in_progress'})
+        assert client.post('/api/mock-interviews/' + repeat_id + '/abandon').status_code == 200
+        assert client.delete(path).status_code == 200
+        assert client.get(path).status_code == 404

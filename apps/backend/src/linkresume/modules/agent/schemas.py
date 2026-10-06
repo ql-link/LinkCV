@@ -81,6 +81,7 @@ class AgentSelectionContext(BaseModel):
 
 
 AgentContextType = Literal[
+    "user_profile",
     "resume",
     "resume_version",
     "dataset",
@@ -179,6 +180,7 @@ class AgentContextMaterial(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: AgentContextType
+    presentation: Literal["mention", "implicit"] = "mention"
     id: str
     version: str
     lock_version: int | None = None
@@ -308,6 +310,8 @@ class AgentClarification(BaseModel):
 
 class AgentMessageRecord(BaseModel):
     sequence_no: int
+    submission_key: str | None = None
+    reply_to_sequence_no: int | None = None
     run_id: str | None = None
     role: Literal["user", "assistant"]
     message_type: Literal["text", "clarification"] = "text"
@@ -353,6 +357,41 @@ class ActiveRunResponse(BaseModel):
 
 class AgentReadinessResponse(BaseModel):
     ready: bool
+    steering: bool = False
+
+
+class SteeringRequest(MessageCreateRequest):
+    @model_validator(mode="after")
+    def require_plain_request(self) -> "SteeringRequest":
+        if self.reply_to_sequence_no is not None or self.clarification_answers is not None:
+            raise ValueError("steering cannot answer clarification")
+        return self
+
+
+class SubmissionReceipt(BaseModel):
+    run_id: str
+    submission_key: str
+    state: Literal["waiting", "accepted", "applied", "not_applied", "unknown"]
+    user_sequence_no: int | None = None
+    run_status: Literal["running", "succeeded", "failed", "cancelled"] | None = None
+    error: str | None = None
+
+
+class SteeringActivation(SteeringRequest):
+    pass
+
+
+class SteeringAck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    submission_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    user_sequence_no: int = Field(ge=1)
+
+
+class ReplyCompletion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_sequence_no: int = Field(ge=1)
+    content: str = Field(max_length=1_000_000)
+    clarification: AgentClarification | None = None
 
 
 class AgentModelSummary(BaseModel):
@@ -368,6 +407,12 @@ class AgentModelResponse(BaseModel):
     model: AgentModelSummary
 
 
+class ProposalConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entry: Literal["assistant", "editor"] | None = None
+
+
 class ProposalCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -379,6 +424,7 @@ class ProposalCreateRequest(BaseModel):
 
 
 class ProposalRecord(BaseModel):
+    source_user_sequence_no: int | None = None
     superseded_by: str | None = None
     id: str
     run_id: str
@@ -425,6 +471,7 @@ class ToolEventRequest(BaseModel):
         "get_resume_context",
         "create_resume_proposal",
         "resolve_resume_reference",
+        "resolve_resource_reference",
         "resolve_resume_target",
         "search_resume_materials",
         "analyze_resume_content",
@@ -464,7 +511,7 @@ class AgentTaskSpec(BaseModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
     workflow: Literal[
         "resource_catalog", "resume_edit", "resume_translation",
-        "interview_guide", "career_planning", "resume_title",
+        "interview_guide", "career_planning", "resume_title", "material_lookup",
     ]
     output: Literal["proposal", "advice", "catalog"]
     label: str = Field(min_length=1, max_length=120)
@@ -479,6 +526,7 @@ class AgentTaskSpec(BaseModel):
             "interview_guide": "advice",
             "career_planning": "advice",
             "resume_title": "advice",
+            "material_lookup": "advice",
         }
         if self.workflow in expected and self.output != expected[self.workflow]:
             raise ValueError("task output does not match workflow")
@@ -530,7 +578,11 @@ class ResumeTargetLocator(BaseModel):
 
     resume_id: str
     base_lock_version: int = Field(ge=1)
-    surface: Literal["semantic", "editor"]
+    surface: Literal["semantic", "editor", "canonical"]
+    format: Literal["canonical-target.v1"] | None = None
+    target_kind: str | None = None
+    node_ids: list[str] = Field(default_factory=list, max_length=100)
+    allowed_scopes: list[Literal["target", "entry", "section", "resume", "range"]] = Field(default_factory=list)
     section: str | None = Field(default=None, max_length=64)
     entry_id: str | None = Field(default=None, max_length=128)
     field: str | None = Field(default=None, max_length=64)
@@ -553,6 +605,9 @@ class TargetResolveRequest(BaseModel):
     selection_context: AgentSelectionContext | None = None
     quoted_text: str | None = Field(default=None, min_length=1, max_length=20_000)
     scope_hint: Literal["target", "resume"] = "target"
+    node_id: str | None = Field(default=None, pattern=r"^node_[a-z0-9]{16,64}$")
+    start_node_id: str | None = Field(default=None, pattern=r"^node_[a-z0-9]{16,64}$")
+    end_node_id: str | None = Field(default=None, pattern=r"^node_[a-z0-9]{16,64}$")
 
 
 class TargetResolveResponse(BaseModel):
@@ -561,14 +616,39 @@ class TargetResolveResponse(BaseModel):
     candidates: list[TargetCandidate] = Field(default_factory=list)
 
 
+class ResourceReferenceResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory_ref: str = Field(pattern=r"^m:[1-9][0-9]*:(?:user_profile|resume|dataset|job|application|interview):[1-9][0-9]{0,19}$")
+    relation: Literal["continuation", "historical_selection"]
+    referring_text: str = Field(min_length=1, max_length=300)
+
+
+class ResourceReferenceResolveResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    resource: AgentContextSnapshot
+    materials: list[AgentContextMaterial]
+    sources: list[dict[str, Any]]
+
+
 class ResumeReferenceResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, min_length=1, max_length=255)
     resume_id: str | None = Field(default=None, pattern=r"^[0-9]+$")
+    memory_ref: str | None = Field(default=None, pattern=r"^m:[1-9][0-9]*:resume:[1-9][0-9]*$")
+    relation: Literal["continuation", "historical_selection"] | None = None
+    referring_text: str | None = Field(default=None, min_length=1, max_length=300)
 
     @model_validator(mode="after")
     def require_reference(self) -> "ResumeReferenceResolveRequest":
+        if self.memory_ref is not None:
+            if self.title is not None or self.resume_id is not None or self.relation is None or self.referring_text is None:
+                raise ValueError("memory reference requires relation and referring_text exclusively")
+            return self
+        if self.relation is not None or self.referring_text is not None:
+            raise ValueError("memory_ref is required")
         if self.title is None and self.resume_id is None:
             raise ValueError("title or resume_id is required")
         return self
@@ -590,7 +670,7 @@ class ContextReadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target: ResumeTargetLocator
-    scope: Literal["target", "entry", "section", "resume"] = "target"
+    scope: Literal["target", "entry", "section", "resume", "range"] = "target"
 
 
 class ScopedResumeContextResponse(BaseModel):
@@ -599,8 +679,9 @@ class ScopedResumeContextResponse(BaseModel):
     title: str
     lock_version: int
     target: ResumeTargetLocator
-    scope: Literal["target", "entry", "section", "resume"]
+    scope: Literal["target", "entry", "section", "resume", "range"]
     content: str
+    truncated: bool = False
     blocks: list[dict[str, Any]] = Field(default_factory=list)
     data: ResumeDocument | None = None
     style: ResumePresentation
@@ -634,7 +715,7 @@ class DiagnosisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target: ResumeTargetLocator
-    scope: Literal["target", "entry", "section", "resume"] = "target"
+    scope: Literal["target", "entry", "section", "resume", "range"] = "target"
     job_id: str | None = None
     source_ids: list[str] = Field(default_factory=list, max_length=20)
 

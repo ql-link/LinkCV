@@ -10,6 +10,11 @@ import {
   configuredModels,
   streamWithRouteFallback,
   createResumeContextPolicy,
+  validateMemoryReference,
+  resumeReferenceParameters,
+  resourceReferenceParameters,
+  selectionForResume,
+  referenceNeedsResolution,
   createSerialExecutor,
   createSkillReadTool,
   enableToolOnce,
@@ -26,10 +31,29 @@ import {
   translationCallKey,
   SYSTEM_PROMPT,
   USER_FACING_RESPONSE_PROMPT,
+  loadIntentDecision,
+  intentDecisionContext,
 } from "../src/runtime/agent.js";
 import { validateContextMaterials } from "../src/context.js";
+import { validateToolArguments } from "../../../third_party/pi/packages/ai/dist/utils/validation.js";
 
 const codedTestError = (code) => Object.assign(new Error(code), { code });
+
+test("intent plan is loaded before execution and cannot be replanned", async () => {
+  const tasks = [{ id: "diagnose", workflow: "resume_edit", status: "planned" }];
+  const decision = await loadIntentDecision({ recognizeIntent: async () => ({ version: 1, mode: "plan", tasks }) });
+  assert.deepEqual(decision.tasks, tasks);
+  assert.match(intentDecisionContext(decision), /不得重新规划/);
+  assert.match(intentDecisionContext({ mode: "clarify", clarification_purposes: ["edit_scope"] }), /禁止规划/);
+  assert.equal(intentDecisionContext({ mode: "fallback" }), "");
+});
+
+test("intent authorization failure and cancellation do not become fallback", async () => {
+  for (const code of ["AGENT_TASK_CONTEXT_NOT_AUTHORIZED", "AGENT_RUN_NOT_ACTIVE", "AbortError"]) {
+    await assert.rejects(loadIntentDecision({ recognizeIntent: async () => { throw codedTestError(code); } }), { code });
+  }
+  await assert.rejects(loadIntentDecision({ recognizeIntent: async () => ({ version: 1, mode: "plan", tasks: [] }) }), { code: "AGENT_INTENT_RESPONSE_INVALID" });
+});
 
 test("runtime registers an arbitrary OpenAI-compatible provider route", async () => {
   const { modelRuntime, model } = await configuredModel({
@@ -51,6 +75,73 @@ test("runtime keeps separate provider configuration for each route of one model"
     { provider: "deepseek", api: "openai-completions", name: "same-model", routeId: "12", apiKey: "fictional-two", baseUrl: "https://api.deepseek.com/v1" },
   ]);
   assert.deepEqual(routes.map((route) => route.model.provider), ["linkresume-aihubmix-11", "linkresume-deepseek-12"]);
+});
+
+test("configured Pi runtime sends non-thinking options through the actual OpenAI stream", async () => {
+  for (const name of ["deepseek-v4.1-flash", "qwen3.8-flash"]) {
+    const { modelRuntime, model } = await configuredModel({
+      provider: "aihubmix", api: "openai-completions", name,
+      apiKey: "fictional-key", baseUrl: "https://api.inferera.com/v1",
+    });
+    let requests = 0;
+    const result = await modelRuntime.streamSimple(model, {
+      messages: [{ role: "user", content: [{ type: "text", text: "虚构问题" }], timestamp: 0 }],
+    }, {
+      maxRetries: 0,
+      fetch: async (url, options) => {
+        requests += 1;
+        assert.equal(new URL(url).hostname, "api.inferera.com");
+        const payload = JSON.parse(options.body);
+        if (name === "deepseek-v4.1-flash") assert.deepEqual(payload.thinking, { type: "disabled" });
+        else assert.equal(payload.enable_thinking, false);
+        assert.equal(payload.model, name);
+        const chunks = [
+          { id: "fixture", model: name, choices: [{ index: 0, delta: { role: "assistant", content: "OK" }, finish_reason: null }] },
+          { id: "fixture", model: name, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+        ];
+        return new Response(chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    }).result();
+    assert.equal(result.stopReason, "stop", result.errorMessage);
+    assert.equal(requests, 1);
+    assert.equal(result.content[0].text, "OK");
+  }
+});
+
+test("GPT-6 Luna Responses runtime sends reasoning none and reads its native stream", async () => {
+  const { modelRuntime, model } = await configuredModel({
+    provider: "aihubmix", api: "openai-responses", name: "gpt-6-luna",
+    apiKey: "fictional-key", baseUrl: "https://api.inferera.com/v1",
+  });
+  const message = { type: "message", id: "msg_fixture", role: "assistant", status: "completed",
+    content: [{ type: "output_text", text: "OK", annotations: [] }] };
+  const result = await modelRuntime.streamSimple(model, {
+    messages: [{ role: "user", content: [{ type: "text", text: "虚构问题" }], timestamp: 0 }],
+  }, {
+    maxRetries: 0,
+    fetch: async (url, options) => {
+      assert.equal(new URL(url).pathname, "/v1/responses");
+      const payload = JSON.parse(options.body);
+      assert.deepEqual(payload.reasoning, { effort: "none" });
+      assert.equal(payload.store, false);
+      const chunks = [
+        { type: "response.output_item.added", output_index: 0, item: { ...message, content: [] } },
+        { type: "response.output_text.delta", output_index: 0, content_index: 0, item_id: message.id, delta: "OK" },
+        { type: "response.output_item.done", output_index: 0, item: message },
+        { type: "response.completed", response: { id: "resp_fixture", status: "completed", output: [message], usage: {
+          input_tokens: 3, output_tokens: 1, total_tokens: 4, output_tokens_details: { reasoning_tokens: 0 },
+        } } },
+      ];
+      return new Response(chunks.map((chunk) => `event: ${chunk.type}\ndata: ${JSON.stringify(chunk)}\n\n`).join(""), {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  }).result();
+  assert.equal(result.stopReason, "stop", result.errorMessage);
+  assert.equal(result.content[0].text, "OK");
+  assert.equal(result.usage.reasoning, 0);
 });
 
 test("model request switches to the next route only before content is emitted", async () => {
@@ -145,7 +236,7 @@ test("system prompt identifies the assistant as LinkResume", () => {
   assert.match(SYSTEM_PROMPT, /resolve_resume_reference/);
   assert.match(SYSTEM_PROMPT, /begin_final_response/);
   assert.match(SYSTEM_PROMPT, /临时工作过程/);
-  assert.match(SYSTEM_PROMPT, /不绑定或改写会话/);
+  assert.match(SYSTEM_PROMPT, /不绑定会话/);
   assert.doesNotMatch(SYSTEM_PROMPT, /通过 `@`/);
   assert.doesNotMatch(SYSTEM_PROMPT, new RegExp(["Link", "CV"].join(""), "i"));
 });
@@ -745,6 +836,7 @@ test("read tool can load every P1 career workflow", async () => {
     "interview-guide/SKILL.md",
     "career-planning/SKILL.md",
     "resume-title-generator/SKILL.md",
+    "material-lookup/SKILL.md",
   ]) {
     const result = await tool.execute(`read-${path}`, { path });
     assert.match(result.content[0].text, /^---/);
@@ -830,4 +922,157 @@ test("planning catalog reveals authorized identities without another task's body
   assert.match(catalog, /张三的简历/);
   assert.match(catalog, /示例岗位/);
   assert.doesNotMatch(catalog, /PRIVATE_FIRST_TASK|PRIVATE_SECOND_TASK/);
+});
+
+test("career profile materials expose only the explicitly selected career fields", () => {
+  const profile = { type: "user_profile", id: "1", version: "3", label: "个人画像", updated_at: "2026-10-02T00:00:00Z", content: { profile_markdown: "- skills: React, TypeScript" } };
+  assert.deepEqual(validateContextMaterials([profile]), [profile]);
+  assert.match(formatContextMaterials([profile]), /React, TypeScript/);
+  assert.throws(() => validateContextMaterials([{ ...profile, content: { ...profile.content, contact_email: "fictional@example.test" } }]), /INVALID_CONTEXT_MATERIALS/);
+  assert.throws(() => validateContextMaterials([profile, profile]), /INVALID_CONTEXT_MATERIALS/);
+
+});
+
+const identityMemory = { schema_version: 1, truncated: false, events: [
+  { memory_ref: "m:1:resume:11", source_sequence_no: 1,
+    resource: { type: "resume", id: "11", label: "张三后端简历" }, source: "explicit",
+    tasks: [{ id: "a", label: "分析第一段", status: "completed", result: "建议说明职责" }] },
+  { memory_ref: "m:3:resume:22", source_sequence_no: 3,
+    resource: { type: "resume", id: "22", label: "张三产品简历" }, source: "explicit", tasks: [] },
+] };
+
+test("conversation memory preserves several identities separately from authorized context", () => {
+  const prompt = buildAgentConversation({ content: "回到前面那份", history: [], conversationMemory: identityMemory });
+  assert.match(prompt, /m:1:resume:11/);
+  assert.match(prompt, /m:3:resume:22/);
+  assert.match(prompt, /不是本轮正文授权或默认目标/);
+  assert.doesNotMatch(prompt, /<authorized-context-catalog>/);
+  assert.match(SYSTEM_PROMPT, /没有指向时即使只有一个历史对象也不能自动读取/);
+});
+
+test("history resolution requires a real memory key and current user evidence", () => {
+  const params = { memory_ref: "m:1:resume:11", relation: "historical_selection", referring_text: "回到前面那份" };
+  assert.equal(validateMemoryReference(params, identityMemory, "请回到前面那份看第二段"), "11");
+  assert.throws(() => validateMemoryReference({ ...params, memory_ref: "m:9:resume:99" }, identityMemory, "回到前面那份"), /AGENT_MEMORY_REFERENCE_INVALID/);
+  assert.throws(() => validateMemoryReference(params, identityMemory, "聊聊面试"), /AGENT_MEMORY_REFERENCE_INVALID/);
+  assert.throws(() => validateMemoryReference({ ...params, resume_id: "22" }, identityMemory, "回到前面那份"), /AGENT_MEMORY_REFERENCE_INVALID/);
+  assert.equal(validateMemoryReference(params, identityMemory, "确认", [{ value: "回到前面那份" }]), "11");
+});
+
+test("reference schema separates explicit selection and current-turn memory evidence", () => {
+  const tool = { name: "resolve_resume_reference", parameters: resumeReferenceParameters(identityMemory, "再看第二段", [{ value: "回到前面那份" }]) };
+  const call = (args) => validateToolArguments(tool, { type: "toolCall", id: "fictional-call", name: tool.name, arguments: args });
+  const params = { memory_ref: "m:1:resume:11", relation: "continuation", referring_text: "再看第二段" };
+  assert.deepEqual(call(params), params);
+  assert.deepEqual(call({ title: "虚构简历" }), { title: "虚构简历" });
+  assert.deepEqual(call({}), {});
+  for (const invalid of [
+    { ...params, resume_id: "11" }, { ...params, title: "虚构简历" },
+    { ...params, memory_ref: "m:9:resume:99" }, { ...params, referring_text: "第二段实习经历" },
+    { memory_ref: params.memory_ref }, { relation: "continuation" },
+  ]) assert.throws(() => call(invalid));
+  assert.deepEqual(call({ ...params, referring_text: "回到前面那份" }), { ...params, referring_text: "回到前面那份" });
+  const empty = { ...tool, parameters: resumeReferenceParameters({ events: [] }, "继续") };
+  assert.throws(() => validateToolArguments(empty, { name: tool.name, arguments: params }));
+  const longRequest = "再看第二段" + "虚构说明".repeat(100);
+  const longTool = { ...tool, parameters: resumeReferenceParameters(identityMemory, longRequest, [{ value: "确认" }]) };
+  assert.deepEqual(validateToolArguments(longTool, { name: tool.name, arguments: params }), params);
+  assert.equal(validateMemoryReference(params, identityMemory, longRequest), "11");
+});
+
+test("resource reference schema includes all mention kinds while resume tools remain scoped", () => {
+  const memory = { ...identityMemory, events: ["user_profile", "resume", "dataset", "job", "application", "interview"].map((type) => ({
+    ...identityMemory.events[0], resource: { type, id: "11", label: "虚构对象" }, memory_ref: `m:1:${type}:11`,
+  })) };
+  const tool = { name: "resolve_resource_reference", parameters: resourceReferenceParameters(memory, "继续刚才的资料") };
+  for (const type of ["user_profile", "resume", "dataset", "job", "application", "interview"]) {
+    const params = { memory_ref: `m:1:${type}:11`, relation: "continuation", referring_text: "继续刚才的资料" };
+    assert.deepEqual(validateToolArguments(tool, { name: tool.name, arguments: params }), params);
+    assert.equal(validateMemoryReference(params, memory, "继续刚才的资料", [], null), "11");
+    if (type !== "resume") assert.throws(() => validateMemoryReference(params, memory, "继续刚才的资料"));
+    assert.throws(() => validateToolArguments(tool, { name: tool.name, arguments: { ...params, title: "伪造" } }));
+  }
+  const scoped = resumeReferenceParameters(memory, "继续刚才的资料");
+  assert.deepEqual(scoped.properties.memory_ref.enum, ["m:1:resume:11"]);
+});
+
+test("editor background permits switching instead of pinning the run", async () => {
+  const policy = createResumeContextPolicy([{ type: "resume", id: "11", presentation: "implicit" }]);
+  assert.equal(policy.resumeId, null);
+  assert.equal(policy.backgroundId, "11");
+  const calls = [];
+  const client = {
+    resolveTarget: async (params) => { calls.push(params); return { target: { resume_id: params.resume_id } }; },
+    resolveResumeReference: async (params) => { calls.push(params); return { target: { resume_id: "22" } }; },
+  };
+  const result = await policy.resolveReference(client, { title: "张三产品简历" });
+  assert.equal(result.target.resume_id, "22");
+  assert.deepEqual(calls, [{ title: "张三产品简历" }]);
+  await policy.resolveReference(client, {});
+  assert.deepEqual(calls[1], { resume_id: "11", scope_hint: "resume" });
+  const selection = { selected_text: "旧简历选区" };
+  assert.equal(selectionForResume(policy, "11", selection), selection);
+  assert.equal(selectionForResume(policy, "22", selection), null);
+  assert.equal(selectionForResume(policy, null, selection), null);
+});
+
+test("explicit selected identity survives duplicate title guesses but real alternatives are checked", () => {
+  const explicit = [{ type: "resume", id: "11", label: "张三后端简历" }];
+  assert.equal(referenceNeedsResolution({ title: "张三后端简历" }, explicit, "看看张三后端简历"), false);
+  assert.equal(referenceNeedsResolution({ resume_id: "999" }, explicit, "看看这份"), false);
+  assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, explicit, "换张三产品简历"), true);
+  assert.equal(referenceNeedsResolution({ memory_ref: "m:1:resume:22" }, explicit, "回到前面那份"), true);
+  assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, [{ ...explicit[0], presentation: "implicit" }], "换张三产品简历"), true);
+});
+
+test("canonical scope capability requires range resolution instead of claiming permission failure", async () => {
+  const { unavailableCanonicalScope } = await import("../src/runtime/agent.js");
+  const target = { surface: "canonical", allowed_scopes: ["target", "section", "resume"] };
+  assert.equal(unavailableCanonicalScope(target, "section"), null);
+  assert.equal(unavailableCanonicalScope(target, "entry").status, "scope_requires_resolution");
+  assert.match(unavailableCanonicalScope(target, "entry").next, /起止 node_id/);
+  assert.equal(unavailableCanonicalScope({ surface: "canonical", allowed_scopes: ["range"] }, "range"), null);
+});
+
+
+test("diagnosis can recover invalid optional material references without weakening authorization", async () => {
+  const { invalidDiagnosisMaterials } = await import("../src/runtime/agent.js");
+  const error = { code: "AGENT_TASK_CONTEXT_NOT_AUTHORIZED" };
+  assert.equal(invalidDiagnosisMaterials(error, { source_ids: ["node_fictional"] }).status, "invalid_material_references");
+  assert.match(invalidDiagnosisMaterials(error, { job_id: "123" }).next, /source_ids=\[\]/);
+  assert.equal(invalidDiagnosisMaterials(error, { source_ids: [] }), null);
+  assert.equal(invalidDiagnosisMaterials({ code: "TARGET_STALE" }, { job_id: "123" }), null);
+});
+
+
+test("an experience frozen as a range uses that precise range for entry reads", async () => {
+  const { canonicalReadScope } = await import("../src/runtime/agent.js");
+  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "range" }, "entry"), "range");
+  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "paragraph" }, "entry"), "entry");
+  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "range" }, "section"), "section");
+});
+
+
+test("diagnosis parameters expose only authorized materials and canonical scopes", async () => {
+  const { diagnosisParameters } = await import("../src/runtime/agent.js");
+  const shape = diagnosisParameters({ surface: "canonical", target_kind: "range", allowed_scopes: ["target", "range", "section", "resume"] });
+  assert.deepEqual(shape.properties.scope.enum, ["target", "range"]);
+  assert.equal(shape.properties.job_id, undefined);
+  assert.equal(shape.properties.source_ids.maxItems, 0);
+  const sourced = diagnosisParameters(null, ["7"], ["dataset:8:revision"]);
+  assert.deepEqual(sourced.properties.job_id.enum, ["7"]);
+  assert.deepEqual(sourced.properties.source_ids.items.enum, ["dataset:8:revision"]);
+});
+
+
+test("native target identifiers are constrained to the current read directory and mutually exclusive", async () => {
+  const { targetParameters } = await import("../src/runtime/agent.js");
+  const first = "node_1111111111111111", last = "node_2222222222222222";
+  assert.equal(targetParameters().properties.node_id, undefined);
+  const tool = { name: "resolve_resume_target", parameters: targetParameters([first, last], [first, last]) };
+  const validate = args => validateToolArguments(tool, { name: tool.name, arguments: args });
+  assert.deepEqual(validate({ node_id: first }), { node_id: first });
+  assert.deepEqual(validate({ start_node_id: first, end_node_id: last }), { start_node_id: first, end_node_id: last });
+  assert.throws(() => validate({ node_id: first, start_node_id: first, end_node_id: last }));
+  assert.throws(() => validate({ node_id: "node_3333333333333333" }));
 });

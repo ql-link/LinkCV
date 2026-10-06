@@ -61,7 +61,7 @@ def operation_rows():
             literal(1).label("source"), AgentOperation.id.label("row_id"),
             AgentOperation.public_id.label("public_id"),
             AgentSession.user_id.label("user_id"),
-            AgentOperation.created_at.label("created_at"),
+            AgentOperation.create_time.label("created_at"),
             op_status.label("status"),
             func.coalesce(AgentRun.error_code, AgentOperation.error_code).label("error_code"),
             AgentOperation.failure_stage.label("failure_stage"),
@@ -77,7 +77,7 @@ def operation_rows():
             literal(0).label("source"), AgentRun.id.label("row_id"),
             AgentRun.public_id.label("public_id"),
             AgentSession.user_id.label("user_id"),
-            AgentRun.created_at.label("created_at"),
+            AgentRun.create_time.label("created_at"),
             AgentRun.status.label("status"),
             AgentRun.error_code.label("error_code"),
             literal(None).label("failure_stage"),
@@ -98,6 +98,8 @@ def list_agent_operations(
     to_at: datetime | None = Query(default=None, alias="to"),
     status: Literal["preflighting", "running", "succeeded", "failed", "cancelled"] | None = None,
     error_code: str | None = Query(default=None, alias="errorCode", max_length=64),
+    operation_id: str | None = Query(default=None, alias="operationId", min_length=1, max_length=64),
+    user_id: int | None = Query(default=None, alias="userId", ge=1),
     cursor: str | None = Query(default=None, max_length=256),
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -115,6 +117,11 @@ def list_agent_operations(
         query = query.where(rows.c.status == status)
     if error_code is not None:
         query = query.where(rows.c.error_code == error_code)
+    # Exact matches inside the (at most 31-day) window above.
+    if operation_id is not None:
+        query = query.where(rows.c.public_id == operation_id)
+    if user_id is not None:
+        query = query.where(rows.c.user_id == user_id)
     if cursor is not None:
         at, source, row_id = _decode_cursor(cursor)
         query = query.where(or_(
@@ -225,6 +232,6 @@ def get_agent_operation(
         } for item in tools],
         "proposals": [{
             "id": item.public_id, "status": item.status,
-            "created_at": item.created_at, "applied_at": item.applied_at,
+            "created_at": item.create_time, "applied_at": item.applied_at,
         } for item in proposals],
     }

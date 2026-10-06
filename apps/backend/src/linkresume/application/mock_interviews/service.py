@@ -7,6 +7,8 @@ concurrent request or a stale background task cannot overwrite newer progress.
 
 from __future__ import annotations
 
+from linkresume.modules.identity.dependencies import lock_active_user
+
 import asyncio
 import json
 import logging
@@ -23,6 +25,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from linkresume.application.mock_interviews import prompts, rubric, voice_metrics
+from linkresume.modules.product_events import service as product_events
 from linkresume.application.mock_interviews.outputs import (
     BackgroundAnalysis,
     ClaimExtraction,
@@ -34,11 +37,14 @@ from linkresume.application.mock_interviews.outputs import (
     SignalJudgement,
 )
 from linkresume.application.mock_interviews.retrieval import (
+    SNIPPET_CHARS,
+    EvidenceSnippet,
     MaterialDocument,
     MaterialRetriever,
 )
 from linkresume.application.resumes.service import parse_persisted_resume_snapshot
 from linkresume.core.database import utc_now
+from linkresume.integrations.linkrag_client import LinkRagError
 from linkresume.modules.agent.resume_tools import BLOCK_MARKER_PATTERN, editor_markdown
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.interviews.models import JobApplication, JobApplicationStage
@@ -53,6 +59,7 @@ from linkresume.modules.mock_interviews.models import (
 )
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 from linkresume.services.dataset_content_service import content_key, read_markdown, source_version
+from linkresume.services.rag_sync_service import recall_dataset_snippets
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +124,7 @@ class StartRequest:
     language: str
     material_ids: list[int]
     answer_mode: str = "text"
+    materials_in_questions: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +137,7 @@ def require_owned(db: Session, user_id: int, public_id: str, *, lock: bool = Fal
         MockInterview.public_id == public_id, MockInterview.user_id == user_id
     )
     if lock:
+        lock_active_user(db, user_id)
         statement = statement.with_for_update().execution_options(populate_existing=True)
     interview = db.scalar(statement)
     if interview is None:
@@ -286,16 +295,17 @@ def build_interview(db: Session, user_id: int, request: StartRequest) -> MockInt
         interview_type=request.interview_type or _default_interview_type(stage),
         difficulty=request.difficulty,
         question_count=request.question_count,
-        follow_up_enabled=request.follow_up_enabled,
+        is_follow_up_enabled=request.follow_up_enabled,
         language=request.language,
         answer_mode=request.answer_mode,
         material_refs_json=_material_refs(db, user_id, request.material_ids),
+        is_materials_in_questions=bool(request.materials_in_questions and request.material_ids),
         status="preparing",
         task_lease_until=utc_now() + TASK_LEASE,
         task_token=new_task_token(),
         last_activity_at=utc_now(),
         # Explicit microsecond timestamps keep list cursors stable on every backend.
-        created_at=utc_now(),
+        create_time=utc_now(),
     )
 
 
@@ -310,6 +320,7 @@ def release_expired(db: Session, user_id: int) -> None:
     matches no row takes an InnoDB gap lock on the unique slot index, and two
     concurrent creates would then deadlock on their INSERTs.
     """
+    lock_active_user(db, user_id)
     now = utc_now()
     expired_task = db.execute(
         update(MockInterview)
@@ -466,7 +477,7 @@ def voice_report(questions: list[MockInterviewQuestion]) -> dict[str, object] | 
     per_answer = [
         voice_metrics.answer_metrics(list(item.words_json or []), item.audio_duration_ms)
         for item in questions
-        if item.answer_status == "answered" and item.answer_source == "voice"
+        if item.answer_status == "answered" and item.answer_source == "voice" and item.words_json
     ]
     return voice_metrics.summarize(per_answer)
 
@@ -630,10 +641,12 @@ class MockInterviewRunner:
         session_factory: sessionmaker[Session],
         llm: LLMService,
         storage: Any,
+        rag: Any | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._llm = llm
         self._storage = storage
+        self._rag = rag
         self._tasks: set[asyncio.Task[None]] = set()
 
     def spawn(self, coroutine) -> None:
@@ -717,10 +730,12 @@ class MockInterviewRunner:
         if reused_analysis is not None:
             analysis = reused_analysis
         else:
-            materials = await self._db(
-                self._with_db, lambda db: load_materials(db, self._storage, interview)
-            )
-            snippets = _analysis_snippets(materials.retriever, interview)
+            snippets: list[dict[str, object]] = []
+            if interview.materials_in_questions:
+                materials = await self._db(
+                    self._with_db, lambda db: load_materials(db, self._storage, interview)
+                )
+                snippets = _analysis_snippets(materials.retriever, interview)
             await self._heartbeat(interview_id, "preparing", token)
             analysis_value = await _structured(
                 self._llm,
@@ -776,6 +791,7 @@ class MockInterviewRunner:
                     and previous.resume_markdown_snapshot == interview.resume_markdown_snapshot
                     and previous.job_snapshot_json == interview.job_snapshot_json
                     and previous.material_refs_json == interview.material_refs_json
+                    and previous.is_materials_in_questions == interview.is_materials_in_questions
                 ):
                     reused = dict(previous.analysis_json)
         db.expunge(interview)
@@ -832,7 +848,7 @@ class MockInterviewRunner:
         root = next(item for item in questions if item.id == _root_id(current))
         follow_ups = sum(1 for item in questions if item.parent_id == root.id)
         allow = (
-            interview.follow_up_enabled
+            interview.is_follow_up_enabled
             and current.answer_status == "answered"
             and follow_ups < rubric.MAX_FOLLOW_UPS
         )
@@ -1216,8 +1232,9 @@ class MockInterviewRunner:
             usage,
         )
         items: list[dict[str, object]] = []
+        rag_state = {"available": self._rag is not None}
         for claim in extraction.claims[:MAX_FACT_CLAIMS]:
-            snippets = materials.retriever.search(claim.text, limit=3)
+            snippets = await self._evidence(interview, materials.retriever, claim.text, rag_state)
             if not snippets:
                 items.append({"claim": claim.text, "kind": claim.kind, "question_sequence_no": claim.question_sequence_no, "verdict": "not_found", "quote": "", "source": None, "note": ""})
                 continue
@@ -1254,6 +1271,58 @@ class MockInterviewRunner:
             )
         return {"status": "completed", "items": items, **base}
 
+    async def _evidence(
+        self,
+        interview: MockInterview,
+        retriever: MaterialRetriever,
+        claim: str,
+        rag_state: dict[str, bool],
+    ) -> list[EvidenceSnippet]:
+        """Top 3 snippets from the selected materials for one claim.
+
+        Materials indexed in LinkRag are recalled semantically; the rest keep
+        the in-memory retriever. The first RAG failure switches the whole
+        fact check to the in-memory retriever so results stay consistent.
+        """
+        selected = [int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []]
+        rag_snippets: list[EvidenceSnippet] = []
+        covered: set[int] = set()
+        if rag_state["available"] and selected:
+            try:
+                found, covered = await self._db(
+                    self._with_db,
+                    lambda db: recall_dataset_snippets(
+                        db,
+                        self._rag,
+                        user_id=interview.user_id,
+                        query=claim,
+                        dataset_ids=selected,
+                        limit=3,
+                    ),
+                )
+            except LinkRagError:
+                rag_state["available"] = False
+                found, covered = [], set()
+            rag_snippets = [
+                EvidenceSnippet(
+                    dataset_id=str(item.dataset_id),
+                    title=item.title,
+                    version=item.version,
+                    # RAG chunks have no stable local position.
+                    position=-1,
+                    # Keep the verified quote inside what the model is shown.
+                    text=item.text[:SNIPPET_CHARS],
+                    score=round(item.score, 4),
+                )
+                for item in found
+            ]
+        local = [
+            snippet
+            for snippet in retriever.search(claim, limit=3 + len(covered) * 3)
+            if int(snippet.dataset_id) not in covered
+        ]
+        return (rag_snippets + local)[:3]
+
     def _store_report(
         self, db: Session, interview_id: int, token: str, report, evaluations, usage: _Usage
     ) -> None:
@@ -1273,7 +1342,7 @@ class MockInterviewRunner:
             report["closing_message"] = closing
         interview.report_json = report
         interview.total_score = Decimal(str(report["total_score"]))
-        interview.low_confidence = bool(report["low_confidence"])
+        interview.is_low_confidence = bool(report["low_confidence"])
         interview.rubric_version = rubric.RUBRIC_VERSION
         interview.status = "completed"
         interview.error_code = None
@@ -1283,6 +1352,7 @@ class MockInterviewRunner:
         interview.output_tokens += usage.output_tokens
         _set_slot(interview)
         interview.lock_version += 1
+        product_events.mock_interview_completed(db, interview.user_id, interview.id, interview.answer_mode)
         db.commit()
 
 
@@ -1406,6 +1476,7 @@ def start(
     repeat_of_id: int | None = None,
     speech_snapshot: dict[str, object] | None = None,
 ) -> MockInterview:
+    lock_active_user(db, user_id)
     ensure_slot_free(db, user_id)
     interview = build_interview(db, user_id, request)
     interview.repeat_of_id = repeat_of_id
@@ -1416,7 +1487,7 @@ def start(
     return interview
 
 
-def repeat_request(interview: MockInterview) -> StartRequest:
+def repeat_request(interview: MockInterview, *, answer_mode: str | None = None) -> StartRequest:
     application_id = (
         interview.job_application_id if interview.source_type == "job_application" else None
     )
@@ -1433,10 +1504,11 @@ def repeat_request(interview: MockInterview) -> StartRequest:
         interview_type=interview.interview_type,
         difficulty=interview.difficulty,
         question_count=interview.question_count,
-        follow_up_enabled=interview.follow_up_enabled,
+        follow_up_enabled=interview.is_follow_up_enabled,
         language=interview.language,
         material_ids=[int(str(ref["dataset_id"])) for ref in interview.material_refs_json or []],
-        answer_mode=interview.answer_mode,
+        materials_in_questions=interview.is_materials_in_questions,
+        answer_mode=answer_mode or interview.answer_mode,
     )
 
 
@@ -1487,6 +1559,7 @@ def submit_answer(
     A voice interview accepts only server recognition (``voice``) or a skip;
     typed text for it is rejected so the transcript cannot be forged.
     """
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     if _expire_if_stale(interview, utc_now()):
         db.commit()
@@ -1542,6 +1615,7 @@ def needs_reply(db: Session, interview: MockInterview) -> bool:
 
 def finish(db: Session, user_id: int, public_id: str) -> tuple[MockInterview, bool]:
     """End early. Returns (interview, should_evaluate)."""
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     if interview.status != "in_progress":
         raise _state_invalid()
@@ -1568,6 +1642,7 @@ def finish(db: Session, user_id: int, public_id: str) -> tuple[MockInterview, bo
 
 
 def abandon(db: Session, user_id: int, public_id: str) -> MockInterview:
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     if interview.status not in ("preparing", "preparation_failed", "in_progress"):
         raise _state_invalid()
@@ -1583,6 +1658,7 @@ def abandon(db: Session, user_id: int, public_id: str) -> MockInterview:
 
 
 def retry(db: Session, user_id: int, public_id: str) -> MockInterview:
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     _expire_if_stale(interview, utc_now())
     if interview.status == "preparation_failed":
@@ -1608,23 +1684,23 @@ def retry(db: Session, user_id: int, public_id: str) -> MockInterview:
     return interview
 
 
-def delete_interview(db: Session, user_id: int, public_id: str) -> str:
-    """Delete the interview; returns the recording prefix the caller must purge."""
+def delete_interview(db: Session, user_id: int, public_id: str, *, purge: Callable[[str], None]) -> None:
+    """Keep the row and object references available until storage deletion succeeds."""
+    lock_active_user(db, user_id)
     interview = require_owned(db, user_id, public_id, lock=True)
     _expire_if_stale(interview, utc_now())
     if interview.status in MOCK_INTERVIEW_ACTIVE_STATUSES:
         db.commit()
         raise _state_invalid()
+    purge(recording_prefix(interview))
     db.execute(
         update(MockInterview)
         .where(MockInterview.repeat_of_id == interview.id)
         .values(repeat_of_id=None)
     )
-    prefix = recording_prefix(interview)
     db.execute(delete(MockInterviewQuestion).where(MockInterviewQuestion.interview_id == interview.id))
     db.delete(interview)
     db.commit()
-    return prefix
 
 
 def serialize_question(question: MockInterviewQuestion) -> dict[str, object]:

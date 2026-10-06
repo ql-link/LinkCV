@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import timedelta, timezone
@@ -7,11 +8,13 @@ import re
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, object_session
 
 from linkresume.core.database import utc_now
 from linkresume.core.errors import ApiError
+from linkresume.modules.product_events import service as product_events
+from linkresume.modules.product_events.service import ProposalEntry
 from linkresume.application.resumes.service import (
     InvalidResumeTitle,
     ResumeTitleConflict,
@@ -28,10 +31,17 @@ from linkresume.modules.agent.models import (
     AgentOperation,
     AgentRun,
     AgentSession,
+    AgentStageEvent,
     AgentToolCall,
     ResumeChangeProposal,
 )
+from linkresume.modules.llm.models import LLMCallLog
 from linkresume.modules.agent.context_service import resolve_contexts
+from linkresume.modules.agent.message_scope import (
+    active_message, clarification_metadata, proposal_message, register_proposal, reply_source_message,
+)
+
+from linkresume.modules.agent.conversation_memory import conversation_memory
 from linkresume.modules.agent.schemas import (
     AgentMessageRecord,
     AgentClarification,
@@ -46,12 +56,11 @@ from linkresume.modules.agent.schemas import (
     ProposalRecord,
     ProposalOperation,
     ResumeTargetLocator,
+    ResumeReferenceResolveRequest,
+    ResourceReferenceResolveRequest,
     TranslationProposalCreateRequest,
 )
 from linkresume.modules.agent.resume_tools import (
-    apply_operations,
-    editor_markdown,
-    replace_editor_markdown,
     resolve_target,
     target_content,
     validate_source_ids,
@@ -168,27 +177,29 @@ def session_record(
     return AgentSessionRecord(
         id=session.public_id,
         title=session.title,
-        pinned=bool(getattr(session, "pinned", False)),
+        pinned=bool(getattr(session, "is_pinned", False)),
         status=session.status,
         selected_model_id=str(session.selected_llm_model_id) if session.selected_llm_model_id else None,
         last_message_at=session.last_message_at,
-        created_at=session.created_at,
-        updated_at=session.updated_at,
+        created_at=session.create_time,
+        updated_at=session.update_time,
         messages=[
             AgentMessageRecord(
                 sequence_no=item.sequence_no,
+                submission_key=(item.metadata_json or {}).get("submission", {}).get("key"),
+                reply_to_sequence_no=(item.metadata_json or {}).get("reply_to_sequence_no"),
                 run_id=run_ids.get(item.run_id),
                 role=item.role,
                 message_type=item.message_type,
                 content=item.content,
                 clarification=(
-                    item.metadata_json if item.message_type == "clarification" else None
+                    clarification_metadata(item) if item.message_type == "clarification" else None
                 ),
                 contexts=message_contexts(item),
                 tasks=(item.metadata_json.get("agent_tasks")
                        if item.role == "user" and isinstance(item.metadata_json, dict)
                        else None),
-                created_at=item.created_at,
+                created_at=item.create_time,
             )
             for item in (messages or [])
         ],
@@ -203,6 +214,7 @@ def proposal_record(
     ) if proposal.proposed_data_json is not None and proposal.proposed_style_json is not None else None
     return ProposalRecord(
         superseded_by=proposal_superseded_by(proposal),
+        source_user_sequence_no=proposal_source_sequence(proposal),
         id=proposal.public_id,
         run_id=run_public_id,
         resume_id=str(proposal.resume_id),
@@ -226,17 +238,21 @@ def proposal_record(
         status=proposal.status,
         applied_lock_version=proposal.applied_lock_version,
         expires_at=proposal.expires_at,
-        created_at=proposal.created_at,
+        created_at=proposal.create_time,
     )
+
+
+def proposal_source_sequence(proposal: ResumeChangeProposal) -> int | None:
+    db = object_session(proposal)
+    message = proposal_message(db, proposal.run_id, proposal.public_id) if db else None
+    return message.sequence_no if message else None
 
 
 def proposal_superseded_by(proposal: ResumeChangeProposal) -> str | None:
     db = object_session(proposal)
     if db is None:
         return None
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == proposal.run_id, AgentMessage.role == "user"
-    ))
+    message = proposal_message(db, proposal.run_id, proposal.public_id)
     return ((message.metadata_json or {}).get("superseded_proposals", {}).get(proposal.public_id)
             if message is not None else None)
 
@@ -255,9 +271,8 @@ def revision_source(db: Session, session: AgentSession, public_id: str) -> Resum
 
 
 def supersede_revision_source(db: Session, run: AgentRun, proposal: ResumeChangeProposal) -> None:
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == run.id, AgentMessage.role == "user"
-    ).with_for_update())
+    message = active_message(db, run, lock=True)
+    register_proposal(db, run, proposal.public_id)
     source_id = (message.metadata_json or {}).get("revision_proposal_id") if message else None
     if not source_id:
         return
@@ -277,9 +292,7 @@ def supersede_revision_source(db: Session, run: AgentRun, proposal: ResumeChange
         if replacement is not None:
             return
         raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
-    original_message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == source.run_id, AgentMessage.role == "user"
-    ).with_for_update())
+    original_message = proposal_message(db, source.run_id, source.public_id)
     if original_message is None:
         raise ApiError(409, "AGENT_PROPOSAL_NOT_PENDING")
     metadata = deepcopy(original_message.metadata_json or {})
@@ -310,6 +323,7 @@ def update_session(
     model_id: str | None = None,
 ) -> AgentSession:
     """Update owner-scoped session display state or explicit logical model choice."""
+    lock_active_user(db, user_id)
     if not fields:
         raise ApiError(400, "INVALID_AGENT_SESSION")
 
@@ -332,7 +346,7 @@ def update_session(
     if "pinned" in fields:
         if pinned is None:
             raise ApiError(400, "INVALID_AGENT_SESSION")
-        record.pinned = pinned
+        record.is_pinned = pinned
     if "model_id" in fields:
         selected = int(model_id) if model_id is not None else None
         if selected is not None and not eligible_routes(
@@ -340,7 +354,7 @@ def update_session(
         ):
             raise ApiError(409, "AGENT_MODEL_UNAVAILABLE")
         record.selected_llm_model_id = selected
-    record.updated_at = utc_now()
+    record.update_time = utc_now()
     try:
         db.commit()
     except Exception:
@@ -352,6 +366,7 @@ def update_session(
 
 def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
     """Delete one owned session and all of its Agent-owned dependent rows."""
+    lock_active_user(db, user_id)
     session = db.scalar(
         select(AgentSession)
         .where(
@@ -386,7 +401,20 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
             db.execute(delete(AgentToolCall).where(AgentToolCall.run_id.in_(run_ids)))
         db.execute(delete(AgentMessage).where(AgentMessage.session_id == session.id))
         if run_ids:
+            # Call logs are billing history: keep them and detach the deleted runs.
+            db.execute(
+                update(LLMCallLog)
+                .where(LLMCallLog.agent_run_id.in_(run_ids))
+                .values(agent_run_id=None)
+            )
             db.execute(delete(AgentRun).where(AgentRun.id.in_(run_ids)))
+        db.execute(
+            delete(AgentStageEvent).where(
+                AgentStageEvent.agent_operation_id.in_(
+                    select(AgentOperation.id).where(AgentOperation.session_id == session.id)
+                )
+            )
+        )
         db.execute(delete(AgentOperation).where(AgentOperation.session_id == session.id))
         db.execute(
             delete(AgentSession).where(
@@ -403,6 +431,7 @@ def delete_session(db: Session, *, public_id: str, user_id: int) -> None:
 def create_session(
     db: Session, *, user_id: int, title: str | None, model_id: str | None = None,
 ) -> AgentSession:
+    lock_active_user(db, user_id)
     default_title = "新对话"
     normalized_title = " ".join((title or default_title).split())
     if not normalized_title or len(normalized_title) > 128:
@@ -457,16 +486,7 @@ def clarification_context_state(
         raise ApiError(409, "AGENT_CLARIFICATION_STALE")
     if latest_message.run_id is None:
         return [], None
-    source_message = db.scalar(
-        select(AgentMessage)
-        .where(
-            AgentMessage.session_id == session.id,
-            AgentMessage.run_id == latest_message.run_id,
-            AgentMessage.role == "user",
-        )
-        .order_by(AgentMessage.sequence_no.asc())
-        .limit(1)
-    )
+    source_message = reply_source_message(db, latest_message)
     if source_message is None:
         return [], None
     if source_message.metadata_json is None:
@@ -515,7 +535,9 @@ def create_run(
     revision_proposal_id: str | None = None,
     operation: AgentOperation | None = None,
     trace_request_id: str | None = None,
+    submitted_request_hash: str | None = None,
 ) -> tuple[AgentRun, bool]:
+    lock_active_user(db, session.user_id)
     normalized_content = content.strip()
     if not normalized_content:
         raise ApiError(400, "INVALID_AGENT_MESSAGE")
@@ -544,6 +566,12 @@ def create_run(
         )
     )
     if existing is not None:
+        original_message = db.scalar(select(AgentMessage).where(AgentMessage.run_id == existing.id,
+            AgentMessage.role == "user").order_by(AgentMessage.sequence_no).limit(1))
+        original_hash = ((original_message.metadata_json or {}).get("submission", {}).get("hash")
+                         if original_message is not None else None)
+        if submitted_request_hash and original_hash and original_hash != submitted_request_hash:
+            raise ApiError(409, "AGENT_SUBMISSION_CONFLICT")
         if operation is not None and trace_request_id is not None:
             operation.state = "run_created"
             operation.error_code = None
@@ -558,9 +586,7 @@ def create_run(
             AgentMessage.session_id == session.id, AgentMessage.sequence_no == reply_to_sequence_no,
             AgentMessage.role == "assistant", AgentMessage.message_type == "clarification",
         ))
-        original = db.scalar(select(AgentMessage).where(
-            AgentMessage.run_id == reply.run_id, AgentMessage.role == "user"
-        )) if reply else None
+        original = reply_source_message(db, reply) if reply else None
         revision_proposal_id = (original.metadata_json or {}).get("revision_proposal_id") if original else None
     revision = revision_source(db, session, revision_proposal_id) if revision_proposal_id else None
     normalized_answers: list[dict[str, str]] = []
@@ -580,7 +606,7 @@ def create_run(
         ):
             raise ApiError(409, "AGENT_CLARIFICATION_STALE")
         try:
-            clarification = AgentClarification.model_validate(latest_message.metadata_json)
+            clarification = AgentClarification.model_validate(clarification_metadata(latest_message))
         except Exception as error:
             raise ApiError(409, "AGENT_CLARIFICATION_STALE") from error
         if clarification_answers is not None:
@@ -678,6 +704,8 @@ def create_run(
             metadata_json=(
                 {
                     "version": 1,
+                    **({"submission": {"key": idempotency_key, "hash": submitted_request_hash,
+                                        "mode": "follow_up"}} if submitted_request_hash else {}),
                     **({"revision_proposal_id": revision.public_id,
                         "revision_proposal": {"summary": revision.summary, "operations": revision.operations_json or [],
                                               "resume_id": str(revision.resume_id)}} if revision else {}),
@@ -709,7 +737,7 @@ def create_run(
                         else {}
                     ),
                 }
-                if context_snapshots or selection_context is not None or normalized_answers or revision
+                if context_snapshots or selection_context is not None or normalized_answers or revision or submitted_request_hash
                 else None
             ),
         )
@@ -739,8 +767,11 @@ def get_active_run(db: Session, public_id: str) -> tuple[AgentRun, AgentSession]
     if row is None:
         raise ApiError(404, "AGENT_RUN_NOT_FOUND")
     run, session = row
-    if run.status != "running" or session.status != "active":
+    lock_active_user(db, session.user_id)
+    run = db.scalar(select(AgentRun).where(AgentRun.id == run.id).with_for_update().execution_options(populate_existing=True))
+    if run is None or run.status != "running" or session.status != "active":
         raise ApiError(409, "AGENT_RUN_NOT_ACTIVE")
+    active_message(db, run)
     return run, session
 
 
@@ -757,7 +788,7 @@ def resolve_resume_reference(
         db.scalars(
         select(Resume)
         .where(Resume.user_id == session.user_id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
         ).all()
     )
     if resume_id is not None:
@@ -792,7 +823,7 @@ def resolve_resume_reference(
                 {
                     "resume_id": str(resume.id),
                     "title": resume.title,
-                    "updated_at": resume.updated_at,
+                    "updated_at": resume.update_time,
                 }
                 for resume in matches[:10]
             ],
@@ -813,6 +844,7 @@ def resolve_resume_reference(
 def _owned_resume_for_target(
     db: Session, *, user_id: int, resume_id: str, lock: bool = False
 ) -> Resume:
+    lock_active_user(db, user_id)
     if not resume_id.isascii() or not resume_id.isdecimal():
         raise ApiError(404, "RESUME_NOT_FOUND")
     query = select(Resume).where(
@@ -882,6 +914,7 @@ def create_scoped_proposal(
     ttl_days: int,
     fingerprint_secret: str,
 ) -> ResumeChangeProposal:
+    require_canonical_range(db, run, payload.target)
     resume = _owned_resume_for_target(
         db,
         user_id=session.user_id,
@@ -920,18 +953,16 @@ def create_scoped_proposal(
         raise ApiError(422, "SOURCE_REQUIRED")
     snapshot = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     target_content(resume, snapshot.data, payload.target, "target")
-    markdown = editor_markdown(snapshot.data)
-    if markdown is None:
-        raise ApiError(422, "TARGET_INVALID")
-    updated_markdown = apply_operations(
-        markdown,
+    from linkresume.modules.agent.canonical_targets import apply_operations as apply_canonical_operations
+    updated_data = apply_canonical_operations(
+        snapshot.data, resume=resume,
         mode=payload.mode,
         main_target=payload.target,
         operations=payload.operations,
     )
     try:
         parse_persisted_resume_snapshot(
-            replace_editor_markdown(snapshot.data, updated_markdown), snapshot.style
+            updated_data, snapshot.style
         )
     except ValueError as error:
         raise ApiError(422, "PATCH_OUT_OF_SCOPE") from error
@@ -992,7 +1023,7 @@ def create_translation_proposal(
     if (
         payload.target.resume_id != str(resume.id)
         or payload.target.base_lock_version != resume.lock_version
-        or payload.target.surface != "semantic"
+        or payload.target.surface not in {"semantic", "canonical"}
         or payload.target.section != "resume"
         or payload.target.field != "data"
     ):
@@ -1044,9 +1075,11 @@ def confirm_proposal(
     | None = None,
     delete_asset: Callable[[str], None] | None = None,
     trace_request_id: str | None = None,
+    entry: ProposalEntry = "unknown",
 ) -> tuple[ResumeChangeProposal, Resume]:
     # Read only the mode before acquiring locks. Translation allocates a new
     # resume, so its lock order must agree with other quota-checked creations.
+    lock_active_user(db, user_id)
     mode = db.scalar(
         select(ResumeChangeProposal.proposal_mode).where(
             ResumeChangeProposal.public_id == public_id,
@@ -1170,6 +1203,7 @@ def confirm_proposal(
             proposal.result_resume_id = result.id
             proposal.applied_lock_version = proposal.base_lock_version
             proposal.applied_at = utc_now()
+            product_events.resume_created(db, user_id, result.id, "translate")
             trace_confirmation("succeeded")
             db.commit()
             db.refresh(result)
@@ -1205,17 +1239,15 @@ def confirm_proposal(
                     ProposalOperation.model_validate(operation_payload)
                 )
             target_content(resume, current.data, rebased_target, "target")
-            markdown = editor_markdown(current.data)
-            if markdown is None:
-                raise ApiError(422, "TARGET_INVALID")
-            updated_markdown = apply_operations(
-                markdown,
+            from linkresume.modules.agent.canonical_targets import apply_operations as apply_canonical_operations
+            updated_data = apply_canonical_operations(
+                current.data, resume=resume,
                 mode=proposal.proposal_mode,
                 main_target=rebased_target,
                 operations=rebased_operations,
             )
             snapshot = parse_persisted_resume_snapshot(
-                replace_editor_markdown(current.data, updated_markdown),
+                updated_data,
                 current.style,
             )
         except (ApiError, KeyError, TypeError, ValueError):
@@ -1250,6 +1282,9 @@ def confirm_proposal(
     proposal.status = "applied"
     proposal.applied_lock_version = resume.lock_version
     proposal.applied_at = utc_now()
+    product_events.ai_customization_applied(
+        db, user_id, proposal_id=proposal.id, resume_id=resume.id, mode=proposal.proposal_mode, entry=entry
+    )
     trace_confirmation("succeeded")
     try:
         db.commit()
@@ -1263,6 +1298,7 @@ def confirm_proposal(
 def reject_proposal(
     db: Session, *, public_id: str, user_id: int
 ) -> ResumeChangeProposal:
+    lock_active_user(db, user_id)
     proposal = db.scalar(
         select(ResumeChangeProposal)
         .where(
@@ -1284,6 +1320,7 @@ def reject_proposal(
 
 def delete_resume_agent_data(db: Session, *, resume_id: int, user_id: int) -> None:
     """Delete resume-scoped proposals without deleting independent conversations."""
+    lock_active_user(db, user_id)
     db.execute(
         delete(ResumeChangeProposal).where(
             ResumeChangeProposal.resume_id == resume_id,
@@ -1296,12 +1333,7 @@ def _run_task_message(db: Session, run: AgentRun) -> AgentMessage:
     status = db.scalar(select(AgentRun.status).where(AgentRun.id == run.id).with_for_update())
     if status != "running":
         raise ApiError(409, "AGENT_RUN_NOT_ACTIVE")
-    message = db.scalar(
-        select(AgentMessage).where(
-            AgentMessage.run_id == run.id,
-            AgentMessage.role == "user",
-        ).with_for_update()
-    )
+    message = active_message(db, run, lock=True)
     if message is None:
         raise ApiError(409, "AGENT_TASK_MESSAGE_NOT_FOUND")
     return message
@@ -1353,24 +1385,36 @@ def task_authorized_refs(
     db: Session, *, run: AgentRun, require_running: bool = True,
 ) -> set[tuple[str, str]] | None:
     """None means a legacy run without a task plan; a planned run is scoped."""
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == run.id, AgentMessage.role == "user",
-    ))
+    message = active_message(db, run)
     tasks = (message.metadata_json or {}).get("agent_tasks") if message else None
     if not isinstance(tasks, list):
+        count = db.scalar(select(func.count(AgentMessage.id)).where(
+            AgentMessage.run_id == run.id, AgentMessage.role == "user"))
+        if count > 1:
+            return {(item["type"], item["id"]) for item in (message.metadata_json or {}).get("contexts", [])}
         return None
     active = [item for item in tasks if item.get("status") == "running"]
     if require_running and len(active) != 1:
         raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
     if not active:
         return set()
-    return {
+    allowed = {
         (item["type"], item["id"])
         for item in [
             *(active[0].get("context_refs") or []),
             *(active[0].get("resolved_refs") or []),
         ]
     }
+    resolution = next((item for item in (message.metadata_json or {}).get("resume_resolutions", [])
+                       if item.get("task_id") == active[0]["id"]), None)
+    if resolution:
+        allowed = {(kind, resource_id) for kind, resource_id in allowed
+                   if kind != "resume" or resource_id == resolution["resume_id"]}
+    for resolution in (message.metadata_json or {}).get("resource_resolutions", []):
+        if resolution.get("task_id") == active[0]["id"]:
+            allowed = {(kind, resource_id) for kind, resource_id in allowed
+                       if kind != resolution["type"] or resource_id == resolution["id"]}
+    return allowed
 
 
 def require_task_resource(
@@ -1395,26 +1439,179 @@ def require_task_sources(
 
 def authorize_resolved_task_resume(
     db: Session, *, run: AgentRun, resume_id: str,
+    label: str = "", source: str = "explicit",
+    source_sequence_no: int | None = None, relation: str | None = None,
+    referring_text: str | None = None,
+    commit: bool = True,
 ) -> None:
-    message = db.scalar(select(AgentMessage).where(
-        AgentMessage.run_id == run.id, AgentMessage.role == "user",
-    ).with_for_update())
+    message = active_message(db, run, lock=True)
     if message is None:
         return
     metadata = dict(message.metadata_json or {})
     tasks = deepcopy(metadata.get("agent_tasks"))
+    active = [item for item in tasks if item.get("status") == "running"] if isinstance(tasks, list) else []
+    if isinstance(tasks, list) and len(active) != 1:
+        raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+    task_id = active[0]["id"] if active else None
+    records = deepcopy(metadata.get("resume_resolutions", []))
+    existing = next((item for item in records if item.get("task_id") == task_id), None)
+    if existing and existing["resume_id"] != resume_id:
+        raise ApiError(409, "AGENT_RESUME_TARGET_CONFLICT")
+    if active:
+        # Keep the plan immutable; the frozen resolution narrows effective grants.
+        refs = active[0].setdefault("resolved_refs", [])
+        ref = {"type": "resume", "id": resume_id}
+        if ref not in refs:
+            refs.append(ref)
+        metadata["agent_tasks"] = tasks
+    if existing is None:
+        records.append({
+            "task_id": task_id, "resume_id": resume_id, "label_at_resolution": label,
+            "source": source, "source_sequence_no": source_sequence_no,
+            "relation": relation, "referring_text": referring_text,
+        })
+    metadata["resume_resolutions"] = records
+    message.metadata_json = metadata
+    if commit:
+        db.commit()
+
+
+def resolve_task_resume_reference(
+    db: Session, *, run: AgentRun, session: AgentSession,
+    payload: ResumeReferenceResolveRequest,
+    commit: bool = True,
+) -> dict[str, Any]:
+    """Resolve identity evidence into a current, task-scoped resource grant."""
+    source_message = db.scalar(select(AgentMessage).where(
+        AgentMessage.run_id == run.id, AgentMessage.role == "user",
+    ))
+    if source_message is None:
+        if payload.memory_ref:
+            raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+        # Legacy internal callers have no persisted user message or task plan.
+        return resolve_resume_reference(db, session=session, title=payload.title, resume_id=payload.resume_id)
+    message = _run_task_message(db, run)
+    metadata = message.metadata_json or {}
+    resume_id = payload.resume_id
+    memory_event = None
+    if payload.memory_ref:
+        tasks = metadata.get("agent_tasks", [])
+        if not any(item.get("status") == "running" for item in tasks):
+            raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+        memory_event = next((event for event in conversation_memory(db, run)["events"]
+                             if event["memory_ref"] == payload.memory_ref), None)
+        if memory_event is None:
+            raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+        texts = [message.content] + [item.get("value", "") for item in metadata.get("clarification_answers", [])]
+        if not payload.referring_text or not payload.referring_text.strip() or not any(
+            payload.referring_text in text for text in texts
+        ):
+            raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+        resume_id = memory_event["resource"]["id"]
+    result = resolve_resume_reference(db, session=session, title=payload.title, resume_id=resume_id)
+    if memory_event and result["status"] != "resolved":
+        raise ApiError(404, "AGENT_MEMORY_TARGET_UNAVAILABLE")
+    if result["status"] != "resolved":
+        return result
+    target_id = result["target"]["resume_id"]
+    explicit = {item["id"] for item in metadata.get("contexts", [])
+                if item.get("type") == "resume" and item.get("presentation", "mention") != "implicit"}
+    if explicit and target_id not in explicit:
+        raise ApiError(409, "AGENT_RESUME_SELECTION_CONFLICT")
+    resume = db.scalar(select(Resume).where(Resume.id == int(target_id), Resume.user_id == session.user_id))
+    selected = next((item for item in metadata.get("contexts", [])
+                     if item.get("type") == "resume" and item.get("id") == target_id), None)
+    source = "memory" if memory_event else "implicit" if selected and selected.get("presentation") == "implicit" else "explicit"
+    authorize_resolved_task_resume(
+        db, run=run, resume_id=target_id, label=resume.title, source=source,
+        source_sequence_no=memory_event["source_sequence_no"] if memory_event else None,
+        relation=payload.relation, referring_text=payload.referring_text,
+        commit=commit,
+    )
+    return result
+
+
+def _material_content_sha256(content: dict[str, Any]) -> str:
+    return sha256(json.dumps(content, ensure_ascii=False, sort_keys=True,
+                             separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def resolve_task_resource_reference(
+    db: Session, *, run: AgentRun, session: AgentSession,
+    payload: ResourceReferenceResolveRequest, storage: Any, settings: Any,
+) -> dict[str, Any]:
+    """Convert same-conversation identity evidence into a bounded current read."""
+    message = _run_task_message(db, run)
+    metadata = dict(message.metadata_json or {})
+    tasks = deepcopy(metadata.get("agent_tasks", []))
     if not isinstance(tasks, list):
-        return
-    active = [item for item in tasks if item.get("status") == "running"]
+        raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
+    active = [task for task in tasks if task.get("status") == "running"]
     if len(active) != 1:
         raise ApiError(409, "AGENT_TASK_NOT_RUNNING")
-    refs = active[0].setdefault("resolved_refs", [])
-    ref = {"type": "resume", "id": resume_id}
-    if ref not in refs:
-        refs.append(ref)
+    event = next((item for item in conversation_memory(db, run)["events"]
+                  if item["memory_ref"] == payload.memory_ref), None)
+    texts = [message.content] + [item.get("value", "") for item in metadata.get("clarification_answers", [])]
+    if event is None or not payload.referring_text.strip() or not any(payload.referring_text in text for text in texts):
+        raise ApiError(409, "AGENT_MEMORY_REFERENCE_INVALID")
+    kind, resource_id = event["resource"]["type"], event["resource"]["id"]
+    explicit = {item["id"] for item in metadata.get("contexts", [])
+                if item.get("type") == kind and item.get("presentation", "mention") != "implicit"}
+    if explicit and resource_id not in explicit:
+        raise ApiError(409, "AGENT_RESOURCE_SELECTION_CONFLICT")
+    records = deepcopy(metadata.get("resource_resolutions", []))
+    existing = next((item for item in records if item.get("task_id") == active[0]["id"]
+                     and item.get("type") == kind), None)
+    if existing and existing["id"] != resource_id:
+        raise ApiError(409, "AGENT_RESOURCE_TARGET_CONFLICT")
+    selected_version = existing["snapshot"]["version"] if existing else None
+    if kind == "user_profile" and existing is None:
+        from linkresume.modules.identity.models import UserProfile
+        profile = db.scalar(select(UserProfile).where(UserProfile.user_id == session.user_id).with_for_update())
+        if resource_id != str(session.user_id) or profile is None:
+            raise ApiError(404, "AGENT_MEMORY_TARGET_UNAVAILABLE")
+        selected_version = str(profile.lock_version)
+    try:
+        resolved = resolve_contexts(
+            db, user_id=session.user_id,
+            refs=[AgentContextRef(type=kind, id=resource_id,
+                                  version=selected_version)],
+            storage=storage, settings=settings,
+        )
+    except ApiError as error:
+        if error.code == "AGENT_CONTEXT_NOT_FOUND":
+            raise ApiError(404, "AGENT_MEMORY_TARGET_UNAVAILABLE") from error
+        raise
+    content_hash = _material_content_sha256(resolved.materials[0].content)
+    if existing and existing.get("content_sha256") not in (None, content_hash):
+        raise ApiError(409, "AGENT_CONTEXT_STALE")
+    if kind == "resume":
+        # Keep the existing resume conflict, selection and editing safeguards.
+        resolve_task_resume_reference(db, run=run, session=session,
+                                      payload=ResumeReferenceResolveRequest(**payload.model_dump()), commit=False)
+        metadata = dict(message.metadata_json or {})
+        tasks = deepcopy(metadata["agent_tasks"])
+        active = [task for task in tasks if task.get("status") == "running"]
+    snapshot = resolved.snapshots[0].model_dump(mode="json")
+    ref = {"type": kind, "id": resource_id}
+    if ref not in active[0].setdefault("resolved_refs", []):
+        active[0]["resolved_refs"].append(ref)
+    if existing is None:
+        records.append({
+            **ref, "task_id": active[0]["id"], "label_at_resolution": snapshot["label"],
+            "source": "memory", "source_sequence_no": event["source_sequence_no"],
+            "relation": payload.relation, "referring_text": payload.referring_text,
+            "snapshot": snapshot,
+            "content_sha256": content_hash,
+        })
     metadata["agent_tasks"] = tasks
+    metadata["resource_resolutions"] = records
     message.metadata_json = metadata
     db.commit()
+    package = get_task_materials(db, run=run, task_id=active[0]["id"], storage=storage, settings=settings)
+    return {"resource": snapshot,
+            "materials": [item for item in package["materials"] if (item["type"], item["id"]) == (kind, resource_id)],
+            "sources": [item for item in package["sources"] if (item["type"], item["id"]) == (kind, resource_id)]}
 
 
 def get_task_materials(
@@ -1436,14 +1633,27 @@ def get_task_materials(
         for item in metadata.get("contexts", [])
         if isinstance(item, dict)
     }
+    snapshots.update({(item["type"], item["id"]): item["snapshot"]
+                      for item in metadata.get("resource_resolutions", [])
+                      if item.get("task_id") == task_id})
     refs = []
-    for selected in task.get("context_refs", []):
+    allowed = task_authorized_refs(db, run=run)
+    selected_refs = {(item["type"], item["id"]): item for item in [
+        *task.get("context_refs", []), *task.get("resolved_refs", []),
+    ]}
+    for selected in selected_refs.values():
+        if allowed is not None and (selected["type"], selected["id"]) not in allowed:
+            continue
         snapshot = snapshots.get((selected["type"], selected["id"]))
         if snapshot is None:
+            if selected in task.get("resolved_refs", []) and selected["type"] == "resume":
+                # Legacy resume references use the scoped resume reader.
+                continue
             raise ApiError(409, "AGENT_TASK_CONTEXT_NOT_AUTHORIZED")
         refs.append(AgentContextRef(
             type=selected["type"], id=selected["id"],
             version=snapshot["version"],
+            presentation=snapshot.get("presentation", "mention"),
         ))
     resolved = resolve_contexts(
         db, user_id=db.scalar(select(AgentSession.user_id).where(
@@ -1452,14 +1662,18 @@ def get_task_materials(
         storage=storage, settings=settings,
     )
     materials = [item.model_dump(mode="json") for item in resolved.materials]
+    frozen_hashes = {(item["type"], item["id"]): item.get("content_sha256")
+                     for item in metadata.get("resource_resolutions", [])
+                     if item.get("task_id") == task_id}
+    for item in materials:
+        expected_hash = frozen_hashes.get((item["type"], item["id"]))
+        if expected_hash is not None and expected_hash != _material_content_sha256(item["content"]):
+            raise ApiError(409, "AGENT_CONTEXT_STALE")
     receipts = [{
         "type": item["type"], "id": item["id"], "version": item["version"],
         "source_role": TASK_SOURCE_ROLES.get(item["type"], "source_material"),
         "claim_status": "source_only",
-        "content_sha256": sha256(json.dumps(
-            item["content"], ensure_ascii=False, sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")).hexdigest(),
+        "content_sha256": _material_content_sha256(item["content"]),
     } for item in materials]
     task["material_receipts"] = receipts
     metadata["agent_tasks"] = tasks
@@ -1587,3 +1801,37 @@ def upsert_tool_event(db: Session, *, run: AgentRun, payload: object) -> AgentTo
     db.commit()
     db.refresh(record)
     return record
+
+
+def _range_grant_key(target: ResumeTargetLocator) -> str:
+    value = target.model_dump(mode='json')
+    return sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def record_canonical_range(db: Session, run: AgentRun, target: ResumeTargetLocator) -> None:
+    if not target.node_ids:
+        return
+    message = active_message(db, run, lock=True)
+    metadata = deepcopy(message.metadata_json or {})
+    task = next((t for t in metadata.get('agent_tasks', []) if t.get('status') == 'running'), None)
+    if task is None:
+        raise ApiError(409, 'AGENT_TASK_NOT_RUNNING')
+    grants = metadata.setdefault('canonical_range_grants', {})
+    keys = grants.setdefault(task['id'], [])
+    key = _range_grant_key(target)
+    if key not in keys:
+        if len(keys) >= 16:
+            raise ApiError(422, 'EDIT_PLAN_TARGET_LIMIT')
+        keys.append(key)
+    message.metadata_json = metadata
+    db.commit()
+
+
+def require_canonical_range(db: Session, run: AgentRun, target: ResumeTargetLocator) -> None:
+    if not target.node_ids:
+        return
+    message = active_message(db, run)
+    metadata = message.metadata_json or {}
+    task = next((t for t in metadata.get('agent_tasks', []) if t.get('status') == 'running'), None)
+    if task is None or _range_grant_key(target) not in metadata.get('canonical_range_grants', {}).get(task['id'], []):
+        raise ApiError(422, 'PATCH_OUT_OF_SCOPE')

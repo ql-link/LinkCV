@@ -1,3 +1,4 @@
+import { t, getLocale } from "@/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rememberTextThumbnail } from "./datasetThumbnails";
 
@@ -57,7 +58,7 @@ function remainingUploadCounts(items: DatasetUploadItem[]) {
 function collectUploadFailures(items: DatasetUploadItem[]): DatasetUploadFailure[] {
   return items
     .filter((item) => item.status === "failed" && item.error)
-    .map((item) => ({ fileName: item.file.name, reason: item.error ?? "上传失败，请稍后重试。" }));
+    .map((item) => ({ fileName: item.file.name, reason: item.error ?? t("上传失败，请稍后重试。") }));
 }
 
 function emptyBatchResult(overrides: Partial<DatasetUploadBatchResult> = {}): DatasetUploadBatchResult {
@@ -172,8 +173,8 @@ function updateItem(
 
 function formatBatchLimitMessage(limit: number, retained = false): string {
   return retained
-    ? `一次最多选择 ${limit} 个文件，已保留前 ${limit} 个。`
-    : `一次最多选择 ${limit} 个文件。`;
+    ? t("一次最多选择 {value0} 个文件，已保留前 {value1} 个。", { value0: limit, value1: limit })
+    : t("一次最多选择 {value0} 个文件。", { value0: limit });
 }
 
 export function useDatasetUploads({
@@ -277,7 +278,7 @@ export function useDatasetUploads({
           retryWithNewKey: false,
         });
       } catch {
-        failures.push({ fileName: file.name, reason: "无法创建上传请求，请刷新页面后重试。" });
+        failures.push({ fileName: file.name, reason: t("无法创建上传请求，请刷新页面后重试。") });
       }
     }
 
@@ -293,7 +294,7 @@ export function useDatasetUploads({
     if (prepared.items.length > 0) commitItems([...itemsRef.current, ...prepared.items]);
     if (prepared.limitMessage) onLimitExceededRef.current?.(prepared.limitMessage);
     if (prepared.failures.length > 0 && prepared.items.length === 0) {
-      onLimitExceededRef.current?.(prepared.failures[0]?.reason ?? "上传失败，请稍后重试。");
+      onLimitExceededRef.current?.(prepared.failures[0]?.reason ?? t("上传失败，请稍后重试。"));
     }
     return prepared;
   }, [commitItems, prepareUpload]);
@@ -355,7 +356,7 @@ export function useDatasetUploads({
     if (!targetFolderId) {
       return emptyBatchResult({
         failedCount: selected.length,
-        failures: selected.map((item) => ({ fileName: item.file.name, reason: "请先进入文件夹再上传资料。" })),
+        failures: selected.map((item) => ({ fileName: item.file.name, reason: t("请先进入文件夹再上传资料。") })),
       });
     }
 
@@ -404,7 +405,7 @@ export function useDatasetUploads({
           commitItems((current) => updateItem(current, item.id, {
             status: "failed",
             checked: false,
-            error: "服务端仍在确认上传结果，请稍后重试。",
+            error: t("服务端仍在确认上传结果，请稍后重试。"),
             retryable: true,
             retryWithNewKey: false,
           }));
@@ -426,7 +427,7 @@ export function useDatasetUploads({
           deferredCount += 1;
           deferredFailures.push({
             fileName: item.file.name,
-            reason: "资料已保存，但解析提交失败，请在列表中重新解析。",
+            reason: t("资料已保存，但解析提交失败，请在列表中重新解析。"),
           });
           ambiguousRetryKeysRef.current.delete(datasetUploadFileIdentity(item.file));
           commitItems((current) => current.filter((currentItem) => currentItem.id !== item.id));
@@ -445,7 +446,7 @@ export function useDatasetUploads({
           checked: false,
           error: datasetUploadErrorMessage(
             error,
-            "上传失败，请稍后重试。",
+            t("上传失败，请稍后重试。"),
             limitsRef.current,
           ),
           retryable: true,

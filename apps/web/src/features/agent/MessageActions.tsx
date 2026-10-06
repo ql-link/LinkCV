@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import { Check, Copy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { copyText } from "../../utils/clipboard";
@@ -9,6 +10,7 @@ type MessageActionsProps = {
 };
 
 export function MessageActions({ content, createdAt, timeLabel }: MessageActionsProps) {
+  useLocale();
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
@@ -31,8 +33,8 @@ export function MessageActions({ content, createdAt, timeLabel }: MessageActions
       <time dateTime={createdAt}>{timeLabel}</time>
       <button
         type="button"
-        aria-label={copyState === "copied" ? "已复制消息" : copyState === "failed" ? "复制失败，重试" : "复制消息"}
-        title={copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败，重试" : "复制消息"}
+        aria-label={copyState === "copied" ? t("已复制消息") : copyState === "failed" ? t("复制失败，重试") : t("复制消息")}
+        title={copyState === "copied" ? t("已复制") : copyState === "failed" ? t("复制失败，重试") : t("复制消息")}
         onClick={() => void copyMessage()}
       >
         {copyState === "copied" ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}

@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import { Extension } from "@tiptap/core";
 import type { Editor } from "@tiptap/react";
 import { Plugin, type EditorState } from "@tiptap/pm/state";
@@ -27,6 +28,13 @@ export type CommandMenuState = {
 type LineInsertMenuOptions = {
   onOpen: (state: CommandMenuState) => void;
 };
+
+// 光标前的行文本是否以「/查询词」结尾：返回查询词，不匹配返回 null。
+// 行首的块定位符（resumeBlockAnchor 在 textBetween 里以 \ufffc 占位）也算行首，否则新建的空行输入 / 打不开插入菜单。
+export function slashCommandQuery(lineBeforeCursor: string): string | null {
+  const match = lineBeforeCursor.match(/(?:^|[\s\ufffc])\/([^\s/\ufffc]*)$/u);
+  return match ? match[1] ?? "" : null;
+}
 
 const groupedVisualLineNodeNames = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow"]);
 
@@ -65,8 +73,8 @@ export const LineInsertMenuExtension = Extension.create<LineInsertMenuOptions>({
                 const button = document.createElement("button");
                 button.type = "button";
                 button.className = "resume-line-add";
-                button.setAttribute("aria-label", "在此行开头插入内容");
-                button.setAttribute("title", "在此行开头插入内容");
+                button.setAttribute("aria-label", t("在此行开头插入内容"));
+                button.setAttribute("title", t("在此行开头插入内容"));
                 button.setAttribute("contenteditable", "false");
                 button.textContent = "+";
                 button.addEventListener("mousedown", (event) => event.preventDefault());
@@ -137,11 +145,11 @@ export function runWorkbenchBlockCommand(
     // 已经是分栏行时，同一个入口改为取消分栏，把这一行合并回普通正文。
     if (currentWorkbenchBlockCommandId(editor) === "resume-row") {
       const merged = convertResumeRowToParagraph(editor);
-      if (!merged) onNotice("这一行无法取消分栏");
+      if (!merged) onNotice(t("这一行无法取消分栏"));
       return merged;
     }
     const changed = convertCurrentLineToResumeRow(editor);
-    if (!changed) onNotice("请先把光标放在要左右对齐的正文行中");
+    if (!changed) onNotice(t("请先把光标放在要左右对齐的正文行中"));
     return changed;
   }
   if (command.id === "inline-icon") return insertInlineIcon(editor, "Star");
@@ -165,6 +173,20 @@ export function runWorkbenchBlockCommand(
   return false;
 }
 
+// 插入菜单左侧的字形方块（Figma 509:259）
+const commandGlyphs: Record<string, string> = {
+  paragraph: "T",
+  "resume-row": "‖",
+  "heading-1": "H1",
+  "heading-2": "H2",
+  "heading-3": "H3",
+  "bullet-list": "•",
+  "ordered-list": "1.",
+  image: "▣",
+  "inline-image": "▫",
+  "inline-icon": "★",
+};
+
 export function SlashCommandMenu({
   editor,
   resumeId,
@@ -178,6 +200,7 @@ export function SlashCommandMenu({
   onClose: () => void;
   onNotice: (message: string) => void;
 }) {
+  useLocale();
   const commands = useMemo(() => filterWorkbenchCommands(state.query), [state.query]);
   // 菜单打开时光标所在行的真实块类型，用来标出当前状态。
   const currentCommandId = currentWorkbenchBlockCommandId(editor);
@@ -251,16 +274,17 @@ export function SlashCommandMenu({
       ref={rootRef}
       className="workbench-command-menu"
       role="listbox"
-      aria-label="插入与转换块"
+      aria-label={t("插入与转换块")}
       style={{ left: state.x, top: state.y }}
     >
-      <div className="workbench-command-heading">
-        {iconPickerOpen ? (
-          <button type="button" aria-label="返回插入与转换" onClick={() => setIconPickerOpen(false)}><ChevronLeft size={14} />选择图标</button>
-        ) : "插入与转换"}
-      </div>
+      {/* Figma 509:259 插入菜单没有标题行；选图标的二级页保留「返回」 */}
       {iconPickerOpen ? (
-        <div className="workbench-inline-icon-picker" role="listbox" aria-label="选择图标">
+        <div className="workbench-command-heading">
+          <button type="button" aria-label={t("返回插入与转换")} onClick={() => setIconPickerOpen(false)}><ChevronLeft size={14} />{t("选择图标")}</button>
+        </div>
+      ) : null}
+      {iconPickerOpen ? (
+        <div className="workbench-inline-icon-picker" role="listbox" aria-label={t("选择图标")}>
           {resumeInlineIconOptions.map((option, index) => {
             const Icon = inlineIconComponents[option.name];
             return (
@@ -280,7 +304,7 @@ export function SlashCommandMenu({
             );
           })}
         </div>
-      ) : commands.length === 0 ? <p>没有匹配命令</p> : commands.map((command, index) => {
+      ) : commands.length === 0 ? <p>{t("没有匹配命令")}</p> : commands.map((command, index) => {
         const current = command.id === currentCommandId;
         return (
           <button
@@ -294,8 +318,11 @@ export function SlashCommandMenu({
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => execute(command)}
           >
-            <span>{command.label}</span>
-            <small>{command.id === "resume-row" && current ? "当前行 · 点击取消分栏" : command.keywords[0]}</small>
+            <span className="workbench-command-glyph" aria-hidden="true">{commandGlyphs[command.id] ?? "T"}</span>
+            <span>{command.id === "heading-2" ? t("标题 2 · 新增模块") : command.label}</span>
+            {command.id === "resume-row" && current
+              ? <small>{t("当前行 · 点击取消分栏")}</small>
+              : <small className="v3-visually-hidden">{command.keywords[0]}</small>}
           </button>
         );
       })}

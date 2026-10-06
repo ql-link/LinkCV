@@ -375,6 +375,8 @@ export interface ToolCall {
 }
 
 export interface Usage {
+    /** True only after a provider returned usage, never for SDK initial zero counters. */
+    providerReported?: boolean;
 	input: number;
 	output: number;
 	cacheRead: number;

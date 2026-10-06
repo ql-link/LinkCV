@@ -1,0 +1,42 @@
+.agent-panel .agent-composer:has(.agent-message-queue) { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.agent-message-queue { min-width: 0; border: 1px solid var(--ui-border); border-radius: 12px; background: color-mix(in srgb, var(--ui-foreground) 3%, var(--ui-surface)); padding: 8px 10px 7px; font: 400 13px/1.5 var(--ui-font-sans); color: var(--ui-foreground); }
+.assistant-composer > .agent-message-queue { margin-bottom: 8px; }
+.agent-message-queue-head { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 8px; padding-left: 4px; }
+.agent-message-queue-heading { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ui-text-muted); font-size: 12px; }
+.agent-message-queue-heading > svg { flex-shrink: 0; }
+.agent-message-queue-paused { margin-left: 2px; padding-left: 8px; border-left: 1px solid var(--ui-border-strong); color: var(--ui-text-muted); font-size: 11px; }
+.agent-message-queue-list { list-style: none; max-height: 180px; overflow-y: auto; overscroll-behavior: contain; margin: 2px 0 0; padding: 0; }
+.agent-message-queue-item { display: flex; min-height: 38px; align-items: center; gap: 10px; padding: 3px 4px; border-radius: 7px; }
+.agent-message-queue-item.is-editing { background: color-mix(in srgb, var(--ui-foreground) 6%, var(--ui-surface)); }
+.agent-message-queue-content { flex: 1; min-width: 0; }
+.agent-message-queue-preview { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-message-queue-meta { display: block; color: var(--ui-text-muted); font-size: 11px; }
+.agent-message-queue-actions { display: flex; max-width: 55%; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; }
+.agent-message-queue-reason { margin: 4px 4px 0; color: var(--ui-text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.agent-message-queue-error { display: block; margin: 4px 0; color: var(--ui-destructive); font-size: 12px; overflow-wrap: anywhere; }
+.agent-queue-button.ui-button { min-width: 0; height: 28px; gap: 5px; border: 0; border-radius: 6px; background: transparent; padding: 0 7px; color: var(--ui-text-secondary); box-shadow: none; font-size: 12px; font-weight: 400; transition: color 120ms ease, background-color 120ms ease; }
+.agent-queue-button.ui-button::before,
+.agent-queue-button.ui-button::after { content: none; }
+.agent-queue-button.ui-button:hover,
+.agent-queue-button.ui-button[data-state="open"] { background: color-mix(in srgb, var(--ui-foreground) 6%, var(--ui-surface)); color: var(--ui-foreground); box-shadow: none; }
+.agent-queue-button.ui-button:focus-visible { outline: 2px solid var(--ui-ring); outline-offset: 2px; box-shadow: none; }
+.agent-queue-icon.ui-button { width: 28px; padding: 0; }
+.agent-queue-control.ui-button { flex-shrink: 0; font-size: 11px; }
+.agent-queue-button.ui-button > svg { width: 14px; height: 14px; }
+.agent-queue-menu { min-width: 148px; border-color: var(--ui-border); border-radius: 10px; background: var(--ui-surface); padding: 5px; color: var(--ui-foreground); font-family: var(--ui-font-sans); }
+.agent-queue-menu-separator { background: var(--ui-border); }
+.agent-queue-menu-item { min-height: 32px; border-radius: 6px; font-size: 13px; }
+.agent-queue-menu-item:focus { background: color-mix(in srgb, var(--ui-foreground) 5%, var(--ui-surface)); color: var(--ui-foreground); }
+.agent-queue-menu-item.is-danger { color: var(--ui-destructive); }
+.agent-queue-menu-item.is-danger:focus { background: var(--ui-destructive-subtle); color: var(--ui-destructive); }
+.agent-queue-edit-notice { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px 6px; color: var(--ui-text-muted); font: 400 12px/1.5 var(--ui-font-sans); }
+.assistant-composer .assistant-send-button.is-stop { right: 55px; }
+.assistant-conversation.is-empty .assistant-composer .assistant-send-button.is-stop { right: 76px; }
+.agent-composer .agent-send-button.is-stop { right: 56px; }
+.assistant-input-shell:has(.is-stop) .assistant-composer-editor { padding-right: 96px; }
+.assistant-conversation.is-empty .assistant-input-shell:has(.is-stop) .assistant-composer-editor { padding-right: 134px; }
+.agent-input-shell:has(.is-stop) textarea { padding-right: 100px; }
+@media (pointer: coarse) {
+  .agent-queue-button.ui-button { height: 36px; }
+  .agent-queue-icon.ui-button { width: 36px; }
+}

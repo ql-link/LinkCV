@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import hashlib
 import json
 import logging
@@ -35,9 +36,10 @@ from linkresume.core.storage import (
 )
 from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.agent.service import delete_resume_agent_data
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.job_matches.models import JobResumeMatch
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -115,8 +117,8 @@ def resume_summary(resume: Resume) -> ResumeSummary:
         title=resume.title,
         source_type=resume.source_type,
         lock_version=resume.lock_version,
-        created_at=resume.created_at,
-        updated_at=resume.updated_at,
+        created_at=resume.create_time,
+        updated_at=resume.update_time,
         preview=preview,
     )
 
@@ -145,7 +147,7 @@ def resume_record(resume: Resume) -> ResumeRecord:
 @router.get("", response_model=ResumeListResponse)
 def list_resumes(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeListResponse:
     resumes = db.scalars(
         select(Resume)
@@ -156,14 +158,14 @@ def list_resumes(
                 Resume.source_type,
                 Resume.template_id,
                 Resume.lock_version,
-                Resume.created_at,
-                Resume.updated_at,
+                Resume.create_time,
+                Resume.update_time,
                 Resume.data_json,
                 Resume.style_json,
             )
         )
         .where(Resume.user_id == user.id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
     ).all()
     return ResumeListResponse(resumes=[resume_summary(resume) for resume in resumes])
 
@@ -204,7 +206,7 @@ def create_resume(
 def get_resume(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeResponse:
     return ResumeResponse(resume=resume_record(require_owned_resume(db, resume_id, user.id)))
 
@@ -340,6 +342,7 @@ def delete_resume(
     user: User = Depends(get_current_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResumeResponse:
+    user = lock_active_user(db, user.id)
     parsed_id = parse_decimal_id(resume_id)
     if parsed_id is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
@@ -398,6 +401,7 @@ def delete_resume(
             JobApplication.user_id == user.id,
         ).values(resume_id=None, resume_title_snapshot=None))
         detach_mock_interview_resume(db, user_id=user.id, resume_id=resume.id)
+        db.execute(delete(JobResumeMatch).where(JobResumeMatch.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
     except Exception:

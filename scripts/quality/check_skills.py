@@ -74,85 +74,86 @@ FRONTEND_CAPABILITY_SKILLS = {
     "frontend-visual-check",
 }
 SOLUTION_TEMPLATE_REQUIRED_MARKERS = (
-    "# <KEY> · <标题> 方案文档",
-    "| 任务标识 |",
-    "| 一句话需求 |",
-    "| 来源材料 |",
-    "| 复杂度 |",
-    "| 风险 |",
-    "| 记录 |",
-    "| 后续路径 |",
-    "| 创建时间 |",
-    "| 最后更新 |",
-    "本模板保留完整章节库，不是逐章填写的表单",
-    "未命中的章节整章删除",
-    "可观察结果 → 业务规则 → 真实文件与编号步骤 → 验证证据",
-    "## 第一部分 · 需求",
-    "### 1. 需求描述",
-    "#### 1.1 需求正文",
-    "#### 1.4 可观察结果",
-    "| 编号 | 完成后可以观察或断言的结果 |",
-    "### 2. 现状与问题",
-    "### 3. 模块分解",
-    "### 4. 业务流程",
-    "#### 4.1 主要流程图",
-    "#### 4.3 关键规则与异常分支",
-    "| 编号 | 条件或动作 | 系统行为 | 用户或下游可见结果 | 失败后的状态或数据结果 |",
-    "### 5. 状态机",
-    "**初始状态**",
-    "**终态**",
-    "## 第二部分 · 方案",
-    "### 6. 整体架构",
-    "### 7. 数据模型",
-    "使用正常文本按数据对象说明变更层级",
+    "# <KEY> · <标题>",
+    "- **任务标识**：",
+    "- **来源**：",
+    "- **后续路径**：",
+    "- **更新时间**：",
+    "未命中的小节整节删除",
+    "可观察结果 → 业务规则 → 实施步骤 → 验证证据",
+    "## 第一部分 · 需求理解",
+    "### 1. 需求概述",
+    "### 2. 需求拆分",
+    "- **R1**：",
+    "**本次不做**：",
+    "### 3. 业务流程与规则",
+    "**关键规则**：",
+    "- **BR1**：",
+    "### 4. 难点与风险",
+    "### 5. 待确认问题",
+    "### 6. 已确认决策",
+    "## 第二部分 · 设计约束",
+    "### 7. 数据库变更",
+    "阿里巴巴 MySQL 规约",
+    "#### 7.1 数据影响",
     "#### 7.2 数据结构变更",
-    "结构定义片段只供开发评审，不是可直接执行的 DDL",
-    "字段代码块只写字段",
-    "约束变更：",
-    "索引变更：",
-    "#### 7.3 存量数据、兼容与迁移",
-    "全部未命中时删除整节",
-    "使用正常文本描述存量数据的处理范围",
-    "### 8. 接口契约",
-    "**HTTP 方法与路径**",
-    "### 9. 文件结构与实现方案",
-    "#### 9.3 代码实施计划",
-    "| 步骤 | 对应结果或规则 | 真实路径 | 动作 | 修改后职责或具体行为 | 依赖或消费方 | 完成判据 |",
-    "### 10. 外部服务与安全边界",
-    "## 第三部分 · 收口",
-    "### 11. 实施顺序",
-    "### 12. 已确认决策",
-    "### 13. 风险与依赖",
-    "### 14. 验证与验收",
-    "| 编号 | 可观察结果或规则 | 验证层级 | 测试文件或命令 | 关键断言或人工步骤 | 预期证据 |",
+    "结构片段只供评审，不是可执行 DDL",
+    "约束与索引：",
+    "#### 7.3 存量数据与迁移（按需）",
+    "#### 7.4 规约自检",
+    "### 8. 接口与数据结构",
+    "#### `<METHOD> <PATH>`",
+    "### 9. 中间件与外部依赖",
+    "### 10. 状态机",
+    "**初始状态 / 终态**",
+    "## 第三部分 · 实施与验证",
+    "### 11. 影响范围",
+    "### 12. 代码实施计划",
+    "### 13. 验证与验收",
 )
 SOLUTION_SKILL_REQUIRED_MARKERS = (
-    "`solution.template.md` 保留原有完整章节库",
-    "未命中的章节整章删除",
-    "复杂任务也不要求机械填写完整章节库",
-    "必须保留状态机",
-    "必须保留数据模型",
-    "主要流程图",
-    "可观察结果 → 业务规则 → 真实文件与编号步骤 → 验证证据",
-    "每行给出一个真实文件路径",
-    "第 7 章固定按实际内容连续编号",
-    "新增表和已有表的字段变化都使用 SQL 风格的结构定义片段",
-    "不得混入“字段定义”或“新增字段”",
-    "才保留“存量数据、兼容与迁移”",
-    "存量数据处理使用正常文本描述",
+    "写给开发者看",
+    "具体实现方式（文件拆分、函数设计、代码写法）由实施 Agent",
+    "未命中整节删除",
+    "只要读写持久数据就必须保留",
+    "必须使用 `mysql-ddl-conventions`",
+    "新表和新增字段全量遵守",
+    "存量表不追溯",
+    "难点与风险",
+    "待确认问题",
+    "中间件与外部依赖",
+    "可观察结果（R）→ 关键规则（BR）→ 代码实施计划 → 验证与验收（V）",
+    "表格不超过 4 列",
+    "不是可执行 DDL",
     "HTTP 契约必须同时写方法和路径",
     "直接施工路径把本节作为唯一验证契约",
     "不依赖固定章节编号",
     "没有 Issue 不阻止创建方案，也不算例外",
-    "没有真实待决选择的短方案，整份展示一次并确认一次",
+    "没有待确认问题的短方案，整份展示一次并确认一次",
     "确认方案时直接复用该选择",
 )
 SOLUTION_TEMPLATE_FORBIDDEN_MARKERS = (
     "#### 7.4 定稿 DDL",
-    "#### 7.3 数据结构变更",
     "| 字段 | 类型 | 可空 | 默认值 | 业务含义 | 变更 | 约束、索引或枚举 |",
     "| 数据对象 | 变更层级 | 读取方 | 写入方 | 归属与权限 | 必须保持的不变量 |",
+    "| 步骤 | 对应结果或规则 | 真实路径 | 动作 | 修改后职责或具体行为 | 依赖或消费方 | 完成判据 |",
+    "foreign key fk_",
 )
+MYSQL_DDL_REQUIRED_MARKERS = {
+    Path("mysql-ddl-conventions/SKILL.md"): (
+        "[alibaba-mysql-rules.md](alibaba-mysql-rules.md)",
+        "不建数据库外键与级联",
+        "存量例外",
+    ),
+    Path("mysql-ddl-conventions/alibaba-mysql-rules.md"): (
+        "【强制】表名不使用复数名词",
+        "【强制】表必备三字段：`id`、`create_time`、`update_time`",
+        "【强制】小数类型使用 `decimal`",
+        "【强制】不得使用外键与级联",
+        "【强制】业务上具有唯一特性的字段",
+        "## 五、规约自检清单",
+    ),
+}
 SOLUTION_FIXED_SECTION_RE = re.compile(
     r"(?:方案文档|`?solution\.md`?)(?:的)?(?:第 ?\d+ ?节| ?\d+\.\d+)"
 )
@@ -355,14 +356,14 @@ REDUCTION_CONTRACTS = {
     Path("run-all-tests/SKILL.md"): (
         "**任务范围验证**",
         "**PR 范围验证**",
-        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
+        "`npm run check`、`check:web` 和 `build:*` 仅在用户明确要求时运行",
         "同一会话中，如果任务范围验证后",
         "任务范围验证不因为“最终验证”自动变成全仓检查",
     ),
     Path("branch-pr-workflow/SKILL.md"): (
         "来源 Issue 是可选的追踪信息",
         "同一会话中，任务范围验证后",
-        "只有差异实际覆盖全仓、无法可靠缩小范围或用户明确要求时运行 `npm run check`",
+        "`npm run check`、`check:web` 和 `build:*` 仅在用户明确要求时运行",
         "共享 CI 仍运行其配置的检查",
     ),
     Path("code-review-and-quality/SKILL.md"): (
@@ -667,9 +668,29 @@ def validate_solution_template() -> list[str]:
     ]
     if stale_template:
         errors.append(
-            "solution-generator: 方案模板仍包含旧的可执行 DDL 展示契约 "
+            "solution-generator: 方案模板仍包含旧的可执行 DDL、宽表格或外键示例 "
             + ", ".join(repr(marker) for marker in stale_template)
         )
+    return errors
+
+
+def validate_mysql_ddl_contract() -> list[str]:
+    if not (SKILLS_ROOT / "mysql-ddl-conventions").is_dir():
+        return []
+
+    errors: list[str] = []
+    for relative_path, markers in MYSQL_DDL_REQUIRED_MARKERS.items():
+        path = SKILLS_ROOT / relative_path
+        if not path.is_file():
+            errors.append(f"{relative_path.as_posix()}: 缺少 MySQL 规约文件")
+            continue
+        text = path.read_text(encoding="utf-8")
+        missing = [marker for marker in markers if marker not in text]
+        if missing:
+            errors.append(
+                f"{relative_path.as_posix()}: 缺少阿里巴巴 MySQL 规约契约 "
+                + ", ".join(repr(marker) for marker in missing)
+            )
     return errors
 
 
@@ -1013,6 +1034,7 @@ def main() -> int:
     )
     errors.extend(validate_obsolete_workflow_contract())
     errors.extend(validate_solution_template())
+    errors.extend(validate_mysql_ddl_contract())
     errors.extend(validate_flow_router_contract())
     errors.extend(validate_frontend_capability_contract())
     errors.extend(validate_flow_router_delivery_contract())
