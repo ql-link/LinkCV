@@ -14,7 +14,7 @@ metadata:
 ## 固定流程
 
 1. 先根据用户已经明确的范围和本轮授权材料判断这是单一目标还是复合局部修改。复合局部修改直接形成完整任务清单并进入第 7 步，不得先为其中任一目标单独执行定位、读取或诊断；这些阶段由批处理工具在冻结清单后逐项完成。
-2. 单一目标场景：按路由规则先确定本任务目标：显式引用且没有冲突时直接定位；需要历史指代、主动切换或选择背景简历时先调用 `resolve_resume_reference`，历史分支提交 memory_ref、relation、referring_text，解析成功后在同一份当前简历内调用 `resolve_resume_target`。不能因历史记忆或编辑器背景存在而跳过本轮意图判断。随后调用 `get_resume_context` 读取所需的最小范围。该选择只作用于当前运行，不绑定会话。编辑器选区仅适用于同一份简历；引用文本出现零处或多处时才确认内容位置，不重新确认简历身份。只有整篇诊断才允许读取整份简历。
+2. 单一目标场景：按路由规则先确定本任务目标：显式引用且没有冲突时直接定位；需要历史指代、主动切换或选择背景简历时先调用 `resolve_resume_reference`，历史分支提交 memory_ref、relation、referring_text，解析成功后在同一份当前简历内调用 `resolve_resume_target`。不能因历史记忆或编辑器背景存在而跳过本轮意图判断。随后调用 `get_resume_context` 读取所需的最小范围。该选择只作用于当前运行，不绑定会话。编辑器选区仅适用于同一份简历；引用文本出现零处或多处时才确认内容位置，不重新确认简历身份。可先读取整份 canonical 目录以确定真实章节和节点；具体分析、诊断与修改必须再定位并读取所需最小范围。
 3. 需要岗位、历史简历或资料依据时调用 `search_resume_materials`。没有授权来源时不得补造事实。
 4. 单一目标修改调用 `analyze_resume_content` 并取得当前目标的 `diagnosis_fingerprint`；复合局部修改的每项目标由批处理工具独立诊断；纯分析请求在解释结构化结果后结束。
 5. 只处理最多三个真实且高价值的问题。没有数字不等于缺少结果；定性影响、交付物、服务范围、稳定性、流程变化和业务作用都可以是证据。
@@ -41,3 +41,9 @@ metadata:
 - 用户明确要求删除已定位的局部字段或块内选区时，使用 `replace_target_text` 且 `new_text` 为空字符串；删除 section/entry 正文中的完整 paragraph 或 list item 节点时使用 `delete_target` 且 `new_text` 为空字符串，不得为了满足“改写”形式而保留占位符或留下空 bullet。
 - 一个复合请求的计划执行结束后，最终回复应按工具返回结果说明已生成几张待确认提案以及未完成任务，不得自行重试失败任务，也不得因为其中存在多个模块而声称系统不支持修改。
 - 会话历史中的结构化 `clarification` 与 `clarification_answers` 是已经确认的选择。只要目标版本仍有效，不得换一种说法重复询问同一个范围、动作或位置；应继续定位、诊断并生成提案。
+
+## canonical 节点范围
+
+简历只使用当前 canonical 数据树，章节直接包含段落/列表/row 是合法表达，不要求必须有 entry。需要具体经历而尚未定位时先 resolve_resume_target(scope_hint="resume")、get_resume_context(scope="resume") 读取当前节点目录。只读任务同样可使用定位工具。可用 node_id 定位模块或节点，按 allowed_scopes 读取 section；已有实际 entry 可读 entry；没有 entry 时依据模块正文确定该段经历的起止节点，调用 resolve_resume_target(start_node_id,end_node_id) 冻结连续范围，再按 range 读取和诊断。不能把整章当成第一段，不能猜测 ID；范围不明先澄清。truncated=true 表示正文不完整，需要缩小范围，不能据此结束为已完成。定位新目标后重新读取、重新诊断，不能复用前一目标的指纹。
+
+提案只使用当前读取返回的可编辑节点 ID；new_text 是正文，不携带 linkresume-block 标记，不伪造结构节点。修改授权、版本、节点归属和范围均由服务端复验。

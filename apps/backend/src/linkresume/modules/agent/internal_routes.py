@@ -65,6 +65,8 @@ from linkresume.modules.agent.service import (
     task_authorized_refs,
     update_task_status,
     upsert_tool_event,
+    record_canonical_range,
+    require_canonical_range,
 )
 from linkresume.modules.llm.models import LLMCallLog, LLMModel, LLMModelRoute, LLMProviderConnection, LLMUseCaseRoute, get_use_case_route
 from linkresume.modules.llm.providers import pi_api
@@ -333,6 +335,9 @@ def resolve_run_target(
         selection_context=payload.selection_context,
         quoted_text=payload.quoted_text,
         scope_hint=payload.scope_hint,
+        node_id=payload.node_id,
+        start_node_id=payload.start_node_id,
+        end_node_id=payload.end_node_id,
     )
     if result["status"] == "resolved":
         message = active_message(db, run)
@@ -340,6 +345,7 @@ def resolve_run_target(
                          if item.get("type") == "resume" and item.get("id") == str(resume.id)), None)
         authorize_resolved_task_resume(db, run=run, resume_id=str(resume.id), label=resume.title,
                                       source="implicit" if selected and selected.get("presentation") == "implicit" else "explicit")
+        record_canonical_range(db, run, TargetResolveResponse.model_validate(result).target)
     return TargetResolveResponse.model_validate(result)
 
 
@@ -402,8 +408,23 @@ def read_scoped_run_context(
     payload: ContextReadRequest,
     db: Session = Depends(get_db),
 ) -> ScopedResumeContextResponse:
-    _, _, resume, snapshot = _run_resume(db, run_id, payload.target.resume_id)
+    run, _, resume, snapshot = _run_resume(db, run_id, payload.target.resume_id)
+    require_canonical_range(db, run, payload.target)
     content = target_content(resume, snapshot.data, payload.target, payload.scope)
+    from linkresume.modules.agent.canonical_targets import MAX_READ_CHARS
+    blocks = scoped_blocks(resume, snapshot.data, payload.target, payload.scope)
+    bounded_blocks = []
+    budget = MAX_READ_CHARS
+    truncated = len(content) > MAX_READ_CHARS
+    for block in blocks:
+        if budget <= 0:
+            truncated = True
+            break
+        value = block["content"]
+        if len(value) > budget:
+            truncated = True
+        bounded_blocks.append({**block, "content": value[:budget]})
+        budget -= len(value)
     return ScopedResumeContextResponse(
         run_id=run_id,
         resume_id=str(resume.id),
@@ -411,9 +432,10 @@ def read_scoped_run_context(
         lock_version=resume.lock_version,
         target=payload.target,
         scope=payload.scope,
-        content=content,
-        blocks=scoped_blocks(resume, snapshot.data, payload.target, payload.scope),
-        data=snapshot.data if payload.scope == "resume" else None,
+        content=content[:MAX_READ_CHARS],
+        truncated=truncated,
+        blocks=bounded_blocks,
+        data=snapshot.data if payload.scope == "resume" and not truncated else None,
         style=snapshot.style,
     )
 
@@ -452,6 +474,7 @@ def diagnose_run_target(
     run, session, resume, snapshot = _run_resume(
         db, run_id, payload.target.resume_id
     )
+    require_canonical_range(db, run, payload.target)
     if payload.job_id is not None:
         require_task_resource(
             db, run=run, resource_type="job", resource_id=payload.job_id,

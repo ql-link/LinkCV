@@ -1024,3 +1024,55 @@ test("explicit selected identity survives duplicate title guesses but real alter
   assert.equal(referenceNeedsResolution({ memory_ref: "m:1:resume:22" }, explicit, "回到前面那份"), true);
   assert.equal(referenceNeedsResolution({ title: "张三产品简历" }, [{ ...explicit[0], presentation: "implicit" }], "换张三产品简历"), true);
 });
+
+test("canonical scope capability requires range resolution instead of claiming permission failure", async () => {
+  const { unavailableCanonicalScope } = await import("../src/runtime/agent.js");
+  const target = { surface: "canonical", allowed_scopes: ["target", "section", "resume"] };
+  assert.equal(unavailableCanonicalScope(target, "section"), null);
+  assert.equal(unavailableCanonicalScope(target, "entry").status, "scope_requires_resolution");
+  assert.match(unavailableCanonicalScope(target, "entry").next, /起止 node_id/);
+  assert.equal(unavailableCanonicalScope({ surface: "canonical", allowed_scopes: ["range"] }, "range"), null);
+});
+
+
+test("diagnosis can recover invalid optional material references without weakening authorization", async () => {
+  const { invalidDiagnosisMaterials } = await import("../src/runtime/agent.js");
+  const error = { code: "AGENT_TASK_CONTEXT_NOT_AUTHORIZED" };
+  assert.equal(invalidDiagnosisMaterials(error, { source_ids: ["node_fictional"] }).status, "invalid_material_references");
+  assert.match(invalidDiagnosisMaterials(error, { job_id: "123" }).next, /source_ids=\[\]/);
+  assert.equal(invalidDiagnosisMaterials(error, { source_ids: [] }), null);
+  assert.equal(invalidDiagnosisMaterials({ code: "TARGET_STALE" }, { job_id: "123" }), null);
+});
+
+
+test("an experience frozen as a range uses that precise range for entry reads", async () => {
+  const { canonicalReadScope } = await import("../src/runtime/agent.js");
+  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "range" }, "entry"), "range");
+  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "paragraph" }, "entry"), "entry");
+  assert.equal(canonicalReadScope({ surface: "canonical", target_kind: "range" }, "section"), "section");
+});
+
+
+test("diagnosis parameters expose only authorized materials and canonical scopes", async () => {
+  const { diagnosisParameters } = await import("../src/runtime/agent.js");
+  const shape = diagnosisParameters({ surface: "canonical", target_kind: "range", allowed_scopes: ["target", "range", "section", "resume"] });
+  assert.deepEqual(shape.properties.scope.enum, ["target", "range"]);
+  assert.equal(shape.properties.job_id, undefined);
+  assert.equal(shape.properties.source_ids.maxItems, 0);
+  const sourced = diagnosisParameters(null, ["7"], ["dataset:8:revision"]);
+  assert.deepEqual(sourced.properties.job_id.enum, ["7"]);
+  assert.deepEqual(sourced.properties.source_ids.items.enum, ["dataset:8:revision"]);
+});
+
+
+test("native target identifiers are constrained to the current read directory and mutually exclusive", async () => {
+  const { targetParameters } = await import("../src/runtime/agent.js");
+  const first = "node_1111111111111111", last = "node_2222222222222222";
+  assert.equal(targetParameters().properties.node_id, undefined);
+  const tool = { name: "resolve_resume_target", parameters: targetParameters([first, last], [first, last]) };
+  const validate = args => validateToolArguments(tool, { name: tool.name, arguments: args });
+  assert.deepEqual(validate({ node_id: first }), { node_id: first });
+  assert.deepEqual(validate({ start_node_id: first, end_node_id: last }), { start_node_id: first, end_node_id: last });
+  assert.throws(() => validate({ node_id: first, start_node_id: first, end_node_id: last }));
+  assert.throws(() => validate({ node_id: "node_3333333333333333" }));
+});
