@@ -1442,13 +1442,16 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(api.streamAgentMessage).toHaveBeenCalledOnce());
     expect(await screen.findByText("已显示的部分回复")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
     const nextInput = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
     expect(nextInput).not.toHaveAttribute("contenteditable", "false");
     await user.type(nextInput, "下一条草稿");
-    expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "停止生成" }));
     expect(await screen.findByText("已停止生成")).toBeInTheDocument();
     expect(nextInput).toHaveTextContent("下一条草稿");
+    expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发送" })).toBeEnabled();
   });
 
   it("在思考区累计工具阶段文字，并在最终正文开始前一次清空", async () => {
@@ -1561,11 +1564,14 @@ describe("AssistantPage", () => {
     await user.click(screen.getByRole("button", { name: "发送" }));
 
     expect(await screen.findByText("正在读取所选资料…")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "停止生成" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
     expect(screen.queryByText("正在召回相关资料")).not.toBeInTheDocument();
     expect(container.querySelector(".assistant-state-header")).not.toBeInTheDocument();
 
     finishStream();
     await waitFor(() => expect(screen.queryByRole("button", { name: "停止生成" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
   });
 
   it("暂停后不把已发送 query 回填输入框，手动重试也不会重复用户消息", async () => {

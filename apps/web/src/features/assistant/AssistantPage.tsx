@@ -2056,16 +2056,15 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     </div>
   );
 
-  const sendButton = <>
-    {current.running && (
+  const sendButton = current.running ? (
     <button type="button" className="assistant-send is-stop" aria-label={t("停止生成")} onClick={stopGeneration}>
       <span aria-hidden="true" />
     </button>
-    )}
+  ) : (
     <button type="submit" className="assistant-send" aria-label={messageQueue.editingId ? "保存排队消息" : t("发送")} disabled={current.cancelling || !current.draft.trim()}>
       <Icon name="up" size={16} strokeWidth={2.2} />
     </button>
-  </>;
+  );
 
   const resumeChips = chipResumes.length > 0 && (
     <div className="assistant-composer-chips">
