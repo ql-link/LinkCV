@@ -134,12 +134,13 @@ describe("工作区响应式导航", () => {
       .mockResolvedValueOnce({ session });
     const user = userEvent.setup();
     render(<V3Shell active="home">页面内容</V3Shell>);
-    const pin = screen.getByRole("region", { name: "Pin" });
+    expect(screen.queryByRole("region", { name: "Pin" })).not.toBeInTheDocument();
     const recent = screen.getByRole("region", { name: "最近对话" });
-    expect(pin.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await user.click(within(recent).getByRole("button", { name: "测试对话 的更多操作" }));
     await user.click(screen.getByRole("menuitem", { name: "Pin" }));
     expect(update).toHaveBeenCalledWith(session.id, { pinned: true });
+    const pin = await screen.findByRole("region", { name: "Pin" });
+    expect(pin.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await waitFor(() => expect(within(pin).getByRole("button", { name: "测试对话" })).toBeInTheDocument());
     expect(within(recent).queryByRole("button", { name: "测试对话" })).not.toBeInTheDocument();
     await user.click(within(pin).getByRole("button", { name: "收起Pin" }));
@@ -150,6 +151,7 @@ describe("工作区响应式导航", () => {
     await user.click(within(pin).getByRole("button", { name: "测试对话 的更多操作" }));
     await user.click(screen.getByRole("menuitem", { name: "取消 Pin" }));
     await waitFor(() => expect(useSessionStore.getState().sessions[0].pinned).toBe(false));
+    expect(screen.queryByRole("region", { name: "Pin" })).not.toBeInTheDocument();
     await user.click(within(recent).getByRole("button", { name: "展开最近对话" }));
     expect(within(recent).getByRole("button", { name: "测试对话" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "新建对话" })).toHaveLength(1);

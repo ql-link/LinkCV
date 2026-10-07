@@ -932,7 +932,7 @@ describe("AssistantPage", () => {
     expect(await screen.findByRole("link", { name: "新建第一份简历" })).toHaveAttribute("href", "/resumes/new");
     expect(screen.getByRole("link", { name: "设置求职方向" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("link", { name: "安装浏览器插件" })).toHaveAttribute("href", "/career/applications");
-    expect(screen.getAllByRole("button", { name: "新建对话" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "添加资料" }));
     expect(await screen.findByRole("dialog", { name: "选择资料" })).toBeInTheDocument();

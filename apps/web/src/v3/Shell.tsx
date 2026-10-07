@@ -38,11 +38,13 @@ function go(event: React.MouseEvent, href: string, onNavigate?: () => void) {
 export function V3Sidebar({
   active,
   onNewConversation,
+  showNewConversation = true,
   onSelectSession,
   onNavigate,
 }: {
   active: V3Section;
   onNewConversation?: () => void;
+  showNewConversation?: boolean;
   onSelectSession?: (sessionId: string) => void;
   onNavigate?: () => void;
 }) {
@@ -134,10 +136,12 @@ export function V3Sidebar({
         <img src={brandWordmark} alt="" width={146} height={30} />
       </a>
       <div className="v3-side-body" data-locale-scroll>
-        <button type="button" className="v3-side-row v3-side-new" onClick={newConversation}>
-          <Icon name="plus" size={16} />
-          <span data-locale-motion>{t("新建对话")}</span>
-        </button>
+        {showNewConversation && (
+          <button type="button" className="v3-side-row v3-side-new" onClick={newConversation}>
+            <Icon name="plus" size={16} />
+            <span data-locale-motion>{t("新建对话")}</span>
+          </button>
+        )}
         <nav ref={navRef} className={`v3-side-nav${indicatorTop !== null ? " has-indicator" : ""}`} aria-label={t("工作区导航")}>
           {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)`, transition: indicator.snap ? "none" : undefined }} />}
           {NAV.map((item) => {
@@ -163,6 +167,7 @@ export function V3Sidebar({
         {(["pin", "recent"] as const).map((group) => {
           const label = group === "pin" ? "Pin" : t("最近对话");
           const items = sessions.filter((session) => Boolean(session.pinned) === (group === "pin"));
+          if (group === "pin" && items.length === 0) return null;
           const collapsed = collapsedGroups[group];
           const id = `${groupId}-${group}`;
           return (
@@ -344,6 +349,7 @@ export function V3Shell({
   children,
   bare = false,
   onNewConversation,
+  showNewConversation = true,
   onSelectSession,
   contentClassName = "",
   scroll = true,
@@ -352,6 +358,7 @@ export function V3Shell({
   children: ReactNode;
   bare?: boolean;
   onNewConversation?: () => void;
+  showNewConversation?: boolean;
   onSelectSession?: (sessionId: string) => void;
   contentClassName?: string;
   scroll?: boolean;
@@ -380,7 +387,7 @@ export function V3Shell({
     // 等待背景解除 inert 后恢复焦点；浏览器会在打开抽屉时移走原触发器的焦点。
     requestAnimationFrame(() => navigationTriggerRef.current?.focus());
   };
-  const sidebar = <V3Sidebar active={active} onNewConversation={onNewConversation} onSelectSession={onSelectSession} onNavigate={compact ? closeNavigation : undefined} />;
+  const sidebar = <V3Sidebar active={active} showNewConversation={showNewConversation} onNewConversation={onNewConversation} onSelectSession={onSelectSession} onNavigate={compact ? closeNavigation : undefined} />;
   return (
     <div className={`v3 v3-window${bare ? " is-bare" : ""}`} data-ui-theme="light">
       {!bare && !compact && sidebar}

@@ -2252,6 +2252,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       active="home"
       scroll={false}
       contentClassName={`assistant-v3-content${previewOpen && sessionPreviewTabs.length ? " has-preview" : ""}`}
+      showNewConversation={!isHome || activeKey !== NEW_CONVERSATION_KEY}
       onNewConversation={() => void createNewConversation()}
       onSelectSession={(id) => void selectSession(id)}
     >
