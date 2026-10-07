@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 RUBRIC_VERSION = "v3"
 # 提示词版本：任何影响出题、追问、评估口径的提示词改动都要同步递增，便于解释分数漂移。
-PROMPT_VERSION = "2026-10-c"
+PROMPT_VERSION = "2026-10-d"
 
 DIMENSIONS = (
     "professional_depth",

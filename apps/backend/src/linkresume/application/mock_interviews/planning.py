@@ -42,6 +42,15 @@ def select_plan(
             "candidates": [_untag(item, is_real_skill_check(item)) for item in plan.candidates],
         }
     )
+    # 模型常漏填 project 或对同一段经历用不同写法，先归并到已知经历名再计数。
+    known = [item.project for item in [*plan.selected, *plan.candidates] if item.project.strip()]
+    plan = plan.model_copy(
+        update={
+            "selected": [_with_project(item, known) for item in plan.selected],
+            "candidates": [_with_project(item, known) for item in plan.candidates],
+        }
+    )
+    cap = project_cap(interview_type, question_count)
 
     chosen: list[PlanItem] = []
     topics: set[str] = set()
@@ -53,8 +62,8 @@ def select_plan(
         nonlocal gaps, designs
         if item.topic in topics:
             return False
-        project = item.project.strip().casefold()
-        if project and per_project.get(project, 0) >= rubric.MAX_TOPICS_PER_PROJECT:
+        project = project_key(item.project)
+        if project and per_project.get(project, 0) >= cap:
             return False
         if item.is_gap and gaps >= gap_cap:
             return False
@@ -94,11 +103,66 @@ def select_plan(
         problems.append("skill_check")
     if profile.open_design_questions == "exactly one" and not any(item.is_open_design for item in chosen):
         problems.append("open_design")
+    if interview_type in SPREAD_TYPES and any(_needs_project(item) for item in chosen):
+        problems.append("project")
     return order_topics(chosen, difficulty), problems
 
 
 def _norm(text: str) -> str:
     return "".join(text.split()).casefold()
+
+
+# 综合面与技术面要把题目分散到不同经历；项目深挖面按设计集中在 1–2 个项目，不设单项目上限。
+SPREAD_TYPES = ("technical", "comprehensive")
+_PROJECT_NOISE = str.maketrans("", "", "-_·•.,，。、:：;；/\\|()（）[]【】<>《》\"'“”‘’")
+
+
+def project_key(name: str) -> str:
+    """Comparable form of an experience name: no spaces, punctuation or case."""
+    return _norm(name).translate(_PROJECT_NOISE)
+
+
+def same_project(left: str, right: str) -> bool:
+    """Treat "字节实习" and "字节 - 实习（后端）" as one experience; empty names never match."""
+    a, b = project_key(left), project_key(right)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = sorted((a, b), key=len)
+    return len(shorter) >= 2 and shorter in longer
+
+
+def _canonical(name: str, known: list[str]) -> str:
+    """Map a project name onto the first known spelling of the same experience."""
+    return next((other for other in known if same_project(name, other)), name)
+
+
+def _with_project(item: PlanItem, known: list[str]) -> PlanItem:
+    """Normalise the project name; fill it when the topic or anchor names a known project."""
+    if item.is_skill_check or item.is_intro:
+        return item
+    if item.project.strip():
+        return item.model_copy(update={"project": _canonical(item.project, known)})
+    text = project_key(item.topic + item.anchor)
+    for other in known:
+        key = project_key(other)
+        if len(key) >= 2 and key in text:
+            return item.model_copy(update={"project": other})
+    return item
+
+
+def _needs_project(item: PlanItem) -> bool:
+    """Resume or material topics are about an experience and must name it."""
+    return (
+        item.anchor_kind in ("resume", "material")
+        and not item.project.strip()
+        and not (item.is_skill_check or item.is_open_design or item.is_gap or item.is_intro)
+    )
+
+
+def project_cap(interview_type: str, question_count: int) -> int:
+    return rubric.MAX_TOPICS_PER_PROJECT if interview_type in SPREAD_TYPES else max(question_count, 1)
 
 
 def _untag(item: PlanItem, real: bool) -> PlanItem:
@@ -120,6 +184,7 @@ PROBLEM_HINTS = {
     "count": "考察点数量不足，请补足到要求的数量。",
     "open_design": "缺少要求的开放设计题（is_open_design=true）。",
     "skill_check": "缺少针对简历中技术栈本身的考察点（is_skill_check=true，skill 填技术名，不绑定具体项目）。",
+    "project": "有来自简历经历的考察点没有填写 project：请填写所属经历名称，同一段经历在所有考察点中用完全相同的写法。",
 }
 
 
@@ -184,19 +249,34 @@ def with_intro(items: list[PlanItem], language: str) -> list[PlanItem]:
 
 
 def apply_intro_adaptation(
-    items: list[dict[str, Any]], replacements: list[Any], intro_answer: str, difficulty: str
+    items: list[dict[str, Any]],
+    replacements: list[Any],
+    intro_answer: str,
+    difficulty: str,
+    interview_type: str = "technical",
 ) -> tuple[list[dict[str, Any]], int]:
     """Swap in topics built on what the candidate stressed in the self-introduction.
 
     Only unasked topics (index ≥ 1) can be replaced, the anchor must quote the
-    introduction verbatim, and the plan keeps its length. Returns the new plan
-    items and how many replacements were applied.
+    introduction verbatim, and the plan keeps its length. In spread interviews
+    an experience never loses its only topic and never exceeds the project cap,
+    so stressing one internship cannot push the others out of the interview.
+    Returns the new plan items and how many replacements were applied.
     """
     from linkresume.application.mock_interviews.scoring import quoted_in
 
     result = list(items)
     applied = 0
     used: set[int] = set()
+    spread = interview_type in SPREAD_TYPES
+
+    def count(project: str, skip: int) -> int:
+        return sum(
+            1
+            for position, other in enumerate(result)
+            if position != skip and same_project(project, str(other.get("project") or ""))
+        )
+
     for replacement in replacements:
         if applied >= MAX_INTRO_REPLACEMENTS:
             break
@@ -210,6 +290,16 @@ def apply_intro_adaptation(
         current = result[index]
         if current.get("is_open_design") or current.get("is_skill_check"):
             continue
+        known = [str(other.get("project") or "") for position, other in enumerate(result) if position != index]
+        known = [name for name in known if name.strip()]
+        item = _with_project(item, known)
+        if spread:
+            current_project = str(current.get("project") or "")
+            # 某段经历唯一的考察点不能被换掉，否则这段经历就不会被问到。
+            if current_project.strip() and count(current_project, index) == 0:
+                continue
+            if item.project.strip() and count(item.project, index) >= rubric.MAX_TOPICS_PER_PROJECT:
+                continue
         fixed = item.model_copy(
             update={
                 "anchor_kind": "intro",
@@ -257,27 +347,35 @@ def fill_skill_checks(
     """Guarantee tech-stack coverage when the model could not deliver it.
 
     Builds template topics for the most prominent declared skills and puts
-    them in place of the last topics that carry no hard requirement.
+    them in place of topics that carry no hard requirement, preferring the
+    experience with the most topics so no experience loses its only one.
     """
     have = sum(item.is_skill_check for item in items)
     text = SKILL_TEXT.get(language, SKILL_TEXT["zh"])
     covered = {_norm(item.skill) for item in items if item.is_skill_check}
     result = list(items)
+
+    def priority(index: int) -> tuple[int, int]:
+        project = result[index].project
+        if not project.strip():
+            return (1, -index)
+        others = sum(1 for other in result if same_project(project, other.project))
+        # 0：所在经历还有别的题；2：该经历唯一的题，最后才动。
+        return (0 if others > 1 else 2, -index)
+
     for skill in skills:
         if have >= need:
             break
         if _norm(skill) in covered:
             continue
-        replace_at = next(
-            (
-                index
-                for index in range(len(result) - 1, -1, -1)
-                if not result[index].is_skill_check and not result[index].is_open_design
-            ),
-            None,
-        )
-        if replace_at is None:
+        replaceable = [
+            index
+            for index in range(len(result))
+            if not result[index].is_skill_check and not result[index].is_open_design
+        ]
+        if not replaceable:
             break
+        replace_at = min(replaceable, key=priority)
         result[replace_at] = PlanItem(
             topic=text["topic"].format(skill=skill),
             anchor=text["anchor"].format(skill=skill),

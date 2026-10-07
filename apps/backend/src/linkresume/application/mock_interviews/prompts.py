@@ -132,13 +132,19 @@ def plan_messages(
         + "\n规则：每个考察点必须有 anchor（简历原句、JD 要求或资料片段）；"
         + "以交集题为主，缺口题比例为"
         + {"low": "低", "medium": "中", "high": "高"}[profile.gap_ratio]
-        + f"；同一项目不超过 2 个考察点；start_depth 取 L{profile.start_depth_min}–L{profile.start_depth_max}；"
+        + (
+            f"；同一项目不超过 {MAX_TOPICS_PER_PROJECT} 个考察点，简历有多段实习、工作或项目经历时尽量每段都覆盖到"
+            if interview.interview_type in ("technical", "comprehensive")
+            else ""
+        )
+        + f"；start_depth 取 L{profile.start_depth_min}–L{profile.start_depth_max}；"
         + "开放设计题"
         + {"none": "不出", "at most one": "最多 1 个", "exactly one": "必须恰好 1 个"}[
             profile.open_design_questions
         ]
         + "；每个考察点给出 3–5 条 expected_signals（好的回答应包含的要点）和 2–3 个由浅到深的追问方向。"
-        + f"每个考察点填写 project（所属项目或经历名称，没有则留空；同一项目最多 {MAX_TOPICS_PER_PROJECT} 个）、"
+        + "每个考察点填写 project（所属项目或经历名称：凡是来自简历或资料中某段经历的考察点都必须填写，"
+        + "同一段经历在所有考察点中用完全相同的写法；技术栈本身、岗位要求或开放设计题没有对应经历时留空）、"
         + "is_gap（是否简历缺口题）和 is_open_design（是否开放设计题）。"
         + "开场的自我介绍由系统固定安排，不要把它列为考察点，也不占用这些名额。"
         + (
@@ -415,6 +421,12 @@ def intro_adaptation_messages(
         + "如果现有计划（plan，下标 0 是自我介绍本身）没有覆盖这些强调的内容，"
         + "把最多 2 个关联度最低的考察点替换成针对这些强调内容的新考察点；已经覆盖就不要替换。"
         + "标记为 is_open_design 或 is_skill_check 的考察点不可替换，下标 0 也不可替换。"
+        + (
+            f"不要替换某段经历（project）唯一的考察点，同一段经历替换后也不得超过 {MAX_TOPICS_PER_PROJECT} 个，"
+            "让面试仍然覆盖候选人的不同经历；新考察点属于某段经历时 project 沿用计划中的同一写法。"
+            if interview.interview_type in ("technical", "comprehensive")
+            else ""
+        )
         + f"新考察点的 anchor 必须逐字摘自自我介绍原话；start_depth 取 L{profile.start_depth_min}–L{profile.start_depth_max}；"
         + "给出 3–5 条 expected_signals 和 2–3 个由浅到深的追问方向；topic 不得与现有考察点重复。"
         + "没有需要调整的内容时 replacements 返回空数组。\n"
