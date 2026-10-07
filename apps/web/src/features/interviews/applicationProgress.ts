@@ -308,7 +308,7 @@ export function applicationScheduleStatusLabel(
   const currentTime = (now ?? new Date()).getTime();
   if (!Number.isFinite(currentTime)) return null;
   if (currentTime >= end) return t("等待结果");
-  if (currentTime >= start) return t("正在进行");
+  if (currentTime >= start) return t("进行中");
 
   const untilStart = start - currentTime;
   if (untilStart <= HOUR_IN_MILLISECONDS * 24) {
@@ -355,7 +355,7 @@ export function applicationProgressToneClass(
   if (options.currentStageCompleted && scheduledProgressColumn(projection)) return "is-success";
   const scheduleLabel = applicationScheduleStatusLabel(application, options);
   if (scheduleLabel === t("等待结果")) return "is-waiting";
-  if (scheduleLabel === t("正在进行")) return "is-active";
+  if (scheduleLabel === t("进行中")) return "is-active";
   if (scheduleLabel) return "is-scheduled";
   if (application.stage_state === "negotiating") return "is-offer";
   if (projection.isWaiting) return "is-waiting";
@@ -419,4 +419,15 @@ export function defaultNextStage(application: ApplicationProgressSource): Ordere
   if (current === "screening") return "assessment";
   if (current === "assessment") return "written_test";
   return current === "offer" ? "offer" : "interview";
+}
+
+/** Keep the filter broad: all unfinished stages belong to in-progress work. */
+export function applicationFilterStatus(
+  application: ApplicationProgressScheduleSource,
+  options: ApplicationProgressLabelOptions = {},
+): string {
+  const projection = projectApplicationProgress(application);
+  if (projection.columnKey === "ended") return "ended";
+  if (applicationScheduleStatusLabel(application, options) === t("已完成")) return "completed";
+  return "in_progress";
 }

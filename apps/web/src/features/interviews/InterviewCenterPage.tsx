@@ -133,6 +133,7 @@ import {
 } from "./ApplicationsBoard";
 import {
   applicationStageMatchesSession,
+  applicationFilterStatus,
   applicationProgressLabel,
   applicationProgressToneClass,
   applicationStatusLabel,
@@ -651,7 +652,8 @@ export function InterviewCenterPage({
   const [hiddenApplicationBoardColumnIds, setHiddenApplicationBoardColumnIds] = useState<Set<string>>(
     readStoredHiddenApplicationBoardColumnIds,
   );
-  const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_schedule");
+  const [applicationStatusFilter, setApplicationStatusFilter] = useState("all");
+  const [applicationSortMode, setApplicationSortMode] = useState<ApplicationSortMode>("recent_updated");
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasLoadedData, setHasLoadedData] = useState(() => Boolean(cachedCareer));
@@ -1069,12 +1071,14 @@ export function InterviewCenterPage({
           applications={applications}
           displayMode={applicationDisplayMode}
           hiddenColumnIds={hiddenApplicationBoardColumnIds}
+          statusFilter={applicationStatusFilter}
           sortMode={applicationSortMode}
           groupByCategory={groupByCategory}
           query={query}
           onQueryChange={setQuery}
           onGroupingChange={setGroupByCategory}
           onDisplayModeChange={setApplicationDisplayMode}
+          onStatusFilterChange={setApplicationStatusFilter}
           onSortChange={setApplicationSortMode}
           onColumnVisibilityChange={(columnId, visible) => {
             setHiddenApplicationBoardColumnIds((current) => {
@@ -1138,6 +1142,7 @@ export function InterviewCenterPage({
           query={query}
           displayMode={applicationDisplayMode}
           hiddenColumnIds={hiddenApplicationBoardColumnIds}
+          statusFilter={applicationStatusFilter}
           sortMode={applicationSortMode}
           groupByCategory={groupByCategory}
           timezone={timezone}
@@ -1401,6 +1406,8 @@ function ApplicationViewControls({
   query,
   onQueryChange,
   onDisplayModeChange,
+  statusFilter,
+  onStatusFilterChange,
   onSortChange,
   onGroupingChange,
   onColumnVisibilityChange,
@@ -1412,12 +1419,18 @@ function ApplicationViewControls({
   groupByCategory: boolean;
   query: string;
   onQueryChange: (value: string) => void;
+  statusFilter: string;
+  onStatusFilterChange: (value: string) => void;
   onDisplayModeChange: (value: "board" | "list") => void;
   onSortChange: (value: ApplicationSortMode) => void;
   onGroupingChange: (value: boolean) => void;
   onColumnVisibilityChange: (columnId: string, visible: boolean) => void;
 }) {
   useLocale();
+  const statusOptions = [
+    { value: "in_progress", label: t("进行中") },
+    { value: "completed", label: t("已完成") },
+  ];
   const sortRef = useRef<HTMLButtonElement>(null);
   const filterRef = useRef<HTMLButtonElement>(null);
   const [sortOpen, setSortOpen] = useState(false);
@@ -1450,13 +1463,19 @@ function ApplicationViewControls({
           label={t("排序")}
           width={148}
           items={[
-            { label: t("最近排期"), checked: sortMode === "recent_schedule", onSelect: () => onSortChange("recent_schedule") },
+            { label: t("最近修改"), checked: sortMode === "recent_updated", onSelect: () => onSortChange("recent_updated") },
             { label: t("最先添加"), checked: sortMode === "earliest_added", onSelect: () => onSortChange("earliest_added") },
           ]}
         />
         <button ref={filterRef} type="button" className="career-toolbar-link" aria-label={t("视图设置")} aria-haspopup="dialog" aria-expanded={filterOpen} onClick={() => (filterOpen ? closeFilter() : setFilterOpen(true))}>
           <Icon name="filter" size={13} />{t("筛选")}</button>
         <Popover anchorRef={filterRef} open={filterOpen} onClose={closeFilter} placement="bottom-end" label={t("视图设置")} className="career-filter-panel">
+          <div className="career-filter-field">
+            <span>{t("状态")}</span>
+            <Select size="sm" label={t("状态筛选")} value={statusFilter}
+              options={[{ value: "all", label: t("全部状态") }, ...statusOptions]}
+              onChange={onStatusFilterChange} />
+          </div>
           <div className="career-filter-field">
             <span>{t("分组")}</span>
             <Select
@@ -1473,7 +1492,7 @@ function ApplicationViewControls({
               size="sm"
               label={t("排序方式")}
               value={sortMode}
-              options={[{ value: "recent_schedule", label: t("最近排期") }, { value: "earliest_added", label: t("最先添加") }]}
+              options={[{ value: "recent_updated", label: t("最近修改") }, { value: "earliest_added", label: t("最先添加") }]}
               onChange={(value) => onSortChange(value as ApplicationSortMode)}
             />
           </div>
@@ -1685,6 +1704,7 @@ function ApplicationsView({
   sessions,
   query,
   displayMode,
+  statusFilter,
   sortMode,
   timezone,
   onCreate,
@@ -1699,6 +1719,7 @@ function ApplicationsView({
   groupByCategory: boolean;
   sessions: InterviewSessionSummary[];
   query: string;
+  statusFilter: string;
   displayMode: "board" | "list";
   sortMode: ApplicationSortMode;
   timezone: string;
@@ -1749,12 +1770,13 @@ function ApplicationsView({
   }
   const normalizedQuery = query.trim().toLowerCase();
   const visibleApplications = sortApplications(
-    applications.filter((item) => !normalizedQuery
+    applications.filter((item) => (statusFilter === "all" || applicationFilterStatus(item, {
+      now, currentStageCompleted: completedScheduleStartAtByApplicationId.has(item.id),
+    }) === statusFilter) && (!normalizedQuery
       || `${item.company_name_snapshot}${item.job_title_snapshot}${applicationProgressLabel(item, { now })}${applicationStatusLabel(item)}`
         .toLowerCase()
-        .includes(normalizedQuery)),
+        .includes(normalizedQuery))),
     sortMode,
-    completedScheduleStartAtByApplicationId,
   );
   const categories = [["internship", t("实习")], ["campus", t("校招")], ["full_time", t("正式")], ["", t("未分类")]] as const;
   const categoryKey = (item: JobApplicationSummary) => categories.some(([key]) => key === item.job_snapshot?.employment_type) ? String(item.job_snapshot?.employment_type ?? "") : "";
@@ -1797,7 +1819,6 @@ function ApplicationsView({
         onRequestCategory={setCategoryApplication}
         visibleApplications={visibleApplications}
         completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
-        completedScheduleStartAtByApplicationId={completedScheduleStartAtByApplicationId}
         now={now}
         sortMode={sortMode}
         displayMode={displayMode}
