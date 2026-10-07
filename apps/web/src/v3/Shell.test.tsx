@@ -64,14 +64,14 @@ describe("工作区响应式导航", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it("新建对话关闭抽屉并执行页面回调", async () => {
-    const onNewConversation = vi.fn();
+  it.each(["home", "resumes", "templates", "jobs", "schedule", "mock", "datasets", "account"] as const)("%s 侧栏在桌面和窄屏均不显示新建对话按钮", async (active) => {
     const user = userEvent.setup();
-    render(<V3Shell active="home" onNewConversation={onNewConversation}>页面内容</V3Shell>);
+    resize(1440);
+    render(<V3Shell active={active}>页面内容</V3Shell>);
+    expect(screen.queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
+    resize(390);
     await user.click(screen.getByRole("button", { name: "打开工作区导航" }));
-    await user.click(within(screen.getByRole("dialog")).getAllByRole("button", { name: "新建对话" })[0]);
-    expect(onNewConversation).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("dialog")).queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
   });
 
   it("打开抽屉时切换英文更新导航文案并保留关闭行为", async () => {
@@ -83,7 +83,7 @@ describe("工作区响应式导航", () => {
     const dialog = screen.getByRole("dialog", { name: "Workspace navigation" });
     expect(trigger).toHaveAccessibleName("Open workspace navigation");
     expect(within(dialog).getByRole("navigation", { name: "Workspace navigation" })).toBeInTheDocument();
-    expect(within(dialog).getAllByRole("button", { name: "New conversation" })).toHaveLength(1);
+    expect(within(dialog).queryByRole("button", { name: "New conversation" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Close" })).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("link", { name: "Library" }));
     expect(window.location.pathname).toBe("/datasets");
@@ -154,7 +154,7 @@ describe("工作区响应式导航", () => {
     expect(screen.queryByRole("region", { name: "Pin" })).not.toBeInTheDocument();
     await user.click(within(recent).getByRole("button", { name: "展开最近对话" }));
     expect(within(recent).getByRole("button", { name: "测试对话" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "新建对话" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
   });
 
   it("Pin 保存失败显示错误且会话保留在原分组", async () => {

@@ -208,9 +208,9 @@ describe("AssistantPage", () => {
     await waitFor(() => expect(useActiveSessionStore.getState().activeId).toBe("session-1"));
     expect(within(sidebar).getByRole("button", { name: "字节三面 · 系统设计" })).toHaveAttribute("aria-current", "page");
 
-    await user.click(within(sidebar).getAllByRole("button", { name: "新建对话" })[0]);
+    expect(within(sidebar).queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
+    await user.click(within(sidebar).getByRole("link", { name: "首页" }));
     expect(window.location.pathname).toBe("/assistant");
-    await waitFor(() => expect(useActiveSessionStore.getState().activeId).toBeNull());
   });
 
   it("把服务端无时区的 UTC 时间按 UTC 解析，避免刷新后进度多出八小时", () => {

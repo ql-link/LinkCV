@@ -65,7 +65,6 @@
 .v3-side-row:hover { background: var(--v3-field); color: var(--v3-txt); text-decoration: none; }
 .v3-side-row.is-active { background: var(--v3-hl); color: var(--v3-txt); font-weight: var(--ui-weight-medium); }
 .v3-side-row .v3-side-count { margin-left: auto; color: var(--v3-fnt); font-family: var(--v3-num); font-size: var(--ui-text-xs); font-weight: 500; line-height: var(--ui-line-metadata); }
-.v3-side-new { color: var(--v3-txt); font-size: var(--ui-text-sm); line-height: var(--ui-line-control); font-weight: var(--ui-weight-medium); white-space: nowrap; }
 .v3-side-nav { position: relative; display: grid; gap: 4px; margin-top: 12px; }
 .v3-side-section { display: flex; height: auto; margin: 22px 12px 8px; align-items: center; justify-content: space-between; color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); min-height: var(--ui-line-metadata); }
 .v3-side-section button { display: grid; width: 18px; height: 18px; place-items: center; border: 0; border-radius: 5px; background: transparent; padding: 0; color: var(--v3-fnt); cursor: pointer; }

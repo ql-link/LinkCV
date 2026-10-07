@@ -25,7 +25,7 @@ Web 的共享侧栏、首页任务卡与右侧预览属于客户端呈现；预�
 
 ## 组件入口
 
-Web 共享侧栏由 `V3Shell` / `V3Sidebar` 渲染，`AssistantPage` 根据新对话主页状态传入 `showNewConversation`；置顶分组根据客户端会话列表决定是否挂载。入口和空分组的显示规则见 [AI 求职助手](../features/ai-assistant.md)，会话持久化和运行 API 沿用既有协议。
+Web 共享侧栏由 `V3Shell` / `V3Sidebar` 渲染，不提供新建对话按钮或对应显示控制属性；置顶分组根据客户端会话列表决定是否挂载。入口和空分组的显示规则见 [AI 求职助手](../features/ai-assistant.md)，会话持久化和运行 API 沿用既有协议。
 
 首页 Offer 截止提醒直接读取求职记录的 `offer_reply_due_on`，客户端按日历日期计算，不经过 Agent、LLM 或本地示例生成器。
 
