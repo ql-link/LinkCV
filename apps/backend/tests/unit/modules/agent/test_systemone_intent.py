@@ -183,3 +183,11 @@ def test_resume_switch_is_conservative_when_doubtful(probability, expected):
     value = native_answers(payload, ("diagnose",))
     value["answers"]["resume_switch"]["noul"] = probability
     assert decision_from_answers(value, refs).resume_switch is expected
+
+
+def test_a_selected_resume_is_not_reopened_by_unnamed_wording_or_history():
+    selected, _ = request_with([{"type": "resume", "id": "1", "presentation": "mention"}])
+    background, _ = request_with([{"type": "resume", "id": "1", "presentation": "implicit"}])
+    chosen = selected["questions"]["clarification_purpose"]["criteria"]["resume_identity"]
+    assert "显式选择" in chosen and "另一份" in chosen
+    assert "应当使用显式选择的简历" not in background["questions"]["clarification_purpose"]["criteria"]["resume_identity"]

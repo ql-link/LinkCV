@@ -372,3 +372,40 @@ test("an entry-less section is rewritten through one frozen range instead of fai
   assert.equal(h.called("diagnoses")[0].payload.scope, "range");
   assert.deepEqual(h.statuses(), { intent_1: "completed" });
 });
+
+test("a resume selected in a later turn is the one that is read, not the one from earlier turns", async (t) => {
+  const context = structuredClone(wholeResumeContext);
+  context.resume_id = "22"; context.title = "张三的第二份简历";
+  const memory = { schema_version: 1, truncated: false, events: [{
+    memory_ref: "m:1:resume:11", relation: "selected", resource: { type: "resume", id: "11", label: "张三的简历" } }] };
+  const h = createHarness(t, {
+    intent: { mode: "plan" }, tasks: [task("intent_1", "resume_diagnosis", { context_refs: withResume("22") })], context, autoResume: "22",
+    script: [submit("s1", "第二份简历是后端简历。"), [say("第二份简历是后端简历。")]],
+  });
+  await h.run({
+    userSequenceNo: 5, content: "这份简历是做什么的",
+    contextMaterials: [{ type: "resume", id: "22", resume_id: "22", presentation: "mention", label: "张三的第二份简历", version: "1", content: {} }],
+    conversationMemory: memory,
+    history: [{ role: "user", content: "这份简历是做什么的" }, { role: "assistant", content: "这是第一份简历的说明。" }],
+  });
+  assert.deepEqual(h.called("targets:resolve").map((item) => item.payload.resume_id), ["22"]);
+  assert.match(h.turns[0].prompt, /张三的第二份简历/);
+  assert.deepEqual(h.statuses(), { intent_1: "completed" });
+});
+
+test("a resume selected this turn is never asked about again, even when the model tries", async (t) => {
+  const question = { purpose: "resume_identity", id: "which", header: "简历", question: "你指的是哪一份简历？", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] };
+  const h = createHarness(t, {
+    intent: { mode: "fallback", reason: "INTENT_DECISION_INCONSISTENT", routing_rules: "规则" }, autoResume: "22",
+    script: [
+      [call("c1", "request_user_input", { questions: [question] })],
+      [call("p1", "plan_agent_request", { tasks: [{ id: "diagnose", workflow: "resume_diagnosis", output: "advice", label: "诊断" }] })],
+      submit("s1", "这段实习负责订单系统。"),
+      [say("这段实习负责订单系统。")],
+    ],
+  });
+  await h.run({ contextMaterials: [{ type: "resume", id: "22", resume_id: "22", presentation: "mention", label: "简历 B", version: "1", content: {} }] });
+  assert.equal(h.eventTypes("clarification.requested").length, 0);
+  assert.ok(h.events.some((event) => event.type === "assistant.activity.status" && event.errorCode === "AGENT_RESUME_ALREADY_SELECTED"));
+  assert.deepEqual(h.statuses(), { diagnose: "completed" });
+});
