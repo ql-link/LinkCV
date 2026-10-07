@@ -407,3 +407,5 @@ AI 复盘 v2：`review:generate` 校验后立即返回 202，在 API 进程内�
 ORM 映射既有 `review_report` JSON、`review_request_id` CHAR(36)、`review_started_at` DATETIME(6)、`review_status` VARCHAR(16)、`review_error` VARCHAR(64)，本次不修改历史 SQL 或新增迁移。报告含 schema_version=1、源文字哈希、生成时间、三维评分与问题分析；请求中的源哈希保存在 JSON 元数据，未完成及不兼容结构不作为有效报告返回。`review_status` 为 generating/ready/failed；请求 UUID 用于生成幂等，活动状态按 3 分钟租期处理。目标数据库需要沿现有链升级到 head（0108）；历史账号版 0105 由 0106 补齐 Offer/复盘字段；SQLite 测试不证明 MySQL 迁移已应用。
 
 Agent 跨轮身份记忆覆盖现有六类 contexts；通用历史引用通过内部 `resources:resolve-reference` 接口重建同会话证据并复用 `resolve_contexts` 的归属、解析状态、受控对象键与版本校验。每个任务按资源类型冻结解析目标，正文仅在当前读取响应中出现，JSON 元数据中的 resource_resolutions 保存身份 snapshot，任务材料收据保存 SHA256 而不保存正文。旧 resume_resolutions 与简历专用接口继续兼容，无数据库 schema 迁移。
+
+`systemone_intent.py` 在存在显式简历选择时改写 `resume_identity` 的判定说明，避免历史中的其他简历触发“是哪一份简历”的追问。

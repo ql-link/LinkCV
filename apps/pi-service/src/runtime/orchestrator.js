@@ -264,6 +264,11 @@ export async function executeAgentRun({
   };
 
   const assertPurposes = (questions) => {
+    // A resume the user selected this turn is the identity; only a stated conflict reopens it.
+    if (resumePolicy.resumeId && intentDecision.resume_identity_conflict !== true
+        && questions.some((question) => question.purpose === "resume_identity")) {
+      throw codedError("AGENT_RESUME_ALREADY_SELECTED");
+    }
     if (allowedPurposes && questions.some((question) => !allowedPurposes.includes(question.purpose))) {
       throw codedError("AGENT_INTENT_CLARIFICATION_SCOPE_INVALID");
     }
