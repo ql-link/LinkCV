@@ -1175,23 +1175,31 @@ select:not([data-slot]):focus-visible {
 
 .resume-row {
   display: grid;
-  grid-template-columns: minmax(0, calc(var(--resume-row-left, 70%) - 6px)) minmax(0, 1fr);
+  grid-template-columns: minmax(0, var(--resume-row-left, 50%)) minmax(0, 1fr);
   align-items: baseline;
-  gap: 12px;
-  margin: 3px 0;
+  gap: 0;
+  margin: 2px 0;
   page-break-inside: avoid;
   break-inside: avoid;
 }
 
 .resume-row-left {
   min-width: 0;
+  padding-right: 6px;
 }
 
 .resume-row-right {
   min-width: 0;
-  padding-left: 10px;
+  padding-left: 16px;
   text-align: right;
-  font-style: italic;
+}
+
+.resume-content .resume-row > p {
+  min-width: 0;
+  min-height: 1.45em;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .resume-row.single {

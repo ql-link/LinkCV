@@ -34,6 +34,9 @@ body { margin: 0; padding: 0; background: #fff; }
 }
 
 [data-resume-print-document] .resume-print-content {
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  overflow-wrap: break-word;
   height: auto;
   min-height: calc(297mm - var(--resume-page-margin-top) - var(--resume-page-margin-bottom));
   overflow: visible;

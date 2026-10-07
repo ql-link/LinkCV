@@ -12,6 +12,8 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 
 ## 功能与架构导航
 
+列表项的可选 `align` 与段落对齐一起保存在现有 canonical JSON 内，无数据库迁移。后端和静态 schema 同步接受 left / center / right，缺省或 null 在序列化时省略，旧快照摘要不变。发布时先让后端支持此字段，再发布可写入列表对齐的 Web，避免旧的严格解析器拒绝新字段。
+
 本页维护 FastAPI/Worker 运行结构、事务、迁移、外部集成和后端通用约定。用户能力与业务规则分别见[账号](../features/identity-account.md)、[简历](../features/resume-workbench.md)、[求职中心](../features/career-center.md)、[AI 助手](../features/ai-assistant.md)和[资料集](../features/datasets.md)；独立运行子系统见[小程序适配](miniprogram.md)、[Agent/LLM](agent-runtime.md)、[可观测性](observability.md)和[插件制品](plugin-delivery.md)。具体 URL、schema 和稳定错误仍以 [HTTP 接口契约](../api/http-contracts.md) 为准。
 
 ## 当前职责与结构
