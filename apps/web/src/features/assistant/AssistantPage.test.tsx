@@ -974,7 +974,7 @@ describe("AssistantPage", () => {
     const workspace = screen.getByRole("region", { name: "AI 求职助手工作区" });
     expect(within(workspace).queryByRole("heading", { name: /^AI 求职助手$/ })).not.toBeInTheDocument();
     expect(screen.queryByText("仅使用你主动选择的简历与资料")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新建对话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "分析岗位匹配度" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "添加资料" }));

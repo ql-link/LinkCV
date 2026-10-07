@@ -1977,9 +1977,11 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
           <X size={18} />
         </button>
       </div>
-      <button type="button" className="assistant-new-button" onClick={() => void createNewConversation()}>
-        <Plus size={16} aria-hidden="true" />新建对话
-      </button>
+      {(workspaceSection || activeKey !== NEW_CONVERSATION_KEY) && (
+        <button type="button" className="assistant-new-button" onClick={() => void createNewConversation()}>
+          <Plus size={16} aria-hidden="true" />新建对话
+        </button>
+      )}
       <nav className="assistant-sidebar-shortcuts" aria-label="AI 工作台导航">
         {([
           { section: "resumes", view: undefined, label: "我的简历", icon: FileText },
