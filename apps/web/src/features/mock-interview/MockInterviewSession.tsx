@@ -134,9 +134,12 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
   const groups = useMemo(() => groupQuestions(questions), [questions]);
   const currentRoot = current ? (current.parent_id ?? current.id) : null;
   const currentGroup = groups.find((group) => group.root.id === currentRoot) ?? groups[groups.length - 1];
-  const mainIndex = currentGroup ? currentGroup.root.plan_index + 1 : 1;
+  // 自我介绍不占题量：它单独显示为「开场」，正式题从 1 开始计数
+  const introOffset = interview.has_intro ? 1 : 0;
+  const isIntro = introOffset === 1 && currentGroup?.root.plan_index === 0;
+  const mainIndex = currentGroup ? (isIntro ? 0 : currentGroup.root.plan_index + 1 - introOffset) : 1;
   const followNo = current?.kind === "follow_up" ? currentGroup.follows.findIndex((item) => item.id === current.id) + 1 : 0;
-  const answeredMains = groups.filter((group) => group.root.answer_status !== "pending" && group.root.id !== currentRoot).length;
+  const answeredMains = groups.filter((group) => group.root.answer_status !== "pending" && group.root.id !== currentRoot && group.root.plan_index >= introOffset).length;
   const elapsed = interview.started_at ? now - new Date(interview.started_at).getTime() : 0;
   // 回答已保存但面试官回复丢失（回合失败或页面中断）：需要先重新生成，不能继续作答
   const needsReply = interview.needs_reply && streaming === null;
@@ -252,7 +255,7 @@ export function InProgressView({ interview, onChanged, pause }: { interview: Moc
             <i key={index} className={index < mainIndex - 1 ? "is-done" : index === mainIndex - 1 ? "is-current" : ""} />
           ))}
         </span>
-        <b>{t("第 ")}{mainIndex} / {interview.question_count}{t(" 题")}{followNo ? t(" · 追问 {value0}", { value0: followNo }) : ""}</b>
+        <b>{isIntro ? t("开场 · 自我介绍") : <>{t("第 ")}{mainIndex} / {interview.question_count}{t(" 题")}</>}{followNo ? t(" · 追问 {value0}", { value0: followNo }) : ""}</b>
       </div>
       <div className="mi-thread" ref={scrollRef} aria-live="polite">
         {groups.map((group) => (

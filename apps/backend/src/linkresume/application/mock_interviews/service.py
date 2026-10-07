@@ -28,6 +28,7 @@ from linkresume.application.mock_interviews import planning, prompts, rubric, vo
 from linkresume.application.mock_interviews.scoring import (  # noqa: F401  (re-exported for transcripts and tests)
     _align_signals,
     _normalize,
+    follow_up_grounded,
     practice_focus,
     quoted_in,
     score_root,
@@ -39,6 +40,7 @@ from linkresume.application.mock_interviews.outputs import (
     ClaimVerification,
     InterviewPlan,
     InterviewerTurn,
+    IntroAdaptation,
     OverallEvaluation,
     QuestionEvaluation,
 )
@@ -463,8 +465,10 @@ def hotwords(interview: MockInterview, analysis: dict[str, Any], plan: dict[str,
     terms: list[str] = []
     for claim in analysis.get("claims") or []:
         terms.extend(str(item) for item in claim.get("technologies") or [])
+    terms.extend(str(item) for item in analysis.get("skills") or [])
     for item in plan.get("selected") or []:
         terms.append(str(item.get("topic") or ""))
+        terms.append(str(item.get("skill") or ""))
     job = interview.job_snapshot_json or {}
     terms.extend(str(job.get(key) or "") for key in ("company_name", "job_title"))
     for ref in interview.material_refs_json or []:
@@ -754,28 +758,47 @@ class MockInterviewRunner:
             analysis = analysis_value.model_dump()
         await self._heartbeat(interview_id, "preparing", token)
         selected: list[Any] = []
+        fixes: list[str] = []
         # The model often under-delivers or breaks a hard rule (count, open-design
-        # quota); the server enforces them and asks again once before failing.
+        # quota, tech-stack coverage); the server enforces them and asks again
+        # once, naming what was missing, before giving up.
+        require_skills = bool(analysis.get("skills"))
         for _ in range(2):
             plan_value = await _structured(
                 self._llm,
                 interview.user_id,
-                prompts.plan_messages(interview, analysis, previous_topics),
+                prompts.plan_messages(interview, analysis, previous_topics, fixes=fixes),
                 InterviewPlan,
                 usage,
             )
             selected, problems = planning.select_plan(
-                plan_value, difficulty=interview.difficulty, question_count=interview.question_count
+                plan_value,
+                difficulty=interview.difficulty,
+                question_count=interview.question_count,
+                interview_type=interview.interview_type,
+                require_skills=require_skills,
+                skills=list(analysis.get("skills") or []),
             )
             if not problems:
                 break
+            fixes = [planning.PROBLEM_HINTS[item] for item in problems]
             logger.warning(
                 "mock interview plan rejected",
                 extra={"mock_interview_id": interview_id, "problems": problems, "got": len(selected)},
             )
         if len(selected) < interview.question_count:
             raise MockInterviewError(502, "MOCK_INTERVIEW_PLAN_INCOMPLETE")
-        plan = planning.plan_payload(selected)
+        if require_skills and "skill_check" in problems:
+            # The model twice failed to cover the declared tech stack; guarantee it.
+            selected = planning.fill_skill_checks(
+                selected,
+                list(analysis.get("skills") or []),
+                planning.required_skill_checks(interview.interview_type, interview.question_count),
+                interview.difficulty,
+                interview.language,
+            )
+        # 自我介绍固定在最前面，不占用用户设置的题量。
+        plan = planning.plan_payload(planning.with_intro(selected, interview.language))
         stored = await self._db(
             self._with_db,
             lambda db: self._store_plan(db, interview_id, token, analysis, plan, usage),
@@ -795,7 +818,9 @@ class MockInterviewRunner:
         if interview.repeat_of_id is not None:
             previous = db.get(MockInterview, interview.repeat_of_id)
             if previous is not None and previous.user_id == interview.user_id:
-                previous_topics = [str(item.get("topic")) for item in _plan_items(previous)]
+                previous_topics = [
+                    str(item.get("topic")) for item in _plan_items(previous) if not item.get("is_intro")
+                ]
                 if (
                     previous.analysis_json
                     and previous.resume_markdown_snapshot == interview.resume_markdown_snapshot
@@ -908,6 +933,9 @@ class MockInterviewRunner:
             yield {"event": "error", "error": "MOCK_INTERVIEW_NOT_FOUND"}
             return
         interview, questions = context
+        adapted = await self._adapt_after_intro(interview, questions)
+        if adapted is not None:
+            interview, questions = adapted
         decision = self._turn_plan(interview, questions)
         plan = _plan_items(interview)
         if decision["opening"]:
@@ -932,7 +960,10 @@ class MockInterviewRunner:
             # plan's expected signals do not describe.
             next_item=next_item if decision["allow_follow_up"] else None,
             allowed_actions=tuple(decision["allowed"]),
+            previous_depth=questions[-1].depth_level if questions and decision["allow_follow_up"] else None,
         )
+        last_answer = (questions[-1].answer_text or "") if questions else ""
+        asked = [item.content for item in questions]
         allowed = tuple(decision["allowed"])
         header: InterviewerTurn | None = None
         buffer = ""
@@ -963,6 +994,13 @@ class MockInterviewRunner:
                         first, rest = split
                         header = _parse_header(first)
                         if header is None or header.action not in allowed:
+                            rejected = True
+                            break
+                        # A follow-up must quote the answer it probes; one silent
+                        # retry, then accept so the interview is never blocked.
+                        if attempt == 0 and header.action == "follow_up" and not follow_up_grounded(
+                            header.probe_quote, last_answer, header.probe_gap
+                        ):
                             rejected = True
                             break
                         chunk = rest
@@ -1004,6 +1042,89 @@ class MockInterviewRunner:
             # event cancels this generator at the yield.
             self.spawn(self.evaluate(interview_id, str(evaluation_token)))
         yield {"event": "turn", **result}
+
+    async def _adapt_after_intro(self, interview: MockInterview, questions: list[MockInterviewQuestion]):
+        """Once, right after the self-introduction is answered, reshape the plan around it.
+
+        Returns a fresh turn context when the plan was rewritten, otherwise
+        ``None``. A failure here never blocks the interview: the original plan
+        stays and the attempt is recorded so it is not repeated.
+        """
+        plan = _plan_items(interview)
+        if not questions or not plan or not plan[0].get("is_intro"):
+            return None
+        if (interview.plan_json or {}).get("intro_adapted"):
+            return None
+        intro = questions[0]
+        if intro.plan_index != 0 or intro.answer_status != "answered" or not intro.answer_text:
+            return None
+        # 太短的自我介绍没有可利用的信息，不值得多一次模型调用。
+        if len(intro.answer_text.strip()) < planning.MIN_INTRO_CHARS:
+            await self._db(self._with_db, lambda db: self._store_adapted_plan(db, interview.id, plan, 0, _Usage(), done=True))
+            return None
+        usage = _Usage()
+        items, applied, failed = plan, 0, False
+        try:
+            adaptation = await _structured(
+                self._llm,
+                interview.user_id,
+                prompts.intro_adaptation_messages(
+                    interview,
+                    intro_answer=intro.answer_text,
+                    plan=plan,
+                    skills=list((interview.analysis_json or {}).get("skills") or []),
+                ),
+                IntroAdaptation,
+                usage,
+            )
+            items, applied = planning.apply_intro_adaptation(
+                plan, adaptation.replacements, intro.answer_text, interview.difficulty
+            )
+        except Exception:
+            failed = True
+            logger.warning("mock interview intro adaptation failed", extra={"mock_interview_id": interview.id}, exc_info=True)
+        stored = await self._db(
+            self._with_db,
+            lambda db: self._store_adapted_plan(db, interview.id, items, applied, usage, done=not failed),
+        )
+        if not stored:
+            return None
+        return await self._db(self._with_db, lambda db: self._turn_context(db, interview.id))
+
+    def _store_adapted_plan(
+        self,
+        db: Session,
+        interview_id: int,
+        items: list[dict[str, Any]],
+        applied: int,
+        usage: _Usage,
+        *,
+        done: bool,
+    ) -> bool:
+        """Persist the adjusted plan. A failed attempt may be retried once on the next turn."""
+        interview = db.scalar(
+            select(MockInterview)
+            .where(MockInterview.id == interview_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if interview is None or interview.status != "in_progress" or (interview.plan_json or {}).get("intro_adapted"):
+            db.rollback()
+            return False
+        plan = dict(interview.plan_json or {})
+        plan["selected"] = items
+        attempts = int(plan.get("intro_attempts") or 0) + 1
+        plan["intro_attempts"] = attempts
+        plan["intro_adapted"] = done or attempts >= 2
+        plan["intro_replaced"] = applied
+        interview.plan_json = plan
+        if applied and interview.answer_mode == "voice":
+            # Topics changed, so the recognition hot words must follow.
+            interview.hotwords_json = hotwords(interview, dict(interview.analysis_json or {}), plan)
+        interview.input_tokens += usage.input_tokens
+        interview.output_tokens += usage.output_tokens
+        db.commit()
+        return True
 
     async def _generate_turn_to_completion(self, interview_id: int, token: str) -> None:
         await self._heartbeat(interview_id, "preparing", token)
@@ -1081,12 +1202,16 @@ class MockInterviewRunner:
             if action == "follow_up":
                 parent_id = decision["root_id"]
                 plan_index = decision["plan_index"]
-                depth = rubric.clamp_depth(interview.difficulty, header.depth_level)
+                # Depth may rise by at most one level per follow-up.
+                previous = questions[-1].depth_level or 1
+                depth = min(rubric.clamp_depth(interview.difficulty, header.depth_level), previous + 1)
             else:
                 parent_id = None
                 plan_index = 0 if decision["opening"] else decision["plan_index"] + 1
-                depth = rubric.clamp_start_depth(
-                    interview.difficulty, int(plan[plan_index].get("start_depth") or 1)
+                depth = (
+                    1
+                    if plan[plan_index].get("is_intro")
+                    else rubric.clamp_start_depth(interview.difficulty, int(plan[plan_index].get("start_depth") or 1))
                 )
             question = MockInterviewQuestion(
                 interview_id=interview.id,
@@ -1187,8 +1312,17 @@ class MockInterviewRunner:
             item = plan[root.plan_index]
             evaluation = score_root(interview, item, root, questions, results.get(root.id))
             evaluations[root.id] = evaluation
-            scores.append(float(evaluation["score"]))
-            question_results.append({"topic": item.get("topic"), "sequence_no": root.sequence_no, **evaluation})
+            # 自我介绍只给反馈，不进入题目平均分。
+            if not item.get("is_intro"):
+                scores.append(float(evaluation["score"]))
+            question_results.append(
+                {
+                    "topic": item.get("topic"),
+                    "sequence_no": root.sequence_no,
+                    "is_intro": bool(item.get("is_intro")),
+                    **evaluation,
+                }
+            )
 
         fact_check = await self._fact_check(interview, questions, usage, token)
         await self._heartbeat(interview_id, "evaluating", token)
@@ -1232,7 +1366,8 @@ class MockInterviewRunner:
             item["weight"] = weights[str(item["key"])]
         dimension_total = rubric.dimension_score(dimension_scores, weights)
         total = rubric.total_score(scores, dimension_total)
-        answered_roots = sum(1 for root in roots if not evaluations[root.id]["skipped"])
+        scored_roots = [root for root in roots if not plan[root.plan_index].get("is_intro")]
+        answered_roots = sum(1 for root in scored_roots if not evaluations[root.id]["skipped"])
         report = {
             "rubric_version": rubric.RUBRIC_VERSION,
             "prompt_version": rubric.PROMPT_VERSION,
@@ -1253,7 +1388,7 @@ class MockInterviewRunner:
             # 没有资料核验时"简历一致性"只来自模型对对话的判断，报告里要标明可信度。
             "consistency_basis": "materials" if fact_check.get("status") == "completed" and fact_check.get("items") else "model_only",
             "off_topic_detected": overall.off_topic_detected,
-            "low_confidence": rubric.low_confidence(answered=answered_roots, total=len(roots)),
+            "low_confidence": rubric.low_confidence(answered=answered_roots, total=len(scored_roots)),
         }
         await self._db(
             self._with_db,

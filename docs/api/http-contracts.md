@@ -412,7 +412,7 @@ Offer 状态只使用 `none/received/accepted/declined`，其中 Web 只写 `rec
 | --- | --- | --- |
 | `GET` | `/api/mock-interviews` | 按 `created_at DESC, id DESC` 分页；支持 `job_application_id`、`resume_id`、`status`、`cursor` 和 `limit`（默认 20、最大 100），返回 `{items, next_cursor}` |
 | `POST` | `/api/mock-interviews` | 发起并在后台准备，返回 `201 {mock_interview}`，状态为 `preparing` |
-| `GET` | `/api/mock-interviews/:id` | 详情；读取时应用任务租约与空闲超时 |
+| `GET` | `/api/mock-interviews/:id` | 详情；读取时应用任务租约与空闲超时。`has_intro=true` 表示计划以固定的自我介绍开场（`plan_index=0`），它不占 `question_count`，`answered_main_questions` 也不含它；报告 `questions[].is_intro` 标记该题，其得分不进入 `question_average` |
 | `POST` | `/api/mock-interviews/:id/answers` | 提交当前题回答并以 SSE 返回面试官下一回合 |
 | `POST` | `/api/mock-interviews/:id/skip` | 跳过当前题并以 SSE 返回面试官下一回合 |
 | `POST` | `/api/mock-interviews/:id/reply:retry` | 面试官回复丢失时重新生成，以 SSE 返回 |

@@ -898,7 +898,10 @@ struct MockInterviewView: View {
         let current = item.current
         let currentRoot = current.map { $0.text("parent_id").isEmpty ? $0.text("id") : $0.text("parent_id") }
         let group = all.first { $0.root.text("id") == currentRoot } ?? all.last
-        let mainIndex = (group?.root["plan_index"]?.integer ?? 0) + 1
+        // 自我介绍不占题量：开场显示为「开场」，正式题从 1 开始计数
+        let introOffset = item.raw["has_intro"] == .bool(true) ? 1 : 0
+        let isIntro = introOffset == 1 && (group?.root["plan_index"]?.integer ?? 0) == 0
+        let mainIndex = isIntro ? 0 : (group?.root["plan_index"]?.integer ?? 0) + 1 - introOffset
         let followNo = current?.text("kind") == "follow_up" ? (group?.follows.firstIndex { $0.text("id") == current?.text("id") } ?? 0) + 1 : 0
         let total = max(1, item.raw["question_count"]?.integer ?? 5)
         let needsReply = item.raw["needs_reply"] == .bool(true)
@@ -922,7 +925,7 @@ struct MockInterviewView: View {
                     }
                 }.frame(maxWidth: 680)
                 Spacer()
-                Text("第 \(mainIndex) / \(total) 题" + (followNo > 0 ? " · 追问 \(followNo)" : "")).font(V3.sans(11.5, weight: .medium)).foregroundStyle(V3.txt)
+                Text((isIntro ? "开场 · 自我介绍" : "第 \(mainIndex) / \(total) 题") + (followNo > 0 ? " · 追问 \(followNo)" : "")).font(V3.sans(11.5, weight: .medium)).foregroundStyle(V3.txt)
             }.frame(height: 24).padding(.bottom, 12).overlay(alignment: .bottom) { Rectangle().fill(V3.line).frame(height: 1) }
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(all.enumerated()), id: \.offset) { index, entry in
@@ -931,7 +934,7 @@ struct MockInterviewView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ZStack {
                             Rectangle().fill(V3.line).frame(height: 1)
-                            Text("Q\((entry.root["plan_index"]?.integer ?? index) + 1) · \(done ? "已完成" : "进行中")").font(V3.sans(11)).foregroundStyle(V3.fnt).padding(.horizontal, 8).background(.white)
+                            Text("\(item.raw["has_intro"] == .bool(true) && (entry.root["plan_index"]?.integer ?? index) == 0 ? "开场" : "Q\((entry.root["plan_index"]?.integer ?? index) + 1 - (item.raw["has_intro"] == .bool(true) ? 1 : 0))") · \(done ? "已完成" : "进行中")").font(V3.sans(11)).foregroundStyle(V3.fnt).padding(.horizontal, 8).background(.white)
                         }.frame(height: 16).padding(.bottom, 22)
                         ForEach(turns, id: \.self) { question in turn(question, isCurrent: question.text("id") == current?.text("id")) }
                     }.padding(.top, index == 0 ? 0 : 30)
