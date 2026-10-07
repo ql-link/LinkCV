@@ -1158,14 +1158,16 @@ export function ResumeWorkbench({
         style={{ "--workbench-preview-scale": renderedPreviewScale } as React.CSSProperties}
       >
         <div className={`workbench-document-stack${horizontalMode ? " pages-horizontal" : ""}`}>
-          <article
-            ref={paperRef}
-            className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}${horizontalMode ? " pages-horizontal" : ""}`}
-            style={resumeStyle}
-            aria-label={t("可编辑简历页面")}
-          >
-            <EditorContent editor={editor} />
-          </article>
+          <div className="workbench-paper-frame">
+            <article
+              ref={paperRef}
+              className={`resume-paper theme-${settings.theme}${settings.smartOnePage ? " smart-one-page" : ""}${horizontalMode ? " pages-horizontal" : ""}`}
+              style={resumeStyle}
+              aria-label={t("可编辑简历页面")}
+            >
+              <EditorContent editor={editor} className="workbench-page-flow" />
+            </article>
+          </div>
         </div>
       </div>
 
