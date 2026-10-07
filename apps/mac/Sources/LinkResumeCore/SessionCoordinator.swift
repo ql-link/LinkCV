@@ -37,6 +37,7 @@ public struct DesktopLoginChallenge: Sendable {
 }
 
 public actor SessionCoordinator {
+    public nonisolated var origin: URL { transport.origin }
     private let transport: any DesktopRequesting
     private let tokens: any TokenStore
     private let scope: String
@@ -148,6 +149,61 @@ public actor SessionCoordinator {
         let transport = self.transport
         do { try await authorized { access in try await transport.downloadDataset(id:id, to:target, limit:limit, access:access) }; return DatasetFile(url:target,directory:directory) }
         catch { try? FileManager.default.removeItem(at:directory); throw error }
+    }
+
+    /// 本人简历列表；generation 拒绝退出或切换账号后的迟到结果。
+    public func listResumes() async throws -> [ResumeSummary] {
+        struct Envelope: Decodable, Sendable { let resumes: [ResumeSummary] }
+        let current = generation
+        let result = try await request(Envelope.self, path: "/api/resumes").resumes
+        guard current == generation, !disabled else { throw APIError.unauthorized }
+        return result
+    }
+
+    /// 单份 PDF 最多 20 MiB，只保存在内存，由界面写到用户选择的位置。
+    public func downloadResumePDF(id: String, lockVersion: Int) async throws -> Data {
+        let transport = self.transport, current = generation
+        let data = try await authorized { access in try await transport.downloadResumePDF(id: id, lockVersion: lockVersion, limit: 20 * 1024 * 1024, access: access) }
+        guard current == generation, !disabled else { throw APIError.unauthorized }
+        return data
+    }
+
+    /// 本人头像（`/api/assets/users/{本人}/assets/avatar/...`），只接受当前账号路径与 PNG/JPEG，最多 4 MiB，不缓存。
+    public func accountAvatar(path: String) async throws -> Data {
+        guard !disabled, let account = try tokens.load(scope: scope)?.accountID else { throw APIError.unauthorized }
+        let checked = try PaperAssets.path(path, account: account)
+        guard checked.hasPrefix("/api/assets/users/\(account)/assets/") else { throw APIError.invalidResponse }
+        let current = generation
+        let image = try await self.image(path: checked, limit: 4 * 1024 * 1024)
+        guard current == generation, !disabled else { throw APIError.unauthorized }
+        return image.data
+    }
+
+    public func mockAudio(path: String, method: String, body: JSONValue?) async throws -> Data {
+        let transport = self.transport
+        return try await authorized { access in try await transport.mockAudio(path: path, method: method, body: body, access: access) }
+    }
+
+    /// 打开识别 WebSocket 前先确保 access 有效；握手失败（4401）由界面按登录失效处理。
+    public func speechSocket(interviewID: String, questionID: String, purpose: String) async throws -> URLSessionWebSocketTask {
+        let transport = self.transport
+        return try await authorized { access in
+            try transport.speechSocket(path: "/api/mock-interviews/\(interviewID)/speech", query: ["question_id": questionID, "purpose": purpose], access: access)
+        }
+    }
+
+    public func importResume(_ upload: ResumeImportUpload) async throws -> JSONValue {
+        let transport = self.transport
+        return try await authorized { access in try await transport.importResume(upload, access: access) }
+    }
+
+    /// AI 助手 SSE。只在开始响应前处理 401 续期；已开始的流不重放，避免重复提交消息（消息自带幂等键）。
+    public func streamAgent(path: String, method: String, body: JSONValue?, onEvent: @MainActor @Sendable (AgentEvent) async -> Void) async throws {
+        let transport = self.transport, current = generation
+        try await authorized { access in
+            try await transport.streamAgent(path: path, method: method, body: body, access: access, onEvent: onEvent)
+        }
+        guard current == generation, !disabled else { throw APIError.unauthorized }
     }
 
     public func preparePaper(_ request: ResumeRenderRequest) async throws -> PaperPreparation {

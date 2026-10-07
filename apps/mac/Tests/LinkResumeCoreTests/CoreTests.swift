@@ -71,7 +71,7 @@ private actor DelayedIdentityAPI: APIClient {
 }
 
 @Test func navigationMatchesWebOrder() {
-    #expect(WorkspaceSection.allCases.map(\.title) == ["首页", "我的简历", "简历模板", "岗位看板", "面试日程", "模拟面试", "资料库"])
+    #expect(WorkspaceSection.sidebar.map(\.title) == ["首页", "我的简历", "简历模板", "岗位看板", "面试日程", "模拟面试", "资料库"])
 }
 
 @Test func guestExamplesWorkWithoutGrantingAccountAccess() async throws {

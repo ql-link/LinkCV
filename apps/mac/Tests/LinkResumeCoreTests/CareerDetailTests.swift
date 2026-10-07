@@ -112,10 +112,11 @@ private let sessions = #"""
     for (path, method) in [("/api/interview-sessions/3/review:generate", "POST"), ("/api/interview-sessions/3/review-notes", "PUT"),
                            ("/api/interview-sessions/3/review-notes/9", "DELETE"), ("/api/interview-sessions/3/transcriptions/4:retry", "POST"),
                            ("/api/interview-sessions/3/transcriptions/4:apply", "POST"), ("/api/interview-sessions/3/written-questions:extract", "POST"),
-                           ("/api/interview-sessions/3/assets", "GET"), ("/api/interview-sessions/3", "DELETE"), ("/api/interview-assets/4/content", "GET")] {
+                           ("/api/interview-sessions/3/assets", "GET"), ("/api/interview-sessions/3", "DELETE"), ("/api/interview-assets/4/content", "GET"),
+                           ("/api/interview-sessions/3/prep-items:generate", "POST")] {
         #expect(CareerRequest.allowed(path: path, method: method), "\(method) \(path)")
     }
-    for (path, method) in [("/api/interview-sessions/3/prep-items:generate", "POST"), ("/api/interview-sessions/3/transcriptions/4:drop", "POST"),
+    for (path, method) in [("/api/interview-sessions/3/prep-items:generate", "GET"), ("/api/interview-sessions/3/transcriptions/4:drop", "POST"),
                            ("/api/interview-sessions/3/review-notes/x", "DELETE"), ("/api/interview-assets/4", "DELETE"), ("/api/interview-sessions/3/review:generate", "GET")] {
         #expect(!CareerRequest.allowed(path: path, method: method), "\(method) \(path)")
     }

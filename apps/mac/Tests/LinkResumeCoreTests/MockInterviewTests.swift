@@ -12,6 +12,14 @@ import Testing
         #expect(!CareerRequest.allowed(path: path, method: "POST"))
     }
     #expect(CareerRequest.allowed(path: "/api/datasets", method: "GET"))
+    // Voice interview surface.
+    #expect(MockInterviewRequest.allowed(path: "/api/mock-interviews/speech-capability", method: "GET"))
+    #expect(MockInterviewRequest.audio(path: base + "/speech/playback", method: "POST"))
+    #expect(MockInterviewRequest.audio(path: base + "/questions/12/recording", method: "GET"))
+    #expect(MockInterviewRequest.allowed(path: base + "/questions/12/transcript", method: "PUT"))
+    #expect(MockInterviewRequest.allowed(path: base + "/recordings", method: "DELETE"))
+    #expect(!MockInterviewRequest.allowed(path: base + "/questions/x/recording", method: "GET"))
+    #expect(!MockInterviewRequest.allowed(path: base + "/questions/12/recording", method: "DELETE"))
     #expect(!MockInterviewRequest.allowed(path: "/api/datasets", method: "POST"))
     #expect(!MockInterviewRequest.allowed(path: "/api/datasets/1", method: "GET"))
 }
@@ -23,7 +31,7 @@ import Testing
         try MockInterviewRequest.decodeEvents(Data("event: interviewer.failed\ndata: {\"error\":\"TURN_FAILED\"}\n\n".utf8))
     }
     #expect(throws: (any Error).self) { try MockInterviewRequest.decodeEvents(Data(": heartbeat\n\n".utf8)) }
-    #expect(throws: (any Error).self) { try MockInterviewRequest.decodeEvents(Data(repeating: 32, count: 4 * 1024 * 1024 + 1)) }
+    #expect(throws: (any Error).self) { try MockInterviewRequest.decodeEvents(Data(repeating: 32, count: MockInterviewRequest.maximumTurnBytes + 1)) }
     #expect(throws: (any Error).self) { try MockInterviewRequest.decodeEvents(Data([0xff])) }
 }
 @Test func currentQuestionRequiresPendingAndStatusIsDurable() {

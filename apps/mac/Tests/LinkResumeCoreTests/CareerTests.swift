@@ -8,10 +8,22 @@ private func application(_ source: String) throws -> CareerApplication {
 @Test func careerChannelsHaveNarrowRouteBoundary() {
     #expect(CareerRequest.allowed(path: "/api/job-applications/12/stages", method: "POST"))
     #expect(CareerRequest.allowed(path: "/api/interview-sessions/12/answer-plan", method: "PUT"))
-    for path in ["/api/account/profile", "/api/job-applications/12/reviews", "/api/job-applications//12", "/api/job-applications/12/", "/api/job-applications/１２", "/api/job-applications?scope=all"] {
+    for path in ["/api/account/avatar", "/api/job-applications/12/reviews", "/api/job-applications//12", "/api/job-applications/12/", "/api/job-applications/１２", "/api/job-applications?scope=all"] {
         #expect(!CareerRequest.allowed(path: path, method: "GET"))
     }
-    #expect(!CareerRequest.allowed(path: "/api/resumes/1", method: "DELETE"))
+    #expect(!CareerRequest.allowed(path: "/api/resumes/1/semantic-classification", method: "POST"))
+    // Resume management, account page and AI assistant have their own narrow whitelists.
+    for (path, method) in [("/api/resumes/1", "DELETE"), ("/api/resumes/1/copy", "POST"), ("/api/resumes/1/share", "PATCH"),
+                           ("/api/resume-imports/3", "DELETE"), ("/api/resumes/1/apply-template", "POST"), ("/api/resumes/1/assets", "POST"),
+                           ("/api/resumes/1/assets/a.png", "DELETE"), ("/api/account/profile", "GET"), ("/api/account/user-profile", "PUT"),
+                           ("/api/agent/sessions", "POST"), ("/api/agent/proposals/abc/confirm", "POST"), ("/api/job-descriptions/2/match", "GET")] {
+        #expect(CareerRequest.allowed(path: path, method: method), "\(method) \(path)")
+    }
+    for (path, method) in [("/api/resumes/1/assets", "GET"), ("/api/resumes/1/apply-template", "GET"), ("/api/account/deletion", "POST"), ("/api/admin/agent-operations", "GET"),
+                           ("/api/agent/sessions/1/messages", "POST"), ("/api/resumes/abc", "GET")] {
+        #expect(!CareerRequest.allowed(path: path, method: method), "\(method) \(path)")
+    }
+    #expect(AgentRequest.streams(path: "/api/agent/sessions/1/messages", method: "POST"))
 }
 @Test func careerProjectionKeepsPendingNullAndDynamicInterviewColumns() throws {
     let pending = try application(#"{"id":"1","phase":"","current_stage":null,"current_stage_type":"screening","applied_at":null}"#)

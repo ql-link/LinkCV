@@ -4,10 +4,15 @@ public enum CareerRequest {
     public static func allowed(path: String, method: String) -> Bool {
         if DatasetRequest.allowed(path: path, method: method) { return true }
         if MockInterviewRequest.allowed(path: path, method: method) { return true }
+        if ResumeRequest.allowed(path: path, method: method) { return true }
+        if AccountRequest.allowed(path: path, method: method) { return true }
+        if AgentRequest.allowed(path: path, method: method), !AgentRequest.streams(path: path, method: method) { return true }
         guard path.hasPrefix("/api/"), !path.contains("//"), !path.hasSuffix("/"), !path.contains("?"), !path.contains("#"), !path.contains("..") else { return false }
         let reads = ["/api/resumes", "/api/job-applications", "/api/interview-overview", "/api/interview-sessions", "/api/job-descriptions"]
         if method == "GET", reads.contains(path) { return true }
         if method == "POST", ["/api/job-descriptions", "/api/job-descriptions/parse-draft", "/api/job-applications"].contains(path) { return true }
+        if path == "/api/job-matches/recommendations" { return method == "GET" }
+        if path == "/api/job-matches/recommendations:ensure" { return method == "POST" }
         let parts = path.split(separator: "/").map(String.init)
         guard parts.count >= 3, parts[0] == "api", parts[2].allSatisfy({ $0 >= "0" && $0 <= "9" }), !parts[2].isEmpty else { return false }
         if parts.count == 3 {
@@ -15,6 +20,8 @@ public enum CareerRequest {
             return parts[1] == "interview-sessions" && ["GET", "PUT", "DELETE"].contains(method)
         }
         if parts.count == 4, parts[1] == "job-descriptions", parts[3] == "logo" { return method == "GET" }
+        if parts.count == 4, parts[1] == "job-descriptions", parts[3] == "match" { return method == "GET" }
+        if parts.count == 4, parts[1] == "job-descriptions", parts[3] == "match:analyze" { return method == "POST" }
         if parts.count == 4, parts[1] == "interview-sessions", parts[3] == "answer-plan" { return method == "PUT" }
         if parts[1] == "interview-sessions", let stage = stageDetail(parts, method: method) { return stage }
         if parts.count == 4, parts[1] == "interview-assets", parts[3] == "content" { return method == "GET" }
@@ -31,7 +38,7 @@ public enum CareerRequest {
             switch parts[3] {
             case "assets": return ["GET", "POST"].contains(method)
             case "review-notes": return method == "PUT"
-            case "written-questions:extract", "review:generate": return method == "POST"
+            case "written-questions:extract", "review:generate", "prep-items:generate": return method == "POST"
             default: return nil
             }
         }

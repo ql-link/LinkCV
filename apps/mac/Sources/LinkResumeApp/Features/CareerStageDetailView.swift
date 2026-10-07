@@ -463,47 +463,105 @@ struct CareerAudioBar: View {
     }
 }
 
-/// Preparation checklist of an upcoming interview; items can be ticked off.
+/// Preparation checklist of an upcoming interview (Web `PrepChecklistCard.tsx`): AI generation once per
+/// scheduled session, tick off, add and remove items. Saves carry the latest lock version.
 struct CareerPrepChecklist: View {
     let session: JSONValue
     let api: any APIClient
     let readOnly: Bool
     let changed: () -> Void
     let notice: (String) -> Void
-    @State private var busy = false
-    private var items: [JSONValue] { session["prep_items"]?.items ?? [] }
+    @State private var busy: String?
+    @State private var draft = ""
+    @State private var local: [JSONValue]?
+    private static let maxItems = 12, maxTitle = 80
+    private static let categories = ["intro": "自我介绍", "project": "项目深挖", "technical": "技术知识", "system_design": "系统设计",
+                                     "behavior": "行为与动机", "company": "公司调研", "other": "其他"]
+    private var items: [JSONValue] { local ?? session["prep_items"]?.items ?? [] }
+    private var generated: Bool { session["prep_generated_at"].map { $0 != .null } ?? false }
+    private var canGenerate: Bool { !readOnly && session.text("status") == "scheduled" && !generated }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("准备清单").font(LibraryTypography.sans(15, weight: .medium))
-                if !items.isEmpty { CareerChipView("\(items.filter { $0["done"]?.bool == true }.count)/\(items.count)", .gray) }
+                Text("面试准备清单").font(LibraryTypography.sans(15, weight: .medium))
+                if !items.isEmpty { CareerChipView("\(items.filter { $0["done"]?.bool == true }.count) / \(items.count) 已完成", .gray) }
                 Spacer()
             }
-            if items.isEmpty { Text("还没有准备事项。可以在 Web 端由 AI 根据岗位和简历生成准备清单。").font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.hint) }
+            if busy == "generate" {
+                Text("AI 正在根据岗位、简历和历史复盘生成清单…").font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.sub)
+            } else if items.isEmpty {
+                Text(readOnly ? "暂无准备事项。" : canGenerate ? "还没有准备清单。让 AI 按这场面试的岗位和简历生成一份，每场面试只能生成一次。"
+                     : generated ? "清单已清空。" : "这场面试已经结束，不再生成准备清单。")
+                    .font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.hint)
+            }
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                Button { Task { await toggle(index) } } label: {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: item["done"]?.bool == true ? "checkmark.circle.fill" : "circle").font(.system(size: 14))
-                            .foregroundStyle(item["done"]?.bool == true ? CareerPalette.green : CareerPalette.faint)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.text("title")).font(LibraryTypography.sans(13, weight: .medium)).strikethrough(item["done"]?.bool == true, color: CareerPalette.faint)
-                            if !item.text("reason").isEmpty { Text(item.text("reason")).font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.sub) }
-                        }
-                        Spacer(minLength: 0)
-                    }.contentShape(Rectangle())
-                }.buttonStyle(.plain).disabled(readOnly || busy)
+                HStack(alignment: .top, spacing: 10) {
+                    Button { Task { await toggle(index) } } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: item["done"]?.bool == true ? "checkmark.circle.fill" : "circle").font(.system(size: 14))
+                                .foregroundStyle(item["done"]?.bool == true ? CareerPalette.green : CareerPalette.faint)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.text("title")).font(LibraryTypography.sans(13, weight: .medium)).strikethrough(item["done"]?.bool == true, color: CareerPalette.faint)
+                                Text([Self.categories[item.text("category")] ?? "其他", item.text("reason")].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.sub)
+                            }
+                            Spacer(minLength: 0)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(readOnly || busy != nil)
+                        .accessibilityLabel(item.text("title")).accessibilityValue(item["done"]?.bool == true ? "已完成" : "未完成")
+                    if !readOnly {
+                        Button { Task { await save(items.enumerated().filter { $0.offset != index }.map(\.element)) } } label: {
+                            Image(systemName: "trash").font(.system(size: 11))
+                        }.buttonStyle(.plain).foregroundStyle(CareerPalette.faint).disabled(busy != nil).accessibilityLabel("删除 \(item.text("title"))")
+                    }
+                }
+            }
+            if canGenerate {
+                Button { Task { await generate() } } label: { Label(busy == "generate" ? "生成中…" : "AI 生成准备清单", systemImage: "wand.and.stars") }
+                    .buttonStyle(CareerActionStyle(kind: .outline)).disabled(busy != nil)
+            }
+            if !readOnly {
+                HStack(spacing: 8) {
+                    TextField("添加一项准备事项", text: $draft).textFieldStyle(.roundedBorder).onSubmit { add() }
+                    Button("添加", action: add).buttonStyle(CareerActionStyle(kind: .outline))
+                        .disabled(busy != nil || draft.trimmingCharacters(in: .whitespaces).isEmpty || items.count >= Self.maxItems)
+                }
             }
         }.careerCard(padding: 20)
+            .onChange(of: session["lock_version"]) { _, _ in local = nil }
     }
     private func toggle(_ index: Int) async {
         guard case .object(var fields) = items[index] else { return }
         fields["done"] = .bool(fields["done"]?.bool != true)
         var next = items; next[index] = .object(fields)
-        busy = true; defer { busy = false }
+        await save(next)
+    }
+    private func add() {
+        let title = String(draft.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxTitle))
+        guard !title.isEmpty, items.count < Self.maxItems, busy == nil else { return }
+        draft = ""
+        Task { await save(items + [.object(["title": .string(title), "category": .string("other"), "reason": .null, "done": .bool(false)])]) }
+    }
+    private func save(_ next: [JSONValue]) async {
+        let previous = local
+        local = next; busy = "save"; defer { busy = nil }
         do {
             _ = try await api.careerRequest(path: "/api/interview-sessions/\(session.text("id"))", method: "PUT", query: [:],
                                             body: .object(["prep_items": .array(next), "base_lock_version": session["lock_version"] ?? .number(1)]))
             changed()
-        } catch { notice(CareerErrors.message(error)) }
+        } catch { local = previous; notice(CareerErrors.message(error)); changed() }
+    }
+    private func generate() async {
+        busy = "generate"; defer { busy = nil }
+        do {
+            _ = try await api.careerRequest(path: "/api/interview-sessions/\(session.text("id"))/prep-items:generate", method: "POST", query: [:], body: nil)
+            local = nil; changed()
+        } catch {
+            let messages = ["INTERVIEW_PREP_ALREADY_GENERATED": "这场面试已经生成过准备清单。", "LLM_MODEL_NOT_CONFIGURED": "AI 生成暂不可用，请稍后再试。",
+                            "LLM_RESPONSE_INVALID": "AI 这次没有生成有效的清单，可以再试一次。", "INTERVIEW_INVALID_TRANSITION": "只有待进行的面试可以生成准备清单。"]
+            if case APIError.server(let status, let code) = error, let message = messages[code] ?? (status >= 500 ? "AI 暂时没能生成清单，请稍后重试。" : nil) {
+                notice(message); if code == "INTERVIEW_PREP_ALREADY_GENERATED" { changed() }
+            } else { notice(CareerErrors.message(error)) }
+        }
     }
 }

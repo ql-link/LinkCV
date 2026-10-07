@@ -19,6 +19,12 @@ public final class SessionStore {
         self.api = api
     }
 
+    /// 账号页改昵称后同步侧栏；只更新同一账号，不改变登录状态。
+    public func updateNickname(_ nickname: String) {
+        guard case .signedIn(let user) = phase, !nickname.isEmpty else { return }
+        phase = .signedIn(User(id: user.id, email: user.email, nickname: nickname, isAdmin: user.isAdmin))
+    }
+
     public func restore() async {
         operation += 1
         let current = operation

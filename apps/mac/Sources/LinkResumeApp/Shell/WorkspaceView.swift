@@ -15,10 +15,16 @@ struct WorkspaceView: View {
         var reason: String { reasonOverride ?? template.map { "登录后继续使用「\($0.name)」。" } ?? "登录后查看和同步你的简历。" }
     }
     @State private var loginRequest: LoginRequest?
-    @State private var creationTemplate: ResumeTemplate?
+    @State private var pendingCreateKey: String?
+    private struct ChatTarget: Equatable { let token = UUID(); let sessionID: String?; let initial: String? }
+    @State private var chat: ChatTarget?
+    @State private var agentSessions = AgentSessionsModel()
+    @State private var focusResumeID: String?
+    @State private var editResumeID: String?
     @State private var featureNotice = false
     @State private var homeDraft = ""
     @State private var pluginNotice = false
+    @State private var router = WorkspaceRouter()
 
     private var user: User? {
         if case .signedIn(let user) = session.phase { return user }
@@ -39,7 +45,7 @@ struct WorkspaceView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).frame(height: 34)
                 }.buttonStyle(.plain)
                 VStack(spacing: 4) {
-                    ForEach(WorkspaceSection.allCases) { section in
+                    ForEach(WorkspaceSection.sidebar) { section in
                         Button { selection = section } label: {
                             Label(section.title, systemImage: section.symbol)
                                 .font(.system(size: 14, weight: selection == section ? .medium : .regular))
@@ -55,8 +61,24 @@ struct WorkspaceView: View {
                     Button { selection = .home; homeDraft = "" } label: { Image(systemName: "plus") }
                         .buttonStyle(.plain).accessibilityLabel("新建对话")
                 }.padding(.horizontal, 12).padding(.top, 22).padding(.bottom, 8)
-                Text(user == nil ? "登录后读取对话" : "原生对话列表尚未接入")
-                    .font(.system(size: 12)).foregroundStyle(Color(hex: 0x96968F)).padding(.horizontal, 12)
+                if user == nil || (agentSessions.loaded && agentSessions.sessions.isEmpty) {
+                    Text(user == nil ? "登录后读取对话" : "还没有对话")
+                        .font(.system(size: 12)).foregroundStyle(Color(hex: 0x96968F)).padding(.horizontal, 12)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(agentSessions.sessions.prefix(20), id: \.self) { item in
+                                let active = selection == .assistant && chat?.sessionID == item.text("id")
+                                Button { chat = ChatTarget(sessionID: item.text("id"), initial: nil); selection = .assistant } label: {
+                                    Text(item.text("title").isEmpty ? "新对话" : item.text("title")).font(.system(size: 13)).lineLimit(1)
+                                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10).frame(height: 30)
+                                        .foregroundStyle(active ? Color(hex: 0x1D1D1B) : Color(hex: 0x55554F))
+                                        .background(active ? Color(hex: 0xE6E6E2) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }.frame(maxHeight: 240)
+                }
                 Spacer()
                 if user == nil {
                     Button { requestLogin() } label: {
@@ -71,6 +93,7 @@ struct WorkspaceView: View {
                 } else {
                     Menu {
                         Text(user?.nickname ?? "个人资料")
+                        Button("账号设置") { selection = .account }
                         Button("退出登录") { Task { await session.signOut() } }
                     } label: { Label(user?.nickname ?? "个人资料", systemImage: "person.crop.circle") }
                         .padding(.bottom, 26)
@@ -88,20 +111,29 @@ struct WorkspaceView: View {
                 switch selection {
                 case .home, nil:
                     AssistantHomeView(nickname: user?.nickname, draft: $homeDraft,
-                        browse: { selection = .templates }, requireAccount: { requestLogin(reason: "登录 LinkResume；你的输入会保留。") }, showPlugin: { pluginNotice = true })
+                        browse: { selection = .templates }, requireAccount: { requestLogin(reason: "登录 LinkResume；你的输入会保留。") }, showPlugin: { pluginNotice = true },
+                        navigate: { selection = $0 }, editResume: { editResumeID = $0; selection = .resumes },
+                        send: { text in chat = ChatTarget(sessionID: nil, initial: text); homeDraft = ""; selection = .assistant })
                 case .datasets: DatasetLibraryView(requireAccount: { requestLogin(reason: "登录后管理你的资料库。") })
                         case .mock: MockInterviewView(requireAccount: { requestLogin(reason: "登录后开始模拟面试。") }, showSchedule: { selection = .schedule })
                 case .schedule: InterviewScheduleView(requireAccount: { requestLogin(reason: "登录后管理面试安排。") })
                 case .jobs: JobsBoardView(requireAccount: { requestLogin(reason: "登录后管理岗位和求职进度。") })
-                case .templates: TemplatesView(initialSelectedID: creationTemplate?.id, onUseTemplate: useTemplate)
+                case .templates:
+                    TemplatesView(pendingCreateKey: $pendingCreateKey,
+                                  requireLogin: { loginRequest = LoginRequest(template: $0) },
+                                  onCreated: { id in editResumeID = id.isEmpty ? nil : id; selection = .resumes })
                 case .resumes:
-                    if let template = creationTemplate, user != nil {
-                        VStack(alignment: .leading, spacing: 20) {
-                            Text("已选择：\(template.name)").font(.title2.bold())
-                            Text("登录已完成，模板选择已保留。原生简历创建与编辑尚未接入，此时没有保存新的简历。")
-                            Button("返回模板预览") { selection = .templates }.buttonStyle(WebActionStyle())
-                        }.padding(52).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    } else { HomeView(nickname: user?.nickname, browse: { selection = .templates }, login: { requestLogin() }) }
+                    ResumesView(focusResumeID: $focusResumeID, editResumeID: $editResumeID, browse: { selection = .templates }, login: { requestLogin() })
+                case .assistant:
+                    if user != nil, let chat {
+                        AssistantChatView(sessionID: chat.sessionID, initialMessage: chat.initial,
+                                          created: { _ in Task { await agentSessions.load(api: session.api, account: user?.id ?? "") } },
+                                          deleted: { self.chat = nil; selection = .home; Task { await agentSessions.load(api: session.api, account: user?.id ?? "") } },
+                                          sessionsChanged: { Task { await agentSessions.load(api: session.api, account: user?.id ?? "") } })
+                            .id(chat.token)
+                    } else { PlaceholderView(section: .assistant) }
+                case .account:
+                    if user != nil { AccountView() } else { PlaceholderView(section: .account) }
                 case let section?: PlaceholderView(section: section)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -110,8 +142,9 @@ struct WorkspaceView: View {
                 .padding(.vertical, 12).padding(.trailing, 12)
         }.background(Color(hex: 0xF1F1EF))
         .alert("安装浏览器插件", isPresented: $pluginNotice) {
+            Button("在浏览器打开") { WebBridge.open("/career/applications", api: session.api) }
             Button("知道了", role: .cancel) {}
-        } message: { Text("插件安装入口尚未开放。你仍可以浏览模板和示例简历。") }
+        } message: { Text("浏览器插件在 Chrome / Edge 中使用，安装包与安装说明在 Web 的岗位看板页面提供。") }
         .alert("此功能尚未开放", isPresented: $featureNotice) {
             Button("知道了", role: .cancel) {}
         } message: { Text("此功能将在后续版本开放。你已输入的内容会保留，可以继续浏览模板。") }
@@ -125,19 +158,36 @@ struct WorkspaceView: View {
                 SignInView()
             }.frame(width: 520, height: 560)
         }
+        .environment(router)
+        .onChange(of: router.pending) {
+            switch router.take() {
+            case .section(let section): selection = section
+            case .draft(let text): homeDraft = String(text.prefix(4000)); selection = .home
+            case .editResume(let id): editResumeID = id; selection = .resumes
+            case nil: break
+            }
+        }
+        .task(id: user?.id ?? "") { await agentSessions.load(api: session.api, account: user?.id ?? "") }
         .onChange(of: session.phase) { previous, current in
             if case .signedIn(let nextUser) = current {
                 if case .signedIn(let oldUser) = previous, oldUser.id != nextUser.id {
-                    creationTemplate = nil
+                    pendingCreateKey = nil
+                    focusResumeID = nil
+                    editResumeID = nil
+                    chat = nil
                     loginRequest = nil
                     homeDraft = ""
                     selection = .home
                 }
                 let template = loginRequest?.template
                 loginRequest = nil
-                if let template { creationTemplate = template; selection = .resumes }
+                // 登录前选中的示例模板：回到模板页，按 key 匹配真实模板后打开创建弹窗
+                if let template { pendingCreateKey = template.key; selection = .templates }
             } else if case .signedIn = previous {
-                creationTemplate = nil
+                pendingCreateKey = nil
+                focusResumeID = nil
+                editResumeID = nil
+                chat = nil
                 loginRequest = nil
                 homeDraft = ""
                 selection = .home
@@ -150,44 +200,6 @@ struct WorkspaceView: View {
         loginRequest = LoginRequest(template: nil, reasonOverride: reason)
     }
 
-    private func useTemplate(_ template: ResumeTemplate) {
-        if user != nil { creationTemplate = template; selection = .resumes }
-        else {
-            loginRequest = LoginRequest(template: template)
-        }
-    }
-}
-
-private struct HomeView: View {
-    let nickname: String?
-    let browse: () -> Void
-    let login: () -> Void
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("RESUMES  /  \(nickname == nil ? "游客预览" : "个人工作区")")
-                    .font(.system(size: 11, weight: .medium)).foregroundStyle(Tokens.Color.textMuted)
-                Text("我的简历").font(.custom("Songti SC", size: 28).weight(.semibold)).padding(.top, 9)
-                Text("每份简历独立编辑，需要时复制一份按岗位修改。")
-                    .font(.system(size: 13)).foregroundStyle(Tokens.Color.textMuted).padding(.top, 6)
-                Divider().padding(.top, 24)
-                VStack(spacing: 12) {
-                    EmptyResumeArt().frame(width: 504, height: 236)
-                    Text(nickname == nil ? "从第一份简历开始" : "个人简历列表尚未接入")
-                        .font(.custom("Songti SC", size: 18).weight(.semibold))
-                    Text(nickname == nil ? "新建时选一套模板、起个名字；已有简历文件可以用「导入简历」。" : "尚未查询你的账号数据，这里不代表你没有简历。")
-                        .font(.system(size: 13)).foregroundStyle(Tokens.Color.textMuted)
-                    HStack(spacing: 20) {
-                        Button("新建简历 →", action: browse).buttonStyle(WebActionStyle())
-                        Button("导入简历", systemImage: "square.and.arrow.up", action: login).buttonStyle(.plain)
-                    }.padding(.top, 8)
-                    Text("内置示例可离线预览；保存、导入与个人数据需登录，原生写入功能尚未接入。")
-                        .font(.system(size: 12)).foregroundStyle(Tokens.Color.textMuted).padding(.top, 8)
-                }.frame(maxWidth: .infinity).padding(.top, 42)
-            }.frame(maxWidth: 860, alignment: .leading).padding(.horizontal, 52).padding(.vertical, 51)
-                .frame(maxWidth: .infinity)
-        }
-    }
 }
 
 struct WebActionStyle: ButtonStyle {
@@ -199,7 +211,7 @@ struct WebActionStyle: ButtonStyle {
     }
 }
 
-private struct EmptyResumeArt: View {
+struct EmptyResumeArt: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             Canvas { context, _ in

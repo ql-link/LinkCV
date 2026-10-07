@@ -1,16 +1,35 @@
 import Foundation
 public enum MockInterviewRequest {
+    /// 回合 SSE 上限：语音面试的面试官语音以 base64 mp3 随流返回，比纯文字大得多。
+    public static let maximumTurnBytes = 32 * 1024 * 1024
+    /// 二进制音频接口：试听（mp3）与录音回放（wav）。
+    public static func audio(path: String, method: String) -> Bool {
+        allowed(path: path, method: method) && (path.hasSuffix("/speech/playback") || path.hasSuffix("/recording"))
+    }
     public static func allowed(path: String, method: String) -> Bool {
         if path == "/api/mock-interviews" { return ["GET", "POST"].contains(method) }
         if path == "/api/datasets" { return method == "GET" }
+        if path == "/api/mock-interviews/speech-capability" { return method == "GET" }
         let parts = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count == 4 || parts.count == 5, parts[0].isEmpty, parts[1] == "api", parts[2] == "mock-interviews",
+        guard (4...7).contains(parts.count), parts[0].isEmpty, parts[1] == "api", parts[2] == "mock-interviews",
               let id = UUID(uuidString: String(parts[3])), id.uuidString.lowercased() == parts[3] else { return false }
         if parts.count == 4 { return ["GET", "DELETE"].contains(method) }
-        return method == "POST" && ["answers", "skip", "reply:retry", "finish", "abandon", "retry", "repeat"].contains(parts[4])
+        if parts.count == 5 {
+            if parts[4] == "recordings" { return method == "DELETE" }
+            return method == "POST" && ["answers", "skip", "reply:retry", "finish", "abandon", "retry", "repeat", "transcripts:correct"].contains(parts[4])
+        }
+        if parts.count == 6 { return parts[4] == "speech" && parts[5] == "playback" && method == "POST" }
+        // /questions/{id}/transcript|re-evaluate|recording
+        guard parts.count == 7, parts[4] == "questions", !parts[5].isEmpty, parts[5].allSatisfy({ $0.isASCII && $0.isNumber }) else { return false }
+        switch parts[6] {
+        case "transcript": return method == "PUT"
+        case "re-evaluate": return method == "POST"
+        case "recording": return method == "GET"
+        default: return false
+        }
     }
     public static func decodeEvents(_ data: Data) throws -> JSONValue {
-        guard data.count <= 4 * 1024 * 1024, let source = String(data: data, encoding: .utf8) else { throw APIError.invalidResponse }
+        guard data.count <= MockInterviewRequest.maximumTurnBytes, let source = String(data: data, encoding: .utf8) else { throw APIError.invalidResponse }
         var events: [JSONValue] = []
         for block in source.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n\n") {
             var kind = ""; var lines: [String] = []
