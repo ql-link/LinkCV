@@ -17,7 +17,7 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
-  width: min(860px, calc(100% - 2 * var(--v3-gutter)));
+  width: min(var(--v3-page-max), 100%);
   margin: 0 auto;
   padding: 35px 0 64px;
   color: var(--v3-txt);

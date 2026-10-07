@@ -1771,7 +1771,7 @@
 }
 .career-session-record-hero-inner {
   display: flex;
-  width: min(1280px, calc(100% - 48px));
+  width: min(var(--v3-page-max), calc(100% - 2 * var(--v3-gutter)));
   min-height: 80px;
   box-sizing: border-box;
   align-items: center;
@@ -1785,8 +1785,8 @@
 .career-session-record-hero .career-record-actions { align-self: flex-end; gap: 8px; transform: translateY(5px); }
 .career-session-record-hero .career-record-actions .ui-button { width: 110px; min-height: 36px; font-size: 13px; }
 .career-session-hero-status { padding: 4px 10px; font-size: 11px; line-height: 16px; }
-.career-session-detail-body { min-width: 0; box-sizing: border-box; background: var(--ui-surface-subtle); padding: 12px max(24px, calc((100vw - 1280px) / 2)) 40px; }
-.career-session-record-content { width: min(1000px, 100%); min-width: 0; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface); margin: 0 auto; padding: 24px; }
+.career-session-detail-body { min-width: 0; box-sizing: border-box; background: var(--ui-surface-subtle); padding: 12px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 40px; }
+.career-session-record-content { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface); margin: 0 auto; padding: 24px; }
 .career-session-content-header { display: flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 12px; }
 .career-session-content-header h2 { margin: 0; font-size: 20px; line-height: 25px; }
 .career-session-content-header span { color: var(--ui-text-muted); font-size: 12px; }
@@ -2171,6 +2171,8 @@
 .career-application-detail-page {
   background: var(--ui-background);
 }
+/* V3 工作区里页面外壳已经限定了正文宽度，详情页不再单独铺一块底色，否则宽屏下会露出一个浅灰矩形。 */
+.v3-career .career-application-detail-page { background: transparent; }
 
 .career-application-detail-page .career-application-record-hero {
   min-height: 112px;
@@ -5225,7 +5227,8 @@
 .v3-career .career-reui-calendar [data-slot="event-calendar-time-gutter"] span { left: 0; right: auto; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-day-header"][data-today] { background: transparent; }
 .v3-career .career-schedule-head { margin-bottom: 20px; }
-.v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] { height: 540px !important; max-height: 540px; }
+/* 时间网格高度随日历面板伸缩：高屏多露出几个小时，矮屏在网格内部滚动，不再固定 540px 造成留白或被截断。 */
+.v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] { height: auto !important; min-height: 320px; max-height: none; }
 .career-upcoming { margin-top: 24px; border-top: 0; padding-top: 0; }
 .career-upcoming-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-cell"] > div:has(> [data-slot="event-calendar-month-day-number"]) { order: -1; justify-content: flex-start; height: 30px; flex-shrink: 0; padding: 0 4px; }
