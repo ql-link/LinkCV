@@ -181,6 +181,8 @@ Agent 文本投影为经历结构化字段和 row 单元格正文保留各自的
 
 本轮显式选择的简历（presentation=mention）就是目标身份：意图识别的 `resume_identity` 澄清只在用户明确点名另一份简历时成立，历史中出现过别的简历或文字没有写明是哪份都不算；Pi 在回退规划等未受意图约束的路径中也拒绝提交 `resume_identity` 问题（`AGENT_RESUME_ALREADY_SELECTED`），除非意图结果标明与显式选择冲突。
 
+后续轮次没有再 `@` 简历、只是继续追问上一轮简历里的内容（如“第一段实习的职位”）时，意图识别把它规划为一项只读的 `resume_diagnosis` 任务，而不是普通对话；Pi 的身份步骤通过 `memory_ref` 与 `relation: continuation` 从短期记忆读取该简历，再按正文直接回答。同样，追问此前 `@` 过的岗位、资料、求职进程或面试记录时，所有只读生成步骤都开放 `resolve_resource_reference`（记忆非空时），按 `memory_ref` 重新校验归属后读取当前内容。
+
 ### Canonical 原生目标
 
 任务启动后由 Pi 运行时从镜像内已注册 Markdown 注入工作流规则，模型不读取文件。简历读取使用 canonical 节点：整份读取返回全部可编辑节点及其稳定 ID，章节下的段落可以直接属于章节而没有 entry。修改计划按节点 ID 或带父范围的逐字摘录定位；`rewrite_entry_star` 的目标没有 entry 时，运行时把被修改节点冻结为一个连续 range（服务端记录授权收据）后再诊断和创建提案。读取超过上限时 `truncated=true`：诊断和修改只针对已读取部分并向模型说明，整份翻译因缺少完整数据直接失败为 `RESUME_TOO_LARGE_TO_TRANSLATE`。模型提交的修改在服务端仍复验授权、版本、节点归属和范围。

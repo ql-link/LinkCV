@@ -191,3 +191,12 @@ def test_a_selected_resume_is_not_reopened_by_unnamed_wording_or_history():
     chosen = selected["questions"]["clarification_purpose"]["criteria"]["resume_identity"]
     assert "显式选择" in chosen and "另一份" in chosen
     assert "应当使用显式选择的简历" not in background["questions"]["clarification_purpose"]["criteria"]["resume_identity"]
+
+
+def test_follow_up_questions_about_a_resume_are_business_tasks_not_chat():
+    from linkresume.modules.agent.intent_schemas import INTENT_ROUTING_RULES, PLANNING_RULES
+
+    for rules in (INTENT_ROUTING_RULES, PLANNING_RULES):
+        assert "询问某份简历正文里的具体内容" in rules
+        assert "本轮没有再选择" in rules and "不要因为本轮没有 @" in rules
+        assert "追问此前 @ 过的岗位" in rules

@@ -409,3 +409,39 @@ test("a resume selected this turn is never asked about again, even when the mode
   assert.ok(h.events.some((event) => event.type === "assistant.activity.status" && event.errorCode === "AGENT_RESUME_ALREADY_SELECTED"));
   assert.deepEqual(h.statuses(), { diagnose: "completed" });
 });
+
+test("a follow-up without @ reads the resume from the previous turn through short-term memory", async (t) => {
+  const memory = { schema_version: 1, truncated: false, events: [{
+    memory_ref: "m:1:resume:11", relation: "selected", resource: { type: "resume", id: "11", label: "张三的简历" } }] };
+  const h = createHarness(t, {
+    intent: { mode: "plan" }, tasks: [task("intent_1", "resume_diagnosis", { context_refs: [] })], autoResume: "11",
+    script: [
+      [call("r1", "resolve_resume_reference", { memory_ref: "m:1:resume:11", relation: "continuation", referring_text: "告诉我第一段实习经历的职位" })],
+      submit("s1", "第一段实习的职位是后端开发实习生。"),
+      [say("第一段实习的职位是后端开发实习生。")],
+    ],
+  });
+  await h.run({
+    userSequenceNo: 5, content: "告诉我第一段实习经历的职位", contextMaterials: [], conversationMemory: memory,
+    history: [{ role: "user", content: "分析我的第一段实习经历。" }, { role: "assistant", content: "第一段实习写得较具体。" }],
+  });
+  assert.deepEqual(h.called("resumes:resolve-reference").map((item) => item.payload.memory_ref), ["m:1:resume:11"]);
+  assert.equal(h.eventTypes("clarification.requested").length, 0);
+  assert.deepEqual(h.statuses(), { intent_1: "completed" });
+});
+
+test("a follow-up about an earlier @ job or dataset can be read through memory even when no resume is involved", async (t) => {
+  const memory = { schema_version: 1, truncated: false, events: [{
+    memory_ref: "m:1:job:31", relation: "selected", resource: { type: "job", id: "31", label: "后端开发岗位" } }] };
+  const h = createHarness(t, {
+    intent: { mode: "plan" }, tasks: [task("intent_1", "material_lookup", { context_refs: [] })], autoResume: null,
+    script: [
+      [call("r1", "resolve_resource_reference", { memory_ref: "m:1:job:31", relation: "continuation", referring_text: "这个岗位要求什么" })],
+      submit("s1", "岗位要求熟悉 Python。"),
+      [say("岗位要求熟悉 Python。")],
+    ],
+  });
+  await h.run({ userSequenceNo: 5, content: "这个岗位要求什么", contextMaterials: [], conversationMemory: memory });
+  assert.equal(h.called("resources:resolve-reference").length, 1);
+  assert.deepEqual(h.statuses(), { intent_1: "completed" });
+});
