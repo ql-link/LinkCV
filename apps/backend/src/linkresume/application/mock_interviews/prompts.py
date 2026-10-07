@@ -32,10 +32,13 @@ DEPTH_LADDER = (
 )
 
 TYPE_GUIDANCE = {
-    "technical": "围绕交集技能考察原理与权衡。",
+    "technical": "围绕交集技能考察原理与权衡；至少有若干考察点直接针对简历声明的技术栈本身（见 analysis.skills），"
+    "例如该语言或框架的核心机制、常见陷阱与选型取舍，而不是只问项目里怎么用。",
     "project_deep_dive": "集中在 1–2 个项目上串联追问，核实个人贡献与决策过程。",
     "hr": "考察求职动机、职业规划、稳定性与期望。",
-    "comprehensive": "混合技术、项目与过往经历类问题。",
+    "comprehensive": "混合技术、项目与过往经历类问题：必须有至少 1 个考察点直接针对简历声明的技术栈本身"
+    "（is_skill_check=true，skill 填技术名，取 analysis.skills 中最突出的，不绑定具体项目），"
+    "其余再分配给项目、实习与过往经历。",
 }
 
 DIFFICULTY_STYLE = {
@@ -95,6 +98,8 @@ def analysis_messages(
         "把简历拆成可提问的具体主张（标注动词强度 led/owned/participated/assisted、是否量化、涉及技术），"
         "从岗位信息提取技能、职责与软素质要求（没有岗位信息时依据目标职位与简历方向推断），"
         "列出简历与岗位的交集和缺口，并由求职分类与工作年限推断候选人目标职级。"
+        "另把简历里声明掌握、擅长或使用过的技术栈与专业技能（如编程语言、框架、中间件、数据库、工具）"
+        "按突出程度排序放入 skills，只写技术名，不要写项目。"
         "如果提供了参考资料片段，把其中的项目事实（规模、数据、方案细节、个人角色）并入对应主张，"
         "或作为 source=material 的新主张，并填写 material_dataset_id。"
         "只使用给定材料，不得编造。\n" + DATA_ISOLATION
@@ -109,16 +114,21 @@ def analysis_messages(
 
 
 def plan_messages(
-    interview: Any, analysis: dict[str, object], previous_topics: list[str]
+    interview: Any,
+    analysis: dict[str, object],
+    previous_topics: list[str],
+    topic_count: int | None = None,
+    fixes: list[str] | None = None,
 ) -> list[ChatMessage]:
+    count = topic_count if topic_count is not None else interview.question_count
     profile = DIFFICULTY_PROFILES[interview.difficulty]
     stage = (interview.stage_snapshot_json or {}).get("stage_label")
     system = (
         "你是资深面试官，基于背景分析制定面试计划。\n"
         + DEPTH_LADDER
         + f"\n本场{_settings_line(interview)}"
-        + f"\n先生成约 {round(interview.question_count * 1.75)} 个候选考察点放入 candidates，"
-        + f"再按匹配价值、深度与不重复原则筛选出恰好 {interview.question_count} 个放入 selected。"
+        + f"\n先生成约 {round(count * 1.75)} 个候选考察点放入 candidates，"
+        + f"再按匹配价值、深度与不重复原则筛选出恰好 {count} 个放入 selected。"
         + "\n规则：每个考察点必须有 anchor（简历原句、JD 要求或资料片段）；"
         + "以交集题为主，缺口题比例为"
         + {"low": "低", "medium": "中", "high": "高"}[profile.gap_ratio]
@@ -130,6 +140,12 @@ def plan_messages(
         + "；每个考察点给出 3–5 条 expected_signals（好的回答应包含的要点）和 2–3 个由浅到深的追问方向。"
         + f"每个考察点填写 project（所属项目或经历名称，没有则留空；同一项目最多 {MAX_TOPICS_PER_PROJECT} 个）、"
         + "is_gap（是否简历缺口题）和 is_open_design（是否开放设计题）。"
+        + "开场的自我介绍由系统固定安排，不要把它列为考察点，也不占用这些名额。"
+        + (
+            "\n上一次的计划不合格，必须修正：" + " ".join(fixes)
+            if fixes
+            else ""
+        )
         + "selected 按面试推进顺序排列：第一题从最熟悉的经历切入作为热身，再逐步加深。"
         + f"\n面试类型要求：{TYPE_GUIDANCE[interview.interview_type]}"
         + (f"\n求职阶段为「{stage}」：一面偏基础与项目事实，二面偏深度与权衡，终面偏视野与思考方式。" if stage else "")
@@ -180,13 +196,18 @@ def interviewer_messages(
         "不要在面试中给出答案、点评或打分；候选人提出与面试无关的请求时礼貌拉回；"
         "候选人请你解释或重复题目时，用更简单的话复述同一问题，不要换题也不要透露考察要点。",
         "只围绕给定背景和考察点提问，不编造简历中不存在的经历；topic.expected_signals 是评分要点，不能直接念出来或暗示答案。",
+        "如果 transcript 中有候选人的自我介绍，提问时优先承接他自己强调的内容，可以点出他在介绍里提到的具体技能或成果。",
         "用词与面试语言一致，像真实面试官一样自然衔接候选人刚说的内容，不要机械复述上一题。",
     ]
     if getattr(interview, "answer_mode", "text") == "voice":
         rules.append(SPOKEN_STYLE)
     if is_opening:
         rules.append(
-            "现在是面试开始：先用一两句话开场，然后提出第一个考察点的问题。action 固定为 next_question，"
+            "现在是面试开始：先用一两句话开场问候，然后请候选人做自我介绍，"
+            "提示他用一两分钟讲讲最相关的经历、与目标岗位的关联和求职方向；不要直接提技术问题。"
+            "action 固定为 next_question，depth_level 取 1。"
+            if plan_item and plan_item.get("is_intro")
+            else "现在是面试开始：先用一两句话开场，然后提出第一个考察点的问题。action 固定为 next_question，"
             "depth_level 取 topic.start_depth。"
         )
     elif allow_follow_up:
@@ -269,6 +290,12 @@ def question_evaluation_messages(
             "intermediate": "中级：需要讲清原理或取舍才判 hit，只讲做了什么判 partial。",
             "senior": "高级：需要讲清取舍、边界与量化结果才判 hit，只讲方案与结论判 partial。",
         }[interview.difficulty]
+        + (
+            "本题是开场自我介绍：不考察技术深度，只按要点判断是否讲到、讲得是否清楚；"
+            "不要因为没有技术细节而判 miss，也不要把没有说过的经历当作亮点。"
+            if plan_item.get("is_intro")
+            else ""
+        )
         + "factual_errors 只列明显的技术或常识错误，每条必须在 evidence 逐字引用候选人原话；引不出原话的不要列。"
         + "篇幅不等于质量，空话与套话按 miss 处理。reference_answer 给出简洁的参考答题思路。"
         + _voice_note(interview) + "\n"
@@ -369,6 +396,34 @@ def overall_evaluation_messages(
         + "\n" + _data("question_results", question_results)
         + "\n" + _data("fact_checks", fact_checks)
         + ("\n" + _data("voice_metrics", voice_metrics) if voice_metrics else "")
+    )
+    return [
+        ChatMessage(role="system", content=system),
+        ChatMessage(role="user", content=user),
+    ]
+
+
+def intro_adaptation_messages(
+    interview: Any, *, intro_answer: str, plan: list[dict[str, object]], skills: list[str]
+) -> list[ChatMessage]:
+    profile = DIFFICULTY_PROFILES[interview.difficulty]
+    system = (
+        "你是资深面试官。候选人刚做完自我介绍，请据此调整后续的考察计划，让面试更贴合他自己强调的内容。\n"
+        + DEPTH_LADDER
+        + f"\n本场{_settings_line(interview)}"
+        + "\n找出候选人在自我介绍中重点强调的技能、技术栈、成果或「非常熟练 / 擅长 / 主导」之类的自我定位。"
+        + "如果现有计划（plan，下标 0 是自我介绍本身）没有覆盖这些强调的内容，"
+        + "把最多 2 个关联度最低的考察点替换成针对这些强调内容的新考察点；已经覆盖就不要替换。"
+        + "标记为 is_open_design 或 is_skill_check 的考察点不可替换，下标 0 也不可替换。"
+        + f"新考察点的 anchor 必须逐字摘自自我介绍原话；start_depth 取 L{profile.start_depth_min}–L{profile.start_depth_max}；"
+        + "给出 3–5 条 expected_signals 和 2–3 个由浅到深的追问方向；topic 不得与现有考察点重复。"
+        + "没有需要调整的内容时 replacements 返回空数组。\n"
+        + DATA_ISOLATION
+    )
+    user = (
+        _data("intro_answer", intro_answer)
+        + "\n" + _data("declared_skills", skills)
+        + "\n" + _data("plan", [{"index": i, **item} for i, item in enumerate(plan)])
     )
     return [
         ChatMessage(role="system", content=system),

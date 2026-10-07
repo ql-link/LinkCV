@@ -315,7 +315,10 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
   };
 
   const elapsed = detail.started_at ? now - new Date(detail.started_at).getTime() : 0;
-  const plan = question?.plan_index ?? detail.answered_main_questions;
+  // 自我介绍不占题量：开场时 plan 为 -1，正式题从 0 开始计数
+  const introOffset = detail.has_intro ? 1 : 0;
+  const plan = question ? question.plan_index - introOffset : detail.answered_main_questions;
+  const isIntro = plan < 0;
   const follow = question ? followIndex(detail, question) : 0;
   const answeredLog = useMemo(() => detail.questions.filter((entry) => entry.answer_status !== "pending"), [detail.questions]);
 
@@ -354,13 +357,13 @@ export function VoiceSessionPage({ interview, onChanged }: { interview: MockInte
           <p>{interviewEyebrow(detail)}</p>
           <h1>{interviewTitle(detail, t("语音面试"))}</h1>
         </div>
-        <div className="vx-progress" aria-label={t("第 {value0} / {value1} 题", { value0: plan + 1, value1: detail.question_count })}>
+        <div className="vx-progress" aria-label={isIntro ? t("开场 · 自我介绍") : t("第 {value0} / {value1} 题", { value0: plan + 1, value1: detail.question_count })}>
           <div className="vx-progress-bars">
             {Array.from({ length: detail.question_count }, (_, index) => (
               <i key={index} className={index < plan ? "is-done" : index === plan && phase !== "closing" ? "is-current" : phase === "closing" ? "is-done" : ""} />
             ))}
           </div>
-          <span>{phase === "closing" ? t("已完成 {value0} 题", { value0: detail.question_count }) : t("第 {value0} / {value1} 题{value2}", { value0: plan + 1, value1: detail.question_count, value2: follow ? ` · 追问 ${follow}` : "" })}</span>
+          <span>{phase === "closing" ? t("已完成 {value0} 题", { value0: detail.question_count }) : isIntro ? `${t("开场 · 自我介绍")}${follow ? ` · ${t("追问")} ${follow}` : ""}` : t("第 {value0} / {value1} 题{value2}", { value0: plan + 1, value1: detail.question_count, value2: follow ? ` · 追问 ${follow}` : "" })}</span>
         </div>
         <div className="vx-stage-tools">
           <span className="vx-timer">{formatElapsed(elapsed)}</span>

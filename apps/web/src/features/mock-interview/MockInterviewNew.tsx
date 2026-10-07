@@ -271,7 +271,7 @@ function MoreSettingsDialog({
         <h2 className="v3-dialog-title">{t("更多设置")}</h2>
         <p className="v3-dialog-sub">{t("主问题数量、追问与语言；参考资料用于出题和事实核验。")}</p>
         <div className="mi-more-row">
-          <span><b>{t("主问题数")}</b><small>{t("3–10 道，不含追问")}</small></span>
+          <span><b>{t("主问题数")}</b><small>{t("3–10 道，不含追问与自我介绍")}</small></span>
           <div className="mi-more-select"><Select label={t("主问题数")} value={String(count)} options={countOptions} onChange={(value) => setCount(Number(value))} /></div>
         </div>
         <div className="mi-more-row">

@@ -83,6 +83,8 @@ class ScriptedGateway:
         self.users.append("\n".join(str(m.content) for m in messages if m.role == "user"))
         if "正在为一场模拟面试做背景分析" in system:
             payload = {"claims": [{"text": "负责订单系统重构", "verb_strength": "owned"}], "candidate_level": "社招 3 年"}
+        elif "刚做完自我介绍" in system:
+            payload = {"replacements": []}
         elif "制定面试计划" in system:
             count = int(system.split("恰好 ")[1].split(" ")[0])
             payload = {"candidates": [], "selected": [plan_item(i) for i in range(count)]}
@@ -276,7 +278,8 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
     gateway = ScriptedGateway()
     gateway.turn_headers = [
         {"action": "next_question", "depth_level": 2},  # opening
-        {"action": "follow_up", "depth_level": 5, "probe_quote": "我用火焰图定位热点"},  # clamped to L4
+        {"action": "follow_up", "depth_level": 5, "probe_quote": "我用火焰图定位热点", "probe_gap": "缺少数据验证"},  # limited to previous depth + 1
+        {"action": "next_question", "depth_level": 2},
         {"action": "next_question", "depth_level": 2},
         {"action": "next_question", "depth_level": 2},
         {"action": "finish", "depth_level": 2},
@@ -288,7 +291,7 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert created["status"] == "preparing"
         detail = wait_for(client, created["id"], {"in_progress"})
         first = detail["questions"][0]
-        assert first["kind"] == "main" and first["depth_level"] == 3  # start depth clamped to L2–L3
+        assert first["kind"] == "main" and first["depth_level"] == 1  # the opening question is the fixed self-introduction
         assert "如何定位" in first["content"]
 
         response = answer(client, created["id"], first["id"], "我用火焰图定位热点，也对比过本地缓存。")
@@ -297,7 +300,7 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert any(name == "interviewer.delta" for name, _ in events)
         turn = next(data for name, data in events if name == "interviewer.turn")
         assert turn["action"] == "follow_up"
-        assert turn["question"]["depth_level"] == 4
+        assert turn["question"]["depth_level"] == 2  # intro is L1; a follow-up rises at most one level
         assert turn["question"]["parent_id"] == first["id"]
 
         answer(client, created["id"], turn["question"]["id"], "用火焰图定位热点。")
@@ -306,8 +309,12 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert third["kind"] == "main" and third["plan_index"] == 1
         answer(client, created["id"], third["id"], "用火焰图定位热点")
         detail = wait_for(client, created["id"], {"in_progress"})
+        fourth = detail["questions"][-1]
+        assert fourth["plan_index"] == 2
+        answer(client, created["id"], fourth["id"], "用火焰图定位热点")
+        detail = wait_for(client, created["id"], {"in_progress"})
         last = detail["questions"][-1]
-        assert last["plan_index"] == 2
+        assert last["plan_index"] == 3  # self-introduction + the 3 requested questions
         final = sse_events(answer(client, created["id"], last["id"], "对比过本地缓存").text)
         assert next(data for name, data in final if name == "interviewer.turn")["action"] == "finish"
 
@@ -319,15 +326,17 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
                 select(ProductEvent).where(ProductEvent.event_name == "mock_interview_completed")
             ).all()
         assert [e.properties_json["answer_mode"] for e in completed] == ["text"]
-        assert len(report["questions"]) == 3
+        assert len(report["questions"]) == 4  # intro + 3 requested questions
         first_signals = report["questions"][0]["signals"]
         # The third judgement quoted text that is not in the answers.
-        assert [item["verdict"] for item in first_signals] == ["hit", "partial", "miss"]
+        assert [item["verdict"] for item in first_signals] == ["hit", "partial", "miss", "miss"]
+        assert report["questions"][0]["topic"] == "自我介绍"  # fixed intro takes the first slot
         weights = {item["key"]: item["weight"] for item in report["dimensions"]}
         assert "job_fit" not in weights  # no JD supplied
         assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
         dimension = sum((item["score"] - 1) / 4 * 100 * item["weight"] for item in report["dimensions"])
-        question_avg = sum(item["score"] for item in report["questions"]) / 3
+        scored = [item["score"] for item in report["questions"] if not item["is_intro"]]
+        question_avg = sum(scored) / 3  # the self-introduction is feedback only
         assert report["total_score"] == pytest.approx(question_avg * 0.7 + dimension * 0.3, abs=0.05)
         assert report_detail["total_score"] == pytest.approx(report["total_score"])
         assert report["fact_check"]["status"] == "not_requested"
@@ -814,7 +823,7 @@ def test_evaluation_runs_even_if_client_drops_the_final_turn() -> None:
         # Answer the last planned topic directly so the next turn finishes.
         with app.state.session_factory() as db:
             question = db.get(MockInterviewQuestion, int(detail["questions"][0]["id"]))
-            question.plan_index = 2
+            question.plan_index = 3
             db.commit()
         runner = app.state.mock_interview_runner
         client.post(
@@ -882,7 +891,7 @@ def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -
     from linkresume.core.security import create_access_token
 
     gateway = ScriptedGateway()
-    gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3, "probe_quote": "我用火焰图定位热点"}]
+    gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3, "probe_quote": "我用火焰图定位热点", "probe_gap": "缺少数据验证"}]
     app = build_app(gateway)
     with TestClient(app) as client:
         assert client.get('/api/mock-interviews').status_code == 401

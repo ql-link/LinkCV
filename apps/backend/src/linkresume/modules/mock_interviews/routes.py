@@ -163,13 +163,18 @@ def _detail(db: Session, interview: MockInterview) -> MockInterviewDetail:
     summary = _summary(interview)
     repeat = _repeat_public_ids(db, [interview]).get(interview.repeat_of_id or 0)
     report = interview.report_json if interview.status == "completed" else None
+    plan = (interview.plan_json or {}).get("selected") or []
+    has_intro = bool(plan and plan[0].get("is_intro"))
     return MockInterviewDetail(
         **summary.model_dump(exclude={"repeat_of_id"}),
         repeat_of_id=repeat,
         materials=list(interview.material_refs_json or []),
         current_question_id=str(interview.current_question_id) if interview.current_question_id else None,
+        has_intro=has_intro,
         answered_main_questions=sum(
-            1 for item in questions if item.parent_id is None and item.answer_status != "pending"
+            1
+            for item in questions
+            if item.parent_id is None and item.answer_status != "pending" and not (has_intro and item.plan_index == 0)
         ),
         needs_reply=bool(questions) and interview.status == "in_progress" and questions[-1].answer_status != "pending",
         questions=[service.serialize_question(item) for item in questions],

@@ -89,7 +89,7 @@ export type MockInterviewReport = {
   question_average: number;
   dimension_score: number;
   dimensions: MockDimension[];
-  questions: Array<MockQuestionEvaluation & { topic: string; sequence_no: number }>;
+  questions: Array<MockQuestionEvaluation & { topic: string; sequence_no: number; is_intro?: boolean }>;
   fact_check: { status: "not_requested" | "completed" | "failed"; items: MockFactCheckItem[] };
   resume_risks: string[];
   improvements: string[];
@@ -135,6 +135,8 @@ export type MockInterviewDetail = MockInterviewSummary & {
   materials: Array<{ dataset_id: string; file_name: string; version: string }>;
   current_question_id: string | null;
   answered_main_questions: number;
+  // 面试以固定的自我介绍开场，它不占用 question_count。
+  has_intro?: boolean;
   needs_reply: boolean;
   questions: MockInterviewQuestion[];
   report: MockInterviewReport | null;

@@ -57,12 +57,14 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
   }
 
   const expected = EXPECTED_DEPTH[interview.difficulty] ?? 3;
-  const answered = rows.filter((row) => !row.evaluation.skipped).length;
+  // 自我介绍只给反馈，不计入题量与得分统计
+  const scoredRows = rows.filter((row) => !row.evaluation.is_intro);
+  const answered = scoredRows.filter((row) => !row.evaluation.skipped).length;
   // 分母用配置的主问题数：提前结束时未出的题也算「未作答」
-  const total = Math.max(interview.question_count, rows.length);
+  const total = Math.max(interview.question_count, scoredRows.length);
   const followCount = rows.reduce((sum, row) => sum + row.group.follows.length, 0);
-  const good = rows.filter((row) => row.evaluation.score >= GOOD_SCORE);
-  const weak = rows.filter((row) => row.evaluation.score < GOOD_SCORE);
+  const good = scoredRows.filter((row) => row.evaluation.score >= GOOD_SCORE);
+  const weak = scoredRows.filter((row) => row.evaluation.score < GOOD_SCORE);
   const visible = filter === "good" ? good : filter === "weak" ? weak : rows;
   const minutes = interview.started_at && interview.finished_at ? Math.max(1, Math.round((new Date(interview.finished_at).getTime() - new Date(interview.started_at).getTime()) / 60_000)) : null;
   const dims = report.dimensions;

@@ -272,8 +272,13 @@ def store_reevaluation(
     results = [dict(item) for item in report.get("questions") or []]
     for index, item in enumerate(results):
         if item.get("sequence_no") == root.sequence_no:
-            results[index] = {"topic": item.get("topic"), "sequence_no": root.sequence_no, **evaluation}
-    scores = [float(item["score"]) for item in results]
+            results[index] = {
+                "topic": item.get("topic"),
+                "sequence_no": root.sequence_no,
+                "is_intro": bool(item.get("is_intro")),
+                **evaluation,
+            }
+    scores = [float(item["score"]) for item in results if not item.get("is_intro")]
     previous_total = report.get("total_score")
     total = rubric.total_score(scores, float(report.get("dimension_score") or 0))
     report["questions"] = results

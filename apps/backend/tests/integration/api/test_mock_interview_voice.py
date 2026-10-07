@@ -212,7 +212,7 @@ def test_voice_interview_saves_recordings_speaks_and_reports_voice_metrics() -> 
     with TestClient(app) as client:
         register(client, "voice-full@example.test")
         assert client.get("/api/mock-interviews/speech-capability").json() == {"stt": True, "tts": True}
-        report_detail = run_voice_interview(client, app, speech, ["我用瑞迪斯做缓存，嗯，那个 QPS 一千"] * 3)
+        report_detail = run_voice_interview(client, app, speech, ["我用瑞迪斯做缓存，嗯，那个 QPS 一千"] * 4)
         answered = [q for q in report_detail["questions"] if q["answer_status"] == "answered"]
         assert answered and all(q["answer_source"] == "voice" and q["has_recording"] for q in answered)
         assert answered[0]["raw_transcript"] == "我用瑞迪斯做缓存，嗯，那个 QPS 一千"
@@ -376,7 +376,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
     ]
     with TestClient(app) as client:
         register(client, "voice-correct@example.test")
-        detail = run_voice_interview(client, app, speech, [original] * 3)
+        detail = run_voice_interview(client, app, speech, [original] * 4)
         interview_id = detail["id"]
         roots = [q for q in detail["questions"] if q["kind"] == "main" and q["answer_status"] == "answered"]
 
@@ -387,7 +387,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         corrected = client.post(f"/api/mock-interviews/{interview_id}/transcripts:correct")
         assert corrected.status_code == 200, corrected.text
         states = [item["state"] for item in corrected.json()["items"]]
-        assert states == ["corrected", "correction_rejected", "original"]
+        assert states == ["corrected", "correction_rejected", "original", "correction_rejected"]
         body = corrected.json()["mock_interview"]
         assert body["transcript_corrected_at"] is not None
         first = next(q for q in body["questions"] if q["id"] == roots[0]["id"])
@@ -413,7 +413,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
             assert data["re_evaluate_count"] == count and data["remaining"] == 3 - count
         report = data["mock_interview"]["report"]
         assert [item["count"] for item in report["re_evaluations"]] == [1, 2, 3]
-        scores = [item["score"] for item in report["questions"]]
+        scores = [item["score"] for item in report["questions"] if not item["is_intro"]]
         assert report["total_score"] == pytest.approx(
             sum(scores) / len(scores) * 0.7 + report["dimension_score"] * 0.3, abs=0.01
         )
@@ -433,7 +433,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         rows = db.scalars(select(MockInterviewQuestion).where(MockInterviewQuestion.recording_object_name.is_not(None))).all()
         assert rows == []
         correction_logs = db.scalars(select(LLMCallLog).where(LLMCallLog.use_case == TRANSCRIPT_CORRECTION)).all()
-        assert len(correction_logs) == 3
+        assert len(correction_logs) == 4  # intro + 3 requested questions
 
 
 def test_text_interview_rejects_correction() -> None:

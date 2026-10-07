@@ -56,7 +56,8 @@ def score_root(
         difficulty=interview.difficulty,
         factual_errors=len(errors),
         skipped=False,
-        interview_type=interview.interview_type,
+        # 自我介绍没有技术深度要求，不按期望深度扣分。
+        interview_type="hr" if item.get("is_intro") else interview.interview_type,
     )
     return {
         "skipped": False,
@@ -111,7 +112,7 @@ def _align_signals(
 
 def practice_focus(question_results: list[dict[str, object]], limit: int = 3) -> list[dict[str, object]]:
     """The weakest answered topics, so the report can point at what to practise next."""
-    answered = [item for item in question_results if not item.get("skipped")]
+    answered = [item for item in question_results if not item.get("skipped") and not item.get("is_intro")]
     weakest = sorted(answered, key=lambda item: float(item.get("score") or 0))[:limit]
     return [
         {
@@ -125,6 +126,6 @@ def practice_focus(question_results: list[dict[str, object]], limit: int = 3) ->
     ]
 
 
-def follow_up_grounded(probe_quote: str, answer: str) -> bool:
-    """A follow-up must quote what the candidate actually said."""
-    return len(_normalize(probe_quote)) >= 4 and quoted_in(probe_quote, answer)
+def follow_up_grounded(probe_quote: str, answer: str, probe_gap: str = "") -> bool:
+    """A follow-up must quote a substantive stretch of what the candidate said and name what is missing."""
+    return len(_normalize(probe_quote)) >= 6 and bool(probe_gap.strip()) and quoted_in(probe_quote, answer)

@@ -178,6 +178,8 @@ class MockInterviewDetail(MockInterviewSummary):
     materials: list[MockInterviewMaterialRef]
     current_question_id: str | None
     answered_main_questions: int
+    # 计划以固定的自我介绍开场；它不占用 question_count，进度展示需要把它单独对待。
+    has_intro: bool = False
     needs_reply: bool
     questions: list[MockInterviewQuestionRecord]
     report: dict[str, Any] | None
