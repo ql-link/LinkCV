@@ -142,13 +142,13 @@
 .mi-section-head > span { color: var(--v3-fnt); font-size: 12px; white-space: nowrap; }
 .mi-others { margin-top: 20px; }
 .mi-jobs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
-.mi-job { height: 137px; border: 1px solid var(--v3-cl); border-radius: 14px; background: #fff; padding: 15px 17px; }
+.mi-job { display: flex; flex-direction: column; align-items: flex-start; min-height: 137px; border: 1px solid var(--v3-cl); border-radius: 14px; background: #fff; padding: 15px 17px; }
 .mi-job h3 { overflow: hidden; font-size: 13.5px; font-weight: 500; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .mi-job-stage { display: flex; align-items: center; gap: 6px; margin-top: 10px !important; color: var(--v3-sub); font-size: 11.5px; }
 .mi-job-stage i { width: 6px; height: 6px; border-radius: 50%; background: var(--v3-fnt); }
 .mi-job-stage i.is-soon { background: var(--v3-or); }
-.mi-job-practice { margin-top: 10px !important; color: var(--v3-fnt); font-size: 11.5px; }
-.mi-job .v3-btn { height: 33px; margin-top: 10px; padding: 0 15px; font-size: 12.5px; }
+.mi-job-practice { margin: 10px 0 10px !important; color: var(--v3-fnt); font-size: 11.5px; }
+.mi-job .v3-btn { height: 33px; margin-top: auto; flex-shrink: 0; padding: 0 15px; font-size: 12.5px; }
 .mi-general { display: flex; height: 61px; align-items: center; justify-content: space-between; margin-top: 12px; border-radius: 14px; background: var(--v3-field); padding: 0 20px; }
 .mi-general strong { display: block; font-size: 13.5px; font-weight: 500; }
 .mi-general small { display: block; margin-top: 3px; color: var(--v3-fnt); font-size: 11.5px; }

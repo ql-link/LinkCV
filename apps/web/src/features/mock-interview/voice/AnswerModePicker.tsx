@@ -18,7 +18,9 @@ export function AnswerModePicker({ value, onChange, speechAvailable }: { value: 
   const voiceDisabled = !speechAvailable || !browserOk;
   const unavailableHint = !speechAvailable
     ? t("语音服务暂未开启（管理端未配置语音识别与合成线路），当前只能文字作答。")
-    : t("当前浏览器不支持录音，请换用最新版 Chrome、Edge 或 Safari 后再选择语音面试。");
+    : typeof window !== "undefined" && window.isSecureContext === false
+      ? t("当前页面不是 HTTPS 安全连接，浏览器禁止录音。请通过 HTTPS 或 localhost 访问后再选择语音面试。")
+      : t("当前浏览器不支持录音，请换用最新版 Chrome、Edge 或 Safari 后再选择语音面试。");
   const hint = voiceDisabled && value === "text" ? unavailableHint : HINTS[value];
 
   return (

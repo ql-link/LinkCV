@@ -178,6 +178,23 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
         </div>
       </section>
 
+      {((report.practice_focus?.length ?? 0) > 0 || report.consistency_basis === "model_only") && (
+        <section className="mi-report-section" aria-label={t("下一步练习")}>
+          <div className="mi-section-head is-report"><h2>{t("下一步练习")}</h2><i aria-hidden="true" /></div>
+          <div className="mi-cards">
+            {report.practice_focus?.map((item) => (
+              <article key={item.sequence_no} className="mi-improve">
+                <h3>{item.topic}<button type="button" className="mi-qref" onClick={() => setOpenIndex(item.sequence_no - 1)}>Q{item.sequence_no}</button></h3>
+                {item.reason && <p>{item.reason}</p>}
+              </article>
+            ))}
+            {report.consistency_basis === "model_only" && (
+              <article className="mi-improve"><p>{t("简历一致性来自对话中的判断，没有选择参考资料可供核验；选择项目资料后再练一次会更可靠。")}</p></article>
+            )}
+          </div>
+        </section>
+      )}
+
       {improvements.length > 0 && (
         <section className="mi-report-section" aria-label={t("改进建议")}>
           <div className="mi-section-head is-report"><h2>{t("改进建议")}</h2><span>{t("按重要程度排序 · ")}{improvements.length}{t(" 条")}</span><i aria-hidden="true" /></div>

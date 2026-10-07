@@ -24,7 +24,14 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
-from linkresume.application.mock_interviews import prompts, rubric, voice_metrics
+from linkresume.application.mock_interviews import planning, prompts, rubric, voice_metrics
+from linkresume.application.mock_interviews.scoring import (  # noqa: F401  (re-exported for transcripts and tests)
+    _align_signals,
+    _normalize,
+    practice_focus,
+    quoted_in,
+    score_root,
+)
 from linkresume.modules.product_events import service as product_events
 from linkresume.application.mock_interviews.outputs import (
     BackgroundAnalysis,
@@ -34,7 +41,6 @@ from linkresume.application.mock_interviews.outputs import (
     InterviewerTurn,
     OverallEvaluation,
     QuestionEvaluation,
-    SignalJudgement,
 )
 from linkresume.application.mock_interviews.retrieval import (
     SNIPPET_CHARS,
@@ -70,6 +76,7 @@ MAX_MATERIALS = 10
 MATERIAL_TOTAL_BYTES = 1_000_000
 MATERIAL_SNIPPETS_FOR_ANALYSIS = 12
 MAX_FACT_CLAIMS = 15
+EVALUATION_CONCURRENCY = 3
 TASK_LEASE = timedelta(minutes=10)
 IDLE_TIMEOUT = timedelta(hours=24)
 ANSWER_CHARS = 8_000
@@ -731,7 +738,7 @@ class MockInterviewRunner:
             analysis = reused_analysis
         else:
             snippets: list[dict[str, object]] = []
-            if interview.materials_in_questions:
+            if interview.is_materials_in_questions:
                 materials = await self._db(
                     self._with_db, lambda db: load_materials(db, self._storage, interview)
                 )
@@ -746,26 +753,29 @@ class MockInterviewRunner:
             )
             analysis = analysis_value.model_dump()
         await self._heartbeat(interview_id, "preparing", token)
-        plan_value = await _structured(
-            self._llm,
-            interview.user_id,
-            prompts.plan_messages(interview, analysis, previous_topics),
-            InterviewPlan,
-            usage,
-        )
-        selected = [
-            item.model_copy(update={"start_depth": rubric.clamp_start_depth(interview.difficulty, item.start_depth)})
-            for item in plan_value.selected[: interview.question_count]
-        ]
-        if len(selected) < interview.question_count:
-            pool = [item for item in plan_value.candidates if item.topic not in {s.topic for s in selected}]
-            selected.extend(
-                item.model_copy(update={"start_depth": rubric.clamp_start_depth(interview.difficulty, item.start_depth)})
-                for item in pool[: interview.question_count - len(selected)]
+        selected: list[Any] = []
+        # The model often under-delivers or breaks a hard rule (count, open-design
+        # quota); the server enforces them and asks again once before failing.
+        for _ in range(2):
+            plan_value = await _structured(
+                self._llm,
+                interview.user_id,
+                prompts.plan_messages(interview, analysis, previous_topics),
+                InterviewPlan,
+                usage,
+            )
+            selected, problems = planning.select_plan(
+                plan_value, difficulty=interview.difficulty, question_count=interview.question_count
+            )
+            if not problems:
+                break
+            logger.warning(
+                "mock interview plan rejected",
+                extra={"mock_interview_id": interview_id, "problems": problems, "got": len(selected)},
             )
         if len(selected) < interview.question_count:
             raise MockInterviewError(502, "MOCK_INTERVIEW_PLAN_INCOMPLETE")
-        plan = {"selected": [item.model_dump() for item in selected]}
+        plan = planning.plan_payload(selected)
         stored = await self._db(
             self._with_db,
             lambda db: self._store_plan(db, interview_id, token, analysis, plan, usage),
@@ -843,22 +853,32 @@ class MockInterviewRunner:
         """Decide what the next model turn is allowed to do."""
         plan = _plan_items(interview)
         if not questions:
-            return {"opening": True, "plan_index": 0, "follow_ups": 0, "allow_follow_up": False}
+            return {
+                "opening": True,
+                "plan_index": 0,
+                "follow_ups": 0,
+                "allow_follow_up": False,
+                "allowed": ("next_question",),
+            }
         current = questions[-1]
         root = next(item for item in questions if item.id == _root_id(current))
         follow_ups = sum(1 for item in questions if item.parent_id == root.id)
         allow = (
             interview.is_follow_up_enabled
             and current.answer_status == "answered"
-            and follow_ups < rubric.MAX_FOLLOW_UPS
+            and follow_ups < rubric.max_follow_ups(interview.difficulty)
         )
+        last = root.plan_index >= len(plan) - 1
+        moving_on = "finish" if last else "next_question"
         return {
             "opening": False,
             "plan_index": root.plan_index,
             "follow_ups": follow_ups,
             "allow_follow_up": allow,
-            "last_topic": root.plan_index >= len(plan) - 1,
+            "last_topic": last,
             "root_id": root.id,
+            # The only actions whose spoken text matches what the server will store.
+            "allowed": ("follow_up", moving_on) if allow else (moving_on,),
         }
 
     async def stream_turn(
@@ -897,6 +917,8 @@ class MockInterviewRunner:
         else:
             next_index = decision["plan_index"] + 1
             topic = plan[next_index] if next_index < len(plan) else plan[decision["plan_index"]]
+        next_index = decision["plan_index"] + 1
+        next_item = plan[next_index] if next_index < len(plan) else None
         messages = prompts.interviewer_messages(
             interview,
             plan_item=topic,
@@ -905,40 +927,60 @@ class MockInterviewRunner:
             allow_follow_up=bool(decision["allow_follow_up"]),
             is_opening=bool(decision["opening"]),
             is_last_topic=bool(decision.get("last_topic")),
+            # While a follow-up is possible the model also needs the topic it
+            # would move on to, otherwise it improvises a question that the
+            # plan's expected signals do not describe.
+            next_item=next_item if decision["allow_follow_up"] else None,
+            allowed_actions=tuple(decision["allowed"]),
         )
+        allowed = tuple(decision["allowed"])
         header: InterviewerTurn | None = None
         buffer = ""
         body: list[str] = []
         usage = ChatUsage()
-        try:
-            stream = await self._llm.stream_chat(
-                interview.user_id, messages, source=LLM_SOURCE, use_case=MOCK_INTERVIEW
-            )
-            async for event in stream.events:
-                if event.type == "error":
-                    yield {"event": "error", "error": event.error_code or "LLM_UNAVAILABLE"}
-                    return
-                if event.type == "done":
-                    usage = event.usage or usage
-                    break
-                chunk = event.content or ""
-                if header is None:
-                    buffer += chunk
-                    split = _split_header(buffer)
-                    if split is None:
-                        continue
-                    first, rest = split
-                    header = _parse_header(first)
-                    if header is None:
-                        yield {"event": "error", "error": "LLM_RESPONSE_INVALID"}
+        # A malformed header or an action whose text would not match what is
+        # stored is detected before any text reaches the client, so one silent
+        # retry is possible.
+        for attempt in range(2):
+            header, buffer, body, rejected = None, "", [], False
+            try:
+                stream = await self._llm.stream_chat(
+                    interview.user_id, messages, source=LLM_SOURCE, use_case=MOCK_INTERVIEW
+                )
+                async for event in stream.events:
+                    if event.type == "error":
+                        yield {"event": "error", "error": event.error_code or "LLM_UNAVAILABLE"}
                         return
-                    chunk = rest
-                if chunk:
-                    body.append(chunk)
-                    yield {"event": "delta", "content": chunk}
-        except LLMError as error:
-            yield {"event": "error", "error": error.code}
-            return
+                    if event.type == "done":
+                        usage = event.usage or usage
+                        break
+                    chunk = event.content or ""
+                    if header is None:
+                        buffer += chunk
+                        split = _split_header(buffer)
+                        if split is None:
+                            continue
+                        first, rest = split
+                        header = _parse_header(first)
+                        if header is None or header.action not in allowed:
+                            rejected = True
+                            break
+                        chunk = rest
+                    if chunk:
+                        body.append(chunk)
+                        yield {"event": "delta", "content": chunk}
+            except LLMError as error:
+                yield {"event": "error", "error": error.code}
+                return
+            if not rejected:
+                break
+            logger.warning(
+                "mock interview turn rejected",
+                extra={"mock_interview_id": interview_id, "attempt": attempt, "allowed": allowed},
+            )
+            if attempt == 1:
+                yield {"event": "error", "error": "LLM_RESPONSE_INVALID"}
+                return
         if header is None:
             header = _parse_header(buffer)
             if header is not None:
@@ -1130,8 +1172,14 @@ class MockInterviewRunner:
             return root.id, value
 
         # Each question is judged in its own call so earlier answers cannot bias
-        # later scores; calls run sequentially to bound per-user provider load.
-        results = dict([await evaluate_root(root) for root in roots])
+        # later scores; a small semaphore bounds per-user provider load.
+        gate = asyncio.Semaphore(EVALUATION_CONCURRENCY)
+
+        async def bounded(root: MockInterviewQuestion):
+            async with gate:
+                return await evaluate_root(root)
+
+        results = dict(await asyncio.gather(*(bounded(root) for root in roots)))
         question_results: list[dict[str, object]] = []
         scores: list[float] = []
         evaluations: dict[int, dict[str, object]] = {}
@@ -1157,6 +1205,7 @@ class MockInterviewRunner:
             OverallEvaluation,
             usage,
         )
+        all_answers = " ".join(item.answer_text or "" for item in questions)
         has_job = bool((interview.job_snapshot_json or {}).get("description"))
         weights = rubric.effective_weights(interview.interview_type, has_job=has_job)
         dimensions: list[dict[str, object]] = []
@@ -1171,7 +1220,8 @@ class MockInterviewRunner:
                     "key": key,
                     "score": judgement.score,
                     "weight": weights[key],
-                    "evidence": judgement.evidence,
+                    # Quotes the candidate never said are not evidence.
+                    "evidence": [text for text in judgement.evidence if quoted_in(text, all_answers)],
                     "comment": judgement.comment,
                 }
             )
@@ -1185,6 +1235,7 @@ class MockInterviewRunner:
         answered_roots = sum(1 for root in roots if not evaluations[root.id]["skipped"])
         report = {
             "rubric_version": rubric.RUBRIC_VERSION,
+            "prompt_version": rubric.PROMPT_VERSION,
             "answer_mode": interview.answer_mode,
             "voice_metrics": voice_report(questions) if interview.answer_mode == "voice" else None,
             "headline": overall.headline,
@@ -1197,6 +1248,10 @@ class MockInterviewRunner:
             "fact_check": fact_check,
             "resume_risks": overall.resume_risks,
             "improvements": overall.improvements,
+            "strengths": overall.strengths,
+            "practice_focus": practice_focus(question_results),
+            # 没有资料核验时"简历一致性"只来自模型对对话的判断，报告里要标明可信度。
+            "consistency_basis": "materials" if fact_check.get("status") == "completed" and fact_check.get("items") else "model_only",
             "off_topic_detected": overall.off_topic_detected,
             "low_confidence": rubric.low_confidence(answered=answered_roots, total=len(roots)),
         }
@@ -1231,21 +1286,22 @@ class MockInterviewRunner:
             ClaimExtraction,
             usage,
         )
-        items: list[dict[str, object]] = []
         rag_state = {"available": self._rag is not None}
-        for claim in extraction.claims[:MAX_FACT_CLAIMS]:
-            snippets = await self._evidence(interview, materials.retriever, claim.text, rag_state)
-            if not snippets:
-                items.append({"claim": claim.text, "kind": claim.kind, "question_sequence_no": claim.question_sequence_no, "verdict": "not_found", "quote": "", "source": None, "note": ""})
-                continue
-            await self._heartbeat(interview.id, "evaluating", token)
-            verification = await _structured(
-                self._llm,
-                interview.user_id,
-                prompts.claim_verification_messages(claim.text, [s.as_dict() for s in snippets]),
-                ClaimVerification,
-                usage,
-            )
+        gate = asyncio.Semaphore(EVALUATION_CONCURRENCY)
+
+        async def verify(claim) -> dict[str, object]:
+            async with gate:
+                snippets = await self._evidence(interview, materials.retriever, claim.text, rag_state)
+                if not snippets:
+                    return {"claim": claim.text, "kind": claim.kind, "question_sequence_no": claim.question_sequence_no, "verdict": "not_found", "quote": "", "source": None, "note": ""}
+                await self._heartbeat(interview.id, "evaluating", token)
+                verification = await _structured(
+                    self._llm,
+                    interview.user_id,
+                    prompts.claim_verification_messages(claim.text, [s.as_dict() for s in snippets]),
+                    ClaimVerification,
+                    usage,
+                )
             source = None
             verdict = verification.verdict
             quote = verification.quote
@@ -1258,17 +1314,17 @@ class MockInterviewRunner:
                     verdict, quote = "not_found", ""
                 else:
                     source = chosen.as_dict()
-            items.append(
-                {
-                    "claim": claim.text,
-                    "kind": claim.kind,
-                    "question_sequence_no": claim.question_sequence_no,
-                    "verdict": verdict,
-                    "quote": quote,
-                    "source": source,
-                    "note": verification.note,
-                }
-            )
+            return {
+                "claim": claim.text,
+                "kind": claim.kind,
+                "question_sequence_no": claim.question_sequence_no,
+                "verdict": verdict,
+                "quote": quote,
+                "source": source,
+                "note": verification.note,
+            }
+
+        items = list(await asyncio.gather(*(verify(claim) for claim in extraction.claims[:MAX_FACT_CLAIMS])))
         return {"status": "completed", "items": items, **base}
 
     async def _evidence(
@@ -1356,93 +1412,25 @@ class MockInterviewRunner:
         db.commit()
 
 
-def score_root(
-    interview: MockInterview,
-    item: dict[str, Any],
-    root: MockInterviewQuestion,
-    questions: list[MockInterviewQuestion],
-    value: QuestionEvaluation | None,
-) -> dict[str, object]:
-    """Deterministic score for one main question from the model's judgements."""
-    signals = list(item.get("expected_signals") or [])
-    if value is None:
-        verdicts: list[dict[str, object]] = [
-            {"signal": signal, "verdict": "miss", "evidence": ""} for signal in signals
-        ]
-        evaluation = {
-            "skipped": True,
-            "score": 0.0,
-            "achieved_depth": 0,
-            "signals": verdicts,
-            "factual_errors": [],
-            "highlights": [],
-            "weaknesses": [],
-            "reference_answer": "",
-        }
-    else:
-        answers = " ".join(
-            q.answer_text or "" for q in questions if _root_id(q) == root.id
-        )
-        verdicts = _align_signals(signals, value, answers)
-        score = rubric.question_score(
-            signal_verdicts=[str(v["verdict"]) for v in verdicts],
-            achieved_depth=value.achieved_depth,
-            difficulty=interview.difficulty,
-            factual_errors=len(value.factual_errors),
-            skipped=False,
-        )
-        evaluation = {
-            "skipped": False,
-            "score": score,
-            "achieved_depth": value.achieved_depth,
-            "signals": verdicts,
-            "factual_errors": value.factual_errors,
-            "highlights": value.highlights,
-            "weaknesses": value.weaknesses,
-            "reference_answer": value.reference_answer,
-        }
-    return evaluation
-
-
-def _normalize(text: str) -> str:
-    return re.sub(r"\s+", "", text).casefold()
-
-
-def _align_signals(
-    signals: list[str], value: QuestionEvaluation, answers: str
-) -> list[dict[str, object]]:
-    """Map judgements onto the planned signals; unquoted judgements count as a miss."""
-    remaining = list(value.signals)
-    normalized_answers = _normalize(answers)
-    # Exact name matches first; leftovers fill unmatched signals positionally.
-    # Each judgement is consumed once so one verdict cannot score two signals.
-    matched: dict[int, SignalJudgement] = {}
-    for index, signal in enumerate(signals):
-        hit = next((item for item in remaining if _normalize(item.signal) == _normalize(signal)), None)
-        if hit is not None:
-            matched[index] = hit
-            remaining.remove(hit)
-    aligned: list[dict[str, object]] = []
-    for index, signal in enumerate(signals):
-        judgement = matched.get(index)
-        if judgement is None and remaining:
-            judgement = remaining.pop(0)
-        verdict = judgement.verdict if judgement else "miss"
-        evidence = judgement.evidence if judgement else ""
-        if verdict != "miss" and (not evidence or _normalize(evidence) not in normalized_answers):
-            verdict, evidence = "miss", ""
-        aligned.append({"signal": signal, "verdict": verdict, "evidence": evidence})
-    return aligned
-
-
 def _split_header(buffer: str) -> tuple[str, str] | None:
-    """Split the leading JSON decision from the spoken text once it is complete."""
+    """Split the leading JSON decision from the spoken text once it is complete.
+
+    Tolerates a Markdown code fence around the JSON line.
+    """
     stripped = buffer.lstrip()
+    fenced = stripped.startswith("```")
+    if fenced:
+        if "\n" not in stripped:
+            return None
+        stripped = stripped.split("\n", 1)[1].lstrip()
     if stripped.startswith("{") and "}" in stripped:
         end = stripped.index("}") + 1
-        return stripped[:end], stripped[end:].lstrip("\r\n")
-    if "\n" in buffer:
-        first, rest = buffer.split("\n", 1)
+        rest = stripped[end:].lstrip("\r\n")
+        if fenced and rest.startswith("```"):
+            rest = rest.split("\n", 1)[1] if "\n" in rest else ""
+        return stripped[:end], rest
+    if "\n" in stripped:
+        first, rest = stripped.split("\n", 1)
         return first, rest
     return None
 
