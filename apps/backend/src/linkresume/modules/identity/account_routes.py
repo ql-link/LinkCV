@@ -32,7 +32,7 @@ from linkresume.modules.identity.account_deletion_service import (
     active_types, deletion_status, ensure_no_public_responsibility, request_deletion,
 )
 from linkresume.modules.identity.wechat_routes import require_wechat_environment
-from linkresume.modules.identity.dependencies import get_current_user, get_settings, lock_active_user
+from linkresume.modules.identity.dependencies import get_current_account_user, get_current_user, get_settings, lock_active_user
 from linkresume.modules.identity.capabilities import password_login_enabled, require_password_enabled, wechat_login_enabled
 from linkresume.modules.identity.models import AccountPreference, User, UserProfile
 from linkresume.modules.identity.schemas import (
@@ -162,7 +162,7 @@ def _apply_profile_fields(
 @router.get("/profile", response_model=AccountProfileResponse)
 def get_profile(
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_account_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
@@ -200,7 +200,7 @@ def get_profile(
 @router.put("/contact-email", response_model=ContactEmailResponse)
 def update_contact_email(
     payload: ContactEmailRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_account_user),
     db: Session = Depends(get_db),
 ) -> ContactEmailResponse:
     user = lock_active_user(db, user.id)
@@ -221,7 +221,7 @@ def _preferences(row: AccountPreference | None) -> AccountPreferencesResponse:
 
 @router.get("/preferences", response_model=AccountPreferencesResponse)
 def get_preferences(
-    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+    user: User = Depends(get_current_account_user), db: Session = Depends(get_db),
 ) -> AccountPreferencesResponse:
     return _preferences(db.scalar(select(AccountPreference).where(AccountPreference.user_id == user.id)))
 
@@ -229,7 +229,7 @@ def get_preferences(
 @router.patch("/preferences", response_model=AccountPreferencesResponse)
 def update_preferences(
     payload: dict[str, object],
-    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+    user: User = Depends(get_current_account_user), db: Session = Depends(get_db),
 ) -> AccountPreferencesResponse:
     user = lock_active_user(db, user.id)
     if not payload or set(payload) - {"locale", "interview_reminder_enabled"}:
@@ -252,7 +252,7 @@ def update_preferences(
 
 @router.get("/user-profile", response_model=UserProfileData)
 def get_user_profile(
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_account_user),
     db: Session = Depends(get_db),
 ) -> UserProfileData:
     """未创建画像时返回空画像（lock_version=1 约定），不写库。"""
@@ -262,7 +262,7 @@ def get_user_profile(
 @router.put("/user-profile", response_model=UserProfileData)
 def put_user_profile(
     payload: UserProfileUpdateRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_account_user),
     db: Session = Depends(get_db),
 ) -> UserProfileData:
     user = lock_active_user(db, user.id)
@@ -353,7 +353,7 @@ def put_user_profile(
 @router.patch("/profile", response_model=UserProfileResponse)
 def update_profile(
     payload: ProfileUpdateRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_account_user),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> UserProfileResponse:
@@ -375,7 +375,7 @@ def update_profile(
 @router.put("/avatar", response_model=AvatarResponse)
 def upload_avatar(
     payload: AvatarUploadRequest,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_account_user),
     db: Session = Depends(get_db),
     storage: AssetStorage = Depends(get_storage),
 ) -> AvatarResponse:
@@ -418,7 +418,7 @@ def upload_avatar(
 
 @router.delete("/avatar", response_model=OkResponse)
 def delete_avatar(
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_account_user),
     db: Session = Depends(get_db),
     storage: AssetStorage = Depends(get_storage),
 ) -> OkResponse:

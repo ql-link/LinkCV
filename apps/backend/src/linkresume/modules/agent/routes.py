@@ -60,7 +60,7 @@ from linkresume.modules.agent.service import (
     session_record,
     update_session,
 )
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_agent_user as get_current_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.llm.service import LLMError
 from linkresume.modules.llm.resolver import ASSISTANT_CONVERSATION, eligible_routes

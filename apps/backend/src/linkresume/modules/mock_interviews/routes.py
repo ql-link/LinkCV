@@ -280,8 +280,6 @@ async def create_mock_interview(
     user: User = Depends(get_current_user),
     runner: MockInterviewRunner = Depends(get_mock_interview_runner),
 ) -> MockInterviewResponse:
-    if request.headers.get("authorization") is not None and payload.answer_mode != "text":
-        raise ApiError(403, "DESKTOP_SCOPE_FORBIDDEN")
     try:
         await request.app.state.llm_service.ensure_configured(MOCK_INTERVIEW)
     except LLMError as error:
@@ -714,8 +712,6 @@ async def repeat_mock_interview(
     source_mode = (payload.answer_mode if payload is not None else None) or await _in_session(
         request, lambda db: service.require_owned(db, user.id, interview_id).answer_mode
     )
-    if request.headers.get("authorization") is not None and source_mode != "text":
-        raise ApiError(403, "DESKTOP_SCOPE_FORBIDDEN")
     snapshot = await _ensure_voice_available(request) if source_mode == "voice" else None
 
     def run(db: Session) -> tuple[int, str, MockInterviewDetail]:
@@ -779,6 +775,18 @@ def _same_origin(websocket: WebSocket) -> bool:
     return parsed.scheme in ("http", "https") and parsed.netloc == host
 
 
+def _desktop_bearer(websocket: WebSocket, settings) -> str | None:
+    """A desktop Bearer token, only when no auth cookie rides along (channels never mix)."""
+    scheme, _, token = (websocket.headers.get("authorization") or "").partition(" ")
+    if scheme.lower() != "bearer" or not token or " " in token:
+        return None
+    if any(name in websocket.cookies for name in (
+        settings.access_cookie_name, settings.refresh_cookie_name, settings.session_cookie_name,
+    )):
+        return None
+    return token
+
+
 @router.websocket("/{interview_id}/speech")
 async def speech_socket(
     websocket: WebSocket,
@@ -787,14 +795,18 @@ async def speech_socket(
     purpose: str = Query(pattern=r"^(voice_input|voice_answer)$"),
 ) -> None:
     app = websocket.app
-    if not _same_origin(websocket):
+    # Native clients authenticate with a desktop Bearer header, which a cross-site page
+    # cannot attach to a WebSocket handshake; cookie handshakes still require our origin.
+    bearer = _desktop_bearer(websocket, app.state.settings)
+    if bearer is None and not _same_origin(websocket):
         await websocket.close(code=4403)
         return
 
     def authorize() -> tuple[int, int, list[str], str] | str:
         with app.state.session_factory() as db:
             user = _load_user(
-                websocket.cookies.get(app.state.settings.access_cookie_name), WEB_CHANNEL,
+                bearer if bearer is not None else websocket.cookies.get(app.state.settings.access_cookie_name),
+                "desktop" if bearer is not None else WEB_CHANNEL,
                 websocket, db, app.state.settings, app.state.redis,
             )
             if user is None:

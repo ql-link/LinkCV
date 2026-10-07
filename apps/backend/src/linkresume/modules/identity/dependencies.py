@@ -126,8 +126,85 @@ def get_current_career_user(
         or method == "POST" and re.fullmatch(session + r"/(?:written-questions:extract|review:generate)", path)
         or method == "PUT" and re.fullmatch(session + r"/review-notes", path)
         or method == "DELETE" and re.fullmatch(session + r"/review-notes/[0-9]+", path)
+        or method == "POST" and re.fullmatch(session + r"/prep-items:generate", path)
+        # Job detail: resume match score, JD coverage and home recommendations.
+        or method == "GET" and re.fullmatch(r"/api/job-descriptions/[0-9]+/match", path)
+        or method == "POST" and re.fullmatch(r"/api/job-descriptions/[0-9]+/match:analyze", path)
+        or method == "GET" and path == "/api/job-matches/recommendations"
+        or method == "POST" and path == "/api/job-matches/recommendations:ensure"
     )
     if not allowed:
+        raise ApiError(403, "DESKTOP_ROUTE_FORBIDDEN")
+    return get_current_desktop_user(request, db, settings, redis_client)
+
+
+def get_current_resume_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+) -> User:
+    """Desktop resume workbench: create from template, import files, edit content and presentation,
+    switch templates, upload resume images, rename, copy, delete and share.
+
+    Semantic classification and the legacy `/api/assets` upload stay Web-only.
+    """
+    if request.headers.get("authorization") is None:
+        return get_current_user(get_optional_user(request, db, settings, redis_client))
+    path, method = request.url.path, request.method
+    resume = r"/api/resumes/[0-9]+"
+    allowed = (
+        method == "POST" and path == "/api/resumes"
+        or method in {"PUT", "DELETE"} and re.fullmatch(resume, path)
+        or method == "POST" and re.fullmatch(resume + r"/copy", path)
+        or method in {"GET", "POST", "PATCH", "DELETE"} and re.fullmatch(resume + r"/share", path)
+        or method == "POST" and re.fullmatch(resume + r"/(apply-template|assets)", path)
+        or method == "DELETE" and re.fullmatch(resume + r"/assets/[^/]+", path)
+        # File import (Markdown/DOCX/PDF) and its task cards.
+        or method == "POST" and path == "/api/resumes/import"
+        or method == "GET" and path == "/api/resume-overview"
+        or method in {"GET", "DELETE"} and re.fullmatch(r"/api/resume-imports/[0-9]+", path)
+    )
+    if not allowed:
+        raise ApiError(403, "DESKTOP_ROUTE_FORBIDDEN")
+    return get_current_desktop_user(request, db, settings, redis_client)
+
+
+def get_current_account_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+) -> User:
+    """Desktop account page: profile, nickname, avatar, contact email, preferences and job-seeking profile.
+
+    Password, WeChat binding and account deletion stay Web-only.
+    """
+    if request.headers.get("authorization") is None:
+        return get_current_user(get_optional_user(request, db, settings, redis_client))
+    path, method = request.url.path, request.method
+    allowed = (
+        method in {"GET", "PATCH"} and path in {"/api/account/profile", "/api/account/preferences"}
+        or method == "PUT" and path == "/api/account/contact-email"
+        or method in {"GET", "PUT"} and path == "/api/account/user-profile"
+        or method in {"PUT", "DELETE"} and path == "/api/account/avatar"
+    )
+    if not allowed:
+        raise ApiError(403, "DESKTOP_ROUTE_FORBIDDEN")
+    return get_current_desktop_user(request, db, settings, redis_client)
+
+
+def get_current_agent_user(
+    request: Request,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+    redis_client: "redis.Redis" = Depends(get_redis),
+) -> User:
+    """Desktop AI assistant: the user-facing `/api/agent/*` router (sessions, streamed runs,
+    contexts and resume proposals). Admin agent operations and internal runtime routes stay excluded."""
+    if request.headers.get("authorization") is None:
+        return get_current_user(get_optional_user(request, db, settings, redis_client))
+    if not request.url.path.startswith("/api/agent/"):
         raise ApiError(403, "DESKTOP_ROUTE_FORBIDDEN")
     return get_current_desktop_user(request, db, settings, redis_client)
 
@@ -219,7 +296,7 @@ def get_current_mock_interview_user(
     settings: Settings = Depends(get_settings),
     redis_client: "redis.Redis" = Depends(get_redis),
 ) -> User:
-    """Native text-interview surface. No recording, speech or dataset mutation access."""
+    """Native mock-interview surface, text and voice. No dataset mutation access."""
     if request.headers.get("authorization") is None:
         return get_current_user(get_optional_user(request, db, settings, redis_client))
     path, method = request.url.path, request.method
@@ -231,6 +308,13 @@ def get_current_mock_interview_user(
         or method == "POST" and re.fullmatch(
             r"/api/mock-interviews/" + identifier + r"/(?:answers|skip|reply:retry|finish|abandon|retry|repeat)", path
         )
+        # Voice interviews: capability probe, interviewer voice preview, recordings and transcript review.
+        or method == "GET" and path == "/api/mock-interviews/speech-capability"
+        or method == "POST" and re.fullmatch(r"/api/mock-interviews/" + identifier + r"/(?:speech/playback|transcripts:correct)", path)
+        or method == "PUT" and re.fullmatch(r"/api/mock-interviews/" + identifier + r"/questions/[0-9]+/transcript", path)
+        or method == "POST" and re.fullmatch(r"/api/mock-interviews/" + identifier + r"/questions/[0-9]+/re-evaluate", path)
+        or method == "GET" and re.fullmatch(r"/api/mock-interviews/" + identifier + r"/questions/[0-9]+/recording", path)
+        or method == "DELETE" and re.fullmatch(r"/api/mock-interviews/" + identifier + r"/recordings", path)
     )
     if not allowed:
         raise ApiError(403, "DESKTOP_SCOPE_FORBIDDEN")
