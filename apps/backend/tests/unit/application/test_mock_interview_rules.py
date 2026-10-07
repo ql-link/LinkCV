@@ -234,7 +234,7 @@ def test_plan_selection_enforces_project_gap_and_design_rules() -> None:
             _plan_item("g2", is_gap=True),
             _plan_item("g3", is_gap=True),
         ],
-        candidates=[_plan_item("c1"), _plan_item("d1", is_open_design=True)],
+        candidates=[_plan_item("c1", anchor_kind="job"), _plan_item("d1", is_open_design=True)],
     )
     chosen, problems = select_plan(plan, difficulty="intermediate", question_count=5, require_skills=False)
     topics = [item.topic for item in chosen]
@@ -246,7 +246,7 @@ def test_senior_plan_requires_exactly_one_open_design_and_orders_warm_up_first()
     from linkresume.application.mock_interviews.outputs import InterviewPlan
     from linkresume.application.mock_interviews.planning import select_plan
 
-    items = [_plan_item(f"t{i}", start_depth=5) for i in range(4)]
+    items = [_plan_item(f"t{i}", start_depth=5, anchor_kind="job") for i in range(4)]
     plan = InterviewPlan(selected=items, candidates=[_plan_item("design", is_open_design=True)])
     chosen, problems = select_plan(plan, difficulty="senior", question_count=4, require_skills=False)
     assert not problems and sum(item.is_open_design for item in chosen) == 1
@@ -378,7 +378,7 @@ def test_skill_check_tag_must_name_a_declared_skill_and_loses_its_project() -> N
     fake = _plan_item("套了皮的项目题", project="项目A", is_skill_check=True, skill="Rust")
     real = _plan_item("Java 并发", project="项目B", is_skill_check=True, skill="java")
     chosen, problems = select_plan(
-        InterviewPlan(selected=[fake, real, _plan_item("p1"), _plan_item("p2"), _plan_item("p3")]),
+        InterviewPlan(selected=[fake, real, *(_plan_item(f"p{i}", anchor_kind="job") for i in (1, 2, 3))]),
         difficulty="intermediate", question_count=3, interview_type="comprehensive", skills=["Java", "MySQL"],
     )
     assert not problems
@@ -411,3 +411,90 @@ def test_intro_adaptation_uses_at_most_two_replacements() -> None:
     ]
     _, applied = apply_intro_adaptation(plan, replacements, intro, "intermediate")
     assert applied == 2
+
+
+def test_project_cap_merges_spellings_and_infers_missing_project() -> None:
+    from linkresume.application.mock_interviews.outputs import InterviewPlan
+    from linkresume.application.mock_interviews.planning import select_plan
+
+    plan = InterviewPlan(
+        selected=[
+            _plan_item("a1", project="甲公司实习"),
+            _plan_item("a2", project="甲公司 - 实习（后端）"),  # same experience, different spelling
+            _plan_item("a3", anchor="在甲公司实习期间重构了网关"),  # project left empty, named in the anchor
+            _plan_item("b1", project="乙公司实习"),
+            _plan_item("b2", project="乙公司实习"),
+        ],
+        candidates=[_plan_item("j1", anchor_kind="job")],
+    )
+    chosen, problems = select_plan(plan, difficulty="intermediate", question_count=5, require_skills=False)
+    topics = [item.topic for item in chosen]
+    assert "a3" not in topics and {"b1", "b2", "j1"} <= set(topics) and not problems
+
+
+def test_resume_topic_without_project_triggers_a_retry_hint_only_in_spread_types() -> None:
+    from linkresume.application.mock_interviews.outputs import InterviewPlan
+    from linkresume.application.mock_interviews.planning import select_plan
+
+    plan = InterviewPlan(selected=[_plan_item("p1", project="甲项目"), _plan_item("loose")])
+    _, problems = select_plan(plan, difficulty="junior", question_count=2, require_skills=False)
+    assert problems == ["project"]
+    _, problems = select_plan(
+        plan, difficulty="junior", question_count=2, interview_type="project_deep_dive", require_skills=False
+    )
+    assert problems == []
+
+
+def test_project_deep_dive_may_concentrate_on_one_project() -> None:
+    from linkresume.application.mock_interviews.outputs import InterviewPlan
+    from linkresume.application.mock_interviews.planning import select_plan
+
+    plan = InterviewPlan(selected=[_plan_item(f"p{i}", project="甲项目") for i in range(4)])
+    chosen, problems = select_plan(
+        plan, difficulty="junior", question_count=4, interview_type="project_deep_dive", require_skills=False
+    )
+    assert len(chosen) == 4 and not problems
+
+
+def test_intro_adaptation_keeps_every_experience_in_the_plan() -> None:
+    from types import SimpleNamespace
+
+    from linkresume.application.mock_interviews.planning import apply_intro_adaptation
+
+    plan = [
+        {"topic": "自我介绍", "is_intro": True},
+        {"topic": "甲1", "project": "甲公司实习"},
+        {"topic": "乙1", "project": "乙公司实习"},  # the only topic of 乙
+        {"topic": "通用", "project": ""},
+    ]
+    intro = "我在甲公司实习时主导了推荐系统重构，也非常熟练 Kafka"
+    replacements = [
+        SimpleNamespace(index=2, item=_plan_item("Kafka 投递", anchor="非常熟练 Kafka")),
+        SimpleNamespace(index=3, item=_plan_item("推荐重构", anchor="主导了推荐系统重构", project="甲公司 实习")),
+    ]
+    items, applied = apply_intro_adaptation(plan, replacements, intro, "intermediate", "comprehensive")
+    assert applied == 1
+    assert items[2]["topic"] == "乙1"  # 乙's only topic survives
+    assert items[3]["topic"] == "推荐重构" and items[3]["project"] == "甲公司实习"
+
+    # A third 甲 topic would exceed the per-project cap.
+    crowded = [*plan[:3], {"topic": "甲2", "project": "甲公司实习"}, {"topic": "通用", "project": ""}]
+    extra = SimpleNamespace(index=4, item=_plan_item("推荐重构", anchor="主导了推荐系统重构", project="甲公司实习"))
+    _, applied = apply_intro_adaptation(crowded, [extra], intro, "intermediate", "comprehensive")
+    assert applied == 0
+    # Project deep dives are meant to concentrate, so no such guard.
+    _, applied = apply_intro_adaptation(crowded, [extra], intro, "intermediate", "project_deep_dive")
+    assert applied == 1
+
+
+def test_fill_skill_checks_takes_from_the_most_covered_experience() -> None:
+    from linkresume.application.mock_interviews.planning import fill_skill_checks
+
+    items = [
+        _plan_item("甲1", project="甲"),
+        _plan_item("甲2", project="甲"),
+        _plan_item("乙1", project="乙"),
+    ]
+    filled = fill_skill_checks(items, ["Java"], 1, "intermediate", "zh")
+    topics = [item.topic for item in filled]
+    assert "乙1" in topics and "甲1" in topics and "甲2" not in topics

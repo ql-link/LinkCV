@@ -1078,7 +1078,11 @@ class MockInterviewRunner:
                 usage,
             )
             items, applied = planning.apply_intro_adaptation(
-                plan, adaptation.replacements, intro.answer_text, interview.difficulty
+                plan,
+                adaptation.replacements,
+                intro.answer_text,
+                interview.difficulty,
+                interview.interview_type,
             )
         except Exception:
             failed = True
