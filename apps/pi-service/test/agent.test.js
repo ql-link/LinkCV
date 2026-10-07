@@ -226,6 +226,8 @@ test("system prompt applies the user-facing response style after agent policy", 
   assert.match(USER_FACING_RESPONSE_PROMPT, /恰好对应数量的 Markdown 列表项/);
   assert.match(USER_FACING_RESPONSE_PROMPT, /整项使用一至两句完整句子/);
   assert.match(USER_FACING_RESPONSE_PROMPT, /最多三个/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /分析、诊断、评估、审阅和给建议类请求/);
+  assert.match(USER_FACING_RESPONSE_PROMPT, /发现之间不得写成一段连续正文/);
   assert.match(USER_FACING_RESPONSE_PROMPT, /只报告本轮实际观察到的结果/);
   assert.match(USER_FACING_RESPONSE_PROMPT, /内容说完后立即结束/);
   assert.match(USER_FACING_RESPONSE_PROMPT, /在内部静默检查输出形状/);
@@ -949,4 +951,16 @@ test("every workflow's rules are loadable content-only skills", async () => {
   }
   for (const workflow of Object.values(WORKFLOWS)) for (const skill of workflow.skills) assert.ok(REGISTERED_SKILLS.includes(skill));
   await assert.rejects(loadSkillRules("career-assistant-router"), /AGENT_SKILL_UNKNOWN/);
+});
+
+test("analysis, edit, interview, planning and title workflows share the evidence method", async () => {
+  const { loadSkillRules } = await import("../src/runtime/skills.js");
+  for (const name of ["resume_diagnosis", "resume_edit", "interview_guide", "career_planning", "resume_title"]) {
+    assert.equal(WORKFLOWS[name].skills[0], "resume-evidence-method", name);
+  }
+  const diagnosis = await loadSkillRules("resume-diagnosis");
+  for (const scenario of ["整体诊断", "单段经历或项目分析", "岗位匹配分析", "结构与格式审查", "内容问答", "片段评价"]) {
+    assert.ok(diagnosis.includes(scenario), scenario);
+  }
+  assert.match(await loadSkillRules("resume-evidence-method"), /每个发现都要有证据/);
 });
