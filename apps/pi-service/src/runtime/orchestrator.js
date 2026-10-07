@@ -800,7 +800,7 @@ export async function executeAgentRun({
     current.inlineResume = pointsAtResume;
     const tools = [
       "search_resume_materials",
-      ...(pointsAtResume ? taskTools(["resolve_resume_reference", "resolve_resource_reference"]) : []),
+      ...(pointsAtResume ? taskTools(["resolve_resume_reference", "resolve_resource_reference"]) : taskTools(["resolve_resource_reference"])),
       "submit_task_result",
     ];
     await modelStep({

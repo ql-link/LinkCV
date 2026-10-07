@@ -409,3 +409,5 @@ ORM 映射既有 `review_report` JSON、`review_request_id` CHAR(36)、`review_s
 Agent 跨轮身份记忆覆盖现有六类 contexts；通用历史引用通过内部 `resources:resolve-reference` 接口重建同会话证据并复用 `resolve_contexts` 的归属、解析状态、受控对象键与版本校验。每个任务按资源类型冻结解析目标，正文仅在当前读取响应中出现，JSON 元数据中的 resource_resolutions 保存身份 snapshot，任务材料收据保存 SHA256 而不保存正文。旧 resume_resolutions 与简历专用接口继续兼容，无数据库 schema 迁移。
 
 `systemone_intent.py` 在存在显式简历选择时改写 `resume_identity` 的判定说明，避免历史中的其他简历触发“是哪一份简历”的追问。
+
+`intent_schemas.py` 的路由规则把“追问上一轮简历内容”规划为 `resume_diagnosis` 任务，不当作普通对话。
