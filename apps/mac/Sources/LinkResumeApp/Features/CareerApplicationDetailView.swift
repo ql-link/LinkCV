@@ -33,7 +33,7 @@ struct CareerApplicationDetailView: View {
     let api: any APIClient
     let back: () -> Void
     let perform: (String, CareerApplication) -> Void
-    private enum Route: Equatable { case stage(String), report(String) }
+    private enum Route: Equatable { case stage(String), report(String), job(String) }
     @State private var route: Route?
     @State private var current: JSONValue?
     @State private var sessions: [JSONValue] = []
@@ -49,6 +49,7 @@ struct CareerApplicationDetailView: View {
     @State private var cancelling: JSONValue?
     @State private var refreshed = UUID()
     @State private var now = Date()
+    @Environment(WorkspaceRouter.self) private var router: WorkspaceRouter?
     private var raw: JSONValue { current ?? application.raw }
     private var item: CareerApplication { CareerApplication(raw).includingSessions(sessions) }
     private var model: CareerDetailModel { CareerDetailModel(application: raw, sessions: sessions, now: now) }
@@ -60,6 +61,8 @@ struct CareerApplicationDetailView: View {
             CareerStageDetailView(sessionID: id, api: api, back: { route = nil; refreshed = UUID() }, openReport: { route = .report(id) })
         case .report(let id):
             CareerReviewReportView(sessionID: id, api: api, back: { route = .stage(id) })
+        case .job(let id):
+            JobDetailView(jobID: id, application: raw, back: { route = nil; refreshed = UUID() }, deleted: back)
         case nil:
             progressPage
         }
@@ -100,6 +103,12 @@ struct CareerApplicationDetailView: View {
         } message: { Text("取消后阶段回到“等待安排”，可以重新安排时间；已上传的资料会保留。") }
     }
 
+    /// 有岗位记录时进入完整岗位详情（匹配度、字段编辑）；原岗位已删除时退回只读描述。
+    private func openJob() {
+        let id = raw.text("job_description_id")
+        if id.isEmpty { showJob = true } else { route = .job(id) }
+    }
+
     // MARK: Header
 
     private func header(_ model: CareerDetailModel) -> some View {
@@ -124,10 +133,11 @@ struct CareerApplicationDetailView: View {
             HStack(spacing: 8) {
                 Button(raw["is_favorite"]?.bool == true ? "★ 已收藏" : "☆ 收藏") { Task { await toggleFavorite() } }
                     .buttonStyle(CareerActionStyle(kind: .text)).disabled(busy || current == nil)
-                Button("岗位详情") { showJob = true }.buttonStyle(CareerActionStyle())
+                Button("岗位详情") { openJob() }.buttonStyle(CareerActionStyle())
                 Menu {
                     Button("修改求职分类") { perform("category", item) }
-                    Button("岗位详情") { showJob = true }
+                    Button("岗位详情") { openJob() }
+                    Button("管理关联资料") { router?.jump(.section(.datasets)) }
                     if !active && raw.text("archived_at").isEmpty { Button("归档（从看板隐藏）") { perform("archive", item) } }
                     if !raw.text("archived_at").isEmpty { Button("恢复岗位") { perform("restore", item) } }
                     if active && raw.text("offer_status") == "none" || model.ended {
@@ -297,7 +307,7 @@ struct CareerApplicationDetailView: View {
                 sideCard(card.title, action: card.action, onAction: { handle(model.verbalOffer ? .recordOffer : .editOffer) }) { CareerInfoRows(rows: card.rows) }
             }
             sideCard("投递信息", action: model.pending || !active ? nil : "编辑", onAction: { showJob = true }) { CareerInfoRows(rows: model.deliveryRows) }
-            sideCard("关联资料", action: nil, onAction: {}) {
+            sideCard("关联资料", action: "管理", onAction: { router?.jump(.section(.datasets)) }) {
                 let items = resources
                 if items.isEmpty { Text("还没有关联简历和资料").font(LibraryTypography.sans(12)).foregroundStyle(CareerPalette.faint) }
                 else {

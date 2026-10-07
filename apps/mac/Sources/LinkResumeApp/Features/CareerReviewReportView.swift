@@ -19,6 +19,7 @@ struct CareerReviewReportView: View {
     @State private var targets: [JSONValue] = []
     @State private var now = Date()
     @State private var refreshed = UUID()
+    @Environment(WorkspaceRouter.self) private var router: WorkspaceRouter?
 
     private var session: JSONValue { detail["session"] ?? .null }
     private var application: JSONValue { detail["application"] ?? .null }
@@ -351,6 +352,10 @@ struct CareerReviewReportView: View {
                 }.fixedSize()
                 Button("取消") { targets = [] }.buttonStyle(CareerActionStyle(kind: .text))
             }
+            // 模拟下一轮：把题目和建议答法放进首页对话输入框，由用户确认后发送（Web 跳转 /assistant?prompt=）
+            Button("模拟下一轮 →") {
+                router?.jump(.draft("请围绕以下问题帮我练习面试回答：\n" + question.text("question") + "\n" + question.text("suggested_answer")))
+            }.buttonStyle(CareerActionStyle())
         }
         .padding(.top, 14).frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .top) { Rectangle().fill(CareerPalette.line).frame(height: 1) }

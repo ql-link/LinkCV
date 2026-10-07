@@ -1,4 +1,5 @@
 import AppKit
+import LinkResumeCore
 import SwiftUI
 
 struct HomeGuideContent: Decodable {
@@ -22,11 +23,17 @@ struct HomeGuideContent: Decodable {
 }
 
 struct AssistantHomeView: View {
+    @Environment(SessionStore.self) private var session
     let nickname: String?
     @Binding var draft: String
     let browse: () -> Void
     let requireAccount: () -> Void
     let showPlugin: () -> Void
+    var navigate: (WorkspaceSection) -> Void = { _ in }
+    var editResume: (String) -> Void = { _ in }
+    /// 登录后发送输入：进入原生 AI 对话。
+    var send: (String) -> Void = { _ in }
+    @State private var dashboard = HomeDashboardModel()
     @State private var content: HomeGuideContent?
     @State private var failed = false
     @FocusState private var composerFocused: Bool
@@ -37,22 +44,40 @@ struct AssistantHomeView: View {
         return prefix + (nickname.map { "，\($0)" } ?? "") + "。"
     }
 
+    private var account: String { if case .signedIn(let user) = session.phase { return user.id }; return "" }
+    private var ready: HomeDashboard? { if case .ready(let value) = dashboard.state { return value }; return nil }
+    private var signedInCopy: (title: String, subtitle: String, chips: [String])? { nickname == nil ? nil : ready?.copy }
+
     var body: some View {
         GeometryReader { viewport in
             let compact = viewport.size.height < 740
             if let content {
                 VStack(spacing: 0) {
-                    Text(greeting + (nickname == nil ? content.title : "今天想推进什么？"))
+                    Text(greeting + (signedInCopy?.title ?? (nickname == nil ? content.title : "今天想推进什么？")))
                         .font(V3.serif(28)).foregroundStyle(V3.txt).multilineTextAlignment(.center)
                         .frame(minHeight: 36)
-                    Text(nickname == nil ? content.subtitle : "改简历、分析 JD、准备面试，从这里开始。")
+                    Text(signedInCopy?.subtitle ?? (nickname == nil ? content.subtitle : "改简历、分析 JD、准备面试，从这里开始。"))
                         .font(V3.sans(14)).foregroundStyle(V3.fnt).padding(.top, 11)
                     composer(content).padding(.top, compact ? 24 : 32)
                     HStack(spacing: 10) {
-                        ForEach(content.chips, id: \.self) { chip in
+                        ForEach(signedInCopy?.chips ?? content.chips, id: \.self) { chip in
                             Button { draft = chip; composerFocused = true } label: { V3Chip(label: chip) }.buttonStyle(.plain)
                         }
                     }.padding(.top, compact ? 12 : 16)
+                    if nickname != nil, let ready {
+                        HStack(spacing: 19) {
+                            ForEach(Array(ready.cards.enumerated()), id: \.offset) { _, card in
+                                HomeCardView(card: card, compact: compact, navigate: navigate, showPlugin: showPlugin, editResume: editResume)
+                            }
+                        }.padding(.top, compact ? 20 : 32)
+                    } else if nickname != nil, case .failed = dashboard.state {
+                        HStack(spacing: 8) {
+                            Text("首页进度没能加载出来。").font(V3.sans(12.5)).foregroundStyle(V3.sub)
+                            Button("重新加载") { Task { await dashboard.load(api: session.api, account: account) } }.buttonStyle(.link)
+                        }.padding(.top, compact ? 20 : 32)
+                    } else if nickname != nil {
+                        ProgressView().controlSize(.small).frame(height: compact ? 200 : 236).padding(.top, compact ? 20 : 32)
+                    } else {
                     HStack(spacing: 19) {
                         ForEach(content.cards) { card in
                             Button {
@@ -65,7 +90,8 @@ struct AssistantHomeView: View {
                                 .accessibilityLabel(card.title)
                         }
                     }.padding(.top, compact ? 20 : 32)
-                    Text(nickname == nil ? "游客引导 · 当前输入仅保留在本次会话；AI 对话尚未开放。" : "引导视图 · 尚未读取账号进度；客户端的 AI 对话尚未开放，请在 Web 使用。")
+                    }
+                    Text(nickname == nil ? "游客引导 · 当前输入仅保留在本次会话；登录后可与 AI 对话。" : "卡片按你的简历、排期和求职进度生成，不经过 AI。")
                         .font(V3.sans(11)).foregroundStyle(V3.fnt).padding(.top, compact ? 16 : 20)
                 }.frame(width: min(720, max(0, viewport.size.width - 48)))
                     .padding(.top, min(251, max(40, viewport.size.height * 0.4 - 130)))
@@ -79,6 +105,7 @@ struct AssistantHomeView: View {
             do { content = try HomeGuideContent.load() }
             catch { failed = true }
         }
+        .task(id: account) { if !account.isEmpty { await dashboard.load(api: session.api, account: account) } }
     }
 
     private func composer(_ content: HomeGuideContent) -> some View {
@@ -98,10 +125,8 @@ struct AssistantHomeView: View {
                         .overlay(Circle().stroke(V3.cl))
                 }.buttonStyle(.plain).accessibilityLabel("添加资料")
                 Spacer()
-                Menu { Text("AI 模型尚未连接") } label: {
-                    Label("模型未连接", systemImage: "sparkles").font(V3.sans(13.5)).foregroundStyle(V3.sub)
-                }.menuStyle(.borderlessButton).fixedSize()
-                Button(action: requireAccount) {
+                Label(nickname == nil ? "登录后可用" : "AI 助手", systemImage: "cpu").font(V3.sans(13.5)).foregroundStyle(V3.sub)
+                Button { if nickname == nil { requireAccount() } else { send(draft) } } label: {
                     Image(systemName: "arrow.up").font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.white).frame(width: 36, height: 36)
                         .background(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color(hex: 0xC9C9C3) : V3.txt, in: Circle())

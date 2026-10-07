@@ -13,7 +13,7 @@ from linkresume.application.resumes.share_service import (
 from linkresume.core.database import get_db
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import AssetStorage, get_storage
-from linkresume.modules.identity.dependencies import get_current_user, get_optional_user
+from linkresume.modules.identity.dependencies import get_current_resume_user, get_optional_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.models import Resume
 from linkresume.modules.resumes.pdf_routes import (
@@ -46,7 +46,7 @@ def _require_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume:
 def get_share_state(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
 ) -> ResumeShareResponse:
     resume = _require_owned_resume(db, resume_id, user.id)
     return ResumeShareResponse(share=share_state_of(resume))
@@ -57,7 +57,7 @@ def create_share(
     resume_id: str,
     request: ResumeShareCreateRequest | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
 ) -> ResumeShareResponse:
     _require_owned_resume(db, resume_id, user.id)
     updated = create_or_overwrite_share(
@@ -78,7 +78,7 @@ def update_share_state(
     resume_id: str,
     request: ResumeShareUpdateRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
 ) -> ResumeShareResponse:
     _require_owned_resume(db, resume_id, user.id)
     try:
@@ -100,7 +100,7 @@ def update_share_state(
 def delete_share_state(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
 ) -> DeleteResumeShareResponse:
     _require_owned_resume(db, resume_id, user.id)
     deleted = delete_share(db, resume_id, user.id)

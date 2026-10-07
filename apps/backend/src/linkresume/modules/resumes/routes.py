@@ -36,7 +36,7 @@ from linkresume.core.storage import (
 )
 from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.agent.service import delete_resume_agent_data
-from linkresume.modules.identity.dependencies import get_current_user, get_current_workspace_user
+from linkresume.modules.identity.dependencies import get_current_resume_user, get_current_user, get_current_workspace_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.job_matches.models import JobResumeMatch
@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/{resume_id}/copy", response_model=ResumeResponse, status_code=201)
 def copy_current_resume(resume_id: str, payload: ResumeCopyRequest, response: Response,
-                        db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db), user: User = Depends(get_current_resume_user),
                         storage: AssetStorage = Depends(get_storage)) -> ResumeResponse:
     result, created = copy_resume(db, storage, user_id=user.id, resume_id=resume_id,
                                   title=payload.title, base_lock_version=payload.base_lock_version,
@@ -175,7 +175,7 @@ def create_resume(
     payload: ResumeCreateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
 ) -> ResumeResponse:
     if payload.template_id is None:
         raise ApiError(400, "TEMPLATE_REQUIRED")
@@ -246,10 +246,17 @@ async def classify_resume_semantics(
 def update_resume(
     resume_id: str,
     payload: ResumeUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
+    # Native clients rename and edit content and presentation; an empty update is
+    # never a valid desktop request.
+    if getattr(request.state, "auth_channel", None) == "desktop" and (
+        payload.title is None and payload.data is None and payload.style is None
+    ):
+        raise ApiError(403, "DESKTOP_ROUTE_FORBIDDEN")
     resume = require_owned_resume(db, resume_id, user.id)
     if resume.lock_version != payload.base_lock_version:
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
@@ -293,7 +300,7 @@ def apply_template(
     resume_id: str,
     payload: ResumeApplyTemplateRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
     template_id = parse_decimal_id(payload.template_id)
@@ -339,7 +346,7 @@ def apply_template(
 def delete_resume(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResumeResponse:
     user = lock_active_user(db, user.id)

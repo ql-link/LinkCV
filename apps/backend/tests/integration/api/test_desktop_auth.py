@@ -164,18 +164,38 @@ def test_desktop_readonly_resources_keep_ownership_and_version_checks(desktop_ap
             assert client.get(path, headers=headers).status_code == 404, path
         assert client.get(other_legacy, headers=headers).status_code == 403
 
+        # Desktop edits content and presentation, switches templates and manages resume images.
+        empty = client.put(f'/api/resumes/{rid}', headers=headers, json={'base_lock_version': 1})
+        assert empty.status_code == 403, empty.text
+        assert empty.json()['error'] == 'DESKTOP_ROUTE_FORBIDDEN'
+        styled = client.put(f'/api/resumes/{rid}', headers=headers, json={'style': owned['style'], 'base_lock_version': 1})
+        assert styled.status_code == 200, styled.text
+        assert styled.json()['resume']['lock_version'] == 2
+        switched = client.post(f'/api/resumes/{rid}/apply-template', headers=headers,
+                               json={'template_id': template_id, 'base_lock_version': 2})
+        assert switched.status_code == 200, switched.text
+        assert switched.json()['resume']['lock_version'] == 3
+        stale = client.post(f'/api/resumes/{rid}/apply-template', headers=headers,
+                            json={'template_id': template_id, 'base_lock_version': 2})
+        assert stale.status_code == 409, stale.text
+        assert client.post(f"/api/resumes/{other['id']}/apply-template", headers=headers,
+                           json={'template_id': template_id, 'base_lock_version': 1}).status_code == 404
+        desktop_asset = client.post(f'/api/resumes/{rid}/assets', headers=headers, json={
+            'file_name': 'desktop.png', 'data_url': 'data:image/png;base64,cG5nLWJ5dGVz',
+        })
+        assert desktop_asset.status_code == 201, desktop_asset.text
+        assert client.post(f"/api/resumes/{other['id']}/assets", headers=headers, json={
+            'file_name': 'desktop.png', 'data_url': 'data:image/png;base64,cG5nLWJ5dGVz',
+        }).status_code == 404
+        assert client.delete(desktop_asset.json()['asset']['url'], headers=headers).status_code == 200
+        assert client.delete(other_asset, headers=headers).status_code == 404
         for method, path in (
-            ('POST', '/api/resumes'), ('PUT', f'/api/resumes/{rid}'),
-            ('POST', f'/api/resumes/{rid}/copy'), ('POST', f'/api/resumes/{rid}/apply-template'),
-            ('DELETE', f'/api/resumes/{rid}'), ('POST', f'/api/resumes/{rid}/assets'),
-            ('DELETE', owned_asset), ('POST', '/api/assets'),
+            ('POST', '/api/assets'), ('POST', f'/api/resumes/{rid}/semantic-classification'),
             ('GET', '/api/auth/admin/users'), ('GET', '/api/auth/admin/users/1'),
             ('PATCH', '/api/auth/admin/users/1/status'), ('GET', '/api/auth/admin/stats'),
-            ('GET', '/api/account/profile'),
         ):
             denied = client.request(method, path, headers=headers, json={})
             assert denied.status_code == 401, (method, path, denied.text)
-        assert client.get(f'/api/resumes/{rid}', headers=headers).json()['resume']['lock_version'] == 1
         assert client.get(owned_asset, headers=headers).content == b'png-bytes'
 
 
@@ -192,9 +212,13 @@ def test_desktop_login_retry_refresh_logout_and_channels(desktop_app):
         assert client.get('/api/resumes', headers=headers).status_code == 200
         assert client.get('/api/resume-templates', headers=headers).status_code == 200
         assert client.get('/api/auth/me', headers=headers).json()['user'] is None
-        for path in ('/api/account/profile', '/api/auth/admin/users'):
-            assert client.get(path, headers=headers).status_code == 401
-        assert client.post('/api/resumes', headers=headers, json={}).status_code == 401
+        assert client.get('/api/auth/admin/users', headers=headers).status_code == 401
+        assert client.get('/api/account/profile', headers=headers).status_code == 200
+        # Password routes are hidden outside Local/Development (404); either way desktop is denied.
+        for method, path in (('POST', '/api/account/deletion'), ('POST', '/api/account/change-password')):
+            denied = client.request(method, path, headers=headers, json={})
+            assert denied.status_code in {401, 404}, (method, path, denied.text)
+        assert client.post('/api/resumes', headers=headers, json={}).status_code == 400
         sid = tokens['refresh_token'].split('.')[0]
         wrong = client.post('/api/auth/desktop/logout', json={'refresh_token': sid + '.wrong'})
         assert wrong.status_code == 401
@@ -530,8 +554,12 @@ def test_desktop_career_owned_commands_and_channel_boundaries(desktop_app):
             'client_request_id': str(uuid4()), 'reason': 'user_withdrew', 'base_lock_version': application['lock_version'],
         })
         assert terminated.status_code == 200, terminated.text
-        for path in ('/api/account/profile', '/api/auth/admin/users'):
-            assert client.get(path, headers=headers).status_code == 401
+        assert client.get('/api/auth/admin/users', headers=headers).status_code == 401
+        assert client.get('/api/account/profile', headers=headers).status_code == 200
+        # Password routes are hidden outside Local/Development (404); either way desktop is denied.
+        for method, path in (('POST', '/api/account/deletion'), ('POST', '/api/account/change-password')):
+            denied = client.request(method, path, headers=headers, json={})
+            assert denied.status_code in {401, 404}, (method, path, denied.text)
         assert client.get('/api/interview-assets/999999/content', headers=headers).status_code == 404
         assert client.delete('/api/interview-assets/999999', headers=headers).status_code == 403
         assert client.delete(f'/api/job-applications/{aid}', headers=other_headers).status_code == 404
@@ -593,7 +621,9 @@ def test_desktop_schedule_open_window_plan_clear_cancel_and_stage_boundary(deskt
         })
         assert cancelled.status_code == 200, cancelled.text
         assert cancelled.json()['session']['status'] == 'cancelled'
-        assert client.post(f"/api/interview-sessions/{session['id']}/prep-items:generate", headers=headers, json={}).status_code == 403
+        # Prep generation is in the desktop whitelist; the outcome follows the shared service (model/state errors).
+        prep = client.post(f"/api/interview-sessions/{session['id']}/prep-items:generate", headers=headers, json={})
+        assert prep.json().get('error') != 'DESKTOP_ROUTE_FORBIDDEN', prep.text
         deleted = client.delete(f"/api/interview-sessions/{session['id']}", headers=headers)
         assert deleted.status_code == 200, deleted.text
         assert client.get(f"/api/interview-sessions/{session['id']}", headers=headers).status_code == 404

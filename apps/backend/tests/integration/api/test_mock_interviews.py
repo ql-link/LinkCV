@@ -905,8 +905,10 @@ def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -
         wrong = create_access_token(uid, credentials.sid, app.state.settings, 'miniprogram')
         assert client.get('/api/mock-interviews', headers={'Authorization': 'Bearer ' + wrong}).status_code == 401
         assert client.get('/api/datasets').status_code == 200
-        assert client.get('/api/mock-interviews/speech-capability').status_code == 403
-        assert client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'answer_mode':'voice'}).status_code == 403
+        # Desktop may probe speech and start voice interviews; this fixture has no speech routes configured.
+        assert client.get('/api/mock-interviews/speech-capability').status_code == 200
+        voice = client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'answer_mode':'voice'})
+        assert voice.status_code == 503 and voice.json()['error'] == 'MOCK_INTERVIEW_SPEECH_UNAVAILABLE', voice.text
         created = client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'question_count':3})
         assert created.status_code == 201, created.text
         identity = created.json()['mock_interview']['id']

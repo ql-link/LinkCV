@@ -10,6 +10,13 @@ public protocol APIClient: Sendable {
     func signOut() async throws
     func preparePaper(_ request: ResumeRenderRequest) async throws -> PaperPreparation
     func listResumeTemplates() async throws -> [ResumeTemplate]
+    func listResumes() async throws -> [ResumeSummary]
+    func downloadResumePDF(id: String, lockVersion: Int) async throws -> Data
+    func streamAgent(path: String, method: String, body: JSONValue?, onEvent: @MainActor @Sendable (AgentEvent) async -> Void) async throws
+    func importResume(_ upload: ResumeImportUpload) async throws -> JSONValue
+    func accountAvatar(path: String) async throws -> Data
+    func mockAudio(path: String, method: String, body: JSONValue?) async throws -> Data
+    func speechSocket(interviewID: String, questionID: String, purpose: String) async throws -> URLSessionWebSocketTask
 }
 
 public enum APIError: Error, Equatable {
@@ -55,6 +62,13 @@ extension APIClient {
     public func uploadDataset(_ upload: DatasetUpload) async throws -> JSONValue { throw APIError.unauthorized }
     public func downloadDataset(id: String, limit: Int64) async throws -> DatasetFile { throw APIError.unauthorized }
     public func careerRequest(path: String, method: String = "GET", query: [String: String] = [:], body: JSONValue? = nil) async throws -> JSONValue { throw APIError.unauthorized }
+    public func listResumes() async throws -> [ResumeSummary] { throw APIError.unauthorized }
+    public func downloadResumePDF(id: String, lockVersion: Int) async throws -> Data { throw APIError.unauthorized }
+    public func streamAgent(path: String, method: String, body: JSONValue?, onEvent: @MainActor @Sendable (AgentEvent) async -> Void) async throws { throw APIError.unauthorized }
+    public func importResume(_ upload: ResumeImportUpload) async throws -> JSONValue { throw APIError.unauthorized }
+    public func accountAvatar(path: String) async throws -> Data { throw APIError.unauthorized }
+    public func mockAudio(path: String, method: String, body: JSONValue?) async throws -> Data { throw APIError.unauthorized }
+    public func speechSocket(interviewID: String, questionID: String, purpose: String) async throws -> URLSessionWebSocketTask { throw APIError.unauthorized }
     public func preparePaper(_ request: ResumeRenderRequest) async throws -> PaperPreparation {
         try await PaperAssets.prepare(request, account: "") { _, _ in throw APIError.invalidResponse }
     }

@@ -21,6 +21,7 @@ struct MockInterviewView: View {
     @State private var loading = false
     @State private var busy = false
     @State private var error: String?
+    @State private var notice: String?
     @State private var careerError: String?
     @State private var resume = ""
     @State private var job = "__none"
@@ -46,6 +47,15 @@ struct MockInterviewView: View {
     @State private var recordType = "all"
     @State private var recordSort = "latest"
     @State private var openQuestion: Int?
+    @State private var answerMode = "text"
+    @State private var speechReady = false
+    @State private var recorder = VoiceRecorder()
+    @State private var voice = InterviewerVoice()
+    @State private var playedQuestion = ""
+    @State private var voiceChecked = Set<String>()
+    @State private var leaveCheck: String?
+    struct TranscriptEdit: Identifiable { let question: JSONValue; var text: String; var id: String { question.text("id") } }
+    @State private var transcriptEdit: TranscriptEdit?
     private var account: String { if case .signedIn(let user) = session.phase { return user.id }; return "" }
     private var completed: [MockInterview] { records.filter { $0.status == "completed" } }
     private func request(_ path: String, _ method: String = "GET", _ body: JSONValue? = nil, query: [String:String] = [:]) async throws -> JSONValue {
@@ -66,6 +76,9 @@ struct MockInterviewView: View {
                 else if screen == "records" { recordList }
                 else if screen == "new" { configuration }
                 else if let detail { interview(detail) }
+                if let notice, error == nil {
+                    Text(notice).font(V3.sans(12.5)).foregroundStyle(V3.green).padding(.top, 16)
+                }
                 if let error {
                     HStack(spacing: 10) {
                         Text(error).font(V3.sans(12.5)).foregroundStyle(V3.red)
@@ -77,6 +90,23 @@ struct MockInterviewView: View {
             .frame(maxWidth: screen == "new" ? 624 : .infinity, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .top)
         }
         .task(id: account + screen + selectedID + refresh.uuidString) { await load() }
+        .task(id: account) { if !account.isEmpty { await loadSpeechCapability() } }
+        .onChange(of: screen) { notice = nil }
+        .sheet(item: $transcriptEdit) { edit in
+            VStack(alignment: .leading, spacing: 12) {
+                Text("修改识别稿").font(V3.serif(20))
+                Text(edit.question.text("content")).font(V3.sans(12.5)).foregroundStyle(V3.sub).lineLimit(3)
+                TextEditor(text: Binding(get: { transcriptEdit?.text ?? "" }, set: { transcriptEdit?.text = $0 })).font(V3.sans(13)).frame(height: 180)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(V3.cl))
+                Text("只修正识别错误，不改变回答本意；修改后可重新评估本题（次数有限）。").font(V3.sans(11.5)).foregroundStyle(V3.fnt)
+                HStack {
+                    Spacer()
+                    Button("取消") { transcriptEdit = nil }.buttonStyle(V3ButtonStyle(kind: .ghost)).disabled(busy)
+                    Button("保存") { if let current = transcriptEdit { Task { await saveTranscript(current, reEvaluate: false) } } }.buttonStyle(V3ButtonStyle(kind: .ghost)).disabled(busy)
+                    Button("保存并重新评估") { if let current = transcriptEdit { Task { await saveTranscript(current, reEvaluate: true) } } }.buttonStyle(V3ButtonStyle(kind: .dark)).disabled(busy)
+                }
+            }.padding(24).frame(width: 520)
+        }
         .onChange(of: account) { _, id in
             records = []; recordsLoaded = false; radarDimensions = []; busy = false; error = nil; careerError = nil; applications = []; arrangements = []; resumes = []; materials = []; detail = nil
             chosenMaterials = []; job = "__none"; draft = ""; uncertain = nil; repeatUnknown = false; createUnknown = false; resume = ""; jd = ""; query = ""; confirmation = nil; selectedID = ""; screen = "home"
@@ -119,7 +149,7 @@ struct MockInterviewView: View {
         if let preferred { type = preferred }
         if account.isEmpty { pending = true; requireAccount() } else { screen = "new" }
     }
-    private func open(_ item: MockInterview) { selectedID = item.id; detail = item; repeatUnknown = false; draft = ""; uncertain = nil; screen = "detail"; error = nil }
+    private func open(_ item: MockInterview) { selectedID = item.id; detail = item; repeatUnknown = false; draft = ""; uncertain = nil; screen = "detail"; error = nil; notice = nil }
 
     // MARK: 07.1 Home
 
@@ -599,7 +629,7 @@ struct MockInterviewView: View {
                     Text(resumes.isEmpty ? (loading ? "正在加载简历…" : "还没有简历，先去创建一份") : "选择一份简历").tag("")
                     ForEach(resumes, id: \.self) { Text($0.text("title")).tag($0.text("id")) }
                 }.labelsHidden().controlSize(.large).disabled(resumes.isEmpty)
-                if resumes.isEmpty && !loading { hint("模拟面试需要一份简历，请先在 Web 创建或导入简历后刷新。") }
+                if resumes.isEmpty && !loading { hint("模拟面试需要一份简历，请先在“我的简历”新建或导入简历后刷新。") }
             }
             newField("目标岗位", optional: true) {
                 Picker("目标岗位", selection: $job) {
@@ -628,11 +658,9 @@ struct MockInterviewView: View {
             }
             newField("作答方式") {
                 HStack(spacing: 10) {
-                    Image(systemName: "keyboard").font(.system(size: 14)).foregroundStyle(V3.txt)
-                    VStack(alignment: .leading, spacing: 3) { Text("文字作答").font(V3.sans(13, weight: .medium)); Text("在输入框里回答，可随时修改").font(V3.sans(11)).foregroundStyle(V3.fnt) }
-                    Spacer()
-                    Text("语音面试请在 Web 进行").font(V3.sans(11)).foregroundStyle(V3.fnt)
-                }.padding(.horizontal, 14).frame(height: 56).background(.white, in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).stroke(V3.txt, lineWidth: 1.5))
+                    modeCard("text", symbol: "keyboard", title: "文字作答", subtitle: "在输入框里回答，可随时修改", enabled: true)
+                    modeCard("voice", symbol: "mic", title: "语音面试", subtitle: speechReady ? "全程开口回答，面试官语音提问" : "语音线路未配置，暂不可用", enabled: speechReady)
+                }
             }
             Button { moreOpen = true } label: {
                 HStack(spacing: 10) {
@@ -647,6 +675,17 @@ struct MockInterviewView: View {
             Text("准备约 30 秒 · 同一时间只能进行一场模拟面试").font(V3.sans(11)).foregroundStyle(V3.fnt).frame(maxWidth: .infinity).padding(.top, 14)
             if createUnknown { Text("创建结果尚未确认。返回首页并刷新，确认是否已有进行中的场次，避免重复创建。").font(V3.sans(12)).foregroundStyle(V3.orange).padding(.top, 12) }
         }.disabled(busy && !createUnknown)
+    }
+    private func modeCard(_ mode: String, symbol: String, title: String, subtitle: String, enabled: Bool) -> some View {
+        Button { answerMode = mode } label: {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(.system(size: 14)).foregroundStyle(V3.txt)
+                VStack(alignment: .leading, spacing: 3) { Text(title).font(V3.sans(13, weight: .medium)); Text(subtitle).font(V3.sans(11)).foregroundStyle(V3.fnt) }
+                Spacer()
+            }.padding(.horizontal, 14).frame(maxWidth: .infinity).frame(height: 56).background(.white, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(answerMode == mode ? V3.txt : V3.cl, lineWidth: answerMode == mode ? 1.5 : 1))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.55)
     }
     private func newField<Content: View>(_ title: String, optional: Bool = false, top: CGFloat = 39, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -755,6 +794,7 @@ struct MockInterviewView: View {
     }
     @ViewBuilder private func interview(_ item: MockInterview) -> some View {
         if item.status == "completed" { report(item) }
+        else if item.raw.text("answer_mode") == "voice", ["preparing", "in_progress"].contains(item.status), !voiceChecked.contains(item.id) { deviceCheck(item) }
         else if ["preparing", "preparation_failed"].contains(item.status) {
             VStack(alignment: .leading, spacing: 0) {
                 sessionHead(item) { Button("取消本场") { confirmation = "abandon" }.buttonStyle(.plain).font(V3.sans(11.5)).foregroundStyle(V3.sub).disabled(busy) }
@@ -782,11 +822,69 @@ struct MockInterviewView: View {
                 sessionHead(item) { Button("删除记录") { confirmation = "delete" }.buttonStyle(.plain).font(V3.sans(11.5)).foregroundStyle(V3.red).disabled(busy) }
                 statusPanel(failed: false, title: "这场模拟面试已放弃", message: "放弃的场次不生成评估报告，可以用相同配置再练一次。") {
                     Button("返回") { goHome() }.buttonStyle(V3ButtonStyle(kind: .ghost, height: 36))
-                    Button("重新开始") { Task { await commandAction("repeat") } }.buttonStyle(V3ButtonStyle(kind: .dark, height: 36)).disabled(busy || repeatUnknown || item.raw.text("answer_mode") == "voice")
+                    Button("重新开始") { Task { await commandAction("repeat") } }.buttonStyle(V3ButtonStyle(kind: .dark, height: 36)).disabled(busy || repeatUnknown || (item.raw.text("answer_mode") == "voice" && !speechReady))
                 }
             }
         } else { live(item) }
     }
+    /// 语音场次每次进入先做设备检测（Web `VoiceSessionPage` 的 check 阶段）；准备中也可以先检测，题目就绪后才能开始。
+    private func deviceCheck(_ item: MockInterview) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sessionHead(item) { Button("放弃") { confirmation = "abandon" }.buttonStyle(.plain).font(V3.sans(11.5)).foregroundStyle(V3.sub).disabled(busy) }
+            VoiceDeviceCheck(interviewID: item.id, language: item.raw.text("language"), questionCount: item.raw["question_count"]?.integer ?? 5,
+                             preparing: item.status == "preparing", busy: busy, api: session.api,
+                             onStart: { voiceChecked.insert(item.id) }, onBack: { leaveCheck = "back" }, onSwitchToText: { leaveCheck = "text" })
+                .id(item.id)
+        }
+        .alert(leaveCheck == "text" ? "改为文字面试？" : "返回修改设置？", isPresented: Binding(get: { leaveCheck != nil }, set: { if !$0 { leaveCheck = nil } })) {
+            Button("取消", role: .cancel) { leaveCheck = nil }
+            Button(leaveCheck == "text" ? "改为文字面试" : "返回修改") { let target = leaveCheck ?? "back"; leaveCheck = nil; Task { await leaveVoiceCheck(target) } }
+        } message: {
+            Text(leaveCheck == "text" ? "面试中不能切换作答方式。将放弃这场语音面试，并按相同设置重新开始一场文字面试。" : "将放弃这场语音面试，回到新建页修改设置后重新开始。")
+        }
+    }
+
+    /// 设备检测页离开：先放弃本场；“返回修改”带着原设置回到新建页，“改为文字面试”按相同设置新建文字场次。
+    private func leaveVoiceCheck(_ target: String) async {
+        guard !busy, let item = detail else { return }
+        busy = true; error = nil
+        defer { busy = false }
+        let raw = item.raw
+        do {
+            if ["preparing", "preparation_failed", "in_progress"].contains(item.status) { _ = try await request("/api/mock-interviews/" + item.id + "/abandon", "POST") }
+            let materialIDs = (raw["materials"]?.items ?? []).map { $0.text("dataset_id") }.filter { !$0.isEmpty }
+            if target == "back" {
+                let application = raw.text("job_application_id")
+                job = application.isEmpty ? "__none" : application
+                if resumes.contains(where: { $0.text("id") == raw.text("resume_id") }) { resume = raw.text("resume_id") }
+                type = raw.text("interview_type").isEmpty ? type : raw.text("interview_type"); typeTouched = true
+                difficulty = raw.text("difficulty").isEmpty ? difficulty : raw.text("difficulty")
+                count = raw["question_count"]?.integer ?? count
+                follow = raw["follow_up_enabled"] != .bool(false)
+                language = raw.text("language").isEmpty ? language : raw.text("language")
+                chosenMaterials = Set(materialIDs); materialsInQuestions = raw["materials_in_questions"] == .bool(true)
+                answerMode = "voice"; createUnknown = false
+                detail = nil; selectedID = ""; screen = "new"
+                return
+            }
+            var body: [String: JSONValue] = [
+                "interview_type": .string(raw.text("interview_type")), "difficulty": .string(raw.text("difficulty")),
+                "question_count": .number(Double(raw["question_count"]?.integer ?? 5)), "follow_up_enabled": .bool(raw["follow_up_enabled"] != .bool(false)),
+                "language": .string(raw.text("language").isEmpty ? "zh" : raw.text("language")), "answer_mode": .string("text"),
+                "material_ids": .array(materialIDs.map(JSONValue.string)), "materials_in_questions": .bool(raw["materials_in_questions"] == .bool(true) && !materialIDs.isEmpty),
+            ]
+            if !raw.text("job_application_id").isEmpty { body["job_application_id"] = .string(raw.text("job_application_id")) }
+            else if !raw.text("job_description_id").isEmpty { body["job_description_id"] = .string(raw.text("job_description_id")) }
+            if !raw.text("resume_id").isEmpty { body["resume_id"] = .string(raw.text("resume_id")) }
+            if !raw.text("target_role").isEmpty { body["target_role"] = .string(raw.text("target_role")) }
+            let data = try await request("/api/mock-interviews", "POST", .object(body))
+            open(MockInterview(data["mock_interview"] ?? .null)); refresh = UUID()
+        } catch {
+            if error is CancellationError { return }
+            self.error = explain(error) + (target == "text" ? " 本场可能已放弃，请返回首页刷新确认。" : "")
+        }
+    }
+
     private func groups(_ item: MockInterview) -> [(root: JSONValue, follows: [JSONValue])] {
         var result: [(root: JSONValue, follows: [JSONValue])] = []
         for question in item.questions.sorted(by: { ($0["sequence_no"]?.integer ?? 0) < ($1["sequence_no"]?.integer ?? 0) }) {
@@ -840,7 +938,7 @@ struct MockInterviewView: View {
                 }
             }.padding(.top, 24).padding(.bottom, 16)
             if item.raw.text("answer_mode") == "voice" {
-                Text("本场是语音面试，请在 Web 继续作答。原生文字流程不会把纯文字冒充语音回答。").font(V3.sans(12.5)).foregroundStyle(V3.orange)
+                voiceComposer(item, current: current, locked: locked, needsReply: needsReply)
             } else {
                 if needsReply {
                     HStack(spacing: 12) {
@@ -886,6 +984,107 @@ struct MockInterviewView: View {
             }
         }
     }
+    /// 语音作答区：开始/停止录音、实时识别字幕、面试官语音重播。回答即服务端识别稿，提交后不能修改。
+    @ViewBuilder private func voiceComposer(_ item: MockInterview, current: JSONValue?, locked: Bool, needsReply: Bool) -> some View {
+        if needsReply {
+            HStack(spacing: 12) {
+                Text("面试官的回复没有生成出来，你的回答已经保存。").font(V3.sans(13)).foregroundStyle(Color(hex: 0x6B5A2E))
+                Spacer()
+                Button("重新生成回复") { Task { await commandAction("reply:retry") } }.buttonStyle(V3ButtonStyle(kind: .dark)).disabled(busy)
+            }.padding(.horizontal, 14).padding(.vertical, 10).background(Color(hex: 0xFBF6EA), in: RoundedRectangle(cornerRadius: 14)).padding(.bottom, 10)
+        }
+        VStack(spacing: 12) {
+            Text(recorder.partial.isEmpty ? (recorder.phase == .recording ? "正在聆听…" : busy ? "面试官正在思考…" : current == nil ? "面试已结束" : "点击下方按钮开始回答") : recorder.partial)
+                .font(V3.sans(14)).foregroundStyle(recorder.partial.isEmpty ? V3.fnt : V3.txt).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            HStack(spacing: 14) {
+                Button { if let current { Task { await replayQuestion(item, current) } } } label: { Label(voice.playing ? "播放中" : "重听题目", systemImage: "speaker.wave.2") }
+                    .buttonStyle(V3ButtonStyle(kind: .ghost)).disabled(current == nil || voice.playing || recorder.phase != .idle)
+                Spacer()
+                if recorder.phase == .recording {
+                    Capsule().fill(V3.red.opacity(0.25)).frame(width: 60 * CGFloat(max(0.1, recorder.level)), height: 6).animation(.linear(duration: 0.1), value: recorder.level)
+                }
+                Button {
+                    guard let current else { return }
+                    if recorder.phase == .recording { Task { await finishVoiceAnswer(current) } }
+                    else { voice.stop(); Task { await recorder.start(api: session.api, interviewID: selectedID, questionID: current.text("id")) } }
+                } label: {
+                    Image(systemName: recorder.phase == .recording ? "stop.fill" : "mic.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 52, height: 52).background(recorder.phase == .recording ? V3.red : (locked ? Color(hex: 0xC9C9C3) : V3.txt), in: Circle())
+                }.buttonStyle(.plain).disabled(locked || recorder.phase == .connecting || recorder.phase == .finishing)
+                    .accessibilityLabel(recorder.phase == .recording ? "结束回答" : "开始回答")
+            }
+            if case .failed(let message) = recorder.phase { Text(message).font(V3.sans(12)).foregroundStyle(V3.red) }
+            HStack {
+                Button("跳过此题") { if let current { recorder.cancel(); Task { await submit(current, skip: true) } } }.buttonStyle(.plain).font(V3.sans(12.5)).foregroundStyle(V3.sub).disabled(locked || recorder.phase == .recording)
+                Spacer()
+                Text(recorder.phase == .finishing ? "正在生成识别稿…" : "回答以服务端识别稿为准，提交后不能修改").font(V3.sans(12)).foregroundStyle(V3.fnt)
+            }
+            if let uncertain {
+                HStack(spacing: 10) {
+                    Text("上一次提交的结果尚未确认。").font(V3.sans(12)).foregroundStyle(V3.orange)
+                    Button("重试原提交") { Task { await sendAnswer(uncertain.command, uncertain.body) } }.buttonStyle(CareerActionStyle(kind: .link)).disabled(busy)
+                }
+            }
+        }.padding(16).background(Color(hex: 0xFAFAF8), in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color(hex: 0xD6D6D0)))
+        .task(id: current?.text("id") ?? "") {
+            // 新题目（首题或 SSE 未带语音的题）自动朗读一次
+            guard let current, playedQuestion != current.text("id"), !busy, !voice.playing else { return }
+            await replayQuestion(item, current)
+        }
+        .onDisappear { recorder.cancel(); voice.stop() }
+    }
+
+    private func replayQuestion(_ item: MockInterview, _ question: JSONValue) async {
+        playedQuestion = question.text("id")
+        guard let audio = try? await session.api.mockAudio(path: "/api/mock-interviews/\(item.id)/speech/playback", method: "POST",
+                                                           body: .object(["question_id": .string(question.text("id"))])) else { return }
+        voice.play(audio)
+    }
+
+    private func playRecording(_ item: MockInterview, _ question: JSONValue) async {
+        do { voice.stop(); voice.play(try await session.api.mockAudio(path: "/api/mock-interviews/\(item.id)/questions/\(question.text("id"))/recording", method: "GET", body: nil)) }
+        catch { self.error = "录音不可用（可能已删除）。" }
+    }
+
+    /// 报告页语音操作：AI 修正识别稿、删除录音；成功后以响应中的最新场次刷新。
+    private func voiceCommand(_ command: String, _ method: String, success: String) async {
+        guard !busy else { return }; busy = true; error = nil; notice = nil
+        defer { busy = false }
+        do {
+            let data = try await request("/api/mock-interviews/" + selectedID + "/" + command, method)
+            if let latest = data["mock_interview"], latest != .null { detail = MockInterview(latest) }
+            notice = success
+        } catch { self.error = explain(error) }
+    }
+
+    private func saveTranscript(_ edit: TranscriptEdit, reEvaluate: Bool) async {
+        guard !busy else { return }; busy = true; error = nil; notice = nil
+        defer { busy = false }
+        let base = "/api/mock-interviews/" + selectedID + "/questions/" + edit.question.text("id")
+        do {
+            let updated = try await request(base + "/transcript", "PUT", .object(["text": .string(edit.text.trimmingCharacters(in: .whitespacesAndNewlines))]))
+            if let latest = updated["mock_interview"] { detail = MockInterview(latest) }
+            notice = "已保存识别稿。"
+            if reEvaluate {
+                let result = try await request(base + "/re-evaluate", "POST")
+                if let latest = result["mock_interview"] { detail = MockInterview(latest) }
+                notice = "已重新评估，本题还可重评 \(result["remaining"]?.integer ?? 0) 次。"
+            }
+            transcriptEdit = nil
+        } catch { self.error = explain(error) }
+    }
+
+    private func finishVoiceAnswer(_ question: JSONValue) async {
+        do {
+            let result = try await recorder.stop()
+            guard !result.sessionID.isEmpty else { throw APIError.invalidResponse }
+            await sendAnswer("answers", .object(["question_id": .string(question.text("id")), "speech_session_id": .string(result.sessionID),
+                                                 "__idempotency_key": .string(UUID().uuidString.lowercased())]))
+        } catch {
+            if case .failed = recorder.phase {} else { self.error = "识别没有完成，请重新录音。" }
+        }
+    }
+
     private func turn(_ question: JSONValue, isCurrent: Bool) -> some View {
         let follow = question.text("kind") == "follow_up"
         let answered = question.text("answer_status") == "answered" ? question.text("answer_text") : nil
@@ -946,8 +1145,14 @@ struct MockInterviewView: View {
                 Spacer()
                 HStack(spacing: 8) {
                     Button("删除记录") { confirmation = "delete" }.buttonStyle(.plain).font(V3.sans(12)).foregroundStyle(V3.red).padding(.trailing, 4).disabled(busy)
+                    if item.raw.text("answer_mode") == "voice", item.status == "completed" {
+                        Menu("语音") {
+                            Button("AI 修正识别稿") { Task { await voiceCommand("transcripts:correct", "POST", success: "已修正识别稿，可在逐题记录中查看。") } }
+                            Button("删除全部录音", role: .destructive) { Task { await voiceCommand("recordings", "DELETE", success: "已删除本场录音，识别稿与报告保留。") } }
+                        }.fixedSize().disabled(busy)
+                    }
                     Button("返回列表") { screen = "records"; detail = nil; selectedID = "" }.buttonStyle(V3ButtonStyle(kind: .ghost))
-                    Button(busy ? "正在创建…" : "再练一次") { Task { await commandAction("repeat") } }.buttonStyle(V3ButtonStyle(kind: .dark)).disabled(busy || repeatUnknown || item.raw.text("answer_mode") == "voice")
+                    Button(busy ? "正在创建…" : "再练一次") { Task { await commandAction("repeat") } }.buttonStyle(V3ButtonStyle(kind: .dark)).disabled(busy || repeatUnknown || (item.raw.text("answer_mode") == "voice" && !speechReady))
                 }.padding(.top, -8)
             }
             if report == .null {
@@ -1092,6 +1297,12 @@ struct MockInterviewView: View {
                             Text(question.text("content")).font(V3.sans(13)).foregroundStyle(V3.txt).fixedSize(horizontal: false, vertical: true)
                             Text(question.text("answer_status") == "skipped" ? "这道题跳过了，记 0 分。" : question.text("answer_text")).font(V3.sans(12.5)).foregroundStyle(V3.sub)
                                 .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(V3.stage, in: RoundedRectangle(cornerRadius: 10)).textSelection(.enabled)
+                            if item.raw.text("answer_mode") == "voice", question.text("answer_status") == "answered", item.status == "completed" {
+                                HStack(spacing: 14) {
+                                    Button { Task { await playRecording(item, question) } } label: { Label("播放录音", systemImage: "play.circle") }
+                                    Button { transcriptEdit = TranscriptEdit(question: question, text: question.text("answer_text")) } label: { Label("修改识别稿", systemImage: "pencil") }
+                                }.buttonStyle(.link).font(V3.sans(12)).disabled(busy)
+                            }
                         }
                     }
                     Text("详细分析").font(V3.sans(13, weight: .medium)).padding(.top, 4)
@@ -1129,6 +1340,11 @@ struct MockInterviewView: View {
                 HStack(alignment: .top, spacing: 6) { Circle().fill(tone).frame(width: 5, height: 5).padding(.top, 6); Text(text).font(V3.sans(12)).foregroundStyle(V3.sub).fixedSize(horizontal: false, vertical: true) }
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private func loadSpeechCapability() async {
+        guard let result = try? await request("/api/mock-interviews/speech-capability") else { speechReady = false; return }
+        speechReady = result["stt"]?.bool == true && result["tts"]?.bool == true
+        if !speechReady { answerMode = "text" }
     }
     private func load() async {
         guard !account.isEmpty else { loading = false; error = nil; return }
@@ -1177,7 +1393,7 @@ struct MockInterviewView: View {
         if jd.count > 20000 { error = "JD 最多 20000 字。"; return }
         busy = true; error = nil
         do {
-            var body: [String:JSONValue] = ["resume_id": .string(resume), "interview_type": .string(type), "difficulty": .string(difficulty), "question_count": .number(Double(count)), "follow_up_enabled": .bool(follow), "language": .string(language), "answer_mode": .string("text"), "material_ids": .array(chosenMaterials.sorted().map(JSONValue.string)), "materials_in_questions": .bool(materialsInQuestions && !chosenMaterials.isEmpty)]
+            var body: [String:JSONValue] = ["resume_id": .string(resume), "interview_type": .string(type), "difficulty": .string(difficulty), "question_count": .number(Double(count)), "follow_up_enabled": .bool(follow), "language": .string(language), "answer_mode": .string(answerMode == "voice" && speechReady ? "voice" : "text"), "material_ids": .array(chosenMaterials.sorted().map(JSONValue.string)), "materials_in_questions": .bool(materialsInQuestions && !chosenMaterials.isEmpty)]
             if job == "__jd" { body["job_description_text"] = .string(jd.trimmingCharacters(in: .whitespacesAndNewlines)) } else if job != "__none" { body["job_application_id"] = .string(job) }
             let data = try await request("/api/mock-interviews", "POST", .object(body)); try Task.checkCancellation(); open(MockInterview(data["mock_interview"] ?? .null))
         } catch {
@@ -1194,7 +1410,15 @@ struct MockInterviewView: View {
     }
     private func sendAnswer(_ command: String, _ body: JSONValue) async {
         guard !busy else { return }; busy = true; error = nil; uncertain = (command, body)
-        do { _ = try await request("/api/mock-interviews/" + selectedID + "/" + command, "POST", body) } catch { if error is CancellationError { busy = false; return }; self.error = explain(error); if case APIError.server(let status, _) = error, [400, 422].contains(status) { uncertain = nil } }
+        do {
+            let result = try await request("/api/mock-interviews/" + selectedID + "/" + command, "POST", body)
+            // 语音面试：面试官回复的 mp3 片段随回合 SSE 返回，按序播放；下一题已朗读，避免重复播放
+            let events = result["events"]?.items ?? []
+            if events.contains(where: { $0.text("event") == "interviewer.audio" }) {
+                voice.enqueue(events: events)
+                if let next = events.last(where: { $0.text("event") == "interviewer.turn" })?["data"]?["question"]?.text("id") { playedQuestion = next }
+            }
+        } catch { if error is CancellationError { busy = false; return }; self.error = explain(error); if case APIError.server(let status, _) = error, [400, 422].contains(status) { uncertain = nil } }
         do {
             let data = try await request("/api/mock-interviews/" + selectedID); try Task.checkCancellation(); detail = MockInterview(data["mock_interview"] ?? .null)
             if detail?.questions.contains(where: { $0.text("id") == body.text("question_id") && $0.text("answer_status") != "pending" }) == true { uncertain = nil; draft = "" }
@@ -1214,7 +1438,7 @@ struct MockInterviewView: View {
         busy = false
     }
     private func explainCode(_ code: String) -> String {
-        ["LLM_MODEL_NOT_CONFIGURED":"模拟面试模型尚未配置，请联系管理员配置后重试。", "MOCK_INTERVIEW_IN_PROGRESS":"已有一场进行中的面试，请回到首页继续该场。", "MOCK_INTERVIEW_RESUME_REQUIRED":"请选择一份本人简历。", "MOCK_INTERVIEW_SOURCE_NOT_FOUND":"来源不存在或已不可访问，请重新选择。", "MOCK_INTERVIEW_TASK_INTERRUPTED":"任务已中断，可以重试。", "MOCK_INTERVIEW_STATE_INVALID":"记录状态已变化，请刷新后再操作。", "MOCK_INTERVIEW_QUESTION_MISMATCH":"当前问题已变化，请刷新。", "MOCK_INTERVIEW_MATERIAL_INVALID":"所选资料尚未就绪或不可访问，请重新选择。"][code] ?? "操作未完成（\(code)），请刷新确认状态后重试。"
+        ["LLM_MODEL_NOT_CONFIGURED":"模拟面试模型尚未配置，请联系管理员配置后重试。", "MOCK_INTERVIEW_IN_PROGRESS":"已有一场进行中的面试，请回到首页继续该场。", "MOCK_INTERVIEW_RESUME_REQUIRED":"请选择一份本人简历。", "MOCK_INTERVIEW_SOURCE_NOT_FOUND":"来源不存在或已不可访问，请重新选择。", "MOCK_INTERVIEW_TASK_INTERRUPTED":"任务已中断，可以重试。", "MOCK_INTERVIEW_STATE_INVALID":"记录状态已变化，请刷新后再操作。", "MOCK_INTERVIEW_QUESTION_MISMATCH":"当前问题已变化，请刷新。", "MOCK_INTERVIEW_MATERIAL_INVALID":"所选资料尚未就绪或不可访问，请重新选择。", "MOCK_INTERVIEW_RE_EVALUATE_LIMIT":"本题重新评估次数已用完。", "MOCK_INTERVIEW_TRANSCRIPT_ALREADY_CORRECTED":"本场识别稿已经修正过。", "MOCK_INTERVIEW_TRANSCRIPT_CORRECTION_REJECTED":"AI 修正结果未通过校验，识别稿保持不变。", "MOCK_INTERVIEW_RECORDING_NOT_FOUND":"录音不存在或已删除。", "MOCK_INTERVIEW_SPEECH_UNAVAILABLE":"语音线路暂未配置，请改用文字作答。"][code] ?? "操作未完成（\(code)），请刷新确认状态后重试。"
     }
     private func explain(_ value: Error) -> String {
         if case APIError.unauthorized = value { return "登录已失效，请重新登录。" }

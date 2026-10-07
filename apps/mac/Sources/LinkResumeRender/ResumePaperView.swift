@@ -7,12 +7,15 @@ import WebKit
 /// 外框、缩放、切换动画都在 SwiftUI 这一侧完成。
 public struct ResumePaperView: NSViewRepresentable {
     private let request: ResumeRenderRequest
+    private let highlights: [String]
     private let onError: (String) -> Void
     private let onRendered: (CGFloat) -> Void
 
-    public init(request: ResumeRenderRequest, onRendered: @escaping (CGFloat) -> Void = { _ in }, onError: @escaping (String) -> Void = { _ in }) {
+    /// `highlights`：纸面上包含这些文字的段落与列表项加底色标出（AI 待确认修改的原文）。
+    public init(request: ResumeRenderRequest, highlights: [String] = [], onRendered: @escaping (CGFloat) -> Void = { _ in }, onError: @escaping (String) -> Void = { _ in }) {
         self.onError = onError
         self.request = request
+        self.highlights = highlights
         self.onRendered = onRendered
     }
 
@@ -29,6 +32,7 @@ public struct ResumePaperView: NSViewRepresentable {
         if let url = Bundle.module.url(forResource: "paper", withExtension: "html") {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
+        context.coordinator.highlights = highlights
         context.coordinator.render(request)
         return webView
     }
@@ -36,6 +40,7 @@ public struct ResumePaperView: NSViewRepresentable {
     public func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onError = onError
         context.coordinator.onRendered = onRendered
+        context.coordinator.setHighlights(highlights)
         context.coordinator.render(request)
     }
 
@@ -62,7 +67,38 @@ public final class PaperBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
         self.onRendered = onRendered
     }
 
-    func detach() { pending = nil; lastSent = nil; isReady = false; webView = nil }
+    var highlights: [String] = []
+    private var rendered = false
+
+    func detach() { pending = nil; lastSent = nil; isReady = false; rendered = false; webView = nil }
+
+    func setHighlights(_ next: [String]) {
+        guard next != highlights else { return }
+        highlights = next
+        if rendered { applyHighlights() }
+    }
+
+    /// 只改元素的内联样式（CSSOM 不受页面 CSP 限制），文字列表经 JSONEncoder 编码为 JS 字面量。
+    private func applyHighlights() {
+        let texts = highlights.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard let data = try? JSONEncoder().encode(texts), let json = String(data: data, encoding: .utf8) else { return }
+        webView?.evaluateJavaScript("""
+        (function (texts) {
+          var root = document.getElementById("paper-root"); if (!root) return 0;
+          root.querySelectorAll("[data-lr-pending]").forEach(function (node) {
+            node.removeAttribute("data-lr-pending"); node.style.backgroundColor = ""; node.style.boxShadow = ""; node.style.borderRadius = "";
+          });
+          var hits = Array.prototype.filter.call(root.querySelectorAll("p, li"), function (node) {
+            return texts.some(function (text) { return (node.textContent || "").indexOf(text) >= 0; });
+          });
+          hits.forEach(function (node) {
+            node.setAttribute("data-lr-pending", "");
+            node.style.backgroundColor = "rgba(255, 204, 0, 0.28)"; node.style.boxShadow = "0 0 0 2px rgba(255, 204, 0, 0.28)"; node.style.borderRadius = "2px";
+          });
+          return hits.length;
+        })(\(json))
+        """)
+    }
 
     func attach(_ webView: WKWebView) { self.webView = webView; webView.navigationDelegate = self }
 
@@ -97,6 +133,8 @@ public final class PaperBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
                 isReady = true
                 flush()
             case "rendered":
+                rendered = true
+                if !highlights.isEmpty { applyHighlights() }
                 onRendered(CGFloat(body["heightPx"] as? Double ?? 0))
             case "error":
                 onError(body["message"] as? String ?? "纸面预览失败，请重试。")
