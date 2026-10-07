@@ -347,108 +347,51 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("sorts scheduled progress by the next session and keeps stable creation ordering", () => {
-    const makeSummary = (
-      id: string,
-      overrides: Partial<JobApplicationSummary> = {},
-    ): JobApplicationSummary => ({
-      ...application,
-      id,
-      created_at: "2026-08-20T01:00:00Z",
-      next_session_id: null,
-      next_session_start_at: null,
-      next_session_end_at: null,
-      next_session_mode: null,
-      ...overrides,
-    });
-    const scheduledLate = makeSummary("scheduled-late", {
-      created_at: "2026-08-12T01:00:00Z",
-      next_session_start_at: "2026-09-04T01:00:00Z",
-      next_session_end_at: "2026-09-04T02:00:00Z",
-    });
-    const scheduledEarly = makeSummary("scheduled-early", {
-      created_at: "2026-08-14T01:00:00Z",
-      next_session_start_at: "2026-09-02T01:00:00Z",
-      next_session_end_at: "2026-09-02T02:00:00Z",
-    });
-    const scheduledSameTimeOlder = makeSummary("scheduled-same-older", {
-      created_at: "2026-08-10T01:00:00Z",
-      next_session_start_at: "2026-09-02T01:00:00Z",
-      next_session_end_at: "2026-09-02T02:00:00Z",
-    });
-    const noSchedule = makeSummary("no-schedule", { created_at: "2026-08-01T01:00:00Z" });
-    const invalidSchedule = makeSummary("invalid-schedule", {
-      created_at: "2026-08-02T01:00:00Z",
-      next_session_start_at: "not-a-date",
-      next_session_end_at: "2026-09-02T02:00:00Z",
-    });
-    const pending = makeSummary("pending", {
-      created_at: "2026-08-03T01:00:00Z",
-      current_stage_type: "screening",
-      current_round_no: null,
-      current_stage_label: "筛选中",
-      stage_state: "awaiting_result",
-      applied_at: "2026-08-03T02:00:00Z",
-      next_session_start_at: "2026-09-01T01:00:00Z",
-      next_session_end_at: "2026-09-01T02:00:00Z",
-    });
-    const completedOlder = makeSummary("completed-older", {
-      created_at: "2026-08-04T01:00:00Z",
-    });
-    const completedRecent = makeSummary("completed-recent", {
-      created_at: "2026-08-05T01:00:00Z",
-    });
-    const completedScheduleStartAtByApplicationId = new Map([
-      [completedOlder.id, "2026-08-20T01:00:00Z"],
-      [completedRecent.id, "2026-08-28T01:00:00Z"],
-    ]);
+  it("sorts by modification time and retains earliest-added ordering", () => {
+    const base = { ...application, next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null };
+    const older = { ...base, id: "older", created_at: "2026-08-01T00:00:00Z", updated_at: "2026-08-30T00:00:00Z" };
+    const newer = { ...base, id: "newer", created_at: "2026-08-02T00:00:00Z", updated_at: "2026-08-02T00:00:00Z" };
+    const invalid = { ...base, id: "invalid", created_at: "2026-08-10T00:00:00Z", updated_at: "invalid" };
+    expect(sortApplications([newer, invalid, older], "recent_updated").map((item) => item.id)).toEqual(["older", "invalid", "newer"]);
+    expect(sortApplications([newer, older], "earliest_added").map((item) => item.id)).toEqual(["older", "newer"]);
+  });
 
-    expect(sortApplications(
-      [
-        scheduledLate,
-        completedOlder,
-        noSchedule,
-        pending,
-        completedRecent,
-        scheduledEarly,
-        invalidSchedule,
-        scheduledSameTimeOlder,
-      ],
-      "recent_schedule",
-      completedScheduleStartAtByApplicationId,
-    ).map((item) => item.id)).toEqual([
-      "scheduled-same-older",
-      "scheduled-early",
-      "scheduled-late",
-      "completed-recent",
-      "completed-older",
-      "no-schedule",
-      "invalid-schedule",
-      "pending",
-    ]);
-    expect(sortApplications(
-      [
-        scheduledLate,
-        completedOlder,
-        noSchedule,
-        pending,
-        completedRecent,
-        scheduledEarly,
-        invalidSchedule,
-        scheduledSameTimeOlder,
-      ],
-      "earliest_added",
-      completedScheduleStartAtByApplicationId,
-    ).map((item) => item.id)).toEqual([
-      "no-schedule",
-      "invalid-schedule",
-      "pending",
-      "completed-older",
-      "completed-recent",
-      "scheduled-same-older",
-      "scheduled-late",
-      "scheduled-early",
-    ]);
+  it("filters card statuses and keeps the selection when switching to the list", async () => {
+    const now = Date.now();
+    const base = { ...application, next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null };
+    mocks.listJobApplications.mockResolvedValue({ items: [
+      { ...base, id: "ongoing", company_name_snapshot: "进行公司", next_session_start_at: new Date(now - 3600000).toISOString(), next_session_end_at: new Date(now + 3600000).toISOString() },
+      { ...base, id: "upcoming", company_name_snapshot: "待进行公司", next_session_start_at: new Date(now + 86400000).toISOString(), next_session_end_at: new Date(now + 90000000).toISOString() },
+      { ...base, id: "waiting", company_name_snapshot: "等待结果公司", next_session_start_at: new Date(now - 7200000).toISOString(), next_session_end_at: new Date(now - 3600000).toISOString() },
+      { ...base, id: "pending", company_name_snapshot: "待投递公司", current_stage_type: "screening", current_stage_label: "待投递", applied_at: null },
+      { ...base, id: "completed", company_name_snapshot: "完成公司" },
+      { ...base, id: "ended", company_name_snapshot: "结束公司", status: "withdrawn" },
+    ], next_cursor: null });
+    mocks.listInterviewSessions.mockResolvedValue({ items: [{ ...session, application_id: "completed", status: "completed", completed_at: new Date(now).toISOString() }], next_cursor: null });
+    render(<InterviewCenterPage view="applications" />);
+    await screen.findByRole("region", { name: "求职进程看板" });
+    chooseSelectOption(openViewSettings(), "状态筛选", "进行中");
+    expect(screen.getByText("进行公司")).toBeInTheDocument();
+    expect(screen.getByText("待进行公司")).toBeInTheDocument();
+    switchToApplicationList();
+    expect(screen.getByRole("table", { name: "求职记录列表" })).toHaveTextContent("进行公司");
+    expect(screen.getByText("待进行公司")).toBeInTheDocument();
+    expect(screen.getByText("等待结果公司")).toBeInTheDocument();
+    expect(screen.getByText("待投递公司")).toBeInTheDocument();
+    fireEvent.click(within(openViewSettings()).getByRole("button", { name: "状态筛选" }));
+    expect(screen.queryByRole("option", { name: "待投递" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "待进行" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "等待结果" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("option", { name: "已完成" }));
+    expect(screen.getByText("完成公司")).toBeInTheDocument();
+    expect(screen.queryByText("进行公司")).not.toBeInTheDocument();
+    expect(screen.queryByText("待进行公司")).not.toBeInTheDocument();
+    expect(screen.queryByText("等待结果公司")).not.toBeInTheDocument();
+    expect(screen.queryByText("待投递公司")).not.toBeInTheDocument();
+    chooseSelectOption(openViewSettings(), "状态筛选", "全部状态");
+    expect(screen.getByText("完成公司")).toBeInTheDocument();
+    expect(screen.getByText("结束公司")).toBeInTheDocument();
   });
 
   it("projects assessment and interview schedule labels from one injectable clock", () => {
@@ -465,7 +408,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(applicationScheduleStatusLabel(makeScheduled("2026-09-04T01:00:00Z"), { now })).toBe("4 天后");
     expect(applicationScheduleStatusLabel(makeScheduled("2026-09-03T00:00:00Z"), { now })).toBe("2 天后");
     expect(applicationScheduleStatusLabel(makeScheduled("2026-09-02T00:00:00Z"), { now })).toBe("24 小时后");
-    expect(applicationScheduleStatusLabel(makeScheduled("2026-08-31T23:30:00Z"), { now })).toBe("正在进行");
+    expect(applicationScheduleStatusLabel(makeScheduled("2026-08-31T23:30:00Z"), { now })).toBe("进行中");
     expect(applicationScheduleStatusLabel(makeScheduled("2026-08-31T23:00:00Z", "2026-08-31T23:30:00Z"), { now })).toBe("等待结果");
     expect(applicationScheduleStatusLabel({
       ...makeScheduled("2026-09-10T00:00:00Z"),
@@ -598,7 +541,7 @@ describe("InterviewCenterPage API projections", () => {
     await act(async () => {
       vi.advanceTimersByTime(31 * 60 * 1000);
     });
-    expect(screen.getByLabelText("二面 · 正在进行")).toBeInTheDocument();
+    expect(screen.getByLabelText("二面 · 进行中")).toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(60 * 60 * 1000);
@@ -707,7 +650,7 @@ describe("InterviewCenterPage API projections", () => {
       { ...application, applied_at: "2026-08-18T01:00:00Z", stage_state: "awaiting_result" as const,
         next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null },
       { ...application, id: "22", company_name_snapshot: "示例公司", applied_at: "2026-08-18T01:00:00Z",
-        stage_state: "awaiting_result" as const, created_at: "2026-08-19T01:00:00Z",
+        stage_state: "awaiting_result" as const, created_at: "2026-08-19T01:00:00Z", updated_at: "2026-08-20T01:00:00Z",
         next_session_id: null, next_session_start_at: null, next_session_end_at: null, next_session_mode: null },
     ];
     const completedSessions = [
@@ -1442,7 +1385,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByRole("button", { name: "展示阶段" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("group", { name: "展示阶段" })).not.toBeInTheDocument();
     expect(screen.queryByText("关闭后将从看板中隐藏")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "排序方式" })).toHaveTextContent("最近排期");
+    expect(screen.getByRole("button", { name: "排序方式" })).toHaveTextContent("最近修改");
     expect(screen.queryByRole("table", { name: "求职记录列表" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "查看记录" })).not.toBeInTheDocument();
     const searchbox = screen.getByRole("searchbox", { name: "搜索求职进程" });
@@ -3687,7 +3630,7 @@ describe("InterviewCenterPage API projections", () => {
     expect(companyLogo).toHaveAttribute("referrerpolicy", "no-referrer");
     expect(within(interviewCard).queryByText("全职")).not.toBeInTheDocument();
     expect(within(interviewCard).getByText("正式")).toHaveClass("progress-card-category");
-    expect(within(interviewCard).getByText(/^(\d+ 天后|\d+ 小时后|正在进行|等待结果)$/)).toBeInTheDocument();
+    expect(within(interviewCard).getByText(/^(\d+ 天后|\d+ 小时后|进行中|等待结果)$/)).toBeInTheDocument();
     expect(interviewCard.querySelector(".progress-card-updated-at")).not.toBeInTheDocument();
     expect(interviewCard).toHaveAttribute("draggable", "true");
     fireEvent.error(companyLogo);

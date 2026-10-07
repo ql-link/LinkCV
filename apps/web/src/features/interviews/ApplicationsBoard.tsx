@@ -24,7 +24,7 @@ import {
 } from "./applicationProgress";
 
 export type ProgressColumnKey = ApplicationProgressColumnKey;
-export type ApplicationSortMode = "recent_schedule" | "earliest_added";
+export type ApplicationSortMode = "recent_updated" | "earliest_added";
 export type NextStageDialogTab = "assessment" | "written_test" | "interview" | "offer";
 export type NextStagePrefill = {
   initialTab: NextStageDialogTab;
@@ -287,63 +287,35 @@ function isScheduleColumn(columnKey: ProgressColumnKey): boolean {
   return columnKey === "assessment" || columnKey === "written_test" || columnKey === "interview";
 }
 
-/** Whether an application participates in recent-schedule ordering. */
-export function hasValidApplicationSchedule(application: JobApplicationSummary): boolean {
-  return isScheduleColumn(progressColumnKey(application))
-    && validApplicationTimestamp(application.next_session_start_at) !== null;
-}
-
 /** Stable application ordering shared by the board and list presentations. */
 export function compareApplicationsBySortMode(
   left: JobApplicationSummary,
   right: JobApplicationSummary,
   sortMode: ApplicationSortMode,
-  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string> = new Map(),
 ): number {
   if (sortMode === "earliest_added") return compareApplicationsByCreatedAt(left, right);
-
-  const leftScheduleAt = hasValidApplicationSchedule(left)
-    ? validApplicationTimestamp(left.next_session_start_at)
-    : null;
-  const rightScheduleAt = hasValidApplicationSchedule(right)
-    ? validApplicationTimestamp(right.next_session_start_at)
-    : null;
-  if (leftScheduleAt !== null && rightScheduleAt !== null && leftScheduleAt !== rightScheduleAt) {
-    return leftScheduleAt - rightScheduleAt;
+  if (sortMode === "recent_updated") {
+    const leftUpdatedAt = validApplicationTimestamp(left.updated_at) ?? validApplicationTimestamp(left.created_at);
+    const rightUpdatedAt = validApplicationTimestamp(right.updated_at) ?? validApplicationTimestamp(right.created_at);
+    if (leftUpdatedAt !== null && rightUpdatedAt !== null && leftUpdatedAt !== rightUpdatedAt) {
+      return rightUpdatedAt - leftUpdatedAt;
+    }
+    if (leftUpdatedAt === null && rightUpdatedAt !== null) return 1;
+    if (leftUpdatedAt !== null && rightUpdatedAt === null) return -1;
+    return compareApplicationsByCreatedAt(left, right);
   }
-  if (leftScheduleAt !== null && rightScheduleAt === null) return -1;
-  if (leftScheduleAt === null && rightScheduleAt !== null) return 1;
 
-  // Upcoming work is ordered nearest-first above. Once the current stage is
-  // completed, the most recent historical schedule should lead its group.
-  const leftCompletedScheduleAt = validApplicationTimestamp(
-    completedScheduleStartAtByApplicationId.get(left.id),
-  );
-  const rightCompletedScheduleAt = validApplicationTimestamp(
-    completedScheduleStartAtByApplicationId.get(right.id),
-  );
-  if (
-    leftCompletedScheduleAt !== null
-    && rightCompletedScheduleAt !== null
-    && leftCompletedScheduleAt !== rightCompletedScheduleAt
-  ) {
-    return rightCompletedScheduleAt - leftCompletedScheduleAt;
-  }
-  if (leftCompletedScheduleAt !== null && rightCompletedScheduleAt === null) return -1;
-  if (leftCompletedScheduleAt === null && rightCompletedScheduleAt !== null) return 1;
   return compareApplicationsByCreatedAt(left, right);
 }
 
 export function sortApplications(
   applications: readonly JobApplicationSummary[],
   sortMode: ApplicationSortMode,
-  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string> = new Map(),
 ): JobApplicationSummary[] {
   return [...applications].sort((left, right) => compareApplicationsBySortMode(
     left,
     right,
     sortMode,
-    completedScheduleStartAtByApplicationId,
   ));
 }
 
@@ -615,9 +587,8 @@ export function ApplicationsBoard({
   hiddenColumnIds,
   groupByCategory = false,
   completedCurrentStageApplicationIds,
-  completedScheduleStartAtByApplicationId,
   now,
-  sortMode = "recent_schedule",
+  sortMode = "recent_updated",
   displayMode,
   formDropPreview,
   onNotice,
@@ -631,7 +602,6 @@ export function ApplicationsBoard({
   hiddenColumnIds?: ReadonlySet<string>;
   groupByCategory?: boolean;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
-  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
   displayMode: "board" | "list";
@@ -678,7 +648,6 @@ export function ApplicationsBoard({
           layoutApplications={visibleApplications}
           hiddenColumnIds={hiddenColumnIds}
           completedCurrentStageApplicationIds={completedCurrentStageApplicationIds}
-          completedScheduleStartAtByApplicationId={completedScheduleStartAtByApplicationId}
           now={now}
           sortMode={sortMode}
           columnOrder={columnOrder}
@@ -702,9 +671,8 @@ export function ProgressBoard({
   layoutApplications = applications,
   hiddenColumnIds,
   completedCurrentStageApplicationIds,
-  completedScheduleStartAtByApplicationId,
   now,
-  sortMode = "recent_schedule",
+  sortMode = "recent_updated",
   columnOrder,
   formDropPreview,
   onColumnOrderChange,
@@ -719,7 +687,6 @@ export function ProgressBoard({
   layoutApplications?: JobApplicationSummary[];
   hiddenColumnIds?: ReadonlySet<string>;
   completedCurrentStageApplicationIds: ReadonlySet<string>;
-  completedScheduleStartAtByApplicationId: ReadonlyMap<string, string>;
   now?: Date;
   sortMode?: ApplicationSortMode;
   columnOrder: string[];
@@ -755,7 +722,6 @@ export function ProgressBoard({
       const boardColumns = buildBoardColumns(sortApplications(
         layoutApplications,
         sortMode,
-        completedScheduleStartAtByApplicationId,
       )).map((column) => ({
         ...column, items: column.items.filter((item) => memberIds.has(item.id)),
       }));
@@ -765,7 +731,7 @@ export function ProgressBoard({
         - (columnIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER)
       ));
     },
-    [applications, columnOrder, completedScheduleStartAtByApplicationId, layoutApplications, sortMode],
+    [applications, columnOrder, layoutApplications, sortMode],
   );
   const columns = hiddenColumnIds?.size
     ? allColumns.filter((column) => !hiddenColumnIds.has(column.id))
