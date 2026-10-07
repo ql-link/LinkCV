@@ -150,7 +150,9 @@ def plan_messages(
 
 TURN_FORMAT = (
     "输出格式：第一行是一个 JSON 对象 "
-    '{"action": "follow_up" | "next_question" | "finish", "depth_level": 1-5}，'
+    '{"action": "follow_up" | "next_question" | "finish", "depth_level": 1-5, '
+    '"probe_quote": "追问时填：候选人最近一次回答中被你追问的那句原话，逐字摘录", '
+    '"probe_gap": "追问时填：这一点缺了什么"}，非追问时 probe_quote 与 probe_gap 留空字符串。'
     "第二行起是你要对候选人说的话（纯文本，不要 Markdown 标题）。"
 )
 
@@ -166,6 +168,7 @@ def interviewer_messages(
     is_last_topic: bool,
     next_item: dict[str, object] | None = None,
     allowed_actions: tuple[str, ...] | None = None,
+    previous_depth: int | None = None,
 ) -> list[ChatMessage]:
     profile = DIFFICULTY_PROFILES[interview.difficulty]
     lenient = interview.difficulty == "junior"
@@ -198,6 +201,17 @@ def interviewer_messages(
             )
             + f"期望信号已基本命中→不再追问。当前问题已追问 {follow_ups_used} 次，上限 {profile.max_follow_ups} 次。"
         )
+        rules.append(
+            "追问必须基于候选人最近一次回答：先在回答里找出所有可追问的点，只挑价值最高的一个，优先级为"
+            "①与简历或前文矛盾 ②关键决策缺原因或替代方案 ③结论缺数据与验证 ④实现细节；"
+            "话术第一句要点出他刚说的那个具体内容（可复述关键词），再提问；"
+            "不要追问他已经讲清楚的内容，也不要与 transcript 中任何已问过的问题意思重复。"
+            + (
+                f"上一问的深度是 L{previous_depth}，只有回答扎实时才升到 L{previous_depth + 1}，否则保持或降低；"
+                "追问不能只是换个说法问同一层的细节，要真的推进到更深一层，或补全缺失的关键点。"
+                if previous_depth else ""
+            )
+        )
     else:
         rules.append("不再追问当前问题。")
     if not is_opening:
@@ -207,7 +221,7 @@ def interviewer_messages(
             )
         else:
             rules.append(
-                "不追问时 action 为 next_question：用一句话自然过渡，然后只围绕 next_topic 提出新问题，"
+                "不追问时 action 为 next_question：用一句话承接候选人刚说的一个具体内容作为过渡，然后只围绕 next_topic 提出新问题，"
                 "不得自行编造考察点；depth_level 取 next_topic.start_depth。"
             )
     if allowed_actions:

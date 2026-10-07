@@ -57,6 +57,9 @@ class InterviewPlan(_Output):
 class InterviewerTurn(_Output):
     action: Literal["follow_up", "next_question", "finish"]
     depth_level: int = Field(ge=1, le=5)
+    # 追问时填写：被追问的候选人原话（逐字摘录）与该点缺什么，服务端据此核对追问确实基于回答。
+    probe_quote: str = Field(default="", max_length=300)
+    probe_gap: str = Field(default="", max_length=200)
     message: str = Field(min_length=1, max_length=2000)
 
 

@@ -276,7 +276,7 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
     gateway = ScriptedGateway()
     gateway.turn_headers = [
         {"action": "next_question", "depth_level": 2},  # opening
-        {"action": "follow_up", "depth_level": 5},  # clamped to L4
+        {"action": "follow_up", "depth_level": 5, "probe_quote": "我用火焰图定位热点"},  # clamped to L4
         {"action": "next_question", "depth_level": 2},
         {"action": "next_question", "depth_level": 2},
         {"action": "finish", "depth_level": 2},
@@ -882,7 +882,7 @@ def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -
     from linkresume.core.security import create_access_token
 
     gateway = ScriptedGateway()
-    gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3}]
+    gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3, "probe_quote": "我用火焰图定位热点"}]
     app = build_app(gateway)
     with TestClient(app) as client:
         assert client.get('/api/mock-interviews').status_code == 401

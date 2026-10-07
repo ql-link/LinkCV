@@ -283,3 +283,29 @@ def test_follow_up_prompt_carries_next_topic_and_allowed_actions() -> None:
     )
     assert "next_topic" in messages[1].content and "下一个" in messages[1].content
     assert "follow_up / next_question" in messages[0].content and "80 字" in messages[0].content
+
+
+def test_follow_up_must_quote_the_candidate_answer() -> None:
+    from linkresume.application.mock_interviews.scoring import follow_up_grounded
+
+    answer = "冻结会把数据复制到独立版本表形成不可变快照"
+    assert follow_up_grounded("复制到独立版本表", answer)
+    assert not follow_up_grounded("", answer)
+    assert not follow_up_grounded("你没说过的话", answer)
+    assert not follow_up_grounded("版", answer)  # too short to be evidence
+
+
+def test_follow_up_prompt_asks_for_probe_and_previous_depth() -> None:
+    from types import SimpleNamespace
+
+    from linkresume.application.mock_interviews import prompts
+
+    interview = SimpleNamespace(
+        interview_type="technical", difficulty="intermediate", language="zh", answer_mode="text",
+        resume_markdown_snapshot="r", job_snapshot_json=None, stage_snapshot_json=None, target_role=None,
+    )
+    system = prompts.interviewer_messages(
+        interview, plan_item={"topic": "当前"}, next_item=None, transcript=[], follow_ups_used=0,
+        allow_follow_up=True, is_opening=False, is_last_topic=False, previous_depth=3,
+    )[0].content
+    assert "probe_quote" in system and "只挑价值最高的一个" in system and "上一问的深度是 L3" in system

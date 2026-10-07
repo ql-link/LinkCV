@@ -123,3 +123,8 @@ def practice_focus(question_results: list[dict[str, object]], limit: int = 3) ->
         for item in weakest
         if float(item.get("score") or 0) < 70
     ]
+
+
+def follow_up_grounded(probe_quote: str, answer: str) -> bool:
+    """A follow-up must quote what the candidate actually said."""
+    return len(_normalize(probe_quote)) >= 4 and quoted_in(probe_quote, answer)

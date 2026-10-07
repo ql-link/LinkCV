@@ -28,6 +28,7 @@ from linkresume.application.mock_interviews import planning, prompts, rubric, vo
 from linkresume.application.mock_interviews.scoring import (  # noqa: F401  (re-exported for transcripts and tests)
     _align_signals,
     _normalize,
+    follow_up_grounded,
     practice_focus,
     quoted_in,
     score_root,
@@ -932,7 +933,10 @@ class MockInterviewRunner:
             # plan's expected signals do not describe.
             next_item=next_item if decision["allow_follow_up"] else None,
             allowed_actions=tuple(decision["allowed"]),
+            previous_depth=questions[-1].depth_level if questions and decision["allow_follow_up"] else None,
         )
+        last_answer = (questions[-1].answer_text or "") if questions else ""
+        asked = [item.content for item in questions]
         allowed = tuple(decision["allowed"])
         header: InterviewerTurn | None = None
         buffer = ""
@@ -963,6 +967,13 @@ class MockInterviewRunner:
                         first, rest = split
                         header = _parse_header(first)
                         if header is None or header.action not in allowed:
+                            rejected = True
+                            break
+                        # A follow-up must quote the answer it probes; one silent
+                        # retry, then accept so the interview is never blocked.
+                        if attempt == 0 and header.action == "follow_up" and not follow_up_grounded(
+                            header.probe_quote, last_answer
+                        ):
                             rejected = True
                             break
                         chunk = rest
@@ -1081,7 +1092,9 @@ class MockInterviewRunner:
             if action == "follow_up":
                 parent_id = decision["root_id"]
                 plan_index = decision["plan_index"]
-                depth = rubric.clamp_depth(interview.difficulty, header.depth_level)
+                # Depth may rise by at most one level per follow-up.
+                previous = questions[-1].depth_level or 1
+                depth = min(rubric.clamp_depth(interview.difficulty, header.depth_level), previous + 1)
             else:
                 parent_id = None
                 plan_index = 0 if decision["opening"] else decision["plan_index"] + 1
