@@ -1,3 +1,4 @@
+from pydantic import SecretStr
 import uuid
 from decimal import Decimal
 from datetime import UTC, datetime, timedelta
@@ -31,6 +32,12 @@ def build_app():
 
 
 def mini_headers(app, email: str) -> dict[str, str]:
+    # Seed users through development credentials, then exercise the production
+    # mini-program capability with fictional WeChat configuration.
+    app.state.settings = app.state.settings.model_copy(update={
+        "app_environment": "production", "wechat_appid": "wx-fictional",
+        "wechat_secret": SecretStr("fictional-secret"),
+    })
     with app.state.session_factory() as session:
         user = session.scalar(select(User).where(User.email == email))
         assert user is not None
@@ -44,10 +51,13 @@ def mini_headers(app, email: str) -> dict[str, str]:
 
 
 def register_user(web_client: TestClient, email: str) -> None:
+    settings = web_client.app.state.settings
+    web_client.app.state.settings = settings.model_copy(update={"app_environment": "development"})
     response = web_client.post(
         "/api/auth/register",
         json={"email": email, "password": "password-123"},
     )
+    web_client.app.state.settings = settings
     assert response.status_code == 201
     web_client.cookies.clear()
 
@@ -115,7 +125,7 @@ def test_mini_career_projects_company_logo_url() -> None:
         register_user(client, email)
         with_logo = create_job(app, email, "前端工程师", "星河示例科技", logo_url=logo)
         without_logo = create_job(app, email, "后端工程师", "无标识示例科技")
-        client.post("/api/auth/login", json={"email": email, "password": "password-123"})
+        seed_web_login(client,json={'email': email, 'password': 'password-123'})
         created = {}
         for job_id in (with_logo, without_logo):
             response = client.post(
@@ -189,10 +199,7 @@ def test_career_workflow_advance_close_and_complete() -> None:
 
         # 1. 在 Web 端创建投递及面试会话
         # 登录 Web 获得 Cookie
-        login_resp = client.post(
-            "/api/auth/login",
-            json={"email": "user@example.test", "password": "password-123"},
-        )
+        login_resp = seed_web_login(client,json={'email': 'user@example.test', 'password': 'password-123'})
         assert login_resp.status_code == 200
         cookies = login_resp.cookies
 
@@ -299,7 +306,7 @@ def test_career_workflow_advance_close_and_complete() -> None:
 def _pending_application(client, app, email="owner@example.test"):
     register_user(client, email)
     job_id = create_job(app, email, company="星河示例科技")
-    client.post("/api/auth/login", json={"email": email, "password": "password-123"})
+    seed_web_login(client,json={'email': email, 'password': 'password-123'})
     response = client.post(
         "/api/job-applications",
         json={
@@ -503,10 +510,7 @@ def test_mini_overlapping_schedules_cancel_and_offer():
         first, headers = _pending_application(client, app)
         # A second application belongs to the same user; create via Web channel.
         job_id = create_job(app, "owner@example.test", company="云杉示例实验室")
-        client.post(
-            "/api/auth/login",
-            json={"email": "owner@example.test", "password": "password-123"},
-        )
+        seed_web_login(client,json={'email': 'owner@example.test', 'password': 'password-123'})
         second = client.post(
             "/api/job-applications",
             json={
@@ -609,10 +613,7 @@ def test_application_resume_preview_uses_latest_current_content():
     with TestClient(app) as client:
         application, headers = _pending_application(client, app)
         aid = application["id"]
-        client.post(
-            "/api/auth/login",
-            json={"email": "owner@example.test", "password": "password-123"},
-        )
+        seed_web_login(client,json={'email': 'owner@example.test', 'password': 'password-123'})
         resume = client.post(
             "/api/resumes",
             json={"title": "张三的投递简历", "template_id": app.state.test_template_id},
@@ -632,10 +633,7 @@ def test_application_resume_preview_uses_latest_current_content():
         assert staged.status_code == 200, staged.text
         linked_id = staged.json()["application"]["resume_id"]
         assert linked_id == rid
-        client.post(
-            "/api/auth/login",
-            json={"email": "owner@example.test", "password": "password-123"},
-        )
+        seed_web_login(client,json={'email': 'owner@example.test', 'password': 'password-123'})
         data = resume["data"]
         data["identity"]["name"] = {
             "node_id": "node_name0000000000001",
@@ -683,3 +681,13 @@ def test_application_resume_preview_uses_latest_current_content():
         assert client.put(binding_url, json={
             "resume_id": rid, "base_lock_version": rebound.json()["application"]["lock_version"],
         }).status_code == 401
+
+
+def seed_web_login(client, *, json):
+    """Set up Web credentials before testing production mini channel isolation."""
+    previous = client.app.state.settings
+    client.app.state.settings = previous.model_copy(update={"app_environment": "development"})
+    try:
+        return client.post("/api/auth/login", json=json)
+    finally:
+        client.app.state.settings = previous

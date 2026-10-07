@@ -1,0 +1,11 @@
+[
+  {"id":"conversation","request":"你好，请用一句话介绍你能提供哪些求职帮助。","expected":{"mode":"conversation","actions":[],"purposes":[]}},
+  {"id":"mixed","request":"你好，介绍一下你的能力，顺便帮我诊断已选简历的问题。","authorized_contexts":[{"type":"resume","id":"1","presentation":"mention"}],"expected":{"mode":"plan","actions":["diagnose"],"purposes":[]}},
+  {"id":"general_optimization","request":"帮我优化一下已选简历，先看看有哪些问题。","authorized_contexts":[{"type":"resume","id":"1","presentation":"mention"}],"expected":{"mode":"plan","actions":["diagnose"],"purposes":[]}},
+  {"id":"missing_resume","request":"请帮我修改简历。","expected":{"mode":"clarify","actions":[],"purposes":["resume_identity"]}},
+  {"id":"history_reference","request":"按刚才的诊断建议修改虚构甲简历。","history":[{"role":"user","content":"请诊断虚构甲简历。"},{"role":"assistant","content":"建议精简重复的项目描述。"}],"expected":{"mode":"plan","actions":["edit"],"purposes":[]}},
+  {"id":"ambiguous_history","request":"按你刚才的建议改一下那份简历。","history":[{"role":"user","content":"我有虚构甲和虚构乙两份简历，都需要优化。"},{"role":"assistant","content":"两份都可以精简重复描述。"}],"expected":{"mode":"clarify","actions":[],"purposes":["resume_identity"]}},
+  {"id":"missing_fact","request":"把已选简历的项目成果改成真实量化数据，但我还没有提供这些数据，请先问我。","authorized_contexts":[{"type":"resume","id":"1","presentation":"mention"}],"expected":{"mode":"clarify","actions":[],"purposes":["missing_fact"]}},
+  {"id":"multi_goal","request":"请先诊断已选简历，再给出通用面试准备建议。","authorized_contexts":[{"type":"resume","id":"1","presentation":"mention"}],"expected":{"mode":"plan","actions":["diagnose","interview"],"purposes":[]}},
+  {"id":"identity_conflict","request":"我选的是虚构甲简历，但我想修改虚构乙，请先确认使用哪一份。","authorized_contexts":[{"type":"resume","id":"1","label":"虚构甲","presentation":"mention"}],"expected":{"mode":"clarify","actions":[],"purposes":["resume_identity"],"identity_conflict":true}}
+]

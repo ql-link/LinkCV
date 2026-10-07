@@ -1,17 +1,10 @@
+import { t, useLocale } from "@/i18n";
 import { useState } from "react";
-import { Check, Folder } from "lucide-react";
 
 import type { DatasetFolder } from "../../../api/client";
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  Label,
-} from "@/components/ui";
+import { Icon } from "../../../v3/Icon";
+import { Dialog, DialogFooter } from "../../../v3/primitives";
+import { MoveArt } from "./DatasetArt";
 
 export type MoveToFolderDialogProps = {
   open: boolean;
@@ -20,9 +13,11 @@ export type MoveToFolderDialogProps = {
   currentFolderId?: string | null;
   itemCount: number;
   singleItemName?: string;
+  singleItemFormat?: string;
   onMove: (targetFolderId: string) => Promise<void>;
 };
 
+// 06.1b 移动到文件夹（480 宽）：插图 → 「选择目标分类」→ 文件夹单选列表（选中行浅灰底 + 对勾）→ 确定移动。
 export function MoveToFolderDialog({
   open,
   onOpenChange,
@@ -30,17 +25,23 @@ export function MoveToFolderDialog({
   currentFolderId,
   itemCount,
   singleItemName,
+  singleItemFormat,
   onMove,
 }: MoveToFolderDialogProps) {
-  const [selectedTarget, setSelectedTarget] = useState<string | null>(
-    currentFolderId ?? null,
-  );
+  useLocale();
+  const [selectedTarget, setSelectedTarget] = useState<string | null>(currentFolderId ?? null);
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const title = singleItemName
-    ? `移动「${singleItemName}」到文件夹`
-    : `批量移动 ${itemCount} 份资料到文件夹`;
+  // 标题保留旧版文案结构，便于辅助技术区分单条与批量
+  const label = singleItemName
+    ? t("移动「{value0}」到文件夹", { value0: singleItemName })
+    : t("批量移动 {value0} 份资料到文件夹", { value0: itemCount });
+  const sub = singleItemName
+    ? t("「{value0}」 · 选择目标文件夹", { value0: singleItemName })
+    : t("已选择 {value0} 份资料 · 选择目标文件夹", { value0: itemCount });
+  const targetName = folders.find((folder) => folder.id === selectedTarget)?.name ?? t("文件夹");
+  const artTag = (singleItemFormat ?? "").toUpperCase().slice(0, 4) || String(itemCount);
 
   const handleSubmit = async () => {
     if (!selectedTarget) return;
@@ -54,68 +55,57 @@ export function MoveToFolderDialog({
       await onMove(selectedTarget);
       onOpenChange(false);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "移动失败，请稍后重试。");
+      setError(err instanceof Error ? err.message : t("移动失败，请稍后重试。"));
     } finally {
       setMoving(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={(val) => !moving && onOpenChange(val)}>
-      <DialogContent className="dataset-action-dialog sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-foreground text-lg font-semibold">{title}</DialogTitle>
-          <DialogDescription className="text-muted-foreground text-sm">
-            选择目标分类文件夹，将所选资料整理到相应分类中。
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="py-2 space-y-2">
-          <Label className="text-xs font-semibold text-secondary uppercase tracking-wider">
-            选择目标分类
-          </Label>
-          <div
-            className="dataset-move-options"
-            role="radiogroup"
-            aria-label="目标文件夹列表"
-          >
-            {folders.map((folder) => {
-              const isSelected = selectedTarget === folder.id;
-              return (
-                <button
-                  key={folder.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={isSelected}
-                  className={`dataset-move-option${isSelected ? " is-selected" : ""}`}
-                  onClick={() => setSelectedTarget(folder.id)}
-                >
-                  <Folder size={16} className="dataset-move-option-icon" aria-hidden="true" />
-                  <span className="dataset-move-option-name">{folder.name}</span>
-                  <span className="dataset-move-option-count">{folder.dataset_count} 份</span>
-                  {isSelected && (
-                    <Check size={15} className="dataset-move-check" aria-hidden="true" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          {error && (
-            <small className="text-xs text-destructive block mt-1" role="alert">
-              {error}
-            </small>
-          )}
+    <Dialog open={open} width={480} label={label} className="ds-dialog" closable={!moving} onClose={() => { if (!moving) onOpenChange(false); }}>
+      <div className="v3-dialog-body">
+        <h2 className="v3-dialog-title">{singleItemName ? t("移动资料到文件夹") : t("移动 {value0} 份资料到文件夹", { value0: itemCount })}</h2>
+        <p className="v3-dialog-sub ds-one-line" title={sub}>{sub}</p>
+        <div className="v3-stage ds-dialog-art" style={{ height: 84 }}>
+          <MoveArt tag={artTag} folderName={targetName} />
         </div>
-
-        <DialogFooter>
-          <Button variant="secondary" disabled={moving} onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button disabled={moving || !selectedTarget || selectedTarget === currentFolderId} onClick={() => void handleSubmit()}>
-            {moving ? "正在移动…" : "确定移动"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+        <div className="ds-list-label"><span>{t("选择目标分类")}</span></div>
+        <div className="ds-pick" role="radiogroup" aria-label={t("目标文件夹列表")} style={{ maxHeight: 228 }}>
+          {folders.length === 0 && <p className="ds-pick-empty">{t("还没有其他文件夹")}</p>}
+          {folders.map((folder) => {
+            const isSelected = selectedTarget === folder.id;
+            return (
+              <button
+                key={folder.id}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                className="ds-pick-item"
+                disabled={moving}
+                onClick={() => setSelectedTarget(folder.id)}
+              >
+                <Icon name="folder" size={14} />
+                <span>{folder.name}</span>
+                <small className="v3-num">{folder.dataset_count}{t(" 份")}</small>
+                {isSelected && <Icon className="v3-menu-check" name="check" size={14} />}
+              </button>
+            );
+          })}
+        </div>
+        {error && <p className="ds-inline-error" role="alert">{error}</p>}
+      </div>
+      <DialogFooter>
+        <button type="button" className="v3-btn v3-btn-ghost" style={{ width: 80 }} disabled={moving} onClick={() => onOpenChange(false)}>{t("取消")}</button>
+        <button
+          type="button"
+          className="v3-btn v3-btn-dark"
+          style={{ width: 96 }}
+          disabled={moving || !selectedTarget || selectedTarget === currentFolderId}
+          onClick={() => void handleSubmit()}
+        >
+          {moving ? t("正在移动…") : t("确定移动")}
+        </button>
+      </DialogFooter>
     </Dialog>
   );
 }

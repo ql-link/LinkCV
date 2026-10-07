@@ -19,7 +19,7 @@ from linkresume.core.storage import (
     build_import_cleanup_object_names,
     get_storage,
 )
-from linkresume.modules.identity.dependencies import get_current_user, get_settings
+from linkresume.modules.identity.dependencies import get_current_resume_user, get_settings
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.import_routes import import_summary
 from linkresume.modules.resumes.models import (
@@ -76,7 +76,7 @@ def get_resume_overview(
     failed_limit: int = Query(default=20, ge=1, le=50),
     failed_cursor: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     settings: Settings = Depends(get_settings),
 ) -> ResumeOverviewResponse:
     close_stale_resume_imports(
@@ -94,14 +94,14 @@ def get_resume_overview(
                 Resume.source_type,
                 Resume.template_id,
                 Resume.lock_version,
-                Resume.created_at,
-                Resume.updated_at,
+                Resume.create_time,
+                Resume.update_time,
                 Resume.data_json,
                 Resume.style_json,
             )
         )
         .where(Resume.user_id == user.id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
     ).all()
     active = db.scalars(
         select(DocumentParseTask)
@@ -114,7 +114,7 @@ def get_resume_overview(
             ),
         )
         .order_by(
-            DocumentParseTask.created_at.desc(),
+            DocumentParseTask.create_time.desc(),
             DocumentParseTask.id.desc(),
         )
     ).all()
@@ -135,16 +135,16 @@ def get_resume_overview(
         cursor_boundary = literal(cursor_timestamp)
         failed_query = failed_query.where(
             or_(
-                DocumentParseTask.created_at < cursor_boundary,
+                DocumentParseTask.create_time < cursor_boundary,
                 and_(
-                    DocumentParseTask.created_at == cursor_boundary,
+                    DocumentParseTask.create_time == cursor_boundary,
                     DocumentParseTask.id < import_id,
                 ),
             )
         )
     failed = db.scalars(
         failed_query.order_by(
-            DocumentParseTask.created_at.desc(),
+            DocumentParseTask.create_time.desc(),
             DocumentParseTask.id.desc(),
         ).limit(failed_limit + 1)
     ).all()
@@ -152,7 +152,7 @@ def get_resume_overview(
     if len(failed) > failed_limit:
         failed = failed[:failed_limit]
         last = failed[-1]
-        next_cursor = _encode_cursor(last.created_at, last.id)
+        next_cursor = _encode_cursor(last.create_time, last.id)
     return ResumeOverviewResponse(
         resumes=[resume_summary(item) for item in resumes],
         active_imports=[import_summary(db, item) for item in active],
@@ -165,7 +165,7 @@ def get_resume_overview(
 def get_resume_import(
     import_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     settings: Settings = Depends(get_settings),
 ) -> ResumeImportResponse:
     close_stale_resume_imports(
@@ -195,7 +195,7 @@ def get_resume_import(
 def delete_resume_import(
     import_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResumeImportResponse:
     parsed_id = parse_decimal_id(import_id)

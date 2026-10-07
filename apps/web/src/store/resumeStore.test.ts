@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultResumeMarkdown } from "../parser/defaultResume";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { ApiRequestError, api, type ResumeImportSummary, type ResumeRecord } from "../api/client";
 import {
@@ -9,6 +10,8 @@ import {
   type LayoutPlan,
 } from "../api/resumeContract";
 import { resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
+import { enqueueMessage, queueKey, readQueue } from "../features/agent/messageQueue";
+import { installMessageQueueEnvironment } from "../test/messageQueueEnvironment";
 import {
   defaultSettings,
   flushPendingLocalResumeDraft,
@@ -163,6 +166,35 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => { vi.unstubAllGlobals(); });
+
+describe("logout message queue cleanup", () => {
+  const user = { id: "logout-user", email: "logout@example.test", nickname: "测试用户", is_admin: false };
+  it("退出登录只清理当前账号的本机队列", async () => {
+    installMessageQueueEnvironment();
+    useResumeStore.setState({ user });
+    await enqueueMessage(user.id, "conversation", { content: "当前账号待发送消息" });
+    await enqueueMessage("another-user", "conversation", { content: "其他账号待发送消息" });
+    vi.spyOn(api, "logout").mockResolvedValue({ ok: true });
+    await useResumeStore.getState().logout();
+    expect((await readQueue(queueKey(user.id, "conversation"))).items).toHaveLength(0);
+    expect((await readQueue(queueKey("another-user", "conversation"))).items).toHaveLength(1);
+    expect(useResumeStore.getState()).toMatchObject({ user: null, authStatus: "guest", error: null });
+  });
+
+  it("本机队列清理失败仍完成退出登录并提示清理存储", async () => {
+    installMessageQueueEnvironment();
+    useResumeStore.setState({ user });
+    await enqueueMessage(user.id, "conversation", { content: "待发送消息" });
+    localStorage.setItem(queueKey(user.id, "legacy"), "legacy data");
+    vi.spyOn(localStorage, "removeItem").mockImplementation(() => { throw new Error("storage denied"); });
+    const logout = vi.spyOn(api, "logout").mockResolvedValue({ ok: true });
+    await useResumeStore.getState().logout();
+    expect(logout).toHaveBeenCalledOnce();
+    expect(useResumeStore.getState()).toMatchObject({ user: null, authStatus: "guest", error: expect.stringContaining("本机消息清理失败") });
+  });
+});
+
 describe("proposal confirmation write coordination", () => {
   it("先保存草稿，阻止交错编辑，确认后同步正文和内部锁", async () => {
     const saving = deferred<{ resume: ResumeRecord }>();
@@ -179,7 +211,7 @@ describe("proposal confirmation write coordination", () => {
     expect(useResumeStore.getState().title).toBe(originalTitle);
     expect(useResumeStore.getState().editorContent).toEqual(originalContent);
     saving.resolve({ resume: record(2, "已保存草稿") });
-    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-1"));
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledWith("proposal-1", undefined));
     const autosave = useResumeStore.getState().saveCurrentResume();
     confirming.resolve({ resume: record(3, "AI 修改后的正文") });
     await operation;
@@ -995,7 +1027,7 @@ describe("account profile sync and password change", () => {
       is_admin: false,
       avatar_url: "/api/assets/users/1/assets/avatar",
       wechat_status: "unbound",
-      wechat_bound_at: null,
+      wechat_bound_at: null, contact_email: null, registered_at: "2026-01-01T00:00:00Z",
     });
     expect(useResumeStore.getState().user).toMatchObject({
       nickname: "新昵称",
@@ -1012,9 +1044,43 @@ describe("account profile sync and password change", () => {
       is_admin: false,
       avatar_url: null,
       wechat_status: "unbound",
-      wechat_bound_at: null,
+      wechat_bound_at: null, contact_email: null, registered_at: "2026-01-01T00:00:00Z",
     });
     expect(useResumeStore.getState().user).toBeNull();
   });
 
+});
+
+it("清空会话时清除编辑器内容并丢弃迟到的列表和简历详情", async () => {
+  const user = { id: "fictional-cache-user", email: "fictional@example.test", nickname: "虚构用户", is_admin: false };
+  useResumeStore.setState({ user });
+  let finishList!: (value: Awaited<ReturnType<typeof api.getResumeOverview>>) => void;
+  let finishDetail!: (value: Awaited<ReturnType<typeof api.getResume>>) => void;
+  vi.spyOn(api, "getResumeOverview").mockReturnValue(new Promise((resolve) => { finishList = resolve; }));
+  vi.spyOn(api, "getResume").mockReturnValue(new Promise((resolve) => { finishDetail = resolve; }));
+  const list = useResumeStore.getState().listResumes();
+  const detail = useResumeStore.getState().loadResume("1");
+  useResumeStore.getState().clearSession();
+  expect(useResumeStore.getState().markdown).toBe(defaultResumeMarkdown);
+  finishList({ resumes: [record(1, "# 旧账号的虚构简历")], active_imports: [], failed_imports: [], next_failed_cursor: null });
+  finishDetail({ resume: record(1, "# 旧账号的虚构简历") });
+  await Promise.all([list, detail]);
+  expect(useResumeStore.getState().user).toBeNull();
+  expect(useResumeStore.getState().resumes).toEqual([]);
+  expect(useResumeStore.getState().activeResumeId).toBeNull();
+  expect(useResumeStore.getState().markdown).toBe(defaultResumeMarkdown);
+});
+
+it("重新登录后忽略上一会话迟到的模板响应，即使重新打开同一简历", async () => {
+  const user = { id: "fictional-cache-user", email: "fictional@example.test", nickname: "虚构用户", is_admin: false };
+  useResumeStore.setState({ user, activeResumeId: "1", versionOperationPending: false });
+  const response = deferred<Awaited<ReturnType<typeof api.applyResumeTemplate>>>();
+  vi.spyOn(api, "applyResumeTemplate").mockReturnValue(response.promise);
+  const applying = useResumeStore.getState().applyTemplate("9", editorDocument("旧会话正文"));
+  useResumeStore.getState().clearSession();
+  useResumeStore.setState({ user, activeResumeId: "1", resumes: [record(5, "# 新会话正文")], lockVersion: 5 });
+  response.resolve({ resume: { ...record(2, "# 旧会话正文"), template_id: "9" } });
+  await applying;
+  expect(useResumeStore.getState().lockVersion).toBe(5);
+  expect(useResumeStore.getState().resumes).toEqual([record(5, "# 新会话正文")]);
 });

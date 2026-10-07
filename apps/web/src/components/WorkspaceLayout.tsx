@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 import type { ComponentType, ReactNode } from "react";
 import {
   BriefcaseBusiness,
@@ -38,7 +39,7 @@ const NAV_ITEMS: Array<{
     activeColor: "var(--ui-accent)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-accent) 10%, transparent) 48%, transparent 76%)",
     key: "resumes",
-    label: "我的简历",
+    get label() { return t("我的简历"); },
     href: "/resumes",
     icon: FileText,
   },
@@ -46,7 +47,7 @@ const NAV_ITEMS: Array<{
     activeColor: "var(--ui-template-accent)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-template-accent) 24%, transparent) 0%, color-mix(in srgb, var(--ui-template-accent) 10%, transparent) 48%, transparent 76%)",
     key: "templates",
-    label: "简历模板",
+    get label() { return t("简历模板"); },
     href: "/templates",
     icon: LayoutTemplate,
   },
@@ -54,7 +55,7 @@ const NAV_ITEMS: Array<{
     activeColor: "var(--ui-warning)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
     key: "applications",
-    label: "求职记录",
+    get label() { return t("求职记录"); },
     href: "/career/applications",
     icon: ListChecks,
   },
@@ -62,7 +63,7 @@ const NAV_ITEMS: Array<{
     activeColor: "var(--ui-warning)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-warning) 24%, transparent) 0%, color-mix(in srgb, var(--ui-warning) 10%, transparent) 48%, transparent 76%)",
     key: "schedule",
-    label: "面试排期",
+    get label() { return t("面试排期"); },
     href: "/career/schedule",
     icon: CalendarDays,
   },
@@ -70,7 +71,7 @@ const NAV_ITEMS: Array<{
     activeColor: "var(--ui-success)",
     gradient: "radial-gradient(circle, color-mix(in srgb, var(--ui-success) 24%, transparent) 0%, color-mix(in srgb, var(--ui-success) 10%, transparent) 48%, transparent 76%)",
     key: "datasets",
-    label: "资料库",
+    get label() { return t("资料库"); },
     href: "/datasets",
     icon: FolderOpen,
   },
@@ -83,7 +84,8 @@ export function WorkspaceNavigation({
   nickname,
   onItemIntent = preloadWorkspacePage,
 }: WorkspaceNavigationProps) {
-  const displayName = nickname || email || "个人资料";
+  useLocale();
+  const displayName = nickname || email || t("个人资料");
   const activeHref = NAV_ITEMS.find((item) => item.key === active)?.href ?? "";
 
   return (
@@ -98,12 +100,12 @@ export function WorkspaceNavigation({
           event.preventDefault();
           navigateTo("/resumes");
         }}
-        aria-label="LinkResume 首页"
+        aria-label={t("LinkResume 首页")}
       >
         <Brand className="dashboard-brand" label="LinkResume" name="LinkResume" />
       </a>
       <div className="dashboard-nav-scroll">
-        <nav aria-label="工作区导航" title={`当前账号：${displayName}`}>
+        <nav aria-label={t("工作区导航")} title={t("当前账号：{value0}", { value0: displayName })}>
           <RandomLetterSwapNav
             activeItem={activeHref}
             className="dashboard-tabs"
@@ -128,16 +130,16 @@ export function WorkspaceNavigation({
           }}
         >
           <img src={assistantFeather} alt="" aria-hidden="true" />
-          <span>AI 工作台</span>
+          <span>{t("AI 工作台")}</span>
         </a>
         <a
           aria-current={active === "account" ? "page" : undefined}
-          aria-label={`打开个人资料，当前账号：${displayName}`}
+          aria-label={t("打开个人资料，当前账号：{value0}", { value0: displayName })}
           className="dashboard-account-badge"
           href="/account"
           onFocus={() => { void onItemIntent("/account"); }}
           onMouseEnter={() => { void onItemIntent("/account"); }}
-          title={`个人资料：${displayName}`}
+          title={t("个人资料：{value0}", { value0: displayName })}
           onClick={(event) => {
             if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
             event.preventDefault();
@@ -174,6 +176,7 @@ export function WorkspacePageHero({
   tone?: "accent" | "template" | "success" | "warning";
   className?: string;
 }) {
+  useLocale();
   if (icon || layout === "module") {
     return (
       <header className={`page-hero is-module${className ? ` ${className}` : ""}`}>
@@ -206,15 +209,16 @@ export function WorkspacePageHero({
 }
 
 const CAREER_ITEMS: Array<{ key: CareerSection; label: string; href: string; icon: typeof BriefcaseBusiness }> = [
-  { key: "applications", label: "求职记录", href: "/career/applications", icon: ListChecks },
-  { key: "schedule", label: "面试排期", href: "/career/schedule", icon: CalendarDays },
+  { key: "applications", get label() { return t("求职记录"); }, href: "/career/applications", icon: ListChecks },
+  { key: "schedule", get label() { return t("面试排期"); }, href: "/career/schedule", icon: CalendarDays },
 ];
 
 export function CareerNavigation({ active }: { active: CareerSection }) {
+  useLocale();
   const activeEntry = active === "schedule" ? "schedule" : "applications";
 
   return (
-    <nav className="career-subnav" aria-label="求职中心导航">
+    <nav className="career-subnav" aria-label={t("求职中心导航")}>
       {CAREER_ITEMS.map(({ key, label, href, icon: Icon }) => (
         <a
           key={key}
@@ -244,6 +248,7 @@ export function WorkspaceLayout({
   children: ReactNode;
   className?: string;
 }) {
+  useLocale();
   const user = useResumeStore((state) => state.user);
   return (
     <div className={`dashboard-shell${className ? ` ${className}` : ""}`} data-ui-theme="light">
@@ -259,6 +264,7 @@ export function WorkspaceLayout({
 }
 
 export function AssistantWorkspaceLayout({ children }: { children: ReactNode }) {
+  useLocale();
   return (
     <div className="dashboard-shell assistant-workspace-shell" data-ui-theme="light">
       {children}

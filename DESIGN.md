@@ -30,51 +30,70 @@ colors:
   scrim: "rgba(15, 18, 22, 0.46)"
 typography:
   page-title:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Noto Serif SC, Source Han Serif SC, Songti SC, sans-serif"
     fontSize: 1.75rem
     fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: -0.02em
+    lineHeight: 2.25rem
   section-title:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1.25rem
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 1.75rem
   subsection-title:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 1.5rem
   body-md:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.5rem
   body-sm:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.375rem
   content-md:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Lora, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 1rem
     fontWeight: 400
-    lineHeight: 1.55
+    lineHeight: 1.625rem
   content-sm:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontFamily: "Lora, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.875rem
     fontWeight: 400
-    lineHeight: 1.55
-  label-sm:
-    fontFamily: "Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
-    fontSize: 0.875rem
+    lineHeight: 1.375rem
+  content-title:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 1.5rem
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 2rem
+  label-sm:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 0.875rem
+    fontWeight: 500
+    lineHeight: 1.25rem
+  navigation:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 0.875rem
+    fontWeight: 500
+    lineHeight: 1.25rem
   metadata:
-    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, Source Han Sans SC, monospace"
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
     fontSize: 0.75rem
     fontWeight: 500
-    lineHeight: 1.25
+    lineHeight: 1.125rem
+  metric:
+    fontFamily: "Poppins, Source Han Sans SC, Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+    fontSize: 1.75rem
+    fontWeight: 600
+    lineHeight: 2.25rem
+  code:
+    fontFamily: "JetBrains Mono, SFMono-Regular, Consolas, Liberation Mono, Source Han Sans SC, monospace"
+    fontSize: 0.875rem
+    fontWeight: 400
+    lineHeight: 1.375rem
 rounded:
   xs: 0.375rem
   sm: 0.5rem
@@ -293,10 +312,10 @@ LinkResume 的登录后功能区采用 Apple 式克制与 OpenAI 式任务效率
 
 排版强调快速扫描。页面通常只使用页面标题、区域标题、正文和辅助信息四级，不通过连续增加字号或字重制造层级。
 
-- 产品界面的标题、正文、输入和按钮统一使用随应用发布的思源黑体可变字体，通过字号、字重和紧凑字距建立层级；简历画布继续尊重用户选择的版式字体。
-- 正文默认 16px，密集控件和说明使用 14px。
-- 技术标识、时间、版本和短元数据的拉丁字符可以使用等宽字体，其中的中文回退到思源黑体；正文不使用等宽字体。
-- 独立 AI 助手和简历编辑器侧栏的用户消息与 AI 回复正文使用思源宋体，空状态、输入编辑器、会话导航和操作控件仍使用全局思源黑体。
+- 产品界面的西文标题、导航、按钮、输入、字段值与普通说明使用 Poppins（`--ui-font-sans` / `--ui-font-display`）；AI 长回复、岗位说明与资料长文使用 Lora（`--ui-font-content`）。中文界面和阅读正文沿用思源黑体，页面大标题使用 Noto Serif SC（`--ui-font-heading`）；弹窗、分区和卡片标题使用界面字体。两套西文字体随应用本地发布并保留 SIL OFL 1.1 授权；简历画布和 PDF 继续尊重用户选择的版式字体。
+- 页面标题 28px/36px/600，弹窗标题 20px/28px/600，分区与卡片标题 16px/24px/600；导航和控件 14px/20px/500，普通正文与说明 14px/22px/400，长文阅读 16px/26px/400，时间和短状态 12px/18px。选中导航以背景与颜色强调，保持字重稳定，避免切换时文字宽度跳动。
+- 独立统计数值使用 Poppins；正文中的数字跟随所在文字角色。代码、需要逐字符辨认的技术标识使用等宽字体，普通日期、时间和状态不默认使用等宽字体。
+- 独立 AI 助手和简历编辑器侧栏的 AI 回复使用阅读栈；用户消息、输入和操作控件使用界面栈。Markdown 标题使用 Poppins / 思源黑体，代码保留等宽字体。
 - 删除“欢迎使用”“轻松完成”“一站式管理”等不能帮助用户决策的文案；说明文字只解释限制、后果或下一步动作。
 
 设置页使用 `subsection-title`（16px/600）作为区域标题；核心正文、字段标签和控件使用 14–16px，只有时间、短状态和其他元信息使用 12px `metadata`。不把账户页个案字号直接推广为全局规则。
@@ -315,6 +334,8 @@ Settings Pattern 只约束显式选择它的共享组件或页面，不是所有
 
 每个页面只有一个主任务，默认阅读顺序是：页面上下文与标题 → 主要操作 → 核心内容 → 必要说明。一个区域通常只有一个主按钮；筛选和次要操作不能与主操作争夺注意力。
 
+V3 工作区正文随可用内容卡宽度伸展，桌面左右留白各为内容卡宽度的 3%、最少 24px，窄屏使用 16px；对话和新建表单保留独立阅读宽度。岗位看板单列保持 220–280px、列间距 10px，超宽屏增加可见列数，窄屏保留看板内横向滚动。
+
 布局采用流式内容区和 4px 基础间距。控件内部通常使用 8–16px，相关内容间使用 16–24px，大分区间使用 32–48px。不要为了整齐把所有内容装入卡片；先使用排版、间距、分隔线和背景层级。
 
 响应式基准为 1440、1024、390px。桌面保留完整导航和高价值辅助信息；小桌面收窄辅助区或转为主次堆叠；移动端采用单列、16px 页面边距和可触达操作。关键值不得截断，表格应重排或显式横向滚动。
@@ -323,27 +344,36 @@ Settings Pattern 只约束显式选择它的共享组件或页面，不是所有
 
 深度主要由色调层和细边框表达，而不是大面积阴影。普通卡片不使用阴影；只有 Popover、下拉菜单、弹窗和其他真正浮起的临时表面使用轻微或中等阴影与 scrim。不要在同一容器同时叠加强边框、深阴影和高对比背景。
 
+### Page Eyebrow
+
+工作区页面标题上方的小字统一使用 `PageEyebrow`（`apps/web/src/v3/primitives.tsx`，样式 `.v3-page-eyebrow`：西文 Poppins／中文思源黑体 12px、字重 500、行高 18px、`--v3-fnt` 灰色），距内容卡顶部 52–53px。格式为「英文模块名 · 当前位置或摘要」，以 ` · ` 分隔：一级页面写摘要（`TEMPLATES · 85 套`、`SCHEDULE · 2026 年 · 周视图`），子页面把模块名做成可点击的返回链接（`DATASETS · 证书`、`MOCK INTERVIEW · 练习记录`、`JOBS · 公司 · 岗位详情`）。模块名固定为 RESUMES、TEMPLATES、JOBS、SCHEDULE、REVIEWS、DATASETS、MOCK INTERVIEW、ACCOUNT；小字不重复大标题的内容。
+
 ### Motion & Interaction
 
-动效只解释按下、打开、关闭、展开、操作结果或空间关系。它必须由用户操作或真实状态变化触发，默认不使用弹跳，不把动效当作等待业务完成的人工延迟。功能区不使用全页切换动画、持续 Shader、粒子、视差或自动播放装饰。
+动效只解释按下、打开、关闭、展开、切换、操作结果或空间关系，必须由用户操作或真实状态变化触发，不把动效当作等待业务完成的人工延迟。整体手感参照 Apple 系统动效：快起步、长而柔的收尾，位移不超过 8px、缩放不低于 0.96，同一状态变化只组合 opacity 与一种位移或缩放。导航和白色内容外壳保持不透明；页面切换不给整页做透明度动画，页面就绪后直接呈现；加载完成的交接只由骨架残影负责，内容本身不再额外淡入或重新挂载，避免叠加成一次闪烁。页内视图切换（标签、月 / 周、筛选、分页、进入文件夹）不重新挂载，由 `useContentMotion` 在同一节点上原地淡入，只有带方向含义的切换才位移：日历的上一段 / 下一段沿时间方向横向滑入，看板 / 列表、月 / 周这类分段切换按控件的左右位置滑入，竖排分类切换按上下位置滑入；切换时页头、统计和工具栏保持不动，只有被切换的区域移动。模板预览、单题详情这类「上一个 / 下一个」翻看用 `SlideSwap`：旧内容向一侧滑出、新内容从另一侧滑入（420ms）。加载、页内切换一律不做上下位移。`.v3-stagger` 依次淡入只用于不经过骨架交接的列表；经过骨架交接的网格、看板不再错位淡入。
 
-运行时以 `--ui-duration-fast: 100ms`、`--ui-duration-base: 180ms`、`--ui-duration-slow: 260ms`、`--ui-ease-standard` 和 `--ui-ease-press` 为唯一基础 Token。新组件先复用这些值；只有手势驱动且需要连续跟手时才使用可中断弹簧，并从当前可见位置继续，不为普通按钮、菜单或表单引入弹簧库。
+依赖异步数据的标题、统计和空状态在数据确定前使用占位；不能把未知值先显示成 0、空列表或通用业务文案，再替换为真实内容。同一组相关文案与卡片应基于完整结果同时展示。骨架屏按真实页面的版式和尺寸绘制，在请求持续 150ms 后才出现；数据到达时由 `Reveal` 交接：真实内容直接出现在最终位置、不加包裹层，骨架作为绝对定位的残影叠在原处淡出（280ms），因此文字和卡片没有位移，快于 150ms 的请求直接显示内容，不设置强制最短等待。请求失败应显示明确的失败状态，不伪装成没有数据。
+
+工作区页面的列表数据使用 stale-while-revalidate 缓存（`apps/web/src/v3/pageCache.ts`，与 TanStack Query / SWR 的默认行为一致）：再次进入看过的页面时先直接显示上一次的数据、不画骨架，同时在后台静默刷新并原地替换；10 秒内读过的数据不重复请求，几乎不变的简历模板放宽到 5 分钟；窗口回到前台时当前页面在后台刷新一次（5 秒内最多一次）；后台刷新失败时保留已显示的数据。缓存只在内存中、按登录用户隔离，登录用户变化时整体清空；本页的上传、改名、删除等操作只更新缓存内容，不当作刚从服务器读过。
+
+运行时 Token 位于 `apps/web/src/design-system/tokens.css`：`--ui-duration-fast: 140ms`、`--ui-duration-base: 240ms`、`--ui-duration-slow: 360ms`；`--ui-ease-standard`（快起步长收尾）、`--ui-ease-press`（悬停与按下）、`--ui-ease-exit`（退场）和 `--ui-ease-spring`（过冲约 2% 的弹簧曲线，CSS `linear()` 采样；用于 0.96 → 1 的缩放时肉眼看不出放大）。V3 的组合规则集中在 `apps/web/src/v3/motion.css`；新组件先复用这些值和类名，不为普通按钮、菜单或表单引入弹簧库。
 
 | 交互 | 默认反馈 | 时序 | 限制 |
 | --- | --- | --- | --- |
-| Hover | 只改变颜色、边框或背景 | 100ms，`--ui-ease-press` | 不移动布局，不给普通卡片添加悬浮位移或新阴影 |
-| Button press | `pointer-down` 立即反馈，可使用 `scale(0.98)` 或下移 1px | 100ms，`--ui-ease-press` | 禁用态无按压效果；操作提交后用状态反馈，不保留缩放 |
-| Select / Popover / Menu | 从触发器方向淡入并移动 4px；关闭沿原路径返回 | 180ms，`--ui-ease-standard` | `transform-origin` 对齐触发器，不从无关方向飞入，不弹跳 |
-| Dialog | Scrim 淡入，面板使用 opacity 与 `scale(0.98 → 1)` | 打开 180–220ms；关闭不长于打开 | 焦点立即进入弹窗；动效期间不能锁住关闭或键盘输入 |
-| Drawer / Sheet | 沿其停靠边缘进入和退出 | 220–260ms，`--ui-ease-standard` | 同一路径往返；只有真实拖拽时才允许跟手与速度衔接 |
-| Accordion / Collapsible | 内容高度与 opacity 同步变化 | 180ms，`--ui-ease-standard` | 不延迟内容可访问性；长内容避免夸张高度动画 |
-| Tooltip | 指针或键盘聚焦稳定后出现，短淡入 | 延迟约 300ms；出现不超过 100ms | 关闭即时；任务必需信息不能只放在 Tooltip 中 |
-| Toast / inline feedback | 短淡入或 4px 位移，结果文案立即可读 | 进入 180ms；退出 100–160ms | 错误不得自动过早消失；状态不能只靠动画表达 |
-| Loading | 使用局部进度、Skeleton 或紧凑 Spinner | 只在真实等待期间运行 | 不用假进度拖延；避免整页脉冲和大面积循环运动 |
+| Hover | 颜色、边框或背景短过渡；简历 / 模板纸面可上浮 2px | 140ms，`--ui-ease-press` | 不改变布局，不给普通卡片新增阴影 |
+| Button press | `pointer-down` 立即缩到 0.97，松手弹回 | 按下 60ms，回弹 140ms | 禁用态无按压效果；操作提交后用状态反馈，不保留缩放 |
+| 分段控件 / 侧栏选中项 / 开关 | 选中滑块跟随到新位置 | 360ms，`--ui-ease-spring` | 滑块只动 transform，不移动文字 |
+| Select / Popover / Menu | 从触发器方向淡入、移动 6px、缩放 0.96 → 1；关闭沿原路径快速返回 | 打开 360ms `--ui-ease-spring`；关闭 140ms `--ui-ease-exit` | `transform-origin` 对齐触发器，不从无关方向飞入 |
+| Dialog | Scrim 淡入并轻微模糊背景，面板 opacity、下方 8px、缩放 0.96 → 1 | 打开 360ms `--ui-ease-spring`；关闭 240ms，不长于打开 | 焦点立即进入弹窗；动效期间不能锁住关闭或键盘输入 |
+| Drawer / Sheet | 沿其停靠边缘进入和退出 | 360ms，`--ui-ease-standard` | 同一路径往返；只有真实拖拽时才允许跟手与速度衔接 |
+| 页内切换 | 原地淡入；日历按时间方向横向滑入 | 360ms，`--ui-ease-standard` | 不上下位移，不重新挂载表单，不重置滚动和选中状态 |
+| Tooltip | 指针或键盘聚焦稳定后出现，短淡入 | 延迟约 300ms；出现不超过 140ms | 关闭即时；任务必需信息不能只放在 Tooltip 中 |
+| Toast / inline feedback | 从上方 10px 落下并淡入 | 进入 360ms；退出 140ms | 错误不得自动过早消失；状态不能只靠动画表达 |
+| Loading | 使用与真实版式、尺寸一致的 Skeleton，数据到达时骨架残影淡出 | 骨架 150ms 后出现；残影淡出 280ms | 不用假进度拖延；避免整页脉冲和大面积循环运动 |
 
-只动画 `transform` 与 `opacity` 等不改变布局的属性；颜色、边框和背景可做短过渡。禁止用动画隐藏操作延迟，也不要在同一状态变化里叠加缩放、位移、模糊和旋转等多种效果。进入与退出必须保持来源、方向和层级一致，用户在过渡期间仍可继续操作或撤销。
+只动画 `transform`、`translate`、`scale` 与 `opacity` 等不改变布局的属性；颜色、边框和背景可做短过渡。页内动画使用 `backwards` 填充，结束后不残留内联位移，避免与拖拽等交互冲突。进入与退出必须保持来源、方向和层级一致，用户在过渡期间仍可继续操作或撤销。
 
-所有动效必须支持 `prefers-reduced-motion: reduce`：移除位移、缩放、弹簧、视差和自动循环，改为不超过 100ms 的 opacity 或颜色变化；加载状态保留静态或低运动量反馈。关闭动效、焦点转移和可访问状态不能依赖动画完成事件。
+所有动效必须支持 `prefers-reduced-motion: reduce`：移除位移、缩放、弹簧和错位，改为不超过 100ms 的 opacity 或颜色变化；加载状态保留静态或低运动量反馈。关闭动效、焦点转移和可访问状态不能依赖动画完成事件。
 
 ## Shapes
 

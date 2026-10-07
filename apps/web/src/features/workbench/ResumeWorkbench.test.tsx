@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState, type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,16 +7,14 @@ import { defaultCanonicalPresentation } from "../../api/resumeContract";
 import {
   ResumeWorkbench,
   ImportWarningBanner,
-  AgentFloatingEntry,
-  clampAgentDrawerWidth,
-  clampAgentFloatingPosition,
   FontPreviewSelect,
   normalizeVersionName,
-  PageArrangementControl,
-  SettingsStepper,
-  SaveVersionAction,
-  WorkbenchTemplateAction,
+  SettingsSlider,
+  steppedSettingValue,
   VersionRenameAction,
+  WorkbenchPageBar,
+  WorkbenchScorePill,
+  WorkbenchToolRail,
   WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM,
   versionRenameErrorMessage,
   setRestoredEditorContent,
@@ -25,31 +23,40 @@ import {
   truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
-  WorkbenchDrawerHeader,
   WorkbenchMoreMenu,
-  WorkbenchSettingsAction,
   WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
   resumeWorkbenchStyle,
 } from "./ResumeWorkbench";
 import { resumePdfExportErrorMessage } from "../preview/pdfExport";
+import { evaluateResumeCompleteness } from "./resumeCompleteness";
 
 describe("ResumeWorkbench 顶部工具栏显示范围", () => {
-  it("AI 助手内嵌模式不显示顶部工具栏", () => {
+  it("AI 助手内嵌模式不显示 V3 外框和顶部工具栏", () => {
     render(<ResumeWorkbench embedded />);
-    expect(screen.queryByRole("button", { name: "设置" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "关闭简历" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回全部简历" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "简历模板" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "导出 PDF" })).not.toBeInTheDocument();
     expect(screen.queryByRole("banner")).not.toBeInTheDocument();
   });
 
-  it("独立简历编辑页保留顶部工具栏", () => {
+  it("独立简历编辑页将页面设置收进右侧排版面板", async () => {
     render(<ResumeWorkbench />);
-    expect(screen.getByRole("button", { name: "返回全部简历" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "简历模板" })).toBeInTheDocument();
     expect(screen.getByRole("banner")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回全部简历" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "导出 PDF" })).toHaveClass("v3-btn-dark");
+    expect(document.querySelectorAll(".v3-btn-dark")).toHaveLength(1);
+    const rail = screen.getByRole("navigation", { name: "编辑工具" });
+    expect(within(rail).getAllByRole("button").map((button) => button.querySelector("span")?.textContent)).toEqual(["大纲", "模板", "排版", "检查"]);
+    expect(screen.queryByRole("button", { name: /智能助手/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: "页面设置" })).not.toBeInTheDocument();
+    await userEvent.click(within(rail).getByRole("button", { name: "排版" }));
+    const panel = await screen.findByRole("region", { name: "设置" });
+    expect(within(panel).getByRole("toolbar", { name: "页面设置" })).toBeInTheDocument();
+    expect(within(panel).queryByText("模块顺序")).not.toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "增大正文字号" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "减小上下边距" })).toBeInTheDocument();
   });
 });
 
@@ -155,133 +162,48 @@ describe("ResumeWorkbench 标题", () => {
   });
 });
 
-describe("ResumeWorkbench AI 悬浮入口", () => {
-  it("用同一个低打扰入口打开和收起智能助手", async () => {
-    const user = userEvent.setup();
-    const onToggle = vi.fn();
-    const { rerender } = render(<AgentFloatingEntry open={false} onToggle={onToggle} />);
-
-    const openButton = screen.getByRole("button", { name: "打开智能助手" });
-    expect(openButton).toHaveTextContent("AI 助手");
-    await user.click(openButton);
-    expect(onToggle).toHaveBeenCalledOnce();
-
-    rerender(<AgentFloatingEntry open onToggle={onToggle} />);
-    expect(screen.getByRole("button", { name: "收起智能助手" })).toHaveTextContent("AI 助手");
-  });
-
-  it("允许拖动到工作台内的新位置且松手时不会误打开助手", () => {
-    const onToggle = vi.fn();
-    render(<AgentFloatingEntry open={false} onToggle={onToggle} />);
-
-    const entry = screen.getByRole("button", { name: "打开智能助手" });
-    const canvas = entry.parentElement as HTMLElement;
-    Object.defineProperties(canvas, {
-      clientWidth: { configurable: true, value: 500 },
-      clientHeight: { configurable: true, value: 400 },
-    });
-    Object.defineProperties(entry, {
-      offsetWidth: { configurable: true, value: 120 },
-      offsetHeight: { configurable: true, value: 56 },
-    });
-    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
-      left: 0, top: 0, right: 500, bottom: 400, width: 500, height: 400, x: 0, y: 0, toJSON: () => ({}),
-    });
-    vi.spyOn(entry, "getBoundingClientRect").mockReturnValue({
-      left: 360, top: 320, right: 480, bottom: 376, width: 120, height: 56, x: 360, y: 320, toJSON: () => ({}),
-    });
-
-    const dispatchPointer = (type: string, values: Record<string, number | boolean>) => {
-      const event = new Event(type, { bubbles: true, cancelable: true });
-      Object.defineProperties(event, Object.fromEntries(
-        Object.entries(values).map(([key, value]) => [key, { configurable: true, value }]),
-      ));
-      fireEvent(entry, event);
-    };
-    dispatchPointer("pointerdown", { button: 0, isPrimary: true, pointerId: 1, clientX: 400, clientY: 340 });
-    dispatchPointer("pointermove", { pointerId: 1, clientX: 100, clientY: 90 });
-    dispatchPointer("pointerup", { pointerId: 1, clientX: 100, clientY: 90 });
-    fireEvent.click(entry);
-
-    expect(entry).toHaveClass("has-custom-position");
-    expect(entry).toHaveStyle({ left: "60px", top: "70px" });
-    expect(onToggle).not.toHaveBeenCalled();
-  });
-
-  it("将拖动位置限制在工作台可视边界内", () => {
-    expect(clampAgentFloatingPosition(
-      { left: -100, top: 900 },
-      { width: 500, height: 400, entryWidth: 120, entryHeight: 56 },
-    )).toEqual({ left: 8, top: 336 });
-  });
-});
-
-describe("ResumeWorkbench 抽屉布局", () => {
-  it("为普通抽屉和更宽的智能助手抽屉提供对应画布状态", () => {
+describe("ResumeWorkbench 面板布局", () => {
+  it("面板打开时画布进入让位状态", () => {
     expect(workbenchCanvasClassName(null)).toBe("workbench-canvas");
-    expect(workbenchCanvasClassName("settings")).toBe("workbench-canvas has-drawer");
+    expect(workbenchCanvasClassName("outline")).toBe("workbench-canvas has-drawer");
     expect(workbenchCanvasClassName("quality")).toBe("workbench-canvas has-drawer");
-    expect(workbenchCanvasClassName("agent")).toBe("workbench-canvas has-drawer has-agent-drawer");
-  });
-
-  it("把智能助手宽度限制在桌面范围和当前视口内", () => {
-    expect(clampAgentDrawerWidth(200, 1440)).toBe(320);
-    expect(clampAgentDrawerWidth(900, 1440)).toBe(640);
-    expect(clampAgentDrawerWidth(600, 500)).toBe(476);
-    expect(clampAgentDrawerWidth(390, 300)).toBe(320);
   });
 });
 
-describe("ResumeWorkbench 编辑面板入口", () => {
-  it("从顶部设置按钮打开或收起编辑面板", async () => {
+describe("ResumeWorkbench 右侧工具卡片", () => {
+  it("点击工具项切换对应面板，并标出当前打开的一项", async () => {
     const user = userEvent.setup();
     const onToggle = vi.fn();
-    const { rerender } = render(<WorkbenchSettingsAction panelOpen={false} onToggle={onToggle} />);
+    const { rerender } = render(<WorkbenchToolRail mode={null} pendingChecks={3} onToggle={onToggle} />);
 
-    const action = screen.getByRole("button", { name: "设置" });
-    expect(action).toHaveAttribute("aria-expanded", "false");
-    await user.click(action);
-    expect(onToggle).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "大纲" }));
+    await user.click(screen.getByRole("button", { name: "简历模板" }));
+    await user.click(screen.getByRole("button", { name: "排版" }));
+    await user.click(screen.getByRole("button", { name: "简历检查" }));
+    expect(onToggle.mock.calls.map(([mode]) => mode)).toEqual(["outline", "template", "type", "quality"]);
+    expect(screen.getByRole("button", { name: "简历检查" })).toHaveTextContent("3");
 
-    rerender(<WorkbenchSettingsAction panelOpen onToggle={onToggle} />);
-    expect(screen.getByRole("button", { name: "设置" })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "设置" })).toHaveClass("is-active");
-  });
-
-  it("抽屉标题区只提供标题和关闭，不再有面板切换", async () => {
-    const user = userEvent.setup();
-    const onClose = vi.fn();
-    render(
-      <WorkbenchDrawerHeader
-        titleId="workbench-settings-title"
-        title="设置"
-        closeLabel="关闭设置面板"
-        onClose={onClose}
-      />,
-    );
-
-    expect(screen.getByRole("heading", { name: "设置" })).toHaveAttribute("id", "workbench-settings-title");
-    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
-    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "关闭设置面板" }));
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-});
-
-describe("ResumeWorkbench 简历模板入口", () => {
-  it("从顶部简历模板按钮打开或收起模板面板", async () => {
-    const user = userEvent.setup();
-    const onToggle = vi.fn();
-    const { rerender } = render(<WorkbenchTemplateAction panelOpen={false} onToggle={onToggle} />);
-
-    const action = screen.getByRole("button", { name: "简历模板" });
-    expect(action).toHaveAttribute("aria-expanded", "false");
-    await user.click(action);
-    expect(onToggle).toHaveBeenCalledOnce();
-
-    rerender(<WorkbenchTemplateAction panelOpen onToggle={onToggle} />);
+    rerender(<WorkbenchToolRail mode="template" pendingChecks={0} onToggle={onToggle} />);
     expect(screen.getByRole("button", { name: "简历模板" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "简历模板" })).toHaveClass("is-active");
+    expect(screen.getByRole("button", { name: "简历检查" })).toHaveTextContent(/^检查$/);
+  });
+
+  it("保存或版本操作期间禁用模板入口", () => {
+    render(<WorkbenchToolRail mode={null} pendingChecks={0} templateDisabled onToggle={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "简历模板" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "大纲" })).toBeEnabled();
+  });
+
+  it("顶栏完整度胶囊显示分数与等级并打开简历检查", async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+    const result = evaluateResumeCompleteness("");
+    render(<WorkbenchScorePill result={result} active={false} onClick={onClick} />);
+    const pill = screen.getByRole("button", { name: new RegExp(`简历完整度 ${result.score} 分`) });
+    expect(pill).toHaveTextContent(`${result.score}${result.level}`);
+    await user.click(pill);
+    expect(onClick).toHaveBeenCalledOnce();
   });
 });
 
@@ -293,127 +215,105 @@ describe("ResumeWorkbench 字体选择", () => {
 
     render(<FontPreviewSelect value={serifFont} onChange={onChange} />);
 
-    const trigger = screen.getByRole("combobox", { name: "字体" });
+    const trigger = screen.getByRole("button", { name: "字体" });
     expect(trigger).toHaveTextContent("思源宋体");
-    expect(trigger).not.toHaveTextContent("张三的简历 Resume");
 
     await user.click(trigger);
-    expect(screen.getByRole("listbox")).toHaveAttribute("data-ui-theme", "light");
     const wenkaiOption = screen.getByRole("option", { name: /霞鹜文楷/ });
-    expect(wenkaiOption).toHaveTextContent("霞鹜文楷");
-    expect(wenkaiOption).not.toHaveTextContent("Medium");
-    expect(wenkaiOption).not.toHaveTextContent("张三的简历 Resume");
-    expect(wenkaiOption.querySelector(".workbench-font-option-copy")).toHaveStyle({
-      fontFamily: '"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif',
-    });
-
     await user.click(wenkaiOption);
     expect(onChange).toHaveBeenCalledWith('"LXGW WenKai", KaiTi, STKaiti, "Songti SC", serif');
   });
 
   it("版本操作期间禁用字体选择", () => {
     render(<FontPreviewSelect value="missing-font" onChange={vi.fn()} disabled />);
-    expect(screen.getByRole("combobox", { name: "字体" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "字体" })).toHaveTextContent("思源宋体");
+    expect(screen.getByRole("button", { name: "字体" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "字体" })).toHaveTextContent("思源宋体");
   });
 });
 
-describe("ResumeWorkbench 页面设置步进按钮", () => {
-  it("按指定步长增大或减小当前数值", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(<SettingsStepper label="正文字号" unit="pt" value={10.5} min={8} max={16} step={0.5} onChange={onChange} />);
-
-    await user.click(screen.getByRole("button", { name: "正文字号减小" }));
-    await user.click(screen.getByRole("button", { name: "正文字号增大" }));
-
-    expect(onChange).toHaveBeenNthCalledWith(1, 10);
-    expect(onChange).toHaveBeenNthCalledWith(2, 11);
+describe("ResumeWorkbench 排版滑杆", () => {
+  it("按指定步长增大或减小当前数值", () => {
+    expect(steppedSettingValue(10.5, -1, 8, 16, 0.5)).toBe(10);
+    expect(steppedSettingValue(10.5, 1, 8, 16, 0.5)).toBe(11);
+    expect(steppedSettingValue(1.3500000000000001, -1, 1.1, 1.8, 0.05)).toBe(1.3);
   });
 
-  it("字号和行距不显示浮点尾数，步进仍返回准确值", async () => {
-    const user = userEvent.setup();
+  it("拖动滑杆时吸附到步长，数值不显示浮点尾数", () => {
     const onChange = vi.fn();
     render(<>
-      <SettingsStepper label="正文字号" unit="pt" value={10.500000000000002} min={8} max={16} step={0.5} onChange={onChange} />
-      <SettingsStepper label="正文行距" unit="" value={1.3500000000000001} min={1.1} max={1.8} step={0.05} onChange={onChange} />
+      <SettingsSlider label="正文字号" unit="pt" value={10.500000000000002} min={8} max={16} step={0.5} digits={1} onChange={onChange} />
+      <SettingsSlider label="正文行距" unit="" value={1.3500000000000001} min={1.1} max={1.8} step={0.05} digits={2} onChange={onChange} />
     </>);
     expect(screen.getByLabelText("正文字号当前值")).toHaveTextContent(/^10\.5 pt$/);
     expect(screen.getByLabelText("正文行距当前值")).toHaveTextContent(/^1\.35$/);
-    await user.click(screen.getByRole("button", { name: "正文字号增大" }));
-    await user.click(screen.getByRole("button", { name: "正文行距减小" }));
-    expect(onChange).toHaveBeenNthCalledWith(1, 11);
-    expect(onChange).toHaveBeenNthCalledWith(2, 1.3);
+    fireEvent.change(screen.getByRole("slider", { name: "正文字号" }), { target: { value: "11.2" } });
+    expect(onChange).toHaveBeenLastCalledWith(11);
+    fireEvent.change(screen.getByRole("slider", { name: "正文行距" }), { target: { value: "1.3" } });
+    expect(onChange).toHaveBeenLastCalledWith(1.3);
   });
 
-  it("允许上下页边距减小到 6 毫米", async () => {
-    const user = userEvent.setup();
+  it("允许上下页边距减小到 6 毫米", () => {
     const onChange = vi.fn();
-    const { rerender } = render(
-      <SettingsStepper
-        label="上下边距"
-        unit="mm"
-        value={8}
-        min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM}
-        max={30}
-        step={2}
-        onChange={onChange}
-      />,
+    render(
+      <SettingsSlider label="上下边距" unit="mm" value={8} min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM} max={30} step={2} onChange={onChange} />,
     );
-
-    await user.click(screen.getByRole("button", { name: "上下边距减小" }));
+    const slider = screen.getByRole("slider", { name: "上下边距" });
+    expect(slider).toHaveAttribute("min", "6");
+    fireEvent.change(slider, { target: { value: "6" } });
     expect(onChange).toHaveBeenCalledWith(6);
-
-    rerender(
-      <SettingsStepper
-        label="上下边距"
-        unit="mm"
-        value={6}
-        min={WORKBENCH_VERTICAL_PAGE_MARGIN_MIN_MM}
-        max={30}
-        step={2}
-        onChange={onChange}
-      />,
-    );
-    expect(screen.getByRole("button", { name: "上下边距减小" })).toBeDisabled();
   });
 });
 
-describe("ResumeWorkbench 页面排列", () => {
-  it("在页面设置中明确选择上下、左右或智能一页", async () => {
+describe("ResumeWorkbench 页面栏", () => {
+  const renderBar = (overrides: Partial<ComponentProps<typeof WorkbenchPageBar>> = {}) => {
+    const handlers = {
+      onArrangementChange: vi.fn(),
+      onSmartOnePageChange: vi.fn(),
+    };
+    const view = render(
+      <WorkbenchPageBar arrangement="vertical" smartOnePage={false} {...handlers} {...overrides} />,
+    );
+    return { ...handlers, ...view };
+  };
+
+  it("在页面栏选择上下、左右或智能一页", async () => {
     const user = userEvent.setup();
-    const onChange = vi.fn();
-    const onSmartOnePageChange = vi.fn();
+    const { onArrangementChange, onSmartOnePageChange, rerender } = renderBar();
 
-    const { rerender } = render(<PageArrangementControl value="vertical" onChange={onChange} onSmartOnePageChange={onSmartOnePageChange} />);
-
-    const verticalButton = screen.getByRole("button", { name: "上下排列" });
-    const horizontalButton = screen.getByRole("button", { name: "左右排列" });
-    expect(verticalButton).toHaveAttribute("aria-pressed", "true");
-    expect(verticalButton.querySelector('[data-arrangement="vertical"]')).toBeInTheDocument();
-    await user.click(horizontalButton);
-    expect(onChange).toHaveBeenCalledWith("horizontal");
-    await user.click(screen.getByRole("button", { name: "智能一页" }));
+    expect(screen.queryByText(/第 \d+ \/ \d+ 页/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上下排列" })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: "左右排列" }));
+    expect(onArrangementChange).toHaveBeenCalledWith("horizontal");
+    await user.click(screen.getByRole("switch", { name: "智能一页" }));
     expect(onSmartOnePageChange).toHaveBeenCalledWith(true);
 
-    onChange.mockClear();
+    onArrangementChange.mockClear();
     onSmartOnePageChange.mockClear();
-    rerender(<PageArrangementControl value="horizontal" onChange={onChange} smartOnePage onSmartOnePageChange={onSmartOnePageChange} />);
+    rerender(
+      <WorkbenchPageBar arrangement="horizontal" smartOnePage onArrangementChange={onArrangementChange} onSmartOnePageChange={onSmartOnePageChange} />,
+    );
+    expect(screen.queryByText("共 1 页")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "左右排列" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "智能一页" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "上下排列" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "左右排列" })).toBeEnabled();
+    expect(screen.getByRole("switch", { name: "智能一页" })).toHaveAttribute("aria-checked", "true");
 
     await user.click(screen.getByRole("button", { name: "上下排列" }));
     expect(onSmartOnePageChange).toHaveBeenCalledWith(false);
-    expect(onChange).toHaveBeenCalledWith("vertical");
+    expect(onArrangementChange).toHaveBeenCalledWith("vertical");
+  });
+
+  it("不显示页数或缩放控件", () => {
+    renderBar();
+    expect(screen.queryByText(/第 \d+ \/ \d+ 页/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "缩小" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "放大" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("当前缩放")).not.toBeInTheDocument();
   });
 
   it("版本操作期间禁用全部页面布局选择", () => {
-    render(<PageArrangementControl value="horizontal" onChange={vi.fn()} onSmartOnePageChange={vi.fn()} disabled />);
+    renderBar({ disabled: true });
     expect(screen.getByRole("button", { name: "上下排列" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "左右排列" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "智能一页" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "智能一页" })).toBeDisabled();
   });
 });
 
@@ -446,70 +346,23 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
       .toHaveTextContent("保存失败 · 简历中引用的图片总大小不能超过 10MB");
   });
 
-  it("页面设置中的保存版本入口保留命名版本操作", async () => {
-    const user = userEvent.setup();
-    const onSave = vi.fn();
-    const { rerender } = render(<SaveVersionAction pending={false} onSave={onSave} />);
-
-    await user.click(screen.getByRole("button", { name: "保存版本" }));
-    expect(onSave).toHaveBeenCalledOnce();
-    expect(screen.getByText(/可命名、可恢复/)).toBeInTheDocument();
-
-    rerender(<SaveVersionAction pending onSave={onSave} />);
-    expect(screen.getByRole("button", { name: "正在保存版本" })).toBeDisabled();
+  it("编辑冲突时提示简历已在其他地方修改", () => {
+    render(<WorkbenchSaveStatus dirty saveStatus="error" error="RESUME_EDIT_CONFLICT" />);
+    expect(screen.getByRole("status")).toHaveTextContent("保存失败 · 简历已在其他地方修改");
   });
 });
 
 describe("ResumeWorkbench 更多操作菜单", () => {
-  const renderMenu = (overrides: Partial<ComponentProps<typeof WorkbenchMoreMenu>> = {}) => {
-    const handlers = {
-      onExport: vi.fn(),
-      onCompleteness: vi.fn(),
-      onDelete: vi.fn(),
-      exportPending: false,
-      ...overrides,
-    };
-    render(<WorkbenchMoreMenu {...handlers} />);
-    return handlers;
-  };
-
-  it("默认收起，展开后展示日常操作，不再提供历史版本入口", async () => {
+  it("默认收起，展开后只提供删除简历", async () => {
     const user = userEvent.setup();
-    renderMenu();
+    const onDelete = vi.fn();
+    render(<WorkbenchMoreMenu onDelete={onDelete} />);
 
     expect(screen.queryByRole("menu", { name: "更多操作" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "更多操作" }));
-
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      "导出 PDF",
-      "简历完整度分析",
-      "删除简历",
-    ]);
-  });
-
-  it.each([
-    ["导出 PDF", "onExport"],
-    ["简历完整度分析", "onCompleteness"],
-    ["删除简历", "onDelete"],
-  ] as const)("点击 %s 触发对应操作", async (label, handler) => {
-    const user = userEvent.setup();
-    const handlers = renderMenu();
-
-    await user.click(screen.getByRole("button", { name: "更多操作" }));
-    await user.click(screen.getByRole("menuitem", { name: label }));
-
-    expect(handlers[handler]).toHaveBeenCalledOnce();
-  });
-
-  it("PDF 生成期间禁用菜单中的导出项", async () => {
-    const user = userEvent.setup();
-    const handlers = renderMenu({ exportPending: true });
-
-    await user.click(screen.getByRole("button", { name: "更多操作" }));
-    const exportItem = screen.getByRole("menuitem", { name: "导出中…" });
-    expect(exportItem).toBeDisabled();
-    await user.click(exportItem);
-    expect(handlers.onExport).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["删除简历"]);
+    await user.click(screen.getByRole("menuitem", { name: "删除简历" }));
+    expect(onDelete).toHaveBeenCalledOnce();
   });
 });
 

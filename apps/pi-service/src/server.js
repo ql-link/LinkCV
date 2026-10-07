@@ -3,7 +3,7 @@ import { configureHttpDispatcher } from "../../../third_party/pi/packages/coding
 
 import { bearerToken, tokensEqual } from "./auth.js";
 import { loadConfig } from "./config.js";
-import { validateContextMaterials } from "./context.js";
+import { validateContextMaterials, validateConversationMemory } from "./context.js";
 import { executeAgentProbe, executeAgentRun } from "./runtime/agent.js";
 import { createLinkResumeClient } from "./tools/linkresume-client.js";
 
@@ -52,7 +52,7 @@ const server = createServer(async (request, response) => {
     try {
       const result = await createLinkResumeClient(config, "readiness", controller.signal).readiness();
       if (result?.ready !== true) throw new Error("AGENT_NOT_READY");
-      return json(response, 200, { ready: true, service: "linkresume-pi" });
+      return json(response, 200, { ready: true, steering: true, service: "linkresume-pi" });
     } catch {
       return json(response, 503, { error: "AGENT_NOT_READY" });
     }
@@ -108,8 +108,10 @@ const server = createServer(async (request, response) => {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
     }
     let contextMaterials;
+    let conversationMemory;
     try {
       contextMaterials = validateContextMaterials(payload.contextMaterials);
+      conversationMemory = validateConversationMemory(payload.conversationMemory);
     } catch {
       return json(response, 400, { error: "INVALID_AGENT_RUN" });
     }
@@ -157,11 +159,12 @@ const server = createServer(async (request, response) => {
     });
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort("timeout"), config.runTimeoutMs);
-    activeRuns.set(payload.runId, controller);
+    const active = { controller, steering: null };
+    activeRuns.set(payload.runId, active);
     response.on("close", () => {
       if (!response.writableEnded) controller.abort("client_disconnected");
     });
-    writeEvent(response, "run.started", { runId: payload.runId });
+    writeEvent(response, "run.started", { runId: payload.runId, userSequenceNo: payload.userSequenceNo, submissionKey: payload.submissionKey });
     try {
       const usage = await executeAgentRun({
         config,
@@ -171,6 +174,10 @@ const server = createServer(async (request, response) => {
         clarificationAnswers,
         selectionContext: payload.selectionContext ?? null,
         contextMaterials,
+        userSequenceNo: payload.userSequenceNo ?? null,
+        submissionKey: payload.submissionKey ?? null,
+        onReady: (handle) => { active.steering = handle; },
+        conversationMemory,
         emit: (type, data) => writeEvent(response, type, data),
         signal: controller.signal,
       });
@@ -222,10 +229,29 @@ const server = createServer(async (request, response) => {
     }
     return;
   }
+  const steerMatch = url.pathname.match(/^\/internal\/agent\/runs\/([^/]+)\/steer(?:\/([A-Za-z0-9_-]{8,64}))?$/);
+  if (steerMatch && ["POST", "GET"].includes(request.method)) {
+    const runId = decodeURIComponent(steerMatch[1]);
+    const active = activeRuns.get(runId);
+    if (request.method === "GET" && steerMatch[2]) {
+      const receipt = active?.steering?.lookup(steerMatch[2]) ?? {
+        run_id: runId, submission_key: steerMatch[2], state: "unknown",
+      };
+      return json(response, 200, { ...receipt, request_hash: active?.steering?.fingerprint(steerMatch[2]) ?? null });
+    }
+    if (!active) return json(response, 409, { error: "AGENT_STEER_TARGET_FINISHED" });
+    if (!active.steering) return json(response, 503, { error: "AGENT_NOT_READY" });
+    try {
+      const receipt = await active.steering.submit(await readJson(request));
+      return json(response, 202, receipt);
+    } catch (error) {
+      return json(response, error.status ?? 400, { error: error.status ? error.message : "INVALID_AGENT_MESSAGE" });
+    }
+  }
   const cancelMatch = url.pathname.match(/^\/internal\/agent\/runs\/([^/]+)\/cancel$/);
   if (request.method === "POST" && cancelMatch) {
     const runId = decodeURIComponent(cancelMatch[1]);
-    const controller = activeRuns.get(runId);
+    const controller = activeRuns.get(runId)?.controller;
     if (controller) controller.abort("cancelled");
     return json(response, 200, { runId, status: controller ? "cancelled" : "not_running" });
   }

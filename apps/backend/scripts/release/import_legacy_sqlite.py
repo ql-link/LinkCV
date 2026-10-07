@@ -382,8 +382,8 @@ def import_plan(engine: Engine, plan: ImportPlan, *, execute: bool) -> None:
                     nickname=_nickname(legacy_user.email),
                     status=1,
                     is_admin=0,
-                    created_at=legacy_user.created_at,
-                    updated_at=legacy_user.updated_at,
+                    create_time=legacy_user.created_at,
+                    update_time=legacy_user.updated_at,
                 )
                 session.add(user)
                 session.flush()
@@ -429,8 +429,8 @@ def import_plan(engine: Engine, plan: ImportPlan, *, execute: bool) -> None:
                     style_json=legacy_resume.style,
                     lock_version=1,
                     source_type="blank",
-                    created_at=legacy_resume.created_at,
-                    updated_at=legacy_resume.updated_at,
+                    create_time=legacy_resume.created_at,
+                    update_time=legacy_resume.updated_at,
                 )
                 session.add(resume)
                 session.flush()

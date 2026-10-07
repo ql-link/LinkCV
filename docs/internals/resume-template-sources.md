@@ -1,5 +1,7 @@
 # 简历模板第三方来源
 
+本文保留参考版式与原型采用的原名称；Muse 选择集的展示名由 `0101`、`0102` 更名，见[完整名称对照](../features/resume-template-names.md)。稳定模板 key 和来源编号保持不变。
+
 ## 用户选定商务与活力版式（0081）
 
 以用户提供的两张独立截图为视觉参考，分别实现 `featured-classic-business-cn`（经典商务）与 `featured-vitality-cn`（活力）。前者提炼浅蓝居中肖像页眉、细蓝章节线与紧凑单栏正文；后者提炼暖橙身份卡、白色经历卡片与右侧技能栏。两套版式复用项目内 `0079` 已验证的虚构产品经理样本，不复制截图中的真人照片、VIP 标识、联系方式、文字、源码或装饰素材，头像继续使用项目内置安全占位。
@@ -44,3 +46,97 @@
 | `career-classic-cn` | [rendercv/rendercv-typst](https://github.com/rendercv/rendercv-typst/tree/71e22e0692fc84518b2255974cf693b3334ab928) | `examples/classic.typ`，CSS 表达居中页眉与短线标题；沿用上文 MIT 声明 |
 
 HireTechUpUp 参考库的金融、制造、医疗、教育、校招和实习分类用于行业覆盖盘点；本批次不复制其未明确授权的代码、图片或示例文字。
+
+## Muse 选择集（0100）
+
+迁移 `0104` 下架其中 14 套近似款；本节仍保留全部来源以支持历史简历快照，当前可选清单见[模板目录整理](../features/resume-template-curation.md)。
+
+Muse 的 79 套版式来自用户确认的本地原型选择集，按现有 canonical 正文、区域插槽和 CSS 重写。来源编号用于对应原型，不表示引入 Canva 的模板代码、授权资源或服务依赖。参考截图、旧原型脚本、真实照片、插画和媒体 Logo 不随产品分发；头像为空时只显示 CSS 剪影占位，用户上传的头像继续按原图片呈现。
+
+通用 58 套冻结复用 Featured 产品经理虚构样本；行业 21 套使用建筑、金融、审计、法律、硬件、医学、教育、传媒、实验、演艺、咨询的 11 份虚构样本。交易、案例、论文、修订说明、职业路径和核心数据均转换为可编辑的普通章节、段落或列表；不增加公共正文类型。原型中的评分圆点、星级、甘特条、专用卡片和结构化表格没有对应的数据协议，不输出虚构评分或固定专业事实。三列等复杂结构适配为单栏或双栏；装饰保留颜色、标题线条、图框和 CSS 纹理近似，不保证逐像素还原。
+
+所有模板默认关闭智能一页，长内容按 A4 自然分页。章节和身份只出现一次，模板的全语义 fallback 保留新增章节。行业装饰序号仅编号当前章节，不代表履历中的真实编号。
+
+canva-02/03 的十套选择以 canva-08 精修版为依据。完整选择对应关系：
+
+| 原型来源 | 名称 | 产品模板 key |
+| --- | --- | --- |
+| `canva-07#r52` | 蓝色工牌侧栏 | `muse-badge-cn` |
+| `canva-07#r53` | HELLO 粉绿色块 | `muse-hello-cn` |
+| `canva-07#r54` | 深蓝代码风 | `muse-code-cn` |
+| `canva-07#r55` | 橙红底超大姓名 | `muse-vermilion-cn` |
+| `canva-07#r56` | 黄色撕纸便签 + 线圈 | `muse-notebook-cn` |
+| `canva-07#r57` | 蓝绿 L 形色块 | `muse-elbow-cn` |
+| `canva-07#r58` | 米色半透明圆角卡片 | `muse-translucent-cn` |
+| `canva-07#r59` | 深色方块页眉 + 灰侧栏 | `muse-charcoal-cn` |
+| `canva-07#r60` | 绿色整页 + 横线分栏 | `muse-evergreen-cn` |
+| `canva-07#r61` | 红色圆角框 + 对话气泡照片 | `muse-speech-cn` |
+| `canva-07#r62` | 暖灰圆形照片 + 深色页脚 | `muse-taupe-cn` |
+| `canva-07#r63` | 蓝框纸纹 | `muse-paperframe-cn` |
+| `canva-07#r64` | 珊瑚粉圆角框 | `muse-coral-cn` |
+| `canva-06#r33` | 细体大名 + 双线联系栏 | `muse-hairline-cn` |
+| `canva-06#r34` | 灰侧栏 + 右上灰色竖条 | `muse-greyrail-cn` |
+| `canva-06#r35` | 水彩浅蓝 + 深青右栏 | `muse-watercolor-cn` |
+| `canva-06#r36` | 斜杠标题 + 空心圆时间轴 | `muse-slash-cn` |
+| `canva-06#r37` | 鼠尾草底 + 双栏网格 | `muse-sagegrid-cn` |
+| `canva-06#r38` | 雾青侧栏 + 圆形图标标题 | `muse-mist-cn` |
+| `canva-06#r39` | 蓝天弧线 + 红色标签圆角框 | `muse-sky-cn` |
+| `canva-06#r40` | 拱形照片 + 圆点评级 | `muse-archphoto-cn` |
+| `canva-06#r41` | 海军蓝侧栏 + 错位投影标签 | `muse-shadowtag-cn` |
+| `canva-06#r42` | 红色页眉 + 双栏 | `muse-redbanner-cn` |
+| `canva-06#r43` | 拍立得照片 + 细体衬线名 | `muse-polaroid-cn` |
+| `canva-06#r44` | 深蓝页眉 + 明黄侧栏 | `muse-yellowrail-cn` |
+| `canva-06#r45` | 砖红撞色 + 倾斜卡片 | `muse-tilted-cn` |
+| `canva-06#r46` | 酒红纹理 + 等宽字体 | `muse-burgundy-cn` |
+| `canva-06#r47` | 紫色渐变 + 分栏分隔线 | `muse-violet-cn` |
+| `canva-06#r48` | 纯黑页面 + 窄体大名 | `muse-noir-cn` |
+| `canva-06#r49` | 线圈笔记本 + 拍立得 | `muse-spiral-cn` |
+| `canva-06#r50` | 窄体巨名 + 十字格线 | `muse-crossgrid-cn` |
+| `canva-06#r51` | 梦幻光晕 + 右对齐经历框 | `muse-halo-cn` |
+| `canva-05#r19` | 深蓝页眉 + 图标时间轴 | `muse-navymast-cn` |
+| `canva-05#r21` | 浅灰格线版式 | `muse-formgrid-cn` |
+| `canva-05#r23` | 浅蓝页眉 + 蓝色侧栏 | `muse-bluewash-cn` |
+| `canva-05#r24` | 灰侧栏 + 黑色姓名条 | `muse-nameband-cn` |
+| `canva-05#r26` | 蓝色斜角侧栏 | `muse-diagonal-cn` |
+| `canva-05#r28` | 米白纸面 + 圆角侧栏 | `muse-roundrail-cn` |
+| `canva-05#r31` | 粗细姓名 + 双时间轴 | `muse-twintimeline-cn` |
+| `canva-05#r30` | 深海军蓝侧栏 | `muse-deeprail-cn` |
+| `canva-05#r32` | 青色错位照片框 | `muse-offsetphoto-cn` |
+| `canva-04#1` | 灰色侧栏 + 折角标题条 | `muse-folded-cn` |
+| `canva-01#1` | 灰阶斜切页眉 | `muse-slanted-cn` |
+| `prototype#index` | 目录索引 | `muse-contents-cn` |
+| `prototype#numeral` | 大号数字锚点 | `muse-numerals-cn` |
+| `prototype#spine` | 竖排书脊 | `muse-bookspine-cn` |
+| `prototype#annals` | 年谱 | `muse-chronicle-cn` |
+| `prototype#tabs` | 侧边页签 | `muse-tabs-cn` |
+| `prototype#arch` | 建筑 · 施工图图框 | `muse-blueprint-cn` |
+| `prototype#arch2` | 建筑 · 竖向图签 | `muse-titleblock-cn` |
+| `prototype#arch3` | 建筑 · 图纸目录 | `muse-drawinglist-cn` |
+| `prototype#finance` | 金融 · 交易列表 | `muse-dealbook-cn` |
+| `prototype#fin3` | 金融 · 研报首页 | `muse-researchnote-cn` |
+| `prototype#audit` | 审计 · 底稿索引 | `muse-workpaper-cn` |
+| `prototype#audit2` | 审计 · 明细账 | `muse-ledger-cn` |
+| `prototype#law3` | 法律 · 备忘录 | `muse-memorandum-cn` |
+| `prototype#law2` | 法律 · 案例摘要 | `muse-casebrief-cn` |
+| `prototype#spec` | 硬件 · 规格书 | `muse-datasheet-cn` |
+| `prototype#med2` | 医学 · 学术型 | `muse-medicalpapers-cn` |
+| `prototype#med3` | 医学 · 职业路径 | `muse-clinicalpath-cn` |
+| `prototype#edu2` | 教育 · 页边批注 | `muse-annotations-cn` |
+| `prototype#news` | 传媒 · 新闻稿 | `muse-press-cn` |
+| `prototype#edu3` | 教育 · 教学·教研·育人 | `muse-teaching-cn` |
+| `prototype#news3` | 传媒 · 节目串联单 | `muse-rundown-cn` |
+| `prototype#spec3` | 硬件 · 修订记录 | `muse-revisions-cn` |
+| `prototype#lab` | 实验 · 实验记录本 | `muse-labbook-cn` |
+| `prototype#lab3` | 实验 · 元素卡片 | `muse-element-cn` |
+| `prototype#prog3` | 演艺 · 场刊 | `muse-playbill-cn` |
+| `prototype#cons` | 咨询 · 结论先行 | `muse-consulting-cn` |
+| `canva-03#t94` | 姓名职位等大三区 | `muse-triptych-cn` |
+| `canva-03#t84` | 暖红编辑单栏 | `muse-rededitorial-cn` |
+| `canva-03#t116` | 黑白五五分 | `muse-halfblack-cn` |
+| `canva-03#t98` | 黑色页眉 + 手写体职位 | `muse-blackmast-cn` |
+| `canva-03#t113` | 颗粒黑侧栏 + 灰色公司条 | `muse-grainrail-cn` |
+| `canva-03#t99` | 米色侧栏 + 签名装饰 | `muse-signaturerail-cn` |
+| `canva-03#t114` | 问候语姓名 + 圆角衬底 | `muse-greeting-cn` |
+| `canva-02#a` | 灰条标题 + 方形照片 | `muse-greyleaders-cn` |
+| `canva-02#d` | 圆形头像页眉 + 底部三栏 | `muse-ruled-cn` |
+| `canva-02#e` | 姓名左上 + 职位右对齐 | `muse-righttitle-cn` |

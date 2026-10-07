@@ -2,6 +2,8 @@
 
 ## 当前状态
 
+Vite 与根级 Docker Web 构建仅使用 `index.html` 作为 HTML 入口；落地页演示截图随源码作为静态资源打包，`landing-demo.html` 仅用于开发期生成截图。演示边界见 [Web 公共落地页](../internals/web.md#公共落地页与产品演示)。
+
 Web 构建会把统一打印文档、页面现有主题 CSS、固定字体文件和一次性 Chromium 驱动 CLI 输出到 `dist-server`，FastAPI 生产镜像复制为 `/app/pdf`。Web 当前快照与小程序正式版本都通过有界 stdin 传入该脚本并从 stdout 接收完整 PDF；小程序 PNG 再由 Python 进程内的 PDFium 临时栅格化。进程完成即退出，快照、PDF 和 PNG 都不写入服务端持久存储。FastAPI 镜像中的 Node 22 只承载该脚本，不新增常驻 PDF 服务。
 
 根级 `Dockerfile` 构建 Vite 静态产物和 FastAPI Python 环境，并把 Node 22、锁定的 `playwright-core` 运行库和 Debian Chromium 复制/安装到运行镜像。PDF 子进程以专用非登录用户 `linkresume-pdf` 运行，保留 Chromium 沙箱；固定路径为 `/usr/bin/chromium`，智能一页默认上限为 2000mm。独立的 `deploy/Dockerfile.pi` 构建无头 Pi Service 镜像。Web 构建阶段会把 `postcss.config.cjs`、`tailwind.config.cjs`、PDF CLI 与应用源码一起复制到 `/app/apps/web`；Pi 构建阶段安装 vendored workspace 的锁定依赖并校验仓库中版本化的模型目录快照。常规 Docker 构建不访问 `models.dev`、OpenRouter、NVIDIA NIM 或 Vercel AI Gateway，只有维护者主动执行 `npm run refresh:pi-model-data` 时才联网刷新模型快照。Node 依赖查询默认使用 npmmirror，但 `npm ci` 禁止替换 `package-lock.json` 已锁定的 tarball 主机。固定版本的 `uv` 与 Python 依赖默认使用阿里云 PyPI；Production Cloud 还通过 `DEBIAN_MIRROR` build arg 使用阿里云 Debian 镜像，apt 继续校验 Debian 仓库签名，本地及其他构建默认使用官方 `deb.debian.org`。构建过程从 `uv.lock` 导出带哈希的 requirements。镜像构建不连接数据库。FastAPI 容器启动时 runner 先核对 `APP_ENV`、MySQL host、port 和 database，再只读比对 Alembic 当前版本与 `0030` Agent 表、`0031` 范围化提案字段、`0032` 结构化澄清消息字段、`0033` 面试中心三张表等已知 schema 标记；任一对象提前存在、缺失或部分应用都会在执行 DDL 前终止部署。目标和 schema 对齐后才升级到 Alembic head，并由 Uvicorn 在 `8000` 端口提供 `/api` 与 Web 静态文件。
@@ -25,10 +27,12 @@ Dev Jenkins Job 使用 `deploy/jenkins/Jenkinsfile.development`。Jenkins 将当
 - 容器：`linkresume-dev`、`linkresume-worker-dev`、`linkresume-pi-dev`、`linkresume-dev-promtail`
 - 网络：外部网络 `tolink-dev-net`
 - 宿主机端口：`18002`
-- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；后者必须提供非空的 `WECHAT_APPID` 和 `WECHAT_SECRET`
+- 配置：`.env.development` + 权限为 `600` 的 `.env.development.local`；开发环境不要求微信凭据
 - 迁移门禁：`APP_ENV=development`、MySQL `100.86.10.52:13306/linkresume`
 
-Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。发布脚本在迁移与容器替换前检查私密文件权限，并通过 FastAPI `Settings` 拒绝缺失、空值或占位的微信凭据，避免 Jenkins 成功但扫码登录不可用。LinkResume Dev 使用独立 `linkresume` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
+共享 Dev 的 `18002` 直接映射到 FastAPI `8000`，没有 LinkResume 专用 Nginx；`/api/mock-interviews/{id}/speech` 的 WebSocket 握手由 FastAPI 直接处理。用本地 Vite 页面联调时，通过其同源 WebSocket 代理转发，见 [Web 模块](../internals/web.md#api-调用)。
+
+Dev Jenkins 节点需预置 `/var/jenkins_home/.ssh/primary_dev`，并能以 `root` 连接 Primary。Primary 需已有 Docker、Docker Compose、`tolink-dev-net` 和私密 env 文件。发布脚本在迁移与容器替换前检查私密文件权限，并通过 FastAPI `Settings` 校验必需的中间件与服务配置；开发环境仅开放邮箱密码认证。LinkResume Dev 使用独立 `linkresume` MySQL 数据库、MinIO bucket 和 Redis DB 2；本地密钥文件只保存凭据，不覆盖仓库中的地址与资源名。任一前置条件、迁移或健康检查失败都会让 Job 失败。
 
 `linkresume-dev` 的 Generic Webhook Trigger 只接受 `refs/heads/dev`。token 通过 Jenkins Secret Text 凭据 `linkresume-dev-webhook-token` 注入，仓库不保存 token；GitHub 仓库 webhook 只订阅 push 事件。
 
@@ -44,6 +48,8 @@ Production Jenkins Job 使用根目录 `Jenkinsfile`。Jenkins 位于 Primary，
 - 宿主机端口：`4174`（容器内 FastAPI 仍监听 `8000`，保持现有生产反向代理上游）
 - 配置：`.env.production` + 权限为 `600` 的 `.env.production.local`
 - 迁移门禁：`APP_ENV=production`、MySQL `tolink-mysql:3306/linkresume`
+
+生产公网入口由 Cloud 上的 `linkrag-web` Nginx 容器承载，LinkResume 虚拟主机配置从宿主机 `/opt/tolink/LinkRag-Web/nginx/linkresume.conf` 单文件挂载。`/api/mock-interviews/{id}/speech` 的独立代理规则转发到 `172.20.0.1:4174`，使用 HTTP/1.1，传递 `Host`、`X-Forwarded-Proto`、`Upgrade` 和 `Connection`，读写超时均为 600 秒；普通 `/api` 请求仍走既有根路径代理。变更该外部配置后，在 `linkrag-web` 容器内执行 `nginx -t` 并核对已加载配置；如果宿主机文件被原子替换，须重启容器以重新挂载，单纯热重载仍会读取旧 inode。语音 WebSocket 必须由页面同源发起，后端还会校验 `Origin` 与 `Host`；代理配置生效不代表未部署语音后端的环境已经通过语音联调。
 
 Production Web 只把 Vite 生成的哈希 `/assets/*` 发布到阿里云 OSS Bucket 的 `LinkResume/assets/` 前缀，并把入口 favicon 发布到 `LinkResume/favicon.png`，由浏览器直接通过 `https://qingluo-public.oss-cn-shanghai.aliyuncs.com/LinkResume/` 读取；不使用 CDN、自定义静态域名或独立证书。`index.html`、SPA 路由和 `/api/*` 仍由 `https://linkresume.cn` 的公网 Nginx 与 FastAPI 提供。根 `Dockerfile` 通过 `VITE_ASSET_BASE_URL` 把 OSS 地址写进生产 HTML，同时继续在镜像 `/app/web/assets` 保留哈希资源和在 `/app/web/favicon.png` 保留入口图标。发布脚本从即将部署的不可变镜像提取这些文件，使用生产已验证兼容的 `ossutil 2.4.0` 上传哈希资源到 `LinkResume/assets/` 并设置一年 `immutable`，上传 favicon 到 `LinkResume/favicon.png` 并设置短缓存，随后逐项以兼容生产 `curl 7.29.0` 的 `--retry 2`、连接超时和总超时设置，通过 OSS HTTPS HEAD 检查状态；哈希 JavaScript/字体还检查缓存头和跨域响应，favicon 检查 `image/png`；全部成功后才允许初始化数据库、迁移和切换应用。上传或 OSS 验证失败发生在切换前，旧生产版本继续服务。
 
@@ -96,16 +102,17 @@ Production 使用 `APP_ENV=production`，普通 Web 用户只能通过微信小�
 
 ## CI
 
-`.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上执行根级 `npm run check`。业务需求从最新 `origin/master` 创建独立业务分支，完成后向 `dev` 提 PR。本地和 CI 复用同一质量入口，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
+`.github/workflows/quality.yml` 在面向 `dev`、`master` 的 PR 和对应分支 push 上按改动路径并行执行质量检查：`extension`、`desktop`、`miniprogram`、`pi`、`devenv` 与 `contracts` 各为独立 job，只在对应目录有改动时运行；共享分支 push、无法确定基线或改动了根 `package.json`、lockfile、`scripts/quality/` 与该 workflow 时全部运行。`check` 是汇总 job，保留 `Quality / check` 状态名，被跳过的 job 视为通过、任一 job 失败或取消则失败；同一 PR 连续推送会取消较早的运行。业务需求从最新 `origin/master` 创建独立业务分支，完成后向 `dev` 提 PR。本地的 `npm run check` 与 CI 各 job 复用同一组质量脚本，完整分支规则见 [本地开发与配置](development.md#分支与发布流程)。
 
-CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。Quality 使用一次性 MySQL 8.4 服务，在完整 `npm run check` 前分别验证 `0081 → 0082` 的面试素材迁移与 `0083 → 0084` 的当前简历关联迁移；该数据库只包含虚构测试数据，不连接 Development 或 Production。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
+CI 会安装锁定的 `third_party/pi` 与独立 `apps/pi-service` 依赖，并先校验仓库内版本化模型目录快照。CI 不再运行 Web 与后端的完整测试和构建（`web`、`backend` job 已移除），这两类检查改由本地 `npm run check:web`、`npm run test:backend` 等命令在提 PR 前运行。MySQL 迁移校验拆为独立的 `migrations` job，使用一次性 MySQL 8.4 服务：PR 只有改动迁移目录、迁移测试、ORM `models.py`、`migration_sql.py`、`alembic.ini`、`uv.lock` 或该 workflow 时才运行，推送到 `dev`、`master` 时总是运行。它从空库执行两次 `alembic upgrade head` 验证完整链路与幂等，并按本次新增 revision 编号运行 `test_mysql_migrations.py` 中同名测试；该数据库只包含虚构测试数据，不连接 Development 或 Production。应用检查 job 不启动 MySQL。独立的 `rules` job 只安装 uv 与后端依赖，始终运行 AI 入口、项目 Skill 和文档同步检查，文档未同步时无需等待 Node 依赖安装即可失败；需要 Web 依赖的运行时契约由 `contracts` job 在 Web、后端、部署或脚本有改动时运行。独立 Pi 镜像在关闭网络的构建层再次校验该快照并执行离线构建，不在 Production 构建时访问实时模型目录。
 
 ## 恢复与应用回退
 
 - 应用回滚必须把 `TAG` 与 `PI_TAG` 一起切回同一环境、同一版本的两个不可变镜像标签并重新执行 Compose；不得把 Dev 标签部署到 Production。
 - 数据库迁移是 forward-only：当前与历史 revision 都不提供 down SQL，禁止执行 Alembic downgrade，也不做升级降级往返测试。
 - 发布前按迁移风险准备并验证数据库及相关对象存储备份。需要恢复旧数据库状态时使用备份；普通 schema 或数据缺陷通过新的向前 revision 修正。
-- 当前仓库 head `0094`；`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹，并只对已登记的 Development 旧 `0059` 完整结构执行缺失基础 DDL 的增量补齐；已有 `user_preferences` 不删除。`0063` 为独立简历翻译提案增加新标题与结果简历字段，`0064` 增加分享页 PDF 下载权限，`0065` 先把旧绑定回填为消息上下文，再删除 Agent 会话上已废弃的持久化简历绑定字段及其复合索引，会话、运行和消息记录保留。`0066`–`0081` 分批扩充、调整和退役简历模板目录；`0082` 将面试录制或上传的音视频素材统一迁入 `user_dataset`，并增加素材类型、面试关联、时长和旧素材 ID 的完整性约束。 `0083` 新增 Agent 操作轨迹；`0084` 建立当前简历复制幂等和求职可选关联；`0094` 新增应用内公告与用户已读时间点两张空表，属于纯加法变更。
+- 面试录音转写需要在部署覆盖中设置 `MINIO_PUBLIC_ENDPOINT`（阿里云语音服务可访问的 MinIO 公网地址，用于生成 6 小时预签名下载链接；为空时转写任务失败为 `INTERVIEW_TRANSCRIPTION_STORAGE_UNAVAILABLE`），并在 LLM 治理中为 `speech_to_text` 配置阿里云线路且开通对应录音文件识别模型；`INTERVIEW_TRANSCRIPTION_ENABLED`、`INTERVIEW_TRANSCRIPTION_POLL_SECONDS`、`INTERVIEW_TRANSCRIPTION_MODEL` 见 `.env.example`。转写轮询运行在 Worker 进程。
+- 当前仓库 head `0115`。`0111–0115` 按阿里巴巴 MySQL 规约整改全部表（补注释、布尔字段改为 `is_xxx`、删除全部数据库外键、补齐 `id` 与 `create_time`/`update_time`、表名改为单数），细节见[后端内部说明](../internals/backend.md#阿里巴巴-mysql-规约整改)。它们会改动所有表名，必须在停服窗口内先备份再迁移；`0115` 之后旧镜像无法运行，失败只能从备份恢复。更早的 revision 说明如下：`0034` 删除存量已归档 JD 并移除对应字段和索引，`0035` 为 JD 图片智能导入新增空的 `job_image_structuring` 模型能力绑定，`0043` 为资料上传增加幂等、可靠排队与解析尝试字段，`0049` 为活动简历导入任务回填受理时冻结的模板定义快照，`0050` 将白名单内完整的历史 Markdown 图标标记规范化为 canonical 结构化图标，`0051` 为已登记画像结构漂移提供 forward-only 修复和发布门禁，`0052` 为 Agent 会话增加持久化置顶状态及列表索引，`0053` 将历史 OC/书面 Offer 合并为统一状态并增加可选 Offer 详情字段，`0054` 将 Offer 薪资区间收敛为单值字段，`0055` 删除手工岗位职位描述的非空白检查约束，`0056` 将岗位用工类型约束收敛为 `internship/campus/full_time` 或空值并拒绝不兼容存量值，`0057` 新增求职生命周期与阶段历史并在回填后拒绝孤立排期或缺失当前阶段，`0058` 增加固定场次/开放窗口类型和开放窗口个人作答计划字段，`0059` 增加岗位 Logo URL 与独立全局公司资料表，`0060` 增加资料库文件夹分类，`0061` 增加资料当前正文指针、替换操作与对象清理记录，`0062` 增加公司 Logo 内容指纹，并只对已登记的 Development 旧 `0059` 完整结构执行缺失基础 DDL 的增量补齐；已有 `user_preferences` 不删除。`0063` 为独立简历翻译提案增加新标题与结果简历字段，`0064` 增加分享页 PDF 下载权限，`0065` 先把旧绑定回填为消息上下文，再删除 Agent 会话上已废弃的持久化简历绑定字段及其复合索引，会话、运行和消息记录保留。`0066`–`0081` 分批扩充、调整和退役简历模板目录；`0082` 将面试录制或上传的音视频素材统一迁入 `user_dataset`，并增加素材类型、面试关联、时长和旧素材 ID 的完整性约束。 `0083` 新增 Agent 操作轨迹；`0084` 建立当前简历复制幂等和求职可选关联；`0094` 新增应用内公告与用户已读时间点两张空表，属于纯加法变更；`0095`、`0096` 新增模拟面试表及其语音作答字段；`0097` 为 `llm_models` 增加默认值为 1 的 `user_selectable` 列，升级后存量模型保持可选。
 - 如果使用执行 `0033` 前的数据库备份恢复，必须同时处理备份之后写入 MinIO 的面试对象；只恢复数据库会产生失去元数据索引的对象。
 - 只有旧应用兼容当前新 schema 时才允许回退应用镜像。若不兼容，必须继续向前修复或按完整恢复方案同时恢复数据库与应用，不能只回切镜像。
 - MySQL DDL 可能隐式提交；迁移失败后停止自动重试，核对实际 current 和 schema，再决定新 revision 或备份恢复。
@@ -123,7 +130,7 @@ Promtail 配置可以复用到后续系统级日志采集：在 `deploy/observab
 
 ## 资料操作表退役（0089）
 
-历史 Dev 数据库已应用过 `0088` 的供应商目录迁移，因此迁移链保留了该 revision 的原始 SQL：`0087 → 0088 → 0089 → 0090 → 0091 → 0092 → 0093 → 0094`。从 `0087` 升级的其他环境也会执行 `0088`；它会清空旧模型配置和验证记录，而 `0091` 会重建旧调用日志表。`0093` 只在历史 `llm_provider_models` 与 `llm_providers` 均为空时删除它们；非空时停止迁移并先核对、导出。升级前须备份数据库，核对旧模型表、调用日志、`resume_versions`、运行中 Agent 任务及对象存储；不能仅改写 `alembic_version` 跳过 `0088`。
+历史 Dev 数据库已应用过 `0088` 的供应商目录迁移，因此迁移链保留了该 revision 的原始 SQL：`0087 → 0088 → 0089 → 0090 → 0091 → 0092 → 0093 → 0094 → 0095 → 0096 → 0097`。从 `0087` 升级的其他环境也会执行 `0088`；它会清空旧模型配置和验证记录，而 `0091` 会重建旧调用日志表。`0093` 只在历史 `llm_provider_models` 与 `llm_providers` 均为空时删除它们；非空时停止迁移并先核对、导出。升级前须备份数据库，核对旧模型表、调用日志、`resume_versions`、运行中 Agent 任务及对象存储；不能仅改写 `alembic_version` 跳过 `0088`。
 
 Dev 发布脚本在停止旧容器前使用新镜像运行只读 Alembic 预检，检查目标版本链、已知 schema 标记以及待退役表是否仍有记录。预检失败时旧服务保持运行；停机后正式迁移会重复这些检查。Jenkins 的 `RUN_TESTS` 默认为关闭；打开它需要 Jenkins 执行节点具备 Node/npm、uv 和相应测试依赖，PR/push 的完整质量检查由 GitHub Actions 执行。
 
@@ -153,3 +160,12 @@ uv run --directory apps/backend python scripts/release/migrate_interview_assets.
 ```
 
 确认脚本成功、旧素材表为空后，通过部署迁移入口升级至 `0090`，再启动配套新 API、Web 和 Worker。迁移会在任何 DDL 前阻止非空旧素材表被删除；空库不需要运行脚本。旧应用不能在删表后重新启动。MySQL DDL 不支持事务回滚，部分失败必须先核对实际 schema 与 revision，再修复或从备份恢复，不能盲目重跑。
+
+
+## 账号清理配置与启用
+
+环境认证方式与注销语义见[账号功能](../features/identity-account.md)。开发环境不需要微信凭据；生产微信认证要求 WECHAT_APPID/WECHAT_SECRET，敏感注销确认的小程序码页面由 WECHAT_QR_PAGE 指定，默认 pages/account-confirm/index。
+
+ACCOUNT_DELETION_ENABLED 默认 false；ACCOUNT_DELETION_POLL_SECONDS 默认 10，ACCOUNT_DELETION_LEASE_SECONDS 默认 60。关闭受理开关不停止已受理任务的清理。部署前先查询目标真实 Alembic current 并备份，按既有升级流程应用 0106；必须在独立目标测试账号确认同身份真机扫码、租约恢复、MinIO 私有前缀及真实 LinkRag 文件清理，再决定开启受理。不能将 SQLite、假对象存储和替身微信测试视作上述验收。
+
+需要人工处理的任务可在配置或外部故障修复后运行 `uv run --directory apps/backend python -m linkresume.workers.account_deletion_worker retry --job-id <public-id>` 重排，不能恢复账号。完成回执仅保留七天。租约、重试与 schema 事实源见[Backend](../internals/backend.md#账号偏好联系邮箱与持久注销)。

@@ -2,13 +2,13 @@
 <view class="page" style="min-height:calc(100vh - {{statusBarHeight + 50}}px)">
   <view class="content">
     <view class="identity">
-      <text class="title" wx:if="{{phase === 'pending'}}">确认网页登录</text>
-      <text class="title" wx:elif="{{phase === 'confirmed'}}">网页已安全登录</text>
+      <text class="title" wx:if="{{phase === 'pending'}}">{{loginTarget === 'desktop' ? '确认桌面登录' : '确认网页登录'}}</text>
+      <text class="title" wx:elif="{{phase === 'confirmed'}}">{{loginTarget === 'desktop' ? '桌面登录请求已确认' : '网页已安全登录'}}</text>
       <text class="title" wx:elif="{{phase === 'cancelled'}}">本次登录已取消</text>
       <text class="title" wx:elif="{{phase === 'expired'}}">登录请求已过期</text>
       <text class="title" wx:elif="{{phase === 'error'}}">暂时无法确认</text>
       <text class="title" wx:else>正在检查登录请求</text>
-      <text class="subtitle" wx:if="{{phase === 'pending' && !submitting}}">确认后，当前浏览器将登录你的 LinkResume 账号</text>
+      <text class="subtitle" wx:if="{{phase === 'pending' && !submitting}}">{{loginTarget === 'desktop' ? '确认后，请返回桌面客户端完成登录；当前手机不会领取桌面会话' : '确认后，当前浏览器将登录你的 LinkResume 账号'}}</text>
       <text class="subtitle" wx:else>{{message}}</text>
       <view class="inline-status" wx:if="{{loading || submitting}}"><view class="spinner"></view></view>
     </view>
@@ -22,21 +22,21 @@
         open-type="agreePrivacyAuthorization"
         bindagreeprivacyauthorization="handlePrivacyAuthorization"
         disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted}}"
-      >{{submitting ? '正在处理…' : '确认网页登录'}}</button>
+      >{{submitting ? '正在处理…' : (loginTarget === 'desktop' ? '确认桌面登录' : '确认网页登录')}}</button>
       <button
         wx:else
         class="ui-primary-button confirm-primary-button"
         hover-class="confirm-primary-button-pressed"
         bindtap="handleConfirm"
         disabled="{{submitting || !privacyReady || !privacySupported || !agreementAccepted}}"
-      >{{submitting ? '正在处理…' : '确认网页登录'}}</button>
+      >{{submitting ? '正在处理…' : (loginTarget === 'desktop' ? '确认桌面登录' : '确认网页登录')}}</button>
       <button class="secondary-button" hover-class="secondary-button-pressed" bindtap="handleCancel" disabled="{{submitting}}">取消本次登录</button>
     </view>
     <view class="actions" wx:elif="{{phase === 'expired' || phase === 'error'}}">
       <button class="secondary-button secondary-button-bordered" hover-class="secondary-button-pressed" bindtap="loadStatus">重新检查</button>
       <button class="secondary-button" hover-class="secondary-button-pressed" bindtap="handleBackHome">返回简历</button>
     </view>
-    <view class="actions" wx:elif="{{phase === 'cancelled'}}">
+    <view class="actions" wx:elif="{{phase === 'cancelled' || phase === 'confirmed'}}">
       <button class="ui-primary-button confirm-primary-button" hover-class="confirm-primary-button-pressed" bindtap="handleBackHome">返回简历</button>
     </view>
 

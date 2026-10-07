@@ -32,6 +32,8 @@ from linkresume.domain.resume import (
     TemplateDefinition,
 )
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.dependencies import lock_active_user
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -247,7 +249,7 @@ class ResumeImportProcessor:
                 record.parse_status = "failed"
                 record.failure_reason = failure_reason
                 if started is None:
-                    created_at = record.created_at
+                    created_at = record.create_time
                     if created_at.tzinfo is None:
                         created_at = created_at.replace(tzinfo=timezone.utc)
                     elapsed_ms = round((utc_now() - created_at).total_seconds() * 1000)
@@ -270,9 +272,29 @@ class ResumeImportProcessor:
         operation_id: str,
         markdown: str,
     ) -> None:
+        # Keep the entire blocking transaction in one thread. Holding an owner
+        # lock across an await lets another import block the event loop on that
+        # same lock, preventing the first transaction from ever committing.
+        await asyncio.to_thread(
+            self._write_converted_markdown,
+            import_id=import_id,
+            user_id=user_id,
+            operation_id=operation_id,
+            markdown=markdown,
+        )
+
+    def _write_converted_markdown(
+        self,
+        *,
+        import_id: int,
+        user_id: int,
+        operation_id: str,
+        markdown: str,
+    ) -> None:
         object_name: str | None = None
         try:
             with self._session_factory() as db:
+                lock_active_user(db, user_id)
                 record = db.scalar(
                     select(DocumentParseTask)
                     .where(
@@ -292,11 +314,8 @@ class ResumeImportProcessor:
                     # The task row lock is intentionally held through both
                     # object upload and the reference commit.  Delete and
                     # confirmation paths therefore cannot race this pair.
-                    await asyncio.to_thread(
-                        self._storage.upload,
-                        object_name,
-                        markdown.encode("utf-8"),
-                        "text/markdown",
+                    self._storage.upload(
+                        object_name, markdown.encode("utf-8"), "text/markdown"
                     )
                     record.converted_object_name = object_name
                     db.commit()
@@ -342,7 +361,7 @@ class ResumeImportProcessor:
                         )
                         return
                     try:
-                        await asyncio.to_thread(self._storage.delete, object_name)
+                        self._storage.delete(object_name)
                     except Exception as compensation_error:
                         logger.warning(
                             "resume import converted markdown compensation failed",
@@ -399,32 +418,26 @@ class ResumeImportProcessor:
 
         object_name = build_source_graph_object_name(user_id, operation_id)
         payload = source_graph.model_dump_json().encode("utf-8")
-        try:
-            await asyncio.to_thread(
-                self._storage.upload,
-                object_name,
-                payload,
-                "application/json",
-            )
+        def write_graph() -> str:
             with self._session_factory() as db:
+                lock_active_user(db, user_id)
                 record = db.scalar(
-                    select(DocumentParseTask)
-                    .where(
+                    select(DocumentParseTask).where(
                         DocumentParseTask.id == import_id,
                         DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
                         DocumentParseTask.user_id == user_id,
                         DocumentParseTask.parse_status == "processing",
-                    )
-                    .with_for_update()
+                    ).with_for_update()
                 )
                 if record is None:
-                    raise WorkerTaskRetryable(
-                        "source graph task is no longer processable",
-                        stage="source_graph_persistence",
-                    )
+                    raise WorkerTaskRetryable("source graph task is no longer processable", stage="source_graph_persistence")
+                self._storage.upload(object_name, payload, "application/json")
                 record.source_graph_object_name = object_name
                 db.commit()
             return object_name
+
+        try:
+            return await asyncio.to_thread(write_graph)
         except WorkerTaskRetryable:
             raise
         except Exception as error:
@@ -455,6 +468,7 @@ class ResumeImportProcessor:
         self,
         *,
         import_id: int,
+        user_id: int,
         selected_template_id: int,
         title: str,
         parsed,
@@ -464,14 +478,9 @@ class ResumeImportProcessor:
     ) -> None:
         try:
             with self._session_factory() as db:
-                user_id = db.scalar(
-                    select(DocumentParseTask.user_id).where(
-                        DocumentParseTask.id == import_id,
-                        DocumentParseTask.source_type == RESUME_IMPORT_SOURCE_TYPE,
-                    )
-                )
-                if user_id is None:
-                    return
+                # Lock before any consistent read establishes a MySQL
+                # repeatable-read snapshot, so quota counts include the
+                # preceding owner's committed finalization.
                 locked_user = db.scalar(
                     select(User.id).where(User.id == user_id).with_for_update()
                 )
@@ -501,6 +510,14 @@ class ResumeImportProcessor:
                         stage="resume_persistence",
                     )
                 if resume_slot_count(db, record.user_id) > MAX_RESUMES_PER_USER:
+                    # Release this rejected task's reserved slot atomically
+                    # with the quota decision, before another import proceeds.
+                    record.parse_status = "failed"
+                    record.failure_reason = "quota_exceeded"
+                    record.parse_duration_ms = min(
+                        max(0, round((monotonic() - started) * 1000)), 2**32 - 1
+                    )
+                    db.commit()
                     raise ResumeImportFailure(
                         409, "RESUME_LIMIT_REACHED", stage="resume_persistence"
                     )
@@ -509,7 +526,7 @@ class ResumeImportProcessor:
                     .where(ResumeTemplate.id == selected_template_id)
                     .with_for_update()
                 )
-                # The row is required by the resume foreign key, but its
+                # The resume must reference an existing template row, but its
                 # current style and active flag are not part of this task's
                 # render contract.  The accepted task snapshot is the only
                 # source of the imported presentation.
@@ -547,6 +564,7 @@ class ResumeImportProcessor:
                     db,
                 )
                 resume.parse_task_id = record.id
+                product_events.resume_created(db, record.user_id, resume.id, "import")
                 record.parse_status = "succeeded"
                 record.parse_duration_ms = min(
                     round((monotonic() - started) * 1000),
@@ -581,7 +599,9 @@ class ResumeImportProcessor:
             raise WorkerDependencyUnavailable("import lock is already held")
         try:
             try:
-                loaded = self._load_inputs(import_id, template_id)
+                loaded = await asyncio.to_thread(
+                    self._load_inputs, import_id, template_id
+                )
                 if loaded is None:
                     return
                 record, template_definition, presentation = loaded
@@ -673,8 +693,10 @@ class ResumeImportProcessor:
                     raise ResumeImportFailure(
                         422, "IMPORT_TEMPLATE_NOT_FROZEN", stage="resume_persistence"
                     )
-                self._persist_success(
+                await asyncio.to_thread(
+                    self._persist_success,
                     import_id=record.id,
+                    user_id=record.user_id,
                     selected_template_id=selected_template_id,
                     title=title,
                     parsed=parsed,
@@ -724,7 +746,8 @@ class ResumeImportProcessor:
                         stage=error.stage,
                         exception_type=error.exception_type,
                     ) from error
-                self._mark_failed(
+                await asyncio.to_thread(
+                    self._mark_failed,
                     import_id,
                     started,
                     FAILURE_REASON_BY_CODE.get(error.code, "internal_error"),
