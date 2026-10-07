@@ -200,3 +200,23 @@ def test_agent_native_replacement_preserves_field_styles():
     assert result.sections[0].title.value == "新的章节标题"
     assert result.sections[0].title.runs[0].style == data.sections[0].title.runs[0].style
     assert result.identity.name.runs == data.identity.name.runs
+
+@pytest.mark.parametrize("align", [None, "left", "center", "right"])
+def test_list_item_alignment_matches_static_schema_and_round_trips(align):
+    from linkresume.domain.resume.models import ListItem
+
+    payload = {"node_id": "node_aaaaaaaaaaaaaaaa", "source_refs": [], "runs": [styled_run()]}
+    expected = dict(payload)
+    if align is not None:
+        expected["align"] = align
+    payload["align"] = align
+    assert ListItem.model_validate(payload).model_dump(mode="json") == expected
+    root = Path(__file__).resolve().parents[6]
+    schema = json.loads((root / "contracts/resume/canonical-resume.schema.json").read_text())
+    validator = Draft202012Validator({"$ref": "#/$defs/listItem", "$defs": schema["$defs"]})
+    validator.validate(payload)
+    validator.validate(expected)
+    invalid = {**payload, "align": "justify"}
+    assert list(validator.iter_errors(invalid))
+    with pytest.raises(ValidationError):
+        ListItem.model_validate(invalid)

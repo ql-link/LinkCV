@@ -64,6 +64,7 @@ import {
   resumeRowDividerOffsets,
 } from "./resumeRowColumns";
 import { RESUME_IMAGE_ACCEPT, validateResumeImageFile } from "./resumeImageLimits";
+import { resumeInlineImageDimensions } from "./resumeInlineImageDimensions";
 import { ResumeBulletListInputRules } from "./editorInputRules";
 
 export const inlineIconComponents = {
@@ -870,9 +871,7 @@ function InlineIconView({ node }: NodeViewProps) {
 
 function InlineImageView({ node, editor, selected, getPos, deleteNode }: NodeViewProps) {
   useLocale();
-  const width = Math.min(240, Math.max(16, Number(node.attrs.width) || 72));
-  const legacyAspectRatio = Math.min(20, Math.max(0.1, Number(node.attrs.aspectRatio) || 3));
-  const height = Math.min(240, Math.max(16, Number(node.attrs.height) || width / legacyAspectRatio));
+  const { width, height } = resumeInlineImageDimensions(node.attrs);
   // setNodeMarkup 通过替换节点生效，会把节点选区映射成普通光标；同事务里重新选回节点，
   // 否则每次属性写入都会卸载这个工具条、打断连续拖拽。
   const updateImageAttrs = (attrs: Record<string, unknown>) => {
@@ -954,11 +953,11 @@ export const InlineImage = Node.create({
       "data-aspect-ratio": node.attrs.aspectRatio,
       "data-alt": node.attrs.alt,
       class: "resume-inline-image",
-      style: `width:${node.attrs.width}px;height:${node.attrs.height ?? Math.round(node.attrs.width / node.attrs.aspectRatio)}px`,
+      style: `width:${resumeInlineImageDimensions(node.attrs).width}px;height:${resumeInlineImageDimensions(node.attrs).height}px`,
       src: node.attrs.src,
       alt: node.attrs.alt,
       width: node.attrs.width,
-      height: node.attrs.height ?? Math.round(node.attrs.width / node.attrs.aspectRatio),
+      height: resumeInlineImageDimensions(node.attrs).height,
     }),
   ],
   addNodeView: () => ReactNodeViewRenderer(InlineImageView),

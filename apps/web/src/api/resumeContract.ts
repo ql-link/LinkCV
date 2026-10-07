@@ -236,6 +236,7 @@ export type CanonicalParagraphBlock = CanonicalSourceReferenced & {
 
 export type CanonicalListItem = CanonicalSourceReferenced & {
   runs: Array<CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia>;
+  align?: CanonicalTextAlign | null;
 };
 
 export type CanonicalListBlock = {
