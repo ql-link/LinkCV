@@ -21,7 +21,7 @@ final class VoiceRecorder {
     private var pendingBytes = 0
     private var earlyFinal: Final?
 
-    static let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
+    nonisolated(unsafe) static let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
 
     func start(api: any APIClient, interviewID: String, questionID: String, purpose: String = "voice_answer") async {
         guard phase == .idle || { if case .failed = phase { return true }; return false }() else { return }
@@ -150,11 +150,13 @@ final class VoiceRecorder {
         let ratio = targetFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 32
         guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
-        var consumed = false
+        // 输入块同步调用，只交出这一个缓冲；用引用类型承载标记，避免并发捕获可变局部变量。
+        final class Once: @unchecked Sendable { var consumed = false }
+        let once = Once()
         var error: NSError?
         converter.convert(to: output, error: &error) { _, status in
-            if consumed { status.pointee = .noDataNow; return nil }
-            consumed = true; status.pointee = .haveData; return buffer
+            if once.consumed { status.pointee = .noDataNow; return nil }
+            once.consumed = true; status.pointee = .haveData; return buffer
         }
         guard error == nil, output.frameLength > 0, let channel = output.int16ChannelData else { return nil }
         return Data(bytes: channel[0], count: Int(output.frameLength) * MemoryLayout<Int16>.size)

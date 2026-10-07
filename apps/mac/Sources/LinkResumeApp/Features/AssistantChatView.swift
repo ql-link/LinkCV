@@ -155,7 +155,7 @@ struct AssistantChatView: View {
 
     private func generatedTab(_ message: JSONValue, index: Int) -> ChatPreviewTab? {
         guard let title = Self.documentTitle(message.text("content")) else { return nil }
-        let id = message["sequence_no"]?.integer.map(String.init) ?? "m\(index)"
+        let id = message["sequence_no"]?.numberValue.map { String(Int($0)) } ?? "m\(index)"
         return ChatPreviewTab(kind: .generated, id: id, label: title + ".md", content: message.text("content"))
     }
 

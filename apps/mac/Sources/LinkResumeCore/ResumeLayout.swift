@@ -79,6 +79,11 @@ public struct ResumeTypeSettings: Equatable, Sendable {
     public var verticalPageMargin: Double
     public var smartOnePage: Bool
 
+    public init(fontFamily: String, fontSize: Double, lineHeight: Double, pageMargin: Double, verticalPageMargin: Double, smartOnePage: Bool) {
+        self.fontFamily = fontFamily; self.fontSize = fontSize; self.lineHeight = lineHeight
+        self.pageMargin = pageMargin; self.verticalPageMargin = verticalPageMargin; self.smartOnePage = smartOnePage
+    }
+
     public static func read(_ style: JSONValue) -> ResumeTypeSettings? {
         guard style.text("schema_version") == "resume-presentation.v1", let tokens = style["template_snapshot"]?["tokens"] else { return nil }
         let key = style["template_snapshot"]?.text("template_key") ?? ""
