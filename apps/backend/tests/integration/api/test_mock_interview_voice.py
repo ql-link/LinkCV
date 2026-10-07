@@ -218,7 +218,7 @@ def test_voice_interview_saves_recordings_speaks_and_reports_voice_metrics() -> 
         assert answered[0]["raw_transcript"] == "我用瑞迪斯做缓存，嗯，那个 QPS 一千"
         assert answered[0]["transcript_state"] == "original"
         report = report_detail["report"]
-        assert report["answer_mode"] == "voice" and report["rubric_version"] == "v2"
+        assert report["answer_mode"] == "voice" and report["rubric_version"] == "v3"
         metrics = report["voice_metrics"]
         assert metrics["long_pauses"] == len(answered)
         assert metrics["filler_ratio"] > 0 and metrics["chars_per_minute"] > 0

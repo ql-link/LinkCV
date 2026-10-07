@@ -132,7 +132,11 @@ class ScriptedGateway:
                 yield GatewayStreamEvent(type="done", usage=USAGE)
 
             return broken()
-        header = self.turn_headers.pop(0) if self.turn_headers else {"action": "next_question", "depth_level": 2}
+        if self.turn_headers:
+            header = self.turn_headers.pop(0)
+        else:
+            # Default to the move-on action the prompt allows (finish on the last topic).
+            header = {"action": "finish" if "finish" in system.split("只能是以下之一：")[-1].split("。")[0] else "next_question", "depth_level": 2}
         text = "好的，请问你是如何定位性能瓶颈的？" if header["action"] != "finish" else "今天的面试到这里，感谢。"
 
         async def events():
@@ -322,12 +326,12 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         weights = {item["key"]: item["weight"] for item in report["dimensions"]}
         assert "job_fit" not in weights  # no JD supplied
         assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
-        dimension = sum(item["score"] / 5 * 100 * item["weight"] for item in report["dimensions"])
+        dimension = sum((item["score"] - 1) / 4 * 100 * item["weight"] for item in report["dimensions"])
         question_avg = sum(item["score"] for item in report["questions"]) / 3
         assert report["total_score"] == pytest.approx(question_avg * 0.7 + dimension * 0.3, abs=0.05)
         assert report_detail["total_score"] == pytest.approx(report["total_score"])
         assert report["fact_check"]["status"] == "not_requested"
-        assert report["rubric_version"] == "v2"
+        assert report["rubric_version"] == "v3"
         assert report["answer_mode"] == "text" and report["voice_metrics"] is None
     with app.state.session_factory() as db:
         logs = db.scalars(select(LLMCallLog)).all()

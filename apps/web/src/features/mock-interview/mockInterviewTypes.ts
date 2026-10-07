@@ -93,6 +93,10 @@ export type MockInterviewReport = {
   fact_check: { status: "not_requested" | "completed" | "failed"; items: MockFactCheckItem[] };
   resume_risks: string[];
   improvements: string[];
+  strengths?: string[];
+  practice_focus?: Array<{ topic: string; sequence_no: number; score: number; reason: string }>;
+  consistency_basis?: "materials" | "model_only";
+  prompt_version?: string;
   off_topic_detected: boolean;
   low_confidence: boolean;
   closing_message?: string;

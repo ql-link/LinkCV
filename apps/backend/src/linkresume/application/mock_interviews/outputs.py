@@ -40,6 +40,9 @@ class PlanItem(_Output):
     topic: str = Field(min_length=1, max_length=200)
     anchor: str = Field(min_length=1, max_length=500)
     anchor_kind: Literal["resume", "job", "material"] = "resume"
+    # 服务端据此裁剪：同一项目考察点上限、开放设计题数量。
+    project: str = Field(default="", max_length=120)
+    is_open_design: bool = False
     start_depth: int = Field(ge=1, le=5)
     expected_signals: list[str] = Field(min_length=1, max_length=5)
     follow_up_directions: list[str] = Field(default_factory=list, max_length=3)
@@ -58,15 +61,23 @@ class InterviewerTurn(_Output):
 
 
 class SignalJudgement(_Output):
+    # expected_signals 的下标（从 0 开始），优先于名称匹配，避免判定记到错的信号上。
+    index: int | None = Field(default=None, ge=0, le=20)
     signal: str = Field(max_length=300)
     verdict: Verdict
+    evidence: str = Field(default="", max_length=500)
+
+
+class FactualError(_Output):
+    description: str = Field(min_length=1, max_length=300)
+    # 候选人原话；引不出来的"事实错误"不扣分。
     evidence: str = Field(default="", max_length=500)
 
 
 class QuestionEvaluation(_Output):
     signals: list[SignalJudgement] = Field(default_factory=list, max_length=5)
     achieved_depth: int = Field(ge=0, le=5)
-    factual_errors: list[str] = Field(default_factory=list, max_length=10)
+    factual_errors: list[FactualError] = Field(default_factory=list, max_length=10)
     highlights: list[str] = Field(default_factory=list, max_length=5)
     weaknesses: list[str] = Field(default_factory=list, max_length=5)
     reference_answer: str = Field(default="", max_length=2000)
@@ -105,6 +116,7 @@ class OverallEvaluation(_Output):
     summary: str = Field(max_length=2000)
     resume_risks: list[str] = Field(default_factory=list, max_length=8)
     improvements: list[str] = Field(min_length=1, max_length=5)
+    strengths: list[str] = Field(default_factory=list, max_length=5)
     off_topic_detected: bool = False
 
 

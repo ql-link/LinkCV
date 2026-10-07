@@ -58,7 +58,7 @@ def test_total_score_formula() -> None:
         {"professional_depth": 4, "structure": 3, "job_fit": 5, "resume_consistency": 4, "communication": 3},
         rubric.effective_weights("technical", has_job=True),
     )
-    assert dimension == pytest.approx(80 * 0.35 + 60 * 0.2 + 100 * 0.2 + 80 * 0.15 + 60 * 0.1)
+    assert dimension == pytest.approx(75 * 0.35 + 50 * 0.2 + 100 * 0.2 + 75 * 0.15 + 50 * 0.1)
     assert rubric.total_score([80, 60], dimension) == pytest.approx(70 * 0.7 + dimension * 0.3, abs=0.01)
 
 
@@ -168,3 +168,118 @@ def test_slot_contention_maps_mysql_deadlock_to_conflict() -> None:
 
     with pytest.raises(OperationalError):
         occupy_slot(OtherFailure(), object())
+
+
+def test_hr_interviews_are_not_penalised_for_technical_depth() -> None:
+    kwargs = dict(signal_verdicts=["hit", "hit"], achieved_depth=1, difficulty="senior", factual_errors=0, skipped=False)
+    assert rubric.question_score(**kwargs, interview_type="hr") == 100.0
+    assert rubric.question_score(**kwargs, interview_type="technical") < 100.0
+
+
+def test_dimension_score_floor_is_zero() -> None:
+    weights = {"structure": 1.0}
+    assert rubric.dimension_score({"structure": 1}, weights) == 0.0
+    assert rubric.dimension_score({"structure": 5}, weights) == 100.0
+
+
+def test_judgement_index_beats_name_and_is_not_reused() -> None:
+    value = QuestionEvaluation(
+        signals=[
+            SignalJudgement(index=1, signal="随便写的名字", verdict="hit", evidence="火焰图"),
+            SignalJudgement(index=0, signal="另一个名字", verdict="partial", evidence="本地缓存"),
+        ],
+        achieved_depth=3,
+    )
+    aligned = _align_signals(["A", "B"], value, "火焰图 本地缓存")
+    assert [item["verdict"] for item in aligned] == ["partial", "hit"]
+
+
+def test_unquoted_factual_errors_do_not_cost_points() -> None:
+    from types import SimpleNamespace
+
+    from linkresume.application.mock_interviews.outputs import FactualError
+    from linkresume.application.mock_interviews.scoring import score_root
+
+    interview = SimpleNamespace(difficulty="junior", interview_type="technical")
+    root = SimpleNamespace(id=1, parent_id=None, answer_text="我用了 Redis 做缓存")
+    value = QuestionEvaluation(
+        signals=[SignalJudgement(index=0, signal="A", verdict="hit", evidence="Redis 做缓存")],
+        achieved_depth=2,
+        factual_errors=[
+            FactualError(description="编造", evidence="根本没说过的话"),
+            FactualError(description="有据", evidence="Redis"),
+        ],
+    )
+    result = score_root(interview, {"expected_signals": ["A"]}, root, [root], value)
+    assert result["factual_errors"] == ["有据"]
+    assert result["score"] == 90.0
+
+
+def _plan_item(topic: str, **kwargs):
+    from linkresume.application.mock_interviews.outputs import PlanItem
+
+    return PlanItem(topic=topic, anchor="a", start_depth=kwargs.pop("start_depth", 2), expected_signals=["x"], **kwargs)
+
+
+def test_plan_selection_enforces_project_gap_and_design_rules() -> None:
+    from linkresume.application.mock_interviews.outputs import InterviewPlan
+    from linkresume.application.mock_interviews.planning import select_plan
+
+    plan = InterviewPlan(
+        selected=[
+            _plan_item("t1", project="P"),
+            _plan_item("t2", project="P"),
+            _plan_item("t3", project="P"),  # third topic of one project is dropped
+            _plan_item("g1", is_gap=True),
+            _plan_item("g2", is_gap=True),
+            _plan_item("g3", is_gap=True),
+        ],
+        candidates=[_plan_item("c1"), _plan_item("d1", is_open_design=True)],
+    )
+    chosen, problems = select_plan(plan, difficulty="intermediate", question_count=5)
+    topics = [item.topic for item in chosen]
+    assert "t3" not in topics and not problems
+    assert sum(item.is_gap for item in chosen) <= 2  # ceil(5 * 0.4)
+
+
+def test_senior_plan_requires_exactly_one_open_design_and_orders_warm_up_first() -> None:
+    from linkresume.application.mock_interviews.outputs import InterviewPlan
+    from linkresume.application.mock_interviews.planning import select_plan
+
+    items = [_plan_item(f"t{i}", start_depth=5) for i in range(4)]
+    plan = InterviewPlan(selected=items, candidates=[_plan_item("design", is_open_design=True)])
+    chosen, problems = select_plan(plan, difficulty="senior", question_count=4)
+    assert not problems and sum(item.is_open_design for item in chosen) == 1
+    assert all(item.start_depth == 3 for item in chosen)  # clamped into the senior range
+    _, missing = select_plan(InterviewPlan(selected=items), difficulty="senior", question_count=4)
+    assert missing == ["open_design"]
+
+
+def test_short_plan_is_reported() -> None:
+    from linkresume.application.mock_interviews.outputs import InterviewPlan
+    from linkresume.application.mock_interviews.planning import select_plan
+
+    _, problems = select_plan(InterviewPlan(selected=[_plan_item("only")]), difficulty="junior", question_count=3)
+    assert "count" in problems
+
+
+def test_header_split_tolerates_code_fence() -> None:
+    first, rest = _split_header('```json\n{"action":"next_question","depth_level":2}\n```\n好的，下一题。')
+    assert _parse_header(first) is not None and rest == "好的，下一题。"
+
+
+def test_follow_up_prompt_carries_next_topic_and_allowed_actions() -> None:
+    from types import SimpleNamespace
+
+    from linkresume.application.mock_interviews import prompts
+
+    interview = SimpleNamespace(
+        interview_type="technical", difficulty="senior", language="zh", answer_mode="voice",
+        resume_markdown_snapshot="r", job_snapshot_json=None, stage_snapshot_json=None, target_role=None,
+    )
+    messages = prompts.interviewer_messages(
+        interview, plan_item={"topic": "当前"}, next_item={"topic": "下一个"}, transcript=[], follow_ups_used=0,
+        allow_follow_up=True, is_opening=False, is_last_topic=False, allowed_actions=("follow_up", "next_question"),
+    )
+    assert "next_topic" in messages[1].content and "下一个" in messages[1].content
+    assert "follow_up / next_question" in messages[0].content and "80 字" in messages[0].content

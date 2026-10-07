@@ -14,6 +14,7 @@ import {
   type MockTurnEvent,
 } from "./mockInterviewApi";
 import { charCount, clock, groupQuestions, hhmm, sessionEyebrow, sessionHeading, useNow } from "./mockShared";
+import { MOCK_INTERVIEW_ERROR_MESSAGES } from "./mockInterviewText";
 
 /* ───────────── 准备中 / 准备失败 ───────────── */
 
@@ -59,7 +60,7 @@ export function PreparingView({ interview, onChanged }: { interview: MockIntervi
           <span className="mi-spinner" aria-hidden="true" />
         )}
         <h2>{failed ? t("面试官没能准备好题目") : t("面试官正在准备题目")}</h2>
-        <p>{failed ? t("考察计划不完整，请重试；进行中的名额已经释放。") : t("通常需要 20–40 秒，可以离开此页，准备完成后回到这里继续。")}</p>
+        <p>{failed ? (interview.error_code && MOCK_INTERVIEW_ERROR_MESSAGES[interview.error_code] ? t(MOCK_INTERVIEW_ERROR_MESSAGES[interview.error_code]) : t("面试官没能完成准备，请重试；进行中的名额已经释放。")) : t("通常需要 20–40 秒，可以离开此页，准备完成后回到这里继续。")}</p>
         <ol className="mi-prep-steps">
           {PREP_STEPS.map((item, index) => {
             const state = index < step ? "done" : index === step ? (failed ? "failed" : "active") : "todo";
