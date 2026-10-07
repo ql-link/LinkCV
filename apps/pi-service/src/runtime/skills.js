@@ -5,7 +5,7 @@ const SKILLS_ROOT = fileURLToPath(new URL("../../resources/skills/", import.meta
 const REGISTERED = new Set([
   "resume-diagnosis", "resume-edit-workflow", "resume-edit-local", "resume-edit-entry-star",
   "resume-generate-from-materials", "resume-translation", "interview-guide", "career-planning",
-  "resume-title-generator", "material-lookup", "resource-catalog",
+  "resume-title-generator", "material-lookup", "resource-catalog", "resume-evidence-method",
 ]);
 const cache = new Map();
 

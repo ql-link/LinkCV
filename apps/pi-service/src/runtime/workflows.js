@@ -4,11 +4,11 @@
 export const WORKFLOWS = Object.freeze({
   resource_catalog: { label: "资源盘点", skills: ["resource-catalog"], resume: "none", purposes: [] },
   resume_diagnosis: {
-    label: "简历诊断", skills: ["resume-diagnosis"], resume: "required",
+    label: "简历诊断", skills: ["resume-evidence-method", "resume-diagnosis"], resume: "required",
     purposes: ["resume_identity", "content_location"],
   },
   resume_edit: {
-    label: "简历修改", skills: ["resume-edit-workflow"], resume: "required",
+    label: "简历修改", skills: ["resume-evidence-method", "resume-edit-workflow"], resume: "required",
     purposes: ["resume_identity", "edit_scope", "content_location", "missing_fact", "target_position"],
   },
   resume_translation: {
@@ -16,15 +16,15 @@ export const WORKFLOWS = Object.freeze({
     purposes: ["resume_identity", "edit_scope"],
   },
   interview_guide: {
-    label: "面试准备", skills: ["interview-guide"], resume: "optional",
+    label: "面试准备", skills: ["resume-evidence-method", "interview-guide"], resume: "optional",
     purposes: ["resume_identity", "target_position", "missing_fact"],
   },
   career_planning: {
-    label: "职业规划", skills: ["career-planning"], resume: "optional",
+    label: "职业规划", skills: ["resume-evidence-method", "career-planning"], resume: "optional",
     purposes: ["resume_identity", "target_position", "missing_fact"],
   },
   resume_title: {
-    label: "简历标题建议", skills: ["resume-title-generator"], resume: "optional",
+    label: "简历标题建议", skills: ["resume-evidence-method", "resume-title-generator"], resume: "optional",
     purposes: ["resume_identity", "missing_fact"],
   },
   material_lookup: { label: "资料查找", skills: ["material-lookup"], resume: "none", purposes: ["missing_fact"] },
