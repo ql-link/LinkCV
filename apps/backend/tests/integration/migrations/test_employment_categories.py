@@ -11,6 +11,10 @@ from sqlalchemy.exc import DBAPIError
 
 from tests.integration.migrations.test_mysql_migrations import invoke_alembic, run_alembic
 
+# Historical migration tests inspect the schema as it was before the 0111-0115
+# Alibaba naming migrations; 0115 renamed tables and time columns.
+PRE_NAMING_HEAD = "0110"
+
 
 def test_employment_categories_upgrade_and_reject_legacy_values() -> None:
     raw = os.environ.get("LINKRESUME_TEST_MYSQL_URL")
@@ -32,14 +36,14 @@ def test_employment_categories_upgrade_and_reject_legacy_values() -> None:
             connection.execute(text("INSERT INTO job_descriptions (id,user_id,job_title,company_name,employment_type,description,skills,source_type) VALUES (91002,91001,'测试岗位','测试公司','internship','测试正文',JSON_ARRAY(),'manual')"))
         with engine.begin() as connection:
             connection.execute(text("UPDATE job_descriptions SET employment_type='part_time' WHERE id=91002"))
-        rejected = invoke_alembic(url, "upgrade", "head")
+        rejected = invoke_alembic(url, "upgrade", PRE_NAMING_HEAD)
         assert rejected.returncode != 0
         with engine.begin() as connection:
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0055"
             assert connection.execute(text("SELECT employment_type FROM job_descriptions WHERE id=91002")).scalar_one() == "part_time"
             connection.execute(text("UPDATE job_descriptions SET employment_type='internship' WHERE id=91002"))
-        run_alembic(url, "upgrade", "head")
-        run_alembic(url, "upgrade", "head")
+        run_alembic(url, "upgrade", PRE_NAMING_HEAD)
+        run_alembic(url, "upgrade", PRE_NAMING_HEAD)
         with engine.begin() as connection:
             assert connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one() == "0056"
             assert connection.execute(text("SELECT employment_type FROM job_descriptions WHERE id=91002")).scalar_one() == "internship"

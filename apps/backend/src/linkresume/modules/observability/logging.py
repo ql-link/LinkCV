@@ -33,11 +33,20 @@ _SECRET_ASSIGNMENT_PATTERN = re.compile(
 _URL_QUERY_PATTERN = re.compile(r"(https?://[^\s?#]+)[?#][^\s]+")
 
 ALLOWED_FIELDS = {
+    "skill_name",
+    "target_surface",
+    "target_section_kind",
+    "target_has_entry",
+    "target_has_section",
     "actor_user_id",
     "action",
     "dependency",
     "duration_ms",
     "error_code",
+    "intent_mode",
+    "call_id",
+    "decision_field",
+    "decision_confidence",
     "failure_stage",
     "http_method",
     "http_route",

@@ -174,9 +174,11 @@ def test_alignment_does_not_change_node_ids_order_or_sources():
     assert aligned.sections[0].blocks[0].runs == plain.sections[0].blocks[0].runs
 
 
-def test_agent_replacement_clears_only_replaced_field_runs():
+def test_agent_native_replacement_preserves_field_styles():
     from linkresume.domain.resume.models import CanonicalResumeDocument
-    from linkresume.modules.agent.resume_tools import editor_markdown, replace_editor_markdown
+    from types import SimpleNamespace
+    from linkresume.modules.agent.canonical_targets import resolve, apply_operations
+    from linkresume.modules.agent.schemas import ResumeTargetLocator, ProposalOperation
     from tests.canonical_resume_fixtures import canonical_resume_payload
 
     payload, _ = canonical_resume_payload()
@@ -191,9 +193,30 @@ def test_agent_replacement_clears_only_replaced_field_runs():
     name = payload["identity"]["name"]
     name["runs"] = [styled_run(name["value"], 24)]
     data = CanonicalResumeDocument.model_validate(payload)
-    markdown = editor_markdown(data)
-    edited = markdown.replace(section["title"]["value"], "新的章节标题", 1)
-    result = CanonicalResumeDocument.model_validate(replace_editor_markdown(data, edited))
+    resume = SimpleNamespace(id=1, lock_version=1)
+    target = ResumeTargetLocator.model_validate(resolve(resume, data, node_id=section["node_id"])["target"])
+    operation = ProposalOperation(op="replace_target_text", target=target, new_text="新的章节标题", expected_text_hash=target.expected_text_hash)
+    result = CanonicalResumeDocument.model_validate(apply_operations(data, resume=resume, mode="polish_local", main_target=target, operations=[operation]))
     assert result.sections[0].title.value == "新的章节标题"
-    assert result.sections[0].title.runs is None
+    assert result.sections[0].title.runs[0].style == data.sections[0].title.runs[0].style
     assert result.identity.name.runs == data.identity.name.runs
+
+@pytest.mark.parametrize("align", [None, "left", "center", "right"])
+def test_list_item_alignment_matches_static_schema_and_round_trips(align):
+    from linkresume.domain.resume.models import ListItem
+
+    payload = {"node_id": "node_aaaaaaaaaaaaaaaa", "source_refs": [], "runs": [styled_run()]}
+    expected = dict(payload)
+    if align is not None:
+        expected["align"] = align
+    payload["align"] = align
+    assert ListItem.model_validate(payload).model_dump(mode="json") == expected
+    root = Path(__file__).resolve().parents[6]
+    schema = json.loads((root / "contracts/resume/canonical-resume.schema.json").read_text())
+    validator = Draft202012Validator({"$ref": "#/$defs/listItem", "$defs": schema["$defs"]})
+    validator.validate(payload)
+    validator.validate(expected)
+    invalid = {**payload, "align": "justify"}
+    assert list(validator.iter_errors(invalid))
+    with pytest.raises(ValidationError):
+        ListItem.model_validate(invalid)

@@ -83,6 +83,8 @@ class AdminAnnouncementStatsResponse(ApiModel):
     published: int
     unpublished: int
     active: int
+    # Published but not started yet; "published" minus "active" minus this is expired.
+    scheduled: int
 
 
 class UserAnnouncement(ApiModel):

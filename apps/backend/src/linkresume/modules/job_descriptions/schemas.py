@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 EmploymentType = Literal[
@@ -85,6 +86,19 @@ class JobDescriptionDraft(BaseModel):
             if normalized and normalized not in result:
                 result.append(normalized)
         return result
+
+    @field_validator("salary_currency", mode="before")
+    @classmethod
+    def normalize_draft_currency(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = unicodedata.normalize("NFKC", value).strip().upper()
+        aliases = {
+            "人民币": "CNY", "RMB": "CNY", "美元": "USD", "美金": "USD",
+            "欧元": "EUR", "英镑": "GBP", "港币": "HKD", "港元": "HKD",
+            "日元": "JPY", "日圆": "JPY",
+        }
+        return aliases.get(normalized, normalized) or None
 
 
 class JobDescriptionDraftResponse(BaseModel):
@@ -398,7 +412,7 @@ class JobDescriptionSummary(BaseModel):
     source_site: str | None
     source_url: str | None
     lock_version: int
-    updated_at: datetime
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @field_validator("id", mode="before")
     @classmethod
@@ -435,7 +449,7 @@ class JobDescriptionRecord(JobDescriptionSummary):
     source_url_hash: str | None
     imported_at: datetime | None
     notes: str | None
-    created_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
 
     @field_validator("source_url_hash", mode="before")
     @classmethod

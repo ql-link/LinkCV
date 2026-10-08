@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { Mermaid, MermaidConfig } from "mermaid";
 
 import { DATASET_MERMAID_PLACEHOLDER_SELECTOR } from "./datasetMarkdown";
@@ -23,7 +24,7 @@ const mermaidConfig: MermaidConfig = {
   ],
 };
 
-const fallbackErrorMessage = "Mermaid 图表渲染失败，已保留源代码。";
+const fallbackErrorMessage = t("Mermaid 图表渲染失败，已保留源代码。");
 let mermaidModulePromise: Promise<Mermaid> | null = null;
 let renderSequence = 0;
 

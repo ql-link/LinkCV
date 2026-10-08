@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
+import { getSinglePageFitScale, getTwoPageFitScale, getWheelZoomScale, handleWheelZoom } from "./workbenchZoom";
 
 describe("workbench wheel zoom", () => {
+  it("单页按抽屉打开后的可用容器宽度适配，宽屏保持设计基准", () => {
+    const a4 = 210 / 25.4 * 96;
+    const base = 560 / a4;
+    expect(getSinglePageFitScale(1400, 80, base) * a4).toBeCloseTo(560, 0);
+    expect(getSinglePageFitScale(560, 48, base) * a4).toBeLessThanOrEqual(512);
+    expect(getSinglePageFitScale(320, 32, base) * a4).toBeCloseTo(288, 0);
+    expect(getSinglePageFitScale(0, 80, base)).toBe(0.1);
+  });
   it("只在按下 Command 或 Ctrl 时缩放", () => {
     expect(getWheelZoomScale(1, { ctrlKey: false, metaKey: false, deltaY: -1 })).toBeNull();
     expect(getWheelZoomScale(1, { ctrlKey: true, metaKey: false, deltaY: -1 })).toBe(1.08);

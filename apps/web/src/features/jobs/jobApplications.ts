@@ -1,3 +1,4 @@
+import { t, getLocale } from "@/i18n";
 import { api, type JobApplicationSummary } from "@/api/client";
 import { offerStatusLabel } from "../interviews/applicationProgress";
 
@@ -33,7 +34,7 @@ export function applicationOutcome(application: JobApplicationSummary): string {
   if (application.status === "active") return application.current_stage_label;
   if (application.offer_status === "accepted") return offerStatusLabel(application.offer_status);
   if (application.offer_status === "declined") return offerStatusLabel(application.offer_status);
-  if (application.status === "rejected") return "未通过";
-  if (application.status === "withdrawn") return "已主动结束";
-  return "已结束";
+  if (application.status === "rejected") return t("未通过");
+  if (application.status === "withdrawn") return t("已主动结束");
+  return t("已结束");
 }

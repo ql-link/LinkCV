@@ -7,7 +7,9 @@ from linkresume.domain.document_conversion import PdfLayoutBlock
 from linkresume.domain.resume import (
     ParsedSourceBlock,
     build_source_graph,
+    compose_canonical_resume_document,
     validate_sparse_annotations,
+    validate_source_closure,
 )
 from linkresume.integrations.resume_structuring import (
     LLMResumeStructuringClient,
@@ -126,7 +128,9 @@ def test_sparse_structuring_uses_source_graph_as_the_only_llm_contract() -> None
     assert result.annotations == []
     user_id, messages, source, response_model, capability = service.calls[0]
     payload = json.loads(messages[1].content)
-    assert set(payload) == {"source_graph"}
+    assert set(payload) == {"source_graph", "source_graph_sha256"}
+    assert payload["source_graph_sha256"] == graph.graph_sha256()
+    assert payload["source_graph_sha256"] != graph.source_document_sha256
     assert [leaf["source_id"] for leaf in payload["source_graph"]["leaves"]] == [
         leaf.source_id for leaf in graph.leaves
     ]
@@ -155,10 +159,28 @@ def test_sparse_structuring_keeps_valid_annotations() -> None:
     ]
 
 
+def test_model_can_copy_supplied_hash_and_compose_without_losing_unannotated_sources():
+    graph = graph_fixture()
+    class PayloadService:
+        async def structured_chat(self, user_id, messages, *, response_model, **kwargs):
+            payload = json.loads(messages[1].content)
+            return StructuredChatResult(value=response_model.model_validate({
+                "schema_version": "sparse-resume-annotations.v1",
+                "source_graph_sha256": payload["source_graph_sha256"],
+                "annotations": [valid_identity_annotation(graph)],
+            }), call_id="llmcall_fixture")
+    result = asyncio.run(LLMResumeStructuringClient(PayloadService()).extract_sparse(
+        user_id=42, source_graph=graph, timeout_seconds=5,
+    ))
+    document = compose_canonical_resume_document(graph, result).document
+    validate_source_closure(graph, document)
+    assert {item.source_id for item in document.source_dispositions} == {leaf.source_id for leaf in graph.leaves}
+
+
 def test_structuring_payload_adds_only_bounded_advisory_layout_fields() -> None:
     graph = graph_fixture()
     payload = structuring_payload(source_graph=graph, layout_hints=layout_hints())
-    assert set(payload) == {"source_graph", "layout"}
+    assert set(payload) == {"source_graph", "source_graph_sha256", "layout"}
     assert set(payload["layout"][0]) == {
         "block_id", "source_order", "source_page", "text", "bbox",
         "confidence", "role", "row_id", "continuation_of",

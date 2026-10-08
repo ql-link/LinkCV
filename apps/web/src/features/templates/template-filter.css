@@ -98,3 +98,143 @@
   .template-filter-options { gap: 5px; }
   .template-filter-options button { min-width: 0; flex: 1; }
 }
+
+/* ═════════════ V3 · 03 简历模板（Figma「V3 · 单栏」519:2 / 519:285 / 520:2 / 525:2411） ═════════════
+   坐标均为内容卡坐标：正文列 x 146、宽 860。 */
+
+/* 正文列 860，宽窗口时居中；窄于 1151 时保留两侧最少 40 */
+.v3-page.tpl-page { margin: 0 auto; padding-right: max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)); padding-left: max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)); }
+
+/* 页头行高按画板：眉题 52 / 13 高，标题 74 / 40 高，副标题 120 / 16 高 */
+.tpl-page .v3-page-eyebrow { line-height: var(--ui-line-metadata); }
+.tpl-page .v3-page-title { margin-top: 9px; line-height: var(--ui-line-page-title); }
+.tpl-page .v3-page-sub { margin-top: 6px; line-height: 16px; }
+
+/* 摘要行：「找到 N 套模板 · 清除筛选」左，「需后端 · 按热度排序 · 筛选」右；按钮顶 164，距副标题 28 */
+.tpl-toolbar { display: flex; height: 30px; align-items: center; gap: 12px; margin-top: 28px; }
+.tpl-summary { color: var(--v3-sub); font-size: 12px; }
+.tpl-clear { border: 0; background: transparent; padding: 0; color: var(--v3-txt); cursor: pointer; font-size: 12px; font-weight: 500; }
+.tpl-clear:hover { text-decoration: underline; }
+.tpl-sort { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; margin-right: 4px; color: var(--v3-fnt); font-size: 12px; }
+
+/* 筛选按钮 92×30；打开时灰底，已选条件时黑边 + 「筛选 · n」 */
+.tpl-filter-trigger { display: inline-flex; height: 30px; flex: 0 0 auto; align-items: center; gap: 6px; border: 1px solid var(--v3-cl); border-radius: 8px; background: #fff; padding: 0 18px 0 11px; color: var(--v3-txt); cursor: pointer; font-size: 12px; font-weight: 500; }
+.tpl-filter-trigger > svg:first-child { color: var(--v3-sub); }
+.tpl-filter-trigger > span { margin-left: 0; }
+.tpl-filter-trigger .tpl-filter-chev { color: var(--v3-fnt); transition: transform 140ms ease; }
+.tpl-filter-trigger:hover, .tpl-filter-trigger.is-open { background: var(--v3-field); }
+.tpl-filter-trigger.is-open .tpl-filter-chev { transform: rotate(180deg); }
+.tpl-filter-trigger.is-active { border-color: #c9d7f4; background: var(--v3-bl-soft); color: var(--v3-bl); }
+.tpl-filter-trigger:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+
+/* 03.1b 筛选弹层：300 宽、圆角 12，胶囊 28 高 */
+.v3-menu.tpl-filter-pop { width: 300px; border-radius: 12px; padding: 16px 18px 18px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
+.tpl-filter-head { display: flex; height: 16px; align-items: center; justify-content: space-between; }
+.tpl-filter-head strong { color: var(--v3-txt); font-size: 13px; font-weight: 500; line-height: 16px; }
+.tpl-filter-reset { display: grid; width: 22px; height: 22px; margin-right: -2px; place-items: center; border: 0; border-radius: 6px; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; }
+.tpl-filter-reset:hover:not(:disabled) { background: var(--v3-field); color: var(--v3-txt); }
+.tpl-filter-reset:disabled { cursor: default; opacity: .4; }
+.tpl-filter-group { margin-top: 20px; }
+.tpl-filter-group + .tpl-filter-group { margin-top: 18px; }
+.tpl-filter-group > span { display: block; height: 13px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.tpl-filter-group > div { display: flex; gap: 8px; margin-top: 9px; }
+.tpl-filter-group button { height: 28px; border: 0; border-radius: 14px; background: var(--v3-field); padding: 0 12px; color: var(--v3-sub); cursor: pointer; font-size: 12px; font-weight: 500; }
+.tpl-filter-group button:hover { background: var(--v3-fl); }
+.tpl-filter-group button[aria-pressed="true"] { background: var(--v3-bl-soft); color: var(--v3-bl); }
+.tpl-filter-group button:focus-visible, .tpl-filter-reset:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+
+/* 模板卡网格：4 列、列间 20、行间 32；封面 264 高灰底，缩略图四周留 22 / 18 */
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 32px 20px; margin-top: 24px; }
+.tpl-card { position: relative; min-width: 0; }
+.tpl-card-trigger { position: absolute; z-index: 1; inset: 0; border: 0; border-radius: 6px; background: transparent; padding: 0; cursor: pointer; }
+.tpl-card-trigger:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 4px; }
+/* 不再套灰底：模板纸面直接铺满卡片宽度（A4 比例），描边加深做对比 */
+.tpl-card-cover { border-radius: 6px; }
+.tpl-card-thumb { position: relative; aspect-ratio: 210 / 297; overflow: hidden; border: 1px solid #d3d3ce; border-radius: 6px; transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease; background: #fff; container-type: inline-size; }
+.tpl-card:hover .tpl-card-thumb { border-color: #b9b9b3; box-shadow: 0 8px 22px rgb(0 0 0 / 8%); transform: translateY(-2px); }
+.tpl-card-thumb .resume-readonly-preview-card { background: #fff; }
+/* 把整份 A4 缩到缩略图宽度 */
+.tpl-card-thumb .resume-readonly-preview-card .resume-preview-paper { top: 0; scale: calc(100cqw / 210mm); }
+.tpl-page[data-resizing] .tpl-card-thumb .resume-preview-paper { will-change: transform; }
+.tpl-card-name { overflow: hidden; margin: 14px 0 0; color: var(--v3-txt); font-size: var(--ui-text-sm); font-weight: 500; line-height: var(--ui-line-control); text-overflow: ellipsis; white-space: nowrap; }
+.tpl-card-meta { display: flex; height: 20px; align-items: center; gap: 6px; margin-top: 4px; }
+.tpl-card-uses { margin-left: auto; color: var(--v3-fnt); font-family: var(--v3-num); font-size: 10.5px; white-space: nowrap; }
+
+/* 空状态：② 距摘要行 42，③ 距副标题 64；按钮带图标 */
+.v3-empty.tpl-empty { margin-top: 42px; }
+.v3-empty.tpl-empty.is-none, .v3-empty.tpl-empty.is-error { margin-top: 64px; }
+.tpl-empty .v3-empty-actions .v3-btn { gap: 5px; }
+/* 画板：标题距卡顶 230 / 26 高，说明 264 / 22 高，按钮 322 */
+.v3-empty.tpl-empty h3 { margin-top: 21px; line-height: 26px; }
+.v3-empty.tpl-empty p { margin-top: 8px; }
+.v3-empty.tpl-empty .v3-empty-actions { margin-top: 36px; }
+.tpl-empty.is-filtered .v3-empty-actions .v3-btn { width: 112px; }
+.tpl-empty.is-none .v3-empty-actions .v3-btn { width: 126px; }
+.tpl-empty .v3-empty-actions .v3-btn svg { color: var(--v3-sub); }
+.tpl-funnel { position: absolute; top: 96px; left: 270px; display: grid; width: 58px; height: 58px; place-items: center; border: 1px solid var(--v3-cl); border-radius: 29px; background: #fff; color: var(--v3-sub); box-shadow: 0 4px 12px rgb(0 0 0 / 8%); }
+.tpl-funnel-count { position: absolute; top: 94px; left: 314px; display: grid; width: 22px; height: 22px; place-items: center; border-radius: 11px; background: var(--v3-or); color: #fff; font-family: var(--v3-num); font-size: 11px; font-weight: 700; }
+.tpl-slot { position: absolute; top: 30px; width: 84px; height: 112px; border: 1px dashed var(--v3-fl); border-radius: 5px; }
+.tpl-slot i { position: absolute; left: 12px; border-radius: 2px; background: var(--v3-sk); }
+.tpl-loading { margin-top: 64px; }
+
+/* 03.1a 模板预览：760×900；标题区 100，点阵舞台 696×688，底栏 88 */
+.v3-dialog.tpl-preview-dialog { height: 900px; }
+.tpl-preview-head { flex: 0 0 auto; padding: 28px 32px 0; height: 100px; }
+.tpl-preview-head .v3-dialog-title { height: 29px; padding-right: 40px; overflow: hidden; line-height: 29px; text-overflow: ellipsis; white-space: nowrap; }
+.tpl-preview-meta { display: flex; height: 20px; align-items: center; gap: 6px; margin-top: 7px; }
+.tpl-preview-uses { margin-left: 6px; color: var(--v3-fnt); font-family: var(--v3-num); font-size: 11px; }
+.tpl-preview-meta .v3-be-tag { margin-left: 2px; }
+.tpl-preview-stage { min-height: 0; flex: 1; margin: 0 31px 24px; }
+.tpl-preview-scroll { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; }
+.tpl-preview-paper { display: flex; min-width: 100%; width: max-content; justify-content: center; }
+.tpl-preview-paper .resume-readonly-preview-full { max-height: none; overflow: visible; background: transparent; padding: 34px 76px 80px; }
+/* 100% = A4 宽 420（Figma 03.1a），210mm ≈ 793.7px */
+.tpl-preview-paper .resume-preview-paper { zoom: calc(var(--tpl-zoom, 1) * 0.5292); border-radius: 4px; box-shadow: 0 8px 24px rgb(0 0 0 / 8%); }
+.tpl-preview-nav { position: absolute; z-index: 2; top: calc(50% - 18px); display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--v3-cl); border-radius: 18px; background: #fff; padding: 0; color: var(--v3-sub); cursor: pointer; box-shadow: 0 2px 6px rgb(0 0 0 / 6%); }
+.tpl-preview-nav.is-prev { left: 20px; }
+.tpl-preview-nav.is-next { right: 20px; }
+.tpl-preview-nav:hover:not(:disabled) { color: var(--v3-txt); background: var(--v3-field); }
+.tpl-preview-nav:disabled { cursor: default; opacity: .4; }
+.tpl-preview-zoom { position: absolute; z-index: 2; bottom: 16px; left: calc(50% - 66px); display: flex; width: 132px; height: 32px; align-items: center; justify-content: space-between; border: 1px solid var(--v3-cl); border-radius: 8px; background: #fff; padding: 0 6px; box-shadow: 0 2px 6px rgb(0 0 0 / 6%); }
+.tpl-preview-zoom button { display: grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 5px; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; font-size: 14px; font-weight: 500; }
+.tpl-preview-zoom button:hover:not(:disabled) { background: var(--v3-field); color: var(--v3-txt); }
+.tpl-preview-zoom button:disabled { cursor: default; opacity: .35; }
+.tpl-preview-zoom output { color: var(--v3-txt); font-family: var(--v3-num); font-size: 11.5px; font-weight: 500; }
+.tpl-preview-nav:focus-visible, .tpl-preview-zoom button:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.tpl-preview-count { color: var(--v3-fnt); font-size: 11.5px; }
+
+.tpl-create-field { margin-top: 20px; }
+
+
+/* 列表只在自己的区域里滚动：标题和筛选栏固定，模板网格单独滚动 */
+.v3-page.tpl-page { display: flex; height: 100%; min-height: 0; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+.v3-page.tpl-page > :not(.tpl-grid) { flex: 0 0 auto; }
+.v3-page.tpl-page > .tpl-grid { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; margin: 0 -8px; padding: 24px 8px 48px; }
+/* 加载中 / 交叉淡化时，工具栏和网格被包在 .tpl-body 里：同样让网格占满剩余高度并单独滚动 */
+.v3-page.tpl-page > .tpl-body { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.v3-page.tpl-page > .tpl-body.is-crossfade { display: grid; grid-template-rows: minmax(0, 1fr); }
+.tpl-body > .v3-reveal-out, .tpl-body > .v3-reveal-in { display: flex; min-height: 0; flex-direction: column; }
+.tpl-body .tpl-grid { min-height: 0; flex: 1 1 auto; align-content: start; overflow-y: auto; overscroll-behavior: contain; margin: 0 -8px; padding: 24px 8px 48px; }
+.tpl-body .v3-skeleton.tpl-grid { overflow: hidden; }
+/* 模板预览左右切换：纸面和标题用 SlideSwap 滑动；横向裁掉滑出的部分，纵向保持滚动 */
+.tpl-preview-slide { min-width: 100%; width: max-content; overflow: clip visible; }
+.tpl-preview-head-swap { overflow: clip visible; }
+.tpl-body .tpl-toolbar { flex: 0 0 auto; }
+
+@container workspace (max-width: 680px) {
+  .v3-page.tpl-page { padding-top: 28px; }
+  .tpl-toolbar { height: auto; min-height: 30px; flex-wrap: wrap; gap: 12px; }
+  .tpl-sort { margin-left: 0; }
+}
+@container dialog (max-width: 600px) {
+  .tpl-preview-head { padding: 24px 20px 0; }
+  .tpl-preview-stage { margin: 0 12px 16px; container: template-preview / inline-size; }
+  .tpl-preview-paper .resume-readonly-preview-full { padding: 24px 12px 72px; }
+  .tpl-preview-paper .resume-preview-paper { zoom: calc(var(--tpl-zoom, 1) * (100cqw - 24px) / 210mm); }
+  .tpl-preview-nav.is-prev { left: 6px; }
+  .tpl-preview-nav.is-next { right: 6px; }
+}
+
+@media (max-height: 600px) {
+  .v3-page.tpl-page { height: auto; min-height: 100%; overflow: visible; padding-bottom: 24px; }
+}

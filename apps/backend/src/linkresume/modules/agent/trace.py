@@ -22,8 +22,10 @@ RESULTS = frozenset({"started", "succeeded", "failed", "cancelled"})
 SAFE_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
 
 TOOL_STAGES = {
+    "read_skill": "model_execution",
     "list_user_resources": "context_loading",
     "resolve_resume_reference": "target_resolution",
+    "resolve_resource_reference": "target_resolution",
     "resolve_resume_target": "target_resolution",
     "get_resume_context": "scope_read",
     "search_resume_materials": "scope_read",
@@ -36,6 +38,11 @@ TOOL_STAGES = {
     "plan_agent_request": "model_execution",
     "start_agent_task": "model_execution",
     "finish_agent_task": "model_execution",
+    "runtime_step": "model_execution",
+    "reply_directly": "model_execution",
+    "submit_task_result": "model_execution",
+    "submit_resume_edit_plan": "proposal_creation",
+    "submit_translation": "proposal_creation",
 }
 
 
@@ -103,7 +110,7 @@ def begin_operation(
     if row is None:
         row = AgentOperation(
             public_id=public_id, session_id=session_id, state="preflighting",
-            created_at=utc_now(),
+            create_time=utc_now(),
         )
         db.add(row)
         try:

@@ -7,7 +7,6 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    ForeignKey,
     Index,
     JSON,
     Numeric,
@@ -40,45 +39,45 @@ def _medium_text():
 
 
 class MockInterview(Base):
-    __tablename__ = "mock_interviews"
+    __tablename__ = "mock_interview"
     __table_args__ = (
-        UniqueConstraint("public_id", name="uk_mock_interviews_public_id"),
-        UniqueConstraint("active_user_id", name="uk_mock_interviews_active_user"),
+        UniqueConstraint("public_id", name="uk_mock_interview_public_id"),
+        UniqueConstraint("active_user_id", name="uk_mock_interview_active_user"),
         CheckConstraint(
             "source_type IN ('job_application', 'resume')",
-            name="ck_mock_interviews_source_type",
+            name="ck_mock_interview_source_type",
         ),
         CheckConstraint(
             "interview_type IN ('technical', 'project_deep_dive', "
             "'hr', 'comprehensive')",
-            name="ck_mock_interviews_type",
+            name="ck_mock_interview_type",
         ),
         CheckConstraint(
             "difficulty IN ('junior', 'intermediate', 'senior')",
-            name="ck_mock_interviews_difficulty",
+            name="ck_mock_interview_difficulty",
         ),
         CheckConstraint(
-            "question_count BETWEEN 3 AND 10", name="ck_mock_interviews_question_count"
+            "question_count BETWEEN 3 AND 10", name="ck_mock_interview_question_count"
         ),
-        CheckConstraint("language IN ('zh', 'en')", name="ck_mock_interviews_language"),
+        CheckConstraint("language IN ('zh', 'en')", name="ck_mock_interview_language"),
         CheckConstraint(
-            "answer_mode IN ('text', 'voice')", name="ck_mock_interviews_answer_mode"
+            "answer_mode IN ('text', 'voice')", name="ck_mock_interview_answer_mode"
         ),
         CheckConstraint(
             "status IN ('preparing', 'preparation_failed', 'in_progress', 'evaluating', "
             "'evaluation_failed', 'completed', 'abandoned')",
-            name="ck_mock_interviews_status",
+            name="ck_mock_interview_status",
         ),
         CheckConstraint(
             "total_score IS NULL OR (total_score >= 0 AND total_score <= 100)",
-            name="ck_mock_interviews_score",
+            name="ck_mock_interview_score",
         ),
-        CheckConstraint("lock_version >= 1", name="ck_mock_interviews_lock_version"),
-        Index("idx_mock_interviews_user_created", "user_id", "created_at", "id"),
-        Index("idx_mock_interviews_application", "job_application_id"),
-        Index("idx_mock_interviews_resume", "resume_id"),
-        Index("idx_mock_interviews_job", "job_description_id"),
-        Index("idx_mock_interviews_repeat_of", "repeat_of_id"),
+        CheckConstraint("lock_version >= 1", name="ck_mock_interview_lock_version"),
+        Index("idx_mock_interview_user_created", "user_id", "create_time", "id"),
+        Index("idx_mock_interview_application", "job_application_id"),
+        Index("idx_mock_interview_resume", "resume_id"),
+        Index("idx_mock_interview_job", "job_description_id"),
+        Index("idx_mock_interview_repeat_of", "repeat_of_id"),
         {"comment": "AI 模拟面试", "sqlite_autoincrement": True},
     )
 
@@ -88,7 +87,6 @@ class MockInterview(Base):
     public_id: Mapped[str] = mapped_column(ascii_char(36), nullable=False)
     user_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("users.id", name="fk_mock_interviews_user", ondelete="RESTRICT"),
         nullable=False,
     )
     active_user_id: Mapped[int | None] = mapped_column(
@@ -101,30 +99,18 @@ class MockInterview(Base):
     )
     job_application_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_applications.id",
-            name="fk_mock_interviews_application",
-            ondelete="SET NULL",
-        ),
         nullable=True,
     )
     resume_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey("resumes.id", name="fk_mock_interviews_resume", ondelete="SET NULL"),
         nullable=True,
     )
     job_description_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "job_descriptions.id", name="fk_mock_interviews_job", ondelete="SET NULL"
-        ),
         nullable=True,
     )
     repeat_of_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "mock_interviews.id", name="fk_mock_interviews_repeat_of", ondelete="SET NULL"
-        ),
         nullable=True,
         comment="再练一次的来源面试",
     )
@@ -140,7 +126,7 @@ class MockInterview(Base):
     interview_type: Mapped[str] = mapped_column(String(24), nullable=False)
     difficulty: Mapped[str] = mapped_column(String(16), nullable=False)
     question_count: Mapped[int] = mapped_column(unsigned_tinyint_type(), nullable=False)
-    follow_up_enabled: Mapped[bool] = mapped_column(
+    is_follow_up_enabled: Mapped[bool] = mapped_column(
         Boolean(), nullable=False, default=True, server_default="1"
     )
     language: Mapped[str] = mapped_column(String(8), nullable=False)
@@ -159,6 +145,10 @@ class MockInterview(Base):
     )
     recordings_deleted_at: Mapped[datetime | None] = mapped_column(
         timestamp_type(), nullable=True, comment="本场录音被删除的时间"
+    )
+    is_materials_in_questions: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False, server_default="0",
+        comment="出题是否参考所选资料；false 时资料只用于报告核验",
     )
     material_refs_json: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON(), nullable=True, comment="参考资料 ID 与发起时正文版本"
@@ -185,7 +175,7 @@ class MockInterview(Base):
         timestamp_type(), nullable=False, server_default=func.now()
     )
     total_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
-    low_confidence: Mapped[bool] = mapped_column(
+    is_low_confidence: Mapped[bool] = mapped_column(
         Boolean(), nullable=False, default=False, server_default="0"
     )
     report_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(), nullable=True)
@@ -200,44 +190,44 @@ class MockInterview(Base):
     lock_version: Mapped[int] = mapped_column(
         unsigned_bigint_type(), nullable=False, default=1, server_default="1"
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
 
 class MockInterviewQuestion(Base):
-    __tablename__ = "mock_interview_questions"
+    __tablename__ = "mock_interview_question"
     __table_args__ = (
         UniqueConstraint(
-            "interview_id", "sequence_no", name="uk_mock_interview_questions_sequence"
+            "interview_id", "sequence_no", name="uk_mock_interview_question_sequence"
         ),
         CheckConstraint(
-            "depth_level BETWEEN 1 AND 5", name="ck_mock_interview_questions_depth"
+            "depth_level BETWEEN 1 AND 5", name="ck_mock_interview_question_depth"
         ),
         CheckConstraint(
             "answer_status IN ('pending', 'answered', 'skipped')",
-            name="ck_mock_interview_questions_answer_status",
+            name="ck_mock_interview_question_answer_status",
         ),
         CheckConstraint(
             "(answer_status = 'pending' AND answer_text IS NULL AND answered_at IS NULL) OR "
             "(answer_status = 'answered' AND answer_text IS NOT NULL "
             "AND answered_at IS NOT NULL) OR "
             "(answer_status = 'skipped' AND answer_text IS NULL AND answered_at IS NOT NULL)",
-            name="ck_mock_interview_questions_answer",
+            name="ck_mock_interview_question_answer",
         ),
         CheckConstraint(
             "answer_source IS NULL OR answer_source IN ('text', 'voice_input', 'voice')",
-            name="ck_mock_interview_questions_answer_source",
+            name="ck_mock_interview_question_answer_source",
         ),
         CheckConstraint(
             "transcript_state IS NULL OR transcript_state IN "
             "('original', 'corrected', 'correction_rejected', 'edited')",
-            name="ck_mock_interview_questions_transcript_state",
+            name="ck_mock_interview_question_transcript_state",
         ),
-        Index("idx_mock_interview_questions_parent", "parent_id"),
+        Index("idx_mock_interview_question_parent", "parent_id"),
         {"comment": "模拟面试的提问与作答", "sqlite_autoincrement": True},
     )
 
@@ -246,20 +236,10 @@ class MockInterviewQuestion(Base):
     )
     interview_id: Mapped[int] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "mock_interviews.id",
-            name="fk_mock_interview_questions_interview",
-            ondelete="CASCADE",
-        ),
         nullable=False,
     )
     parent_id: Mapped[int | None] = mapped_column(
         unsigned_bigint_type(),
-        ForeignKey(
-            "mock_interview_questions.id",
-            name="fk_mock_interview_questions_parent",
-            ondelete="CASCADE",
-        ),
         nullable=True,
         comment="追问指向的主问题",
     )
@@ -315,9 +295,9 @@ class MockInterviewQuestion(Base):
     evaluation_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSON(), nullable=True, comment="主问题的逐题评价"
     )
-    created_at: Mapped[datetime] = mapped_column(
+    create_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now()
     )
-    updated_at: Mapped[datetime] = mapped_column(
+    update_time: Mapped[datetime] = mapped_column(
         timestamp_type(), nullable=False, server_default=func.now(), onupdate=func.now()
     )

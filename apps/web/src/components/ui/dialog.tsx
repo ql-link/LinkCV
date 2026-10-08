@@ -1,10 +1,17 @@
+import { t, useLocale } from "@/i18n";
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
+import { DialogMotionState, useDialogPresence, usePresenceRef } from "./motion"
+
 import { cn } from "@/lib/utils"
 
-const Dialog = DialogPrimitive.Root
+function Dialog(props: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
+  useLocale();
+  const presence = useDialogPresence(props)
+  return <DialogMotionState.Provider value={presence.open}><DialogPrimitive.Root {...props} {...presence} /></DialogMotionState.Provider>
+}
 
 const DialogTrigger = DialogPrimitive.Trigger
 
@@ -21,7 +28,7 @@ const DialogOverlay = React.forwardRef<
     data-slot="dialog-overlay"
     data-ui-theme="light"
     className={cn(
-      "fixed inset-0 z-50 bg-[var(--scrim)] transition-opacity duration-base motion-reduce:duration-fast data-[state=closed]:opacity-0 data-[state=open]:opacity-100",
+      "ui-motion-overlay fixed inset-0 z-50 bg-[var(--scrim)]",
       className
     )}
     {...props}
@@ -32,15 +39,17 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => {
+  const presence = usePresenceRef(ref)
+  return (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
-      ref={ref}
+      {...presence}
       data-slot="dialog-content"
       data-ui-theme="light"
       className={cn(
-        "fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface p-6 text-foreground shadow-md outline-none transition-[opacity,transform] duration-base motion-reduce:transition-opacity motion-reduce:duration-fast data-[state=closed]:scale-[0.98] data-[state=closed]:opacity-0 data-[state=open]:scale-100 data-[state=open]:opacity-100 motion-reduce:data-[state=closed]:scale-100",
+        "ui-motion-dialog fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-surface p-6 text-foreground shadow-md outline-none",
         className
       )}
       {...props}
@@ -51,11 +60,12 @@ const DialogContent = React.forwardRef<
         className="absolute right-4 top-4 grid size-9 place-items-center bg-transparent text-muted-foreground transition-colors duration-fast hover:bg-transparent hover:text-foreground focus-visible:text-foreground focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-foreground"
       >
         <X className="h-[18px] w-[18px]" aria-hidden="true" />
-        <span className="sr-only">关闭</span>
+        <span className="sr-only">{t("关闭")}</span>
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-))
+)
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({

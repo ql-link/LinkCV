@@ -67,70 +67,85 @@ describe("HomeScreen", () => {
     window.history.replaceState(null, "", "/resumes");
   });
 
-  it("首次读取时在页头下方展示统一加载状态", () => {
-    const { container } = renderHome({ loading: true });
+  it("首次读取时保留页头并展示骨架卡片", () => {
+    renderHome({ loading: true });
 
+    expect(screen.getByRole("heading", { name: "我的简历" })).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "正在加载我的简历…" })).toBeInTheDocument();
-    expect(container.querySelector(".home-dashboard-content > .page-loading")).toBeInTheDocument();
-    expect(container.querySelector(".dashboard-main")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "全部简历" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/RESUMES · \d+ 份/)).not.toBeInTheDocument();
   });
 
-  it("无简历时直接在工作区背景展示空状态", () => {
-    const { container } = renderHome({ resumes: [] });
-    const emptyState = container.querySelector(".home-resume-empty-state") as HTMLElement;
+  it("无简历时展示空列表卡片，新建与导入都从卡片进入", () => {
+    renderHome({ resumes: [] });
+    const emptyState = screen.getByRole("region", { name: "还没有简历" });
 
-    expect(screen.getByRole("heading", { name: "还没有正式简历" })).toBeInTheDocument();
-    expect(emptyState).toBeInTheDocument();
-    expect(container.querySelector(".dashboard-empty-state")).not.toBeInTheDocument();
-    expect(within(emptyState).getByRole("button", { name: "创建第一份简历" })).toBeInTheDocument();
+    expect(within(emptyState).getByRole("heading", { name: "从第一份简历开始" })).toBeInTheDocument();
+    expect(within(emptyState).getByRole("button", { name: "新建简历" })).toBeInTheDocument();
     expect(within(emptyState).getByRole("button", { name: "导入简历" })).toBeInTheDocument();
+    expect(document.querySelector(".hv3-eyebrow")).toHaveTextContent("RESUMES · 0 份");
   });
 
   it("按名称筛选简历并从新建按钮在当前页打开创建弹窗", async () => {
     vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates: [] });
     renderHome();
 
-    expect(screen.queryByText(/按最近更新排列/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/点击简历卡片可继续编辑/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("searchbox", { name: "搜索简历" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "搜索简历" }));
     fireEvent.change(screen.getByRole("searchbox", { name: "搜索简历" }), {
       target: { value: "frontend" },
     });
     expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
     expect(screen.queryByText("产品经理")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "清除并收起搜索" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索简历" }), { target: { value: "" } });
     expect(screen.getByText("产品经理")).toBeInTheDocument();
-    expect(screen.queryByRole("searchbox", { name: "搜索简历" })).not.toBeInTheDocument();
 
-    const createButton = screen.getByRole("button", { name: "新建简历" });
-    expect(createButton).toHaveClass("ui-button-transparent");
-    fireEvent.click(createButton);
+    fireEvent.click(screen.getByRole("button", { name: "新建简历" }));
     expect(await screen.findByRole("dialog", { name: "新建简历" })).toBeInTheDocument();
-    expect(screen.getByText("命名并选择一个起点，创建后直接进入编辑器。")).toBeInTheDocument();
-    expect(screen.queryByText("导入文件")).not.toBeInTheDocument();
+    expect(screen.getByText("选一套模板，再起个名字，创建后直接进入编辑器。")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/resumes");
+  });
+
+  it("搜索没有结果时只替换卡片区，并可一键清除搜索", () => {
+    renderHome();
+    fireEvent.change(screen.getByRole("searchbox", { name: "搜索简历" }), { target: { value: "滴滴" } });
+
+    expect(screen.getByRole("heading", { name: "没有找到「滴滴」" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "我的简历" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "清除搜索" }));
+    expect(screen.getByText("Frontend Resume")).toBeInTheDocument();
+  });
+
+  it("达到 10 份上限时新建、导入、复制都置灰并说明原因", () => {
+    const many = Array.from({ length: 10 }, (_, index) => ({ ...resumes[0], id: String(index + 1), title: `简历 ${index + 1}` }));
+    renderHome({ resumes: many });
+
+    expect(screen.getByText("已达到 10 份上限。删除不用的简历后，才能新建、导入或复制。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建简历" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "导入简历" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "已达 10 份上限" })).toBeDisabled();
+    const menu = openResumeMenu("简历 1");
+    expect(within(menu).getByRole("menuitem", { name: "复制为新简历" })).toBeDisabled();
   });
 
   it("导入简历入口在当前列表打开弹窗而不改变地址", async () => {
     vi.spyOn(api, "listResumeTemplates").mockResolvedValue({ templates: [] });
     renderHome();
     fireEvent.click(screen.getByRole("button", { name: "导入简历" }));
-    expect(await screen.findByRole("alertdialog", { name: "导入简历" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "导入简历" })).toBeInTheDocument();
     expect(screen.queryByText("选择模板")).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/resumes");
     expect(window.location.search).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
-    expect(screen.queryByRole("alertdialog", { name: "导入简历" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "导入简历" })).not.toBeInTheDocument();
   });
 
   it("通过站内确认弹窗删除正式简历", async () => {
     const onDelete = vi.fn().mockResolvedValue(undefined);
     renderHome({ onDelete });
     fireEvent.click(within(openResumeMenu()).getByRole("menuitem", { name: "删除" }));
-    expect(screen.getByRole("alertdialog", { name: "删除“Frontend Resume”？" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
+    const dialog = screen.getByRole("dialog", { name: "删除这份简历？" });
+    expect(dialog).toHaveTextContent("Frontend Resume · 删除后无法恢复");
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除" }));
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith("1"));
   });
 
@@ -163,21 +178,33 @@ describe("HomeScreen", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("保存名称失败，请刷新列表后重试。");
-    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert).toHaveClass("v3-toast");
     expect(dialog).not.toContainElement(alert);
     expect(dialog).toBeInTheDocument();
   });
 
-  it("卡片底部只保留打开，其余操作收进右上角菜单", () => {
-    renderHome();
+  it("点击缩略图打开编辑器，其余操作收进右上角菜单", () => {
+    const onOpen = vi.fn();
+    renderHome({ onOpen });
 
-    expect(screen.getAllByRole("button", { name: "打开" })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "打开 Frontend Resume" }));
+    expect(onOpen).toHaveBeenCalledWith("1");
     expect(screen.queryByRole("menuitem")).not.toBeInTheDocument();
 
     const menu = openResumeMenu();
-    expect(within(menu).getByRole("menuitem", { name: "重命名" })).toBeInTheDocument();
-    expect(within(menu).getByRole("menuitem", { name: "分享链接" })).toBeInTheDocument();
-    expect(within(menu).getByRole("menuitem", { name: "删除" })).toBeInTheDocument();
+    for (const name of ["打开编辑", "重命名", "复制为新简历", "分享链接", "导出 PDF", "删除"]) {
+      expect(within(menu).getByRole("menuitem", { name })).toBeInTheDocument();
+    }
+  });
+
+  it("重命名弹窗里可以转去复制为新简历", () => {
+    renderHome();
+    fireEvent.click(within(openResumeMenu()).getByRole("menuitem", { name: "重命名" }));
+    fireEvent.click(screen.getByRole("button", { name: "复制为新简历" }));
+
+    expect(screen.queryByRole("dialog", { name: "重命名简历" })).not.toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "复制为新简历" });
+    expect(within(dialog).getByLabelText("简历名称")).toHaveValue("Frontend Resume 副本");
   });
 
   it("摘要缺少服务端布局计划时显示受控不可用状态", () => {
@@ -199,7 +226,7 @@ describe("HomeScreen", () => {
     renderHome();
     openResumeMenu();
 
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Escape" });
 
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "更多简历操作 Frontend Resume" })).toHaveFocus();
@@ -235,8 +262,8 @@ describe("HomeScreen", () => {
 
     renderHome({ failedImports });
 
-    expect(screen.getByText("上传失败")).toBeInTheDocument();
-    expect(screen.getByText("解析失败")).toBeInTheDocument();
+    expect(screen.getAllByText("上传失败").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("解析失败").length).toBeGreaterThan(0);
     expect(screen.getByText("上传失败 · 420 毫秒")).toBeInTheDocument();
     expect(screen.getByText("解析失败 · 1.3 秒")).toBeInTheDocument();
   });
@@ -260,7 +287,7 @@ describe("HomeScreen", () => {
     const taskCard = screen.getByRole("article", {
       name: "导入任务 张三-后端工程师.pdf",
     });
-    expect(taskCard).toHaveClass("home-import-card");
+    expect(taskCard).toHaveClass("hv3-import-card");
     expect(within(taskCard).getByText("解析中")).toBeInTheDocument();
     expect(screen.getByRole("progressbar", {
       name: "张三-后端工程师.pdf 正在解析",
@@ -386,6 +413,20 @@ describe("HomePage import polling", () => {
     await act(() => vi.advanceTimersByTimeAsync(2000));
 
     expect(poll).not.toHaveBeenCalled();
+  });
+
+  it("列表加载失败时显示失败卡片，重新加载恢复空列表", async () => {
+    const list = vi.fn().mockRejectedValueOnce(new Error("NETWORK_ERROR")).mockResolvedValueOnce(undefined);
+    useResumeStore.setState({ listResumes: list });
+    render(<HomePage />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByRole("alert")).toHaveTextContent("简历列表没能加载出来");
+    expect(screen.queryByRole("region", { name: "还没有简历" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "还没有简历" })).toBeInTheDocument();
   });
 
   it("上一次状态请求未完成时跳过同一任务的后续 tick", async () => {

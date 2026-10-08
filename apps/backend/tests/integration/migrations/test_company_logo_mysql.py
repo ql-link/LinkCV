@@ -23,6 +23,10 @@ from tests.integration.migrations.test_mysql_migrations import (
     run_alembic,
 )
 
+# Historical migration tests inspect the schema as it was before the 0111-0115
+# Alibaba naming migrations; 0115 renamed tables and time columns.
+PRE_NAMING_HEAD = "0110"
+
 
 def _metadata_without_company_logo_schema() -> tuple[MetaData, Table]:
     baseline = MetaData()
@@ -78,8 +82,8 @@ def test_logo_upgrade_repairs_legacy_development_0059_shape():
             )
         )
 
-    run_alembic(url, "upgrade", "head")
-    run_alembic(url, "upgrade", "head")
+    run_alembic(url, "upgrade", PRE_NAMING_HEAD)
+    run_alembic(url, "upgrade", PRE_NAMING_HEAD)
 
     inspector = inspect(engine)
     assert {"user_preferences", "global_companies"} <= set(inspector.get_table_names())
@@ -127,7 +131,7 @@ def test_logo_upgrade_resumes_after_legacy_logo_url_ddl_committed():
         )
     run_alembic(url, "stamp", "0061")
 
-    run_alembic(url, "upgrade", "head")
+    run_alembic(url, "upgrade", PRE_NAMING_HEAD)
 
     inspector = inspect(engine)
     assert "global_companies" in inspector.get_table_names()
@@ -152,7 +156,7 @@ def test_logo_upgrade_rejects_unknown_partial_schema_before_ddl():
         )
     run_alembic(url, "stamp", "0061")
 
-    result = invoke_alembic(url, "upgrade", "head")
+    result = invoke_alembic(url, "upgrade", PRE_NAMING_HEAD)
 
     assert result.returncode != 0
     assert (
@@ -173,7 +177,7 @@ def test_logo_upgrade_stamps_after_target_ddl_was_committed():
     Base.metadata.create_all(engine)
     run_alembic(url, "stamp", "0061")
 
-    run_alembic(url, "upgrade", "head")
+    run_alembic(url, "upgrade", PRE_NAMING_HEAD)
 
     with engine.connect() as connection:
         assert (

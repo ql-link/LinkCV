@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { resumeInlineImageDimensions } from "../../workbench/resumeInlineImageDimensions";
 import { isInlineIconName } from "../../../lib/resumeInlineIcon";
 import { renderInlineIcon } from "../../../parser/resumeMarkdown";
 import {
@@ -78,8 +79,7 @@ function inlineContent(node: JSONContent): string {
   if (node.type === "inlineImage") {
     const src = safeAsset(node.attrs?.src);
     if (!src) return "";
-    const width = Math.min(240, Math.max(16, Number(node.attrs?.width) || 72));
-    const height = Math.min(240, Math.max(16, Number(node.attrs?.height) || 24));
+    const { width, height } = resumeInlineImageDimensions(node.attrs);
     const alt = escapeHtml(String(node.attrs?.alt ?? "行内图片"));
     return `<img data-inline-image data-src="${escapeHtml(src)}" data-width="${width}" data-height="${height}" data-alt="${alt}" class="resume-inline-image" style="width:${width}px;height:${height}px" src="${escapeHtml(src)}" width="${width}" height="${height}" alt="${alt}">`;
   }
@@ -98,7 +98,7 @@ function childBlocks(node: JSONContent) {
 }
 
 export function renderResumeEditorNode(node: JSONContent): string {
-  if (node.type === "doc") return childBlocks(node);
+  if (node.type === "doc") return renderResumeEditorDocument(node);
   if (node.type === "text" || node.type === "hardBreak" || node.type === "resumeBlockAnchor" || node.type === "inlineIcon" || node.type === "inlineImage") {
     return inlineContent(node);
   }
@@ -127,12 +127,12 @@ export function renderResumeEditorNode(node: JSONContent): string {
         ? `;--resume-row-tracks:${resumeRowColumnTracks(widths)}`
         : "";
       return `<div class="resume-row equal" data-type="resume-row" data-block="equal" data-columns="${cells.length}" style="--resume-row-columns:${cells.length}${tracks}">${cells
-        .map((cell) => `<p class="resume-row-cell">${inlineContent(cell)}</p>`)
+        .map((cell) => `<p class="resume-row-cell"${textAlignment(cell)}>${inlineContent(cell)}</p>`)
         .join("")}</div>`;
     }
     const [left, right] = cells;
     const leftWidth = Math.min(80, Math.max(30, Number(node.attrs?.leftWidth) || 50));
-    return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}" style="--resume-row-left:${leftWidth}%"><p class="resume-row-left">${left ? inlineContent(left) : ""}</p><p class="resume-row-right">${right ? inlineContent(right) : ""}</p></div>`;
+    return `<div class="resume-row" data-type="resume-row" data-block="pair" data-left-width="${leftWidth}" style="--resume-row-left:${leftWidth}%"><p class="resume-row-left"${left ? textAlignment(left) : ""}>${left ? inlineContent(left) : ""}</p><p class="resume-row-right"${right ? textAlignment(right) : ""}>${right ? inlineContent(right) : ""}</p></div>`;
   }
   if (node.type === "resumeColumns") {
     const columns = node.content ?? [];
@@ -146,7 +146,7 @@ export function renderResumeEditorNode(node: JSONContent): string {
     const className = meta ? "resume-meta-row" : "resume-trio-row";
     const itemName = meta ? "meta" : "trio";
     return `<div class="${className}" data-type="${className}">${(node.content ?? []).map(
-      (child) => `<p data-${itemName}-cell>${inlineContent(child)}</p>`,
+      (child) => `<p data-${itemName}-cell${textAlignment(child)}>${inlineContent(child)}</p>`,
     ).join("")}</div>`;
   }
   if (node.type === "avatarImage") {
@@ -156,7 +156,7 @@ export function renderResumeEditorNode(node: JSONContent): string {
     const alt = escapeHtml(String(node.attrs?.alt ?? "简历头像"));
     const templateAvatar = /^\/templates\/avatar-(cat|administrative|campus|civic|creative)\.(jpg|png|svg)$/u.test(src)
       ? ' data-template-avatar="true"' : "";
-    return `<figure data-type="avatar-image"${templateAvatar} data-src="${escapeHtml(src)}" data-size="${size}" data-alt="${alt}"${node.attrs?.systemFallback === true ? ' data-system-fallback="true"' : ""} class="resume-media-node resume-avatar" style="width:${size}px;height:calc(${size}px * var(--resume-avatar-height-ratio, 1.4))"><img src="${escapeHtml(src)}" alt="${alt}"></figure>`;
+    return `<figure data-type="avatar-image"${templateAvatar} data-src="${escapeHtml(src)}" data-size="${size}" data-alt="${alt}"${node.attrs?.systemFallback === true ? ' data-system-fallback="true"' : ""} class="resume-media-node resume-avatar" style="width:${size}px;height:calc(${size}px * var(--resume-avatar-height-ratio, 1.4));--resume-avatar-size:${size}px"><img src="${escapeHtml(src)}" alt="${alt}"></figure>`;
   }
   if (node.type === "resumeImage") {
     const src = safeAsset(node.attrs?.src);
@@ -171,5 +171,23 @@ export function renderResumeEditorNode(node: JSONContent): string {
 }
 
 export function renderResumeEditorDocument(document: JSONContent) {
-  return document.type === "doc" ? childBlocks(document) : "";
+  if (document.type !== "doc") return "";
+  let pendingHeadline = false;
+  const hasText = (node: JSONContent): boolean => Boolean(node.text?.length)
+    || (node.content ?? []).some(hasText);
+  return (document.content ?? []).map((node) => {
+    if (node.type === "heading" && node.attrs?.level === 1) {
+      pendingHeadline = true;
+      return renderResumeEditorNode(node);
+    }
+    if (pendingHeadline && node.type === "paragraph") {
+      // Match ResumeIdentityHeadline's editor decoration: anchors and blank
+      // paragraphs do not break the relationship with the name heading.
+      if (!hasText(node)) return renderResumeEditorNode(node);
+      pendingHeadline = false;
+      return `<p${textAlignment(node)} class="resume-identity-headline">${inlineContent(node)}</p>`;
+    }
+    pendingHeadline = false;
+    return renderResumeEditorNode(node);
+  }).join("");
 }

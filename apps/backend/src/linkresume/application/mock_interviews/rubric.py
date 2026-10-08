@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-RUBRIC_VERSION = "v2"
+RUBRIC_VERSION = "v3"
+# 提示词版本：任何影响出题、追问、评估口径的提示词改动都要同步递增，便于解释分数漂移。
+PROMPT_VERSION = "2026-10-d"
 
 DIMENSIONS = (
     "professional_depth",
@@ -65,15 +67,25 @@ class DifficultyProfile:
     expected_depth: int
     gap_ratio: str
     open_design_questions: str
+    max_follow_ups: int = 2
 
 
 DIFFICULTY_PROFILES = {
-    "junior": DifficultyProfile(1, 2, 3, 2, "low", "none"),
-    "intermediate": DifficultyProfile(2, 3, 4, 3, "medium", "at most one"),
-    "senior": DifficultyProfile(3, 3, 5, 4, "high", "exactly one"),
+    "junior": DifficultyProfile(1, 2, 3, 2, "low", "none", 2),
+    "intermediate": DifficultyProfile(2, 3, 4, 3, "medium", "at most one", 2),
+    # 高级从 L3 起步，需要 3 次追问才有空间逐级升到 L5。
+    "senior": DifficultyProfile(3, 3, 5, 4, "high", "exactly one", 3),
 }
 
-MAX_FOLLOW_UPS = 2
+# 缺口题占比上限（相对题量），计划按此在服务端裁剪而不只靠提示词。
+GAP_RATIO_CAP = {"low": 0.2, "medium": 0.4, "high": 0.6}
+MAX_TOPICS_PER_PROJECT = 2
+# 深度阶梯描述的是技术追问；HR 面不按技术深度扣分。
+DEPTH_SCORED_TYPES = ("technical", "project_deep_dive", "comprehensive")
+
+
+def max_follow_ups(difficulty: str) -> int:
+    return DIFFICULTY_PROFILES[difficulty].max_follow_ups
 
 
 def clamp_depth(difficulty: str, depth: int) -> int:
@@ -93,6 +105,7 @@ def question_score(
     difficulty: str,
     factual_errors: int,
     skipped: bool,
+    interview_type: str = "technical",
 ) -> float:
     if skipped:
         return 0.0
@@ -100,7 +113,8 @@ def question_score(
         signal = sum(SIGNAL_POINTS[item] for item in signal_verdicts) / len(signal_verdicts)
     else:
         signal = 0.0
-    shortfall = max(0, DIFFICULTY_PROFILES[difficulty].expected_depth - achieved_depth)
+    expected = DIFFICULTY_PROFILES[difficulty].expected_depth if interview_type in DEPTH_SCORED_TYPES else 0
+    shortfall = max(0, expected - achieved_depth)
     depth_factor = max(0.0, 1.0 - DEPTH_PENALTY_PER_LEVEL * shortfall)
     score = signal * depth_factor * 100 - factual_errors * FACTUAL_ERROR_PENALTY
     return round(max(0.0, score), 2)
@@ -116,7 +130,8 @@ def effective_weights(interview_type: str, *, has_job: bool) -> dict[str, float]
 
 def dimension_score(scores: dict[str, int], weights: dict[str, float]) -> float:
     return round(
-        sum(scores.get(key, 0) / 5 * 100 * weight for key, weight in weights.items() if weight),
+        # 1 分对应 0、5 分对应 100，避免最低档也白拿 20 分。
+        sum(max(0, scores.get(key, 1) - 1) / 4 * 100 * weight for key, weight in weights.items() if weight),
         2,
     )
 
