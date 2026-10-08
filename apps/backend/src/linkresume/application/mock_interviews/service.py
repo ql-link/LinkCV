@@ -29,8 +29,10 @@ from linkresume.application.mock_interviews.scoring import (  # noqa: F401  (re-
     _align_signals,
     _normalize,
     follow_up_grounded,
-    practice_focus,
+    legacy_report_fields,
+    normalize_actions,
     quoted_in,
+    report_metrics,
     score_root,
 )
 from linkresume.modules.product_events import service as product_events
@@ -512,6 +514,11 @@ def _plan_items(interview: MockInterview) -> list[dict[str, Any]]:
 
 def _root_id(question: MockInterviewQuestion) -> int:
     return question.parent_id or question.id
+
+
+def _plain_resume(markdown: str) -> str:
+    """Resume text without Markdown emphasis, so quotes of rendered sentences still match."""
+    return re.sub(r"[*_`#>]", "", markdown or "")
 
 
 # ---------------------------------------------------------------------------
@@ -1310,89 +1317,82 @@ class MockInterviewRunner:
 
         results = dict(await asyncio.gather(*(bounded(root) for root in roots)))
         question_results: list[dict[str, object]] = []
-        scores: list[float] = []
         evaluations: dict[int, dict[str, object]] = {}
-        for root in roots:
+        for number, root in enumerate(roots, start=1):
             item = plan[root.plan_index]
             evaluation = score_root(interview, item, root, questions, results.get(root.id))
             evaluations[root.id] = evaluation
-            # 自我介绍只给反馈，不进入题目平均分。
-            if not item.get("is_intro"):
-                scores.append(float(evaluation["score"]))
             question_results.append(
                 {
                     "topic": item.get("topic"),
                     "sequence_no": root.sequence_no,
+                    "number": number,
                     "is_intro": bool(item.get("is_intro")),
+                    "anchor_kind": item.get("anchor_kind") or "resume",
                     **evaluation,
                 }
             )
+        row_to_root = {item.sequence_no: next(r.sequence_no for r in roots if r.id == _root_id(item)) for item in questions}
 
         fact_check = await self._fact_check(interview, questions, usage, token)
+        for fact in fact_check["items"]:
+            row = fact.get("question_sequence_no")
+            fact["root_sequence_no"] = row_to_root.get(int(row)) if isinstance(row, int) else None
+        has_job = bool((interview.job_snapshot_json or {}).get("description"))
+        voice = voice_report(questions) if interview.answer_mode == "voice" else None
+        metrics = report_metrics(
+            difficulty=interview.difficulty,
+            language=interview.language,
+            has_job=has_job,
+            question_results=question_results,
+            fact_items=fact_check["items"],
+            voice_metrics=voice,
+        )
         await self._heartbeat(interview_id, "evaluating", token)
         overall = await _structured(
             self._llm,
             interview.user_id,
             prompts.overall_evaluation_messages(
                 interview,
-                voice_metrics=voice_report(questions) if interview.answer_mode == "voice" else None,
+                voice_metrics=voice,
                 transcript=_transcript(questions),
                 question_results=question_results,
                 fact_checks=fact_check["items"],
+                metrics=metrics,
             ),
             OverallEvaluation,
             usage,
         )
-        all_answers = " ".join(item.answer_text or "" for item in questions)
-        has_job = bool((interview.job_snapshot_json or {}).get("description"))
-        weights = rubric.effective_weights(interview.interview_type, has_job=has_job)
-        dimensions: list[dict[str, object]] = []
-        dimension_scores: dict[str, int] = {}
-        for key in rubric.DIMENSIONS:
-            judgement = getattr(overall, key)
-            if weights[key] == 0 or judgement is None:
-                continue
-            dimension_scores[key] = judgement.score
-            dimensions.append(
-                {
-                    "key": key,
-                    "score": judgement.score,
-                    "weight": weights[key],
-                    # Quotes the candidate never said are not evidence.
-                    "evidence": [text for text in judgement.evidence if quoted_in(text, all_answers)],
-                    "comment": judgement.comment,
-                }
-            )
-        weights = {key: value for key, value in weights.items() if key in dimension_scores}
-        total_weight = sum(weights.values())
-        weights = {key: round(value / total_weight, 4) for key, value in weights.items()} if total_weight else {}
-        for item in dimensions:
-            item["weight"] = weights[str(item["key"])]
-        dimension_total = rubric.dimension_score(dimension_scores, weights)
-        total = rubric.total_score(scores, dimension_total)
-        scored_roots = [root for root in roots if not plan[root.plan_index].get("is_intro")]
-        answered_roots = sum(1 for root in scored_roots if not evaluations[root.id]["skipped"])
+        dimensions = metrics["dimensions"]
+        notes = {note.key: note.comment for note in overall.competency_notes}
+        for dimension in dimensions:
+            dimension["comment"] = notes.get(str(dimension["key"]), "")
+        actions = normalize_actions(
+            overall.actions,
+            question_results=question_results,
+            row_to_root=row_to_root,
+            competency_keys={str(item["key"]) for item in dimensions},
+            resume_text=_plain_resume(interview.resume_markdown_snapshot),
+        )
         report = {
             "rubric_version": rubric.RUBRIC_VERSION,
             "prompt_version": rubric.PROMPT_VERSION,
             "answer_mode": interview.answer_mode,
-            "voice_metrics": voice_report(questions) if interview.answer_mode == "voice" else None,
+            "voice_metrics": {**voice, "delivery_score": metrics["voice_delivery"]} if voice else None,
             "headline": overall.headline,
             "summary": overall.summary,
-            "total_score": total,
-            "question_average": round(sum(scores) / len(scores), 2) if scores else 0.0,
-            "dimension_score": dimension_total,
-            "dimensions": dimensions,
-            "questions": question_results,
-            "fact_check": fact_check,
-            "resume_risks": overall.resume_risks,
-            "improvements": overall.improvements,
             "strengths": overall.strengths,
-            "practice_focus": practice_focus(question_results),
-            # 没有资料核验时"简历一致性"只来自模型对对话的判断，报告里要标明可信度。
+            "total_score": metrics["total_score"],
+            "verdict": metrics["verdict"],
+            "competencies": dimensions,
+            "questions": question_results,
+            "actions": actions,
+            **legacy_report_fields(total_score=metrics["total_score"], competencies=dimensions, actions=actions),
+            "fact_check": fact_check,
+            # 没有资料核验时简历一致性只来自模型对对话的判断，不计分，只进入行动清单。
             "consistency_basis": "materials" if fact_check.get("status") == "completed" and fact_check.get("items") else "model_only",
             "off_topic_detected": overall.off_topic_detected,
-            "low_confidence": rubric.low_confidence(answered=answered_roots, total=len(scored_roots)),
+            "low_confidence": metrics["low_confidence"],
         }
         await self._db(
             self._with_db,

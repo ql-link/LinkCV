@@ -25,8 +25,10 @@ from linkresume.application.mock_interviews.service import (
     _root_id,
     _state_invalid,
     _transcript,
+    legacy_report_fields,
     list_questions,
     require_owned,
+    report_metrics,
     score_root,
 )
 from linkresume.core.database import utc_now
@@ -225,6 +227,9 @@ def reevaluation_context(db: Session, user_id: int, public_id: str, question_id:
         raise _state_invalid()
     if root.re_evaluate_count >= MAX_RE_EVALUATIONS:
         raise MockInterviewError(409, "MOCK_INTERVIEW_RE_EVALUATE_LIMIT")
+    # 旧版评分的报告只读：没有可复算的逐题结构，重评会把两套口径混在一份报告里。
+    if (interview.report_json or {}).get("rubric_version") != rubric.RUBRIC_VERSION:
+        raise MockInterviewError(409, "MOCK_INTERVIEW_REPORT_OUTDATED")
     db.commit()
     db.expunge(interview)
     for item in questions:
@@ -254,6 +259,9 @@ def store_reevaluation(
     if root.re_evaluate_count >= MAX_RE_EVALUATIONS:
         db.rollback()
         raise MockInterviewError(409, "MOCK_INTERVIEW_RE_EVALUATE_LIMIT")
+    if (interview.report_json or {}).get("rubric_version") != rubric.RUBRIC_VERSION:
+        db.rollback()
+        raise MockInterviewError(409, "MOCK_INTERVIEW_REPORT_OUTDATED")
     plan = _plan_items(interview)
     evaluation = score_root(interview, plan[root.plan_index], root, questions, value)
     previous = root.evaluation_json or {}
@@ -275,15 +283,38 @@ def store_reevaluation(
             results[index] = {
                 "topic": item.get("topic"),
                 "sequence_no": root.sequence_no,
+                "number": item.get("number"),
                 "is_intro": bool(item.get("is_intro")),
+                "anchor_kind": item.get("anchor_kind") or "resume",
                 **evaluation,
             }
-    scores = [float(item["score"]) for item in results if not item.get("is_intro")]
     previous_total = report.get("total_score")
-    total = rubric.total_score(scores, float(report.get("dimension_score") or 0))
+    previous_verdict = (report.get("verdict") or {}).get("level")
+    voice = report.get("voice_metrics")
+    fact_check = report.get("fact_check") or {}
+    metrics = report_metrics(
+        difficulty=interview.difficulty,
+        language=interview.language,
+        has_job=bool((interview.job_snapshot_json or {}).get("description")),
+        question_results=results,
+        fact_items=list(fact_check.get("items") or []),
+        voice_metrics=voice,
+    )
+    # 评语与行动清单是整场的文字结论，单题重评只复算数字，沿用已有评语。
+    notes = {str(item.get("key")): item.get("comment") or "" for item in report.get("competencies") or []}
+    dimensions = metrics["dimensions"]
+    for dimension in dimensions:
+        dimension["comment"] = notes.get(str(dimension["key"]), "")
+    total = float(metrics["total_score"])
+    verdict = metrics["verdict"]
     report["questions"] = results
-    report["question_average"] = round(sum(scores) / len(scores), 2) if scores else 0.0
     report["total_score"] = total
+    report["verdict"] = verdict
+    report["competencies"] = dimensions
+    report.update(legacy_report_fields(total_score=total, competencies=dimensions, actions=list(report.get("actions") or [])))
+    report["low_confidence"] = metrics["low_confidence"]
+    if voice:
+        report["voice_metrics"] = {**voice, "delivery_score": metrics["voice_delivery"]}
     re_evaluations = list(report.get("re_evaluations") or [])
     re_evaluations.append({
         "sequence_no": root.sequence_no,
@@ -292,10 +323,13 @@ def store_reevaluation(
         "score": evaluation["score"],
         "previous_total": previous_total,
         "total": total,
+        "previous_verdict": previous_verdict,
+        "verdict": verdict["level"],
     })
     report["re_evaluations"] = re_evaluations
     interview.report_json = report
     interview.total_score = Decimal(str(total))
+    interview.is_low_confidence = bool(report["low_confidence"])
     interview.lock_version += 1
     db.commit()
     return {

@@ -58,6 +58,6 @@ public struct MockInterview: Identifiable, Sendable {
     public var label: String { Self.statusLabels[status] ?? status }
     public var type: String { Self.types[raw.text("interview_type")] ?? "综合面" }
     public static let types = ["technical": "技术面", "project_deep_dive": "项目深挖", "comprehensive": "综合面", "hr": "HR 面"]
-    public static let dimensions = ["professional_depth": "专业深度", "structure": "表达结构", "job_fit": "岗位匹配", "resume_consistency": "简历一致性", "communication": "沟通表现"]
+    public static let dimensions = ["professional_depth": "专业深度", "structure": "表达结构", "job_fit": "岗位匹配", "resume_consistency": "简历一致性", "communication": "沟通表现", "knowledge": "知识与原理", "problem_solving": "方案与权衡", "ownership": "项目主导与成果", "motivation": "动机与稳定性"]
     public static let statusLabels = ["preparing": "准备中", "preparation_failed": "准备失败", "in_progress": "面试中", "evaluating": "评估中", "evaluation_failed": "评估失败", "completed": "已完成", "abandoned": "已放弃"]
 }

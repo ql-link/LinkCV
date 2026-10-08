@@ -157,6 +157,9 @@ class MockInterviewSummary(BaseModel):
     materials_in_questions: bool = False
     total_score: float | None
     low_confidence: bool
+    # 由报告派生：列表与趋势只比较同一评分版本、同一类型与难度的场次。
+    rubric_version: str | None = None
+    verdict: Literal["meets", "borderline", "below", "insufficient"] | None = None
     error_code: str | None
     started_at: datetime | None
     finished_at: datetime | None

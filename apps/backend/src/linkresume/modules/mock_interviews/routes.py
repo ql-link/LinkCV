@@ -119,6 +119,7 @@ def _sse(event: str, data: dict[str, object]) -> bytes:
 def _summary(interview: MockInterview) -> MockInterviewSummary:
     job = interview.job_snapshot_json or {}
     stage = interview.stage_snapshot_json or {}
+    report = (interview.report_json or {}) if interview.status == "completed" else {}
     return MockInterviewSummary(
         id=interview.public_id,
         status=interview.status,  # type: ignore[arg-type]
@@ -141,6 +142,8 @@ def _summary(interview: MockInterview) -> MockInterviewSummary:
         materials_in_questions=interview.is_materials_in_questions,
         total_score=float(interview.total_score) if interview.total_score is not None else None,
         low_confidence=interview.is_low_confidence,
+        rubric_version=report.get("rubric_version"),
+        verdict=(report.get("verdict") or {}).get("level"),
         error_code=interview.error_code,
         started_at=interview.started_at,
         finished_at=interview.finished_at,

@@ -97,6 +97,7 @@ class ScriptedGateway:
                     {"signal": SIGNALS[1], "verdict": "partial", "evidence": "对比过本地缓存"},
                     {"signal": SIGNALS[2], "verdict": "hit", "evidence": "这句话没有出现在回答里"},
                 ],
+                "expression": {"verdict": "hit", "evidence": "用火焰图定位热点", "note": "结论先行"},
                 "achieved_depth": 3,
                 "factual_errors": [],
                 "highlights": ["定位方法清楚"],
@@ -107,18 +108,17 @@ class ScriptedGateway:
             payload = {"claims": [{"text": "QPS 从 2000 提升到 10000", "kind": "number", "question_sequence_no": 1}]}
         elif "核验候选人的一条陈述" in system:
             payload = {"verdict": "conflict", "quote": "QPS 从 2000 提升到 5000", "snippet_index": 0, "note": "资料数值更低"}
-        elif "维度评估" in system:
-            judgement = {"score": 4, "evidence": ["用火焰图定位热点"], "comment": "较好"}
+        elif "结论与行动清单" in system:
             payload = {
-                "professional_depth": judgement,
-                "structure": {**judgement, "score": 3},
-                "job_fit": judgement,
-                "resume_consistency": judgement,
-                "communication": {**judgement, "score": 5},
                 "headline": "基础扎实",
                 "summary": "整体表现良好。",
-                "resume_risks": ["补充 QPS 提升的验证方式"],
-                "improvements": ["练习用数据支撑结论"],
+                "strengths": ["定位方法清楚"],
+                "competency_notes": [{"key": "knowledge", "comment": "原理讲得清楚"}],
+                "actions": [
+                    {"title": "练习用数据支撑结论", "priority": "normal", "kind": "practice", "question_refs": [2, 999]},
+                    {"title": "补充 QPS 提升的验证方式", "priority": "high", "kind": "resume",
+                     "resume_quote": "简历里没有的句子", "question_refs": [2]},
+                ],
             }
         else:
             raise AssertionError(system[:200])
@@ -331,16 +331,35 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         # The third judgement quoted text that is not in the answers.
         assert [item["verdict"] for item in first_signals] == ["hit", "partial", "miss", "miss"]
         assert report["questions"][0]["topic"] == "自我介绍"  # fixed intro takes the first slot
-        weights = {item["key"]: item["weight"] for item in report["dimensions"]}
+        assert report["questions"][0]["expression"]["verdict"] == "hit"
+        weights = {item["key"]: item["weight"] for item in report["competencies"]}
         assert "job_fit" not in weights  # no JD supplied
         assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
-        dimension = sum((item["score"] - 1) / 4 * 100 * item["weight"] for item in report["dimensions"])
+        knowledge = next(item for item in report["competencies"] if item["key"] == "knowledge")
+        assert knowledge["comment"] == "原理讲得清楚"
         scored = [item["score"] for item in report["questions"] if not item["is_intro"]]
-        question_avg = sum(scored) / 3  # the self-introduction is feedback only
-        assert report["total_score"] == pytest.approx(question_avg * 0.7 + dimension * 0.3, abs=0.05)
+        # The self-introduction is feedback only; the total is the plain question average.
+        assert report["total_score"] == pytest.approx(sum(scored) / 3, abs=0.01)
         assert report_detail["total_score"] == pytest.approx(report["total_score"])
+        assert report["verdict"]["level"] in {"meets", "borderline", "below"}
+        assert report["verdict"]["target"] == report_detail["difficulty"]
+        assert report_detail["verdict"] == report["verdict"]["level"]
+        assert report_detail["rubric_version"] == "v4"
+        listed = client.get("/api/mock-interviews").json()["items"]
+        assert next(item for item in listed if item["id"] == created["id"])["verdict"] == report["verdict"]["level"]
+        # Unknown refs are dropped and an unquotable resume line becomes a practice item; high priority first.
+        assert [item["title"] for item in report["actions"]] == ["补充 QPS 提升的验证方式", "练习用数据支撑结论"]
+        assert report["actions"][0]["kind"] == "practice" and report["actions"][0]["resume_quote"] is None
+        assert all(ref != 999 for item in report["actions"] for ref in item["question_refs"])
+        # v1–v3 fields stay for old desktop clients and interview prep.
+        assert report["question_average"] == report["dimension_score"] == report["total_score"]
+        assessed = [item for item in report["competencies"] if item["assessed"]]
+        assert [item["key"] for item in report["dimensions"]] == [item["key"] for item in assessed]
+        assert all(1 <= item["score"] <= 5 for item in report["dimensions"])
+        assert report["improvements"] == [f"{item['title']}：{item['detail']}" if item["detail"] else item["title"] for item in report["actions"]]
+        assert report["resume_risks"] == [] and report["practice_focus"] == []
         assert report["fact_check"]["status"] == "not_requested"
-        assert report["rubric_version"] == "v3"
+        assert report["rubric_version"] == "v4"
         assert report["answer_mode"] == "text" and report["voice_metrics"] is None
     with app.state.session_factory() as db:
         logs = db.scalars(select(LLMCallLog)).all()
