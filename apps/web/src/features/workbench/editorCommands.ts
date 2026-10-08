@@ -1,5 +1,5 @@
 import { t, getLocale } from "@/i18n";
-import type { Editor } from "@tiptap/react";
+import type { ChainedCommands, CommandProps, Editor } from "@tiptap/react";
 import { Fragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { InlineIconName } from "../../lib/resumeInlineIcon";
@@ -52,38 +52,58 @@ export function insertInlineIcon(
 }
 
 /**
- * 将光标所在的普通段落替换成结构化左右行，并把非空行的光标放到右栏。
+ * 将光标所在的已有文字行替换成结构化左右行：原有文字放在最左栏，非空行的光标放到右栏。
  * 两栏都是真实段落，因此改字体、页边距或导出 PDF 时不会像空格对齐那样漂移。
+ * 列表项先逐层提升为普通段落再转换，整个过程是一次事务，可以一步撤销。
  */
 export function convertCurrentLineToResumeRow(editor: Editor) {
-  return editor.commands.command(({ state, dispatch }) => {
-    const { $from } = state.selection;
-    let paragraphDepth = $from.depth;
+  const { $from } = editor.state.selection;
+  let listDepth = 0;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const name = $from.node(depth).type.name;
+    if (RESUME_FIXED_ROW_NODE_NAMES.has(name)) return false;
+    if (name === "listItem") listDepth += 1;
+  }
+  if (listDepth === 0) return editor.commands.command(replaceParagraphWithResumeRow);
 
-    while (paragraphDepth > 0 && $from.node(paragraphDepth).type.name !== "paragraph") {
-      paragraphDepth -= 1;
-    }
+  const convert = (chain: ChainedCommands) => {
+    for (let index = 0; index < listDepth; index += 1) chain = chain.liftListItem("listItem");
+    return chain.command(replaceParagraphWithResumeRow);
+  };
+  if (!convert(editor.can().chain()).run()) return false;
+  return convert(editor.chain()).run();
+}
 
-    if (paragraphDepth === 0 || $from.node(paragraphDepth - 1).type.name !== "doc") return false;
+function replaceParagraphWithResumeRow({ state, dispatch }: CommandProps) {
+  const { $from } = state.selection;
+  let paragraphDepth = $from.depth;
 
-    const paragraph = $from.node(paragraphDepth);
-    const rowType = state.schema.nodes.resumeRow;
-    const paragraphType = state.schema.nodes.paragraph;
-    if (!rowType || !paragraphType) return false;
+  while (paragraphDepth > 0 && $from.node(paragraphDepth).type.name !== "paragraph") {
+    paragraphDepth -= 1;
+  }
 
-    const from = $from.before(paragraphDepth);
-    const left = paragraphType.create(paragraph.attrs, paragraph.content, paragraph.marks);
-    const right = paragraphType.create();
-    const row = rowType.create({ leftWidth: 50 }, [left, right]);
-    const transaction = state.tr.replaceWith(from, from + paragraph.nodeSize, row);
-    const rightTextPosition = from + 2 + left.nodeSize;
-    const targetPosition = paragraph.textContent.length === 0
-      ? from + 2
-      : rightTextPosition;
-    transaction.setSelection(TextSelection.create(transaction.doc, targetPosition));
-    dispatch?.(transaction.scrollIntoView());
-    return true;
-  });
+  // 侧栏模板的正文都在 resumeColumn 里，分栏行在这里与顶层同样合法。
+  if (paragraphDepth === 0) return false;
+  const parentName = $from.node(paragraphDepth - 1).type.name;
+  if (parentName !== "doc" && parentName !== "resumeColumn") return false;
+
+  const paragraph = $from.node(paragraphDepth);
+  const rowType = state.schema.nodes.resumeRow;
+  const paragraphType = state.schema.nodes.paragraph;
+  if (!rowType || !paragraphType) return false;
+
+  const from = $from.before(paragraphDepth);
+  const left = paragraphType.create(paragraph.attrs, paragraph.content, paragraph.marks);
+  const right = paragraphType.create();
+  const row = rowType.create({ leftWidth: 50 }, [left, right]);
+  const transaction = state.tr.replaceWith(from, from + paragraph.nodeSize, row);
+  const rightTextPosition = from + 2 + left.nodeSize;
+  const targetPosition = paragraph.textContent.length === 0
+    ? from + 2
+    : rightTextPosition;
+  transaction.setSelection(TextSelection.create(transaction.doc, targetPosition));
+  dispatch?.(transaction.scrollIntoView());
+  return true;
 }
 
 /**
@@ -190,11 +210,10 @@ export function setResumeRowColumns(
     }
 
     // 栏数变化后旧占比没有对应关系，宽度回到等分。
-    const transaction = state.tr.replaceWith(
-      rowPosition,
-      rowPosition + row.nodeSize,
-      row.type.create({ ...row.attrs, columnWidths: null }, cells),
-    );
+    const nextRow = row.type.create({ ...row.attrs, columnWidths: null }, cells);
+    const transaction = state.tr.replaceWith(rowPosition, rowPosition + row.nodeSize, nextRow);
+    // 整行替换会把原选区映射到行外；光标留在最后一栏末尾，切栏后可以直接输入或剪切粘贴。
+    transaction.setSelection(TextSelection.near(transaction.doc.resolve(rowPosition + nextRow.nodeSize - 2), -1));
     dispatch?.(transaction.scrollIntoView());
     return true;
   });

@@ -681,10 +681,8 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
     const startX = event.clientX;
     const base = effectiveWidths;
     const baseLeftWidth = leftWidth;
-    let moved = false;
 
     const move = (moveEvent: PointerEvent) => {
-      moved = true;
       const deltaPercent = ((moveEvent.clientX - startX) / rowWidth) * 100;
       if (equalColumns) applyWidths(resizeResumeRowColumns(base, dividerIndex, deltaPercent));
       else applyPairWidth(baseLeftWidth + deltaPercent);
@@ -693,8 +691,7 @@ function ResumeRowView({ node, editor, getPos }: NodeViewProps) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", finish);
-      // 只是点了一下分隔线时不写入宽度，未调整过的行保持不携带宽度数据。
-      if (!moved && equalColumns) applyWidths(null);
+      // 只是点了一下分隔线时不改宽度；恢复等分只走双击。
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", finish, { once: true });
@@ -1186,8 +1183,11 @@ const coversEntireNode = (node: PMNode, pos: number, from: number, to: number): 
 
 // 自内向外找第一个被选区完全包住内容的布局节点；
 // 找到的第一个布局节点没被选区覆盖时直接放弃，避免外层的更大结构被误删。
+// 选区只在一个文本块内时始终是文字操作：其余栏为空（如刚从两栏切成三栏）时，
+// 选中唯一一栏的文字也会“覆盖”整行，不能因此把整行剪走。
 export const fullyCoveredResumeLayoutNode = (selection: TextSelection): { node: PMNode; pos: number } | null => {
-  const { $from, to } = selection;
+  const { $from, $to, to } = selection;
+  if ($from.sameParent($to)) return null;
   for (let depth = $from.depth; depth > 0; depth--) {
     const node = $from.node(depth);
     if (!RESUME_LAYOUT_NODE_NAMES.has(node.type.name)) continue;
