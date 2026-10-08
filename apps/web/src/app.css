@@ -2590,7 +2590,8 @@ select:not([data-slot]):focus-visible,
   line-height: inherit;
 }
 
-.resume-avatar[data-template-avatar="true"] img[src] {
+.resume-avatar[data-template-avatar="true"] img[src],
+.resume-paper[class*="theme-"] .resume-avatar[data-template-avatar="true"] img[src] {
   visibility: visible;
   width: 100%;
   height: 100%;
