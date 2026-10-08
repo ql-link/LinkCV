@@ -152,6 +152,35 @@ const value = 1;
     expect(container).toHaveTextContent('<script>alert("unsafe")</script>');
   });
 
+  it("兼容中文加粗结束标记前的空格，同时保留代码与转义原文", () => {
+    const { container } = render(<AgentMarkdown content={'- **职责范围不够清楚： **原文需要补充。\n- **工具效果缺少依据： **请补充结果。\n\n**常规加粗** 与 **下一项加粗**、*斜体*、***加粗斜体***、__下划线加粗__、~~删除线~~\n\n`**代码： **` 与 \\*\\*转义： \\*\\*\n\n```md\n**代码块： **\n```\n\n未闭合 **标记'} />);
+    expect(Array.from(container.querySelectorAll("strong")).map((node) => node.textContent)).toEqual([
+      "职责范围不够清楚： ", "工具效果缺少依据： ", "常规加粗", "下一项加粗", "加粗斜体", "下划线加粗",
+    ]);
+    expect(container.querySelector("em")).toHaveTextContent("斜体");
+    expect(container.querySelector("strong em, em strong")).toHaveTextContent("加粗斜体");
+    expect(container.querySelector("s")).toHaveTextContent("删除线");
+    expect(container.querySelector("p code")).toHaveTextContent("**代码： **");
+    expect(container.querySelector("pre code")).toHaveTextContent("**代码块： **");
+    expect(container).toHaveTextContent("**转义： **");
+    expect(container).toHaveTextContent("未闭合 **标记");
+  });
+
+  it("渲染中文标点结尾的加粗、各级标题、嵌套列表和安全链接", () => {
+    const { container } = render(<AgentMarkdown content={'**职责：**需要说明，**结果： **需要验证。\n\n# 标题一\n\n## 标题二\n\n### 标题三\n\n#### 标题四\n\n##### 标题五\n\n###### 标题六\n\n- 外层\n  - 内层\n\n1. 步骤一\n2. 步骤二\n\n> 引用中的 *斜体*\n\n[链接](https://example.com "链接标题") 与 https://example.org\n\n[危险链接](javascript:alert(1))\n\n    缩进代码 <script>\n\n普通第一行\n普通第二行'} />);
+    expect(Array.from(container.querySelectorAll("strong")).map((node) => node.textContent)).toEqual(["职责：", "结果： "]);
+    expect(screen.getAllByRole("heading").map((node) => node.tagName)).toEqual(["H2", "H3", "H4", "H5", "H6", "H6"]);
+    expect(container.querySelector("ul ul li")).toHaveTextContent("内层");
+    expect(container.querySelectorAll("ol > li")).toHaveLength(2);
+    expect(container.querySelector("blockquote em")).toHaveTextContent("斜体");
+    expect(screen.getByRole("link", { name: "链接" })).toHaveAttribute("title", "链接标题");
+    expect(screen.getByRole("link", { name: "https://example.org" })).toHaveAttribute("target", "_blank");
+    expect(container.querySelector('a[href^="javascript:"]')).not.toBeInTheDocument();
+    expect(container.querySelector("pre code")).toHaveTextContent("缩进代码 <script>");
+    expect(container.querySelector("script")).not.toBeInTheDocument();
+    expect(container.querySelector("p br")).toBeInTheDocument();
+  });
+
   it("保留普通换行并可复制围栏代码", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });

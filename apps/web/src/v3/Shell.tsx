@@ -114,7 +114,7 @@ export function V3Sidebar({
     setIndicator({ top: from, snap: true });
     const frame = requestAnimationFrame(() => { setIndicator({ top: next, snap: false }); lastIndicatorTop = next; });
     return () => cancelAnimationFrame(frame);
-  }, [active]);
+  }, [active, activeSessionId]);
 
   return (
     <aside className="v3-sidebar" aria-label={t("工作区侧栏")}>
@@ -126,7 +126,7 @@ export function V3Sidebar({
           {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)`, transition: indicator.snap ? "none" : undefined }} />}
           {NAV.map((item) => {
             const count = item.key === "resumes" ? resumeCount || null : item.key === "jobs" ? applicationCount : item.count?.() ?? null;
-            const isActive = item.key === active;
+            const isActive = item.key === active && (item.key !== "home" || !activeSessionId);
             return (
               <a
                 key={item.key}
