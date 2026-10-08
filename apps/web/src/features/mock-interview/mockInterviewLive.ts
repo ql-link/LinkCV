@@ -3,6 +3,7 @@
 import { ApiRequestError, apiRequest, createApiRequestId, refreshApiSession } from "@/api/client";
 import { MOCK_INTERVIEW_ERROR_MESSAGES } from "./mockInterviewText";
 import { notifyMockInterviews } from "./mockInterviewEvents";
+import { normalizeResponse } from "./reportCompat";
 import {
   MockInterviewError,
   type MockInterviewApi,
@@ -42,7 +43,7 @@ function toMockError(error: unknown): unknown {
 
 async function call<T>(path: string, options: Parameters<typeof apiRequest>[1] = {}): Promise<T> {
   try {
-    return await apiRequest<T>(path, options);
+    return normalizeResponse(await apiRequest<T>(path, options));
   } catch (error) {
     throw toMockError(error);
   }

@@ -107,7 +107,7 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
         <div className="mi-total">
           <div className="mi-total-label">{t("总分")}<span className={`mi-grade ${scoreTone(report.total_score)}`}>{scoreGrade(report.total_score)}</span></div>
           <div className="mi-total-num"><b>{Math.round(report.total_score)}</b><small>/ 100</small></div>
-          <p>{t("题目 ")}{report.question_average.toFixed(1)}{t(" × 70% + 维度 ")}{report.dimension_score.toFixed(1)} × 30%</p>
+          <p>{report.verdict ? t("总分为逐题平均分 · 评分规则 v4") : <>{t("题目 ")}{report.question_average.toFixed(1)}{t(" × 70% + 维度 ")}{report.dimension_score.toFixed(1)} × 30%</>}</p>
         </div>
         <i className="mi-summary-div" aria-hidden="true" />
         <div className="mi-summary-copy">

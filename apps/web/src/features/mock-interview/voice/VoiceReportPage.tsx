@@ -310,7 +310,7 @@ function Summary({ report, score, answered, total, followCount, goodCount, weakC
       <div className="vr-score">
         <div className="vr-score-top"><span>{t("总分")}</span><span className={`vr-tag is-${g.tone}`}>{g.label}</span></div>
         <div className="vr-score-num"><strong>{score}</strong><span>/ 100</span></div>
-        <small>{t("题目 ")}{report.question_average.toFixed(1)}{t(" × 70% + 维度 ")}{report.dimension_score.toFixed(1)} × 30%</small>
+        <small>{report.verdict ? t("总分为逐题平均分 · 评分规则 v4") : <>{t("题目 ")}{report.question_average.toFixed(1)}{t(" × 70% + 维度 ")}{report.dimension_score.toFixed(1)} × 30%</>}</small>
       </div>
       <span className="vr-summary-rule" aria-hidden="true" />
       <div className="vr-summary-copy">

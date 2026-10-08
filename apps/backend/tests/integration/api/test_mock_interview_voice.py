@@ -218,7 +218,7 @@ def test_voice_interview_saves_recordings_speaks_and_reports_voice_metrics() -> 
         assert answered[0]["raw_transcript"] == "我用瑞迪斯做缓存，嗯，那个 QPS 一千"
         assert answered[0]["transcript_state"] == "original"
         report = report_detail["report"]
-        assert report["answer_mode"] == "voice" and report["rubric_version"] == "v3"
+        assert report["answer_mode"] == "voice" and report["rubric_version"] == "v4"
         metrics = report["voice_metrics"]
         assert metrics["long_pauses"] == len(answered)
         assert metrics["filler_ratio"] > 0 and metrics["chars_per_minute"] > 0
@@ -406,6 +406,18 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         assert second["transcript_state"] == "edited"
 
         url = f"/api/mock-interviews/{interview_id}/questions/{roots[0]['id']}/re-evaluate"
+
+        def set_rubric(version: str) -> None:
+            with app.state.session_factory() as db:
+                row = db.scalar(select(MockInterview).where(MockInterview.public_id == interview_id))
+                row.report_json = {**row.report_json, "rubric_version": version}
+                db.commit()
+
+        # Reports scored under an older rubric are read-only and do not spend an attempt.
+        set_rubric("v3")
+        outdated = client.post(url)
+        assert outdated.status_code == 409 and outdated.json()["error"] == "MOCK_INTERVIEW_REPORT_OUTDATED"
+        set_rubric("v4")
         for count in (1, 2, 3):
             result = client.post(url)
             assert result.status_code == 200, result.text
@@ -414,9 +426,8 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         report = data["mock_interview"]["report"]
         assert [item["count"] for item in report["re_evaluations"]] == [1, 2, 3]
         scores = [item["score"] for item in report["questions"] if not item["is_intro"]]
-        assert report["total_score"] == pytest.approx(
-            sum(scores) / len(scores) * 0.7 + report["dimension_score"] * 0.3, abs=0.01
-        )
+        assert report["total_score"] == pytest.approx(sum(scores) / len(scores), abs=0.01)
+        assert report["re_evaluations"][-1]["verdict"] == report["verdict"]["level"]
         assert data["mock_interview"]["total_score"] == pytest.approx(report["total_score"])
         root = next(q for q in data["mock_interview"]["questions"] if q["id"] == roots[0]["id"])
         assert len(root["evaluation_history"]) == 3

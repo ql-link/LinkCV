@@ -10,56 +10,78 @@ from linkresume.application.mock_interviews.retrieval import (
     tokenize,
 )
 from linkresume.application.mock_interviews.service import _align_signals, _parse_header, _split_header
-from linkresume.application.mock_interviews.outputs import QuestionEvaluation, SignalJudgement
+from linkresume.application.mock_interviews.outputs import ExpressionJudgement, QuestionEvaluation, SignalJudgement
+
+NO_EXPRESSION = ExpressionJudgement(verdict="miss")
 
 
-def test_question_score_combines_signals_depth_and_errors() -> None:
-    # intermediate expects L3; L2 is one level short -> factor 0.85
-    score = rubric.question_score(
-        signal_verdicts=["hit", "partial", "miss", "hit"],
-        achieved_depth=2,
-        difficulty="intermediate",
-        factual_errors=1,
-        skipped=False,
-    )
-    assert score == pytest.approx(0.625 * 0.85 * 100 - 10, abs=0.01)
+def test_core_signals_weigh_twice_as_much_as_bonus_signals() -> None:
+    # core hit (2) + bonus miss (1) + bonus partial (1 × 0.5) -> 2.5 / 4
+    signals = [(True, "hit"), (False, "miss"), (False, "partial")]
+    assert rubric.weighted_points(signals) == pytest.approx(0.625)
+    assert rubric.question_score(signals=signals, depth_factor=1.0, error_severities=[], skipped=False) == 62.5
 
 
 def test_question_score_floor_and_skip() -> None:
     assert rubric.question_score(
-        signal_verdicts=["miss"], achieved_depth=0, difficulty="senior", factual_errors=3, skipped=False
+        signals=[(True, "miss")], depth_factor=1.0, error_severities=["major"], skipped=False
     ) == 0.0
-    assert rubric.question_score(
-        signal_verdicts=["hit"], achieved_depth=5, difficulty="junior", factual_errors=0, skipped=True
-    ) == 0.0
+    assert rubric.question_score(signals=[(True, "hit")], depth_factor=1.0, error_severities=[], skipped=True) == 0.0
 
 
-def test_depth_meeting_expectation_is_not_penalised() -> None:
-    assert rubric.question_score(
-        signal_verdicts=["hit", "hit"], achieved_depth=5, difficulty="senior", factual_errors=0, skipped=False
-    ) == 100.0
-
-
-def test_weights_drop_job_fit_without_job_and_hr_has_no_depth() -> None:
-    weights = rubric.effective_weights("technical", has_job=False)
-    assert weights["job_fit"] == 0
-    assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
-    assert weights["professional_depth"] == pytest.approx(0.35 / 0.8, abs=1e-3)
-    assert rubric.effective_weights("hr", has_job=True)["professional_depth"] == 0
-
-
-def test_every_interview_type_weights_sum_to_one() -> None:
-    for weights in rubric.DIMENSION_WEIGHTS.values():
-        assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
-
-
-def test_total_score_formula() -> None:
-    dimension = rubric.dimension_score(
-        {"professional_depth": 4, "structure": 3, "job_fit": 5, "resume_consistency": 4, "communication": 3},
-        rubric.effective_weights("technical", has_job=True),
+def test_depth_is_only_penalised_when_the_interviewer_probed_that_deep() -> None:
+    # senior expects L4
+    assert rubric.depth_outcome(difficulty="senior", probed_depth=4, achieved_depth=3, depth_scored=True) == (
+        pytest.approx(0.85), "short"
     )
-    assert dimension == pytest.approx(75 * 0.35 + 50 * 0.2 + 100 * 0.2 + 75 * 0.15 + 50 * 0.1)
-    assert rubric.total_score([80, 60], dimension) == pytest.approx(70 * 0.7 + dimension * 0.3, abs=0.01)
+    assert rubric.depth_outcome(difficulty="senior", probed_depth=3, achieved_depth=3, depth_scored=True) == (
+        1.0, "not_probed"
+    )
+    # Probed to L3 only, answered L2: penalised for the level that was asked, not the expected one.
+    assert rubric.depth_outcome(difficulty="senior", probed_depth=3, achieved_depth=2, depth_scored=True) == (
+        pytest.approx(0.85), "not_probed"
+    )
+    assert rubric.depth_outcome(difficulty="senior", probed_depth=5, achieved_depth=5, depth_scored=True) == (1.0, "met")
+    assert rubric.depth_outcome(difficulty="senior", probed_depth=1, achieved_depth=0, depth_scored=False) == (
+        1.0, "not_scored"
+    )
+
+
+def test_factual_errors_are_graded_and_capped() -> None:
+    assert rubric.error_penalty(["minor"]) == 5
+    assert rubric.error_penalty(["major"]) == 15
+    assert rubric.error_penalty(["major", "major", "major"]) == rubric.MAX_ERROR_PENALTY == 30
+
+
+def test_total_score_is_the_question_average() -> None:
+    assert rubric.total_score([80, 60]) == 70.0
+    assert rubric.total_score([]) == 0.0
+
+
+def test_voice_delivery_scores_each_metric_against_its_reference() -> None:
+    reference = {"chars_per_minute": [180, 260], "long_pauses": [0, 2], "filler_ratio": [0.0, 0.03]}
+    assert rubric.voice_delivery(None) is None
+    inside = {"chars_per_minute": 200, "long_pauses": 1, "filler_ratio": 0.01, "reference": reference}
+    assert rubric.voice_delivery(inside) == 1.0
+    # 300 is 40 above the range (half-width 40) -> 0.5; 5 pauses is 3 above (half-width 1) -> 0
+    mixed = {"chars_per_minute": 300, "long_pauses": 5, "filler_ratio": 0.0, "reference": reference}
+    assert rubric.voice_delivery(mixed) == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize(
+    ("answered", "total", "flags", "core", "level"),
+    [
+        (1, 95, 0, 1.0, "insufficient"),
+        (3, 75, 0, 0.6, "meets"),
+        (3, 75, 0, 0.59, "borderline"),
+        (3, 90, 1, 1.0, "borderline"),
+        (3, 60, 1, 0.5, "borderline"),
+        (3, 59.9, 0, 1.0, "below"),
+        (3, 80, 2, 1.0, "below"),
+    ],
+)
+def test_verdict_thresholds(answered, total, flags, core, level) -> None:
+    assert rubric.verdict_level(answered=answered, total=total, risk_flags=flags, core_hit_rate=core) == level
 
 
 def test_low_confidence_rules() -> None:
@@ -114,6 +136,7 @@ def test_unquoted_judgements_are_downgraded_to_miss() -> None:
             SignalJudgement(signal="有数据验证", verdict="hit", evidence="编造的引用"),
         ],
         achieved_depth=3,
+        expression=NO_EXPRESSION,
     )
     aligned = _align_signals(["说出瓶颈定位方法", "有数据验证"], value, "当时我用火焰图定位了热点函数")
     assert [item["verdict"] for item in aligned] == ["hit", "miss"]
@@ -124,6 +147,7 @@ def test_one_judgement_cannot_score_two_signals() -> None:
     value = QuestionEvaluation(
         signals=[SignalJudgement(signal="B", verdict="hit", evidence="火焰图")],
         achieved_depth=3,
+        expression=NO_EXPRESSION,
     )
     aligned = _align_signals(["A", "B"], value, "我用了火焰图")
     assert [item["verdict"] for item in aligned] == ["miss", "hit"]
@@ -136,6 +160,7 @@ def test_renamed_judgements_fill_unmatched_signals_in_order() -> None:
             SignalJudgement(signal="改写的 B", verdict="partial", evidence="本地缓存"),
         ],
         achieved_depth=3,
+        expression=NO_EXPRESSION,
     )
     aligned = _align_signals(["A", "B"], value, "火焰图 本地缓存")
     assert [item["verdict"] for item in aligned] == ["hit", "partial"]
@@ -170,16 +195,18 @@ def test_slot_contention_maps_mysql_deadlock_to_conflict() -> None:
         occupy_slot(OtherFailure(), object())
 
 
-def test_hr_interviews_are_not_penalised_for_technical_depth() -> None:
-    kwargs = dict(signal_verdicts=["hit", "hit"], achieved_depth=1, difficulty="senior", factual_errors=0, skipped=False)
-    assert rubric.question_score(**kwargs, interview_type="hr") == 100.0
-    assert rubric.question_score(**kwargs, interview_type="technical") < 100.0
+def test_signal_specs_tag_legacy_signals_and_bound_core_count() -> None:
+    from linkresume.application.mock_interviews.scoring import signal_specs
 
-
-def test_dimension_score_floor_is_zero() -> None:
-    weights = {"structure": 1.0}
-    assert rubric.dimension_score({"structure": 1}, weights) == 0.0
-    assert rubric.dimension_score({"structure": 5}, weights) == 100.0
+    legacy = signal_specs({"expected_signals": ["a", "b"], "project": "订单系统"}, "technical")
+    assert [(s["competency"], s["core"]) for s in legacy] == [("ownership", True), ("ownership", False)]
+    assert signal_specs({"expected_signals": ["a"]}, "hr")[0]["competency"] == "motivation"
+    tagged = signal_specs(
+        {"expected_signals": [{"text": t, "competency": "bogus", "core": True} for t in "abcde"], "is_skill_check": True},
+        "technical",
+    )
+    assert [s["core"] for s in tagged] == [True, True, True, False, False]
+    assert {s["competency"] for s in tagged} == {"knowledge"}
 
 
 def test_judgement_index_beats_name_and_is_not_reused() -> None:
@@ -189,6 +216,7 @@ def test_judgement_index_beats_name_and_is_not_reused() -> None:
             SignalJudgement(index=0, signal="另一个名字", verdict="partial", evidence="本地缓存"),
         ],
         achieved_depth=3,
+        expression=NO_EXPRESSION,
     )
     aligned = _align_signals(["A", "B"], value, "火焰图 本地缓存")
     assert [item["verdict"] for item in aligned] == ["partial", "hit"]
@@ -201,18 +229,38 @@ def test_unquoted_factual_errors_do_not_cost_points() -> None:
     from linkresume.application.mock_interviews.scoring import score_root
 
     interview = SimpleNamespace(difficulty="junior", interview_type="technical")
-    root = SimpleNamespace(id=1, parent_id=None, answer_text="我用了 Redis 做缓存")
+    root = SimpleNamespace(id=1, parent_id=None, answer_text="我用了 Redis 做缓存", answer_status="answered", depth_level=2)
     value = QuestionEvaluation(
         signals=[SignalJudgement(index=0, signal="A", verdict="hit", evidence="Redis 做缓存")],
+        expression=ExpressionJudgement(verdict="hit", evidence="我用了 Redis"),
         achieved_depth=2,
         factual_errors=[
-            FactualError(description="编造", evidence="根本没说过的话"),
+            FactualError(description="编造", evidence="根本没说过的话", severity="major"),
             FactualError(description="有据", evidence="Redis"),
         ],
     )
     result = score_root(interview, {"expected_signals": ["A"]}, root, [root], value)
-    assert result["factual_errors"] == ["有据"]
-    assert result["score"] == 90.0
+    assert result["factual_errors"] == [{"description": "有据", "severity": "minor"}]
+    assert result["depth_status"] == "met"
+    assert result["score"] == 95.0
+
+
+def test_unquoted_expression_counts_as_a_missed_bonus_signal() -> None:
+    from types import SimpleNamespace
+
+    from linkresume.application.mock_interviews.scoring import score_root
+
+    interview = SimpleNamespace(difficulty="junior", interview_type="technical")
+    root = SimpleNamespace(id=1, parent_id=None, answer_text="我用了 Redis 做缓存", answer_status="answered", depth_level=2)
+    value = QuestionEvaluation(
+        signals=[SignalJudgement(index=0, signal="A", verdict="hit", evidence="Redis 做缓存")],
+        expression=ExpressionJudgement(verdict="hit", evidence="编造的引用"),
+        achieved_depth=2,
+    )
+    result = score_root(interview, {"expected_signals": ["A"]}, root, [root], value)
+    assert result["expression"]["verdict"] == "miss"
+    # core hit (2) + expression miss (1) -> 2/3
+    assert result["score"] == pytest.approx(66.67, abs=0.01)
 
 
 def _plan_item(topic: str, **kwargs):
@@ -322,9 +370,11 @@ def test_intro_is_fixed_first_item_and_not_depth_penalised() -> None:
     items = with_intro([PlanItem(topic="缓存", anchor="a", start_depth=3, expected_signals=["x"])], "zh")
     assert items[0].is_intro and items[0].topic == "自我介绍" and items[0].start_depth == 1
     interview = SimpleNamespace(difficulty="senior", interview_type="technical")
-    root = SimpleNamespace(id=1, parent_id=None, answer_text="我做后端五年")
+    root = SimpleNamespace(id=1, parent_id=None, answer_text="我做后端五年", answer_status="answered", depth_level=4)
     value = QuestionEvaluation(
-        signals=[SignalJudgement(index=0, signal="s", verdict="hit", evidence="我做后端五年")], achieved_depth=1
+        signals=[SignalJudgement(index=0, signal="s", verdict="hit", evidence="我做后端五年")],
+        expression=ExpressionJudgement(verdict="hit", evidence="我做后端五年"),
+        achieved_depth=1,
     )
     assert score_root(interview, {"expected_signals": ["s"], "is_intro": True}, root, [root], value)["score"] == 100.0
     assert score_root(interview, {"expected_signals": ["s"]}, root, [root], value)["score"] < 100.0

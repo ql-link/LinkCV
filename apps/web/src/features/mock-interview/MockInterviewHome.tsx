@@ -12,11 +12,11 @@ import { ConfirmDialog, Segmented, Select, Toast, PageEyebrow } from "@/v3/primi
 import {
   ACTIVE_STATUSES,
   DIMENSION_LABELS,
+  LEGACY_DIMENSION_KEYS,
   INTERVIEW_TYPE_LABELS,
   mockInterviewApi,
   mockInterviewErrorMessage,
   subscribeMockInterviews,
-  type MockDimension,
   type MockInterviewDetail,
   type MockInterviewSummary,
   type MockInterviewType,
@@ -131,7 +131,7 @@ function practiceHours(items: MockInterviewSummary[]) {
 }
 
 function dimensionAverages(details: MockInterviewDetail[]) {
-  const keys = Object.keys(DIMENSION_LABELS) as MockDimension["key"][];
+  const keys = LEGACY_DIMENSION_KEYS;
   return keys.map((key) => {
     const values = details.flatMap((item) => item.report?.dimensions.filter((dimension) => dimension.key === key).map((dimension) => dimension.score) ?? []);
     return { key, label: DIMENSION_LABELS[key], value: values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0 };

@@ -17,11 +17,17 @@ export type MockInterviewStatus =
 
 export type MockSignalVerdict = { signal: string; verdict: "hit" | "partial" | "miss"; evidence: string };
 
+export type MockFactualError = { description: string; severity: "minor" | "major" };
+
 export type MockQuestionEvaluation = {
   skipped: boolean;
   score: number;
   achieved_depth: number;
-  signals: MockSignalVerdict[];
+  // v4：面试官实际追问到的深度与深度判定；没追问到期望深度时不扣分。
+  probed_depth?: number;
+  depth_status?: "met" | "short" | "not_probed" | "not_scored";
+  expression?: { verdict: MockSignalVerdict["verdict"]; evidence: string; note: string } | null;
+  signals: Array<MockSignalVerdict & { competency?: string; core?: boolean }>;
   factual_errors: string[];
   highlights: string[];
   weaknesses: string[];
@@ -55,11 +61,43 @@ export type MockInterviewQuestion = {
 };
 
 export type MockDimension = {
-  key: "professional_depth" | "structure" | "job_fit" | "resume_consistency" | "communication";
+  key: "professional_depth" | "structure" | "job_fit" | "resume_consistency" | "communication" | MockCompetencyKey;
   score: number;
   weight: number;
   evidence: string;
   comment: string;
+};
+
+// 评分规则 v4：能力项由逐题要点重新归类得出，只解释分数、不参与计分。
+export type MockCompetencyKey = "knowledge" | "problem_solving" | "ownership" | "motivation" | "communication" | "job_fit";
+export type MockVerdictLevel = "meets" | "borderline" | "below" | "insufficient";
+
+export type MockReportVerdict = {
+  level: MockVerdictLevel;
+  target: MockDifficulty;
+  core_hit_rate: number;
+  risk_flags: Array<{ kind: "low_question" | "major_error" | "material_conflict" | "skipped_core"; sequence_no: number | null; text: string }>;
+  reasons: string[];
+};
+
+export type MockCompetency = {
+  key: MockCompetencyKey;
+  assessed: boolean;
+  score: number | null;
+  level: "strong" | "solid" | "weak" | null;
+  weight: number;
+  question_refs: number[];
+  comment: string;
+};
+
+export type MockReportAction = {
+  title: string;
+  detail: string;
+  priority: "high" | "normal";
+  kind: "practice" | "resume" | "material";
+  question_refs: number[];
+  competency: string | null;
+  resume_quote: string | null;
 };
 
 export type MockVoiceMetrics = {
@@ -79,8 +117,12 @@ export type MockFactCheckItem = {
   file_name: string;
 };
 
+// 页面使用的报告视图。v4 报告在数据层（reportCompat.ts）补齐旧字段，并原样保留 v4 字段供新报告页使用。
 export type MockInterviewReport = {
   rubric_version: string;
+  verdict?: MockReportVerdict;
+  competencies?: MockCompetency[];
+  actions?: MockReportAction[];
   answer_mode: MockAnswerMode;
   voice_metrics: MockVoiceMetrics | null;
   headline: string;
@@ -101,6 +143,21 @@ export type MockInterviewReport = {
   low_confidence: boolean;
   closing_message?: string;
   re_evaluations?: Array<{ question_id: string; before: number; after: number; at: string }>;
+};
+
+// 后端 v4 原始报告中与视图不同的字段。
+export type MockInterviewReportV4Raw = Omit<MockInterviewReport, "dimensions" | "questions" | "question_average" | "dimension_score" | "resume_risks" | "improvements"> & {
+  rubric_version: "v4";
+  verdict: MockReportVerdict;
+  dimensions: MockCompetency[];
+  actions: MockReportAction[];
+  questions: Array<Omit<MockQuestionEvaluation, "factual_errors"> & {
+    topic: string;
+    sequence_no: number;
+    number: number;
+    is_intro?: boolean;
+    factual_errors: MockFactualError[];
+  }>;
 };
 
 export type MockInterviewSummary = {
@@ -124,6 +181,8 @@ export type MockInterviewSummary = {
   answer_mode: MockAnswerMode;
   total_score: number | null;
   low_confidence: boolean;
+  rubric_version?: string | null;
+  verdict?: MockVerdictLevel | null;
   error_code: string | null;
   started_at: string | null;
   finished_at: string | null;
@@ -190,7 +249,13 @@ export const DIMENSION_LABELS: Record<MockDimension["key"], string> = {
   get job_fit() { return t("岗位匹配"); },
   get resume_consistency() { return t("简历一致性"); },
   get communication() { return t("沟通表现"); },
+  get knowledge() { return t("知识与原理"); },
+  get problem_solving() { return t("方案与权衡"); },
+  get ownership() { return t("项目主导与成果"); },
+  get motivation() { return t("动机与稳定性"); },
 };
+// v1–v3 报告的五个维度；首页能力雷达只汇总这一组，避免与 v4 能力项混在同一张图里。
+export const LEGACY_DIMENSION_KEYS = ["professional_depth", "structure", "job_fit", "resume_consistency", "communication"] as const;
 export const ACTIVE_STATUSES: MockInterviewStatus[] = ["preparing", "in_progress", "evaluating"];
 
 // 数据层接口：真实实现在 mockInterviewLive.ts，演示实现（本地假数据）在 mockInterviewDemo.ts，
