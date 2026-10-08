@@ -9,7 +9,7 @@ import {
   resumePresentationTemplateDefinition,
   styleToEditorSettings,
 } from "../../../api/resumeContract";
-import { composeEditorDocumentForLayoutPlan } from "../../workbench/templateLayout";
+import { composeEditorDocumentForLayoutPlan, resumeEditorAvatarWidth } from "../../workbench/templateLayout";
 import { resumeDocumentToEditorDocument } from "../../workbench/resumeEditorPersistence";
 import { renderResumeEditorDocument } from "./resumeEditorRenderer";
 
@@ -59,10 +59,11 @@ function replaceEmbeddedAssets(html: string, assets: Record<string, string>) {
   });
 }
 
-function printCssVariables(style: CanonicalResumePresentation) {
+function printCssVariables(style: CanonicalResumePresentation, avatarWidth: number) {
   const settings = styleToEditorSettings(style);
   const margins = resumePresentationPageMargins(style);
   return [
+    `--resume-avatar-width:${avatarWidth}px`,
     `--resume-font-family:${safeCssValue(settings.fontFamily, "sans-serif")}`,
     `--resume-font-size:${settings.fontSize}pt`,
     `--resume-line-height:${settings.lineHeight}`,
@@ -94,6 +95,7 @@ export function renderResumePrintDocument(
   const definition = resumePresentationTemplateDefinition(request.style);
   let rendered = UNAVAILABLE_PRINT_CONTENT;
   let renderState = "unavailable";
+  let avatarWidth = 94;
   if (editorDocument && request.layout_plan && definition) {
     try {
       const projected = composeEditorDocumentForLayoutPlan(
@@ -103,6 +105,7 @@ export function renderResumePrintDocument(
         definition,
       );
       rendered = renderResumeEditorDocument(projected);
+      avatarWidth = resumeEditorAvatarWidth(projected);
       renderState = "pending";
     } catch {
       // A missing, stale, or malformed plan must fail closed. Rendering the
@@ -121,7 +124,7 @@ export function renderResumePrintDocument(
   const contentClasses = "resume-content resume-print-content";
   const extraClass = options.className ? ` ${escapeHtml(options.className)}` : "";
   const ariaLabel = options.ariaLabel ? ` aria-label="${escapeHtml(options.ariaLabel)}"` : "";
-  const style = printCssVariables(request.style);
+  const style = printCssVariables(request.style, avatarWidth);
   const title = escapeHtml(request.title.trim() || "LinkResume Resume");
   const css = options.includeStyles ? "<style data-resume-print-styles>/* injected by the renderer */</style>" : "";
 

@@ -614,6 +614,45 @@ describe("姓名下 headline 行样式标记", () => {
 });
 
 
+describe("个人信息的语义排版", () => {
+  let editor: Editor | null = null;
+  afterEach(() => editor?.destroy());
+  const contact = {
+    type: "paragraph",
+    content: [
+      { type: "resumeBlockAnchor", attrs: { blockId: "node_contact0000000001", role: "contact", contactKind: "email" } },
+      { type: "text", text: "demo@example.com" },
+    ],
+  };
+
+  it.each([false, true])("没有 headline 的联系方式在分栏=%s 时仍按联系方式排版", (columns) => {
+    const identity = [
+      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+      contact,
+    ];
+    editor = new Editor({ extensions: resumeEditorExtensions, content: {
+      type: "doc", content: columns ? [{ type: "resumeColumns", content: [
+        { type: "resumeColumn", attrs: { variant: "sidebar" }, content: identity },
+        { type: "resumeColumn", attrs: { variant: "main" }, content: [{ type: "paragraph" }] },
+      ] }] : identity,
+    } });
+    expect(editor.view.dom.querySelectorAll("p.resume-identity-headline")).toHaveLength(0);
+    expect(editor.view.dom.querySelector("p.resume-identity-contacts")?.textContent).toBe("demo@example.com");
+  });
+
+  it("缺少姓名时也独立识别 headline 和联系方式", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: { type: "doc", content: [
+      { type: "paragraph", content: [
+        { type: "resumeBlockAnchor", attrs: { blockId: "node_headline000000001", role: "identity-headline" } },
+        { type: "text", text: "开发工程师" },
+      ] },
+      { type: "paragraph" }, contact,
+    ] } });
+    expect(editor.view.dom.querySelector("p.resume-identity-headline")?.textContent).toBe("开发工程师");
+    expect(editor.view.dom.querySelector("p.resume-identity-contacts")?.textContent).toBe("demo@example.com");
+  });
+});
+
 describe("叶子节点指针选区", () => {
   const IMAGE_DOC = {
     type: "doc",

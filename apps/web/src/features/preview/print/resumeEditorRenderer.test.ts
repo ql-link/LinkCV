@@ -83,3 +83,19 @@ describe("renderResumeEditorDocument 分栏行", () => {
     expect(invalid).not.toContain("--resume-row-tracks");
   });
 });
+
+
+describe("只读个人信息与编辑器采用同一语义", () => {
+  it.each(["contact", "identity-headline"])("不依赖姓名或相邻段落识别 %s", (role) => {
+    const root = document.createElement("div");
+    root.innerHTML = renderResumeEditorDocument({ type: "doc", content: [{
+      type: "paragraph", content: [
+        { type: "resumeBlockAnchor", attrs: { blockId: "node_identity00000001", role } },
+        { type: "text", text: "示例信息" },
+      ],
+    }] });
+    const paragraph = root.querySelector("p")!;
+    expect(paragraph.className).toBe(role === "contact" ? "resume-identity-contacts" : "resume-identity-headline");
+    expect(paragraph.textContent).toBe("示例信息");
+  });
+});

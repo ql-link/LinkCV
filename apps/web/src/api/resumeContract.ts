@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { museThemes, type MuseTheme } from "./museThemes";
 import { atlasThemes, type AtlasTheme } from "./atlasThemes";
 import { studioThemes, type StudioTheme } from "./studioThemes";
 import { openThemes, type OpenTheme } from "./openThemes";
@@ -725,6 +726,7 @@ type EditorSettings = {
     | OriginalTheme
     | CareerTheme
     | FeaturedTheme
+    | MuseTheme
     | "classic"
     | "modern"
     | "compact"
@@ -1206,7 +1208,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
     const supportedThemes = [
       ...atlasThemes,
       ...studioThemes,
-      ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes,
+      ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes, ...museThemes,
       "timeline-gutter",
       "centered-portrait",
       "mist-masthead",
@@ -1244,7 +1246,7 @@ export function styleToEditorSettings(style: ResumePresentationRead): EditorSett
   const supportedThemes = [
     ...atlasThemes,
     ...studioThemes,
-    ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes,
+    ...openThemes, ...originalThemes, ...careerThemes, ...featuredThemes, ...museThemes,
     "timeline-gutter",
     "centered-portrait",
     "mist-masthead",
