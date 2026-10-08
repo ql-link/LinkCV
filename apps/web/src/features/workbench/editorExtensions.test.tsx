@@ -501,6 +501,17 @@ describe("分栏分隔线拖拽", () => {
     expect(storedWidths()).toBeNull();
   });
 
+  it("只点一下分隔线不会清掉已调整的宽度", async () => {
+    const row = await renderRow(["甲", "乙", "丙"], true);
+    stubRowWidth();
+    drag(handles(row)[0], 100, 160);
+    expect(storedWidths()).toEqual([43.33, 23.34, 33.33]);
+
+    clickOnly(handles(row)[0], 160);
+
+    expect(storedWidths()).toEqual([43.33, 23.34, 33.33]);
+  });
+
   it("双击分隔线恢复等分", async () => {
     const row = await renderRow(["甲", "乙", "丙"], true);
     stubRowWidth();
@@ -909,6 +920,29 @@ describe("分栏结构剪切复制", () => {
     const { first, last } = leafRange(pos + 1, cell);
     setTextSel(first, last);
     expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+  });
+
+  it("其余栏为空时只选唯一一栏的文字，剪切仍按文字处理", () => {
+    createEditor({
+      type: "doc",
+      content: [{
+        type: "resumeRow",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "左栏文字" }] },
+          { type: "paragraph" },
+          { type: "paragraph" },
+        ],
+      }],
+    });
+    const pos = nodePos("resumeRow");
+    const cell = editor!.state.doc.nodeAt(pos + 1)!;
+    const { first, last } = leafRange(pos + 1, cell);
+    setTextSel(first, last);
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+
+    const { handled } = fakeClipboardEvent("cut");
+    expect(handled).toBeFalsy();
+    expect(nodeAt("resumeRow")?.childCount).toBe(3);
   });
 
   it("剪切整行内容：剪贴板带结构标记且行节点被删除", () => {
