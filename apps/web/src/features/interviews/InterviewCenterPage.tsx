@@ -1004,12 +1004,6 @@ export function InterviewCenterPage({
     }
   };
 
-  const openCreateProcess = () => {
-    setCreateInterviewApplicationId(null);
-    setCreateInterviewStartAt(null);
-    setCreateInterviewEndAt(null);
-    setCreateProcessOpen(true);
-  };
   const closeCreateProcess = () => {
     setCreateProcessOpen(false);
     setCreateInterviewStartAt(null);
@@ -1060,7 +1054,6 @@ export function InterviewCenterPage({
           loading={showSkeleton}
           weekStart={weekStart}
           timezone={timezone}
-          onCreateProcess={openCreateProcess}
           onImport={openJobImport}
         />
       )}
@@ -1306,7 +1299,6 @@ function ApplicationsHeader({
   loading,
   weekStart,
   timezone,
-  onCreateProcess,
   onImport,
 }: {
   applications: JobApplicationSummary[];
@@ -1314,7 +1306,6 @@ function ApplicationsHeader({
   loading: boolean;
   weekStart: Date;
   timezone: string;
-  onCreateProcess: () => void;
   onImport: () => void;
 }) {
   useLocale();
@@ -1370,7 +1361,6 @@ function ApplicationsHeader({
         subtitle={<Reveal inline loading={statsPending} placeholder={<LoadingText width={260} />}>{t("{value0} 个进行中 · {value1} 场面试{value2}", { value0: activeCount, value1: weeklyInterviews, value2: pendingOffers ? t(" · {value0} 个 Offer 待回复", { value0: pendingOffers }) : "" })}</Reveal>}
         actions={(
           <>
-            <button type="button" className="v3-btn v3-btn-ghost" onClick={onCreateProcess}><Icon name="cal" size={13} />{t("已有面试安排")}</button>
             <button type="button" className="v3-btn v3-btn-dark" onClick={onImport}>{t("导入岗位")}</button>
           </>
         )}
