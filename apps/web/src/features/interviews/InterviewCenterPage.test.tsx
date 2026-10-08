@@ -1361,11 +1361,11 @@ describe("InterviewCenterPage API projections", () => {
     );
 
     expect(await screen.findByRole("region", { name: "求职进程看板" })).toBeInTheDocument();
-    // V3 页头：衬线标题「岗位看板」+ 描边「已有面试安排」+ 唯一黑色主按钮「导入岗位」；旧的模块导航不再渲染
+    // V3 页头：衬线标题「岗位看板」+ 唯一黑色主按钮「导入岗位」；旧的模块导航不再渲染
     expect(screen.getByRole("heading", { name: "岗位看板", level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "求职进程" })).not.toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "求职中心导航" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "已有面试安排" })).toHaveClass("v3-btn-ghost");
+    expect(screen.queryByRole("button", { name: "已有面试安排" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "导入岗位" })).toHaveClass("v3-btn-dark");
     expect(document.querySelectorAll(".career-v3-page .v3-btn-dark")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "新建求职进程" })).not.toBeInTheDocument();
