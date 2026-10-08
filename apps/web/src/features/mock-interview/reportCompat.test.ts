@@ -16,7 +16,7 @@ const v4: MockInterviewReportV4Raw = {
     { key: "knowledge", assessed: true, score: 80, level: "strong", weight: 0.6, question_refs: [2], comment: "原理清楚" },
     { key: "problem_solving", assessed: false, score: null, level: null, weight: 0.1, question_refs: [2], comment: "" },
   ],
-  dimensions: [{ key: "knowledge", score: 4.2, weight: 1, evidence: [], comment: "原理清楚" }],
+  dimensions: [{ key: "knowledge", score: 4.2, weight: 1, evidence: "", comment: "原理清楚" }],
   actions: [
     { title: "补齐故障边界", detail: "说明节点宕机后的补偿", priority: "high", kind: "practice", question_refs: [2], competency: "knowledge", resume_quote: null },
   ],
