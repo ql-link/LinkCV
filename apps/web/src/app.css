@@ -2484,9 +2484,13 @@ select:not([data-slot]):focus-visible,
   line-height: inherit;
 }
 
-.resume-avatar img[src$="/templates/avatar-cat.jpg"] {
-  transform: scale(2.05);
-  transform-origin: 50% 43%;
+.resume-avatar[data-template-avatar="true"] img[src] {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #fff;
+  transform: none;
 }
 /* 校招 / 社招通用 */
 .theme-campus-professional .resume-content {

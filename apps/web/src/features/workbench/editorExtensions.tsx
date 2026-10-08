@@ -351,6 +351,7 @@ function MediaNodeView({ node, selected, updateAttributes, deleteNode }: NodeVie
       aria-label={isAvatar ? "简历头像；按住 Command 或 Control 并滚动鼠标滚轮缩放，也可按住修饰键使用上下方向键调整" : undefined}
       tabIndex={isAvatar && selected ? 0 : undefined}
       data-drag-handle
+      data-template-avatar={isAvatar && /^\/templates\/avatar-(cat|administrative|campus|civic|creative)\.(jpg|png|svg)$/u.test(String(node.attrs.src)) ? "true" : undefined}
       onKeyDown={(event: React.KeyboardEvent<HTMLElement>) => {
         if (!isAvatar || !selected || (!event.ctrlKey && !event.metaKey)) return;
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
