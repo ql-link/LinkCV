@@ -66,6 +66,7 @@ import {
 import { RESUME_IMAGE_ACCEPT, validateResumeImageFile } from "./resumeImageLimits";
 import { resumeInlineImageDimensions } from "./resumeInlineImageDimensions";
 import { ResumeBulletListInputRules } from "./editorInputRules";
+import { identityHeadlineClass, resumeIdentityParagraphClass } from "./resumeIdentityLayout";
 
 export const inlineIconComponents = {
   Mail,
@@ -168,13 +169,10 @@ export const ResumeBlockIdentity = Extension.create({
   },
 });
 
-const identityHeadlineClass = "resume-identity-headline";
-
 /**
- * 姓名行（h1）与下方的 headline 行是一个整体，主题用 `h1 + p` 相邻选择器
- * 给 headline 行加居中小字样式。一旦在中间插入空行，相邻关系断开、
- * headline 行退回普通正文样式。这里改为按结构打类：一级标题之后、
- * 只隔空段落的首个有内容段落固定携带该类，样式不再依赖 DOM 相邻。
+ * Canonical identity anchors distinguish the optional headline from contacts.
+ * Decorate both flow and column headers without persisting presentation classes.
+ * Unanchored legacy editor content still recognizes the first nonblank H1 paragraph.
  */
 export const ResumeIdentityHeadline = Extension.create({
   name: "resumeIdentityHeadline",
@@ -183,17 +181,32 @@ export const ResumeIdentityHeadline = Extension.create({
       props: {
         decorations(state) {
           const decorations: Decoration[] = [];
-          let pendingHeadline = false;
-          state.doc.forEach((node, position) => {
-            if (node.type.name === "heading" && node.attrs.level === 1) {
-              pendingHeadline = true;
-              return;
-            }
-            if (pendingHeadline && node.type.name === "paragraph") {
-              if (node.textContent.length === 0) return;
-              decorations.push(Decoration.node(position, position + node.nodeSize, { class: identityHeadlineClass }));
-            }
-            pendingHeadline = false;
+          const decorateContainer = (container: PMNode, start: number) => {
+            let pendingHeadline = false;
+            container.forEach((node, offset) => {
+              const position = start + offset;
+              const identityClass = node.type.name === "paragraph"
+                ? resumeIdentityParagraphClass(node.toJSON())
+                : null;
+              if (identityClass) {
+                decorations.push(Decoration.node(position, position + node.nodeSize, { class: identityClass }));
+                pendingHeadline = false;
+                return;
+              }
+              if (node.type.name === "heading" && node.attrs.level === 1) {
+                pendingHeadline = true;
+                return;
+              }
+              if (pendingHeadline && node.type.name === "paragraph") {
+                if (node.textContent.length === 0) return;
+                decorations.push(Decoration.node(position, position + node.nodeSize, { class: identityHeadlineClass }));
+              }
+              pendingHeadline = false;
+            });
+          };
+          decorateContainer(state.doc, 0);
+          state.doc.descendants((node, position) => {
+            if (node.type.name === "resumeColumn") decorateContainer(node, position + 1);
           });
           if (!decorations.length) return DecorationSet.empty;
           return DecorationSet.create(state.doc, decorations);

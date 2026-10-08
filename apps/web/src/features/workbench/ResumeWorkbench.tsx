@@ -14,6 +14,7 @@ import { resumeImageContractErrorMessage } from "./resumeImageLimits";
 import { IconButton } from "@/components/ui";
 import { useResumeStore, type ResumeSettings } from "../../store/resumeStore";
 import { resumeEditorExtensions } from "./editorExtensions";
+import { resumeEditorAvatarWidth } from "./templateLayout";
 import { SelectionFormattingToolbar, WorkbenchHistoryActions } from "./WorkbenchToolbar";
 import {
   createSelectionBubbleAnchor,
@@ -111,9 +112,11 @@ export function resumeWorkbenchStyle(
   settings: Pick<ResumeSettings, "fontFamily" | "fontSize" | "lineHeight" | "pageMargin" | "verticalPageMargin">,
   accentColor: unknown,
   style?: ResumePresentationRead,
+  avatarWidth = 94,
 ) {
   const margins = liveResumePageMargins(settings, style);
   return {
+    "--resume-avatar-width": `${avatarWidth}px`,
     "--resume-font-family": settings.fontFamily,
     "--resume-font-size": `${settings.fontSize}pt`,
     "--resume-line-height": settings.lineHeight,
@@ -1000,8 +1003,8 @@ export function ResumeWorkbench({
   }, [dirty]);
 
   const resumeStyle = useMemo(
-    () => resumeWorkbenchStyle(settings, resumePresentationAccentColor(style), style),
-    [data, settings, style],
+    () => resumeWorkbenchStyle(settings, resumePresentationAccentColor(style), style, resumeEditorAvatarWidth(editorContent)),
+    [editorContent, settings, style],
   );
 
   const applyWorkbenchTemplate = async (template: ResumeTemplate) => {

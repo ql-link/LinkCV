@@ -130,6 +130,36 @@ describe("renderResumeEditorDocument 分栏行", () => {
   });
 });
 
+
+describe("只读个人信息与编辑器采用同一语义", () => {
+  it("姓名后缺少职位描述时，联系方式语义优先于历史相邻识别", () => {
+    const html = renderResumeEditorDocument({ type: "doc", content: [
+      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "张三" }] },
+      { type: "paragraph" },
+      { type: "paragraph", content: [
+        { type: "resumeBlockAnchor", attrs: { blockId: "node_contact000000001", role: "contact" } },
+        { type: "text", text: "demo@example.com" },
+      ] },
+      textCell("普通正文"),
+    ] });
+    expect(html).toContain('class="resume-identity-contacts"');
+    expect(html).not.toContain('class="resume-identity-headline"');
+    expect(html).toContain('<p>普通正文</p>');
+  });
+  it.each(["contact", "identity-headline"])("不依赖姓名或相邻段落识别 %s", (role) => {
+    const root = document.createElement("div");
+    root.innerHTML = renderResumeEditorDocument({ type: "doc", content: [{
+      type: "paragraph", content: [
+        { type: "resumeBlockAnchor", attrs: { blockId: "node_identity00000001", role } },
+        { type: "text", text: "示例信息" },
+      ],
+    }] });
+    const paragraph = root.querySelector("p")!;
+    expect(paragraph.className).toBe(role === "contact" ? "resume-identity-contacts" : "resume-identity-headline");
+    expect(paragraph.textContent).toBe("示例信息");
+  });
+});
+
 describe("只读分栏与行内图片", () => {
   it.each(["resumeRow", "resumeTrioRow", "resumeMetaRow"])("%s 保留格内显式对齐", (type) => {
     const count = type === "resumeMetaRow" ? 4 : type === "resumeTrioRow" ? 3 : 2;

@@ -2,6 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import { resumeInlineImageDimensions } from "../../workbench/resumeInlineImageDimensions";
 import { isInlineIconName } from "../../../lib/resumeInlineIcon";
 import { renderInlineIcon } from "../../../parser/resumeMarkdown";
+import { resumeIdentityParagraphClass } from "../../workbench/resumeIdentityLayout";
 import {
   normalizeResumeRowColumnWidths,
   resumeRowColumnTracks,
@@ -102,7 +103,10 @@ export function renderResumeEditorNode(node: JSONContent): string {
   if (node.type === "text" || node.type === "hardBreak" || node.type === "resumeBlockAnchor" || node.type === "inlineIcon" || node.type === "inlineImage") {
     return inlineContent(node);
   }
-  if (node.type === "paragraph") return `<p${textAlignment(node)}>${inlineContent(node)}</p>`;
+  if (node.type === "paragraph") {
+    const identityClass = resumeIdentityParagraphClass(node);
+    return `<p${textAlignment(node)}${identityClass ? ` class="${identityClass}"` : ""}>${inlineContent(node)}</p>`;
+  }
   if (node.type === "heading") {
     const level = [1, 2, 3].includes(Number(node.attrs?.level)) ? Number(node.attrs?.level) : 2;
     return `<h${level}${textAlignment(node)}>${inlineContent(node)}</h${level}>`;
@@ -176,6 +180,10 @@ export function renderResumeEditorDocument(document: JSONContent) {
   const hasText = (node: JSONContent): boolean => Boolean(node.text?.length)
     || (node.content ?? []).some(hasText);
   return (document.content ?? []).map((node) => {
+    if (resumeIdentityParagraphClass(node)) {
+      pendingHeadline = false;
+      return renderResumeEditorNode(node);
+    }
     if (node.type === "heading" && node.attrs?.level === 1) {
       pendingHeadline = true;
       return renderResumeEditorNode(node);

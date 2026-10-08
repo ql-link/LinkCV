@@ -9,7 +9,7 @@ import {
   type CanonicalResumePresentation,
   type LayoutPlan,
 } from "../api/resumeContract";
-import { resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
+import { resumeDocumentFromEditorDocument, resumeDocumentToEditorDocument } from "../features/workbench/resumeEditorPersistence";
 import { enqueueMessage, queueKey, readQueue } from "../features/agent/messageQueue";
 import { installMessageQueueEnvironment } from "../test/messageQueueEnvironment";
 import {
@@ -378,6 +378,33 @@ describe("resume local draft persistence", () => {
 });
 
 describe("resume save serialization", () => {
+  it("切换时个人信息恢复模板默认对齐，正文手动格式和内容保留", async () => {
+    const data = structuredClone(canonicalDocument("项目经历"));
+    data.identity.name = { node_id: "node_name000000000001", source_refs: [], value: "李示例", align: "center" };
+    data.identity.headline = { node_id: "node_headline000000001", source_refs: [], value: "工程师", align: "right" };
+    data.identity.contacts = [{ node_id: "node_contact000000001", source_refs: [], value: "demo@example.com", contact_kind: "email", align: "center" }];
+    data.sections[0].title!.align = "right";
+    data.sections[0].blocks = [{ node_id: "node_block00000000001", source_refs: [], block_type: "paragraph", align: "center", runs: [{
+      inline_type: "text", text: "保留格式的正文", marks: ["bold"], href: null,
+      style: { color: "#345678", font_size_pt: 12, highlight_color: null },
+    }] }];
+    const editor = resumeDocumentToEditorDocument(data)!;
+    useResumeStore.setState({ data, editorContent: editor });
+    const apply = vi.spyOn(api, "applyResumeTemplate").mockImplementation(async (_id, request) => ({
+      resume: { ...record(2, ""), data: request.data!, style: canonicalStyle("original-offset-cn") },
+    }));
+
+    await useResumeStore.getState().applyTemplate("9", editor);
+
+    const submitted = apply.mock.calls[0][1].data!;
+    expect(submitted.identity.name?.align).toBeNull();
+    expect(submitted.identity.headline?.align).toBeNull();
+    expect(submitted.identity.contacts[0].align).toBeNull();
+    expect(submitted.sections).toEqual(resumeDocumentFromEditorDocument(editor, data).sections);
+    expect(data.identity.name.align).toBe("center");
+    expect(useResumeStore.getState().data).toEqual(submitted);
+  });
+
   it("从 ResumeRecord 更新本地摘要时保留服务端布局计划", async () => {
     const data = canonicalDocument("# 带布局计划的简历");
     const layoutPlan = canonicalLayoutPlan(data);

@@ -39,6 +39,7 @@ import { defaultResumeMarkdown } from "../parser/defaultResume";
 import { renderResumeMarkdown } from "../parser/resumeMarkdown";
 import { buildNamedImportFile } from "../lib/resumeImport";
 
+import { resetEditorIdentityAlignment, resetResumeIdentityAlignment } from "../features/workbench/resumeIdentityLayout";
 import type { MuseTheme } from "../api/museThemes";
 import type { AtlasTheme } from "../api/atlasThemes";
 import type { StudioTheme } from "../api/studioThemes";
@@ -922,7 +923,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     const resumeId = state.activeResumeId;
     const operationVersion = state.editVersion;
     const operationId = ++templateOperationSequence;
-    const nextData = resumeDocumentFromEditorDocument(editorDocument, state.data);
+    const nextData = resetResumeIdentityAlignment(resumeDocumentFromEditorDocument(editorDocument, state.data));
     set({ saveStatus: "saving", versionOperationPending: true, error: null });
     try {
       const response = await api.applyResumeTemplate(resumeId, {
@@ -939,9 +940,12 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         return;
       }
       if (state.editVersion !== operationVersion) {
-        const latestData = typeof state.editorContent === "string"
+        const latestEditor = typeof state.editorContent === "string"
+          ? state.editorContent
+          : resetEditorIdentityAlignment(state.editorContent);
+        const latestData = resetResumeIdentityAlignment(typeof latestEditor === "string"
           ? state.data
-          : resumeDocumentFromEditorDocument(state.editorContent, state.data);
+          : resumeDocumentFromEditorDocument(latestEditor, state.data));
 
         // The response plan belongs to the data submitted by this request. If
         // the editor changed while the request was in flight, applying that
@@ -957,7 +961,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
           lockVersion: resume.lock_version,
           data: latestData,
           style: resume.style,
-          editorContent: state.editorContent,
+          editorContent: latestEditor,
           // Preserve local presentation edits as well. The follow-up save
           // merges these settings into the switched template snapshot.
           settings: state.settings,
