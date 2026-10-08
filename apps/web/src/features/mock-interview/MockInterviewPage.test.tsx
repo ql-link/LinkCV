@@ -94,15 +94,25 @@ describe("07 模拟面试 · 文字面试", () => {
     const input = screen.getByLabelText("你的回答");
     fireEvent.change(input, { target: { value: "按租户加任务 ID 取模分片，热点靠积压监控发现。" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(await screen.findByText("正在输入…")).toBeInTheDocument();
+    expect(await screen.findByText("正在提问…")).toBeInTheDocument();
     expect(await screen.findByText(/某个分片突然成为热点/, undefined, { timeout: 5000 })).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText("正在输入…")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("正在提问…")).not.toBeInTheDocument());
     expect(await screen.findByText("第 1 / 3 题 · 追问 1")).toBeInTheDocument();
     expect(screen.getByText("按租户加任务 ID 取模分片，热点靠积压监控发现。")).toBeInTheDocument();
 
     // 跳过追问 → 第 2 题
     fireEvent.click(screen.getByRole("button", { name: "跳过此题" }));
     expect(await screen.findByText("第 2 / 3 题", undefined, { timeout: 5000 })).toBeInTheDocument();
+
+    // 正文只显示当前主问题的追问链；已完成的题从进度条只读回看
+    expect(screen.queryByText("按租户加任务 ID 取模分片，热点靠积压监控发现。")).not.toBeInTheDocument();
+    const reviewQ1 = screen.getByRole("button", { name: "查看第 1 题" });
+    await waitFor(() => expect(reviewQ1).toBeEnabled());
+    fireEvent.click(reviewQ1);
+    expect(screen.getByText("按租户加任务 ID 取模分片，热点靠积压监控发现。")).toBeInTheDocument();
+    expect(screen.queryByLabelText("你的回答")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "回到第 2 题" }));
+    expect(screen.getByLabelText("你的回答")).toBeInTheDocument();
 
     // 提前结束并评估
     fireEvent.click(screen.getByRole("button", { name: "结束并评估" }));

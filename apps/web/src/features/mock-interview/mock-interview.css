@@ -277,52 +277,82 @@
 .mi-preparing.is-ended { padding-top: 40px; }
 .mi-preparing.is-ended h2 { margin-top: 0 !important; }
 
-.mi-live { display: flex; height: 100%; min-height: 0; flex-direction: column; padding-bottom: 24px; }
+/* 07.2R 作答界面（Figma 1136:156）：顶部标题 + 主问题进度，正文 760 列显示一道题的追问链，底部紧凑输入框 */
+.mi-live { --mi-col: 760px; display: flex; height: 100%; min-height: 0; flex-direction: column; padding-top: 28px; padding-bottom: 24px; }
 .v3-content-scroll:has(.mi-live) { display: flex; }
 .v3-content-scroll > .mi-live { height: auto; min-height: 100%; }
-.mi-live .mi-session-head { height: 72px; border-bottom: 0; }
-.mi-live .mi-session-actions { margin-top: 28px; }
-.mi-progress { display: flex; height: 24px; align-items: center; justify-content: space-between; margin-top: 0; border-bottom: 1px solid var(--v3-line); padding-bottom: 12px; box-sizing: content-box; }
-.mi-progress-bars { display: flex; width: 680px; gap: 6px; }
-.mi-progress-bars i { height: 4px; flex: 1; border-radius: 2px; background: var(--v3-line); }
-.mi-progress-bars i.is-done { background: var(--v3-dark); }
-.mi-progress-bars i.is-current { background: var(--v3-or); }
-.mi-progress b { font-size: 11.5px; font-weight: 500; }
-.mi-thread { min-height: 0; flex: 1; overflow-y: auto; padding: 24px 0 16px; }
-.mi-qblock { position: relative; padding-top: 30px; }
-.mi-qblock:first-child { padding-top: 0; }
-.mi-qlabel { position: relative; height: 16px; margin-bottom: 22px; text-align: center; }
-.mi-qlabel::before { content: ""; position: absolute; top: 8px; right: 0; left: 0; height: 1px; background: var(--v3-line); }
-.mi-qlabel span { position: relative; background: #fff; padding: 0 8px; color: var(--v3-fnt); font-size: 11px; }
-.mi-msg-ai { max-width: 620px; margin-bottom: 16px; }
-.mi-msg-ai p { font-size: var(--ui-text-md); line-height: var(--ui-line-content); white-space: pre-wrap; font-family: var(--ui-font-content); }
-.mi-msg-ai.is-closing p { color: var(--v3-sub); }
-.mi-msg-meta { display: flex; align-items: center; justify-content: space-between; min-height: 0; }
-.mi-msg-meta:not(:empty) { margin-bottom: 5px; }
-.mi-kind { display: inline-flex; height: 19px; align-items: center; border-radius: 5px; background: #f4f4f1; padding: 0 8px; color: #76766f; font-size: 11px; }
-.mi-kind.is-follow { background: #fdf1e4; color: #b8691c; }
-.mi-typing { color: var(--v3-fnt); font-size: 11px; }
-.mi-typing.is-wait { color: var(--v3-fnt2); }
-.mi-caret { display: inline-block; width: 2px; height: 14px; margin-left: 2px; vertical-align: -2px; background: var(--v3-txt); animation: mi-blink 1s steps(2) infinite; }
+.mi-live-top { flex: 0 0 auto; border-bottom: 1px solid var(--v3-line); padding-bottom: 20px; }
+.mi-live-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.mi-live-title { min-width: 0; }
+.mi-live-title p { margin-top: 4px !important; color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); }
+.mi-live .mi-session-actions { margin-top: 0; gap: 10px; }
+.mi-live .mi-timer { margin-right: 6px; color: var(--v3-sub); font-size: 13px; }
+
+.mi-steps { margin-top: 22px; }
+.mi-steps ol { display: flex; gap: 20px; }
+.mi-step { min-width: 0; flex: 1 1 0; }
+.mi-step.is-intro { flex: 0 0 64px; }
+.mi-step > button, .mi-step > div { display: flex; width: 100%; flex-direction: column; gap: 9px; border: 0; background: none; padding: 0; color: inherit; text-align: left; }
+.mi-step > button { cursor: pointer; }
+.mi-step > button:disabled { cursor: default; }
+.mi-step > button:focus-visible { border-radius: 4px; outline: 2px solid var(--v3-dark); outline-offset: 4px; }
+.mi-step-bars { display: flex; gap: 3px; }
+.mi-step-bars i { height: 3px; flex: 1; border-radius: 2px; background: var(--v3-line); }
+.mi-step-bars i.is-done { background: var(--v3-dark); }
+.mi-step-bars i.is-current { background: var(--v3-or); }
+.mi-step-bars i.is-skip { background: #d6d6d1; }
+.mi-step.is-viewing .mi-step-bars i.is-done { background: var(--v3-or); }
+.mi-step-label { display: flex; min-width: 0; align-items: baseline; gap: 6px; white-space: nowrap; }
+.mi-step-label b { overflow: hidden; color: var(--v3-fnt); font-size: 12px; font-weight: 400; text-overflow: ellipsis; }
+.mi-step-label em { color: #b8691c; font-size: 12px; font-style: normal; }
+.mi-step-label small { color: var(--v3-fnt2); font-size: 12px; }
+.mi-step.is-todo .mi-step-label b { color: var(--v3-fnt2); }
+.mi-step.is-cur .mi-step-label b, .mi-step.is-viewing .mi-step-label b { color: var(--v3-txt); font-weight: 500; }
+.mi-step > button:hover:not(:disabled) .mi-step-label b { color: var(--v3-txt); }
+
+.mi-thread { min-height: 0; flex: 1; overflow-y: auto; padding: 36px 0 20px; }
+.mi-chain, .mi-chain-group { display: flex; flex-direction: column; gap: 20px; }
+.mi-chain { width: min(var(--mi-col), 100%); margin: 0 auto; }
+.mi-msg-ai { display: flex; max-width: 640px; gap: 12px; }
+.mi-msg-ai .mi-feather { margin-top: 20px; border: 1px solid var(--v3-cl); background: #fff; color: var(--v3-bl); }
+.mi-msg-body { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 6px; }
+.mi-msg-label { color: var(--v3-fnt); font-size: 12px; font-weight: 500; line-height: 16px; }
+.mi-msg-ai.is-main .mi-msg-label { color: #33332f; }
+.mi-msg-ai.is-active .mi-msg-label { color: #b8691c; }
+.mi-msg-bubble { border: 1px solid var(--v3-cl); border-radius: 4px 14px 14px; background: #fff; padding: 11px 16px; color: var(--v3-txt); font-family: var(--ui-font-sans); font-size: 15px; line-height: 25px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mi-msg-ai.is-main .mi-msg-bubble { font-size: 16.5px; font-weight: 500; line-height: 28px; }
+.mi-msg-ai.is-active .mi-msg-bubble { border-color: #efd9bf; background: #fdf8f2; font-weight: 500; }
+.mi-caret { display: inline-block; width: 2px; height: 16px; margin-left: 2px; vertical-align: -3px; background: var(--v3-or); animation: mi-blink 1s steps(2) infinite; }
 @keyframes mi-blink { 50% { opacity: 0; } }
-.mi-msg-me { display: flex; flex-direction: column; align-items: flex-end; margin: 14px 0 16px; }
-.mi-bubble { max-width: 520px; border-radius: 11px; background: #f4f4f1; padding: 12px 16px; color: #33332f; font-size: var(--ui-text-sm); line-height: var(--ui-line-body); white-space: pre-wrap; font-family: var(--ui-font-sans); }
+@media (prefers-reduced-motion: reduce) { .mi-caret { animation: none; } }
+.mi-msg-me { display: flex; justify-content: flex-end; }
+.mi-bubble { max-width: 520px; border-radius: 14px 4px 14px 14px; background: #efefec; padding: 11px 16px; color: #33332f; font-family: var(--ui-font-sans); font-size: 14.5px; line-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mi-bubble.is-skipped { color: var(--v3-fnt); font-size: var(--ui-text-xs); line-height: var(--ui-line-metadata); }
-.mi-msg-me small { margin-top: 6px; color: var(--v3-fnt); font: 10.5px var(--v3-num); }
-.mi-composer { flex: 0 0 auto; padding-top: 8px; }
+
+.mi-composer { width: min(var(--mi-col), 100%); flex: 0 0 auto; margin: 0 auto; padding-top: 8px; }
 .mi-reply-lost { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; border: 1px solid #e8d9b8; border-radius: 14px; background: #fbf6ea; padding: 10px 14px; font-size: 13px; color: #6b5a2f; }
-.mi-input { display: flex; min-height: 58px; align-items: flex-end; gap: 8px; border: 1px solid #d6d6d0; border-radius: 18px; background: #fafaf8; padding: 13px 13px 12px 18px; }
-.mi-input:focus-within { border-color: #b4b4ae; background: #fff; }
-.mi-input.is-recording { border-color: var(--v3-dark); }
-.mi-input textarea { min-height: 20px; max-height: 180px; flex: 1; align-self: center; resize: none; border: 0; outline: none; background: transparent; padding: 0; color: var(--v3-txt); font: 400 var(--ui-text-sm)/var(--ui-line-body) var(--ui-font-sans); field-sizing: content; }
-.mi-input textarea::placeholder { color: #a3a39c; }
+.mi-input { display: flex; flex-direction: column; border: 1px solid #d6d6d1; border-radius: 14px; background: #fff; box-shadow: 0 2px 8px rgb(0 0 0 / 4%); padding: 12px 8px 8px; }
+.mi-input:focus-within, .mi-input.is-recording { border-color: var(--v3-dark); }
+.mi-input.is-locked { background: #fafaf9; box-shadow: none; }
+.mi-input textarea { min-height: 24px; max-height: 144px; resize: none; border: 0; outline: none; background: transparent; padding: 0 8px; color: var(--v3-txt); font: 400 14.5px/24px var(--ui-font-sans); field-sizing: content; }
+.mi-input textarea::placeholder { color: #b3b3ad; }
 .mi-input textarea:disabled { cursor: default; }
-.mi-input-tools { display: flex; align-items: center; gap: 6px; }
-.mi-send { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 16px; background: var(--v3-dark); color: #fff; cursor: pointer; }
-.mi-send:disabled { background: #c9c9c3; cursor: default; }
-.mi-composer-foot { display: flex; height: 22px; align-items: center; justify-content: space-between; margin-top: 8px; padding: 0 0 0 2px; color: var(--v3-fnt); font-size: 12.5px; }
-.mi-composer-foot .mi-text-btn { font-size: 12.5px; }
-.mi-composer-foot > span { padding-right: 12px; }
+.mi-input-tools { display: flex; min-height: 32px; align-items: center; gap: 2px; margin-top: 4px; }
+/* 语音输入组件自带「状态区 + 麦克风」，在这里拆开排进工具栏：麦克风在最左，状态区占中间 */
+.mi-input-tools .vx-vib { display: contents; }
+.mi-input-tools .vx-vib-mic, .mi-input-tools .vx-vib-actions { order: 0; }
+.mi-input-tools .vx-vib-mic { width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: var(--v3-sub); }
+.mi-input-tools .vx-vib-mic.is-off::after { top: 14px; left: 5px; }
+.mi-input-tools .vx-vib-status { order: 2; min-width: 0; flex: 1; padding: 0 8px; }
+.mi-input-tools .vx-vib.is-idle .vx-vib-hint { display: none; }
+.mi-skip { order: 1; height: 30px; border: 0; border-radius: 7px; background: transparent; padding: 0 10px; color: var(--v3-sub); cursor: pointer; font-size: 12.5px; }
+.mi-skip:hover:not(:disabled), .mi-input-tools .vx-vib-mic:hover:not(:disabled) { background: var(--v3-field); color: var(--v3-txt); }
+.mi-skip:disabled { color: var(--v3-fnt2); cursor: default; }
+.mi-send { order: 3; display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; margin-left: auto; border: 0; border-radius: 15px; background: var(--v3-dark); color: #fff; cursor: pointer; }
+.mi-send:disabled { background: #d6d6d1; cursor: default; }
+.mi-composer-hint { margin-top: 8px !important; color: var(--v3-fnt); font-size: 11.5px; text-align: center; }
+.mi-review-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-radius: 14px; background: var(--v3-field); padding: 8px 8px 8px 16px; color: var(--v3-sub); font-size: 13px; }
+.mi-review-bar .v3-btn { flex: 0 0 auto; }
 
 /* ───────────── 07.3 评估报告 ───────────── */
 
@@ -542,12 +572,12 @@
   .mi-stats-empty-head { flex-wrap: wrap; }
   .mi-stat-col { max-width: 100%; }
   .mi-trend { flex-basis: 100%; }
-  .mi-session-head, .mi-live .mi-session-head { height: auto; flex-wrap: wrap; gap: 16px; padding-bottom: 16px; }
-  .mi-session-actions, .mi-live .mi-session-actions { margin-top: 0; }
-  .mi-progress { gap: 12px; }
-  .mi-progress-bars { min-width: 0; flex: 1; }
-  .mi-progress b { flex: 0 0 auto; }
-  .mi-input textarea { min-width: 0; }
+  .mi-session-head, .mi-live-head { height: auto; flex-wrap: wrap; gap: 16px; padding-bottom: 16px; }
+  .mi-session-actions { margin-top: 0; }
+  .mi-steps ol { gap: 8px; }
+  .mi-step.is-intro { flex-basis: 40px; }
+  .mi-step-label em, .mi-step-label small { display: none; }
+  .mi-msg-ai .mi-feather { display: none; }
   .mi-report-actions { position: static; flex-wrap: wrap; margin: 16px 0; }
   .mi-report-head .mi-serif-title, .mi-report-meta, .mi-summary-stats { flex-wrap: wrap; }
   .mi-summary { flex-direction: column; gap: 20px; padding: 20px; }
@@ -562,5 +592,5 @@
 @container workspace (max-width: 560px) {
   .mi-preparing { width: 100%; margin-top: 40px; padding-inline: 16px; }
   .mi-prep-steps { width: 100%; }
-  .mi-prep-fail-actions, .mi-composer-foot { height: auto; flex-wrap: wrap; gap: 12px; }
+  .mi-prep-fail-actions { height: auto; flex-wrap: wrap; gap: 12px; }
 }
