@@ -2591,6 +2591,7 @@ select:not([data-slot]):focus-visible,
 }
 
 .resume-avatar[data-template-avatar="true"] img[src] {
+  visibility: visible;
   width: 100%;
   height: 100%;
   object-fit: contain;
