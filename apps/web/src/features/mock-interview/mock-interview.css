@@ -124,6 +124,38 @@
 .mi-radar-label { position: absolute; display: grid; width: 72px; white-space: nowrap; justify-items: center; color: var(--v3-sub); font-size: 10.5px; line-height: 13px; }
 .mi-radar-label b { color: var(--v3-txt); font: 700 11px var(--v3-num); }
 .mi-radar-label.is-weak, .mi-radar-label.is-weak b { color: var(--v3-or); }
+/* 首页统计卡（评分规则 v4）：同类型同难度的得分变化 + 能力表现 */
+.mi-stats.is-v4 { height: auto; min-height: 239px; }
+.mi-stat-head small { color: var(--v3-fnt); font-size: 11px; white-space: nowrap; }
+.mi-trend-scope { width: 156px; }
+.mi-trend-scope-label { color: var(--v3-sub); font-size: 11.5px; white-space: nowrap; }
+.mi-trend-kpi { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; }
+.mi-trend-kpi b { font: 700 28px/34px var(--v3-num); }
+.mi-trend-kpi em { font-size: 11.5px; font-style: normal; font-weight: 500; white-space: nowrap; }
+.mi-trend-kpi em.is-up { color: #2e8c57; }
+.mi-trend-kpi em.is-down { color: var(--v3-rd); }
+.mi-trend-chart.is-zoned { height: 144px; margin-top: 8px; }
+.mi-trend-chart.is-zoned svg { top: 0; }
+.mi-trend-chart.is-zoned text { fill: var(--v3-fnt); font-size: 10.5px; }
+.mi-trend-chart.is-zoned text.is-good { fill: #2f7d4a; }
+.mi-trend-chart.is-zoned text.is-mid { fill: #b8691c; }
+.mi-trend-dot.is-good { fill: #2f7d4a; }
+.mi-trend-dot.is-mid { fill: var(--v3-or); }
+.mi-trend-dot.is-bad { fill: #c4413b; }
+.mi-trend-dot.is-none { fill: #bdbdb6; }
+.mi-trend-date.is-zoned { top: 126px; }
+.mi-overall-nums.is-inline { display: flex; gap: 16px; margin-top: 8px; }
+.mi-overall-nums.is-inline span { display: flex; align-items: baseline; gap: 4px; font-size: 11px; }
+.mi-overall-nums.is-inline b { font: 600 13px/18px var(--v3-num); }
+.mi-ability-col { width: 330px; flex: 0 0 auto; }
+.mi-ability-list { display: grid; gap: 10px; margin-top: 14px; }
+.mi-ability-list li { display: grid; grid-template-columns: 84px minmax(0, 1fr) 24px auto; align-items: center; gap: 10px; font-size: 12px; }
+.mi-ability-list li > i { height: 6px; overflow: hidden; border-radius: 3px; background: var(--v3-field); }
+.mi-ability-list li > i > i { display: block; height: 100%; border-radius: inherit; background: var(--v3-dark); }
+.mi-ability-list b { font: 600 12px var(--v3-num); }
+.mi-ability-list li.is-weak span, .mi-ability-list li.is-weak b { color: #b8691c; font-weight: 500; }
+.mi-ability-list li.is-weak > i > i { background: var(--v3-or); }
+.mi-ability-list .mi-weak { font-style: normal; }
 
 .mi-stats-empty { height: 251px; margin-top: 20px; padding: 21px 24px; }
 .mi-stats-empty-head { display: flex; align-items: baseline; gap: 8px; }
@@ -449,6 +481,61 @@
 .mi-verdict.is-unsupported { background: var(--v3-field); color: var(--v3-sub); }
 .mi-report-foot { margin-top: 40px; color: var(--v3-fnt); font-size: 11px; text-align: center; }
 
+/* 评估报告（评分规则 v4）：仪表结论、做得好 / 风险信号、能力表现、逐题柱状图、行动清单 */
+.mi-summary.is-v4 { align-items: center; }
+.mi-gauge-col { display: flex; width: 210px; flex: 0 0 auto; flex-direction: column; align-items: center; gap: 6px; }
+.mi-gauge { position: relative; width: 210px; height: 124px; }
+.mi-gauge svg { position: absolute; inset: 0; }
+.mi-gauge path { fill: none; stroke-width: 12; }
+.mi-gauge text { fill: var(--v3-fnt); font: 10px var(--v3-num); }
+.mi-gauge circle { fill: var(--v3-dark); stroke: #fff; stroke-width: 3; }
+.mi-gauge b { position: absolute; top: 46px; left: 0; width: 100%; font: 600 44px/52px var(--v3-num); text-align: center; }
+.mi-gauge small { position: absolute; top: 98px; left: 0; width: 100%; color: var(--v3-fnt); font: 12px var(--v3-num); text-align: center; }
+.mi-grade.is-none { background: var(--v3-field); color: var(--v3-sub); }
+.mi-proscons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.mi-proscons article { border: 1px solid var(--v3-cl); border-radius: 12px; padding: 16px 20px; }
+.mi-proscons h3 { font-size: 13px; font-weight: 500; }
+.mi-proscons ul { display: grid; gap: 8px; margin-top: 10px !important; }
+.mi-proscons li { display: flex; align-items: flex-start; gap: 8px; color: var(--v3-sub); font-size: 12px; line-height: 18px; }
+.mi-proscons li > span { min-width: 0; flex: 1; }
+.mi-proscons li > i { display: grid; width: 16px; height: 16px; flex: 0 0 auto; place-items: center; margin-top: 1px; border-radius: 999px; font: 700 10px/16px var(--v3-num); font-style: normal; }
+.mi-proscons .is-good li > i { background: #e8f3ec; color: #2f7d4a; }
+.mi-proscons .is-bad li > i { background: #f7e7e3; color: #b3402e; }
+.mi-proscons p { margin-top: 10px !important; color: var(--v3-fnt); font-size: 12px; }
+.mi-comp-list { margin-top: 14px; border-top: 1px solid var(--v3-line); }
+.mi-comp-list li { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 0 16px; border-bottom: 1px solid var(--v3-line); padding: 12px 0; }
+.mi-comp-list li > b { font-size: 13px; font-weight: 500; line-height: 18px; }
+.mi-comp-list li.is-thin > b, .mi-comp-list li.is-thin p { color: var(--v3-fnt); }
+.mi-comp-list p { margin-top: 6px !important; color: var(--v3-sub); font-size: 12px; line-height: 18px; }
+.mi-comp-list li.is-thin p { margin-top: 0 !important; }
+.mi-comp-row { display: grid; grid-template-columns: minmax(0, 1fr) 28px 52px; align-items: center; gap: 12px; }
+.mi-comp-bar { position: relative; height: 6px; border-radius: 3px; background: var(--v3-field); }
+.mi-comp-bar > i { display: block; height: 100%; border-radius: inherit; background: var(--v3-dark); }
+.mi-comp-bar > i.is-weak { background: var(--v3-or); }
+.mi-comp-bar > span { position: absolute; top: -3px; width: 1px; height: 12px; background: #cfcfc9; }
+.mi-comp-row strong { font: 600 12px var(--v3-num); }
+.mi-comp-row strong.is-weak { color: #b8691c; }
+.mi-comp-row .mi-grade, .mi-comp-row .mi-tag-sq { justify-self: start; }
+.mi-qchart { position: relative; height: 200px; margin-top: 16px; }
+.mi-qchart-plot { position: absolute; top: 20px; right: 56px; bottom: 24px; left: 0; border-bottom: 1px solid var(--v3-cl); }
+.mi-qchart-band { position: absolute; top: 0; right: 0; left: 0; height: 25%; background: #f4f8f5; }
+.mi-qchart-ref { position: absolute; right: 0; left: 0; border-top: 1px dashed #cfcfc9; }
+.mi-qchart-ref > span { position: absolute; top: -8px; left: calc(100% + 8px); color: var(--v3-fnt); font-size: 11px; white-space: nowrap; }
+.mi-qchart-bars { position: absolute; inset: 0; display: flex; }
+.mi-qchart-bars button { position: relative; flex: 1; border: 0; background: transparent; cursor: pointer; padding: 0; }
+.mi-qchart-bars i { position: absolute; bottom: 0; left: 50%; width: 24px; margin-left: -12px; border-radius: 4px 4px 0 0; background: var(--v3-dark); transition: opacity var(--ui-duration-fast) var(--ui-ease-press); }
+.mi-qchart-bars i.is-bad { background: #c4413b; }
+.mi-qchart-bars button:hover i, .mi-qchart-bars button:focus-visible i { opacity: .8; }
+.mi-qchart-bars b { position: absolute; right: 0; left: 0; font: 600 11px var(--v3-num); text-align: center; }
+.mi-qchart-bars b.is-good { color: #2f7d4a; }
+.mi-qchart-bars b.is-mid { color: var(--v3-sub); }
+.mi-qchart-bars b.is-bad { color: #b3402e; }
+.mi-qchart-bars small { position: absolute; right: 0; bottom: -20px; left: 0; color: var(--v3-fnt); font: 11px var(--v3-num); text-align: center; }
+.mi-report.is-v4 .mi-qchart + .mi-qlist { margin-top: 20px; }
+.mi-action-kind { margin-left: auto; }
+.mi-action h3 { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 500; }
+.mi-action .mi-risk-head { margin-top: 10px; }
+
 /* 雷达图 */
 .mi-radar { position: absolute; top: 0; left: 0; }
 
@@ -540,12 +627,17 @@
 @container workspace (max-width: 850px) {
   .mi-stats { height: auto; flex-wrap: wrap; gap: 24px; }
   .mi-vdiv { display: none; }
+  .mi-stats.is-v4 .mi-trend, .mi-ability-col { width: 100%; flex-basis: 100%; }
   .mi-toolbar { flex-wrap: wrap; }
   .mi-list { overflow-x: auto; }
   .mi-list-head, .mi-list-row { min-width: 760px; }
   .mi-records .mi-list-scroll { overflow: visible; }
   .mi-records > .mi-list { display: block; overflow: auto; }
   .mi-dims { flex-direction: column; gap: 16px; }
+  .mi-summary.is-v4 { flex-wrap: wrap; gap: 16px; }
+  .mi-summary.is-v4 .mi-summary-div { display: none; }
+  .mi-proscons { grid-template-columns: minmax(0, 1fr); }
+  .mi-comp-list li { grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .mi-dim-radar { align-self: center; margin-top: 20px; }
 }
 @container workspace (max-width: 560px) {

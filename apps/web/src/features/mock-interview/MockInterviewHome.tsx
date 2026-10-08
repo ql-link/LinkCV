@@ -12,16 +12,16 @@ import { ConfirmDialog, Segmented, Select, Toast, PageEyebrow } from "@/v3/primi
 import {
   ACTIVE_STATUSES,
   DIMENSION_LABELS,
-  LEGACY_DIMENSION_KEYS,
   INTERVIEW_TYPE_LABELS,
   mockInterviewApi,
   mockInterviewErrorMessage,
   subscribeMockInterviews,
+  type MockCompetencyKey,
   type MockInterviewDetail,
   type MockInterviewSummary,
   type MockInterviewType,
 } from "./mockInterviewApi";
-import { RadarChart, STATUS_LABELS, countdown, dateTimeLabel, dayBand, hhmm, interviewTitle, mmdd, timeAgo, typeDifficulty, weekday } from "./mockShared";
+import { STATUS_LABELS, countdown, dateTimeLabel, dayBand, hhmm, interviewTitle, mmdd, timeAgo, typeDifficulty, weekday } from "./mockShared";
 
 const MOCK_HOME_CACHE_KEY = "mock-interview-home";
 
@@ -36,7 +36,7 @@ type HomeData = {
   upcoming: InterviewSessionSummary | null;
 };
 
-// 能力雷达按最近这些已完成场次的维度分数求平均
+// 能力表现按最近这些已完成场次的能力项求平均
 const DIMENSION_SAMPLE = 10;
 
 function useMockList() {
@@ -128,14 +128,6 @@ function practiceHours(items: MockInterviewSummary[]) {
     return sum + (real > 0 ? real : estimateMinutes(item.question_count) * 60_000);
   }, 0);
   return ms / 3_600_000;
-}
-
-function dimensionAverages(details: MockInterviewDetail[]) {
-  const keys = LEGACY_DIMENSION_KEYS;
-  return keys.map((key) => {
-    const values = details.flatMap((item) => item.report?.dimensions.filter((dimension) => dimension.key === key).map((dimension) => dimension.score) ?? []);
-    return { key, label: DIMENSION_LABELS[key], value: values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0 };
-  });
 }
 
 function appPractice(applicationId: string, interviews: MockInterviewSummary[]) {
@@ -270,7 +262,8 @@ function UpcomingCard({
   const mine = interviews.filter((item) => item.job_application_id === session.application_id && item.status === "completed");
   const coverage = types.map((type) => {
     const done = mine.filter((item) => item.interview_type === type);
-    return { type, count: done.length, best: done.length ? Math.round(Math.max(...done.map((item) => item.total_score ?? 0))) : null };
+    const latest = [...done].sort((a, b) => finishedAt(b).localeCompare(finishedAt(a)))[0];
+    return { type, count: done.length, latest: latest ? Math.round(latest.total_score ?? 0) : null };
   });
   const practiced = coverage.filter((item) => item.count > 0).length;
   const next = coverage.find((item) => item.count === 0) ?? null;
@@ -308,7 +301,7 @@ function UpcomingCard({
               <span key={item.type} className={`mi-cover-chip${item.count ? " is-done" : practiced > 0 && item === next ? " is-next" : ""}`}>
                 {item.count ? <Icon name="ccheck" size={12} /> : <span className="mi-dash-ring" aria-hidden="true" />}
                 <b>{INTERVIEW_TYPE_LABELS[item.type]}</b>
-                <small>{item.count ? t("{value0} 场 · {value1}{value2}", { value0: item.count, value1: item.count > 1 ? t("最高 ") : "", value2: item.best }) : t("还没练")}</small>
+                <small>{item.count ? t("{value0} 场 · 最近 {value1}", { value0: item.count, value1: item.latest }) : t("还没练")}</small>
               </span>
             ))}
           </div>
@@ -368,74 +361,97 @@ function StartCard() {
   );
 }
 
+// 得分变化只比较同类型、同难度的场次；默认选最近一场所在的组合
+const TREND_LIMIT = 8;
+const VERDICT_TONE: Record<string, string> = { meets: "is-good", borderline: "is-mid", below: "is-bad" };
+const VERDICT_SHORT: Record<string, string> = { get meets() { return t("达到"); }, get borderline() { return t("接近"); }, get below() { return t("有差距"); } };
+const WEAK_COMPETENCY = 55;
+
+function finishedAt(item: MockInterviewSummary) {
+  return item.finished_at ?? item.created_at;
+}
+
+function scopeKey(item: Pick<MockInterviewSummary, "interview_type" | "difficulty">) {
+  return `${item.interview_type}:${item.difficulty}`;
+}
+
+// 最近 10 场 v4 报告的能力项平均分；旧报告没有能力项，不参与
+function competencyAverages(details: MockInterviewDetail[]) {
+  const pool = new Map<MockCompetencyKey, number[]>();
+  for (const item of details) {
+    for (const competency of item.report?.competencies ?? []) {
+      if (!competency.assessed || competency.score === null) continue;
+      pool.set(competency.key, [...(pool.get(competency.key) ?? []), competency.score]);
+    }
+  }
+  return [...pool.entries()].map(([key, values]) => ({ key, label: DIMENSION_LABELS[key], value: Math.round(values.reduce((a, b) => a + b, 0) / values.length) }));
+}
+
 function StatsCard({ completed, details, abandoned }: { completed: MockInterviewSummary[]; details: MockInterviewDetail[]; abandoned: number }) {
   useLocale();
-  const scores = completed.map((item) => item.total_score ?? 0);
-  const average = scores.reduce((a, b) => a + b, 0) / scores.length;
+  const ordered = useMemo(() => [...completed].sort((a, b) => finishedAt(a).localeCompare(finishedAt(b))), [completed]);
+  const scopes = useMemo(() => {
+    const seen = new Map<string, MockInterviewSummary>();
+    for (const item of [...ordered].reverse()) if (!seen.has(scopeKey(item))) seen.set(scopeKey(item), item);
+    return [...seen.entries()].map(([value, item]) => ({ value, label: typeDifficulty(item) }));
+  }, [ordered]);
+  const [scope, setScope] = useState(scopes[0]?.value ?? "");
+  const current = scopes.some((item) => item.value === scope) ? scope : scopes[0]?.value ?? "";
+  const trend = ordered.filter((item) => scopeKey(item) === current).slice(-TREND_LIMIT);
+  const last = trend[trend.length - 1];
+  const previous = trend[trend.length - 2];
+  const delta = last && previous ? Math.round((last.total_score ?? 0) - (previous.total_score ?? 0)) : null;
   const hours = practiceHours(completed);
-  const trend = [...completed].sort((a, b) => (a.finished_at ?? a.created_at).localeCompare(b.finished_at ?? b.created_at)).slice(-4);
-  const dims = dimensionAverages(details).filter((item) => item.value > 0);
-  const weakIndex = dims.length ? dims.reduce((min, item, index) => (item.value < dims[min].value ? index : min), 0) : -1;
-  const ringRatio = Math.max(0, Math.min(1, average / 100));
-  const circumference = 2 * Math.PI * 50;
+  const competencies = competencyAverages(details);
+  const weakest = competencies.length ? competencies.reduce((min, item) => (item.value < min.value ? item : min), competencies[0]) : null;
 
   return (
-    <section className="mi-card mi-stats" aria-label={t("练习数据")}>
-      <div className="mi-stat-col mi-overall">
-        <div className="mi-stat-head"><h3>{t("综合表现")}</h3></div>
-        <div className="mi-ring">
-          <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
-            <circle cx="62" cy="62" r="50" fill="none" stroke="var(--v3-field)" strokeWidth="9" />
-            <circle cx="62" cy="62" r="50" fill="none" stroke="var(--v3-bl)" strokeWidth="9" strokeLinecap="round" strokeDasharray={`${circumference * ringRatio} ${circumference}`} transform="rotate(-90 62 62)" />
-          </svg>
-          <strong>{average.toFixed(1)}</strong>
-          <small>{t("平均分")}</small>
+    <section className="mi-card mi-stats is-v4" aria-label={t("练习数据")}>
+      <div className="mi-stat-col mi-trend">
+        <div className="mi-stat-head">
+          <h3>{t("得分变化")}</h3>
+          {scopes.length > 1 ? (
+            <div className="mi-trend-scope"><Select size="sm" label={t("比较的面试类型与难度")} value={current} options={scopes} onChange={setScope} /></div>
+          ) : last ? <span className="mi-trend-scope-label">{typeDifficulty(last)}</span> : null}
         </div>
-        <div className="mi-overall-nums">
+        {last && (
+          <div className="mi-trend-kpi">
+            <b>{Math.round(last.total_score ?? 0)}</b>
+            {last.verdict && VERDICT_TONE[last.verdict] && <span className={`mi-grade ${VERDICT_TONE[last.verdict]}`}>{VERDICT_SHORT[last.verdict]}</span>}
+            {delta !== null && delta !== 0 && <em className={delta > 0 ? "is-up" : "is-down"}>{t("比上一场 ")}{delta > 0 ? `↑${delta}` : `↓${-delta}`}</em>}
+          </div>
+        )}
+        {trend.length >= 2 ? <TrendChart items={trend} /> : <p className="mi-stat-empty">{t("同类型、同难度完成 2 场后显示变化")}</p>}
+        <div className="mi-overall-nums is-inline">
           <span><b>{completed.length}</b>{t("已完成")}</span>
           <span><b>{abandoned}</b>{t("已放弃")}</span>
           <span><b>{hours.toFixed(1)}h</b>{t("累计练习")}</span>
         </div>
       </div>
       <i className="mi-vdiv" aria-hidden="true" />
-      <div className="mi-stat-col mi-trend">
-        <div className="mi-stat-head">
-          <h3>{t("得分趋势")}</h3>
-          {trend.length >= 2 && (() => {
-            const last = trend[trend.length - 1].total_score ?? 0;
-            const delta = Math.round(last - (trend[trend.length - 2].total_score ?? 0));
-            return <span className="mi-trend-last">{t("最近 ")}{Math.round(last)} {delta !== 0 && <em className={delta > 0 ? "is-up" : "is-down"}>{delta > 0 ? `↑${delta}` : `↓${-delta}`}</em>}</span>;
-          })()}
-        </div>
-        {trend.length >= 2 ? <TrendChart items={trend} average={average} /> : <p className="mi-stat-empty">{t("完成 2 场后显示变化")}</p>}
-      </div>
-      <i className="mi-vdiv" aria-hidden="true" />
-      <div className="mi-stat-col mi-radar-col">
-        <div className="mi-stat-head">
-          <h3>{t("能力雷达")}</h3>
-          {weakIndex >= 0 && <span className="mi-weak">{t("待加强 · ")}{dims[weakIndex].label}</span>}
-        </div>
-        {dims.length >= 3 ? (
-          <div className="mi-home-radar">
-            <RadarChart items={dims.map((item) => ({ label: item.label, value: item.value }))} width={240} height={168} radius={48} cy={86} weakIndex={weakIndex} />
-            {dims.map((item, index) => {
-              const angle = -Math.PI / 2 + (index * 2 * Math.PI) / dims.length;
-              const x = 120 + Math.cos(angle) * 80;
-              const y = 86 + Math.sin(angle) * 70;
+      <div className="mi-stat-col mi-ability-col">
+        <div className="mi-stat-head"><h3>{t("能力表现")}</h3><small>{t("最近 {value0} 场平均", { value0: DIMENSION_SAMPLE })}</small></div>
+        {competencies.length ? (
+          <ul className="mi-ability-list">
+            {competencies.map((item) => {
+              const weak = item === weakest && item.value < WEAK_COMPETENCY;
               return (
-                <span key={item.key} className={`mi-radar-label${index === weakIndex ? " is-weak" : ""}`} style={{ left: x - 36, top: y - 13 }}>
-                  {item.label}<b>{item.value.toFixed(1)}</b>
-                </span>
+                <li key={item.key} className={weak ? "is-weak" : ""}>
+                  <span>{item.label}</span>
+                  <i aria-hidden="true"><i style={{ width: `${item.value}%` }} /></i>
+                  <b>{item.value}</b>
+                  {weak && <em className="mi-weak">{t("待加强")}</em>}
+                </li>
               );
             })}
-          </div>
-        ) : <p className="mi-stat-empty">{t("完成报告后显示")}</p>}
+          </ul>
+        ) : <p className="mi-stat-empty">{t("完成新版评估报告后显示")}</p>}
       </div>
     </section>
   );
 }
 
-// 趋势列在统计卡里撑满剩余宽度（Figma 241:234 为 290 宽），图表按实际宽度重新布点
+// 趋势列在统计卡里撑满剩余宽度，图表按实际宽度重新布点；背景按「有差距 / 接近 / 达到」分区
 function useElementWidth<T extends HTMLElement>(fallback: number) {
   const ref = useRef<T>(null);
   const [width, setWidth] = useState(fallback);
@@ -452,38 +468,43 @@ function useElementWidth<T extends HTMLElement>(fallback: number) {
   return [ref, width] as const;
 }
 
-function TrendChart({ items, average }: { items: MockInterviewSummary[]; average: number }) {
+const TREND_LO = 30;
+const TREND_HI = 90;
+const ZONE_LABEL_WIDTH = 34;
+
+function TrendChart({ items }: { items: MockInterviewSummary[] }) {
   useLocale();
-  const [chartRef, width] = useElementWidth<HTMLDivElement>(290);
+  const [chartRef, width] = useElementWidth<HTMLDivElement>(400);
+  const plot = Math.max(120, width - ZONE_LABEL_WIDTH);
+  const clamp = (score: number) => Math.max(TREND_LO, Math.min(TREND_HI, score));
+  const y = (score: number) => 8 + ((TREND_HI - clamp(score)) / (TREND_HI - TREND_LO)) * 112;
+  const x = (index: number) => 14 + (index * (plot - 28)) / Math.max(1, items.length - 1);
   const scores = items.map((item) => item.total_score ?? 0);
-  const lo = Math.min(...scores, average) - 8;
-  const hi = Math.max(...scores, average) + 8;
-  const y = (score: number) => 112 - ((score - lo) / (hi - lo)) * 96;
-  const x = (index: number) => 18 + (index * (width - 34)) / Math.max(1, items.length - 1);
   const line = scores.map((score, index) => `${x(index)},${y(score)}`).join(" ");
-  const area = `18,112 ${line} ${x(scores.length - 1)},112`;
   return (
-    <div className="mi-trend-chart" ref={chartRef}>
-      <svg width={width} height="120" viewBox={`0 0 ${width} 120`} aria-hidden="true">
-        {[16, 48, 80, 112].map((gy) => <line key={gy} x1="0" x2={width} y1={gy} y2={gy} stroke="var(--v3-line)" />)}
-        <polygon points={area} fill="rgb(63 111 216 / 8%)" />
-        <line x1="0" x2={width} y1={y(average)} y2={y(average)} stroke="var(--v3-fnt)" strokeDasharray="3 3" />
-        <polyline points={line} fill="none" stroke="var(--v3-bl)" strokeWidth="1.6" />
-        {scores.map((score, index) => {
-          const last = index === scores.length - 1;
-          return <circle key={index} cx={x(index)} cy={y(score)} r={last ? 5 : 3.5} fill={last ? "var(--v3-bl)" : "#fff"} stroke={last ? "#fff" : "var(--v3-bl)"} strokeWidth="1.4" />;
+    <div className="mi-trend-chart is-zoned" ref={chartRef}>
+      <svg width={width} height="140" viewBox={`0 0 ${width} 140`} role="img" aria-label={t("得分变化：{value0}", { value0: scores.map((score) => Math.round(score)).join("、") })}>
+        <rect x="0" y={y(TREND_HI)} width={plot} height={y(75) - y(TREND_HI)} fill="#f2f7f3" />
+        <rect x="0" y={y(75)} width={plot} height={y(60) - y(75)} fill="#fcf6ee" />
+        <line x1="0" x2={plot} y1="120" y2="120" stroke="var(--v3-line)" />
+        <text x={plot + 6} y={(y(TREND_HI) + y(75)) / 2 + 4} className="is-good">{t("达到")}</text>
+        <text x={plot + 6} y={(y(75) + y(60)) / 2 + 4} className="is-mid">{t("接近")}</text>
+        <text x={plot + 6} y={(y(60) + 120) / 2 + 4}>{t("差距")}</text>
+        <polyline points={line} fill="none" stroke="#bdbdb6" strokeWidth="1.5" />
+        {items.map((item, index) => {
+          const isLast = index === items.length - 1;
+          return <circle key={item.id} cx={x(index)} cy={y(scores[index])} r={isLast ? 5.5 : 4} className={`mi-trend-dot ${VERDICT_TONE[item.verdict ?? ""] ?? "is-none"}`} stroke="#fff" strokeWidth="2" />;
         })}
       </svg>
       {items.map((item, index) => {
-        const last = index === items.length - 1;
+        const isLast = index === items.length - 1;
         return (
           <span key={item.id}>
-            <b className={`mi-trend-score${last ? " is-last" : ""}`} style={{ left: x(index) - 8, top: 24 + y(scores[index]) - 20 }}>{Math.round(scores[index])}</b>
-            <small className="mi-trend-date" style={{ left: x(index) - 20 }}>{mmdd(item.finished_at ?? item.created_at)}</small>
+            <b className={`mi-trend-score${isLast ? " is-last" : ""}`} style={{ left: x(index) - 8, top: y(scores[index]) - 20 }}>{Math.round(scores[index])}</b>
+            <small className="mi-trend-date is-zoned" style={{ left: x(index) - 20 }}>{mmdd(finishedAt(item))}</small>
           </span>
         );
       })}
-      <small className="mi-trend-avg" style={{ top: 24 + y(average) + 4 }}>{t("均分 ")}{average.toFixed(1)}</small>
     </div>
   );
 }
@@ -505,16 +526,16 @@ function StatsEmpty() {
             <polyline points="10,70 75,58 140,64 210,36" fill="none" stroke="#cfcfca" strokeDasharray="4 3" strokeWidth="1.4" />
             {[[10, 70], [75, 58], [140, 64], [210, 36]].map(([cx, cy]) => <circle key={cx} cx={cx} cy={cy} r="3.5" fill="#d8d8d3" />)}
           </svg>
-          <b>{t("得分趋势")}</b>
-          <small>{t("完成 2 场后显示变化")}</small>
+          <b>{t("得分变化")}</b>
+          <small>{t("同类型、同难度完成 2 场后显示变化")}</small>
         </div>
         <div>
           <svg className="mi-ghost-art" width="104" height="96" viewBox="0 0 104 96" aria-hidden="true">
             <polygon points="52,6 96,38 79,90 25,90 8,38" fill="#fff" stroke="var(--v3-cl)" />
             <polygon points="52,24 79,44 69,76 35,76 25,44" fill="none" stroke="var(--v3-cl)" />
           </svg>
-          <b>{t("能力雷达")}</b>
-          <small>{t("按五个维度找出薄弱项")}</small>
+          <b>{t("能力表现")}</b>
+          <small>{t("找出最需要加强的能力")}</small>
         </div>
       </div>
     </section>
