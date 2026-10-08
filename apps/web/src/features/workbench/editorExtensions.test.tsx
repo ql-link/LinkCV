@@ -146,6 +146,16 @@ describe("简历头像上下文操作", () => {
 
     expect(avatar?.parentElement).toHaveClass("resume-avatar-node-view");
     expect(avatar).toHaveStyle({ width: "96px", height: "calc(96px * var(--resume-avatar-height-ratio, 1.4))" });
+    expect(avatar).not.toHaveAttribute("data-template-avatar");
+  });
+
+  it("marks template avatars for proportional framing", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: { type: "doc", content: [{ type: "avatarImage", attrs: { src: "/templates/avatar-cat.jpg", size: 94 } }] },
+    });
+    const { container } = render(<EditorContent editor={editor} />);
+    expect(container.querySelector(".resume-avatar")).toHaveAttribute("data-template-avatar", "true");
   });
 
   it("只有选中已有头像时显示更换头像操作", async () => {

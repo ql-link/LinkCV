@@ -4457,3 +4457,67 @@ def test_mysql_0097_adds_user_selectable_and_keeps_existing_models_selectable() 
             text("SELECT user_selectable FROM llm_models WHERE display_name = '新模型'")
         ) == 1
     engine.dispose()
+
+
+def test_mysql_0117_normalizes_builtin_sample_names_without_touching_user_content() -> None:
+    from copy import deepcopy
+    import re
+
+    from linkresume.core.migration_sql import execute_sql_file
+    from linkresume.modules.identity.models import User
+    from linkresume.modules.resumes.models import ResumeTemplate
+
+    database_url = migration_test_url()
+    reset_test_database_to_base(database_url)
+    run_alembic(database_url, "upgrade", "0116")
+    engine = create_engine(database_url)
+    Session = sessionmaker(engine)
+    seed_sql = (BACKEND_ROOT / "migrations/sql/0100.up.sql").read_text()
+    samples = {
+        key: json.loads(value.replace("''", "'"))
+        for key, value in re.findall(r"SET @muse_sample_(\w+) = CAST\('((?:[^']|'')*)' AS JSON\)", seed_sql)
+    }
+    expected_names = {
+        key: samples[sample]["identity"]["name"]["value"]
+        for key, sample in re.findall(
+            r"VALUES \('(muse-[a-z]+-cn)', '(?:[^']|'')*', '(?:[^']|'')*', @muse_sample_(\w+), CAST", seed_sql
+        )
+    }
+    try:
+        with Session.begin() as db:
+            original = db.scalar(select(ResumeTemplate).where(ResumeTemplate.key == "muse-blueprint-cn"))
+            assert original is not None
+            custom_data = deepcopy(original.data_json)
+            custom_data["identity"]["name"]["value"] = "测试自定义姓名"
+            edited = db.scalar(select(ResumeTemplate).where(ResumeTemplate.key == "muse-titleblock-cn"))
+            assert edited is not None
+            edited.data_json = custom_data
+            db.add(ResumeTemplate(key="custom-name-test", name="自定义模板", data_json=original.data_json,
+                                  style_json=original.style_json, is_active=0))
+            user = User(email="migration-name-test@example.com", nickname="迁移测试")
+            db.add(user)
+            db.flush()
+            resume = Resume(user_id=user.id, template_id=original.id, title="保留已有示例内容",
+                            data_json=original.data_json, style_json=original.style_json, source_type="template")
+            db.add(resume)
+        with engine.connect() as connection:
+            before = {row.key: json.loads(row.data_json) for row in connection.execute(text("SELECT `key`, data_json FROM resume_template"))}
+            resume_before = connection.execute(text("SELECT data_json FROM resume")).scalars().all()
+        run_alembic(database_url, "upgrade", "0117")
+        with engine.begin() as connection:
+            after = {row.key: json.loads(row.data_json) for row in connection.execute(text("SELECT `key`, data_json FROM resume_template"))}
+            changed = 0
+            for key, data in before.items():
+                expected = deepcopy(data)
+                name = data["identity"]["name"]["value"]
+                if key in expected_names and name == expected_names[key] and name != "张三":
+                    expected["identity"]["name"]["value"] = "张三"
+                    changed += 1
+                assert after[key] == expected, key
+            assert changed > 0
+            assert connection.execute(text("SELECT data_json FROM resume")).scalars().all() == resume_before
+            execute_sql_file(connection, BACKEND_ROOT / "migrations/sql/0117.up.sql")
+            rerun = {row.key: json.loads(row.data_json) for row in connection.execute(text("SELECT `key`, data_json FROM resume_template"))}
+            assert rerun == after
+    finally:
+        engine.dispose()

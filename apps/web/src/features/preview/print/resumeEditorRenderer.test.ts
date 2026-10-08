@@ -55,6 +55,14 @@ describe("renderResumeEditorDocument 分栏行", () => {
       content: [{ type: "avatarImage", attrs: { src: "/templates/avatar-cat.jpg", size: 94 } }],
     });
     expect(html).toContain("width:94px;height:calc(94px * var(--resume-avatar-height-ratio, 1.4))");
+    expect(html).toContain('data-template-avatar="true"');
+  });
+  it("keeps uploaded photos outside the template avatar framing", () => {
+    const html = renderResumeEditorDocument({
+      type: "doc",
+      content: [{ type: "avatarImage", attrs: { src: "/api/resumes/1/assets/avatar.jpg", size: 94 } }],
+    });
+    expect(html).not.toContain("data-template-avatar");
   });
   it("2 栏仍是带左右比例的左右分栏", () => {
     const html = renderResumeEditorDocument(withRow({
