@@ -61,10 +61,8 @@
 .wb3-score svg { margin-right: 7px; }
 .wb3-score strong { font: 600 12.5px var(--v3-num); }
 .wb3-score span { margin-left: 6px; color: var(--v3-sub); font-size: 11.5px; }
-.wb3-more { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--v3-cl); border-radius: 8px; background: #fff; padding: 0; color: var(--v3-sub); cursor: pointer; }
-.wb3-more:hover, .wb3-more.is-active { background: var(--v3-field); color: var(--v3-txt); }
 .wb3-export.v3-btn { width: 104px; }
-.wb3-score:focus-visible, .wb3-more:focus-visible, .wb3-home:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.wb3-score:focus-visible, .wb3-home:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
 
 /* ── 画布：灰底，纸面居中；面板打开时右侧让出 工具卡片 + 面板 的宽度 */
 .wb3 .workbench-canvas {

@@ -57,8 +57,7 @@ import {
 import { liveResumePageMargins } from "../preview/resumePageMargins";
 import { V3Shell } from "../../v3/Shell";
 import { Icon, type V3IconName } from "../../v3/Icon";
-import { ConfirmDialog, Menu, Toast } from "../../v3/primitives";
-import { Centered, MiniResume, Badge } from "../../v3/art";
+import { Toast } from "../../v3/primitives";
 import "./workbench-v3.css";
 
 // 兼容旧导出：排版相关的步进 / 字体组件移到 WorkbenchTypePanel
@@ -126,39 +125,6 @@ export function resumeWorkbenchStyle(
     "--resume-page-margin-left": `${margins.left}mm`,
     "--preview-accent": normalizeResumeAccentColor(accentColor),
   } as React.CSSProperties;
-}
-
-// ⋯ 更多操作：只保留删除简历（导出 PDF 是顶栏主按钮，完整度走分数胶囊）
-export function WorkbenchMoreMenu({ onDelete }: { onDelete: () => void }) {
-  useLocale();
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLButtonElement | null>(null);
-  const close = useCallback(() => setOpen(false), []);
-  return (
-    <>
-      <button
-        ref={anchorRef}
-        type="button"
-        className={`wb3-more${open ? " is-active" : ""}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={t("更多操作")}
-        title={t("更多操作")}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Icon name="more" size={16} />
-      </button>
-      <Menu
-        anchorRef={anchorRef}
-        open={open}
-        onClose={close}
-        placement="bottom-end"
-        width={160}
-        label={t("更多操作")}
-        items={[{ label: t("删除简历"), icon: "trash", danger: true, onSelect: onDelete }]}
-      />
-    </>
-  );
 }
 
 // 顶栏完整度胶囊：小号仪表盘 + 分数 + 等级，点开 02.2d 简历检查
@@ -733,11 +699,8 @@ export function ResumeWorkbench({
     || Boolean(state.proposalApplyingResumeId && state.proposalApplyingResumeId === state.activeResumeId));
   const proposalContentRevision = useResumeStore((state) => state.proposalContentRevision);
   const goHome = useResumeStore((state) => state.goHome);
-  const deleteStoredResume = useResumeStore((state) => state.deleteResume);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
   const [toast, setToast] = useState<ToastState>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deletePending, setDeletePending] = useState(false);
   const [pdfExportPending, setPdfExportPending] = useState(false);
   const [commandMenu, setCommandMenu] = useState<CommandMenuState | null>(null);
   const [workspaceWidth, setWorkspaceWidth] = useState(() => window.innerWidth);
@@ -1112,26 +1075,6 @@ export function ResumeWorkbench({
     navigateTo("/resumes");
   };
 
-  const confirmDeleteResume = async () => {
-    if (!activeResumeId || deletePending) return;
-    setDeletePending(true);
-    try {
-      await deleteStoredResume(activeResumeId);
-    } catch {
-      setDeletePending(false);
-      setDeleteDialogOpen(false);
-      setToast({ kind: "error", label: t("删除简历失败，请稍后重试") });
-      return;
-    }
-    setDeleteDialogOpen(false);
-    if (embedded && onClose) {
-      onClose();
-      return;
-    }
-    goHome();
-    navigateTo("/resumes");
-  };
-
   const retrySave = async () => {
     setSaveErrorNoticeOpen(false);
     await saveCurrentResume();
@@ -1272,7 +1215,6 @@ export function ResumeWorkbench({
             </div>
             <div className="wb3-head-actions">
               <WorkbenchScorePill result={completeness} active={drawerMode === "quality"} onClick={() => toggleDrawer("quality")} />
-              <WorkbenchMoreMenu onDelete={() => setDeleteDialogOpen(true)} />
               <button
                 type="button"
                 className="v3-btn v3-btn-dark wb3-export"
@@ -1332,18 +1274,6 @@ export function ResumeWorkbench({
           />
         )}</MotionPresence>
 
-        <MotionPresence>{deleteDialogOpen && (
-          <ConfirmDialog
-            title={t("删除“{value0}”？", { value0: title })}
-            description={t("删除后无法恢复。求职记录会保留，关联简历将被清空。")}
-            art={<DeleteResumeArt />}
-            confirmLabel={t("永久删除")}
-            busyLabel={t("正在删除…")}
-            busy={deletePending}
-            onCancel={() => setDeleteDialogOpen(false)}
-            onConfirm={() => void confirmDeleteResume()}
-          />
-        )}</MotionPresence>
       </div>
     </MotionConfig>
   );
@@ -1353,17 +1283,6 @@ export function ResumeWorkbench({
     <V3Shell active="none" bare scroll={false} contentClassName="wb3-content">
       {workbench}
     </V3Shell>
-  );
-}
-
-// 删除确认插图：迷你简历 + 红色垃圾桶角标（舞台 372×128，同 01.1j 的构图）
-function DeleteResumeArt() {
-  useLocale();
-  return (
-    <Centered width={372} height={128}>
-      <MiniResume x={146} y={16} w={80} h={100} />
-      <Badge x={212} y={84} size={30} icon="trash" fill="var(--v3-rd-soft)" color="var(--v3-rd)" border="#f1d4d4" />
-    </Centered>
   );
 }
 
