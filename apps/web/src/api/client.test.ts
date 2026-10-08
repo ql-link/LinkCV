@@ -301,6 +301,19 @@ describe("API observability", () => {
 });
 
 describe("Agent SSE client", () => {
+  it("保留插入状态及独立回复的消息来源，包括跨数据块事件", async () => {
+    const events = [
+      { type: "user.message.accepted", runId: "run-1", submissionKey: "steer-key", userSequenceNo: 3, content: "调整目标", contexts: [] },
+      { type: "user.message.applied", runId: "run-1", submissionKey: "steer-key", userSequenceNo: 3 },
+      { type: "assistant.message.completed", runId: "run-1", submissionKey: "steer-key", userSequenceNo: 3, sequenceNo: 4, content: "已调整后续工作" },
+      { type: "run.completed", runId: "run-1", userSequenceNo: 3 },
+    ];
+    const source = events.map(({ type, ...data }) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`).join("");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(streamResponse([source.slice(0, 39), source.slice(39)])));
+    const onEvent = vi.fn();
+    await api.streamAgentRun("run-1", new AbortController().signal, onEvent);
+    expect(onEvent.mock.calls.map(([event]) => event)).toEqual(events);
+  });
   it("正常 EOF 前没有终态事件时按协议失败", async () => {
     vi.stubGlobal(
       "fetch",
@@ -385,6 +398,20 @@ describe("Agent SSE client", () => {
 });
 
 describe("Agent session list API", () => {
+  it("通过登录 API 提交插入并查询原提交回执", async () => {
+    const receipt = { run_id: "run/a", submission_key: "original_key", state: "waiting" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, receipt));
+    vi.stubGlobal("fetch", fetchMock);
+    const payload = { content: "保留已有结果，调整目标", idempotency_key: "original_key", contexts: [{ type: "resume" as const, id: "2", version: "3" }], replace_inherited_resume: true };
+    await expect(api.steerAgentRun("run/a", payload)).resolves.toEqual(receipt);
+    await api.getAgentSteering("run/a", "original_key");
+    await api.getAgentSubmission("session/a", "original_key");
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/agent/runs/run%2Fa/steer", "/api/agent/runs/run%2Fa/steer/original_key",
+      "/api/agent/sessions/session%2Fa/submissions/original_key",
+    ]);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST", credentials: "include", body: JSON.stringify(payload) });
+  });
   it("读取当前用户最近会话且不按简历绑定筛选", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { sessions: [] }));
     vi.stubGlobal("fetch", fetchMock);
@@ -832,6 +859,8 @@ describe("API resume share", () => {
           assets: {},
           sharer: { nickname: "于晏", avatar_url: null },
           allow_download: true,
+          expires_at: null,
+          updated_at: "2026-09-26T08:00:00Z",
         }),
       );
     vi.stubGlobal("fetch", fetchMock);

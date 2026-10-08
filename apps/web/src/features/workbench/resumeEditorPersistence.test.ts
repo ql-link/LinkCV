@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Editor, type JSONContent } from "@tiptap/core";
+import { defaultCanonicalDocument } from "../../api/resumeContract";
 import type {
   CanonicalResumeDocument,
   CanonicalTextRun,
@@ -1290,5 +1291,39 @@ describe("canonical resume editing projection", () => {
     row.content = row.content?.slice(0, 1);
     expect(() => canonicalResumeDocumentFromEditorDocument(invalidRow, canonicalEditingFixture))
       .toThrow("RESUME_EDITOR_ROW_CARDINALITY");
+  });
+});
+
+describe("列表与分栏对齐的保存往返", () => {
+  const paragraph = (text: string, textAlign: string): JSONContent => ({
+    type: "paragraph", attrs: { textAlign }, content: [{ type: "text", text }],
+  });
+  function roundTrip(block: JSONContent) {
+    const data = canonicalResumeDocumentFromEditorDocument({ type: "doc", content: [
+      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "张三" }] },
+      { type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "项目经历" }] },
+      block,
+    ] }, defaultCanonicalDocument);
+    const content = canonicalResumeDocumentToEditorDocument(data).content!;
+    return { data, restored: content[content.length - 1] };
+  }
+  it.each([
+    ["resumeRow", 2], ["resumeRow", 3], ["resumeRow", 4], ["resumeTrioRow", 3], ["resumeMetaRow", 4],
+  ] as const)("保留 %s 的 %i 格独立对齐", (type, count) => {
+    const alignments = ["center", "left", "right", "center"].slice(0, count);
+    const { data, restored } = roundTrip({ type, content: alignments.map((align, i) => paragraph(`第${i + 1}栏`, align)) });
+    const row = data.sections[0].blocks[0];
+    if (row.block_type !== "row") throw new Error("TEST_FIXTURE_INVALID");
+    expect(row.cells.map((cell) => cell.blocks[0].block_type === "paragraph" ? cell.blocks[0].align : null)).toEqual(alignments);
+    expect(restored.content!.map((cell) => cell.attrs?.textAlign)).toEqual(alignments);
+  });
+  it.each(["bulletList", "orderedList"])("保留 %s 中各项对齐", (type) => {
+    const { data, restored } = roundTrip({ type, attrs: { start: 1 }, content: ["center", "right"].map((align) => ({
+      type: "listItem", content: [paragraph("虚构列表项", align)],
+    })) });
+    const list = data.sections[0].blocks[0];
+    if (list.block_type !== "bullet_list" && list.block_type !== "ordered_list") throw new Error("TEST_FIXTURE_INVALID");
+    expect(list.items.map((item) => item.align)).toEqual(["center", "right"]);
+    expect(restored.content!.map((item) => item.content![0].attrs?.textAlign)).toEqual(["center", "right"]);
   });
 });

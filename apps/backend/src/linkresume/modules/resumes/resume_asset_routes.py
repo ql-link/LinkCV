@@ -17,7 +17,7 @@ from linkresume.core.storage import (
     get_storage,
     infer_image_content_type,
 )
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_resume_user, get_current_workspace_user, lock_active_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.resumes.image_limits import (
     MAX_RESUME_IMAGE_BYTES,
@@ -81,9 +81,10 @@ def upload_resume_asset(
     resume_id: str,
     payload: ResumeAssetUploadRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> ResumeAssetResponse:
+    lock_active_user(db, user.id)
     resume = require_owned_resume(db, resume_id, user.id)
     image = decode_image_data_url(payload.data_url)
     if image is None:
@@ -116,7 +117,7 @@ def read_resume_asset(
     resume_id: str,
     asset_name: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> StreamingResponse:
     resume = require_owned_resume(db, resume_id, user.id)
@@ -147,9 +148,10 @@ def delete_resume_asset(
     resume_id: str,
     asset_name: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResumeAssetResponse:
+    lock_active_user(db, user.id)
     resume = require_owned_resume(db, resume_id, user.id)
     if "/" in asset_name or "\\" in asset_name or asset_name in {".", ".."}:
         raise ApiError(404, "ASSET_NOT_FOUND")

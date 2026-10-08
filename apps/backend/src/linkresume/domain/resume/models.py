@@ -265,6 +265,14 @@ Identity.model_rebuild()
 
 class ListItem(SourceReferenced):
     runs: list[InlineContent] = Field(max_length=2000)
+    align: Literal["left", "center", "right"] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_align(self, handler):
+        data = handler(self)
+        if data.get("align") is None:
+            data.pop("align", None)
+        return data
 
 
 class ListBlock(ClosedModel):

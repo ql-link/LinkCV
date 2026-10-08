@@ -5,11 +5,14 @@ Run once after the 0064 schema revision and the unified-ingest code deploy:
     uv run --directory apps/backend python scripts/release/migrate_interview_assets.py [--execute]
 
 Per row: copy the object to the ``users/{uid}/datasets/`` namespace, insert a
-``document_parse_tasks`` + ``user_dataset`` pair (documents queue for parsing,
+``document_parse_task`` + ``user_dataset`` pair (documents queue for parsing,
 media lands in a terminal state), verify the copied object, then delete the
 legacy object and row. ``legacy_interview_asset_id`` makes reruns idempotent:
 rows already migrated are skipped, and the deterministic target object key
 makes a mid-row crash safe to retry.
+
+Table and column names follow the current schema (0115 singular names and
+create_time/update_time); only the retired ``interview_assets`` keeps its name.
 """
 
 import argparse
@@ -43,8 +46,8 @@ LIST_SQL = text(
         a.created_at,
         ja.user_id
     FROM interview_assets a
-    JOIN interview_sessions s ON s.id = a.interview_session_id
-    JOIN job_applications ja ON ja.id = s.application_id
+    JOIN interview_session s ON s.id = a.interview_session_id
+    JOIN job_application ja ON ja.id = s.application_id
     ORDER BY a.id
     """
 )
@@ -175,11 +178,11 @@ def migrate(engine: Engine, storage: AssetStorage, *, execute: bool) -> int:
                 cursor = connection.execute(
                     text(
                         """
-                        INSERT INTO document_parse_tasks (
+                        INSERT INTO document_parse_task (
                             source_type, user_id, file_name, file_format,
                             object_name, upload_status, upload_duration_ms,
                             parse_status, parse_duration_ms,
-                            parse_attempt_count, created_at, updated_at
+                            parse_attempt_count, create_time, update_time
                         ) VALUES (
                             'dataset', :user_id, :file_name, :file_format,
                             :object_name, 'succeeded', 0,
@@ -208,7 +211,7 @@ def migrate(engine: Engine, storage: AssetStorage, *, execute: bool) -> int:
                             file_size, object_name, sha256,
                             asset_kind, interview_session_id,
                             interview_source_type, duration_ms,
-                            legacy_interview_asset_id, created_at
+                            legacy_interview_asset_id, create_time
                         ) VALUES (
                             :user_id, NULL, :idempotency_key,
                             :request_fingerprint, :parse_task_id,

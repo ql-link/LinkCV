@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 from linkresume.core.errors import ApiError
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.dependencies import lock_active_user
 from linkresume.modules.resumes.models import DocumentParseTask, DATASET_SOURCE_TYPE
 
 
 def lock_user(db: Session, user_id: int):
-    db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+    lock_active_user(db, user_id)
 
 
 def owned(db: Session, user_id: int, dataset_id: int, *, lock=False):

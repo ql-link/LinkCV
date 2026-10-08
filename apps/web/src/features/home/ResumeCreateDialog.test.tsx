@@ -34,7 +34,7 @@ describe("ResumeCreateDialog", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "下一个模板" }));
     expect(within(dialog).getByRole("option", { name: "现代简约，已选择" })).toHaveAttribute("aria-selected", "true");
-    expect(within(dialog).getByRole("status", { name: "当前模板位置" })).toHaveTextContent("2 / 3");
+    expect(within(dialog).getByRole("status", { name: "当前模板位置" })).toHaveTextContent("第 2 / 3 套");
 
     fireEvent.change(within(dialog).getByLabelText("简历名称"), {
       target: { value: "  2026 产品经理简历  " },
@@ -57,7 +57,7 @@ describe("ResumeCreateDialog", () => {
     fireEvent.keyDown(listbox, { key: "ArrowLeft" });
 
     expect(screen.getByRole("option", { name: "技术极简，已选择" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("status", { name: "当前模板位置" })).toHaveTextContent("3 / 3");
+    expect(screen.getByRole("status", { name: "当前模板位置" })).toHaveTextContent("第 3 / 3 套");
 
     fireEvent.keyDown(listbox, { key: "ArrowLeft" });
     fireEvent.keyDown(listbox, { key: "ArrowLeft" });
@@ -76,9 +76,8 @@ describe("ResumeCreateDialog", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("请输入简历名称。");
-    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert).toHaveClass("v3-toast");
     expect(dialog).not.toContainElement(alert);
-    expect(alert.parentElement).toBe(document.body);
     expect(createResume).not.toHaveBeenCalled();
     expect(within(dialog).getByLabelText("简历名称")).toHaveFocus();
   });
@@ -96,7 +95,7 @@ describe("ResumeCreateDialog", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("该名称已经存在，请换一个名称。");
-    expect(alert).toHaveClass("ui-feedback-notice", "is-floating");
+    expect(alert).toHaveClass("v3-toast");
     expect(dialog).not.toContainElement(alert);
     expect(dialog).toBeInTheDocument();
     expect(window.location.pathname).toBe("/resumes");

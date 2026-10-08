@@ -20,6 +20,9 @@ from linkresume.core.config import Settings
 from linkresume.core.errors import ApiError
 from linkresume.core.storage import AssetStorage
 from linkresume.modules.datasets.models import UserDataset
+from linkresume.modules.identity.models import UserProfile
+from linkresume.modules.identity.schemas import UserProfileData
+from linkresume.modules.identity.dependencies import lock_active_user
 from linkresume.modules.datasets.routes import read_dataset_markdown
 from linkresume.modules.agent.schemas import (
     AgentContextListItem,
@@ -43,6 +46,7 @@ from linkresume.modules.resumes.models import (
 
 
 CONTEXT_TYPES: tuple[AgentContextType, ...] = (
+    "user_profile",
     "resume",
     "resume_version",
     "dataset",
@@ -134,6 +138,25 @@ def _list_item(snapshot: AgentContextSnapshot) -> AgentContextListItem:
     )
 
 
+def _profile_content(profile: UserProfile) -> str:
+    values = UserProfileData.model_validate(profile).model_dump(mode="json")
+    for key in ("lock_version", "created_at", "updated_at"):
+        values.pop(key, None)
+    lines = [
+        f"- {key}: {json.dumps(value, ensure_ascii=False)}"
+        for key, value in values.items() if value is not None and value != [] and value != ""
+    ]
+    return "## Personal career profile\n" + "\n".join(lines) if lines else ""
+
+
+def _profile_snapshot(profile: UserProfile) -> AgentContextSnapshot:
+    return _snapshot(
+        type="user_profile", id=str(profile.user_id), version=str(profile.lock_version),
+        lock_version=profile.lock_version, updated_at=profile.update_time,
+        label="个人画像", description="本人填写的求职资料",
+    )
+
+
 def _resume_item(resume: Resume) -> AgentContextListItem:
     return _list_item(
         _snapshot(
@@ -141,7 +164,7 @@ def _resume_item(resume: Resume) -> AgentContextListItem:
             id=str(resume.id),
             version=str(resume.lock_version),
             lock_version=resume.lock_version,
-            updated_at=resume.updated_at,
+            updated_at=resume.update_time,
             label=resume.title,
             description="当前简历",
             resume_id=str(resume.id),
@@ -157,7 +180,7 @@ def _dataset_item(
             type="dataset",
             id=str(dataset.id),
             version=dataset.sha256,
-            updated_at=task.updated_at,
+            updated_at=task.update_time,
             label=dataset.file_name,
             description="资料库文件",
         )
@@ -171,7 +194,7 @@ def _job_item(job: JobDescription) -> AgentContextListItem:
             id=str(job.id),
             version=str(job.lock_version),
             lock_version=job.lock_version,
-            updated_at=job.updated_at,
+            updated_at=job.update_time,
             label=f"{job.company_name} · {job.job_title}",
             description=job.work_city or job.employment_type,
         )
@@ -189,7 +212,7 @@ def _application_item(
             id=str(application.id),
             version=str(application.lock_version),
             lock_version=application.lock_version,
-            updated_at=application.updated_at,
+            updated_at=application.update_time,
             label=(
                 f"{application.company_name_snapshot} · "
                 f"{application.job_title_snapshot}"
@@ -211,7 +234,7 @@ def _interview_item(
             id=str(interview.id),
             version=str(interview.lock_version),
             lock_version=interview.lock_version,
-            updated_at=interview.updated_at,
+            updated_at=interview.update_time,
             label=(
                 f"{application.company_name_snapshot} · "
                 f"{application.job_title_snapshot} · {interview.stage_label}"
@@ -253,12 +276,18 @@ def list_contexts(
     types = tuple(item for item in types if item != "resume_version")
     result: list[AgentContextListItem] = []
     for item_type in types:
-        if item_type == "resume":
+        if item_type == "user_profile":
+            profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user_id))
+            if profile is not None and _profile_content(profile) and (
+                normalized_query is None or normalized_query.lower() in "个人画像 本人填写的求职资料 career profile"
+            ):
+                result.append(_list_item(_profile_snapshot(profile)))
+        elif item_type == "resume":
             statement = select(Resume).where(Resume.user_id == user_id)
             if search_pattern is not None:
                 statement = statement.where(Resume.title.ilike(search_pattern))
             records = db.scalars(
-                statement.order_by(Resume.updated_at.desc(), Resume.id.desc()).limit(
+                statement.order_by(Resume.update_time.desc(), Resume.id.desc()).limit(
                     limit
                 )
             ).all()
@@ -285,7 +314,7 @@ def list_contexts(
                 )
             rows = db.execute(
                 statement.order_by(
-                    DocumentParseTask.updated_at.desc(), UserDataset.id.desc()
+                    DocumentParseTask.update_time.desc(), UserDataset.id.desc()
                 ).limit(limit)
             ).all()
             result.extend(_dataset_item(dataset, task) for dataset, task in rows)
@@ -302,7 +331,7 @@ def list_contexts(
                 )
             records = db.scalars(
                 statement.order_by(
-                    JobDescription.updated_at.desc(), JobDescription.id.desc()
+                    JobDescription.update_time.desc(), JobDescription.id.desc()
                 ).limit(limit)
             ).all()
             result.extend(_job_item(record) for record in records)
@@ -327,7 +356,7 @@ def list_contexts(
                 )
             rows = db.execute(
                 statement.order_by(
-                    JobApplication.updated_at.desc(), JobApplication.id.desc()
+                    JobApplication.update_time.desc(), JobApplication.id.desc()
                 ).limit(limit)
             ).all()
             result.extend(
@@ -353,7 +382,7 @@ def list_contexts(
                 )
             rows = db.execute(
                 statement.order_by(
-                    InterviewSession.updated_at.desc(), InterviewSession.id.desc()
+                    InterviewSession.update_time.desc(), InterviewSession.id.desc()
                 ).limit(limit)
             ).all()
             result.extend(
@@ -429,7 +458,7 @@ def _make_material(
     if len(encoded) > MAX_ITEM_CHARS:
         content = {"summary": _clip(encoded, MAX_ITEM_CHARS)}
     return AgentContextMaterial(
-        **snapshot.model_dump(exclude={"presentation"}),
+        **snapshot.model_dump(),
         content=content,
     )
 
@@ -445,7 +474,7 @@ def _resolve_resume(
     if resume is None:
         raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
     markers = _version_markers(
-        version=resume.lock_version, updated_at=resume.updated_at
+        version=resume.lock_version, updated_at=resume.update_time
     )
     _ensure_fresh(ref, markers)
     snapshot = _snapshot(
@@ -456,7 +485,7 @@ def _resolve_resume(
         resume_id=str(resume.id),
         label=resume.title,
         description="当前简历",
-        updated_at=resume.updated_at,
+        updated_at=resume.update_time,
     )
     return (
         resume,
@@ -477,7 +506,7 @@ def _resolve_job(
         raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
     _ensure_fresh(
         ref,
-        _version_markers(version=job.lock_version, updated_at=job.updated_at),
+        _version_markers(version=job.lock_version, updated_at=job.update_time),
     )
     snapshot = _snapshot(
         type="job",
@@ -486,7 +515,7 @@ def _resolve_job(
         lock_version=job.lock_version,
         label=f"{job.company_name} · {job.job_title}",
         description=job.work_city or job.employment_type,
-        updated_at=job.updated_at,
+        updated_at=job.update_time,
     )
     return snapshot, _make_material(snapshot, _material_content(type="job", job=job))
 
@@ -521,7 +550,7 @@ def _resolve_dataset(
     dataset, task = row
     _ensure_fresh(
         ref,
-        _version_markers(version=dataset.sha256, updated_at=task.updated_at),
+        _version_markers(version=dataset.sha256, updated_at=task.update_time),
     )
     object_name = task.converted_object_name
     expected_prefix = f"users/{user_id}/datasets/converted/"
@@ -539,7 +568,7 @@ def _resolve_dataset(
         type="dataset",
         id=str(dataset.id),
         version=dataset.sha256,
-        updated_at=task.updated_at,
+        updated_at=task.update_time,
         label=dataset.file_name,
         description="资料库文件",
     )
@@ -569,7 +598,7 @@ def _resolve_application(
     _ensure_fresh(
         ref,
         _version_markers(
-            version=application.lock_version, updated_at=application.updated_at
+            version=application.lock_version, updated_at=application.update_time
         ),
     )
     snapshot = _snapshot(
@@ -581,7 +610,7 @@ def _resolve_application(
             f"{application.company_name_snapshot} · {application.job_title_snapshot}"
         ),
         description=stage.stage_label if stage else "待投递",
-        updated_at=application.updated_at,
+        updated_at=application.update_time,
         resume_id=str(linked_resume_id) if linked_resume_id is not None else None,
     )
     return (
@@ -619,7 +648,7 @@ def _resolve_interview(
     _ensure_fresh(
         ref,
         _version_markers(
-            version=interview.lock_version, updated_at=interview.updated_at
+            version=interview.lock_version, updated_at=interview.update_time
         ),
     )
     snapshot = _snapshot(
@@ -632,7 +661,7 @@ def _resolve_interview(
             f"{application.job_title_snapshot} · {interview.stage_label}"
         ),
         description=interview.status,
-        updated_at=interview.updated_at,
+        updated_at=interview.update_time,
         resume_id=str(linked_resume_id) if linked_resume_id is not None else None,
     )
     return (
@@ -656,6 +685,8 @@ def resolve_contexts(
     """Resolve and validate all references before a run/message is created."""
 
     refs = refs or []
+    if refs:
+        lock_active_user(db, user_id)
     if len(refs) > MAX_CONTEXTS:
         raise ApiError(400, "INVALID_AGENT_CONTEXTS")
     seen_types: set[str] = set()
@@ -665,7 +696,17 @@ def resolve_contexts(
         if ref.type in seen_types:
             raise ApiError(400, "INVALID_AGENT_CONTEXTS")
         seen_types.add(ref.type)
-        if ref.type == "resume":
+        if ref.type == "user_profile":
+            if ref.id != str(user_id):
+                raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
+            profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user_id).with_for_update())
+            if profile is None or not _profile_content(profile):
+                raise ApiError(404, "AGENT_CONTEXT_NOT_FOUND")
+            if ref.version is None or ref.version != str(profile.lock_version):
+                raise ApiError(409, "AGENT_CONTEXT_STALE")
+            snapshot = _profile_snapshot(profile)
+            material = _make_material(snapshot, {"profile_markdown": _profile_content(profile)})
+        elif ref.type == "resume":
             _, snapshot, material = _resolve_resume(db, user_id=user_id, ref=ref)
         elif ref.type == "resume_version":
             raise ApiError(409, "AGENT_CONTEXT_RETIRED")
@@ -684,6 +725,7 @@ def resolve_contexts(
         else:
             _, _, snapshot, material = _resolve_interview(db, user_id=user_id, ref=ref)
         snapshot.presentation = ref.presentation
+        material.presentation = ref.presentation
         snapshots.append(snapshot)
         materials.append(material)
 

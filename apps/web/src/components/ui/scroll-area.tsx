@@ -20,7 +20,9 @@ const ScrollArea = React.forwardRef<
     >
       {children}
     </ScrollAreaPrimitive.Viewport>
-    <ScrollBar />
+    {/* 全站不显示滚动条（与原生滚动条一致，见 styles.css），区域照常可以滚动。
+        Radix 只有在挂载了纵向滚动条时才给视口开 overflow-y，所以这里挂一个隐藏的滚动条，否则滚轮翻不动 */}
+    <ScrollAreaPrimitive.ScrollAreaScrollbar orientation="vertical" className="hidden" />
     <ScrollAreaPrimitive.Corner />
   </ScrollAreaPrimitive.Root>
 ))

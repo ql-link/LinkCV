@@ -1,7 +1,10 @@
+import { resetSessionStores } from "../v3/sessionStore";
 import { create } from "zustand";
+import { clearMessageQueues } from "../features/agent/messageQueue";
 import type { JSONContent } from "@tiptap/core";
 import {
   api,
+  AgentProposalEntry,
   ApiRequestError,
   ImportWarning,
   ResumeRecord,
@@ -44,6 +47,7 @@ import type { OpenTheme } from "../api/openThemes";
 import type { OriginalTheme } from "../api/originalThemes";
 import type { CareerTheme } from "../api/careerThemes";
 import type { FeaturedTheme } from "../api/featuredThemes";
+import { setPageCacheUser } from "../v3/pageCache";
 
 export type ResumeTheme =
   | AtlasTheme
@@ -116,8 +120,11 @@ type ResumeState = {
   register: (email: string, password: string) => Promise<void>;
   loginWithWechat: (user: User) => Promise<void>;
   logout: () => Promise<void>;
+  clearSession: () => Promise<void>;
   syncProfile: (user: UserProfile) => void;
   listResumes: () => Promise<void>;
+  /** 最近一次成功读取简历列表的时间；null 表示本次登录还没读过（我的简历页据此决定是否画骨架） */
+  resumesLoadedAt: number | null;
   createResume: (title: string, templateId: string) => Promise<string>;
   importResume: (file: File, templateId: string, title?: string) => Promise<string>;
   pollResumeImport: (id: string) => Promise<void>;
@@ -126,7 +133,7 @@ type ResumeState = {
   deleteResume: (id: string) => Promise<void>;
   deleteResumeImport: (id: string) => Promise<void>;
   saveCurrentResume: () => Promise<void>;
-  confirmResumeProposal: (proposalId: string, resumeId: string) => Promise<ResumeRecord>;
+  confirmResumeProposal: (proposalId: string, resumeId: string, entry?: AgentProposalEntry) => Promise<ResumeRecord>;
   goHome: () => void;
   dismissImportWarnings: (resumeId: string) => void;
   setTitle: (title: string) => void;
@@ -446,9 +453,12 @@ function mergeResumeSummary(resumes: ResumeSummary[], resume: ResumeRecord) {
   });
 }
 
+let personalScopeRevision = 0;
+
 export const useResumeStore = create<ResumeState>((set, get) => ({
   authStatus: "checking",
   user: null,
+  resumesLoadedAt: null,
   resumes: [],
   activeImports: [],
   failedImports: [],
@@ -524,12 +534,22 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   logout: async () => {
+    await api.logout();
+    await get().clearSession();
+  },
+
+  clearSession: async () => {
+    personalScopeRevision += 1;
+    resetSessionStores();
     const currentUserId = get().user?.id;
     if (currentUserId) clearLocalResumeDraftsForUser(currentUserId);
-    await api.logout();
+    const queuesCleared = currentUserId
+      ? clearMessageQueues(currentUserId).then(() => true, () => false)
+      : Promise.resolve(true);
     set({
       authStatus: "guest",
       user: null,
+      resumesLoadedAt: null,
       resumes: [],
       activeImports: [],
       failedImports: [],
@@ -537,9 +557,25 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       importWarningsByResumeId: {},
       activeResumeId: null,
       lockVersion: 0,
+      data: defaultCanonicalDocument,
+      style: defaultCanonicalPresentation,
+      title: "张三-后端开发实习生",
+      markdown: defaultResumeMarkdown,
+      editorContent: defaultResumeDocument,
+      settings: defaultSettings,
+      splitRatio: 0.4,
+      previewScale: 1,
+      proposalApplyingResumeId: null,
+      proposalContentRevision: 0,
+      editVersion: 0,
       dirty: false,
       saveStatus: "idle",
+      error: null,
     });
+    const scope = personalScopeRevision;
+    if (!await queuesCleared && personalScopeRevision === scope && !get().user) {
+      set({ error: "已退出登录，本机消息清理失败，请清理浏览器存储。" });
+    }
   },
 
   syncProfile: (profile) => {
@@ -549,25 +585,30 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   listResumes: async () => {
+    const scope = personalScopeRevision;
     const overview = await api.getResumeOverview();
+    if (scope !== personalScopeRevision) return;
     set({
       resumes: overview.resumes,
       activeImports: overview.active_imports,
       failedImports: overview.failed_imports,
+      resumesLoadedAt: Date.now(),
     });
   },
 
   createResume: async (title, templateId) => {
+    const scope = personalScopeRevision;
     const { resume } = await api.createResume({
       title,
       template_id: templateId,
     });
     const { resumes } = await api.listResumes();
-    set({ resumes, ...applyResume(resume) });
+    if (scope === personalScopeRevision) set({ resumes, ...applyResume(resume) });
     return resume.id;
   },
 
   importResume: async (file, templateId, title) => {
+    const scope = personalScopeRevision;
     const idempotencyKey = createImportIdempotencyKey();
     const importFile = title === undefined ? file : buildNamedImportFile(file, title);
     try {
@@ -576,7 +617,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         templateId,
         idempotencyKey,
       );
-      set((state) => ({
+      if (scope === personalScopeRevision) set((state) => ({
         activeImports: [
           importTask,
           ...state.activeImports.filter((item) => item.id !== importTask.id),
@@ -589,7 +630,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
         const payload = (error as { payload?: Record<string, unknown> | null }).payload;
         const importTask = payload?.import as ResumeImportSummary | undefined;
         if (importTask?.id) {
-          set((state) => ({
+          if (scope === personalScopeRevision) set((state) => ({
             activeImports: state.activeImports.filter((item) => item.id !== importTask.id),
             failedImports: [
               importTask,
@@ -603,6 +644,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   pollResumeImport: async (id) => {
+    const scope = personalScopeRevision;
     const current = get().activeImports.find((item) => item.id === id);
     if (
       current?.upload_status !== "succeeded"
@@ -611,6 +653,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       return;
     }
     const { import: importTask } = await api.getResumeImport(id);
+    if (scope !== personalScopeRevision) return;
     if (importTask.parse_status === "processing") {
       set((state) => ({
         activeImports: state.activeImports.map((item) => (
@@ -631,6 +674,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
     }
     if (importTask.parse_status === "succeeded") {
       const overview = await api.getResumeOverview();
+      if (scope !== personalScopeRevision) return;
       set({
         resumes: overview.resumes,
         activeImports: overview.active_imports,
@@ -640,17 +684,21 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   loadResume: async (id) => {
+    const scope = personalScopeRevision;
     const { resume } = await api.getResume(id);
+    if (scope !== personalScopeRevision) return;
     set(applyResumeWithLocalDraft(resume, get().user?.id, get()));
   },
 
   renameResume: async (id, title) => {
+    const scope = personalScopeRevision;
     const current = get().resumes.find((resume) => resume.id === id);
     if (!current) throw new Error("RESUME_NOT_FOUND");
     const { resume } = await api.updateResume(id, {
       title,
       base_lock_version: current.lock_version,
     });
+    if (scope !== personalScopeRevision) return;
     set((state) => {
       const resumes = mergeResumeSummary(state.resumes, resume);
       if (state.activeResumeId !== id) return { resumes };
@@ -663,7 +711,9 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   deleteResume: async (id) => {
+    const scope = personalScopeRevision;
     const { deleted } = await api.deleteResume(id);
+    if (scope !== personalScopeRevision) return;
     if (!deleted) throw new Error("RESUME_DELETE_FAILED");
     set((state) => {
       const importWarningsByResumeId = { ...state.importWarningsByResumeId };
@@ -680,7 +730,9 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   deleteResumeImport: async (id) => {
+    const scope = personalScopeRevision;
     const { deleted } = await api.deleteResumeImport(id);
+    if (scope !== personalScopeRevision) return;
     if (!deleted) throw new Error("RESUME_IMPORT_DELETE_FAILED");
     set((state) => ({
       failedImports: state.failedImports.filter((item) => item.id !== id),
@@ -688,11 +740,13 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
   },
 
   saveCurrentResume: async () => {
+    const scope = personalScopeRevision;
     const requestedResumeId = get().activeResumeId;
     const queuedSave = saveQueue.then(async () => {
       const state = get();
       if (
-        !state.activeResumeId
+        scope !== personalScopeRevision
+        || !state.activeResumeId
         || state.activeResumeId !== requestedResumeId
         || !state.dirty
         || state.versionOperationPending
@@ -730,6 +784,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
           style: nextStyle,
         });
         const { resume } = response;
+        if (scope !== personalScopeRevision) return;
         set((current) => {
           const resumes = mergeResumeSummary(current.resumes, resume);
           if (current.activeResumeId !== snapshot.activeResumeId) return { resumes };
@@ -748,14 +803,14 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
           };
         });
       } catch (error) {
-        set({ saveStatus: "error", error: (error as Error).message });
+        if (scope === personalScopeRevision) set({ saveStatus: "error", error: (error as Error).message });
       }
     });
     saveQueue = queuedSave.catch(() => undefined);
     await queuedSave;
   },
 
-  confirmResumeProposal: async (proposalId, resumeId) => {
+  confirmResumeProposal: async (proposalId, resumeId, entry) => {
     if (get().proposalApplyingResumeId || get().versionOperationPending) {
       throw new ApiRequestError(409, "RESUME_WRITE_PENDING");
     }
@@ -772,7 +827,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       const confirmation = saveQueue.then(async () => {
         let resume: ResumeRecord;
         try {
-          ({ resume } = await api.confirmAgentProposal(proposalId));
+          ({ resume } = await api.confirmAgentProposal(proposalId, entry));
         } catch (error) {
           if (error instanceof ApiRequestError && error.status < 500) throw error;
           // A lost response is not proof of rollback. Reconcile the persisted
@@ -858,6 +913,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       saveStatus: "idle",
     })),
   applyTemplate: async (templateId, editorDocument) => {
+    const scope = personalScopeRevision;
     let state = get();
     if (state.proposalApplyingResumeId === state.activeResumeId && state.proposalApplyingResumeId) {
       throw new ApiRequestError(409, "RESUME_WRITE_PENDING");
@@ -878,7 +934,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       });
       const { resume } = response;
       state = get();
-      if (operationId !== templateOperationSequence) return;
+      if (operationId !== templateOperationSequence || scope !== personalScopeRevision) return;
       if (state.activeResumeId !== resumeId) {
         set({ saveStatus: "idle", versionOperationPending: false });
         return;
@@ -923,7 +979,7 @@ export const useResumeStore = create<ResumeState>((set, get) => ({
       });
     } catch (error) {
       state = get();
-      if (operationId !== templateOperationSequence) throw error;
+      if (operationId !== templateOperationSequence || scope !== personalScopeRevision) throw error;
       // Do not attach an obsolete request failure to another resume, but always
       // release the global operation lock owned by this request.
       set(state.activeResumeId === resumeId && state.editVersion === operationVersion
@@ -977,3 +1033,13 @@ useResumeStore.subscribe((state, previous) => {
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", flushPendingLocalResumeDraft);
 }
+
+// 页面短时缓存按登录用户隔离：登录、退出、换账号时清空，避免看到上一个账号的数据
+setPageCacheUser(useResumeStore.getState().user?.id ?? null);
+useResumeStore.subscribe((state, previous) => {
+  setPageCacheUser(state.user?.id ?? null);
+  if (state.user?.id !== previous.user?.id) {
+    personalScopeRevision += 1;
+    resetSessionStores();
+  }
+});

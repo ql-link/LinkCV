@@ -5,6 +5,7 @@ import re
 import time
 import unicodedata
 from dataclasses import dataclass
+from datetime import timedelta
 from io import BytesIO
 from pathlib import PurePath
 from typing import BinaryIO
@@ -75,6 +76,22 @@ class AssetStorage:
         if endpoint.port:
             host = f"{host}:{endpoint.port}"
         self.bucket = settings.minio_bucket
+        self._public_client: Minio | None = None
+        public = (settings.minio_public_endpoint or "").strip()
+        if public:
+            origin = urlsplit(public)
+            if origin.scheme not in {"http", "https"} or not origin.hostname:
+                raise ValueError("MINIO_PUBLIC_ENDPOINT must be an HTTP(S) URL")
+            public_host = origin.hostname + (f":{origin.port}" if origin.port else "")
+            # Signing is local; a fixed region avoids a bucket-location lookup
+            # against the public origin.
+            self._public_client = Minio(
+                public_host,
+                access_key=settings.minio_access_key,
+                secret_key=settings.minio_secret_key,
+                secure=origin.scheme == "https",
+                region=settings.minio_region,
+            )
         self.client = Minio(
             host,
             access_key=settings.minio_access_key,
@@ -89,6 +106,16 @@ class AssetStorage:
                 retries=Retry(total=False),
             ),
         )
+
+    @property
+    def public_downloads_enabled(self) -> bool:
+        return self._public_client is not None
+
+    def presigned_public_get_url(self, object_name: str, expires: timedelta) -> str:
+        """A GET-only link on the public origin for one object; never log it."""
+        if self._public_client is None:
+            raise RuntimeError("MINIO_PUBLIC_ENDPOINT is not configured")
+        return self._public_client.presigned_get_object(self.bucket, object_name, expires=expires)
 
     def ensure_bucket(self) -> None:
         if not self.client.bucket_exists(self.bucket):

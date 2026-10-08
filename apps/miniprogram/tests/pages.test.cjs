@@ -470,6 +470,40 @@ test("confirm page returns an already confirmed scan to resumes when a session e
   assert.deepEqual(switches, ["/pages/resumes/index"]);
 });
 
+test("desktop confirmation stays on the phone without issuing a mini session", async () => {
+  for (const status of ["pending", "success"]) {
+    const requests = [];
+    await withPage("../pages/confirm", {
+      "../services/auth": {
+        apiUrl: (path) => `http://127.0.0.1:8000${path}`,
+        acceptPrivacyAgreement() {},
+        wxLoginCode: async () => "wx-code",
+        loginExistingAccount() { throw new Error("desktop confirmation must not log in the mini program"); },
+      },
+    }, {
+      switchTab() { throw new Error("desktop confirmation must stay visible"); },
+      request(options) {
+        requests.push(options);
+        queueMicrotask(() => options.success({ statusCode: 200, data: options.method === "GET"
+          ? { status, login_target: "desktop", platform: "windows" } : { ok: true } }));
+      },
+    }, async (page) => {
+      page.data.scene = "desktop:0123456789abcdef";
+      page.loadStatus();
+      await flush();
+      assert.equal(page.data.loginTarget, "desktop");
+      assert.equal(page.data.platform, "windows");
+      if (status === "pending") {
+        page.data.agreementAccepted = true;
+        await page.handleConfirm();
+      }
+      assert.equal(page.data.phase, "confirmed");
+      assert.match(page.data.message, /返回客户端完成登录/);
+    });
+    assert.equal(requests.length, status === "pending" ? 2 : 1);
+  }
+});
+
 test("confirm page without a scene falls back to the resumes tab", async () => {
   const switches = [];
   await withPage("../pages/confirm", {

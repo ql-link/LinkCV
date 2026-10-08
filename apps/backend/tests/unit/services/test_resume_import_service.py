@@ -9,6 +9,7 @@ from PIL import Image
 
 from linkresume.domain.document_conversion import DocumentMarkdownResult, PdfLayoutBlock
 from linkresume.domain.resume import SparseResumeAnnotations
+from linkresume.domain.resume.models import SparseAnnotation
 from linkresume.domain.resume_extraction import ResumeExtractionDraft
 from linkresume.services.resume_import_service import (
     ResumeImportFailure,
@@ -123,6 +124,75 @@ class SparseStructuringClient:
             source_graph_sha256=source_graph.graph_sha256(),
             annotations=[],
         )
+
+
+def test_pdf_import_preserves_contacts_and_each_experience_with_ambiguous_annotations():
+    contact_line = "电话:13800000000 | 邮箱:zhangsan@example.invalid"
+    first = "示例甲公司 ｜ 2026.01-2026.03 ｜ 后端实习生"
+    second = "示例乙公司 ｜ 2026.04-2026.06 ｜ Java实习生"
+
+    class AmbiguousStructuringClient:
+        async def extract_sparse(self, *, source_graph, **_kwargs):
+            annotations = []
+            for leaf in source_graph.leaves:
+                if leaf.text == contact_line:
+                    keys, role, kind, anchor = ("phone", "email"), "contact", None, None
+                elif leaf.text in {first, second}:
+                    keys = ("organization", "role", "start_date", "end_date")
+                    role, kind, anchor = "entry_field", "work", leaf.source_id
+                else:
+                    continue
+                annotations.extend(
+                    SparseAnnotation(
+                        source_id=leaf.source_id,
+                        role=role,
+                        semantic_kind=kind,
+                        entry_anchor_source_id=anchor,
+                        field_key=key,
+                        normalized_value=None,
+                        confidence=0.9,
+                    )
+                    for key in keys
+                )
+            return SparseResumeAnnotations(
+                schema_version="sparse-resume-annotations.v1",
+                source_graph_sha256=source_graph.graph_sha256(),
+                annotations=annotations,
+            )
+
+    service = ResumeImportService(
+        document_converter=FakeConverter(
+            f"# 张三\n\n{contact_line}\n\n## 实习经历\n\n{first}\n\n"
+            f"工作介绍:第一段介绍\n\n1. 第一段成果\n\n{second}\n\n"
+            "工作介绍:第二段介绍\n\n1. 第二段成果",
+            source_format="pdf",
+        ),
+        structuring_client=AmbiguousStructuringClient(),
+        max_structuring_bytes=16_000,
+        structuring_timeout_seconds=30,
+    )
+    result = asyncio.run(service.parse_resume(
+        user_id=1,
+        filename="resume.pdf",
+        content_type="application/pdf",
+        content=b"%PDF-1.4 deterministic fixture",
+        operation_id="test-import",
+        deadline_monotonic=monotonic() + 60,
+    ))
+    assert [contact.value for contact in result.document.identity.contacts] == [
+        "13800000000", "zhangsan@example.invalid"
+    ]
+    section = result.document.sections[0]
+    assert section.blocks == []
+    assert [entry.fields.name.value for entry in section.entries] == [first, second]
+    for entry, introduction, achievement in zip(
+        section.entries,
+        ("工作介绍:第一段介绍", "工作介绍:第二段介绍"),
+        ("第一段成果", "第二段成果"),
+        strict=True,
+    ):
+        assert entry.blocks[0].runs[0].text == introduction
+        assert entry.blocks[1].items[0].runs[0].text == achievement
 
 
 def test_file_validation_and_safe_filename_are_side_effect_free() -> None:

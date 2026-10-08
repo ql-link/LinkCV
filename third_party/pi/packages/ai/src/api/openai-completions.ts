@@ -1409,6 +1409,7 @@ function parseChunkUsage(
 	// OpenAI completion_tokens already includes reasoning_tokens.
 	const outputTokens = rawUsage.completion_tokens || 0;
 	const usage: AssistantMessage["usage"] = {
+        providerReported: rawUsage.prompt_tokens !== undefined && rawUsage.completion_tokens !== undefined,
 		input,
 		output: outputTokens,
 		cacheRead: cacheReadTokens,

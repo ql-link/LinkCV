@@ -639,6 +639,103 @@ select:not([data-slot]):focus-visible,
   min-width: 0;
 }
 
+/* A page made entirely of columns stretches its rails, while the text keeps
+   its natural spacing. Header/card layouts retain their own block geometry. */
+@media screen {
+  .resume-paper .resume-content:has(> :is(.resume-columns,.resume-layout-columns):only-child) {
+    display: flex;
+    flex-direction: column;
+    min-height: var(--resume-column-page-height, calc(297mm - var(--resume-page-margin-top, var(--resume-page-margin-y)) - var(--resume-page-margin-bottom, var(--resume-page-margin-y))));
+  }
+  .resume-paper .resume-content > :is(.resume-columns,.resume-layout-columns):only-child {
+    flex: 1 0 auto;
+    min-height: 0;
+  }
+}
+
+/* These themes put the page insets inside .resume-content. */
+.resume-paper[class*="theme-muse-"],
+.resume-paper.theme-administrative-sidebar { --resume-column-page-height: 297mm; }
+
+/* Whole-sheet rails share the physical paper edges. Paint is independent of
+   the column's padded text box, so changing page insets cannot leave a white
+   strip outside a sidebar or move the resume's existing text. */
+.resume-paper [data-resume-column-fill] {
+  position: relative;
+  isolation: isolate;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.resume-paper [data-resume-column-fill]::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: var(--resume-column-fill-left);
+  right: var(--resume-column-fill-right, 0px);
+  top: var(--resume-column-fill-top);
+  bottom: var(--resume-column-fill-bottom);
+  box-sizing: border-box;
+  background: var(--resume-column-fill-background);
+  border-top: var(--resume-column-fill-border-top);
+  border-right: var(--resume-column-fill-border-right);
+  border-bottom: var(--resume-column-fill-border-bottom);
+  border-left: var(--resume-column-fill-border-left);
+  border-radius: var(--resume-column-fill-radius);
+  box-shadow: var(--resume-column-fill-shadow);
+  pointer-events: none;
+}
+.resume-paper:has(> [data-resume-sheet-outline-paint]) { position: relative; isolation: isolate; }
+.resume-paper [data-resume-sheet-outline] { border-color: transparent !important; }
+.resume-paper [data-resume-sheet-background] { background: transparent !important; }
+.resume-paper[data-resume-sheet-outline] .resume-content { border-color: transparent !important; }
+.resume-paper[data-resume-sheet-background] .resume-content { background: transparent !important; }
+.resume-paper[data-resume-identity-fill] .resume-content { position: relative; z-index: 1; }
+.resume-readonly-preview-full .resume-paper[data-resume-identity-fill] { position: relative; }
+.resume-paper[data-resume-identity-fill] .resume-content :is(h1,h1 + p),
+.resume-paper[data-resume-identity-fill="3"] .resume-content h1 + p + p {
+  background-color: transparent !important;
+}
+.resume-paper > [data-resume-identity-fill-paint] {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+.resume-paper[data-resume-sheet-columns] :is(.resume-layout-column-sidebar,.resume-layout-column-main) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.resume-paper > [data-resume-sheet-outline-paint] {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.resume-paper > [data-resume-sheet-outline-paint][data-resume-sheet-pages] {
+  border: 0 !important;
+  background: none !important;
+}
+.resume-paper:has(> [data-resume-sheet-column-strip]) { position: relative; isolation: isolate; }
+.resume-paper > [data-resume-sheet-column-strip] { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.resume-paper:has(> [data-resume-sheet-column-strip]) .resume-content { position: relative; z-index: 1; }
+.resume-paper.pages-horizontal [data-resume-column-fill]::after { content: none; }
+.resume-paper.pages-horizontal > :is([data-resume-sheet-column-strip],[data-resume-sheet-outline-paint]) > div {
+  /* Arrangement switches reuse the measured page geometry. Move only paint,
+     without cloning/reparsing editable content during the transition. */
+  transform: translate(
+    calc(var(--resume-sheet-page-index) * (210mm + 24px)),
+    calc(var(--resume-sheet-page-index) * -1 * (297mm + 24px))
+  );
+}
+@media print {
+  .resume-paper > [data-resume-sheet-outline-paint] {
+    position: fixed;
+    inset: var(--resume-print-bleed-top, 0px) var(--resume-print-bleed-right, 0px) var(--resume-print-bleed-bottom, 0px) var(--resume-print-bleed-left, 0px);
+  }
+}
+
 .resume-meta-row,
 .resume-layout-meta-row {
   display: grid;
@@ -728,6 +825,10 @@ select:not([data-slot]):focus-visible,
   padding-top: 30px;
   padding-left: 16px;
   position: relative;
+}
+
+.theme-right-rail .resume-content > :is(p.resume-identity-headline,p.resume-identity-contacts) {
+  padding-left: 16px;
 }
 
 .theme-right-rail .resume-avatar {
@@ -829,7 +930,7 @@ select:not([data-slot]):focus-visible,
 /* Section-wide ribbons, with a darker leading stripe and generous separation. */
 .theme-blue-ribbon .resume-content h2 {
   clear: both;
-  margin: 24px 0 12px;
+  margin: 18px 0 10px;
   padding: 7px 13px;
   border: 0;
   border-left: 6px solid #315cb6;
@@ -908,7 +1009,7 @@ select:not([data-slot]):focus-visible,
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 26px 0 14px -120px;
+  margin: 20px 0 10px -120px;
   padding: 0;
   border: 0;
   font-size: 11pt;
@@ -936,6 +1037,23 @@ select:not([data-slot]):focus-visible,
 
 .theme-timeline-gutter .resume-content h3 {
   clear: both;
+}
+
+.resume-paper:is(.theme-blue-ribbon,.theme-timeline-gutter,.theme-atlas-ruled-notebook,.theme-atlas-minimal-axis) .resume-content ul {
+  margin: 5px 0 10px;
+}
+
+.resume-paper:is(.theme-blue-ribbon,.theme-timeline-gutter,.theme-atlas-ruled-notebook,.theme-atlas-minimal-axis) .resume-content li {
+  margin: 2px 0;
+}
+
+.resume-paper:is(.theme-atlas-ruled-notebook,.theme-atlas-minimal-axis) .resume-content h2 {
+  margin-top: 14px;
+  margin-bottom: 8px;
+}
+
+.resume-paper:is(.theme-atlas-ruled-notebook,.theme-atlas-minimal-axis) .resume-content h3 {
+  margin-top: 10px;
 }
 
 .theme-centered-portrait .resume-avatar {
@@ -1084,32 +1202,9 @@ select:not([data-slot]):focus-visible,
 .theme-atlas-centered-rule .resume-content h2::before, .theme-atlas-centered-rule .resume-content h2::after {content:"";flex:1;height:1px;background:#aeb8c4}
 .theme-atlas-centered-rule .resume-content h3 {margin-top:14px}
 
-/* 信笺边框 — 内嵌双层细框、左侧肖像与居中章节标签。 */
+/* 信笺边框 — 纸边双层细框、左侧肖像与居中章节标签。 */
 .theme-atlas-framed-letter {--atlas-inset:22px}
 .theme-atlas-framed-letter .resume-content {border:4px double #bdb2a8}
-.resume-workbench .theme-atlas-framed-letter .resume-content {border-color:transparent}
-.resume-workbench .theme-atlas-framed-letter:not(.smart-one-page):not(.pages-horizontal)::after {
-  --frame-top:calc(var(--resume-page-margin-top,var(--resume-page-margin-y)) - 8px);
-  --frame-bottom:calc(297mm - var(--resume-page-margin-bottom,var(--resume-page-margin-y)) + 8px);
-  content:"";
-  position:absolute;
-  inset:0 var(--resume-page-margin-right,var(--resume-page-margin-x)) 0 var(--resume-page-margin-left,var(--resume-page-margin-x));
-  z-index:1;
-  pointer-events:none;
-  border-inline:4px double #bdb2a8;
-  background:repeating-linear-gradient(to bottom,
-    transparent 0 var(--frame-top),
-    #bdb2a8 var(--frame-top) calc(var(--frame-top) + 1px),
-    transparent calc(var(--frame-top) + 1px) calc(var(--frame-top) + 3px),
-    #bdb2a8 calc(var(--frame-top) + 3px) calc(var(--frame-top) + 4px),
-    transparent calc(var(--frame-top) + 4px) calc(var(--frame-bottom) - 4px),
-    #bdb2a8 calc(var(--frame-bottom) - 4px) calc(var(--frame-bottom) - 3px),
-    transparent calc(var(--frame-bottom) - 3px) calc(var(--frame-bottom) - 1px),
-    #bdb2a8 calc(var(--frame-bottom) - 1px) var(--frame-bottom),
-    transparent var(--frame-bottom) calc(297mm + 24px));
-  -webkit-mask-image:repeating-linear-gradient(to bottom,transparent 0 var(--frame-top),#000 var(--frame-top) var(--frame-bottom),transparent var(--frame-bottom) calc(297mm + 24px));
-  mask-image:repeating-linear-gradient(to bottom,transparent 0 var(--frame-top),#000 var(--frame-top) var(--frame-bottom),transparent var(--frame-bottom) calc(297mm + 24px));
-}
 .theme-atlas-framed-letter .resume-avatar {float:left;margin:0 18px 12px 0}
 .theme-atlas-framed-letter .resume-content h1 {font-size:25pt;padding-top:5px}
 .theme-atlas-framed-letter .resume-content h2 {text-align:center;border:1px solid #d4c9bd;padding:6px;background:#faf7f1;letter-spacing:.1em}
@@ -1788,14 +1883,16 @@ select:not([data-slot]):focus-visible,
 .theme-studio-modular-cards .resume-content > h1 {padding-top:18px;border-radius:12px 12px 0 0}
 .theme-studio-modular-cards .resume-content > h1:not(:has(~ p.resume-identity-headline, ~ p.resume-identity-contacts)) {padding-bottom:18px;border-radius:12px;margin-bottom:14px}
 .theme-studio-modular-cards .resume-content:not(:has(> p.resume-identity-headline)) > p.resume-identity-contacts {padding-top:8px}
-.theme-studio-modular-cards .resume-content > h2 {padding-top:16px;border:0;font-size:10pt}
+.theme-studio-modular-cards .resume-content > h2 {clear:none;padding-top:16px;border:0;font-size:10pt}
 .theme-studio-modular-cards .resume-content > h2 + p {padding-top:6px;padding-bottom:18px;border-radius:0 0 12px 12px}
 .theme-studio-modular-cards .resume-avatar {position:relative;margin:18px 18px 10px 20px}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 {background:#fff;border-radius:8px 8px 0 0;padding:12px 14px 5px;margin-bottom:0}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p {background:#fff;padding:0 14px 10px;margin:0;border-radius:0 0 8px 8px;color:#526278}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p:has(+ ul) {border-radius:0}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > h3 + p + ul {background:#fff;padding:0 14px 12px 30px;margin-top:0;border-radius:0 0 8px 8px}
-.theme-studio-modular-cards .resume-content h2 {border-left:4px solid #547bc1;padding-left:10px;border-bottom:0}
+.theme-studio-modular-cards .resume-content h2 {border-left:4px solid #547bc1;padding-left:10px;border-bottom:0;margin:16px 0 8px}
+.theme-studio-modular-cards .resume-content h3 {margin-top:10px}
+.theme-studio-modular-cards .resume-content li {margin:2px 0}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) {margin:10px 0 0;padding:10px 14px 5px;border-radius:8px 8px 0 0;background:#fff}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row):not(:has(+ :is(p,ul,ol))) {padding-bottom:11px;border-radius:8px;margin-bottom:8px}
 .theme-studio-modular-cards :is(.resume-column,.resume-layout-column) > :is(.node-resumeRow,.resume-row) + p,
@@ -1969,7 +2066,7 @@ select:not([data-slot]):focus-visible,
   box-sizing:border-box;
   min-height:42px;
   margin:0 0 0 calc(var(--resume-avatar-width, 94px) + 24px);
-  padding:14px 86px 2px 16px;
+  padding:14px 16px 2px 16px;
   border-radius:9px 9px 0 0;
   background:var(--preview-accent);
   color:#fff;
@@ -1979,7 +2076,7 @@ select:not([data-slot]):focus-visible,
 }
 :is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > p.resume-identity-headline {
   margin:0 0 0 calc(var(--resume-avatar-width, 94px) + 24px);
-  padding:2px 86px 3px 16px;
+  padding:2px 16px 3px 16px;
   background:var(--preview-accent);
   color:#fff;
   font-size:10pt;
@@ -1987,7 +2084,7 @@ select:not([data-slot]):focus-visible,
 }
 :is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content > p.resume-identity-contacts {
   margin:0 0 20px calc(var(--resume-avatar-width, 94px) + 24px);
-  padding:3px 86px 13px 16px;
+  padding:3px 16px 13px 16px;
   border-radius:0 0 9px 9px;
   background:var(--preview-accent);
   color:#fff;
@@ -2032,30 +2129,44 @@ select:not([data-slot]):focus-visible,
 :is(.theme-featured-card-dashed,.theme-featured-card-rail) .resume-content li {margin:2px 0}
 
 .theme-featured-card-dashed .resume-content h2 {
-  margin:14px 0 6px;
+  margin:10px 0 5px;
   padding-bottom:4px;
   border-bottom:1px dashed color-mix(in srgb,var(--preview-accent) 78%,white);
 }
 .theme-featured-card-dashed .resume-content h2:first-of-type {margin-top:4px}
+.theme-featured-card-dashed .resume-avatar {
+  position:static;
+  float:left;
+  --resume-avatar-height-ratio:1;
+  margin:0 18px 16px 0;
+}
 
 .theme-featured-card-rail .resume-content {
   display:grid;
-  grid-template-columns:94px minmax(0,1fr);
-  column-gap:20px;
+  grid-template-columns:80px minmax(0,1fr);
+  column-gap:18px;
   align-items:start;
 }
 .theme-featured-card-rail .resume-content > * {grid-column:2}
-.theme-featured-card-rail .resume-content > .resume-avatar {grid-column:1}
+.theme-featured-card-rail .resume-content > .resume-avatar {
+  position:static;
+  grid-column:1;
+  grid-row:1 / span 3;
+  align-self:center;
+  max-width:100%;
+  height:auto !important;
+  aspect-ratio:1 / var(--resume-avatar-height-ratio,1.4);
+}
 .theme-featured-card-rail .resume-content > h2 {
   grid-column:1;
   align-self:start;
-  margin:14px 0 0;
+  margin:10px 0 0;
   padding-top:1px;
   border:0;
   text-align:right;
 }
 .theme-featured-card-rail .resume-content > h2 + :is(h3,p) {
-  margin-top:14px;
+  margin-top:10px;
   padding-top:1px;
   border-top:1px solid color-mix(in srgb,var(--preview-accent) 56%,white);
 }
@@ -2078,20 +2189,19 @@ select:not([data-slot]):focus-visible,
   line-height:1.4;
 }
 .theme-featured-classic-business .resume-avatar {
-  position:absolute;
+  position:relative;
   z-index:1;
-  top:12px;
-  left:50%;
+  --resume-avatar-height-ratio:1;
   float:none;
-  margin:0;
-  transform:translateX(-50%);
+  margin:0 auto 8px;
+  display:block;
   border:0;
   border-radius:4px;
   box-shadow:0 3px 10px rgb(37 62 111 / 18%);
 }
 .theme-featured-classic-business .resume-content > h1 {
   margin:0;
-  padding:calc(var(--resume-avatar-width, 94px) * var(--resume-avatar-height-ratio, 1.4) + 30px) 18px 2px;
+  padding:8px 18px 2px;
   background:#edf3fd;
   color:var(--preview-accent);
   font-size:22pt;
@@ -2107,19 +2217,15 @@ select:not([data-slot]):focus-visible,
   text-align:center;
 }
 .theme-featured-classic-business .resume-content > p.resume-identity-contacts {
-  margin:0 0 12px;
+  margin:0 0 8px;
   padding:5px 18px 12px;
   background:#edf3fd;
   color:#52617a;
   font-size:8.5pt;
   text-align:center;
 }
-.theme-featured-classic-business .resume-content:not(:has(> h1)) > p.resume-identity-headline,
-.theme-featured-classic-business .resume-content:not(:has(> h1, > p.resume-identity-headline)) > p.resume-identity-contacts {
-  padding-top:calc(var(--resume-avatar-width, 94px) * var(--resume-avatar-height-ratio, 1.4) + 30px);
-}
 .theme-featured-classic-business .resume-content h2 {
-  margin:12px 0 5px;
+  margin:8px 0 4px;
   padding-bottom:3px;
   border-bottom:1.5px solid var(--preview-accent);
   color:var(--preview-accent);
@@ -2159,7 +2265,7 @@ select:not([data-slot]):focus-visible,
   position:relative;
   z-index:1;
   float:right;
-  margin:12px 10px 16px 18px;
+  margin:16px 18px 10px 16px;
   border:0;
   border-radius:4px;
   box-shadow:0 3px 10px rgb(82 58 44 / 18%);
@@ -2399,8 +2505,6 @@ select:not([data-slot]):focus-visible,
 }
 
 .theme-administrative-sidebar .resume-column-main p.resume-identity-headline,
-.theme-administrative-sidebar .resume-layout-column-main p.resume-identity-headline,
-.theme-administrative-sidebar .resume-column-main p.resume-identity-headline,
 .theme-administrative-sidebar .resume-layout-column-main p.resume-identity-headline {
   color: #294f73;
   text-align: left;
@@ -2494,9 +2598,15 @@ select:not([data-slot]):focus-visible,
   line-height: inherit;
 }
 
-.resume-avatar img[src$="/templates/avatar-cat.jpg"] {
-  transform: scale(2.05);
-  transform-origin: 50% 43%;
+.resume-avatar[data-template-avatar="true"] img[src],
+.resume-paper[class*="theme-"] .resume-avatar[data-template-avatar="true"] img[src] {
+  visibility: visible;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #fff;
+  transform: none;
 }
 /* 校招 / 社招通用 */
 .theme-campus-professional .resume-content {
@@ -2513,8 +2623,6 @@ select:not([data-slot]):focus-visible,
 .theme-campus-professional .resume-avatar {
   position: relative;
   overflow: hidden;
-  top: 0;
-  right: 0;
   float: right;
   margin: 0 0 12px 18px;
   border: 3px solid #edf4ff;
@@ -2538,7 +2646,7 @@ select:not([data-slot]):focus-visible,
   font-size: 8.8pt;
 }
 
-.theme-campus-professional .resume-content h2 {
+.theme-campus-professional .resume-content > h2:first-of-type {
   clear: both;
 }
 
@@ -3448,7 +3556,7 @@ select:not([data-slot]):focus-visible,
   overflow: hidden;
   background: var(--canvas);
   color: var(--ink);
-  font-family: var(--ui-font-content);
+  font-family: var(--ui-font-sans);
 }
 
 .workspace-route-loading {

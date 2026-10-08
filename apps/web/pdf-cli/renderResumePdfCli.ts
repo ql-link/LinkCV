@@ -16,10 +16,11 @@ import campusAvatar from "../public/templates/avatar-campus.png";
 import templateAvatar from "../public/templates/avatar-cat.jpg";
 import civicAvatar from "../public/templates/avatar-civic.png";
 import creativeAvatar from "../public/templates/avatar-creative.png";
-import museStyles from "../src/muse-templates.css?raw";
 import applicationStyles from "../src/app.css?raw";
 import baseStyles from "../src/styles.css?raw";
 import printStyles from "../src/features/preview/print/resume-print.css?raw";
+import museStyles from "../src/muse-templates.css?raw";
+import { syncResumeSheetColumns } from "../src/features/preview/print/resumeSheetDecoration";
 import {
   renderResumePrintDocument,
   RESUME_RENDER_PROTOCOL_VERSION,
@@ -153,33 +154,26 @@ function maxSmartHeightMm() {
 
 function printMargins(style: CanonicalResumePresentation) {
   const resolved = resumePresentationPageMargins(style);
-  if (style.template_snapshot.template_key.startsWith("muse-")) {
-    return { top: resolved.top, right: 0, bottom: resolved.bottom, left: 0 };
-  }
-  // Keep the established PDF pagination contract: a zero template inset means
-  // that the theme owns its inner full-bleed decoration, while Chromium still
-  // receives the reviewed default page gutter.  The independent edge values
-  // remain available to the browser/editor renderer and are preserved in the
-  // canonical snapshot; changing this PDF fallback would move all three
-  // full-bleed official templates relative to their approved baselines.
-  const x = resolved.left || 20;
-  const y = resolved.top || 16;
   const columns = style.template_snapshot.regions.some((region) => region.region_kind === "sidebar");
-  // Column layouts and flow layouts with a zero top margin own the complete
-  // A4 canvas (for example a full-bleed header). Their inner spacing is
-  // already expressed by the resume CSS variables, so Chromium must not add
-  // a second @page margin around the template.
-  return columns
-    ? { top: 0, right: 0, bottom: 0, left: 0 }
-    : { top: y, right: x, bottom: y, left: x };
+  return columns || style.template_snapshot.template_key.startsWith("muse-")
+    ? { top: resolved.top, right: 0, bottom: resolved.bottom, left: 0 }
+    : resolved;
 }
 
 function pageMarginStyles(style: CanonicalResumePresentation) {
   const margins = printMargins(style);
-  const printableWidth = A4_WIDTH_MM - margins.left - margins.right;
+  const columns = style.template_snapshot.regions.some((region) => region.region_kind === "sidebar");
+  const resolved = resumePresentationPageMargins(style);
+  const muse = style.template_snapshot.template_key.startsWith("muse-");
+  const left = columns && !muse ? resolved.left : margins.left;
+  const right = columns && !muse ? resolved.right : margins.right;
   return [
-    `@page{size:A4;margin:${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm}`,
-    `html[data-resume-pdf-cli],html[data-resume-pdf-cli] body{width:${printableWidth}mm!important}`,
+    // @page gutters clip all decoration, including fixed underlays. Keep the
+    // physical canvas full bleed and clone the document's text padding at
+    // page breaks instead, so continuation pages retain readable gutters.
+    `@page{size:A4;margin:0}`,
+    `html[data-resume-pdf-cli],html[data-resume-pdf-cli] body{width:${A4_WIDTH_MM}mm!important}`,
+    `html[data-resume-pdf-cli] [data-resume-print-document]{padding:${margins.top}mm ${right}mm ${margins.bottom}mm ${left}mm!important;box-decoration-break:clone;-webkit-box-decoration-break:clone}`,
   ].join("");
 }
 
@@ -197,7 +191,6 @@ async function main() {
     renderResumePrintDocument({ ...payload, assets }, { includeStyles: true }),
     payload.style,
   );
-  const margins = printMargins(payload.style);
   const executablePath = chromiumExecutablePath();
   const browser = await chromium.launch({
     executablePath,
@@ -250,15 +243,25 @@ async function main() {
       }));
       const content = root.querySelector<HTMLElement>(".resume-print-content");
       if (!content) throw new Error("PDF_RENDER_LAYOUT_MEASUREMENT_FAILED");
-      const computed = getComputedStyle(root);
-      const configuredMarginTop = Number.parseFloat(computed.getPropertyValue("--resume-page-margin-top")) || 0;
-      const configuredMarginBottom = Number.parseFloat(computed.getPropertyValue("--resume-page-margin-bottom")) || 0;
-      const marginTop = root.classList.contains("theme-administrative-sidebar") ? 0 : configuredMarginTop;
-      const marginBottom = root.classList.contains("theme-administrative-sidebar") ? 0 : configuredMarginBottom;
+      // The paper color must outlive the last paragraph as well. Its fixed
+      // underlay is independent of flow height and repeats on continuation pages.
+      document.body.style.setProperty("--resume-sheet-background", getComputedStyle(root).background);
+      // The measured document already includes its cloned text gutters.
+      const marginTop = 0;
+      const marginBottom = 0;
       const smart = root.classList.contains("smart-one-page");
       root.dataset.renderState = "ready";
-      return { contentHeightPx: content.getBoundingClientRect().height, marginTop, marginBottom, smart };
+      // A column's leading margin can collapse outside the content box. Count
+      // its offset from the page origin too; allow one pixel for Chromium's
+      // conversion of the measured height to physical PDF page units.
+      const contentHeightPx = Math.ceil(Math.max(
+        root.getBoundingClientRect().bottom,
+        content.getBoundingClientRect().bottom,
+      )) + 1;
+      return { contentHeightPx, marginTop, marginBottom, smart };
     });
+
+    await page.evaluate(syncResumeSheetColumns, { printMargins: { top: 0, right: 0, bottom: 0, left: 0 } });
 
     const heightMm = measurement.smart
       ? smartPageHeightMm(measurement.contentHeightPx, measurement.marginTop, measurement.marginBottom, maxSmartHeightMm())
@@ -285,7 +288,7 @@ async function main() {
         }
       });
       await page.addStyleTag({
-        content: `@page { size: 210mm ${heightMm}mm !important; margin: ${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm !important; }`,
+        content: `@page { size: 210mm ${heightMm}mm !important; margin: 0 !important; }`,
       });
     }
     const pdf = await page.pdf(measurement.smart

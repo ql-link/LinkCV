@@ -1,3 +1,4 @@
+import { t, useLocale } from "@/i18n";
 // LR-203 本地验证页：真实编辑器扩展 + 分页插件 + 行首「+」/斜杠命令菜单。
 // 不进入仓库提交；仅用于无后端环境下验证标题内中文输入法与行首回车/退格行为。
 import { EditorContent, useEditor } from "@tiptap/react";
@@ -7,6 +8,7 @@ import "./styles.css";
 import "./design-system/tokens.css";
 import "./design-system/utilities.css";
 import "./app.css";
+import "./muse-templates.css";
 import "./components/ui/layout-patterns.css";
 import "./features/preview/print/resume-fonts.css";
 import { resumeEditorExtensions } from "./features/workbench/editorExtensions";
@@ -65,6 +67,7 @@ const paperStyle = {
 } as React.CSSProperties;
 
 function ReproWorkbench() {
+  useLocale();
   const [commandMenu, setCommandMenu] = useState<CommandMenuState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -131,12 +134,11 @@ function ReproWorkbench() {
           lineHeight: 1.8,
         }}
       >
-        <strong>LR-203 修复验证页</strong>（独立编辑器，与工作台同一套扩展）
-        <ol style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-          <li>把光标放进「教育背景」等标题，用中文输入法（如拼音）输入文字，候选词 Enter/方向键应不再被吞。</li>
-          <li>光标移到标题行首按回车 → 标题上方应出现一个空段落（不再是空标题）。</li>
-          <li>非空标题行首按退格 → 标题并入上一行；空标题行首退格 → 整行被删除。</li>
-          <li>输入「/」打开命令菜单，用中文输入法过滤，组合期间 Enter/Esc/方向键不应触发菜单命令。</li>
+        <strong>{t("LR-203 修复验证页")}</strong>{t("（独立编辑器，与工作台同一套扩展）")}<ol style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+          <li>{t("把光标放进「教育背景」等标题，用中文输入法（如拼音）输入文字，候选词 Enter/方向键应不再被吞。")}</li>
+          <li>{t("光标移到标题行首按回车 → 标题上方应出现一个空段落（不再是空标题）。")}</li>
+          <li>{t("非空标题行首按退格 → 标题并入上一行；空标题行首退格 → 整行被删除。")}</li>
+          <li>{t("输入「/」打开命令菜单，用中文输入法过滤，组合期间 Enter/Esc/方向键不应触发菜单命令。")}</li>
         </ol>
         {notice ? <div style={{ color: "#b45309", marginTop: 8 }}>{notice}</div> : null}
       </div>
@@ -144,7 +146,7 @@ function ReproWorkbench() {
         <article
           className="resume-paper theme-classic smart-one-page"
           style={paperStyle}
-          aria-label="可编辑简历页面"
+          aria-label={t("可编辑简历页面")}
         >
           <EditorContent editor={editor} />
         </article>

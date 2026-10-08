@@ -9,6 +9,7 @@ import secrets
 
 import redis
 from fastapi import APIRouter, Depends, Form, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -26,7 +27,10 @@ from linkresume.core.security import (
 )
 from linkresume.integrations.wechat_client import WechatApiError, WechatClient
 from linkresume.modules.identity.dependencies import get_settings
+from linkresume.modules.identity.capabilities import require_wechat_enabled
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events import service as product_events
+from linkresume.modules.product_events.service import RegistrationMethod
 from linkresume.modules.identity.schemas import OkResponse, UserResponse
 from linkresume.modules.identity.session_service import (
     MINIPROGRAM_CHANNEL,
@@ -37,7 +41,13 @@ from linkresume.modules.identity.session_service import (
     rotate_session,
 )
 
-router = APIRouter(prefix="/auth/wechat", tags=["identity"])
+def require_wechat_environment(settings: Settings = Depends(get_settings)) -> None:
+    require_wechat_enabled(settings)
+
+
+router = APIRouter(
+    prefix="/auth/wechat", tags=["identity"], dependencies=[Depends(require_wechat_environment)]
+)
 logger = logging.getLogger(__name__)
 SCENE_CLAIM_TIMEOUT_SECONDS = 30
 
@@ -91,6 +101,25 @@ redis.call('HSET', KEYS[1], 'web_sid', ARGV[2])
 redis.call('EXPIRE', KEYS[1], ARGV[3])
 return previous
 """
+
+
+def _bounded_desktop_scene_script(script: str, expired_result: str) -> str:
+    guard = """
+local desktop = redis.call('HGET', KEYS[1], 'target_channel') == 'desktop'
+local deadline = tonumber(redis.call('HGET', KEYS[1], 'expires_at') or '0')
+if desktop and deadline <= tonumber(redis.call('TIME')[1]) then return EXPIRED_RESULT end
+""".replace("EXPIRED_RESULT", expired_result)
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[3])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[3]) end")
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[4])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[4]) end")
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[2])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[2]) end")
+    script = script.replace("redis.call('EXPIRE', KEYS[1], ARGV[1])", "if desktop then redis.call('EXPIREAT', KEYS[1], deadline) else redis.call('EXPIRE', KEYS[1], ARGV[1]) end")
+    return guard + script
+
+
+CLAIM_SCENE_SCRIPT = _bounded_desktop_scene_script(CLAIM_SCENE_SCRIPT, "'missing'")
+FINALIZE_SCENE_SCRIPT = _bounded_desktop_scene_script(FINALIZE_SCENE_SCRIPT, "0")
+RESTORE_SCENE_SCRIPT = _bounded_desktop_scene_script(RESTORE_SCENE_SCRIPT, "0")
+CANCEL_SCENE_SCRIPT = _bounded_desktop_scene_script(CANCEL_SCENE_SCRIPT, "'missing'")
 
 
 class WeChatQrcodeResponse(BaseModel):
@@ -190,6 +219,7 @@ def resolve_wechat_user(
     wechat_openid: str,
     *,
     allow_registration: bool,
+    method: RegistrationMethod,
 ) -> User:
     user = db.scalar(select(User).where(User.wechat_openid == wechat_openid))
     if user is not None:
@@ -204,6 +234,8 @@ def resolve_wechat_user(
     )
     db.add(user)
     try:
+        db.flush()
+        product_events.registered(db, user.id, method)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -271,6 +303,7 @@ def create_login_qrcode(
 
 @router.get("/status", response_model=WeChatStatusResponse)
 def login_status(
+    request: Request,
     response: Response,
     scene: str = Query(min_length=8, max_length=128),
     poll_token: str | None = Query(default=None, min_length=1, max_length=128),
@@ -279,7 +312,19 @@ def login_status(
     db: Session = Depends(get_db),
 ) -> WeChatStatusResponse:
     key = scene_key(scene)
-    state = redis_client.hget(key, "state")
+    record = redis_client.hgetall(key)
+    if record.get("target_channel") == "desktop":
+        import time
+
+        state = record.get("state", "expired")
+        if float(record.get("expires_at", 0)) <= time.time():
+            state = "expired"
+        mapped = {"processing": "pending", "confirmed": "success", "consumed": "success"}.get(state, state)
+        return JSONResponse(
+            {"status": mapped, "user": None, "login_target": "desktop", "platform": record.get("platform")},
+            headers={"Cache-Control": "no-store"},
+        )
+    state = record.get("state")
     if state is None:
         return WeChatStatusResponse(status="expired")
     if state in {"pending", "processing"}:
@@ -301,12 +346,15 @@ def login_status(
     if not uid.isdecimal():
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
-    user = db.scalar(select(User).where(User.id == int(uid)))
-    if user is None or user.status != 1:
+    user = db.scalar(select(User).where(User.id == int(uid)).with_for_update().execution_options(populate_existing=True))
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         redis_client.delete(key)
         return WeChatStatusResponse(status="expired")
 
-    credentials = issue_session(user, settings, redis_client, channel=WEB_CHANNEL)
+    credentials = issue_session(
+        user, settings, redis_client, channel=WEB_CHANNEL,
+        user_agent=request.headers.get("user-agent", ""),
+    )
     previous_sid = redis_client.eval(
         SWAP_WEB_SESSION_SCRIPT,
         1,
@@ -377,6 +425,7 @@ def confirm_login(
             db,
             openid,
             allow_registration=privacy_accepted,
+            method="wechat_qr",
         )
     except Exception:
         redis_client.eval(
@@ -387,14 +436,15 @@ def confirm_login(
             settings.wechat_scene_ttl_seconds,
         )
         raise
-    if user.status != 1:
+    user = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         redis_client.eval(
             FINALIZE_SCENE_SCRIPT,
             1,
             key,
             claim_id,
             "cancelled",
-            str(user.id),
+            str(user.id) if user else "",
             settings.wechat_scene_ttl_seconds,
         )
         raise ApiError(401, "ACCOUNT_DISABLED")
@@ -467,15 +517,17 @@ def miniprogram_login(
         db,
         exchange_openid(wechat, payload.code),
         allow_registration=payload.privacy_accepted,
+        method="wechat_miniprogram",
     )
-    if user.status != 1:
+    user = db.scalar(select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True))
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         raise ApiError(401, "ACCOUNT_DISABLED")
     user.last_login_at = utc_now()
-    db.commit()
-    db.refresh(user)
     credentials = issue_session(
         user, settings, redis_client, channel=MINIPROGRAM_CHANNEL
     )
+    db.commit()
+    db.refresh(user)
     return mini_auth_response(user, credentials, settings)
 
 

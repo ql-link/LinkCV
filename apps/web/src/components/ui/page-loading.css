@@ -1,17 +1,22 @@
+/* 全站加载占位：统一成 V3 风格（10.1 页面加载中）——细线转圈 + 灰色说明，配色取 V3 Token 的字面值，
+   这样即使页面没有引入 v3.css（Suspense fallback 在外壳外渲染）也保持一致。 */
 .page-loading {
   display: grid;
   width: 100%;
   min-width: 0;
   place-content: center;
   justify-items: center;
-  gap: var(--ui-space-3);
-  color: var(--ui-text-muted);
+  gap: 12px;
+  color: #96968f;
+  font-family: var(--ui-font-sans);
   text-align: center;
 }
 
+/* 整页：V3 窗口底色 + 居中白色内容卡的留白感 */
 .page-loading.is-page {
   min-height: 100vh;
-  background: var(--ui-background);
+  min-height: 100dvh;
+  background: #f1f1ef;
 }
 
 .page-loading.is-workspace {
@@ -22,17 +27,43 @@
   min-height: 180px;
 }
 
+/* 24px 圆环：浅灰底圈 + 深色 1/4 弧 */
 .page-loading-spinner {
-  width: 28px;
-  height: 28px;
-  color: var(--ui-accent);
-  animation: page-loading-spin 800ms linear infinite;
+  display: block;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #e4e4e0;
+  border-top-color: #1d1d1b;
+  border-radius: 50%;
+  animation: page-loading-spin 800ms linear infinite,
+    page-loading-reveal var(--ui-duration-fast, 100ms) ease-out var(--ui-duration-base, 180ms) both;
 }
 
 .page-loading p {
   margin: 0;
-  font-size: var(--ui-text-sm);
-  line-height: var(--ui-leading-normal);
+  color: #96968f;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* Reserve layout immediately, but don't flash an indicator for a fast request.
+   This is only an appearance threshold: ready content never waits for this animation. */
+.page-loading > p, .ui-loading-placeholder {
+  animation: page-loading-reveal var(--ui-duration-fast, 100ms) ease-out var(--ui-duration-base, 180ms) both;
+}
+
+@keyframes page-loading-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ui-loading-text {
+  display: inline-block;
+  max-width: 100%;
+  height: .8em;
+  border-radius: 3px;
+  background: var(--v3-sk, #e5e5e1);
+  vertical-align: -.02em;
 }
 
 @keyframes page-loading-spin {
@@ -40,5 +71,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-loading-spinner { animation: none; }
+  .page-loading-spinner { animation-duration: 2400ms, 100ms; }
 }

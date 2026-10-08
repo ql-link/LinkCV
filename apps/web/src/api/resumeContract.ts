@@ -1,11 +1,11 @@
 import type { JSONContent } from "@tiptap/core";
-import { museThemes, type MuseTheme } from "./museThemes";
 import { atlasThemes, type AtlasTheme } from "./atlasThemes";
 import { studioThemes, type StudioTheme } from "./studioThemes";
 import { openThemes, type OpenTheme } from "./openThemes";
 import { originalThemes, type OriginalTheme } from "./originalThemes";
 import { careerThemes, type CareerTheme } from "./careerThemes";
 import { featuredThemes, type FeaturedTheme } from "./featuredThemes";
+import { museThemes, type MuseTheme } from "./museThemes";
 import { inlineIconMarkdown, isInlineIconName } from "../lib/resumeInlineIcon";
 import type { InlineIconName } from "../lib/resumeInlineIcon";
 import { isResumeEmailLink } from "../lib/resumeLink";
@@ -236,6 +236,7 @@ export type CanonicalParagraphBlock = CanonicalSourceReferenced & {
 
 export type CanonicalListItem = CanonicalSourceReferenced & {
   runs: Array<CanonicalTextRun | CanonicalInlineIcon | CanonicalInlineMedia>;
+  align?: CanonicalTextAlign | null;
 };
 
 export type CanonicalListBlock = {

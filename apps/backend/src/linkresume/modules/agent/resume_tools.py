@@ -2,9 +2,7 @@ import hashlib
 import hmac
 import json
 import re
-from dataclasses import dataclass
 from typing import Any
-from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,7 +11,9 @@ from linkresume.core.errors import ApiError
 from linkresume.domain.resume import CanonicalResumeDocument
 from linkresume.modules.datasets.models import UserDataset
 from linkresume.modules.datasets.routes import read_dataset_markdown
+from linkresume.integrations.linkrag_client import LinkRagError
 from linkresume.services.dataset_content_service import content_key, source_version
+from linkresume.services.rag_sync_service import recall_dataset_snippets
 from linkresume.modules.job_descriptions.models import JobDescription
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask, Resume
 
@@ -40,14 +40,11 @@ ENTRY_FIELD_LABELS = {
     "degree": "学位",
     "major": "专业",
 }
+# Display-only marker stripping is also used by mock interview rendering.
 BLOCK_MARKER_PATTERN = re.compile(
     r"\[\[linkresume-block:(node_[a-z0-9]{16,64})"
     r"(?::(?:(?:identity|profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom)"
     r"|entry-field:(name|organization|role|location|start_date|end_date|url|degree|major)))?\]\]"
-)
-SECTION_HEADING_PATTERN = re.compile(
-    r"^##\s+\[\[linkresume-block:(node_[a-z0-9]{16,64})(?::(?:profile|work|education|project|skills|activity|interests|certificates|awards|languages|custom))?\]\](.*)$",
-    re.MULTILINE,
 )
 NUMBER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])\d+(?:\.\d+)?\s*(?:%|％|倍|万|亿|ms|s|秒|分钟|小时|天|人|次|个|元|美元)?",
@@ -95,20 +92,6 @@ RESULT_TERMS = (
 
 def text_hash(value: str) -> str:
     return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
-
-
-@dataclass(frozen=True)
-class EditorBlock:
-    block_id: str
-    text: str
-    line_prefix: str
-    start: int
-    end: int
-    section_id: str | None
-    section_label: str | None
-    entry_id: str | None
-    entry_label: str | None
-    field: str | None
 
 
 def _inline_text(runs: list[Any]) -> str:
@@ -190,418 +173,22 @@ def _canonical_blocks_markdown(blocks: list[Any]) -> list[str]:
     return parts
 
 
-def replace_editor_markdown(
-    data: CanonicalResumeDocument, markdown: str
-) -> dict[str, Any]:
-    """Apply marker-scoped edits without round-tripping the canonical tree."""
-
-    payload = data.model_dump(mode="json")
-    before = {block.block_id: block for block in parse_editor_blocks(editor_markdown(data) or "")}
-    after = {block.block_id: block for block in parse_editor_blocks(markdown)}
-
-    def plain_run(text: str) -> list[dict[str, Any]]:
-        return [{
-            "inline_type": "text",
-            "text": text,
-            "marks": [],
-            "href": None,
-            "style": {"color": None, "font_size_pt": None, "highlight_color": None},
-        }]
-
-    containers: list[list[dict[str, Any]]] = []
-    for section in payload["sections"]:
-        section_after = after.get(section["node_id"])
-        section_before = before.get(section["node_id"])
-        if (
-            section_after is not None
-            and section_before is not None
-            and section_after.text != section_before.text
-            and section["title"] is not None
-        ):
-            section["title"]["value"] = section_after.text
-            section["title"].pop("runs", None)
-        for entry in section["entries"]:
-            entry_after = after.get(entry["node_id"])
-            entry_before = before.get(entry["node_id"])
-            if (
-                entry_after is not None
-                and entry_before is not None
-                and entry_after.text != entry_before.text
-            ):
-                target_field_item = next(
-                    (
-                        (field_key, field)
-                        for field_key, field in entry["fields"].items()
-                        if field is not None
-                    ),
-                    None,
-                )
-                if target_field_item is None:
-                    raise ApiError(422, "TARGET_INVALID")
-                field_key, target_field = target_field_item
-                if entry_after.text:
-                    target_field["value"] = entry_after.text
-                    target_field.pop("runs", None)
-                else:
-                    entry["fields"][field_key] = None
-            for field_key, target_field in list(entry["fields"].items()):
-                if target_field is None:
-                    continue
-                field_after = after.get(target_field["node_id"])
-                field_before = before.get(target_field["node_id"])
-                if (
-                    field_after is None
-                    or field_before is None
-                    or field_after.text == field_before.text
-                ):
-                    continue
-                if field_after.text:
-                    target_field["value"] = field_after.text
-                    target_field.pop("runs", None)
-                else:
-                    entry["fields"][field_key] = None
-        containers.append(section["blocks"])
-        containers.extend(entry["blocks"] for entry in section["entries"])
-    deleted_ids = set(before) - set(after)
-    handled_deleted_ids: set[str] = set()
-
-    def update_blocks(blocks: list[dict[str, Any]], *, allow_delete: bool) -> None:
-        retained: list[dict[str, Any]] = []
-        for block in blocks:
-            if block["block_type"] == "paragraph":
-                node_id = block["node_id"]
-                if allow_delete and node_id in deleted_ids:
-                    handled_deleted_ids.add(node_id)
-                    continue
-                if node_id in after:
-                    current = before.get(node_id)
-                    replacement = after[node_id].text
-                    if current is not None and replacement != current.text:
-                        if not replacement:
-                            if not allow_delete:
-                                raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-                            continue
-                        block["runs"] = plain_run(replacement)
-            elif block["block_type"] in {"ordered_list", "bullet_list"}:
-                retained_items: list[dict[str, Any]] = []
-                for item in block["items"]:
-                    node_id = item["node_id"]
-                    if allow_delete and node_id in deleted_ids:
-                        handled_deleted_ids.add(node_id)
-                        continue
-                    current = before.get(node_id)
-                    replacement = after.get(node_id)
-                    if (
-                        current is not None
-                        and replacement is not None
-                        and replacement.text != current.text
-                    ):
-                        if not replacement.text:
-                            continue
-                        item["runs"] = plain_run(replacement.text)
-                    retained_items.append(item)
-                block["items"] = retained_items
-                if allow_delete and not retained_items:
-                    continue
-            elif block["block_type"] == "row":
-                for cell in block["cells"]:
-                    update_blocks(cell["blocks"], allow_delete=False)
-            retained.append(block)
-        blocks[:] = retained
-
-    for blocks in containers:
-        update_blocks(blocks, allow_delete=True)
-
-    unsupported_deleted_ids = deleted_ids - handled_deleted_ids
-    if unsupported_deleted_ids:
-        raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-
-    # Inserted nodes are attached after their immediately preceding canonical
-    # block in the same section/entry container. They never rewrite unrelated
-    # blocks, source refs, marks or media.
-    ordered = parse_editor_blocks(markdown)
-    known_ids = set(before)
-    for index, block in enumerate(ordered):
-        if block.block_id in known_ids:
-            continue
-        previous_id = next(
-            (candidate.block_id for candidate in reversed(ordered[:index]) if candidate.block_id in known_ids),
-            None,
-        )
-        if previous_id is None:
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        inserted = False
-        for blocks in containers:
-            for position, existing in enumerate(blocks):
-                existing_ids = {existing["node_id"]}
-                existing_ids.update(item["node_id"] for item in existing.get("items", []))
-                if previous_id not in existing_ids:
-                    continue
-                blocks.insert(position + 1, {
-                    "node_id": block.block_id,
-                    "source_refs": [],
-                    "block_type": "paragraph",
-                    "runs": plain_run(block.text),
-                })
-                inserted = True
-                known_ids.add(block.block_id)
-                break
-            if inserted:
-                break
-        if not inserted:
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-    return payload
-
-
-def parse_editor_blocks(markdown: str) -> list[EditorBlock]:
-    matches = list(BLOCK_MARKER_PATTERN.finditer(markdown))
-    blocks: list[EditorBlock] = []
-    section_id: str | None = None
-    section_label: str | None = None
-    entry_id: str | None = None
-    entry_label: str | None = None
-    for index, match in enumerate(matches):
-        line_start = markdown.rfind("\n", 0, match.start()) + 1
-        next_start = (
-            markdown.rfind("\n", 0, matches[index + 1].start()) + 1
-            if index + 1 < len(matches)
-            else len(markdown)
-        )
-        prefix = markdown[line_start : match.start()]
-        raw = markdown[match.end() : next_start].strip()
-        field = match.group(2)
-        if field is not None:
-            label = ENTRY_FIELD_LABELS[field]
-            if raw.startswith(f"{label}："):
-                raw = raw[len(label) + 1 :].strip()
-            elif raw.startswith(f"{label}:"):
-                raw = raw[len(label) + 1 :].strip()
-        heading = re.fullmatch(r"(#{1,3})\s*", prefix)
-        if heading and len(heading.group(1)) == 2:
-            section_id, section_label = match.group(1), raw
-            entry_id = entry_label = None
-        elif heading and len(heading.group(1)) == 3:
-            entry_id, entry_label = match.group(1), raw
-        blocks.append(
-            EditorBlock(
-                block_id=match.group(1),
-                text=raw,
-                line_prefix=prefix,
-                start=line_start,
-                end=next_start,
-                section_id=section_id,
-                section_label=section_label,
-                entry_id=entry_id,
-                entry_label=entry_label,
-                field=field,
-            )
-        )
-    return blocks
-
-
-def _locator(
-    resume: Resume, block: EditorBlock, selected_text: str | None
-) -> dict[str, Any]:
-    target_text = selected_text or block.text
-    return {
-        "resume_id": str(resume.id),
-        "base_lock_version": resume.lock_version,
-        "surface": "editor",
-        "section": block.section_id,
-        "entry_id": block.entry_id,
-        "field": block.field or "markdown",
-        "item_id": None,
-        "block_id": block.block_id,
-        "selected_text": selected_text,
-        "expected_text_hash": text_hash(target_text),
-    }
-
-
-def resolve_target(
-    resume: Resume,
-    data: Any,
-    *,
-    selection_context: Any | None,
-    quoted_text: str | None,
-    scope_hint: str = "target",
-) -> dict[str, Any]:
-    markdown = editor_markdown(data)
-    blocks = parse_editor_blocks(markdown or "")
-    quote = (
-        selection_context.selected_text
-        if selection_context is not None
-        else quoted_text
-    )
-    if selection_context is not None:
-        requested = [
-            block for block in blocks if block.block_id in selection_context.block_ids
-        ]
-        if len(requested) != len(selection_context.block_ids):
-            return {"status": "not_found", "target": None, "candidates": []}
-        exact = [block for block in requested if quote and quote in block.text]
-        if len(exact) == 1:
-            return {
-                "status": "resolved",
-                "target": _locator(resume, exact[0], quote),
-                "candidates": [],
-            }
-        if len(exact) > 1:
-            return _ambiguous(resume, exact, quote)
-        requested_entry_ids = {block.entry_id for block in requested if block.entry_id}
-        if len(requested) > 1 and len(requested_entry_ids) == 1:
-            entry_id = next(iter(requested_entry_ids))
-            anchor = next(
-                (
-                    block
-                    for block in blocks
-                    if block.entry_id == entry_id and block.block_id == entry_id
-                ),
-                requested[0],
-            )
-            return {
-                "status": "resolved",
-                "target": _locator(resume, anchor, None),
-                "candidates": [],
-            }
-        if len(requested) > 1:
-            return _ambiguous(resume, requested, None)
-    if quote:
-        matches = [block for block in blocks if quote in block.text]
-        if len(matches) == 1:
-            return {
-                "status": "resolved",
-                "target": _locator(resume, matches[0], quote),
-                "candidates": [],
-            }
-        if len(matches) > 1:
-            return _ambiguous(resume, matches, quote)
-    if scope_hint == "resume" and not quote:
-        serialized = json.dumps(
-            data.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
-        )
-        return {
-            "status": "resolved",
-            "target": {
-                "resume_id": str(resume.id),
-                "base_lock_version": resume.lock_version,
-                "surface": "semantic",
-                "section": "resume",
-                "entry_id": None,
-                "field": "data",
-                "item_id": None,
-                "block_id": None,
-                "selected_text": None,
-                "expected_text_hash": text_hash(serialized),
-            },
-            "candidates": [],
-        }
-    return {"status": "not_found", "target": None, "candidates": []}
-
-
-def _ambiguous(
-    resume: Resume, blocks: list[EditorBlock], quote: str | None
-) -> dict[str, Any]:
-    candidates = []
-    for block in blocks[:10]:
-        label = (
-            " / ".join(
-                value for value in (block.section_label, block.entry_label) if value
-            )
-            or "简历正文"
-        )
-        candidates.append(
-            {
-                "target": _locator(resume, block, quote),
-                "label": label,
-                "excerpt": block.text[:240],
-            }
-        )
-    return {"status": "ambiguous", "target": None, "candidates": candidates}
+def resolve_target(resume: Resume, data: Any, *, selection_context: Any | None,
+                   quoted_text: str | None, scope_hint: str = "target", node_id: str | None = None,
+                   start_node_id: str | None = None, end_node_id: str | None = None) -> dict[str, Any]:
+    from linkresume.modules.agent.canonical_targets import resolve
+    return resolve(resume, data, selection_context=selection_context, quoted_text=quoted_text,
+                   scope_hint=scope_hint, node_id=node_id, start_node_id=start_node_id, end_node_id=end_node_id)
 
 
 def target_content(resume: Resume, data: Any, target: Any, scope: str) -> str:
-    if (
-        str(resume.id) != target.resume_id
-        or resume.lock_version != target.base_lock_version
-    ):
-        raise ApiError(409, "TARGET_STALE")
-    if target.surface == "semantic" and target.section == "resume":
-        serialized = json.dumps(
-            data.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
-        )
-        if scope != "resume":
-            raise ApiError(422, "SCOPE_FORBIDDEN")
-        if text_hash(serialized) != target.expected_text_hash:
-            raise ApiError(409, "TARGET_STALE")
-        return serialized
-    markdown = editor_markdown(data)
-    if target.surface != "editor" or markdown is None or target.block_id is None:
-        raise ApiError(422, "TARGET_INVALID")
-    blocks = parse_editor_blocks(markdown)
-    block = next((item for item in blocks if item.block_id == target.block_id), None)
-    if block is None:
-        raise ApiError(409, "TARGET_STALE")
-    expected_text = target.selected_text or block.text
-    if (
-        text_hash(expected_text) != target.expected_text_hash
-        or expected_text not in block.text
-    ):
-        raise ApiError(409, "TARGET_STALE")
-    if scope == "target":
-        return expected_text
-    if scope == "entry":
-        if not block.entry_id:
-            raise ApiError(422, "SCOPE_FORBIDDEN")
-        return "\n\n".join(
-            item.text for item in blocks if item.entry_id == block.entry_id
-        )
-    if scope == "section":
-        if not block.section_id:
-            raise ApiError(422, "SCOPE_FORBIDDEN")
-        return "\n\n".join(
-            item.text for item in blocks if item.section_id == block.section_id
-        )
-    if scope == "resume":
-        return BLOCK_MARKER_PATTERN.sub("", markdown)
-    raise ApiError(422, "SCOPE_FORBIDDEN")
+    from linkresume.modules.agent.canonical_targets import content
+    return content(resume, data, target, scope)
 
 
-def scoped_blocks(
-    resume: Resume, data: Any, target: Any, scope: str
-) -> list[dict[str, Any]]:
-    target_content(resume, data, target, scope)
-    if target.surface == "semantic":
-        return []
-    markdown = editor_markdown(data)
-    if markdown is None:
-        return []
-    blocks = parse_editor_blocks(markdown)
-    anchor = next((item for item in blocks if item.block_id == target.block_id), None)
-    if anchor is None:
-        raise ApiError(409, "TARGET_STALE")
-    if scope == "target":
-        selected = [anchor]
-    elif scope == "entry":
-        selected = [item for item in blocks if item.entry_id == anchor.entry_id]
-    elif scope == "section":
-        selected = [item for item in blocks if item.section_id == anchor.section_id]
-    else:
-        selected = blocks
-    return [
-        {
-            "target": _locator(
-                resume,
-                item,
-                target.selected_text if item.block_id == target.block_id else None,
-            ),
-            "content": (
-                target.selected_text
-                if item.block_id == target.block_id and target.selected_text
-                else item.text
-            ),
-        }
-        for item in selected
-    ]
+def scoped_blocks(resume: Resume, data: Any, target: Any, scope: str) -> list[dict[str, Any]]:
+    from linkresume.modules.agent.canonical_targets import scoped_blocks as read_blocks
+    return read_blocks(resume, data, target, scope)
 
 
 def search_materials(
@@ -614,6 +201,7 @@ def search_materials(
     storage: Any,
     max_bytes: int,
     allowed_refs: set[tuple[str, str]] | None = None,
+    rag: Any | None = None,
 ) -> list[dict[str, str]]:
     needle = query.casefold()
     sources: list[dict[str, str]] = []
@@ -649,7 +237,7 @@ def search_materials(
         if resume_ids is not None:
             statement = statement.where(Resume.id.in_(resume_ids))
         for resume in db.scalars(
-            statement.order_by(Resume.updated_at.desc()).limit(20)
+            statement.order_by(Resume.update_time.desc()).limit(20)
         ):
             content = json.dumps(resume.data_json, ensure_ascii=False)
             add(
@@ -665,7 +253,7 @@ def search_materials(
         if job_ids is not None:
             statement = statement.where(JobDescription.id.in_(job_ids))
         for job in db.scalars(
-            statement.order_by(JobDescription.updated_at.desc()).limit(20)
+            statement.order_by(JobDescription.update_time.desc()).limit(20)
         ):
             content = "\n".join(
                 [
@@ -696,7 +284,35 @@ def search_materials(
         )
         if dataset_ids is not None:
             statement = statement.where(UserDataset.id.in_(dataset_ids))
-        rows = db.execute(statement.order_by(UserDataset.created_at.desc()).limit(20)).all()
+        covered: set[int] = set()
+        if rag is not None and (dataset_ids is None or dataset_ids):
+            try:
+                snippets, covered = recall_dataset_snippets(
+                    db,
+                    rag,
+                    user_id=user_id,
+                    query=query,
+                    dataset_ids=dataset_ids,
+                    limit=limit - len(sources),
+                )
+            except LinkRagError:
+                # RAG is an enhancement: any failure falls back to matching.
+                snippets, covered = [], set()
+            for snippet in snippets:
+                if len(sources) >= limit:
+                    break
+                sources.append(
+                    {
+                        "source_id": f"dataset:{snippet.dataset_id}:{snippet.version}",
+                        "source_type": "dataset",
+                        "title": snippet.title,
+                        "excerpt": snippet.text[:500],
+                        "version": snippet.version,
+                    }
+                )
+        if covered:
+            statement = statement.where(UserDataset.id.not_in(covered))
+        rows = db.execute(statement.order_by(UserDataset.create_time.desc()).limit(20)).all()
         for dataset, task in rows:
             if len(sources) >= limit or not (dataset.content_object_name or task.converted_object_name):
                 continue
@@ -794,9 +410,9 @@ def diagnose_content(
         )
     return {
         "target": target,
-        "scope": "entry"
+        "scope": "range" if target.get("node_ids") else ("entry"
         if target.get("entry_id") and not target.get("selected_text")
-        else "bullet",
+        else "bullet"),
         "job_match": job_match,
         "quantification": {
             "has_result_metric": bool(metrics),
@@ -870,123 +486,3 @@ def validate_source_ids(
             {"source_id": source_id, "source_type": source_type, "title": title}
         )
     return refs
-
-
-def apply_operations(
-    markdown: str, *, mode: str, main_target: Any, operations: list[Any]
-) -> str:
-    if mode == "polish_local" and (
-        len(operations) != 1
-        or operations[0].op not in {"replace_target_text", "delete_target"}
-    ):
-        raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-    if mode == "generate_from_materials" and any(
-        item.op != "insert_after_target" for item in operations
-    ):
-        raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-    initial_blocks = parse_editor_blocks(markdown)
-    main_block = next(
-        (item for item in initial_blocks if item.block_id == main_target.block_id), None
-    )
-    if main_block is None:
-        raise ApiError(409, "TARGET_STALE")
-    if (
-        main_target.surface != "editor"
-        or main_target.section != main_block.section_id
-        or main_target.entry_id != main_block.entry_id
-        or main_target.field != (main_block.field or "markdown")
-    ):
-        raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-    updated = markdown
-    for operation in operations:
-        if BLOCK_MARKER_PATTERN.search(operation.new_text):
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        if operation.op == "delete_target" and operation.new_text:
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        if (
-            mode in {"polish_local", "rewrite_entry_star"}
-            and "\n" in operation.new_text
-        ):
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        target = operation.target
-        if (
-            target.resume_id != main_target.resume_id
-            or target.base_lock_version != main_target.base_lock_version
-            or target.surface != "editor"
-            or target.field != main_target.field
-            or operation.expected_text_hash != target.expected_text_hash
-        ):
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        main_is_section_anchor = main_block.block_id == main_block.section_id
-        main_is_entry_anchor = main_block.block_id == main_block.entry_id
-        local_target_is_authorized = (
-            target.block_id == main_target.block_id
-            or (
-                mode == "polish_local"
-                and main_is_section_anchor
-                and target.section == main_target.section
-            )
-            or (
-                mode == "polish_local"
-                and main_is_entry_anchor
-                and target.entry_id == main_target.entry_id
-            )
-        )
-        if mode in {"polish_local", "generate_from_materials"} and not (
-            local_target_is_authorized
-        ):
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        blocks = parse_editor_blocks(updated)
-        block = next(
-            (item for item in blocks if item.block_id == target.block_id), None
-        )
-        if block is None:
-            raise ApiError(409, "TARGET_STALE")
-        if (
-            target.field != (block.field or "markdown")
-            or target.section != block.section_id
-            or target.entry_id != block.entry_id
-            or (
-                mode == "rewrite_entry_star"
-                and (not main_block.entry_id or block.entry_id != main_block.entry_id)
-            )
-        ):
-            raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-        expected = target.selected_text or block.text
-        if (
-            operation.expected_text_hash != text_hash(expected)
-            or expected not in block.text
-        ):
-            raise ApiError(409, "TARGET_STALE")
-        # A whole-block locator deliberately carries no user selection.  Once
-        # the block and its expected hash have been verified against the
-        # current markdown, persist the exact protected text for the proposal
-        # card.  This does not alter diagnosis data or the patch scope; it only
-        # makes the server-derived before value observable to clients.
-        if not target.selected_text:
-            target.selected_text = expected
-        if operation.op == "replace_target_text":
-            segment = updated[block.start : block.end]
-            if segment.count(expected) != 1:
-                raise ApiError(409, "TARGET_STALE")
-            replacement = segment.replace(expected, operation.new_text, 1)
-            updated = updated[: block.start] + replacement + updated[block.end :]
-        elif operation.op == "delete_target":
-            if (
-                expected != block.text
-                or block.field is not None
-                or block.block_id in {block.section_id, block.entry_id}
-            ):
-                raise ApiError(422, "PATCH_OUT_OF_SCOPE")
-            updated = updated[: block.start] + updated[block.end :]
-        else:
-            generated_id = f"node_{uuid4().hex}"
-            new_text = operation.new_text.strip()
-            heading_or_list = re.match(r"^(#{1,3}\s+|-\s+|\d+\.\s+)", new_text)
-            annotated = (
-                f"{heading_or_list.group(0)}[[linkresume-block:{generated_id}]]{new_text[heading_or_list.end() :]}"
-                if heading_or_list
-                else f"[[linkresume-block:{generated_id}]]{new_text}"
-            )
-            updated = updated[: block.end] + f"\n\n{annotated}" + updated[block.end :]
-    return updated
