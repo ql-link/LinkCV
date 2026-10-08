@@ -4,6 +4,12 @@
 @import "../design-system/fonts.css";
 @import "./motion.css";
 
+/* 页面正文有最大宽度并在内容卡内居中。默认 860 对应 13 寸（1440）设计稿；
+   内容卡 ≥ 1260（14 寸 1512、16 寸及以上）时由下方 @container 改为 1100，≥ 1800（2K 外接屏）改为 1400，窄屏仍由 gutter 兜底。
+   对话和新建表单保留各自的阅读宽度。
+   默认值放在 :root 而不是 .v3：个别页面根节点自身也带 .v3，放在 .v3 上会把外层继承来的档位覆盖回默认值。 */
+:root { --v3-page-max: 860px; }
+
 .v3 {
   --v3-txt: #1d1d1b;
   --v3-sub: #55554f;
@@ -31,9 +37,6 @@
   --v3-purple-soft: #f3eefa;
   --v3-sk: #ececea;
   --v3-sk2: #dcdcd8;
-  /* 正文填满可用内容区，左右各留内容卡宽度的 3%（桌面至少 24px）。
-     窄屏在下方改用 16px；对话和新建表单保留各自的阅读宽度。 */
-  --v3-page-max: 100%;
   --v3-gutter: max(24px, 3cqw);
   --v3-sans: var(--ui-font-sans);
   --v3-serif: var(--ui-font-heading);
@@ -56,6 +59,14 @@
 .v3-window.is-bare .v3-content { left: 12px; }
 .v3-content { position: absolute; top: 12px; right: 12px; bottom: 12px; left: 229px; min-width: 0; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 16px; background: var(--v3-card); container: workspace / inline-size; }
 .v3-content-scroll { position: absolute; inset: 0; overflow-y: auto; }
+/* 容器自身不能被自己的容器查询选中，所以把宽度档位设在它的直接子元素上，由页面继承。 */
+@container workspace (min-width: 1260px) {
+  .v3-content > * { --v3-page-max: 1100px; }
+}
+/* 2K 及以上外接显示器（内容卡 ≥ 1800）再放宽一档，避免两侧各空出 600px、看板仍需横向滚动。 */
+@container workspace (min-width: 1800px) {
+  .v3-content > * { --v3-page-max: 1400px; }
+}
 
 .v3-sidebar { position: absolute; top: 0; bottom: 0; left: 0; display: flex; width: 216px; flex-direction: column; padding: 0 14px; }
 .v3-sidebar-brand { display: flex; height: 30px; flex: 0 0 auto; margin: 24px 0 10px 8px; align-items: center; }

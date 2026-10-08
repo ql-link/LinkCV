@@ -1771,7 +1771,7 @@
 }
 .career-session-record-hero-inner {
   display: flex;
-  width: min(1280px, calc(100% - 48px));
+  width: min(var(--v3-page-max), calc(100% - 2 * var(--v3-gutter)));
   min-height: 80px;
   box-sizing: border-box;
   align-items: center;
@@ -1785,8 +1785,8 @@
 .career-session-record-hero .career-record-actions { align-self: flex-end; gap: 8px; transform: translateY(5px); }
 .career-session-record-hero .career-record-actions .ui-button { width: 110px; min-height: 36px; font-size: 13px; }
 .career-session-hero-status { padding: 4px 10px; font-size: 11px; line-height: 16px; }
-.career-session-detail-body { min-width: 0; box-sizing: border-box; background: var(--ui-surface-subtle); padding: 12px max(24px, calc((100vw - 1280px) / 2)) 40px; }
-.career-session-record-content { width: min(1000px, 100%); min-width: 0; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface); margin: 0 auto; padding: 24px; }
+.career-session-detail-body { min-width: 0; box-sizing: border-box; background: var(--ui-surface-subtle); padding: 12px max(var(--v3-gutter), calc((100% - var(--v3-page-max)) / 2)) 40px; }
+.career-session-record-content { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); background: var(--ui-surface); margin: 0 auto; padding: 24px; }
 .career-session-content-header { display: flex; min-height: 32px; align-items: center; justify-content: space-between; gap: 12px; }
 .career-session-content-header h2 { margin: 0; font-size: 20px; line-height: 25px; }
 .career-session-content-header span { color: var(--ui-text-muted); font-size: 12px; }
@@ -2171,6 +2171,8 @@
 .career-application-detail-page {
   background: var(--ui-background);
 }
+/* V3 工作区里页面外壳已经限定了正文宽度，详情页不再单独铺一块底色，否则宽屏下会露出一个浅灰矩形。 */
+.v3-career .career-application-detail-page { background: transparent; }
 
 .career-application-detail-page .career-application-record-hero {
   min-height: 112px;
@@ -5083,7 +5085,7 @@
 .v3-career .career-reui-calendar .interview-calendar-nav-arrows :is([data-slot="event-calendar-nav-prev"], [data-slot="event-calendar-nav-next"]) { width: 30px !important; padding: 0; }
 .v3-career .career-reui-calendar .interview-calendar-nav-arrows :is(button):hover { background: var(--v3-field) !important; }
 .v3-career .career-reui-calendar .interview-calendar-nav-arrows svg { width: 13px; height: 13px; stroke-width: 1.8; }
-/* 日历内容撑满页头与「接下来」之间的剩余高度：月视图各行均分，周视图时间轴在区域内滚动 */
+/* 日历内容撑满页头以下的剩余高度：月视图各行均分，周视图时间轴在区域内滚动 */
 .v3-career .career-reui-calendar [data-slot="event-calendar-content"] { display: flex; height: auto; min-height: 0; flex: 1 1 0; flex-direction: column; }
 
 /* 月视图：星期行 158，行高 104，日期数字 Poppins 10.5；今天整格浅蓝底 + 蓝色圆形日期 */
@@ -5154,17 +5156,6 @@
 .v3-career .interview-calendar-open-window-content .interview-calendar-event-title { font-weight: 500; }
 .v3-career .interview-calendar-open-window-content :is(.interview-calendar-window-range, .interview-calendar-window-status) { color: var(--v3-sub); font-style: normal; }
 
-/* 「接下来」列表：时间 Poppins 12 → 标题 13.5 Medium → 形式 11.5 → 右侧状态 */
-.career-upcoming { margin-top: 24px; border-top: 1px solid var(--v3-line); padding-top: 24px; }
-.career-upcoming ul { margin: 0; padding: 0; list-style: none; }
-.career-upcoming li + li { border-top: 1px solid var(--v3-line); }
-.career-upcoming li:last-child { border-bottom: 1px solid var(--v3-line); }
-.career-upcoming button { display: grid; width: 100%; height: 50px; grid-template-columns: 16px 114px minmax(0, 270px) minmax(0, 1fr) auto; align-items: center; border: 0; background: transparent; padding: 0; color: inherit; cursor: pointer; font: inherit; text-align: left; }
-.career-upcoming button:hover { background: #fafaf8; }
-.career-upcoming-time { color: var(--v3-sub); font-size: 12px; font-weight: 500; }
-.career-upcoming strong { overflow: hidden; font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.career-upcoming-meta, .career-upcoming-state { color: var(--v3-fnt); font-size: 11.5px; }
-.career-upcoming-state { display: inline-flex; align-items: center; gap: 8px; }
 
 /* ─────────── V3 弹窗（日程详情 05.2b–i、新建面试 05.2a） ─────────── */
 .career-dialog-stage { height: 128px; margin-top: 18px; }
@@ -5225,9 +5216,8 @@
 .v3-career .career-reui-calendar [data-slot="event-calendar-time-gutter"] span { left: 0; right: auto; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-day-header"][data-today] { background: transparent; }
 .v3-career .career-schedule-head { margin-bottom: 20px; }
-.v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] { height: 540px !important; max-height: 540px; }
-.career-upcoming { margin-top: 24px; border-top: 0; padding-top: 0; }
-.career-upcoming-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 时间网格高度随日历面板伸缩：高屏多露出几个小时，矮屏在网格内部滚动，不再固定 540px 造成留白或被截断。 */
+.v3-career .career-reui-calendar [data-slot="event-calendar-time-grid"] { height: auto !important; min-height: 320px; max-height: none; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-cell"] > div:has(> [data-slot="event-calendar-month-day-number"]) { order: -1; justify-content: flex-start; height: 30px; flex-shrink: 0; padding: 0 4px; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-bar-overlay"] { top: 30px; }
 .v3-career .career-reui-calendar [data-slot="event-calendar-month-day-number"] { margin: 4px 0 0; }
@@ -5240,7 +5230,7 @@
 .career-notice-action:focus-visible { outline: 2px solid var(--v3-bl); outline-offset: 2px; border-radius: 4px; }
 
 /* 列表只在自己的区域里滚动：看板页、日程页撑满内容卡高度，页头和工具栏固定，
-   看板每列 / 日历网格 / 接下来列表各自滚动，整页不再出现第二条滚动条。 */
+   看板每列 / 日历网格各自滚动，整页不再出现第二条滚动条。 */
 .v3-career .career-v3-page.career-applications-board-content,
 .v3-career .career-v3-page.career-schedule-content {
   display: flex;
@@ -5260,8 +5250,6 @@
 .v3-career .career-schedule-v3 > .schedule-calendar-panel { display: flex; min-height: 280px; flex: 1 1 auto; flex-direction: column; overflow: hidden; border-radius: 0; }
 .v3-career .career-schedule-v3 > .schedule-calendar-panel > div { min-height: 0; flex: 1 1 auto; }
 .v3-career .career-schedule-v3 .career-reui-calendar { min-height: 0; flex: 1 1 auto; overflow: hidden; }
-.v3-career .career-schedule-v3 > .career-upcoming { flex: 0 0 auto; }
-.v3-career .career-schedule-v3 > .career-upcoming ul { overflow-y: auto; overscroll-behavior: contain; }
 .v3-career.career-workspace-frame:not(.is-standalone-detail) { height: 100%; min-height: 0; margin: 0; }
 .v3-career .career-schedule-v3 > .schedule-calendar-panel > div > .relative { min-height: 0; }
 /* 面试日程：标题可点开月历跳转日期；月视图的日期数字可点进那一周 */
@@ -5295,12 +5283,6 @@
 .v3-career .career-v3-page.career-schedule-content > :not(.interview-schedule-layout, .career-body-slot) { flex: 0 0 auto; }
 .v3-career .career-v3-page.career-applications-board-content > .career-applications-layout,
 .v3-career .career-v3-page.career-applications-board-content > .career-body-slot { min-height: 0; flex: 1 1 0; }
-/* 「接下来」列表固定占 3 行的高度（不足 3 条也留位），月 / 周切换时日历区域高度不变，下方列表不上下跳 */
-.v3-career .career-schedule-v3 > .career-upcoming ul { height: 154px; max-height: none; }
-/* 「接下来」没有安排时：同样占 3 行高度，放一句提示；日历高度与有安排时一致 */
-.v3-career .career-schedule-v3 > .career-upcoming .career-upcoming-empty { display: grid; height: 154px; place-content: center; justify-items: center; gap: 6px; border-top: 1px solid var(--v3-line); border-bottom: 1px solid var(--v3-line); text-align: center; }
-.career-upcoming-empty p { margin: 0; color: var(--v3-sub); font-size: 13px; }
-.career-upcoming-empty small { color: var(--v3-fnt); font-size: 11.5px; }
 /* 月 / 周切换时日历左右滑入 24px。面板和日历根节点原来是 overflow:hidden，滑动中的内容会被边缘裁掉一截，
    看起来像左边被啃掉、右边空一条再弹回来，就是「抽搐」。改成 overflow:clip 并把裁剪边界向外放 32px，
    位置不变，滑动过程完整可见；两者都不是滚动容器（周视图的滚动在内部 viewport），所以不影响滚动。 */

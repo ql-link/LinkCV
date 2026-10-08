@@ -58,7 +58,6 @@ import { Icon, type V3IconName } from "@/v3/Icon";
 import { Reveal, Sk, SkeletonBoard, SkeletonCalendar, SkeletonCards, SkeletonHead } from "@/v3/skeletons";
 import { readPageCache, updatePageCache, useRevalidateOnFocus, writePageCache } from "@/v3/pageCache";
 import {
-  BeTag,
   ConfirmDialog as V3ConfirmDialog,
   DateTimeField,
   Dialog as V3Dialog,
@@ -74,7 +73,6 @@ import {
   formatDateTimeLabel,
 } from "@/v3/primitives";
 import { Badge, Bar, Centered, DeleteSessionArt, Paper } from "@/v3/art";
-import { MOCK_SESSION_CONFIRMED } from "@/v3/mocks";
 import { PrepChecklistCard } from "./PrepChecklistCard";
 import { CareerNotice, CareerPageHead, ScheduleArt, type ScheduleArtKind } from "./careerV3";
 import { describeScheduleConflict, findScheduleConflicts } from "./scheduleConflicts";
@@ -2342,11 +2340,6 @@ function ScheduleView({
   const inRange = visibleInterviews.filter((item) => item.status !== "cancelled" && new Date(item.startAt) < rangeEnd && new Date(item.endAt) > rangeStart);
   const todayCount = visibleInterviews.filter((item) => item.status !== "cancelled" && item.scheduleKind === "fixed_slot" && new Date(item.startAt).toDateString() === now.toDateString()).length;
   const subtitle = t("{value0} {value1} 个日程{value2}", { value0: granularity === "month" ? t("本月") : t("本周"), value1: inRange.length, value2: todayCount ? t(" · 今天 {value0} 场面试", { value0: todayCount }) : "" });
-  // 「接下来」：未来（或正在进行）的 3 条安排
-  const upcoming = visibleInterviews
-    .filter((item) => item.status === "upcoming" || item.status === "active")
-    .sort((left, right) => new Date(left.scheduleKind === "open_window" ? left.endAt : left.startAt).getTime() - new Date(right.scheduleKind === "open_window" ? right.endAt : right.startAt).getTime())
-    .slice(0, 3);
   return (
     <div className="interview-schedule-layout career-schedule-v3">
       <p id="schedule-drag-instructions" className="visually-hidden">{t("双击空白时间新建排期；按住空白时间拖动可选择范围。按住卡片可在当天移动排期，拖动上边缘调整开始时间，下边缘调整结束时间，以 15 分钟为步长调整。")}</p>
@@ -2481,37 +2474,6 @@ function ScheduleView({
           </header>
           <EventCalendarContent />
         </EventCalendar>
-      </section>
-      {/* 「接下来」始终占位：没有安排时显示一句提示，日历高度不因此变化 */}
-      <section className="career-upcoming" aria-label={t("接下来")}>
-        <p className="career-section-label">{t("接下来")}</p>
-        {upcoming.length === 0 ? (
-          <div className="career-upcoming-empty">
-            <p>{t("接下来没有安排的面试或笔试")}</p>
-            <small>{t("收到面试通知后，可以点右上角「新建面试」，或在日历空白处双击添加")}</small>
-          </div>
-        ) : (
-          <ul>
-            {upcoming.map((item) => {
-              const start = new Date(item.scheduleKind === "open_window" ? item.endAt : item.startAt);
-              const isToday = start.toDateString() === now.toDateString();
-              const timeLabel = `${isToday ? t("今天") : formatMonthDay(start)} ${formatTime(start)}`;
-              return (
-                <li key={item.id}>
-                  <button type="button" onClick={() => handleOpen(item.id)} aria-label={`${item.stage}｜${item.company}，${timeLabel}`}>
-                    <span className="career-dot" data-tone={item.scheduleKind === "open_window" ? "red" : "blue"} aria-hidden="true" />
-                    <span className="career-upcoming-time v3-num">{timeLabel}</span>
-                    <strong>{item.company} · {item.role} {item.stage}</strong>
-                    <span className="career-upcoming-meta">{item.meetingLabel}</span>
-                    <span className="career-upcoming-state">
-                      {item.scheduleKind === "open_window" ? (item.status === "active" ? t("待完成") : t("未开始")) : isToday ? (item.prepTotal > 0 ? <>{t("准备清单")} {item.prepDone}/{item.prepTotal}</> : t("未生成准备清单")) : MOCK_SESSION_CONFIRMED ? <>{t("已确认")}<BeTag /></> : t("待确认")}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
       </section>
       <MotionPresence>{dialogInterview && (
         <InterviewScheduleDialog
