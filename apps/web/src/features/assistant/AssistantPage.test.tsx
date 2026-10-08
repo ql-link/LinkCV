@@ -180,6 +180,8 @@ describe("AssistantPage", () => {
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
     render(<StrictMode><AssistantPage sessionId={session.id} /></StrictMode>);
     expect(screen.getByRole("status", { name: "正在读取对话…" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "首页" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "首页" })).not.toHaveClass("is-active");
     expect(screen.queryByLabelText("开始使用 AI 求职助手")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "第二条对话" }));
@@ -197,7 +199,7 @@ describe("AssistantPage", () => {
     vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: listed });
     vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
 
-    render(<AssistantPage />);
+    const { rerender } = render(<AssistantPage />);
     const sidebar = await screen.findByRole("complementary", { name: "工作区侧栏" });
     expect(within(sidebar).getByRole("link", { name: "首页" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("complementary", { name: "对话列表" })).not.toBeInTheDocument();
@@ -207,10 +209,18 @@ describe("AssistantPage", () => {
     expect(window.location.pathname).toBe("/assistant/session-1");
     await waitFor(() => expect(useActiveSessionStore.getState().activeId).toBe("session-1"));
     expect(within(sidebar).getByRole("button", { name: "字节三面 · 系统设计" })).toHaveAttribute("aria-current", "page");
+    expect(within(sidebar).getByRole("link", { name: "首页" })).not.toHaveAttribute("aria-current");
+    expect(within(sidebar).getByRole("link", { name: "首页" })).not.toHaveClass("is-active");
+    expect(sidebar.querySelector(".v3-side-indicator")).not.toBeInTheDocument();
 
+    rerender(<AssistantPage sessionId="session-1" />);
     expect(within(sidebar).queryByRole("button", { name: "新建对话" })).not.toBeInTheDocument();
     await user.click(within(sidebar).getByRole("link", { name: "首页" }));
     expect(window.location.pathname).toBe("/assistant");
+    rerender(<AssistantPage />);
+    expect(within(sidebar).getByRole("link", { name: "首页" })).toHaveAttribute("aria-current", "page");
+    expect(within(sidebar).getByRole("link", { name: "首页" })).toHaveClass("is-active");
+    expect(within(sidebar).getByRole("button", { name: "字节三面 · 系统设计" })).not.toHaveAttribute("aria-current");
   });
 
   it("把服务端无时区的 UTC 时间按 UTC 解析，避免刷新后进度多出八小时", () => {
@@ -1180,6 +1190,59 @@ describe("AssistantPage", () => {
         { question_id: "role", option_id: "__other__", value: "自定义岗位" },
       ],
     }));
+  });
+
+  it.each([false, true])("主输入框发送新消息跳过询问并在刷新后保持移除（收起：%s）", async (collapsed) => {
+    const user = userEvent.setup();
+    const clarification = {
+      version: 1 as const,
+      questions: [{ id: "scope", header: "修改范围", question: "你希望修改哪段经历？", options: [{ id: "work", label: "工作经历" }] }],
+    };
+    const askedSession: AgentSession = {
+      ...session,
+      messages: [
+        { sequence_no: 1, role: "user", content: "请帮我优化", created_at: session.created_at },
+        { sequence_no: 2, role: "assistant", message_type: "clarification", clarification, content: "继续前需要确认：", created_at: session.created_at },
+      ],
+    };
+    const sentSession: AgentSession = {
+      ...askedSession,
+      messages: [...askedSession.messages,
+        { sequence_no: 3, role: "user", content: "先告诉我如何准备面试", created_at: session.created_at },
+        { sequence_no: 4, role: "assistant", content: "可以先梳理项目经历。", created_at: session.created_at },
+      ],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [askedSession] });
+    const detail = vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: askedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    let finish!: () => void;
+    const stream = vi.spyOn(api, "streamAgentMessage").mockImplementation(async (_id, _payload, _signal, onEvent) => {
+      onEvent({ type: "run.started", runId: "run-new" });
+      await new Promise<void>((resolve) => { finish = resolve; });
+      onEvent({ type: "run.completed", runId: "run-new" });
+    });
+    const view = render(<AssistantPage sessionId={session.id} />);
+    expect(await screen.findByRole("region", { name: "需要你确认" })).toBeInTheDocument();
+    if (collapsed) await user.click(screen.getByRole("button", { name: "收起主动询问" }));
+    const input = screen.getByRole("textbox", { name: "告诉助手你想完成什么" });
+    expect(input).toHaveAttribute("contenteditable", "true");
+    await user.type(input, "先告诉我如何准备面试");
+    detail.mockResolvedValue({ session: sentSession });
+    if (collapsed) await user.keyboard("{Enter}");
+    else await user.click(screen.getByRole("button", { name: "发送" }));
+    await waitFor(() => expect(stream).toHaveBeenCalledTimes(1));
+    expect(stream.mock.calls[0]?.[1]).toEqual(expect.objectContaining({ content: "先告诉我如何准备面试" }));
+    expect(stream.mock.calls[0]?.[1]).not.toHaveProperty("reply_to_sequence_no");
+    expect(stream.mock.calls[0]?.[1]).not.toHaveProperty("clarification_answers");
+    expect(screen.queryByRole("region", { name: "需要你确认" })).not.toBeInTheDocument();
+    expect(screen.queryByText("继续前需要确认：")).not.toBeInTheDocument();
+    await act(async () => { finish(); });
+    expect(await screen.findByText("可以先梳理项目经历。")).toBeInTheDocument();
+    view.unmount();
+    render(<AssistantPage sessionId={session.id} />);
+    expect(await screen.findByText("可以先梳理项目经历。")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "需要你确认" })).not.toBeInTheDocument();
+    expect(screen.queryByText("继续前需要确认：")).not.toBeInTheDocument();
   });
 
   it("澄清时显式选择另一份简历会提交替换原简历的意图", async () => {

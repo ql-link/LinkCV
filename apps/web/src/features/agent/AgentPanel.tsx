@@ -210,6 +210,31 @@ const agentMarkdown = new MarkdownIt({
   typographer: false,
 });
 
+// 模型偶尔在加粗结束标记前插入空格，中文标点后紧接正文也可能无法闭合。
+// 只放宽已有 ** 开始标记的闭合规则，
+// 保留 Markdown 的代码、转义和链接解析，不对整段原文做正则替换。
+agentMarkdown.inline.ruler.before("emphasis", "spaced_strong_close", (state, silent) => {
+  if (silent || state.src.slice(state.pos, state.pos + 2) !== "**") return false;
+  const scanned = state.scanDelims(state.pos, true);
+  if (scanned.length !== 2 || scanned.can_close || !/[^\S\r\n]|\p{P}/u.test(state.src[state.pos - 1] ?? "")) return false;
+  let openings = 0;
+  for (let index = 0; index < state.delimiters.length - 1; index += 1) {
+    const delimiter = state.delimiters[index];
+    const next = state.delimiters[index + 1];
+    if (delimiter.marker !== 0x2a || delimiter.length !== 2 || next.marker !== 0x2a || next.token !== delimiter.token + 1) continue;
+    if (delimiter.close && openings > 0) openings -= 1;
+    else if (delimiter.open) openings += 1;
+    index += 1;
+  }
+  if (!openings) return false;
+  for (let index = 0; index < 2; index += 1) {
+    state.push("text", "", 0).content = "*";
+    state.delimiters.push({ marker: 0x2a, length: 2, token: state.tokens.length - 1, end: -1, open: false, close: true });
+  }
+  state.pos += 2;
+  return true;
+});
+
 function agentHeadingTag(tag: string) {
   const sourceLevel = Number.parseInt(tag.slice(1), 10) || 1;
   return { sourceLevel, tag: `h${Math.min(sourceLevel + 1, 6)}` };

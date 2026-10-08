@@ -1433,8 +1433,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     const trimmed = content.trim();
     const key = activeKeyRef.current;
     const state = conversationStatesRef.current[key] ?? blankConversation();
-    const statePendingClarification = pendingClarificationMessage(state.messages);
-    if (!trimmed || state.running || state.cancelling || (statePendingClarification && replyToSequenceNo === undefined)) {
+    if (!trimmed || state.running || state.cancelling) {
       return;
     }
     if (replyToSequenceNo === undefined && state.screenshots?.length) {
@@ -2209,7 +2208,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
     </form>
   );
 
-  const renderMessages = () => current.messages.filter((message) => message !== pendingClarification).map((message, index) => {
+  const renderMessages = () => current.messages.filter((message) => message.message_type !== "clarification").map((message, index) => {
     const messageIndex = current.messages.indexOf(message);
     const source = current.messages.slice(0, messageIndex + 1).filter((item) => item.role === "user").slice(-1)[0];
     const next = current.messages[messageIndex + 1];
