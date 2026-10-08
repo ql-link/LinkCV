@@ -23,7 +23,6 @@ import {
   truncateWorkbenchTitle,
   ZoomFeedback,
   WorkbenchSaveStatus,
-  WorkbenchMoreMenu,
   WorkbenchTitleInput,
   workbenchCanvasClassName,
   versionOperationErrorMessage,
@@ -349,20 +348,6 @@ describe("ResumeWorkbench 顶部保存反馈", () => {
   it("编辑冲突时提示简历已在其他地方修改", () => {
     render(<WorkbenchSaveStatus dirty saveStatus="error" error="RESUME_EDIT_CONFLICT" />);
     expect(screen.getByRole("status")).toHaveTextContent("保存失败 · 简历已在其他地方修改");
-  });
-});
-
-describe("ResumeWorkbench 更多操作菜单", () => {
-  it("默认收起，展开后只提供删除简历", async () => {
-    const user = userEvent.setup();
-    const onDelete = vi.fn();
-    render(<WorkbenchMoreMenu onDelete={onDelete} />);
-
-    expect(screen.queryByRole("menu", { name: "更多操作" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "更多操作" }));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["删除简历"]);
-    await user.click(screen.getByRole("menuitem", { name: "删除简历" }));
-    expect(onDelete).toHaveBeenCalledOnce();
   });
 });
 
