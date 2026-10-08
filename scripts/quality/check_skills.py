@@ -225,7 +225,7 @@ IMPLEMENTATION_DELEGATION_FORBIDDEN_MARKERS = (
 DESIGN_SYSTEM_REQUIRED_MARKERS = {
     Path("run-all-tests/SKILL.md"): (
         "npm run check:design",
-        "修改 `DESIGN.md`、`tokens.css`",
+        "修改 `tokens.css`、设计 Skill",
     ),
 }
 IMPLEMENTATION_EXECUTION_REQUIRED_MARKERS = (

@@ -24,7 +24,7 @@ description: 根据 LinkResume 的实际改动范围选择并运行验证命令�
 | --- | --- |
 | 仅 AI 规则、项目技能、链接或门禁脚本 | `npm run check:ai` |
 | 仅长期项目文档或文档同步规则 | `npm run check:docs` |
-| DESIGN.md、设计 Token、Settings Pattern 或页面 CSS 事实源 | `npm run check:design` |
+| 设计 Token、Settings Pattern 或页面 CSS 事实源 | `npm run check:design` |
 | 路由、端口、环境变量、代理或部署契约 | `npm run check:contracts` |
 | 前端自动化测试 | `npm run test:web` |
 | Web 前端类型 | `npm run typecheck:web` |
@@ -50,7 +50,7 @@ Python 命令统一通过项目脚本或 `uv run --directory apps/backend` 执�
 2. 修改项目技能或 AI 链接时至少运行 `npm run check:ai`。
 3. 修改 `docs/` 或代码到文档映射时至少运行 `npm run check:docs`。
 4. 修改路由、端口、环境变量、代理或部署契约时运行 `npm run check:contracts`。
-5. 修改 `DESIGN.md`、`tokens.css`、设计 Skill 或受 Pattern 约束的页面 CSS 时运行 `npm run check:design`；若同时修改 AI Skill，再运行 `npm run check:ai`。
+5. 修改 `tokens.css`、设计 Skill 或受 Pattern 约束的页面 CSS 时运行 `npm run check:design`；若同时修改 AI Skill，再运行 `npm run check:ai`。
 6. Web 页面实现完成时统一运行 `npm run check:web`；中间轮次只在定位问题需要时运行最窄测试，不机械重复全套检查。
 7. 修改 FastAPI 时先运行受影响的后端单元或集成测试；只有后端影响较广、无法可靠选择测试时才运行完整后端测试。修改 Python 依赖、打包或构建配置时再增加 `npm run build:backend`。`scripts/quality/` 下的门禁脚本按其治理领域选择 `check:ai`、`check:docs`、`check:contracts` 或 `check:design`，不因使用 Python 自动触发后端应用测试和构建。
 8. 同时涉及前后端时组合运行受影响的前端与后端命令；只有需要统一覆盖多个应用现有测试时才运行 `npm test`。
