@@ -13,7 +13,6 @@
 | 按技术架构定位运行组件 | [架构文档](#架构文档) |
 | 查找契约事实源和消费方 | [internals/contract-governance.md](internals/contract-governance.md) |
 | 修改 React/Vite 前端 | [internals/web.md](internals/web.md) |
-| 理解视觉语言或设计内部功能页面 | [`DESIGN.md`](../DESIGN.md) |
 | 修改或侧载岗位采集插件 | [internals/extension.md](internals/extension.md) |
 | 修改 FastAPI 后端 | [internals/backend.md](internals/backend.md) |
 | 了解 third_party/pi 引入方式与对接约束 | [internals/third-party-pi.md](internals/third-party-pi.md) |

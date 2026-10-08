@@ -1,5 +1,5 @@
 /* V3 · 单栏设计的公共 Token 与基础件。
-   布局沿用确认稿；文字角色由 DESIGN.md 与 design-system/tokens.css 定义。 */
+   布局沿用确认稿；文字角色由 design-system/tokens.css 定义。 */
 @import "@fontsource/noto-serif-sc/600.css";
 @import "../design-system/fonts.css";
 @import "./motion.css";
