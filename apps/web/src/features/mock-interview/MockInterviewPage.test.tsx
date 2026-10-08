@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MockInterviewPage } from "./MockInterviewPage";
-import { mockInterviewApi, resetMockInterviewStore } from "./mockInterviewApi";
+import { MockInterviewReportView } from "./MockInterviewReport";
+import { mockInterviewApi, resetMockInterviewStore, type MockInterviewReport } from "./mockInterviewApi";
 import { setLocale } from "../../i18n";
 
 // 真实接口（简历 / 求职记录 / 面试安排 / 资料）全部替身；模拟面试本身走本地假数据层
@@ -151,6 +152,48 @@ describe("07 模拟面试 · 文字面试", () => {
     expect(await screen.findByRole("dialog", { name: "第 2 题详情" })).toBeInTheDocument();
   });
 
+  it("评估报告 v4：录用倾向、风险信号、能力表现、逐题柱状图与行动清单", async () => {
+    const { items } = await mockInterviewApi.list();
+    const seeded = items.find((item) => item.answer_mode === "text")!;
+    const { mock_interview: detail } = await mockInterviewApi.get(seeded.id);
+    const legacy = detail.report!;
+    const questions = legacy.questions.map((item, index) => ({ ...item, probed_depth: 3, depth_status: index === 2 ? "short" as const : "met" as const }));
+    const [first, second, third] = questions;
+    const report: MockInterviewReport = {
+      ...legacy,
+      rubric_version: "v4",
+      verdict: { level: "borderline", target: detail.difficulty, core_hit_rate: 0.63, risk_flags: [{ kind: "low_question", sequence_no: third.sequence_no, text: "Q3 得分 34" }], reasons: [] },
+      competencies: [
+        { key: "knowledge", assessed: true, score: 78, level: "strong", weight: 0.6, question_refs: [first.sequence_no], comment: "原理讲得清楚" },
+        { key: "job_fit", assessed: false, score: null, level: null, weight: 0.1, question_refs: [second.sequence_no], comment: "" },
+      ],
+      actions: [
+        { title: "补上缓存故障场景", detail: "讲清删除失败的补偿", priority: "high", kind: "practice", question_refs: [third.sequence_no], competency: "problem_solving", resume_quote: null },
+        { title: "补上结果数据", detail: "写明 QPS 的变化", priority: "normal", kind: "resume", question_refs: [], competency: null, resume_quote: "主导订单系统重构" },
+      ],
+      strengths: ["持久化原理完整"],
+      questions,
+    };
+    render(<MockInterviewReportView interview={{ ...detail, report }} />);
+
+    expect(screen.getByRole("img", { name: /^总分 \d+ \/ 100$/ })).toBeInTheDocument();
+    expect(screen.getByText(/^接近 · .+标准$/)).toBeInTheDocument();
+    expect(screen.getByText("持久化原理完整")).toBeInTheDocument();
+    expect(screen.getByText("Q3 得分 34")).toBeInTheDocument();
+    const competencies = screen.getByRole("region", { name: "能力表现" });
+    expect(competencies).toHaveTextContent("知识与原理");
+    expect(competencies).toHaveTextContent("考察不足");
+    const rows = screen.getByRole("region", { name: "逐题表现" });
+    expect(rows).toHaveTextContent("只答到");
+    const next = screen.getByRole("region", { name: "下一步" });
+    expect(next).toHaveTextContent("补上缓存故障场景");
+    expect(next).toHaveTextContent("「主导订单系统重构」");
+    expect(next).toHaveTextContent("改简历");
+
+    fireEvent.click(within(next).getByRole("button", { name: "Q3" }));
+    expect(await screen.findByRole("dialog", { name: "第 3 题详情" })).toBeInTheDocument();
+  });
+
   it("首页：有面试安排时展示主卡、统计与其他在投岗位；练习记录可筛选", async () => {
     const start = new Date(Date.now() + 3 * 3_600_000).toISOString();
     mocks.listInterviewSessions.mockResolvedValue({ items: [{ id: "s-1", application_id: "app-1", stage_label: "三面", status: "scheduled", start_at: start, end_at: start, company_name: "示例科技", job_title: "后端工程师" }], next_cursor: null });
@@ -161,7 +204,7 @@ describe("07 模拟面试 · 文字面试", () => {
     expect(within(upcoming).getByText("3 小时后")).toBeInTheDocument();
     // 每页只有一个黑色主按钮：主卡按钮是黑色，页头「开始新面试」降为描边
     expect(document.querySelectorAll(".v3-btn-dark")).toHaveLength(1);
-    expect(screen.getByRole("region", { name: "练习数据" })).toHaveTextContent("平均分");
+    expect(screen.getByRole("region", { name: "练习数据" })).toHaveTextContent("得分变化");
 
     fireEvent.click(screen.getByRole("button", { name: /练习记录/ }));
     view.unmount();

@@ -254,8 +254,6 @@ export const DIMENSION_LABELS: Record<MockDimension["key"], string> = {
   get ownership() { return t("项目主导与成果"); },
   get motivation() { return t("动机与稳定性"); },
 };
-// v1–v3 报告的五个维度；首页能力雷达只汇总这一组，避免与 v4 能力项混在同一张图里。
-export const LEGACY_DIMENSION_KEYS = ["professional_depth", "structure", "job_fit", "resume_consistency", "communication"] as const;
 export const ACTIVE_STATUSES: MockInterviewStatus[] = ["preparing", "in_progress", "evaluating"];
 
 // 数据层接口：真实实现在 mockInterviewLive.ts，演示实现（本地假数据）在 mockInterviewDemo.ts，

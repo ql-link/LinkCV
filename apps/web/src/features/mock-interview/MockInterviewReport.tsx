@@ -14,8 +14,12 @@ import {
   mockInterviewErrorMessage,
   type MockFactCheckItem,
   type MockInterviewDetail,
+  type MockCompetency,
+  type MockCompetencyKey,
   type MockInterviewReport,
+  type MockReportAction,
   type MockSignalVerdict,
+  type MockVerdictLevel,
 } from "./mockInterviewApi";
 import { InterviewerMark, RadarChart, charCount, dateTimeLabel, groupQuestions, interviewTitle, scoreGrade, scoreTone, type QuestionGroup } from "./mockShared";
 
@@ -55,6 +59,8 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
       </div>
     );
   }
+
+  if (report.verdict && report.competencies) return <ReportV4 interview={interview} report={report} rows={rows} />;
 
   const expected = EXPECTED_DEPTH[interview.difficulty] ?? 3;
   // 自我介绍只给反馈，不计入题量与得分统计
@@ -238,21 +244,7 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
         </section>
       )}
 
-      {report.fact_check.status !== "not_requested" && (
-        <section className="mi-report-section" aria-label={t("事实核验")}>
-          <div className="mi-section-head is-report"><h2>{t("事实核验")}</h2><span>{report.fact_check.status === "failed" ? t("资料读取失败，本次未核验") : t("对照所选资料 · {value0} 条", { value0: report.fact_check.items.length })}</span><i aria-hidden="true" /></div>
-          {report.fact_check.items.length > 0 && (
-            <ul className="mi-facts">
-              {report.fact_check.items.map((item, index) => (
-                <li key={index}>
-                  <span className={`mi-verdict is-${item.verdict}`}>{FACT_LABELS[item.verdict]}</span>
-                  <div><b>{item.claim}</b><small>{item.quote ? `「${item.quote}」 · ` : ""}{item.file_name}</small></div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
+      <FactCheckSection report={report} />
 
       <footer className="mi-report-foot">{t("评分规则 ")}{report.rubric_version}{t(" · 分数由固定规则计算，模型只判断单条标准并给出原文依据")}</footer>
 
@@ -267,6 +259,292 @@ export function MockInterviewReportView({ interview }: { interview: MockIntervie
         />
       )}
       {toast && <Toast kind="error" title={t("没能再练一次")} message={toast} onDismiss={() => setToast(null)} />}
+    </div>
+  );
+}
+
+function FactCheckSection({ report }: { report: MockInterviewReport }) {
+  useLocale();
+  if (report.fact_check.status === "not_requested") return null;
+  return (
+    <section className="mi-report-section" aria-label={t("事实核验")}>
+      <div className="mi-section-head is-report"><h2>{t("事实核验")}</h2><span>{report.fact_check.status === "failed" ? t("资料读取失败，本次未核验") : t("对照所选资料 · {value0} 条", { value0: report.fact_check.items.length })}</span><i aria-hidden="true" /></div>
+      {report.fact_check.items.length > 0 && (
+        <ul className="mi-facts">
+          {report.fact_check.items.map((item, index) => (
+            <li key={index}>
+              <span className={`mi-verdict is-${item.verdict}`}>{FACT_LABELS[item.verdict]}</span>
+              <div><b>{item.claim}</b><small>{item.quote ? `「${item.quote}」 · ` : ""}{item.file_name}</small></div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* ───────────── 评分规则 v4 报告 ───────────── */
+
+const VERDICT_LABELS_V4: Record<MockVerdictLevel, string> = { get meets() { return t("达到"); }, get borderline() { return t("接近"); }, get below() { return t("有差距"); }, get insufficient() { return t("无法判断"); } };
+const VERDICT_TONES: Record<MockVerdictLevel, string> = { meets: "is-good", borderline: "is-mid", below: "is-bad", insufficient: "is-none" };
+const LEVEL_LABELS: Record<NonNullable<MockCompetency["level"]>, string> = { get strong() { return t("强"); }, get solid() { return t("达标"); }, get weak() { return t("待加强"); } };
+const ACTION_KIND_LABELS: Record<MockReportAction["kind"], string> = { get practice() { return t("练习"); }, get resume() { return t("改简历"); }, get material() { return t("补资料"); } };
+// 刻度与后端 rubric 一致：总分 60 接近、75 达到；能力分 55 达标、75 强；单题低于 40 记风险
+const NEAR_SCORE = 60;
+const MEETS_SCORE = 75;
+const SOLID_COMPETENCY = 55;
+const STRONG_COMPETENCY = 75;
+const LOW_QUESTION = 40;
+
+function ReportV4({ interview, report, rows }: { interview: MockInterviewDetail; report: MockInterviewReport; rows: Row[] }) {
+  useLocale();
+  const verdict = report.verdict!;
+  const competencies = (report.competencies ?? []).filter((item) => item.assessed || item.question_refs.length > 0);
+  const actions = report.actions ?? [];
+  const strengths = report.strengths ?? [];
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const expected = EXPECTED_DEPTH[interview.difficulty] ?? 3;
+  const scoredRows = rows.filter((row) => !row.evaluation.is_intro);
+  const answered = scoredRows.filter((row) => !row.evaluation.skipped).length;
+  const total = Math.max(interview.question_count, scoredRows.length);
+  const minutes = interview.started_at && interview.finished_at ? Math.max(1, Math.round((new Date(interview.finished_at).getTime() - new Date(interview.started_at).getTime()) / 60_000)) : null;
+  // 后端的题号、能力与行动引用都是主问题的 sequence_no；页面按题目顺序编号
+  const rowIndex = (sequenceNo: number) => rows.findIndex((row) => row.group.root.sequence_no === sequenceNo);
+  const questionRef = (sequenceNo: number) => {
+    const index = rowIndex(sequenceNo);
+    return index < 0 ? null : <button key={sequenceNo} type="button" className="mi-qref" onClick={() => setOpenIndex(index)}>Q{index + 1}</button>;
+  };
+  const tone = VERDICT_TONES[verdict.level];
+
+  const repeat = async () => {
+    setBusy(true);
+    try {
+      const { mock_interview } = await mockInterviewApi.repeat(interview.id);
+      navigateTo(mockInterviewPath(mock_interview.id));
+    } catch (reason) {
+      setToast(mockInterviewErrorMessage(reason));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mi-page mi-report is-v4">
+      <div className="mi-report-actions">
+        <button type="button" className="v3-btn v3-btn-ghost" onClick={() => navigateTo("/mock-interviews?view=records")}>{t("返回列表")}</button>
+        <button type="button" className="v3-btn v3-btn-dark" disabled={busy} onClick={repeat}>{busy ? t("正在创建…") : t("再练一次")}</button>
+      </div>
+      <header className="mi-report-head">
+        <PageEyebrow segments={[{ label: "MOCK INTERVIEW", href: "/mock-interviews", onClick: () => navigateTo("/mock-interviews"), ariaLabel: t("返回模拟面试") }, interviewTitle(interview)]} />
+        <h1 className="mi-serif-title">{t("评估报告")}</h1>
+        <div className="mi-report-meta">
+          <span className="mi-tag-sq">{INTERVIEW_TYPE_LABELS[interview.interview_type]}</span>
+          <span className="mi-tag-sq">{DIFFICULTY_LABELS[interview.difficulty]}</span>
+          <span>{answered >= total ? t("{value0} 题全部作答", { value0: total }) : t("作答 {value0} / {value1} 题", { value0: answered, value1: total })}{minutes ? t(" · 用时 {value0} 分钟", { value0: minutes }) : ""} · {dateTimeLabel(interview.finished_at ?? interview.created_at)}</span>
+        </div>
+      </header>
+
+      {report.low_confidence && (
+        <div className="mi-low-confidence" role="note">{t("作答不足 2 道主问题或跳过超过一半，本报告仅供参考。")}</div>
+      )}
+
+      <section className="mi-summary is-v4" aria-label={t("结论")}>
+        <div className="mi-gauge-col">
+          <ScoreGauge score={report.total_score} />
+          <span className={`mi-grade ${tone}`}>{VERDICT_LABELS_V4[verdict.level]}{verdict.level === "insufficient" ? "" : t(" · {value0}标准", { value0: DIFFICULTY_LABELS[verdict.target] })}</span>
+        </div>
+        <i className="mi-summary-div" aria-hidden="true" />
+        <div className="mi-summary-copy">
+          <h2>{report.headline}</h2>
+          <p>{report.summary}</p>
+          <div className="mi-summary-stats">
+            <span>{t("总分")}<b>{Math.round(report.total_score)}</b></span>
+            <span>{t("核心要点命中率")}<b>{Math.round(verdict.core_hit_rate * 100)}%</b></span>
+            <span>{t("风险信号")}<b>{t("{value0} 处", { value0: verdict.risk_flags.length })}</b></span>
+          </div>
+        </div>
+      </section>
+
+      {(strengths.length > 0 || verdict.risk_flags.length > 0) && (
+        <div className="mi-proscons">
+          <article className="is-good">
+            <h3>{t("做得好的")}</h3>
+            {strengths.length ? <ul>{strengths.map((text) => <li key={text}><i aria-hidden="true">✓</i><span>{text}</span></li>)}</ul> : <p>{t("这场没有特别突出的回答")}</p>}
+          </article>
+          <article className="is-bad">
+            <h3>{t("风险信号")}</h3>
+            {verdict.risk_flags.length ? (
+              <ul>
+                {verdict.risk_flags.map((flag) => (
+                  <li key={`${flag.kind}-${flag.sequence_no}-${flag.text}`}><i aria-hidden="true">!</i><span>{flag.text}</span>{flag.sequence_no !== null && questionRef(flag.sequence_no)}</li>
+                ))}
+              </ul>
+            ) : <p>{t("没有发现风险信号")}</p>}
+          </article>
+        </div>
+      )}
+
+      {competencies.length > 0 && (
+        <section className="mi-report-section" aria-label={t("能力表现")}>
+          <div className="mi-section-head is-report"><h2>{t("能力表现")}</h2><span>{t("0–100 分 · 按各题预设的答题要点汇总 · 竖线为达标 {value0}、强 {value1}", { value0: SOLID_COMPETENCY, value1: STRONG_COMPETENCY })}</span><i aria-hidden="true" /></div>
+          <ul className="mi-comp-list">
+            {competencies.map((item) => {
+              const weak = item.level === "weak";
+              return (
+                <li key={item.key} className={item.assessed ? "" : "is-thin"}>
+                  <b>{DIMENSION_LABELS[item.key]}</b>
+                  {item.assessed && item.score !== null ? (
+                    <div>
+                      <div className="mi-comp-row">
+                        <span className="mi-comp-bar" aria-hidden="true">
+                          <i className={weak ? "is-weak" : ""} style={{ width: `${item.score}%` }} />
+                          <span style={{ left: `${SOLID_COMPETENCY}%` }} /><span style={{ left: `${STRONG_COMPETENCY}%` }} />
+                        </span>
+                        <strong className={weak ? "is-weak" : ""}>{Math.round(item.score)}</strong>
+                        {item.level && <span className={item.level === "strong" ? "mi-grade is-good" : weak ? "mi-grade is-mid" : "mi-tag-sq"}>{LEVEL_LABELS[item.level]}</span>}
+                      </div>
+                      {item.comment && <p>{item.comment}</p>}
+                    </div>
+                  ) : <p>{t("本场涉及的题目太少，考察不足，不评分")}</p>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      <section className="mi-report-section" aria-label={t("逐题表现")}>
+        <div className="mi-section-head is-report"><h2>{t("逐题表现")}</h2><span>{t("总分 = {value0} 道主问题的平均分，自我介绍不计分 · 点击题目查看完整问答与分析", { value0: scoredRows.length })}</span><i aria-hidden="true" /></div>
+        {scoredRows.length > 0 && (
+          <div className="mi-qchart">
+            <div className="mi-qchart-plot">
+              <span className="mi-qchart-band" aria-hidden="true" />
+              <span className="mi-qchart-ref" style={{ bottom: `${MEETS_SCORE}%` }}><span>{t("达到 {value0}", { value0: MEETS_SCORE })}</span></span>
+              <span className="mi-qchart-ref" style={{ bottom: `${NEAR_SCORE}%` }}><span>{t("接近 {value0}", { value0: NEAR_SCORE })}</span></span>
+              <div className="mi-qchart-bars">
+                {scoredRows.map((row) => {
+                  const index = rows.indexOf(row);
+                  const score = row.evaluation.score;
+                  return (
+                    <button key={row.group.root.id} type="button" onClick={() => setOpenIndex(index)} aria-label={t("Q{value0} {value1}，{value2} 分", { value0: index + 1, value1: row.evaluation.topic, value2: score })}>
+                      <i className={score < LOW_QUESTION ? "is-bad" : ""} style={{ height: `${score}%` }} />
+                      <b className={scoreTone(score)} style={{ bottom: `calc(${score}% + 4px)` }}>{score}</b>
+                      <small>Q{index + 1}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+        <div className="mi-qlist">
+          {rows.map((row, index) => {
+            const evaluation = row.evaluation;
+            const errors = evaluation.factual_errors.length;
+            return (
+              <button key={row.group.root.id} type="button" className={`mi-qrow${evaluation.score < LOW_QUESTION && !evaluation.is_intro ? " has-conflict" : ""}`} onClick={() => setOpenIndex(index)} aria-label={t("Q{value0} {value1}，{value2} 分", { value0: index + 1, value1: evaluation.topic, value2: evaluation.score })}>
+                <span className="mi-qno">Q{index + 1}</span>
+                <span className="mi-qtopic">{evaluation.topic}</span>
+                {errors > 0 && <span className="mi-tag-sq is-warn">{t("{value0} 处事实错误", { value0: errors })}</span>}
+                <DepthTag evaluation={evaluation} expected={expected} />
+                <b className={`mi-qscore ${evaluation.is_intro ? "" : scoreTone(evaluation.score)}`}>{evaluation.is_intro ? "—" : evaluation.score}</b>
+                <span className="mi-qchev" aria-hidden="true">›</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {actions.length > 0 && (
+        <section className="mi-report-section" aria-label={t("下一步")}>
+          <div className="mi-section-head is-report">
+            <h2>{t("下一步")}</h2><span>{t("按优先级排序 · {value0} 条", { value0: actions.length })}</span><i aria-hidden="true" />
+            {interview.resume_id && actions.some((item) => item.kind === "resume") && <OpenResumeButton resumeId={interview.resume_id} />}
+          </div>
+          <div className="mi-cards">
+            {actions.map((item, index) => {
+              const refs = item.question_refs.map(questionRef).filter(Boolean);
+              const sources = (refs.length > 0 || item.competency) && (
+                <div className="mi-sources">
+                  {refs.length > 0 && <><small>{t("来源")}</small>{refs}</>}
+                  {refs.length > 0 && item.competency && <i aria-hidden="true" />}
+                  {item.competency && <><small>{t("能力")}</small><span className="mi-tag-sq">{DIMENSION_LABELS[item.competency as MockCompetencyKey] ?? item.competency}</span></>}
+                </div>
+              );
+              const head = <h3><span className={`mi-tag-sq${item.priority === "high" ? " is-warn" : ""}`}>{item.priority === "high" ? t("重要") : t("建议")}</span>{item.title}{item.kind !== "practice" && <span className="mi-tag-sq mi-action-kind">{ACTION_KIND_LABELS[item.kind]}</span>}</h3>;
+              return item.resume_quote ? (
+                <article key={index} className="mi-risk mi-action">
+                  {head}
+                  <div className="mi-risk-head"><small>{t("简历原文")}</small><b>「{item.resume_quote}」</b></div>
+                  {item.detail && <div className="mi-risk-fix"><b>{t("修改建议")}</b><span>{item.detail}</span></div>}
+                  {sources}
+                </article>
+              ) : (
+                <article key={index} className="mi-improve">
+                  {head}
+                  {item.detail && <p>{item.detail}</p>}
+                  {sources}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <FactCheckSection report={report} />
+
+      <footer className="mi-report-foot">{t("评分规则 ")}{report.rubric_version}{t(" · 总分为主问题平均分，模型只判断单条答题要点并给出原文依据")}</footer>
+
+      {openIndex !== null && rows[openIndex] && (
+        <QuestionDetailDialog rows={rows} index={openIndex} expected={expected} report={report} onNavigate={setOpenIndex} onClose={() => setOpenIndex(null)} />
+      )}
+      {toast && <Toast kind="error" title={t("没能再练一次")} message={toast} onDismiss={() => setToast(null)} />}
+    </div>
+  );
+}
+
+// 深度只和面试官实际追问到的层级比较：没追问到就不扣分
+function DepthTag({ evaluation, expected }: { evaluation: ReportQuestion; expected: number }) {
+  useLocale();
+  if (evaluation.skipped) return <span className="mi-tag-sq">{t("已跳过")}</span>;
+  if (evaluation.is_intro) return <span className="mi-tag-sq">{t("不计分")}</span>;
+  const probed = evaluation.probed_depth ?? 0;
+  const achieved = evaluation.achieved_depth;
+  switch (evaluation.depth_status) {
+    case "short": return <span className="mi-tag-sq is-warn">{t("追问到 L{value0} · 只答到 L{value1}", { value0: probed, value1: achieved })}</span>;
+    case "met": return <span className="mi-tag-sq">{t("追问到 L{value0} · 答到 L{value1}", { value0: probed, value1: achieved })}</span>;
+    case "not_probed": return <span className="mi-tag-sq">{t("答到 L{value0} · 未追问到 L{value1}，不扣分", { value0: achieved, value1: expected })}</span>;
+    default: return null;
+  }
+}
+
+// 半圆仪表：0–60 有差距、60–75 接近、75–100 达到，圆点标出本场总分
+const GAUGE = { cx: 105, cy: 106, r: 94 };
+function gaugePoint(value: number, radius = GAUGE.r) {
+  const angle = Math.PI + (Math.max(0, Math.min(100, value)) / 100) * Math.PI;
+  return [GAUGE.cx + radius * Math.cos(angle), GAUGE.cy + radius * Math.sin(angle)] as const;
+}
+function gaugeArc(from: number, to: number) {
+  const [x0, y0] = gaugePoint(from);
+  const [x1, y1] = gaugePoint(to);
+  return `M ${x0} ${y0} A ${GAUGE.r} ${GAUGE.r} 0 0 1 ${x1} ${y1}`;
+}
+function ScoreGauge({ score }: { score: number }) {
+  useLocale();
+  const [mx, my] = gaugePoint(score);
+  return (
+    <div className="mi-gauge" role="img" aria-label={t("总分 {value0} / 100", { value0: Math.round(score) })}>
+      <svg width="210" height="124" viewBox="0 0 210 124" aria-hidden="true">
+        <path d={gaugeArc(0, NEAR_SCORE - 0.8)} stroke="#ead3cf" />
+        <path d={gaugeArc(NEAR_SCORE + 0.8, MEETS_SCORE - 0.8)} stroke="#f0dcc0" />
+        <path d={gaugeArc(MEETS_SCORE + 0.8, 100)} stroke="#d2e6d8" />
+        {[NEAR_SCORE, MEETS_SCORE].map((value) => { const [x, y] = gaugePoint(value, GAUGE.r + 13); return <text key={value} x={x} y={y + 3} textAnchor="middle">{value}</text>; })}
+        <circle cx={mx} cy={my} r="8" />
+      </svg>
+      <b>{Math.round(score)}</b>
+      <small>/ 100</small>
     </div>
   );
 }
