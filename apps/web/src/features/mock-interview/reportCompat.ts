@@ -1,9 +1,7 @@
 // 评分规则 v4 报告到页面报告视图的适配。
-// v4 去掉了整体维度分、改进建议与简历风险数组，改为能力项（0–100）与行动清单；
-// 新报告页确认前，这里补齐旧页面读取的字段，同时把 v4 原始字段保留在 verdict / competencies / actions 上。
+// v4 报告仍带着 v1–v3 字段（维度 1–5 分、改进建议、简历风险），旧页面可以直接读取；
+// 与视图不同的只有事实错误：v4 每条带严重度，旧页面按字符串展示。
 import type {
-  MockCompetency,
-  MockDimension,
   MockFactualError,
   MockInterviewDetail,
   MockInterviewReport,
@@ -21,26 +19,9 @@ function evaluationView<T extends RawEvaluation>(evaluation: T): T & { factual_e
   return { ...evaluation, factual_errors: evaluation.factual_errors.map((item) => (typeof item === "string" ? item : item.description)) };
 }
 
-function dimensionView(item: MockCompetency): MockDimension {
-  // 旧页面按 1–5 分画条形图；v4 能力分是 0–100。
-  return { key: item.key, score: Math.round(((item.score ?? 0) / 20) * 10) / 10, weight: item.weight, evidence: "", comment: item.comment };
-}
-
 export function reportView(report: MockInterviewReport | MockInterviewReportV4Raw | null): MockInterviewReport | null {
   if (!report || !isV4Report(report)) return report;
-  const actions = report.actions ?? [];
-  const { dimensions, questions, ...rest } = report;
-  return {
-    ...rest,
-    competencies: dimensions,
-    dimensions: dimensions.filter((item) => item.assessed).map(dimensionView),
-    questions: questions.map(evaluationView),
-    question_average: report.total_score,
-    dimension_score: 0,
-    improvements: actions.filter((item) => item.kind !== "resume").map((item) => (item.detail ? `${item.title}：${item.detail}` : item.title)),
-    resume_risks: actions.filter((item) => item.kind === "resume").map((item) => `${item.resume_quote ? `「${item.resume_quote}」` : ""}${item.title}${item.detail ? `：${item.detail}` : ""}`),
-    practice_focus: [],
-  };
+  return { ...report, questions: report.questions.map(evaluationView) };
 }
 
 export function detailView<T extends MockInterviewDetail>(detail: T): T {

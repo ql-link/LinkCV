@@ -145,11 +145,11 @@ export type MockInterviewReport = {
   re_evaluations?: Array<{ question_id: string; before: number; after: number; at: string }>;
 };
 
-// 后端 v4 原始报告中与视图不同的字段。
-export type MockInterviewReportV4Raw = Omit<MockInterviewReport, "dimensions" | "questions" | "question_average" | "dimension_score" | "resume_risks" | "improvements"> & {
+// 后端 v4 原始报告：保留 v1–v3 字段供旧客户端读取，新增能力项、录用倾向与行动清单；只有事实错误的形状不同。
+export type MockInterviewReportV4Raw = Omit<MockInterviewReport, "questions"> & {
   rubric_version: "v4";
   verdict: MockReportVerdict;
-  dimensions: MockCompetency[];
+  competencies: MockCompetency[];
   actions: MockReportAction[];
   questions: Array<Omit<MockQuestionEvaluation, "factual_errors"> & {
     topic: string;

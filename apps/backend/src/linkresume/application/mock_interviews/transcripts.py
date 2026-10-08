@@ -25,6 +25,7 @@ from linkresume.application.mock_interviews.service import (
     _root_id,
     _state_invalid,
     _transcript,
+    legacy_report_fields,
     list_questions,
     require_owned,
     report_metrics,
@@ -300,7 +301,7 @@ def store_reevaluation(
         voice_metrics=voice,
     )
     # 评语与行动清单是整场的文字结论，单题重评只复算数字，沿用已有评语。
-    notes = {str(item.get("key")): item.get("comment") or "" for item in report.get("dimensions") or []}
+    notes = {str(item.get("key")): item.get("comment") or "" for item in report.get("competencies") or []}
     dimensions = metrics["dimensions"]
     for dimension in dimensions:
         dimension["comment"] = notes.get(str(dimension["key"]), "")
@@ -309,7 +310,8 @@ def store_reevaluation(
     report["questions"] = results
     report["total_score"] = total
     report["verdict"] = verdict
-    report["dimensions"] = dimensions
+    report["competencies"] = dimensions
+    report.update(legacy_report_fields(total_score=total, competencies=dimensions, actions=list(report.get("actions") or [])))
     report["low_confidence"] = metrics["low_confidence"]
     if voice:
         report["voice_metrics"] = {**voice, "delivery_score": metrics["voice_delivery"]}

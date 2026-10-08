@@ -428,6 +428,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         scores = [item["score"] for item in report["questions"] if not item["is_intro"]]
         assert report["total_score"] == pytest.approx(sum(scores) / len(scores), abs=0.01)
         assert report["re_evaluations"][-1]["verdict"] == report["verdict"]["level"]
+        assert report["question_average"] == report["dimension_score"] == report["total_score"]
         assert data["mock_interview"]["total_score"] == pytest.approx(report["total_score"])
         root = next(q for q in data["mock_interview"]["questions"] if q["id"] == roots[0]["id"])
         assert len(root["evaluation_history"]) == 3

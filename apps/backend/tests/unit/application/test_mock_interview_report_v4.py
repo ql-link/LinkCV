@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from linkresume.application.mock_interviews.outputs import ActionItem
-from linkresume.application.mock_interviews.scoring import normalize_actions, report_metrics
+from linkresume.application.mock_interviews.scoring import legacy_report_fields, normalize_actions, report_metrics
 
 
 def _question(sequence_no, number, score, *, signals=(), expression="hit", intro=False, skipped=False,
@@ -136,3 +136,25 @@ def test_actions_drop_unknown_refs_map_follow_ups_and_require_real_resume_quotes
     assert by_title["真改简历"]["kind"] == "resume" and by_title["真改简历"]["competency"] == "ownership"
     assert by_title["练习"]["question_refs"] == [1]
     assert by_title["提示"]["competency"] is None
+
+
+def test_legacy_fields_keep_old_clients_readable() -> None:
+    competencies = [
+        {"key": "knowledge", "assessed": True, "score": 75.0, "weight": 0.3, "comment": "原理清楚"},
+        {"key": "communication", "assessed": True, "score": 0.0, "weight": 0.3, "comment": ""},
+        {"key": "ownership", "assessed": False, "score": None, "weight": 0.4, "comment": ""},
+    ]
+    actions = [
+        {"title": "补齐故障边界", "detail": "说明补偿", "kind": "practice", "resume_quote": None},
+        {"title": "补充口径", "detail": "", "kind": "resume", "resume_quote": "QPS 提升到 3 万"},
+    ]
+    legacy = legacy_report_fields(total_score=66.0, competencies=competencies, actions=actions)
+    assert legacy["question_average"] == legacy["dimension_score"] == 66.0
+    # 0–100 maps back to the v3 1–5 scale; unassessed competencies are left out and weights renormalised.
+    assert legacy["dimensions"] == [
+        {"key": "knowledge", "score": 4.0, "weight": 0.5, "evidence": [], "comment": "原理清楚"},
+        {"key": "communication", "score": 1.0, "weight": 0.5, "evidence": [], "comment": ""},
+    ]
+    assert legacy["improvements"] == ["补齐故障边界：说明补偿"]
+    assert legacy["resume_risks"] == ["「QPS 提升到 3 万」补充口径"]
+    assert legacy["practice_focus"] == []

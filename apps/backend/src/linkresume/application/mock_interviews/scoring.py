@@ -317,6 +317,42 @@ def report_metrics(
     }
 
 
+def legacy_report_fields(
+    *, total_score: float, competencies: list[dict[str, Any]], actions: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """v1–v3 报告字段，供未升级的 macOS / Windows 客户端和面试准备继续读取。"""
+    assessed = [item for item in competencies if item["assessed"] and item["score"] is not None]
+    weight = sum(float(item["weight"]) for item in assessed)
+    return {
+        "question_average": total_score,
+        # 旧客户端展示「题目 × 70% + 维度 × 30%」，与总分取同值让这条公式仍然成立。
+        "dimension_score": total_score,
+        # 旧维度分是 1–5 分，按 v3 的「1 分对应 0、5 分对应 100」反向换算。
+        "dimensions": [
+            {
+                "key": item["key"],
+                "score": round(1 + float(item["score"]) / 25, 1),
+                "weight": round(float(item["weight"]) / weight, 4) if weight else 0.0,
+                "evidence": [],
+                "comment": item.get("comment") or "",
+            }
+            for item in assessed
+        ],
+        "improvements": [
+            f"{item['title']}：{item['detail']}" if item["detail"] else item["title"]
+            for item in actions
+            if item["kind"] != "resume"
+        ],
+        "resume_risks": [
+            (f"「{item['resume_quote']}」" if item["resume_quote"] else "")
+            + (f"{item['title']}：{item['detail']}" if item["detail"] else item["title"])
+            for item in actions
+            if item["kind"] == "resume"
+        ],
+        "practice_focus": [],
+    }
+
+
 def normalize_actions(
     actions: list[Any],
     *,

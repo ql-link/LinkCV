@@ -332,10 +332,10 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert [item["verdict"] for item in first_signals] == ["hit", "partial", "miss", "miss"]
         assert report["questions"][0]["topic"] == "自我介绍"  # fixed intro takes the first slot
         assert report["questions"][0]["expression"]["verdict"] == "hit"
-        weights = {item["key"]: item["weight"] for item in report["dimensions"]}
+        weights = {item["key"]: item["weight"] for item in report["competencies"]}
         assert "job_fit" not in weights  # no JD supplied
         assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
-        knowledge = next(item for item in report["dimensions"] if item["key"] == "knowledge")
+        knowledge = next(item for item in report["competencies"] if item["key"] == "knowledge")
         assert knowledge["comment"] == "原理讲得清楚"
         scored = [item["score"] for item in report["questions"] if not item["is_intro"]]
         # The self-introduction is feedback only; the total is the plain question average.
@@ -351,7 +351,13 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert [item["title"] for item in report["actions"]] == ["补充 QPS 提升的验证方式", "练习用数据支撑结论"]
         assert report["actions"][0]["kind"] == "practice" and report["actions"][0]["resume_quote"] is None
         assert all(ref != 999 for item in report["actions"] for ref in item["question_refs"])
-        assert "improvements" not in report and "dimension_score" not in report
+        # v1–v3 fields stay for old desktop clients and interview prep.
+        assert report["question_average"] == report["dimension_score"] == report["total_score"]
+        assessed = [item for item in report["competencies"] if item["assessed"]]
+        assert [item["key"] for item in report["dimensions"]] == [item["key"] for item in assessed]
+        assert all(1 <= item["score"] <= 5 for item in report["dimensions"])
+        assert report["improvements"] == [f"{item['title']}：{item['detail']}" if item["detail"] else item["title"] for item in report["actions"]]
+        assert report["resume_risks"] == [] and report["practice_focus"] == []
         assert report["fact_check"]["status"] == "not_requested"
         assert report["rubric_version"] == "v4"
         assert report["answer_mode"] == "text" and report["voice_metrics"] is None
