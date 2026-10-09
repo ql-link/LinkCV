@@ -120,7 +120,7 @@ describe("WorkbenchSectionOrderReset", () => {
     const sections = (json.content ?? []).slice(1);
     editor.commands.setContent({ type: "doc", content: [json.content![0], sections[1], sections[0]] });
 
-    await user.click(screen.getByRole("button", { name: "恢复默认" }));
+    await user.click(screen.getByRole("button", { name: "恢复默认顺序" }));
 
     expect(sectionTitles(editor)).toEqual(["教育经历", "专业技能"]);
   });
@@ -129,7 +129,7 @@ describe("WorkbenchSectionOrderReset", () => {
     editor = new Editor({ extensions: resumeEditorExtensions, content });
     render(<WorkbenchSectionOrderReset editor={editor} disabled />);
 
-    expect(screen.getByRole("button", { name: "恢复默认" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "恢复默认顺序" })).toBeDisabled();
   });
 });
 

@@ -1160,6 +1160,8 @@ export function ResumeWorkbench({
                     editor={editor}
                     completeness={completeness}
                     disabled={versionOperationPending}
+                    smartOnePage={settings.smartOnePage}
+                    onSmartOnePage={() => updateSettings({ smartOnePage: true })}
                     onClose={() => setDrawerMode(null)}
                   />
                 ) : drawerMode === "template" ? (
