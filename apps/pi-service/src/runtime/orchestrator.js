@@ -17,6 +17,7 @@ import {
   fallbackPlanInstruction,
   finalInstruction,
   identityInstruction,
+  localDate,
   readOnlyInstruction,
   resultReminder,
   translationInstruction,
@@ -128,6 +129,7 @@ export async function executeAgentRun({
   submissionKey = null,
   onReady = () => {},
   modelFactory = configuredModels,
+  now = () => new Date(),
 }) {
   const emit = (type, data) => rawEmit(type, { ...data,
     ...(userSequenceNo == null ? {} : { userSequenceNo }) });
@@ -270,7 +272,10 @@ export async function executeAgentRun({
       throw codedError("AGENT_RESUME_ALREADY_SELECTED");
     }
     if (allowedPurposes && questions.some((question) => !allowedPurposes.includes(question.purpose))) {
-      throw codedError("AGENT_INTENT_CLARIFICATION_SCOPE_INVALID");
+      // The message is what the model sees; name the allowed purposes so it can recover.
+      const error = codedError("AGENT_INTENT_CLARIFICATION_SCOPE_INVALID");
+      error.message = `AGENT_INTENT_CLARIFICATION_SCOPE_INVALID：本步骤只能用这些问题类别追问 ${JSON.stringify(allowedPurposes)}，不要换用其他类别重试。`;
+      throw error;
     }
   };
 
@@ -718,7 +723,7 @@ export async function executeAgentRun({
     const rules = (await Promise.all(workflow.skills.map(loadSkillRules))).join("\n\n");
     const materials = (current.materials ?? []).filter((item) => !(item.type === "resume" && item.id === current.resumeId
       && ["resume_diagnosis", "resume_edit", "resume_translation"].includes(name)));
-    const common = { task, position, total, rules, materials };
+    const common = { task, position, total, today: localDate(now()), rules, materials };
 
     if (workflow.resume === "required" && !current.resumeId) {
       current.awaitingIdentity = true;
@@ -756,7 +761,7 @@ export async function executeAgentRun({
         name: "generate",
         label: "诊断简历",
         tools,
-        text: readOnlyInstruction({ ...common, resume, selection: current.selection, tools }),
+        text: readOnlyInstruction({ ...common, resume, selection: current.selection, tools, purposes: ["content_location"] }),
         submitTool: "submit_task_result",
         missingCode: "AGENT_STEP_RESULT_MISSING",
         purposes: ["content_location"],
@@ -807,7 +812,7 @@ export async function executeAgentRun({
       name: "generate",
       label: `${workflow.label}`,
       tools,
-      text: readOnlyInstruction({ ...common, tools }),
+      text: readOnlyInstruction({ ...common, tools, purposes: workflow.purposes }),
       submitTool: "submit_task_result",
       missingCode: "AGENT_STEP_RESULT_MISSING",
       purposes: workflow.purposes,
