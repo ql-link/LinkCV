@@ -78,6 +78,10 @@
 }
 .wb3 .workbench-canvas.has-drawer { padding-right: 464px; }
 .wb3.is-embedded .workbench-canvas { padding-right: 0; }
+/* 段落分析结果在纸面右侧成栏：有分析时让出这一栏（412 = PageLens 的 RAIL_ROOM + LENS_GAP + LENS_MAX_WIDTH），纸面在左侧剩余区域居中，任意缩放下分析栏都不被挤掉 */
+@media (min-width: 981px) {
+  .wb3 .workbench-canvas.has-lens:not(.has-drawer) { padding-right: 412px; --wb3-pagebar-right: 412px; }
+}
 .wb3 .workbench-paper-scroll { padding: 23px 40px 96px; }
 .wb3 .resume-paper { filter: drop-shadow(0 4px 9px rgb(0 0 0 / 6%)); }
 .wb3 .resume-paper.smart-one-page { box-shadow: 0 4px 18px rgb(0 0 0 / 6%); filter: none; }
@@ -134,44 +138,109 @@
 .wb3-panel-close:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 1px; }
 .wb3-panel-body { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 19px 24px 24px; }
 
-/* 02.2a 大纲 */
-.wb3-outline-meta { display: flex; height: 14px; align-items: center; justify-content: space-between; margin-bottom: 14px; color: var(--v3-fnt); font-size: 11.5px; }
+/* 08 大纲 V2（Figma 1244:156）：两行模块行、状态标签、当前位置、分页感知、行操作与添加模块 */
+.wb3-outline-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.wb3 .wb3-outline-body { padding: 16px 16px 20px; }
+.wb3-outline-pages { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; border: 1px solid var(--v3-line); border-radius: 10px; background: #fafaf9; padding: 12px; }
+.wb3-outline-thumbs { display: flex; flex: 0 0 auto; gap: 6px; }
+.wb3-outline-thumb { display: grid; justify-items: center; gap: 4px; }
+.wb3-outline-thumb small { color: var(--v3-fnt); font: 10px var(--v3-num); }
+.wb3-outline-sheet { display: flex; width: 44px; height: 62px; box-sizing: border-box; flex-direction: column; gap: 2px; overflow: hidden; border: 1px solid var(--v3-cl); border-radius: 3px; background: #fff; padding: 5px 5px 12px; }
+.wb3-outline-sheet i { display: block; min-height: 4px; max-height: 11px; flex: 1 1 0; border-radius: 1px; background: var(--v3-line); }
+.wb3-outline-sheet i.is-head { flex: 0 0 5px; background: var(--v3-cl); }
+.wb3-outline-sheet i.is-current { background: #9fb7ec; }
+.wb3-outline-pages-text { display: grid; min-width: 0; flex: 1; justify-items: start; gap: 4px; }
+.wb3-outline-pages-text strong { color: var(--v3-txt); font-size: 13px; font-weight: 500; }
+.wb3-outline-pages-text span { color: var(--v3-fnt); font-size: 11.5px; line-height: 1.4; }
+.wb3 .wb3-outline-compress { margin: 0; border: 0; background: transparent; padding: 0; color: var(--v3-bl); cursor: pointer; font-size: 11.5px; font-weight: 500; }
+.wb3 .wb3-outline-compress:hover { background: transparent; color: var(--v3-link); }
+.wb3 .wb3-outline-compress:focus-visible { outline: 2px solid var(--v3-bl); outline-offset: 2px; border-radius: 3px; }
+.wb3-outline-meta { display: flex; align-items: center; justify-content: space-between; padding: 14px 8px 6px; color: var(--v3-fnt); font-size: 11.5px; line-height: 14px; }
+.wb3-outline-meta.is-dragging > span:first-child { color: var(--v3-bl); }
 .wb3 .workbench-section-order-reset { margin: 0; border: 0; border-radius: 5px; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; font-size: 11.5px; font-weight: 500; }
 .wb3 .workbench-section-order-reset:hover:not(:disabled) { color: var(--v3-txt); background: transparent; }
 .wb3 .workbench-section-order-reset:disabled { color: var(--v3-fnt2); cursor: default; }
-.wb3 .workbench-section-order { display: grid; gap: 14px; margin: 0 -8px; }
-.wb3 .workbench-section-order-group-label { margin: 0 8px; color: var(--v3-fnt); font-size: 11px; font-weight: 500; }
-.wb3 .workbench-section-order-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.wb3 .workbench-section-order-row { position: relative; display: flex; height: 40px; min-height: 40px; align-items: center; gap: 0; border: 1px solid transparent; border-radius: 9px; background: transparent; padding: 0 14px 0 10px; }
-.wb3 .workbench-section-order-row:hover { background: var(--v3-field); }
-.wb3 .workbench-section-order-row.is-fixed { border-style: solid; background: transparent; }
-.wb3 .workbench-section-order-row.is-fixed:hover { background: var(--v3-field); }
-.wb3 .workbench-section-order-row.is-dragging { opacity: 0.3; }
-.wb3 .workbench-section-order-row.is-drop-before::before,
-.wb3 .workbench-section-order-row.is-drop-after::after { position: absolute; right: 0; left: 6px; height: 2px; border-radius: 1px; background: var(--v3-bl); content: ""; }
-.wb3 .workbench-section-order-row.is-drop-before::before { top: -3px; }
-.wb3 .workbench-section-order-row.is-drop-after::after { bottom: -3px; }
+.wb3 .workbench-section-order { display: grid; gap: 12px; margin: 0; }
+.wb3 .workbench-section-order-group { display: grid; gap: 4px; }
+.wb3 .workbench-section-order-group-label { display: flex; align-items: center; gap: 6px; margin: 4px 8px 2px; color: var(--v3-sub); font-size: 11.5px; font-weight: 500; }
+.wb3 .workbench-section-order-group-label small { color: var(--v3-fnt2); font-size: 11px; font-weight: 400; }
+.wb3 .workbench-section-order-column { position: relative; width: 12px; height: 10px; box-sizing: border-box; border: 1.5px solid var(--v3-fnt); border-radius: 2px; }
+.wb3 .workbench-section-order-column::after { position: absolute; top: 0; bottom: 0; width: 4px; background: var(--v3-fnt); content: ""; }
+.wb3 .workbench-section-order-column.is-left::after { left: 0; }
+.wb3 .workbench-section-order-column.is-right::after { right: 0; }
+.wb3 .workbench-section-order-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.wb3 .workbench-section-order-row { position: relative; display: flex; min-height: 52px; box-sizing: border-box; align-items: center; gap: 8px; border: 0; border-radius: 10px; background: transparent; padding: 9px 10px 9px 8px; }
+.wb3 .workbench-section-order-row:hover, .wb3 .workbench-section-order-row.is-menu-open { background: #fafaf9; }
+.wb3 .workbench-section-order-row.is-current { background: var(--v3-field); }
+.wb3 .workbench-section-order-row.is-current::before { position: absolute; top: 17px; left: 0; width: 3px; height: 18px; border-radius: 2px; background: var(--v3-bl); content: ""; }
+.wb3 .workbench-section-order-row.is-current .workbench-section-order-title { font-weight: 500; }
+.wb3 .workbench-section-order-row.is-dragging { opacity: 0.35; }
+.wb3 .workbench-section-order-row.is-drop-before::after,
+.wb3 .workbench-section-order-row.is-drop-after::after { position: absolute; z-index: 2; right: 0; left: 6px; height: 2px; border-radius: 1px; background: var(--v3-bl); content: ""; }
+.wb3 .workbench-section-order-row.is-drop-before::after { top: -2px; }
+.wb3 .workbench-section-order-row.is-drop-after::after { bottom: -2px; }
+.wb3 .workbench-section-order-row.is-drop-before.is-current::before,
+.wb3 .workbench-section-order-row.is-drop-after.is-current::before { display: none; }
 .wb3 .workbench-section-order-handle,
-.wb3 .workbench-section-order-fixed { display: grid; width: 18px; height: 28px; flex: 0 0 18px; place-items: center; margin-right: 8px; border: 0; background: transparent; padding: 0; color: var(--v3-fnt); }
-.wb3 .workbench-section-order-fixed { color: var(--v3-fnt2); }
+.wb3 .workbench-section-order-fixed { position: relative; z-index: 1; display: grid; width: 20px; height: 34px; flex: 0 0 20px; place-items: center; margin: 0; border: 0; background: transparent; padding: 0; color: var(--v3-fnt2); }
 .wb3 .workbench-section-order-handle { border-radius: 5px; cursor: grab; }
+.wb3 .workbench-section-order-row:hover .workbench-section-order-handle:not(:disabled) { color: var(--v3-fnt); }
 .wb3 .workbench-section-order-handle:hover:not(:disabled) { background: transparent; color: var(--v3-sub); }
 .wb3 .workbench-section-order-handle:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 0; }
-.wb3 .workbench-section-order-title { min-width: 0; flex: 1; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; font: 13px var(--v3-sans); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
-.wb3 .workbench-section-order-row:hover .workbench-section-order-title { color: var(--v3-txt); }
-.wb3 .workbench-section-order-title:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; border-radius: 4px; }
-.wb3 .workbench-section-order-flag { width: 6px; height: 6px; flex: 0 0 6px; margin-left: 12px; border-radius: 50%; background: var(--v3-or); }
-.wb3 .workbench-section-order-hint { flex: 0 0 auto; margin-left: 12px; color: var(--v3-fnt2); font-size: 11px; }
-.wb3 .workbench-section-order-row.is-fixed .workbench-section-order-flag { order: 1; }
-.wb3 .workbench-section-order-row.is-fixed .workbench-section-order-hint { order: 2; }
-.wb3-outline-empty { margin: 8px 0 0; color: var(--v3-fnt); font-size: 12px; }
-.wb3-outline-flag-note { display: flex; align-items: center; gap: 8px; margin: 16px 0 0; border-bottom: 1px solid var(--v3-line); padding-bottom: 20px; color: var(--v3-fnt); font-size: 11.5px; }
-.wb3-outline-flag-note i { width: 6px; height: 6px; border-radius: 50%; background: var(--v3-or); }
-.wb3-outline-tip { display: flex; height: 62px; align-items: flex-start; gap: 12px; margin-top: 20px; border-radius: 10px; background: var(--v3-field); padding: 14px; }
-.wb3-outline-key { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border: 1px solid var(--v3-cl); border-radius: 6px; background: #fff; font: 600 12px var(--v3-num); }
-.wb3-outline-tip > span:last-child { display: grid; gap: 5px; }
-.wb3-outline-tip strong { font-size: 12.5px; font-weight: 500; }
-.wb3-outline-tip small { color: var(--v3-fnt); font-size: 11.5px; }
+.wb3 .workbench-section-order-text { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.wb3 .workbench-section-order-title { min-width: 0; overflow: hidden; border: 0; background: transparent; padding: 0; color: var(--v3-txt); cursor: pointer; font: 13px/16px var(--v3-sans); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.wb3 .workbench-section-order-title::after { position: absolute; inset: 0; border-radius: 10px; content: ""; }
+.wb3 .workbench-section-order-title:focus-visible { outline: none; }
+.wb3 .workbench-section-order-title:focus-visible::after { outline: 2px solid var(--v3-dark); outline-offset: -2px; }
+.wb3 .workbench-section-order-summary { overflow: hidden; color: var(--v3-fnt); font-size: 11px; line-height: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.wb3 .workbench-section-order-row.is-empty .workbench-section-order-title { color: var(--v3-fnt); }
+.wb3 .workbench-section-order-rename { position: relative; z-index: 1; width: 100%; height: 22px; box-sizing: border-box; margin: -3px 0 -3px -6px; border: 1px solid var(--v3-bl); border-radius: 6px; background: #fff; padding: 0 6px; color: var(--v3-txt); font: 13px var(--v3-sans); outline: none; box-shadow: 0 0 0 3px rgb(63 111 216 / 14%); }
+.wb3 .workbench-section-order-tag { flex: 0 0 auto; border-radius: 4px; background: var(--v3-field); padding: 2px 6px; color: var(--v3-fnt); font-size: 10.5px; font-weight: 500; line-height: 13px; }
+.wb3 .workbench-section-order-tag.is-flag { background: #fbf1e6; color: #b8661a; }
+.wb3 .workbench-section-order-hint { flex: 0 0 auto; color: var(--v3-fnt2); font-size: 11px; }
+.wb3 .workbench-section-order-more { position: relative; z-index: 1; display: none; width: 22px; height: 22px; flex: 0 0 22px; place-items: center; margin: 0 -3px 0 0; border: 0; border-radius: 6px; background: transparent; padding: 0; color: var(--v3-sub); cursor: pointer; }
+.wb3 .workbench-section-order-row:hover .workbench-section-order-more,
+.wb3 .workbench-section-order-row.is-menu-open .workbench-section-order-more,
+.wb3 .workbench-section-order-more:focus-visible { display: grid; }
+.wb3 .workbench-section-order-row:hover .workbench-section-order-tag,
+.wb3 .workbench-section-order-row.is-menu-open .workbench-section-order-tag { display: none; }
+.wb3 .workbench-section-order-row.is-fixed:hover .workbench-section-order-tag { display: block; }
+.wb3 .workbench-section-order-more:hover { background: var(--v3-field); color: var(--v3-txt); }
+.wb3 .workbench-section-order-more:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 0; }
+.wb3 .workbench-section-order-page { display: flex; align-items: center; gap: 8px; padding: 6px 8px; color: var(--v3-fnt); font-size: 10.5px; }
+.wb3 .workbench-section-order-page::before,
+.wb3 .workbench-section-order-page::after { height: 1px; flex: 1; background: var(--v3-cl); content: ""; }
+.wb3 .wb3-outline-add { display: flex; width: 100%; height: 37px; align-items: center; justify-content: center; gap: 6px; margin-top: 10px; border: 1px dashed var(--v3-fnt2); border-radius: 10px; background: transparent; padding: 0 12px; color: var(--v3-sub); cursor: pointer; font: 500 12.5px var(--v3-sans); }
+.wb3 .wb3-outline-add:hover:not(:disabled), .wb3 .wb3-outline-add[data-state="open"] { border-color: var(--v3-fnt); background: #fafaf9; color: var(--v3-txt); }
+.wb3 .wb3-outline-add:disabled { color: var(--v3-fnt2); cursor: default; }
+.wb3 .wb3-outline-add:focus-visible { outline: 2px solid var(--v3-dark); outline-offset: 2px; }
+.wb3-outline-empty { margin: 8px 8px 0; color: var(--v3-fnt); font-size: 12px; }
+.wb3-outline-foot { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; border-top: 1px solid var(--v3-line); padding: 14px 24px; color: var(--v3-fnt); font-size: 11px; white-space: nowrap; }
+.wb3-outline-foot kbd { border: 1px solid var(--v3-cl); border-radius: 4px; background: #fff; padding: 1px 5px; color: var(--v3-txt); font: 600 11px var(--v3-num); }
+/* 行操作菜单与添加模块弹层（Portal 到面板内，继承 V3 Token） */
+.wb3-outline-menu { z-index: 60; display: grid; line-height: 17px; min-width: 176px; box-sizing: border-box; border: 1px solid var(--v3-cl); border-radius: 10px; background: #fff; padding: 6px; box-shadow: 0 1px 3px rgb(0 0 0 / 5%), 0 8px 24px rgb(0 0 0 / 8%); color: var(--v3-txt); }
+.wb3-outline-menu.is-add { width: 332px; border-radius: 12px; }
+.wb3-outline-menu-label { padding: 8px 10px 6px; color: var(--v3-fnt); font-size: 11px; line-height: 13px; }
+.wb3-outline-menu-item { display: flex; align-items: center; gap: 8px; border-radius: 6px; padding: 7px 10px; color: var(--v3-txt); cursor: pointer; font-size: 12.5px; outline: none; }
+.wb3-outline-menu-item svg { flex: 0 0 auto; color: var(--v3-sub); }
+.wb3-outline-menu-item[data-highlighted] { background: var(--v3-field); }
+.wb3-outline-menu-item.is-danger, .wb3-outline-menu-item.is-danger svg { color: #b9442f; }
+.wb3-outline-menu-item.is-option { gap: 10px; border-radius: 8px; padding: 8px 10px; }
+.wb3-outline-menu-item.is-option > span { display: grid; min-width: 0; flex: 1; gap: 1px; }
+.wb3-outline-menu-item.is-option strong { font-size: 12.5px; font-weight: 500; line-height: 17px; }
+.wb3-outline-menu-item.is-option small { display: block; color: var(--v3-fnt); font-size: 11px; line-height: 14px; }
+.wb3-outline-menu-item.is-option kbd { visibility: hidden; color: var(--v3-fnt); font: 12px var(--v3-num); }
+.wb3-outline-menu-item.is-option[data-highlighted] kbd { visibility: visible; }
+.wb3-outline-menu-item.is-custom { border-radius: 8px; padding: 9px 10px; color: var(--v3-sub); font-weight: 500; }
+.wb3-outline-menu-separator { height: 1px; margin: 2px 0; background: var(--v3-line); }
+.wb3-outline-menu-note { margin: 0; padding: 2px 10px 4px; color: var(--v3-fnt); font-size: 10.5px; line-height: 15px; }
+.wb3-outline-menu.is-add .wb3-outline-menu-note { padding: 6px 10px; }
+/* 大纲打开时正文上的同步标记：光标所在模块的标题、被拖模块与落点 */
+.wb3 .resume-paper .outline-current-mark { position: absolute; display: inline-block; width: 3px; height: 14px; margin: 0.2em 0 0 -12px; border-radius: 2px; background: var(--v3-bl); pointer-events: none; user-select: none; }
+.wb3 .resume-paper .outline-dragging-block { background: rgb(63 111 216 / 6%); box-shadow: -8px 0 0 rgb(63 111 216 / 6%), 8px 0 0 rgb(63 111 216 / 6%); }
+/* 落点线用收缩的外阴影画出 2px 横线，避免占用模板标题的伪元素 */
+.wb3 .resume-paper .outline-drop-before { box-shadow: 0 -6px 0 -4px var(--v3-bl); }
+.wb3 .resume-paper .outline-drop-after { box-shadow: 0 6px 0 -4px var(--v3-bl); }
 
 /* 02.2b 简历模板：两列 160 宽缩略图，间距 12，名称在下方 */
 .wb3 .workbench-template-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; }

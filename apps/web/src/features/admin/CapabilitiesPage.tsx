@@ -5,7 +5,7 @@
  * model — so the page groups bindings by model and edits the order at that level.
  */
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { ArrowRight, AudioLines, CircleAlert, Eye, EyeOff, FileText, Gauge, GripVertical, Image, Languages, ListChecks, MessageSquare, Mic, Plus, ScanText, Search, Trash2, UserRound, Workflow, type LucideIcon } from "lucide-react";
+import { ArrowRight, AudioLines, CircleAlert, Eye, EyeOff, FileText, Gauge, GripVertical, Image, Languages, ListChecks, MessageSquare, Mic, PenLine, Plus, ScanText, Search, Trash2, UserRound, Workflow, type LucideIcon } from "lucide-react";
 import { useMemo, useRef, useState, type CSSProperties, type DragEvent } from "react";
 import { api, type LlmBinding, type LlmModel, type LlmRoute } from "../../api/client";
 import {
@@ -55,6 +55,7 @@ const useCaseIcons: Record<string, LucideIcon> = {
   transcript_correction: Languages,
   job_match: Gauge,
   interview_prep: ListChecks,
+  section_review: PenLine,
   speech_to_text: Mic,
   text_to_speech: AudioLines,
 };

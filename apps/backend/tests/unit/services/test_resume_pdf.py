@@ -144,6 +144,19 @@ class MemoryStorage:
         return SimpleNamespace(size=len(self.objects[object_key]))
 
 
+@pytest.mark.parametrize("field", ["runs", "prefix_runs"])
+def test_structured_field_images_keep_ownership_checks_and_embed_in_pdf(field):
+    source = "/api/resumes/11/assets/example.png"
+    data = {"identity": {"name": {field: [{"inline_type": "media", "src": source}]}}}
+    storage = MemoryStorage({"users/7/resumes/11/assets/example.png": b"example"})
+    validate_resume_pdf_asset_contract(storage, data, user_id=7, resume_id=11)
+    assert source in build_render_assets(storage, data, user_id=7, resume_id=11)
+    data["identity"]["name"][field][0]["src"] = "/api/resumes/12/assets/example.png"
+    with pytest.raises(ApiError) as raised:
+        validate_resume_pdf_asset_contract(storage, data, user_id=7, resume_id=11)
+    assert raised.value.code == "RESUME_PDF_IMAGE_UNAVAILABLE"
+
+
 def test_external_asset_urls_are_ignored_without_network_fetches() -> None:
     storage = RecordingStorage()
     assets = build_render_assets(

@@ -444,6 +444,55 @@ export type AgentSelectionContext = {
   selected_text_hash: string;
 };
 
+export type SectionReviewLine = { id: string; text: string };
+export type SectionReviewSection = { entry_id: string; heading: string; lines: SectionReviewLine[] };
+export type SectionReviewContext = { id: string; label: string; text: string };
+export type SectionReviewWritingMethod = "star" | "xyz" | "car";
+export type SectionReviewReference =
+  | { kind: "general" }
+  | { kind: "job"; job_id: string }
+  | { kind: "method"; method: SectionReviewWritingMethod };
+export type SectionReviewQuestion = { id: string; prompt: string; options: string[] };
+export type SectionReviewVariant = { id: string; label: string; text: string; risky_terms: string[] };
+export type SectionReviewProposal = { context_id: string; summary: string; line_id: string; text: string };
+export type SectionReviewNoteKind = "missing" | "wording" | "structure";
+export type SectionReviewNote = {
+  id: string;
+  kind: SectionReviewNoteKind;
+  line_id: string | null;
+  quote: string;
+  title: string;
+  detail: string;
+  questions: SectionReviewQuestion[];
+  variants: SectionReviewVariant[];
+  proposal: SectionReviewProposal | null;
+};
+export type SectionReviewAnalyzeRequest = {
+  section: SectionReviewSection;
+  context: SectionReviewContext[];
+  intent?: string | null;
+  reference: SectionReviewReference;
+  /** Optional job the resume is aimed at, applied on top of the style. */
+  job_id?: string | null;
+};
+export type SectionReviewAnalyzeResponse = {
+  reference_label: string;
+  inferred_focus: string | null;
+  too_thin: boolean;
+  draft_questions: SectionReviewQuestion[];
+  notes: SectionReviewNote[];
+};
+export type SectionReviewRewriteRequest = {
+  section: SectionReviewSection;
+  context: SectionReviewContext[];
+  reference: SectionReviewReference;
+  job_id?: string | null;
+  line_id: string | null;
+  instruction?: string | null;
+  answers: Array<{ question: string; answer: string }>;
+};
+export type SectionReviewRewriteResponse = { variants: SectionReviewVariant[]; missing: string[] };
+
 export type AgentContextType =
   | "user_profile"
   | "resume"
@@ -2300,6 +2349,16 @@ export const api = {
       method: "PUT",
       body: payload,
     }),
+  analyzeResumeSection: (resumeId: string, payload: SectionReviewAnalyzeRequest, signal?: AbortSignal) =>
+    request<SectionReviewAnalyzeResponse>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-review:analyze`,
+      { method: "POST", body: payload, signal },
+    ),
+  rewriteResumeSectionLine: (resumeId: string, payload: SectionReviewRewriteRequest, signal?: AbortSignal) =>
+    request<SectionReviewRewriteResponse>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-review:rewrite`,
+      { method: "POST", body: payload, signal },
+    ),
   generateInterviewPrepItems: (id: string) =>
     request<InterviewSessionDetail>(
       `/api/interview-sessions/${id}/prep-items:generate`,

@@ -226,7 +226,7 @@ function ResumeCard({
         <button className="hv3-thumb-open" type="button" aria-label={t("打开 {value0}", { value0: resume.title })} onClick={onOpen}>
           <span className="hv3-paper" aria-hidden="true">
             {resume.preview?.layout_plan ? (
-              <ResumePreview data={resume.preview.data} style={resume.preview.style} layoutPlan={resume.preview.layout_plan} />
+              <ResumePreview data={resume.preview.data} style={resume.preview.style} layoutPlan={resume.preview.layout_plan} firstPageOnly />
             ) : (
               <span className="hv3-paper-unavailable">{t("预览不可用")}</span>
             )}

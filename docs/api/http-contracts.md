@@ -16,6 +16,7 @@ Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/auth/me` | `{user}`；只识别 Web Cookie，无效 Cookie 或小程序 Bearer 均返回 `user: null` |
+| `GET` | `/api/auth/default-avatar` | 公开 PNG 项目羽毛 Logo，不依赖登录或对象存储；新注册账号的 `avatar_url` 指向此接口，已有账号不回填 |
 | `POST` | `/api/auth/register` | `201 {user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
 | `POST` | `/api/auth/login` | `{user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
 | `POST` | `/api/auth/admin-login` | `{user}`，管理员登录并签发 Web 双 Cookie |
@@ -97,7 +98,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 
 正文段落（包括 row 单元格内段落）和列表项支持可选 `align: left|center|right|null`；缺省或 `null` 不写入规范化快照，保留旧快照及内容摘要。对齐是内容级样式，不是模板布局；保存、读取、分享和 PDF 沿用该值。
 
-`TextValue`（姓名、职业定位、章节标题、经历字段）与 `Contact` 可携带可选的 `runs`，结构复用正文的 `TextRun`，用于保存局部字号等文字样式；`runs` 非 `null` 时，其中的文字拼接必须严格等于字段 `value`，否则保存返回 `400 INVALID_RESUME_DOCUMENT`。`runs` 最多 1000 项；`prefix_runs` 最多 100 项、合计不超过 101 字符，用于联系方式和经历字段的显示标签，渲染时仅在其文字与当前生成标签完全相符时采用。字号仍由 `InlineStyle.font_size_pt` 约束为 6–48 pt。缺少或为 `null` 的两个可选字段继续按旧数据读取，并在序列化时省略，避免改变未设置样式的历史内容摘要；有样式的新快照必须由支持该扩展的前后端及 PDF 渲染器共同读写。
+`TextValue`（姓名、职业定位、章节标题、经历字段）与 `Contact` 可携带可选的 `runs`，结构复用正文的 `InlineContent`（文字、图标、行内图片），用于保存局部文字样式和任意位置的行内图片；`runs` 非 `null` 时，仅文字项拼接必须严格等于字段 `value`，图片与图标不计入语义文本，否则保存返回 `400 INVALID_RESUME_DOCUMENT`。`runs` 最多 1000 项；`prefix_runs` 最多 100 项、合计不超过 101 字符，用于联系方式和经历字段的显示标签，渲染时仅在其文字与当前生成标签完全相符时采用。字号仍由 `InlineStyle.font_size_pt` 约束为 6–48 pt。缺少或为 `null` 的两个可选字段继续按旧数据读取，并在序列化时省略，避免改变未设置样式的历史内容摘要；有样式或图片的新快照必须由支持该扩展的前后端及 PDF 渲染器共同读写。标题、姓名、职业定位、经历标签与联系方式均允许插入行内图片，也允许仅包含图片；联系方式的空文本必须至少有一项行内图片。图片保留独立 node_id、尺寸和资源引用，继续接受现有上传限制与资源归属检查。图片扩展保存在现有 JSON 中，无数据库迁移；发布时后端与共用 Web/PDF 渲染器先支持扩展，再启用 Web 写入，旧严格解析器无法读取包含图片的新字段。
 
 简历 API、Python DTO 和 TypeScript 类型统一使用 `snake_case`，数据库 ID 在 HTTP 中使用十进制字符串。维护窗口升级到 `0047` 后，运行期只接受 `schema_version=canonical-resume.v1` 的 `data` 和 `schema_version=resume-presentation.v1` 的 `style`；旧 `basics/semantic_sections/custom_sections` 与旧 `manifest` 只允许进入一次性迁移转换器，不能通过普通保存、模板切换、版本、Agent、分享或 PDF API 写回。`CanonicalResumeDocument` 使用稳定 `node_*`、identity、按语义排序的 sections、段落/列表/媒体以及章节内 `row`（`pair` 两格、`meta` 四格、`trio` 三格、`equal` 三或四格等分；等分行可选携带与格数等长的每栏宽度占比，缺省即等分且不写入该字段）和 `source_refs/source_dispositions` 保存唯一内容真值；row/cell 是模板无关的正文结构，禁止保存模板级 region、slot、sidebar/main、column、CSS、分页和编辑器 selection。`TemplateDefinition` 的严格 `avatar` 包含 `visibility`、`fallback_asset`、`size_px` 和已声明的 `region_id`；系统默认头像只在渲染投影中出现，不写回 canonical 正文。`ResumePresentation` 使用 `portable/template_scoped/template_snapshot` 保存展示设置与当前模板快照；`portable.smart_one_page` 控制连续单页或标准 A4 导出。模板切换只更换模板身份、presentation 与后端编译的 `LayoutPlan`，正文规范摘要必须保持不变。字段闭集、数量和长度、URL、node/source 唯一性与来源闭包均严格校验；LLM 只返回稀疏语义标注，未标注源块由确定性组合器保留，不生成“未分类内容”。旧 `markdown/settings/splitRatio/previewScale/lockVersion` 不是简历写契约。
 
@@ -199,6 +200,46 @@ Agent 目标解析、读取、诊断和提案以 canonical 原生节点为唯一
 新增 SSE `user.message.accepted`、`user.message.applied`、`user.message.rejected` 和 `assistant.message.completed`，携带 `runId/submissionKey/userSequenceNo`；完成事件另含 `sequenceNo/content/clarification?`，在正式回复落库后发出。过程、正文、任务、澄清和提案事件追加 `userSequenceNo`。同一 run 可有多条用户请求和各自完整回复；后来失败保留此前结果，终态不再次拼接或保存不同请求的正文。重放时按来源与正式消息序号去重。
 
 Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissionKey]` 只协调进程内输入。FastAPI 服务间 POST `/internal/agent/runs/:runId/steering:activate`、`steering:ack` 与 `messages:complete` 分别激活、确认消费和持久化完整回复。工具回调的可信 `X-Agent-User-Sequence` 必须对应当前活动用户消息；不匹配或多消息 run 缺失来源返回 `409 AGENT_REQUEST_SCOPE_STALE`，仍从 run 反查用户与会话，不能把序号当身份。
+
+## 编辑器段落精修
+
+编辑器的段落聚焦使用两个仅限 Web Cookie 会话的接口，不经过 Pi 运行时，也不写入简历：
+
+| Method | Path | 成功结果 |
+| --- | --- | --- |
+| `POST` | `/api/resumes/:resumeId/section-review:analyze` | 页边批注 `{reference_label,inferred_focus,too_thin,draft_questions,notes}` |
+| `POST` | `/api/resumes/:resumeId/section-review:rewrite` | 改写候选 `{variants,missing}` |
+
+两者的请求都包含：
+- `section`：`{entry_id,heading,lines:[{id,text}]}`，最多 20 行，每行 ≤ 500 字，合计 ≤ 4000 字，行 `id` 不得重复。
+- `context`：`[{id,label,text}]`，最多 6 段，每段 ≤ 1500 字，合计 ≤ 6000 字。
+- `reference` 是分析风格：`{kind:"general"}` 或 `{kind:"method",method}`，`method` 为 `star|xyz|car`；未传时按 `general`（通用写作标准：个人贡献、结果量化、具体、简洁、取舍与去重、写法一致六条）。旧形态 `{kind:"job",job_id}` 继续兼容，等于通用写作标准加该岗位。
+- `job_id`：选填的投递岗位，必须属于本人，否则 `404 JOB_NOT_FOUND`；在所选风格之上叠加岗位要求。与旧形态 `{kind:"job"}` 同传返回 422。`reference_label` 为风格名（「STAR 法则」「XYZ 公式」「CAR 法则」「通用写作标准」），有岗位时追加「 · 公司 · 职位」。
+
+`analyze` 另接受 `intent`（≤ 300 字）。`rewrite` 另接受以下字段，`instruction` 和 `answers` 至少提供一项：
+- `line_id`：必须是 `section.lines` 中的 id；为 `null` 表示起草新行。
+- `instruction`：≤ 300 字。
+- `answers`：`[{question,answer}]`，最多 3 条。
+
+文本由前端按当前编辑器内容提交，节点 id 只回显，后端只校验简历和参照岗位属于本人。
+
+`notes` 最多 6 条，每条 `{id,kind,line_id,quote,title,detail,questions,variants,proposal}`：
+- `kind` 为 `missing`（只给 `questions`）、`wording`（只给 1–2 个 `variants`）或 `structure`（只给 `proposal:{context_id,summary,line_id,text}`）。
+- `variants` 的元素为 `{id,label,text,risky_terms}`；`risky_terms` 只保留出现在改写文本中、比原文更强、需要用户确认属实的词。
+
+服务端丢弃以下内容：
+- 锚点不在请求行中的批注；
+- 引用未发送上下文的结构提案；
+- 缺少追问或改写的批注。
+
+`quote` 不是该行原文片段时置为空字符串。`intent` 非空时 `inferred_focus` 固定为 `null`。本段可分析文字少于 20 个字时不调用模型，返回 `too_thin=true` 和固定的起草问题。
+
+**错误**：
+- 简历不存在或不属于本人：`404 RESUME_NOT_FOUND`。
+- 参照岗位不存在或不属于本人：`404 JOB_NOT_FOUND`。
+- 超出长度或数量限制、`line_id` 不属于本段，或 `instruction` 与 `answers` 都为空：`422`。
+- `section_review` 场景未配置：`503 LLM_MODEL_NOT_CONFIGURED`。
+- 模型失败，或结构两次都无效：`502`，后者错误码为 `LLM_RESPONSE_INVALID`。
 
 ## 简历分享链接
 

@@ -29,6 +29,7 @@ from linkresume.integrations.wechat_client import WechatApiError, WechatClient
 from linkresume.modules.identity.dependencies import get_settings
 from linkresume.modules.identity.capabilities import require_wechat_enabled
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.default_avatar import DEFAULT_AVATAR_KEY
 from linkresume.modules.product_events import service as product_events
 from linkresume.modules.product_events.service import RegistrationMethod
 from linkresume.modules.identity.schemas import OkResponse, UserResponse
@@ -231,6 +232,7 @@ def resolve_wechat_user(
         email=None,
         password_hash=None,
         nickname=f"微信用户{secrets.token_hex(3)}",
+        avatar_object_key=DEFAULT_AVATAR_KEY,
     )
     db.add(user)
     try:

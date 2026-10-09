@@ -103,7 +103,7 @@ def test_profile_query_returns_stats_and_recent_resumes() -> None:
         assert body["user"]["email"] == "profile@example.com"
         assert body["user"]["id"].isdecimal()
         assert body["user"]["nickname"].startswith("用户")
-        assert body["user"]["avatar_url"] is None
+        assert body["user"]["avatar_url"] == "/api/auth/default-avatar"
         assert "avatar_object_key" not in body["user"]
         assert body["resume_count"] == 2
         assert "profile" not in body
@@ -128,7 +128,7 @@ def test_nickname_update_validates_and_persists() -> None:
         )
         assert updated.status_code == 200
         assert updated.json()["nickname"] == "新昵称"
-        assert updated.json()["avatar_url"] is None
+        assert updated.json()["avatar_url"] == "/api/auth/default-avatar"
 
         blank = client.patch("/api/account/profile", json={"nickname": "   "})
         assert blank.status_code == 400

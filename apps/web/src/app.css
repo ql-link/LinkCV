@@ -690,7 +690,7 @@ select:not([data-slot]):focus-visible,
 .resume-paper [data-resume-sheet-background] { background: transparent !important; }
 .resume-paper[data-resume-sheet-outline] .resume-content { border-color: transparent !important; }
 .resume-paper[data-resume-sheet-background] .resume-content { background: transparent !important; }
-.resume-paper[data-resume-identity-fill] .resume-content { position: relative; z-index: 1; }
+.resume-paper[data-resume-identity-fill] .resume-content { position: relative; z-index: 2; }
 .resume-readonly-preview-full .resume-paper[data-resume-identity-fill] { position: relative; }
 .resume-paper[data-resume-identity-fill] .resume-content :is(h1,h1 + p),
 .resume-paper[data-resume-identity-fill="3"] .resume-content h1 + p + p {
@@ -698,7 +698,7 @@ select:not([data-slot]):focus-visible,
 }
 .resume-paper > [data-resume-identity-fill-paint] {
   position: absolute;
-  z-index: 0;
+  z-index: 1;
   pointer-events: none;
 }
 .resume-paper[data-resume-sheet-columns] :is(.resume-layout-column-sidebar,.resume-layout-column-main) {
@@ -719,7 +719,7 @@ select:not([data-slot]):focus-visible,
 }
 .resume-paper:has(> [data-resume-sheet-column-strip]) { position: relative; isolation: isolate; }
 .resume-paper > [data-resume-sheet-column-strip] { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.resume-paper:has(> [data-resume-sheet-column-strip]) .resume-content { position: relative; z-index: 1; }
+.resume-paper:has(> [data-resume-sheet-column-strip]) .resume-content { position: relative; z-index: 2; }
 .resume-paper.pages-horizontal [data-resume-column-fill]::after { content: none; }
 .resume-paper.pages-horizontal > :is([data-resume-sheet-column-strip],[data-resume-sheet-outline-paint]) > div {
   /* Arrangement switches reuse the measured page geometry. Move only paint,
@@ -2022,8 +2022,10 @@ select:not([data-slot]):focus-visible,
 .theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) {background:#dce5fc;padding-top:0}
 .theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > :is(h1,p):not(h2 ~ *) {background:var(--preview-accent);color:white;margin:0 -15px;padding:6px 15px}
 .theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > h1 {padding-top:16px!important}
-.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > p.resume-identity-headline {margin-bottom:0;font-size:9pt}
-.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:left;margin:14px 10px 8px 0;position:relative}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > p.resume-identity-headline {margin:0 -15px;font-size:9pt}
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) > p.resume-identity-contacts {word-break:keep-all}
+/* The narrow identity rail needs a full text line below the portrait. */
+.theme-featured-product :is(.resume-column-sidebar,.resume-layout-column-sidebar) .resume-avatar {float:none;display:block;margin:14px auto 12px;position:relative;max-width:100%}
 .theme-featured-product :is(.resume-column-main,.resume-layout-column-main) h2 {box-sizing:border-box;background:#dce5fc;color:var(--preview-accent);padding:8px 14px;margin:18px 0 8px}
 .theme-featured-product :is(.resume-column-main,.resume-layout-column-main) > h2:first-child {margin-top:0}
 
@@ -2896,6 +2898,13 @@ select:not([data-slot]):focus-visible,
   translate: -50% 0;
   scale: 0.21;
   transform-origin: top center;
+}
+
+.resume-readonly-preview-first-page { content-visibility: visible; }
+.resume-readonly-preview-first-page .resume-preview-paper {
+  height: 297mm;
+  min-height: 297mm;
+  overflow: hidden;
 }
 
 .resume-readonly-preview-full {
@@ -6489,7 +6498,8 @@ select:not([data-slot]):focus-visible,
   left: calc(-1 * var(--share-break-inline-offset, 0px));
 }
 
-.share-page .resume-print-content li.share-page-break {
+.share-page .resume-print-content li.share-page-break,
+.resume-readonly-preview-first-page .resume-print-content li.share-page-break {
   margin: 0;
   padding: 0;
   list-style: none;

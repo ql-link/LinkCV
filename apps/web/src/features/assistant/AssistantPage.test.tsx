@@ -292,6 +292,42 @@ describe("AssistantPage", () => {
     expect(window.location.pathname).toBe("/resumes/7/edit");
   });
 
+  it("关闭文件标签后收起再展开保留剩余标签，消息引用可以重新打开已关闭文件", async () => {
+    const user = userEvent.setup();
+    const routedSession: AgentSession = {
+      ...session,
+      messages: [{ sequence_no: 1, role: "user", content: "比较两份简历", created_at: session.created_at,
+        contexts: [
+          { type: "resume", id: "7", resume_id: "7", version: "1", label: "示例简历甲" },
+          { type: "resume", id: "8", resume_id: "8", version: "1", label: "示例简历乙" },
+        ] }],
+    };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [routedSession] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: routedSession });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.spyOn(api, "getResume").mockImplementation(async (id) => ({ resume: {
+      id, title: id === "7" ? "示例简历甲" : "示例简历乙", source_type: "blank", lock_version: 1,
+      created_at: session.created_at, updated_at: session.updated_at, template_id: null,
+      data: defaultCanonicalDocument, style: defaultCanonicalPresentation,
+    } }));
+    render(<AssistantPage sessionId="session-1" />);
+    await user.click(await screen.findByRole("button", { name: "查看本会话的 2 个文件" }));
+    let panel = await screen.findByRole("complementary", { name: "文件预览" });
+    await user.click(within(panel).getByRole("button", { name: "关闭 示例简历甲" }));
+    expect(within(panel).getAllByRole("tab")).toHaveLength(1);
+    await user.click(within(panel).getByRole("button", { name: "关闭预览" }));
+    await user.click(await screen.findByRole("button", { name: "查看本会话的 1 个文件" }));
+    panel = await screen.findByRole("complementary", { name: "文件预览" });
+    expect(within(panel).getAllByRole("tab")).toHaveLength(1);
+    expect(within(panel).queryByRole("tab", { name: /示例简历甲/ })).not.toBeInTheDocument();
+    await user.click(within(panel).getByRole("button", { name: "关闭 示例简历乙" }));
+    expect(screen.queryByRole("button", { name: /查看本会话的 .* 个文件/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "引用文件 示例简历甲" }));
+    panel = await screen.findByRole("complementary", { name: "文件预览" });
+    expect(within(panel).getAllByRole("tab")).toHaveLength(1);
+    expect(within(panel).getByRole("tab", { name: /示例简历甲/ })).toBeInTheDocument();
+  });
+
   it("只有一项修改时按钮为「忽略 / 采用」，采用后收起为摘要并可展开回看", async () => {
     const user = userEvent.setup();
     const proposal: AgentProposal = {
