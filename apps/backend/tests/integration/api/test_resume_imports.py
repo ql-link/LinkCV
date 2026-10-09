@@ -522,7 +522,7 @@ def test_get_resume_import_closes_a_stale_processing_task() -> None:
         with app.state.session_factory() as db:
             record = db.get(DocumentParseTask, import_id)
             assert record is not None
-            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            record.update_time = datetime.now(timezone.utc) - timedelta(minutes=5)
             db.commit()
 
         status = client.get(f"/api/resume-imports/{import_id}")
@@ -541,7 +541,7 @@ def test_overview_closes_stale_processing_import_with_sqlite_datetime() -> None:
         with app.state.session_factory() as db:
             record = db.get(DocumentParseTask, import_id)
             assert record is not None
-            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            record.update_time = datetime.now(timezone.utc) - timedelta(minutes=5)
             db.commit()
 
         overview = client.get("/api/resume-overview")
@@ -564,7 +564,7 @@ def test_import_replay_closes_stale_task_before_idempotency_response() -> None:
         with app.state.session_factory() as db:
             record = db.get(DocumentParseTask, import_id)
             assert record is not None
-            record.updated_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+            record.update_time = datetime.now(timezone.utc) - timedelta(minutes=5)
             db.commit()
 
         replay = import_file(client, app, key=key)

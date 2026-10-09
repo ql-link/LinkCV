@@ -112,7 +112,9 @@ def test_llm_configuration_writes_are_audited() -> None:
     path = f"/api/admin/llm/use-cases/job_text_extraction/routes/{route}"
     client.put(path, json={"useCase": "job_text_extraction", "routeId": int(route),
                            "protocolCode": "openai_chat", "priority": 100})
-    assert client.patch(path, json={"enabled": True}).status_code == 422
+    assert client.patch(path, json={"enabled": "invalid"}).status_code == 400
+    # 启用现在会自动执行探针；测试替身验证成功后应允许启用。
+    assert client.patch(path, json={"enabled": True}).status_code == 200
     assert client.post(f"{path}/probe").status_code == 200
     client.patch(path, json={"priority": 50})
     assert client.delete(path).status_code == 204
@@ -127,6 +129,7 @@ def test_llm_configuration_writes_are_audited() -> None:
         ("admin.llm_route_update", "llm_route", route, "succeeded"),
         ("admin.llm_binding_upsert", "llm_binding", binding, "succeeded"),
         ("admin.llm_binding_update", "llm_binding", binding, "failed"),
+        ("admin.llm_binding_update", "llm_binding", binding, "succeeded"),
         ("admin.llm_binding_probe", "llm_binding", binding, "succeeded"),
         ("admin.llm_binding_update", "llm_binding", binding, "succeeded"),
         ("admin.llm_binding_delete", "llm_binding", binding, "succeeded"),

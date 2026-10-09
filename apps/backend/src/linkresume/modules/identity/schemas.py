@@ -382,8 +382,11 @@ class UserProfileData(UserProfileBase):
         label = education_labels.get(education)
         if not label or not isinstance(tiers, list) or label not in tiers:
             return value
+        # ORM 时间列已改名，响应字段名仍保留原有 API 契约。
+        attribute_names = {"created_at": "create_time", "updated_at": "update_time"}
         fields = dict(value) if isinstance(value, dict) else {
-            name: getattr(value, name) for name in cls.model_fields
+            name: getattr(value, attribute_names.get(name, name))
+            for name in cls.model_fields
         }
         fields["school_tier"] = [tier for tier in tiers if tier != label]
         return fields

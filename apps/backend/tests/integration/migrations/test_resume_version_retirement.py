@@ -10,10 +10,13 @@ from linkresume.modules.interviews.models import JobApplication
 from linkresume.modules.resumes.models import Resume
 from tests.legacy_models import ResumeVersion
 from tests.integration.api.test_interviews import build_app, register, create_job, create_resume, create_application
+from tests.migration_naming import current_table
 
 ROOT = Path(__file__).resolve().parents[5]
 SQL = (ROOT / "apps/backend/migrations/sql/0084.up.sql").read_text()
 MAPPING = SQL[SQL.index("UPDATE job_applications"):]
+for historical_table in ("job_applications", "resumes"):
+    MAPPING = MAPPING.replace(historical_table, current_table(historical_table))
 
 
 @pytest.mark.parametrize("foreign_owner", [False, True])
@@ -27,7 +30,7 @@ def test_mapping_resolves_owned_parent_without_changing_history_or_new_links(for
         application = create_application(client, create_job(client, "虚构迁移公司"))
     with app.state.session_factory() as db:
         ResumeVersion.__table__.create(db.get_bind())
-        db.execute(text("ALTER TABLE job_applications ADD COLUMN resume_version_id INTEGER"))
+        db.execute(text("ALTER TABLE job_application ADD COLUMN resume_version_id INTEGER"))
         row = db.get(Resume, int(source["id"]))
         legacy = ResumeVersion(resume_id=row.id, template_id=row.template_id, version_no=4,
                                name="旧名称", reason="manual", data_json=deepcopy(row.data_json),
@@ -35,13 +38,13 @@ def test_mapping_resolves_owned_parent_without_changing_history_or_new_links(for
         db.add(legacy)
         db.flush()
         target = db.get(JobApplication, int(application["id"]))
-        db.execute(text("UPDATE job_applications SET resume_version_id = :v WHERE id = :id"), {"v": legacy.id, "id": target.id})
+        db.execute(text("UPDATE job_application SET resume_version_id = :v WHERE id = :id"), {"v": legacy.id, "id": target.id})
         db.commit()
         db.execute(text(MAPPING))
         db.commit()
         db.refresh(target)
         assert target.resume_id == (None if foreign_owner else row.id)
-        assert db.scalar(text("SELECT resume_version_id FROM job_applications WHERE id = :id"), {"id": target.id}) == legacy.id
+        assert db.scalar(text("SELECT resume_version_id FROM job_application WHERE id = :id"), {"id": target.id}) == legacy.id
         assert db.get(ResumeVersion, legacy.id) is not None
         target.resume_id = int(alternate["id"])
         db.commit()

@@ -202,6 +202,10 @@ def run_voice_interview(client, app, speech: FakeSpeech, transcripts: list[str])
         if names[-1] == "interviewer.turn" and next(d for n, d in events if n == "interviewer.turn")["action"] == "finish":
             break
         detail = wait_for(client, created["id"], {"in_progress", "evaluating", "completed"})
+    latest = client.get(f"/api/mock-interviews/{created['id']}").json()["mock_interview"]
+    if latest["status"] == "in_progress":
+        # 素材清理测试只提供有限答案，不依赖当前考察点数量自动结束。
+        assert client.post(f"/api/mock-interviews/{created['id']}/finish").status_code == 200
     return wait_for(client, created["id"], {"completed"})
 
 
@@ -240,7 +244,7 @@ def test_voice_interview_saves_recordings_speaks_and_reports_voice_metrics() -> 
         speech_logs = db.scalars(select(LLMCallLog).where(LLMCallLog.use_case.in_([SPEECH_TO_TEXT, TEXT_TO_SPEECH]))).all()
         assert {log.use_case for log in speech_logs} == {SPEECH_TO_TEXT, TEXT_TO_SPEECH}
         assert all(log.status == "succeeded" for log in speech_logs)
-        assert any((log.usage_json or {}).get("audio_seconds") == 1.0 for log in speech_logs)
+        assert any((log.usage_json or {}).get("audioSeconds") == 1.0 for log in speech_logs)
 
 
 def test_turn_audio_is_sent_as_sse_and_tts_failure_only_drops_audio() -> None:

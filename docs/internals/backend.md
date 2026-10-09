@@ -42,7 +42,7 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
-| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
+| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（自定义头像二进制仅经 `/api/miniprogram/account/avatar` 分发，该接口也支持默认 Logo） |
 | `src/linkresume/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
@@ -267,7 +267,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 ## 对象存储
 
 - 用户级兼容图片：`users/{user_id}/assets/...`。
-- 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
+- 账号自定义头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `user.avatar_object_key`；旧路径中的已有头像保持兼容。新注册的邮箱和微信账号保存 `system:project-logo` 默认头像标记，通过公开 `/api/auth/default-avatar` 读取随后端包发布的项目羽毛 Logo；该标记不传入对象存储上传、读取或删除。小程序的本人头像二进制接口也识别此标记，以兼容其固定下载路径。已有用户不做数据回填，默认头像的用户行为见[账号功能](../features/identity-account.md#本人资料与联系邮箱)。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/source/{safe_name}`。
 - 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；删除时同时兼容旧的 `.../{operation_id}/converted.md`。
 - 知识库原文件：`users/{user_id}/datasets/...`。
@@ -282,6 +282,8 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 公开的 `/api/account/*` 通过 `get_current_user` 获取当前用户，不接受客户端 `user_id`。`GET /api/account/profile` 返回资料并附带简历数量与最近 5 份简历；`PATCH /api/account/profile` 只允许修改昵称（去空白后 1–50 字符）。头像上传复用 `decode_image_data_url`、`build_avatar_object_name` 和 `asset_url`：新对象写入 `users/{user_id}/assets/avatar/...`，再更新 `users.avatar_object_key`，提交失败补偿删除新对象，成功后才清理旧对象；响应只含相对 URL。普通改密和微信绑定不是运行时公开契约；用户停用或管理员操作仍通过 `revoke_user_sessions` 撤销该用户的 Web 与小程序 session。
 
 `UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0044`，由 `0045`、`0046` 和漂移修复 `0051` 收敛为当前结构），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
+
+画像 schema 在清理旧学历标签时构造响应副本，时间属性按 ORM 的 `create_time`、`update_time` 读取并映射到既有响应字段，不改写 ORM 对象；兼容规则见[账号功能](../features/identity-account.md)。
 
 ## 简历分享
 

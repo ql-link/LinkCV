@@ -16,6 +16,7 @@ Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/auth/me` | `{user}`；只识别 Web Cookie，无效 Cookie 或小程序 Bearer 均返回 `user: null` |
+| `GET` | `/api/auth/default-avatar` | 公开 PNG 项目羽毛 Logo，不依赖登录或对象存储；新注册账号的 `avatar_url` 指向此接口，已有账号不回填 |
 | `POST` | `/api/auth/register` | `201 {user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
 | `POST` | `/api/auth/login` | `{user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
 | `POST` | `/api/auth/admin-login` | `{user}`，管理员登录并签发 Web 双 Cookie |
@@ -91,7 +92,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 | `GET` | `/api/account/user-profile` | 新画像完整对象；未创建返回 `lock_version=1` 空对象 |
 | `PUT` | `/api/account/user-profile` | 保存后的新画像完整对象；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` 并携带最新画像 |
 
-`0111–0115` 按阿里巴巴 MySQL 规约修改了数据库表名、时间列和布尔列名称，HTTP 契约不变：响应仍使用 `created_at`/`updated_at`（或既有的 `createdAt`/`updatedAt`）、`pinned`、`enabled`、`share_allow_download` 等原字段名。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
+`0111–0115` 按阿里巴巴 MySQL 规约修改了数据库表名、时间列和布尔列名称，HTTP 契约不变：响应仍使用 `created_at`/`updated_at`（或既有的 `createdAt`/`updatedAt`）、`pinned`、`enabled`、`share_allow_download` 等原字段名。旧画像重复学历标签的读取兼容处理同样保留该时间响应契约，规则见[账号功能](../features/identity-account.md)。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
 
 ## 语义简历契约
 

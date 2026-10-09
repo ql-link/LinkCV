@@ -956,7 +956,10 @@ def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -
         assert client.post(path + '/finish').status_code == 200
         complete = wait_for(client, identity, {'completed'})
         assert complete['report']['total_score'] == complete['total_score']
-        assert client.post(path + '/transcripts:correct').status_code == 403
+        # Desktop 已开放识别稿修正；该文字面试夹具未配置修正模型。
+        correction = client.post(path + '/transcripts:correct')
+        assert correction.status_code == 503
+        assert correction.json()['error'] == 'LLM_MODEL_NOT_CONFIGURED'
         repeat = client.post(path + '/repeat')
         assert repeat.status_code == 201, repeat.text
         repeat_id = repeat.json()['mock_interview']['id']

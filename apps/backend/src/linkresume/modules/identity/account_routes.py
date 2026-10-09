@@ -35,6 +35,7 @@ from linkresume.modules.identity.wechat_routes import require_wechat_environment
 from linkresume.modules.identity.dependencies import get_current_account_user, get_current_user, get_settings, lock_active_user
 from linkresume.modules.identity.capabilities import password_login_enabled, require_password_enabled, wechat_login_enabled
 from linkresume.modules.identity.models import AccountPreference, User, UserProfile
+from linkresume.modules.identity.default_avatar import is_custom_avatar
 from linkresume.modules.identity.schemas import (
     AccountProfileResponse,
     AvatarResponse,
@@ -90,9 +91,7 @@ def _profile(user: User, settings: Settings) -> UserProfileResponse:
         email=user.email,
         nickname=user.nickname,
         is_admin=bool(user.is_admin),
-        avatar_url=(
-            asset_url(user.avatar_object_key) if user.avatar_object_key else None
-        ),
+        avatar_url=user.avatar_url,
         wechat_status=wechat_status,
         wechat_bound_at=user.wechat_bound_at if wechat_login_enabled(settings) else None,
         contact_email=user.contact_email,
@@ -408,7 +407,7 @@ def upload_avatar(
     db.refresh(user)
 
     # Remove the previous avatar only after the replacement is committed.
-    if previous_key and previous_key != object_name:
+    if is_custom_avatar(previous_key) and previous_key != object_name:
         try:
             storage.delete(previous_key)
         except Exception:
@@ -431,7 +430,7 @@ def delete_avatar(
         db.rollback()
         logger.exception("failed to delete avatar for user %s", user.id)
         raise
-    if previous_key:
+    if is_custom_avatar(previous_key):
         try:
             storage.delete(previous_key)
         except Exception:

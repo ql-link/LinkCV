@@ -3,6 +3,7 @@ import secrets
 
 import redis
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from linkresume.core.security import (
 )
 from linkresume.modules.identity.dependencies import get_optional_user, get_settings
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.default_avatar import DEFAULT_AVATAR_KEY, DEFAULT_AVATAR_PATH
 from linkresume.modules.identity.capabilities import (
     password_login_enabled,
     require_password_enabled,
@@ -47,6 +49,15 @@ from linkresume.modules.observability.audit import bind_audit_actor, bind_audit_
 
 router = APIRouter(prefix="/auth", tags=["identity"])
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+@router.get("/default-avatar", response_class=FileResponse)
+def default_avatar() -> FileResponse:
+    return FileResponse(
+        DEFAULT_AVATAR_PATH,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 def normalize_email(value: str) -> str:
@@ -117,6 +128,7 @@ def register(
         contact_email=email,
         password_hash=hash_password(payload.password),
         nickname=f"用户{secrets.token_hex(3)}",
+        avatar_object_key=DEFAULT_AVATAR_KEY,
     )
     db.add(user)
     try:

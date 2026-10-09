@@ -22,4 +22,3 @@ export const MOCK_ACCOUNT_PREFS = { interviewReminderOn: true, interviewReminder
 
 // 编辑资料 · 绑定微信弹窗的示例二维码种子（/api/account/wechat/bind-* 线上只对测试应用开放，先画固定图案）
 export const MOCK_WECHAT_BIND_QR_SEED = "linkresume-bind-demo";
-

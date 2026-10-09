@@ -103,7 +103,7 @@ def test_profile_query_returns_stats_and_recent_resumes() -> None:
         assert body["user"]["email"] == "profile@example.com"
         assert body["user"]["id"].isdecimal()
         assert body["user"]["nickname"].startswith("用户")
-        assert body["user"]["avatar_url"] is None
+        assert body["user"]["avatar_url"] == "/api/auth/default-avatar"
         assert "avatar_object_key" not in body["user"]
         assert body["resume_count"] == 2
         assert "profile" not in body
@@ -128,7 +128,7 @@ def test_nickname_update_validates_and_persists() -> None:
         )
         assert updated.status_code == 200
         assert updated.json()["nickname"] == "新昵称"
-        assert updated.json()["avatar_url"] is None
+        assert updated.json()["avatar_url"] == "/api/auth/default-avatar"
 
         blank = client.patch("/api/account/profile", json={"nickname": "   "})
         assert blank.status_code == 400
@@ -445,12 +445,16 @@ def test_user_profile_reads_redundant_legacy_education_tag_without_changing_stor
             row = session.scalar(select(UserProfile))
             row.school_tier = ["本科", "project_985"]
             session.commit()
+            expected_created_at = row.create_time.isoformat().replace("+00:00", "Z")
+            expected_updated_at = row.update_time.isoformat().replace("+00:00", "Z")
 
         response = client.get("/api/account/user-profile")
         assert response.status_code == 200
         assert response.json()["education_level"] == "bachelor"
         assert response.json()["school_tier"] == ["project_985"]
         assert response.json()["lock_version"] == 1
+        assert response.json()["created_at"].removesuffix("Z") == expected_created_at.removesuffix("Z")
+        assert response.json()["updated_at"].removesuffix("Z") == expected_updated_at.removesuffix("Z")
         with app.state.session_factory() as session:
             row = session.scalar(select(UserProfile))
             assert row.school_tier == ["本科", "project_985"]

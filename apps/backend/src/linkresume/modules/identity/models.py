@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from linkresume.core.database import Base
 from linkresume.core.storage import asset_url
+from linkresume.modules.identity.default_avatar import DEFAULT_AVATAR_KEY, DEFAULT_AVATAR_URL
 
 
 def unsigned_bigint_type():
@@ -123,6 +124,8 @@ class User(Base):
 
     @property
     def avatar_url(self) -> str | None:
+        if self.avatar_object_key == DEFAULT_AVATAR_KEY:
+            return DEFAULT_AVATAR_URL
         if not self.avatar_object_key:
             return None
         return asset_url(self.avatar_object_key)

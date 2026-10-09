@@ -584,4 +584,3 @@ def _improvements(
         )
         for position, item in enumerate(ranked)
     ]
-

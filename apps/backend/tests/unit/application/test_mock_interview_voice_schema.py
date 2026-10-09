@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+from tests.migration_naming import current_columns, current_object_names
 
 SQL = (Path(__file__).resolve().parents[3] / "migrations/sql/0096.up.sql").read_text(encoding="utf-8")
 
@@ -26,10 +27,10 @@ def _orm_checks(model) -> set[str]:
 
 def test_0096_columns_and_checks_match_orm() -> None:
     for model in (MockInterview, MockInterviewQuestion):
-        table = model.__tablename__
-        added = _added(table)
+        table = model.__tablename__ + "s"
+        added = current_columns(table, _added(table))
         assert added and added <= set(model.__table__.columns.keys())
-        assert _constraints(table) <= _orm_checks(model)
+        assert current_object_names(table, _constraints(table)) <= _orm_checks(model)
 
 
 def test_public_interview_times_are_explicit_utc():
