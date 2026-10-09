@@ -10,14 +10,13 @@ import { Icon, type V3IconName } from "./Icon";
 import { Avatar, ConfirmDialog, Dialog, Menu, Toast } from "./primitives";
 import { useActiveSessionStore, useSessionStore } from "./sessionStore";
 import { DeleteSessionArt } from "./art";
-import { readPageCache, writePageCache } from "./pageCache";
 import "./v3.css";
 
 export type V3Section = "home" | "resumes" | "templates" | "jobs" | "schedule" | "mock" | "datasets" | "account" | "none";
 
-const NAV: Array<{ key: V3Section; icon: V3IconName; label: string; href: string; count?: () => number | null }> = [
+const NAV: Array<{ key: V3Section; icon: V3IconName; label: string; href: string }> = [
   { key: "home", icon: "sun", get label() { return t("首页"); }, href: "/assistant" },
-  { key: "resumes", icon: "doc", get label() { return t("我的简历"); }, href: "/resumes", count: () => useResumeStore.getState().resumes.length || null },
+  { key: "resumes", icon: "doc", get label() { return t("我的简历"); }, href: "/resumes" },
   { key: "templates", icon: "layout", get label() { return t("简历模板"); }, href: "/templates" },
   { key: "jobs", icon: "brief", get label() { return t("岗位看板"); }, href: "/career/applications" },
   { key: "schedule", icon: "cal", get label() { return t("面试日程"); }, href: "/career/schedule" },
@@ -46,7 +45,6 @@ export function V3Sidebar({
 }) {
   useLocale();
   const user = useResumeStore((state) => state.user);
-  const resumeCount = useResumeStore((state) => state.resumes.length);
   const sessions = useSessionStore((state) => state.sessions);
   const collapsedGroups = useSessionStore((state) => state.collapsedGroups);
   const toggleGroup = useSessionStore((state) => state.toggleGroup);
@@ -55,37 +53,6 @@ export function V3Sidebar({
   const load = useSessionStore((state) => state.load);
   const activeSessionId = useActiveSessionStore((state) => state.activeId);
   const displayName = user?.nickname || user?.email || t("我");
-  const [applicationCount, setApplicationCount] = useState<number | null>(() => readPageCache<number>("sidebar-application-count")?.value ?? null);
-
-  useEffect(() => {
-    let cancelled = false;
-    // 侧栏「岗位看板」计数：5 分钟内切换页面直接用上次的数，不重复请求
-    const cached = readPageCache<number>("sidebar-application-count");
-    const refresh = async () => {
-      try {
-        let count = 0;
-        let cursor: string | undefined;
-        const seen = new Set<string>();
-        do {
-          const result = await api.listJobApplications({ scope: "active", limit: 200, cursor });
-          if (!result || cancelled) return;
-          count += result.items.filter((item) => item.status === "active" && !item.archived_at).length;
-          cursor = result.next_cursor ?? undefined;
-          if (cursor && seen.has(cursor)) break;
-          if (cursor) seen.add(cursor);
-        } while (cursor);
-        if (!cancelled) { setApplicationCount(count); writePageCache("sidebar-application-count", count); }
-      } catch { /* 计数暂不可用时保留导航。 */ }
-    };
-    const changed = (event: Event) => {
-      const count = (event as CustomEvent<number>).detail;
-      setApplicationCount(count);
-      writePageCache("sidebar-application-count", count);
-    };
-    if (!cached?.fresh) void refresh();
-    window.addEventListener("career-applications-changed", changed);
-    return () => { cancelled = true; window.removeEventListener("career-applications-changed", changed); };
-  }, [active, user?.id]);
 
   useEffect(() => {
     void load();
@@ -125,7 +92,6 @@ export function V3Sidebar({
         <nav ref={navRef} className={`v3-side-nav${indicatorTop !== null ? " has-indicator" : ""}`} aria-label={t("工作区导航")}>
           {indicatorTop !== null && <span className="v3-side-indicator" aria-hidden="true" style={{ transform: `translateY(${indicatorTop}px)`, transition: indicator.snap ? "none" : undefined }} />}
           {NAV.map((item) => {
-            const count = item.key === "resumes" ? resumeCount || null : item.key === "jobs" ? applicationCount : item.count?.() ?? null;
             const isActive = item.key === active && (item.key !== "home" || !activeSessionId);
             return (
               <a
@@ -139,7 +105,6 @@ export function V3Sidebar({
               >
                 <Icon name={item.icon} size={16} />
                 <span data-locale-motion>{item.label}</span>
-                {count ? <span className="v3-side-count">{count}</span> : null}
               </a>
             );
           })}

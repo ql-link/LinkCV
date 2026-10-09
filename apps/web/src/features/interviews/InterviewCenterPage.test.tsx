@@ -1961,6 +1961,8 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it("edits a scheduled assessment from the stage menu", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(fixtureSessionStart.getTime() - 60 * 60_000));
     const assessmentSession = {
       ...session,
       stage_type: "other" as const,
@@ -2025,6 +2027,8 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it("keeps the edit dialog open until a schedule conflict is explicitly accepted", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(fixtureSessionStart.getTime() - 60 * 60_000));
     const rescheduledSession = {
       ...session,
       end_at: new Date(new Date(session.start_at).getTime() + 90 * 60_000).toISOString(),

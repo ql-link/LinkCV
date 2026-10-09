@@ -70,7 +70,9 @@ export function convertCurrentLineToResumeRow(editor: Editor) {
     for (let index = 0; index < listDepth; index += 1) chain = chain.liftListItem("listItem");
     return chain.command(replaceParagraphWithResumeRow);
   };
-  if (!convert(editor.can().chain()).run()) return false;
+  // can() 不派发事务，lift 的结果不会进入后续命令看到的文档。
+  // 只预检提升能力，实际提升与分栏转换仍在同一事务内完成。
+  if (!editor.can().liftListItem("listItem")) return false;
   return convert(editor.chain()).run();
 }
 
