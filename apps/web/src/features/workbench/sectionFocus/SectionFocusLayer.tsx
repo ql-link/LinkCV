@@ -1,7 +1,8 @@
 import { t } from "@/i18n";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { FocusSheet, DiffText, type AppliedEdit, type FocusRequest, type SheetSnapshot } from "./FocusSheet";
+import { FocusSheet, DiffText, snapshotNotes, type AppliedEdit, type FocusRequest, type SheetSnapshot } from "./FocusSheet";
+import { PageLens, type LensGroup } from "./PageLens";
 import {
   CONTEXT_LIMIT,
   focusUnitsFromDoc,
@@ -88,8 +89,8 @@ type ChipSpot = { compact: boolean; top: number; left: number };
  * When neither has room there is no entry on the page (⌘K still works); it
  * never sits on top of resume text.
  */
-function chipSpot(editor: Editor, scroller: HTMLElement | null, origin: DOMRect, rect: Rect): ChipSpot | null {
-  const gutter = gutterLeft(editor, scroller, origin, CHIP_WIDTH, rect.left + rect.width / 2);
+function chipSpot(editor: Editor, scroller: HTMLElement | null, origin: DOMRect, rect: Rect, side: "left" | null): ChipSpot | null {
+  const gutter = gutterLeft(editor, scroller, origin, CHIP_WIDTH, side === "left" ? -Infinity : rect.left + rect.width / 2);
   if (gutter !== null) return { compact: false, top: rect.top, left: gutter };
   const contentRight = editor.view.dom.getBoundingClientRect().right - origin.left;
   const margin = paperBox(editor).right - origin.left - contentRight;
@@ -165,10 +166,17 @@ export function SectionFocusLayer({
   const visitCount = useRef(0);
   // Finished analyses by paragraph, kept until the page is left; reopening reuses them.
   const analyses = useRef(new Map<string, SheetSnapshot>());
+  // Bumped when an analysis is saved, so the page annotations pick it up.
+  const [analysesVersion, setAnalysesVersion] = useState(0);
+  const [lensOpen, setLensOpen] = useState(true);
   const saveAnalysis = useCallback((unitId: string, snapshot: SheetSnapshot) => {
     analyses.current.set(unitId, snapshot);
+    setAnalysesVersion((value) => value + 1);
   }, []);
-  useEffect(() => { analyses.current.clear(); }, [resumeId]);
+  useEffect(() => {
+    analyses.current.clear();
+    setAnalysesVersion((value) => value + 1);
+  }, [resumeId]);
 
   useEffect(() => {
     // Every document change, including content replaced without an update event
@@ -228,7 +236,7 @@ export function SectionFocusLayer({
     };
   }, [editor, units]);
 
-  const openFocus = useCallback((unitId: string, intent = "") => {
+  const openFocus = useCallback((unitId: string, intent = "", itemId?: string) => {
     setComposerId(null);
     setComposerText("");
     setPaletteOpen(false);
@@ -236,7 +244,7 @@ export function SectionFocusLayer({
     setLanding(null);
     visitEdits.current = [];
     editor.commands.blur();
-    setFocus({ unitId, intent });
+    setFocus({ unitId, intent, itemId });
   }, [editor]);
 
   // ⌘K / Ctrl+K opens the one-line palette, aimed at the paragraph holding the caret.
@@ -313,9 +321,20 @@ export function SectionFocusLayer({
   const composerUnit = unitById(composerId);
   const landingUnit = unitById(landing?.unitId ?? null);
   const landingUnitCount = new Set(landing?.edits.map((edit) => edit.unitId)).size;
+  // Analysis results of every paragraph analysed in this session, in page order.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lensGroups = useMemo<LensGroup[]>(() => units.flatMap((unit) => {
+    const snapshot = analyses.current.get(unit.id);
+    const notes = snapshot ? snapshotNotes(snapshot, editor) : [];
+    return notes.length ? [{ unit, notes }] : [];
+  }), [units, editor, analysesVersion, revision]);
+  const showLens = lensGroups.length > 0 && !focus && !(landing?.recapOpen);
   const showEntry = Boolean(caretUnit) && !focus && !composerId && !paletteOpen;
   const caretRect = showEntry && caretUnit && origin ? unitRect(editor, caretUnit, origin) : null;
-  const chip = caretRect && origin ? chipSpot(editor, scrollRef.current, origin, caretRect) : null;
+  // With the annotations on the right, the entry keeps to the left margin.
+  const chip = caretRect && origin
+    ? chipSpot(editor, scrollRef.current, origin, caretRect, showLens && lensOpen ? "left" : null)
+    : null;
   const coachLeft = caretRect && chip && origin && !coachSeen
     ? gutterLeft(editor, scrollRef.current, origin, COACH_WIDTH, caretRect.left + caretRect.width / 2)
     : null;
@@ -326,10 +345,22 @@ export function SectionFocusLayer({
 
   return (
     <div ref={layerRef} className="sf-layer">
+      {showLens && origin && (
+        <PageLens
+          editor={editor}
+          groups={lensGroups}
+          origin={origin}
+          scroller={scrollRef.current}
+          open={lensOpen}
+          revision={revision}
+          onToggle={setLensOpen}
+          onOpenNote={(unitId, noteId) => openFocus(unitId, "", noteId)}
+        />
+      )}
       {caretRect && caretUnit && chip && (
         <>
-          {/* Which paragraph the entry acts on, shown only while pointing at the entry. */}
-          {entryHovered && <div className="sf-hover-outline" style={{ top: caretRect.top, left: caretRect.left, width: caretRect.width, height: caretRect.height }} />}
+          {/* The paragraph the entry acts on. It never takes clicks, so editing is unaffected. */}
+          <div className={`sf-caret-outline${entryHovered ? " is-strong" : ""}`} style={{ top: caretRect.top, left: caretRect.left, width: caretRect.width, height: caretRect.height }} />
           <div
             className={`sf-hover-actions${chip.compact ? " is-compact" : ""}`}
             // Clicking the entry must not take the caret out of the resume.

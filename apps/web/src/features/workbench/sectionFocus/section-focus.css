@@ -61,6 +61,10 @@
 .sf-del { color: var(--sf-ink3); text-decoration: line-through; text-decoration-color: var(--sf-ink4); }
 ::highlight(linkresume-section-focus-added) { background-color: color-mix(in srgb, #9fd3b2 70%, transparent); }
 
+::highlight(linkresume-section-lens-missing) { background-color: color-mix(in srgb, #f5b860 45%, transparent); }
+::highlight(linkresume-section-lens-wording) { background-color: color-mix(in srgb, #9db8f2 45%, transparent); }
+::highlight(linkresume-section-lens-structure) { background-color: color-mix(in srgb, #c3b0ee 45%, transparent); }
+
 /* ── ① 悬停 ───────────────────────────────────────── */
 .sf-hover-outline,
 .sf-selected-outline { position: absolute; border-radius: 8px; pointer-events: none !important; }
@@ -271,3 +275,65 @@
 @media (prefers-reduced-motion: reduce) {
   .sf-stage, .sf-sheet, .sf-recap, .sf-toast { animation: none; }
 }
+
+/* ── 光标所在段落 ───────────────────────────────────── */
+.sf-caret-outline { position: absolute; box-sizing: border-box; border: 1.5px solid color-mix(in srgb, var(--sf-blue) 38%, transparent); border-radius: 8px; pointer-events: none !important; transition: border-color 120ms, background-color 120ms; }
+.sf-caret-outline.is-strong { border-color: var(--sf-blue); background: color-mix(in srgb, var(--sf-blue) 4%, transparent); }
+
+/* ── 页面上的段落分析（岗位透镜样式） ─────────────────── */
+.sf-lens { position: absolute; inset: 0; overflow: hidden; pointer-events: none !important; }
+.sf-lens-marker { position: absolute; width: 3px; border-radius: 2px; background: var(--sf-blue); }
+.sf-lens-marker.is-missing { background: var(--sf-orange); }
+.sf-lens-marker.is-structure { background: var(--sf-violet); }
+.sf-lens-marker.is-done { background: var(--sf-green); }
+.sf-lens-links { position: absolute; top: 0; left: 0; overflow: visible; }
+.sf-lens-links path { fill: none; stroke: var(--sf-hi-blue); stroke-width: 1.2; }
+.sf-lens-links circle { fill: var(--sf-blue); }
+.sf-lens-links .is-missing path { stroke: var(--sf-hi-orange); stroke-dasharray: 3 3; }
+.sf-lens-links .is-missing circle { fill: var(--sf-orange); }
+.sf-lens-links .is-structure path { stroke: var(--sf-hi-violet); }
+.sf-lens-links .is-structure circle { fill: var(--sf-violet); }
+.sf-lens-links .is-done path { stroke: var(--sf-hi-green); }
+.sf-lens-links .is-done circle { fill: var(--sf-green); }
+.sf-lens-group { position: absolute; }
+.sf-lens-group header { display: flex; align-items: center; gap: 8px; font-size: 12px; pointer-events: auto; }
+.sf-lens-group header strong { min-width: 0; overflow: hidden; color: var(--sf-ink); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.sf-lens-group header span { flex: none; color: var(--sf-ink3); font-size: 11px; }
+.sf-lens-group header .sf-link { margin-left: auto; }
+.sf-lens-card { position: absolute; left: 0; right: 0; box-sizing: border-box; display: grid; align-content: center; gap: 3px; border: 1px solid var(--sf-line2); border-left: 3px solid var(--sf-blue); border-radius: 8px; background: #fff; padding: 0 12px; text-align: left; pointer-events: auto; box-shadow: 0 1px 2px rgb(0 0 0 / 4%); transition: border-color 120ms, box-shadow 120ms; }
+.sf-lens-card:hover { box-shadow: 0 4px 14px rgb(0 0 0 / 8%); }
+.sf-lens-card.is-missing { border-left-color: var(--sf-orange); background: #fffaf3; }
+.sf-lens-card.is-structure { border-left-color: var(--sf-violet); }
+.sf-lens-card.is-done { border-left-color: var(--sf-green); background: #fff; }
+.sf-lens-card.is-skipped,
+.sf-lens-card.is-changed { border-left-color: var(--sf-ink4); opacity: .6; }
+.sf-lens-card-head { display: flex; min-width: 0; align-items: center; gap: 6px; font-size: 12.5px; }
+.sf-lens-card-head strong { min-width: 0; overflow: hidden; color: var(--sf-ink); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.sf-lens-card-head em { flex: none; margin-left: auto; color: var(--sf-ink3); font-size: 11px; font-style: normal; }
+.sf-lens-card.is-done .sf-lens-card-head em { color: var(--sf-green); }
+.sf-lens-card-detail { overflow: hidden; color: var(--sf-ink3); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.sf-lens-pill { position: absolute; display: inline-flex; height: 30px; align-items: center; gap: 7px; border: 1px solid var(--sf-line2); border-radius: 15px; background: #fff; padding: 0 12px; color: var(--sf-ink); font-size: 12px; pointer-events: auto; box-shadow: 0 2px 8px rgb(0 0 0 / 6%); }
+.sf-lens-pill b { min-width: 18px; border-radius: 9px; background: var(--sf-orange); padding: 1px 5px; color: #fff; font-size: 11px; font-weight: 600; text-align: center; }
+
+/* ── 同一分区的多段经历 ─────────────────────────────── */
+.sf-rail-entries { position: relative; }
+.sf-rail button.is-numbered { display: flex; align-items: flex-start; gap: 8px; padding: 7px 8px; white-space: normal; }
+.sf-rail-no { flex: none; width: 20px; border-radius: 4px; background: var(--sf-line); padding: 1px 0; color: var(--sf-ink3); font: 500 10.5px var(--sf-mono); text-align: center; }
+.sf-rail button.is-current .sf-rail-no { background: var(--sf-blue); color: #fff; }
+.sf-rail-name { display: grid; min-width: 0; gap: 2px; }
+.sf-rail-name small { color: var(--sf-ink4); font: 10.5px var(--sf-mono); font-weight: 400; }
+.sf-entry-head.is-numbered { align-items: center; }
+.sf-entry-no { flex: none; display: inline-grid; width: 28px; height: 28px; place-items: center; border-radius: 7px; background: var(--sf-blue); color: #fff; font: 600 12px var(--sf-mono); }
+.sf-siblings { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 12px; }
+.sf-siblings button { display: inline-flex; align-items: center; gap: 6px; height: 26px; border: 1px dashed var(--sf-line2); border-radius: 13px; background: #fff; padding: 0 10px; color: var(--sf-ink2); font-size: 12px; }
+.sf-siblings button:hover { border-color: var(--sf-blue); color: var(--sf-blue); }
+.sf-siblings b { color: var(--sf-ink3); font: 500 10.5px var(--sf-mono); }
+.sf-siblings small { color: var(--sf-ink4); font: 10.5px var(--sf-mono); }
+.sf-entry-head.is-numbered .sf-heading { flex: 1; border-left: 0; padding-left: 0; }
+.sf-lens-card-head i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--sf-blue); }
+.sf-lens-card.is-missing .sf-lens-card-head i { background: var(--sf-orange); }
+.sf-lens-card.is-structure .sf-lens-card-head i { background: var(--sf-violet); }
+.sf-lens-card.is-done .sf-lens-card-head i { background: var(--sf-green); }
+.sf-lens-card.is-skipped .sf-lens-card-head i,
+.sf-lens-card.is-changed .sf-lens-card-head i { background: var(--sf-ink4); }
+.sf-lens-card-detail { padding-left: 12px; }

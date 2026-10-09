@@ -35,7 +35,8 @@ export type AppliedEdit = LineEdit & {
   title: string;
 };
 
-export type FocusRequest = { unitId: string; intent: string };
+/** `itemId` opens the sheet on one saved suggestion, e.g. from the page annotations. */
+export type FocusRequest = { unitId: string; intent: string; itemId?: string };
 
 type Reference = SectionReviewReference & { label?: string };
 type Draft = { variants: SectionReviewVariant[]; missing: string[]; baseText: string; lineId: string };
@@ -72,6 +73,33 @@ export type SheetSnapshot = {
   draftAnswers: string[];
   runId: number;
 };
+
+export type LensNote = {
+  id: string;
+  number: number | null;
+  kind: SectionReviewNoteKind;
+  title: string;
+  detail: string;
+  quote: string;
+  lineId: string | null;
+  /** `changed`: the line was edited after the analysis, so the note may no longer apply. */
+  status: "open" | "done" | "skipped" | "changed";
+};
+
+/** Analysis results of one paragraph, as shown on the resume page. */
+export function snapshotNotes(snapshot: SheetSnapshot, editor: Editor): LensNote[] {
+  return restoreItems(snapshot.items, editor).flatMap((item): LensNote[] => {
+    if (!item.note) return [];
+    const lineId = item.note.line_id ?? item.lineId;
+    const current = lineId ? currentLineText(editor.state.doc, lineId) : null;
+    if (lineId && current === null) return [];
+    const base = lineId ? snapshot.phase.baseLines[lineId] : undefined;
+    const status = item.status === "done" ? "done"
+      : item.status === "skipped" ? "skipped"
+        : base !== undefined && current !== base ? "changed" : "open";
+    return [{ id: item.id, number: item.number, kind: item.kind as SectionReviewNoteKind, title: item.note.title, detail: item.note.detail, quote: item.note.quote, lineId, status }];
+  });
+}
 
 /** Bring a saved snapshot in line with the document as it is now. */
 function restoreItems(items: Item[], editor: Editor): Item[] {
@@ -194,7 +222,9 @@ export function FocusSheet({
   ));
   const [phase, setPhase] = useState<Phase>(restored?.phase ?? { kind: "loading" });
   const [items, setItems] = useState<Item[]>(restored?.items ?? []);
-  const [activeId, setActiveId] = useState<string | null>(restored?.activeId ?? null);
+  const [activeId, setActiveId] = useState<string | null>(() => (
+    request.itemId && restored?.items.some((item) => item.id === request.itemId) ? request.itemId : restored?.activeId ?? null
+  ));
   const [askText, setAskText] = useState("");
   const [askLineId, setAskLineId] = useState<string | null>(null);
   const [jobs, setJobs] = useState<JobDescriptionSummary[] | null>(null);
@@ -486,6 +516,11 @@ export function FocusSheet({
   const doneCount = items.filter((item) => item.status === "done").length;
   const stale = ready ? changedSinceAnalysis(unit, ready.baseLines, items) : false;
   const header = headerParts(unit);
+  // Other experiences of the same section, e.g. two internships, numbered so they stay apart.
+  const siblings = unit.kind === "entry" && unit.sectionLabel
+    ? units.filter((item) => item.kind === "entry" && item.sectionLabel === unit.sectionLabel && sameSection(units, item, unit))
+    : [unit];
+  const siblingIndex = Math.max(0, siblings.findIndex((item) => item.id === unit.id));
 
   const renderItemPanel = (item: Item) => {
     const draft = item.draft;
@@ -638,18 +673,30 @@ export function FocusSheet({
             <li key={group.units[0].id}>
               {group.label && <span className="sf-rail-section">{group.label}</span>}
               <ul className={group.label ? "sf-rail-entries" : undefined}>
-                {group.units.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      className={item.id === unit.id ? "is-current" : ""}
-                      title={unitLabel(item)}
-                      onClick={() => item.id !== unit.id && onNavigate(item.id, edits)}
-                    >
-                      {item.heading || item.sectionLabel}
-                    </button>
-                  </li>
-                ))}
+                {group.units.map((item, position) => {
+                  const numbered = group.label !== null && group.units.length > 1;
+                  const dates = numbered ? headerParts(item).dates[0] : undefined;
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        className={`${item.id === unit.id ? "is-current" : ""}${numbered ? " is-numbered" : ""}`}
+                        title={unitLabel(item)}
+                        onClick={() => item.id !== unit.id && onNavigate(item.id, edits)}
+                      >
+                        {numbered ? (
+                          <>
+                            <span className="sf-rail-no">{String(position + 1).padStart(2, "0")}</span>
+                            <span className="sf-rail-name">
+                              {item.heading || item.sectionLabel}
+                              {dates && <small>{dates}</small>}
+                            </span>
+                          </>
+                        ) : item.heading || item.sectionLabel}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             </li>
           ))}
@@ -660,7 +707,11 @@ export function FocusSheet({
         <header className="sf-sheet-head">
           <div className="sf-title-row">
             <span className="sf-mono">FOCUS</span>
-            <span className="sf-muted">{unit.sectionLabel} · {String(index + 1).padStart(2, "0")} / {String(units.length).padStart(2, "0")}</span>
+            <span className="sf-muted">
+              {siblings.length > 1
+                ? t("{section} · 第 {n} 段，共 {total} 段", { section: unit.sectionLabel, n: siblingIndex + 1, total: siblings.length })
+                : `${unit.sectionLabel} · ${String(index + 1).padStart(2, "0")} / ${String(units.length).padStart(2, "0")}`}
+            </span>
             <span className="sf-sentence">
               {t("以")}
               <select
@@ -756,11 +807,25 @@ export function FocusSheet({
           <div className="sf-row sf-row-head">
             <div className="sf-line">
               <div className="sf-line-body">
-                <div className="sf-entry-head">
+                <div className={`sf-entry-head${siblings.length > 1 ? " is-numbered" : ""}`}>
+                  {siblings.length > 1 && <span className="sf-entry-no">{String(siblingIndex + 1).padStart(2, "0")}</span>}
                   <h2 className="sf-heading">{unit.heading}</h2>
                   {header.dates.length > 0 && <span className="sf-dates">{header.dates.join(" · ")}</span>}
                 </div>
                 {header.details.length > 0 && <p className="sf-meta">{header.details.join("  ·  ")}</p>}
+                {siblings.length > 1 && (
+                  <p className="sf-siblings">
+                    <span className="sf-muted">{t("同一分区的其他经历")}</span>
+                    {siblings.filter((item) => item.id !== unit.id).map((item) => (
+                      <button key={item.id} type="button" onClick={() => onNavigate(item.id, edits)}>
+                        <b>{String(siblings.indexOf(item) + 1).padStart(2, "0")}</b>
+                        {item.heading}
+                        {headerParts(item).dates[0] && <small>{headerParts(item).dates[0]}</small>}
+                        <span aria-hidden="true">→</span>
+                      </button>
+                    ))}
+                  </p>
+                )}
                 {activeItem && activeItem.lineId === null && renderItemPanel(activeItem)}
               </div>
               {lineNotes(null).length > 0 && <i className="sf-leader" aria-hidden="true" />}
@@ -858,6 +923,12 @@ export function FocusSheet({
  * Rail entries grouped by section: entries sit under their section name, while
  * a section that is itself the unit (e.g. skills) stands alone.
  */
+/** Whether two entries sit in the same run of a section (sections can repeat a label). */
+function sameSection(units: FocusUnit[], a: FocusUnit, b: FocusUnit) {
+  const group = railGroups(units).find((candidate) => candidate.units.includes(b));
+  return group?.units.includes(a) ?? false;
+}
+
 function railGroups(units: FocusUnit[]) {
   const groups: Array<{ label: string | null; units: FocusUnit[] }> = [];
   for (const unit of units) {
