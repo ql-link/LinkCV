@@ -16,6 +16,7 @@ Web 客户端收到受保护请求的 `401` 后最多续期重试一次；对话
 | Method | Path | 成功结果 |
 | --- | --- | --- |
 | `GET` | `/api/auth/me` | `{user}`；只识别 Web Cookie，无效 Cookie 或小程序 Bearer 均返回 `user: null` |
+| `GET` | `/api/auth/default-avatar` | 公开 PNG 项目羽毛 Logo，不依赖登录或对象存储；新注册账号的 `avatar_url` 指向此接口，已有账号不回填 |
 | `POST` | `/api/auth/register` | `201 {user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
 | `POST` | `/api/auth/login` | `{user}`；仅 local/development，JSON `{email, password}`，成功后签发 Web 双 Cookie |
 | `POST` | `/api/auth/admin-login` | `{user}`，管理员登录并签发 Web 双 Cookie |

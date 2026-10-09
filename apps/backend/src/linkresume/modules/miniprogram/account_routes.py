@@ -2,7 +2,7 @@ from linkresume.modules.identity.dependencies import lock_active_user
 import logging
 
 from fastapi import APIRouter, Depends, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from minio.error import S3Error
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from linkresume.core.storage import (
 )
 from linkresume.modules.identity.dependencies import get_current_miniprogram_user
 from linkresume.modules.identity.models import User
+from linkresume.modules.identity.default_avatar import DEFAULT_AVATAR_KEY, DEFAULT_AVATAR_URL, DEFAULT_AVATAR_PATH, is_custom_avatar
 from linkresume.modules.identity.schemas import (
     AvatarResponse,
     AvatarUploadRequest,
@@ -36,6 +37,8 @@ NICKNAME_MAX_LENGTH = 50
 
 
 def mini_avatar_url(user: User) -> str | None:
+    if user.avatar_object_key == DEFAULT_AVATAR_KEY:
+        return DEFAULT_AVATAR_URL
     if not user.avatar_object_key:
         return None
     return "/api/miniprogram/account/avatar"
@@ -111,7 +114,7 @@ def upload_avatar(
         raise ApiError(502, "ASSET_UPLOAD_FAILED") from error
     db.refresh(user)
 
-    if previous_key and previous_key != object_name:
+    if is_custom_avatar(previous_key) and previous_key != object_name:
         try:
             storage.delete(previous_key)
         except Exception:
@@ -125,6 +128,10 @@ def read_avatar(
     storage: AssetStorage = Depends(get_storage),
 ) -> Response:
     object_name = user.avatar_object_key
+    if object_name == DEFAULT_AVATAR_KEY:
+        return FileResponse(DEFAULT_AVATAR_PATH, media_type="image/png", headers={
+            "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff",
+        })
     if not object_name or not object_name.startswith(f"users/{user.id}/assets/"):
         raise ApiError(404, "ASSET_NOT_FOUND")
     try:

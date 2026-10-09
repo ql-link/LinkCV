@@ -42,7 +42,7 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
-| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
+| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（自定义头像二进制仅经 `/api/miniprogram/account/avatar` 分发，该接口也支持默认 Logo） |
 | `src/linkresume/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
@@ -267,7 +267,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 ## 对象存储
 
 - 用户级兼容图片：`users/{user_id}/assets/...`。
-- 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
+- 账号自定义头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `user.avatar_object_key`；旧路径中的已有头像保持兼容。新注册的邮箱和微信账号保存 `system:project-logo` 默认头像标记，通过公开 `/api/auth/default-avatar` 读取随后端包发布的项目羽毛 Logo；该标记不传入对象存储上传、读取或删除。小程序的本人头像二进制接口也识别此标记，以兼容其固定下载路径。已有用户不做数据回填，默认头像的用户行为见[账号功能](../features/identity-account.md#本人资料与联系邮箱)。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/source/{safe_name}`。
 - 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；删除时同时兼容旧的 `.../{operation_id}/converted.md`。
 - 知识库原文件：`users/{user_id}/datasets/...`。
