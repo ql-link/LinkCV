@@ -29,6 +29,9 @@ import {
 } from "./sectionModel";
 import { diffText } from "./textDiff";
 
+/** How long the reading cursor rests on each line while the analysis runs. */
+const READ_STEP = 1100;
+
 export type AppliedEdit = LineEdit & {
   id: string;
   unitId: string;
@@ -238,15 +241,18 @@ export function FocusSheet({
   const itemsRef = useRef(items);
   useEffect(() => { itemsRef.current = items; }, [items]);
   const runIdRef = useRef(restored?.runId ?? 0);
-  // Seconds spent on the current analysis, so the wait reads as progress.
-  const [waited, setWaited] = useState(0);
+  // Time spent on the current analysis: paces the reading cursor and the status line.
+  const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (phase.kind !== "loading") return;
     const started = Date.now();
-    setWaited(0);
-    const timer = window.setInterval(() => setWaited(Math.floor((Date.now() - started) / 1000)), 1000);
+    setElapsed(0);
+    const timer = window.setInterval(() => setElapsed(Date.now() - started), 400);
     return () => window.clearInterval(timer);
   }, [phase.kind]);
+  const waited = Math.floor(elapsed / 1000);
+  // The line the reading cursor rests on; it walks the paragraph line by line.
+  const readingLine = phase.kind === "loading" && unit?.lines.length ? Math.floor(elapsed / READ_STEP) % unit.lines.length : -1;
   // Changes applied in an earlier visit were already shown in that visit's recap.
   const reported = useRef(new Set(restored?.items.flatMap((item) => (item.status === "done" && item.edit ? [item.edit] : [])) ?? []));
 
@@ -658,7 +664,7 @@ export function FocusSheet({
     const showPanel = panelItem ?? (activeItem && activeItem.lineId === lineId && activeItem.kind !== "missing" ? activeItem : null);
     const askingItem = activeItem && activeItem.lineId === lineId && activeItem.kind === "missing" ? activeItem : null;
     return (
-      <div key={lineId} className={`sf-row${notes.length ? " has-notes" : ""}`} style={{ "--sf-row": position } as CSSProperties}>
+      <div key={lineId} className={`sf-row${notes.length ? " has-notes" : ""}${position === readingLine ? " is-reading" : ""}`} style={{ "--sf-row": position } as CSSProperties}>
         <div className="sf-line">
           <span className="sf-bullet" aria-hidden="true">·</span>
           <div className="sf-line-body">
@@ -675,8 +681,35 @@ export function FocusSheet({
         </div>
         <div className="sf-notes" aria-label={t("第 {n} 条的批注", { n: position + 1 })}>
           {notes.map(renderNote)}
-          {phase.kind === "loading" && editable.has(lineId) && position < 3 && <i className="sf-note-skeleton" aria-hidden="true" />}
+          {phase.kind === "loading" && editable.has(lineId) && position < 3 && (
+            <span className="sf-note-skeleton" aria-hidden="true"><i /><i /></span>
+          )}
         </div>
+      </div>
+    );
+  };
+
+  // Analysis in progress, written in the margin where its notes will land.
+  const renderThinking = () => {
+    // One request does all of it; the phrases only pace the wait.
+    const phrases = [
+      t("通读这一段"),
+      t("对照其他 {n} 段经历", { n: contextIds.length }),
+      t("对照{reference}", { reference: reference.kind === "job" ? reference.label ?? t("目标岗位") : t("通用写作标准") }),
+      t("整理批注"),
+    ];
+    const step = waited < 2 ? 0 : waited < 4 ? 1 : waited < 9 ? 2 : 3;
+    return (
+      <div className="sf-think" role="status" aria-live="polite">
+        <span className="sf-think-label">
+          <span className="sf-think-pulse" aria-hidden="true"><i /><i /><i /></span>
+          {t("AI 正在分析")}
+        </span>
+        <strong key={step} className="sf-think-phrase">{phrases[step]}</strong>
+        <span className="sf-think-meta">
+          <span className="sf-mono">{t("{n} 秒", { n: waited })}</span>
+          {waited < 25 ? t("通常 10–30 秒，完成后批注会出现在这一栏") : t("比平时久一些，请再等等")}
+        </span>
       </div>
     );
   };
@@ -729,7 +762,7 @@ export function FocusSheet({
       </nav>
 
       <section className="sf-sheet">
-        <header className="sf-sheet-head">
+        <header className={`sf-sheet-head${phase.kind === "loading" ? " is-thinking" : ""}`}>
           <div className="sf-title-row">
             <span className="sf-mono">FOCUS</span>
             <span className="sf-muted sf-position">
@@ -835,34 +868,6 @@ export function FocusSheet({
         </header>
 
         <div className={`sf-body${phase.kind === "loading" ? " is-thinking" : ""}`}>
-          {phase.kind === "loading" && (() => {
-            // One request does all of it; the steps only pace the wait.
-            const steps = [
-              t("读取这一段"),
-              t("读取 {n} 处上下文", { n: contextIds.length }),
-              t("对照{reference}", { reference: reference.kind === "job" ? reference.label ?? t("目标岗位") : t("通用写作标准") }),
-              t("生成建议"),
-            ];
-            const current = waited < 1 ? 0 : waited < 2 ? 1 : waited < 8 ? 2 : 3;
-            return (
-              <div className="sf-thinking" role="status" aria-live="polite">
-                <span className="sf-thinking-orb" aria-hidden="true"><i /><i /><i /></span>
-                <div className="sf-thinking-text">
-                  <strong>{t("AI 正在分析这段经历")}<span className="sf-thinking-dots" aria-hidden="true" /></strong>
-                  <ol className="sf-steps">
-                    {steps.map((step, position) => (
-                      <li key={position} className={position < current ? "is-done" : position === current ? "is-current" : undefined}>{step}</li>
-                    ))}
-                  </ol>
-                </div>
-                <span className="sf-thinking-time">
-                  {t("已等待 {n} 秒", { n: waited })}
-                  <small>{waited < 25 ? t("通常需要 10–30 秒") : t("比平时久一些，请再等等")}</small>
-                </span>
-                <i className="sf-thinking-bar" aria-hidden="true" />
-              </div>
-            );
-          })()}
           {phase.kind === "error" && (
             <div className="sf-empty" role="alert">
               <p>{phase.message}</p>
@@ -896,7 +901,10 @@ export function FocusSheet({
               </div>
               {lineNotes(null).length > 0 && <i className="sf-leader" aria-hidden="true" />}
             </div>
-            <div className="sf-notes">{lineNotes(null).map(renderNote)}</div>
+            <div className="sf-notes">
+              {lineNotes(null).map(renderNote)}
+              {phase.kind === "loading" && renderThinking()}
+            </div>
           </div>
 
           {ready?.result.too_thin ? (

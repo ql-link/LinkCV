@@ -165,32 +165,31 @@
 .sf-menu-box svg { width: 10px; height: 10px; color: #fff; stroke-width: 3; }
 .sf-menu .is-checked .sf-menu-box { border-color: #3f6fd8; background: #3f6fd8; }
 .sf-body { min-height: 0; flex: 1; overflow: auto; padding: 22px 40px 28px; }
-.sf-thinking { position: sticky; top: -22px; z-index: 2; display: flex; align-items: center; gap: 14px; overflow: hidden; margin: -22px -40px 18px; border-bottom: 1px solid #dfe7fa; background: #f5f8ff; padding: 16px 40px 18px; }
-.sf-thinking-orb { position: relative; width: 34px; height: 34px; flex: none; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px #dfe7fa; }
-.sf-thinking-orb i { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--sf-blue); animation: sf-orbit 1.4s cubic-bezier(.5, 0, .5, 1) infinite; }
-.sf-thinking-orb i:nth-child(2) { opacity: .6; animation-delay: -.18s; }
-.sf-thinking-orb i:nth-child(3) { opacity: .3; animation-delay: -.36s; }
-@keyframes sf-orbit { from { transform: rotate(0deg) translateX(10px); } to { transform: rotate(360deg) translateX(10px); } }
-.sf-thinking-text { display: grid; min-width: 0; flex: 1; gap: 6px; }
-.sf-thinking-text strong { color: var(--sf-ink); font-size: 14px; font-weight: 600; }
-.sf-thinking-dots::after { display: inline-block; width: 1.2em; content: ""; text-align: left; animation: sf-dots 1.2s steps(4) infinite; }
-@keyframes sf-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
-.sf-thinking-time { display: grid; flex: none; gap: 2px; color: var(--sf-ink2); font: 500 12px var(--sf-mono); text-align: right; }
-.sf-thinking-time small { color: var(--sf-ink3); font: 400 11px system-ui, sans-serif; }
-.sf-thinking-bar { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; overflow: hidden; background: #dfe7fa; }
-.sf-thinking-bar::after { position: absolute; inset: 0 auto 0 0; width: 35%; background: linear-gradient(90deg, transparent, var(--sf-blue), transparent); content: ""; animation: sf-sweep 1.6s ease-in-out infinite; }
-@keyframes sf-sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
-/* The lines being read: a soft highlight passes over them one after another. */
-.sf-body.is-thinking .sf-line-text { background: linear-gradient(100deg, transparent 40%, rgb(63 111 216 / 12%) 50%, transparent 60%) no-repeat; background-size: 250% 100%; background-position: 120% 0; animation: sf-read 2.4s ease-in-out infinite; animation-delay: calc(var(--sf-row, 0) * 180ms); }
-@keyframes sf-read { 0% { background-position: 120% 0; } 60%, 100% { background-position: -20% 0; } }
-.sf-note-skeleton { display: block; height: 48px; border-radius: 8px; background: linear-gradient(90deg, #f3f3f1 0%, #fafaf8 50%, #f3f3f1 100%); background-size: 200% 100%; animation: sf-shimmer 1.4s linear infinite; }
-@keyframes sf-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
-.sf-steps { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; padding: 0; color: var(--sf-ink4); font-size: 12px; list-style: none; }
-.sf-steps li.is-done { color: var(--sf-ink2); }
-.sf-steps li.is-done::before { margin-right: 4px; color: var(--sf-green); content: "✓"; }
-.sf-steps li.is-current { color: var(--sf-blue); }
-.sf-steps li.is-current::before { display: inline-block; width: 9px; height: 9px; margin-right: 6px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; content: ""; animation: sf-spin 800ms linear infinite; }
-@keyframes sf-spin { to { transform: rotate(360deg); } }
+.sf-sheet-head { position: relative; }
+.sf-sheet-head.is-thinking::after { position: absolute; right: 0; bottom: -1px; left: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--sf-blue) 50%, transparent) no-repeat; background-size: 30% 100%; content: ""; animation: sf-hairline 1.8s ease-in-out infinite; }
+@keyframes sf-hairline { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+/* Margin note standing in for the notes while they are written. */
+.sf-think { position: sticky; top: 0; display: grid; gap: 6px; border-left: 2px solid var(--sf-blue); padding: 2px 0 4px 12px; }
+.sf-think-label { display: inline-flex; align-items: center; gap: 8px; color: var(--sf-blue); font: 500 10.5px var(--sf-mono); letter-spacing: .06em; }
+.sf-think-pulse { display: inline-flex; gap: 3px; }
+.sf-think-pulse i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: sf-pulse 1.2s ease-in-out infinite; }
+.sf-think-pulse i:nth-child(2) { animation-delay: .15s; }
+.sf-think-pulse i:nth-child(3) { animation-delay: .3s; }
+@keyframes sf-pulse { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+.sf-think-phrase { color: var(--sf-ink); font: 500 17px/1.5 var(--sf-serif); animation: sf-phrase 360ms ease-out; }
+@keyframes sf-phrase { from { opacity: 0; translate: 0 4px; } }
+.sf-think-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; color: var(--sf-ink3); font-size: 11.5px; line-height: 1.6; }
+.sf-think-meta .sf-mono { color: var(--sf-ink2); font-size: 11px; }
+/* The paragraph is read line by line: the others step back, the bullet of the current one turns blue. */
+.sf-body.is-thinking .sf-line-text { color: var(--sf-ink3); transition: color 400ms; }
+.sf-body.is-thinking .sf-row.is-reading .sf-line-text { color: var(--sf-ink); }
+.sf-body.is-thinking .sf-bullet { transition: color 400ms, transform 400ms; }
+.sf-body.is-thinking .sf-row.is-reading .sf-bullet { color: var(--sf-blue); transform: scale(1.6); }
+.sf-note-skeleton { display: grid; gap: 8px; padding: 8px 0 0 12px; border-left: 2px solid var(--sf-line); }
+.sf-note-skeleton i { display: block; height: 7px; border-radius: 4px; background: linear-gradient(90deg, #f1f1ef 30%, #fafaf8 50%, #f1f1ef 70%); background-size: 300% 100%; animation: sf-shimmer 1.6s linear infinite; }
+.sf-note-skeleton i:first-child { width: 62%; }
+.sf-note-skeleton i:last-child { width: 88%; }
+@keyframes sf-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
 .sf-empty { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; border-radius: 10px; background: #fdf3f0; padding: 12px 14px; color: #b9442f; font-size: 13px; }
 .sf-empty p { margin: 0; flex: 1; }
 .sf-empty-note { margin: 12px 0; color: var(--sf-ink3); font-size: 13px; }
@@ -313,8 +312,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sf-stage, .sf-sheet, .sf-recap, .sf-toast, .sf-bar { animation: none; }
-  .sf-lens-tab, .sf-body.is-thinking .sf-line-text, .sf-note-skeleton, .sf-thinking-bar::after, .sf-thinking-dots::after { animation: none; }
-  .sf-thinking-orb i { animation-duration: 4s; }
+  .sf-lens-tab, .sf-note-skeleton i, .sf-sheet-head.is-thinking::after, .sf-think-phrase { animation: none; }
+  .sf-think-pulse i { animation-duration: 3s; }
+  .sf-body.is-thinking .sf-line-text, .sf-body.is-thinking .sf-bullet { transition: none; }
 }
 
 /* ── 光标所在段落 ───────────────────────────────────── */
