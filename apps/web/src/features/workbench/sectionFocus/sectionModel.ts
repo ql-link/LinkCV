@@ -24,6 +24,8 @@ export type FocusUnit = {
 const ANCHOR = "resumeBlockAnchor";
 const LINE_ROLES = new Set(["list-item", "entry-block", "section-block", "block"]);
 const META_ROLES = new Set(["entry-field", "row-block", "row-cell"]);
+/** Table-like rows (date | company | role …). Recognised by node type: their anchors may carry no role. */
+const ROW_TYPES = new Set(["resumeRow", "resumeMetaRow", "resumeTrioRow"]);
 
 type Anchor = { blockId: string; role: string };
 
@@ -80,6 +82,33 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
   const sectionsWithEntries = new Set<string>();
   const entryBlocks = new Set<string>();
   doc.descendants((node, pos) => {
+    if (ROW_TYPES.has(node.type.name)) {
+      // A header row opens a new unit, unless it continues a header that has no
+      // lines yet (a two-row header) or sits inside a real entry.
+      const cells: string[] = [];
+      let rowId: string | null = null;
+      node.forEach((cell) => {
+        if (!cell.isTextblock) return;
+        rowId ??= anchorsOf(cell)[0]?.blockId ?? null;
+        const value = textblockText(cell).trim();
+        if (value) cells.push(value);
+      });
+      const end = pos + node.nodeSize;
+      const current: FocusUnit | null = entry;
+      if (sectionUnit && cells.length && (current === null || (entryFromRow && current.lines.length > 0))) {
+        const id = rowId ?? `row-at-${pos}`;
+        entry = { id, kind: "entry", sectionLabel, heading: "", meta: [], lines: [], from: pos, to: end };
+        entryFromRow = true;
+        rowUnits.set(id, sectionUnit.id);
+        units.push(entry);
+      }
+      const target: FocusUnit | null = entry ?? sectionUnit;
+      if (target) {
+        target.meta.push(...cells);
+        target.to = end;
+      }
+      return false;
+    }
     if (!node.isTextblock) return true;
     const anchors = anchorsOf(node);
     const end = pos + node.nodeSize;
@@ -101,16 +130,6 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
       if (sectionUnit) sectionsWithEntries.add(sectionUnit.id);
       units.push(entry);
       return false;
-    }
-    // A header row opens a new unit, unless it continues a header that has no
-    // lines yet (a two-row header) or sits inside a real entry.
-    const rowAnchor = role("row");
-    const current: FocusUnit | null = entry;
-    if (rowAnchor && sectionUnit && (current === null || (entryFromRow && current.lines.length > 0))) {
-      entry = { id: rowAnchor.blockId, kind: "entry", sectionLabel, heading: "", meta: [], lines: [], from: pos, to: end };
-      entryFromRow = true;
-      rowUnits.set(rowAnchor.blockId, sectionUnit.id);
-      units.push(entry);
     }
     const line = anchors.find((anchor) => LINE_ROLES.has(anchor.role));
     const target = line?.role === "section-block" && !entryFromRow ? sectionUnit : entry ?? sectionUnit;

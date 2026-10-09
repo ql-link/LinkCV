@@ -96,6 +96,7 @@
 .sf-palette { width: min(640px, calc(100% - 48px)); overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 24px 64px rgb(0 0 0 / 24%); }
 .sf-palette-input { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--sf-line); padding: 16px 18px; }
 .sf-palette-input input { min-width: 0; flex: 1; border: 0; outline: none; color: var(--sf-ink); font-size: 17px; }
+.sf-palette-current { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border-top: 1px solid var(--sf-line); padding: 12px 18px; font-size: 12px; }
 .sf-understood { background: #f6f8fd; padding: 16px 18px; }
 .sf-understood dl { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 10px 8px; margin: 10px 0 14px; font-size: 12.5px; }
 .sf-understood dt { color: var(--sf-ink3); }

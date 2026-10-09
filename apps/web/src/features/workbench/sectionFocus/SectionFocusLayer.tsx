@@ -17,10 +17,8 @@ import "./section-focus.css";
 const COACH_KEY = "linkresume.section-focus.coach.v1";
 const QUICK_ASKS = ["分析这段", "突出技术深度", "更有冲击力", "更精简", "补上数据"];
 const HIGHLIGHT_NAME = "linkresume-section-focus-added";
-/** The pointer has to rest on a paragraph this long before the outline shows. */
-const HOVER_DELAY = 450;
-/** Grace period for crossing the page margin to reach the actions. */
-const HOVER_GRACE = 320;
+/** The entry stays this long after the editor loses focus, so it can still be clicked. */
+const BLUR_GRACE = 200;
 const GUTTER_GAP = 12;
 const CHIP_WIDTH = 236;
 const COMPACT_WIDTH = 30;
@@ -33,9 +31,10 @@ function readCoachSeen() {
   try { return localStorage.getItem(COACH_KEY) === "1"; } catch { return true; }
 }
 
-function isTypingTarget(target: EventTarget | null) {
-  const element = target as HTMLElement | null;
-  return !!element && (element.tagName === "INPUT" || element.tagName === "TEXTAREA" || element.tagName === "SELECT");
+/** The unit that holds the caret, if any. */
+function unitAtSelection(editor: Editor, units: FocusUnit[]): string | null {
+  const pos = editor.state.selection.from;
+  return units.find((unit) => pos >= unit.from && pos <= unit.to)?.id ?? null;
 }
 
 /** Union of the on-screen boxes of a unit's blocks, relative to `origin`. */
@@ -84,17 +83,18 @@ function paperBox(editor: Editor) {
 type ChipSpot = { compact: boolean; top: number; left: number };
 
 /**
- * Margin beside the page first; otherwise a compact icon column in the page's
- * own right margin; only as a last resort just above the paragraph.
+ * The entry lives outside the editable text: in the grey margin beside the
+ * page, or as a compact icon column in the page's own blank right margin.
+ * When neither has room there is no entry on the page (⌘K still works); it
+ * never sits on top of resume text.
  */
-function chipSpot(editor: Editor, scroller: HTMLElement | null, origin: DOMRect, rect: Rect): ChipSpot {
+function chipSpot(editor: Editor, scroller: HTMLElement | null, origin: DOMRect, rect: Rect): ChipSpot | null {
   const gutter = gutterLeft(editor, scroller, origin, CHIP_WIDTH, rect.left + rect.width / 2);
   if (gutter !== null) return { compact: false, top: rect.top, left: gutter };
-  // The page's own blank margin: between the editable content and the paper edge.
   const contentRight = editor.view.dom.getBoundingClientRect().right - origin.left;
   const margin = paperBox(editor).right - origin.left - contentRight;
   if (margin >= COMPACT_WIDTH + 6) return { compact: true, top: rect.top, left: contentRight + (margin - COMPACT_WIDTH) / 2 };
-  return { compact: false, top: Math.max(4, rect.top - 34), left: Math.max(4, rect.left + rect.width - CHIP_WIDTH) };
+  return null;
 }
 
 /** Briefly highlight the added words of applied edits on the page. */
@@ -148,7 +148,10 @@ export function SectionFocusLayer({
 }) {
   const layerRef = useRef<HTMLDivElement>(null);
   const [revision, setRevision] = useState(0);
-  const [hoverId, setHoverId] = useState<string | null>(null);
+  // The paragraph holding the caret. The entry follows the caret, never the
+  // pointer, so nothing reacts to mouse movement over the resume text.
+  const [caretId, setCaretId] = useState<string | null>(null);
+  const [entryHovered, setEntryHovered] = useState(false);
   const [composerId, setComposerId] = useState<string | null>(null);
   const [composerText, setComposerText] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -203,105 +206,57 @@ export function SectionFocusLayer({
     };
   }, [scrollRef]);
 
-  // Hover detection: which unit is under the pointer. Editing always wins: the
-  // outline only shows after the pointer rests, and disappears on any press,
-  // drag-selection or typing.
-  const hoverTimer = useRef(0);
-  const pendingHover = useRef<string | null>(null);
-  const clearHoverTimer = useCallback(() => {
-    window.clearTimeout(hoverTimer.current);
-    pendingHover.current = null;
-  }, []);
-  const hideHover = useCallback(() => {
-    clearHoverTimer();
-    setHoverId(null);
-  }, [clearHoverTimer]);
-
   useEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    let frame = 0;
-    const onMove = (event: MouseEvent) => {
-      if (focus || composerId) return;
-      cancelAnimationFrame(frame);
-      if (event.buttons & 1) {
-        hideHover();
-        return;
-      }
-      frame = requestAnimationFrame(() => {
-        const hit = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
-        const unit = hit ? units.find((item) => hit.pos >= item.from && hit.pos <= item.to) : undefined;
-        const id = unit?.id ?? null;
-        if (id === pendingHover.current) return;
-        clearHoverTimer();
-        pendingHover.current = id;
-        if (id === null) {
-          // Leave time to cross the margin to the actions beside the page.
-          hoverTimer.current = window.setTimeout(() => setHoverId(null), HOVER_GRACE);
-          return;
-        }
-        // The current outline stays until the new paragraph has been rested on,
-        // so crossing other paragraphs on the way to the actions does not switch.
-        hoverTimer.current = window.setTimeout(() => setHoverId(id), HOVER_DELAY);
-      });
+    let blurTimer = 0;
+    const sync = () => {
+      window.clearTimeout(blurTimer);
+      setCaretId(editor.isFocused ? unitAtSelection(editor, units) : null);
     };
-    const onLeave = (event: MouseEvent) => {
-      // Moving onto the floating actions keeps the hover alive.
-      if ((event.relatedTarget as HTMLElement | null)?.closest?.(".sf-hover-actions, .sf-coach")) {
-        clearHoverTimer();
-        return;
-      }
-      hideHover();
+    const onBlur = () => {
+      window.clearTimeout(blurTimer);
+      blurTimer = window.setTimeout(() => setCaretId(null), BLUR_GRACE);
     };
-    const onPress = () => hideHover();
-    const editorDom = editor.view.dom;
-    scroller.addEventListener("mousemove", onMove);
-    scroller.addEventListener("mouseleave", onLeave);
-    scroller.addEventListener("mousedown", onPress, true);
-    editorDom.addEventListener("keydown", onPress);
+    sync();
+    editor.on("selectionUpdate", sync);
+    editor.on("focus", sync);
+    editor.on("blur", onBlur);
     return () => {
-      cancelAnimationFrame(frame);
-      clearHoverTimer();
-      scroller.removeEventListener("mousemove", onMove);
-      scroller.removeEventListener("mouseleave", onLeave);
-      scroller.removeEventListener("mousedown", onPress, true);
-      editorDom.removeEventListener("keydown", onPress);
+      window.clearTimeout(blurTimer);
+      editor.off("selectionUpdate", sync);
+      editor.off("focus", sync);
+      editor.off("blur", onBlur);
     };
-  }, [clearHoverTimer, composerId, editor, focus, hideHover, scrollRef, units]);
+  }, [editor, units]);
 
   const openFocus = useCallback((unitId: string, intent = "") => {
     setComposerId(null);
     setComposerText("");
     setPaletteOpen(false);
-    setHoverId(null);
+    setEntryHovered(false);
     setLanding(null);
     visitEdits.current = [];
     editor.commands.blur();
     setFocus({ unitId, intent });
   }, [editor]);
 
-  // ⌘K / Ctrl+K opens the one-line palette; F focuses the hovered unit.
+  // ⌘K / Ctrl+K opens the one-line palette, aimed at the paragraph holding the caret.
+  const [paletteUnit, setPaletteUnit] = useState<string | null>(null);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k" && !focus) {
         event.preventDefault();
+        setPaletteUnit(editor.isFocused ? unitAtSelection(editor, units) : null);
         setPaletteOpen((open) => !open);
         return;
       }
       if (event.key === "Escape" && (paletteOpen || composerId)) {
         setPaletteOpen(false);
         setComposerId(null);
-        return;
-      }
-      if (event.key.toLowerCase() === "f" && hoverId && !focus && !composerId && !paletteOpen
-        && !event.metaKey && !event.ctrlKey && !event.altKey && !isTypingTarget(event.target) && !editor.isFocused) {
-        event.preventDefault();
-        openFocus(hoverId);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [composerId, editor, focus, hoverId, openFocus, paletteOpen]);
+  }, [composerId, editor, focus, paletteOpen, units]);
 
   const dismissCoach = () => {
     setCoachSeen(true);
@@ -354,14 +309,15 @@ export function SectionFocusLayer({
     if (blocked) onNotice(t("有 {n} 处之后又被改过，没有自动撤销。", { n: blocked }));
   };
 
-  const hoverUnit = unitById(hoverId);
+  const caretUnit = unitById(caretId);
   const composerUnit = unitById(composerId);
   const landingUnit = unitById(landing?.unitId ?? null);
   const landingUnitCount = new Set(landing?.edits.map((edit) => edit.unitId)).size;
-  const hoverRect = hoverUnit && origin ? unitRect(editor, hoverUnit, origin) : null;
-  const chip = hoverRect && origin ? chipSpot(editor, scrollRef.current, origin, hoverRect) : null;
-  const coachLeft = hoverRect && origin && !coachSeen
-    ? gutterLeft(editor, scrollRef.current, origin, COACH_WIDTH, hoverRect.left + hoverRect.width / 2)
+  const showEntry = Boolean(caretUnit) && !focus && !composerId && !paletteOpen;
+  const caretRect = showEntry && caretUnit && origin ? unitRect(editor, caretUnit, origin) : null;
+  const chip = caretRect && origin ? chipSpot(editor, scrollRef.current, origin, caretRect) : null;
+  const coachLeft = caretRect && chip && origin && !coachSeen
+    ? gutterLeft(editor, scrollRef.current, origin, COACH_WIDTH, caretRect.left + caretRect.width / 2)
     : null;
   const composerRect = composerUnit && origin ? unitRect(editor, composerUnit, origin) : null;
   const landingRect = landingUnit && origin ? unitRect(editor, landingUnit, origin) : null;
@@ -370,31 +326,31 @@ export function SectionFocusLayer({
 
   return (
     <div ref={layerRef} className="sf-layer">
-      {hoverRect && hoverUnit && chip && !focus && !composerId && (
+      {caretRect && caretUnit && chip && (
         <>
-          <div className="sf-hover-outline" style={{ top: hoverRect.top, left: hoverRect.left, width: hoverRect.width, height: hoverRect.height }} />
+          {/* Which paragraph the entry acts on, shown only while pointing at the entry. */}
+          {entryHovered && <div className="sf-hover-outline" style={{ top: caretRect.top, left: caretRect.left, width: caretRect.width, height: caretRect.height }} />}
           <div
             className={`sf-hover-actions${chip.compact ? " is-compact" : ""}`}
-            onMouseEnter={clearHoverTimer}
-            onMouseLeave={(event) => {
-              if (!(event.relatedTarget instanceof Node) || !scrollRef.current?.contains(event.relatedTarget)) hideHover();
-            }}
+            // Clicking the entry must not take the caret out of the resume.
+            onMouseDown={(event) => event.preventDefault()}
+            onMouseEnter={() => setEntryHovered(true)}
+            onMouseLeave={() => setEntryHovered(false)}
             style={{ top: chip.top, left: chip.left }}
           >
-            <button type="button" onClick={() => openFocus(hoverUnit.id)} aria-label={t("聚焦这段")} title={chip.compact ? t("聚焦这段") : undefined}>
+            <button type="button" onClick={() => openFocus(caretUnit.id)} aria-label={t("聚焦这段")} title={chip.compact ? t("聚焦这段") : undefined}>
               <i className="sf-ring" aria-hidden="true" />
-              {!chip.compact && <>{t("聚焦这段")}<kbd>F</kbd></>}
+              {!chip.compact && t("聚焦这段")}
             </button>
-            <button type="button" onClick={() => { setComposerId(hoverUnit.id); setComposerText(""); dismissCoach(); }} aria-label={t("说说怎么改…")} title={chip.compact ? t("说说怎么改…") : undefined}>
+            <button type="button" onClick={() => { setComposerId(caretUnit.id); setComposerText(""); setEntryHovered(false); dismissCoach(); }} aria-label={t("说说怎么改…")} title={chip.compact ? t("说说怎么改…") : undefined}>
               {chip.compact ? <PenLine size={13} aria-hidden="true" /> : t("说说怎么改…")}
             </button>
           </div>
-          {/* The intro only shows where it cannot cover resume text. */}
           {!coachSeen && coachLeft !== null && (
-            <div className="sf-coach" role="note" onMouseEnter={clearHoverTimer} style={{ top: hoverRect.top + 40, left: coachLeft, width: COACH_WIDTH }}>
+            <div className="sf-coach" role="note" onMouseDown={(event) => event.preventDefault()} style={{ top: caretRect.top + 40, left: coachLeft, width: COACH_WIDTH }}>
               <span className="sf-mono">NEW</span>
               <strong>{t("让 AI 帮你改某一段")}</strong>
-              <p>{t("悬停在一段经历上：点「聚焦这段」让 AI 先看看问题；点「说说怎么改」直接写你的要求。熟练后可以按 ⌘K 一句话直达。")}</p>
+              <p>{t("光标停在哪段经历里，页边就会出现这段的入口：点「聚焦这段」让 AI 先看看问题；点「说说怎么改」直接写你的要求。也可以按 ⌘K 一句话直达。")}</p>
               <button type="button" onClick={dismissCoach}>{t("知道了")}</button>
             </div>
           )}
@@ -448,6 +404,7 @@ export function SectionFocusLayer({
       {paletteOpen && (
         <CommandPalette
           units={units}
+          initialUnitId={paletteUnit}
           onClose={() => setPaletteOpen(false)}
           onConfirm={(unitId, intent) => openFocus(unitId, intent)}
         />
@@ -516,15 +473,18 @@ export function SectionFocusLayer({
 
 function CommandPalette({
   units,
+  initialUnitId,
   onClose,
   onConfirm,
 }: {
   units: FocusUnit[];
+  initialUnitId: string | null;
   onClose: () => void;
   onConfirm: (unitId: string, intent: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [picked, setPicked] = useState<string | null>(null);
+  // The paragraph holding the caret is the target until the sentence names another.
+  const [picked, setPicked] = useState<string | null>(initialUnitId);
   const [choosing, setChoosing] = useState(false);
   const match = useMemo(() => matchTarget(query, units), [query, units]);
   const target = picked
@@ -551,7 +511,13 @@ function CommandPalette({
             value={query}
             maxLength={300}
             placeholder={t("一句话说要改哪段、怎么改，比如「帮我改一下美团那段，突出技术深度」")}
-            onChange={(event) => { setQuery(event.target.value); setPicked(null); setChoosing(false); }}
+            onChange={(event) => {
+              const value = event.target.value;
+              setQuery(value);
+              // Naming a paragraph in the sentence overrides the caret one.
+              setPicked(initialUnitId && matchTarget(value, units).kind !== "unique" ? initialUnitId : null);
+              setChoosing(false);
+            }}
           />
           <kbd>Esc</kbd>
         </label>
@@ -570,6 +536,13 @@ function CommandPalette({
               <button type="submit" className="sf-btn sf-btn-dark">{t("聚焦并分析这一段 ↵")}</button>
               <span className="sf-muted">{t("不对？点「目标」换一段")}</span>
             </div>
+          </div>
+        )}
+        {!query.trim() && target && !choosing && (
+          <div className="sf-palette-current">
+            <span className="sf-muted">{t("当前段")}</span>
+            <button type="button" className="sf-pill" onClick={() => setChoosing(true)}>{unitLabel(target)} ▾</button>
+            <span className="sf-muted">{t("直接回车聚焦这段，或写下要求")}</span>
           </div>
         )}
         {candidates.length > 0 && (

@@ -175,6 +175,30 @@ describe("header-row experiences", () => {
     expect(headerParts(units[0])).toEqual({ dates: ["2023.06 - 2023.09"], details: ["用户运营", "运营实习生"] });
     expect(units[0].to).toBeLessThan(units[1].from);
   });
+
+  it("recognises header rows whose anchors carry no role", () => {
+    const bare = (id: string, cells: string[]): JSONContent => ({
+      type: "resumeRow",
+      content: cells.map((text, index) => ({
+        type: "paragraph",
+        content: [{ type: "resumeBlockAnchor", attrs: { blockId: `node_bare${id}${index}0000000000`, role: null } }, { type: "text", text }],
+      })),
+    });
+    const units = focusUnitsFromDoc(makeEditor({
+      type: "doc",
+      content: [
+        heading(2, [anchor("node_sectionintern000002", "section")], "实习经历"),
+        bare("a", ["2023.06 - 2023.09", "星野零售科技有限公司"]),
+        { type: "bulletList", content: [bullet("node_lineintern00000011", "维护商品信息与活动排期。")] },
+        bare("b", ["2022.07 - 2022.10", "澄海内容科技有限公司"]),
+        { type: "bulletList", content: [bullet("node_lineintern00000012", "完成内容审核与用户互动。")] },
+      ],
+    }).state.doc);
+    expect(units.map((unit) => [unit.heading, unit.meta, unit.lines.length])).toEqual([
+      ["星野零售科技有限公司", ["2023.06 - 2023.09"], 1],
+      ["澄海内容科技有限公司", ["2022.07 - 2022.10"], 1],
+    ]);
+  });
 });
 
 describe("entry header facts", () => {
