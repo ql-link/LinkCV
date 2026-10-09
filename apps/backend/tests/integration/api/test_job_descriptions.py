@@ -36,7 +36,7 @@ class DraftGateway:
         self.calls: list[dict[str, object]] = []
 
     async def complete(
-        self, *, model, messages, api_base, api_key, disable_thinking=False
+        self, *, model, messages, api_base, api_key, protocol_code="openai_chat", disable_thinking=False
     ):
         self.calls.append({"model": model, "messages": messages, "api_key": api_key})
         content = (
@@ -76,14 +76,14 @@ def build_app(*, llm_gateway=None, with_llm_key: bool = False):
 
 def configure_draft_models(app) -> None:
     with app.state.session_factory() as db:
-        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, enabled=True, runtime_config_version=1)
+        connection = LLMProviderConnection(provider_code="aihubmix", name="测试", credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})), settings_json={}, is_enabled=True, runtime_config_version=1)
         db.add(connection); db.flush()
         for use_case, target in [(JOB_TEXT_EXTRACTION, "chat-model"), (JOB_IMAGE_EXTRACTION, "vision-model")]:
             model = LLMModel(display_name=target)
             db.add(model); db.flush()
-            route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=target, origin="manual", enabled=True, target_available=True)
+            route = LLMModelRoute(model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=target, origin="manual", is_enabled=True, is_target_available=True)
             db.add(route); db.flush()
-            binding = LLMUseCaseRoute(use_case=use_case, route_id=route.id, protocol_code="openai_chat", priority=100, enabled=True, validated_at=utc_now())
+            binding = LLMUseCaseRoute(use_case=use_case, route_id=route.id, protocol_code="openai_chat", priority=100, is_enabled=True, validated_at=utc_now())
             db.add(binding); db.flush()
             binding.validated_fingerprint = validation_fingerprint(binding, route, connection)
         db.commit()
@@ -195,6 +195,77 @@ def test_parse_text_and_image_drafts_use_separate_models_without_creating_jobs()
             .content[-1]
             .image_url.url.startswith("data:image/png;base64,")
         )
+        with app.state.session_factory() as db:
+            assert db.scalar(select(func.count()).select_from(JobDescription)) == 0
+
+
+def test_text_draft_normalizes_salary_for_creation_with_one_model_call() -> None:
+    class SalaryGateway(DraftGateway):
+        async def complete(self, **kwargs):
+            result = await super().complete(**kwargs)
+            return GatewayResult(
+                content='{"job_title":"测试工程师","company_name":"示例科技",'
+                '"description":"执行回归测试","salary_text":"人民币14-18K每月",'
+                '"salary_currency":"人民币"}',
+                usage=result.usage,
+            )
+
+    gateway = SalaryGateway()
+    app = build_app(llm_gateway=gateway, with_llm_key=True)
+    with TestClient(app) as client:
+        register(client)
+        configure_draft_models(app)
+        response = client.post(
+            "/api/job-descriptions/parse-draft",
+            files={"text": (None, "推荐岗位人民币99999元/月\n示例科技招聘测试工程师，工资人民币14-18K每月。")},
+        )
+        assert response.status_code == 200, response.text
+        parsed = response.json()
+        assert parsed["draft"]["salary_currency"] == "CNY"
+        assert Decimal(parsed["draft"]["salary_min"]) == 14000
+        assert Decimal(parsed["draft"]["salary_max"]) == 18000
+        assert parsed["draft"]["salary_period"] == "month"
+        assert parsed["draft"]["salary_months_per_year"] is None
+        assert parsed["warnings"] == []
+        assert len(gateway.calls) == 1
+        with app.state.session_factory() as db:
+            assert db.scalar(select(func.count()).select_from(JobDescription)) == 0
+        created = client.post("/api/job-descriptions", json={**parsed["draft"], "source_type": "manual"})
+        assert created.status_code == 201, created.text
+        assert created.json()["job_description"]["salary_currency"] == "CNY"
+
+
+@pytest.mark.parametrize(("source", "salary_text", "extra", "expected_minimum", "warning"), [
+    ("当前工资人民币14000元/月", "人民币99999元/月", {}, None,
+     "薪资原文未能与输入对应，请核对。"),
+    ("人民币14-18K每月", "人民币14-18K每月",
+     {"salary_min": 15000, "salary_currency": "CNY", "salary_period": "month"}, "15000",
+     "结构化薪资与薪资原文不一致或提取不完整，请核对。"),
+])
+def test_text_draft_exposes_source_and_salary_conflicts_without_overwriting(
+    source, salary_text, extra, expected_minimum, warning,
+) -> None:
+    class ConflictGateway(DraftGateway):
+        async def complete(self, **kwargs):
+            result = await super().complete(**kwargs)
+            return GatewayResult(
+                content=json.dumps({"job_title": "测试工程师", "company_name": "示例科技",
+                                    "salary_text": salary_text, **extra}, ensure_ascii=False),
+                usage=result.usage,
+            )
+
+    gateway = ConflictGateway()
+    app = build_app(llm_gateway=gateway, with_llm_key=True)
+    with TestClient(app) as client:
+        register(client)
+        configure_draft_models(app)
+        response = client.post("/api/job-descriptions/parse-draft", files={"text": (None, source)})
+        assert response.status_code == 200, response.text
+        result = response.json()
+        assert result["draft"]["salary_min"] == expected_minimum
+        assert result["draft"]["salary_max"] is None
+        assert warning in result["warnings"]
+        assert len(gateway.calls) == 1
         with app.state.session_factory() as db:
             assert db.scalar(select(func.count()).select_from(JobDescription)) == 0
 

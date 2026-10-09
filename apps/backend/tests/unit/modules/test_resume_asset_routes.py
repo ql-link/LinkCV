@@ -8,6 +8,15 @@ from linkresume.modules.resumes import resume_asset_routes
 from linkresume.modules.resumes.image_limits import MAX_RESUME_IMAGE_BYTES
 
 
+@pytest.fixture(autouse=True)
+def active_upload_owner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        resume_asset_routes,
+        "lock_active_user",
+        lambda db, user_id: SimpleNamespace(id=user_id),
+    )
+
+
 class RecordingStorage:
     def __init__(self) -> None:
         self.uploaded_size = 0

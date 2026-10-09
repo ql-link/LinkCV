@@ -1,15 +1,13 @@
-import { Copy, RefreshCw, Trash2, X } from "lucide-react";
+import { t, useLocale } from "@/i18n";
+import { MotionPresence } from "@/components/ui/motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ResumeShareState, type ResumeShareUpdatePayload } from "../../api/client";
-import {
-  ConfirmDialog,
-  PageLoading,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui";
+import { copyText } from "../../utils/clipboard";
+import { Icon } from "../../v3/Icon";
+import { ConfirmDialog, Dialog, Segmented, Toggle } from "../../v3/primitives";
+import { ShareArt } from "./homeArt";
+import { useStableCallback } from "./useStableCallback";
+import "./home-v3.css";
 
 function parseShareExpiry(expiresAt: string | null) {
   if (!expiresAt) return null;
@@ -23,16 +21,15 @@ function isShareExpired(expiresAt: string | null) {
   return time !== null && time < Date.now();
 }
 
+// 有效期文案：Figma 写法「有效至 2026-10-27 18:00」
 function formatShareExpiry(expiresAt: string | null, expired = false) {
-  if (!expiresAt) return "永久";
+  if (!expiresAt) return t("永久有效");
   const time = parseShareExpiry(expiresAt);
-  if (time === null) return "到期时间不可用";
-  const date = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(time));
-  return expired ? `已于 ${date} 过期` : `有效至 ${date}`;
+  if (time === null) return t("到期时间不可用");
+  const date = new Date(time);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const label = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return expired ? t("已于 {value0} 过期", { value0: label }) : t("有效至 {value0}", { value0: label });
 }
 
 type SharePanelProps = {
@@ -42,24 +39,18 @@ type SharePanelProps = {
 };
 
 const EXPIRY_OPTIONS = [
-  {
-    key: "7d",
-    label: "7 天",
-    expiresAt: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    key: "1m",
-    label: "30 天",
-    expiresAt: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-  },
-  {
-    key: "forever",
-    label: "永久",
-    expiresAt: () => null,
-  },
+  { key: "7d", get label() { return t("7 天"); }, expiresAt: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() },
+  { key: "1m", get label() { return t("30 天"); }, expiresAt: () => new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() },
+  { key: "forever", get label() { return t("永久"); }, expiresAt: () => null },
 ] as const;
 
 type ExpiryKey = (typeof EXPIRY_OPTIONS)[number]["key"];
+type Visibility = "private" | "public";
+
+const VISIBILITY_OPTIONS: Array<{ value: Visibility; label: string }> = [
+  { value: "public", get label() { return t("公开"); } },
+  { value: "private", get label() { return t("仅自己"); } },
+];
 
 function shareUrl(token: string) {
   return `${window.location.origin}/share/${token}`;
@@ -71,20 +62,35 @@ function matchExpiry(expiresAt: string | null): ExpiryKey | null {
   if (time === null) return null;
   for (const option of EXPIRY_OPTIONS) {
     if (option.key === "forever") continue;
-    if (Math.abs(time - Date.parse(option.expiresAt() as string)) < 60 * 60 * 1000) {
-      return option.key;
-    }
+    if (Math.abs(time - Date.parse(option.expiresAt() as string)) < 60 * 60 * 1000) return option.key;
   }
   return null;
 }
 
+// 设置卡里的一行：左侧标题 + 说明，右侧控件
+function SettingRow({ title, hint, children }: { title: string; hint: string; children: React.ReactNode }) {
+  useLocale();
+  return (
+    <div className="v3-grow hv3-share-row">
+      <div className="v3-grow-copy">
+        <strong>{title}</strong>
+        <small>{hint}</small>
+      </div>
+      <div className="v3-grow-right">{children}</div>
+    </div>
+  );
+}
+
+// 02.1d 分享简历（520 宽）：插图 → 链接栏（唯一黑按钮「复制链接」）→ 状态 → 设置卡 → 底部重新生成 / 删除 + 完成
 export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) {
+  useLocale();
+  const close = useStableCallback(onClose);
   const [share, setShare] = useState<ResumeShareState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [createVisibility, setCreateVisibility] = useState<"private" | "public">("public");
+  const [createVisibility, setCreateVisibility] = useState<Visibility>("public");
   const [createExpiry, setCreateExpiry] = useState<ExpiryKey>("forever");
   const [createAllowDownload, setCreateAllowDownload] = useState(true);
   const [allowDownloadPending, setAllowDownloadPending] = useState(false);
@@ -103,7 +109,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     setLoading(true);
     void load()
       .catch(() => {
-        if (!cancelled) setError("分享状态读取失败，请稍后重试。");
+        if (!cancelled) setError(t("分享状态读取失败，请稍后重试。"));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -113,10 +119,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     };
   }, [load]);
 
-  const runAction = async (
-    action: () => Promise<void>,
-    failureMessage: string,
-  ) => {
+  const runAction = async (action: () => Promise<void>, failureMessage: string) => {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -129,20 +132,17 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
     }
   };
 
-  const createOrOverwrite = (
-    visibility: "private" | "public",
-    expiry: ExpiryKey,
-    allowDownload: boolean,
-  ) => runAction(async () => {
-    const option = EXPIRY_OPTIONS.find((item) => item.key === expiry)!;
+  const createShare = () => runAction(async () => {
+    const option = EXPIRY_OPTIONS.find((item) => item.key === createExpiry)!;
     const result = await api.createShare(resumeId, {
-      visibility,
+      visibility: createVisibility,
       expires_at: option.expiresAt(),
-      allow_download: allowDownload,
+      allow_download: createAllowDownload,
     });
     setShare(result.share);
-  }, "生成分享链接失败，请稍后重试。");
+  }, t("生成分享链接失败，请稍后重试。"));
 
+  // 重新生成：保留可见性与下载权限；未过期保留原到期时间，已过期按原有效时长顺延（推算不出时默认 7 天）
   const regenerate = () => {
     if (!share) return;
     const now = Date.now();
@@ -161,15 +161,16 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
         allow_download: share.share_allow_download,
       });
       setShare(result.share);
-    }, "重新生成分享链接失败，请稍后重试。");
+    }, t("重新生成分享链接失败，请稍后重试。"));
   };
 
   const updateConfig = (payload: ResumeShareUpdatePayload) =>
     runAction(async () => {
       const result = await api.updateShare(resumeId, payload);
       setShare(result.share);
-    }, "更新链接配置失败，请稍后重试。");
+    }, t("更新链接配置失败，请稍后重试。"));
 
+  // 下载开关先乐观更新，失败回滚
   const updateAllowDownload = async (allowDownload: boolean) => {
     if (!share || busy || allowDownloadPendingRef.current) return;
     const previousShare = share;
@@ -182,7 +183,7 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
       setShare(result.share);
     } catch {
       setShare(previousShare);
-      setError("更新链接配置失败，请稍后重试。");
+      setError(t("更新链接配置失败，请稍后重试。"));
     } finally {
       allowDownloadPendingRef.current = false;
       setAllowDownloadPending(false);
@@ -191,285 +192,151 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
 
   const copyLink = async () => {
     if (!share) return;
+    setError(null);
+    setCopied(false);
     try {
-      await navigator.clipboard.writeText(shareUrl(share.share_token));
+      await copyText(shareUrl(share.share_token));
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError("复制失败，请手动复制链接。");
+      setError(t("复制失败，请手动复制链接。"));
     }
-  };
-
-  const updateExpiry = (key: ExpiryKey) => {
-    const option = EXPIRY_OPTIONS.find((item) => item.key === key)!;
-    void updateConfig({ expires_at: option.expiresAt() });
   };
 
   const currentExpiry = matchExpiry(share?.share_expires_at ?? null);
   const expired = !!share && isShareExpired(share.share_expires_at);
   const originalExpiresAt = parseShareExpiry(share?.share_expires_at ?? null);
   const originalCreatedAt = parseShareExpiry(share?.share_created_at ?? null);
-  const canRenewOriginalDuration = originalExpiresAt !== null && originalCreatedAt !== null
-    && originalCreatedAt < originalExpiresAt;
+  const canRenewOriginalDuration = originalExpiresAt !== null && originalCreatedAt !== null && originalCreatedAt < originalExpiresAt;
   const regenerationExpiryDescription = !expired
-    ? "现有到期时间会保留。"
+    ? t("现有到期时间会保留。")
     : canRenewOriginalDuration
-      ? "新链接按原有效时长重新计算到期时间。"
-      : "原有效时长无法确定，新链接默认有效 7 天。";
-  const visibilitySummary = share?.share_visibility === "public" ? "公开" : "仅自己";
+      ? t("新链接按原有效时长重新计算到期时间。")
+      : t("原有效时长无法确定，新链接默认有效 7 天。");
+  const locked = busy || allowDownloadPending;
+  const visibility = share?.share_visibility ?? createVisibility;
+  const allowDownload = share ? share.share_allow_download : createAllowDownload;
+  const confirmOpen = confirmRegenerate || confirmDelete;
 
   return (
-    <div
-      className="share-panel-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        className="share-panel"
-        data-download-pending={allowDownloadPending || undefined}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`分享「${resumeTitle}」`}
-        onMouseDown={(event) => event.stopPropagation()}
+    <>
+      <Dialog
+        width={520}
+        label={t("分享「{value0}」", { value0: resumeTitle })}
+        onClose={close}
+        closable={!confirmOpen}
+        className="hv3-share"
       >
-        <header className="share-panel-head">
-          <div className="share-panel-title">
-            <h2>分享简历</h2>
-          </div>
-          <button type="button" className="share-panel-close" aria-label="关闭" onClick={onClose}>
-            <X size={18} strokeWidth={1.8} aria-hidden="true" />
-          </button>
-        </header>
+        <div className="v3-dialog-body" data-download-pending={allowDownloadPending || undefined}>
+          <h2 className="v3-dialog-title">{t("分享简历")}</h2>
+          <p className="v3-dialog-sub hv3-share-sub">{t("为「")}{resumeTitle}{t("」生成只读链接，对方不用登录就能查看。")}</p>
+          <div className="v3-stage has-dots hv3-share-stage"><ShareArt visibility={visibility} token={share?.share_token} /></div>
 
-        {loading ? (
-          <div className="share-panel-loading"><PageLoading label="正在读取分享状态…" scope="panel" /></div>
-        ) : error && !share ? (
-          <div className="share-panel-body share-panel-empty">
-            <p className="share-panel-error">{error}</p>
-            <button type="button" className="share-panel-retry" onClick={() => void load()}>
-              重试
-            </button>
-          </div>
-        ) : !share ? (
-          <div className="share-panel-body share-panel-empty">
-            <div className="share-panel-settings">
-              <div className="share-panel-setting">
-                <span>访问权限</span>
-                <Select
-                  value={createVisibility}
-                  disabled={busy}
-                  onValueChange={(value) => setCreateVisibility(value as "private" | "public")}
-                >
-                  <SelectTrigger
-                    className="share-panel-select-trigger"
-                    aria-label="访问权限"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="share-panel-select-content">
-                    <SelectItem value="public" className="share-panel-select-item">所有人可见</SelectItem>
-                    <SelectItem value="private" className="share-panel-select-item">仅自己可见</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="share-panel-setting">
-                <span>有效期</span>
-                <Select
-                  value={createExpiry}
-                  disabled={busy}
-                  onValueChange={(value) => setCreateExpiry(value as ExpiryKey)}
-                >
-                  <SelectTrigger
-                    className="share-panel-select-trigger"
-                    aria-label="有效期"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="share-panel-select-content">
-                    {EXPIRY_OPTIONS.map((option) => (
-                      <SelectItem
-                        key={option.key}
-                        value={option.key}
-                        className="share-panel-select-item"
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="share-panel-setting share-panel-download-setting">
-                <span className="share-panel-setting-copy">
-                  <strong>允许下载 PDF</strong>
-                  <small>关闭后，公开页面不显示下载入口</small>
-                </span>
-                <button
-                  type="button"
-                  className={`share-panel-switch${createAllowDownload ? " is-on" : ""}`}
-                  role="switch"
-                  aria-label="允许下载 PDF"
-                  aria-checked={createAllowDownload}
-                  disabled={busy}
-                  onClick={() => setCreateAllowDownload((value) => !value)}
-                >
-                  <span />
-                </button>
-              </div>
+          {loading ? (
+            <div className="hv3-share-loading" role="status" aria-label={t("正在读取分享状态…")}>{t("正在读取分享状态…")}</div>
+          ) : error && !share && !busy && !createPending(error) ? (
+            <div className="hv3-share-loading">
+              <p className="hv3-share-error" role="alert">{error}</p>
+              <button type="button" className="v3-btn v3-btn-ghost" onClick={() => void load().catch(() => setError(t("分享状态读取失败，请稍后重试。")))}>{t("重试")}</button>
             </div>
-            <div className="share-panel-create-actions">
-              <button
-                type="button"
-                className="share-panel-primary"
-                disabled={busy}
-                onClick={() => void createOrOverwrite(createVisibility, createExpiry, createAllowDownload)}
-              >
-                {busy ? "正在创建…" : "创建分享链接"}
+          ) : (
+            <>
+              {share && (
+                <>
+                  <div className={`hv3-share-link${expired ? " is-expired" : ""}`}>
+                    <Icon name="link" size={14} />
+                    <span className="hv3-share-url v3-num" title={expired ? undefined : shareUrl(share.share_token)}>
+                      {expired ? t("该分享链接已失效，访客将无法继续访问简历") : shareUrl(share.share_token)}
+                    </span>
+                    <button type="button" className="v3-btn v3-btn-dark hv3-share-copy" onClick={() => void copyLink()} disabled={busy || expired}>
+                      {expired ? t("不可复制") : copied ? t("已复制") : t("复制链接")}
+                    </button>
+                  </div>
+                  <p className={`hv3-share-status${expired ? " is-expired" : ""}`} role="status">
+                    <span className="hv3-share-dot" />
+                    <span className="hv3-share-status-label">{expired ? t("链接已过期") : t("链接可用")}</span>
+                    <span className="hv3-share-status-time v3-num">{formatShareExpiry(share.share_expires_at, expired)}</span>
+                  </p>
+                </>
+              )}
+
+              <div className="v3-gcard hv3-share-settings">
+                <SettingRow title={t("谁可以查看")} hint={visibility === "public" ? t("公开后，拿到链接的人都能打开") : t("仅自己登录后可以打开")}>
+                  <Segmented<Visibility>
+                    label={t("访问权限")}
+                    value={visibility}
+                    options={VISIBILITY_OPTIONS}
+                    onChange={(value) => {
+                      if (locked) return;
+                      if (share) {
+                        if (value !== share.share_visibility) void updateConfig({ visibility: value });
+                      } else setCreateVisibility(value);
+                    }}
+                  />
+                </SettingRow>
+                <SettingRow title={t("链接有效期")} hint={t("到期后链接自动失效，可以重新生成")}>
+                  <Segmented<ExpiryKey | "custom">
+                    label={t("有效期")}
+                    value={share ? currentExpiry ?? "custom" : createExpiry}
+                    options={EXPIRY_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
+                    onChange={(value) => {
+                      if (locked || value === "custom") return;
+                      const option = EXPIRY_OPTIONS.find((item) => item.key === value)!;
+                      if (share) void updateConfig({ expires_at: option.expiresAt() });
+                      else setCreateExpiry(option.key);
+                    }}
+                  />
+                </SettingRow>
+                <SettingRow
+                  title={t("允许下载 PDF")}
+                  hint={allowDownload ? t("关闭后，公开页面不显示下载入口") : t("关闭后，任何访问者（包括分享者）均不可下载")}
+                >
+                  <Toggle
+                    label={t("允许下载 PDF")}
+                    checked={allowDownload}
+                    disabled={locked}
+                    onChange={(next) => {
+                      if (share) void updateAllowDownload(next);
+                      else setCreateAllowDownload(next);
+                    }}
+                  />
+                </SettingRow>
+              </div>
+              {error && <p className="hv3-share-error" role="alert">{error}</p>}
+            </>
+          )}
+        </div>
+
+        <div className="v3-dialog-foot hv3-foot">
+          <div className="v3-dialog-foot-left">
+            {share && (
+              <>
+                <button type="button" className="v3-link hv3-share-regen" disabled={locked} onClick={() => setConfirmRegenerate(true)}>
+                  <Icon name="refresh" size={13} />{t("重新生成链接")}</button>
+                <button type="button" className="v3-link hv3-share-delete" disabled={locked} onClick={() => setConfirmDelete(true)}>{t("删除链接")}</button>
+              </>
+            )}
+          </div>
+          {!loading && !share ? (
+            <>
+              <button type="button" className="v3-btn v3-btn-ghost hv3-foot-cancel" onClick={onClose}>{t("取消")}</button>
+              <button type="button" className="v3-btn v3-btn-dark" disabled={busy} onClick={() => void createShare()}>
+                {busy ? t("正在创建…") : t("创建分享链接")}
               </button>
-            </div>
-            {error && <p className="share-panel-error">{error}</p>}
-          </div>
-        ) : (
-          <div className="share-panel-body share-panel-has-link">
-            <section className="share-panel-link-section">
-              <span className="share-panel-section-label">
-                {expired ? "状态说明" : "分享链接"}
-              </span>
-              <p className={`share-panel-status is-${expired ? "expired" : "available"}`} role="status">
-                <span>{expired ? "链接已过期" : "链接可用"}</span>
-                <span className="share-panel-status-summary">
-                  {expired
-                    ? formatShareExpiry(share.share_expires_at, true)
-                    : `${visibilitySummary} · ${formatShareExpiry(share.share_expires_at)}`}
-                </span>
-              </p>
-              <span className="share-panel-link-row">
-                <span
-                  className={`share-panel-link-value${expired ? " is-expired" : ""}`}
-                  title={expired ? undefined : shareUrl(share.share_token)}
-                >
-                  {expired
-                    ? "该分享链接已失效，访客将无法继续访问简历"
-                    : shareUrl(share.share_token)}
-                </span>
-                <button
-                  type="button"
-                  className={`share-panel-copy${expired ? " is-disabled" : ""}`}
-                  onClick={() => void copyLink()}
-                  disabled={busy || expired}
-                >
-                  <Copy size={16} strokeWidth={1.8} aria-hidden="true" />
-                  {expired ? "不可复制" : copied ? "已复制" : "复制链接"}
-                </button>
-              </span>
-            </section>
+            </>
+          ) : (
+            <button type="button" className="v3-btn v3-btn-ghost hv3-share-done" onClick={onClose}>{t("完成")}</button>
+          )}
+        </div>
+      </Dialog>
 
-            <div className="share-panel-divider" />
-            <div className="share-panel-settings">
-              <div className="share-panel-setting">
-                <span>访问权限</span>
-                <Select
-                  value={share.share_visibility}
-                  disabled={busy || allowDownloadPending}
-                  onValueChange={(value) => void updateConfig({
-                    visibility: value as "private" | "public",
-                  })}
-                >
-                  <SelectTrigger className="share-panel-select-trigger" aria-label="访问权限">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="share-panel-select-content">
-                    <SelectItem value="public" className="share-panel-select-item">所有人可见</SelectItem>
-                    <SelectItem value="private" className="share-panel-select-item">仅自己可见</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="share-panel-setting">
-                <span>有效期</span>
-                <Select
-                  value={currentExpiry ?? "custom"}
-                  disabled={busy || allowDownloadPending}
-                  onValueChange={(value) => {
-                    if (value !== "custom") updateExpiry(value as ExpiryKey);
-                  }}
-                >
-                  <SelectTrigger className="share-panel-select-trigger" aria-label="有效期">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="share-panel-select-content">
-                    {currentExpiry === null && (
-                      <SelectItem value="custom" disabled className="share-panel-select-item">
-                        {formatShareExpiry(share.share_expires_at)}
-                      </SelectItem>
-                    )}
-                    {EXPIRY_OPTIONS.map((option) => (
-                      <SelectItem
-                        key={option.key}
-                        value={option.key}
-                        className="share-panel-select-item"
-                      >
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="share-panel-setting share-panel-download-setting">
-                <span className="share-panel-setting-copy">
-                  <strong>允许下载 PDF</strong>
-                  <small>
-                    {share.share_allow_download
-                      ? "关闭后，公开页面不显示下载入口"
-                      : "关闭后，任何访问者（包括分享者）均不可下载"}
-                  </small>
-                </span>
-                <button
-                  type="button"
-                  className={`share-panel-switch${share.share_allow_download ? " is-on" : ""}`}
-                  role="switch"
-                  aria-label="允许下载 PDF"
-                  aria-checked={share.share_allow_download}
-                  disabled={busy || allowDownloadPending}
-                  onClick={() => void updateAllowDownload(!share.share_allow_download)}
-                >
-                  <span />
-                </button>
-              </div>
-            </div>
-
-            {error && <p className="share-panel-error">{error}</p>}
-            <div className="share-panel-actions">
-              <button
-                type="button"
-                className="share-panel-regenerate"
-                disabled={busy || allowDownloadPending}
-                onClick={() => setConfirmRegenerate(true)}
-              >
-                <RefreshCw size={16} strokeWidth={1.8} aria-hidden="true" />
-                重新生成链接
-              </button>
-              <button
-                type="button"
-                className="share-panel-danger"
-                disabled={busy || allowDownloadPending}
-                onClick={() => setConfirmDelete(true)}
-              >
-                <Trash2 size={16} strokeWidth={1.8} aria-hidden="true" />
-                删除链接
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
-
-      {confirmRegenerate && (
+      <MotionPresence>{confirmRegenerate && (
         <ConfirmDialog
-          kind="warning"
-          title="重新生成分享链接？"
-          description={`重新生成后旧链接将立即失效，已转发的旧地址无法再访问。「${resumeTitle}」的可见性与下载权限会保留。${regenerationExpiryDescription}`}
-          confirmLabel="确认重新生成"
-          busyLabel="正在重新生成…"
+          danger={false}
+          title={t("重新生成分享链接？")}
+          description={t("重新生成后旧链接将立即失效，已转发的旧地址无法再访问。「{value0}」的可见性与下载权限会保留。{value1}", { value0: resumeTitle, value1: regenerationExpiryDescription })}
+          confirmLabel={t("确认重新生成")}
+          busyLabel={t("正在重新生成…")}
           busy={busy}
           onCancel={() => setConfirmRegenerate(false)}
           onConfirm={() => {
@@ -477,14 +344,13 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
             void regenerate();
           }}
         />
-      )}
-      {confirmDelete && (
+      )}</MotionPresence>
+      <MotionPresence>{confirmDelete && (
         <ConfirmDialog
-          kind="delete"
-          title="删除分享链接？"
-          description={`删除后旧地址将显示「分享链接已失效」，之后可重新创建。「${resumeTitle}」本身不受影响。`}
-          confirmLabel="确认删除"
-          busyLabel="正在删除…"
+          title={t("删除分享链接？")}
+          description={t("删除后旧地址将显示「分享链接已失效」，之后可重新创建。「{value0}」本身不受影响。", { value0: resumeTitle })}
+          confirmLabel={t("确认删除")}
+          busyLabel={t("正在删除…")}
           busy={busy}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
@@ -495,10 +361,15 @@ export function SharePanel({ resumeId, resumeTitle, onClose }: SharePanelProps) 
               setCreateExpiry("forever");
               setCreateAllowDownload(true);
               setShare(null);
-            }, "删除分享链接失败，请稍后重试。");
+            }, t("删除分享链接失败，请稍后重试。"));
           }}
         />
-      )}
-    </div>
+      )}</MotionPresence>
+    </>
   );
+}
+
+// 只有「读取失败」才进入重试态；创建 / 删除失败仍留在设置界面并显示错误
+function createPending(error: string) {
+  return error !== t("分享状态读取失败，请稍后重试。");
 }

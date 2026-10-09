@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 import hashlib
 import json
 import logging
@@ -35,9 +36,10 @@ from linkresume.core.storage import (
 )
 from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.agent.service import delete_resume_agent_data
-from linkresume.modules.identity.dependencies import get_current_user
+from linkresume.modules.identity.dependencies import get_current_resume_user, get_current_user, get_current_workspace_user
 from linkresume.modules.identity.models import User
 from linkresume.modules.interviews.models import JobApplication
+from linkresume.modules.job_matches.models import JobResumeMatch
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -65,7 +67,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/{resume_id}/copy", response_model=ResumeResponse, status_code=201)
 def copy_current_resume(resume_id: str, payload: ResumeCopyRequest, response: Response,
-                        db: Session = Depends(get_db), user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db), user: User = Depends(get_current_resume_user),
                         storage: AssetStorage = Depends(get_storage)) -> ResumeResponse:
     result, created = copy_resume(db, storage, user_id=user.id, resume_id=resume_id,
                                   title=payload.title, base_lock_version=payload.base_lock_version,
@@ -115,8 +117,8 @@ def resume_summary(resume: Resume) -> ResumeSummary:
         title=resume.title,
         source_type=resume.source_type,
         lock_version=resume.lock_version,
-        created_at=resume.created_at,
-        updated_at=resume.updated_at,
+        created_at=resume.create_time,
+        updated_at=resume.update_time,
         preview=preview,
     )
 
@@ -145,7 +147,7 @@ def resume_record(resume: Resume) -> ResumeRecord:
 @router.get("", response_model=ResumeListResponse)
 def list_resumes(
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeListResponse:
     resumes = db.scalars(
         select(Resume)
@@ -156,14 +158,14 @@ def list_resumes(
                 Resume.source_type,
                 Resume.template_id,
                 Resume.lock_version,
-                Resume.created_at,
-                Resume.updated_at,
+                Resume.create_time,
+                Resume.update_time,
                 Resume.data_json,
                 Resume.style_json,
             )
         )
         .where(Resume.user_id == user.id)
-        .order_by(Resume.updated_at.desc(), Resume.id.desc())
+        .order_by(Resume.update_time.desc(), Resume.id.desc())
     ).all()
     return ResumeListResponse(resumes=[resume_summary(resume) for resume in resumes])
 
@@ -173,7 +175,7 @@ def create_resume(
     payload: ResumeCreateRequest,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
 ) -> ResumeResponse:
     if payload.template_id is None:
         raise ApiError(400, "TEMPLATE_REQUIRED")
@@ -204,7 +206,7 @@ def create_resume(
 def get_resume(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_workspace_user),
 ) -> ResumeResponse:
     return ResumeResponse(resume=resume_record(require_owned_resume(db, resume_id, user.id)))
 
@@ -244,10 +246,17 @@ async def classify_resume_semantics(
 def update_resume(
     resume_id: str,
     payload: ResumeUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
+    # Native clients rename and edit content and presentation; an empty update is
+    # never a valid desktop request.
+    if getattr(request.state, "auth_channel", None) == "desktop" and (
+        payload.title is None and payload.data is None and payload.style is None
+    ):
+        raise ApiError(403, "DESKTOP_ROUTE_FORBIDDEN")
     resume = require_owned_resume(db, resume_id, user.id)
     if resume.lock_version != payload.base_lock_version:
         raise ApiError(409, "RESUME_EDIT_CONFLICT")
@@ -291,7 +300,7 @@ def apply_template(
     resume_id: str,
     payload: ResumeApplyTemplateRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> ResumeResponse:
     template_id = parse_decimal_id(payload.template_id)
@@ -337,9 +346,10 @@ def apply_template(
 def delete_resume(
     resume_id: str,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_resume_user),
     storage: AssetStorage = Depends(get_storage),
 ) -> DeleteResumeResponse:
+    user = lock_active_user(db, user.id)
     parsed_id = parse_decimal_id(resume_id)
     if parsed_id is None:
         raise ApiError(404, "RESUME_NOT_FOUND")
@@ -398,6 +408,7 @@ def delete_resume(
             JobApplication.user_id == user.id,
         ).values(resume_id=None, resume_title_snapshot=None))
         detach_mock_interview_resume(db, user_id=user.id, resume_id=resume.id)
+        db.execute(delete(JobResumeMatch).where(JobResumeMatch.resume_id == resume.id))
         result = db.execute(delete(Resume).where(Resume.id == resume.id))
         db.commit()
     except Exception:

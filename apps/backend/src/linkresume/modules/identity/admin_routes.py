@@ -112,7 +112,7 @@ def list_users(
             status=u.status,
             resume_count=resume_counts.get(u.id, 0),
             last_login_at=u.last_login_at,
-            created_at=u.created_at,
+            created_at=u.create_time,
         )
         for u in rows
     ]
@@ -146,8 +146,8 @@ def get_user_detail(
         llm_call_count=llm_call_count,
         llm_costs=llm_costs,
         last_login_at=user.last_login_at,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
+        created_at=user.create_time,
+        updated_at=user.update_time,
     )
 
 
@@ -169,9 +169,11 @@ def update_user_status(
     if user_id == admin.id:
         raise ApiError(422, "CANNOT_SELF_DISABLE")
 
-    target = db.scalar(select(User).where(User.id == user_id))
+    target = db.scalar(select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True))
     if target is None:
         raise ApiError(404, "USER_NOT_FOUND")
+    if target.deletion_requested_at is not None:
+        raise ApiError(409, "ACCOUNT_DELETION_IN_PROGRESS")
 
     new_status = 1 if body.action == "enable" else 0
 
@@ -204,7 +206,7 @@ def update_user_status(
             status=target.status,
             resume_count=0,
             last_login_at=target.last_login_at,
-            created_at=target.created_at,
+            created_at=target.create_time,
         ),
     )
 

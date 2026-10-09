@@ -95,24 +95,65 @@ describe("convertCurrentLineToResumeRow", () => {
     expect(editor.getJSON().content?.[0].attrs?.leftWidth).toBe(60);
   });
 
-  it("不会把列表项转换成破坏列表结构的左右行", () => {
+  it("侧栏模板的栏内正文也能转换成左右行", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: {
+        type: "doc",
+        content: [{
+          type: "resumeColumns",
+          content: [
+            { type: "resumeColumn", attrs: { variant: "sidebar" }, content: [{ type: "paragraph", content: [{ type: "text", text: "侧栏" }] }] },
+            { type: "resumeColumn", attrs: { variant: "main" }, content: [{ type: "paragraph", content: [{ type: "text", text: "星河云科技" }] }] },
+          ],
+        }],
+      },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1) + 2);
+
+    expect(convertCurrentLineToResumeRow(editor)).toBe(true);
+    const main = editor.getJSON().content?.[0].content?.[1];
+    expect(main?.content?.[0]).toMatchObject({ type: "resumeRow" });
+    expect(editor.isActive("resumeRow")).toBe(true);
+  });
+
+  it("列表项先移出列表，文字放在最左栏，其余列表项保持不变", () => {
     editor = new Editor({
       extensions: resumeEditorExtensions,
       content: {
         type: "doc",
         content: [{
           type: "bulletList",
-          content: [{
+          content: ["第一项", "列表项", "第三项"].map((text) => ({
             type: "listItem",
-            content: [{ type: "paragraph", content: [{ type: "text", text: "列表项" }] }],
-          }],
+            content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+          })),
         }],
       },
+    });
+    editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1) + 1);
+
+    expect(convertCurrentLineToResumeRow(editor)).toBe(true);
+    const content = editor.getJSON().content ?? [];
+    expect(content.map((node) => node.type)).toEqual(["bulletList", "resumeRow", "bulletList"]);
+    expect(editor.state.doc.child(1).child(0).textContent).toBe("列表项");
+    expect(editor.state.doc.child(1).child(1).textContent).toBe("");
+    expect(editor.isActive("resumeRow")).toBe(true);
+    expect(editor.commands.undo()).toBe(true);
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["bulletList"]);
+    expect(editor.state.doc.child(0).childCount).toBe(3);
+    expect(editor.state.doc.child(0).textContent).toBe("第一项列表项第三项");
+  });
+
+  it("标题行不转换成左右行", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: { type: "doc", content: [{ type: "heading", attrs: { level: 2 }, content: [{ type: "text", text: "工作经历" }] }] },
     });
     editor.commands.setTextSelection(3);
 
     expect(convertCurrentLineToResumeRow(editor)).toBe(false);
-    expect(editor.getJSON().content?.[0].type).toBe("bulletList");
+    expect(editor.getJSON().content?.[0].type).toBe("heading");
   });
 
   it("可以恢复普通行且不丢失左右文字", () => {
@@ -909,6 +950,15 @@ describe("switchResumeRowColumns", () => {
     });
     return count;
   }
+
+  it("切换栏数后光标留在行内最后一栏", () => {
+    editor = createRowEditor([{ text: "星河云科技" }, { text: "" }]);
+
+    expect(setResumeRowColumns(editor, 0, 3)).toBe(true);
+    const { $from } = editor.state.selection;
+    expect(editor.isActive("resumeRow")).toBe(true);
+    expect($from.index(1)).toBe(2);
+  });
 
   it("从 2 栏扩到 4 栏只补空栏并保留已有文字", () => {
     editor = createRowEditor([{ text: "星河云科技" }, { text: "2022.9 – 2026.6" }]);

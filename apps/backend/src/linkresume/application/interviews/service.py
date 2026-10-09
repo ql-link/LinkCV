@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from linkresume.modules.identity.dependencies import lock_active_user
+
 from linkresume.application.interviews.resume_binding_service import bind_resume
 from linkresume.core.errors import ApiError
 
@@ -36,9 +38,11 @@ from linkresume.core.database import utc_now
 from linkresume.modules.interviews.models import (
     InterviewSession,
     JobApplication,
+    JobApplicationOfferMaterial,
     JobApplicationStage,
 )
 from linkresume.modules.interviews.schemas import (
+    OC_DETAIL_FIELDS,
     AddApplicationStageRequest,
     AdvanceApplicationRequest,
     CancelInterviewRequest,
@@ -166,6 +170,8 @@ DEFAULT_STAGE_LABELS = {
     "assessment": "测评",
     "written_test": "笔试",
     "ai_interview": "AI 面试",
+    "hr": "HR 面",
+    "oc": "OC",
     "offer": "Offer",
 }
 
@@ -174,6 +180,7 @@ SCHEDULABLE_STAGE_TYPES = {
     "written_test",
     "ai_interview",
     "interview",
+    "hr",
 }
 
 
@@ -300,7 +307,7 @@ def find_application_for_job(
             JobApplication.user_id == user_id,
             JobApplication.job_description_id == job_description_id,
         )
-        .order_by(JobApplication.created_at.desc(), JobApplication.id.desc())
+        .order_by(JobApplication.create_time.desc(), JobApplication.id.desc())
         .limit(1)
     )
 
@@ -312,6 +319,7 @@ def ensure_pending_application_for_job(
     *,
     notes: str | None = None,
 ) -> tuple[JobApplication, bool]:
+    lock_active_user(db, user_id)
     locked_job = db.scalar(
         select(JobDescription)
         .where(
@@ -346,8 +354,8 @@ def ensure_pending_application_for_job(
         applied_at=None,
         notes=notes,
         lock_version=1,
-        created_at=now,
-        updated_at=now,
+        create_time=now,
+        update_time=now,
     )
     db.add(application)
     db.flush()
@@ -358,6 +366,7 @@ def ensure_pending_application_for_job(
 def create_application(
     db: Session, user_id: int, payload: JobApplicationCreateRequest
 ) -> JobApplication:
+    lock_active_user(db, user_id)
     job_description_id = parse_decimal_id(payload.job_description_id)
     if job_description_id is None:
         raise InterviewNotFound
@@ -523,9 +532,9 @@ def list_applications(
         )
         query = query.where(
             or_(
-                JobApplication.updated_at < cursor_time,
+                JobApplication.update_time < cursor_time,
                 and_(
-                    JobApplication.updated_at == cursor_time,
+                    JobApplication.update_time == cursor_time,
                     JobApplication.id < cursor_id,
                 ),
             )
@@ -533,7 +542,7 @@ def list_applications(
     rows = list(
         db.scalars(
             query.order_by(
-                JobApplication.updated_at.desc(), JobApplication.id.desc()
+                JobApplication.update_time.desc(), JobApplication.id.desc()
             ).limit(limit + 1)
         )
     )
@@ -542,7 +551,7 @@ def list_applications(
     next_cursor = (
         _encode_cursor(
             kind="job_applications",
-            timestamp=items[-1].updated_at,
+            timestamp=items[-1].update_time,
             row_id=items[-1].id,
             filter_digest=filter_digest,
         )
@@ -594,7 +603,11 @@ def _legacy_stage_projection(
         legacy_type = "interview"
         legacy_round = round_no or 1
         stage_state = "awaiting_schedule"
-    elif stage_type == "offer":
+    elif stage_type == "hr":
+        legacy_type = "hr"
+        legacy_round = None
+        stage_state = "awaiting_schedule"
+    elif stage_type in {"offer", "oc"}:
         legacy_type = "offer"
         legacy_round = None
         stage_state = "negotiating"
@@ -626,6 +639,7 @@ def add_application_stage(
     application_id: int,
     payload: AddApplicationStageRequest,
 ) -> StageChangeResult:
+    lock_active_user(db, user_id)
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -657,14 +671,26 @@ def add_application_stage(
 
     stage_label = _stage_label(payload.stage_type, payload.stage_label)
     bind_resume(db, application, payload)
+    if "notes" in payload.model_fields_set:
+        application.notes = payload.notes
+    if "applied_channel" in payload.model_fields_set:
+        application.applied_channel = payload.applied_channel
+    if payload.stage_type == "oc":
+        for field in OC_DETAIL_FIELDS:
+            if field in payload.model_fields_set:
+                value = getattr(payload, field)
+                if field == "oc_communicated_at" and value is not None:
+                    value = value.astimezone(UTC)
+                setattr(application, field, value)
     now = utc_now()
+    settle_elapsed_sessions(db, application, now)
     previous = current_application_stage(db, application.id)
     if previous is not None:
         previous.current_marker = None
         previous.stage_status = "completed"
         previous.stage_result = "passed"
         previous.completed_at = now
-        previous.updated_at = now
+        previous.update_time = now
         db.execute(
             update(InterviewSession)
             .where(
@@ -672,7 +698,7 @@ def add_application_stage(
                 InterviewSession.status == "completed",
                 InterviewSession.round_result == "pending",
             )
-            .values(round_result="passed", updated_at=now)
+            .values(round_result="passed", update_time=now)
         )
     last_sequence_no = db.scalar(
         select(func.max(JobApplicationStage.sequence_no)).where(
@@ -692,8 +718,8 @@ def add_application_stage(
         current_marker=1,
         entered_at=now,
         completed_at=None,
-        created_at=now,
-        updated_at=now,
+        create_time=now,
+        update_time=now,
     )
     application.applied_at = (
         payload.applied_at.astimezone(UTC)
@@ -709,7 +735,7 @@ def add_application_stage(
     application.terminated_at = None
     application.termination_reason = None
     application.lock_version += 1
-    application.updated_at = now
+    application.update_time = now
     try:
         db.add(stage)
         db.commit()
@@ -736,6 +762,7 @@ def terminate_application(
     application_id: int,
     payload: TerminateApplicationRequest,
 ) -> StageChangeResult:
+    lock_active_user(db, user_id)
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -754,7 +781,10 @@ def terminate_application(
         raise InterviewInvalidTransition
     if application.lock_version != payload.base_lock_version:
         raise InterviewEditConflict
+    if payload.reason == "offer_declined" and application.offer_status != "received":
+        raise InterviewInvalidTransition
     now = utc_now()
+    settle_elapsed_sessions(db, application, now)
     current = current_application_stage(db, application.id)
     if current is not None:
         current.current_marker = None
@@ -763,7 +793,7 @@ def terminate_application(
             "rejected" if payload.reason == "company_rejected" else "skipped"
         )
         current.completed_at = now
-        current.updated_at = now
+        current.update_time = now
     application.applied_at = (
         payload.applied_at.astimezone(UTC)
         if payload.applied_at is not None
@@ -782,7 +812,7 @@ def terminate_application(
     if payload.reason == "offer_declined":
         application.offer_status = "declined"
     application.lock_version += 1
-    application.updated_at = now
+    application.update_time = now
     db.commit()
     db.refresh(application)
     return StageChangeResult(application=application, stage=None)
@@ -797,7 +827,7 @@ def _commit_application_update(
     values = {
         **values,
         "lock_version": JobApplication.lock_version + 1,
-        "updated_at": utc_now(),
+        "update_time": utc_now(),
     }
     result = db.execute(
         update(JobApplication)
@@ -821,6 +851,7 @@ def update_application(
     application_id: int,
     payload: JobApplicationUpdateRequest,
 ) -> JobApplication:
+    lock_active_user(db, user_id)
     application = db.scalar(select(JobApplication).where(JobApplication.id == application_id, JobApplication.user_id == user_id).with_for_update())
     if application is None:
         raise InterviewNotFound
@@ -832,7 +863,8 @@ def update_application(
     if (
         is_pending
         and provided.get("applied_at") is not None
-        and set(provided) <= {"applied_at", "resume_id", "resume_version_id"}
+        and set(provided)
+        <= {"applied_at", "applied_channel", "resume_id", "resume_version_id"}
     ):
         stage_payload: dict[str, object] = {
             "client_request_id": uuid4(),
@@ -845,6 +877,8 @@ def update_application(
             stage_payload["resume_id"] = provided["resume_id"]
         if "resume_version_id" in provided:
             stage_payload["resume_version_id"] = provided["resume_version_id"]
+        if "applied_channel" in provided:
+            stage_payload["applied_channel"] = provided["applied_channel"]
         result = add_application_stage(
             db,
             user_id,
@@ -952,10 +986,16 @@ def record_offer(
     payload: OfferApplicationRequest,
 ) -> JobApplication:
     application = require_owned_application(db, user_id, application_id)
+    current_stage = current_application_stage(db, application.id)
+    if current_stage is not None and current_stage.stage_type == "oc":
+        # A verbal offer moves to a formal one through a new Offer stage.
+        raise InterviewInvalidTransition
     try:
         state = transition_offer(_application_state(application))
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
+    if payload.material_dataset_ids is not None:
+        _replace_offer_materials(db, application, payload.material_dataset_ids)
     values = {
         **_state_values(state),
         "offer_base_location": payload.base_location,
@@ -964,9 +1004,62 @@ def record_offer(
         "offer_salary_period": payload.salary_period,
         "offer_benefits_description": payload.benefits_description,
     }
+    if "notes" in payload.model_fields_set:
+        values["notes"] = payload.notes
+    for field in ("received_on", "reply_due_on", "start_on", "probation"):
+        if field in payload.model_fields_set:
+            values[f"offer_{field}"] = getattr(payload, field)
     return _commit_application_update(
         db, application, payload.base_lock_version, values
     )
+
+
+def _replace_offer_materials(
+    db: Session, application: JobApplication, dataset_ids: list[str]
+) -> None:
+    """Replace the Offer files; every file must belong to the applicant."""
+
+    ids = [parse_decimal_id(value) for value in dataset_ids]
+    if ids:
+        owned = set(
+            db.scalars(
+                select(UserDataset.id).where(
+                    UserDataset.id.in_(ids),
+                    UserDataset.user_id == application.user_id,
+                )
+            )
+        )
+        if owned != set(ids):
+            raise InterviewNotFound
+    db.execute(
+        delete(JobApplicationOfferMaterial).where(
+            JobApplicationOfferMaterial.application_id == application.id
+        )
+    )
+    for dataset_id in ids:
+        db.add(
+            JobApplicationOfferMaterial(
+                application_id=application.id, dataset_id=dataset_id
+            )
+        )
+    db.flush()
+
+
+def list_offer_materials(
+    db: Session, application_id: int
+) -> list[tuple[int, str]]:
+    return [
+        (row.id, row.file_name)
+        for row in db.execute(
+            select(UserDataset.id, UserDataset.file_name)
+            .join(
+                JobApplicationOfferMaterial,
+                JobApplicationOfferMaterial.dataset_id == UserDataset.id,
+            )
+            .where(JobApplicationOfferMaterial.application_id == application_id)
+            .order_by(UserDataset.id)
+        )
+    ]
 
 
 def close_application(
@@ -976,6 +1069,17 @@ def close_application(
     payload: CloseApplicationRequest,
 ) -> JobApplication:
     application = require_owned_application(db, user_id, application_id)
+    if application.archived_at is not None:
+        raise InterviewInvalidTransition
+    if payload.offer_status is not None:
+        try:
+            transition_close(
+                _application_state(application),
+                status=payload.status,
+                offer_status=payload.offer_status,
+            )
+        except InvalidTransition as error:
+            raise InterviewInvalidTransition from error
     if payload.offer_status != "accepted":
         reason = (
             "offer_declined"
@@ -1034,7 +1138,8 @@ def delete_application(
     delete_asset_object: Callable[[str], None] | None = None,
 ) -> None:
     # delete_asset_object is retained for signature compatibility; linked
-    # datasets are only unlinked (FK ON DELETE SET NULL), never removed here.
+    # datasets are only unlinked (interview_session_id set to NULL), never removed here.
+    lock_active_user(db, user_id)
     application = db.scalar(
         select(JobApplication)
         .where(
@@ -1068,6 +1173,18 @@ def delete_application(
         db.commit()
         return
 
+    # No database foreign keys: clear the aggregate's own rows explicitly.
+    db.execute(
+        delete(JobApplicationStage).where(
+            JobApplicationStage.application_id == application.id
+        )
+    )
+    db.execute(
+        delete(JobApplicationOfferMaterial).where(
+            JobApplicationOfferMaterial.application_id == application.id
+        )
+    )
+    detach_mock_interview_applications(db, [application.id])
     result = db.execute(
         delete(JobApplication).where(
             JobApplication.id == application.id,
@@ -1082,6 +1199,25 @@ def delete_application(
         db.rollback()
         raise InterviewApplicationNotEmpty
     db.commit()
+
+
+def _delete_session_children(db: Session, session_ids: list[int]) -> None:
+    """Transcription jobs and per-question notes live and die with their session."""
+    from linkresume.modules.interviews.models import (
+        InterviewRecordingTranscription,
+        InterviewReviewQuestionNote,
+    )
+
+    db.execute(
+        delete(InterviewRecordingTranscription).where(
+            InterviewRecordingTranscription.session_id.in_(session_ids)
+        )
+    )
+    db.execute(
+        delete(InterviewReviewQuestionNote).where(
+            InterviewReviewQuestionNote.session_id.in_(session_ids)
+        )
+    )
 
 
 def delete_application_records(
@@ -1114,12 +1250,18 @@ def delete_application_records(
             .where(UserDataset.interview_session_id.in_(locked_session_ids))
             .values(interview_session_id=None, interview_source_type=None)
         )
+        _delete_session_children(db, locked_session_ids)
         db.execute(
             delete(InterviewSession).where(InterviewSession.id.in_(locked_session_ids))
         )
     db.execute(
         delete(JobApplicationStage).where(
             JobApplicationStage.application_id.in_(application_ids)
+        )
+    )
+    db.execute(
+        delete(JobApplicationOfferMaterial).where(
+            JobApplicationOfferMaterial.application_id.in_(application_ids)
         )
     )
     detach_mock_interview_applications(db, application_ids)
@@ -1166,6 +1308,64 @@ def _session_matches_current_stage(
     return True
 
 
+def _current_stage_waits_for_result(
+    db: Session, application: JobApplication, now: datetime
+) -> bool:
+    """Return whether every scheduled session of the current stage has ended."""
+
+    if application.status != "active" or application.stage_state != "scheduled":
+        return False
+    scheduled = [
+        session
+        for session in db.scalars(
+            select(InterviewSession).where(
+                InterviewSession.application_id == application.id,
+                InterviewSession.status == "scheduled",
+            )
+        )
+        if _session_matches_current_stage(session, application)
+    ]
+    return bool(scheduled) and all(
+        _normalize_cursor_time(session.end_at) <= now for session in scheduled
+    )
+
+
+def effective_stage_state(
+    db: Session, application: JobApplication, now: datetime | None = None
+) -> str:
+    """Project ``scheduled`` to ``awaiting_result`` once the schedule has ended."""
+
+    if _current_stage_waits_for_result(db, application, now or utc_now()):
+        return "awaiting_result"
+    return application.stage_state
+
+
+def settle_elapsed_sessions(
+    db: Session, application: JobApplication, now: datetime
+) -> None:
+    """Persist the time-based completion that reads already project.
+
+    Settlement only materializes what clients have already seen, so it does
+    not bump lock versions; the enclosing command owns the commit.
+    """
+
+    waits_for_result = _current_stage_waits_for_result(db, application, now)
+    elapsed = db.scalars(
+        select(InterviewSession).where(
+            InterviewSession.application_id == application.id,
+            InterviewSession.status == "scheduled",
+            InterviewSession.end_at <= now,
+        )
+    )
+    for session in elapsed:
+        session.status = "completed"
+        session.completed_at = session.end_at
+        session.update_time = now
+    if waits_for_result:
+        application.stage_state = "awaiting_result"
+    db.flush()
+
+
 def _session_matches_create_request(
     session: InterviewSession,
     payload: InterviewSessionCreateRequest,
@@ -1201,6 +1401,7 @@ def create_session(
     application_id: int,
     payload: InterviewSessionCreateRequest,
 ) -> InterviewSession:
+    lock_active_user(db, user_id)
     application = require_owned_application(db, user_id, application_id)
     if (
         application.status != "active"
@@ -1214,6 +1415,7 @@ def create_session(
     if payload.schedule_kind == "open_window" and current_stage.stage_type not in {
         "assessment",
         "written_test",
+        "ai_interview",
     }:
         raise InterviewScheduleKindNotSupported
     requested_stage_id = (
@@ -1252,7 +1454,11 @@ def create_session(
     except InvalidTransition as error:
         raise InterviewInvalidTransition from error
     expected_legacy_types = (
-        {"interview", "hr"} if current_stage.stage_type == "interview" else {"other"}
+        {"interview", "hr"}
+        if current_stage.stage_type == "interview"
+        else {"hr"}
+        if current_stage.stage_type == "hr"
+        else {"other"}
     )
     if payload.stage_type not in expected_legacy_types:
         raise InterviewInvalidTransition
@@ -1284,8 +1490,8 @@ def create_session(
         reminder_minutes=payload.reminder_minutes,
         preparation_note=payload.preparation_note,
         lock_version=1,
-        created_at=now,
-        updated_at=now,
+        create_time=now,
+        update_time=now,
     )
     try:
         db.add(session)
@@ -1302,7 +1508,7 @@ def create_session(
             .values(
                 **_state_values(state),
                 lock_version=JobApplication.lock_version + 1,
-                updated_at=now,
+                update_time=now,
             )
         )
         if transition.rowcount != 1:
@@ -1386,7 +1592,25 @@ def list_sessions(
     if end_at is not None:
         query = query.where(InterviewSession.start_at < normalized_end)
     if status:
-        query = query.where(InterviewSession.status == status)
+        # Filter on the time-projected status so lists agree with responses.
+        now = utc_now()
+        if status == "scheduled":
+            query = query.where(
+                InterviewSession.status == "scheduled",
+                InterviewSession.end_at > now,
+            )
+        elif status == "completed":
+            query = query.where(
+                or_(
+                    InterviewSession.status == "completed",
+                    and_(
+                        InterviewSession.status == "scheduled",
+                        InterviewSession.end_at <= now,
+                    ),
+                )
+            )
+        else:
+            query = query.where(InterviewSession.status == status)
     if application_id:
         query = query.where(InterviewSession.application_id == application_id)
     if cursor:
@@ -1436,7 +1660,7 @@ def _commit_session_update(
     values = {
         **values,
         "lock_version": InterviewSession.lock_version + 1,
-        "updated_at": utc_now(),
+        "update_time": utc_now(),
     }
     result = db.execute(
         update(InterviewSession)
@@ -1453,12 +1677,29 @@ def _commit_session_update(
     return db.get(InterviewSession, session.id)  # type: ignore[return-value]
 
 
+def normalize_prep_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give every item a unique id; client-supplied ids are kept when unique."""
+    seen: set[str] = set()
+    normalized: list[dict[str, Any]] = []
+    for item in items:
+        item_id = item.get("id")
+        if not item_id or item_id in seen:
+            item_id = str(uuid4())
+        seen.add(item_id)
+        normalized.append({**item, "id": item_id})
+    return normalized
+
+
 def update_session(
     db: Session, user_id: int, session_id: int, payload: InterviewSessionUpdateRequest
 ) -> InterviewSession:
     result = require_owned_session(db, user_id, session_id)
     values = payload.model_dump(exclude_unset=True)
     values.pop("base_lock_version", None)
+    if "prep_items" in values:
+        values["prep_items"] = normalize_prep_items(values["prep_items"] or [])
+    if "questions_markdown" in values and values["questions_markdown"] != result.session.questions_markdown:
+        values["transcript_source"] = "manual" if (values["questions_markdown"] or "").strip() else None
     return _commit_session_update(db, result.session, payload.base_lock_version, values)
 
 
@@ -1509,7 +1750,7 @@ def update_answer_plan(
         if session.application_stage_id is not None
         else None
     )
-    if stage is None or stage.stage_type not in {"assessment", "written_test"}:
+    if stage is None or stage.stage_type not in {"assessment", "written_test", "ai_interview"}:
         raise InterviewAnswerPlanNotSupported
     if payload.answer_plan_start_at is None:
         return _commit_session_update(
@@ -1546,6 +1787,7 @@ def update_answer_plan(
 def complete_interview(
     db: Session, user_id: int, session_id: int, payload: CompleteInterviewRequest
 ) -> InterviewSession:
+    lock_active_user(db, user_id)
     result = require_owned_session(db, user_id, session_id, for_update=True)
     session = result.session
     if result.application.archived_at is not None:
@@ -1570,10 +1812,10 @@ def complete_interview(
     session.status = "completed"
     session.completed_at = now
     session.lock_version += 1
-    session.updated_at = now
+    session.update_time = now
     _apply_state(result.application, state)
     result.application.lock_version += 1
-    result.application.updated_at = now
+    result.application.update_time = now
     db.commit()
     db.refresh(session)
     return session
@@ -1582,6 +1824,7 @@ def complete_interview(
 def cancel_interview(
     db: Session, user_id: int, session_id: int, payload: CancelInterviewRequest
 ) -> InterviewSession:
+    lock_active_user(db, user_id)
     result = require_owned_session(db, user_id, session_id, for_update=True)
     session = result.session
     if result.application.archived_at is not None:
@@ -1603,22 +1846,24 @@ def cancel_interview(
     session.cancelled_at = now
     session.cancellation_reason = payload.reason
     session.lock_version += 1
-    session.updated_at = now
+    session.update_time = now
     _apply_state(result.application, state)
     result.application.lock_version += 1
-    result.application.updated_at = now
+    result.application.update_time = now
     db.commit()
     db.refresh(session)
     return session
 
 
 def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication:
+    lock_active_user(db, user_id)
     result = require_owned_session(db, user_id, session_id, for_update=True)
     db.execute(
         update(UserDataset)
         .where(UserDataset.interview_session_id == session_id)
         .values(interview_session_id=None, interview_source_type=None)
     )
+    _delete_session_children(db, [session_id])
     db.delete(result.session)
     remaining_scheduled = db.scalar(
         select(func.count(InterviewSession.id)).where(
@@ -1634,7 +1879,7 @@ def delete_session(db: Session, user_id: int, session_id: int) -> JobApplication
     ):
         result.application.stage_state = "awaiting_schedule"
         result.application.lock_version += 1
-        result.application.updated_at = utc_now()
+        result.application.update_time = utc_now()
     db.commit()
     db.refresh(result.application)
     return result.application
@@ -1654,7 +1899,7 @@ def list_assets(db: Session, user_id: int, session_id: int) -> list[UserDataset]
                 UserDataset.user_id == user_id,
                 DocumentParseTask.upload_status == "succeeded",
             )
-            .order_by(UserDataset.created_at.desc(), UserDataset.id.desc())
+            .order_by(UserDataset.create_time.desc(), UserDataset.id.desc())
         )
     )
 
@@ -1682,10 +1927,21 @@ def find_owned_asset(
 
 
 def attach_dataset_to_session(
-    db: Session, user_id: int, session_id: int, dataset_id: int
+    db: Session,
+    user_id: int,
+    session_id: int,
+    dataset_id: int,
+    *,
+    transcribe: bool = False,
 ) -> UserDataset:
-    """Link an owned, unlinked dataset to an owned session (idempotent)."""
-    require_owned_session(db, user_id, session_id, for_update=True)
+    """Link an owned, unlinked dataset to an owned session (idempotent).
+
+    With ``transcribe`` a linked recording queues a background transcription.
+    """
+    from linkresume.application.interviews import transcription_service
+
+    lock_active_user(db, user_id)
+    owned = require_owned_session(db, user_id, session_id, for_update=True)
     dataset, task = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if task.upload_status != "succeeded":
         raise InvalidInterviewRequest
@@ -1695,31 +1951,44 @@ def attach_dataset_to_session(
         raise DatasetAlreadyLinked
     dataset.interview_session_id = session_id
     dataset.interview_source_type = "uploaded"
+    transcription_service.ensure_task(
+        db, session=owned.session, dataset=dataset, enabled=transcribe
+    )
     db.commit()
     db.refresh(dataset)
     return dataset
+
+
+def _cancel_transcription(db: Session, dataset_id: int) -> None:
+    from linkresume.application.interviews import transcription_service
+
+    transcription_service.cancel_for_dataset(db, dataset_id)
 
 
 def unlink_session_dataset(
     db: Session, user_id: int, session_id: int, dataset_id: int
 ) -> None:
     """Remove the session link; the dataset file stays in the library."""
+    lock_active_user(db, user_id)
     require_owned_session(db, user_id, session_id, for_update=True)
     dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if dataset.interview_session_id != session_id:
         raise InterviewAssetNotLinked
     dataset.interview_session_id = None
     dataset.interview_source_type = None
+    _cancel_transcription(db, dataset.id)
     db.commit()
 
 
 def unlink_owned_dataset(db: Session, user_id: int, dataset_id: int) -> None:
     """Legacy `interview-assets/{id}` removal: unlink from whatever session."""
+    lock_active_user(db, user_id)
     dataset, _ = dataset_content.owned(db, user_id, dataset_id, lock=True)
     if dataset.interview_session_id is None:
         raise InterviewAssetNotLinked
     dataset.interview_session_id = None
     dataset.interview_source_type = None
+    _cancel_transcription(db, dataset.id)
     db.commit()
 
 
@@ -1766,7 +2035,13 @@ def overview(
                 .where(
                     JobApplication.user_id == user_id,
                     JobApplication.archived_at.is_(None),
-                    InterviewSession.status == "completed",
+                    or_(
+                        InterviewSession.status == "completed",
+                        and_(
+                            InterviewSession.status == "scheduled",
+                            InterviewSession.end_at <= now,
+                        ),
+                    ),
                 )
             )
             or 0
@@ -1792,7 +2067,7 @@ def overview(
                 JobApplication.archived_at.is_(None),
                 JobApplication.status == "active",
             )
-            .order_by(JobApplication.updated_at.desc(), JobApplication.id.desc())
+            .order_by(JobApplication.update_time.desc(), JobApplication.id.desc())
         )
     )
     return metrics, pipeline, week_sessions

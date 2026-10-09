@@ -2,11 +2,13 @@ import { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { Fragment, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { EditorContent } from "@tiptap/react";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resumeEditorExtensions, fullyCoveredResumeLayoutNode } from "./editorExtensions";
 import { setResumeRowColumns } from "./editorCommands";
+import { api } from "../../api/client";
+import { useResumeStore } from "../../store/resumeStore";
 
 let editor: Editor | null = null;
 
@@ -90,6 +92,44 @@ afterEach(() => {
 });
 
 describe("简历头像上下文操作", () => {
+  it("更换系统占位头像后展示用户照片并清除占位标记", async () => {
+    const initialResumeId = useResumeStore.getState().activeResumeId;
+    useResumeStore.setState({ activeResumeId: "fixture-badge-resume" });
+    class LoadedImage extends EventTarget {
+      set src(_value: string) { this.dispatchEvent(new Event("load")); }
+    }
+    vi.stubGlobal("Image", LoadedImage);
+    const upload = vi.spyOn(api, "uploadResumeAsset").mockResolvedValue({
+      asset: { object_key: "fixture-avatar", url: "/api/assets/fixture-avatar.png" },
+    });
+    let picker: HTMLInputElement | null = null;
+    vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(function (this: HTMLInputElement) {
+      picker = this;
+    });
+    try {
+      editor = new Editor({
+        extensions: resumeEditorExtensions,
+        content: { type: "doc", content: [{
+          type: "avatarImage",
+          attrs: { src: "/templates/avatar-cat.jpg", size: 94, alt: "张三头像", systemFallback: true },
+        }] },
+      });
+      const { container } = render(<EditorContent editor={editor} />);
+      expect(container.querySelector(".resume-avatar")).toHaveAttribute("data-system-fallback", "true");
+      act(() => { editor!.commands.setNodeSelection(0); });
+      fireEvent.click(screen.getByRole("button", { name: "更换头像" }));
+      expect(picker).not.toBeNull();
+      fireEvent.change(picker!, { target: { files: [new File(["png"], "虚构头像.png", { type: "image/png" })] } });
+      await waitFor(() => expect(screen.getByRole("img", { name: "张三头像" })).toHaveAttribute("src", "/api/assets/fixture-avatar.png"));
+      expect(upload).toHaveBeenCalledOnce();
+      expect(container.querySelector(".resume-avatar")).not.toHaveAttribute("data-system-fallback");
+      expect(editor.getJSON().content?.[0].attrs?.systemFallback).toBe(false);
+    } finally {
+      useResumeStore.setState({ activeResumeId: initialResumeId });
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("头像 NodeView 外层不会成为模板绝对定位的包含块", () => {
     editor = new Editor({
       extensions: resumeEditorExtensions,
@@ -106,6 +146,16 @@ describe("简历头像上下文操作", () => {
 
     expect(avatar?.parentElement).toHaveClass("resume-avatar-node-view");
     expect(avatar).toHaveStyle({ width: "96px", height: "calc(96px * var(--resume-avatar-height-ratio, 1.4))" });
+    expect(avatar).not.toHaveAttribute("data-template-avatar");
+  });
+
+  it("marks template avatars for proportional framing", () => {
+    editor = new Editor({
+      extensions: resumeEditorExtensions,
+      content: { type: "doc", content: [{ type: "avatarImage", attrs: { src: "/templates/avatar-cat.jpg", size: 94 } }] },
+    });
+    const { container } = render(<EditorContent editor={editor} />);
+    expect(container.querySelector(".resume-avatar")).toHaveAttribute("data-template-avatar", "true");
   });
 
   it("只有选中已有头像时显示更换头像操作", async () => {
@@ -158,6 +208,7 @@ describe("简历头像上下文操作", () => {
     const avatar = container.querySelector<HTMLElement>(".resume-avatar");
     const avatarImage = screen.getByRole("img", { name: "张三头像" });
     expect(avatar).not.toBeNull();
+    expect(avatar?.style.getPropertyValue("--resume-avatar-size")).toBe("96px");
 
     fireEvent.wheel(avatarImage, { deltaY: -100 });
     expect(editor.getJSON().content?.[0].attrs?.size).toBe(96);
@@ -171,6 +222,7 @@ describe("简历头像上下文操作", () => {
     act(() => { avatarImage.dispatchEvent(zoomIn); });
     expect(zoomIn.defaultPrevented).toBe(true);
     expect(editor.getJSON().content?.[0].attrs?.size).toBe(100);
+    expect(avatar?.style.getPropertyValue("--resume-avatar-size")).toBe("100px");
 
     fireEvent.wheel(avatarImage, { metaKey: true, deltaY: 100 });
     expect(editor.getJSON().content?.[0].attrs?.size).toBe(96);
@@ -459,6 +511,17 @@ describe("分栏分隔线拖拽", () => {
     expect(storedWidths()).toBeNull();
   });
 
+  it("只点一下分隔线不会清掉已调整的宽度", async () => {
+    const row = await renderRow(["甲", "乙", "丙"], true);
+    stubRowWidth();
+    drag(handles(row)[0], 100, 160);
+    expect(storedWidths()).toEqual([43.33, 23.34, 33.33]);
+
+    clickOnly(handles(row)[0], 160);
+
+    expect(storedWidths()).toEqual([43.33, 23.34, 33.33]);
+  });
+
   it("双击分隔线恢复等分", async () => {
     const row = await renderRow(["甲", "乙", "丙"], true);
     stubRowWidth();
@@ -468,6 +531,24 @@ describe("分栏分隔线拖拽", () => {
     fireEvent.doubleClick(handles(row)[0]);
 
     expect(storedWidths()).toBeNull();
+  });
+});
+
+describe("正文图片单位下拉", () => {
+  it("用自绘选项切换百分比与像素并保持图片渲染宽度", async () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: { type: "doc", content: [{ type: "resumeImage", attrs: { src: "data:image/png;base64,dGVzdA==", width: 25, widthUnit: "%", alt: "示例图片" } }] } });
+    const { container } = render(<EditorContent editor={editor} />);
+    const image = screen.getByRole("img", { name: "示例图片" });
+    vi.spyOn(image, "getBoundingClientRect").mockReturnValue({ width: 200, height: 100 } as DOMRect);
+    vi.spyOn(container.querySelector(".ProseMirror")!, "getBoundingClientRect").mockReturnValue({ width: 800, height: 1000 } as DOMRect);
+    act(() => editor!.commands.setNodeSelection(0));
+    expect(container.querySelector("select")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "图片宽度单位" }));
+    fireEvent.click(await screen.findByRole("option", { name: "px" }));
+    expect(editor.state.doc.firstChild?.attrs).toMatchObject({ width: 200, widthUnit: "px" });
+    fireEvent.click(screen.getByRole("button", { name: "图片宽度单位" }));
+    fireEvent.click(await screen.findByRole("option", { name: "%" }));
+    expect(editor.state.doc.firstChild?.attrs).toMatchObject({ width: 25, widthUnit: "%" });
   });
 });
 
@@ -613,6 +694,45 @@ describe("姓名下 headline 行样式标记", () => {
   });
 });
 
+
+describe("个人信息的语义排版", () => {
+  let editor: Editor | null = null;
+  afterEach(() => editor?.destroy());
+  const contact = {
+    type: "paragraph",
+    content: [
+      { type: "resumeBlockAnchor", attrs: { blockId: "node_contact0000000001", role: "contact", contactKind: "email" } },
+      { type: "text", text: "demo@example.com" },
+    ],
+  };
+
+  it.each([false, true])("没有 headline 的联系方式在分栏=%s 时仍按联系方式排版", (columns) => {
+    const identity = [
+      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "李示例" }] },
+      contact,
+    ];
+    editor = new Editor({ extensions: resumeEditorExtensions, content: {
+      type: "doc", content: columns ? [{ type: "resumeColumns", content: [
+        { type: "resumeColumn", attrs: { variant: "sidebar" }, content: identity },
+        { type: "resumeColumn", attrs: { variant: "main" }, content: [{ type: "paragraph" }] },
+      ] }] : identity,
+    } });
+    expect(editor.view.dom.querySelectorAll("p.resume-identity-headline")).toHaveLength(0);
+    expect(editor.view.dom.querySelector("p.resume-identity-contacts")?.textContent).toBe("demo@example.com");
+  });
+
+  it("缺少姓名时也独立识别 headline 和联系方式", () => {
+    editor = new Editor({ extensions: resumeEditorExtensions, content: { type: "doc", content: [
+      { type: "paragraph", content: [
+        { type: "resumeBlockAnchor", attrs: { blockId: "node_headline000000001", role: "identity-headline" } },
+        { type: "text", text: "开发工程师" },
+      ] },
+      { type: "paragraph" }, contact,
+    ] } });
+    expect(editor.view.dom.querySelector("p.resume-identity-headline")?.textContent).toBe("开发工程师");
+    expect(editor.view.dom.querySelector("p.resume-identity-contacts")?.textContent).toBe("demo@example.com");
+  });
+});
 
 describe("叶子节点指针选区", () => {
   const IMAGE_DOC = {
@@ -849,6 +969,29 @@ describe("分栏结构剪切复制", () => {
     const { first, last } = leafRange(pos + 1, cell);
     setTextSel(first, last);
     expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+  });
+
+  it("其余栏为空时只选唯一一栏的文字，剪切仍按文字处理", () => {
+    createEditor({
+      type: "doc",
+      content: [{
+        type: "resumeRow",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "左栏文字" }] },
+          { type: "paragraph" },
+          { type: "paragraph" },
+        ],
+      }],
+    });
+    const pos = nodePos("resumeRow");
+    const cell = editor!.state.doc.nodeAt(pos + 1)!;
+    const { first, last } = leafRange(pos + 1, cell);
+    setTextSel(first, last);
+    expect(fullyCoveredResumeLayoutNode(editor!.state.selection as TextSelection)).toBeNull();
+
+    const { handled } = fakeClipboardEvent("cut");
+    expect(handled).toBeFalsy();
+    expect(nodeAt("resumeRow")?.childCount).toBe(3);
   });
 
   it("剪切整行内容：剪贴板带结构标记且行节点被删除", () => {

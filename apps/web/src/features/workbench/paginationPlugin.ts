@@ -1,6 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { syncResumeSheetColumns } from "../preview/print/resumeSheetDecoration";
 import { A4_HEIGHT_CSS_PX, PAGE_CONTINUATION_INSET_PX, computePageBreaks, pageContentHeight, type PageBlock, type PageBreak } from "./pagination";
 
 export const paginationPluginKey = new PluginKey<DecorationSet>("resumePagination");
@@ -143,6 +144,12 @@ function setPageStripMetrics(paper: HTMLElement, pageCount: number) {
   if (paper.style.getPropertyValue("--resume-page-count") !== count) paper.style.setProperty("--resume-page-count", count);
   if (paper.style.getPropertyValue("--resume-page-strip-width") !== width) paper.style.setProperty("--resume-page-strip-width", width);
   if (paper.style.getPropertyValue("--resume-page-stack-height") !== height) paper.style.setProperty("--resume-page-stack-height", height);
+  // Reserve the painted footprint while the editable A4 layout remains at 1:1.
+  const frame = paper.closest<HTMLElement>(".workbench-paper-frame");
+  if (frame) {
+    frame.style.setProperty("--workbench-paper-width", `${paper.offsetWidth}px`);
+    frame.style.setProperty("--workbench-paper-height", `${paper.offsetHeight}px`);
+  }
 }
 
 export function paginationTextNodes(element: HTMLElement) {
@@ -254,6 +261,7 @@ export const PaginationExtension = Extension.create({
             deferredRelevantMeasure ||= relevantMeasure;
             return;
           }
+          if (paper && !paper.classList.contains("pages-horizontal")) syncResumeSheetColumns({ paper });
           if (!paper || paper.classList.contains("smart-one-page")) {
             if (paper) setPageStripMetrics(paper, 1);
             if (lastBreaks.length > 0 || lastCollapsedPositions.length > 0) {
@@ -295,14 +303,15 @@ export const PaginationExtension = Extension.create({
             measurementPaper.style.zoom = "1";
             paper.parentElement?.appendChild(measurementPaper);
             measurementEditor = measurementPaper.querySelector<HTMLElement>(".resume-content") ?? editor;
+            syncResumeSheetColumns({ paper, measurementPaper });
           }
           const editorRect = measurementEditor.getBoundingClientRect();
           const paperRect = measurementPaper?.getBoundingClientRect() ?? paper.getBoundingClientRect();
-          // offsetHeight is rounded to an integer and changes when page-break
-          // widgets are inserted. Deriving zoom from it feeds those changes back
-          // into every measured block position, especially near an A4 seam.
-          const zoom = Number.parseFloat(getComputedStyle(measurementPaper ?? paper).zoom);
-          const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+          // Client rectangles include the visual scale; pagination uses fixed
+          // A4 coordinates. Read that scale directly to avoid offsetHeight's
+          // integer rounding feeding back into positions near a page seam.
+          const paintedScale = Number.parseFloat(getComputedStyle(measurementPaper ?? paper).scale);
+          const scale = Number.isFinite(paintedScale) && paintedScale > 0 ? paintedScale : 1;
           const markers = Array.from(measurementEditor.querySelectorAll<HTMLElement>(".workbench-page-break"));
           const candidates = paginationCandidates(measurementEditor);
           const markerMeasurements = markers.map((marker) => ({

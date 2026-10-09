@@ -1,10 +1,19 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiRequestError, api, type AgentProposal, type AgentSession } from "../../api/client";
 import { defaultCanonicalDocument, defaultCanonicalPresentation } from "../../api/resumeContract";
 import { agentErrorMessage, AgentMarkdown, AgentPanel, AgentUserAvatar } from "./AgentPanel";
+import { useResumeStore } from "../../store/resumeStore";
+import { installMessageQueueEnvironment } from "../../test/messageQueueEnvironment";
+import { changeQueue, enqueueMessage, queueKey } from "./messageQueue";
+
+beforeEach(() => {
+  installMessageQueueEnvironment();
+  vi.spyOn(api, "getActiveAgentRun").mockResolvedValue({ run: null });
+  useResumeStore.setState({ user: { id: "1", email: "queue-user@example.test", nickname: "测试用户", is_admin: false }, lockVersion: 2 });
+});
 
 const session: AgentSession = {
   id: "session-1",
@@ -34,9 +43,67 @@ const proposal: AgentProposal = {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  delete (document as Partial<Document>).execCommand;
 });
 
 describe("AgentPanel", () => {
+  it("保存期间切换到新对话不会把旧草稿发送或清除新草稿", async () => {
+    let finishSave!: (saved: boolean) => void;
+    const saving = new Promise<boolean>((resolve) => { finishSave = resolve; });
+    const create = vi.spyOn(api, "createAgentSession").mockResolvedValue({ session });
+    const stream = vi.spyOn(api, "streamAgentMessage").mockResolvedValue(undefined);
+    render(<AgentPanel resumeId="resume-1" onBeforeRun={() => saving} onBeforeConfirm={async () => true} onApplied={vi.fn()} />);
+    const input = await screen.findByRole("textbox", { name: "告诉助手你想改善什么" });
+    fireEvent.change(input, { target: { value: "旧会话待发送" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    fireEvent.click(screen.getByRole("button", { name: "新建对话" }));
+    fireEvent.change(input, { target: { value: "新会话草稿" } });
+    await act(async () => { finishSave(true); });
+    expect(input).toHaveValue("新会话草稿");
+    expect(create).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
+  });
+
+  it("恢复活跃历史会话时去重已保存回复，并按来源展示插入后的回复", async () => {
+    await enqueueMessage("1", session.id, { content: "插入指令" });
+    await changeQueue(queueKey("1", session.id), (value) => {
+      Object.assign(value.items[0], { mode: "steer", state: "waiting_insert", targetRunId: "run-1", submissionKey: "steer-key" });
+    });
+    vi.spyOn(api, "getAgentSteering").mockResolvedValue({ run_id: "run-1", submission_key: "steer-key", state: "waiting" });
+    const restored: AgentSession = { ...session, messages: [
+      { sequence_no: 1, role: "user", run_id: "run-1", content: "原始指令", created_at: session.created_at },
+      { sequence_no: 2, role: "assistant", run_id: "run-1", reply_to_sequence_no: 1, content: "原始回复", created_at: session.created_at },
+    ] };
+    vi.spyOn(api, "listAgentSessions").mockResolvedValue({ sessions: [restored] });
+    vi.spyOn(api, "getAgentSession").mockResolvedValue({ session: restored });
+    vi.spyOn(api, "listAgentProposals").mockResolvedValue({ proposals: [] });
+    vi.mocked(api.getActiveAgentRun).mockResolvedValue({ run: { run_id: "run-1", status: "running", started_at: session.created_at } });
+    let deliver!: Parameters<typeof api.streamAgentRun>[2];
+    let finish!: () => void;
+    vi.spyOn(api, "streamAgentRun").mockImplementation((_run, _signal, onEvent) => {
+      deliver = onEvent;
+      return new Promise<void>((resolve) => { finish = resolve; });
+    });
+    render(<AgentPanel resumeId="resume-1" onBeforeConfirm={async () => true} onApplied={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "历史对话" }));
+    fireEvent.click(await screen.findByRole("button", { name: /简历助手/ }));
+    await waitFor(() => expect(api.streamAgentRun).toHaveBeenCalledOnce());
+    expect(screen.queryByText("等待插入")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "待发送消息" })).not.toBeInTheDocument();
+    act(() => {
+      deliver({ type: "assistant.delta", runId: "run-1", userSequenceNo: 1, delta: "原始回复" });
+      deliver({ type: "assistant.message.completed", runId: "run-1", userSequenceNo: 1, sequenceNo: 2, content: "原始回复" });
+      deliver({ type: "user.message.accepted", runId: "run-1", userSequenceNo: 3, submissionKey: "steer-key", content: "插入指令", contexts: [] });
+      deliver({ type: "user.message.applied", runId: "run-1", userSequenceNo: 3, submissionKey: "steer-key" });
+      deliver({ type: "assistant.message.completed", runId: "run-1", userSequenceNo: 3, sequenceNo: 4, content: "插入后的回复" });
+    });
+    await waitFor(() => expect(screen.queryByRole("region", { name: "待发送消息" })).not.toBeInTheDocument());
+    expect(screen.getAllByText("原始回复")).toHaveLength(1);
+    expect(screen.getByText("插入指令")).toBeInTheDocument();
+    expect(screen.getByText("插入后的回复")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "告诉助手你想改善什么" })).toBeEnabled();
+    await act(async () => { finish(); });
+  });
   it("提案确认失败时展示图片总量契约提示", () => {
     expect(agentErrorMessage(new ApiRequestError(413, "RESUME_PDF_ASSETS_TOO_LARGE")))
       .toBe("简历中引用的图片总大小不能超过 10MB");
@@ -85,6 +152,35 @@ const value = 1;
     expect(container).toHaveTextContent('<script>alert("unsafe")</script>');
   });
 
+  it("兼容中文加粗结束标记前的空格，同时保留代码与转义原文", () => {
+    const { container } = render(<AgentMarkdown content={'- **职责范围不够清楚： **原文需要补充。\n- **工具效果缺少依据： **请补充结果。\n\n**常规加粗** 与 **下一项加粗**、*斜体*、***加粗斜体***、__下划线加粗__、~~删除线~~\n\n`**代码： **` 与 \\*\\*转义： \\*\\*\n\n```md\n**代码块： **\n```\n\n未闭合 **标记'} />);
+    expect(Array.from(container.querySelectorAll("strong")).map((node) => node.textContent)).toEqual([
+      "职责范围不够清楚： ", "工具效果缺少依据： ", "常规加粗", "下一项加粗", "加粗斜体", "下划线加粗",
+    ]);
+    expect(container.querySelector("em")).toHaveTextContent("斜体");
+    expect(container.querySelector("strong em, em strong")).toHaveTextContent("加粗斜体");
+    expect(container.querySelector("s")).toHaveTextContent("删除线");
+    expect(container.querySelector("p code")).toHaveTextContent("**代码： **");
+    expect(container.querySelector("pre code")).toHaveTextContent("**代码块： **");
+    expect(container).toHaveTextContent("**转义： **");
+    expect(container).toHaveTextContent("未闭合 **标记");
+  });
+
+  it("渲染中文标点结尾的加粗、各级标题、嵌套列表和安全链接", () => {
+    const { container } = render(<AgentMarkdown content={'**职责：**需要说明，**结果： **需要验证。\n\n# 标题一\n\n## 标题二\n\n### 标题三\n\n#### 标题四\n\n##### 标题五\n\n###### 标题六\n\n- 外层\n  - 内层\n\n1. 步骤一\n2. 步骤二\n\n> 引用中的 *斜体*\n\n[链接](https://example.com "链接标题") 与 https://example.org\n\n[危险链接](javascript:alert(1))\n\n    缩进代码 <script>\n\n普通第一行\n普通第二行'} />);
+    expect(Array.from(container.querySelectorAll("strong")).map((node) => node.textContent)).toEqual(["职责：", "结果： "]);
+    expect(screen.getAllByRole("heading").map((node) => node.tagName)).toEqual(["H2", "H3", "H4", "H5", "H6", "H6"]);
+    expect(container.querySelector("ul ul li")).toHaveTextContent("内层");
+    expect(container.querySelectorAll("ol > li")).toHaveLength(2);
+    expect(container.querySelector("blockquote em")).toHaveTextContent("斜体");
+    expect(screen.getByRole("link", { name: "链接" })).toHaveAttribute("title", "链接标题");
+    expect(screen.getByRole("link", { name: "https://example.org" })).toHaveAttribute("target", "_blank");
+    expect(container.querySelector('a[href^="javascript:"]')).not.toBeInTheDocument();
+    expect(container.querySelector("pre code")).toHaveTextContent("缩进代码 <script>");
+    expect(container.querySelector("script")).not.toBeInTheDocument();
+    expect(container.querySelector("p br")).toBeInTheDocument();
+  });
+
   it("保留普通换行并可复制围栏代码", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
@@ -100,6 +196,24 @@ const answer = 42;
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("const answer = 42;"));
     expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("已复制");
+  });
+
+  it("HTTP 环境可以复制代码块原文", async () => {
+    vi.stubGlobal("navigator", {});
+    let copiedText = "";
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => {
+        copiedText = (document.activeElement as HTMLTextAreaElement).value;
+        return true;
+      },
+    });
+    render(<AgentMarkdown content={'```ts\nconst answer = 42;\n```'} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "复制代码" })).toHaveTextContent("已复制"));
+    expect(copiedText).toBe("const answer = 42;");
   });
 
   it("用户消息头像使用当前用户图片，并在缺少图片时回退到昵称首字", async () => {
@@ -146,7 +260,7 @@ const answer = 42;
     await waitFor(() => expect(streamMessage).toHaveBeenCalledOnce());
     expect(onBeforeRun).toHaveBeenCalledOnce();
     expect(streamMessage.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
-      contexts: [{ type: "resume", id: "resume-1" }],
+      contexts: [{ type: "resume", id: "resume-1", version: "2" }],
     }));
   });
 
@@ -185,7 +299,7 @@ const answer = 42;
     expect(onBeforeRun).toHaveBeenCalledOnce();
     expect(streamMessage.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       content: "优化表达",
-      contexts: [{ type: "resume", id: "resume-1" }],
+      contexts: [{ type: "resume", id: "resume-1", version: "2" }],
       selection_context: selectionContext,
     }));
   });
@@ -264,12 +378,12 @@ const answer = 42;
     await user.type(screen.getByLabelText("告诉助手你想改善什么"), "帮我优化项目经历");
     await user.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(await screen.findByText("我整理了一份修改提案。")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("我整理了一份修改提案。")).toBeInTheDocument());
     expect(screen.getByText("突出项目中的量化成果")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "应用到简历" }));
 
     await waitFor(() => expect(onBeforeConfirm).toHaveBeenCalledOnce());
-    expect(confirm).toHaveBeenCalledWith("proposal-1");
+    expect(confirm).toHaveBeenCalledWith("proposal-1", "editor");
     expect(onApplied).toHaveBeenCalledOnce();
   });
 
@@ -356,7 +470,7 @@ const answer = 42;
     expect(await screen.findByRole("button", { name: /简历助手/ })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /简历助手/ }));
 
-    expect(await screen.findByText("这是历史对话")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("这是历史对话")).toBeInTheDocument());
     expect(getSession).toHaveBeenCalledWith("session-1");
     expect(api.listAgentProposals).toHaveBeenCalledWith(null, "session-1");
   });
@@ -432,7 +546,7 @@ const answer = 42;
     await user.type(screen.getByLabelText("告诉助手你想改善什么"), "让经历更贴合目标岗位");
     await user.click(screen.getByRole("button", { name: "发送" }));
     expect(await screen.findByRole("region", { name: "需要你确认" })).toBeInTheDocument();
-    expect(screen.getByLabelText("告诉助手你想改善什么")).toBeDisabled();
+    expect(screen.getByLabelText("告诉助手你想改善什么")).toBeEnabled();
 
     await user.click(screen.getByRole("button", { name: "提交回答" }));
     expect(screen.getAllByText("请选择一个选项或填写其他答案。")).toHaveLength(2);

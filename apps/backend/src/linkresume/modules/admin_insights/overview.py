@@ -41,7 +41,7 @@ def _users(db: Session, window: Window) -> tuple[int, int]:
         )
     ) or 0
     created = db.scalar(
-        select(func.count(User.id)).where(User.created_at >= window.start, User.created_at < window.end)
+        select(func.count(User.id)).where(User.create_time >= window.start, User.create_time < window.end)
     ) or 0
     return active, created
 
@@ -53,9 +53,9 @@ def _invalid_conversation_bindings(db: Session, now: datetime) -> list[str]:
         .join(LLMProviderConnection, LLMProviderConnection.id == LLMModelRoute.connection_id)
         .where(
             LLMUseCaseRoute.use_case == ASSISTANT_CONVERSATION,
-            LLMUseCaseRoute.enabled.is_(True),
-            LLMModelRoute.enabled.is_(True),
-            LLMProviderConnection.enabled.is_(True),
+            LLMUseCaseRoute.is_enabled.is_(True),
+            LLMModelRoute.is_enabled.is_(True),
+            LLMProviderConnection.is_enabled.is_(True),
         )
     ).all()
     return [
@@ -128,7 +128,7 @@ def overview(db: Session, now: datetime) -> dict[str, object]:
     trend_window = Window(today.start - timedelta(days=13), now)
     per_day: dict[object, list] = defaultdict(list)
     for row in llm.call_rows(db, trend_window):
-        per_day[day_of(row.created_at)].append(row)
+        per_day[day_of(row.create_time)].append(row)
     trend = []
     for day in day_series(now, 14):
         rows = per_day[day]

@@ -544,33 +544,86 @@ def _contact_kind(
     return field_key  # type: ignore[return-value]
 
 
+def _source_field_values(
+    text: str, annotations: list[SparseAnnotation]
+) -> list[str] | None:
+    """Accept only a complete, non-overlapping partition of source text.
+
+    A single field can own a whole source leaf without a normalized value.
+    Multiple fields cannot each fall back to that same leaf.  Incomplete or
+    invented model values leave the original source available for rendering.
+    """
+
+    values: list[str] = []
+    for annotation in annotations:
+        raw = annotation.normalized_value
+        if raw is None or not raw.strip():
+            if len(annotations) != 1:
+                return None
+            values.append(text)
+        else:
+            values.append(raw.strip())
+    if len(values) != len(set(values)):
+        return None
+    remainder = text
+    for value in values:
+        if not value or value not in remainder:
+            return None
+        remainder = remainder.replace(value, " " * len(value), 1)
+    if re.search(r"[^\s|｜:：,，;；/\\·•()（）\[\]{}\-–—~～.。]", remainder):
+        return None
+    return values
+
+
 def _entry_fields(
     *,
     anchor: str,
     annotations: Iterable[SparseAnnotation],
     views_by_id: dict[str, _SourceView],
-) -> tuple[EntryFields, list[str], set[str]]:
+) -> tuple[EntryFields, dict[str, list[str]], set[str], set[str]]:
     values: dict[str, TextValue | None] = {key: None for key in _FIELD_KEYS}
-    target_ids: list[str] = []
+    targets_by_source: dict[str, list[str]] = defaultdict(list)
     source_ids: set[str] = {anchor}
+    fallback_sources: set[str] = set()
+    by_source: dict[str, list[SparseAnnotation]] = defaultdict(list)
     for annotation in annotations:
         field_key = annotation.field_key
         if field_key not in _FIELD_KEYS:
             raise CanonicalCompositionError(f"unsupported entry field: {field_key}")
-        source = views_by_id[annotation.source_id]
-        raw = annotation.normalized_value
-        value = raw.strip() if raw is not None and raw.strip() else source.text
-        if not value:
-            raise CanonicalCompositionError("entry field source is empty")
-        text_value = _text_value(
-            kind=f"entry-field:{field_key}",
-            value=value,
-            source_ids=[annotation.source_id],
-        )
-        values[field_key] = text_value
-        target_ids.append(text_value.node_id)
+        by_source[annotation.source_id].append(annotation)
         source_ids.add(annotation.source_id)
-    return EntryFields(**values), target_ids, source_ids
+    for source_id, hints in sorted(
+        by_source.items(), key=lambda item: views_by_id[item[0]].ordinal
+    ):
+        source = views_by_id[source_id]
+        if not source.text:
+            raise CanonicalCompositionError("entry field source is empty")
+        field_values = _source_field_values(source.text, hints)
+        if field_values is None or any(values[hint.field_key] is not None for hint in hints):
+            fallback_sources.add(source_id)
+            continue
+        for hint, value in zip(hints, field_values, strict=True):
+            field_key = hint.field_key
+            text_value = _text_value(
+                kind=f"entry-field:{field_key}",
+                value=value,
+                source_ids=[source_id],
+            )
+            values[field_key] = text_value
+            targets_by_source[source_id].append(text_value.node_id)
+    # The anchor must have visible content even when its fields are ambiguous
+    # or only later sources supplied fields.  Keep its original header once.
+    if anchor not in targets_by_source and values["name"] is None:
+        source = views_by_id[anchor]
+        text_value = _text_value(
+            kind="entry-field:name", value=source.text, source_ids=[anchor]
+        )
+        values["name"] = text_value
+        targets_by_source[anchor].append(text_value.node_id)
+        fallback_sources.discard(anchor)
+    elif anchor not in targets_by_source:
+        fallback_sources.add(anchor)
+    return EntryFields(**values), targets_by_source, source_ids, fallback_sources
 
 
 def _validate_annotation_semantics(
@@ -684,17 +737,18 @@ def compose_canonical_resume_document(
         source_annotations = by_source.get(view.source_id, ())
         explicit = [item for item in source_annotations if item.role == "contact"]
         candidates: list[tuple[str, str, str | None]] = []
-        for annotation in explicit:
-            assert annotation.field_key is not None
-            raw = annotation.normalized_value
-            value = raw.strip() if raw is not None and raw.strip() else view.text
-            if value:
-                candidates.append((annotation.field_key, value, None))
-        if not explicit and view.source_id in identity_preamble_sources:
+        if explicit or view.source_id in identity_preamble_sources:
             candidates = [
                 (kind, value, None)
                 for kind, value in _automatic_contact_candidates(view)
             ]
+        if explicit and not candidates:
+            field_values = _source_field_values(view.text, explicit)
+            if field_values is not None:
+                candidates = [
+                    (annotation.field_key, value, None)
+                    for annotation, value in zip(explicit, field_values, strict=True)
+                ]
         if not candidates:
             continue
         for field_key, value, label in candidates:
@@ -723,6 +777,7 @@ def compose_canonical_resume_document(
     entry_by_anchor: dict[str, ResumeEntry] = {}
     entry_event_ordinal: dict[str, int] = {}
     entry_source_ids: dict[str, set[str]] = {}
+    entry_fallback_sources: set[str] = set()
     for anchor, values in entry_annotations.items():
         if anchor not in views_by_id:
             raise CanonicalCompositionError("entry anchor references an unknown source")
@@ -731,7 +786,7 @@ def compose_canonical_resume_document(
         }
         if len(semantic_kinds) != 1:
             raise CanonicalCompositionError("entry fields must share one semantic kind")
-        fields, field_targets, source_ids = _entry_fields(
+        fields, field_targets, source_ids, fallback_sources = _entry_fields(
             anchor=anchor,
             annotations=values,
             views_by_id=views_by_id,
@@ -752,11 +807,9 @@ def compose_canonical_resume_document(
         )
         entry_source_ids[anchor] = source_ids
         disposition_targets[anchor].append(entry.node_id)
-        disposition_targets[anchor].extend(field_targets)
+        entry_fallback_sources.update(fallback_sources)
         for source_id in source_ids:
-            disposition_targets[source_id].extend(
-                field_targets if source_id != anchor else []
-            )
+            disposition_targets[source_id].extend(field_targets.get(source_id, []))
             consumed.add(source_id)
             transformed_sources.add(source_id)
 
@@ -850,8 +903,10 @@ def compose_canonical_resume_document(
                 (entry_event_ordinal[source_id], "entry", source_id)
             )
             target_section["source_ids"].extend(entry_source_ids[source_id])
+            if source_id in entry_fallback_sources:
+                target_section["events"].append((view.ordinal, "paragraph", source_id))
             continue
-        if source_id in entry_source_members:
+        if source_id in entry_source_members and source_id not in entry_fallback_sources:
             # A non-anchor field source is represented by its structured field
             # value and must not be emitted a second time as a body block.
             continue
@@ -897,14 +952,35 @@ def compose_canonical_resume_document(
         sorted(sections_acc, key=lambda value: value["start_ordinal"])
     ):
         events = sorted(section["events"], key=lambda value: value[0])
+        if events and events[0][1] != "entry" and any(
+            event_kind == "entry" for _, event_kind, _ in events
+        ):
+            # Canonical sections render entries before section-level blocks.
+            # A leading preface therefore requires the source-order fallback
+            # rather than moving that preface behind every entry.
+            events = []
+            for source_id in sorted(
+                set(section["source_ids"]), key=lambda key: views_by_id[key].ordinal
+            ):
+                if source_id == section["title_source_id"]:
+                    continue
+                view = views_by_id[source_id]
+                disposition_targets[source_id] = []
+                events.append((
+                    view.ordinal,
+                    "list" if view.leaf.leaf_kind == "list_item" else "paragraph",
+                    source_id,
+                ))
         blocks: list[ContentBlock] = []
-        entries: list[ResumeEntry] = []
+        entry_anchors: list[str] = []
+        body_by_entry: dict[str, list[ContentBlock]] = defaultdict(list)
+        active_entry: str | None = None
         index = 0
         while index < len(events):
             _, event_kind, payload = events[index]
             if event_kind == "entry":
-                entry = entry_by_anchor[payload]
-                entries.append(entry)
+                entry_anchors.append(payload)
+                active_entry = payload
                 index += 1
                 continue
             if event_kind == "list":
@@ -963,7 +1039,8 @@ def compose_canonical_resume_document(
                         start=start,
                         items=items,
                     )
-                    blocks.append(list_node)
+                    target_blocks = body_by_entry[active_entry] if active_entry else blocks
+                    target_blocks.append(list_node)
                 index = cursor
                 continue
             view = views_by_id[payload]
@@ -974,7 +1051,8 @@ def compose_canonical_resume_document(
                 disposition_reason[payload] = "empty_source"
                 index += 1
                 continue
-            blocks.append(block)
+            target_blocks = body_by_entry[active_entry] if active_entry else blocks
+            target_blocks.append(block)
             disposition_targets[payload].append(block.node_id)
             consumed.add(payload)
             index += 1
@@ -998,7 +1076,15 @@ def compose_canonical_resume_document(
             node_id=section_node_id,
             semantic_kind=section["kind"],
             title=title_value,
-            entries=entries,
+            entries=[
+                ResumeEntry(
+                    node_id=entry_by_anchor[anchor].node_id,
+                    fields=entry_by_anchor[anchor].fields,
+                    source_refs=entry_by_anchor[anchor].source_refs,
+                    blocks=body_by_entry[anchor],
+                )
+                for anchor in entry_anchors
+            ],
             blocks=blocks,
             source_refs=section_refs,
         )

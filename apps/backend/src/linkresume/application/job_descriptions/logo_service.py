@@ -60,7 +60,7 @@ def sync_application_logos(db: Session, job: JobDescription) -> None:
         application.job_snapshot = {**application.job_snapshot, "logo_url": job.resolved_logo_url}
         # Protect this JSON-only change from concurrent edits of the snapshot.
         application.lock_version += 1
-        application.updated_at = utc_now()
+        application.update_time = utc_now()
 
 
 @contextmanager
@@ -112,7 +112,7 @@ def attach_logo(
                 storage.put(object_name, normalized, "image/webp", cache_control="private, no-cache")
         locked.logo_sha256 = digest
         locked.lock_version += 1
-        locked.updated_at = utc_now()
+        locked.update_time = utc_now()
         sync_application_logos(db, locked)
         db.commit()
         return {"logo_url": locked.resolved_logo_url, "revision": digest}

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 import redis
@@ -21,6 +23,18 @@ from linkresume.modules.identity.models import User
 
 WEB_CHANNEL = "web"
 MINIPROGRAM_CHANNEL = "miniprogram"
+DESKTOP_CHANNEL = "desktop"
+
+
+def prepare_session(user: User, settings: Settings, *, channel: str, sid: str | None = None) -> SessionCredentials:
+    if channel not in {WEB_CHANNEL, MINIPROGRAM_CHANNEL, DESKTOP_CHANNEL}:
+        raise ValueError("unsupported session channel")
+    sid = sid or new_session_id()
+    return SessionCredentials(
+        sid=sid,
+        access_token=create_access_token(user.id, sid, settings, channel),
+        refresh_token=build_refresh_token(sid, new_refresh_secret()),
+    )
 
 ROTATE_REFRESH_SCRIPT = """-- auth_rotate_refresh
 local channel = redis.call('HGET', KEYS[1], 'channel')
@@ -45,11 +59,13 @@ def issue_session(
     redis_client: "redis.Redis",
     *,
     channel: str,
+    user_agent: str = "",
 ) -> SessionCredentials:
     if channel not in {WEB_CHANNEL, MINIPROGRAM_CHANNEL}:
         raise ValueError("unsupported session channel")
-    sid = new_session_id()
-    secret = new_refresh_secret()
+    credentials = prepare_session(user, settings, channel=channel)
+    sid = credentials.sid
+    secret = credentials.refresh_token.partition('.')[2]
     key = session_key(sid)
     redis_client.hset(
         key,
@@ -58,15 +74,12 @@ def issue_session(
             "rhash": hash_secret(secret),
             "channel": channel,
             "created_at": utc_now().isoformat(),
+            "user_agent": user_agent[:512],
         },
     )
     redis_client.expire(key, refresh_max_age_seconds(settings))
     redis_client.sadd(user_sessions_key(user.id), sid)
-    return SessionCredentials(
-        sid=sid,
-        access_token=create_access_token(user.id, sid, settings, channel),
-        refresh_token=build_refresh_token(sid, secret),
-    )
+    return credentials
 
 
 def rotate_session(
@@ -89,8 +102,8 @@ def rotate_session(
     if not uid.isdecimal():
         revoke_session(redis_client, sid)
         return None
-    user = db.scalar(select(User).where(User.id == int(uid)))
-    if user is None or user.status != 1:
+    user = db.scalar(select(User).where(User.id == int(uid)).with_for_update().execution_options(populate_existing=True))
+    if user is None or user.status != 1 or user.deletion_requested_at is not None:
         revoke_session(redis_client, sid, int(uid))
         return None
 

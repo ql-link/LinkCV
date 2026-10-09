@@ -1,4 +1,5 @@
-import type { Editor } from "@tiptap/react";
+import { t, getLocale } from "@/i18n";
+import type { ChainedCommands, CommandProps, Editor } from "@tiptap/react";
 import { Fragment, type Node as ProseMirrorNode, type ResolvedPos } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 import type { InlineIconName } from "../../lib/resumeInlineIcon";
@@ -23,16 +24,16 @@ export type WorkbenchBlockCommand = {
 };
 
 export const workbenchBlockCommands: WorkbenchBlockCommand[] = [
-  { id: "paragraph", label: "正文", keywords: ["文本", "paragraph"] },
-  { id: "resume-row", label: "左右分栏", keywords: ["同一行左 / 右独立输入", "当前行左右对齐", "双栏", "两栏", "分栏", "左右", "日期", "columns"] },
-  { id: "heading-1", label: "标题 1", keywords: ["一级标题", "h1"] },
-  { id: "heading-2", label: "标题 2", keywords: ["章节", "二级标题", "h2"] },
-  { id: "heading-3", label: "标题 3", keywords: ["小标题", "三级标题", "h3"] },
-  { id: "bullet-list", label: "无序列表", keywords: ["分点", "项目符号", "ul"] },
-  { id: "ordered-list", label: "有序列表", keywords: ["编号", "ol"] },
-  { id: "image", label: "插入图片", keywords: ["正文图片", "image"] },
-  { id: "inline-image", label: "插入行内图片", keywords: ["公司 Logo", "文字内嵌图片", "行内", "logo"] },
-  { id: "inline-icon", label: "插入图标", keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
+  { id: "paragraph", get label() { return t("正文"); }, keywords: ["文本", "paragraph"] },
+  { id: "resume-row", get label() { return t("左右分栏"); }, keywords: ["同一行左 / 右独立输入", "当前行左右对齐", "双栏", "两栏", "分栏", "左右", "日期", "columns"] },
+  { id: "heading-1", get label() { return t("标题 1"); }, keywords: ["一级标题", "h1"] },
+  { id: "heading-2", get label() { return t("标题 2"); }, keywords: ["章节", "二级标题", "h2"] },
+  { id: "heading-3", get label() { return t("标题 3"); }, keywords: ["小标题", "三级标题", "h3"] },
+  { id: "bullet-list", get label() { return t("无序列表"); }, keywords: ["分点", "项目符号", "ul"] },
+  { id: "ordered-list", get label() { return t("有序列表"); }, keywords: ["编号", "ol"] },
+  { id: "image", get label() { return t("插入图片"); }, keywords: ["正文图片", "image"] },
+  { id: "inline-image", get label() { return t("插入行内图片"); }, keywords: ["公司 Logo", "文字内嵌图片", "行内", "logo"] },
+  { id: "inline-icon", get label() { return t("插入图标"); }, keywords: ["图标", "学校", "教育", "电话", "邮箱", "icon"] },
 ];
 
 export function insertInlineIcon(
@@ -51,38 +52,63 @@ export function insertInlineIcon(
 }
 
 /**
- * 将光标所在的普通段落替换成结构化左右行，并把非空行的光标放到右栏。
+ * 将光标所在的已有文字行替换成结构化左右行：原有文字放在最左栏，非空行的光标放到右栏。
  * 两栏都是真实段落，因此改字体、页边距或导出 PDF 时不会像空格对齐那样漂移。
+ * 列表项先逐层提升为普通段落再转换，整个过程是一次事务，可以一步撤销。
  */
 export function convertCurrentLineToResumeRow(editor: Editor) {
-  return editor.commands.command(({ state, dispatch }) => {
-    const { $from } = state.selection;
-    let paragraphDepth = $from.depth;
+  const { $from } = editor.state.selection;
+  let listDepth = 0;
+  for (let depth = $from.depth; depth > 0; depth -= 1) {
+    const name = $from.node(depth).type.name;
+    if (RESUME_FIXED_ROW_NODE_NAMES.has(name)) return false;
+    if (name === "listItem") listDepth += 1;
+  }
+  if (listDepth === 0) return editor.commands.command(replaceParagraphWithResumeRow);
 
-    while (paragraphDepth > 0 && $from.node(paragraphDepth).type.name !== "paragraph") {
-      paragraphDepth -= 1;
-    }
-
-    if (paragraphDepth === 0 || $from.node(paragraphDepth - 1).type.name !== "doc") return false;
-
-    const paragraph = $from.node(paragraphDepth);
-    const rowType = state.schema.nodes.resumeRow;
-    const paragraphType = state.schema.nodes.paragraph;
-    if (!rowType || !paragraphType) return false;
-
-    const from = $from.before(paragraphDepth);
-    const left = paragraphType.create(paragraph.attrs, paragraph.content, paragraph.marks);
-    const right = paragraphType.create();
-    const row = rowType.create({ leftWidth: 50 }, [left, right]);
-    const transaction = state.tr.replaceWith(from, from + paragraph.nodeSize, row);
-    const rightTextPosition = from + 2 + left.nodeSize;
-    const targetPosition = paragraph.textContent.length === 0
-      ? from + 2
-      : rightTextPosition;
-    transaction.setSelection(TextSelection.create(transaction.doc, targetPosition));
-    dispatch?.(transaction.scrollIntoView());
-    return true;
+  const convert = (chain: ChainedCommands) => {
+    for (let index = 0; index < listDepth; index += 1) chain = chain.liftListItem("listItem");
+    return chain.command(replaceParagraphWithResumeRow);
+  };
+  return editor.commands.command(({ chain, tr }) => {
+    // can() 不执行列表提升，后续命令会误读提升前的父节点。
+    // 在未提交事务中顺序转换，失败时禁止派发，避免只提升列表项。
+    const converted = convert(chain()).run();
+    if (!converted) tr.setMeta("preventDispatch", true);
+    return converted;
   });
+}
+
+function replaceParagraphWithResumeRow({ state, dispatch }: CommandProps) {
+  const { $from } = state.selection;
+  let paragraphDepth = $from.depth;
+
+  while (paragraphDepth > 0 && $from.node(paragraphDepth).type.name !== "paragraph") {
+    paragraphDepth -= 1;
+  }
+
+  // 侧栏模板的正文都在 resumeColumn 里，分栏行在这里与顶层同样合法。
+  if (paragraphDepth === 0) return false;
+  const parentName = $from.node(paragraphDepth - 1).type.name;
+  if (parentName !== "doc" && parentName !== "resumeColumn") return false;
+
+  const paragraph = $from.node(paragraphDepth);
+  const rowType = state.schema.nodes.resumeRow;
+  const paragraphType = state.schema.nodes.paragraph;
+  if (!rowType || !paragraphType) return false;
+
+  const from = $from.before(paragraphDepth);
+  const left = paragraphType.create(paragraph.attrs, paragraph.content, paragraph.marks);
+  const right = paragraphType.create();
+  const row = rowType.create({ leftWidth: 50 }, [left, right]);
+  const transaction = state.tr.replaceWith(from, from + paragraph.nodeSize, row);
+  const rightTextPosition = from + 2 + left.nodeSize;
+  const targetPosition = paragraph.textContent.length === 0
+    ? from + 2
+    : rightTextPosition;
+  transaction.setSelection(TextSelection.create(transaction.doc, targetPosition));
+  dispatch?.(transaction.scrollIntoView());
+  return true;
 }
 
 /**
@@ -189,11 +215,10 @@ export function setResumeRowColumns(
     }
 
     // 栏数变化后旧占比没有对应关系，宽度回到等分。
-    const transaction = state.tr.replaceWith(
-      rowPosition,
-      rowPosition + row.nodeSize,
-      row.type.create({ ...row.attrs, columnWidths: null }, cells),
-    );
+    const nextRow = row.type.create({ ...row.attrs, columnWidths: null }, cells);
+    const transaction = state.tr.replaceWith(rowPosition, rowPosition + row.nodeSize, nextRow);
+    // 整行替换会把原选区映射到行外；光标留在最后一栏末尾，切栏后可以直接输入或剪切粘贴。
+    transaction.setSelection(TextSelection.near(transaction.doc.resolve(rowPosition + nextRow.nodeSize - 2), -1));
     dispatch?.(transaction.scrollIntoView());
     return true;
   });

@@ -147,8 +147,12 @@ def test_create_share_public_read_and_overwrite() -> None:
             "assets",
             "sharer",
             "allow_download",
+            "expires_at",
+            "updated_at",
         }
         assert payload["allow_download"] is True
+        assert payload["expires_at"] is None
+        assert payload["updated_at"]
         assert payload["assets"] == {}
         assert set(payload["sharer"]) == {"nickname", "avatar_url"}
         assert payload["sharer"]["nickname"]
@@ -513,3 +517,47 @@ def test_delete_resume_invalidates_share_and_ownership_is_enforced() -> None:
             assert session.scalar(
                 select(Resume).where(Resume.share_token == token)
             ) is None
+
+
+def test_saved_list_alignment_reaches_public_share_and_pdf_payload() -> None:
+    app = build_app()
+    with ExitStack() as stack:
+        owner = stack.enter_context(TestClient(app))
+        guest = stack.enter_context(TestClient(app))
+        register(owner, "alignment-owner@example.com")
+        created = create_resume(owner, app).json()["resume"]
+        data = created["data"]
+        data["sections"] = [{
+            "node_id": "node_alignmentsection01", "source_refs": [],
+            "semantic_kind": "project",
+            "title": {"node_id": "node_alignmenttitle001", "source_refs": [], "value": "项目经历"},
+            "entries": [], "blocks": [],
+        }]
+        data["sections"][0]["blocks"].append({
+            "node_id": "node_alignmentlist00001",
+            "block_type": "bullet_list",
+            "start": None,
+            "items": [{
+                "node_id": "node_alignmentitem00001",
+                "source_refs": [],
+                "align": "center",
+                "runs": [{
+                    "inline_type": "text", "text": "虚构列表项", "marks": [], "href": None,
+                    "style": {"color": None, "font_size_pt": None, "highlight_color": None},
+                }],
+            }],
+        })
+        saved = owner.put(
+            f"/api/resumes/{created['id']}",
+            json={"data": data, "base_lock_version": created["lock_version"]},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["resume"]["data"]["sections"][0]["blocks"][-1]["items"][0]["align"] == "center"
+        token = owner.post(f"/api/resumes/{created['id']}/share").json()["share"]["share_token"]
+        public = guest.get(f"/api/share/{token}")
+        assert public.status_code == 200
+        assert public.json()["data"]["sections"][0]["blocks"][-1]["items"][0]["align"] == "center"
+        downloaded = guest.get(f"/api/share/{token}/pdf")
+        assert downloaded.status_code == 200
+        rendered = app.state.resume_pdf_renderer.payloads[-1]
+        assert rendered["data"]["sections"][0]["blocks"][-1]["items"][0]["align"] == "center"

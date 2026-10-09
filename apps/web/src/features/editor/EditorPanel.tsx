@@ -1,3 +1,4 @@
+import { t, useLocale, getLocale } from "@/i18n";
 import CodeMirror from "@uiw/react-codemirror";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
@@ -28,6 +29,7 @@ function readFileAsDataUrl(file: File) {
 }
 
 export function EditorPanel() {
+  useLocale();
   const markdownValue = useResumeStore((state) => state.markdown);
   const activeResumeId = useResumeStore((state) => state.activeResumeId);
   const setMarkdown = useResumeStore((state) => state.setMarkdown);
@@ -74,7 +76,7 @@ export function EditorPanel() {
         insertRange,
       );
     } catch (error) {
-      setUploadError(`图片上传失败：${(error as Error).message}`);
+      setUploadError(t("图片上传失败：{value0}", { value0: (error as Error).message }));
     } finally {
       pendingImageInsertRangeRef.current = null;
       setIsUploadingImage(false);

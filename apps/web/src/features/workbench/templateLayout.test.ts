@@ -11,6 +11,7 @@ import {
 } from "../../api/resumeContract";
 import {
   composeEditorDocumentForLayoutPlan,
+  resumeEditorAvatarWidth,
   composeEditorDocumentForTemplate,
   composeResumeMarkdownForTemplate,
   stripTemplateProjectionFromEditorDocument,
@@ -18,6 +19,14 @@ import {
 import { canonicalResumeDocumentToEditorDocument } from "./resumeEditorPersistence";
 
 const flowManifest = defaultSemanticStyle.manifest;
+
+it("头像避让使用主栏中的实际照片宽度，空侧栏不抢占结果", () => {
+  expect(resumeEditorAvatarWidth({ type: "doc", content: [{ type: "resumeColumns", content: [
+    { type: "resumeColumn", attrs: { variant: "sidebar" }, content: [{ type: "paragraph" }] },
+    { type: "resumeColumn", attrs: { variant: "main" }, content: [{ type: "avatarImage", attrs: { size: 160 } }] },
+  ] }] })).toBe(160);
+  expect(resumeEditorAvatarWidth({ type: "doc" })).toBe(94);
+});
 const columnsManifest = {
   ...flowManifest,
   renderer_key: "columns" as const,

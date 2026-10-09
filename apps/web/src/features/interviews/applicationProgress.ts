@@ -1,3 +1,4 @@
+import { t, getLocale } from "@/i18n";
 import type { InterviewSessionRecord, JobApplicationRecord } from "@/api/client";
 
 /**
@@ -36,10 +37,10 @@ export type ApplicationProgressSource = Pick<
  */
 export function offerStatusLabel(status: JobApplicationRecord["offer_status"]): string {
   return status === "none"
-    ? "Offer 状态待确认"
+    ? t("Offer 状态待确认")
     : status === "declined"
-      ? "已主动结束"
-      : "已收到 Offer";
+      ? t("已主动结束")
+      : t("已收到 Offer");
 }
 
 /**
@@ -98,13 +99,13 @@ export const APPLICATION_PROGRESS_COLUMNS: Array<{
   key: ApplicationProgressColumnKey;
   label: string;
 }> = [
-  { key: "pending", label: "待投递" },
-  { key: "screening", label: "筛选中" },
-  { key: "assessment", label: "测评" },
-  { key: "written_test", label: "笔试" },
-  { key: "interview", label: "面试中" },
+  { key: "pending", get label() { return t("待投递"); } },
+  { key: "screening", get label() { return t("筛选中"); } },
+  { key: "assessment", get label() { return t("测评"); } },
+  { key: "written_test", get label() { return t("笔试"); } },
+  { key: "interview", get label() { return t("面试中"); } },
   { key: "offer", label: "Offer" },
-  { key: "ended", label: "已结束" },
+  { key: "ended", get label() { return t("已结束"); } },
 ];
 
 const PENDING_LABEL = "待投递";
@@ -142,26 +143,26 @@ export function normalizeApplicationStageLabel(
   if (application.current_stage) return application.current_stage.stage_label;
   const label = application.current_stage_label.trim();
   if (application.current_stage_type === "offer") return "Offer";
-  if (application.current_stage_type !== "screening") return label || "当前阶段";
-  if (label === "测评中") return "测评";
-  if (label === "笔试中") return "笔试";
+  if (application.current_stage_type !== "screening") return label || t("当前阶段");
+  if (label === "测评中") return t("测评");
+  if (label === "笔试中") return t("笔试");
   if (label.includes("笔试") || label.includes("测评") || /assessment/i.test(label)) {
-    return label || "当前阶段";
+    return label || t("当前阶段");
   }
   return label === PENDING_LABEL ? PENDING_LABEL : DEFAULT_SCREENING_LABEL;
 }
 
 function terminalStatusLabel(application: ApplicationProgressSource): string | null {
-  if (application.archived_at) return "已归档";
+  if (application.archived_at) return t("已归档");
   if (application.lifecycle_status === "terminated") {
-    if (application.termination_reason === "company_rejected") return "未通过";
-    if (application.termination_reason === "user_withdrew" || application.termination_reason === "offer_declined") return "已主动结束";
-    return "已终止";
+    if (application.termination_reason === "company_rejected") return t("未通过");
+    if (application.termination_reason === "user_withdrew" || application.termination_reason === "offer_declined") return t("已主动结束");
+    return t("已终止");
   }
-  if (application.status === "rejected") return "未通过";
-  if (application.status === "withdrawn") return "已主动结束";
+  if (application.status === "rejected") return t("未通过");
+  if (application.status === "withdrawn") return t("已主动结束");
   if (application.status === "closed") {
-    return application.offer_status === "declined" ? "已主动结束" : "已结束";
+    return application.offer_status === "declined" ? t("已主动结束") : t("已结束");
   }
   return null;
 }
@@ -180,7 +181,7 @@ export function projectApplicationProgress(
   const isPending = active && phase === "pending";
   const isWaiting = active
     && application.stage_state === "awaiting_result"
-    && (stableStageType === "interview" || stableStageType === "ai_interview");
+    && (stableStageType === "interview" || stableStageType === "hr" || stableStageType === "ai_interview");
   const isAssessment = active
     && (stableStageType === "assessment" || stableStageType === "written_test");
   const isAcceptedOffer = application.archived_at === null
@@ -192,9 +193,9 @@ export function projectApplicationProgress(
     return {
       columnKey: "offer",
       stageLabel: normalizedStageLabel,
-      statusLabel: "已收到 Offer",
+      statusLabel: t("已收到 Offer"),
       supportingLabel: null,
-      primaryLabel: "已收到 Offer",
+      primaryLabel: t("已收到 Offer"),
       isPending: false,
       isWaiting: false,
       isAssessment: false,
@@ -217,18 +218,18 @@ export function projectApplicationProgress(
   if (isPending) {
     return {
       columnKey: "pending",
-      stageLabel: PENDING_LABEL,
-      statusLabel: PENDING_LABEL,
-      supportingLabel: PENDING_SUPPORTING_LABEL,
-      primaryLabel: PENDING_LABEL,
+      stageLabel: t(PENDING_LABEL),
+      statusLabel: t(PENDING_LABEL),
+      supportingLabel: t(PENDING_SUPPORTING_LABEL),
+      primaryLabel: t(PENDING_LABEL),
       isPending: true,
       isWaiting: false,
       isAssessment: false,
     };
   }
 
-  if (active && stableStageType === "offer") {
-    const statusLabel = offerStatusLabel(application.offer_status);
+  if (active && (stableStageType === "offer" || stableStageType === "oc")) {
+    const statusLabel = stableStageType === "oc" ? t("口头意向") : offerStatusLabel(application.offer_status);
     return {
       columnKey: "offer",
       stageLabel: normalizedStageLabel,
@@ -249,10 +250,10 @@ export function projectApplicationProgress(
         ? "written_test"
         : "interview";
   const statusLabel = application.stage_state === "awaiting_schedule"
-    ? "等待安排"
+    ? t("等待安排")
     : application.stage_state === "awaiting_result"
-      ? "等待结果"
-      : "进行中";
+      ? t("等待结果")
+      : t("进行中");
   return {
     columnKey,
     stageLabel: normalizedStageLabel,
@@ -282,7 +283,7 @@ function validTimestamp(value: string | null | undefined): number | null {
 /** Exact schedule copy retained for non-countdown contexts. */
 export function formatApplicationScheduleDateTime(value: string): string {
   const date = new Date(value);
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return t("{value0}月{value1}日 {value2}:{value3}", { value0: date.getMonth() + 1, value1: date.getDate(), value2: String(date.getHours()).padStart(2, "0"), value3: String(date.getMinutes()).padStart(2, "0") });
 }
 
 /**
@@ -297,7 +298,7 @@ export function applicationScheduleStatusLabel(
   const projection = projectApplicationProgress(application);
   if (!scheduledProgressColumn(projection)) return null;
 
-  if (currentStageCompleted) return "已完成";
+  if (currentStageCompleted) return t("已完成");
 
   const startAt = application.next_session_start_at;
   const start = validTimestamp(startAt);
@@ -306,14 +307,14 @@ export function applicationScheduleStatusLabel(
 
   const currentTime = (now ?? new Date()).getTime();
   if (!Number.isFinite(currentTime)) return null;
-  if (currentTime >= end) return "等待结果";
-  if (currentTime >= start) return "正在进行";
+  if (currentTime >= end) return t("等待结果");
+  if (currentTime >= start) return t("进行中");
 
   const untilStart = start - currentTime;
   if (untilStart <= HOUR_IN_MILLISECONDS * 24) {
-    return `${Math.max(1, Math.ceil(untilStart / HOUR_IN_MILLISECONDS))} 小时后`;
+    return t("{value0} 小时后", { value0: Math.max(1, Math.ceil(untilStart / HOUR_IN_MILLISECONDS)) });
   }
-  return `${Math.ceil(untilStart / DAY_IN_MILLISECONDS)} 天后`;
+  return t("{value0} 天后", { value0: Math.ceil(untilStart / DAY_IN_MILLISECONDS) });
 }
 
 export function applicationProgressLabel(
@@ -353,8 +354,8 @@ export function applicationProgressToneClass(
   if (projection.columnKey === "offer") return "is-offer";
   if (options.currentStageCompleted && scheduledProgressColumn(projection)) return "is-success";
   const scheduleLabel = applicationScheduleStatusLabel(application, options);
-  if (scheduleLabel === "等待结果") return "is-waiting";
-  if (scheduleLabel === "正在进行") return "is-active";
+  if (scheduleLabel === t("等待结果")) return "is-waiting";
+  if (scheduleLabel === t("进行中")) return "is-active";
   if (scheduleLabel) return "is-scheduled";
   if (application.stage_state === "negotiating") return "is-offer";
   if (projection.isWaiting) return "is-waiting";
@@ -377,4 +378,56 @@ export function isApplicationDraggable(application: ApplicationProgressSource): 
     && application.applied_at !== null
     && application.current_stage_type === "screening"
     && application.stage_state === "awaiting_result";
+}
+
+/**
+ * 求职流程的阶段先后顺序（看板列、拖拽校验、「添加下一阶段」默认项共用）。
+ * 规则：只能往后走，不能退回更早的阶段；面试可以连续多轮，由轮次再比较先后。
+ * 后端接受任意阶段，这里只约束前端给出的入口，避免出现「测评完成后进不了笔试」这类死路。
+ */
+export const APPLICATION_STAGE_ORDER = ["screening", "assessment", "written_test", "ai_interview", "interview", "offer"] as const;
+export type OrderedStageType = (typeof APPLICATION_STAGE_ORDER)[number];
+
+export function applicationStageRank(stage: string): number {
+  const index = APPLICATION_STAGE_ORDER.indexOf(stage as OrderedStageType);
+  return index < 0 ? 0 : index;
+}
+
+/** 当前所处阶段（看板列 → 阶段类型）；待投递视为筛选之前 */
+export function currentOrderedStage(application: ApplicationProgressSource): OrderedStageType | "pending" {
+  const projection = projectApplicationProgress(application);
+  if (projection.isPending) return "pending";
+  const stable: string = application.current_stage?.stage_type ?? legacyStableStageType(application);
+  if (stable === "hr") return "interview";
+  return APPLICATION_STAGE_ORDER.includes(stable as OrderedStageType) ? stable as OrderedStageType : "screening";
+}
+
+/** 当前阶段之后可以进入的阶段（面试可以再来一轮） */
+export function nextStageOptions(application: ApplicationProgressSource): OrderedStageType[] {
+  const current = currentOrderedStage(application);
+  if (current === "pending") return [...APPLICATION_STAGE_ORDER];
+  const rank = applicationStageRank(current);
+  return APPLICATION_STAGE_ORDER.filter((stage) => (
+    stage === "interview" ? rank <= applicationStageRank("interview") : applicationStageRank(stage) > rank
+  ));
+}
+
+/** 「添加下一阶段」默认选中的下一步：筛选 → 测评 → 笔试 → 面试（一面 / 下一轮）→ Offer */
+export function defaultNextStage(application: ApplicationProgressSource): OrderedStageType {
+  const current = currentOrderedStage(application);
+  if (current === "pending") return "screening";
+  if (current === "screening") return "assessment";
+  if (current === "assessment") return "written_test";
+  return current === "offer" ? "offer" : "interview";
+}
+
+/** Keep the filter broad: all unfinished stages belong to in-progress work. */
+export function applicationFilterStatus(
+  application: ApplicationProgressScheduleSource,
+  options: ApplicationProgressLabelOptions = {},
+): string {
+  const projection = projectApplicationProgress(application);
+  if (projection.columnKey === "ended") return "ended";
+  if (applicationScheduleStatusLabel(application, options) === t("已完成")) return "completed";
+  return "in_progress";
 }

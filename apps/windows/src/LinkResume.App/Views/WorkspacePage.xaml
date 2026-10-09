@@ -1,0 +1,14 @@
+<Page x:Class="LinkResume.App.Views.WorkspacePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="#F1F1EF" ColumnDefinitions="216,13,*">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <StackPanel x:Name="TopBar" Spacing="4" Padding="14,24,14,0" />
+            <StackPanel x:Name="AccountHost" Grid.Row="2" Padding="20,0,20,26" />
+        </Grid>
+        <NavigationView x:Name="Nav" Visibility="Collapsed" SelectionChanged="OnSelectionChanged" />
+        <Border Grid.Column="2" Margin="0,12,12,12" Background="White" BorderBrush="#E4E4E0" BorderThickness="1" CornerRadius="16">
+            <Frame x:Name="ContentFrame" />
+        </Border>
+    </Grid>
+</Page>

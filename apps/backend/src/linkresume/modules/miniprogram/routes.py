@@ -12,6 +12,7 @@ from linkresume.core.storage import AssetStorage, get_storage
 from linkresume.domain.resume import compile_layout_plan
 from linkresume.modules.identity.dependencies import get_current_miniprogram_user
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.miniprogram.pdf_service import ResumePdfRenderer, ResumePreviewRenderer, build_render_assets
 from linkresume.modules.resumes.models import Resume
 from linkresume.modules.resumes.routes import resume_record, resume_summary
@@ -53,7 +54,7 @@ def retired_resume_reader(user: User = Depends(get_current_miniprogram_user)):
 
 @v2_router.get("", response_model=ResumeListResponse)
 def list_resumes(db: Session = Depends(get_db), user: User = Depends(get_current_miniprogram_user)):
-    rows = db.scalars(select(Resume).where(Resume.user_id == user.id).order_by(Resume.updated_at.desc(), Resume.id.desc())).all()
+    rows = db.scalars(select(Resume).where(Resume.user_id == user.id).order_by(Resume.update_time.desc(), Resume.id.desc())).all()
     return ResumeListResponse(resumes=[resume_summary(row) for row in rows])
 
 
@@ -86,7 +87,9 @@ def download_resume_pdf(resume_id: str, lock_version: int = Query(ge=1),
     db: Session = Depends(get_db), user: User = Depends(get_current_miniprogram_user),
     storage: AssetStorage = Depends(get_storage), renderer: ResumePdfRenderer = Depends(get_pdf_renderer)):
     resume = current_render_input(db, resume_id, user, lock_version)
-    return output(_render_pdf(resume, resume, user, storage, renderer), "application/pdf", lock_version)
+    response = output(_render_pdf(resume, resume, user, storage, renderer), "application/pdf", lock_version)
+    product_events.pdf_exported(db, user.id, resume.id, "miniprogram")
+    return response
 
 
 @v2_router.get("/{resume_id}/preview.png", response_model=None)

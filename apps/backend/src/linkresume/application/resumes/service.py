@@ -1,3 +1,4 @@
+from linkresume.modules.identity.dependencies import lock_active_user
 from copy import deepcopy
 from datetime import timedelta, timezone
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from linkresume.domain.resume import (
 from linkresume.domain.resume.layout import LayoutCompilationError, compile_layout_plan
 from linkresume.domain.resume.models import PresentationSettings
 from linkresume.modules.identity.models import User
+from linkresume.modules.product_events import service as product_events
 from linkresume.modules.resumes.models import (
     RESUME_IMPORT_SOURCE_TYPE,
     DocumentParseTask,
@@ -271,6 +273,7 @@ def find_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | Non
 
 
 def lock_owned_resume(db: Session, resume_id: str, user_id: int) -> Resume | None:
+    lock_active_user(db, user_id)
     parsed_id = parse_decimal_id(resume_id)
     if parsed_id is None:
         return None
@@ -320,18 +323,18 @@ def close_stale_resume_imports(
             or_(
                 and_(
                     DocumentParseTask.upload_status == "uploading",
-                    DocumentParseTask.updated_at < upload_cutoff,
+                    DocumentParseTask.update_time < upload_cutoff,
                 ),
                 and_(
                     DocumentParseTask.parse_status == "processing",
-                    DocumentParseTask.updated_at < parse_cutoff,
+                    DocumentParseTask.update_time < parse_cutoff,
                 ),
             ),
         )
         .with_for_update()
     ).all()
     for record in records:
-        created_at = record.created_at
+        created_at = record.create_time
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=timezone.utc)
         elapsed_ms = round((now - created_at).total_seconds() * 1000)
@@ -425,6 +428,7 @@ def persist_resume(
     command: CreateResumeCommand,
     db: Session,
 ) -> Resume:
+    lock_active_user(db, command.user_id)
     snapshot = parse_persisted_resume_snapshot(
         _model_json(command.data),
         _model_json(command.style),
@@ -521,6 +525,7 @@ def create_resume_from_template(
             ),
             db,
         )
+        product_events.resume_created(db, user_id, resume.id, "template")
         db.commit()
         return resume
     except Exception:
@@ -538,6 +543,7 @@ def update_resume_snapshot(
     data: ResumeDocumentValue | None,
     style: ResumePresentationValue | None,
 ) -> Resume | None:
+    lock_active_user(db, user_id)
     current = parse_persisted_resume_snapshot(resume.data_json, resume.style_json)
     next_data = data if data is not None else current.data
     next_style = merge_resume_presentation(current.style, style)
@@ -579,7 +585,7 @@ def update_resume_snapshot(
         "data_json": snapshot.data_json,
         "style_json": snapshot.style_json,
         "lock_version": Resume.lock_version + 1,
-        "updated_at": utc_now(),
+        "update_time": utc_now(),
     }
     result = db.execute(
         update(Resume)
@@ -609,6 +615,7 @@ def apply_resume_template(
     data: ResumeDocumentValue | None = None,
 ) -> Resume | None:
     """Atomically save current content and switch presentation provenance."""
+    lock_active_user(db, user_id)
     template = db.scalar(
         select(ResumeTemplate).where(
             ResumeTemplate.id == template_id,
@@ -671,7 +678,7 @@ def apply_resume_template(
             data_json=deepcopy(candidate.data_json),
             style_json=deepcopy(candidate.style_json),
             lock_version=Resume.lock_version + 1,
-            updated_at=utc_now(),
+            update_time=utc_now(),
         )
     )
     if result.rowcount != 1:

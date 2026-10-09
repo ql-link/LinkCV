@@ -81,7 +81,7 @@ class CorrectingGateway(ScriptedGateway):
         super().__init__()
         self.corrections: list[dict] = []
 
-    async def complete(self, *, model, messages, api_base, api_key):
+    async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat"):
         system = self._system(messages)
         if "语音识别校对员" in system:
             from linkresume.modules.llm.gateway import GatewayResult, GatewayUsage
@@ -89,7 +89,7 @@ class CorrectingGateway(ScriptedGateway):
             payload = self.corrections.pop(0)
             return GatewayResult(content=json.dumps(payload, ensure_ascii=False),
                                  usage=GatewayUsage(input_tokens=5, output_tokens=5))
-        return await super().complete(model=model, messages=messages, api_base=api_base, api_key=api_key)
+        return await super().complete(model=model, messages=messages, api_base=api_base, api_key=api_key, protocol_code=protocol_code)
 
 
 def _bind(app, use_case: str, protocol: str, *, provider: str, settings: dict, target: str) -> None:
@@ -101,7 +101,7 @@ def _bind(app, use_case: str, protocol: str, *, provider: str, settings: dict, t
             connection = LLMProviderConnection(
                 provider_code=provider, name=f"{provider}-test",
                 credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})),
-                settings_json=settings, enabled=True, runtime_config_version=1,
+                settings_json=settings, is_enabled=True, runtime_config_version=1,
             )
             db.add(connection)
             db.flush()
@@ -110,13 +110,13 @@ def _bind(app, use_case: str, protocol: str, *, provider: str, settings: dict, t
         db.flush()
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target=target,
-            origin="manual", enabled=True, target_available=True,
+            origin="manual", is_enabled=True, is_target_available=True,
         )
         db.add(route)
         db.flush()
         binding = LLMUseCaseRoute(
             use_case=use_case, route_id=route.id, protocol_code=protocol, priority=100,
-            enabled=True, validated_at=utc_now(),
+            is_enabled=True, validated_at=utc_now(),
         )
         db.add(binding)
         db.flush()
@@ -202,6 +202,10 @@ def run_voice_interview(client, app, speech: FakeSpeech, transcripts: list[str])
         if names[-1] == "interviewer.turn" and next(d for n, d in events if n == "interviewer.turn")["action"] == "finish":
             break
         detail = wait_for(client, created["id"], {"in_progress", "evaluating", "completed"})
+    latest = client.get(f"/api/mock-interviews/{created['id']}").json()["mock_interview"]
+    if latest["status"] == "in_progress":
+        # 素材清理测试只提供有限答案，不依赖当前考察点数量自动结束。
+        assert client.post(f"/api/mock-interviews/{created['id']}/finish").status_code == 200
     return wait_for(client, created["id"], {"completed"})
 
 
@@ -212,13 +216,13 @@ def test_voice_interview_saves_recordings_speaks_and_reports_voice_metrics() -> 
     with TestClient(app) as client:
         register(client, "voice-full@example.test")
         assert client.get("/api/mock-interviews/speech-capability").json() == {"stt": True, "tts": True}
-        report_detail = run_voice_interview(client, app, speech, ["我用瑞迪斯做缓存，嗯，那个 QPS 一千"] * 3)
+        report_detail = run_voice_interview(client, app, speech, ["我用瑞迪斯做缓存，嗯，那个 QPS 一千"] * 4)
         answered = [q for q in report_detail["questions"] if q["answer_status"] == "answered"]
         assert answered and all(q["answer_source"] == "voice" and q["has_recording"] for q in answered)
         assert answered[0]["raw_transcript"] == "我用瑞迪斯做缓存，嗯，那个 QPS 一千"
         assert answered[0]["transcript_state"] == "original"
         report = report_detail["report"]
-        assert report["answer_mode"] == "voice" and report["rubric_version"] == "v2"
+        assert report["answer_mode"] == "voice" and report["rubric_version"] == "v4"
         metrics = report["voice_metrics"]
         assert metrics["long_pauses"] == len(answered)
         assert metrics["filler_ratio"] > 0 and metrics["chars_per_minute"] > 0
@@ -240,7 +244,7 @@ def test_voice_interview_saves_recordings_speaks_and_reports_voice_metrics() -> 
         speech_logs = db.scalars(select(LLMCallLog).where(LLMCallLog.use_case.in_([SPEECH_TO_TEXT, TEXT_TO_SPEECH]))).all()
         assert {log.use_case for log in speech_logs} == {SPEECH_TO_TEXT, TEXT_TO_SPEECH}
         assert all(log.status == "succeeded" for log in speech_logs)
-        assert any((log.usage_json or {}).get("audio_seconds") == 1.0 for log in speech_logs)
+        assert any((log.usage_json or {}).get("audioSeconds") == 1.0 for log in speech_logs)
 
 
 def test_turn_audio_is_sent_as_sse_and_tts_failure_only_drops_audio() -> None:
@@ -376,7 +380,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
     ]
     with TestClient(app) as client:
         register(client, "voice-correct@example.test")
-        detail = run_voice_interview(client, app, speech, [original] * 3)
+        detail = run_voice_interview(client, app, speech, [original] * 4)
         interview_id = detail["id"]
         roots = [q for q in detail["questions"] if q["kind"] == "main" and q["answer_status"] == "answered"]
 
@@ -387,7 +391,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         corrected = client.post(f"/api/mock-interviews/{interview_id}/transcripts:correct")
         assert corrected.status_code == 200, corrected.text
         states = [item["state"] for item in corrected.json()["items"]]
-        assert states == ["corrected", "correction_rejected", "original"]
+        assert states == ["corrected", "correction_rejected", "original", "correction_rejected"]
         body = corrected.json()["mock_interview"]
         assert body["transcript_corrected_at"] is not None
         first = next(q for q in body["questions"] if q["id"] == roots[0]["id"])
@@ -406,6 +410,18 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         assert second["transcript_state"] == "edited"
 
         url = f"/api/mock-interviews/{interview_id}/questions/{roots[0]['id']}/re-evaluate"
+
+        def set_rubric(version: str) -> None:
+            with app.state.session_factory() as db:
+                row = db.scalar(select(MockInterview).where(MockInterview.public_id == interview_id))
+                row.report_json = {**row.report_json, "rubric_version": version}
+                db.commit()
+
+        # Reports scored under an older rubric are read-only and do not spend an attempt.
+        set_rubric("v3")
+        outdated = client.post(url)
+        assert outdated.status_code == 409 and outdated.json()["error"] == "MOCK_INTERVIEW_REPORT_OUTDATED"
+        set_rubric("v4")
         for count in (1, 2, 3):
             result = client.post(url)
             assert result.status_code == 200, result.text
@@ -413,10 +429,10 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
             assert data["re_evaluate_count"] == count and data["remaining"] == 3 - count
         report = data["mock_interview"]["report"]
         assert [item["count"] for item in report["re_evaluations"]] == [1, 2, 3]
-        scores = [item["score"] for item in report["questions"]]
-        assert report["total_score"] == pytest.approx(
-            sum(scores) / len(scores) * 0.7 + report["dimension_score"] * 0.3, abs=0.01
-        )
+        scores = [item["score"] for item in report["questions"] if not item["is_intro"]]
+        assert report["total_score"] == pytest.approx(sum(scores) / len(scores), abs=0.01)
+        assert report["re_evaluations"][-1]["verdict"] == report["verdict"]["level"]
+        assert report["question_average"] == report["dimension_score"] == report["total_score"]
         assert data["mock_interview"]["total_score"] == pytest.approx(report["total_score"])
         root = next(q for q in data["mock_interview"]["questions"] if q["id"] == roots[0]["id"])
         assert len(root["evaluation_history"]) == 3
@@ -433,7 +449,7 @@ def test_correction_once_edit_limits_and_re_evaluation() -> None:
         rows = db.scalars(select(MockInterviewQuestion).where(MockInterviewQuestion.recording_object_name.is_not(None))).all()
         assert rows == []
         correction_logs = db.scalars(select(LLMCallLog).where(LLMCallLog.use_case == TRANSCRIPT_CORRECTION)).all()
-        assert len(correction_logs) == 3
+        assert len(correction_logs) == 4  # intro + 3 requested questions
 
 
 def test_text_interview_rejects_correction() -> None:

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal, TypeAlias
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from linkresume.domain.resume import (
     CanonicalResumeDocument,
@@ -105,8 +105,8 @@ class ResumeSummary(BaseModel):
     title: str
     source_type: Literal["blank", "template", "import"]
     lock_version: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
     preview: ResumePreview | None = None
 
     @field_validator("id", mode="before")
@@ -156,8 +156,8 @@ class ResumeImportSummary(BaseModel):
     parse_duration_ms: int | None
     selected_template_id: str | None
     result_resume_id: str | None
-    created_at: datetime
-    updated_at: datetime
+    created_at: datetime = Field(validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime = Field(validation_alias=AliasChoices("update_time", "updated_at"))
 
     @field_validator("id", "result_resume_id", mode="before")
     @classmethod
@@ -188,6 +188,8 @@ class ResumeTemplateRecord(BaseModel):
     layout_plan: LayoutPlan
     switchable: Literal[True] = True
     incompatibility_reason: None = None
+    # 仅模板列表与详情接口填充；嵌入简历响应时为 None
+    use_count: int | None = None
 
 
 class ResumeTemplateListResponse(BaseModel):
@@ -252,3 +254,5 @@ class PublicSharePayload(BaseModel):
     assets: dict[str, str]
     sharer: PublicShareSharer
     allow_download: bool
+    expires_at: datetime | None = None
+    updated_at: datetime

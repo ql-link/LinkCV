@@ -24,6 +24,7 @@ from linkresume.modules.llm.models import (
 )
 from linkresume.modules.llm.resolver import MOCK_INTERVIEW, validation_fingerprint
 from linkresume.modules.mock_interviews.models import MockInterview, MockInterviewQuestion
+from linkresume.modules.product_events.models import ProductEvent
 from linkresume.modules.resumes.models import DATASET_SOURCE_TYPE, DocumentParseTask
 from tests.fakes import FakeRedis
 from tests.integration.api.test_interviews import (
@@ -75,13 +76,15 @@ class ScriptedGateway:
     def _system(self, messages) -> str:
         return "\n".join(m.content for m in messages if m.role == "system" and isinstance(m.content, str))
 
-    async def complete(self, *, model, messages, api_base, api_key) -> GatewayResult:
+    async def complete(self, *, model, messages, api_base, api_key, protocol_code="openai_chat") -> GatewayResult:
         del model, api_base, api_key
         system = self._system(messages)
         self.systems.append(system)
         self.users.append("\n".join(str(m.content) for m in messages if m.role == "user"))
         if "正在为一场模拟面试做背景分析" in system:
             payload = {"claims": [{"text": "负责订单系统重构", "verb_strength": "owned"}], "candidate_level": "社招 3 年"}
+        elif "刚做完自我介绍" in system:
+            payload = {"replacements": []}
         elif "制定面试计划" in system:
             count = int(system.split("恰好 ")[1].split(" ")[0])
             payload = {"candidates": [], "selected": [plan_item(i) for i in range(count)]}
@@ -94,6 +97,7 @@ class ScriptedGateway:
                     {"signal": SIGNALS[1], "verdict": "partial", "evidence": "对比过本地缓存"},
                     {"signal": SIGNALS[2], "verdict": "hit", "evidence": "这句话没有出现在回答里"},
                 ],
+                "expression": {"verdict": "hit", "evidence": "用火焰图定位热点", "note": "结论先行"},
                 "achieved_depth": 3,
                 "factual_errors": [],
                 "highlights": ["定位方法清楚"],
@@ -104,24 +108,23 @@ class ScriptedGateway:
             payload = {"claims": [{"text": "QPS 从 2000 提升到 10000", "kind": "number", "question_sequence_no": 1}]}
         elif "核验候选人的一条陈述" in system:
             payload = {"verdict": "conflict", "quote": "QPS 从 2000 提升到 5000", "snippet_index": 0, "note": "资料数值更低"}
-        elif "维度评估" in system:
-            judgement = {"score": 4, "evidence": ["用火焰图定位热点"], "comment": "较好"}
+        elif "结论与行动清单" in system:
             payload = {
-                "professional_depth": judgement,
-                "structure": {**judgement, "score": 3},
-                "job_fit": judgement,
-                "resume_consistency": judgement,
-                "communication": {**judgement, "score": 5},
                 "headline": "基础扎实",
                 "summary": "整体表现良好。",
-                "resume_risks": ["补充 QPS 提升的验证方式"],
-                "improvements": ["练习用数据支撑结论"],
+                "strengths": ["定位方法清楚"],
+                "competency_notes": [{"key": "knowledge", "comment": "原理讲得清楚"}],
+                "actions": [
+                    {"title": "练习用数据支撑结论", "priority": "normal", "kind": "practice", "question_refs": [2, 999]},
+                    {"title": "补充 QPS 提升的验证方式", "priority": "high", "kind": "resume",
+                     "resume_quote": "简历里没有的句子", "question_refs": [2]},
+                ],
             }
         else:
             raise AssertionError(system[:200])
         return GatewayResult(content=json.dumps(payload, ensure_ascii=False), usage=USAGE)
 
-    async def start_stream(self, *, model, messages, api_base, api_key):
+    async def start_stream(self, *, model, messages, api_base, api_key, protocol_code="openai_chat"):
         del model, api_base, api_key
         system = self._system(messages)
         self.systems.append(system)
@@ -131,7 +134,11 @@ class ScriptedGateway:
                 yield GatewayStreamEvent(type="done", usage=USAGE)
 
             return broken()
-        header = self.turn_headers.pop(0) if self.turn_headers else {"action": "next_question", "depth_level": 2}
+        if self.turn_headers:
+            header = self.turn_headers.pop(0)
+        else:
+            # Default to the move-on action the prompt allows (finish on the last topic).
+            header = {"action": "finish" if "finish" in system.split("只能是以下之一：")[-1].split("。")[0] else "next_question", "depth_level": 2}
         text = "好的，请问你是如何定位性能瓶颈的？" if header["action"] != "finish" else "今天的面试到这里，感谢。"
 
         async def events():
@@ -165,7 +172,9 @@ class _Database:
 _database = _Database()
 
 
-def build_app(gateway: ScriptedGateway, *, configure: bool = True, storage: FakeStorage | None = None):
+def build_app(
+    gateway: ScriptedGateway, *, configure: bool = True, storage: FakeStorage | None = None, linkrag=None
+):
     app = create_app(
         Settings(
             database_url=_database.url(),
@@ -175,6 +184,7 @@ def build_app(gateway: ScriptedGateway, *, configure: bool = True, storage: Fake
         storage=storage or FakeStorage(),
         redis=FakeRedis(),
         llm_gateway=gateway,
+        linkrag_client=linkrag,
         create_schema=True,
     )
     with app.state.session_factory() as db:
@@ -200,7 +210,7 @@ def configure_mock_interview_model(app) -> None:
             name="测试",
             credential_ciphertext=app.state.llm_service.encrypt_credential(json.dumps({"api_key": "fictional-key"})),
             settings_json={},
-            enabled=True,
+            is_enabled=True,
             runtime_config_version=1,
         )
         db.add(connection)
@@ -210,13 +220,13 @@ def configure_mock_interview_model(app) -> None:
         db.flush()
         route = LLMModelRoute(
             model_id=model.id, connection_id=connection.id, target_kind="model", invoke_target="interview-model",
-            origin="manual", enabled=True, target_available=True,
+            origin="manual", is_enabled=True, is_target_available=True,
         )
         db.add(route)
         db.flush()
         binding = LLMUseCaseRoute(
             use_case=MOCK_INTERVIEW, route_id=route.id, protocol_code="openai_chat", priority=100,
-            enabled=True, validated_at=utc_now(),
+            is_enabled=True, validated_at=utc_now(),
         )
         db.add(binding)
         db.flush()
@@ -268,7 +278,8 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
     gateway = ScriptedGateway()
     gateway.turn_headers = [
         {"action": "next_question", "depth_level": 2},  # opening
-        {"action": "follow_up", "depth_level": 5},  # clamped to L4
+        {"action": "follow_up", "depth_level": 5, "probe_quote": "我用火焰图定位热点", "probe_gap": "缺少数据验证"},  # limited to previous depth + 1
+        {"action": "next_question", "depth_level": 2},
         {"action": "next_question", "depth_level": 2},
         {"action": "next_question", "depth_level": 2},
         {"action": "finish", "depth_level": 2},
@@ -280,7 +291,7 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert created["status"] == "preparing"
         detail = wait_for(client, created["id"], {"in_progress"})
         first = detail["questions"][0]
-        assert first["kind"] == "main" and first["depth_level"] == 3  # start depth clamped to L2–L3
+        assert first["kind"] == "main" and first["depth_level"] == 1  # the opening question is the fixed self-introduction
         assert "如何定位" in first["content"]
 
         response = answer(client, created["id"], first["id"], "我用火焰图定位热点，也对比过本地缓存。")
@@ -289,7 +300,7 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert any(name == "interviewer.delta" for name, _ in events)
         turn = next(data for name, data in events if name == "interviewer.turn")
         assert turn["action"] == "follow_up"
-        assert turn["question"]["depth_level"] == 4
+        assert turn["question"]["depth_level"] == 2  # intro is L1; a follow-up rises at most one level
         assert turn["question"]["parent_id"] == first["id"]
 
         answer(client, created["id"], turn["question"]["id"], "用火焰图定位热点。")
@@ -298,27 +309,57 @@ def test_full_interview_from_resume_produces_recomputable_report() -> None:
         assert third["kind"] == "main" and third["plan_index"] == 1
         answer(client, created["id"], third["id"], "用火焰图定位热点")
         detail = wait_for(client, created["id"], {"in_progress"})
+        fourth = detail["questions"][-1]
+        assert fourth["plan_index"] == 2
+        answer(client, created["id"], fourth["id"], "用火焰图定位热点")
+        detail = wait_for(client, created["id"], {"in_progress"})
         last = detail["questions"][-1]
-        assert last["plan_index"] == 2
+        assert last["plan_index"] == 3  # self-introduction + the 3 requested questions
         final = sse_events(answer(client, created["id"], last["id"], "对比过本地缓存").text)
         assert next(data for name, data in final if name == "interviewer.turn")["action"] == "finish"
 
         report_detail = wait_for(client, created["id"], {"completed"})
         report = report_detail["report"]
         assert report["closing_message"].startswith("今天的面试")
-        assert len(report["questions"]) == 3
+        with app.state.session_factory() as db:
+            completed = db.scalars(
+                select(ProductEvent).where(ProductEvent.event_name == "mock_interview_completed")
+            ).all()
+        assert [e.properties_json["answer_mode"] for e in completed] == ["text"]
+        assert len(report["questions"]) == 4  # intro + 3 requested questions
         first_signals = report["questions"][0]["signals"]
         # The third judgement quoted text that is not in the answers.
-        assert [item["verdict"] for item in first_signals] == ["hit", "partial", "miss"]
-        weights = {item["key"]: item["weight"] for item in report["dimensions"]}
+        assert [item["verdict"] for item in first_signals] == ["hit", "partial", "miss", "miss"]
+        assert report["questions"][0]["topic"] == "自我介绍"  # fixed intro takes the first slot
+        assert report["questions"][0]["expression"]["verdict"] == "hit"
+        weights = {item["key"]: item["weight"] for item in report["competencies"]}
         assert "job_fit" not in weights  # no JD supplied
         assert sum(weights.values()) == pytest.approx(1.0, abs=1e-3)
-        dimension = sum(item["score"] / 5 * 100 * item["weight"] for item in report["dimensions"])
-        question_avg = sum(item["score"] for item in report["questions"]) / 3
-        assert report["total_score"] == pytest.approx(question_avg * 0.7 + dimension * 0.3, abs=0.05)
+        knowledge = next(item for item in report["competencies"] if item["key"] == "knowledge")
+        assert knowledge["comment"] == "原理讲得清楚"
+        scored = [item["score"] for item in report["questions"] if not item["is_intro"]]
+        # The self-introduction is feedback only; the total is the plain question average.
+        assert report["total_score"] == pytest.approx(sum(scored) / 3, abs=0.01)
         assert report_detail["total_score"] == pytest.approx(report["total_score"])
+        assert report["verdict"]["level"] in {"meets", "borderline", "below"}
+        assert report["verdict"]["target"] == report_detail["difficulty"]
+        assert report_detail["verdict"] == report["verdict"]["level"]
+        assert report_detail["rubric_version"] == "v4"
+        listed = client.get("/api/mock-interviews").json()["items"]
+        assert next(item for item in listed if item["id"] == created["id"])["verdict"] == report["verdict"]["level"]
+        # Unknown refs are dropped and an unquotable resume line becomes a practice item; high priority first.
+        assert [item["title"] for item in report["actions"]] == ["补充 QPS 提升的验证方式", "练习用数据支撑结论"]
+        assert report["actions"][0]["kind"] == "practice" and report["actions"][0]["resume_quote"] is None
+        assert all(ref != 999 for item in report["actions"] for ref in item["question_refs"])
+        # v1–v3 fields stay for old desktop clients and interview prep.
+        assert report["question_average"] == report["dimension_score"] == report["total_score"]
+        assessed = [item for item in report["competencies"] if item["assessed"]]
+        assert [item["key"] for item in report["dimensions"]] == [item["key"] for item in assessed]
+        assert all(1 <= item["score"] <= 5 for item in report["dimensions"])
+        assert report["improvements"] == [f"{item['title']}：{item['detail']}" if item["detail"] else item["title"] for item in report["actions"]]
+        assert report["resume_risks"] == [] and report["practice_focus"] == []
         assert report["fact_check"]["status"] == "not_requested"
-        assert report["rubric_version"] == "v2"
+        assert report["rubric_version"] == "v4"
         assert report["answer_mode"] == "text" and report["voice_metrics"] is None
     with app.state.session_factory() as db:
         logs = db.scalars(select(LLMCallLog)).all()
@@ -570,9 +611,11 @@ def test_reference_materials_drive_fact_check_with_verified_quotes() -> None:
             json={"resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False, "material_ids": [dataset_id]},
         ).json()["mock_interview"]
         assert created["materials"][0]["dataset_id"] == dataset_id
+        assert created["materials_in_questions"] is False
         detail = wait_for(client, created["id"], {"in_progress"})
         analysis_user = next(user for system, user in zip(gateway.systems, gateway.users) if "正在为一场模拟面试做背景分析" in system)
-        assert "5000" in analysis_user  # material facts reach the analysis step
+        # By default questions come from the resume only; materials stay for the report.
+        assert "5000" not in analysis_user
         answer(client, created["id"], detail["questions"][0]["id"], "QPS 从 2000 提升到 10000，用火焰图定位热点")
         client.post(f"/api/mock-interviews/{created['id']}/finish")
         report = wait_for(client, created["id"], {"completed"})["report"]
@@ -581,6 +624,94 @@ def test_reference_materials_drive_fact_check_with_verified_quotes() -> None:
         assert fact["items"][0]["verdict"] == "conflict"
         assert fact["items"][0]["source"]["dataset_id"] == dataset_id
         assert fact["items"][0]["source"]["title"] == "项目复盘.md"
+
+
+def test_materials_in_questions_switch_feeds_analysis_and_carries_to_repeat() -> None:
+    storage = FakeStorage()
+    gateway = ScriptedGateway()
+    app = build_app(gateway, storage=storage)
+    with TestClient(app) as client:
+        register(client, "mock-material-switch@example.test")
+        dataset_id = seed_dataset(
+            app, "mock-material-switch@example.test", storage, "# 性能\n订单系统重构后 QPS 从 2000 提升到 5000。"
+        )
+        resume = create_resume(client, app)
+        created = client.post(
+            "/api/mock-interviews",
+            json={
+                "resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False,
+                "material_ids": [dataset_id], "materials_in_questions": True,
+            },
+        ).json()["mock_interview"]
+        assert created["materials_in_questions"] is True
+        detail = wait_for(client, created["id"], {"in_progress"})
+        analysis_user = next(user for system, user in zip(gateway.systems, gateway.users) if "正在为一场模拟面试做背景分析" in system)
+        assert "5000" in analysis_user
+        client.post(f"/api/mock-interviews/{created['id']}/abandon")
+        repeat = client.post(f"/api/mock-interviews/{created['id']}/repeat")
+        assert repeat.status_code == 201, repeat.text
+        assert repeat.json()["mock_interview"]["materials_in_questions"] is True
+        wait_for(client, repeat.json()["mock_interview"]["id"], {"in_progress"})
+        client.post(f"/api/mock-interviews/{repeat.json()['mock_interview']['id']}/abandon")
+        # Without materials the switch has nothing to act on and is stored off.
+        plain = client.post(
+            "/api/mock-interviews",
+            json={"resume_id": resume["id"], "question_count": 3, "materials_in_questions": True},
+        )
+        assert plain.status_code == 201, plain.text
+        assert plain.json()["mock_interview"]["materials_in_questions"] is False
+        assert detail["status"] == "in_progress"
+
+
+def mark_indexed(app, dataset_id: str, rag_file_id: int) -> None:
+    from linkresume.modules.datasets.models import UserDatasetRagSync
+
+    with app.state.session_factory() as db:
+        dataset = db.get(UserDataset, int(dataset_id))
+        db.add(UserDatasetRagSync(
+            dataset_id=dataset.id, user_id=dataset.user_id, status="ready",
+            content_revision=dataset.content_revision, synced_revision=dataset.content_revision,
+            rag_file_id=rag_file_id, attempt_count=0,
+        ))
+        db.commit()
+
+
+@pytest.mark.parametrize("rag_fails", [False, True])
+def test_fact_check_uses_rag_for_indexed_materials(rag_fails: bool) -> None:
+    from tests.fakes import FakeLinkRag
+
+    storage = FakeStorage()
+    gateway = ScriptedGateway()
+    rag = FakeLinkRag()
+    app = build_app(gateway, storage=storage, linkrag=rag)
+    with TestClient(app) as client:
+        register(client, "mock-rag@example.test")
+        # The local text never mentions 5000, so only RAG can supply the quote.
+        dataset_id = seed_dataset(app, "mock-rag@example.test", storage, "# 性能\n订单系统做过重构。")
+        mark_indexed(app, dataset_id, 7001)
+        rag.recall_hits = {7001: "订单系统重构后 QPS 从 2000 提升到 5000。"}
+        if rag_fails:
+            rag.fail = {"recall"}
+        resume = create_resume(client, app)
+        created = client.post(
+            "/api/mock-interviews",
+            json={"resume_id": resume["id"], "question_count": 3, "follow_up_enabled": False, "material_ids": [dataset_id]},
+        ).json()["mock_interview"]
+        detail = wait_for(client, created["id"], {"in_progress"})
+        assert rag.recall_calls == []  # question generation never touches materials by default
+        answer(client, created["id"], detail["questions"][0]["id"], "QPS 从 2000 提升到 10000")
+        client.post(f"/api/mock-interviews/{created['id']}/finish")
+        fact = wait_for(client, created["id"], {"completed"})["report"]["fact_check"]
+    assert fact["status"] == "completed"
+    (item,) = fact["items"]
+    if rag_fails:
+        # Fallback: the in-memory text lacks the quote, so the verdict is downgraded.
+        assert item["verdict"] == "not_found"
+    else:
+        assert rag.recall_calls[0]["file_ids"] == [7001]
+        assert item["verdict"] == "conflict"
+        assert item["source"]["dataset_id"] == dataset_id
+        assert item["source"]["title"] == "项目复盘.md"
 
 
 def test_material_read_failure_skips_fact_check_only() -> None:
@@ -711,7 +842,7 @@ def test_evaluation_runs_even_if_client_drops_the_final_turn() -> None:
         # Answer the last planned topic directly so the next turn finishes.
         with app.state.session_factory() as db:
             question = db.get(MockInterviewQuestion, int(detail["questions"][0]["id"]))
-            question.plan_index = 2
+            question.plan_index = 3
             db.commit()
         runner = app.state.mock_interview_runner
         client.post(
@@ -770,3 +901,69 @@ def test_repeat_keeps_job_context_after_application_is_deleted() -> None:
         repeated = client.post(f"/api/mock-interviews/{created['id']}/repeat").json()["mock_interview"]
         repeated_row = _row(app, repeated["id"])
         assert repeated_row.job_snapshot_json["description"] == "负责虚构业务的后端系统设计与开发。"
+
+
+def test_desktop_text_interview_flow_keeps_ownership_channel_and_idempotency() -> None:
+    from linkresume.modules.identity.models import User
+    from linkresume.modules.identity.session_service import prepare_session
+    from linkresume.core.security import session_key
+    from linkresume.core.security import create_access_token
+
+    gateway = ScriptedGateway()
+    gateway.turn_headers = [{"action": "next_question", "depth_level": 2}, {"action": "follow_up", "depth_level": 3, "probe_quote": "我用火焰图定位热点", "probe_gap": "缺少数据验证"}]
+    app = build_app(gateway)
+    with TestClient(app) as client:
+        assert client.get('/api/mock-interviews').status_code == 401
+        register(client, 'desktop-practice@example.test')
+        resume = create_resume(client, app)
+        uid = int(client.get('/api/auth/me').json()['user']['id'])
+        with app.state.session_factory() as db:
+            user = db.get(User, uid)
+            credentials = prepare_session(user, app.state.settings, channel='desktop')
+            app.state.redis.hset(session_key(credentials.sid), mapping={'uid': str(uid), 'channel': 'desktop'})
+            stranger = User(wechat_openid='mock-desktop-stranger', nickname='虚构用户')
+            db.add(stranger)
+            db.commit()
+            other = prepare_session(stranger, app.state.settings, channel='desktop')
+            app.state.redis.hset(session_key(other.sid), mapping={'uid': str(stranger.id), 'channel': 'desktop'})
+        headers = {'Authorization': 'Bearer ' + credentials.access_token}
+        assert client.get('/api/mock-interviews', headers=headers).status_code == 401  # mixed Cookie/Bearer
+        client.cookies.clear()
+        client.headers.update(headers)
+        wrong = create_access_token(uid, credentials.sid, app.state.settings, 'miniprogram')
+        assert client.get('/api/mock-interviews', headers={'Authorization': 'Bearer ' + wrong}).status_code == 401
+        assert client.get('/api/datasets').status_code == 200
+        # Desktop may probe speech and start voice interviews; this fixture has no speech routes configured.
+        assert client.get('/api/mock-interviews/speech-capability').status_code == 200
+        voice = client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'answer_mode':'voice'})
+        assert voice.status_code == 503 and voice.json()['error'] == 'MOCK_INTERVIEW_SPEECH_UNAVAILABLE', voice.text
+        created = client.post('/api/mock-interviews', json={'resume_id':resume['id'], 'question_count':3})
+        assert created.status_code == 201, created.text
+        identity = created.json()['mock_interview']['id']
+        path = '/api/mock-interviews/' + identity
+        other_headers = {'Authorization':'Bearer ' + other.access_token}
+        assert client.get(path, headers=other_headers).status_code == 404
+        assert client.post(path + '/finish', headers=other_headers).status_code == 404
+        ready = wait_for(client, identity, {'in_progress'})
+        question = ready['current_question_id']
+        key = str(uuid4())
+        result = answer(client, identity, question, '我用火焰图定位热点，也对比过本地缓存。', key)
+        assert result.status_code == 200
+        assert any(name == 'interviewer.turn' for name, _ in sse_events(result.text))
+        assert answer(client, identity, question, '我用火焰图定位热点，也对比过本地缓存。', key).status_code == 200
+        detail = client.get(path).json()['mock_interview']
+        assert len(detail['questions']) == 2
+        assert client.post(path + '/finish').status_code == 200
+        complete = wait_for(client, identity, {'completed'})
+        assert complete['report']['total_score'] == complete['total_score']
+        # Desktop 已开放识别稿修正；该文字面试夹具未配置修正模型。
+        correction = client.post(path + '/transcripts:correct')
+        assert correction.status_code == 503
+        assert correction.json()['error'] == 'LLM_MODEL_NOT_CONFIGURED'
+        repeat = client.post(path + '/repeat')
+        assert repeat.status_code == 201, repeat.text
+        repeat_id = repeat.json()['mock_interview']['id']
+        wait_for(client, repeat_id, {'in_progress'})
+        assert client.post('/api/mock-interviews/' + repeat_id + '/abandon').status_code == 200
+        assert client.delete(path).status_code == 200
+        assert client.get(path).status_code == 404

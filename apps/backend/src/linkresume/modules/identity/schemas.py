@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from linkresume.modules.job_descriptions.schemas import (
     SalaryPeriod,
@@ -118,6 +118,7 @@ class AuthResponse(BaseModel):
 
 class AuthCapabilitiesResponse(BaseModel):
     password_login_enabled: bool
+    wechat_login_enabled: bool
 
 
 class MeResponse(BaseModel):
@@ -138,6 +139,81 @@ class UserProfileResponse(BaseModel):
     avatar_url: str | None = None
     wechat_status: str = "unbound"
     wechat_bound_at: datetime | None = None
+    contact_email: str | None = None
+    registered_at: datetime | None = None
+
+    @field_validator("registered_at", mode="before")
+    @classmethod
+    def registered_at_utc(cls, value: object) -> object:
+        return _as_utc(value)
+
+
+class AccountCapabilities(BaseModel):
+    auth_mode: Literal["password", "wechat", "unavailable"]
+    can_change_password: bool
+    can_delete_account: bool
+    deletion_confirmation_method: Literal["password", "wechat"] | None
+
+
+class CurrentSessionResponse(BaseModel):
+    device_label: str
+
+
+class AccountPreferencesResponse(BaseModel):
+    locale: Literal["zh-CN", "en-US"] = "zh-CN"
+    interview_reminder_enabled: bool = False
+    notifications_available: Literal[False] = False
+
+
+class ContactEmailRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str | None
+
+
+class ContactEmailResponse(BaseModel):
+    contact_email: str | None
+
+
+class WechatActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["delete_account"]
+
+
+class WechatActionPoll(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scene: str = Field(min_length=1, max_length=32)
+    poll_token: str = Field(min_length=1, max_length=128)
+
+
+class WechatActionConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scene: str = Field(min_length=1, max_length=32)
+    code: str = Field(min_length=1, max_length=128)
+
+
+class PasswordDeletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal["password"]
+    current_password: str = Field(min_length=1, max_length=512)
+    confirmation: str = Field(max_length=32)
+
+
+class WechatDeletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal["wechat"]
+    action_token: str = Field(min_length=1, max_length=128)
+    confirmation: str = Field(max_length=32)
+
+
+AccountDeletionRequest = Annotated[
+    PasswordDeletionRequest | WechatDeletionRequest, Field(discriminator="method")
+]
+
+
+class AccountDeletionStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    job_id: str = Field(min_length=36, max_length=36)
+    receipt_token: str = Field(min_length=1, max_length=128)
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -287,8 +363,33 @@ class UserProfileData(UserProfileBase):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     lock_version: int
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    created_at: datetime | None = Field(default=None, validation_alias=AliasChoices("create_time", "created_at"))
+    updated_at: datetime | None = Field(default=None, validation_alias=AliasChoices("update_time", "updated_at"))
+
+    @model_validator(mode="before")
+    @classmethod
+    def remove_redundant_legacy_education_tag(cls, value: object) -> object:
+        """旧记录可能把已保存的学历标签重复放入院校层次；只修正读取视图。"""
+        education_labels = {
+            "high_school": "高中及以下",
+            "junior_college": "大专",
+            "bachelor": "本科",
+            "master": "硕士",
+            "doctor": "博士",
+        }
+        education = value.get("education_level") if isinstance(value, dict) else getattr(value, "education_level", None)
+        tiers = value.get("school_tier") if isinstance(value, dict) else getattr(value, "school_tier", None)
+        label = education_labels.get(education)
+        if not label or not isinstance(tiers, list) or label not in tiers:
+            return value
+        # ORM 时间列已改名，响应字段名仍保留原有 API 契约。
+        attribute_names = {"created_at": "create_time", "updated_at": "update_time"}
+        fields = dict(value) if isinstance(value, dict) else {
+            name: getattr(value, attribute_names.get(name, name))
+            for name in cls.model_fields
+        }
+        fields["school_tier"] = [tier for tier in tiers if tier != label]
+        return fields
 
     @field_validator("created_at", "updated_at", mode="before")
     @classmethod
@@ -306,6 +407,8 @@ class AccountProfileResponse(BaseModel):
     user: UserProfileResponse
     resume_count: int
     recent_resumes: list[RecentResumeSummary]
+    current_session: CurrentSessionResponse
+    capabilities: AccountCapabilities
 
 
 class AvatarUploadRequest(BaseModel):
@@ -318,6 +421,7 @@ class AvatarResponse(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     current_password: str
     new_password: str
     confirm_password: str

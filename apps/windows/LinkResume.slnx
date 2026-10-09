@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LinkResume.Core/LinkResume.Core.csproj" />
+    <Project Path="src/LinkResume.App/LinkResume.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LinkResume.Core.Tests/LinkResume.Core.Tests.csproj" />
+    <Project Path="tests/LinkResume.Platform.Tests/LinkResume.Platform.Tests.csproj" />
+  </Folder>
+</Solution>
