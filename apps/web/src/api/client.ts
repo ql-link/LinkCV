@@ -475,13 +475,49 @@ export type SectionReviewAnalyzeRequest = {
   /** Optional job the resume is aimed at, applied on top of the style. */
   job_id?: string | null;
 };
-export type SectionReviewAnalyzeResponse = {
+export type SectionReviewAnalyzeResult = {
   reference_label: string;
   inferred_focus: string | null;
   too_thin: boolean;
   draft_questions: SectionReviewQuestion[];
   notes: SectionReviewNote[];
 };
+export type SectionReviewItemKind = SectionReviewNoteKind | "ask" | "draft";
+export type SectionReviewItemStatus = "todo" | "asking" | "pending" | "done" | "skipped";
+export type SectionReviewEdit = { line_id: string; before: string; after: string };
+export type SectionReviewDraft = { variants: SectionReviewVariant[]; missing: string[]; base_text: string; line_id: string };
+/** One saved note, request or draft of a paragraph's analysis. */
+export type SectionReviewItem = {
+  id: string;
+  review_id: string;
+  note_id: string | null;
+  note: SectionReviewNote | null;
+  kind: SectionReviewItemKind;
+  line_id: string | null;
+  instruction: string;
+  status: SectionReviewItemStatus;
+  question_index: number;
+  answers: string[];
+  draft: SectionReviewDraft | null;
+  selected_index: number;
+  edit: SectionReviewEdit | null;
+  update_time: string;
+};
+/** The latest saved analysis of one paragraph. */
+export type SectionReviewRecord = {
+  id: string;
+  unit_id: string;
+  analysis_no: number;
+  reference: SectionReviewReference;
+  job_id: string | null;
+  intent: string;
+  context_ids: string[];
+  base_lines: Record<string, string>;
+  result: SectionReviewAnalyzeResult;
+  items: SectionReviewItem[];
+  update_time: string;
+};
+export type SectionReviewAnalyzeResponse = SectionReviewAnalyzeResult & { review: SectionReviewRecord };
 export type SectionReviewRewriteRequest = {
   section: SectionReviewSection;
   context: SectionReviewContext[];
@@ -490,8 +526,20 @@ export type SectionReviewRewriteRequest = {
   line_id: string | null;
   instruction?: string | null;
   answers: Array<{ question: string; answer: string }>;
+  /** The saved analysis; without it the result is returned but not saved. */
+  review_id?: string | null;
+  /** The item the result belongs to; otherwise `item_kind` creates one. */
+  item_id?: string | null;
+  item_kind?: "ask" | "draft" | null;
 };
-export type SectionReviewRewriteResponse = { variants: SectionReviewVariant[]; missing: string[] };
+export type SectionReviewRewriteResponse = { variants: SectionReviewVariant[]; missing: string[]; item: SectionReviewItem | null };
+export type SectionReviewItemUpdate = {
+  status?: SectionReviewItemStatus;
+  question_index?: number;
+  answers?: string[];
+  selected_index?: number;
+  edit?: SectionReviewEdit | null;
+};
 
 export type AgentContextType =
   | "user_profile"
@@ -2358,6 +2406,16 @@ export const api = {
     request<SectionReviewRewriteResponse>(
       `/api/resumes/${encodeURIComponent(resumeId)}/section-review:rewrite`,
       { method: "POST", body: payload, signal },
+    ),
+  listResumeSectionReviews: (resumeId: string, signal?: AbortSignal) =>
+    request<{ reviews: SectionReviewRecord[] }>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-reviews`,
+      { signal },
+    ),
+  updateResumeSectionReviewItem: (resumeId: string, reviewId: string, itemId: string, payload: SectionReviewItemUpdate) =>
+    request<SectionReviewItem>(
+      `/api/resumes/${encodeURIComponent(resumeId)}/section-reviews/${encodeURIComponent(reviewId)}/items/${encodeURIComponent(itemId)}`,
+      { method: "PATCH", body: payload },
     ),
   generateInterviewPrepItems: (id: string) =>
     request<InterviewSessionDetail>(

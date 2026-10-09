@@ -7,7 +7,10 @@ import {
   api,
   ApiRequestError,
   type JobDescriptionSummary,
-  type SectionReviewAnalyzeResponse,
+  type SectionReviewAnalyzeResult,
+  type SectionReviewItem,
+  type SectionReviewItemUpdate,
+  type SectionReviewRecord,
   type SectionReviewNote,
   type SectionReviewNoteKind,
   type SectionReviewQuestion,
@@ -66,6 +69,8 @@ type Item = {
   kind: SectionReviewNoteKind | "ask";
   note: SectionReviewNote | null;
   instruction: string;
+  /** Drafted from the answers to the "too little content" questions. */
+  fromDraft?: boolean;
   lineId: string | null;
   status: ItemStatus;
   qIndex: number;
@@ -79,9 +84,12 @@ type Item = {
 type Phase =
   | { kind: "loading" }
   | { kind: "error"; message: string }
-  | { kind: "ready"; result: SectionReviewAnalyzeResponse; baseLines: Record<string, string> };
+  | { kind: "ready"; result: SectionReviewAnalyzeResult; baseLines: Record<string, string>; reviewId: string };
 
-/** A finished analysis kept for the session, so reopening a paragraph does not call the model again. */
+/**
+ * A finished analysis of one paragraph. Saved on the server, so reopening the
+ * paragraph, even after a reload, does not call the model again.
+ */
 export type SheetSnapshot = {
   phase: Extract<Phase, { kind: "ready" }>;
   items: Item[];
@@ -134,6 +142,66 @@ function restoreItems(items: Item[], editor: Editor): Item[] {
   });
 }
 
+/** A saved item as a working item of the sheet. */
+function itemFromServer(item: SectionReviewItem, number: number | null): Item {
+  const fromDraft = item.kind === "draft";
+  return {
+    id: item.id,
+    number,
+    kind: fromDraft ? "missing" : item.kind,
+    note: item.note,
+    instruction: item.instruction || (fromDraft ? t("按你的回答起草") : ""),
+    fromDraft,
+    lineId: item.line_id,
+    status: item.status,
+    qIndex: item.question_index,
+    answers: item.answers,
+    draft: item.draft
+      ? { variants: item.draft.variants, missing: item.draft.missing, baseText: item.draft.base_text, lineId: item.draft.line_id }
+      : null,
+    selected: item.selected_index,
+    message: null,
+    edit: item.edit ? { lineId: item.edit.line_id, before: item.edit.before, after: item.edit.after } : null,
+  };
+}
+
+/** Saved items in order; notes and drafts are numbered, the user's own requests are not. */
+function itemsFromServer(items: SectionReviewItem[]): Item[] {
+  let number = 0;
+  return items.map((item) => itemFromServer(item, item.kind === "ask" ? null : ++number));
+}
+
+/** A saved analysis, as loaded when the editor opens. */
+export function snapshotFromRecord(record: SectionReviewRecord): SheetSnapshot {
+  const items = itemsFromServer(record.items);
+  const reference = record.reference;
+  const jobId = record.job_id ?? (reference.kind === "job" ? reference.job_id : null);
+  // The label reads「风格 · 公司 · 职位」; the job part is what the picker shows.
+  const jobLabel = record.result.reference_label.split(" · ").slice(1).join(" · ");
+  return {
+    phase: { kind: "ready", result: record.result, baseLines: record.base_lines, reviewId: record.id },
+    items,
+    activeId: items.find((item) => item.status !== "done" && item.status !== "skipped")?.id ?? null,
+    style: reference.kind === "method" ? { kind: "method", method: reference.method } : { kind: "general" },
+    job: jobId ? { id: jobId, label: jobLabel || t("目标岗位") } : null,
+    intent: record.intent,
+    contextIds: record.context_ids,
+    draftAnswers: record.items.find((item) => item.kind === "draft")?.answers ?? [],
+    runId: 0,
+  };
+}
+
+/** Notes whose target line the AI may not rewrite are left out, unless already applied. */
+function rewritableItems(items: Item[], unit: FocusUnit) {
+  const editableIds = editableLineIds(unit);
+  const fallbackLine = unit.lines.find((line) => editableIds.has(line.id))?.id ?? null;
+  return items.filter((item) => {
+    if (!item.note || item.status === "done") return true;
+    const target = item.note.proposal?.line_id ?? item.note.line_id ?? fallbackLine;
+    return target !== null && editableIds.has(target);
+  });
+}
+
 /** Whether the paragraph changed after the analysis, other than through changes applied here. */
 function changedSinceAnalysis(unit: FocusUnit, baseLines: Record<string, string>, items: Item[]) {
   const applied = new Map(items.flatMap((item) => (item.status === "done" && item.edit ? [[item.edit.lineId, item.edit.after] as const] : [])));
@@ -163,6 +231,13 @@ const STATUS_LABEL: Record<ItemStatus, string> = {
 function errorMessage(error: unknown) {
   if (error instanceof ApiRequestError && error.message === "LLM_MODEL_NOT_CONFIGURED") {
     return t("AI 精修暂不可用：管理员还没有配置模型。");
+  }
+  if (error instanceof ApiRequestError && error.message === "SECTION_REVIEW_NOT_FOUND") {
+    return t("这条建议已被新的分析替换，请在新的建议里继续。");
+  }
+  if (error instanceof ApiRequestError && error.message === "SECTION_REVIEW_ITEM_APPLIED") return t("这一条已经采用，不再生成新版本。");
+  if (error instanceof ApiRequestError && error.message === "SECTION_REVIEW_ITEM_LIMIT") {
+    return t("这一段的建议已经很多了，先处理一些或重新分析，再继续提要求。");
   }
   if (error instanceof ApiRequestError && error.status === 404) return t("没有找到这份简历或所选岗位。");
   return t("这次没有完成，原文没有任何改动，可以重试。");
@@ -232,7 +307,7 @@ export function FocusSheet({
   onNavigate: (unitId: string, edits: AppliedEdit[]) => void;
 }) {
   const unit = units.find((item) => item.id === request.unitId);
-  const [restored] = useState(() => (cached ? { ...cached, items: restoreItems(cached.items, editor) } : null));
+  const [restored] = useState(() => (cached && unit ? { ...cached, items: rewritableItems(restoreItems(cached.items, editor), unit) } : null));
   // A new instruction from ⌘K asks for a fresh analysis even when one is saved.
   const [autoRun] = useState(() => !restored || Boolean(request.intent.trim()));
   const [style, setStyle] = useState<Style>(restored?.style ?? DEFAULT_STYLE);
@@ -311,47 +386,18 @@ export function FocusSheet({
       }, controller.signal);
       if (runId !== runIdRef.current) return;
       const baseLines = Object.fromEntries(section.lines.map((line) => [line.id, line.text]));
-      const editableIds = editableLineIds(unit);
-      const fallbackLine = section.lines.find((line) => editableIds.has(line.id))?.id ?? null;
-      // Notes whose target line the AI may not rewrite are dropped up front.
-      const notes = result.notes.filter((note) => {
-        const target = note.proposal?.line_id ?? note.line_id ?? fallbackLine;
-        return target !== null && editableIds.has(target);
+      // Applied changes survive a re-analysis on the server, so they stay listed and undoable.
+      const next = rewritableItems(itemsFromServer(result.review.items), unit);
+      const shown = new Set(next.flatMap((item) => (item.note ? [item.note.id] : [])));
+      const { review, ...analysis } = result;
+      setPhase({
+        kind: "ready",
+        result: { ...analysis, notes: analysis.notes.filter((note) => shown.has(note.id)) },
+        baseLines,
+        reviewId: review.id,
       });
-      setPhase({ kind: "ready", result: { ...result, notes }, baseLines });
-      setItems((current) => {
-        // Applied changes survive a re-analysis so they stay listed and undoable.
-        const kept = current.filter((item) => item.status === "done");
-        const offset = kept.reduce((max, item) => Math.max(max, item.number ?? 0), 0);
-        return [
-          ...kept,
-          ...notes.map((note, position): Item => ({
-            id: `r${runId}-${note.id}`,
-            number: offset + position + 1,
-            kind: note.kind,
-            note,
-            instruction: "",
-            lineId: note.line_id ?? note.proposal?.line_id ?? fallbackLine,
-            status: "todo",
-            qIndex: 0,
-            answers: [],
-            draft: note.kind === "wording" && note.line_id
-              ? { variants: note.variants, missing: [], baseText: baseLines[note.line_id] ?? "", lineId: note.line_id }
-              : note.kind === "structure" && note.proposal
-                ? {
-                  variants: [{ id: `${note.id}-p`, label: t("提案"), text: note.proposal.text, risky_terms: [] }],
-                  missing: [],
-                  baseText: baseLines[note.proposal.line_id] ?? "",
-                  lineId: note.proposal.line_id,
-                }
-                : null,
-            selected: 0,
-            message: null,
-            edit: null,
-            })),
-        ];
-      });
-      setActiveId(notes[0] ? `r${runId}-${notes[0].id}` : null);
+      setItems(next);
+      setActiveId(next.find((item) => item.status !== "done")?.id ?? null);
     } catch (error) {
       if (isAbort(error) || runId !== runIdRef.current) return;
       setPhase({ kind: "error", message: errorMessage(error) });
@@ -409,12 +455,34 @@ export function FocusSheet({
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...(typeof update === "function" ? update(item) : update) } : item));
   };
 
+  // User actions are saved in order; a failed save only shows after a reload.
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
+  const save = (itemId: string, update: SectionReviewItemUpdate) => {
+    if (phase.kind !== "ready" || itemId.startsWith("local-")) return;
+    const reviewId = phase.reviewId;
+    saving.current = saving.current
+      .then(() => api.updateResumeSectionReviewItem(resumeId, reviewId, itemId, update))
+      .catch(() => undefined);
+  };
+  useEffect(() => {
+    // Undone from the recap card or edited by hand since the last visit: no longer applied.
+    restored?.items.forEach((item) => {
+      if (item.status !== "done" && cached?.items.some((old) => old.id === item.id && old.status === "done")) {
+        save(item.id, { status: item.draft ? "pending" : "todo", edit: null });
+      }
+    });
+    // Once, for the saved state this sheet opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const rewrite = async (item: Item, payload: { lineId: string | null; instruction?: string; answers?: Array<{ question: string; answer: string }> }) => {
     if (!unit) return;
     if (payload.lineId && !editable.has(payload.lineId)) {
       patch(item.id, { status: "error", message: t("这一句太长或不在前 20 条里，AI 不会改它。") });
       return;
     }
+    if (phase.kind !== "ready") return;
+    const reviewId = phase.reviewId;
     itemRequests.current.get(item.id)?.abort();
     const controller = track();
     itemRequests.current.set(item.id, controller);
@@ -431,13 +499,20 @@ export function FocusSheet({
         line_id: payload.lineId,
         instruction: payload.instruction ?? null,
         answers: payload.answers ?? [],
+        review_id: reviewId,
+        // An item made here (a request, a draft) gets its saved id with the first result.
+        ...(item.id.startsWith("local-") ? { item_kind: item.fromDraft ? "draft" as const : "ask" as const } : { item_id: item.id }),
       }, controller.signal);
       if (!isLatest()) return;
+      const saved = response.item ? itemFromServer(response.item, item.number) : null;
       patch(item.id, {
+        id: saved?.id ?? item.id,
         status: "pending",
         selected: 0,
-        draft: { variants: response.variants, missing: response.missing, baseText, lineId: payload.lineId ?? "" },
+        ...(saved ? { qIndex: saved.qIndex, answers: saved.answers } : {}),
+        draft: saved?.draft ?? { variants: response.variants, missing: response.missing, baseText, lineId: payload.lineId ?? "" },
       });
+      if (saved && saved.id !== item.id) setActiveId((current) => (current === item.id ? saved.id : current));
     } catch (error) {
       if (isAbort(error) || !isLatest()) return;
       patch(item.id, { status: "error", message: errorMessage(error) });
@@ -467,6 +542,7 @@ export function FocusSheet({
     itemRequests.current.get(item.id)?.abort();
     itemRequests.current.delete(item.id);
     patch(item.id, { status: "done", message: null, edit: { lineId: draft.lineId, before: before ?? "", after: variant.text } });
+    save(item.id, { status: "done", edit: { line_id: draft.lineId, before: before ?? "", after: variant.text } });
     const next = itemsRef.current.find((candidate) => candidate.id !== item.id && (candidate.status === "todo" || candidate.status === "pending"));
     if (next) setActiveId(next.id);
   };
@@ -480,10 +556,12 @@ export function FocusSheet({
     }
     editor.view.dispatch(result);
     patch(item.id, { status: item.draft ? "pending" : "todo", edit: null, message: null });
+    save(item.id, { status: item.draft ? "pending" : "todo", edit: null });
   };
 
   const skip = (item: Item) => {
     patch(item.id, { status: "skipped", message: null });
+    save(item.id, { status: "skipped" });
     const next = itemsRef.current.find((candidate) => candidate.id !== item.id && candidate.status === "todo");
     if (next) setActiveId(next.id);
   };
@@ -495,7 +573,10 @@ export function FocusSheet({
     answers[item.qIndex] = text;
     const questions = item.note.questions;
     const nextIndex = item.qIndex + 1;
-    patch(item.id, { answers, qIndex: Math.min(nextIndex, questions.length - 1), status: nextIndex < questions.length ? "asking" : item.status });
+    const qIndex = Math.min(nextIndex, questions.length - 1);
+    patch(item.id, { answers, qIndex, status: nextIndex < questions.length ? "asking" : item.status });
+    // No status here: the rewrite below sets it, and this save may land after it.
+    save(item.id, { answers: Array.from(answers, (reply) => reply ?? ""), question_index: qIndex });
     void rewrite({ ...item, answers }, {
       lineId: item.lineId,
       answers: answers.flatMap((reply, position) => reply ? [{ question: questions[position]?.prompt ?? question.prompt, answer: reply }] : []),
@@ -515,7 +596,7 @@ export function FocusSheet({
       ?? null;
     if (!lineId) return;
     const item: Item = {
-      id: `ask-${Date.now()}`,
+      id: `local-ask-${Date.now()}`,
       number: null,
       kind: "ask",
       note: null,
@@ -600,7 +681,10 @@ export function FocusSheet({
                 key={variant.id}
                 type="button"
                 className={`sf-variant${position === item.selected ? " is-selected" : ""}`}
-                onClick={() => patch(item.id, { selected: position })}
+                onClick={() => {
+                  patch(item.id, { selected: position });
+                  if (position !== item.selected) save(item.id, { selected_index: position });
+                }}
                 disabled={item.status === "done"}
               >
                 <span className="sf-variant-head">
@@ -952,11 +1036,12 @@ export function FocusSheet({
                 const lineId = unit.lines.find((line) => editable.has(line.id))?.id ?? null;
                 if (!lineId) return;
                 const item: Item = {
-                  id: `draft-${Date.now()}`,
+                  id: `local-draft-${Date.now()}`,
                   number: 1,
                   kind: "missing",
                   note: null,
                   instruction: t("按你的回答起草"),
+                  fromDraft: true,
                   lineId,
                   status: "loading",
                   qIndex: 0,
@@ -967,7 +1052,7 @@ export function FocusSheet({
                   edit: null,
                 };
                 // Replace an unapplied draft; an applied one stays listed and undoable.
-                setItems((current) => [...current.filter((candidate) => !(candidate.id.startsWith("draft-") && candidate.status !== "done")), item]);
+                setItems((current) => [...current.filter((candidate) => !(candidate.fromDraft && candidate.status !== "done")), item]);
                 setActiveId(item.id);
                 void rewrite(item, {
                   lineId,
