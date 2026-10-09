@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiRequestError, type JobApplicationSummary, type ResumeSummary } from "@/api/client";
+import { ApiRequestError, type ApplicationStageRecord, type JobApplicationSummary, type ResumeSummary } from "@/api/client";
 import { setPageCacheUser, clearPageCache } from "@/v3/pageCache";
 import { useResumeStore } from "@/store/resumeStore";
 import { applicationCardTimeLabel, sortApplications } from "./ApplicationsBoard";
@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
   listInterviewSessions: vi.fn(),
   getInterviewOverview: vi.fn(),
   listJobApplications: vi.fn(),
+  getJobApplication: vi.fn(),
   getInterviewSession: vi.fn(),
   updateJobApplication: vi.fn(),
   rescheduleInterviewSession: vi.fn(),
@@ -257,6 +258,10 @@ async function switchToScheduleMonth() {
 }
 
 beforeEach(() => {
+  mocks.getJobApplication.mockImplementation(async (id: string) => {
+    const response = await mocks.listJobApplications();
+    return { application: response.items.find((item: JobApplicationSummary) => item.id === id) };
+  });
   mocks.getInterviewOverview.mockResolvedValue(undefined);
   window.sessionStorage.removeItem("linkresume:career-applications:column-order:v1");
   window.sessionStorage.removeItem("linkresume:career-applications:hidden-columns:v1");
@@ -631,6 +636,7 @@ describe("InterviewCenterPage API projections", () => {
     }>();
     mocks.listInterviewSessions.mockResolvedValueOnce({ items: [], next_cursor: null });
     mocks.listJobApplications.mockReturnValueOnce(applicationRequest.promise);
+    mocks.getJobApplication.mockResolvedValue({ application: newApplication });
 
     rerender(<InterviewCenterPage view="applications" initialApplicationId="88" />);
 
@@ -1708,6 +1714,77 @@ describe("InterviewCenterPage API projections", () => {
     expect(screen.getByRole("group", { name: "显示方式" })).toHaveTextContent("列表");
     expect(await screen.findByRole("table", { name: "求职记录列表" })).toBeInTheDocument();
     expect(screen.queryByText("进行中的进程")).not.toBeInTheDocument();
+  });
+
+  it("loads all interview rounds from the detail endpoint and shows their scheduled dates", async () => {
+    const stages: ApplicationStageRecord[] = ["HR 面", "一面", "二面"].map((label, index) => ({
+      id: `stage-${index}`,
+      application_id: application.id,
+      client_request_id: `request-${index}`,
+      stage_type: index === 0 ? "hr" : "interview",
+      stage_label: label,
+      interview_round_no: index === 0 ? null : index,
+      sequence_no: index + 1,
+      stage_status: index === 2 ? "active" : "completed",
+      stage_result: index === 2 ? "pending" : "passed",
+      current_marker: index === 2 ? 1 : null,
+      entered_at: "2026-09-21T01:00:00Z",
+      completed_at: index === 2 ? null : "2026-10-09T01:00:00Z",
+      created_at: "2026-09-21T01:00:00Z",
+      updated_at: "2026-10-09T01:00:00Z",
+    }));
+    const rounds = stages.map((stage, index) => ({
+      ...session,
+      id: `round-${index}`,
+      application_stage_id: stage.id,
+      stage_type: stage.stage_type === "hr" ? "hr" as const : "interview" as const,
+      stage_label: stage.stage_label,
+      round_no: stage.interview_round_no,
+      start_at: `2026-10-${["01", "05", "13"][index]}T06:30:00Z`,
+      end_at: `2026-10-${["01", "05", "13"][index]}T07:00:00Z`,
+      status: index === 2 ? "scheduled" as const : "completed" as const,
+    }));
+    const detailed = {
+      ...application,
+      applied_at: "2026-09-21T01:00:00Z",
+      current_stage_type: "interview" as const,
+      current_stage_label: "二面",
+      current_round_no: 2,
+      current_stage: stages[2],
+      stages,
+    };
+    mocks.listJobApplications.mockResolvedValue({ items: [{ ...detailed, stages: [] }], next_cursor: null });
+    mocks.getJobApplication.mockResolvedValue({ application: detailed });
+    mocks.listInterviewSessions.mockResolvedValue({ items: rounds, next_cursor: null });
+    mocks.getInterviewSession.mockResolvedValue({ session: rounds[0], application: detailed, assets: [] });
+
+    render(<InterviewCenterPage view="applications" initialApplicationId={application.id} />);
+
+    const pipeline = await screen.findByRole("list", { name: "当前阶段：二面" });
+    expect(within(pipeline).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      expect.stringContaining("已投递"), expect.stringContaining("HR 面"),
+      expect.stringContaining("一面"), expect.stringContaining("二面"), expect.stringContaining("下一阶段"),
+    ]);
+    for (const [label, date] of [["HR 面", "10.01"], ["一面", "10.05"], ["二面", "10.13"]]) {
+      const record = screen.getByRole("heading", { level: 3, name: label }).closest("li")!;
+      expect(record.querySelector("time")).toHaveTextContent(date);
+      expect(record).not.toHaveTextContent("暂无安排记录");
+      const node = within(pipeline).getByText(label).closest("li")!;
+      expect(node).toHaveTextContent(date);
+    }
+    expect(mocks.getJobApplication).toHaveBeenCalledWith(application.id);
+    fireEvent.click(screen.getByRole("button", { name: "HR 面" }));
+    expect(window.location.pathname).toBe(`/career/applications/${application.id}`);
+    expect(window.location.search).toBe("?session=round-0");
+    expect(window.history.state).toEqual({ careerSessionDialog: true });
+  });
+
+  it("stops loading when the full application detail cannot be read", async () => {
+    mocks.getJobApplication.mockRejectedValue(new ApiRequestError(404, "INTERVIEW_NOT_FOUND"));
+    render(<InterviewCenterPage view="applications" initialApplicationId={application.id} />);
+    expect(await screen.findByRole("heading", { name: "无法打开这条求职进程" })).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: "正在加载求职数据…" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "阶段记录" })).not.toBeInTheDocument();
   });
 
   it("renders an application detail route as a standalone record page", async () => {

@@ -318,4 +318,3 @@ describe("entry header facts", () => {
     ]);
   });
 });
-

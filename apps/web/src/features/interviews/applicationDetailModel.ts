@@ -321,7 +321,7 @@ export function buildApplicationDetail(
         continue;
       }
       if (stage.stage_result === "rejected" || (ended && stage === stages[stages.length - 1] && rejected)) {
-        steps.push({ key: stage.id, label: stageLabel(stage), meta: t("{value0} · 未通过", { value0: formatMonthDay(stage.completed_at ?? stage.entered_at) }), state: "failed" });
+        steps.push({ key: stage.id, label: stageLabel(stage), meta: t("{value0} · 未通过", { value0: formatMonthDay(session?.start_at ?? stage.completed_at ?? stage.entered_at) }), state: "failed" });
         continue;
       }
       if (isCurrent) {
@@ -343,8 +343,8 @@ export function buildApplicationDetail(
         key: stage.id,
         label: stage.stage_type === "screening" ? t("筛选") : stageLabel(stage),
         meta: passed
-          ? t("{value0} · 已通过", { value0: formatMonthDay(stage.completed_at ?? session?.start_at ?? stage.entered_at) })
-          : formatMonthDay(stage.completed_at ?? session?.start_at ?? stage.entered_at),
+          ? t("{value0} · 已通过", { value0: formatMonthDay(session?.start_at ?? stage.completed_at ?? stage.entered_at) })
+          : formatMonthDay(session?.start_at ?? stage.completed_at ?? stage.entered_at),
         state: "done",
       });
     }
@@ -591,7 +591,7 @@ export function buildApplicationDetail(
       id: stage.id,
       date: stage.stage_type === "oc" && application.oc_communicated_at
         ? formatMonthDay(application.oc_communicated_at)
-        : formatMonthDay(isCurrent ? session?.start_at ?? stage.entered_at : stage.completed_at ?? session?.start_at ?? stage.entered_at),
+        : formatMonthDay(session?.start_at ?? (isCurrent ? stage.entered_at : stage.completed_at ?? stage.entered_at)),
       title: stage.stage_type === "screening"
         ? t("简历筛选")
         : stage.stage_type === "oc" || isLegacyOc(stage)

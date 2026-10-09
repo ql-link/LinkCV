@@ -770,15 +770,33 @@ export function InterviewCenterPage({
               startAt: weekStart.toISOString(),
               endAt: addDays(weekStart, 7).toISOString(),
             };
-      const [nextSessions, nextApplications] = await Promise.all([
+      const [nextSessions, listedApplications, applicationRecord] = await Promise.all([
         listAllInterviewSessions({
           includeArchived: includeArchivedSessions,
           applicationId: applicationDetail || interviewDetail ? initialApplicationId : undefined,
           ...sessionRange,
         }),
         listAllJobApplications(applicationScope),
+        applicationDetail
+          ? api.getJobApplication(initialApplicationId as string)
+          : Promise.resolve(null),
       ]);
       if (requestId !== loadRequestRef.current) return;
+      // List summaries omit stage history. Always hydrate the detail route from
+      // the single-record endpoint, including after stage/schedule mutations.
+      const nextApplications = applicationRecord
+        ? [
+            ...listedApplications.filter((item) => item.id !== applicationRecord.application.id),
+            {
+              next_session_id: null,
+              next_session_start_at: null,
+              next_session_end_at: null,
+              next_session_mode: null,
+              ...listedApplications.find((item) => item.id === applicationRecord.application.id),
+              ...applicationRecord.application,
+            },
+          ]
+        : listedApplications;
       setSessions(nextSessions);
       if (view === "applications" && !initialApplicationId) {
         setApplicationBoardSessions(nextSessions);
@@ -823,6 +841,8 @@ export function InterviewCenterPage({
     } catch (error) {
       if (requestId === loadRequestRef.current) {
         showNotice(errorMessage(error));
+        if (view === "applications" && initialApplicationId)
+          setResolvedApplicationDetailId(initialApplicationId);
         if (detailRequestRef.current === invalidatedDetailRequest)
           setDetailLoading(false);
       }
