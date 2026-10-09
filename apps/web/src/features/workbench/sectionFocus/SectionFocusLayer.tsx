@@ -178,9 +178,25 @@ export function SectionFocusLayer({
   const analyses = useRef(new Map<string, SheetSnapshot>());
   // Bumped when an analysis is saved, so the page annotations pick it up.
   const [analysesVersion, setAnalysesVersion] = useState(0);
-  const [lensOpen, setLensOpen] = useState(true);
+  // Paragraphs whose page notes the user folded away; each folds on its own.
+  const [lensCollapsed, setLensCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleLens = useCallback((unitId: string, open: boolean) => {
+    setLensCollapsed((current) => {
+      const next = new Set(current);
+      if (open) next.delete(unitId);
+      else next.add(unitId);
+      return next;
+    });
+  }, []);
   const saveAnalysis = useCallback((unitId: string, snapshot: SheetSnapshot) => {
     analyses.current.set(unitId, snapshot);
+    // A fresh look at a paragraph shows its notes again.
+    setLensCollapsed((current) => {
+      if (!current.has(unitId)) return current;
+      const next = new Set(current);
+      next.delete(unitId);
+      return next;
+    });
     setAnalysesVersion((value) => value + 1);
   }, []);
   useEffect(() => {
@@ -381,9 +397,9 @@ export function SectionFocusLayer({
           groups={lensGroups}
           origin={origin}
           scroller={scrollRef.current}
-          open={lensOpen}
+          collapsed={lensCollapsed}
           revision={revision}
-          onToggle={setLensOpen}
+          onToggle={toggleLens}
           onOpenNote={(unitId, noteId) => openFocus(unitId, "", noteId)}
         />
       )}

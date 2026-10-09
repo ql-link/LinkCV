@@ -2,7 +2,7 @@ import { t } from "@/i18n";
 import type { Editor } from "@tiptap/core";
 import { Check, ChevronDown, RefreshCw } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   api,
   ApiRequestError,
@@ -238,6 +238,15 @@ export function FocusSheet({
   const itemsRef = useRef(items);
   useEffect(() => { itemsRef.current = items; }, [items]);
   const runIdRef = useRef(restored?.runId ?? 0);
+  // Seconds spent on the current analysis, so the wait reads as progress.
+  const [waited, setWaited] = useState(0);
+  useEffect(() => {
+    if (phase.kind !== "loading") return;
+    const started = Date.now();
+    setWaited(0);
+    const timer = window.setInterval(() => setWaited(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [phase.kind]);
   // Changes applied in an earlier visit were already shown in that visit's recap.
   const reported = useRef(new Set(restored?.items.flatMap((item) => (item.status === "done" && item.edit ? [item.edit] : [])) ?? []));
 
@@ -649,7 +658,7 @@ export function FocusSheet({
     const showPanel = panelItem ?? (activeItem && activeItem.lineId === lineId && activeItem.kind !== "missing" ? activeItem : null);
     const askingItem = activeItem && activeItem.lineId === lineId && activeItem.kind === "missing" ? activeItem : null;
     return (
-      <div key={lineId} className={`sf-row${notes.length ? " has-notes" : ""}`}>
+      <div key={lineId} className={`sf-row${notes.length ? " has-notes" : ""}`} style={{ "--sf-row": position } as CSSProperties}>
         <div className="sf-line">
           <span className="sf-bullet" aria-hidden="true">·</span>
           <div className="sf-line-body">
@@ -664,7 +673,10 @@ export function FocusSheet({
           </div>
           {notes.length > 0 && <i className="sf-leader" aria-hidden="true" />}
         </div>
-        <div className="sf-notes" aria-label={t("第 {n} 条的批注", { n: position + 1 })}>{notes.map(renderNote)}</div>
+        <div className="sf-notes" aria-label={t("第 {n} 条的批注", { n: position + 1 })}>
+          {notes.map(renderNote)}
+          {phase.kind === "loading" && editable.has(lineId) && position < 3 && <i className="sf-note-skeleton" aria-hidden="true" />}
+        </div>
       </div>
     );
   };
@@ -822,15 +834,35 @@ export function FocusSheet({
           )}
         </header>
 
-        <div className="sf-body">
-          {phase.kind === "loading" && (
-            <ol className="sf-steps" aria-live="polite">
-              <li className="is-done">{t("读取这一段")}</li>
-              <li className="is-done">{t("读取 {n} 处上下文", { n: contextIds.length })}</li>
-              <li className="is-current">{t("对照{reference}", { reference: reference.kind === "job" ? reference.label ?? t("目标岗位") : t("通用写作标准") })}</li>
-              <li>{t("生成建议")}</li>
-            </ol>
-          )}
+        <div className={`sf-body${phase.kind === "loading" ? " is-thinking" : ""}`}>
+          {phase.kind === "loading" && (() => {
+            // One request does all of it; the steps only pace the wait.
+            const steps = [
+              t("读取这一段"),
+              t("读取 {n} 处上下文", { n: contextIds.length }),
+              t("对照{reference}", { reference: reference.kind === "job" ? reference.label ?? t("目标岗位") : t("通用写作标准") }),
+              t("生成建议"),
+            ];
+            const current = waited < 1 ? 0 : waited < 2 ? 1 : waited < 8 ? 2 : 3;
+            return (
+              <div className="sf-thinking" role="status" aria-live="polite">
+                <span className="sf-thinking-orb" aria-hidden="true"><i /><i /><i /></span>
+                <div className="sf-thinking-text">
+                  <strong>{t("AI 正在分析这段经历")}<span className="sf-thinking-dots" aria-hidden="true" /></strong>
+                  <ol className="sf-steps">
+                    {steps.map((step, position) => (
+                      <li key={position} className={position < current ? "is-done" : position === current ? "is-current" : undefined}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+                <span className="sf-thinking-time">
+                  {t("已等待 {n} 秒", { n: waited })}
+                  <small>{waited < 25 ? t("通常需要 10–30 秒") : t("比平时久一些，请再等等")}</small>
+                </span>
+                <i className="sf-thinking-bar" aria-hidden="true" />
+              </div>
+            );
+          })()}
           {phase.kind === "error" && (
             <div className="sf-empty" role="alert">
               <p>{phase.message}</p>
@@ -920,7 +952,7 @@ export function FocusSheet({
           <input
             value={askText}
             onChange={(event) => setAskText(event.target.value)}
-            placeholder={t("还有想法？直接告诉 AI，比如「第 2 条写得更有冲击力，但别夸大」")}
+            placeholder={phase.kind === "loading" ? t("AI 分析完成后，可以在这里继续提要求") : t("还有想法？直接告诉 AI，比如「第 2 条写得更有冲击力，但别夸大」")}
             maxLength={300}
             disabled={phase.kind !== "ready" || !unit.lines.length}
             aria-label={t("补充要求")}

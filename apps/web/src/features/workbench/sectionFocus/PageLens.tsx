@@ -1,5 +1,6 @@
 import { t } from "@/i18n";
 import type { Editor } from "@tiptap/core";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect } from "react";
 import type { SectionReviewNoteKind } from "../../../api/client";
 import type { LensNote } from "./FocusSheet";
@@ -10,7 +11,8 @@ import { unitLabel, type FocusUnit } from "./sectionModel";
  * design: a coloured bar in the page margin beside each line with a note, the
  * problem words under a highlighter, and a column of note cards beside the
  * page joined to their lines. Nothing here sits on top of resume text or takes
- * pointer events from the editor; only the cards are clickable.
+ * pointer events from the editor; only the cards are clickable. Each paragraph
+ * folds on its own: a folded one leaves a tab level with its first line.
  */
 
 export type LensGroup = { unit: FocusUnit; notes: LensNote[] };
@@ -44,6 +46,19 @@ type Box = { top: number; left: number; right: number; bottom: number };
 
 function lineHost(editor: Editor, lineId: string) {
   return editor.view.dom.querySelector(`[data-resume-block-id="${CSS.escape(lineId)}"]`)?.closest("p, li, h1, h2, h3, h4") ?? null;
+}
+
+/** Top of a paragraph's first visible line. */
+function unitTop(editor: Editor, unit: FocusUnit, origin: DOMRect) {
+  let top = Infinity;
+  editor.state.doc.nodesBetween(unit.from, Math.min(unit.to, editor.state.doc.content.size), (node, pos) => {
+    if (Number.isFinite(top)) return false;
+    if (!node.isTextblock) return true;
+    const dom = editor.view.nodeDOM(pos);
+    if (dom instanceof HTMLElement && dom.getBoundingClientRect().height > 0) top = dom.getBoundingClientRect().top - origin.top;
+    return false;
+  });
+  return Number.isFinite(top) ? top : null;
 }
 
 function relative(box: DOMRect, origin: DOMRect): Box {
@@ -87,7 +102,7 @@ export function PageLens({
   groups,
   origin,
   scroller,
-  open,
+  collapsed,
   revision,
   onToggle,
   onOpenNote,
@@ -96,28 +111,28 @@ export function PageLens({
   groups: LensGroup[];
   origin: DOMRect;
   scroller: HTMLElement | null;
-  open: boolean;
+  /** Paragraphs whose notes are folded away. */
+  collapsed: ReadonlySet<string>;
   /** Changes whenever the document does, so the highlights follow the text. */
   revision: number;
-  onToggle: (open: boolean) => void;
+  onToggle: (unitId: string, open: boolean) => void;
   onOpenNote: (unitId: string, noteId: string) => void;
 }) {
   // Problem words under the highlighter, painted with the CSS Highlight API so
   // the editor DOM is never touched.
-  const signature = groups.map((group) => group.notes.map((note) => `${note.id}:${note.status}:${note.quote}`).join(",")).join("|");
+  const signature = groups.map((group) => (collapsed.has(group.unit.id) ? "-" : "") + group.notes.map((note) => `${note.id}:${note.status}:${note.quote}`).join(",")).join("|");
   useEffect(() => {
     const registry = (globalThis.CSS as unknown as { highlights?: Map<string, unknown> } | undefined)?.highlights;
     const HighlightCtor = (globalThis as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
     if (!registry || !HighlightCtor) return;
     const byKind = new Map<SectionReviewNoteKind, Range[]>(KINDS.map((kind) => [kind, []]));
-    if (open) {
-      for (const group of groups) {
-        for (const note of group.notes) {
+    for (const group of groups) {
+      if (collapsed.has(group.unit.id)) continue;
+      for (const note of group.notes) {
           if (note.status !== "open" || !note.lineId || !note.quote) continue;
           const host = lineHost(editor, note.lineId);
           if (host) byKind.get(note.kind)?.push(...quoteRanges(host, note.quote));
         }
-      }
     }
     for (const kind of KINDS) {
       const ranges = byKind.get(kind) ?? [];
@@ -127,7 +142,7 @@ export function PageLens({
     return () => { for (const kind of KINDS) registry.delete(highlightName(kind)); };
     // `signature` and `revision` stand for the notes and the document.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, open, signature, revision]);
+  }, [editor, signature, revision]);
 
   const paperElement = editor.view.dom.closest(".resume-paper") ?? editor.view.dom;
   const paper = relative(paperElement.getBoundingClientRect(), origin);
@@ -136,33 +151,28 @@ export function PageLens({
   const lensLeft = paper.right + LENS_GAP;
   const lensWidth = Math.min(LENS_MAX_WIDTH, bounds.right - RAIL_ROOM - lensLeft);
   const hasColumn = lensWidth >= LENS_MIN_WIDTH;
-  const openCount = groups.reduce((sum, group) => sum + group.notes.filter((note) => note.status === "open").length, 0);
-
-  if (!open) {
-    if (!hasColumn) return null;
-    return (
-      <button type="button" className="sf-lens-pill" style={{ top: Math.max(paper.top, bounds.top) + 8, left: lensLeft }} onClick={() => onToggle(true)}>
-        <i className="sf-ring" aria-hidden="true" />
-        {t("段落分析")}
-        {openCount > 0 && <b>{openCount}</b>}
-      </button>
-    );
-  }
-
   // Markers in the page margin and the card column, laid out top to bottom.
   const markers: Array<{ key: string; kind: SectionReviewNoteKind | "done"; top: number; height: number }> = [];
   const links: Array<{ key: string; kind: SectionReviewNoteKind | "done"; x1: number; y1: number; x2: number; y2: number }> = [];
-  const placed: Array<{ group: LensGroup; top: number; cards: Array<{ note: LensNote; top: number }> }> = [];
+  const placed: Array<{ group: LensGroup; top: number; folded: boolean; cards: Array<{ note: LensNote; top: number }> }> = [];
   let cursor = Math.max(paper.top, bounds.top) + 8;
   for (const group of groups) {
+    // Header and tab sit level with the paragraph's first line, whether open or folded.
+    const start = unitTop(editor, group.unit, origin);
+    const folded = collapsed.has(group.unit.id);
+    if (folded) {
+      const top = Math.max(cursor, start ?? cursor);
+      placed.push({ group, top, folded, cards: [] });
+      cursor = top + HEAD_HEIGHT + GROUP_GAP;
+      continue;
+    }
     const lines = new Map<string, Box>();
     for (const note of group.notes) {
       if (!note.lineId || lines.has(note.lineId)) continue;
       const host = lineHost(editor, note.lineId);
       if (host) lines.set(note.lineId, relative(host.getBoundingClientRect(), origin));
     }
-    const first = [...lines.values()].reduce((min, box) => Math.min(min, box.top), Infinity);
-    const top = Math.max(cursor, Number.isFinite(first) ? first - HEAD_HEIGHT : cursor);
+    const top = Math.max(cursor, start ?? cursor);
     let y = top + HEAD_HEIGHT;
     const cards: Array<{ note: LensNote; top: number }> = [];
     for (const note of group.notes) {
@@ -177,7 +187,7 @@ export function PageLens({
         links.push({ key: note.id, kind, x1: content.right + 6, y1: line.top + 11, x2: lensLeft, y2: cardTop + 20 });
       }
     }
-    placed.push({ group, top, cards });
+    placed.push({ group, top, folded, cards });
     cursor = y + GROUP_GAP;
   }
 
@@ -199,17 +209,37 @@ export function PageLens({
               );
             })}
           </svg>
-          {placed.map(({ group, top, cards }) => {
+          {placed.map(({ group, top, folded, cards }) => {
             const done = group.notes.filter((note) => note.status === "done").length;
             const pending = group.notes.filter((note) => note.status === "open").length;
+            const name = group.unit.heading || group.unit.sectionLabel;
+            if (folded) {
+              return (
+                <button
+                  key={group.unit.id}
+                  type="button"
+                  className="sf-lens-tab"
+                  style={{ top, left: lensLeft, maxWidth: lensWidth, height: HEAD_HEIGHT }}
+                  title={t("展开「{name}」的分析", { name: unitLabel(group.unit) })}
+                  aria-expanded={false}
+                  onClick={() => onToggle(group.unit.id, true)}
+                >
+                  <i className="sf-ring" aria-hidden="true" />
+                  <strong>{name}</strong>
+                  {pending > 0 ? <b>{pending}</b> : <span>{t("{done} 已采用", { done })}</span>}
+                  <ChevronDown size={13} aria-hidden="true" />
+                </button>
+              );
+            }
             return (
               <section key={group.unit.id} className="sf-lens-group" style={{ top, left: lensLeft, width: lensWidth }}>
                 <header style={{ height: HEAD_HEIGHT }}>
-                  <strong title={unitLabel(group.unit)}>{group.unit.heading || group.unit.sectionLabel}</strong>
+                  <strong title={unitLabel(group.unit)}>{name}</strong>
                   <span>{t("{pending} 条待处理 · {done} 已采用", { pending, done })}</span>
-                  {group === placed[0].group && (
-                    <button type="button" className="sf-link sf-muted" onClick={() => onToggle(false)}>{t("收起")}</button>
-                  )}
+                  <button type="button" className="sf-lens-fold" aria-expanded={true} title={t("收起「{name}」的分析", { name: unitLabel(group.unit) })} onClick={() => onToggle(group.unit.id, false)}>
+                    {t("收起")}
+                    <ChevronUp size={13} aria-hidden="true" />
+                  </button>
                 </header>
                 {cards.map(({ note, top: cardTop }) => (
                   <button
