@@ -609,6 +609,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   // 右侧预览面板：按会话保留已打开的标签（本会话内保留，切会话时各自独立）
   const [previewTabs, setPreviewTabs] = useState<Record<string, PreviewTab[]>>({});
+  const [closedPreviewKeys, setClosedPreviewKeys] = useState<Record<string, string[]>>({});
   const [previewActive, setPreviewActive] = useState<Record<string, string | null>>({});
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(520);
@@ -1070,6 +1071,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
       if (conversationStatesRef.current[NEW_CONVERSATION_KEY]?.messages.some((message) => message.localOnly)) {
         updateConversation(NEW_CONVERSATION_KEY, blankConversation());
         setPreviewTabs((all) => ({ ...all, [NEW_CONVERSATION_KEY]: [] }));
+        setClosedPreviewKeys((all) => ({ ...all, [NEW_CONVERSATION_KEY]: [] }));
         setPreviewActive((all) => ({ ...all, [NEW_CONVERSATION_KEY]: null }));
       }
       navigateTo(assistantPath());
@@ -1764,7 +1766,7 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
 
   const sessionPreviewTabs = previewTabs[activeKey] ?? [];
   const activePreviewKey = previewOpen ? (previewActive[activeKey] ?? null) : null;
-  // 本会话引用过的所有文件（用户消息与当前输入框里的上下文），右上角「N 个文件」汇总它们
+  // 会话文件保留引用，关闭的预览标签不再计入文件入口或自动重新打开。
   const sessionContexts = (() => {
     const seen = new Map<string, AgentContextSnapshot>();
     for (const context of [...current.messages.flatMap((message) => message.contexts ?? []), ...current.contexts]) {
@@ -1785,9 +1787,17 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   }, [current.messages, activePreviewKey, unavailableKeys]);
 
   const localFiles = current.messages.flatMap((message) => [...(message.screenshots ?? []), ...(message.generatedDocument ? [message.generatedDocument] : [])]);
-  const allFileCount = sessionContexts.length + localFiles.length;
+  const closedKeys = closedPreviewKeys[activeKey] ?? [];
+  const availableFileTabs = [...new Map([
+    ...sessionContexts.map((context) => previewTabForContext(context)!),
+    ...localFiles,
+    ...sessionPreviewTabs,
+  ].filter((tab) => !closedKeys.includes(previewTabKey(tab)))
+    .map((tab) => [previewTabKey(tab), tab])).values()];
+  const allFileCount = availableFileTabs.length;
 
   const openPreview = (tab: PreviewTab) => {
+    setClosedPreviewKeys((all) => ({ ...all, [activeKey]: (all[activeKey] ?? []).filter((key) => key !== previewTabKey(tab)) }));
     setPreviewTabs((all) => ({ ...all, [activeKey]: openPreviewTab(all[activeKey] ?? [], tab) }));
     setPreviewActive((all) => ({ ...all, [activeKey]: previewTabKey(tab) }));
     setPreviewOpen(true);
@@ -1800,13 +1810,13 @@ export function AssistantPage({ sessionId, workspaceSection, careerView }: Assis
   };
   const openAllFiles = () => {
     let tabs = sessionPreviewTabs;
-    sessionContexts.forEach((context) => { tabs = openPreviewTab(tabs, previewTabForContext(context)!); });
-    localFiles.forEach((file) => { tabs = openPreviewTab(tabs, file); });
+    availableFileTabs.forEach((tab) => { tabs = openPreviewTab(tabs, tab); });
     setPreviewTabs((all) => ({ ...all, [activeKey]: tabs }));
     setPreviewActive((all) => ({ ...all, [activeKey]: all[activeKey] ?? (tabs[0] ? previewTabKey(tabs[0]) : null) }));
     if (tabs.length) setPreviewOpen(true);
   };
   const closePreviewTab = (key: string) => {
+    setClosedPreviewKeys((all) => ({ ...all, [activeKey]: [...new Set([...(all[activeKey] ?? []), key])] }));
     const tabs = sessionPreviewTabs.filter((tab) => previewTabKey(tab) !== key);
     setPreviewTabs((all) => ({ ...all, [activeKey]: (all[activeKey] ?? []).filter((tab) => previewTabKey(tab) !== key) }));
     if (previewActive[activeKey] === key) {
