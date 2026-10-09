@@ -269,18 +269,24 @@ def scoped_blocks(resume, data, target, scope: str) -> list[dict]:
                  order=n.order, editable=n.editable, content=n.text) for n in selected]
 
 
-def replace_runs(runs: list[dict], expected: str, replacement: str) -> list[dict]:
-    text = inline_text(runs)
+def replace_runs(runs: list[dict], expected: str, replacement: str, *, text_only: bool = False) -> list[dict]:
+    def run_text(run):
+        return run.get('text', '') if text_only else inline_text([run])
+
+    text = ''.join(run_text(run) for run in runs)
     if not expected:
         if text:
             raise ApiError(409, 'TARGET_STALE')
-        return [plain_run(replacement)] if replacement else []
+        return ([plain_run(replacement)] if replacement else []) + [deepcopy(run) for run in runs if text_only and run['inline_type'] != 'text']
     if text.count(expected) != 1:
         raise ApiError(409, 'TARGET_STALE')
     start = text.index(expected); end = start + len(expected)
     result = []; pos = 0; inserted = False
     for run in runs:
-        size = len(inline_text([run])); next_pos = pos + size
+        if text_only and run['inline_type'] != 'text':
+            result.append(deepcopy(run))
+            continue
+        size = len(run_text(run)); next_pos = pos + size
         if next_pos <= start or pos >= end:
             result.append(deepcopy(run))
         else:
@@ -350,8 +356,9 @@ def apply_operations(data, *, resume, mode, main_target, operations) -> dict:
                     raise ApiError(409, 'TARGET_STALE')
                 obj['value'] = obj['value'].replace(expected, operation.new_text, 1) if expected else operation.new_text
                 if obj.get('runs') is not None:
-                    obj['runs'] = replace_runs(obj['runs'], expected, operation.new_text)
-                if not obj['value'] and 'fields' in node.path:
+                    obj['runs'] = replace_runs(obj['runs'], expected, operation.new_text, text_only=True)
+                has_media = any(run['inline_type'] == 'media' for run in (obj.get('runs') or []) + (obj.get('prefix_runs') or []))
+                if not obj['value'] and not has_media and 'fields' in node.path:
                     at(payload, node.path[:-1])[node.path[-1]] = None
                     remove_source_targets(payload, {obj['node_id']})
             else:

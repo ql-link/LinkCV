@@ -22,7 +22,7 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 
 意图识别的上游调用与断开监控使用 AnyIO 任务组，与 FastAPI/Starlette 的取消作用域一致；`anyio>=4,<5` 已显式声明为直接依赖，锁文件沿用已有版本。场景与执行边界见 [Agent 运行时](agent-runtime.md#调用链)。
 
-结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `TextRun` 和字号边界，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
+结构化简历字段的局部文字样式保存在既有 canonical JSON 快照内，与正文共用 `InlineContent`、字号和行内图片边界，姓名、标题、标签和联系方式也保留行内图片，无需新增数据库列或回填。读取、保存、版本与模板切换继续经过同一 Pydantic 解析边界，字段与文字样式的一致性规则见 [语义简历契约](../api/http-contracts.md#语义简历契约)。
 
 `apps/backend` 承接健康检查、Web/小程序/desktop 三渠道 Redis 会话鉴权、微信自动建号、网页扫码确认、小程序只读简历、语义简历生命周期、历史版本、简历分享链接、智能助手会话与修改提案、异步文件导入、私有对象资源、无状态结构化 JD 资料、面试求职进程与排期复盘、用户中心、统一 LLM 调用和管理员模型治理 API、管理台用户管理、知识库资料异步解析，以及统一系统日志、业务审计和管理员日志查询。
 
@@ -42,7 +42,7 @@ LLM 场景绑定启用接口在后端自动执行探针，先保持停用，验�
 | `src/linkresume/core/mq/` | RabbitMQ/Kafka publisher、统一导入消息和 confirm 异常边界 |
 | `src/linkresume/workers/` | 独立消费、Redis 防重、解析和结果事务；公共依赖失败保留消息 |
 | `src/linkresume/modules/identity/` | 用户模型、管理员密码登录、三渠道会话、微信自动建号、扫码状态机、`/api/account` 用户中心、个人画像（`user_profiles`）与管理端用户管理 |
-| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（头像二进制仅经 `/api/miniprogram/account/avatar` 分发） |
+| `src/linkresume/modules/miniprogram/` | 本人当前内容只读元数据、PDF 与 PNG 预览；校验私有图片后调用一次性 Node 渲染器，并用 PDFium 栅格化页面，不保存成品。`account_routes.py` 提供小程序专用昵称与头像读写（自定义头像二进制仅经 `/api/miniprogram/account/avatar` 分发，该接口也支持默认 Logo） |
 | `src/linkresume/modules/resumes/` | ORM、HTTP DTO（用户模板列表与详情按 `resumes.template_id` 实时聚合 `use_count`，无新增列）、模板及管理、简历、版本、异步导入、分享和资源路由；模板批量排序在一个事务内锁定全部模板并整体重写排序值；管理员删除模板前锁定该行并统计简历与导入任务引用，有引用时拒绝，并发写入由 `RESTRICT` 外键兜底；模板快照校验与布局编译结果按 `data_json`/`style_json` 内容缓存在进程内（`template_compilation.py`） |
 | `src/linkresume/modules/datasets/` | `user_dataset` 资料元数据、`user_dataset_folders` 文件夹分类、异步解析受理与状态列表路由 |
 | `src/linkresume/modules/job_descriptions/` | 用户 JD 与独立全局公司资料 ORM、HTTP DTO 和受保护的 JD 路由 |
@@ -236,6 +236,12 @@ FastAPI 的 OpenAI-compatible 请求使用 `LiteLLMGateway` 适配器，LiteLLM 
 
 `scripts/db/init_mysql.py` 只允许创建名为 `linkresume` 的 MySQL 数据库；`scripts/release/run_alembic.py` 在迁移前校验环境、host、port 和数据库并输出不含密码的摘要，再只读核对 Alembic 当前版本与已知 revision 的表、字段标记。发现版本落后但后续对象已存在，或版本已应用但标记对象缺失时，runner 会在任何 DDL 前停止，要求先人工核实并对齐 schema 与 `alembic_version`。FastAPI 配置支持根 `.env`、显式 `LINKRESUME_ENV_FILE`、同名 `.local` 和进程环境覆盖。Redis 在鉴权链路中作为唯一会话存储：`auth:session:{sid}` 保存会话哈希，`auth:user_sessions:{uid}` 索引该用户全部会话；会话不写 MySQL，撤销即删除 key。Web Cookie 和小程序 Bearer 分别要求 `web` 与 `miniprogram` channel；上线前缺少 channel 的旧会话仅兼容为 Web，并在续期时补写 channel。对象存储配置仅使用 `MINIO_*`。
 
+编辑器段落精修由 `application/section_review/service.py` 实现，以 `source=section_review` 调用 `section_review` 场景的结构化输出，路由位于 `modules/resumes/section_review_routes.py`。流程分两步：
+1. 在短会话内校验简历归属，组装参照：分析风格取 `WRITING_METHODS`（STAR / XYZ / CAR）或细化后的 `GENERAL_STANDARD`；选填的 `job_id` 校验本人归属后把岗位要求（复用 `job_matches.service.job_text`）叠加在风格之后。旧的 `{kind:"job"}` 参照仍按通用写作标准加岗位处理。
+2. 关闭会话后调用模型；结构无效时重试一次。
+
+后端只校验和过滤模型输出：锚点必须回到请求文本，结构提案必须引用已发送的上下文。不写简历，不新增表或迁移。用户文本放在 `<data>` 中并声明不是指令。本段文字少于 20 个字时不调用模型。契约见 [HTTP 契约](../api/http-contracts.md#编辑器段落精修)。
+
 ## 导入与外部边界
 
 Markdown 文件在进程内做 UTF-8 与确定性换行清理；DOCX 以固定的 `output_formats=markdown/include_bbox=false/include_images=false` 调用 LinkParse `POST /v1/parse`，PDF 在此基础上额外发送 `include_layout=true`。LinkParse 识别文件类型并决定 OpenDataLoader、OCR 选页和渲染 DPI；layout 模式内部即使公开 `include_bbox=false` 也应保留 OCR 坐标，并在 `meta.pdf.layout` 返回版本化物理行、归一化 bbox、来源顺序、语义角色、同行、续行和质量计数。LinkParse 响应在 JSON decode 前限制为 3 MiB，先校验 request ID、外层兼容 envelope、预期文件类型和空 assets，再独立尝试解析可选 layout；可安全解析的页码、bbox、源顺序和有界块作为精简模型提示，严格关系、计数、warning 和 Markdown 一致性检查只决定是否采用重建 Markdown。显式请求 layout 时若 LinkParse 返回 `413 LAYOUT_RESOURCE_LIMIT`，客户端在同一 deadline 内仅补发一次不含 `include_layout` 的 Markdown 请求，随后按原错误映射收口，不递归重试。layout 缺失、降级、畸形或不一致时保留原始 LinkParse Markdown，不产生 `RESUME_LAYOUT_UNSUPPORTED`；安全提示若仍可用可以继续传入模型，缺少 layout 的旧 LinkParse 版本保持兼容。PDF 始终关闭图片输出，文字与图片混排的 PDF 继续解析文字且不再检查原文件是否存在图片对象；图片不会被单独提取为资产，也不进入 SourceGraph、LLM 或简历快照，模板头像保持为空。完整原始 PDF（其中仍包含嵌入图片）会按现有导入任务生命周期保存在私有对象存储并发送给 LinkParse。含图片/表格/文本框的 DOCX，以及转换 Markdown 中仍存在图片、表格、嵌入或主动 HTML 时仍按既有不可承载内容边界失败。LinkParse 的 Word omitted-image/table 信号参与该严格检查，其余 Word 元数据只写入脱敏调用日志。
@@ -267,7 +273,7 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 ## 对象存储
 
 - 用户级兼容图片：`users/{user_id}/assets/...`。
-- 账号头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `users.avatar_object_key`；旧路径中的已有头像保持兼容。
+- 账号自定义头像：`users/{user_id}/assets/avatar/...`，对象键记录在 `user.avatar_object_key`；旧路径中的已有头像保持兼容。新注册的邮箱和微信账号保存 `system:project-logo` 默认头像标记，通过公开 `/api/auth/default-avatar` 读取随后端包发布的项目羽毛 Logo；该标记不传入对象存储上传、读取或删除。小程序的本人头像二进制接口也识别此标记，以兼容其固定下载路径。已有用户不做数据回填，默认头像的用户行为见[账号功能](../features/identity-account.md#本人资料与联系邮箱)。
 - 导入原文件：`users/{user_id}/resume-imports/{operation_id}/source/{safe_name}`。
 - 导入转换存档：`users/{user_id}/resume-imports/{operation_id}/artifacts/converted.md`；删除时同时兼容旧的 `.../{operation_id}/converted.md`。
 - 知识库原文件：`users/{user_id}/datasets/...`。

@@ -105,7 +105,10 @@ def test_profile_returns_nickname_and_avatar_url() -> None:
         assert profile.status_code == 200
         body = profile.json()
         assert body["nickname"].startswith("用户")
-        assert body["avatar_url"] is None
+        assert body["avatar_url"] == "/api/auth/default-avatar"
+        avatar = web_client.get("/api/miniprogram/account/avatar", headers=headers)
+        assert avatar.status_code == 200
+        assert avatar.content == web_client.get("/api/auth/default-avatar").content
 
 
 def test_update_nickname_validates_and_persists() -> None:
@@ -167,6 +170,12 @@ def test_avatar_read_without_avatar_returns_404() -> None:
     with TestClient(app) as web_client:
         register_user(web_client, "owner@example.test")
         headers = mini_headers(app, "owner@example.test")
+
+        # Existing accounts without an avatar still return 404; new accounts have a Logo.
+        with app.state.session_factory() as session:
+            user = session.scalar(select(User).where(User.email == "owner@example.test"))
+            user.avatar_object_key = None
+            session.commit()
 
         missing = web_client.get("/api/miniprogram/account/avatar", headers=headers)
         assert missing.status_code == 404

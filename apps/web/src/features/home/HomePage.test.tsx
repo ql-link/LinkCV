@@ -222,6 +222,33 @@ describe("HomeScreen", () => {
     expect(screen.getByText("预览不可用")).toBeInTheDocument();
   });
 
+  it("我的简历卡片按未启用智能一页的第一页预览", () => {
+    const style = {
+      ...defaultCanonicalPresentation,
+      portable: { ...defaultCanonicalPresentation.portable, smart_one_page: true },
+    };
+    const { container } = renderHome({ resumes: [{
+      ...resumes[0],
+      preview: {
+        data: defaultCanonicalDocument,
+        style,
+        layout_plan: {
+          schema_version: "layout-plan.v1",
+          content_sha256: `sha256:${"2".repeat(64)}`,
+          template_key: "classic-cn",
+          regions: [{ region_id: "main", order: 0, nodes: [{
+            node_id: defaultCanonicalDocument.identity.node_id,
+            semantic_kind: "identity",
+            slot_id: "main_content",
+          }] }],
+        },
+      },
+    }] });
+    expect(container.querySelector(".hv3-paper .resume-readonly-preview-first-page")).toBeInTheDocument();
+    expect(container.querySelector(".hv3-paper .resume-paper")).not.toHaveClass("smart-one-page");
+    expect(style.portable.smart_one_page).toBe(true);
+  });
+
   it("按 Escape 关闭操作菜单并将焦点还给三个点按钮", () => {
     renderHome();
     openResumeMenu();

@@ -188,7 +188,7 @@
 }
 
 /* ── 对话底部输入框（01.1a）：720 宽，输入框 58 高、圆角 18、边框 #d6d6d0；底部距内容卡 24 */
-.assistant-composer-dock { flex: 0 0 auto; padding: 8px 24px 24px; }
+.assistant-composer-dock { flex: 0 0 auto; padding: 8px 24px max(8px, env(safe-area-inset-bottom)); }
 .assistant-composer { position: relative; display: flex; width: 720px; max-width: 100%; flex-direction: column; margin: 0 auto; }
 .assistant-composer-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px 4px; }
 .assistant-input { position: relative; display: flex; min-height: 58px; align-items: flex-end; gap: 12px; border: 1px solid #d6d6d0; border-radius: 18px; background: #fff; padding: 12px 12px 12px 18px; }
@@ -445,7 +445,7 @@
   .assistant-home-title { overflow-wrap: anywhere; }
   .assistant-composer.is-home { margin-top: 28px; }
   .assistant-message-viewport, .has-preview .assistant-message-viewport { padding: 24px 16px; }
-  .assistant-composer-dock { padding: 8px 16px 16px; }
+  .assistant-composer-dock { padding-inline: 16px; }
   .assistant-composer-foot { height: auto; min-height: 22px; flex-wrap: wrap; gap: 8px; }
   .assistant-home-input-foot { flex-wrap: wrap; height: auto; min-height: 36px; gap: 6px; }
   .assistant-home-input:has(.assistant-home-resume-chip) { height: auto; min-height: 150px; }

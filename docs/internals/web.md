@@ -2,6 +2,8 @@
 
 Featured 系列在 `api/featuredThemes.ts` 注册十一套参考版式，其中卡片虚线使用全宽虚线章节，卡片分栏使用左侧章节索引与右侧履历正文，经典商务使用浅蓝居中肖像页眉，活力使用暖橙卡片与右侧能力栏；共享 `app.css` 负责可编辑与打印布局，双栏在 PDF CLI 中保留纸面内边距并取消旧的整页列最小高度，避免空白续页。来源与重复项对应关系见[模板来源](resume-template-sources.md)。
 
+蓝色拼版（`featured-product-cn`）的窄侧栏使用独占一行的居中头像，姓名、职位描述与联系方式保持相同宽度，避免头像挤断电话和邮箱。整页侧栏背景、个人信息色块和正文按此顺序叠放，个人信息色块不会被侧栏背景覆盖；编辑器和只读预览共用这些样式。
+
 ## 功能与架构导航
 
 本页维护 Web 运行入口、路由、共享 UI、视觉交互和前端测试边界。跨端业务规则分别见[账号](../features/identity-account.md)、[简历工作台](../features/resume-workbench.md)、[求职中心](../features/career-center.md)、[AI 助手](../features/ai-assistant.md)和[资料集](../features/datasets.md)；系统日志与插件制品属于独立[可观测性](observability.md)和[插件制品](plugin-delivery.md)架构。
