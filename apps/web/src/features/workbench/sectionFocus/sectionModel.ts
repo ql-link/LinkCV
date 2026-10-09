@@ -139,7 +139,7 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
     let title: FocusLine | null = null;
     let titleFrom = from;
     const holder = current ?? sectionUnit;
-    if (lastLine && holder && lastLine.unit === holder && holder.lines.at(-1)?.id === lastLine.id && isTitleLine(lastLine.text)) {
+    if (lastLine && holder && lastLine.unit === holder && holder.lines[holder.lines.length - 1]?.id === lastLine.id && isTitleLine(lastLine.text)) {
       title = holder.lines.pop()!;
       titleFrom = lastLine.from;
     }
