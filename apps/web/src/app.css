@@ -2898,6 +2898,13 @@ select:not([data-slot]):focus-visible,
   transform-origin: top center;
 }
 
+.resume-readonly-preview-first-page { content-visibility: visible; }
+.resume-readonly-preview-first-page .resume-preview-paper {
+  height: 297mm;
+  min-height: 297mm;
+  overflow: hidden;
+}
+
 .resume-readonly-preview-full {
   max-height: min(76vh, 900px);
   overflow: auto;
@@ -6489,7 +6496,8 @@ select:not([data-slot]):focus-visible,
   left: calc(-1 * var(--share-break-inline-offset, 0px));
 }
 
-.share-page .resume-print-content li.share-page-break {
+.share-page .resume-print-content li.share-page-break,
+.resume-readonly-preview-first-page .resume-print-content li.share-page-break {
   margin: 0;
   padding: 0;
   list-style: none;
