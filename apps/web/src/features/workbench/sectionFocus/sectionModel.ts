@@ -48,10 +48,49 @@ export function textblockText(node: PMNode): string {
   return text;
 }
 
-const DATE_LIKE = /\d{4}\s*[.\-/年]\s*\d{1,2}|至今|现在|present|now/i;
+const YEAR = String.raw`(?:19|20)\d{2}`;
+const MONTH_NAME = String.raw`(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?`;
+/** 2023.06, 2023-6, 2023/06, 2023年6月, 2023, Jun 2023. */
+const DATE = String.raw`(?:${MONTH_NAME}\s*${YEAR}|${YEAR}(?:\s*[.\-/年]\s*\d{1,2}\s*月?)?)`;
+const ONGOING = String.raw`(?:至今|现在|今|present|now|current)`;
+
+/** A date range such as「2023.06 - 2023.09」「2019 - 2023」「2022年7月至今」or「Jun 2021 – Present」. */
+const DATE_RANGE = new RegExp(String.raw`${DATE}\s*(?:[-–—~～至到]+|to)\s*(?:${DATE}|${ONGOING})`, "i");
+const DATE_LIKE = new RegExp(String.raw`\d{4}\s*[.\-/年]\s*\d{1,2}|${DATE_RANGE.source}|至今|现在|present|now`, "i");
 
 export function isDateLike(text: string) {
   return DATE_LIKE.test(text);
+}
+
+const SENTENCE_MARKS = /[。；;，,！!？?]/;
+
+/**
+ * A plain line that reads like an experience header: a date range plus a few
+ * short fields (company, school, project, role), with no sentence punctuation.
+ */
+function isHeaderLine(text: string) {
+  return text.length <= 80 && DATE_RANGE.test(text) && !SENTENCE_MARKS.test(text);
+}
+
+/**
+ * A short line that can name the experience whose header follows it, such as
+ * a project or school name on its own line above「2021.03 - 2022.01  负责人」.
+ */
+function isTitleLine(text: string) {
+  return text.length > 0 && text.length <= 40 && !SENTENCE_MARKS.test(text) && !/[:：]$/.test(text) && !isDateLike(text);
+}
+
+/** Header fields, with the date range split out of a field that also holds a name. */
+function headerCells(text: string) {
+  return text
+    .split(/\s{2,}|\t|\s*[|｜·•]\s*/)
+    .flatMap((cell) => {
+      const match = DATE_RANGE.exec(cell);
+      if (!match || match[0].length === cell.trim().length) return [cell];
+      return [cell.slice(0, match.index), match[0], cell.slice(match.index + match[0].length)];
+    })
+    .map((cell) => cell.trim())
+    .filter(Boolean);
 }
 
 function isHeaderFact(text: string) {
@@ -67,9 +106,11 @@ export function headerParts(unit: FocusUnit): { dates: string[]; details: string
 }
 
 /**
- * Some resumes have no entries: each experience is a header row
- * (date | company | role | tag) followed by its bullets. Such a row starts its
- * own unit, so two internships in one section are never merged.
+ * Some resumes have no entries, or put several experiences under one entry:
+ * each experience is a header (a table row, or a plain「date  name  role」line)
+ * followed by its bullets. Such a header starts its own unit, so two
+ * internships, schools or projects in one section are never merged. This holds
+ * in every section; nothing here depends on the section's name.
  */
 export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
   const units: FocusUnit[] = [];
@@ -81,10 +122,56 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
   const rowUnits = new Map<string, string>();
   const sectionsWithEntries = new Set<string>();
   const entryBlocks = new Set<string>();
+  // The line pushed just before the current block, when it was a plain line.
+  let lastLine: { unit: FocusUnit; id: string; text: string; from: number } | null = null;
+
+  /**
+   * An experience header (a table row, or a plain「date  name  role」line).
+   * It opens a new unit when the current one already has lines, or already has
+   * its own date range (two schools listed without bullets), so experiences are
+   * never merged, whether or not they sit under one entry. An untitled entry
+   * takes the header as its title. Right after another header (a two-row
+   * header) or a titled entry, it only adds to the header. A short title line
+   * just above the header (a project name on its own line) becomes the title.
+   */
+  const header = (id: string, cells: string[], from: number, to: number) => {
+    const current: FocusUnit | null = entry;
+    let title: FocusLine | null = null;
+    let titleFrom = from;
+    const holder = current ?? sectionUnit;
+    if (lastLine && holder && lastLine.unit === holder && holder.lines.at(-1)?.id === lastLine.id && isTitleLine(lastLine.text)) {
+      title = holder.lines.pop()!;
+      titleFrom = lastLine.from;
+    }
+    lastLine = null;
+    const hasRange = (items: string[]) => items.some((item) => DATE_RANGE.test(item));
+    if (sectionUnit && cells.length) {
+      if (current === null || current.lines.length > 0 || (hasRange(current.meta) && hasRange(cells))) {
+        entry = { id, kind: "entry", sectionLabel, heading: "", meta: [], lines: [], from: titleFrom, to };
+        entryFromRow = true;
+        rowUnits.set(id, sectionUnit.id);
+        units.push(entry);
+      } else if (!entryFromRow && !current.heading) {
+        entryFromRow = true;
+        rowUnits.set(current.id, sectionUnit.id);
+      }
+    }
+    const target: FocusUnit | null = entry ?? sectionUnit;
+    if (title && target && !target.heading) {
+      target.heading = title.text;
+      // The title now opens this unit, so the previous one ends before it.
+      if (holder && holder !== target) holder.to = Math.max(holder.from, titleFrom - 1);
+    } else if (title && holder) {
+      holder.lines.push(title);
+    }
+    if (target) {
+      target.meta.push(...cells);
+      target.to = to;
+    }
+  };
+
   doc.descendants((node, pos) => {
     if (ROW_TYPES.has(node.type.name)) {
-      // A header row opens a new unit, unless it continues a header that has no
-      // lines yet (a two-row header) or sits inside a real entry.
       const cells: string[] = [];
       let rowId: string | null = null;
       node.forEach((cell) => {
@@ -93,20 +180,7 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
         const value = textblockText(cell).trim();
         if (value) cells.push(value);
       });
-      const end = pos + node.nodeSize;
-      const current: FocusUnit | null = entry;
-      if (sectionUnit && cells.length && (current === null || (entryFromRow && current.lines.length > 0))) {
-        const id = rowId ?? `row-at-${pos}`;
-        entry = { id, kind: "entry", sectionLabel, heading: "", meta: [], lines: [], from: pos, to: end };
-        entryFromRow = true;
-        rowUnits.set(id, sectionUnit.id);
-        units.push(entry);
-      }
-      const target: FocusUnit | null = entry ?? sectionUnit;
-      if (target) {
-        target.meta.push(...cells);
-        target.to = end;
-      }
+      header(rowId ?? `row-at-${pos}`, cells, pos, pos + node.nodeSize);
       return false;
     }
     if (!node.isTextblock) return true;
@@ -119,6 +193,7 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
       sectionLabel = text;
       entry = null;
       entryFromRow = false;
+      lastLine = null;
       sectionUnit = { id: section.blockId, kind: "section", sectionLabel: text, heading: text, meta: [], lines: [], from: pos, to: end };
       units.push(sectionUnit);
       return false;
@@ -127,19 +202,28 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
     if (entryAnchor) {
       entry = { id: entryAnchor.blockId, kind: "entry", sectionLabel, heading: text, meta: [], lines: [], from: pos, to: end };
       entryFromRow = false;
+      lastLine = null;
       if (sectionUnit) sectionsWithEntries.add(sectionUnit.id);
       units.push(entry);
       return false;
     }
     const line = anchors.find((anchor) => LINE_ROLES.has(anchor.role));
+    if (line && line.role !== "list-item" && isHeaderLine(text)) {
+      header(line.blockId, headerCells(text), pos, end);
+      return false;
+    }
     const target = line?.role === "section-block" && !entryFromRow ? sectionUnit : entry ?? sectionUnit;
     if (line && target) {
       if (line.role === "entry-block") entryBlocks.add(line.blockId);
       target.lines.push({ id: line.blockId, text });
       target.to = end;
+      lastLine = line.role === "list-item" ? null : { unit: target, id: line.blockId, text, from: pos };
     } else if (target && anchors.some((anchor) => META_ROLES.has(anchor.role)) && text) {
       target.meta.push(text);
       target.to = end;
+      lastLine = null;
+    } else {
+      lastLine = null;
     }
     return false;
   });
@@ -153,11 +237,12 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
       unit.lines = unit.lines.slice(facts);
     }
     if (!rowUnits.has(unit.id) || !unit.lines.length) continue;
+    sectionsWithEntries.add(rowUnits.get(unit.id)!);
+    if (unit.heading) continue;
     // The first cell that is not a date names the row, e.g. the company.
     const titleIndex = unit.meta.findIndex((item) => !isDateLike(item));
     unit.heading = titleIndex >= 0 ? unit.meta[titleIndex] : unit.meta[0] ?? "";
     unit.meta = unit.meta.filter((_, index) => index !== (titleIndex >= 0 ? titleIndex : 0));
-    sectionsWithEntries.add(rowUnits.get(unit.id)!);
   }
   return units.filter((unit) => (
     unit.kind === "entry"

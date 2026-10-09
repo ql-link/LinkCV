@@ -201,6 +201,101 @@ describe("header-row experiences", () => {
   });
 });
 
+describe("experiences without their own titles", () => {
+  const row = (id: string, cells: string[]): JSONContent => ({
+    type: "resumeRow",
+    content: cells.map((text, index) => ({
+      type: "paragraph",
+      content: [anchor(`node_cell${id}${index}00000000000`, "row-cell"), { type: "text", text }],
+    })),
+  });
+
+  it("splits two internships that share one untitled entry", () => {
+    const units = focusUnitsFromDoc(makeEditor({
+      type: "doc",
+      content: [
+        heading(2, [anchor("node_sectionintern000003", "section")], "实习经历"),
+        { type: "heading", attrs: { level: 3 }, content: [anchor("node_entryuntitled00001", "entry")] },
+        row("a", ["2023.06 - 2023.09", "星野零售科技有限公司", "用户运营", "运营实习生"]),
+        { type: "bulletList", content: [bullet("node_lineintern00000021", "维护商品信息与活动排期。"), bullet("node_lineintern00000022", "分析访问与购买漏斗。")] },
+        row("b", ["2022.07 - 2022.10", "澄海内容科技有限公司", "内容社区", "运营实习生"]),
+        { type: "bulletList", content: [bullet("node_lineintern00000023", "完成内容审核与用户互动。")] },
+      ],
+    }).state.doc);
+    expect(units.map((unit) => [unit.id, unit.heading, headerParts(unit).dates, unit.lines.length])).toEqual([
+      ["node_entryuntitled00001", "星野零售科技有限公司", ["2023.06 - 2023.09"], 2],
+      ["node_cellb000000000000", "澄海内容科技有限公司", ["2022.07 - 2022.10"], 1],
+    ]);
+  });
+
+  it("treats a plain「date  company  role」line as a header", () => {
+    const block = (id: string, text: string): JSONContent => ({ type: "paragraph", content: [anchor(id, "section-block"), { type: "text", text }] });
+    const units = focusUnitsFromDoc(makeEditor({
+      type: "doc",
+      content: [
+        heading(2, [anchor("node_sectionintern000004", "section")], "实习经历"),
+        block("node_headintern00000001", "2023.06 - 2023.09  星野零售科技有限公司  运营实习生"),
+        { type: "bulletList", content: [bullet("node_lineintern00000031", "维护商品信息与活动排期。")] },
+        block("node_headintern00000002", "2022.07 - 2022.10 | 澄海内容科技有限公司 | 运营实习生"),
+        { type: "bulletList", content: [bullet("node_lineintern00000032", "完成内容审核与用户互动。")] },
+        heading(2, [anchor("node_sectionedu000000009", "section")], "教育背景"),
+        block("node_eduline000000000001", "示例大学 · 信息管理 · 2019.09 - 2023.06，主修统计学。"),
+      ],
+    }).state.doc);
+    expect(units.map((unit) => [unit.heading, unit.meta, unit.lines.length])).toEqual([
+      ["星野零售科技有限公司", ["2023.06 - 2023.09", "运营实习生"], 1],
+      ["澄海内容科技有限公司", ["2022.07 - 2022.10", "运营实习生"], 1],
+      ["教育背景", [], 1],
+    ]);
+  });
+});
+
+describe("experiences in any section", () => {
+  const block = (id: string, text: string): JSONContent => ({ type: "paragraph", content: [anchor(id, "section-block"), { type: "text", text }] });
+  const units = (content: JSONContent[]) => focusUnitsFromDoc(makeEditor({ type: "doc", content }).state.doc);
+
+  it("splits schools, including date formats with years only or 年月", () => {
+    const result = units([
+      heading(2, [anchor("node_sectionedu000000011", "section")], "教育经历"),
+      block("node_eduhead00000000001", "示例大学 计算机科学与技术 硕士 2021年9月 - 2024年6月"),
+      { type: "bulletList", content: [bullet("node_eduline00000000011", "研究方向为推荐系统。")] },
+      block("node_eduhead00000000002", "样例理工学院 · 软件工程 · 本科 · 2017 - 2021"),
+      { type: "bulletList", content: [bullet("node_eduline00000000012", "专业排名前 10%。")] },
+    ]);
+    expect(result.map((unit) => [unit.heading, headerParts(unit).dates, unit.lines.length])).toEqual([
+      ["示例大学 计算机科学与技术 硕士", ["2021年9月 - 2024年6月"], 1],
+      ["样例理工学院", ["2017 - 2021"], 1],
+    ]);
+  });
+
+  it("does not merge two headers that each carry their own dates", () => {
+    const result = units([
+      heading(2, [anchor("node_sectionedu000000012", "section")], "教育经历"),
+      { type: "heading", attrs: { level: 3 }, content: [anchor("node_entryuntitled00002", "entry")] },
+      block("node_eduhead00000000003", "2021.09 - 2024.06  示例大学  硕士"),
+      block("node_eduhead00000000004", "2017.09 - 2021.06  样例理工学院  本科"),
+      { type: "bulletList", content: [bullet("node_eduline00000000013", "获校级奖学金两次。")] },
+    ]);
+    expect(result.map((unit) => [unit.heading, unit.lines.length])).toEqual([["样例理工学院", 1]]);
+  });
+
+  it("takes a project name on the line above the dates as the title", () => {
+    const result = units([
+      heading(2, [anchor("node_sectionlab000000001", "section")], "科研经历"),
+      block("node_labtitle0000000001", "基于图结构的推荐算法研究"),
+      block("node_labhead00000000001", "2021.03 - 2022.01  课题负责人"),
+      { type: "bulletList", content: [bullet("node_labline00000000001", "设计并实现召回模型。")] },
+      block("node_labtitle0000000002", "多模态内容理解研究"),
+      block("node_labhead00000000002", "Mar 2022 – Present  研究助理"),
+      { type: "bulletList", content: [bullet("node_labline00000000002", "整理标注数据集。")] },
+    ]);
+    expect(result.map((unit) => [unit.heading, unit.meta, unit.lines.map((line) => line.text)])).toEqual([
+      ["基于图结构的推荐算法研究", ["2021.03 - 2022.01", "课题负责人"], ["设计并实现召回模型。"]],
+      ["多模态内容理解研究", ["Mar 2022 – Present", "研究助理"], ["整理标注数据集。"]],
+    ]);
+  });
+});
+
 describe("entry header facts", () => {
   const block = (id: string, text: string): JSONContent => ({ type: "paragraph", content: [anchor(id, "entry-block"), { type: "text", text }] });
   it("moves short facts under the title into the header only when real lines remain", () => {
