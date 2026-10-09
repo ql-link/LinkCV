@@ -139,6 +139,10 @@ describe("convertCurrentLineToResumeRow", () => {
     expect(editor.state.doc.child(1).child(0).textContent).toBe("列表项");
     expect(editor.state.doc.child(1).child(1).textContent).toBe("");
     expect(editor.isActive("resumeRow")).toBe(true);
+    expect(editor.commands.undo()).toBe(true);
+    expect(editor.getJSON().content?.map((node) => node.type)).toEqual(["bulletList"]);
+    expect(editor.state.doc.child(0).childCount).toBe(3);
+    expect(editor.state.doc.child(0).textContent).toBe("第一项列表项第三项");
   });
 
   it("标题行不转换成左右行", () => {

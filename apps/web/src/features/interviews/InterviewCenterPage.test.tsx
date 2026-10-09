@@ -1962,7 +1962,7 @@ describe("InterviewCenterPage API projections", () => {
 
   it("edits a scheduled assessment from the stage menu", async () => {
     const assessmentSession = {
-      ...session,
+      ...upcomingSession,
       stage_type: "other" as const,
       round_no: null,
       stage_label: "笔试",
@@ -2025,6 +2025,7 @@ describe("InterviewCenterPage API projections", () => {
   });
 
   it("keeps the edit dialog open until a schedule conflict is explicitly accepted", async () => {
+    const session = upcomingSession;
     const rescheduledSession = {
       ...session,
       end_at: new Date(new Date(session.start_at).getTime() + 90 * 60_000).toISOString(),

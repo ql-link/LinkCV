@@ -70,8 +70,13 @@ export function convertCurrentLineToResumeRow(editor: Editor) {
     for (let index = 0; index < listDepth; index += 1) chain = chain.liftListItem("listItem");
     return chain.command(replaceParagraphWithResumeRow);
   };
-  if (!convert(editor.can().chain()).run()) return false;
-  return convert(editor.chain()).run();
+  return editor.commands.command(({ chain, tr }) => {
+    // can() 不执行列表提升，后续命令会误读提升前的父节点。
+    // 在未提交事务中顺序转换，失败时禁止派发，避免只提升列表项。
+    const converted = convert(chain()).run();
+    if (!converted) tr.setMeta("preventDispatch", true);
+    return converted;
+  });
 }
 
 function replaceParagraphWithResumeRow({ state, dispatch }: CommandProps) {

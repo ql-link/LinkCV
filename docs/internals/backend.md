@@ -283,6 +283,8 @@ LinkRag 是同机部署的独立 RAG 服务。LinkResume 通过它的 `/api/v1/a
 
 `UserProfile` 模型承载每个用户至多一份的个人画像（`user_profiles` 表，迁移 `0044`，由 `0045`、`0046` 和漂移修复 `0051` 收敛为当前结构），`GET/PUT /api/account/user-profile` 负责读写。`GET` 未创建时返回 `lock_version=1` 的约定空对象且不写库；`PUT` 整体替换全部可编辑字段（缺省以 `null`/空数组覆盖），首次创建要求 `base_lock_version=1`。更新使用 `user_id + lock_version` 条件写并递增版本，影响 0 行即并发冲突，`USER_PROFILE_VERSION_CONFLICT` 附最新画像供前端刷新重试；创建时 `IntegrityError` 冲突同样转成该错误。薪资币种统一转大写三字母，数组字段去除空串与重复并保留提交顺序；schema 侧 `UserProfileData` 追加 `lock_version` 与 UTC 时间戳，`GET /api/account/profile` 的 `profile` 字段未创建时为 `null`。
 
+画像 schema 在清理旧学历标签时构造响应副本，时间属性按 ORM 的 `create_time`、`update_time` 读取并映射到既有响应字段，不改写 ORM 对象；兼容规则见[账号功能](../features/identity-account.md)。
+
 ## 简历分享
 
 `application/resumes/share_service.py` 承担分享业务，`modules/resumes/share_routes.py` 暴露管理端 4 个端点（`/api/resumes/{resume_id}/share` 的 GET/POST/PATCH/DELETE）和公开只读端点（`/api/share/{token}` 与 `/api/share/{token}/pdf`，依赖 `get_optional_user` 以支持 `private` 可见性判断）。token 使用 `secrets.token_urlsafe(16)`，全局唯一且冲突重试 3 次；`POST` 可选携带 `visibility`（缺省 `public`）与 `expires_at`（缺省永久）指定创建/覆盖时的权限和有效期，已有链接时作废旧 token 生成新 token，`DELETE` 清空分享字段，重复删除幂等。公开解析按「token 存在 → 未过期（SQLite naive datetime 按 UTC 解释后比较）→ 非 `private` 或访问者是分享者本人 → 分享记录对应用户与简历存在」的顺序校验，任一不满足统一抛 `SHARE_LINK_UNAVAILABLE`，路由转成 `404`，防止枚举探测。分享内容实时读取简历主记录中最近一次保存成功的 `data/style` 草稿并返回 `data/style/layout_plan/assets/sharer`，不保存分享快照，因此自动保存成功后无需创建正式版本即可反映到分享页，尚未保存成功的浏览器本地编辑不会公开。`assets` 复用 PDF 的受控解析边界，从分享记录反查用户和简历后只读取当前草稿引用的本人 PNG/JPEG，并以内存 data URI 返回；单图和快照图片原始总量均限制为 10 MiB，响应使用 `private, no-store`，匿名请求不能指定或读取任意对象键。公开 PDF 复用 `pdf_routes.py` 的受控渲染与下载响应，只把当前草稿的 `portable.smart_one_page` 在渲染副本中强制设为 `false` 以输出 A4 分页，不回写数据库，也不渲染分享页面外壳。

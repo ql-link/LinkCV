@@ -445,12 +445,16 @@ def test_user_profile_reads_redundant_legacy_education_tag_without_changing_stor
             row = session.scalar(select(UserProfile))
             row.school_tier = ["本科", "project_985"]
             session.commit()
+            expected_created_at = row.create_time.isoformat().replace("+00:00", "Z")
+            expected_updated_at = row.update_time.isoformat().replace("+00:00", "Z")
 
         response = client.get("/api/account/user-profile")
         assert response.status_code == 200
         assert response.json()["education_level"] == "bachelor"
         assert response.json()["school_tier"] == ["project_985"]
         assert response.json()["lock_version"] == 1
+        assert response.json()["created_at"].removesuffix("Z") == expected_created_at.removesuffix("Z")
+        assert response.json()["updated_at"].removesuffix("Z") == expected_updated_at.removesuffix("Z")
         with app.state.session_factory() as session:
             row = session.scalar(select(UserProfile))
             assert row.school_tier == ["本科", "project_985"]

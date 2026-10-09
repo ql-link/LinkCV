@@ -280,7 +280,7 @@ def test_stale_processing_is_requeued_with_same_attempt_version() -> None:
     with app.state.session_factory() as db:
         task = db.get(DocumentParseTask, task_id)
         assert task is not None
-        task.updated_at = utc_now() - timedelta(
+        task.update_time = utc_now() - timedelta(
             seconds=processor._settings.dataset_parse_stale_seconds + 1
         )
         db.commit()
@@ -303,7 +303,7 @@ def test_stale_processing_at_max_attempts_is_terminal_failure() -> None:
         assert task is not None
         task.parse_status = "processing"
         task.parse_attempt_count = processor._settings.dataset_parse_max_attempts
-        task.updated_at = utc_now() - timedelta(
+        task.update_time = utc_now() - timedelta(
             seconds=processor._settings.dataset_parse_stale_seconds + 1
         )
         db.commit()
@@ -353,7 +353,7 @@ def test_old_attempt_cannot_complete_after_recovery_claims_new_attempt() -> None
     with app.state.session_factory() as db:
         task = db.get(DocumentParseTask, task_id)
         assert task is not None
-        task.updated_at = utc_now() - timedelta(
+        task.update_time = utc_now() - timedelta(
             seconds=processor._settings.dataset_parse_stale_seconds + 1
         )
         db.commit()
@@ -401,7 +401,7 @@ def test_stale_upload_reservation_is_failed_and_source_object_removed() -> None:
         task.upload_duration_ms = None
         task.parse_status = None
         task.parse_duration_ms = None
-        task.updated_at = utc_now() - timedelta(
+        task.update_time = utc_now() - timedelta(
             seconds=processor._settings.dataset_upload_reservation_ttl_seconds + 1
         )
         db.commit()
@@ -425,7 +425,7 @@ def test_failed_upload_reservation_is_removed_after_retention_window() -> None:
         task.upload_duration_ms = 1
         task.parse_status = None
         task.parse_duration_ms = None
-        task.updated_at = utc_now() - timedelta(
+        task.update_time = utc_now() - timedelta(
             seconds=processor._settings.dataset_upload_reservation_ttl_seconds + 1
         )
         db.commit()
@@ -445,7 +445,7 @@ def test_failed_upload_reservation_is_retained_when_object_cleanup_fails() -> No
         task.upload_duration_ms = 1
         task.parse_status = None
         task.parse_duration_ms = None
-        task.updated_at = utc_now() - timedelta(
+        task.update_time = utc_now() - timedelta(
             seconds=processor._settings.dataset_upload_reservation_ttl_seconds + 1
         )
         db.commit()

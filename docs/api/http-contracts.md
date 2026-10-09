@@ -91,7 +91,7 @@ scene 在 Redis 中按 `pending → processing → confirmed` 或 `pending → c
 | `GET` | `/api/account/user-profile` | 新画像完整对象；未创建返回 `lock_version=1` 空对象 |
 | `PUT` | `/api/account/user-profile` | 保存后的新画像完整对象；请求含 `base_lock_version` 及可编辑字段，并发过期返回 `409 USER_PROFILE_VERSION_CONFLICT` 并携带最新画像 |
 
-`0111–0115` 按阿里巴巴 MySQL 规约修改了数据库表名、时间列和布尔列名称，HTTP 契约不变：响应仍使用 `created_at`/`updated_at`（或既有的 `createdAt`/`updatedAt`）、`pinned`、`enabled`、`share_allow_download` 等原字段名。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
+`0111–0115` 按阿里巴巴 MySQL 规约修改了数据库表名、时间列和布尔列名称，HTTP 契约不变：响应仍使用 `created_at`/`updated_at`（或既有的 `createdAt`/`updatedAt`）、`pinned`、`enabled`、`share_allow_download` 等原字段名。旧画像重复学历标签的读取兼容处理同样保留该时间响应契约，规则见[账号功能](../features/identity-account.md)。详见[阿里巴巴 MySQL 规约整改](../internals/backend.md#阿里巴巴-mysql-规约整改)。
 
 ## 语义简历契约
 
