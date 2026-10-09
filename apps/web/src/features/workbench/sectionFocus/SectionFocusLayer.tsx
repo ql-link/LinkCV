@@ -1,7 +1,8 @@
 import { t } from "@/i18n";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { FocusSheet, DiffText, snapshotNotes, type AppliedEdit, type FocusRequest, type SheetSnapshot } from "./FocusSheet";
+import { api } from "../../../api/client";
+import { FocusSheet, DiffText, snapshotFromRecord, snapshotNotes, type AppliedEdit, type FocusRequest, type SheetSnapshot } from "./FocusSheet";
 import { PageLens, type LensGroup } from "./PageLens";
 import {
   focusUnitsFromDoc,
@@ -177,7 +178,7 @@ export function SectionFocusLayer({
   // Edits from paragraphs already left via the rail during this focus session.
   const visitEdits = useRef<AppliedEdit[]>([]);
   const visitCount = useRef(0);
-  // Finished analyses by paragraph, kept until the page is left; reopening reuses them.
+  // Finished analyses by paragraph, loaded from the server and kept in step with it; reopening reuses them.
   const analyses = useRef(new Map<string, SheetSnapshot>());
   // Bumped when an analysis is saved, so the page annotations pick it up.
   const [analysesVersion, setAnalysesVersion] = useState(0);
@@ -205,6 +206,18 @@ export function SectionFocusLayer({
   useEffect(() => {
     analyses.current.clear();
     setAnalysesVersion((value) => value + 1);
+    const controller = new AbortController();
+    api.listResumeSectionReviews(resumeId, controller.signal)
+      .then(({ reviews }) => {
+        // An analysis finished in this visit is newer than what was loaded.
+        reviews.forEach((review) => {
+          if (!analyses.current.has(review.unit_id)) analyses.current.set(review.unit_id, snapshotFromRecord(review));
+        });
+        setAnalysesVersion((value) => value + 1);
+      })
+      // Without saved results the page simply starts with none.
+      .catch(() => undefined);
+    return () => controller.abort();
   }, [resumeId]);
 
   useEffect(() => {

@@ -203,12 +203,14 @@ Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissio
 
 ## 编辑器段落精修
 
-编辑器的段落聚焦使用两个仅限 Web Cookie 会话的接口，不经过 Pi 运行时，也不写入简历：
+编辑器的段落聚焦使用以下仅限 Web Cookie 会话的接口，不经过 Pi 运行时，也不写入简历。每段最近一次分析结果和处理进度保存在服务器（`resume_section_review`、`resume_section_review_item`）：
 
 | Method | Path | 成功结果 |
 | --- | --- | --- |
-| `POST` | `/api/resumes/:resumeId/section-review:analyze` | 页边批注 `{reference_label,inferred_focus,too_thin,draft_questions,notes}` |
-| `POST` | `/api/resumes/:resumeId/section-review:rewrite` | 改写候选 `{variants,missing}` |
+| `POST` | `/api/resumes/:resumeId/section-review:analyze` | 页边批注 `{reference_label,inferred_focus,too_thin,draft_questions,notes,review}` |
+| `POST` | `/api/resumes/:resumeId/section-review:rewrite` | 改写候选 `{variants,missing,item}` |
+| `GET` | `/api/resumes/:resumeId/section-reviews` | 本简历全部已保存分析 `{reviews:[review]}`，按 `unit_id` 排序 |
+| `PATCH` | `/api/resumes/:resumeId/section-reviews/:reviewId/items/:itemId` | 更新后的 `item` |
 
 两者的请求都包含：
 - `section`：`{entry_id,heading,lines:[{id,text}]}`，最多 20 行，每行 ≤ 500 字，合计 ≤ 4000 字，行 `id` 不得重复。
@@ -220,6 +222,8 @@ Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissio
 - `line_id`：必须是 `section.lines` 中的 id；为 `null` 表示起草新行。
 - `instruction`：≤ 300 字。
 - `answers`：`[{question,answer}]`，最多 3 条。
+- `review_id`：本段已保存分析的 id，其 `unit_id` 必须等于 `section.entry_id`。不传时只返回结果、不保存，响应 `item` 为 `null`，供保存功能上线前的旧客户端在滚动发布期间继续使用。
+- 传 `review_id` 时 `item_id` 与 `item_kind` 二选一：`item_id` 把结果写到已有条目（追问、再调语气、重试）；`item_kind` 为 `ask`（需 `instruction`）时新建一条自定义要求，为 `draft` 时替换本段未采用的起草条目。
 
 文本由前端按当前编辑器内容提交，节点 id 只回显，后端只校验简历和参照岗位属于本人。
 
@@ -234,10 +238,22 @@ Pi 服务令牌保护的 POST/GET `/internal/agent/runs/:runId/steer[/:submissio
 
 `quote` 不是该行原文片段时置为空字符串。`intent` 非空时 `inferred_focus` 固定为 `null`。本段可分析文字少于 20 个字时不调用模型，返回 `too_thin=true` 和固定的起草问题。
 
+**保存的结果**：
+- `review` 为 `{id,unit_id,analysis_no,reference,job_id,intent,context_ids,base_lines,result,items,update_time}`，`unit_id` 即 `section.entry_id`，`result` 为上述分析字段。同一简历同一段只保存一份；模型成功后才写入，失败不改变已保存内容。
+- 重新分析时 `analysis_no` 加一，除 `done` 外的条目全部替换；`done` 条目保留，连同当时的批注（`item.note`）和 `edit`。
+- `item` 为 `{id,review_id,note_id,note,kind,line_id,instruction,status,question_index,answers,draft,selected_index,edit,update_time}`。`kind` 为 `missing|wording|structure|ask|draft`；`status` 为 `todo|asking|pending|done|skipped`。分析产生的条目初始为 `todo`，`wording`、`structure` 带候选 `draft:{variants,missing,base_text,line_id}`；改写成功后条目为 `pending`。
+- `PATCH` 只改传入字段（`status`、`question_index`、`answers`、`selected_index`、`edit`，至少一项）。合法状态流转：`todo→asking|done|skipped`，`asking→done|skipped`，`pending→asking|done|skipped`，`done→pending`（有候选）或 `todo`；`skipped` 不可再改。采用（`done`）必须带 `edit:{line_id,before,after}`，撤销时清除；已采用条目不能改版本或回答。相同的重复请求按成功返回。
+- 起草条目的 `answers` 按起草问题的位置保存，未回答的位置为空字符串。
+- 每段最多 30 条未采用的条目，已采用的不计入。删除简历或注销账号时同事务删除。
+
 **错误**：
 - 简历不存在或不属于本人：`404 RESUME_NOT_FOUND`。
 - 参照岗位不存在或不属于本人：`404 JOB_NOT_FOUND`。
-- 超出长度或数量限制、`line_id` 不属于本段，或 `instruction` 与 `answers` 都为空：`422`。
+- 已保存分析或条目不存在、不属于该简历，或已被重新分析替换：`404 SECTION_REVIEW_NOT_FOUND`。
+- 改写已采用的条目：`409 SECTION_REVIEW_ITEM_APPLIED`，不调用模型；改写期间被采用时结果不写入。
+- 新建条目会使未采用条目超过 30 条：`409 SECTION_REVIEW_ITEM_LIMIT`。
+- 状态流转或字段组合不合法，或改写已跳过的条目：`409 SECTION_REVIEW_INVALID_TRANSITION`。
+- 超出长度或数量限制、`line_id` 不属于本段、`instruction` 与 `answers` 都为空、传 `review_id` 时 `item_id` 与 `item_kind` 不是恰好一项、不传 `review_id` 却带了 `item_id` 或 `item_kind`，或 `PATCH` 请求为空：`422`。
 - `section_review` 场景未配置：`503 LLM_MODEL_NOT_CONFIGURED`。
 - 模型失败，或结构两次都无效：`502`，后者错误码为 `LLM_RESPONSE_INVALID`。
 

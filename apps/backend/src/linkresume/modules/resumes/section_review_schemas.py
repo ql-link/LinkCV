@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from datetime import datetime
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -15,6 +16,7 @@ CONTEXT_TOTAL_CHARS = 6_000
 MAX_NOTES = 6
 MAX_QUESTIONS = 3
 MAX_VARIANTS = 2
+MAX_REVIEW_ITEMS = 30
 
 NodeId = Annotated[str, Field(min_length=1, max_length=64)]
 
@@ -119,6 +121,12 @@ class SectionReviewRewriteRequest(_Request):
     line_id: str | None = Field(default=None, max_length=64)
     instruction: str | None = Field(default=None, max_length=300)
     answers: list[SectionReviewAnswer] = Field(default_factory=list, max_length=MAX_QUESTIONS)
+    # The saved analysis of this paragraph, and either the item the result belongs
+    # to or the kind of item to create (a request of the user's, or a draft).
+    # Without review_id the result is returned but not saved (older clients).
+    review_id: str | None = Field(default=None, min_length=1, max_length=20)
+    item_id: str | None = Field(default=None, min_length=1, max_length=20)
+    item_kind: Literal["ask", "draft"] | None = None
 
     @model_validator(mode="after")
     def _bounded(self) -> "SectionReviewRewriteRequest":
@@ -128,6 +136,13 @@ class SectionReviewRewriteRequest(_Request):
             raise ValueError("line_id is not part of the section")
         if not (self.instruction or "").strip() and not self.answers:
             raise ValueError("instruction or answers is required")
+        if self.review_id is None:
+            if self.item_id is not None or self.item_kind is not None:
+                raise ValueError("item_id and item_kind need a review_id")
+        elif (self.item_id is None) == (self.item_kind is None):
+            raise ValueError("exactly one of item_id and item_kind is required")
+        if self.item_kind == "ask" and not (self.instruction or "").strip():
+            raise ValueError("a request item needs an instruction")
         return self
 
 
@@ -163,7 +178,7 @@ class SectionReviewNote(BaseModel):
     proposal: SectionReviewProposal | None = None
 
 
-class SectionReviewAnalyzeResponse(BaseModel):
+class SectionReviewAnalyzeResult(BaseModel):
     reference_label: str
     inferred_focus: str | None
     too_thin: bool
@@ -171,6 +186,86 @@ class SectionReviewAnalyzeResponse(BaseModel):
     notes: list[SectionReviewNote] = Field(default_factory=list)
 
 
+SectionReviewItemKind = Literal["missing", "wording", "structure", "ask", "draft"]
+SectionReviewItemStatus = Literal["todo", "asking", "pending", "done", "skipped"]
+
+
+class SectionReviewEdit(_Request):
+    line_id: NodeId
+    before: str = Field(max_length=LINE_CHARS)
+    after: str = Field(max_length=LINE_CHARS)
+
+
+class SectionReviewDraft(BaseModel):
+    variants: list[SectionReviewVariant]
+    missing: list[str] = Field(default_factory=list)
+    base_text: str
+    line_id: str
+
+
+class SectionReviewItem(BaseModel):
+    id: str
+    review_id: str
+    note_id: str | None
+    # The note this item answers; kept with applied items across re-analysis.
+    note: SectionReviewNote | None
+    kind: SectionReviewItemKind
+    line_id: str | None
+    instruction: str
+    status: SectionReviewItemStatus
+    question_index: int
+    answers: list[str]
+    draft: SectionReviewDraft | None
+    selected_index: int
+    edit: SectionReviewEdit | None
+    update_time: datetime
+
+
+class SectionReviewRecord(BaseModel):
+    id: str
+    unit_id: str
+    analysis_no: int
+    reference: dict[str, Any]
+    job_id: str | None
+    intent: str
+    context_ids: list[str]
+    base_lines: dict[str, str]
+    result: SectionReviewAnalyzeResult
+    items: list[SectionReviewItem]
+    update_time: datetime
+
+
+class SectionReviewAnalyzeResponse(SectionReviewAnalyzeResult):
+    review: SectionReviewRecord
+
+
 class SectionReviewRewriteResponse(BaseModel):
     variants: list[SectionReviewVariant]
     missing: list[str] = Field(default_factory=list)
+    # The saved item; null when the request carried no review_id.
+    item: SectionReviewItem | None = None
+
+
+class SectionReviewListResponse(BaseModel):
+    reviews: list[SectionReviewRecord]
+
+
+class SectionReviewItemUpdate(_Request):
+    """A user's action on one item; only the fields sent are changed."""
+
+    status: SectionReviewItemStatus | None = None
+    question_index: int | None = Field(default=None, ge=0, lt=MAX_QUESTIONS)
+    answers: list[Annotated[str, Field(max_length=300)]] | None = Field(
+        default=None, max_length=MAX_QUESTIONS
+    )
+    selected_index: int | None = Field(default=None, ge=0, lt=MAX_VARIANTS)
+    edit: SectionReviewEdit | None = None
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "SectionReviewItemUpdate":
+        if not self.model_fields_set:
+            raise ValueError("at least one field is required")
+        for name in ("status", "question_index", "answers", "selected_index"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self

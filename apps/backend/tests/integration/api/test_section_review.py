@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from linkresume.core.config import Settings
 from linkresume.core.database import utc_now
@@ -19,6 +20,10 @@ from linkresume.modules.llm.models import (
 )
 from linkresume.modules.llm.resolver import SECTION_REVIEW, validation_fingerprint
 from linkresume.modules.resumes.models import ResumeTemplate
+from linkresume.modules.resumes.section_review_models import (
+    ResumeSectionReview,
+    ResumeSectionReviewItem,
+)
 from tests.canonical_resume_fixtures import canonical_template_payload
 from tests.fakes import FakeRedis
 from tests.integration.api.test_interviews import FakeStorage, create_job, register
@@ -184,6 +189,33 @@ def analysis_reply() -> dict[str, object]:
             {"kind": "missing", "line_id": "li-2", "title": "没有追问的缺信息批注"},
         ],
     }
+
+
+def analyze(client: TestClient, resume_id: str, **overrides: object) -> dict[str, object]:
+    response = client.post(f"/api/resumes/{resume_id}/section-review:analyze", json=analyze_payload(**overrides))
+    assert response.status_code == 200, response.text
+    return response.json()["review"]
+
+
+def rewrite_payload(review_id: str, **fields: object) -> dict[str, object]:
+    return {
+        "section": {"entry_id": "entry-1", "heading": "美团", "lines": LINES},
+        "context": CONTEXT,
+        "review_id": review_id,
+        **fields,
+    }
+
+
+def rewrite_reply(text: str = "按回答重写：负责配送调度服务改造，解决数据一致性问题。") -> dict[str, object]:
+    return {"variants": [{"label": "按你的回答", "text": text}], "missing": []}
+
+
+def item_url(resume_id: str, review: dict, item: dict) -> str:
+    return f"/api/resumes/{resume_id}/section-reviews/{review['id']}/items/{item['id']}"
+
+
+def applied_edit(line_id: str = "li-2") -> dict[str, str]:
+    return {"line_id": line_id, "before": LINES[1]["text"], "after": "参与开发限流与熔断组件，负责组件迭代与线上稳定性保障。"}
 
 
 def test_analyze_returns_anchored_notes_and_drops_invalid_ones(database_url) -> None:
@@ -410,24 +442,28 @@ def test_rewrite_returns_variants_and_missing_labels(database_url) -> None:
             "missing": ["结果", "结果"],
         }
     )
+    gateway.replies.insert(0, json.dumps(analysis_reply(), ensure_ascii=False))
     app = build_app(database_url, gateway)
     with TestClient(app) as client:
         register(client, "rewrite@example.test")
         resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
         response = client.post(
             f"/api/resumes/{resume_id}/section-review:rewrite",
-            json={
-                "section": {"entry_id": "entry-1", "heading": "美团", "lines": LINES},
-                "context": CONTEXT,
-                "line_id": "li-2",
-                "instruction": "写得更有冲击力，但别夸大",
-            },
+            json=rewrite_payload(review["id"], item_kind="ask", line_id="li-2", instruction="写得更有冲击力，但别夸大"),
         )
     assert response.status_code == 200, response.text
     body = response.json()
     assert [v["id"] for v in body["variants"]] == ["r-a", "r-b"]
     assert body["variants"][1]["risky_terms"] == ["核心成员"]
     assert body["missing"] == ["结果"]
+    # Saved as a new request item of the user's, ready to confirm.
+    item = body["item"]
+    assert item["kind"] == "ask"
+    assert item["status"] == "pending"
+    assert item["instruction"] == "写得更有冲击力，但别夸大"
+    assert item["draft"]["base_text"] == LINES[1]["text"]
+    assert [v["id"] for v in item["draft"]["variants"]] == ["r-a", "r-b"]
 
 
 def test_rewrite_requires_known_line_and_some_input(database_url) -> None:
@@ -437,14 +473,396 @@ def test_rewrite_requires_known_line_and_some_input(database_url) -> None:
         register(client, "rewrite-invalid@example.test")
         resume_id = create_resume(client, app)
         section = {"entry_id": "entry-1", "heading": "美团", "lines": LINES}
+        target = {"review_id": "1", "item_kind": "ask"}
         unknown = client.post(
             f"/api/resumes/{resume_id}/section-review:rewrite",
-            json={"section": section, "line_id": "li-404", "instruction": "改短"},
+            json={"section": section, "line_id": "li-404", "instruction": "改短", **target},
         )
         empty = client.post(
             f"/api/resumes/{resume_id}/section-review:rewrite",
-            json={"section": section, "line_id": "li-1"},
+            json={"section": section, "line_id": "li-1", **target},
+        )
+        both = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json={"section": section, "line_id": "li-1", "instruction": "改短", "review_id": "1", "item_id": "1", "item_kind": "ask"},
+        )
+        neither = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json={"section": section, "line_id": "li-1", "instruction": "改短", "review_id": "1"},
+        )
+        orphan = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json={"section": section, "line_id": "li-1", "instruction": "改短", "item_kind": "ask"},
         )
     assert unknown.status_code == 422
     assert empty.status_code == 422
+    assert both.status_code == 422
+    assert neither.status_code == 422
+    assert orphan.status_code == 422
     assert gateway.calls == 0
+
+
+# --- saved results -----------------------------------------------------------
+
+
+def test_analysis_is_saved_and_listed_with_items(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "saved@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        listed = client.get(f"/api/resumes/{resume_id}/section-reviews")
+
+    assert review["unit_id"] == "entry-1"
+    assert review["analysis_no"] == 1
+    assert review["intent"] == "突出技术深度"
+    assert review["context_ids"] == ["entry-2"]
+    assert review["base_lines"] == {line["id"]: line["text"] for line in LINES}
+    items = review["items"]
+    assert [item["kind"] for item in items] == ["missing", "wording", "structure"]
+    assert {item["status"] for item in items} == {"todo"}
+    assert items[0]["note"]["id"] == "n1" and items[0]["draft"] is None
+    # Expression and structure notes come with their candidates already.
+    assert items[1]["draft"]["base_text"] == LINES[1]["text"]
+    assert items[2]["draft"]["variants"][0]["text"] == "主导配送服务改造。"
+    assert items[2]["draft"]["line_id"] == "li-1"
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["reviews"] == [review]
+
+
+def test_thin_section_is_saved_without_items(database_url) -> None:
+    gateway = ReviewGateway()
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "saved-thin@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id, section={"entry_id": "entry-1", "heading": "", "lines": [{"id": "li-1", "text": "写代码"}]})
+    assert review["result"]["too_thin"] is True
+    assert review["items"] == []
+    assert gateway.calls == 0
+
+
+def test_reanalysis_keeps_applied_items_and_replaces_the_rest(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    gateway.push({"notes": [{"kind": "wording", "line_id": "li-1", "title": "新的批注", "variants": [{"text": "改造配送调度服务。"}]}]})
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "reanalyze@example.test")
+        resume_id = create_resume(client, app)
+        first = analyze(client, resume_id)
+        wording = first["items"][1]
+        applied = client.patch(item_url(resume_id, first, wording), json={"status": "done", "edit": applied_edit()})
+        assert applied.status_code == 200, applied.text
+        second = analyze(client, resume_id)
+
+    assert second["id"] == first["id"]
+    assert second["analysis_no"] == 2
+    items = second["items"]
+    assert [item["id"] for item in items][0] == wording["id"]
+    kept = items[0]
+    assert kept["status"] == "done"
+    assert kept["edit"] == applied_edit()
+    # Its note is kept even though the new analysis reuses the id n1.
+    assert kept["note"]["title"] == "「参与…工作」读起来偏弱"
+    assert [item["note"]["title"] for item in items[1:]] == ["新的批注"]
+
+
+def test_rewrite_of_a_note_is_saved_and_survives_listing(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    gateway.push(rewrite_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "rewrite-note@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        missing = review["items"][0]
+        answered = client.patch(
+            item_url(resume_id, review, missing),
+            json={"status": "asking", "answers": ["数据一致性"], "question_index": 1},
+        )
+        assert answered.status_code == 200, answered.text
+        response = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json=rewrite_payload(
+                review["id"],
+                item_id=missing["id"],
+                line_id="li-1",
+                answers=[{"question": "最难的是什么？", "answer": "数据一致性"}],
+            ),
+        )
+        listed = client.get(f"/api/resumes/{resume_id}/section-reviews").json()["reviews"][0]
+
+    assert response.status_code == 200, response.text
+    item = response.json()["item"]
+    assert item["id"] == missing["id"]
+    assert item["status"] == "pending"
+    assert item["answers"] == ["数据一致性"]
+    assert item["question_index"] == 1
+    assert item["draft"]["variants"][0]["label"] == "按你的回答"
+    assert listed["items"][0] == item
+
+
+def test_new_draft_replaces_the_unapplied_one(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(rewrite_reply("第一次起草。"))
+    gateway.push(rewrite_reply("第二次起草。"))
+    app = build_app(database_url, gateway)
+    thin = {"entry_id": "entry-1", "heading": "", "lines": [{"id": "li-1", "text": "写代码"}]}
+    with TestClient(app) as client:
+        register(client, "draft@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id, section=thin)
+        prompts = [question["prompt"] for question in review["result"]["draft_questions"]]
+        # The second question is left blank, so the request carries only two answers.
+        answers = [{"question": prompts[0], "answer": "订单服务"}, {"question": prompts[2], "answer": "下单耗时缩短 30%"}]
+        for _ in range(2):
+            response = client.post(
+                f"/api/resumes/{resume_id}/section-review:rewrite",
+                json={**rewrite_payload(review["id"], item_kind="draft", line_id="li-1", answers=answers), "section": thin},
+            )
+            assert response.status_code == 200, response.text
+        items = client.get(f"/api/resumes/{resume_id}/section-reviews").json()["reviews"][0]["items"]
+
+    assert len(items) == 1
+    assert items[0]["kind"] == "draft"
+    # Saved by question position, so the third answer stays with the third question.
+    assert items[0]["answers"] == ["订单服务", "", "下单耗时缩短 30%"]
+    assert items[0]["draft"]["variants"][0]["text"] == "第二次起草。"
+
+
+def test_rewrite_refuses_applied_and_replaced_items(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "rewrite-refused@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        wording, structure = review["items"][1], review["items"][2]
+        client.patch(item_url(resume_id, review, wording), json={"status": "done", "edit": applied_edit()})
+        applied = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json=rewrite_payload(review["id"], item_id=wording["id"], line_id="li-2", instruction="换一种语气"),
+        )
+        analyze(client, resume_id)
+        replaced = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json=rewrite_payload(review["id"], item_id=structure["id"], line_id="li-1", instruction="换一种语气"),
+        )
+        other_paragraph = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json={**rewrite_payload(review["id"], item_kind="ask", line_id="li-1", instruction="改短"), "section": {"entry_id": "entry-9", "lines": LINES}},
+        )
+
+    assert applied.status_code == 409
+    assert applied.json()["error"] == "SECTION_REVIEW_ITEM_APPLIED"
+    assert replaced.status_code == 404
+    assert replaced.json()["error"] == "SECTION_REVIEW_NOT_FOUND"
+    assert other_paragraph.status_code == 404
+    # Two analyses; none of the refused rewrites reached the model.
+    assert gateway.calls == 2
+
+
+def test_rewrite_refuses_new_items_beyond_the_limit(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "limit@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        with app.state.session_factory() as db:
+            owner_id = db.get(ResumeSectionReview, int(review["id"])).user_id
+            for _ in range(27):
+                db.add(
+                    ResumeSectionReviewItem(
+                        user_id=owner_id,
+                        resume_id=int(resume_id),
+                        review_id=int(review["id"]),
+                        kind="ask",
+                        instruction="虚构要求",
+                        status="skipped",
+                        answers_json=[],
+                    )
+                )
+            db.commit()
+        response = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json=rewrite_payload(review["id"], item_kind="ask", line_id="li-1", instruction="改短"),
+        )
+    assert response.status_code == 409
+    assert response.json()["error"] == "SECTION_REVIEW_ITEM_LIMIT"
+    assert gateway.calls == 1
+
+
+def test_item_updates_follow_the_state_machine(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "patch@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        missing, wording, structure = review["items"]
+
+        def patch(item: dict, body: dict):
+            return client.patch(item_url(resume_id, review, item), json=body)
+
+        # Choosing a version, then applying with the before/after text.
+        assert patch(wording, {"selected_index": 1}).json()["selected_index"] == 1
+        assert patch(wording, {"selected_index": 2}).status_code == 422
+        no_edit = patch(wording, {"status": "done"})
+        done = patch(wording, {"status": "done", "edit": applied_edit()})
+        repeat = patch(wording, {"status": "done", "edit": applied_edit()})
+        change_applied = patch(wording, {"selected_index": 0})
+        # Undo goes back to pending because the item has candidates.
+        undone = patch(wording, {"status": "pending", "edit": None})
+
+        # Answering follow-up questions; a missing note has no candidates to undo to.
+        asking = patch(missing, {"status": "asking", "answers": ["灰度切流"], "question_index": 1})
+        too_far = patch(missing, {"question_index": 2})
+        skipped = patch(structure, {"status": "skipped"})
+        revived = patch(structure, {"status": "todo"})
+        empty = patch(structure, {})
+
+    assert no_edit.status_code == 409
+    assert no_edit.json()["error"] == "SECTION_REVIEW_INVALID_TRANSITION"
+    assert done.status_code == 200, done.text
+    assert done.json()["edit"] == applied_edit()
+    assert repeat.status_code == 200
+    assert change_applied.status_code == 409
+    assert undone.status_code == 200, undone.text
+    assert undone.json()["status"] == "pending"
+    assert undone.json()["edit"] is None
+    assert asking.json()["status"] == "asking"
+    assert asking.json()["answers"] == ["灰度切流"]
+    assert too_far.status_code == 409
+    assert skipped.json()["status"] == "skipped"
+    assert revived.status_code == 409
+    assert empty.status_code == 422
+
+
+def test_saved_results_are_private(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as owner:
+        register(owner, "owner@example.test")
+        resume_id = create_resume(owner, app)
+        review = analyze(owner, resume_id)
+        item = review["items"][0]
+    with TestClient(app) as other:
+        register(other, "other@example.test")
+        listed = other.get(f"/api/resumes/{resume_id}/section-reviews")
+        patched = other.patch(item_url(resume_id, review, item), json={"status": "skipped"})
+        own_resume = create_resume(other, app)
+        cross = other.patch(item_url(own_resume, review, item), json={"status": "skipped"})
+    assert listed.status_code == 404
+    assert listed.json()["error"] == "RESUME_NOT_FOUND"
+    assert patched.status_code == 404
+    assert cross.status_code == 404
+    assert cross.json()["error"] == "SECTION_REVIEW_NOT_FOUND"
+
+
+def test_failed_analysis_keeps_the_saved_result(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "failed@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        # No reply queued: the model answers garbage twice and the analysis fails.
+        failed = client.post(f"/api/resumes/{resume_id}/section-review:analyze", json=analyze_payload())
+        listed = client.get(f"/api/resumes/{resume_id}/section-reviews").json()["reviews"]
+    assert failed.status_code == 502
+    assert listed == [review]
+
+
+def test_deleting_the_resume_removes_saved_results(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "delete@example.test")
+        resume_id = create_resume(client, app)
+        analyze(client, resume_id)
+        deleted = client.delete(f"/api/resumes/{resume_id}")
+    assert deleted.status_code == 200, deleted.text
+    with app.state.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(ResumeSectionReview)) == 0
+        assert db.scalar(select(func.count()).select_from(ResumeSectionReviewItem)) == 0
+
+
+def test_rewrite_without_review_id_is_returned_but_not_saved(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(rewrite_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "legacy-rewrite@example.test")
+        resume_id = create_resume(client, app)
+        response = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json={"section": {"entry_id": "entry-1", "heading": "", "lines": LINES}, "line_id": "li-1", "instruction": "改短"},
+        )
+    # A client from before saved results keeps working during a rolling release.
+    assert response.status_code == 200, response.text
+    assert response.json()["item"] is None
+    with app.state.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(ResumeSectionReviewItem)) == 0
+
+
+def test_rewrite_refuses_skipped_items(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "rewrite-skipped@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        wording = review["items"][1]
+        client.patch(item_url(resume_id, review, wording), json={"status": "skipped"})
+        response = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json=rewrite_payload(review["id"], item_id=wording["id"], line_id="li-2", instruction="换一种语气"),
+        )
+    assert response.status_code == 409
+    assert response.json()["error"] == "SECTION_REVIEW_INVALID_TRANSITION"
+    assert gateway.calls == 1
+
+
+def test_applied_items_do_not_count_toward_the_limit(database_url) -> None:
+    gateway = ReviewGateway()
+    gateway.push(analysis_reply())
+    gateway.push(rewrite_reply())
+    app = build_app(database_url, gateway)
+    with TestClient(app) as client:
+        register(client, "limit-applied@example.test")
+        resume_id = create_resume(client, app)
+        review = analyze(client, resume_id)
+        with app.state.session_factory() as db:
+            owner_id = db.get(ResumeSectionReview, int(review["id"])).user_id
+            for _ in range(40):
+                db.add(
+                    ResumeSectionReviewItem(
+                        user_id=owner_id,
+                        resume_id=int(resume_id),
+                        review_id=int(review["id"]),
+                        kind="ask",
+                        instruction="虚构要求",
+                        status="done",
+                        answers_json=[],
+                        edit_json=applied_edit(),
+                    )
+                )
+            db.commit()
+        response = client.post(
+            f"/api/resumes/{resume_id}/section-review:rewrite",
+            json=rewrite_payload(review["id"], item_kind="ask", line_id="li-1", instruction="改短"),
+        )
+    assert response.status_code == 200, response.text
