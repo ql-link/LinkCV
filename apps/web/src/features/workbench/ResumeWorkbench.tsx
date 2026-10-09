@@ -57,6 +57,7 @@ import {
 } from "../../api/resumeContract";
 import { liveResumePageMargins } from "../preview/resumePageMargins";
 import { V3Shell } from "../../v3/Shell";
+import { SectionFocusLayer } from "./sectionFocus/SectionFocusLayer";
 import { Icon, type V3IconName } from "../../v3/Icon";
 import { Toast } from "../../v3/primitives";
 import "./workbench-v3.css";
@@ -1116,6 +1117,16 @@ export function ResumeWorkbench({
           </div>
         </div>
       </div>
+
+      {!embedded && activeResumeId && editor && (
+        <SectionFocusLayer
+          editor={editor}
+          resumeId={activeResumeId}
+          scrollRef={paperScrollRef}
+          scale={renderedPreviewScale}
+          onNotice={(label) => setToast({ kind: "warning", label })}
+        />
+      )}
 
       {!embedded && (
         <>

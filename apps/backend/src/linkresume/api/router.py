@@ -32,6 +32,7 @@ from linkresume.modules.resumes.overview_routes import (
 )
 from linkresume.modules.resumes.pdf_routes import router as resume_pdf_router
 from linkresume.modules.resumes.routes import router as resume_router
+from linkresume.modules.resumes.section_review_routes import router as resume_section_review_router
 from linkresume.modules.resumes.share_routes import public_router as public_share_router
 from linkresume.modules.resumes.share_routes import router as resume_share_router
 from linkresume.modules.resumes.resume_asset_routes import router as resume_asset_router
@@ -71,6 +72,7 @@ api_router.include_router(import_router)
 api_router.include_router(overview_router)
 api_router.include_router(resume_import_router)
 api_router.include_router(resume_router)
+api_router.include_router(resume_section_review_router)
 api_router.include_router(resume_pdf_router)
 api_router.include_router(resume_share_router)
 api_router.include_router(public_share_router)
