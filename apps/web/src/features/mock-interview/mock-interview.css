@@ -50,6 +50,12 @@
 .mi-date-body span { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; color: var(--v3-sub); font-size: 11px; }
 .mi-date-body i { width: 5px; height: 5px; border-radius: 50%; background: var(--v3-fnt); }
 .mi-date-body i.is-today { background: var(--v3-rd); }
+/* 还没约面试时间：日期卡显示当前阶段，可点去添加时间 */
+.mi-date-card.is-unscheduled { display: block; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.mi-date-card.is-unscheduled .mi-date-band { background: var(--v3-field); color: var(--v3-sub); }
+.mi-date-card.is-unscheduled .mi-date-body strong { overflow: hidden; padding: 0 6px; font: 600 15px/26px var(--v3-sans); text-overflow: ellipsis; white-space: nowrap; }
+.mi-date-card.is-unscheduled .mi-date-body span { color: var(--v3-fnt); }
+.mi-date-card.is-unscheduled:hover .mi-date-body span { color: var(--v3-txt); }
 .mi-up-info { min-width: 0; flex: 1; padding: 2px 0 0 20px; }
 .mi-up-title { display: flex; align-items: center; gap: 8px; height: 20px; }
 .mi-up-title h2 { overflow: hidden; font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); line-height: var(--ui-line-subsection-title); text-overflow: ellipsis; white-space: nowrap; font-family: var(--ui-font-display); }
@@ -125,7 +131,11 @@
 .mi-radar-label b { color: var(--v3-txt); font: 700 11px var(--v3-num); }
 .mi-radar-label.is-weak, .mi-radar-label.is-weak b { color: var(--v3-or); }
 /* 首页统计卡（评分规则 v4）：同类型同难度的得分变化 + 能力表现 */
-.mi-stats.is-v4 { height: auto; min-height: 239px; }
+.mi-stats.is-v4 { height: auto; }
+.mi-stats.is-v4 .mi-vdiv { height: auto; align-self: stretch; }
+.mi-stats.is-v4 .mi-stat-empty { padding: 28px 0 20px; }
+.mi-trend-single { margin-top: 6px !important; color: var(--v3-fnt); font-size: 12px; line-height: 18px; }
+.mi-stats.is-v4 .mi-trend-single + .mi-overall-nums { margin-top: 16px; }
 .mi-stat-head small { color: var(--v3-fnt); font-size: 11px; white-space: nowrap; }
 .mi-trend-scope { width: 156px; }
 .mi-trend-scope-label { color: var(--v3-sub); font-size: 11.5px; white-space: nowrap; }
@@ -156,17 +166,11 @@
 .mi-ability-list li.is-weak span, .mi-ability-list li.is-weak b { color: #b8691c; font-weight: 500; }
 .mi-ability-list li.is-weak > i > i { background: var(--v3-or); }
 .mi-ability-list .mi-weak { font-style: normal; }
+/* 统计卡空态：同一结构，图表与能力条画成占位 */
+.mi-stats.is-empty .mi-trend-kpi b { color: #c8c8c2; }
+.mi-trend-chart.is-ghost svg { width: 100%; }
+.mi-ability-list.is-ghost span, .mi-ability-list.is-ghost b { color: var(--v3-fnt); }
 
-.mi-stats-empty { height: 251px; margin-top: 20px; padding: 21px 24px; }
-.mi-stats-empty-head { display: flex; align-items: baseline; gap: 8px; }
-.mi-stats-empty-head h3 { font-size: 13px; font-weight: 500; }
-.mi-stats-empty-head span { color: var(--v3-fnt); font-size: 12px; }
-.mi-ghosts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
-.mi-ghosts > div { display: flex; height: 177px; flex-direction: column; align-items: center; border-radius: 12px; background: var(--v3-field); padding-top: 16px; }
-.mi-ghosts b { margin-top: 10px; color: var(--v3-sub); font-size: 12.5px; font-weight: 500; }
-.mi-ghosts small { margin-top: 10px; color: var(--v3-fnt); font-size: 11.5px; }
-.mi-ghost-ring { display: grid; width: 96px; height: 96px; place-items: center; border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 10px #fff, inset 0 0 0 11px var(--v3-cl); color: #b4b4ae; font: 18px var(--v3-num); }
-.mi-ghost-art { display: block; height: 96px; border-radius: 8px; background: #fff; }
 
 .mi-section-head { display: flex; align-items: center; gap: 12px; height: 18px; }
 .mi-section-head h2 { flex: 0 0 auto; font-size: var(--ui-text-md); font-weight: var(--ui-weight-semibold); font-family: var(--ui-font-display); line-height: var(--ui-line-subsection-title); }
@@ -651,7 +655,6 @@
   .mi-start-btn { margin-left: auto; }
   .mi-jobs { grid-template-columns: minmax(0, 1fr); }
   .mi-general { height: auto; flex-wrap: wrap; gap: 12px; padding: 16px; }
-  .mi-stats-empty { height: auto; min-height: 251px; padding: 20px 16px; }
 }
 
 @media (max-height: 600px) {
@@ -659,9 +662,6 @@
 }
 
 @container workspace (max-width: 560px) {
-  .mi-ghosts { grid-template-columns: minmax(0, 1fr); }
-  .mi-ghost-art { max-width: 100%; }
-  .mi-stats-empty-head { flex-wrap: wrap; }
   .mi-stat-col { max-width: 100%; }
   .mi-trend { flex-basis: 100%; }
   .mi-session-head, .mi-live-head { height: auto; flex-wrap: wrap; gap: 16px; padding-bottom: 16px; }

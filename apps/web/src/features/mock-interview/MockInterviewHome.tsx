@@ -175,8 +175,9 @@ function MockInterviewHomeBody({ records, home }: { records: boolean; home: Retu
   if (records) return <RecordsView interviews={data.interviews} />;
 
   const completed = data.interviews.filter((item) => item.status === "completed");
-  const upcomingApp = data.upcoming ? data.applications.find((app) => app.id === data.upcoming!.application_id) ?? null : null;
-  const newUser = !data.upcoming && data.interviews.length === 0;
+  const abandonedCount = data.interviews.filter((item) => item.status === "abandoned").length;
+  const focus = focusTarget(data.upcoming, data.applications, data.interviews);
+  const newUser = !focus && data.interviews.length === 0;
 
   const abandon = async () => {
     if (!abandonTarget) return;
@@ -193,18 +194,18 @@ function MockInterviewHomeBody({ records, home }: { records: boolean; home: Retu
 
   return (
     <div className="mi-page">
-      <HomeHeader count={data.interviews.length} hasUpcoming={Boolean(data.upcoming)} newUser={newUser} />
-      {data.upcoming ? (
-        <UpcomingCard session={data.upcoming} application={upcomingApp} interviews={data.interviews} active={data.active} onAbandon={setAbandonTarget} />
+      <HomeHeader count={data.interviews.length} hasUpcoming={Boolean(focus)} newUser={newUser} />
+      {focus ? (
+        <UpcomingCard focus={focus} interviews={data.interviews} active={data.active} onAbandon={setAbandonTarget} />
       ) : newUser ? (
         <StartCard />
       ) : data.active ? (
         <section className="mi-card mi-resume-only"><ResumeStrip active={data.active} onAbandon={setAbandonTarget} /></section>
       ) : null}
-      {completed.length ? <StatsCard completed={completed} details={data.details} abandoned={data.interviews.filter((item) => item.status === "abandoned").length} /> : <StatsEmpty />}
+      {completed.length ? <StatsCard completed={completed} details={data.details} abandoned={abandonedCount} /> : <StatsEmpty abandoned={abandonedCount} />}
       <OtherJobs
         title={newUser ? t("从在投岗位开始") : t("其他在投岗位")}
-        applications={data.applications.filter((app) => app.id !== data.upcoming?.application_id)}
+        applications={data.applications.filter((app) => app.id !== focus?.applicationId)}
         interviews={data.interviews}
         failed={careerFailed}
       />
@@ -244,22 +245,52 @@ function HomeHeader({ count, hasUpcoming, newUser }: { count: number; hasUpcomin
   );
 }
 
+// 主卡对象：有面试安排时用最近一场；没有安排时用在投岗位里最该练的一个（下次面试最近，其次最近练过），保证首页始终有主卡
+type FocusTarget = {
+  applicationId: string;
+  application: JobApplicationSummary | null;
+  company: string;
+  jobTitle: string;
+  stageLabel: string;
+  startAt: string | null;
+  stateLabel: string;
+};
+
+function focusTarget(upcoming: InterviewSessionSummary | null, applications: JobApplicationSummary[], interviews: MockInterviewSummary[]): FocusTarget | null {
+  if (upcoming) {
+    const application = applications.find((app) => app.id === upcoming.application_id) ?? null;
+    return { applicationId: upcoming.application_id, application, company: upcoming.company_name, jobTitle: upcoming.job_title, stageLabel: upcoming.stage_label, startAt: upcoming.start_at, stateLabel: "" };
+  }
+  if (!applications.length) return null;
+  const lastPractice = (id: string) => interviews.filter((item) => item.job_application_id === id).map((item) => item.created_at).sort().pop() ?? "";
+  const [app] = [...applications].sort((a, b) =>
+    (a.next_session_start_at ?? "9999").localeCompare(b.next_session_start_at ?? "9999") || lastPractice(b.id).localeCompare(lastPractice(a.id)));
+  return {
+    applicationId: app.id,
+    application: app,
+    company: app.company_name_snapshot,
+    jobTitle: app.job_title_snapshot,
+    stageLabel: app.current_stage_label,
+    startAt: null,
+    stateLabel: STAGE_STATE_LABELS[app.stage_state] ?? t("进行中"),
+  };
+}
+
 function UpcomingCard({
-  session,
-  application,
+  focus,
   interviews,
   active,
   onAbandon,
 }: {
-  session: InterviewSessionSummary;
-  application: JobApplicationSummary | null;
+  focus: FocusTarget;
   interviews: MockInterviewSummary[];
   active: MockInterviewDetail | null;
   onAbandon: (item: MockInterviewDetail) => void;
 }) {
   useLocale();
-  const types = coverageTypes(session.stage_label);
-  const mine = interviews.filter((item) => item.job_application_id === session.application_id && item.status === "completed");
+  const { application } = focus;
+  const types = coverageTypes(focus.stageLabel);
+  const mine = interviews.filter((item) => item.job_application_id === focus.applicationId && item.status === "completed");
   const coverage = types.map((type) => {
     const done = mine.filter((item) => item.interview_type === type);
     const latest = [...done].sort((a, b) => finishedAt(b).localeCompare(finishedAt(a)))[0];
@@ -268,25 +299,36 @@ function UpcomingCard({
   const practiced = coverage.filter((item) => item.count > 0).length;
   const next = coverage.find((item) => item.count === 0) ?? null;
   const recommended = next?.type ?? types[0];
-  const startPath = `${newMockInterviewPath({ applicationId: session.application_id })}&type=${recommended}`;
+  const startPath = `${newMockInterviewPath({ applicationId: focus.applicationId })}&type=${recommended}`;
   const buttonLabel = practiced === 0 ? t("针对这场练一次") : next ? t("练{value0}", { value0: INTERVIEW_TYPE_LABELS[next.type] }) : t("再练一场");
-  const note = practiced === 0 ? t("先练{value0} · 约 {value1} 分钟", { value0: INTERVIEW_TYPE_LABELS[recommended], value1: estimateMinutes() }) : t("{value0}常考 · 约 {value1} 分钟", { value0: session.stage_label, value1: estimateMinutes() });
-  const today = dayBand(session.start_at) === t("今天");
+  const note = practiced === 0 ? t("先练{value0} · 约 {value1} 分钟", { value0: INTERVIEW_TYPE_LABELS[recommended], value1: estimateMinutes() }) : t("{value0}常考 · 约 {value1} 分钟", { value0: focus.stageLabel, value1: estimateMinutes() });
+  const today = focus.startAt ? dayBand(focus.startAt) === t("今天") : false;
 
   return (
-    <section className="mi-card mi-upcoming" aria-label={t("最近的面试安排")}>
+    <section className="mi-card mi-upcoming" aria-label={focus.startAt ? t("最近的面试安排") : t("在投岗位练习")}>
       <div className="mi-up-main">
-        <div className="mi-date-card">
-          <div className={`mi-date-band${today ? " is-today" : ""}`}><b>{dayBand(session.start_at)}</b><span>{weekday(session.start_at)}</span></div>
-          <div className="mi-date-body">
-            <strong>{hhmm(session.start_at)}</strong>
-            <span><i className={today ? "is-today" : ""} />{countdown(session.start_at)}</span>
+        {focus.startAt ? (
+          <div className="mi-date-card">
+            <div className={`mi-date-band${today ? " is-today" : ""}`}><b>{dayBand(focus.startAt)}</b><span>{weekday(focus.startAt)}</span></div>
+            <div className="mi-date-body">
+              <strong>{hhmm(focus.startAt)}</strong>
+              <span><i className={today ? "is-today" : ""} />{countdown(focus.startAt)}</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          // 还没约面试时间：日期卡改为显示当前阶段，点击去面试日程添加时间
+          <button type="button" className="mi-date-card is-unscheduled" onClick={() => navigateTo("/career/schedule")} aria-label={t("添加面试时间")}>
+            <div className="mi-date-band"><b>{focus.stateLabel}</b></div>
+            <div className="mi-date-body">
+              <strong>{focus.stageLabel}</strong>
+              <span>{t("添加时间 ›")}</span>
+            </div>
+          </button>
+        )}
         <div className="mi-up-info">
           <div className="mi-up-title">
-            <h2>{session.company_name} · {session.job_title}</h2>
-            <span className="mi-tag">{session.stage_label} · {INTERVIEW_TYPE_LABELS[recommended]}</span>
+            <h2>{focus.company} · {focus.jobTitle}</h2>
+            <span className="mi-tag">{focus.stageLabel} · {INTERVIEW_TYPE_LABELS[recommended]}</span>
           </div>
           <div className="mi-prep">
             <span className="mi-prep-label">{t("准备度")}</span>
@@ -307,7 +349,7 @@ function UpcomingCard({
           </div>
         </div>
         <div className="mi-up-actions">
-          <button type="button" className="mi-link" onClick={() => navigateTo(application?.job_description_id ? `/career/jobs/${encodeURIComponent(application.job_description_id)}` : `/career/applications/${encodeURIComponent(session.application_id)}`)}>{t("查看岗位 ›")}</button>
+          <button type="button" className="mi-link" onClick={() => navigateTo(application?.job_description_id ? `/career/jobs/${encodeURIComponent(application.job_description_id)}` : `/career/applications/${encodeURIComponent(focus.applicationId)}`)}>{t("查看岗位 ›")}</button>
           <button type="button" className="v3-btn v3-btn-dark mi-up-primary" onClick={() => navigateTo(startPath)}>{buttonLabel}</button>
           <small>{note}</small>
         </div>
@@ -375,16 +417,45 @@ function scopeKey(item: Pick<MockInterviewSummary, "interview_type" | "difficult
   return `${item.interview_type}:${item.difficulty}`;
 }
 
-// 最近 10 场 v4 报告的能力项平均分；旧报告没有能力项，不参与
-function competencyAverages(details: MockInterviewDetail[]) {
-  const pool = new Map<MockCompetencyKey, number[]>();
-  for (const item of details) {
-    for (const competency of item.report?.competencies ?? []) {
-      if (!competency.assessed || competency.score === null) continue;
-      pool.set(competency.key, [...(pool.get(competency.key) ?? []), competency.score]);
+type AbilityRow = { key: string; label: string; value: number; ratio: number; text: string };
+type Abilities = { legacy: boolean; samples: number; rows: AbilityRow[]; weakKey: string | null };
+
+const LEGACY_DIMENSION_KEYS = ["professional_depth", "structure", "job_fit", "resume_consistency", "communication"] as const;
+// 旧版维度是 1–5 分；低于 3.5 分（约等于新版 62 分）才提示待加强
+const WEAK_LEGACY_DIMENSION = 3.5;
+
+function average(values: number[]) {
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+// 优先汇总最近 10 场 v4 报告的能力项（0–100）；还没有 v4 报告时退回旧报告的五个维度（1–5），不把两种分制混在一起
+function abilityAverages(details: MockInterviewDetail[]): Abilities | null {
+  const current = details.filter((item) => item.report?.verdict && item.report.competencies);
+  if (current.length) {
+    const pool = new Map<MockCompetencyKey, number[]>();
+    for (const item of current) {
+      for (const competency of item.report!.competencies!) {
+        if (!competency.assessed || competency.score === null) continue;
+        pool.set(competency.key, [...(pool.get(competency.key) ?? []), competency.score]);
+      }
     }
+    const rows = [...pool.entries()].map(([key, values]) => {
+      const value = Math.round(average(values));
+      return { key, label: DIMENSION_LABELS[key], value, ratio: value / 100, text: String(value) };
+    });
+    const weakest = rows.length ? rows.reduce((min, item) => (item.value < min.value ? item : min), rows[0]) : null;
+    if (rows.length) return { legacy: false, samples: current.length, rows, weakKey: weakest && weakest.value < WEAK_COMPETENCY ? weakest.key : null };
   }
-  return [...pool.entries()].map(([key, values]) => ({ key, label: DIMENSION_LABELS[key], value: Math.round(values.reduce((a, b) => a + b, 0) / values.length) }));
+  const legacy = details.filter((item) => item.report && !item.report.verdict);
+  const rows = LEGACY_DIMENSION_KEYS.flatMap((key) => {
+    const values = legacy.flatMap((item) => item.report!.dimensions.filter((dimension) => dimension.key === key).map((dimension) => dimension.score));
+    if (!values.length) return [];
+    const value = average(values);
+    return [{ key, label: DIMENSION_LABELS[key], value, ratio: Math.max(0, Math.min(1, (value - 1) / 4)), text: value.toFixed(1) }];
+  });
+  if (!rows.length) return null;
+  const weakest = rows.reduce((min, item) => (item.value < min.value ? item : min), rows[0]);
+  return { legacy: true, samples: legacy.length, rows, weakKey: weakest.value < WEAK_LEGACY_DIMENSION ? weakest.key : null };
 }
 
 function StatsCard({ completed, details, abandoned }: { completed: MockInterviewSummary[]; details: MockInterviewDetail[]; abandoned: number }) {
@@ -402,8 +473,7 @@ function StatsCard({ completed, details, abandoned }: { completed: MockInterview
   const previous = trend[trend.length - 2];
   const delta = last && previous ? Math.round((last.total_score ?? 0) - (previous.total_score ?? 0)) : null;
   const hours = practiceHours(completed);
-  const competencies = competencyAverages(details);
-  const weakest = competencies.length ? competencies.reduce((min, item) => (item.value < min.value ? item : min), competencies[0]) : null;
+  const abilities = abilityAverages(details);
 
   return (
     <section className="mi-card mi-stats is-v4" aria-label={t("练习数据")}>
@@ -421,7 +491,8 @@ function StatsCard({ completed, details, abandoned }: { completed: MockInterview
             {delta !== null && delta !== 0 && <em className={delta > 0 ? "is-up" : "is-down"}>{t("比上一场 ")}{delta > 0 ? `↑${delta}` : `↓${-delta}`}</em>}
           </div>
         )}
-        {trend.length >= 2 ? <TrendChart items={trend} /> : <p className="mi-stat-empty">{t("同类型、同难度完成 2 场后显示变化")}</p>}
+        {trend.length > 0 && <TrendChart items={trend} />}
+        {trend.length === 1 && <p className="mi-trend-single">{t("同类型、同难度再练 1 场后显示变化")}</p>}
         <div className="mi-overall-nums is-inline">
           <span><b>{completed.length}</b>{t("已完成")}</span>
           <span><b>{abandoned}</b>{t("已放弃")}</span>
@@ -430,22 +501,25 @@ function StatsCard({ completed, details, abandoned }: { completed: MockInterview
       </div>
       <i className="mi-vdiv" aria-hidden="true" />
       <div className="mi-stat-col mi-ability-col">
-        <div className="mi-stat-head"><h3>{t("能力表现")}</h3><small>{t("最近 {value0} 场平均", { value0: DIMENSION_SAMPLE })}</small></div>
-        {competencies.length ? (
+        <div className="mi-stat-head">
+          <h3>{t("能力表现")}</h3>
+          {abilities && <small>{abilities.legacy ? t("旧版评分 · 1–5 分 · 最近 {value0} 场", { value0: abilities.samples }) : t("最近 {value0} 场平均", { value0: abilities.samples })}</small>}
+        </div>
+        {abilities ? (
           <ul className="mi-ability-list">
-            {competencies.map((item) => {
-              const weak = item === weakest && item.value < WEAK_COMPETENCY;
+            {abilities.rows.map((item) => {
+              const weak = item.key === abilities.weakKey;
               return (
                 <li key={item.key} className={weak ? "is-weak" : ""}>
                   <span>{item.label}</span>
-                  <i aria-hidden="true"><i style={{ width: `${item.value}%` }} /></i>
-                  <b>{item.value}</b>
+                  <i aria-hidden="true"><i style={{ width: `${item.ratio * 100}%` }} /></i>
+                  <b>{item.text}</b>
                   {weak && <em className="mi-weak">{t("待加强")}</em>}
                 </li>
               );
             })}
           </ul>
-        ) : <p className="mi-stat-empty">{t("完成新版评估报告后显示")}</p>}
+        ) : <p className="mi-stat-empty">{t("完成第一份评估报告后显示")}</p>}
       </div>
     </section>
   );
@@ -478,7 +552,8 @@ function TrendChart({ items }: { items: MockInterviewSummary[] }) {
   const plot = Math.max(120, width - ZONE_LABEL_WIDTH);
   const clamp = (score: number) => Math.max(TREND_LO, Math.min(TREND_HI, score));
   const y = (score: number) => 8 + ((TREND_HI - clamp(score)) / (TREND_HI - TREND_LO)) * 112;
-  const x = (index: number) => 14 + (index * (plot - 28)) / Math.max(1, items.length - 1);
+  // 只有一场时把点放在中间，图表结构与多场时保持一致
+  const x = (index: number) => (items.length === 1 ? plot / 2 : 14 + (index * (plot - 28)) / (items.length - 1));
   const scores = items.map((item) => item.total_score ?? 0);
   const line = scores.map((score, index) => `${x(index)},${y(score)}`).join(" ");
   return (
@@ -509,34 +584,38 @@ function TrendChart({ items }: { items: MockInterviewSummary[] }) {
   );
 }
 
-function StatsEmpty() {
+// 还没有完成场次：沿用统计卡的两栏结构，图表和能力条画成空态，避免首页在有无数据时换一套布局
+const EMPTY_ABILITY_KEYS: MockCompetencyKey[] = ["knowledge", "problem_solving", "ownership", "communication", "job_fit"];
+
+function StatsEmpty({ abandoned }: { abandoned: number }) {
   useLocale();
   return (
-    <section className="mi-card mi-stats-empty" aria-label={t("练习数据")}>
-      <div className="mi-stats-empty-head"><h3>{t("练习数据")}</h3><span>{t("完成第 1 场面试后生成")}</span></div>
-      <div className="mi-ghosts">
-        <div>
-          <span className="mi-ghost-ring" aria-hidden="true">—</span>
-          <b>{t("综合表现")}</b>
-          <small>{t("平均分、完成场次与累计时长")}</small>
-        </div>
-        <div>
-          <svg className="mi-ghost-art" width="220" height="96" viewBox="0 0 220 96" aria-hidden="true">
-            <path d="M0 88 L0 32" stroke="none" />
-            <polyline points="10,70 75,58 140,64 210,36" fill="none" stroke="#cfcfca" strokeDasharray="4 3" strokeWidth="1.4" />
-            {[[10, 70], [75, 58], [140, 64], [210, 36]].map(([cx, cy]) => <circle key={cx} cx={cx} cy={cy} r="3.5" fill="#d8d8d3" />)}
+    <section className="mi-card mi-stats is-v4 is-empty" aria-label={t("练习数据")}>
+      <div className="mi-stat-col mi-trend">
+        <div className="mi-stat-head"><h3>{t("得分变化")}</h3><small>{t("完成第 1 场面试后生成")}</small></div>
+        <div className="mi-trend-kpi"><b>—</b></div>
+        <div className="mi-trend-chart is-zoned is-ghost" aria-hidden="true">
+          <svg width="100%" height="140" preserveAspectRatio="none" viewBox="0 0 400 140">
+            <rect x="0" y="8" width="366" height="28" fill="#f2f7f3" />
+            <rect x="0" y="36" width="366" height="28" fill="#fcf6ee" />
+            <line x1="0" x2="366" y1="120" y2="120" stroke="var(--v3-line)" />
+            <polyline points="14,96 130,78 246,84 352,52" fill="none" stroke="#cfcfca" strokeDasharray="4 3" strokeWidth="1.4" vectorEffect="non-scaling-stroke" />
           </svg>
-          <b>{t("得分变化")}</b>
-          <small>{t("同类型、同难度完成 2 场后显示变化")}</small>
         </div>
-        <div>
-          <svg className="mi-ghost-art" width="104" height="96" viewBox="0 0 104 96" aria-hidden="true">
-            <polygon points="52,6 96,38 79,90 25,90 8,38" fill="#fff" stroke="var(--v3-cl)" />
-            <polygon points="52,24 79,44 69,76 35,76 25,44" fill="none" stroke="var(--v3-cl)" />
-          </svg>
-          <b>{t("能力表现")}</b>
-          <small>{t("找出最需要加强的能力")}</small>
+        <div className="mi-overall-nums is-inline">
+          <span><b>0</b>{t("已完成")}</span>
+          <span><b>{abandoned}</b>{t("已放弃")}</span>
+          <span><b>0.0h</b>{t("累计练习")}</span>
         </div>
+      </div>
+      <i className="mi-vdiv" aria-hidden="true" />
+      <div className="mi-stat-col mi-ability-col">
+        <div className="mi-stat-head"><h3>{t("能力表现")}</h3><small>{t("找出最需要加强的能力")}</small></div>
+        <ul className="mi-ability-list is-ghost">
+          {EMPTY_ABILITY_KEYS.map((key) => (
+            <li key={key}><span>{DIMENSION_LABELS[key]}</span><i aria-hidden="true" /><b>—</b></li>
+          ))}
+        </ul>
       </div>
     </section>
   );
