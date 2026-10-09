@@ -1,5 +1,6 @@
 import { t } from "@/i18n";
 import type { Editor } from "@tiptap/core";
+import { RefreshCw } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api,
@@ -17,6 +18,7 @@ import {
   contextPayload,
   currentLineText,
   editableLineIds,
+  headerParts,
   lineIndexFromText,
   replaceLineText,
   sectionPayload,
@@ -58,6 +60,39 @@ type Phase =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "ready"; result: SectionReviewAnalyzeResponse; baseLines: Record<string, string> };
+
+/** A finished analysis kept for the session, so reopening a paragraph does not call the model again. */
+export type SheetSnapshot = {
+  phase: Extract<Phase, { kind: "ready" }>;
+  items: Item[];
+  activeId: string | null;
+  reference: Reference;
+  intent: string;
+  contextIds: string[];
+  draftAnswers: string[];
+  runId: number;
+};
+
+/** Bring a saved snapshot in line with the document as it is now. */
+function restoreItems(items: Item[], editor: Editor): Item[] {
+  return items.map((item) => {
+    // A request cut off by closing the sheet goes back to where it started.
+    if (item.status === "loading") return { ...item, status: item.draft ? "pending" : "todo" };
+    // Undone from the recap card or edited by hand since: no longer applied.
+    if (item.status === "done" && item.edit && currentLineText(editor.state.doc, item.edit.lineId) !== item.edit.after) {
+      return { ...item, status: item.draft ? "pending" : "todo", edit: null };
+    }
+    return item;
+  });
+}
+
+/** Whether the paragraph changed after the analysis, other than through changes applied here. */
+function changedSinceAnalysis(unit: FocusUnit, baseLines: Record<string, string>, items: Item[]) {
+  const applied = new Map(items.flatMap((item) => (item.status === "done" && item.edit ? [[item.edit.lineId, item.edit.after] as const] : [])));
+  const ids = Object.keys(baseLines);
+  if (ids.length !== unit.lines.length) return true;
+  return unit.lines.some((line) => !(line.id in baseLines) || line.text !== (applied.get(line.id) ?? baseLines[line.id]));
+}
 
 const KIND_LABEL: Record<Item["kind"], string> = {
   missing: "MISSING",
@@ -133,6 +168,8 @@ export function FocusSheet({
   units,
   request,
   index,
+  cached,
+  onSave,
   onClose,
   onNavigate,
 }: {
@@ -141,29 +178,36 @@ export function FocusSheet({
   units: FocusUnit[];
   request: FocusRequest;
   index: number;
+  cached: SheetSnapshot | null;
+  onSave: (unitId: string, snapshot: SheetSnapshot) => void;
   onClose: (edits: AppliedEdit[]) => void;
   onNavigate: (unitId: string, edits: AppliedEdit[]) => void;
 }) {
   const unit = units.find((item) => item.id === request.unitId);
-  const [reference, setReference] = useState<Reference>({ kind: "general" });
-  const [intent, setIntent] = useState(request.intent);
-  const [contextIds, setContextIds] = useState<string[]>(() => (
+  const [restored] = useState(() => (cached ? { ...cached, items: restoreItems(cached.items, editor) } : null));
+  // A new instruction from ⌘K asks for a fresh analysis even when one is saved.
+  const [autoRun] = useState(() => !restored || Boolean(request.intent.trim()));
+  const [reference, setReference] = useState<Reference>(restored?.reference ?? { kind: "general" });
+  const [intent, setIntent] = useState(request.intent.trim() ? request.intent : restored?.intent ?? "");
+  const [contextIds, setContextIds] = useState<string[]>(() => restored?.contextIds.filter((id) => units.some((item) => item.id === id)) ?? (
     units.filter((item) => item.id !== request.unitId && item.lines.some((line) => line.text.trim())).slice(0, CONTEXT_LIMIT).map((item) => item.id)
   ));
-  const [phase, setPhase] = useState<Phase>({ kind: "loading" });
-  const [items, setItems] = useState<Item[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>(restored?.phase ?? { kind: "loading" });
+  const [items, setItems] = useState<Item[]>(restored?.items ?? []);
+  const [activeId, setActiveId] = useState<string | null>(restored?.activeId ?? null);
   const [askText, setAskText] = useState("");
   const [askLineId, setAskLineId] = useState<string | null>(null);
   const [jobs, setJobs] = useState<JobDescriptionSummary[] | null>(null);
-  const [draftAnswers, setDraftAnswers] = useState<string[]>([]);
+  const [draftAnswers, setDraftAnswers] = useState<string[]>(restored?.draftAnswers ?? []);
   const controllers = useRef(new Set<AbortController>());
   // Latest rewrite per item; an older reply must not overwrite a newer one.
   const itemRequests = useRef(new Map<string, AbortController>());
   const editable = useMemo(() => (unit ? editableLineIds(unit) : new Set<string>()), [unit]);
   const itemsRef = useRef(items);
   useEffect(() => { itemsRef.current = items; }, [items]);
-  const runIdRef = useRef(0);
+  const runIdRef = useRef(restored?.runId ?? 0);
+  // Changes applied in an earlier visit were already shown in that visit's recap.
+  const reported = useRef(new Set(restored?.items.flatMap((item) => (item.status === "done" && item.edit ? [item.edit] : [])) ?? []));
 
   const track = useCallback(() => {
     const controller = new AbortController();
@@ -173,7 +217,7 @@ export function FocusSheet({
   const release = useCallback((controller: AbortController) => { controllers.current.delete(controller); }, []);
 
   const edits = useMemo<AppliedEdit[]>(() => items.flatMap((item) => (
-    item.edit && item.status === "done"
+    item.edit && item.status === "done" && !reported.current.has(item.edit)
       ? [{ ...item.edit, id: item.id, unitId: request.unitId, kind: item.kind, title: item.note?.title ?? item.instruction }]
       : []
   )), [items, request.unitId]);
@@ -252,10 +296,23 @@ export function FocusSheet({
   }, [unit, units, resumeId, contextIds, intent, reference, track, release]);
 
   useEffect(() => {
-    void analyze();
+    if (autoRun) void analyze();
     const active = controllers.current;
     return () => { active.forEach((controller) => controller.abort()); };
-    // Only the first analysis runs automatically.
+    // Only the first analysis runs automatically, and only when nothing is saved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Save the latest finished analysis when the sheet goes away (close or switching paragraphs).
+  const snapshot = useRef<SheetSnapshot | null>(null);
+  useEffect(() => {
+    snapshot.current = phase.kind === "ready"
+      ? { phase, items, activeId, reference, intent, contextIds, draftAnswers, runId: runIdRef.current }
+      : null;
+  }, [phase, items, activeId, reference, intent, contextIds, draftAnswers]);
+  useEffect(() => () => {
+    if (snapshot.current) onSave(request.unitId, snapshot.current);
+    // Saved once, on unmount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -427,6 +484,8 @@ export function FocusSheet({
   const activeItem = items.find((item) => item.id === activeId) ?? null;
   const contextUnits = units.filter((item) => item.id !== unit.id);
   const doneCount = items.filter((item) => item.status === "done").length;
+  const stale = ready ? changedSinceAnalysis(unit, ready.baseLines, items) : false;
+  const header = headerParts(unit);
 
   const renderItemPanel = (item: Item) => {
     const draft = item.draft;
@@ -575,15 +634,23 @@ export function FocusSheet({
       <nav className="sf-rail" aria-label={t("全文")}>
         <span className="sf-mono sf-muted">{t("全文 · {n} 段", { n: units.length })}</span>
         <ul>
-          {units.map((item) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                className={item.id === unit.id ? "is-current" : ""}
-                onClick={() => item.id !== unit.id && onNavigate(item.id, edits)}
-              >
-                {item.heading || item.sectionLabel}
-              </button>
+          {railGroups(units).map((group) => (
+            <li key={group.units[0].id}>
+              {group.label && <span className="sf-rail-section">{group.label}</span>}
+              <ul className={group.label ? "sf-rail-entries" : undefined}>
+                {group.units.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className={item.id === unit.id ? "is-current" : ""}
+                      title={unitLabel(item)}
+                      onClick={() => item.id !== unit.id && onNavigate(item.id, edits)}
+                    >
+                      {item.heading || item.sectionLabel}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>
@@ -621,9 +688,20 @@ export function FocusSheet({
                 onChange={(event) => setIntent(event.target.value)}
                 maxLength={300}
               />
-              <button type="button" className="sf-link" onClick={() => void analyze()}>{t("重新分析")}</button>
+            </span>
+            <span className="sf-head-actions">
+              <button type="button" className="sf-regen" disabled={phase.kind === "loading"} onClick={() => void analyze()}>
+                <RefreshCw size={13} aria-hidden="true" />
+                {t("重新生成")}
+              </button>
+              <button type="button" className="sf-close" onClick={close} aria-label={t("完成并放回")}>{t("完成")}</button>
             </span>
           </div>
+          {ready && stale && (
+            <p className="sf-reuse">
+              {t("这段在上次分析后改过，建议点「重新生成」。")}
+            </p>
+          )}
           {ready?.result.inferred_focus && !intent.trim() && (
             <p className="sf-infer">
               {t("AI 推断这段想突出「{focus}」", { focus: ready.result.inferred_focus })}
@@ -678,8 +756,11 @@ export function FocusSheet({
           <div className="sf-row sf-row-head">
             <div className="sf-line">
               <div className="sf-line-body">
-                <h2 className="sf-heading">{unit.heading}</h2>
-                {unit.meta.length > 0 && <p className="sf-meta">{unit.meta.join("  ·  ")}</p>}
+                <div className="sf-entry-head">
+                  <h2 className="sf-heading">{unit.heading}</h2>
+                  {header.dates.length > 0 && <span className="sf-dates">{header.dates.join(" · ")}</span>}
+                </div>
+                {header.details.length > 0 && <p className="sf-meta">{header.details.join("  ·  ")}</p>}
                 {activeItem && activeItem.lineId === null && renderItemPanel(activeItem)}
               </div>
               {lineNotes(null).length > 0 && <i className="sf-leader" aria-hidden="true" />}
@@ -769,9 +850,25 @@ export function FocusSheet({
           </span>
         </footer>
       </section>
-      <button type="button" className="sf-close" onClick={close} aria-label={t("完成并放回")}>{t("完成")}</button>
     </div>
   );
+}
+
+/**
+ * Rail entries grouped by section: entries sit under their section name, while
+ * a section that is itself the unit (e.g. skills) stands alone.
+ */
+function railGroups(units: FocusUnit[]) {
+  const groups: Array<{ label: string | null; units: FocusUnit[] }> = [];
+  for (const unit of units) {
+    const last = groups[groups.length - 1];
+    if (unit.kind === "entry" && unit.sectionLabel && last?.label === unit.sectionLabel) {
+      last.units.push(unit);
+    } else {
+      groups.push({ label: unit.kind === "entry" && unit.sectionLabel ? unit.sectionLabel : null, units: [unit] });
+    }
+  }
+  return groups;
 }
 
 function QuestionStep({

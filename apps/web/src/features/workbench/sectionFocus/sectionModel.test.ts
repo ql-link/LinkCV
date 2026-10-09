@@ -6,6 +6,7 @@ import {
   currentLineText,
   editableLineIds,
   focusUnitsFromDoc,
+  headerParts,
   lineIndexFromText,
   matchTarget,
   replaceLineText,
@@ -143,3 +144,59 @@ describe("editableLineIds", () => {
     expect(ids.has("line-20")).toBe(false);
   });
 });
+
+describe("header-row experiences", () => {
+  const cell = (anchors: JSONContent[], text: string): JSONContent => ({ type: "paragraph", content: [...anchors, { type: "text", text }] });
+  const row = (id: string, cells: string[]): JSONContent => ({
+    type: "resumeRow",
+    content: cells.map((text, index) => cell([
+      ...(index === 0 ? [anchor(`node_row${id}0000000000000`, "row")] : []),
+      anchor(`node_cell${id}${index}00000000000`, "row-cell"),
+      anchor(`node_blk${id}${index}000000000000`, "row-block"),
+    ], text)),
+  });
+  const rowDoc: JSONContent = {
+    type: "doc",
+    content: [
+      heading(2, [anchor("node_sectionintern000001", "section")], "实习经历"),
+      row("a", ["2023.06 - 2023.09", "星野零售科技有限公司", "用户运营", "运营实习生"]),
+      { type: "bulletList", content: [bullet("node_lineintern00000001", "维护商品信息与活动排期。"), bullet("node_lineintern00000002", "分析访问与购买漏斗。")] },
+      row("b", ["2022.07 - 2022.10", "澄海内容科技有限公司", "内容社区", "运营实习生"]),
+      { type: "bulletList", content: [bullet("node_lineintern00000003", "完成内容审核与用户互动。")] },
+    ],
+  };
+
+  it("splits each header row and its bullets into its own unit", () => {
+    const units = focusUnitsFromDoc(makeEditor(rowDoc).state.doc);
+    expect(units.map((unit) => [unit.kind, unit.sectionLabel, unit.heading, unit.lines.length])).toEqual([
+      ["entry", "实习经历", "星野零售科技有限公司", 2],
+      ["entry", "实习经历", "澄海内容科技有限公司", 1],
+    ]);
+    expect(headerParts(units[0])).toEqual({ dates: ["2023.06 - 2023.09"], details: ["用户运营", "运营实习生"] });
+    expect(units[0].to).toBeLessThan(units[1].from);
+  });
+});
+
+describe("entry header facts", () => {
+  const block = (id: string, text: string): JSONContent => ({ type: "paragraph", content: [anchor(id, "entry-block"), { type: "text", text }] });
+  it("moves short facts under the title into the header only when real lines remain", () => {
+    const units = focusUnitsFromDoc(makeEditor({
+      type: "doc",
+      content: [
+        heading(2, [anchor("node_sectionwork00000009", "section")], "工作经历"),
+        heading(3, [anchor("node_entryyunshan000001", "entry")], "云杉协作科技有限公司"),
+        block("node_blockdate000000001", "2022.07 — 至今"),
+        block("node_blockrole000000001", "高级产品经理"),
+        { type: "bulletList", content: [bullet("node_lineyunshan000001", "负责企业协作平台季度路线图，梳理审批与权限需求。")] },
+        heading(2, [anchor("node_sectionskill0000001", "section")], "专业技能"),
+        heading(3, [anchor("node_entryskill00000001", "entry")], "产品规划"),
+        block("node_blockskill00000001", "需求分析、优先级管理、路线图"),
+      ],
+    }).state.doc);
+    expect(units.map((unit) => [unit.heading, unit.meta, unit.lines.map((line) => line.text)])).toEqual([
+      ["云杉协作科技有限公司", ["2022.07 — 至今", "高级产品经理"], ["负责企业协作平台季度路线图，梳理审批与权限需求。"]],
+      ["产品规划", [], ["需求分析、优先级管理、路线图"]],
+    ]);
+  });
+});
+

@@ -1,7 +1,7 @@
 import { t } from "@/i18n";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { FocusSheet, DiffText, type AppliedEdit, type FocusRequest } from "./FocusSheet";
+import { FocusSheet, DiffText, type AppliedEdit, type FocusRequest, type SheetSnapshot } from "./FocusSheet";
 import {
   CONTEXT_LIMIT,
   focusUnitsFromDoc,
@@ -10,12 +10,21 @@ import {
   unitLabel,
   type FocusUnit,
 } from "./sectionModel";
+import { PenLine } from "lucide-react";
 import { addedRanges } from "./textDiff";
 import "./section-focus.css";
 
 const COACH_KEY = "linkresume.section-focus.coach.v1";
 const QUICK_ASKS = ["分析这段", "突出技术深度", "更有冲击力", "更精简", "补上数据"];
 const HIGHLIGHT_NAME = "linkresume-section-focus-added";
+/** The pointer has to rest on a paragraph this long before the outline shows. */
+const HOVER_DELAY = 450;
+/** Grace period for crossing the page margin to reach the actions. */
+const HOVER_GRACE = 320;
+const GUTTER_GAP = 12;
+const CHIP_WIDTH = 236;
+const COMPACT_WIDTH = 30;
+const COACH_WIDTH = 260;
 
 type Rect = { top: number; left: number; width: number; height: number };
 type Landing = { unitId: string; edits: AppliedEdit[]; recapOpen: boolean };
@@ -54,6 +63,40 @@ function unitRect(editor: Editor, unit: FocusUnit, origin: DOMRect): Rect | null
   return { top: top - origin.top - 6, left: left - origin.left - 10, width: right - left + 20, height: bottom - top + 12 };
 }
 
+/**
+ * Left offset in the grey margin beside the page, so floating UI never sits on
+ * top of resume text. Tries the side nearer to `nearX` first; null when
+ * neither side has room.
+ */
+function gutterLeft(editor: Editor, scroller: HTMLElement | null, origin: DOMRect, width: number, nearX: number): number | null {
+  const paper = paperBox(editor);
+  const bounds = (scroller ?? editor.view.dom).getBoundingClientRect();
+  const right = paper.right + GUTTER_GAP + width <= bounds.right - 8 ? paper.right - origin.left + GUTTER_GAP : null;
+  const left = paper.left - GUTTER_GAP - width >= bounds.left + 8 ? paper.left - origin.left - GUTTER_GAP - width : null;
+  const preferLeft = nearX + origin.left < (paper.left + paper.right) / 2;
+  return preferLeft ? left ?? right : right ?? left;
+}
+
+function paperBox(editor: Editor) {
+  return (editor.view.dom.closest(".resume-paper") ?? editor.view.dom).getBoundingClientRect();
+}
+
+type ChipSpot = { compact: boolean; top: number; left: number };
+
+/**
+ * Margin beside the page first; otherwise a compact icon column in the page's
+ * own right margin; only as a last resort just above the paragraph.
+ */
+function chipSpot(editor: Editor, scroller: HTMLElement | null, origin: DOMRect, rect: Rect): ChipSpot {
+  const gutter = gutterLeft(editor, scroller, origin, CHIP_WIDTH, rect.left + rect.width / 2);
+  if (gutter !== null) return { compact: false, top: rect.top, left: gutter };
+  // The page's own blank margin: between the editable content and the paper edge.
+  const contentRight = editor.view.dom.getBoundingClientRect().right - origin.left;
+  const margin = paperBox(editor).right - origin.left - contentRight;
+  if (margin >= COMPACT_WIDTH + 6) return { compact: true, top: rect.top, left: contentRight + (margin - COMPACT_WIDTH) / 2 };
+  return { compact: false, top: Math.max(4, rect.top - 34), left: Math.max(4, rect.left + rect.width - CHIP_WIDTH) };
+}
+
 /** Briefly highlight the added words of applied edits on the page. */
 function flashEdits(editor: Editor, edits: AppliedEdit[]) {
   const registry = (globalThis.CSS as unknown as { highlights?: Map<string, unknown> } | undefined)?.highlights;
@@ -63,7 +106,12 @@ function flashEdits(editor: Editor, edits: AppliedEdit[]) {
   for (const edit of edits) {
     const host = editor.view.dom.querySelector(`[data-resume-block-id="${CSS.escape(edit.lineId)}"]`)?.closest("p, li, h1, h2, h3, h4");
     if (!host) continue;
-    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+    // Skip widget text such as the「+」line-insert button; it is not part of the line.
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => (node.parentElement?.closest('[contenteditable="false"]')
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT),
+    });
     const nodes: Text[] = [];
     while (walker.nextNode()) nodes.push(walker.currentNode as Text);
     for (const [start, end] of addedRanges(edit.before, edit.after)) {
@@ -112,11 +160,21 @@ export function SectionFocusLayer({
   // Edits from paragraphs already left via the rail during this focus session.
   const visitEdits = useRef<AppliedEdit[]>([]);
   const visitCount = useRef(0);
+  // Finished analyses by paragraph, kept until the page is left; reopening reuses them.
+  const analyses = useRef(new Map<string, SheetSnapshot>());
+  const saveAnalysis = useCallback((unitId: string, snapshot: SheetSnapshot) => {
+    analyses.current.set(unitId, snapshot);
+  }, []);
+  useEffect(() => { analyses.current.clear(); }, [resumeId]);
 
   useEffect(() => {
-    const bump = () => setRevision((value) => value + 1);
-    editor.on("update", bump);
-    return () => { editor.off("update", bump); };
+    // Every document change, including content replaced without an update event
+    // (loading a version, switching templates).
+    const bump = ({ transaction }: { transaction: { docChanged: boolean } }) => {
+      if (transaction.docChanged) setRevision((value) => value + 1);
+    };
+    editor.on("transaction", bump);
+    return () => { editor.off("transaction", bump); };
   }, [editor]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,7 +203,20 @@ export function SectionFocusLayer({
     };
   }, [scrollRef]);
 
-  // Hover detection: which unit is under the pointer.
+  // Hover detection: which unit is under the pointer. Editing always wins: the
+  // outline only shows after the pointer rests, and disappears on any press,
+  // drag-selection or typing.
+  const hoverTimer = useRef(0);
+  const pendingHover = useRef<string | null>(null);
+  const clearHoverTimer = useCallback(() => {
+    window.clearTimeout(hoverTimer.current);
+    pendingHover.current = null;
+  }, []);
+  const hideHover = useCallback(() => {
+    clearHoverTimer();
+    setHoverId(null);
+  }, [clearHoverTimer]);
+
   useEffect(() => {
     const scroller = scrollRef.current;
     if (!scroller) return;
@@ -153,26 +224,50 @@ export function SectionFocusLayer({
     const onMove = (event: MouseEvent) => {
       if (focus || composerId) return;
       cancelAnimationFrame(frame);
+      if (event.buttons & 1) {
+        hideHover();
+        return;
+      }
       frame = requestAnimationFrame(() => {
-        if ((event.target as HTMLElement | null)?.closest(".sf-hover-actions, .sf-coach")) return;
         const hit = editor.view.posAtCoords({ left: event.clientX, top: event.clientY });
         const unit = hit ? units.find((item) => hit.pos >= item.from && hit.pos <= item.to) : undefined;
-        setHoverId(unit?.id ?? null);
+        const id = unit?.id ?? null;
+        if (id === pendingHover.current) return;
+        clearHoverTimer();
+        pendingHover.current = id;
+        if (id === null) {
+          // Leave time to cross the margin to the actions beside the page.
+          hoverTimer.current = window.setTimeout(() => setHoverId(null), HOVER_GRACE);
+          return;
+        }
+        // The current outline stays until the new paragraph has been rested on,
+        // so crossing other paragraphs on the way to the actions does not switch.
+        hoverTimer.current = window.setTimeout(() => setHoverId(id), HOVER_DELAY);
       });
     };
     const onLeave = (event: MouseEvent) => {
       // Moving onto the floating actions keeps the hover alive.
-      if ((event.relatedTarget as HTMLElement | null)?.closest?.(".sf-hover-actions, .sf-coach")) return;
-      setHoverId(null);
+      if ((event.relatedTarget as HTMLElement | null)?.closest?.(".sf-hover-actions, .sf-coach")) {
+        clearHoverTimer();
+        return;
+      }
+      hideHover();
     };
+    const onPress = () => hideHover();
+    const editorDom = editor.view.dom;
     scroller.addEventListener("mousemove", onMove);
     scroller.addEventListener("mouseleave", onLeave);
+    scroller.addEventListener("mousedown", onPress, true);
+    editorDom.addEventListener("keydown", onPress);
     return () => {
       cancelAnimationFrame(frame);
+      clearHoverTimer();
       scroller.removeEventListener("mousemove", onMove);
       scroller.removeEventListener("mouseleave", onLeave);
+      scroller.removeEventListener("mousedown", onPress, true);
+      editorDom.removeEventListener("keydown", onPress);
     };
-  }, [composerId, editor, focus, scrollRef, units]);
+  }, [clearHoverTimer, composerId, editor, focus, hideHover, scrollRef, units]);
 
   const openFocus = useCallback((unitId: string, intent = "") => {
     setComposerId(null);
@@ -264,6 +359,10 @@ export function SectionFocusLayer({
   const landingUnit = unitById(landing?.unitId ?? null);
   const landingUnitCount = new Set(landing?.edits.map((edit) => edit.unitId)).size;
   const hoverRect = hoverUnit && origin ? unitRect(editor, hoverUnit, origin) : null;
+  const chip = hoverRect && origin ? chipSpot(editor, scrollRef.current, origin, hoverRect) : null;
+  const coachLeft = hoverRect && origin && !coachSeen
+    ? gutterLeft(editor, scrollRef.current, origin, COACH_WIDTH, hoverRect.left + hoverRect.width / 2)
+    : null;
   const composerRect = composerUnit && origin ? unitRect(editor, composerUnit, origin) : null;
   const landingRect = landingUnit && origin ? unitRect(editor, landingUnit, origin) : null;
   const focusIndex = focus ? units.findIndex((unit) => unit.id === focus.unitId) : -1;
@@ -271,21 +370,28 @@ export function SectionFocusLayer({
 
   return (
     <div ref={layerRef} className="sf-layer">
-      {hoverRect && hoverUnit && !focus && !composerId && (
+      {hoverRect && hoverUnit && chip && !focus && !composerId && (
         <>
           <div className="sf-hover-outline" style={{ top: hoverRect.top, left: hoverRect.left, width: hoverRect.width, height: hoverRect.height }} />
-          <div className="sf-hover-actions" onMouseLeave={(event) => {
-            if (!(event.relatedTarget instanceof Node) || !scrollRef.current?.contains(event.relatedTarget)) setHoverId(null);
-          }} style={{ top: Math.max(4, hoverRect.top - 16), left: hoverRect.left + hoverRect.width - 8 }}>
-            <button type="button" onClick={() => openFocus(hoverUnit.id)}>
-              <i className="sf-ring" aria-hidden="true" />{t("聚焦这段")}<kbd>F</kbd>
+          <div
+            className={`sf-hover-actions${chip.compact ? " is-compact" : ""}`}
+            onMouseEnter={clearHoverTimer}
+            onMouseLeave={(event) => {
+              if (!(event.relatedTarget instanceof Node) || !scrollRef.current?.contains(event.relatedTarget)) hideHover();
+            }}
+            style={{ top: chip.top, left: chip.left }}
+          >
+            <button type="button" onClick={() => openFocus(hoverUnit.id)} aria-label={t("聚焦这段")} title={chip.compact ? t("聚焦这段") : undefined}>
+              <i className="sf-ring" aria-hidden="true" />
+              {!chip.compact && <>{t("聚焦这段")}<kbd>F</kbd></>}
             </button>
-            <button type="button" onClick={() => { setComposerId(hoverUnit.id); setComposerText(""); dismissCoach(); }}>
-              {t("说说怎么改…")}
+            <button type="button" onClick={() => { setComposerId(hoverUnit.id); setComposerText(""); dismissCoach(); }} aria-label={t("说说怎么改…")} title={chip.compact ? t("说说怎么改…") : undefined}>
+              {chip.compact ? <PenLine size={13} aria-hidden="true" /> : t("说说怎么改…")}
             </button>
           </div>
-          {!coachSeen && (
-            <div className="sf-coach" role="note" style={{ top: Math.max(4, hoverRect.top - 24), left: hoverRect.left + hoverRect.width + 28 }}>
+          {/* The intro only shows where it cannot cover resume text. */}
+          {!coachSeen && coachLeft !== null && (
+            <div className="sf-coach" role="note" onMouseEnter={clearHoverTimer} style={{ top: hoverRect.top + 40, left: coachLeft, width: COACH_WIDTH }}>
               <span className="sf-mono">NEW</span>
               <strong>{t("让 AI 帮你改某一段")}</strong>
               <p>{t("悬停在一段经历上：点「聚焦这段」让 AI 先看看问题；点「说说怎么改」直接写你的要求。熟练后可以按 ⌘K 一句话直达。")}</p>
@@ -355,6 +461,8 @@ export function SectionFocusLayer({
           units={units}
           request={focus}
           index={focusIndex}
+          cached={analyses.current.get(focus.unitId) ?? null}
+          onSave={saveAnalysis}
           onClose={finishFocus}
           onNavigate={(unitId, edits) => {
             visitEdits.current = [...visitEdits.current, ...tagVisit(edits)];

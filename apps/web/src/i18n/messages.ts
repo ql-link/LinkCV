@@ -3882,4 +3882,5 @@ export const messages: Record<string, string> = {
   "段落精修": "Section polishing",
   "{count} 段已更新：采用 {n} 处": "{count} sections updated: {n} applied",
   "这一句太长或不在前 20 条里，AI 不会改它。": "This line is too long or past the first 20 lines, so AI won't change it.",
+  "这段在上次分析后改过，建议点「重新生成」。": "This section changed after the last analysis. Consider regenerating.",
 };

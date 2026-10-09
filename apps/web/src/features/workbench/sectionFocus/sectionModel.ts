@@ -46,12 +46,39 @@ export function textblockText(node: PMNode): string {
   return text;
 }
 
+const DATE_LIKE = /\d{4}\s*[.\-/年]\s*\d{1,2}|至今|现在|present|now/i;
+
+export function isDateLike(text: string) {
+  return DATE_LIKE.test(text);
+}
+
+function isHeaderFact(text: string) {
+  return text.length > 0 && (isDateLike(text) || (text.length <= 24 && !/[。；;，,！!？?]/.test(text)));
+}
+
+/** Header details split into dates (shown on the right) and the rest. */
+export function headerParts(unit: FocusUnit): { dates: string[]; details: string[] } {
+  return {
+    dates: unit.meta.filter(isDateLike),
+    details: unit.meta.filter((item) => !isDateLike(item)),
+  };
+}
+
+/**
+ * Some resumes have no entries: each experience is a header row
+ * (date | company | role | tag) followed by its bullets. Such a row starts its
+ * own unit, so two internships in one section are never merged.
+ */
 export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
   const units: FocusUnit[] = [];
   let sectionLabel = "";
   let sectionUnit: FocusUnit | null = null;
   let entry: FocusUnit | null = null;
+  let entryFromRow = false;
+  // Units opened by a header row → the section they belong to.
+  const rowUnits = new Map<string, string>();
   const sectionsWithEntries = new Set<string>();
+  const entryBlocks = new Set<string>();
   doc.descendants((node, pos) => {
     if (!node.isTextblock) return true;
     const anchors = anchorsOf(node);
@@ -62,6 +89,7 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
     if (section) {
       sectionLabel = text;
       entry = null;
+      entryFromRow = false;
       sectionUnit = { id: section.blockId, kind: "section", sectionLabel: text, heading: text, meta: [], lines: [], from: pos, to: end };
       units.push(sectionUnit);
       return false;
@@ -69,13 +97,25 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
     const entryAnchor = role("entry");
     if (entryAnchor) {
       entry = { id: entryAnchor.blockId, kind: "entry", sectionLabel, heading: text, meta: [], lines: [], from: pos, to: end };
+      entryFromRow = false;
       if (sectionUnit) sectionsWithEntries.add(sectionUnit.id);
       units.push(entry);
       return false;
     }
+    // A header row opens a new unit, unless it continues a header that has no
+    // lines yet (a two-row header) or sits inside a real entry.
+    const rowAnchor = role("row");
+    const current: FocusUnit | null = entry;
+    if (rowAnchor && sectionUnit && (current === null || (entryFromRow && current.lines.length > 0))) {
+      entry = { id: rowAnchor.blockId, kind: "entry", sectionLabel, heading: "", meta: [], lines: [], from: pos, to: end };
+      entryFromRow = true;
+      rowUnits.set(rowAnchor.blockId, sectionUnit.id);
+      units.push(entry);
+    }
     const line = anchors.find((anchor) => LINE_ROLES.has(anchor.role));
-    const target = line?.role === "section-block" ? sectionUnit : entry ?? sectionUnit;
+    const target = line?.role === "section-block" && !entryFromRow ? sectionUnit : entry ?? sectionUnit;
     if (line && target) {
+      if (line.role === "entry-block") entryBlocks.add(line.blockId);
       target.lines.push({ id: line.blockId, text });
       target.to = end;
     } else if (target && anchors.some((anchor) => META_ROLES.has(anchor.role)) && text) {
@@ -84,8 +124,28 @@ export function focusUnitsFromDoc(doc: PMNode): FocusUnit[] {
     }
     return false;
   });
-  // Sections are only focus units when they hold their own lines and no entries.
-  return units.filter((unit) => unit.kind === "entry" || (unit.lines.length > 0 && !sectionsWithEntries.has(unit.id)));
+  for (const unit of units) {
+    if (unit.kind !== "entry") continue;
+    // Short facts right under an entry title (dates, degree, job title) belong
+    // to its header, as long as real lines remain for the AI to work on.
+    const facts = unit.lines.findIndex((item) => !(entryBlocks.has(item.id) && isHeaderFact(item.text)));
+    if (facts > 0) {
+      unit.meta.push(...unit.lines.slice(0, facts).map((item) => item.text));
+      unit.lines = unit.lines.slice(facts);
+    }
+    if (!rowUnits.has(unit.id) || !unit.lines.length) continue;
+    // The first cell that is not a date names the row, e.g. the company.
+    const titleIndex = unit.meta.findIndex((item) => !isDateLike(item));
+    unit.heading = titleIndex >= 0 ? unit.meta[titleIndex] : unit.meta[0] ?? "";
+    unit.meta = unit.meta.filter((_, index) => index !== (titleIndex >= 0 ? titleIndex : 0));
+    sectionsWithEntries.add(rowUnits.get(unit.id)!);
+  }
+  return units.filter((unit) => (
+    unit.kind === "entry"
+      ? !rowUnits.has(unit.id) || unit.lines.length > 0
+      // Sections are only focus units when they hold their own lines and no entries.
+      : unit.lines.length > 0 && !sectionsWithEntries.has(unit.id)
+  ));
 }
 
 export function unitLabel(unit: FocusUnit) {
