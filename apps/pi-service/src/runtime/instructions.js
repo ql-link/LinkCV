@@ -6,8 +6,8 @@ const SELECTION_LIMIT = 2000;
 const json = (value) => JSON.stringify(value);
 
 function taskHeader(task, position, total, today) {
-  // Without today's date the model cannot tell a past period from a planned one.
-  return `当前任务 ${position}/${total}：${task.label}${today ? `\n今天是 ${today}，据此判断简历中的时间已经过去还是尚未到来，不要为此追问用户。` : ""}`;
+  // Only lets the model avoid misreading ordinary past dates; dates are not a topic in themselves.
+  return `当前任务 ${position}/${total}：${task.label}${today ? `\n今天是 ${today}。早于今天的起止时间都是已经结束的正常经历，不要评论、质疑或要求确认。` : ""}`;
 }
 
 // The product's users are in China; a calendar date is all the model needs.
@@ -19,7 +19,7 @@ export function localDate(date) {
 export function purposeNote(purposes) {
   if (!purposes) return "";
   if (!purposes.length) return "本步骤不能向用户追问，只能按已知信息提交 completed。";
-  return `向用户追问时 question.purpose 只能是 ${json(purposes)}；其他缺失信息（例如经历是否已发生、具体数据）不要追问，按已知事实完成本步骤，在结论中分情况给出建议并写明需要用户补充什么。`;
+  return `向用户追问时 question.purpose 只能是 ${json(purposes)}；其他缺失的细节不要追问，把简历原文当作用户的真实经历完成本步骤，需要用户补充的内容在改写示例中用占位标出。`;
 }
 
 function selectionNote(selection) {

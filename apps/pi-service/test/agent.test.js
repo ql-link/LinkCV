@@ -962,5 +962,11 @@ test("analysis, edit, interview, planning and title workflows share the evidence
   for (const scenario of ["整体诊断", "单段经历或项目分析", "岗位匹配分析", "结构与格式审查", "内容问答", "片段评价"]) {
     assert.ok(diagnosis.includes(scenario), scenario);
   }
-  assert.match(await loadSkillRules("resume-evidence-method"), /每个发现都要有证据/);
+  assert.match(diagnosis, /STAR/);
+  assert.match(diagnosis, /XYZ/);
+  const evidence = await loadSkillRules("resume-evidence-method");
+  assert.match(evidence, /每个发现都要有证据/);
+  // Ordinary dates and the user's own experiences are not findings.
+  assert.match(evidence, /不质疑经历是否真实发生/);
+  assert.doesNotMatch(evidence, /未来时间写成已发生|可信度风险/);
 });
