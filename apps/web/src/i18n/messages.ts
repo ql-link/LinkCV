@@ -3895,6 +3895,8 @@ export const messages: Record<string, string> = {
   "执行": "Run",
   "按你的回答起草": "Drafted from your answers",
   "换一种语气，事实不变": "Use a different tone, keep the facts",
+  "在这一版的基础上换一种语气，内容和事实不变：{text}": "Keep the content and facts of this version and only change the tone: {text}",
+  "基于当前这版换一种语气，内容不变": "Change the tone of the version shown, keep its content",
   "换成哪一段？": "Switch to which section?",
   "提案": "Proposal",
   "收起改动": "Hide changes",

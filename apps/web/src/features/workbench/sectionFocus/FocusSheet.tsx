@@ -502,6 +502,27 @@ export function FocusSheet({
     });
   };
 
+  // The user's answers as request pairs, from follow-up questions or the thin-draft form.
+  const answerPairs = (item: Item) => {
+    const questions = item.note?.questions ?? (phase.kind === "ready" ? phase.result.draft_questions : []);
+    return item.answers.flatMap((reply, position) => {
+      const text = reply.trim();
+      return text && questions[position] ? [{ question: questions[position].prompt, answer: text }] : [];
+    });
+  };
+
+  // 「再调语气」works on the version on screen, not the original line: keep its content
+  // and the user's answers, and only change the tone.
+  const retune = (item: Item) => {
+    const shown = item.draft?.variants[item.selected]?.text ?? "";
+    const instruction = t("在这一版的基础上换一种语气，内容和事实不变：{text}", { text: shown });
+    void rewrite(item, {
+      lineId: item.lineId,
+      instruction: shown && instruction.length <= 300 ? instruction : item.instruction || t("换一种语气，事实不变"),
+      answers: answerPairs(item),
+    });
+  };
+
   const submitAsk = () => {
     const instruction = askText.trim();
     if (!instruction || !unit || phase.kind !== "ready") return;
@@ -637,11 +658,17 @@ export function FocusSheet({
                 </button>
               )}
               {item.status === "stale" && <button type="button" className="sf-btn" onClick={() => void analyze()}>{t("重新分析")}</button>}
-              {item.status === "error" && item.kind === "ask" && (
-                <button type="button" className="sf-btn" onClick={() => void rewrite(item, { lineId: item.lineId, instruction: item.instruction })}>{t("重试")}</button>
+              {item.status === "error" && (item.kind === "ask" || answerPairs(item).length > 0) && (
+                <button
+                  type="button"
+                  className="sf-btn"
+                  onClick={() => void rewrite(item, { lineId: item.lineId, instruction: item.kind === "ask" ? item.instruction : undefined, answers: answerPairs(item) })}
+                >
+                  {t("重试")}
+                </button>
               )}
               {draft && (item.status === "pending" || item.status === "todo") && note?.kind !== "structure" && item.lineId && (
-                <button type="button" className="sf-btn" onClick={() => void rewrite(item, { lineId: item.lineId, instruction: item.instruction || t("换一种语气，事实不变") })}>
+                <button type="button" className="sf-btn" title={t("基于当前这版换一种语气，内容不变")} onClick={() => retune(item)}>
                   {t("再调语气")}
                 </button>
               )}
@@ -1102,7 +1129,19 @@ function QuestionStep({
         </div>
       )}
       <label className="sf-answer">
-        <input value={value} onChange={(event) => setValue(event.target.value)} maxLength={300} placeholder={t("用你自己的话回答，AI 不会替你编")} autoFocus />
+        <input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter submits right away; Enter that confirms an IME candidate does not.
+            if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
+            event.preventDefault();
+            if (value.trim()) onSubmit(value);
+          }}
+          maxLength={300}
+          placeholder={t("用你自己的话回答，AI 不会替你编")}
+          autoFocus
+        />
         <button type="submit" disabled={!value.trim()}>{index + 1 < total ? t("下一题 ↵") : t("生成 ↵")}</button>
       </label>
     </form>

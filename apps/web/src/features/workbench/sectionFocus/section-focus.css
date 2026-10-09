@@ -239,7 +239,9 @@
 .sf-option.is-selected { border-color: var(--sf-orange); background: color-mix(in srgb, var(--sf-orange) 9%, #fff); color: var(--sf-orange); }
 .sf-answer { display: flex; align-items: center; gap: 10px; border-bottom: 1.5px solid color-mix(in srgb, var(--sf-orange) 55%, transparent); padding-bottom: 6px; }
 .sf-answer input { min-width: 0; flex: 1; border: 0; outline: none; color: var(--sf-ink); font-size: 14px; }
-.sf-answer button { border: 1px solid var(--sf-line2); border-radius: 6px; background: #fff; padding: 2px 8px; color: var(--sf-ink3); font-size: 11.5px; }
+.sf-answer button { flex: none; border: 1px solid var(--sf-ink); border-radius: 6px; background: var(--sf-ink); padding: 3px 10px; color: #fff; font-size: 12px; font-weight: 500; }
+.sf-answer button:hover:not(:disabled) { background: #000; }
+.sf-answer button:disabled { border-color: var(--sf-line2); background: #fff; color: var(--sf-ink4); }
 .sf-linked { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-bottom: 10px; color: var(--sf-ink2); font-size: 12.5px; }
 .sf-linked p { width: 100%; margin: 0; }
 .sf-variants { display: grid; gap: 10px; }
