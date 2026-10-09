@@ -1123,6 +1123,7 @@ export function ResumeWorkbench({
           editor={editor}
           resumeId={activeResumeId}
           scrollRef={paperScrollRef}
+          scale={renderedPreviewScale}
           onNotice={(label) => setToast({ kind: "warning", label })}
         />
       )}

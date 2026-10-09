@@ -4,14 +4,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { FocusSheet, DiffText, snapshotNotes, type AppliedEdit, type FocusRequest, type SheetSnapshot } from "./FocusSheet";
 import { PageLens, type LensGroup } from "./PageLens";
 import {
-  CONTEXT_LIMIT,
   focusUnitsFromDoc,
   matchTarget,
   replaceLineText,
   unitLabel,
   type FocusUnit,
 } from "./sectionModel";
-import { PenLine } from "lucide-react";
 import { addedRanges } from "./textDiff";
 import "./section-focus.css";
 
@@ -21,8 +19,13 @@ const HIGHLIGHT_NAME = "linkresume-section-focus-added";
 /** The entry stays this long after the editor loses focus, so it can still be clicked. */
 const BLUR_GRACE = 200;
 const GUTTER_GAP = 12;
-const CHIP_WIDTH = 236;
-const COMPACT_WIDTH = 30;
+/** The command bar under the paragraph frame, at 100% zoom. */
+const BAR_HEIGHT = 40;
+const BAR_GAP = 6;
+/** The bar stays out of the way while the user is typing in the paragraph. */
+const TYPING_QUIET = 900;
+/** Overlays hide while the canvas zooms and come back once it settles. */
+const ZOOM_SETTLE = 140;
 const COACH_WIDTH = 260;
 
 type Rect = { top: number; left: number; width: number; height: number };
@@ -81,21 +84,21 @@ function paperBox(editor: Editor) {
   return (editor.view.dom.closest(".resume-paper") ?? editor.view.dom).getBoundingClientRect();
 }
 
-type ChipSpot = { compact: boolean; top: number; left: number };
+type BarSpot = { top: number; left: number; width: number; scale: number; above: boolean };
 
 /**
- * The entry lives outside the editable text: in the grey margin beside the
- * page, or as a compact icon column in the page's own blank right margin.
- * When neither has room there is no entry on the page (⌘K still works); it
- * never sits on top of resume text.
+ * The command bar hangs from the bottom edge of the paragraph frame, as wide
+ * as the frame; when there is no room below it moves above. It follows the
+ * canvas zoom down to 85% so it stays easy to hit, and never grows past 100%.
  */
-function chipSpot(editor: Editor, scroller: HTMLElement | null, origin: DOMRect, rect: Rect, side: "left" | null): ChipSpot | null {
-  const gutter = gutterLeft(editor, scroller, origin, CHIP_WIDTH, side === "left" ? -Infinity : rect.left + rect.width / 2);
-  if (gutter !== null) return { compact: false, top: rect.top, left: gutter };
-  const contentRight = editor.view.dom.getBoundingClientRect().right - origin.left;
-  const margin = paperBox(editor).right - origin.left - contentRight;
-  if (margin >= COMPACT_WIDTH + 6) return { compact: true, top: rect.top, left: contentRight + (margin - COMPACT_WIDTH) / 2 };
-  return null;
+function barSpot(scroller: HTMLElement | null, editor: Editor, origin: DOMRect, rect: Rect, zoom: number): BarSpot {
+  const scale = Math.min(1, Math.max(0.85, zoom));
+  const height = BAR_HEIGHT * scale;
+  const view = (scroller ?? editor.view.dom).getBoundingClientRect();
+  const bottom = view.bottom - origin.top - 8;
+  const below = rect.top + rect.height + BAR_GAP;
+  const above = below + height > bottom && rect.top - BAR_GAP - height >= view.top - origin.top + 8;
+  return { top: above ? rect.top - BAR_GAP - height : below, left: rect.left, width: rect.width, scale, above };
 }
 
 /** Briefly highlight the added words of applied edits on the page. */
@@ -140,11 +143,14 @@ export function SectionFocusLayer({
   editor,
   resumeId,
   scrollRef,
+  scale = 1,
   onNotice,
 }: {
   editor: Editor;
   resumeId: string;
   scrollRef: RefObject<HTMLElement | null>;
+  /** Canvas zoom. The paper is scaled with CSS, which fires no resize, so a change re-measures. */
+  scale?: number;
   onNotice: (label: string) => void;
 }) {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -153,8 +159,12 @@ export function SectionFocusLayer({
   // pointer, so nothing reacts to mouse movement over the resume text.
   const [caretId, setCaretId] = useState<string | null>(null);
   const [entryHovered, setEntryHovered] = useState(false);
-  const [composerId, setComposerId] = useState<string | null>(null);
-  const [composerText, setComposerText] = useState("");
+  // What the user types in the command bar, and the paragraph it is pinned to
+  // while the bar's input has focus (the editor's caret is gone by then).
+  const [barText, setBarText] = useState("");
+  const [barUnitId, setBarUnitId] = useState<string | null>(null);
+  const [typing, setTyping] = useState(false);
+  const [zooming, setZooming] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [focus, setFocus] = useState<FocusRequest | null>(null);
   const [landing, setLanding] = useState<Landing | null>(null);
@@ -181,11 +191,20 @@ export function SectionFocusLayer({
   useEffect(() => {
     // Every document change, including content replaced without an update event
     // (loading a version, switching templates).
+    let quietTimer = 0;
     const bump = ({ transaction }: { transaction: { docChanged: boolean } }) => {
-      if (transaction.docChanged) setRevision((value) => value + 1);
+      if (!transaction.docChanged) return;
+      setRevision((value) => value + 1);
+      if (!editor.isFocused) return;
+      setTyping(true);
+      window.clearTimeout(quietTimer);
+      quietTimer = window.setTimeout(() => setTyping(false), TYPING_QUIET);
     };
     editor.on("transaction", bump);
-    return () => { editor.off("transaction", bump); };
+    return () => {
+      window.clearTimeout(quietTimer);
+      editor.off("transaction", bump);
+    };
   }, [editor]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -214,6 +233,23 @@ export function SectionFocusLayer({
     };
   }, [scrollRef]);
 
+  // Zooming moves every paragraph on screen: hide the frame and bar while it
+  // happens, then measure again at the new scale.
+  const firstScale = useRef(true);
+  useLayoutEffect(() => {
+    if (firstScale.current) {
+      firstScale.current = false;
+      return;
+    }
+    setZooming(true);
+    const timer = window.setTimeout(() => {
+      setOrigin(layerRef.current?.getBoundingClientRect() ?? null);
+      setLayoutTick((value) => value + 1);
+      setZooming(false);
+    }, ZOOM_SETTLE);
+    return () => window.clearTimeout(timer);
+  }, [scale]);
+
   useEffect(() => {
     let blurTimer = 0;
     const sync = () => {
@@ -237,8 +273,8 @@ export function SectionFocusLayer({
   }, [editor, units]);
 
   const openFocus = useCallback((unitId: string, intent = "", itemId?: string) => {
-    setComposerId(null);
-    setComposerText("");
+    setBarText("");
+    setBarUnitId(null);
     setPaletteOpen(false);
     setEntryHovered(false);
     setLanding(null);
@@ -257,14 +293,11 @@ export function SectionFocusLayer({
         setPaletteOpen((open) => !open);
         return;
       }
-      if (event.key === "Escape" && (paletteOpen || composerId)) {
-        setPaletteOpen(false);
-        setComposerId(null);
-      }
+      if (event.key === "Escape" && paletteOpen) setPaletteOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [composerId, editor, focus, paletteOpen, units]);
+  }, [editor, focus, paletteOpen, units]);
 
   const dismissCoach = () => {
     setCoachSeen(true);
@@ -318,7 +351,6 @@ export function SectionFocusLayer({
   };
 
   const caretUnit = unitById(caretId);
-  const composerUnit = unitById(composerId);
   const landingUnit = unitById(landing?.unitId ?? null);
   const landingUnitCount = new Set(landing?.edits.map((edit) => edit.unitId)).size;
   // Analysis results of every paragraph analysed in this session, in page order.
@@ -329,16 +361,14 @@ export function SectionFocusLayer({
     return notes.length ? [{ unit, notes }] : [];
   }), [units, editor, analysesVersion, revision]);
   const showLens = lensGroups.length > 0 && !focus && !(landing?.recapOpen);
-  const showEntry = Boolean(caretUnit) && !focus && !composerId && !paletteOpen;
-  const caretRect = showEntry && caretUnit && origin ? unitRect(editor, caretUnit, origin) : null;
-  // With the annotations on the right, the entry keeps to the left margin.
-  const chip = caretRect && origin
-    ? chipSpot(editor, scrollRef.current, origin, caretRect, showLens && lensOpen ? "left" : null)
+  // The bar's own input keeps its paragraph while it has focus.
+  const entryUnit = caretUnit ?? unitById(barUnitId);
+  const showEntry = Boolean(entryUnit) && !focus && !paletteOpen && !zooming;
+  const entryRect = showEntry && entryUnit && origin ? unitRect(editor, entryUnit, origin) : null;
+  const bar = entryRect && origin && (!typing || barUnitId) ? barSpot(scrollRef.current, editor, origin, entryRect, scale) : null;
+  const coachLeft = entryRect && bar && origin && !coachSeen
+    ? gutterLeft(editor, scrollRef.current, origin, COACH_WIDTH, entryRect.left + entryRect.width / 2)
     : null;
-  const coachLeft = caretRect && chip && origin && !coachSeen
-    ? gutterLeft(editor, scrollRef.current, origin, COACH_WIDTH, caretRect.left + caretRect.width / 2)
-    : null;
-  const composerRect = composerUnit && origin ? unitRect(editor, composerUnit, origin) : null;
   const landingRect = landingUnit && origin ? unitRect(editor, landingUnit, origin) : null;
   const focusIndex = focus ? units.findIndex((unit) => unit.id === focus.unitId) : -1;
   const nextUnit = landing ? units[units.findIndex((unit) => unit.id === landing.unitId) + 1] ?? null : null;
@@ -357,78 +387,59 @@ export function SectionFocusLayer({
           onOpenNote={(unitId, noteId) => openFocus(unitId, "", noteId)}
         />
       )}
-      {caretRect && caretUnit && chip && (
+      {entryRect && entryUnit && (
         <>
-          {/* The paragraph the entry acts on. It never takes clicks, so editing is unaffected. */}
-          <div className={`sf-caret-outline${entryHovered ? " is-strong" : ""}`} style={{ top: caretRect.top, left: caretRect.left, width: caretRect.width, height: caretRect.height }} />
-          <div
-            className={`sf-hover-actions${chip.compact ? " is-compact" : ""}`}
-            // Clicking the entry must not take the caret out of the resume.
-            onMouseDown={(event) => event.preventDefault()}
-            onMouseEnter={() => setEntryHovered(true)}
-            onMouseLeave={() => setEntryHovered(false)}
-            style={{ top: chip.top, left: chip.left }}
-          >
-            <button type="button" onClick={() => openFocus(caretUnit.id)} aria-label={t("聚焦这段")} title={chip.compact ? t("聚焦这段") : undefined}>
-              <i className="sf-ring" aria-hidden="true" />
-              {!chip.compact && t("聚焦这段")}
-            </button>
-            <button type="button" onClick={() => { setComposerId(caretUnit.id); setComposerText(""); setEntryHovered(false); dismissCoach(); }} aria-label={t("说说怎么改…")} title={chip.compact ? t("说说怎么改…") : undefined}>
-              {chip.compact ? <PenLine size={13} aria-hidden="true" /> : t("说说怎么改…")}
-            </button>
-          </div>
+          {/* The paragraph the bar acts on. It never takes clicks, so editing is unaffected. */}
+          <div className={`sf-caret-outline${entryHovered || barUnitId ? " is-strong" : ""}`} style={{ top: entryRect.top, left: entryRect.left, width: entryRect.width, height: entryRect.height }} />
+          {bar && (
+            <form
+              className={`sf-bar${bar.above ? " is-above" : ""}`}
+              style={{ top: bar.top, left: bar.left, width: bar.width / bar.scale, transform: `scale(${bar.scale})` }}
+              // Clicking the bar, except its input, must not take the caret out of the resume.
+              onMouseDown={(event) => { if (!(event.target instanceof HTMLInputElement)) event.preventDefault(); }}
+              onMouseEnter={() => setEntryHovered(true)}
+              onMouseLeave={() => setEntryHovered(false)}
+              onSubmit={(event) => {
+                event.preventDefault();
+                openFocus(entryUnit.id, barText.trim());
+              }}
+            >
+              <button type="submit" className="sf-bar-focus">
+                <i className="sf-ring" aria-hidden="true" />
+                {t("聚焦这段")}
+              </button>
+              <input
+                value={barText}
+                maxLength={300}
+                onChange={(event) => setBarText(event.target.value)}
+                onFocus={() => { setBarUnitId(entryUnit.id); dismissCoach(); }}
+                onBlur={() => setBarUnitId(null)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  setBarText("");
+                  editor.commands.focus();
+                }}
+                placeholder={t("对这段说点什么，比如「更突出结果」")}
+                aria-label={t("对这段的要求")}
+              />
+              <kbd aria-hidden="true">↵</kbd>
+              {barUnitId && !barText && (
+                <div className="sf-bar-quick">
+                  {QUICK_ASKS.map((label) => (
+                    <button key={label} type="button" onClick={() => setBarText(t(label))}>{t(label)}</button>
+                  ))}
+                </div>
+              )}
+            </form>
+          )}
           {!coachSeen && coachLeft !== null && (
-            <div className="sf-coach" role="note" onMouseDown={(event) => event.preventDefault()} style={{ top: caretRect.top + 40, left: coachLeft, width: COACH_WIDTH }}>
+            <div className="sf-coach" role="note" onMouseDown={(event) => event.preventDefault()} style={{ top: entryRect.top, left: coachLeft, width: COACH_WIDTH }}>
               <span className="sf-mono">NEW</span>
               <strong>{t("让 AI 帮你改某一段")}</strong>
-              <p>{t("光标停在哪段经历里，页边就会出现这段的入口：点「聚焦这段」让 AI 先看看问题；点「说说怎么改」直接写你的要求。也可以按 ⌘K 一句话直达。")}</p>
+              <p>{t("光标停在哪段经历里，这段就会被虚线框住，下方出现指令条：点「聚焦这段」让 AI 先看看问题，或者直接写下要求按回车。也可以按 ⌘K 一句话直达。")}</p>
               <button type="button" onClick={dismissCoach}>{t("知道了")}</button>
             </div>
           )}
-        </>
-      )}
-
-      {composerUnit && composerRect && (
-        <>
-          <div className="sf-selected-outline" style={{ top: composerRect.top, left: composerRect.left, width: composerRect.width, height: composerRect.height }} />
-          <form
-            className="sf-composer"
-            style={{ top: composerRect.top + composerRect.height + 8, left: composerRect.left - 12, width: Math.max(420, composerRect.width + 24) }}
-            onSubmit={(event) => {
-              event.preventDefault();
-              openFocus(composerUnit.id, composerText.trim());
-            }}
-          >
-            <div className="sf-composer-head">
-              <i className="sf-ring" aria-hidden="true" />
-              <strong>{t("改这一段")}</strong>
-              <span className="sf-muted">{unitLabel(composerUnit)}</span>
-              <button type="button" className="sf-link sf-muted" onClick={() => setComposerId(null)}>{t("Esc 关闭")}</button>
-            </div>
-            <input
-              autoFocus
-              value={composerText}
-              maxLength={300}
-              onChange={(event) => setComposerText(event.target.value)}
-              placeholder={t("想怎么改？比如「帮我分析一下这段，想突出技术深度」")}
-              aria-label={t("修改要求")}
-            />
-            <div className="sf-quick">
-              <span className="sf-muted">{t("常用")}</span>
-              {QUICK_ASKS.map((label) => (
-                <button key={label} type="button" className={composerText === t(label) ? "is-selected" : ""} onClick={() => setComposerText(t(label))}>{t(label)}</button>
-              ))}
-            </div>
-            <div className="sf-composer-foot">
-              <span className="sf-mono sf-muted">CONTEXT</span>
-              <span className="sf-muted">
-                {t("会一并参考：{list}", {
-                  list: units.filter((unit) => unit.id !== composerUnit.id).slice(0, CONTEXT_LIMIT).map((unit) => unit.heading || unit.sectionLabel).join("、") || t("无"),
-                })}
-              </span>
-              <button type="submit" className="sf-btn sf-btn-dark">{t("开始 ↵")}</button>
-            </div>
-          </form>
         </>
       )}
 

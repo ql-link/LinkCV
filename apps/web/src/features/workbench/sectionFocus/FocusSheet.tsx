@@ -1,6 +1,7 @@
 import { t } from "@/i18n";
 import type { Editor } from "@tiptap/core";
-import { RefreshCw } from "lucide-react";
+import { Check, ChevronDown, RefreshCw } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   api,
@@ -228,6 +229,7 @@ export function FocusSheet({
   const [askText, setAskText] = useState("");
   const [askLineId, setAskLineId] = useState<string | null>(null);
   const [jobs, setJobs] = useState<JobDescriptionSummary[] | null>(null);
+  const [jobsLoading, setJobsLoading] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<string[]>(restored?.draftAnswers ?? []);
   const controllers = useRef(new Set<AbortController>());
   // Latest rewrite per item; an older reply must not overwrite a newer one.
@@ -348,6 +350,8 @@ export function FocusSheet({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // An open dropdown handles its own keys, Escape included.
+      if ((event.target as HTMLElement | null)?.closest?.('[role="menu"]')) return;
       if (event.key === "Escape") {
         event.preventDefault();
         close();
@@ -501,9 +505,11 @@ export function FocusSheet({
   const loadJobs = () => {
     if (jobs !== null) return;
     setJobs([]);
+    setJobsLoading(true);
     api.listJobDescriptions({ limit: 20 })
       .then((response) => setJobs(response.items))
-      .catch(() => setJobs([]));
+      .catch(() => setJobs([]))
+      .finally(() => setJobsLoading(false));
   };
 
   if (!unit) return null;
@@ -513,7 +519,14 @@ export function FocusSheet({
   const lineNotes = (lineId: string | null) => items.filter((item) => (item.note ? item.note.line_id === lineId : item.lineId === lineId && lineId !== null));
   const activeItem = items.find((item) => item.id === activeId) ?? null;
   const contextUnits = units.filter((item) => item.id !== unit.id);
+  const firstContext = contextIds.map((id) => units.find((item) => item.id === id)).find(Boolean);
+  const contextLabel = !firstContext
+    ? t("不参考其他段落")
+    : contextIds.length > 1
+      ? t("{first} 等 {n} 段", { first: firstContext.heading || firstContext.sectionLabel, n: contextIds.length })
+      : unitLabel(firstContext);
   const doneCount = items.filter((item) => item.status === "done").length;
+  const askLine = askLineId ? unit.lines.findIndex((line) => line.id === askLineId) : -1;
   const stale = ready ? changedSinceAnalysis(unit, ready.baseLines, items) : false;
   const header = headerParts(unit);
   // Other experiences of the same section, e.g. two internships, numbered so they stay apart.
@@ -688,11 +701,11 @@ export function FocusSheet({
                           <>
                             <span className="sf-rail-no">{String(position + 1).padStart(2, "0")}</span>
                             <span className="sf-rail-name">
-                              {item.heading || item.sectionLabel}
+                              <span className="sf-rail-title">{item.heading || item.sectionLabel}</span>
                               {dates && <small>{dates}</small>}
                             </span>
                           </>
-                        ) : item.heading || item.sectionLabel}
+                        ) : <span className="sf-rail-title">{item.heading || item.sectionLabel}</span>}
                       </button>
                     </li>
                   );
@@ -707,38 +720,10 @@ export function FocusSheet({
         <header className="sf-sheet-head">
           <div className="sf-title-row">
             <span className="sf-mono">FOCUS</span>
-            <span className="sf-muted">
+            <span className="sf-muted sf-position">
               {siblings.length > 1
                 ? t("{section} · 第 {n} 段，共 {total} 段", { section: unit.sectionLabel, n: siblingIndex + 1, total: siblings.length })
                 : `${unit.sectionLabel} · ${String(index + 1).padStart(2, "0")} / ${String(units.length).padStart(2, "0")}`}
-            </span>
-            <span className="sf-sentence">
-              {t("以")}
-              <select
-                aria-label={t("参照")}
-                value={reference.kind === "job" ? reference.job_id : "general"}
-                onFocus={loadJobs}
-                onMouseDown={loadJobs}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  const job = jobs?.find((item) => item.id === value);
-                  setReference(job ? { kind: "job", job_id: job.id, label: `${job.company_name} · ${job.job_title}` } : { kind: "general" });
-                }}
-              >
-                <option value="general">{t("通用写作标准")}</option>
-                {reference.kind === "job" && !jobs?.some((job) => job.id === reference.job_id) && (
-                  <option value={reference.job_id}>{reference.label}</option>
-                )}
-                {jobs?.map((job) => <option key={job.id} value={job.id}>{job.company_name} · {job.job_title}</option>)}
-              </select>
-              {t("为参照，突出")}
-              <input
-                aria-label={t("想突出的方向")}
-                value={intent}
-                placeholder={ready?.result.inferred_focus ?? t("想突出什么")}
-                onChange={(event) => setIntent(event.target.value)}
-                maxLength={300}
-              />
             </span>
             <span className="sf-head-actions">
               <button type="button" className="sf-regen" disabled={phase.kind === "loading"} onClick={() => void analyze()}>
@@ -748,44 +733,93 @@ export function FocusSheet({
               <button type="button" className="sf-close" onClick={close} aria-label={t("完成并放回")}>{t("完成")}</button>
             </span>
           </div>
+          <div className="sf-setup">
+            <span className="sf-sentence">
+              {t("以")}
+              <DropdownMenu onOpenChange={(open) => open && loadJobs()}>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="sf-pick" aria-label={t("参照")}>
+                    <span>{reference.kind === "job" ? reference.label ?? t("目标岗位") : t("通用写作标准")}</span>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="sf-menu">
+                  <DropdownMenuItem onSelect={() => setReference({ kind: "general" })}>
+                    <span>{t("通用写作标准")}</span>
+                    {reference.kind === "general" && <Check aria-hidden="true" />}
+                  </DropdownMenuItem>
+                  {reference.kind === "job" && !jobs?.some((job) => job.id === reference.job_id) && (
+                    <DropdownMenuItem onSelect={() => undefined}>
+                      <span>{reference.label ?? t("目标岗位")}</span>
+                      <Check aria-hidden="true" />
+                    </DropdownMenuItem>
+                  )}
+                  <div className="sf-menu-label">{t("已收集的岗位")}</div>
+                  {jobsLoading && <div className="sf-menu-empty">{t("正在读取岗位…")}</div>}
+                  {!jobsLoading && jobs?.length === 0 && <div className="sf-menu-empty">{t("还没有收集岗位")}</div>}
+                  {jobs?.map((job) => (
+                    <DropdownMenuItem key={job.id} onSelect={() => setReference({ kind: "job", job_id: job.id, label: `${job.company_name} · ${job.job_title}` })}>
+                      <span>{job.company_name} · {job.job_title}</span>
+                      {reference.kind === "job" && reference.job_id === job.id && <Check aria-hidden="true" />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {t("为参照，突出")}
+              <input
+                className="sf-intent"
+                aria-label={t("想突出的方向")}
+                value={intent}
+                title={intent || ready?.result.inferred_focus || undefined}
+                placeholder={ready?.result.inferred_focus ?? t("想突出什么")}
+                onChange={(event) => setIntent(event.target.value)}
+                maxLength={300}
+              />
+              {ready?.result.inferred_focus && !intent.trim() && (
+                <button type="button" className="sf-link sf-infer-use" title={t("AI 推断这段想突出「{focus}」", { focus: ready.result.inferred_focus })} onClick={() => setIntent(ready.result.inferred_focus ?? "")}>
+                  {t("就按 AI 推断")}
+                </button>
+              )}
+            </span>
+            <span className="sf-context">
+              {t("一并参考")}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="sf-pick sf-pick-quiet" aria-label={t("参考段落")}>
+                    <span>{contextLabel}</span>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="sf-menu sf-menu-wide">
+                  <div className="sf-menu-label">{t("最多 {n} 段，分析时一并参考", { n: CONTEXT_LIMIT })}</div>
+                  {contextUnits.map((item) => {
+                    const checked = contextIds.includes(item.id);
+                    const full = !checked && contextIds.length >= CONTEXT_LIMIT;
+                    return (
+                      <DropdownMenuItem
+                        key={item.id}
+                        disabled={full}
+                        className={checked ? "is-checked" : undefined}
+                        onSelect={(event) => {
+                          // Keep the menu open so several sections can be picked in a row.
+                          event.preventDefault();
+                          setContextIds((current) => current.includes(item.id) ? current.filter((value) => value !== item.id) : [...current, item.id]);
+                        }}
+                      >
+                        <i className="sf-menu-box" aria-hidden="true">{checked && <Check />}</i>
+                        <span>{unitLabel(item)}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </span>
+          </div>
           {ready && stale && (
             <p className="sf-reuse">
               {t("这段在上次分析后改过，建议点「重新生成」。")}
             </p>
           )}
-          {ready?.result.inferred_focus && !intent.trim() && (
-            <p className="sf-infer">
-              {t("AI 推断这段想突出「{focus}」", { focus: ready.result.inferred_focus })}
-              <button type="button" className="sf-link" onClick={() => setIntent(ready.result.inferred_focus ?? "")}>{t("就按这个")}</button>
-            </p>
-          )}
-          <div className="sf-context">
-            <span className="sf-mono sf-muted">CONTEXT</span>
-            <span className="sf-muted">{t("一并参考")}</span>
-            {contextIds.map((id) => {
-              const item = units.find((candidate) => candidate.id === id);
-              if (!item) return null;
-              return (
-                <span key={id} className="sf-context-chip">
-                  {unitLabel(item)}
-                  <button type="button" aria-label={t("不参考这一段")} onClick={() => setContextIds((current) => current.filter((value) => value !== id))}>×</button>
-                </span>
-              );
-            })}
-            {contextIds.length < CONTEXT_LIMIT && contextUnits.some((item) => !contextIds.includes(item.id)) && (
-              <select
-                className="sf-context-add"
-                aria-label={t("添加参考段落")}
-                value=""
-                onChange={(event) => event.target.value && setContextIds((current) => [...current, event.target.value])}
-              >
-                <option value="">{t("+ 添加")}</option>
-                {contextUnits.filter((item) => !contextIds.includes(item.id)).map((item) => (
-                  <option key={item.id} value={item.id}>{unitLabel(item)}</option>
-                ))}
-              </select>
-            )}
-          </div>
         </header>
 
         <div className="sf-body">
@@ -891,15 +925,27 @@ export function FocusSheet({
             disabled={phase.kind !== "ready" || !unit.lines.length}
             aria-label={t("补充要求")}
           />
-          <select
-            aria-label={t("作用于哪一条")}
-            value={askLineId ?? ""}
-            onChange={(event) => setAskLineId(event.target.value || null)}
-            disabled={phase.kind !== "ready"}
-          >
-            <option value="">{t("自动判断")}</option>
-            {unit.lines.map((line, position) => editable.has(line.id) && <option key={line.id} value={line.id}>{t("第 {n} 条", { n: position + 1 })}</option>)}
-          </select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild disabled={phase.kind !== "ready"}>
+              <button type="button" className="sf-pick sf-pick-chip" aria-label={t("作用于哪一条")}>
+                <span>{askLine >= 0 ? t("第 {n} 条", { n: askLine + 1 }) : t("自动判断")}</span>
+                <ChevronDown size={13} aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" side="top" className="sf-menu">
+              <DropdownMenuItem onSelect={() => setAskLineId(null)}>
+                <span>{t("自动判断")}</span>
+                {askLine < 0 && <Check aria-hidden="true" />}
+              </DropdownMenuItem>
+              {unit.lines.map((line, position) => editable.has(line.id) && (
+                <DropdownMenuItem key={line.id} onSelect={() => setAskLineId(line.id)}>
+                  <span>{t("第 {n} 条", { n: position + 1 })}</span>
+                  <small>{line.text.slice(0, 16)}</small>
+                  {askLineId === line.id && <Check aria-hidden="true" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button type="submit" className="sf-enter" disabled={!askText.trim() || phase.kind !== "ready"} aria-label={t("发送")}>↵</button>
           <span className="sf-muted">{t("只作用于这一段")}</span>
         </form>
