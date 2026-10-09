@@ -1,62 +1,87 @@
 # LinkResume
 
-> 面向中文求职者的一站式 AI 求职工具。
+> 懂你经历的求职搭档。
 
-LinkResume 将简历制作、岗位管理、投递跟踪和面试复盘放进同一个工作区，帮助求职者减少在 Word、招聘网站、表格和聊天记录之间反复切换。
+LinkResume 是面向中文求职者的 AI 求职工作台。从导入简历和项目资料开始，用 AI 梳理经历、对照岗位要求、练习面试，再把简历、岗位和求职进度放在同一个工作区里管理。
 
-![LinkResume 首页](docs/assets/readme/landing.png)
+[在线体验](https://linkresume.cn/resumes) · [官网](https://linkresume.cn/home) · [界面预览](#界面预览) · [本地运行](#本地运行) · [项目文档](docs/README.md)
 
-## 为什么做 LinkResume
+[![LinkResume 官网：品牌介绍与产品演示](docs/assets/readme/landing.webp)](https://linkresume.cn/home)
 
-一段完整的求职经历通常会产生多份简历、多个岗位链接、不同投递版本以及大量面试记录。这些内容往往散落在不同工具里，既难以整理，也很难回顾每一次修改和投递。
+## 从经历到机会
 
-LinkResume 希望以简历为起点，把岗位、投递、面试和个人资料连接起来，让求职过程更清晰，也让 AI 能够在用户明确选择的上下文中提供更具体的建议。
+求职准备不止是写完一份简历。面对不同岗位，你需要挑选相关经历、调整表达、跟进投递，还要准备项目追问和整理面试反馈。这些材料如果散落在文档、招聘网站、表格和聊天记录里，每一步都要重新找信息。
 
-## 主要功能
+LinkResume 把这条路径连接起来：简历保存你的经历，岗位明确目标，资料库补充细节，AI 助手围绕你选择的内容展开分析，岗位看板和日程记录接下来的行动。简历修改先展示前后对比，由你确认后再写入。
 
-| 功能 | 说明 |
+## 可以做什么
+
+| 能力 | 使用方式 |
 | --- | --- |
-| 简历制作 | 从模板或已有的 Markdown、DOCX、PDF 文件开始，在线编辑并自动保存 |
-| 版本与导出 | 为不同岗位保存简历版本，支持恢复、分享和 PDF 导出 |
-| AI 求职助手 | 结合用户选择的简历、岗位和资料进行分析，生成需要用户确认的修改建议 |
-| 岗位与投递管理 | 导入岗位信息，通过看板记录投递阶段和求职进展 |
-| 面试安排与复盘 | 使用日历管理笔试、测评和面试，并保存面试记录与复盘 |
-| 个人资料集 | 分类保存求职材料，在需要时作为 AI 助手的上下文引用 |
+| 制作与整理简历 | 从模板新建，或导入 PDF、DOCX、Markdown；在 A4 画布中编辑，自动保存，按不同岗位复制独立简历 |
+| 排版、分享与导出 | 切换模板，调整字体、行距和页边距，选择 A4 分页或智能一页，生成分享链接与 PDF |
+| AI 简历助手 | 引用简历、岗位和资料，诊断表达、梳理项目、分析 JD 或准备面试；逐项查看并确认修改提案 |
+| 岗位与求职进程 | 导入岗位，关联简历，在看板中跟进投递、筛选、面试和 Offer |
+| 面试日程与记录 | 用日历安排笔试和面试，保存准备清单、面试材料与复盘笔记 |
+| AI 模拟面试 | 基于简历与岗位进行文字或语音练习，接受追问，结束后查看逐题反馈和评估报告 |
+| 个人资料库 | 按文件夹整理项目文档、作品和求职材料，在 AI 对话或模拟面试中主动选择引用 |
+| 浏览器岗位采集 | 在 Chrome 中读取当前 BOSS 直聘岗位，核对后导入工作区 |
 
 ## 界面预览
 
-### 简历模板
+以下截图使用当前 Web 页面组件与虚构数据生成。AI 回复与评分均为演示示例，不代表真实模型调用或实际求职结果。
 
-从不同版式的简历模板开始创建，根据岗位和内容选择合适的呈现方式。
+### 简历模板：选择适合内容的版式
 
-![LinkResume 简历模板](docs/assets/readme/resume-templates.png)
+浏览模板预览，按视觉风格与实习、校招、社招等场景筛选。从模板开始创建，也可以在编辑时切换版式。
 
-### 简历编辑
+[![简历模板：版式预览与分类筛选](docs/assets/readme/resume-templates.webp)](https://linkresume.cn/templates)
 
-在接近真实 A4 纸张的工作区中编辑简历，调整页面设置、切换模板、管理版本并导出 PDF。
+### 简历编辑：内容与排版一起完成
 
-![LinkResume 简历编辑器](docs/assets/readme/resume-editor.png)
+在 A4 画布中直接编辑正文，调整模块顺序、字体、字号、行距和页边距。内容自动保存，完成后可以导出 PDF，或复制一份用于另一个目标岗位。
 
-### AI 求职助手
+[![简历编辑器：A4 画布与排版设置](docs/assets/readme/resume-editor.webp)](https://linkresume.cn/resumes)
 
-主动选择简历、岗位或个人资料作为上下文，向 AI 发起分析和优化请求。涉及简历内容的修改不会自动覆盖原文，需要用户确认后才会应用。
+### AI 助手：看清建议，再决定如何修改
 
-![LinkResume AI 求职助手](docs/assets/readme/ai-assistant.png)
+把选中的简历、岗位和项目资料带入对话，让助手协助梳理经历、分析 JD 或准备面试。修改建议展示原文与建议内容，可以应用、继续调整或放弃。
 
-### 求职进程
+[![AI 求职助手：项目经历分析与待确认的修改提案](docs/assets/readme/ai-assistant.webp)](https://linkresume.cn/assistant)
 
-把岗位和投递进度集中到看板中，查看每个机会当前所处的阶段。
+### 岗位看板：跟进每一个机会
 
-![LinkResume 求职进程看板](docs/assets/readme/career-board.png)
+把岗位、关联简历和当前求职阶段放在同一张看板中，查看待投递、已投递、面试和 Offer，继续记录每个机会的进展。
 
-## 如何使用
+[![岗位看板：岗位卡片与求职阶段](docs/assets/readme/career-board.webp)](https://linkresume.cn/career/applications)
 
-1. 注册或登录 LinkResume。
-2. 从模板创建简历，或者导入已有的 Markdown、DOCX、PDF 文件。
-3. 在编辑器中完善内容，根据需要保存版本并导出 PDF。
-4. 导入目标岗位，在求职看板中记录投递进度。
-5. 添加笔试或面试安排，并在结束后记录复盘。
-6. 需要分析或优化时，在 AI 助手中主动选择相关简历、岗位和资料。
+### 面试日程：把准备落实到时间
+
+集中查看笔试与面试安排，通过月历、周历和场次详情管理时间与准备事项。
+
+[![面试日程：日历中的笔试与面试安排](docs/assets/readme/interview-schedule.webp)](https://linkresume.cn/career/schedule)
+
+### 模拟面试：围绕真实经历练习
+
+选择简历与目标岗位，设置面试类型、难度和语言，以文字或语音作答。AI 面试官根据回答追问，结束后提供逐题反馈和后续练习建议。
+
+[![AI 模拟面试：练习入口与面试记录](docs/assets/readme/mock-interview.webp)](https://linkresume.cn/mock-interviews)
+
+### 资料库：让项目细节随手可用
+
+把项目复盘、作品集和面试材料按文件夹整理。需要分析或练习时，主动选择相关资料作为上下文。
+
+[![个人资料库：分类文件夹与求职材料](docs/assets/readme/datasets.webp)](https://linkresume.cn/datasets)
+
+## 开始使用
+
+1. 打开[在线工作区](https://linkresume.cn/resumes)，通过微信小程序扫码登录。
+2. 导入已有简历，或选择模板创建一份；完善内容并导出 PDF。
+3. 收集目标岗位，关联对应简历，在看板里跟进求职进度。
+4. 将项目文档和作品放进资料库，在 AI 助手中选择相关内容进行分析和修改。
+5. 安排面试，进行模拟练习，结束后整理记录与反馈。
+
+线上普通用户使用微信扫码登录；本地与 Development 环境使用邮箱注册和密码登录。可用模型和语音能力以实际环境配置为准。
 
 ## 本地运行
 
@@ -66,7 +91,7 @@ LinkResume 希望以简历为起点，把岗位、投递、面试和个人资料
 - Python 3.11–3.13 与 [uv](https://docs.astral.sh/uv/)
 - Docker 与 Docker Compose
 
-### 初始化
+### 初始化与启动
 
 ```bash
 cp .env.example .env
@@ -76,42 +101,56 @@ npm run db:init
 npm run dev:local
 ```
 
-启动后访问 `http://127.0.0.1:5173`。本地环境默认同时运行 Web、FastAPI、文档解析 Worker 和 Pi Agent；MySQL、Redis、MinIO 与 RabbitMQ 由 Docker Compose 提供。
+启动后访问 [http://127.0.0.1:5173](http://127.0.0.1:5173)。`dev:local` 使用本地中间件，同时启动 Web、PDF 渲染构建监听、FastAPI、文档解析 Worker 和 Pi Agent；MySQL、Redis、MinIO 与 RabbitMQ 由 Docker Compose 提供。
 
-PDF、DOCX 解析和真实 AI 能力依赖额外的服务及模型配置。缺少这些配置时，基础页面和非 AI 功能仍可用于本地开发，详细配置见[本地开发文档](docs/ops/development.md)。
+文件解析、AI 对话和语音能力需要相应的外部服务与模型配置，配置步骤见[本地开发文档](docs/ops/development.md)。
 
 ### 常用命令
 
 | 命令 | 作用 |
 | --- | --- |
 | `npm run dev:local` | 使用本地中间件启动开发环境 |
-| `npm run dev:development` | 使用共享 Development 中间件启动本地应用 |
-| `npm run build` | 构建 Web、Chrome 插件和后端包 |
-| `npm test` | 运行各应用自动化测试 |
-| `npm run check` | 运行完整本地质量检查 |
+| `npm run dev:development` | 使用共享 Dev 中间件启动本地应用，需先配置对应环境文件 |
+| `npm run typecheck:web` | 检查 Web TypeScript 类型 |
+| `npm run test:web -- <测试文件>` | 运行指定 Web 测试 |
+| `npm run check:docs` | 检查长期文档同步 |
+| `npm run check:contracts` | 检查确定性运行时契约 |
 
-## 技术架构
+## 项目结构
 
-LinkResume 是 React/TypeScript 与 FastAPI 构成的前后端分离 Monorepo。Web 请求通过 Vite 或部署网关访问 FastAPI，业务数据保存在 MySQL，私有文件保存在 MinIO，Redis 用于会话与运行时状态，RabbitMQ 用于异步文档解析。
+Web 使用 React、TypeScript 与 Vite，业务 API 使用 FastAPI。MySQL 保存业务数据，MinIO 保存私有文件，Redis 管理会话与运行时状态，RabbitMQ 调度异步文档解析。独立的 Pi Agent 服务通过受控工具调用后端。
 
 ```text
-apps/web         React、TypeScript、Vite Web 应用
-apps/extension   WXT、React、TypeScript Chrome 岗位采集插件
-apps/miniprogram 微信小程序
-apps/backend     FastAPI、SQLAlchemy、Alembic 后端与 Worker
-apps/pi-service  AI Agent 服务
+apps/web         Web 工作区、公共官网与分享页
+apps/extension   Chrome 岗位采集插件
+apps/miniprogram 微信小程序与扫码登录入口
+apps/desktop     Electron 桌面壳
+apps/mac         macOS 原生客户端
+apps/windows     Windows 原生客户端
+apps/native      原生客户端共用资源与简历渲染工具
+apps/backend     FastAPI、Worker 与 SQL-first Alembic 迁移
+apps/pi-service  Pi Agent 服务
+third_party/pi   项目引入的 Pi 工具包
 deploy           Docker Compose 与部署配置
-docs             架构、功能、API 与运维文档
+docs             功能、架构、API 与运维文档
 ```
 
-更完整的项目说明可以从[文档索引](docs/README.md)进入：
+各客户端的能力范围以对应文档为准。完整资料从[文档索引](docs/README.md)进入：
 
 - [简历与工作台](docs/features/resume-workbench.md)
-- [求职中心](docs/features/career-center.md)
 - [AI 求职助手](docs/features/ai-assistant.md)
-- [用户资料集](docs/features/datasets.md)
+- [岗位、求职进程与面试日程](docs/features/career-center.md)
+- [AI 模拟面试](docs/features/mock-interview.md)
+- [个人资料库](docs/features/datasets.md)
+- [浏览器插件安装与开发](apps/extension/README.md)
+- [原生客户端](apps/native/README.md)
 - [整体架构](docs/internals/architecture.md)
+- [本地开发](docs/ops/development.md)与[部署说明](docs/ops/deployment.md)
+
+展示图片可通过[截图脚本](apps/web/scripts/capture-readme.mjs)重新生成，使用独立演示入口，无需真实账号或后端服务。
 
 ## 浏览器岗位采集插件
 
-项目包含可侧载的 Chrome Manifest V3 插件。插件只读取用户当前打开的 BOSS 直聘岗位详情，在用户核对并确认后导入 LinkResume，不执行自动投递、后台批量抓取或轮询。构建与安装步骤见[插件说明](apps/extension/README.md)。
+插件读取用户当前打开的 BOSS 直聘岗位详情，先展示预览，核对并确认后才导入 LinkResume。安装入口位于工作区岗位看板，侧载与开发步骤见[插件说明](apps/extension/README.md)。
+
+插件不执行自动投递、后台批量抓取或轮询。
