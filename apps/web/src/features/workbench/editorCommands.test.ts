@@ -132,6 +132,7 @@ describe("convertCurrentLineToResumeRow", () => {
       },
     });
     editor.commands.setTextSelection(visualStartOfTextblock(editor, "paragraph", 1) + 1);
+    const original = editor.getJSON();
 
     expect(convertCurrentLineToResumeRow(editor)).toBe(true);
     const content = editor.getJSON().content ?? [];
@@ -139,6 +140,8 @@ describe("convertCurrentLineToResumeRow", () => {
     expect(editor.state.doc.child(1).child(0).textContent).toBe("列表项");
     expect(editor.state.doc.child(1).child(1).textContent).toBe("");
     expect(editor.isActive("resumeRow")).toBe(true);
+    expect(editor.commands.undo()).toBe(true);
+    expect(editor.getJSON()).toEqual(original);
   });
 
   it("标题行不转换成左右行", () => {
